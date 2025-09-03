@@ -51,21 +51,23 @@ cd ./excalidraw-complete/excalidraw
 # git checkout 7582_fix_docker_build
 
 # Adjust URLs inside of frontend.patch if you want to use a reverse proxy
-git apply ../frontend.patch
+git apply ../frontend.patch ## fails recently, you have to change the URLS manually
+```
+* (Optional)  Remove tracking in excalidraw/excalidraw-app/index.html , ,e.g. change the line above ` <!-- 100% privacy friendly analytics -->`  to ` <% if (typeof PROD == 'undefined') { %>`
+```
 cd ../
 git checkout dev
 docker build -t exalidraw-ui-build excalidraw -f ui-build.Dockerfile
 docker run -v ${PWD}/:/pwd/ -it exalidraw-ui-build cp -r /frontend /pwd
 ```
 
-(Optional) Replace `localhost:3002` inside of `main.go` with your domain name if you want to use a reverse proxy
-(Optional) Replace `"ssl=!0", "ssl=0"` with `"ssl=!0", "ssl=1"` if you want to use HTTPS
-(Optional) Replace `"ssl:!0", "ssl:0"` with `"ssl:!0", "ssl:1"` if you want to use HTTPS
-
+* (Optional) Replace `localhost:3002` inside of `main.go` with your domain name if you want to use a reverse proxy
+* (Optional) Replace `"ssl=!0", "ssl=0"` with `"ssl=!0", "ssl=1"` if you want to use HTTPS
+* (Optional) Replace `"ssl:!0", "ssl:0"` with `"ssl:!0", "ssl:1"` if you want to use HTTPS
 Compile the Go application:
 
 ```bash
-go build -o excalidraw-complete main.go
+CGO_ENABLED=0 go build -o excalidraw-complete main.go
 ```
 
 Declare environment variables if you want any (see section above)
