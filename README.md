@@ -1,3 +1,27 @@
+# 🛑 **IMPORTANT ANNOUNCEMENT: Project Retirement** 🛑
+
+**I will no longer be maintaining the `excalidraw-complete` repository.**
+
+Thank you to everyone who has used, supported, and contributed to this project!
+
+I have started working on a **new, ambitious whiteboard application** from the ground up. This new project is being developed in **Rust** using **WGPU** for graphics and **egui** for the user interface.
+
+This fundamental technology shift allows for the deep integration of features I've always wanted, including:
+
+* **Native Performance:** Leveraging Rust for fast operation.
+* **Self-Hostable Collaboration:** Collaboration features are foundational to the application's design, built directly into a single, self-contained binary, resolving the primary issue where users are *forced to rely on the official Excalidraw instance* for collaboration functionality.
+* **New Features:** The new architecture opens the door to a host of advanced features that were not feasible within the constraints of this wrapper project.
+
+My experience with `excalidraw-complete` was a direct response to the community struggle for a *complete* self-hosted solution. While Excalidraw offers excellent collaboration, this feature is **not available for self-hosting**, requiring users to rely on the official instance—a design choice that likely aligns with their business model. I grew tired of the constant battle against an architecture where the necessary architectural **abstractions for a simple, monolithic self-hosted solution were missing**. Starting fresh in Rust with an integrated architecture resolves this fundamental issue, giving me the freedom to build the platform I want without having to constantly fight upstream decisions.
+
+`excalidraw-complete` **failed** to provide a self-hosted solution of Excalidraw with a fully featured collaboration system. Hence, developing a completely new application in Rust offers a better path forward to achieve the features and performance I envision for a modern, collaborative whiteboard.
+
+**The `excalidraw-complete` repository will remain archived for historical reference, but no new updates, fixes, or feature additions will be made.**
+
+Further announcement will come.
+
+
+-----
 # Excalidraw Complete: A Self-Hosted Solution
 
 Excalidraw Complete simplifies the deployment of Excalidraw, bringing an
