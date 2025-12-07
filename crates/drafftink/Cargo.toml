@@ -1,0 +1,12 @@
+[package]
+name = "drafftink"
+version = "0.1.0"
+edition = "2021"
+license = "AGPL-3.0"
+description = "DrafftInk - Collaborative whiteboard application (placeholder crate)"
+repository = "https://github.com/patwie/drafft-ink"
+readme = "README.md"
+keywords = ["whiteboard", "drawing", "collaboration"]
+categories = ["graphics", "visualization"]
+
+[dependencies]

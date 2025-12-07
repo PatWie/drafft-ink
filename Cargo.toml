@@ -1,6 +1,7 @@
 [workspace]
 resolver = "2"
 members = [
+    "crates/drafftink",
     "crates/drafftink-core",
     "crates/drafftink-render",
     "crates/drafftink-widgets",
@@ -11,7 +12,7 @@ members = [
 [workspace.package]
 version = "0.1.0"
 edition = "2024"
-license = "MIT OR Apache-2.0"
+license = "AGPL-3.0"
 rust-version = "1.86"
 
 [workspace.dependencies]
@@ -20,7 +21,7 @@ kurbo = { version = "0.12", features = ["serde"] }
 peniko = "0.5"
 
 # Rendering - use git master for wgpu 27 compatibility
-vello = { git = "https://github.com/linebender/vello", branch = "main" }
+vello = "0.6.0"
 roughr = "0.12"
 rough_vello = "0.13"
 
@@ -78,3 +79,8 @@ codegen-units = 1
 inherits = "release"
 opt-level = "z"
 lto = true
+
+[patch.crates-io]
+# Use vello from git until a new version with wgpu 27 support is published to crates.io
+# Current vello 0.6.0 uses wgpu 26, but egui 0.33 requires wgpu 27
+vello = { git = "https://github.com/linebender/vello", rev = "1771112ebc0ae04d996ebf493d3a00d73303f014" }

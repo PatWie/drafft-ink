@@ -1041,6 +1041,10 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d8b14ccef22fc6f5a8f4d7d768562a182c04ce9a3b3157b91390b52ddfdf1a76"
 
 [[package]]
+name = "drafftink"
+version = "0.1.0"
+
+[[package]]
 name = "drafftink-app"
 version = "0.1.0"
 dependencies = [
@@ -2705,31 +2709,6 @@ checksum = "80986bbbcf925ebd3be54c26613d861255284584501595cf418320c078945608"
 dependencies = [
  "num-traits",
  "pxfm",
-]
-
-[[package]]
-name = "naga"
-version = "26.0.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "916cbc7cb27db60be930a4e2da243cf4bc39569195f22fd8ee419cd31d5b662c"
-dependencies = [
- "arrayvec",
- "bit-set",
- "bitflags 2.10.0",
- "cfg-if",
- "cfg_aliases",
- "codespan-reporting",
- "half",
- "hashbrown 0.15.5",
- "hexf-parse",
- "indexmap",
- "libm",
- "log",
- "num-traits",
- "once_cell",
- "rustc-hash 1.1.0",
- "thiserror 2.0.17",
- "unicode-ident",
 ]
 
 [[package]]
@@ -4867,7 +4846,7 @@ checksum = "ba73ea9cf16a25df0c8caa16c51acb937d5712a8429db78a3ee29d5dcacd3a65"
 [[package]]
 name = "vello"
 version = "0.6.0"
-source = "git+https://github.com/linebender/vello?branch=main#8b1fb9bcd2bccacbf7f5cf97f46edb2c3d37ae31"
+source = "git+https://github.com/linebender/vello?rev=1771112ebc0ae04d996ebf493d3a00d73303f014#1771112ebc0ae04d996ebf493d3a00d73303f014"
 dependencies = [
  "bytemuck",
  "futures-intrusive",
@@ -4885,7 +4864,7 @@ dependencies = [
 [[package]]
 name = "vello_encoding"
 version = "0.6.0"
-source = "git+https://github.com/linebender/vello?branch=main#8b1fb9bcd2bccacbf7f5cf97f46edb2c3d37ae31"
+source = "git+https://github.com/linebender/vello?rev=1771112ebc0ae04d996ebf493d3a00d73303f014#1771112ebc0ae04d996ebf493d3a00d73303f014"
 dependencies = [
  "bytemuck",
  "guillotiere",
@@ -4897,11 +4876,11 @@ dependencies = [
 [[package]]
 name = "vello_shaders"
 version = "0.6.0"
-source = "git+https://github.com/linebender/vello?branch=main#8b1fb9bcd2bccacbf7f5cf97f46edb2c3d37ae31"
+source = "git+https://github.com/linebender/vello?rev=1771112ebc0ae04d996ebf493d3a00d73303f014#1771112ebc0ae04d996ebf493d3a00d73303f014"
 dependencies = [
  "bytemuck",
  "log",
- "naga 26.0.0",
+ "naga",
  "thiserror 2.0.17",
  "vello_encoding",
 ]
@@ -5186,7 +5165,7 @@ dependencies = [
  "hashbrown 0.16.1",
  "js-sys",
  "log",
- "naga 27.0.3",
+ "naga",
  "parking_lot",
  "portable-atomic",
  "profiling",
@@ -5217,7 +5196,7 @@ dependencies = [
  "hashbrown 0.16.1",
  "indexmap",
  "log",
- "naga 27.0.3",
+ "naga",
  "once_cell",
  "parking_lot",
  "portable-atomic",
@@ -5288,7 +5267,7 @@ dependencies = [
  "libloading",
  "log",
  "metal",
- "naga 27.0.3",
+ "naga",
  "ndk-sys",
  "objc",
  "once_cell",

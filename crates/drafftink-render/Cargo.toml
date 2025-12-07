@@ -13,7 +13,7 @@ vello-renderer = ["dep:vello", "dep:parley"]
 # rough-style = ["vello-renderer", "dep:roughr", "dep:rough_vello"]
 
 [dependencies]
-drafftink-core = { path = "../drafftink-core" }
+drafftink-core = { path = "../drafftink-core", version = "0.1.0" }
 kurbo.workspace = true
 peniko.workspace = true
 thiserror.workspace = true

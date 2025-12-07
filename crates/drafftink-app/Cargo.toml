@@ -18,9 +18,9 @@ default = ["native"]
 native = ["dep:pollster", "dep:env_logger", "dep:rfd", "dep:arboard"]
 
 [dependencies]
-drafftink-core = { path = "../drafftink-core" }
-drafftink-render = { path = "../drafftink-render" }
-drafftink-widgets = { path = "../drafftink-widgets" }
+drafftink-core = { path = "../drafftink-core", version="0.1.0" }
+drafftink-render = { path = "../drafftink-render", version="0.1.0" }
+drafftink-widgets = { path = "../drafftink-widgets", version="0.1.0" }
 
 kurbo.workspace = true
 peniko.workspace = true
