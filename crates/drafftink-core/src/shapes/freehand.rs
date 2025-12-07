@@ -263,10 +263,7 @@ mod tests {
 
     #[test]
     fn test_hit_test() {
-        let freehand = Freehand::from_points(vec![
-            Point::new(0.0, 0.0),
-            Point::new(100.0, 0.0),
-        ]);
+        let freehand = Freehand::from_points(vec![Point::new(0.0, 0.0), Point::new(100.0, 0.0)]);
 
         assert!(freehand.hit_test(Point::new(50.0, 0.0), 5.0));
         assert!(!freehand.hit_test(Point::new(50.0, 20.0), 5.0));

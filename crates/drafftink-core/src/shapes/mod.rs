@@ -1,22 +1,22 @@
 //! Shape definitions for the whiteboard.
 
-mod rectangle;
-mod ellipse;
-mod line;
 mod arrow;
+mod ellipse;
 mod freehand;
-mod text;
 mod group;
 mod image;
+mod line;
+mod rectangle;
+mod text;
 
-pub use rectangle::Rectangle;
-pub use ellipse::Ellipse;
-pub use line::Line;
 pub use arrow::Arrow;
+pub use ellipse::Ellipse;
 pub use freehand::Freehand;
-pub use text::{Text, FontFamily, FontWeight};
 pub use group::Group;
 pub use image::{Image, ImageFormat};
+pub use line::Line;
+pub use rectangle::Rectangle;
+pub use text::{FontFamily, FontWeight, Text};
 
 use kurbo::{Affine, BezPath, Point, Rect};
 use peniko::Color;
@@ -121,13 +121,13 @@ pub struct ShapeStyle {
 /// Uses a simple counter + hash approach that works on all platforms including WASM.
 fn generate_seed() -> u32 {
     use std::sync::atomic::{AtomicU32, Ordering};
-    
+
     // Global counter for seed generation - ensures uniqueness even without time
     static SEED_COUNTER: AtomicU32 = AtomicU32::new(1);
-    
+
     // Get next counter value
     let counter = SEED_COUNTER.fetch_add(1, Ordering::Relaxed);
-    
+
     // Mix the counter with some constants for better distribution
     // Using a simple hash function (similar to splitmix32)
     let mut x = counter.wrapping_mul(0x9E3779B9);
@@ -307,12 +307,12 @@ impl Shape {
             Shape::Image(s) => s.transform(affine),
         }
     }
-    
+
     /// Check if this shape is a group.
     pub fn is_group(&self) -> bool {
         matches!(self, Shape::Group(_))
     }
-    
+
     /// Get the group if this shape is a group.
     pub fn as_group(&self) -> Option<&Group> {
         match self {
@@ -320,7 +320,7 @@ impl Shape {
             _ => None,
         }
     }
-    
+
     /// Get the mutable group if this shape is a group.
     pub fn as_group_mut(&mut self) -> Option<&mut Group> {
         match self {
@@ -328,7 +328,7 @@ impl Shape {
             _ => None,
         }
     }
-    
+
     /// Regenerate the shape's ID with a new unique identifier.
     /// This is used when duplicating or pasting shapes to ensure they have unique IDs.
     pub fn regenerate_id(&mut self) {
@@ -344,12 +344,12 @@ impl Shape {
             Shape::Image(s) => s.id = new_id,
         }
     }
-    
+
     /// Check if this shape is an image.
     pub fn is_image(&self) -> bool {
         matches!(self, Shape::Image(_))
     }
-    
+
     /// Get the image if this shape is an image.
     pub fn as_image(&self) -> Option<&Image> {
         match self {

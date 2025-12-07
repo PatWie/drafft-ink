@@ -8,11 +8,11 @@ use serde::{Deserialize, Serialize};
 /// Uses a simple counter + hash approach that works on all platforms including WASM.
 fn generate_tool_seed() -> u32 {
     use std::sync::atomic::{AtomicU32, Ordering};
-    
+
     static SEED_COUNTER: AtomicU32 = AtomicU32::new(1);
-    
+
     let counter = SEED_COUNTER.fetch_add(1, Ordering::Relaxed);
-    
+
     // Mix the counter with constants for better distribution (splitmix32-like)
     let mut x = counter.wrapping_mul(0x9E3779B9);
     x ^= x >> 16;
@@ -95,7 +95,7 @@ impl ToolManager {
             self.freehand_points.clear();
             self.freehand_points.push(point);
         }
-        
+
         self.state = ToolState::Active {
             start: point,
             current: point,
@@ -108,7 +108,7 @@ impl ToolManager {
     pub fn update(&mut self, point: Point) {
         if let ToolState::Active { current, .. } = &mut self.state {
             *current = point;
-            
+
             // Accumulate points for freehand
             if self.current_tool == ToolKind::Freehand {
                 self.freehand_points.push(point);
@@ -143,7 +143,13 @@ impl ToolManager {
 
     /// Get the preview shape for the current interaction.
     pub fn preview_shape(&self) -> Option<Shape> {
-        if let ToolState::Active { start, current, seed, .. } = &self.state {
+        if let ToolState::Active {
+            start,
+            current,
+            seed,
+            ..
+        } = &self.state
+        {
             // For freehand, use the accumulated points
             if self.current_tool == ToolKind::Freehand {
                 return self.create_freehand_preview(*seed);
@@ -157,7 +163,7 @@ impl ToolManager {
     /// Create a freehand preview from accumulated points.
     fn create_freehand_preview(&self, seed: u32) -> Option<Shape> {
         use crate::shapes::Freehand;
-        
+
         if self.freehand_points.len() >= 2 {
             let mut freehand = Freehand::from_points(self.freehand_points.clone());
             freehand.style = self.current_style.clone();
@@ -204,14 +210,14 @@ impl ToolManager {
             }
             ToolKind::Select | ToolKind::Pan => None,
         };
-        
+
         // Apply current style to the shape with the stable seed
         if let Some(ref mut s) = shape {
             let mut style = self.current_style.clone();
             style.seed = seed;
             *s.style_mut() = style;
         }
-        
+
         shape
     }
 }

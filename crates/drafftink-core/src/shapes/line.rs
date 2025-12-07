@@ -77,10 +77,7 @@ impl ShapeTrait for Line {
 
         // Project point onto line, clamped to segment
         let t = (point_vec.dot(line_vec) / line_len_sq).clamp(0.0, 1.0);
-        let projection = Point::new(
-            self.start.x + t * line_vec.x,
-            self.start.y + t * line_vec.y,
-        );
+        let projection = Point::new(self.start.x + t * line_vec.x, self.start.y + t * line_vec.y);
 
         let dist = ((point.x - projection.x).powi(2) + (point.y - projection.y).powi(2)).sqrt();
         dist <= tolerance + self.style.stroke_width / 2.0

@@ -23,9 +23,10 @@ impl Storage for MemoryStorage {
         let id = id.to_string();
         let document = document.clone();
         Box::pin(async move {
-            let mut docs = self.documents.write().map_err(|e| {
-                StorageError::Other(format!("Lock error: {}", e))
-            })?;
+            let mut docs = self
+                .documents
+                .write()
+                .map_err(|e| StorageError::Other(format!("Lock error: {}", e)))?;
             docs.insert(id, document);
             Ok(())
         })
@@ -34,9 +35,10 @@ impl Storage for MemoryStorage {
     fn load(&self, id: &str) -> BoxFuture<'_, StorageResult<CanvasDocument>> {
         let id = id.to_string();
         Box::pin(async move {
-            let docs = self.documents.read().map_err(|e| {
-                StorageError::Other(format!("Lock error: {}", e))
-            })?;
+            let docs = self
+                .documents
+                .read()
+                .map_err(|e| StorageError::Other(format!("Lock error: {}", e)))?;
             docs.get(&id)
                 .cloned()
                 .ok_or_else(|| StorageError::NotFound(id))
@@ -46,9 +48,10 @@ impl Storage for MemoryStorage {
     fn delete(&self, id: &str) -> BoxFuture<'_, StorageResult<()>> {
         let id = id.to_string();
         Box::pin(async move {
-            let mut docs = self.documents.write().map_err(|e| {
-                StorageError::Other(format!("Lock error: {}", e))
-            })?;
+            let mut docs = self
+                .documents
+                .write()
+                .map_err(|e| StorageError::Other(format!("Lock error: {}", e)))?;
             docs.remove(&id);
             Ok(())
         })
@@ -56,9 +59,10 @@ impl Storage for MemoryStorage {
 
     fn list(&self) -> BoxFuture<'_, StorageResult<Vec<String>>> {
         Box::pin(async move {
-            let docs = self.documents.read().map_err(|e| {
-                StorageError::Other(format!("Lock error: {}", e))
-            })?;
+            let docs = self
+                .documents
+                .read()
+                .map_err(|e| StorageError::Other(format!("Lock error: {}", e)))?;
             Ok(docs.keys().cloned().collect())
         })
     }
@@ -66,9 +70,10 @@ impl Storage for MemoryStorage {
     fn exists(&self, id: &str) -> BoxFuture<'_, StorageResult<bool>> {
         let id = id.to_string();
         Box::pin(async move {
-            let docs = self.documents.read().map_err(|e| {
-                StorageError::Other(format!("Lock error: {}", e))
-            })?;
+            let docs = self
+                .documents
+                .read()
+                .map_err(|e| StorageError::Other(format!("Lock error: {}", e)))?;
             Ok(docs.contains_key(&id))
         })
     }

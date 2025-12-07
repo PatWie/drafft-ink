@@ -1,15 +1,19 @@
 //! Event handling for tool interactions.
 
-use kurbo::{Point, Rect};
 use drafftink_core::canvas::Canvas;
 use drafftink_core::input::InputState;
+use drafftink_core::selection::HandleKind;
 use drafftink_core::selection::{
-    apply_manipulation, get_manipulation_target_position, hit_test_handles, ManipulationState, MultiMoveState, HANDLE_HIT_TOLERANCE,
+    HANDLE_HIT_TOLERANCE, ManipulationState, MultiMoveState, apply_manipulation,
+    get_manipulation_target_position, hit_test_handles,
 };
 use drafftink_core::shapes::{Freehand, Shape, ShapeId, ShapeStyle, Text};
-use drafftink_core::selection::HandleKind;
-use drafftink_core::snap::{snap_line_endpoint_isometric, snap_point_with_shapes, get_snap_targets_from_bounds, get_snap_targets_from_line, AngleSnapResult, SnapMode, SnapResult, SnapTarget, GRID_SIZE};
+use drafftink_core::snap::{
+    AngleSnapResult, GRID_SIZE, SnapMode, SnapResult, SnapTarget, get_snap_targets_from_bounds,
+    get_snap_targets_from_line, snap_line_endpoint_isometric, snap_point_with_shapes,
+};
 use drafftink_core::tools::ToolKind;
+use kurbo::{Point, Rect};
 
 /// Collect all snap targets from shapes in the canvas.
 /// Optionally excludes a specific shape (e.g., the one being manipulated).
@@ -21,13 +25,13 @@ fn collect_snap_targets(canvas: &Canvas, exclude_shape_id: Option<ShapeId>) -> V
 /// Collect all snap targets from shapes in the canvas, excluding multiple shapes.
 fn collect_snap_targets_excluding(canvas: &Canvas, exclude_ids: &[ShapeId]) -> Vec<SnapTarget> {
     let mut targets = Vec::new();
-    
+
     for shape in canvas.document.shapes_ordered() {
         // Skip excluded shapes
         if exclude_ids.contains(&shape.id()) {
             continue;
         }
-        
+
         // Get snap targets based on shape type
         match shape {
             Shape::Line(line) => {
@@ -42,7 +46,7 @@ fn collect_snap_targets_excluding(canvas: &Canvas, exclude_ids: &[ShapeId]) -> V
             }
         }
     }
-    
+
     targets
 }
 
@@ -52,16 +56,16 @@ fn get_line_other_endpoint(shape: &Shape, handle: Option<HandleKind>) -> Point {
     match shape {
         Shape::Line(line) => {
             match handle {
-                Some(HandleKind::Endpoint(0)) => line.end,   // Manipulating start -> return end
+                Some(HandleKind::Endpoint(0)) => line.end, // Manipulating start -> return end
                 Some(HandleKind::Endpoint(1)) => line.start, // Manipulating end -> return start
-                _ => line.start, // Default to start
+                _ => line.start,                           // Default to start
             }
         }
         Shape::Arrow(arrow) => {
             match handle {
-                Some(HandleKind::Endpoint(0)) => arrow.end,   // Manipulating start -> return end
+                Some(HandleKind::Endpoint(0)) => arrow.end, // Manipulating start -> return end
                 Some(HandleKind::Endpoint(1)) => arrow.start, // Manipulating end -> return start
-                _ => arrow.start, // Default to start
+                _ => arrow.start,                           // Default to start
             }
         }
         _ => Point::ZERO, // Not a line/arrow
@@ -176,7 +180,9 @@ impl EventHandler {
     pub fn exit_text_edit(&mut self, canvas: &mut Canvas) {
         // Check if text is empty and should be deleted
         if let Some(id) = self.editing_text {
-            let should_delete = canvas.document.get_shape(id)
+            let should_delete = canvas
+                .document
+                .get_shape(id)
                 .map(|shape| {
                     if let Shape::Text(text) = shape {
                         text.content.trim().is_empty()
@@ -185,12 +191,12 @@ impl EventHandler {
                     }
                 })
                 .unwrap_or(false);
-            
+
             if should_delete {
                 canvas.remove_shape(id);
             }
         }
-        
+
         self.editing_text = None;
         canvas.exit_text_editing();
     }
@@ -203,11 +209,22 @@ impl EventHandler {
 
     /// Handle a press event (mouse down).
     /// `snap_mode` controls whether the start point should snap to grid.
-    pub fn handle_press(&mut self, canvas: &mut Canvas, world_point: Point, input: &InputState, snap_mode: SnapMode) {
+    pub fn handle_press(
+        &mut self,
+        canvas: &mut Canvas,
+        world_point: Point,
+        input: &InputState,
+        snap_mode: SnapMode,
+    ) {
         // If we're editing text and click elsewhere, stop editing
         if self.editing_text.is_some() {
-            let hits = canvas.document.shapes_at_point(world_point, 5.0 / canvas.camera.zoom);
-            let clicked_on_editing = hits.first().map(|&id| Some(id) == self.editing_text).unwrap_or(false);
+            let hits = canvas
+                .document
+                .shapes_at_point(world_point, 5.0 / canvas.camera.zoom);
+            let clicked_on_editing = hits
+                .first()
+                .map(|&id| Some(id) == self.editing_text)
+                .unwrap_or(false);
             if !clicked_on_editing {
                 self.exit_text_edit(canvas);
             } else {
@@ -215,11 +232,13 @@ impl EventHandler {
                 return;
             }
         }
-        
+
         match canvas.tool_manager.current_tool {
             ToolKind::Text => {
                 // Text tool: check if clicking on existing text to edit it
-                let hits = canvas.document.shapes_at_point(world_point, 5.0 / canvas.camera.zoom);
+                let hits = canvas
+                    .document
+                    .shapes_at_point(world_point, 5.0 / canvas.camera.zoom);
                 if let Some(&id) = hits.first() {
                     if let Some(Shape::Text(_)) = canvas.document.get_shape(id) {
                         // Enter text edit mode for existing text
@@ -234,7 +253,9 @@ impl EventHandler {
             ToolKind::Select => {
                 // Check for double-click on text shape to enter edit mode
                 if input.is_double_click() {
-                    let hits = canvas.document.shapes_at_point(world_point, 5.0 / canvas.camera.zoom);
+                    let hits = canvas
+                        .document
+                        .shapes_at_point(world_point, 5.0 / canvas.camera.zoom);
                     if let Some(&id) = hits.first() {
                         if let Some(Shape::Text(_)) = canvas.document.get_shape(id) {
                             // Double-click on text - enter edit mode
@@ -245,13 +266,15 @@ impl EventHandler {
                         }
                     }
                 }
-                
+
                 // First, check if we clicked on a handle of a selected shape
                 let handle_tolerance = HANDLE_HIT_TOLERANCE / canvas.camera.zoom;
-                
+
                 for &shape_id in &canvas.selection {
                     if let Some(shape) = canvas.document.get_shape(shape_id) {
-                        if let Some(handle_kind) = hit_test_handles(shape, world_point, handle_tolerance) {
+                        if let Some(handle_kind) =
+                            hit_test_handles(shape, world_point, handle_tolerance)
+                        {
                             // Start handle manipulation
                             self.manipulation = Some(ManipulationState::new(
                                 shape_id,
@@ -265,7 +288,9 @@ impl EventHandler {
                 }
 
                 // Check for shape hit (for selection or move)
-                let hits = canvas.document.shapes_at_point(world_point, 5.0 / canvas.camera.zoom);
+                let hits = canvas
+                    .document
+                    .shapes_at_point(world_point, 5.0 / canvas.camera.zoom);
                 if let Some(&id) = hits.first() {
                     if input.modifiers.shift {
                         // Add to/toggle selection
@@ -281,7 +306,7 @@ impl EventHandler {
                             canvas.clear_selection();
                             canvas.select(id);
                         }
-                        
+
                         // Start move - use MultiMoveState for all selected shapes
                         let mut original_shapes = std::collections::HashMap::new();
                         for &shape_id in &canvas.selection {
@@ -289,11 +314,12 @@ impl EventHandler {
                                 original_shapes.insert(shape_id, shape.clone());
                             }
                         }
-                        
+
                         if !original_shapes.is_empty() {
                             // Alt/Option + drag = duplicate
                             if input.modifiers.alt {
-                                let mut mm = MultiMoveState::new_duplicate(world_point, original_shapes);
+                                let mut mm =
+                                    MultiMoveState::new_duplicate(world_point, original_shapes);
                                 // Create duplicates immediately with new IDs
                                 for (_, shape) in &mm.original_shapes {
                                     let mut new_shape = shape.clone();
@@ -309,7 +335,8 @@ impl EventHandler {
                                 }
                                 self.multi_move = Some(mm);
                             } else {
-                                self.multi_move = Some(MultiMoveState::new(world_point, original_shapes));
+                                self.multi_move =
+                                    Some(MultiMoveState::new(world_point, original_shapes));
                             }
                         }
                     }
@@ -336,7 +363,8 @@ impl EventHandler {
                 // Store start point for angle snapping visualization
                 let start_point = if snap_mode.is_enabled() {
                     let targets = collect_snap_targets(canvas, None);
-                    let snap_result = snap_point_with_shapes(world_point, snap_mode, GRID_SIZE, &targets);
+                    let snap_result =
+                        snap_point_with_shapes(world_point, snap_mode, GRID_SIZE, &targets);
                     if snap_result.is_snapped() {
                         self.last_snap = Some(snap_result);
                     }
@@ -351,7 +379,8 @@ impl EventHandler {
                 // Start shape drawing - snap start point if enabled
                 let start_point = if snap_mode.is_enabled() {
                     let targets = collect_snap_targets(canvas, None);
-                    let snap_result = snap_point_with_shapes(world_point, snap_mode, GRID_SIZE, &targets);
+                    let snap_result =
+                        snap_point_with_shapes(world_point, snap_mode, GRID_SIZE, &targets);
                     if snap_result.is_snapped() {
                         self.last_snap = Some(snap_result);
                     }
@@ -368,13 +397,21 @@ impl EventHandler {
     /// Handle a release event (mouse up).
     /// `snap_mode` controls whether the end point should snap to grid.
     /// `angle_snap_enabled` enables 15° angle snapping for lines/arrows.
-    pub fn handle_release(&mut self, canvas: &mut Canvas, world_point: Point, input: &InputState, current_style: &ShapeStyle, snap_mode: SnapMode, angle_snap_enabled: bool) {
+    pub fn handle_release(
+        &mut self,
+        canvas: &mut Canvas,
+        world_point: Point,
+        input: &InputState,
+        current_style: &ShapeStyle,
+        snap_mode: SnapMode,
+        angle_snap_enabled: bool,
+    ) {
         // If we were manipulating a single shape (handle resize), finalize it
         if let Some(manip) = self.manipulation.take() {
             // Use manip.current_point which was already snapped during drag,
             // NOT the raw world_point which would cause a jump on release
             let delta = manip.delta();
-            
+
             // Check if shape actually changed (delta is non-zero)
             if delta.x.abs() > 0.1 || delta.y.abs() > 0.1 {
                 // Push undo state before finalizing (restore original, then re-apply)
@@ -395,7 +432,7 @@ impl EventHandler {
         // If we were moving multiple shapes, finalize them
         if let Some(mm) = self.multi_move.take() {
             let delta = mm.delta();
-            
+
             if mm.is_duplicate {
                 // Duplicate mode: shapes were already created, just need to finalize their positions
                 // Check if actually moved
@@ -434,7 +471,7 @@ impl EventHandler {
                             *shape = original_shape.clone();
                         }
                     }
-                    
+
                     // Now push undo and apply the final changes
                     canvas.document.push_undo();
                     let translation = kurbo::Affine::translate(delta);
@@ -477,9 +514,7 @@ impl EventHandler {
                     freehand.simplify(2.0); // Simplify the path
                     freehand.style = current_style.clone(); // Apply current style
                     canvas.document.push_undo();
-                    canvas
-                        .document
-                        .add_shape(Shape::Freehand(freehand));
+                    canvas.document.add_shape(Shape::Freehand(freehand));
                 }
                 canvas.tool_manager.cancel();
             }
@@ -488,7 +523,7 @@ impl EventHandler {
                 if self.editing_text.is_some() {
                     return;
                 }
-                
+
                 // Text tool: create text at click position with empty content
                 let mut text = Text::new(world_point, String::new());
                 text.style = current_style.clone();
@@ -508,7 +543,12 @@ impl EventHandler {
                     // First try shape snapping (highest priority when enabled)
                     if snap_mode.snaps_to_shapes() {
                         let targets = collect_snap_targets(canvas, None);
-                        let shape_snap = snap_point_with_shapes(world_point, SnapMode::Shapes, GRID_SIZE, &targets);
+                        let shape_snap = snap_point_with_shapes(
+                            world_point,
+                            SnapMode::Shapes,
+                            GRID_SIZE,
+                            &targets,
+                        );
                         if shape_snap.is_snapped() {
                             shape_snap.point
                         } else {
@@ -541,10 +581,10 @@ impl EventHandler {
                 } else {
                     world_point
                 };
-                
+
                 // Clear line start point
                 self.line_start_point = None;
-                
+
                 if let Some(mut shape) = canvas.tool_manager.end(end_point) {
                     // Only add if shape has meaningful size
                     let bounds = shape.bounds();
@@ -564,7 +604,7 @@ impl EventHandler {
                 } else {
                     world_point
                 };
-                
+
                 if let Some(mut shape) = canvas.tool_manager.end(end_point) {
                     // Only add if shape has meaningful size
                     let bounds = shape.bounds();
@@ -582,41 +622,54 @@ impl EventHandler {
     /// Handle a move event while dragging.
     /// `snap_mode` controls whether points should snap to grid.
     /// `angle_snap_enabled` enables 15° angle snapping for lines/arrows.
-    pub fn handle_drag(&mut self, canvas: &mut Canvas, world_point: Point, _input: &InputState, snap_mode: SnapMode, angle_snap_enabled: bool) {
+    pub fn handle_drag(
+        &mut self,
+        canvas: &mut Canvas,
+        world_point: Point,
+        _input: &InputState,
+        snap_mode: SnapMode,
+        angle_snap_enabled: bool,
+    ) {
         // Clear previous snap
         self.last_snap = None;
         self.last_angle_snap = None;
-        
+
         // If we're manipulating a shape, update it
         if let Some(manip) = &mut self.manipulation {
             // Check if we're manipulating a line or arrow endpoint
             let is_line_or_arrow = matches!(manip.original_shape, Shape::Line(_) | Shape::Arrow(_));
-            
+
             // Calculate raw delta from cursor movement
             let raw_delta = kurbo::Vec2::new(
                 world_point.x - manip.start_point.x,
                 world_point.y - manip.start_point.y,
             );
-            
+
             // Get the original handle/shape position that's being manipulated
-            let original_position = get_manipulation_target_position(&manip.original_shape, manip.handle);
-            
+            let original_position =
+                get_manipulation_target_position(&manip.original_shape, manip.handle);
+
             // Calculate where the handle/shape would end up
             let target_position = Point::new(
                 original_position.x + raw_delta.x,
                 original_position.y + raw_delta.y,
             );
-            
+
             // For line/arrow endpoint manipulation, try shape snapping first (highest priority)
             // then fall back to angle/grid snapping
             let snap_result = if is_line_or_arrow && manip.handle.is_some() {
                 // Get the other endpoint as the origin for polar snapping
                 let other_endpoint = get_line_other_endpoint(&manip.original_shape, manip.handle);
-                
+
                 // First try shape snapping (highest priority when enabled)
                 if snap_mode.snaps_to_shapes() {
                     let targets = collect_snap_targets(canvas, Some(manip.shape_id));
-                    let shape_snap = snap_point_with_shapes(target_position, SnapMode::Shapes, GRID_SIZE, &targets);
+                    let shape_snap = snap_point_with_shapes(
+                        target_position,
+                        SnapMode::Shapes,
+                        GRID_SIZE,
+                        &targets,
+                    );
                     if shape_snap.is_snapped() {
                         self.last_snap = Some(shape_snap);
                         self.last_angle_snap = None;
@@ -632,12 +685,12 @@ impl EventHandler {
                             false,
                             GRID_SIZE,
                         );
-                        
+
                         if angle_result.snapped {
                             self.last_angle_snap = Some(angle_result);
                             self.line_start_point = Some(other_endpoint);
                         }
-                        
+
                         SnapResult {
                             point: angle_result.point,
                             snapped_x: angle_result.snapped,
@@ -658,12 +711,12 @@ impl EventHandler {
                         false,
                         GRID_SIZE,
                     );
-                    
+
                     if angle_result.snapped {
                         self.last_angle_snap = Some(angle_result);
                         self.line_start_point = Some(other_endpoint);
                     }
-                    
+
                     SnapResult {
                         point: angle_result.point,
                         snapped_x: angle_result.snapped,
@@ -679,24 +732,24 @@ impl EventHandler {
                 let targets = collect_snap_targets(canvas, Some(manip.shape_id));
                 snap_point_with_shapes(target_position, snap_mode, GRID_SIZE, &targets)
             };
-            
+
             // Store snap result for visual guides (show where handle snaps to)
             if snap_result.is_snapped() && self.last_angle_snap.is_none() {
                 self.last_snap = Some(snap_result);
             }
-            
+
             // Calculate adjusted delta so that original + adjusted_delta = snapped_position
             let adjusted_delta = kurbo::Vec2::new(
                 snap_result.point.x - original_position.x,
                 snap_result.point.y - original_position.y,
             );
-            
+
             // Update current_point to reflect the adjusted delta
             manip.current_point = Point::new(
                 manip.start_point.x + adjusted_delta.x,
                 manip.start_point.y + adjusted_delta.y,
             );
-            
+
             // Apply manipulation preview to the shape
             let new_shape = apply_manipulation(&manip.original_shape, manip.handle, adjusted_delta);
             if let Some(shape) = canvas.document.get_shape_mut(manip.shape_id) {
@@ -712,7 +765,7 @@ impl EventHandler {
                 world_point.x - mm.start_point.x,
                 world_point.y - mm.start_point.y,
             );
-            
+
             // For multi-move, use the first shape's top-left as reference for snapping
             let reference_shape = mm.original_shapes.values().next();
             let snap_result = if let Some(ref_shape) = reference_shape {
@@ -721,15 +774,16 @@ impl EventHandler {
                     original_position.x + raw_delta.x,
                     original_position.y + raw_delta.y,
                 );
-                
+
                 let exclude_ids: Vec<ShapeId> = mm.original_shapes.keys().copied().collect();
                 let targets = collect_snap_targets_excluding(canvas, &exclude_ids);
-                let snap_result = snap_point_with_shapes(target_position, snap_mode, GRID_SIZE, &targets);
-                
+                let snap_result =
+                    snap_point_with_shapes(target_position, snap_mode, GRID_SIZE, &targets);
+
                 if snap_result.is_snapped() {
                     self.last_snap = Some(snap_result);
                 }
-                
+
                 // Calculate adjusted delta based on snapped position
                 kurbo::Vec2::new(
                     snap_result.point.x - original_position.x,
@@ -738,13 +792,13 @@ impl EventHandler {
             } else {
                 raw_delta
             };
-            
+
             // Update current_point
             mm.current_point = Point::new(
                 mm.start_point.x + snap_result.x,
                 mm.start_point.y + snap_result.y,
             );
-            
+
             // Apply movement to shapes
             let translation = kurbo::Affine::translate(snap_result);
             if mm.is_duplicate {
@@ -752,7 +806,9 @@ impl EventHandler {
                 for (idx, &dup_id) in mm.duplicated_ids.iter().enumerate() {
                     // Get the corresponding original shape
                     let original_shape = mm.original_shapes.values().nth(idx);
-                    if let (Some(orig), Some(shape)) = (original_shape, canvas.document.get_shape_mut(dup_id)) {
+                    if let (Some(orig), Some(shape)) =
+                        (original_shape, canvas.document.get_shape_mut(dup_id))
+                    {
                         let mut new_shape = orig.clone();
                         new_shape.transform(translation);
                         *shape = new_shape;
@@ -780,14 +836,19 @@ impl EventHandler {
         // Update tool manager (handles freehand point accumulation internally)
         if canvas.tool_manager.is_active() {
             let tool = canvas.tool_manager.current_tool;
-            
+
             // Special handling for Line and Arrow tools with angle snapping
             if matches!(tool, ToolKind::Line | ToolKind::Arrow) {
                 if let Some(start) = self.line_start_point {
                     // First try shape snapping (highest priority when enabled)
                     if snap_mode.snaps_to_shapes() {
                         let targets = collect_snap_targets(canvas, None);
-                        let shape_snap = snap_point_with_shapes(world_point, SnapMode::Shapes, GRID_SIZE, &targets);
+                        let shape_snap = snap_point_with_shapes(
+                            world_point,
+                            SnapMode::Shapes,
+                            GRID_SIZE,
+                            &targets,
+                        );
                         if shape_snap.is_snapped() {
                             self.last_snap = Some(shape_snap);
                             self.last_angle_snap = None;
@@ -795,7 +856,7 @@ impl EventHandler {
                             return;
                         }
                     }
-                    
+
                     // Use angle-aware snapping (grid + angle)
                     let angle_result = snap_line_endpoint_isometric(
                         start,
@@ -805,21 +866,22 @@ impl EventHandler {
                         false, // unused parameter kept for API compatibility
                         GRID_SIZE,
                     );
-                    
+
                     // Store for visualization
                     if angle_result.snapped {
                         self.last_angle_snap = Some(angle_result);
                     }
-                    
+
                     canvas.tool_manager.update(angle_result.point);
                     return;
                 }
             }
-            
+
             // Apply snapping for other shape creation tools (except freehand)
             let point = if snap_mode.is_enabled() && tool != ToolKind::Freehand {
                 let targets = collect_snap_targets(canvas, None);
-                let snap_result = snap_point_with_shapes(world_point, snap_mode, GRID_SIZE, &targets);
+                let snap_result =
+                    snap_point_with_shapes(world_point, snap_mode, GRID_SIZE, &targets);
                 if snap_result.is_snapped() {
                     self.last_snap = Some(snap_result);
                 }
@@ -830,7 +892,7 @@ impl EventHandler {
             canvas.tool_manager.update(point);
         }
     }
-    
+
     /// Clear the last snap result (call when dragging ends).
     pub fn clear_snap(&mut self) {
         self.last_snap = None;

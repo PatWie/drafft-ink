@@ -17,9 +17,9 @@ pub use buttons::{
     TextButton, ToggleButton,
 };
 pub use colors::{
-    colors_match, hue_to_rgb, parse_css_color, ColorGrid, ColorGridPosition, ColorSwatch,
-    ColorSwatchStyle, ColorSwatchWithWheel, NoColorSwatch, SelectionStyle, TailwindColor,
-    TailwindPalette, SHADE_LABELS, TAILWIND_COLORS,
+    ColorGrid, ColorGridPosition, ColorSwatch, ColorSwatchStyle, ColorSwatchWithWheel,
+    NoColorSwatch, SHADE_LABELS, SelectionStyle, TAILWIND_COLORS, TailwindColor, TailwindPalette,
+    colors_match, hue_to_rgb, parse_css_color,
 };
 pub use layout::{section_label, separator, vertical_separator};
 pub use menu::{menu_item, menu_item_enabled, menu_separator, panel_frame, toolbar_frame};

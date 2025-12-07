@@ -5,10 +5,10 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 
 // Use web_time for WASM compatibility
-#[cfg(target_arch = "wasm32")]
-use web_time::Instant;
 #[cfg(not(target_arch = "wasm32"))]
 use std::time::Instant;
+#[cfg(target_arch = "wasm32")]
+use web_time::Instant;
 
 /// Mouse button identifiers.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -136,14 +136,18 @@ impl InputState {
                 if self.pressed_buttons.insert(button) {
                     self.just_pressed_buttons.insert(button);
                 }
-                
+
                 // Double-click detection for left button
                 if button == MouseButton::Left {
                     let now = Instant::now();
-                    if let (Some(last_time), Some(last_pos)) = (self.last_click_time, self.last_click_position) {
+                    if let (Some(last_time), Some(last_pos)) =
+                        (self.last_click_time, self.last_click_position)
+                    {
                         let elapsed = now.duration_since(last_time).as_millis();
-                        let distance = ((position.x - last_pos.x).powi(2) + (position.y - last_pos.y).powi(2)).sqrt();
-                        
+                        let distance = ((position.x - last_pos.x).powi(2)
+                            + (position.y - last_pos.y).powi(2))
+                        .sqrt();
+
                         if elapsed < DOUBLE_CLICK_TIME_MS && distance < DOUBLE_CLICK_DISTANCE {
                             self.double_click_detected = true;
                             // Reset to prevent triple-click being detected as another double-click
@@ -157,7 +161,7 @@ impl InputState {
                         self.last_click_time = Some(now);
                         self.last_click_position = Some(position);
                     }
-                    
+
                     if !self.is_dragging {
                         self.is_dragging = true;
                         self.drag_start = Some(position);

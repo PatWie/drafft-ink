@@ -1,7 +1,7 @@
 //! Menu components: menu items, separators, panel frames.
 
 use egui::{
-    vec2, Color32, CornerRadius, CursorIcon, Frame, Margin, Pos2, Response, Sense, Stroke, Ui,
+    Color32, CornerRadius, CursorIcon, Frame, Margin, Pos2, Response, Sense, Stroke, Ui, vec2,
 };
 
 use crate::{sizing, theme};
