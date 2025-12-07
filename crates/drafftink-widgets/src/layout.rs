@@ -25,10 +25,7 @@ pub fn vertical_separator(ui: &mut Ui) {
     let x = rect.left() + 1.0;
     let top = rect.center().y - height / 2.0;
     ui.painter().line_segment(
-        [
-            egui::Pos2::new(x, top),
-            egui::Pos2::new(x, top + height),
-        ],
+        [egui::Pos2::new(x, top), egui::Pos2::new(x, top + height)],
         Stroke::new(1.0, Color32::from_gray(210)),
     );
     ui.add_space(3.0);

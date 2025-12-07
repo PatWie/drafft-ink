@@ -1,12 +1,11 @@
 //! Conversion between Shape types and Loro values.
 
-use loro::{LoroMap, LoroResult, LoroValue, LoroList, LoroMapValue};
 use crate::shapes::{
-    Shape, ShapeStyle, SerializableColor, Sloppiness, ShapeTrait,
-    Rectangle, Ellipse, Line, Arrow, Freehand, Text, FontFamily, FontWeight, Group,
-    Image, ImageFormat,
+    Arrow, Ellipse, FontFamily, FontWeight, Freehand, Group, Image, ImageFormat, Line, Rectangle,
+    SerializableColor, Shape, ShapeStyle, ShapeTrait, Sloppiness, Text,
 };
 use kurbo::Point;
+use loro::{LoroList, LoroMap, LoroMapValue, LoroResult, LoroValue};
 use uuid::Uuid;
 
 // Shape type identifiers
@@ -142,15 +141,16 @@ pub fn shape_to_loro(shape: &Shape, map: &LoroMap) -> LoroResult<()> {
         Shape::Freehand(freehand) => {
             map.insert(KEY_TYPE, TYPE_FREEHAND)?;
             map.insert(KEY_ID, freehand.id().to_string())?;
-            
+
             // Store points as a list of [x, y] pairs
             let points_list = map.insert_container(KEY_POINTS, LoroList::new())?;
             for point in &freehand.points {
-                let point_list = points_list.insert_container(points_list.len(), LoroList::new())?;
+                let point_list =
+                    points_list.insert_container(points_list.len(), LoroList::new())?;
                 point_list.push(point.x)?;
                 point_list.push(point.y)?;
             }
-            
+
             style_to_loro(&freehand.style, map)?;
         }
         Shape::Text(text) => {
@@ -167,11 +167,12 @@ pub fn shape_to_loro(shape: &Shape, map: &LoroMap) -> LoroResult<()> {
         Shape::Group(group) => {
             map.insert(KEY_TYPE, TYPE_GROUP)?;
             map.insert(KEY_ID, group.id().to_string())?;
-            
+
             // Store children as a list of shape maps
             let children_list = map.insert_container(KEY_CHILDREN, LoroList::new())?;
             for child in group.children() {
-                let child_map = children_list.insert_container(children_list.len(), LoroMap::new())?;
+                let child_map =
+                    children_list.insert_container(children_list.len(), LoroMap::new())?;
                 shape_to_loro(child, &child_map)?;
             }
         }
@@ -201,7 +202,7 @@ fn style_to_loro(style: &ShapeStyle, map: &LoroMap) -> LoroResult<()> {
     map.insert(KEY_STROKE_WIDTH, style.stroke_width)?;
     map.insert(KEY_SLOPPINESS, sloppiness_to_i64(style.sloppiness))?;
     map.insert(KEY_SEED, style.seed as i64)?;
-    
+
     if let Some(fill) = style.fill_color {
         map.insert(KEY_HAS_FILL, true)?;
         map.insert(KEY_FILL_R, fill.r as i64)?;
@@ -211,14 +212,14 @@ fn style_to_loro(style: &ShapeStyle, map: &LoroMap) -> LoroResult<()> {
     } else {
         map.insert(KEY_HAS_FILL, false)?;
     }
-    
+
     Ok(())
 }
 
 /// Convert a Loro map to a Shape.
 pub fn shape_from_loro(map: &LoroMapValue) -> Option<Shape> {
     let shape_type = get_string(map, KEY_TYPE)?;
-    
+
     match shape_type.as_str() {
         TYPE_RECTANGLE => rectangle_from_loro(map),
         TYPE_ELLIPSE => ellipse_from_loro(map),
@@ -240,11 +241,11 @@ fn rectangle_from_loro(map: &LoroMapValue) -> Option<Shape> {
     let height = get_double(map, KEY_HEIGHT)?;
     let corner_radius = get_double(map, KEY_CORNER_RADIUS).unwrap_or(0.0);
     let style = style_from_loro(map)?;
-    
+
     let mut rect = Rectangle::new(Point::new(x, y), width, height);
     rect.corner_radius = corner_radius;
     rect.style = style;
-    
+
     // Reconstruct with correct ID via serde (since id is private)
     if let Ok(id) = Uuid::parse_str(&id_str) {
         let json = serde_json::json!({
@@ -259,7 +260,7 @@ fn rectangle_from_loro(map: &LoroMapValue) -> Option<Shape> {
             return Some(Shape::Rectangle(rect_with_id));
         }
     }
-    
+
     Some(Shape::Rectangle(rect))
 }
 
@@ -270,10 +271,10 @@ fn ellipse_from_loro(map: &LoroMapValue) -> Option<Shape> {
     let radius_x = get_double(map, KEY_WIDTH)?;
     let radius_y = get_double(map, KEY_HEIGHT)?;
     let style = style_from_loro(map)?;
-    
+
     let mut ellipse = Ellipse::new(Point::new(center_x, center_y), radius_x, radius_y);
     ellipse.style = style;
-    
+
     if let Ok(id) = Uuid::parse_str(&id_str) {
         let json = serde_json::json!({
             "id": id.to_string(),
@@ -286,7 +287,7 @@ fn ellipse_from_loro(map: &LoroMapValue) -> Option<Shape> {
             return Some(Shape::Ellipse(ellipse_with_id));
         }
     }
-    
+
     Some(Shape::Ellipse(ellipse))
 }
 
@@ -297,10 +298,10 @@ fn line_from_loro(map: &LoroMapValue) -> Option<Shape> {
     let end_x = get_double(map, KEY_END_X)?;
     let end_y = get_double(map, KEY_END_Y)?;
     let style = style_from_loro(map)?;
-    
+
     let mut line = Line::new(Point::new(start_x, start_y), Point::new(end_x, end_y));
     line.style = style;
-    
+
     if let Ok(id) = Uuid::parse_str(&id_str) {
         let json = serde_json::json!({
             "id": id.to_string(),
@@ -312,7 +313,7 @@ fn line_from_loro(map: &LoroMapValue) -> Option<Shape> {
             return Some(Shape::Line(line_with_id));
         }
     }
-    
+
     Some(Shape::Line(line))
 }
 
@@ -323,10 +324,10 @@ fn arrow_from_loro(map: &LoroMapValue) -> Option<Shape> {
     let end_x = get_double(map, KEY_END_X)?;
     let end_y = get_double(map, KEY_END_Y)?;
     let style = style_from_loro(map)?;
-    
+
     let mut arrow = Arrow::new(Point::new(start_x, start_y), Point::new(end_x, end_y));
     arrow.style = style;
-    
+
     if let Ok(id) = Uuid::parse_str(&id_str) {
         let json = serde_json::json!({
             "id": id.to_string(),
@@ -339,42 +340,46 @@ fn arrow_from_loro(map: &LoroMapValue) -> Option<Shape> {
             return Some(Shape::Arrow(arrow_with_id));
         }
     }
-    
+
     Some(Shape::Arrow(arrow))
 }
 
 fn freehand_from_loro(map: &LoroMapValue) -> Option<Shape> {
     let id_str = get_string(map, KEY_ID)?;
     let style = style_from_loro(map)?;
-    
+
     let points: Vec<Point> = if let Some(LoroValue::List(points_list)) = map.get(KEY_POINTS) {
-        points_list.iter().filter_map(|p| {
-            if let LoroValue::List(coords) = p {
-                if coords.len() >= 2 {
-                    let x = match coords.first()? {
-                        LoroValue::Double(d) => *d,
-                        LoroValue::I64(i) => *i as f64,
-                        _ => return None,
-                    };
-                    let y = match coords.get(1)? {
-                        LoroValue::Double(d) => *d,
-                        LoroValue::I64(i) => *i as f64,
-                        _ => return None,
-                    };
-                    return Some(Point::new(x, y));
+        points_list
+            .iter()
+            .filter_map(|p| {
+                if let LoroValue::List(coords) = p {
+                    if coords.len() >= 2 {
+                        let x = match coords.first()? {
+                            LoroValue::Double(d) => *d,
+                            LoroValue::I64(i) => *i as f64,
+                            _ => return None,
+                        };
+                        let y = match coords.get(1)? {
+                            LoroValue::Double(d) => *d,
+                            LoroValue::I64(i) => *i as f64,
+                            _ => return None,
+                        };
+                        return Some(Point::new(x, y));
+                    }
                 }
-            }
-            None
-        }).collect()
+                None
+            })
+            .collect()
     } else {
         vec![]
     };
-    
+
     let mut freehand = Freehand::from_points(points.clone());
     freehand.style = style;
-    
+
     if let Ok(id) = Uuid::parse_str(&id_str) {
-        let points_json: Vec<serde_json::Value> = points.iter()
+        let points_json: Vec<serde_json::Value> = points
+            .iter()
             .map(|p| serde_json::json!({ "x": p.x, "y": p.y }))
             .collect();
         let json = serde_json::json!({
@@ -386,7 +391,7 @@ fn freehand_from_loro(map: &LoroMapValue) -> Option<Shape> {
             return Some(Shape::Freehand(freehand_with_id));
         }
     }
-    
+
     Some(Shape::Freehand(freehand))
 }
 
@@ -396,16 +401,20 @@ fn text_from_loro(map: &LoroMapValue) -> Option<Shape> {
     let y = get_double(map, KEY_Y)?;
     let content = get_string(map, KEY_CONTENT)?;
     let font_size = get_double(map, KEY_FONT_SIZE).unwrap_or(20.0);
-    let font_family = get_i64(map, KEY_FONT_FAMILY).map(i64_to_font_family).unwrap_or_default();
-    let font_weight = get_i64(map, KEY_FONT_WEIGHT).map(i64_to_font_weight).unwrap_or_default();
+    let font_family = get_i64(map, KEY_FONT_FAMILY)
+        .map(i64_to_font_family)
+        .unwrap_or_default();
+    let font_weight = get_i64(map, KEY_FONT_WEIGHT)
+        .map(i64_to_font_weight)
+        .unwrap_or_default();
     let style = style_from_loro(map)?;
-    
+
     let mut text = Text::new(Point::new(x, y), content.clone())
         .with_font_size(font_size)
         .with_font_family(font_family)
         .with_font_weight(font_weight);
     text.style = style;
-    
+
     if let Ok(id) = Uuid::parse_str(&id_str) {
         let json = serde_json::json!({
             "id": id.to_string(),
@@ -420,13 +429,13 @@ fn text_from_loro(map: &LoroMapValue) -> Option<Shape> {
             return Some(Shape::Text(text_with_id));
         }
     }
-    
+
     Some(Shape::Text(text))
 }
 
 fn group_from_loro(map: &LoroMapValue) -> Option<Shape> {
     let id_str = get_string(map, KEY_ID)?;
-    
+
     // Get the children list
     let children_value = map.get(KEY_CHILDREN)?;
     let children_list = match &children_value {
@@ -438,7 +447,7 @@ fn group_from_loro(map: &LoroMapValue) -> Option<Shape> {
         LoroValue::List(list) => list,
         _ => return None,
     };
-    
+
     let mut children = Vec::new();
     for child_value in children_list.iter() {
         if let LoroValue::Map(child_map) = child_value {
@@ -448,11 +457,12 @@ fn group_from_loro(map: &LoroMapValue) -> Option<Shape> {
             }
         }
     }
-    
+
     // Reconstruct with correct ID
     if let Ok(id) = Uuid::parse_str(&id_str) {
         // Create a group with the specific ID using serde
-        let children_json: Vec<serde_json::Value> = children.iter()
+        let children_json: Vec<serde_json::Value> = children
+            .iter()
             .map(|c| serde_json::to_value(c).unwrap_or_default())
             .collect();
         let json = serde_json::json!({
@@ -464,7 +474,7 @@ fn group_from_loro(map: &LoroMapValue) -> Option<Shape> {
             return Some(Shape::Group(group_with_id));
         }
     }
-    
+
     Some(Shape::Group(Group::new(children)))
 }
 
@@ -474,7 +484,9 @@ fn style_from_loro(map: &LoroMapValue) -> Option<ShapeStyle> {
     let stroke_b = get_i64(map, KEY_STROKE_B)? as u8;
     let stroke_a = get_i64(map, KEY_STROKE_A)? as u8;
     let stroke_width = get_double(map, KEY_STROKE_WIDTH)?;
-    let sloppiness = get_i64(map, KEY_SLOPPINESS).map(i64_to_sloppiness).unwrap_or_default();
+    let sloppiness = get_i64(map, KEY_SLOPPINESS)
+        .map(i64_to_sloppiness)
+        .unwrap_or_default();
     // Use existing seed or generate a new one for backward compatibility with old documents
     let seed = get_i64(map, KEY_SEED).map(|v| v as u32).unwrap_or_else(|| {
         // Generate a seed using atomic counter (works on all platforms including WASM)
@@ -487,7 +499,7 @@ fn style_from_loro(map: &LoroMapValue) -> Option<ShapeStyle> {
         x ^= x >> 13;
         x
     });
-    
+
     let fill_color = if get_bool(map, KEY_HAS_FILL).unwrap_or(false) {
         let fill_r = get_i64(map, KEY_FILL_R).unwrap_or(0) as u8;
         let fill_g = get_i64(map, KEY_FILL_G).unwrap_or(0) as u8;
@@ -497,7 +509,7 @@ fn style_from_loro(map: &LoroMapValue) -> Option<ShapeStyle> {
     } else {
         None
     };
-    
+
     Some(ShapeStyle {
         stroke_color: SerializableColor::new(stroke_r, stroke_g, stroke_b, stroke_a),
         stroke_width,
@@ -599,10 +611,12 @@ fn image_from_loro(map: &LoroMapValue) -> Option<Shape> {
     let height = get_double(map, KEY_HEIGHT)?;
     let source_width = get_i64(map, KEY_SOURCE_WIDTH)? as u32;
     let source_height = get_i64(map, KEY_SOURCE_HEIGHT)? as u32;
-    let format = get_i64(map, KEY_FORMAT).map(i64_to_image_format).unwrap_or(ImageFormat::Png);
+    let format = get_i64(map, KEY_FORMAT)
+        .map(i64_to_image_format)
+        .unwrap_or(ImageFormat::Png);
     let data_base64 = get_string(map, KEY_DATA_BASE64)?;
     let style = style_from_loro(map)?;
-    
+
     if let Ok(id) = Uuid::parse_str(&id_str) {
         let json = serde_json::json!({
             "id": id.to_string(),
@@ -619,6 +633,6 @@ fn image_from_loro(map: &LoroMapValue) -> Option<Shape> {
             return Some(Shape::Image(image_with_id));
         }
     }
-    
+
     None
 }

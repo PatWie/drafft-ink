@@ -9,8 +9,8 @@ use crate::canvas::CanvasDocument;
 use crate::crdt::CrdtDocument;
 use crate::shapes::{Shape, ShapeId};
 use crate::sync::{
-    AwarenessState, ClientMessage, CursorPosition, ServerMessage, SyncEvent,
-    base64_decode, base64_encode,
+    AwarenessState, ClientMessage, CursorPosition, ServerMessage, SyncEvent, base64_decode,
+    base64_encode,
 };
 
 /// Manages collaboration state and synchronization between local and CRDT documents.
@@ -140,7 +140,7 @@ impl CollaborationManager {
     pub fn add_shape(&mut self, doc: &mut CanvasDocument, shape: Shape) {
         let shape_clone = shape.clone();
         doc.add_shape(shape);
-        
+
         if self.enabled {
             let _ = self.crdt.add_shape(&shape_clone);
         }
@@ -149,11 +149,11 @@ impl CollaborationManager {
     /// Remove a shape, syncing to CRDT if enabled.
     pub fn remove_shape(&mut self, doc: &mut CanvasDocument, id: ShapeId) -> Option<Shape> {
         let result = doc.remove_shape(id);
-        
+
         if self.enabled && result.is_some() {
             let _ = self.crdt.remove_shape(&id.to_string());
         }
-        
+
         result
     }
 
@@ -162,7 +162,7 @@ impl CollaborationManager {
         let id = shape.id();
         if let Some(existing) = doc.shapes.get_mut(&id) {
             *existing = shape.clone();
-            
+
             if self.enabled {
                 let _ = self.crdt.update_shape(&shape);
             }
@@ -252,7 +252,9 @@ impl CollaborationManager {
 
     /// Request to join a room. Queues the join message.
     pub fn join_room(&mut self, room: &str) {
-        let msg = ClientMessage::Join { room: room.to_string() };
+        let msg = ClientMessage::Join {
+            room: room.to_string(),
+        };
         if let Ok(json) = serde_json::to_string(&msg) {
             self.outgoing.push(json);
         }
@@ -337,12 +339,16 @@ impl CollaborationManager {
     /// Returns a SyncEvent describing what happened.
     pub fn handle_message(&mut self, json: &str) -> Option<SyncEvent> {
         let msg: ServerMessage = serde_json::from_str(json).ok()?;
-        
+
         match msg {
-            ServerMessage::Joined { room, peer_count, initial_sync } => {
+            ServerMessage::Joined {
+                room,
+                peer_count,
+                initial_sync,
+            } => {
                 self.current_room = Some(room.clone());
                 self.enable();
-                
+
                 // Import initial state if provided
                 let initial_data = initial_sync.and_then(|s| {
                     base64_decode(&s).and_then(|bytes| {
@@ -353,19 +359,15 @@ impl CollaborationManager {
                         }
                     })
                 });
-                
+
                 Some(SyncEvent::JoinedRoom {
                     room,
                     peer_count,
                     initial_sync: initial_data,
                 })
             }
-            ServerMessage::PeerJoined { peer_id } => {
-                Some(SyncEvent::PeerJoined { peer_id })
-            }
-            ServerMessage::PeerLeft { peer_id } => {
-                Some(SyncEvent::PeerLeft { peer_id })
-            }
+            ServerMessage::PeerJoined { peer_id } => Some(SyncEvent::PeerJoined { peer_id }),
+            ServerMessage::PeerLeft { peer_id } => Some(SyncEvent::PeerLeft { peer_id }),
             ServerMessage::Sync { from, data } => {
                 // Decode and import CRDT data
                 if let Some(bytes) = base64_decode(&data) {
@@ -375,12 +377,16 @@ impl CollaborationManager {
                 }
                 None
             }
-            ServerMessage::Awareness { from, peer_id, state } => {
-                Some(SyncEvent::AwarenessReceived { from, peer_id, state })
-            }
-            ServerMessage::Error { message } => {
-                Some(SyncEvent::Error { message })
-            }
+            ServerMessage::Awareness {
+                from,
+                peer_id,
+                state,
+            } => Some(SyncEvent::AwarenessReceived {
+                from,
+                peer_id,
+                state,
+            }),
+            ServerMessage::Error { message } => Some(SyncEvent::Error { message }),
         }
     }
 }
@@ -420,10 +426,13 @@ mod tests {
     #[test]
     fn test_sync_from_crdt() {
         let mut manager = CollaborationManager::new();
-        
+
         // Add shape to CRDT
         let rect = Rectangle::new(Point::new(10.0, 20.0), 100.0, 50.0);
-        manager.crdt_mut().add_shape(&Shape::Rectangle(rect)).unwrap();
+        manager
+            .crdt_mut()
+            .add_shape(&Shape::Rectangle(rect))
+            .unwrap();
 
         // Sync to local document
         let mut doc = CanvasDocument::new();
@@ -440,7 +449,10 @@ mod tests {
 
         // Add shape to first manager
         let rect = Rectangle::new(Point::new(50.0, 50.0), 200.0, 100.0);
-        manager1.crdt_mut().add_shape(&Shape::Rectangle(rect)).unwrap();
+        manager1
+            .crdt_mut()
+            .add_shape(&Shape::Rectangle(rect))
+            .unwrap();
 
         // Export snapshot
         let snapshot = manager1.export_snapshot();
@@ -459,7 +471,7 @@ mod tests {
 
         let mut doc = CanvasDocument::new();
         let rect = Rectangle::new(Point::new(0.0, 0.0), 100.0, 100.0);
-        
+
         manager.add_shape(&mut doc, Shape::Rectangle(rect));
 
         // Both local and CRDT should have the shape
@@ -476,7 +488,7 @@ mod tests {
         let rect = Rectangle::new(Point::new(0.0, 0.0), 100.0, 100.0);
         let shape = Shape::Rectangle(rect);
         let id = shape.id();
-        
+
         manager.add_shape(&mut doc, shape);
         assert_eq!(doc.shapes.len(), 1);
         assert_eq!(manager.crdt().shape_count(), 1);

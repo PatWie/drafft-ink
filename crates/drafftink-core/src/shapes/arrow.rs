@@ -74,10 +74,30 @@ impl ShapeTrait for Arrow {
             head_back.y - perp.y * self.head_size * 0.5,
         );
 
-        let min_x = self.start.x.min(self.end.x).min(head_left.x).min(head_right.x);
-        let min_y = self.start.y.min(self.end.y).min(head_left.y).min(head_right.y);
-        let max_x = self.start.x.max(self.end.x).max(head_left.x).max(head_right.x);
-        let max_y = self.start.y.max(self.end.y).max(head_left.y).max(head_right.y);
+        let min_x = self
+            .start
+            .x
+            .min(self.end.x)
+            .min(head_left.x)
+            .min(head_right.x);
+        let min_y = self
+            .start
+            .y
+            .min(self.end.y)
+            .min(head_left.y)
+            .min(head_right.y);
+        let max_x = self
+            .start
+            .x
+            .max(self.end.x)
+            .max(head_left.x)
+            .max(head_right.x);
+        let max_y = self
+            .start
+            .y
+            .max(self.end.y)
+            .max(head_left.y)
+            .max(head_right.y);
 
         Rect::new(min_x, min_y, max_x, max_y)
     }
@@ -90,10 +110,8 @@ impl ShapeTrait for Arrow {
         let line_len_sq = line_vec.hypot2();
         if line_len_sq > f64::EPSILON {
             let t = (point_vec.dot(line_vec) / line_len_sq).clamp(0.0, 1.0);
-            let projection = Point::new(
-                self.start.x + t * line_vec.x,
-                self.start.y + t * line_vec.y,
-            );
+            let projection =
+                Point::new(self.start.x + t * line_vec.x, self.start.y + t * line_vec.y);
             let dist = ((point.x - projection.x).powi(2) + (point.y - projection.y).powi(2)).sqrt();
             if dist <= tolerance + self.style.stroke_width / 2.0 {
                 return true;

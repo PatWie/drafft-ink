@@ -27,7 +27,7 @@ impl FontFamily {
             FontFamily::ArchitectsDaughter => "Architects Daughter",
         }
     }
-    
+
     /// Get display name for UI.
     pub fn display_name(&self) -> &'static str {
         match self {
@@ -36,10 +36,14 @@ impl FontFamily {
             FontFamily::ArchitectsDaughter => "Architects",
         }
     }
-    
+
     /// Get all available font families.
     pub fn all() -> &'static [FontFamily] {
-        &[FontFamily::GelPen, FontFamily::Roboto, FontFamily::ArchitectsDaughter]
+        &[
+            FontFamily::GelPen,
+            FontFamily::Roboto,
+            FontFamily::ArchitectsDaughter,
+        ]
     }
 }
 
@@ -64,7 +68,7 @@ impl FontWeight {
             FontWeight::Heavy => "Heavy",
         }
     }
-    
+
     /// Get all available font weights.
     pub fn all() -> &'static [FontWeight] {
         &[FontWeight::Light, FontWeight::Regular, FontWeight::Heavy]
@@ -106,9 +110,7 @@ impl Clone for Text {
             font_weight: self.font_weight,
             style: self.style.clone(),
             // Clone the cached size value, not the lock
-            cached_size: RwLock::new(
-                self.cached_size.read().ok().and_then(|guard| *guard)
-            ),
+            cached_size: RwLock::new(self.cached_size.read().ok().and_then(|guard| *guard)),
         }
     }
 }
@@ -116,7 +118,7 @@ impl Clone for Text {
 impl Text {
     /// Default font size (M = Medium).
     pub const DEFAULT_FONT_SIZE: f64 = 20.0;
-    
+
     /// Create a new text shape.
     pub fn new(position: Point, content: String) -> Self {
         Self {
@@ -130,7 +132,7 @@ impl Text {
             cached_size: RwLock::new(None),
         }
     }
-    
+
     /// Set the cached layout size (computed by the renderer).
     /// Uses interior mutability so this can be called during rendering.
     pub fn set_cached_size(&self, width: f64, height: f64) {
@@ -138,7 +140,7 @@ impl Text {
             *cache = Some((width, height));
         }
     }
-    
+
     /// Clear the cached size (call when text properties change).
     pub fn invalidate_cache(&self) {
         if let Ok(mut cache) = self.cached_size.write() {
@@ -151,13 +153,13 @@ impl Text {
         self.font_size = size;
         self
     }
-    
+
     /// Set the font family.
     pub fn with_font_family(mut self, family: FontFamily) -> Self {
         self.font_family = family;
         self
     }
-    
+
     /// Set the font weight.
     pub fn with_font_weight(mut self, weight: FontWeight) -> Self {
         self.font_weight = weight;
@@ -179,12 +181,13 @@ impl Text {
     /// This is a rough estimate; actual width depends on the font.
     fn approximate_width(&self) -> f64 {
         // For multi-line text, find the widest line
-        let max_line_len = self.content
+        let max_line_len = self
+            .content
             .lines()
             .map(|line| line.len())
             .max()
             .unwrap_or(0);
-        
+
         // Average character width varies by font family and weight
         // These values are empirically determined approximations
         let char_width_factor = match (&self.font_family, &self.font_weight) {
@@ -199,7 +202,7 @@ impl Text {
             // Architects Daughter is a handwritten font with wider characters
             (FontFamily::ArchitectsDaughter, _) => 0.58,
         };
-        
+
         max_line_len as f64 * self.font_size * char_width_factor
     }
 
@@ -225,13 +228,17 @@ impl ShapeTrait for Text {
 
     fn bounds(&self) -> Rect {
         // Use cached size if available, otherwise approximate
-        let (width, height) = self.cached_size
+        let (width, height) = self
+            .cached_size
             .read()
             .ok()
             .and_then(|guard| *guard)
             .map(|(w, h)| (w.max(20.0), h))
             .unwrap_or_else(|| {
-                (self.approximate_width().max(20.0), self.approximate_height())
+                (
+                    self.approximate_width().max(20.0),
+                    self.approximate_height(),
+                )
             });
         // Position is top-left corner
         Rect::new(
@@ -296,8 +303,7 @@ mod tests {
 
     #[test]
     fn test_text_with_font_size() {
-        let text = Text::new(Point::new(0.0, 0.0), "Test".to_string())
-            .with_font_size(32.0);
+        let text = Text::new(Point::new(0.0, 0.0), "Test".to_string()).with_font_size(32.0);
         assert!((text.font_size - 32.0).abs() < f64::EPSILON);
     }
 
@@ -305,10 +311,7 @@ mod tests {
     fn test_hit_test() {
         let text = Text::new(Point::new(100.0, 100.0), "Hello World".to_string());
         let bounds = text.bounds();
-        let center = Point::new(
-            (bounds.x0 + bounds.x1) / 2.0,
-            (bounds.y0 + bounds.y1) / 2.0,
-        );
+        let center = Point::new((bounds.x0 + bounds.x1) / 2.0, (bounds.y0 + bounds.y1) / 2.0);
         assert!(text.hit_test(center, 0.0));
         assert!(!text.hit_test(Point::new(0.0, 0.0), 0.0));
     }

@@ -167,7 +167,12 @@ pub struct MultiMoveState {
 
 impl ManipulationState {
     /// Create a new manipulation state.
-    pub fn new(shape_id: ShapeId, handle: Option<HandleKind>, start_point: Point, original_shape: Shape) -> Self {
+    pub fn new(
+        shape_id: ShapeId,
+        handle: Option<HandleKind>,
+        start_point: Point,
+        original_shape: Shape,
+    ) -> Self {
         Self {
             shape_id,
             handle,
@@ -188,7 +193,10 @@ impl ManipulationState {
 
 impl MultiMoveState {
     /// Create a new multi-move state.
-    pub fn new(start_point: Point, original_shapes: std::collections::HashMap<ShapeId, Shape>) -> Self {
+    pub fn new(
+        start_point: Point,
+        original_shapes: std::collections::HashMap<ShapeId, Shape>,
+    ) -> Self {
         Self {
             start_point,
             current_point: start_point,
@@ -197,9 +205,12 @@ impl MultiMoveState {
             duplicated_ids: Vec::new(),
         }
     }
-    
+
     /// Create a new multi-move state for duplication (Alt+drag).
-    pub fn new_duplicate(start_point: Point, original_shapes: std::collections::HashMap<ShapeId, Shape>) -> Self {
+    pub fn new_duplicate(
+        start_point: Point,
+        original_shapes: std::collections::HashMap<ShapeId, Shape>,
+    ) -> Self {
         Self {
             start_point,
             current_point: start_point,
@@ -216,7 +227,7 @@ impl MultiMoveState {
             self.current_point.y - self.start_point.y,
         )
     }
-    
+
     /// Get the shape IDs being moved.
     pub fn shape_ids(&self) -> Vec<ShapeId> {
         self.original_shapes.keys().copied().collect()
@@ -232,17 +243,23 @@ pub fn get_manipulation_target_position(shape: &Shape, handle: Option<HandleKind
             let bounds = shape.bounds();
             Point::new(bounds.x0, bounds.y0)
         }
-        Some(HandleKind::Endpoint(idx)) => {
-            match shape {
-                Shape::Line(line) => {
-                    if idx == 0 { line.start } else { line.end }
+        Some(HandleKind::Endpoint(idx)) => match shape {
+            Shape::Line(line) => {
+                if idx == 0 {
+                    line.start
+                } else {
+                    line.end
                 }
-                Shape::Arrow(arrow) => {
-                    if idx == 0 { arrow.start } else { arrow.end }
-                }
-                _ => shape.bounds().center(),
             }
-        }
+            Shape::Arrow(arrow) => {
+                if idx == 0 {
+                    arrow.start
+                } else {
+                    arrow.end
+                }
+            }
+            _ => shape.bounds().center(),
+        },
         Some(HandleKind::Corner(corner)) => {
             let bounds = shape.bounds();
             match corner {
@@ -268,7 +285,7 @@ pub fn get_manipulation_target_position(shape: &Shape, handle: Option<HandleKind
 /// Returns the modified shape.
 pub fn apply_manipulation(shape: &Shape, handle: Option<HandleKind>, delta: kurbo::Vec2) -> Shape {
     let mut shape = shape.clone();
-    
+
     match handle {
         None => {
             // Move the entire shape
@@ -315,46 +332,110 @@ pub fn apply_manipulation(shape: &Shape, handle: Option<HandleKind>, delta: kurb
             // Edge resize not implemented yet
         }
     }
-    
+
     shape
 }
 
 /// Apply corner resize to a rectangle.
-fn apply_corner_resize_rect(rect: &mut crate::shapes::Rectangle, corner: Corner, delta: kurbo::Vec2) {
+fn apply_corner_resize_rect(
+    rect: &mut crate::shapes::Rectangle,
+    corner: Corner,
+    delta: kurbo::Vec2,
+) {
     let bounds = rect.bounds();
     let (new_x0, new_y0, new_x1, new_y1) = match corner {
-        Corner::TopLeft => (bounds.x0 + delta.x, bounds.y0 + delta.y, bounds.x1, bounds.y1),
-        Corner::TopRight => (bounds.x0, bounds.y0 + delta.y, bounds.x1 + delta.x, bounds.y1),
-        Corner::BottomLeft => (bounds.x0 + delta.x, bounds.y0, bounds.x1, bounds.y1 + delta.y),
-        Corner::BottomRight => (bounds.x0, bounds.y0, bounds.x1 + delta.x, bounds.y1 + delta.y),
+        Corner::TopLeft => (
+            bounds.x0 + delta.x,
+            bounds.y0 + delta.y,
+            bounds.x1,
+            bounds.y1,
+        ),
+        Corner::TopRight => (
+            bounds.x0,
+            bounds.y0 + delta.y,
+            bounds.x1 + delta.x,
+            bounds.y1,
+        ),
+        Corner::BottomLeft => (
+            bounds.x0 + delta.x,
+            bounds.y0,
+            bounds.x1,
+            bounds.y1 + delta.y,
+        ),
+        Corner::BottomRight => (
+            bounds.x0,
+            bounds.y0,
+            bounds.x1 + delta.x,
+            bounds.y1 + delta.y,
+        ),
     };
-    
+
     // Ensure min size and handle flipping
-    let (x0, x1) = if new_x0 < new_x1 { (new_x0, new_x1) } else { (new_x1, new_x0) };
-    let (y0, y1) = if new_y0 < new_y1 { (new_y0, new_y1) } else { (new_y1, new_y0) };
-    
+    let (x0, x1) = if new_x0 < new_x1 {
+        (new_x0, new_x1)
+    } else {
+        (new_x1, new_x0)
+    };
+    let (y0, y1) = if new_y0 < new_y1 {
+        (new_y0, new_y1)
+    } else {
+        (new_y1, new_y0)
+    };
+
     rect.position = Point::new(x0, y0);
     rect.width = (x1 - x0).max(1.0);
     rect.height = (y1 - y0).max(1.0);
 }
 
 /// Apply corner resize to an ellipse.
-fn apply_corner_resize_ellipse(ellipse: &mut crate::shapes::Ellipse, corner: Corner, delta: kurbo::Vec2) {
+fn apply_corner_resize_ellipse(
+    ellipse: &mut crate::shapes::Ellipse,
+    corner: Corner,
+    delta: kurbo::Vec2,
+) {
     let bounds = ellipse.bounds();
     let (new_x0, new_y0, new_x1, new_y1) = match corner {
-        Corner::TopLeft => (bounds.x0 + delta.x, bounds.y0 + delta.y, bounds.x1, bounds.y1),
-        Corner::TopRight => (bounds.x0, bounds.y0 + delta.y, bounds.x1 + delta.x, bounds.y1),
-        Corner::BottomLeft => (bounds.x0 + delta.x, bounds.y0, bounds.x1, bounds.y1 + delta.y),
-        Corner::BottomRight => (bounds.x0, bounds.y0, bounds.x1 + delta.x, bounds.y1 + delta.y),
+        Corner::TopLeft => (
+            bounds.x0 + delta.x,
+            bounds.y0 + delta.y,
+            bounds.x1,
+            bounds.y1,
+        ),
+        Corner::TopRight => (
+            bounds.x0,
+            bounds.y0 + delta.y,
+            bounds.x1 + delta.x,
+            bounds.y1,
+        ),
+        Corner::BottomLeft => (
+            bounds.x0 + delta.x,
+            bounds.y0,
+            bounds.x1,
+            bounds.y1 + delta.y,
+        ),
+        Corner::BottomRight => (
+            bounds.x0,
+            bounds.y0,
+            bounds.x1 + delta.x,
+            bounds.y1 + delta.y,
+        ),
     };
-    
+
     // Ensure min size and handle flipping
-    let (x0, x1) = if new_x0 < new_x1 { (new_x0, new_x1) } else { (new_x1, new_x0) };
-    let (y0, y1) = if new_y0 < new_y1 { (new_y0, new_y1) } else { (new_y1, new_y0) };
-    
+    let (x0, x1) = if new_x0 < new_x1 {
+        (new_x0, new_x1)
+    } else {
+        (new_x1, new_x0)
+    };
+    let (y0, y1) = if new_y0 < new_y1 {
+        (new_y0, new_y1)
+    } else {
+        (new_y1, new_y0)
+    };
+
     let width = (x1 - x0).max(1.0);
     let height = (y1 - y0).max(1.0);
-    
+
     ellipse.center = Point::new(x0 + width / 2.0, y0 + height / 2.0);
     ellipse.radius_x = width / 2.0;
     ellipse.radius_y = height / 2.0;
@@ -369,7 +450,7 @@ mod tests {
     fn test_line_handles() {
         let line = Line::new(Point::new(0.0, 0.0), Point::new(100.0, 100.0));
         let handles = get_handles(&Shape::Line(line));
-        
+
         assert_eq!(handles.len(), 2);
         assert!(matches!(handles[0].kind, HandleKind::Endpoint(0)));
         assert!(matches!(handles[1].kind, HandleKind::Endpoint(1)));
@@ -379,15 +460,18 @@ mod tests {
     fn test_rectangle_handles() {
         let rect = Rectangle::new(Point::new(0.0, 0.0), 100.0, 50.0);
         let handles = get_handles(&Shape::Rectangle(rect));
-        
+
         assert_eq!(handles.len(), 4);
-        assert!(matches!(handles[0].kind, HandleKind::Corner(Corner::TopLeft)));
+        assert!(matches!(
+            handles[0].kind,
+            HandleKind::Corner(Corner::TopLeft)
+        ));
     }
 
     #[test]
     fn test_handle_hit_test() {
         let handle = Handle::new(Point::new(50.0, 50.0), HandleKind::Endpoint(0));
-        
+
         assert!(handle.hit_test(Point::new(50.0, 50.0), 10.0));
         assert!(handle.hit_test(Point::new(55.0, 55.0), 10.0));
         assert!(!handle.hit_test(Point::new(70.0, 70.0), 10.0));
@@ -397,9 +481,13 @@ mod tests {
     fn test_apply_endpoint_manipulation() {
         let line = Line::new(Point::new(0.0, 0.0), Point::new(100.0, 100.0));
         let shape = Shape::Line(line);
-        
-        let result = apply_manipulation(&shape, Some(HandleKind::Endpoint(1)), kurbo::Vec2::new(10.0, 20.0));
-        
+
+        let result = apply_manipulation(
+            &shape,
+            Some(HandleKind::Endpoint(1)),
+            kurbo::Vec2::new(10.0, 20.0),
+        );
+
         if let Shape::Line(line) = result {
             assert!((line.end.x - 110.0).abs() < f64::EPSILON);
             assert!((line.end.y - 120.0).abs() < f64::EPSILON);
@@ -412,13 +500,13 @@ mod tests {
     fn test_apply_corner_manipulation() {
         let rect = Rectangle::new(Point::new(0.0, 0.0), 100.0, 100.0);
         let shape = Shape::Rectangle(rect);
-        
+
         let result = apply_manipulation(
-            &shape, 
-            Some(HandleKind::Corner(Corner::BottomRight)), 
-            kurbo::Vec2::new(50.0, 50.0)
+            &shape,
+            Some(HandleKind::Corner(Corner::BottomRight)),
+            kurbo::Vec2::new(50.0, 50.0),
         );
-        
+
         if let Shape::Rectangle(rect) = result {
             assert!((rect.width - 150.0).abs() < f64::EPSILON);
             assert!((rect.height - 150.0).abs() < f64::EPSILON);

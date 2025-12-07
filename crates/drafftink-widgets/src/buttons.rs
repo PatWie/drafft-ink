@@ -1,8 +1,8 @@
 //! Button components: icon buttons, toggle buttons, multi-state toggles.
 
 use egui::{
-    vec2, Align2, Color32, CornerRadius, CursorIcon, Image, ImageSource, Pos2, Rect, Sense, Stroke,
-    StrokeKind, Ui, Vec2,
+    Align2, Color32, CornerRadius, CursorIcon, Image, ImageSource, Pos2, Rect, Sense, Stroke,
+    StrokeKind, Ui, Vec2, vec2,
 };
 
 use crate::{sizing, theme};
@@ -152,11 +152,8 @@ impl<'a> IconButton<'a> {
             };
 
             // Draw background
-            ui.painter().rect_filled(
-                rect,
-                CornerRadius::same(self.style.corner_radius),
-                bg_color,
-            );
+            ui.painter()
+                .rect_filled(rect, CornerRadius::same(self.style.corner_radius), bg_color);
 
             // Determine icon tint
             let icon_tint = if self.selected {
@@ -247,7 +244,10 @@ impl<'a> ToggleButton<'a> {
             Color32::PLACEHOLDER, // Color doesn't matter for sizing
         );
         let text_width = galley.size().x;
-        let width = self.min_width.unwrap_or(text_width + 16.0).max(text_width + 16.0);
+        let width = self
+            .min_width
+            .unwrap_or(text_width + 16.0)
+            .max(text_width + 16.0);
         let size = vec2(width, self.height);
 
         let (rect, response) = ui.allocate_exact_size(size, Sense::click());
@@ -356,11 +356,8 @@ impl<'a, T: Clone + PartialEq> MultiToggle<'a, T> {
                 self.style.bg_color
             };
 
-            ui.painter().rect_filled(
-                rect,
-                CornerRadius::same(self.style.corner_radius),
-                bg_color,
-            );
+            ui.painter()
+                .rect_filled(rect, CornerRadius::same(self.style.corner_radius), bg_color);
 
             // Draw icon centered
             let icon_rect = Rect::from_center_size(rect.center(), self.style.icon_size);
@@ -368,7 +365,9 @@ impl<'a, T: Clone + PartialEq> MultiToggle<'a, T> {
         }
 
         let clicked = response.clicked();
-        response.on_hover_text(state.tooltip).on_hover_cursor(CursorIcon::PointingHand);
+        response
+            .on_hover_text(state.tooltip)
+            .on_hover_cursor(CursorIcon::PointingHand);
 
         if clicked {
             // Cycle to next state
@@ -481,7 +480,8 @@ impl<'a> StrokeWidthButton<'a> {
             };
 
             // Background
-            ui.painter().rect_filled(rect, CornerRadius::same(sizing::CORNER_RADIUS), bg_color);
+            ui.painter()
+                .rect_filled(rect, CornerRadius::same(sizing::CORNER_RADIUS), bg_color);
 
             // Border
             if !self.selected {
@@ -504,7 +504,9 @@ impl<'a> StrokeWidthButton<'a> {
         }
 
         let clicked = response.clicked();
-        response.on_hover_text(self.tooltip).on_hover_cursor(CursorIcon::PointingHand);
+        response
+            .on_hover_text(self.tooltip)
+            .on_hover_cursor(CursorIcon::PointingHand);
         clicked
     }
 }
@@ -548,7 +550,8 @@ impl<'a> FontSizeButton<'a> {
                 Color32::from_gray(60)
             };
 
-            ui.painter().rect_filled(rect, CornerRadius::same(sizing::CORNER_RADIUS), bg_color);
+            ui.painter()
+                .rect_filled(rect, CornerRadius::same(sizing::CORNER_RADIUS), bg_color);
 
             // Draw the label letter with size proportional to actual font size
             let display_size = match self.label {
@@ -569,7 +572,9 @@ impl<'a> FontSizeButton<'a> {
         }
 
         let clicked = response.clicked();
-        response.on_hover_text(format!("{} px", self.size_px as i32)).on_hover_cursor(CursorIcon::PointingHand);
+        response
+            .on_hover_text(format!("{} px", self.size_px as i32))
+            .on_hover_cursor(CursorIcon::PointingHand);
         clicked
     }
 }

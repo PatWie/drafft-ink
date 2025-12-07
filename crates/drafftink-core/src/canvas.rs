@@ -3,7 +3,7 @@
 use crate::camera::Camera;
 use crate::shapes::{Group, Shape, ShapeId, ShapeTrait};
 use crate::tools::{ToolKind, ToolManager};
-use crate::widget::{WidgetManager, WidgetState, EditingKind};
+use crate::widget::{EditingKind, WidgetManager, WidgetState};
 use kurbo::{Point, Rect};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -71,10 +71,10 @@ impl CanvasDocument {
     pub fn push_undo(&mut self) {
         let snapshot = self.snapshot();
         self.undo_stack.push(snapshot);
-        
+
         // Clear redo stack when new changes are made
         self.redo_stack.clear();
-        
+
         // Limit undo history size
         if self.undo_stack.len() > MAX_UNDO_HISTORY {
             self.undo_stack.remove(0);
@@ -88,11 +88,11 @@ impl CanvasDocument {
             // Save current state to redo stack
             let current = self.snapshot();
             self.redo_stack.push(current);
-            
+
             // Restore the snapshot
             self.shapes = snapshot.shapes;
             self.z_order = snapshot.z_order;
-            
+
             true
         } else {
             false
@@ -106,11 +106,11 @@ impl CanvasDocument {
             // Save current state to undo stack
             let current = self.snapshot();
             self.undo_stack.push(current);
-            
+
             // Restore the snapshot
             self.shapes = snapshot.shapes;
             self.z_order = snapshot.z_order;
-            
+
             true
         } else {
             false
@@ -280,7 +280,7 @@ impl CanvasDocument {
         if shape_ids.len() < 2 {
             return None;
         }
-        
+
         // Collect the shapes to group (in z-order)
         let mut shapes_to_group: Vec<(usize, Shape)> = Vec::new();
         for (idx, &zid) in self.z_order.iter().enumerate() {
@@ -290,33 +290,35 @@ impl CanvasDocument {
                 }
             }
         }
-        
+
         if shapes_to_group.len() < 2 {
             return None;
         }
-        
+
         // Find the highest z-order position (where the group will go)
         let max_z_idx = shapes_to_group.iter().map(|(idx, _)| *idx).max().unwrap();
-        
+
         // Extract shapes in their z-order
         let children: Vec<Shape> = shapes_to_group.into_iter().map(|(_, s)| s).collect();
-        
+
         // Create the group
         let group = Group::new(children);
         let group_id = group.id();
-        
+
         // Remove the original shapes from the document
         for &id in shape_ids {
             self.shapes.remove(&id);
             self.z_order.retain(|&zid| zid != id);
         }
-        
+
         // Add the group at the position of the frontmost shape
         self.shapes.insert(group_id, Shape::Group(group));
         // Insert at the max position (adjusted for removed items)
-        let insert_pos = max_z_idx.saturating_sub(shape_ids.len() - 1).min(self.z_order.len());
+        let insert_pos = max_z_idx
+            .saturating_sub(shape_ids.len() - 1)
+            .min(self.z_order.len());
         self.z_order.insert(insert_pos, group_id);
-        
+
         Some(group_id)
     }
 
@@ -328,28 +330,27 @@ impl CanvasDocument {
             Some(Shape::Group(g)) => g.clone(),
             _ => return None,
         };
-        
+
         // Find the group's position in z-order
         let z_pos = self.z_order.iter().position(|&id| id == group_id)?;
-        
+
         // Remove the group
         self.shapes.remove(&group_id);
         self.z_order.retain(|&id| id != group_id);
-        
+
         // Add children back to the document at the group's position
         let children = group.ungroup();
         let child_ids: Vec<ShapeId> = children.iter().map(|s| s.id()).collect();
-        
+
         for (i, child) in children.into_iter().enumerate() {
             let child_id = child.id();
             self.shapes.insert(child_id, child);
             // Insert at the original position, maintaining child order
             self.z_order.insert(z_pos + i, child_id);
         }
-        
+
         Some(child_ids)
     }
-
 }
 
 /// Runtime canvas state (not persisted).
@@ -489,23 +490,23 @@ impl Canvas {
         if self.selection.len() < 2 {
             return None;
         }
-        
+
         let shape_ids: Vec<ShapeId> = self.selection.clone();
-        
+
         // Push undo before grouping
         self.document.push_undo();
-        
+
         if let Some(group_id) = self.document.group_shapes(&shape_ids) {
             // Clear old selection and widgets
             for &id in &shape_ids {
                 self.widgets.remove(id);
             }
-            
+
             // Select the new group
             self.selection.clear();
             self.selection.push(group_id);
             self.widgets.add_to_selection(group_id);
-            
+
             Some(group_id)
         } else {
             None
@@ -516,30 +517,32 @@ impl Canvas {
     /// Returns the IDs of all ungrouped children.
     pub fn ungroup_selected(&mut self) -> Vec<ShapeId> {
         let mut all_children = Vec::new();
-        
+
         // Find groups in selection
-        let groups: Vec<ShapeId> = self.selection
+        let groups: Vec<ShapeId> = self
+            .selection
             .iter()
             .filter(|&&id| {
-                self.document.get_shape(id)
+                self.document
+                    .get_shape(id)
                     .map(|s| s.is_group())
                     .unwrap_or(false)
             })
             .copied()
             .collect();
-        
+
         if groups.is_empty() {
             return all_children;
         }
-        
+
         // Push undo before ungrouping
         self.document.push_undo();
-        
+
         // Ungroup each group
         for group_id in groups {
             self.widgets.remove(group_id);
             self.selection.retain(|&id| id != group_id);
-            
+
             if let Some(children) = self.document.ungroup_shape(group_id) {
                 // Add children to selection
                 for &child_id in &children {
@@ -551,7 +554,7 @@ impl Canvas {
                 all_children.extend(children);
             }
         }
-        
+
         all_children
     }
 }
@@ -667,21 +670,21 @@ mod tests {
     #[test]
     fn test_undo_add_shape() {
         let mut doc = CanvasDocument::new();
-        
+
         // Add a shape with undo point
         doc.push_undo();
         let rect = Rectangle::new(Point::new(0.0, 0.0), 100.0, 100.0);
         let id = rect.id();
         doc.add_shape(Shape::Rectangle(rect));
-        
+
         assert_eq!(doc.len(), 1);
         assert!(doc.can_undo());
-        
+
         // Undo should remove the shape
         assert!(doc.undo());
         assert!(doc.is_empty());
         assert!(doc.can_redo());
-        
+
         // Redo should restore the shape
         assert!(doc.redo());
         assert_eq!(doc.len(), 1);
@@ -694,13 +697,13 @@ mod tests {
         let rect = Rectangle::new(Point::new(0.0, 0.0), 100.0, 100.0);
         let id = rect.id();
         doc.add_shape(Shape::Rectangle(rect));
-        
+
         // Remove with undo point
         doc.push_undo();
         doc.remove_shape(id);
-        
+
         assert!(doc.is_empty());
-        
+
         // Undo should restore the shape
         assert!(doc.undo());
         assert_eq!(doc.len(), 1);
@@ -710,21 +713,21 @@ mod tests {
     #[test]
     fn test_undo_clears_redo() {
         let mut doc = CanvasDocument::new();
-        
+
         // Add first shape
         doc.push_undo();
         let rect1 = Rectangle::new(Point::new(0.0, 0.0), 100.0, 100.0);
         doc.add_shape(Shape::Rectangle(rect1));
-        
+
         // Undo
         assert!(doc.undo());
         assert!(doc.can_redo());
-        
+
         // Add new shape (should clear redo)
         doc.push_undo();
         let rect2 = Rectangle::new(Point::new(50.0, 50.0), 100.0, 100.0);
         doc.add_shape(Shape::Rectangle(rect2));
-        
+
         // Redo should not be available
         assert!(!doc.can_redo());
     }
@@ -732,11 +735,11 @@ mod tests {
     #[test]
     fn test_undo_empty_stack() {
         let mut doc = CanvasDocument::new();
-        
+
         // Undo on empty stack should return false
         assert!(!doc.can_undo());
         assert!(!doc.undo());
-        
+
         // Redo on empty stack should return false
         assert!(!doc.can_redo());
         assert!(!doc.redo());

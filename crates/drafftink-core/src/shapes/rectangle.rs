@@ -25,11 +25,11 @@ impl Rectangle {
     /// Default adaptive corner radius in pixels.
     /// This fixed radius keeps visual appearance consistent across different element sizes.
     pub const DEFAULT_ADAPTIVE_RADIUS: f64 = 32.0;
-    
+
     /// Default proportional radius (25% of largest side).
     /// Used for legacy elements, linear elements, and diamonds.
     pub const DEFAULT_PROPORTIONAL_RADIUS: f64 = 0.25;
-    
+
     /// Create a new rectangle.
     pub fn new(position: Point, width: f64, height: f64) -> Self {
         Self {

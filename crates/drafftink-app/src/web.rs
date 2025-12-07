@@ -15,13 +15,18 @@ pub struct UrlParams {
 pub fn get_url_params() -> UrlParams {
     let window = match web_sys::window() {
         Some(w) => w,
-        None => return UrlParams { room: None, server: None },
+        None => {
+            return UrlParams {
+                room: None,
+                server: None,
+            };
+        }
     };
     let location = window.location();
-    
+
     let mut room = None;
     let mut server = None;
-    
+
     // Try query string first (?room=abc123&server=host:port)
     if let Ok(search) = location.search() {
         let params = parse_params(&search);
@@ -32,7 +37,7 @@ pub fn get_url_params() -> UrlParams {
             server = params.1;
         }
     }
-    
+
     // Try hash fragment (#room=abc123&server=host:port)
     if let Ok(hash) = location.hash() {
         let params = parse_params(&hash);
@@ -43,7 +48,7 @@ pub fn get_url_params() -> UrlParams {
             server = params.1;
         }
     }
-    
+
     UrlParams { room, server }
 }
 
@@ -51,10 +56,10 @@ pub fn get_url_params() -> UrlParams {
 fn parse_params(s: &str) -> (Option<String>, Option<String>) {
     // Remove leading ? or #
     let s = s.trim_start_matches(|c| c == '?' || c == '#');
-    
+
     let mut room = None;
     let mut server = None;
-    
+
     for pair in s.split('&') {
         let mut parts = pair.splitn(2, '=');
         if let (Some(key), Some(value)) = (parts.next(), parts.next()) {
@@ -67,7 +72,7 @@ fn parse_params(s: &str) -> (Option<String>, Option<String>) {
             }
         }
     }
-    
+
     (room, server)
 }
 
@@ -96,13 +101,13 @@ pub fn get_server_url(server_param: Option<&str>) -> Option<String> {
             return Some(format!("ws://{}/ws", server.trim_end_matches('/')));
         }
     }
-    
+
     // Fall back to page origin
     let window = web_sys::window()?;
     let location = window.location();
     let protocol = location.protocol().ok()?;
     let host = location.host().ok()?;
-    
+
     let ws_protocol = if protocol == "https:" { "wss:" } else { "ws:" };
     Some(format!("{}//{}/ws", ws_protocol, host))
 }
@@ -117,7 +122,7 @@ pub async fn run_wasm() {
     console_log::init_with_level(log::Level::Info).expect("Failed to initialize logger");
 
     log::info!("Starting DrafftInk (WASM)");
-    
+
     // Log URL params if present
     let params = get_url_params();
     if let Some(ref room) = params.room {

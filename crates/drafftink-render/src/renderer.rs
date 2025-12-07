@@ -1,10 +1,10 @@
 //! Renderer trait abstraction.
 
-use kurbo::{Affine, Rect, Size};
-use peniko::Color;
 use drafftink_core::canvas::Canvas;
 use drafftink_core::shapes::Shape;
 use drafftink_core::snap::SnapTarget;
+use kurbo::{Affine, Rect, Size};
+use peniko::Color;
 use thiserror::Error;
 
 /// Renderer errors.

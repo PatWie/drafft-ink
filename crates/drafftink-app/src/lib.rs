@@ -8,7 +8,7 @@ mod event_handler;
 mod ui;
 
 pub use app::{App, AppConfig};
-pub use ui::{render_ui, UiAction, UiState};
+pub use ui::{UiAction, UiState, render_ui};
 
 #[cfg(target_arch = "wasm32")]
 mod web;
