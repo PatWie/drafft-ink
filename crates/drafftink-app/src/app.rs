@@ -197,8 +197,8 @@ mod file_ops {
     }
 
     /// Save document to IndexedDB (real persistence).
-    pub fn save_document(document: &CanvasDocument, _name: &str) {
-        let doc_id = document.id.clone();
+    pub fn save_document(document: &CanvasDocument, name: &str) {
+        let doc_id = name.to_string();
         let doc_clone = document.clone();
         
         STORAGE.with(|storage| {
@@ -1475,11 +1475,6 @@ impl ApplicationHandler for App {
 
         log::info!("Window created, initializing renderer...");
 
-        // Initialize render context
-        let render_cx = self
-            .render_cx
-            .get_or_insert_with(|| vello::util::RenderContext::new());
-
         let size = window.inner_size();
         let (width, height) = if size.width == 0 || size.height == 0 {
             (self.config.width, self.config.height)
@@ -1492,6 +1487,10 @@ impl ApplicationHandler for App {
         // On native, block on async surface creation
         #[cfg(not(target_arch = "wasm32"))]
         {
+            let render_cx = self
+                .render_cx
+                .get_or_insert_with(|| vello::util::RenderContext::new());
+            
             let surface = pollster::block_on(render_cx.create_surface(
                 window.clone(),
                 width,
@@ -2666,12 +2665,8 @@ impl ApplicationHandler for App {
                                 .unwrap_or(Color::from_rgba8(59, 130, 246, 255)); // Default blue
                             
                             // Get peer name (or use "Anonymous")
-                            let label = peer.awareness.user.as_ref()
-                                .map(|u| u.name.as_str())
-                                .unwrap_or("Anonymous");
-                            
-                            // Draw cursor pointer with name label
-                            state.shape_renderer.draw_cursor(screen_pos, color, label);
+                            // Draw cursor pointer
+                            state.shape_renderer.draw_cursor(screen_pos, color);
                         }
                     }
                 }

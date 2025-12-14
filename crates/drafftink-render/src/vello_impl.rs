@@ -2,7 +2,7 @@
 
 use crate::renderer::{RenderContext, Renderer, ShapeRenderer};
 use crate::text_editor::TextEditState;
-use kurbo::{Affine, BezPath, PathEl, Point, Rect, Shape as KurboShape, Stroke, Vec2};
+use kurbo::{Affine, BezPath, PathEl, Point, Rect, Shape as KurboShape, Stroke};
 use parley::layout::PositionedLayoutItem;
 use parley::{FontContext, LayoutContext};
 use peniko::{Brush, Color, Fill};
@@ -598,12 +598,12 @@ impl VelloRenderer {
                     img_data
                 } else {
                     // Failed to decode - draw placeholder
-                    self.render_image_placeholder(image, transform, "Failed to decode");
+                    self.render_image_placeholder(image, transform);
                     return;
                 }
             } else {
                 // No data - draw placeholder
-                self.render_image_placeholder(image, transform, "No image data");
+                self.render_image_placeholder(image, transform);
                 return;
             }
         };
@@ -621,7 +621,7 @@ impl VelloRenderer {
     }
     
     /// Render a placeholder for images that couldn't be loaded.
-    fn render_image_placeholder(&mut self, image: &drafftink_core::shapes::Image, transform: Affine, _msg: &str) {
+    fn render_image_placeholder(&mut self, image: &drafftink_core::shapes::Image, transform: Affine) {
         let bounds = image.bounds();
         
         // Draw a gray rectangle with an X
@@ -1369,9 +1369,8 @@ impl ShapeRenderer for VelloRenderer {
 impl VelloRenderer {
     /// Draw a remote user's cursor at a screen position.
     /// 
-    /// The cursor is rendered as a small pointer arrow with the user's color
-    /// and their name shown nearby.
-    pub fn draw_cursor(&mut self, screen_pos: Point, color: Color, label: &str) {
+    /// The cursor is rendered as a small pointer arrow with the user's color.
+    pub fn draw_cursor(&mut self, screen_pos: Point, color: Color) {
         // Draw cursor pointer (simple triangle pointing up-right)
         let mut path = BezPath::new();
         // Triangle: tip at screen_pos, pointing up-right

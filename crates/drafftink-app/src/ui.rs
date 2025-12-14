@@ -501,7 +501,7 @@ fn render_bottom_toolbar(ctx: &Context, ui_state: &mut UiState) -> Option<UiActi
 
     // Get screen rect to position at bottom
     #[allow(deprecated)]
-    let screen_rect = ctx.input(|i| i.screen_rect());
+    let screen_rect = ctx.input(|i| i.content_rect());
     let toolbar_height = 36.0;
     let margin = 12.0;
     let bottom_y = screen_rect.max.y - margin - toolbar_height;
@@ -1472,7 +1472,7 @@ fn render_collaboration_modal(ctx: &Context, ui_state: &mut UiState) -> Option<U
     
     // Semi-transparent backdrop
     #[allow(deprecated)]
-    let screen_rect = ctx.input(|i| i.screen_rect());
+    let screen_rect = ctx.input(|i| i.content_rect());
     egui::Area::new(egui::Id::new("collab_modal_backdrop"))
         .fixed_pos(Pos2::ZERO)
         .order(egui::Order::Middle)
@@ -1790,7 +1790,7 @@ fn render_shortcuts_modal(ctx: &Context, ui_state: &mut UiState) {
         .fixed_pos(Pos2::ZERO)
         .order(egui::Order::Background)
         .show(ctx, |ui| {
-            let screen_rect = ctx.input(|i| i.screen_rect());
+            let screen_rect = ctx.input(|i| i.content_rect());
             let response = ui.allocate_rect(screen_rect, egui::Sense::click());
             ui.painter().rect_filled(screen_rect, 0.0, Color32::from_black_alpha(80));
             if response.clicked() {
@@ -1855,7 +1855,7 @@ fn render_save_dialog(ctx: &Context, ui_state: &mut UiState) -> Option<UiAction>
         .fixed_pos(Pos2::ZERO)
         .order(egui::Order::Background)
         .show(ctx, |ui| {
-            let screen_rect = ctx.input(|i| i.screen_rect());
+            let screen_rect = ctx.input(|i| i.content_rect());
             let response = ui.allocate_rect(screen_rect, egui::Sense::click());
             ui.painter().rect_filled(screen_rect, 0.0, Color32::from_black_alpha(80));
             if response.clicked() {
@@ -1924,7 +1924,7 @@ fn render_open_dialog(ctx: &Context, ui_state: &mut UiState) -> Option<UiAction>
         .fixed_pos(Pos2::ZERO)
         .order(egui::Order::Background)
         .show(ctx, |ui| {
-            let screen_rect = ctx.input(|i| i.screen_rect());
+            let screen_rect = ctx.input(|i| i.content_rect());
             let response = ui.allocate_rect(screen_rect, egui::Sense::click());
             ui.painter().rect_filled(screen_rect, 0.0, Color32::from_black_alpha(80));
             if response.clicked() {
@@ -1988,7 +1988,7 @@ fn render_open_recent_dialog(ctx: &Context, ui_state: &mut UiState) -> Option<Ui
         .fixed_pos(Pos2::ZERO)
         .order(egui::Order::Background)
         .show(ctx, |ui| {
-            let screen_rect = ctx.input(|i| i.screen_rect());
+            let screen_rect = ctx.input(|i| i.content_rect());
             let response = ui.allocate_rect(screen_rect, egui::Sense::click());
             ui.painter().rect_filled(screen_rect, 0.0, Color32::from_black_alpha(80));
             if response.clicked() {
