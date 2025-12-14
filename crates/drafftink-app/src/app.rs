@@ -4,18 +4,21 @@ use kurbo::{Point, Size, Vec2};
 use peniko::Color;
 use drafftink_core::canvas::Canvas;
 use drafftink_core::collaboration::CollaborationManager;
-use drafftink_core::input::{InputState, KeyEvent, Modifiers, MouseButton, PointerEvent};
+use drafftink_core::input::InputState;
 use drafftink_core::shapes::Shape;
 use drafftink_core::sync::{AwarenessState, ConnectionState, SyncEvent};
 use drafftink_core::tools::ToolKind;
-use drafftink_render::{AngleSnapInfo, GridStyle, PngRenderResult, RenderContext, Renderer, TextEditResult, TextEditState, TextKey, TextModifiers, VelloRenderer};
+use drafftink_render::{AngleSnapInfo, GridStyle, RenderContext, Renderer, TextEditResult, TextEditState, TextKey, TextModifiers, VelloRenderer};
+#[cfg(not(target_arch = "wasm32"))]
+use drafftink_render::PngRenderResult;
 use std::sync::Arc;
 use vello::util::RenderSurface;
 use vello::wgpu::PresentMode;
 use vello::{AaConfig, RenderParams, RendererOptions, Scene};
 use winit::application::ApplicationHandler;
+#[cfg(not(target_arch = "wasm32"))]
 use winit::dpi::LogicalSize;
-use winit::event::{ElementState, MouseScrollDelta, WindowEvent};
+use winit::event::{ElementState, MouseButton, MouseScrollDelta, WindowEvent};
 use winit::event_loop::{ActiveEventLoop, EventLoop};
 use winit::keyboard::{Key, NamedKey};
 use winit::window::{Window, WindowId};
@@ -1586,6 +1589,9 @@ impl ApplicationHandler for App {
             return;
         };
 
+        // Process input events through WinitInputHelper
+        state.input.process_window_event(&event);
+
         // Let egui process the event first
         let egui_response = state.egui_state.on_window_event(&state.window, &event);
         
@@ -1731,8 +1737,6 @@ impl ApplicationHandler for App {
                         }
                     }
                 }
-                
-                state.input.begin_frame();
                 
                 // Sync UI state with canvas
                 state.ui_state.current_tool = state.canvas.tool_manager.current_tool;
@@ -2820,7 +2824,6 @@ impl ApplicationHandler for App {
 
             WindowEvent::CursorMoved { position, .. } => {
                 let point = Point::new(position.x, position.y);
-                state.input.handle_pointer_event(PointerEvent::Move { position: point });
 
                 // Skip canvas processing if egui wants the pointer
                 if egui_wants_input {
@@ -2899,7 +2902,7 @@ impl ApplicationHandler for App {
                         );
                     } else if state.canvas.tool_manager.current_tool == ToolKind::Pan {
                         // Pan with left mouse + pan tool
-                        let delta = state.input.pointer_delta();
+                        let delta = state.input.cursor_diff();
                         state.canvas.camera.pan(delta);
                     } else if state.canvas.tool_manager.is_active() {
                         // Drawing a new shape or freehand
@@ -2918,7 +2921,7 @@ impl ApplicationHandler for App {
 
                 // Middle mouse button always pans
                 if state.input.is_button_pressed(MouseButton::Middle) {
-                    let delta = state.input.pointer_delta();
+                    let delta = state.input.cursor_diff();
                     state.canvas.camera.pan(delta);
                 }
             }
@@ -2930,21 +2933,16 @@ impl ApplicationHandler for App {
                 }
 
                 let mouse_btn = match button {
-                    winit::event::MouseButton::Left => MouseButton::Left,
-                    winit::event::MouseButton::Right => MouseButton::Right,
-                    winit::event::MouseButton::Middle => MouseButton::Middle,
+                    MouseButton::Left => MouseButton::Left,
+                    MouseButton::Right => MouseButton::Right,
+                    MouseButton::Middle => MouseButton::Middle,
                     _ => return,
                 };
 
-                let position = state.input.pointer_position;
+                let position = state.input.mouse_position();
 
                 match btn_state {
                     ElementState::Pressed => {
-                        state.input.handle_pointer_event(PointerEvent::Down {
-                            position,
-                            button: mouse_btn,
-                        });
-
                         if mouse_btn == MouseButton::Left {
                             let world_point = state.canvas.camera.screen_to_world(position);
                             
@@ -2970,7 +2968,7 @@ impl ApplicationHandler for App {
                                         // Position cursor at click location using new API
                                         if let Some(edit_state) = &mut state.text_edit_state {
                                             let (font_cx, layout_cx) = state.shape_renderer.contexts_mut();
-                                            edit_state.handle_mouse_down(local_x, local_y, state.input.modifiers.shift, font_cx, layout_cx);
+                                            edit_state.handle_mouse_down(local_x, local_y, state.input.shift(), font_cx, layout_cx);
                                         }
                                     }
                                     // Handled click on editing text
@@ -3011,11 +3009,6 @@ impl ApplicationHandler for App {
                         }
                     }
                     ElementState::Released => {
-                        state.input.handle_pointer_event(PointerEvent::Up {
-                            position,
-                            button: mouse_btn,
-                        });
-
                         if mouse_btn == MouseButton::Left {
                             // Handle text editing mouse release
                             if let Some(edit_state) = &mut state.text_edit_state {
@@ -3074,13 +3067,9 @@ impl ApplicationHandler for App {
                     MouseScrollDelta::PixelDelta(pos) => Vec2::new(pos.x, pos.y),
                 };
 
-                let position = state.input.pointer_position;
-                state.input.handle_pointer_event(PointerEvent::Scroll {
-                    position,
-                    delta: scroll,
-                });
+                let position = state.input.mouse_position();
 
-                if state.input.modifiers.ctrl || state.input.modifiers.meta {
+                if state.input.ctrl() {
                     // Ctrl/Cmd + scroll = zoom
                     let zoom_factor = if scroll.y > 0.0 { 1.1 } else { 0.9 };
                     state.canvas.camera.zoom_at(position, zoom_factor);
@@ -3128,10 +3117,10 @@ impl ApplicationHandler for App {
                         if let Some(key) = text_key {
                             log::debug!("Text edit key: {:?}", key);
                             let modifiers = TextModifiers {
-                                shift: state.input.modifiers.shift,
-                                ctrl: state.input.modifiers.ctrl,
-                                alt: state.input.modifiers.alt,
-                                meta: state.input.modifiers.meta,
+                                shift: state.input.shift(),
+                                ctrl: state.input.ctrl(),
+                                alt: state.input.alt(),
+                                meta: false, // winit_input_helper doesn't track meta separately
                             };
                             
                             let (font_cx, layout_cx) = state.shape_renderer.contexts_mut();
@@ -3181,13 +3170,11 @@ impl ApplicationHandler for App {
 
                 match event.state {
                     ElementState::Pressed => {
-                        state.input.handle_key_event(KeyEvent::Pressed(key_str.to_string()));
-
                         // Check for Ctrl/Cmd modifiers first for file operations
-                        let has_modifier = state.input.modifiers.ctrl || state.input.modifiers.meta;
+                        let has_modifier = state.input.ctrl();
                         
                         if has_modifier {
-                            let has_shift = state.input.modifiers.shift;
+                            let has_shift = state.input.shift();
                             match key_str {
                                 "a" | "A" => {
                                     state.canvas.select_all();
@@ -3496,19 +3483,13 @@ impl ApplicationHandler for App {
                         }
                     }
                     ElementState::Released => {
-                        state.input.handle_key_event(KeyEvent::Released(key_str.to_string()));
+                        // Input state is handled by WinitInputHelper
                     }
                 }
             }
 
-            WindowEvent::ModifiersChanged(modifiers) => {
-                let mods = modifiers.state();
-                state.input.set_modifiers(Modifiers {
-                    shift: mods.shift_key(),
-                    ctrl: mods.control_key(),
-                    alt: mods.alt_key(),
-                    meta: mods.super_key(),
-                });
+            WindowEvent::ModifiersChanged(_) => {
+                // Modifiers are tracked by WinitInputHelper
             }
 
             #[cfg(not(target_arch = "wasm32"))]
@@ -3576,6 +3557,18 @@ impl ApplicationHandler for App {
             }
 
             _ => {}
+        }
+    }
+
+    fn new_events(&mut self, _event_loop: &ActiveEventLoop, _cause: winit::event::StartCause) {
+        if let Some(state) = &mut self.state {
+            state.input.step();
+        }
+    }
+
+    fn about_to_wait(&mut self, _event_loop: &ActiveEventLoop) {
+        if let Some(state) = &mut self.state {
+            state.input.end_step();
         }
     }
 }

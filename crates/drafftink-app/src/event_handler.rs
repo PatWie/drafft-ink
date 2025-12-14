@@ -267,7 +267,7 @@ impl EventHandler {
                 // Check for shape hit (for selection or move)
                 let hits = canvas.document.shapes_at_point(world_point, 5.0 / canvas.camera.zoom);
                 if let Some(&id) = hits.first() {
-                    if input.modifiers.shift {
+                    if input.shift() {
                         // Add to/toggle selection
                         if canvas.is_selected(id) {
                             canvas.selection.retain(|&s| s != id);
@@ -292,7 +292,7 @@ impl EventHandler {
                         
                         if !original_shapes.is_empty() {
                             // Alt/Option + drag = duplicate
-                            if input.modifiers.alt {
+                            if input.alt() {
                                 let mut mm = MultiMoveState::new_duplicate(world_point, original_shapes);
                                 // Create duplicates immediately with new IDs
                                 for (_, shape) in &mm.original_shapes {
@@ -315,7 +315,7 @@ impl EventHandler {
                     }
                 } else {
                     // Clicked on empty space - start selection rectangle
-                    if !input.modifiers.shift {
+                    if !input.shift() {
                         canvas.clear_selection();
                     }
                     self.selection_rect = Some(SelectionRect {
@@ -384,7 +384,7 @@ impl EventHandler {
                 }
                 // Now push undo and apply the final change
                 canvas.document.push_undo();
-                let new_shape = apply_manipulation(&manip.original_shape, manip.handle, delta, input.modifiers.shift);
+                let new_shape = apply_manipulation(&manip.original_shape, manip.handle, delta, input.shift());
                 if let Some(shape) = canvas.document.get_shape_mut(manip.shape_id) {
                     *shape = new_shape;
                 }
@@ -456,7 +456,7 @@ impl EventHandler {
             // Only select if rectangle has meaningful size
             if rect.width() > 2.0 && rect.height() > 2.0 {
                 let shapes_in_rect = canvas.document.shapes_in_rect(rect);
-                if !input.modifiers.shift {
+                if !input.shift() {
                     canvas.clear_selection();
                 }
                 for id in shapes_in_rect {
@@ -698,7 +698,7 @@ impl EventHandler {
             );
             
             // Apply manipulation preview to the shape
-            let new_shape = apply_manipulation(&manip.original_shape, manip.handle, adjusted_delta, input.modifiers.shift);
+            let new_shape = apply_manipulation(&manip.original_shape, manip.handle, adjusted_delta, input.shift());
             if let Some(shape) = canvas.document.get_shape_mut(manip.shape_id) {
                 *shape = new_shape;
             }
