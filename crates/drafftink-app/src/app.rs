@@ -194,6 +194,42 @@ mod file_ops {
         static STORAGE: Rc<IndexedDbStorage> = Rc::new(IndexedDbStorage::new());
         static PENDING_DOCUMENT: RefCell<Option<CanvasDocument>> = const { RefCell::new(None) };
         static PENDING_DOCUMENT_LIST: RefCell<Option<Vec<String>>> = const { RefCell::new(None) };
+        static PENDING_CLIPBOARD_TEXT: RefCell<Option<String>> = const { RefCell::new(None) };
+    }
+
+    /// Request clipboard text read (async). Result will be available via take_pending_clipboard_text().
+    pub fn request_clipboard_text() {
+        wasm_bindgen_futures::spawn_local(async {
+            if let Some(text) = read_clipboard_text_async().await {
+                PENDING_CLIPBOARD_TEXT.with(|cell| {
+                    *cell.borrow_mut() = Some(text);
+                });
+            }
+        });
+    }
+
+    /// Take pending clipboard text if available.
+    pub fn take_pending_clipboard_text() -> Option<String> {
+        PENDING_CLIPBOARD_TEXT.with(|cell| cell.borrow_mut().take())
+    }
+
+    async fn read_clipboard_text_async() -> Option<String> {
+        let window = web_sys::window()?;
+        let clipboard = window.navigator().clipboard();
+        let promise = clipboard.read_text();
+        wasm_bindgen_futures::JsFuture::from(promise).await.ok()?.as_string()
+    }
+
+    /// Copy text to clipboard (fire and forget).
+    pub fn copy_text_to_clipboard(text: &str) {
+        let text = text.to_string();
+        wasm_bindgen_futures::spawn_local(async move {
+            if let Some(window) = web_sys::window() {
+                let clipboard = window.navigator().clipboard();
+                let promise = clipboard.write_text(&text);
+                let _ = wasm_bindgen_futures::JsFuture::from(promise).await;
+            }
+        });
     }
 
     /// Save document to IndexedDB (real persistence).
@@ -1660,6 +1696,21 @@ impl ApplicationHandler for App {
                     }
                 }
                 
+                // Check for pending clipboard text paste (WASM async)
+                #[cfg(target_arch = "wasm32")]
+                if let Some(clipboard_text) = file_ops::take_pending_clipboard_text() {
+                    if let Some(text_id) = state.event_handler.editing_text {
+                        if let Some(edit_state) = &mut state.text_edit_state {
+                            let (font_cx, layout_cx) = state.shape_renderer.contexts_mut();
+                            let _ = edit_state.handle_key(TextKey::Paste(clipboard_text), TextModifiers::default(), font_cx, layout_cx);
+                            let new_text = edit_state.text();
+                            if let Some(Shape::Text(text)) = state.canvas.document.get_shape_mut(text_id) {
+                                text.content = new_text;
+                            }
+                        }
+                    }
+                }
+                
                 // Poll WebSocket events
                 if let Some(ref mut ws) = state.websocket {
                     let events = ws.poll_events();
@@ -3092,8 +3143,39 @@ impl ApplicationHandler for App {
                             }
                         }
                         
-                        // Convert winit key to TextKey
-                        let text_key = match &event.logical_key {
+                        // Check for copy/paste shortcuts first
+                        let has_ctrl = state.input.ctrl();
+                        let text_key = if has_ctrl {
+                            match &event.logical_key {
+                                Key::Character(c) if c == "c" || c == "C" => Some(TextKey::Copy),
+                                Key::Character(c) if c == "x" || c == "X" => Some(TextKey::Cut),
+                                Key::Character(c) if c == "v" || c == "V" => {
+                                    // Get text from clipboard
+                                    #[cfg(not(target_arch = "wasm32"))]
+                                    {
+                                        arboard::Clipboard::new()
+                                            .ok()
+                                            .and_then(|mut cb| cb.get_text().ok())
+                                            .map(TextKey::Paste)
+                                    }
+                                    #[cfg(target_arch = "wasm32")]
+                                    {
+                                        file_ops::request_clipboard_text();
+                                        return; // Don't process "v" - paste will happen on next frame
+                                    }
+                                }
+                                // Let Ctrl+A through for select all (handled in text_editor)
+                                Key::Character(c) if c == "a" || c == "A" => None,
+                                // Ignore other Ctrl+key combos in text edit (don't type the letter)
+                                Key::Character(_) => return,
+                                _ => None,
+                            }
+                        } else {
+                            None
+                        };
+                        
+                        // Convert winit key to TextKey (if not already a clipboard operation)
+                        let text_key = text_key.or_else(|| match &event.logical_key {
                             Key::Named(NamedKey::Escape) => Some(TextKey::Escape),
                             Key::Named(NamedKey::Backspace) => Some(TextKey::Backspace),
                             Key::Named(NamedKey::Delete) => Some(TextKey::Delete),
@@ -3107,7 +3189,7 @@ impl ApplicationHandler for App {
                             Key::Named(NamedKey::Space) => Some(TextKey::Character(" ".to_string())),
                             Key::Character(c) => Some(TextKey::Character(c.to_string())),
                             _ => None,
-                        };
+                        });
                         
                         if let Some(key) = text_key {
                             log::debug!("Text edit key: {:?}", key);
@@ -3136,6 +3218,20 @@ impl ApplicationHandler for App {
                                     }
                                     TextEditResult::Handled => {
                                         // Sync content back to the text shape
+                                        let new_text = edit_state.text();
+                                        if let Some(Shape::Text(text)) = state.canvas.document.get_shape_mut(text_id) {
+                                            text.content = new_text;
+                                        }
+                                    }
+                                    TextEditResult::Copy(text_to_copy) => {
+                                        // Copy text to clipboard
+                                        #[cfg(not(target_arch = "wasm32"))]
+                                        if let Ok(mut clipboard) = arboard::Clipboard::new() {
+                                            let _ = clipboard.set_text(&text_to_copy);
+                                        }
+                                        #[cfg(target_arch = "wasm32")]
+                                        file_ops::copy_text_to_clipboard(&text_to_copy);
+                                        // Sync content back (for cut operation)
                                         let new_text = edit_state.text();
                                         if let Some(Shape::Text(text)) = state.canvas.document.get_shape_mut(text_id) {
                                             text.content = new_text;

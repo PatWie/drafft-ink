@@ -25,6 +25,9 @@ pub enum TextKey {
     Home,
     End,
     Escape,
+    Copy,
+    Cut,
+    Paste(String),
 }
 
 /// Keyboard modifiers.
@@ -56,6 +59,8 @@ pub enum TextEditResult {
     ExitEdit,
     /// Event was not handled (pass to other handlers).
     NotHandled,
+    /// Copy requested - contains the selected text to copy.
+    Copy(String),
 }
 
 /// Text editor state for a single text shape being edited.
@@ -289,6 +294,30 @@ impl TextEditState {
                 } else {
                     drv.move_to_line_end();
                 }
+            }
+            TextKey::Copy => {
+                // Return selected text for clipboard
+                drop(drv);
+                if let Some(text) = self.editor.selected_text() {
+                    return TextEditResult::Copy(text.to_string());
+                }
+                return TextEditResult::Handled;
+            }
+            TextKey::Cut => {
+                // Get selected text first, then delete
+                drop(drv);
+                let text_to_copy = self.editor.selected_text().map(|s| s.to_string());
+                if let Some(text) = text_to_copy {
+                    let mut drv = self.editor.driver(font_cx, layout_cx);
+                    drv.delete();
+                    drop(drv);
+                    self.update_layout_cache(font_cx, layout_cx);
+                    return TextEditResult::Copy(text);
+                }
+                return TextEditResult::Handled;
+            }
+            TextKey::Paste(ref text) => {
+                drv.insert_or_replace_selection(text);
             }
             TextKey::Character(ref c) => {
                 // Handle Ctrl+A for select all
