@@ -14,6 +14,7 @@ use drafftink_render::GridStyle;
 use drafftink_widgets::{
     ColorGrid, ColorSwatch, ColorSwatchWithWheel, FontSizeButton, IconButton, NoColorSwatch,
     StrokeWidthButton, ToggleButton, TAILWIND_COLORS,
+    default_btn, input_text, primary_btn, secondary_btn,
     menu_item as widgets_menu_item, menu_item_enabled as widgets_menu_item_enabled,
     menu_separator as widgets_menu_separator, panel_frame as widgets_panel_frame,
     section_label as widgets_section_label, vertical_separator as widgets_vertical_separator,
@@ -191,6 +192,8 @@ pub struct UiState {
     pub save_name_input: String,
     /// List of recent document names.
     pub recent_documents: Vec<String>,
+    /// Selected document from recent list.
+    pub selected_recent_document: Option<String>,
     /// Clipboard for copied/cut shapes (JSON serialized).
     pub clipboard_shapes: Option<String>,
 }
@@ -229,6 +232,7 @@ impl Default for UiState {
             open_recent_dialog_open: false,
             save_name_input: String::new(),
             recent_documents: Vec::new(),
+            selected_recent_document: None,
             clipboard_shapes: None,
         }
     }
@@ -1523,10 +1527,7 @@ fn render_collaboration_modal(ctx: &Context, ui_state: &mut UiState) -> Option<U
                         ui.horizontal(|ui| {
                             ui.label(egui::RichText::new("Collaborate").size(18.0).strong().color(Color32::from_gray(30)));
                             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                                let close_btn = egui::Button::new(
-                                    egui::RichText::new("✕").size(16.0).color(Color32::from_gray(100))
-                                ).frame(false);
-                                if ui.add(close_btn).clicked() {
+                                if default_btn(ui, "✕") {
                                     ui_state.collab_modal_open = false;
                                 }
                             });
@@ -1570,33 +1571,27 @@ fn render_collaboration_modal(ctx: &Context, ui_state: &mut UiState) -> Option<U
                         
                         // Server URL
                         ui.label(egui::RichText::new("Server URL").size(12.0).strong().color(Color32::from_gray(60)));
-                        let server_edit = egui::TextEdit::singleline(&mut ui_state.server_url)
-                            .desired_width(modal_width)
-                            .text_color(Color32::from_gray(30))
-                            .hint_text("ws://localhost:3030/ws");
-                        ui.add(server_edit);
+                        input_text(ui, &mut ui_state.server_url, modal_width, "ws://localhost:3030/ws");
                         
                         ui.add_space(4.0);
                         
                         // Connect/Disconnect button (styled)
-                        let button_text = match ui_state.connection_state {
-                            ConnectionState::Disconnected | ConnectionState::Error => "Connect",
-                            ConnectionState::Connected | ConnectionState::Connecting => "Disconnect",
-                        };
-                        let btn = egui::Button::new(egui::RichText::new(button_text).color(Color32::WHITE))
-                            .fill(Color32::from_rgb(59, 130, 246))
-                            .min_size(Vec2::new(modal_width, 36.0))
-                            .corner_radius(CornerRadius::same(6));
-                        if ui.add(btn).clicked() {
-                            match ui_state.connection_state {
-                                ConnectionState::Disconnected | ConnectionState::Error => {
-                                    action = Some(UiAction::Connect(ui_state.server_url.clone()));
-                                }
-                                ConnectionState::Connected | ConnectionState::Connecting => {
-                                    action = Some(UiAction::Disconnect);
+                        ui.horizontal(|ui| {
+                            let button_text = match ui_state.connection_state {
+                                ConnectionState::Disconnected | ConnectionState::Error => "Connect",
+                                ConnectionState::Connected | ConnectionState::Connecting => "Disconnect",
+                            };
+                            if primary_btn(ui, button_text) {
+                                match ui_state.connection_state {
+                                    ConnectionState::Disconnected | ConnectionState::Error => {
+                                        action = Some(UiAction::Connect(ui_state.server_url.clone()));
+                                    }
+                                    ConnectionState::Connected | ConnectionState::Connecting => {
+                                        action = Some(UiAction::Disconnect);
+                                    }
                                 }
                             }
-                        }
+                        });
                         
                         // Room controls (only when connected)
                         if ui_state.connection_state == ConnectionState::Connected {
@@ -1605,11 +1600,7 @@ fn render_collaboration_modal(ctx: &Context, ui_state: &mut UiState) -> Option<U
                             ui.add_space(4.0);
                             
                             ui.label(egui::RichText::new("Room").size(12.0).strong().color(Color32::from_gray(60)));
-                            let room_edit = egui::TextEdit::singleline(&mut ui_state.room_input)
-                                .desired_width(modal_width)
-                                .text_color(Color32::from_gray(30))
-                                .hint_text("Enter room name");
-                            ui.add(room_edit);
+                            input_text(ui, &mut ui_state.room_input, modal_width, "Enter room name");
                             
                             ui.add_space(4.0);
                             
@@ -1640,11 +1631,7 @@ fn render_collaboration_modal(ctx: &Context, ui_state: &mut UiState) -> Option<U
                             
                             // Name input
                             ui.label(egui::RichText::new("Display Name").size(11.0).color(Color32::from_gray(100)));
-                            let name_edit = egui::TextEdit::singleline(&mut ui_state.user_name)
-                                .desired_width(modal_width)
-                                .text_color(Color32::from_gray(30))
-                                .hint_text("Anonymous");
-                            let name_response = ui.add(name_edit);
+                            let name_response = input_text(ui, &mut ui_state.user_name, modal_width, "Anonymous");
                             if name_response.lost_focus() {
                                 action = Some(UiAction::SetUserName(ui_state.user_name.clone()));
                             }
@@ -1823,10 +1810,7 @@ fn render_shortcuts_modal(ctx: &Context, ui_state: &mut UiState) {
                     ui.horizontal(|ui| {
                         ui.label(egui::RichText::new("Keyboard Shortcuts").size(16.0).strong());
                         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                            let close_btn = egui::Button::new(
-                                egui::RichText::new("✕").size(16.0).color(Color32::from_gray(100))
-                            ).frame(false);
-                            if ui.add(close_btn).clicked() {
+                            if default_btn(ui, "✕") {
                                 ui_state.shortcuts_modal_open = false;
                             }
                         });
@@ -1895,10 +1879,7 @@ fn render_save_dialog(ctx: &Context, ui_state: &mut UiState) -> Option<UiAction>
                     ui.horizontal(|ui| {
                         ui.label(egui::RichText::new("Save Document").size(16.0).strong().color(Color32::from_gray(30)));
                         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                            let close_btn = egui::Button::new(
-                                egui::RichText::new("✕").size(16.0).color(Color32::from_gray(100))
-                            ).frame(false);
-                            if ui.add(close_btn).clicked() {
+                            if default_btn(ui, "✕") {
                                 ui_state.save_dialog_open = false;
                             }
                         });
@@ -1907,10 +1888,7 @@ fn render_save_dialog(ctx: &Context, ui_state: &mut UiState) -> Option<UiAction>
                     ui.add_space(12.0);
                     
                     ui.label(egui::RichText::new("Document name:").size(12.0).color(Color32::from_gray(60)));
-                    let response = ui.add(egui::TextEdit::singleline(&mut ui_state.save_name_input)
-                        .desired_width(300.0)
-                        .text_color(Color32::from_gray(30))
-                        .background_color(Color32::WHITE));
+                    let response = input_text(ui, &mut ui_state.save_name_input, 300.0, "");
                     
                     if response.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)) {
                         if !ui_state.save_name_input.trim().is_empty() {
@@ -1922,18 +1900,10 @@ fn render_save_dialog(ctx: &Context, ui_state: &mut UiState) -> Option<UiAction>
                     ui.add_space(12.0);
                     
                     ui.horizontal(|ui| {
-                        let cancel_btn = egui::Button::new(egui::RichText::new("Cancel").color(Color32::from_gray(100)))
-                            .fill(Color32::from_gray(240))
-                            .min_size(Vec2::new(80.0, 32.0))
-                            .corner_radius(CornerRadius::same(6));
-                        if ui.add(cancel_btn).clicked() {
+                        if secondary_btn(ui, "Cancel") {
                             ui_state.save_dialog_open = false;
                         }
-                        let save_btn = egui::Button::new(egui::RichText::new("Save").color(Color32::WHITE))
-                            .fill(Color32::from_rgb(59, 130, 246))
-                            .min_size(Vec2::new(80.0, 32.0))
-                            .corner_radius(CornerRadius::same(6));
-                        if ui.add(save_btn).clicked() && !ui_state.save_name_input.trim().is_empty() {
+                        if primary_btn(ui, "Save") && !ui_state.save_name_input.trim().is_empty() {
                             action = Some(UiAction::SaveLocalWithName(ui_state.save_name_input.trim().to_string()));
                             ui_state.save_dialog_open = false;
                         }
@@ -1978,10 +1948,7 @@ fn render_open_dialog(ctx: &Context, ui_state: &mut UiState) -> Option<UiAction>
                     ui.horizontal(|ui| {
                         ui.label(egui::RichText::new("Open Document").size(16.0).strong().color(Color32::from_gray(30)));
                         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                            let close_btn = egui::Button::new(
-                                egui::RichText::new("✕").size(16.0).color(Color32::from_gray(100))
-                            ).frame(false);
-                            if ui.add(close_btn).clicked() {
+                            if default_btn(ui, "✕") {
                                 ui_state.open_dialog_open = false;
                             }
                         });
@@ -2045,10 +2012,7 @@ fn render_open_recent_dialog(ctx: &Context, ui_state: &mut UiState) -> Option<Ui
                     ui.horizontal(|ui| {
                         ui.label(egui::RichText::new("Open Recent").size(16.0).strong().color(Color32::from_gray(30)));
                         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                            let close_btn = egui::Button::new(
-                                egui::RichText::new("✕").size(16.0).color(Color32::from_gray(100))
-                            ).frame(false);
-                            if ui.add(close_btn).clicked() {
+                            if default_btn(ui, "✕") {
                                 ui_state.open_recent_dialog_open = false;
                             }
                         });
@@ -2056,21 +2020,41 @@ fn render_open_recent_dialog(ctx: &Context, ui_state: &mut UiState) -> Option<Ui
                     
                     ui.add_space(12.0);
                     
-                    ui.label(egui::RichText::new("Recent documents:").size(12.0).color(Color32::from_gray(60)));
+                    ui.label(egui::RichText::new("Select document:").size(12.0).color(Color32::from_gray(60)));
                     
                     if ui_state.recent_documents.is_empty() {
                         ui.label(egui::RichText::new("No recent documents").color(Color32::from_gray(150)));
                     } else {
-                        egui::ScrollArea::vertical()
-                            .max_height(300.0)
-                            .show(ui, |ui| {
-                                for doc_name in &ui_state.recent_documents.clone() {
-                                    if ui.button(doc_name).clicked() {
-                                        action = Some(UiAction::LoadLocal(doc_name.clone()));
-                                        ui_state.open_recent_dialog_open = false;
+                        ui.add_space(4.0);
+                        
+                        let selected_text = ui_state.selected_recent_document.as_deref().unwrap_or("Select a document").to_string();
+                        ui.scope(|ui| {
+                            ui.visuals_mut().widgets.inactive.bg_stroke = Stroke::new(1.0, Color32::from_gray(220));
+                            ui.visuals_mut().widgets.hovered.bg_stroke = Stroke::new(1.0, Color32::from_gray(180));
+                            ui.visuals_mut().widgets.active.bg_stroke = Stroke::new(1.0, Color32::from_rgb(59, 130, 246));
+                            ui.visuals_mut().widgets.inactive.weak_bg_fill = Color32::WHITE;
+                            ui.visuals_mut().widgets.hovered.weak_bg_fill = Color32::WHITE;
+                            
+                            egui::ComboBox::from_id_salt("recent_docs_dropdown")
+                                .selected_text(selected_text)
+                                .width(260.0)
+                                .show_ui(ui, |ui| {
+                                    for doc_name in &ui_state.recent_documents.clone() {
+                                        ui.selectable_value(&mut ui_state.selected_recent_document, Some(doc_name.clone()), doc_name);
                                     }
+                                });
+                        });
+                        
+                        ui.add_space(12.0);
+                        
+                        ui.horizontal(|ui| {
+                            if primary_btn(ui, "Open") {
+                                if let Some(doc_name) = &ui_state.selected_recent_document {
+                                    action = Some(UiAction::LoadLocal(doc_name.clone()));
+                                    ui_state.open_recent_dialog_open = false;
                                 }
-                            });
+                            }
+                        });
                     }
                 });
             });

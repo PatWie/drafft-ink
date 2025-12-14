@@ -9,6 +9,7 @@
 
 pub mod buttons;
 pub mod colors;
+pub mod common;
 pub mod layout;
 pub mod menu;
 
@@ -21,6 +22,7 @@ pub use colors::{
     ColorSwatchStyle, ColorSwatchWithWheel, NoColorSwatch, SelectionStyle, TailwindColor,
     TailwindPalette, SHADE_LABELS, TAILWIND_COLORS,
 };
+pub use common::{default_btn, input_text, primary_btn, secondary_btn};
 pub use layout::{section_label, separator, vertical_separator};
 pub use menu::{menu_item, menu_item_enabled, menu_separator, panel_frame, toolbar_frame};
 
