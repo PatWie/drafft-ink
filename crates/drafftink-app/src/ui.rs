@@ -35,6 +35,8 @@ pub struct SelectedShapeProps {
     pub is_line: bool,
     /// Is the selected shape an arrow?
     pub is_arrow: bool,
+    /// Is the selected shape a freehand?
+    pub is_freehand: bool,
     /// Font size (for text shapes).
     pub font_size: f32,
     /// Font family (for text shapes).
@@ -51,6 +53,8 @@ pub struct SelectedShapeProps {
     pub is_drawing_tool: bool,
     /// Is the active tool for rectangles?
     pub tool_is_rectangle: bool,
+    /// Calligraphy mode for freehand.
+    pub calligraphy_mode: bool,
 }
 
 impl SelectedShapeProps {
@@ -405,6 +409,8 @@ pub enum UiAction {
     AlignCenterV,
     /// Show keyboard shortcuts help.
     ShowShortcuts,
+    /// Toggle calligraphy mode for freehand tool.
+    ToggleCalligraphy,
 }
 
 /// Tool definitions with SVG icons
@@ -1184,6 +1190,21 @@ fn render_right_panel(ctx: &Context, props: &SelectedShapeProps) -> Option<UiAct
                                 let is_angular = props.path_style == 2;
                                 if ToggleButton::new("Angular", is_angular).show(ui) && !is_angular {
                                     action = Some(UiAction::SetPathStyle(2));
+                                }
+                            });
+                        }
+                        
+                        // Calligraphy mode (for freehand tool only)
+                        if props.is_freehand {
+                            ui.add_space(8.0);
+                            ui.label(egui::RichText::new("Style").size(11.0).color(Color32::from_gray(100)));
+                            ui.horizontal(|ui| {
+                                ui.spacing_mut().item_spacing = Vec2::new(4.0, 0.0);
+                                if ToggleButton::new("Normal", !props.calligraphy_mode).show(ui) && props.calligraphy_mode {
+                                    action = Some(UiAction::ToggleCalligraphy);
+                                }
+                                if ToggleButton::new("Calligraphy", props.calligraphy_mode).show(ui) && !props.calligraphy_mode {
+                                    action = Some(UiAction::ToggleCalligraphy);
                                 }
                             });
                         }

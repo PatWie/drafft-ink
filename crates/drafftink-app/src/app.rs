@@ -1856,6 +1856,8 @@ impl ApplicationHandler for App {
                     selected_props.tool_is_rectangle = current_tool == ToolKind::Rectangle;
                     selected_props.is_line = current_tool == ToolKind::Line;
                     selected_props.is_arrow = current_tool == ToolKind::Arrow;
+                    selected_props.is_freehand = current_tool == ToolKind::Freehand;
+                    selected_props.calligraphy_mode = state.canvas.tool_manager.calligraphy_mode;
                     selected_props.sloppiness = state.ui_state.to_shape_style().sloppiness as u8;
                     selected_props.path_style = state.ui_state.path_style;
                     // Use UI state corner radius for new rectangles
@@ -2629,6 +2631,10 @@ impl ApplicationHandler for App {
                             }
                             UiAction::ShowShortcuts => {
                                 state.ui_state.shortcuts_modal_open = !state.ui_state.shortcuts_modal_open;
+                            }
+                            UiAction::ToggleCalligraphy => {
+                                state.canvas.tool_manager.calligraphy_mode = !state.canvas.tool_manager.calligraphy_mode;
+                                log::info!("Calligraphy mode: {}", state.canvas.tool_manager.calligraphy_mode);
                             }
                         }
                     }

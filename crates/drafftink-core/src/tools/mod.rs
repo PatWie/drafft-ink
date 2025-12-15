@@ -74,6 +74,12 @@ pub struct ToolManager {
     pub current_style: ShapeStyle,
     /// Corner radius for new rectangles (0 = sharp corners).
     pub corner_radius: f64,
+    /// Calligraphy mode for freehand (MSD smoothing).
+    pub calligraphy_mode: bool,
+    /// MSD brush position (mass position).
+    msd_pos: Point,
+    /// MSD brush velocity.
+    msd_vel: Point,
 }
 
 impl ToolManager {
@@ -94,6 +100,9 @@ impl ToolManager {
         if self.current_tool == ToolKind::Freehand {
             self.freehand_points.clear();
             self.freehand_points.push(point);
+            // Initialize MSD state
+            self.msd_pos = point;
+            self.msd_vel = Point::ZERO;
         }
         
         self.state = ToolState::Active {
@@ -111,7 +120,35 @@ impl ToolManager {
             
             // Accumulate points for freehand
             if self.current_tool == ToolKind::Freehand {
-                self.freehand_points.push(point);
+                if self.calligraphy_mode {
+                    // MSD simulation: brush follows mouse with inertia
+                    const M: f64 = 0.5;   // Mass
+                    const K: f64 = 120.0; // Stiffness
+                    const C: f64 = 15.49; // Critical damping: 2 * sqrt(M * K) ≈ 2 * sqrt(60)
+                    const DT: f64 = 1.0 / 60.0; // ~60fps
+                    
+                    // Force = spring + damping
+                    let dx = point.x - self.msd_pos.x;
+                    let dy = point.y - self.msd_pos.y;
+                    let ax = (K * dx - C * self.msd_vel.x) / M;
+                    let ay = (K * dy - C * self.msd_vel.y) / M;
+                    
+                    // Integrate
+                    self.msd_vel.x += ax * DT;
+                    self.msd_vel.y += ay * DT;
+                    self.msd_pos.x += self.msd_vel.x * DT;
+                    self.msd_pos.y += self.msd_vel.y * DT;
+                    
+                    // Only add point if moved enough
+                    if let Some(last) = self.freehand_points.last() {
+                        let dist = ((self.msd_pos.x - last.x).powi(2) + (self.msd_pos.y - last.y).powi(2)).sqrt();
+                        if dist > 2.0 {
+                            self.freehand_points.push(self.msd_pos);
+                        }
+                    }
+                } else {
+                    self.freehand_points.push(point);
+                }
             }
         }
     }
