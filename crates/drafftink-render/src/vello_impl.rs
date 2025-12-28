@@ -878,7 +878,7 @@ impl VelloRenderer {
             _ => {
                 // Draw selection rectangle for non-line shapes
                 let bounds = shape.bounds();
-                let stroke = Stroke::new(stroke_width).with_dashes(0.0, &[dash_len, dash_len]);
+                let stroke = Stroke::new(stroke_width).with_dashes(0.0, [dash_len, dash_len]);
                 let mut path = BezPath::new();
                 path.move_to(Point::new(bounds.x0, bounds.y0));
                 path.line_to(Point::new(bounds.x1, bounds.y0));
@@ -1263,7 +1263,7 @@ impl VelloRenderer {
         // Stroke with blue dashed line - scale inversely with zoom
         let stroke_width = 1.0 / self.zoom;
         let dash_len = 4.0 / self.zoom;
-        let stroke = Stroke::new(stroke_width).with_dashes(0.0, &[dash_len, dash_len]);
+        let stroke = Stroke::new(stroke_width).with_dashes(0.0, [dash_len, dash_len]);
         self.scene.stroke(
             &stroke,
             transform,

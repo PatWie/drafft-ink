@@ -73,9 +73,7 @@ pub fn compute_elbow_path(start: Point, end: Point) -> Vec<Point> {
     // Departure heading: direction from start toward end (prefer horizontal)
     let departure_heading = if dx.abs() >= dy.abs() {
         if dx > 0.0 { Heading::Right } else { Heading::Left }
-    } else {
-        if dy > 0.0 { Heading::Down } else { Heading::Up }
-    };
+    } else if dy > 0.0 { Heading::Down } else { Heading::Up };
 
     // Dongles at midpoint on the departure axis (like Excalidraw's dynamic bounds)
     let mid_x = (start.x + end.x) / 2.0;

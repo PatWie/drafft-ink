@@ -107,7 +107,7 @@ impl CrdtDocument {
         let z_order = self.z_order_list();
         
         // Remove from shapes map
-        shapes.delete(&id)?;
+        shapes.delete(id)?;
         
         // Remove from z-order
         for i in 0..z_order.len() {

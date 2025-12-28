@@ -34,9 +34,9 @@ pub fn default_btn(ui: &mut Ui, text: &str) -> bool {
 }
 
 /// Single-line text input with modern styling.
-pub fn input_text<'a>(
+pub fn input_text(
     ui: &mut Ui,
-    text: &'a mut String,
+    text: &mut String,
     width: f32,
     hint: &str,
 ) -> egui::Response {

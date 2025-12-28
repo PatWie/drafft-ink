@@ -226,7 +226,6 @@ impl EventHandler {
                         self.enter_text_edit(canvas, id);
                         canvas.clear_selection();
                         canvas.select(id);
-                        return;
                     }
                 }
                 // If not clicking on text, will create new text on release
@@ -295,7 +294,7 @@ impl EventHandler {
                             if input.alt() {
                                 let mut mm = MultiMoveState::new_duplicate(world_point, original_shapes);
                                 // Create duplicates immediately with new IDs
-                                for (_, shape) in &mm.original_shapes {
+                                for shape in mm.original_shapes.values() {
                                     let mut new_shape = shape.clone();
                                     new_shape.regenerate_id();
                                     let new_id = new_shape.id();

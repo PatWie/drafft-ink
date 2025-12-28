@@ -34,7 +34,7 @@ mod file_ops {
     pub fn save_document(document: &CanvasDocument, name: &str) {
         let dialog = rfd::FileDialog::new()
             .set_title("Save Document")
-            .set_file_name(&format!("{}.json", name))
+            .set_file_name(format!("{}.json", name))
             .add_filter("DrafftInk Document", &["json"]);
 
         if let Some(path) = dialog.save_file() {
@@ -95,7 +95,7 @@ mod file_ops {
     pub fn export_png(png_data: &[u8], name: &str) {
         let dialog = rfd::FileDialog::new()
             .set_title("Export PNG")
-            .set_file_name(&format!("{}.png", name))
+            .set_file_name(format!("{}.png", name))
             .add_filter("PNG Image", &["png"]);
 
         if let Some(path) = dialog.save_file() {
@@ -1548,7 +1548,7 @@ impl ApplicationHandler for App {
         {
             let render_cx = self
                 .render_cx
-                .get_or_insert_with(|| vello::util::RenderContext::new());
+                .get_or_insert_with(vello::util::RenderContext::new);
             
             let surface = pollster::block_on(render_cx.create_surface(
                 window.clone(),
@@ -2804,7 +2804,7 @@ impl ApplicationHandler for App {
                 // Render remote peer cursors
                 {
                     let camera = &state.canvas.camera;
-                    for (_peer_id, peer) in &state.remote_peers {
+                    for peer in state.remote_peers.values() {
                         if let Some(ref cursor) = peer.awareness.cursor {
                             let world_pos = Point::new(cursor.x, cursor.y);
                             let screen_pos = camera.world_to_screen(world_pos);

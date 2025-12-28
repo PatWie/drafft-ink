@@ -39,8 +39,10 @@ pub enum ToolKind {
 
 /// State of a tool interaction.
 #[derive(Debug, Clone)]
+#[derive(Default)]
 pub enum ToolState {
     /// Tool is idle, waiting for interaction.
+    #[default]
     Idle,
     /// Tool is actively being used (e.g., drawing a shape).
     Active {
@@ -55,11 +57,6 @@ pub enum ToolState {
     },
 }
 
-impl Default for ToolState {
-    fn default() -> Self {
-        Self::Idle
-    }
-}
 
 /// Manages the current tool and its state.
 #[derive(Debug, Clone, Default)]

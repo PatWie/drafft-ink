@@ -2,8 +2,10 @@
 
 /// The UI state of a widget/shape.
 #[derive(Debug, Clone, PartialEq)]
+#[derive(Default)]
 pub enum WidgetState {
     /// Normal display state - no interaction.
+    #[default]
     Normal,
     /// Mouse is hovering over the widget.
     Hovered,
@@ -13,11 +15,6 @@ pub enum WidgetState {
     Editing(EditingKind),
 }
 
-impl Default for WidgetState {
-    fn default() -> Self {
-        Self::Normal
-    }
-}
 
 impl WidgetState {
     /// Check if widget is selected (either just selected or editing).

@@ -39,7 +39,7 @@ impl Storage for MemoryStorage {
             })?;
             docs.get(&id)
                 .cloned()
-                .ok_or_else(|| StorageError::NotFound(id))
+                .ok_or(StorageError::NotFound(id))
         })
     }
 

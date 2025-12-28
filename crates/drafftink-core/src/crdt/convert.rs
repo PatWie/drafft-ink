@@ -323,7 +323,7 @@ fn group_from_loro(map: &LoroMapValue) -> Option<Shape> {
     
     let children: Vec<Shape> = children_list.iter().filter_map(|v| {
         if let LoroValue::Map(child_map) = v {
-            shape_from_loro(&LoroMapValue::from(child_map.clone()))
+            shape_from_loro(&child_map.clone())
         } else {
             None
         }
