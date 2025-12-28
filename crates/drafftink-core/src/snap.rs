@@ -230,24 +230,20 @@ pub enum SnapTargetKind {
 
 /// Collect snap targets from a shape's bounds.
 pub fn get_snap_targets_from_bounds(bounds: kurbo::Rect) -> Vec<SnapTarget> {
-    let mut targets = Vec::with_capacity(9);
-    
-    // Corners
-    targets.push(SnapTarget { point: Point::new(bounds.x0, bounds.y0), kind: SnapTargetKind::Corner });
-    targets.push(SnapTarget { point: Point::new(bounds.x1, bounds.y0), kind: SnapTargetKind::Corner });
-    targets.push(SnapTarget { point: Point::new(bounds.x1, bounds.y1), kind: SnapTargetKind::Corner });
-    targets.push(SnapTarget { point: Point::new(bounds.x0, bounds.y1), kind: SnapTargetKind::Corner });
-    
-    // Edge midpoints
-    targets.push(SnapTarget { point: Point::new((bounds.x0 + bounds.x1) / 2.0, bounds.y0), kind: SnapTargetKind::Midpoint });
-    targets.push(SnapTarget { point: Point::new(bounds.x1, (bounds.y0 + bounds.y1) / 2.0), kind: SnapTargetKind::Midpoint });
-    targets.push(SnapTarget { point: Point::new((bounds.x0 + bounds.x1) / 2.0, bounds.y1), kind: SnapTargetKind::Midpoint });
-    targets.push(SnapTarget { point: Point::new(bounds.x0, (bounds.y0 + bounds.y1) / 2.0), kind: SnapTargetKind::Midpoint });
-    
-    // Center
-    targets.push(SnapTarget { point: Point::new((bounds.x0 + bounds.x1) / 2.0, (bounds.y0 + bounds.y1) / 2.0), kind: SnapTargetKind::Center });
-    
-    targets
+    vec![
+        // Corners
+        SnapTarget { point: Point::new(bounds.x0, bounds.y0), kind: SnapTargetKind::Corner },
+        SnapTarget { point: Point::new(bounds.x1, bounds.y0), kind: SnapTargetKind::Corner },
+        SnapTarget { point: Point::new(bounds.x1, bounds.y1), kind: SnapTargetKind::Corner },
+        SnapTarget { point: Point::new(bounds.x0, bounds.y1), kind: SnapTargetKind::Corner },
+        // Edge midpoints
+        SnapTarget { point: Point::new((bounds.x0 + bounds.x1) / 2.0, bounds.y0), kind: SnapTargetKind::Midpoint },
+        SnapTarget { point: Point::new(bounds.x1, (bounds.y0 + bounds.y1) / 2.0), kind: SnapTargetKind::Midpoint },
+        SnapTarget { point: Point::new((bounds.x0 + bounds.x1) / 2.0, bounds.y1), kind: SnapTargetKind::Midpoint },
+        SnapTarget { point: Point::new(bounds.x0, (bounds.y0 + bounds.y1) / 2.0), kind: SnapTargetKind::Midpoint },
+        // Center
+        SnapTarget { point: Point::new((bounds.x0 + bounds.x1) / 2.0, (bounds.y0 + bounds.y1) / 2.0), kind: SnapTargetKind::Center },
+    ]
 }
 
 /// Collect snap targets from line endpoints.

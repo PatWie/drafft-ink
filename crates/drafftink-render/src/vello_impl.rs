@@ -1204,7 +1204,7 @@ impl VelloRenderer {
             // Draw angle arc from 0° to the snapped angle
             let arc_radius = 30.0 / self.zoom;
             let segments = (info.angle_degrees.abs() / 5.0).ceil() as usize;
-            let segments = segments.max(2).min(72); // At least 2, at most 72 segments
+            let segments = segments.clamp(2, 72); // At least 2, at most 72 segments
             
             if segments > 1 {
                 let mut arc_path = BezPath::new();

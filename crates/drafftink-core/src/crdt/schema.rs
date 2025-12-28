@@ -130,10 +130,8 @@ impl CrdtDocument {
         // Get the deep value and extract the shape map
         let shapes_value = shapes.get_deep_value();
         if let LoroValue::Map(map) = shapes_value {
-            if let Some(shape_value) = map.get(id) {
-                if let LoroValue::Map(shape_map) = shape_value {
-                    return shape_from_loro(shape_map);
-                }
+            if let Some(LoroValue::Map(shape_map)) = map.get(id) {
+                return shape_from_loro(shape_map);
             }
         }
         
