@@ -447,16 +447,16 @@ fn i64_to_path_style(v: i64) -> PathStyle {
 fn font_family_to_i64(f: FontFamily) -> i64 {
     match f {
         FontFamily::GelPen => 0,
-        FontFamily::Roboto => 1,
-        FontFamily::ArchitectsDaughter => 2,
+        FontFamily::VanillaExtract => 1,
+        FontFamily::GelPenSerif => 2,
     }
 }
 
 fn i64_to_font_family(v: i64) -> FontFamily {
     match v {
         0 => FontFamily::GelPen,
-        1 => FontFamily::Roboto,
-        _ => FontFamily::ArchitectsDaughter,
+        1 => FontFamily::VanillaExtract,
+        _ => FontFamily::GelPenSerif,
     }
 }
 

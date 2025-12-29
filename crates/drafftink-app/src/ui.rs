@@ -1097,13 +1097,13 @@ fn render_right_panel(ctx: &Context, props: &SelectedShapeProps) -> Option<UiAct
                                     action = Some(UiAction::SetFontFamily(0));
                                 }
                                 
-                                let is_roboto = props.font_family == FontFamily::Roboto;
-                                if ToggleButton::new("Roboto", is_roboto).show(ui) && !is_roboto {
+                                let is_vanilla = props.font_family == FontFamily::VanillaExtract;
+                                if ToggleButton::new("Vanilla", is_vanilla).show(ui) && !is_vanilla {
                                     action = Some(UiAction::SetFontFamily(1));
                                 }
                                 
-                                let is_architects = props.font_family == FontFamily::ArchitectsDaughter;
-                                if ToggleButton::new("Architects", is_architects).show(ui) && !is_architects {
+                                let is_gelpen_serif = props.font_family == FontFamily::GelPenSerif;
+                                if ToggleButton::new("GelPen Serif", is_gelpen_serif).show(ui) && !is_gelpen_serif {
                                     action = Some(UiAction::SetFontFamily(2));
                                 }
                             });

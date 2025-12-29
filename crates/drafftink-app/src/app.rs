@@ -2100,8 +2100,8 @@ impl ApplicationHandler for App {
                                 use drafftink_core::shapes::{Shape, FontFamily};
                                 let family = match family_idx {
                                     0 => FontFamily::GelPen,
-                                    1 => FontFamily::Roboto,
-                                    _ => FontFamily::ArchitectsDaughter,
+                                    1 => FontFamily::VanillaExtract,
+                                    _ => FontFamily::GelPenSerif,
                                 };
                                 for &shape_id in &state.canvas.selection.clone() {
                                     if let Some(Shape::Text(text)) = state.canvas.document.get_shape_mut(shape_id) {

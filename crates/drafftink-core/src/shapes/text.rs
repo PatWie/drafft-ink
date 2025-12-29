@@ -12,10 +12,10 @@ pub enum FontFamily {
     /// GelPen hand-drawn style font (default).
     #[default]
     GelPen,
-    /// Roboto sans-serif font.
-    Roboto,
-    /// Architects Daughter handwritten font.
-    ArchitectsDaughter,
+    /// Vanilla Extract handwritten font.
+    VanillaExtract,
+    /// GelPen Serif handwritten font.
+    GelPenSerif,
 }
 
 impl FontFamily {
@@ -23,8 +23,8 @@ impl FontFamily {
     pub fn name(&self) -> &'static str {
         match self {
             FontFamily::GelPen => "GelPen",
-            FontFamily::Roboto => "Roboto",
-            FontFamily::ArchitectsDaughter => "Architects Daughter",
+            FontFamily::VanillaExtract => "Vanilla Extract",
+            FontFamily::GelPenSerif => "GelPen Serif",
         }
     }
     
@@ -32,14 +32,14 @@ impl FontFamily {
     pub fn display_name(&self) -> &'static str {
         match self {
             FontFamily::GelPen => "GelPen",
-            FontFamily::Roboto => "Roboto",
-            FontFamily::ArchitectsDaughter => "Architects",
+            FontFamily::VanillaExtract => "Vanilla",
+            FontFamily::GelPenSerif => "GelPen Serif",
         }
     }
     
     /// Get all available font families.
     pub fn all() -> &'static [FontFamily] {
-        &[FontFamily::GelPen, FontFamily::Roboto, FontFamily::ArchitectsDaughter]
+        &[FontFamily::GelPen, FontFamily::VanillaExtract, FontFamily::GelPenSerif]
     }
 }
 
@@ -197,12 +197,12 @@ impl Text {
             (FontFamily::GelPen, FontWeight::Light) => 0.50,
             (FontFamily::GelPen, FontWeight::Regular) => 0.55,
             (FontFamily::GelPen, FontWeight::Heavy) => 0.60,
-            // Roboto is a proportional sans-serif, narrower on average
-            (FontFamily::Roboto, FontWeight::Light) => 0.45,
-            (FontFamily::Roboto, FontWeight::Regular) => 0.48,
-            (FontFamily::Roboto, FontWeight::Heavy) => 0.52,
-            // Architects Daughter is a handwritten font with wider characters
-            (FontFamily::ArchitectsDaughter, _) => 0.58,
+            // Vanilla Extract is a handwritten font
+            (FontFamily::VanillaExtract, _) => 0.50,
+            // GelPen Serif is a handwritten font with wider characters
+            (FontFamily::GelPenSerif, FontWeight::Light) => 0.55,
+            (FontFamily::GelPenSerif, FontWeight::Regular) => 0.58,
+            (FontFamily::GelPenSerif, FontWeight::Heavy) => 0.60,
         };
         
         max_line_len as f64 * self.font_size * char_width_factor

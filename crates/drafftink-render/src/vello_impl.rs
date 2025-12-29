@@ -27,12 +27,12 @@ pub struct PngRenderResult {
 static GELPEN_REGULAR: &[u8] = include_bytes!("../assets/GelPen.ttf");
 static GELPEN_LIGHT: &[u8] = include_bytes!("../assets/GelPenLight.ttf");
 static GELPEN_HEAVY: &[u8] = include_bytes!("../assets/GelPenHeavy.ttf");
-/// Embedded Roboto fonts (Light, Regular, Bold)
-static ROBOTO_LIGHT: &[u8] = include_bytes!("../assets/Roboto-Light.ttf");
-static ROBOTO_REGULAR: &[u8] = include_bytes!("../assets/Roboto-Regular.ttf");
-static ROBOTO_BOLD: &[u8] = include_bytes!("../assets/Roboto-Bold.ttf");
-/// Embedded Architects Daughter font for handwritten style
-static ARCHITECTS_DAUGHTER: &[u8] = include_bytes!("../assets/ArchitectsDaughter.ttf");
+/// Embedded VanillaExtract font
+static VANILLA_EXTRACT: &[u8] = include_bytes!("../assets/VanillaExtract.ttf");
+/// Embedded GelPenSerif fonts for handwritten style
+static GELPEN_SERIF_LIGHT: &[u8] = include_bytes!("../assets/GelPenSerifLight.ttf");
+static GELPEN_SERIF_MEDIUM: &[u8] = include_bytes!("../assets/GelPenSerifMedium.ttf");
+static GELPEN_SERIF_HEAVY: &[u8] = include_bytes!("../assets/GelPenSerifHeavy.ttf");
 
 /// Vello-based renderer for GPU-accelerated 2D graphics.
 pub struct VelloRenderer {
@@ -280,19 +280,19 @@ impl VelloRenderer {
             None,
         );
         font_cx.collection.register_fonts(
-            vello::peniko::Blob::new(std::sync::Arc::new(ROBOTO_LIGHT)),
+            vello::peniko::Blob::new(std::sync::Arc::new(VANILLA_EXTRACT)),
             None,
         );
         font_cx.collection.register_fonts(
-            vello::peniko::Blob::new(std::sync::Arc::new(ROBOTO_REGULAR)),
+            vello::peniko::Blob::new(std::sync::Arc::new(GELPEN_SERIF_LIGHT)),
             None,
         );
         font_cx.collection.register_fonts(
-            vello::peniko::Blob::new(std::sync::Arc::new(ROBOTO_BOLD)),
+            vello::peniko::Blob::new(std::sync::Arc::new(GELPEN_SERIF_MEDIUM)),
             None,
         );
         font_cx.collection.register_fonts(
-            vello::peniko::Blob::new(std::sync::Arc::new(ARCHITECTS_DAUGHTER)),
+            vello::peniko::Blob::new(std::sync::Arc::new(GELPEN_SERIF_HEAVY)),
             None,
         );
         
@@ -566,15 +566,15 @@ impl VelloRenderer {
         //   - Roboto-Light.ttf has weight 300 (LIGHT)
         //   - Roboto-Regular.ttf has weight 400 (NORMAL)
         //   - Roboto-Bold.ttf has weight 700 (BOLD)
-        // For ArchitectsDaughter: single font only
+        // For GelPenSerif: each weight is a separate font family
         let (font_name, parley_weight) = match (&text.font_family, &text.font_weight) {
             (FontFamily::GelPen, FontWeight::Light) => ("GelPenLight", parley::FontWeight::NORMAL),
             (FontFamily::GelPen, FontWeight::Regular) => ("GelPen", parley::FontWeight::NORMAL),
             (FontFamily::GelPen, FontWeight::Heavy) => ("GelPenHeavy", parley::FontWeight::NORMAL),
-            (FontFamily::Roboto, FontWeight::Light) => ("Roboto", parley::FontWeight::LIGHT),
-            (FontFamily::Roboto, FontWeight::Regular) => ("Roboto", parley::FontWeight::NORMAL),
-            (FontFamily::Roboto, FontWeight::Heavy) => ("Roboto", parley::FontWeight::BOLD),
-            (FontFamily::ArchitectsDaughter, _) => ("Architects Daughter", parley::FontWeight::NORMAL),
+            (FontFamily::VanillaExtract, _) => ("Vanilla Extract", parley::FontWeight::NORMAL),
+            (FontFamily::GelPenSerif, FontWeight::Light) => ("GelPenSerifLight", parley::FontWeight::NORMAL),
+            (FontFamily::GelPenSerif, FontWeight::Regular) => ("GelPenSerif", parley::FontWeight::NORMAL),
+            (FontFamily::GelPenSerif, FontWeight::Heavy) => ("GelPenSerifHeavy", parley::FontWeight::NORMAL),
         };
         
         // Build the layout using cached font context
@@ -751,10 +751,10 @@ impl VelloRenderer {
             (ShapeFontFamily::GelPen, FontWeight::Light) => ("GelPenLight", parley::FontWeight::NORMAL),
             (ShapeFontFamily::GelPen, FontWeight::Regular) => ("GelPen", parley::FontWeight::NORMAL),
             (ShapeFontFamily::GelPen, FontWeight::Heavy) => ("GelPenHeavy", parley::FontWeight::NORMAL),
-            (ShapeFontFamily::Roboto, FontWeight::Light) => ("Roboto", parley::FontWeight::LIGHT),
-            (ShapeFontFamily::Roboto, FontWeight::Regular) => ("Roboto", parley::FontWeight::NORMAL),
-            (ShapeFontFamily::Roboto, FontWeight::Heavy) => ("Roboto", parley::FontWeight::BOLD),
-            (ShapeFontFamily::ArchitectsDaughter, _) => ("Architects Daughter", parley::FontWeight::NORMAL),
+            (ShapeFontFamily::VanillaExtract, _) => ("Vanilla Extract", parley::FontWeight::NORMAL),
+            (ShapeFontFamily::GelPenSerif, FontWeight::Light) => ("GelPenSerifLight", parley::FontWeight::NORMAL),
+            (ShapeFontFamily::GelPenSerif, FontWeight::Regular) => ("GelPenSerif", parley::FontWeight::NORMAL),
+            (ShapeFontFamily::GelPenSerif, FontWeight::Heavy) => ("GelPenSerifHeavy", parley::FontWeight::NORMAL),
         };
         
         // Configure the editor styles
