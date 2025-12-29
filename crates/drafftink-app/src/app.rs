@@ -283,8 +283,13 @@ mod file_ops {
                         log::info!("Document loaded from IndexedDB: {}", doc.name);
                         set_pending_document(doc);
                     }
-                    Err(e) => {
-                        log::info!("No saved document found: {:?}", e);
+                    Err(_) => {
+                        // No saved document - load intro as default
+                        static INTRO_JSON: &str = include_str!("../assets/intro.json");
+                        if let Ok(doc) = drafftink_core::canvas::CanvasDocument::from_json(INTRO_JSON) {
+                            log::info!("Loading intro document as default");
+                            set_pending_document(doc);
+                        }
                     }
                 }
             });
@@ -1344,6 +1349,15 @@ impl App {
 
         let mut canvas = Canvas::new();
         canvas.set_viewport_size(surface.config.width as f64, surface.config.height as f64);
+        
+        // Load intro as default for native (WASM handles this in load_document_async)
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            static INTRO_JSON: &str = include_str!("../assets/intro.json");
+            if let Ok(doc) = drafftink_core::canvas::CanvasDocument::from_json(INTRO_JSON) {
+                canvas.document = doc;
+            }
+        }
 
         log::info!("DrafftInk initialized - {}x{}", surface.config.width, surface.config.height);
         log::info!("Keyboard shortcuts: V=Select, H=Pan, R=Rectangle, E=Ellipse, L=Line, A=Arrow, P=Pen");
