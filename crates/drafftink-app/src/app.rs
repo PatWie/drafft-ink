@@ -3469,6 +3469,10 @@ impl ApplicationHandler for App {
                         NamedKey::Escape => "Escape",
                         NamedKey::Delete => "Delete",
                         NamedKey::Backspace => "Backspace",
+                        NamedKey::ArrowUp => "ArrowUp",
+                        NamedKey::ArrowDown => "ArrowDown",
+                        NamedKey::ArrowLeft => "ArrowLeft",
+                        NamedKey::ArrowRight => "ArrowRight",
                         _ => return,
                     },
                     Key::Character(c) => c.as_str(),
@@ -3810,6 +3814,26 @@ impl ApplicationHandler for App {
                                         state.canvas.clear_selection();
                                         state.canvas.set_tool(ToolKind::Select);
                                         state.ui_state.current_tool = ToolKind::Select;
+                                    }
+                                }
+                                // Arrow keys: nudge selected shapes by grid size
+                                "ArrowUp" | "ArrowDown" | "ArrowLeft" | "ArrowRight" => {
+                                    if !state.canvas.selection.is_empty() {
+                                        use drafftink_core::GRID_SIZE;
+                                        let delta = match key_str {
+                                            "ArrowUp" => kurbo::Vec2::new(0.0, -GRID_SIZE),
+                                            "ArrowDown" => kurbo::Vec2::new(0.0, GRID_SIZE),
+                                            "ArrowLeft" => kurbo::Vec2::new(-GRID_SIZE, 0.0),
+                                            "ArrowRight" => kurbo::Vec2::new(GRID_SIZE, 0.0),
+                                            _ => return,
+                                        };
+                                        state.canvas.document.push_undo();
+                                        let translation = kurbo::Affine::translate(delta);
+                                        for &id in &state.canvas.selection {
+                                            if let Some(shape) = state.canvas.document.get_shape_mut(id) {
+                                                shape.transform(translation);
+                                            }
+                                        }
                                     }
                                 }
                                 _ => {}
