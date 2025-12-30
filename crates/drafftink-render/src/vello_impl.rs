@@ -771,8 +771,19 @@ impl VelloRenderer {
             styles.insert(StyleProperty::FontWeight(parley_weight));
         }
         
-        // Create transform to position text at the shape's position
-        let text_transform = transform * Affine::translate((text.position.x, text.position.y));
+        // Create transform to position text at the shape's position, with rotation
+        let rotation = text.rotation;
+        let text_transform = if rotation.abs() > 0.001 {
+            let bounds = text.bounds();
+            let center = bounds.center();
+            let center_vec = kurbo::Vec2::new(center.x, center.y);
+            transform * Affine::translate(center_vec)
+                * Affine::rotate(rotation)
+                * Affine::translate(-center_vec)
+                * Affine::translate((text.position.x, text.position.y))
+        } else {
+            transform * Affine::translate((text.position.x, text.position.y))
+        };
         
         // IMPORTANT: First compute the layout - this must happen before cursor/selection geometry
         let layout = edit_state.editor_mut().layout(&mut self.font_cx, &mut self.layout_cx);
