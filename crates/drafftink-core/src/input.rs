@@ -1,7 +1,7 @@
 //! Input state management using winit_input_helper.
 
 use kurbo::{Point, Vec2};
-use winit::event::{DeviceEvent, MouseButton, WindowEvent};
+use winit::event::{DeviceEvent, MouseButton, WindowEvent, Touch, TouchPhase};
 use winit::keyboard::KeyCode;
 use winit_input_helper::WinitInputHelper;
 
@@ -14,6 +14,14 @@ use std::time::Instant;
 /// Double-click detection constants.
 const DOUBLE_CLICK_TIME_MS: u128 = 500;
 const DOUBLE_CLICK_DISTANCE: f64 = 5.0;
+
+/// Touch state for a single finger.
+#[derive(Debug, Clone, Copy)]
+pub struct TouchState {
+    pub id: u64,
+    pub position: Point,
+    pub phase: TouchPhase,
+}
 
 /// Tracks the current input state across frames using WinitInputHelper.
 pub struct InputState {
@@ -28,6 +36,12 @@ pub struct InputState {
     pub is_dragging: bool,
     /// Start position of current drag operation.
     pub drag_start: Option<Point>,
+    /// Active touch points (up to 2 for pinch-zoom).
+    touches: [Option<TouchState>; 2],
+    /// Previous distance between two fingers (for pinch zoom).
+    pinch_distance: Option<f64>,
+    /// Previous center between two fingers (for pan during pinch).
+    pinch_center: Option<Point>,
 }
 
 impl Default for InputState {
@@ -45,6 +59,9 @@ impl InputState {
             double_click_detected: false,
             is_dragging: false,
             drag_start: None,
+            touches: [None, None],
+            pinch_distance: None,
+            pinch_center: None,
         }
     }
 
@@ -175,5 +192,107 @@ impl InputState {
 
     pub fn close_requested(&self) -> bool {
         self.helper.close_requested()
+    }
+
+    // --- Touch ---
+
+    /// Process a touch event. Returns (pan_delta, zoom_delta, zoom_center) if gesture detected.
+    pub fn process_touch(&mut self, touch: &Touch) -> Option<(Vec2, f64, Point)> {
+        let pos = Point::new(touch.location.x, touch.location.y);
+        let state = TouchState { id: touch.id, position: pos, phase: touch.phase };
+        
+        match touch.phase {
+            TouchPhase::Started => {
+                // Find empty slot
+                if self.touches[0].is_none() {
+                    self.touches[0] = Some(state);
+                } else if self.touches[1].is_none() {
+                    self.touches[1] = Some(state);
+                    // Initialize pinch state
+                    if let (Some(t0), Some(t1)) = (self.touches[0], self.touches[1]) {
+                        self.pinch_distance = Some(t0.position.distance(t1.position));
+                        self.pinch_center = Some(Point::new(
+                            (t0.position.x + t1.position.x) / 2.0,
+                            (t0.position.y + t1.position.y) / 2.0,
+                        ));
+                    }
+                }
+                None
+            }
+            TouchPhase::Moved => {
+                // Update touch position
+                for slot in &mut self.touches {
+                    if let Some(t) = slot {
+                        if t.id == touch.id {
+                            t.position = pos;
+                            t.phase = touch.phase;
+                        }
+                    }
+                }
+                
+                // Calculate gesture
+                if let (Some(t0), Some(t1)) = (self.touches[0], self.touches[1]) {
+                    // Two-finger gesture: pinch zoom + pan
+                    let new_dist = t0.position.distance(t1.position);
+                    let new_center = Point::new(
+                        (t0.position.x + t1.position.x) / 2.0,
+                        (t0.position.y + t1.position.y) / 2.0,
+                    );
+                    
+                    let zoom_delta = if let Some(old_dist) = self.pinch_distance {
+                        if old_dist > 0.0 { new_dist / old_dist } else { 1.0 }
+                    } else { 1.0 };
+                    
+                    let pan_delta = if let Some(old_center) = self.pinch_center {
+                        Vec2::new(new_center.x - old_center.x, new_center.y - old_center.y)
+                    } else { Vec2::ZERO };
+                    
+                    self.pinch_distance = Some(new_dist);
+                    self.pinch_center = Some(new_center);
+                    
+                    Some((pan_delta, zoom_delta, new_center))
+                } else {
+                    None
+                }
+            }
+            TouchPhase::Ended | TouchPhase::Cancelled => {
+                // Remove touch
+                for slot in &mut self.touches {
+                    if let Some(t) = slot {
+                        if t.id == touch.id {
+                            *slot = None;
+                        }
+                    }
+                }
+                self.pinch_distance = None;
+                self.pinch_center = None;
+                None
+            }
+        }
+    }
+
+    /// Get the primary touch position (first finger).
+    pub fn primary_touch(&self) -> Option<Point> {
+        self.touches[0].map(|t| t.position)
+    }
+
+    /// Get number of active touches.
+    pub fn touch_count(&self) -> usize {
+        self.touches.iter().filter(|t| t.is_some()).count()
+    }
+
+    /// Check if single touch is active (for drawing).
+    pub fn is_single_touch(&self) -> bool {
+        self.touches[0].is_some() && self.touches[1].is_none()
+    }
+
+    /// Check if touch just started (first finger down).
+    pub fn touch_just_started(&self) -> bool {
+        self.touches[0].map(|t| t.phase == TouchPhase::Started).unwrap_or(false)
+    }
+
+    /// Check if touch just ended.
+    pub fn touch_just_ended(&self) -> bool {
+        self.touches[0].is_none() && self.touches[1].is_none()
     }
 }

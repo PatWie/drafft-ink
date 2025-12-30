@@ -134,6 +134,27 @@ impl EventHandler {
         self.selection_rect.is_some()
     }
 
+    /// Cancel any ongoing operation.
+    pub fn cancel(&mut self, canvas: &mut Canvas) {
+        // Restore original shapes if manipulating
+        if let Some(manip) = self.manipulation.take() {
+            if let Some(shape) = canvas.document.get_shape_mut(manip.shape_id) {
+                *shape = manip.original_shape;
+            }
+        }
+        if let Some(mm) = self.multi_move.take() {
+            for (id, original) in mm.original_shapes {
+                if let Some(shape) = canvas.document.get_shape_mut(id) {
+                    *shape = original;
+                }
+            }
+        }
+        self.selection_rect = None;
+        self.last_snap = None;
+        self.last_angle_snap = None;
+        canvas.tool_manager.cancel();
+    }
+
     /// Get the current selection rectangle (for rendering).
     pub fn selection_rect(&self) -> Option<&SelectionRect> {
         self.selection_rect.as_ref()

@@ -3253,6 +3253,83 @@ impl ApplicationHandler for App {
                 }
             }
 
+            WindowEvent::Touch(touch) => {
+                // Skip if egui wants input
+                if egui_wants_input {
+                    return;
+                }
+
+                use winit::event::TouchPhase;
+                let pos = Point::new(touch.location.x, touch.location.y);
+                let world_point = state.canvas.camera.screen_to_world(pos);
+
+                // Track previous position for pan delta
+                let prev_pos = state.input.primary_touch();
+                
+                // Process touch and get gesture result
+                let gesture = state.input.process_touch(&touch);
+                let touch_count = state.input.touch_count();
+
+                if let Some((pan_delta, zoom_delta, zoom_center)) = gesture {
+                    // Two-finger gesture: pinch-zoom and pan
+                    if (zoom_delta - 1.0).abs() > 0.001 {
+                        state.canvas.camera.zoom_at(zoom_center, zoom_delta);
+                    }
+                    if pan_delta.length() > 0.1 {
+                        state.canvas.camera.pan(pan_delta);
+                    }
+                } else if touch_count <= 1 {
+                    // Single finger behavior depends on tool
+                    let is_pan_tool = state.canvas.tool_manager.current_tool == ToolKind::Pan;
+                    
+                    if is_pan_tool {
+                        // Pan tool: single finger pans
+                        if touch.phase == TouchPhase::Moved {
+                            if let Some(prev) = prev_pos {
+                                let delta = Vec2::new(pos.x - prev.x, pos.y - prev.y);
+                                state.canvas.camera.pan(delta);
+                            }
+                        }
+                    } else {
+                        // Other tools: single finger draws/selects
+                        match touch.phase {
+                            TouchPhase::Started => {
+                                state.event_handler.handle_press(
+                                    &mut state.canvas,
+                                    world_point,
+                                    &state.input,
+                                    state.ui_state.snap_mode,
+                                );
+                            }
+                            TouchPhase::Moved => {
+                                state.event_handler.handle_drag(
+                                    &mut state.canvas,
+                                    world_point,
+                                    &state.input,
+                                    state.ui_state.snap_mode,
+                                    state.ui_state.angle_snap_enabled,
+                                );
+                            }
+                            TouchPhase::Ended => {
+                                let current_style = state.ui_state.to_shape_style();
+                                state.event_handler.handle_release(
+                                    &mut state.canvas,
+                                    world_point,
+                                    &state.input,
+                                    &current_style,
+                                    state.ui_state.snap_mode,
+                                    state.ui_state.angle_snap_enabled,
+                                );
+                            }
+                            TouchPhase::Cancelled => {
+                                state.event_handler.cancel(&mut state.canvas);
+                            }
+                        }
+                    }
+                }
+                state.window.request_redraw();
+            }
+
             WindowEvent::KeyboardInput { event, .. } => {
                 // Skip canvas processing if egui wants keyboard
                 if egui_wants_input {
