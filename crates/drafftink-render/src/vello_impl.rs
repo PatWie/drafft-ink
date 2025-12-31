@@ -739,6 +739,7 @@ impl VelloRenderer {
         text: &drafftink_core::shapes::Text,
         edit_state: &mut TextEditState,
         transform: Affine,
+        anchor: Option<Point>,
     ) {
         use drafftink_core::shapes::{FontFamily as ShapeFontFamily, FontWeight};
         
@@ -771,22 +772,46 @@ impl VelloRenderer {
             styles.insert(StyleProperty::FontWeight(parley_weight));
         }
         
-        // Create transform to position text at the shape's position, with rotation
+        // IMPORTANT: First compute the layout - this must happen before cursor/selection geometry
+        let layout = edit_state.editor_mut().layout(&mut self.font_cx, &mut self.layout_cx);
+        let layout_width = layout.width() as f64;
+        let layout_height = layout.height() as f64;
+        
+        // Update cached size so bounds() returns correct values
+        text.set_cached_size(layout_width, layout_height);
+        
+        // Compute position that keeps anchor (top-left handle) fixed
+        // anchor = position + (half_w, half_h) + rotate(-half_w, -half_h)
+        // position = anchor - (half_w, half_h) - rotate(-half_w, -half_h)
         let rotation = text.rotation;
+        let half_w = layout_width / 2.0;
+        let half_h = layout_height / 2.0;
+        
+        let render_position = if let Some(anchor) = anchor {
+            if rotation.abs() > 0.001 {
+                let cos_r = rotation.cos();
+                let sin_r = rotation.sin();
+                let rot_x = -half_w * cos_r + half_h * sin_r;
+                let rot_y = -half_w * sin_r - half_h * cos_r;
+                Point::new(anchor.x - half_w - rot_x, anchor.y - half_h - rot_y)
+            } else {
+                anchor
+            }
+        } else {
+            text.position
+        };
+        
+        // Create transform using computed render position
         let text_transform = if rotation.abs() > 0.001 {
-            let bounds = text.bounds();
-            let center = bounds.center();
+            let center = Point::new(render_position.x + half_w, render_position.y + half_h);
             let center_vec = kurbo::Vec2::new(center.x, center.y);
             transform * Affine::translate(center_vec)
                 * Affine::rotate(rotation)
                 * Affine::translate(-center_vec)
-                * Affine::translate((text.position.x, text.position.y))
+                * Affine::translate((render_position.x, render_position.y))
         } else {
-            transform * Affine::translate((text.position.x, text.position.y))
+            transform * Affine::translate((render_position.x, render_position.y))
         };
-        
-        // IMPORTANT: First compute the layout - this must happen before cursor/selection geometry
-        let layout = edit_state.editor_mut().layout(&mut self.font_cx, &mut self.layout_cx);
         
         // Render glyphs first (text content)
         for line in layout.lines() {
@@ -869,6 +894,33 @@ impl VelloRenderer {
                 );
             }
         }
+    }
+
+    /// DEBUG: Render anchor point visualization
+    pub fn render_debug_anchor(&mut self, anchor: Point, transform: Affine) {
+        let size = 10.0 / self.zoom;
+        // Red cross at anchor position
+        let mut path = BezPath::new();
+        path.move_to(Point::new(anchor.x - size, anchor.y));
+        path.line_to(Point::new(anchor.x + size, anchor.y));
+        path.move_to(Point::new(anchor.x, anchor.y - size));
+        path.line_to(Point::new(anchor.x, anchor.y + size));
+        self.scene.stroke(
+            &Stroke::new(2.0 / self.zoom),
+            transform,
+            Color::from_rgba8(255, 0, 0, 255),
+            None,
+            &path,
+        );
+        // Red circle
+        let circle = kurbo::Circle::new(anchor, size / 2.0);
+        self.scene.stroke(
+            &Stroke::new(2.0 / self.zoom),
+            transform,
+            Color::from_rgba8(255, 0, 0, 255),
+            None,
+            &circle,
+        );
     }
 
     /// Render shape-specific selection handles.

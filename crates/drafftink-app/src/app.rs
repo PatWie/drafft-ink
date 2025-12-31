@@ -2820,7 +2820,7 @@ impl ApplicationHandler for App {
                         // Update cursor blinking
                         if let Some(edit_state) = &mut state.text_edit_state {
                             edit_state.cursor_blink();
-                            state.shape_renderer.render_text_editing(text, edit_state, camera_transform);
+                            state.shape_renderer.render_text_editing(text, edit_state, camera_transform, state.event_handler.text_edit_anchor);
                         }
                     }
                 }

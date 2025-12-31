@@ -6,7 +6,7 @@ use drafftink_core::input::InputState;
 use drafftink_core::selection::{
     apply_manipulation, apply_rotation, get_handles, get_manipulation_target_position, hit_test_handles, hit_test_boundary, ManipulationState, MultiMoveState, HANDLE_HIT_TOLERANCE,
 };
-use drafftink_core::shapes::{Freehand, Shape, ShapeId, ShapeStyle, Text};
+use drafftink_core::shapes::{Freehand, Shape, ShapeId, ShapeStyle, ShapeTrait, Text};
 use drafftink_core::selection::{Corner, HandleKind};
 use drafftink_core::snap::{snap_line_endpoint_isometric, snap_point_with_shapes, get_snap_targets_from_bounds, get_snap_targets_from_line, AngleSnapResult, SnapMode, SnapResult, SnapTarget, GRID_SIZE};
 use drafftink_core::tools::ToolKind;
@@ -99,8 +99,10 @@ pub struct EventHandler {
     selection_rect: Option<SelectionRect>,
     /// Shape ID being edited (for text editing).
     pub editing_text: Option<ShapeId>,
-    /// Original center of text when editing started (for preserving visual position on rotated text).
-    text_edit_original_center: Option<Point>,
+    /// Original top-left handle position when editing started.
+    pub text_edit_anchor: Option<Point>,
+    /// Original size (width, height) when editing started.
+    text_edit_size: Option<(f64, f64)>,
     /// Last snap result (for rendering snap guides).
     pub last_snap: Option<SnapResult>,
     /// Last angle snap result (for rendering angle guides).
@@ -132,7 +134,8 @@ impl EventHandler {
             multi_move: None,
             selection_rect: None,
             editing_text: None,
-            text_edit_original_center: None,
+            text_edit_anchor: None,
+            text_edit_size: None,
             last_snap: None,
             last_angle_snap: None,
             line_start_point: None,
@@ -204,15 +207,17 @@ impl EventHandler {
 
     /// Enter text editing mode for a shape.
     /// This updates both the local state and the Canvas's WidgetManager.
-    /// Stores the top-left handle position to preserve it after editing.
+    /// Stores the top-left handle position and size to preserve anchor after editing.
     pub fn enter_text_edit(&mut self, canvas: &mut Canvas, id: ShapeId) {
-        // Store the actual top-left handle position
-        self.text_edit_original_center = canvas.document.get_shape(id)
-            .and_then(|shape| {
-                get_handles(shape).into_iter()
-                    .find(|h| matches!(h.kind, HandleKind::Corner(Corner::TopLeft)))
-                    .map(|h| h.position)
-            });
+        if let Some(shape) = canvas.document.get_shape(id) {
+            // Store the actual top-left handle position
+            self.text_edit_anchor = get_handles(shape).into_iter()
+                .find(|h| matches!(h.kind, HandleKind::Corner(Corner::TopLeft)))
+                .map(|h| h.position);
+            // Store the current bounds size
+            let bounds = shape.bounds();
+            self.text_edit_size = Some((bounds.width(), bounds.height()));
+        }
         self.editing_text = Some(id);
         canvas.enter_text_editing(id);
     }
@@ -220,7 +225,7 @@ impl EventHandler {
     /// Exit text editing mode.
     /// This updates both the local state and the Canvas's WidgetManager.
     /// If the text is empty, the shape is deleted.
-    /// Preserves top-left handle position for rotated text.
+    /// Preserves top-left handle position using current size.
     pub fn exit_text_edit(&mut self, canvas: &mut Canvas) {
         if let Some(id) = self.editing_text {
             let should_delete = canvas.document.get_shape(id)
@@ -235,25 +240,30 @@ impl EventHandler {
             
             if should_delete {
                 canvas.remove_shape(id);
-            } else if let Some(target_tl) = self.text_edit_original_center {
-                // Get current top-left handle position and adjust
-                if let Some(shape) = canvas.document.get_shape(id) {
-                    if let Some(current_tl) = get_handles(shape).into_iter()
-                        .find(|h| matches!(h.kind, HandleKind::Corner(Corner::TopLeft)))
-                        .map(|h| h.position)
-                    {
-                        let offset = target_tl - current_tl;
-                        if let Some(Shape::Text(text)) = canvas.document.get_shape_mut(id) {
-                            text.position.x += offset.x;
-                            text.position.y += offset.y;
-                        }
+            } else if let Some(anchor) = self.text_edit_anchor {
+                // Update position to keep anchor fixed with current size
+                if let Some(Shape::Text(text)) = canvas.document.get_shape_mut(id) {
+                    let bounds = text.bounds();
+                    let half_w = bounds.width() / 2.0;
+                    let half_h = bounds.height() / 2.0;
+                    let rotation = text.rotation;
+                    
+                    if rotation.abs() > 0.001 {
+                        let cos_r = rotation.cos();
+                        let sin_r = rotation.sin();
+                        let rot_x = -half_w * cos_r + half_h * sin_r;
+                        let rot_y = -half_w * sin_r - half_h * cos_r;
+                        text.position = Point::new(anchor.x - half_w - rot_x, anchor.y - half_h - rot_y);
+                    } else {
+                        text.position = anchor;
                     }
                 }
             }
         }
         
         self.editing_text = None;
-        self.text_edit_original_center = None;
+        self.text_edit_anchor = None;
+        self.text_edit_size = None;
         canvas.exit_text_editing();
     }
 
