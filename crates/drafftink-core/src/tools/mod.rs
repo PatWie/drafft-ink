@@ -70,12 +70,20 @@ pub struct ToolManager {
     pub state: ToolState,
     /// Accumulated points for freehand drawing.
     freehand_points: Vec<Point>,
+    /// Accumulated pressure values for freehand drawing.
+    freehand_pressures: Vec<f64>,
+    /// Last point timestamp for velocity calculation.
+    last_point_time: Option<std::time::Instant>,
+    /// Last point position for velocity calculation.
+    last_point_pos: Option<Point>,
     /// Current style to apply to new shapes.
     pub current_style: ShapeStyle,
     /// Corner radius for new rectangles (0 = sharp corners).
     pub corner_radius: f64,
     /// Calligraphy mode for freehand (MSD smoothing).
     pub calligraphy_mode: bool,
+    /// Pressure simulation mode (varies width based on speed).
+    pub pressure_simulation: bool,
     /// MSD brush position (mass position).
     msd_pos: Point,
     /// MSD brush velocity.
@@ -97,9 +105,13 @@ impl ToolManager {
     /// Begin a tool interaction.
     pub fn begin(&mut self, point: Point) {
         // Clear and start freehand points if using freehand tool
-        if self.current_tool == ToolKind::Freehand {
+        if self.current_tool == ToolKind::Freehand || self.current_tool == ToolKind::Highlighter {
             self.freehand_points.clear();
+            self.freehand_pressures.clear();
             self.freehand_points.push(point);
+            self.freehand_pressures.push(1.0); // Start with full pressure
+            self.last_point_time = Some(std::time::Instant::now());
+            self.last_point_pos = Some(point);
             // Initialize MSD state
             self.msd_pos = point;
             self.msd_vel = Point::ZERO;
@@ -119,7 +131,7 @@ impl ToolManager {
             *current = point;
             
             // Accumulate points for freehand
-            if self.current_tool == ToolKind::Freehand {
+            if self.current_tool == ToolKind::Freehand || self.current_tool == ToolKind::Highlighter {
                 if self.calligraphy_mode {
                     // MSD simulation: brush follows mouse with inertia
                     const M: f64 = 0.5;   // Mass
@@ -143,14 +155,50 @@ impl ToolManager {
                     if let Some(last) = self.freehand_points.last() {
                         let dist = ((self.msd_pos.x - last.x).powi(2) + (self.msd_pos.y - last.y).powi(2)).sqrt();
                         if dist > 2.0 {
+                            let pressure = self.compute_pressure(self.msd_pos);
                             self.freehand_points.push(self.msd_pos);
+                            self.freehand_pressures.push(pressure);
                         }
                     }
                 } else {
+                    let pressure = self.compute_pressure(point);
                     self.freehand_points.push(point);
+                    self.freehand_pressures.push(pressure);
                 }
             }
         }
+    }
+
+    /// Compute pressure based on drawing velocity.
+    /// Fast movement = low pressure (thin line), slow movement = high pressure (thick line).
+    fn compute_pressure(&mut self, point: Point) -> f64 {
+        if !self.pressure_simulation {
+            return 1.0;
+        }
+
+        let now = std::time::Instant::now();
+        let pressure = if let (Some(last_time), Some(last_pos)) = (self.last_point_time, self.last_point_pos) {
+            let dt = now.duration_since(last_time).as_secs_f64();
+            if dt > 0.0 {
+                let dist = ((point.x - last_pos.x).powi(2) + (point.y - last_pos.y).powi(2)).sqrt();
+                let velocity = dist / dt;
+                
+                // Map velocity to pressure: slow = high pressure, fast = low pressure
+                // Typical drawing velocity range: 0-2000 pixels/second
+                // Use exponential decay for natural feel
+                let normalized_velocity = (velocity / 800.0).min(3.0);
+                let pressure = (-normalized_velocity).exp();
+                pressure.clamp(0.2, 1.0) // Keep minimum pressure at 20%
+            } else {
+                1.0
+            }
+        } else {
+            1.0
+        };
+
+        self.last_point_time = Some(now);
+        self.last_point_pos = Some(point);
+        pressure
     }
 
     /// End the current interaction and return any created shape.
@@ -171,6 +219,9 @@ impl ToolManager {
     pub fn cancel(&mut self) {
         self.state = ToolState::Idle;
         self.freehand_points.clear();
+        self.freehand_pressures.clear();
+        self.last_point_time = None;
+        self.last_point_pos = None;
     }
 
     /// Check if a tool interaction is active.
@@ -181,8 +232,8 @@ impl ToolManager {
     /// Get the preview shape for the current interaction.
     pub fn preview_shape(&self) -> Option<Shape> {
         if let ToolState::Active { start, current, seed, .. } = &self.state {
-            // For freehand, use the accumulated points
-            if self.current_tool == ToolKind::Freehand {
+            // For freehand/highlighter, use the accumulated points
+            if self.current_tool == ToolKind::Freehand || self.current_tool == ToolKind::Highlighter {
                 return self.create_freehand_preview(*seed);
             }
             self.create_shape_with_seed(*start, *current, *seed)
@@ -196,7 +247,14 @@ impl ToolManager {
         use crate::shapes::Freehand;
         
         if self.freehand_points.len() >= 2 {
-            let mut freehand = Freehand::from_points(self.freehand_points.clone());
+            let mut freehand = if self.pressure_simulation && !self.freehand_pressures.is_empty() {
+                Freehand::from_points_with_pressure(
+                    self.freehand_points.clone(),
+                    self.freehand_pressures.clone(),
+                )
+            } else {
+                Freehand::from_points(self.freehand_points.clone())
+            };
             freehand.style = self.current_style.clone();
             freehand.style.seed = seed;
             Some(Shape::Freehand(freehand))
@@ -208,6 +266,11 @@ impl ToolManager {
     /// Get the accumulated freehand points (for final shape creation).
     pub fn freehand_points(&self) -> &[Point] {
         &self.freehand_points
+    }
+
+    /// Get the accumulated freehand pressure values.
+    pub fn freehand_pressures(&self) -> &[f64] {
+        &self.freehand_pressures
     }
 
     /// Create a shape from start and end points with a specific seed.

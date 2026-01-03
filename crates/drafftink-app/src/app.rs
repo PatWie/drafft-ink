@@ -1872,6 +1872,7 @@ impl ApplicationHandler for App {
                         current_tool,
                         &state.ui_state,
                         state.canvas.tool_manager.calligraphy_mode,
+                        state.canvas.tool_manager.pressure_simulation,
                     );
                 }
                 
@@ -2676,6 +2677,10 @@ impl ApplicationHandler for App {
                             UiAction::ToggleCalligraphy => {
                                 state.canvas.tool_manager.calligraphy_mode = !state.canvas.tool_manager.calligraphy_mode;
                                 log::info!("Calligraphy mode: {}", state.canvas.tool_manager.calligraphy_mode);
+                            }
+                            UiAction::TogglePressureSimulation => {
+                                state.canvas.tool_manager.pressure_simulation = !state.canvas.tool_manager.pressure_simulation;
+                                log::info!("Pressure simulation: {}", state.canvas.tool_manager.pressure_simulation);
                             }
                         }
                     }

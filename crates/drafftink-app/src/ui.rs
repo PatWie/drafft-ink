@@ -59,6 +59,8 @@ pub struct SelectedShapeProps {
     pub tool_is_rectangle: bool,
     /// Calligraphy mode for freehand.
     pub calligraphy_mode: bool,
+    /// Pressure simulation mode for freehand.
+    pub pressure_simulation: bool,
 }
 
 impl SelectedShapeProps {
@@ -128,15 +130,16 @@ impl SelectedShapeProps {
     }
     
     /// Create props for drawing tool mode (no selection, configuring new shapes).
-    pub fn for_tool(tool: drafftink_core::tools::ToolKind, ui_state: &UiState, calligraphy: bool) -> Self {
+    pub fn for_tool(tool: drafftink_core::tools::ToolKind, ui_state: &UiState, calligraphy: bool, pressure_sim: bool) -> Self {
         use drafftink_core::tools::ToolKind;
         Self {
             is_drawing_tool: true,
             tool_is_rectangle: tool == ToolKind::Rectangle,
             is_line: tool == ToolKind::Line,
             is_arrow: tool == ToolKind::Arrow,
-            is_freehand: tool == ToolKind::Freehand,
+            is_freehand: tool == ToolKind::Freehand || tool == ToolKind::Highlighter,
             calligraphy_mode: calligraphy,
+            pressure_simulation: pressure_sim,
             sloppiness: ui_state.sloppiness as u8,
             fill_pattern: ui_state.fill_pattern as u8,
             has_fill: ui_state.fill_color.is_some(),
@@ -453,6 +456,8 @@ pub enum UiAction {
     ShowShortcuts,
     /// Toggle calligraphy mode for freehand tool.
     ToggleCalligraphy,
+    /// Toggle pressure simulation for freehand tool.
+    TogglePressureSimulation,
 }
 
 /// Tool definitions with SVG icons
@@ -1303,6 +1308,18 @@ fn render_right_panel(ctx: &Context, props: &SelectedShapeProps) -> Option<UiAct
                                 }
                                 if ToggleButton::new("Calligraphy", props.calligraphy_mode).show(ui) && !props.calligraphy_mode {
                                     action = Some(UiAction::ToggleCalligraphy);
+                                }
+                            });
+                            
+                            // Pressure simulation toggle
+                            ui.add_space(4.0);
+                            ui.horizontal(|ui| {
+                                ui.spacing_mut().item_spacing = Vec2::new(4.0, 0.0);
+                                if ToggleButton::new("Uniform", !props.pressure_simulation).show(ui) && props.pressure_simulation {
+                                    action = Some(UiAction::TogglePressureSimulation);
+                                }
+                                if ToggleButton::new("Pressure", props.pressure_simulation).show(ui) && !props.pressure_simulation {
+                                    action = Some(UiAction::TogglePressureSimulation);
                                 }
                             });
                         }

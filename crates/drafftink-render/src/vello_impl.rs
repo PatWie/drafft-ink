@@ -535,6 +535,82 @@ impl VelloRenderer {
         }
     }
 
+    /// Render a freehand shape with variable width based on pressure.
+    fn render_freehand_with_pressure(&mut self, freehand: &drafftink_core::shapes::Freehand, transform: Affine) {
+        use kurbo::Vec2;
+        
+        if freehand.points.len() < 2 {
+            return;
+        }
+
+        let style = &freehand.style;
+        let base_width = style.stroke_width;
+        let color = style.stroke();
+
+        // Build a filled polygon that represents the variable-width stroke
+        let mut left_points: Vec<Point> = Vec::new();
+        let mut right_points: Vec<Point> = Vec::new();
+
+        for i in 0..freehand.points.len() {
+            let point = freehand.points[i];
+            let pressure = freehand.pressure_at(i);
+            let width = base_width * pressure;
+
+            // Calculate perpendicular direction
+            let dir = if i == 0 {
+                // First point: use direction to next point
+                let next = freehand.points[i + 1];
+                Vec2::new(next.x - point.x, next.y - point.y)
+            } else if i == freehand.points.len() - 1 {
+                // Last point: use direction from previous point
+                let prev = freehand.points[i - 1];
+                Vec2::new(point.x - prev.x, point.y - prev.y)
+            } else {
+                // Middle points: average of incoming and outgoing directions
+                let prev = freehand.points[i - 1];
+                let next = freehand.points[i + 1];
+                Vec2::new(next.x - prev.x, next.y - prev.y)
+            };
+
+            let len = dir.hypot();
+            if len < f64::EPSILON {
+                continue;
+            }
+
+            // Perpendicular unit vector
+            let perp = Vec2::new(-dir.y / len, dir.x / len);
+            let half_width = width / 2.0;
+
+            left_points.push(Point::new(
+                point.x + perp.x * half_width,
+                point.y + perp.y * half_width,
+            ));
+            right_points.push(Point::new(
+                point.x - perp.x * half_width,
+                point.y - perp.y * half_width,
+            ));
+        }
+
+        if left_points.is_empty() {
+            return;
+        }
+
+        // Build the path: left side forward, right side backward
+        let mut path = BezPath::new();
+        path.move_to(left_points[0]);
+        for point in left_points.iter().skip(1) {
+            path.line_to(*point);
+        }
+        // Connect to right side (reversed)
+        for point in right_points.iter().rev() {
+            path.line_to(*point);
+        }
+        path.close_path();
+
+        // Fill the path
+        self.scene.fill(Fill::NonZero, transform, color, None, &path);
+    }
+
     /// Render a text shape using Parley for proper text layout.
     fn render_text(&mut self, text: &drafftink_core::shapes::Text, transform: Affine) {
         use parley::layout::PositionedLayoutItem;
@@ -1737,6 +1813,15 @@ impl ShapeRenderer for VelloRenderer {
                 // Lines and arrows have no fill
                 let path = shape.to_path();
                 self.render_stroke_only(&path, shape.style(), shape_transform);
+            }
+            Shape::Freehand(freehand) => {
+                // Freehand with pressure support
+                if freehand.has_pressure() {
+                    self.render_freehand_with_pressure(freehand, shape_transform);
+                } else {
+                    let path = shape.to_path();
+                    self.render_stroke_only(&path, shape.style(), shape_transform);
+                }
             }
             _ => {
                 let path = shape.to_path();
