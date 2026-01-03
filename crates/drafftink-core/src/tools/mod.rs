@@ -34,7 +34,10 @@ pub enum ToolKind {
     Line,
     Arrow,
     Freehand,
+    Highlighter,
+    Eraser,
     Text,
+    LaserPointer,
 }
 
 /// State of a tool interaction.
@@ -228,15 +231,15 @@ impl ToolManager {
             }
             ToolKind::Line => Some(Shape::Line(Line::new(start, end))),
             ToolKind::Arrow => Some(Shape::Arrow(Arrow::new(start, end))),
-            ToolKind::Freehand => {
-                // Use accumulated points for freehand
+            ToolKind::Freehand | ToolKind::Highlighter => {
+                // Use accumulated points for freehand/highlighter
                 return self.create_freehand_preview(seed);
             }
             ToolKind::Text => {
                 // Text is created at the click position with empty content
                 Some(Shape::Text(Text::new(start, String::new())))
             }
-            ToolKind::Select | ToolKind::Pan => None,
+            ToolKind::Select | ToolKind::Pan | ToolKind::Eraser | ToolKind::LaserPointer => None,
         };
         
         // Apply current style to the shape with the stable seed

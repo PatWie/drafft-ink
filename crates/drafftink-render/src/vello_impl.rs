@@ -1178,6 +1178,16 @@ impl Renderer for VelloRenderer {
         if let Some(ref rotation_info) = ctx.rotation_info {
             self.render_rotation_guides(rotation_info, camera_transform);
         }
+
+        // Draw eraser cursor
+        if let Some((pos, radius)) = ctx.eraser_cursor {
+            self.render_eraser_cursor(pos, radius, camera_transform);
+        }
+
+        // Draw laser pointer
+        if let Some((pos, ref trail)) = ctx.laser_pointer {
+            self.render_laser_pointer(pos, trail, camera_transform);
+        }
     }
 }
 
@@ -1464,6 +1474,48 @@ impl VelloRenderer {
             None,
             &path,
         );
+    }
+
+    /// Render eraser cursor (circle showing eraser radius).
+    fn render_eraser_cursor(&mut self, pos: Point, radius: f64, transform: Affine) {
+        let circle = kurbo::Circle::new(pos, radius);
+        
+        // Semi-transparent fill
+        let fill_color = Color::from_rgba8(255, 100, 100, 50);
+        self.scene.fill(Fill::NonZero, transform, fill_color, None, &circle);
+        
+        // Stroke
+        let stroke_width = 2.0 / self.zoom;
+        let stroke_color = Color::from_rgba8(200, 50, 50, 200);
+        self.scene.stroke(&Stroke::new(stroke_width), transform, stroke_color, None, &circle);
+    }
+
+    /// Render laser pointer with trail.
+    fn render_laser_pointer(&mut self, pos: Point, trail: &[(Point, f64)], transform: Affine) {
+        // Draw trail with fading effect
+        for (point, alpha) in trail {
+            let a = (*alpha * 255.0) as u8;
+            let color = Color::from_rgba8(255, 0, 0, a);
+            let radius = 4.0 / self.zoom * *alpha;
+            let circle = kurbo::Circle::new(*point, radius);
+            self.scene.fill(Fill::NonZero, transform, color, None, &circle);
+        }
+        
+        // Draw main pointer (bright red dot with glow)
+        let glow_radius = 12.0 / self.zoom;
+        let glow_color = Color::from_rgba8(255, 0, 0, 100);
+        let glow = kurbo::Circle::new(pos, glow_radius);
+        self.scene.fill(Fill::NonZero, transform, glow_color, None, &glow);
+        
+        let main_radius = 6.0 / self.zoom;
+        let main_color = Color::from_rgba8(255, 50, 50, 255);
+        let main = kurbo::Circle::new(pos, main_radius);
+        self.scene.fill(Fill::NonZero, transform, main_color, None, &main);
+        
+        // White center
+        let center_radius = 2.0 / self.zoom;
+        let center = kurbo::Circle::new(pos, center_radius);
+        self.scene.fill(Fill::NonZero, transform, Color::WHITE, None, &center);
     }
 }
 

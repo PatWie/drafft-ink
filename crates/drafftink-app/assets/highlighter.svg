@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <!-- Highlighter icon - thick marker pen -->
+  <path d="M128 384L64 448L96 480L160 416" fill="none" stroke="white" stroke-width="32" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M160 416L384 192L448 256L224 480Z" fill="none" stroke="white" stroke-width="32" stroke-linecap="round" stroke-linejoin="round"/>
+  <line x1="384" y1="192" x2="448" y2="128" stroke="white" stroke-width="32" stroke-linecap="round"/>
+</svg>

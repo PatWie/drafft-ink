@@ -112,6 +112,10 @@ pub struct RenderContext<'a> {
     pub nearby_snap_targets: Vec<SnapTarget>,
     /// Rotation visualization info (for rotation helper lines).
     pub rotation_info: Option<RotationInfo>,
+    /// Eraser cursor position and radius.
+    pub eraser_cursor: Option<(kurbo::Point, f64)>,
+    /// Laser pointer position and trail.
+    pub laser_pointer: Option<(kurbo::Point, Vec<(kurbo::Point, f64)>)>,
 }
 
 impl<'a> RenderContext<'a> {
@@ -130,6 +134,8 @@ impl<'a> RenderContext<'a> {
             angle_snap_info: None,
             nearby_snap_targets: Vec::new(),
             rotation_info: None,
+            eraser_cursor: None,
+            laser_pointer: None,
         }
     }
 
@@ -184,6 +190,18 @@ impl<'a> RenderContext<'a> {
     /// Set rotation info for rendering rotation helper lines.
     pub fn with_rotation_info(mut self, info: Option<RotationInfo>) -> Self {
         self.rotation_info = info;
+        self
+    }
+
+    /// Set eraser cursor position and radius.
+    pub fn with_eraser_cursor(mut self, cursor: Option<(kurbo::Point, f64)>) -> Self {
+        self.eraser_cursor = cursor;
+        self
+    }
+
+    /// Set laser pointer position and trail.
+    pub fn with_laser_pointer(mut self, pointer: Option<(kurbo::Point, Vec<(kurbo::Point, f64)>)>) -> Self {
+        self.laser_pointer = pointer;
         self
     }
 }

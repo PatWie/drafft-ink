@@ -1694,6 +1694,9 @@ impl ApplicationHandler for App {
             }
 
             WindowEvent::RedrawRequested => {
+                // Update laser trail (fade out)
+                state.event_handler.update_laser_trail(1.0 / 60.0);
+                
                 // Check for pending document from async file load (WASM)
                 #[cfg(target_arch = "wasm32")]
                 if let Some(doc) = file_ops::take_pending_document() {
@@ -1861,7 +1864,7 @@ impl ApplicationHandler for App {
                 let current_tool = state.canvas.tool_manager.current_tool;
                 let is_drawing_tool = matches!(
                     current_tool,
-                    ToolKind::Rectangle | ToolKind::Ellipse | ToolKind::Line | ToolKind::Arrow | ToolKind::Freehand
+                    ToolKind::Rectangle | ToolKind::Ellipse | ToolKind::Line | ToolKind::Arrow | ToolKind::Freehand | ToolKind::Highlighter
                 );
                 
                 if is_drawing_tool && !selected_props.has_selection {
@@ -2792,6 +2795,20 @@ impl ApplicationHandler for App {
                     }
                 });
 
+                // Get eraser cursor info
+                let eraser_cursor = if state.canvas.tool_manager.current_tool == ToolKind::Eraser {
+                    state.event_handler.eraser_path().last().map(|p| (*p, state.event_handler.eraser_radius))
+                } else {
+                    None
+                };
+
+                // Get laser pointer info
+                let laser_pointer = if state.canvas.tool_manager.current_tool == ToolKind::LaserPointer {
+                    state.event_handler.laser_position.map(|pos| (pos, state.event_handler.laser_trail.clone()))
+                } else {
+                    None
+                };
+
                 let render_ctx = RenderContext::new(&state.canvas, viewport_size)
                     .with_scale_factor(state.window.scale_factor())
                     .with_background(state.config.background_color)
@@ -2801,7 +2818,9 @@ impl ApplicationHandler for App {
                     .with_snap_point(snap_point)
                     .with_angle_snap(angle_snap_info)
                     .with_snap_targets(snap_targets)
-                    .with_rotation_info(rotation_info);
+                    .with_rotation_info(rotation_info)
+                    .with_eraser_cursor(eraser_cursor)
+                    .with_laser_pointer(laser_pointer);
 
                 state.shape_renderer.build_scene(&render_ctx);
                 
@@ -3778,6 +3797,21 @@ impl ApplicationHandler for App {
                                 "t" | "T" | "8" => {
                                     state.canvas.set_tool(ToolKind::Text);
                                     log::info!("Tool: Text");
+                                }
+                                // Eraser: E
+                                "e" | "E" => {
+                                    state.canvas.set_tool(ToolKind::Eraser);
+                                    log::info!("Tool: Eraser");
+                                }
+                                // Highlighter: G
+                                "g" | "G" => {
+                                    state.canvas.set_tool(ToolKind::Highlighter);
+                                    log::info!("Tool: Highlighter");
+                                }
+                                // Laser Pointer: Z
+                                "z" | "Z" => {
+                                    state.canvas.set_tool(ToolKind::LaserPointer);
+                                    log::info!("Tool: Laser Pointer");
                                 }
                                 "Delete" | "Backspace" => {
                                     if !state.canvas.selection.is_empty() {

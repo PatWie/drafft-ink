@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <!-- Laser pointer icon - dot with rays -->
+  <circle cx="256" cy="256" r="48" fill="white"/>
+  <line x1="256" y1="128" x2="256" y2="64" stroke="white" stroke-width="24" stroke-linecap="round"/>
+  <line x1="256" y1="384" x2="256" y2="448" stroke="white" stroke-width="24" stroke-linecap="round"/>
+  <line x1="128" y1="256" x2="64" y2="256" stroke="white" stroke-width="24" stroke-linecap="round"/>
+  <line x1="384" y1="256" x2="448" y2="256" stroke="white" stroke-width="24" stroke-linecap="round"/>
+</svg>

@@ -508,10 +508,28 @@ fn get_tools() -> Vec<Tool> {
             icon: include_image!("../assets/freehand.svg"),
         },
         Tool {
+            kind: ToolKind::Highlighter,
+            label: "Highlighter",
+            shortcut: "G",
+            icon: include_image!("../assets/highlighter.svg"),
+        },
+        Tool {
+            kind: ToolKind::Eraser,
+            label: "Eraser",
+            shortcut: "E",
+            icon: include_image!("../assets/eraser.svg"),
+        },
+        Tool {
             kind: ToolKind::Text,
             label: "Text",
             shortcut: "T / 8",
             icon: include_image!("../assets/text.svg"),
+        },
+        Tool {
+            kind: ToolKind::LaserPointer,
+            label: "Laser",
+            shortcut: "Z",
+            icon: include_image!("../assets/laser.svg"),
         },
     ]
 }

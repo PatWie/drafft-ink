@@ -113,6 +113,14 @@ pub struct EventHandler {
     pub current_snap_targets: Vec<SnapTarget>,
     /// Current rotation angle during rotation drag (for helper line rendering).
     pub rotation_state: Option<RotationState>,
+    /// Eraser path points for current stroke.
+    eraser_points: Vec<Point>,
+    /// Eraser radius for hit detection.
+    pub eraser_radius: f64,
+    /// Laser pointer position (for rendering).
+    pub laser_position: Option<Point>,
+    /// Laser pointer trail for fading effect.
+    pub laser_trail: Vec<(Point, f64)>,
 }
 
 /// State for rotation drag operation.
@@ -141,6 +149,10 @@ impl EventHandler {
             line_start_point: None,
             current_snap_targets: Vec::new(),
             rotation_state: None,
+            eraser_points: Vec::new(),
+            eraser_radius: 10.0,
+            laser_position: None,
+            laser_trail: Vec::new(),
         }
     }
 
@@ -480,9 +492,19 @@ impl EventHandler {
             ToolKind::Pan => {
                 // Pan is handled in mouse move
             }
-            ToolKind::Freehand => {
-                // Freehand doesn't snap - would be too jerky
+            ToolKind::Freehand | ToolKind::Highlighter => {
+                // Freehand/Highlighter doesn't snap - would be too jerky
                 canvas.tool_manager.begin(world_point);
+            }
+            ToolKind::Eraser => {
+                // Start eraser stroke
+                self.eraser_points.clear();
+                self.eraser_points.push(world_point);
+            }
+            ToolKind::LaserPointer => {
+                // Laser pointer just updates position
+                self.laser_position = Some(world_point);
+                self.laser_trail.push((world_point, 1.0));
             }
             ToolKind::Line | ToolKind::Arrow => {
                 // Start line/arrow drawing - snap start point if enabled
@@ -661,6 +683,31 @@ impl EventHandler {
                         .add_shape(Shape::Freehand(freehand));
                 }
                 canvas.tool_manager.cancel();
+            }
+            ToolKind::Highlighter => {
+                let points = canvas.tool_manager.freehand_points();
+                if points.len() >= 2 {
+                    let mut freehand = Freehand::from_points(points.to_vec());
+                    freehand.simplify(2.0);
+                    // Highlighter: wider stroke, semi-transparent
+                    freehand.style = current_style.clone();
+                    freehand.style.stroke_width = current_style.stroke_width.max(12.0);
+                    freehand.style.stroke_color.a = 128; // 50% opacity
+                    canvas.document.push_undo();
+                    canvas.document.add_shape(Shape::Freehand(freehand));
+                }
+                canvas.tool_manager.cancel();
+            }
+            ToolKind::Eraser => {
+                // Finalize eraser stroke - erase shapes that intersect
+                if !self.eraser_points.is_empty() {
+                    self.apply_eraser(canvas);
+                }
+                self.eraser_points.clear();
+            }
+            ToolKind::LaserPointer => {
+                // Laser pointer doesn't create anything, just clear position
+                // Trail will fade out over time
             }
             ToolKind::Text => {
                 // If we're already editing text, don't create new text
@@ -979,6 +1026,23 @@ impl EventHandler {
             return;
         }
 
+        // Handle eraser tool
+        if canvas.tool_manager.current_tool == ToolKind::Eraser && !self.eraser_points.is_empty() {
+            self.eraser_points.push(world_point);
+            return;
+        }
+
+        // Handle laser pointer tool
+        if canvas.tool_manager.current_tool == ToolKind::LaserPointer {
+            self.laser_position = Some(world_point);
+            self.laser_trail.push((world_point, 1.0));
+            // Keep trail limited
+            if self.laser_trail.len() > 50 {
+                self.laser_trail.remove(0);
+            }
+            return;
+        }
+
         // Update tool manager (handles freehand point accumulation internally)
         if canvas.tool_manager.is_active() {
             let tool = canvas.tool_manager.current_tool;
@@ -1018,8 +1082,8 @@ impl EventHandler {
                 }
             }
             
-            // Apply snapping for other shape creation tools (except freehand)
-            let point = if snap_mode.is_enabled() && tool != ToolKind::Freehand {
+            // Apply snapping for other shape creation tools (except freehand/highlighter)
+            let point = if snap_mode.is_enabled() && !matches!(tool, ToolKind::Freehand | ToolKind::Highlighter) {
                 let targets = collect_snap_targets(canvas, None);
                 let snap_result = snap_point_with_shapes(world_point, snap_mode, GRID_SIZE, &targets);
                 if snap_result.is_snapped() {
@@ -1039,6 +1103,150 @@ impl EventHandler {
         self.last_angle_snap = None;
         self.line_start_point = None;
     }
+
+    /// Apply eraser to shapes that intersect with the eraser path.
+    fn apply_eraser(&mut self, canvas: &mut Canvas) {
+        if self.eraser_points.len() < 2 {
+            return;
+        }
+
+        let radius = self.eraser_radius;
+        let mut shapes_to_remove: Vec<ShapeId> = Vec::new();
+        let mut shapes_to_add: Vec<Shape> = Vec::new();
+
+        // Check each freehand shape for intersection with eraser path
+        for shape in canvas.document.shapes_ordered() {
+            if let Shape::Freehand(freehand) = shape {
+                let result = self.erase_from_freehand(freehand, radius);
+                match result {
+                    EraseResult::Unchanged => {}
+                    EraseResult::Remove => {
+                        shapes_to_remove.push(freehand.id());
+                    }
+                    EraseResult::Split(new_shapes) => {
+                        shapes_to_remove.push(freehand.id());
+                        shapes_to_add.extend(new_shapes);
+                    }
+                }
+            }
+        }
+
+        // Apply changes
+        if !shapes_to_remove.is_empty() || !shapes_to_add.is_empty() {
+            canvas.document.push_undo();
+            for id in shapes_to_remove {
+                canvas.document.remove_shape(id);
+            }
+            for shape in shapes_to_add {
+                canvas.document.add_shape(shape);
+            }
+        }
+    }
+
+    /// Check if a freehand shape intersects with the eraser path and return the result.
+    fn erase_from_freehand(&self, freehand: &Freehand, radius: f64) -> EraseResult {
+        if freehand.points.len() < 2 {
+            return EraseResult::Unchanged;
+        }
+
+        // Find segments that are NOT erased (i.e., not within radius of eraser path)
+        let mut segments: Vec<Vec<Point>> = Vec::new();
+        let mut current_segment: Vec<Point> = Vec::new();
+
+        for point in &freehand.points {
+            let is_erased = self.point_near_eraser_path(*point, radius);
+            
+            if is_erased {
+                // End current segment if it has points
+                if current_segment.len() >= 2 {
+                    segments.push(std::mem::take(&mut current_segment));
+                } else {
+                    current_segment.clear();
+                }
+            } else {
+                current_segment.push(*point);
+            }
+        }
+
+        // Don't forget the last segment
+        if current_segment.len() >= 2 {
+            segments.push(current_segment);
+        }
+
+        // Determine result
+        if segments.is_empty() {
+            EraseResult::Remove
+        } else if segments.len() == 1 && segments[0].len() == freehand.points.len() {
+            EraseResult::Unchanged
+        } else {
+            // Create new freehand shapes from remaining segments
+            let new_shapes: Vec<Shape> = segments
+                .into_iter()
+                .map(|points| {
+                    let mut new_freehand = Freehand::from_points(points);
+                    new_freehand.style = freehand.style.clone();
+                    Shape::Freehand(new_freehand)
+                })
+                .collect();
+            EraseResult::Split(new_shapes)
+        }
+    }
+
+    /// Check if a point is within radius of the eraser path.
+    fn point_near_eraser_path(&self, point: Point, radius: f64) -> bool {
+        for window in self.eraser_points.windows(2) {
+            let start = window[0];
+            let end = window[1];
+            
+            // Distance from point to line segment
+            let line_vec = kurbo::Vec2::new(end.x - start.x, end.y - start.y);
+            let point_vec = kurbo::Vec2::new(point.x - start.x, point.y - start.y);
+            
+            let line_len_sq = line_vec.hypot2();
+            if line_len_sq < f64::EPSILON {
+                // Segment is a point
+                let dist = ((point.x - start.x).powi(2) + (point.y - start.y).powi(2)).sqrt();
+                if dist <= radius {
+                    return true;
+                }
+                continue;
+            }
+            
+            let t = (point_vec.dot(line_vec) / line_len_sq).clamp(0.0, 1.0);
+            let projection = Point::new(start.x + t * line_vec.x, start.y + t * line_vec.y);
+            let dist = ((point.x - projection.x).powi(2) + (point.y - projection.y).powi(2)).sqrt();
+            
+            if dist <= radius {
+                return true;
+            }
+        }
+        false
+    }
+
+    /// Update laser trail (fade out old points). Call each frame.
+    pub fn update_laser_trail(&mut self, dt: f64) {
+        // Fade out trail points
+        for (_, alpha) in &mut self.laser_trail {
+            *alpha -= dt * 3.0; // Fade over ~0.33 seconds
+        }
+        // Remove fully faded points
+        self.laser_trail.retain(|(_, alpha)| *alpha > 0.0);
+    }
+
+    /// Get the current eraser path for rendering.
+    pub fn eraser_path(&self) -> &[Point] {
+        &self.eraser_points
+    }
+}
+
+/// Result of erasing from a freehand shape.
+enum EraseResult {
+    /// Shape was not affected.
+    Unchanged,
+    /// Shape should be completely removed.
+    Remove,
+    /// Shape should be split into new shapes.
+    Split(Vec<Shape>),
 }
 
 impl Default for EventHandler {
