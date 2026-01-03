@@ -61,6 +61,8 @@ pub struct SelectedShapeProps {
     pub calligraphy_mode: bool,
     /// Pressure simulation mode for freehand.
     pub pressure_simulation: bool,
+    /// Shape opacity (0.0-1.0).
+    pub opacity: f32,
 }
 
 impl SelectedShapeProps {
@@ -74,6 +76,7 @@ impl SelectedShapeProps {
         let sloppiness = shape.style().sloppiness as u8;
         let fill_pattern = shape.style().fill_pattern as u8;
         let has_fill = shape.style().fill_color.is_some();
+        let opacity = shape.style().opacity as f32;
         
         match shape {
             Shape::Text(text) => Self {
@@ -86,6 +89,7 @@ impl SelectedShapeProps {
                 sloppiness,
                 fill_pattern,
                 has_fill,
+                opacity,
                 ..Default::default()
             },
             Shape::Rectangle(rect) => Self {
@@ -96,6 +100,7 @@ impl SelectedShapeProps {
                 sloppiness,
                 fill_pattern,
                 has_fill,
+                opacity,
                 ..Default::default()
             },
             Shape::Line(line) => Self {
@@ -106,6 +111,7 @@ impl SelectedShapeProps {
                 sloppiness,
                 fill_pattern,
                 has_fill,
+                opacity,
                 ..Default::default()
             },
             Shape::Arrow(arrow) => Self {
@@ -116,6 +122,7 @@ impl SelectedShapeProps {
                 sloppiness,
                 fill_pattern,
                 has_fill,
+                opacity,
                 ..Default::default()
             },
             _ => Self {
@@ -124,6 +131,7 @@ impl SelectedShapeProps {
                 sloppiness,
                 fill_pattern,
                 has_fill,
+                opacity,
                 ..Default::default()
             },
         }
@@ -462,6 +470,8 @@ pub enum UiAction {
     FlipHorizontal,
     /// Flip selected shapes vertically.
     FlipVertical,
+    /// Set opacity for selected shapes.
+    SetOpacity(f32),
 }
 
 /// Tool definitions with SVG icons
@@ -1368,6 +1378,22 @@ fn render_right_panel(ctx: &Context, props: &SelectedShapeProps) -> Option<UiAct
                                 if IconButton::new(include_image!("../assets/flip-v.svg"), "Flip Vertical").show(ui) {
                                     action = Some(UiAction::FlipVertical);
                                 }
+                            });
+                            
+                            // Opacity control
+                            ui.add_space(8.0);
+                            ui.label(egui::RichText::new("Opacity").size(11.0).color(Color32::from_gray(100)));
+                            ui.horizontal(|ui| {
+                                let mut opacity = props.opacity;
+                                let slider = egui::Slider::new(&mut opacity, 0.0..=1.0)
+                                    .show_value(false)
+                                    .custom_formatter(|v, _| format!("{}%", (v * 100.0) as i32));
+                                if ui.add(slider).changed() {
+                                    action = Some(UiAction::SetOpacity(opacity));
+                                }
+                                ui.label(egui::RichText::new(format!("{}%", (props.opacity * 100.0) as i32))
+                                    .size(11.0)
+                                    .color(Color32::from_gray(100)));
                             });
                             
                             // Alignment controls (only when 2+ shapes are selected)

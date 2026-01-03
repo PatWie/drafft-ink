@@ -311,6 +311,7 @@ impl CanvasDocument {
                 fill_pattern: FillPattern::default(),
                 sloppiness,
                 seed: elem.get("seed").and_then(|v| v.as_u64()).unwrap_or(0) as u32,
+                opacity: elem.get("opacity").and_then(|v| v.as_f64()).unwrap_or(1.0),
             };
             
             let shape: Option<Shape> = match elem_type {

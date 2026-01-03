@@ -227,6 +227,7 @@ fn style_to_loro(style: &ShapeStyle, map: &LoroMap) -> LoroResult<()> {
     map.insert(KEY_SLOPPINESS, sloppiness_to_i64(style.sloppiness))?;
     map.insert(KEY_SEED, style.seed as i64)?;
     map.insert(KEY_FILL_PATTERN, fill_pattern_to_i64(style.fill_pattern))?;
+    map.insert("opacity", style.opacity)?;
     
     if let Some(fill) = style.fill_color {
         map.insert(KEY_HAS_FILL, true)?;
@@ -416,6 +417,7 @@ fn style_from_loro(map: &LoroMapValue) -> Option<ShapeStyle> {
         fill_pattern,
         sloppiness,
         seed,
+        opacity: get_double(map, "opacity").unwrap_or(1.0),
     })
 }
 

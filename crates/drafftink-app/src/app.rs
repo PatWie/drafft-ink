@@ -2696,6 +2696,17 @@ impl ApplicationHandler for App {
                                     log::info!("Flipped selection vertically");
                                 }
                             }
+                            UiAction::SetOpacity(opacity) => {
+                                if !state.canvas.selection.is_empty() {
+                                    state.canvas.document.push_undo();
+                                    for &id in &state.canvas.selection {
+                                        if let Some(shape) = state.canvas.document.get_shape_mut(id) {
+                                            shape.style_mut().opacity = opacity as f64;
+                                        }
+                                    }
+                                    log::info!("Set opacity to {}%", (opacity * 100.0) as i32);
+                                }
+                            }
                         }
                     }
                 });

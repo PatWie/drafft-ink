@@ -448,7 +448,7 @@ impl VelloRenderer {
         let seed = style.seed;
         
         // Fill if present
-        if let Some(fill_color) = style.fill() {
+        if let Some(fill_color) = style.fill_with_opacity() {
             let fill_path = if roughness > 0.0 {
                 apply_hand_drawn_effect(path, roughness * 0.3, self.zoom, seed, 0)
             } else {
@@ -491,7 +491,7 @@ impl VelloRenderer {
             self.scene.stroke(
                 &stroke,
                 transform,
-                style.stroke(),
+                style.stroke_with_opacity(),
                 None,
                 &path1,
             );
@@ -501,7 +501,7 @@ impl VelloRenderer {
             self.scene.stroke(
                 &stroke,
                 transform,
-                style.stroke(),
+                style.stroke_with_opacity(),
                 None,
                 &path2,
             );
@@ -511,7 +511,7 @@ impl VelloRenderer {
             self.scene.stroke(
                 &stroke,
                 transform,
-                style.stroke(),
+                style.stroke_with_opacity(),
                 None,
                 path,
             );
@@ -526,12 +526,12 @@ impl VelloRenderer {
         if roughness > 0.0 {
             let stroke = Stroke::new(style.stroke_width);
             let path1 = apply_hand_drawn_effect(path, roughness, self.zoom, seed, 0);
-            self.scene.stroke(&stroke, transform, style.stroke(), None, &path1);
+            self.scene.stroke(&stroke, transform, style.stroke_with_opacity(), None, &path1);
             let path2 = apply_hand_drawn_effect(path, roughness, self.zoom, seed, 1);
-            self.scene.stroke(&stroke, transform, style.stroke(), None, &path2);
+            self.scene.stroke(&stroke, transform, style.stroke_with_opacity(), None, &path2);
         } else {
             let stroke = Stroke::new(style.stroke_width);
-            self.scene.stroke(&stroke, transform, style.stroke(), None, path);
+            self.scene.stroke(&stroke, transform, style.stroke_with_opacity(), None, path);
         }
     }
 
@@ -545,7 +545,7 @@ impl VelloRenderer {
 
         let style = &freehand.style;
         let base_width = style.stroke_width;
-        let color = style.stroke();
+        let color = style.stroke_with_opacity();
 
         // Build a filled polygon that represents the variable-width stroke
         let mut left_points: Vec<Point> = Vec::new();
@@ -632,7 +632,7 @@ impl VelloRenderer {
         use drafftink_core::shapes::{FontFamily, FontWeight};
         
         let style = &text.style;
-        let brush = Brush::Solid(style.stroke());
+        let brush = Brush::Solid(style.stroke_with_opacity());
         let font_size = text.font_size as f32;
         
         // Determine font name based on family and weight
@@ -820,7 +820,7 @@ impl VelloRenderer {
         use drafftink_core::shapes::{FontFamily as ShapeFontFamily, FontWeight};
         
         let style = &text.style;
-        let brush = Brush::Solid(style.stroke());
+        let brush = Brush::Solid(style.stroke_with_opacity());
         
         // Determine font name and parley weight based on family and weight
         // Use same logic as render_text - all Roboto variants use "Roboto" family with weight

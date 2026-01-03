@@ -157,6 +157,13 @@ pub struct ShapeStyle {
     /// Random seed for hand-drawn effect (ensures consistent rendering across transforms).
     #[serde(default = "generate_seed")]
     pub seed: u32,
+    /// Overall opacity (0.0 = fully transparent, 1.0 = fully opaque).
+    #[serde(default = "default_opacity")]
+    pub opacity: f64,
+}
+
+fn default_opacity() -> f64 {
+    1.0
 }
 
 /// Generate a random seed for new shapes.
@@ -187,9 +194,27 @@ impl ShapeStyle {
         self.stroke_color.into()
     }
 
+    /// Get the stroke color with opacity applied.
+    pub fn stroke_with_opacity(&self) -> Color {
+        let color: Color = self.stroke_color.into();
+        let rgba = color.to_rgba8();
+        let alpha = (rgba.a as f64 * self.opacity) as u8;
+        Color::from_rgba8(rgba.r, rgba.g, rgba.b, alpha)
+    }
+
     /// Get the fill color as a peniko Color.
     pub fn fill(&self) -> Option<Color> {
         self.fill_color.map(|c| c.into())
+    }
+
+    /// Get the fill color with opacity applied.
+    pub fn fill_with_opacity(&self) -> Option<Color> {
+        self.fill_color.map(|c| {
+            let color: Color = c.into();
+            let rgba = color.to_rgba8();
+            let alpha = (rgba.a as f64 * self.opacity) as u8;
+            Color::from_rgba8(rgba.r, rgba.g, rgba.b, alpha)
+        })
     }
 
     /// Set the stroke color from a peniko Color.
@@ -212,6 +237,7 @@ impl Default for ShapeStyle {
             fill_pattern: FillPattern::default(),
             sloppiness: Sloppiness::default(),
             seed: generate_seed(),
+            opacity: 1.0,
         }
     }
 }
