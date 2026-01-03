@@ -458,6 +458,10 @@ pub enum UiAction {
     ToggleCalligraphy,
     /// Toggle pressure simulation for freehand tool.
     TogglePressureSimulation,
+    /// Flip selected shapes horizontally.
+    FlipHorizontal,
+    /// Flip selected shapes vertically.
+    FlipVertical,
 }
 
 /// Tool definitions with SVG icons
@@ -1349,6 +1353,20 @@ fn render_right_panel(ctx: &Context, props: &SelectedShapeProps) -> Option<UiAct
                                 // Front (bring to topmost)
                                 if IconButton::new(include_image!("../assets/layer-front.svg"), "Bring to Front").show(ui) {
                                     action = Some(UiAction::BringToFront);
+                                }
+                            });
+                            
+                            // Flip/Mirror controls
+                            ui.add_space(8.0);
+                            ui.label(egui::RichText::new("Transform").size(11.0).color(Color32::from_gray(100)));
+                            ui.horizontal(|ui| {
+                                ui.spacing_mut().item_spacing = Vec2::new(4.0, 0.0);
+                                
+                                if IconButton::new(include_image!("../assets/flip-h.svg"), "Flip Horizontal").show(ui) {
+                                    action = Some(UiAction::FlipHorizontal);
+                                }
+                                if IconButton::new(include_image!("../assets/flip-v.svg"), "Flip Vertical").show(ui) {
+                                    action = Some(UiAction::FlipVertical);
                                 }
                             });
                             

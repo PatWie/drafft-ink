@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <!-- Flip horizontal icon -->
+  <path d="M128 128L64 256L128 384" fill="none" stroke="white" stroke-width="32" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M384 128L448 256L384 384" fill="none" stroke="white" stroke-width="32" stroke-linecap="round" stroke-linejoin="round"/>
+  <line x1="256" y1="96" x2="256" y2="416" stroke="white" stroke-width="24" stroke-linecap="round" stroke-dasharray="48,32"/>
+</svg>

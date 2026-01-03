@@ -644,6 +644,72 @@ impl Canvas {
         }
     }
 
+    /// Flip selected shapes horizontally (mirror around vertical axis).
+    pub fn flip_selected_horizontal(&mut self) {
+        if self.selection.is_empty() {
+            return;
+        }
+        
+        // Get combined bounds of all selected shapes
+        let mut combined_bounds: Option<kurbo::Rect> = None;
+        for &id in &self.selection {
+            if let Some(shape) = self.document.get_shape(id) {
+                let bounds = shape.bounds();
+                combined_bounds = Some(match combined_bounds {
+                    Some(cb) => cb.union(bounds),
+                    None => bounds,
+                });
+            }
+        }
+        
+        let Some(bounds) = combined_bounds else { return };
+        let center_x = bounds.center().x;
+        
+        // Flip each selected shape around the combined center
+        for &id in &self.selection {
+            if let Some(shape) = self.document.get_shape_mut(id) {
+                // Create flip transform: translate to origin, scale -1 on x, translate back
+                let flip = kurbo::Affine::translate(kurbo::Vec2::new(center_x, 0.0))
+                    * kurbo::Affine::scale_non_uniform(-1.0, 1.0)
+                    * kurbo::Affine::translate(kurbo::Vec2::new(-center_x, 0.0));
+                shape.transform(flip);
+            }
+        }
+    }
+
+    /// Flip selected shapes vertically (mirror around horizontal axis).
+    pub fn flip_selected_vertical(&mut self) {
+        if self.selection.is_empty() {
+            return;
+        }
+        
+        // Get combined bounds of all selected shapes
+        let mut combined_bounds: Option<kurbo::Rect> = None;
+        for &id in &self.selection {
+            if let Some(shape) = self.document.get_shape(id) {
+                let bounds = shape.bounds();
+                combined_bounds = Some(match combined_bounds {
+                    Some(cb) => cb.union(bounds),
+                    None => bounds,
+                });
+            }
+        }
+        
+        let Some(bounds) = combined_bounds else { return };
+        let center_y = bounds.center().y;
+        
+        // Flip each selected shape around the combined center
+        for &id in &self.selection {
+            if let Some(shape) = self.document.get_shape_mut(id) {
+                // Create flip transform: translate to origin, scale -1 on y, translate back
+                let flip = kurbo::Affine::translate(kurbo::Vec2::new(0.0, center_y))
+                    * kurbo::Affine::scale_non_uniform(1.0, -1.0)
+                    * kurbo::Affine::translate(kurbo::Vec2::new(0.0, -center_y));
+                shape.transform(flip);
+            }
+        }
+    }
+
     /// Remove a shape from the canvas.
     pub fn remove_shape(&mut self, id: ShapeId) {
         self.selection.retain(|&s| s != id);

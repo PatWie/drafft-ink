@@ -2682,6 +2682,20 @@ impl ApplicationHandler for App {
                                 state.canvas.tool_manager.pressure_simulation = !state.canvas.tool_manager.pressure_simulation;
                                 log::info!("Pressure simulation: {}", state.canvas.tool_manager.pressure_simulation);
                             }
+                            UiAction::FlipHorizontal => {
+                                if !state.canvas.selection.is_empty() {
+                                    state.canvas.document.push_undo();
+                                    state.canvas.flip_selected_horizontal();
+                                    log::info!("Flipped selection horizontally");
+                                }
+                            }
+                            UiAction::FlipVertical => {
+                                if !state.canvas.selection.is_empty() {
+                                    state.canvas.document.push_undo();
+                                    state.canvas.flip_selected_vertical();
+                                    log::info!("Flipped selection vertically");
+                                }
+                            }
                         }
                     }
                 });
