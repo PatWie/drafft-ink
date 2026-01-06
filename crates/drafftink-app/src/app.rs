@@ -3138,6 +3138,15 @@ impl ApplicationHandler for App {
                         // Pan with left mouse + pan tool
                         let delta = state.input.cursor_diff();
                         state.canvas.camera.pan(delta);
+                    } else if matches!(state.canvas.tool_manager.current_tool, ToolKind::Eraser | ToolKind::LaserPointer) {
+                        // Eraser and laser pointer handle their own drag
+                        state.event_handler.handle_drag(
+                            &mut state.canvas,
+                            world_point,
+                            &state.input,
+                            state.ui_state.snap_mode,
+                            state.ui_state.angle_snap_enabled,
+                        );
                     } else if state.canvas.tool_manager.is_active() {
                         // Drawing a new shape or freehand
                         state.event_handler.handle_drag(
