@@ -4,6 +4,12 @@ use crate::shapes::{Shape, ShapeStyle};
 use kurbo::Point;
 use serde::{Deserialize, Serialize};
 
+// Use web-time on WASM, std::time otherwise
+#[cfg(target_arch = "wasm32")]
+use web_time::Instant;
+#[cfg(not(target_arch = "wasm32"))]
+use std::time::Instant;
+
 /// Generate a random seed for new tool interactions.
 /// Uses a simple counter + hash approach that works on all platforms including WASM.
 fn generate_tool_seed() -> u32 {
@@ -62,7 +68,7 @@ pub enum ToolState {
 
 
 /// Manages the current tool and its state.
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 pub struct ToolManager {
     /// Currently selected tool.
     pub current_tool: ToolKind,
@@ -73,7 +79,7 @@ pub struct ToolManager {
     /// Accumulated pressure values for freehand drawing.
     freehand_pressures: Vec<f64>,
     /// Last point timestamp for velocity calculation.
-    last_point_time: Option<std::time::Instant>,
+    last_point_time: Option<Instant>,
     /// Last point position for velocity calculation.
     last_point_pos: Option<Point>,
     /// Current style to apply to new shapes.
@@ -88,6 +94,25 @@ pub struct ToolManager {
     msd_pos: Point,
     /// MSD brush velocity.
     msd_vel: Point,
+}
+
+impl Default for ToolManager {
+    fn default() -> Self {
+        Self {
+            current_tool: ToolKind::default(),
+            state: ToolState::default(),
+            freehand_points: Vec::new(),
+            freehand_pressures: Vec::new(),
+            last_point_time: None,
+            last_point_pos: None,
+            current_style: ShapeStyle::default(),
+            corner_radius: 0.0,
+            calligraphy_mode: false,
+            pressure_simulation: false,
+            msd_pos: Point::ZERO,
+            msd_vel: Point::ZERO,
+        }
+    }
 }
 
 impl ToolManager {
@@ -110,7 +135,7 @@ impl ToolManager {
             self.freehand_pressures.clear();
             self.freehand_points.push(point);
             self.freehand_pressures.push(1.0); // Start with full pressure
-            self.last_point_time = Some(std::time::Instant::now());
+            self.last_point_time = Some(Instant::now());
             self.last_point_pos = Some(point);
             // Initialize MSD state
             self.msd_pos = point;
@@ -176,7 +201,7 @@ impl ToolManager {
             return 1.0;
         }
 
-        let now = std::time::Instant::now();
+        let now = Instant::now();
         let pressure = if let (Some(last_time), Some(last_pos)) = (self.last_point_time, self.last_point_pos) {
             let dt = now.duration_since(last_time).as_secs_f64();
             if dt > 0.0 {
