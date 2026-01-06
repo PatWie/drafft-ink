@@ -82,6 +82,8 @@ pub struct ToolManager {
     last_point_time: Option<Instant>,
     /// Last point position for velocity calculation.
     last_point_pos: Option<Point>,
+    /// Smoothed pressure value (to avoid sudden jumps).
+    smoothed_pressure: f64,
     /// Current style to apply to new shapes.
     pub current_style: ShapeStyle,
     /// Corner radius for new rectangles (0 = sharp corners).
@@ -105,6 +107,7 @@ impl Default for ToolManager {
             freehand_pressures: Vec::new(),
             last_point_time: None,
             last_point_pos: None,
+            smoothed_pressure: 1.0,
             current_style: ShapeStyle::default(),
             corner_radius: 0.0,
             calligraphy_mode: false,
@@ -137,6 +140,7 @@ impl ToolManager {
             self.freehand_pressures.push(1.0); // Start with full pressure
             self.last_point_time = Some(Instant::now());
             self.last_point_pos = Some(point);
+            self.smoothed_pressure = 1.0;
             // Initialize MSD state
             self.msd_pos = point;
             self.msd_vel = Point::ZERO;
@@ -202,28 +206,31 @@ impl ToolManager {
         }
 
         let now = Instant::now();
-        let pressure = if let (Some(last_time), Some(last_pos)) = (self.last_point_time, self.last_point_pos) {
+        let raw_pressure = if let (Some(last_time), Some(last_pos)) = (self.last_point_time, self.last_point_pos) {
             let dt = now.duration_since(last_time).as_secs_f64();
-            if dt > 0.0 {
+            if dt > 0.001 { // Ignore very small time deltas
                 let dist = ((point.x - last_pos.x).powi(2) + (point.y - last_pos.y).powi(2)).sqrt();
                 let velocity = dist / dt;
                 
                 // Map velocity to pressure: slow = high pressure, fast = low pressure
-                // Typical drawing velocity range: 0-2000 pixels/second
-                // Use exponential decay for natural feel
                 let normalized_velocity = (velocity / 800.0).min(3.0);
                 let pressure = (-normalized_velocity).exp();
-                pressure.clamp(0.2, 1.0) // Keep minimum pressure at 20%
+                pressure.clamp(0.2, 1.0)
             } else {
-                1.0
+                self.smoothed_pressure // Keep previous value for tiny dt
             }
         } else {
             1.0
         };
 
+        // Smooth the pressure to avoid sudden jumps (exponential moving average)
+        // Only allow pressure to change gradually
+        const SMOOTHING: f64 = 0.3; // Lower = smoother
+        self.smoothed_pressure = self.smoothed_pressure * (1.0 - SMOOTHING) + raw_pressure * SMOOTHING;
+
         self.last_point_time = Some(now);
         self.last_point_pos = Some(point);
-        pressure
+        self.smoothed_pressure
     }
 
     /// End the current interaction and return any created shape.
