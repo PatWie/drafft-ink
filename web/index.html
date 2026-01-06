@@ -96,8 +96,8 @@
                     loaded += value.length;
                     
                     if (total > 0) {
-                        const percent = Math.round((loaded / total) * 100);
-                        loadingProgress.textContent = `${percent}% (${formatBytes(loaded)} / ${formatBytes(total)})`;
+                        const percent = Math.min(100, Math.round((loaded / total) * 100));
+                        loadingProgress.textContent = `${percent}%`;
                     } else {
                         loadingProgress.textContent = formatBytes(loaded);
                     }
