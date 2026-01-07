@@ -2187,6 +2187,15 @@ impl ApplicationHandler for App {
                                     }
                                 }
                             }
+                            UiAction::SetMathFontSize(size) => {
+                                use drafftink_core::shapes::Shape;
+                                for &shape_id in &state.canvas.selection.clone() {
+                                    if let Some(Shape::Math(math)) = state.canvas.document.get_shape_mut(shape_id) {
+                                        math.font_size = size as f64;
+                                        math.invalidate_cache();
+                                    }
+                                }
+                            }
                             UiAction::SetFontFamily(family_idx) => {
                                 use drafftink_core::shapes::{Shape, FontFamily};
                                 let family = match family_idx {

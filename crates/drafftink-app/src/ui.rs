@@ -32,6 +32,8 @@ pub struct SelectedShapeProps {
     pub selection_count: usize,
     /// Is the selected shape a text shape?
     pub is_text: bool,
+    /// Is the selected shape a math shape?
+    pub is_math: bool,
     /// Is the selected shape a rectangle?
     pub is_rectangle: bool,
     /// Is the selected shape a line?
@@ -132,6 +134,17 @@ impl SelectedShapeProps {
                 has_selection: true,
                 selection_count: count,
                 is_freehand: true,
+                sloppiness,
+                fill_pattern,
+                has_fill,
+                opacity,
+                ..Default::default()
+            },
+            Shape::Math(math) => Self {
+                has_selection: true,
+                selection_count: count,
+                is_math: true,
+                font_size: math.font_size as f32,
                 sloppiness,
                 fill_pattern,
                 has_fill,
@@ -412,6 +425,8 @@ pub enum UiAction {
     ToggleAngleSnap,
     /// Set font size for text shapes.
     SetFontSize(f32),
+    /// Set font size for math shapes.
+    SetMathFontSize(f32),
     /// Set font family for text shapes.
     SetFontFamily(u8), // 0 = GelPen, 1 = Roboto
     /// Set font weight for text shapes.
@@ -1235,6 +1250,34 @@ fn render_right_panel(ctx: &Context, props: &SelectedShapeProps) -> Option<UiAct
                                 let is_xlarge = (props.font_size - 36.0).abs() < 1.0;
                                 if FontSizeButton::new("XL", 36.0, is_xlarge).show(ui) {
                                     action = Some(UiAction::SetFontSize(36.0));
+                                }
+                            });
+                        }
+                        
+                        // Math-specific properties (font size only)
+                        if props.is_math {
+                            ui.label(egui::RichText::new("Font Size").size(11.0).color(Color32::from_gray(100)));
+                            ui.horizontal(|ui| {
+                                ui.spacing_mut().item_spacing = Vec2::new(4.0, 0.0);
+                                
+                                let is_small = (props.font_size - 16.0).abs() < 1.0;
+                                if FontSizeButton::new("S", 16.0, is_small).show(ui) {
+                                    action = Some(UiAction::SetMathFontSize(16.0));
+                                }
+                                
+                                let is_medium = (props.font_size - 20.0).abs() < 1.0;
+                                if FontSizeButton::new("M", 20.0, is_medium).show(ui) {
+                                    action = Some(UiAction::SetMathFontSize(20.0));
+                                }
+                                
+                                let is_large = (props.font_size - 28.0).abs() < 1.0;
+                                if FontSizeButton::new("L", 28.0, is_large).show(ui) {
+                                    action = Some(UiAction::SetMathFontSize(28.0));
+                                }
+                                
+                                let is_xlarge = (props.font_size - 36.0).abs() < 1.0;
+                                if FontSizeButton::new("XL", 36.0, is_xlarge).show(ui) {
+                                    action = Some(UiAction::SetMathFontSize(36.0));
                                 }
                             });
                         }
