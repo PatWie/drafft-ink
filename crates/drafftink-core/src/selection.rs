@@ -109,10 +109,16 @@ pub fn get_handles(shape: &Shape) -> Vec<Handle> {
             }
             handles
         }
-        Shape::Rectangle(_) | Shape::Ellipse(_) | Shape::Text(_) | Shape::Image(_) | Shape::Math(_) => {
+        Shape::Rectangle(_) | Shape::Ellipse(_) | Shape::Image(_) => {
             let bounds = shape.bounds();
             let rotation = shape.rotation();
             corner_and_rotate_handles(bounds, rotation)
+        }
+        Shape::Text(_) | Shape::Math(_) => {
+            // Text and Math only get rotation handle (no resize)
+            let bounds = shape.bounds();
+            let rotation = shape.rotation();
+            rotate_only_handle(bounds, rotation)
         }
         Shape::Freehand(_) => {
             // Freehand uses bounding box corners (no rotation)
@@ -176,6 +182,21 @@ fn corner_and_rotate_handles(bounds: Rect, rotation: f64) -> Vec<Handle> {
         Handle::new(rotate_point(half_w, half_h), HandleKind::Corner(Corner::BottomRight)),
         // Rotation handle: above top-center
         Handle::new(rotate_point(0.0, -half_h - ROTATE_HANDLE_OFFSET), HandleKind::Rotate),
+    ]
+}
+
+/// Generate only a rotation handle (no corner resize handles).
+fn rotate_only_handle(bounds: Rect, rotation: f64) -> Vec<Handle> {
+    let center = bounds.center();
+    let half_h = bounds.height() / 2.0;
+    let cos_r = rotation.cos();
+    let sin_r = rotation.sin();
+    let dy = -half_h - ROTATE_HANDLE_OFFSET;
+    vec![
+        Handle::new(
+            Point::new(center.x - dy * sin_r, center.y + dy * cos_r),
+            HandleKind::Rotate,
+        ),
     ]
 }
 

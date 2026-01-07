@@ -3944,8 +3944,8 @@ impl ApplicationHandler for App {
                                     state.canvas.set_tool(ToolKind::Eraser);
                                     log::info!("Tool: Eraser");
                                 }
-                                // Highlighter: G
-                                "g" | "G" => {
+                                // Highlighter: H
+                                "h" | "H" => {
                                     state.canvas.set_tool(ToolKind::Highlighter);
                                     log::info!("Tool: Highlighter");
                                 }

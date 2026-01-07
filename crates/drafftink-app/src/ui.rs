@@ -564,7 +564,7 @@ fn get_tools() -> Vec<Tool> {
         Tool {
             kind: ToolKind::Highlighter,
             label: "Highlighter",
-            shortcut: "G",
+            shortcut: "H",
             icon: include_image!("../assets/highlighter.svg"),
         },
         Tool {
