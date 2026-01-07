@@ -2764,9 +2764,7 @@ fn render_open_recent_dialog(ctx: &Context, ui_state: &mut UiState) -> Option<Ui
 
 /// Render the math equation editor dialog.
 fn render_math_editor(ctx: &Context, ui_state: &mut UiState) -> Option<UiAction> {
-    let Some((shape_id, latex_input)) = ui_state.math_editor.as_mut() else {
-        return None;
-    };
+    let (shape_id, latex_input) = ui_state.math_editor.as_mut()?;
     let shape_id = *shape_id;
     let mut action = None;
     let mut close = false;

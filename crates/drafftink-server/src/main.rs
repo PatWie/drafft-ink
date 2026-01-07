@@ -30,7 +30,6 @@ use tracing::{info, warn};
 use uuid::Uuid;
 
 /// Server configuration
-const MAX_ROOM_HISTORY: usize = 100;
 const CHANNEL_CAPACITY: usize = 256;
 
 /// A message sent between clients
@@ -135,15 +134,6 @@ impl AppState {
         Self {
             rooms: DashMap::new(),
         }
-    }
-
-    /// Get or create a room
-    fn get_or_create_room(&self, room_id: &str) -> broadcast::Sender<(String, ServerMessage)> {
-        self.rooms
-            .entry(room_id.to_string())
-            .or_insert_with(Room::new)
-            .tx
-            .clone()
     }
 
     /// Add peer to room

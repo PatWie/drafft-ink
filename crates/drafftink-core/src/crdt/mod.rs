@@ -64,7 +64,8 @@ mod tests {
             fill_color: Some(SerializableColor::new(0, 255, 0, 128)),
             fill_pattern: FillPattern::default(),
             sloppiness: Sloppiness::Artist,
-            seed: 12345, // Fixed seed for testing
+            seed: 12345,
+            opacity: 1.0,
         };
         let original = Shape::Rectangle(rect);
         let id = original.id();

@@ -1712,7 +1712,7 @@ impl VelloRenderer {
 
         // Dashed stroke for reference line
         let dash_pattern = [4.0 / self.zoom, 4.0 / self.zoom];
-        let dashed_stroke = Stroke::new(stroke_width).with_dashes(0.0, &dash_pattern);
+        let dashed_stroke = Stroke::new(stroke_width).with_dashes(0.0, dash_pattern);
         self.scene.stroke(
             &dashed_stroke,
             transform,
