@@ -10,6 +10,9 @@ use drafftink_core::sync::ConnectionState;
 use drafftink_core::tools::ToolKind;
 use drafftink_render::GridStyle;
 
+#[cfg(target_arch = "wasm32")]
+use crate::app::file_ops;
+
 // Re-export from widgets crate for consistent styling
 use drafftink_widgets::{
     ColorGrid, ColorSwatch, ColorSwatchWithWheel, FontSizeButton, IconButton, NoColorSwatch,
@@ -2394,7 +2397,29 @@ fn render_math_editor(ctx: &Context, ui_state: &mut UiState) -> Option<UiAction>
                         // Request focus on first frame
                         response.request_focus();
                         
-                        ui.add_space(8.0);
+                        ui.add_space(4.0);
+                        ui.horizontal(|ui| {
+                            if ui.small_button("Copy").clicked() {
+                                #[cfg(not(target_arch = "wasm32"))]
+                                if let Ok(mut cb) = arboard::Clipboard::new() {
+                                    let _ = cb.set_text(latex_input.as_str());
+                                }
+                                #[cfg(target_arch = "wasm32")]
+                                file_ops::copy_text_to_clipboard(latex_input);
+                            }
+                            if ui.small_button("Paste").clicked() {
+                                #[cfg(not(target_arch = "wasm32"))]
+                                if let Ok(mut cb) = arboard::Clipboard::new() {
+                                    if let Ok(text) = cb.get_text() {
+                                        *latex_input = text;
+                                    }
+                                }
+                                #[cfg(target_arch = "wasm32")]
+                                file_ops::request_clipboard_text_for_math();
+                            }
+                        });
+                        
+                        ui.add_space(4.0);
                         ui.label(egui::RichText::new("Examples: x^2, \\frac{a}{b}, \\sqrt{x}, \\sum_{i=1}^n").size(11.0).color(Color32::from_gray(120)));
                         
                         ui.add_space(16.0);

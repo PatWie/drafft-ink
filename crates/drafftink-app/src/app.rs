@@ -27,7 +27,7 @@ use crate::event_handler::EventHandler;
 use crate::ui::{render_ui, SelectedShapeProps, UiAction, UiState};
 
 #[cfg(feature = "native")]
-mod file_ops {
+pub mod file_ops {
     use drafftink_core::canvas::CanvasDocument;
 
     /// Save document to a JSON file using native file dialog.
@@ -197,7 +197,7 @@ mod file_ops {
 }
 
 #[cfg(target_arch = "wasm32")]
-mod file_ops {
+pub mod file_ops {
     use drafftink_core::canvas::CanvasDocument;
     use drafftink_core::storage::{IndexedDbStorage, Storage};
     use wasm_bindgen::prelude::*;
@@ -209,6 +209,7 @@ mod file_ops {
         static PENDING_DOCUMENT: RefCell<Option<CanvasDocument>> = const { RefCell::new(None) };
         static PENDING_DOCUMENT_LIST: RefCell<Option<Vec<String>>> = const { RefCell::new(None) };
         static PENDING_CLIPBOARD_TEXT: RefCell<Option<String>> = const { RefCell::new(None) };
+        static PENDING_MATH_CLIPBOARD: RefCell<Option<String>> = const { RefCell::new(None) };
     }
 
     /// Request clipboard text read (async). Result will be available via take_pending_clipboard_text().
@@ -220,6 +221,22 @@ mod file_ops {
                 });
             }
         });
+    }
+
+    /// Request clipboard text for math editor (async).
+    pub fn request_clipboard_text_for_math() {
+        wasm_bindgen_futures::spawn_local(async {
+            if let Some(text) = read_clipboard_text_async().await {
+                PENDING_MATH_CLIPBOARD.with(|cell| {
+                    *cell.borrow_mut() = Some(text);
+                });
+            }
+        });
+    }
+
+    /// Take pending math clipboard text if available.
+    pub fn take_pending_math_clipboard() -> Option<String> {
+        PENDING_MATH_CLIPBOARD.with(|cell| cell.borrow_mut().take())
     }
 
     /// Take pending clipboard text if available.
@@ -1773,6 +1790,14 @@ impl ApplicationHandler for App {
                                 text.content = new_text;
                             }
                         }
+                    }
+                }
+                
+                // Check for pending math clipboard paste (WASM async)
+                #[cfg(target_arch = "wasm32")]
+                if let Some(clipboard_text) = file_ops::take_pending_math_clipboard() {
+                    if let Some((_, ref mut latex)) = state.ui_state.math_editor {
+                        *latex = clipboard_text;
                     }
                 }
                 
