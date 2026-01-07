@@ -257,6 +257,15 @@ pub fn get_shape_handles(shape: &Shape) -> Vec<Handle> {
                 Handle::new(HandleKind::BottomRight, Point::new(bounds.x1, bounds.y1)),
             ]
         }
+        Shape::Math(m) => {
+            let bounds = m.bounds();
+            vec![
+                Handle::new(HandleKind::TopLeft, Point::new(bounds.x0, bounds.y0)),
+                Handle::new(HandleKind::TopRight, Point::new(bounds.x1, bounds.y0)),
+                Handle::new(HandleKind::BottomLeft, Point::new(bounds.x0, bounds.y1)),
+                Handle::new(HandleKind::BottomRight, Point::new(bounds.x1, bounds.y1)),
+            ]
+        }
     }
 }
 

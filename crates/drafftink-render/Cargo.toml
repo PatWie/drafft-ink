@@ -25,6 +25,10 @@ image = { version = "0.25", default-features = false, features = ["png", "jpeg",
 vello = { workspace = true, optional = true }
 parley = { version = "0.7", optional = true, default-features = false, features = ["std"] }
 
+# Math rendering (ReX)
+rex = { git = "https://github.com/KenyC/ReX", features = ["ttfparser-fontparser"] }
+ttf-parser = "0.25"
+
 
 # Rough style rendering (rough_vello requires vello 0.5, we use 0.6)
 roughr = { workspace = true }

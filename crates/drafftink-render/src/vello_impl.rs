@@ -33,6 +33,8 @@ static VANILLA_EXTRACT: &[u8] = include_bytes!("../assets/VanillaExtract.ttf");
 static GELPEN_SERIF_LIGHT: &[u8] = include_bytes!("../assets/GelPenSerifLight.ttf");
 static GELPEN_SERIF_MEDIUM: &[u8] = include_bytes!("../assets/GelPenSerifMedium.ttf");
 static GELPEN_SERIF_HEAVY: &[u8] = include_bytes!("../assets/GelPenSerifHeavy.ttf");
+/// Embedded XITS Math font for LaTeX rendering
+static XITS_MATH: &[u8] = include_bytes!("../assets/rex-xits.otf");
 
 /// Vello-based renderer for GPU-accelerated 2D graphics.
 pub struct VelloRenderer {
@@ -810,6 +812,61 @@ impl VelloRenderer {
 
         // Draw border
         self.scene.stroke(&stroke, transform, Color::from_rgba8(100, 100, 100, 255), None, &rect_path);
+    }
+
+    /// Render a math (LaTeX) shape using ReX.
+    fn render_math(&mut self, math: &drafftink_core::shapes::Math, transform: Affine) {
+        use rex::font::backend::ttf_parser::TtfMathFont;
+        use rex::layout::engine::LayoutBuilder;
+        use rex::render::Renderer as RexRenderer;
+        use crate::rex_backend::VelloBackend;
+
+        // Parse the math font
+        let Ok(font_face) = ttf_parser::Face::parse(XITS_MATH, 0) else {
+            self.render_math_error(math, transform, "Font parse error");
+            return;
+        };
+        let Ok(math_font) = TtfMathFont::new(font_face) else {
+            self.render_math_error(math, transform, "No MATH table");
+            return;
+        };
+
+        // Parse LaTeX
+        let Ok(parse_nodes) = rex::parser::parse(&math.latex) else {
+            self.render_math_error(math, transform, "Parse error");
+            return;
+        };
+
+        // Layout
+        let layout_engine = LayoutBuilder::new(&math_font)
+            .font_size(math.font_size)
+            .build();
+        let Ok(layout) = layout_engine.layout(&parse_nodes) else {
+            self.render_math_error(math, transform, "Layout error");
+            return;
+        };
+
+        // Cache size for bounds calculation
+        let size = layout.size();
+        math.set_cached_size(size.width, size.height, size.depth);
+
+        // Position: math.position is baseline origin
+        let math_transform = transform * Affine::translate((math.position.x, math.position.y));
+
+        // Render using our Vello backend
+        let color: Color = math.style.stroke_color.into();
+        let mut backend = VelloBackend::new(&mut self.scene, &math_font, math_transform, color);
+        let renderer = RexRenderer::new();
+        renderer.render(&layout, &mut backend);
+    }
+
+    /// Render error placeholder for math that couldn't be rendered.
+    fn render_math_error(&mut self, math: &drafftink_core::shapes::Math, transform: Affine, _msg: &str) {
+        let bounds = math.bounds();
+        let rect_path = bounds.to_path(0.1);
+        self.scene.fill(Fill::NonZero, transform, Color::from_rgba8(255, 200, 200, 100), None, &rect_path);
+        let stroke = Stroke::new(1.0);
+        self.scene.stroke(&stroke, transform, Color::from_rgba8(255, 100, 100, 255), None, &rect_path);
     }
 
     /// Render a text shape in edit mode using PlainEditor state.
@@ -1826,6 +1883,9 @@ impl ShapeRenderer for VelloRenderer {
                     let path = shape.to_path();
                     self.render_stroke_only(&path, shape.style(), shape_transform);
                 }
+            }
+            Shape::Math(math) => {
+                self.render_math(math, shape_transform);
             }
             _ => {
                 let path = shape.to_path();
