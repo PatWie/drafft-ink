@@ -227,12 +227,10 @@ impl InputState {
             }
             TouchPhase::Moved => {
                 // Update touch position
-                for slot in &mut self.touches {
-                    if let Some(t) = slot {
-                        if t.id == touch.id {
-                            t.position = pos;
-                            t.phase = touch.phase;
-                        }
+                for t in self.touches.iter_mut().flatten() {
+                    if t.id == touch.id {
+                        t.position = pos;
+                        t.phase = touch.phase;
                     }
                 }
 

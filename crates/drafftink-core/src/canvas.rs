@@ -843,6 +843,46 @@ impl Canvas {
     }
 }
 
+/// Parse Excalidraw color string to SerializableColor.
+fn parse_excalidraw_color(color: &str) -> crate::shapes::SerializableColor {
+    use crate::shapes::SerializableColor;
+
+    if color == "transparent" {
+        return SerializableColor::transparent();
+    }
+
+    // Handle hex colors (#rgb, #rrggbb, #rrggbbaa)
+    if let Some(hex) = color.strip_prefix('#') {
+        let hex = hex.trim();
+        match hex.len() {
+            3 => {
+                // #rgb -> #rrggbb
+                let r = u8::from_str_radix(&hex[0..1], 16).unwrap_or(0) * 17;
+                let g = u8::from_str_radix(&hex[1..2], 16).unwrap_or(0) * 17;
+                let b = u8::from_str_radix(&hex[2..3], 16).unwrap_or(0) * 17;
+                return SerializableColor::new(r, g, b, 255);
+            }
+            6 => {
+                let r = u8::from_str_radix(&hex[0..2], 16).unwrap_or(0);
+                let g = u8::from_str_radix(&hex[2..4], 16).unwrap_or(0);
+                let b = u8::from_str_radix(&hex[4..6], 16).unwrap_or(0);
+                return SerializableColor::new(r, g, b, 255);
+            }
+            8 => {
+                let r = u8::from_str_radix(&hex[0..2], 16).unwrap_or(0);
+                let g = u8::from_str_radix(&hex[2..4], 16).unwrap_or(0);
+                let b = u8::from_str_radix(&hex[4..6], 16).unwrap_or(0);
+                let a = u8::from_str_radix(&hex[6..8], 16).unwrap_or(255);
+                return SerializableColor::new(r, g, b, a);
+            }
+            _ => {}
+        }
+    }
+
+    // Default to black
+    SerializableColor::black()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1028,44 +1068,4 @@ mod tests {
         assert!(!doc.can_redo());
         assert!(!doc.redo());
     }
-}
-
-/// Parse Excalidraw color string to SerializableColor.
-fn parse_excalidraw_color(color: &str) -> crate::shapes::SerializableColor {
-    use crate::shapes::SerializableColor;
-
-    if color == "transparent" {
-        return SerializableColor::transparent();
-    }
-
-    // Handle hex colors (#rgb, #rrggbb, #rrggbbaa)
-    if let Some(hex) = color.strip_prefix('#') {
-        let hex = hex.trim();
-        match hex.len() {
-            3 => {
-                // #rgb -> #rrggbb
-                let r = u8::from_str_radix(&hex[0..1], 16).unwrap_or(0) * 17;
-                let g = u8::from_str_radix(&hex[1..2], 16).unwrap_or(0) * 17;
-                let b = u8::from_str_radix(&hex[2..3], 16).unwrap_or(0) * 17;
-                return SerializableColor::new(r, g, b, 255);
-            }
-            6 => {
-                let r = u8::from_str_radix(&hex[0..2], 16).unwrap_or(0);
-                let g = u8::from_str_radix(&hex[2..4], 16).unwrap_or(0);
-                let b = u8::from_str_radix(&hex[4..6], 16).unwrap_or(0);
-                return SerializableColor::new(r, g, b, 255);
-            }
-            8 => {
-                let r = u8::from_str_radix(&hex[0..2], 16).unwrap_or(0);
-                let g = u8::from_str_radix(&hex[2..4], 16).unwrap_or(0);
-                let b = u8::from_str_radix(&hex[4..6], 16).unwrap_or(0);
-                let a = u8::from_str_radix(&hex[6..8], 16).unwrap_or(255);
-                return SerializableColor::new(r, g, b, a);
-            }
-            _ => {}
-        }
-    }
-
-    // Default to black
-    SerializableColor::black()
 }

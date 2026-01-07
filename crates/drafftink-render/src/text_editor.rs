@@ -218,6 +218,7 @@ impl TextEditState {
 
     /// Handle a key press event.
     /// Returns whether the event was handled and if editing should exit.
+    #[allow(clippy::drop_non_drop)]
     pub fn handle_key(
         &mut self,
         key: TextKey,

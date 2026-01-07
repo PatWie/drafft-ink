@@ -413,7 +413,6 @@ impl EventHandler {
                         self.enter_text_edit(canvas, id);
                         canvas.clear_selection();
                         canvas.select(id);
-                        return;
                     }
                 }
                 // If not clicking on text, will create new text on release

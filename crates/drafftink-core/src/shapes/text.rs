@@ -154,6 +154,7 @@ impl Text {
     }
 
     /// Reconstruct a text with a specific ID (for CRDT/storage).
+    #[allow(clippy::too_many_arguments)]
     pub(crate) fn reconstruct(
         id: ShapeId,
         position: Point,

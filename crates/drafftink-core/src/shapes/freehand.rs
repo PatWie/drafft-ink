@@ -172,11 +172,6 @@ fn rdp_simplify_with_pressure(
     }
 }
 
-/// Ramer-Douglas-Peucker line simplification (legacy, no pressure).
-fn rdp_simplify(points: &[Point], tolerance: f64) -> Vec<Point> {
-    rdp_simplify_with_pressure(points, &[], tolerance).0
-}
-
 /// Calculate perpendicular distance from point to line.
 fn perpendicular_distance(point: Point, line_start: Point, line_end: Point) -> f64 {
     let dx = line_end.x - line_start.x;

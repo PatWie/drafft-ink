@@ -4450,11 +4450,6 @@ impl ApplicationHandler for App {
                                     state.canvas.set_tool(ToolKind::Eraser);
                                     log::info!("Tool: Eraser");
                                 }
-                                // Highlighter: H
-                                "h" | "H" => {
-                                    state.canvas.set_tool(ToolKind::Highlighter);
-                                    log::info!("Tool: Highlighter");
-                                }
                                 // Laser Pointer: Z
                                 "z" | "Z" => {
                                     state.canvas.set_tool(ToolKind::LaserPointer);
