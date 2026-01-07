@@ -709,10 +709,7 @@ impl EventHandler {
                 canvas.tool_manager.cancel();
             }
             ToolKind::Eraser => {
-                // Finalize eraser stroke - erase shapes that intersect
-                if !self.eraser_points.is_empty() {
-                    self.apply_eraser(canvas);
-                }
+                // Erasing happens during drag, just clear points
                 self.eraser_points.clear();
             }
             ToolKind::LaserPointer => {
@@ -1036,9 +1033,15 @@ impl EventHandler {
             return;
         }
 
-        // Handle eraser tool
+        // Handle eraser tool - erase immediately while dragging
         if canvas.tool_manager.current_tool == ToolKind::Eraser && !self.eraser_points.is_empty() {
             self.eraser_points.push(world_point);
+            self.apply_eraser(canvas);
+            // Keep only the last point for the next segment
+            if let Some(last) = self.eraser_points.last().copied() {
+                self.eraser_points.clear();
+                self.eraser_points.push(last);
+            }
             return;
         }
 
@@ -1122,124 +1125,24 @@ impl EventHandler {
 
         let radius = self.eraser_radius;
         let mut shapes_to_remove: Vec<ShapeId> = Vec::new();
-        let mut shapes_to_add: Vec<Shape> = Vec::new();
 
-        // Check each freehand shape for intersection with eraser path
+        // Check each shape for intersection with eraser points
         for shape in canvas.document.shapes_ordered() {
-            if let Shape::Freehand(freehand) = shape {
-                let result = self.erase_from_freehand(freehand, radius);
-                match result {
-                    EraseResult::Unchanged => {}
-                    EraseResult::Remove => {
-                        shapes_to_remove.push(freehand.id());
-                    }
-                    EraseResult::Split(new_shapes) => {
-                        shapes_to_remove.push(freehand.id());
-                        shapes_to_add.extend(new_shapes);
-                    }
+            for &point in &self.eraser_points {
+                if shape.hit_test(point, radius) {
+                    shapes_to_remove.push(shape.id());
+                    break;
                 }
             }
         }
 
         // Apply changes
-        if !shapes_to_remove.is_empty() || !shapes_to_add.is_empty() {
+        if !shapes_to_remove.is_empty() {
             canvas.document.push_undo();
             for id in shapes_to_remove {
                 canvas.document.remove_shape(id);
             }
-            for shape in shapes_to_add {
-                canvas.document.add_shape(shape);
-            }
         }
-    }
-
-    /// Check if a freehand shape intersects with the eraser path and return the result.
-    fn erase_from_freehand(&self, freehand: &Freehand, radius: f64) -> EraseResult {
-        if freehand.points.len() < 2 {
-            return EraseResult::Unchanged;
-        }
-
-        // Check each segment of the freehand stroke for intersection with eraser
-        // Mark segments as erased if they intersect with the eraser path
-        let mut segment_erased: Vec<bool> = Vec::with_capacity(freehand.points.len() - 1);
-        
-        for i in 0..freehand.points.len() - 1 {
-            let stroke_start = freehand.points[i];
-            let stroke_end = freehand.points[i + 1];
-            let erased = self.segment_intersects_eraser(stroke_start, stroke_end, radius);
-            segment_erased.push(erased);
-        }
-
-        // Build remaining segments from non-erased parts
-        let mut segments: Vec<Vec<Point>> = Vec::new();
-        let mut current_segment: Vec<Point> = Vec::new();
-
-        for i in 0..freehand.points.len() {
-            // Check if we should start a new segment
-            if i > 0 && segment_erased[i - 1] {
-                // Previous segment was erased, save current and start new
-                if current_segment.len() >= 2 {
-                    segments.push(std::mem::take(&mut current_segment));
-                } else {
-                    current_segment.clear();
-                }
-            }
-            
-            // Add point if segment leading to next point is not erased (or it's the last point)
-            if i == freehand.points.len() - 1 || !segment_erased[i] {
-                current_segment.push(freehand.points[i]);
-            } else if current_segment.is_empty() || current_segment.last() != Some(&freehand.points[i]) {
-                // Add the start point of an erased segment to close the previous segment
-                current_segment.push(freehand.points[i]);
-            }
-        }
-
-        // Don't forget the last segment
-        if current_segment.len() >= 2 {
-            segments.push(current_segment);
-        }
-
-        // Determine result
-        if segments.is_empty() {
-            EraseResult::Remove
-        } else if segments.len() == 1 && segments[0].len() == freehand.points.len() {
-            EraseResult::Unchanged
-        } else {
-            // Create new freehand shapes from remaining segments
-            let new_shapes: Vec<Shape> = segments
-                .into_iter()
-                .map(|points| {
-                    let mut new_freehand = Freehand::from_points(points);
-                    new_freehand.style = freehand.style.clone();
-                    Shape::Freehand(new_freehand)
-                })
-                .collect();
-            EraseResult::Split(new_shapes)
-        }
-    }
-
-    /// Check if a stroke segment intersects with the eraser path.
-    fn segment_intersects_eraser(&self, stroke_start: Point, stroke_end: Point, radius: f64) -> bool {
-        // Check against each segment of the eraser path
-        for window in self.eraser_points.windows(2) {
-            let eraser_start = window[0];
-            let eraser_end = window[1];
-            
-            // Check if the two line segments are within radius of each other
-            if segments_within_distance(stroke_start, stroke_end, eraser_start, eraser_end, radius) {
-                return true;
-            }
-        }
-        
-        // Also check single eraser point (for clicks without drag)
-        if self.eraser_points.len() == 1 {
-            let eraser_point = self.eraser_points[0];
-            if point_to_segment_distance(eraser_point, stroke_start, stroke_end) <= radius {
-                return true;
-            }
-        }
-        
-        false
     }
 
     /// Update laser trail (fade out old points). Call each frame.
@@ -1256,75 +1159,6 @@ impl EventHandler {
     pub fn eraser_path(&self) -> &[Point] {
         &self.eraser_points
     }
-}
-
-/// Check if two line segments are within a given distance of each other.
-fn segments_within_distance(a1: Point, a2: Point, b1: Point, b2: Point, dist: f64) -> bool {
-    // Check if any endpoint is close to the other segment
-    if point_to_segment_distance(a1, b1, b2) <= dist { return true; }
-    if point_to_segment_distance(a2, b1, b2) <= dist { return true; }
-    if point_to_segment_distance(b1, a1, a2) <= dist { return true; }
-    if point_to_segment_distance(b2, a1, a2) <= dist { return true; }
-    
-    // Check if segments actually intersect
-    if segments_intersect(a1, a2, b1, b2) { return true; }
-    
-    false
-}
-
-/// Calculate distance from a point to a line segment.
-fn point_to_segment_distance(point: Point, seg_start: Point, seg_end: Point) -> f64 {
-    let line_vec = kurbo::Vec2::new(seg_end.x - seg_start.x, seg_end.y - seg_start.y);
-    let point_vec = kurbo::Vec2::new(point.x - seg_start.x, point.y - seg_start.y);
-    
-    let line_len_sq = line_vec.hypot2();
-    if line_len_sq < f64::EPSILON {
-        return ((point.x - seg_start.x).powi(2) + (point.y - seg_start.y).powi(2)).sqrt();
-    }
-    
-    let t = (point_vec.dot(line_vec) / line_len_sq).clamp(0.0, 1.0);
-    let projection = Point::new(seg_start.x + t * line_vec.x, seg_start.y + t * line_vec.y);
-    ((point.x - projection.x).powi(2) + (point.y - projection.y).powi(2)).sqrt()
-}
-
-/// Check if two line segments intersect.
-fn segments_intersect(a1: Point, a2: Point, b1: Point, b2: Point) -> bool {
-    let d1 = cross_product_sign(b1, b2, a1);
-    let d2 = cross_product_sign(b1, b2, a2);
-    let d3 = cross_product_sign(a1, a2, b1);
-    let d4 = cross_product_sign(a1, a2, b2);
-    
-    if ((d1 > 0.0 && d2 < 0.0) || (d1 < 0.0 && d2 > 0.0)) &&
-       ((d3 > 0.0 && d4 < 0.0) || (d3 < 0.0 && d4 > 0.0)) {
-        return true;
-    }
-    
-    // Check collinear cases
-    if d1 == 0.0 && on_segment(b1, a1, b2) { return true; }
-    if d2 == 0.0 && on_segment(b1, a2, b2) { return true; }
-    if d3 == 0.0 && on_segment(a1, b1, a2) { return true; }
-    if d4 == 0.0 && on_segment(a1, b2, a2) { return true; }
-    
-    false
-}
-
-fn cross_product_sign(a: Point, b: Point, c: Point) -> f64 {
-    (b.x - a.x) * (c.y - a.y) - (b.y - a.y) * (c.x - a.x)
-}
-
-fn on_segment(p: Point, q: Point, r: Point) -> bool {
-    q.x <= p.x.max(r.x) && q.x >= p.x.min(r.x) &&
-    q.y <= p.y.max(r.y) && q.y >= p.y.min(r.y)
-}
-
-/// Result of erasing from a freehand shape.
-enum EraseResult {
-    /// Shape was not affected.
-    Unchanged,
-    /// Shape should be completely removed.
-    Remove,
-    /// Shape should be split into new shapes.
-    Split(Vec<Shape>),
 }
 
 impl Default for EventHandler {
