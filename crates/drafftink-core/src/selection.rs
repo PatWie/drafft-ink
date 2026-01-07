@@ -114,8 +114,8 @@ pub fn get_handles(shape: &Shape) -> Vec<Handle> {
             let rotation = shape.rotation();
             corner_and_rotate_handles(bounds, rotation)
         }
-        Shape::Freehand(_) => {
-            // Freehand uses bounding box corners (no rotation)
+        Shape::Freehand(_) | Shape::Math(_) => {
+            // Freehand and Math use bounding box corners (no rotation)
             let bounds = shape.bounds();
             corner_handles(bounds)
         }

@@ -4,7 +4,7 @@ use loro::{LoroMap, LoroResult, LoroValue, LoroList, LoroMapValue};
 use crate::shapes::{
     Shape, ShapeStyle, SerializableColor, Sloppiness, ShapeTrait, FillPattern,
     Rectangle, Ellipse, Line, Arrow, Freehand, Text, FontFamily, FontWeight, Group,
-    Image, ImageFormat, PathStyle,
+    Image, ImageFormat, PathStyle, Math,
 };
 use kurbo::Point;
 use uuid::Uuid;
@@ -213,6 +213,15 @@ pub fn shape_to_loro(shape: &Shape, map: &LoroMap) -> LoroResult<()> {
             map.insert(KEY_ROTATION, image.rotation)?;
             style_to_loro(&image.style, map)?;
         }
+        Shape::Math(math) => {
+            map.insert(KEY_TYPE, "math")?;
+            map.insert(KEY_ID, math.id().to_string())?;
+            map.insert(KEY_X, math.position.x)?;
+            map.insert(KEY_Y, math.position.y)?;
+            map.insert(KEY_CONTENT, math.latex.clone())?;
+            map.insert(KEY_FONT_SIZE, math.font_size)?;
+            style_to_loro(&math.style, map)?;
+        }
     }
     Ok(())
 }
@@ -255,6 +264,7 @@ pub fn shape_from_loro(map: &LoroMapValue) -> Option<Shape> {
         TYPE_TEXT => text_from_loro(map),
         TYPE_GROUP => group_from_loro(map),
         TYPE_IMAGE => image_from_loro(map),
+        "math" => math_from_loro(map),
         _ => None,
     }
 }
@@ -354,6 +364,16 @@ fn image_from_loro(map: &LoroMapValue) -> Option<Shape> {
         get_i64(map, KEY_FORMAT).map(i64_to_image_format).unwrap_or(ImageFormat::Png),
         get_string(map, KEY_DATA_BASE64)?,
         get_double(map, KEY_ROTATION).unwrap_or(0.0),
+        style_from_loro(map)?,
+    )))
+}
+
+fn math_from_loro(map: &LoroMapValue) -> Option<Shape> {
+    Some(Shape::Math(Math::reconstruct(
+        get_id(map)?,
+        Point::new(get_double(map, KEY_X)?, get_double(map, KEY_Y)?),
+        get_string(map, KEY_CONTENT)?,
+        get_double(map, KEY_FONT_SIZE).unwrap_or(Math::DEFAULT_FONT_SIZE),
         style_from_loro(map)?,
     )))
 }

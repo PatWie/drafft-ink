@@ -8,6 +8,7 @@ mod freehand;
 mod text;
 mod group;
 mod image;
+mod math;
 
 pub use rectangle::Rectangle;
 pub use ellipse::Ellipse;
@@ -17,6 +18,7 @@ pub use freehand::Freehand;
 pub use text::{Text, FontFamily, FontWeight};
 pub use group::Group;
 pub use image::{Image, ImageFormat};
+pub use math::Math;
 
 use kurbo::{Affine, BezPath, Point, Rect};
 use peniko::Color;
@@ -283,6 +285,7 @@ pub enum Shape {
     Text(Text),
     Group(Group),
     Image(Image),
+    Math(Math),
 }
 
 impl Shape {
@@ -296,6 +299,7 @@ impl Shape {
             Shape::Text(s) => s.id(),
             Shape::Group(s) => s.id(),
             Shape::Image(s) => s.id(),
+            Shape::Math(s) => s.id(),
         }
     }
 
@@ -309,6 +313,7 @@ impl Shape {
             Shape::Text(s) => s.bounds(),
             Shape::Group(s) => s.bounds(),
             Shape::Image(s) => s.bounds(),
+            Shape::Math(s) => s.bounds(),
         }
     }
 
@@ -322,6 +327,7 @@ impl Shape {
             Shape::Text(s) => s.hit_test(point, tolerance),
             Shape::Group(s) => s.hit_test(point, tolerance),
             Shape::Image(s) => s.hit_test(point, tolerance),
+            Shape::Math(s) => s.hit_test(point, tolerance),
         }
     }
 
@@ -335,6 +341,7 @@ impl Shape {
             Shape::Text(s) => s.to_path(),
             Shape::Group(s) => s.to_path(),
             Shape::Image(s) => s.to_path(),
+            Shape::Math(s) => s.to_path(),
         }
     }
 
@@ -348,6 +355,7 @@ impl Shape {
             Shape::Text(s) => s.style(),
             Shape::Group(s) => s.style(),
             Shape::Image(s) => s.style(),
+            Shape::Math(s) => s.style(),
         }
     }
 
@@ -361,6 +369,7 @@ impl Shape {
             Shape::Text(s) => s.style_mut(),
             Shape::Group(s) => s.style_mut(),
             Shape::Image(s) => s.style_mut(),
+            Shape::Math(s) => s.style_mut(),
         }
     }
 
@@ -374,6 +383,7 @@ impl Shape {
             Shape::Text(s) => s.transform(affine),
             Shape::Group(s) => s.transform(affine),
             Shape::Image(s) => s.transform(affine),
+            Shape::Math(s) => s.transform(affine),
         }
     }
     
@@ -411,6 +421,7 @@ impl Shape {
             Shape::Text(s) => s.id = new_id,
             Shape::Group(s) => s.id = new_id,
             Shape::Image(s) => s.id = new_id,
+            Shape::Math(s) => s.id = new_id,
         }
     }
     
