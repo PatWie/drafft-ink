@@ -1799,7 +1799,7 @@ fn render_collaboration_modal(ctx: &Context, ui_state: &mut UiState) -> Option<U
                         ui.horizontal(|ui| {
                             ui.label(egui::RichText::new("Collaborate").size(18.0).strong().color(Color32::from_gray(30)));
                             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                                if default_btn(ui, "✕") {
+                                if default_btn(ui, "X") {
                                     ui_state.collab_modal_open = false;
                                 }
                             });
@@ -2082,7 +2082,7 @@ fn render_shortcuts_modal(ctx: &Context, ui_state: &mut UiState) {
                     ui.horizontal(|ui| {
                         ui.label(egui::RichText::new("Keyboard Shortcuts").size(16.0).strong());
                         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                            if default_btn(ui, "✕") {
+                            if default_btn(ui, "X") {
                                 ui_state.shortcuts_modal_open = false;
                             }
                         });
@@ -2151,7 +2151,7 @@ fn render_save_dialog(ctx: &Context, ui_state: &mut UiState) -> Option<UiAction>
                     ui.horizontal(|ui| {
                         ui.label(egui::RichText::new("Save Document").size(16.0).strong().color(Color32::from_gray(30)));
                         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                            if default_btn(ui, "✕") {
+                            if default_btn(ui, "X") {
                                 ui_state.save_dialog_open = false;
                             }
                         });
@@ -2219,7 +2219,7 @@ fn render_open_dialog(ctx: &Context, ui_state: &mut UiState) -> Option<UiAction>
                     ui.horizontal(|ui| {
                         ui.label(egui::RichText::new("Open Document").size(16.0).strong().color(Color32::from_gray(30)));
                         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                            if default_btn(ui, "✕") {
+                            if default_btn(ui, "X") {
                                 ui_state.open_dialog_open = false;
                             }
                         });
@@ -2283,7 +2283,7 @@ fn render_open_recent_dialog(ctx: &Context, ui_state: &mut UiState) -> Option<Ui
                     ui.horizontal(|ui| {
                         ui.label(egui::RichText::new("Open Recent").size(16.0).strong().color(Color32::from_gray(30)));
                         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                            if default_btn(ui, "✕") {
+                            if default_btn(ui, "X") {
                                 ui_state.open_recent_dialog_open = false;
                             }
                         });
@@ -2374,7 +2374,7 @@ fn render_math_editor(ctx: &Context, ui_state: &mut UiState) -> Option<UiAction>
                         ui.horizontal(|ui| {
                             ui.label(egui::RichText::new("Edit Equation").size(16.0).strong().color(Color32::from_gray(30)));
                             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                                if default_btn(ui, "✕") {
+                                if default_btn(ui, "X") {
                                     close = true;
                                 }
                             });
