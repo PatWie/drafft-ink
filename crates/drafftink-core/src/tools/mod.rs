@@ -279,16 +279,20 @@ impl ToolManager {
         use crate::shapes::Freehand;
         
         if self.freehand_points.len() >= 2 {
-            let mut freehand = if self.pressure_simulation && !self.freehand_pressures.is_empty() {
-                Freehand::from_points_with_pressure(
-                    self.freehand_points.clone(),
-                    self.freehand_pressures.clone(),
-                )
-            } else {
-                Freehand::from_points(self.freehand_points.clone())
-            };
+            // Always use pressure data for consistent rendering with final shape
+            let mut freehand = Freehand::from_points_with_pressure(
+                self.freehand_points.clone(),
+                self.freehand_pressures.clone(),
+            );
             freehand.style = self.current_style.clone();
             freehand.style.seed = seed;
+            
+            // Apply highlighter-specific style (wider, semi-transparent)
+            if self.current_tool == ToolKind::Highlighter {
+                freehand.style.stroke_width = self.current_style.stroke_width.max(12.0);
+                freehand.style.stroke_color.a = 128;
+            }
+            
             Some(Shape::Freehand(freehand))
         } else {
             None

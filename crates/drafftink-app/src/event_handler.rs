@@ -675,11 +675,8 @@ impl EventHandler {
                 let points = canvas.tool_manager.freehand_points();
                 let pressures = canvas.tool_manager.freehand_pressures();
                 if points.len() >= 2 {
-                    let mut freehand = if canvas.tool_manager.pressure_simulation && !pressures.is_empty() {
-                        Freehand::from_points_with_pressure(points.to_vec(), pressures.to_vec())
-                    } else {
-                        Freehand::from_points(points.to_vec())
-                    };
+                    // Always use pressure data for consistent rendering
+                    let mut freehand = Freehand::from_points_with_pressure(points.to_vec(), pressures.to_vec());
                     freehand.simplify(2.0); // Simplify the path
                     freehand.style = current_style.clone(); // Apply current style
                     canvas.document.push_undo();
@@ -693,11 +690,8 @@ impl EventHandler {
                 let points = canvas.tool_manager.freehand_points();
                 let pressures = canvas.tool_manager.freehand_pressures();
                 if points.len() >= 2 {
-                    let mut freehand = if canvas.tool_manager.pressure_simulation && !pressures.is_empty() {
-                        Freehand::from_points_with_pressure(points.to_vec(), pressures.to_vec())
-                    } else {
-                        Freehand::from_points(points.to_vec())
-                    };
+                    // Always use pressure data for consistent rendering
+                    let mut freehand = Freehand::from_points_with_pressure(points.to_vec(), pressures.to_vec());
                     freehand.simplify(2.0);
                     // Highlighter: wider stroke, semi-transparent
                     freehand.style = current_style.clone();

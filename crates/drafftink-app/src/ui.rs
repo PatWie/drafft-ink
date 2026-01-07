@@ -125,6 +125,16 @@ impl SelectedShapeProps {
                 opacity,
                 ..Default::default()
             },
+            Shape::Freehand(_) => Self {
+                has_selection: true,
+                selection_count: count,
+                is_freehand: true,
+                sloppiness,
+                fill_pattern,
+                has_fill,
+                opacity,
+                ..Default::default()
+            },
             _ => Self {
                 has_selection: true,
                 selection_count: count,
@@ -1233,8 +1243,8 @@ fn render_right_panel(ctx: &Context, props: &SelectedShapeProps) -> Option<UiAct
                             });
                         }
                         
-                        // Sloppiness (for all shapes except text, or when drawing tool is active)
-                        if !props.is_text || props.is_drawing_tool {
+                        // Sloppiness (for all shapes except text and freehand/highlighter)
+                        if !props.is_text && !props.is_freehand {
                             ui.add_space(4.0);
                             ui.label(egui::RichText::new("Sloppiness").size(11.0).color(Color32::from_gray(100)));
                             ui.horizontal(|ui| {
