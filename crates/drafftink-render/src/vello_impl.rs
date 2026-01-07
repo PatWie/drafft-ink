@@ -821,15 +821,17 @@ impl VelloRenderer {
         use rex::render::Renderer as RexRenderer;
         use crate::rex_backend::VelloBackend;
 
-        // Parse the math font
-        let Ok(font_face) = ttf_parser::Face::parse(XITS_MATH, 0) else {
+        // Parse fonts
+        let Ok(math_face) = ttf_parser::Face::parse(XITS_MATH, 0) else {
             self.render_math_error(math, transform, "Font parse error");
             return;
         };
-        let Ok(math_font) = TtfMathFont::new(font_face) else {
+        let Ok(math_font) = TtfMathFont::new(math_face) else {
             self.render_math_error(math, transform, "No MATH table");
             return;
         };
+        // Primary font (GelPen) for text glyphs - fallback to math font if unavailable
+        let primary_face = ttf_parser::Face::parse(GELPEN_REGULAR, 0).ok();
 
         // Parse LaTeX
         let Ok(parse_nodes) = rex::parser::parse(&math.latex) else {
@@ -853,9 +855,9 @@ impl VelloRenderer {
         // Position: math.position is baseline origin
         let math_transform = transform * Affine::translate((math.position.x, math.position.y));
 
-        // Render using our Vello backend
+        // Render using our Vello backend with font fallback
         let color: Color = math.style.stroke_color.into();
-        let mut backend = VelloBackend::new(&mut self.scene, &math_font, math_transform, color);
+        let mut backend = VelloBackend::new(&mut self.scene, &math_font, primary_face.as_ref(), math_transform, color);
         let renderer = RexRenderer::new();
         renderer.render(&layout, &mut backend);
     }

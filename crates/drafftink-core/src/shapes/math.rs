@@ -88,11 +88,12 @@ impl ShapeTrait for Math {
             .and_then(|g| *g)
             .unwrap_or((self.latex.len() as f64 * self.font_size * 0.5, self.font_size, self.font_size * 0.3));
         
+        // height is positive (above baseline), depth is negative (below baseline)
         Rect::new(
             self.position.x,
             self.position.y - height,
             self.position.x + width,
-            self.position.y + depth,
+            self.position.y - depth,  // depth is negative, so -depth is positive
         )
     }
 
