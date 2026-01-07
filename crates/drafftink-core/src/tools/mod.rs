@@ -43,6 +43,7 @@ pub enum ToolKind {
     Highlighter,
     Eraser,
     Text,
+    Math,
     LaserPointer,
 }
 
@@ -337,6 +338,11 @@ impl ToolManager {
             ToolKind::Text => {
                 // Text is created at the click position with empty content
                 Some(Shape::Text(Text::new(start, String::new())))
+            }
+            ToolKind::Math => {
+                // Math is created at the click position with placeholder LaTeX
+                use crate::shapes::Math;
+                Some(Shape::Math(Math::new(start, r"x^2".to_string())))
             }
             ToolKind::Select | ToolKind::Pan | ToolKind::Eraser | ToolKind::LaserPointer => None,
         };

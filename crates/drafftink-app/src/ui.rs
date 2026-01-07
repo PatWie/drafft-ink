@@ -555,6 +555,12 @@ fn get_tools() -> Vec<Tool> {
             icon: include_image!("../assets/text.svg"),
         },
         Tool {
+            kind: ToolKind::Math,
+            label: "Math",
+            shortcut: "M / 9",
+            icon: include_image!("../assets/math.svg"),
+        },
+        Tool {
             kind: ToolKind::LaserPointer,
             label: "Laser",
             shortcut: "Z",

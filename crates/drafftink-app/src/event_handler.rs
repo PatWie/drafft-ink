@@ -6,7 +6,7 @@ use drafftink_core::input::InputState;
 use drafftink_core::selection::{
     apply_manipulation, apply_rotation, get_handles, get_manipulation_target_position, hit_test_handles, hit_test_boundary, ManipulationState, MultiMoveState, HANDLE_HIT_TOLERANCE,
 };
-use drafftink_core::shapes::{Freehand, Shape, ShapeId, ShapeStyle, ShapeTrait, Text};
+use drafftink_core::shapes::{Freehand, Math, Shape, ShapeId, ShapeStyle, ShapeTrait, Text};
 use drafftink_core::selection::{Corner, HandleKind};
 use drafftink_core::snap::{snap_line_endpoint_isometric, snap_point_with_shapes, get_snap_targets_from_bounds, get_snap_targets_from_line, AngleSnapResult, SnapMode, SnapResult, SnapTarget, GRID_SIZE};
 use drafftink_core::tools::ToolKind;
@@ -727,6 +727,18 @@ impl EventHandler {
                 canvas.clear_selection();
                 canvas.add_to_selection(shape_id);
                 self.enter_text_edit(canvas, shape_id);
+                canvas.tool_manager.cancel();
+            }
+            ToolKind::Math => {
+                // Math tool: create math shape at click position with placeholder
+                let mut math = Math::new(world_point, r"x^2 + y^2 = r^2".to_string());
+                math.style = current_style.clone();
+                let shape = Shape::Math(math);
+                let shape_id = shape.id();
+                canvas.document.push_undo();
+                canvas.document.add_shape(shape);
+                canvas.clear_selection();
+                canvas.add_to_selection(shape_id);
                 canvas.tool_manager.cancel();
             }
             ToolKind::Line | ToolKind::Arrow => {

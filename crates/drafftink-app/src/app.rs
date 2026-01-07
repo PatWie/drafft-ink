@@ -3876,6 +3876,11 @@ impl ApplicationHandler for App {
                                     state.canvas.set_tool(ToolKind::Text);
                                     log::info!("Tool: Text");
                                 }
+                                // Math: M or 9
+                                "m" | "M" | "9" => {
+                                    state.canvas.set_tool(ToolKind::Math);
+                                    log::info!("Tool: Math");
+                                }
                                 // Eraser: E
                                 "e" | "E" => {
                                     state.canvas.set_tool(ToolKind::Eraser);
