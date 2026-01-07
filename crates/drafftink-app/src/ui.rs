@@ -419,6 +419,8 @@ pub enum UiAction {
     SetExportScale(u8),
     /// Clear document (remove all shapes).
     ClearDocument,
+    /// Show intro/welcome screen.
+    ShowIntro,
     /// Set sloppiness level for selected shapes.
     SetSloppiness(u8), // 0 = Architect, 1 = Artist, 2 = Cartoonist
     /// Set fill pattern for selected shapes.
@@ -1515,6 +1517,11 @@ fn render_file_menu(ctx: &Context, ui_state: &mut UiState) -> Option<UiAction> {
                         
                         if menu_item(ui, "Clear", "") {
                             action = Some(UiAction::ClearDocument);
+                            ui_state.menu_open = false;
+                        }
+                        
+                        if menu_item(ui, "Show Intro", "") {
+                            action = Some(UiAction::ShowIntro);
                             ui_state.menu_open = false;
                         }
                         

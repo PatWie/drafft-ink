@@ -2106,6 +2106,15 @@ impl ApplicationHandler for App {
                                     }
                                 }
                             }
+                            UiAction::ShowIntro => {
+                                static INTRO_JSON: &str = include_str!("../assets/intro.json");
+                                if let Ok(doc) = drafftink_core::canvas::CanvasDocument::from_json(INTRO_JSON) {
+                                    state.canvas.document = doc;
+                                    state.canvas.clear_selection();
+                                    state.canvas.camera.reset();
+                                    log::info!("Loaded intro document");
+                                }
+                            }
                             UiAction::ExportPng | UiAction::CopyPng => {
                                 // Deferred - handled after egui run (needs render_cx access)
                                 deferred_action = Some(action);
