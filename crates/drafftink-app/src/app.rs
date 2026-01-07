@@ -2746,6 +2746,13 @@ impl ApplicationHandler for App {
                                     log::info!("Set opacity to {}%", (opacity * 100.0) as i32);
                                 }
                             }
+                            UiAction::UpdateMathLatex(shape_id, latex) => {
+                                state.canvas.document.push_undo();
+                                if let Some(Shape::Math(math)) = state.canvas.document.get_shape_mut(shape_id) {
+                                    math.set_latex(latex);
+                                    log::info!("Updated math LaTeX");
+                                }
+                            }
                         }
                     }
                 });
@@ -3285,6 +3292,14 @@ impl ApplicationHandler for App {
                                         drv.move_to_text_end();
                                         state.text_edit_state = Some(edit_state);
                                         log::info!("Entered text edit mode for shape {:?}, content: '{}'", text_id, text.content);
+                                    }
+                                }
+                                
+                                // Check if we need to open math editor
+                                if let Some(math_id) = state.event_handler.pending_math_edit.take() {
+                                    if let Some(Shape::Math(math)) = state.canvas.document.get_shape(math_id) {
+                                        state.ui_state.math_editor = Some((math_id, math.latex.clone()));
+                                        log::info!("Opening math editor for shape {:?}", math_id);
                                     }
                                 }
                             }

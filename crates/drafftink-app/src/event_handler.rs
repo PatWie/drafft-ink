@@ -121,6 +121,8 @@ pub struct EventHandler {
     pub laser_position: Option<Point>,
     /// Laser pointer trail for fading effect.
     pub laser_trail: Vec<(Point, f64)>,
+    /// Math shape ID to open editor for (set on double-click).
+    pub pending_math_edit: Option<ShapeId>,
 }
 
 /// State for rotation drag operation.
@@ -153,6 +155,7 @@ impl EventHandler {
             eraser_radius: 10.0,
             laser_position: None,
             laser_trail: Vec::new(),
+            pending_math_edit: None,
         }
     }
 
@@ -389,6 +392,13 @@ impl EventHandler {
                         if let Some(Shape::Text(_)) = canvas.document.get_shape(id) {
                             // Double-click on text - enter edit mode
                             self.enter_text_edit(canvas, id);
+                            canvas.clear_selection();
+                            canvas.select(id);
+                            return;
+                        }
+                        if let Some(Shape::Math(_)) = canvas.document.get_shape(id) {
+                            // Double-click on math - open editor
+                            self.pending_math_edit = Some(id);
                             canvas.clear_selection();
                             canvas.select(id);
                             return;

@@ -4,7 +4,7 @@ use egui::{
     include_image, Align2, Color32, Context, CornerRadius, Frame, ImageSource, Margin,
     Pos2, Rect, Stroke, Vec2,
 };
-use drafftink_core::shapes::{FontFamily, FontWeight, Shape, ShapeStyle, FillPattern};
+use drafftink_core::shapes::{FontFamily, FontWeight, Shape, ShapeId, ShapeStyle, FillPattern};
 use drafftink_core::snap::SnapMode;
 use drafftink_core::sync::ConnectionState;
 use drafftink_core::tools::ToolKind;
@@ -274,6 +274,8 @@ pub struct UiState {
     pub last_picked_stroke: Option<Color32>,
     /// Last picked fill color from color grid.
     pub last_picked_fill: Option<Color32>,
+    /// Math editor state: (shape_id, latex_input)
+    pub math_editor: Option<(ShapeId, String)>,
 }
 
 impl Default for UiState {
@@ -316,6 +318,7 @@ impl Default for UiState {
             clipboard_shapes: None,
             last_picked_stroke: None,
             last_picked_fill: None,
+            math_editor: None,
         }
     }
 }
@@ -482,6 +485,8 @@ pub enum UiAction {
     FlipVertical,
     /// Set opacity for selected shapes.
     SetOpacity(f32),
+    /// Update math shape LaTeX.
+    UpdateMathLatex(ShapeId, String),
 }
 
 /// Tool definitions with SVG icons
@@ -578,12 +583,13 @@ pub fn render_ui(ctx: &Context, ui_state: &mut UiState, selected_props: &Selecte
     let file_action = render_file_menu(ctx, ui_state);
     let bottom_action = render_bottom_toolbar(ctx, ui_state);
     let right_panel_action = render_right_panel(ctx, selected_props);
+    let math_action = render_math_editor(ctx, ui_state);
     
     // Render presence panel (no actions returned)
     render_presence_panel(ctx, ui_state);
 
     // Return the first action (toolbar takes precedence)
-    toolbar_action.or(properties_action).or(file_action).or(bottom_action).or(right_panel_action)
+    toolbar_action.or(properties_action).or(file_action).or(bottom_action).or(right_panel_action).or(math_action)
 }
 
 /// Render the toolbar and return any triggered action.
@@ -2322,3 +2328,88 @@ fn render_open_recent_dialog(ctx: &Context, ui_state: &mut UiState) -> Option<Ui
 }
 
 
+
+/// Render the math equation editor dialog.
+fn render_math_editor(ctx: &Context, ui_state: &mut UiState) -> Option<UiAction> {
+    let Some((shape_id, latex_input)) = ui_state.math_editor.as_mut() else {
+        return None;
+    };
+    let shape_id = *shape_id;
+    let mut action = None;
+    let mut close = false;
+
+    // Backdrop
+    egui::Area::new(egui::Id::new("math_editor_backdrop"))
+        .fixed_pos(Pos2::ZERO)
+        .order(egui::Order::Background)
+        .show(ctx, |ui| {
+            let screen_rect = ctx.input(|i| i.content_rect());
+            let response = ui.allocate_rect(screen_rect, egui::Sense::click());
+            ui.painter().rect_filled(screen_rect, 0.0, Color32::from_black_alpha(80));
+            if response.clicked() {
+                close = true;
+            }
+        });
+
+    // Modal window
+    egui::Area::new(egui::Id::new("math_editor_dialog"))
+        .anchor(Align2::CENTER_CENTER, Vec2::ZERO)
+        .order(egui::Order::Foreground)
+        .show(ctx, |ui| {
+            Frame::new()
+                .fill(Color32::WHITE)
+                .corner_radius(CornerRadius::same(12))
+                .stroke(Stroke::new(1.0, Color32::from_gray(200)))
+                .inner_margin(Margin::same(20))
+                .show(ui, |ui| {
+                    ui.set_width(400.0);
+                    ui.vertical(|ui| {
+                        ui.horizontal(|ui| {
+                            ui.label(egui::RichText::new("Edit Equation").size(16.0).strong().color(Color32::from_gray(30)));
+                            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                                if default_btn(ui, "✕") {
+                                    close = true;
+                                }
+                            });
+                        });
+                        
+                        ui.add_space(12.0);
+                        
+                        ui.label(egui::RichText::new("LaTeX:").size(12.0).color(Color32::from_gray(60)));
+                        ui.add_space(4.0);
+                        
+                        let text_edit = egui::TextEdit::multiline(latex_input)
+                            .desired_width(f32::INFINITY)
+                            .desired_rows(3)
+                            .font(egui::TextStyle::Monospace);
+                        let response = ui.add(text_edit);
+                        
+                        // Request focus on first frame
+                        response.request_focus();
+                        
+                        ui.add_space(8.0);
+                        ui.label(egui::RichText::new("Examples: x^2, \\frac{a}{b}, \\sqrt{x}, \\sum_{i=1}^n").size(11.0).color(Color32::from_gray(120)));
+                        
+                        ui.add_space(16.0);
+                        
+                        ui.horizontal(|ui| {
+                            if primary_btn(ui, "Apply") {
+                                let latex: String = latex_input.clone();
+                                action = Some(UiAction::UpdateMathLatex(shape_id, latex));
+                                close = true;
+                            }
+                            ui.add_space(8.0);
+                            if default_btn(ui, "Cancel") {
+                                close = true;
+                            }
+                        });
+                    });
+                });
+        });
+
+    if close {
+        ui_state.math_editor = None;
+    }
+    
+    action
+}
