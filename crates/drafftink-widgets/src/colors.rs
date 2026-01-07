@@ -565,6 +565,10 @@ impl<'a> ColorGrid<'a> {
                         let quick_tooltips = ["None", "Black", "White", "Blue", "Red", "Emerald", "Amber", "Purple", "Slate"];
 
                         for (row_idx, &shade_idx) in self.shade_indices.iter().enumerate() {
+                            // Add padding above 500-level row
+                            if shade_idx == 6 {
+                                ui.add_space(4.0);
+                            }
                             ui.horizontal(|ui| {
                                 ui.spacing_mut().item_spacing = vec2(2.0, 0.0);
                                 
@@ -644,6 +648,10 @@ impl<'a> ColorGrid<'a> {
                                     }
                                 }
                             });
+                            // Add padding below 500-level row
+                            if shade_idx == 6 {
+                                ui.add_space(4.0);
+                            }
                         }
                     });
                 });
