@@ -16,6 +16,9 @@ pub struct Math {
     pub latex: String,
     /// Font size in pixels.
     pub font_size: f64,
+    /// Rotation angle in radians (around center).
+    #[serde(default)]
+    pub rotation: f64,
     /// Style properties.
     pub style: ShapeStyle,
     /// Cached layout size (width, height, depth) from renderer.
@@ -30,6 +33,7 @@ impl Clone for Math {
             position: self.position,
             latex: self.latex.clone(),
             font_size: self.font_size,
+            rotation: self.rotation,
             style: self.style.clone(),
             cached_size: RwLock::new(self.cached_size.read().ok().and_then(|g| *g)),
         }
@@ -45,13 +49,14 @@ impl Math {
             position,
             latex,
             font_size: Self::DEFAULT_FONT_SIZE,
+            rotation: 0.0,
             style: ShapeStyle::default(),
             cached_size: RwLock::new(None),
         }
     }
 
-    pub(crate) fn reconstruct(id: ShapeId, position: Point, latex: String, font_size: f64, style: ShapeStyle) -> Self {
-        Self { id, position, latex, font_size, style, cached_size: RwLock::new(None) }
+    pub(crate) fn reconstruct(id: ShapeId, position: Point, latex: String, font_size: f64, rotation: f64, style: ShapeStyle) -> Self {
+        Self { id, position, latex, font_size, rotation, style, cached_size: RwLock::new(None) }
     }
 
     pub fn set_cached_size(&self, width: f64, height: f64, depth: f64) {
@@ -89,12 +94,34 @@ impl ShapeTrait for Math {
             .unwrap_or((self.latex.len() as f64 * self.font_size * 0.5, self.font_size, self.font_size * 0.3));
         
         // height is positive (above baseline), depth is negative (below baseline)
-        Rect::new(
+        let unrotated = Rect::new(
             self.position.x,
             self.position.y - height,
             self.position.x + width,
-            self.position.y - depth,  // depth is negative, so -depth is positive
-        )
+            self.position.y - depth,
+        );
+        
+        if self.rotation.abs() < 0.001 {
+            return unrotated;
+        }
+        
+        // Rotate around center and compute axis-aligned bounding box
+        let center = Point::new(unrotated.center().x, unrotated.center().y);
+        let corners = [
+            Point::new(unrotated.x0, unrotated.y0),
+            Point::new(unrotated.x1, unrotated.y0),
+            Point::new(unrotated.x1, unrotated.y1),
+            Point::new(unrotated.x0, unrotated.y1),
+        ];
+        let rot = Affine::rotate_about(self.rotation, center);
+        let rotated: Vec<Point> = corners.iter().map(|&p| rot * p).collect();
+        
+        let min_x = rotated.iter().map(|p| p.x).fold(f64::INFINITY, f64::min);
+        let max_x = rotated.iter().map(|p| p.x).fold(f64::NEG_INFINITY, f64::max);
+        let min_y = rotated.iter().map(|p| p.y).fold(f64::INFINITY, f64::min);
+        let max_y = rotated.iter().map(|p| p.y).fold(f64::NEG_INFINITY, f64::max);
+        
+        Rect::new(min_x, min_y, max_x, max_y)
     }
 
     fn hit_test(&self, point: Point, tolerance: f64) -> bool {
@@ -127,6 +154,11 @@ impl ShapeTrait for Math {
         if (scale - 1.0).abs() > 0.01 {
             self.font_size *= scale;
             self.invalidate_cache();
+        }
+        // Extract rotation from affine
+        let rotation = coeffs[1].atan2(coeffs[0]);
+        if rotation.abs() > 0.001 {
+            self.rotation += rotation;
         }
     }
 

@@ -220,6 +220,7 @@ pub fn shape_to_loro(shape: &Shape, map: &LoroMap) -> LoroResult<()> {
             map.insert(KEY_Y, math.position.y)?;
             map.insert(KEY_CONTENT, math.latex.clone())?;
             map.insert(KEY_FONT_SIZE, math.font_size)?;
+            map.insert(KEY_ROTATION, math.rotation)?;
             style_to_loro(&math.style, map)?;
         }
     }
@@ -374,6 +375,7 @@ fn math_from_loro(map: &LoroMapValue) -> Option<Shape> {
         Point::new(get_double(map, KEY_X)?, get_double(map, KEY_Y)?),
         get_string(map, KEY_CONTENT)?,
         get_double(map, KEY_FONT_SIZE).unwrap_or(Math::DEFAULT_FONT_SIZE),
+        get_double(map, KEY_ROTATION).unwrap_or(0.0),
         style_from_loro(map)?,
     )))
 }

@@ -852,8 +852,14 @@ impl VelloRenderer {
         let size = layout.size();
         math.set_cached_size(size.width, size.height, size.depth);
 
-        // Position: math.position is baseline origin
-        let math_transform = transform * Affine::translate((math.position.x, math.position.y));
+        // Position: math.position is baseline origin, apply rotation around center
+        let center_x = math.position.x + size.width / 2.0;
+        let center_y = math.position.y - size.height / 2.0 - size.depth / 2.0;
+        let math_transform = transform
+            * Affine::translate((center_x, center_y))
+            * Affine::rotate(math.rotation)
+            * Affine::translate((-center_x, -center_y))
+            * Affine::translate((math.position.x, math.position.y));
 
         // Render using our Vello backend with font fallback
         let color: Color = math.style.stroke_color.into();

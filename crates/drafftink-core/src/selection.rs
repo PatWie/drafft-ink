@@ -109,13 +109,13 @@ pub fn get_handles(shape: &Shape) -> Vec<Handle> {
             }
             handles
         }
-        Shape::Rectangle(_) | Shape::Ellipse(_) | Shape::Text(_) | Shape::Image(_) => {
+        Shape::Rectangle(_) | Shape::Ellipse(_) | Shape::Text(_) | Shape::Image(_) | Shape::Math(_) => {
             let bounds = shape.bounds();
             let rotation = shape.rotation();
             corner_and_rotate_handles(bounds, rotation)
         }
-        Shape::Freehand(_) | Shape::Math(_) => {
-            // Freehand and Math use bounding box corners (no rotation)
+        Shape::Freehand(_) => {
+            // Freehand uses bounding box corners (no rotation)
             let bounds = shape.bounds();
             corner_handles(bounds)
         }

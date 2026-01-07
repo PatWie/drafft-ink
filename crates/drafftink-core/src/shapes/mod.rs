@@ -445,6 +445,7 @@ impl Shape {
             Shape::Ellipse(e) => e.rotation,
             Shape::Text(t) => t.rotation,
             Shape::Image(i) => i.rotation,
+            Shape::Math(m) => m.rotation,
             _ => 0.0,
         }
     }
@@ -456,12 +457,13 @@ impl Shape {
             Shape::Ellipse(e) => e.rotation = rotation,
             Shape::Text(t) => t.rotation = rotation,
             Shape::Image(i) => i.rotation = rotation,
+            Shape::Math(m) => m.rotation = rotation,
             _ => {}
         }
     }
     
     /// Check if this shape supports rotation.
     pub fn supports_rotation(&self) -> bool {
-        matches!(self, Shape::Rectangle(_) | Shape::Ellipse(_) | Shape::Text(_) | Shape::Image(_))
+        matches!(self, Shape::Rectangle(_) | Shape::Ellipse(_) | Shape::Text(_) | Shape::Image(_) | Shape::Math(_))
     }
 }
