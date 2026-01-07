@@ -270,6 +270,21 @@ mod file_ops {
         });
     }
 
+    /// Auto-save document to IndexedDB (silent, no logging).
+    pub fn autosave_document(document: &CanvasDocument) {
+        let doc_clone = document.clone();
+        
+        STORAGE.with(|storage| {
+            let storage = storage.clone();
+            wasm_bindgen_futures::spawn_local(async move {
+                let future = storage.save("__last__", &doc_clone);
+                if let Err(e) = future.await {
+                    log::warn!("Autosave failed: {:?}", e);
+                }
+            });
+        });
+    }
+
     /// Load document from IndexedDB - triggers async load.
     /// Use `take_pending_document()` to retrieve the loaded document.
     pub fn load_document_async() {
@@ -1262,6 +1277,12 @@ struct AppState {
     websocket: Option<drafftink_core::sync::NativeWebSocket>,
     /// Remote peers in the current room (for cursor rendering).
     remote_peers: std::collections::HashMap<String, RemotePeer>,
+    
+    // Auto-save (WASM only)
+    #[cfg(target_arch = "wasm32")]
+    last_autosave: web_time::Instant,
+    #[cfg(target_arch = "wasm32")]
+    last_doc_version: u64,
 }
 
 /// Main application struct.
@@ -1380,6 +1401,10 @@ impl App {
             collab: CollaborationManager::new(),
             websocket: None,
             remote_peers: std::collections::HashMap::new(),
+            #[cfg(target_arch = "wasm32")]
+            last_autosave: web_time::Instant::now(),
+            #[cfg(target_arch = "wasm32")]
+            last_doc_version: 0,
         });
 
         self.pending_window = None;
@@ -1887,6 +1912,20 @@ impl ApplicationHandler for App {
                         has_cursor: peer.awareness.cursor.is_some(),
                     }
                 }).collect();
+                
+                // Auto-save to IndexedDB (WASM only) - every 5 seconds if document changed
+                #[cfg(target_arch = "wasm32")]
+                {
+                    let doc_version = state.canvas.document.shapes.len() as u64 
+                        + state.canvas.document.z_order.len() as u64;
+                    if doc_version != state.last_doc_version 
+                        && state.last_autosave.elapsed().as_secs() >= 5 
+                    {
+                        file_ops::autosave_document(&state.canvas.document);
+                        state.last_autosave = web_time::Instant::now();
+                        state.last_doc_version = doc_version;
+                    }
+                }
                 
                 // Run egui and get any actions
                 let egui_input = state.egui_state.take_egui_input(&state.window);
