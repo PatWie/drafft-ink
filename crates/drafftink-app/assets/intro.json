@@ -2,6 +2,115 @@
   "id": "intro",
   "name": "intro",
   "shapes": {
+    "908e00aa-d160-4bef-bd2b-6def6d521bdf": {
+      "Arrow": {
+        "id": "908e00aa-d160-4bef-bd2b-6def6d521bdf",
+        "start": {
+          "x": 1180.0,
+          "y": 180.0
+        },
+        "end": {
+          "x": 1220.0,
+          "y": 100.0
+        },
+        "intermediate_points": [],
+        "path_style": "Direct",
+        "head_size": 15.0,
+        "style": {
+          "stroke_color": {
+            "r": 236,
+            "g": 72,
+            "b": 153,
+            "a": 255
+          },
+          "stroke_width": 2.0,
+          "fill_color": {
+            "r": 226,
+            "g": 232,
+            "b": 240,
+            "a": 255
+          },
+          "fill_pattern": "Hachure",
+          "sloppiness": "Artist",
+          "seed": 2173216194,
+          "opacity": 1.0
+        }
+      }
+    },
+    "8f3c4b5c-1373-4c02-b156-da21861acbec": {
+      "Arrow": {
+        "id": "8f3c4b5c-1373-4c02-b156-da21861acbec",
+        "start": {
+          "x": 460.0,
+          "y": 700.0
+        },
+        "end": {
+          "x": 180.0,
+          "y": 160.0
+        },
+        "intermediate_points": [
+          {
+            "x": 220.0,
+            "y": 620.0
+          }
+        ],
+        "path_style": "Flowing",
+        "head_size": 15.0,
+        "style": {
+          "stroke_color": {
+            "r": 236,
+            "g": 72,
+            "b": 153,
+            "a": 255
+          },
+          "stroke_width": 2.0,
+          "fill_color": {
+            "r": 226,
+            "g": 232,
+            "b": 240,
+            "a": 255
+          },
+          "fill_pattern": "Hachure",
+          "sloppiness": "Artist",
+          "seed": 3368028940,
+          "opacity": 1.0
+        }
+      }
+    },
+    "f6ab6ff0-2c43-4edc-91d4-95a4d19d0fc5": {
+      "Text": {
+        "id": "f6ab6ff0-2c43-4edc-91d4-95a4d19d0fc5",
+        "position": {
+          "x": 400.0,
+          "y": 860.0
+        },
+        "content": "snap to grid",
+        "font_size": 20.0,
+        "font_family": "GelPen",
+        "font_weight": "Regular",
+        "rotation": 0.0,
+        "style": {
+          "stroke_color": {
+            "r": 236,
+            "g": 72,
+            "b": 153,
+            "a": 255
+          },
+          "stroke_width": 2.0,
+          "fill_color": {
+            "r": 226,
+            "g": 232,
+            "b": 240,
+            "a": 255
+          },
+          "fill_pattern": "Hachure",
+          "sloppiness": "Artist",
+          "seed": 3159276705,
+          "opacity": 1.0
+        },
+        "char_colors": []
+      }
+    },
     "ebe55230-d97a-48c2-9ca7-d717cf151525": {
       "Arrow": {
         "id": "ebe55230-d97a-48c2-9ca7-d717cf151525",
@@ -37,20 +146,78 @@
         }
       }
     },
-    "78b1b518-2f31-4c63-a11b-671f7b41a721": {
-      "Arrow": {
-        "id": "78b1b518-2f31-4c63-a11b-671f7b41a721",
-        "start": {
-          "x": 960.0,
-          "y": 180.0
+    "8011136b-0594-46a0-b794-c5d7190d884d": {
+      "Text": {
+        "id": "8011136b-0594-46a0-b794-c5d7190d884d",
+        "position": {
+          "x": 540.0,
+          "y": 600.2920386904761
         },
-        "end": {
-          "x": 1000.0,
-          "y": 100.0
+        "content": "https://sharasfonts.com/",
+        "font_size": 20.0,
+        "font_family": "GelPen",
+        "font_weight": "Regular",
+        "rotation": 0.0,
+        "style": {
+          "stroke_color": {
+            "r": 168,
+            "g": 85,
+            "b": 247,
+            "a": 255
+          },
+          "stroke_width": 2.0,
+          "fill_color": null,
+          "fill_pattern": "Solid",
+          "sloppiness": "Artist",
+          "seed": 3464142227,
+          "opacity": 1.0
         },
-        "intermediate_points": [],
-        "path_style": "Direct",
-        "head_size": 15.0,
+        "char_colors": []
+      }
+    },
+    "76ac8445-b150-4a6f-a485-91720eadc964": {
+      "Ellipse": {
+        "id": "76ac8445-b150-4a6f-a485-91720eadc964",
+        "center": {
+          "x": 644.770275297619,
+          "y": 611.1714099702382
+        },
+        "radius_x": 127.95107886904762,
+        "radius_y": 31.171409970238187,
+        "rotation": 0.0,
+        "style": {
+          "stroke_color": {
+            "r": 168,
+            "g": 85,
+            "b": 247,
+            "a": 255
+          },
+          "stroke_width": 2.0,
+          "fill_color": {
+            "r": 243,
+            "g": 232,
+            "b": 255,
+            "a": 255
+          },
+          "fill_pattern": "CrossHatch",
+          "sloppiness": "Artist",
+          "seed": 710655003,
+          "opacity": 1.0
+        }
+      }
+    },
+    "2da43eca-8d7d-4bf2-b024-55bff373e047": {
+      "Text": {
+        "id": "2da43eca-8d7d-4bf2-b024-55bff373e047",
+        "position": {
+          "x": 137.69810267857144,
+          "y": 669.4047619047619
+        },
+        "content": "choose tool",
+        "font_size": 20.0,
+        "font_family": "GelPen",
+        "font_weight": "Regular",
+        "rotation": 0.4929152858407124,
         "style": {
           "stroke_color": {
             "r": 236,
@@ -67,19 +234,20 @@
           },
           "fill_pattern": "Hachure",
           "sloppiness": "Artist",
-          "seed": 2173216194,
+          "seed": 3159276705,
           "opacity": 1.0
-        }
+        },
+        "char_colors": []
       }
     },
-    "1747ac47-f4b1-4154-9dd5-04ac8b10f19d": {
+    "688927d5-75bf-4c30-927d-e7dee224b42c": {
       "Text": {
-        "id": "1747ac47-f4b1-4154-9dd5-04ac8b10f19d",
+        "id": "688927d5-75bf-4c30-927d-e7dee224b42c",
         "position": {
           "x": 600.0,
-          "y": 480.0
+          "y": 460.0
         },
-        "content": "https://drafft.ink/",
+        "content": "https://github.com/PatWie/drafft-ink",
         "font_size": 20.0,
         "font_family": "GelPen",
         "font_weight": "Regular",
@@ -102,6 +270,213 @@
           "sloppiness": "Artist",
           "seed": 2057383781,
           "opacity": 1.0
+        },
+        "char_colors": []
+      }
+    },
+    "89376fe3-9c98-4a69-9c89-c3d8dcda2b31": {
+      "Text": {
+        "id": "89376fe3-9c98-4a69-9c89-c3d8dcda2b31",
+        "position": {
+          "x": 520.0,
+          "y": 460.0
+        },
+        "content": "code",
+        "font_size": 20.0,
+        "font_family": "GelPen",
+        "font_weight": "Regular",
+        "rotation": 0.0,
+        "style": {
+          "stroke_color": {
+            "r": 16,
+            "g": 185,
+            "b": 129,
+            "a": 255
+          },
+          "stroke_width": 2.0,
+          "fill_color": {
+            "r": 226,
+            "g": 232,
+            "b": 240,
+            "a": 255
+          },
+          "fill_pattern": "Hachure",
+          "sloppiness": "Artist",
+          "seed": 2042441525,
+          "opacity": 1.0
+        },
+        "char_colors": []
+      }
+    },
+    "0e38b771-8eef-449b-83fb-dfc065387fb0": {
+      "Freehand": {
+        "id": "0e38b771-8eef-449b-83fb-dfc065387fb0",
+        "points": [
+          {
+            "x": 935.5701264880952,
+            "y": 372.4841889880952
+          },
+          {
+            "x": 935.5701264880952,
+            "y": 372.4841889880952
+          }
+        ],
+        "pressures": [
+          1.0,
+          1.0
+        ],
+        "style": {
+          "stroke_color": {
+            "r": 8,
+            "g": 145,
+            "b": 178,
+            "a": 128
+          },
+          "stroke_width": 12.0,
+          "fill_color": {
+            "r": 251,
+            "g": 207,
+            "b": 232,
+            "a": 255
+          },
+          "fill_pattern": "Hachure",
+          "sloppiness": "Artist",
+          "seed": 1915652040,
+          "opacity": 1.0
+        }
+      }
+    },
+    "3ec83310-46c2-4f8d-9253-d48bf4a08aaa": {
+      "Arrow": {
+        "id": "3ec83310-46c2-4f8d-9253-d48bf4a08aaa",
+        "start": {
+          "x": 435.1069568452382,
+          "y": 883.7630208333333
+        },
+        "end": {
+          "x": 432.00520833333337,
+          "y": 976.11328125
+        },
+        "intermediate_points": [],
+        "path_style": "Direct",
+        "head_size": 15.0,
+        "style": {
+          "stroke_color": {
+            "r": 236,
+            "g": 72,
+            "b": 153,
+            "a": 255
+          },
+          "stroke_width": 2.0,
+          "fill_color": {
+            "r": 226,
+            "g": 232,
+            "b": 240,
+            "a": 255
+          },
+          "fill_pattern": "Hachure",
+          "sloppiness": "Artist",
+          "seed": 2361813540,
+          "opacity": 1.0
+        }
+      }
+    },
+    "cd5ad2eb-c60b-4b4f-8dad-1a2ead152413": {
+      "Arrow": {
+        "id": "cd5ad2eb-c60b-4b4f-8dad-1a2ead152413",
+        "start": {
+          "x": 190.4380580357144,
+          "y": 709.5647321428571
+        },
+        "end": {
+          "x": 128.3286830357143,
+          "y": 672.6041666666667
+        },
+        "intermediate_points": [],
+        "path_style": "Direct",
+        "head_size": 15.0,
+        "style": {
+          "stroke_color": {
+            "r": 236,
+            "g": 72,
+            "b": 153,
+            "a": 255
+          },
+          "stroke_width": 2.0,
+          "fill_color": {
+            "r": 226,
+            "g": 232,
+            "b": 240,
+            "a": 255
+          },
+          "fill_pattern": "Hachure",
+          "sloppiness": "Artist",
+          "seed": 2361813540,
+          "opacity": 1.0
+        }
+      }
+    },
+    "a464801a-d072-4463-983e-72553071b66f": {
+      "Rectangle": {
+        "id": "a464801a-d072-4463-983e-72553071b66f",
+        "position": {
+          "x": 297.79110863095235,
+          "y": 186.29557291666663
+        },
+        "width": 492.91759672619054,
+        "height": 65.37853422619048,
+        "corner_radius": 0.0,
+        "rotation": 0.0,
+        "style": {
+          "stroke_color": {
+            "r": 129,
+            "g": 140,
+            "b": 248,
+            "a": 255
+          },
+          "stroke_width": 2.0,
+          "fill_color": {
+            "r": 224,
+            "g": 231,
+            "b": 255,
+            "a": 255
+          },
+          "fill_pattern": "Hachure",
+          "sloppiness": "Artist",
+          "seed": 4109042794,
+          "opacity": 1.0
+        }
+      }
+    },
+    "82ea95af-f275-41d1-b50f-fd4841f40155": {
+      "Rectangle": {
+        "id": "82ea95af-f275-41d1-b50f-fd4841f40155",
+        "position": {
+          "x": 286.82105654761904,
+          "y": 400.50781249999994
+        },
+        "width": 345.63392857142856,
+        "height": 40.729166666666686,
+        "corner_radius": 32.0,
+        "rotation": 0.0,
+        "style": {
+          "stroke_color": {
+            "r": 148,
+            "g": 163,
+            "b": 184,
+            "a": 255
+          },
+          "stroke_width": 2.0,
+          "fill_color": {
+            "r": 226,
+            "g": 232,
+            "b": 240,
+            "a": 255
+          },
+          "fill_pattern": "Hachure",
+          "sloppiness": "Artist",
+          "seed": 102219515,
+          "opacity": 1.0
         }
       }
     },
@@ -118,7 +493,7 @@
                   "y": 499.88839285714266
                 },
                 {
-                  "x": 1158.0636160714287,
+                  "x": 1158.063616071429,
                   "y": 463.6346726190475
                 }
               ],
@@ -260,7 +635,8 @@
                       "sloppiness": "Artist",
                       "seed": 2477280406,
                       "opacity": 1.0
-                    }
+                    },
+                    "char_colors": []
                   }
                 }
               ],
@@ -297,23 +673,23 @@
         }
       }
     },
-    "8011136b-0594-46a0-b794-c5d7190d884d": {
+    "672ff778-bf3a-4aa3-b077-bad9d4974465": {
       "Text": {
-        "id": "8011136b-0594-46a0-b794-c5d7190d884d",
+        "id": "672ff778-bf3a-4aa3-b077-bad9d4974465",
         "position": {
-          "x": 540.0,
-          "y": 600.2920386904761
+          "x": 296.56343005952374,
+          "y": 408.829613095238
         },
-        "content": "https://sharasfonts.com/",
+        "content": "All data is save locally in your Browser!",
         "font_size": 20.0,
         "font_family": "GelPen",
         "font_weight": "Regular",
         "rotation": 0.0,
         "style": {
           "stroke_color": {
-            "r": 168,
+            "r": 71,
             "g": 85,
-            "b": 247,
+            "b": 105,
             "a": 255
           },
           "stroke_width": 2.0,
@@ -322,127 +698,18 @@
           "sloppiness": "Artist",
           "seed": 3464142227,
           "opacity": 1.0
-        }
-      }
-    },
-    "8f3c4b5c-1373-4c02-b156-da21861acbec": {
-      "Arrow": {
-        "id": "8f3c4b5c-1373-4c02-b156-da21861acbec",
-        "start": {
-          "x": 460.0,
-          "y": 700.0
         },
-        "end": {
-          "x": 180.0,
-          "y": 160.0
-        },
-        "intermediate_points": [
-          {
-            "x": 220.0,
-            "y": 620.0
-          }
-        ],
-        "path_style": "Flowing",
-        "head_size": 15.0,
-        "style": {
-          "stroke_color": {
-            "r": 236,
-            "g": 72,
-            "b": 153,
-            "a": 255
-          },
-          "stroke_width": 2.0,
-          "fill_color": {
-            "r": 226,
-            "g": 232,
-            "b": 240,
-            "a": 255
-          },
-          "fill_pattern": "Hachure",
-          "sloppiness": "Artist",
-          "seed": 3368028940,
-          "opacity": 1.0
-        }
+        "char_colors": []
       }
     },
-    "81e526d4-7d3b-4a7b-b613-25f2394ff101": {
-      "Rectangle": {
-        "id": "81e526d4-7d3b-4a7b-b613-25f2394ff101",
-        "position": {
-          "x": 280.0,
-          "y": 700.0
-        },
-        "width": 560.0,
-        "height": 60.0,
-        "corner_radius": 32.0,
-        "rotation": 0.0,
-        "style": {
-          "stroke_color": {
-            "r": 236,
-            "g": 72,
-            "b": 153,
-            "a": 255
-          },
-          "stroke_width": 2.0,
-          "fill_color": {
-            "r": 251,
-            "g": 207,
-            "b": 232,
-            "a": 255
-          },
-          "fill_pattern": "Hachure",
-          "sloppiness": "Artist",
-          "seed": 3300016019,
-          "opacity": 1.0
-        }
-      }
-    },
-    "0e38b771-8eef-449b-83fb-dfc065387fb0": {
-      "Freehand": {
-        "id": "0e38b771-8eef-449b-83fb-dfc065387fb0",
-        "points": [
-          {
-            "x": 935.5701264880952,
-            "y": 372.48418898809524
-          },
-          {
-            "x": 935.5701264880952,
-            "y": 372.48418898809524
-          }
-        ],
-        "pressures": [
-          1.0,
-          1.0
-        ],
-        "style": {
-          "stroke_color": {
-            "r": 8,
-            "g": 145,
-            "b": 178,
-            "a": 128
-          },
-          "stroke_width": 12.0,
-          "fill_color": {
-            "r": 251,
-            "g": 207,
-            "b": 232,
-            "a": 255
-          },
-          "fill_pattern": "Hachure",
-          "sloppiness": "Artist",
-          "seed": 1915652040,
-          "opacity": 1.0
-        }
-      }
-    },
-    "6f39f12e-f412-49ac-8f1b-ae0f23456666": {
+    "0e1a8a54-f214-402c-8128-9a120a74f9ab": {
       "Text": {
-        "id": "6f39f12e-f412-49ac-8f1b-ae0f23456666",
+        "id": "0e1a8a54-f214-402c-8128-9a120a74f9ab",
         "position": {
-          "x": 1140.0,
-          "y": 200.0
+          "x": 1009.999069940476,
+          "y": 356.17373511904765
         },
-        "content": "select stroke",
+        "content": "choose properties",
         "font_size": 20.0,
         "font_family": "GelPen",
         "font_weight": "Regular",
@@ -464,6 +731,36 @@
           "fill_pattern": "Hachure",
           "sloppiness": "Artist",
           "seed": 3159276705,
+          "opacity": 1.0
+        },
+        "char_colors": []
+      }
+    },
+    "b412e8c5-5289-45d3-af52-4044adf3fae0": {
+      "Line": {
+        "id": "b412e8c5-5289-45d3-af52-4044adf3fae0",
+        "start": {
+          "x": 440.87923809523807,
+          "y": 724.0426666666667
+        },
+        "end": {
+          "x": 479.6248380952381,
+          "y": 724.0426666666667
+        },
+        "intermediate_points": [],
+        "path_style": "Direct",
+        "style": {
+          "stroke_color": {
+            "r": 0,
+            "g": 0,
+            "b": 0,
+            "a": 255
+          },
+          "stroke_width": 4.0,
+          "fill_color": null,
+          "fill_pattern": "Solid",
+          "sloppiness": "Artist",
+          "seed": 45354383,
           "opacity": 1.0
         }
       }
@@ -498,55 +795,20 @@
           "sloppiness": "Artist",
           "seed": 2042441525,
           "opacity": 1.0
-        }
+        },
+        "char_colors": []
       }
     },
-    "cd5ad2eb-c60b-4b4f-8dad-1a2ead152413": {
-      "Arrow": {
-        "id": "cd5ad2eb-c60b-4b4f-8dad-1a2ead152413",
-        "start": {
-          "x": 190.4380580357144,
-          "y": 709.5647321428571
-        },
-        "end": {
-          "x": 128.3286830357143,
-          "y": 672.6041666666667
-        },
-        "intermediate_points": [],
-        "path_style": "Direct",
-        "head_size": 15.0,
-        "style": {
-          "stroke_color": {
-            "r": 236,
-            "g": 72,
-            "b": 153,
-            "a": 255
-          },
-          "stroke_width": 2.0,
-          "fill_color": {
-            "r": 226,
-            "g": 232,
-            "b": 240,
-            "a": 255
-          },
-          "fill_pattern": "Hachure",
-          "sloppiness": "Artist",
-          "seed": 2361813540,
-          "opacity": 1.0
-        }
-      }
-    },
-    "f6ab6ff0-2c43-4edc-91d4-95a4d19d0fc5": {
-      "Text": {
-        "id": "f6ab6ff0-2c43-4edc-91d4-95a4d19d0fc5",
+    "81e526d4-7d3b-4a7b-b613-25f2394ff101": {
+      "Rectangle": {
+        "id": "81e526d4-7d3b-4a7b-b613-25f2394ff101",
         "position": {
-          "x": 400.0,
-          "y": 860.0
+          "x": 280.0,
+          "y": 700.0
         },
-        "content": "snap to grid",
-        "font_size": 20.0,
-        "font_family": "GelPen",
-        "font_weight": "Regular",
+        "width": 560.0,
+        "height": 60.0,
+        "corner_radius": 32.0,
         "rotation": 0.0,
         "style": {
           "stroke_color": {
@@ -557,49 +819,14 @@
           },
           "stroke_width": 2.0,
           "fill_color": {
-            "r": 226,
-            "g": 232,
-            "b": 240,
+            "r": 251,
+            "g": 207,
+            "b": 232,
             "a": 255
           },
           "fill_pattern": "Hachure",
           "sloppiness": "Artist",
-          "seed": 3159276705,
-          "opacity": 1.0
-        }
-      }
-    },
-    "3ec83310-46c2-4f8d-9253-d48bf4a08aaa": {
-      "Arrow": {
-        "id": "3ec83310-46c2-4f8d-9253-d48bf4a08aaa",
-        "start": {
-          "x": 435.1069568452382,
-          "y": 883.7630208333333
-        },
-        "end": {
-          "x": 432.00520833333337,
-          "y": 976.11328125
-        },
-        "intermediate_points": [],
-        "path_style": "Direct",
-        "head_size": 15.0,
-        "style": {
-          "stroke_color": {
-            "r": 236,
-            "g": 72,
-            "b": 153,
-            "a": 255
-          },
-          "stroke_width": 2.0,
-          "fill_color": {
-            "r": 226,
-            "g": 232,
-            "b": 240,
-            "a": 255
-          },
-          "fill_pattern": "Hachure",
-          "sloppiness": "Artist",
-          "seed": 2361813540,
+          "seed": 3300016019,
           "opacity": 1.0
         }
       }
@@ -608,14 +835,14 @@
       "Text": {
         "id": "353823b2-21e8-41f0-acf6-5d6456660bc7",
         "position": {
-          "x": 820.0,
-          "y": 200.0
+          "x": 817.6143973214286,
+          "y": 135.1748511904762
         },
         "content": "select color",
         "font_size": 20.0,
         "font_family": "GelPen",
         "font_weight": "Regular",
-        "rotation": 0.0,
+        "rotation": -1.5707963267948966,
         "style": {
           "stroke_color": {
             "r": 236,
@@ -634,195 +861,8 @@
           "sloppiness": "Artist",
           "seed": 3159276705,
           "opacity": 1.0
-        }
-      }
-    },
-    "2da43eca-8d7d-4bf2-b024-55bff373e047": {
-      "Text": {
-        "id": "2da43eca-8d7d-4bf2-b024-55bff373e047",
-        "position": {
-          "x": 140.0,
-          "y": 720.0
         },
-        "content": "choose tool",
-        "font_size": 20.0,
-        "font_family": "GelPen",
-        "font_weight": "Regular",
-        "rotation": 0.0,
-        "style": {
-          "stroke_color": {
-            "r": 236,
-            "g": 72,
-            "b": 153,
-            "a": 255
-          },
-          "stroke_width": 2.0,
-          "fill_color": {
-            "r": 226,
-            "g": 232,
-            "b": 240,
-            "a": 255
-          },
-          "fill_pattern": "Hachure",
-          "sloppiness": "Artist",
-          "seed": 3159276705,
-          "opacity": 1.0
-        }
-      }
-    },
-    "d5c1b924-8617-4d7a-9c2b-92f6afbcce1d": {
-      "Text": {
-        "id": "d5c1b924-8617-4d7a-9c2b-92f6afbcce1d",
-        "position": {
-          "x": 300.0,
-          "y": 720.0
-        },
-        "content": "Click the menu",
-        "font_size": 20.0,
-        "font_family": "GelPen",
-        "font_weight": "Regular",
-        "rotation": 0.0,
-        "style": {
-          "stroke_color": {
-            "r": 0,
-            "g": 0,
-            "b": 0,
-            "a": 255
-          },
-          "stroke_width": 2.0,
-          "fill_color": null,
-          "fill_pattern": "Solid",
-          "sloppiness": "Artist",
-          "seed": 3464142227,
-          "opacity": 1.0
-        }
-      }
-    },
-    "76ac8445-b150-4a6f-a485-91720eadc964": {
-      "Ellipse": {
-        "id": "76ac8445-b150-4a6f-a485-91720eadc964",
-        "center": {
-          "x": 644.770275297619,
-          "y": 611.1714099702382
-        },
-        "radius_x": 127.95107886904762,
-        "radius_y": 31.171409970238187,
-        "rotation": 0.0,
-        "style": {
-          "stroke_color": {
-            "r": 168,
-            "g": 85,
-            "b": 247,
-            "a": 255
-          },
-          "stroke_width": 2.0,
-          "fill_color": {
-            "r": 243,
-            "g": 232,
-            "b": 255,
-            "a": 255
-          },
-          "fill_pattern": "CrossHatch",
-          "sloppiness": "Artist",
-          "seed": 710655003,
-          "opacity": 1.0
-        }
-      }
-    },
-    "a464801a-d072-4463-983e-72553071b66f": {
-      "Rectangle": {
-        "id": "a464801a-d072-4463-983e-72553071b66f",
-        "position": {
-          "x": 297.79110863095235,
-          "y": 186.29557291666663
-        },
-        "width": 492.91759672619054,
-        "height": 65.37853422619048,
-        "corner_radius": 0.0,
-        "rotation": 0.0,
-        "style": {
-          "stroke_color": {
-            "r": 129,
-            "g": 140,
-            "b": 248,
-            "a": 255
-          },
-          "stroke_width": 2.0,
-          "fill_color": {
-            "r": 224,
-            "g": 231,
-            "b": 255,
-            "a": 255
-          },
-          "fill_pattern": "Hachure",
-          "sloppiness": "Artist",
-          "seed": 4109042794,
-          "opacity": 1.0
-        }
-      }
-    },
-    "e524d881-e3f5-4a60-978f-9306172da10b": {
-      "Line": {
-        "id": "e524d881-e3f5-4a60-978f-9306172da10b",
-        "start": {
-          "x": 440.9571428571429,
-          "y": 729.2050666666665
-        },
-        "end": {
-          "x": 480.0027047619048,
-          "y": 729.0217333333333
-        },
-        "intermediate_points": [],
-        "path_style": "Direct",
-        "style": {
-          "stroke_color": {
-            "r": 0,
-            "g": 0,
-            "b": 0,
-            "a": 255
-          },
-          "stroke_width": 4.0,
-          "fill_color": null,
-          "fill_pattern": "Solid",
-          "sloppiness": "Artist",
-          "seed": 3361232487,
-          "opacity": 1.0
-        }
-      }
-    },
-    "908e00aa-d160-4bef-bd2b-6def6d521bdf": {
-      "Arrow": {
-        "id": "908e00aa-d160-4bef-bd2b-6def6d521bdf",
-        "start": {
-          "x": 1180.0,
-          "y": 180.0
-        },
-        "end": {
-          "x": 1220.0,
-          "y": 100.0
-        },
-        "intermediate_points": [],
-        "path_style": "Direct",
-        "head_size": 15.0,
-        "style": {
-          "stroke_color": {
-            "r": 236,
-            "g": 72,
-            "b": 153,
-            "a": 255
-          },
-          "stroke_width": 2.0,
-          "fill_color": {
-            "r": 226,
-            "g": 232,
-            "b": 240,
-            "a": 255
-          },
-          "fill_pattern": "Hachure",
-          "sloppiness": "Artist",
-          "seed": 2173216194,
-          "opacity": 1.0
-        }
+        "char_colors": []
       }
     },
     "a1c137be-6cb0-4f2b-b69a-f5c1582ebc19": {
@@ -850,176 +890,22 @@
           "sloppiness": "Artist",
           "seed": 2039762141,
           "opacity": 1.0
-        }
+        },
+        "char_colors": []
       }
     },
-    "b412e8c5-5289-45d3-af52-4044adf3fae0": {
-      "Line": {
-        "id": "b412e8c5-5289-45d3-af52-4044adf3fae0",
-        "start": {
-          "x": 440.87923809523807,
-          "y": 724.0426666666667
-        },
-        "end": {
-          "x": 479.6248380952381,
-          "y": 724.0426666666667
-        },
-        "intermediate_points": [],
-        "path_style": "Direct",
-        "style": {
-          "stroke_color": {
-            "r": 0,
-            "g": 0,
-            "b": 0,
-            "a": 255
-          },
-          "stroke_width": 4.0,
-          "fill_color": null,
-          "fill_pattern": "Solid",
-          "sloppiness": "Artist",
-          "seed": 45354383,
-          "opacity": 1.0
-        }
-      }
-    },
-    "688927d5-75bf-4c30-927d-e7dee224b42c": {
+    "6f39f12e-f412-49ac-8f1b-ae0f23456666": {
       "Text": {
-        "id": "688927d5-75bf-4c30-927d-e7dee224b42c",
+        "id": "6f39f12e-f412-49ac-8f1b-ae0f23456666",
         "position": {
-          "x": 600.0,
-          "y": 460.0
+          "x": 1112.55859375,
+          "y": 137.6860119047619
         },
-        "content": "https://github.com/PatWie/drafft-ink",
+        "content": "select stroke",
         "font_size": 20.0,
         "font_family": "GelPen",
         "font_weight": "Regular",
-        "rotation": 0.0,
-        "style": {
-          "stroke_color": {
-            "r": 16,
-            "g": 185,
-            "b": 129,
-            "a": 255
-          },
-          "stroke_width": 2.0,
-          "fill_color": {
-            "r": 226,
-            "g": 232,
-            "b": 240,
-            "a": 255
-          },
-          "fill_pattern": "Hachure",
-          "sloppiness": "Artist",
-          "seed": 2057383781,
-          "opacity": 1.0
-        }
-      }
-    },
-    "89376fe3-9c98-4a69-9c89-c3d8dcda2b31": {
-      "Text": {
-        "id": "89376fe3-9c98-4a69-9c89-c3d8dcda2b31",
-        "position": {
-          "x": 520.0,
-          "y": 460.0
-        },
-        "content": "code",
-        "font_size": 20.0,
-        "font_family": "GelPen",
-        "font_weight": "Regular",
-        "rotation": 0.0,
-        "style": {
-          "stroke_color": {
-            "r": 16,
-            "g": 185,
-            "b": 129,
-            "a": 255
-          },
-          "stroke_width": 2.0,
-          "fill_color": {
-            "r": 226,
-            "g": 232,
-            "b": 240,
-            "a": 255
-          },
-          "fill_pattern": "Hachure",
-          "sloppiness": "Artist",
-          "seed": 2042441525,
-          "opacity": 1.0
-        }
-      }
-    },
-    "82ea95af-f275-41d1-b50f-fd4841f40155": {
-      "Rectangle": {
-        "id": "82ea95af-f275-41d1-b50f-fd4841f40155",
-        "position": {
-          "x": 288.9741443452381,
-          "y": 371.7317708333333
-        },
-        "width": 345.63392857142856,
-        "height": 40.729166666666686,
-        "corner_radius": 32.0,
-        "rotation": 0.0,
-        "style": {
-          "stroke_color": {
-            "r": 148,
-            "g": 163,
-            "b": 184,
-            "a": 255
-          },
-          "stroke_width": 2.0,
-          "fill_color": {
-            "r": 226,
-            "g": 232,
-            "b": 240,
-            "a": 255
-          },
-          "fill_pattern": "Hachure",
-          "sloppiness": "Artist",
-          "seed": 102219515,
-          "opacity": 1.0
-        }
-      }
-    },
-    "672ff778-bf3a-4aa3-b077-bad9d4974465": {
-      "Text": {
-        "id": "672ff778-bf3a-4aa3-b077-bad9d4974465",
-        "position": {
-          "x": 298.7165178571428,
-          "y": 380.0535714285714
-        },
-        "content": "All data is save locally in your Browser!",
-        "font_size": 20.0,
-        "font_family": "GelPen",
-        "font_weight": "Regular",
-        "rotation": 0.0,
-        "style": {
-          "stroke_color": {
-            "r": 71,
-            "g": 85,
-            "b": 105,
-            "a": 255
-          },
-          "stroke_width": 2.0,
-          "fill_color": null,
-          "fill_pattern": "Solid",
-          "sloppiness": "Artist",
-          "seed": 3464142227,
-          "opacity": 1.0
-        }
-      }
-    },
-    "7851d95c-2805-4d5d-9622-be9f72d3c034": {
-      "Text": {
-        "id": "7851d95c-2805-4d5d-9622-be9f72d3c034",
-        "position": {
-          "x": 256.15420386904765,
-          "y": 850.8072916666667
-        },
-        "content": "navigate",
-        "font_size": 20.0,
-        "font_family": "GelPen",
-        "font_weight": "Regular",
-        "rotation": 0.0,
+        "rotation": -1.0828328387553818,
         "style": {
           "stroke_color": {
             "r": 236,
@@ -1038,7 +924,8 @@
           "sloppiness": "Artist",
           "seed": 3159276705,
           "opacity": 1.0
-        }
+        },
+        "char_colors": []
       }
     },
     "869a6455-c940-4ed7-b2bf-62c9198c561e": {
@@ -1066,7 +953,8 @@
           "sloppiness": "Artist",
           "seed": 3464142227,
           "opacity": 1.0
-        }
+        },
+        "char_colors": []
       }
     },
     "d5972fc1-dc9a-4e7f-b5d3-a9e0b0e1992f": {
@@ -1098,16 +986,16 @@
         }
       }
     },
-    "636858d5-dd1e-46b7-88f3-4bbe6b03de7e": {
+    "78b1b518-2f31-4c63-a11b-671f7b41a721": {
       "Arrow": {
-        "id": "636858d5-dd1e-46b7-88f3-4bbe6b03de7e",
+        "id": "78b1b518-2f31-4c63-a11b-671f7b41a721",
         "start": {
-          "x": 1089.9990699404761,
-          "y": 396.17373511904765
+          "x": 960.0,
+          "y": 180.0
         },
         "end": {
-          "x": 1189.9990699404761,
-          "y": 396.17373511904765
+          "x": 1000.0,
+          "y": 100.0
         },
         "intermediate_points": [],
         "path_style": "Direct",
@@ -1133,18 +1021,19 @@
         }
       }
     },
-    "5a2ea263-177c-4434-ad5a-0128bcd33e8f": {
-      "Text": {
-        "id": "5a2ea263-177c-4434-ad5a-0128bcd33e8f",
-        "position": {
-          "x": 299.0234375,
-          "y": 273.11197916666663
+    "e524d881-e3f5-4a60-978f-9306172da10b": {
+      "Line": {
+        "id": "e524d881-e3f5-4a60-978f-9306172da10b",
+        "start": {
+          "x": 440.9571428571429,
+          "y": 729.2050666666665
         },
-        "content": "Effortlessly self-host whiteboards. High-performance, \ncross-platform digital whiteboard with live collaboration \nbuilt in Rust & WebGPU. Zero subscription, AGPLv3-licensed.",
-        "font_size": 20.0,
-        "font_family": "GelPen",
-        "font_weight": "Regular",
-        "rotation": 0.0,
+        "end": {
+          "x": 480.0027047619048,
+          "y": 729.0217333333333
+        },
+        "intermediate_points": [],
+        "path_style": "Direct",
         "style": {
           "stroke_color": {
             "r": 0,
@@ -1152,77 +1041,11 @@
             "b": 0,
             "a": 255
           },
-          "stroke_width": 2.0,
+          "stroke_width": 4.0,
           "fill_color": null,
           "fill_pattern": "Solid",
           "sloppiness": "Artist",
-          "seed": 2585576749,
-          "opacity": 1.0
-        }
-      }
-    },
-    "b144e19b-7109-406c-a30e-1fa8761a7815": {
-      "Text": {
-        "id": "b144e19b-7109-406c-a30e-1fa8761a7815",
-        "position": {
-          "x": 960.0,
-          "y": 180.0
-        },
-        "content": "select fill",
-        "font_size": 20.0,
-        "font_family": "GelPen",
-        "font_weight": "Regular",
-        "rotation": 0.0,
-        "style": {
-          "stroke_color": {
-            "r": 236,
-            "g": 72,
-            "b": 153,
-            "a": 255
-          },
-          "stroke_width": 2.0,
-          "fill_color": {
-            "r": 226,
-            "g": 232,
-            "b": 240,
-            "a": 255
-          },
-          "fill_pattern": "Hachure",
-          "sloppiness": "Artist",
-          "seed": 3159276705,
-          "opacity": 1.0
-        }
-      }
-    },
-    "0e1a8a54-f214-402c-8128-9a120a74f9ab": {
-      "Text": {
-        "id": "0e1a8a54-f214-402c-8128-9a120a74f9ab",
-        "position": {
-          "x": 1009.9990699404761,
-          "y": 356.17373511904765
-        },
-        "content": "choose properties",
-        "font_size": 20.0,
-        "font_family": "GelPen",
-        "font_weight": "Regular",
-        "rotation": 0.0,
-        "style": {
-          "stroke_color": {
-            "r": 236,
-            "g": 72,
-            "b": 153,
-            "a": 255
-          },
-          "stroke_width": 2.0,
-          "fill_color": {
-            "r": 226,
-            "g": 232,
-            "b": 240,
-            "a": 255
-          },
-          "fill_pattern": "Hachure",
-          "sloppiness": "Artist",
-          "seed": 3159276705,
+          "seed": 3361232487,
           "opacity": 1.0
         }
       }
@@ -1262,6 +1085,402 @@
         }
       }
     },
+    "1747ac47-f4b1-4154-9dd5-04ac8b10f19d": {
+      "Text": {
+        "id": "1747ac47-f4b1-4154-9dd5-04ac8b10f19d",
+        "position": {
+          "x": 600.0,
+          "y": 480.0
+        },
+        "content": "https://drafft.ink/",
+        "font_size": 20.0,
+        "font_family": "GelPen",
+        "font_weight": "Regular",
+        "rotation": 0.0,
+        "style": {
+          "stroke_color": {
+            "r": 16,
+            "g": 185,
+            "b": 129,
+            "a": 255
+          },
+          "stroke_width": 2.0,
+          "fill_color": {
+            "r": 226,
+            "g": 232,
+            "b": 240,
+            "a": 255
+          },
+          "fill_pattern": "Hachure",
+          "sloppiness": "Artist",
+          "seed": 2057383781,
+          "opacity": 1.0
+        },
+        "char_colors": []
+      }
+    },
+    "636858d5-dd1e-46b7-88f3-4bbe6b03de7e": {
+      "Arrow": {
+        "id": "636858d5-dd1e-46b7-88f3-4bbe6b03de7e",
+        "start": {
+          "x": 1089.999069940476,
+          "y": 396.1737351190477
+        },
+        "end": {
+          "x": 1189.999069940476,
+          "y": 396.1737351190477
+        },
+        "intermediate_points": [],
+        "path_style": "Direct",
+        "head_size": 15.0,
+        "style": {
+          "stroke_color": {
+            "r": 236,
+            "g": 72,
+            "b": 153,
+            "a": 255
+          },
+          "stroke_width": 2.0,
+          "fill_color": {
+            "r": 226,
+            "g": 232,
+            "b": 240,
+            "a": 255
+          },
+          "fill_pattern": "Hachure",
+          "sloppiness": "Artist",
+          "seed": 2173216194,
+          "opacity": 1.0
+        }
+      }
+    },
+    "7851d95c-2805-4d5d-9622-be9f72d3c034": {
+      "Text": {
+        "id": "7851d95c-2805-4d5d-9622-be9f72d3c034",
+        "position": {
+          "x": 256.15420386904765,
+          "y": 850.8072916666667
+        },
+        "content": "navigate",
+        "font_size": 20.0,
+        "font_family": "GelPen",
+        "font_weight": "Regular",
+        "rotation": 0.0,
+        "style": {
+          "stroke_color": {
+            "r": 236,
+            "g": 72,
+            "b": 153,
+            "a": 255
+          },
+          "stroke_width": 2.0,
+          "fill_color": {
+            "r": 226,
+            "g": 232,
+            "b": 240,
+            "a": 255
+          },
+          "fill_pattern": "Hachure",
+          "sloppiness": "Artist",
+          "seed": 3159276705,
+          "opacity": 1.0
+        },
+        "char_colors": []
+      }
+    },
+    "5a2ea263-177c-4434-ad5a-0128bcd33e8f": {
+      "Text": {
+        "id": "5a2ea263-177c-4434-ad5a-0128bcd33e8f",
+        "position": {
+          "x": 299.0234375,
+          "y": 273.11197916666663
+        },
+        "content": "Effortlessly self-host whiteboards. High-performance, \ncross-platform digital whiteboard with live collaboration \nbuilt in Rust & WebGPU. Zero subscription, AGPLv3-licensed.\nWith colored text spans!",
+        "font_size": 20.0,
+        "font_family": "GelPen",
+        "font_weight": "Regular",
+        "rotation": 0.0,
+        "style": {
+          "stroke_color": {
+            "r": 0,
+            "g": 0,
+            "b": 0,
+            "a": 255
+          },
+          "stroke_width": 2.0,
+          "fill_color": {
+            "r": 0,
+            "g": 0,
+            "b": 0,
+            "a": 0
+          },
+          "fill_pattern": "Solid",
+          "sloppiness": "Artist",
+          "seed": 2585576749,
+          "opacity": 1.0
+        },
+        "char_colors": [
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          {
+            "r": 0,
+            "g": 0,
+            "b": 0,
+            "a": 255
+          },
+          {
+            "r": 0,
+            "g": 0,
+            "b": 0,
+            "a": 255
+          },
+          {
+            "r": 0,
+            "g": 0,
+            "b": 0,
+            "a": 255
+          },
+          {
+            "r": 0,
+            "g": 0,
+            "b": 0,
+            "a": 255
+          },
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          {
+            "r": 59,
+            "g": 130,
+            "b": 246,
+            "a": 255
+          },
+          {
+            "r": 239,
+            "g": 68,
+            "b": 68,
+            "a": 255
+          },
+          {
+            "r": 16,
+            "g": 185,
+            "b": 129,
+            "a": 255
+          },
+          {
+            "r": 168,
+            "g": 85,
+            "b": 247,
+            "a": 255
+          },
+          {
+            "r": 99,
+            "g": 102,
+            "b": 241,
+            "a": 255
+          },
+          {
+            "r": 192,
+            "g": 38,
+            "b": 211,
+            "a": 255
+          },
+          {
+            "r": 245,
+            "g": 158,
+            "b": 11,
+            "a": 255
+          },
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          {
+            "r": 0,
+            "g": 0,
+            "b": 0,
+            "a": 255
+          }
+        ]
+      }
+    },
     "5d9d1ad6-fc13-40bd-9d77-124a60132cc5": {
       "Text": {
         "id": "5d9d1ad6-fc13-40bd-9d77-124a60132cc5",
@@ -1287,7 +1506,71 @@
           "sloppiness": "Artist",
           "seed": 3464142227,
           "opacity": 1.0
-        }
+        },
+        "char_colors": []
+      }
+    },
+    "d5c1b924-8617-4d7a-9c2b-92f6afbcce1d": {
+      "Text": {
+        "id": "d5c1b924-8617-4d7a-9c2b-92f6afbcce1d",
+        "position": {
+          "x": 300.0,
+          "y": 720.0
+        },
+        "content": "Click the menu",
+        "font_size": 20.0,
+        "font_family": "GelPen",
+        "font_weight": "Regular",
+        "rotation": 0.0,
+        "style": {
+          "stroke_color": {
+            "r": 0,
+            "g": 0,
+            "b": 0,
+            "a": 255
+          },
+          "stroke_width": 2.0,
+          "fill_color": null,
+          "fill_pattern": "Solid",
+          "sloppiness": "Artist",
+          "seed": 3464142227,
+          "opacity": 1.0
+        },
+        "char_colors": []
+      }
+    },
+    "b144e19b-7109-406c-a30e-1fa8761a7815": {
+      "Text": {
+        "id": "b144e19b-7109-406c-a30e-1fa8761a7815",
+        "position": {
+          "x": 958.8560267857142,
+          "y": 145.234375
+        },
+        "content": "select fill",
+        "font_size": 20.0,
+        "font_family": "GelPen",
+        "font_weight": "Regular",
+        "rotation": -1.0491605184886232,
+        "style": {
+          "stroke_color": {
+            "r": 236,
+            "g": 72,
+            "b": 153,
+            "a": 255
+          },
+          "stroke_width": 2.0,
+          "fill_color": {
+            "r": 226,
+            "g": 232,
+            "b": 240,
+            "a": 255
+          },
+          "fill_pattern": "Hachure",
+          "sloppiness": "Artist",
+          "seed": 3159276705,
+          "opacity": 1.0
+        },
+        "char_colors": []
       }
     }
   },

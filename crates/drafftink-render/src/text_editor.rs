@@ -148,6 +148,22 @@ impl TextEditState {
         styles.insert(StyleProperty::FontSize(size));
     }
 
+    /// Get the current selection range as byte offsets.
+    /// Returns None if selection is collapsed (just a cursor).
+    pub fn selection_range(&self) -> Option<std::ops::Range<usize>> {
+        let range = self.editor.raw_selection().text_range();
+        if range.start == range.end {
+            None
+        } else {
+            Some(range)
+        }
+    }
+
+    /// Get the cursor byte offset (start of selection or cursor position).
+    pub fn cursor_byte_offset(&self) -> usize {
+        self.editor.raw_selection().text_range().start
+    }
+
     /// Set the text width constraint.
     pub fn set_width(&mut self, width: Option<f32>) {
         self.editor.set_width(width);

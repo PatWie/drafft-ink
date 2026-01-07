@@ -1876,6 +1876,13 @@ impl ApplicationHandler for App {
                 if let Some(clipboard_text) = file_ops::take_pending_clipboard_text() {
                     if let Some(text_id) = state.event_handler.editing_text {
                         if let Some(edit_state) = &mut state.text_edit_state {
+                            // Capture state before paste
+                            let old_text = edit_state.text();
+                            let old_char_count = old_text.chars().count();
+                            let cursor_byte = edit_state.cursor_byte_offset();
+                            let edit_char_pos =
+                                old_text[..cursor_byte.min(old_text.len())].chars().count();
+
                             let (font_cx, layout_cx) = state.shape_renderer.contexts_mut();
                             let _ = edit_state.handle_key(
                                 TextKey::Paste(clipboard_text),
@@ -1888,6 +1895,7 @@ impl ApplicationHandler for App {
                                 state.canvas.document.get_shape_mut(text_id)
                             {
                                 text.content = new_text;
+                                text.sync_char_colors_after_edit(edit_char_pos, old_char_count);
                             }
                         }
                     }
@@ -2076,6 +2084,19 @@ impl ApplicationHandler for App {
                     }
                 }
 
+                // Capture text selection state BEFORE egui processing
+                // (mouse events may clear it during egui run)
+                let text_selection_state: Option<(
+                    drafftink_core::shapes::ShapeId,
+                    std::ops::Range<usize>,
+                )> = if let (Some(text_id), Some(edit_state)) =
+                    (state.event_handler.editing_text, &state.text_edit_state)
+                {
+                    edit_state.selection_range().map(|r| (text_id, r))
+                } else {
+                    None
+                };
+
                 // Run egui and get any actions
                 let egui_input = state.egui_state.take_egui_input(&state.window);
                 let mut deferred_action: Option<UiAction> = None;
@@ -2088,18 +2109,49 @@ impl ApplicationHandler for App {
                             UiAction::SetStrokeColor(color) => {
                                 // Update UI state
                                 state.ui_state.stroke_color = color;
-                                // Apply to selected shapes
-                                let style = state.ui_state.to_shape_style();
-                                let has_selection = !state.canvas.selection.is_empty();
-                                for &shape_id in &state.canvas.selection.clone() {
-                                    if let Some(shape) =
-                                        state.canvas.document.get_shape_mut(shape_id)
+
+                                // Use captured text selection state (before mouse events cleared it)
+                                let mut applied_to_text_range = false;
+                                if let Some((text_id, byte_range)) = &text_selection_state {
+                                    if let Some(Shape::Text(text)) =
+                                        state.canvas.document.get_shape_mut(*text_id)
                                     {
-                                        shape.style_mut().stroke_color = style.stroke_color;
+                                        // Convert byte range to char indices
+                                        let start_char =
+                                            text.content[..byte_range.start].chars().count();
+                                        let end_char =
+                                            text.content[..byte_range.end].chars().count();
+                                        let style = state.ui_state.to_shape_style();
+                                        text.apply_color_to_range(
+                                            start_char,
+                                            end_char,
+                                            style.stroke_color,
+                                        );
+                                        applied_to_text_range = true;
+                                        log::info!(
+                                            "Applied color to char range {}..{}",
+                                            start_char,
+                                            end_char
+                                        );
                                     }
                                 }
+
+                                // If not applied to text range, apply to whole shapes
+                                if !applied_to_text_range {
+                                    let style = state.ui_state.to_shape_style();
+                                    for &shape_id in &state.canvas.selection.clone() {
+                                        if let Some(shape) =
+                                            state.canvas.document.get_shape_mut(shape_id)
+                                        {
+                                            shape.style_mut().stroke_color = style.stroke_color;
+                                        }
+                                    }
+                                }
+
                                 // Sync property changes
-                                if has_selection && state.collab.is_in_room() {
+                                let has_changes =
+                                    applied_to_text_range || !state.canvas.selection.is_empty();
+                                if has_changes && state.collab.is_in_room() {
                                     state.collab.sync_to_crdt(&state.canvas.document);
                                     state.collab.broadcast_sync();
                                     if let Some(ref ws) = state.websocket {
@@ -3977,6 +4029,13 @@ impl ApplicationHandler for App {
                             let (font_cx, layout_cx) = state.shape_renderer.contexts_mut();
 
                             if let Some(edit_state) = &mut state.text_edit_state {
+                                // Capture state before edit for color sync
+                                let old_text = edit_state.text();
+                                let old_char_count = old_text.chars().count();
+                                let cursor_byte = edit_state.cursor_byte_offset();
+                                let edit_char_pos =
+                                    old_text[..cursor_byte.min(old_text.len())].chars().count();
+
                                 let result =
                                     edit_state.handle_key(key, modifiers, font_cx, layout_cx);
                                 log::debug!(
@@ -3993,6 +4052,10 @@ impl ApplicationHandler for App {
                                             state.canvas.document.get_shape_mut(text_id)
                                         {
                                             text.content = new_text;
+                                            text.sync_char_colors_after_edit(
+                                                edit_char_pos,
+                                                old_char_count,
+                                            );
                                         }
                                         state.event_handler.exit_text_edit(&mut state.canvas);
                                         state.text_edit_state = None;
@@ -4004,6 +4067,10 @@ impl ApplicationHandler for App {
                                             state.canvas.document.get_shape_mut(text_id)
                                         {
                                             text.content = new_text;
+                                            text.sync_char_colors_after_edit(
+                                                edit_char_pos,
+                                                old_char_count,
+                                            );
                                         }
                                     }
                                     TextEditResult::Copy(text_to_copy) => {
@@ -4020,6 +4087,10 @@ impl ApplicationHandler for App {
                                             state.canvas.document.get_shape_mut(text_id)
                                         {
                                             text.content = new_text;
+                                            text.sync_char_colors_after_edit(
+                                                edit_char_pos,
+                                                old_char_count,
+                                            );
                                         }
                                     }
                                     TextEditResult::NotHandled => {}

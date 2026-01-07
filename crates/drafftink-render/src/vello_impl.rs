@@ -719,6 +719,22 @@ impl VelloRenderer {
         builder.push_default(StyleProperty::FontStack(parley::FontStack::Single(
             parley::FontFamily::Named(font_name.into()),
         )));
+
+        // Apply per-character colors
+        let mut byte_offset = 0;
+        for (char_idx, ch) in text.content.chars().enumerate() {
+            if let Some(Some(color)) = text.char_colors.get(char_idx) {
+                let color: peniko::Color = (*color).into();
+                let span_brush = Brush::Solid(color);
+                let char_len = ch.len_utf8();
+                builder.push(
+                    StyleProperty::Brush(span_brush),
+                    byte_offset..byte_offset + char_len,
+                );
+            }
+            byte_offset += ch.len_utf8();
+        }
+
         let mut layout = builder.build(&text.content);
 
         // Compute layout (no max width constraint for now)
@@ -758,6 +774,9 @@ impl VelloRenderer {
                     .skew()
                     .map(|angle| Affine::skew(angle.to_radians().tan() as f64, 0.0));
 
+                // Get the brush from the glyph run's style (supports per-run colors)
+                let run_brush = &glyph_run.style().brush;
+
                 let glyphs: Vec<vello::Glyph> = glyph_run
                     .glyphs()
                     .map(|glyph| {
@@ -776,7 +795,7 @@ impl VelloRenderer {
                 if !glyphs.is_empty() {
                     self.scene
                         .draw_glyphs(font)
-                        .brush(&brush)
+                        .brush(run_brush)
                         .hint(true)
                         .transform(text_transform)
                         .glyph_transform(glyph_xform)
@@ -1039,7 +1058,44 @@ impl VelloRenderer {
             styles.insert(StyleProperty::FontWeight(parley_weight));
         }
 
-        // IMPORTANT: First compute the layout - this must happen before cursor/selection geometry
+        // Get the current text content from the editor
+        let editor_text: String = edit_state.editor().text().to_string();
+
+        // Build a layout with per-character colors (PlainEditor doesn't support ranged styles)
+        let mut builder =
+            self.layout_cx
+                .ranged_builder(&mut self.font_cx, &editor_text, 1.0, false);
+        builder.push_default(parley::StyleProperty::FontSize(text.font_size as f32));
+        builder.push_default(parley::StyleProperty::Brush(brush.clone()));
+        builder.push_default(parley::StyleProperty::FontWeight(parley_weight));
+        builder.push_default(parley::StyleProperty::FontStack(parley::FontStack::Single(
+            parley::FontFamily::Named(font_name.into()),
+        )));
+
+        // Apply per-character colors
+        let mut byte_offset = 0;
+        for (char_idx, ch) in editor_text.chars().enumerate() {
+            if let Some(Some(color)) = text.char_colors.get(char_idx) {
+                let color: peniko::Color = (*color).into();
+                let span_brush = Brush::Solid(color);
+                let char_len = ch.len_utf8();
+                builder.push(
+                    parley::StyleProperty::Brush(span_brush),
+                    byte_offset..byte_offset + char_len,
+                );
+            }
+            byte_offset += ch.len_utf8();
+        }
+
+        let mut styled_layout = builder.build(&editor_text);
+        styled_layout.break_all_lines(None);
+        styled_layout.align(
+            None,
+            parley::Alignment::Start,
+            parley::AlignmentOptions::default(),
+        );
+
+        // Also update the editor's layout for cursor/selection geometry
         let layout = edit_state
             .editor_mut()
             .layout(&mut self.font_cx, &mut self.layout_cx);
@@ -1083,8 +1139,8 @@ impl VelloRenderer {
             transform * Affine::translate((render_position.x, render_position.y))
         };
 
-        // Render glyphs first (text content)
-        for line in layout.lines() {
+        // Render glyphs first (text content) - use styled_layout which has color spans
+        for line in styled_layout.lines() {
             for item in line.items() {
                 let PositionedLayoutItem::GlyphRun(glyph_run) = item else {
                     continue;

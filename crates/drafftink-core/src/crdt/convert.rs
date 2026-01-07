@@ -65,6 +65,7 @@ const KEY_CONTENT: &str = "content";
 const KEY_FONT_SIZE: &str = "font_size";
 const KEY_FONT_FAMILY: &str = "font_family";
 const KEY_FONT_WEIGHT: &str = "font_weight";
+const KEY_CHAR_COLORS: &str = "char_colors";
 
 // Image keys
 const KEY_SOURCE_WIDTH: &str = "source_width";
@@ -195,6 +196,20 @@ pub fn shape_to_loro(shape: &Shape, map: &LoroMap) -> LoroResult<()> {
             map.insert(KEY_FONT_FAMILY, font_family_to_i64(text.font_family))?;
             map.insert(KEY_FONT_WEIGHT, font_weight_to_i64(text.font_weight))?;
             map.insert(KEY_ROTATION, text.rotation)?;
+            // Serialize char_colors as list of [r,g,b,a] or null
+            let colors_list = map.insert_container(KEY_CHAR_COLORS, LoroList::new())?;
+            for color in &text.char_colors {
+                if let Some(c) = color {
+                    let c_list =
+                        colors_list.insert_container(colors_list.len(), LoroList::new())?;
+                    c_list.push(c.r as i64)?;
+                    c_list.push(c.g as i64)?;
+                    c_list.push(c.b as i64)?;
+                    c_list.push(c.a as i64)?;
+                } else {
+                    colors_list.push(LoroValue::Null)?;
+                }
+            }
             style_to_loro(&text.style, map)?;
         }
         Shape::Group(group) => {
@@ -339,6 +354,7 @@ fn freehand_from_loro(map: &LoroMapValue) -> Option<Shape> {
 }
 
 fn text_from_loro(map: &LoroMapValue) -> Option<Shape> {
+    let char_colors = char_colors_from_loro(map);
     Some(Shape::Text(Text::reconstruct(
         get_id(map)?,
         Point::new(get_double(map, KEY_X)?, get_double(map, KEY_Y)?),
@@ -352,6 +368,7 @@ fn text_from_loro(map: &LoroMapValue) -> Option<Shape> {
             .unwrap_or_default(),
         get_double(map, KEY_ROTATION).unwrap_or(0.0),
         style_from_loro(map)?,
+        char_colors,
     )))
 }
 
@@ -438,6 +455,38 @@ fn pressures_from_loro(map: &LoroMapValue) -> Vec<f64> {
             LoroValue::Double(d) => Some(*d),
             LoroValue::I64(i) => Some(*i as f64),
             _ => None,
+        })
+        .collect()
+}
+
+fn char_colors_from_loro(map: &LoroMapValue) -> Vec<Option<SerializableColor>> {
+    let Some(LoroValue::List(list)) = map.get(KEY_CHAR_COLORS) else {
+        return vec![];
+    };
+    list.iter()
+        .map(|v| {
+            if let LoroValue::List(rgba) = v {
+                if rgba.len() >= 4 {
+                    let r = match &rgba[0] {
+                        LoroValue::I64(n) => *n as u8,
+                        _ => return None,
+                    };
+                    let g = match &rgba[1] {
+                        LoroValue::I64(n) => *n as u8,
+                        _ => return None,
+                    };
+                    let b = match &rgba[2] {
+                        LoroValue::I64(n) => *n as u8,
+                        _ => return None,
+                    };
+                    let a = match &rgba[3] {
+                        LoroValue::I64(n) => *n as u8,
+                        _ => return None,
+                    };
+                    return Some(SerializableColor::new(r, g, b, a));
+                }
+            }
+            None
         })
         .collect()
 }
