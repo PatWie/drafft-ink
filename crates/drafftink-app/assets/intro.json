@@ -2,484 +2,6 @@
   "id": "intro",
   "name": "intro",
   "shapes": {
-    "908e00aa-d160-4bef-bd2b-6def6d521bdf": {
-      "Arrow": {
-        "id": "908e00aa-d160-4bef-bd2b-6def6d521bdf",
-        "start": {
-          "x": 1180.0,
-          "y": 180.0
-        },
-        "end": {
-          "x": 1220.0,
-          "y": 100.0
-        },
-        "intermediate_points": [],
-        "path_style": "Direct",
-        "head_size": 15.0,
-        "style": {
-          "stroke_color": {
-            "r": 236,
-            "g": 72,
-            "b": 153,
-            "a": 255
-          },
-          "stroke_width": 2.0,
-          "fill_color": {
-            "r": 226,
-            "g": 232,
-            "b": 240,
-            "a": 255
-          },
-          "fill_pattern": "Hachure",
-          "sloppiness": "Artist",
-          "seed": 2173216194,
-          "opacity": 1.0
-        }
-      }
-    },
-    "8f3c4b5c-1373-4c02-b156-da21861acbec": {
-      "Arrow": {
-        "id": "8f3c4b5c-1373-4c02-b156-da21861acbec",
-        "start": {
-          "x": 460.0,
-          "y": 700.0
-        },
-        "end": {
-          "x": 180.0,
-          "y": 160.0
-        },
-        "intermediate_points": [
-          {
-            "x": 220.0,
-            "y": 620.0
-          }
-        ],
-        "path_style": "Flowing",
-        "head_size": 15.0,
-        "style": {
-          "stroke_color": {
-            "r": 236,
-            "g": 72,
-            "b": 153,
-            "a": 255
-          },
-          "stroke_width": 2.0,
-          "fill_color": {
-            "r": 226,
-            "g": 232,
-            "b": 240,
-            "a": 255
-          },
-          "fill_pattern": "Hachure",
-          "sloppiness": "Artist",
-          "seed": 3368028940,
-          "opacity": 1.0
-        }
-      }
-    },
-    "f6ab6ff0-2c43-4edc-91d4-95a4d19d0fc5": {
-      "Text": {
-        "id": "f6ab6ff0-2c43-4edc-91d4-95a4d19d0fc5",
-        "position": {
-          "x": 400.0,
-          "y": 860.0
-        },
-        "content": "snap to grid",
-        "font_size": 20.0,
-        "font_family": "GelPen",
-        "font_weight": "Regular",
-        "rotation": 0.0,
-        "style": {
-          "stroke_color": {
-            "r": 236,
-            "g": 72,
-            "b": 153,
-            "a": 255
-          },
-          "stroke_width": 2.0,
-          "fill_color": {
-            "r": 226,
-            "g": 232,
-            "b": 240,
-            "a": 255
-          },
-          "fill_pattern": "Hachure",
-          "sloppiness": "Artist",
-          "seed": 3159276705,
-          "opacity": 1.0
-        },
-        "char_colors": []
-      }
-    },
-    "ebe55230-d97a-48c2-9ca7-d717cf151525": {
-      "Arrow": {
-        "id": "ebe55230-d97a-48c2-9ca7-d717cf151525",
-        "start": {
-          "x": 242.49720982142867,
-          "y": 861.8098958333333
-        },
-        "end": {
-          "x": 239.39546130952385,
-          "y": 954.16015625
-        },
-        "intermediate_points": [],
-        "path_style": "Direct",
-        "head_size": 15.0,
-        "style": {
-          "stroke_color": {
-            "r": 236,
-            "g": 72,
-            "b": 153,
-            "a": 255
-          },
-          "stroke_width": 2.0,
-          "fill_color": {
-            "r": 226,
-            "g": 232,
-            "b": 240,
-            "a": 255
-          },
-          "fill_pattern": "Hachure",
-          "sloppiness": "Artist",
-          "seed": 2361813540,
-          "opacity": 1.0
-        }
-      }
-    },
-    "8011136b-0594-46a0-b794-c5d7190d884d": {
-      "Text": {
-        "id": "8011136b-0594-46a0-b794-c5d7190d884d",
-        "position": {
-          "x": 540.0,
-          "y": 600.2920386904761
-        },
-        "content": "https://sharasfonts.com/",
-        "font_size": 20.0,
-        "font_family": "GelPen",
-        "font_weight": "Regular",
-        "rotation": 0.0,
-        "style": {
-          "stroke_color": {
-            "r": 168,
-            "g": 85,
-            "b": 247,
-            "a": 255
-          },
-          "stroke_width": 2.0,
-          "fill_color": null,
-          "fill_pattern": "Solid",
-          "sloppiness": "Artist",
-          "seed": 3464142227,
-          "opacity": 1.0
-        },
-        "char_colors": []
-      }
-    },
-    "76ac8445-b150-4a6f-a485-91720eadc964": {
-      "Ellipse": {
-        "id": "76ac8445-b150-4a6f-a485-91720eadc964",
-        "center": {
-          "x": 644.770275297619,
-          "y": 611.1714099702382
-        },
-        "radius_x": 127.95107886904762,
-        "radius_y": 31.171409970238187,
-        "rotation": 0.0,
-        "style": {
-          "stroke_color": {
-            "r": 168,
-            "g": 85,
-            "b": 247,
-            "a": 255
-          },
-          "stroke_width": 2.0,
-          "fill_color": {
-            "r": 243,
-            "g": 232,
-            "b": 255,
-            "a": 255
-          },
-          "fill_pattern": "CrossHatch",
-          "sloppiness": "Artist",
-          "seed": 710655003,
-          "opacity": 1.0
-        }
-      }
-    },
-    "2da43eca-8d7d-4bf2-b024-55bff373e047": {
-      "Text": {
-        "id": "2da43eca-8d7d-4bf2-b024-55bff373e047",
-        "position": {
-          "x": 137.69810267857144,
-          "y": 669.4047619047619
-        },
-        "content": "choose tool",
-        "font_size": 20.0,
-        "font_family": "GelPen",
-        "font_weight": "Regular",
-        "rotation": 0.4929152858407124,
-        "style": {
-          "stroke_color": {
-            "r": 236,
-            "g": 72,
-            "b": 153,
-            "a": 255
-          },
-          "stroke_width": 2.0,
-          "fill_color": {
-            "r": 226,
-            "g": 232,
-            "b": 240,
-            "a": 255
-          },
-          "fill_pattern": "Hachure",
-          "sloppiness": "Artist",
-          "seed": 3159276705,
-          "opacity": 1.0
-        },
-        "char_colors": []
-      }
-    },
-    "688927d5-75bf-4c30-927d-e7dee224b42c": {
-      "Text": {
-        "id": "688927d5-75bf-4c30-927d-e7dee224b42c",
-        "position": {
-          "x": 600.0,
-          "y": 460.0
-        },
-        "content": "https://github.com/PatWie/drafft-ink",
-        "font_size": 20.0,
-        "font_family": "GelPen",
-        "font_weight": "Regular",
-        "rotation": 0.0,
-        "style": {
-          "stroke_color": {
-            "r": 16,
-            "g": 185,
-            "b": 129,
-            "a": 255
-          },
-          "stroke_width": 2.0,
-          "fill_color": {
-            "r": 226,
-            "g": 232,
-            "b": 240,
-            "a": 255
-          },
-          "fill_pattern": "Hachure",
-          "sloppiness": "Artist",
-          "seed": 2057383781,
-          "opacity": 1.0
-        },
-        "char_colors": []
-      }
-    },
-    "89376fe3-9c98-4a69-9c89-c3d8dcda2b31": {
-      "Text": {
-        "id": "89376fe3-9c98-4a69-9c89-c3d8dcda2b31",
-        "position": {
-          "x": 520.0,
-          "y": 460.0
-        },
-        "content": "code",
-        "font_size": 20.0,
-        "font_family": "GelPen",
-        "font_weight": "Regular",
-        "rotation": 0.0,
-        "style": {
-          "stroke_color": {
-            "r": 16,
-            "g": 185,
-            "b": 129,
-            "a": 255
-          },
-          "stroke_width": 2.0,
-          "fill_color": {
-            "r": 226,
-            "g": 232,
-            "b": 240,
-            "a": 255
-          },
-          "fill_pattern": "Hachure",
-          "sloppiness": "Artist",
-          "seed": 2042441525,
-          "opacity": 1.0
-        },
-        "char_colors": []
-      }
-    },
-    "0e38b771-8eef-449b-83fb-dfc065387fb0": {
-      "Freehand": {
-        "id": "0e38b771-8eef-449b-83fb-dfc065387fb0",
-        "points": [
-          {
-            "x": 935.5701264880952,
-            "y": 372.4841889880952
-          },
-          {
-            "x": 935.5701264880952,
-            "y": 372.4841889880952
-          }
-        ],
-        "pressures": [
-          1.0,
-          1.0
-        ],
-        "style": {
-          "stroke_color": {
-            "r": 8,
-            "g": 145,
-            "b": 178,
-            "a": 128
-          },
-          "stroke_width": 12.0,
-          "fill_color": {
-            "r": 251,
-            "g": 207,
-            "b": 232,
-            "a": 255
-          },
-          "fill_pattern": "Hachure",
-          "sloppiness": "Artist",
-          "seed": 1915652040,
-          "opacity": 1.0
-        }
-      }
-    },
-    "3ec83310-46c2-4f8d-9253-d48bf4a08aaa": {
-      "Arrow": {
-        "id": "3ec83310-46c2-4f8d-9253-d48bf4a08aaa",
-        "start": {
-          "x": 435.1069568452382,
-          "y": 883.7630208333333
-        },
-        "end": {
-          "x": 432.00520833333337,
-          "y": 976.11328125
-        },
-        "intermediate_points": [],
-        "path_style": "Direct",
-        "head_size": 15.0,
-        "style": {
-          "stroke_color": {
-            "r": 236,
-            "g": 72,
-            "b": 153,
-            "a": 255
-          },
-          "stroke_width": 2.0,
-          "fill_color": {
-            "r": 226,
-            "g": 232,
-            "b": 240,
-            "a": 255
-          },
-          "fill_pattern": "Hachure",
-          "sloppiness": "Artist",
-          "seed": 2361813540,
-          "opacity": 1.0
-        }
-      }
-    },
-    "cd5ad2eb-c60b-4b4f-8dad-1a2ead152413": {
-      "Arrow": {
-        "id": "cd5ad2eb-c60b-4b4f-8dad-1a2ead152413",
-        "start": {
-          "x": 190.4380580357144,
-          "y": 709.5647321428571
-        },
-        "end": {
-          "x": 128.3286830357143,
-          "y": 672.6041666666667
-        },
-        "intermediate_points": [],
-        "path_style": "Direct",
-        "head_size": 15.0,
-        "style": {
-          "stroke_color": {
-            "r": 236,
-            "g": 72,
-            "b": 153,
-            "a": 255
-          },
-          "stroke_width": 2.0,
-          "fill_color": {
-            "r": 226,
-            "g": 232,
-            "b": 240,
-            "a": 255
-          },
-          "fill_pattern": "Hachure",
-          "sloppiness": "Artist",
-          "seed": 2361813540,
-          "opacity": 1.0
-        }
-      }
-    },
-    "a464801a-d072-4463-983e-72553071b66f": {
-      "Rectangle": {
-        "id": "a464801a-d072-4463-983e-72553071b66f",
-        "position": {
-          "x": 297.79110863095235,
-          "y": 186.29557291666663
-        },
-        "width": 492.91759672619054,
-        "height": 65.37853422619048,
-        "corner_radius": 0.0,
-        "rotation": 0.0,
-        "style": {
-          "stroke_color": {
-            "r": 129,
-            "g": 140,
-            "b": 248,
-            "a": 255
-          },
-          "stroke_width": 2.0,
-          "fill_color": {
-            "r": 224,
-            "g": 231,
-            "b": 255,
-            "a": 255
-          },
-          "fill_pattern": "Hachure",
-          "sloppiness": "Artist",
-          "seed": 4109042794,
-          "opacity": 1.0
-        }
-      }
-    },
-    "82ea95af-f275-41d1-b50f-fd4841f40155": {
-      "Rectangle": {
-        "id": "82ea95af-f275-41d1-b50f-fd4841f40155",
-        "position": {
-          "x": 286.82105654761904,
-          "y": 400.50781249999994
-        },
-        "width": 345.63392857142856,
-        "height": 40.729166666666686,
-        "corner_radius": 32.0,
-        "rotation": 0.0,
-        "style": {
-          "stroke_color": {
-            "r": 148,
-            "g": 163,
-            "b": 184,
-            "a": 255
-          },
-          "stroke_width": 2.0,
-          "fill_color": {
-            "r": 226,
-            "g": 232,
-            "b": 240,
-            "a": 255
-          },
-          "fill_pattern": "Hachure",
-          "sloppiness": "Artist",
-          "seed": 102219515,
-          "opacity": 1.0
-        }
-      }
-    },
     "246e018e-c231-4d5c-b605-e7402ae2e1f0": {
       "Group": {
         "id": "246e018e-c231-4d5c-b605-e7402ae2e1f0",
@@ -489,12 +11,12 @@
               "id": "4673a1f8-96f6-498f-8dc6-7ff2eefe606e",
               "points": [
                 {
-                  "x": 1068.1640625000002,
-                  "y": 499.88839285714266
+                  "x": 1165.3041294642858,
+                  "y": 467.601376488095
                 },
                 {
-                  "x": 1158.063616071429,
-                  "y": 463.6346726190475
+                  "x": 1255.2036830357144,
+                  "y": 431.34765624999983
                 }
               ],
               "pressures": [
@@ -531,20 +53,20 @@
                     "id": "fb794d69-aa38-4f63-87a1-acdedcb0fb2d",
                     "points": [
                       {
-                        "x": 847.1121651785716,
-                        "y": 616.5736607142856
+                        "x": 944.2522321428571,
+                        "y": 584.2866443452378
                       },
                       {
-                        "x": 870.8984375000001,
-                        "y": 612.8720238095236
+                        "x": 968.0385044642857,
+                        "y": 580.5850074404759
                       },
                       {
-                        "x": 895.9681919642859,
-                        "y": 604.413132440476
+                        "x": 993.1082589285714,
+                        "y": 572.1261160714284
                       },
                       {
-                        "x": 960.6352306547622,
-                        "y": 567.8989955357141
+                        "x": 1057.7752976190477,
+                        "y": 535.6119791666665
                       }
                     ],
                     "pressures": [
@@ -578,8 +100,8 @@
                   "Math": {
                     "id": "f462a57e-dcd1-416a-aee6-ba8c047741d3",
                     "position": {
-                      "x": 889.8949032738096,
-                      "y": 600.8919270833334
+                      "x": 987.0349702380952,
+                      "y": 568.6049107142858
                     },
                     "latex": "x^2 + y^2 = \\int_{x=0}^\\infty R^2 dx",
                     "font_size": 20.0,
@@ -609,8 +131,8 @@
                   "Text": {
                     "id": "27b33f95-39a5-4b11-a10d-39086a75e8d5",
                     "position": {
-                      "x": 836.9233630952383,
-                      "y": 518.5593377976188
+                      "x": 934.0634300595239,
+                      "y": 486.27232142857116
                     },
                     "content": "We also support LaTeX with best-effort\nfor same font",
                     "font_size": 20.0,
@@ -651,7 +173,7 @@
                 "fill_color": null,
                 "fill_pattern": "Solid",
                 "sloppiness": "Artist",
-                "seed": 1559242683,
+                "seed": 3650283037,
                 "opacity": 1.0
               }
             }
@@ -668,46 +190,78 @@
           "fill_color": null,
           "fill_pattern": "Solid",
           "sloppiness": "Artist",
-          "seed": 2459991349,
+          "seed": 2928556452,
           "opacity": 1.0
         }
       }
     },
-    "672ff778-bf3a-4aa3-b077-bad9d4974465": {
-      "Text": {
-        "id": "672ff778-bf3a-4aa3-b077-bad9d4974465",
-        "position": {
-          "x": 296.56343005952374,
-          "y": 408.829613095238
+    "b5960dbc-ac14-4afc-b978-b5a3daabe231": {
+      "Line": {
+        "id": "b5960dbc-ac14-4afc-b978-b5a3daabe231",
+        "start": {
+          "x": 344.04761904761904,
+          "y": 370.43340773809524
         },
-        "content": "All data is save locally in your Browser!",
-        "font_size": 20.0,
-        "font_family": "GelPen",
-        "font_weight": "Regular",
-        "rotation": 0.0,
+        "end": {
+          "x": 406.3662574404762,
+          "y": 369.48939732142856
+        },
+        "intermediate_points": [],
+        "path_style": "Direct",
         "style": {
           "stroke_color": {
-            "r": 71,
-            "g": 85,
-            "b": 105,
+            "r": 239,
+            "g": 68,
+            "b": 68,
             "a": 255
           },
           "stroke_width": 2.0,
           "fill_color": null,
           "fill_pattern": "Solid",
           "sloppiness": "Artist",
-          "seed": 3464142227,
+          "seed": 3300330616,
           "opacity": 1.0
+        }
+      }
+    },
+    "a464801a-d072-4463-983e-72553071b66f": {
+      "Rectangle": {
+        "id": "a464801a-d072-4463-983e-72553071b66f",
+        "position": {
+          "x": 297.79110863095235,
+          "y": 186.29557291666663
         },
-        "char_colors": []
+        "width": 492.91759672619054,
+        "height": 65.37853422619048,
+        "corner_radius": 0.0,
+        "rotation": 0.0,
+        "style": {
+          "stroke_color": {
+            "r": 129,
+            "g": 140,
+            "b": 248,
+            "a": 255
+          },
+          "stroke_width": 2.0,
+          "fill_color": {
+            "r": 224,
+            "g": 231,
+            "b": 255,
+            "a": 255
+          },
+          "fill_pattern": "Hachure",
+          "sloppiness": "Artist",
+          "seed": 4109042794,
+          "opacity": 1.0
+        }
       }
     },
     "0e1a8a54-f214-402c-8128-9a120a74f9ab": {
       "Text": {
         "id": "0e1a8a54-f214-402c-8128-9a120a74f9ab",
         "position": {
-          "x": 1009.999069940476,
-          "y": 356.17373511904765
+          "x": 1372.229352678571,
+          "y": 401.2537202380953
         },
         "content": "choose properties",
         "font_size": 20.0,
@@ -736,16 +290,45 @@
         "char_colors": []
       }
     },
+    "8011136b-0594-46a0-b794-c5d7190d884d": {
+      "Text": {
+        "id": "8011136b-0594-46a0-b794-c5d7190d884d",
+        "position": {
+          "x": 540.0,
+          "y": 600.2920386904761
+        },
+        "content": "https://sharasfonts.com/",
+        "font_size": 20.0,
+        "font_family": "GelPen",
+        "font_weight": "Regular",
+        "rotation": 0.0,
+        "style": {
+          "stroke_color": {
+            "r": 168,
+            "g": 85,
+            "b": 247,
+            "a": 255
+          },
+          "stroke_width": 2.0,
+          "fill_color": null,
+          "fill_pattern": "Solid",
+          "sloppiness": "Artist",
+          "seed": 3464142227,
+          "opacity": 1.0
+        },
+        "char_colors": []
+      }
+    },
     "b412e8c5-5289-45d3-af52-4044adf3fae0": {
       "Line": {
         "id": "b412e8c5-5289-45d3-af52-4044adf3fae0",
         "start": {
-          "x": 440.87923809523807,
-          "y": 724.0426666666667
+          "x": 503.47745238095234,
+          "y": 728.265880952381
         },
         "end": {
-          "x": 479.6248380952381,
-          "y": 724.0426666666667
+          "x": 542.2230523809524,
+          "y": 728.265880952381
         },
         "intermediate_points": [],
         "path_style": "Direct",
@@ -765,23 +348,23 @@
         }
       }
     },
-    "67a51385-90ce-4e98-b2cc-33d9fe7ca953": {
+    "7c00409a-03ec-4645-9595-4aee65c711e7": {
       "Text": {
-        "id": "67a51385-90ce-4e98-b2cc-33d9fe7ca953",
+        "id": "7c00409a-03ec-4645-9595-4aee65c711e7",
         "position": {
-          "x": 520.0,
-          "y": 480.0
+          "x": 1126.8917410714287,
+          "y": 684.3089657738095
         },
-        "content": "url",
+        "content": "Select a font",
         "font_size": 20.0,
         "font_family": "GelPen",
         "font_weight": "Regular",
         "rotation": 0.0,
         "style": {
           "stroke_color": {
-            "r": 16,
-            "g": 185,
-            "b": 129,
+            "r": 168,
+            "g": 162,
+            "b": 158,
             "a": 255
           },
           "stroke_width": 2.0,
@@ -793,158 +376,43 @@
           },
           "fill_pattern": "Hachure",
           "sloppiness": "Artist",
-          "seed": 2042441525,
+          "seed": 2860431849,
           "opacity": 1.0
         },
-        "char_colors": []
+        "char_colors": [
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null
+        ]
       }
     },
-    "81e526d4-7d3b-4a7b-b613-25f2394ff101": {
-      "Rectangle": {
-        "id": "81e526d4-7d3b-4a7b-b613-25f2394ff101",
-        "position": {
-          "x": 280.0,
-          "y": 700.0
-        },
-        "width": 560.0,
-        "height": 60.0,
-        "corner_radius": 32.0,
-        "rotation": 0.0,
-        "style": {
-          "stroke_color": {
-            "r": 236,
-            "g": 72,
-            "b": 153,
-            "a": 255
-          },
-          "stroke_width": 2.0,
-          "fill_color": {
-            "r": 251,
-            "g": 207,
-            "b": 232,
-            "a": 255
-          },
-          "fill_pattern": "Hachure",
-          "sloppiness": "Artist",
-          "seed": 3300016019,
-          "opacity": 1.0
-        }
-      }
-    },
-    "353823b2-21e8-41f0-acf6-5d6456660bc7": {
+    "5d9d1ad6-fc13-40bd-9d77-124a60132cc5": {
       "Text": {
-        "id": "353823b2-21e8-41f0-acf6-5d6456660bc7",
+        "id": "5d9d1ad6-fc13-40bd-9d77-124a60132cc5",
         "position": {
-          "x": 817.6143973214286,
-          "y": 135.1748511904762
+          "x": 380.0,
+          "y": 600.0
         },
-        "content": "select color",
-        "font_size": 20.0,
-        "font_family": "GelPen",
-        "font_weight": "Regular",
-        "rotation": -1.5707963267948966,
-        "style": {
-          "stroke_color": {
-            "r": 236,
-            "g": 72,
-            "b": 153,
-            "a": 255
-          },
-          "stroke_width": 2.0,
-          "fill_color": {
-            "r": 226,
-            "g": 232,
-            "b": 240,
-            "a": 255
-          },
-          "fill_pattern": "Hachure",
-          "sloppiness": "Artist",
-          "seed": 3159276705,
-          "opacity": 1.0
-        },
-        "char_colors": []
-      }
-    },
-    "a1c137be-6cb0-4f2b-b69a-f5c1582ebc19": {
-      "Text": {
-        "id": "a1c137be-6cb0-4f2b-b69a-f5c1582ebc19",
-        "position": {
-          "x": 319.78701636904765,
-          "y": 205.3106398809524
-        },
-        "content": "Welcome to Drafft.Ink",
-        "font_size": 36.0,
-        "font_family": "VanillaExtract",
-        "font_weight": "Regular",
-        "rotation": 0.0,
-        "style": {
-          "stroke_color": {
-            "r": 99,
-            "g": 102,
-            "b": 241,
-            "a": 255
-          },
-          "stroke_width": 2.0,
-          "fill_color": null,
-          "fill_pattern": "Solid",
-          "sloppiness": "Artist",
-          "seed": 2039762141,
-          "opacity": 1.0
-        },
-        "char_colors": []
-      }
-    },
-    "6f39f12e-f412-49ac-8f1b-ae0f23456666": {
-      "Text": {
-        "id": "6f39f12e-f412-49ac-8f1b-ae0f23456666",
-        "position": {
-          "x": 1112.55859375,
-          "y": 137.6860119047619
-        },
-        "content": "select stroke",
-        "font_size": 20.0,
-        "font_family": "GelPen",
-        "font_weight": "Regular",
-        "rotation": -1.0828328387553818,
-        "style": {
-          "stroke_color": {
-            "r": 236,
-            "g": 72,
-            "b": 153,
-            "a": 255
-          },
-          "stroke_width": 2.0,
-          "fill_color": {
-            "r": 226,
-            "g": 232,
-            "b": 240,
-            "a": 255
-          },
-          "fill_pattern": "Hachure",
-          "sloppiness": "Artist",
-          "seed": 3159276705,
-          "opacity": 1.0
-        },
-        "char_colors": []
-      }
-    },
-    "869a6455-c940-4ed7-b2bf-62c9198c561e": {
-      "Text": {
-        "id": "869a6455-c940-4ed7-b2bf-62c9198c561e",
-        "position": {
-          "x": 500.0,
-          "y": 720.0
-        },
-        "content": "Then \"clear\" to get your empty canvas.",
+        "content": "Fonts are from",
         "font_size": 20.0,
         "font_family": "GelPen",
         "font_weight": "Regular",
         "rotation": 0.0,
         "style": {
           "stroke_color": {
-            "r": 0,
-            "g": 0,
-            "b": 0,
+            "r": 168,
+            "g": 85,
+            "b": 247,
             "a": 255
           },
           "stroke_width": 2.0,
@@ -957,49 +425,18 @@
         "char_colors": []
       }
     },
-    "d5972fc1-dc9a-4e7f-b5d3-a9e0b0e1992f": {
-      "Line": {
-        "id": "d5972fc1-dc9a-4e7f-b5d3-a9e0b0e1992f",
-        "start": {
-          "x": 440.87847619047625,
-          "y": 736.1675619047618
+    "b144e19b-7109-406c-a30e-1fa8761a7815": {
+      "Text": {
+        "id": "b144e19b-7109-406c-a30e-1fa8761a7815",
+        "position": {
+          "x": 914.1759672619048,
+          "y": 305.47433035714283
         },
-        "end": {
-          "x": 480.4431047619048,
-          "y": 736.190038095238
-        },
-        "intermediate_points": [],
-        "path_style": "Direct",
-        "style": {
-          "stroke_color": {
-            "r": 0,
-            "g": 0,
-            "b": 0,
-            "a": 255
-          },
-          "stroke_width": 4.0,
-          "fill_color": null,
-          "fill_pattern": "Solid",
-          "sloppiness": "Artist",
-          "seed": 3106472349,
-          "opacity": 1.0
-        }
-      }
-    },
-    "78b1b518-2f31-4c63-a11b-671f7b41a721": {
-      "Arrow": {
-        "id": "78b1b518-2f31-4c63-a11b-671f7b41a721",
-        "start": {
-          "x": 960.0,
-          "y": 180.0
-        },
-        "end": {
-          "x": 1000.0,
-          "y": 100.0
-        },
-        "intermediate_points": [],
-        "path_style": "Direct",
-        "head_size": 15.0,
+        "content": "select fill",
+        "font_size": 20.0,
+        "font_family": "GelPen",
+        "font_weight": "Regular",
+        "rotation": -0.462933654782959,
         "style": {
           "stroke_color": {
             "r": 236,
@@ -1016,21 +453,22 @@
           },
           "fill_pattern": "Hachure",
           "sloppiness": "Artist",
-          "seed": 2173216194,
+          "seed": 3159276705,
           "opacity": 1.0
-        }
+        },
+        "char_colors": []
       }
     },
     "e524d881-e3f5-4a60-978f-9306172da10b": {
       "Line": {
         "id": "e524d881-e3f5-4a60-978f-9306172da10b",
         "start": {
-          "x": 440.9571428571429,
-          "y": 729.2050666666665
+          "x": 502.387574404762,
+          "y": 734.7575220238094
         },
         "end": {
-          "x": 480.0027047619048,
-          "y": 729.0217333333333
+          "x": 541.4331363095239,
+          "y": 734.5741886904761
         },
         "intermediate_points": [],
         "path_style": "Direct",
@@ -1050,19 +488,24 @@
         }
       }
     },
-    "d465e6f1-e986-4d8b-b9f0-381b2655c393": {
+    "8f3c4b5c-1373-4c02-b156-da21861acbec": {
       "Arrow": {
-        "id": "d465e6f1-e986-4d8b-b9f0-381b2655c393",
+        "id": "8f3c4b5c-1373-4c02-b156-da21861acbec",
         "start": {
-          "x": 838.5044642857143,
-          "y": 189.00669642857144
+          "x": 521.430431547619,
+          "y": 705.5524553571429
         },
         "end": {
-          "x": 839.1183035714286,
-          "y": 101.68805803571428
+          "x": 55.0418526785715,
+          "y": 85.16741071428575
         },
-        "intermediate_points": [],
-        "path_style": "Direct",
+        "intermediate_points": [
+          {
+            "x": 281.4304315476191,
+            "y": 625.5524553571429
+          }
+        ],
+        "path_style": "Flowing",
         "head_size": 15.0,
         "style": {
           "stroke_color": {
@@ -1080,61 +523,73 @@
           },
           "fill_pattern": "Hachure",
           "sloppiness": "Artist",
-          "seed": 2361813540,
+          "seed": 3368028940,
           "opacity": 1.0
         }
       }
     },
-    "1747ac47-f4b1-4154-9dd5-04ac8b10f19d": {
+    "8584ea55-b8c1-4fc7-bbc2-956d51fe75df": {
       "Text": {
-        "id": "1747ac47-f4b1-4154-9dd5-04ac8b10f19d",
+        "id": "8584ea55-b8c1-4fc7-bbc2-956d51fe75df",
         "position": {
-          "x": 600.0,
-          "y": 480.0
+          "x": 1166.8917410714287,
+          "y": 724.3089657738095
         },
-        "content": "https://drafft.ink/",
+        "content": "Select a font",
+        "font_size": 20.0,
+        "font_family": "GelPenSerif",
+        "font_weight": "Light",
+        "rotation": 0.0,
+        "style": {
+          "stroke_color": {
+            "r": 168,
+            "g": 162,
+            "b": 158,
+            "a": 255
+          },
+          "stroke_width": 2.0,
+          "fill_color": {
+            "r": 226,
+            "g": 232,
+            "b": 240,
+            "a": 255
+          },
+          "fill_pattern": "Hachure",
+          "sloppiness": "Artist",
+          "seed": 2860431849,
+          "opacity": 1.0
+        },
+        "char_colors": [
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null
+        ]
+      }
+    },
+    "383eab95-4c91-4cbe-a28f-a2c033e0849e": {
+      "Text": {
+        "id": "383eab95-4c91-4cbe-a28f-a2c033e0849e",
+        "position": {
+          "x": 1702.8357514880954,
+          "y": 919.5042782738095
+        },
+        "content": "live collab users",
         "font_size": 20.0,
         "font_family": "GelPen",
         "font_weight": "Regular",
         "rotation": 0.0,
         "style": {
           "stroke_color": {
-            "r": 16,
-            "g": 185,
-            "b": 129,
-            "a": 255
-          },
-          "stroke_width": 2.0,
-          "fill_color": {
-            "r": 226,
-            "g": 232,
-            "b": 240,
-            "a": 255
-          },
-          "fill_pattern": "Hachure",
-          "sloppiness": "Artist",
-          "seed": 2057383781,
-          "opacity": 1.0
-        },
-        "char_colors": []
-      }
-    },
-    "636858d5-dd1e-46b7-88f3-4bbe6b03de7e": {
-      "Arrow": {
-        "id": "636858d5-dd1e-46b7-88f3-4bbe6b03de7e",
-        "start": {
-          "x": 1089.999069940476,
-          "y": 396.1737351190477
-        },
-        "end": {
-          "x": 1189.999069940476,
-          "y": 396.1737351190477
-        },
-        "intermediate_points": [],
-        "path_style": "Direct",
-        "head_size": 15.0,
-        "style": {
-          "stroke_color": {
             "r": 236,
             "g": 72,
             "b": 153,
@@ -1149,17 +604,36 @@
           },
           "fill_pattern": "Hachure",
           "sloppiness": "Artist",
-          "seed": 2173216194,
+          "seed": 3159276705,
           "opacity": 1.0
-        }
+        },
+        "char_colors": [
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null
+        ]
       }
     },
     "7851d95c-2805-4d5d-9622-be9f72d3c034": {
       "Text": {
         "id": "7851d95c-2805-4d5d-9622-be9f72d3c034",
         "position": {
-          "x": 256.15420386904765,
-          "y": 850.8072916666667
+          "x": 262.9668898809524,
+          "y": 870.8733258928572
         },
         "content": "navigate",
         "font_size": 20.0,
@@ -1183,6 +657,64 @@
           "fill_pattern": "Hachure",
           "sloppiness": "Artist",
           "seed": 3159276705,
+          "opacity": 1.0
+        },
+        "char_colors": []
+      }
+    },
+    "d5c1b924-8617-4d7a-9c2b-92f6afbcce1d": {
+      "Text": {
+        "id": "d5c1b924-8617-4d7a-9c2b-92f6afbcce1d",
+        "position": {
+          "x": 361.4304315476191,
+          "y": 725.5524553571429
+        },
+        "content": "Click the menu",
+        "font_size": 20.0,
+        "font_family": "GelPen",
+        "font_weight": "Regular",
+        "rotation": 0.0,
+        "style": {
+          "stroke_color": {
+            "r": 0,
+            "g": 0,
+            "b": 0,
+            "a": 255
+          },
+          "stroke_width": 2.0,
+          "fill_color": null,
+          "fill_pattern": "Solid",
+          "sloppiness": "Artist",
+          "seed": 3464142227,
+          "opacity": 1.0
+        },
+        "char_colors": []
+      }
+    },
+    "672ff778-bf3a-4aa3-b077-bad9d4974465": {
+      "Text": {
+        "id": "672ff778-bf3a-4aa3-b077-bad9d4974465",
+        "position": {
+          "x": 296.56343005952374,
+          "y": 408.829613095238
+        },
+        "content": "All data is save locally in your Browser!",
+        "font_size": 20.0,
+        "font_family": "GelPen",
+        "font_weight": "Regular",
+        "rotation": 0.0,
+        "style": {
+          "stroke_color": {
+            "r": 71,
+            "g": 85,
+            "b": 105,
+            "a": 255
+          },
+          "stroke_width": 2.0,
+          "fill_color": null,
+          "fill_pattern": "Solid",
+          "sloppiness": "Artist",
+          "seed": 3464142227,
           "opacity": 1.0
         },
         "char_colors": []
@@ -1481,17 +1013,366 @@
         ]
       }
     },
-    "5d9d1ad6-fc13-40bd-9d77-124a60132cc5": {
-      "Text": {
-        "id": "5d9d1ad6-fc13-40bd-9d77-124a60132cc5",
-        "position": {
-          "x": 380.0,
-          "y": 600.0
+    "3ec83310-46c2-4f8d-9253-d48bf4a08aaa": {
+      "Arrow": {
+        "id": "3ec83310-46c2-4f8d-9253-d48bf4a08aaa",
+        "start": {
+          "x": 426.7829241071429,
+          "y": 895.6724330357142
         },
-        "content": "Fonts are from",
+        "end": {
+          "x": 423.6811755952381,
+          "y": 988.022693452381
+        },
+        "intermediate_points": [],
+        "path_style": "Direct",
+        "head_size": 15.0,
+        "style": {
+          "stroke_color": {
+            "r": 236,
+            "g": 72,
+            "b": 153,
+            "a": 255
+          },
+          "stroke_width": 2.0,
+          "fill_color": {
+            "r": 226,
+            "g": 232,
+            "b": 240,
+            "a": 255
+          },
+          "fill_pattern": "Hachure",
+          "sloppiness": "Artist",
+          "seed": 2361813540,
+          "opacity": 1.0
+        }
+      }
+    },
+    "353823b2-21e8-41f0-acf6-5d6456660bc7": {
+      "Text": {
+        "id": "353823b2-21e8-41f0-acf6-5d6456660bc7",
+        "position": {
+          "x": 833.1742931547619,
+          "y": 164.3136160714285
+        },
+        "content": "select color",
         "font_size": 20.0,
         "font_family": "GelPen",
         "font_weight": "Regular",
+        "rotation": 1.1080481565002787,
+        "style": {
+          "stroke_color": {
+            "r": 236,
+            "g": 72,
+            "b": 153,
+            "a": 255
+          },
+          "stroke_width": 2.0,
+          "fill_color": {
+            "r": 226,
+            "g": 232,
+            "b": 240,
+            "a": 255
+          },
+          "fill_pattern": "Hachure",
+          "sloppiness": "Artist",
+          "seed": 3159276705,
+          "opacity": 1.0
+        },
+        "char_colors": []
+      }
+    },
+    "636858d5-dd1e-46b7-88f3-4bbe6b03de7e": {
+      "Arrow": {
+        "id": "636858d5-dd1e-46b7-88f3-4bbe6b03de7e",
+        "start": {
+          "x": 1385.0325520833333,
+          "y": 439.3982514880953
+        },
+        "end": {
+          "x": 1653.0431547619048,
+          "y": 439.1192336309525
+        },
+        "intermediate_points": [],
+        "path_style": "Direct",
+        "head_size": 15.0,
+        "style": {
+          "stroke_color": {
+            "r": 236,
+            "g": 72,
+            "b": 153,
+            "a": 255
+          },
+          "stroke_width": 2.0,
+          "fill_color": {
+            "r": 226,
+            "g": 232,
+            "b": 240,
+            "a": 255
+          },
+          "fill_pattern": "Hachure",
+          "sloppiness": "Artist",
+          "seed": 2173216194,
+          "opacity": 1.0
+        }
+      }
+    },
+    "bf702f2e-2878-4984-acbf-c697cffe0c4d": {
+      "Text": {
+        "id": "bf702f2e-2878-4984-acbf-c697cffe0c4d",
+        "position": {
+          "x": 1146.8917410714287,
+          "y": 704.3089657738095
+        },
+        "content": "Select a font",
+        "font_size": 20.0,
+        "font_family": "GelPen",
+        "font_weight": "Heavy",
+        "rotation": 0.0,
+        "style": {
+          "stroke_color": {
+            "r": 168,
+            "g": 162,
+            "b": 158,
+            "a": 255
+          },
+          "stroke_width": 2.0,
+          "fill_color": {
+            "r": 226,
+            "g": 232,
+            "b": 240,
+            "a": 255
+          },
+          "fill_pattern": "Hachure",
+          "sloppiness": "Artist",
+          "seed": 2860431849,
+          "opacity": 1.0
+        },
+        "char_colors": [
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null
+        ]
+      }
+    },
+    "a1c137be-6cb0-4f2b-b69a-f5c1582ebc19": {
+      "Text": {
+        "id": "a1c137be-6cb0-4f2b-b69a-f5c1582ebc19",
+        "position": {
+          "x": 319.78701636904765,
+          "y": 205.3106398809524
+        },
+        "content": "Welcome to Drafft.Ink",
+        "font_size": 36.0,
+        "font_family": "VanillaExtract",
+        "font_weight": "Regular",
+        "rotation": 0.0,
+        "style": {
+          "stroke_color": {
+            "r": 99,
+            "g": 102,
+            "b": 241,
+            "a": 255
+          },
+          "stroke_width": 2.0,
+          "fill_color": null,
+          "fill_pattern": "Solid",
+          "sloppiness": "Artist",
+          "seed": 2039762141,
+          "opacity": 1.0
+        },
+        "char_colors": []
+      }
+    },
+    "d07a3d20-f7c5-4762-9894-c1d61a13be3c": {
+      "Arrow": {
+        "id": "d07a3d20-f7c5-4762-9894-c1d61a13be3c",
+        "start": {
+          "x": 1785.1757812500002,
+          "y": 959.7107514880952
+        },
+        "end": {
+          "x": 1894.425223214286,
+          "y": 1024.9869791666665
+        },
+        "intermediate_points": [],
+        "path_style": "Direct",
+        "head_size": 15.0,
+        "style": {
+          "stroke_color": {
+            "r": 236,
+            "g": 72,
+            "b": 153,
+            "a": 255
+          },
+          "stroke_width": 2.0,
+          "fill_color": {
+            "r": 226,
+            "g": 232,
+            "b": 240,
+            "a": 255
+          },
+          "fill_pattern": "Hachure",
+          "sloppiness": "Artist",
+          "seed": 2361813540,
+          "opacity": 1.0
+        }
+      }
+    },
+    "6f39f12e-f412-49ac-8f1b-ae0f23456666": {
+      "Text": {
+        "id": "6f39f12e-f412-49ac-8f1b-ae0f23456666",
+        "position": {
+          "x": 1504.7925967261906,
+          "y": 27.18563988095238
+        },
+        "content": "select stroke",
+        "font_size": 20.0,
+        "font_family": "GelPen",
+        "font_weight": "Regular",
+        "rotation": -0.0,
+        "style": {
+          "stroke_color": {
+            "r": 236,
+            "g": 72,
+            "b": 153,
+            "a": 255
+          },
+          "stroke_width": 2.0,
+          "fill_color": {
+            "r": 226,
+            "g": 232,
+            "b": 240,
+            "a": 255
+          },
+          "fill_pattern": "Hachure",
+          "sloppiness": "Artist",
+          "seed": 3159276705,
+          "opacity": 1.0
+        },
+        "char_colors": []
+      }
+    },
+    "89376fe3-9c98-4a69-9c89-c3d8dcda2b31": {
+      "Text": {
+        "id": "89376fe3-9c98-4a69-9c89-c3d8dcda2b31",
+        "position": {
+          "x": 520.0,
+          "y": 460.0
+        },
+        "content": "code",
+        "font_size": 20.0,
+        "font_family": "GelPen",
+        "font_weight": "Regular",
+        "rotation": 0.0,
+        "style": {
+          "stroke_color": {
+            "r": 16,
+            "g": 185,
+            "b": 129,
+            "a": 255
+          },
+          "stroke_width": 2.0,
+          "fill_color": {
+            "r": 226,
+            "g": 232,
+            "b": 240,
+            "a": 255
+          },
+          "fill_pattern": "Hachure",
+          "sloppiness": "Artist",
+          "seed": 2042441525,
+          "opacity": 1.0
+        },
+        "char_colors": []
+      }
+    },
+    "82ea95af-f275-41d1-b50f-fd4841f40155": {
+      "Rectangle": {
+        "id": "82ea95af-f275-41d1-b50f-fd4841f40155",
+        "position": {
+          "x": 286.82105654761904,
+          "y": 400.50781249999994
+        },
+        "width": 345.63392857142856,
+        "height": 40.729166666666686,
+        "corner_radius": 32.0,
+        "rotation": 0.0,
+        "style": {
+          "stroke_color": {
+            "r": 148,
+            "g": 163,
+            "b": 184,
+            "a": 255
+          },
+          "stroke_width": 2.0,
+          "fill_color": {
+            "r": 226,
+            "g": 232,
+            "b": 240,
+            "a": 255
+          },
+          "fill_pattern": "Hachure",
+          "sloppiness": "Artist",
+          "seed": 102219515,
+          "opacity": 1.0
+        }
+      }
+    },
+    "cd5ad2eb-c60b-4b4f-8dad-1a2ead152413": {
+      "Arrow": {
+        "id": "cd5ad2eb-c60b-4b4f-8dad-1a2ead152413",
+        "start": {
+          "x": 189.6103050595239,
+          "y": 118.01432291666663
+        },
+        "end": {
+          "x": 127.50093005952382,
+          "y": 81.05375744047626
+        },
+        "intermediate_points": [],
+        "path_style": "Direct",
+        "head_size": 15.0,
+        "style": {
+          "stroke_color": {
+            "r": 236,
+            "g": 72,
+            "b": 153,
+            "a": 255
+          },
+          "stroke_width": 2.0,
+          "fill_color": {
+            "r": 226,
+            "g": 232,
+            "b": 240,
+            "a": 255
+          },
+          "fill_pattern": "Hachure",
+          "sloppiness": "Artist",
+          "seed": 2361813540,
+          "opacity": 1.0
+        }
+      }
+    },
+    "76ac8445-b150-4a6f-a485-91720eadc964": {
+      "Ellipse": {
+        "id": "76ac8445-b150-4a6f-a485-91720eadc964",
+        "center": {
+          "x": 644.770275297619,
+          "y": 611.1714099702382
+        },
+        "radius_x": 127.95107886904762,
+        "radius_y": 31.171409970238187,
         "rotation": 0.0,
         "style": {
           "stroke_color": {
@@ -1501,23 +1382,522 @@
             "a": 255
           },
           "stroke_width": 2.0,
-          "fill_color": null,
-          "fill_pattern": "Solid",
+          "fill_color": {
+            "r": 243,
+            "g": 232,
+            "b": 255,
+            "a": 255
+          },
+          "fill_pattern": "CrossHatch",
           "sloppiness": "Artist",
-          "seed": 3464142227,
+          "seed": 710655003,
+          "opacity": 1.0
+        }
+      }
+    },
+    "2da43eca-8d7d-4bf2-b024-55bff373e047": {
+      "Text": {
+        "id": "2da43eca-8d7d-4bf2-b024-55bff373e047",
+        "position": {
+          "x": 147.61718750000006,
+          "y": 71.66480654761904
+        },
+        "content": "live collab",
+        "font_size": 20.0,
+        "font_family": "GelPen",
+        "font_weight": "Regular",
+        "rotation": 0.4929152858407124,
+        "style": {
+          "stroke_color": {
+            "r": 236,
+            "g": 72,
+            "b": 153,
+            "a": 255
+          },
+          "stroke_width": 2.0,
+          "fill_color": {
+            "r": 226,
+            "g": 232,
+            "b": 240,
+            "a": 255
+          },
+          "fill_pattern": "Hachure",
+          "sloppiness": "Artist",
+          "seed": 3159276705,
+          "opacity": 1.0
+        },
+        "char_colors": [
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null
+        ]
+      }
+    },
+    "d465e6f1-e986-4d8b-b9f0-381b2655c393": {
+      "Arrow": {
+        "id": "d465e6f1-e986-4d8b-b9f0-381b2655c393",
+        "start": {
+          "x": 907.6032366071429,
+          "y": 175.4557291666667
+        },
+        "end": {
+          "x": 872.1075148809524,
+          "y": 108.84486607142853
+        },
+        "intermediate_points": [],
+        "path_style": "Direct",
+        "head_size": 15.0,
+        "style": {
+          "stroke_color": {
+            "r": 236,
+            "g": 72,
+            "b": 153,
+            "a": 255
+          },
+          "stroke_width": 2.0,
+          "fill_color": {
+            "r": 226,
+            "g": 232,
+            "b": 240,
+            "a": 255
+          },
+          "fill_pattern": "Hachure",
+          "sloppiness": "Artist",
+          "seed": 2361813540,
+          "opacity": 1.0
+        }
+      }
+    },
+    "67a51385-90ce-4e98-b2cc-33d9fe7ca953": {
+      "Text": {
+        "id": "67a51385-90ce-4e98-b2cc-33d9fe7ca953",
+        "position": {
+          "x": 520.0,
+          "y": 480.0
+        },
+        "content": "url",
+        "font_size": 20.0,
+        "font_family": "GelPen",
+        "font_weight": "Regular",
+        "rotation": 0.0,
+        "style": {
+          "stroke_color": {
+            "r": 16,
+            "g": 185,
+            "b": 129,
+            "a": 255
+          },
+          "stroke_width": 2.0,
+          "fill_color": {
+            "r": 226,
+            "g": 232,
+            "b": 240,
+            "a": 255
+          },
+          "fill_pattern": "Hachure",
+          "sloppiness": "Artist",
+          "seed": 2042441525,
           "opacity": 1.0
         },
         "char_colors": []
       }
     },
-    "d5c1b924-8617-4d7a-9c2b-92f6afbcce1d": {
+    "f6ab6ff0-2c43-4edc-91d4-95a4d19d0fc5": {
       "Text": {
-        "id": "d5c1b924-8617-4d7a-9c2b-92f6afbcce1d",
+        "id": "f6ab6ff0-2c43-4edc-91d4-95a4d19d0fc5",
         "position": {
-          "x": 300.0,
-          "y": 720.0
+          "x": 391.6759672619047,
+          "y": 872.0489211309523
         },
-        "content": "Click the menu",
+        "content": "snap to grid",
+        "font_size": 20.0,
+        "font_family": "GelPen",
+        "font_weight": "Regular",
+        "rotation": 0.0,
+        "style": {
+          "stroke_color": {
+            "r": 236,
+            "g": 72,
+            "b": 153,
+            "a": 255
+          },
+          "stroke_width": 2.0,
+          "fill_color": {
+            "r": 226,
+            "g": 232,
+            "b": 240,
+            "a": 255
+          },
+          "fill_pattern": "Hachure",
+          "sloppiness": "Artist",
+          "seed": 3159276705,
+          "opacity": 1.0
+        },
+        "char_colors": []
+      }
+    },
+    "6bb4acdf-d5cd-453f-83ed-00107e1822fc": {
+      "Text": {
+        "id": "6bb4acdf-d5cd-453f-83ed-00107e1822fc",
+        "position": {
+          "x": 1226.8917410714287,
+          "y": 784.3089657738095
+        },
+        "content": "Select a font",
+        "font_size": 20.0,
+        "font_family": "VanillaExtract",
+        "font_weight": "Light",
+        "rotation": 0.0,
+        "style": {
+          "stroke_color": {
+            "r": 168,
+            "g": 162,
+            "b": 158,
+            "a": 255
+          },
+          "stroke_width": 2.0,
+          "fill_color": {
+            "r": 226,
+            "g": 232,
+            "b": 240,
+            "a": 255
+          },
+          "fill_pattern": "Hachure",
+          "sloppiness": "Artist",
+          "seed": 2860431849,
+          "opacity": 1.0
+        },
+        "char_colors": [
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null
+        ]
+      }
+    },
+    "5be0ed94-501b-4d40-9c48-4507fb446cb9": {
+      "Arrow": {
+        "id": "5be0ed94-501b-4d40-9c48-4507fb446cb9",
+        "start": {
+          "x": 49.40662202380963,
+          "y": 891.7894345238095
+        },
+        "end": {
+          "x": 46.304873511904816,
+          "y": 984.1396949404763
+        },
+        "intermediate_points": [],
+        "path_style": "Direct",
+        "head_size": 15.0,
+        "style": {
+          "stroke_color": {
+            "r": 236,
+            "g": 72,
+            "b": 153,
+            "a": 255
+          },
+          "stroke_width": 2.0,
+          "fill_color": {
+            "r": 226,
+            "g": 232,
+            "b": 240,
+            "a": 255
+          },
+          "fill_pattern": "Hachure",
+          "sloppiness": "Artist",
+          "seed": 2361813540,
+          "opacity": 1.0
+        }
+      }
+    },
+    "57cac866-ff61-429d-81fa-fcc338463a4e": {
+      "Text": {
+        "id": "57cac866-ff61-429d-81fa-fcc338463a4e",
+        "position": {
+          "x": 1186.8917410714287,
+          "y": 744.3089657738095
+        },
+        "content": "Select a font",
+        "font_size": 20.0,
+        "font_family": "GelPenSerif",
+        "font_weight": "Regular",
+        "rotation": 0.0,
+        "style": {
+          "stroke_color": {
+            "r": 168,
+            "g": 162,
+            "b": 158,
+            "a": 255
+          },
+          "stroke_width": 2.0,
+          "fill_color": {
+            "r": 226,
+            "g": 232,
+            "b": 240,
+            "a": 255
+          },
+          "fill_pattern": "Hachure",
+          "sloppiness": "Artist",
+          "seed": 2860431849,
+          "opacity": 1.0
+        },
+        "char_colors": [
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null
+        ]
+      }
+    },
+    "d5972fc1-dc9a-4e7f-b5d3-a9e0b0e1992f": {
+      "Line": {
+        "id": "d5972fc1-dc9a-4e7f-b5d3-a9e0b0e1992f",
+        "start": {
+          "x": 502.30890773809534,
+          "y": 741.7200172619047
+        },
+        "end": {
+          "x": 541.8735363095238,
+          "y": 741.7424934523809
+        },
+        "intermediate_points": [],
+        "path_style": "Direct",
+        "style": {
+          "stroke_color": {
+            "r": 0,
+            "g": 0,
+            "b": 0,
+            "a": 255
+          },
+          "stroke_width": 4.0,
+          "fill_color": null,
+          "fill_pattern": "Solid",
+          "sloppiness": "Artist",
+          "seed": 3106472349,
+          "opacity": 1.0
+        }
+      }
+    },
+    "ebe55230-d97a-48c2-9ca7-d717cf151525": {
+      "Arrow": {
+        "id": "ebe55230-d97a-48c2-9ca7-d717cf151525",
+        "start": {
+          "x": 249.30989583333343,
+          "y": 881.8759300595237
+        },
+        "end": {
+          "x": 246.2081473214286,
+          "y": 974.2261904761905
+        },
+        "intermediate_points": [],
+        "path_style": "Direct",
+        "head_size": 15.0,
+        "style": {
+          "stroke_color": {
+            "r": 236,
+            "g": 72,
+            "b": 153,
+            "a": 255
+          },
+          "stroke_width": 2.0,
+          "fill_color": {
+            "r": 226,
+            "g": 232,
+            "b": 240,
+            "a": 255
+          },
+          "fill_pattern": "Hachure",
+          "sloppiness": "Artist",
+          "seed": 2361813540,
+          "opacity": 1.0
+        }
+      }
+    },
+    "be3b50c7-7491-4e2e-8bda-2313b75d9410": {
+      "Text": {
+        "id": "be3b50c7-7491-4e2e-8bda-2313b75d9410",
+        "position": {
+          "x": 106.93545386904768,
+          "y": 566.7438616071429
+        },
+        "content": "choose tool",
+        "font_size": 20.0,
+        "font_family": "GelPen",
+        "font_weight": "Regular",
+        "rotation": 0.5330455554650533,
+        "style": {
+          "stroke_color": {
+            "r": 236,
+            "g": 72,
+            "b": 153,
+            "a": 255
+          },
+          "stroke_width": 2.0,
+          "fill_color": {
+            "r": 226,
+            "g": 232,
+            "b": 240,
+            "a": 255
+          },
+          "fill_pattern": "Hachure",
+          "sloppiness": "Artist",
+          "seed": 3159276705,
+          "opacity": 1.0
+        },
+        "char_colors": []
+      }
+    },
+    "28820735-3aaa-4b2a-832d-a24d9af388c8": {
+      "Text": {
+        "id": "28820735-3aaa-4b2a-832d-a24d9af388c8",
+        "position": {
+          "x": 1206.8917410714287,
+          "y": 764.3089657738095
+        },
+        "content": "Select a font",
+        "font_size": 20.0,
+        "font_family": "GelPenSerif",
+        "font_weight": "Heavy",
+        "rotation": 0.0,
+        "style": {
+          "stroke_color": {
+            "r": 168,
+            "g": 162,
+            "b": 158,
+            "a": 255
+          },
+          "stroke_width": 2.0,
+          "fill_color": {
+            "r": 226,
+            "g": 232,
+            "b": 240,
+            "a": 255
+          },
+          "fill_pattern": "Hachure",
+          "sloppiness": "Artist",
+          "seed": 2860431849,
+          "opacity": 1.0
+        },
+        "char_colors": [
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null
+        ]
+      }
+    },
+    "0e4f6357-54aa-448c-8754-62ccc179851f": {
+      "Arrow": {
+        "id": "0e4f6357-54aa-448c-8754-62ccc179851f",
+        "start": {
+          "x": 171.05003720238105,
+          "y": 619.7293526785714
+        },
+        "end": {
+          "x": 108.94066220238096,
+          "y": 582.7687872023811
+        },
+        "intermediate_points": [],
+        "path_style": "Direct",
+        "head_size": 15.0,
+        "style": {
+          "stroke_color": {
+            "r": 236,
+            "g": 72,
+            "b": 153,
+            "a": 255
+          },
+          "stroke_width": 2.0,
+          "fill_color": {
+            "r": 226,
+            "g": 232,
+            "b": 240,
+            "a": 255
+          },
+          "fill_pattern": "Hachure",
+          "sloppiness": "Artist",
+          "seed": 2361813540,
+          "opacity": 1.0
+        }
+      }
+    },
+    "1747ac47-f4b1-4154-9dd5-04ac8b10f19d": {
+      "Text": {
+        "id": "1747ac47-f4b1-4154-9dd5-04ac8b10f19d",
+        "position": {
+          "x": 600.0,
+          "y": 480.0
+        },
+        "content": "https://drafft.ink/",
+        "font_size": 20.0,
+        "font_family": "GelPen",
+        "font_weight": "Regular",
+        "rotation": 0.0,
+        "style": {
+          "stroke_color": {
+            "r": 16,
+            "g": 185,
+            "b": 129,
+            "a": 255
+          },
+          "stroke_width": 2.0,
+          "fill_color": {
+            "r": 226,
+            "g": 232,
+            "b": 240,
+            "a": 255
+          },
+          "fill_pattern": "Hachure",
+          "sloppiness": "Artist",
+          "seed": 2057383781,
+          "opacity": 1.0
+        },
+        "char_colors": []
+      }
+    },
+    "869a6455-c940-4ed7-b2bf-62c9198c561e": {
+      "Text": {
+        "id": "869a6455-c940-4ed7-b2bf-62c9198c561e",
+        "position": {
+          "x": 561.430431547619,
+          "y": 725.5524553571429
+        },
+        "content": "Then \"clear\" to get your empty canvas.",
         "font_size": 20.0,
         "font_family": "GelPen",
         "font_weight": "Regular",
@@ -1539,18 +1919,206 @@
         "char_colors": []
       }
     },
-    "b144e19b-7109-406c-a30e-1fa8761a7815": {
+    "6e26fd72-7a63-455e-a8c6-8a27ff5f457e": {
       "Text": {
-        "id": "b144e19b-7109-406c-a30e-1fa8761a7815",
+        "id": "6e26fd72-7a63-455e-a8c6-8a27ff5f457e",
         "position": {
-          "x": 958.8560267857142,
-          "y": 145.234375
+          "x": 1106.8917410714287,
+          "y": 664.3089657738095
         },
-        "content": "select fill",
+        "content": "Select a font",
+        "font_size": 20.0,
+        "font_family": "GelPen",
+        "font_weight": "Light",
+        "rotation": 0.0,
+        "style": {
+          "stroke_color": {
+            "r": 168,
+            "g": 162,
+            "b": 158,
+            "a": 255
+          },
+          "stroke_width": 2.0,
+          "fill_color": {
+            "r": 226,
+            "g": 232,
+            "b": 240,
+            "a": 255
+          },
+          "fill_pattern": "Hachure",
+          "sloppiness": "Artist",
+          "seed": 2860431849,
+          "opacity": 1.0
+        },
+        "char_colors": [
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null
+        ]
+      }
+    },
+    "81e526d4-7d3b-4a7b-b613-25f2394ff101": {
+      "Rectangle": {
+        "id": "81e526d4-7d3b-4a7b-b613-25f2394ff101",
+        "position": {
+          "x": 341.4304315476191,
+          "y": 705.5524553571429
+        },
+        "width": 560.0,
+        "height": 60.0,
+        "corner_radius": 32.0,
+        "rotation": 0.0,
+        "style": {
+          "stroke_color": {
+            "r": 236,
+            "g": 72,
+            "b": 153,
+            "a": 255
+          },
+          "stroke_width": 2.0,
+          "fill_color": {
+            "r": 251,
+            "g": 207,
+            "b": 232,
+            "a": 255
+          },
+          "fill_pattern": "Hachure",
+          "sloppiness": "Artist",
+          "seed": 3300016019,
+          "opacity": 1.0
+        }
+      }
+    },
+    "78b1b518-2f31-4c63-a11b-671f7b41a721": {
+      "Arrow": {
+        "id": "78b1b518-2f31-4c63-a11b-671f7b41a721",
+        "start": {
+          "x": 920.3329613095239,
+          "y": 302.89341517857144
+        },
+        "end": {
+          "x": 988.7555803571429,
+          "y": 276.4555431547619
+        },
+        "intermediate_points": [],
+        "path_style": "Direct",
+        "head_size": 15.0,
+        "style": {
+          "stroke_color": {
+            "r": 236,
+            "g": 72,
+            "b": 153,
+            "a": 255
+          },
+          "stroke_width": 2.0,
+          "fill_color": {
+            "r": 226,
+            "g": 232,
+            "b": 240,
+            "a": 255
+          },
+          "fill_pattern": "Hachure",
+          "sloppiness": "Artist",
+          "seed": 2173216194,
+          "opacity": 1.0
+        }
+      }
+    },
+    "908e00aa-d160-4bef-bd2b-6def6d521bdf": {
+      "Arrow": {
+        "id": "908e00aa-d160-4bef-bd2b-6def6d521bdf",
+        "start": {
+          "x": 1606.9205729166665,
+          "y": 53.181733630952394
+        },
+        "end": {
+          "x": 1346.1114211309523,
+          "y": 27.757626488095237
+        },
+        "intermediate_points": [],
+        "path_style": "Angular",
+        "head_size": 15.0,
+        "style": {
+          "stroke_color": {
+            "r": 236,
+            "g": 72,
+            "b": 153,
+            "a": 255
+          },
+          "stroke_width": 2.0,
+          "fill_color": {
+            "r": 226,
+            "g": 232,
+            "b": 240,
+            "a": 255
+          },
+          "fill_pattern": "Hachure",
+          "sloppiness": "Artist",
+          "seed": 2173216194,
+          "opacity": 1.0
+        }
+      }
+    },
+    "0e38b771-8eef-449b-83fb-dfc065387fb0": {
+      "Freehand": {
+        "id": "0e38b771-8eef-449b-83fb-dfc065387fb0",
+        "points": [
+          {
+            "x": 935.5701264880952,
+            "y": 372.4841889880952
+          },
+          {
+            "x": 935.5701264880952,
+            "y": 372.4841889880952
+          }
+        ],
+        "pressures": [
+          1.0,
+          1.0
+        ],
+        "style": {
+          "stroke_color": {
+            "r": 8,
+            "g": 145,
+            "b": 178,
+            "a": 128
+          },
+          "stroke_width": 12.0,
+          "fill_color": {
+            "r": 251,
+            "g": 207,
+            "b": 232,
+            "a": 255
+          },
+          "fill_pattern": "Hachure",
+          "sloppiness": "Artist",
+          "seed": 1915652040,
+          "opacity": 1.0
+        }
+      }
+    },
+    "7451a4c8-df68-49da-beb4-46c8ba3cb87c": {
+      "Text": {
+        "id": "7451a4c8-df68-49da-beb4-46c8ba3cb87c",
+        "position": {
+          "x": 68.86253720238102,
+          "y": 868.4495907738096
+        },
+        "content": "fullCRDT\nhistory",
         "font_size": 20.0,
         "font_family": "GelPen",
         "font_weight": "Regular",
-        "rotation": -1.0491605184886232,
+        "rotation": 0.0,
         "style": {
           "stroke_color": {
             "r": 236,
@@ -1568,6 +2136,57 @@
           "fill_pattern": "Hachure",
           "sloppiness": "Artist",
           "seed": 3159276705,
+          "opacity": 1.0
+        },
+        "char_colors": [
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null
+        ]
+      }
+    },
+    "688927d5-75bf-4c30-927d-e7dee224b42c": {
+      "Text": {
+        "id": "688927d5-75bf-4c30-927d-e7dee224b42c",
+        "position": {
+          "x": 600.0,
+          "y": 460.0
+        },
+        "content": "https://github.com/PatWie/drafft-ink",
+        "font_size": 20.0,
+        "font_family": "GelPen",
+        "font_weight": "Regular",
+        "rotation": 0.0,
+        "style": {
+          "stroke_color": {
+            "r": 16,
+            "g": 185,
+            "b": 129,
+            "a": 255
+          },
+          "stroke_width": 2.0,
+          "fill_color": {
+            "r": 226,
+            "g": 232,
+            "b": 240,
+            "a": 255
+          },
+          "fill_pattern": "Hachure",
+          "sloppiness": "Artist",
+          "seed": 2057383781,
           "opacity": 1.0
         },
         "char_colors": []
@@ -1609,6 +2228,20 @@
     "636858d5-dd1e-46b7-88f3-4bbe6b03de7e",
     "0e1a8a54-f214-402c-8128-9a120a74f9ab",
     "0e38b771-8eef-449b-83fb-dfc065387fb0",
-    "246e018e-c231-4d5c-b605-e7402ae2e1f0"
+    "246e018e-c231-4d5c-b605-e7402ae2e1f0",
+    "6e26fd72-7a63-455e-a8c6-8a27ff5f457e",
+    "7c00409a-03ec-4645-9595-4aee65c711e7",
+    "bf702f2e-2878-4984-acbf-c697cffe0c4d",
+    "8584ea55-b8c1-4fc7-bbc2-956d51fe75df",
+    "57cac866-ff61-429d-81fa-fcc338463a4e",
+    "28820735-3aaa-4b2a-832d-a24d9af388c8",
+    "6bb4acdf-d5cd-453f-83ed-00107e1822fc",
+    "7451a4c8-df68-49da-beb4-46c8ba3cb87c",
+    "5be0ed94-501b-4d40-9c48-4507fb446cb9",
+    "be3b50c7-7491-4e2e-8bda-2313b75d9410",
+    "0e4f6357-54aa-448c-8754-62ccc179851f",
+    "383eab95-4c91-4cbe-a28f-a2c033e0849e",
+    "d07a3d20-f7c5-4762-9894-c1d61a13be3c",
+    "b5960dbc-ac14-4afc-b978-b5a3daabe231"
   ]
 }
