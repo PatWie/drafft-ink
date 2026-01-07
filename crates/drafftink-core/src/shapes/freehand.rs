@@ -50,11 +50,16 @@ impl Freehand {
     }
 
     /// Reconstruct a freehand with a specific ID (for CRDT/storage).
-    pub(crate) fn reconstruct(id: ShapeId, points: Vec<Point>, style: ShapeStyle) -> Self {
+    pub(crate) fn reconstruct(
+        id: ShapeId,
+        points: Vec<Point>,
+        pressures: Vec<f64>,
+        style: ShapeStyle,
+    ) -> Self {
         Self {
             id,
             points,
-            pressures: Vec::new(),
+            pressures,
             style,
         }
     }

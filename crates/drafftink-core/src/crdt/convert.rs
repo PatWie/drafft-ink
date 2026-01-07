@@ -58,6 +58,7 @@ const KEY_HEAD_SIZE: &str = "head_size";
 
 // Freehand keys
 const KEY_POINTS: &str = "points";
+const KEY_PRESSURES: &str = "pressures";
 
 // Text keys
 const KEY_CONTENT: &str = "content";
@@ -175,6 +176,12 @@ pub fn shape_to_loro(shape: &Shape, map: &LoroMap) -> LoroResult<()> {
                     points_list.insert_container(points_list.len(), LoroList::new())?;
                 point_list.push(point.x)?;
                 point_list.push(point.y)?;
+            }
+            if !freehand.pressures.is_empty() {
+                let pressures_list = map.insert_container(KEY_PRESSURES, LoroList::new())?;
+                for p in &freehand.pressures {
+                    pressures_list.push(*p)?;
+                }
             }
             style_to_loro(&freehand.style, map)?;
         }
@@ -322,9 +329,11 @@ fn arrow_from_loro(map: &LoroMapValue) -> Option<Shape> {
 }
 
 fn freehand_from_loro(map: &LoroMapValue) -> Option<Shape> {
+    let pressures = pressures_from_loro(map);
     Some(Shape::Freehand(Freehand::reconstruct(
         get_id(map)?,
         points_from_loro(map, KEY_POINTS),
+        pressures,
         style_from_loro(map)?,
     )))
 }
@@ -416,6 +425,19 @@ fn points_from_loro(map: &LoroMapValue, key: &str) -> Vec<Point> {
                 }
             }
             None
+        })
+        .collect()
+}
+
+fn pressures_from_loro(map: &LoroMapValue) -> Vec<f64> {
+    let Some(LoroValue::List(list)) = map.get(KEY_PRESSURES) else {
+        return vec![];
+    };
+    list.iter()
+        .filter_map(|v| match v {
+            LoroValue::Double(d) => Some(*d),
+            LoroValue::I64(i) => Some(*i as f64),
+            _ => None,
         })
         .collect()
 }
