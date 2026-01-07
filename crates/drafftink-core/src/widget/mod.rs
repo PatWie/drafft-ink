@@ -7,10 +7,10 @@
 //!
 //! Shapes remain pure data. Widgets wrap shapes with UI state.
 
-mod state;
-mod manager;
 mod handles;
+mod manager;
+mod state;
 
-pub use state::{WidgetState, EditingKind};
-pub use manager::WidgetManager;
 pub use handles::{Handle, HandleKind, HandleShape};
+pub use manager::WidgetManager;
+pub use state::{EditingKind, WidgetState};

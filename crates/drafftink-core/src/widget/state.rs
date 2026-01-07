@@ -1,8 +1,7 @@
 //! Widget state definitions.
 
 /// The UI state of a widget/shape.
-#[derive(Debug, Clone, PartialEq)]
-#[derive(Default)]
+#[derive(Debug, Clone, PartialEq, Default)]
 pub enum WidgetState {
     /// Normal display state - no interaction.
     #[default]
@@ -14,7 +13,6 @@ pub enum WidgetState {
     /// Widget is in editing mode (e.g., text editing).
     Editing(EditingKind),
 }
-
 
 impl WidgetState {
     /// Check if widget is selected (either just selected or editing).

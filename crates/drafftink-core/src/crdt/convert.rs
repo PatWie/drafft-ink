@@ -1,12 +1,11 @@
 //! Conversion between Shape types and Loro values.
 
-use loro::{LoroMap, LoroResult, LoroValue, LoroList, LoroMapValue};
 use crate::shapes::{
-    Shape, ShapeStyle, SerializableColor, Sloppiness, ShapeTrait, FillPattern,
-    Rectangle, Ellipse, Line, Arrow, Freehand, Text, FontFamily, FontWeight, Group,
-    Image, ImageFormat, PathStyle, Math,
+    Arrow, Ellipse, FillPattern, FontFamily, FontWeight, Freehand, Group, Image, ImageFormat, Line,
+    Math, PathStyle, Rectangle, SerializableColor, Shape, ShapeStyle, ShapeTrait, Sloppiness, Text,
 };
 use kurbo::Point;
+use loro::{LoroList, LoroMap, LoroMapValue, LoroResult, LoroValue};
 use uuid::Uuid;
 
 // Shape type identifiers
@@ -172,7 +171,8 @@ pub fn shape_to_loro(shape: &Shape, map: &LoroMap) -> LoroResult<()> {
             map.insert(KEY_ID, freehand.id().to_string())?;
             let points_list = map.insert_container(KEY_POINTS, LoroList::new())?;
             for point in &freehand.points {
-                let point_list = points_list.insert_container(points_list.len(), LoroList::new())?;
+                let point_list =
+                    points_list.insert_container(points_list.len(), LoroList::new())?;
                 point_list.push(point.x)?;
                 point_list.push(point.y)?;
             }
@@ -195,7 +195,8 @@ pub fn shape_to_loro(shape: &Shape, map: &LoroMap) -> LoroResult<()> {
             map.insert(KEY_ID, group.id().to_string())?;
             let children_list = map.insert_container(KEY_CHILDREN, LoroList::new())?;
             for child in group.children() {
-                let child_map = children_list.insert_container(children_list.len(), LoroMap::new())?;
+                let child_map =
+                    children_list.insert_container(children_list.len(), LoroMap::new())?;
                 shape_to_loro(child, &child_map)?;
             }
         }
@@ -238,7 +239,7 @@ fn style_to_loro(style: &ShapeStyle, map: &LoroMap) -> LoroResult<()> {
     map.insert(KEY_SEED, style.seed as i64)?;
     map.insert(KEY_FILL_PATTERN, fill_pattern_to_i64(style.fill_pattern))?;
     map.insert("opacity", style.opacity)?;
-    
+
     if let Some(fill) = style.fill_color {
         map.insert(KEY_HAS_FILL, true)?;
         map.insert(KEY_FILL_R, fill.r as i64)?;
@@ -248,14 +249,14 @@ fn style_to_loro(style: &ShapeStyle, map: &LoroMap) -> LoroResult<()> {
     } else {
         map.insert(KEY_HAS_FILL, false)?;
     }
-    
+
     Ok(())
 }
 
 /// Convert a Loro map to a Shape.
 pub fn shape_from_loro(map: &LoroMapValue) -> Option<Shape> {
     let shape_type = get_string(map, KEY_TYPE)?;
-    
+
     match shape_type.as_str() {
         TYPE_RECTANGLE => rectangle_from_loro(map),
         TYPE_ELLIPSE => ellipse_from_loro(map),
@@ -299,7 +300,9 @@ fn line_from_loro(map: &LoroMapValue) -> Option<Shape> {
         Point::new(get_double(map, KEY_START_X)?, get_double(map, KEY_START_Y)?),
         Point::new(get_double(map, KEY_END_X)?, get_double(map, KEY_END_Y)?),
         points_from_loro(map, KEY_INTERMEDIATE_POINTS),
-        get_i64(map, KEY_PATH_STYLE).map(i64_to_path_style).unwrap_or_default(),
+        get_i64(map, KEY_PATH_STYLE)
+            .map(i64_to_path_style)
+            .unwrap_or_default(),
         style_from_loro(map)?,
     )))
 }
@@ -310,7 +313,9 @@ fn arrow_from_loro(map: &LoroMapValue) -> Option<Shape> {
         Point::new(get_double(map, KEY_START_X)?, get_double(map, KEY_START_Y)?),
         Point::new(get_double(map, KEY_END_X)?, get_double(map, KEY_END_Y)?),
         points_from_loro(map, KEY_INTERMEDIATE_POINTS),
-        get_i64(map, KEY_PATH_STYLE).map(i64_to_path_style).unwrap_or_default(),
+        get_i64(map, KEY_PATH_STYLE)
+            .map(i64_to_path_style)
+            .unwrap_or_default(),
         get_double(map, KEY_HEAD_SIZE).unwrap_or(15.0),
         style_from_loro(map)?,
     )))
@@ -330,8 +335,12 @@ fn text_from_loro(map: &LoroMapValue) -> Option<Shape> {
         Point::new(get_double(map, KEY_X)?, get_double(map, KEY_Y)?),
         get_string(map, KEY_CONTENT)?,
         get_double(map, KEY_FONT_SIZE).unwrap_or(20.0),
-        get_i64(map, KEY_FONT_FAMILY).map(i64_to_font_family).unwrap_or_default(),
-        get_i64(map, KEY_FONT_WEIGHT).map(i64_to_font_weight).unwrap_or_default(),
+        get_i64(map, KEY_FONT_FAMILY)
+            .map(i64_to_font_family)
+            .unwrap_or_default(),
+        get_i64(map, KEY_FONT_WEIGHT)
+            .map(i64_to_font_weight)
+            .unwrap_or_default(),
         get_double(map, KEY_ROTATION).unwrap_or(0.0),
         style_from_loro(map)?,
     )))
@@ -342,15 +351,18 @@ fn group_from_loro(map: &LoroMapValue) -> Option<Shape> {
         LoroValue::List(list) => list,
         _ => return None,
     };
-    
-    let children: Vec<Shape> = children_list.iter().filter_map(|v| {
-        if let LoroValue::Map(child_map) = v {
-            shape_from_loro(&child_map.clone())
-        } else {
-            None
-        }
-    }).collect();
-    
+
+    let children: Vec<Shape> = children_list
+        .iter()
+        .filter_map(|v| {
+            if let LoroValue::Map(child_map) = v {
+                shape_from_loro(&child_map.clone())
+            } else {
+                None
+            }
+        })
+        .collect();
+
     Some(Shape::Group(Group::reconstruct(get_id(map)?, children)))
 }
 
@@ -362,7 +374,9 @@ fn image_from_loro(map: &LoroMapValue) -> Option<Shape> {
         get_double(map, KEY_HEIGHT)?,
         get_i64(map, KEY_SOURCE_WIDTH)? as u32,
         get_i64(map, KEY_SOURCE_HEIGHT)? as u32,
-        get_i64(map, KEY_FORMAT).map(i64_to_image_format).unwrap_or(ImageFormat::Png),
+        get_i64(map, KEY_FORMAT)
+            .map(i64_to_image_format)
+            .unwrap_or(ImageFormat::Png),
         get_string(map, KEY_DATA_BASE64)?,
         get_double(map, KEY_ROTATION).unwrap_or(0.0),
         style_from_loro(map)?,
@@ -381,25 +395,29 @@ fn math_from_loro(map: &LoroMapValue) -> Option<Shape> {
 }
 
 fn points_from_loro(map: &LoroMapValue, key: &str) -> Vec<Point> {
-    let Some(LoroValue::List(list)) = map.get(key) else { return vec![] };
-    list.iter().filter_map(|p| {
-        if let LoroValue::List(coords) = p {
-            if coords.len() >= 2 {
-                let x = match coords.first()? {
-                    LoroValue::Double(d) => *d,
-                    LoroValue::I64(i) => *i as f64,
-                    _ => return None,
-                };
-                let y = match coords.get(1)? {
-                    LoroValue::Double(d) => *d,
-                    LoroValue::I64(i) => *i as f64,
-                    _ => return None,
-                };
-                return Some(Point::new(x, y));
+    let Some(LoroValue::List(list)) = map.get(key) else {
+        return vec![];
+    };
+    list.iter()
+        .filter_map(|p| {
+            if let LoroValue::List(coords) = p {
+                if coords.len() >= 2 {
+                    let x = match coords.first()? {
+                        LoroValue::Double(d) => *d,
+                        LoroValue::I64(i) => *i as f64,
+                        _ => return None,
+                    };
+                    let y = match coords.get(1)? {
+                        LoroValue::Double(d) => *d,
+                        LoroValue::I64(i) => *i as f64,
+                        _ => return None,
+                    };
+                    return Some(Point::new(x, y));
+                }
             }
-        }
-        None
-    }).collect()
+            None
+        })
+        .collect()
 }
 
 fn style_from_loro(map: &LoroMapValue) -> Option<ShapeStyle> {
@@ -408,8 +426,12 @@ fn style_from_loro(map: &LoroMapValue) -> Option<ShapeStyle> {
     let stroke_b = get_i64(map, KEY_STROKE_B)? as u8;
     let stroke_a = get_i64(map, KEY_STROKE_A)? as u8;
     let stroke_width = get_double(map, KEY_STROKE_WIDTH)?;
-    let sloppiness = get_i64(map, KEY_SLOPPINESS).map(i64_to_sloppiness).unwrap_or_default();
-    let fill_pattern = get_i64(map, KEY_FILL_PATTERN).map(i64_to_fill_pattern).unwrap_or_default();
+    let sloppiness = get_i64(map, KEY_SLOPPINESS)
+        .map(i64_to_sloppiness)
+        .unwrap_or_default();
+    let fill_pattern = get_i64(map, KEY_FILL_PATTERN)
+        .map(i64_to_fill_pattern)
+        .unwrap_or_default();
     let seed = get_i64(map, KEY_SEED).map(|v| v as u32).unwrap_or_else(|| {
         use std::sync::atomic::{AtomicU32, Ordering};
         static SEED_COUNTER: AtomicU32 = AtomicU32::new(1);
@@ -420,7 +442,7 @@ fn style_from_loro(map: &LoroMapValue) -> Option<ShapeStyle> {
         x ^= x >> 13;
         x
     });
-    
+
     let fill_color = if get_bool(map, KEY_HAS_FILL).unwrap_or(false) {
         Some(SerializableColor::new(
             get_i64(map, KEY_FILL_R).unwrap_or(0) as u8,
@@ -431,7 +453,7 @@ fn style_from_loro(map: &LoroMapValue) -> Option<ShapeStyle> {
     } else {
         None
     };
-    
+
     Some(ShapeStyle {
         stroke_color: SerializableColor::new(stroke_r, stroke_g, stroke_b, stroke_a),
         stroke_width,

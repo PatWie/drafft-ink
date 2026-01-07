@@ -55,8 +55,23 @@ impl Math {
         }
     }
 
-    pub(crate) fn reconstruct(id: ShapeId, position: Point, latex: String, font_size: f64, rotation: f64, style: ShapeStyle) -> Self {
-        Self { id, position, latex, font_size, rotation, style, cached_size: RwLock::new(None) }
+    pub(crate) fn reconstruct(
+        id: ShapeId,
+        position: Point,
+        latex: String,
+        font_size: f64,
+        rotation: f64,
+        style: ShapeStyle,
+    ) -> Self {
+        Self {
+            id,
+            position,
+            latex,
+            font_size,
+            rotation,
+            style,
+            cached_size: RwLock::new(None),
+        }
     }
 
     pub fn set_cached_size(&self, width: f64, height: f64, depth: f64) {
@@ -87,12 +102,12 @@ impl ShapeTrait for Math {
     }
 
     fn bounds(&self) -> Rect {
-        let (width, height, depth) = self.cached_size
-            .read()
-            .ok()
-            .and_then(|g| *g)
-            .unwrap_or((self.latex.len() as f64 * self.font_size * 0.5, self.font_size, self.font_size * 0.3));
-        
+        let (width, height, depth) = self.cached_size.read().ok().and_then(|g| *g).unwrap_or((
+            self.latex.len() as f64 * self.font_size * 0.5,
+            self.font_size,
+            self.font_size * 0.3,
+        ));
+
         // height is positive (above baseline), depth is negative (below baseline)
         let unrotated = Rect::new(
             self.position.x,
@@ -100,11 +115,11 @@ impl ShapeTrait for Math {
             self.position.x + width,
             self.position.y - depth,
         );
-        
+
         if self.rotation.abs() < 0.001 {
             return unrotated;
         }
-        
+
         // Rotate around center and compute axis-aligned bounding box
         let center = Point::new(unrotated.center().x, unrotated.center().y);
         let corners = [
@@ -115,12 +130,18 @@ impl ShapeTrait for Math {
         ];
         let rot = Affine::rotate_about(self.rotation, center);
         let rotated: Vec<Point> = corners.iter().map(|&p| rot * p).collect();
-        
+
         let min_x = rotated.iter().map(|p| p.x).fold(f64::INFINITY, f64::min);
-        let max_x = rotated.iter().map(|p| p.x).fold(f64::NEG_INFINITY, f64::max);
+        let max_x = rotated
+            .iter()
+            .map(|p| p.x)
+            .fold(f64::NEG_INFINITY, f64::max);
         let min_y = rotated.iter().map(|p| p.y).fold(f64::INFINITY, f64::min);
-        let max_y = rotated.iter().map(|p| p.y).fold(f64::NEG_INFINITY, f64::max);
-        
+        let max_y = rotated
+            .iter()
+            .map(|p| p.y)
+            .fold(f64::NEG_INFINITY, f64::max);
+
         Rect::new(min_x, min_y, max_x, max_y)
     }
 

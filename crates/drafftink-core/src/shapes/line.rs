@@ -49,8 +49,22 @@ impl Line {
     }
 
     /// Reconstruct a line with a specific ID (for CRDT/storage).
-    pub(crate) fn reconstruct(id: ShapeId, start: Point, end: Point, intermediate_points: Vec<Point>, path_style: PathStyle, style: ShapeStyle) -> Self {
-        Self { id, start, end, intermediate_points, path_style, style }
+    pub(crate) fn reconstruct(
+        id: ShapeId,
+        start: Point,
+        end: Point,
+        intermediate_points: Vec<Point>,
+        path_style: PathStyle,
+        style: ShapeStyle,
+    ) -> Self {
+        Self {
+            id,
+            start,
+            end,
+            intermediate_points,
+            path_style,
+            style,
+        }
     }
 
     /// Create a polyline from multiple points.
@@ -108,8 +122,12 @@ impl ShapeTrait for Line {
 
     fn bounds(&self) -> Rect {
         let points = self.all_points();
-        let (min_x, max_x) = points.iter().fold((f64::MAX, f64::MIN), |(mn, mx), p| (mn.min(p.x), mx.max(p.x)));
-        let (min_y, max_y) = points.iter().fold((f64::MAX, f64::MIN), |(mn, mx), p| (mn.min(p.y), mx.max(p.y)));
+        let (min_x, max_x) = points.iter().fold((f64::MAX, f64::MIN), |(mn, mx), p| {
+            (mn.min(p.x), mx.max(p.x))
+        });
+        let (min_y, max_y) = points.iter().fold((f64::MAX, f64::MIN), |(mn, mx), p| {
+            (mn.min(p.y), mx.max(p.y))
+        });
         Rect::new(min_x, min_y, max_x, max_y)
     }
 
@@ -127,10 +145,7 @@ impl ShapeTrait for Line {
 
         // Project point onto line, clamped to segment
         let t = (point_vec.dot(line_vec) / line_len_sq).clamp(0.0, 1.0);
-        let projection = Point::new(
-            self.start.x + t * line_vec.x,
-            self.start.y + t * line_vec.y,
-        );
+        let projection = Point::new(self.start.x + t * line_vec.x, self.start.y + t * line_vec.y);
 
         let dist = ((point.x - projection.x).powi(2) + (point.y - projection.y).powi(2)).sqrt();
         dist <= tolerance + self.style.stroke_width / 2.0
@@ -138,7 +153,7 @@ impl ShapeTrait for Line {
 
     fn to_path(&self) -> BezPath {
         let mut path = BezPath::new();
-        
+
         if self.start == self.end {
             return path;
         }
@@ -155,13 +170,13 @@ impl ShapeTrait for Line {
             }
             _ => self.all_points(),
         };
-        
+
         if points.len() < 2 {
             return path;
         }
-        
+
         path.move_to(points[0]);
-        
+
         match self.path_style {
             PathStyle::Direct | PathStyle::Angular => {
                 for p in &points[1..] {
@@ -175,16 +190,20 @@ impl ShapeTrait for Line {
                     let p0 = points[if i == 0 { 0 } else { i - 1 }];
                     let p1 = points[i];
                     let p2 = points[i + 1];
-                    let p3 = points[if i + 2 >= points.len() { points.len() - 1 } else { i + 2 }];
-                    
+                    let p3 = points[if i + 2 >= points.len() {
+                        points.len() - 1
+                    } else {
+                        i + 2
+                    }];
+
                     let t1x = (p2.x - p0.x) * tension;
                     let t1y = (p2.y - p0.y) * tension;
                     let t2x = (p3.x - p1.x) * tension;
                     let t2y = (p3.y - p1.y) * tension;
-                    
+
                     let cp1 = Point::new(p1.x + t1x / 3.0, p1.y + t1y / 3.0);
                     let cp2 = Point::new(p2.x - t2x / 3.0, p2.y - t2y / 3.0);
-                    
+
                     path.curve_to(cp1, cp2, p2);
                 }
             }

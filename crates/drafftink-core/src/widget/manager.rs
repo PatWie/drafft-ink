@@ -1,10 +1,10 @@
 //! Widget manager for tracking UI state of shapes.
 
-use std::collections::{HashMap, HashSet};
-use kurbo::Point;
-use crate::shapes::{Shape, ShapeId, ShapeTrait};
-use super::state::{WidgetState, EditingKind};
 use super::handles::{Handle, HandleKind, HandleShape};
+use super::state::{EditingKind, WidgetState};
+use crate::shapes::{Shape, ShapeId, ShapeTrait};
+use kurbo::Point;
+use std::collections::{HashMap, HashSet};
 
 /// Manages UI state for all shapes in the document.
 ///
@@ -136,7 +136,7 @@ impl WidgetManager {
                 self.exit_editing();
             }
         }
-        
+
         self.set_state(id, WidgetState::Editing(kind));
     }
 

@@ -2,14 +2,14 @@
 
 use crate::renderer::{RenderContext, Renderer, ShapeRenderer};
 use crate::text_editor::TextEditState;
+use drafftink_core::selection::{Handle, HandleKind, get_handles};
+use drafftink_core::shapes::{FillPattern, Shape, ShapeStyle, ShapeTrait};
+use drafftink_core::snap::{SnapTarget, SnapTargetKind};
 use kurbo::{Affine, BezPath, PathEl, Point, Rect, Shape as KurboShape, Stroke};
 use parley::layout::PositionedLayoutItem;
 use parley::{FontContext, LayoutContext};
 use peniko::{Brush, Color, Fill};
-use drafftink_core::selection::{get_handles, Handle, HandleKind};
-use drafftink_core::shapes::{Shape, ShapeStyle, ShapeTrait, FillPattern};
 use roughr::core::{FillStyle, OptionsBuilder};
-use drafftink_core::snap::{SnapTarget, SnapTargetKind};
 use vello::Scene;
 
 /// Result of PNG rendering - contains the raw RGBA pixel data and dimensions.
@@ -104,7 +104,13 @@ impl SimpleRng {
 /// roughness: 0 = clean, 1 = slight wobble, 2 = very sketchy
 /// seed: stable random seed from the shape's style (persisted, doesn't change on transform)
 /// stroke_index: 0 or 1 for multi-stroke effect (different random offsets)
-fn apply_hand_drawn_effect(path: &BezPath, roughness: f64, zoom: f64, seed: u32, stroke_index: u32) -> BezPath {
+fn apply_hand_drawn_effect(
+    path: &BezPath,
+    roughness: f64,
+    zoom: f64,
+    seed: u32,
+    stroke_index: u32,
+) -> BezPath {
     if roughness <= 0.0 {
         return path.clone();
     }
@@ -211,7 +217,12 @@ fn apply_hand_drawn_effect(path: &BezPath, roughness: f64, zoom: f64, seed: u32,
 }
 
 /// Generate fill pattern lines within the given bounds using roughr.
-fn generate_fill_pattern(pattern: FillPattern, bounds: Rect, stroke_width: f64, seed: u32) -> BezPath {
+fn generate_fill_pattern(
+    pattern: FillPattern,
+    bounds: Rect,
+    stroke_width: f64,
+    seed: u32,
+) -> BezPath {
     use roughr::core::{OpSetType, OpType};
 
     let fill_style = match pattern {
@@ -236,7 +247,13 @@ fn generate_fill_pattern(pattern: FillPattern, bounds: Rect, stroke_width: f64, 
         .unwrap();
 
     let generator = roughr::generator::Generator::default();
-    let drawing = generator.rectangle::<f64>(bounds.x0, bounds.y0, bounds.width(), bounds.height(), &Some(options));
+    let drawing = generator.rectangle::<f64>(
+        bounds.x0,
+        bounds.y0,
+        bounds.width(),
+        bounds.height(),
+        &Some(options),
+    );
 
     // Extract FillSketch ops directly from drawable.sets (like the official vello example)
     let mut path = BezPath::new();
@@ -327,7 +344,11 @@ impl VelloRenderer {
     /// Returns the scene and the scaled bounds (for texture dimensions).
     ///
     /// `scale` is the export resolution multiplier (1 = 1x, 2 = 2x, 3 = 3x).
-    pub fn build_export_scene(&mut self, document: &drafftink_core::canvas::CanvasDocument, scale: f64) -> (Scene, Option<Rect>) {
+    pub fn build_export_scene(
+        &mut self,
+        document: &drafftink_core::canvas::CanvasDocument,
+        scale: f64,
+    ) -> (Scene, Option<Rect>) {
         self.scene.reset();
         self.zoom = scale;
 
@@ -345,8 +366,8 @@ impl VelloRenderer {
         let padded_bounds = bounds.inflate(padding, padding);
 
         // Transform: translate to origin, then scale up
-        let transform = Affine::scale(scale)
-            * Affine::translate((-padded_bounds.x0, -padded_bounds.y0));
+        let transform =
+            Affine::scale(scale) * Affine::translate((-padded_bounds.x0, -padded_bounds.y0));
 
         // Scaled output dimensions
         let scaled_width = padded_bounds.width() * scale;
@@ -417,8 +438,8 @@ impl VelloRenderer {
         let padded_bounds = bounds.inflate(padding, padding);
 
         // Transform: translate to origin, then scale up
-        let transform = Affine::scale(scale)
-            * Affine::translate((-padded_bounds.x0, -padded_bounds.y0));
+        let transform =
+            Affine::scale(scale) * Affine::translate((-padded_bounds.x0, -padded_bounds.y0));
 
         // Scaled output dimensions
         let scaled_width = padded_bounds.width() * scale;
@@ -459,7 +480,8 @@ impl VelloRenderer {
 
             match style.fill_pattern {
                 FillPattern::Solid => {
-                    self.scene.fill(Fill::NonZero, transform, fill_color, None, &fill_path);
+                    self.scene
+                        .fill(Fill::NonZero, transform, fill_color, None, &fill_path);
                 }
                 _ => {
                     // For patterns, first fill with a lighter version of the color as background
@@ -469,16 +491,19 @@ impl VelloRenderer {
                         fill_color.to_rgba8().b,
                         (fill_color.to_rgba8().a as f32 * 0.15) as u8,
                     );
-                    self.scene.fill(Fill::NonZero, transform, bg_color, None, &fill_path);
+                    self.scene
+                        .fill(Fill::NonZero, transform, bg_color, None, &fill_path);
 
                     // Then draw the pattern lines clipped to shape
                     let bounds = path.bounding_box();
-                    let pattern_path = generate_fill_pattern(style.fill_pattern, bounds, style.stroke_width, seed);
+                    let pattern_path =
+                        generate_fill_pattern(style.fill_pattern, bounds, style.stroke_width, seed);
 
                     // Clip pattern to shape boundary
                     self.scene.push_clip_layer(transform, &fill_path);
                     let pattern_stroke = Stroke::new(style.stroke_width * 0.5);
-                    self.scene.stroke(&pattern_stroke, transform, fill_color, None, &pattern_path);
+                    self.scene
+                        .stroke(&pattern_stroke, transform, fill_color, None, &pattern_path);
                     self.scene.pop_layer();
                 }
             }
@@ -510,13 +535,8 @@ impl VelloRenderer {
         } else {
             // Clean stroke for Architect mode
             let stroke = Stroke::new(style.stroke_width);
-            self.scene.stroke(
-                &stroke,
-                transform,
-                style.stroke_with_opacity(),
-                None,
-                path,
-            );
+            self.scene
+                .stroke(&stroke, transform, style.stroke_with_opacity(), None, path);
         }
     }
 
@@ -528,17 +548,34 @@ impl VelloRenderer {
         if roughness > 0.0 {
             let stroke = Stroke::new(style.stroke_width);
             let path1 = apply_hand_drawn_effect(path, roughness, self.zoom, seed, 0);
-            self.scene.stroke(&stroke, transform, style.stroke_with_opacity(), None, &path1);
+            self.scene.stroke(
+                &stroke,
+                transform,
+                style.stroke_with_opacity(),
+                None,
+                &path1,
+            );
             let path2 = apply_hand_drawn_effect(path, roughness, self.zoom, seed, 1);
-            self.scene.stroke(&stroke, transform, style.stroke_with_opacity(), None, &path2);
+            self.scene.stroke(
+                &stroke,
+                transform,
+                style.stroke_with_opacity(),
+                None,
+                &path2,
+            );
         } else {
             let stroke = Stroke::new(style.stroke_width);
-            self.scene.stroke(&stroke, transform, style.stroke_with_opacity(), None, path);
+            self.scene
+                .stroke(&stroke, transform, style.stroke_with_opacity(), None, path);
         }
     }
 
     /// Render a freehand shape with variable width based on pressure.
-    fn render_freehand_with_pressure(&mut self, freehand: &drafftink_core::shapes::Freehand, transform: Affine) {
+    fn render_freehand_with_pressure(
+        &mut self,
+        freehand: &drafftink_core::shapes::Freehand,
+        transform: Affine,
+    ) {
         use kurbo::Vec2;
 
         if freehand.points.len() < 2 {
@@ -614,13 +651,14 @@ impl VelloRenderer {
         path.close_path();
 
         // Fill the path (no sloppiness - freehand is already hand-drawn)
-        self.scene.fill(Fill::NonZero, transform, color, None, &path);
+        self.scene
+            .fill(Fill::NonZero, transform, color, None, &path);
     }
 
     /// Render a text shape using Parley for proper text layout.
     fn render_text(&mut self, text: &drafftink_core::shapes::Text, transform: Affine) {
-        use parley::layout::PositionedLayoutItem;
         use parley::StyleProperty;
+        use parley::layout::PositionedLayoutItem;
 
         // Skip empty text
         if text.content.is_empty() {
@@ -631,7 +669,13 @@ impl VelloRenderer {
                 Point::new(text.position.x, text.position.y + cursor_height),
             );
             let stroke = Stroke::new(2.0);
-            self.scene.stroke(&stroke, transform, Color::from_rgba8(100, 100, 100, 200), None, &cursor);
+            self.scene.stroke(
+                &stroke,
+                transform,
+                Color::from_rgba8(100, 100, 100, 200),
+                None,
+                &cursor,
+            );
             return;
         }
 
@@ -654,24 +698,36 @@ impl VelloRenderer {
             (FontFamily::GelPen, FontWeight::Regular) => ("GelPen", parley::FontWeight::NORMAL),
             (FontFamily::GelPen, FontWeight::Heavy) => ("GelPenHeavy", parley::FontWeight::NORMAL),
             (FontFamily::VanillaExtract, _) => ("Vanilla Extract", parley::FontWeight::NORMAL),
-            (FontFamily::GelPenSerif, FontWeight::Light) => ("GelPenSerifLight", parley::FontWeight::NORMAL),
-            (FontFamily::GelPenSerif, FontWeight::Regular) => ("GelPenSerif", parley::FontWeight::NORMAL),
-            (FontFamily::GelPenSerif, FontWeight::Heavy) => ("GelPenSerifHeavy", parley::FontWeight::NORMAL),
+            (FontFamily::GelPenSerif, FontWeight::Light) => {
+                ("GelPenSerifLight", parley::FontWeight::NORMAL)
+            }
+            (FontFamily::GelPenSerif, FontWeight::Regular) => {
+                ("GelPenSerif", parley::FontWeight::NORMAL)
+            }
+            (FontFamily::GelPenSerif, FontWeight::Heavy) => {
+                ("GelPenSerifHeavy", parley::FontWeight::NORMAL)
+            }
         };
 
         // Build the layout using cached font context
-        let mut builder = self.layout_cx.ranged_builder(&mut self.font_cx, &text.content, 1.0, false);
+        let mut builder =
+            self.layout_cx
+                .ranged_builder(&mut self.font_cx, &text.content, 1.0, false);
         builder.push_default(StyleProperty::FontSize(font_size));
         builder.push_default(StyleProperty::Brush(brush.clone()));
         builder.push_default(StyleProperty::FontWeight(parley_weight));
         builder.push_default(StyleProperty::FontStack(parley::FontStack::Single(
-            parley::FontFamily::Named(font_name.into())
+            parley::FontFamily::Named(font_name.into()),
         )));
         let mut layout = builder.build(&text.content);
 
         // Compute layout (no max width constraint for now)
         layout.break_all_lines(None);
-        layout.align(None, parley::Alignment::Start, parley::AlignmentOptions::default());
+        layout.align(
+            None,
+            parley::Alignment::Start,
+            parley::AlignmentOptions::default(),
+        );
 
         // Cache the computed layout dimensions for accurate bounds
         let layout_width = layout.width() as f64;
@@ -702,17 +758,20 @@ impl VelloRenderer {
                     .skew()
                     .map(|angle| Affine::skew(angle.to_radians().tan() as f64, 0.0));
 
-                let glyphs: Vec<vello::Glyph> = glyph_run.glyphs().map(|glyph| {
-                    let gx = x + glyph.x;
-                    let gy = y - glyph.y;
-                    x += glyph.advance;
-                    glyph_count += 1;
-                    vello::Glyph {
-                        id: glyph.id,
-                        x: gx,
-                        y: gy,
-                    }
-                }).collect();
+                let glyphs: Vec<vello::Glyph> = glyph_run
+                    .glyphs()
+                    .map(|glyph| {
+                        let gx = x + glyph.x;
+                        let gy = y - glyph.y;
+                        x += glyph.advance;
+                        glyph_count += 1;
+                        vello::Glyph {
+                            id: glyph.id,
+                            x: gx,
+                            y: gy,
+                        }
+                    })
+                    .collect();
 
                 if !glyphs.is_empty() {
                     self.scene
@@ -739,7 +798,13 @@ impl VelloRenderer {
                 text.position.x + width.max(20.0),
                 text.position.y + height,
             );
-            self.scene.fill(Fill::NonZero, transform, Color::from_rgba8(255, 100, 100, 100), None, &rect);
+            self.scene.fill(
+                Fill::NonZero,
+                transform,
+                Color::from_rgba8(255, 100, 100, 100),
+                None,
+                &rect,
+            );
         }
     }
 
@@ -794,12 +859,22 @@ impl VelloRenderer {
     }
 
     /// Render a placeholder for images that couldn't be loaded.
-    fn render_image_placeholder(&mut self, image: &drafftink_core::shapes::Image, transform: Affine) {
+    fn render_image_placeholder(
+        &mut self,
+        image: &drafftink_core::shapes::Image,
+        transform: Affine,
+    ) {
         let bounds = image.bounds();
 
         // Draw a gray rectangle with an X
         let rect_path = bounds.to_path(0.1);
-        self.scene.fill(Fill::NonZero, transform, Color::from_rgba8(200, 200, 200, 255), None, &rect_path);
+        self.scene.fill(
+            Fill::NonZero,
+            transform,
+            Color::from_rgba8(200, 200, 200, 255),
+            None,
+            &rect_path,
+        );
 
         // Draw diagonal lines (X pattern)
         let stroke = Stroke::new(2.0);
@@ -808,18 +883,30 @@ impl VelloRenderer {
         x_path.line_to(Point::new(bounds.x1, bounds.y1));
         x_path.move_to(Point::new(bounds.x1, bounds.y0));
         x_path.line_to(Point::new(bounds.x0, bounds.y1));
-        self.scene.stroke(&stroke, transform, Color::from_rgba8(150, 150, 150, 255), None, &x_path);
+        self.scene.stroke(
+            &stroke,
+            transform,
+            Color::from_rgba8(150, 150, 150, 255),
+            None,
+            &x_path,
+        );
 
         // Draw border
-        self.scene.stroke(&stroke, transform, Color::from_rgba8(100, 100, 100, 255), None, &rect_path);
+        self.scene.stroke(
+            &stroke,
+            transform,
+            Color::from_rgba8(100, 100, 100, 255),
+            None,
+            &rect_path,
+        );
     }
 
     /// Render a math (LaTeX) shape using ReX.
     fn render_math(&mut self, math: &drafftink_core::shapes::Math, transform: Affine) {
+        use crate::rex_backend::VelloBackend;
         use rex::font::backend::ttf_parser::TtfMathFont;
         use rex::layout::engine::LayoutBuilder;
         use rex::render::Renderer as RexRenderer;
-        use crate::rex_backend::VelloBackend;
 
         // Parse fonts
         let Ok(math_face) = ttf_parser::Face::parse(XITS_MATH, 0) else {
@@ -863,18 +950,41 @@ impl VelloRenderer {
 
         // Render using our Vello backend with font fallback
         let color: Color = math.style.stroke_color.into();
-        let mut backend = VelloBackend::new(&mut self.scene, &math_font, primary_face.as_ref(), math_transform, color);
+        let mut backend = VelloBackend::new(
+            &mut self.scene,
+            &math_font,
+            primary_face.as_ref(),
+            math_transform,
+            color,
+        );
         let renderer = RexRenderer::new();
         renderer.render(&layout, &mut backend);
     }
 
     /// Render error placeholder for math that couldn't be rendered.
-    fn render_math_error(&mut self, math: &drafftink_core::shapes::Math, transform: Affine, _msg: &str) {
+    fn render_math_error(
+        &mut self,
+        math: &drafftink_core::shapes::Math,
+        transform: Affine,
+        _msg: &str,
+    ) {
         let bounds = math.bounds();
         let rect_path = bounds.to_path(0.1);
-        self.scene.fill(Fill::NonZero, transform, Color::from_rgba8(255, 200, 200, 100), None, &rect_path);
+        self.scene.fill(
+            Fill::NonZero,
+            transform,
+            Color::from_rgba8(255, 200, 200, 100),
+            None,
+            &rect_path,
+        );
         let stroke = Stroke::new(1.0);
-        self.scene.stroke(&stroke, transform, Color::from_rgba8(255, 100, 100, 255), None, &rect_path);
+        self.scene.stroke(
+            &stroke,
+            transform,
+            Color::from_rgba8(255, 100, 100, 255),
+            None,
+            &rect_path,
+        );
     }
 
     /// Render a text shape in edit mode using PlainEditor state.
@@ -894,13 +1004,25 @@ impl VelloRenderer {
         // Determine font name and parley weight based on family and weight
         // Use same logic as render_text - all Roboto variants use "Roboto" family with weight
         let (font_name, parley_weight) = match (&text.font_family, &text.font_weight) {
-            (ShapeFontFamily::GelPen, FontWeight::Light) => ("GelPenLight", parley::FontWeight::NORMAL),
-            (ShapeFontFamily::GelPen, FontWeight::Regular) => ("GelPen", parley::FontWeight::NORMAL),
-            (ShapeFontFamily::GelPen, FontWeight::Heavy) => ("GelPenHeavy", parley::FontWeight::NORMAL),
+            (ShapeFontFamily::GelPen, FontWeight::Light) => {
+                ("GelPenLight", parley::FontWeight::NORMAL)
+            }
+            (ShapeFontFamily::GelPen, FontWeight::Regular) => {
+                ("GelPen", parley::FontWeight::NORMAL)
+            }
+            (ShapeFontFamily::GelPen, FontWeight::Heavy) => {
+                ("GelPenHeavy", parley::FontWeight::NORMAL)
+            }
             (ShapeFontFamily::VanillaExtract, _) => ("Vanilla Extract", parley::FontWeight::NORMAL),
-            (ShapeFontFamily::GelPenSerif, FontWeight::Light) => ("GelPenSerifLight", parley::FontWeight::NORMAL),
-            (ShapeFontFamily::GelPenSerif, FontWeight::Regular) => ("GelPenSerif", parley::FontWeight::NORMAL),
-            (ShapeFontFamily::GelPenSerif, FontWeight::Heavy) => ("GelPenSerifHeavy", parley::FontWeight::NORMAL),
+            (ShapeFontFamily::GelPenSerif, FontWeight::Light) => {
+                ("GelPenSerifLight", parley::FontWeight::NORMAL)
+            }
+            (ShapeFontFamily::GelPenSerif, FontWeight::Regular) => {
+                ("GelPenSerif", parley::FontWeight::NORMAL)
+            }
+            (ShapeFontFamily::GelPenSerif, FontWeight::Heavy) => {
+                ("GelPenSerifHeavy", parley::FontWeight::NORMAL)
+            }
         };
 
         // Configure the editor styles
@@ -909,16 +1031,18 @@ impl VelloRenderer {
 
         // Set the font family and weight in the editor
         {
-            use parley::{FontStack, FontFamily, StyleProperty};
+            use parley::{FontFamily, FontStack, StyleProperty};
             let styles = edit_state.editor_mut().edit_styles();
             styles.insert(StyleProperty::FontStack(FontStack::Single(
-                FontFamily::Named(font_name.into())
+                FontFamily::Named(font_name.into()),
             )));
             styles.insert(StyleProperty::FontWeight(parley_weight));
         }
 
         // IMPORTANT: First compute the layout - this must happen before cursor/selection geometry
-        let layout = edit_state.editor_mut().layout(&mut self.font_cx, &mut self.layout_cx);
+        let layout = edit_state
+            .editor_mut()
+            .layout(&mut self.font_cx, &mut self.layout_cx);
         let layout_width = layout.width() as f64;
         let layout_height = layout.height() as f64;
 
@@ -950,7 +1074,8 @@ impl VelloRenderer {
         let text_transform = if rotation.abs() > 0.001 {
             let center = Point::new(render_position.x + half_w, render_position.y + half_h);
             let center_vec = kurbo::Vec2::new(center.x, center.y);
-            transform * Affine::translate(center_vec)
+            transform
+                * Affine::translate(center_vec)
                 * Affine::rotate(rotation)
                 * Affine::translate(-center_vec)
                 * Affine::translate((render_position.x, render_position.y))
@@ -975,16 +1100,19 @@ impl VelloRenderer {
                     .skew()
                     .map(|angle| Affine::skew(angle.to_radians().tan() as f64, 0.0));
 
-                let glyphs: Vec<vello::Glyph> = glyph_run.glyphs().map(|glyph| {
-                    let gx = x + glyph.x;
-                    let gy = y - glyph.y;
-                    x += glyph.advance;
-                    vello::Glyph {
-                        id: glyph.id,
-                        x: gx,
-                        y: gy,
-                    }
-                }).collect();
+                let glyphs: Vec<vello::Glyph> = glyph_run
+                    .glyphs()
+                    .map(|glyph| {
+                        let gx = x + glyph.x;
+                        let gy = y - glyph.y;
+                        x += glyph.advance;
+                        vello::Glyph {
+                            id: glyph.id,
+                            x: gx,
+                            y: gy,
+                        }
+                    })
+                    .collect();
 
                 if !glyphs.is_empty() {
                     self.scene
@@ -1108,13 +1236,8 @@ impl VelloRenderer {
                     transform
                 };
 
-                self.scene.stroke(
-                    &stroke,
-                    box_transform,
-                    self.selection_color,
-                    None,
-                    &path,
-                );
+                self.scene
+                    .stroke(&stroke, box_transform, self.selection_color, None, &path);
             }
         }
 
@@ -1140,13 +1263,8 @@ impl VelloRenderer {
                 let path = ellipse.to_path(0.1);
 
                 // White fill
-                self.scene.fill(
-                    Fill::NonZero,
-                    transform,
-                    Color::WHITE,
-                    None,
-                    &path,
-                );
+                self.scene
+                    .fill(Fill::NonZero, transform, Color::WHITE, None, &path);
 
                 // Blue border
                 self.scene.stroke(
@@ -1184,22 +1302,12 @@ impl VelloRenderer {
             HandleKind::Corner(_) | HandleKind::Edge(_) => {
                 // Square handle for corners/edges
                 let half = size / 2.0;
-                let rect = Rect::new(
-                    pos.x - half,
-                    pos.y - half,
-                    pos.x + half,
-                    pos.y + half,
-                );
+                let rect = Rect::new(pos.x - half, pos.y - half, pos.x + half, pos.y + half);
                 let path = rect.to_path(0.1);
 
                 // White fill
-                self.scene.fill(
-                    Fill::NonZero,
-                    transform,
-                    Color::WHITE,
-                    None,
-                    &path,
-                );
+                self.scene
+                    .fill(Fill::NonZero, transform, Color::WHITE, None, &path);
 
                 // Blue border
                 self.scene.stroke(
@@ -1217,13 +1325,8 @@ impl VelloRenderer {
                 let path = ellipse.to_path(0.1);
 
                 // White fill
-                self.scene.fill(
-                    Fill::NonZero,
-                    transform,
-                    Color::WHITE,
-                    None,
-                    &path,
-                );
+                self.scene
+                    .fill(Fill::NonZero, transform, Color::WHITE, None, &path);
 
                 // Blue border
                 self.scene.stroke(
@@ -1279,7 +1382,9 @@ impl Renderer for VelloRenderer {
         match ctx.grid_style {
             GridStyle::None => {}
             GridStyle::Lines => self.render_grid_lines(viewport, camera_transform, 20.0),
-            GridStyle::HorizontalLines => self.render_horizontal_lines(viewport, camera_transform, 20.0),
+            GridStyle::HorizontalLines => {
+                self.render_horizontal_lines(viewport, camera_transform, 20.0)
+            }
             GridStyle::CrossPlus => self.render_grid_crosses(viewport, camera_transform, 20.0),
             GridStyle::Dots => self.render_grid_dots(viewport, camera_transform, 20.0),
         }
@@ -1338,7 +1443,12 @@ impl Renderer for VelloRenderer {
 
 impl VelloRenderer {
     /// Render snap guides (crosshairs at the snap point).
-    fn render_snap_guides(&mut self, snap_point: Point, transform: Affine, viewport_size: kurbo::Size) {
+    fn render_snap_guides(
+        &mut self,
+        snap_point: Point,
+        transform: Affine,
+        viewport_size: kurbo::Size,
+    ) {
         // Snap guide color - subtle magenta/pink
         let guide_color = Color::from_rgba8(236, 72, 153, 180); // Pink-500 with alpha
 
@@ -1350,32 +1460,41 @@ impl VelloRenderer {
         // Get the inverse transform to convert screen bounds to world bounds
         let inv_transform = transform.inverse();
         let world_top_left = inv_transform * Point::new(0.0, 0.0);
-        let world_bottom_right = inv_transform * Point::new(viewport_size.width, viewport_size.height);
+        let world_bottom_right =
+            inv_transform * Point::new(viewport_size.width, viewport_size.height);
 
         // Horizontal line through snap point (full width)
         let mut h_path = BezPath::new();
         h_path.move_to(Point::new(world_top_left.x, snap_point.y));
         h_path.line_to(Point::new(world_bottom_right.x, snap_point.y));
-        self.scene.stroke(&stroke, transform, guide_color, None, &h_path);
+        self.scene
+            .stroke(&stroke, transform, guide_color, None, &h_path);
 
         // Vertical line through snap point (full height)
         let mut v_path = BezPath::new();
         v_path.move_to(Point::new(snap_point.x, world_top_left.y));
         v_path.line_to(Point::new(snap_point.x, world_bottom_right.y));
-        self.scene.stroke(&stroke, transform, guide_color, None, &v_path);
+        self.scene
+            .stroke(&stroke, transform, guide_color, None, &v_path);
 
         // Small circle at the intersection
         let circle_radius = 4.0 / self.zoom;
         let circle = kurbo::Circle::new(snap_point, circle_radius);
-        self.scene.stroke(&Stroke::new(stroke_width * 2.0), transform, guide_color, None, &circle);
+        self.scene.stroke(
+            &Stroke::new(stroke_width * 2.0),
+            transform,
+            guide_color,
+            None,
+            &circle,
+        );
     }
 
     /// Render nearby snap targets as small indicators.
     fn render_snap_targets(&mut self, targets: &[SnapTarget], transform: Affine) {
         // Different colors for different target types
-        let corner_color = Color::from_rgba8(59, 130, 246, 150);    // Blue for corners
-        let midpoint_color = Color::from_rgba8(16, 185, 129, 150);  // Emerald for midpoints
-        let center_color = Color::from_rgba8(245, 158, 11, 150);    // Amber for centers
+        let corner_color = Color::from_rgba8(59, 130, 246, 150); // Blue for corners
+        let midpoint_color = Color::from_rgba8(16, 185, 129, 150); // Emerald for midpoints
+        let center_color = Color::from_rgba8(245, 158, 11, 150); // Amber for centers
 
         // Size scaled inversely with zoom for constant screen appearance
         let size = 4.0 / self.zoom;
@@ -1399,7 +1518,8 @@ impl VelloRenderer {
                         target.point.x + half,
                         target.point.y + half,
                     );
-                    self.scene.stroke(&Stroke::new(stroke_width), transform, color, None, &rect);
+                    self.scene
+                        .stroke(&Stroke::new(stroke_width), transform, color, None, &rect);
                 }
                 SnapTargetKind::Midpoint => {
                     // Draw a small diamond for midpoints
@@ -1409,12 +1529,14 @@ impl VelloRenderer {
                     path.line_to(Point::new(target.point.x, target.point.y + size));
                     path.line_to(Point::new(target.point.x - size, target.point.y));
                     path.close_path();
-                    self.scene.stroke(&Stroke::new(stroke_width), transform, color, None, &path);
+                    self.scene
+                        .stroke(&Stroke::new(stroke_width), transform, color, None, &path);
                 }
                 SnapTargetKind::Center => {
                     // Draw a small circle for centers
                     let circle = kurbo::Circle::new(target.point, size);
-                    self.scene.stroke(&Stroke::new(stroke_width), transform, color, None, &circle);
+                    self.scene
+                        .stroke(&Stroke::new(stroke_width), transform, color, None, &circle);
                 }
             }
         }
@@ -1443,7 +1565,8 @@ impl VelloRenderer {
         // Calculate ray length based on viewport
         let inv_transform = transform.inverse();
         let world_top_left = inv_transform * Point::new(0.0, 0.0);
-        let world_bottom_right = inv_transform * Point::new(viewport_size.width, viewport_size.height);
+        let world_bottom_right =
+            inv_transform * Point::new(viewport_size.width, viewport_size.height);
         let viewport_diagonal = ((world_bottom_right.x - world_top_left.x).powi(2)
             + (world_bottom_right.y - world_top_left.y).powi(2))
         .sqrt();
@@ -1459,7 +1582,13 @@ impl VelloRenderer {
             path.move_to(start);
             path.line_to(Point::new(end_x, end_y));
         }
-        self.scene.stroke(&Stroke::new(thin_stroke_width), transform, ray_color, None, &path);
+        self.scene.stroke(
+            &Stroke::new(thin_stroke_width),
+            transform,
+            ray_color,
+            None,
+            &path,
+        );
 
         // Highlight the active snap angle ray if snapped
         if info.is_snapped {
@@ -1470,7 +1599,13 @@ impl VelloRenderer {
                 start.x + ray_length * angle_rad.cos(),
                 start.y + ray_length * angle_rad.sin(),
             ));
-            self.scene.stroke(&Stroke::new(thick_stroke_width), transform, active_ray_color, None, &active_path);
+            self.scene.stroke(
+                &Stroke::new(thick_stroke_width),
+                transform,
+                active_ray_color,
+                None,
+                &active_path,
+            );
 
             // Draw angle arc from 0° to the snapped angle
             let arc_radius = 30.0 / self.zoom;
@@ -1494,7 +1629,13 @@ impl VelloRenderer {
                     arc_path.line_to(Point::new(x, y));
                 }
 
-                self.scene.stroke(&Stroke::new(thick_stroke_width), transform, arc_color, None, &arc_path);
+                self.scene.stroke(
+                    &Stroke::new(thick_stroke_width),
+                    transform,
+                    arc_color,
+                    None,
+                    &arc_path,
+                );
             }
 
             // Draw angle label (e.g., "45°")
@@ -1512,18 +1653,18 @@ impl VelloRenderer {
     }
 
     /// Render rotation helper lines (center crosshair and angle indicator).
-    fn render_rotation_guides(
-        &mut self,
-        info: &crate::renderer::RotationInfo,
-        transform: Affine,
-    ) {
+    fn render_rotation_guides(&mut self, info: &crate::renderer::RotationInfo, transform: Affine) {
         use std::f64::consts::PI;
 
         // Colors
         let guide_color = Color::from_rgba8(236, 72, 153, 200); // Magenta
         let snap_color = Color::from_rgba8(34, 197, 94, 220); // Green when snapped
 
-        let color = if info.snapped { snap_color } else { guide_color };
+        let color = if info.snapped {
+            snap_color
+        } else {
+            guide_color
+        };
 
         // Stroke widths scaled inversely with zoom
         let stroke_width = 1.5 / self.zoom;
@@ -1537,7 +1678,13 @@ impl VelloRenderer {
         cross_path.line_to(Point::new(center.x + cross_size, center.y));
         cross_path.move_to(Point::new(center.x, center.y - cross_size));
         cross_path.line_to(Point::new(center.x, center.y + cross_size));
-        self.scene.stroke(&Stroke::new(stroke_width), transform, color, None, &cross_path);
+        self.scene.stroke(
+            &Stroke::new(stroke_width),
+            transform,
+            color,
+            None,
+            &cross_path,
+        );
 
         // Draw rotation indicator line from center outward at current angle
         let indicator_length = 50.0 / self.zoom;
@@ -1549,7 +1696,13 @@ impl VelloRenderer {
         let mut indicator_path = BezPath::new();
         indicator_path.move_to(center);
         indicator_path.line_to(Point::new(end_x, end_y));
-        self.scene.stroke(&Stroke::new(stroke_width * 1.5), transform, color, None, &indicator_path);
+        self.scene.stroke(
+            &Stroke::new(stroke_width * 1.5),
+            transform,
+            color,
+            None,
+            &indicator_path,
+        );
 
         // Draw reference line at 0° (pointing up)
         let ref_end_y = center.y - indicator_length;
@@ -1560,7 +1713,13 @@ impl VelloRenderer {
         // Dashed stroke for reference line
         let dash_pattern = [4.0 / self.zoom, 4.0 / self.zoom];
         let dashed_stroke = Stroke::new(stroke_width).with_dashes(0.0, &dash_pattern);
-        self.scene.stroke(&dashed_stroke, transform, Color::from_rgba8(150, 150, 150, 150), None, &ref_path);
+        self.scene.stroke(
+            &dashed_stroke,
+            transform,
+            Color::from_rgba8(150, 150, 150, 150),
+            None,
+            &ref_path,
+        );
 
         // Draw angle arc from 0° to current angle
         if info.angle.abs() > 0.01 {
@@ -1584,7 +1743,13 @@ impl VelloRenderer {
                 arc_path.line_to(Point::new(x, y));
             }
 
-            self.scene.stroke(&Stroke::new(stroke_width), transform, color, None, &arc_path);
+            self.scene.stroke(
+                &Stroke::new(stroke_width),
+                transform,
+                color,
+                None,
+                &arc_path,
+            );
         }
     }
 
@@ -1600,25 +1765,15 @@ impl VelloRenderer {
         path.line_to(Point::new(rect.x0, rect.y1));
         path.close_path();
 
-        self.scene.fill(
-            Fill::NonZero,
-            transform,
-            fill_color,
-            None,
-            &path,
-        );
+        self.scene
+            .fill(Fill::NonZero, transform, fill_color, None, &path);
 
         // Stroke with blue dashed line - scale inversely with zoom
         let stroke_width = 1.0 / self.zoom;
         let dash_len = 4.0 / self.zoom;
         let stroke = Stroke::new(stroke_width).with_dashes(0.0, [dash_len, dash_len]);
-        self.scene.stroke(
-            &stroke,
-            transform,
-            self.selection_color,
-            None,
-            &path,
-        );
+        self.scene
+            .stroke(&stroke, transform, self.selection_color, None, &path);
     }
 
     /// Render eraser cursor (circle showing eraser radius).
@@ -1627,12 +1782,19 @@ impl VelloRenderer {
 
         // Semi-transparent fill
         let fill_color = Color::from_rgba8(255, 100, 100, 50);
-        self.scene.fill(Fill::NonZero, transform, fill_color, None, &circle);
+        self.scene
+            .fill(Fill::NonZero, transform, fill_color, None, &circle);
 
         // Stroke
         let stroke_width = 2.0 / self.zoom;
         let stroke_color = Color::from_rgba8(200, 50, 50, 200);
-        self.scene.stroke(&Stroke::new(stroke_width), transform, stroke_color, None, &circle);
+        self.scene.stroke(
+            &Stroke::new(stroke_width),
+            transform,
+            stroke_color,
+            None,
+            &circle,
+        );
     }
 
     /// Render laser pointer with trail.
@@ -1643,30 +1805,39 @@ impl VelloRenderer {
             let color = Color::from_rgba8(255, 0, 0, a);
             let radius = 4.0 / self.zoom * *alpha;
             let circle = kurbo::Circle::new(*point, radius);
-            self.scene.fill(Fill::NonZero, transform, color, None, &circle);
+            self.scene
+                .fill(Fill::NonZero, transform, color, None, &circle);
         }
 
         // Draw main pointer (bright red dot with glow)
         let glow_radius = 12.0 / self.zoom;
         let glow_color = Color::from_rgba8(255, 0, 0, 100);
         let glow = kurbo::Circle::new(pos, glow_radius);
-        self.scene.fill(Fill::NonZero, transform, glow_color, None, &glow);
+        self.scene
+            .fill(Fill::NonZero, transform, glow_color, None, &glow);
 
         let main_radius = 6.0 / self.zoom;
         let main_color = Color::from_rgba8(255, 50, 50, 255);
         let main = kurbo::Circle::new(pos, main_radius);
-        self.scene.fill(Fill::NonZero, transform, main_color, None, &main);
+        self.scene
+            .fill(Fill::NonZero, transform, main_color, None, &main);
 
         // White center
         let center_radius = 2.0 / self.zoom;
         let center = kurbo::Circle::new(pos, center_radius);
-        self.scene.fill(Fill::NonZero, transform, Color::WHITE, None, &center);
+        self.scene
+            .fill(Fill::NonZero, transform, Color::WHITE, None, &center);
     }
 }
 
 impl VelloRenderer {
     /// Calculate grid bounds from viewport and transform.
-    fn grid_bounds(&self, viewport: Rect, transform: Affine, grid_size: f64) -> (f64, f64, f64, f64) {
+    fn grid_bounds(
+        &self,
+        viewport: Rect,
+        transform: Affine,
+        grid_size: f64,
+    ) -> (f64, f64, f64, f64) {
         let inv = transform.inverse();
         let world_tl = inv * Point::new(viewport.x0, viewport.y0);
         let world_br = inv * Point::new(viewport.x1, viewport.y1);
@@ -1692,7 +1863,8 @@ impl VelloRenderer {
             let mut path = BezPath::new();
             path.move_to(Point::new(x, start_y));
             path.line_to(Point::new(x, end_y));
-            self.scene.stroke(&stroke, transform, grid_color, None, &path);
+            self.scene
+                .stroke(&stroke, transform, grid_color, None, &path);
             x += grid_size;
         }
 
@@ -1702,7 +1874,8 @@ impl VelloRenderer {
             let mut path = BezPath::new();
             path.move_to(Point::new(start_x, y));
             path.line_to(Point::new(end_x, y));
-            self.scene.stroke(&stroke, transform, grid_color, None, &path);
+            self.scene
+                .stroke(&stroke, transform, grid_color, None, &path);
             y += grid_size;
         }
     }
@@ -1719,7 +1892,8 @@ impl VelloRenderer {
             let mut path = BezPath::new();
             path.move_to(Point::new(start_x, y));
             path.line_to(Point::new(end_x, y));
-            self.scene.stroke(&stroke, transform, grid_color, None, &path);
+            self.scene
+                .stroke(&stroke, transform, grid_color, None, &path);
             y += grid_size;
         }
     }
@@ -1752,7 +1926,8 @@ impl VelloRenderer {
         }
 
         // Single draw call for all crosses
-        self.scene.stroke(&stroke, transform, grid_color, None, &path);
+        self.scene
+            .stroke(&stroke, transform, grid_color, None, &path);
     }
 
     /// Render grid as dots at intersections.
@@ -1771,12 +1946,7 @@ impl VelloRenderer {
             let mut y = start_y;
             while y <= end_y {
                 // Add a small square for each dot (cheaper than ellipse)
-                let rect = Rect::new(
-                    x - dot_size,
-                    y - dot_size,
-                    x + dot_size,
-                    y + dot_size,
-                );
+                let rect = Rect::new(x - dot_size, y - dot_size, x + dot_size, y + dot_size);
                 path.move_to(Point::new(rect.x0, rect.y0));
                 path.line_to(Point::new(rect.x1, rect.y0));
                 path.line_to(Point::new(rect.x1, rect.y1));
@@ -1788,7 +1958,8 @@ impl VelloRenderer {
         }
 
         // Single draw call for all dots
-        self.scene.fill(Fill::NonZero, transform, grid_color, None, &path);
+        self.scene
+            .fill(Fill::NonZero, transform, grid_color, None, &path);
     }
 
     #[allow(dead_code)]
@@ -1804,13 +1975,8 @@ impl VelloRenderer {
         path.line_to(Point::new(bounds.x0, bounds.y1));
         path.close_path();
 
-        self.scene.stroke(
-            &stroke,
-            transform,
-            self.selection_color,
-            None,
-            &path,
-        );
+        self.scene
+            .stroke(&stroke, transform, self.selection_color, None, &path);
 
         // Corner handles
         let corners = [
@@ -1856,7 +2022,8 @@ impl ShapeRenderer for VelloRenderer {
         let shape_transform = if rotation.abs() > 0.001 {
             let center = shape.bounds().center();
             let center_vec = kurbo::Vec2::new(center.x, center.y);
-            transform * Affine::translate(center_vec)
+            transform
+                * Affine::translate(center_vec)
                 * Affine::rotate(rotation)
                 * Affine::translate(-center_vec)
         } else {
@@ -1942,7 +2109,8 @@ impl VelloRenderer {
 
         // White stroke for visibility against any background
         let stroke = Stroke::new(1.5);
-        self.scene.stroke(&stroke, Affine::IDENTITY, Color::WHITE, None, &path);
+        self.scene
+            .stroke(&stroke, Affine::IDENTITY, Color::WHITE, None, &path);
     }
 }
 

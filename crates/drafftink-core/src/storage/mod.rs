@@ -10,13 +10,8 @@ mod file;
 mod indexeddb;
 
 pub use autosave::{
-    AutoSaveManager, 
-    PlatformAutoSaveManager, 
-    PlatformStorage,
-    create_autosave_manager, 
-    create_default_storage,
-    DEFAULT_AUTOSAVE_INTERVAL_SECS,
-    LAST_DOCUMENT_KEY,
+    AutoSaveManager, DEFAULT_AUTOSAVE_INTERVAL_SECS, LAST_DOCUMENT_KEY, PlatformAutoSaveManager,
+    PlatformStorage, create_autosave_manager, create_default_storage,
 };
 pub use memory::MemoryStorage;
 
@@ -54,7 +49,7 @@ pub type BoxFuture<'a, T> = Pin<Box<dyn Future<Output = T> + 'a>>;
 ///
 /// Implementations can store documents in memory, local storage,
 /// IndexedDB (WASM), filesystem, or S3.
-/// 
+///
 /// Note: On native platforms, implementations must be Send + Sync.
 /// On WASM, these bounds are relaxed since it's single-threaded.
 #[cfg(not(target_arch = "wasm32"))]

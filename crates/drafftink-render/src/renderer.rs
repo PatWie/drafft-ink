@@ -1,10 +1,10 @@
 //! Renderer trait abstraction.
 
-use kurbo::{Affine, Rect, Size};
-use peniko::Color;
 use drafftink_core::canvas::Canvas;
 use drafftink_core::shapes::Shape;
 use drafftink_core::snap::SnapTarget;
+use kurbo::{Affine, Rect, Size};
+use peniko::Color;
 use thiserror::Error;
 
 /// Renderer errors.
@@ -186,7 +186,7 @@ impl<'a> RenderContext<'a> {
         self.nearby_snap_targets = targets;
         self
     }
-    
+
     /// Set rotation info for rendering rotation helper lines.
     pub fn with_rotation_info(mut self, info: Option<RotationInfo>) -> Self {
         self.rotation_info = info;
@@ -200,7 +200,10 @@ impl<'a> RenderContext<'a> {
     }
 
     /// Set laser pointer position and trail.
-    pub fn with_laser_pointer(mut self, pointer: Option<(kurbo::Point, Vec<(kurbo::Point, f64)>)>) -> Self {
+    pub fn with_laser_pointer(
+        mut self,
+        pointer: Option<(kurbo::Point, Vec<(kurbo::Point, f64)>)>,
+    ) -> Self {
         self.laser_pointer = pointer;
         self
     }

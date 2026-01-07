@@ -25,7 +25,7 @@ impl ImageFormat {
             ImageFormat::WebP => "image/webp",
         }
     }
-    
+
     /// Detect format from file extension.
     pub fn from_extension(ext: &str) -> Option<Self> {
         match ext.to_lowercase().as_str() {
@@ -35,28 +35,28 @@ impl ImageFormat {
             _ => None,
         }
     }
-    
+
     /// Detect format from magic bytes.
     pub fn from_magic_bytes(data: &[u8]) -> Option<Self> {
         if data.len() < 4 {
             return None;
         }
-        
+
         // PNG: 89 50 4E 47
         if data.starts_with(&[0x89, 0x50, 0x4E, 0x47]) {
             return Some(ImageFormat::Png);
         }
-        
+
         // JPEG: FF D8 FF
         if data.starts_with(&[0xFF, 0xD8, 0xFF]) {
             return Some(ImageFormat::Jpeg);
         }
-        
+
         // WebP: RIFF....WEBP
         if data.len() >= 12 && &data[0..4] == b"RIFF" && &data[8..12] == b"WEBP" {
             return Some(ImageFormat::WebP);
         }
-        
+
         None
     }
 }
@@ -89,7 +89,7 @@ pub struct Image {
 
 impl Image {
     /// Create a new image shape from raw image data.
-    /// 
+    ///
     /// # Arguments
     /// * `position` - Top-left corner position
     /// * `data` - Raw image bytes (PNG, JPEG, or WebP)
@@ -104,7 +104,7 @@ impl Image {
         format: ImageFormat,
     ) -> Self {
         use base64::{Engine, engine::general_purpose::STANDARD};
-        
+
         Self {
             id: Uuid::new_v4(),
             position,
@@ -118,10 +118,32 @@ impl Image {
             style: ShapeStyle::default(),
         }
     }
-    
+
     /// Reconstruct an image with a specific ID (for CRDT/storage).
-    pub(crate) fn reconstruct(id: ShapeId, position: Point, width: f64, height: f64, source_width: u32, source_height: u32, format: ImageFormat, data_base64: String, rotation: f64, style: ShapeStyle) -> Self {
-        Self { id, position, width, height, source_width, source_height, format, data_base64, rotation, style }
+    pub(crate) fn reconstruct(
+        id: ShapeId,
+        position: Point,
+        width: f64,
+        height: f64,
+        source_width: u32,
+        source_height: u32,
+        format: ImageFormat,
+        data_base64: String,
+        rotation: f64,
+        style: ShapeStyle,
+    ) -> Self {
+        Self {
+            id,
+            position,
+            width,
+            height,
+            source_width,
+            source_height,
+            format,
+            data_base64,
+            rotation,
+            style,
+        }
     }
 
     /// Create an image shape with specific display dimensions.
@@ -130,12 +152,12 @@ impl Image {
         self.height = height;
         self
     }
-    
+
     /// Scale the image to fit within max dimensions while preserving aspect ratio.
     pub fn fit_within(mut self, max_width: f64, max_height: f64) -> Self {
         let aspect = self.source_width as f64 / self.source_height as f64;
         let target_aspect = max_width / max_height;
-        
+
         if aspect > target_aspect {
             // Image is wider than target - fit to width
             self.width = max_width;
@@ -145,16 +167,16 @@ impl Image {
             self.height = max_height;
             self.width = max_height * aspect;
         }
-        
+
         self
     }
-    
+
     /// Get the raw image data (decoded from base64).
     pub fn data(&self) -> Option<Vec<u8>> {
         use base64::{Engine, engine::general_purpose::STANDARD};
         STANDARD.decode(&self.data_base64).ok()
     }
-    
+
     /// Get the bounding rectangle.
     pub fn as_rect(&self) -> Rect {
         Rect::new(
@@ -164,7 +186,7 @@ impl Image {
             self.position.y + self.height,
         )
     }
-    
+
     /// Get the size of the image data in bytes.
     pub fn data_size(&self) -> usize {
         // Base64 is ~4/3 the size of raw data
@@ -220,10 +242,11 @@ mod tests {
     fn test_image_creation() {
         // 1x1 red PNG (minimal valid PNG)
         let png_data = [
-            0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A,
+            0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A,
+            0x0A,
             // ... minimal PNG would be larger, just testing structure
         ];
-        
+
         let format = ImageFormat::from_magic_bytes(&png_data);
         assert_eq!(format, Some(ImageFormat::Png));
     }
@@ -242,7 +265,7 @@ mod tests {
     fn test_fit_within() {
         let data = vec![0u8; 10];
         let img = Image::new(Point::ZERO, &data, 1000, 500, ImageFormat::Png);
-        
+
         // Fit 1000x500 (2:1 aspect) into 400x400 box
         let fitted = img.fit_within(400.0, 400.0);
         assert!((fitted.width - 400.0).abs() < 0.01);

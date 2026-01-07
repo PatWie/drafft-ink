@@ -67,7 +67,13 @@ impl<'a, 'f, 'p> VelloBackend<'a, 'f, 'p> {
         // Build reverse map from glyph ID to codepoint
         let mut glyph_to_codepoint = HashMap::new();
         if primary_font.is_some() {
-            for subtable in math_font.font().tables().cmap.iter().flat_map(|c| c.subtables) {
+            for subtable in math_font
+                .font()
+                .tables()
+                .cmap
+                .iter()
+                .flat_map(|c| c.subtables)
+            {
                 if subtable.is_unicode() {
                     subtable.codepoints(|cp| {
                         if let Some(c) = char::from_u32(cp) {
@@ -132,7 +138,10 @@ impl<'f, 'p> FontBackend<TtfMathFont<'f>> for VelloBackend<'_, 'f, 'p> {
                     let adjusted_scale = scale * 0.75;
                     let glyph_transform = self.transform
                         * Affine::translate(kurbo::Vec2::new(pos.x, pos.y))
-                        * Affine::scale_non_uniform(adjusted_scale / units_per_em, -adjusted_scale / units_per_em);
+                        * Affine::scale_non_uniform(
+                            adjusted_scale / units_per_em,
+                            -adjusted_scale / units_per_em,
+                        );
 
                     let mut builder = PathBuilder(BezPath::new());
                     if primary.outline_glyph(primary_gid, &mut builder).is_some() {
@@ -150,8 +159,17 @@ impl<'f, 'p> FontBackend<TtfMathFont<'f>> for VelloBackend<'_, 'f, 'p> {
         }
 
         // Fallback to math font
-        let ttf_parser::cff::Matrix { sx, ky, kx, sy, tx, ty } = self.math_font.font_matrix();
-        let font_matrix = Affine::new([sx as f64, ky as f64, kx as f64, sy as f64, tx as f64, ty as f64]);
+        let ttf_parser::cff::Matrix {
+            sx,
+            ky,
+            kx,
+            sy,
+            tx,
+            ty,
+        } = self.math_font.font_matrix();
+        let font_matrix = Affine::new([
+            sx as f64, ky as f64, kx as f64, sy as f64, tx as f64, ty as f64,
+        ]);
 
         let glyph_transform = self.transform
             * Affine::translate(kurbo::Vec2::new(pos.x, pos.y))
@@ -159,7 +177,9 @@ impl<'f, 'p> FontBackend<TtfMathFont<'f>> for VelloBackend<'_, 'f, 'p> {
             * font_matrix;
 
         let mut builder = PathBuilder(BezPath::new());
-        self.math_font.font().outline_glyph(gid.into(), &mut builder);
+        self.math_font
+            .font()
+            .outline_glyph(gid.into(), &mut builder);
 
         self.scene.fill(
             vello::peniko::Fill::NonZero,

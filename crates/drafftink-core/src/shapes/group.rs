@@ -25,10 +25,14 @@ impl Group {
             style: ShapeStyle::default(),
         }
     }
-    
+
     /// Reconstruct a group with a specific ID (for CRDT/storage).
     pub(crate) fn reconstruct(id: ShapeId, children: Vec<Shape>) -> Self {
-        Self { id, children, style: ShapeStyle::default() }
+        Self {
+            id,
+            children,
+            style: ShapeStyle::default(),
+        }
     }
 
     /// Get the children of this group.
@@ -45,7 +49,7 @@ impl Group {
     pub fn ungroup(self) -> Vec<Shape> {
         self.children
     }
-    
+
     /// Get all shape IDs in this group (including nested groups).
     pub fn all_shape_ids(&self) -> Vec<ShapeId> {
         let mut ids = vec![self.id];
@@ -58,7 +62,7 @@ impl Group {
         }
         ids
     }
-    
+
     /// Find a shape by ID within this group (including nested groups).
     pub fn find_shape(&self, id: ShapeId) -> Option<&Shape> {
         for child in &self.children {
@@ -73,7 +77,7 @@ impl Group {
         }
         None
     }
-    
+
     /// Find a mutable shape by ID within this group (including nested groups).
     pub fn find_shape_mut(&mut self, id: ShapeId) -> Option<&mut Shape> {
         for child in &mut self.children {
@@ -99,7 +103,7 @@ impl ShapeTrait for Group {
         if self.children.is_empty() {
             return Rect::ZERO;
         }
-        
+
         let mut bounds = self.children[0].bounds();
         for child in &self.children[1..] {
             bounds = bounds.union(child.bounds());
@@ -156,9 +160,9 @@ mod tests {
     fn test_group_creation() {
         let rect1 = Rectangle::new(Point::new(0.0, 0.0), 100.0, 50.0);
         let rect2 = Rectangle::new(Point::new(200.0, 200.0), 50.0, 100.0);
-        
+
         let group = Group::new(vec![Shape::Rectangle(rect1), Shape::Rectangle(rect2)]);
-        
+
         assert_eq!(group.children().len(), 2);
     }
 
@@ -166,10 +170,10 @@ mod tests {
     fn test_group_bounds() {
         let rect1 = Rectangle::new(Point::new(0.0, 0.0), 100.0, 50.0);
         let rect2 = Rectangle::new(Point::new(200.0, 200.0), 50.0, 100.0);
-        
+
         let group = Group::new(vec![Shape::Rectangle(rect1), Shape::Rectangle(rect2)]);
         let bounds = group.bounds();
-        
+
         assert!((bounds.x0 - 0.0).abs() < f64::EPSILON);
         assert!((bounds.y0 - 0.0).abs() < f64::EPSILON);
         assert!((bounds.x1 - 250.0).abs() < f64::EPSILON);
@@ -180,9 +184,9 @@ mod tests {
     fn test_group_hit_test() {
         let rect1 = Rectangle::new(Point::new(0.0, 0.0), 100.0, 50.0);
         let rect2 = Rectangle::new(Point::new(200.0, 200.0), 50.0, 100.0);
-        
+
         let group = Group::new(vec![Shape::Rectangle(rect1), Shape::Rectangle(rect2)]);
-        
+
         // Hit test on first child
         assert!(group.hit_test(Point::new(50.0, 25.0), 0.0));
         // Hit test on second child
@@ -195,10 +199,10 @@ mod tests {
     fn test_nested_groups() {
         let rect1 = Rectangle::new(Point::new(0.0, 0.0), 100.0, 50.0);
         let rect2 = Rectangle::new(Point::new(200.0, 200.0), 50.0, 100.0);
-        
+
         let inner_group = Group::new(vec![Shape::Rectangle(rect1)]);
         let outer_group = Group::new(vec![Shape::Group(inner_group), Shape::Rectangle(rect2)]);
-        
+
         // Should be able to hit test through nested groups
         assert!(outer_group.hit_test(Point::new(50.0, 25.0), 0.0));
     }
@@ -207,10 +211,10 @@ mod tests {
     fn test_ungroup() {
         let rect1 = Rectangle::new(Point::new(0.0, 0.0), 100.0, 50.0);
         let rect2 = Rectangle::new(Point::new(200.0, 200.0), 50.0, 100.0);
-        
+
         let group = Group::new(vec![Shape::Rectangle(rect1), Shape::Rectangle(rect2)]);
         let children = group.ungroup();
-        
+
         assert_eq!(children.len(), 2);
     }
 }

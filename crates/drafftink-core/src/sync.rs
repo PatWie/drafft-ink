@@ -92,7 +92,11 @@ pub enum SyncEvent {
     /// Disconnected from server
     Disconnected,
     /// Joined a room
-    JoinedRoom { room: String, peer_count: usize, initial_sync: Option<Vec<u8>> },
+    JoinedRoom {
+        room: String,
+        peer_count: usize,
+        initial_sync: Option<Vec<u8>>,
+    },
     /// A peer joined the room
     PeerJoined { peer_id: String },
     /// A peer left the room
@@ -100,7 +104,11 @@ pub enum SyncEvent {
     /// Received sync data from a peer
     SyncReceived { from: String, data: Vec<u8> },
     /// Received awareness update from a peer
-    AwarenessReceived { from: String, peer_id: u64, state: AwarenessState },
+    AwarenessReceived {
+        from: String,
+        peer_id: u64,
+        state: AwarenessState,
+    },
     /// Error occurred
     Error { message: String },
 }
@@ -108,14 +116,12 @@ pub enum SyncEvent {
 /// Base64 decoding
 pub fn base64_decode(input: &str) -> Option<Vec<u8>> {
     const DECODE_TABLE: [i8; 128] = [
-        -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
-        -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
-        -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, 62, -1, -1, -1, 63,
-        52, 53, 54, 55, 56, 57, 58, 59, 60, 61, -1, -1, -1, -1, -1, -1,
-        -1,  0,  1,  2,  3,  4,  5,  6,  7,  8,  9, 10, 11, 12, 13, 14,
-        15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, -1, -1, -1, -1, -1,
-        -1, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40,
-        41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, -1, -1, -1, -1, -1,
+        -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
+        -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, 62, -1, -1,
+        -1, 63, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, -1, -1, -1, -1, -1, -1, -1, 0, 1, 2, 3, 4,
+        5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, -1, -1, -1,
+        -1, -1, -1, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45,
+        46, 47, 48, 49, 50, 51, -1, -1, -1, -1, -1,
     ];
 
     let input = input.trim_end_matches('=');
@@ -146,30 +152,30 @@ pub fn base64_decode(input: &str) -> Option<Vec<u8>> {
 /// Base64 encoding
 pub fn base64_encode(data: &[u8]) -> String {
     const B64_CHARS: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-    
+
     let mut result = String::with_capacity(data.len().div_ceil(3) * 4);
-    
+
     for chunk in data.chunks(3) {
         let b0 = chunk[0];
         let b1 = chunk.get(1).copied().unwrap_or(0);
         let b2 = chunk.get(2).copied().unwrap_or(0);
-        
+
         result.push(B64_CHARS[(b0 >> 2) as usize] as char);
         result.push(B64_CHARS[(((b0 & 0x03) << 4) | (b1 >> 4)) as usize] as char);
-        
+
         if chunk.len() > 1 {
             result.push(B64_CHARS[(((b1 & 0x0f) << 2) | (b2 >> 6)) as usize] as char);
         } else {
             result.push('=');
         }
-        
+
         if chunk.len() > 2 {
             result.push(B64_CHARS[(b2 & 0x3f) as usize] as char);
         } else {
             result.push('=');
         }
     }
-    
+
     result
 }
 
@@ -182,12 +188,12 @@ mod wasm_client {
     use super::*;
     use std::cell::RefCell;
     use std::rc::Rc;
-    use wasm_bindgen::prelude::*;
     use wasm_bindgen::JsCast;
-    use web_sys::{MessageEvent, WebSocket, CloseEvent, ErrorEvent};
+    use wasm_bindgen::prelude::*;
+    use web_sys::{CloseEvent, ErrorEvent, MessageEvent, WebSocket};
 
     /// WebSocket client for WASM.
-    /// 
+    ///
     /// Events are collected and must be polled via `poll_events()`.
     pub struct WasmWebSocket {
         ws: Option<WebSocket>,
@@ -220,7 +226,8 @@ mod wasm_client {
                 return Err("Already connected".to_string());
             }
 
-            let ws = WebSocket::new(url).map_err(|e| format!("Failed to create WebSocket: {:?}", e))?;
+            let ws =
+                WebSocket::new(url).map_err(|e| format!("Failed to create WebSocket: {:?}", e))?;
             ws.set_binary_type(web_sys::BinaryType::Arraybuffer);
 
             self.state = ConnectionState::Connecting;
@@ -241,11 +248,21 @@ mod wasm_client {
                     // Parse and convert to SyncEvent
                     if let Ok(server_msg) = serde_json::from_str::<ServerMessage>(&s) {
                         let event = match server_msg {
-                            ServerMessage::Joined { room, peer_count, initial_sync } => {
+                            ServerMessage::Joined {
+                                room,
+                                peer_count,
+                                initial_sync,
+                            } => {
                                 let data = initial_sync.and_then(|s| super::base64_decode(&s));
-                                SyncEvent::JoinedRoom { room, peer_count, initial_sync: data }
+                                SyncEvent::JoinedRoom {
+                                    room,
+                                    peer_count,
+                                    initial_sync: data,
+                                }
                             }
-                            ServerMessage::PeerJoined { peer_id } => SyncEvent::PeerJoined { peer_id },
+                            ServerMessage::PeerJoined { peer_id } => {
+                                SyncEvent::PeerJoined { peer_id }
+                            }
                             ServerMessage::PeerLeft { peer_id } => SyncEvent::PeerLeft { peer_id },
                             ServerMessage::Sync { from, data } => {
                                 if let Some(bytes) = super::base64_decode(&data) {
@@ -254,9 +271,15 @@ mod wasm_client {
                                     return;
                                 }
                             }
-                            ServerMessage::Awareness { from, peer_id, state } => {
-                                SyncEvent::AwarenessReceived { from, peer_id, state }
-                            }
+                            ServerMessage::Awareness {
+                                from,
+                                peer_id,
+                                state,
+                            } => SyncEvent::AwarenessReceived {
+                                from,
+                                peer_id,
+                                state,
+                            },
                             ServerMessage::Error { message } => SyncEvent::Error { message },
                         };
                         events_msg.borrow_mut().push(event);
@@ -315,7 +338,7 @@ mod wasm_client {
         /// Poll for pending events (non-blocking).
         pub fn poll_events(&mut self) -> Vec<SyncEvent> {
             let mut events = self.events.borrow_mut();
-            
+
             // Update state based on events
             for event in events.iter() {
                 match event {
@@ -325,7 +348,7 @@ mod wasm_client {
                     _ => {}
                 }
             }
-            
+
             std::mem::take(&mut *events)
         }
 
@@ -357,10 +380,10 @@ pub use wasm_client::WasmWebSocket;
 #[cfg(not(target_arch = "wasm32"))]
 mod native_client {
     use super::*;
-    use std::sync::mpsc::{channel, Receiver, Sender, TryRecvError};
+    use std::sync::mpsc::{Receiver, Sender, TryRecvError, channel};
     use std::thread::{self, JoinHandle};
     use std::time::Duration;
-    use tungstenite::{connect, Message};
+    use tungstenite::{Message, connect};
     use url::Url;
 
     /// Commands sent to the WebSocket thread.
@@ -370,7 +393,7 @@ mod native_client {
     }
 
     /// WebSocket client for native platforms.
-    /// 
+    ///
     /// Uses a background thread for non-blocking operation.
     pub struct NativeWebSocket {
         state: ConnectionState,
@@ -404,27 +427,30 @@ mod native_client {
             // Validate URL
             let parsed_url = Url::parse(url).map_err(|e| format!("Invalid URL: {}", e))?;
             if parsed_url.scheme() != "ws" && parsed_url.scheme() != "wss" {
-                return Err(format!("Invalid WebSocket URL scheme: {}", parsed_url.scheme()));
+                return Err(format!(
+                    "Invalid WebSocket URL scheme: {}",
+                    parsed_url.scheme()
+                ));
             }
 
             self.state = ConnectionState::Connecting;
-            
+
             let (cmd_tx, cmd_rx) = channel::<WsCommand>();
             let (event_tx, event_rx) = channel::<SyncEvent>();
-            
+
             let url = url.to_string();
-            
+
             let handle = thread::spawn(move || {
                 log::info!("WebSocket thread: connecting to {}", url);
-                
+
                 // Connect to WebSocket with timeout
                 let ws_result = connect(&url);
-                
+
                 match ws_result {
                     Ok((mut socket, response)) => {
                         log::info!("WebSocket connected, status: {}", response.status());
                         let _ = event_tx.send(SyncEvent::Connected);
-                        
+
                         // Set read timeout on the underlying TCP stream for non-blocking behavior
                         // This is more reliable for tunneled/forwarded connections
                         {
@@ -437,16 +463,21 @@ mod native_client {
                                 #[allow(unreachable_patterns)]
                                 _ => {
                                     // For TLS streams, we'll rely on WouldBlock/TimedOut errors
-                                    log::debug!("TLS or other stream - using default timeout handling");
+                                    log::debug!(
+                                        "TLS or other stream - using default timeout handling"
+                                    );
                                 }
                             }
                         }
-                        
+
                         loop {
                             // Check for commands (non-blocking)
                             match cmd_rx.try_recv() {
                                 Ok(WsCommand::Send(msg)) => {
-                                    log::debug!("WebSocket sending: {}", &msg[..msg.len().min(100)]);
+                                    log::debug!(
+                                        "WebSocket sending: {}",
+                                        &msg[..msg.len().min(100)]
+                                    );
                                     if let Err(e) = socket.send(Message::Text(msg)) {
                                         log::error!("WebSocket send error: {}", e);
                                         break;
@@ -463,19 +494,37 @@ mod native_client {
                                 }
                                 Err(TryRecvError::Empty) => {}
                             }
-                            
+
                             // Check for incoming messages (with timeout)
                             match socket.read() {
                                 Ok(Message::Text(txt)) => {
-                                    log::debug!("WebSocket received: {}", &txt[..txt.len().min(100)]);
-                                    if let Ok(server_msg) = serde_json::from_str::<ServerMessage>(&txt) {
+                                    log::debug!(
+                                        "WebSocket received: {}",
+                                        &txt[..txt.len().min(100)]
+                                    );
+                                    if let Ok(server_msg) =
+                                        serde_json::from_str::<ServerMessage>(&txt)
+                                    {
                                         let event = match server_msg {
-                                            ServerMessage::Joined { room, peer_count, initial_sync } => {
-                                                let data = initial_sync.and_then(|s| super::base64_decode(&s));
-                                                SyncEvent::JoinedRoom { room, peer_count, initial_sync: data }
+                                            ServerMessage::Joined {
+                                                room,
+                                                peer_count,
+                                                initial_sync,
+                                            } => {
+                                                let data = initial_sync
+                                                    .and_then(|s| super::base64_decode(&s));
+                                                SyncEvent::JoinedRoom {
+                                                    room,
+                                                    peer_count,
+                                                    initial_sync: data,
+                                                }
                                             }
-                                            ServerMessage::PeerJoined { peer_id } => SyncEvent::PeerJoined { peer_id },
-                                            ServerMessage::PeerLeft { peer_id } => SyncEvent::PeerLeft { peer_id },
+                                            ServerMessage::PeerJoined { peer_id } => {
+                                                SyncEvent::PeerJoined { peer_id }
+                                            }
+                                            ServerMessage::PeerLeft { peer_id } => {
+                                                SyncEvent::PeerLeft { peer_id }
+                                            }
                                             ServerMessage::Sync { from, data } => {
                                                 if let Some(bytes) = super::base64_decode(&data) {
                                                     SyncEvent::SyncReceived { from, data: bytes }
@@ -483,10 +532,18 @@ mod native_client {
                                                     continue;
                                                 }
                                             }
-                                            ServerMessage::Awareness { from, peer_id, state } => {
-                                                SyncEvent::AwarenessReceived { from, peer_id, state }
+                                            ServerMessage::Awareness {
+                                                from,
+                                                peer_id,
+                                                state,
+                                            } => SyncEvent::AwarenessReceived {
+                                                from,
+                                                peer_id,
+                                                state,
+                                            },
+                                            ServerMessage::Error { message } => {
+                                                SyncEvent::Error { message }
                                             }
-                                            ServerMessage::Error { message } => SyncEvent::Error { message },
                                         };
                                         let _ = event_tx.send(event);
                                     } else {
@@ -502,9 +559,10 @@ mod native_client {
                                     break;
                                 }
                                 Ok(_) => {} // Ignore binary, pong
-                                Err(tungstenite::Error::Io(ref e)) 
-                                    if e.kind() == std::io::ErrorKind::WouldBlock 
-                                    || e.kind() == std::io::ErrorKind::TimedOut => {
+                                Err(tungstenite::Error::Io(ref e))
+                                    if e.kind() == std::io::ErrorKind::WouldBlock
+                                        || e.kind() == std::io::ErrorKind::TimedOut =>
+                                {
                                     // Timeout on read, continue loop
                                     continue;
                                 }
@@ -514,7 +572,7 @@ mod native_client {
                                 }
                             }
                         }
-                        
+
                         log::info!("WebSocket thread exiting");
                         let _ = event_tx.send(SyncEvent::Disconnected);
                     }
@@ -526,11 +584,11 @@ mod native_client {
                     }
                 }
             });
-            
+
             self.cmd_tx = Some(cmd_tx);
             self.event_rx = Some(event_rx);
             self._thread = Some(handle);
-            
+
             Ok(())
         }
 
@@ -569,7 +627,7 @@ mod native_client {
                     self.events.push(event);
                 }
             }
-            
+
             std::mem::take(&mut self.events)
         }
 
@@ -589,7 +647,7 @@ mod native_client {
             Self::new()
         }
     }
-    
+
     impl Drop for NativeWebSocket {
         fn drop(&mut self) {
             self.disconnect();
@@ -643,7 +701,9 @@ mod tests {
 
     #[test]
     fn test_client_message_serialize() {
-        let msg = ClientMessage::Join { room: "test-room".to_string() };
+        let msg = ClientMessage::Join {
+            room: "test-room".to_string(),
+        };
         let json = serde_json::to_string(&msg).unwrap();
         assert!(json.contains("join"));
         assert!(json.contains("test-room"));
@@ -654,7 +714,9 @@ mod tests {
         let json = r#"{"type":"joined","room":"test","peer_count":2}"#;
         let msg: ServerMessage = serde_json::from_str(json).unwrap();
         match msg {
-            ServerMessage::Joined { room, peer_count, .. } => {
+            ServerMessage::Joined {
+                room, peer_count, ..
+            } => {
                 assert_eq!(room, "test");
                 assert_eq!(peer_count, 2);
             }

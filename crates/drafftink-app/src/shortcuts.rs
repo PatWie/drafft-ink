@@ -10,8 +10,18 @@ pub struct Shortcut {
 }
 
 impl Shortcut {
-    pub const fn new(key: &'static str, ctrl: bool, shift: bool, description: &'static str) -> Self {
-        Self { key, ctrl, shift, description }
+    pub const fn new(
+        key: &'static str,
+        ctrl: bool,
+        shift: bool,
+        description: &'static str,
+    ) -> Self {
+        Self {
+            key,
+            ctrl,
+            shift,
+            description,
+        }
     }
 
     /// Format the shortcut for display (e.g., "Ctrl+S").
@@ -51,7 +61,12 @@ impl ShortcutRegistry {
             Shortcut::new("Delete", false, false, "Delete selected shapes"),
             Shortcut::new("Backspace", false, false, "Delete selected shapes"),
             Shortcut::new("Escape", false, false, "Cancel current action"),
-            Shortcut::new("Shift+Drag", false, false, "Maintain aspect ratio while resizing"),
+            Shortcut::new(
+                "Shift+Drag",
+                false,
+                false,
+                "Maintain aspect ratio while resizing",
+            ),
         ]
     }
 

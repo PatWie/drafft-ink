@@ -28,11 +28,11 @@ impl Rectangle {
     /// Default adaptive corner radius in pixels.
     /// This fixed radius keeps visual appearance consistent across different element sizes.
     pub const DEFAULT_ADAPTIVE_RADIUS: f64 = 32.0;
-    
+
     /// Default proportional radius (25% of largest side).
     /// Used for legacy elements, linear elements, and diamonds.
     pub const DEFAULT_PROPORTIONAL_RADIUS: f64 = 0.25;
-    
+
     /// Create a new rectangle.
     pub fn new(position: Point, width: f64, height: f64) -> Self {
         Self {
@@ -47,8 +47,24 @@ impl Rectangle {
     }
 
     /// Reconstruct a rectangle with a specific ID (for CRDT/storage).
-    pub(crate) fn reconstruct(id: ShapeId, position: Point, width: f64, height: f64, corner_radius: f64, rotation: f64, style: ShapeStyle) -> Self {
-        Self { id, position, width, height, corner_radius, rotation, style }
+    pub(crate) fn reconstruct(
+        id: ShapeId,
+        position: Point,
+        width: f64,
+        height: f64,
+        corner_radius: f64,
+        rotation: f64,
+        style: ShapeStyle,
+    ) -> Self {
+        Self {
+            id,
+            position,
+            width,
+            height,
+            corner_radius,
+            rotation,
+            style,
+        }
     }
 
     /// Create a rectangle from two corner points.

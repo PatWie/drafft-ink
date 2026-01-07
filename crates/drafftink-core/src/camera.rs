@@ -84,10 +84,7 @@ impl Camera {
 
         // Adjust offset so world_point stays at screen_point
         let new_screen = self.world_to_screen(world_point);
-        let correction = Vec2::new(
-            screen_point.x - new_screen.x,
-            screen_point.y - new_screen.y,
-        );
+        let correction = Vec2::new(screen_point.x - new_screen.x, screen_point.y - new_screen.y);
         self.offset += correction;
     }
 

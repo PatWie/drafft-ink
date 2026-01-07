@@ -100,7 +100,7 @@ impl AngleSnapResult {
         // Normalize to 0-360
         let angle_normalized = if angle < 0.0 { angle + 360.0 } else { angle };
         let distance = (dx * dx + dy * dy).sqrt();
-        
+
         Self {
             point,
             angle_degrees: angle_normalized,
@@ -131,7 +131,7 @@ pub fn snap_line_endpoint(start: Point, end: Point, angle_snap_enabled: bool) ->
     let dx = end.x - start.x;
     let dy = end.y - start.y;
     let distance = (dx * dx + dy * dy).sqrt();
-    
+
     // Handle zero-length case
     if distance < 0.001 {
         return AngleSnapResult {
@@ -142,11 +142,15 @@ pub fn snap_line_endpoint(start: Point, end: Point, angle_snap_enabled: bool) ->
             distance: 0.0,
         };
     }
-    
+
     let original_angle = dy.atan2(dx).to_degrees();
     // Normalize to 0-360
-    let original_angle_normalized = if original_angle < 0.0 { original_angle + 360.0 } else { original_angle };
-    
+    let original_angle_normalized = if original_angle < 0.0 {
+        original_angle + 360.0
+    } else {
+        original_angle
+    };
+
     if !angle_snap_enabled {
         return AngleSnapResult {
             point: end,
@@ -156,21 +160,21 @@ pub fn snap_line_endpoint(start: Point, end: Point, angle_snap_enabled: bool) ->
             distance,
         };
     }
-    
+
     // Snap to nearest 15° increment
     let snapped_angle = snap_angle(original_angle_normalized, ANGLE_SNAP_INCREMENT);
     let snapped_radians = snapped_angle.to_radians();
-    
+
     // Calculate new endpoint at snapped angle with same distance
     let snapped_point = Point::new(
         start.x + distance * snapped_radians.cos(),
         start.y + distance * snapped_radians.sin(),
     );
-    
+
     // Check if we actually snapped (angle changed meaningfully)
     let angle_diff = (snapped_angle - original_angle_normalized).abs();
     let did_snap = angle_diff > 0.1 && angle_diff < 359.9;
-    
+
     AngleSnapResult {
         point: snapped_point,
         angle_degrees: snapped_angle,
@@ -184,7 +188,7 @@ pub fn snap_line_endpoint(start: Point, end: Point, angle_snap_enabled: bool) ->
 pub fn snap_to_grid(point: Point, grid_size: f64) -> SnapResult {
     let snapped_x = (point.x / grid_size).round() * grid_size;
     let snapped_y = (point.y / grid_size).round() * grid_size;
-    
+
     SnapResult {
         point: Point::new(snapped_x, snapped_y),
         snapped_x: true,
@@ -232,26 +236,62 @@ pub enum SnapTargetKind {
 pub fn get_snap_targets_from_bounds(bounds: kurbo::Rect) -> Vec<SnapTarget> {
     vec![
         // Corners
-        SnapTarget { point: Point::new(bounds.x0, bounds.y0), kind: SnapTargetKind::Corner },
-        SnapTarget { point: Point::new(bounds.x1, bounds.y0), kind: SnapTargetKind::Corner },
-        SnapTarget { point: Point::new(bounds.x1, bounds.y1), kind: SnapTargetKind::Corner },
-        SnapTarget { point: Point::new(bounds.x0, bounds.y1), kind: SnapTargetKind::Corner },
+        SnapTarget {
+            point: Point::new(bounds.x0, bounds.y0),
+            kind: SnapTargetKind::Corner,
+        },
+        SnapTarget {
+            point: Point::new(bounds.x1, bounds.y0),
+            kind: SnapTargetKind::Corner,
+        },
+        SnapTarget {
+            point: Point::new(bounds.x1, bounds.y1),
+            kind: SnapTargetKind::Corner,
+        },
+        SnapTarget {
+            point: Point::new(bounds.x0, bounds.y1),
+            kind: SnapTargetKind::Corner,
+        },
         // Edge midpoints
-        SnapTarget { point: Point::new((bounds.x0 + bounds.x1) / 2.0, bounds.y0), kind: SnapTargetKind::Midpoint },
-        SnapTarget { point: Point::new(bounds.x1, (bounds.y0 + bounds.y1) / 2.0), kind: SnapTargetKind::Midpoint },
-        SnapTarget { point: Point::new((bounds.x0 + bounds.x1) / 2.0, bounds.y1), kind: SnapTargetKind::Midpoint },
-        SnapTarget { point: Point::new(bounds.x0, (bounds.y0 + bounds.y1) / 2.0), kind: SnapTargetKind::Midpoint },
+        SnapTarget {
+            point: Point::new((bounds.x0 + bounds.x1) / 2.0, bounds.y0),
+            kind: SnapTargetKind::Midpoint,
+        },
+        SnapTarget {
+            point: Point::new(bounds.x1, (bounds.y0 + bounds.y1) / 2.0),
+            kind: SnapTargetKind::Midpoint,
+        },
+        SnapTarget {
+            point: Point::new((bounds.x0 + bounds.x1) / 2.0, bounds.y1),
+            kind: SnapTargetKind::Midpoint,
+        },
+        SnapTarget {
+            point: Point::new(bounds.x0, (bounds.y0 + bounds.y1) / 2.0),
+            kind: SnapTargetKind::Midpoint,
+        },
         // Center
-        SnapTarget { point: Point::new((bounds.x0 + bounds.x1) / 2.0, (bounds.y0 + bounds.y1) / 2.0), kind: SnapTargetKind::Center },
+        SnapTarget {
+            point: Point::new((bounds.x0 + bounds.x1) / 2.0, (bounds.y0 + bounds.y1) / 2.0),
+            kind: SnapTargetKind::Center,
+        },
     ]
 }
 
 /// Collect snap targets from line endpoints.
 pub fn get_snap_targets_from_line(start: Point, end: Point) -> Vec<SnapTarget> {
     vec![
-        SnapTarget { point: start, kind: SnapTargetKind::Corner },
-        SnapTarget { point: end, kind: SnapTargetKind::Corner },
-        SnapTarget { point: Point::new((start.x + end.x) / 2.0, (start.y + end.y) / 2.0), kind: SnapTargetKind::Midpoint },
+        SnapTarget {
+            point: start,
+            kind: SnapTargetKind::Corner,
+        },
+        SnapTarget {
+            point: end,
+            kind: SnapTargetKind::Corner,
+        },
+        SnapTarget {
+            point: Point::new((start.x + end.x) / 2.0, (start.y + end.y) / 2.0),
+            kind: SnapTargetKind::Midpoint,
+        },
     ]
 }
 
@@ -259,18 +299,18 @@ pub fn get_snap_targets_from_line(start: Point, end: Point) -> Vec<SnapTarget> {
 pub fn snap_to_shapes(point: Point, targets: &[SnapTarget], threshold: f64) -> SnapResult {
     let mut best_target: Option<&SnapTarget> = None;
     let mut best_dist_sq = threshold * threshold;
-    
+
     for target in targets {
         let dx = point.x - target.point.x;
         let dy = point.y - target.point.y;
         let dist_sq = dx * dx + dy * dy;
-        
+
         if dist_sq < best_dist_sq {
             best_dist_sq = dist_sq;
             best_target = Some(target);
         }
     }
-    
+
     if let Some(target) = best_target {
         SnapResult {
             point: target.point,
@@ -283,7 +323,12 @@ pub fn snap_to_shapes(point: Point, targets: &[SnapTarget], threshold: f64) -> S
 }
 
 /// Snap a point based on the current snap mode with shape targets.
-pub fn snap_point_with_shapes(point: Point, mode: SnapMode, grid_size: f64, shape_targets: &[SnapTarget]) -> SnapResult {
+pub fn snap_point_with_shapes(
+    point: Point,
+    mode: SnapMode,
+    grid_size: f64,
+    shape_targets: &[SnapTarget],
+) -> SnapResult {
     match mode {
         SnapMode::None => SnapResult::none(point),
         SnapMode::Grid => snap_to_grid(point, grid_size),
@@ -302,10 +347,10 @@ pub fn snap_point_with_shapes(point: Point, mode: SnapMode, grid_size: f64, shap
 
 /// Find where a ray from origin at a given angle intersects with grid lines.
 /// Returns the nearest intersection point to the target point.
-/// 
+///
 /// This snaps to where the angle ray crosses horizontal or vertical grid lines,
 /// NOT to grid corners (which may not be on the ray).
-/// 
+///
 /// `origin` - The start point of the ray
 /// `angle_degrees` - The angle of the ray in degrees
 /// `target_point` - The point we're trying to snap (used to find nearest intersection)
@@ -319,15 +364,15 @@ pub fn snap_ray_to_grid_lines(
     let angle_rad = angle_degrees.to_radians();
     let cos_a = angle_rad.cos();
     let sin_a = angle_rad.sin();
-    
+
     let mut best_point = target_point;
     let mut best_dist_to_target = f64::MAX;
     let mut found = false;
-    
+
     // Handle special cases for axis-aligned angles
     let is_horizontal = sin_a.abs() < 0.001;
     let is_vertical = cos_a.abs() < 0.001;
-    
+
     if is_horizontal {
         // Horizontal line: snap to vertical grid lines
         let y = origin.y;
@@ -338,7 +383,8 @@ pub fn snap_ray_to_grid_lines(
             // Check direction matches
             if (grid_x - origin.x) * cos_a >= 0.0 || (grid_x - origin.x).abs() < 0.001 {
                 let candidate = Point::new(grid_x, y);
-                let dist = (candidate.x - target_point.x).powi(2) + (candidate.y - target_point.y).powi(2);
+                let dist =
+                    (candidate.x - target_point.x).powi(2) + (candidate.y - target_point.y).powi(2);
                 if dist < best_dist_to_target {
                     best_dist_to_target = dist;
                     best_point = candidate;
@@ -355,7 +401,8 @@ pub fn snap_ray_to_grid_lines(
             // Check direction matches
             if (grid_y - origin.y) * sin_a >= 0.0 || (grid_y - origin.y).abs() < 0.001 {
                 let candidate = Point::new(x, grid_y);
-                let dist = (candidate.x - target_point.x).powi(2) + (candidate.y - target_point.y).powi(2);
+                let dist =
+                    (candidate.x - target_point.x).powi(2) + (candidate.y - target_point.y).powi(2);
                 if dist < best_dist_to_target {
                     best_dist_to_target = dist;
                     best_point = candidate;
@@ -365,7 +412,7 @@ pub fn snap_ray_to_grid_lines(
         }
     } else {
         // General case: find intersections with both horizontal and vertical grid lines
-        
+
         // Intersections with vertical grid lines (x = n * grid_size)
         let base_grid_x = (target_point.x / grid_size).round() as i32;
         for dx in -5..=5 {
@@ -377,7 +424,8 @@ pub fn snap_ray_to_grid_lines(
                 // t must be positive (in direction of ray)
                 let y = origin.y + t * sin_a;
                 let candidate = Point::new(grid_x, y);
-                let dist = (candidate.x - target_point.x).powi(2) + (candidate.y - target_point.y).powi(2);
+                let dist =
+                    (candidate.x - target_point.x).powi(2) + (candidate.y - target_point.y).powi(2);
                 if dist < best_dist_to_target {
                     best_dist_to_target = dist;
                     best_point = candidate;
@@ -385,7 +433,7 @@ pub fn snap_ray_to_grid_lines(
                 }
             }
         }
-        
+
         // Intersections with horizontal grid lines (y = n * grid_size)
         let base_grid_y = (target_point.y / grid_size).round() as i32;
         for dy in -5..=5 {
@@ -395,7 +443,8 @@ pub fn snap_ray_to_grid_lines(
             if t >= 0.0 {
                 let x = origin.x + t * cos_a;
                 let candidate = Point::new(x, grid_y);
-                let dist = (candidate.x - target_point.x).powi(2) + (candidate.y - target_point.y).powi(2);
+                let dist =
+                    (candidate.x - target_point.x).powi(2) + (candidate.y - target_point.y).powi(2);
                 if dist < best_dist_to_target {
                     best_dist_to_target = dist;
                     best_point = candidate;
@@ -404,7 +453,7 @@ pub fn snap_ray_to_grid_lines(
             }
         }
     }
-    
+
     if found {
         SnapResult {
             point: best_point,
@@ -417,17 +466,17 @@ pub fn snap_ray_to_grid_lines(
 }
 
 /// Snap a line endpoint considering both angle snapping and grid snapping.
-/// 
+///
 /// When BOTH angle_snap AND grid_snap are enabled:
 ///   - Snaps to grid LINE intersections (where the angle ray crosses horizontal/vertical grid lines)
 ///   - This keeps the endpoint EXACTLY on the snapped angle ray
-/// 
+///
 /// When only angle_snap is enabled:
 ///   - Snaps angle to 15° increments, preserves distance
-/// 
+///
 /// When only grid_snap is enabled:
 ///   - Snaps to nearest grid corner
-/// 
+///
 /// The `_use_isometric_grid` parameter is kept for API compatibility but is no longer used.
 /// The behavior is now: angle_snap + grid_snap = snap to grid LINE intersections on the angle ray.
 pub fn snap_line_endpoint_isometric(
@@ -441,7 +490,7 @@ pub fn snap_line_endpoint_isometric(
     let dx = end.x - start.x;
     let dy = end.y - start.y;
     let distance = (dx * dx + dy * dy).sqrt();
-    
+
     // Handle zero-length case
     if distance < 0.001 {
         return AngleSnapResult {
@@ -452,32 +501,37 @@ pub fn snap_line_endpoint_isometric(
             distance: 0.0,
         };
     }
-    
+
     let original_angle = dy.atan2(dx).to_degrees();
-    let original_angle_normalized = if original_angle < 0.0 { original_angle + 360.0 } else { original_angle };
-    
+    let original_angle_normalized = if original_angle < 0.0 {
+        original_angle + 360.0
+    } else {
+        original_angle
+    };
+
     // When BOTH angle snap AND grid snap are enabled:
     // Snap to grid LINE intersections (not corners) - this keeps the point ON the angle ray
     if angle_snap_enabled && grid_snap_enabled {
         // First snap to angle
         let snapped_angle = snap_angle(original_angle_normalized, ANGLE_SNAP_INCREMENT);
-        
+
         // Calculate point on the snapped angle line at the original distance
         let snapped_radians = snapped_angle.to_radians();
         let angle_snapped_point = Point::new(
             start.x + distance * snapped_radians.cos(),
             start.y + distance * snapped_radians.sin(),
         );
-        
+
         // Find where this angle ray intersects with grid LINES (not corners)
-        let grid_snap = snap_ray_to_grid_lines(start, snapped_angle, angle_snapped_point, grid_size);
-        
+        let grid_snap =
+            snap_ray_to_grid_lines(start, snapped_angle, angle_snapped_point, grid_size);
+
         if grid_snap.is_snapped() {
             // Recalculate distance for the grid-snapped point
             let new_dx = grid_snap.point.x - start.x;
             let new_dy = grid_snap.point.y - start.y;
             let new_distance = (new_dx * new_dx + new_dy * new_dy).sqrt();
-            
+
             return AngleSnapResult {
                 point: grid_snap.point,
                 angle_degrees: snapped_angle,
@@ -486,7 +540,7 @@ pub fn snap_line_endpoint_isometric(
                 distance: new_distance,
             };
         }
-        
+
         // If no grid line intersection found, just use angle snapping
         return AngleSnapResult {
             point: angle_snapped_point,
@@ -496,7 +550,7 @@ pub fn snap_line_endpoint_isometric(
             distance,
         };
     }
-    
+
     // Only grid snap (no angle snap): snap to grid corners
     if !angle_snap_enabled {
         if grid_snap_enabled {
@@ -517,20 +571,20 @@ pub fn snap_line_endpoint_isometric(
             distance,
         };
     }
-    
+
     // Only angle snap (no grid snap): snap angle, preserve distance
     let snapped_angle = snap_angle(original_angle_normalized, ANGLE_SNAP_INCREMENT);
     let snapped_radians = snapped_angle.to_radians();
-    
+
     // Calculate new endpoint at snapped angle with same distance
     let snapped_point = Point::new(
         start.x + distance * snapped_radians.cos(),
         start.y + distance * snapped_radians.sin(),
     );
-    
+
     let angle_diff = (snapped_angle - original_angle_normalized).abs();
     let did_snap = angle_diff > 0.1 && angle_diff < 359.9;
-    
+
     AngleSnapResult {
         point: snapped_point,
         angle_degrees: snapped_angle,
@@ -605,7 +659,7 @@ mod tests {
         let start = Point::new(0.0, 0.0);
         let end = Point::new(100.0, 5.0); // Slightly off horizontal
         let result = snap_line_endpoint(start, end, true);
-        
+
         // Should snap to 0° (horizontal)
         assert!(result.snapped);
         assert!((result.angle_degrees - 0.0).abs() < 0.01);
@@ -617,7 +671,7 @@ mod tests {
         let start = Point::new(0.0, 0.0);
         let end = Point::new(100.0, 102.0); // Slightly off 45°
         let result = snap_line_endpoint(start, end, true);
-        
+
         // Should snap to 45°
         assert!(result.snapped);
         assert!((result.angle_degrees - 45.0).abs() < 0.01);
@@ -628,7 +682,7 @@ mod tests {
         let start = Point::new(0.0, 0.0);
         let end = Point::new(100.0, 5.0);
         let result = snap_line_endpoint(start, end, false);
-        
+
         // Should not snap
         assert!(!result.snapped);
         assert_eq!(result.point, end);
@@ -639,7 +693,7 @@ mod tests {
         let start = Point::new(0.0, 0.0);
         let end = Point::new(100.0, 10.0);
         let result = snap_line_endpoint(start, end, true);
-        
+
         // Distance should be preserved
         let original_distance = ((100.0_f64).powi(2) + (10.0_f64).powi(2)).sqrt();
         assert!((result.distance - original_distance).abs() < 0.01);
@@ -650,12 +704,12 @@ mod tests {
         // Ray from origin at 0° (horizontal)
         let origin = Point::new(0.0, 0.0);
         let target = Point::new(55.0, 0.0);
-        
+
         // Should snap to nearest vertical grid line intersection
         let result = snap_ray_to_grid_lines(origin, 0.0, target, 20.0);
         assert!(result.is_snapped());
         assert!((result.point.x - 60.0).abs() < 0.01); // Nearest grid line at x=60
-        assert!((result.point.y - 0.0).abs() < 0.01);  // Y stays at 0
+        assert!((result.point.y - 0.0).abs() < 0.01); // Y stays at 0
     }
 
     #[test]
@@ -663,7 +717,7 @@ mod tests {
         // Ray from origin at 45°
         let origin = Point::new(0.0, 0.0);
         let target = Point::new(50.0, 50.0);
-        
+
         // At 45°, the ray crosses grid lines at various points
         // e.g., crosses x=20 at (20, 20), x=40 at (40, 40), etc.
         // and crosses y=20 at (20, 20), y=40 at (40, 40), etc.
@@ -679,7 +733,7 @@ mod tests {
         // Ray from origin at 30°
         let origin = Point::new(0.0, 0.0);
         let target = Point::new(100.0, 57.7); // approximately 100 * tan(30°)
-        
+
         let result = snap_ray_to_grid_lines(origin, 30.0, target, 20.0);
         assert!(result.is_snapped());
         // Point should be on the 30° ray
@@ -691,33 +745,37 @@ mod tests {
     fn test_snap_line_endpoint_isometric() {
         let start = Point::new(0.0, 0.0);
         let end = Point::new(100.0, 5.0); // Slightly off horizontal
-        
+
         // With isometric grid, should snap to grid LINE (not corner) on 0° ray
         let result = snap_line_endpoint_isometric(start, end, true, true, true, 20.0);
-        
+
         // Should be snapped
         assert!(result.snapped);
         // Y should be 0 (on horizontal line from origin)
         assert!((result.point.y).abs() < 0.01);
         // X should be on a grid line (multiple of 20)
-        assert!((result.point.x % 20.0).abs() < 0.01 || (result.point.x % 20.0 - 20.0).abs() < 0.01);
+        assert!(
+            (result.point.x % 20.0).abs() < 0.01 || (result.point.x % 20.0 - 20.0).abs() < 0.01
+        );
     }
 
     #[test]
     fn test_snap_line_endpoint_isometric_45_degrees() {
         let start = Point::new(0.0, 0.0);
         let end = Point::new(100.0, 102.0); // Slightly off 45°
-        
+
         // With isometric grid, should snap to grid LINE on 45° ray
         let result = snap_line_endpoint_isometric(start, end, true, true, true, 20.0);
-        
+
         // Should be snapped
         assert!(result.snapped);
         // Should be on a 45° angle (x ≈ y since from origin)
         assert!((result.point.x - result.point.y).abs() < 0.1);
         // Either x or y should be on a grid line
-        let on_x_grid = (result.point.x % 20.0).abs() < 0.01 || (result.point.x % 20.0 - 20.0).abs() < 0.01;
-        let on_y_grid = (result.point.y % 20.0).abs() < 0.01 || (result.point.y % 20.0 - 20.0).abs() < 0.01;
+        let on_x_grid =
+            (result.point.x % 20.0).abs() < 0.01 || (result.point.x % 20.0 - 20.0).abs() < 0.01;
+        let on_y_grid =
+            (result.point.y % 20.0).abs() < 0.01 || (result.point.y % 20.0 - 20.0).abs() < 0.01;
         assert!(on_x_grid || on_y_grid);
     }
 }

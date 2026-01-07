@@ -18,9 +18,9 @@ pub use buttons::{
     TextButton, ToggleButton,
 };
 pub use colors::{
-    colors_match, hue_to_rgb, parse_css_color, ColorGrid, ColorGridPosition, ColorSwatch,
-    ColorSwatchStyle, ColorSwatchWithWheel, NoColorSwatch, SelectionStyle, TailwindColor,
-    TailwindPalette, SHADE_LABELS, TAILWIND_COLORS,
+    ColorGrid, ColorGridPosition, ColorSwatch, ColorSwatchStyle, ColorSwatchWithWheel,
+    NoColorSwatch, SHADE_LABELS, SelectionStyle, TAILWIND_COLORS, TailwindColor, TailwindPalette,
+    colors_match, hue_to_rgb, parse_css_color,
 };
 pub use common::{default_btn, input_text, primary_btn, secondary_btn};
 pub use layout::{section_label, separator, vertical_separator};

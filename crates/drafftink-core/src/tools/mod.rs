@@ -5,20 +5,20 @@ use kurbo::Point;
 use serde::{Deserialize, Serialize};
 
 // Use web-time on WASM, std::time otherwise
-#[cfg(target_arch = "wasm32")]
-use web_time::Instant;
 #[cfg(not(target_arch = "wasm32"))]
 use std::time::Instant;
+#[cfg(target_arch = "wasm32")]
+use web_time::Instant;
 
 /// Generate a random seed for new tool interactions.
 /// Uses a simple counter + hash approach that works on all platforms including WASM.
 fn generate_tool_seed() -> u32 {
     use std::sync::atomic::{AtomicU32, Ordering};
-    
+
     static SEED_COUNTER: AtomicU32 = AtomicU32::new(1);
-    
+
     let counter = SEED_COUNTER.fetch_add(1, Ordering::Relaxed);
-    
+
     // Mix the counter with constants for better distribution (splitmix32-like)
     let mut x = counter.wrapping_mul(0x9E3779B9);
     x ^= x >> 16;
@@ -48,8 +48,7 @@ pub enum ToolKind {
 }
 
 /// State of a tool interaction.
-#[derive(Debug, Clone)]
-#[derive(Default)]
+#[derive(Debug, Clone, Default)]
 pub enum ToolState {
     /// Tool is idle, waiting for interaction.
     #[default]
@@ -66,7 +65,6 @@ pub enum ToolState {
         seed: u32,
     },
 }
-
 
 /// Manages the current tool and its state.
 #[derive(Debug, Clone)]
@@ -146,7 +144,7 @@ impl ToolManager {
             self.msd_pos = point;
             self.msd_vel = Point::ZERO;
         }
-        
+
         self.state = ToolState::Active {
             start: point,
             current: point,
@@ -159,31 +157,34 @@ impl ToolManager {
     pub fn update(&mut self, point: Point) {
         if let ToolState::Active { current, .. } = &mut self.state {
             *current = point;
-            
+
             // Accumulate points for freehand
-            if self.current_tool == ToolKind::Freehand || self.current_tool == ToolKind::Highlighter {
+            if self.current_tool == ToolKind::Freehand || self.current_tool == ToolKind::Highlighter
+            {
                 if self.calligraphy_mode {
                     // MSD simulation: brush follows mouse with inertia
-                    const M: f64 = 0.5;   // Mass
+                    const M: f64 = 0.5; // Mass
                     const K: f64 = 120.0; // Stiffness
                     const C: f64 = 15.49; // Critical damping: 2 * sqrt(M * K) ≈ 2 * sqrt(60)
                     const DT: f64 = 1.0 / 60.0; // ~60fps
-                    
+
                     // Force = spring + damping
                     let dx = point.x - self.msd_pos.x;
                     let dy = point.y - self.msd_pos.y;
                     let ax = (K * dx - C * self.msd_vel.x) / M;
                     let ay = (K * dy - C * self.msd_vel.y) / M;
-                    
+
                     // Integrate
                     self.msd_vel.x += ax * DT;
                     self.msd_vel.y += ay * DT;
                     self.msd_pos.x += self.msd_vel.x * DT;
                     self.msd_pos.y += self.msd_vel.y * DT;
-                    
+
                     // Only add point if moved enough
                     if let Some(last) = self.freehand_points.last() {
-                        let dist = ((self.msd_pos.x - last.x).powi(2) + (self.msd_pos.y - last.y).powi(2)).sqrt();
+                        let dist = ((self.msd_pos.x - last.x).powi(2)
+                            + (self.msd_pos.y - last.y).powi(2))
+                        .sqrt();
                         if dist > 2.0 {
                             let pressure = self.compute_pressure(self.msd_pos);
                             self.freehand_points.push(self.msd_pos);
@@ -207,12 +208,15 @@ impl ToolManager {
         }
 
         let now = Instant::now();
-        let raw_pressure = if let (Some(last_time), Some(last_pos)) = (self.last_point_time, self.last_point_pos) {
+        let raw_pressure = if let (Some(last_time), Some(last_pos)) =
+            (self.last_point_time, self.last_point_pos)
+        {
             let dt = now.duration_since(last_time).as_secs_f64();
-            if dt > 0.001 { // Ignore very small time deltas
+            if dt > 0.001 {
+                // Ignore very small time deltas
                 let dist = ((point.x - last_pos.x).powi(2) + (point.y - last_pos.y).powi(2)).sqrt();
                 let velocity = dist / dt;
-                
+
                 // Map velocity to pressure: slow = high pressure, fast = low pressure
                 let normalized_velocity = (velocity / 800.0).min(3.0);
                 let pressure = (-normalized_velocity).exp();
@@ -227,7 +231,8 @@ impl ToolManager {
         // Smooth the pressure to avoid sudden jumps (exponential moving average)
         // Only allow pressure to change gradually
         const SMOOTHING: f64 = 0.3; // Lower = smoother
-        self.smoothed_pressure = self.smoothed_pressure * (1.0 - SMOOTHING) + raw_pressure * SMOOTHING;
+        self.smoothed_pressure =
+            self.smoothed_pressure * (1.0 - SMOOTHING) + raw_pressure * SMOOTHING;
 
         self.last_point_time = Some(now);
         self.last_point_pos = Some(point);
@@ -264,9 +269,16 @@ impl ToolManager {
 
     /// Get the preview shape for the current interaction.
     pub fn preview_shape(&self) -> Option<Shape> {
-        if let ToolState::Active { start, current, seed, .. } = &self.state {
+        if let ToolState::Active {
+            start,
+            current,
+            seed,
+            ..
+        } = &self.state
+        {
             // For freehand/highlighter, use the accumulated points
-            if self.current_tool == ToolKind::Freehand || self.current_tool == ToolKind::Highlighter {
+            if self.current_tool == ToolKind::Freehand || self.current_tool == ToolKind::Highlighter
+            {
                 return self.create_freehand_preview(*seed);
             }
             self.create_shape_with_seed(*start, *current, *seed)
@@ -278,7 +290,7 @@ impl ToolManager {
     /// Create a freehand preview from accumulated points.
     fn create_freehand_preview(&self, seed: u32) -> Option<Shape> {
         use crate::shapes::Freehand;
-        
+
         if self.freehand_points.len() >= 2 {
             // Always use pressure data for consistent rendering with final shape
             let mut freehand = Freehand::from_points_with_pressure(
@@ -287,13 +299,13 @@ impl ToolManager {
             );
             freehand.style = self.current_style.clone();
             freehand.style.seed = seed;
-            
+
             // Apply highlighter-specific style (wider, semi-transparent)
             if self.current_tool == ToolKind::Highlighter {
                 freehand.style.stroke_width = self.current_style.stroke_width.max(12.0);
                 freehand.style.stroke_color.a = 128;
             }
-            
+
             Some(Shape::Freehand(freehand))
         } else {
             None
@@ -346,14 +358,14 @@ impl ToolManager {
             }
             ToolKind::Select | ToolKind::Pan | ToolKind::Eraser | ToolKind::LaserPointer => None,
         };
-        
+
         // Apply current style to the shape with the stable seed
         if let Some(ref mut s) = shape {
             let mut style = self.current_style.clone();
             style.seed = seed;
             *s.style_mut() = style;
         }
-        
+
         shape
     }
 }

@@ -1,9 +1,9 @@
 //! DrafftInk WebSocket Relay Server
 //!
 //! A simple relay server that broadcasts CRDT updates between clients in the same room.
-//! 
+//!
 //! ## Protocol
-//! 
+//!
 //! Messages are JSON with the following format:
 //! ```json
 //! { "type": "join", "room": "room-id" }
@@ -12,13 +12,13 @@
 //! ```
 
 use axum::{
+    Router,
     extract::{
-        ws::{Message, WebSocket, WebSocketUpgrade},
         State,
+        ws::{Message, WebSocket, WebSocketUpgrade},
     },
     response::IntoResponse,
     routing::get,
-    Router,
 };
 use dashmap::DashMap;
 use futures_util::{SinkExt, StreamExt};
@@ -147,8 +147,19 @@ impl AppState {
     }
 
     /// Add peer to room
-    fn join_room(&self, room_id: &str, peer_id: &str) -> (broadcast::Receiver<(String, ServerMessage)>, Option<String>, usize) {
-        let mut room = self.rooms.entry(room_id.to_string()).or_insert_with(Room::new);
+    fn join_room(
+        &self,
+        room_id: &str,
+        peer_id: &str,
+    ) -> (
+        broadcast::Receiver<(String, ServerMessage)>,
+        Option<String>,
+        usize,
+    ) {
+        let mut room = self
+            .rooms
+            .entry(room_id.to_string())
+            .or_insert_with(Room::new);
         room.peers.insert(peer_id.to_string());
         let rx = room.tx.subscribe();
         let initial_sync = room.last_sync.clone();
@@ -221,10 +232,7 @@ async fn health() -> &'static str {
 }
 
 /// WebSocket upgrade handler
-async fn ws_handler(
-    ws: WebSocketUpgrade,
-    State(state): State<Arc<AppState>>,
-) -> impl IntoResponse {
+async fn ws_handler(ws: WebSocketUpgrade, State(state): State<Arc<AppState>>) -> impl IntoResponse {
     ws.on_upgrade(move |socket| handle_socket(socket, state))
 }
 
@@ -367,9 +375,13 @@ async fn handle_socket(socket: WebSocket, state: Arc<AppState>) {
     // Cleanup on disconnect
     if let Some(ref room) = current_room {
         state.leave_room(room, &peer_id);
-        state.broadcast(room, &peer_id, ServerMessage::PeerLeft {
-            peer_id: peer_id.clone(),
-        });
+        state.broadcast(
+            room,
+            &peer_id,
+            ServerMessage::PeerLeft {
+                peer_id: peer_id.clone(),
+            },
+        );
     }
     info!("Connection closed: {}", peer_id);
 }
@@ -379,27 +391,27 @@ const B64_CHARS: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0
 /// Simple base64 encoding
 fn base64_encode(data: &[u8]) -> String {
     let mut result = String::with_capacity(data.len().div_ceil(3) * 4);
-    
+
     for chunk in data.chunks(3) {
         let b0 = chunk[0];
         let b1 = chunk.get(1).copied().unwrap_or(0);
         let b2 = chunk.get(2).copied().unwrap_or(0);
-        
+
         result.push(B64_CHARS[(b0 >> 2) as usize] as char);
         result.push(B64_CHARS[(((b0 & 0x03) << 4) | (b1 >> 4)) as usize] as char);
-        
+
         if chunk.len() > 1 {
             result.push(B64_CHARS[(((b1 & 0x0f) << 2) | (b2 >> 6)) as usize] as char);
         } else {
             result.push('=');
         }
-        
+
         if chunk.len() > 2 {
             result.push(B64_CHARS[(b2 & 0x3f) as usize] as char);
         } else {
             result.push('=');
         }
     }
-    
+
     result
 }

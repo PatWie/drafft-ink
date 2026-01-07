@@ -2,7 +2,7 @@
 
 use super::{BoxFuture, Storage, StorageError, StorageResult};
 use crate::canvas::CanvasDocument;
-use rexie::{Rexie, TransactionMode, ObjectStore};
+use rexie::{ObjectStore, Rexie, TransactionMode};
 use wasm_bindgen::JsValue;
 
 const DB_NAME: &str = "drafftink";
@@ -44,23 +44,28 @@ impl Storage for IndexedDbStorage {
 
         Box::pin(async move {
             let db = self.get_db().await?;
-            let transaction = db.transaction(&[STORE_NAME], TransactionMode::ReadWrite)
+            let transaction = db
+                .transaction(&[STORE_NAME], TransactionMode::ReadWrite)
                 .map_err(|e| StorageError::Other(e.to_string()))?;
-            
-            let store = transaction.store(STORE_NAME)
+
+            let store = transaction
+                .store(STORE_NAME)
                 .map_err(|e| StorageError::Other(e.to_string()))?;
-                
+
             // Use serde-wasm-bindgen for better performance
             let js_val = serde_wasm_bindgen::to_value(&doc_clone)
                 .map_err(|e| StorageError::Serialization(e.to_string()))?;
-                
-            store.put(&js_val, Some(&JsValue::from_str(&id)))
+
+            store
+                .put(&js_val, Some(&JsValue::from_str(&id)))
                 .await
                 .map_err(|e| StorageError::Other(e.to_string()))?;
-                
-            transaction.done().await
+
+            transaction
+                .done()
+                .await
                 .map_err(|e| StorageError::Other(e.to_string()))?;
-            
+
             Ok(())
         })
     }
@@ -70,16 +75,19 @@ impl Storage for IndexedDbStorage {
 
         Box::pin(async move {
             let db = self.get_db().await?;
-            let transaction = db.transaction(&[STORE_NAME], TransactionMode::ReadOnly)
+            let transaction = db
+                .transaction(&[STORE_NAME], TransactionMode::ReadOnly)
                 .map_err(|e| StorageError::Other(e.to_string()))?;
-            
-            let store = transaction.store(STORE_NAME)
+
+            let store = transaction
+                .store(STORE_NAME)
                 .map_err(|e| StorageError::Other(e.to_string()))?;
-            
-            let js_val = store.get(JsValue::from_str(&id))
+
+            let js_val = store
+                .get(JsValue::from_str(&id))
                 .await
                 .map_err(|e| StorageError::Other(e.to_string()))?;
-            
+
             match js_val {
                 Some(val) => serde_wasm_bindgen::from_value(val)
                     .map_err(|e| StorageError::Serialization(e.to_string())),
@@ -93,19 +101,24 @@ impl Storage for IndexedDbStorage {
 
         Box::pin(async move {
             let db = self.get_db().await?;
-            let transaction = db.transaction(&[STORE_NAME], TransactionMode::ReadWrite)
+            let transaction = db
+                .transaction(&[STORE_NAME], TransactionMode::ReadWrite)
                 .map_err(|e| StorageError::Other(e.to_string()))?;
-            
-            let store = transaction.store(STORE_NAME)
+
+            let store = transaction
+                .store(STORE_NAME)
                 .map_err(|e| StorageError::Other(e.to_string()))?;
-            
-            store.delete(JsValue::from_str(&id))
+
+            store
+                .delete(JsValue::from_str(&id))
                 .await
                 .map_err(|e| StorageError::Other(e.to_string()))?;
-            
-            transaction.done().await
+
+            transaction
+                .done()
+                .await
                 .map_err(|e| StorageError::Other(e.to_string()))?;
-            
+
             Ok(())
         })
     }
@@ -113,16 +126,19 @@ impl Storage for IndexedDbStorage {
     fn list(&self) -> BoxFuture<'_, StorageResult<Vec<String>>> {
         Box::pin(async move {
             let db = self.get_db().await?;
-            let transaction = db.transaction(&[STORE_NAME], TransactionMode::ReadOnly)
+            let transaction = db
+                .transaction(&[STORE_NAME], TransactionMode::ReadOnly)
                 .map_err(|e| StorageError::Other(e.to_string()))?;
-            
-            let store = transaction.store(STORE_NAME)
+
+            let store = transaction
+                .store(STORE_NAME)
                 .map_err(|e| StorageError::Other(e.to_string()))?;
-            
-            let js_keys = store.get_all_keys(None, None)
+
+            let js_keys = store
+                .get_all_keys(None, None)
                 .await
                 .map_err(|e| StorageError::Other(e.to_string()))?;
-            
+
             let mut ids = Vec::new();
             for key in js_keys {
                 if let Some(key_str) = key.as_string() {
@@ -138,16 +154,19 @@ impl Storage for IndexedDbStorage {
 
         Box::pin(async move {
             let db = self.get_db().await?;
-            let transaction = db.transaction(&[STORE_NAME], TransactionMode::ReadOnly)
+            let transaction = db
+                .transaction(&[STORE_NAME], TransactionMode::ReadOnly)
                 .map_err(|e| StorageError::Other(e.to_string()))?;
-            
-            let store = transaction.store(STORE_NAME)
+
+            let store = transaction
+                .store(STORE_NAME)
                 .map_err(|e| StorageError::Other(e.to_string()))?;
-            
-            let js_val = store.get(JsValue::from_str(&id))
+
+            let js_val = store
+                .get(JsValue::from_str(&id))
                 .await
                 .map_err(|e| StorageError::Other(e.to_string()))?;
-            
+
             Ok(js_val.is_some())
         })
     }

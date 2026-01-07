@@ -79,7 +79,7 @@ impl<S: Storage> AutoSaveManager<S> {
         if !self.dirty {
             return false;
         }
-        
+
         match self.last_save {
             Some(last) => last.elapsed() >= self.interval,
             None => true, // Never saved, should save
@@ -92,25 +92,26 @@ impl<S: Storage> AutoSaveManager<S> {
         if !self.should_save() {
             return Ok(false);
         }
-        
+
         self.save(document).await?;
         Ok(true)
     }
 
     /// Force save the document immediately.
     pub async fn save(&mut self, document: &CanvasDocument) -> StorageResult<()> {
-        let doc_id = self.current_doc_id
+        let doc_id = self
+            .current_doc_id
             .clone()
             .unwrap_or_else(|| document.id.clone());
-        
+
         self.storage.save(&doc_id, document).await?;
-        
+
         // Also save as the "last document" for auto-restore
         self.storage.save(LAST_DOCUMENT_KEY, document).await?;
-        
+
         self.last_save = Some(Instant::now());
         self.dirty = false;
-        
+
         Ok(())
     }
 
@@ -198,7 +199,9 @@ mod tests {
 
         fn dummy_raw_waker() -> RawWaker {
             fn no_op(_: *const ()) {}
-            fn clone(_: *const ()) -> RawWaker { dummy_raw_waker() }
+            fn clone(_: *const ()) -> RawWaker {
+                dummy_raw_waker()
+            }
             static VTABLE: RawWakerVTable = RawWakerVTable::new(clone, no_op, no_op, no_op);
             RawWaker::new(std::ptr::null(), &VTABLE)
         }
@@ -219,7 +222,7 @@ mod tests {
     fn test_autosave_manager_creation() {
         let storage = Arc::new(MemoryStorage::new());
         let manager = AutoSaveManager::new(storage);
-        
+
         assert!(!manager.is_dirty());
         assert!(!manager.should_save());
     }
@@ -228,11 +231,11 @@ mod tests {
     fn test_autosave_dirty_flag() {
         let storage = Arc::new(MemoryStorage::new());
         let mut manager = AutoSaveManager::new(storage);
-        
+
         assert!(!manager.is_dirty());
         manager.mark_dirty();
         assert!(manager.is_dirty());
-        
+
         // Should save when dirty and no previous save
         assert!(manager.should_save());
     }
@@ -241,13 +244,13 @@ mod tests {
     fn test_autosave_save_clears_dirty() {
         let storage = Arc::new(MemoryStorage::new());
         let mut manager = AutoSaveManager::new(storage);
-        
+
         manager.mark_dirty();
         assert!(manager.is_dirty());
-        
+
         let doc = CanvasDocument::new();
         block_on(manager.save(&doc)).unwrap();
-        
+
         assert!(!manager.is_dirty());
     }
 
@@ -255,17 +258,17 @@ mod tests {
     fn test_autosave_load_last() {
         let storage = Arc::new(MemoryStorage::new());
         let mut manager = AutoSaveManager::new(storage);
-        
+
         // Save a document
         let mut doc = CanvasDocument::new();
         doc.name = "Test Document".to_string();
         manager.mark_dirty();
         block_on(manager.save(&doc)).unwrap();
-        
+
         // Create new manager and load last
         let storage2 = manager.storage().clone();
         let mut manager2 = AutoSaveManager::new(storage2);
-        
+
         let loaded = block_on(manager2.load_last()).expect("Should load last document");
         assert_eq!(loaded.name, "Test Document");
     }
@@ -274,13 +277,13 @@ mod tests {
     fn test_autosave_list_excludes_special_key() {
         let storage = Arc::new(MemoryStorage::new());
         let mut manager = AutoSaveManager::new(storage);
-        
+
         let doc = CanvasDocument::new();
         manager.mark_dirty();
         block_on(manager.save(&doc)).unwrap();
-        
+
         let list = block_on(manager.list_documents()).unwrap();
-        
+
         // Should not include LAST_DOCUMENT_KEY
         assert!(!list.contains(&LAST_DOCUMENT_KEY.to_string()));
     }

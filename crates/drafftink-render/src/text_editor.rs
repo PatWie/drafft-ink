@@ -6,10 +6,10 @@ use peniko::Brush;
 use std::time::Duration;
 
 // Use web_time for WASM compatibility
-#[cfg(target_arch = "wasm32")]
-use web_time::Instant;
 #[cfg(not(target_arch = "wasm32"))]
 use std::time::Instant;
+#[cfg(target_arch = "wasm32")]
+use web_time::Instant;
 
 /// Keyboard key for text editing.
 #[derive(Debug, Clone, PartialEq)]
@@ -85,17 +85,17 @@ impl TextEditState {
     /// Create a new text edit state with the given text content.
     pub fn new(text: &str, font_size: f32) -> Self {
         use parley::GenericFamily;
-        
+
         let mut editor = PlainEditor::new(font_size);
         editor.set_text(text);
         editor.set_scale(1.0);
-        
+
         // Set default styles - use SansSerif generic family
         // The renderer will set the specific font (GelPen) via styles
         let styles = editor.edit_styles();
         styles.insert(GenericFamily::SansSerif.into());
         styles.insert(StyleProperty::Brush(Brush::Solid(peniko::Color::BLACK)));
-        
+
         Self {
             editor,
             cursor_visible: true,
@@ -206,7 +206,11 @@ impl TextEditState {
     }
 
     /// Update cached layout dimensions from the current layout.
-    pub fn update_layout_cache(&mut self, font_cx: &mut FontContext, layout_cx: &mut LayoutContext<Brush>) {
+    pub fn update_layout_cache(
+        &mut self,
+        font_cx: &mut FontContext,
+        layout_cx: &mut LayoutContext<Brush>,
+    ) {
         let layout = self.editor.layout(font_cx, layout_cx);
         self.cached_width = layout.width();
         self.cached_height = layout.height();
@@ -255,7 +259,11 @@ impl TextEditState {
             }
             TextKey::Left => {
                 if action_mod {
-                    if shift { drv.select_word_left(); } else { drv.move_word_left(); }
+                    if shift {
+                        drv.select_word_left();
+                    } else {
+                        drv.move_word_left();
+                    }
                 } else if shift {
                     drv.select_left();
                 } else {
@@ -264,7 +272,11 @@ impl TextEditState {
             }
             TextKey::Right => {
                 if action_mod {
-                    if shift { drv.select_word_right(); } else { drv.move_word_right(); }
+                    if shift {
+                        drv.select_word_right();
+                    } else {
+                        drv.move_word_right();
+                    }
                 } else if shift {
                     drv.select_right();
                 } else {
@@ -272,14 +284,26 @@ impl TextEditState {
                 }
             }
             TextKey::Up => {
-                if shift { drv.select_up(); } else { drv.move_up(); }
+                if shift {
+                    drv.select_up();
+                } else {
+                    drv.move_up();
+                }
             }
             TextKey::Down => {
-                if shift { drv.select_down(); } else { drv.move_down(); }
+                if shift {
+                    drv.select_down();
+                } else {
+                    drv.move_down();
+                }
             }
             TextKey::Home => {
                 if action_mod {
-                    if shift { drv.select_to_text_start(); } else { drv.move_to_text_start(); }
+                    if shift {
+                        drv.select_to_text_start();
+                    } else {
+                        drv.move_to_text_start();
+                    }
                 } else if shift {
                     drv.select_to_line_start();
                 } else {
@@ -288,7 +312,11 @@ impl TextEditState {
             }
             TextKey::End => {
                 if action_mod {
-                    if shift { drv.select_to_text_end(); } else { drv.move_to_text_end(); }
+                    if shift {
+                        drv.select_to_text_end();
+                    } else {
+                        drv.move_to_text_end();
+                    }
                 } else if shift {
                     drv.select_to_line_end();
                 } else {
@@ -352,7 +380,7 @@ impl TextEditState {
     ) {
         self.cursor_reset();
         self.is_dragging = true;
-        
+
         let mut drv = self.editor.driver(font_cx, layout_cx);
         if shift {
             drv.extend_selection_to_point(local_x, local_y);
@@ -372,7 +400,7 @@ impl TextEditState {
         if !self.is_dragging {
             return;
         }
-        
+
         self.cursor_reset();
         let mut drv = self.editor.driver(font_cx, layout_cx);
         drv.extend_selection_to_point(local_x, local_y);

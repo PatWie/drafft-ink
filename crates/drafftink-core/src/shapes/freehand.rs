@@ -51,7 +51,12 @@ impl Freehand {
 
     /// Reconstruct a freehand with a specific ID (for CRDT/storage).
     pub(crate) fn reconstruct(id: ShapeId, points: Vec<Point>, style: ShapeStyle) -> Self {
-        Self { id, points, pressures: Vec::new(), style }
+        Self {
+            id,
+            points,
+            pressures: Vec::new(),
+            style,
+        }
     }
 
     /// Add a point to the path.
@@ -92,7 +97,8 @@ impl Freehand {
         }
 
         // Ramer-Douglas-Peucker algorithm with pressure preservation
-        let (new_points, new_pressures) = rdp_simplify_with_pressure(&self.points, &self.pressures, tolerance);
+        let (new_points, new_pressures) =
+            rdp_simplify_with_pressure(&self.points, &self.pressures, tolerance);
         self.points = new_points;
         self.pressures = new_pressures;
     }
@@ -105,7 +111,11 @@ impl Default for Freehand {
 }
 
 /// Ramer-Douglas-Peucker line simplification with pressure preservation.
-fn rdp_simplify_with_pressure(points: &[Point], pressures: &[f64], tolerance: f64) -> (Vec<Point>, Vec<f64>) {
+fn rdp_simplify_with_pressure(
+    points: &[Point],
+    pressures: &[f64],
+    tolerance: f64,
+) -> (Vec<Point>, Vec<f64>) {
     if points.len() < 3 {
         let p = if pressures.len() == points.len() {
             pressures.to_vec()
@@ -142,9 +152,11 @@ fn rdp_simplify_with_pressure(points: &[Point], pressures: &[f64], tolerance: f6
         } else {
             &[]
         };
-        
-        let (mut left_pts, mut left_press) = rdp_simplify_with_pressure(&points[..=max_index], left_pressures, tolerance);
-        let (right_pts, right_press) = rdp_simplify_with_pressure(&points[max_index..], right_pressures, tolerance);
+
+        let (mut left_pts, mut left_press) =
+            rdp_simplify_with_pressure(&points[..=max_index], left_pressures, tolerance);
+        let (right_pts, right_press) =
+            rdp_simplify_with_pressure(&points[max_index..], right_pressures, tolerance);
 
         // Combine, removing duplicate point at junction
         left_pts.pop();
@@ -326,10 +338,7 @@ mod tests {
 
     #[test]
     fn test_hit_test() {
-        let freehand = Freehand::from_points(vec![
-            Point::new(0.0, 0.0),
-            Point::new(100.0, 0.0),
-        ]);
+        let freehand = Freehand::from_points(vec![Point::new(0.0, 0.0), Point::new(100.0, 0.0)]);
 
         assert!(freehand.hit_test(Point::new(50.0, 0.0), 5.0));
         assert!(!freehand.hit_test(Point::new(50.0, 20.0), 5.0));

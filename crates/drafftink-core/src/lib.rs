@@ -22,6 +22,8 @@ pub use collaboration::CollaborationManager;
 pub use crdt::CrdtDocument;
 pub use input::InputState;
 pub use selection::{ManipulationState, MultiMoveState};
-pub use snap::{SnapMode, SnapResult, SnapTarget, SnapTargetKind, snap_point, snap_to_grid, GRID_SIZE};
-pub use sync::{ConnectionState, SyncEvent, PlatformWebSocket};
-pub use widget::{WidgetState, WidgetManager, EditingKind, Handle, HandleKind, HandleShape};
+pub use snap::{
+    GRID_SIZE, SnapMode, SnapResult, SnapTarget, SnapTargetKind, snap_point, snap_to_grid,
+};
+pub use sync::{ConnectionState, PlatformWebSocket, SyncEvent};
+pub use widget::{EditingKind, Handle, HandleKind, HandleShape, WidgetManager, WidgetState};

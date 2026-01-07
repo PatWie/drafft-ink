@@ -1,15 +1,15 @@
 //! Input state management using winit_input_helper.
 
 use kurbo::{Point, Vec2};
-use winit::event::{DeviceEvent, MouseButton, WindowEvent, Touch, TouchPhase};
+use winit::event::{DeviceEvent, MouseButton, Touch, TouchPhase, WindowEvent};
 use winit::keyboard::KeyCode;
 use winit_input_helper::WinitInputHelper;
 
 // Use web_time for WASM compatibility
-#[cfg(target_arch = "wasm32")]
-use web_time::Instant;
 #[cfg(not(target_arch = "wasm32"))]
 use std::time::Instant;
+#[cfg(target_arch = "wasm32")]
+use web_time::Instant;
 
 /// Double-click detection constants.
 const DOUBLE_CLICK_TIME_MS: u128 = 500;
@@ -79,13 +79,15 @@ impl InputState {
     /// Process a window event. Returns true on redraw request.
     pub fn process_window_event(&mut self, event: &WindowEvent) -> bool {
         let result = self.helper.process_window_event(event);
-        
+
         // Handle double-click and drag detection
         if self.mouse_just_pressed(MouseButton::Left) {
             let current_pos = self.mouse_position();
             let now = Instant::now();
 
-            if let (Some(last_time), Some(last_pos)) = (self.last_click_time, self.last_click_position) {
+            if let (Some(last_time), Some(last_pos)) =
+                (self.last_click_time, self.last_click_position)
+            {
                 let elapsed = now.duration_since(last_time).as_millis();
                 let distance = current_pos.distance(last_pos);
 
@@ -199,8 +201,12 @@ impl InputState {
     /// Process a touch event. Returns (pan_delta, zoom_delta, zoom_center) if gesture detected.
     pub fn process_touch(&mut self, touch: &Touch) -> Option<(Vec2, f64, Point)> {
         let pos = Point::new(touch.location.x, touch.location.y);
-        let state = TouchState { id: touch.id, position: pos, phase: touch.phase };
-        
+        let state = TouchState {
+            id: touch.id,
+            position: pos,
+            phase: touch.phase,
+        };
+
         match touch.phase {
             TouchPhase::Started => {
                 // Find empty slot
@@ -229,7 +235,7 @@ impl InputState {
                         }
                     }
                 }
-                
+
                 // Calculate gesture
                 if let (Some(t0), Some(t1)) = (self.touches[0], self.touches[1]) {
                     // Two-finger gesture: pinch zoom + pan
@@ -238,18 +244,26 @@ impl InputState {
                         (t0.position.x + t1.position.x) / 2.0,
                         (t0.position.y + t1.position.y) / 2.0,
                     );
-                    
+
                     let zoom_delta = if let Some(old_dist) = self.pinch_distance {
-                        if old_dist > 0.0 { new_dist / old_dist } else { 1.0 }
-                    } else { 1.0 };
-                    
+                        if old_dist > 0.0 {
+                            new_dist / old_dist
+                        } else {
+                            1.0
+                        }
+                    } else {
+                        1.0
+                    };
+
                     let pan_delta = if let Some(old_center) = self.pinch_center {
                         Vec2::new(new_center.x - old_center.x, new_center.y - old_center.y)
-                    } else { Vec2::ZERO };
-                    
+                    } else {
+                        Vec2::ZERO
+                    };
+
                     self.pinch_distance = Some(new_dist);
                     self.pinch_center = Some(new_center);
-                    
+
                     Some((pan_delta, zoom_delta, new_center))
                 } else {
                     None
@@ -288,7 +302,9 @@ impl InputState {
 
     /// Check if touch just started (first finger down).
     pub fn touch_just_started(&self) -> bool {
-        self.touches[0].map(|t| t.phase == TouchPhase::Started).unwrap_or(false)
+        self.touches[0]
+            .map(|t| t.phase == TouchPhase::Started)
+            .unwrap_or(false)
     }
 
     /// Check if touch just ended.

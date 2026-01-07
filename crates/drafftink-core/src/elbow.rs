@@ -72,13 +72,21 @@ pub fn compute_elbow_path(start: Point, end: Point) -> Vec<Point> {
 
     // Departure heading: direction from start toward end (prefer horizontal)
     let departure_heading = if dx.abs() >= dy.abs() {
-        if dx > 0.0 { Heading::Right } else { Heading::Left }
-    } else if dy > 0.0 { Heading::Down } else { Heading::Up };
+        if dx > 0.0 {
+            Heading::Right
+        } else {
+            Heading::Left
+        }
+    } else if dy > 0.0 {
+        Heading::Down
+    } else {
+        Heading::Up
+    };
 
     // Dongles at midpoint on the departure axis (like Excalidraw's dynamic bounds)
     let mid_x = (start.x + end.x) / 2.0;
     let mid_y = (start.y + end.y) / 2.0;
-    
+
     let (departure, arrival) = match departure_heading {
         Heading::Right | Heading::Left => {
             // Horizontal departure: dongles at mid_x
@@ -108,13 +116,14 @@ pub fn compute_elbow_path(start: Point, end: Point) -> Vec<Point> {
         |cell| neighbors(cell, turn_penalty),
         |cell| estimate(cell, ex, ey, turn_penalty),
         |cell| cell.x == ex && cell.y == ey,
-    ).expect("A* always finds a path on unbounded grid");
+    )
+    .expect("A* always finds a path on unbounded grid");
 
     // Build result: departure + corners + arrival
     let mut result = vec![departure];
     result.extend(extract_corners(&path, departure, arrival));
     result.push(arrival);
-    
+
     result
 }
 
@@ -126,7 +135,8 @@ fn neighbors(cell: &Cell, turn_penalty: u64) -> Vec<(Cell, u64)> {
         (1, 0, Heading::Right),
     ];
 
-    moves.iter()
+    moves
+        .iter()
         .filter(|(_, _, h)| *h != cell.heading.reverse())
         .map(|(dx, dy, h)| {
             let cost = if cell.heading == Heading::None || cell.heading == *h {
@@ -153,10 +163,18 @@ fn extract_corners(path: &[Cell], start: Point, end: Point) -> Vec<Point> {
             let mut corner = Point::new(from_grid(path[i].x), from_grid(path[i].y));
 
             // Snap to waypoint coordinates for cleaner lines
-            if path[i].x == path[0].x { corner.x = start.x; }
-            if path[i].y == path[0].y { corner.y = start.y; }
-            if path[i].x == path.last().unwrap().x { corner.x = end.x; }
-            if path[i].y == path.last().unwrap().y { corner.y = end.y; }
+            if path[i].x == path[0].x {
+                corner.x = start.x;
+            }
+            if path[i].y == path[0].y {
+                corner.y = start.y;
+            }
+            if path[i].x == path.last().unwrap().x {
+                corner.x = end.x;
+            }
+            if path[i].y == path.last().unwrap().y {
+                corner.y = end.y;
+            }
 
             corners.push(corner);
         }

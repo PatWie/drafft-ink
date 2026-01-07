@@ -3,7 +3,7 @@
 //! Includes the full Tailwind CSS color palette and components for color selection.
 
 use egui::{
-    vec2, Color32, CornerRadius, CursorIcon, Pos2, Rect, Sense, Stroke, StrokeKind, Ui, Vec2,
+    Color32, CornerRadius, CursorIcon, Pos2, Rect, Sense, Stroke, StrokeKind, Ui, Vec2, vec2,
 };
 
 use crate::{sizing, theme};
@@ -79,94 +79,380 @@ impl TailwindPalette {
 
 // Extended Tailwind colors with 25 shade (OKLCH perceptual interpolation)
 pub const TAILWIND_COLORS: &[TailwindColor] = &[
-    TailwindColor::new("Red", [
-        (253, 252, 252), (254, 242, 242), (254, 226, 226), (254, 202, 202), (252, 165, 165),
-        (248, 113, 113), (239, 68, 68), (220, 38, 38), (185, 28, 28), (153, 27, 27), (127, 29, 29), (69, 10, 10),
-    ]),
-    TailwindColor::new("Orange", [
-        (253, 252, 250), (255, 247, 237), (255, 237, 213), (254, 215, 170), (253, 186, 116),
-        (251, 146, 60), (249, 115, 22), (234, 88, 12), (194, 65, 12), (154, 52, 18), (124, 45, 18), (67, 20, 7),
-    ]),
-    TailwindColor::new("Amber", [
-        (254, 254, 254), (255, 251, 235), (254, 243, 199), (253, 230, 138), (252, 211, 77),
-        (251, 191, 36), (245, 158, 11), (217, 119, 6), (180, 83, 9), (146, 64, 14), (120, 53, 15), (69, 26, 3),
-    ]),
-    TailwindColor::new("Yellow", [
-        (253, 253, 253), (254, 252, 232), (254, 249, 195), (254, 240, 138), (253, 224, 71),
-        (250, 204, 21), (234, 179, 8), (202, 138, 4), (161, 98, 7), (133, 77, 14), (113, 63, 18), (66, 32, 6),
-    ]),
-    TailwindColor::new("Lime", [
-        (253, 255, 248), (247, 254, 231), (236, 252, 203), (217, 249, 157), (190, 242, 100),
-        (163, 230, 53), (132, 204, 22), (101, 163, 13), (77, 124, 15), (63, 98, 18), (54, 83, 20), (26, 46, 5),
-    ]),
-    TailwindColor::new("Green", [
-        (252, 252, 252), (240, 253, 244), (220, 252, 231), (187, 247, 208), (134, 239, 172),
-        (74, 222, 128), (34, 197, 94), (22, 163, 74), (21, 128, 61), (22, 101, 52), (20, 83, 45), (5, 46, 22),
-    ]),
-    TailwindColor::new("Emerald", [
-        (254, 254, 254), (236, 253, 245), (209, 250, 229), (167, 243, 208), (110, 231, 183),
-        (52, 211, 153), (16, 185, 129), (5, 150, 105), (4, 120, 87), (6, 95, 70), (6, 78, 59), (2, 44, 34),
-    ]),
-    TailwindColor::new("Teal", [
-        (254, 254, 254), (240, 253, 250), (204, 251, 241), (153, 246, 228), (94, 234, 212),
-        (45, 212, 191), (20, 184, 166), (13, 148, 136), (15, 118, 110), (17, 94, 89), (19, 78, 74), (4, 47, 46),
-    ]),
-    TailwindColor::new("Cyan", [
-        (254, 254, 254), (236, 254, 255), (207, 250, 254), (165, 243, 252), (103, 232, 249),
-        (34, 211, 238), (6, 182, 212), (8, 145, 178), (14, 116, 144), (21, 94, 117), (22, 78, 99), (8, 51, 68),
-    ]),
-    TailwindColor::new("Sky", [
-        (249, 253, 255), (240, 249, 255), (224, 242, 254), (186, 230, 253), (125, 211, 252),
-        (56, 189, 248), (14, 165, 233), (2, 132, 199), (3, 105, 161), (7, 89, 133), (12, 74, 110), (8, 47, 73),
-    ]),
-    TailwindColor::new("Blue", [
-        (253, 254, 255), (239, 246, 255), (219, 234, 254), (191, 219, 254), (147, 197, 253),
-        (96, 165, 250), (59, 130, 246), (37, 99, 235), (29, 78, 216), (30, 64, 175), (30, 58, 138), (23, 37, 84),
-    ]),
-    TailwindColor::new("Indigo", [
-        (246, 248, 254), (238, 242, 255), (224, 231, 255), (199, 210, 254), (165, 180, 252),
-        (129, 140, 248), (99, 102, 241), (79, 70, 229), (67, 56, 202), (55, 48, 163), (49, 46, 129), (30, 27, 75),
-    ]),
-    TailwindColor::new("Violet", [
-        (250, 249, 255), (245, 243, 255), (237, 233, 254), (221, 214, 254), (196, 181, 253),
-        (167, 139, 250), (139, 92, 246), (124, 58, 237), (109, 40, 217), (91, 33, 182), (76, 29, 149), (46, 16, 101),
-    ]),
-    TailwindColor::new("Purple", [
-        (254, 254, 255), (250, 245, 255), (243, 232, 255), (233, 213, 255), (216, 180, 254),
-        (192, 132, 252), (168, 85, 247), (147, 51, 234), (126, 34, 206), (107, 33, 168), (88, 28, 135), (59, 7, 100),
-    ]),
-    TailwindColor::new("Fuchsia", [
-        (254, 251, 255), (253, 244, 255), (250, 232, 255), (245, 208, 254), (240, 171, 252),
-        (232, 121, 249), (217, 70, 239), (192, 38, 211), (162, 28, 175), (134, 25, 143), (112, 26, 117), (74, 4, 78),
-    ]),
-    TailwindColor::new("Pink", [
-        (253, 248, 251), (253, 242, 248), (252, 231, 243), (251, 207, 232), (249, 168, 212),
-        (244, 114, 182), (236, 72, 153), (219, 39, 119), (190, 24, 93), (157, 23, 77), (131, 24, 67), (80, 7, 36),
-    ]),
-    TailwindColor::new("Rose", [
-        (254, 249, 250), (255, 241, 242), (255, 228, 230), (254, 205, 211), (253, 164, 175),
-        (251, 113, 133), (244, 63, 94), (225, 29, 72), (190, 18, 60), (159, 18, 57), (136, 19, 55), (76, 5, 25),
-    ]),
-    TailwindColor::new("Slate", [
-        (250, 251, 252), (248, 250, 252), (241, 245, 249), (226, 232, 240), (203, 213, 225),
-        (148, 163, 184), (100, 116, 139), (71, 85, 105), (51, 65, 85), (30, 41, 59), (15, 23, 42), (2, 6, 23),
-    ]),
-    TailwindColor::new("Gray", [
-        (251, 252, 253), (249, 250, 251), (243, 244, 246), (229, 231, 235), (209, 213, 219),
-        (156, 163, 175), (107, 114, 128), (75, 85, 99), (55, 65, 81), (31, 41, 55), (17, 24, 39), (3, 7, 18),
-    ]),
-    TailwindColor::new("Zinc", [
-        (250, 250, 250), (250, 250, 250), (244, 244, 245), (228, 228, 231), (212, 212, 216),
-        (161, 161, 170), (113, 113, 122), (82, 82, 91), (63, 63, 70), (39, 39, 42), (24, 24, 27), (9, 9, 11),
-    ]),
-    TailwindColor::new("Neutral", [
-        (250, 250, 250), (250, 250, 250), (245, 245, 245), (229, 229, 229), (212, 212, 212),
-        (163, 163, 163), (115, 115, 115), (82, 82, 82), (64, 64, 64), (38, 38, 38), (23, 23, 23), (10, 10, 10),
-    ]),
-    TailwindColor::new("Stone", [
-        (250, 250, 249), (250, 250, 249), (245, 245, 244), (231, 229, 228), (214, 211, 209),
-        (168, 162, 158), (120, 113, 108), (87, 83, 78), (68, 64, 60), (41, 37, 36), (28, 25, 23), (12, 10, 9),
-    ]),
+    TailwindColor::new(
+        "Red",
+        [
+            (253, 252, 252),
+            (254, 242, 242),
+            (254, 226, 226),
+            (254, 202, 202),
+            (252, 165, 165),
+            (248, 113, 113),
+            (239, 68, 68),
+            (220, 38, 38),
+            (185, 28, 28),
+            (153, 27, 27),
+            (127, 29, 29),
+            (69, 10, 10),
+        ],
+    ),
+    TailwindColor::new(
+        "Orange",
+        [
+            (253, 252, 250),
+            (255, 247, 237),
+            (255, 237, 213),
+            (254, 215, 170),
+            (253, 186, 116),
+            (251, 146, 60),
+            (249, 115, 22),
+            (234, 88, 12),
+            (194, 65, 12),
+            (154, 52, 18),
+            (124, 45, 18),
+            (67, 20, 7),
+        ],
+    ),
+    TailwindColor::new(
+        "Amber",
+        [
+            (254, 254, 254),
+            (255, 251, 235),
+            (254, 243, 199),
+            (253, 230, 138),
+            (252, 211, 77),
+            (251, 191, 36),
+            (245, 158, 11),
+            (217, 119, 6),
+            (180, 83, 9),
+            (146, 64, 14),
+            (120, 53, 15),
+            (69, 26, 3),
+        ],
+    ),
+    TailwindColor::new(
+        "Yellow",
+        [
+            (253, 253, 253),
+            (254, 252, 232),
+            (254, 249, 195),
+            (254, 240, 138),
+            (253, 224, 71),
+            (250, 204, 21),
+            (234, 179, 8),
+            (202, 138, 4),
+            (161, 98, 7),
+            (133, 77, 14),
+            (113, 63, 18),
+            (66, 32, 6),
+        ],
+    ),
+    TailwindColor::new(
+        "Lime",
+        [
+            (253, 255, 248),
+            (247, 254, 231),
+            (236, 252, 203),
+            (217, 249, 157),
+            (190, 242, 100),
+            (163, 230, 53),
+            (132, 204, 22),
+            (101, 163, 13),
+            (77, 124, 15),
+            (63, 98, 18),
+            (54, 83, 20),
+            (26, 46, 5),
+        ],
+    ),
+    TailwindColor::new(
+        "Green",
+        [
+            (252, 252, 252),
+            (240, 253, 244),
+            (220, 252, 231),
+            (187, 247, 208),
+            (134, 239, 172),
+            (74, 222, 128),
+            (34, 197, 94),
+            (22, 163, 74),
+            (21, 128, 61),
+            (22, 101, 52),
+            (20, 83, 45),
+            (5, 46, 22),
+        ],
+    ),
+    TailwindColor::new(
+        "Emerald",
+        [
+            (254, 254, 254),
+            (236, 253, 245),
+            (209, 250, 229),
+            (167, 243, 208),
+            (110, 231, 183),
+            (52, 211, 153),
+            (16, 185, 129),
+            (5, 150, 105),
+            (4, 120, 87),
+            (6, 95, 70),
+            (6, 78, 59),
+            (2, 44, 34),
+        ],
+    ),
+    TailwindColor::new(
+        "Teal",
+        [
+            (254, 254, 254),
+            (240, 253, 250),
+            (204, 251, 241),
+            (153, 246, 228),
+            (94, 234, 212),
+            (45, 212, 191),
+            (20, 184, 166),
+            (13, 148, 136),
+            (15, 118, 110),
+            (17, 94, 89),
+            (19, 78, 74),
+            (4, 47, 46),
+        ],
+    ),
+    TailwindColor::new(
+        "Cyan",
+        [
+            (254, 254, 254),
+            (236, 254, 255),
+            (207, 250, 254),
+            (165, 243, 252),
+            (103, 232, 249),
+            (34, 211, 238),
+            (6, 182, 212),
+            (8, 145, 178),
+            (14, 116, 144),
+            (21, 94, 117),
+            (22, 78, 99),
+            (8, 51, 68),
+        ],
+    ),
+    TailwindColor::new(
+        "Sky",
+        [
+            (249, 253, 255),
+            (240, 249, 255),
+            (224, 242, 254),
+            (186, 230, 253),
+            (125, 211, 252),
+            (56, 189, 248),
+            (14, 165, 233),
+            (2, 132, 199),
+            (3, 105, 161),
+            (7, 89, 133),
+            (12, 74, 110),
+            (8, 47, 73),
+        ],
+    ),
+    TailwindColor::new(
+        "Blue",
+        [
+            (253, 254, 255),
+            (239, 246, 255),
+            (219, 234, 254),
+            (191, 219, 254),
+            (147, 197, 253),
+            (96, 165, 250),
+            (59, 130, 246),
+            (37, 99, 235),
+            (29, 78, 216),
+            (30, 64, 175),
+            (30, 58, 138),
+            (23, 37, 84),
+        ],
+    ),
+    TailwindColor::new(
+        "Indigo",
+        [
+            (246, 248, 254),
+            (238, 242, 255),
+            (224, 231, 255),
+            (199, 210, 254),
+            (165, 180, 252),
+            (129, 140, 248),
+            (99, 102, 241),
+            (79, 70, 229),
+            (67, 56, 202),
+            (55, 48, 163),
+            (49, 46, 129),
+            (30, 27, 75),
+        ],
+    ),
+    TailwindColor::new(
+        "Violet",
+        [
+            (250, 249, 255),
+            (245, 243, 255),
+            (237, 233, 254),
+            (221, 214, 254),
+            (196, 181, 253),
+            (167, 139, 250),
+            (139, 92, 246),
+            (124, 58, 237),
+            (109, 40, 217),
+            (91, 33, 182),
+            (76, 29, 149),
+            (46, 16, 101),
+        ],
+    ),
+    TailwindColor::new(
+        "Purple",
+        [
+            (254, 254, 255),
+            (250, 245, 255),
+            (243, 232, 255),
+            (233, 213, 255),
+            (216, 180, 254),
+            (192, 132, 252),
+            (168, 85, 247),
+            (147, 51, 234),
+            (126, 34, 206),
+            (107, 33, 168),
+            (88, 28, 135),
+            (59, 7, 100),
+        ],
+    ),
+    TailwindColor::new(
+        "Fuchsia",
+        [
+            (254, 251, 255),
+            (253, 244, 255),
+            (250, 232, 255),
+            (245, 208, 254),
+            (240, 171, 252),
+            (232, 121, 249),
+            (217, 70, 239),
+            (192, 38, 211),
+            (162, 28, 175),
+            (134, 25, 143),
+            (112, 26, 117),
+            (74, 4, 78),
+        ],
+    ),
+    TailwindColor::new(
+        "Pink",
+        [
+            (253, 248, 251),
+            (253, 242, 248),
+            (252, 231, 243),
+            (251, 207, 232),
+            (249, 168, 212),
+            (244, 114, 182),
+            (236, 72, 153),
+            (219, 39, 119),
+            (190, 24, 93),
+            (157, 23, 77),
+            (131, 24, 67),
+            (80, 7, 36),
+        ],
+    ),
+    TailwindColor::new(
+        "Rose",
+        [
+            (254, 249, 250),
+            (255, 241, 242),
+            (255, 228, 230),
+            (254, 205, 211),
+            (253, 164, 175),
+            (251, 113, 133),
+            (244, 63, 94),
+            (225, 29, 72),
+            (190, 18, 60),
+            (159, 18, 57),
+            (136, 19, 55),
+            (76, 5, 25),
+        ],
+    ),
+    TailwindColor::new(
+        "Slate",
+        [
+            (250, 251, 252),
+            (248, 250, 252),
+            (241, 245, 249),
+            (226, 232, 240),
+            (203, 213, 225),
+            (148, 163, 184),
+            (100, 116, 139),
+            (71, 85, 105),
+            (51, 65, 85),
+            (30, 41, 59),
+            (15, 23, 42),
+            (2, 6, 23),
+        ],
+    ),
+    TailwindColor::new(
+        "Gray",
+        [
+            (251, 252, 253),
+            (249, 250, 251),
+            (243, 244, 246),
+            (229, 231, 235),
+            (209, 213, 219),
+            (156, 163, 175),
+            (107, 114, 128),
+            (75, 85, 99),
+            (55, 65, 81),
+            (31, 41, 55),
+            (17, 24, 39),
+            (3, 7, 18),
+        ],
+    ),
+    TailwindColor::new(
+        "Zinc",
+        [
+            (250, 250, 250),
+            (250, 250, 250),
+            (244, 244, 245),
+            (228, 228, 231),
+            (212, 212, 216),
+            (161, 161, 170),
+            (113, 113, 122),
+            (82, 82, 91),
+            (63, 63, 70),
+            (39, 39, 42),
+            (24, 24, 27),
+            (9, 9, 11),
+        ],
+    ),
+    TailwindColor::new(
+        "Neutral",
+        [
+            (250, 250, 250),
+            (250, 250, 250),
+            (245, 245, 245),
+            (229, 229, 229),
+            (212, 212, 212),
+            (163, 163, 163),
+            (115, 115, 115),
+            (82, 82, 82),
+            (64, 64, 64),
+            (38, 38, 38),
+            (23, 23, 23),
+            (10, 10, 10),
+        ],
+    ),
+    TailwindColor::new(
+        "Stone",
+        [
+            (250, 250, 249),
+            (250, 250, 249),
+            (245, 245, 244),
+            (231, 229, 228),
+            (214, 211, 209),
+            (168, 162, 158),
+            (120, 113, 108),
+            (87, 83, 78),
+            (68, 64, 60),
+            (41, 37, 36),
+            (28, 25, 23),
+            (12, 10, 9),
+        ],
+    ),
 ];
 
 /// Style for color swatches.
@@ -307,7 +593,9 @@ impl<'a> ColorSwatch<'a> {
         }
 
         let clicked = response.clicked();
-        response.on_hover_text(self.tooltip).on_hover_cursor(CursorIcon::PointingHand);
+        response
+            .on_hover_text(self.tooltip)
+            .on_hover_cursor(CursorIcon::PointingHand);
         (clicked, rect)
     }
 }
@@ -388,7 +676,9 @@ impl<'a> ColorSwatchWithWheel<'a> {
         }
 
         let clicked = response.clicked();
-        response.on_hover_text(self.tooltip).on_hover_cursor(CursorIcon::PointingHand);
+        response
+            .on_hover_text(self.tooltip)
+            .on_hover_cursor(CursorIcon::PointingHand);
         (clicked, rect)
     }
 }
@@ -455,7 +745,9 @@ impl<'a> NoColorSwatch<'a> {
         }
 
         let clicked = response.clicked();
-        response.on_hover_text(self.tooltip).on_hover_cursor(CursorIcon::PointingHand);
+        response
+            .on_hover_text(self.tooltip)
+            .on_hover_cursor(CursorIcon::PointingHand);
         clicked
     }
 }
@@ -519,9 +811,10 @@ impl<'a> ColorGrid<'a> {
             ColorGridPosition::Below => {
                 Pos2::new(anchor_rect.left() - 100.0, anchor_rect.bottom() + 8.0)
             }
-            ColorGridPosition::Above => {
-                Pos2::new(anchor_rect.left() - 50.0, anchor_rect.top() - grid_height - 8.0)
-            }
+            ColorGridPosition::Above => Pos2::new(
+                anchor_rect.left() - 50.0,
+                anchor_rect.top() - grid_height - 8.0,
+            ),
         };
 
         egui::Area::new(egui::Id::new("color_grid"))
@@ -562,7 +855,10 @@ impl<'a> ColorGrid<'a> {
                             QuickColor::Tailwind(13), // Purple
                             QuickColor::Tailwind(17), // Slate
                         ];
-                        let quick_tooltips = ["None", "Black", "White", "Blue", "Red", "Emerald", "Amber", "Purple", "Slate"];
+                        let quick_tooltips = [
+                            "None", "Black", "White", "Blue", "Red", "Emerald", "Amber", "Purple",
+                            "Slate",
+                        ];
 
                         for (row_idx, &shade_idx) in self.shade_indices.iter().enumerate() {
                             // Add padding above 500-level row
@@ -571,7 +867,7 @@ impl<'a> ColorGrid<'a> {
                             }
                             ui.horizontal(|ui| {
                                 ui.spacing_mut().item_spacing = vec2(2.0, 0.0);
-                                
+
                                 // Main Tailwind color grid
                                 for tw_color in TAILWIND_COLORS.iter() {
                                     let color = tw_color.shades[shade_idx];
@@ -586,11 +882,11 @@ impl<'a> ColorGrid<'a> {
                                         selected = Some(color);
                                     }
                                 }
-                                
+
                                 // Quick access column (only for first 9 rows)
                                 if row_idx < quick_colors.len() {
                                     ui.add_space(4.0);
-                                    
+
                                     // Quick access color
                                     match quick_colors[row_idx] {
                                         QuickColor::None => {
@@ -605,11 +901,15 @@ impl<'a> ColorGrid<'a> {
                                             }
                                         }
                                         QuickColor::Black => {
-                                            let is_selected = colors_match(self.current_color, Color32::BLACK);
-                                            let (clicked, _) = ColorSwatch::new(Color32::BLACK, quick_tooltips[row_idx])
-                                                .selected(is_selected)
-                                                .grid()
-                                                .show(ui);
+                                            let is_selected =
+                                                colors_match(self.current_color, Color32::BLACK);
+                                            let (clicked, _) = ColorSwatch::new(
+                                                Color32::BLACK,
+                                                quick_tooltips[row_idx],
+                                            )
+                                            .selected(is_selected)
+                                            .grid()
+                                            .show(ui);
                                             if clicked {
                                                 selected = Some(Color32::BLACK);
                                             }
@@ -617,30 +917,50 @@ impl<'a> ColorGrid<'a> {
                                         QuickColor::White => {
                                             // White circle with gray border
                                             let size = vec2(16.0, 16.0);
-                                            let (rect, response) = ui.allocate_exact_size(size, Sense::click());
+                                            let (rect, response) =
+                                                ui.allocate_exact_size(size, Sense::click());
                                             if ui.is_rect_visible(rect) {
                                                 let center = rect.center();
                                                 let radius = 8.0;
-                                                ui.painter().circle_filled(center, radius, Color32::WHITE);
-                                                ui.painter().circle_stroke(center, radius, Stroke::new(1.0, Color32::from_gray(180)));
-                                                let is_selected = colors_match(self.current_color, Color32::WHITE);
+                                                ui.painter().circle_filled(
+                                                    center,
+                                                    radius,
+                                                    Color32::WHITE,
+                                                );
+                                                ui.painter().circle_stroke(
+                                                    center,
+                                                    radius,
+                                                    Stroke::new(1.0, Color32::from_gray(180)),
+                                                );
+                                                let is_selected = colors_match(
+                                                    self.current_color,
+                                                    Color32::WHITE,
+                                                );
                                                 if is_selected {
-                                                    ui.painter().circle_stroke(center, radius - 3.0, Stroke::new(2.0, Color32::from_gray(30)));
+                                                    ui.painter().circle_stroke(
+                                                        center,
+                                                        radius - 3.0,
+                                                        Stroke::new(2.0, Color32::from_gray(30)),
+                                                    );
                                                 }
                                             }
                                             let clicked = response.clicked();
-                                            response.on_hover_text(quick_tooltips[row_idx]).on_hover_cursor(CursorIcon::PointingHand);
+                                            response
+                                                .on_hover_text(quick_tooltips[row_idx])
+                                                .on_hover_cursor(CursorIcon::PointingHand);
                                             if clicked {
                                                 selected = Some(Color32::WHITE);
                                             }
                                         }
                                         QuickColor::Tailwind(idx) => {
                                             let color = TAILWIND_COLORS[idx].shades[6]; // 500-level
-                                            let is_selected = colors_match(self.current_color, color);
-                                            let (clicked, _) = ColorSwatch::new(color, quick_tooltips[row_idx])
-                                                .selected(is_selected)
-                                                .grid()
-                                                .show(ui);
+                                            let is_selected =
+                                                colors_match(self.current_color, color);
+                                            let (clicked, _) =
+                                                ColorSwatch::new(color, quick_tooltips[row_idx])
+                                                    .selected(is_selected)
+                                                    .grid()
+                                                    .show(ui);
                                             if clicked {
                                                 selected = Some(color);
                                             }

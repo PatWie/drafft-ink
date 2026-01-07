@@ -1,8 +1,10 @@
 //! Loro document schema and operations.
 
-use loro::{LoroDoc, LoroList, LoroMap, LoroResult, LoroValue, ExportMode, ValueOrContainer, UndoManager};
+use super::convert::{shape_from_loro, shape_to_loro};
 use crate::shapes::Shape;
-use super::convert::{shape_to_loro, shape_from_loro};
+use loro::{
+    ExportMode, LoroDoc, LoroList, LoroMap, LoroResult, LoroValue, UndoManager, ValueOrContainer,
+};
 
 /// Key for the shapes map in the document.
 pub const SHAPES_KEY: &str = "shapes";
@@ -12,7 +14,7 @@ pub const Z_ORDER_KEY: &str = "z_order";
 pub const NAME_KEY: &str = "name";
 
 /// A CRDT-backed document for collaborative editing.
-/// 
+///
 /// This wraps a `LoroDoc` and provides a high-level API for working with shapes.
 /// It also includes an `UndoManager` for local undo/redo operations.
 pub struct CrdtDocument {
@@ -85,19 +87,19 @@ impl CrdtDocument {
         let id = shape.id().to_string();
         let shapes = self.shapes_map();
         let z_order = self.z_order_list();
-        
+
         // Create a new map for the shape
         let shape_map = shapes.insert_container(&id, LoroMap::new())?;
-        
+
         // Convert shape to Loro values
         shape_to_loro(shape, &shape_map)?;
-        
+
         // Add to z-order
         z_order.push(LoroValue::String(id.into()))?;
-        
+
         // Commit the transaction
         self.doc.commit();
-        
+
         Ok(())
     }
 
@@ -105,10 +107,10 @@ impl CrdtDocument {
     pub fn remove_shape(&mut self, id: &str) -> LoroResult<()> {
         let shapes = self.shapes_map();
         let z_order = self.z_order_list();
-        
+
         // Remove from shapes map
         shapes.delete(id)?;
-        
+
         // Remove from z-order
         for i in 0..z_order.len() {
             if let Some(ValueOrContainer::Value(LoroValue::String(s))) = z_order.get(i) {
@@ -118,7 +120,7 @@ impl CrdtDocument {
                 }
             }
         }
-        
+
         self.doc.commit();
         Ok(())
     }
@@ -126,7 +128,7 @@ impl CrdtDocument {
     /// Get a shape by ID.
     pub fn get_shape(&self, id: &str) -> Option<Shape> {
         let shapes = self.shapes_map();
-        
+
         // Get the deep value and extract the shape map
         let shapes_value = shapes.get_deep_value();
         if let LoroValue::Map(map) = shapes_value {
@@ -134,7 +136,7 @@ impl CrdtDocument {
                 return shape_from_loro(shape_map);
             }
         }
-        
+
         None
     }
 
@@ -142,12 +144,12 @@ impl CrdtDocument {
     pub fn update_shape(&mut self, shape: &Shape) -> LoroResult<()> {
         let id = shape.id().to_string();
         let shapes = self.shapes_map();
-        
+
         // Remove the old shape data and add new
         shapes.delete(&id)?;
         let shape_map = shapes.insert_container(&id, LoroMap::new())?;
         shape_to_loro(shape, &shape_map)?;
-        
+
         self.doc.commit();
         Ok(())
     }
@@ -156,20 +158,20 @@ impl CrdtDocument {
     pub fn shapes_ordered(&self) -> Vec<Shape> {
         let z_order = self.z_order();
         let mut shapes = Vec::with_capacity(z_order.len());
-        
+
         for id in z_order {
             if let Some(shape) = self.get_shape(&id) {
                 shapes.push(shape);
             }
         }
-        
+
         shapes
     }
 
     /// Bring a shape to the front (top of z-order).
     pub fn bring_to_front(&mut self, id: &str) -> LoroResult<()> {
         let z_order = self.z_order_list();
-        
+
         // Find and remove from current position
         for i in 0..z_order.len() {
             if let Some(ValueOrContainer::Value(LoroValue::String(s))) = z_order.get(i) {
@@ -179,10 +181,10 @@ impl CrdtDocument {
                 }
             }
         }
-        
+
         // Add to end (front)
         z_order.push(LoroValue::String(id.to_string().into()))?;
-        
+
         self.doc.commit();
         Ok(())
     }
@@ -190,7 +192,7 @@ impl CrdtDocument {
     /// Send a shape to the back (bottom of z-order).
     pub fn send_to_back(&mut self, id: &str) -> LoroResult<()> {
         let z_order = self.z_order_list();
-        
+
         // Find and remove from current position
         for i in 0..z_order.len() {
             if let Some(ValueOrContainer::Value(LoroValue::String(s))) = z_order.get(i) {
@@ -200,10 +202,10 @@ impl CrdtDocument {
                 }
             }
         }
-        
+
         // Insert at beginning (back)
         z_order.insert(0, LoroValue::String(id.to_string().into()))?;
-        
+
         self.doc.commit();
         Ok(())
     }
@@ -213,7 +215,7 @@ impl CrdtDocument {
     pub fn bring_forward(&mut self, id: &str) -> LoroResult<bool> {
         let z_order = self.z_order_list();
         let len = z_order.len();
-        
+
         // Find current position
         let mut pos = None;
         for i in 0..len {
@@ -224,26 +226,28 @@ impl CrdtDocument {
                 }
             }
         }
-        
+
         if let Some(i) = pos {
             if i < len - 1 {
                 // Get the item at the next position
-                let next_id = if let Some(ValueOrContainer::Value(LoroValue::String(s))) = z_order.get(i + 1) {
+                let next_id = if let Some(ValueOrContainer::Value(LoroValue::String(s))) =
+                    z_order.get(i + 1)
+                {
                     s.to_string()
                 } else {
                     return Ok(false);
                 };
-                
+
                 // Swap by removing and reinserting
                 z_order.delete(i, 2)?;
                 z_order.insert(i, LoroValue::String(id.to_string().into()))?;
                 z_order.insert(i, LoroValue::String(next_id.into()))?;
-                
+
                 self.doc.commit();
                 return Ok(true);
             }
         }
-        
+
         Ok(false)
     }
 
@@ -251,7 +255,7 @@ impl CrdtDocument {
     /// Returns true if the shape was moved, false if already at back.
     pub fn send_backward(&mut self, id: &str) -> LoroResult<bool> {
         let z_order = self.z_order_list();
-        
+
         // Find current position
         let mut pos = None;
         for i in 0..z_order.len() {
@@ -262,26 +266,28 @@ impl CrdtDocument {
                 }
             }
         }
-        
+
         if let Some(i) = pos {
             if i > 0 {
                 // Get the item at the previous position
-                let prev_id = if let Some(ValueOrContainer::Value(LoroValue::String(s))) = z_order.get(i - 1) {
+                let prev_id = if let Some(ValueOrContainer::Value(LoroValue::String(s))) =
+                    z_order.get(i - 1)
+                {
                     s.to_string()
                 } else {
                     return Ok(false);
                 };
-                
+
                 // Swap by removing and reinserting
                 z_order.delete(i - 1, 2)?;
                 z_order.insert(i - 1, LoroValue::String(id.to_string().into()))?;
                 z_order.insert(i - 1, LoroValue::String(prev_id.into()))?;
-                
+
                 self.doc.commit();
                 return Ok(true);
             }
         }
-        
+
         Ok(false)
     }
 
@@ -292,7 +298,9 @@ impl CrdtDocument {
 
     /// Export incremental updates since a version.
     pub fn export_updates(&self, since: &loro::VersionVector) -> Vec<u8> {
-        self.doc.export(ExportMode::updates(since)).unwrap_or_default()
+        self.doc
+            .export(ExportMode::updates(since))
+            .unwrap_or_default()
     }
 
     /// Import updates from another document.
@@ -333,7 +341,7 @@ impl CrdtDocument {
         if len > 0 {
             z_order.delete(0, len)?;
         }
-        
+
         // Clear shapes - need to delete each key
         let shapes = self.shapes_map();
         let keys: Vec<String> = {
@@ -344,11 +352,11 @@ impl CrdtDocument {
                 vec![]
             }
         };
-        
+
         for key in keys {
             shapes.delete(&key)?;
         }
-        
+
         self.doc.commit();
         Ok(())
     }

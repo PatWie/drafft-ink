@@ -3,7 +3,7 @@
 use crate::camera::Camera;
 use crate::shapes::{Group, Shape, ShapeId, ShapeTrait};
 use crate::tools::{ToolKind, ToolManager};
-use crate::widget::{WidgetManager, WidgetState, EditingKind};
+use crate::widget::{EditingKind, WidgetManager, WidgetState};
 use kurbo::{Point, Rect};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -71,10 +71,10 @@ impl CanvasDocument {
     pub fn push_undo(&mut self) {
         let snapshot = self.snapshot();
         self.undo_stack.push(snapshot);
-        
+
         // Clear redo stack when new changes are made
         self.redo_stack.clear();
-        
+
         // Limit undo history size
         if self.undo_stack.len() > MAX_UNDO_HISTORY {
             self.undo_stack.remove(0);
@@ -88,11 +88,11 @@ impl CanvasDocument {
             // Save current state to redo stack
             let current = self.snapshot();
             self.redo_stack.push(current);
-            
+
             // Restore the snapshot
             self.shapes = snapshot.shapes;
             self.z_order = snapshot.z_order;
-            
+
             true
         } else {
             false
@@ -106,11 +106,11 @@ impl CanvasDocument {
             // Save current state to undo stack
             let current = self.snapshot();
             self.undo_stack.push(current);
-            
+
             // Restore the snapshot
             self.shapes = snapshot.shapes;
             self.z_order = snapshot.z_order;
-            
+
             true
         } else {
             false
@@ -264,46 +264,62 @@ impl CanvasDocument {
 
     /// Import from Excalidraw JSON format.
     pub fn from_excalidraw(json: &str) -> Result<Self, String> {
-        use crate::shapes::{Arrow, Ellipse, Freehand, Line, PathStyle, Rectangle, ShapeStyle, Sloppiness, Text, FillPattern};
-        
-        let data: serde_json::Value = serde_json::from_str(json)
-            .map_err(|e| format!("Invalid JSON: {}", e))?;
-        
-        let elements = data.get("elements")
+        use crate::shapes::{
+            Arrow, Ellipse, FillPattern, Freehand, Line, PathStyle, Rectangle, ShapeStyle,
+            Sloppiness, Text,
+        };
+
+        let data: serde_json::Value =
+            serde_json::from_str(json).map_err(|e| format!("Invalid JSON: {}", e))?;
+
+        let elements = data
+            .get("elements")
             .and_then(|e| e.as_array())
             .ok_or("Missing 'elements' array")?;
-        
+
         let mut doc = Self::new();
-        
+
         for elem in elements {
             // Skip deleted elements
-            if elem.get("isDeleted").and_then(|v| v.as_bool()).unwrap_or(false) {
+            if elem
+                .get("isDeleted")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false)
+            {
                 continue;
             }
-            
+
             let elem_type = elem.get("type").and_then(|t| t.as_str()).unwrap_or("");
             let x = elem.get("x").and_then(|v| v.as_f64()).unwrap_or(0.0);
             let y = elem.get("y").and_then(|v| v.as_f64()).unwrap_or(0.0);
-            
+
             // Parse colors
             let stroke_color = parse_excalidraw_color(
-                elem.get("strokeColor").and_then(|v| v.as_str()).unwrap_or("#000000")
+                elem.get("strokeColor")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("#000000"),
             );
-            let bg_color = elem.get("backgroundColor").and_then(|v| v.as_str()).unwrap_or("transparent");
+            let bg_color = elem
+                .get("backgroundColor")
+                .and_then(|v| v.as_str())
+                .unwrap_or("transparent");
             let fill_color = if bg_color == "transparent" {
                 None
             } else {
                 Some(parse_excalidraw_color(bg_color))
             };
-            
-            let stroke_width = elem.get("strokeWidth").and_then(|v| v.as_f64()).unwrap_or(2.0);
+
+            let stroke_width = elem
+                .get("strokeWidth")
+                .and_then(|v| v.as_f64())
+                .unwrap_or(2.0);
             let roughness = elem.get("roughness").and_then(|v| v.as_i64()).unwrap_or(1);
             let sloppiness = match roughness {
                 0 => Sloppiness::Architect,
                 1 => Sloppiness::Artist,
                 _ => Sloppiness::Cartoonist,
             };
-            
+
             let style = ShapeStyle {
                 stroke_color,
                 stroke_width,
@@ -313,7 +329,7 @@ impl CanvasDocument {
                 seed: elem.get("seed").and_then(|v| v.as_u64()).unwrap_or(0) as u32,
                 opacity: elem.get("opacity").and_then(|v| v.as_f64()).unwrap_or(1.0),
             };
-            
+
             let shape: Option<Shape> = match elem_type {
                 "rectangle" | "diamond" => {
                     let width = elem.get("width").and_then(|v| v.as_f64()).unwrap_or(100.0);
@@ -322,7 +338,9 @@ impl CanvasDocument {
                     rect.style = style;
                     // Handle roundness
                     if elem.get("roundness").is_some() {
-                        rect.corner_radius = Rectangle::DEFAULT_ADAPTIVE_RADIUS.min(width / 4.0).min(height / 4.0);
+                        rect.corner_radius = Rectangle::DEFAULT_ADAPTIVE_RADIUS
+                            .min(width / 4.0)
+                            .min(height / 4.0);
                     }
                     // Diamond is rendered as rotated rectangle (TODO: proper diamond shape)
                     Some(Shape::Rectangle(rect))
@@ -338,7 +356,8 @@ impl CanvasDocument {
                 "freedraw" => {
                     let points = elem.get("points").and_then(|p| p.as_array());
                     if let Some(pts) = points {
-                        let freehand_points: Vec<Point> = pts.iter()
+                        let freehand_points: Vec<Point> = pts
+                            .iter()
                             .filter_map(|p| p.as_array())
                             .filter_map(|arr| {
                                 let px = arr.first().and_then(|v| v.as_f64())?;
@@ -350,13 +369,18 @@ impl CanvasDocument {
                             let mut freehand = Freehand::from_points(freehand_points);
                             freehand.style = style;
                             Some(Shape::Freehand(freehand))
-                        } else { None }
-                    } else { None }
+                        } else {
+                            None
+                        }
+                    } else {
+                        None
+                    }
                 }
                 "line" => {
                     let points = elem.get("points").and_then(|p| p.as_array());
                     if let Some(pts) = points {
-                        let line_points: Vec<Point> = pts.iter()
+                        let line_points: Vec<Point> = pts
+                            .iter()
                             .filter_map(|p| p.as_array())
                             .filter_map(|arr| {
                                 let px = arr.first().and_then(|v| v.as_f64())?;
@@ -365,21 +389,27 @@ impl CanvasDocument {
                             })
                             .collect();
                         if line_points.len() >= 2 {
-                            let path_style = if elem.get("roundness").map(|r| !r.is_null()).unwrap_or(false) {
-                                PathStyle::Flowing
-                            } else {
-                                PathStyle::Direct
-                            };
+                            let path_style =
+                                if elem.get("roundness").map(|r| !r.is_null()).unwrap_or(false) {
+                                    PathStyle::Flowing
+                                } else {
+                                    PathStyle::Direct
+                                };
                             let mut line = Line::from_points(line_points, path_style);
                             line.style = style;
                             Some(Shape::Line(line))
-                        } else { None }
-                    } else { None }
+                        } else {
+                            None
+                        }
+                    } else {
+                        None
+                    }
                 }
                 "arrow" => {
                     let points = elem.get("points").and_then(|p| p.as_array());
                     if let Some(pts) = points {
-                        let arrow_points: Vec<Point> = pts.iter()
+                        let arrow_points: Vec<Point> = pts
+                            .iter()
                             .filter_map(|p| p.as_array())
                             .filter_map(|arr| {
                                 let px = arr.first().and_then(|v| v.as_f64())?;
@@ -388,8 +418,12 @@ impl CanvasDocument {
                             })
                             .collect();
                         if arrow_points.len() >= 2 {
-                            let elbowed = elem.get("elbowed").and_then(|v| v.as_bool()).unwrap_or(false);
-                            let has_roundness = elem.get("roundness").map(|r| !r.is_null()).unwrap_or(false);
+                            let elbowed = elem
+                                .get("elbowed")
+                                .and_then(|v| v.as_bool())
+                                .unwrap_or(false);
+                            let has_roundness =
+                                elem.get("roundness").map(|r| !r.is_null()).unwrap_or(false);
                             let path_style = if elbowed {
                                 PathStyle::Angular
                             } else if has_roundness {
@@ -400,12 +434,23 @@ impl CanvasDocument {
                             let mut arrow = Arrow::from_points(arrow_points, path_style);
                             arrow.style = style;
                             Some(Shape::Arrow(arrow))
-                        } else { None }
-                    } else { None }
+                        } else {
+                            None
+                        }
+                    } else {
+                        None
+                    }
                 }
                 "text" => {
-                    let content = elem.get("text").and_then(|v| v.as_str()).unwrap_or("").to_string();
-                    let font_size = elem.get("fontSize").and_then(|v| v.as_f64()).unwrap_or(20.0);
+                    let content = elem
+                        .get("text")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("")
+                        .to_string();
+                    let font_size = elem
+                        .get("fontSize")
+                        .and_then(|v| v.as_f64())
+                        .unwrap_or(20.0);
                     let mut text = Text::new(Point::new(x, y), content);
                     text.font_size = font_size;
                     text.style = style;
@@ -413,12 +458,12 @@ impl CanvasDocument {
                 }
                 _ => None,
             };
-            
+
             if let Some(s) = shape {
                 doc.add_shape(s);
             }
         }
-        
+
         Ok(doc)
     }
 
@@ -440,7 +485,7 @@ impl CanvasDocument {
         if shape_ids.len() < 2 {
             return None;
         }
-        
+
         // Collect the shapes to group (in z-order)
         let mut shapes_to_group: Vec<(usize, Shape)> = Vec::new();
         for (idx, &zid) in self.z_order.iter().enumerate() {
@@ -450,33 +495,35 @@ impl CanvasDocument {
                 }
             }
         }
-        
+
         if shapes_to_group.len() < 2 {
             return None;
         }
-        
+
         // Find the highest z-order position (where the group will go)
         let max_z_idx = shapes_to_group.iter().map(|(idx, _)| *idx).max().unwrap();
-        
+
         // Extract shapes in their z-order
         let children: Vec<Shape> = shapes_to_group.into_iter().map(|(_, s)| s).collect();
-        
+
         // Create the group
         let group = Group::new(children);
         let group_id = group.id();
-        
+
         // Remove the original shapes from the document
         for &id in shape_ids {
             self.shapes.remove(&id);
             self.z_order.retain(|&zid| zid != id);
         }
-        
+
         // Add the group at the position of the frontmost shape
         self.shapes.insert(group_id, Shape::Group(group));
         // Insert at the max position (adjusted for removed items)
-        let insert_pos = max_z_idx.saturating_sub(shape_ids.len() - 1).min(self.z_order.len());
+        let insert_pos = max_z_idx
+            .saturating_sub(shape_ids.len() - 1)
+            .min(self.z_order.len());
         self.z_order.insert(insert_pos, group_id);
-        
+
         Some(group_id)
     }
 
@@ -488,28 +535,27 @@ impl CanvasDocument {
             Some(Shape::Group(g)) => g.clone(),
             _ => return None,
         };
-        
+
         // Find the group's position in z-order
         let z_pos = self.z_order.iter().position(|&id| id == group_id)?;
-        
+
         // Remove the group
         self.shapes.remove(&group_id);
         self.z_order.retain(|&id| id != group_id);
-        
+
         // Add children back to the document at the group's position
         let children = group.ungroup();
         let child_ids: Vec<ShapeId> = children.iter().map(|s| s.id()).collect();
-        
+
         for (i, child) in children.into_iter().enumerate() {
             let child_id = child.id();
             self.shapes.insert(child_id, child);
             // Insert at the original position, maintaining child order
             self.z_order.insert(z_pos + i, child_id);
         }
-        
+
         Some(child_ids)
     }
-
 }
 
 /// Runtime canvas state (not persisted).
@@ -650,7 +696,7 @@ impl Canvas {
         if self.selection.is_empty() {
             return;
         }
-        
+
         // Get combined bounds of all selected shapes
         let mut combined_bounds: Option<kurbo::Rect> = None;
         for &id in &self.selection {
@@ -662,10 +708,12 @@ impl Canvas {
                 });
             }
         }
-        
-        let Some(bounds) = combined_bounds else { return };
+
+        let Some(bounds) = combined_bounds else {
+            return;
+        };
         let center_x = bounds.center().x;
-        
+
         // Flip each selected shape around the combined center
         for &id in &self.selection {
             if let Some(shape) = self.document.get_shape_mut(id) {
@@ -683,7 +731,7 @@ impl Canvas {
         if self.selection.is_empty() {
             return;
         }
-        
+
         // Get combined bounds of all selected shapes
         let mut combined_bounds: Option<kurbo::Rect> = None;
         for &id in &self.selection {
@@ -695,10 +743,12 @@ impl Canvas {
                 });
             }
         }
-        
-        let Some(bounds) = combined_bounds else { return };
+
+        let Some(bounds) = combined_bounds else {
+            return;
+        };
         let center_y = bounds.center().y;
-        
+
         // Flip each selected shape around the combined center
         for &id in &self.selection {
             if let Some(shape) = self.document.get_shape_mut(id) {
@@ -724,23 +774,23 @@ impl Canvas {
         if self.selection.len() < 2 {
             return None;
         }
-        
+
         let shape_ids: Vec<ShapeId> = self.selection.clone();
-        
+
         // Push undo before grouping
         self.document.push_undo();
-        
+
         if let Some(group_id) = self.document.group_shapes(&shape_ids) {
             // Clear old selection and widgets
             for &id in &shape_ids {
                 self.widgets.remove(id);
             }
-            
+
             // Select the new group
             self.selection.clear();
             self.selection.push(group_id);
             self.widgets.add_to_selection(group_id);
-            
+
             Some(group_id)
         } else {
             None
@@ -751,30 +801,32 @@ impl Canvas {
     /// Returns the IDs of all ungrouped children.
     pub fn ungroup_selected(&mut self) -> Vec<ShapeId> {
         let mut all_children = Vec::new();
-        
+
         // Find groups in selection
-        let groups: Vec<ShapeId> = self.selection
+        let groups: Vec<ShapeId> = self
+            .selection
             .iter()
             .filter(|&&id| {
-                self.document.get_shape(id)
+                self.document
+                    .get_shape(id)
                     .map(|s| s.is_group())
                     .unwrap_or(false)
             })
             .copied()
             .collect();
-        
+
         if groups.is_empty() {
             return all_children;
         }
-        
+
         // Push undo before ungrouping
         self.document.push_undo();
-        
+
         // Ungroup each group
         for group_id in groups {
             self.widgets.remove(group_id);
             self.selection.retain(|&id| id != group_id);
-            
+
             if let Some(children) = self.document.ungroup_shape(group_id) {
                 // Add children to selection
                 for &child_id in &children {
@@ -786,7 +838,7 @@ impl Canvas {
                 all_children.extend(children);
             }
         }
-        
+
         all_children
     }
 }
@@ -902,21 +954,21 @@ mod tests {
     #[test]
     fn test_undo_add_shape() {
         let mut doc = CanvasDocument::new();
-        
+
         // Add a shape with undo point
         doc.push_undo();
         let rect = Rectangle::new(Point::new(0.0, 0.0), 100.0, 100.0);
         let id = rect.id();
         doc.add_shape(Shape::Rectangle(rect));
-        
+
         assert_eq!(doc.len(), 1);
         assert!(doc.can_undo());
-        
+
         // Undo should remove the shape
         assert!(doc.undo());
         assert!(doc.is_empty());
         assert!(doc.can_redo());
-        
+
         // Redo should restore the shape
         assert!(doc.redo());
         assert_eq!(doc.len(), 1);
@@ -929,13 +981,13 @@ mod tests {
         let rect = Rectangle::new(Point::new(0.0, 0.0), 100.0, 100.0);
         let id = rect.id();
         doc.add_shape(Shape::Rectangle(rect));
-        
+
         // Remove with undo point
         doc.push_undo();
         doc.remove_shape(id);
-        
+
         assert!(doc.is_empty());
-        
+
         // Undo should restore the shape
         assert!(doc.undo());
         assert_eq!(doc.len(), 1);
@@ -945,21 +997,21 @@ mod tests {
     #[test]
     fn test_undo_clears_redo() {
         let mut doc = CanvasDocument::new();
-        
+
         // Add first shape
         doc.push_undo();
         let rect1 = Rectangle::new(Point::new(0.0, 0.0), 100.0, 100.0);
         doc.add_shape(Shape::Rectangle(rect1));
-        
+
         // Undo
         assert!(doc.undo());
         assert!(doc.can_redo());
-        
+
         // Add new shape (should clear redo)
         doc.push_undo();
         let rect2 = Rectangle::new(Point::new(50.0, 50.0), 100.0, 100.0);
         doc.add_shape(Shape::Rectangle(rect2));
-        
+
         // Redo should not be available
         assert!(!doc.can_redo());
     }
@@ -967,11 +1019,11 @@ mod tests {
     #[test]
     fn test_undo_empty_stack() {
         let mut doc = CanvasDocument::new();
-        
+
         // Undo on empty stack should return false
         assert!(!doc.can_undo());
         assert!(!doc.undo());
-        
+
         // Redo on empty stack should return false
         assert!(!doc.can_redo());
         assert!(!doc.redo());
@@ -981,11 +1033,11 @@ mod tests {
 /// Parse Excalidraw color string to SerializableColor.
 fn parse_excalidraw_color(color: &str) -> crate::shapes::SerializableColor {
     use crate::shapes::SerializableColor;
-    
+
     if color == "transparent" {
         return SerializableColor::transparent();
     }
-    
+
     // Handle hex colors (#rgb, #rrggbb, #rrggbbaa)
     if let Some(hex) = color.strip_prefix('#') {
         let hex = hex.trim();
@@ -1013,7 +1065,7 @@ fn parse_excalidraw_color(color: &str) -> crate::shapes::SerializableColor {
             _ => {}
         }
     }
-    
+
     // Default to black
     SerializableColor::black()
 }
