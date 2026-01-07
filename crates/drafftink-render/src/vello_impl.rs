@@ -607,6 +607,14 @@ impl VelloRenderer {
         }
         path.close_path();
 
+        // Apply hand-drawn effect if sloppiness is enabled
+        let roughness = style.sloppiness.roughness();
+        let path = if roughness > 0.0 {
+            apply_hand_drawn_effect(&path, roughness * 0.5, self.zoom, style.seed, 0)
+        } else {
+            path
+        };
+
         // Fill the path
         self.scene.fill(Fill::NonZero, transform, color, None, &path);
     }
