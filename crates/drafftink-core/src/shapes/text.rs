@@ -94,6 +94,9 @@ pub struct Text {
     pub rotation: f64,
     /// Style properties.
     pub style: ShapeStyle,
+    /// Per-character colors (one per char, None = use default style color).
+    #[serde(default)]
+    pub char_colors: Vec<Option<super::SerializableColor>>,
     /// Cached layout size (width, height) computed by the renderer.
     /// This is set after text layout and provides accurate bounds.
     /// Uses RwLock for thread-safe interior mutability.
@@ -113,6 +116,7 @@ impl Clone for Text {
             font_weight: self.font_weight,
             rotation: self.rotation,
             style: self.style.clone(),
+            char_colors: self.char_colors.clone(),
             // Clone the cached size value, not the lock
             cached_size: RwLock::new(self.cached_size.read().ok().and_then(|guard| *guard)),
         }
@@ -125,6 +129,7 @@ impl Text {
 
     /// Create a new text shape.
     pub fn new(position: Point, content: String) -> Self {
+        let char_count = content.chars().count();
         Self {
             id: Uuid::new_v4(),
             position,
@@ -134,6 +139,7 @@ impl Text {
             font_weight: FontWeight::default(),
             rotation: 0.0,
             style: ShapeStyle::default(),
+            char_colors: vec![None; char_count],
             cached_size: RwLock::new(None),
         }
     }
@@ -153,6 +159,62 @@ impl Text {
         }
     }
 
+    /// Apply a color to a character index range.
+    pub fn apply_color_to_range(
+        &mut self,
+        start_char: usize,
+        end_char: usize,
+        color: super::SerializableColor,
+    ) {
+        // Ensure char_colors is the right size
+        let char_count = self.content.chars().count();
+        self.char_colors.resize(char_count, None);
+
+        for i in start_char..end_char.min(char_count) {
+            self.char_colors[i] = Some(color);
+        }
+    }
+
+    /// Sync char_colors with content after text edit.
+    /// `edit_char_pos` is the character index where the edit occurred.
+    /// `old_char_count` is the character count before the edit.
+    pub fn sync_char_colors_after_edit(&mut self, edit_char_pos: usize, old_char_count: usize) {
+        let new_char_count = self.content.chars().count();
+        if new_char_count == old_char_count {
+            return; // No change in length
+        }
+
+        if new_char_count > old_char_count {
+            // Characters inserted - insert None values at edit position
+            let inserted = new_char_count - old_char_count;
+            let insert_pos = edit_char_pos.min(self.char_colors.len());
+            for _ in 0..inserted {
+                if insert_pos <= self.char_colors.len() {
+                    self.char_colors.insert(insert_pos, None);
+                } else {
+                    self.char_colors.push(None);
+                }
+            }
+        } else {
+            // Characters deleted - remove values at edit position
+            let deleted = old_char_count - new_char_count;
+            let delete_pos = edit_char_pos.min(self.char_colors.len());
+            for _ in 0..deleted {
+                if delete_pos < self.char_colors.len() {
+                    self.char_colors.remove(delete_pos);
+                }
+            }
+        }
+        // Ensure correct final size
+        self.char_colors.resize(new_char_count, None);
+    }
+
+    /// Simple resize sync (for cases where edit position is unknown).
+    pub fn sync_char_colors_with_content(&mut self) {
+        let char_count = self.content.chars().count();
+        self.char_colors.resize(char_count, None);
+    }
+
     /// Reconstruct a text with a specific ID (for CRDT/storage).
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn reconstruct(
@@ -164,6 +226,7 @@ impl Text {
         font_weight: FontWeight,
         rotation: f64,
         style: ShapeStyle,
+        char_colors: Vec<Option<super::SerializableColor>>,
     ) -> Self {
         Self {
             id,
@@ -174,6 +237,7 @@ impl Text {
             font_weight,
             rotation,
             style,
+            char_colors,
             cached_size: RwLock::new(None),
         }
     }
