@@ -534,72 +534,74 @@ pub mod file_ops {
     }
 
     fn trigger_file_input_async() {
-        use wasm_bindgen::closure::Closure;
+        wasm_bindgen_futures::spawn_local(async {
+            if let Err(e) = trigger_file_input_impl().await {
+                log::error!("Failed to load file: {:?}", e);
+            }
+        });
+    }
 
-        let window = web_sys::window().expect("No window");
-        let document = window.document().expect("No document");
+    async fn trigger_file_input_impl() -> Result<(), JsValue> {
+        let window = web_sys::window().ok_or("No window")?;
+        let document = window.document().ok_or("No document")?;
 
-        // Create hidden file input
-        let input = document
-            .create_element("input")
-            .expect("Failed to create input")
-            .dyn_into::<web_sys::HtmlInputElement>()
-            .expect("Failed to cast to input");
-
+        let input: web_sys::HtmlInputElement = document.create_element("input")?.dyn_into()?;
         input.set_type("file");
         input.set_accept(".json,.excalidraw");
         input.style().set_property("display", "none").ok();
 
-        // Add change listener to handle file selection
-        let input_clone = input.clone();
-        let onchange = Closure::once(Box::new(move |_event: web_sys::Event| {
-            if let Some(files) = input_clone.files() {
-                if let Some(file) = files.get(0) {
-                    let filename = file.name();
-                    let is_excalidraw = filename.to_lowercase().ends_with(".excalidraw");
+        document.body().ok_or("No body")?.append_child(&input)?;
 
-                    // Read the file content
-                    let reader = web_sys::FileReader::new().expect("Failed to create FileReader");
-                    let reader_clone = reader.clone();
+        // Wait for file selection via Promise
+        let file = wait_for_file_selection(&input).await;
+        input.remove();
 
-                    let onload = Closure::once(Box::new(move |_event: web_sys::Event| {
-                        if let Ok(result) = reader_clone.result() {
-                            if let Some(text) = result.as_string() {
-                                let doc_result = if is_excalidraw {
-                                    CanvasDocument::from_excalidraw(&text)
-                                        .map_err(|e| e.to_string())
-                                } else {
-                                    CanvasDocument::from_json(&text).map_err(|e| e.to_string())
-                                };
+        let file = file?;
+        let filename = file.name();
+        let is_excalidraw = filename.to_lowercase().ends_with(".excalidraw");
 
-                                match doc_result {
-                                    Ok(doc) => {
-                                        log::info!("Document loaded: {}", doc.name);
-                                        set_pending_document(doc);
-                                    }
-                                    Err(e) => {
-                                        log::error!("Failed to parse document: {}", e);
-                                    }
-                                }
-                            }
-                        }
-                    }) as Box<dyn FnOnce(_)>);
+        // Read file content using File.text() which returns a Promise
+        let text: String = wasm_bindgen_futures::JsFuture::from(file.text())
+            .await?
+            .as_string()
+            .ok_or("Failed to read file as text")?;
 
-                    reader.set_onload(Some(onload.as_ref().unchecked_ref()));
-                    onload.forget(); // Prevent closure from being dropped
+        let doc_result = if is_excalidraw {
+            CanvasDocument::from_excalidraw(&text).map_err(|e| e.to_string())
+        } else {
+            CanvasDocument::from_json(&text).map_err(|e| e.to_string())
+        };
 
-                    reader.read_as_text(&file).expect("Failed to read file");
-                }
+        match doc_result {
+            Ok(doc) => {
+                log::info!("Document loaded: {}", doc.name);
+                set_pending_document(doc);
+                Ok(())
             }
-            // Clean up the input element
-            input_clone.remove();
-        }) as Box<dyn FnOnce(_)>);
+            Err(e) => Err(JsValue::from_str(&format!("Failed to parse document: {}", e))),
+        }
+    }
 
-        input.set_onchange(Some(onchange.as_ref().unchecked_ref()));
-        onchange.forget(); // Prevent closure from being dropped
+    async fn wait_for_file_selection(
+        input: &web_sys::HtmlInputElement,
+    ) -> Result<web_sys::File, JsValue> {
+        use wasm_bindgen::closure::Closure;
 
-        document.body().expect("No body").append_child(&input).ok();
+        let input_clone = input.clone();
+        let promise = js_sys::Promise::new(&mut |resolve, _reject| {
+            let input_inner = input_clone.clone();
+            let onchange = Closure::once(Box::new(move |_: web_sys::Event| {
+                let file = input_inner.files().and_then(|f| f.get(0));
+                resolve.call1(&JsValue::NULL, &file.into()).ok();
+            }) as Box<dyn FnOnce(_)>);
+            input_clone.set_onchange(Some(onchange.as_ref().unchecked_ref()));
+            onchange.forget();
+        });
+
         input.click();
+
+        let result = wasm_bindgen_futures::JsFuture::from(promise).await?;
+        result.dyn_into::<web_sys::File>()
     }
 
     // Thread-local storage for pending pasted image
@@ -726,49 +728,51 @@ pub mod file_ops {
     }
 
     async fn decode_image_dimensions(blob_url: &str) -> Result<(u32, u32), JsValue> {
-        use wasm_bindgen::closure::Closure;
-
         let window = web_sys::window().ok_or("No window")?;
         let document = window.document().ok_or("No document")?;
-
         let img: web_sys::HtmlImageElement = document.create_element("img")?.dyn_into()?;
 
-        // Use Promise-based approach to wait for image load
+        let promise = wait_for_image_load(&img);
+        img.set_src(blob_url);
+        promise.await?;
+
+        Ok((img.natural_width(), img.natural_height()))
+    }
+
+    async fn wait_for_image_load(img: &web_sys::HtmlImageElement) -> Result<(), JsValue> {
+        use wasm_bindgen::closure::Closure;
+
         let img_clone = img.clone();
         let promise = js_sys::Promise::new(&mut |resolve, reject| {
-            let img_inner = img_clone.clone();
-            let resolve_clone = resolve.clone();
-
             let onload = Closure::once(Box::new(move |_: web_sys::Event| {
-                let width = img_inner.natural_width();
-                let height = img_inner.natural_height();
-                let arr = js_sys::Array::new();
-                arr.push(&JsValue::from(width));
-                arr.push(&JsValue::from(height));
-                resolve_clone.call1(&JsValue::NULL, &arr).ok();
+                resolve.call0(&JsValue::NULL).ok();
             }) as Box<dyn FnOnce(_)>);
-
-            let reject_clone = reject.clone();
             let onerror = Closure::once(Box::new(move |_: web_sys::Event| {
-                reject_clone
-                    .call1(&JsValue::NULL, &"Failed to load image".into())
-                    .ok();
+                reject.call1(&JsValue::NULL, &"Failed to load image".into()).ok();
             }) as Box<dyn FnOnce(_)>);
-
             img_clone.set_onload(Some(onload.as_ref().unchecked_ref()));
             img_clone.set_onerror(Some(onerror.as_ref().unchecked_ref()));
             onload.forget();
             onerror.forget();
         });
 
-        img.set_src(blob_url);
+        wasm_bindgen_futures::JsFuture::from(promise).await?;
+        Ok(())
+    }
 
-        let result = wasm_bindgen_futures::JsFuture::from(promise).await?;
-        let arr: js_sys::Array = result.dyn_into()?;
-        let width = arr.get(0).as_f64().ok_or("Invalid width")? as u32;
-        let height = arr.get(1).as_f64().ok_or("Invalid height")? as u32;
+    /// Yield to the browser event loop via requestAnimationFrame.
+    /// This allows WebGPU callbacks and other browser tasks to run.
+    pub async fn yield_to_browser() {
+        use wasm_bindgen::closure::Closure;
 
-        Ok((width, height))
+        let promise = js_sys::Promise::new(&mut |resolve, _reject| {
+            let window = web_sys::window().expect("no window");
+            let closure = Closure::once_into_js(move || {
+                let _ = resolve.call0(&JsValue::NULL);
+            });
+            let _ = window.request_animation_frame(closure.unchecked_ref());
+        });
+        let _ = wasm_bindgen_futures::JsFuture::from(promise).await;
     }
 
     fn set_pending_image(shape: drafftink_core::shapes::Shape) {
@@ -1089,7 +1093,6 @@ pub fn spawn_png_export_async(
     is_copy: bool,
 ) {
     use std::sync::atomic::{AtomicBool, Ordering};
-    use wasm_bindgen::prelude::*;
 
     if width == 0 || height == 0 {
         log::warn!("Cannot export empty scene");
@@ -1222,14 +1225,7 @@ pub fn spawn_png_export_async(
             // Yield to browser event loop using requestAnimationFrame
             // This is crucial - Promise.resolve() creates a microtask that doesn't
             // actually yield to the browser's task queue where WebGPU callbacks run
-            let promise = js_sys::Promise::new(&mut |resolve, _reject| {
-                let window = web_sys::window().expect("no window");
-                let closure = wasm_bindgen::closure::Closure::once_into_js(move || {
-                    let _ = resolve.call0(&JsValue::NULL);
-                });
-                let _ = window.request_animation_frame(closure.unchecked_ref());
-            });
-            let _ = wasm_bindgen_futures::JsFuture::from(promise).await;
+            let _ = file_ops::yield_to_browser().await;
         }
 
         // Now that mapping is complete, we can access the data
