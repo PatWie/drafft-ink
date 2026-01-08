@@ -32,83 +32,103 @@ use crate::ui::{SelectedShapeProps, UiAction, UiState, render_ui};
 #[cfg(feature = "native")]
 pub mod file_ops {
     use drafftink_core::canvas::CanvasDocument;
+    use std::sync::Mutex;
 
-    /// Save document to a JSON file using native file dialog.
+    // Channel for receiving async file operation results
+    static PENDING_DOCUMENT: Mutex<Option<CanvasDocument>> = Mutex::new(None);
+
+    /// Save document to a JSON file using native file dialog (async, non-blocking).
     pub fn save_document(document: &CanvasDocument, name: &str) {
-        let dialog = rfd::FileDialog::new()
-            .set_title("Save Document")
-            .set_file_name(format!("{}.json", name))
-            .add_filter("DrafftInk Document", &["json"]);
+        let doc = document.clone();
+        let default_name = format!("{}.json", name);
+        std::thread::spawn(move || {
+            let dialog = rfd::FileDialog::new()
+                .set_title("Save Document")
+                .set_file_name(&default_name)
+                .add_filter("DrafftInk Document", &["json"]);
 
-        if let Some(path) = dialog.save_file() {
-            match document.to_json() {
-                Ok(json) => {
-                    if let Err(e) = std::fs::write(&path, &json) {
-                        log::error!("Failed to write file: {}", e);
-                    } else {
-                        log::info!("Saved document to: {:?}", path);
+            if let Some(path) = dialog.save_file() {
+                match doc.to_json() {
+                    Ok(json) => {
+                        if let Err(e) = std::fs::write(&path, &json) {
+                            log::error!("Failed to write file: {}", e);
+                        } else {
+                            log::info!("Saved document to: {:?}", path);
+                        }
                     }
+                    Err(e) => log::error!("Failed to serialize document: {}", e),
                 }
-                Err(e) => log::error!("Failed to serialize document: {}", e),
             }
-        }
+        });
     }
 
-    /// Load document from a JSON file using native file dialog.
-    pub fn load_document() -> Option<CanvasDocument> {
-        let dialog = rfd::FileDialog::new()
-            .set_title("Open Document")
-            .add_filter("DrafftInk Document", &["json"])
-            .add_filter("Excalidraw", &["excalidraw"]);
+    /// Load document from a JSON file using native file dialog (async, non-blocking).
+    /// Use `take_pending_document()` to retrieve the result.
+    pub fn load_document() {
+        std::thread::spawn(move || {
+            let dialog = rfd::FileDialog::new()
+                .set_title("Open Document")
+                .add_filter("DrafftInk Document", &["json"])
+                .add_filter("Excalidraw", &["excalidraw"]);
 
-        if let Some(path) = dialog.pick_file() {
-            match std::fs::read_to_string(&path) {
-                Ok(content) => {
-                    // Check if it's an Excalidraw file
-                    let is_excalidraw = path
-                        .extension()
-                        .map(|e| e.to_string_lossy().to_lowercase() == "excalidraw")
-                        .unwrap_or(false);
+            if let Some(path) = dialog.pick_file() {
+                match std::fs::read_to_string(&path) {
+                    Ok(content) => {
+                        let is_excalidraw = path
+                            .extension()
+                            .map(|e| e.to_string_lossy().to_lowercase() == "excalidraw")
+                            .unwrap_or(false);
 
-                    let result = if is_excalidraw {
-                        CanvasDocument::from_excalidraw(&content).map_err(|e| e.to_string())
-                    } else {
-                        CanvasDocument::from_json(&content).map_err(|e| e.to_string())
-                    };
+                        let result = if is_excalidraw {
+                            CanvasDocument::from_excalidraw(&content).map_err(|e| e.to_string())
+                        } else {
+                            CanvasDocument::from_json(&content).map_err(|e| e.to_string())
+                        };
 
-                    match result {
-                        Ok(doc) => {
-                            log::info!("Loaded document from: {:?}", path);
-                            return Some(doc);
+                        match result {
+                            Ok(doc) => {
+                                log::info!("Loaded document from: {:?}", path);
+                                if let Ok(mut pending) = PENDING_DOCUMENT.lock() {
+                                    *pending = Some(doc);
+                                }
+                            }
+                            Err(e) => log::error!("Failed to parse document: {}", e),
                         }
-                        Err(e) => log::error!("Failed to parse document: {}", e),
                     }
+                    Err(e) => log::error!("Failed to read file: {}", e),
                 }
-                Err(e) => log::error!("Failed to read file: {}", e),
             }
-        }
-        None
+        });
+    }
+
+    /// Take pending document from async load operation.
+    pub fn take_pending_document() -> Option<CanvasDocument> {
+        PENDING_DOCUMENT.lock().ok().and_then(|mut p| p.take())
     }
 
     /// Load document by name (for native, just calls load_document).
-    pub fn load_document_by_name(_name: &str) -> Option<CanvasDocument> {
+    pub fn load_document_by_name(_name: &str) {
         load_document()
     }
 
-    /// Export PNG to file using native file dialog.
+    /// Export PNG to file using native file dialog (async, non-blocking).
     pub fn export_png(png_data: &[u8], name: &str) {
-        let dialog = rfd::FileDialog::new()
-            .set_title("Export PNG")
-            .set_file_name(format!("{}.png", name))
-            .add_filter("PNG Image", &["png"]);
+        let data = png_data.to_vec();
+        let default_name = format!("{}.png", name);
+        std::thread::spawn(move || {
+            let dialog = rfd::FileDialog::new()
+                .set_title("Export PNG")
+                .set_file_name(&default_name)
+                .add_filter("PNG Image", &["png"]);
 
-        if let Some(path) = dialog.save_file() {
-            if let Err(e) = std::fs::write(&path, png_data) {
-                log::error!("Failed to write PNG: {}", e);
-            } else {
-                log::info!("Exported PNG to: {:?}", path);
+            if let Some(path) = dialog.save_file() {
+                if let Err(e) = std::fs::write(&path, &data) {
+                    log::error!("Failed to write PNG: {}", e);
+                } else {
+                    log::info!("Exported PNG to: {:?}", path);
+                }
             }
-        }
+        });
     }
 
     /// Copy PNG to clipboard.
@@ -902,6 +922,15 @@ pub mod file_ops {
         let uint8_array = js_sys::Uint8Array::new(&array_buffer);
         let data = uint8_array.to_vec();
 
+        // Check for embedded scene data in PNG files
+        if file_type == "image/png" || file_name.ends_with(".png") {
+            if let Some(json) = super::extract_scene_from_png(&data) {
+                log::info!("Found embedded scene in PNG, loading as document");
+                add_pending_dropped_document(json);
+                return Ok(());
+            }
+        }
+
         // Determine format
         let format = if file_type == "image/jpeg"
             || file_name.ends_with(".jpg")
@@ -944,6 +973,22 @@ pub mod file_ops {
         add_pending_dropped_image(Shape::Image(image));
 
         Ok(())
+    }
+
+    /// Queue a dropped document (from PNG with embedded scene) for loading.
+    fn add_pending_dropped_document(json: String) {
+        PENDING_DROPPED_DOCUMENT.with(|cell| {
+            cell.borrow_mut().replace(json);
+        });
+    }
+
+    thread_local! {
+        static PENDING_DROPPED_DOCUMENT: std::cell::RefCell<Option<String>> = const { std::cell::RefCell::new(None) };
+    }
+
+    /// Take any pending dropped document JSON.
+    pub fn take_pending_dropped_document() -> Option<String> {
+        PENDING_DROPPED_DOCUMENT.with(|cell| cell.borrow_mut().take())
     }
 
     fn add_pending_dropped_image(shape: drafftink_core::shapes::Shape) {
@@ -1091,6 +1136,7 @@ pub fn spawn_png_export_async(
     height: u32,
     filename: String,
     is_copy: bool,
+    scene_json: Option<String>,
 ) {
     use std::sync::atomic::{AtomicBool, Ordering};
 
@@ -1244,7 +1290,7 @@ pub fn spawn_png_export_async(
         readback_buffer.unmap();
 
         // Encode to PNG
-        let png_data = match encode_png(&rgba_data, width, height) {
+        let png_data = match encode_png(&rgba_data, width, height, scene_json.as_deref()) {
             Some(data) => data,
             None => {
                 log::error!("Failed to encode PNG");
@@ -1262,13 +1308,23 @@ pub fn spawn_png_export_async(
     });
 }
 
-/// Encode RGBA pixel data to PNG bytes.
-fn encode_png(rgba_data: &[u8], width: u32, height: u32) -> Option<Vec<u8>> {
+/// MIME type keyword for embedded scene data in PNG tEXt chunks.
+const PNG_METADATA_KEYWORD: &str = "application/vnd.drafftink+json";
+
+/// Encode RGBA pixel data to PNG bytes with optional embedded scene JSON.
+fn encode_png(rgba_data: &[u8], width: u32, height: u32, scene_json: Option<&str>) -> Option<Vec<u8>> {
     let mut png_data = Vec::new();
     {
         let mut encoder = png::Encoder::new(&mut png_data, width, height);
         encoder.set_color(png::ColorType::Rgba);
         encoder.set_depth(png::BitDepth::Eight);
+
+        // Embed scene data as compressed zTXt chunk
+        if let Some(json) = scene_json {
+            if let Err(e) = encoder.add_ztxt_chunk(PNG_METADATA_KEYWORD.to_string(), json.to_string()) {
+                log::warn!("Failed to add metadata chunk: {:?}", e);
+            }
+        }
 
         let mut writer = match encoder.write_header() {
             Ok(w) => w,
@@ -1285,6 +1341,19 @@ fn encode_png(rgba_data: &[u8], width: u32, height: u32) -> Option<Vec<u8>> {
     }
 
     Some(png_data)
+}
+
+/// Extract embedded scene JSON from PNG data, if present.
+pub fn extract_scene_from_png(png_data: &[u8]) -> Option<String> {
+    let decoder = png::Decoder::new(std::io::Cursor::new(png_data));
+    let reader = decoder.read_info().ok()?;
+    
+    for chunk in &reader.info().compressed_latin1_text {
+        if chunk.keyword == PNG_METADATA_KEYWORD {
+            return chunk.get_text().ok();
+        }
+    }
+    None
 }
 
 /// Parse a CSS color string like "#ff0000" or "rgb(255, 0, 0)".
@@ -1828,8 +1897,7 @@ impl ApplicationHandler for App {
                 // Update laser trail (fade out)
                 state.event_handler.update_laser_trail(1.0 / 60.0);
 
-                // Check for pending document from async file load (WASM)
-                #[cfg(target_arch = "wasm32")]
+                // Check for pending document from async file load
                 if let Some(doc) = file_ops::take_pending_document() {
                     state.canvas.document = doc;
                     state.canvas.clear_selection();
@@ -1864,6 +1932,21 @@ impl ApplicationHandler for App {
                     state.canvas.add_to_selection(new_id);
                     if state.collab.is_in_room() {
                         let _ = state.collab.crdt_mut().add_shape(&image_shape);
+                    }
+                }
+
+                // Check for pending dropped document (PNG with embedded scene)
+                #[cfg(target_arch = "wasm32")]
+                if let Some(json) = file_ops::take_pending_dropped_document() {
+                    use drafftink_core::canvas::CanvasDocument;
+                    match CanvasDocument::from_json(&json) {
+                        Ok(doc) => {
+                            log::info!("Loaded document from dropped PNG");
+                            state.canvas.document = doc;
+                            state.canvas.clear_selection();
+                            state.canvas.camera.reset();
+                        }
+                        Err(e) => log::error!("Failed to parse embedded document: {}", e),
                     }
                 }
 
@@ -2254,9 +2337,8 @@ impl ApplicationHandler for App {
                             UiAction::LoadLocal(name) => {
                                 // Load document by name from local storage
                                 #[cfg(not(target_arch = "wasm32"))]
-                                if let Some(doc) = file_ops::load_document_by_name(&name) {
-                                    state.canvas.document = doc;
-                                    state.canvas.clear_selection();
+                                {
+                                    file_ops::load_document_by_name(&name);
                                 }
                                 #[cfg(target_arch = "wasm32")]
                                 {
@@ -2271,9 +2353,8 @@ impl ApplicationHandler for App {
                             }
                             UiAction::LoadDocument => {
                                 #[cfg(not(target_arch = "wasm32"))]
-                                if let Some(doc) = file_ops::load_document() {
-                                    state.canvas.document = doc;
-                                    state.canvas.clear_selection();
+                                {
+                                    file_ops::load_document();
                                 }
                                 #[cfg(target_arch = "wasm32")]
                                 {
@@ -2298,9 +2379,8 @@ impl ApplicationHandler for App {
                                 #[cfg(target_arch = "wasm32")]
                                 file_ops::upload_document_async();
                                 #[cfg(not(target_arch = "wasm32"))]
-                                if let Some(doc) = file_ops::load_document() {
-                                    state.canvas.document = doc;
-                                    state.canvas.clear_selection();
+                                {
+                                    file_ops::load_document();
                                 }
                             }
                             UiAction::ClearDocument => {
@@ -3147,10 +3227,12 @@ impl ApplicationHandler for App {
                                             width,
                                             height,
                                         ) {
+                                            let scene_json = state.canvas.document.to_json().ok();
                                             if let Some(png_data) = encode_png(
                                                 &result.rgba_data,
                                                 result.width,
                                                 result.height,
+                                                scene_json.as_deref(),
                                             ) {
                                                 file_ops::export_png(
                                                     &png_data,
@@ -3164,8 +3246,9 @@ impl ApplicationHandler for App {
                                     {
                                         let filename =
                                             format!("{}.png", state.canvas.document.name);
+                                        let scene_json = state.canvas.document.to_json().ok();
                                         spawn_png_export_async(
-                                            device, queue, scene, width, height, filename, false,
+                                            device, queue, scene, width, height, filename, false, scene_json,
                                         );
                                     }
                                 } else {
@@ -3227,6 +3310,7 @@ impl ApplicationHandler for App {
                                             height,
                                             "selection.png".to_string(),
                                             true,
+                                            None, // No metadata for clipboard copy
                                         );
                                     }
                                 } else {
@@ -4138,9 +4222,8 @@ impl ApplicationHandler for App {
                                 }
                                 "o" | "O" => {
                                     #[cfg(not(target_arch = "wasm32"))]
-                                    if let Some(doc) = file_ops::load_document() {
-                                        state.canvas.document = doc;
-                                        state.canvas.clear_selection();
+                                    {
+                                        file_ops::load_document();
                                     }
                                     #[cfg(target_arch = "wasm32")]
                                     {
@@ -4182,10 +4265,12 @@ impl ApplicationHandler for App {
                                                     width,
                                                     height,
                                                 ) {
+                                                    let scene_json = state.canvas.document.to_json().ok();
                                                     if let Some(png_data) = encode_png(
                                                         &result.rgba_data,
                                                         result.width,
                                                         result.height,
+                                                        scene_json.as_deref(),
                                                     ) {
                                                         file_ops::export_png(
                                                             &png_data,
@@ -4199,9 +4284,10 @@ impl ApplicationHandler for App {
                                             {
                                                 let filename =
                                                     format!("{}.png", state.canvas.document.name);
+                                                let scene_json = state.canvas.document.to_json().ok();
                                                 spawn_png_export_async(
                                                     device, queue, scene, width, height, filename,
-                                                    false,
+                                                    false, scene_json,
                                                 );
                                             }
                                         } else {
@@ -4318,6 +4404,7 @@ impl ApplicationHandler for App {
                                                     height,
                                                     "selection.png".to_string(),
                                                     true,
+                                                    None, // No metadata for clipboard copy
                                                 );
                                             }
                                         } else {
@@ -4603,6 +4690,24 @@ impl ApplicationHandler for App {
                     let ext_str = ext.to_string_lossy().to_lowercase();
                     if matches!(ext_str.as_str(), "png" | "jpg" | "jpeg" | "webp") {
                         if let Ok(data) = std::fs::read(&path) {
+                            // Check for embedded scene data in PNG files
+                            if ext_str == "png" {
+                                if let Some(json) = extract_scene_from_png(&data) {
+                                    log::info!("Found embedded scene in PNG, loading as document");
+                                    use drafftink_core::canvas::CanvasDocument;
+                                    match CanvasDocument::from_json(&json) {
+                                        Ok(doc) => {
+                                            state.canvas.document = doc;
+                                            state.canvas.clear_selection();
+                                            state.canvas.camera.reset();
+                                            state.window.request_redraw();
+                                            return;
+                                        }
+                                        Err(e) => log::error!("Failed to parse embedded document: {}", e),
+                                    }
+                                }
+                            }
+
                             use drafftink_core::shapes::{Image, ImageFormat, Shape};
                             use kurbo::Point;
 
