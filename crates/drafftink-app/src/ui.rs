@@ -1,7 +1,6 @@
 //! UI components using egui.
 
 use drafftink_core::shapes::{FillPattern, FontFamily, FontWeight, Shape, ShapeId, ShapeStyle};
-use drafftink_core::snap::SnapMode;
 use drafftink_core::sync::ConnectionState;
 use drafftink_core::tools::ToolKind;
 use drafftink_render::GridStyle;
@@ -244,8 +243,10 @@ pub struct UiState {
     pub grid_style: GridStyle,
     /// Current zoom level (1.0 = 100%).
     pub zoom_level: f64,
-    /// Current snap mode (for grid snapping).
-    pub snap_mode: SnapMode,
+    /// Whether grid snapping is enabled.
+    pub grid_snap_enabled: bool,
+    /// Whether smart guides are enabled.
+    pub smart_snap_enabled: bool,
     /// Whether angle snapping is enabled (for lines/arrows only).
     pub angle_snap_enabled: bool,
     /// Export scale factor (1 = 1x, 2 = 2x, 3 = 3x).
@@ -315,7 +316,8 @@ impl Default for UiState {
             color_popover: ColorPopover::None,
             grid_style: GridStyle::default(),
             zoom_level: drafftink_core::camera::BASE_ZOOM,
-            snap_mode: SnapMode::default(),
+            grid_snap_enabled: false,
+            smart_snap_enabled: false,
             angle_snap_enabled: false,
             export_scale: 2, // Default to 2x for good quality
             sloppiness: drafftink_core::shapes::Sloppiness::Artist,
@@ -428,8 +430,10 @@ pub enum UiAction {
     ZoomReset,
     /// Center canvas at origin (0,0).
     CenterCanvas,
-    /// Toggle snap mode (cycles through modes).
-    ToggleSnap,
+    /// Toggle grid snap.
+    ToggleGridSnap,
+    /// Toggle smart guides.
+    ToggleSmartSnap,
     /// Toggle angle snap (for lines/arrows).
     ToggleAngleSnap,
     /// Set font size for text shapes.
@@ -849,34 +853,49 @@ fn render_bottom_toolbar(ctx: &Context, ui_state: &mut UiState) -> Option<UiActi
                         );
                         ui.add_space(8.0);
 
-                        // Snap button - icon changes based on current mode
-                        let snap_icon = match ui_state.snap_mode {
-                            SnapMode::None => include_image!("../assets/snap-grid.svg"),
-                            SnapMode::Grid => include_image!("../assets/snap-grid.svg"),
-                            SnapMode::Shapes => include_image!("../assets/snap-shapes.svg"),
-                            SnapMode::All => include_image!("../assets/snap-all.svg"),
+                        // Grid snap button
+                        let grid_snap_tooltip = if ui_state.grid_snap_enabled {
+                            "Grid Snap: On"
+                        } else {
+                            "Grid Snap: Off"
                         };
-                        let snap_tooltip = match ui_state.snap_mode {
-                            SnapMode::None => "Snap: Off (click for grid snap)",
-                            SnapMode::Grid => "Snap: Grid (click for shape snap)",
-                            SnapMode::Shapes => "Snap: Shapes (click for all)",
-                            SnapMode::All => "Snap: All (click to disable)",
-                        };
-                        if IconButton::new(snap_icon, snap_tooltip)
-                            .small()
-                            .selected(ui_state.snap_mode.is_enabled())
-                            .show(ui)
+                        if IconButton::new(
+                            include_image!("../assets/snap-grid.svg"),
+                            grid_snap_tooltip,
+                        )
+                        .small()
+                        .selected(ui_state.grid_snap_enabled)
+                        .show(ui)
                         {
-                            action = Some(UiAction::ToggleSnap);
+                            action = Some(UiAction::ToggleGridSnap);
                         }
 
                         ui.add_space(4.0);
 
-                        // Angle snap button (using SVG icon)
-                        let angle_snap_tooltip = if ui_state.angle_snap_enabled {
-                            "Angle Snap: On (15° increments)"
+                        // Smart guides button
+                        let smart_snap_tooltip = if ui_state.smart_snap_enabled {
+                            "Smart Guides: On"
                         } else {
-                            "Angle Snap: Off (click to enable)"
+                            "Smart Guides: Off"
+                        };
+                        if IconButton::new(
+                            include_image!("../assets/snap-shapes.svg"),
+                            smart_snap_tooltip,
+                        )
+                        .small()
+                        .selected(ui_state.smart_snap_enabled)
+                        .show(ui)
+                        {
+                            action = Some(UiAction::ToggleSmartSnap);
+                        }
+
+                        ui.add_space(4.0);
+
+                        // Angle snap button
+                        let angle_snap_tooltip = if ui_state.angle_snap_enabled {
+                            "Angle Snap: On (15°)"
+                        } else {
+                            "Angle Snap: Off"
                         };
                         if IconButton::new(
                             include_image!("../assets/angle.svg"),

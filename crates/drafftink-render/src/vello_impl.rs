@@ -4,7 +4,6 @@ use crate::renderer::{RenderContext, Renderer, ShapeRenderer};
 use crate::text_editor::TextEditState;
 use drafftink_core::selection::{Handle, HandleKind, get_handles};
 use drafftink_core::shapes::{FillPattern, Shape, ShapeStyle, ShapeTrait, StrokeStyle};
-use drafftink_core::snap::{SnapTarget, SnapTargetKind};
 use kurbo::{Affine, BezPath, PathEl, Point, Rect, Shape as KurboShape, Stroke};
 use parley::layout::PositionedLayoutItem;
 use parley::{FontContext, LayoutContext};
@@ -1485,11 +1484,6 @@ impl Renderer for VelloRenderer {
             self.render_selection_rect(rect, camera_transform);
         }
 
-        // Draw nearby snap targets (small indicators on shapes)
-        if !ctx.nearby_snap_targets.is_empty() {
-            self.render_snap_targets(&ctx.nearby_snap_targets, camera_transform);
-        }
-
         // Draw snap guides
         if let Some(snap_point) = ctx.snap_point {
             self.render_snap_guides(snap_point, camera_transform, ctx.viewport_size);
@@ -1563,59 +1557,6 @@ impl VelloRenderer {
             None,
             &circle,
         );
-    }
-
-    /// Render nearby snap targets as small indicators.
-    fn render_snap_targets(&mut self, targets: &[SnapTarget], transform: Affine) {
-        // Different colors for different target types
-        let corner_color = Color::from_rgba8(59, 130, 246, 150); // Blue for corners
-        let midpoint_color = Color::from_rgba8(16, 185, 129, 150); // Emerald for midpoints
-        let center_color = Color::from_rgba8(245, 158, 11, 150); // Amber for centers
-
-        // Size scaled inversely with zoom for constant screen appearance
-        let size = 4.0 / self.zoom;
-        let stroke_width = 1.0 / self.zoom;
-
-        for target in targets {
-            let color = match target.kind {
-                SnapTargetKind::Corner => corner_color,
-                SnapTargetKind::Midpoint => midpoint_color,
-                SnapTargetKind::Center => center_color,
-                SnapTargetKind::Edge => corner_color, // Treat edges like corners
-            };
-
-            match target.kind {
-                SnapTargetKind::Corner | SnapTargetKind::Edge => {
-                    // Draw a small square for corners
-                    let half = size;
-                    let rect = Rect::new(
-                        target.point.x - half,
-                        target.point.y - half,
-                        target.point.x + half,
-                        target.point.y + half,
-                    );
-                    self.scene
-                        .stroke(&Stroke::new(stroke_width), transform, color, None, &rect);
-                }
-                SnapTargetKind::Midpoint => {
-                    // Draw a small diamond for midpoints
-                    let mut path = BezPath::new();
-                    path.move_to(Point::new(target.point.x, target.point.y - size));
-                    path.line_to(Point::new(target.point.x + size, target.point.y));
-                    path.line_to(Point::new(target.point.x, target.point.y + size));
-                    path.line_to(Point::new(target.point.x - size, target.point.y));
-                    path.close_path();
-                    self.scene
-                        .stroke(&Stroke::new(stroke_width), transform, color, None, &path);
-                }
-                SnapTargetKind::Center => {
-                    // Draw a small circle for centers
-                    let circle = kurbo::Circle::new(target.point, size);
-                    self.scene
-                        .stroke(&Stroke::new(stroke_width), transform, color, None, &circle);
-                }
-            }
-        }
     }
 
     /// Render angle snap visualization (polar rays and angle arc).

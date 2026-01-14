@@ -9,46 +9,10 @@ use drafftink_core::selection::{
 };
 use drafftink_core::shapes::{Freehand, Math, Shape, ShapeId, ShapeStyle, ShapeTrait, Text};
 use drafftink_core::snap::{
-    AngleSnapResult, GRID_SIZE, SnapMode, SnapResult, SnapTarget, get_snap_targets_from_bounds,
-    get_snap_targets_from_line, snap_line_endpoint_isometric, snap_point_with_shapes,
+    AngleSnapResult, GRID_SIZE, SnapResult, snap_line_endpoint_isometric, snap_to_grid,
 };
 use drafftink_core::tools::ToolKind;
 use kurbo::{Point, Rect};
-
-/// Collect all snap targets from shapes in the canvas.
-/// Optionally excludes a specific shape (e.g., the one being manipulated).
-fn collect_snap_targets(canvas: &Canvas, exclude_shape_id: Option<ShapeId>) -> Vec<SnapTarget> {
-    let exclude_ids: Vec<ShapeId> = exclude_shape_id.into_iter().collect();
-    collect_snap_targets_excluding(canvas, &exclude_ids)
-}
-
-/// Collect all snap targets from shapes in the canvas, excluding multiple shapes.
-fn collect_snap_targets_excluding(canvas: &Canvas, exclude_ids: &[ShapeId]) -> Vec<SnapTarget> {
-    let mut targets = Vec::new();
-
-    for shape in canvas.document.shapes_ordered() {
-        // Skip excluded shapes
-        if exclude_ids.contains(&shape.id()) {
-            continue;
-        }
-
-        // Get snap targets based on shape type
-        match shape {
-            Shape::Line(line) => {
-                targets.extend(get_snap_targets_from_line(line.start, line.end));
-            }
-            Shape::Arrow(arrow) => {
-                targets.extend(get_snap_targets_from_line(arrow.start, arrow.end));
-            }
-            _ => {
-                // For other shapes, use bounds
-                targets.extend(get_snap_targets_from_bounds(shape.bounds()));
-            }
-        }
-    }
-
-    targets
-}
 
 /// Get the other endpoint of a line/arrow given the handle being manipulated.
 /// Returns the start point if manipulating the end, and vice versa.
@@ -113,8 +77,6 @@ pub struct EventHandler {
     pub last_angle_snap: Option<AngleSnapResult>,
     /// Start point for line/arrow drawing (for angle snap visualization).
     pub line_start_point: Option<Point>,
-    /// Current snap targets from nearby shapes (for rendering snap indicators).
-    pub current_snap_targets: Vec<SnapTarget>,
     /// Current rotation angle during rotation drag (for helper line rendering).
     pub rotation_state: Option<RotationState>,
     /// Eraser path points for current stroke.
@@ -153,7 +115,6 @@ impl EventHandler {
             last_snap: None,
             last_angle_snap: None,
             line_start_point: None,
-            current_snap_targets: Vec::new(),
             rotation_state: None,
             eraser_points: Vec::new(),
             eraser_radius: 10.0,
@@ -204,24 +165,6 @@ impl EventHandler {
     #[allow(dead_code)]
     pub fn manipulation(&self) -> Option<&ManipulationState> {
         self.manipulation.as_ref()
-    }
-
-    /// Update snap targets based on current snap mode.
-    /// Should be called each frame when shape snapping is enabled.
-    pub fn update_snap_targets(&mut self, canvas: &Canvas, snap_mode: SnapMode) {
-        if snap_mode.snaps_to_shapes() {
-            // Collect all snap targets, excluding any shapes being manipulated/moved
-            let exclude_ids: Vec<ShapeId> = if let Some(m) = &self.manipulation {
-                vec![m.shape_id]
-            } else if let Some(mm) = &self.multi_move {
-                mm.shape_ids()
-            } else {
-                vec![]
-            };
-            self.current_snap_targets = collect_snap_targets_excluding(canvas, &exclude_ids);
-        } else {
-            self.current_snap_targets.clear();
-        }
     }
 
     /// Enter text editing mode for a shape.
@@ -345,13 +288,13 @@ impl EventHandler {
     }
 
     /// Handle a press event (mouse down).
-    /// `snap_mode` controls whether the start point should snap to grid.
+    /// `grid_snap_enabled` controls whether the start point should snap to grid.
     pub fn handle_press(
         &mut self,
         canvas: &mut Canvas,
         world_point: Point,
         input: &InputState,
-        snap_mode: SnapMode,
+        grid_snap_enabled: bool,
     ) {
         // If we're editing text and click elsewhere, stop editing
         if self.editing_text.is_some() {
@@ -562,13 +505,9 @@ impl EventHandler {
             ToolKind::Line | ToolKind::Arrow => {
                 // Start line/arrow drawing - snap start point if enabled
                 // Store start point for angle snapping visualization
-                let start_point = if snap_mode.is_enabled() {
-                    let targets = collect_snap_targets(canvas, None);
-                    let snap_result =
-                        snap_point_with_shapes(world_point, snap_mode, GRID_SIZE, &targets);
-                    if snap_result.is_snapped() {
-                        self.last_snap = Some(snap_result);
-                    }
+                let start_point = if grid_snap_enabled {
+                    let snap_result = snap_to_grid(world_point, GRID_SIZE);
+                    self.last_snap = Some(snap_result);
                     snap_result.point
                 } else {
                     world_point
@@ -578,13 +517,9 @@ impl EventHandler {
             }
             _ => {
                 // Start shape drawing - snap start point if enabled
-                let start_point = if snap_mode.is_enabled() {
-                    let targets = collect_snap_targets(canvas, None);
-                    let snap_result =
-                        snap_point_with_shapes(world_point, snap_mode, GRID_SIZE, &targets);
-                    if snap_result.is_snapped() {
-                        self.last_snap = Some(snap_result);
-                    }
+                let start_point = if grid_snap_enabled {
+                    let snap_result = snap_to_grid(world_point, GRID_SIZE);
+                    self.last_snap = Some(snap_result);
                     snap_result.point
                 } else {
                     world_point
@@ -596,7 +531,7 @@ impl EventHandler {
     }
 
     /// Handle a release event (mouse up).
-    /// `snap_mode` controls whether the end point should snap to grid.
+    /// `grid_snap_enabled` controls whether the end point should snap to grid.
     /// `angle_snap_enabled` enables 15° angle snapping for lines/arrows.
     pub fn handle_release(
         &mut self,
@@ -604,7 +539,7 @@ impl EventHandler {
         world_point: Point,
         input: &InputState,
         current_style: &ShapeStyle,
-        snap_mode: SnapMode,
+        grid_snap_enabled: bool,
         angle_snap_enabled: bool,
     ) {
         // Clear rotation state
@@ -806,46 +741,19 @@ impl EventHandler {
                 canvas.tool_manager.cancel();
             }
             ToolKind::Line | ToolKind::Arrow => {
-                // Complete line/arrow - use shape snapping first, then angle/grid snapping
+                // Complete line/arrow - use angle/grid snapping
                 let end_point = if let Some(start) = self.line_start_point {
-                    // First try shape snapping (highest priority when enabled)
-                    if snap_mode.snaps_to_shapes() {
-                        let targets = collect_snap_targets(canvas, None);
-                        let shape_snap = snap_point_with_shapes(
-                            world_point,
-                            SnapMode::Shapes,
-                            GRID_SIZE,
-                            &targets,
-                        );
-                        if shape_snap.is_snapped() {
-                            shape_snap.point
-                        } else {
-                            // Fall back to angle/grid snapping
-                            let angle_result = snap_line_endpoint_isometric(
-                                start,
-                                world_point,
-                                angle_snap_enabled,
-                                snap_mode.snaps_to_grid(),
-                                false,
-                                GRID_SIZE,
-                            );
-                            angle_result.point
-                        }
-                    } else {
-                        // Only angle/grid snapping
-                        let angle_result = snap_line_endpoint_isometric(
-                            start,
-                            world_point,
-                            angle_snap_enabled,
-                            snap_mode.snaps_to_grid(),
-                            false,
-                            GRID_SIZE,
-                        );
-                        angle_result.point
-                    }
-                } else if snap_mode.is_enabled() {
-                    let targets = collect_snap_targets(canvas, None);
-                    snap_point_with_shapes(world_point, snap_mode, GRID_SIZE, &targets).point
+                    let angle_result = snap_line_endpoint_isometric(
+                        start,
+                        world_point,
+                        angle_snap_enabled,
+                        grid_snap_enabled,
+                        false,
+                        GRID_SIZE,
+                    );
+                    angle_result.point
+                } else if grid_snap_enabled {
+                    snap_to_grid(world_point, GRID_SIZE).point
                 } else {
                     world_point
                 };
@@ -866,9 +774,8 @@ impl EventHandler {
             }
             _ => {
                 // Complete other shapes (Rectangle, Ellipse) - snap end point if enabled
-                let end_point = if snap_mode.is_enabled() {
-                    let targets = collect_snap_targets(canvas, None);
-                    snap_point_with_shapes(world_point, snap_mode, GRID_SIZE, &targets).point
+                let end_point = if grid_snap_enabled {
+                    snap_to_grid(world_point, GRID_SIZE).point
                 } else {
                     world_point
                 };
@@ -888,14 +795,14 @@ impl EventHandler {
     }
 
     /// Handle a move event while dragging.
-    /// `snap_mode` controls whether points should snap to grid.
+    /// `grid_snap_enabled` controls whether points should snap to grid.
     /// `angle_snap_enabled` enables 15° angle snapping for lines/arrows.
     pub fn handle_drag(
         &mut self,
         canvas: &mut Canvas,
         world_point: Point,
         input: &InputState,
-        snap_mode: SnapMode,
+        grid_snap_enabled: bool,
         angle_snap_enabled: bool,
     ) {
         // Clear previous snap
@@ -946,59 +853,17 @@ impl EventHandler {
                 original_position.y + raw_delta.y,
             );
 
-            // For line/arrow endpoint manipulation, try shape snapping first (highest priority)
-            // then fall back to angle/grid snapping
+            // For line/arrow endpoint manipulation, use angle/grid snapping
             let snap_result = if is_line_or_arrow && manip.handle.is_some() {
                 // Get the other endpoint as the origin for polar snapping
                 let other_endpoint = get_line_other_endpoint(&manip.original_shape, manip.handle);
 
-                // First try shape snapping (highest priority when enabled)
-                if snap_mode.snaps_to_shapes() {
-                    let targets = collect_snap_targets(canvas, Some(manip.shape_id));
-                    let shape_snap = snap_point_with_shapes(
-                        target_position,
-                        SnapMode::Shapes,
-                        GRID_SIZE,
-                        &targets,
-                    );
-                    if shape_snap.is_snapped() {
-                        self.last_snap = Some(shape_snap);
-                        self.last_angle_snap = None;
-                        self.line_start_point = None;
-                        shape_snap
-                    } else if angle_snap_enabled {
-                        // Fall back to angle/grid snapping
-                        let angle_result = snap_line_endpoint_isometric(
-                            other_endpoint,
-                            target_position,
-                            angle_snap_enabled,
-                            snap_mode.snaps_to_grid(),
-                            false,
-                            GRID_SIZE,
-                        );
-
-                        if angle_result.snapped {
-                            self.last_angle_snap = Some(angle_result);
-                            self.line_start_point = Some(other_endpoint);
-                        }
-
-                        SnapResult {
-                            point: angle_result.point,
-                            snapped_x: angle_result.snapped,
-                            snapped_y: angle_result.snapped,
-                        }
-                    } else {
-                        // Just grid snapping
-                        let targets = collect_snap_targets(canvas, Some(manip.shape_id));
-                        snap_point_with_shapes(target_position, snap_mode, GRID_SIZE, &targets)
-                    }
-                } else if angle_snap_enabled {
-                    // Only angle/grid snapping (no shape snap)
+                if angle_snap_enabled {
                     let angle_result = snap_line_endpoint_isometric(
                         other_endpoint,
                         target_position,
                         angle_snap_enabled,
-                        snap_mode.snaps_to_grid(),
+                        grid_snap_enabled,
                         false,
                         GRID_SIZE,
                     );
@@ -1013,15 +878,18 @@ impl EventHandler {
                         snapped_x: angle_result.snapped,
                         snapped_y: angle_result.snapped,
                     }
+                } else if grid_snap_enabled {
+                    snap_to_grid(target_position, GRID_SIZE)
                 } else {
-                    // Just grid snapping for endpoints
-                    let targets = collect_snap_targets(canvas, Some(manip.shape_id));
-                    snap_point_with_shapes(target_position, snap_mode, GRID_SIZE, &targets)
+                    SnapResult::none(target_position)
                 }
             } else {
-                // Regular snapping for non-line shapes (grid and/or shapes)
-                let targets = collect_snap_targets(canvas, Some(manip.shape_id));
-                snap_point_with_shapes(target_position, snap_mode, GRID_SIZE, &targets)
+                // Regular grid snapping for non-line shapes
+                if grid_snap_enabled {
+                    snap_to_grid(target_position, GRID_SIZE)
+                } else {
+                    SnapResult::none(target_position)
+                }
             };
 
             // Store snap result for visual guides (show where handle snaps to)
@@ -1071,10 +939,11 @@ impl EventHandler {
                     original_position.y + raw_delta.y,
                 );
 
-                let exclude_ids: Vec<ShapeId> = mm.original_shapes.keys().copied().collect();
-                let targets = collect_snap_targets_excluding(canvas, &exclude_ids);
-                let snap_result =
-                    snap_point_with_shapes(target_position, snap_mode, GRID_SIZE, &targets);
+                let snap_result = if grid_snap_enabled {
+                    snap_to_grid(target_position, GRID_SIZE)
+                } else {
+                    SnapResult::none(target_position)
+                };
 
                 if snap_result.is_snapped() {
                     self.last_snap = Some(snap_result);
@@ -1159,29 +1028,12 @@ impl EventHandler {
             // Special handling for Line and Arrow tools with angle snapping
             if matches!(tool, ToolKind::Line | ToolKind::Arrow) {
                 if let Some(start) = self.line_start_point {
-                    // First try shape snapping (highest priority when enabled)
-                    if snap_mode.snaps_to_shapes() {
-                        let targets = collect_snap_targets(canvas, None);
-                        let shape_snap = snap_point_with_shapes(
-                            world_point,
-                            SnapMode::Shapes,
-                            GRID_SIZE,
-                            &targets,
-                        );
-                        if shape_snap.is_snapped() {
-                            self.last_snap = Some(shape_snap);
-                            self.last_angle_snap = None;
-                            canvas.tool_manager.update(shape_snap.point);
-                            return;
-                        }
-                    }
-
                     // Use angle-aware snapping (grid + angle)
                     let angle_result = snap_line_endpoint_isometric(
                         start,
                         world_point,
                         angle_snap_enabled,
-                        snap_mode.snaps_to_grid(),
+                        grid_snap_enabled,
                         false, // unused parameter kept for API compatibility
                         GRID_SIZE,
                     );
@@ -1197,15 +1049,11 @@ impl EventHandler {
             }
 
             // Apply snapping for other shape creation tools (except freehand/highlighter)
-            let point = if snap_mode.is_enabled()
+            let point = if grid_snap_enabled
                 && !matches!(tool, ToolKind::Freehand | ToolKind::Highlighter)
             {
-                let targets = collect_snap_targets(canvas, None);
-                let snap_result =
-                    snap_point_with_shapes(world_point, snap_mode, GRID_SIZE, &targets);
-                if snap_result.is_snapped() {
-                    self.last_snap = Some(snap_result);
-                }
+                let snap_result = snap_to_grid(world_point, GRID_SIZE);
+                self.last_snap = Some(snap_result);
                 snap_result.point
             } else {
                 world_point

@@ -2,7 +2,6 @@
 
 use drafftink_core::canvas::Canvas;
 use drafftink_core::shapes::Shape;
-use drafftink_core::snap::SnapTarget;
 use kurbo::{Affine, Rect, Size};
 use peniko::Color;
 use thiserror::Error;
@@ -108,8 +107,6 @@ pub struct RenderContext<'a> {
     pub snap_point: Option<kurbo::Point>,
     /// Angle snap visualization info (for lines/arrows).
     pub angle_snap_info: Option<AngleSnapInfo>,
-    /// Nearby snap targets to highlight (when shape snapping is enabled).
-    pub nearby_snap_targets: Vec<SnapTarget>,
     /// Rotation visualization info (for rotation helper lines).
     pub rotation_info: Option<RotationInfo>,
     /// Eraser cursor position and radius.
@@ -132,7 +129,6 @@ impl<'a> RenderContext<'a> {
             editing_shape_id: None,
             snap_point: None,
             angle_snap_info: None,
-            nearby_snap_targets: Vec::new(),
             rotation_info: None,
             eraser_cursor: None,
             laser_pointer: None,
@@ -178,12 +174,6 @@ impl<'a> RenderContext<'a> {
     /// Set the angle snap info for rendering angle guides.
     pub fn with_angle_snap(mut self, info: Option<AngleSnapInfo>) -> Self {
         self.angle_snap_info = info;
-        self
-    }
-
-    /// Set nearby snap targets to highlight.
-    pub fn with_snap_targets(mut self, targets: Vec<SnapTarget>) -> Self {
-        self.nearby_snap_targets = targets;
         self
     }
 

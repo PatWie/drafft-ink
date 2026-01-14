@@ -2444,8 +2444,13 @@ impl ApplicationHandler for App {
                                 // Reset camera offset to default (origin at top-left)
                                 state.canvas.camera.offset = kurbo::Vec2::ZERO;
                             }
-                            UiAction::ToggleSnap => {
-                                state.ui_state.snap_mode = state.ui_state.snap_mode.next();
+                            UiAction::ToggleGridSnap => {
+                                state.ui_state.grid_snap_enabled =
+                                    !state.ui_state.grid_snap_enabled;
+                            }
+                            UiAction::ToggleSmartSnap => {
+                                state.ui_state.smart_snap_enabled =
+                                    !state.ui_state.smart_snap_enabled;
                             }
                             UiAction::ToggleAngleSnap => {
                                 state.ui_state.angle_snap_enabled =
@@ -3385,12 +3390,6 @@ impl ApplicationHandler for App {
                         is_snapped: angle_snap.snapped,
                     });
 
-                // Update and get snap targets for nearby shape indicators
-                state
-                    .event_handler
-                    .update_snap_targets(&state.canvas, state.ui_state.snap_mode);
-                let snap_targets = state.event_handler.current_snap_targets.clone();
-
                 // Get rotation info for helper lines
                 let rotation_info = state.event_handler.rotation_state.as_ref().map(|rs| {
                     drafftink_render::RotationInfo {
@@ -3430,7 +3429,6 @@ impl ApplicationHandler for App {
                     .with_editing_shape(state.event_handler.editing_text)
                     .with_snap_point(snap_point)
                     .with_angle_snap(angle_snap_info)
-                    .with_snap_targets(snap_targets)
                     .with_rotation_info(rotation_info)
                     .with_eraser_cursor(eraser_cursor)
                     .with_laser_pointer(laser_pointer);
@@ -3712,7 +3710,7 @@ impl ApplicationHandler for App {
                             &mut state.canvas,
                             world_point,
                             &state.input,
-                            state.ui_state.snap_mode,
+                            state.ui_state.grid_snap_enabled,
                             state.ui_state.angle_snap_enabled,
                         );
 
@@ -3739,7 +3737,7 @@ impl ApplicationHandler for App {
                             &mut state.canvas,
                             world_point,
                             &state.input,
-                            state.ui_state.snap_mode,
+                            state.ui_state.grid_snap_enabled,
                             state.ui_state.angle_snap_enabled,
                         );
                     } else if state.canvas.tool_manager.current_tool == ToolKind::Pan {
@@ -3755,7 +3753,7 @@ impl ApplicationHandler for App {
                             &mut state.canvas,
                             world_point,
                             &state.input,
-                            state.ui_state.snap_mode,
+                            state.ui_state.grid_snap_enabled,
                             state.ui_state.angle_snap_enabled,
                         );
                     } else if state.canvas.tool_manager.is_active() {
@@ -3764,7 +3762,7 @@ impl ApplicationHandler for App {
                             &mut state.canvas,
                             world_point,
                             &state.input,
-                            state.ui_state.snap_mode,
+                            state.ui_state.grid_snap_enabled,
                             state.ui_state.angle_snap_enabled,
                         );
 
@@ -3855,7 +3853,7 @@ impl ApplicationHandler for App {
                                         &mut state.canvas,
                                         world_point,
                                         &state.input,
-                                        state.ui_state.snap_mode,
+                                        state.ui_state.grid_snap_enabled,
                                     );
                                 }
                             } else {
@@ -3863,7 +3861,7 @@ impl ApplicationHandler for App {
                                     &mut state.canvas,
                                     world_point,
                                     &state.input,
-                                    state.ui_state.snap_mode,
+                                    state.ui_state.grid_snap_enabled,
                                 );
 
                                 // Check if we just entered text edit mode
@@ -3918,7 +3916,7 @@ impl ApplicationHandler for App {
                                 world_point,
                                 &state.input,
                                 &current_style,
-                                state.ui_state.snap_mode,
+                                state.ui_state.grid_snap_enabled,
                                 state.ui_state.angle_snap_enabled,
                             );
 
@@ -4030,7 +4028,7 @@ impl ApplicationHandler for App {
                                     &mut state.canvas,
                                     world_point,
                                     &state.input,
-                                    state.ui_state.snap_mode,
+                                    state.ui_state.grid_snap_enabled,
                                 );
                             }
                             TouchPhase::Moved => {
@@ -4038,7 +4036,7 @@ impl ApplicationHandler for App {
                                     &mut state.canvas,
                                     world_point,
                                     &state.input,
-                                    state.ui_state.snap_mode,
+                                    state.ui_state.grid_snap_enabled,
                                     state.ui_state.angle_snap_enabled,
                                 );
                             }
@@ -4049,7 +4047,7 @@ impl ApplicationHandler for App {
                                     world_point,
                                     &state.input,
                                     &current_style,
-                                    state.ui_state.snap_mode,
+                                    state.ui_state.grid_snap_enabled,
                                     state.ui_state.angle_snap_enabled,
                                 );
                             }

@@ -1,49 +1,132 @@
-//! Snap functionality for aligning points to grid and shapes.
+//! Snap functionality for aligning points to grid and smart guides.
 
-use kurbo::Point;
+use kurbo::{Point, Rect};
 
 /// Grid size for snapping (matches the visual grid).
 pub const GRID_SIZE: f64 = 20.0;
 
-/// Snap mode for aligning shapes to grid or other elements.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub enum SnapMode {
-    /// No snapping.
-    #[default]
-    None,
-    /// Snap to grid intersections.
-    Grid,
-    /// Snap to other shape edges/corners.
-    Shapes,
-    /// Snap to both grid and shapes.
-    All,
+/// Threshold for smart guide detection (in world units).
+pub const SMART_GUIDE_THRESHOLD: f64 = 8.0;
+
+/// A smart guide line for alignment visualization.
+#[derive(Debug, Clone, Copy)]
+pub struct SmartGuide {
+    /// Type of guide.
+    pub kind: SmartGuideKind,
+    /// Position (x for vertical lines, y for horizontal lines).
+    pub position: f64,
+    /// Start of the guide line.
+    pub start: f64,
+    /// End of the guide line.
+    pub end: f64,
 }
 
-impl SnapMode {
-    /// Cycle to the next snap mode.
-    pub fn next(self) -> Self {
-        match self {
-            SnapMode::None => SnapMode::Grid,
-            SnapMode::Grid => SnapMode::Shapes,
-            SnapMode::Shapes => SnapMode::All,
-            SnapMode::All => SnapMode::None,
+/// Type of smart guide.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SmartGuideKind {
+    /// Vertical alignment line (same x).
+    Vertical,
+    /// Horizontal alignment line (same y).
+    Horizontal,
+    /// Equal spacing indicator.
+    EqualSpacing,
+}
+
+/// Result of smart guide detection.
+#[derive(Debug, Clone, Default)]
+pub struct SmartGuideResult {
+    /// Snapped point.
+    pub point: Point,
+    /// Active guides to render.
+    pub guides: Vec<SmartGuide>,
+    /// Whether x was snapped.
+    pub snapped_x: bool,
+    /// Whether y was snapped.
+    pub snapped_y: bool,
+}
+
+/// Detect smart guides for a dragged bounding box against other shapes.
+pub fn detect_smart_guides(
+    dragged_bounds: Rect,
+    other_bounds: &[Rect],
+    threshold: f64,
+) -> SmartGuideResult {
+    let mut result = SmartGuideResult {
+        point: Point::new(dragged_bounds.x0, dragged_bounds.y0),
+        guides: Vec::new(),
+        snapped_x: false,
+        snapped_y: false,
+    };
+
+    let dragged_cx = (dragged_bounds.x0 + dragged_bounds.x1) / 2.0;
+    let dragged_cy = (dragged_bounds.y0 + dragged_bounds.y1) / 2.0;
+
+    let mut best_dx: Option<(f64, f64)> = None; // (snap_x, guide_x)
+    let mut best_dy: Option<(f64, f64)> = None; // (snap_y, guide_y)
+    let mut best_dist_x = threshold;
+    let mut best_dist_y = threshold;
+
+    for other in other_bounds {
+        let other_cx = (other.x0 + other.x1) / 2.0;
+        let other_cy = (other.y0 + other.y1) / 2.0;
+
+        // Check vertical alignments (x positions)
+        for dragged_x in [
+            dragged_bounds.x0,
+            dragged_bounds.x1,
+            dragged_cx,
+        ] {
+            for other_x in [other.x0, other.x1, other_cx] {
+                let dist = (dragged_x - other_x).abs();
+                if dist < best_dist_x {
+                    best_dist_x = dist;
+                    let snap_x = dragged_bounds.x0 + (other_x - dragged_x);
+                    best_dx = Some((snap_x, other_x));
+                }
+            }
+        }
+
+        // Check horizontal alignments (y positions)
+        for dragged_y in [
+            dragged_bounds.y0,
+            dragged_bounds.y1,
+            dragged_cy,
+        ] {
+            for other_y in [other.y0, other.y1, other_cy] {
+                let dist = (dragged_y - other_y).abs();
+                if dist < best_dist_y {
+                    best_dist_y = dist;
+                    let snap_y = dragged_bounds.y0 + (other_y - dragged_y);
+                    best_dy = Some((snap_y, other_y));
+                }
+            }
         }
     }
 
-    /// Check if grid snapping is enabled.
-    pub fn snaps_to_grid(self) -> bool {
-        matches!(self, SnapMode::Grid | SnapMode::All)
+    // Apply snaps and create guides
+    if let Some((snap_x, guide_x)) = best_dx {
+        result.point.x = snap_x;
+        result.snapped_x = true;
+        result.guides.push(SmartGuide {
+            kind: SmartGuideKind::Vertical,
+            position: guide_x,
+            start: dragged_bounds.y0.min(dragged_bounds.y1) - 20.0,
+            end: dragged_bounds.y0.max(dragged_bounds.y1) + 20.0,
+        });
     }
 
-    /// Check if shape snapping is enabled.
-    pub fn snaps_to_shapes(self) -> bool {
-        matches!(self, SnapMode::Shapes | SnapMode::All)
+    if let Some((snap_y, guide_y)) = best_dy {
+        result.point.y = snap_y;
+        result.snapped_y = true;
+        result.guides.push(SmartGuide {
+            kind: SmartGuideKind::Horizontal,
+            position: guide_y,
+            start: dragged_bounds.x0.min(dragged_bounds.x1) - 20.0,
+            end: dragged_bounds.x0.max(dragged_bounds.x1) + 20.0,
+        });
     }
 
-    /// Check if any snapping is enabled.
-    pub fn is_enabled(self) -> bool {
-        self != SnapMode::None
-    }
+    result
 }
 
 /// Result of a snap operation.
@@ -196,152 +279,12 @@ pub fn snap_to_grid(point: Point, grid_size: f64) -> SnapResult {
     }
 }
 
-/// Snap a point based on the current snap mode (without shape data).
-/// For shape snapping, use `snap_point_with_shapes` instead.
-pub fn snap_point(point: Point, mode: SnapMode, grid_size: f64) -> SnapResult {
-    match mode {
-        SnapMode::None => SnapResult::none(point),
-        SnapMode::Grid => snap_to_grid(point, grid_size),
-        SnapMode::Shapes => SnapResult::none(point), // Need shapes, use snap_point_with_shapes
-        SnapMode::All => snap_to_grid(point, grid_size), // Grid only without shapes
-    }
-}
-
-/// Distance threshold for shape snapping (in world units).
-pub const SHAPE_SNAP_THRESHOLD: f64 = 10.0;
-
-/// A point that can be snapped to on a shape.
-#[derive(Debug, Clone, Copy)]
-pub struct SnapTarget {
-    /// The snap point location.
-    pub point: Point,
-    /// Type of snap target for visual feedback.
-    pub kind: SnapTargetKind,
-}
-
-/// Type of snap target.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum SnapTargetKind {
-    /// Corner/vertex of a shape.
-    Corner,
-    /// Midpoint of an edge.
-    Midpoint,
-    /// Center of a shape.
-    Center,
-    /// Point on an edge.
-    Edge,
-}
-
-/// Collect snap targets from a shape's bounds.
-pub fn get_snap_targets_from_bounds(bounds: kurbo::Rect) -> Vec<SnapTarget> {
-    vec![
-        // Corners
-        SnapTarget {
-            point: Point::new(bounds.x0, bounds.y0),
-            kind: SnapTargetKind::Corner,
-        },
-        SnapTarget {
-            point: Point::new(bounds.x1, bounds.y0),
-            kind: SnapTargetKind::Corner,
-        },
-        SnapTarget {
-            point: Point::new(bounds.x1, bounds.y1),
-            kind: SnapTargetKind::Corner,
-        },
-        SnapTarget {
-            point: Point::new(bounds.x0, bounds.y1),
-            kind: SnapTargetKind::Corner,
-        },
-        // Edge midpoints
-        SnapTarget {
-            point: Point::new((bounds.x0 + bounds.x1) / 2.0, bounds.y0),
-            kind: SnapTargetKind::Midpoint,
-        },
-        SnapTarget {
-            point: Point::new(bounds.x1, (bounds.y0 + bounds.y1) / 2.0),
-            kind: SnapTargetKind::Midpoint,
-        },
-        SnapTarget {
-            point: Point::new((bounds.x0 + bounds.x1) / 2.0, bounds.y1),
-            kind: SnapTargetKind::Midpoint,
-        },
-        SnapTarget {
-            point: Point::new(bounds.x0, (bounds.y0 + bounds.y1) / 2.0),
-            kind: SnapTargetKind::Midpoint,
-        },
-        // Center
-        SnapTarget {
-            point: Point::new((bounds.x0 + bounds.x1) / 2.0, (bounds.y0 + bounds.y1) / 2.0),
-            kind: SnapTargetKind::Center,
-        },
-    ]
-}
-
-/// Collect snap targets from line endpoints.
-pub fn get_snap_targets_from_line(start: Point, end: Point) -> Vec<SnapTarget> {
-    vec![
-        SnapTarget {
-            point: start,
-            kind: SnapTargetKind::Corner,
-        },
-        SnapTarget {
-            point: end,
-            kind: SnapTargetKind::Corner,
-        },
-        SnapTarget {
-            point: Point::new((start.x + end.x) / 2.0, (start.y + end.y) / 2.0),
-            kind: SnapTargetKind::Midpoint,
-        },
-    ]
-}
-
-/// Snap a point to the nearest shape snap target.
-pub fn snap_to_shapes(point: Point, targets: &[SnapTarget], threshold: f64) -> SnapResult {
-    let mut best_target: Option<&SnapTarget> = None;
-    let mut best_dist_sq = threshold * threshold;
-
-    for target in targets {
-        let dx = point.x - target.point.x;
-        let dy = point.y - target.point.y;
-        let dist_sq = dx * dx + dy * dy;
-
-        if dist_sq < best_dist_sq {
-            best_dist_sq = dist_sq;
-            best_target = Some(target);
-        }
-    }
-
-    if let Some(target) = best_target {
-        SnapResult {
-            point: target.point,
-            snapped_x: true,
-            snapped_y: true,
-        }
+/// Snap a point to grid if enabled.
+pub fn snap_point(point: Point, grid_enabled: bool, grid_size: f64) -> SnapResult {
+    if grid_enabled {
+        snap_to_grid(point, grid_size)
     } else {
         SnapResult::none(point)
-    }
-}
-
-/// Snap a point based on the current snap mode with shape targets.
-pub fn snap_point_with_shapes(
-    point: Point,
-    mode: SnapMode,
-    grid_size: f64,
-    shape_targets: &[SnapTarget],
-) -> SnapResult {
-    match mode {
-        SnapMode::None => SnapResult::none(point),
-        SnapMode::Grid => snap_to_grid(point, grid_size),
-        SnapMode::Shapes => snap_to_shapes(point, shape_targets, SHAPE_SNAP_THRESHOLD),
-        SnapMode::All => {
-            // Try shape snap first (higher priority), then grid
-            let shape_result = snap_to_shapes(point, shape_targets, SHAPE_SNAP_THRESHOLD);
-            if shape_result.is_snapped() {
-                shape_result
-            } else {
-                snap_to_grid(point, grid_size)
-            }
-        }
     }
 }
 
@@ -616,27 +559,6 @@ mod tests {
     fn test_snap_to_grid_round_up() {
         let result = snap_to_grid(Point::new(31.0, 51.0), 20.0);
         assert_eq!(result.point, Point::new(40.0, 60.0));
-    }
-
-    #[test]
-    fn test_snap_mode_cycle() {
-        assert_eq!(SnapMode::None.next(), SnapMode::Grid);
-        assert_eq!(SnapMode::Grid.next(), SnapMode::Shapes);
-        assert_eq!(SnapMode::Shapes.next(), SnapMode::All);
-        assert_eq!(SnapMode::All.next(), SnapMode::None);
-    }
-
-    #[test]
-    fn test_snap_mode_flags() {
-        assert!(!SnapMode::None.snaps_to_grid());
-        assert!(SnapMode::Grid.snaps_to_grid());
-        assert!(!SnapMode::Shapes.snaps_to_grid());
-        assert!(SnapMode::All.snaps_to_grid());
-
-        assert!(!SnapMode::None.snaps_to_shapes());
-        assert!(!SnapMode::Grid.snaps_to_shapes());
-        assert!(SnapMode::Shapes.snaps_to_shapes());
-        assert!(SnapMode::All.snaps_to_shapes());
     }
 
     #[test]
