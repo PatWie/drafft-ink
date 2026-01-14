@@ -1174,7 +1174,7 @@
         },
         "content": "Welcome to Drafft.Ink",
         "font_size": 36.0,
-        "font_family": "NotoSans",
+        "font_family": "VanillaExtract",
         "font_weight": "Regular",
         "rotation": 0.0,
         "style": {
@@ -1553,7 +1553,7 @@
         },
         "content": "Select a font",
         "font_size": 20.0,
-        "font_family": "NotoSans",
+        "font_family": "VanillaExtract",
         "font_weight": "Light",
         "rotation": 0.0,
         "style": {

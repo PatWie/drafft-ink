@@ -26,6 +26,8 @@ pub struct PngRenderResult {
 static GELPEN_REGULAR: &[u8] = include_bytes!("../assets/GelPen.ttf");
 static GELPEN_LIGHT: &[u8] = include_bytes!("../assets/GelPenLight.ttf");
 static GELPEN_HEAVY: &[u8] = include_bytes!("../assets/GelPenHeavy.ttf");
+/// Embedded VanillaExtract font
+static VANILLA_EXTRACT: &[u8] = include_bytes!("../assets/VanillaExtract.ttf");
 /// Embedded GelPenSerif fonts for handwritten style
 static GELPEN_SERIF_LIGHT: &[u8] = include_bytes!("../assets/GelPenSerifLight.ttf");
 static GELPEN_SERIF_MEDIUM: &[u8] = include_bytes!("../assets/GelPenSerifMedium.ttf");
@@ -297,6 +299,10 @@ impl VelloRenderer {
         );
         font_cx.collection.register_fonts(
             vello::peniko::Blob::new(std::sync::Arc::new(GELPEN_HEAVY)),
+            None,
+        );
+        font_cx.collection.register_fonts(
+            vello::peniko::Blob::new(std::sync::Arc::new(VANILLA_EXTRACT)),
             None,
         );
         font_cx.collection.register_fonts(
@@ -738,6 +744,9 @@ impl VelloRenderer {
             (FontFamily::GelPenSerif, FontWeight::Heavy) => {
                 ("GelPenSerifHeavy", parley::FontWeight::NORMAL, false)
             }
+            (FontFamily::VanillaExtract, _) => {
+                ("Vanilla Extract", parley::FontWeight::NORMAL, false)
+            }
         };
 
         // Build the layout using cached font context
@@ -1083,6 +1092,9 @@ impl VelloRenderer {
             }
             (ShapeFontFamily::GelPenSerif, FontWeight::Heavy) => {
                 ("GelPenSerifHeavy", parley::FontWeight::NORMAL, false)
+            }
+            (ShapeFontFamily::VanillaExtract, _) => {
+                ("Vanilla Extract", parley::FontWeight::NORMAL, false)
             }
         };
 

@@ -2502,7 +2502,8 @@ impl ApplicationHandler for App {
                                 let family = match family_idx {
                                     0 => FontFamily::GelPen,
                                     1 => FontFamily::NotoSans,
-                                    _ => FontFamily::GelPenSerif,
+                                    2 => FontFamily::GelPenSerif,
+                                    _ => FontFamily::VanillaExtract,
                                 };
                                 for &shape_id in &state.canvas.selection.clone() {
                                     if let Some(Shape::Text(text)) =

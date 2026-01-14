@@ -603,6 +603,7 @@ fn font_family_to_i64(f: FontFamily) -> i64 {
         FontFamily::GelPen => 0,
         FontFamily::NotoSans => 1,
         FontFamily::GelPenSerif => 2,
+        FontFamily::VanillaExtract => 3,
     }
 }
 
@@ -610,7 +611,8 @@ fn i64_to_font_family(v: i64) -> FontFamily {
     match v {
         0 => FontFamily::GelPen,
         1 => FontFamily::NotoSans,
-        _ => FontFamily::GelPenSerif,
+        2 => FontFamily::GelPenSerif,
+        _ => FontFamily::VanillaExtract,
     }
 }
 

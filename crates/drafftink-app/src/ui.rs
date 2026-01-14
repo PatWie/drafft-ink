@@ -441,7 +441,7 @@ pub enum UiAction {
     /// Set font size for math shapes.
     SetMathFontSize(f32),
     /// Set font family for text shapes.
-    SetFontFamily(u8), // 0 = GelPen, 1 = NotoSans, 2 = GelPenSerif
+    SetFontFamily(u8), // 0 = GelPen, 1 = NotoSans, 2 = GelPenSerif, 3 = VanillaExtract
     /// Set font weight for text shapes.
     SetFontWeight(u8), // 0 = Light, 1 = Regular, 2 = Heavy
     /// Set corner radius for rectangle shapes.
@@ -1301,10 +1301,17 @@ fn render_right_panel(ctx: &Context, props: &SelectedShapeProps) -> Option<UiAct
                                     action = Some(UiAction::SetFontFamily(2));
                                 }
 
-                                let is_noto = props.font_family == FontFamily::NotoSans;
-                                if ToggleButton::new("Noto", is_noto).show(ui) && !is_noto
+                                // TODO: Re-enable Noto Sans once font rendering is finalized
+                                // let is_noto = props.font_family == FontFamily::NotoSans;
+                                // if ToggleButton::new("Noto", is_noto).show(ui) && !is_noto
+                                // {
+                                //     action = Some(UiAction::SetFontFamily(1));
+                                // }
+
+                                let is_vanilla = props.font_family == FontFamily::VanillaExtract;
+                                if ToggleButton::new("Vanilla", is_vanilla).show(ui) && !is_vanilla
                                 {
-                                    action = Some(UiAction::SetFontFamily(1));
+                                    action = Some(UiAction::SetFontFamily(3));
                                 }
                             });
 

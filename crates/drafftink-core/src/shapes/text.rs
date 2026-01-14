@@ -16,6 +16,8 @@ pub enum FontFamily {
     NotoSans,
     /// GelPen Serif handwritten font.
     GelPenSerif,
+    /// Vanilla Extract handwritten font.
+    VanillaExtract,
 }
 
 impl FontFamily {
@@ -25,6 +27,7 @@ impl FontFamily {
             FontFamily::GelPen => "GelPen",
             FontFamily::NotoSans => "Noto Sans",
             FontFamily::GelPenSerif => "GelPen Serif",
+            FontFamily::VanillaExtract => "Vanilla Extract",
         }
     }
 
@@ -34,6 +37,7 @@ impl FontFamily {
             FontFamily::GelPen => "GelPen",
             FontFamily::NotoSans => "Noto",
             FontFamily::GelPenSerif => "GelPen Serif",
+            FontFamily::VanillaExtract => "Vanilla",
         }
     }
 
@@ -43,6 +47,7 @@ impl FontFamily {
             FontFamily::GelPen,
             FontFamily::NotoSans,
             FontFamily::GelPenSerif,
+            FontFamily::VanillaExtract,
         ]
     }
 }
@@ -297,6 +302,8 @@ impl Text {
             (FontFamily::GelPenSerif, FontWeight::Light) => 0.55,
             (FontFamily::GelPenSerif, FontWeight::Regular) => 0.58,
             (FontFamily::GelPenSerif, FontWeight::Heavy) => 0.60,
+            // Vanilla Extract is a handwritten font
+            (FontFamily::VanillaExtract, _) => 0.50,
         };
 
         max_line_len as f64 * self.font_size * char_width_factor
