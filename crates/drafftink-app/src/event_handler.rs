@@ -9,9 +9,9 @@ use drafftink_core::selection::{
 };
 use drafftink_core::shapes::{Freehand, Math, Shape, ShapeId, ShapeStyle, ShapeTrait, Text};
 use drafftink_core::snap::{
-    AngleSnapResult, GRID_SIZE, SMART_GUIDE_THRESHOLD, SmartGuide, SnapResult,
-    detect_smart_guides, detect_smart_guides_for_point, snap_line_endpoint_isometric,
-    snap_ray_to_smart_guides, snap_to_grid,
+    AngleSnapResult, GRID_SIZE, SMART_GUIDE_THRESHOLD, SmartGuide, SnapResult, detect_smart_guides,
+    detect_smart_guides_for_point, snap_line_endpoint_isometric, snap_ray_to_smart_guides,
+    snap_to_grid,
 };
 use drafftink_core::tools::ToolKind;
 use kurbo::{Point, Rect};

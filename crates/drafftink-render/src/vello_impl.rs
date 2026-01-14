@@ -2131,7 +2131,12 @@ impl ShapeRenderer for VelloRenderer {
                     self.render_freehand_with_pressure(freehand, shape_transform);
                 } else {
                     let path = shape.to_path();
-                    self.render_stroke_only(&path, shape.style(), StrokeStyle::Solid, shape_transform);
+                    self.render_stroke_only(
+                        &path,
+                        shape.style(),
+                        StrokeStyle::Solid,
+                        shape_transform,
+                    );
                 }
             }
             Shape::Math(math) => {

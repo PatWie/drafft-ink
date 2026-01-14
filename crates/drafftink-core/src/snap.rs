@@ -117,7 +117,9 @@ pub fn detect_smart_guides(
                 if dist_between < best_dist_x && gap_ab > dragged_w {
                     best_dist_x = dist_between;
                     best_dx = Some((target_between, target_between + dragged_w / 2.0, *a));
-                    result.guides.retain(|g| !matches!(g.kind, SmartGuideKind::EqualSpacingH));
+                    result
+                        .guides
+                        .retain(|g| !matches!(g.kind, SmartGuideKind::EqualSpacingH));
                     let cy = dragged_cy;
                     result.guides.push(SmartGuide {
                         kind: SmartGuideKind::EqualSpacingH,
@@ -139,7 +141,9 @@ pub fn detect_smart_guides(
                 if dist_right < best_dist_x {
                     best_dist_x = dist_right;
                     best_dx = Some((target_right, target_right + dragged_w / 2.0, *b));
-                    result.guides.retain(|g| !matches!(g.kind, SmartGuideKind::EqualSpacingH));
+                    result
+                        .guides
+                        .retain(|g| !matches!(g.kind, SmartGuideKind::EqualSpacingH));
                     let cy = dragged_cy;
                     result.guides.push(SmartGuide {
                         kind: SmartGuideKind::EqualSpacingH,
@@ -161,7 +165,9 @@ pub fn detect_smart_guides(
                 if dist_left < best_dist_x {
                     best_dist_x = dist_left;
                     best_dx = Some((target_left, target_left + dragged_w / 2.0, *a));
-                    result.guides.retain(|g| !matches!(g.kind, SmartGuideKind::EqualSpacingH));
+                    result
+                        .guides
+                        .retain(|g| !matches!(g.kind, SmartGuideKind::EqualSpacingH));
                     let cy = dragged_cy;
                     result.guides.push(SmartGuide {
                         kind: SmartGuideKind::EqualSpacingH,
@@ -188,7 +194,9 @@ pub fn detect_smart_guides(
                 if dist_between < best_dist_y && gap_ab > dragged_h {
                     best_dist_y = dist_between;
                     best_dy = Some((target_between, target_between + dragged_h / 2.0, *a));
-                    result.guides.retain(|g| !matches!(g.kind, SmartGuideKind::EqualSpacingV));
+                    result
+                        .guides
+                        .retain(|g| !matches!(g.kind, SmartGuideKind::EqualSpacingV));
                     let cx = dragged_cx;
                     result.guides.push(SmartGuide {
                         kind: SmartGuideKind::EqualSpacingV,
@@ -210,7 +218,9 @@ pub fn detect_smart_guides(
                 if dist_below < best_dist_y {
                     best_dist_y = dist_below;
                     best_dy = Some((target_below, target_below + dragged_h / 2.0, *b));
-                    result.guides.retain(|g| !matches!(g.kind, SmartGuideKind::EqualSpacingV));
+                    result
+                        .guides
+                        .retain(|g| !matches!(g.kind, SmartGuideKind::EqualSpacingV));
                     let cx = dragged_cx;
                     result.guides.push(SmartGuide {
                         kind: SmartGuideKind::EqualSpacingV,
@@ -232,7 +242,9 @@ pub fn detect_smart_guides(
                 if dist_above < best_dist_y {
                     best_dist_y = dist_above;
                     best_dy = Some((target_above, target_above + dragged_h / 2.0, *a));
-                    result.guides.retain(|g| !matches!(g.kind, SmartGuideKind::EqualSpacingV));
+                    result
+                        .guides
+                        .retain(|g| !matches!(g.kind, SmartGuideKind::EqualSpacingV));
                     let cx = dragged_cx;
                     result.guides.push(SmartGuide {
                         kind: SmartGuideKind::EqualSpacingV,
@@ -346,7 +358,11 @@ pub fn detect_smart_guides_for_point(
     if let Some((snap_y, guide_y, other_x0, other_x1)) = best_dy {
         result.point.y = snap_y;
         result.snapped_y = true;
-        let snapped_x = if result.snapped_x { result.point.x } else { point.x };
+        let snapped_x = if result.snapped_x {
+            result.point.x
+        } else {
+            point.x
+        };
         let min_x = snapped_x.min(other_x0).min(other_x1);
         let max_x = snapped_x.max(other_x0).max(other_x1);
         result.guides.push(SmartGuide {
