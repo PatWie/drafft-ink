@@ -729,12 +729,24 @@ impl VelloRenderer {
         //   - Roboto-Bold.ttf has weight 700 (BOLD)
         // For GelPenSerif: each weight is a separate font family
         let (font_name, parley_weight, is_italic) = match (&text.font_family, &text.font_weight) {
-            (FontFamily::GelPen, FontWeight::Light) => ("GelPenLight", parley::FontWeight::NORMAL, false),
-            (FontFamily::GelPen, FontWeight::Regular) => ("GelPen", parley::FontWeight::NORMAL, false),
-            (FontFamily::GelPen, FontWeight::Heavy) => ("GelPenHeavy", parley::FontWeight::NORMAL, false),
-            (FontFamily::NotoSans, FontWeight::Light) => ("Noto Sans", parley::FontWeight::NORMAL, true),
-            (FontFamily::NotoSans, FontWeight::Regular) => ("Noto Sans", parley::FontWeight::NORMAL, false),
-            (FontFamily::NotoSans, FontWeight::Heavy) => ("Noto Sans", parley::FontWeight::BOLD, false),
+            (FontFamily::GelPen, FontWeight::Light) => {
+                ("GelPenLight", parley::FontWeight::NORMAL, false)
+            }
+            (FontFamily::GelPen, FontWeight::Regular) => {
+                ("GelPen", parley::FontWeight::NORMAL, false)
+            }
+            (FontFamily::GelPen, FontWeight::Heavy) => {
+                ("GelPenHeavy", parley::FontWeight::NORMAL, false)
+            }
+            (FontFamily::NotoSans, FontWeight::Light) => {
+                ("Noto Sans", parley::FontWeight::NORMAL, true)
+            }
+            (FontFamily::NotoSans, FontWeight::Regular) => {
+                ("Noto Sans", parley::FontWeight::NORMAL, false)
+            }
+            (FontFamily::NotoSans, FontWeight::Heavy) => {
+                ("Noto Sans", parley::FontWeight::BOLD, false)
+            }
             (FontFamily::GelPenSerif, FontWeight::Light) => {
                 ("GelPenSerifLight", parley::FontWeight::NORMAL, false)
             }
@@ -1502,14 +1514,24 @@ impl Renderer for VelloRenderer {
             GridStyle::Dots => self.render_grid_dots(viewport, camera_transform, 20.0),
         }
 
-        // Draw all shapes in z-order (skip shape being edited - it's rendered separately)
+        // Compute world-space viewport for culling
+        let world_viewport = Rect::new(
+            -ctx.canvas.camera.offset.x / ctx.canvas.camera.zoom,
+            -ctx.canvas.camera.offset.y / ctx.canvas.camera.zoom,
+            (-ctx.canvas.camera.offset.x + ctx.viewport_size.width) / ctx.canvas.camera.zoom,
+            (-ctx.canvas.camera.offset.y + ctx.viewport_size.height) / ctx.canvas.camera.zoom,
+        );
+
+        // Draw all shapes in z-order (skip shape being edited or off-screen)
         for shape in ctx.canvas.document.shapes_ordered() {
-            // Skip shape being edited (will be rendered with cursor/selection separately)
             if ctx.editing_shape_id == Some(shape.id()) {
                 continue;
             }
-            let is_selected = ctx.canvas.is_selected(shape.id());
-            self.render_shape(shape, camera_transform, is_selected);
+            // Viewport culling
+            if !shape.bounds().intersect(world_viewport).is_zero_area() {
+                let is_selected = ctx.canvas.is_selected(shape.id());
+                self.render_shape(shape, camera_transform, is_selected);
+            }
         }
 
         // Draw preview shape if tool is active
@@ -1610,9 +1632,9 @@ impl VelloRenderer {
         let padding = 3.0 / self.zoom;
 
         // Build text layout using same font as text tool
-        let mut builder =
-            self.layout_cx
-                .ranged_builder(&mut self.font_cx, text, 1.0, false);
+        let mut builder = self
+            .layout_cx
+            .ranged_builder(&mut self.font_cx, text, 1.0, false);
         builder.push_default(StyleProperty::FontSize(font_size));
         builder.push_default(StyleProperty::Brush(Brush::Solid(Color::WHITE)));
         builder.push_default(StyleProperty::FontStack(parley::FontStack::Single(
@@ -1632,16 +1654,20 @@ impl VelloRenderer {
             center.x + text_width / 2.0 + padding,
             center.y + text_height / 2.0 + padding,
         );
-        self.scene.fill(Fill::NonZero, transform, bg_color, None, &rect);
+        self.scene
+            .fill(Fill::NonZero, transform, bg_color, None, &rect);
 
         // Render text - scale down by zoom to match world coords
         let text_x = center.x - text_width / 2.0;
         let text_y = center.y - text_height / 2.0;
-        let text_transform = transform * Affine::translate((text_x, text_y)) * Affine::scale(1.0 / self.zoom);
+        let text_transform =
+            transform * Affine::translate((text_x, text_y)) * Affine::scale(1.0 / self.zoom);
 
         for line in layout.lines() {
             for item in line.items() {
-                let PositionedLayoutItem::GlyphRun(glyph_run) = item else { continue };
+                let PositionedLayoutItem::GlyphRun(glyph_run) = item else {
+                    continue;
+                };
                 let mut x = glyph_run.offset();
                 let y = glyph_run.baseline();
                 let run = glyph_run.run();
@@ -1654,7 +1680,11 @@ impl VelloRenderer {
                         let gx = x + g.x;
                         let gy = y - g.y;
                         x += g.advance;
-                        vello::Glyph { id: g.id, x: gx, y: gy }
+                        vello::Glyph {
+                            id: g.id,
+                            x: gx,
+                            y: gy,
+                        }
                     })
                     .collect();
 
