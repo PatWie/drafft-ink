@@ -1011,6 +1011,10 @@ impl EventHandler {
                 world_point.y - mm.start_point.y,
             );
 
+            // Only apply snapping if cursor moved more than 2px (prevents snap on click)
+            let movement_threshold = 2.0;
+            let has_meaningful_movement = raw_delta.hypot() > movement_threshold;
+
             // For multi-move, use the first shape's bounds as reference for snapping
             let reference_shape = mm.original_shapes.values().next();
             let snap_result = if let Some(ref_shape) = reference_shape {
@@ -1026,34 +1030,40 @@ impl EventHandler {
                 let exclude_ids: Vec<ShapeId> = mm.original_shapes.keys().copied().collect();
                 let mut final_delta = raw_delta;
 
-                // Smart guides
-                if smart_snap_enabled {
-                    let other_bounds: Vec<Rect> = canvas
-                        .document
-                        .shapes_ordered()
-                        .filter(|s| !exclude_ids.contains(&s.id()))
-                        .map(|s| s.bounds())
-                        .collect();
+                // Only apply snapping if there's meaningful movement
+                if has_meaningful_movement {
+                    // Smart guides
+                    if smart_snap_enabled {
+                        let other_bounds: Vec<Rect> = canvas
+                            .document
+                            .shapes_ordered()
+                            .filter(|s| !exclude_ids.contains(&s.id()))
+                            .map(|s| s.bounds())
+                            .collect();
 
-                    let guide_result =
-                        detect_smart_guides(target_bounds, &other_bounds, SMART_GUIDE_THRESHOLD);
-                    if guide_result.snapped_x || guide_result.snapped_y {
-                        final_delta.x += guide_result.point.x - target_bounds.x0;
-                        final_delta.y += guide_result.point.y - target_bounds.y0;
-                        self.smart_guides = guide_result.guides;
+                        let guide_result = detect_smart_guides(
+                            target_bounds,
+                            &other_bounds,
+                            SMART_GUIDE_THRESHOLD,
+                        );
+                        if guide_result.snapped_x || guide_result.snapped_y {
+                            final_delta.x += guide_result.point.x - target_bounds.x0;
+                            final_delta.y += guide_result.point.y - target_bounds.y0;
+                            self.smart_guides = guide_result.guides;
+                        }
                     }
-                }
 
-                // Grid snap (applied after smart guides)
-                if grid_snap_enabled {
-                    let target_pos = Point::new(
-                        original_bounds.x0 + final_delta.x,
-                        original_bounds.y0 + final_delta.y,
-                    );
-                    let snap_result = snap_to_grid(target_pos, GRID_SIZE);
-                    final_delta.x = snap_result.point.x - original_bounds.x0;
-                    final_delta.y = snap_result.point.y - original_bounds.y0;
-                    self.last_snap = Some(snap_result);
+                    // Grid snap (applied after smart guides)
+                    if grid_snap_enabled {
+                        let target_pos = Point::new(
+                            original_bounds.x0 + final_delta.x,
+                            original_bounds.y0 + final_delta.y,
+                        );
+                        let snap_result = snap_to_grid(target_pos, GRID_SIZE);
+                        final_delta.x = snap_result.point.x - original_bounds.x0;
+                        final_delta.y = snap_result.point.y - original_bounds.y0;
+                        self.last_snap = Some(snap_result);
+                    }
                 }
 
                 final_delta
