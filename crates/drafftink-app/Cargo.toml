@@ -88,3 +88,8 @@ console_log.workspace = true
 web-time = "1.1"
 
 [dev-dependencies]
+criterion = "0.5"
+
+[[bench]]
+name = "render_bench"
+harness = false
