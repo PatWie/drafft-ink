@@ -23,7 +23,7 @@ use winit::application::ApplicationHandler;
 use winit::dpi::LogicalSize;
 use winit::event::{ElementState, MouseButton, MouseScrollDelta, WindowEvent};
 use winit::event_loop::{ActiveEventLoop, EventLoop};
-use winit::keyboard::{Key, NamedKey};
+use winit::keyboard::{Key, KeyCode, NamedKey, PhysicalKey};
 use winit::window::{CursorIcon, Window, WindowId};
 
 use crate::event_handler::EventHandler;
@@ -4356,7 +4356,13 @@ impl ApplicationHandler for App {
                 // (Paint-style: press to start, release to finish — uses the
                 // current cursor position). Modifier combos like Ctrl+Space
                 // are left to the regular handler below.
-                if matches!(&event.logical_key, Key::Named(NamedKey::Space))
+                //
+                // Match on `physical_key` (not `logical_key`) so we agree with
+                // `InputState::is_drawing()`, which queries the physical-key
+                // hold state via winit_input_helper. Using the logical key
+                // here would risk the two checks disagreeing on layouts/IMEs
+                // where the space bar's logical output differs.
+                if matches!(event.physical_key, PhysicalKey::Code(KeyCode::Space))
                     && !state.input.ctrl()
                     && !event.repeat
                 {
