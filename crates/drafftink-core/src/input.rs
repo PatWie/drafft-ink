@@ -133,6 +133,12 @@ impl InputState {
         self.helper.mouse_held(button)
     }
 
+    /// True while the user is actively drawing — left mouse button held,
+    /// or SPACE held (virtual left button for Paint-style keyboard drawing).
+    pub fn is_drawing(&self) -> bool {
+        self.helper.mouse_held(MouseButton::Left) || self.helper.key_held(KeyCode::Space)
+    }
+
     pub fn mouse_just_pressed(&self, button: MouseButton) -> bool {
         self.helper.mouse_pressed(button)
     }

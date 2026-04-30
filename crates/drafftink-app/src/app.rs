@@ -23,7 +23,7 @@ use winit::application::ApplicationHandler;
 use winit::dpi::LogicalSize;
 use winit::event::{ElementState, MouseButton, MouseScrollDelta, WindowEvent};
 use winit::event_loop::{ActiveEventLoop, EventLoop};
-use winit::keyboard::{Key, KeyCode, NamedKey};
+use winit::keyboard::{Key, NamedKey};
 use winit::window::{CursorIcon, Window, WindowId};
 
 use crate::event_handler::EventHandler;
@@ -1485,6 +1485,49 @@ struct AppState {
     needs_redraw: bool,
 }
 
+/// Sync the document to CRDT, broadcast to peers, and flush outgoing
+/// messages to the websocket. No-op when not in a room.
+///
+/// Free function (rather than `&mut self` on `AppState`) so callers can
+/// invoke it inside closures that already hold disjoint borrows of other
+/// fields on `AppState` (e.g. inside the egui closure that borrows
+/// `state.egui_ctx`). Pass the fields directly to keep borrows fine-grained.
+#[cfg(not(target_arch = "wasm32"))]
+fn broadcast_doc_changes(
+    collab: &mut CollaborationManager,
+    document: &drafftink_core::canvas::CanvasDocument,
+    websocket: Option<&drafftink_core::sync::NativeWebSocket>,
+) {
+    if !collab.is_in_room() {
+        return;
+    }
+    collab.sync_to_crdt(document);
+    collab.broadcast_sync();
+    if let Some(ws) = websocket {
+        for msg in collab.take_outgoing() {
+            let _ = ws.send(&msg);
+        }
+    }
+}
+
+#[cfg(target_arch = "wasm32")]
+fn broadcast_doc_changes(
+    collab: &mut CollaborationManager,
+    document: &drafftink_core::canvas::CanvasDocument,
+    websocket: Option<&drafftink_core::sync::WasmWebSocket>,
+) {
+    if !collab.is_in_room() {
+        return;
+    }
+    collab.sync_to_crdt(document);
+    collab.broadcast_sync();
+    if let Some(ws) = websocket {
+        for msg in collab.take_outgoing() {
+            let _ = ws.send(&msg);
+        }
+    }
+}
+
 /// Main application struct.
 pub struct App {
     config: AppConfig,
@@ -2316,14 +2359,12 @@ impl ApplicationHandler for App {
                                 // Sync property changes
                                 let has_changes =
                                     applied_to_text_range || !state.canvas.selection.is_empty();
-                                if has_changes && state.collab.is_in_room() {
-                                    state.collab.sync_to_crdt(&state.canvas.document);
-                                    state.collab.broadcast_sync();
-                                    if let Some(ref ws) = state.websocket {
-                                        for msg in state.collab.take_outgoing() {
-                                            let _ = ws.send(&msg);
-                                        }
-                                    }
+                                if has_changes {
+                                    broadcast_doc_changes(
+                                        &mut state.collab,
+                                        &state.canvas.document,
+                                        state.websocket.as_ref(),
+                                    );
                                 }
                             }
                             UiAction::SetFillColor(color) => {
@@ -2338,14 +2379,12 @@ impl ApplicationHandler for App {
                                     }
                                 }
                                 // Sync property changes
-                                if has_selection && state.collab.is_in_room() {
-                                    state.collab.sync_to_crdt(&state.canvas.document);
-                                    state.collab.broadcast_sync();
-                                    if let Some(ref ws) = state.websocket {
-                                        for msg in state.collab.take_outgoing() {
-                                            let _ = ws.send(&msg);
-                                        }
-                                    }
+                                if has_selection {
+                                    broadcast_doc_changes(
+                                        &mut state.collab,
+                                        &state.canvas.document,
+                                        state.websocket.as_ref(),
+                                    );
                                 }
                             }
                             UiAction::SetStrokeWidth(width) => {
@@ -2359,14 +2398,12 @@ impl ApplicationHandler for App {
                                     }
                                 }
                                 // Sync property changes
-                                if has_selection && state.collab.is_in_room() {
-                                    state.collab.sync_to_crdt(&state.canvas.document);
-                                    state.collab.broadcast_sync();
-                                    if let Some(ref ws) = state.websocket {
-                                        for msg in state.collab.take_outgoing() {
-                                            let _ = ws.send(&msg);
-                                        }
-                                    }
+                                if has_selection {
+                                    broadcast_doc_changes(
+                                        &mut state.collab,
+                                        &state.canvas.document,
+                                        state.websocket.as_ref(),
+                                    );
                                 }
                             }
                             UiAction::SaveLocal => {
@@ -2476,15 +2513,11 @@ impl ApplicationHandler for App {
                                     state.canvas.clear_selection();
                                     log::info!("Document cleared");
                                     // Sync changes to collaborators
-                                    if state.collab.is_in_room() {
-                                        state.collab.sync_to_crdt(&state.canvas.document);
-                                        state.collab.broadcast_sync();
-                                        if let Some(ref ws) = state.websocket {
-                                            for msg in state.collab.take_outgoing() {
-                                                let _ = ws.send(&msg);
-                                            }
-                                        }
-                                    }
+                                    broadcast_doc_changes(
+                                        &mut state.collab,
+                                        &state.canvas.document,
+                                        state.websocket.as_ref(),
+                                    );
                                 }
                             }
                             UiAction::ShowIntro => {
@@ -2616,14 +2649,12 @@ impl ApplicationHandler for App {
                                     }
                                 }
                                 // Sync property changes
-                                if has_selection && state.collab.is_in_room() {
-                                    state.collab.sync_to_crdt(&state.canvas.document);
-                                    state.collab.broadcast_sync();
-                                    if let Some(ref ws) = state.websocket {
-                                        for msg in state.collab.take_outgoing() {
-                                            let _ = ws.send(&msg);
-                                        }
-                                    }
+                                if has_selection {
+                                    broadcast_doc_changes(
+                                        &mut state.collab,
+                                        &state.canvas.document,
+                                        state.websocket.as_ref(),
+                                    );
                                 }
                             }
                             UiAction::SetExportScale(scale) => {
@@ -2651,14 +2682,12 @@ impl ApplicationHandler for App {
                                 }
                                 log::info!("Sloppiness: {:?}", sloppiness);
                                 // Sync property changes
-                                if has_selection && state.collab.is_in_room() {
-                                    state.collab.sync_to_crdt(&state.canvas.document);
-                                    state.collab.broadcast_sync();
-                                    if let Some(ref ws) = state.websocket {
-                                        for msg in state.collab.take_outgoing() {
-                                            let _ = ws.send(&msg);
-                                        }
-                                    }
+                                if has_selection {
+                                    broadcast_doc_changes(
+                                        &mut state.collab,
+                                        &state.canvas.document,
+                                        state.websocket.as_ref(),
+                                    );
                                 }
                             }
                             UiAction::SetFillPattern(level) => {
@@ -2682,14 +2711,12 @@ impl ApplicationHandler for App {
                                     }
                                 }
                                 log::info!("Fill pattern: {:?}", fill_pattern);
-                                if has_selection && state.collab.is_in_room() {
-                                    state.collab.sync_to_crdt(&state.canvas.document);
-                                    state.collab.broadcast_sync();
-                                    if let Some(ref ws) = state.websocket {
-                                        for msg in state.collab.take_outgoing() {
-                                            let _ = ws.send(&msg);
-                                        }
-                                    }
+                                if has_selection {
+                                    broadcast_doc_changes(
+                                        &mut state.collab,
+                                        &state.canvas.document,
+                                        state.websocket.as_ref(),
+                                    );
                                 }
                             }
                             UiAction::SetPathStyle(level) => {
@@ -2727,14 +2754,12 @@ impl ApplicationHandler for App {
                                 }
                                 log::info!("PathStyle: {:?}", path_style);
                                 // Sync property changes
-                                if has_selection && state.collab.is_in_room() {
-                                    state.collab.sync_to_crdt(&state.canvas.document);
-                                    state.collab.broadcast_sync();
-                                    if let Some(ref ws) = state.websocket {
-                                        for msg in state.collab.take_outgoing() {
-                                            let _ = ws.send(&msg);
-                                        }
-                                    }
+                                if has_selection {
+                                    broadcast_doc_changes(
+                                        &mut state.collab,
+                                        &state.canvas.document,
+                                        state.websocket.as_ref(),
+                                    );
                                 }
                             }
                             UiAction::SetStrokeStyle(level) => {
@@ -2763,14 +2788,12 @@ impl ApplicationHandler for App {
                                 }
                                 log::info!("StrokeStyle: {:?}", stroke_style);
                                 // Sync property changes
-                                if has_selection && state.collab.is_in_room() {
-                                    state.collab.sync_to_crdt(&state.canvas.document);
-                                    state.collab.broadcast_sync();
-                                    if let Some(ref ws) = state.websocket {
-                                        for msg in state.collab.take_outgoing() {
-                                            let _ = ws.send(&msg);
-                                        }
-                                    }
+                                if has_selection {
+                                    broadcast_doc_changes(
+                                        &mut state.collab,
+                                        &state.canvas.document,
+                                        state.websocket.as_ref(),
+                                    );
                                 }
                             }
                             UiAction::Undo => {
@@ -2778,15 +2801,11 @@ impl ApplicationHandler for App {
                                     state.canvas.clear_selection();
                                     log::info!("Undo performed");
                                     // Sync changes to collaborators
-                                    if state.collab.is_in_room() {
-                                        state.collab.sync_to_crdt(&state.canvas.document);
-                                        state.collab.broadcast_sync();
-                                        if let Some(ref ws) = state.websocket {
-                                            for msg in state.collab.take_outgoing() {
-                                                let _ = ws.send(&msg);
-                                            }
-                                        }
-                                    }
+                                    broadcast_doc_changes(
+                                        &mut state.collab,
+                                        &state.canvas.document,
+                                        state.websocket.as_ref(),
+                                    );
                                 } else {
                                     log::info!("Nothing to undo");
                                 }
@@ -2796,15 +2815,11 @@ impl ApplicationHandler for App {
                                     state.canvas.clear_selection();
                                     log::info!("Redo performed");
                                     // Sync changes to collaborators
-                                    if state.collab.is_in_room() {
-                                        state.collab.sync_to_crdt(&state.canvas.document);
-                                        state.collab.broadcast_sync();
-                                        if let Some(ref ws) = state.websocket {
-                                            for msg in state.collab.take_outgoing() {
-                                                let _ = ws.send(&msg);
-                                            }
-                                        }
-                                    }
+                                    broadcast_doc_changes(
+                                        &mut state.collab,
+                                        &state.canvas.document,
+                                        state.websocket.as_ref(),
+                                    );
                                 } else {
                                     log::info!("Nothing to redo");
                                 }
@@ -3753,9 +3768,7 @@ impl ApplicationHandler for App {
                 let world_point = state.canvas.camera.screen_to_world(point);
 
                 // Update cursor based on hover position (only when not dragging)
-                if !state.input.is_button_pressed(MouseButton::Left)
-                    && !state.input.is_key_pressed(KeyCode::Space)
-                {
+                if !state.input.is_drawing() {
                     use drafftink_core::selection::{Corner, HandleKind};
                     let cursor = match state
                         .event_handler
@@ -3799,9 +3812,7 @@ impl ApplicationHandler for App {
 
                 // Handle dragging (manipulation or shape drawing).
                 // SPACE acts as a virtual left mouse button (Paint-style draw).
-                if state.input.is_button_pressed(MouseButton::Left)
-                    || state.input.is_key_pressed(KeyCode::Space)
-                {
+                if state.input.is_drawing() {
                     // Handle text selection dragging first
                     if let Some(text_id) = state.event_handler.editing_text {
                         if let Some(Shape::Text(text)) = state.canvas.document.get_shape(text_id) {
@@ -3832,14 +3843,12 @@ impl ApplicationHandler for App {
                             unsafe {
                                 DRAG_SYNC_FRAME = DRAG_SYNC_FRAME.wrapping_add(1);
                                 // Sync every 10 frames (~6 times per second at 60fps)
-                                if DRAG_SYNC_FRAME % 10 == 0 && state.collab.is_in_room() {
-                                    state.collab.sync_to_crdt(&state.canvas.document);
-                                    state.collab.broadcast_sync();
-                                    if let Some(ref ws) = state.websocket {
-                                        for msg in state.collab.take_outgoing() {
-                                            let _ = ws.send(&msg);
-                                        }
-                                    }
+                                if DRAG_SYNC_FRAME % 10 == 0 {
+                                    broadcast_doc_changes(
+                                        &mut state.collab,
+                                        &state.canvas.document,
+                                        state.websocket.as_ref(),
+                                    );
                                 }
                             }
                         }
@@ -4041,15 +4050,11 @@ impl ApplicationHandler for App {
                             );
 
                             // Broadcast document changes to collaborators
-                            if state.collab.is_in_room() {
-                                state.collab.sync_to_crdt(&state.canvas.document);
-                                state.collab.broadcast_sync();
-                                if let Some(ref ws) = state.websocket {
-                                    for msg in state.collab.take_outgoing() {
-                                        let _ = ws.send(&msg);
-                                    }
-                                }
-                            }
+                            broadcast_doc_changes(
+                                &mut state.collab,
+                                &state.canvas.document,
+                                state.websocket.as_ref(),
+                            );
 
                             // Clear snap guides when done dragging
                             state.event_handler.clear_snap();
@@ -4378,15 +4383,11 @@ impl ApplicationHandler for App {
                                 state.ui_state.angle_snap_enabled,
                             );
 
-                            if state.collab.is_in_room() {
-                                state.collab.sync_to_crdt(&state.canvas.document);
-                                state.collab.broadcast_sync();
-                                if let Some(ref ws) = state.websocket {
-                                    for msg in state.collab.take_outgoing() {
-                                        let _ = ws.send(&msg);
-                                    }
-                                }
-                            }
+                            broadcast_doc_changes(
+                                &mut state.collab,
+                                &state.canvas.document,
+                                state.websocket.as_ref(),
+                            );
 
                             state.event_handler.clear_snap();
                         }
