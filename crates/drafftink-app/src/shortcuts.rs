@@ -63,6 +63,12 @@ impl ShortcutRegistry {
             Shortcut::new("Backspace", false, false, "Delete selected shapes"),
             Shortcut::new("Escape", false, false, "Cancel current action"),
             Shortcut::new(
+                "Space",
+                false,
+                false,
+                "Draw / click at cursor (hold like the left mouse button)",
+            ),
+            Shortcut::new(
                 "Shift+Drag",
                 false,
                 false,

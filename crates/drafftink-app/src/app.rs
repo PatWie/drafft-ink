@@ -23,7 +23,7 @@ use winit::application::ApplicationHandler;
 use winit::dpi::LogicalSize;
 use winit::event::{ElementState, MouseButton, MouseScrollDelta, WindowEvent};
 use winit::event_loop::{ActiveEventLoop, EventLoop};
-use winit::keyboard::{Key, NamedKey};
+use winit::keyboard::{Key, KeyCode, NamedKey};
 use winit::window::{CursorIcon, Window, WindowId};
 
 use crate::event_handler::EventHandler;
@@ -3753,7 +3753,9 @@ impl ApplicationHandler for App {
                 let world_point = state.canvas.camera.screen_to_world(point);
 
                 // Update cursor based on hover position (only when not dragging)
-                if !state.input.is_button_pressed(MouseButton::Left) {
+                if !state.input.is_button_pressed(MouseButton::Left)
+                    && !state.input.is_key_pressed(KeyCode::Space)
+                {
                     use drafftink_core::selection::{Corner, HandleKind};
                     let cursor = match state
                         .event_handler
@@ -3795,8 +3797,11 @@ impl ApplicationHandler for App {
                     }
                 }
 
-                // Handle dragging (manipulation or shape drawing)
-                if state.input.is_button_pressed(MouseButton::Left) {
+                // Handle dragging (manipulation or shape drawing).
+                // SPACE acts as a virtual left mouse button (Paint-style draw).
+                if state.input.is_button_pressed(MouseButton::Left)
+                    || state.input.is_key_pressed(KeyCode::Space)
+                {
                     // Handle text selection dragging first
                     if let Some(text_id) = state.event_handler.editing_text {
                         if let Some(Shape::Text(text)) = state.canvas.document.get_shape(text_id) {
@@ -4337,6 +4342,56 @@ impl ApplicationHandler for App {
                             log::debug!("Text edit: unhandled key {:?}", event.logical_key);
                         }
                     }
+                    state.needs_redraw = true;
+                    state.window.request_redraw();
+                    return;
+                }
+
+                // SPACE behaves like the left mouse button for drawing
+                // (Paint-style: press to start, release to finish — uses the
+                // current cursor position). Modifier combos like Ctrl+Space
+                // are left to the regular handler below.
+                if matches!(&event.logical_key, Key::Named(NamedKey::Space))
+                    && !state.input.ctrl()
+                    && !event.repeat
+                {
+                    let position = state.input.mouse_position();
+                    let world_point = state.canvas.camera.screen_to_world(position);
+
+                    match event.state {
+                        ElementState::Pressed => {
+                            state.event_handler.handle_press(
+                                &mut state.canvas,
+                                world_point,
+                                &state.input,
+                                state.ui_state.grid_snap_enabled,
+                            );
+                        }
+                        ElementState::Released => {
+                            let current_style = state.ui_state.to_shape_style();
+                            state.event_handler.handle_release(
+                                &mut state.canvas,
+                                world_point,
+                                &state.input,
+                                &current_style,
+                                state.ui_state.grid_snap_enabled,
+                                state.ui_state.angle_snap_enabled,
+                            );
+
+                            if state.collab.is_in_room() {
+                                state.collab.sync_to_crdt(&state.canvas.document);
+                                state.collab.broadcast_sync();
+                                if let Some(ref ws) = state.websocket {
+                                    for msg in state.collab.take_outgoing() {
+                                        let _ = ws.send(&msg);
+                                    }
+                                }
+                            }
+
+                            state.event_handler.clear_snap();
+                        }
+                    }
+
                     state.needs_redraw = true;
                     state.window.request_redraw();
                     return;
