@@ -1273,11 +1273,11 @@ checksum = "d8b14ccef22fc6f5a8f4d7d768562a182c04ce9a3b3157b91390b52ddfdf1a76"
 
 [[package]]
 name = "drafftink"
-version = "0.1.0"
+version = "0.1.1"
 
 [[package]]
 name = "drafftink-app"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "arboard",
  "console_error_panic_hook",
@@ -1311,7 +1311,7 @@ dependencies = [
 
 [[package]]
 name = "drafftink-core"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "base64",
  "dirs",
@@ -1340,7 +1340,7 @@ dependencies = [
 
 [[package]]
 name = "drafftink-render"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "drafftink-core",
  "image",
@@ -1357,7 +1357,7 @@ dependencies = [
 
 [[package]]
 name = "drafftink-server"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "axum",
  "bytes",
@@ -1375,7 +1375,7 @@ dependencies = [
 
 [[package]]
 name = "drafftink-widgets"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "egui",
 ]
