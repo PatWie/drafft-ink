@@ -1,0 +1,12 @@
+# Quarantine age-gate allowlist.
+#
+# Lines here exempt dependencies from the supply-chain cooldown enforced by
+# utils/quarantine_check.py. Use sparingly and only after reviewing the crate.
+#
+# Format (one entry per line, '#' starts a comment):
+#   crate-name            exempts every version of the crate
+#   crate-name==1.2.3     exempts only that exact version
+#
+# Prefer pinning an older compatible version over adding an exemption. When an
+# exemption is unavoidable (e.g. a security fix you must adopt immediately),
+# record why in a comment and remove it once the version clears the window.

@@ -12,6 +12,31 @@ env:
   RUST_BACKTRACE: 1
 
 jobs:
+  quarantine:
+    name: Dependency Age Gate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+
+      # Publish dates are immutable, so persist the cache across runs keyed by
+      # Cargo.lock. A changed lockfile restores the prior cache and only fetches
+      # the newly introduced versions.
+      - name: Cache publish dates
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/drafftink-quarantine
+          key: ${{ runner.os }}-quarantine-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-quarantine-
+
+      - name: Enforce dependency cooldown
+        run: python3 utils/quarantine_check.py --min-age-days 7
+
   check:
     name: Check
     runs-on: ubuntu-latest
