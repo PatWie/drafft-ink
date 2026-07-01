@@ -8,6 +8,7 @@ pub mod collaboration;
 pub mod crdt;
 pub mod elbow;
 pub mod input;
+pub mod mermaid;
 pub mod selection;
 pub mod shapes;
 pub mod snap;
@@ -21,6 +22,7 @@ pub use canvas::Canvas;
 pub use collaboration::CollaborationManager;
 pub use crdt::CrdtDocument;
 pub use input::InputState;
+pub use mermaid::shapes_from_mermaid;
 pub use selection::{ManipulationState, MultiMoveState};
 pub use snap::{
     ENDPOINT_SNAP_RADIUS, EQUAL_SPACING_SNAP_RADIUS, GRID_SIZE, MULTI_MOVE_SNAP_RADIUS,

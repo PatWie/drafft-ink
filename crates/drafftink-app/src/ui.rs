@@ -416,6 +416,8 @@ pub enum UiAction {
     DownloadDocument,
     /// Upload document from JSON file (WASM only, same as LoadDocument on native).
     UploadDocument,
+    /// Import a Mermaid diagram from the clipboard as native, editable shapes.
+    ImportMermaidFromClipboard,
     /// Export document as PNG file.
     ExportPng,
     /// Copy selection to clipboard as PNG.
@@ -1856,11 +1858,17 @@ fn render_file_menu(ctx: &Context, ui_state: &mut UiState) -> Option<UiAction> {
                             widgets_menu_separator(ui);
                         }
 
+                        if menu_item(ui, "Import Mermaid (Clipboard)", "") {
+                            action = Some(UiAction::ImportMermaidFromClipboard);
+                            ui_state.menu_open = false;
+                        }
+
+                        widgets_menu_separator(ui);
+
                         if menu_item(ui, "Export PNG", "Ctrl+E") {
                             action = Some(UiAction::ExportPng);
                             ui_state.menu_open = false;
                         }
-
                         // Copy as PNG (show disabled state if no selection)
                         if menu_item_enabled(ui, "Copy as PNG", "Ctrl+Shift+C", has_selection) {
                             action = Some(UiAction::CopyPng);

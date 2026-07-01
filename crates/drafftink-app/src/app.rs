@@ -816,14 +816,16 @@ pub mod file_ops {
         static PENDING_EXCALIDRAW_SHAPES: RefCell<Option<(Vec<drafftink_core::shapes::Shape>, kurbo::Point)>> = const { RefCell::new(None) };
     }
 
-    /// Try to paste shapes from clipboard text (Excalidraw format).
-    /// The result will be available via `take_pending_excalidraw_shapes()`.
+    /// Try to import shapes from clipboard text: Excalidraw scene JSON first,
+    /// then Mermaid diagram source. The result will be available via
+    /// `take_pending_excalidraw_shapes()`.
     pub fn paste_shapes_from_clipboard_async(cursor_world: kurbo::Point) {
         wasm_bindgen_futures::spawn_local(async move {
             if let Some(text) = read_clipboard_text_async().await {
-                if let Some(shapes) =
+                let shapes =
                     drafftink_core::canvas::CanvasDocument::shapes_from_excalidraw_clipboard(&text)
-                {
+                        .or_else(|| drafftink_core::shapes_from_mermaid(&text));
+                if let Some(shapes) = shapes {
                     PENDING_EXCALIDRAW_SHAPES.with(|cell| {
                         *cell.borrow_mut() = Some((shapes, cursor_world));
                     });
@@ -1528,6 +1530,54 @@ fn broadcast_doc_changes(
     }
 }
 
+/// Place a freshly imported/pasted set of shapes onto the canvas, centered on a
+/// world-space point, as a single undoable operation that also selects the
+/// result and mirrors it to collaborators.
+///
+/// Factored out so the several paste/import entry points (internal clipboard,
+/// Excalidraw, Mermaid, and the async WASM path) share one implementation of
+/// the "recenter, add, select, broadcast" sequence rather than duplicating it.
+fn place_shapes_centered_at(
+    canvas: &mut Canvas,
+    collab: &mut CollaborationManager,
+    shapes: Vec<Shape>,
+    center_world: Point,
+) {
+    if shapes.is_empty() {
+        return;
+    }
+
+    // Recenter the group's bounding box on the requested point.
+    let bounds = shapes.iter().fold(
+        kurbo::Rect::new(f64::MAX, f64::MAX, f64::MIN, f64::MIN),
+        |acc, s| {
+            let b = s.bounds();
+            kurbo::Rect::new(
+                acc.x0.min(b.x0),
+                acc.y0.min(b.y0),
+                acc.x1.max(b.x1),
+                acc.y1.max(b.y1),
+            )
+        },
+    );
+    let offset = Vec2::new(
+        center_world.x - (bounds.x0 + bounds.x1) / 2.0,
+        center_world.y - (bounds.y0 + bounds.y1) / 2.0,
+    );
+
+    canvas.document.push_undo();
+    canvas.clear_selection();
+    for mut shape in shapes {
+        shape.transform(kurbo::Affine::translate(offset));
+        let new_id = shape.id();
+        canvas.document.add_shape(shape.clone());
+        canvas.add_to_selection(new_id);
+        if collab.is_in_room() {
+            let _ = collab.crdt_mut().add_shape(&shape);
+        }
+    }
+}
+
 /// Main application struct.
 pub struct App {
     config: AppConfig,
@@ -2011,38 +2061,17 @@ impl ApplicationHandler for App {
                     state.needs_redraw = true;
                 }
 
-                // Check for pending Excalidraw shapes from clipboard (WASM)
+                // Check for pending imported shapes from clipboard text
+                // (Excalidraw or Mermaid) resolved by the async WASM reader.
                 #[cfg(target_arch = "wasm32")]
                 if let Some((shapes, cursor_world)) = file_ops::take_pending_excalidraw_shapes() {
-                    // Center pasted shapes at mouse cursor
-                    let group_bounds = shapes.iter().fold(
-                        kurbo::Rect::new(f64::MAX, f64::MAX, f64::MIN, f64::MIN),
-                        |acc, s| {
-                            let b = s.bounds();
-                            kurbo::Rect::new(
-                                acc.x0.min(b.x0),
-                                acc.y0.min(b.y0),
-                                acc.x1.max(b.x1),
-                                acc.y1.max(b.y1),
-                            )
-                        },
+                    place_shapes_centered_at(
+                        &mut state.canvas,
+                        &mut state.collab,
+                        shapes,
+                        cursor_world,
                     );
-                    let offset = Vec2::new(
-                        cursor_world.x - (group_bounds.x0 + group_bounds.x1) / 2.0,
-                        cursor_world.y - (group_bounds.y0 + group_bounds.y1) / 2.0,
-                    );
-                    state.canvas.document.push_undo();
-                    state.canvas.clear_selection();
-                    for mut shape in shapes {
-                        shape.transform(kurbo::Affine::translate(offset));
-                        let new_id = shape.id();
-                        state.canvas.document.add_shape(shape.clone());
-                        state.canvas.add_to_selection(new_id);
-                        if state.collab.is_in_room() {
-                            let _ = state.collab.crdt_mut().add_shape(&shape);
-                        }
-                    }
-                    log::info!("Pasted shapes from Excalidraw clipboard");
+                    log::info!("Imported shapes from clipboard text");
                     state.needs_redraw = true;
                 }
 
@@ -2505,6 +2534,41 @@ impl ApplicationHandler for App {
                                 {
                                     file_ops::load_document();
                                 }
+                            }
+                            UiAction::ImportMermaidFromClipboard => {
+                                // Import a Mermaid diagram from the clipboard as
+                                // native, editable shapes, centered in the
+                                // current viewport.
+                                let center_world =
+                                    state.canvas.camera.screen_to_world(kurbo::Point::new(
+                                        state.canvas.viewport_size.width / 2.0,
+                                        state.canvas.viewport_size.height / 2.0,
+                                    ));
+                                #[cfg(not(target_arch = "wasm32"))]
+                                {
+                                    let text = arboard::Clipboard::new()
+                                        .ok()
+                                        .and_then(|mut cb| cb.get_text().ok());
+                                    match text
+                                        .as_deref()
+                                        .and_then(drafftink_core::shapes_from_mermaid)
+                                    {
+                                        Some(shapes) => {
+                                            place_shapes_centered_at(
+                                                &mut state.canvas,
+                                                &mut state.collab,
+                                                shapes,
+                                                center_world,
+                                            );
+                                            log::info!("Imported Mermaid diagram from clipboard");
+                                        }
+                                        None => log::info!(
+                                            "Clipboard did not contain a recognized Mermaid diagram"
+                                        ),
+                                    }
+                                }
+                                #[cfg(target_arch = "wasm32")]
+                                file_ops::paste_shapes_from_clipboard_async(center_world);
                             }
                             UiAction::ClearDocument => {
                                 if !state.canvas.document.is_empty() {
@@ -4786,39 +4850,36 @@ impl ApplicationHandler for App {
                                         }
                                     }
 
-                                    // Try Excalidraw clipboard format from system clipboard (native)
+                                    // Try structured text formats from the
+                                    // system clipboard (native): Excalidraw
+                                    // scene JSON first, then Mermaid diagram
+                                    // source. Both import as native shapes
+                                    // centered on the mouse cursor.
                                     #[cfg(not(target_arch = "wasm32"))]
                                     if !pasted {
                                         if let Ok(mut cb) = arboard::Clipboard::new() {
                                             if let Ok(text) = cb.get_text() {
+                                                let cursor_world = state
+                                                    .canvas
+                                                    .camera
+                                                    .screen_to_world(state.input.mouse_position());
                                                 if let Some(shapes) = drafftink_core::canvas::CanvasDocument::shapes_from_excalidraw_clipboard(&text) {
-                                                    // Center pasted shapes at mouse cursor
-                                                    let cursor_world = state.canvas.camera.screen_to_world(
-                                                        state.input.mouse_position(),
+                                                    place_shapes_centered_at(
+                                                        &mut state.canvas,
+                                                        &mut state.collab,
+                                                        shapes,
+                                                        cursor_world,
                                                     );
-                                                    let group_bounds = shapes.iter().fold(
-                                                        kurbo::Rect::new(f64::MAX, f64::MAX, f64::MIN, f64::MIN),
-                                                        |acc, s| {
-                                                            let b = s.bounds();
-                                                            kurbo::Rect::new(acc.x0.min(b.x0), acc.y0.min(b.y0), acc.x1.max(b.x1), acc.y1.max(b.y1))
-                                                        },
-                                                    );
-                                                    let offset = kurbo::Vec2::new(
-                                                        cursor_world.x - (group_bounds.x0 + group_bounds.x1) / 2.0,
-                                                        cursor_world.y - (group_bounds.y0 + group_bounds.y1) / 2.0,
-                                                    );
-                                                    state.canvas.document.push_undo();
-                                                    state.canvas.clear_selection();
-                                                    for mut shape in shapes {
-                                                        shape.transform(kurbo::Affine::translate(offset));
-                                                        let new_id = shape.id();
-                                                        state.canvas.document.add_shape(shape.clone());
-                                                        state.canvas.add_to_selection(new_id);
-                                                        if state.collab.is_in_room() {
-                                                            let _ = state.collab.crdt_mut().add_shape(&shape);
-                                                        }
-                                                    }
                                                     log::info!("Pasted shapes from Excalidraw clipboard");
+                                                    pasted = true;
+                                                } else if let Some(shapes) = drafftink_core::shapes_from_mermaid(&text) {
+                                                    place_shapes_centered_at(
+                                                        &mut state.canvas,
+                                                        &mut state.collab,
+                                                        shapes,
+                                                        cursor_world,
+                                                    );
+                                                    log::info!("Imported Mermaid diagram from clipboard");
                                                     pasted = true;
                                                 }
                                             }
