@@ -36,6 +36,7 @@ pub mod file_ops {
 
     // Channel for receiving async file operation results
     static PENDING_DOCUMENT: Mutex<Option<CanvasDocument>> = Mutex::new(None);
+    static PENDING_LIBRARY: Mutex<Option<(String, CanvasDocument)>> = Mutex::new(None);
 
     /// Save document to a JSON file using native file dialog (async, non-blocking).
     pub fn save_document(document: &CanvasDocument, name: &str) {
@@ -104,6 +105,40 @@ pub mod file_ops {
     /// Take pending document from async load operation.
     pub fn take_pending_document() -> Option<CanvasDocument> {
         PENDING_DOCUMENT.lock().ok().and_then(|mut p| p.take())
+    }
+
+    /// Load an Excalidraw library (`.excalidrawlib`) via native file dialog
+    /// (async, non-blocking). Retrieve via `take_pending_library()`.
+    pub fn load_excalidrawlib_async() {
+        std::thread::spawn(move || {
+            let dialog = rfd::FileDialog::new()
+                .set_title("Open Excalidraw Library")
+                .add_filter("Excalidraw Library", &["excalidrawlib"]);
+            if let Some(path) = dialog.pick_file() {
+                match std::fs::read_to_string(&path) {
+                    Ok(content) => {
+                        let name = path
+                            .file_stem()
+                            .map(|s| s.to_string_lossy().to_string())
+                            .unwrap_or_else(|| "Library".to_string());
+                        match super::build_library_document(&content, &name) {
+                            Some(result) => {
+                                if let Ok(mut pending) = PENDING_LIBRARY.lock() {
+                                    *pending = Some(result);
+                                }
+                            }
+                            None => log::error!("Not a valid Excalidraw library: {:?}", path),
+                        }
+                    }
+                    Err(e) => log::error!("Failed to read library: {}", e),
+                }
+            }
+        });
+    }
+
+    /// Take a pending library `(name, document)` from an async load.
+    pub fn take_pending_library() -> Option<(String, CanvasDocument)> {
+        PENDING_LIBRARY.lock().ok().and_then(|mut p| p.take())
     }
 
     /// Load document by name (for native, just calls load_document).
@@ -237,6 +272,7 @@ pub mod file_ops {
         static PENDING_DOCUMENT_LIST: RefCell<Option<Vec<String>>> = const { RefCell::new(None) };
         static PENDING_CLIPBOARD_TEXT: RefCell<Option<String>> = const { RefCell::new(None) };
         static PENDING_MATH_CLIPBOARD: RefCell<Option<String>> = const { RefCell::new(None) };
+        static PENDING_LIBRARY: RefCell<Option<(String, CanvasDocument)>> = const { RefCell::new(None) };
     }
 
     /// Request clipboard text read (async). Result will be available via take_pending_clipboard_text().
@@ -559,6 +595,59 @@ pub mod file_ops {
                 log::error!("Failed to load file: {:?}", e);
             }
         });
+    }
+
+    /// Load an Excalidraw library (`.excalidrawlib`) via a browser file picker
+    /// (async). Retrieve via `take_pending_library()`.
+    pub fn load_excalidrawlib_async() {
+        wasm_bindgen_futures::spawn_local(async {
+            if let Err(e) = load_excalidrawlib_impl().await {
+                log::error!("Failed to load library: {:?}", e);
+            }
+        });
+    }
+
+    async fn load_excalidrawlib_impl() -> Result<(), JsValue> {
+        let window = web_sys::window().ok_or("No window")?;
+        let document = window.document().ok_or("No document")?;
+
+        let input: web_sys::HtmlInputElement = document.create_element("input")?.dyn_into()?;
+        input.set_type("file");
+        input.set_accept(".excalidrawlib,.json");
+        input.style().set_property("display", "none").ok();
+        document.body().ok_or("No body")?.append_child(&input)?;
+
+        let file = wait_for_file_selection(&input).await;
+        input.remove();
+        let file = file?;
+
+        // Use the file name (without extension) as the tab label.
+        let filename = file.name();
+        let name = filename
+            .rsplit('/')
+            .next()
+            .unwrap_or(&filename)
+            .strip_suffix(".excalidrawlib")
+            .map(str::to_string)
+            .unwrap_or(filename);
+
+        let text: String = wasm_bindgen_futures::JsFuture::from(file.text())
+            .await?
+            .as_string()
+            .ok_or("Failed to read file as text")?;
+
+        match super::build_library_document(&text, &name) {
+            Some(result) => {
+                PENDING_LIBRARY.with(|cell| *cell.borrow_mut() = Some(result));
+                Ok(())
+            }
+            None => Err(JsValue::from_str("Not a valid Excalidraw library")),
+        }
+    }
+
+    /// Take a pending library `(name, document)` from an async load.
+    pub fn take_pending_library() -> Option<(String, CanvasDocument)> {
+        PENDING_LIBRARY.with(|cell| cell.borrow_mut().take())
     }
 
     async fn trigger_file_input_impl() -> Result<(), JsValue> {
@@ -1439,6 +1528,18 @@ pub struct RemotePeer {
     pub awareness: AwarenessState,
 }
 
+/// A saved editing tab. The currently active tab's live edits live in
+/// [`AppState::canvas`]; this snapshot is refreshed whenever the user switches
+/// away, and restored when the tab becomes active again.
+struct TabState {
+    /// Tab label shown in the tab strip.
+    name: String,
+    /// The tab's document (authoritative only while the tab is inactive).
+    document: drafftink_core::canvas::CanvasDocument,
+    /// The tab's camera (pan/zoom), preserved across switches.
+    camera: drafftink_core::Camera,
+}
+
 /// Runtime state for the application.
 struct AppState {
     // Windowing
@@ -1459,6 +1560,10 @@ struct AppState {
 
     // State
     canvas: Canvas,
+    /// Open tabs; the active tab's live document/camera live in `canvas`.
+    tabs: Vec<TabState>,
+    /// Index of the active tab within `tabs`.
+    active_tab: usize,
     input: InputState,
     config: AppConfig,
 
@@ -1578,6 +1683,87 @@ fn place_shapes_centered_at(
     }
 }
 
+/// Parse Excalidraw library text and lay its icons out as a grid document,
+/// returning the tab name and the document. Returns `None` if the text is not a
+/// recognizable Excalidraw library.
+fn build_library_document(
+    content: &str,
+    fallback_name: &str,
+) -> Option<(String, drafftink_core::canvas::CanvasDocument)> {
+    let items = drafftink_core::library_from_excalidrawlib(content)?;
+    let shapes = drafftink_core::library_layout_grid(&items);
+    let mut document = drafftink_core::canvas::CanvasDocument::new();
+    for shape in shapes {
+        document.add_shape(shape);
+    }
+    let name = if fallback_name.trim().is_empty() {
+        "Library".to_string()
+    } else {
+        fallback_name.to_string()
+    };
+    Some((name, document))
+}
+
+/// Snapshot the active tab's live document/camera back into `tabs`, so it can
+/// be restored later. Call before changing which tab is active.
+fn snapshot_active_tab(state: &mut AppState) {
+    let active = state.active_tab;
+    state.tabs[active].document = state.canvas.document.clone();
+    state.tabs[active].camera = state.canvas.camera.clone();
+}
+
+/// Load the tab at `index` into the live canvas.
+fn load_tab_into_canvas(state: &mut AppState, index: usize) {
+    state.active_tab = index;
+    state.canvas.document = state.tabs[index].document.clone();
+    state.canvas.camera = state.tabs[index].camera.clone();
+    state.canvas.clear_selection();
+    state.needs_redraw = true;
+}
+
+/// Switch the active tab, preserving the outgoing tab's edits.
+fn switch_to_tab(state: &mut AppState, target: usize) {
+    if target == state.active_tab || target >= state.tabs.len() {
+        return;
+    }
+    snapshot_active_tab(state);
+    load_tab_into_canvas(state, target);
+}
+
+/// Append a new tab holding `document` and make it active.
+fn add_tab(state: &mut AppState, name: String, document: drafftink_core::canvas::CanvasDocument) {
+    snapshot_active_tab(state);
+    state.tabs.push(TabState {
+        name,
+        document,
+        camera: drafftink_core::Camera::new(),
+    });
+    let index = state.tabs.len() - 1;
+    load_tab_into_canvas(state, index);
+}
+
+/// Close the tab at `index`. The last remaining tab is never closed.
+fn close_tab(state: &mut AppState, index: usize) {
+    if state.tabs.len() <= 1 || index >= state.tabs.len() {
+        return;
+    }
+    // Preserve the active tab's edits unless we are removing it.
+    if index != state.active_tab {
+        snapshot_active_tab(state);
+    }
+    state.tabs.remove(index);
+
+    // Recompute the active tab so it still points at a live tab.
+    let new_active = if state.active_tab > index {
+        state.active_tab - 1
+    } else if state.active_tab == index {
+        index.min(state.tabs.len() - 1)
+    } else {
+        state.active_tab
+    };
+    load_tab_into_canvas(state, new_active);
+}
+
 /// Main application struct.
 pub struct App {
     config: AppConfig,
@@ -1690,6 +1876,12 @@ impl App {
             egui_renderer,
             ui_state: UiState::default(),
             canvas,
+            tabs: vec![TabState {
+                name: "Canvas".to_string(),
+                document: drafftink_core::canvas::CanvasDocument::new(),
+                camera: drafftink_core::Camera::new(),
+            }],
+            active_tab: 0,
             input: InputState::new(),
             config: self.config.clone(),
             event_handler: EventHandler::new(),
@@ -2041,6 +2233,11 @@ impl ApplicationHandler for App {
                     state.needs_redraw = true;
                 }
 
+                // Check for a pending Excalidraw library loaded into a new tab.
+                if let Some((name, document)) = file_ops::take_pending_library() {
+                    add_tab(state, name, document);
+                }
+
                 // Check for pending document list (WASM)
                 #[cfg(target_arch = "wasm32")]
                 if let Some(docs) = file_ops::take_pending_document_list() {
@@ -2334,7 +2531,11 @@ impl ApplicationHandler for App {
 
                 // Run egui and get any actions
                 let egui_input = state.egui_state.take_egui_input(&state.window);
+                // Sync the tab strip metadata for the UI to render.
+                state.ui_state.tab_names = state.tabs.iter().map(|t| t.name.clone()).collect();
+                state.ui_state.active_tab = state.active_tab;
                 let mut deferred_action: Option<UiAction> = None;
+                let mut tab_action: Option<UiAction> = None;
                 let mut ui_action_taken = false;
                 let egui_output = state.egui_ctx.run(egui_input, |ctx| {
                     if let Some(action) = render_ui(ctx, &mut state.ui_state, &selected_props) {
@@ -2569,6 +2770,14 @@ impl ApplicationHandler for App {
                                 }
                                 #[cfg(target_arch = "wasm32")]
                                 file_ops::paste_shapes_from_clipboard_async(center_world);
+                            }
+                            UiAction::SwitchTab(_)
+                            | UiAction::CloseTab(_)
+                            | UiAction::LoadLibrary => {
+                                // Tab operations need exclusive access to the
+                                // whole AppState, which the egui closure cannot
+                                // hold; handle them after the egui run.
+                                tab_action = Some(action.clone());
                             }
                             UiAction::ClearDocument => {
                                 if !state.canvas.document.is_empty() {
@@ -3160,24 +3369,26 @@ impl ApplicationHandler for App {
                             UiAction::PasteShapes => {
                                 if let Some(json) = &state.ui_state.clipboard_shapes.clone() {
                                     if let Ok(shapes) = serde_json::from_str::<Vec<Shape>>(json) {
-                                        state.canvas.document.push_undo();
-                                        state.canvas.clear_selection();
-                                        for shape in shapes {
-                                            // Create new shape with a new unique ID
-                                            let mut new_shape = shape.clone();
-                                            new_shape.regenerate_id();
-                                            // Offset slightly down-right
-                                            new_shape.transform(kurbo::Affine::translate(
-                                                kurbo::Vec2::new(20.0, 20.0),
+                                        // Center pasted shapes in the current
+                                        // viewport so cross-tab pastes are visible.
+                                        let center =
+                                            state.canvas.camera.screen_to_world(kurbo::Point::new(
+                                                state.canvas.viewport_size.width / 2.0,
+                                                state.canvas.viewport_size.height / 2.0,
                                             ));
-                                            let new_id = new_shape.id();
-                                            state.canvas.document.add_shape(new_shape.clone());
-                                            state.canvas.add_to_selection(new_id);
-                                            if state.collab.is_in_room() {
-                                                let _ =
-                                                    state.collab.crdt_mut().add_shape(&new_shape);
-                                            }
-                                        }
+                                        let shapes: Vec<Shape> = shapes
+                                            .into_iter()
+                                            .map(|mut s| {
+                                                s.regenerate_id();
+                                                s
+                                            })
+                                            .collect();
+                                        place_shapes_centered_at(
+                                            &mut state.canvas,
+                                            &mut state.collab,
+                                            shapes,
+                                            center,
+                                        );
                                         log::info!("Pasted shapes from clipboard");
                                     }
                                 }
@@ -3397,6 +3608,18 @@ impl ApplicationHandler for App {
                 let egui_primitives = state
                     .egui_ctx
                     .tessellate(egui_output.shapes, egui_output.pixels_per_point);
+
+                // Handle tab operations, which need exclusive access to the
+                // whole AppState (unavailable inside the egui closure).
+                if let Some(action) = tab_action {
+                    match action {
+                        UiAction::SwitchTab(i) => switch_to_tab(state, i),
+                        UiAction::CloseTab(i) => close_tab(state, i),
+                        UiAction::LoadLibrary => file_ops::load_excalidrawlib_async(),
+                        _ => {}
+                    }
+                    state.needs_redraw = true;
+                }
 
                 // Handle deferred actions that need render_cx access
                 if let Some(action) = deferred_action {
@@ -4822,29 +5045,30 @@ impl ApplicationHandler for App {
                                 }
                                 // Ctrl+V = Paste shapes or image
                                 "v" | "V" => {
-                                    // First try to paste shapes from internal clipboard
+                                    // First try to paste shapes from the internal
+                                    // clipboard, centered on the cursor so pastes
+                                    // (including across tabs) always land in view.
                                     let mut pasted = false;
                                     if let Some(json) = &state.ui_state.clipboard_shapes.clone() {
                                         if let Ok(shapes) = serde_json::from_str::<Vec<Shape>>(json)
                                         {
-                                            state.canvas.document.push_undo();
-                                            state.canvas.clear_selection();
-                                            for shape in shapes {
-                                                let mut new_shape = shape.clone();
-                                                new_shape.regenerate_id();
-                                                new_shape.transform(kurbo::Affine::translate(
-                                                    kurbo::Vec2::new(20.0, 20.0),
-                                                ));
-                                                let new_id = new_shape.id();
-                                                state.canvas.document.add_shape(new_shape.clone());
-                                                state.canvas.add_to_selection(new_id);
-                                                if state.collab.is_in_room() {
-                                                    let _ = state
-                                                        .collab
-                                                        .crdt_mut()
-                                                        .add_shape(&new_shape);
-                                                }
-                                            }
+                                            let cursor_world = state
+                                                .canvas
+                                                .camera
+                                                .screen_to_world(state.input.mouse_position());
+                                            let shapes: Vec<Shape> = shapes
+                                                .into_iter()
+                                                .map(|mut s| {
+                                                    s.regenerate_id();
+                                                    s
+                                                })
+                                                .collect();
+                                            place_shapes_centered_at(
+                                                &mut state.canvas,
+                                                &mut state.collab,
+                                                shapes,
+                                                cursor_world,
+                                            );
                                             log::info!("Pasted shapes");
                                             pasted = true;
                                         }

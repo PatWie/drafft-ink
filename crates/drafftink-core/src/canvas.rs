@@ -13,7 +13,6 @@ use uuid::Uuid;
 const MAX_UNDO_HISTORY: usize = 50;
 
 /// Distance threshold for detecting closed polygons (first ≈ last point).
-const CLOSED_PATH_THRESHOLD: f64 = 10.0;
 
 /// A snapshot of document state for undo/redo.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -263,11 +262,6 @@ impl CanvasDocument {
 
     /// Import from Excalidraw JSON format.
     pub fn from_excalidraw(json: &str) -> Result<Self, String> {
-        use crate::shapes::{
-            Arrow, Ellipse, FillPattern, Freehand, Line, PathStyle, Rectangle, ShapeStyle,
-            Sloppiness, Text,
-        };
-
         let data: serde_json::Value =
             serde_json::from_str(json).map_err(|e| format!("Invalid JSON: {}", e))?;
 
@@ -277,223 +271,9 @@ impl CanvasDocument {
             .ok_or("Missing 'elements' array")?;
 
         let mut doc = Self::new();
-
         for elem in elements {
-            // Skip deleted elements
-            if elem
-                .get("isDeleted")
-                .and_then(|v| v.as_bool())
-                .unwrap_or(false)
-            {
-                continue;
-            }
-
-            let elem_type = elem.get("type").and_then(|t| t.as_str()).unwrap_or("");
-            let x = elem.get("x").and_then(|v| v.as_f64()).unwrap_or(0.0);
-            let y = elem.get("y").and_then(|v| v.as_f64()).unwrap_or(0.0);
-
-            // Parse colors
-            let stroke_color = parse_excalidraw_color(
-                elem.get("strokeColor")
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("#000000"),
-            );
-            let bg_color = elem
-                .get("backgroundColor")
-                .and_then(|v| v.as_str())
-                .unwrap_or("transparent");
-            let fill_color = if bg_color == "transparent" {
-                None
-            } else {
-                Some(parse_excalidraw_color(bg_color))
-            };
-
-            let stroke_width = elem
-                .get("strokeWidth")
-                .and_then(|v| v.as_f64())
-                .unwrap_or(2.0);
-            let roughness = elem.get("roughness").and_then(|v| v.as_i64()).unwrap_or(1);
-            let sloppiness = match roughness {
-                0 => Sloppiness::Architect,
-                1 => Sloppiness::Artist,
-                _ => Sloppiness::Cartoonist,
-            };
-
-            let fill_pattern = match elem
-                .get("fillStyle")
-                .and_then(|v| v.as_str())
-                .unwrap_or("solid")
-            {
-                "hachure" => FillPattern::Hachure,
-                "cross-hatch" => FillPattern::CrossHatch,
-                "zigzag" => FillPattern::ZigZag,
-                _ => FillPattern::Solid,
-            };
-
-            let style = ShapeStyle {
-                stroke_color,
-                stroke_width,
-                fill_color,
-                fill_pattern,
-                sloppiness,
-                seed: elem.get("seed").and_then(|v| v.as_u64()).unwrap_or(0) as u32,
-                opacity: elem
-                    .get("opacity")
-                    .and_then(|v| v.as_f64())
-                    .map(|v| if v > 1.0 { v / 100.0 } else { v })
-                    .unwrap_or(1.0),
-            };
-
-            let shape: Option<Shape> = match elem_type {
-                "rectangle" | "diamond" => {
-                    let width = elem.get("width").and_then(|v| v.as_f64()).unwrap_or(100.0);
-                    let height = elem.get("height").and_then(|v| v.as_f64()).unwrap_or(100.0);
-                    let mut rect = Rectangle::new(Point::new(x, y), width, height);
-                    rect.style = style;
-                    // Handle roundness
-                    if elem.get("roundness").is_some() {
-                        rect.corner_radius = Rectangle::DEFAULT_ADAPTIVE_RADIUS
-                            .min(width / 4.0)
-                            .min(height / 4.0);
-                    }
-                    // Diamond is rendered as rotated rectangle (TODO: proper diamond shape)
-                    Some(Shape::Rectangle(rect))
-                }
-                "ellipse" => {
-                    let width = elem.get("width").and_then(|v| v.as_f64()).unwrap_or(100.0);
-                    let height = elem.get("height").and_then(|v| v.as_f64()).unwrap_or(100.0);
-                    let center = Point::new(x + width / 2.0, y + height / 2.0);
-                    let mut ellipse = Ellipse::new(center, width / 2.0, height / 2.0);
-                    ellipse.style = style;
-                    Some(Shape::Ellipse(ellipse))
-                }
-                "freedraw" => {
-                    let points = elem.get("points").and_then(|p| p.as_array());
-                    if let Some(pts) = points {
-                        let freehand_points: Vec<Point> = pts
-                            .iter()
-                            .filter_map(|p| p.as_array())
-                            .filter_map(|arr| {
-                                let px = arr.first().and_then(|v| v.as_f64())?;
-                                let py = arr.get(1).and_then(|v| v.as_f64())?;
-                                Some(Point::new(x + px, y + py))
-                            })
-                            .collect();
-                        if !freehand_points.is_empty() {
-                            let mut freehand = Freehand::from_points(freehand_points.clone());
-                            freehand.style = style;
-                            if freehand_points.len() >= 3 {
-                                let first = freehand_points.first().unwrap();
-                                let last = freehand_points.last().unwrap();
-                                if (first.x - last.x).abs() < CLOSED_PATH_THRESHOLD
-                                    && (first.y - last.y).abs() < CLOSED_PATH_THRESHOLD
-                                {
-                                    freehand.closed = true;
-                                }
-                            }
-                            Some(Shape::Freehand(freehand))
-                        } else {
-                            None
-                        }
-                    } else {
-                        None
-                    }
-                }
-                "line" => {
-                    let points = elem.get("points").and_then(|p| p.as_array());
-                    if let Some(pts) = points {
-                        let line_points: Vec<Point> = pts
-                            .iter()
-                            .filter_map(|p| p.as_array())
-                            .filter_map(|arr| {
-                                let px = arr.first().and_then(|v| v.as_f64())?;
-                                let py = arr.get(1).and_then(|v| v.as_f64())?;
-                                Some(Point::new(x + px, y + py))
-                            })
-                            .collect();
-                        if line_points.len() >= 2 {
-                            let path_style =
-                                if elem.get("roundness").map(|r| !r.is_null()).unwrap_or(false) {
-                                    PathStyle::Flowing
-                                } else {
-                                    PathStyle::Direct
-                                };
-                            let mut line = Line::from_points(line_points.clone(), path_style);
-                            line.style = style;
-                            // Detect closed polygon (first ~= last point)
-                            if line_points.len() >= 3 {
-                                let first = line_points.first().unwrap();
-                                let last = line_points.last().unwrap();
-                                if (first.x - last.x).abs() < CLOSED_PATH_THRESHOLD
-                                    && (first.y - last.y).abs() < CLOSED_PATH_THRESHOLD
-                                {
-                                    line.closed = true;
-                                }
-                            }
-                            Some(Shape::Line(line))
-                        } else {
-                            None
-                        }
-                    } else {
-                        None
-                    }
-                }
-                "arrow" => {
-                    let points = elem.get("points").and_then(|p| p.as_array());
-                    if let Some(pts) = points {
-                        let arrow_points: Vec<Point> = pts
-                            .iter()
-                            .filter_map(|p| p.as_array())
-                            .filter_map(|arr| {
-                                let px = arr.first().and_then(|v| v.as_f64())?;
-                                let py = arr.get(1).and_then(|v| v.as_f64())?;
-                                Some(Point::new(x + px, y + py))
-                            })
-                            .collect();
-                        if arrow_points.len() >= 2 {
-                            let elbowed = elem
-                                .get("elbowed")
-                                .and_then(|v| v.as_bool())
-                                .unwrap_or(false);
-                            let has_roundness =
-                                elem.get("roundness").map(|r| !r.is_null()).unwrap_or(false);
-                            let path_style = if elbowed {
-                                PathStyle::Angular
-                            } else if has_roundness {
-                                PathStyle::Flowing
-                            } else {
-                                PathStyle::Direct
-                            };
-                            let mut arrow = Arrow::from_points(arrow_points, path_style);
-                            arrow.style = style;
-                            Some(Shape::Arrow(arrow))
-                        } else {
-                            None
-                        }
-                    } else {
-                        None
-                    }
-                }
-                "text" => {
-                    let content = elem
-                        .get("text")
-                        .and_then(|v| v.as_str())
-                        .unwrap_or("")
-                        .to_string();
-                    let font_size = elem
-                        .get("fontSize")
-                        .and_then(|v| v.as_f64())
-                        .unwrap_or(20.0);
-                    let mut text = Text::new(Point::new(x, y), content);
-                    text.font_size = font_size;
-                    text.style = style;
-                    Some(Shape::Text(text))
-                }
-                _ => None,
-            };
-
-            if let Some(s) = shape {
-                doc.add_shape(s);
+            if let Some(shape) = crate::excalidraw::element_to_shape(elem) {
+                doc.add_shape(shape);
             }
         }
 
@@ -901,46 +681,6 @@ impl Canvas {
 
         all_children
     }
-}
-
-/// Parse Excalidraw color string to SerializableColor.
-fn parse_excalidraw_color(color: &str) -> crate::shapes::SerializableColor {
-    use crate::shapes::SerializableColor;
-
-    if color == "transparent" {
-        return SerializableColor::transparent();
-    }
-
-    // Handle hex colors (#rgb, #rrggbb, #rrggbbaa)
-    if let Some(hex) = color.strip_prefix('#') {
-        let hex = hex.trim();
-        match hex.len() {
-            3 => {
-                // #rgb -> #rrggbb
-                let r = u8::from_str_radix(&hex[0..1], 16).unwrap_or(0) * 17;
-                let g = u8::from_str_radix(&hex[1..2], 16).unwrap_or(0) * 17;
-                let b = u8::from_str_radix(&hex[2..3], 16).unwrap_or(0) * 17;
-                return SerializableColor::new(r, g, b, 255);
-            }
-            6 => {
-                let r = u8::from_str_radix(&hex[0..2], 16).unwrap_or(0);
-                let g = u8::from_str_radix(&hex[2..4], 16).unwrap_or(0);
-                let b = u8::from_str_radix(&hex[4..6], 16).unwrap_or(0);
-                return SerializableColor::new(r, g, b, 255);
-            }
-            8 => {
-                let r = u8::from_str_radix(&hex[0..2], 16).unwrap_or(0);
-                let g = u8::from_str_radix(&hex[2..4], 16).unwrap_or(0);
-                let b = u8::from_str_radix(&hex[4..6], 16).unwrap_or(0);
-                let a = u8::from_str_radix(&hex[6..8], 16).unwrap_or(255);
-                return SerializableColor::new(r, g, b, a);
-            }
-            _ => {}
-        }
-    }
-
-    // Default to black
-    SerializableColor::black()
 }
 
 #[cfg(test)]

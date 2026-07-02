@@ -302,6 +302,10 @@ pub struct UiState {
     pub last_picked_fill: Option<Color32>,
     /// Math editor state: (shape_id, latex_input)
     pub math_editor: Option<(ShapeId, String)>,
+    /// Names of the open tabs, in order (synced from the app each frame).
+    pub tab_names: Vec<String>,
+    /// Index of the active tab within `tab_names`.
+    pub active_tab: usize,
 }
 
 impl Default for UiState {
@@ -346,6 +350,8 @@ impl Default for UiState {
             last_picked_stroke: None,
             last_picked_fill: None,
             math_editor: None,
+            tab_names: Vec::new(),
+            active_tab: 0,
         }
     }
 }
@@ -418,6 +424,12 @@ pub enum UiAction {
     UploadDocument,
     /// Import a Mermaid diagram from the clipboard as native, editable shapes.
     ImportMermaidFromClipboard,
+    /// Switch to the tab at the given index.
+    SwitchTab(usize),
+    /// Close the tab at the given index.
+    CloseTab(usize),
+    /// Load an Excalidraw library (`.excalidrawlib`) into a new tab.
+    LoadLibrary,
     /// Export document as PNG file.
     ExportPng,
     /// Copy selection to clipboard as PNG.
@@ -625,6 +637,7 @@ pub fn render_ui(
     let bottom_action = render_bottom_toolbar(ctx, ui_state);
     let right_panel_action = render_right_panel(ctx, selected_props);
     let math_action = render_math_editor(ctx, ui_state);
+    let tab_action = render_tab_bar(ctx, ui_state);
 
     // Render presence panel (no actions returned)
     render_presence_panel(ctx, ui_state);
@@ -636,6 +649,77 @@ pub fn render_ui(
         .or(bottom_action)
         .or(right_panel_action)
         .or(math_action)
+        .or(tab_action)
+}
+
+/// Render the tab strip (top-center) with one button per open canvas plus a
+/// control to load an Excalidraw library as a new tab. Icons in a library tab
+/// are browsed on their own canvas and copied into a working tab, so no
+/// separate thumbnail rendering is needed.
+fn render_tab_bar(ctx: &Context, ui_state: &mut UiState) -> Option<UiAction> {
+    let mut action = None;
+    let tabs = ui_state.tab_names.clone();
+    let active = ui_state.active_tab;
+    let closable = tabs.len() > 1;
+
+    egui::Area::new(egui::Id::new("tab_bar"))
+        .anchor(Align2::CENTER_BOTTOM, Vec2::new(0.0, -12.0))
+        .order(egui::Order::Foreground)
+        .show(ctx, |ui| {
+            panel_frame().show(ui, |ui| {
+                ui.horizontal(|ui| {
+                    ui.spacing_mut().item_spacing = Vec2::new(4.0, 0.0);
+                    for (i, name) in tabs.iter().enumerate() {
+                        let selected = i == active;
+                        let label = egui::RichText::new(name).size(12.0).color(if selected {
+                            Color32::WHITE
+                        } else {
+                            Color32::from_gray(90)
+                        });
+                        let btn = egui::Button::new(label)
+                            .fill(if selected {
+                                Color32::from_rgb(59, 130, 246)
+                            } else {
+                                Color32::TRANSPARENT
+                            })
+                            .corner_radius(egui::CornerRadius::same(4));
+                        if ui.add(btn).clicked() {
+                            action = Some(UiAction::SwitchTab(i));
+                        }
+                        if closable {
+                            let close = egui::Button::new(
+                                egui::RichText::new("×")
+                                    .size(13.0)
+                                    .color(Color32::from_gray(120)),
+                            )
+                            .fill(Color32::TRANSPARENT)
+                            .corner_radius(egui::CornerRadius::same(4));
+                            if ui.add(close).on_hover_text("Close tab").clicked() {
+                                action = Some(UiAction::CloseTab(i));
+                            }
+                        }
+                    }
+
+                    ui.add_space(6.0);
+                    let load = egui::Button::new(
+                        egui::RichText::new("+ Library")
+                            .size(12.0)
+                            .color(Color32::from_gray(90)),
+                    )
+                    .fill(Color32::TRANSPARENT)
+                    .corner_radius(egui::CornerRadius::same(4));
+                    if ui
+                        .add(load)
+                        .on_hover_text("Load an Excalidraw library (.excalidrawlib) as a new tab")
+                        .clicked()
+                    {
+                        action = Some(UiAction::LoadLibrary);
+                    }
+                });
+            });
+        });
+
+    action
 }
 
 /// Render the toolbar and return any triggered action.

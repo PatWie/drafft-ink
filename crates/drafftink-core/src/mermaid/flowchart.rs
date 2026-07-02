@@ -79,6 +79,8 @@ enum NodeShape {
 /// A flowchart node. A node may also be a `subgraph` cluster, in which case it
 /// contains other nodes and is drawn as a labeled container box.
 struct Node {
+    /// The node's Mermaid identifier (used for de-duplication and lookups).
+    id: String,
     label: String,
     shape: NodeShape,
     /// Whether an explicit shape/label has been seen (so later bare references
@@ -133,7 +135,6 @@ impl Direction {
 /// The fully parsed flowchart.
 struct Flowchart {
     nodes: Vec<Node>,
-    ids: Vec<String>,
     edges: Vec<Edge>,
     direction: Direction,
 }
@@ -163,7 +164,6 @@ const SKIP_KEYWORDS: &[&str] = &["style", "classDef", "class", "click", "linkSty
 /// top-level flow direction.
 fn parse(body: &str) -> Flowchart {
     let mut nodes: Vec<Node> = Vec::new();
-    let mut ids: Vec<String> = Vec::new();
     let mut edges: Vec<Edge> = Vec::new();
     let mut direction = Direction::TopBottom;
     // The stack of open subgraph clusters; the last entry is the current scope.
@@ -180,20 +180,12 @@ fn parse(body: &str) -> Flowchart {
             if line.is_empty() {
                 continue;
             }
-            parse_statement(
-                line,
-                &mut nodes,
-                &mut ids,
-                &mut edges,
-                &mut cluster_stack,
-                direction,
-            );
+            parse_statement(line, &mut nodes, &mut edges, &mut cluster_stack, direction);
         }
     }
 
     Flowchart {
         nodes,
-        ids,
         edges,
         direction,
     }
@@ -204,7 +196,6 @@ fn parse(body: &str) -> Flowchart {
 fn parse_statement(
     line: &str,
     nodes: &mut Vec<Node>,
-    ids: &mut Vec<String>,
     edges: &mut Vec<Edge>,
     cluster_stack: &mut Vec<usize>,
     root_direction: Direction,
@@ -212,7 +203,7 @@ fn parse_statement(
     let current = cluster_stack.last().copied();
 
     if let Some(rest) = keyword(line, "subgraph") {
-        let idx = open_subgraph(rest, nodes, ids, current, root_direction);
+        let idx = open_subgraph(rest, nodes, current, root_direction);
         cluster_stack.push(idx);
     } else if line == "end" {
         cluster_stack.pop();
@@ -221,7 +212,7 @@ fn parse_statement(
             nodes[c].direction = parse_direction(rest);
         }
     } else if !is_skippable(line) {
-        parse_chain(line, nodes, ids, edges, current);
+        parse_chain(line, nodes, edges, current);
     }
 }
 
@@ -243,7 +234,6 @@ fn keyword<'a>(line: &'a str, word: &str) -> Option<&'a str> {
 fn open_subgraph(
     rest: &str,
     nodes: &mut Vec<Node>,
-    ids: &mut Vec<String>,
     parent: Option<usize>,
     root_direction: Direction,
 ) -> usize {
@@ -256,7 +246,7 @@ fn open_subgraph(
             shape: None,
         });
 
-    let idx = intern_node(nodes, ids, parsed, parent);
+    let idx = intern_node(nodes, parsed, parent);
     nodes[idx].is_cluster = true;
     // A cluster's declared parent is the scope it is nested within.
     nodes[idx].parent = parent;
@@ -298,20 +288,14 @@ fn is_skippable(line: &str) -> bool {
 
 /// Parse one statement into a chain of nodes joined by links, recording edges.
 /// Newly created nodes are assigned to the current subgraph scope.
-fn parse_chain(
-    line: &str,
-    nodes: &mut Vec<Node>,
-    ids: &mut Vec<String>,
-    edges: &mut Vec<Edge>,
-    parent: Option<usize>,
-) {
+fn parse_chain(line: &str, nodes: &mut Vec<Node>, edges: &mut Vec<Edge>, parent: Option<usize>) {
     let chars: Vec<char> = line.chars().collect();
     let mut cursor = skip_ws(&chars, 0);
 
     let Some((first, next)) = parse_node(&chars, cursor) else {
         return;
     };
-    let mut prev = intern_node(nodes, ids, first, parent);
+    let mut prev = intern_node(nodes, first, parent);
     cursor = next;
 
     loop {
@@ -323,7 +307,7 @@ fn parse_chain(
         let Some((node, after_node)) = parse_node(&chars, cursor) else {
             break;
         };
-        let current = intern_node(nodes, ids, node, parent);
+        let current = intern_node(nodes, node, parent);
         cursor = after_node;
         edges.push(Edge {
             from: prev,
@@ -344,13 +328,8 @@ struct ParsedNode {
 /// Find or create a node by id. An explicit label/shape upgrades a node that
 /// was previously only referenced. A brand-new node is assigned to `parent`.
 /// Returns the node's index.
-fn intern_node(
-    nodes: &mut Vec<Node>,
-    ids: &mut Vec<String>,
-    parsed: ParsedNode,
-    parent: Option<usize>,
-) -> usize {
-    if let Some(idx) = ids.iter().position(|id| *id == parsed.id) {
+fn intern_node(nodes: &mut Vec<Node>, parsed: ParsedNode, parent: Option<usize>) -> usize {
+    if let Some(idx) = nodes.iter().position(|n| n.id == parsed.id) {
         if let (Some(shape), false) = (parsed.shape, nodes[idx].explicit) {
             nodes[idx].shape = shape;
             nodes[idx].label = parsed.label.unwrap_or_else(|| parsed.id.clone());
@@ -358,8 +337,8 @@ fn intern_node(
         }
         return idx;
     }
-    ids.push(parsed.id.clone());
     nodes.push(Node {
+        id: parsed.id.clone(),
         label: parsed.label.unwrap_or(parsed.id),
         shape: parsed.shape.unwrap_or(NodeShape::Rectangle),
         explicit: parsed.shape.is_some(),
@@ -1420,7 +1399,7 @@ mod tests {
     #[test]
     fn subgraphs_capture_membership_and_are_clusters() {
         let chart = parse(NESTED);
-        let idx = |id: &str| chart.ids.iter().position(|s| s == id).unwrap();
+        let idx = |id: &str| chart.nodes.iter().position(|n| n.id == id).unwrap();
         assert!(chart.nodes[idx("STACK")].is_cluster);
         assert!(chart.nodes[idx("REAL")].is_cluster);
         assert!(chart.nodes[idx("SIM")].is_cluster);
@@ -1453,7 +1432,7 @@ mod tests {
             assign_absolute(root_child, &chart, &children, &mut state);
         }
 
-        let idx = |id: &str| chart.ids.iter().position(|s| s == id).unwrap();
+        let idx = |id: &str| chart.nodes.iter().position(|n| n.id == id).unwrap();
         let stack = idx("STACK");
         let cluster_box = Rect::from_center_size(
             state.abs[stack],
@@ -1526,7 +1505,7 @@ mod tests {
     #[test]
     fn user_diagram_parses_chains_clusters_and_hexagon() {
         let chart = parse(USER_DIAGRAM);
-        let idx = |id: &str| chart.ids.iter().position(|s| s == id).unwrap();
+        let idx = |id: &str| chart.nodes.iter().position(|n| n.id == id).unwrap();
 
         // Four leaf nodes in KITCHEN joined by a 3-hop bidirectional chain.
         for id in ["A", "B", "C", "D"] {
