@@ -451,8 +451,10 @@ mod native_client {
                         log::info!("WebSocket connected, status: {}", response.status());
                         let _ = event_tx.send(SyncEvent::Connected);
 
-                        // Set read timeout on the underlying TCP stream for non-blocking behavior
-                        // This is more reliable for tunneled/forwarded connections
+                        // Set a read timeout on the underlying TCP stream so the
+                        // loop can interleave send-command checks with reads.
+                        // Without this, wss:// (TLS) connections block on read
+                        // indefinitely and never flush queued outgoing messages.
                         {
                             let stream = socket.get_mut();
                             match stream {
@@ -460,11 +462,15 @@ mod native_client {
                                     let _ = tcp.set_read_timeout(Some(Duration::from_millis(50)));
                                     let _ = tcp.set_write_timeout(Some(Duration::from_secs(5)));
                                 }
+                                tungstenite::stream::MaybeTlsStream::NativeTls(tls) => {
+                                    let tcp = tls.get_ref();
+                                    let _ = tcp.set_read_timeout(Some(Duration::from_millis(50)));
+                                    let _ = tcp.set_write_timeout(Some(Duration::from_secs(5)));
+                                }
                                 #[allow(unreachable_patterns)]
                                 _ => {
-                                    // For TLS streams, we'll rely on WouldBlock/TimedOut errors
-                                    log::debug!(
-                                        "TLS or other stream - using default timeout handling"
+                                    log::warn!(
+                                        "Unrecognized stream type - send commands may be delayed until the server sends data"
                                     );
                                 }
                             }
