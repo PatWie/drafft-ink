@@ -132,6 +132,6 @@ pub async fn run_wasm() {
         log::info!("Server from URL: {}", server);
     }
 
-    // Run the app
-    crate::App::run().await;
+    // Run the app (web auto-joins via URL params, not CLI args)
+    crate::App::run(None, None).await;
 }

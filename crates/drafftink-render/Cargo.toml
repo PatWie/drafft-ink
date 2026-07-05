@@ -26,7 +26,9 @@ vello = { workspace = true, optional = true }
 parley = { version = "0.7", optional = true, default-features = false, features = ["std"] }
 
 # Math rendering (ReX)
-rex = { git = "https://github.com/KenyC/ReX", features = ["ttfparser-fontparser"] }
+# Pinned to an immutable commit; aeccdba is required to build under Nix and is
+# the revision requested by the upstream contributor.
+rex = { git = "https://github.com/KenyC/ReX", rev = "aeccdba38f3fa54195c469319b65c423e17a77ae", features = ["ttfparser-fontparser"] }
 ttf-parser = "0.25"
 
 

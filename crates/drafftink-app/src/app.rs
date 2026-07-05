@@ -1774,6 +1774,10 @@ pub struct App {
     /// Flag to indicate async init is in progress
     #[cfg(target_arch = "wasm32")]
     init_in_progress: std::cell::Cell<bool>,
+    /// Collaboration server URL to auto-connect to on startup (from CLI args).
+    startup_server: Option<String>,
+    /// Room to auto-join on startup (from CLI args).
+    startup_room: Option<String>,
 }
 
 impl App {
@@ -1791,13 +1795,18 @@ impl App {
             pending_window: None,
             #[cfg(target_arch = "wasm32")]
             init_in_progress: std::cell::Cell::new(false),
+            startup_server: None,
+            startup_room: None,
         }
     }
 
-    /// Run the application.
-    pub async fn run() {
+    /// Run the application, optionally auto-connecting to `server` and
+    /// auto-joining `room` on startup (native CLI args; `None` on the web).
+    pub async fn run(server: Option<String>, room: Option<String>) {
         let event_loop = EventLoop::new().expect("Failed to create event loop");
-        let app = App::new();
+        let mut app = App::new();
+        app.startup_server = server;
+        app.startup_room = room;
 
         #[cfg(target_arch = "wasm32")]
         {
@@ -1921,8 +1930,58 @@ impl App {
             self.try_auto_join_room();
         }
 
+        // Pre-populate collaboration fields from startup CLI args (native only).
+        #[cfg(not(target_arch = "wasm32"))]
+        if let Some(state) = self.state.as_mut() {
+            if let Some(server) = self.startup_server.as_ref() {
+                state.ui_state.server_url = server.clone();
+            }
+            if let Some(room) = self.startup_room.as_ref() {
+                state.ui_state.room_input = room.clone();
+            }
+        }
+
+        // Auto-connect (and optionally join a room) from startup args (native only).
+        #[cfg(not(target_arch = "wasm32"))]
+        if self.startup_server.is_some() {
+            self.try_auto_join_room_native();
+        }
+
         // Request initial redraw
         window.request_redraw();
+    }
+
+    /// Auto-connect to the startup server and queue a room join, driven by
+    /// native CLI args (`--server`/`--room`). Mirrors the WASM URL-param path.
+    #[cfg(not(target_arch = "wasm32"))]
+    fn try_auto_join_room_native(&mut self) {
+        use drafftink_core::sync::ConnectionState;
+
+        let Some(server_url) = self.startup_server.clone() else {
+            return;
+        };
+        let room = self.startup_room.clone();
+        let Some(state) = self.state.as_mut() else {
+            return;
+        };
+
+        log::info!("Auto-connecting to {}", server_url);
+        let mut ws = drafftink_core::sync::NativeWebSocket::new();
+        match ws.connect(&server_url) {
+            Ok(()) => {
+                log::info!("WebSocket connecting to {}", server_url);
+                state.websocket = Some(ws);
+                state.ui_state.connection_state = ConnectionState::Connecting;
+                if let Some(room) = room {
+                    log::info!("Queuing auto-join for room '{}'", room);
+                    state.collab.join_room(&room);
+                }
+            }
+            Err(e) => {
+                log::error!("WebSocket connect failed: {}", e);
+                state.ui_state.connection_state = ConnectionState::Error;
+            }
+        }
     }
 
     /// Try to auto-join a room from URL parameters (WASM only).
