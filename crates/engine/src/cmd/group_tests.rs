@@ -411,3 +411,17 @@ fn old_weakness_arrows_bound_to_a_group_follow_it() {
     let start = drafftink_edit::transform::geometry::world_points(get(&s, &arrow)).unwrap()[0];
     assert!((start.y - 220.0).abs() < 0.1 && (start.x - 20.0).abs() < 0.1, "the arrow start follows the centre of r0: {start:?}");
 }
+
+#[test]
+fn exit_drops_an_editing_group_that_lost_its_members() {
+    let (mut s, ids, g) = grouped(2);
+    run(&mut s, "group.ungroup", json!({"group": g}));
+    // a collaborator's delete can leave the id behind; Esc (`tool.cancel`) must still be able to leave it
+    s.tab_mut().observed.editing_group = Some(drafftink_scene::GroupId::new("gone").unwrap());
+    assert!(s.tab().observed.editing_group.is_some());
+    assert!(s.availability("group.exit").is_ok());
+    let out = run(&mut s, "group.exit", json!({}));
+    assert_eq!(out["editing_group"], json!(null));
+    assert!(s.tab().observed.editing_group.is_none());
+    assert_eq!(s.selection().len(), ids.len());
+}

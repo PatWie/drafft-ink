@@ -260,6 +260,12 @@ fn enter(s: &mut Session, a: EnterArgs) -> Result<EnterOut, Refusal> {
 
 fn exit(s: &mut Session, _: NoArgs) -> Result<EnterOut, Refusal> {
     let cmd = s.cmd();
+    // An editing group that lost its members is not a group any more. Leaving it must still work (Esc runs this
+    // command), so the stale id is dropped and the selection stays.
+    if s.tab().observed.editing_group.is_some() && editing_group(s).is_none() {
+        s.tab_mut().observed.editing_group = None;
+        return Ok(EnterOut { editing_group: None, selected: selected_ids(s) });
+    }
     let sel = exit_group(s.store(), &current_selection(s)).map_err(|e| selection_refusal(cmd, e))?;
     let out = EnterOut { editing_group: sel.editing_group.clone(), selected: sel.ids.iter().cloned().collect() };
     apply_selection(s, sel);
@@ -268,7 +274,7 @@ fn exit(s: &mut Session, _: NoArgs) -> Result<EnterOut, Refusal> {
 
 /// `not_in_group` when no group is being edited.
 fn exit_available(s: &Session) -> Result<(), Refusal> {
-    if editing_group(s).is_some() { Ok(()) } else { Err(not_in_group("group.exit")) }
+    if s.tab().observed.editing_group.is_some() { Ok(()) } else { Err(not_in_group("group.exit")) }
 }
 
 // ---- registration ----
