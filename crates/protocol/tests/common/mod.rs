@@ -7,26 +7,15 @@ pub fn cid(n: u8) -> ClientId {
 }
 
 pub fn user(n: u8) -> UserInfo {
-    UserInfo {
-        name: format!("user {n} \u{1f600}"),
-        color: 0x6366f1,
-    }
+    UserInfo { name: format!("user {n} \u{1f600}"), color: 0x6366f1 }
 }
 
 pub fn full_awareness() -> AwarenessState {
     AwarenessState {
         user: Some(user(1)),
-        cursor: Some(Point {
-            x: -1234.5,
-            y: 99.25,
-        }),
+        cursor: Some(Point { x: -1234.5, y: 99.25 }),
         selection: vec!["a1".into(), "b2".into(), "ünï".into()],
-        viewport: Some(Viewport {
-            x: -10.0,
-            y: 20.0,
-            width: 1920.0,
-            height: 1080.0,
-        }),
+        viewport: Some(Viewport { x: -10.0, y: 20.0, width: 1920.0, height: 1080.0 }),
     }
 }
 
@@ -50,13 +39,8 @@ pub fn client_samples() -> Vec<ClientMessage> {
             version: vec![],
             user: None,
         },
-        ClientMessage::Update {
-            seq: u32::MAX,
-            update: vec![0, 1, 2, 3, 250],
-        },
-        ClientMessage::RequestSync {
-            version: vec![9; 300],
-        },
+        ClientMessage::Update { seq: u32::MAX, update: vec![0, 1, 2, 3, 250] },
+        ClientMessage::RequestSync { version: vec![9; 300] },
         ClientMessage::RequestSync { version: vec![] },
         ClientMessage::Awareness(full_awareness()),
         ClientMessage::Awareness(AwarenessState::default()),
@@ -74,14 +58,8 @@ pub fn server_samples() -> Vec<ServerMessage> {
             room: RoomId::new("room").unwrap(),
             client_id: cid(3),
             peers: vec![
-                PeerInfo {
-                    client_id: cid(4),
-                    user: Some(user(4)),
-                },
-                PeerInfo {
-                    client_id: cid(5),
-                    user: None,
-                },
+                PeerInfo { client_id: cid(4), user: Some(user(4)) },
+                PeerInfo { client_id: cid(5), user: None },
             ],
             server_version: vec![5, 6, 7],
             limits: Limits::DEFAULT,
@@ -100,42 +78,15 @@ pub fn server_samples() -> Vec<ServerMessage> {
                 max_awareness_per_sec: 2,
             },
         },
-        ServerMessage::SyncResponse {
-            kind: SyncKind::Updates,
-            data: vec![1; 1000],
-            server_version: vec![2; 10],
-        },
-        ServerMessage::SyncResponse {
-            kind: SyncKind::Snapshot,
-            data: vec![],
-            server_version: vec![],
-        },
-        ServerMessage::Update {
-            from: cid(9),
-            update: vec![42; 17],
-        },
+        ServerMessage::SyncResponse { kind: SyncKind::Updates, data: vec![1; 1000], server_version: vec![2; 10] },
+        ServerMessage::SyncResponse { kind: SyncKind::Snapshot, data: vec![], server_version: vec![] },
+        ServerMessage::Update { from: cid(9), update: vec![42; 17] },
         ServerMessage::Ack { seq: 12345 },
-        ServerMessage::PeerJoined {
-            peer: PeerInfo {
-                client_id: cid(6),
-                user: Some(user(6)),
-            },
-        },
+        ServerMessage::PeerJoined { peer: PeerInfo { client_id: cid(6), user: Some(user(6)) } },
         ServerMessage::PeerLeft { client_id: cid(6) },
-        ServerMessage::PeerAwareness {
-            from: cid(8),
-            state: full_awareness(),
-        },
-        ServerMessage::Error {
-            code: ErrorCode::RateLimited,
-            message: "slow down".into(),
-            retry_after_ms: Some(1500),
-        },
-        ServerMessage::Error {
-            code: ErrorCode::Internal,
-            message: String::new(),
-            retry_after_ms: None,
-        },
+        ServerMessage::PeerAwareness { from: cid(8), state: full_awareness() },
+        ServerMessage::Error { code: ErrorCode::RateLimited, message: "slow down".into(), retry_after_ms: Some(1500) },
+        ServerMessage::Error { code: ErrorCode::Internal, message: String::new(), retry_after_ms: None },
         ServerMessage::Ping { nonce: 77 },
         ServerMessage::Pong { nonce: 78 },
     ]

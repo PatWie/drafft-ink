@@ -24,14 +24,8 @@ impl RoomId {
         if id.len() > MAX_ROOM_ID_BYTES {
             return Err(ValidationError::new("room", "is too long"));
         }
-        if !id
-            .bytes()
-            .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'-' | b'_' | b'.'))
-        {
-            return Err(ValidationError::new(
-                "room",
-                "may only contain letters, digits, '-', '_' and '.'",
-            ));
+        if !id.bytes().all(|b| b.is_ascii_alphanumeric() || matches!(b, b'-' | b'_' | b'.')) {
+            return Err(ValidationError::new("room", "may only contain letters, digits, '-', '_' and '.'"));
         }
         Ok(RoomId(id))
     }
@@ -94,8 +88,8 @@ impl ClientId {
 
     /// Parses 32 hex characters.
     pub fn from_hex(text: &str) -> Result<Self, ValidationError> {
-        let bytes = hex_decode(text, 16)
-            .ok_or_else(|| ValidationError::new("client_id", "must be 32 hex characters"))?;
+        let bytes =
+            hex_decode(text, 16).ok_or_else(|| ValidationError::new("client_id", "must be 32 hex characters"))?;
         let mut out = [0u8; 16];
         out.copy_from_slice(&bytes);
         Ok(ClientId(out))
@@ -147,7 +141,5 @@ pub(crate) fn hex_decode(text: &str, exact: usize) -> Option<Vec<u8>> {
     if !raw.len().is_multiple_of(2) || (exact != 0 && raw.len() != exact * 2) {
         return None;
     }
-    raw.chunks_exact(2)
-        .map(|pair| Some(nibble(pair[0])? << 4 | nibble(pair[1])?))
-        .collect()
+    raw.chunks_exact(2).map(|pair| Some(nibble(pair[0])? << 4 | nibble(pair[1])?)).collect()
 }

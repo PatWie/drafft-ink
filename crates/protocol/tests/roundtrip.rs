@@ -9,10 +9,7 @@ fn client_messages_round_trip_binary() {
         let frame = msg.encode().unwrap();
         assert_eq!(ClientMessage::decode(&frame).unwrap(), msg, "{msg:?}");
         // Encoding is canonical: decode then encode gives the same bytes.
-        assert_eq!(
-            ClientMessage::decode(&frame).unwrap().encode().unwrap(),
-            frame
-        );
+        assert_eq!(ClientMessage::decode(&frame).unwrap().encode().unwrap(), frame);
     }
 }
 
@@ -21,10 +18,7 @@ fn server_messages_round_trip_binary() {
     for msg in server_samples() {
         let frame = msg.encode().unwrap();
         assert_eq!(ServerMessage::decode(&frame).unwrap(), msg, "{msg:?}");
-        assert_eq!(
-            ServerMessage::decode(&frame).unwrap().encode().unwrap(),
-            frame
-        );
+        assert_eq!(ServerMessage::decode(&frame).unwrap().encode().unwrap(), frame);
     }
 }
 
@@ -46,12 +40,7 @@ fn server_messages_round_trip_json() {
 
 #[test]
 fn json_form_is_readable() {
-    let text = ClientMessage::Update {
-        seq: 3,
-        update: vec![0xde, 0xad],
-    }
-    .to_json()
-    .unwrap();
+    let text = ClientMessage::Update { seq: 3, update: vec![0xde, 0xad] }.to_json().unwrap();
     assert_eq!(text, r#"{"type":"update","seq":3,"update":"dead"}"#);
     let text = ClientMessage::Leave.to_json().unwrap();
     assert_eq!(text, r#"{"type":"leave"}"#);
@@ -61,33 +50,18 @@ fn json_form_is_readable() {
 fn binary_payloads_are_raw_not_base64() {
     // A 1000 byte update costs 1000 bytes plus a small envelope (tag, seq, 2 byte length).
     let payload = vec![0xabu8; 1000];
-    let frame = ClientMessage::Update {
-        seq: 1,
-        update: payload.clone(),
-    }
-    .encode()
-    .unwrap();
+    let frame = ClientMessage::Update { seq: 1, update: payload.clone() }.encode().unwrap();
     assert_eq!(frame.len(), 1000 + 1 + 4 + 2);
     assert!(frame.ends_with(&payload));
     // The old scheme cost 4/3 of that in base64 alone.
-    let json = ClientMessage::Update {
-        seq: 1,
-        update: payload,
-    }
-    .to_json()
-    .unwrap();
+    let json = ClientMessage::Update { seq: 1, update: payload }.to_json().unwrap();
     assert!(json.len() > 2 * 1000);
 }
 
 #[test]
 fn large_payload_near_the_limit_round_trips() {
     let update = vec![7u8; MAX_UPDATE_BYTES];
-    let frame = ServerMessage::Update {
-        from: cid(1),
-        update: update.clone(),
-    }
-    .encode()
-    .unwrap();
+    let frame = ServerMessage::Update { from: cid(1), update: update.clone() }.encode().unwrap();
     match ServerMessage::decode(&frame).unwrap() {
         ServerMessage::Update { update: got, .. } => assert_eq!(got, update),
         other => panic!("{other:?}"),
@@ -96,17 +70,11 @@ fn large_payload_near_the_limit_round_trips() {
 
 #[test]
 fn oversize_messages_are_refused_when_encoding() {
-    let big = ClientMessage::Update {
-        seq: 0,
-        update: vec![0; MAX_UPDATE_BYTES + 1],
-    };
+    let big = ClientMessage::Update { seq: 0, update: vec![0; MAX_UPDATE_BYTES + 1] };
     assert!(matches!(big.encode(), Err(EncodeError::Invalid(_))));
     assert!(matches!(big.to_json(), Err(EncodeError::Invalid(_))));
 
-    let empty = ClientMessage::Update {
-        seq: 0,
-        update: vec![],
-    };
+    let empty = ClientMessage::Update { seq: 0, update: vec![] };
     assert!(matches!(empty.encode(), Err(EncodeError::Invalid(_))));
 
     let mut a = full_awareness();
@@ -114,17 +82,11 @@ fn oversize_messages_are_refused_when_encoding() {
     assert!(ClientMessage::Awareness(a).encode().is_err());
 
     let mut a = full_awareness();
-    a.user = Some(UserInfo {
-        name: "x".repeat(MAX_USER_NAME_BYTES + 1),
-        color: 0,
-    });
+    a.user = Some(UserInfo { name: "x".repeat(MAX_USER_NAME_BYTES + 1), color: 0 });
     assert!(ClientMessage::Awareness(a).encode().is_err());
 
     let mut a = full_awareness();
-    a.cursor = Some(Point {
-        x: f64::NAN,
-        y: 0.0,
-    });
+    a.cursor = Some(Point { x: f64::NAN, y: 0.0 });
     assert!(ClientMessage::Awareness(a).encode().is_err());
 
     let sync = ServerMessage::SyncResponse {
@@ -188,9 +150,7 @@ fn reconnect_delay_grows_then_caps() {
         for attempt in 0..40 {
             let d = reconnect_delay_ms(attempt, jitter);
             assert!(d <= RECONNECT_MAX_MS, "attempt {attempt}: {d}");
-            let full = RECONNECT_BASE_MS
-                .saturating_mul(1 << attempt.min(16))
-                .min(RECONNECT_MAX_MS);
+            let full = RECONNECT_BASE_MS.saturating_mul(1 << attempt.min(16)).min(RECONNECT_MAX_MS);
             assert!(d >= full / 2 && d <= full);
             assert!(full / 2 >= prev_floor);
             prev_floor = full / 2;

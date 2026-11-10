@@ -23,10 +23,7 @@ pub(crate) mod hex_bytes {
 
 fn parse<T: serde::de::DeserializeOwned>(text: &str) -> Result<T, DecodeError> {
     if text.len() > MAX_JSON_BYTES {
-        return Err(DecodeError::FrameTooLarge {
-            len: text.len(),
-            max: MAX_JSON_BYTES,
-        });
+        return Err(DecodeError::FrameTooLarge { len: text.len(), max: MAX_JSON_BYTES });
     }
     serde_json::from_str(text).map_err(|e| DecodeError::Json(e.to_string()))
 }
@@ -41,12 +38,7 @@ impl ClientMessage {
     /// Parses the JSON debug form and validates it like a binary frame.
     pub fn from_json(text: &str) -> Result<Self, DecodeError> {
         let msg: ClientMessage = parse(text)?;
-        if let ClientMessage::Join {
-            min_version,
-            max_version,
-            ..
-        } = &msg
-        {
+        if let ClientMessage::Join { min_version, max_version, .. } = &msg {
             crate::binary::check_version_range(*min_version, *max_version)?;
         }
         msg.validate()?;

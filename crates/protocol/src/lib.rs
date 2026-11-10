@@ -23,6 +23,5 @@ pub use error::{DecodeError, EncodeError, ValidationError};
 pub use ids::{ClientId, RoomId};
 pub use limits::*;
 pub use message::{
-    AwarenessState, ClientMessage, ErrorCode, PeerInfo, Point, ServerMessage, SyncKind, UserInfo,
-    Viewport,
+    AwarenessState, ClientMessage, ErrorCode, PeerInfo, Point, ServerMessage, SyncKind, UserInfo, Viewport,
 };

@@ -111,9 +111,7 @@ impl DecodeError {
     /// The error code a server sends back for this failure.
     pub fn error_code(&self) -> crate::ErrorCode {
         match self {
-            DecodeError::FrameTooLarge { .. } | DecodeError::FieldTooLong { .. } => {
-                crate::ErrorCode::TooLarge
-            }
+            DecodeError::FrameTooLarge { .. } | DecodeError::FieldTooLong { .. } => crate::ErrorCode::TooLarge,
             DecodeError::UnsupportedVersion { .. } => crate::ErrorCode::UnsupportedVersion,
             _ => crate::ErrorCode::Malformed,
         }

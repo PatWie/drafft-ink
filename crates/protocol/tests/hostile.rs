@@ -47,15 +47,9 @@ fn trailing_bytes_are_an_error() {
     for (is_client, mut frame) in all_frames() {
         frame.push(0);
         if is_client {
-            assert!(matches!(
-                ClientMessage::decode(&frame),
-                Err(DecodeError::TrailingBytes(1))
-            ));
+            assert!(matches!(ClientMessage::decode(&frame), Err(DecodeError::TrailingBytes(1))));
         } else {
-            assert!(matches!(
-                ServerMessage::decode(&frame),
-                Err(DecodeError::TrailingBytes(1))
-            ));
+            assert!(matches!(ServerMessage::decode(&frame), Err(DecodeError::TrailingBytes(1))));
         }
     }
 }
@@ -138,16 +132,10 @@ fn huge_declared_lengths_do_not_allocate_or_panic() {
     f.push(b'r');
     f.extend_from_slice(&[0; 16]);
     f.extend_from_slice(&[0x80, 0x02]); // 256 peers
-    assert!(matches!(
-        ServerMessage::decode(&f),
-        Err(DecodeError::Truncated(_))
-    ));
+    assert!(matches!(ServerMessage::decode(&f), Err(DecodeError::Truncated(_))));
     // An awareness that claims 512 ids with no bytes behind them.
     let mut f = vec![0x04, 8, 0x80, 0x04];
-    assert!(matches!(
-        ClientMessage::decode(&f),
-        Err(DecodeError::Truncated(_))
-    ));
+    assert!(matches!(ClientMessage::decode(&f), Err(DecodeError::Truncated(_))));
     f[2] = 0xff; // now above the limit
     f.truncate(3);
     f.extend_from_slice(&[0xff, 0xff, 0x0f]);
@@ -158,43 +146,23 @@ fn huge_declared_lengths_do_not_allocate_or_panic() {
 fn overlong_and_overflowing_varints_are_rejected() {
     // Six continuation bytes.
     let f = [0x03, 0x80, 0x80, 0x80, 0x80, 0x80, 0x00];
-    assert!(matches!(
-        ClientMessage::decode(&f),
-        Err(DecodeError::BadVarint(_))
-    ));
+    assert!(matches!(ClientMessage::decode(&f), Err(DecodeError::BadVarint(_))));
     // Fifth byte carries bits above u32.
     let f = [0x03, 0xff, 0xff, 0xff, 0xff, 0x1f];
-    assert!(matches!(
-        ClientMessage::decode(&f),
-        Err(DecodeError::BadVarint(_))
-    ));
+    assert!(matches!(ClientMessage::decode(&f), Err(DecodeError::BadVarint(_))));
 }
 
 #[test]
 fn oversize_frames_are_refused_before_parsing() {
     let f = vec![0x02u8; MAX_FRAME_BYTES + 1];
-    assert!(matches!(
-        ClientMessage::decode(&f),
-        Err(DecodeError::FrameTooLarge { .. })
-    ));
-    assert!(matches!(
-        ServerMessage::decode(&f),
-        Err(DecodeError::FrameTooLarge { .. })
-    ));
+    assert!(matches!(ClientMessage::decode(&f), Err(DecodeError::FrameTooLarge { .. })));
+    assert!(matches!(ServerMessage::decode(&f), Err(DecodeError::FrameTooLarge { .. })));
     // An update above its field limit but inside the frame limit.
-    let mut f = ClientMessage::Update {
-        seq: 1,
-        update: vec![1; 10],
-    }
-    .encode()
-    .unwrap();
+    let mut f = ClientMessage::Update { seq: 1, update: vec![1; 10] }.encode().unwrap();
     f.truncate(5);
     f.extend_from_slice(&[0x80, 0x80, 0x80, 0x03]); // length 6_291_456 > 4 MiB
     f.extend(vec![0u8; MAX_UPDATE_BYTES + 10]);
-    assert!(matches!(
-        ClientMessage::decode(&f),
-        Err(DecodeError::FieldTooLong { .. })
-    ));
+    assert!(matches!(ClientMessage::decode(&f), Err(DecodeError::FieldTooLong { .. })));
 }
 
 #[test]
@@ -203,60 +171,33 @@ fn invalid_text_and_values_are_rejected() {
     let mut f = vec![0x01, 1, 0, 1, 0, 2, 0xc3, 0x28];
     f.extend_from_slice(&[0; 16]);
     f.extend_from_slice(&[0, 0, 0]);
-    assert!(matches!(
-        ClientMessage::decode(&f),
-        Err(DecodeError::InvalidUtf8(_))
-    ));
+    assert!(matches!(ClientMessage::decode(&f), Err(DecodeError::InvalidUtf8(_))));
     // Room id with a space.
     let mut f = vec![0x01, 1, 0, 1, 0, 1, b' '];
     f.extend_from_slice(&[0; 16]);
     f.extend_from_slice(&[0, 0, 0]);
-    assert!(matches!(
-        ClientMessage::decode(&f),
-        Err(DecodeError::Invalid(_))
-    ));
+    assert!(matches!(ClientMessage::decode(&f), Err(DecodeError::Invalid(_))));
     // Bool byte 2.
     let mut f = vec![0x01, 1, 0, 1, 0, 1, b'r'];
     f.extend_from_slice(&[0; 16]);
     f.extend_from_slice(&[2, 0, 0]);
-    assert!(matches!(
-        ClientMessage::decode(&f),
-        Err(DecodeError::UnknownValue { .. })
-    ));
+    assert!(matches!(ClientMessage::decode(&f), Err(DecodeError::UnknownValue { .. })));
     // Unknown awareness flag bit.
-    assert!(matches!(
-        ClientMessage::decode(&[0x04, 0x10]),
-        Err(DecodeError::UnknownValue { .. })
-    ));
+    assert!(matches!(ClientMessage::decode(&[0x04, 0x10]), Err(DecodeError::UnknownValue { .. })));
     // Non-finite cursor.
     let mut f = vec![0x04, 2];
     f.extend_from_slice(&f64::NAN.to_le_bytes());
     f.extend_from_slice(&0f64.to_le_bytes());
-    assert!(matches!(
-        ClientMessage::decode(&f),
-        Err(DecodeError::Invalid(_))
-    ));
+    assert!(matches!(ClientMessage::decode(&f), Err(DecodeError::Invalid(_))));
     // Colour above 24 bits.
     let mut f = vec![0x04, 1, 0];
     f.extend_from_slice(&0x0100_0000u32.to_le_bytes());
-    assert!(matches!(
-        ClientMessage::decode(&f),
-        Err(DecodeError::Invalid(_))
-    ));
+    assert!(matches!(ClientMessage::decode(&f), Err(DecodeError::Invalid(_))));
     // Unknown error code and sync kind.
-    assert!(matches!(
-        ServerMessage::decode(&[0x88, 99, 0, 0]),
-        Err(DecodeError::UnknownValue { .. })
-    ));
-    assert!(matches!(
-        ServerMessage::decode(&[0x82, 7, 0, 0]),
-        Err(DecodeError::UnknownValue { .. })
-    ));
+    assert!(matches!(ServerMessage::decode(&[0x88, 99, 0, 0]), Err(DecodeError::UnknownValue { .. })));
+    assert!(matches!(ServerMessage::decode(&[0x82, 7, 0, 0]), Err(DecodeError::UnknownValue { .. })));
     // Empty update.
-    assert!(matches!(
-        ClientMessage::decode(&[0x02, 0, 0, 0, 0, 0]),
-        Err(DecodeError::Invalid(_))
-    ));
+    assert!(matches!(ClientMessage::decode(&[0x02, 0, 0, 0, 0, 0]), Err(DecodeError::Invalid(_))));
 }
 
 #[test]
@@ -287,22 +228,10 @@ fn hostile_json_never_panics() {
         let _ = ServerMessage::from_json(c);
     }
     let too_big = " ".repeat(MAX_JSON_BYTES + 1);
-    assert!(matches!(
-        ClientMessage::from_json(&too_big),
-        Err(DecodeError::FrameTooLarge { .. })
-    ));
+    assert!(matches!(ClientMessage::from_json(&too_big), Err(DecodeError::FrameTooLarge { .. })));
     // Valid JSON that breaks a rule is refused by validation.
-    let long_name = format!(
-        "{{\"type\":\"awareness\",\"user\":{{\"name\":\"{}\",\"color\":1}}}}",
-        "x".repeat(200)
-    );
-    assert!(matches!(
-        ClientMessage::from_json(&long_name),
-        Err(DecodeError::Invalid(_))
-    ));
+    let long_name = format!("{{\"type\":\"awareness\",\"user\":{{\"name\":\"{}\",\"color\":1}}}}", "x".repeat(200));
+    assert!(matches!(ClientMessage::from_json(&long_name), Err(DecodeError::Invalid(_))));
     let bad_color = "{\"type\":\"awareness\",\"user\":{\"name\":\"a\",\"color\":16777216}}";
-    assert!(matches!(
-        ClientMessage::from_json(bad_color),
-        Err(DecodeError::Invalid(_))
-    ));
+    assert!(matches!(ClientMessage::from_json(bad_color), Err(DecodeError::Invalid(_))));
 }

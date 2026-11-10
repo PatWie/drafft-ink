@@ -102,9 +102,7 @@ pub fn negotiate_version(client_min: u16, client_max: u16) -> Option<u16> {
 /// that lost the server together does not come back together. `jitter` is any random u32.
 pub fn reconnect_delay_ms(attempt: u32, jitter: u32) -> u32 {
     let exp = attempt.min(16);
-    let full = RECONNECT_BASE_MS
-        .saturating_mul(1u32 << exp)
-        .min(RECONNECT_MAX_MS);
+    let full = RECONNECT_BASE_MS.saturating_mul(1u32 << exp).min(RECONNECT_MAX_MS);
     let half = full / 2;
     let spread = u64::from(full - half) + 1;
     half + (u64::from(jitter) % spread) as u32

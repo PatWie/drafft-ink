@@ -172,13 +172,7 @@ impl ErrorCode {
 
     /// Whether a client may reconnect on its own after this code.
     pub const fn retryable(self) -> bool {
-        matches!(
-            self,
-            ErrorCode::RoomFull
-                | ErrorCode::RateLimited
-                | ErrorCode::Unavailable
-                | ErrorCode::Internal
-        )
+        matches!(self, ErrorCode::RoomFull | ErrorCode::RateLimited | ErrorCode::Unavailable | ErrorCode::Internal)
     }
 }
 
@@ -335,11 +329,7 @@ impl ServerMessage {
             }
             message.truncate(cut);
         }
-        ServerMessage::Error {
-            code,
-            message,
-            retry_after_ms: None,
-        }
+        ServerMessage::Error { code, message, retry_after_ms: None }
     }
 
     /// The `Error` a server sends for a frame it could not decode.
@@ -351,19 +341,11 @@ impl ServerMessage {
 // ---- validation ---------------------------------------------------------------------------
 
 fn check_len(field: &'static str, len: usize, max: usize) -> Result<(), ValidationError> {
-    if len > max {
-        Err(ValidationError::new(field, "is too long"))
-    } else {
-        Ok(())
-    }
+    if len > max { Err(ValidationError::new(field, "is too long")) } else { Ok(()) }
 }
 
 fn check_finite(field: &'static str, v: f64) -> Result<(), ValidationError> {
-    if v.is_finite() {
-        Ok(())
-    } else {
-        Err(ValidationError::new(field, "must be a finite number"))
-    }
+    if v.is_finite() { Ok(()) } else { Err(ValidationError::new(field, "must be a finite number")) }
 }
 
 impl UserInfo {
@@ -393,10 +375,7 @@ impl AwarenessState {
             check_finite("viewport.width", v.width)?;
             check_finite("viewport.height", v.height)?;
             if v.width < 0.0 || v.height < 0.0 {
-                return Err(ValidationError::new(
-                    "viewport",
-                    "size must not be negative",
-                ));
+                return Err(ValidationError::new("viewport", "size must not be negative"));
             }
         }
         check_len("selection", self.selection.len(), MAX_SELECTION_IDS)?;
@@ -422,16 +401,10 @@ impl PeerInfo {
 impl Limits {
     fn validate(&self) -> Result<(), ValidationError> {
         if self.max_frame_bytes as usize > MAX_FRAME_BYTES {
-            return Err(ValidationError::new(
-                "limits.max_frame_bytes",
-                "above the hard limit",
-            ));
+            return Err(ValidationError::new("limits.max_frame_bytes", "above the hard limit"));
         }
         if self.max_update_bytes as usize > MAX_UPDATE_BYTES {
-            return Err(ValidationError::new(
-                "limits.max_update_bytes",
-                "above the hard limit",
-            ));
+            return Err(ValidationError::new("limits.max_update_bytes", "above the hard limit"));
         }
         Ok(())
     }
@@ -441,14 +414,7 @@ impl ClientMessage {
     /// Checks every size limit and value rule. Encoders and decoders call this.
     pub fn validate(&self) -> Result<(), ValidationError> {
         match self {
-            ClientMessage::Join {
-                min_version,
-                max_version,
-                auth_token,
-                version,
-                user,
-                ..
-            } => {
+            ClientMessage::Join { min_version, max_version, auth_token, version, user, .. } => {
                 if min_version > max_version {
                     return Err(ValidationError::new("version range", "min is above max"));
                 }
@@ -467,13 +433,9 @@ impl ClientMessage {
                 }
                 check_len("update", update.len(), MAX_UPDATE_BYTES)
             }
-            ClientMessage::RequestSync { version } => {
-                check_len("version", version.len(), MAX_VERSION_BYTES)
-            }
+            ClientMessage::RequestSync { version } => check_len("version", version.len(), MAX_VERSION_BYTES),
             ClientMessage::Awareness(state) => state.validate(),
-            ClientMessage::Ping { .. } | ClientMessage::Pong { .. } | ClientMessage::Leave => {
-                Ok(())
-            }
+            ClientMessage::Ping { .. } | ClientMessage::Pong { .. } | ClientMessage::Leave => Ok(()),
         }
     }
 }
@@ -482,13 +444,7 @@ impl ServerMessage {
     /// Checks every size limit and value rule. Encoders and decoders call this.
     pub fn validate(&self) -> Result<(), ValidationError> {
         match self {
-            ServerMessage::Joined {
-                server,
-                peers,
-                server_version,
-                limits,
-                ..
-            } => {
+            ServerMessage::Joined { server, peers, server_version, limits, .. } => {
                 check_len("server", server.len(), MAX_SERVER_NAME_BYTES)?;
                 check_len("peers", peers.len(), MAX_PEERS)?;
                 for p in peers {
@@ -497,11 +453,7 @@ impl ServerMessage {
                 check_len("server_version", server_version.len(), MAX_VERSION_BYTES)?;
                 limits.validate()
             }
-            ServerMessage::SyncResponse {
-                data,
-                server_version,
-                ..
-            } => {
+            ServerMessage::SyncResponse { data, server_version, .. } => {
                 check_len("data", data.len(), MAX_SYNC_BYTES)?;
                 check_len("server_version", server_version.len(), MAX_VERSION_BYTES)
             }
@@ -513,9 +465,7 @@ impl ServerMessage {
             }
             ServerMessage::PeerJoined { peer } => peer.validate(),
             ServerMessage::PeerAwareness { state, .. } => state.validate(),
-            ServerMessage::Error { message, .. } => {
-                check_len("message", message.len(), MAX_ERROR_MESSAGE_BYTES)
-            }
+            ServerMessage::Error { message, .. } => check_len("message", message.len(), MAX_ERROR_MESSAGE_BYTES),
             ServerMessage::Ack { .. }
             | ServerMessage::PeerLeft { .. }
             | ServerMessage::Ping { .. }

@@ -54,20 +54,14 @@ pub(crate) fn check_version_range(client_min: u16, client_max: u16) -> Result<()
 fn finish(w: Writer) -> Result<Vec<u8>, EncodeError> {
     let out = w.finish();
     if out.len() > MAX_FRAME_BYTES {
-        return Err(EncodeError::FrameTooLarge {
-            len: out.len(),
-            max: MAX_FRAME_BYTES,
-        });
+        return Err(EncodeError::FrameTooLarge { len: out.len(), max: MAX_FRAME_BYTES });
     }
     Ok(out)
 }
 
 fn split_tag(frame: &[u8]) -> Result<(u8, Reader<'_>), DecodeError> {
     if frame.len() > MAX_FRAME_BYTES {
-        return Err(DecodeError::FrameTooLarge {
-            len: frame.len(),
-            max: MAX_FRAME_BYTES,
-        });
+        return Err(DecodeError::FrameTooLarge { len: frame.len(), max: MAX_FRAME_BYTES });
     }
     let (&tag, rest) = frame.split_first().ok_or(DecodeError::Empty)?;
     Ok((tag, Reader::new(rest)))
@@ -91,18 +85,11 @@ fn put_user(w: &mut Writer, u: &UserInfo) {
 }
 
 fn get_user(r: &mut Reader<'_>) -> Result<UserInfo, DecodeError> {
-    Ok(UserInfo {
-        name: r.string("user.name", MAX_USER_NAME_BYTES)?,
-        color: r.u32("user.color")?,
-    })
+    Ok(UserInfo { name: r.string("user.name", MAX_USER_NAME_BYTES)?, color: r.u32("user.color")? })
 }
 
 fn get_opt_user(r: &mut Reader<'_>) -> Result<Option<UserInfo>, DecodeError> {
-    if r.bool("user flag")? {
-        Ok(Some(get_user(r)?))
-    } else {
-        Ok(None)
-    }
+    if r.bool("user flag")? { Ok(Some(get_user(r)?)) } else { Ok(None) }
 }
 
 fn put_peer(w: &mut Writer, p: &PeerInfo) {
@@ -112,10 +99,7 @@ fn put_peer(w: &mut Writer, p: &PeerInfo) {
 
 fn get_peer(r: &mut Reader<'_>) -> Result<PeerInfo, DecodeError> {
     let client_id = ClientId::from_bytes(r.id16("client_id")?);
-    Ok(PeerInfo {
-        client_id,
-        user: get_opt_user(r)?,
-    })
+    Ok(PeerInfo { client_id, user: get_opt_user(r)? })
 }
 
 fn put_awareness(w: &mut Writer, a: &AwarenessState) {
@@ -157,24 +141,11 @@ fn put_awareness(w: &mut Writer, a: &AwarenessState) {
 fn get_awareness(r: &mut Reader<'_>) -> Result<AwarenessState, DecodeError> {
     let flags = r.u8("awareness flags")?;
     if flags & !A_ALL != 0 {
-        return Err(DecodeError::UnknownValue {
-            field: "awareness flags",
-            value: u32::from(flags),
-        });
+        return Err(DecodeError::UnknownValue { field: "awareness flags", value: u32::from(flags) });
     }
-    let user = if flags & A_USER != 0 {
-        Some(get_user(r)?)
-    } else {
-        None
-    };
-    let cursor = if flags & A_CURSOR != 0 {
-        Some(Point {
-            x: r.f64("cursor.x")?,
-            y: r.f64("cursor.y")?,
-        })
-    } else {
-        None
-    };
+    let user = if flags & A_USER != 0 { Some(get_user(r)?) } else { None };
+    let cursor =
+        if flags & A_CURSOR != 0 { Some(Point { x: r.f64("cursor.x")?, y: r.f64("cursor.y")? }) } else { None };
     let viewport = if flags & A_VIEWPORT != 0 {
         Some(Viewport {
             x: r.f64("viewport.x")?,
@@ -193,12 +164,7 @@ fn get_awareness(r: &mut Reader<'_>) -> Result<AwarenessState, DecodeError> {
             selection.push(r.string("selection id", MAX_ELEMENT_ID_BYTES)?);
         }
     }
-    Ok(AwarenessState {
-        user,
-        cursor,
-        selection,
-        viewport,
-    })
+    Ok(AwarenessState { user, cursor, selection, viewport })
 }
 
 fn get_room(r: &mut Reader<'_>) -> Result<RoomId, DecodeError> {
@@ -212,15 +178,7 @@ impl ClientMessage {
     pub fn encode(&self) -> Result<Vec<u8>, EncodeError> {
         self.validate()?;
         match self {
-            ClientMessage::Join {
-                min_version,
-                max_version,
-                room,
-                client_id,
-                auth_token,
-                version,
-                user,
-            } => {
+            ClientMessage::Join { min_version, max_version, room, client_id, auth_token, version, user } => {
                 let mut w = Writer::new(C_JOIN);
                 // The version range comes first and its layout never changes, so a server of
                 // any version can tell that it cannot talk to this client.
@@ -283,37 +241,17 @@ impl ClientMessage {
                 check_version_range(min_version, max_version)?;
                 let room = get_room(&mut r)?;
                 let client_id = ClientId::from_bytes(r.id16("client_id")?);
-                let auth_token = if r.bool("auth flag")? {
-                    Some(r.string("auth_token", MAX_AUTH_TOKEN_BYTES)?)
-                } else {
-                    None
-                };
+                let auth_token =
+                    if r.bool("auth flag")? { Some(r.string("auth_token", MAX_AUTH_TOKEN_BYTES)?) } else { None };
                 let version = r.bytes("version", MAX_VERSION_BYTES)?;
                 let user = get_opt_user(&mut r)?;
-                ClientMessage::Join {
-                    min_version,
-                    max_version,
-                    room,
-                    client_id,
-                    auth_token,
-                    version,
-                    user,
-                }
+                ClientMessage::Join { min_version, max_version, room, client_id, auth_token, version, user }
             }
-            C_UPDATE => ClientMessage::Update {
-                seq: r.u32("seq")?,
-                update: r.bytes("update", MAX_UPDATE_BYTES)?,
-            },
-            C_REQUEST_SYNC => ClientMessage::RequestSync {
-                version: r.bytes("version", MAX_VERSION_BYTES)?,
-            },
+            C_UPDATE => ClientMessage::Update { seq: r.u32("seq")?, update: r.bytes("update", MAX_UPDATE_BYTES)? },
+            C_REQUEST_SYNC => ClientMessage::RequestSync { version: r.bytes("version", MAX_VERSION_BYTES)? },
             C_AWARENESS => ClientMessage::Awareness(get_awareness(&mut r)?),
-            C_PING => ClientMessage::Ping {
-                nonce: r.u64("nonce")?,
-            },
-            C_PONG => ClientMessage::Pong {
-                nonce: r.u64("nonce")?,
-            },
+            C_PING => ClientMessage::Ping { nonce: r.u64("nonce")? },
+            C_PONG => ClientMessage::Pong { nonce: r.u64("nonce")? },
             C_LEAVE => ClientMessage::Leave,
             other => return Err(DecodeError::UnknownTag(other)),
         };
@@ -330,15 +268,7 @@ impl ServerMessage {
     pub fn encode(&self) -> Result<Vec<u8>, EncodeError> {
         self.validate()?;
         match self {
-            ServerMessage::Joined {
-                protocol_version,
-                server,
-                room,
-                client_id,
-                peers,
-                server_version,
-                limits,
-            } => {
+            ServerMessage::Joined { protocol_version, server, room, client_id, peers, server_version, limits } => {
                 let mut w = Writer::new(S_JOINED);
                 w.u16(*protocol_version);
                 w.str(server);
@@ -355,11 +285,7 @@ impl ServerMessage {
                 w.u16(limits.max_awareness_per_sec);
                 finish(w)
             }
-            ServerMessage::SyncResponse {
-                kind,
-                data,
-                server_version,
-            } => {
+            ServerMessage::SyncResponse { kind, data, server_version } => {
                 let mut w = Writer::new(S_SYNC_RESPONSE);
                 w.u8(match kind {
                     SyncKind::Updates => 0,
@@ -396,11 +322,7 @@ impl ServerMessage {
                 put_awareness(&mut w, state);
                 finish(w)
             }
-            ServerMessage::Error {
-                code,
-                message,
-                retry_after_ms,
-            } => {
+            ServerMessage::Error { code, message, retry_after_ms } => {
                 let mut w = Writer::new(S_ERROR);
                 w.u8(code.as_u8());
                 w.str(message);
@@ -448,25 +370,14 @@ impl ServerMessage {
                     max_updates_per_sec: r.u16("limits.max_updates_per_sec")?,
                     max_awareness_per_sec: r.u16("limits.max_awareness_per_sec")?,
                 };
-                ServerMessage::Joined {
-                    protocol_version,
-                    server,
-                    room,
-                    client_id,
-                    peers,
-                    server_version,
-                    limits,
-                }
+                ServerMessage::Joined { protocol_version, server, room, client_id, peers, server_version, limits }
             }
             S_SYNC_RESPONSE => {
                 let kind = match r.u8("sync kind")? {
                     0 => SyncKind::Updates,
                     1 => SyncKind::Snapshot,
                     v => {
-                        return Err(DecodeError::UnknownValue {
-                            field: "sync kind",
-                            value: u32::from(v),
-                        });
+                        return Err(DecodeError::UnknownValue { field: "sync kind", value: u32::from(v) });
                     }
                 };
                 ServerMessage::SyncResponse {
@@ -480,40 +391,22 @@ impl ServerMessage {
                 update: r.bytes("update", MAX_UPDATE_BYTES)?,
             },
             S_ACK => ServerMessage::Ack { seq: r.u32("seq")? },
-            S_PEER_JOINED => ServerMessage::PeerJoined {
-                peer: get_peer(&mut r)?,
-            },
-            S_PEER_LEFT => ServerMessage::PeerLeft {
-                client_id: ClientId::from_bytes(r.id16("client_id")?),
-            },
+            S_PEER_JOINED => ServerMessage::PeerJoined { peer: get_peer(&mut r)? },
+            S_PEER_LEFT => ServerMessage::PeerLeft { client_id: ClientId::from_bytes(r.id16("client_id")?) },
             S_PEER_AWARENESS => ServerMessage::PeerAwareness {
                 from: ClientId::from_bytes(r.id16("from")?),
                 state: get_awareness(&mut r)?,
             },
             S_ERROR => {
                 let raw = r.u8("error code")?;
-                let code = ErrorCode::from_u8(raw).ok_or(DecodeError::UnknownValue {
-                    field: "error code",
-                    value: u32::from(raw),
-                })?;
+                let code = ErrorCode::from_u8(raw)
+                    .ok_or(DecodeError::UnknownValue { field: "error code", value: u32::from(raw) })?;
                 let message = r.string("message", MAX_ERROR_MESSAGE_BYTES)?;
-                let retry_after_ms = if r.bool("retry flag")? {
-                    Some(r.u32("retry_after_ms")?)
-                } else {
-                    None
-                };
-                ServerMessage::Error {
-                    code,
-                    message,
-                    retry_after_ms,
-                }
+                let retry_after_ms = if r.bool("retry flag")? { Some(r.u32("retry_after_ms")?) } else { None };
+                ServerMessage::Error { code, message, retry_after_ms }
             }
-            S_PING => ServerMessage::Ping {
-                nonce: r.u64("nonce")?,
-            },
-            S_PONG => ServerMessage::Pong {
-                nonce: r.u64("nonce")?,
-            },
+            S_PING => ServerMessage::Ping { nonce: r.u64("nonce")? },
+            S_PONG => ServerMessage::Pong { nonce: r.u64("nonce")? },
             other => return Err(DecodeError::UnknownTag(other)),
         };
         r.finish()?;

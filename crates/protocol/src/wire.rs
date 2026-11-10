@@ -83,9 +83,7 @@ impl<'a> Reader<'a> {
         }
         let start = self.pos;
         self.pos += n;
-        self.buf
-            .get(start..start + n)
-            .ok_or(DecodeError::Truncated(what))
+        self.buf.get(start..start + n).ok_or(DecodeError::Truncated(what))
     }
 
     fn array<const N: usize>(&mut self, what: &'static str) -> Result<[u8; N], DecodeError> {
@@ -117,10 +115,7 @@ impl<'a> Reader<'a> {
         match self.u8(what)? {
             0 => Ok(false),
             1 => Ok(true),
-            v => Err(DecodeError::UnknownValue {
-                field: what,
-                value: u32::from(v),
-            }),
+            v => Err(DecodeError::UnknownValue { field: what, value: u32::from(v) }),
         }
     }
 
@@ -144,11 +139,7 @@ impl<'a> Reader<'a> {
     pub fn len(&mut self, what: &'static str, max: usize) -> Result<usize, DecodeError> {
         let len = self.varint(what)? as usize;
         if len > max {
-            return Err(DecodeError::FieldTooLong {
-                field: what,
-                len,
-                max,
-            });
+            return Err(DecodeError::FieldTooLong { field: what, len, max });
         }
         Ok(len)
     }
@@ -161,19 +152,12 @@ impl<'a> Reader<'a> {
     pub fn string(&mut self, what: &'static str, max: usize) -> Result<String, DecodeError> {
         let len = self.len(what, max)?;
         let raw = self.take(len, what)?;
-        std::str::from_utf8(raw)
-            .map(str::to_owned)
-            .map_err(|_| DecodeError::InvalidUtf8(what))
+        std::str::from_utf8(raw).map(str::to_owned).map_err(|_| DecodeError::InvalidUtf8(what))
     }
 
     /// Reads an element count. Every element takes at least `min_elem` bytes, so a count that
     /// the remaining input cannot hold is refused before a vector is allocated.
-    pub fn count(
-        &mut self,
-        what: &'static str,
-        max: usize,
-        min_elem: usize,
-    ) -> Result<usize, DecodeError> {
+    pub fn count(&mut self, what: &'static str, max: usize, min_elem: usize) -> Result<usize, DecodeError> {
         let n = self.len(what, max)?;
         if n.saturating_mul(min_elem) > self.remaining() {
             return Err(DecodeError::Truncated(what));
