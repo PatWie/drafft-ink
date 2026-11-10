@@ -1564,6 +1564,7 @@ dependencies = [
 name = "drafftink-ui"
 version = "0.2.0"
 dependencies = [
+ "drafftink-edit",
  "drafftink-engine",
  "drafftink-scene",
  "egui",

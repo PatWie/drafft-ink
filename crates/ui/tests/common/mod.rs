@@ -1,6 +1,7 @@
 //! Shared fixture of the UI tests: a real `Session` over fake ports, the model, the UI state and a
 //! recorder for the actions each frame returns. No GPU: `egui_kittest` runs the UI headless.
 #![allow(dead_code)]
+#![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
 use drafftink_engine::Session;
 use drafftink_engine::ports::fake::Fakes;
@@ -50,7 +51,7 @@ impl Fixture {
     /// Recaptures the model.
     pub fn refresh(&mut self) {
         self.model.invalidate();
-        self.model.refresh(&mut self.session);
+        self.model.refresh(&self.session);
     }
 
     /// The commands among the recorded actions.

@@ -282,9 +282,9 @@ impl CommandSink for Session {
     }
 }
 
-/// A command that was executed, with what it returned.
+/// A command that was ran, with what it returned.
 #[derive(Debug, Clone)]
-pub struct Executed {
+pub struct Ran {
     /// The call.
     pub call: Call,
     /// The output, or the refusal.
@@ -295,15 +295,15 @@ pub struct Executed {
 #[derive(Debug, Default)]
 pub struct Report {
     /// Every command that ran, in order.
-    pub executed: Vec<Executed>,
+    pub ran: Vec<Ran>,
     /// Requests for the app.
     pub host: Vec<HostRequest>,
 }
 
 impl Report {
-    /// The refusals among the executed commands.
+    /// The refusals among the ran commands.
     pub fn refusals(&self) -> impl Iterator<Item = &Refusal> {
-        self.executed.iter().filter_map(|e| e.result.as_ref().err())
+        self.ran.iter().filter_map(|e| e.result.as_ref().err())
     }
 }
 
@@ -324,7 +324,7 @@ pub fn dispatch<S: CommandSink>(sink: &mut S, state: &mut UiState, actions: Vec<
             Routed::Command(call) => {
                 let result = sink.run(call.origin, &call.id, call.args.clone());
                 state.after_command(&call, &result, now, &mut report.host);
-                report.executed.push(Executed { call, result });
+                report.ran.push(Ran { call, result });
             }
         }
     }

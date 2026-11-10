@@ -12,7 +12,7 @@ use std::hash::{DefaultHasher, Hash, Hasher};
 
 use drafftink_engine::spec::{CommandSpec, Scope, TextGate};
 use drafftink_engine::state::Tool;
-use drafftink_engine::{Origin, Refusal, Session};
+use drafftink_engine::{Refusal, Session};
 use drafftink_scene::SceneRead;
 use serde_json::{Value, json};
 
@@ -205,6 +205,7 @@ pub struct Model {
     /// Presence. Written by the app through `UiShell::set_collab`.
     pub collab: CollabView,
     stamp: Option<u64>,
+    captured_mac: bool,
 }
 
 impl Default for Model {
@@ -229,6 +230,7 @@ impl Default for Model {
             background: "#ffffff".to_owned(),
             collab: CollabView::default(),
             stamp: None,
+            captured_mac: false,
         }
     }
 }
@@ -282,17 +284,18 @@ impl Model {
     /// Recaptures from the session when its stamp changed (or after [`Model::invalidate`]). Returns
     /// true when it recaptured. Reading the style goes through `style.get`, so this takes the session
     /// mutably; the call is a read and changes no state.
-    pub fn refresh(&mut self, s: &mut Session) -> bool {
+    pub fn refresh(&mut self, s: &Session) -> bool {
         let stamp = Self::stamp_of(s);
-        if self.stamp == Some(stamp) && !self.commands.is_empty() {
+        if self.stamp == Some(stamp) && !self.commands.is_empty() && self.captured_mac == self.mac {
             return false;
         }
         self.capture(s);
+        self.captured_mac = self.mac;
         self.stamp = Some(stamp);
         true
     }
 
-    fn capture(&mut self, s: &mut Session) {
+    fn capture(&mut self, s: &Session) {
         let mac = self.mac;
         self.commands = s
             .commands()
@@ -444,31 +447,38 @@ fn shortcuts_of(spec: &CommandSpec, mac: bool) -> Vec<ShortcutView> {
         .collect()
 }
 
-/// Reads the style panel's data with `style.get`. A refusal (for example while a text edit runs)
-/// leaves the panel empty.
-fn read_style(s: &mut Session) -> StyleView {
-    let Ok(out) = s.execute_from(Origin::Ui, "style.get", json!({})) else {
-        return StyleView::default();
+/// Reads the style panel's data: the style of the selection, or the defaults for new elements when nothing is
+/// selected. It is the read half of `style.get` (same domain function, same "mixed" rule) without a command
+/// call, because a call would put a ring entry after every user action.
+fn read_style(s: &Session) -> StyleView {
+    use drafftink_edit::style::{Prop, read};
+    let targets = s.targets(None).unwrap_or_default();
+    let (source, kinds, rows): (&str, Vec<String>, Vec<_>) = if targets.is_empty() {
+        ("defaults", Vec::new(), vec![s.tool.defaults().to_props()])
+    } else {
+        match read(s.store(), &targets, true) {
+            Ok(read) => {
+                let mut kinds: Vec<String> = read.iter().map(|(k, _)| k.name().to_owned()).collect();
+                kinds.sort();
+                kinds.dedup();
+                ("selection", kinds, read.into_iter().map(|(_, p)| p).collect())
+            }
+            Err(_) => return StyleView::default(),
+        }
     };
-    let source = out.get("source").and_then(Value::as_str).unwrap_or("defaults").to_owned();
-    let kinds = out
-        .get("kinds")
-        .and_then(Value::as_array)
-        .map(|a| a.iter().filter_map(|k| k.as_str().map(str::to_owned)).collect())
-        .unwrap_or_default();
-    let props = out
-        .get("props")
-        .and_then(Value::as_object)
-        .map(|m| {
-            m.iter()
-                .map(|(name, p)| {
-                    let applicable = p.get("applicable").and_then(Value::as_bool).unwrap_or(false);
-                    (name.clone(), StyleProp { applicable, value: p.get("value").cloned() })
-                })
-                .collect()
+    let props = Prop::ALL
+        .into_iter()
+        .map(|prop| {
+            let values: Vec<Value> = rows.iter().filter_map(|r| r.value(prop)).collect();
+            let value = match values.split_first() {
+                None => None,
+                Some((first, rest)) if rest.iter().all(|v| v == first) => Some(first.clone()),
+                Some(_) => Some(json!("mixed")),
+            };
+            (prop.name().to_owned(), StyleProp { applicable: !values.is_empty(), value })
         })
-        .unwrap_or_default();
-    StyleView { source, kinds, props }
+        .collect();
+    StyleView { source: source.to_owned(), kinds, props }
 }
 
 /// The JSON Schema of a command's arguments (a JSON object with `properties`, `required`, `$defs`).

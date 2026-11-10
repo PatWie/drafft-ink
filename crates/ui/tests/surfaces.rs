@@ -1,5 +1,6 @@
 //! One test per surface: clicking a control makes the expected command call, a refused control is
 //! greyed with the refusal text.
+#![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
 mod common;
 
@@ -185,7 +186,7 @@ fn undo_button_is_enabled_after_a_change() {
     f.refresh();
     assert!(f.model.refusal_text("history.undo").is_some());
     let a = add_rect(&mut f.session, 0.0, 0.0, 10.0, 10.0).unwrap();
-    select(&mut f.session, &[a.clone()]);
+    select(&mut f.session, std::slice::from_ref(&a));
     f.session.execute("style.set", json!({"props": {"stroke_color": "blue-500"}})).unwrap();
     f.refresh();
     assert!(f.model.refusal_text("history.undo").is_none());

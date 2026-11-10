@@ -70,7 +70,7 @@ impl UiShell {
 
         let now = ctx.input(|i| i.time);
         let report = dispatch(session, &mut self.state, actions, now);
-        if !report.executed.is_empty() {
+        if !report.ran.is_empty() {
             self.model.invalidate();
             self.model.refresh(session);
             // The state the user sees changed: one more frame to show it.
