@@ -35,6 +35,11 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 thiserror = "2"
 log = "0.4"
+# scene (L1) data model
+smallvec = { version = "1", features = ["serde"] }
+smol_str = { version = "0.3", features = ["serde"] }
+base64 = "0.22"
+sha2 = "0.10"
 uuid = { version = "1", features = ["serde"] }
 image = { version = "0.25", default-features = false, features = ["png", "jpeg", "webp"] }
 png = "0.18"
