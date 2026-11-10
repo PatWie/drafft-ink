@@ -181,6 +181,8 @@ pub struct RenderRequest {
     pub selection: Vec<ElementId>,
     /// Background colour to use when `background` is set.
     pub background_color: Color,
+    /// Draw with the dark palette (`doc.export` with `dark`).
+    pub dark: bool,
 }
 
 /// Offscreen rendering for PNG export and screenshots.

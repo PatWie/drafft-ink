@@ -189,6 +189,7 @@ pub(super) fn copy_as(s: &mut Session, a: CopyAsArgs) -> Result<CopyAsOut, Refus
                 overlay: false,
                 selection: Vec::new(),
                 background_color: doc.background,
+                dark: false,
             };
             let png = match s.ports.renderer.as_ref() {
                 Some(r) => r
