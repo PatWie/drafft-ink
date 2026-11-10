@@ -1,11 +1,30 @@
 [package]
 name = "drafftink-profile"
+description = "Drafft.ink performance tooling: spans, frame stats, redraw reasons, work counters, PerfStats JSON, Chrome trace"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
 rust-version.workspace = true
 
+[features]
+default = ["enabled"]
+# Compile spans, phase timing and frame statistics in. With `default-features = false` every
+# timing call is an empty inline function and `Span` is zero-sized. Work counters and redraw
+# reasons are always compiled: tests assert on them and each costs one non-atomic add.
+enabled = []
+
 [dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }
+# `Instant` that also works in the browser (std's panics on wasm32-unknown-unknown).
+web-time = "1"
+
+[dev-dependencies]
+criterion = { version = "0.5", default-features = false, features = ["cargo_bench_support"] }
+
+[[bench]]
+name = "span_overhead"
+harness = false
 
 [lints]
 workspace = true

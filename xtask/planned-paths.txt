@@ -5,6 +5,5 @@ ATTRIBUTION.md
 docs/commands.md
 docs/exceptions.md
 docs/testing.md
-docs/performance.md
 docs/agents.md
 docs/formats.md
