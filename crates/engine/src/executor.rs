@@ -15,7 +15,7 @@ use crate::ring::{Origin, Outcome, Record};
 use crate::session::{Session, SoftState};
 use crate::spec::{CommandSpec, Gate, RingMode, Selection, Status, TextGate, Txn, Undo};
 use crate::state::TabId;
-use crate::store::{CoalesceKey, DocMark, NewStep, Summary};
+use crate::store::{DocMark, StepMeta, Summary};
 use drafftink_profile::{Counter, inc, now_ns, span};
 
 /// Where arguments come from.
@@ -118,7 +118,10 @@ impl Session {
         if self.run.depth > 0 {
             let r = Refusal::internal(
                 spec.id,
-                format!("`{}` was called from inside `{}`; commands run other commands with run_nested only", spec.id, self.run.cmd),
+                format!(
+                    "`{}` was called from inside `{}`; commands run other commands with run_nested only",
+                    spec.id, self.run.cmd
+                ),
             );
             return Err(r);
         }
@@ -219,7 +222,15 @@ impl Session {
             let top_level = mode == Mode::Top;
             let res = self.run_pipeline(end, Input::Json(&args), origin, mode);
             if top_level && let Ok(done) = &res {
-                self.record(origin, end, Some(&args), Outcome::ok(done.changed, done.undo_label.clone()), 0, None, None);
+                self.record(
+                    origin,
+                    end,
+                    Some(&args),
+                    Outcome::ok(done.changed, done.undo_label.clone()),
+                    0,
+                    None,
+                    None,
+                );
             }
             res?;
         }
@@ -295,7 +306,12 @@ impl Session {
         self.invoke(spec, parsed.as_ref())
     }
 
-    fn run_standard(&mut self, spec: &'static CommandSpec, parsed: &Parsed<'_>, mode: Mode) -> Result<StepDone, Refusal> {
+    fn run_standard(
+        &mut self,
+        spec: &'static CommandSpec,
+        parsed: &Parsed<'_>,
+        mode: Mode,
+    ) -> Result<StepDone, Refusal> {
         let tab_id = self.tab().id;
         let soft = self.soft_state();
         let mark = self.tab().doc.mark();
@@ -306,7 +322,8 @@ impl Session {
             self.run.writes.clear();
             self.run.history_reset = false;
         }
-        let result = self.invoke(spec, parsed.any()).and_then(|v| self.invariant_pass(tab_id, mark, spec.id).map(|()| v));
+        let result =
+            self.invoke(spec, parsed.any()).and_then(|v| self.invariant_pass(tab_id, mark, spec.id).map(|()| v));
         match result {
             Err(r) => {
                 let r = self.rollback(tab_id, mark, &soft, r);
@@ -314,7 +331,7 @@ impl Session {
                 self.run.warnings.truncate(if mode == Mode::Top { 0 } else { warn_len });
                 Err(r.for_command(spec.id))
             }
-            Ok(out) => Ok(self.finish_ok(spec, out, tab_id, mark, &soft, mode, warn_len)),
+            Ok(out) => self.finish_ok(spec, out, tab_id, mark, &soft, mode, warn_len),
         }
     }
 
@@ -335,7 +352,10 @@ impl Session {
         if let Some(t) = self.tab_by_id_mut(tab_id)
             && let Err(e) = t.doc.rollback_to(mark)
         {
-            r = Refusal::internal(&r.command, format!("rolling back failed: {e}. Reload the document from the last save"));
+            r = Refusal::internal(
+                &r.command,
+                format!("rolling back failed: {e}. Reload the document from the last save"),
+            );
         }
         self.restore_soft(soft);
         r
@@ -351,34 +371,34 @@ impl Session {
         soft: &SoftState,
         mode: Mode,
         warn_len: usize,
-    ) -> StepDone {
+    ) -> Result<StepDone, Refusal> {
         let mut undo_label = None;
         let summary: Summary;
         if mode == Mode::Top {
-            let now = self.now_ms();
             let depth = self.settings.history_depth();
             let reset = self.run.history_reset;
-            let obs_after = self.tab_by_id(tab_id).map(|t| t.observed.clone());
+            let obs_after = self.tab_by_id(tab_id).map(|t| t.observed.clone()).unwrap_or_default();
+            let undoable = matches!(spec.undo, Undo::Undoable | Undo::Gesture) && !reset;
             match self.tab_by_id_mut(tab_id) {
                 Some(t) => {
-                    let (patch, s) = t.doc.take_since(mark);
-                    if s.changed && matches!(spec.undo, Undo::Undoable | Undo::Gesture) && !reset {
-                        let label = spec.title.to_owned();
-                        t.history.push(
-                            NewStep {
-                                label: label.clone(),
-                                patch,
-                                obs_before: soft.observed.clone(),
-                                obs_after: obs_after.unwrap_or_default(),
-                                coalesce: spec.coalesce.map(|c| CoalesceKey { key: c.key, ms: c.ms }),
-                                targets: s.touched.clone(),
-                                t_ms: now,
-                            },
-                            depth,
-                        );
-                        undo_label = Some(label);
+                    let meta =
+                        StepMeta { label: spec.title, undoable, before: &soft.observed, after: &obs_after, depth };
+                    match t.doc.commit_since(mark, &meta) {
+                        Ok(s) => {
+                            if s.changed && undoable {
+                                undo_label = Some(spec.title.to_owned());
+                            }
+                            summary = s;
+                        }
+                        Err(e) => {
+                            // The replicated store refused the write: take the command back.
+                            let r = Refusal::internal(spec.id, format!("saving the change failed: {e}"));
+                            let r = self.rollback(tab_id, mark, soft, r);
+                            self.run.writes.clear();
+                            self.run.warnings.clear();
+                            return Err(r);
+                        }
                     }
-                    summary = s;
                 }
                 None => summary = Summary::default(),
             }
@@ -397,7 +417,7 @@ impl Session {
         if changed {
             self.mark_dirty(spec.redraw);
         }
-        StepDone { out, changed, undo_label }
+        Ok(StepDone { out, changed, undo_label })
     }
 
     /// Commands that manage their own state (gesture protocol, history).
@@ -452,7 +472,14 @@ impl Session {
         });
     }
 
-    pub(crate) fn record_refusal_spec(&mut self, origin: Origin, spec: &CommandSpec, args: Option<&Value>, r: &Refusal, dur: u64) {
+    pub(crate) fn record_refusal_spec(
+        &mut self,
+        origin: Origin,
+        spec: &CommandSpec,
+        args: Option<&Value>,
+        r: &Refusal,
+        dur: u64,
+    ) {
         self.record(origin, spec, args, Outcome::refused(r), dur, None, None);
     }
 

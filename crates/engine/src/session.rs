@@ -214,7 +214,7 @@ impl Session {
     /// Clears the active tab's undo history. The running command then pushes no undo step
     /// (`doc.new`, `doc.open`).
     pub fn clear_history(&mut self) {
-        self.tab_mut().history.clear();
+        self.tab_mut().doc.clear_history();
         self.run.history_reset = true;
     }
 
@@ -229,7 +229,7 @@ impl Session {
     }
 
     /// Shorthand for the active tab's document store, read-only.
-    pub fn store(&self) -> &crate::store::DocStore {
+    pub fn store(&self) -> &crate::store::WorkStore {
         self.tab().doc.store()
     }
 
@@ -283,7 +283,9 @@ impl Session {
                 }
                 out
             }
-            None => self.selection().iter().filter(|id| self.store().get(id).is_some_and(|e| !e.deleted)).cloned().collect(),
+            None => {
+                self.selection().iter().filter(|id| self.store().get(id).is_some_and(|e| !e.deleted)).cloned().collect()
+            }
         };
         if ids.is_empty() { Err(Refusal::no_target(self.cmd())) } else { Ok(ids) }
     }
@@ -300,7 +302,7 @@ impl Session {
     pub fn undo_steps(&mut self, n: usize) -> Result<UndoOutcome, Refusal> {
         let cmd = self.cmd();
         let t = self.tab_mut();
-        let out = t.history.undo(&mut t.doc, n).map_err(|e| Refusal::internal(cmd, format!("undo failed: {e}")))?;
+        let out = t.doc.undo(n).map_err(|e| Refusal::internal(cmd, format!("undo failed: {e}")))?;
         if let Some(obs) = &out.observed {
             t.observed = obs.clone();
         }
@@ -314,7 +316,7 @@ impl Session {
     pub fn redo_steps(&mut self, n: usize) -> Result<UndoOutcome, Refusal> {
         let cmd = self.cmd();
         let t = self.tab_mut();
-        let out = t.history.redo(&mut t.doc, n).map_err(|e| Refusal::internal(cmd, format!("redo failed: {e}")))?;
+        let out = t.doc.redo(n).map_err(|e| Refusal::internal(cmd, format!("redo failed: {e}")))?;
         if let Some(obs) = &out.observed {
             t.observed = obs.clone();
         }
@@ -393,8 +395,8 @@ impl Session {
                 doc_hash(t),
                 t.observed,
                 t.view,
-                t.history.undo_depth(),
-                t.history.redo_depth(),
+                t.doc.undo_depth(),
+                t.doc.redo_depth(),
                 t.saved_revision
             ));
         }

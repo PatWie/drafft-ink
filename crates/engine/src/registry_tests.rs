@@ -31,7 +31,11 @@ fn ids_are_unique_and_well_formed() {
         *seen.entry(s.id).or_default() += 1;
         let (fam, verb) = s.id.split_once('.').unwrap_or_else(|| panic!("`{}` has no dot", s.id));
         assert!(!fam.is_empty() && fam.bytes().all(|b| b.is_ascii_lowercase()), "family part of `{}`", s.id);
-        assert!(!verb.is_empty() && verb.bytes().all(|b| b.is_ascii_lowercase() || b == b'_'), "verb part of `{}`", s.id);
+        assert!(
+            !verb.is_empty() && verb.bytes().all(|b| b.is_ascii_lowercase() || b == b'_'),
+            "verb part of `{}`",
+            s.id
+        );
         assert_eq!(s.family, fam, "`{}` declares family `{}`", s.id, s.family);
     }
     let dups: Vec<&&str> = seen.iter().filter(|(_, n)| **n > 1).map(|(id, _)| id).collect();
@@ -41,9 +45,19 @@ fn ids_are_unique_and_well_formed() {
 #[test]
 fn words_are_plain() {
     for s in specs() {
-        assert!(!s.title.is_empty() && s.title.chars().next().is_some_and(char::is_uppercase), "title of `{}`: {:?}", s.id, s.title);
+        assert!(
+            !s.title.is_empty() && s.title.chars().next().is_some_and(char::is_uppercase),
+            "title of `{}`: {:?}",
+            s.id,
+            s.title
+        );
         assert!(!s.title.ends_with('.'), "title of `{}` ends with a period", s.id);
-        assert!(s.summary.len() >= 20 && s.summary.ends_with('.'), "summary of `{}` must be a sentence: {:?}", s.id, s.summary);
+        assert!(
+            s.summary.len() >= 20 && s.summary.ends_with('.'),
+            "summary of `{}` must be a sentence: {:?}",
+            s.id,
+            s.summary
+        );
         for b in s.shortcuts {
             if let Some(t) = b.title {
                 assert!(t.chars().next().is_some_and(char::is_uppercase), "binding title {t:?} of `{}`", s.id);
@@ -98,7 +112,11 @@ fn facts_are_consistent() {
         }
         if s.mutates.contains(Mutates::DOC) {
             if !DOC_EXEMPT_VIEW_ONLY.contains(&id) {
-                assert_eq!(s.view_only, Gate::Refused, "`{id}` changes the document, so it must refuse in view-only mode");
+                assert_eq!(
+                    s.view_only,
+                    Gate::Refused,
+                    "`{id}` changes the document, so it must refuse in view-only mode"
+                );
             }
             if !DOC_EXEMPT_UNDO.contains(&id) {
                 assert_ne!(s.undo, Undo::NoUndo, "`{id}` changes the document, so it needs an undo class");
@@ -201,7 +219,8 @@ fn shortcut_arguments_are_valid_for_their_command() {
             if b.args.is_empty() {
                 continue;
             }
-            let v: Value = serde_json::from_str(b.args).unwrap_or_else(|e| panic!("binding args of `{}` are not JSON: {e}", s.id));
+            let v: Value =
+                serde_json::from_str(b.args).unwrap_or_else(|e| panic!("binding args of `{}` are not JSON: {e}", s.id));
             if let Err(r) = s.handler.parse(s.id, &v) {
                 panic!("binding args {v} of `{}` do not parse: {}", s.id, r.message);
             }
@@ -231,7 +250,8 @@ fn every_command_publishes_closed_argument_and_output_schemas() {
 fn examples_parse_and_agent_commands_with_required_arguments_have_one() {
     for s in specs() {
         if !s.example.is_empty() {
-            let v: Value = serde_json::from_str(s.example).unwrap_or_else(|e| panic!("example of `{}` is not JSON: {e}", s.id));
+            let v: Value =
+                serde_json::from_str(s.example).unwrap_or_else(|e| panic!("example of `{}` is not JSON: {e}", s.id));
             if let Err(r) = s.handler.parse(s.id, &v) {
                 panic!("example {v} of `{}` does not parse: {}", s.id, r.message);
             }
@@ -394,7 +414,11 @@ fn hostile_params_never_panic_in_a_batch() {
             let step = crate::batch::BatchStep::new(spec.id, v.clone());
             let out = s.execute_batch(crate::ring::Origin::Test, &[step], &crate::batch::BatchOpts::default());
             if let Some(f) = &out.failed {
-                assert_ne!(f.refusal.code, "internal", "`{}` panicked in a batch on {v}: {}", spec.id, f.refusal.message);
+                assert_ne!(
+                    f.refusal.code, "internal",
+                    "`{}` panicked in a batch on {v}: {}",
+                    spec.id, f.refusal.message
+                );
                 assert_eq!(s.fingerprint(), before, "`{}` failed in a batch on {v} but changed state", spec.id);
             }
         }
@@ -445,7 +469,9 @@ fn check_refusal(spec: &CommandSpec, s: &mut Session, args: Value, must_refuse: 
         Err(r) => {
             assert_ne!(r.code, "internal", "`{}` failed unexpectedly on {args}: {}", spec.id, r.message);
             // A `Commit` gate commits a running text edit before the command refuses; that is its own step.
-            let committed = spec.while_text_edit == TextGate::Commit && before.contains("text=Some") && !s.fingerprint().contains("text=Some");
+            let committed = spec.while_text_edit == TextGate::Commit
+                && before.contains("text=Some")
+                && !s.fingerprint().contains("text=Some");
             if !committed {
                 assert!(s.fingerprint() == before, "`{}` refused {args} with `{}` but changed state", spec.id, r.code);
             }
@@ -474,4 +500,3 @@ fn availability_and_execute_agree_on_state_refusals() {
         }
     }
 }
-

@@ -358,7 +358,8 @@ impl Facts {
     };
 
     /// A camera command: changes the view only, allowed in every state.
-    pub const CAMERA: Facts = Facts { reads_only: false, mutates: Mutates::VIEW, redraw: Redraw::Camera, ..Facts::READ_ONLY };
+    pub const CAMERA: Facts =
+        Facts { reads_only: false, mutates: Mutates::VIEW, redraw: Redraw::Camera, ..Facts::READ_ONLY };
 }
 
 /// One command. Build it with [`CommandSpec::new`] and the optional `const` methods.
@@ -378,10 +379,10 @@ pub struct CommandSpec {
     /// JSON Schema of the output struct (the common keys are added by `engine.describe`).
     pub output: fn() -> Schema,
     /// State-dependent availability. Never looks at the arguments.
-    pub available: fn(&Session) -> Result<(), Refusal>,
+    pub available: Check,
     /// Checks that need the default arguments (the current selection): `too_few`, `needs_single`. Used by
     /// `Session::availability`, so a disabled control shows the text `execute` would return.
-    pub default_targets: Option<fn(&Session) -> Result<(), Refusal>>,
+    pub default_targets: Option<Check>,
     /// The typed handler.
     pub handler: &'static dyn Handler,
     /// Command-specific refusal codes this command can return (the shared ones are implied).
@@ -431,6 +432,9 @@ impl std::fmt::Debug for CommandSpec {
         write!(f, "CommandSpec({})", self.id)
     }
 }
+
+/// A state check: `Ok` or the refusal a disabled control shows.
+pub type Check = fn(&Session) -> Result<(), Refusal>;
 
 /// The default `available`: always.
 pub fn always(_: &Session) -> Result<(), Refusal> {
@@ -489,14 +493,14 @@ impl CommandSpec {
 
     /// Sets the state-dependent availability check.
     #[must_use]
-    pub const fn available(mut self, f: fn(&Session) -> Result<(), Refusal>) -> Self {
+    pub const fn available(mut self, f: Check) -> Self {
         self.available = f;
         self
     }
 
     /// Sets the check that uses the default arguments.
     #[must_use]
-    pub const fn default_targets(mut self, f: fn(&Session) -> Result<(), Refusal>) -> Self {
+    pub const fn default_targets(mut self, f: Check) -> Self {
         self.default_targets = Some(f);
         self
     }

@@ -1,31 +1,40 @@
 //! The document store of one tab, its rollback journal, and per-tab undo history.
 //!
-//! **This is the only module that knows which store backs a tab.** Today it is the in-memory store; when
-//! the Loro store lands, `DocStore`, [`Patch`], [`TabDoc`] and [`UndoHistory`] change and nothing else
-//! does. The contract the rest of the engine relies on:
+//! **This is the only module that knows how a tab's document is held.** A tab has two stores:
 //!
-//! * [`TabDoc::edit`] is the only way to change a document. It commits one transaction and records how to
-//!   take it back.
-//! * [`TabDoc::mark`] / [`TabDoc::rollback_to`] return the document to an earlier point (command
-//!   failure, batch failure, gesture frames, gesture cancel). The Loro version remembers frontiers.
-//! * [`UndoHistory`] holds the user-visible steps. A step carries the observed editor state from before
-//!   and after it (selection, editing group), and restores it on undo and redo.
+//! * the **working store** ([`WorkStore`], an in-memory scene): what commands read and edit. Every edit
+//!   is journaled as a [`Patch`], so a refused command, a failed batch and every gesture frame can be
+//!   taken back without touching anything else;
+//! * the **replicated store** ([`DocStore`] = `drafftink_doc::LoroStore`): the CRDT truth, which owns
+//!   undo history and sync. It is written once per command, batch or gesture end, in one transaction
+//!   labelled with the command title and carrying the editor state before and after
+//!   ([`TabDoc::commit_since`]). Live gesture frames and refused commands never reach it.
 //!
-//! With the in-memory store a [`Patch`] holds the previous value of every touched element, so rollback,
-//! undo and redo cost what the command touched, not the size of the document.
+//! Undo, redo and remote updates change the replicated store; [`TabDoc`] then copies the touched
+//! elements into the working store. The cost is a second in-memory copy of the scene. A follow-up in the
+//! doc crate (a transaction that stays open across a command) would remove it; nothing outside this file
+//! would change.
+//!
+//! Known limits of this arrangement: a gesture rollback restores whole elements, so a remote edit to the
+//! same element during a gesture is overwritten in the working store until the gesture ends (the final
+//! command re-runs against the current state); `Coalesce` is accepted but the Loro undo manager has no
+//! per-target merge, so repeats make separate steps.
 
 use std::collections::BTreeMap;
 
+use drafftink_doc::{DocError, LoroStore};
 use drafftink_scene::{
-    Change, ChangeKind, ChangeSet, DocMeta, Document, Element, ElementId, FileEntry, FileId, MemoryStore, SceneRead,
+    ChangeKind, ChangeSet, DocMeta, Document, Element, ElementId, FileEntry, FileId, MemoryStore, SceneRead,
     SceneStore, SceneTx, StoreError, ZIndex,
 };
 
 use crate::state::Observed;
 
-/// The store behind a tab. The coordinator switches this to the Loro store together with the bodies of
-/// [`Patch`], [`TabDoc`] and [`UndoHistory`].
-pub type DocStore = MemoryStore;
+/// The replicated store behind a tab: the CRDT truth, undo history and sync.
+pub type DocStore = LoroStore;
+
+/// The working store commands read and edit.
+pub type WorkStore = MemoryStore;
 
 /// Everything needed to put the document back as it was: for each touched element its previous value
 /// (`None`: it did not exist), and the previous metadata and blobs.
@@ -94,7 +103,7 @@ impl Patch {
 /// The transaction handed to commands: a store transaction that notes the previous value of everything
 /// it touches. Implements [`SceneTx`], so the domain functions of the `edit` crate take it unchanged.
 pub struct DocTx<'a, 'p> {
-    inner: <DocStore as SceneStore>::Tx<'a>,
+    inner: <WorkStore as SceneStore>::Tx<'a>,
     patch: &'p mut Patch,
 }
 
@@ -199,13 +208,16 @@ impl SceneTx for DocTx<'_, '_> {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct DocMark(usize);
 
-/// One tab's document: the store plus the journal of patches committed since the oldest open mark.
+/// One tab's document: the working store, the replicated store and the journal of working-store edits.
 pub struct TabDoc {
-    store: DocStore,
+    work: WorkStore,
+    loro: DocStore,
     journal: Vec<Patch>,
-    /// Store commits that a rollback undid, with the rollback commits themselves. The logical revision
-    /// leaves them out, so a refused command does not make the document look edited.
+    /// Working-store commits that a rollback undid, with the rollback commits themselves. The logical
+    /// revision leaves them out, so a refused command does not make the document look edited.
     undone_commits: u64,
+    /// The undo depth last given to the replicated store.
+    depth: usize,
 }
 
 impl Default for TabDoc {
@@ -214,26 +226,57 @@ impl Default for TabDoc {
     }
 }
 
+/// What a committed step records for undo.
+pub struct StepMeta<'a> {
+    /// Label of the step (the command title or the batch label).
+    pub label: &'a str,
+    /// False: sync the change but leave it out of undo history (document replacement).
+    pub undoable: bool,
+    /// Editor state before the step; undo restores it.
+    pub before: &'a Observed,
+    /// Editor state after the step; redo restores it.
+    pub after: &'a Observed,
+    /// Most undo steps to keep.
+    pub depth: usize,
+}
+
 impl TabDoc {
     /// An empty document.
     pub fn new() -> Self {
-        Self { store: DocStore::new(), journal: Vec::new(), undone_commits: 0 }
+        Self { work: WorkStore::new(), loro: DocStore::new(), journal: Vec::new(), undone_commits: 0, depth: 200 }
     }
 
-    /// A tab document holding `doc`.
+    /// A tab document holding `doc`, with no undo history.
     pub fn from_document(doc: &Document) -> Result<Self, StoreError> {
-        Ok(Self { store: DocStore::from_document(doc)?, journal: Vec::new(), undone_commits: 0 })
+        Ok(Self {
+            work: WorkStore::from_document(doc)?,
+            loro: DocStore::from_document(doc)?,
+            journal: Vec::new(),
+            undone_commits: 0,
+            depth: 200,
+        })
     }
 
-    /// Read access to the store.
-    pub fn store(&self) -> &DocStore {
-        &self.store
+    /// Read access to the working store (what commands and the renderer read).
+    pub fn store(&self) -> &WorkStore {
+        &self.work
     }
 
-    /// The document revision: raised by every kept change, including undo and redo. A change that was
-    /// rolled back does not count.
+    /// The replicated store, for export and sync glue.
+    pub fn replicated(&self) -> &DocStore {
+        &self.loro
+    }
+
+    /// The replicated store, mutable, for sync glue that does not change the scene itself
+    /// (`take_unsent_update`, trimming).
+    pub fn replicated_mut(&mut self) -> &mut DocStore {
+        &mut self.loro
+    }
+
+    /// The document revision: raised by every kept change, including undo, redo and remote updates. A
+    /// change that was rolled back does not count.
     pub fn revision(&self) -> u64 {
-        self.store.revision().saturating_sub(self.undone_commits)
+        self.work.revision().saturating_sub(self.undone_commits)
     }
 
     /// Runs `f` in one transaction. Commits and journals it when `f` returns `Ok`; drops the transaction
@@ -242,7 +285,7 @@ impl TabDoc {
         &mut self,
         f: impl FnOnce(&mut DocTx<'_, '_>) -> Result<R, E>,
     ) -> Result<(R, ChangeSet), E> {
-        let (r, cs, patch) = Self::run_tx(&mut self.store, f)?;
+        let (r, cs, patch) = Self::run_tx(&mut self.work, f)?;
         if !cs.is_empty() {
             self.journal.push(patch);
         }
@@ -250,7 +293,7 @@ impl TabDoc {
     }
 
     fn run_tx<R, E: From<StoreError>>(
-        store: &mut DocStore,
+        store: &mut WorkStore,
         f: impl FnOnce(&mut DocTx<'_, '_>) -> Result<R, E>,
     ) -> Result<(R, ChangeSet, Patch), E> {
         let mut patch = Patch::default();
@@ -264,7 +307,7 @@ impl TabDoc {
 
     /// Applies `patch` outside the journal and returns the patch that takes it back.
     fn apply_raw(&mut self, patch: &Patch) -> Result<(ChangeSet, Patch), StoreError> {
-        let (_, cs, inverse) = Self::run_tx::<(), StoreError>(&mut self.store, |tx| patch.apply(tx))?;
+        let (_, cs, inverse) = Self::run_tx::<(), StoreError>(&mut self.work, |tx| patch.apply(tx))?;
         Ok((cs, inverse))
     }
 
@@ -275,8 +318,8 @@ impl TabDoc {
         if report.has_errors() {
             return Err(StoreError::InvalidDocument(report));
         }
-        let existing: Vec<ElementId> = self.store.iter_all().map(|e| e.id.clone()).collect();
-        let old_files: Vec<FileId> = self.store.files().map(|(id, _)| id.clone()).collect();
+        let existing: Vec<ElementId> = self.work.iter_all().map(|e| e.id.clone()).collect();
+        let old_files: Vec<FileId> = self.work.files().map(|(id, _)| id.clone()).collect();
         let (_, cs) = self.edit::<(), StoreError>(|tx| {
             for id in &existing {
                 tx.remove(id)?;
@@ -299,7 +342,7 @@ impl TabDoc {
 
     /// A copy of the content as a [`Document`].
     pub fn snapshot(&self) -> Document {
-        drafftink_scene::snapshot(&self.store)
+        drafftink_scene::snapshot(&self.work)
     }
 
     /// The current journal position.
@@ -352,6 +395,188 @@ impl TabDoc {
         self.summarize(self.journal.get(mark.0..).unwrap_or(&[]))
     }
 
+    /// Writes what the commits since `mark` did to the replicated store as one transaction, labelled
+    /// `meta.label` and carrying the editor state before and after. This is the one place that touches
+    /// the CRDT for a command, a batch or the end of a gesture. Returns the summary of what changed.
+    pub fn commit_since(&mut self, mark: DocMark, meta: &StepMeta<'_>) -> Result<Summary, StoreError> {
+        let (patch, summary) = self.take_since(mark);
+        if !summary.changed {
+            return Ok(summary);
+        }
+        let written = self.write_to_loro(&patch, meta);
+        if let Err(e) = written {
+            // Keep the edits reachable by `rollback_to`, so the caller can take the command back.
+            self.journal.push(patch);
+            return Err(e);
+        }
+        Ok(summary)
+    }
+
+    fn write_to_loro(&mut self, patch: &Patch, meta: &StepMeta<'_>) -> Result<(), StoreError> {
+        if self.depth != meta.depth {
+            self.loro.set_undo_depth(meta.depth);
+            self.depth = meta.depth;
+        }
+        let mut tx = self.loro.begin();
+        if meta.undoable {
+            tx.describe(meta.label, meta.before.to_state(), meta.after.to_state());
+        } else {
+            tx.not_undoable();
+            tx.set_label(meta.label);
+        }
+        for id in patch.touched() {
+            match (self.work.get(id), tx.get(id).is_some()) {
+                (Some(w), true) => {
+                    let w = w.clone();
+                    tx.update(id, |x| {
+                        let version = x.version;
+                        *x = w;
+                        x.version = version;
+                    })?;
+                }
+                (Some(w), false) => tx.insert(w.clone())?,
+                (None, true) => tx.remove(id)?,
+                (None, false) => {}
+            }
+        }
+        if patch.meta.is_some() {
+            let m = self.work.meta();
+            if tx.meta().name != m.name {
+                tx.set_name(&m.name)?;
+            }
+            if tx.meta().background != m.background {
+                tx.set_background(m.background);
+            }
+        }
+        for id in patch.files.keys() {
+            match self.work.file(id) {
+                Some(f) if tx.file(id).is_none() => {
+                    tx.put_file(f.clone())?;
+                }
+                None if tx.file(id).is_some() => {
+                    tx.remove_file(id);
+                }
+                _ => {}
+            }
+        }
+        tx.commit()?;
+        Ok(())
+    }
+
+    /// Copies what a change set from the replicated store touched into the working store, outside the
+    /// journal.
+    fn mirror(&mut self, cs: &ChangeSet) -> Result<(), StoreError> {
+        let loro = &self.loro;
+        let mut tx = self.work.begin();
+        for c in &cs.elements {
+            match (c.kind, loro.get(&c.id)) {
+                (ChangeKind::Removed, _) | (_, None) => {
+                    if tx.contains(&c.id) {
+                        tx.remove(&c.id)?;
+                    }
+                }
+                (_, Some(e)) if tx.contains(&c.id) => {
+                    let e = e.clone();
+                    tx.update(&c.id, |x| {
+                        let version = x.version;
+                        *x = e;
+                        x.version = version;
+                    })?;
+                }
+                (_, Some(e)) => tx.insert(e.clone())?,
+            }
+        }
+        if cs.meta {
+            let m = loro.meta();
+            if tx.meta().name != m.name {
+                tx.set_name(&m.name)?;
+            }
+            tx.set_background(m.background);
+        }
+        for id in &cs.files {
+            match loro.file(id) {
+                Some(f) => {
+                    tx.put_file(f.clone())?;
+                }
+                None => {
+                    tx.remove_file(id);
+                }
+            }
+        }
+        tx.commit()?;
+        Ok(())
+    }
+
+    /// Applies a remote update from a peer and brings the working store up to date. Returns what changed.
+    pub fn apply_remote(&mut self, bytes: &[u8]) -> Result<ChangeSet, DocError> {
+        let cs = self.loro.apply_remote(bytes)?;
+        self.mirror(&cs).map_err(|e| DocError::Backend(e.to_string()))?;
+        Ok(cs)
+    }
+
+    /// Takes back up to `n` of this peer's steps. A step that has become a no-op (a collaborator already
+    /// changed the same things) is consumed and not counted.
+    pub fn undo(&mut self, n: usize) -> Result<UndoOutcome, StoreError> {
+        self.undo_redo(n, true)
+    }
+
+    /// Re-applies up to `n` undone steps.
+    pub fn redo(&mut self, n: usize) -> Result<UndoOutcome, StoreError> {
+        self.undo_redo(n, false)
+    }
+
+    fn undo_redo(&mut self, n: usize, undo: bool) -> Result<UndoOutcome, StoreError> {
+        let mut out = UndoOutcome { labels: Vec::new(), observed: None, touched: Vec::new() };
+        while out.labels.len() < n {
+            let step = if undo { self.loro.undo() } else { self.loro.redo() }
+                .map_err(|e| StoreError::Backend(e.to_string()))?;
+            let Some(step) = step else { break };
+            self.mirror(&step.changes)?;
+            if step.changes.is_empty() {
+                continue;
+            }
+            out.touched.extend(step.changes.ids().cloned());
+            out.labels.push(step.label);
+            out.observed = Some(Observed::from_state(&step.restore));
+        }
+        Ok(out)
+    }
+
+    /// True when there is a step to undo.
+    pub fn can_undo(&self) -> bool {
+        self.loro.can_undo()
+    }
+
+    /// True when there is a step to redo.
+    pub fn can_redo(&self) -> bool {
+        self.loro.can_redo()
+    }
+
+    /// Label of the step undo would take back.
+    pub fn undo_label(&self) -> Option<String> {
+        self.loro.undo_label()
+    }
+
+    /// Label of the step redo would re-apply.
+    pub fn redo_label(&self) -> Option<String> {
+        self.loro.redo_label()
+    }
+
+    /// Steps on the undo stack.
+    pub fn undo_depth(&self) -> usize {
+        self.loro.undo_depth()
+    }
+
+    /// Steps on the redo stack.
+    pub fn redo_depth(&self) -> usize {
+        self.loro.redo_depth()
+    }
+
+    /// Drops both stacks.
+    pub fn clear_history(&mut self) {
+        self.loro.clear_history();
+    }
+
     /// Drops the journal. Called when no mark is open any more.
     pub fn forget_journal(&mut self) {
         self.journal.clear();
@@ -380,7 +605,7 @@ impl TabDoc {
         }
         let mut s = Summary::default();
         for (id, prev) in first {
-            let now = self.store.get(id);
+            let now = self.work.get(id);
             match (prev, now) {
                 (None, Some(n)) if !n.deleted => s.created.push(id.clone()),
                 (Some(p), Some(n)) if !p.deleted && n.deleted => s.deleted.push(id.clone()),
@@ -392,8 +617,8 @@ impl TabDoc {
                 s.touched.push(id.clone());
             }
         }
-        let meta_changed = meta.is_some_and(|m| m != self.store.meta());
-        let files_changed = files.iter().any(|(id, prev)| prev.as_ref() != self.store.file(id));
+        let meta_changed = meta.is_some_and(|m| m != self.work.meta());
+        let files_changed = files.iter().any(|(id, prev)| prev.as_ref() != self.work.file(id));
         s.changed = !s.touched.is_empty() || meta_changed || files_changed;
         s
     }
@@ -412,43 +637,6 @@ pub struct Summary {
     pub changed: bool,
 }
 
-/// Which repeats merge into one undo step: same `key` (the command id) on the same targets, within `ms`.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct CoalesceKey {
-    /// The command id.
-    pub key: &'static str,
-    /// Time window in milliseconds.
-    pub ms: u64,
-}
-
-/// A step ready to be pushed.
-pub struct NewStep {
-    /// Label shown by undo and redo (the command title or the batch label).
-    pub label: String,
-    /// Takes the step back.
-    pub patch: Patch,
-    /// Editor state before the step.
-    pub obs_before: Observed,
-    /// Editor state after the step.
-    pub obs_after: Observed,
-    /// Merge rule, if the command has one.
-    pub coalesce: Option<CoalesceKey>,
-    /// Elements the step changed.
-    pub targets: Vec<ElementId>,
-    /// Wall time in milliseconds.
-    pub t_ms: u64,
-}
-
-struct Step {
-    label: String,
-    patch: Patch,
-    obs_before: Observed,
-    obs_after: Observed,
-    coalesce: Option<CoalesceKey>,
-    targets: Vec<ElementId>,
-    t_ms: u64,
-}
-
 /// What undo or redo did.
 #[derive(Debug, Clone, PartialEq)]
 pub struct UndoOutcome {
@@ -458,144 +646,6 @@ pub struct UndoOutcome {
     pub observed: Option<Observed>,
     /// Elements whose value changed.
     pub touched: Vec<ElementId>,
-}
-
-/// Per-tab undo and redo stacks.
-#[derive(Default)]
-pub struct UndoHistory {
-    undo: Vec<Step>,
-    redo: Vec<Step>,
-}
-
-impl UndoHistory {
-    /// Empty history.
-    pub fn new() -> Self {
-        Self::default()
-    }
-
-    /// Pushes a step, clears redo, merges with the previous step when `coalesce` allows it, and keeps at
-    /// most `depth` steps.
-    pub fn push(&mut self, step: NewStep, depth: usize) {
-        self.redo.clear();
-        if let (Some(key), Some(prev)) = (&step.coalesce, self.undo.last_mut()) {
-            let same = prev.coalesce.as_ref() == Some(key)
-                && prev.targets == step.targets
-                && step.t_ms.saturating_sub(prev.t_ms) <= key.ms;
-            if same {
-                prev.patch.absorb_later(step.patch);
-                prev.obs_after = step.obs_after;
-                prev.t_ms = step.t_ms;
-                return;
-            }
-        }
-        self.undo.push(Step {
-            label: step.label,
-            patch: step.patch,
-            obs_before: step.obs_before,
-            obs_after: step.obs_after,
-            coalesce: step.coalesce,
-            targets: step.targets,
-            t_ms: step.t_ms,
-        });
-        let depth = depth.max(1);
-        if self.undo.len() > depth {
-            let drop = self.undo.len() - depth;
-            self.undo.drain(..drop);
-        }
-    }
-
-    /// Takes back up to `n` steps. A step that would change nothing (a remote edit already did it) is
-    /// dropped without counting.
-    pub fn undo(&mut self, doc: &mut TabDoc, n: usize) -> Result<UndoOutcome, StoreError> {
-        let mut out = UndoOutcome { labels: Vec::new(), observed: None, touched: Vec::new() };
-        while out.labels.len() < n {
-            let Some(step) = self.undo.pop() else { break };
-            let (cs, inverse) = doc.apply_raw(&step.patch)?;
-            out.touched.extend(cs.ids().cloned());
-            let skipped = cs.is_empty();
-            self.redo.push(Step { patch: inverse, ..step });
-            if skipped {
-                // Nothing visible changed: the step stays reachable by redo but does not count.
-                continue;
-            }
-            if let Some(s) = self.redo.last() {
-                out.labels.push(s.label.clone());
-                out.observed = Some(s.obs_before.clone());
-            }
-        }
-        Ok(out)
-    }
-
-    /// Re-applies up to `n` undone steps.
-    pub fn redo(&mut self, doc: &mut TabDoc, n: usize) -> Result<UndoOutcome, StoreError> {
-        let mut out = UndoOutcome { labels: Vec::new(), observed: None, touched: Vec::new() };
-        while out.labels.len() < n {
-            let Some(step) = self.redo.pop() else { break };
-            let (cs, inverse) = doc.apply_raw(&step.patch)?;
-            out.touched.extend(cs.ids().cloned());
-            let skipped = cs.is_empty();
-            self.undo.push(Step { patch: inverse, ..step });
-            if skipped {
-                continue;
-            }
-            if let Some(s) = self.undo.last() {
-                out.labels.push(s.label.clone());
-                out.observed = Some(s.obs_after.clone());
-            }
-        }
-        Ok(out)
-    }
-
-    /// True when there is a step to undo.
-    pub fn can_undo(&self) -> bool {
-        !self.undo.is_empty()
-    }
-
-    /// True when there is a step to redo.
-    pub fn can_redo(&self) -> bool {
-        !self.redo.is_empty()
-    }
-
-    /// Label of the step undo would take back.
-    pub fn undo_label(&self) -> Option<&str> {
-        self.undo.last().map(|s| s.label.as_str())
-    }
-
-    /// Label of the step redo would re-apply.
-    pub fn redo_label(&self) -> Option<&str> {
-        self.redo.last().map(|s| s.label.as_str())
-    }
-
-    /// Steps on the undo stack.
-    pub fn undo_depth(&self) -> usize {
-        self.undo.len()
-    }
-
-    /// Steps on the redo stack.
-    pub fn redo_depth(&self) -> usize {
-        self.redo.len()
-    }
-
-    /// Drops both stacks.
-    pub fn clear(&mut self) {
-        self.undo.clear();
-        self.redo.clear();
-    }
-}
-
-/// Number of live elements added, removed or changed by a change set. Used for output summaries.
-pub fn count_changes(cs: &ChangeSet) -> (usize, usize, usize) {
-    let mut a = 0;
-    let mut r = 0;
-    let mut u = 0;
-    for Change { kind, .. } in &cs.elements {
-        match kind {
-            ChangeKind::Added => a += 1,
-            ChangeKind::Removed => r += 1,
-            ChangeKind::Updated => u += 1,
-        }
-    }
-    (a, r, u)
 }
 
 #[cfg(test)]
@@ -648,89 +698,95 @@ mod tests {
         assert!(!doc.changed_since(mark));
     }
 
+    fn step<'a>(label: &'a str, before: &'a Observed, after: &'a Observed) -> StepMeta<'a> {
+        StepMeta { label, undoable: true, before, after, depth: 50 }
+    }
+
     #[test]
-    fn undo_and_redo_walk_the_stacks_with_observed_state() {
+    fn commit_since_makes_one_undo_step_that_restores_the_editor_state() {
         let mut ids = SeqIds::new();
         let mut doc = TabDoc::new();
-        let mut hist = UndoHistory::new();
         let mark = doc.mark();
         let e = rect(&mut ids, &ZIndex::first());
         let id = e.id.clone();
         add(&mut doc, e);
-        let (patch, summary) = doc.take_since(mark);
-        assert_eq!(summary.created, vec![id.clone()]);
+        doc.edit::<(), StoreError>(|tx| tx.update(&id, |e| e.transform.x = 4.0)).unwrap();
         let before = Observed::default();
         let mut after = Observed::default();
         after.selection.insert(id.clone());
-        hist.push(
-            NewStep {
-                label: "Create".into(),
-                patch,
-                obs_before: before.clone(),
-                obs_after: after.clone(),
-                coalesce: None,
-                targets: vec![id.clone()],
-                t_ms: 0,
-            },
-            50,
-        );
-        assert!(hist.can_undo() && !hist.can_redo());
-        let out = hist.undo(&mut doc, 1).unwrap();
+        let summary = doc.commit_since(mark, &step("Create", &before, &after)).unwrap();
+        assert_eq!(summary.created, vec![id.clone()]);
+        assert_eq!(doc.undo_depth(), 1, "two edits, one transaction, one step");
+        assert_eq!(doc.undo_label().as_deref(), Some("Create"));
+        assert_eq!(doc.replicated().get(&id).unwrap().transform.x, 4.0);
+
+        let out = doc.undo(1).unwrap();
         assert_eq!(out.labels, ["Create"]);
         assert_eq!(out.observed, Some(before));
-        assert!(doc.store().get(&id).is_none());
-        let out = hist.redo(&mut doc, 1).unwrap();
+        assert!(doc.store().get(&id).is_none() && doc.replicated().get(&id).is_none());
+        let out = doc.redo(1).unwrap();
         assert_eq!(out.observed, Some(after));
-        assert!(doc.store().get(&id).is_some());
+        assert_eq!(doc.store().get(&id).unwrap().transform.x, 4.0);
     }
 
     #[test]
-    fn coalesced_repeats_make_one_step_and_depth_is_capped() {
+    fn a_rolled_back_edit_never_reaches_the_replicated_store() {
         let mut ids = SeqIds::new();
         let mut doc = TabDoc::new();
         let e = rect(&mut ids, &ZIndex::first());
         let id = e.id.clone();
         add(&mut doc, e);
-        doc.forget_journal();
-        let mut hist = UndoHistory::new();
-        for (i, x) in [10.0, 20.0, 30.0].into_iter().enumerate() {
-            let mark = doc.mark();
-            doc.edit::<(), StoreError>(|tx| tx.update(&id, |e| e.transform.x = x)).unwrap();
-            let (patch, _) = doc.take_since(mark);
-            hist.push(
-                NewStep {
-                    label: "Nudge".into(),
-                    patch,
-                    obs_before: Observed::default(),
-                    obs_after: Observed::default(),
-                    coalesce: Some(CoalesceKey { key: "element.nudge", ms: 500 }),
-                    targets: vec![id.clone()],
-                    t_ms: 100 * i as u64,
-                },
-                50,
-            );
-        }
-        assert_eq!(hist.undo_depth(), 1);
-        hist.undo(&mut doc, 1).unwrap();
-        assert_eq!(doc.store().get(&id).unwrap().transform.x, 0.0);
+        let o = Observed::default();
+        doc.commit_since(DocMark(0), &step("Add", &o, &o)).unwrap();
+        let rev = doc.replicated().revision();
+        let mark = doc.mark();
+        doc.edit::<(), StoreError>(|tx| tx.update(&id, |e| e.transform.x = 77.0)).unwrap();
+        doc.rollback_to(mark).unwrap();
+        doc.commit_since(mark, &step("Nothing", &o, &o)).unwrap();
+        assert_eq!(doc.replicated().revision(), rev);
+        assert_eq!(doc.undo_depth(), 1);
+    }
 
-        let mut small = UndoHistory::new();
-        for i in 0..5 {
-            small.push(
-                NewStep {
-                    label: format!("s{i}"),
-                    patch: Patch::default(),
-                    obs_before: Observed::default(),
-                    obs_after: Observed::default(),
-                    coalesce: None,
-                    targets: vec![],
-                    t_ms: 0,
-                },
-                3,
-            );
+    #[test]
+    fn not_undoable_commits_sync_but_leave_no_step() {
+        let mut ids = SeqIds::new();
+        let mut doc = TabDoc::new();
+        add(&mut doc, rect(&mut ids, &ZIndex::first()));
+        let o = Observed::default();
+        doc.commit_since(DocMark(0), &StepMeta { label: "Open", undoable: false, before: &o, after: &o, depth: 50 })
+            .unwrap();
+        assert_eq!(doc.undo_depth(), 0);
+        assert_eq!(doc.replicated().len(), 1);
+    }
+
+    #[test]
+    fn remote_updates_reach_the_working_store() {
+        let mut ids = SeqIds::new();
+        let mut a = TabDoc::new();
+        let o = Observed::default();
+        add(&mut a, rect(&mut ids, &ZIndex::first()));
+        a.commit_since(DocMark(0), &step("Add", &o, &o)).unwrap();
+        let snapshot = a.replicated().export_snapshot().unwrap();
+        let mut b = TabDoc::new();
+        let cs = b.apply_remote(&snapshot).unwrap();
+        assert_eq!(cs.elements.len(), 1);
+        assert_eq!(b.store().len(), 1, "the working store follows the replicated one");
+        assert_eq!(b.undo_depth(), 0, "a remote edit is not on this peer's undo stack");
+    }
+
+    #[test]
+    fn depth_is_capped_by_the_step_meta() {
+        let mut ids = SeqIds::new();
+        let mut doc = TabDoc::new();
+        let o = Observed::default();
+        for _ in 0..6 {
+            let mark = doc.mark();
+            let z = doc.store().next_top_index().unwrap();
+            add(&mut doc, rect(&mut ids, &z));
+            doc.commit_since(mark, &StepMeta { label: "Add", undoable: true, before: &o, after: &o, depth: 3 })
+                .unwrap();
         }
-        assert_eq!(small.undo_depth(), 3);
-        assert_eq!(small.undo_label(), Some("s4"));
+        assert_eq!(doc.undo_depth(), 3);
     }
 
     #[test]

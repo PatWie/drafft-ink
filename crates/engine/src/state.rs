@@ -4,13 +4,14 @@
 use std::any::{Any, TypeId};
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 
+use drafftink_doc::ObservedState;
 use drafftink_geom::kurbo::Point;
 use drafftink_scene::{ElementId, GroupId, Style};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
-use crate::store::{TabDoc, UndoHistory};
+use crate::store::TabDoc;
 
 /// Zoom that the UI shows as 100% (`zoom / BASE_ZOOM * 100`).
 pub const BASE_ZOOM: f64 = 1.68;
@@ -32,6 +33,31 @@ pub struct Observed {
     pub editing_group: Option<GroupId>,
     /// The line or arrow whose points are being edited.
     pub linear_editor: Option<LinearEditor>,
+}
+
+impl Observed {
+    /// The form the replicated store keeps with an undo step.
+    pub fn to_state(&self) -> ObservedState {
+        ObservedState {
+            selection: self.selection.iter().cloned().collect(),
+            selected_groups: self.selected_groups.iter().cloned().collect(),
+            editing_group: self.editing_group.clone(),
+            point_editor: self.linear_editor.as_ref().map(|l| l.element.clone()),
+        }
+    }
+
+    /// Back from the stored form. Selected points of a point editor are not stored and start empty.
+    pub fn from_state(s: &ObservedState) -> Self {
+        Self {
+            selection: s.selection.iter().cloned().collect(),
+            selected_groups: s.selected_groups.iter().cloned().collect(),
+            editing_group: s.editing_group.clone(),
+            linear_editor: s
+                .point_editor
+                .as_ref()
+                .map(|e| LinearEditor { element: e.clone(), selected_points: BTreeSet::new() }),
+        }
+    }
 }
 
 /// Point-edit mode of a line or arrow.
@@ -320,8 +346,6 @@ pub struct Tab {
     pub id: TabId,
     /// The document store with its rollback journal.
     pub doc: TabDoc,
-    /// Undo and redo.
-    pub history: UndoHistory,
     /// Selection and friends.
     pub observed: Observed,
     /// Camera.
@@ -338,7 +362,6 @@ impl Tab {
         Self {
             id,
             doc: TabDoc::new(),
-            history: UndoHistory::new(),
             observed: Observed::default(),
             view: View::default(),
             saved_revision: 0,

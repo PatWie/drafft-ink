@@ -22,7 +22,7 @@ use crate::refusal::{Refusal, echo};
 use crate::ring::{Origin, Outcome};
 use crate::session::Session;
 use crate::spec::{Batch, Mutates};
-use crate::store::NewStep;
+use crate::store::StepMeta;
 use drafftink_profile::now_ns;
 
 /// Most steps in one batch.
@@ -140,7 +140,10 @@ fn batch_refusal(code: &'static str, id: &str, message: String) -> Refusal {
 }
 
 fn valid_name(n: &str) -> bool {
-    !n.is_empty() && n.len() <= 40 && n.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'_') && !n.bytes().all(|b| b.is_ascii_digit())
+    !n.is_empty()
+        && n.len() <= 40
+        && n.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'_')
+        && !n.bytes().all(|b| b.is_ascii_digit())
 }
 
 /// A parsed `$ref`.
@@ -198,7 +201,9 @@ impl Resolver<'_> {
                 .or_else(|| out.get("ids").and_then(|c| c.get(0)))
                 .cloned()
                 .ok_or_else(|| format!("`{shown}` has no created id; that step created nothing and returned no `ids`")),
-            Some("created" | "deleted" | "ids") => Ok(out.get(tok.field.unwrap_or("created")).cloned().unwrap_or_else(|| json!([]))),
+            Some("created" | "deleted" | "ids") => {
+                Ok(out.get(tok.field.unwrap_or("created")).cloned().unwrap_or_else(|| json!([])))
+            }
             Some(f) => out
                 .get("nodes")
                 .and_then(|n| n.get(f))
@@ -241,12 +246,8 @@ impl Resolver<'_> {
     }
 }
 
-const OUTSIDE_TXN: &[(Mutates, &str)] = &[
-    (Mutates::TABS, "tabs"),
-    (Mutates::SETTINGS, "settings"),
-    (Mutates::PORTS, "ports"),
-    (Mutates::COLLAB, "collab"),
-];
+const OUTSIDE_TXN: &[(Mutates, &str)] =
+    &[(Mutates::TABS, "tabs"), (Mutates::SETTINGS, "settings"), (Mutates::PORTS, "ports"), (Mutates::COLLAB, "collab")];
 
 impl Session {
     /// Runs a batch given as JSON: `{"steps": [...], "opts": {...}}`. Malformed batches and limit
@@ -278,11 +279,11 @@ impl Session {
     }
 
     /// Checks every step before step 0 runs: known id, batch rule, argument shape, names and references.
-    fn preflight(&self, steps: &[BatchStep]) -> Result<(), (usize, Refusal)> {
+    fn preflight(&self, steps: &[BatchStep]) -> Result<(), Box<(usize, Refusal)>> {
         let mut names: HashMap<&str, usize> = HashMap::new();
         let last = steps.len().saturating_sub(1);
         for (i, step) in steps.iter().enumerate() {
-            let fail = |r: Refusal| (i, r);
+            let fail = |r: Refusal| Box::new((i, r));
             let Some(spec) = self.registry().find(&step.id) else {
                 return Err(fail(self.registry().unknown(&step.id)));
             };
@@ -298,7 +299,11 @@ impl Session {
                     return Err(fail(batch_refusal(
                         "must_be_last",
                         spec.id,
-                        format!("`{}` may only be the last step of a batch, and it is step {i} of {}. Move it to the end or run it on its own.", spec.id, steps.len()),
+                        format!(
+                            "`{}` may only be the last step of a batch, and it is step {i} of {}. Move it to the end or run it on its own.",
+                            spec.id,
+                            steps.len()
+                        ),
                     )));
                 }
                 _ => {}
@@ -313,7 +318,10 @@ impl Session {
                 if !ok {
                     return Err(fail(Refusal::bad_args(
                         spec.id,
-                        format!("`${}` does not refer to an earlier step. Name a step with `as` before using it", r.base),
+                        format!(
+                            "`${}` does not refer to an earlier step. Name a step with `as` before using it",
+                            r.base
+                        ),
                     )));
                 }
             }
@@ -326,18 +334,24 @@ impl Session {
                 if !valid_name(name) {
                     return Err(fail(Refusal::bad_args(
                         spec.id,
-                        format!("the step name `{}` must be letters, digits and underscores, and not only digits", echo(name)),
+                        format!(
+                            "the step name `{}` must be letters, digits and underscores, and not only digits",
+                            echo(name)
+                        ),
                     )));
                 }
                 if names.insert(name.as_str(), i).is_some() {
-                    return Err(fail(Refusal::bad_args(spec.id, format!("the step name `{}` is used twice", echo(name)))));
+                    return Err(fail(Refusal::bad_args(
+                        spec.id,
+                        format!("the step name `{}` is used twice", echo(name)),
+                    )));
                 }
             }
         }
         if let Some(first) = steps.first()
             && let Some(spec) = self.registry().find(&first.id)
         {
-            self.state_availability(spec).map_err(|r| (0, r))?;
+            self.state_availability(spec).map_err(|r| Box::new((0, r)))?;
         }
         Ok(())
     }
@@ -401,9 +415,11 @@ impl Session {
             });
             return o;
         }
-        if let Err((index, refusal)) = self.preflight(steps) {
+        if let Err(e) = self.preflight(steps) {
+            let (index, refusal) = *e;
             let mut o = empty("nothing was run: the batch failed its check before step 0");
-            o.failed = Some(BatchFailure { index, id: steps.get(index).map(|s| s.id.clone()).unwrap_or_default(), refusal });
+            o.failed =
+                Some(BatchFailure { index, id: steps.get(index).map(|s| s.id.clone()).unwrap_or_default(), refusal });
             return o;
         }
 
@@ -430,7 +446,8 @@ impl Session {
             let args = match (Resolver { names: &names, results: &results }).substitute(&step.args) {
                 Ok(a) => a,
                 Err(msg) => {
-                    failed = Some(BatchFailure { index: i, id: step.id.clone(), refusal: Refusal::bad_args(spec.id, msg) });
+                    failed =
+                        Some(BatchFailure { index: i, id: step.id.clone(), refusal: Refusal::bad_args(spec.id, msg) });
                     break;
                 }
             };
@@ -467,7 +484,12 @@ impl Session {
             let note = if opts.dry_run && failed.is_none() {
                 Some("dry run: everything was rolled back".to_owned())
             } else {
-                failed.as_ref().map(|f| format!("step {} (`{}`) was refused, so all {} earlier step(s) were rolled back", f.index, f.id, completed))
+                failed.as_ref().map(|f| {
+                    format!(
+                        "step {} (`{}`) was refused, so all {} earlier step(s) were rolled back",
+                        f.index, f.id, completed
+                    )
+                })
             };
             return BatchOutput {
                 completed,
@@ -482,7 +504,6 @@ impl Session {
         }
 
         // Success, or a non-atomic failure: what ran stays, as one undo step.
-        let now = self.now_ms();
         let depth = self.settings.history_depth();
         let reset = self.run.history_reset;
         let title = opts.label.clone().unwrap_or_else(|| match steps.len() {
@@ -492,24 +513,35 @@ impl Session {
         let mut changed = false;
         let mut undo_label = None;
         let obs_after = self.tab_by_id(tab_id).map(|t| t.observed.clone()).unwrap_or_default();
+        let mut save_error = None;
         if let Some(t) = self.tab_by_id_mut(tab_id) {
-            let (patch, summary) = t.doc.take_since(mark);
-            changed = summary.changed;
-            if summary.changed && !reset {
-                t.history.push(
-                    NewStep {
-                        label: title.clone(),
-                        patch,
-                        obs_before: soft_observed(&soft),
-                        obs_after,
-                        coalesce: None,
-                        targets: summary.touched,
-                        t_ms: now,
-                    },
-                    depth,
-                );
-                undo_label = Some(title);
+            let meta = StepMeta { label: &title, undoable: !reset, before: &soft.observed, after: &obs_after, depth };
+            match t.doc.commit_since(mark, &meta) {
+                Ok(summary) => {
+                    changed = summary.changed;
+                    if summary.changed && !reset {
+                        undo_label = Some(title.clone());
+                    }
+                }
+                Err(e) => save_error = Some(e),
             }
+        }
+        if let Some(e) = save_error {
+            let r = Refusal::internal("batch", format!("saving the change failed: {e}"));
+            let r = self.rollback(tab_id, mark, &soft, r);
+            self.run.writes.clear();
+            self.run.warnings.clear();
+            self.dirty = dirty_before;
+            return BatchOutput {
+                completed,
+                results,
+                failed: Some(BatchFailure { index: completed, id: "batch".to_owned(), refusal: r }),
+                rolled_back: true,
+                undo_label: None,
+                not_rolled_back,
+                note: Some("the batch could not be saved, so it was rolled back".to_owned()),
+                changed: false,
+            };
         }
         let writes = std::mem::take(&mut self.run.writes);
         let flush_warnings = self.ports.flush(writes);
@@ -526,8 +558,4 @@ impl Session {
         }
         BatchOutput { completed, results, failed, rolled_back: false, undo_label, not_rolled_back, note, changed }
     }
-}
-
-fn soft_observed(s: &crate::session::SoftState) -> crate::state::Observed {
-    s.observed.clone()
 }

@@ -72,14 +72,7 @@ pub fn rich_session() -> Result<Session, StoreError> {
         40.0,
     )?;
     add(&mut s, ElementKind::Text(TextData::new("hello")), 40.0, -80.0, 60.0, 20.0)?;
-    add(
-        &mut s,
-        ElementKind::Frame(drafftink_scene::FrameData { name: None, clip: true }),
-        -50.0,
-        -50.0,
-        400.0,
-        500.0,
-    )?;
+    add(&mut s, ElementKind::Frame(drafftink_scene::FrameData { name: None, clip: true }), -50.0, -50.0, 400.0, 500.0)?;
     s.tab_mut().doc.forget_journal();
     if let Some(second) = ids.get(1) {
         s.tab_mut().observed.selection.insert(second.clone());

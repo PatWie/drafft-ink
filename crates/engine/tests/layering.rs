@@ -201,6 +201,10 @@ fn scan_engine_sources() -> Result<(usize, Vec<String>), String> {
     let files = rust_files(&src)?;
     let mut hits = Vec::new();
     for file in &files {
+        // `*_tests.rs` files are compiled only under `#[cfg(test)]`; some read docs/commands.md from disk.
+        if file.file_name().and_then(|n| n.to_str()).is_some_and(|n| n.ends_with("_tests.rs")) {
+            continue;
+        }
         let rel = file.strip_prefix(&root).unwrap_or(file).display().to_string();
         hits.extend(source_hits(&rel, &read(file)?));
     }

@@ -48,4 +48,4 @@ pub use registry::{CommandInfo, Registry};
 pub use ring::{Origin, Outcome, Ring, RingEntry};
 pub use session::{Ref, Session};
 pub use spec::{CommandSpec, Facts, NoArgs, Typed};
-pub use store::{DocStore, TabDoc, UndoHistory};
+pub use store::{DocStore, TabDoc, WorkStore};

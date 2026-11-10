@@ -231,7 +231,8 @@ pub enum PortKind {
 
 impl PortKind {
     /// Every kind.
-    pub const ALL: [PortKind; 6] = [Self::Clipboard, Self::Storage, Self::Files, Self::Renderer, Self::Net, Self::Clock];
+    pub const ALL: [PortKind; 6] =
+        [Self::Clipboard, Self::Storage, Self::Files, Self::Renderer, Self::Net, Self::Clock];
 
     /// Lower-case name.
     pub const fn name(self) -> &'static str {
@@ -469,10 +470,13 @@ pub mod fake {
         }
     }
 
+    type StoredMap = BTreeMap<(Ns, String), (Vec<u8>, u64)>;
+    type FileMap = BTreeMap<String, (Vec<u8>, String)>;
+
     /// Key-value storage in memory.
     #[derive(Debug, Clone, Default)]
     pub struct FakeStorage {
-        data: Arc<Mutex<BTreeMap<(Ns, String), (Vec<u8>, u64)>>>,
+        data: Arc<Mutex<StoredMap>>,
         clock: FakeClock,
     }
 
@@ -522,7 +526,7 @@ pub mod fake {
     /// Files in memory. A download is recorded like any other write.
     #[derive(Debug, Clone, Default)]
     pub struct FakeFiles {
-        data: Arc<Mutex<BTreeMap<String, (Vec<u8>, String)>>>,
+        data: Arc<Mutex<FileMap>>,
     }
 
     fn file_key(f: &FileRef) -> String {
@@ -596,7 +600,9 @@ pub mod fake {
         fn render_png(&self, scene: &SceneView, req: &RenderRequest) -> Result<Vec<u8>, PortError> {
             self.calls.fetch_add(1, Ordering::SeqCst);
             let mut out = b"\x89PNG-fake".to_vec();
-            out.extend_from_slice(format!(" {}x{} elements={}", req.size_px.0, req.size_px.1, scene.elements.len()).as_bytes());
+            out.extend_from_slice(
+                format!(" {}x{} elements={}", req.size_px.0, req.size_px.1, scene.elements.len()).as_bytes(),
+            );
             Ok(out)
         }
     }

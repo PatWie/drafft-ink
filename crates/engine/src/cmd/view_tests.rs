@@ -53,7 +53,7 @@ fn camera_commands_are_always_available_and_never_touch_history() {
     run(&mut s, "view.pan", json!({"dx": 10, "dy": 10}));
     run(&mut s, "view.zoom_in", json!({}));
     run(&mut s, "view.center", json!({"on": "content"}));
-    assert_eq!(s.tab().history.undo_depth(), 0);
+    assert_eq!(s.tab().doc.undo_depth(), 0);
     assert_eq!(s.tab().doc.revision(), rev);
 }
 
@@ -410,7 +410,7 @@ fn screenshot_renders_a_region_through_the_port_and_changes_nothing() {
     assert!(out["bytes"]["base64"].as_str().unwrap().len() > 8);
     assert_eq!(fakes.renderer.calls(), 1);
     assert_eq!(s.fingerprint(), before);
-    assert_eq!(s.tab().history.undo_depth(), 0);
+    assert_eq!(s.tab().doc.undo_depth(), 0);
 
     let out = run(&mut s, "view.screenshot", json!({"max_side_px": 100, "region": "viewport"}));
     assert_eq!((out["width"].as_u64(), out["height"].as_u64()), (Some(100), Some(75)));

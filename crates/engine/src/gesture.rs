@@ -82,7 +82,12 @@ impl Session {
     // ---- typed fast path ----
 
     /// Begins a gesture with typed arguments. `args` must be the command's argument struct.
-    pub fn gesture_begin_typed(&mut self, origin: Origin, command: &str, args: &dyn Any) -> Result<(GestureId, Value), Refusal> {
+    pub fn gesture_begin_typed(
+        &mut self,
+        origin: Origin,
+        command: &str,
+        args: &dyn Any,
+    ) -> Result<(GestureId, Value), Refusal> {
         let r = self.begin_core(origin, command, Input::Typed(args));
         self.record_typed_refusal(origin, "gesture.begin", &r);
         r
@@ -90,24 +95,27 @@ impl Session {
 
     /// Sends one live frame with typed, absolute arguments. A refusal keeps the last good frame.
     pub fn gesture_update(&mut self, id: GestureId, args: &dyn Any) -> Result<Value, Refusal> {
+        let origin = self.gesture.as_ref().map_or(Origin::Ui, |g| g.origin);
         let r = self.update_core(id, Input::Typed(args));
-        self.record_typed_refusal(self.run.origin, "gesture.update", &r);
+        self.record_typed_refusal(origin, "gesture.update", &r);
         r
     }
 
     /// Ends the gesture with typed arguments (default: the last frame's) and commits one undo step.
     pub fn gesture_end_typed(&mut self, id: GestureId, args: Option<&dyn Any>) -> Result<Value, Refusal> {
+        let origin = self.gesture.as_ref().map_or(Origin::Ui, |g| g.origin);
         let r = self.end_core(Some(id), args.map(Input::Typed));
         if r.is_err() {
-            self.record_typed_refusal(self.run.origin, "gesture.end", &r);
+            self.record_typed_refusal(origin, "gesture.end", &r);
         }
         r
     }
 
     /// Cancels the gesture and restores the state from before `begin`. With none running it is a no-op.
     pub fn gesture_cancel(&mut self, id: Option<GestureId>) -> Result<Value, Refusal> {
-        let r = self.cancel_core(id, Origin::Ui);
-        self.record_typed_refusal(self.run.origin, "gesture.cancel", &r);
+        let origin = self.gesture.as_ref().map_or(Origin::Ui, |g| g.origin);
+        let r = self.cancel_core(id, origin);
+        self.record_typed_refusal(origin, "gesture.cancel", &r);
         r
     }
 
@@ -161,10 +169,11 @@ impl Session {
     }
 
     pub(crate) fn gesture_cancel_json(&mut self, gesture: Option<&str>) -> Result<Value, Refusal> {
-        let id = match gesture {
-            Some(g) => Some(GestureId::parse(g).ok_or_else(|| unknown_gesture_id("gesture.cancel", g))?),
-            None => None,
-        };
+        // A cancel that names no known gesture is a stray one (window blur): nothing to cancel.
+        let id = gesture.and_then(GestureId::parse);
+        if gesture.is_some() && id.is_none() {
+            return Ok(json!({ "changed": false, "cancelled": false }));
+        }
         let origin = self.run.origin;
         self.cancel_core(id, origin)
     }
@@ -187,17 +196,20 @@ impl Session {
             return Err(Refusal::custom(
                 "not_gesturable",
                 "gesture.begin",
-                format!("`{}` cannot run as a gesture. Gestures work with: {}.", crate::refusal::echo(command), self.gesture_commands()),
+                format!(
+                    "`{}` cannot run as a gesture. Gestures work with: {}.",
+                    crate::refusal::echo(command),
+                    self.gesture_commands()
+                ),
             ));
         }
         self.check_gates(spec, origin, Mode::Top, true)?;
         self.check_gesture_available(spec)?;
         let args: Box<dyn Any> = match input {
             Input::Json(v) => spec.handler.parse(spec.id, v)?,
-            Input::Typed(a) => spec
-                .handler
-                .clone_args(a)
-                .ok_or_else(|| Refusal::internal("gesture.begin", format!("the typed arguments do not match `{}`", spec.id)))?,
+            Input::Typed(a) => spec.handler.clone_args(a).ok_or_else(|| {
+                Refusal::internal("gesture.begin", format!("the typed arguments do not match `{}`", spec.id))
+            })?,
         };
         let tab = self.tab().id;
         let mark = self.tab().doc.mark();
@@ -269,10 +281,9 @@ impl Session {
         let (spec, tab, mark) = (g.spec, g.tab, g.mark);
         let args: Box<dyn Any> = match input {
             Input::Json(v) => spec.handler.parse(spec.id, v)?,
-            Input::Typed(a) => spec
-                .handler
-                .clone_args(a)
-                .ok_or_else(|| Refusal::internal("gesture.update", format!("the typed arguments do not match `{}`", spec.id)))?,
+            Input::Typed(a) => spec.handler.clone_args(a).ok_or_else(|| {
+                Refusal::internal("gesture.update", format!("the typed arguments do not match `{}`", spec.id))
+            })?,
         };
         let base = match self.gesture.as_ref() {
             Some(g) => g.base.clone(),
@@ -280,7 +291,10 @@ impl Session {
         };
         let pre = self.soft_state();
         let forward = match self.tab_by_id_mut(tab) {
-            Some(t) => t.doc.rollback_to(mark).map_err(|e| Refusal::internal(spec.id, format!("restoring the base failed: {e}")))?,
+            Some(t) => t
+                .doc
+                .rollback_to(mark)
+                .map_err(|e| Refusal::internal(spec.id, format!("restoring the base failed: {e}")))?,
             None => {
                 self.gesture = None;
                 return Err(no_gesture("gesture.update", &id.to_string()));
@@ -325,8 +339,14 @@ impl Session {
             return Err(no_gesture("gesture.end", "(none)"));
         };
         // Back to the base, as if the gesture had never run.
-        if let Some(t) = self.tab_by_id_mut(g.tab) {
-            let _ = t.doc.rollback_to(g.mark);
+        if let Some(t) = self.tab_by_id_mut(g.tab)
+            && let Err(e) = t.doc.rollback_to(g.mark)
+        {
+            self.restore_soft(&g.base);
+            return Err(Refusal::internal(
+                "gesture.end",
+                format!("restoring the base failed: {e}. Reload the document from the last save"),
+            ));
         }
         self.restore_soft(&g.base);
         let spec = g.spec;
@@ -364,10 +384,17 @@ impl Session {
         let Some(g) = self.gesture.take() else {
             return Ok(json!({ "changed": false, "cancelled": false }));
         };
-        if let Some(t) = self.tab_by_id_mut(g.tab) {
-            let _ = t.doc.rollback_to(g.mark);
-        }
+        let rolled = match self.tab_by_id_mut(g.tab) {
+            Some(t) => t.doc.rollback_to(g.mark).map(|_| ()),
+            None => Ok(()),
+        };
         self.restore_soft(&g.base);
+        if let Err(e) = rolled {
+            return Err(Refusal::internal(
+                "gesture.cancel",
+                format!("restoring the base failed: {e}. Reload the document from the last save"),
+            ));
+        }
         self.run.warnings.clear();
         self.run.writes.clear();
         self.mark_dirty(crate::spec::Redraw::Scene);

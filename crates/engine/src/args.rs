@@ -19,11 +19,8 @@ pub const MAX_WORLD: f64 = 1.0e9;
 /// The top-level property names of an argument schema. Empty for schemas without `properties`
 /// (a struct with only flattened or untagged parts).
 pub fn schema_keys(schema: &Schema) -> Vec<String> {
-    let mut keys: Vec<String> = schema
-        .get("properties")
-        .and_then(Value::as_object)
-        .map(|o| o.keys().cloned().collect())
-        .unwrap_or_default();
+    let mut keys: Vec<String> =
+        schema.get("properties").and_then(Value::as_object).map(|o| o.keys().cloned().collect()).unwrap_or_default();
     keys.sort();
     keys
 }
@@ -76,7 +73,10 @@ pub fn parse_args<A: DeserializeOwned + JsonSchema + 'static>(command: &str, arg
         // A command whose arguments are not an object (rare) still gets a chance to deserialise.
         let probe: Result<A, _> = serde_path_to_error::deserialize(args);
         return probe.map_err(|e| {
-            Refusal::bad_args(command, format!("the arguments must be a JSON object ({})", echo(&e.inner().to_string())))
+            Refusal::bad_args(
+                command,
+                format!("the arguments must be a JSON object ({})", echo(&e.inner().to_string())),
+            )
         });
     }
     match serde_path_to_error::deserialize::<_, A>(args) {
@@ -125,7 +125,8 @@ fn unknown_key(command: &str, bad: &str, valid: &[String]) -> Refusal {
         let list: Vec<String> = valid.iter().map(|k| format!("`{k}`")).collect();
         detail.push_str(&format!(". Valid keys: {}", list.join(", ")));
     }
-    Refusal::bad_args(command, detail).with_details(serde_json::json!({ "key": echo(bad), "did_you_mean": near.first() }))
+    Refusal::bad_args(command, detail)
+        .with_details(serde_json::json!({ "key": echo(bad), "did_you_mean": near.first() }))
 }
 
 /// Refuses an unknown top-level key (with the closest valid one). Does nothing when `keys` is empty.

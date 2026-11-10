@@ -55,24 +55,72 @@ pub struct CodeInfo {
 
 /// The shared catalog of §1.5. `refusal_codes_are_catalogued` checks every declared code against it.
 pub const SHARED_CODES: &[CodeInfo] = &[
-    CodeInfo { code: "unknown_command", template: "Unknown command `{id}`. Did you mean `{a}` or `{b}`? List commands with `engine.commands`." },
-    CodeInfo { code: "bad_args", template: "Invalid arguments for `{id}`: {detail}. See `engine.describe` for the schema." },
-    CodeInfo { code: "internal", template: "`{id}` failed unexpectedly and was rolled back, so the document is unchanged. Details: {msg}." },
-    CodeInfo { code: "no_target", template: "Nothing to act on: no elements are selected. Select elements first, or pass `ids`." },
-    CodeInfo { code: "not_found", template: "No element matches `{ref}`. Look up ids with `element.query` or `doc.outline`." },
-    CodeInfo { code: "locked", template: "Element `{id}` is locked. Unlock it first with `element.lock` (locked=false) or `element.unlock_all`." },
-    CodeInfo { code: "view_only", template: "The document is view-only, so `{id}` cannot change it. Turn view-only off with `view.set_view_only` (on=false)." },
-    CodeInfo { code: "gesture_active", template: "A drag is in progress. Finish it with `gesture.end` or cancel it with `gesture.cancel` before running `{id}`." },
-    CodeInfo { code: "text_editing", template: "A text element is being edited. Finish with `text.edit_end` before running `{id}`." },
-    CodeInfo { code: "unsaved_changes", template: "This document has unsaved changes. Save it with `doc.save`, or pass on_unsaved=\"discard\" to drop them, or on_unsaved=\"save\" to save and continue." },
+    CodeInfo {
+        code: "unknown_command",
+        template: "Unknown command `{id}`. Did you mean `{a}` or `{b}`? List commands with `engine.commands`.",
+    },
+    CodeInfo {
+        code: "bad_args",
+        template: "Invalid arguments for `{id}`: {detail}. See `engine.describe` for the schema.",
+    },
+    CodeInfo {
+        code: "internal",
+        template: "`{id}` failed unexpectedly and was rolled back, so the document is unchanged. Details: {msg}.",
+    },
+    CodeInfo {
+        code: "no_target",
+        template: "Nothing to act on: no elements are selected. Select elements first, or pass `ids`.",
+    },
+    CodeInfo {
+        code: "not_found",
+        template: "No element matches `{ref}`. Look up ids with `element.query` or `doc.outline`.",
+    },
+    CodeInfo {
+        code: "locked",
+        template: "Element `{id}` is locked. Unlock it first with `element.lock` (locked=false) or `element.unlock_all`.",
+    },
+    CodeInfo {
+        code: "view_only",
+        template: "The document is view-only, so `{id}` cannot change it. Turn view-only off with `view.set_view_only` (on=false).",
+    },
+    CodeInfo {
+        code: "gesture_active",
+        template: "A drag is in progress. Finish it with `gesture.end` or cancel it with `gesture.cancel` before running `{id}`.",
+    },
+    CodeInfo {
+        code: "text_editing",
+        template: "A text element is being edited. Finish with `text.edit_end` before running `{id}`.",
+    },
+    CodeInfo {
+        code: "unsaved_changes",
+        template: "This document has unsaved changes. Save it with `doc.save`, or pass on_unsaved=\"discard\" to drop them, or on_unsaved=\"save\" to save and continue.",
+    },
     CodeInfo { code: "wrong_kind", template: "`{id}` does not work on {kind} elements. It works on {allowed}." },
-    CodeInfo { code: "not_applicable", template: "None of the targeted elements support {props}. They apply to {kinds}." },
-    CodeInfo { code: "too_few", template: "`{id}` needs at least {n} {things}, and {have} were given. Select more, or pass `ids`." },
-    CodeInfo { code: "port_unavailable", template: "`{id}` needs {port}, which this session does not provide ({where}). {alternative}" },
-    CodeInfo { code: "io_failed", template: "Could not {read|write} {target}: {msg}. Check the location and permissions, or pass the data as `bytes`." },
+    CodeInfo {
+        code: "not_applicable",
+        template: "None of the targeted elements support {props}. They apply to {kinds}.",
+    },
+    CodeInfo {
+        code: "too_few",
+        template: "`{id}` needs at least {n} {things}, and {have} were given. Select more, or pass `ids`.",
+    },
+    CodeInfo {
+        code: "port_unavailable",
+        template: "`{id}` needs {port}, which this session does not provide ({where}). {alternative}",
+    },
+    CodeInfo {
+        code: "io_failed",
+        template: "Could not {read|write} {target}: {msg}. Check the location and permissions, or pass the data as `bytes`.",
+    },
     CodeInfo { code: "parse_failed", template: "{what} could not be read: {msg}. {hint}" },
-    CodeInfo { code: "limit_exceeded", template: "`{id}` was given {n} {things}, and the limit is {max}. Split the work into several calls." },
-    CodeInfo { code: "needs_single", template: "`{id}` needs exactly one {thing} selected, and {have} are selected. Select one {thing} first, or pass it by id." },
+    CodeInfo {
+        code: "limit_exceeded",
+        template: "`{id}` was given {n} {things}, and the limit is {max}. Split the work into several calls.",
+    },
+    CodeInfo {
+        code: "needs_single",
+        template: "`{id}` needs exactly one {thing} selected, and {have} are selected. Select one {thing} first, or pass it by id.",
+    },
     CodeInfo { code: "nothing_to_do", template: "Nothing to {verb}: {reason}." },
     CodeInfo { code: "not_supported", template: "`{id}` is registered but not available yet: {reason}." },
 ];
@@ -357,6 +405,12 @@ fn echo_long(s: &str) -> String {
     if it.next().is_some() { format!("{head}…") } else { head }
 }
 
+/// True when the characters of `needle` appear in `hay` in order.
+fn is_subsequence(needle: &str, hay: &str) -> bool {
+    let mut it = hay.chars();
+    needle.chars().all(|n| it.any(|h| h == n))
+}
+
 /// Edit distance between two strings, by characters. Inputs are cut to 64 characters.
 pub fn edit_distance(a: &str, b: &str) -> usize {
     let a: Vec<char> = a.chars().take(64).collect();
@@ -390,8 +444,17 @@ pub fn closest<'a>(wanted: &str, candidates: impl IntoIterator<Item = &'a str>, 
         let same_last = !last.is_empty() && c_last == last;
         let d = edit_distance(&wanted_lc, c);
         let d_last = edit_distance(last, c_last);
-        if same_last || d <= limit || (d_last <= 1 && last.len() > 3) {
-            scored.push((usize::from(!same_last), d, c));
+        // A typo that dropped letters ("zoom_fit" for "zoom_to_fit") is a stronger hint than a short edit distance.
+        let subseq = last.len() > 3 && is_subsequence(last, c_last);
+        if same_last || subseq || d <= limit || (d_last <= 1 && last.len() > 3) {
+            let tier = if same_last {
+                0
+            } else if subseq {
+                1
+            } else {
+                2
+            };
+            scored.push((tier, d, c));
         }
     }
     scored.sort();
