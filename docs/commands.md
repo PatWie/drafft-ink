@@ -1,0 +1,1636 @@
+# Command catalog
+
+Status: contract for the rewrite. Parallel agents implement one family each from this file, so every id, argument, refusal and undo class below is binding. A change to a command starts with a change here.
+
+Companion: `docs/exceptions.md` lists the only things that are allowed to change state without one `Session::execute` call per user action (pointer gestures, camera moves, text caret).
+
+Sources used: `docs/plan.md` §5, §6, §11; the old-app inventory (`research/drafftink.md`, `parts/app-actions.md`, `parts/ui-widgets.md`); the Excalidraw diff and actions research (`parts/04-features-diff.md`, `parts/03-actions-api.md`); groups (`parts/01-elements-groups.md`); bindings (`parts/02f-binding-rust-design.md`); solidcraft's command model (`research/solidcraft.md` Part A).
+
+Abbreviations in the `source` columns:
+
+| Short | Meaning |
+|---|---|
+| `A:n` | old `crates/drafftink-app/src/app.rs` line n (keyboard handler 4540-5369, `UiAction` match 2603-3667) |
+| `U:n` | old `crates/drafftink-app/src/ui.rs` line n |
+| `E:n` | old `crates/drafftink-app/src/event_handler.rs` line n |
+| `X:name` | Excalidraw: `actions/<name>`, a component, or a key from its help dialog |
+| NEW | not in the old app. Either an Excalidraw feature from plan §6 or an agent feature from plan §11 |
+| FIX | exists in the old app but is wrong there; the catalog specifies the corrected behaviour |
+
+Contents: 1 command model, 2 families, 3 read-only index, 4 UI decisions turned into arguments, 5 settings keys, 6 keymap, 7 old action to command mapping, 8 coverage of Excalidraw, 9 open questions, 10 declared facts per command (Appendix A).
+
+---
+
+## 1. The command model
+
+### 1.1 Session and state classes
+
+A `Session` (crate `engine`, L5) owns everything a user can change. Commands see it only through `&Session` (`available`) and `&mut Session` (`execute`). It holds these classes of state, and every command declares which classes it touches (`mutates`):
+
+| Class | Contents | Persists | In undo history |
+|---|---|---|---|
+| Document (per tab) | elements, groups, frames, files, name, background colour. Loro-backed (`doc`). | yes, in the file and in the CRDT | yes |
+| Observed editor state (per tab) | selection, selected groups, editing group, linear-editor point mode | no | yes, restored by undo (Excalidraw's `ObservedAppState`) |
+| View (per tab) | camera (scroll, zoom), viewport size | no | no |
+| Tool | active tool, tool lock, temporary tool, style defaults for new elements | defaults persist as a setting | no |
+| Tabs | tab list, active tab | no | no |
+| Settings | the keys in §5 | yes, via `Storage` | no |
+| Gesture | the one running gesture, if any (§1.10) | no | one step on `gesture.end` |
+| Text edit | the element or draft being edited (§1.10, `exceptions.md`) | no | one step on `text.edit_end` |
+| Collab | connection, room, peers, presence | no | no |
+| Ring | recent-command ring (§1.9) | no | no |
+
+UI state is not in the Session: open menus, popovers, dialogs, hover, scroll position of panels, zen mode, the stats panel. See §1.12 (UI verbs).
+
+### 1.2 `CommandSpec`
+
+Every command is one `static CommandSpec`. Families keep their specs in `crates/engine/src/cmd/<family>.rs` and their tests in `cmd/<family>_tests.rs`. The registry is a plain list of the family `COMMANDS` slices (no macro magic).
+
+```rust
+pub struct CommandSpec {
+    // identity
+    pub id: &'static str,            // "family.verb", lower snake_case, one dot, unique
+    pub title: &'static str,         // palette and menu text, sentence case
+    pub family: &'static str,        // equals the part of `id` before the dot (tested)
+    pub summary: &'static str,       // one sentence for `engine.describe` and MCP
+    // contract
+    pub args: fn() -> Schema,        // JSON Schema of the typed Args struct (schemars), deny_unknown_fields
+    pub output: fn() -> Schema,      // JSON Schema of the typed Output struct
+    pub available: fn(&Session) -> Result<(), Refusal>,
+    pub execute: fn(&mut Session, Args) -> Result<Output, Refusal>,  // wrapper deserialises the typed args
+    // history
+    pub undo: Undo,                  // Undoable | NoUndo | Gesture
+    pub coalesce: Option<Coalesce>,  // merge rapid repeats into one undo step
+    // facts (every one is required; a test fails if a registration omits one)
+    pub reads_only: bool,            // true: never changes any state class
+    pub mutates: Mutates,            // bit set: Doc, Observed, View, Tool, Tabs, Settings, Collab, Ports
+    pub needs_selection: Selection,  // No | Optional (selection is the default for `ids`)
+    pub ports: Ports,                // required ports: Clipboard, Storage, Files, Renderer, Net, Clock
+    pub batch: Batch,                // Allowed | Last | Never
+    pub view_only: Gate,             // Allowed | Refused  (allowed while the document is view-only)
+    pub while_gesture: Gate,         // Allowed | Refused  (allowed while a gesture runs)
+    pub while_text_edit: TextGate,   // Allowed | Refused | Commit  (Commit: the running text edit is committed first, then the command runs)
+    pub redraw: Redraw,              // None | Overlay | Scene: the dirty reason on success
+    pub palette: bool,               // listed in the command palette
+    pub agent: bool,                 // exposed as an MCP tool and in `window.drafftink.commands()`
+    pub shortcuts: &'static [Binding], // default keys with fixed args (§1.12)
+    pub status: Status,              // Stable | Planned("reason"): registered but refuses with `not_supported`
+}
+```
+
+Facts that matter beyond the obvious:
+
+- `undo`: `Undoable` pushes one undo step when the command changed the document, and pushes nothing when it did not (a no-op never creates a step). The step also records the observed editor state (selection, editing group) before and after. `NoUndo` never touches history (view, tool, settings, reads, undo itself, document replacement). `Gesture` commands run as `gesture.begin/update/end` (§1.10) and are one `Undoable` step at `end`; called plainly they behave as `Undoable`.
+- `coalesce`: `Some({ key, ms })` merges a repeat of the same command id on the same targets within `ms` into the previous undo step. Used for nudge, font-size steps and zoom-free repeated style taps. Default `None`.
+- `needs_selection = Optional` means the command has an `ids` argument whose default is the current selection. If the resolved list is empty the command refuses with `no_target`.
+- `batch = Last` means the command may only be the final step of a batch (`doc.open`, `tab.close` of the active tab). `Never` means it cannot appear in a batch at all (gestures, `history.*`, `collab.connect`).
+- `view_only = Refused` for every command whose `mutates` contains `Doc`.
+- `while_text_edit = Commit` is how a click, a tab switch, `Mod+S` or a tool change ends a text edit without the UI having to call `text.edit_end` first: the engine commits the edit (one undo step), then runs the command.
+- `redraw`: `Scene` re-encodes changed element fragments, `Overlay` redraws handles, guides and cursors only, `None` requests nothing. This is the dirty reason that `cargo xtask perf --idle` relies on.
+
+Registry tests (in `crates/engine/src/registry_tests.rs`, all run in `cargo xtask ci`):
+
+1. ids are unique, match `^[a-z]+\.[a-z_]+$`, and the prefix equals `family`.
+2. Every fact above is declared. `reads_only` implies `mutates` is empty and `undo = NoUndo`. `mutates` containing `Doc` implies `view_only = Refused`, and implies `undo != NoUndo` except for the commands that replace or stream the document: `doc.new`, `doc.open`, `doc.show_intro`, `collab.join_room`, `history.undo`, `history.redo`, `gesture.begin`, `gesture.update`, `gesture.cancel`. The exception list is a constant in the test, so a new entry needs a reviewer.
+3. Titles are unique. Default shortcuts do not collide within the same `when` scope.
+4. Every `Refusal` code a command can return is in the catalog of §1.5 (checked by `refusal_codes_are_catalogued`, which scans the specs' declared `refusals: &[&str]` lists).
+5. `hostile_params_never_panic`: every command, with every hostile JSON value for every argument key, never panics and never changes the document when it refuses.
+6. `refusal_leaves_state_unchanged`: for every command, a refusal leaves all state classes byte-identical (document frontiers, selection, tool, view).
+7. `catalog_matches_registry`: `cargo xtask commands --check` parses this file. In §2 (between the headings `## 2. Families` and `## 3.`), every table row whose first cell is a backticked id, appearing exactly twice per id (once in the identity table, once in the details table), must name a registry id, and every registry id must appear. It also compares the facts in Appendix A (§10) and the shortcuts in the identity tables with the registrations. Keep the first-cell format.
+
+### 1.3 Arguments
+
+Arguments are one typed Rust struct per command with `#[derive(Deserialize, JsonSchema)]` and `#[serde(deny_unknown_fields)]`. The handler receives the struct, not a `Value`. The JSON Schema is published by `engine.describe` and used to generate MCP tools. Unknown keys and wrong types become a `bad_args` refusal that names the key and, for unknown keys, the closest valid key.
+
+In tables an argument is written `name: type = default`. `name?: type` means optional with no default (absent means "not given"). A default written as `selection` means "the current selection, resolved when the command runs".
+
+Shared types:
+
+| Type | Meaning |
+|---|---|
+| `Id` | element id, an opaque string. Group and frame ids are separate types (`GroupId`, element id of the frame). |
+| `Ref` | an `Id`, or `"@name"` to address an element by the `name` set with `element.set_name`. Resolution happens before `available`-dependent checks. Unknown refs give `not_found`. |
+| `Refs` | `Ref[]`. A group id is accepted wherever the table says `Refs|GroupId` and means all its members. |
+| `Point` | `[x, y]` in world units (f64). Screen coordinates are written `ScreenPoint`. |
+| `Rect` | `{x, y, w, h}` in world units. |
+| `Angle` | degrees, clockwise, f64. Internally radians. |
+| `Color` | `"#rrggbb"`, `"#rrggbbaa"`, `"transparent"`, or a palette name `"<family>-<shade>"` such as `"blue-500"` (22 Tailwind families by shades 25 to 950, from the old `TAILWIND_COLORS`). |
+| `FileRef` | `{path}` (native), `{stored}` (a name in the `Storage` documents namespace, used by the web app and by "recent documents"), `{download}` (a file name; the shell offers the bytes as a download), `{handle}` (an opaque id of a File System Access handle). |
+| `Bytes` | `{base64, name?, mime?}` or `{path}`. Large payloads should use `{path}`. |
+| `Query` | the filter object of `element.query` (§2.4). |
+| `Tab` | tab id, index, or name. Omitted means the active tab. |
+| `Source` | who called: `ui`, `keyboard`, `menu`, `context_menu`, `palette`, `script`, `mcp`, `test`. Recorded in the ring; `view_only` and `agent` gates may use it. Never changes the result of a command. |
+
+Units: positions and sizes are world units; the old app's `GRID_SIZE` is 20. Opacity is `0..1`. Angles are degrees. Zoom is a scale factor (screen px per world unit); the UI shows `zoom / 1.68 * 100` as percent, which keeps the old "100% = BASE_ZOOM 1.68" display.
+
+### 1.4 Execution
+
+`Session::execute(id, args, source) -> Result<Output, Refusal>` is the only entry point for user actions. `execute_batch` calls the same steps. In order:
+
+1. Look up `id`. Unknown ids refuse with `unknown_command` and up to three suggestions (same last segment, then edit distance).
+2. Gates from facts: `view_only`, `while_gesture`, `while_text_edit` (a `Commit` gate commits the text edit here, before step 3).
+3. `available(&Session)`. A refusal here is the same text the palette shows greyed out.
+4. Deserialise and validate args (`bad_args`), resolve `Ref`s (`not_found`), apply defaults.
+5. Open a transaction: remember Loro frontiers and clone the small non-document session state (selection, tool, view, editing group).
+6. Run `execute` inside `catch_unwind`.
+7. On `Err` or panic: roll the document back to the remembered frontiers, restore the session state, record the refusal, return it. A panic becomes an `internal` refusal. A command never has to be atomic by hand.
+8. On `Ok`: run the invariant pass inside the same transaction (bindings, bound text, frame membership, group integrity, z-order indices; section 02f of the binding design). Then commit once, label the undo step with `title`, push it if `undo = Undoable` and something changed, apply `coalesce`, flush port writes, set the dirty reason from `redraw`, hand the incremental CRDT delta to `collab`, record the ring entry.
+
+Commands never call each other through `execute`. Shared behaviour lives in the domain crates (`edit`, `doc`, `io`), and a command validates and delegates to it. The one allowed internal composition is `Session::run_nested(spec, args)`, which skips steps 5 to 8 and lets the outer command own them (used by `clipboard.cut`, which is a copy plus a delete in one step).
+
+### 1.5 Refusals
+
+```rust
+pub struct Refusal {
+    pub code: &'static str,        // stable snake_case, from the catalog below
+    pub command: String,           // the id that refused
+    pub message: String,           // plain words, one to three sentences, says how to proceed
+    pub suggest: Vec<Suggestion>,  // machine-readable next steps: { command, args? }
+    pub details: Option<Value>,    // e.g. offending ids, a parse position
+}
+```
+
+Rules for the `message`:
+
+- Plain words, no jargon, no stack traces. Name the thing and the value that was wrong.
+- End with what to do: either the command to run (in backticks) or the argument to change.
+- The same text goes to a toast, to the greyed palette item, and to the agent. The UI may add buttons from `suggest` but never rewrites the text.
+- A state-dependent refusal (`available`) must not depend on the arguments, so the palette can show it. A refusal that depends on arguments comes from `execute` and is validated before any mutation.
+- A command that runs and finds the document already in the requested state is not a refusal. It returns `Ok` with `changed: false` and pushes no undo step. Refuse only when there is nothing the command can act on.
+
+Shared catalog. Placeholders in braces are filled in; the wording is exact.
+
+| Code | Message |
+|---|---|
+| `unknown_command` | Unknown command `{id}`. Did you mean `{a}` or `{b}`? List commands with `engine.commands`. |
+| `bad_args` | Invalid arguments for `{id}`: {detail}. See `engine.describe` for the schema. |
+| `internal` | `{id}` failed unexpectedly and was rolled back, so the document is unchanged. Details: {msg}. |
+| `no_target` | Nothing to act on: no elements are selected. Select elements first, or pass `ids`. |
+| `not_found` | No element matches `{ref}`. Look up ids with `element.query` or `doc.outline`. |
+| `locked` | Element `{id}` is locked. Unlock it first with `element.lock` (locked=false) or `element.unlock_all`. |
+| `view_only` | The document is view-only, so `{id}` cannot change it. Turn view-only off with `view.set_view_only` (on=false). |
+| `gesture_active` | A drag is in progress. Finish it with `gesture.end` or cancel it with `gesture.cancel` before running `{id}`. |
+| `text_editing` | A text element is being edited. Finish with `text.edit_end` before running `{id}`. |
+| `unsaved_changes` | This document has unsaved changes. Save it with `doc.save`, or pass onUnsaved="discard" to drop them, or onUnsaved="save" to save and continue. |
+| `wrong_kind` | `{id}` does not work on {kind} elements. It works on {allowed}. |
+| `not_applicable` | None of the targeted elements support {props}. They apply to {kinds}. |
+| `too_few` | `{id}` needs at least {n} {things}, and {have} were given. Select more, or pass `ids`. |
+| `port_unavailable` | `{id}` needs {port}, which this session does not provide ({where}). {alternative} |
+| `io_failed` | Could not {read\|write} {target}: {msg}. Check the location and permissions, or pass the data as `bytes`. |
+| `parse_failed` | {what} could not be read: {msg}. {hint} |
+| `limit_exceeded` | `{id}` was given {n} {things}, and the limit is {max}. Split the work into several calls. |
+| `needs_single` | `{id}` needs exactly one {thing} selected, and {have} are selected. Select one {thing} first, or pass it by id. |
+| `nothing_to_do` | Nothing to {verb}: {reason}. |
+| `not_supported` | `{id}` is registered but not available yet: {reason}. |
+
+Command-specific codes appear inline in the §2 tables as `code: "message"`. They follow the same rules and are added to the catalog check (test 4).
+
+### 1.6 Output
+
+A successful command returns a JSON object defined by its `output` schema. Every output has these common keys:
+
+```json
+{ "changed": true, "undo_label": "Move", "created": ["id..."], "deleted": ["id..."], "warnings": [] }
+```
+
+`created`/`deleted` list element ids when the command made or removed any. `warnings` carries non-fatal notes (an unsupported property was skipped, a port write after commit failed). Commands add their own keys (`ids`, `bounds`, `guides`). Read-only commands return only their payload plus `changed: false`.
+
+### 1.7 Batches
+
+`Session::execute_batch(steps, opts) -> BatchOutput`.
+
+```json
+{ "steps": [ { "id": "element.create", "args": { "kind": "rectangle", "bounds": {"x":0,"y":0,"w":120,"h":60} }, "as": "box" },
+             { "id": "style.set", "args": { "ids": ["$box"], "props": { "fill_color": "blue-100" } } } ],
+  "opts": { "label": "Draw box", "atomic": true, "dry_run": false } }
+```
+
+- **Preflight.** Before step 0 runs, every step is checked for: known id, `batch != Never`, `batch = Last` only on the final step, args that deserialise against the schema (symbolic `$refs` count as valid strings), duplicate `as` names, `$refs` that point to an earlier step. Preflight cannot know state-dependent availability of later steps, so it checks only step 0's `available`. A preflight failure returns `{completed: 0, failed: {index, id, refusal}, note: "nothing was run"}` and changes nothing.
+- **Atomic.** All steps run in one transaction. The first refusal rolls back document and session state to the start of the batch (selection, tool, view included) and returns `{completed: i, failed: {index, id, refusal}, rolled_back: true}`. With `atomic: false` the steps before the failure stay applied and still form one undo step.
+- **One undo step.** The whole batch commits once, with `opts.label` (default: the first step's title plus the count). `history.undo` reverts all of it.
+- **Symbolic references.** `as: "name"` binds the step's `created[0]` (or its `ids` output). Later args may use `"$name"` anywhere an `Id`/`Ref` is accepted, `"$name.created"` for the whole list, and `"$1"` for the output of step 1 (0-based). `diagram.create` additionally exposes its symbolic node ids as `"$name.<node>"`.
+- **Ports.** Port writes (file, clipboard, download) from steps are queued and flushed only after the last step succeeds, so a rolled-back batch has no side effect.
+- **Limits.** 10 000 steps, 10 MB of JSON. `limit_exceeded` otherwise.
+- **Not allowed inside a batch:** commands with `batch = Never`. `doc.open`, `doc.new` and `tab.close` of the active tab must be last.
+- `dry_run: true` runs preflight and then the steps, reports the outputs, and rolls everything back.
+- Output: `{completed, results: [Output...], failed?, rolled_back, undo_label}`.
+
+### 1.8 Undo
+
+- Local, per-peer undo using Loro's `UndoManager`. One `execute` or one batch or one gesture is one undo step. Undo of a step restores the document and the observed editor state (selection, editing group) as of before the step.
+- Undo is a new edit for collaborators and travels the same CRDT path as any edit. This fixes the old divergence where only the UI path broadcast an undo.
+- Depth is the `history.depth` setting (default 50, as in the old app). Redo clears only when a new document change is made, not when the selection changes.
+- Selection changes alone never create a step (clicking around must not fill the history). The next document step records the selection from before and after it, so undo restores what was selected.
+- Property changes (style, font, flip, align, z-order) are undoable. In the old app most were not (FIX).
+- A rapid repeat of a command with `coalesce` merges into the previous step.
+- `history.undo` and `history.redo` refuse during a gesture or a text edit.
+
+### 1.9 Recent ring
+
+A bounded ring (default 256 entries, `engine.recent`) of every top-level `execute`, `execute_batch` and gesture:
+
+```json
+{ "seq": 412, "t_ms": 1730000000000, "id": "element.move", "args": "{\"ids\":[\"a\"],\"dx\":20,...}",
+  "source": "keyboard", "outcome": { "ok": true, "changed": true, "undo_label": "Move" }, "duration_us": 310 }
+```
+
+- `args` is the JSON text truncated to 512 bytes. Image bytes are replaced by their length.
+- A refusal is recorded with its `code` and `message`: `outcome: { "ok": false, "code": "locked", "message": "..." }`.
+- A batch is one entry with `steps: n`. A gesture is one entry written at `end` or `cancel`, with `frames: n` (live frames are not recorded).
+- Read-only commands are recorded too (an agent debugging its own calls needs them) but `engine.recent` can filter them with `mutating_only: true`.
+- The ring is session state, not document state. Remote edits do not appear in it.
+
+### 1.10 Gestures
+
+A gesture is a user action that streams many small updates and must end as one undo step: dragging, resizing, rotating, dragging a line point, scrubbing a slider.
+
+```
+gesture.begin  { command, args }       -> { gesture: "g1", ...output of the first frame }
+gesture.update { gesture, args }       -> live frame; output may include overlay data
+gesture.end    { gesture, args? }      -> same as execute(command, args), committed once
+gesture.cancel { gesture? }            -> restores the state from before gesture.begin
+```
+
+Rules:
+
+1. Only commands whose spec has `undo = Gesture` can be begun: `element.move`, `element.resize`, `element.rotate`, `arrow.move_point`, `style.set`. Calling any of them plainly is also valid and is the same final result.
+2. **Frames are absolute.** Every `gesture.update` carries the full args relative to the state at `begin` (for move: the total `dx, dy` since the start), never an increment. The engine keeps the pre-gesture values of every element a frame touches. A frame restores those values and re-runs the command with `live = true`. Dropping or reordering frames is harmless.
+3. `live = true` skips work that is only needed for the final state: undo bookkeeping, collab broadcast, the library, and expensive re-measures. It does not skip the binding solver or snapping, so bound arrows follow a dragged shape and smart guides are computed. Overlay data (`guides`, `bind_highlight`, `angle_badge`, `size_badge`) comes back in the frame output for the renderer.
+4. `gesture.end` re-runs the command from the base state with `live = false`, commits once, labels the step with the command title, and broadcasts once. **Property:** `begin + any updates + end(args)` produces the same document as `execute(command, args)` on the base state (ids and timestamps aside). A test per gesture command checks this.
+5. One gesture at a time per session. A second `begin` refuses `gesture_active`. While a gesture runs, commands with `while_gesture = Refused` refuse. Allowed are: reads, `view.*` camera moves, `collab.set_pointer`, `engine.*`, and `gesture.*`.
+6. The UI cancels a gesture on Esc, window blur, pointer cancel, and when the pointer is released over a panel (this fixes the old stuck-drag bug, A:2257). The engine also cancels a gesture that received no frame for 30 seconds (`Clock` port).
+7. A refusal inside `update` is returned but leaves the last good frame in place. A refusal at `end` aborts the gesture and restores the base state.
+8. Gestures cannot be used in batches. Concurrent remote edits merge normally; `end` re-runs against the current state, so remote changes to other fields of the same elements are kept.
+9. Live frames are not recorded in the ring and are not broadcast to collaborators. Peers see the result at `end`.
+10. The UI calls the typed in-process path (`Session::gesture_update(GestureId, TypedArgs)`) so no JSON is built per pointer event. The JSON route is for the bridge.
+
+Gestures that do not use this protocol are listed in `docs/exceptions.md`, each with its reason and the command that reaches its final state.
+
+### 1.11 Ports
+
+Commands never touch the OS, the network or the UI. Everything outside the process comes through traits in `crates/engine/src/ports.rs`, passed in `Session::new(ports)`. A missing optional port makes the commands that need it refuse with `port_unavailable`. The testkit provides in-memory fakes of all of them.
+
+```rust
+pub trait Clipboard {
+    fn read(&self, want: &[ClipKind]) -> Result<Option<ClipPayload>, PortError>; // Elements, Text, Image, Svg
+    fn write(&mut self, payload: ClipPayload) -> Result<(), PortError>;
+}
+pub trait Storage {   // namespaces: Documents, Autosave, Settings, Library
+    fn get(&self, ns: Ns, key: &str) -> Result<Option<Vec<u8>>, PortError>;
+    fn put(&mut self, ns: Ns, key: &str, bytes: &[u8]) -> Result<(), PortError>;
+    fn delete(&mut self, ns: Ns, key: &str) -> Result<(), PortError>;
+    fn list(&self, ns: Ns) -> Result<Vec<StoredInfo>, PortError>;               // name, size, modified_ms
+}
+pub trait Files {
+    fn read(&self, file: &FileRef) -> Result<Vec<u8>, PortError>;
+    fn exists(&self, file: &FileRef) -> bool;
+    fn write(&mut self, file: &FileRef, bytes: &[u8], mime: &str) -> Result<FileRef, PortError>; // Download = hand to the shell
+}
+pub trait Clock { fn now_ms(&self) -> u64; fn mono_ms(&self) -> u64; }          // wall time for timestamps, monotonic for timing
+pub trait Ids   { fn element_id(&mut self) -> Id; fn seed(&mut self) -> u32; }   // random in the app, sequential in tests
+pub trait Renderer {                                                              // offscreen render, for PNG export and screenshots
+    fn render_png(&self, scene: &SceneView, req: &RenderRequest) -> Result<Vec<u8>, PortError>;
+}
+pub trait Net { /* the collab Transport: connect, send, poll; defined in crate collab */ }
+```
+
+Rules:
+
+- **No awaiting.** A command is synchronous. Anything asynchronous is resolved by the shell before the call and passed as arguments, or is already present in the port. The web shell fills the `Clipboard` port from the browser `paste` event, which delivers data synchronously, before it calls `clipboard.paste`. If the browser only gives async access, the shell reads first and passes `clipboard.paste { source: {text} }` or `{image}`.
+- **No dialogs.** File pickers, confirm dialogs and prompts live in the UI. The UI passes the chosen path or bytes. A decision that used to be a dialog is an argument with a safe default (§4).
+- **Pure domain parts stay pure.** SVG export, `.excalidraw` read/write, Mermaid parse, layout are `io` and `edit` functions without ports. Only the PNG render needs `Renderer`.
+- **Time and randomness** come from `Clock` and `Ids`, so scenarios replay deterministically.
+- `Net` is owned by `collab` (L5). `engine` holds a handle to it. Remote edits enter through `Session::apply_remote(delta)`, which is not a command (§1.12) but uses the same document and CRDT path as local edits.
+
+### 1.12 Keymap, UI verbs, surfaces
+
+**Shortcuts** are data in each spec: `Binding { keys: &[Chord], args: json, when: Scope, title: Option<&str> }`. A binding fixes some args of the command, so one command can have many bindings (`tool.set` has one per tool). The palette lists one entry per binding that has a `title`. Notation in this file:
+
+- `Mod` is Cmd on macOS and Ctrl elsewhere. `Alt` is Option on macOS. `Ctrl` means the physical Control key on every platform. `Shift` is Shift.
+- Where macOS and others differ, the cell reads `mac: ... / other: ...`.
+- The old app recognised only the physical Control key, so Cmd did nothing on macOS (FIX). Every `Ctrl+x` of the old app is `Mod+x` here.
+- `when`: `canvas` (focus on the canvas, no text edit), `text` (inside a text edit; handled by the editor, listed in `exceptions.md`), `always`.
+- Placeholders in binding args: `$cursor` is replaced by the shell with the pointer's world position (omitted when the pointer is outside the canvas), `$viewport_center` likewise.
+- Keys are matched on the logical key, never the physical key code, except the arrow and function keys.
+- A shortcut is never handled while an egui text field has focus.
+
+**UI verbs** are not commands. They are the thin set of actions that open or close UI (dialogs, popovers, panels, pickers). They are in the same keymap so conflicts are detected, they are never in `engine.commands` and never exposed to agents, and they may only call commands. The full list is in §6.3. Rule of thumb: if it needs a dialog, a picker or a panel, it is a UI verb that ends by calling a command with the chosen values.
+
+**Surfaces.** Toolbar buttons, menus, the context menu, shortcuts, the palette, the bridge, MCP, `window.drafftink` and tests all call `Session::execute`. A button reads `engine.commands` for title, shortcut and availability. A disabled control shows the refusal message as its tooltip. The UI shows a refusal returned by `execute` as a toast (text unchanged) and may attach buttons from `suggest`. There is no "one action per frame" bottleneck (FIX of U:645): the UI collects all user actions of a frame and executes them in order.
+
+**Not commands.** Remote edits, presence updates and window events are applied by the engine without being user actions: `Session::apply_remote`, `Session::set_remote_presence`, and `Session` ticks (autosave timer, gesture watchdog, collab poll). They appear in the ring only when they fail.
+
+### 1.13 Views of the catalog
+
+For each family in §2 the first table gives identity, undo class, keys and source. The second table gives arguments, availability with refusal text, and effect. Rows named in `docs/exceptions.md` as the final command of a gesture say so in the effect.
+
+---
+
+## 2. Families
+
+Twenty-three families. Each table row's first cell is the backticked id (checked by `catalog_matches_registry`). Facts that are the same for every command of a family are not repeated; the per-command fact values are in Appendix A (§10).
+
+Shared enums used in the tables (these are the exact accepted strings):
+
+```
+Tool        = select | hand | rectangle | diamond | ellipse | arrow | line | freehand | highlighter | text | math | frame | eraser | laser
+Kind        = rectangle | diamond | ellipse | line | arrow | freehand | text | math | image | frame
+Snap        = auto | none | grid | smart          (auto: follow settings snap.grid and snap.smart_guides)
+OnUnsaved   = refuse | discard | save            (default refuse)
+Handle      = nw | n | ne | e | se | s | sw | w
+Query       = { ids?, text?, kind?, style?, region?, connected_to?, group?, frame?, name?, locked?, selected?, has_label? }
+Head        = arrow | bar | circle | circle_outline | triangle | triangle_outline | diamond | diamond_outline
+              | cardinality_one | cardinality_many | cardinality_one_or_many | cardinality_exactly_one
+              | cardinality_zero_or_one | cardinality_zero_or_many
+StyleProps  = { stroke_color, fill_color, fill_pattern, stroke_width, stroke_style, sloppiness, corner_radius, opacity,
+                freehand_style, pressure_mode, font_family, font_weight, font_size, text_align, vertical_align, line_height }
+```
+
+The old numeric enums map as follows (they were bare `u8` in `UiAction`): sloppiness 0..3 = architect, artist, cartoonist, drunk; fill pattern 0..6 = solid, hachure, zigzag, cross_hatch, dots, dashed, zigzag_line; path style 0..2 = sharp, round, elbow (`arrow.set_type`); stroke style 0..2 = solid, dashed, dotted; font family 0..3 = gelpen, noto_sans, gelpen_serif, vanilla_extract; font weight 0..2 = light, regular, heavy.
+
+### 2.1 `doc`: documents
+
+A document is the content of a tab. "Dirty" means the document revision differs from the revision last saved or opened; a freshly opened, blank or intro document is not dirty.
+
+| id | title | undo | keys (mac / other) | source |
+|---|---|---|---|---|
+| `doc.new` | New document | NoUndo | none | NEW (A:2841 is `doc.clear`) |
+| `doc.open` | Open document | NoUndo | `Mod+O` is the UI verb `ui.open_file`, which calls this | A:4790, 2749, 2766, 2789; U:1907-1912 |
+| `doc.drop` | Open dropped files | Undoable | none (drag and drop) | A:5376-5468; file_ops 939+ |
+| `doc.save` | Save | NoUndo | `Mod+S` | A:4784, 2698, 2726, 2760, 2776 |
+| `doc.rename` | Rename document | Undoable | none | NEW (A:2726 sets the name on save) |
+| `doc.set_background` | Set background colour | Undoable | none | A:3237, U:1007; FIX (was not saved or exported) |
+| `doc.export` | Export | NoUndo | `Mod+E` (png, selection or all) | A:4870, 3691; X:actionExport |
+| `doc.clear` | Clear document | Undoable | `Mod+Delete` | A:2841; X:actionClearCanvas |
+| `doc.show_intro` | Show intro document | NoUndo | none | A:2855 |
+| `doc.autosave` | Autosave now | NoUndo | none (timer) | A:2564-2576; FIX |
+| `doc.list` | List saved documents | NoUndo, read-only | none | A:2710, 2718 |
+| `doc.inspect` | Inspect document | NoUndo, read-only | none | NEW §11 |
+| `doc.outline` | Outline document | NoUndo, read-only | none | NEW §11 |
+
+| id | args | availability and refusals | effect |
+|---|---|---|---|
+| `doc.new` | `name?: string`, `onUnsaved: OnUnsaved = refuse`, `in_new_tab: bool = false` | Always available. Execute refuses: `unsaved_changes` (catalog text) when the active document is dirty, onUnsaved is refuse and in_new_tab is false. `in_room`: "This tab is connected to room {room}, and a new document would replace the shared one. Leave the room with `collab.leave_room`, or pass in_new_tab=true." | Replaces the active tab's document with a blank one (history cleared, selection cleared, save target cleared, any gesture or text edit ended) or opens it in a new tab. onUnsaved=save runs the `doc.save` logic first and fails with `no_save_target` if there is no target. |
+| `doc.open` | `source: FileRef \| Bytes`, `format: "auto" \| "drafftink" \| "excalidraw" \| "png" = auto`, `mode: "replace" \| "new_tab" \| "merge" = replace`, `onUnsaved: OnUnsaved = refuse`, `at?: Point`, `select: bool = true` | Always available. Execute refuses: `io_failed` (catalog); `parse_failed`: "The file is not a drafft.ink or Excalidraw document: {msg}. Open a .json, .drafftink or .excalidraw file, or a PNG exported with the scene embedded."; `is_library`: "`{name}` is an Excalidraw library, not a document. Add it to the library with `library.import`."; `newer_version`: "This file was saved by a newer drafft.ink (format {n}), and this one reads up to format {max}. Update the app to open it."; `unsaved_changes` and `in_room` as in `doc.new` (replace mode only). | Reads and migrates the file (old drafft-ink JSON without a version field loads through the `io` migration). replace: loads into the active tab, clears history, selection, gesture and text-edit state, restores the saved camera or fits to content. new_tab: opens a tab. merge: inserts the file's elements with new ids at `at` (default: original coordinates), selects them, one undo step. A PNG with an embedded scene (zTXt `application/vnd.drafftink+json`, or Excalidraw's tEXt) restores that scene. `{stored:"autosave"}` restores the last autosave (this is what `Ctrl+O` did on the web, A:790). |
+| `doc.drop` | `items: {name: string, bytes: Bytes, mime?: string}[]`, `at: Point = viewport_center`, `scene_png: "insert" \| "open" = insert`, `documents: "new_tab" \| "replace" \| "merge" = new_tab`, `onUnsaved: OnUnsaved = refuse` | Always available. Execute refuses: `nothing_to_do`: "Nothing to open: none of the {n} dropped files is an image, document or library. Supported: PNG, JPEG, WebP, .json, .drafftink, .excalidraw, .excalidrawlib."; `limit_exceeded` (more than 50 items). | Routes each item by sniffed content, not by extension alone. PNG/JPEG/WebP go to the `image.insert` logic (a PNG with an embedded scene is inserted as an image unless scene_png=open, which restores the scene as the old app did and is then the same as `doc.open`). Documents go to `doc.open` with `documents` as the mode. `.excalidrawlib` goes to `library.import` (merge). Several images are placed with a 20 unit cascade (FIX: the old app stacked them, A:5376). Unsupported items are skipped and listed in `warnings`. |
+| `doc.save` | `to?: FileRef`, `format: "drafftink" \| "excalidraw" = drafftink`, `name?: string`, `remember: bool = true`, `overwrite: bool = false` | Always available. Execute refuses: `no_save_target`: "This document has no save location yet. Pass `to` (a path, a stored name or a download name)." The web shell configures a default target, `{stored: <document name>}`, so `Mod+S` works there without a dialog; the native UI reacts to this code by opening its picker and calling again with `to`. `would_overwrite`: "`{target}` already exists and is not this document's file. Pass overwrite=true to replace it."; `io_failed` (catalog); `port_unavailable` when the port for `to` is missing. | Serialises (versioned JSON, images embedded; the excalidraw format warns about dropped fields), writes through `Files` or `Storage`, sets the saved revision (document is no longer dirty), sets the document name if `name` is given, and with remember=true stores `to` as the save target. Adds the target to the recent list (10 entries). Replaces the dialog-driven native save and the IndexedDB save of the old app (one code path). |
+| `doc.rename` | `name: string` | Always available. Execute refuses: `empty_name`: "The name is empty. Give a name of 1 to 120 characters." | Sets the document name (trimmed to 120 characters). The tab title follows. |
+| `doc.set_background` | `color: Color` | Always available. | Sets the background colour stored in the document (saved, synced, used by export and screenshots). `transparent` is allowed. The default for new documents is the setting `doc.default_background` (`#ffffff`; the old app had two defaults, `#fafafa` and white). |
+| `doc.export` | `format: "png" \| "svg" \| "json" \| "excalidraw" = png`, `scope: "auto" \| "all" \| "selection" \| "ids" \| "frame" = auto`, `ids?: Refs`, `frame?: Ref`, `scale: number = settings export.scale`, `padding: number = settings export.padding`, `background: bool = settings export.background`, `dark: bool = settings export.dark`, `embed_scene: bool = settings export.embed_scene`, `to: "inline" \| FileRef = inline` | Always available. Execute refuses: `no_target` for scope selection or ids with nothing selected; `nothing_to_do`: "Nothing to export: the document has no elements. Draw something first, or pass `ids`."; `port_unavailable`: "`doc.export` with format png needs the renderer, which this session does not provide (headless without a GPU). Use format svg or json." (png only); `io_failed`. | auto means the selection if there is one, else everything (as the old app did). Renders at `scale` (0.25 to 4; the UI offers 1, 2, 3) with `padding` units around the content and the document background. png embeds the scene as zTXt `application/vnd.drafftink+json` when embed_scene is true, and can be re-opened with `doc.open`. `inline` returns `{bytes: {base64, mime}}`. `{download}` and `{path}` write through `Files`. This is the single export implementation (the old app had five copies, A:3691, 3756, 4801, 4870, 4992). A scope=frame export clips to the frame and omits other frames' labels. |
+| `doc.clear` | none | `empty_document`: "The document is already empty, so there is nothing to clear." | Deletes every element (including locked ones), clears the selection, keeps name, background and files table entries until garbage collection. One undo step. In a room it deletes for everyone, like any edit. |
+| `doc.show_intro` | `mode: "replace" \| "new_tab" = replace`, `onUnsaved: OnUnsaved = refuse` | Always available. Execute refuses `unsaved_changes`, `in_room` as in `doc.new`. | Loads the built-in intro document (`assets/intro.json`). Replace resets the camera, history and selection. |
+| `doc.autosave` | none | `port_unavailable`: "`doc.autosave` needs persistent storage, which this session does not provide (storage port missing)." | If the revision changed since the last autosave, writes the active document to `Storage` under `autosave`. Output `{saved: bool}`. The shell calls it from a timer: at most every `autosave.interval_s` (5) seconds while the revision is dirty, and once on window close. FIX: the old detector counted shapes only (A:2564). |
+| `doc.list` | `where: "recent" \| "stored" \| "autosave" = recent` | Always available. | Returns `[{name, ref: FileRef, modified_ms, size}]`. `recent` is the last 10 saved or opened documents; `stored` is the web document store. |
+| `doc.inspect` | `ids?: Refs`, `detail: "summary" \| "full" = summary`, `include_deleted: bool = false`, `limit: int = 200`, `offset: int = 0` | Always available. `not_found` for unknown ids. | Summary: name, revision, dirty, save target, background, tab, counts per kind, bounds, group and frame counts, locked count. Full adds every field of each element (id, kind, geometry, angle, style, group ids, frame id, bindings, bound text, name, locked, z index). |
+| `doc.outline` | `format: "text" \| "json" \| "both" = both`, `scope: "all" \| "selection" \| "visible" \| "frame" = all`, `frame?: Ref`, `max_nodes: int = 500` | Always available. | A compact structure for agents: nodes (id, kind, name, label text, bounds), edges (from, to, label, arrowheads, type), groups (group id with member ids), frames (frame with children), unconnected text. The text form is one line per node and per edge, for example `a "Start" rectangle (0,0,120x60)` and `a -> b "yes"`. Truncates at `max_nodes` and says so. |
+
+### 2.2 `tab`: canvas tabs
+
+A tab holds one document with its own selection, camera and history (the old app cleared history on switch and left stale text-edit and gesture state, A:1725; FIX).
+
+| id | title | undo | keys | source |
+|---|---|---|---|---|
+| `tab.new` | New tab | NoUndo | none | NEW (old: only via library import, A:1734) |
+| `tab.switch` | Switch tab | NoUndo | none | U:691, A:3675 |
+| `tab.close` | Close tab | NoUndo | none | U:705, A:1746 |
+| `tab.rename` | Rename tab | Undoable | none | NEW |
+| `tab.move` | Move tab | NoUndo | none | NEW |
+| `tab.duplicate` | Duplicate tab | NoUndo | none | NEW |
+| `tab.list` | List tabs | NoUndo, read-only | none | NEW |
+
+| id | args | availability and refusals | effect |
+|---|---|---|---|
+| `tab.new` | `name?: string`, `from: "blank" \| "intro" \| "active" = blank` | `gesture_active` (catalog) while a gesture runs. | Adds a tab after the active one and activates it. A running text edit ends first (committed). |
+| `tab.switch` | `tab: Tab` | `no_such_tab`: "There is no tab `{tab}`. List tabs with `tab.list`." `gesture_active`. | Ends a running text edit (committed), clears hover and linear-editor state, and activates the tab. Does not clone documents. Collab rooms stay bound to their tab. |
+| `tab.close` | `tab?: Tab`, `onUnsaved: OnUnsaved = refuse`, `leave_room: bool = false` | `last_tab`: "The last tab cannot be closed. Open another tab first with `tab.new`, or clear this document with `doc.clear`." `unsaved_changes`. `in_room`: "Tab `{name}` is connected to room {room}. Leave the room first with `collab.leave_room`, or pass leave_room=true." `no_such_tab`. | Closes the tab and activates its left neighbour. batch: Last when it closes the active tab. |
+| `tab.rename` | `tab?: Tab`, `name: string` | `empty_name` (as `doc.rename`). `no_such_tab`. | Renames that tab's document. One undo step in that tab's history. |
+| `tab.move` | `tab?: Tab`, `to_index: int` | `no_such_tab`. `bad_args` if the index is out of range (message gives the range). | Reorders the tab list. |
+| `tab.duplicate` | `tab?: Tab`, `name?: string` | `no_such_tab`. | Copies the document into a new tab (new document id, not in any room) and activates it. |
+| `tab.list` | none | Always available. | `[{id, index, name, active, dirty, room?}]`. |
+
+### 2.3 `tool`: tools
+
+Tool changes are never undoable and never touch the document. `tool.set` is the one place that decides what a tool change implies (FIX: the old `set_tool` did not end text editing or cancel a manipulation, and was implemented three times, A:5245, 5305, U:745).
+
+| id | title | undo | keys (mac / other) | source |
+|---|---|---|---|---|
+| `tool.set` | Set tool | NoUndo | see the binding table below | A:5245-5295; U:745; X:Tools.tsx |
+| `tool.lock` | Keep tool active | NoUndo | `Q` | X:LockButton, actions/shortcuts `toolLock`; NEW |
+| `tool.hold` | Hold tool temporarily | NoUndo | `Space` (hold) with tool=hand | X:App.pan.ts; NEW (replaces A:4711 Space as mouse button) |
+| `tool.release` | Release held tool | NoUndo | `Space` (release) | NEW |
+| `tool.cancel` | Cancel | NoUndo | `Esc` | A:5305 |
+
+Bindings of `tool.set` (keys fire only without Ctrl/Cmd/Alt, and also without Shift; the old app accepted Shift+letter as the tool key, A:5245, which would collide with Shift+H and Shift+V flip):
+
+| Tool | Keys | Source |
+|---|---|---|
+| select | `V`, `1` | A:5245 |
+| hand | `H` | A:5250 |
+| rectangle | `R`, `2` | A:5255 |
+| diamond | `D`, `3` | X (NEW; key 3 was unused) |
+| ellipse | `O`, `4` | A:5260 |
+| arrow | `A`, `5` | A:5265 |
+| line | `L`, `6` | A:5270 |
+| freehand | `P`, `7`, `X` | A:5275; `X` from Excalidraw |
+| highlighter | none (as in the old app; toolbar and palette) | U:594 claimed `H`, wrong |
+| text | `T`, `8` | A:5280 |
+| math | `M`, `9` | A:5285 (Excalidraw uses `9` for image; see §6.4) |
+| frame | `F` | X (NEW) |
+| eraser | `E`, `0` | A:5290; `0` from Excalidraw |
+| laser | `Z`, `K` | A:5295; `K` from Excalidraw |
+
+| id | args | availability and refusals | effect |
+|---|---|---|---|
+| `tool.set` | `tool: Tool`, `keep_selection?: bool` (default true for select and hand, false for the other tools) | Always available. Execute refuses: `view_only_tool`: "In view-only mode only the select, hand and laser tools are available. Turn view-only off with `view.set_view_only` (on=false)." `gesture_active`. | Ends a running text edit (committed), abandons a half-drawn multi-point line, leaves the linear point editor, then sets the tool. Switching to a drawing tool clears the selection unless keep_selection is true. The highlighter and the freehand tool share one recognizer and differ in defaults (width 12 or more, alpha 128, see `element.create`). |
+| `tool.lock` | `on?: bool` (omitted toggles) | Always available. | Tool lock keeps the drawing tool after an element is created instead of returning to select. Session state, not persisted. Output `{tool_lock}`. |
+| `tool.hold` | `tool: Tool = hand` | `gesture_active`. | Remembers the current tool and activates `tool` until `tool.release`. While held, key repeat is ignored. Used by Space-drag panning. |
+| `tool.release` | none | Always available. A release without a hold is not an error: Ok with changed=false. | Restores the tool that was active before `tool.hold`. |
+| `tool.cancel` | `all: bool = true` | Always available (a stray Esc is Ok with changed=false). | One Esc ladder, in this order, each rung only if applicable: cancel the running gesture (`gesture.cancel`); end a text edit (committed); leave the linear point editor; leave the editing group (`group.exit`); clear the selection; switch to the select tool (and clear tool lock). With all=true every rung runs (the old app's single Esc, A:5305). With all=false only the first applicable rung runs, which is Excalidraw's step-by-step Esc. Output lists the rungs that ran. The UI closes open dialogs and popovers first (verb `ui.close_overlays`); that is not part of this command. |
+
+### 2.4 `element`: create, delete, move, resize, rotate, lock
+
+An element is flat and has a stable id (`scene` crate). Groups are `groupIds` on elements, not a shape kind. Moving, resizing, rotating, flipping and deleting always keep arrows bound to the elements, bound text with its container, and frame membership consistent, because the invariant pass (§1.4 step 8) runs inside every command. A command never fixes those by hand.
+
+`Query` fields (all optional, combined with AND): `ids: Refs`, `text: string | {contains?: string, regex?: string}` (case-insensitive, matches text, labels and LaTeX), `kind: Kind | Kind[]`, `style: StyleProps` (exact match on the given props), `region: {rect: Rect, mode: "overlap" | "contain" | "contained_by"}`, `connected_to: {ref: Ref, direction: "in" | "out" | "any"}` (arrows bound to the element, or elements bound by an arrow), `group: GroupId`, `frame: Ref`, `name: string` (glob), `locked: bool`, `selected: bool`, `has_label: bool`.
+
+| id | title | undo | keys (mac / other) | source |
+|---|---|---|---|---|
+| `element.create` | Create element | Undoable | none (tools call it) | E:566-596, 734-764, 773-846 |
+| `element.delete` | Delete | Undoable | `Delete`, `Backspace` | A:5299; X:actionDeleteSelected |
+| `element.duplicate` | Duplicate | Undoable | `Mod+D` | A:5210, 3354 |
+| `element.move` | Move | Gesture | none (drag); `Alt` while dragging sets duplicate=true | E:656-713, 1105-1205, 514-536 |
+| `element.nudge` | Nudge | Undoable (coalesce 1000 ms) | `Arrow keys`, `Shift+Arrow keys` (fine) | A:5338 |
+| `element.resize` | Resize | Gesture | none (drag handles) | E:876-1104, 609-655 |
+| `element.set_bounds` | Set position and size | Undoable | none | NEW (stats panel, agents) |
+| `element.rotate` | Rotate | Gesture | none (drag handle); double-click handle calls mode=to, angle=0 | E:878-902, 611-632, 447-462 |
+| `element.flip` | Flip | Undoable | `Shift+H` flip horizontal, `Shift+V` flip vertical | U:1753, 1761; A:3625-3632; X:actionFlip |
+| `element.lock` | Lock or unlock | Undoable | `Mod+Shift+L` | X:actionElementLock; NEW |
+| `element.unlock_all` | Unlock all | Undoable | none (context menu) | X:actionElementLock; NEW |
+| `element.set_name` | Name element | Undoable | none | NEW §11 |
+| `element.relabel` | Change label | Undoable | none | NEW §11 |
+| `element.connect` | Connect elements | Undoable | none | NEW §11 |
+| `element.erase` | Erase along path | Undoable | none (eraser tool) | E:1285-1311 |
+| `element.query` | Find elements | NoUndo, read-only | none | NEW §11 |
+| `element.at` | Element at point | NoUndo, read-only | none | NEW §11 |
+
+| id | args | availability and refusals | effect |
+|---|---|---|---|
+| `element.create` | `kind: Kind` (not image: use `image.insert`), plus per kind (below), common: `style?: StyleProps` (default: the style defaults), `name?: string`, `id?: Id`, `select: bool = true`, `frame: "auto" \| Ref \| null = auto`, `capture: bool = true`, `after?: Ref`, `from_tool: bool = false` | Always available. Execute refuses: `too_small`: "The {kind} is smaller than 1 unit in {width/height}. Give bounds with w and h of at least 1."; `too_few` (catalog) for a line, arrow or freehand with fewer than 2 points (1 point is allowed for freehand: it becomes a dot); `empty_text`: "A text element cannot be empty. Give `text`, or start typing with `text.edit_begin`."; `invalid_latex` (see `text.set_latex`); `id_in_use`: "The id `{id}` is already used by another element. Omit `id` to get a fresh one."; `name_taken` (see `element.set_name`); `not_bindable` for a start or end target (see `arrow.bind`); `wrong_kind` for kind=image: "`element.create` cannot create images. Use `image.insert`."; `locked` for a locked container or frame target. | Creates one element (or a text with its container label) and selects it. Per kind. rectangle, diamond, ellipse, frame: `bounds: Rect` (negative w or h is normalised). line, arrow: `points: Point[]` (2 or more, world coordinates), `arrow_type: "sharp" \| "round" \| "elbow" = sharp`, `closed: bool = false` (line only), `start?: Bind`, `end?: Bind` with `Bind = {target: Ref, mode?: "inside" \| "orbit", fixed_point?: [rx, ry]}`, `bind: "auto" \| "off" = auto` (auto binds an end that lies inside a bindable element or within the bind distance of its outline, per the binding design), `start_head?: Head \| null`, `end_head?: Head \| null` (arrow defaults: no start head, `arrow` end head, as the old app). freehand: `points: Point[]`, `pressures?: number[]` (0..1, same length; absent means uniform or simulated by `pressure_mode`), `highlighter: bool = false` (width at least 12 and alpha 128 unless the style says otherwise), `simplify: number = 2.0` (RDP tolerance in world units, 0 keeps all points; old `Freehand::simplify(2.0)`). text: `text: string`, `at: Point` (top-left), `width?: number` (fixed width wraps; absent auto-sizes), `container?: Ref` (create as that shape's label). math: `latex: string = "x^2 + y^2 = r^2"` (the old default, E:792-803), `at: Point`. `frame: auto` puts the new element into the frame under the bounds' centre; a new frame with capture=true takes in every unlocked element that lies completely inside it (groups only if all members are inside, no frames). `from_tool: true` is passed by the drawing recognizer: afterwards the tool returns to select unless `tool.lock` is on, in the same undo step. Bound arrows and elbow routes are solved before the command returns. |
+| `element.delete` | `ids: Refs = selection`, `frame_children: "delete" \| "release" = delete` | `no_target`. Execute: `locked`, `not_found`. | Soft-deletes the elements (tombstones, so undo and sync work). A deleted container deletes its bound text. An arrow bound to a deleted element keeps its position and becomes unbound at that end. Deleting a frame deletes its children (release keeps them, frame_id cleared). Deleting a group member removes just that member; a group with one member left stops being a group. Inside an editing group the selection falls back to the remaining members. |
+| `element.duplicate` | `ids: Refs = selection`, `dx: number = 20`, `dy: number = 20`, `select: bool = true` | `no_target`. Execute: `locked`. | Copies the elements with new ids and new seeds, offset by (dx, dy). Group ids are regenerated consistently (all copies of a group's members share one new group id; inside an editing group the copy stays in the parent group). Bindings are remapped to the copies; an end whose target was not copied becomes unbound. Frame membership is remapped to a copied frame or cleared. Copies are inserted directly above the last original, group members stay contiguous. The selection becomes the copies. One undo step. |
+| `element.move` | `ids: Refs = selection`, `dx: number = 0`, `dy: number = 0` (total since the start, world units), `duplicate: bool = false`, `snap: Snap = auto`, `frame: "auto" \| "keep" = auto`, `pointer?: Point` (world position of the pointer; frame hit-testing uses it, default the centre of the moved bounds) | `no_target`. Execute: `locked`. | Translates the elements. A frame moves its children. Bound text moves with its container. Arrows: if an arrow moves together with its targets it moves rigidly and keeps its bindings; an arrow moved without its target unbinds the ends whose targets stay behind; arrows bound to moved targets follow (orbit ends stay on the outline). With snap, grid snap (20) and smart guides (threshold 8, equal spacing) adjust (dx, dy); the reference is the moved bounds, deterministic (the old code used `HashMap::values().next()`, E:1105, FIX). duplicate=true leaves the originals and moves copies (Alt-drag), and selects the copies. With frame=auto, on the committed (non-live) run elements dropped over a frame join it and elements dragged out of it leave it, by the pointer rules. Output: `{dx, dy}` after snapping, `guides`, `frame_highlight?`. Gesture command (§1.10). |
+| `element.nudge` | `dir: "left" \| "right" \| "up" \| "down"`, `ids: Refs = selection`, `step?: number`, `fine: bool = false` | `no_target`. Execute: `locked`. | Moves by `step` (default the setting `input.nudge_step`, 20 = the old `GRID_SIZE`), or by 1 unit when fine=true (Shift+arrow, NEW). Re-snapshots the binding fixed points of bound arrows. Repeated nudges of the same elements within 1 s merge into one undo step (the old app pushed one step per key repeat, A:5338). |
+| `element.resize` | `ids: Refs = selection`, `handle: Handle = se`, `dx: number`, `dy: number` (total displacement of the handle since the start, world axes), `keep_aspect: bool = false`, `from_center: bool = false`, `snap: Snap = auto` | `no_target`. Execute: `locked`. | Scales the common bounds of the elements: corners scale about the opposite corner, edges stretch one axis (edge handles are NEW; the old app declared them but never produced them). from_center scales about the centre (Alt). keep_aspect is forced for text and images, and when a rotated element or a group member takes part (Excalidraw rule). Text scales its font size on a corner handle, and an edge handle sets a fixed width (wrap on, auto-resize off). Linear elements and freehand scale their points. Resizing a frame recomputes membership on the committed run. Minimum size is 1 unit (clamped, never a refusal). Bound arrows, bound text and elbow routes update. Output: `{bounds, guides, size_badge}`. Gesture command. |
+| `element.set_bounds` | `ids: Refs = selection`, `x?: number`, `y?: number`, `w?: number`, `h?: number`, `anchor: "top_left" \| "center" = top_left`, `keep_aspect: bool = false` | `no_target`. Execute: `locked`; `bad_args` if w or h is not above 0. | Sets the position and/or size of the common bounds of the selection (one element: exactly that box). Uses the same scaling rules as `element.resize`. Used by a numeric stats panel and by agents. |
+| `element.rotate` | `ids: Refs = selection`, `angle: number`, `mode: "by" \| "to" = by`, `snap_degrees?: number` (the UI passes 15 while Shift is held) | `no_target`. Execute: `locked`; `bad_args`: "mode \"to\" sets an absolute angle and needs exactly one element; use mode \"by\" to rotate several."; `not_rotatable`: "Elbow arrows cannot be rotated. Change the arrow type first with `arrow.set_type` (sharp or round)." or "Frames cannot be rotated." | Rotates about the common centre. Every element's own `angle` changes by the delta (there is no group angle, which fixes the old cosmetic group rotation). mode=to with angle 0 resets the rotation (double-click on the rotate handle, E:447). A single rotated arrow unbinds both its ends; arrows bound to rotated targets follow. snap_degrees rounds the resulting delta. Output: `{angle, angle_badge}`. Gesture command. |
+| `element.flip` | `ids: Refs = selection`, `axis: "horizontal" \| "vertical"` | `no_target`. Execute: `locked`. | Mirrors the elements about their common centre. A group moves as a unit (fixes the old displaced children, core `Group::transform`). Angles are negated, linear points mirrored, images toggle their scale sign, text keeps readable glyphs and only moves. Bound arrows follow. |
+| `element.lock` | `ids: Refs = selection`, `locked?: bool` (omitted toggles: unlock if all are locked, else lock) | `no_target`. | Sets `locked`. Locking an element locks every member of its outermost group, so a group stays one unit. Locked elements leave the selection, are not hit by click or marquee, are not binding targets, and every element, style, arrange, group and text command refuses them with `locked`. They can still be found by `element.query` and addressed by id. |
+| `element.unlock_all` | `ids?: Refs`, `select: bool = true` | `nothing_to_do`: "Nothing to unlock: no element is locked." | Unlocks the given elements, or every locked element, and selects them. |
+| `element.set_name` | `id: Ref`, `name: string \| null` | Execute: `name_taken`: "The name `{name}` is already used by element `{id}`. Names must be unique so that `@{name}` is unambiguous. Pick another name, or clear the other with `element.set_name`."; `bad_name`: "A name must be 1 to 64 characters, must not start with `@` or `$`, and must not contain control characters."; `not_found`. | Sets or clears the element's `name` field (stored in the document and synced). Agents then address the element as `@name`. Not shown on the canvas. |
+| `element.relabel` | `id: Ref`, `text: string`, `create: bool = true` | Execute: `wrong_kind` (allowed: text, rectangle, diamond, ellipse, arrow); `locked`; `not_found`. | On a text element, replaces its content. On a shape or an arrow, replaces its bound label, creating one when create=true, removing it when `text` is empty. Re-measures, grows the container when the text no longer fits, and re-centres the label. |
+| `element.connect` | `from: Ref`, `to: Ref`, `kind: "arrow" \| "line" = arrow`, `arrow_type: "sharp" \| "round" \| "elbow" = sharp`, `bind_mode: "orbit" \| "inside" = orbit`, `label?: string`, `start_head?: Head \| null`, `end_head?: Head \| null`, `style?: StyleProps`, `name?: string` | Execute: `same_element`: "Cannot connect an element to itself with `element.connect`. Pass two different elements."; `not_bindable`: "{kind} elements cannot be arrow targets. Bindable kinds: rectangle, diamond, ellipse, text, image, frame."; `locked`; `not_found`. | Creates an arrow whose ends are bound to the two elements (the binding is stored on the arrow), starting on the side facing the other element, routed and z-ordered above both. The label becomes the arrow's bound text. Output `{created: [arrow id]}`. |
+| `element.erase` | `path: Point[]` (1 or more), `radius: number = 10`, `units: "screen" \| "world" = screen` | Always available. Erasing nothing is Ok with deleted=[] (changed=false). | Deletes every unlocked element hit by the swept path, using exact hit testing, with the rules of `element.delete`, as one undo step (the old app pushed an undo step per drag event and used a fixed 10 world units, E:1285; FIX). Screen units are converted with the current zoom. |
+| `element.query` | `where?: Query`, `limit: int = 100` (max 1000), `offset: int = 0`, `fields: string[] = [id, kind, name, text, bounds]`, `order: "z" \| "reading" \| "position" = z` | Always available. `bad_args` on a malformed query. | Returns `{total, items, truncated}`. Selectable fields: id, kind, name, text, bounds, style, angle, group_ids, frame, bindings, bound_text, locked, z. |
+| `element.at` | `point: Point`, `tolerance: number = 6` (screen px), `all: bool = false`, `deep: bool = false`, `include_locked: bool = false` | Always available. | Hit-tests with the spatial index. Returns the topmost unit (the outermost group, or the member with deep=true), or all hits top to bottom. Frames are hit only on their outline and name, not their interior. |
+
+### 2.5 `selection`: selection
+
+State: selected element ids, selected groups, the editing group, and the linear point editor. Selection commands never create undo steps (§1.8).
+
+| id | title | undo | keys (mac / other) | source |
+|---|---|---|---|---|
+| `selection.select` | Select | NoUndo | none | E:486-538; X:App.selection |
+| `selection.select_at` | Select at point | NoUndo | none (click) | E:486-538; X:handleSelectionOnPointerDown |
+| `selection.select_region` | Select region | NoUndo | none (marquee) | E:539-547, 714-729 |
+| `selection.all` | Select all | NoUndo | `Mod+A` | A:4777; X:actionSelectAll |
+| `selection.clear` | Clear selection | NoUndo | none (`Esc` runs `tool.cancel`) | A:5305 |
+| `selection.get` | Get selection | NoUndo, read-only | none | NEW §11 |
+| `selection.navigate` | Select connected element | NoUndo | `Alt+Arrow keys` | X:flowchart; NEW |
+
+| id | args | availability and refusals | effect |
+|---|---|---|---|
+| `selection.select` | exactly one of `ids: Refs`, `group: GroupId`, `where: Query`; `mode: "replace" \| "add" \| "remove" \| "toggle" = replace`, `deep: bool = false`, `include_locked: bool = false` | Always available. Execute: `bad_args`: "Give exactly one of `ids`, `group` or `where`."; `not_found`. | Selecting a member selects its outermost group (inside an editing group: the next level down) unless deep=true, in which case it selects the element itself and sets the editing group to its innermost group when all targets share it. A selected frame excludes its children. Bound text follows its container. Locked elements are skipped unless include_locked. Output `{selected, groups, editing_group}`. Shift-click is mode=toggle. |
+| `selection.select_at` | `point: Point`, `mode: "replace" \| "add" \| "remove" \| "toggle" = replace`, `deep: bool = false`, `cycle: bool = false`, `tolerance: number = 6` (screen px), `include_locked: bool = false` | Always available. | Hit-tests at the point and selects the unit as above. A click on empty canvas with mode=replace clears the selection and leaves the editing group unless the point lies inside it. cycle=true (Alt-click) steps through the units under the point, top to bottom. Clicking inside the common bounds of an existing multi-selection keeps it (the gesture start in the UI does not call this). |
+| `selection.select_region` | `rect: Rect`, `mode: "replace" \| "add" = replace`, `contain: "overlap" \| "contain" = settings input.box_select`, `include_locked: bool = false` | Always available. | Selects elements overlapping (the old "touch, not contain" semantics) or fully inside the rectangle. Any member inside selects its whole outermost group. Ignores locked elements and bound text, and never selects the children of a selected frame together with the frame. The recognizer ignores rectangles under 2 by 2 pixels (old rule, E:714). |
+| `selection.all` | `within?: Ref` (a frame or a group) | `nothing_to_do`: "There are no elements to select." | Selects all unlocked elements, as groups (inside an editing group: that group's members; with `within`: that frame's children or group's members). |
+| `selection.clear` | none | Always available (idempotent). | Clears the selection and leaves the editing group and the linear point editor. |
+| `selection.get` | `detail: "ids" \| "summary" \| "full" = summary` | Always available. | `{ids, groups, editing_group, count, bounds, kinds, linear_editor?}`; full adds each element's fields. |
+| `selection.navigate` | `direction: "up" \| "down" \| "left" \| "right"` | `needs_single` (thing: "element"). Execute: `nothing_to_do`: "`{id}` has no connected element to the {direction}." | Selects the node connected by an arrow in that direction (the visually nearest, as Excalidraw's flowchart navigation). |
+
+### 2.6 `clipboard`: copy, cut, paste
+
+One path for every surface: the keyboard, the context menu and the palette all call these (the old app had different keyboard and button paste, A:5106 vs A:3428; FIX). The old copy buffer was an in-process JSON string and never reached the system clipboard (FIX).
+
+Payload written by `copy`/`cut`: custom MIME `application/vnd.drafftink.clipboard+json` (elements, files, bound text, frame children) and, when the setting `clipboard.excalidraw_compat` is true (default), the same selection as Excalidraw clipboard JSON in `text/plain` so it pastes into Excalidraw.
+
+| id | title | undo | keys (mac / other) | source |
+|---|---|---|---|---|
+| `clipboard.copy` | Copy | NoUndo | `Mod+C` | A:5061, 3384; X:actionCopy |
+| `clipboard.cut` | Cut | Undoable | `Mod+X` | A:5078, 3400; X:actionCut |
+| `clipboard.paste` | Paste | Undoable | `Mod+V` (at: `$cursor`), `Mod+Shift+V` (plain_text=true) | A:5106, 3428; X:actionPaste |
+| `clipboard.copy_style` | Copy style | NoUndo | `Mod+Alt+C` | X:actionCopyStyles; NEW |
+| `clipboard.paste_style` | Paste style | Undoable | `Mod+Alt+V` | X:actionPasteStyles; NEW |
+| `clipboard.copy_as` | Copy as image | NoUndo | `Mod+Shift+E`, `Mod+Shift+C` (both from the old app), `Shift+Alt+C` (Excalidraw) | A:4801, 4992, 3756; U:1957; X:actionCopyAsPng |
+
+| id | args | availability and refusals | effect |
+|---|---|---|---|
+| `clipboard.copy` | `ids: Refs = selection`, `system: bool = true` | `no_target`. | Stores the copy in the session buffer and writes the payload through the `Clipboard` port. A missing port with system=true is not an error: the internal copy still works and `warnings` says so. |
+| `clipboard.cut` | `ids: Refs = selection`, `system: bool = true` | `no_target`. Execute: `locked`. | `clipboard.copy` followed by `element.delete` in one undo step. |
+| `clipboard.paste` | `source: "system" \| "internal" \| {text: string} \| {image: Bytes} \| {elements: object} = system`, `at: Point = viewport_center`, `select: bool = true`, `plain_text: bool = false` | Execute: `clipboard_empty`: "The clipboard has nothing drafft.ink can paste. Supported: copied elements, Excalidraw data, images, Mermaid diagrams and plain text."; `port_unavailable`: "`clipboard.paste` with source system needs the system clipboard, which this session does not provide. Pass `source` with the data instead."; `parse_failed` for explicit data; `mermaid_unsupported` (see `diagram.import_mermaid`). | Routing for source=system, in this order: drafft.ink clipboard payload, Excalidraw clipboard JSON, an image, text that parses as a Mermaid diagram, plain text (a new text element). plain_text=true skips straight to a text element. Pasted elements get new ids and new group ids (they never join an existing group), are centred on `at` (the UI passes `$cursor`; the old keyboard path centred on the cursor and the button path on the viewport, A:5106 vs A:3428), keep their frame only when the frame was pasted too, and have bindings remapped or nulled. The selection becomes the pasted elements. |
+| `clipboard.copy_style` | `from?: Ref` (default the first selected element) | `no_target`. | Remembers the style props of that element (stroke, fill, pattern, width, stroke style, sloppiness, corner radius, opacity, and the font props for text) in the session style buffer. |
+| `clipboard.paste_style` | `ids: Refs = selection` | `no_target`. Execute: `nothing_to_do`: "No style has been copied yet. Copy one with `clipboard.copy_style` first."; `locked`. | Applies the remembered props to the targets that support them, with the semantics of `style.set` (scope selection). |
+| `clipboard.copy_as` | `format: "png" \| "svg" \| "text" = png`, `scope: "selection" \| "all" \| "ids" = selection`, `ids?: Refs`, `scale`, `padding`, `background`, `dark` (as `doc.export`) | `no_target` for scope selection with nothing selected (the old menu item was disabled then, U:1957). Execute: `port_unavailable` for png without the `Renderer` or for any format without the `Clipboard`; `nothing_to_do` for format text when no text is in scope. | Renders and writes the image (or SVG, or the concatenated text of text elements and labels) to the system clipboard. One implementation replaces the three copies of the old copy-PNG block. |
+
+### 2.7 `style`: styles
+
+One command sets any number of style props on the selection and on the defaults for new elements. It replaces the old `SetStrokeColor`, `SetFillColor`, `SetStrokeWidth`, `SetCornerRadius`, `SetSloppiness`, `SetFillPattern`, `SetStrokeStyle`, `SetOpacity` and the font actions, which each repeated about 25 lines and mostly pushed no undo step (FIX: all style changes are undoable and all reach collaborators).
+
+The props (each applies only to the kinds listed; others are skipped and reported):
+
+| Prop | Type | Applies to | Old |
+|---|---|---|---|
+| `stroke_color` | `Color` | all except image | U:1043, A:2606 |
+| `fill_color` | `Color \| null` (null is no fill; the old colour grid returned transparent instead of None, FIX) | rectangle, diamond, ellipse, frame, closed line, freehand | U:1097-1182, A:2659 |
+| `fill_pattern` | `solid \| hachure \| zigzag \| cross_hatch \| dots \| dashed \| zigzag_line` (all seven; the old UI showed four) | shapes with a fill | U:1572, A:3025 |
+| `stroke_width` | number above 0 (presets 1, 2, 4, 8) | all except image, text, math | U:1156, A:2679 |
+| `stroke_style` | `solid \| dashed \| dotted` | every shape (the old app only had it on line and arrow) | U:1631, A:3097 |
+| `sloppiness` | `architect \| artist \| cartoonist \| drunk` | all except text, math, image, freehand | U:1542, A:2996 |
+| `corner_radius` | number from 0 (sharp). The old "on" was 32. | rectangle, diamond, line, arrow, frame | U:1515, A:2970 |
+| `opacity` | 0 to 1 | all | U:1778, A:3639 |
+| `freehand_style` | `normal \| calligraphy` | freehand | U:1659, A:3609 |
+| `pressure_mode` | `uniform \| simulated \| device` (device is NEW: real pen pressure) | freehand | U:1675, A:3617 |
+| `font_family` | `gelpen \| gelpen_serif \| vanilla_extract \| noto_sans` | text, math labels | U:1380, A:2939 |
+| `font_weight` | `light \| regular \| heavy` | text | U:1417, A:2955 |
+| `font_size` | number above 0 (presets 16, 20, 28, 36; math uses the same sizes, the old `SetMathFontSize` is merged) | text, math | U:1446-1496, A:2918-2928 |
+| `text_align` | `left \| center \| right` | text (NEW) | X:actionChangeTextAlign |
+| `vertical_align` | `top \| middle \| bottom` | text bound to a container (NEW) | X:actionChangeVerticalAlign |
+| `line_height` | number from 1.0 to 3.0 (default 1.25) | text (NEW) | X |
+
+Arrow props (type, arrowheads) are in the `arrow` family. Background colour is `doc.set_background`.
+
+| id | title | undo | keys | source |
+|---|---|---|---|---|
+| `style.set` | Set style | Gesture (coalesce by prop, 1000 ms, when called plainly) | none (`S`, `G`, `Shift+F` are the UI verbs that open the colour and font pickers) | U:1020-1855; A:2606-3130, 3639 |
+| `style.get` | Get style | NoUndo, read-only | none | NEW |
+| `style.apply_theme` | Apply theme | Undoable | none | NEW §11 |
+| `style.list_themes` | List themes | NoUndo, read-only | none | NEW §11 |
+
+| id | args | availability and refusals | effect |
+|---|---|---|---|
+| `style.set` | `props: StyleProps` (at least one), `ids?: Refs`, `scope: "auto" \| "selection" \| "defaults" \| "both" = auto`, `include_bound_text: bool = true` | Always available (with no selection it edits the defaults). Execute: `bad_args` for a value out of range or of the wrong type (the message names the prop and the accepted values); `not_applicable` (catalog) when no targeted element supports any given prop; `locked` when `ids` names a locked element. | scope auto: if there is a target (given `ids` or a selection) apply to it and also update the defaults, else update only the defaults. Defaults are the style new elements get and are persisted as the setting `style.defaults`. A prop that an element does not support is skipped for that element and listed in `skipped`. Text props on a container also reach its bound label (include_bound_text). Output: `{applied: {id: [props]}, skipped: [{id, props}], defaults_updated}`. The UI no longer overwrites its controls from the first selected shape each frame (FIX of A:2499); it reads `style.get`. Gesture command: sliders and colour scrubbing call it live and commit once. |
+| `style.get` | `ids?: Refs`, `scope: "auto" \| "selection" \| "defaults" = auto`, `props?: string[]` | Always available. | For each prop returns `{value \| "mixed", applicable: bool}` over the targets, plus the set of kinds. This drives the properties panel: which sections show, and the "mixed" state for multiple selections (the old panel looked at `selection[0]` only, U:809). |
+| `style.apply_theme` | `name: string`, `ids?: Refs`, `scope: "auto" \| "selection" \| "defaults" \| "both" = auto` | Execute: `unknown_theme`: "Unknown theme `{name}`. Available themes: {list}. See them with `style.list_themes`."; `no_target` only when scope is selection. | A theme is a named `StyleProps` bundle (and optionally a background colour). Applying it is `style.set` with that bundle. Built-in names: `default` (the style defaults of this file), `monochrome`, `pastel`, `blueprint`, `high_contrast`. The style-family implementer defines the exact bundles in `edit/src/themes.rs`; `default` must equal the initial defaults. |
+| `style.list_themes` | none | Always available. | `[{name, props, background?}]`. |
+
+Initial style defaults (the old `UiState::default`, kept): stroke `indigo-500` (`#6366f1`), no fill, pattern solid, width 2, stroke style solid, sloppiness artist, corner radius 0, opacity 1, font gelpen, weight regular, size 20, align left.
+
+### 2.8 `text`: text, labels and math
+
+Typing, caret movement, selection and IME composition inside an active text edit belong to the text editor and are not commands (see `docs/exceptions.md`, E16). The editor hands its result to the engine with `text.edit_end`. A text edit is one undo step, including the creation of the element.
+
+| id | title | undo | keys | source |
+|---|---|---|---|---|
+| `text.set` | Set text | Undoable | none | NEW (E:234-297 edited in place) |
+| `text.set_latex` | Set LaTeX | Undoable | none | U:3015, A:3651 `UpdateMathLatex` |
+| `text.edit_begin` | Start editing text | NoUndo | `Enter` (edit the selected element), double-click | E:378-445, 773-791 |
+| `text.edit_end` | Finish editing text | Undoable | `Esc`, click away, `Mod+Enter` (these are handled by the editor, then call this) | E:253-297; A:4640 |
+| `text.style_range` | Style text range | Undoable | none | A:2606 (range colour), `char_colors` |
+| `text.step_size` | Step font size | Undoable (coalesce 1000 ms) | `Mod+Shift+.` increase, `Mod+Shift+,` decrease | X:actionIncreaseFontSize; NEW |
+| `text.bind` | Bind text to container | Undoable | none | X:actionBoundText bindText; NEW |
+| `text.unbind` | Unbind text | Undoable | none | X:actionBoundText unbindText; NEW |
+| `text.wrap_in_container` | Wrap text in shape | Undoable | none | X:wrapTextInContainer; NEW |
+| `text.set_autoresize` | Set auto-resize | Undoable | none | X:actionTextAutoResize; NEW |
+
+| id | args | availability and refusals | effect |
+|---|---|---|---|
+| `text.set` | `id: Ref`, `text: string`, `keep_runs: bool = true` | Execute: `wrong_kind`: "`text.set` edits text elements and labels. For math use `text.set_latex`."; `empty_text`: "A text element cannot be empty. Delete it with `element.delete`." (labels may be emptied: that removes the label); `locked`; `text_editing`; `not_found`. | Replaces the content of a text element, or of a container's or arrow's label. Per-character colours of the unchanged prefix and suffix are kept. Re-measures through the `TextMeasure` service and grows or re-centres the container. |
+| `text.set_latex` | `id: Ref`, `latex: string` | Execute: `wrong_kind`: "`text.set_latex` edits math elements. For text use `text.set`."; `invalid_latex`: "The LaTeX could not be parsed: {msg}. Fix the expression. Examples: `x^2`, `\frac{a}{b}`, `\sqrt{x}`, `\sum_{i=1}^n i`."; `locked`; `text_editing`. | Replaces the formula. On a parse error the element is unchanged. Layout happens once here, not per frame. |
+| `text.edit_begin` | exactly one of `id: Ref`, `at: Point`; `container?: Ref`, `caret: "end" \| "start" \| "all" \| int = end` | Execute: `wrong_kind` (allowed: text, math, rectangle, diamond, ellipse, arrow); `locked`; `view_only` (catalog); `bad_args`: "Give exactly one of `id` or `at`." | Ends any other text edit (committed), selects the target and starts the session. `at` starts a draft: nothing exists in the document until `text.edit_end`. A container (shape or arrow) edits its label, creating it on commit. Math: the session is opened the same way; the UI shows its equation dialog and ends with `latex`. Output `{kind, text, bounds, latex?}`. |
+| `text.edit_end` | `commit: bool = true`, `text?: string`, `latex?: string`, `runs?: {start: int, end: int, color: Color}[]` | `not_editing`: "No text is being edited. Start with `text.edit_begin`." Execute: `empty_text` is not an error here; a blank result discards a draft or deletes the element, as the old `exit_text_edit` did (E:253). `invalid_latex`. | commit=true applies `text`/`latex`/`runs` (the editor's final content) and creates, updates or removes the element and its label in one undo step, then selects it. commit=false discards the session. A container grows to fit the label. The editor's own undo (Ctrl+Z inside the text) is local and ends here. |
+| `text.style_range` | `id: Ref`, `start: int`, `end: int`, `color?: Color \| null` | Execute: `bad_range`: "The range {start}..{end} is outside the text, which has {len} characters. Use a range within 0..{len}."; `wrong_kind` (text only); `locked`; `text_editing`. | Sets (or with null clears) the colour of characters `start..end`. Only colour exists per character, as in the old app (`char_colors`). During a live text edit the editor owns the runs and sends them with `text.edit_end`. |
+| `text.step_size` | `direction: "increase" \| "decrease"`, `ids: Refs = selection` | `no_target`. Execute: `not_applicable` when no target is text or math. | Moves to the next preset in 16, 20, 28, 36, then by 8 above 36 or below 16 (minimum 8, maximum 200). |
+| `text.bind` | `text: Ref`, `container: Ref` | Execute: `wrong_kind`; `already_bound`: "`{container}` already has a label. Remove it first with `text.unbind`."; `locked`. | Makes the text the label of the container or arrow (stored on the text as `container`, the single authoritative side). Centres it, grows the container, and keeps the text directly above it in z-order. |
+| `text.unbind` | `text: Ref` | Execute: `nothing_to_do`: "`{id}` is not a label of any element." | Detaches the label; it stays where it is as a free text element. |
+| `text.wrap_in_container` | `ids: Refs = selection`, `shape: "rectangle" \| "ellipse" \| "diamond" = rectangle`, `padding: number = 16` | `no_target`. Execute: `not_applicable` when no target is a free text element. | Creates a shape around each free text element and binds the text as its label. |
+| `text.set_autoresize` | `ids: Refs = selection`, `on: bool` | `no_target`. Execute: `not_applicable` (text only). | on: the box follows the content. off: the box keeps its width and the text wraps. |
+
+### 2.9 `arrange`: z-order, align, distribute
+
+Groups, frames and bound text count as one unit. Plain elements and whole outermost groups are the units that move.
+
+| id | title | undo | keys (mac / other) | source |
+|---|---|---|---|---|
+| `arrange.z_order` | Change layer order | Undoable | forward `Mod+]`; backward `Mod+[`; front mac `Mod+Alt+]` / other `Mod+Shift+]`; back mac `Mod+Alt+[` / other `Mod+Shift+[` | U:1703-1733; A:3243-3326; X:actionZindex |
+| `arrange.align` | Align | Undoable | left `Mod+Shift+Left`, right `Mod+Shift+Right`, top `Mod+Shift+Up`, bottom `Mod+Shift+Down` (centres: none) | U:1807-1847; A:3455-3604; X:actionAlign |
+| `arrange.distribute` | Distribute | Undoable | horizontal `Alt+H`, vertical `Alt+V` | NEW; X:actionDistribute |
+
+| id | args | availability and refusals | effect |
+|---|---|---|---|
+| `arrange.z_order` | `op: "front" \| "back" \| "forward" \| "backward"`, `ids: Refs = selection` | `no_target`. Execute: `locked`. Already at the end of the order is Ok with changed=false. | front/back move to the top/bottom. forward/backward move one step over the neighbouring unit, jumping over a whole outermost group (or, inside an editing group, over the next level down) and over a frame's contiguous range. Inside an editing group the move is clamped to that group's z-range; children of a frame stay below their frame. Bound text travels with its container. Only the moved elements get new fractional indices. Reaches collaborators through the CRDT (the old app did not broadcast z-order, A:3243). |
+| `arrange.align` | `edge: "left" \| "right" \| "top" \| "bottom" \| "center_x" \| "center_y"`, `ids: Refs = selection`, `to?: Ref` | `too_few` (n=2, things "elements (a group counts as one)", unless `to` is given): "Align needs at least 2 elements (a group counts as one), and {have} were given. Select more, or pass `to` to align to a reference element." Execute: `locked`. | Aligns the units' edge or centre to the selection bounds, or to the edge of the `to` element. `center_x` makes the x-centres equal (the old `AlignCenterV`, icon "Center (Vertical)"); `center_y` makes the y-centres equal (the old `AlignCenterH`). The old names were inverted against the axis (U:1807). Bound arrows follow. |
+| `arrange.distribute` | `axis: "horizontal" \| "vertical"`, `ids: Refs = selection`, `gap?: number` | `too_few` (n=3): "Distribute needs at least 3 elements (a group counts as one), and {have} were given. Select more, or pass `ids`." Execute: `locked`. | Without `gap`, keeps the two outermost units fixed and equalises the gaps between all units along the axis. With `gap`, spaces units by exactly that gap from the first unit. |
+
+### 2.10 `group`: groups
+
+A group is a shared `groupIds` entry on its members, innermost first. Element ids never change when grouping or ungrouping. The old `Shape::Group` (children by value) is gone; old documents migrate to flat groups in `io`.
+
+| id | title | undo | keys | source |
+|---|---|---|---|---|
+| `group.create` | Group | Undoable | `Mod+G` | A:4973 (keyboard only in the old app); X:actionGroup |
+| `group.ungroup` | Ungroup | Undoable | `Mod+Shift+G` | A:4973; X:actionGroup |
+| `group.enter` | Enter group | NoUndo | none (double-click on a selected group) | X:App double-click; NEW |
+| `group.exit` | Leave group | NoUndo | none (`Esc` runs `tool.cancel`) | X; NEW |
+
+| id | args | availability and refusals | effect |
+|---|---|---|---|
+| `group.create` | `ids: Refs = selection` | `no_target`. `too_few` (n=2): "Grouping needs at least 2 elements, and {have} were given. Select more, or pass `ids`." Execute: `already_grouped`: "These elements already form one group at this level. Ungroup them with `group.ungroup`, or select more elements."; `frame_and_children`: "A frame and its own children cannot be grouped together. Select either the frame or its children."; `locked`. | Adds a new group id as the outermost entry (inside an editing group: just inside it). Members become contiguous in z-order at the position of the topmost member, keeping their relative order; anything that sat between them ends up below. Members from different frames are first removed from their frames. Selection becomes the group. Output `{group, members}`. |
+| `group.ungroup` | `group?: GroupId`, `ids: Refs = selection` | `no_group`: "No group is selected. Select a group first (click it, or `selection.select` with `group`), or pass `group`." Execute: `locked`. | Removes only the selected group level from its members; z-order is unchanged; frame membership of the members is recomputed. Selection becomes the next level (inner groups or members). |
+| `group.enter` | `group?: GroupId` (default the single selected group), `select?: Ref` | `no_group` (same text as above). | Sets the editing group; clicks now select members one level down. `select` selects that element's unit inside the group (the double-click target). |
+| `group.exit` | none | `not_in_group`: "You are not inside a group, so there is nothing to leave." | Clears the editing group and selects that group again. |
+
+### 2.11 `frame`: frames
+
+Frames clip their children when rendered and export as a unit. Frames cannot be nested. Children sit directly below their frame in z-order. Membership changes by dragging (`element.move`, frame=auto), by drawing a frame around elements (`element.create`, kind=frame, capture=true), and by these commands. Rendering flags are settings: `frame.clip`, `frame.show_names`, `frame.outline`.
+
+| id | title | undo | keys | source |
+|---|---|---|---|---|
+| `frame.wrap` | Wrap in frame | Undoable | `W` | X:actionWrapSelectionInFrame; NEW |
+| `frame.unwrap` | Unwrap frame | Undoable | none | X:unwrapFrame; NEW |
+| `frame.rename` | Rename frame | Undoable | none | X:frame label edit; NEW |
+| `frame.add` | Add to frame | Undoable | none | X:addElementsToFrame; NEW |
+| `frame.remove` | Remove from frame | Undoable | none | X:actionRemoveAllElementsFromFrame; NEW |
+| `frame.select_children` | Select frame contents | NoUndo | none | X:actionSelectAllElementsInFrame; NEW |
+
+| id | args | availability and refusals | effect |
+|---|---|---|---|
+| `frame.wrap` | `ids: Refs = selection`, `name?: string`, `padding: number = 16` | `no_target`. Execute: `nested_frame`: "Frames cannot be nested. Remove the frame from the selection, or unwrap it with `frame.unwrap`."; `locked`. | Creates a frame around the common bounds plus padding (0 when an image is included), adds the elements, places the frame directly above them, selects the frame. |
+| `frame.unwrap` | `frame?: Ref` (default the selected frame) | `no_target`. Execute: `wrong_kind`: "`frame.unwrap` works on frames, and `{id}` is a {kind}."; `locked`. | Releases the children (frame id cleared), deletes the frame, selects the children. |
+| `frame.rename` | `frame: Ref`, `name: string \| null` | Execute: `wrong_kind` (frames only); `locked`. | Sets the label; null restores the default "Frame". |
+| `frame.add` | `frame: Ref`, `ids: Refs = selection` | `no_target`. Execute: `wrong_kind`; `locked`. | Makes the elements children of the frame (moving them out of another frame). Frames, and groups that contain a frame, are skipped and listed in `warnings`. Children are moved to just below the frame in z-order. |
+| `frame.remove` | `ids?: Refs`, `frame?: Ref` | `nothing_to_do` when no given element is in a frame. | Clears the frame id of the given elements, or of all children of `frame`. Z-order is unchanged. |
+| `frame.select_children` | `frame: Ref` | Execute: `wrong_kind`; `nothing_to_do`: "`{id}` has no children." | Selects the frame's children, without bound text entries. |
+
+### 2.12 `arrow`: bindings, heads, routing, point editing
+
+Bindings are stored on the arrow only (`start_binding`, `end_binding` with `target`, `fixed_point` as ratios of the target's unrotated box, and `mode`). The reverse index is derived, never stored or synced. Arrows are `arrow` and `line` elements; commands that only make sense for arrows say so. Bindable targets: rectangle, diamond, ellipse, text, image and frames (from outside). Locked and deleted targets are ignored. Bind distance is `clamp(15 / (min(zoom, 1) * 1.5), 15, 30)` screen-corrected units. Settings `arrow.binding` (default on) and `arrow.midpoint_snap` (default off) switch automatic binding and midpoint snapping.
+
+| id | title | undo | keys | source |
+|---|---|---|---|---|
+| `arrow.set_type` | Set arrow type | Undoable | none | U:1603-1615, A:3054 `SetPathStyle`; X:actionChangeArrowType |
+| `arrow.set_head` | Set arrowhead | Undoable | none | NEW (old: one open V head, no choice); X:actionChangeArrowhead |
+| `arrow.bind` | Bind arrow end | Undoable | none | NEW; X:binding |
+| `arrow.unbind` | Unbind arrow end | Undoable | none | NEW |
+| `arrow.move_point` | Move arrow point | Gesture | none (drag) | E:876-1104 (Endpoint, IntermediatePoint, SegmentMidpoint handles) |
+| `arrow.add_point` | Add arrow point | Undoable | none | NEW; X:linearEditor |
+| `arrow.delete_point` | Delete arrow point | Undoable | `Delete` while point editing | X:actionDeleteSelected (point mode); NEW |
+| `arrow.edit_points` | Edit points | NoUndo | `Mod+Enter`, double-click on a line | X:actionLinearEditor; NEW |
+| `arrow.reroute` | Re-route arrows | Undoable | none | NEW |
+
+| id | args | availability and refusals | effect |
+|---|---|---|---|
+| `arrow.set_type` | `ids: Refs = selection`, `type: "sharp" \| "round" \| "elbow"` | `no_target`. Execute: `not_applicable` when no target is an arrow or line; `locked`. | sharp = straight segments (old Direct), round = smooth curve through the points (old Flowing), elbow = orthogonal route found by A* around the bound targets (old Angular, which was a fixed Z shape that ignored shapes and existed only at render time, FIX). Switching to elbow replaces intermediate points by the routed path and forces angle 0; switching away keeps the corner points. |
+| `arrow.set_head` | `ids: Refs = selection`, `end: "start" \| "end" \| "both" = end`, `head: Head \| null` | `no_target`. Execute: `not_applicable` when no target is an arrow; `locked`. | Sets the arrowhead at the given end; null removes it. The old app had one open V head at the end (size 15). |
+| `arrow.bind` | `arrow: Ref`, `end: "start" \| "end"`, `target: Ref`, `mode: "orbit" \| "inside" = orbit`, `fixed_point?: [number, number]` | Execute: `wrong_kind` (arrow only); `not_bindable`: "{kind} elements cannot be arrow targets. Bindable kinds: rectangle, diamond, ellipse, text, image, frame."; `locked`; `not_found`. | Binds that end. orbit puts the end on the target's outline plus a gap of `5 + stroke_width / 2`; inside keeps the end inside the target. Default fixed point: the outline point facing the other end. Updates the route (elbow arrows re-route once). |
+| `arrow.unbind` | `arrow: Ref`, `end: "start" \| "end" \| "both" = both` | Execute: `nothing_to_do`: "`{id}` is not bound at that end."; `locked`. | Clears the binding; the geometry does not change. |
+| `arrow.move_point` | `arrow: Ref`, `index: int \| "start" \| "end"`, `to: Point`, `insert: bool = false`, `bind: "auto" \| "off" \| "inside" = auto`, `snap: Snap = auto` | Execute: `locked`; `bad_args` for an index out of range (message gives the range); `not_movable`: "Elbow arrows only allow moving their two ends. Move the whole arrow, or change its type with `arrow.set_type`." (middle points of an elbow). | Moves one point to `to`. With insert=true, `index` is a segment number and a point is inserted at that segment's midpoint first (dragging the midpoint handle). For an end: bind=auto binds to a target under the pointer (inside the shape: inside mode; in the outline margin: orbit mode), unbinds when dragged away, and keeps the binding otherwise; bind=off ignores targets (Ctrl held); bind=inside forces inside (Alt held). Smart guides, grid and 15-degree angle snap apply per `snap` (old `ENDPOINT_SNAP_RADIUS`; isometric snap for lines). Output: `{bind_highlight?: Id, guides}` for the overlay. Gesture command. |
+| `arrow.add_point` | `arrow: Ref`, `segment: int`, `at?: Point` | Execute: `wrong_kind` (arrow or line); `not_movable` (elbow); `locked`; `bad_args`. | Inserts a vertex on that segment (default at its midpoint). |
+| `arrow.delete_point` | `arrow: Ref`, `index: int` | Execute: `too_few`: "A line needs at least 2 points, so no point can be deleted from `{id}`."; `not_movable`; `locked`. | Removes one point. |
+| `arrow.edit_points` | `arrow?: Ref` (default the single selected line or arrow), `on?: bool` (omitted toggles) | `needs_single` (thing: "line or arrow"). Execute: `wrong_kind`. | Turns the linear point editor on or off. While on, `Delete` removes the selected point and clicking a midpoint adds one. |
+| `arrow.reroute` | `ids: Refs = selection` | `no_target`. Execute: `not_applicable` when no target is an arrow. | Clears fixed elbow segments, re-solves the bindings from the targets' current positions and re-routes. A repair tool for agents and users. |
+
+### 2.13 `image`: images
+
+Images are stored once per file (content hash) in the document's files table. Paste, drop and the picker all use this command.
+
+| id | title | undo | keys | source |
+|---|---|---|---|---|
+| `image.insert` | Insert image | Undoable | `I` is the UI verb `ui.insert_image` (picker), which calls this; `Mod+V` and drops also route here | A:5376-5468; file_ops 171-230, 939+; X:image tool |
+
+| id | args | availability and refusals | effect |
+|---|---|---|---|
+| `image.insert` | `images: Bytes[]` (1 to 20), `at: Point = viewport_center`, `fit: number = 800`, `offset: number = 20`, `select: bool = true`, `downscale: bool = true`, `name?: string` | Always available. Execute: `unsupported_format`: "`{name}` is not a supported image ({found}). Use PNG, JPEG or WebP."; `parse_failed`: "{name} could not be read as an image: {msg}. Try another file."; `limit_exceeded` (more than 20 images, or an image over 25 MiB). | Decodes the header for the size, stores the bytes (re-encoded to at most 2048 px on the long side when over 2 MiB and downscale=true), and creates image elements whose longest side is at most `fit` (smaller images keep their size, as the old 800 px rule), centred on `at`, each further image shifted by `offset`. Selects them. Replaces the old paste, drop and picker code paths, and the stale camera captured by the web drop handler (A:1917, FIX). |
+
+### 2.14 `view`: camera, modes, screenshots
+
+The camera is a scroll point (the world point at the centre of the viewport) and a zoom. Zoom is clamped to 0.1..10. The UI shows percent as `zoom / 1.68 * 100`. Per-frame camera movement by pointer, wheel or touch is an exception (`docs/exceptions.md`, E10 and E11): the UI applies it to the viewport directly and reports the final camera with `view.set`. The commands below are the scriptable equivalents and the final-state commands.
+
+| id | title | undo | keys (mac / other) | source |
+|---|---|---|---|---|
+| `view.set` | Set camera | NoUndo | none | NEW (final state of pan and zoom gestures) |
+| `view.pan` | Pan | NoUndo | wheel; `PgUp`/`PgDn` and `Shift+PgUp`/`Shift+PgDn` call `view.scroll_page` | A:4434, 4244, 4226 |
+| `view.zoom_at` | Zoom at point | NoUndo | `Mod`+wheel (factor 1.1 or 0.9) | A:4449; `camera.zoom_at` |
+| `view.zoom_in` | Zoom in | NoUndo | `Mod+=`, `Mod++` | U:900, A:2874 (x1.25); X |
+| `view.zoom_out` | Zoom out | NoUndo | `Mod+-` | U:866, A:2881 (x0.8); X |
+| `view.zoom_reset` | Reset zoom | NoUndo | `Mod+0` | U:887, A:2890; X |
+| `view.zoom_to_fit` | Zoom to fit | NoUndo | `Shift+1` (all), `Shift+2` and `Shift+3` (selection) | U:930, A:3328; X:actionCanvas |
+| `view.center` | Centre view | NoUndo | none | U:915, A:2894 |
+| `view.scroll_page` | Scroll by page | NoUndo | `PgUp`, `PgDn`, `Shift+PgUp`, `Shift+PgDn` | X (NEW) |
+| `view.set_viewport` | Set viewport size | NoUndo | none (the shell calls it on resize) | A:2267 |
+| `view.set_view_only` | View-only mode | NoUndo | `Alt+R` | X:actionToggleViewMode; NEW |
+| `view.get` | Get view | NoUndo, read-only | none | NEW §11 |
+| `view.screenshot` | Screenshot | NoUndo, read-only | none | NEW §11 |
+
+| id | args | availability and refusals | effect |
+|---|---|---|---|
+| `view.set` | `scroll?: Point`, `zoom?: number` | Always available. `bad_args` for a non-finite number. | Sets the camera (zoom clamped). The UI calls it at the end of a pan or zoom gesture and, at most every 100 ms, during one so that `view.get`, follow mode and screenshots stay fresh. |
+| `view.pan` | `dx: number`, `dy: number` (screen pixels; the content moves by the same amount as the pointer would) | Always available. | Pans. A wheel line is 20 px (A:4434). `Shift`+wheel pans horizontally (NEW). |
+| `view.zoom_at` | exactly one of `factor: number`, `zoom: number`; `at: ScreenPoint \| "viewport_center" = viewport_center` | Execute: `bad_args`: "Give exactly one of `factor` or `zoom`." | Zooms keeping the point under `at` fixed. The wheel passes factor 1.1 (in) or 0.9 (out) as the old fixed step; a pinch passes the finger-distance ratio. Clamps to 0.1..10. |
+| `view.zoom_in` | `at: ScreenPoint \| "viewport_center" = viewport_center` | Always available. | Multiplies zoom by 1.25. |
+| `view.zoom_out` | `at: ScreenPoint \| "viewport_center" = viewport_center` | Always available. | Multiplies zoom by 0.8. |
+| `view.zoom_reset` | `recenter: bool = false` | Always available. | Sets zoom to 1.68 (shown as 100%). The old command did not keep the centre; recenter=true moves the content centre to the viewport centre. |
+| `view.zoom_to_fit` | `scope: "auto" \| "all" \| "selection" \| "ids" \| "rect" = auto`, `ids?: Refs`, `rect?: Rect`, `padding: number = 50`, `max_zoom: number = 10` | Execute: `nothing_to_do`: "There is nothing to fit: the document is empty. Draw something, or use `view.center`." (also for scope selection with no selection: "...nothing is selected...") | auto fits the selection if there is one, else all content (the old rule, A:3328). Replaces the unused `Canvas::fit_to_content` duplicate. |
+| `view.center` | `on: "origin" \| "content" \| "selection" \| "point" = origin`, `point?: Point` | Execute: `nothing_to_do` for content or selection that is empty. | Moves the camera without changing zoom. The old `CenterCanvas` set the offset to zero, which is `on=origin`. |
+| `view.scroll_page` | `direction: "up" \| "down" \| "left" \| "right"`, `fraction: number = 0.8` | Always available. | Scrolls by that fraction of the viewport. |
+| `view.set_viewport` | `width: number`, `height: number`, `scale_factor: number = 1` | `bad_args` unless width and height are above 0. | Tells the engine the canvas size in logical pixels. Needed for fit, centre and screenshots. Not exposed to agents. |
+| `view.set_view_only` | `on?: bool` (omitted toggles) | Always available. | While on, every command with `view_only = Refused` refuses with `view_only`; only select, hand and laser tools work; copying and exporting still work. Session state, not saved with the document. |
+| `view.get` | none | Always available. | `{scroll, zoom, percent, viewport: {w, h, scale_factor}, visible: Rect, view_only, tool, tool_lock}`. |
+| `view.screenshot` | `region: "viewport" \| "all" \| "selection" \| Rect \| {ids: Refs} = viewport`, `scale: number = 1`, `max_side_px: int = 2048`, `background: bool = true`, `overlay: bool = false` | Execute: `port_unavailable`: "`view.screenshot` needs the renderer, which this session does not provide (headless without a GPU). Read the structure with `doc.outline` instead."; `nothing_to_do` for an empty region. | Renders a PNG and returns `{bytes: {base64, mime}, width, height}` so an agent can check what it drew. overlay=true includes selection handles and guides. Never changes state, and never writes files (use `doc.export` for that). |
+
+### 2.15 `history`: undo and redo
+
+Local undo per peer, backed by Loro's `UndoManager`. See §1.8.
+
+| id | title | undo | keys (mac / other) | source |
+|---|---|---|---|---|
+| `history.undo` | Undo | NoUndo | `Mod+Z` | A:4944, 3131; U:795; X:actionHistory |
+| `history.redo` | Redo | NoUndo | `Mod+Shift+Z`, `Mod+Y` (all platforms, as in the old app) | A:4944, 4964, 3145; U:808 |
+| `history.clear` | Clear history | NoUndo | none | X:history.clear (API); NEW |
+| `history.state` | History state | NoUndo, read-only | none | NEW §11 |
+
+| id | args | availability and refusals | effect |
+|---|---|---|---|
+| `history.undo` | `steps: int = 1` (1 to 50) | `nothing_to_undo`: "There is nothing to undo in this tab." `gesture_active`, `text_editing` (catalog; inside the text editor, undo is the editor's own). | Reverts the last step(s) of this peer, restores the selection and editing group, clears nothing else. Entries that would change nothing visible (for example after a remote delete) are skipped. The inverse is a normal CRDT edit, broadcast like any other (FIX: the old keyboard path did not broadcast, A:4944). Output `{undone: [labels], can_undo, can_redo}`. batch: Never. |
+| `history.redo` | `steps: int = 1` | `nothing_to_redo`: "There is nothing to redo in this tab." `gesture_active`, `text_editing`. | Re-applies undone steps. batch: Never. |
+| `history.clear` | none | `gesture_active`. | Drops the undo and redo stacks of the active tab. `doc.open`, `doc.new` and `tab.duplicate` do this themselves. |
+| `history.state` | none | Always available. | `{can_undo, can_redo, undo_label, redo_label, undo_depth, redo_depth}`. |
+
+### 2.16 `collab`: rooms and presence
+
+Remote edits arrive through `Session::apply_remote` and the same document and CRDT path as local edits. They are not commands and are never undoable by this peer. The wire protocol is versioned and shared with the server (`protocol` crate). Commands only start work; the connection state is read with `collab.status`.
+
+| id | title | undo | keys | source |
+|---|---|---|---|---|
+| `collab.connect` | Connect to server | NoUndo | none | A:3160; U:2321 |
+| `collab.disconnect` | Disconnect | NoUndo | none | A:3180; U:2324 |
+| `collab.join_room` | Join room | NoUndo | none | A:3192; U:2369; web `?room=`, `#room=`, CLI `--room` |
+| `collab.leave_room` | Leave room | NoUndo | none | A:3202; U:2359 |
+| `collab.set_user` | Set name and colour | NoUndo | none | A:3215, 3226; U:2394, 2450 |
+| `collab.set_pointer` | Publish pointer | NoUndo | none (pointer move) | A:4140-4160 |
+| `collab.laser` | Laser trail | NoUndo | none (laser tool) | NEW (the old laser was local only, E:561) |
+| `collab.status` | Collab status | NoUndo, read-only | none | NEW |
+
+| id | args | availability and refusals | effect |
+|---|---|---|---|
+| `collab.connect` | `url: string = settings collab.server_url`, `room?: string`, `onLocal: "refuse" \| "merge" \| "discard" = refuse` | Execute: `invalid_url`: "`{url}` is not a valid server address. Use a ws:// or wss:// URL such as `wss://host/ws`. A bare `/ws` works only in the web app, where it means this page's server."; `already_connected`: "Already connected to `{url}`. Disconnect first with `collab.disconnect`."; `port_unavailable` (no `Net` port). | Starts the connection and returns at once with `{state: "connecting"}`. If `room` is given, the join is queued and sent when the socket opens (FIX: the web client lost the join sent while CONNECTING, A:1989). The shell reads the URL parameters and CLI flags and calls this. batch: Never. |
+| `collab.disconnect` | none | `not_connected`: "Not connected, so there is nothing to disconnect." | Leaves the room, closes the socket and clears the peer list. The local document stays. |
+| `collab.join_room` | `room?: string` (omitted creates a random 10-character id), `onLocal: "refuse" \| "merge" \| "discard" = refuse` | `not_connected`: "Not connected to a server. Connect first with `collab.connect`." Execute: `already_in_room`: "Already in room `{room}`. Leave it first with `collab.leave_room`."; `local_content`: "This tab already has content, which joining would merge into room `{room}`. Pass onLocal=\"merge\" to merge it, onLocal=\"discard\" to replace it with the room's content, or open a new tab first with `tab.new`."; `bad_args` for an invalid room name (1 to 64 characters, letters, digits, `-`, `_`). | Binds the room to the active tab and starts incremental sync (Loro updates, never snapshots). With an untouched document (blank or intro) `onLocal` is not consulted. discard clears history. Output `{room, link}` where `link` is `#room=<id>&server=<url>`. |
+| `collab.leave_room` | none | `not_in_room`: "This tab is not in a room, so there is nothing to leave." | Stops syncing this tab and removes its peers. The local copy of the document stays. |
+| `collab.set_user` | `name?: string` (0 to 40 characters), `color?: Color` (`#rrggbb`) | Execute: `bad_args` for a bad colour. | Stores the name and colour in the settings `collab.user_name`, `collab.user_color` and updates presence. Default colour `#6366f1`. Nine preset colours in the picker: `#ef4444 #f97316 #eab308 #22c55e #06b6d4 #3b82f6 #6366f1 #a855f7 #ec4899`. |
+| `collab.set_pointer` | `point: Point \| null`, `tool?: "pointer" \| "laser"` | Always available. | Publishes the local pointer in world coordinates (null: left the canvas, which clears the remote cursor; the old app never cleared it, A:4140). Throttled by time, at most one message per 33 ms (the old throttle counted events). Ephemeral. Not exposed to agents. |
+| `collab.laser` | `points: Point[]`, `fade_ms: int = 330` | Always available. | Shows a fading trail locally and to peers. Nothing is stored. |
+| `collab.status` | none | Always available. | `{state: "disconnected" \| "connecting" \| "connected" \| "error", url, room?, peers: [{id, name, color, pointer?}], error?}`. |
+
+### 2.17 `settings`: persisted settings
+
+Settings live in the `Storage` settings namespace and are loaded at start (FIX: the old app persisted nothing, so colours, snap toggles, grid, export scale, name and server reset on every launch). Keys and defaults are in §5. Setting commands are never undoable and never touch the document.
+
+| id | title | undo | keys | source |
+|---|---|---|---|---|
+| `settings.get` | Get settings | NoUndo, read-only | none | NEW |
+| `settings.set` | Set setting | NoUndo | none | NEW; A:2898-2992 (snap, export scale) |
+| `settings.toggle` | Toggle setting | NoUndo | `Mod+'` (cycles view.grid_style via `settings.cycle`), `Alt+S` (snap.smart_guides) | A:2870, 2898, 2902, 2906; X:actionToggleGridMode, ObjectsSnapMode |
+| `settings.cycle` | Cycle setting | NoUndo | `Mod+'` with key view.grid_style | A:2870 `ToggleGrid` |
+| `settings.reset` | Reset settings | NoUndo | none | NEW |
+
+| id | args | availability and refusals | effect |
+|---|---|---|---|
+| `settings.get` | `key?: string` | Execute: `unknown_setting` (below). | One value, or all `{key: value}`. |
+| `settings.set` | `key: string`, `value: any` | Execute: `unknown_setting`: "Unknown setting `{key}`. Did you mean `{a}`? List settings with `settings.get`."; `bad_args`: "Setting `{key}` must be {expected}, and got {got}." | Validates against the key's type and range and persists. |
+| `settings.toggle` | `key: string` | Execute: `unknown_setting`; `bad_args`: "Setting `{key}` is not an on/off setting. Use `settings.set` or `settings.cycle`." | Flips a boolean setting. |
+| `settings.cycle` | `key: string`, `step: int = 1` | Execute: `unknown_setting`; `bad_args`: "Setting `{key}` has no fixed list of values. Use `settings.set`." | Moves to the next value of an enumerated setting, wrapping. Grid style order: none, lines, horizontal_lines, crosses, dots, none (the old `GridStyle::next`). |
+| `settings.reset` | `key?: string`, `all: bool = false` | Execute: `bad_args`: "Give either `key` or all=true." | Restores defaults. Never changes the document. |
+
+### 2.18 `library`: the shape library
+
+Items are saved groups of elements for reuse. The library is persisted in the `Storage` library namespace, is not part of any document, and has no undo. It reads and writes `.excalidrawlib` (v1 and v2) and replaces the old import-into-a-new-tab flow (A:1689, 2294).
+
+| id | title | undo | keys | source |
+|---|---|---|---|---|
+| `library.add` | Add to library | NoUndo | none | X:actionAddToLibrary; NEW |
+| `library.insert` | Insert from library | Undoable | none | X:LibraryUnit; NEW |
+| `library.remove` | Remove from library | NoUndo | none | NEW |
+| `library.rename` | Rename library item | NoUndo | none | NEW |
+| `library.list` | List library | NoUndo, read-only | none | NEW |
+| `library.import` | Import library | NoUndo | none | U:717, A:2833, 3671 `LoadLibrary`; X:data/library.ts |
+| `library.export` | Export library | NoUndo | none | X:serializeLibraryAsJSON |
+
+| id | args | availability and refusals | effect |
+|---|---|---|---|
+| `library.add` | `ids: Refs = selection`, `name?: string` | `no_target`. | Stores a copy of the elements (ids regenerated on insert; groups, bindings among them and bound text kept) as a new item. Output `{item}`. |
+| `library.insert` | `item: string` (id or name), `at: Point = viewport_center`, `select: bool = true` | Execute: `no_such_item`: "There is no library item `{item}`. List items with `library.list`." | Inserts the item like a paste: new element and group ids, centred on `at`, selected. |
+| `library.remove` | exactly one of `items: string[]`, `all: bool` (all=true is the only way to remove everything) | Execute: `bad_args`: "Give either `items` or all=true."; `no_such_item`. | Removes items. Not undoable, so removal is always explicit. |
+| `library.rename` | `item: string`, `name: string` | `no_such_item`; `empty_name`. | Renames an item. |
+| `library.list` | `search?: string` | Always available. | `[{id, name, element_count, bounds, created}]`. Thumbnails are drawn by the UI from the items. |
+| `library.import` | `source: FileRef \| Bytes`, `mode: "merge" \| "replace" \| "open_as_tab" = merge` | Execute: `parse_failed`: "The file is not an Excalidraw library: {msg}. Libraries are .excalidrawlib files."; `io_failed`. | merge adds items and skips duplicates by content hash. replace replaces the whole library (use with care: not undoable). open_as_tab is the old behaviour: lays the items out on a grid in a new tab. Output `{added, skipped}`. |
+| `library.export` | `items?: string[]` (default all), `to: "inline" \| FileRef = inline` | Execute: `nothing_to_do`: "The library is empty, so there is nothing to export."; `no_such_item`; `io_failed`. | Writes `.excalidrawlib` v2. |
+
+### 2.19 `diagram` and `layout`: build diagrams from structure
+
+Both are agent-first (plan §11) and also serve the UI (Mermaid import, a "tidy up" action). Layout algorithms live in `edit`: `layered` (Sugiyama style, handles cycles), `tree` (needs a forest), `grid`, `force`, and `none` (use given positions). Distances are world units.
+
+| id | title | undo | keys | source |
+|---|---|---|---|---|
+| `diagram.create` | Create diagram | Undoable | none | NEW §11 |
+| `diagram.import_mermaid` | Import Mermaid diagram | Undoable | none (`clipboard.paste` also routes here) | U:1945, A:2798; core `shapes_from_mermaid` |
+| `diagram.extend` | Add connected node | Undoable | `Mod+Arrow keys` | X:flowchart; NEW |
+| `layout.apply` | Auto-layout | Undoable | none | NEW §11 |
+
+Types: `Node = {id: string, label?: string, shape?: "rectangle" | "ellipse" | "diamond" | "text", width?: number, height?: number, name?: string, style?: StyleProps}`, `Edge = {from: string, to: string, label?: string, arrow_type?: "sharp" | "round" | "elbow", start_head?: Head | null, end_head?: Head | null, style?: StyleProps, name?: string}`, `LayoutOpts = {algorithm: "layered" | "tree" | "grid" | "force" | "none" = layered, direction: "down" | "right" | "up" | "left" = down, node_gap: number = 40, layer_gap: number = 80, columns?: int}`. Node `id` is a symbolic name chosen by the caller.
+
+| id | args | availability and refusals | effect |
+|---|---|---|---|
+| `diagram.create` | `nodes: Node[]`, `edges: Edge[] = []`, `layout: LayoutOpts`, `at: Point \| "viewport_center" \| "below_content" = viewport_center`, `group: bool = false`, `frame?: string` (wraps the result in a frame with this name), `select: bool = true` | Execute: `bad_args`: "Give at least one node."; `duplicate_node`: "Node id `{id}` appears twice. Node ids must be unique."; `unknown_node`: "Edge {index} refers to node `{id}`, which is not in `nodes`. Known nodes: {list}."; `tree_not_forest`: "The tree layout needs every node to have at most one incoming edge and no cycles, and node `{id}` breaks that. Use algorithm \"layered\", which handles cycles."; `limit_exceeded` (2000 nodes, 5000 edges). | Creates the nodes (size measured from the label with a minimum of 80 by 48, label stored as bound text), places them with the layout, and creates one bound arrow per edge (both ends bound in orbit mode, edge label as the arrow's bound text, routed). One undo step. Output `{nodes: {symbolic: id}, edges: [ids], bounds, created}`. In a batch the symbolic ids are available as `$<step>.<node>`. |
+| `diagram.import_mermaid` | `source: "clipboard" \| {text: string}`, `at: Point \| "viewport_center" = viewport_center`, `group: bool = true`, `select: bool = true` | Execute: `mermaid_unsupported`: "Mermaid diagram type `{type}` is not supported yet. Supported: flowchart/graph and sequenceDiagram."; `parse_failed`: "The Mermaid text could not be read: {msg} (line {n}). Fix that line and try again."; `clipboard_empty`; `port_unavailable` for source clipboard without the `Clipboard`. | Parses with the native Mermaid parser (flowchart and graph with LR/RL/TB/TD/BT, seven node shapes, solid/dotted/thick edges, labels, subgraphs; sequenceDiagram with participants, messages, self-messages, notes), creates elements with bound arrows (the old import made straight arrows that knew nothing about the shapes), groups them when group=true (the old import always made one group), and uses Mermaid's own layout. Same output as `diagram.create`. |
+| `diagram.extend` | `from: Ref`, `direction: "up" \| "down" \| "left" \| "right"`, `label?: string`, `gap: number = 80` | Execute: `wrong_kind` (allowed: rectangle, diamond, ellipse); `locked`; `not_found`; `needs_single` when `from` is omitted and the selection is not one element. | Creates a node of the same kind and style next to `from` in that direction with a bound arrow from `from` to it, and selects it. If the spot is taken it picks the next free one in the same direction. |
+| `layout.apply` | `algorithm: "layered" \| "tree" \| "grid" \| "force"`, `ids?: Refs`, `where?: Query`, `direction`, `node_gap`, `layer_gap`, `columns` (as LayoutOpts), `anchor: "keep" \| "top_left" \| "center" = keep`, `reroute: bool = true` | Default targets: the selection. `too_few` (n=2, things "elements"). Execute: `tree_not_forest` (as above); `locked`; `limit_exceeded`. | Treats non-arrow elements as nodes and arrows bound between them as edges, moves the nodes, re-routes the bound arrows (elbow routes once, after all moves), and keeps bound text with its shapes. anchor=keep leaves the top-left of the set's bounds where it was. |
+
+### 2.20 `gesture`: gesture protocol
+
+The protocol is specified in §1.10. These four commands are the registry face of it. They are not exposed to agents (agents call the plain command), are not palette entries, and are rejected inside batches.
+
+| id | title | undo | keys | source |
+|---|---|---|---|---|
+| `gesture.begin` | Begin gesture | NoUndo | none | NEW (solidcraft `live` frames) |
+| `gesture.update` | Update gesture | NoUndo | none | NEW |
+| `gesture.end` | End gesture | Undoable (the committing step) | none | NEW |
+| `gesture.cancel` | Cancel gesture | NoUndo | none (UI: `Esc`, blur, pointer cancel) | A:4533 (only touch cancel in the old app) |
+
+| id | args | availability and refusals | effect |
+|---|---|---|---|
+| `gesture.begin` | `command: string`, `args: object` | Execute: `gesture_active` (catalog); `not_gesturable`: "`{command}` cannot run as a gesture. Gestures work with: element.move, element.resize, element.rotate, arrow.move_point, style.set."; plus any refusal of the first frame. | Captures the base state, runs the first live frame, returns `{gesture, ...frame output}`. |
+| `gesture.update` | `gesture: string`, `args: object` | Execute: `no_gesture`: "There is no running gesture `{gesture}`. Start one with `gesture.begin`." A refusal keeps the last good frame. | Restores the base values of touched elements and re-runs the command live with the absolute args. |
+| `gesture.end` | `gesture?: string` (default the running one), `args?: object` (default the last frame's) | `no_gesture`. Execute: any refusal of the command; it aborts the gesture and restores the base state. | Restores the base, runs the command non-live, commits one undo step labelled with the command title, broadcasts once, and writes one ring entry. |
+| `gesture.cancel` | `gesture?: string` | Always available. With no running gesture it is Ok with changed=false (a stray cancel on window blur is normal). | Restores the base state, discards the frames. |
+
+### 2.21 `engine`: introspection of the registry and session
+
+These are what `window.drafftink.commands()`, `recent()` and the MCP tool list are built from. All are read-only and allowed in every state.
+
+| id | title | undo | keys | source |
+|---|---|---|---|---|
+| `engine.commands` | List commands | NoUndo, read-only | none | NEW (solidcraft `engine.commands`); X:ActionManager |
+| `engine.describe` | Describe command | NoUndo, read-only | none | NEW (solidcraft `engine.describe`) |
+| `engine.recent` | Recent commands | NoUndo, read-only | none | NEW §5 |
+| `engine.state` | Session state | NoUndo, read-only | none | NEW |
+
+| id | args | availability and refusals | effect |
+|---|---|---|---|
+| `engine.commands` | `family?: string`, `search?: string`, `available_only: bool = false`, `include_schemas: bool = false` | Always available. | `[{id, title, family, summary, undo, reads_only, shortcuts: {mac, other}, available: true \| {code, message}, facts, args_schema?, output_schema?}]`. `shortcuts` are the effective keys (defaults plus user overrides). |
+| `engine.describe` | `id: string` | Execute: `unknown_command` with suggestions. | The spec for one command: summary, args and output JSON Schema, facts, the refusal codes it can return, and one worked example. |
+| `engine.recent` | `limit: int = 50` (max 256), `mutating_only: bool = false`, `since_seq?: int` | Always available. | The newest entries of the ring (§1.9), oldest first. |
+| `engine.state` | none | Always available. | `{tabs: [{id, name, active, dirty}], tool, tool_lock, view_only, selection: {count, groups, editing_group}, gesture?, text_edit?, revision, dirty, collab: {state, room?}, settings_revision}`. |
+
+### 2.22 `perf`: counters
+
+| id | title | undo | keys | source |
+|---|---|---|---|---|
+| `perf.stats` | Performance counters | NoUndo, read-only | none | NEW (plan §5, §7) |
+
+| id | args | availability and refusals | effect |
+|---|---|---|---|
+| `perf.stats` | `since: "start" \| "last_call" = start`, `trace: bool = false` | Always available. | Returns the `profile` crate's counters and per-phase histograms (input, commands, layout, encode, GPU submit), redraw counts with their dirty reasons, and frame-time percentiles. since=last_call returns only what happened after the previous call (a mark kept in `profile`, not in the session), so a scenario can measure one phase. trace=true adds a Chrome-trace JSON of the retained spans. |
+
+### 2.23 Removed ideas
+
+These were considered and are not commands: `doc.import` (merging is `doc.open` with mode=merge), per-tool ids such as `tool.rectangle` (they are bindings of `tool.set`), a separate `group.select` (use `selection.select` with `group`), a separate `edit.escape` (it is `tool.cancel`), and `tool.image` (inserting an image is `ui.insert_image` then `image.insert`).
+
+---
+
+## 3. Read-only and introspection index
+
+Read-only commands never change any state class (`reads_only = true`). They are allowed in every state: view-only, during a gesture, during a text edit. They are what an agent uses to look before it acts. `window.drafftink` and the bridge expose them under the same ids.
+
+| id | Returns | Used for |
+|---|---|---|
+| `engine.commands` | every command with availability and effective shortcuts | palette, toolbar, MCP tool list, `window.drafftink.commands()` |
+| `engine.describe` | schemas, facts and refusal codes of one command | agents, docs generation |
+| `engine.recent` | the recent ring | `window.drafftink.recent()`, debugging |
+| `engine.state` | tabs, tool, mode, selection summary, gesture, collab | quick orientation |
+| `doc.inspect` | document summary or full element data | detailed read |
+| `doc.outline` | compact text and JSON structure (nodes, edges, groups, frames) | agent orientation after edits |
+| `doc.list` | recent and stored documents | open dialogs |
+| `tab.list` | tabs | tab bar |
+| `selection.get` | selected ids, groups, editing group, bounds | properties panel, stats panel |
+| `style.get` | common value or "mixed" per prop, applicability | properties panel |
+| `style.list_themes` | named style bundles | theme pickers, agents |
+| `element.query` | elements matching a filter | find by text, kind, style, region, connection |
+| `element.at` | element at a point | agents, hit-test checks |
+| `view.get` | camera, viewport, visible rect, modes | orientation |
+| `view.screenshot` | PNG of a region | agents verify what they drew |
+| `history.state` | can undo or redo and their labels | undo and redo buttons |
+| `collab.status` | connection, room, peers | collab button, presence panel |
+| `library.list` | library items | library panel |
+| `settings.get` | setting values | settings UI |
+| `perf.stats` | counters, histograms, optional trace | perf gates, `window.drafftink.perf` |
+
+The hot-path reads of the renderer and of the pointer recognizer (hit-testing under the pointer, handle hit-tests, bind and snap candidates) use `canvas` and `edit` APIs directly. They change nothing, so they are not commands. `element.at` and `arrow.move_point` expose the same logic to scripts.
+
+---
+
+## 4. UI decisions turned into arguments
+
+The old app decided these with dialogs, confirm boxes, hidden modifiers or hard-coded behaviour. Each is now an argument with a safe default, so the UI, a script and an agent get the same behaviour.
+
+| Old decision | Where | Argument | Safe default | Why this default |
+|---|---|---|---|---|
+| Replace the document with unsaved changes | open, new, intro, drop, tab close | `onUnsaved: refuse \| discard \| save` | refuse | Nothing is lost silently. The refusal says how to continue; the UI turns it into its confirm box. |
+| Where an opened file goes | `doc.open`, `doc.drop` | `mode: replace \| new_tab \| merge` | replace for `doc.open`, new_tab for drops | A drop can happen by accident; a deliberate open replaces. |
+| Overwriting an existing file | `doc.save` | `overwrite: bool` | false | The OS dialog asks; scripts do not have one. |
+| No save location yet | `Mod+S` | refusal code `no_save_target` | n/a | The UI opens its picker on that code and calls again with `to`. |
+| Restoring the scene of a dropped PNG | `doc.drop` | `scene_png: insert \| open` | insert | Opening replaces work; inserting does not. (Old: always replaced, A:5376.) |
+| Joining a room with local content | `collab.join_room` | `onLocal: refuse \| merge \| discard` | refuse | Merging into a shared room cannot be taken back by the others. |
+| Closing a tab that is in a room | `tab.close` | `leave_room: bool` | false | Leaving a room is visible to others. |
+| Replacing the document inside a room | `doc.new`, `doc.open` | refusal `in_room` | n/a | Replace would overwrite the shared document. Use `in_new_tab=true`. |
+| What to do with frame children on delete | `element.delete` | `frame_children: delete \| release` | delete | Excalidraw behaviour; undo restores both. |
+| Export region | `doc.export`, `clipboard.copy_as` | `scope: auto \| all \| selection \| ids \| frame` | auto (selection if any, else all) | The old behaviour. |
+| Export look | `doc.export` | `scale`, `padding`, `background`, `dark`, `embed_scene` | the `export.*` settings (2x, 20, on, off, on) | The old fixed values, now persisted. |
+| Where paste lands | `clipboard.paste` | `at: Point` | viewport centre (keyboard passes `$cursor`) | The old keyboard and button paths disagreed. |
+| Plain-text paste of text that looks like Mermaid or Excalidraw | `clipboard.paste` | `plain_text: bool` | false | The old sniffing is kept; `Mod+Shift+V` turns it off. |
+| Finish or discard a text edit | click away, `Esc` | `text.edit_end(commit)` | true | Matches the old exit; blank text is removed. |
+| Math editor Apply or Cancel | math dialog | `text.edit_end(commit, latex)` | commit | Cancel is commit=false. |
+| Ctrl held: ignore snapping | drags | `snap: Snap` | auto | A modifier is an argument, not a hidden global. |
+| Ctrl held: do not bind arrow ends; Alt: bind inside | `arrow.move_point`, `element.create` | `bind: auto \| off \| inside` | auto | |
+| Shift held: keep aspect, snap rotation to 15 degrees | resize, rotate | `keep_aspect`, `snap_degrees` | off | |
+| Alt held: resize from the centre, duplicate on drag | resize, move | `from_center`, `duplicate` | off | |
+| Shift held on click, marquee | selection | `mode: replace \| add \| remove \| toggle` | replace | |
+| Ctrl held on click: pick inside a group | selection | `deep: bool` | false | |
+| Esc | `Esc` | `tool.cancel(all)` | true | The old single Esc did everything. |
+| Which tool after drawing | tool lock | `element.create(from_tool)` and `tool.lock` | back to select | Old behaviour; lock is NEW. |
+| Elbow conversion drops hand-placed points | `arrow.set_type` | n/a (undoable) | n/a | Undo is the safety net. |
+| Removing library items | `library.remove` | `items` or `all: true` | no default | Not undoable, so never implicit. |
+| Replacing the library on import | `library.import` | `mode: merge \| replace \| open_as_tab` | merge | |
+| Clearing the document | `doc.clear` | none | no confirm | Undoable, so no confirm is needed. |
+| Large image on insert | `image.insert` | `downscale: bool`, `fit` | true, 800 | Old fit rule, plus a size cap for the file. |
+| Mermaid import as one group | `diagram.import_mermaid` | `group: bool` | true | The old behaviour. |
+| Server URL | `collab.connect` | `url` | setting `collab.server_url` | The old default `/ws` was invalid on native. |
+| Style change with nothing selected | `style.set` | `scope: auto \| selection \| defaults \| both` | auto | Edits the defaults for new elements. |
+| Mixed values in a multi-selection | `style.get` | returns `"mixed"` | n/a | The old panel showed the first shape only. |
+| Camera animation | zoom to fit, centre | none | instant | Smoothing, if any, is the shell calling `view.set` per frame (exceptions E10, E11). |
+
+---
+
+## 5. Settings keys
+
+Persisted through the `Storage` settings namespace; read with `settings.get`, written with `settings.set`, `settings.toggle`, `settings.cycle`. A change takes effect at once and is stored at once. An unknown key refuses with `unknown_setting`.
+
+| Key | Type and range | Default | Old app |
+|---|---|---|---|
+| `view.grid_style` | `none \| lines \| horizontal_lines \| crosses \| dots` | `lines` | `config.grid_style` (U:817, not persisted) |
+| `snap.grid` | bool | false | `ui_state.grid_snap_enabled` |
+| `snap.smart_guides` | bool | false | `smart_snap_enabled` |
+| `snap.angle` | bool | false | `angle_snap_enabled` |
+| `snap.angle_step` | number 1..90 | 15 | 15 degrees |
+| `export.scale` | number 0.25..4 | 2 | `export_scale` |
+| `export.padding` | number 0..200 | 20 | export padding |
+| `export.background` | bool | true | white |
+| `export.dark` | bool | false | none |
+| `export.embed_scene` | bool | true | zTXt scene |
+| `doc.default_background` | `Color` | `#ffffff` | two defaults (`#fafafa`, white) |
+| `input.nudge_step` | number 0.1..1000 | 20 | `GRID_SIZE` |
+| `input.box_select` | `overlap \| contain` | `overlap` | overlap only |
+| `style.defaults` | `StyleProps` object | see `style` family | `UiState` colours, width, sloppiness; not persisted |
+| `arrow.binding` | bool | true | none |
+| `arrow.midpoint_snap` | bool | false | none |
+| `frame.clip` | bool | true | none |
+| `frame.show_names` | bool | true | none |
+| `frame.outline` | bool | true | none |
+| `history.depth` | int 1..1000 | 50 | 50 |
+| `autosave.enabled` | bool | true | web only |
+| `autosave.interval_s` | int 1..300 | 5 | 5 s |
+| `clipboard.excalidraw_compat` | bool | true | none |
+| `collab.server_url` | string (`ws://`, `wss://`, or `/ws` on the web) | web: this page's `/ws`; native: `ws://localhost:3030/ws` | `"/ws"` |
+| `collab.user_name` | string 0..40 | empty | not persisted |
+| `collab.user_color` | `Color` | `#6366f1` | not persisted |
+| `doc.recent` | list of `FileRef`, at most 10; read only | empty | `recent_documents` |
+
+Constants carried over unchanged from the old app, which are not settings: grid size 20; smart guide threshold 8; equal-spacing radius 800 with candidate caps 50 and 200; handle hit tolerance 24; rotate-handle offset 25; handle size 16 divided by zoom; `BASE_ZOOM` 1.68; zoom range 0.1..10; wheel zoom step 1.1 and 0.9; button zoom 1.25 and 0.8; double-click 500 ms and 5 px; minimum shape size 1; eraser radius 10; freehand simplify 2.0; highlighter width 12 and alpha 128; image fit 800; presence panel shows 8 peers; recent documents 10; duplicate offset 20; laser trail 50 points with a 0.33 s fade.
+
+---
+
+## 6. Keymap
+
+One keymap for every platform. `Mod` is Cmd on macOS and Ctrl elsewhere. Bindings call a command with fixed args. A binding with no entry in the "command" column is a UI verb (§6.3). Keys are inert while a text field or the text editor has focus, except the entries marked `text`.
+
+### 6.1 Default bindings
+
+| Keys (mac / other) | Command and fixed args | When | Source |
+|---|---|---|---|
+| `V` `1` | `tool.set` tool=select | canvas | A:5245 |
+| `H` | `tool.set` tool=hand | canvas | A:5250 |
+| `R` `2` | `tool.set` tool=rectangle | canvas | A:5255 |
+| `D` `3` | `tool.set` tool=diamond | canvas | NEW |
+| `O` `4` | `tool.set` tool=ellipse | canvas | A:5260 |
+| `A` `5` | `tool.set` tool=arrow | canvas | A:5265 |
+| `L` `6` | `tool.set` tool=line | canvas | A:5270 |
+| `P` `7` `X` | `tool.set` tool=freehand | canvas | A:5275 |
+| `T` `8` | `tool.set` tool=text | canvas | A:5280 |
+| `M` `9` | `tool.set` tool=math | canvas | A:5285 |
+| `F` | `tool.set` tool=frame | canvas | NEW |
+| `E` `0` | `tool.set` tool=eraser | canvas | A:5290 |
+| `Z` `K` | `tool.set` tool=laser | canvas | A:5295 |
+| `Q` | `tool.lock` | canvas | NEW |
+| `Space` (hold) | `tool.hold` tool=hand; release calls `tool.release` | canvas | NEW |
+| `Esc` | `ui.close_overlays` when an overlay is open, else `tool.cancel` | always | A:5305 |
+| `Mod+Z` | `history.undo` | canvas | A:4944 |
+| `Mod+Shift+Z`, `Mod+Y` | `history.redo` | canvas | A:4944, 4964 |
+| `Mod+A` | `selection.all` | canvas | A:4777 |
+| `Mod+C` | `clipboard.copy` | canvas | A:5061 |
+| `Mod+X` | `clipboard.cut` | canvas | A:5078 |
+| `Mod+V` | `clipboard.paste` at=`$cursor` | canvas | A:5106 |
+| `Mod+Shift+V` | `clipboard.paste` at=`$cursor`, plain_text=true | canvas | NEW |
+| `Mod+Alt+C` | `clipboard.copy_style` | canvas | NEW |
+| `Mod+Alt+V` | `clipboard.paste_style` | canvas | NEW |
+| `Mod+Shift+E`, `Mod+Shift+C`, `Shift+Alt+C` | `clipboard.copy_as` format=png | canvas | A:4801, 4992; X |
+| `Mod+D` | `element.duplicate` | canvas | A:5210 |
+| `Delete`, `Backspace` | `element.delete` (when the point editor has a selected point: `arrow.delete_point`) | canvas | A:5299 |
+| `Arrow keys` | `element.nudge` dir | canvas, selection | A:5338 |
+| `Shift+Arrow keys` | `element.nudge` dir, fine=true | canvas, selection | NEW |
+| `Shift+H`, `Shift+V` | `element.flip` axis=horizontal, vertical | canvas | NEW |
+| `Mod+Shift+L` | `element.lock` | canvas | NEW |
+| `Mod+G` | `group.create` | canvas | A:4973 |
+| `Mod+Shift+G` | `group.ungroup` | canvas | A:4973 |
+| `Mod+]` `Mod+[` | `arrange.z_order` op=forward, backward | canvas | NEW |
+| mac `Mod+Alt+]` `Mod+Alt+[` / other `Mod+Shift+]` `Mod+Shift+[` | `arrange.z_order` op=front, back | canvas | NEW |
+| `Mod+Shift+Left/Right/Up/Down` | `arrange.align` edge=left, right, top, bottom | canvas | NEW |
+| `Alt+H`, `Alt+V` | `arrange.distribute` axis=horizontal, vertical | canvas | NEW |
+| `W` | `frame.wrap` | canvas | NEW |
+| `Mod+Shift+.` `Mod+Shift+,` | `text.step_size` direction=increase, decrease | canvas | NEW |
+| `Enter` | `text.edit_begin` id=the single selected editable element | canvas | NEW |
+| `Mod+Enter` | `arrow.edit_points` (canvas); finish editing (`text`) | canvas, text | NEW |
+| `Mod+Arrow keys` | `diagram.extend` direction | canvas | NEW |
+| `Alt+Arrow keys` | `selection.navigate` direction | canvas | NEW |
+| `Mod+=` `Mod++` | `view.zoom_in` | canvas | NEW |
+| `Mod+-` | `view.zoom_out` | canvas | NEW |
+| `Mod+0` | `view.zoom_reset` | canvas | NEW |
+| `Shift+1` | `view.zoom_to_fit` scope=all | canvas | NEW |
+| `Shift+2` `Shift+3` | `view.zoom_to_fit` scope=selection | canvas | NEW |
+| `PgUp` `PgDn` `Shift+PgUp` `Shift+PgDn` | `view.scroll_page` up, down, left, right | canvas | NEW |
+| `Alt+R` | `view.set_view_only` | always | NEW |
+| `Mod+'` | `settings.cycle` key=view.grid_style | canvas | NEW |
+| `Alt+S` | `settings.toggle` key=snap.smart_guides | canvas | NEW |
+| `Mod+S` | `doc.save` | always | A:4784 |
+| `Mod+E` | `doc.export` format=png | canvas | A:4870 |
+| `Mod+Delete` | `doc.clear` | canvas | NEW |
+| `Mod+O` | UI verb `ui.open_file` | always | A:4790 |
+| `Mod+Shift+S` | UI verb `ui.save_as` | always | NEW |
+| `Mod+/`, `Mod+Shift+P` | UI verb `ui.open_palette` | always | NEW |
+| `Mod+F` | UI verb `ui.open_search` | canvas | NEW |
+| `?` | UI verb `ui.open_shortcuts` | canvas | U:1998 label only |
+| `Alt+Z` | UI verb `ui.toggle_zen` | canvas | NEW |
+| `Alt+/` | UI verb `ui.toggle_stats` | canvas | NEW |
+| `S` `G` | UI verb `ui.open_color_picker` target=stroke, fill | canvas | NEW |
+| `Shift+F` | UI verb `ui.open_font_picker` | canvas | NEW |
+| `I` | UI verb `ui.insert_image` | canvas | NEW |
+
+### 6.2 Text editor keys (local, `docs/exceptions.md` E16)
+
+Inside a text edit these are handled by the editor widget and never reach the registry: characters and Space; Enter (new line); Backspace, Delete (with `Mod`/`Alt`: by word); arrows, Home, End (`Shift`: extend selection; `Mod`/`Alt`: by word or to the ends); `Mod+A` select all; `Mod+C`, `Mod+X`, `Mod+V` (editor clipboard through the `Clipboard` port); `Mod+Z`, `Mod+Shift+Z` (editor-local undo; the old app swallowed them, A:4603); IME composition. Two keys end the edit and call the registry: `Esc` and `Mod+Enter` call `text.edit_end` (commit=true); a click on the canvas outside the text lets `selection.select_at` run with its `Commit` gate. All other `Mod`+letter chords are ignored inside a text edit (as in the old app).
+
+### 6.3 UI verbs
+
+Not commands, never in `engine.commands`. Each ends, when it produces a result, by calling a command.
+
+| UI verb | Opens or does | Ends with | Old |
+|---|---|---|---|
+| `ui.close_overlays` | closes menu, popovers, dialogs | none | A:5305-5335 flags poked from the keyboard |
+| `ui.toggle_menu` | the hamburger menu | none | `menu_open` |
+| `ui.open_file` | file picker (native `rfd`, browser input) or the list of stored documents | `doc.open` | U:1907-1912, A:790 |
+| `ui.open_recent` | recent documents list | `doc.open` | U:1912 |
+| `ui.save_as` | save dialog or picker | `doc.save` with `to` | U:1900, 2631 |
+| `ui.insert_image` | image picker | `image.insert` | NEW |
+| `ui.open_color_picker` | colour popover (stroke, fill or background) | `style.set` or `doc.set_background` | U:1166-1195, 1007 |
+| `ui.open_font_picker` | font family popover | `style.set` | NEW |
+| `ui.open_palette` | command palette, listing `engine.commands` | the chosen command | NEW |
+| `ui.open_search` | search box over `element.query` | `selection.select`, `view.zoom_to_fit` | NEW |
+| `ui.open_shortcuts` | shortcuts dialog built from the keymap | none | U:1998 |
+| `ui.open_collab` | collaboration dialog | `collab.*` | U:2105 |
+| `ui.open_context_menu` | context menu listing available commands | the chosen command | NEW |
+| `ui.toggle_stats` | stats panel (reads `selection.get`, edits with `element.set_bounds`, `style.set`) | those commands | NEW |
+| `ui.toggle_zen` | hides the chrome | none | NEW |
+| `ui.open_equation_editor` | LaTeX dialog (opened after `text.edit_begin` on a math element) | `text.edit_end` | U:2911 |
+
+### 6.4 Conflicts and how they were resolved
+
+| Conflict | Decision |
+|---|---|
+| `9`: old Math, Excalidraw image | Math keeps `M`/`9` (old app). Image insertion is `I`, a UI verb. |
+| `Mod+E`: old export PNG; Excalidraw `Mod+Shift+E` opens the export dialog | `Mod+E` stays `doc.export`. `Mod+Shift+E` stays the old copy-as-PNG. The export dialog has no default key. |
+| `Mod+Shift+C` is also the browser devtools chord | Kept because the old app had it; `Mod+Shift+E` and `Shift+Alt+C` do the same. |
+| Old tool keys accepted Shift+letter; Excalidraw uses Shift+H and Shift+V for flip | Tool keys fire without Shift. `Shift+H`/`Shift+V` flip. |
+| `Space` was a virtual left mouse button | Space is now pan-while-held (`tool.hold`). The virtual click is dropped (open question 1). |
+| `Mod+O` on the web restored the last autosave, on native it opened a picker | Always a picker (`ui.open_file`). Restoring the autosave is `doc.open` with `{stored: "autosave"}`, offered at start-up. |
+| Plain arrow key: old nudge 20; Excalidraw 1 unit | Plain arrow keeps 20 (`input.nudge_step`). `Shift` is the fine step of 1. |
+| `Mod+Y` redo on macOS | Kept on all platforms (old behaviour). |
+| `Z` laser (old) and `K` laser (Excalidraw) | Both. |
+| `X` freehand alias (Excalidraw) and Excalidraw's `Shift+X` autoshape | `X` is freehand. Autoshape is not planned. |
+| Browser chords (`Mod+D` bookmark, `Mod+S` save page, `Mod+E`, `Mod+G`) | The web shell calls `preventDefault` for every bound chord while the canvas has focus (the old page did it for `E`, `S`, `G` only, web/index.html:70). It never claims `Mod+R`, `Mod+T`, `Mod+W`, `Mod+N`, `Mod+L`. |
+| A shortcut inside an egui text field | Never handled (the old app skipped everything when egui wanted input). |
+
+---
+
+## 7. Old action to command mapping
+
+Every `UiAction` variant, every keyboard binding, every pointer gesture and every other user-reachable action of the old app (commit `8ce40ab`) is below. "UI verb" means §6.3. "Editor-local" means `docs/exceptions.md`.
+
+### 7.1 All 71 `UiAction` variants (U:396-538)
+
+| # | Variant | New command | Notes |
+|---|---|---|---|
+| 1 | `SetTool(kind)` | `tool.set` tool | One implementation; ends text edit (FIX) |
+| 2 | `SetStrokeColor(c)` | `style.set` props.stroke_color | During a text edit with a selected range the colour goes to the editor's runs (editor-local) and is committed by `text.edit_end` (replaces the `text_selection_state` hack, A:2578) |
+| 3 | `SetFillColor(opt)` | `style.set` props.fill_color | `None` is null, not transparent (FIX) |
+| 4 | `SetStrokeWidth(w)` | `style.set` props.stroke_width | Undoable now |
+| 5 | `SaveLocal` | `doc.save` | Web stores by name; native picks via `no_save_target` |
+| 6 | `SaveLocalAs` | UI verb `ui.save_as`, then `doc.save` to | |
+| 7 | `ShowOpenDialog` | UI verb `ui.open_file` (lists `doc.list` stored on the web), then `doc.open` | |
+| 8 | `ShowOpenRecentDialog` | UI verb `ui.open_recent` using `doc.list` recent, then `doc.open` | |
+| 9 | `SaveLocalWithName(name)` | `doc.save` to={stored: name}, name | Drops the `doc.id` swap hack (A:2731) |
+| 10 | `LoadLocal(name)` | `doc.open` source={stored: name} | Native ignored the name (FIX) |
+| 11 | `SaveDocument` (dead) | `doc.save` | |
+| 12 | `LoadDocument` (dead) | `doc.open` via `ui.open_file` | |
+| 13 | `DownloadDocument` (web) | `doc.save` to={download: "<name>.json"} | |
+| 14 | `UploadDocument` (web) | `ui.open_file`, then `doc.open` source=bytes | |
+| 15 | `ImportMermaidFromClipboard` | `diagram.import_mermaid` source=clipboard | |
+| 16 | `SwitchTab(i)` | `tab.switch` tab=i | |
+| 17 | `CloseTab(i)` | `tab.close` tab=i | |
+| 18 | `LoadLibrary` | picker, then `library.import` mode=open_as_tab | Exact old behaviour; merge is the new default |
+| 19 | `ExportPng` | `doc.export` format=png, scope=auto | |
+| 20 | `CopyPng` | `clipboard.copy_as` format=png | |
+| 21 | `ToggleGrid` | `settings.cycle` key=view.grid_style | |
+| 22 | `ZoomIn` | `view.zoom_in` | |
+| 23 | `ZoomOut` | `view.zoom_out` | |
+| 24 | `ZoomReset` | `view.zoom_reset` | |
+| 25 | `CenterCanvas` | `view.center` on=origin | |
+| 26 | `ToggleGridSnap` | `settings.toggle` key=snap.grid | |
+| 27 | `ToggleSmartSnap` | `settings.toggle` key=snap.smart_guides | |
+| 28 | `ToggleAngleSnap` | `settings.toggle` key=snap.angle | |
+| 29 | `SetFontSize(px)` | `style.set` props.font_size | |
+| 30 | `SetMathFontSize(px)` | `style.set` props.font_size | Merged: the separate action only existed to invalidate a cache |
+| 31 | `SetFontFamily(u8)` | `style.set` props.font_family | 0 gelpen, 1 noto_sans, 2 gelpen_serif, 3 vanilla_extract |
+| 32 | `SetFontWeight(u8)` | `style.set` props.font_weight | |
+| 33 | `SetCornerRadius(r)` | `style.set` props.corner_radius | |
+| 34 | `SetExportScale(n)` | `settings.set` key=export.scale | |
+| 35 | `ClearDocument` | `doc.clear` | |
+| 36 | `ShowIntro` | `doc.show_intro` | |
+| 37 | `SetSloppiness(u8)` | `style.set` props.sloppiness | |
+| 38 | `SetFillPattern(u8)` | `style.set` props.fill_pattern | |
+| 39 | `SetPathStyle(u8)` | `arrow.set_type` | 0 sharp, 1 round, 2 elbow |
+| 40 | `SetStrokeStyle(u8)` | `style.set` props.stroke_style | |
+| 41 | `Undo` | `history.undo` | |
+| 42 | `Redo` | `history.redo` | |
+| 43 | `Connect(url)` | `collab.connect` url | |
+| 44 | `Disconnect` | `collab.disconnect` | |
+| 45 | `JoinRoom(room)` | `collab.join_room` room | |
+| 46 | `LeaveRoom` | `collab.leave_room` | |
+| 47 | `SetUserName(name)` | `collab.set_user` name | |
+| 48 | `SetUserColor(hex)` | `collab.set_user` color | |
+| 49 | `SetBgColor(c)` | `doc.set_background` color | Saved with the document now |
+| 50 | `BringToFront` | `arrange.z_order` op=front | |
+| 51 | `SendToBack` | `arrange.z_order` op=back | |
+| 52 | `BringForward` | `arrange.z_order` op=forward | |
+| 53 | `SendBackward` | `arrange.z_order` op=backward | |
+| 54 | `ZoomToFit` | `view.zoom_to_fit` scope=auto | |
+| 55 | `Duplicate` (dead) | `element.duplicate` | |
+| 56 | `CopyShapes` (dead) | `clipboard.copy` | |
+| 57 | `CutShapes` (dead) | `clipboard.cut` | |
+| 58 | `PasteShapes` (dead) | `clipboard.paste` | |
+| 59 | `AlignTop` | `arrange.align` edge=top | |
+| 60 | `AlignBottom` | `arrange.align` edge=bottom | |
+| 61 | `AlignLeft` | `arrange.align` edge=left | |
+| 62 | `AlignRight` | `arrange.align` edge=right | |
+| 63 | `AlignCenterH` | `arrange.align` edge=center_y | Old name was inverted: it aligned the y-centres |
+| 64 | `AlignCenterV` | `arrange.align` edge=center_x | It aligned the x-centres |
+| 65 | `ShowShortcuts` | UI verb `ui.open_shortcuts` | |
+| 66 | `ToggleCalligraphy` | `style.set` props.freehand_style | Toggle becomes an explicit value |
+| 67 | `TogglePressureSimulation` | `style.set` props.pressure_mode | uniform or simulated; device is NEW |
+| 68 | `FlipHorizontal` | `element.flip` axis=horizontal | |
+| 69 | `FlipVertical` | `element.flip` axis=vertical | |
+| 70 | `SetOpacity(f)` | `style.set` props.opacity | Slider drag is one gesture, one undo step (FIX of A:3639) |
+| 71 | `UpdateMathLatex(id, s)` | `text.set_latex` | Or `text.edit_end` latex when ending a math edit session |
+
+### 7.2 Keyboard (A:4540-5369, canvas context)
+
+| Old binding | New command | Notes |
+|---|---|---|
+| `Space` (press, release) | `tool.hold` tool=hand, `tool.release` | The virtual left click is dropped (open question 1) |
+| `Ctrl+A` | `selection.all` | |
+| `Ctrl+S` | `doc.save` | |
+| `Ctrl+O` | UI verb `ui.open_file` | |
+| `Ctrl+Shift+E` | `clipboard.copy_as` format=png | |
+| `Ctrl+E` | `doc.export` format=png | |
+| `Ctrl+Z` | `history.undo` | Broadcasts now |
+| `Ctrl+Shift+Z` | `history.redo` | |
+| `Ctrl+Y` | `history.redo` | |
+| `Ctrl+G` | `group.create` | |
+| `Ctrl+Shift+G` | `group.ungroup` | |
+| `Ctrl+Shift+C` | `clipboard.copy_as` format=png | Duplicate of Ctrl+Shift+E, kept |
+| `Ctrl+C` | `clipboard.copy` | |
+| `Ctrl+X` | `clipboard.cut` | |
+| `Ctrl+V` | `clipboard.paste` at=`$cursor` | Routing: own payload, Excalidraw, image, Mermaid, text |
+| `Ctrl+D` | `element.duplicate` | |
+| `V` `1` | `tool.set` select | |
+| `H` | `tool.set` hand | |
+| `R` `2` | `tool.set` rectangle | |
+| `O` `4` | `tool.set` ellipse | |
+| `A` `5` | `tool.set` arrow | |
+| `L` `6` | `tool.set` line | |
+| `P` `7` | `tool.set` freehand | |
+| `T` `8` | `tool.set` text | |
+| `M` `9` | `tool.set` math | |
+| `E` | `tool.set` eraser | |
+| `Z` | `tool.set` laser | |
+| `Delete`, `Backspace` | `element.delete` | |
+| `Escape` | `ui.close_overlays`, else `tool.cancel` | Closing overlays is no longer done by the keyboard handler poking UI flags |
+| `Arrow keys` | `element.nudge` | One undo step per burst |
+| Text edit: `Esc` | editor-local, then `text.edit_end` | |
+| Text edit: `Ctrl+C`, `Ctrl+X`, `Ctrl+V` | editor-local | Through the `Clipboard` port |
+| Text edit: `Ctrl+A` | editor-local | |
+| Text edit: `Backspace`, `Delete`, `Enter`, arrows, `Home`, `End`, `Space`, characters (with `Ctrl` word/document variants and `Shift` extension) | editor-local | |
+| Text edit: other `Ctrl+letter` | ignored | As before |
+| Highlighter tool: no key | `tool.set` highlighter, no default key | The toolbar tooltip no longer claims `H` |
+| `3`, `0` unused | `3` is diamond, `0` is eraser | NEW |
+
+### 7.3 Pointer, touch, window and system events
+
+| Old input or event | New route | Notes |
+|---|---|---|
+| Click on a shape; Shift+click toggle | `selection.select_at` (mode=replace; toggle with Shift) | E:486-538 |
+| Click on empty canvas | `selection.select_at` mode=replace (clears) | |
+| Marquee drag, release over 2 by 2 px | overlay in the recognizer, then `selection.select_region` | E:539-547, 714-729; E9 |
+| Drag a selected shape (grid and smart snap) | `gesture.begin` with `element.move`, `update`, `end` | E2 |
+| Alt+drag to duplicate | the same with duplicate=true | E:514-536 |
+| Corner or edge handle drag, Shift keeps aspect | gesture of `element.resize` (keep_aspect) | E3 |
+| Endpoint, intermediate point, segment-midpoint handles | gesture of `arrow.move_point` (insert=true for the midpoint) | E5 |
+| Rotate handle, Shift 15 degrees | gesture of `element.rotate` (snap_degrees=15) | E4 |
+| Double-click the rotate handle | `element.rotate` mode=to, angle=0 | E:447-462 |
+| Draw rectangle, ellipse | overlay, then `element.create` kind, from_tool=true | E6 |
+| Draw line or arrow (grid, angle and isometric snap) | overlay, then `element.create` kind=line or arrow | E6 |
+| Freehand, highlighter stroke | stroke buffer, then `element.create` kind=freehand | E7 |
+| Text tool click on empty canvas | `text.edit_begin` at | creates a draft; E:773-791 |
+| Text tool click on existing text; Select-tool double-click on text | `text.edit_begin` id | E:378-445 |
+| Math tool click | `element.create` kind=math, then `text.edit_begin` id and `ui.open_equation_editor` | E:792-803 |
+| Select-tool double-click on math | `text.edit_begin` id, `ui.open_equation_editor` | A:4330 |
+| Double-click empty canvas | `text.edit_begin` at | NEW (Excalidraw) |
+| Double-click a selected group | `group.enter` select=hit | NEW |
+| Eraser drag | hover preview overlay, then `element.erase` path | E:1285; E8 |
+| Laser drag | ephemeral trail, `collab.laser` | E12 |
+| Middle-button drag; Pan-tool drag | camera applied in the UI, then `view.set` | A:4244, 4226; E10 |
+| Mouse wheel | `view.pan`; `Mod`+wheel `view.zoom_at` factor 1.1 or 0.9 | A:4434-4458; E10, E11 |
+| Two-finger touch pan and pinch (max 2 fingers) | camera in the UI, then `view.set` | A:4461-4538; E10, E11 |
+| Single-finger touch | the pointer routes above | |
+| Touch cancel | `gesture.cancel` | A:4533 |
+| Trackpad pinch (unhandled in the old app) | `view.zoom_at` through E11 | NEW |
+| Right button (received and dropped) | UI verb `ui.open_context_menu` | NEW |
+| Hover cursor icons | derived from hit-testing in `canvas`, no command | E1 |
+| Pointer move (collab cursor, every 6th event) | `collab.set_pointer` (time throttled) | A:4140-4160 |
+| Mouse release over an egui panel (swallowed, stuck drag) | UI cancels the gesture: `gesture.cancel` | A:2257 FIX |
+| Window resized | `view.set_viewport` | A:2267 |
+| Window focus lost | `gesture.cancel` | NEW |
+| Window close requested | the shell calls `doc.autosave` | A:2263 |
+| `DroppedFile` (native), DOM drop (web) | `doc.drop` | A:5376; file_ops 939+ |
+| Paste event (web), `Ctrl+V` | the shell fills the `Clipboard` port, then `clipboard.paste` | |
+| Web start-up: restore `__last__`, else intro | `doc.open` source={stored: "autosave"}, else `doc.show_intro` | A:1860, `try_load_last_document` |
+| Native start-up: load intro | `doc.show_intro` | A:1860 |
+| Web `?room=&server=`, `#room=&server=`; CLI `--server`, `--room` | `collab.connect` url, room | A:1957, 1989 |
+| Web autosave to `__last__` | `doc.autosave` on a timer | A:2564 |
+| Web `index.html` keydown `preventDefault` for E, S, G | the web shell prevents every bound chord | web/index.html:70 |
+
+### 7.4 Panels, menus and dialogs of the old UI
+
+| Old control | New |
+|---|---|
+| Tool toolbar (12 tools) | `tool.set`; adds diamond and frame |
+| Top properties bar: stroke swatches, wheel, fill swatches, widths | `style.set`; wheel opens `ui.open_color_picker` |
+| Colour grid popover | UI verb; its picks call `style.set` or `doc.set_background`; "None" picks null |
+| Right panel sections | all `style.set`, `arrow.set_type`, `arrange.*`, `element.flip` |
+| Hamburger menu rows | see §7.1 rows 5 to 20, 35, 36, 65 |
+| Bottom-left toolbar: undo, redo, grid, background, zoom, centre, fit, snap toggles | §7.1 rows 41, 42, 21, 49, 22 to 25, 54, 26 to 28 |
+| Tab bar: tabs, close, "+ Library" | `tab.switch`, `tab.close`, `library.import` open_as_tab; `tab.new` is NEW |
+| Collab button and modal | `ui.open_collab`; actions `collab.connect`, `collab.join_room`, `collab.leave_room`, `collab.disconnect`, `collab.set_user` |
+| Presence panel | `collab.status` |
+| Remote cursors | `Session` presence state fed by `collab` |
+| Save dialog | `ui.save_as`, then `doc.save` |
+| Open and open-recent dialogs | `ui.open_file`, `ui.open_recent` |
+| Math editor dialog (Apply, Cancel, Copy, Paste) | `ui.open_equation_editor`; Apply is `text.edit_end` with latex; Cancel is commit=false; Copy and Paste use the `Clipboard` port in the dialog |
+| Shortcuts modal | `ui.open_shortcuts`, generated from the keymap (the old list had 19 stale entries) |
+| Export scale buttons 1x 2x 3x | `settings.set` key=export.scale |
+
+### 7.5 Behaviour changes from the old app
+
+These are deliberate; each fixes an inventory finding. Reviewers should expect them.
+
+1. Every style, font, flip, align, z-order, opacity and delete action is undoable, reaches collaborators, and goes through one path.
+2. Cmd works on macOS (`Mod`).
+3. Undo and redo broadcast from every surface.
+4. Paste has one path; the keyboard passes `$cursor`, buttons use the viewport centre.
+5. The system clipboard carries copied elements.
+6. Tool keys do not fire with Shift (Shift+H and Shift+V flip).
+7. Space pans while held; it is no longer a virtual mouse click.
+8. Esc is one ladder (`tool.cancel`), and overlays close through `ui.close_overlays` first.
+9. Align names are by axis result: `center_x`, `center_y`.
+10. Eraser radius is 10 screen pixels, and a whole stroke is one undo step.
+11. Group rotation is real (each member's own angle changes); grouping never changes element ids or reorders elements outside the group.
+12. Arrow nudge and similar key repeats merge into one undo step per burst.
+13. Opening or creating a document never silently discards unsaved changes (`onUnsaved=refuse`).
+14. A pending web room join is queued until the socket opens.
+15. A drag ends cleanly on blur, pointer cancel or release over a panel.
+16. Settings, style defaults, user name, server URL and recent documents persist.
+17. The background colour is part of the document and of exports.
+18. Autosave watches the document revision, not the shape count.
+
+---
+
+## 8. Coverage of Excalidraw
+
+### 8.1 Excalidraw shortcuts (research `04-features-diff.md` §4.1 to §4.3)
+
+| Excalidraw | Here |
+|---|---|
+| `H` hand (toggles back) | `tool.set` hand; Space-hold is `tool.hold` |
+| `V`/`1`, `R`/`2`, `D`/`3`, `O`/`4`, `A`/`5`, `L`/`6`, `P`/`7`/`X`, `T`/`8` | `tool.set` (§2.3) |
+| `N` sticky note | not planned (§8.2) |
+| `9` image | `I` (UI verb), conflict §6.4 |
+| `E`/`0` eraser, `F` frame, `K` laser | `tool.set` |
+| `B` bucket fill, `Shift+X` autoshape | not planned |
+| `I`, `Shift+S`, `Shift+G` eyedropper | not planned (`I` is image here) |
+| `Q` tool lock | `tool.lock` |
+| `Esc` | `tool.cancel` |
+| `Enter` edit text or label | `text.edit_begin` |
+| `Mod+Enter` edit line points / finish text | `arrow.edit_points` / editor-local |
+| `Tab`, `Shift+Tab` convert element type | not planned |
+| `Mod` held: do not bind | `bind=off` argument |
+| click, click, click: curved arrow | recognizer collects points, `element.create` points, arrow_type=round |
+| Double-click or `Enter` on image: crop | not planned |
+| `Mod+=`, `Mod+-`, `Mod+0` | `view.zoom_in`, `view.zoom_out`, `view.zoom_reset` |
+| `Shift+1`, `Shift+2`, `Shift+3` | `view.zoom_to_fit` |
+| `PgUp`, `PgDn`, with `Shift` | `view.scroll_page` |
+| Space-drag, wheel-button drag, hand tool, wheel, `Shift`+wheel, `Mod`+wheel | `tool.hold`, E10, `view.pan`, `view.zoom_at` |
+| `Alt+Z` zen | UI verb `ui.toggle_zen` |
+| `Alt+S` objects snap | `settings.toggle` snap.smart_guides |
+| `Mod+'` grid | `settings.cycle` view.grid_style |
+| `Alt+R` view mode | `view.set_view_only` |
+| `Shift+Alt+D` theme | not planned |
+| `Alt+/` stats | UI verb `ui.toggle_stats` |
+| `Mod+F` search | UI verb `ui.open_search` (uses `element.query`) |
+| `Mod+/`, `Mod+Shift+P` palette | UI verb `ui.open_palette` (uses `engine.commands`) |
+| `?` help | UI verb `ui.open_shortcuts` |
+| `Mod+Arrow` flowchart create | `diagram.extend` |
+| `Alt+Arrow` flowchart navigate | `selection.navigate` |
+| Arrow, `Shift+Arrow` nudge | `element.nudge` |
+| `Delete`, `Backspace` | `element.delete` |
+| `Mod+Delete` clear canvas | `doc.clear` |
+| `Mod+X`, `Mod+C`, `Mod+V`, `Mod+Shift+V` | `clipboard.cut/copy/paste` |
+| `Mod+A` | `selection.all` |
+| `Shift+click`, `Mod+click`, `Mod+drag` | `selection.select_at` mode and deep; `selection.select_region` |
+| `Shift+Alt+C` | `clipboard.copy_as` png |
+| `Mod+Alt+C`, `Mod+Alt+V` | `clipboard.copy_style`, `clipboard.paste_style` |
+| `Mod+[`, `Mod+]`, with `Shift` (mac `Alt`) | `arrange.z_order` |
+| `Mod+Shift+Arrows` align | `arrange.align` |
+| `Alt+H`, `Alt+V` distribute | `arrange.distribute` |
+| `Mod+D`, Alt-drag | `element.duplicate`, `element.move` duplicate=true |
+| `Mod+Shift+L` | `element.lock` |
+| `Mod+Z`, `Mod+Shift+Z`, `Mod+Y` | `history.undo`, `history.redo` |
+| `Mod+G`, `Mod+Shift+G` | `group.create`, `group.ungroup` |
+| `W` wrap selection | `frame.wrap` |
+| `Shift+H`, `Shift+V` | `element.flip` |
+| `S`, `G` colour pickers; `Shift+F` font picker | UI verbs |
+| `Mod+Shift+<`, `Mod+Shift+>` | `text.step_size` |
+| `Mod+K` link | not planned |
+| `Mod+O`, `Mod+S`, `Mod+Shift+S` | `ui.open_file`, `doc.save`, `ui.save_as` |
+| `Mod+Shift+E` export dialog | conflict §6.4 (old copy-as-PNG kept) |
+| `Shift` drag constrain, `Alt` drag from centre | `keep_aspect`, `from_center`, `duplicate` arguments |
+
+### 8.2 Plan §6 features and where they live
+
+| Plan §6 item | Commands |
+|---|---|
+| 1 Arrow binding, highlight during drag | `arrow.bind`, `arrow.unbind`, `arrow.move_point` (`bind_highlight` in the frame output), `element.create` bind, `element.connect`, settings `arrow.binding`, `arrow.midpoint_snap` |
+| 2 Flat groups, enter and leave | `group.create`, `group.ungroup`, `group.enter`, `group.exit`, `selection.select` deep |
+| 3 Bound text, arrow labels | `text.bind`, `text.unbind`, `text.wrap_in_container`, `element.relabel`, `text.edit_begin` container |
+| 4 Diamond | `element.create` kind=diamond, tool diamond |
+| 5 Text align and wrap | `style.set` text_align, vertical_align, line_height; `text.set_autoresize` |
+| 6 Arrowheads, elbow with A* | `arrow.set_head`, `arrow.set_type`, `arrow.reroute` |
+| 7 Stroke styles | `style.set` stroke_style (all shapes) |
+| 8 Lock | `element.lock`, `element.unlock_all` |
+| 9 Distribute | `arrange.distribute` |
+| 10 Edge resize handles | `element.resize` handles n, e, s, w |
+| 11 Context menu | UI verb `ui.open_context_menu` over `engine.commands` |
+| 12 Command palette | UI verb `ui.open_palette` over `engine.commands` |
+| 13 Frames | `frame.*`, `element.create` kind=frame |
+| 14 Eraser | `element.erase`, tool eraser |
+| 15 Tool lock | `tool.lock` |
+| 16 Draw modifiers | arguments `keep_aspect`, `from_center`, `snap`, `bind`, `snap_degrees` |
+| 17 SVG and `.excalidraw` export | `doc.export` format svg, excalidraw |
+| 18 Search | UI verb `ui.open_search` over `element.query` |
+| 19 Stats panel | UI verb `ui.toggle_stats` over `selection.get`, `element.set_bounds`, `style.set` |
+| §11 `diagram.create`, `element.query`, `doc.outline`, `element.connect`, `view.screenshot`, `layout.apply`, `element.relabel`, `element.at`, named themes | the same ids, §2.19, §2.4, §2.1, §2.14, §2.7 |
+| §5 introspection: `commands()`, `recent()`, `doc.inspect`, `selection.get`, `view.get`, `element.query`, `element.at`, `history.state`, `perf.stats` | §3 |
+
+### 8.3 Not cataloged
+
+These Excalidraw features are outside the plan. They have no ids. If one is added, its family section is added here first.
+
+Sticky note, embeddable and iframe elements, lasso selection, bucket fill, autoshape, eyedropper, image crop, hyperlinks and element links, convert element type, list markers in text, chart paste, magic frame and every AI feature, dark theme and canvas theme switching, i18n, follow mode, room encryption and passwords, pen-only mode, Excalidraw+ export, shareable encrypted links, scrollbars, welcome screen, hint bar.
+
+---
+
+## 9. Open questions for the coordinator
+
+1. **Space as a virtual mouse button.** The old app let Space press and release the left button at the cursor (A:4711). It is dropped in favour of pan-while-held. If that was meant as a keyboard-only drawing aid, it needs its own design (a `canvas` input mode, not a command).
+2. **Key 9.** Kept as Math (old app). Image insertion uses `I`. Say if Excalidraw parity matters more.
+3. **Undo depth.** Kept at 50. Other editors use hundreds; the setting allows 1000.
+4. **Drawing tool clears the selection.** `tool.set` clears the selection for drawing tools, like Excalidraw. The old right panel showed selection and tool properties together.
+5. **Esc default.** `tool.cancel` defaults to the old do-everything behaviour (`all=true`). Excalidraw's step-by-step Esc is `all=false`.
+6. **Autosave of several tabs.** Only the active tab is autosaved under `autosave`, as before. Restoring all tabs needs a workspace record; not specified here.
+7. **`Mod+Shift+C`.** Collides with browser devtools. Kept for compatibility with the old app.
+8. **Gesture frames go through the registry.** For move, resize, rotate, point drag and style scrubbing the pointer recognizer calls `Session::gesture_update` per event (typed, no JSON). The cost at 100k elements is bounded by the touched set. If the perf gate fails, the fallback is overlay-only preview for move (like draw) with the bound-arrow solver run on a throttle. That would change E2 to class B in `exceptions.md`.
+9. **Highlighter** is a freehand element with a flag and style defaults, not a separate kind. Existing documents map it to freehand with width at least 12 and alpha 128.
+10. **Zoom range** stays 0.1..10 (old). Excalidraw allows 0.1..30.
+11. **Group names** do not exist (a group is a shared id). `doc.outline` identifies groups by id. Add `group.set_name` if agents need it.
+12. **UI verbs** (§6.3) need sign-off from the `ui` implementer. In particular `no_save_target` driving the picker, and `Commit` gates doing what the UI used to do by hand.
+13. **Theme** (dark mode) is not in the plan and has no setting here.
+14. **`doc.new` and `doc.open` in a room** refuse. A user in a room who wants a fresh document opens a new tab.
+
+
+---
+
+## 10. Appendix A: declared facts per command
+
+These are the values for the facts of §1.2 that the tables of §2 do not repeat. They are the registration values the family implementers must use, and `cargo xtask commands --check` compares them with the registry. Where an implementer finds a value wrong, the fix is a change to this table in the same commit.
+
+Legend:
+
+| Column | Values |
+|---|---|
+| mutates | `-` nothing. `D` document. `O` observed editor state (selection, editing group, point editor). `V` view. `T` tool. `B` tabs. `S` settings. `C` collab session. `P` ports (writes a file, the clipboard or storage). `E` a gesture or text-edit session. |
+| selection | `-` does not use the selection. `opt` has an `ids` argument that defaults to the selection. |
+| ports | the ports the command needs. `Files,Storage` means it needs the one its `FileRef` names. A missing required port gives `port_unavailable`. |
+| batch | `ok` allowed anywhere. `last` only as the final step. `never` not allowed in a batch. |
+| view-only | `ok` runs while the document is view-only. `no` refuses with `view_only`. |
+| during gesture | `ok` allowed while a gesture runs. `no` refuses with `gesture_active`. |
+| during text edit | `ok` allowed. `no` refuses with `text_editing`. `commit` the engine commits the running text edit first. |
+| redraw | the dirty reason on success: `scene`, `overlay`, or `-` for none. |
+| palette | listed in the command palette. |
+| agent | exposed as an MCP tool and in `window.drafftink.commands()`. |
+
+| id | mutates | selection | ports | batch | view-only | during gesture | during text edit | redraw | palette | agent |
+|---|---|---|---|---|---|---|---|---|---|---|
+| `doc.new` | D,O,B | - | Files,Storage | last | no | no | commit | scene | y | y |
+| `doc.open` | D,O,B,V | - | Files,Storage | last | no | no | commit | scene | y | y |
+| `doc.drop` | D,O,B | - | Files,Storage | ok | no | no | commit | scene | n | n |
+| `doc.save` | P,B | - | Files,Storage | ok | ok | no | commit | - | y | y |
+| `doc.rename` | D,B | - | - | ok | no | no | commit | scene | y | y |
+| `doc.set_background` | D | - | - | ok | no | no | commit | scene | n | y |
+| `doc.export` | P | - | Files,Renderer | ok | ok | no | commit | - | y | y |
+| `doc.clear` | D,O | - | - | ok | no | no | commit | scene | y | y |
+| `doc.show_intro` | D,O,B,V | - | - | last | no | no | commit | scene | y | y |
+| `doc.autosave` | P | - | Storage | ok | ok | ok | ok | - | n | n |
+| `doc.list` | - | - | - | ok | ok | ok | ok | - | y | y |
+| `doc.inspect` | - | - | - | ok | ok | ok | ok | - | y | y |
+| `doc.outline` | - | - | - | ok | ok | ok | ok | - | y | y |
+| `tab.new` | B | - | - | ok | ok | no | commit | scene | y | y |
+| `tab.switch` | B | - | - | ok | ok | no | commit | scene | y | y |
+| `tab.close` | B | - | - | last | ok | no | commit | scene | y | y |
+| `tab.rename` | D,B | - | - | ok | no | no | commit | scene | y | y |
+| `tab.move` | B | - | - | ok | ok | no | commit | scene | y | y |
+| `tab.duplicate` | B | - | - | ok | ok | no | commit | scene | y | y |
+| `tab.list` | - | - | - | ok | ok | ok | ok | - | y | y |
+| `tool.set` | T,O | - | - | ok | ok | no | commit | overlay | y | y |
+| `tool.lock` | T | - | - | ok | ok | no | ok | overlay | y | y |
+| `tool.hold` | T | - | - | ok | ok | no | ok | overlay | n | n |
+| `tool.release` | T | - | - | ok | ok | ok | ok | overlay | n | n |
+| `tool.cancel` | O,T,E | - | - | ok | ok | ok | ok | overlay | y | y |
+| `element.create` | D,O,T | opt | - | ok | no | no | commit | scene | n | y |
+| `element.delete` | D,O | opt | - | ok | no | no | commit | scene | y | y |
+| `element.duplicate` | D,O | opt | - | ok | no | no | commit | scene | y | y |
+| `element.move` | D,O | opt | - | ok | no | no | commit | scene | n | y |
+| `element.nudge` | D,O | opt | - | ok | no | no | commit | scene | n | y |
+| `element.resize` | D,O | opt | - | ok | no | no | commit | scene | n | y |
+| `element.set_bounds` | D,O | opt | - | ok | no | no | commit | scene | n | y |
+| `element.rotate` | D,O | opt | - | ok | no | no | commit | scene | n | y |
+| `element.flip` | D,O | opt | - | ok | no | no | commit | scene | y | y |
+| `element.lock` | D,O | opt | - | ok | no | no | commit | scene | y | y |
+| `element.unlock_all` | D,O | - | - | ok | no | no | commit | scene | y | y |
+| `element.set_name` | D,O | - | - | ok | no | no | commit | scene | n | y |
+| `element.relabel` | D,O | - | - | ok | no | no | commit | scene | n | y |
+| `element.connect` | D,O | - | - | ok | no | no | commit | scene | n | y |
+| `element.erase` | D,O | - | - | ok | no | no | commit | scene | n | y |
+| `element.query` | - | - | - | ok | ok | ok | ok | - | n | y |
+| `element.at` | - | - | - | ok | ok | ok | ok | - | n | y |
+| `selection.select` | O | - | - | ok | ok | no | commit | overlay | n | y |
+| `selection.select_at` | O | - | - | ok | ok | no | commit | overlay | n | y |
+| `selection.select_region` | O | - | - | ok | ok | no | commit | overlay | n | y |
+| `selection.all` | O | - | - | ok | ok | no | commit | overlay | y | y |
+| `selection.clear` | O | - | - | ok | ok | no | commit | overlay | y | y |
+| `selection.get` | - | - | - | ok | ok | ok | ok | - | n | y |
+| `selection.navigate` | O | - | - | ok | ok | no | commit | overlay | n | y |
+| `clipboard.copy` | P | opt | Clipboard | ok | ok | no | ok | - | y | y |
+| `clipboard.cut` | D,O,P | opt | Clipboard | ok | no | no | commit | scene | y | y |
+| `clipboard.paste` | D,O,P | opt | Clipboard | ok | no | no | commit | scene | y | y |
+| `clipboard.copy_style` | T | opt | Clipboard | ok | ok | no | ok | - | y | y |
+| `clipboard.paste_style` | D | opt | Clipboard | ok | no | no | commit | scene | y | y |
+| `clipboard.copy_as` | P | opt | Renderer,Clipboard | ok | ok | no | ok | - | y | y |
+| `style.set` | D,T | opt | - | ok | no | no | no | scene | n | y |
+| `style.get` | - | opt | - | ok | ok | ok | ok | - | n | y |
+| `style.apply_theme` | D,T | opt | - | ok | no | no | no | scene | y | y |
+| `style.list_themes` | - | - | - | ok | ok | ok | ok | - | n | y |
+| `text.set` | D | - | - | ok | no | no | no | scene | n | y |
+| `text.set_latex` | D | - | - | ok | no | no | no | scene | n | y |
+| `text.edit_begin` | O,E | - | - | ok | no | no | ok | overlay | n | n |
+| `text.edit_end` | D,O,E | - | - | ok | no | no | ok | scene | n | n |
+| `text.style_range` | D | opt | - | ok | no | no | no | scene | n | y |
+| `text.step_size` | D | opt | - | ok | no | no | no | scene | y | y |
+| `text.bind` | D | - | - | ok | no | no | no | scene | n | y |
+| `text.unbind` | D | - | - | ok | no | no | no | scene | n | y |
+| `text.wrap_in_container` | D | opt | - | ok | no | no | no | scene | y | y |
+| `text.set_autoresize` | D | opt | - | ok | no | no | no | scene | y | y |
+| `arrange.z_order` | D | opt | - | ok | no | no | commit | scene | y | y |
+| `arrange.align` | D | opt | - | ok | no | no | commit | scene | y | y |
+| `arrange.distribute` | D | opt | - | ok | no | no | commit | scene | y | y |
+| `group.create` | D,O | opt | - | ok | no | no | commit | scene | y | y |
+| `group.ungroup` | D,O | opt | - | ok | no | no | commit | scene | y | y |
+| `group.enter` | O | - | - | ok | ok | no | commit | scene | y | y |
+| `group.exit` | O | - | - | ok | ok | no | commit | scene | y | y |
+| `frame.wrap` | D,O | opt | - | ok | no | no | commit | scene | y | y |
+| `frame.unwrap` | D,O | opt | - | ok | no | no | commit | scene | y | y |
+| `frame.rename` | D,O | opt | - | ok | no | no | commit | scene | y | y |
+| `frame.add` | D,O | opt | - | ok | no | no | commit | scene | y | y |
+| `frame.remove` | D,O | opt | - | ok | no | no | commit | scene | y | y |
+| `frame.select_children` | O | - | - | ok | ok | no | commit | scene | y | y |
+| `arrow.set_type` | D | opt | - | ok | no | no | commit | scene | y | y |
+| `arrow.set_head` | D | opt | - | ok | no | no | commit | scene | y | y |
+| `arrow.bind` | D | - | - | ok | no | no | commit | scene | n | y |
+| `arrow.unbind` | D | - | - | ok | no | no | commit | scene | n | y |
+| `arrow.move_point` | D | - | - | ok | no | no | commit | scene | n | y |
+| `arrow.add_point` | D | - | - | ok | no | no | commit | scene | n | y |
+| `arrow.delete_point` | D | - | - | ok | no | no | commit | scene | n | y |
+| `arrow.edit_points` | O | opt | - | ok | no | no | commit | scene | n | y |
+| `arrow.reroute` | D | opt | - | ok | no | no | commit | scene | y | y |
+| `image.insert` | D,O | - | - | ok | no | no | commit | scene | n | y |
+| `view.set` | V | - | - | ok | ok | ok | ok | scene | n | y |
+| `view.pan` | V | - | - | ok | ok | ok | ok | scene | n | y |
+| `view.zoom_at` | V | - | - | ok | ok | ok | ok | scene | n | y |
+| `view.zoom_in` | V | - | - | ok | ok | ok | ok | scene | y | y |
+| `view.zoom_out` | V | - | - | ok | ok | ok | ok | scene | y | y |
+| `view.zoom_reset` | V | - | - | ok | ok | ok | ok | scene | y | y |
+| `view.zoom_to_fit` | V | - | - | ok | ok | ok | ok | scene | y | y |
+| `view.center` | V | - | - | ok | ok | ok | ok | scene | y | y |
+| `view.scroll_page` | V | - | - | ok | ok | ok | ok | scene | n | y |
+| `view.set_viewport` | V | - | - | ok | ok | ok | ok | scene | n | n |
+| `view.set_view_only` | V | - | - | ok | ok | ok | ok | scene | y | y |
+| `view.get` | - | - | - | ok | ok | ok | ok | - | y | y |
+| `view.screenshot` | - | - | Renderer | ok | ok | ok | ok | - | n | y |
+| `history.undo` | D,O | - | - | never | no | no | no | scene | y | y |
+| `history.redo` | D,O | - | - | never | no | no | no | scene | y | y |
+| `history.clear` | O | - | - | never | ok | no | no | scene | n | y |
+| `history.state` | - | - | - | ok | ok | ok | ok | - | y | y |
+| `collab.connect` | C | - | Net | never | ok | ok | ok | overlay | y | y |
+| `collab.disconnect` | C | - | Net | never | ok | ok | ok | overlay | y | y |
+| `collab.join_room` | C,D,B | - | Net | never | no | ok | ok | overlay | y | y |
+| `collab.leave_room` | C | - | Net | never | ok | ok | ok | overlay | y | y |
+| `collab.set_user` | C | - | Net | never | ok | ok | ok | overlay | n | y |
+| `collab.set_pointer` | C | - | Net | never | ok | ok | ok | overlay | n | n |
+| `collab.laser` | C | - | Net | never | ok | ok | ok | overlay | n | y |
+| `collab.status` | - | - | - | ok | ok | ok | ok | - | n | y |
+| `settings.get` | - | - | Storage | ok | ok | ok | ok | - | n | y |
+| `settings.set` | S | - | Storage | ok | ok | ok | ok | scene | n | y |
+| `settings.toggle` | S | - | Storage | ok | ok | ok | ok | scene | y | y |
+| `settings.cycle` | S | - | Storage | ok | ok | ok | ok | scene | y | y |
+| `settings.reset` | S | - | Storage | ok | ok | ok | ok | scene | n | y |
+| `library.add` | P | opt | Storage | ok | ok | no | commit | - | y | y |
+| `library.insert` | D,O | - | Storage | ok | no | no | commit | scene | y | y |
+| `library.remove` | P | - | Storage | ok | ok | no | commit | - | y | y |
+| `library.rename` | P | - | Storage | ok | ok | no | commit | - | y | y |
+| `library.list` | - | - | Storage | ok | ok | ok | ok | - | y | y |
+| `library.import` | P,B | - | Files,Storage | ok | ok | no | commit | - | y | y |
+| `library.export` | P | - | Files,Storage | ok | ok | no | commit | - | y | y |
+| `diagram.create` | D,O | - | - | ok | no | no | commit | scene | n | y |
+| `diagram.import_mermaid` | D,O | - | Clipboard | ok | no | no | commit | scene | y | y |
+| `diagram.extend` | D,O | - | - | ok | no | no | commit | scene | y | y |
+| `layout.apply` | D | opt | - | ok | no | no | commit | scene | y | y |
+| `gesture.begin` | D,E | - | - | never | no | no | no | scene | n | n |
+| `gesture.update` | D,E | - | - | never | no | ok | ok | scene | n | n |
+| `gesture.end` | D,O,E | - | - | never | no | ok | ok | scene | n | n |
+| `gesture.cancel` | D,E | - | - | never | no | ok | ok | scene | n | n |
+| `engine.commands` | - | - | - | ok | ok | ok | ok | - | n | y |
+| `engine.describe` | - | - | - | ok | ok | ok | ok | - | n | y |
+| `engine.recent` | - | - | - | ok | ok | ok | ok | - | n | y |
+| `engine.state` | - | - | - | ok | ok | ok | ok | - | n | y |
+| `perf.stats` | - | - | - | ok | ok | ok | ok | - | n | y |
+
+Notes on the table:
+
+- Every `Undoable` command has `mutates` containing `D`. Every `Gesture` command (`element.move`, `element.resize`, `element.rotate`, `arrow.move_point`, `style.set`) accepts `gesture.begin`.
+- The commands marked `agent` = `n` are UI plumbing (`doc.drop`, `doc.autosave`, `tool.hold`, `tool.release`, `text.edit_begin`, `text.edit_end`, `view.set_viewport`, `collab.set_pointer`, `gesture.*`). `gesture.*` is replaced for agents by the plain command; the other plumbing commands have no meaning outside a running UI.
+- `redraw` for `settings.*` is `scene` because grid style, frame rendering and snap overlays change what is drawn. A setting that changes nothing visible may still set the reason; the idle gate counts a redraw only if one was requested.
+- `view.*` commands `redraw = scene` because the camera changed. The renderer reuses cached element fragments, so this is cheap.
