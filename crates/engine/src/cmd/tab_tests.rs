@@ -484,11 +484,23 @@ fn on_unsaved_save_names_the_way_for_a_tab_that_is_not_active() {
 
 #[test]
 fn on_unsaved_save_without_a_save_command_says_so() {
-    let mut s = testing::headless_session();
+    // A registry without the `doc` family, so `doc.save` is not there to run.
+    let reg = Arc::new(Registry::from_families(&[super::COMMANDS]));
+    let mut s = Session::with_registry(Fakes::new().headless_ports(), reg);
     run(&mut s, "tab.new", json!({}));
     testing::add_rect(&mut s, 0.0, 0.0, 10.0, 10.0).unwrap();
     let r = refuse(&mut s, "tab.close", json!({"on_unsaved": "save"}));
     assert_eq!(r.code, "not_supported");
+    assert_eq!(s.tabs.len(), 2);
+}
+
+#[test]
+fn on_unsaved_save_runs_doc_save_and_names_a_missing_target() {
+    let mut s = testing::headless_session();
+    run(&mut s, "tab.new", json!({}));
+    testing::add_rect(&mut s, 0.0, 0.0, 10.0, 10.0).unwrap();
+    let r = refuse(&mut s, "tab.close", json!({"on_unsaved": "save"}));
+    assert_eq!(r.code, "no_save_target");
     assert_eq!(s.tabs.len(), 2);
 }
 

@@ -13,6 +13,7 @@
 //! - `group`, `frame`, `zorder`, `arrange`, `transform`, `lifecycle`: groups, frames, z-order,
 //!   align/distribute/flip, move/resize/rotate of selections, duplicate/delete/lock rules.
 //! - `style`: style properties, applicability, defaults and themes (`style.*` commands).
+//! - `library`: fragments (library items, merged files): take out, insert with new ids, tell apart.
 //! - `text_bind`, `flowchart`, `layout`, `query`: bound text, flowchart helpers, auto-layout for
 //!   `diagram.create`, element queries and the document outline.
 
@@ -26,6 +27,7 @@ pub mod flowchart;
 pub mod frame;
 pub mod group;
 pub mod layout;
+pub mod library;
 pub mod lifecycle;
 pub mod linear;
 pub mod paste;

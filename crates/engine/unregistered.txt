@@ -1,21 +1,3 @@
 # Catalog ids (docs/commands.md §2) that no family has registered yet.
 # One id per line, sorted, no duplicates. `catalog_matches_registry` (src/catalog_tests.rs) checks it.
 # This list only shrinks. A family adds its ids to the registry by deleting their lines here.
-doc.autosave
-doc.clear
-doc.drop
-doc.export
-doc.list
-doc.new
-doc.open
-doc.rename
-doc.save
-doc.set_background
-doc.show_intro
-library.add
-library.export
-library.import
-library.insert
-library.list
-library.remove
-library.rename

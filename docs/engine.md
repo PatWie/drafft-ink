@@ -326,6 +326,8 @@ s.flush_workspace();                     // window close
 
 Call `load_settings` and `restore_workspace` once, before the first command. Settings changes are queued by the `settings.*` commands and written after the command succeeds. The workspace is written by `workspace_tick`, debounced on the `Clock` port (a quiet second, or `autosave.interval_s` after the first unsaved change). The record layouts and the rules are in docs/commands.md §2.2 (workspace) and §2.17 (settings). The engine starts no timer.
 
+The web shell calls `cmd::doc::use_stored_default_target(&mut s, true)` once at start, so that `doc.save` (`Mod+S`) writes a document without a save target to `{stored: <name>}` instead of refusing with `no_save_target`. It is session configuration, not a command. `cmd::doc::intro_document(&mut s, id)` returns the built-in welcome document (`tab.new` with `from=intro` can use it).
+
 Another family that changes a setting calls `cmd::settings::set_internal(s, key, &value)`, which checks the value like `settings.set`, applies it and queues the write.
 
 ### Redraw: idle means idle

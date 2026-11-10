@@ -86,7 +86,7 @@ fn no_such_tab(id: &str, which: &TabRef) -> Refusal {
         .suggesting("tab.list", None)
 }
 
-fn name_of(t: &Tab) -> String {
+pub(crate) fn name_of(t: &Tab) -> String {
     t.doc.store().meta().name.clone()
 }
 
@@ -110,7 +110,7 @@ fn resolve(s: &Session, id: &str, which: Option<&TabRef>) -> Result<usize, Refus
     found.ok_or_else(|| no_such_tab(id, w))
 }
 
-fn too_many_tabs(id: &str) -> Refusal {
+pub(crate) fn too_many_tabs(id: &str) -> Refusal {
     Refusal::custom(
         "too_many_tabs",
         id,
@@ -144,7 +144,7 @@ fn out(s: &Session, changed: bool, id: TabId, index: usize, name: String) -> Tab
 // ---- building tabs ----
 
 /// A new tab around `doc`. It is clean: nothing in it differs from what it was made from.
-fn tab_from(s: &mut Session, id: &str, doc: &Document) -> Result<Tab, Refusal> {
+pub(crate) fn tab_from(s: &mut Session, id: &str, doc: &Document) -> Result<Tab, Refusal> {
     let td = TabDoc::from_document(doc).map_err(|e| Refusal::internal(id, format!("building the tab failed: {e}")))?;
     let tid = s.alloc_tab_id();
     let mut t = Tab::new(tid);
@@ -153,14 +153,19 @@ fn tab_from(s: &mut Session, id: &str, doc: &Document) -> Result<Tab, Refusal> {
     Ok(t)
 }
 
-fn blank_tab(s: &mut Session, id: &str, name: Option<String>) -> Result<Tab, Refusal> {
+/// An empty document with the default name and the background of the setting `doc.default_background`.
+pub(crate) fn blank_document(s: &Session, name: Option<String>) -> Document {
     let background = s
         .settings
         .get("doc.default_background")
         .and_then(serde_json::Value::as_str)
         .and_then(crate::cmd::settings::keys::parse_color)
         .unwrap_or(Color::WHITE);
-    let doc = Document { name: name.unwrap_or_else(|| Document::default().name), background, ..Document::default() };
+    Document { name: name.unwrap_or_else(|| Document::default().name), background, ..Document::default() }
+}
+
+pub(crate) fn blank_tab(s: &mut Session, id: &str, name: Option<String>) -> Result<Tab, Refusal> {
+    let doc = blank_document(s, name);
     tab_from(s, id, &doc)
 }
 
@@ -188,7 +193,7 @@ fn copy_tab(s: &mut Session, id: &str, src: usize, name: Option<String>) -> Resu
 
 /// Puts `tab` after the active tab and makes it the active one. The canvas is one widget, so the new
 /// tab takes over the viewport size of the tab being left.
-fn activate_new(s: &mut Session, tab: Tab) {
+pub(crate) fn activate_new(s: &mut Session, tab: Tab) {
     let at = s.active_index() + 1;
     let viewport = s.view().viewport;
     s.tab_mut().observed.linear_editor = None;

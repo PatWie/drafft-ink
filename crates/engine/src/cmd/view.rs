@@ -719,6 +719,7 @@ fn screenshot(s: &mut Session, a: ScreenshotArgs) -> Result<ScreenshotOut, Refus
         overlay: a.overlay,
         selection: if a.overlay { s.selection().iter().cloned().collect() } else { Vec::new() },
         background_color: s.store().meta().background,
+        dark: false,
     };
     let scene = s.tab().doc.snapshot();
     let png = match s.ports.renderer.as_ref() {
