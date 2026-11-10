@@ -299,7 +299,10 @@ fn refusals_leave_the_store_unchanged<S: SceneStore>(mut s: S) -> Result<(), Str
     ensure!(matches!(tx.update(&eid("zz")?, |_| {}), Err(StoreError::NotFound(_))), "update of unknown id");
     ensure!(matches!(tx.remove(&eid("zz")?), Err(StoreError::NotFound(_))), "remove of unknown id");
     ensure!(
-        matches!(tx.update(&eid("a")?, |e| e.id = ElementId::new("other").unwrap_or_else(|_| e.id.clone())), Err(StoreError::IdChanged(_))),
+        matches!(
+            tx.update(&eid("a")?, |e| e.id = ElementId::new("other").unwrap_or_else(|_| e.id.clone())),
+            Err(StoreError::IdChanged(_))
+        ),
         "id change"
     );
     ensure!(
@@ -441,7 +444,12 @@ fn document_round_trip<S: SceneStore>(mut s: S) -> Result<(), String> {
     let (fid, entry) = FileEntry::new("image/png", vec![9, 9, 9]);
     let mut img = Element::new(
         eid("img")?,
-        ElementKind::Image(crate::element::ImageData { file_id: Some(fid.clone()), natural_width: 4, natural_height: 3, crop: None }),
+        ElementKind::Image(crate::element::ImageData {
+            file_id: Some(fid.clone()),
+            natural_width: 4,
+            natural_height: 3,
+            crop: None,
+        }),
         z[2].clone(),
     );
     img.transform = Transform::new(0.0, 0.0, 40.0, 30.0);

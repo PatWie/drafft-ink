@@ -1,3 +1,4 @@
+#![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 //! Invariants: one test per rule, each with a case that passes and a case that breaks it.
 
 mod common;
@@ -131,7 +132,11 @@ fn bindings_and_fixed_segments_are_checked() {
 
 #[test]
 fn freehand_pressures_match_points() {
-    let mut f = Element::new(id("f"), ElementKind::Freehand(FreehandData::new(vec![Point::new(0.0, 0.0), Point::new(4.0, 4.0)])), ZIndex::first());
+    let mut f = Element::new(
+        id("f"),
+        ElementKind::Freehand(FreehandData::new(vec![Point::new(0.0, 0.0), Point::new(4.0, 4.0)])),
+        ZIndex::first(),
+    );
     assert!(f.refit_points());
     assert_eq!(validate_element(&f), Ok(()));
     if let ElementKind::Freehand(d) = &mut f.kind {
@@ -159,7 +164,9 @@ fn text_runs_must_be_sorted_inside_the_text() {
         }
         assert_eq!(validate_element(&t), Ok(()));
     }
-    for bad in [vec![run(0, 6)], vec![run(2, 2)], vec![run(3, 1)], vec![run(0, 3), run(2, 4)], vec![run(2, 4), run(0, 1)]] {
+    for bad in
+        [vec![run(0, 6)], vec![run(2, 2)], vec![run(3, 1)], vec![run(0, 3), run(2, 4)], vec![run(2, 4), run(0, 1)]]
+    {
         if let ElementKind::Text(d) = &mut t.kind {
             d.runs = bad;
         }
@@ -205,7 +212,12 @@ fn names_links_groups_and_frames_on_one_element() {
 fn images_and_crops() {
     let mut im = Element::new(
         id("i"),
-        ElementKind::Image(ImageData { file_id: None, natural_width: 10, natural_height: 10, crop: Some(Crop { x: 0.0, y: 0.0, width: 0.0, height: 5.0 }) }),
+        ElementKind::Image(ImageData {
+            file_id: None,
+            natural_width: 10,
+            natural_height: 10,
+            crop: Some(Crop { x: 0.0, y: 0.0, width: 0.0, height: 5.0 }),
+        }),
         ZIndex::first(),
     );
     assert!(validate_element(&im).is_err(), "empty crop");
@@ -300,7 +312,10 @@ fn bound_text_needs_a_container() {
     assert!(has_error(&r, |e| matches!(e, DocError::TwoLabels { .. })));
 
     // The arrow label.
-    assert!(validate_document(&doc_of(vec![arrow("ar", &z[0], &[(0.0, 0.0), (9.0, 9.0)]), label("l", &z[1], "ar")])).is_clean());
+    assert!(
+        validate_document(&doc_of(vec![arrow("ar", &z[0], &[(0.0, 0.0), (9.0, 9.0)]), label("l", &z[1], "ar")]))
+            .is_clean()
+    );
 
     // Label below its container, and container deleted.
     let r = validate_document(&doc_of(vec![label("l", &z[0], "box"), rect("box", &z[1])]));
@@ -345,7 +360,8 @@ fn group_stacks_must_nest_consistently() {
         e
     };
     // A inside B inside C, and a sibling in B and C.
-    let ok = doc_of(vec![mk("a", &z[0], &["A", "B", "C"]), mk("b", &z[1], &["A", "B", "C"]), mk("c", &z[2], &["B", "C"])]);
+    let ok =
+        doc_of(vec![mk("a", &z[0], &["A", "B", "C"]), mk("b", &z[1], &["A", "B", "C"]), mk("c", &z[2], &["B", "C"])]);
     assert!(validate_document(&ok).is_clean(), "{:?}", validate_document(&ok));
 
     // Members of A disagree about what is around A.
@@ -387,7 +403,10 @@ fn image_blobs_are_checked_against_their_hash() {
     );
     let mut doc = doc_of(vec![img.clone()]);
     let r = validate_document(&doc);
-    assert!(!r.has_errors() && has_warning(&r, |e| matches!(e, DocError::FileMissing(_))), "a missing blob is only a warning");
+    assert!(
+        !r.has_errors() && has_warning(&r, |e| matches!(e, DocError::FileMissing(_))),
+        "a missing blob is only a warning"
+    );
 
     doc.files.insert(fid.clone(), entry.clone());
     assert!(validate_document(&doc).is_clean());

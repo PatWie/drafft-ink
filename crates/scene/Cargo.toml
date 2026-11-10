@@ -13,7 +13,7 @@ conformance = []
 
 [dependencies]
 serde.workspace = true
-serde_json.workspace = true
+serde_json = { workspace = true, features = ["float_roundtrip"] }
 thiserror.workspace = true
 kurbo.workspace = true
 peniko.workspace = true

@@ -1,3 +1,4 @@
+#![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 //! The native JSON format: round trips, the version gate, refusals, and a checked-in golden file.
 
 mod common;
@@ -50,7 +51,15 @@ fn sample() -> Document {
         d.runs = vec![TextRun { start: 0, end: 1, color: Some(Color::rgb(220, 38, 38)) }];
     }
 
-    let mut stroke = Element::new(id("scribble"), ElementKind::Freehand(FreehandData::new(vec![Point::new(0.0, 0.0), Point::new(5.0, 9.0), Point::new(12.0, 3.0)])), z[4].clone());
+    let mut stroke = Element::new(
+        id("scribble"),
+        ElementKind::Freehand(FreehandData::new(vec![
+            Point::new(0.0, 0.0),
+            Point::new(5.0, 9.0),
+            Point::new(12.0, 3.0),
+        ])),
+        z[4].clone(),
+    );
     if let ElementKind::Freehand(d) = &mut stroke.kind {
         d.pressures = vec![0.3, 0.8, 0.5];
         d.pressure_mode = PressureMode::Device;
@@ -59,7 +68,8 @@ fn sample() -> Document {
     stroke.transform.x += 10.0;
     stroke.transform.y += 100.0;
 
-    let formula = Element::new(id("formula"), ElementKind::Math(MathData::new("\\frac{a}{b}")), z[5].clone()).with_bounds(0.0, 150.0, 40.0, 30.0);
+    let formula = Element::new(id("formula"), ElementKind::Math(MathData::new("\\frac{a}{b}")), z[5].clone())
+        .with_bounds(0.0, 150.0, 40.0, 30.0);
     let img = Element::new(
         id("picture"),
         ElementKind::Image(ImageData { file_id: Some(fid), natural_width: 32, natural_height: 16, crop: None }),
@@ -109,8 +119,12 @@ fn golden_file_is_stable() {
     if std::env::var_os("UPDATE_GOLDEN").is_some() {
         std::fs::write(&path, &current).unwrap();
     }
-    let golden = std::fs::read_to_string(&path).expect("tests/golden/native_v1.json exists; run with UPDATE_GOLDEN=1 to create it");
-    assert_eq!(current, golden, "the native format changed; bump SCHEMA_VERSION or fix the regression (UPDATE_GOLDEN=1 rewrites the file)");
+    let golden = std::fs::read_to_string(&path)
+        .expect("tests/golden/native_v1.json exists; run with UPDATE_GOLDEN=1 to create it");
+    assert_eq!(
+        current, golden,
+        "the native format changed; bump SCHEMA_VERSION or fix the regression (UPDATE_GOLDEN=1 rewrites the file)"
+    );
     // The file written by this build can be read by this build.
     assert_eq!(Document::from_json(&golden).unwrap(), sample());
 }

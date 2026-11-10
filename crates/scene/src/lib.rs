@@ -9,6 +9,8 @@
 //!
 //! No clock, no global randomness, no I/O: ids and seeds come from an injected [`IdSource`].
 
+#![cfg_attr(test, allow(clippy::unwrap_used, clippy::expect_used, clippy::panic))]
+
 pub mod color;
 pub mod derived;
 pub mod document;
@@ -41,5 +43,8 @@ pub use store::{
 pub use style::{
     FillPattern, FontFamily, FontWeight, Sloppiness, StrokeStyle, Style, TextAlign, TextStyle, VerticalAlign,
 };
-pub use validate::{DocError, ElementError, Issue, Report, Severity, validate_document, validate_element, validate_scene};
+pub use validate::{
+    DocError, ElementError, Issue, Report, Severity, element_errors, validate_document, validate_element,
+    validate_scene,
+};
 pub use zindex::{IndexError, ZIndex};

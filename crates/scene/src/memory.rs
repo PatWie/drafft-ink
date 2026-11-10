@@ -291,7 +291,10 @@ impl SceneTx for MemoryTx<'_> {
             return Err(StoreError::BadFile(format!("{:?} is not an image media type like image/png", entry.mime)));
         }
         if entry.bytes.len() > MAX_FILE_BYTES {
-            return Err(StoreError::BadFile(format!("{} bytes is over the {MAX_FILE_BYTES} byte limit", entry.bytes.len())));
+            return Err(StoreError::BadFile(format!(
+                "{} bytes is over the {MAX_FILE_BYTES} byte limit",
+                entry.bytes.len()
+            )));
         }
         let id = FileId::of(&entry.bytes);
         if self.store.files.contains_key(&id) {

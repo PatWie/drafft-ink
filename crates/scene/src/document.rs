@@ -201,10 +201,10 @@ impl Document {
         struct Probe {
             version: Option<u32>,
         }
-        if let Ok(p) = serde_json::from_str::<Probe>(text) {
-            if let Some(found) = p.version.filter(|v| *v > SCHEMA_VERSION) {
-                return Err(DocumentError::NewerVersion { found, max: SCHEMA_VERSION });
-            }
+        if let Ok(p) = serde_json::from_str::<Probe>(text)
+            && let Some(found) = p.version.filter(|v| *v > SCHEMA_VERSION)
+        {
+            return Err(DocumentError::NewerVersion { found, max: SCHEMA_VERSION });
         }
         // serde accepts a bare array for a struct; a document is always an object.
         if !text.trim_start().starts_with('{') {

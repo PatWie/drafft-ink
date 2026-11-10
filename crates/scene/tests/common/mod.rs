@@ -1,3 +1,4 @@
+#![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 //! Shared builders for the integration tests.
 #![allow(dead_code)]
 

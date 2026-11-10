@@ -117,7 +117,9 @@ pub enum ElementError {
     #[error("{0}")]
     NotApplicable(&'static str),
     /// Text runs are unsorted, overlapping, empty or past the end of the text.
-    #[error("text run {start}..{end} is invalid: runs must be sorted, not overlap, be non-empty and end within the {len} characters")]
+    #[error(
+        "text run {start}..{end} is invalid: runs must be sorted, not overlap, be non-empty and end within the {len} characters"
+    )]
     TextRun {
         /// Run start.
         start: u32,
@@ -210,15 +212,15 @@ fn collect_element_errors(e: &Element, out: &mut Vec<ElementError>) {
     if let Some(name) = &e.name {
         check(text_ok("name", name));
     }
-    if let Some(link) = &e.link {
-        if link.len() > MAX_LINK_BYTES || link.chars().any(char::is_control) {
-            check(Err(ElementError::TooLong { field: "link", len: link.len(), max: MAX_LINK_BYTES }));
-        }
+    if let Some(link) = &e.link
+        && (link.len() > MAX_LINK_BYTES || link.chars().any(char::is_control))
+    {
+        check(Err(ElementError::TooLong { field: "link", len: link.len(), max: MAX_LINK_BYTES }));
     }
-    if let Some(c) = &e.custom {
-        if c.len() > MAX_CUSTOM_KEYS {
-            check(Err(ElementError::TooLong { field: "custom", len: c.len(), max: MAX_CUSTOM_KEYS }));
-        }
+    if let Some(c) = &e.custom
+        && c.len() > MAX_CUSTOM_KEYS
+    {
+        check(Err(ElementError::TooLong { field: "custom", len: c.len(), max: MAX_CUSTOM_KEYS }));
     }
     kind_errors(e, out);
 }
@@ -230,7 +232,10 @@ fn kind_errors(e: &Element, out: &mut Vec<ElementError>) {
             let is_arrow = matches!(e.kind, ElementKind::Arrow(_));
             let min_points = if d.closed { 3 } else { 2 };
             if d.points.len() < min_points {
-                put(out, Err(ElementError::TooFewPoints { kind: e.tag().name(), min: min_points, have: d.points.len() }));
+                put(
+                    out,
+                    Err(ElementError::TooFewPoints { kind: e.tag().name(), min: min_points, have: d.points.len() }),
+                );
             }
             points_errors(e, &d.points, out);
             if d.closed && is_arrow {
@@ -448,7 +453,9 @@ pub enum DocError {
         target: ElementId,
     },
     /// A binding targets a kind arrows cannot attach to.
-    #[error("the {end} binding targets {target}, a {kind}; arrows attach to rectangles, diamonds, ellipses, text, images and frames")]
+    #[error(
+        "the {end} binding targets {target}, a {kind}; arrows attach to rectangles, diamonds, ellipses, text, images and frames"
+    )]
     BindingTargetNotBindable {
         /// `start` or `end`.
         end: &'static str,
@@ -466,7 +473,9 @@ pub enum DocError {
         target: ElementId,
     },
     /// Members of a group disagree about the groups around it.
-    #[error("group {0} is nested differently in different members; all members of a group must share the same outer groups")]
+    #[error(
+        "group {0} is nested differently in different members; all members of a group must share the same outer groups"
+    )]
     GroupStack(GroupId),
     /// A group with one live member counts as no group.
     #[error("group {0} has a single live member, so it counts as no group")]
@@ -628,12 +637,7 @@ fn check_name(name: &str, report: &mut Report) {
     }
 }
 
-fn run(
-    elements: &[&Element],
-    files: &[(&FileId, &crate::document::FileEntry)],
-    order: Order,
-    report: &mut Report,
-) {
+fn run(elements: &[&Element], files: &[(&FileId, &crate::document::FileEntry)], order: Order, report: &mut Report) {
     if elements.len() > MAX_ELEMENTS {
         report.add(None, DocError::TooMany { what: "elements", len: elements.len(), max: MAX_ELEMENTS });
         return;
@@ -768,10 +772,10 @@ fn check_groups(elements: &[&Element], report: &mut Report) {
 fn check_names(elements: &[&Element], report: &mut Report) {
     let mut names: BTreeMap<&str, &ElementId> = BTreeMap::new();
     for e in elements.iter().filter(|e| !e.deleted) {
-        if let Some(n) = &e.name {
-            if let Some(other) = names.insert(n.as_str(), &e.id) {
-                report.add(Some(&e.id), DocError::DuplicateName { name: n.clone(), other: other.clone() });
-            }
+        if let Some(n) = &e.name
+            && let Some(other) = names.insert(n.as_str(), &e.id)
+        {
+            report.add(Some(&e.id), DocError::DuplicateName { name: n.clone(), other: other.clone() });
         }
     }
 }
@@ -779,12 +783,11 @@ fn check_names(elements: &[&Element], report: &mut Report) {
 fn check_files(elements: &[&Element], files: &[(&FileId, &crate::document::FileEntry)], report: &mut Report) {
     let present: HashSet<&FileId> = files.iter().map(|(id, _)| *id).collect();
     for e in elements.iter().filter(|e| !e.deleted) {
-        if let ElementKind::Image(i) = &e.kind {
-            if let Some(f) = &i.file_id {
-                if !present.contains(f) {
-                    report.add(Some(&e.id), DocError::FileMissing(f.clone()));
-                }
-            }
+        if let ElementKind::Image(i) = &e.kind
+            && let Some(f) = &i.file_id
+            && !present.contains(f)
+        {
+            report.add(Some(&e.id), DocError::FileMissing(f.clone()));
         }
     }
     for (id, entry) in files {

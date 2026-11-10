@@ -37,7 +37,8 @@ impl Recorded {
             frame: e.frame_id.clone(),
             container: e.container_id().cloned(),
         };
-        let empty = r.targets.iter().all(Option::is_none) && r.groups.is_empty() && r.frame.is_none() && r.container.is_none();
+        let empty =
+            r.targets.iter().all(Option::is_none) && r.groups.is_empty() && r.frame.is_none() && r.container.is_none();
         (!empty).then_some(r)
     }
 }

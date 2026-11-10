@@ -299,10 +299,10 @@ fn key_between(a: Option<&str>, b: Option<&str>) -> Result<String, IndexError> {
     if let Some(b) = b {
         split_key(b)?;
     }
-    if let (Some(a), Some(b)) = (a, b) {
-        if a >= b {
-            return Err(IndexError::NotOrdered { lower: a.into(), upper: b.into() });
-        }
+    if let (Some(a), Some(b)) = (a, b)
+        && a >= b
+    {
+        return Err(IndexError::NotOrdered { lower: a.into(), upper: b.into() });
     }
     match (a, b) {
         (None, None) => Ok(INTEGER_ZERO.to_owned()),

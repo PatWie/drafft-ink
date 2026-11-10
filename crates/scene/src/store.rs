@@ -172,7 +172,12 @@ impl Fields {
     /// Moving alone does not change the local geometry but does change where the element is.
     pub fn affects_geometry(self) -> bool {
         self.intersects(Fields(
-            Self::POSITION.0 | Self::SIZE.0 | Self::ANGLE.0 | Self::FLIP.0 | Self::KIND.0 | Self::DELETED.0
+            Self::POSITION.0
+                | Self::SIZE.0
+                | Self::ANGLE.0
+                | Self::FLIP.0
+                | Self::KIND.0
+                | Self::DELETED.0
                 | Self::STYLE.0,
         ))
     }

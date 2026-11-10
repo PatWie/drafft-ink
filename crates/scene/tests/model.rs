@@ -1,3 +1,4 @@
+#![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 //! The element model: construction, serde forms, defaults, point-box maintenance.
 
 mod common;
@@ -11,7 +12,13 @@ fn every_kind(z: &[ZIndex]) -> Vec<Element> {
     v.push(rect("rect", &z[0]));
     v.push(Element::new(id("dia"), ElementKind::Diamond, z[1].clone()).with_bounds(0.0, 0.0, 5.0, 5.0));
     v.push(Element::new(id("ell"), ElementKind::Ellipse, z[2].clone()).with_bounds(1.0, 2.0, 30.0, 40.0));
-    let mut line = Element::linear(id("line"), Kind::Line, z[3].clone(), &[Point::new(0.0, 0.0), Point::new(10.0, 5.0), Point::new(20.0, 0.0)]).unwrap();
+    let mut line = Element::linear(
+        id("line"),
+        Kind::Line,
+        z[3].clone(),
+        &[Point::new(0.0, 0.0), Point::new(10.0, 5.0), Point::new(20.0, 0.0)],
+    )
+    .unwrap();
     if let ElementKind::Line(d) = &mut line.kind {
         d.closed = true;
         d.path = PathType::Round;
@@ -28,7 +35,11 @@ fn every_kind(z: &[ZIndex]) -> Vec<Element> {
         d.start_binding = Some(Binding { target: id("rect"), mode: BindMode::Inside, fixed_point: [0.25, 0.75] });
     }
     v.push(ar);
-    let mut fh = Element::new(id("free"), ElementKind::Freehand(FreehandData::new(vec![Point::new(0.0, 0.0), Point::new(3.0, 4.0)])), z[5].clone());
+    let mut fh = Element::new(
+        id("free"),
+        ElementKind::Freehand(FreehandData::new(vec![Point::new(0.0, 0.0), Point::new(3.0, 4.0)])),
+        z[5].clone(),
+    );
     if let ElementKind::Freehand(d) = &mut fh.kind {
         d.pressures = vec![0.2, 0.9];
         d.pressure_mode = PressureMode::Device;
@@ -43,8 +54,16 @@ fn every_kind(z: &[ZIndex]) -> Vec<Element> {
     t.auto_resize = false;
     t.runs = vec![TextRun { start: 0, end: 2, color: Some(Color::rgb(255, 0, 0)) }];
     v.push(Element::new(id("text"), ElementKind::Text(t), z[6].clone()).with_bounds(0.0, 0.0, 50.0, 40.0));
-    v.push(Element::new(id("math"), ElementKind::Math(MathData::new("x^2")), z[7].clone()).with_bounds(0.0, 0.0, 30.0, 20.0));
-    let img = ImageData { file_id: Some(FileId::of(b"png")), natural_width: 640, natural_height: 480, crop: Some(Crop { x: 1.0, y: 2.0, width: 3.0, height: 4.0 }) };
+    v.push(
+        Element::new(id("math"), ElementKind::Math(MathData::new("x^2")), z[7].clone())
+            .with_bounds(0.0, 0.0, 30.0, 20.0),
+    );
+    let img = ImageData {
+        file_id: Some(FileId::of(b"png")),
+        natural_width: 640,
+        natural_height: 480,
+        crop: Some(Crop { x: 1.0, y: 2.0, width: 3.0, height: 4.0 }),
+    };
     let mut im = Element::new(id("img"), ElementKind::Image(img), z[8].clone()).with_bounds(0.0, 0.0, 64.0, 48.0);
     im.transform.flip_x = true;
     v.push(im);
@@ -144,15 +163,24 @@ fn unknown_fields_and_kinds_are_rejected() {
 
 #[test]
 fn enum_names_are_the_catalog_names() {
-    let names: Vec<String> = [FillPattern::Solid, FillPattern::Hachure, FillPattern::ZigZag, FillPattern::CrossHatch, FillPattern::Dots, FillPattern::Dashed, FillPattern::ZigZagLine]
-        .iter()
-        .map(|p| serde_json::to_value(p).unwrap().as_str().unwrap().to_owned())
-        .collect();
+    let names: Vec<String> = [
+        FillPattern::Solid,
+        FillPattern::Hachure,
+        FillPattern::ZigZag,
+        FillPattern::CrossHatch,
+        FillPattern::Dots,
+        FillPattern::Dashed,
+        FillPattern::ZigZagLine,
+    ]
+    .iter()
+    .map(|p| serde_json::to_value(p).unwrap().as_str().unwrap().to_owned())
+    .collect();
     assert_eq!(names, ["solid", "hachure", "zigzag", "cross_hatch", "dots", "dashed", "zigzag_line"]);
-    let fonts: Vec<String> = [FontFamily::GelPen, FontFamily::NotoSans, FontFamily::GelPenSerif, FontFamily::VanillaExtract]
-        .iter()
-        .map(|p| serde_json::to_value(p).unwrap().as_str().unwrap().to_owned())
-        .collect();
+    let fonts: Vec<String> =
+        [FontFamily::GelPen, FontFamily::NotoSans, FontFamily::GelPenSerif, FontFamily::VanillaExtract]
+            .iter()
+            .map(|p| serde_json::to_value(p).unwrap().as_str().unwrap().to_owned())
+            .collect();
     assert_eq!(fonts, ["gelpen", "noto_sans", "gelpen_serif", "vanilla_extract"]);
     assert_eq!(Sloppiness::Drunk.roughness(), 3.5);
     assert_eq!(FontFamily::GelPenSerif.renderer_name(), "GelPen Serif");
@@ -230,10 +258,7 @@ fn text_runs_and_old_char_colors_convert_both_ways() {
     let runs = TextData::runs_from_char_colors(&old, 6);
     assert_eq!(
         runs,
-        vec![
-            TextRun { start: 1, end: 3, color: Some(red) },
-            TextRun { start: 4, end: 6, color: Some(blue) },
-        ]
+        vec![TextRun { start: 1, end: 3, color: Some(red) }, TextRun { start: 4, end: 6, color: Some(blue) },]
     );
     let mut t = TextData::new("ab😀def");
     assert_eq!(t.char_count(), 6, "characters are scalar values, not bytes");
@@ -257,7 +282,16 @@ fn transform_geometry() {
 fn json_schema_describes_the_document() {
     let schema = json_schema();
     let text = schema.to_string();
-    for needle in ["elements", "ElementKind", "\"rectangle\"", "cardinality_one_or_many", "Color", "ZIndex", "fixed_point", "drafftink"] {
+    for needle in [
+        "elements",
+        "ElementKind",
+        "\"rectangle\"",
+        "cardinality_one_or_many",
+        "Color",
+        "ZIndex",
+        "fixed_point",
+        "drafftink",
+    ] {
         assert!(text.contains(needle), "schema lacks {needle}");
     }
 }
