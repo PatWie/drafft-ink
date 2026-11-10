@@ -107,13 +107,27 @@ fn anchors() {
 }
 
 #[test]
-fn reroute_false_leaves_arrows_alone() {
+fn reroute_false_keeps_arrows_bound_without_rerouting() {
+    // reroute=false skips the full re-route, but bound arrows must still stay attached: the
+    // binding solver re-aims their ends after the nodes move.
     let (mut s, r) = build(CHAIN, Point::ZERO);
     let ids: Vec<ElementId> = r.nodes.values().cloned().collect();
-    let before = s.get(&r.edges[0]).unwrap().clone();
+    let arrow = r.edges[0].clone();
+    let bind = |s: &MemoryStore| match &s.get(&arrow).unwrap().kind {
+        ElementKind::Arrow(a) => (a.start_binding.clone(), a.end_binding.clone()),
+        _ => panic!("edge is not an arrow"),
+    };
+    let before = bind(&s);
+    assert!(before.0.is_some() && before.1.is_some());
     let out = apply(&mut s, &ids, &ApplyOpts { reroute: false, ..layered(Direction::Down) }).unwrap();
     assert!(out.rerouted.is_empty());
-    assert_eq!(s.get(&r.edges[0]).unwrap().linear_data(), before.linear_data());
+    assert_eq!(bind(&s), before, "bindings are kept");
+    // The ends are already solved: solving again changes nothing.
+    let solved = s.get(&arrow).unwrap().clone();
+    let mut tx = s.begin();
+    drafftink_edit::binding::update_bound_arrows(&mut tx, &ids).unwrap();
+    tx.commit().unwrap();
+    assert_eq!(s.get(&arrow).unwrap().linear_data(), solved.linear_data());
 }
 
 #[test]
