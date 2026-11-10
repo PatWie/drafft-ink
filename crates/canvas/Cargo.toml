@@ -1,11 +1,27 @@
 [package]
 name = "drafftink-canvas"
+description = "The reusable canvas library (L3): viewport, spatial scene index, exact hit testing, pointer gesture recognizers, transformer handles, overlay description and Konva-style event dispatch"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
 rust-version.workspace = true
 
 [dependencies]
+drafftink-geom = { path = "../geom" }
+drafftink-profile = { path = "../profile" }
+drafftink-scene = { path = "../scene" }
+serde.workspace = true
+thiserror.workspace = true
+
+[dev-dependencies]
+criterion.workspace = true
+proptest.workspace = true
+smallvec.workspace = true
+serde_json.workspace = true
+
+[[bench]]
+name = "canvas"
+harness = false
 
 [lints]
 workspace = true
