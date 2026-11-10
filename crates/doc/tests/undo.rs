@@ -308,3 +308,95 @@ fn an_undo_is_exported_like_any_edit() {
     assert_eq!(cs.get(&eid("r")).unwrap().fields, Fields::POSITION);
     assert_eq!(b.get(&eid("r")).unwrap().transform.x, 10.0);
 }
+
+/// One labelled commit that asks to merge into the step below.
+fn nudge(s: &mut LoroStore, label: &str, before: ObservedState, after: ObservedState, x: f64) -> bool {
+    let mut tx = s.begin();
+    tx.describe(label, before, after);
+    tx.merge_with_previous();
+    tx.update(&eid("a"), |e| e.transform.x = x).unwrap();
+    tx.commit().unwrap();
+    s.last_commit_merged()
+}
+
+#[test]
+fn merge_with_previous_folds_repeats_into_one_step() {
+    let mut s = peer(1);
+    add(&mut s, vec![rect("a", &zs(1)[0])]);
+    s.clear_history();
+    labeled(&mut s, "Move", state(&["a"], None), state(&["a"], None), |tx| {
+        tx.update(&eid("a"), |e| e.transform.x = 11.0).unwrap();
+    });
+    assert_eq!(s.undo_depth(), 1);
+    // The first nudge merges into "Move" (the step below), then the others into the same step.
+    assert!(nudge(&mut s, "Nudge", state(&["a"], None), state(&["a"], None), 12.0));
+    assert!(nudge(&mut s, "Nudge", state(&["a"], None), state(&["a", "z"], None), 13.0));
+    assert_eq!(s.undo_depth(), 1, "three commits, one step");
+    assert_eq!(s.get(&eid("a")).unwrap().transform.x, 13.0);
+    assert_eq!(s.undo_label().as_deref(), Some("Move"), "the step keeps the first label");
+    let u = s.undo().unwrap().unwrap();
+    assert_eq!(u.restore, state(&["a"], None));
+    assert_eq!(s.get(&eid("a")).unwrap().transform.x, 10.0, "undo takes back every merged commit");
+    assert!(!s.can_undo());
+    let r = s.redo().unwrap().unwrap();
+    assert_eq!(r.restore, state(&["a", "z"], None), "redo restores the state after the last merged commit");
+    assert_eq!(s.get(&eid("a")).unwrap().transform.x, 13.0);
+    // A plain commit after the merges is a step of its own, and the merge flag is cleared.
+    edit(&mut s, "a", |e| e.transform.y = 5.0);
+    assert!(!s.last_commit_merged());
+    assert_eq!(s.undo_depth(), 2);
+    assert_view_matches_loro(&s);
+}
+
+#[test]
+fn merge_with_previous_starts_a_step_when_there_is_nothing_to_merge_into() {
+    let mut s = peer(1);
+    add(&mut s, vec![rect("a", &zs(1)[0])]);
+    s.clear_history();
+    assert!(!nudge(&mut s, "Nudge", state(&[], None), state(&[], None), 20.0), "empty stack: a new step");
+    assert_eq!(s.undo_depth(), 1);
+    assert!(nudge(&mut s, "Nudge", state(&[], None), state(&[], None), 21.0));
+    assert_eq!(s.undo_depth(), 1);
+    // Not undoable commits never merge and never touch the stack.
+    let mut tx = s.begin();
+    tx.not_undoable();
+    tx.merge_with_previous();
+    tx.update(&eid("a"), |e| e.transform.y = 9.0).unwrap();
+    tx.commit().unwrap();
+    assert!(!s.last_commit_merged());
+    assert_eq!(s.undo_depth(), 1);
+}
+
+#[test]
+fn merge_with_previous_keeps_steps_apart_after_a_collaborators_edit() {
+    let mut a = peer(1);
+    let mut b = peer(2);
+    add(&mut a, vec![rect("a", &zs(1)[0])]);
+    sync(&mut a, &mut b);
+    edit(&mut a, "a", |e| e.transform.x = 30.0);
+    assert!(nudge(&mut a, "Nudge", state(&[], None), state(&[], None), 31.0), "no remote edit between: merged");
+    edit(&mut b, "a", |e| e.style.stroke_color = Color::parse("#00ff00").unwrap());
+    push(&b, &mut a);
+    assert!(!nudge(&mut a, "Nudge", state(&[], None), state(&[], None), 32.0), "a remote edit came between");
+    assert_eq!(a.undo_depth(), 3, "the creation, the move with its first nudge, the nudge after the remote edit");
+    a.undo().unwrap().unwrap();
+    assert_eq!(a.get(&eid("a")).unwrap().transform.x, 31.0);
+    assert_eq!(a.get(&eid("a")).unwrap().style.stroke_color, Color::parse("#00ff00").unwrap());
+    a.undo().unwrap().unwrap();
+    assert_eq!(a.get(&eid("a")).unwrap().transform.x, 10.0);
+}
+
+#[test]
+fn merge_with_previous_is_detected_at_the_depth_limit() {
+    let mut s = LoroStore::with_config(LoroConfig { undo_depth: 2, peer_id: Some(1), ..LoroConfig::default() });
+    add(&mut s, vec![rect("a", &zs(1)[0])]);
+    for i in 0..3 {
+        edit(&mut s, "a", |e| e.transform.x = f64::from(i) + 100.0);
+    }
+    assert_eq!(s.undo_depth(), 2);
+    // At the limit a new step and a merge both leave the count at 2; the store still tells them apart.
+    assert!(nudge(&mut s, "Nudge", ObservedState::default(), ObservedState::default(), 200.0));
+    assert_eq!(s.undo_depth(), 2);
+    edit(&mut s, "a", |e| e.transform.y = 1.0);
+    assert!(!s.last_commit_merged());
+}

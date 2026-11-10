@@ -242,6 +242,15 @@ const TEST_COMMANDS: &[CommandSpec] = &[
     CommandSpec::new("t.nudge", "t", "Nudge", "Moves an element by one unit.", &Typed::new(nudge), DOC)
         .coalesce("t.nudge", 500),
     CommandSpec::new(
+        "t.drag_nudge",
+        "t",
+        "Drag nudge",
+        "A gesture command that also coalesces when called plainly.",
+        &Typed::new(move_el),
+        Facts { undo: Undo::Gesture, ..DOC },
+    )
+    .coalesce("t.drag_nudge", 500),
+    CommandSpec::new(
         "t.write",
         "t",
         "Write clipboard",
@@ -510,10 +519,7 @@ fn a_commit_gate_commits_the_text_edit_first_as_its_own_step() {
     assert_eq!(ids, ["text.edit_end", "t.add"]);
 }
 
-/// Needs a merge API in `drafftink-doc`: Loro's undo manager merges by time only, with no per-target rule,
-/// so `LoroStore` cannot fold a repeat into the previous step yet. The assertions stay as the requirement.
 #[test]
-#[ignore = "needs a merge-with-previous API in drafftink-doc"]
 fn coalesce_merges_repeats_on_the_same_target_within_the_window() {
     let (mut s, fakes) = test_session();
     let id = first_created(&ok(&mut s, "t.add", json!({})));
@@ -529,6 +535,110 @@ fn coalesce_merges_repeats_on_the_same_target_within_the_window() {
     s.undo_steps(1).unwrap();
     let e = s.element(&ElementId::new(&id).unwrap()).unwrap();
     assert_eq!(e.transform.x, 0.0);
+}
+
+#[test]
+fn coalescing_keeps_targets_commands_and_gaps_apart() {
+    let (mut s, fakes) = test_session();
+    let a = first_created(&ok(&mut s, "t.add", json!({"x": 0})));
+    let b = first_created(&ok(&mut s, "t.add", json!({"x": 100})));
+    assert_eq!(s.tab().doc.undo_depth(), 2);
+    ok(&mut s, "t.nudge", json!({"id": a}));
+    ok(&mut s, "t.nudge", json!({"id": a}));
+    assert_eq!(s.tab().doc.undo_depth(), 3, "same target: merged");
+    ok(&mut s, "t.nudge", json!({"id": b}));
+    assert_eq!(s.tab().doc.undo_depth(), 4, "another target: a step of its own");
+    ok(&mut s, "t.nudge", json!({"id": b}));
+    assert_eq!(s.tab().doc.undo_depth(), 4);
+    // Another command in between ends the run, even on the same target.
+    ok(&mut s, "t.touch_same", json!({}));
+    ok(&mut s, "t.move", json!({"id": b, "dx": 1, "dy": 0}));
+    assert_eq!(s.tab().doc.undo_depth(), 5);
+    ok(&mut s, "t.nudge", json!({"id": b}));
+    ok(&mut s, "t.nudge", json!({"id": b}));
+    assert_eq!(s.tab().doc.undo_depth(), 6);
+    // The window slides: a repeat within it of the last repeat merges, however long the run is.
+    for _ in 0..5 {
+        fakes.clock.advance_ms(400);
+        ok(&mut s, "t.nudge", json!({"id": b}));
+    }
+    assert_eq!(s.tab().doc.undo_depth(), 6);
+    fakes.clock.advance_ms(501);
+    ok(&mut s, "t.nudge", json!({"id": b}));
+    assert_eq!(s.tab().doc.undo_depth(), 7, "after a gap longer than the window");
+    // One undo takes back a whole run.
+    let before = x_of(&s, &b);
+    s.undo_steps(1).unwrap();
+    assert_eq!(x_of(&s, &b), before - 1.0);
+    s.undo_steps(1).unwrap();
+    assert_eq!(x_of(&s, &b), before - 1.0 - 7.0, "the run of seven");
+}
+
+#[test]
+fn undo_and_redo_end_a_coalescing_run() {
+    let (mut s, _) = test_session();
+    let a = first_created(&ok(&mut s, "t.add", json!({"x": 0})));
+    ok(&mut s, "t.nudge", json!({"id": a}));
+    ok(&mut s, "t.nudge", json!({"id": a}));
+    s.undo_steps(1).unwrap();
+    s.redo_steps(1).unwrap();
+    ok(&mut s, "t.nudge", json!({"id": a}));
+    assert_eq!(s.tab().doc.undo_depth(), 3, "a repeat after undo and redo does not fold into the redone step");
+}
+
+#[test]
+fn the_final_step_of_a_gesture_and_a_batch_are_never_coalesced() {
+    let (mut s, id) = setup_gesture();
+    let depth = s.tab().doc.undo_depth();
+    for _ in 0..2 {
+        let (g, _) = s
+            .gesture_begin_typed(
+                Origin::Ui,
+                "t.drag_nudge",
+                &MoveArgs { id: id.clone(), dx: 1.0, dy: 0.0, fail: false },
+            )
+            .unwrap();
+        s.gesture_end_typed(g, None).unwrap();
+    }
+    assert_eq!(s.tab().doc.undo_depth(), depth + 2, "two drags are two steps");
+    // Called plainly the same command coalesces.
+    ok(&mut s, "t.drag_nudge", json!({"id": id, "dx": 1, "dy": 0}));
+    ok(&mut s, "t.drag_nudge", json!({"id": id, "dx": 1, "dy": 0}));
+    assert_eq!(s.tab().doc.undo_depth(), depth + 3);
+    // A batch of the coalescing command is its own step and never merges into the previous one.
+    let steps = [BatchStep::new("t.nudge", json!({"id": id}))];
+    ok(&mut s, "t.nudge", json!({"id": id}));
+    let d = s.tab().doc.undo_depth();
+    let out = s.execute_batch(Origin::Test, &steps, &BatchOpts::default());
+    assert!(out.failed.is_none());
+    assert_eq!(s.tab().doc.undo_depth(), d + 1);
+}
+
+#[test]
+fn a_collaborators_edit_between_repeats_keeps_the_steps_apart() {
+    let (mut s, _) = test_session();
+    let a = first_created(&ok(&mut s, "t.add", json!({"x": 0})));
+    ok(&mut s, "t.nudge", json!({"id": a}));
+    // A collaborator edits the same element.
+    let mut peer = crate::store::TabDoc::new();
+    peer.apply_remote(&s.tab().doc.replicated().export_snapshot().unwrap()).unwrap();
+    let pid = ElementId::new(&a).unwrap();
+    let o = crate::state::Observed::default();
+    let mark = peer.mark();
+    peer.edit::<(), StoreError>(|tx| tx.update(&pid, |e| e.locked = true)).unwrap();
+    peer.commit_since(
+        mark,
+        &crate::store::StepMeta { label: "Lock", undoable: true, before: &o, after: &o, depth: 50, coalesce: None },
+    )
+    .unwrap();
+    let bytes = peer.replicated().export_updates_since(&s.tab().doc.replicated().version_vector()).unwrap();
+    let tab = s.tab().id;
+    s.apply_remote(tab, &bytes).unwrap();
+    ok(&mut s, "t.nudge", json!({"id": a}));
+    assert_eq!(s.tab().doc.undo_depth(), 3, "add, first nudge, nudge after the remote edit");
+    s.undo_steps(1).unwrap();
+    assert!(s.element(&pid).unwrap().locked, "the collaborator's lock stays");
+    assert_eq!(x_of(&s, &a), 1.0);
 }
 
 #[test]

@@ -15,7 +15,7 @@ use crate::ring::{Origin, Outcome, Record};
 use crate::session::{Session, SoftState};
 use crate::spec::{CommandSpec, Gate, RingMode, Selection, Status, TextGate, Txn, Undo};
 use crate::state::TabId;
-use crate::store::{DocMark, StepMeta, Summary};
+use crate::store::{CoalesceReq, DocMark, StepMeta, Summary};
 use drafftink_profile::{Counter, inc, now_ns, span};
 
 /// Where arguments come from.
@@ -343,7 +343,8 @@ impl Session {
         if !changed {
             return Ok(());
         }
-        crate::invariants::run(self, tab_id).map_err(|e| Refusal::internal(id, format!("an invariant broke: {e}")))
+        crate::invariants::run(self, tab_id, mark)
+            .map_err(|e| Refusal::internal(id, format!("an invariant broke: {e}")))
     }
 
     /// Takes back document and soft state to the start of a command or batch.
@@ -379,10 +380,24 @@ impl Session {
             let reset = self.run.history_reset;
             let obs_after = self.tab_by_id(tab_id).map(|t| t.observed.clone()).unwrap_or_default();
             let undoable = matches!(spec.undo, Undo::Undoable | Undo::Gesture) && !reset;
+            let now_ms = self.now_ms();
+            let in_gesture_end = self.run.gesture_end;
             match self.tab_by_id_mut(tab_id) {
                 Some(t) => {
-                    let meta =
-                        StepMeta { label: spec.title, undoable, before: &soft.observed, after: &obs_after, depth };
+                    // A gesture's final step is never merged: it is the whole drag, however close to the last one.
+                    let coalesce = spec.coalesce.filter(|_| !in_gesture_end).map(|c| CoalesceReq {
+                        key: c.key,
+                        window_ms: c.ms,
+                        now_ms,
+                    });
+                    let meta = StepMeta {
+                        label: spec.title,
+                        undoable,
+                        before: &soft.observed,
+                        after: &obs_after,
+                        depth,
+                        coalesce,
+                    };
                     match t.doc.commit_since(mark, &meta) {
                         Ok(s) => {
                             if s.changed && undoable {

@@ -17,15 +17,18 @@
 //!
 //! Known limits of this arrangement: a gesture rollback restores whole elements, so a remote edit to the
 //! same element during a gesture is overwritten in the working store until the gesture ends (the final
-//! command re-runs against the current state); `Coalesce` is accepted but the Loro undo manager has no
-//! per-target merge, so repeats make separate steps.
+//! command re-runs against the current state).
+//!
+//! **Coalescing.** A [`StepMeta`] can carry a [`CoalesceReq`]: a repeat of the same key on the same elements
+//! within the window is folded into the previous undo step (`LoroTx::merge_with_previous` in the doc crate).
+//! The tab remembers the last coalescing step to decide; anything else that touches undo history resets it.
 
 use std::collections::BTreeMap;
 
 use drafftink_doc::{DocError, LoroStore};
 use drafftink_scene::{
-    ChangeKind, ChangeSet, DocMeta, Document, Element, ElementId, FileEntry, FileId, MemoryStore, SceneRead,
-    SceneStore, SceneTx, StoreError, ZIndex,
+    Change, ChangeKind, ChangeSet, DocMeta, Document, Element, ElementId, Fields, FileEntry, FileId, MemoryStore,
+    SceneRead, SceneStore, SceneTx, StoreError, ZIndex,
 };
 
 use crate::state::Observed;
@@ -218,12 +221,35 @@ pub struct TabDoc {
     undone_commits: u64,
     /// The undo depth last given to the replicated store.
     depth: usize,
+    /// The last step written with a coalesce request, while it is still the top of the undo stack.
+    last_coalesce: Option<LastCoalesce>,
 }
 
 impl Default for TabDoc {
     fn default() -> Self {
         Self::new()
     }
+}
+
+/// A request to fold a step into the previous one when it repeats it (`CommandSpec::coalesce`).
+#[derive(Debug, Clone, Copy)]
+pub struct CoalesceReq<'a> {
+    /// Steps with the same key may merge.
+    pub key: &'a str,
+    /// Longest gap since the last step with this key, in milliseconds.
+    pub window_ms: u64,
+    /// The time of this step (the clock port), in milliseconds.
+    pub now_ms: u64,
+}
+
+/// The step the tab last wrote with a coalesce request.
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct LastCoalesce {
+    key: String,
+    targets: Vec<ElementId>,
+    t_ms: u64,
+    /// Undo depth right after it: if the stack changed some other way, the step is not the top any more.
+    depth: usize,
 }
 
 /// What a committed step records for undo.
@@ -238,12 +264,21 @@ pub struct StepMeta<'a> {
     pub after: &'a Observed,
     /// Most undo steps to keep.
     pub depth: usize,
+    /// Fold into the previous step when this repeats it.
+    pub coalesce: Option<CoalesceReq<'a>>,
 }
 
 impl TabDoc {
     /// An empty document.
     pub fn new() -> Self {
-        Self { work: WorkStore::new(), loro: DocStore::new(), journal: Vec::new(), undone_commits: 0, depth: 200 }
+        Self {
+            work: WorkStore::new(),
+            loro: DocStore::new(),
+            journal: Vec::new(),
+            undone_commits: 0,
+            depth: 200,
+            last_coalesce: None,
+        }
     }
 
     /// A tab document holding `doc`, with no undo history.
@@ -254,6 +289,7 @@ impl TabDoc {
             journal: Vec::new(),
             undone_commits: 0,
             depth: 200,
+            last_coalesce: None,
         })
     }
 
@@ -390,6 +426,47 @@ impl TabDoc {
         (merged, summary)
     }
 
+    /// The net change of the commits since `mark` as a change set, judged against the present state: which
+    /// elements were added, removed or changed, and in which field groups. The journal stays. The invariant pass
+    /// reads it to see what a command did.
+    pub fn changes_since(&self, mark: DocMark) -> ChangeSet {
+        let tail = self.journal.get(mark.0..).unwrap_or(&[]);
+        let mut first: BTreeMap<&ElementId, &Option<Element>> = BTreeMap::new();
+        let mut meta: Option<&DocMeta> = None;
+        let mut files: BTreeMap<&FileId, &Option<FileEntry>> = BTreeMap::new();
+        for p in tail {
+            for (id, prev) in &p.elements {
+                first.entry(id).or_insert(prev);
+            }
+            if meta.is_none() {
+                meta = p.meta.as_ref();
+            }
+            for (id, prev) in &p.files {
+                files.entry(id).or_insert(prev);
+            }
+        }
+        let mut elements = Vec::new();
+        for (id, prev) in first {
+            let now = self.work.get(id);
+            let (kind, fields) = match (prev, now) {
+                (None, Some(_)) => (ChangeKind::Added, Fields::all()),
+                (Some(_), None) => (ChangeKind::Removed, Fields::all()),
+                (Some(p), Some(n)) => (ChangeKind::Updated, Fields::diff(p, n)),
+                (None, None) => continue,
+            };
+            if kind == ChangeKind::Updated && fields.is_empty() {
+                continue;
+            }
+            elements.push(Change { id: id.clone(), kind, fields, version: now.map_or(0, |e| e.version) });
+        }
+        let files = files
+            .into_iter()
+            .filter(|(id, prev)| prev.as_ref() != self.work.file(id))
+            .map(|(id, _)| id.clone())
+            .collect();
+        ChangeSet { revision: self.work.revision(), elements, meta: meta.is_some_and(|m| m != self.work.meta()), files }
+    }
+
     /// What the commits since `mark` did, without removing them.
     pub fn summary_since(&self, mark: DocMark) -> Summary {
         self.summarize(self.journal.get(mark.0..).unwrap_or(&[]))
@@ -403,16 +480,42 @@ impl TabDoc {
         if !summary.changed {
             return Ok(summary);
         }
-        let written = self.write_to_loro(&patch, meta);
+        let merge = self.should_merge(meta, &summary);
+        let written = self.write_to_loro(&patch, meta, merge);
         if let Err(e) = written {
             // Keep the edits reachable by `rollback_to`, so the caller can take the command back.
             self.journal.push(patch);
             return Err(e);
         }
+        self.note_coalesce(meta, &summary);
         Ok(summary)
     }
 
-    fn write_to_loro(&mut self, patch: &Patch, meta: &StepMeta<'_>) -> Result<(), StoreError> {
+    /// True when `meta` asks to coalesce and the tab's last step was the same key on the same elements within the
+    /// window and is still the top of the undo stack.
+    fn should_merge(&self, meta: &StepMeta<'_>, summary: &Summary) -> bool {
+        let (Some(req), true) = (&meta.coalesce, meta.undoable) else { return false };
+        let Some(last) = &self.last_coalesce else { return false };
+        last.key == req.key
+            && req.now_ms.saturating_sub(last.t_ms) <= req.window_ms
+            && last.targets == sorted(&summary.touched)
+            && last.depth == self.loro.undo_depth()
+    }
+
+    /// Remembers the step just written when it asked to coalesce; forgets the last one otherwise.
+    fn note_coalesce(&mut self, meta: &StepMeta<'_>, summary: &Summary) {
+        self.last_coalesce = match (&meta.coalesce, meta.undoable) {
+            (Some(req), true) => Some(LastCoalesce {
+                key: req.key.to_owned(),
+                targets: sorted(&summary.touched),
+                t_ms: req.now_ms,
+                depth: self.loro.undo_depth(),
+            }),
+            _ => None,
+        };
+    }
+
+    fn write_to_loro(&mut self, patch: &Patch, meta: &StepMeta<'_>, merge: bool) -> Result<(), StoreError> {
         if self.depth != meta.depth {
             self.loro.set_undo_depth(meta.depth);
             self.depth = meta.depth;
@@ -420,6 +523,9 @@ impl TabDoc {
         let mut tx = self.loro.begin();
         if meta.undoable {
             tx.describe(meta.label, meta.before.to_state(), meta.after.to_state());
+            if merge {
+                tx.merge_with_previous();
+            }
         } else {
             tx.not_undoable();
             tx.set_label(meta.label);
@@ -526,6 +632,7 @@ impl TabDoc {
     }
 
     fn undo_redo(&mut self, n: usize, undo: bool) -> Result<UndoOutcome, StoreError> {
+        self.last_coalesce = None;
         let mut out = UndoOutcome { labels: Vec::new(), observed: None, touched: Vec::new() };
         while out.labels.len() < n {
             let step = if undo { self.loro.undo() } else { self.loro.redo() }
@@ -575,6 +682,17 @@ impl TabDoc {
     /// Drops both stacks.
     pub fn clear_history(&mut self) {
         self.loro.clear_history();
+        self.last_coalesce = None;
+    }
+
+    /// Writes every journaled edit to the replicated store as one step that undo cannot see, then drops the
+    /// journal. For setting up a document that has no history (a test fixture, a document built by code): the CRDT
+    /// then holds what the working store holds, so a later undo restores to it and not to an empty document.
+    pub fn commit_untracked(&mut self) -> Result<(), StoreError> {
+        let o = Observed::default();
+        let meta =
+            StepMeta { label: "setup", undoable: false, before: &o, after: &o, depth: self.depth, coalesce: None };
+        self.commit_since(DocMark(0), &meta).map(|_| ())
     }
 
     /// Drops the journal. Called when no mark is open any more.
@@ -622,6 +740,13 @@ impl TabDoc {
         s.changed = !s.touched.is_empty() || meta_changed || files_changed;
         s
     }
+}
+
+fn sorted(ids: &[ElementId]) -> Vec<ElementId> {
+    let mut v = ids.to_vec();
+    v.sort();
+    v.dedup();
+    v
 }
 
 /// What a set of commits did to the elements.
@@ -699,7 +824,7 @@ mod tests {
     }
 
     fn step<'a>(label: &'a str, before: &'a Observed, after: &'a Observed) -> StepMeta<'a> {
-        StepMeta { label, undoable: true, before, after, depth: 50 }
+        StepMeta { label, undoable: true, before, after, depth: 50, coalesce: None }
     }
 
     #[test]
@@ -753,8 +878,11 @@ mod tests {
         let mut doc = TabDoc::new();
         add(&mut doc, rect(&mut ids, &ZIndex::first()));
         let o = Observed::default();
-        doc.commit_since(DocMark(0), &StepMeta { label: "Open", undoable: false, before: &o, after: &o, depth: 50 })
-            .unwrap();
+        doc.commit_since(
+            DocMark(0),
+            &StepMeta { label: "Open", undoable: false, before: &o, after: &o, depth: 50, coalesce: None },
+        )
+        .unwrap();
         assert_eq!(doc.undo_depth(), 0);
         assert_eq!(doc.replicated().len(), 1);
     }
@@ -783,8 +911,11 @@ mod tests {
             let mark = doc.mark();
             let z = doc.store().next_top_index().unwrap();
             add(&mut doc, rect(&mut ids, &z));
-            doc.commit_since(mark, &StepMeta { label: "Add", undoable: true, before: &o, after: &o, depth: 3 })
-                .unwrap();
+            doc.commit_since(
+                mark,
+                &StepMeta { label: "Add", undoable: true, before: &o, after: &o, depth: 3, coalesce: None },
+            )
+            .unwrap();
         }
         assert_eq!(doc.undo_depth(), 3);
     }

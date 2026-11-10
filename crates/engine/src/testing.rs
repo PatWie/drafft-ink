@@ -4,20 +4,30 @@
 use drafftink_scene::{Element, ElementId, ElementKind, SceneRead, SceneTx, StoreError, Transform};
 
 use crate::ports::fake::Fakes;
+use crate::services::Services;
 use crate::session::Session;
 
-/// A session with every fake port, and the fakes to inspect them.
+/// A session with every fake port, and the fakes to inspect them. Text is measured by the fake
+/// ([`Services::fake`]): every character is half the font size wide, so tests are exact and need no fonts.
 pub fn session() -> (Session, Fakes) {
     let fakes = Fakes::new();
-    (Session::new(fakes.ports()), fakes)
+    (Session::with_services(fakes.ports(), Services::fake()), fakes)
+}
+
+/// Like [`session`], with the real text and formula engine. For integration tests; a test that checks numbers
+/// should use the fake, whose text widths are exact.
+pub fn session_typeset() -> (Session, Fakes) {
+    let fakes = Fakes::new();
+    (Session::with_services(fakes.ports(), Services::new()), fakes)
 }
 
 /// A session with only a clock and ids: no clipboard, storage, files, renderer or network.
 pub fn headless_session() -> Session {
-    Session::new(Fakes::new().headless_ports())
+    Session::with_services(Fakes::new().headless_ports(), Services::fake())
 }
 
-/// Adds a rectangle on top and returns its id. The change is a normal journaled commit, not an undo step.
+/// Adds a rectangle on top and returns its id. The change is written to the document without an undo step, so
+/// a later command can be undone back to a document that has the element.
 pub fn add_rect(s: &mut Session, x: f64, y: f64, w: f64, h: f64) -> Result<ElementId, StoreError> {
     add(s, ElementKind::Rectangle, x, y, w, h)
 }
@@ -34,7 +44,7 @@ pub fn add(s: &mut Session, kind: ElementKind, x: f64, y: f64, w: f64, h: f64) -
         e.style.seed = seed;
         tx.insert(e)
     })?;
-    s.tab_mut().doc.forget_journal();
+    s.tab_mut().doc.commit_untracked()?;
     Ok(ret)
 }
 
@@ -73,7 +83,7 @@ pub fn rich_session() -> Result<Session, StoreError> {
     )?;
     add(&mut s, ElementKind::Text(TextData::new("hello")), 40.0, -80.0, 60.0, 20.0)?;
     add(&mut s, ElementKind::Frame(drafftink_scene::FrameData { name: None, clip: true }), -50.0, -50.0, 400.0, 500.0)?;
-    s.tab_mut().doc.forget_journal();
+    s.tab_mut().doc.commit_untracked()?;
     if let Some(second) = ids.get(1) {
         s.tab_mut().observed.selection.insert(second.clone());
     }

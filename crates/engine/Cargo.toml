@@ -11,6 +11,8 @@ drafftink-scene = { path = "../scene" }
 drafftink-doc = { path = "../doc" }
 drafftink-geom = { path = "../geom" }
 drafftink-edit = { path = "../edit" }
+drafftink-io = { path = "../io" }
+drafftink-typeset = { path = "../typeset" }
 drafftink-profile = { path = "../profile" }
 schemars.workspace = true
 serde.workspace = true

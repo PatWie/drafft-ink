@@ -13,4 +13,4 @@ macro_rules! families {
     };
 }
 
-families! { arrow, engine, gesture, perf, style, view }
+families! { arrow, engine, gesture, history, perf, style, view }

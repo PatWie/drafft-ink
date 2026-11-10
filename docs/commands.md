@@ -82,7 +82,7 @@ pub struct CommandSpec {
 Facts that matter beyond the obvious:
 
 - `undo`: `Undoable` pushes one undo step when the command changed the document, and pushes nothing when it did not (a no-op never creates a step). The step also records the observed editor state (selection, editing group) before and after. `NoUndo` never touches history (view, tool, settings, reads, undo itself, document replacement). `Gesture` commands run as `gesture.begin/update/end` (§1.10) and are one `Undoable` step at `end`; called plainly they behave as `Undoable`.
-- `coalesce`: `Some({ key, ms })` merges a repeat of the same command id on the same targets within `ms` into the previous undo step. Used for nudge, font-size steps and zoom-free repeated style taps. Default `None`.
+- `coalesce`: `Some({ key, ms })` merges a repeat of the same command id on the same targets (the elements the step changed) within `ms` of the previous repeat into the previous undo step. Used for nudge, font-size steps and zoom-free repeated style taps. Default `None`. Applies to a plain call only: the last step of a gesture and a batch never merge, and undo, redo, another command's step or a collaborator's edit ends the run.
 - `needs_selection`: `Required` means the command has an `ids` argument whose default is the current selection, and an empty resolved list refuses with `no_target`. `Soft` means the selection is used only as a default when relevant and an empty selection is not an error (`style.set` then edits the defaults). `No` means the selection is not used.
 - `ring = Quiet` keeps high-rate commands from flooding the ring: `view.set`, `view.set_viewport`, `view.pan`, `view.zoom_at`, `collab.set_pointer`, `collab.laser`, `gesture.update`. A Quiet command is written to the ring only when it refuses.
 - `batch = Last` means the command may only be the final step of a batch (`doc.new`, `doc.open`, `doc.drop`, `doc.show_intro`, `tab.close`). `Never` means it cannot appear in a batch at all (gestures, `history.*`, `collab.connect`).
@@ -324,7 +324,7 @@ Rules:
 
 **Surfaces.** Toolbar buttons, menus, the context menu, shortcuts, the palette, the bridge, MCP, `window.drafftink` and tests all call `Session::execute`. A button reads `engine.commands` for title, shortcut and availability. A disabled control shows the refusal message as its tooltip. The UI shows a refusal returned by `execute` as a toast (text unchanged) and may attach buttons from `suggest`. There is no "one action per frame" bottleneck (FIX of U:645): the UI collects all user actions of a frame and executes them in order.
 
-**Not commands.** Remote edits, presence updates and window events are applied by the engine without being user actions: `Session::apply_remote`, `Session::set_remote_presence`, and `Session` ticks (autosave timer, gesture watchdog, collab poll). They appear in the ring only when they fail.
+**Not commands.** Remote edits, presence updates and window events are applied by the engine without being user actions: `Session::apply_remote`, `Session::set_remote_presence`, and `Session` ticks (autosave timer, gesture watchdog, collab poll). `Session::apply_remote` writes one ring entry per received batch (id `remote.apply`, origin `remote`); the other two appear only when they fail.
 
 ### 1.13 Views of the catalog
 
@@ -781,9 +781,9 @@ Local undo per peer, backed by Loro's `UndoManager`. See §1.8.
 
 | id | args | availability and refusals | effect |
 |---|---|---|---|
-| `history.undo` | `steps: int = 1` (1 to `history.depth`) | `nothing_to_undo`: "There is nothing to undo in this tab." `gesture_active`, `text_editing` (catalog; inside the text editor, undo is the editor's own). | Reverts the last step(s) of this peer, restores the selection and editing group, clears nothing else. Entries that would change nothing visible (for example after a remote delete) are skipped. The inverse is a normal CRDT edit, broadcast like any other (FIX: the old keyboard path did not broadcast, A:4944). Output `{undone: [labels], can_undo, can_redo}`. batch: Never. |
-| `history.redo` | `steps: int = 1` | `nothing_to_redo`: "There is nothing to redo in this tab." `gesture_active`, `text_editing`. | Re-applies undone steps. batch: Never. |
-| `history.clear` | none | `gesture_active`. | Drops the undo and redo stacks of the active tab. `doc.open`, `doc.new` and `tab.duplicate` do this themselves. |
+| `history.undo` | `steps: int = 1` (1 to `history.depth`) | `nothing_to_undo`: "There is nothing to undo in this tab." `gesture_active`, `text_editing` (catalog; inside the text editor, undo is the editor's own). | Reverts the last step(s) of this peer, restores the selection and editing group, clears nothing else. Entries that would change nothing visible (for example after a remote delete) are skipped. The inverse is a normal CRDT edit, broadcast like any other (FIX: the old keyboard path did not broadcast, A:4944). Asking for more steps than exist takes all that exist; if every remaining step had become a no-op, they are dropped and the command refuses `nothing_to_undo`. Output `{undone: [labels], can_undo, can_redo}`. batch: Never. |
+| `history.redo` | `steps: int = 1` (1 to `history.depth`) | `nothing_to_redo`: "There is nothing to redo in this tab." `gesture_active`, `text_editing`. | Re-applies undone steps and restores the selection from after them. Output `{redone: [labels], can_undo, can_redo}`. batch: Never. |
+| `history.clear` | none | `gesture_active`. | Drops the undo and redo stacks of the active tab; the document stays. Output `{undo_dropped, redo_dropped}`. `doc.open`, `doc.new` and `tab.duplicate` do this themselves. |
 | `history.state` | none | Always available. | `{can_undo, can_redo, undo_label, redo_label, undo_depth, redo_depth}`. |
 
 ### 2.16 `collab`: rooms and presence

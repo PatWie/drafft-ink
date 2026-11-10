@@ -515,7 +515,14 @@ impl Session {
         let obs_after = self.tab_by_id(tab_id).map(|t| t.observed.clone()).unwrap_or_default();
         let mut save_error = None;
         if let Some(t) = self.tab_by_id_mut(tab_id) {
-            let meta = StepMeta { label: &title, undoable: !reset, before: &soft.observed, after: &obs_after, depth };
+            let meta = StepMeta {
+                label: &title,
+                undoable: !reset,
+                before: &soft.observed,
+                after: &obs_after,
+                depth,
+                coalesce: None,
+            };
             match t.doc.commit_since(mark, &meta) {
                 Ok(summary) => {
                     changed = summary.changed;

@@ -28,6 +28,7 @@ pub struct LoroTx<'a> {
     label: Option<String>,
     info: Option<UndoInfo>,
     undoable: bool,
+    merge: bool,
 }
 
 impl<'a> LoroTx<'a> {
@@ -40,6 +41,7 @@ impl<'a> LoroTx<'a> {
             label: None,
             info: None,
             undoable: true,
+            merge: false,
         }
     }
 
@@ -53,7 +55,18 @@ impl<'a> LoroTx<'a> {
     /// redo returns `after`.
     pub fn describe(&mut self, label: &str, before: ObservedState, after: ObservedState) {
         self.label = Some(label.to_owned());
-        self.info = Some(UndoInfo { label: label.to_owned(), before, after });
+        self.info = Some(UndoInfo { label: label.to_owned(), before, after, seq: 0 });
+    }
+
+    /// Asks to fold this commit into the undo step below it instead of pushing a new step (a repeat of one action,
+    /// such as nudging). The step keeps its label and its `before` state, and takes this commit's `after` state.
+    /// It has no effect when the commit is not undoable, when there is no step to fold into, or when a collaborator's
+    /// edit arrived since that step (Loro then keeps the two apart). [`LoroStore::last_commit_merged`] says what
+    /// happened.
+    ///
+    /// [`LoroStore::last_commit_merged`]: crate::LoroStore::last_commit_merged
+    pub fn merge_with_previous(&mut self) {
+        self.merge = true;
     }
 
     /// Makes this commit invisible to undo (loading a document, applying a migration). It still syncs.
@@ -148,7 +161,7 @@ impl SceneTx for LoroTx<'_> {
     }
 
     fn commit(self) -> Result<ChangeSet, StoreError> {
-        let LoroTx { inner, core, touched, touched_files, label, info, undoable } = self;
+        let LoroTx { inner, core, touched, touched_files, label, info, undoable, merge } = self;
         if let Some(found) = core.blocked {
             return Err(DocError::NewerSchema { found, max: crate::schema::SCHEMA_VERSION }.into());
         }
@@ -178,7 +191,7 @@ impl SceneTx for LoroTx<'_> {
         let info = info.or_else(|| {
             Some(UndoInfo { label: label.clone().unwrap_or_else(|| "edit".to_owned()), ..UndoInfo::default() })
         });
-        let commit = Commit { cs: &cs, news: &news, meta: &meta, files: &files, label, info, undoable };
+        let commit = Commit { cs: &cs, news: &news, meta: &meta, files: &files, label, info, undoable, merge };
         let flag = std::rc::Rc::clone(&core.poisoned);
         let written = crate::store::guard(&flag, || core.write(&commit)).and_then(|r| r);
         if let Err(e) = written {
@@ -207,6 +220,7 @@ struct Commit<'a> {
     label: Option<String>,
     info: Option<UndoInfo>,
     undoable: bool,
+    merge: bool,
 }
 
 impl Core {
@@ -218,15 +232,30 @@ impl Core {
         // into the next commit. The caller resyncs the view after an error.
         let origin = if c.undoable { "local".to_owned() } else { format!("{SYSTEM_ORIGIN_PREFIX}local") };
         let msg = c.label.as_deref().unwrap_or("edit");
+        let merge = c.undoable && c.merge;
+        self.last_merged = false;
+        self.commit_seq += 1;
+        let seq = self.commit_seq;
         {
             let mut g = lock(&self.shared);
-            g.pending = if c.undoable { c.info.as_ref().and_then(UndoInfo::to_loro) } else { None };
+            g.pending = if c.undoable {
+                c.info.clone().map(|i| UndoInfo { seq, ..i }).as_ref().and_then(UndoInfo::to_loro)
+            } else {
+                None
+            };
+        }
+        if merge {
+            self.set_merge_interval(i64::MAX);
         }
         self.doc.commit_with(CommitOptions::new().origin(&origin).commit_msg(msg));
+        if merge {
+            self.set_merge_interval(0);
+        }
         lock(&self.shared).pending = None;
         result?;
         self.stats.commits += 1;
         if c.undoable && self.doc.oplog_frontiers() != before {
+            self.note_merge(merge, seq, c.info.as_ref());
             self.marks.push_back(before);
             let cap = self.config.undo_depth.saturating_add(1).max(2);
             while self.marks.len() > cap {
@@ -234,6 +263,28 @@ impl Core {
             }
         }
         Ok(())
+    }
+
+    fn set_merge_interval(&mut self, ms: i64) {
+        let flag = std::rc::Rc::clone(&self.poisoned);
+        let undo = &mut self.undo;
+        let _ = crate::store::guard(&flag, || undo.set_merge_interval(ms));
+    }
+
+    /// After an undoable commit: records whether it was folded into the step below. A step pushed by this commit
+    /// carries `seq`; if the top of the stack carries another number, the commit was merged.
+    fn note_merge(&mut self, asked: bool, seq: u64, info: Option<&UndoInfo>) {
+        self.last_merged = false;
+        self.merged_after = None;
+        if !asked {
+            return;
+        }
+        let top = self.guard(|| self.undo.top_undo_meta()).ok().flatten();
+        let top_seq = top.map(|m| UndoInfo::from_loro(&m.value).seq);
+        if top_seq.is_some_and(|t| t != seq) {
+            self.last_merged = true;
+            self.merged_after = info.map(|i| i.after.clone());
+        }
     }
 
     fn write_ops(&mut self, c: &Commit<'_>) -> Result<(), DocError> {

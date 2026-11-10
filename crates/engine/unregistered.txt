@@ -61,10 +61,6 @@ group.create
 group.enter
 group.exit
 group.ungroup
-history.clear
-history.redo
-history.state
-history.undo
 image.insert
 layout.apply
 library.add

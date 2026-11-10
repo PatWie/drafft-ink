@@ -76,6 +76,13 @@ pub(crate) struct Core {
     pub invalid: BTreeSet<ElementId>,
     /// Frontiers just before each recent undoable local commit, oldest first.
     pub marks: VecDeque<Frontiers>,
+    /// Counts local commits; stamps the undo step a commit pushes (`UndoInfo::seq`).
+    pub commit_seq: u64,
+    /// The latest undoable commit was folded into the step below it.
+    pub last_merged: bool,
+    /// The editor state after the newest commit folded into the top undo step. The step's own metadata still holds
+    /// the state after its first commit; undo passes this one on to the redo step.
+    pub merged_after: Option<ObservedState>,
     /// Set when the document turned out to use a newer schema: writes are refused.
     pub blocked: Option<u32>,
     /// Remote operations are waiting for missing causal predecessors.
@@ -136,6 +143,9 @@ impl Core {
             stats: WorkStats::default(),
             invalid: BTreeSet::new(),
             marks: VecDeque::new(),
+            commit_seq: 0,
+            last_merged: false,
+            merged_after: None,
             blocked: None,
             pending: false,
             needs_resync: false,
@@ -208,6 +218,8 @@ impl Core {
             std::mem::forget(old_doc);
         }
         self.marks.clear();
+        self.last_merged = false;
+        self.merged_after = None;
         self.pending = false;
         self.blocked = None;
         self.needs_resync = false;
@@ -509,6 +521,15 @@ impl LoroStore {
     pub fn clear_history(&mut self) {
         let _ = self.core.guard(|| self.core.undo.clear());
         self.core.marks.clear();
+        self.core.last_merged = false;
+        self.core.merged_after = None;
+    }
+
+    /// True when the latest undoable commit was folded into the undo step below it (see
+    /// [`LoroTx::merge_with_previous`](crate::LoroTx::merge_with_previous)). False after any other commit, undo,
+    /// redo or `clear_history`.
+    pub fn last_commit_merged(&self) -> bool {
+        self.core.last_merged
     }
 
     /// Changes the most undo steps kept. Takes effect for the steps pushed from now on.
