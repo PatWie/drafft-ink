@@ -2,20 +2,11 @@
 //! elements and the selection). Nothing here holds a domain rule; the rules are in `drafftink-edit`.
 
 use drafftink_edit::group::selection::{Selection as EditSelection, select_ids};
-use drafftink_edit::group::units::TargetError;
-use drafftink_scene::{ElementId, SceneRead};
+use drafftink_scene::ElementId;
 use serde_json::json;
 
 use crate::refusal::Refusal;
 use crate::session::Session;
-
-/// The refusal for a `TargetError` of the edit crate: `not_found` or `locked` (with `details.ids`).
-pub(crate) fn target_refusal(cmd: &str, e: TargetError) -> Refusal {
-    match e {
-        TargetError::NotFound(id) => Refusal::not_found(cmd, id.as_str()),
-        TargetError::Locked(ids) => locked_refusal(cmd, &ids),
-    }
-}
 
 /// `locked` for several elements: the catalog text names the first one, `details.ids` lists all of them.
 pub(crate) fn locked_refusal(cmd: &str, ids: &[ElementId]) -> Refusal {
@@ -65,11 +56,6 @@ pub(crate) fn prune_selection(s: &mut Session) {
 /// Ids as strings, for command output.
 pub(crate) fn id_strings<'a>(ids: impl IntoIterator<Item = &'a ElementId>) -> Vec<String> {
     ids.into_iter().map(|i| i.as_str().to_owned()).collect()
-}
-
-/// True when the element exists and is live.
-pub(crate) fn is_live(s: &Session, id: &ElementId) -> bool {
-    s.store().get(id).is_some_and(|e| !e.deleted)
 }
 
 /// Runs `f` in one document transaction of the active tab together with the session's id source, so that a

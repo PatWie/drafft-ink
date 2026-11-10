@@ -74,7 +74,10 @@ pub fn set_common_bounds<T: SceneTx>(
         merge(&mut report, r);
     }
     let now = common_bounds(&*tx, &base).ok_or(TransformError::NotFinite)?;
-    let (cx, cy) = (spec.x.unwrap_or(if spec.center { old.center().x } else { old.x0 }), spec.y.unwrap_or(if spec.center { old.center().y } else { old.y0 }));
+    let (cx, cy) = (
+        spec.x.unwrap_or(if spec.center { old.center().x } else { old.x0 }),
+        spec.y.unwrap_or(if spec.center { old.center().y } else { old.y0 }),
+    );
     let (x0, y0) = if spec.center { (cx - now.width() / 2.0, cy - now.height() / 2.0) } else { (cx, cy) };
     let d = Vec2::new(x0 - now.x0, y0 - now.y0);
     if d.x != 0.0 || d.y != 0.0 {
