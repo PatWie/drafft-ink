@@ -237,6 +237,10 @@ pub enum Scope {
     Text,
     /// Everywhere.
     Always,
+    /// On the canvas while the line/arrow point editor has a selected point. The shell checks
+    /// this scope before `Canvas`, so the same key can mean "delete point" here and
+    /// "delete element" on the canvas.
+    PointEditor,
 }
 
 /// A default key binding with fixed arguments. `Mod` is Cmd on macOS and Ctrl elsewhere.

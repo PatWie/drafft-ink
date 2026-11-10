@@ -1,6 +1,6 @@
 # Catalog ids (docs/commands.md §2) that no family has registered yet.
-# This list only shrinks. A family adds its ids to the registry by deleting their lines here.
 # One id per line, sorted, no duplicates. `catalog_matches_registry` (src/catalog_tests.rs) checks it.
+# This list only shrinks. A family adds its ids to the registry by deleting their lines here.
 arrange.align
 arrange.distribute
 arrange.z_order
@@ -77,18 +77,6 @@ selection.navigate
 selection.select
 selection.select_at
 selection.select_region
-settings.cycle
-settings.get
-settings.reset
-settings.set
-settings.toggle
-tab.close
-tab.duplicate
-tab.list
-tab.move
-tab.new
-tab.rename
-tab.switch
 text.bind
 text.edit_begin
 text.edit_end
@@ -99,8 +87,3 @@ text.step_size
 text.style_range
 text.unbind
 text.wrap_in_container
-tool.cancel
-tool.hold
-tool.lock
-tool.release
-tool.set

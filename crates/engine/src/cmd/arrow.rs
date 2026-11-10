@@ -271,6 +271,9 @@ pub struct AddPointArgs {
     pub at: Option<Pt>,
 }
 
+/// Delete/Backspace delete the selected point while the point editor is active.
+const DELETE_POINT_KEYS: &[Binding] = &[Binding::new(&["Delete", "Backspace"], Scope::PointEditor)];
+
 /// Arguments of `arrow.delete_point`.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields, default)]
@@ -1229,7 +1232,8 @@ pub const COMMANDS: &[CommandSpec] = &[
         &Typed::new(delete_point),
         DOC,
     )
-    .refusals(&["not_movable"]),
+    .refusals(&["not_movable"])
+    .shortcuts(DELETE_POINT_KEYS),
     CommandSpec::new(
         "arrow.edit_points",
         "arrow",

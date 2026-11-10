@@ -90,7 +90,7 @@ fn fixture() -> Fx {
     let math = put(&mut s, ElementKind::Math(MathData::new("x^2")), 500.0, 100.0, 40.0, 20.0);
     // The fixture is the document's starting point: in the replicated store, but not an undo step.
     let o = crate::state::Observed::default();
-    let meta = crate::store::StepMeta { label: "Fixture", undoable: false, before: &o, after: &o, depth: 50 };
+    let meta = crate::store::StepMeta { label: "Fixture", undoable: false, before: &o, after: &o, depth: 50, coalesce: None };
     s.tab_mut().doc.commit_since(mark, &meta).unwrap();
     s.tab_mut().doc.forget_journal();
     testing::select(&mut s, std::slice::from_ref(&rect));

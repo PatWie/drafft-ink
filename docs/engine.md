@@ -310,6 +310,24 @@ s.gesture_cancel(Some(g))?;
 
 The watchdog: the shell calls `s.tick()` on a timer while a gesture runs (`s.gesture_running()`). It cancels a gesture that got no frame for `WATCHDOG_MS` (30 000 ms of the `Clock` port's monotonic time) and returns true. Start the timer at `begin` and stop it at `end`, so an idle app has no timer. `cancel_gesture_if_running()` is for tab switches and view-only changes. The JSON door is the `gesture.begin`, `gesture.update`, `gesture.end` and `gesture.cancel` commands, for the bridge.
 
+### Start, settings and the workspace
+
+Three calls that are not commands (docs/commands.md §1.12) bring a session up and keep it saved. All need the `Storage` port and do nothing without it.
+
+```rust
+let mut s = Session::new(ports);
+let settings = s.load_settings()?;       // SettingsLoad: applied, ignored (with reasons), unreadable, newer_schema
+let workspace = s.restore_workspace()?;  // WorkspaceRestore: restored, skipped tabs with reasons
+// ... later, whenever take_dirty() says something changed, and when the timer below fires:
+s.workspace_tick();                      // writes when a write is due; true when it wrote
+if let Some(ms) = s.workspace_next_due_ms() { set_one_timer(ms) }   // None: no timer at all
+s.flush_workspace();                     // window close
+```
+
+Call `load_settings` and `restore_workspace` once, before the first command. Settings changes are queued by the `settings.*` commands and written after the command succeeds. The workspace is written by `workspace_tick`, debounced on the `Clock` port (a quiet second, or `autosave.interval_s` after the first unsaved change). The record layouts and the rules are in docs/commands.md §2.2 (workspace) and §2.17 (settings). The engine starts no timer.
+
+Another family that changes a setting calls `cmd::settings::set_internal(s, key, &value)`, which checks the value like `settings.set`, applies it and queues the write.
+
 ### Redraw: idle means idle
 
 ```rust
@@ -367,7 +385,7 @@ What stays the same (the contract of the module doc):
 
 - `TabDoc::edit` is the only way to change a document. It commits one transaction and records how to take it back. Handlers see a `SceneTx` and call `crates/edit` functions on it.
 - `TabDoc::mark` and `TabDoc::rollback_to` return the document to an earlier point. The executor uses them for a failed command and a failed batch. The gesture machinery uses them for each frame and for cancel.
-- One `execute`, one batch or one gesture is one undo step. A step restores the selection and editing group from before it on undo and from after it on redo. The depth is the `history.depth` setting (default 50). A step that has become a no-op (a collaborator already changed the same things) is consumed and not counted.
+- One `execute`, one batch or one gesture is one undo step. A step restores the selection and editing group from before it on undo and from after it on redo. The depth is the `history.depth` setting (default 200). A step that has become a no-op (a collaborator already changed the same things) is consumed and not counted.
 - `TabDoc::revision` rises with every kept change, including undo, redo and remote updates, and drives the dirty flag. A change that was rolled back does not count.
 - Callers outside `crates/engine/src/store.rs` use `mark`, `rollback_to`, `reapply`, `summary_since`, `changed_since`, `commit_since`, `undo`, `redo`, `undo_depth`, `clear_history`. They never look inside a `Patch`.
 

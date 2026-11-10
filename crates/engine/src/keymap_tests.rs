@@ -177,6 +177,7 @@ fn scope_word(s: Scope) -> &'static str {
         Scope::Canvas => "canvas",
         Scope::Text => "text",
         Scope::Always => "always",
+        Scope::PointEditor => "point_editor",
     }
 }
 
