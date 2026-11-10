@@ -8,6 +8,7 @@
 //! - `binding`, `elbow`, `linear`: arrow bindings, elbow routing, line/arrow point editing.
 //! - `group`, `frame`, `zorder`, `arrange`, `transform`, `lifecycle`: groups, frames, z-order,
 //!   align/distribute/flip, move/resize/rotate of selections, duplicate/delete/lock rules.
+//! - `style`: style properties, applicability, defaults and themes (`style.*` commands).
 //! - `text_bind`, `flowchart`, `layout`, `query`: bound text, flowchart helpers, auto-layout for
 //!   `diagram.create`, element queries and the document outline.
 
@@ -21,6 +22,7 @@ pub mod layout;
 pub mod lifecycle;
 pub mod linear;
 pub mod query;
+pub mod style;
 pub mod text_bind;
 pub mod transform;
 pub mod zorder;
