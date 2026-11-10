@@ -400,12 +400,6 @@ fn scenario_an_agent_builds_relabels_reads_and_undoes() {
 #[test]
 fn scenario_an_agent_builds_edits_and_reads_back_a_flowchart() {
     let (mut s, _f) = testing::session();
-    if s.spec("element.connect").is_none() || s.spec("element.relabel").is_none() {
-        // `element.relabel` and `element.connect` belong to the element family (branch f-element-selection). The
-        // text-only variant below covers the same flow with `text.set` until that family is registered.
-        eprintln!("skipped: element.relabel / element.connect are not registered yet");
-        return;
-    }
     let out = run(
         &mut s,
         "diagram.create",
