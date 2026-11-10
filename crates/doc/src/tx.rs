@@ -1,0 +1,344 @@
+//! Transactions: edit the view, then write only the changed fields into Loro in one commit.
+
+use std::collections::BTreeSet;
+
+use drafftink_scene::memory::MemoryTx;
+use drafftink_scene::{
+    ChangeKind, ChangeSet, Color, DocMeta, Element, ElementId, ElementKind, FileEntry, FileId, SceneRead, SceneTx,
+    StoreError, ZIndex,
+};
+use loro::{CommitOptions, LoroValue};
+
+use crate::codec::{self, Flat};
+use crate::error::DocError;
+use crate::schema::{META_BACKGROUND, META_NAME, ROOT_ELEMENTS, ROOT_FILES, ROOT_META, SYSTEM_ORIGIN_PREFIX};
+use crate::store::Core;
+use crate::text;
+use crate::undo::{ObservedState, UndoInfo, lock};
+
+/// A transaction on a [`crate::LoroStore`].
+///
+/// Reads see the transaction's own writes. Nothing reaches Loro until [`SceneTx::commit`], which writes one Loro
+/// commit containing only the fields that differ from what is stored. Dropping the transaction discards it.
+pub struct LoroTx<'a> {
+    inner: MemoryTx<'a>,
+    core: &'a mut Core,
+    touched: BTreeSet<ElementId>,
+    touched_files: BTreeSet<FileId>,
+    label: Option<String>,
+    info: Option<UndoInfo>,
+    undoable: bool,
+}
+
+impl<'a> LoroTx<'a> {
+    pub(crate) fn new(inner: MemoryTx<'a>, core: &'a mut Core) -> Self {
+        Self {
+            inner,
+            core,
+            touched: BTreeSet::new(),
+            touched_files: BTreeSet::new(),
+            label: None,
+            info: None,
+            undoable: true,
+        }
+    }
+
+    /// Labels the commit (stored as the Loro commit message, so peers and history tools can show it). The label
+    /// of an undo step is the one from [`LoroTx::describe`] or, failing that, this one.
+    pub fn set_label(&mut self, label: &str) {
+        self.label = Some(label.to_owned());
+    }
+
+    /// Labels the commit and records the observed editor state before and after it. Undo returns `before`,
+    /// redo returns `after`.
+    pub fn describe(&mut self, label: &str, before: ObservedState, after: ObservedState) {
+        self.label = Some(label.to_owned());
+        self.info = Some(UndoInfo { label: label.to_owned(), before, after });
+    }
+
+    /// Makes this commit invisible to undo (loading a document, applying a migration). It still syncs.
+    pub fn not_undoable(&mut self) {
+        self.undoable = false;
+    }
+}
+
+impl SceneRead for LoroTx<'_> {
+    fn get(&self, id: &ElementId) -> Option<&Element> {
+        self.inner.get(id)
+    }
+    fn iter_all(&self) -> impl Iterator<Item = &Element> {
+        self.inner.iter_all()
+    }
+    fn len(&self) -> usize {
+        self.inner.len()
+    }
+    fn len_all(&self) -> usize {
+        self.inner.len_all()
+    }
+    fn meta(&self) -> &DocMeta {
+        self.inner.meta()
+    }
+    fn file(&self, id: &FileId) -> Option<&FileEntry> {
+        self.inner.file(id)
+    }
+    fn files(&self) -> impl Iterator<Item = (&FileId, &FileEntry)> {
+        self.inner.files()
+    }
+    fn top_z(&self) -> Option<ZIndex> {
+        self.inner.top_z()
+    }
+    fn bottom_z(&self) -> Option<ZIndex> {
+        self.inner.bottom_z()
+    }
+    fn z_neighbors(&self, id: &ElementId) -> (Option<ZIndex>, Option<ZIndex>) {
+        self.inner.z_neighbors(id)
+    }
+}
+
+fn normalize(e: &mut Element) {
+    if let ElementKind::Text(t) = &mut e.kind {
+        text::normalize_runs(&mut t.runs);
+    }
+}
+
+impl SceneTx for LoroTx<'_> {
+    fn insert(&mut self, mut element: Element) -> Result<(), StoreError> {
+        normalize(&mut element);
+        let id = element.id.clone();
+        self.inner.insert(element)?;
+        self.touched.insert(id);
+        Ok(())
+    }
+
+    fn update<F: FnOnce(&mut Element)>(&mut self, id: &ElementId, f: F) -> Result<(), StoreError> {
+        self.inner.update(id, |e| {
+            f(e);
+            normalize(e);
+        })?;
+        self.touched.insert(id.clone());
+        Ok(())
+    }
+
+    fn remove(&mut self, id: &ElementId) -> Result<(), StoreError> {
+        self.inner.remove(id)?;
+        self.touched.insert(id.clone());
+        Ok(())
+    }
+
+    fn set_name(&mut self, name: &str) -> Result<(), StoreError> {
+        self.inner.set_name(name)
+    }
+
+    fn set_background(&mut self, color: Color) {
+        self.inner.set_background(color);
+    }
+
+    fn put_file(&mut self, entry: FileEntry) -> Result<FileId, StoreError> {
+        let id = self.inner.put_file(entry)?;
+        self.touched_files.insert(id.clone());
+        Ok(id)
+    }
+
+    fn remove_file(&mut self, id: &FileId) -> bool {
+        let removed = self.inner.remove_file(id);
+        if removed {
+            self.touched_files.insert(id.clone());
+        }
+        removed
+    }
+
+    fn commit(self) -> Result<ChangeSet, StoreError> {
+        let LoroTx { inner, core, touched, touched_files, label, info, undoable } = self;
+        if let Some(found) = core.blocked {
+            return Err(DocError::NewerSchema { found, max: crate::schema::SCHEMA_VERSION }.into());
+        }
+        if core.poisoned.get() {
+            return Err(DocError::Poisoned.into());
+        }
+        // Capture the final values before the view consumes the transaction.
+        let news: Vec<(ElementId, Option<Element>)> = touched
+            .into_iter()
+            .map(|id| {
+                let e = inner.get(&id).cloned();
+                (id, e)
+            })
+            .collect();
+        let meta = inner.meta().clone();
+        let files: Vec<(FileId, Option<FileEntry>)> = touched_files
+            .into_iter()
+            .map(|id| {
+                let f = inner.file(&id).cloned();
+                (id, f)
+            })
+            .collect();
+        let cs = inner.commit()?;
+        if cs.is_empty() {
+            return Ok(cs);
+        }
+        let info = info.or_else(|| {
+            Some(UndoInfo { label: label.clone().unwrap_or_else(|| "edit".to_owned()), ..UndoInfo::default() })
+        });
+        let commit = Commit { cs: &cs, news: &news, meta: &meta, files: &files, label, info, undoable };
+        let flag = std::rc::Rc::clone(&core.poisoned);
+        let written = crate::store::guard(&flag, || core.write(&commit)).and_then(|r| r);
+        if let Err(e) = written {
+            core.needs_resync = true;
+            return Err(e.into());
+        }
+        profile_count(cs.elements.len());
+        core.notify(&cs);
+        Ok(cs)
+    }
+}
+
+#[cfg(feature = "profile")]
+fn profile_count(n: usize) {
+    drafftink_profile::count(drafftink_profile::Counter::SyncOpsApplied, u64::try_from(n).unwrap_or(u64::MAX));
+}
+
+#[cfg(not(feature = "profile"))]
+fn profile_count(_n: usize) {}
+
+struct Commit<'a> {
+    cs: &'a ChangeSet,
+    news: &'a [(ElementId, Option<Element>)],
+    meta: &'a DocMeta,
+    files: &'a [(FileId, Option<FileEntry>)],
+    label: Option<String>,
+    info: Option<UndoInfo>,
+    undoable: bool,
+}
+
+impl Core {
+    /// Writes one transaction's net change into Loro and commits it once.
+    fn write(&mut self, c: &Commit<'_>) -> Result<(), DocError> {
+        let before = self.doc.oplog_frontiers();
+        let result = self.write_ops(c);
+        // Always commit what was written, even after an error, so that the pending Loro transaction does not leak
+        // into the next commit. The caller resyncs the view after an error.
+        let origin = if c.undoable { "local".to_owned() } else { format!("{SYSTEM_ORIGIN_PREFIX}local") };
+        let msg = c.label.as_deref().unwrap_or("edit");
+        {
+            let mut g = lock(&self.shared);
+            g.pending = if c.undoable { c.info.as_ref().and_then(UndoInfo::to_loro) } else { None };
+        }
+        self.doc.commit_with(CommitOptions::new().origin(&origin).commit_msg(msg));
+        lock(&self.shared).pending = None;
+        result?;
+        self.stats.commits += 1;
+        if c.undoable && self.doc.oplog_frontiers() != before {
+            self.marks.push_back(before);
+            let cap = self.config.undo_depth.saturating_add(1).max(2);
+            while self.marks.len() > cap {
+                self.marks.pop_front();
+            }
+        }
+        Ok(())
+    }
+
+    fn write_ops(&mut self, c: &Commit<'_>) -> Result<(), DocError> {
+        let elements = self.doc.get_map(ROOT_ELEMENTS);
+        for ch in &c.cs.elements {
+            match ch.kind {
+                ChangeKind::Removed => {
+                    elements.delete(ch.id.as_str())?;
+                    self.stats.fields_written += 1;
+                }
+                ChangeKind::Added | ChangeKind::Updated => {
+                    let Some(e) = c
+                        .news
+                        .binary_search_by(|(id, _)| id.cmp(&ch.id))
+                        .ok()
+                        .and_then(|i| c.news.get(i))
+                        .and_then(|(_, e)| e.as_ref())
+                    else {
+                        continue;
+                    };
+                    let reset = ch.kind == ChangeKind::Added && self.invalid.contains(&ch.id);
+                    let map = match elements.ensure_mergeable_map(ch.id.as_str()) {
+                        Ok(m) => m,
+                        Err(_) => {
+                            // The key holds something that is not an element container (a hostile or foreign write).
+                            elements.delete(ch.id.as_str())?;
+                            elements.ensure_mergeable_map(ch.id.as_str())?
+                        }
+                    };
+                    let flat = codec::flatten(e, ch.fields)?;
+                    let mut stale: Vec<String> = Vec::new();
+                    map.for_each(|k, _| {
+                        let in_scope = reset || codec::group_of(k).intersects(ch.fields);
+                        if in_scope && !flat.contains_key(k) {
+                            stale.push(k.to_owned());
+                        }
+                    });
+                    for k in &stale {
+                        map.delete(k)?;
+                        self.stats.fields_written += 1;
+                    }
+                    for (k, v) in &flat {
+                        match v {
+                            Flat::Value(val) => {
+                                let same =
+                                    matches!(map.get(k), Some(loro::ValueOrContainer::Value(cur)) if cur == *val);
+                                if !same {
+                                    map.insert(k, val.clone())?;
+                                    self.stats.fields_written += 1;
+                                }
+                            }
+                            Flat::Text { content, runs } => {
+                                let t = match map.ensure_mergeable_text(k) {
+                                    Ok(t) => t,
+                                    Err(_) => {
+                                        map.delete(k)?;
+                                        map.ensure_mergeable_text(k)?
+                                    }
+                                };
+                                if text::write_text(&t, content, runs)? {
+                                    self.stats.fields_written += 1;
+                                }
+                            }
+                        }
+                    }
+                    self.stats.elements_written += 1;
+                    self.invalid.remove(&ch.id);
+                }
+            }
+        }
+        if c.cs.meta {
+            let m = self.doc.get_map(ROOT_META);
+            put_str(&m, META_NAME, &c.meta.name, "Untitled")?;
+            put_str(&m, META_BACKGROUND, &c.meta.background.to_hex(), "#ffffff")?;
+        }
+        if !c.cs.files.is_empty() {
+            let files = self.doc.get_map(ROOT_FILES);
+            for (id, entry) in c.files {
+                match entry {
+                    Some(f) => {
+                        let mut m = std::collections::HashMap::new();
+                        m.insert("mime".to_owned(), LoroValue::from(f.mime.as_str()));
+                        m.insert("bytes".to_owned(), LoroValue::from(f.bytes.to_vec()));
+                        files.insert(id.as_str(), LoroValue::from(m))?;
+                    }
+                    None => files.delete(id.as_str())?,
+                }
+            }
+        }
+        Ok(())
+    }
+}
+
+/// Stores `value` under `key`, or removes the key when it equals the default.
+fn put_str(map: &loro::LoroMap, key: &str, value: &str, default: &str) -> Result<(), DocError> {
+    let current = match map.get(key) {
+        Some(loro::ValueOrContainer::Value(LoroValue::String(s))) => Some(s.to_string()),
+        _ => None,
+    };
+    if value == default {
+        if current.is_some() {
+            map.delete(key)?;
+        }
+    } else if current.as_deref() != Some(value) {
+        map.insert(key, value)?;
+    }
+    Ok(())
+}
