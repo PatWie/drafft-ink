@@ -1,0 +1,234 @@
+{
+  "id": "00000000-0000-4000-9000-0000af6bcb6d",
+  "name": "groups",
+  "shapes": {
+    "00000000-0000-4000-8000-000000000001": {
+      "Rectangle": {
+        "id": "00000000-0000-4000-8000-000000000001",
+        "position": {
+          "x": 0.0,
+          "y": 0.0
+        },
+        "width": 80.0,
+        "height": 80.0,
+        "corner_radius": 0.0,
+        "rotation": 0.0,
+        "style": {
+          "stroke_color": {
+            "r": 30,
+            "g": 30,
+            "b": 30,
+            "a": 255
+          },
+          "stroke_width": 2.0,
+          "fill_color": {
+            "r": 255,
+            "g": 201,
+            "b": 201,
+            "a": 255
+          },
+          "fill_pattern": "Solid",
+          "sloppiness": "Artist",
+          "seed": 1027,
+          "opacity": 1.0
+        }
+      }
+    },
+    "00000000-0000-4000-8000-000000000002": {
+      "Ellipse": {
+        "id": "00000000-0000-4000-8000-000000000002",
+        "center": {
+          "x": 140.0,
+          "y": 40.0
+        },
+        "radius_x": 40.0,
+        "radius_y": 40.0,
+        "rotation": 0.0,
+        "style": {
+          "stroke_color": {
+            "r": 30,
+            "g": 30,
+            "b": 30,
+            "a": 255
+          },
+          "stroke_width": 2.0,
+          "fill_color": {
+            "r": 165,
+            "g": 216,
+            "b": 255,
+            "a": 255
+          },
+          "fill_pattern": "Solid",
+          "sloppiness": "Artist",
+          "seed": 1028,
+          "opacity": 1.0
+        }
+      }
+    },
+    "00000000-0000-4000-8000-000000000003": {
+      "Rectangle": {
+        "id": "00000000-0000-4000-8000-000000000003",
+        "position": {
+          "x": 200.0,
+          "y": 0.0
+        },
+        "width": 80.0,
+        "height": 80.0,
+        "corner_radius": 0.0,
+        "rotation": 0.0,
+        "style": {
+          "stroke_color": {
+            "r": 30,
+            "g": 30,
+            "b": 30,
+            "a": 255
+          },
+          "stroke_width": 2.0,
+          "fill_color": {
+            "r": 178,
+            "g": 242,
+            "b": 187,
+            "a": 255
+          },
+          "fill_pattern": "Solid",
+          "sloppiness": "Artist",
+          "seed": 1029,
+          "opacity": 1.0
+        }
+      }
+    },
+    "00000000-0000-4000-8000-000000000004": {
+      "Rectangle": {
+        "id": "00000000-0000-4000-8000-000000000004",
+        "position": {
+          "x": 0.0,
+          "y": 120.0
+        },
+        "width": 80.0,
+        "height": 80.0,
+        "corner_radius": 0.0,
+        "rotation": 0.0,
+        "style": {
+          "stroke_color": {
+            "r": 30,
+            "g": 30,
+            "b": 30,
+            "a": 255
+          },
+          "stroke_width": 2.0,
+          "fill_color": null,
+          "fill_pattern": "Solid",
+          "sloppiness": "Artist",
+          "seed": 1030,
+          "opacity": 1.0
+        }
+      }
+    },
+    "00000000-0000-4000-8000-000000000005": {
+      "Text": {
+        "id": "00000000-0000-4000-8000-000000000005",
+        "position": {
+          "x": 100.0,
+          "y": 140.0
+        },
+        "content": "grouped label",
+        "font_size": 20.0,
+        "font_family": "GelPen",
+        "font_weight": "Regular",
+        "rotation": 0.0,
+        "style": {
+          "stroke_color": {
+            "r": 30,
+            "g": 30,
+            "b": 30,
+            "a": 255
+          },
+          "stroke_width": 2.0,
+          "fill_color": null,
+          "fill_pattern": "Solid",
+          "sloppiness": "Artist",
+          "seed": 1031,
+          "opacity": 1.0
+        },
+        "char_colors": [
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null
+        ]
+      }
+    },
+    "00000000-0000-4000-8000-000000000006": {
+      "Rectangle": {
+        "id": "00000000-0000-4000-8000-000000000006",
+        "position": {
+          "x": 300.0,
+          "y": 120.0
+        },
+        "width": 80.0,
+        "height": 80.0,
+        "corner_radius": 0.0,
+        "rotation": 0.0,
+        "style": {
+          "stroke_color": {
+            "r": 30,
+            "g": 30,
+            "b": 30,
+            "a": 255
+          },
+          "stroke_width": 2.0,
+          "fill_color": null,
+          "fill_pattern": "Solid",
+          "sloppiness": "Artist",
+          "seed": 1032,
+          "opacity": 1.0
+        }
+      }
+    },
+    "00000000-0000-4000-8000-000000000007": {
+      "Rectangle": {
+        "id": "00000000-0000-4000-8000-000000000007",
+        "position": {
+          "x": 0.0,
+          "y": 240.0
+        },
+        "width": 80.0,
+        "height": 80.0,
+        "corner_radius": 0.0,
+        "rotation": 0.0,
+        "style": {
+          "stroke_color": {
+            "r": 30,
+            "g": 30,
+            "b": 30,
+            "a": 255
+          },
+          "stroke_width": 2.0,
+          "fill_color": null,
+          "fill_pattern": "Solid",
+          "sloppiness": "Artist",
+          "seed": 1033,
+          "opacity": 1.0
+        }
+      }
+    }
+  },
+  "z_order": [
+    "00000000-0000-4000-8000-000000000001",
+    "00000000-0000-4000-8000-000000000002",
+    "00000000-0000-4000-8000-000000000003",
+    "00000000-0000-4000-8000-000000000004",
+    "00000000-0000-4000-8000-000000000005",
+    "00000000-0000-4000-8000-000000000006",
+    "00000000-0000-4000-8000-000000000007"
+  ]
+}

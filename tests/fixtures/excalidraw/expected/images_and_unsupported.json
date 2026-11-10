@@ -1,0 +1,36 @@
+{
+  "id": "00000000-0000-4000-9000-000060f23b09",
+  "name": "images_and_unsupported",
+  "shapes": {
+    "00000000-0000-4000-8000-000000000001": {
+      "Rectangle": {
+        "id": "00000000-0000-4000-8000-000000000001",
+        "position": {
+          "x": 0.0,
+          "y": 150.0
+        },
+        "width": 100.0,
+        "height": 60.0,
+        "corner_radius": 0.0,
+        "rotation": 0.0,
+        "style": {
+          "stroke_color": {
+            "r": 30,
+            "g": 30,
+            "b": 30,
+            "a": 255
+          },
+          "stroke_width": 2.0,
+          "fill_color": null,
+          "fill_pattern": "Solid",
+          "sloppiness": "Artist",
+          "seed": 1068,
+          "opacity": 1.0
+        }
+      }
+    }
+  },
+  "z_order": [
+    "00000000-0000-4000-8000-000000000001"
+  ]
+}

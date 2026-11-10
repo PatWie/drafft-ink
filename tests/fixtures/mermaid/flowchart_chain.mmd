@@ -1,0 +1,10 @@
+flowchart LR
+    A --> B --> C & D
+    D --> E
+    classDef green fill:#9f6,stroke:#333
+    class A green
+    style B fill:#f9f
+    linkStyle 0 stroke:red
+    click A callback "tooltip"
+    %% a comment
+    E --> A

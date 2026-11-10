@@ -1,0 +1,6 @@
+graph TB
+    A[Client] -->|request| B[Server]
+    B -->|response| A
+    B --> B
+    B --> C[(Database)]
+    C --> B

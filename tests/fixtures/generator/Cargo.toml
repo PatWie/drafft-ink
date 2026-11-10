@@ -1,0 +1,23 @@
+# Fixture generator: runs the OLD app code (drafft-ink @ 8ce40ab) and records what it produces.
+# Standalone on purpose: the empty [workspace] table keeps it out of the new repo's workspace.
+[package]
+name = "fixtures-gen"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[workspace]
+
+[dependencies]
+# The oracle. Override the path with the OLD_REPO checkout by editing this line if it lives elsewhere.
+drafftink-core = { path = "/home/ubuntu/git/drafft-ink/crates/drafftink-core" }
+kurbo = { version = "0.12", features = ["serde"] }
+serde_json = { version = "1.0", features = ["preserve_order"] }
+sha2 = "0.10"
+flate2 = "1"
+image = { version = "0.25", default-features = false, features = ["png", "jpeg", "webp"] }
+base64 = "0.22"
+loro = "1.10"
+
+[profile.release]
+opt-level = 2

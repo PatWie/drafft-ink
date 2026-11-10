@@ -1,0 +1,213 @@
+{
+  "id": "00000000-0000-4000-9000-0000144f3fc2",
+  "name": "closed_paths",
+  "shapes": {
+    "00000000-0000-4000-8000-000000000001": {
+      "Line": {
+        "id": "00000000-0000-4000-8000-000000000001",
+        "start": {
+          "x": 0.0,
+          "y": 0.0
+        },
+        "end": {
+          "x": 0.0,
+          "y": 0.0
+        },
+        "intermediate_points": [
+          {
+            "x": 100.0,
+            "y": 0.0
+          },
+          {
+            "x": 50.0,
+            "y": 80.0
+          }
+        ],
+        "path_style": "Direct",
+        "stroke_style": "Solid",
+        "closed": true,
+        "style": {
+          "stroke_color": {
+            "r": 30,
+            "g": 30,
+            "b": 30,
+            "a": 255
+          },
+          "stroke_width": 2.0,
+          "fill_color": {
+            "r": 255,
+            "g": 201,
+            "b": 201,
+            "a": 255
+          },
+          "fill_pattern": "Solid",
+          "sloppiness": "Artist",
+          "seed": 1057,
+          "opacity": 1.0
+        }
+      }
+    },
+    "00000000-0000-4000-8000-000000000002": {
+      "Line": {
+        "id": "00000000-0000-4000-8000-000000000002",
+        "start": {
+          "x": 200.0,
+          "y": 0.0
+        },
+        "end": {
+          "x": 204.0,
+          "y": 6.0
+        },
+        "intermediate_points": [
+          {
+            "x": 300.0,
+            "y": 0.0
+          },
+          {
+            "x": 300.0,
+            "y": 80.0
+          }
+        ],
+        "path_style": "Direct",
+        "stroke_style": "Solid",
+        "closed": true,
+        "style": {
+          "stroke_color": {
+            "r": 30,
+            "g": 30,
+            "b": 30,
+            "a": 255
+          },
+          "stroke_width": 2.0,
+          "fill_color": {
+            "r": 165,
+            "g": 216,
+            "b": 255,
+            "a": 255
+          },
+          "fill_pattern": "Solid",
+          "sloppiness": "Artist",
+          "seed": 1058,
+          "opacity": 1.0
+        }
+      }
+    },
+    "00000000-0000-4000-8000-000000000003": {
+      "Line": {
+        "id": "00000000-0000-4000-8000-000000000003",
+        "start": {
+          "x": 400.0,
+          "y": 0.0
+        },
+        "end": {
+          "x": 500.0,
+          "y": 80.0
+        },
+        "intermediate_points": [
+          {
+            "x": 500.0,
+            "y": 0.0
+          }
+        ],
+        "path_style": "Direct",
+        "stroke_style": "Solid",
+        "closed": false,
+        "style": {
+          "stroke_color": {
+            "r": 30,
+            "g": 30,
+            "b": 30,
+            "a": 255
+          },
+          "stroke_width": 2.0,
+          "fill_color": null,
+          "fill_pattern": "Solid",
+          "sloppiness": "Artist",
+          "seed": 1059,
+          "opacity": 1.0
+        }
+      }
+    },
+    "00000000-0000-4000-8000-000000000004": {
+      "Line": {
+        "id": "00000000-0000-4000-8000-000000000004",
+        "start": {
+          "x": 600.0,
+          "y": 0.0
+        },
+        "end": {
+          "x": 700.0,
+          "y": 40.0
+        },
+        "intermediate_points": [],
+        "path_style": "Direct",
+        "stroke_style": "Solid",
+        "closed": false,
+        "style": {
+          "stroke_color": {
+            "r": 30,
+            "g": 30,
+            "b": 30,
+            "a": 255
+          },
+          "stroke_width": 2.0,
+          "fill_color": null,
+          "fill_pattern": "Solid",
+          "sloppiness": "Artist",
+          "seed": 1060,
+          "opacity": 1.0
+        }
+      }
+    },
+    "00000000-0000-4000-8000-000000000005": {
+      "Freehand": {
+        "id": "00000000-0000-4000-8000-000000000005",
+        "points": [
+          {
+            "x": 0.0,
+            "y": 200.0
+          },
+          {
+            "x": 60.0,
+            "y": 205.0
+          },
+          {
+            "x": 60.0,
+            "y": 260.0
+          },
+          {
+            "x": 5.0,
+            "y": 260.0
+          },
+          {
+            "x": 2.0,
+            "y": 203.0
+          }
+        ],
+        "pressures": [],
+        "closed": true,
+        "style": {
+          "stroke_color": {
+            "r": 30,
+            "g": 30,
+            "b": 30,
+            "a": 255
+          },
+          "stroke_width": 2.0,
+          "fill_color": null,
+          "fill_pattern": "Solid",
+          "sloppiness": "Artist",
+          "seed": 1062,
+          "opacity": 1.0
+        }
+      }
+    }
+  },
+  "z_order": [
+    "00000000-0000-4000-8000-000000000001",
+    "00000000-0000-4000-8000-000000000002",
+    "00000000-0000-4000-8000-000000000003",
+    "00000000-0000-4000-8000-000000000004",
+    "00000000-0000-4000-8000-000000000005"
+  ]
+}

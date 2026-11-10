@@ -1,0 +1,1111 @@
+{
+  "id": "00000000-0000-4000-9000-0000642d063b",
+  "name": "flowchart_large",
+  "shapes": {
+    "00000000-0000-4000-8000-000000000001": {
+      "Group": {
+        "id": "00000000-0000-4000-8000-000000000001",
+        "children": [
+          {
+            "Arrow": {
+              "id": "00000000-0000-4000-8000-000000000002",
+              "start": {
+                "x": -116.0,
+                "y": -237.0
+              },
+              "end": {
+                "x": -116.0,
+                "y": -153.0
+              },
+              "intermediate_points": [],
+              "path_style": "Direct",
+              "stroke_style": "Solid",
+              "head_size": 15.0,
+              "style": {
+                "stroke_color": {
+                  "r": 30,
+                  "g": 41,
+                  "b": 59,
+                  "a": 255
+                },
+                "stroke_width": 2.0,
+                "fill_color": null,
+                "fill_pattern": "Solid",
+                "sloppiness": "Artist",
+                "seed": 3018069079,
+                "opacity": 1.0
+              }
+            }
+          },
+          {
+            "Arrow": {
+              "id": "00000000-0000-4000-8000-000000000003",
+              "start": {
+                "x": -116.0,
+                "y": -107.0
+              },
+              "end": {
+                "x": -116.0,
+                "y": -23.0
+              },
+              "intermediate_points": [],
+              "path_style": "Direct",
+              "stroke_style": "Solid",
+              "head_size": 15.0,
+              "style": {
+                "stroke_color": {
+                  "r": 30,
+                  "g": 41,
+                  "b": 59,
+                  "a": 255
+                },
+                "stroke_width": 2.0,
+                "fill_color": null,
+                "fill_pattern": "Solid",
+                "sloppiness": "Artist",
+                "seed": 477272267,
+                "opacity": 1.0
+              }
+            }
+          },
+          {
+            "Arrow": {
+              "id": "00000000-0000-4000-8000-000000000004",
+              "start": {
+                "x": -95.47692307692309,
+                "y": 23.0
+              },
+              "end": {
+                "x": -20.523076923076925,
+                "y": 107.0
+              },
+              "intermediate_points": [],
+              "path_style": "Direct",
+              "stroke_style": "Solid",
+              "head_size": 15.0,
+              "style": {
+                "stroke_color": {
+                  "r": 30,
+                  "g": 41,
+                  "b": 59,
+                  "a": 255
+                },
+                "stroke_width": 2.0,
+                "fill_color": null,
+                "fill_pattern": "Solid",
+                "sloppiness": "Artist",
+                "seed": 3092868755,
+                "opacity": 1.0
+              }
+            }
+          },
+          {
+            "Arrow": {
+              "id": "00000000-0000-4000-8000-000000000005",
+              "start": {
+                "x": 0.0,
+                "y": 153.0
+              },
+              "end": {
+                "x": 0.0,
+                "y": 237.0
+              },
+              "intermediate_points": [],
+              "path_style": "Direct",
+              "stroke_style": "Solid",
+              "head_size": 15.0,
+              "style": {
+                "stroke_color": {
+                  "r": 30,
+                  "g": 41,
+                  "b": 59,
+                  "a": 255
+                },
+                "stroke_width": 2.0,
+                "fill_color": null,
+                "fill_pattern": "Solid",
+                "sloppiness": "Artist",
+                "seed": 2237362022,
+                "opacity": 1.0
+              }
+            }
+          },
+          {
+            "Arrow": {
+              "id": "00000000-0000-4000-8000-000000000006",
+              "start": {
+                "x": 6.584615384615384,
+                "y": -237.0
+              },
+              "end": {
+                "x": 1.4153846153846157,
+                "y": -153.0
+              },
+              "intermediate_points": [],
+              "path_style": "Direct",
+              "stroke_style": "Solid",
+              "head_size": 15.0,
+              "style": {
+                "stroke_color": {
+                  "r": 30,
+                  "g": 41,
+                  "b": 59,
+                  "a": 255
+                },
+                "stroke_width": 2.0,
+                "fill_color": null,
+                "fill_pattern": "Solid",
+                "sloppiness": "Artist",
+                "seed": 3736871062,
+                "opacity": 1.0
+              }
+            }
+          },
+          {
+            "Arrow": {
+              "id": "00000000-0000-4000-8000-000000000007",
+              "start": {
+                "x": 0.0,
+                "y": -107.0
+              },
+              "end": {
+                "x": 0.0,
+                "y": -23.0
+              },
+              "intermediate_points": [],
+              "path_style": "Direct",
+              "stroke_style": "Solid",
+              "head_size": 15.0,
+              "style": {
+                "stroke_color": {
+                  "r": 30,
+                  "g": 41,
+                  "b": 59,
+                  "a": 255
+                },
+                "stroke_width": 2.0,
+                "fill_color": null,
+                "fill_pattern": "Solid",
+                "sloppiness": "Artist",
+                "seed": 3516166556,
+                "opacity": 1.0
+              }
+            }
+          },
+          {
+            "Arrow": {
+              "id": "00000000-0000-4000-8000-000000000008",
+              "start": {
+                "x": 0.0,
+                "y": 23.0
+              },
+              "end": {
+                "x": 0.0,
+                "y": 237.0
+              },
+              "intermediate_points": [],
+              "path_style": "Direct",
+              "stroke_style": "Solid",
+              "head_size": 15.0,
+              "style": {
+                "stroke_color": {
+                  "r": 30,
+                  "g": 41,
+                  "b": 59,
+                  "a": 255
+                },
+                "stroke_width": 2.0,
+                "fill_color": null,
+                "fill_pattern": "Solid",
+                "sloppiness": "Artist",
+                "seed": 2024613459,
+                "opacity": 1.0
+              }
+            }
+          },
+          {
+            "Arrow": {
+              "id": "00000000-0000-4000-8000-000000000009",
+              "start": {
+                "x": 122.5846153846154,
+                "y": -237.0
+              },
+              "end": {
+                "x": 117.4153846153846,
+                "y": -153.0
+              },
+              "intermediate_points": [],
+              "path_style": "Direct",
+              "stroke_style": "Solid",
+              "head_size": 15.0,
+              "style": {
+                "stroke_color": {
+                  "r": 30,
+                  "g": 41,
+                  "b": 59,
+                  "a": 255
+                },
+                "stroke_width": 2.0,
+                "fill_color": null,
+                "fill_pattern": "Solid",
+                "sloppiness": "Artist",
+                "seed": 1967739610,
+                "opacity": 1.0
+              }
+            }
+          },
+          {
+            "Arrow": {
+              "id": "00000000-0000-4000-8000-00000000000a",
+              "start": {
+                "x": 116.0,
+                "y": -107.0
+              },
+              "end": {
+                "x": 116.0,
+                "y": -23.0
+              },
+              "intermediate_points": [],
+              "path_style": "Direct",
+              "stroke_style": "Solid",
+              "head_size": 15.0,
+              "style": {
+                "stroke_color": {
+                  "r": 30,
+                  "g": 41,
+                  "b": 59,
+                  "a": 255
+                },
+                "stroke_width": 2.0,
+                "fill_color": null,
+                "fill_pattern": "Solid",
+                "sloppiness": "Artist",
+                "seed": 268439849,
+                "opacity": 1.0
+              }
+            }
+          },
+          {
+            "Arrow": {
+              "id": "00000000-0000-4000-8000-00000000000b",
+              "start": {
+                "x": 105.73846153846154,
+                "y": 23.0
+              },
+              "end": {
+                "x": 10.261538461538462,
+                "y": 237.0
+              },
+              "intermediate_points": [],
+              "path_style": "Direct",
+              "stroke_style": "Solid",
+              "head_size": 15.0,
+              "style": {
+                "stroke_color": {
+                  "r": 30,
+                  "g": 41,
+                  "b": 59,
+                  "a": 255
+                },
+                "stroke_width": 2.0,
+                "fill_color": null,
+                "fill_pattern": "Solid",
+                "sloppiness": "Artist",
+                "seed": 641458128,
+                "opacity": 1.0
+              }
+            }
+          },
+          {
+            "Arrow": {
+              "id": "00000000-0000-4000-8000-00000000000c",
+              "start": {
+                "x": -20.523076923076925,
+                "y": -107.0
+              },
+              "end": {
+                "x": -95.47692307692309,
+                "y": -23.0
+              },
+              "intermediate_points": [],
+              "path_style": "Direct",
+              "stroke_style": "Solid",
+              "head_size": 15.0,
+              "style": {
+                "stroke_color": {
+                  "r": 30,
+                  "g": 41,
+                  "b": 59,
+                  "a": 255
+                },
+                "stroke_width": 2.0,
+                "fill_color": null,
+                "fill_pattern": "Solid",
+                "sloppiness": "Artist",
+                "seed": 4170117123,
+                "opacity": 1.0
+              }
+            }
+          },
+          {
+            "Arrow": {
+              "id": "00000000-0000-4000-8000-00000000000d",
+              "start": {
+                "x": 116.70769230769233,
+                "y": -23.0
+              },
+              "end": {
+                "x": 123.29230769230767,
+                "y": -237.0
+              },
+              "intermediate_points": [],
+              "path_style": "Direct",
+              "stroke_style": "Solid",
+              "head_size": 15.0,
+              "style": {
+                "stroke_color": {
+                  "r": 30,
+                  "g": 41,
+                  "b": 59,
+                  "a": 255
+                },
+                "stroke_width": 2.0,
+                "fill_color": null,
+                "fill_pattern": "Solid",
+                "sloppiness": "Artist",
+                "seed": 1242373789,
+                "opacity": 1.0
+              }
+            }
+          },
+          {
+            "Rectangle": {
+              "id": "00000000-0000-4000-8000-00000000000e",
+              "position": {
+                "x": -160.0,
+                "y": -283.0
+              },
+              "width": 88.0,
+              "height": 46.0,
+              "corner_radius": 0.0,
+              "rotation": 0.0,
+              "style": {
+                "stroke_color": {
+                  "r": 30,
+                  "g": 41,
+                  "b": 59,
+                  "a": 255
+                },
+                "stroke_width": 2.0,
+                "fill_color": {
+                  "r": 255,
+                  "g": 255,
+                  "b": 255,
+                  "a": 255
+                },
+                "fill_pattern": "Solid",
+                "sloppiness": "Artist",
+                "seed": 2629301000,
+                "opacity": 1.0
+              }
+            }
+          },
+          {
+            "Text": {
+              "id": "00000000-0000-4000-8000-00000000000f",
+              "position": {
+                "x": -140.0,
+                "y": -269.6
+              },
+              "content": "Start",
+              "font_size": 16.0,
+              "font_family": "GelPen",
+              "font_weight": "Regular",
+              "rotation": 0.0,
+              "style": {
+                "stroke_color": {
+                  "r": 30,
+                  "g": 41,
+                  "b": 59,
+                  "a": 255
+                },
+                "stroke_width": 2.0,
+                "fill_color": null,
+                "fill_pattern": "Solid",
+                "sloppiness": "Artist",
+                "seed": 2770185568,
+                "opacity": 1.0
+              },
+              "char_colors": [
+                null,
+                null,
+                null,
+                null,
+                null
+              ]
+            }
+          },
+          {
+            "Rectangle": {
+              "id": "00000000-0000-4000-8000-000000000010",
+              "position": {
+                "x": -152.0,
+                "y": -153.0
+              },
+              "width": 72.0,
+              "height": 46.0,
+              "corner_radius": 0.0,
+              "rotation": 0.0,
+              "style": {
+                "stroke_color": {
+                  "r": 30,
+                  "g": 41,
+                  "b": 59,
+                  "a": 255
+                },
+                "stroke_width": 2.0,
+                "fill_color": {
+                  "r": 255,
+                  "g": 255,
+                  "b": 255,
+                  "a": 255
+                },
+                "fill_pattern": "Solid",
+                "sloppiness": "Artist",
+                "seed": 1305055366,
+                "opacity": 1.0
+              }
+            }
+          },
+          {
+            "Text": {
+              "id": "00000000-0000-4000-8000-000000000011",
+              "position": {
+                "x": -125.6,
+                "y": -139.6
+              },
+              "content": "A1",
+              "font_size": 16.0,
+              "font_family": "GelPen",
+              "font_weight": "Regular",
+              "rotation": 0.0,
+              "style": {
+                "stroke_color": {
+                  "r": 30,
+                  "g": 41,
+                  "b": 59,
+                  "a": 255
+                },
+                "stroke_width": 2.0,
+                "fill_color": null,
+                "fill_pattern": "Solid",
+                "sloppiness": "Artist",
+                "seed": 708378109,
+                "opacity": 1.0
+              },
+              "char_colors": [
+                null,
+                null
+              ]
+            }
+          },
+          {
+            "Rectangle": {
+              "id": "00000000-0000-4000-8000-000000000012",
+              "position": {
+                "x": -152.0,
+                "y": -23.0
+              },
+              "width": 72.0,
+              "height": 46.0,
+              "corner_radius": 0.0,
+              "rotation": 0.0,
+              "style": {
+                "stroke_color": {
+                  "r": 30,
+                  "g": 41,
+                  "b": 59,
+                  "a": 255
+                },
+                "stroke_width": 2.0,
+                "fill_color": {
+                  "r": 255,
+                  "g": 255,
+                  "b": 255,
+                  "a": 255
+                },
+                "fill_pattern": "Solid",
+                "sloppiness": "Artist",
+                "seed": 1058973581,
+                "opacity": 1.0
+              }
+            }
+          },
+          {
+            "Text": {
+              "id": "00000000-0000-4000-8000-000000000013",
+              "position": {
+                "x": -125.6,
+                "y": -9.6
+              },
+              "content": "B1",
+              "font_size": 16.0,
+              "font_family": "GelPen",
+              "font_weight": "Regular",
+              "rotation": 0.0,
+              "style": {
+                "stroke_color": {
+                  "r": 30,
+                  "g": 41,
+                  "b": 59,
+                  "a": 255
+                },
+                "stroke_width": 2.0,
+                "fill_color": null,
+                "fill_pattern": "Solid",
+                "sloppiness": "Artist",
+                "seed": 2550679789,
+                "opacity": 1.0
+              },
+              "char_colors": [
+                null,
+                null
+              ]
+            }
+          },
+          {
+            "Rectangle": {
+              "id": "00000000-0000-4000-8000-000000000014",
+              "position": {
+                "x": -36.0,
+                "y": 107.0
+              },
+              "width": 72.0,
+              "height": 46.0,
+              "corner_radius": 0.0,
+              "rotation": 0.0,
+              "style": {
+                "stroke_color": {
+                  "r": 30,
+                  "g": 41,
+                  "b": 59,
+                  "a": 255
+                },
+                "stroke_width": 2.0,
+                "fill_color": {
+                  "r": 255,
+                  "g": 255,
+                  "b": 255,
+                  "a": 255
+                },
+                "fill_pattern": "Solid",
+                "sloppiness": "Artist",
+                "seed": 935693367,
+                "opacity": 1.0
+              }
+            }
+          },
+          {
+            "Text": {
+              "id": "00000000-0000-4000-8000-000000000015",
+              "position": {
+                "x": -9.6,
+                "y": 120.4
+              },
+              "content": "C1",
+              "font_size": 16.0,
+              "font_family": "GelPen",
+              "font_weight": "Regular",
+              "rotation": 0.0,
+              "style": {
+                "stroke_color": {
+                  "r": 30,
+                  "g": 41,
+                  "b": 59,
+                  "a": 255
+                },
+                "stroke_width": 2.0,
+                "fill_color": null,
+                "fill_pattern": "Solid",
+                "sloppiness": "Artist",
+                "seed": 3512411799,
+                "opacity": 1.0
+              },
+              "char_colors": [
+                null,
+                null
+              ]
+            }
+          },
+          {
+            "Rectangle": {
+              "id": "00000000-0000-4000-8000-000000000016",
+              "position": {
+                "x": -36.0,
+                "y": 237.0
+              },
+              "width": 72.0,
+              "height": 46.0,
+              "corner_radius": 0.0,
+              "rotation": 0.0,
+              "style": {
+                "stroke_color": {
+                  "r": 30,
+                  "g": 41,
+                  "b": 59,
+                  "a": 255
+                },
+                "stroke_width": 2.0,
+                "fill_color": {
+                  "r": 255,
+                  "g": 255,
+                  "b": 255,
+                  "a": 255
+                },
+                "fill_pattern": "Solid",
+                "sloppiness": "Artist",
+                "seed": 2481417876,
+                "opacity": 1.0
+              }
+            }
+          },
+          {
+            "Text": {
+              "id": "00000000-0000-4000-8000-000000000017",
+              "position": {
+                "x": -14.4,
+                "y": 250.4
+              },
+              "content": "End",
+              "font_size": 16.0,
+              "font_family": "GelPen",
+              "font_weight": "Regular",
+              "rotation": 0.0,
+              "style": {
+                "stroke_color": {
+                  "r": 30,
+                  "g": 41,
+                  "b": 59,
+                  "a": 255
+                },
+                "stroke_width": 2.0,
+                "fill_color": null,
+                "fill_pattern": "Solid",
+                "sloppiness": "Artist",
+                "seed": 4069877960,
+                "opacity": 1.0
+              },
+              "char_colors": [
+                null,
+                null,
+                null
+              ]
+            }
+          },
+          {
+            "Rectangle": {
+              "id": "00000000-0000-4000-8000-000000000018",
+              "position": {
+                "x": -28.0,
+                "y": -283.0
+              },
+              "width": 72.0,
+              "height": 46.0,
+              "corner_radius": 0.0,
+              "rotation": 0.0,
+              "style": {
+                "stroke_color": {
+                  "r": 30,
+                  "g": 41,
+                  "b": 59,
+                  "a": 255
+                },
+                "stroke_width": 2.0,
+                "fill_color": {
+                  "r": 255,
+                  "g": 255,
+                  "b": 255,
+                  "a": 255
+                },
+                "fill_pattern": "Solid",
+                "sloppiness": "Artist",
+                "seed": 4188515486,
+                "opacity": 1.0
+              }
+            }
+          },
+          {
+            "Text": {
+              "id": "00000000-0000-4000-8000-000000000019",
+              "position": {
+                "x": -1.5999999999999996,
+                "y": -269.6
+              },
+              "content": "A2",
+              "font_size": 16.0,
+              "font_family": "GelPen",
+              "font_weight": "Regular",
+              "rotation": 0.0,
+              "style": {
+                "stroke_color": {
+                  "r": 30,
+                  "g": 41,
+                  "b": 59,
+                  "a": 255
+                },
+                "stroke_width": 2.0,
+                "fill_color": null,
+                "fill_pattern": "Solid",
+                "sloppiness": "Artist",
+                "seed": 1893020166,
+                "opacity": 1.0
+              },
+              "char_colors": [
+                null,
+                null
+              ]
+            }
+          },
+          {
+            "Rectangle": {
+              "id": "00000000-0000-4000-8000-00000000001a",
+              "position": {
+                "x": -36.0,
+                "y": -153.0
+              },
+              "width": 72.0,
+              "height": 46.0,
+              "corner_radius": 0.0,
+              "rotation": 0.0,
+              "style": {
+                "stroke_color": {
+                  "r": 30,
+                  "g": 41,
+                  "b": 59,
+                  "a": 255
+                },
+                "stroke_width": 2.0,
+                "fill_color": {
+                  "r": 255,
+                  "g": 255,
+                  "b": 255,
+                  "a": 255
+                },
+                "fill_pattern": "Solid",
+                "sloppiness": "Artist",
+                "seed": 3131204891,
+                "opacity": 1.0
+              }
+            }
+          },
+          {
+            "Text": {
+              "id": "00000000-0000-4000-8000-00000000001b",
+              "position": {
+                "x": -9.6,
+                "y": -139.6
+              },
+              "content": "B2",
+              "font_size": 16.0,
+              "font_family": "GelPen",
+              "font_weight": "Regular",
+              "rotation": 0.0,
+              "style": {
+                "stroke_color": {
+                  "r": 30,
+                  "g": 41,
+                  "b": 59,
+                  "a": 255
+                },
+                "stroke_width": 2.0,
+                "fill_color": null,
+                "fill_pattern": "Solid",
+                "sloppiness": "Artist",
+                "seed": 1645759863,
+                "opacity": 1.0
+              },
+              "char_colors": [
+                null,
+                null
+              ]
+            }
+          },
+          {
+            "Rectangle": {
+              "id": "00000000-0000-4000-8000-00000000001c",
+              "position": {
+                "x": -36.0,
+                "y": -23.0
+              },
+              "width": 72.0,
+              "height": 46.0,
+              "corner_radius": 0.0,
+              "rotation": 0.0,
+              "style": {
+                "stroke_color": {
+                  "r": 30,
+                  "g": 41,
+                  "b": 59,
+                  "a": 255
+                },
+                "stroke_width": 2.0,
+                "fill_color": {
+                  "r": 255,
+                  "g": 255,
+                  "b": 255,
+                  "a": 255
+                },
+                "fill_pattern": "Solid",
+                "sloppiness": "Artist",
+                "seed": 48743402,
+                "opacity": 1.0
+              }
+            }
+          },
+          {
+            "Text": {
+              "id": "00000000-0000-4000-8000-00000000001d",
+              "position": {
+                "x": -9.6,
+                "y": -9.6
+              },
+              "content": "C2",
+              "font_size": 16.0,
+              "font_family": "GelPen",
+              "font_weight": "Regular",
+              "rotation": 0.0,
+              "style": {
+                "stroke_color": {
+                  "r": 30,
+                  "g": 41,
+                  "b": 59,
+                  "a": 255
+                },
+                "stroke_width": 2.0,
+                "fill_color": null,
+                "fill_pattern": "Solid",
+                "sloppiness": "Artist",
+                "seed": 2548342640,
+                "opacity": 1.0
+              },
+              "char_colors": [
+                null,
+                null
+              ]
+            }
+          },
+          {
+            "Rectangle": {
+              "id": "00000000-0000-4000-8000-00000000001e",
+              "position": {
+                "x": 88.0,
+                "y": -283.0
+              },
+              "width": 72.0,
+              "height": 46.0,
+              "corner_radius": 0.0,
+              "rotation": 0.0,
+              "style": {
+                "stroke_color": {
+                  "r": 30,
+                  "g": 41,
+                  "b": 59,
+                  "a": 255
+                },
+                "stroke_width": 2.0,
+                "fill_color": {
+                  "r": 255,
+                  "g": 255,
+                  "b": 255,
+                  "a": 255
+                },
+                "fill_pattern": "Solid",
+                "sloppiness": "Artist",
+                "seed": 2054203185,
+                "opacity": 1.0
+              }
+            }
+          },
+          {
+            "Text": {
+              "id": "00000000-0000-4000-8000-00000000001f",
+              "position": {
+                "x": 114.4,
+                "y": -269.6
+              },
+              "content": "A3",
+              "font_size": 16.0,
+              "font_family": "GelPen",
+              "font_weight": "Regular",
+              "rotation": 0.0,
+              "style": {
+                "stroke_color": {
+                  "r": 30,
+                  "g": 41,
+                  "b": 59,
+                  "a": 255
+                },
+                "stroke_width": 2.0,
+                "fill_color": null,
+                "fill_pattern": "Solid",
+                "sloppiness": "Artist",
+                "seed": 3361051237,
+                "opacity": 1.0
+              },
+              "char_colors": [
+                null,
+                null
+              ]
+            }
+          },
+          {
+            "Rectangle": {
+              "id": "00000000-0000-4000-8000-000000000020",
+              "position": {
+                "x": 80.0,
+                "y": -153.0
+              },
+              "width": 72.0,
+              "height": 46.0,
+              "corner_radius": 0.0,
+              "rotation": 0.0,
+              "style": {
+                "stroke_color": {
+                  "r": 30,
+                  "g": 41,
+                  "b": 59,
+                  "a": 255
+                },
+                "stroke_width": 2.0,
+                "fill_color": {
+                  "r": 255,
+                  "g": 255,
+                  "b": 255,
+                  "a": 255
+                },
+                "fill_pattern": "Solid",
+                "sloppiness": "Artist",
+                "seed": 1414948225,
+                "opacity": 1.0
+              }
+            }
+          },
+          {
+            "Text": {
+              "id": "00000000-0000-4000-8000-000000000021",
+              "position": {
+                "x": 106.4,
+                "y": -139.6
+              },
+              "content": "B3",
+              "font_size": 16.0,
+              "font_family": "GelPen",
+              "font_weight": "Regular",
+              "rotation": 0.0,
+              "style": {
+                "stroke_color": {
+                  "r": 30,
+                  "g": 41,
+                  "b": 59,
+                  "a": 255
+                },
+                "stroke_width": 2.0,
+                "fill_color": null,
+                "fill_pattern": "Solid",
+                "sloppiness": "Artist",
+                "seed": 731610184,
+                "opacity": 1.0
+              },
+              "char_colors": [
+                null,
+                null
+              ]
+            }
+          },
+          {
+            "Rectangle": {
+              "id": "00000000-0000-4000-8000-000000000022",
+              "position": {
+                "x": 80.0,
+                "y": -23.0
+              },
+              "width": 72.0,
+              "height": 46.0,
+              "corner_radius": 0.0,
+              "rotation": 0.0,
+              "style": {
+                "stroke_color": {
+                  "r": 30,
+                  "g": 41,
+                  "b": 59,
+                  "a": 255
+                },
+                "stroke_width": 2.0,
+                "fill_color": {
+                  "r": 255,
+                  "g": 255,
+                  "b": 255,
+                  "a": 255
+                },
+                "fill_pattern": "Solid",
+                "sloppiness": "Artist",
+                "seed": 396324532,
+                "opacity": 1.0
+              }
+            }
+          },
+          {
+            "Text": {
+              "id": "00000000-0000-4000-8000-000000000023",
+              "position": {
+                "x": 106.4,
+                "y": -9.6
+              },
+              "content": "C3",
+              "font_size": 16.0,
+              "font_family": "GelPen",
+              "font_weight": "Regular",
+              "rotation": 0.0,
+              "style": {
+                "stroke_color": {
+                  "r": 30,
+                  "g": 41,
+                  "b": 59,
+                  "a": 255
+                },
+                "stroke_width": 2.0,
+                "fill_color": null,
+                "fill_pattern": "Solid",
+                "sloppiness": "Artist",
+                "seed": 776391522,
+                "opacity": 1.0
+              },
+              "char_colors": [
+                null,
+                null
+              ]
+            }
+          }
+        ],
+        "rotation": 0.0,
+        "style": {
+          "stroke_color": {
+            "r": 0,
+            "g": 0,
+            "b": 0,
+            "a": 255
+          },
+          "stroke_width": 2.0,
+          "fill_color": null,
+          "fill_pattern": "Solid",
+          "sloppiness": "Artist",
+          "seed": 3480239522,
+          "opacity": 1.0
+        }
+      }
+    }
+  },
+  "z_order": [
+    "00000000-0000-4000-8000-000000000001"
+  ]
+}

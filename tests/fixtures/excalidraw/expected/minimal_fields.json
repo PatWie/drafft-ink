@@ -1,0 +1,207 @@
+{
+  "id": "00000000-0000-4000-9000-000076b6fb74",
+  "name": "minimal_fields",
+  "shapes": {
+    "00000000-0000-4000-8000-000000000001": {
+      "Rectangle": {
+        "id": "00000000-0000-4000-8000-000000000001",
+        "position": {
+          "x": 0.0,
+          "y": 0.0
+        },
+        "width": 100.0,
+        "height": 100.0,
+        "corner_radius": 0.0,
+        "rotation": 0.0,
+        "style": {
+          "stroke_color": {
+            "r": 0,
+            "g": 0,
+            "b": 0,
+            "a": 255
+          },
+          "stroke_width": 2.0,
+          "fill_color": null,
+          "fill_pattern": "Solid",
+          "sloppiness": "Artist",
+          "seed": 0,
+          "opacity": 1.0
+        }
+      }
+    },
+    "00000000-0000-4000-8000-000000000002": {
+      "Ellipse": {
+        "id": "00000000-0000-4000-8000-000000000002",
+        "center": {
+          "x": 60.0,
+          "y": 70.0
+        },
+        "radius_x": 50.0,
+        "radius_y": 50.0,
+        "rotation": 0.0,
+        "style": {
+          "stroke_color": {
+            "r": 0,
+            "g": 0,
+            "b": 0,
+            "a": 255
+          },
+          "stroke_width": 2.0,
+          "fill_color": null,
+          "fill_pattern": "Solid",
+          "sloppiness": "Artist",
+          "seed": 0,
+          "opacity": 1.0
+        }
+      }
+    },
+    "00000000-0000-4000-8000-000000000003": {
+      "Text": {
+        "id": "00000000-0000-4000-8000-000000000003",
+        "position": {
+          "x": 5.0,
+          "y": 5.0
+        },
+        "content": "",
+        "font_size": 20.0,
+        "font_family": "GelPen",
+        "font_weight": "Regular",
+        "rotation": 0.0,
+        "style": {
+          "stroke_color": {
+            "r": 0,
+            "g": 0,
+            "b": 0,
+            "a": 255
+          },
+          "stroke_width": 2.0,
+          "fill_color": null,
+          "fill_pattern": "Solid",
+          "sloppiness": "Artist",
+          "seed": 0,
+          "opacity": 1.0
+        },
+        "char_colors": []
+      }
+    },
+    "00000000-0000-4000-8000-000000000004": {
+      "Text": {
+        "id": "00000000-0000-4000-8000-000000000004",
+        "position": {
+          "x": 5.0,
+          "y": 50.0
+        },
+        "content": "fontSize as float",
+        "font_size": 16.5,
+        "font_family": "GelPen",
+        "font_weight": "Regular",
+        "rotation": 0.0,
+        "style": {
+          "stroke_color": {
+            "r": 0,
+            "g": 0,
+            "b": 0,
+            "a": 255
+          },
+          "stroke_width": 2.0,
+          "fill_color": null,
+          "fill_pattern": "Solid",
+          "sloppiness": "Artist",
+          "seed": 0,
+          "opacity": 0.5
+        },
+        "char_colors": [
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null
+        ]
+      }
+    },
+    "00000000-0000-4000-8000-000000000005": {
+      "Rectangle": {
+        "id": "00000000-0000-4000-8000-000000000005",
+        "position": {
+          "x": 300.0,
+          "y": 0.0
+        },
+        "width": 40.0,
+        "height": 40.0,
+        "corner_radius": 0.0,
+        "rotation": 0.0,
+        "style": {
+          "stroke_color": {
+            "r": 18,
+            "g": 52,
+            "b": 86,
+            "a": 120
+          },
+          "stroke_width": 2.0,
+          "fill_color": {
+            "r": 255,
+            "g": 0,
+            "b": 0,
+            "a": 255
+          },
+          "fill_pattern": "Solid",
+          "sloppiness": "Artist",
+          "seed": 0,
+          "opacity": 1.0
+        }
+      }
+    },
+    "00000000-0000-4000-8000-000000000006": {
+      "Rectangle": {
+        "id": "00000000-0000-4000-8000-000000000006",
+        "position": {
+          "x": 400.0,
+          "y": 0.0
+        },
+        "width": 40.0,
+        "height": 40.0,
+        "corner_radius": 0.0,
+        "rotation": 0.0,
+        "style": {
+          "stroke_color": {
+            "r": 0,
+            "g": 0,
+            "b": 0,
+            "a": 255
+          },
+          "stroke_width": 2.0,
+          "fill_color": {
+            "r": 0,
+            "g": 0,
+            "b": 0,
+            "a": 255
+          },
+          "fill_pattern": "Solid",
+          "sloppiness": "Artist",
+          "seed": 0,
+          "opacity": 1.0
+        }
+      }
+    }
+  },
+  "z_order": [
+    "00000000-0000-4000-8000-000000000001",
+    "00000000-0000-4000-8000-000000000002",
+    "00000000-0000-4000-8000-000000000003",
+    "00000000-0000-4000-8000-000000000004",
+    "00000000-0000-4000-8000-000000000005",
+    "00000000-0000-4000-8000-000000000006"
+  ]
+}

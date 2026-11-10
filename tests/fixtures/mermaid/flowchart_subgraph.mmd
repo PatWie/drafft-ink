@@ -1,0 +1,13 @@
+flowchart TB
+    subgraph KITCHEN["The order pipeline"]
+        direction LR
+        A[Order] --> B[Cook] --> C[Plate]
+    end
+    subgraph REAL["Real kitchen"]
+        R1[Oven] --> R2[Grill]
+        subgraph NESTED[Inner]
+            N1 --> N2
+        end
+    end
+    KITCHEN --> REAL
+    C -.->|serve| N1
