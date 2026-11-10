@@ -81,11 +81,6 @@ impl UiShell {
     }
 
     fn apply_theme(&mut self, ctx: &egui::Context) {
-        if !self.state.fonts_installed {
-            theme::install_fonts(ctx);
-            self.state.fonts_installed = true;
-            self.state.applied_theme = None;
-        }
         let want = self.model.setting_str("theme").unwrap_or("system").to_owned();
         if self.state.applied_theme.as_deref() != Some(want.as_str()) {
             theme::apply(ctx, Some(&want));
@@ -119,6 +114,7 @@ impl UiShell {
 pub fn draw(ui: &mut egui::Ui, model: &Model, state: &mut UiState) -> Vec<UiAction> {
     let mut out = Vec::new();
     let ctx = ui.ctx().clone();
+    theme::ensure_fonts(&ctx);
     let pal = Palette::of(&ctx);
     let mut cx = Cx::new(model, pal, &mut out);
     surfaces::show_all(&ctx, &mut cx, state);

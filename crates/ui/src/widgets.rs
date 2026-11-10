@@ -38,12 +38,15 @@ pub struct Ctl<'a> {
     pub label: String,
     /// Shows the current state.
     pub selected: bool,
+    /// Greys the control for a reason the registry does not know (a property that does not apply to the
+    /// selected elements). The registry's refusal text wins when both apply.
+    pub blocked: Option<String>,
 }
 
 impl<'a> Ctl<'a> {
     /// A control for a command with no arguments.
     pub fn new(id: &'a str) -> Self {
-        Self { id, args: json!({}), label: String::new(), selected: false }
+        Self { id, args: json!({}), label: String::new(), selected: false, blocked: None }
     }
 
     /// With arguments.
@@ -57,6 +60,13 @@ impl<'a> Ctl<'a> {
     #[must_use]
     pub fn label(mut self, label: impl Into<String>) -> Self {
         self.label = label.into();
+        self
+    }
+
+    /// Greys the control with this reason when `reason` is `Some`.
+    #[must_use]
+    pub fn blocked(mut self, reason: Option<String>) -> Self {
+        self.blocked = reason;
         self
     }
 
@@ -121,7 +131,7 @@ impl<'a> Cx<'a> {
         size: Vec2,
         paint: impl FnOnce(&Painter, Rect, Look),
     ) -> Response {
-        let reason = self.refusal(ctl.id);
+        let reason = self.refusal(ctl.id).or_else(|| ctl.blocked.clone());
         let enabled = reason.is_none();
         let label = if ctl.label.is_empty() { self.model.label(ctl.id, &ctl.args) } else { ctl.label.clone() };
         let resp = ui
@@ -181,8 +191,12 @@ impl<'a> Cx<'a> {
 
     /// A small text toggle for a property value (`Architect`, `Dashed`): filled with the accent when selected.
     pub fn toggle_button(&mut self, ui: &mut Ui, ctl: &Ctl<'_>, text: &str) -> Response {
+        self.toggle_button_font(ui, ctl, text, egui::FontId::proportional(11.0))
+    }
+
+    /// Like [`Cx::toggle_button`] with a font, for the font family choices that show their own face.
+    pub fn toggle_button_font(&mut self, ui: &mut Ui, ctl: &Ctl<'_>, text: &str, font: egui::FontId) -> Response {
         let pal = self.pal;
-        let font = egui::FontId::proportional(11.0);
         let galley = ui.painter().layout_no_wrap(text.to_owned(), font, pal.text);
         let size = vec2((galley.size().x + 16.0).max(34.0), 24.0);
         let ctl = Ctl { label: if ctl.label.is_empty() { text.to_owned() } else { ctl.label.clone() }, ..ctl.clone() };
@@ -255,6 +269,39 @@ impl<'a> Cx<'a> {
                 );
             }
         })
+    }
+
+    /// A menu row that applies a UI verb. The key is the verb's own key from the keymap, if it has one.
+    pub fn verb_item(&mut self, ui: &mut Ui, verb: Verb, text: &str) -> Response {
+        let pal = self.pal;
+        let key = crate::keymap::verb_key_label(verb, self.model.mac);
+        let (rect, resp) = ui.allocate_exact_size(vec2(ui.available_width().max(160.0), 28.0), Sense::click());
+        if ui.is_rect_visible(rect) {
+            if resp.hovered() {
+                ui.painter().rect_filled(rect, theme::BUTTON_RADIUS, pal.hover);
+            }
+            ui.painter().text(
+                pos2(rect.left() + 10.0, rect.center().y),
+                Align2::LEFT_CENTER,
+                text,
+                egui::FontId::proportional(13.0),
+                pal.text,
+            );
+            if let Some(k) = key {
+                ui.painter().text(
+                    pos2(rect.right() - 10.0, rect.center().y),
+                    Align2::RIGHT_CENTER,
+                    k,
+                    egui::FontId::proportional(11.0),
+                    pal.muted,
+                );
+            }
+        }
+        resp.widget_info(|| WidgetInfo::labeled(Role::Button, true, text));
+        if resp.clicked() {
+            self.verb(verb);
+        }
+        resp
     }
 
     /// A control that opens something in the UI (no command, never greyed).

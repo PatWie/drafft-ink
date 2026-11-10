@@ -180,6 +180,13 @@ pub const VERB_BINDINGS: &[VerbBinding] = &[
     VerbBinding { keys: &["I"], scope: Scope::Canvas, verb: Verb::InsertImage },
 ];
 
+/// The key of a UI verb as shown in menus, such as `Ctrl+O`.
+pub fn verb_key_label(verb: Verb, mac: bool) -> Option<String> {
+    let vb = VERB_BINDINGS.iter().find(|v| v.verb == verb)?;
+    let chord = vb.keys.iter().find_map(|k| parse_chord(k))?;
+    Some(chord.label(mac))
+}
+
 /// Where the pointer is, in world units, for the `$cursor` and `$viewport_center` placeholders.
 #[derive(Debug, Clone, Copy, Default)]
 pub struct Pointer {

@@ -135,9 +135,45 @@ pub fn theme_preference(setting: Option<&str>) -> ThemePreference {
     }
 }
 
-/// A font id in the hand-written family.
+thread_local! {
+    static HAND_READY: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+/// A font id in the hand-written family (GelPen). Falls back to the default font when the families are
+/// not installed in this pass yet; egui would panic on a family without fonts. [`ensure_fonts`] sets
+/// which case applies at the start of every `draw`.
 pub fn hand(size: f32) -> FontId {
-    FontId::new(size, FontFamily::Name(HAND_FONT.into()))
+    if HAND_READY.with(std::cell::Cell::get) {
+        FontId::new(size, FontFamily::Name(HAND_FONT.into()))
+    } else {
+        FontId::proportional(size)
+    }
+}
+
+/// A font id for a named family of this module (`PREVIEW_SERIF`, `PREVIEW_VANILLA`), with the same
+/// fallback as [`hand`].
+pub fn named(family: &str, size: f32) -> FontId {
+    if HAND_READY.with(std::cell::Cell::get) {
+        FontId::new(size, FontFamily::Name(family.into()))
+    } else {
+        FontId::proportional(size)
+    }
+}
+
+/// True when the GelPen families exist in this egui context.
+fn fonts_present(ctx: &Context) -> bool {
+    ctx.fonts(|f| f.definitions().families.contains_key(&FontFamily::Name(HAND_FONT.into())))
+}
+
+/// Installs the fonts when they are missing and records whether they can be used in this pass. Called at the
+/// start of every `draw`.
+pub fn ensure_fonts(ctx: &Context) -> bool {
+    if !fonts_present(ctx) {
+        install_fonts(ctx);
+    }
+    let ready = fonts_present(ctx);
+    HAND_READY.with(|r| r.set(ready));
+    ready
 }
 
 /// Installs the GelPen fonts as named families. Call once per egui context; a new context (after a GPU

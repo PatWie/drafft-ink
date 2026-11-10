@@ -136,8 +136,6 @@ pub struct UiState {
     scrub: Option<String>,
     /// The theme setting the visuals were last built for.
     pub(crate) applied_theme: Option<String>,
-    /// Fonts are installed in this egui context.
-    pub(crate) fonts_installed: bool,
 }
 
 impl UiState {

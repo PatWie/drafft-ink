@@ -182,6 +182,8 @@ pub enum HostRequest {
     PickSaveTarget,
     /// Show an image picker. The app calls `image.insert`.
     PickImage,
+    /// Show a picker for an Excalidraw library. The app calls `library.import` with `mode: open_as_tab`.
+    PickLibrary,
     /// Copy text to the system clipboard (the equation editor's Copy button).
     CopyText(String),
     /// Ask for the clipboard text. The app answers by calling [`UiState::set_pasted_text`].
@@ -363,7 +365,7 @@ impl UiState {
         if call.origin == Origin::Shortcut && quiet_from_keyboard(refusal.code) {
             return;
         }
-        if call.id.starts_with("gesture.") {
+        if call.id.starts_with("gesture.") && call.id != "gesture.begin" {
             // A scrub that lost its gesture is not worth a toast; the control just stops scrubbing.
             return;
         }

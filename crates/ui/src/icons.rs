@@ -60,6 +60,7 @@ pub enum Icon {
     Lock,
     Unlock,
     Plus,
+    Minus,
     Close,
     Help,
     Search,
@@ -383,6 +384,7 @@ pub fn paint(painter: &Painter, rect: Rect, icon: Icon, color: Color32) {
             pen.line((12.0, 5.0), (12.0, 19.0));
             pen.line((5.0, 12.0), (19.0, 12.0));
         }
+        Icon::Minus => pen.line((5.0, 12.0), (19.0, 12.0)),
         Icon::Close => {
             pen.line((6.0, 6.0), (18.0, 18.0));
             pen.line((18.0, 6.0), (6.0, 18.0));
