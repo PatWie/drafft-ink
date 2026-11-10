@@ -1,0 +1,24 @@
+{
+  "about": "The registry describes itself: commands list by family, one command describes its arguments, the recent ring shows what a script ran, and unknown names are refused with a suggestion.",
+  "steps": [
+    { "assert": "engine.commands", "args": { "family": "tab" }, "expect": [
+        { "path": "$.commands[id=tab.new].family", "eq": "tab" }, { "path": "$.commands[id=tab.new].undo", "eq": "NoUndo" },
+        { "path": "$.commands[id=tab.rename].undo", "eq": "Undoable" }, { "path": "$.commands[id=view.pan]", "exists": false, "note": "other families are filtered out" } ] },
+    { "assert": "engine.commands", "args": { "search": "zoom", "available_only": true }, "expect": [ { "path": "$.commands[id=view.zoom_in].available", "eq": true } ] },
+    { "assert": "engine.describe", "args": { "id": "view.pan" }, "expect": [
+        { "path": "$.id", "eq": "view.pan" }, { "path": "$.args_schema.properties", "contains": "dx" }, { "path": "$.example.args.dx", "is": "number" } ] },
+
+    { "execute": "view.zoom_in" },
+    { "execute": "view.zoom_in", "args": { "at": "nowhere" }, "refused": "bad_args" },
+    { "assert": "engine.recent", "args": { "limit": 5 }, "expect": [
+        { "path": "$.entries[-1].id", "eq": "view.zoom_in" }, { "path": "$.entries[-1].source", "eq": "test" },
+        { "path": "$.entries[-1].outcome.ok", "eq": false, "note": "The refusal is in the ring too." },
+        { "path": "$.entries[-2].outcome.ok", "eq": true } ] },
+    { "assert": "engine.state", "expect": [ { "path": "$.tabs", "len": 1 }, { "path": "$.gesture", "eq": null }, { "path": "$.dirty", "eq": false } ] },
+
+    { "assert": "engine.describe", "args": { "id": "view.pann" }, "refused": "unknown_command", "text": "Did you mean `view.pan`" },
+    { "assert": "engine.commands", "args": { "family": "nope" }, "refused": "bad_args", "text": "Families:" },
+    { "execute": "no.such_command", "refused": "unknown_command", "text": "engine.commands" },
+    { "undo": 1, "refused": "nothing_to_undo" }
+  ]
+}

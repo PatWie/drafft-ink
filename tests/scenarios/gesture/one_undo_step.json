@@ -1,0 +1,24 @@
+{
+  "about": "A gesture is many updates and one undo step; cancel leaves nothing behind. Only commands that declare it can run as a gesture, and nothing else may run while one is open.",
+  "steps": [
+    { "harness": "load_generated", "args": { "count": 6 } },
+    { "execute": "gesture.update", "args": { "gesture": "g1", "args": {} }, "refused": "no_gesture", "text": "gesture.begin" },
+
+    { "execute": "gesture.begin", "args": { "command": "style.set", "args": { "ids": ["e0"], "props": { "stroke_width": 3 } } }, "expect": [ { "path": "$.gesture", "eq": "g1" } ] },
+    { "assert": "engine.state", "expect": [ { "path": "$.gesture.command", "eq": "style.set" } ] },
+    { "execute": "gesture.update", "args": { "gesture": "g1", "args": { "ids": ["e0"], "props": { "stroke_width": 5 } } } },
+    { "execute": "history.undo", "refused": "gesture_active", "note": "Nothing but gesture.update, end and cancel may run while a gesture is open." },
+    { "execute": "gesture.end", "args": { "args": { "ids": ["e0"], "props": { "stroke_width": 7 } } }, "expect": [ { "path": "$.undo_label", "eq": "Set style" } ] },
+    { "assert": "history.state", "expect": [ { "path": "$.undo_depth", "eq": 1 } ] },
+    { "assert": "style.get", "args": { "ids": ["e0"], "props": ["stroke_width"] }, "expect": [ { "path": "$.props.stroke_width.value", "eq": 7 } ] },
+    { "undo": 1 },
+    { "assert": "style.get", "args": { "ids": ["e0"], "props": ["stroke_width"] }, "expect": [ { "path": "$.props.stroke_width.value", "eq": 2 } ], "note": "One undo takes back the whole drag." },
+
+    { "execute": "gesture.begin", "args": { "command": "style.set", "args": { "ids": ["e0"], "props": { "stroke_width": 9 } } } },
+    { "execute": "gesture.cancel", "expect": [ { "path": "$.cancelled", "eq": true } ] },
+    { "assert": "style.get", "args": { "ids": ["e0"], "props": ["stroke_width"] }, "expect": [ { "path": "$.props.stroke_width.value", "eq": 2 } ] },
+    { "assert": "history.state", "expect": [ { "path": "$.undo_depth", "eq": 0 } ], "note": "A cancelled gesture is not a step." },
+
+    { "execute": "gesture.begin", "args": { "command": "view.zoom_in" }, "refused": "not_gesturable", "text": "style.set" }
+  ]
+}

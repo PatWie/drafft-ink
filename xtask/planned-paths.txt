@@ -1,4 +1,3 @@
 # Files that AGENTS.md mentions before they are written. The list only shrinks:
 # `cargo xtask standards` fails when a listed file exists (delete the line) and
 # when AGENTS.md no longer mentions it.
-docs/testing.md

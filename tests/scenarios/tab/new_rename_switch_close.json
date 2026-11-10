@@ -1,0 +1,30 @@
+{
+  "about": "Tabs open, rename, switch, duplicate, move and close by command. Renaming is an undo step; closing the last tab or a dirty one is refused with the way out.",
+  "steps": [
+    { "harness": "load_generated", "args": { "count": 6 } },
+    { "execute": "tab.list", "expect": [ { "path": "$.tabs", "len": 1 }, { "path": "$.tabs[0].id", "eq": "t1" }, { "path": "$.tabs[0].active", "eq": true } ] },
+    { "execute": "tab.new", "args": { "name": "Sketch" }, "expect": [ { "path": "$.id", "eq": "t2" }, { "path": "$.active", "eq": "t2" } ] },
+
+    { "execute": "tab.rename", "args": { "name": "Plans" }, "expect": [ { "path": "$.name", "eq": "Plans" }, { "path": "$.undo_label", "eq": "Rename tab" } ] },
+    { "execute": "tab.rename", "args": { "name": "" }, "refused": "empty_name", "text": "1 to 120 characters" },
+    { "undo": 1, "expect": [ { "path": "$.undone", "eq": ["Rename tab"] } ] },
+    { "execute": "tab.list", "expect": [ { "path": "$.tabs[id=t2].name", "eq": "Sketch" } ] },
+    { "redo": 1 },
+    { "execute": "tab.list", "expect": [ { "path": "$.tabs[id=t2].name", "eq": "Plans" } ] },
+
+    { "execute": "tab.switch", "args": { "tab": "t1" }, "expect": [ { "path": "$.active", "eq": "t1" } ] },
+    { "execute": "tab.switch", "args": { "tab": "t9" }, "refused": "no_such_tab", "text": ["t9", "tab.list"] },
+
+    { "execute": "tab.duplicate", "args": { "name": "Copy" }, "expect": [ { "path": "$.id", "eq": "t3" }, { "path": "$.index", "eq": 1 } ] },
+    { "execute": "tab.move", "args": { "tab": "t3", "to_index": 0 }, "expect": [ { "path": "$.index", "eq": 0 } ] },
+    { "execute": "tab.list", "expect": [ { "path": "$.tabs[0].id", "eq": "t3" }, { "path": "$.tabs[1].id", "eq": "t1" }, { "path": "$.tabs[2].id", "eq": "t2" } ] },
+
+    { "note": "Edit the active tab (t3, the copy), so it has unsaved changes.",
+      "execute": "style.set", "args": { "ids": ["e0"], "props": { "stroke_width": 4 } } },
+    { "execute": "tab.close", "args": { "tab": "t3" }, "refused": "unsaved_changes", "text": "unsaved" },
+    { "execute": "tab.close", "args": { "tab": "t3", "on_unsaved": "discard" }, "expect": [ { "path": "$.id", "eq": "t3" } ] },
+    { "execute": "tab.close", "args": { "tab": "t1" }, "expect": [ { "path": "$.id", "eq": "t1" } ] },
+    { "execute": "tab.close", "args": { "tab": "t2", "on_unsaved": "discard" }, "refused": "last_tab", "text": "tab.new" },
+    { "execute": "tab.list", "expect": [ { "path": "$.tabs", "len": 1 }, { "path": "$.tabs[0].id", "eq": "t2" } ] }
+  ]
+}

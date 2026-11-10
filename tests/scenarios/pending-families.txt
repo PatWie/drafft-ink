@@ -1,0 +1,4 @@
+# Command families that are registered but have no scenario yet. The accounting test
+# (crates/testkit/tests/accounting.rs) fails for a registered family with no tests/scenarios/<family>/*.json
+# unless it is listed here, and fails for a line whose family has scenarios now. The list only shrinks:
+# write the scenario, then delete the line. Do not add a family to avoid writing a scenario.

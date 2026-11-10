@@ -1,0 +1,10 @@
+{
+  "about": "A shell without a storage port still applies settings for the session; nothing is persisted and nothing fails.",
+  "ports": "headless",
+  "steps": [
+    { "execute": "settings.set", "args": { "key": "snap.grid", "value": true }, "expect": [ { "path": "$.changed", "eq": true } ] },
+    { "execute": "settings.get", "args": { "key": "snap.grid" }, "expect": [ { "path": "$.settings['snap.grid']", "eq": true } ] },
+    { "execute": "settings.reset", "args": { "all": true } },
+    { "execute": "settings.get", "args": { "key": "snap.grid" }, "expect": [ { "path": "$.settings['snap.grid']", "eq": false } ] }
+  ]
+}

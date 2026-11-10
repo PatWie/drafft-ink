@@ -1,0 +1,17 @@
+{
+  "about": "Rapid repeats of one command on the same element fold into one undo step; waiting past the window starts a new step. The fake clock decides.",
+  "steps": [
+    { "harness": "load_generated", "args": { "count": 6 } },
+    { "execute": "style.set", "args": { "ids": ["e0"], "props": { "stroke_width": 4 } } },
+    { "execute": "style.set", "args": { "ids": ["e0"], "props": { "stroke_width": 5 } } },
+    { "execute": "style.set", "args": { "ids": ["e0"], "props": { "stroke_width": 6 } } },
+    { "assert": "history.state", "expect": [ { "path": "$.undo_depth", "eq": 1 } ], "note": "Three repeats in the same instant: one step." },
+    { "harness": "advance_clock", "args": { "ms": 60000 } },
+    { "execute": "style.set", "args": { "ids": ["e0"], "props": { "stroke_width": 7 } } },
+    { "assert": "history.state", "expect": [ { "path": "$.undo_depth", "eq": 2 } ], "note": "A minute later: a new step." },
+    { "undo": 1 },
+    { "assert": "style.get", "args": { "ids": ["e0"], "props": ["stroke_width"] }, "expect": [ { "path": "$.props.stroke_width.value", "eq": 6 } ] },
+    { "undo": 1 },
+    { "assert": "style.get", "args": { "ids": ["e0"], "props": ["stroke_width"] }, "expect": [ { "path": "$.props.stroke_width.value", "eq": 2 } ], "note": "One undo takes back all three folded repeats." }
+  ]
+}

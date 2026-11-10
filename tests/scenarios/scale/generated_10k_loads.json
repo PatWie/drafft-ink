@@ -1,0 +1,14 @@
+{
+  "about": "A generated scene of 10,000 mixed elements loads, has the documented mix of kinds, bindings and groups, and the commands that read the whole scene still answer.",
+  "steps": [
+    { "harness": "load_generated", "args": { "count": 10000, "seed": 7 }, "expect": [ { "path": "$.elements", "eq": 10000 } ] },
+    { "harness": "scene_probe", "expect": [
+        { "path": "$.total", "eq": 10000 },
+        { "path": "$.kinds.rectangle", "eq": 2000 }, { "path": "$.kinds.ellipse", "eq": 2000 }, { "path": "$.kinds.diamond", "eq": 1000 }, { "path": "$.kinds.line", "eq": 1000 },
+        { "path": "$.kinds.arrow", "eq": 1000 }, { "path": "$.kinds.freehand", "eq": 1000 }, { "path": "$.kinds.text", "eq": 1000 }, { "path": "$.kinds.math", "eq": 1000 },
+        { "path": "$.bound_arrows", "eq": 1000 }, { "path": "$.groups", "eq": 1000 } ] },
+    { "execute": "view.zoom_to_fit", "expect": [ { "path": "$.zoom", "lt": 0.2, "note": "10k elements on a 1,400 by 1,400 unit square cannot fit at the default zoom" } ] },
+    { "execute": "style.set", "args": { "ids": ["e0"], "props": { "stroke_width": 4 } }, "expect": [ { "path": "$.changed", "eq": true } ] },
+    { "undo": 1, "expect": [ { "path": "$.undone", "len": 1 } ] }
+  ]
+}

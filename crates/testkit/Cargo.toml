@@ -4,8 +4,25 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 rust-version.workspace = true
+description = "Headless harness, JSON scenario runner, deterministic scene generator and pixel probes (L7)."
+build = "build.rs"
 
 [dependencies]
+drafftink-engine = { path = "../engine" }
+drafftink-scene = { path = "../scene" }
+drafftink-io = { path = "../io" }
+drafftink-geom = { path = "../geom" }
+drafftink-edit = { path = "../edit" }
+drafftink-render = { path = "../render" }
+drafftink-gpu = { path = "../gpu" }
+wgpu = { workspace = true }
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+
+[dev-dependencies]
+# Reads src/harness.rs for the accounting test (tests/accounting.rs). Already in the lock file.
+syn = { version = "2", features = ["full", "visit"] }
 
 [lints]
 workspace = true

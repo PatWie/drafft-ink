@@ -1,0 +1,32 @@
+{
+  "about": "Undo and redo walk the document history one step at a time, a batch is one step, and an empty stack refuses in words.",
+  "steps": [
+    { "harness": "load_generated", "args": { "count": 6 } },
+    { "assert": "history.state", "expect": [ { "path": "$.can_undo", "eq": false }, { "path": "$.undo_depth", "eq": 0 } ] },
+    { "undo": 1, "refused": "nothing_to_undo", "text": "nothing to undo" },
+    { "redo": 1, "refused": "nothing_to_redo", "text": "nothing to redo" },
+
+    { "execute": "style.set", "args": { "ids": ["e0"], "props": { "stroke_width": 4 } } },
+    { "assert": "history.state", "expect": [ { "path": "$.undo_depth", "eq": 1 }, { "path": "$.undo_label", "eq": "Set style" } ] },
+    { "undo": 1, "expect": [ { "path": "$.undone", "eq": ["Set style"] }, { "path": "$.can_redo", "eq": true } ] },
+    { "assert": "style.get", "args": { "ids": ["e0"], "props": ["stroke_width"] }, "expect": [ { "path": "$.props.stroke_width.value", "eq": 2 } ] },
+    { "redo": 1, "expect": [ { "path": "$.redone", "eq": ["Set style"] } ] },
+    { "assert": "style.get", "args": { "ids": ["e0"], "props": ["stroke_width"] }, "expect": [ { "path": "$.props.stroke_width.value", "eq": 4 } ] },
+
+    { "note": "Three commands in a batch are one undo step.",
+      "batch": [
+        { "id": "style.set", "args": { "ids": ["e0"], "props": { "stroke_width": 6 } } },
+        { "id": "style.set", "args": { "ids": ["e1"], "props": { "stroke_width": 6 } } },
+        { "id": "style.apply_theme", "args": { "name": "pastel", "ids": ["e2"] } }
+      ],
+      "opts": { "label": "Restyle three" },
+      "expect": [ { "path": "$.completed", "eq": 3 }, { "path": "$.undo_label", "eq": "Restyle three" } ] },
+    { "assert": "history.state", "expect": [ { "path": "$.undo_depth", "eq": 2 }, { "path": "$.undo_label", "eq": "Restyle three" } ] },
+    { "undo": 1 },
+    { "assert": "style.get", "args": { "ids": ["e0"], "props": ["stroke_width"] }, "expect": [ { "path": "$.props.stroke_width.value", "eq": 4 } ], "note": "The batch is gone, and e0 has the width from before it." },
+    { "assert": "style.get", "args": { "ids": ["e1"], "props": ["stroke_width"] }, "expect": [ { "path": "$.props.stroke_width.value", "eq": 2 } ] },
+
+    { "execute": "history.clear", "expect": [ { "path": "$.changed", "eq": true } ] },
+    { "undo": 1, "refused": "nothing_to_undo" }
+  ]
+}
