@@ -931,6 +931,21 @@ version = "0.2.0"
 [[package]]
 name = "drafftink-doc"
 version = "0.2.0"
+dependencies = [
+ "base64 0.22.1",
+ "criterion 0.8.2",
+ "drafftink-profile",
+ "drafftink-scene",
+ "flate2",
+ "kurbo",
+ "loro",
+ "proptest",
+ "serde",
+ "serde_json",
+ "smallvec",
+ "thiserror 2.0.21",
+ "xxhash-rust",
+]
 
 [[package]]
 name = "drafftink-edit"
