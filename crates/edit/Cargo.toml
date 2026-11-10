@@ -6,6 +6,16 @@ license.workspace = true
 rust-version.workspace = true
 
 [dependencies]
+drafftink-geom = { path = "../geom" }
+drafftink-scene = { path = "../scene" }
+drafftink-profile = { path = "../profile" }
+kurbo.workspace = true
+thiserror.workspace = true
+serde.workspace = true
+
+[dev-dependencies]
+drafftink-scene = { path = "../scene", features = ["conformance"] }
+proptest.workspace = true
 
 [lints]
 workspace = true

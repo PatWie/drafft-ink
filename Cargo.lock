@@ -475,6 +475,15 @@ version = "0.2.0"
 [[package]]
 name = "drafftink-edit"
 version = "0.2.0"
+dependencies = [
+ "drafftink-geom",
+ "drafftink-profile",
+ "drafftink-scene",
+ "kurbo",
+ "proptest",
+ "serde",
+ "thiserror",
+]
 
 [[package]]
 name = "drafftink-engine"
