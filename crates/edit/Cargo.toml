@@ -12,10 +12,13 @@ drafftink-profile = { path = "../profile" }
 kurbo.workspace = true
 thiserror.workspace = true
 serde.workspace = true
+serde_json.workspace = true
+schemars.workspace = true
 
 [dev-dependencies]
 drafftink-scene = { path = "../scene", features = ["conformance"] }
 proptest.workspace = true
+insta.workspace = true
 
 [lints]
 workspace = true

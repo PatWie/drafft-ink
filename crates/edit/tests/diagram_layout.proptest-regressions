@@ -1,0 +1,7 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc 335f144ecc94c4b22f85f07366fe4625e82ae9412462ed3bb34e612c0a18d66a # shrinks to g = LayoutGraph { sizes: [10.0W×10.0H, 10.0W×10.0H, 10.0W×10.0H, 10.0W×10.0H, 10.0W×10.0H], edges: [(0, 2), (4, 2), (1, 0), (1, 4), (3, 4), (1, 0), (4, 4), (0, 3), (2, 1), (0, 4)], fixed: [] }, d = Up, ng = 40.21486270333542, lg = 85.9847590289337

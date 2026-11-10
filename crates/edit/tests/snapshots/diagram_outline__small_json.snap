@@ -1,0 +1,120 @@
+---
+source: crates/edit/tests/diagram_outline.rs
+expression: "serde_json::to_string_pretty(&o).unwrap()"
+---
+{
+  "nodes": [
+    {
+      "id": "e1",
+      "name": "start",
+      "kind": "ellipse",
+      "label": "Start",
+      "bounds": [
+        88,
+        0,
+        85,
+        49
+      ]
+    },
+    {
+      "id": "e3",
+      "kind": "diamond",
+      "label": "Is it valid?",
+      "bounds": [
+        0,
+        129,
+        260,
+        70
+      ]
+    },
+    {
+      "id": "e5",
+      "kind": "rectangle",
+      "label": "Done",
+      "bounds": [
+        15,
+        285,
+        80,
+        48
+      ]
+    },
+    {
+      "id": "e7",
+      "kind": "rectangle",
+      "label": "Fix the input\nand retry",
+      "bounds": [
+        135,
+        279,
+        140,
+        60
+      ]
+    },
+    {
+      "id": "rule",
+      "kind": "line",
+      "bounds": [
+        0,
+        500,
+        300,
+        0
+      ]
+    }
+  ],
+  "edges": [
+    {
+      "id": "e9",
+      "from": "e1",
+      "to": "e3",
+      "end_head": "arrow",
+      "path": "sharp"
+    },
+    {
+      "id": "e10",
+      "from": "e3",
+      "to": "e5",
+      "label": "yes",
+      "end_head": "arrow",
+      "path": "sharp"
+    },
+    {
+      "id": "e12",
+      "from": "e3",
+      "to": "e7",
+      "label": "no",
+      "end_head": "arrow",
+      "path": "elbow"
+    },
+    {
+      "id": "e14",
+      "from": "e7",
+      "to": "e3",
+      "start_head": "arrow",
+      "end_head": "arrow",
+      "path": "sharp"
+    }
+  ],
+  "texts": [
+    {
+      "id": "note",
+      "kind": "text",
+      "label": "remember: \"quotes\" work",
+      "bounds": [
+        400,
+        10,
+        200,
+        25
+      ],
+      "locked": true
+    }
+  ],
+  "groups": [
+    {
+      "id": "g1",
+      "members": [
+        "e5",
+        "e7"
+      ]
+    }
+  ],
+  "frames": []
+}

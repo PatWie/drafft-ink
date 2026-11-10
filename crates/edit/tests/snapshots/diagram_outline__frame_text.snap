@@ -1,0 +1,11 @@
+---
+source: crates/edit/tests/diagram_outline.rs
+expression: "outline(&store, &OutlineOpts::default()).to_text()"
+---
+nodes (2):
+e2 "A" rectangle (10,20,80x48)
+e4 "B" rectangle (10,148,80x48)
+edges (1):
+e2 -> e4 "go" [e6]
+frames (1):
+e1 "Flow" (-22,-12,144x240): e2, e4, e6

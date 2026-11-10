@@ -1,0 +1,19 @@
+---
+source: crates/edit/tests/diagram_outline.rs
+expression: o.to_text()
+---
+nodes (5):
+e1 @start "Start" ellipse (88,0,85x49)
+e3 "Is it valid?" diamond (0,129,260x70)
+e5 "Done" rectangle (15,285,80x48)
+e7 "Fix the input\nand retry" rectangle (135,279,140x60)
+rule line (0,500,300x0)
+edges (4):
+e1 -> e3 [e9]
+e3 -> e5 "yes" [e10]
+e3 -> e7 "no" elbow [e12]
+e7 <-> e3 [e14]
+texts (1):
+note "remember: \"quotes\" work" text (400,10,200x25) locked
+groups (1):
+g1: e5, e7
