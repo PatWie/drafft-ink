@@ -1,11 +1,29 @@
 [package]
 name = "drafftink-io"
+description = "Every file format, pure: bytes in, scene Document out. Native JSON, legacy migration, Excalidraw, Mermaid, SVG, PNG metadata."
 version.workspace = true
 edition.workspace = true
 license.workspace = true
 rust-version.workspace = true
 
 [dependencies]
+drafftink-scene = { path = "../scene" }
+drafftink-geom = { path = "../geom" }
+drafftink-sketch = { path = "../sketch" }
+kurbo.workspace = true
+serde.workspace = true
+serde_json = { workspace = true, features = ["float_roundtrip"] }
+thiserror.workspace = true
+base64.workspace = true
+sha2.workspace = true
+loro.workspace = true
+# gzip for the large legacy fixtures and zlib for PNG text chunks. Pure Rust backend.
+flate2 = { version = "1", default-features = false, features = ["rust_backend"] }
+
+[dev-dependencies]
+proptest.workspace = true
+png.workspace = true
+roxmltree = "0.21"
 
 [lints]
 workspace = true
