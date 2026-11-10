@@ -10,6 +10,8 @@ use web_time::Instant;
 static EPOCH: OnceLock<Instant> = OnceLock::new();
 
 /// Nanoseconds since the process-wide epoch (the first call to this function).
+// `web_time::Instant` is wasm-safe; clippy sees the std path it re-exports on native.
+#[allow(clippy::disallowed_methods)]
 pub fn now_ns() -> u64 {
     let epoch = EPOCH.get_or_init(Instant::now);
     u64::try_from(epoch.elapsed().as_nanos()).unwrap_or(u64::MAX)
