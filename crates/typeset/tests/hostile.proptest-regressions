@@ -4,4 +4,4 @@
 #
 # It is recommended to check this file in to source control so that
 # everyone who runs the test benefits from these saved cases.
-cc 249328291dfce69c06138a28e13f7702fbdfe384f7fedf2f9fc1fe710fd7e1f9 # shrinks to text = "Àמּ\n\u{1cd0}", size = NaN, wrap = None, spans = []
+cc dc02dfa78cdc67080e101ff4a0f01643e8befdef874ea80a8db8f3141db8ee92 # shrinks to text = "𑼂ׯ\n\u{fb1e}a", size = NaN, wrap = None, spans = []

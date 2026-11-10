@@ -64,6 +64,20 @@ fn finite(v: f64) -> f32 {
     if v.is_finite() { v.clamp(-1.0e7, 1.0e7) as f32 } else { 0.0 }
 }
 
+/// Move the focus one word to the right (`right`) or left, in screen terms.
+///
+/// Parley's `next_visual_word` / `previous_visual_word` loop until the cursor stops moving. With
+/// text that wraps into one cluster per line they never stop (found by the hostile test: a 1 px
+/// wrap width over a text of mixed scripts). The logical variants walk clusters and always end.
+/// In right-to-left text the visual right is the logical previous word.
+fn word_step(layout: &crate::layout::PLayout, sel: &Selection, right: bool, extend: bool) -> Selection {
+    let focus = sel.focus();
+    let [upstream, downstream] = focus.logical_clusters(layout);
+    let rtl = downstream.or(upstream).is_some_and(|c| c.is_rtl());
+    let to = if right != rtl { focus.next_logical_word(layout) } else { focus.previous_logical_word(layout) };
+    if extend { sel.extend(to) } else { Selection::from(to) }
+}
+
 fn caret_of(c: Cursor) -> Caret {
     Caret { index: c.index(), affinity: c.affinity() }
 }
@@ -163,8 +177,8 @@ impl TextLayout {
         TextSelection(match motion {
             Motion::Left => s.previous_visual(l, extend),
             Motion::Right => s.next_visual(l, extend),
-            Motion::WordLeft => s.previous_visual_word(l, extend),
-            Motion::WordRight => s.next_visual_word(l, extend),
+            Motion::WordLeft => word_step(l, s, false, extend),
+            Motion::WordRight => word_step(l, s, true, extend),
             Motion::Up => s.previous_line(l, extend),
             Motion::Down => s.next_line(l, extend),
             Motion::LineStart => s.line_start(l, extend),
@@ -203,8 +217,71 @@ impl TextLayout {
 
     /// Rectangles that cover the selected text, one or more per line, in layout space. A newline
     /// inside the selection adds a little width at the end of its line, as in most editors.
+    ///
+    /// This is our own version of Parley's `Selection::geometry`, which has a `debug_assert!` that
+    /// fails when a combining mark follows a newline (the newline then shares a cluster with the
+    /// mark). The result is the same as Parley's for text without inline boxes.
     pub fn selection_rects(&self, sel: &TextSelection) -> Vec<Rect> {
-        sel.0.geometry(&self.layout).into_iter().map(|(b, _)| Rect::new(b.x0, b.y0, b.x1, b.y1)).collect()
+        const NEWLINE_WIDTH_RATIO: f64 = 0.25;
+        let range = sel.range();
+        let mut out = Vec::new();
+        if range.is_empty() {
+            return out;
+        }
+        for line in self.layout.lines() {
+            let lr = line.text_range();
+            // A line with an empty range is the empty last line after a trailing newline.
+            if lr.end <= range.start || lr.start >= range.end {
+                continue;
+            }
+            let m = line.metrics();
+            let top = f64::from(m.block_min_coord.min(m.content_block_min_coord));
+            let bottom = f64::from(m.block_max_coord.max(m.content_block_max_coord));
+            let x0 = f64::from(m.offset) + f64::from(m.inline_min_coord);
+            // The selection runs on past this line's hard break: show the newline as a little space.
+            let newline_space = if line.break_reason() == parley::BreakReason::Explicit && range.end >= lr.end {
+                line.runs().last().map_or(0.0, |r| {
+                    let fm = r.font_metrics();
+                    (f64::from(fm.ascent) + f64::from(fm.descent)) * NEWLINE_WIDTH_RATIO
+                })
+            } else {
+                0.0
+            };
+            if range.start <= lr.start && range.end >= lr.end {
+                let r = Rect::new(x0, top, x0 + f64::from(m.advance) + newline_space, bottom);
+                if r.width() > 0.0 {
+                    out.push(r);
+                }
+                continue;
+            }
+            // Partly selected line: walk the clusters in visual order and emit one rectangle per
+            // contiguous selected stretch.
+            let (mut start_x, mut cur_x) = (x0, x0);
+            let mut selected = 0usize;
+            for run in line.runs() {
+                for cluster in run.visual_clusters() {
+                    let advance = f64::from(cluster.advance());
+                    if range.contains(&cluster.text_range().start) {
+                        selected += 1;
+                    } else if cur_x != start_x {
+                        out.push(Rect::new(start_x, top, cur_x, bottom));
+                        start_x = cur_x + advance;
+                        cur_x = start_x;
+                        continue;
+                    } else {
+                        start_x = cur_x + advance;
+                        cur_x = start_x;
+                        continue;
+                    }
+                    cur_x += advance;
+                }
+            }
+            let end_x = if range.end >= lr.end && selected > 0 { cur_x + newline_space } else { cur_x };
+            if end_x != start_x {
+                out.push(Rect::new(start_x, top, end_x, bottom));
+            }
+        }
+        out
     }
 
     /// Index of the line that contains byte `index`.
@@ -214,5 +291,62 @@ impl TextLayout {
             .iter()
             .position(|l| i >= l.text_range.start && i < l.text_range.end)
             .unwrap_or(self.lines.len().saturating_sub(1))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{TextSpec, Typesetter};
+
+    fn same(a: &[Rect], b: &[Rect]) -> bool {
+        a.len() == b.len()
+            && a.iter().zip(b).all(|(p, q)| {
+                (p.x0 - q.x0).abs() < 1e-3
+                    && (p.x1 - q.x1).abs() < 1e-3
+                    && (p.y0 - q.y0).abs() < 1e-3
+                    && (p.y1 - q.y1).abs() < 1e-3
+            })
+    }
+
+    /// Our selection rectangles equal Parley's on every range of ordinary text (the only case
+    /// where Parley does not assert), including wrapped, multi-line and right-to-left text.
+    #[test]
+    fn selection_rects_match_parley_on_ordinary_text() {
+        let mut ts = Typesetter::new();
+        let cases = [
+            TextSpec::new("Hello wide world"),
+            TextSpec::new("one\ntwo\n\nfour"),
+            TextSpec::new("trailing\n"),
+            TextSpec::new("alpha beta gamma delta epsilon zeta eta theta").wrapped(110.0),
+            TextSpec::new("mixed שלום עולם text\nline two").wrapped(150.0),
+            TextSpec::new("é ü ñ 日本語 😀 end"),
+        ];
+        for spec in cases {
+            let l = ts.text(&spec);
+            let idx: Vec<usize> = spec.text.char_indices().map(|(i, _)| i).chain([spec.text.len()]).collect();
+            for &a in &idx {
+                for &b in &idx {
+                    let sel = l.selection_from_range(a, b);
+                    let ours = l.selection_rects(&sel);
+                    let theirs: Vec<Rect> =
+                        sel.0.geometry(&l.layout).into_iter().map(|(r, _)| Rect::new(r.x0, r.y0, r.x1, r.y1)).collect();
+                    assert!(same(&ours, &theirs), "{:?} {a}..{b}\n ours   {ours:?}\n parley {theirs:?}", spec.text);
+                }
+            }
+        }
+    }
+
+    /// A newline followed by a combining mark shares a cluster with it; Parley asserts on this.
+    #[test]
+    fn newline_followed_by_a_combining_mark_does_not_panic() {
+        let mut ts = Typesetter::new();
+        for text in ["𑼂ׯ\n\u{fb1e}a", "a\n\u{301}b", "\n\u{200d}\n", "a\r\n\u{301}"] {
+            let l = ts.text(&TextSpec::new(text));
+            let all = l.select_all();
+            let rects = l.selection_rects(&all);
+            assert!(!rects.is_empty(), "{text:?}");
+            assert!(rects.iter().all(|r| r.x0.is_finite() && r.x1.is_finite() && r.y1 > r.y0));
+        }
     }
 }

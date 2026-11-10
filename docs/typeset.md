@@ -67,6 +67,13 @@ lays out again and rebuilds the selection with `selection_at_index` / `selection
 Up and down keep the horizontal position. Points are layout-local: the editor subtracts the shape
 position and **undoes the shape rotation** first (the old app forgot the rotation).
 
+`selection_rects` and the word motions are our own code, not Parley's. Parley 0.12's
+`Selection::geometry` has a `debug_assert!` that fails when a combining mark follows a newline, and its
+`next_visual_word` / `previous_visual_word` never return on some wrapped mixed-script text. The
+rectangles match Parley's on ordinary text (unit test, all ranges, including right-to-left); word motion
+uses the logical word steps, which are finite, and maps right/left by the text direction at the caret.
+`tests/hostile.rs` calls every caret method with hostile indices and points on arbitrary text.
+
 Backspace and Delete: move the selection one step with `Motion::Left` / `Right` and delete between
 the two indices; that respects grapheme clusters. Only the editor changes text.
 

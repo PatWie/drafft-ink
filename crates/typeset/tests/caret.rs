@@ -263,3 +263,45 @@ fn alignment_moves_carets_with_the_text() {
     let back = l.caret_at_point(Point::new(299.0, 5.0));
     assert!(back.index >= 1);
 }
+
+/// Regression: Parley's visual word motion looped forever on a one-pixel-wide wrap of mixed-script
+/// text, and its selection geometry asserted when a combining mark followed a newline.
+#[test]
+fn word_motions_end_on_degenerate_wraps_and_newline_marks_do_not_panic() {
+    let mut ts = Typesetter::new();
+    // Mixed scripts: the paragraph may be right-to-left, so "right" can mean "earlier in the text".
+    // What must hold is that every call returns and stays inside the text.
+    let text = "\n\n$\n\n𞸧C\n\nᜭH\n\u{d63}:\n𞸫{\nᜁ\nୋ\nS\n\n]ᇐ\n!\u{ac4}\n\nP\n𑌯װW�/\n\nᝥ\n?\n\u{10a05}\n\nD&7\n\n=𐞹\n\">\\à\n\n僚\nJ\n\n1F";
+    for wrap in [0.0, 1.0, 5.0] {
+        let l = ts.text(&plain(text, 20.0).wrapped(wrap));
+        for start in (0..=text.len()).filter(|&i| text.is_char_boundary(i)) {
+            for motion in [Motion::WordRight, Motion::WordLeft] {
+                let mut sel = l.selection_at_index(start, Affinity::Downstream);
+                for _ in 0..text.len() + 2 {
+                    let next = l.move_selection(&sel, motion, false);
+                    assert!(next.focus().index <= text.len());
+                    if next.focus().index == sel.focus().index {
+                        break;
+                    }
+                    sel = next;
+                }
+            }
+        }
+    }
+    // Left-to-right text on the same degenerate wraps still walks to both ends.
+    let ltr = "ab cd\n\nef gh ij\nk";
+    for wrap in [1.0, 5.0] {
+        let l = ts.text(&plain(ltr, 20.0).wrapped(wrap));
+        let mut sel = l.selection_at_index(0, Affinity::Downstream);
+        for _ in 0..ltr.len() {
+            sel = l.move_selection(&sel, Motion::WordRight, false);
+        }
+        assert_eq!(sel.focus().index, ltr.len(), "wrap {wrap}");
+        for _ in 0..ltr.len() {
+            sel = l.move_selection(&sel, Motion::WordLeft, false);
+        }
+        assert_eq!(sel.focus().index, 0, "wrap {wrap}");
+    }
+    let l = ts.text(&plain("𑼂ׯ\n\u{fb1e}a", 20.0));
+    assert!(!l.selection_rects(&l.select_all()).is_empty());
+}
