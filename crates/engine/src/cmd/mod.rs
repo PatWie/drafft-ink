@@ -13,4 +13,4 @@ macro_rules! families {
     };
 }
 
-families! { arrange, arrow, engine, frame, gesture, group, history, perf, settings, style, tab, tool, view }
+families! { arrange, arrow, clipboard, engine, frame, gesture, group, history, image, perf, settings, style, tab, tool, view }

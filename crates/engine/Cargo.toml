@@ -24,6 +24,7 @@ base64.workspace = true
 
 [dev-dependencies]
 drafftink-scene = { path = "../scene", features = ["conformance"] }
+png.workspace = true
 
 [lints]
 workspace = true

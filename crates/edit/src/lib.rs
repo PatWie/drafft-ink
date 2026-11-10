@@ -23,6 +23,7 @@ pub mod frame;
 pub mod group;
 pub mod layout;
 pub mod lifecycle;
+pub mod paste;
 pub mod linear;
 pub mod preflight;
 pub mod query;
