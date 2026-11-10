@@ -483,3 +483,100 @@ fn a_restored_child_of_a_deleted_frame_is_released() {
     assert_valid(&s);
     assert_eq!(validate_scene(&s).warnings().count(), 0);
 }
+
+// ---- with the real binding solver ------------------------------------------------------------------------------
+
+fn two_targets() -> MemoryStore {
+    let mut a = arrow("arr", &[(100.0, 50.0), (300.0, 50.0)]);
+    bind(&mut a, true, "t1", [1.0, 0.5]);
+    bind(&mut a, false, "t2", [0.0, 0.5]);
+    let mut s = scene(vec![rect("t1", 0.0, 0.0, 100.0, 100.0), rect("t2", 300.0, 0.0, 100.0, 100.0), a]);
+    run(&mut s, |tx| drafftink_edit::binding::update_bound_arrows(tx, &ids(&["t1", "t2"]))).unwrap();
+    s
+}
+
+fn bindings(s: &MemoryStore) -> (Option<ElementId>, Option<ElementId>) {
+    let d = get(s, "arr").linear_data().unwrap();
+    (d.start_binding.as_ref().map(|b| b.target.clone()), d.end_binding.as_ref().map(|b| b.target.clone()))
+}
+
+#[test]
+fn deleting_a_target_frees_that_end_where_it_is() {
+    let mut s = two_targets();
+    let before = drafftink_edit::transform::geometry::world_points(get(&s, "arr")).unwrap();
+    let r = run(&mut s, |tx| lifecycle::delete(tx, &ids(&["t1"]), ChildPolicy::Delete)).unwrap();
+    assert_eq!(r.freed, ids(&["arr"]));
+    assert_eq!(bindings(&s), (None, Some(id("t2"))), "only the end bound to the deleted shape is freed");
+    let after = drafftink_edit::transform::geometry::world_points(get(&s, "arr")).unwrap();
+    assert_eq!(before, after, "the arrow does not move");
+    assert_valid(&s);
+    assert_eq!(validate_scene(&s).warnings().count(), 0, "no binding to a tombstone is left");
+    // The other target still drives its end.
+    run(&mut s, |tx| transform::move_by(tx, &ids(&["t2"]), Vec2::new(0.0, 40.0))).unwrap();
+    let moved = drafftink_edit::transform::geometry::world_points(get(&s, "arr")).unwrap();
+    assert!((moved[0] - before[0]).hypot() < 1e-9, "the freed start stays");
+    assert!(moved[1].y > 50.5, "the end bound to t2 followed it down: {moved:?}");
+}
+
+#[test]
+fn deleting_a_frame_with_an_arrow_target_inside_frees_the_arrow() {
+    let mut a = arrow("arr", &[(30.0, 20.0), (300.0, 20.0)]);
+    bind(&mut a, true, "kid", [1.0, 0.5]);
+    let mut s = scene(vec![rect("kid", 10.0, 10.0, 20.0, 20.0).in_frame("f"), frame("f", 0.0, 0.0, 100.0, 100.0), a]);
+    let r = run(&mut s, |tx| lifecycle::delete(tx, &ids(&["f"]), ChildPolicy::Delete)).unwrap();
+    assert_eq!(r.freed, ids(&["arr"]));
+    assert_eq!(bindings(&s), (None, None));
+}
+
+#[test]
+fn restoring_a_target_does_not_bind_a_freed_arrow_again_but_restoring_both_does() {
+    // The arrow was freed when its target was deleted: the restored target is just a shape again.
+    let mut s = two_targets();
+    run(&mut s, |tx| lifecycle::delete(tx, &ids(&["t1"]), ChildPolicy::Delete)).unwrap();
+    run(&mut s, |tx| lifecycle::restore(tx, &ids(&["t1"]))).unwrap();
+    assert_eq!(bindings(&s), (None, Some(id("t2"))));
+    // When the arrow is deleted together with its targets it keeps its bindings, and restoring all of them brings
+    // the arrow back attached and re-solved against where the targets are now.
+    let mut s = two_targets();
+    run(&mut s, |tx| lifecycle::delete(tx, &ids(&["t1", "t2", "arr"]), ChildPolicy::Delete)).unwrap();
+    assert_eq!(bindings(&s), (Some(id("t1")), Some(id("t2"))));
+    run(&mut s, |tx| tx.update(&id("t1"), |e| e.transform.x -= 50.0)).unwrap();
+    let r = run(&mut s, |tx| lifecycle::restore(tx, &ids(&["t1", "t2", "arr"]))).unwrap();
+    assert_eq!(r.arrows, ids(&["arr"]), "the solver re-routed the restored arrow");
+    assert_eq!(bindings(&s), (Some(id("t1")), Some(id("t2"))));
+    let p = drafftink_edit::transform::geometry::world_points(get(&s, "arr")).unwrap();
+    let gap = drafftink_geom::binding::binding_gap(get(&s, "arr").style.stroke_width);
+    assert!((p[0].x - (50.0 + gap)).abs() < 1e-6, "start follows the moved target: {p:?}");
+    assert_valid(&s);
+}
+
+#[test]
+fn duplicated_pairs_follow_their_own_copies() {
+    let mut a = arrow("arr", &[(100.0, 50.0), (300.0, 50.0)]);
+    bind(&mut a, true, "t", [1.0, 0.5]);
+    let mut s = scene(vec![rect("t", 0.0, 0.0, 100.0, 100.0), a]);
+    run(&mut s, |tx| drafftink_edit::binding::update_bound_arrows(tx, &ids(&["t"]))).unwrap();
+    let r = dup(&mut s, &["t", "arr"], None);
+    let map: std::collections::BTreeMap<_, _> = r.copies.iter().cloned().collect();
+    let (ct, ca) = (map[&id("t")].clone(), map[&id("arr")].clone());
+    let orig_before = drafftink_edit::transform::geometry::world_points(get(&s, "arr")).unwrap();
+    run(&mut s, |tx| transform::move_by(tx, std::slice::from_ref(&ct), Vec2::new(0.0, 100.0))).unwrap();
+    let copy = drafftink_edit::transform::geometry::world_points(get(&s, ca.as_str())).unwrap();
+    let gap = drafftink_geom::binding::binding_gap(get(&s, ca.as_str()).style.stroke_width);
+    assert!(
+        (copy[0].x - (120.0 + gap)).abs() < 1e-6 && copy[0].y > 150.0,
+        "the copied arrow follows the copied target: {copy:?}"
+    );
+    assert_eq!(drafftink_edit::transform::geometry::world_points(get(&s, "arr")).unwrap(), orig_before);
+}
+
+#[test]
+fn a_restored_arrow_is_not_left_bound_to_a_target_that_is_still_deleted() {
+    // Found by the random-operation test once deleting a target started to free its arrows.
+    let mut s = two_targets();
+    run(&mut s, |tx| lifecycle::delete(tx, &ids(&["arr", "t2"]), ChildPolicy::Delete)).unwrap();
+    let r = run(&mut s, |tx| lifecycle::restore(tx, &ids(&["arr"]))).unwrap();
+    assert_eq!(r.freed, ids(&["arr"]));
+    assert_eq!(bindings(&s), (Some(id("t1")), None));
+    assert_eq!(validate_scene(&s).warnings().count(), 0);
+}
