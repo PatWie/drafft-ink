@@ -16,13 +16,14 @@ vello = { workspace = true }
 web-time = { workspace = true }
 log = { workspace = true }
 thiserror = { workspace = true }
+png = { workspace = true }
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 egui-winit = { version = "=0.37.0", default-features = false, features = ["x11", "wayland", "clipboard", "links"] }
-wgpu = { workspace = true, features = ["parking_lot", "vulkan", "gles", "metal", "dx12"] }
+wgpu = { workspace = true, features = ["parking_lot", "vulkan", "metal", "dx12"] }
 winit = { workspace = true, features = ["x11", "wayland", "wayland-dlopen", "wayland-csd-adwaita", "rwh_06"] }
 pollster = { workspace = true }
-arboard = { workspace = true }
+arboard = { workspace = true, features = ["wayland-data-control"] }
 env_logger = { workspace = true }
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
@@ -45,11 +46,18 @@ web-sys = { workspace = true, features = [
 ] }
 
 [dev-dependencies]
+wgpu = { workspace = true }
+vello = { workspace = true }
+pollster = { workspace = true }
 env_logger = { workspace = true }
 
 [[example]]
 name = "demo"
-# On wasm32 the example is a binary whose `main` runs the demo; wasm-bindgen turns it into a module.
+
+# wasm32 only (the file is empty elsewhere): wasm-bindgen needs a cdylib.
+[[example]]
+name = "demo_web"
+crate-type = ["cdylib"]
 
 [lints]
 workspace = true

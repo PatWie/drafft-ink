@@ -739,6 +739,7 @@ dependencies = [
  "env_logger",
  "js-sys",
  "log",
+ "png",
  "pollster",
  "thiserror 2.0.21",
  "vello",
