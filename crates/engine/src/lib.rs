@@ -26,7 +26,9 @@ mod invariants;
 pub mod ports;
 pub mod refusal;
 pub mod registry;
+mod remote;
 pub mod ring;
+pub mod services;
 pub mod session;
 pub mod spec;
 pub mod state;
@@ -38,6 +40,10 @@ mod catalog_tests;
 #[cfg(test)]
 mod executor_tests;
 #[cfg(test)]
+mod invariants_tests;
+#[cfg(test)]
+mod keymap_tests;
+#[cfg(test)]
 mod registry_tests;
 
 pub use batch::{BatchFailure, BatchOpts, BatchOutput, BatchStep};
@@ -46,6 +52,7 @@ pub use ports::{PortError, Ports};
 pub use refusal::{Refusal, Suggestion};
 pub use registry::{CommandInfo, Registry};
 pub use ring::{Origin, Outcome, Ring, RingEntry};
+pub use services::Services;
 pub use session::{Ref, Session};
 pub use spec::{CommandSpec, Facts, NoArgs, Typed};
 pub use store::{DocStore, TabDoc, WorkStore};

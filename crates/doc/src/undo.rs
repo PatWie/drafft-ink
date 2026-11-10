@@ -4,6 +4,11 @@
 //! are recorded, so undo never reverts what a collaborator did: Loro rebases the stored inverse over remote
 //! edits. The inverse is applied as an ordinary local edit and travels to peers like any other.
 //!
+//! Merging: [`crate::LoroTx::merge_with_previous`] folds one commit into the step below it, for repeats of one
+//! action (nudging with the arrow keys). Loro merges by time only, with the system clock and no say over which
+//! commits qualify, so the store raises the manager's merge interval for that one commit and puts it back after.
+//! The merged step keeps the label and the `before` state of the first commit; `after` is updated by the store.
+//!
 //! Each step carries a metadata slot with a label and the observed editor state before and after the step. The
 //! store does not interpret it. Undo returns the state to restore (`before`), redo returns `after`.
 
@@ -45,6 +50,14 @@ pub struct UndoInfo {
     /// Editor state after the step; redo restores it.
     #[serde(default)]
     pub after: ObservedState,
+    /// Which commit pushed the step. Lets the store see whether a commit that asked to merge was folded into the
+    /// previous step (the stack then still shows the older number on top). 0 when unknown.
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub(crate) seq: u64,
+}
+
+fn is_zero(n: &u64) -> bool {
+    *n == 0
 }
 
 impl UndoInfo {

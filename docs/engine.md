@@ -21,7 +21,10 @@ Files in `crates/engine/src`:
 - `crates/engine/src/state.rs`: plain session data (`Observed`, `View`, `Tool`, `Settings`, `Tab`, `Extensions`).
 - `crates/engine/src/ports.rs`: the port traits, `Ports`, `PortWrite`, and in-memory fakes in `ports::fake`.
 - `crates/engine/src/registry.rs`: `Registry`, `CommandInfo`, `Session::commands`.
-- `crates/engine/src/invariants.rs`: the hook for the post-command invariant pass (empty today).
+- `crates/engine/src/invariants.rs`: the post-command invariant pass (arrows, then bound text; a marked call site for frame membership). Tests: `invariants_tests.rs`.
+- `crates/engine/src/services/`: the `Services` a session owns: the text and formula engine behind the measuring traits of `edit` and `io` (`Measure`, `TypesetMeasure`, `FakeMeasure`).
+- `crates/engine/src/remote.rs`: `Session::apply_remote`.
+- `crates/engine/src/keymap_tests.rs`: the keymap of `docs/commands.md` section 6.1 against the registered shortcuts.
 - `crates/engine/src/testing.rs`: session and element fixtures for tests.
 - `crates/engine/src/cmd/mod.rs`: the `families!` line. `crates/engine/src/cmd/*.rs`: one file per family.
 - `crates/engine/src/registry_tests.rs` and `crates/engine/src/catalog_tests.rs`: tests that run over every registered command.
@@ -142,7 +145,7 @@ Optional builders, all `const`, chained after `new`:
 | `.default_targets(fn(&Session) -> Result<(), Refusal>)` | Target checks that use the default arguments (the selection): `too_few`, `needs_single`. `Session::availability` runs it. |
 | `.refusals(&["code", ..])` | Command-specific codes only. Shared codes are implied by the facts. Each code must appear in the command's row in `docs/commands.md`. |
 | `.example(r#"{..}"#)` | A worked argument example as JSON text. Required when an `agent: true` command has required arguments. It must parse. |
-| `.coalesce("key", ms)` | Merge rapid repeats on the same targets into one undo step. Recorded in the spec and shown by `engine.commands`, but not applied since the Loro swap (section 5). |
+| `.coalesce("key", ms)` | Merge a repeat of the command on the same elements within `ms` of the previous repeat into the previous undo step (section 5). Applies to a plain call only: the last step of a gesture and a batch never merge. |
 | `.shortcuts(&[Binding])` | Default keys. `Binding::new(&["Mod+0"], Scope::Canvas)`, then `.with_args(json)`, `.titled("...")`, `.mac(&[..])`. Section 6.1 of `docs/commands.md` is the source of the keys. See item 13 of section 6. |
 | `.planned("reason")` | Registered but refuses with `not_supported`. The catalog, palette and tests still see it. |
 | `.own_transaction()` | `Txn::Own`: the handler manages document state. Only the `gesture` and `history` families may use it (tested). |
@@ -171,7 +174,7 @@ For each call, in order (see `crates/engine/src/executor.rs`):
 4. Takes a mark in the document journal and copies the small session state (selection, editing group, point editor, tool, camera, text edit, view-only).
 5. Runs the handler, catching panics (native builds; a panic becomes `internal`).
 6. On `Err` or panic: rolls the document and the small state back, drops queued port writes and warnings, records the refusal.
-7. On `Ok`: runs the invariant pass if the document changed (a failure rolls back with `internal`), writes the change to the replicated store in one transaction labelled with the command `title` (it is an undo step if `undo` is `Undoable` or `Gesture` and something changed; otherwise it syncs without a step), flushes port writes, sets the dirty reason from `redraw`, writes the ring entry.
+7. On `Ok`: runs the invariant pass if the document changed (section 4, "The invariant pass"; a failure rolls back with `internal`), writes the change to the replicated store in one transaction labelled with the command `title` (it is an undo step if `undo` is `Undoable` or `Gesture` and something changed; otherwise it syncs without a step), flushes port writes, sets the dirty reason from `redraw`, writes the ring entry.
 
 So a handler is atomic without effort. A no-op never creates an undo step. Selection changes alone never create one either. The output gets the common keys: `changed`, `undo_label` (when a step was pushed), `created` and `deleted` (element ids, read from the journal, not from your code), and `warnings`. A key you set yourself wins (`changed` in `CameraOut`).
 
@@ -321,12 +324,33 @@ Every successful command that changed something raises a dirty reason from its `
 
 - `s.state_json()` (also `engine.state`): tabs, tool, view-only, selection summary, running gesture, text edit, revision, dirty, settings revision. Use it for status bars and tests.
 - `s.ring().recent(limit, mutating_only, since_seq)` or the command `engine.recent`: the newest entries, oldest first. Each has `seq`, `t_ms`, `id`, `args` (JSON text cut to 512 bytes), `source`, `outcome`, `duration_us`, and `steps` or `frames`. The ring holds 256 entries. A command with `ring: Quiet` is recorded only when it refuses. A gesture is one entry written at `end` or `cancel`.
-- `s.undo_steps(n)` and `s.redo_steps(n)` are the engine side of the `history` family (not registered yet). A shell will call the `history.undo` command, not these.
+- `s.undo_steps(n)` and `s.redo_steps(n)` are the engine side of the `history` family. A shell calls the `history.undo` and `history.redo` commands, not these: the commands add the gates, the refusal texts, the step count and the restore of the selection (`crates/engine/src/cmd/history.rs`).
 - `s.tab()` and `s.tabs` give read access to the tabs, `s.view()` to the camera of the active tab. Read what you need. Change state only through commands.
+
+### Services: measuring text and formulas
+
+`Session::services` (`crates/engine/src/services/`) is the one text and formula engine of a session, seen through the three traits that lower crates define: `drafftink_edit::text_bind::TextMeasure` (`s.services.edit()`), `drafftink_io::TextMeasure` (`.io()`) and `drafftink_io::svg::MathSvg` (`.math_svg()`). Pass those to the functions of `edit` and `io`:
+
+```rust
+let Session { tabs, services, .. } = &mut *s;       // two fields, two borrows
+tabs[0].doc.edit(|tx| text_bind::bind_text(tx, services.edit(), &text, &container))?;
+```
+
+`Services::new()` is the real engine (`drafftink_typeset::Typesetter` with its LRU caches, built on first use). `Services::fake()` measures with the monospace measure of `edit` (every character is half the font size wide) and the estimate of `io`: exact numbers, no fonts. `testing::session()` and `testing::headless_session()` use the fake; `testing::session_typeset()` and `Session::new` use the real one. `Session::with_services(ports, services)` injects either, and `Services::with(impl Measure)` takes any other. `Services::math_layout(latex, size)` returns the `MathLayout` of a formula; the typesetter caches it, so compute it when the formula is edited and ask again freely. `Services::sharing(handle)` lets the renderer and the session use one typesetter and one set of caches.
+
+### The invariant pass
+
+After a handler returns `Ok` and the document changed, the executor calls `invariants::run` (`crates/engine/src/invariants.rs`) before the Loro commit, so its edits are part of the command: they roll back with it and share its undo step. A batch runs the pass after each step. The pass reads what the command did (`TabDoc::changes_since(mark)`, a `ChangeSet` of the journal) and runs, in order:
+
+1. `binding::update_bound_arrows` for the elements whose geometry changed (position, size, angle, flip, kind), were added, or were deleted;
+2. `text_bind::refresh_labels` for those elements and the arrows step 1 moved;
+3. frame membership: a marked call site (`FRAME-MEMBERSHIP`). The rules in `edit::frame` need the drop point of the pointer, so the transform commands call them; a rule that depends on the change set alone is called here.
+
+A label that makes its container grow moves arrows bound to the container, so the pass repeats until a round writes no label (at most 4 rounds). A command that changed no geometry costs one read of the change set. A handler does not call these rules for the follow-ups; it calls them only for what it must do itself (for example `refresh_labels` with a chosen `GrowAnchor` after a resize).
 
 ### Remote edits
 
-`Session::apply_remote(delta)` and `Session::set_remote_presence` are not built yet. The catalog (`docs/commands.md` section 1.12) plans them as non-command entry points that use the same document path as local edits. `TabDoc::apply_remote(bytes)` in `crates/engine/src/store.rs` exists: it applies a Loro update and copies the touched elements into the working store. The `Session` wrapper (routing from `collab`, dirty reason, ring rule) is the part that is missing. `Origin::Remote` exists, and a successful call with it is not written to the ring.
+`Session::apply_remote(tab, bytes)` (`crates/engine/src/remote.rs`) takes a Loro update or snapshot for a tab (any tab, not only the active one). It applies it through `TabDoc::apply_remote` (replicated store first, then the touched elements into the working store), drops deleted elements from the selection and the point editor, raises the dirty reason `Scene` when something changed, and returns the `ChangeSet`. It pushes no undo step, runs no invariant pass and is not a command. A bad update is a `parse_failed` refusal and changes nothing; an unknown tab is `no_such_tab`. Each call writes one ring entry, `remote.apply` with origin `remote` and `{tab, bytes, elements}` as arguments (the failure case too), so `engine.recent` shows that something arrived without listing every element. `Session::set_remote_presence` is not built yet.
 
 ## 5. The undo model and the one swap point
 
@@ -347,10 +371,11 @@ What stays the same (the contract of the module doc):
 - `TabDoc::revision` rises with every kept change, including undo, redo and remote updates, and drives the dirty flag. A change that was rolled back does not count.
 - Callers outside `crates/engine/src/store.rs` use `mark`, `rollback_to`, `reapply`, `summary_since`, `changed_since`, `commit_since`, `undo`, `redo`, `undo_depth`, `clear_history`. They never look inside a `Patch`.
 
+Coalescing (`.coalesce(key, ms)`): `StepMeta` carries a `CoalesceReq`. `TabDoc::commit_since` folds the step into the previous one when the tab's last step had the same key, changed the same elements, is at most `ms` older (measured from the previous repeat, so a held key keeps merging) and is still the top of the undo stack. Folding is `LoroTx::merge_with_previous` in the doc crate, which raises the undo manager's merge interval for that one commit. The merged step keeps the label and the selection from before the first repeat, and redo restores the selection from after the last. Undo, redo, `clear_history`, any step of another command, a batch, the end of a gesture and a collaborator's edit since the last repeat all end the run. The tests are in `executor_tests.rs` (`coalesce_*`) and `crates/doc/tests/undo.rs` (`merge_with_previous_*`).
+
 Known limits:
 
 - A patch stores whole previous elements. A gesture rollback (each frame, cancel, and the base restore at `end`) overwrites, in the working store, a concurrent remote change to the same element, including fields the gesture did not touch. The final command re-runs at `end` against the current state. `docs/commands.md` section 1.10 rule 8 promises more: remote changes to other fields of the same elements are kept.
-- `.coalesce(..)` has no effect. `StepMeta` has no coalesce field, and Loro's undo manager has no per-target merge, so repeats make separate steps. The executor test `coalesce_merges_repeats_on_the_same_target_within_the_window` in `crates/engine/src/executor_tests.rs` states the old behaviour.
 - The scene is held twice in memory.
 - The journal holds element copies until the command or gesture ends.
 
@@ -361,7 +386,7 @@ Where the code departs from `docs/commands.md`. Items 1 to 7 are intended. Items
 1. **Origin names.** The catalog calls the field `Source` with `keyboard` and `mcp`. The code has `Origin` with `shortcut` and `agent`, and accepts `keyboard` and `mcp` as serde aliases. It adds `remote`.
 2. **`live` is a Session flag.** The catalog says the gesture machinery sets `live = true` on the typed args. The code sets a flag that handlers read with `s.live()`. No args struct has a `live` field, so no published schema can contain it.
 3. **`Txn::Own`.** Gesture and history commands manage their own document state (`.own_transaction()`). The executor still does lookup, gates, availability, argument parsing, panic catching and the ring for them. A registry test allows the flag only for the `gesture` and `history` families.
-4. **The invariant pass is a hook.** `crates/engine/src/invariants.rs` has an empty `run`. Each rule of `crates/edit` becomes one call there when it exists, so the executor does not change. The pass runs once per command and only if the document changed.
+4. **The invariant pass.** `crates/engine/src/invariants.rs` runs arrows, then bound text, repeated up to 4 rounds; frame membership is a marked call site. It runs once per command (per step in a batch) and only if the document changed. See section 4.
 5. **`serde_path_to_error`.** `crates/engine/Cargo.toml` depends on it so that `bad_args` names the failing key path (`props.stroke_width`).
 6. **Rollback bumps no logical revision.** `TabDoc::revision` subtracts the commits that a rollback undid, so a refused command does not make the document look edited. The working store's own revision counter still goes up.
 7. **`perf.stats` with `since: last_call`.** The engine computes the delta between two snapshots of the profiler (`delta` in `crates/engine/src/cmd/perf.rs`, mark in `Session`). The profile crate reports totals only.
@@ -370,4 +395,4 @@ Where the code departs from `docs/commands.md`. Items 1 to 7 are intended. Items
 10. **Test locations and names.** The catalog puts all registry tests in `crates/engine/src/registry_tests.rs` and calls one `refusal_codes_are_catalogued`. The catalog tests are in `crates/engine/src/catalog_tests.rs`, and that test is `declared_refusal_codes_are_catalogued`.
 11. **`Net` placement.** Section 1.11 of the catalog says `collab` is L5. After D2 in `docs/deviations.md` it is L4, and the engine owns the client. The `Net` trait in `crates/engine/src/ports.rs` is a placeholder until `collab` lands.
 12. **Panic rollback on wasm.** D3 in `docs/deviations.md`: on `wasm32-unknown-unknown` a panic cannot be caught. The panic tests run natively only.
-13. **Keymap check.** The catalog says `catalog_matches_registry` compares the keymap of section 6.1 with the registered shortcuts. `crates/engine/src/catalog_tests.rs` does not do it yet. Only the registry test for collisions and valid binding arguments runs on shortcuts.
+13. **Keymap check.** The comparison of section 6.1 with the registered shortcuts is `crates/engine/src/keymap_tests.rs`, not `catalog_matches_registry`. It covers registered commands only, both platforms, scopes and fixed arguments; the module doc lists the notation it understands (`mac ... / other ...`, `Left/Right/Up/Down`, `Arrow keys`, `key=a, b` paired with the chords in order). A new shortcut needs its row in section 6.1 in the same change.

@@ -15,6 +15,7 @@ use crate::ports::{PortKind, PortWrite, Ports};
 use crate::refusal::Refusal;
 use crate::registry::Registry;
 use crate::ring::{Origin, Ring};
+use crate::services::Services;
 use crate::spec::{CommandSpec, Redraw};
 use crate::state::{Extensions, Observed, Settings, Tab, TabId, TextEdit, Tool, ToolState, View};
 use crate::store::UndoOutcome;
@@ -55,6 +56,8 @@ pub(crate) struct RunState {
     pub ring_handled: bool,
     /// Who made the call being run.
     pub origin: Origin,
+    /// The pipeline is running the final command of a gesture (`gesture.end`): its step is not coalesced.
+    pub gesture_end: bool,
 }
 
 /// Which dirty reasons are pending since the shell last asked.
@@ -80,6 +83,8 @@ pub struct Session {
     pub view_only: bool,
     /// Everything outside the process.
     pub ports: Ports,
+    /// The text and formula engine behind the measuring traits of `edit` and `io`.
+    pub services: Services,
     /// The text edit in progress, if any.
     pub text_edit: Option<TextEdit>,
     /// Family-private session state (clipboard buffers, library, recent list).
@@ -110,6 +115,7 @@ impl Session {
             settings: Settings::default(),
             view_only: false,
             ports,
+            services: Services::new(),
             text_edit: None,
             ext: Extensions::default(),
             gesture: None,
@@ -119,6 +125,13 @@ impl Session {
             dirty: Dirty::default(),
             perf_mark: None,
         }
+    }
+
+    /// A session with the given services (tests pass `Services::fake()`).
+    pub fn with_services(ports: Ports, services: Services) -> Self {
+        let mut s = Self::new(ports);
+        s.services = services;
+        s
     }
 
     /// The registry this session runs.

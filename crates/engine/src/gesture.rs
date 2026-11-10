@@ -351,10 +351,12 @@ impl Session {
         self.restore_soft(&g.base);
         let spec = g.spec;
         let t0 = g.started_ns;
+        self.run.gesture_end = true;
         let res = match input {
             Some(i) => self.run_pipeline(spec, i, g.origin, Mode::Top),
             None => self.run_pipeline(spec, Input::Typed(g.last_args.as_ref()), g.origin, Mode::Top),
         };
+        self.run.gesture_end = false;
         let dur = now_ns().saturating_sub(t0) / 1000;
         let args_json = match input {
             Some(Input::Json(v)) => Some(v.clone()),

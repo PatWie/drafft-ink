@@ -265,8 +265,18 @@ pub(crate) fn undo_redo(store: &mut LoroStore, undo: bool) -> Result<Option<Undo
         return Ok(None);
     }
     let top = core.guard(|| if undo { core.undo.top_undo_meta() } else { core.undo.top_redo_meta() })?;
-    let value = top.map(|m| m.value).unwrap_or(LoroValue::Null);
-    let info = UndoInfo::from_loro(&value);
+    let mut value = top.map(|m| m.value).unwrap_or(LoroValue::Null);
+    let mut info = UndoInfo::from_loro(&value);
+    core.last_merged = false;
+    if let Some(after) = core.merged_after.take()
+        && undo
+    {
+        // The top step absorbed later commits: the redo step must restore the state after the last of them.
+        info.after = after;
+        if let Some(v) = info.to_loro() {
+            value = v;
+        }
+    }
     lock(&core.shared).carry = Some(value);
     let touched = Arc::new(Mutex::new(Touched::default()));
     let sink = Arc::clone(&touched);
