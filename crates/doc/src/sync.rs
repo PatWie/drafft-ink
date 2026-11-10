@@ -220,6 +220,7 @@ pub(crate) fn apply_remote(store: &mut LoroStore, bytes: &[u8]) -> Result<Change
     });
     core.pending = imported?.pending.is_some();
     core.stats.remote_updates += 1;
+    mark_remote_as_sent(core)?;
     if let Some(found) = core.guard(|| crate::schema::read_version(&core.doc))?
         && found > SCHEMA_VERSION
     {
@@ -229,6 +230,19 @@ pub(crate) fn apply_remote(store: &mut LoroStore, bytes: &[u8]) -> Result<Change
     let cs = sync_view(view, core, touched)?;
     core.notify(&cs);
     Ok(cs)
+}
+
+/// Operations that came from other peers are not this replica's to send: without this, the next
+/// `take_unsent_update` would hand them back, and the sync client would echo every remote edit to the server.
+fn mark_remote_as_sent(core: &mut Core) -> Result<(), DocError> {
+    let me = core.guard(|| core.doc.peer_id())?;
+    let now = core.guard(|| core.doc.oplog_vv())?;
+    for (peer, end) in now.iter() {
+        if *peer != me && core.sent.get(peer).is_none_or(|have| have < end) {
+            core.sent.insert(*peer, *end);
+        }
+    }
+    Ok(())
 }
 
 /// True when `bytes` is a trimmed (shallow or state-only) snapshot whose starting point this replica does not have.

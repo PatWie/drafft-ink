@@ -150,7 +150,7 @@ Work is proportional to the change. `tests/remote.rs` asserts it on a 3,000-elem
 |---|---|---|
 | `version_vector()` | encoded Loro version vector | `Join.version` in the protocol |
 | `export_updates_since(vv)` | operations the peer lacks; empty `vv` means all history held | `SyncResponse` of kind `Updates`; fails with `DocError::HistoryTrimmed` when the peer is older than the kept history (send a snapshot) |
-| `take_unsent_update()` | operations committed since the last call | the update the sync client sends after each commit; a new store starts with nothing sent, a store opened from a snapshot with everything in it sent |
+| `take_unsent_update()` | this replica's own operations committed since the last call (operations that arrived through `apply_remote` count as sent) | the update the sync client sends after each commit; a new store starts with nothing sent, a store opened from a snapshot with everything in it sent |
 | `export_snapshot()` | state and the whole history | saving a room, a joiner that wants full history |
 | `export_state_only()` | state, no history | smallest; late joiners who will never merge old versions |
 | `export_shallow_snapshot(keep_commits)` | state and the history of the last `keep_commits` local commits | late joiners; see section 13 |

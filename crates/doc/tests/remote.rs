@@ -195,3 +195,27 @@ fn the_profile_work_counter_sees_one_op_for_one_changed_element() {
     b.apply_remote(&bytes).unwrap();
     assert_eq!(scope.count(Counter::SyncOpsApplied), 1);
 }
+
+/// Regression: operations that arrived from a peer are not "unsent". The sync client calls `take_unsent_update`
+/// after every commit, and handing remote operations back would echo every remote edit to the server.
+#[test]
+fn remote_operations_are_not_handed_back_as_unsent() {
+    let mut a = peer(1);
+    let mut b = peer(2);
+    let z = zs(2);
+    add(&mut a, vec![rect("a1", &z[0])]);
+    let from_a = a.take_unsent_update().unwrap().unwrap();
+    let b_start = b.take_unsent_update().unwrap().unwrap();
+    b.apply_remote(&from_a).unwrap();
+    assert_eq!(b.take_unsent_update().unwrap(), None, "a remote update must not come back as unsent");
+
+    // A local commit after a remote one still exports, and a third replica converges with it.
+    add(&mut b, vec![rect("b1", &z[1])]);
+    let from_b = b.take_unsent_update().unwrap().unwrap();
+    let mut c = peer(3);
+    c.apply_remote(&from_a).unwrap();
+    c.apply_remote(&b_start).unwrap();
+    c.apply_remote(&from_b).unwrap();
+    assert_same(&b, &c);
+    assert_eq!(c.take_unsent_update().unwrap().map(|_| ()), Some(()), "c's own schema operations were never sent");
+}

@@ -4,8 +4,37 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 rust-version.workspace = true
+description = "Collaboration client: a sans-IO sync state machine, presence, and WebSocket transports (native and web)."
 
 [dependencies]
+drafftink-protocol = { path = "../protocol" }
+drafftink-doc = { path = "../doc" }
+drafftink-scene = { path = "../scene" }
+drafftink-profile = { path = "../profile", default-features = false }
+log.workspace = true
+loro.workspace = true
+thiserror.workspace = true
+
+# Native WebSocket: a background thread runs a small tokio runtime; rustls for wss.
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+tokio = { workspace = true, features = ["rt", "net", "time", "sync", "macros"] }
+tokio-tungstenite = { workspace = true, features = ["connect", "handshake", "rustls-tls-native-roots"] }
+futures-util.workspace = true
+rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12", "logging"] }
+rustls-native-certs = "0.8"
+webpki-roots = "1"
+
+# Browser WebSocket.
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+wasm-bindgen.workspace = true
+js-sys.workspace = true
+web-sys = { workspace = true, features = ["WebSocket", "BinaryType", "MessageEvent", "CloseEvent", "Event", "ErrorEvent"] }
+
+[dev-dependencies]
+tempfile.workspace = true
+proptest.workspace = true
+tokio = { workspace = true, features = ["io-util"] }
+tokio-rustls = { version = "0.26", default-features = false, features = ["ring"] }
 
 [lints]
 workspace = true
