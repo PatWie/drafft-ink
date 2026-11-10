@@ -2,7 +2,7 @@
 
 AGENTS.md says: everything a user can do is a command, and high-frequency gestures are the only exception. This file is that list. It is closed: an input that changes state per pointer event and is not here must call `Session::execute` per user action, like everything else.
 
-Related: `docs/commands.md` §1.10 (the gesture protocol), §3 and §6.2.
+Related: `docs/commands.md` §1.10 (the gesture protocol), §6.2 (text editor keys) and §7.3 (the old pointer and window events).
 
 ## 1. What an exception is
 
@@ -20,14 +20,14 @@ Every exception falls into one of five classes. The class says what may happen b
 
 Rules that hold for all classes:
 
-1. **The final state is a command.** For every row below, the result of the gesture is also reachable with one plain `execute`, with the same arguments, and gives the same document. A test per row proves it: run the gesture through the recognizer in the testkit, run the final command on a fresh copy of the document, and compare (ids and timestamps aside). The table says which command.
+1. **The final state is a command.** For every row below except E1, E12 and E15 (which change nothing or need no special path), the result of the gesture is also reachable with one plain `execute`, with the same arguments, and gives the same document. A test per row proves it: run the gesture through the recognizer in the testkit, run the final command on a fresh copy of the document, and compare (ids and timestamps aside). The table says which command.
 2. **No private state changes.** A recognizer may hold preview state (points collected so far, the marquee rectangle, a hover) but never edits the document, the selection, the tool or the settings by any route other than a command or the gesture protocol.
 3. **Cancel is clean.** Esc, window blur, pointer cancel, a second finger landing during a one-finger gesture, and a release over a panel all end the gesture without a trace. Class A calls `gesture.cancel` (state restored to before `begin`). Class B drops the preview. Class C keeps the camera where it is (cancelling a camera move is not a thing). Class D follows `text.edit_end` with commit=false.
 4. **Collaborators see the end result.** Live frames are not broadcast (class A) and previews do not exist for others (B). Only the final command is a CRDT edit. Presence (E) is sent on its own volatile channel.
 5. **The gesture is not in the ring frame by frame.** The ring gets one entry at the end with the frame count (`docs/commands.md` §1.9).
 6. **Gates apply at the start.** A gesture begins only if the command it will end with would be allowed now (view-only, locked targets, text editing). Locked elements are not hit in the first place.
 7. **One at a time.** There is at most one running gesture per session (class A). Class B/C/D/E recognizers hold their own state and may overlap with a gesture only as listed per row.
-8. **Enforcement.** `cargo xtask exceptions --check` fails when (a) a command with `undo = Gesture` has no row here, (b) a row names a final command that does not exist, (c) the UI crate calls a document-changing session API outside `execute`, `execute_batch` and the `gesture_*` methods (the layering lint in `xtask layers`, which already forbids the UI from holding a `&mut Document`), (d) a row has no test named after its id (`exception_E2_move_equals_plain_command`).
+8. **Enforcement.** `cargo xtask exceptions --check` fails when (a) a command with `undo = Gesture` has no row here, (b) a row names a final command that does not exist, (c) the UI crate calls a document-changing session API outside `execute`, `execute_batch` and the `gesture_*` methods (the layering lint in `xtask layers`, which already forbids the UI from holding a `&mut Document`), (d) a row has no test whose name starts with `exception_<row id>_` (for example `exception_E2_move_equals_plain_command`).
 
 ## 2. The exceptions
 
@@ -79,7 +79,7 @@ Rules that hold for all classes:
 | Cancel | `gesture.cancel`. |
 | Test | `exception_E4_rotate_equals_plain_command`. |
 
-### E5 Line, arrow and freehand point dragging
+### E5 Line and arrow point dragging
 
 | | |
 |---|---|
@@ -179,11 +179,11 @@ Rules that hold for all classes:
 |---|---|
 | Input | Dragging the opacity slider or a stroke-width slider, dragging inside a colour picker's saturation or hue area, dragging font size. A click on a swatch is not a gesture. |
 | Class | A |
-| Protocol | `gesture.begin` `style.set` on the first change, `gesture.update` with the full props for each change, `gesture.end` at release or when the popover closes. |
+| Protocol | `gesture.begin` `style.set` on the first change, `gesture.update` with the full props for each change, `gesture.end` at pointer release (not when the popover closes). |
 | Reason | The user sees the result live on the canvas, and a drag must be one undo step. The old opacity slider pushed an undo step on every tick (A:3639) and the other style props pushed none. |
 | Between events | Live frames skip the history, the broadcast and the defaults update. The end run also updates the defaults and broadcasts. |
-| Final state | `style.set { props, ids, scope }`. |
-| Cancel | `gesture.cancel` (Esc closes the popover and restores the old colour). |
+| Final state | `style.set { props, ids, scope }`. A click on a swatch is a plain `style.set`; the colour picker applies a value on release. |
+| Cancel | `gesture.cancel` (Esc during the drag restores the old colour). |
 | Test | `exception_E13_scrub_equals_plain_command`. |
 
 ### E14 Pointer-driven previews of a pending drag source
@@ -206,7 +206,7 @@ Rules that hold for all classes:
 | Class | not an exception |
 | What happens | Each repeat is one plain `execute`. `element.nudge` carries a `coalesce` rule so a burst becomes one undo step. Zoom keys and page-scroll keys are `NoUndo`. |
 | Reason it is listed | To state that key repeat needs no special path. The cost per execute at 30 Hz is negligible. |
-| Test | `nudge_burst_is_one_undo_step`. |
+| Test | `exception_E15_nudge_burst_is_one_undo_step`. |
 
 ### E16 Text caret, selection, composition and in-text keys
 
@@ -217,8 +217,8 @@ Rules that hold for all classes:
 | What happens | The text editor widget (Parley editor in `typeset`/`ui`) owns the content, the caret, the selection and the composition. The session knows only that an edit is running (`text_edit` state: target id or draft, bounds) so it can apply the `while_text_edit` gates. The editor requests a redraw for caret blink with a timer, not with a per-frame loop. |
 | Reason | A caret move or a keystroke is not a document change until the edit ends; IME composition cannot be expressed as commands (it needs preedit state, cursor ranges and cancel). The old app had no IME at all, and swallowed most `Ctrl+letter` chords, including undo. |
 | Final state | `text.edit_end { commit: true, text, latex?, runs }` (one undo step including the element's creation). `Esc` and `Mod+Enter` end it from the keyboard. A click on the canvas outside the text runs the clicked command with the `Commit` gate (`while_text_edit = commit`), which commits first. Cancel is `text.edit_end { commit: false }`. |
-| Not covered | Choosing a colour or style while the text edit is open is `style.set`, which the editor applies to the selected range as part of its state; `text.edit_end` receives the runs. A text element selected but not being edited uses `style.set` and `text.style_range` as usual. |
-| Test | `exception_E16_edit_equals_plain_command` (typing a string then `text.edit_end` equals `element.create` kind=text then `text.set`), an IME replay test with a preedit sequence, and `text_edit_gates` (commands with `while_text_edit = no` refuse). |
+| Not covered | Choosing a colour or style while the text edit is open does not call `style.set` (it refuses `text_editing`). The UI sends it to the editor, which applies it to the selected range or to the element, and `text.edit_end` receives the runs and `style`. A text element selected but not being edited uses `style.set` and `text.style_range` as usual. |
+| Test | `exception_E16_edit_equals_plain_command` (typing a string then `text.edit_end` equals one `element.create` kind=text with that `text`), an IME replay test with a preedit sequence, and `text_edit_gates` (commands with `while_text_edit = no` refuse). |
 
 ## 3. Things that look like exceptions but are commands
 
