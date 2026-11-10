@@ -1,0 +1,98 @@
+{
+ "type": "excalidraw",
+ "version": 2,
+ "elements": [
+  {
+   "id": "c0",
+   "type": "rectangle",
+   "x": 0,
+   "y": 0,
+   "width": 50,
+   "height": 50,
+   "strokeColor": "#aé",
+   "backgroundColor": "#aé"
+  },
+  {
+   "id": "c1",
+   "type": "rectangle",
+   "x": 60,
+   "y": 0,
+   "width": 50,
+   "height": 50,
+   "strokeColor": "#éé",
+   "backgroundColor": "#éé"
+  },
+  {
+   "id": "c2",
+   "type": "rectangle",
+   "x": 120,
+   "y": 0,
+   "width": 50,
+   "height": 50,
+   "strokeColor": "#aaaaé",
+   "backgroundColor": "#aaaaé"
+  },
+  {
+   "id": "c3",
+   "type": "rectangle",
+   "x": 180,
+   "y": 0,
+   "width": 50,
+   "height": 50,
+   "strokeColor": "#aaaaaaé",
+   "backgroundColor": "#aaaaaaé"
+  },
+  {
+   "id": "c4",
+   "type": "rectangle",
+   "x": 240,
+   "y": 0,
+   "width": 50,
+   "height": 50,
+   "strokeColor": "#日本",
+   "backgroundColor": "#日本"
+  },
+  {
+   "id": "c5",
+   "type": "rectangle",
+   "x": 300,
+   "y": 0,
+   "width": 50,
+   "height": 50,
+   "strokeColor": "#\u0000\u0000\u0000",
+   "backgroundColor": "#\u0000\u0000\u0000"
+  },
+  {
+   "id": "c6",
+   "type": "rectangle",
+   "x": 360,
+   "y": 0,
+   "width": 50,
+   "height": 50,
+   "strokeColor": "#12345",
+   "backgroundColor": "#12345"
+  },
+  {
+   "id": "c7",
+   "type": "rectangle",
+   "x": 420,
+   "y": 0,
+   "width": 50,
+   "height": 50,
+   "strokeColor": "é",
+   "backgroundColor": "é"
+  },
+  {
+   "id": "t",
+   "type": "text",
+   "x": 0,
+   "y": 80,
+   "text": "tint",
+   "strokeColor": "#aé",
+   "backgroundColor": "#aé"
+  }
+ ],
+ "appState": {
+  "viewBackgroundColor": "#aé"
+ }
+}
