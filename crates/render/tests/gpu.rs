@@ -1,0 +1,710 @@
+#![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::field_reassign_with_default)]
+//! Pixel tests on a real GPU adapter (feature `gpu-tests`; run `cargo test -p drafftink-render --features gpu-tests
+//! --test gpu`). They render with Vello into an offscreen texture and compare with the PNGs the old renderer made
+//! (`tests/fixtures/render`, see its README) with a per-channel tolerance of 16, and compare the composer's output
+//! with a render of the same elements drawn without any caching or culling.
+//!
+//! The device is created here, in test code. The library never creates one.
+
+mod common;
+
+use std::path::{Path, PathBuf};
+use std::sync::{Mutex, OnceLock};
+
+use base64::Engine as _;
+use common::*;
+use drafftink_render::*;
+use drafftink_scene::*;
+use drafftink_typeset::{LineHeight, Typesetter};
+use kurbo::{Point, Size, Vec2};
+use serde_json::Value;
+use vello::wgpu;
+use vello::{AaConfig, RenderParams, Renderer, RendererOptions, Scene};
+
+const TOLERANCE: u8 = 16;
+
+// ----------------------------------------------------------------------------------------------
+// Offscreen rendering
+
+struct Gpu {
+    device: wgpu::Device,
+    queue: wgpu::Queue,
+    renderer: Renderer,
+    adapter: String,
+}
+
+/// The shared device, or `None` on a machine without an adapter. Such a machine skips these tests with a message;
+/// set `DRAFFTINK_REQUIRE_GPU=1` (the GPU runner does) to make a missing adapter a failure instead.
+fn gpu_opt() -> Option<&'static Mutex<Gpu>> {
+    static GPU: OnceLock<Option<Mutex<Gpu>>> = OnceLock::new();
+    GPU.get_or_init(|| {
+        let mut cx = vello::util::RenderContext::new();
+        let Some(id) = pollster::block_on(cx.device(None)) else {
+            assert!(
+                std::env::var_os("DRAFFTINK_REQUIRE_GPU").is_none(),
+                "no GPU adapter and DRAFFTINK_REQUIRE_GPU is set"
+            );
+            eprintln!("skipped: no GPU adapter on this machine");
+            return None;
+        };
+        let handle = &cx.devices[id];
+        let adapter = format!("{:?}", handle.adapter().get_info());
+        let (device, queue) = (handle.device.clone(), handle.queue.clone());
+        let renderer = Renderer::new(
+            &device,
+            RendererOptions { antialiasing_support: vello::AaSupport::area_only(), ..RendererOptions::default() },
+        )
+        .expect("renderer");
+        Some(Mutex::new(Gpu { device, queue, renderer, adapter }))
+    })
+    .as_ref()
+}
+
+fn gpu() -> &'static Mutex<Gpu> {
+    gpu_opt().expect("checked by need_gpu")
+}
+
+macro_rules! need_gpu {
+    () => {
+        if gpu_opt().is_none() {
+            return;
+        }
+    };
+}
+
+struct Pixels {
+    w: u32,
+    h: u32,
+    rgba: Vec<u8>,
+}
+
+fn render(scene: &Scene, w: u32, h: u32, base: peniko::Color) -> Pixels {
+    let mut g = gpu().lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+    let g = &mut *g;
+    let texture = g.device.create_texture(&wgpu::TextureDescriptor {
+        label: Some("render test"),
+        size: wgpu::Extent3d { width: w, height: h, depth_or_array_layers: 1 },
+        mip_level_count: 1,
+        sample_count: 1,
+        dimension: wgpu::TextureDimension::D2,
+        format: wgpu::TextureFormat::Rgba8Unorm,
+        usage: wgpu::TextureUsages::STORAGE_BINDING
+            | wgpu::TextureUsages::COPY_SRC
+            | wgpu::TextureUsages::TEXTURE_BINDING,
+        view_formats: &[],
+    });
+    let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
+    g.renderer
+        .render_to_texture(
+            &g.device,
+            &g.queue,
+            scene,
+            &view,
+            &RenderParams { base_color: base, width: w, height: h, antialiasing_method: AaConfig::Area },
+        )
+        .expect("render");
+    let bytes_per_row = (w * 4).next_multiple_of(256);
+    let buffer = g.device.create_buffer(&wgpu::BufferDescriptor {
+        label: Some("readback"),
+        size: u64::from(bytes_per_row * h),
+        usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
+        mapped_at_creation: false,
+    });
+    let mut enc = g.device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: Some("copy") });
+    enc.copy_texture_to_buffer(
+        wgpu::TexelCopyTextureInfo {
+            texture: &texture,
+            mip_level: 0,
+            origin: wgpu::Origin3d::ZERO,
+            aspect: wgpu::TextureAspect::All,
+        },
+        wgpu::TexelCopyBufferInfo {
+            buffer: &buffer,
+            layout: wgpu::TexelCopyBufferLayout {
+                offset: 0,
+                bytes_per_row: Some(bytes_per_row),
+                rows_per_image: Some(h),
+            },
+        },
+        wgpu::Extent3d { width: w, height: h, depth_or_array_layers: 1 },
+    );
+    g.queue.submit(std::iter::once(enc.finish()));
+    let slice = buffer.slice(..);
+    let (tx, rx) = std::sync::mpsc::channel();
+    slice.map_async(wgpu::MapMode::Read, move |r| {
+        tx.send(r).ok();
+    });
+    let _ = g.device.poll(wgpu::PollType::wait_indefinitely());
+    rx.recv().unwrap().unwrap();
+    let data = slice.get_mapped_range().unwrap();
+    let mut rgba = Vec::with_capacity((w * h * 4) as usize);
+    for row in 0..h {
+        let s = (row * bytes_per_row) as usize;
+        rgba.extend_from_slice(&data[s..s + (w * 4) as usize]);
+    }
+    drop(data);
+    buffer.unmap();
+    Pixels { w, h, rgba }
+}
+
+/// How two renders differ.
+#[derive(Debug)]
+struct Diff {
+    /// Largest per-channel difference.
+    max: u8,
+    /// Share of pixels with any channel differing by more than `TOLERANCE`.
+    beyond: f64,
+    /// Share of pixels that differ at all.
+    any: f64,
+}
+
+fn diff(a: &Pixels, b: &Pixels) -> Diff {
+    diff_masked(a, b, &[])
+}
+
+/// Like [`diff`], skipping pixels inside the `ignore` rectangles (device pixels).
+fn diff_masked(a: &Pixels, b: &Pixels, ignore: &[kurbo::Rect]) -> Diff {
+    assert_eq!((a.w, a.h), (b.w, b.h), "sizes differ");
+    let (mut max, mut beyond, mut any) = (0u8, 0usize, 0usize);
+    let mut skipped = 0usize;
+    for (i, (p, q)) in a.rgba.chunks_exact(4).zip(b.rgba.chunks_exact(4)).enumerate() {
+        let pt = Point::new(f64::from(i as u32 % a.w) + 0.5, f64::from(i as u32 / a.w) + 0.5);
+        if ignore.iter().any(|r| r.contains(pt)) {
+            skipped += 1;
+            continue;
+        }
+        let d = p.iter().zip(q).map(|(x, y)| x.abs_diff(*y)).max().unwrap_or(0);
+        max = max.max(d);
+        beyond += usize::from(d > TOLERANCE);
+        any += usize::from(d > 0);
+    }
+    let n = ((a.w * a.h) as usize - skipped).max(1) as f64;
+    Diff { max, beyond: beyond as f64 / n, any: any as f64 / n }
+}
+
+fn read_png(path: &Path) -> Pixels {
+    let mut dec = png::Decoder::new(std::io::BufReader::new(std::fs::File::open(path).unwrap()));
+    dec.set_transformations(png::Transformations::EXPAND);
+    let mut reader = dec.read_info().unwrap();
+    let mut buf = vec![0; reader.output_buffer_size().unwrap()];
+    let info = reader.next_frame(&mut buf).unwrap();
+    let rgba = match info.color_type {
+        png::ColorType::Rgba => buf[..info.buffer_size()].to_vec(),
+        png::ColorType::Rgb => {
+            buf[..info.buffer_size()].chunks_exact(3).flat_map(|p| [p[0], p[1], p[2], 255]).collect()
+        }
+        other => panic!("unexpected png colour type {other:?}"),
+    };
+    Pixels { w: info.width, h: info.height, rgba }
+}
+
+fn write_png(path: &Path, p: &Pixels) {
+    let mut enc = png::Encoder::new(std::io::BufWriter::new(std::fs::File::create(path).unwrap()), p.w, p.h);
+    enc.set_color(png::ColorType::Rgba);
+    enc.set_depth(png::BitDepth::Eight);
+    enc.write_header().unwrap().write_image_data(&p.rgba).unwrap();
+}
+
+// ----------------------------------------------------------------------------------------------
+// The old documents: a small converter (the real one is io's job), sized by the typesetter.
+
+fn fixtures() -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tests/fixtures")
+}
+
+fn num(v: &Value, key: &str, default: f64) -> f64 {
+    v.get(key).and_then(Value::as_f64).unwrap_or(default)
+}
+
+fn color(v: &Value) -> Color {
+    let c = |k| v.get(k).and_then(Value::as_u64).unwrap_or(0) as u8;
+    Color::rgba(c("r"), c("g"), c("b"), c("a"))
+}
+
+fn point(v: &Value) -> Point {
+    Point::new(num(v, "x", 0.0), num(v, "y", 0.0))
+}
+
+fn style_of(v: &Value) -> Style {
+    let s = &v["style"];
+    let mut st = Style::default();
+    st.stroke_color = color(&s["stroke_color"]);
+    st.stroke_width = num(s, "stroke_width", 2.0).max(0.0);
+    st.fill_color = s.get("fill_color").filter(|c| !c.is_null()).map(color);
+    st.fill_pattern = match s["fill_pattern"].as_str().unwrap_or("Solid") {
+        "Hachure" => FillPattern::Hachure,
+        "ZigZag" => FillPattern::ZigZag,
+        "CrossHatch" => FillPattern::CrossHatch,
+        "Dots" => FillPattern::Dots,
+        "Dashed" => FillPattern::Dashed,
+        "ZigZagLine" => FillPattern::ZigZagLine,
+        _ => FillPattern::Solid,
+    };
+    st.sloppiness = match s["sloppiness"].as_str().unwrap_or("Artist") {
+        "Architect" => Sloppiness::Architect,
+        "Cartoonist" => Sloppiness::Cartoonist,
+        "Drunk" => Sloppiness::Drunk,
+        _ => Sloppiness::Artist,
+    };
+    st.seed = s["seed"].as_u64().unwrap_or(0) as u32;
+    st.opacity = num(s, "opacity", 1.0).clamp(0.0, 1.0);
+    st
+}
+
+struct Legacy {
+    /// Regions (old world coordinates) of shapes that this test does not compare; see `ignored_shape`.
+    ignored: Vec<kurbo::Rect>,
+    elements: Vec<Element>,
+    files: Vec<FileEntry>,
+    n: usize,
+}
+
+impl Legacy {
+    fn push(&mut self, mut e: Element) {
+        e.id = id(&format!("l{}", self.n));
+        self.n += 1;
+        self.elements.push(e);
+    }
+
+    fn shape(&mut self, shape: &Value, ts: &mut Typesetter) {
+        let Some((tag, v)) = shape.as_object().and_then(|o| o.iter().next()) else { return };
+        if tag == "Rectangle" {
+            let (p, w, h) = (point(&v["position"]), num(v, "width", 0.0), num(v, "height", 0.0));
+            let dots = v["style"]["fill_pattern"].as_str() == Some("Dots") && v["style"]["fill_color"].is_object();
+            // Known differences from the old renderer, listed in docs/render.md: the position of the dots of a
+            // Dots fill (they come from the sketch crate's random stream), and rectangles with a zero or negative
+            // size (the old code drew them unnormalised; the model normalises).
+            if dots || w <= 0.0 || h <= 0.0 {
+                self.ignored.push(
+                    kurbo::Rect::new(p.x.min(p.x + w), p.y.min(p.y + h), p.x.max(p.x + w), p.y.max(p.y + h))
+                        .inflate(12.0, 12.0),
+                );
+            }
+        }
+        let mut st = style_of(v);
+        let angle = num(v, "rotation", 0.0);
+        let z = ZIndex::first();
+        match tag.as_str() {
+            "Rectangle" => {
+                st.corner_radius = num(v, "corner_radius", 0.0).max(0.0);
+                let p = point(&v["position"]);
+                let (w, h) = (num(v, "width", 0.0), num(v, "height", 0.0));
+                let mut e = Element::new(id("x"), ElementKind::Rectangle, z).with_style(st);
+                e.transform = Transform {
+                    x: p.x.min(p.x + w),
+                    y: p.y.min(p.y + h),
+                    w: w.abs(),
+                    h: h.abs(),
+                    angle,
+                    flip_x: false,
+                    flip_y: false,
+                };
+                self.push(e);
+            }
+            "Ellipse" => {
+                let (c, rx, ry) = (point(&v["center"]), num(v, "radius_x", 0.0).abs(), num(v, "radius_y", 0.0).abs());
+                let mut e = Element::new(id("x"), ElementKind::Ellipse, z).with_style(st);
+                e.transform = Transform {
+                    x: c.x - rx,
+                    y: c.y - ry,
+                    w: 2.0 * rx,
+                    h: 2.0 * ry,
+                    angle,
+                    flip_x: false,
+                    flip_y: false,
+                };
+                self.push(e);
+            }
+            "Line" | "Arrow" => {
+                let arrow = tag == "Arrow";
+                let mut pts = vec![point(&v["start"])];
+                pts.extend(v["intermediate_points"].as_array().into_iter().flatten().map(point));
+                pts.push(point(&v["end"]));
+                let closed = v["closed"].as_bool().unwrap_or(false) && pts.len() >= 3;
+                let Some(mut e) = Element::linear(id("x"), if arrow { Kind::Arrow } else { Kind::Line }, z, &pts)
+                else {
+                    return;
+                };
+                if let ElementKind::Line(d) | ElementKind::Arrow(d) = &mut e.kind {
+                    d.path = match v["path_style"].as_str() {
+                        Some("Flowing") => PathType::Round,
+                        Some("Angular") => PathType::Elbow,
+                        _ => PathType::Sharp,
+                    };
+                    d.closed = closed;
+                    if arrow {
+                        d.end_head = Head::Arrow;
+                        d.head_size = Some(num(v, "head_size", 15.0));
+                    }
+                }
+                st.stroke_style = match v["stroke_style"].as_str() {
+                    Some("Dashed") => StrokeStyle::Dashed,
+                    Some("Dotted") => StrokeStyle::Dotted,
+                    _ => StrokeStyle::Solid,
+                };
+                e.style = st;
+                e.transform.angle = angle;
+                self.push(e);
+            }
+            "Freehand" => {
+                let pts: Vec<Point> = v["points"].as_array().into_iter().flatten().map(point).collect();
+                let mut d = FreehandData::new(pts);
+                d.pressures = v["pressures"].as_array().into_iter().flatten().filter_map(Value::as_f64).collect();
+                if d.pressures.len() != d.points.len() {
+                    d.pressures.clear();
+                }
+                d.closed = v["closed"].as_bool().unwrap_or(false);
+                let mut e = Element::new(id("x"), ElementKind::Freehand(d), z).with_style(st);
+                if e.refit_points() {
+                    self.push(e);
+                }
+            }
+            "Text" => {
+                let mut t = TextData::new(v["content"].as_str().unwrap_or(""));
+                t.font.size = num(v, "font_size", 20.0).max(1.0);
+                t.font.family = match v["font_family"].as_str() {
+                    Some("NotoSans") => FontFamily::NotoSans,
+                    Some("GelPenSerif") => FontFamily::GelPenSerif,
+                    Some("VanillaExtract") => FontFamily::VanillaExtract,
+                    _ => FontFamily::GelPen,
+                };
+                t.font.weight = match v["font_weight"].as_str() {
+                    Some("Light") => FontWeight::Light,
+                    Some("Heavy") => FontWeight::Heavy,
+                    _ => FontWeight::Regular,
+                };
+                let colors: Vec<Option<Color>> = v["char_colors"]
+                    .as_array()
+                    .into_iter()
+                    .flatten()
+                    .map(|c| (!c.is_null()).then(|| color(c)))
+                    .collect();
+                t.runs = TextData::runs_from_char_colors(&colors, t.char_count());
+                // The old renderer used the font's own line height. Express that as a multiple of the size so
+                // that `text_spec` reproduces it.
+                let mut e = Element::new(id("x"), ElementKind::Text(t), z).with_style(st);
+                let p = point(&v["position"]);
+                e.transform = Transform::new(p.x, p.y, 0.0, 0.0);
+                e.transform.angle = angle;
+                if let ElementKind::Text(t) = &mut e.kind {
+                    let mut spec = text_spec(t, e.style.stroke_color, 0.0);
+                    spec.line_height = LineHeight::Normal;
+                    spec.text = "Hg".into();
+                    spec.spans.clear();
+                    let one_line = ts.measure(&spec).height;
+                    t.font.line_height = one_line / t.font.size;
+                }
+                measure_text(ts, &mut e);
+                self.push(e);
+            }
+            "Math" => {
+                let mut m = MathData::new(v["latex"].as_str().unwrap_or(""));
+                m.font_size = num(v, "font_size", 20.0).max(1.0);
+                let p = point(&v["position"]);
+                let (w, h, top) = match ts.math(&math_spec(&m)) {
+                    Ok(l) => (l.width, l.height - l.depth, l.height),
+                    Err(_) => (40.0, 24.0, 24.0),
+                };
+                let mut e = Element::new(id("x"), ElementKind::Math(m), z).with_style(st);
+                // The old position is the baseline origin; the box starts `height` above it.
+                e.transform = Transform { x: p.x, y: p.y - top, w, h, angle, flip_x: false, flip_y: false };
+                self.push(e);
+            }
+            "Image" => {
+                let bytes = base64::engine::general_purpose::STANDARD
+                    .decode(v["data_base64"].as_str().unwrap_or(""))
+                    .unwrap_or_default();
+                let (fid, entry) = FileEntry::new("image/png", bytes);
+                self.files.push(entry);
+                let p = point(&v["position"]);
+                let data = ImageData {
+                    file_id: Some(fid),
+                    natural_width: v["source_width"].as_u64().unwrap_or(0) as u32,
+                    natural_height: v["source_height"].as_u64().unwrap_or(0) as u32,
+                    crop: None,
+                };
+                // The old renderer ignored the style of an image.
+                let mut e = Element::new(id("x"), ElementKind::Image(data), z);
+                e.style.stroke_width = 0.0;
+                e.transform = Transform {
+                    x: p.x,
+                    y: p.y,
+                    w: num(v, "width", 0.0),
+                    h: num(v, "height", 0.0),
+                    angle,
+                    flip_x: false,
+                    flip_y: false,
+                };
+                self.push(e);
+            }
+            "Group" => {
+                for c in v["children"].as_array().into_iter().flatten() {
+                    self.shape(c, ts);
+                }
+            }
+            _ => {}
+        }
+    }
+}
+
+struct Scene2 {
+    ignored: Vec<kurbo::Rect>,
+    store: MemoryStore,
+    index: PaintIndex,
+    bounds: [f64; 4],
+}
+
+fn load_legacy(name: &str, ts: &mut Typesetter) -> Scene2 {
+    let old: Value =
+        serde_json::from_str(&std::fs::read_to_string(fixtures().join(format!("legacy/{name}.json"))).unwrap())
+            .unwrap();
+    let facts: Value =
+        serde_json::from_str(&std::fs::read_to_string(fixtures().join(format!("legacy/{name}.facts.json"))).unwrap())
+            .unwrap();
+    let b = &facts["doc"]["bounds"];
+    let bounds = [0, 1, 2, 3].map(|i| b[i].as_f64().unwrap());
+    let mut c = Legacy { ignored: Vec::new(), elements: Vec::new(), files: Vec::new(), n: 0 };
+    for sid in old["z_order"].as_array().into_iter().flatten().filter_map(Value::as_str) {
+        if let Some(shape) = old["shapes"].get(sid) {
+            c.shape(shape, ts);
+        }
+    }
+    let keys = ZIndex::rebalance(c.elements.len()).unwrap();
+    let ignored = c.ignored;
+    let mut store = MemoryStore::new();
+    let mut tx = store.begin();
+    for entry in c.files {
+        tx.put_file(entry).unwrap();
+    }
+    for (mut e, k) in c.elements.into_iter().zip(keys) {
+        e.index = k;
+        tx.insert(e).unwrap();
+    }
+    tx.commit().unwrap();
+    let index = build_paint_index(&store);
+    Scene2 { ignored, store, index, bounds }
+}
+
+/// The old PNG export: bounds plus 20 px on every side, scale 1, white.
+fn export_view(bounds: [f64; 4], w: u32, h: u32) -> View {
+    View::new(1.0, Vec2::new(20.0 - bounds[0], 20.0 - bounds[1]), Size::new(f64::from(w), f64::from(h)))
+}
+
+fn render_scene2(s: &Scene2, ts: &mut Typesetter, w: u32, h: u32) -> Pixels {
+    let mut composer = SceneComposer::new();
+    composer.set_options(RenderOptions::for_export(Theme::Light));
+    let mut scene = Scene::new();
+    composer.compose(&s.store, &s.index, &export_view(s.bounds, w, h), ts, &mut scene);
+    render(&scene, w, h, peniko::Color::WHITE)
+}
+
+/// Compares our render of a legacy document with the old renderer's PNG.
+fn compare_with_old(name: &str, max_beyond: f64) {
+    let reference = read_png(&fixtures().join(format!("render/{name}.png")));
+    let mut ts = Typesetter::new();
+    let s = load_legacy(name, &mut ts);
+    let ours = render_scene2(&s, &mut ts, reference.w, reference.h);
+    let view = export_view(s.bounds, reference.w, reference.h);
+    let ignore: Vec<kurbo::Rect> = s
+        .ignored
+        .iter()
+        .map(|r| {
+            let (a, b) =
+                (view.world_to_device() * Point::new(r.x0, r.y0), view.world_to_device() * Point::new(r.x1, r.y1));
+            kurbo::Rect::new(a.x, a.y, b.x, b.y)
+        })
+        .collect();
+    let d = diff_masked(&ours, &reference, &ignore);
+    let adapter = gpu().lock().unwrap().adapter.clone();
+    eprintln!("{name}: {d:?} on {adapter}");
+    if let Ok(dir) = std::env::var("RENDER_TEST_OUT") {
+        write_png(&Path::new(&dir).join(format!("{name}.png")), &ours);
+        let mut mark = Pixels { w: ours.w, h: ours.h, rgba: vec![255; ours.rgba.len()] };
+        for (i, (p, q)) in ours.rgba.chunks_exact(4).zip(reference.rgba.chunks_exact(4)).enumerate() {
+            if p.iter().zip(q).any(|(x, y)| x.abs_diff(*y) > TOLERANCE) {
+                mark.rgba[i * 4..i * 4 + 3].copy_from_slice(&[255, 0, 0]);
+            }
+        }
+        write_png(&Path::new(&dir).join(format!("{name}_diff.png")), &mark);
+    }
+    assert!(
+        d.beyond <= max_beyond,
+        "{name}: {:.3}% of pixels differ by more than {TOLERANCE} (max {}, any {:.2}%)",
+        d.beyond * 100.0,
+        d.max,
+        d.any * 100.0
+    );
+}
+
+// ----------------------------------------------------------------------------------------------
+// Against the old renderer
+
+#[test]
+fn rectangles_match_the_old_renderer() {
+    need_gpu!();
+    compare_with_old("styles_rectangle", 0.0);
+}
+
+#[test]
+fn freehand_matches_the_old_renderer() {
+    need_gpu!();
+    compare_with_old("styles_freehand", 0.0);
+}
+
+#[test]
+fn the_shape_sampler_matches_the_old_renderer() {
+    need_gpu!();
+    compare_with_old("all_shapes", 0.004);
+}
+
+#[test]
+fn math_matches_the_old_renderer() {
+    need_gpu!();
+    compare_with_old("math", 0.015);
+}
+
+#[test]
+fn text_matches_the_old_renderer() {
+    need_gpu!();
+    compare_with_old("text_char_colors", 0.0);
+}
+
+#[test]
+fn nested_groups_match_the_old_renderer() {
+    need_gpu!();
+    compare_with_old("groups_nested", 0.02);
+}
+
+#[test]
+fn fonts_match_the_old_renderer() {
+    need_gpu!();
+    compare_with_old("text_fonts", 0.02);
+}
+
+#[test]
+fn images_match_the_old_renderer() {
+    need_gpu!();
+    compare_with_old("images", 0.03);
+}
+
+// ----------------------------------------------------------------------------------------------
+// Against ourselves
+
+fn all_at_once(store: &MemoryStore, view: &View, ts: &mut Typesetter, opts: &RenderOptions) -> Scene {
+    // Every element that touches the view (brute force), in z order, painted fresh: no cache, no index, no level
+    // of detail. Elements far outside the view are left out: Vello draws partial tiles at the edge of the target
+    // slightly differently when the scene holds geometry far away, which is not what this test is about.
+    let mut painter = ElementPainter::new();
+    let mut scene = Scene::new();
+    let to_dev = view.world_to_device();
+    let world = view.world_rect();
+    for e in store.iter().filter(|e| drafftink_geom::aabb::intersects(&world, &paint_bounds(e))) {
+        let f = painter.paint(e, opts, ts, &|fid| store.file(fid).map(|x| x.bytes.clone()));
+        scene.append(&f.scene, Some(to_dev * element_to_world(e)));
+    }
+    scene
+}
+
+#[test]
+fn culling_and_caching_change_no_pixel() {
+    need_gpu!();
+    let mut ts = Typesetter::new();
+    let store = store_of(mixed_elements(500, 3, &mut ts));
+    let index = build_paint_index(&store);
+    let opts = RenderOptions::for_export(Theme::Light);
+    let mut composer = SceneComposer::new();
+    composer.set_options(opts);
+    let (w, h) = (700u32, 500u32);
+    for (zoom, x, y) in [(1.0, 300.0, 200.0), (0.6, 0.0, 0.0), (2.5, 1000.0, 800.0)] {
+        let view = View::new(zoom, Vec2::new(-x * zoom, -y * zoom), Size::new(f64::from(w), f64::from(h)));
+        let reference = render(&all_at_once(&store, &view, &mut ts, &opts), w, h, peniko::Color::WHITE);
+        let mut scene = Scene::new();
+        composer.compose(&store, &index, &view, &mut ts, &mut scene);
+        let cold = render(&scene, w, h, peniko::Color::WHITE);
+        composer.compose(&store, &index, &view, &mut ts, &mut scene);
+        let warm = render(&scene, w, h, peniko::Color::WHITE);
+        for (what, px) in [("cold", &cold), ("warm", &warm)] {
+            let d = diff(px, &reference);
+            assert!(d.beyond == 0.0, "zoom {zoom} {what}: {d:?}");
+        }
+    }
+}
+
+#[test]
+fn a_moved_element_looks_like_one_encoded_there() {
+    need_gpu!();
+    let mut ts = Typesetter::new();
+    let mut store = store_of(mixed_elements(40, 8, &mut ts));
+    let mut index = build_paint_index(&store);
+    let mut warm = SceneComposer::new();
+    warm.set_options(RenderOptions::for_export(Theme::Light));
+    let view = View::new(1.0, Vec2::new(-100.0, -100.0), Size::new(600.0, 400.0));
+    let mut scene = Scene::new();
+    warm.compose(&store, &index, &view, &mut ts, &mut scene);
+    for name in ["e0", "e1", "e3", "e4", "e5", "e6", "e7"] {
+        let cs = update(&mut store, name, |e| {
+            e.transform.x += 37.0;
+            e.transform.y -= 11.0;
+            e.transform.angle = 0.7;
+        });
+        update_paint_index(&mut index, &store, &cs);
+    }
+    warm.compose(&store, &index, &view, &mut ts, &mut scene);
+    let moved = render(&scene, 600, 400, peniko::Color::WHITE);
+    let mut cold = SceneComposer::new();
+    cold.set_options(RenderOptions::for_export(Theme::Light));
+    cold.compose(&store, &index, &view, &mut ts, &mut scene);
+    let fresh = render(&scene, 600, 400, peniko::Color::WHITE);
+    assert_eq!(diff(&moved, &fresh).beyond, 0.0);
+}
+
+#[test]
+fn the_dark_theme_draws_light_ink_on_a_dark_background() {
+    need_gpu!();
+    let mut ts = Typesetter::new();
+    let mut e = rect_el("r", &ZIndex::first(), 20.0, 20.0, 100.0, 60.0);
+    e.style.stroke_color = Color::BLACK;
+    e.style.sloppiness = Sloppiness::Architect;
+    e.style.stroke_width = 4.0;
+    let store = store_of(vec![e]);
+    let index = build_paint_index(&store);
+    let mut composer = SceneComposer::new();
+    composer.set_options(RenderOptions { theme: Theme::Dark, ..RenderOptions::default() });
+    let mut scene = Scene::new();
+    let view = View::new(1.0, Vec2::ZERO, Size::new(140.0, 100.0));
+    composer.compose(&store, &index, &view, &mut ts, &mut scene);
+    let px = render(&scene, 140, 100, composer.background(&store));
+    let at = |x: u32, y: u32| {
+        let i = ((y * px.w + x) * 4) as usize;
+        [px.rgba[i], px.rgba[i + 1], px.rgba[i + 2]]
+    };
+    assert_eq!(at(5, 5), [18, 18, 18], "background");
+    let edge = at(70, 20);
+    assert!(edge[0] > 200, "black ink became light: {edge:?}");
+}
+
+#[test]
+fn an_overlay_over_a_world_scene_renders() {
+    need_gpu!();
+    let mut ts = Typesetter::new();
+    let store = store_of(mixed_elements(30, 2, &mut ts));
+    let index = build_paint_index(&store);
+    let mut composer = SceneComposer::new();
+    let view = View::new(1.0, Vec2::ZERO, Size::new(400.0, 300.0));
+    let (mut world, mut overlay, mut out) = (Scene::new(), Scene::new(), Scene::new());
+    composer.compose(&store, &index, &view, &mut ts, &mut world);
+    let o = Overlay {
+        marquee: Some(kurbo::Rect::new(50.0, 50.0, 200.0, 150.0)),
+        selection: vec![SelectionBox {
+            obox: drafftink_geom::OrientedBox::from_xywh(60.0, 60.0, 100.0, 80.0, 0.2),
+            handles: drafftink_geom::select::HandleSet::ALL,
+            dashed: true,
+        }],
+        ..Overlay::default()
+    };
+    paint_overlay(&mut overlay, &o, &view, &OverlayStyle::default());
+    combine(&world, &overlay, &mut out);
+    let with = render(&out, 400, 300, peniko::Color::WHITE);
+    let without = render(&world, 400, 300, peniko::Color::WHITE);
+    assert!(diff(&with, &without).any > 0.001, "the overlay changed nothing");
+}
