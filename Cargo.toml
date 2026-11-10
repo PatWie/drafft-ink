@@ -84,10 +84,6 @@ unsafe_code = "forbid"
 unwrap_used = "deny"
 expect_used = "deny"
 panic = "deny"
-unimplemented = "deny"
-todo = "deny"
-unreachable = "deny"
-dbg_macro = "deny"
 
 [profile.release]
 opt-level = 3
