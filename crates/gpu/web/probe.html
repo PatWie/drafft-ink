@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>web host probe</title>
+<style>
+  html, body { margin: 0; height: 100%; }
+  #canvas { position: absolute; left: 50px; top: 40px; width: 400px; height: 300px; background: #eef; }
+  #foreign { position: absolute; left: 500px; top: 40px; width: 150px; }
+</style>
+</head>
+<body>
+<canvas id="canvas" width="400" height="300"></canvas>
+<input id="foreign" value="foreign field">
+<script type="module">
+  import init, * as api from "./pkg/web_host_probe.js";
+  // Time stamps of the pointer events as the browser reports them, to compare with the host's time_ms.
+  window.__stamps = [];
+  const canvas = document.getElementById("canvas");
+  for (const name of ["pointerdown", "pointermove", "pointerup", "pointercancel", "pointerleave"]) {
+    canvas.addEventListener(name, (e) => window.__stamps.push({ type: name, t: e.timeStamp }));
+  }
+  try {
+    await init();
+    window.probe = api;
+    window.__js_ready = true;
+  } catch (e) {
+    window.__probe_error = String(e);
+  }
+</script>
+</body>
+</html>
