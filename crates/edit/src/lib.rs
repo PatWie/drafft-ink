@@ -28,6 +28,7 @@ pub mod group;
 pub mod layout;
 pub mod lifecycle;
 pub mod linear;
+pub mod paste;
 pub mod preflight;
 pub mod query;
 pub mod query_cmd;

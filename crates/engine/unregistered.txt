@@ -1,12 +1,6 @@
 # Catalog ids (docs/commands.md §2) that no family has registered yet.
 # One id per line, sorted, no duplicates. `catalog_matches_registry` (src/catalog_tests.rs) checks it.
 # This list only shrinks. A family adds its ids to the registry by deleting their lines here.
-clipboard.copy
-clipboard.copy_as
-clipboard.copy_style
-clipboard.cut
-clipboard.paste
-clipboard.paste_style
 collab.connect
 collab.disconnect
 collab.join_room
@@ -31,6 +25,23 @@ doc.rename
 doc.save
 doc.set_background
 doc.show_intro
+element.at
+element.connect
+element.create
+element.delete
+element.duplicate
+element.erase
+element.flip
+element.lock
+element.move
+element.nudge
+element.query
+element.relabel
+element.resize
+element.rotate
+element.set_bounds
+element.set_name
+element.unlock_all
 image.insert
 layout.apply
 library.add

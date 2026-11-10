@@ -75,6 +75,7 @@ use serde_json::Value;
 use crate::limits::MAX_INPUT_BYTES;
 use crate::{ImportReport, Imported, IoError};
 
+mod clipboard;
 mod export;
 mod image;
 mod import;
@@ -83,6 +84,7 @@ mod map;
 mod notes;
 mod read;
 
+pub use clipboard::export_clipboard;
 pub use library::{GRID_CELL_PADDING, GRID_MAX_COLUMNS};
 
 /// An Excalidraw library: a list of small documents.

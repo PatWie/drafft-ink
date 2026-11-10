@@ -12,11 +12,14 @@
 //! | [`excalidraw`] | `.excalidraw`, `.excalidrawlib` (v1, v2) and the Excalidraw clipboard, import and export |
 //! | [`mermaid`] | Mermaid flowchart and sequence diagram parsing |
 //! | [`svg`] | SVG export (with the scene embedded for re-import) |
+//! | [`clipboard`] | the drafft.ink clipboard envelope, and what pasted text is |
+//! | [`picture`] | size, format and bounded re-encoding of PNG, JPEG and WebP pictures |
 //! | [`png_meta`] | scene JSON inside a PNG text chunk, writer and reader |
 //! | [`facts`] | recomputes the facts of the legacy fixtures and compares them (`cargo xtask fixtures --check`) |
 
 #![cfg_attr(test, allow(clippy::unwrap_used, clippy::expect_used, clippy::panic))]
 
+pub mod clipboard;
 pub mod error;
 pub mod excalidraw;
 pub mod facts;
@@ -26,6 +29,7 @@ pub mod measure;
 pub mod mermaid;
 pub mod native;
 pub mod open;
+pub mod picture;
 pub mod png_meta;
 pub mod svg;
 
