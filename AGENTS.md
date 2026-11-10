@@ -9,7 +9,8 @@ Drafft.ink is an infinite-canvas whiteboard in Rust (Vello on WebGPU, egui, Loro
 - A refusal is a value (`Refusal`) with plain-words text that says how to proceed, never a panic or a silent no-op. Commands never open dialogs: a decision is an argument with a safe default.
 - Domain rules live in the domain crate (`edit`, `doc`, `io`) with typed errors. A command validates and delegates, and never holds a second copy of a rule.
 - Facts about a thing go on its registration (a field), not into name lists. A test fails when a registration omits the field.
-- Never crash: no `unwrap`, `expect`, `panic!` or `unsafe` in non-test code. Errors are `Result`, and every input is hostile: clippy `-D warnings`, `hostile_params_never_panic`.
+- Never crash: no `unwrap`, `expect`, `panic!`, `todo!`, `unimplemented!`, `unreachable!` or `unsafe` in non-test code, xtask included. Errors are `Result`, and every input is hostile: clippy `-D warnings`, `hostile_params_never_panic`.
+- Idiomatic Rust: `?` and typed errors (`thiserror`), iterators over index loops, borrow instead of clone, newtypes and enums over strings and flags, no needless `pub`, small modules, rustdoc on public items. Clippy `-D warnings` is the floor, not the bar.
 - Everything below L6 builds for `wasm32-unknown-unknown`: `cargo xtask wasm`.
 - Idle means idle: no redraw without a dirty reason, every repaint request is tied to pending work: `cargo xtask perf --idle`.
 - Never weaken an assertion to get green. Find out whether the app or the test is wrong, and fix that one.
