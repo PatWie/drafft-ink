@@ -32,9 +32,30 @@
 //! A size change or a point edit changes the key, so a resize drag regenerates each frame (see the
 //! benches for what that costs). [`SketchCache`] is a bounded two-generation cache around it.
 //!
+//! # Measured cost
+//!
+//! `cargo bench -p drafftink-sketch` (release, 64-core Linux box; numbers are medians):
+//!
+//! | Case | Time |
+//! |---|---|
+//! | hachure fill, 4000 x 3000 (about 875 lines) | 272 µs |
+//! | cross-hatch fill, 4000 x 3000 | 562 µs |
+//! | hachure fill, 300 x 200 | 25 µs |
+//! | dots fill, 1000 x 1000 | 7.4 ms (the most expensive fill; capped at [`MAX_FILL_DOTS`]) |
+//! | rectangle outline only | 0.3 µs |
+//! | freehand with pressure, 1k / 10k / 50k points | 28 µs / 287 µs / 5.5 ms |
+//! | sketchy freehand without pressure, 1k / 10k / 50k points | 29 µs / 345 µs / 6.2 ms |
+//! | arrow, 8 points, triangle head | 1.2 µs |
+//! | cache hit (drag frame), hachure rectangle | 41 ns |
+//! | cache key of a 10k-point stroke | 50 µs |
+//! | resize-drag frame (miss), 300 x 200 hachure | 35 µs |
+//!
+//! A hit costs the key hash, which is linear in the point count. Callers with versioned elements
+//! should compute the key once per version and use [`SketchCache::get_with_key`].
+//!
 //! # Limits
 //!
-//! Output size is bounded for any input; see [`limits`](crate#constants). NaN and infinite points
+//! Output size is bounded for any input; see the constants of this crate. NaN and infinite points
 //! are dropped, coordinates are clamped to ±[`MAX_COORD`], point lists are decimated above
 //! [`MAX_POINTS`], and pattern fills draw at most [`MAX_HACHURE_LINES`] lines per direction.
 

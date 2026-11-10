@@ -14,6 +14,9 @@
 //! Fill patterns come from roughr, which changed between 0.12 (old) and 0.14 (new); any difference
 //! is reported by `fill_patterns_match_old_app`.
 
+// Test helpers (not `#[test]` fns) may panic on malformed fixtures.
+#![allow(clippy::expect_used, clippy::panic, clippy::unwrap_used)]
+
 use drafftink_sketch::{
     Arrowhead, Curve, FillKind, FillStyle, PressureProfile, Roundness, SketchGeometry, SketchInput, SketchParams,
     SketchShape, sketch,

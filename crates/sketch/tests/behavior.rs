@@ -1,11 +1,14 @@
 //! Determinism, cache keys, arrows, fills, and hostile inputs.
 
+// Test helpers (not `#[test]` fns) may panic on malformed fixtures.
+#![allow(clippy::expect_used, clippy::panic, clippy::unwrap_used)]
+
 use drafftink_sketch::{
     Arrowhead, Curve, FillKind, FillStyle, HeadKind, LineDash, MAX_FILL_DOTS, MAX_FILL_SEGMENTS, MAX_HACHURE_LINES,
     MAX_POINTS, PressureProfile, Roundness, SketchCache, SketchGeometry, SketchInput, SketchParams, SketchShape,
     sketch, sketch_key,
 };
-use kurbo::{BezPath, PathEl, Point, Rect, Shape};
+use kurbo::{BezPath, PathEl, Point, Rect};
 
 fn params(seed: u32) -> SketchParams {
     SketchParams { seed, ..SketchParams::default() }
