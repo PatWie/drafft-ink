@@ -9,11 +9,53 @@ license = "AGPL-3.0-only"
 rust-version = "1.91"
 
 [workspace.dependencies]
+# ---- Graphics / UI stack: ONE compatible set, pinned by the stack spike (docs/stack.md). ----
+# Keep these in lockstep. eframe/egui-wgpu 0.37 and vello 0.11 both use wgpu 30; vello 0.11 and
+# parley 0.12 both use peniko 0.6 / kurbo 0.13 / linebender_resource_handle 0.1. Bump together or not at all.
+kurbo = { version = "0.13", features = ["serde"] }
+peniko = "=0.6.1"
+vello = { version = "=0.11.0", default-features = true }
+parley = { version = "=0.12.0", default-features = false, features = ["std"] }
+# wgpu: no default features. The crate that owns the device (gpu) picks backends per target:
+#   native: ["std", "parking_lot", "wgsl", "vulkan", "gles", "metal", "dx12"]; wasm32: ["std", "wgsl", "webgpu"].
+# Never enable `webgl` (egui-wgpu does by default): Vello needs compute, and webgl adds naga + a GL backend (+0.6 MB brotli).
+wgpu = { version = "=30.0.1", default-features = false }
+egui = { version = "=0.37.0", default-features = false, features = ["default_fonts"] }
+egui-wgpu = { version = "=0.37.0", default-features = false, features = ["fragile-send-sync-non-atomic-wasm"] }
+eframe = { version = "=0.37.0", default-features = false, features = ["wgpu_no_default_features", "default_fonts", "x11", "wayland"] }
+egui_kittest = { version = "=0.37.0", default-features = false }
+winit = "0.30.13"
+
+# ---- Document, sync, geometry helpers ----
+loro = "1.17"
+roughr = "0.14"
+rstar = "0.14"
+schemars = "1.2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 thiserror = "2"
 log = "0.4"
-# Graphics stack versions are pinned by the stack spike (docs/stack.md).
+uuid = { version = "1", features = ["serde"] }
+image = { version = "0.25", default-features = false, features = ["png", "jpeg", "webp"] }
+png = "0.18"
+web-time = "1"
+
+# ---- Platform glue ----
+wasm-bindgen = "=0.2.130" # must equal the installed wasm-bindgen-cli version
+wasm-bindgen-futures = "0.4"
+js-sys = "0.3"
+web-sys = "0.3"
+console_error_panic_hook = "0.1"
+console_log = "1"
+env_logger = "0.11"
+pollster = "0.4"
+rfd = "0.18"
+arboard = "3"
+
+# ---- Test / bench ----
+proptest = "1"
+insta = "1"
+criterion = "0.8"
 
 [workspace.lints.rust]
 unsafe_code = "forbid"
