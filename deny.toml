@@ -36,6 +36,12 @@ confidence-threshold = 0.9
 [advisories]
 unmaintained = "workspace"
 yanked = "warn"
+ignore = [
+    # ttf-parser is unmaintained (no vulnerability). ReX (math layout) can only read fonts through
+    # it (feature `ttfparser-fontparser`), and `typeset` uses it on the bundled fonts and to check
+    # user fonts. Revisit when ReX moves to skrifa/read-fonts (docs/typeset.md, "ReX").
+    { id = "RUSTSEC-2026-0192", reason = "ReX's font backend; see docs/typeset.md" },
+]
 
 [bans]
 multiple-versions = "warn"
@@ -46,4 +52,5 @@ allow-wildcard-paths = true
 unknown-registry = "deny"
 unknown-git = "deny"
 allow-registry = ["https://github.com/rust-lang/crates.io-index"]
-allow-git = []
+# ReX at a pinned commit, the only maths layout engine in Rust that does TeX layout (docs/typeset.md).
+allow-git = ["https://github.com/KenyC/ReX"]

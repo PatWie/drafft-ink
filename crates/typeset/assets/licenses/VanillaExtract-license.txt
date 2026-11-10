@@ -1,0 +1,7 @@
+Metadata of VanillaExtract.ttf (name table), the only licence information the file carries:
+
+  Copyright:  Shara Weber 2016
+  Designer:   Shara Weber (sharasfonts.com)
+  Licence:    Personal and Commercial Use Allowed
+
+No licence file ships with the font. See ATTRIBUTION.md for the status.
