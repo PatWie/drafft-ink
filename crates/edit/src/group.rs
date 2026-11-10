@@ -25,7 +25,7 @@ use crate::zorder::{Place, ZOrderError, ZReport, move_block};
 pub mod selection;
 pub mod units;
 
-use units::{Relations, ensure_unlocked, impl_from_target, primaries, units as units_of, with_companions};
+use units::{Relations, ensure_unlocked, impl_from_target, primaries, with_companions};
 
 /// Why a group operation was refused.
 #[derive(Debug, Clone, PartialEq, thiserror::Error)]
@@ -123,13 +123,7 @@ pub fn group<T: SceneTx>(
             }
         }
     }
-    let us = units_of(&*tx, &rel, &prim, editing)?;
-    if us.len() < 2 {
-        return match us.first().map(|u| &u.key) {
-            Some(units::UnitKey::Group(_)) => Err(GroupError::AlreadyGrouped),
-            _ => Err(GroupError::TooFew { have: us.len() }),
-        };
-    }
+    let us = crate::preflight::groupable_units(&*tx, &rel, &prim, editing)?;
     let members: Vec<ElementId> = {
         let mut m: Vec<ElementId> = us.iter().flat_map(|u| u.elements.iter().cloned()).collect();
         units::sort_z(&*tx, &mut m);
@@ -224,14 +218,7 @@ pub fn ungroup<T: SceneTx>(
         Some(_) => return Err(GroupError::NoGroup),
         None => {
             // The group units among the given elements: an element of a group stands for its group.
-            let prim = primaries(&*tx, ids)?;
-            let mut found: Vec<GroupId> = Vec::new();
-            for u in units_of(&*tx, &rel, &prim, editing)? {
-                if let units::UnitKey::Group(g) = u.key {
-                    found.push(g);
-                }
-            }
-            found
+            crate::preflight::groups_of(&*tx, &rel, ids, editing)?
         }
     };
     if targets.is_empty() {

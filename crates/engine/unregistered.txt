@@ -1,9 +1,6 @@
 # Catalog ids (docs/commands.md §2) that no family has registered yet.
 # One id per line, sorted, no duplicates. `catalog_matches_registry` (src/catalog_tests.rs) checks it.
 # This list only shrinks. A family adds its ids to the registry by deleting their lines here.
-arrange.align
-arrange.distribute
-arrange.z_order
 clipboard.copy
 clipboard.copy_as
 clipboard.copy_style
@@ -51,16 +48,6 @@ element.rotate
 element.set_bounds
 element.set_name
 element.unlock_all
-frame.add
-frame.remove
-frame.rename
-frame.select_children
-frame.unwrap
-frame.wrap
-group.create
-group.enter
-group.exit
-group.ungroup
 image.insert
 layout.apply
 library.add
