@@ -1,0 +1,450 @@
+# Performance model and tooling
+
+This document is the perf contract of the app. It covers the redraw rules, the tooling in `crates/profile` (`drafftink-profile`), the `PerfStats` JSON schema, the budgets file, the scenarios, how the gate and the e2e drivers use them, and the baseline numbers the rewrite starts from.
+
+Related: `docs/plan.md` §7 (design), `docs/testing.md` (test layers), `AGENTS.md` ("Idle means idle").
+
+## 1. The perf model
+
+The app draws only when something changed. An idle app uses no CPU and no GPU. Five rules follow.
+
+1. **A redraw needs a dirty reason.** Every redraw request names a `RedrawReason` (§2.3). The idle gate is the only place that turns a request into a frame. A frame that starts with no pending reason is `unexplained`, and the idle check fails on it.
+2. **Hover redraws only when the hover state changes.** A pointer move over the canvas runs the hit test, compares the result with the previous hover (element id, handle, cursor icon). It requests `hover_change` only when they differ. A move that changes nothing increments the `redraws_skipped` counter and does nothing else.
+3. **Every repaint request is tied to pending work.** A `request_repaint` or `request_repaint_after` call must be reachable only while something is pending: an animation, a load, a timer deadline, a gesture. When the work ends the requests end. No unconditional repaint request exists, and no poll loop runs without a job to poll.
+4. **Deadlines are honoured, not polled.** `request_repaint_after(d)` is passed to the event loop as a wake-up at `now + d`, and the frame it causes is tagged `timer`. The old app dropped the delay and kept only the boolean (baseline §2), so timed effects depended on other events arriving.
+5. **Other sources wake the loop explicitly.** Each of these sends a message and wakes the loop, and the frame is tagged with the source:
+
+   | Source | Wake-up | Reason |
+   |---|---|---|
+   | Network (collab sync, presence) | transport task -> channel -> `request_repaint` | `collab` |
+   | Autosave finished | job result -> channel -> `request_repaint` | `autosave` |
+   | Text caret | one `request_repaint_after(blink_interval)` while a text field has focus | `caret_blink` |
+   | Async load, paste, drop, image decode | result -> channel -> `request_repaint` | `load` |
+   | egui animation or tooltip | egui's own `request_repaint_after` | `ui` |
+   | Window or canvas resized, scale changed | event loop | `resize` |
+   | Surface lost or visible again | event loop | `surface` |
+
+Cheap while moving, full quality at rest: during pan and zoom the encoder may draw a cheaper form of the scene (no sketch regeneration, no extra detail). When the view has been still for a settle time, one deferred repaint (`timer`) draws the full-quality frame.
+
+The frame, in order. Each step is a `Phase` (§2.2) except the first.
+
+```
+event / wake-up -> idle gate (reason) -> [input] -> [commands] -> [layout] -> [encode] -> [ui] -> [gpu_submit] -> present
+```
+
+Scene encoding keeps one encoded fragment per element, cached by a version number. The scene is assembled from the cache and culled with the spatial index, so the cost of `encode` depends on the number of visible elements, not on the size of the document. Text, math and image caches are bounded. Math is laid out once per edit.
+
+## 2. The profile crate
+
+`drafftink-profile` is layer L0: it depends on no other workspace crate, uses `serde`, `serde_json` and `web-time`, and builds for `wasm32-unknown-unknown`. The clock is `web_time::Instant`, which is `performance.now()` in the browser.
+
+### 2.1 Spans
+
+```rust
+use drafftink_profile as profile;
+
+fn encode_scene(/* ... */) {
+    let _g = profile::span("encode");   // ends when _g drops, also on unwind
+    // ...
+    profile::scope("encode_text", || layout());
+}
+```
+
+- Names are `&'static str`, short snake_case. A name is a key in `PerfStats.spans`. At most 1024 distinct names are kept; further new names are aggregated as `other`.
+- Spans nest. Self time is the span's time minus its children's on the same thread. Total time counts only the outermost occurrence of a name on a thread's stack, so recursion is not counted twice.
+- Cost:
+
+  | Build | Cost of one span |
+  |---|---|
+  | `default-features = false` (no `enabled` feature) | zero: `Span` is a zero-sized type and the calls are empty inline functions |
+  | compiled in, flag off (the default at run time) | one relaxed atomic load |
+  | flag on | two clock reads, a push and a pop on a thread-local stack, no lock |
+
+  Measure with `cargo bench -p drafftink-profile` (benchmark groups `span`, `always_on`, `frame`). Measured numbers are in §7.4; the bench is the source of truth.
+- Threads: each thread keeps its own stack and a small buffer. The buffer moves to the shared bounded ring (32,768 events) when the thread's outermost span ends, so the shared lock is taken once per top-level span. A thread that never ends a span does not publish. On wasm there is one thread.
+- Turn recording on with `profile::set_enabled(true)`. Native apps call `profile::enable_from_env("DRAFFTINK_PERF")` at start-up; the web entry exposes `window.drafftink.perf.enable()`. Counters and redraw reasons are always on and need no flag.
+- Cargo feature `enabled` (default on) compiles the timing code in. A size-sensitive build can depend on the crate with `default-features = false`; then spans, phases and frames record nothing, and counters and redraw reasons still work. Apps forward the feature as their own `profile` feature.
+
+### 2.2 Frames and phases
+
+```rust
+profile::begin_frame();                       // takes the pending redraw reasons
+{ let _p = profile::phase(Phase::Input);  /* ... */ }
+{ let _p = profile::phase(Phase::Encode); /* ... */ }
+profile::end_frame();                         // after present
+```
+
+`Phase` values and what they cover:
+
+| Phase | Covers |
+|---|---|
+| `input` | event handling, gesture updates |
+| `commands` | command execution through the registry |
+| `layout` | text, math and sketch layout done in this frame |
+| `encode` | building the render scene |
+| `gpu_submit` | handing the scene to the GPU and presenting |
+| `ui` | egui run and tessellation |
+
+Time in a frame outside every phase is reported as the phase `other`. A phase also records a span of the same name. The profiler keeps the last 1024 frames (`set_frame_window` changes it) and reports, over that window:
+
+- `frame_ms` (begin to end) and `interval_ms` (start to start): count, mean, p50, p95, p99, max. Percentiles use the nearest-rank method on the exact samples, not on the histogram.
+- `phase_ms`: the same summary for each phase and `other`.
+- A fixed-bucket histogram of frame time. Bucket upper bounds in ms: 1, 2, 4, 8, 12, 16.7, 25, 33.3, 50, 100, 250, 500, and an overflow bucket.
+- Totals since reset: frames, frames over 16.7 ms, frames over 33.3 ms, unexplained frames, frames per redraw reason.
+- `fps` over the window, from the first to the last frame start (it includes idle gaps, so an idle app reports a low number; use `frames` deltas for idle checks).
+
+### 2.3 Redraw reasons
+
+`profile::redraw(RedrawReason::X)` records a redraw request. The idle gate calls it; nothing else needs to. The next `begin_frame` takes all reasons requested since the previous one, so a frame can have several.
+
+| Reason | Meaning |
+|---|---|
+| `startup` | first frame after launch |
+| `command` | a command changed document or editor state |
+| `gesture` | live gesture update: pan, zoom, drag, resize, draw |
+| `hover_change` | hovered element, handle or cursor changed |
+| `resize` | window or canvas size or scale factor changed |
+| `ui` | egui asked for a repaint (widget interaction, animation) |
+| `timer` | a `request_repaint_after` deadline arrived |
+| `caret_blink` | the text caret toggles |
+| `animation` | a running animation needs its next frame |
+| `collab` | a collaborator's edit or presence arrived |
+| `autosave` | autosave finished and the UI shows it |
+| `load` | async load, paste, drop or image decode finished |
+| `surface` | surface lost, resized by the OS, or visible again |
+| `other` | no better tag. Each use is a review item; the idle gate counts them |
+
+Adding a reason changes the schema (§3.4): it adds a key to `redraws.by_reason` and `frames.by_reason`.
+
+### 2.4 Counters and gauges
+
+Counters are monotonic. Gauges hold the last value. All are always compiled in.
+
+| Counter | Counts |
+|---|---|
+| `cache_hit` | a per-element cache served an entry |
+| `cache_miss` | a per-element cache had no valid entry and the work ran |
+| `elements_encoded` | elements encoded into the scene (fragment built or replayed) |
+| `elements_culled` | elements skipped because they are outside the viewport |
+| `commands` | commands run through the registry |
+| `hit_tests` | point or area hit tests |
+| `spatial_queries` | spatial index queries |
+| `relayouts` | text or math layouts that were not served from cache |
+| `sketch_regens` | hand-drawn paths generated (not from cache) |
+| `scene_builds` | whole-scene assemblies |
+| `gpu_submits` | GPU submissions |
+| `sync_ops_applied` | sync operations applied to the document |
+| `redraws_skipped` | redraw requests the idle gate dropped because nothing was dirty |
+
+| Gauge | Reads |
+|---|---|
+| `elements_total` | elements in the document |
+| `elements_visible` | elements that intersect the viewport |
+| `cache_entries` | entries held by render caches |
+
+`profile::count_named("name", n)` adds an ad hoc counter for a quick local check. It takes a lock, so keep it out of hot loops. A named counter that matters gets a `Counter` variant.
+
+### 2.5 Work counters in tests
+
+Tests assert on work, never on time. `WorkScope::begin()` opens a window over the work done by the **current thread**; every update also goes to process-wide totals, but the scope reads thread-local cells. Parallel tests do not see each other, and no clock is involved.
+
+```rust
+use drafftink_profile::{Counter, RedrawReason, WorkScope};
+
+#[test]
+fn panning_does_not_regenerate_sketch_paths() {
+    let mut app = test_app_with_elements(1000);
+    let work = WorkScope::begin();
+    app.execute("view.pan", json!({"dx": 40, "dy": 0}));
+    assert_eq!(work.count(Counter::SketchRegens), 0, "{}", work.summary());
+    assert_eq!(work.count(Counter::Relayouts), 0);
+}
+
+#[test]
+fn hover_over_empty_canvas_redraws_nothing() {
+    let mut app = test_app_with_elements(1000);
+    let work = WorkScope::begin();
+    app.pointer_move(5.0, 5.0);
+    assert_eq!(work.redraws(), 0, "{}", work.summary());
+    assert_eq!(work.redraw_reasons(), vec![]);
+}
+```
+
+Rules:
+- Run the work on the test's thread. Work that an operation hands to other threads is not seen by a `WorkScope`. Assert on it through `profile::snapshot()` in a test that runs alone.
+- `summary()` lists every counter that moved. Put it in the assertion message.
+- A scenario test that checks "no redraw in this window" also checks `work.count(Counter::RedrawsSkipped)` when the input must have reached the gate.
+- Never assert on `frame_ms`, `phase_ms` or span times in a unit test. Those belong to the perf gate (§5).
+
+### 2.6 Chrome trace
+
+`profile::chrome_trace_json()` (or `write_chrome_trace(&mut writer)`) returns the recent spans as Chrome trace-event JSON. Open it in `chrome://tracing` or <https://ui.perfetto.dev>.
+
+- One track per thread with complete events (`ph: "X"`), timestamps in microseconds on the process clock.
+- A `frames` track with one event per frame in the window, with `args.reasons`.
+- A `redraws` track with one instant event per recent redraw request.
+- `otherData.dropped` counts finished spans that fell out of the ring (capacity 32,768). The aggregate in `PerfStats.spans` still counts them.
+
+## 3. PerfStats schema
+
+Schema version: 1
+
+`profile::snapshot()` returns a `PerfStats`; `.to_json()` serializes it. The read-only command `perf.stats` returns the same document, and `window.drafftink.perf.snapshot()` returns it on the web. The native and web drivers read this one shape.
+
+### 3.1 Document
+
+```json
+{
+  "schema": "drafftink.perf",
+  "version": 1,
+  "compiled": true,
+  "enabled": true,
+  "uptime_ms": 12034.5,
+  "frames": {
+    "total": 600, "window": 600,
+    "over_16_7ms": 4, "over_33_3ms": 0, "unexplained": 0,
+    "fps": 59.8,
+    "frame_ms":    {"count": 600, "mean_ms": 6.1, "p50_ms": 5.8, "p95_ms": 9.9, "p99_ms": 14.2, "max_ms": 18.0},
+    "interval_ms": {"count": 599, "mean_ms": 16.7, "p50_ms": 16.7, "p95_ms": 17.3, "p99_ms": 19.0, "max_ms": 22.1},
+    "phase_ms": {"input": {}, "commands": {}, "layout": {}, "encode": {}, "gpu_submit": {}, "ui": {}, "other": {}},
+    "histogram": {"upper_ms": [1.0, 2.0, 4.0, 8.0, 12.0, 16.7, 25.0, 33.3, 50.0, 100.0, 250.0, 500.0],
+                  "counts":   [0, 0, 20, 500, 70, 6, 4, 0, 0, 0, 0, 0, 0]},
+    "by_reason": {"gesture": 600, "hover_change": 0}
+  },
+  "redraws": {
+    "total": 600,
+    "by_reason": {"startup": 1, "command": 0, "gesture": 599},
+    "recent": [{"at_ms": 12001.2, "reason": "gesture"}]
+  },
+  "counters": {"elements_encoded": 52000, "elements_culled": 548000, "cache_hit": 51000, "cache_miss": 1000},
+  "gauges": {"elements_total": 10000, "elements_visible": 87, "cache_entries": 1100},
+  "spans": [{"name": "encode", "count": 600, "total_ms": 900.1, "self_ms": 820.0, "max_ms": 4.2}],
+  "spans_dropped": 0
+}
+```
+
+(Abbreviated: `phase_ms` entries are full summaries, and `by_reason` and `counters` list every name.)
+
+### 3.2 Field rules
+
+- Times are milliseconds with microsecond resolution (three decimals).
+- `frames` and `spans` cover what was recorded while recording was on. `counters`, `gauges` and `redraws` are always on. All reset with `profile::reset()` (`perf.reset`).
+- `frames.total`, `over_*`, `unexplained` and `frames.by_reason` count since reset. Everything else in `frames` describes the rolling window (last 1024 frames).
+- `frames.unexplained` counts frames that began with no pending redraw reason. It must be 0.
+- `frames.by_reason` counts frames per reason (a frame with two reasons counts in both). `redraws.by_reason` counts requests, which can be more than frames because requests coalesce.
+- `counters` has every name from §2.4 even at 0, plus any ad hoc names. `gauges`, `redraws.by_reason`, `frames.by_reason` and `phase_ms` list every known name even at 0.
+- `spans` lists at most 64 names, most self time first.
+- `compiled` is false and `frames`/`spans` are empty when the build has no `enabled` feature.
+
+### 3.3 Metric paths
+
+Budgets and drivers address numbers by path. `PerfStats::metric(path)` resolves them and returns nothing for an unknown path, so a budget on a misspelled metric fails instead of passing.
+
+| Path | Value |
+|---|---|
+| `frames`, `fps` | frames since reset, frames per second over the window |
+| `frame.{mean,p50,p95,p99,max}_ms` | frame time |
+| `frame.over_16_7ms`, `frame.over_33_3ms`, `frame.unexplained` | totals since reset |
+| `interval.{mean,p50,p95,p99,max}_ms` | frame start to start |
+| `phase.<phase>.{mean,p50,p95,p99,max}_ms` | per phase, including `other` |
+| `redraws.total`, `redraws.<reason>` | redraw requests |
+| `counter.<name>`, `gauge.<name>` | work counters and gauges |
+| `span.<name>.{count,total_ms,self_ms,max_ms}` | span aggregates |
+| `external.<name>` | only in a `ScenarioReport`: numbers the driver measured (§4.2) |
+
+### 3.4 Schema versioning
+
+- Adding a field, a counter, a gauge, a phase or a redraw reason keeps the version. Readers ignore fields they do not know.
+- Renaming or removing a field or name, or changing a unit or meaning, bumps `version` (and this document's "Schema version" line). A reader rejects a document whose `version` is newer than it knows.
+- A unit test pins the v1 key set (`schema_v1_key_set_is_pinned`), and `tests/docs.rs` fails if a counter, gauge, reason or phase is missing from this document or the version line is stale.
+
+## 4. Scenarios and reports
+
+### 4.1 Scenarios
+
+Scenarios run inside the app (native `--perf-scenario <name>`, web `window.drafftink.perf.runScenario(name)`) on a scene from the deterministic generator in `testkit` (same output on every platform). Driving the app from inside avoids the flaky synthetic input the baseline hit (baseline §3.1, §3.3).
+
+| Scenario | Scene | Action | What it must show |
+|---|---|---|---|
+| `idle` | the loaded scene | no input for 10 s | at most 1 redraw, 0 unexplained frames, CPU under 1% of a core |
+| `pan` | 1k, 10k, 100k | sinusoidal pan for 10 s at a fixed event rate | frame time within budget; `elements_encoded` tracks visible elements, not total; 0 `sketch_regens` and `relayouts` after the first frame |
+| `zoom` | 1k, 10k, 100k | ctrl+wheel sweep for 10 s | same as pan, plus bounded cache growth |
+| `drag` | 1k, 10k, 100k | drag a selection of 100 elements for 10 s | commit cost independent of scene size; only the dragged elements re-encode |
+| `hover` | 1k, 10k, 100k | 1000 pointer moves, hover state changes on 5% of them | redraws equal the number of hover changes; `redraws_skipped` equals the rest |
+
+A scenario key is `name@size`, with size `1k`, `10k` or `100k`: `pan@10k`. `idle` has no size.
+
+### 4.2 ScenarioReport
+
+A driver wraps a `PerfStats` snapshot with what only it can measure:
+
+```json
+{
+  "schema": "drafftink.perf.scenario",
+  "version": 1,
+  "scenario": "pan",
+  "scene_size": 10000,
+  "meta": {"platform": "web", "adapter": "nvidia/lovelace", "commit": "abc1234", "browser": "chromium 1208"},
+  "external": {"cpu_pct": 41.5, "wasm_bytes": 3210000},
+  "stats": { "...": "a PerfStats" }
+}
+```
+
+- `external.cpu_pct` is process CPU in percent of one core. Native: `utime + stime` from `/proc/<pid>/stat` over the window. Web: the sum over the Chromium process tree.
+- `meta.platform` is `native` or `web`. `meta.adapter` records the GPU adapter, because absolute frame times are only comparable on the same adapter.
+- Other `external` names are free (`wasm_bytes`, `gpu_ms` where timestamp queries exist). A budget may reference any `external.<name>`.
+
+## 5. Budgets and the perf gate
+
+### 5.1 `perf/budgets.json`
+
+```json
+{
+  "version": 1,
+  "scenarios": {
+    "idle": {
+      "redraws.total":        {"max": 1,   "note": "idle means idle"},
+      "frame.unexplained":    {"max": 0},
+      "external.cpu_pct":     {"max": 1.0}
+    },
+    "hover@10k": {
+      "redraws.other":              {"max": 0},
+      "counter.redraws_skipped":    {"min": 900}
+    },
+    "pan@10k": {
+      "frame.p99_ms":               {"max": 16.7, "note": "60 fps on the reference GPU"},
+      "phase.encode.p95_ms":        {"max": 4.0},
+      "counter.sketch_regens":      {"max": 0}
+    }
+  }
+}
+```
+
+- Keys: scenario key (§4.1), then a metric path (§3.3), then a limit with `max` and/or `min` (inclusive) and an optional `note`.
+- A budget on a metric the report lacks is a violation. A report whose scenario has no entry produces a warning in the gate output ("unbudgeted scenario"), not a failure.
+- `Budgets::from_json` rejects an unknown `version`, a limit with neither `max` nor `min`, non-finite limits, and `min` above `max`.
+- Deterministic metrics (`counter.*`, `gauge.*`, `redraws.*`, `frame.unexplained`, `span.*.count`) give the same value on every machine and gate everywhere. Timing metrics (`frame.*`, `phase.*`, `interval.*`, `fps`, span times, `external.*`) depend on the hardware: they gate only on the reference runner with a real GPU, and run in report-only mode on software adapters (llvmpipe, SwiftShader). `Budgets::check_filtered(report, false)` does this split.
+- Tighten a limit when a fix lands, in the same commit, and say so in the commit message. Loosening a limit needs a reason in `note`.
+
+### 5.2 `cargo xtask perf`
+
+`cargo xtask perf` is the gate. It is built on the types in this crate (`ScenarioReport`, `Budgets`):
+
+1. `cargo xtask perf --idle` runs the idle scenario natively (Xvfb, `--perf-scenario idle`, headless harness) and checks the idle budget. This is the check `AGENTS.md` names.
+2. `cargo xtask perf` runs every scenario in `perf/budgets.json` through the native driver, writes one `ScenarioReport` per scenario to `target/perf/<key>.json`, loads the budgets, and prints one line per violation (`Violation` implements `Display`: `pan@10k frame.p99_ms: 20 but must be at most 16.7`). Exit status is non-zero on any violation.
+3. `cargo xtask perf --web` does the same through the browser driver.
+4. Reports and Chrome traces are uploaded as CI artifacts.
+
+The unit-level work-counter tests (§2.5) run in `cargo xtask ci` and need no GPU. The scenario runs need Xvfb, and the web ones need headed Chromium on Xvfb (headless Chromium renders a WebGPU canvas blank; baseline §3.3).
+
+### 5.3 What the drivers do
+
+Both drivers run the same scenario names and write the same `ScenarioReport`:
+
+- **Native:** start the binary with `DRAFFTINK_PERF=1 --perf-scenario <key> --perf-out <path>`. The app runs the scenario, calls `profile::snapshot()`, writes the report and exits. The driver adds `external.cpu_pct` from `/proc/<pid>/stat`.
+- **Web:** serve `web/`, launch headed Chromium on Xvfb with the flag set in `research/web-perf.md`, call `window.drafftink.perf.runScenario(key)`, read the JSON, add the process-tree CPU from `/proc`.
+- Both reset the profiler before the scenario (`perf.reset`), so the report covers only that scenario.
+
+## 6. Redraw rules, checked
+
+| Rule (§1) | Check |
+|---|---|
+| A redraw needs a dirty reason | `frame.unexplained` is 0 in every scenario; `redraws.other` is budgeted per scenario |
+| Idle means idle | `idle`: `redraws.total` at most 1, CPU under 1% |
+| Hover redraws only on change | `hover@*`: redraws equal hover changes; unit tests with `WorkScope` |
+| Repaint tied to pending work | after the work ends, `idle` shows no `timer`, `animation` or `ui` redraws |
+| Deadlines honoured | unit test: `request_repaint_after` yields one `timer` frame at the deadline |
+| Wake-ups explicit | collab, autosave, load tests assert the reason of the frame they cause |
+
+## 7. Baseline: the "before" column
+
+All numbers are from `research/baseline-perf.md` on the research box (Ubuntu x86_64, 64 cores, NVIDIA L40S), old app at commit `8ce40ab`. The rewrite is measured against them. Items marked n/m were not measured.
+
+### 7.1 App behaviour
+
+| Metric | Before (`8ce40ab`) | Rewrite budget |
+|---|---|---|
+| Native idle CPU (5 s and 10 s windows) | 0.3 - 0.6% of a core | under 1%, 0 redraws |
+| Web idle CPU, whole Chromium tree (NVIDIA / SwiftShader) | 0.6% / 0.9%, 0 app frames/s | same |
+| Native wheel pan, ~113 events/s | 52 - 65% of a core | within budget, tied to frames drawn |
+| Native hover over canvas, ~125 moves/s, nothing changing | 53 - 68% of a core (a full frame per move) | 0 redraws when hover state is unchanged |
+| Web pan, 100 events/s (NVIDIA) | 94.6% CPU, 33 fps | n/m |
+| Web ctrl+wheel zoom, 60 events/s (NVIDIA) | 106% CPU, 40 fps | n/m |
+| Web middle-button drag, 125 moves/s (NVIDIA) | 94.5% CPU, 32 fps | n/m |
+| Web hand-tool drag, 125 moves/s (NVIDIA) | 92.6% CPU, 33 fps | n/m |
+| Web pan, SwiftShader | 876% CPU, 6 fps | report only |
+| Web pan frame cost (NVIDIA, wasm main thread) | ~1.8 ms per frame, ~3 `queue.submit` per frame | fewer submits |
+| Web startup, NVIDIA | first app frame 507 ms, first visible ~1.0 s | n/m |
+| Frame statistics available | none (no timing, no counters) | `PerfStats` |
+
+The ~30 fps ceiling on the web was most likely an Xvfb present artifact (`SwapBuffers` ~18 ms per frame), so web fps figures are comparable only on the same display setup.
+
+### 7.2 CPU cost by scene size (Rust microbenchmarks, shipping `opt-level=z`)
+
+| Operation | 1,000 | 10,000 | 100,000 |
+|---|---|---|---|
+| `shapes_at_point` (hit test, linear scan) | 60 us | 0.70 ms | 9.1 ms |
+| `shapes_in_rect` 800x600 (marquee) | 66 us | 0.77 ms | 9.6 ms |
+| Smart-guide input: collect bounds and detect | 157 us | 1.67 ms | 17.0 ms |
+| `push_undo` (document snapshot clone) | 52 us | 1.2 ms | 17.0 ms |
+| `build_scene`, warm cache, almost all culled | 0.36 ms | 1.0 ms | 10.4 ms |
+| `build_scene`, warm cache, everything visible | 1.6 ms | 15.1 ms | n/m |
+| `to_json` / `from_json` | 3.4 / 1.8 ms | 34 / 18 ms | 382 / 199 ms |
+
+The same benches with `opt-level=3` are 1.3x to 2x faster (10k: hit test 0.41 ms, `build_scene` culled 0.59 ms, fit-all 8.9 ms).
+
+Sync (Loro, through the old `CollaborationManager`):
+
+| Operation | 1,000 | 10,000 |
+|---|---|---|
+| `sync_to_crdt` (runs on every local edit in a room) | 64 ms | 427 ms |
+| `sync_from_crdt` (runs on every received message) | 2.05 s | not finished (over 80 s) |
+| `update_shape` for one shape | 40 us | 41 us |
+| Apply one remote single-shape update | 103 us | 103 us |
+| Snapshot export / import | 2.5 / 15 ms | 33 - 35 / 207 ms |
+
+### 7.3 Size and tooling cost
+
+| Item | Before |
+|---|---|
+| Wasm, shipped | 10.33 MB raw, 4.66 MB gzip, 3.46 MB brotli |
+| JS glue | 118.6 KB |
+| Native release binary | 24.4 MB |
+| Release profile | `opt-level="z"` on native and wasm |
+| Frame statistics, spans, counters | none existed |
+
+### 7.4 Cost of the tooling itself
+
+`cargo bench -p drafftink-profile --bench span_overhead` on the research box (Ubuntu x86_64, release profile, load average about 5, so the figures are approximate):
+
+| Call | Time |
+|---|---|
+| `span` with recording off | 0.56 ns |
+| `phase` with recording off | 3.1 ns |
+| `span` with recording on | 114 ns |
+| three nested spans, recording on | 337 ns |
+| `phase` with recording on | 212 ns |
+| `count` (always on) | 1.8 ns |
+| `redraw` (always on, takes a lock for the recent log) | 38 ns |
+| `WorkScope::begin` | 17 ns |
+| `begin_frame` + `end_frame`, recording on | 77 ns |
+| `snapshot().to_json()` | 25 us |
+
+At 60 fps with 20 spans per frame, recording costs about 2.3 us per frame (0.014% of a frame).
+
+### 7.5 Targets that come from the baseline
+
+- Idle: under 1% of a core and 0 renders. Hover with no change: 0 renders.
+- Pan at 10k visible elements: p99 frame under 16.7 ms on the reference GPU.
+- `build_scene` independent of off-screen element count (spatial index).
+- Local commit and remote-op apply under 2 ms at 10k elements, proportional to what changed.
+- No UI-thread stall over 50 ms from collaboration at any scene size.
+- Wasm brotli size not larger than 3.5 MB.
+
+### 7.6 Measurement rules
+
+- Profile first. Time `main` against the branch with alternating runs. Check the load average before a run and wait while the machine is busy.
+- Report medians with the range, the machine, the adapter and the cases.
+- Prove that the output is unchanged (scene golden, pixel probe) before claiming a speed-up.
+- Use exact bounds for culling, never a coarse box.
+- Prefer a work-counter assertion (§2.5) to a timing when the claim is "this no longer happens".
