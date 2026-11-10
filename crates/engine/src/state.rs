@@ -5,8 +5,9 @@ use std::any::{Any, TypeId};
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 use drafftink_doc::ObservedState;
+use drafftink_edit::style::StyleDefaults;
 use drafftink_geom::kurbo::Point;
-use drafftink_scene::{ElementId, GroupId, Style};
+use drafftink_scene::{Brush, ElementId, GroupId, PressureMode, Style, TextStyle};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
@@ -189,13 +190,28 @@ pub struct ToolState {
     pub lock: bool,
     /// A temporary tool held with a key (Space for hand); `active` returns when it is released.
     pub temporary: Option<Tool>,
-    /// Style for new elements.
+    /// Style for new shapes (set by `style.set`).
     pub style_defaults: Style,
+    /// Font for new text.
+    pub text_defaults: TextStyle,
+    /// Brush for new freehand strokes.
+    pub brush_default: Brush,
+    /// Pressure mode for new freehand strokes.
+    pub pressure_default: PressureMode,
 }
 
 impl Default for ToolState {
     fn default() -> Self {
-        Self { active: Tool::Select, lock: false, temporary: None, style_defaults: Style::default() }
+        let d = StyleDefaults::default();
+        Self {
+            active: Tool::Select,
+            lock: false,
+            temporary: None,
+            style_defaults: d.style,
+            text_defaults: d.text,
+            brush_default: d.brush,
+            pressure_default: d.pressure_mode,
+        }
     }
 }
 
@@ -203,6 +219,24 @@ impl ToolState {
     /// The tool that is in effect now (the held one, else the active one).
     pub fn effective(&self) -> Tool {
         self.temporary.unwrap_or(self.active)
+    }
+
+    /// All defaults for new elements in one value.
+    pub fn defaults(&self) -> StyleDefaults {
+        StyleDefaults {
+            style: self.style_defaults.clone(),
+            text: self.text_defaults.clone(),
+            brush: self.brush_default,
+            pressure_mode: self.pressure_default,
+        }
+    }
+
+    /// Replaces all defaults for new elements.
+    pub fn set_defaults(&mut self, d: StyleDefaults) {
+        self.style_defaults = d.style;
+        self.text_defaults = d.text;
+        self.brush_default = d.brush;
+        self.pressure_default = d.pressure_mode;
     }
 }
 
@@ -244,6 +278,7 @@ impl Default for Settings {
             ("collab.user_name", json!("")),
             ("collab.user_color", json!("#6366f1")),
             ("doc.recent", json!([])),
+            ("style.defaults", serde_json::to_value(StyleDefaults::default().to_props()).unwrap_or_default()),
         ];
         Self { values: defaults.into_iter().map(|(k, v)| (k.to_owned(), v)).collect(), revision: 0 }
     }

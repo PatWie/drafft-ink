@@ -19,6 +19,7 @@ pub mod geom;
 pub mod id;
 pub mod limits;
 pub mod memory;
+pub mod palette;
 pub mod store;
 pub mod style;
 pub mod validate;

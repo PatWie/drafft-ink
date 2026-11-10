@@ -95,10 +95,6 @@ settings.get
 settings.reset
 settings.set
 settings.toggle
-style.apply_theme
-style.get
-style.list_themes
-style.set
 tab.close
 tab.duplicate
 tab.list

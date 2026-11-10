@@ -91,7 +91,11 @@ pub fn parse_args<A: DeserializeOwned + JsonSchema + 'static>(command: &str, arg
             {
                 return Err(unknown_key(command, bad, &info.keys));
             }
-            if let Some(bad) = unknown_field_in(&reason) {
+            // Only a top-level unknown field is matched against this command's keys; one nested in an argument
+            // (a misspelt style property) keeps serde's own message, which lists that struct's fields.
+            if (path == "." || path.is_empty())
+                && let Some(bad) = unknown_field_in(&reason)
+            {
                 return Err(unknown_key(command, &bad, &info.keys));
             }
             if path == "." || path.is_empty() {
@@ -189,6 +193,23 @@ mod tests {
         let e = parse_args::<Two>("view.set", &json!({"zom": 2})).unwrap_err();
         assert_eq!(e.code, "bad_args");
         assert!(e.message.contains("unknown key `zom`") && e.message.contains("did you mean `zoom`"), "{}", e.message);
+    }
+
+    #[derive(Debug, Deserialize, Serialize, JsonSchema, PartialEq)]
+    #[serde(deny_unknown_fields)]
+    struct Outer {
+        props: Two,
+        scope: Option<String>,
+    }
+
+    #[test]
+    fn unknown_key_inside_an_argument_is_not_matched_against_the_top_level_keys() {
+        let e = parse_args::<Outer>("style.set", &json!({"props": {"zom": 2}})).unwrap_err();
+        assert!(e.message.contains("`props.zom`") && e.message.contains("unknown field `zom`"), "{}", e.message);
+        assert!(!e.message.contains("did you mean"), "{}", e.message);
+        // A top-level slip still gets the suggestion.
+        let e = parse_args::<Outer>("style.set", &json!({"props": {}, "scop": "x"})).unwrap_err();
+        assert!(e.message.contains("did you mean `scope`"), "{}", e.message);
     }
 
     #[test]
