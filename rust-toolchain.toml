@@ -1,0 +1,8 @@
+# Pinned so local runs and CI use the same compiler and the same clippy lints.
+# CI reads the version from here (`cargo xtask standards` fails if
+# .github/workflows/ci.yml disagrees). Raise it in its own commit.
+[toolchain]
+channel = "1.97.1"
+profile = "minimal"
+components = ["clippy", "rustfmt"]
+targets = ["wasm32-unknown-unknown"]
