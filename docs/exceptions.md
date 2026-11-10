@@ -83,9 +83,9 @@ Rules that hold for all classes:
 
 | | |
 |---|---|
-| Input | Drag an end handle, a vertex handle or a segment midpoint of the selected line or arrow, release. |
+| Input | Drag an end handle, a vertex handle or a segment midpoint of the selected line or arrow (or a segment handle of an elbow arrow), release. |
 | Class | A |
-| Protocol | `arrow.move_point` with the point index (or segment with insert=true), the pointer position, `bind` (auto, off with Ctrl, inside with Alt) and `snap`. |
+| Protocol | `arrow.move_point` with the point index (or segment with insert=true), the pointer position, `bind` (auto, off with Ctrl, inside with Alt) and `snap`; `arrow.move_segment` for an elbow segment handle. |
 | Reason | The bind candidate, its highlight, angle snap and the elbow route must update live. |
 | Between events | The frame output has `bind_highlight` (the target under the pointer) and `guides`. |
 | Final state | `arrow.move_point { arrow, index, to, insert, bind, snap }`. |
