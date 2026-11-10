@@ -1,11 +1,64 @@
 [package]
 name = "drafftink-gpu"
+description = "Drafft.ink GPU and shell: wgpu device, Vello + egui compositor, winit shell for native and web"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
 rust-version.workspace = true
 
 [dependencies]
+drafftink-profile = { path = "../profile" }
+egui = { workspace = true }
+egui-wgpu = { workspace = true }
+wgpu = { workspace = true, features = ["std", "wgsl"] }
+winit = { workspace = true, features = ["rwh_06"] }
+vello = { workspace = true }
+web-time = { workspace = true }
+log = { workspace = true }
+thiserror = { workspace = true }
+png = { workspace = true }
+
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+egui-winit = { version = "=0.37.0", default-features = false, features = ["x11", "wayland", "clipboard", "links"] }
+wgpu = { workspace = true, features = ["parking_lot", "vulkan", "metal", "dx12"] }
+winit = { workspace = true, features = ["x11", "wayland", "wayland-dlopen", "wayland-csd-adwaita", "rwh_06"] }
+pollster = { workspace = true }
+arboard = { workspace = true, features = ["wayland-data-control"] }
+env_logger = { workspace = true }
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+# No `clipboard`/`links` features: arboard and webbrowser do not exist on the web. The web host
+# (src/web) supplies clipboard, links, IME and file drop.
+egui-winit = { version = "=0.37.0", default-features = false }
+wgpu = { workspace = true, features = ["webgpu"] }
+wasm-bindgen = { workspace = true }
+wasm-bindgen-futures = { workspace = true }
+js-sys = { workspace = true }
+console_error_panic_hook = { workspace = true }
+console_log = { workspace = true }
+web-sys = { workspace = true, features = [
+    "Window", "Document", "HtmlCanvasElement", "HtmlElement", "HtmlTextAreaElement", "Element", "Node", "NodeList",
+    "Navigator", "Gpu", "Clipboard", "ClipboardEvent", "ClipboardItem", "DataTransfer", "DataTransferItem",
+    "DataTransferItemList", "File", "FileList", "Blob", "BlobPropertyBag", "DragEvent", "Event", "EventTarget",
+    "KeyboardEvent", "InputEvent", "CompositionEvent", "PointerEvent", "FocusEvent", "VisibilityState",
+    "CssStyleDeclaration", "DomRect", "Performance", "Location", "console", "AddEventListenerOptions",
+    "ResizeObserver", "MediaQueryList", "Permissions", "Url",
+    "MouseEvent", "UiEvent", "FocusOptions", "HtmlHeadElement", "HtmlStyleElement",
+] }
+
+[dev-dependencies]
+wgpu = { workspace = true }
+vello = { workspace = true }
+pollster = { workspace = true }
+env_logger = { workspace = true }
+
+[[example]]
+name = "demo"
+
+# wasm32 only (the file is empty elsewhere): wasm-bindgen needs a cdylib.
+[[example]]
+name = "demo_web"
+crate-type = ["cdylib"]
 
 [lints]
 workspace = true
