@@ -1281,6 +1281,17 @@ version = "0.2.0"
 [[package]]
 name = "drafftink-canvas"
 version = "0.2.0"
+dependencies = [
+ "criterion 0.8.2",
+ "drafftink-geom",
+ "drafftink-profile",
+ "drafftink-scene",
+ "proptest",
+ "serde",
+ "serde_json",
+ "smallvec",
+ "thiserror 2.0.21",
+]
 
 [[package]]
 name = "drafftink-cli"

@@ -1,0 +1,274 @@
+# drafftink-canvas: the canvas library
+
+`drafftink-canvas` (layer L3) is the reusable canvas library: Konva's ideas (a scene, a camera, events that bubble, a transformer) on top of a spatial index with exact hit testing, pointer gesture recognizers and a description of the overlay. It works over any `SceneStore`, including the in-memory store, so a third party can use it without the editor, without Loro and without a UI toolkit. It builds for `wasm32-unknown-unknown` and takes time only from the events it is given.
+
+It knows nothing about commands. It turns input into typed `Intent`s ("a drag started on this handle"); the editor engine (L5) decides what an intent means and runs a command or a gesture. Design context: `docs/plan.md` §1, §4; the Konva comparison is at the end of this page.
+
+| Layer | Crate | Role here |
+|---|---|---|
+| L0 | `geom` | R-tree, outlines, hit tests, handle math, snapping. Re-exported as `drafftink_canvas::geom` |
+| L1 | `scene` | `Element`, `SceneStore`, `ChangeSet`, `MemoryStore`. Re-exported as `drafftink_canvas::scene` |
+| L3 | `canvas` | this page |
+| L2 | `render` | draws the scene and, in its overlay pass, an `Overlay` (see "Overlay") |
+
+## Quick start (Rust)
+
+```rust
+use drafftink_canvas::scene::{Element, ElementId, ElementKind, MemoryStore, SceneRead, SceneTx};
+use drafftink_canvas::geom::kurbo::{Point, Size};
+use drafftink_canvas::{Canvas, EventKind, InputEvent, Intent, PointerEvent, PointerPhase, Selector, Viewport};
+
+let mut canvas = Canvas::new(MemoryStore::new(), Viewport::new(Size::new(800.0, 600.0), 1.0));
+
+canvas.transact(|tx| {
+    let z = tx.next_top_index().unwrap();
+    tx.insert(Element::new(ElementId::new("box").unwrap(), ElementKind::Rectangle, z).with_bounds(0.0, 0.0, 100.0, 60.0))
+}).unwrap();
+
+canvas.on(EventKind::Click, "rectangle".parse().unwrap(), Box::new(|e| println!("clicked {:?}", e.target)));
+
+// The shell feeds events; the canvas answers with intents and fires the listeners.
+let intents: Vec<Intent> = canvas.handle_input(&InputEvent::Pointer(
+    PointerEvent::mouse(PointerPhase::Move, 400.0, 300.0, /* ms */ 0.0)));
+
+// Draw only when something changed.
+let dirty = canvas.take_dirty();      // { scene, camera, overlay }
+```
+
+## Coordinates and units
+
+* **World** space is the scene's: y points down, angles are radians, clockwise on screen.
+* **Screen** space is logical pixels (CSS pixels in a browser) with the origin at the top-left of the canvas. Pointer events, hit tolerances, handle sizes and every other pixel threshold use it. `Viewport::dpr` matters only for the final GPU transform, `Viewport::world_to_device`.
+* **Time** is a number of milliseconds on the caller's clock, carried by each event. The library never reads a clock, so a recorded event stream replays to the same intents.
+
+## 1. Viewport and camera
+
+`Viewport { camera, size, dpr }` with `Camera { scroll, zoom }`. `scroll` is the world point at the centre of the viewport (the form of `view.get` / `view.set`), `zoom` is logical pixels per world unit, clamped to `0.1..=30` (`MIN_ZOOM`, `MAX_ZOOM`). Nothing animates: a caller animates by calling `set_camera` with `Camera::lerp` results.
+
+| Method | Meaning |
+|---|---|
+| `world_to_screen`, `screen_to_world`, `world_to_screen_affine`, `screen_to_world_affine`, `world_to_device` | transforms |
+| `px_to_world`, `world_to_px` | lengths |
+| `visible_rect`, `visible_rect_padded(px)`, `is_visible(rect)` | what is on screen, in world space |
+| `pan_by_screen(delta)`, `pan_by_world(delta)`, `center_on(p)` | pan |
+| `zoom_at(screen_point, factor)`, `set_zoom_at(screen_point, zoom)`, `set_zoom(zoom)` | zoom keeping the point under the cursor fixed; clamped, and a no-op at the limit |
+| `fit_bounds(rect, padding_px, max_zoom)` | centre and fit; a point only centres |
+| `scroll_into_view(rect, padding_px)` | least movement that shows a rectangle |
+| `set_size`, `set_dpr`, `set_camera` | each returns whether anything changed; non-finite input is refused |
+
+## 2. Scene index and hit testing
+
+`SceneIndex` holds a `geom::SpatialIndex` of element bounds (outline plus half the stroke plus arrowheads). It is a cache, built in bulk once and then **updated incrementally from `ChangeSet`s**: per changed element it recomputes bounds only when a geometry field changed (position, size, angle, flip, kind data, style, deleted); a z-order, lock, group, name or custom change costs a field test. It is rebuilt in bulk only when one change set touches more than half of a scene of over 2048 elements (loading a document). `SceneIndex::verify(&scene)` compares the index with a full recomputation; the property test runs it after every random edit.
+
+`Canvas` subscribes to its store, so every commit (local, remote, undo) reaches the index before the next query. Use `Canvas::transact` or the `store_mut()` guard to write; the guard syncs the index when it drops.
+
+### Hit rules
+
+| Kind | Hit when |
+|---|---|
+| rectangle, diamond, ellipse | near the outline; also inside when the style has a visible fill (alpha > 0) |
+| line, arrow | near the polyline (a `round` path uses the same Catmull-Rom spline the renderer draws); inside only for a closed line with a visible fill |
+| freehand | near the polyline; inside only for a closed stroke with a visible fill |
+| text, math, image | anywhere in the rotated box |
+| frame | near its border only. A child of a clipping frame cannot be hit outside the frame |
+
+Reach around an outline is `tolerance_px / zoom + stroke_width / 2` world units: thin lines stay clickable at any zoom, and a fat marker stroke is hit across its full width. Defaults: 5 px for mouse and pen, 12 px for a finger (`CanvasConfig`). Rotation and flips are exact (box shapes are tested in their own frame). Deleted elements are not in the index; locked ones are skipped unless `HitOptions::include_locked`; `HitOptions::filter` hides elements from one query (for example the dragged selection when looking for a binding target).
+
+* `hit(point)` returns the topmost live hit by `(z index, id)`; `hit_all(point)` returns all of them, topmost first. Both return `Hit { id, part: Stroke | Fill | Body }`.
+* `marquee(rect, MarqueeMode::Contain | Intersect)`: *Contain* needs the element's bounds inside the rectangle; *Intersect* selects what the rectangle touches, where an unfilled shape counts only if the rectangle crosses or contains its outline (a marquee inside an empty rectangle selects nothing). Frames are selected only by *Contain*. Locked elements are left out. Results are back to front.
+* `in_rect(rect)` / `Canvas::visible_elements(margin_px)`: the culling query, back to front.
+* `unit_group(element, entered_group, is_group)`: the group a click selects. Without an entered group it is the outermost group. With one, it is the next group inside it, or none when the element is a direct member (then the element itself is the unit). The facade fills `Target::Element { unit_group }` with it and ignores groups with fewer than two live members.
+
+Costs (release build, this machine; scene = the baseline grid of rectangles, ellipses and lines, half filled; the old app scanned all shapes: 60 µs at 1k, 0.70 ms at 10k, 9.1 ms at 100k):
+
+| Operation | 1k | 10k | 100k |
+|---|---|---|---|
+| `hit` at a point inside the scene | 0.43 µs | 0.26 µs | 0.19 µs |
+| `hit_all` | 0.46 µs | 0.28 µs | 0.26 µs |
+| `hit` far outside the scene | 0.06 µs | 0.06 µs | 0.06 µs |
+| culling query, 800x600 world units | 5.6 µs | 6.0 µs | 6.2 µs |
+| `marquee` (intersect), 800x600 | 41 µs | 38 µs | 39 µs |
+| `SceneIndex::apply`, one element moved | 0.27 µs | 0.27 µs | 0.31 µs |
+| `Canvas::transact`, one element moved (store, subscription and index) | 1.2 µs | 1.4 µs | 1.4 µs |
+| hover move through `handle_input` (pick, no change) | 0.51 µs | 0.33 µs | 0.25 µs |
+| bulk build | 0.45 ms | 5.6 ms | 68 ms |
+
+`cargo bench -p drafftink-canvas` reproduces them (`crates/canvas/benches/canvas.rs`).
+
+## 3. Input and intents
+
+The shell translates its events into `InputEvent`s: `Pointer(PointerEvent)`, `Wheel(WheelEvent)`, `PointerLeave { id }` and `CancelAll` (Escape, blur, a release over a panel). A `PointerEvent` has `id`, `kind` (`Mouse`, `Pen`, `Touch`), `phase` (`Down`, `Move`, `Up`, `Cancel`), `pos`, the changed `button`, the held `buttons`, `modifiers`, `pressure`, `tilt` and `time_ms`. A trackpad pinch is a wheel event with `ctrl` set (what browsers send); a native pinch gesture should be sent the same way. Everything serialises with serde, so the JS API takes and returns plain JSON.
+
+`Recognizer` is the state machine; `Canvas::handle_input` runs it against the scene. The recognizer reads the world only through the `Picker` trait (viewport, "what is under this point"), so gestures are tested with a fake scene and scripted events (`tests/recognizer.rs`).
+
+### Intents
+
+| Intent | When |
+|---|---|
+| `Press { at, target, meta }` | a pointer went down, at once (editors select on press so the drag moves the right thing) |
+| `Click`, `DoubleClick`, `LongPress`, `ContextMenu` | release without a drag; a second click in time and distance on the same target (after its `Click`); a hold (`tick`); the secondary button released without a drag |
+| `DragStart { origin, at, target }` | the pointer moved more than the slop from the press. `target` is what was under the press. An `Empty` target is a marquee |
+| `DragUpdate { origin, at, delta_screen, delta_world, target }` | each move; deltas are totals since the press |
+| `DragEnd { …, cancelled }` | release, or an abort (Escape, pointer cancel, a second finger) |
+| `Hover { from, to, at, cursor }` | **only when the target under an idle mouse or pen changes** |
+| `Pan { delta, source }`, `Zoom { at, factor, source }` | wheel, two-finger touch, middle-button drag, hand tool. `Canvas` applies them to its viewport (clamping the zoom) before returning them |
+| `ViewEnd` | a pan or pinch that lasted several events ended: report the camera now |
+
+`Target` is `None` (pointer away), `Empty`, `Element { id, unit_group }` or `Handle(Handle)`. Handles beat elements. `Handle` is `TopLeft | Top | TopRight | Right | BottomRight | Bottom | BottomLeft | Left | Rotate | Point { element, index } | Midpoint { element, segment }`. `Meta` carries pointer id and kind, button, modifiers, pressure, tilt and time. `Cursor` suggests the mouse cursor (resize arrows turn with a rotated box).
+
+### Rules of the state machine
+
+* One pointer owns a gesture. A second finger turns a one-finger gesture into a two-finger view gesture: a running drag ends with `cancelled: true`, then `Pan` (movement of the midpoint) and `Zoom` (ratio of finger distances, emitted when it differs from 1 by more than 0.001, accumulating below that) follow, pan first. When a finger lifts, `ViewEnd` is sent and the other finger is ignored until it lifts too: no click, no drag.
+* Releasing a different mouse button than the one that started the gesture is ignored. A press from the pointer that already owns a gesture (its release was lost outside the window) aborts the old gesture (`cancelled: true`) and starts a new one.
+* A middle-button drag pans. The primary button depends on `PointerMode`: `Select` (default) drags content or a marquee; `Hand` pans; `Draw` starts the drag at the first movement (`draw_slop_px`, 0 by default) and a press without movement is still a click. The app switches mode for the hand tool and for Space-drag.
+* A long press needs a touch or pen (a mouse only with `long_press_mouse`), no movement past the slop, and `long_press_ms`. `Canvas::next_deadline()` says when to call `tick`; a release after the time has passed counts as a long press even without a tick. After a long press the release is not a click.
+* Wheel: Ctrl or Cmd zooms by `1.1^(-delta_y / 100)` about the pointer (one 100 px notch is the old 1.1 step; a trackpad pinch sends small deltas and zooms smoothly; clamped to 0.25..4 per event); otherwise it pans, and Shift turns a vertical wheel sideways. `wheel_zooms` swaps the two. Lines and pages are converted to pixels.
+* Positions inside the intents of one event use the viewport from before that event's own `Pan`/`Zoom`.
+* A press is not undone by a later cancel: if a second finger lands, `Press` has already been sent. An editor that selects on press can undo that itself on `DragEnd { cancelled }`.
+
+### Thresholds (`InputConfig`)
+
+| Field | Default | Meaning |
+|---|---|---|
+| `drag_slop_px` / `drag_slop_touch_px` / `draw_slop_px` | 3 / 8 / 0 | movement from the press that starts a drag (strictly more than) |
+| `double_click_ms` / `double_click_dist_px` | 500 / 5 | double click window |
+| `long_press_ms` / `long_press_mouse` | 500 / off | `None` turns long press off |
+| `middle_button_pans` | on | |
+| `wheel_zooms` | off | plain wheel zooms, Ctrl wheel pans |
+| `wheel_zoom_step` / `wheel_line_px` | 1.1 / 33 | |
+| `pinch_epsilon` / `pinch_min_distance_px` | 0.001 / 4 | |
+
+### Hover and idle
+
+`Hover` is emitted only when the target changes, and `Canvas::take_dirty()` reports `overlay` only then. A thousand moves across one element give one intent and one redraw (`hovering_the_same_target_costs_no_redraw`). After a scene change the facade picks again under the resting pointer, so an element that moved away from under it produces a `Hover` without any input. `Canvas::tick` with nothing due returns nothing and dirties nothing.
+
+## 4. Transformer
+
+`Canvas::set_selection(ids)` tells the canvas what the transformer wraps (Konva's `transformer.nodes`); the canvas never decides what is selected. `SelectionFrame::of(scene, ids)` picks the frame:
+
+| Selection | Frame | Handles |
+|---|---|---|
+| one box-like element | its rotated box | 4 corners, 4 edge middles, rotation |
+| one line or arrow | its points | one per vertex (`Point`), one per segment middle (`Midpoint`, inserts a point) |
+| two or more elements or a whole group | the axis-aligned box around all of them | as for a box |
+
+Handle size, hit radius and the rotation offset are in screen pixels, so they scale with the zoom (defaults in `TransformerConfig`: drawn 16 px; hit radius 12 px for a mouse or pen and 24 px for a finger; rotation handle 25 px above the top edge). A side shorter than 40 px on screen loses its edge handle, a segment shorter than 40 px loses its midpoint. Hit priority: the nearest handle within the radius, corners before the rotation handle before edges, vertices before midpoints. `SelectionFrame::resize(handle, pointer, ResizeOpts)` and `rotate(pointer, snap)` return what a drag would produce (via `geom::select`), for hosts without an editor; the editor turns the same drag into `element.resize` / `element.rotate` / `arrow.move_point`.
+
+## 5. Overlay
+
+`Canvas::overlay()` returns plain data in world space for the render crate's overlay pass:
+
+| Field | Content |
+|---|---|
+| `selection` | one rotated box per selected element (omitted above `max_selection_boxes`, default 256) |
+| `transformer` | the frame, the visible handles with positions, the handle size in px, the active handle |
+| `hover` | the outline (`geom::Primitive`) of the hovered element, unless it is selected |
+| `marquee` | the rectangle being dragged |
+| `guides` | smart guides, set by the host with `set_guides` |
+| `bind_candidates` | outlines of elements to highlight, from `set_bind_candidates(ids)` |
+| `remote_cursors`, `remote_selections` | from `set_remote_users`; selection boxes capped per user |
+| `zoom` | for line widths and dashes |
+
+`trait OverlaySink { fn draw_overlay(&mut self, overlay: &Overlay, viewport: &Viewport) }` is the render-facing seam. The render crate sits below the canvas and cannot name `Overlay`, so the app (or a small glue module above both) implements `OverlaySink` for render's overlay pass once `p2-render` lands; until then nothing in this crate depends on render. `take_dirty()` returns `Dirty { scene, camera, overlay }`: re-encode changed elements, re-composite the cached fragments with the new camera, or redraw the overlay only.
+
+## 6. Event dispatch (Konva-style)
+
+```rust
+let id = canvas.on(EventKind::Click, Selector::Id(box_id), Box::new(|e| { /* … */ e.stop_propagation(); }));
+canvas.on(EventKind::DragMove, ".draggable".parse()?, Box::new(|e| println!("{:?}", e.delta_world)));
+canvas.off(id);
+```
+
+Events: `PointerDown`, `Click`, `DoubleClick`, `LongPress`, `ContextMenu`, `DragStart`, `DragMove`, `DragEnd`, `PointerEnter`, `PointerLeave`, `TransformStart`, `Transform`, `TransformEnd`. Selectors: `Id`, `Kind`, `Name`, `Group`, `Stage`, `Any`; as strings `#id`, `rectangle`, `.name`, `group:g1`, `stage`, `*`. An element's `name` is a space-separated word list like a CSS class, so `.card` matches `name = "card big"`.
+
+* The event goes to the target element's listeners, then to its groups from the innermost to the outermost (the `group_ids` stack), then to the stage. Listeners on one node run in registration order. `stop_propagation()` stops the bubble after the current node's listeners have all run (Konva's `cancelBubble`).
+* Empty space and handles reach only the stage. A drag is delivered to the element that was pressed, wherever the pointer goes. A handle drag arrives as `TransformStart/Transform/TransformEnd` with `handle` set.
+* `PointerEnter` and `PointerLeave` do not bubble. They fire on the element and on each group the pointer enters or leaves with it: moving between two members of a group fires nothing on the group.
+* Callbacks cannot call back into the canvas (it is mutably borrowed while they run); push to a queue and handle it afterwards.
+
+## 7. The facade
+
+`Canvas<S: SceneStore>` owns the store, index, viewport, recognizer, dispatcher and overlay state.
+
+| Group | Methods |
+|---|---|
+| construct | `new(store, viewport)`, `with_config`, `into_store` |
+| store | `store()`, `store_mut()` (guard), `transact(f)`, `index()`, `sync()` |
+| view | `viewport()`, `camera()`, `set_camera`, `set_viewport_size(size, dpr)`, `update_viewport`, `zoom_at`, `pan_by_screen`, `fit_to_content`, `fit_to_elements` |
+| context | `set_selection`, `selection`, `selection_frame`, `set_entered_group`, `set_pointer_mode`, `config`, `set_config` |
+| queries | `hit_at`, `hit_with`, `hit_all_at`, `pick`, `marquee`, `elements_in_rect`, `visible_elements` |
+| events | `on`, `off`, `dispatch` |
+| input | `handle_input`, `tick`, `next_deadline`, `hover` |
+| overlay | `overlay`, `set_guides`, `set_bind_candidates`, `set_remote_users`, `take_dirty` |
+
+## 8. How the editor uses it
+
+The engine owns tools, selection rules and commands; the app routes intents. Intents map to the exception classes of `docs/exceptions.md`:
+
+| Intent | Editor reaction |
+|---|---|
+| `Hover` | E1: set the cursor, show the hover outline, compute the bind candidate; no command |
+| `Press` / `Click` on an element | `selection.select_at` with `unit_group` and the modifiers |
+| `DragStart`/`Update`/`End` on an element | E2: `gesture.begin/update/end` of `element.move` |
+| … on a `Handle` (box) | E3 / E4: `element.resize` / `element.rotate` |
+| … on `Handle::Point` / `Midpoint` | E5: `arrow.move_point` |
+| … on `Empty` | E9: marquee; at the end `selection.select_region` (the overlay already shows the rectangle) |
+| `DoubleClick` on a group member | enter the group, then `Canvas::set_entered_group` |
+| `Pan`, `Zoom`, `ViewEnd` | E10 / E11: already applied to the viewport; report the camera with `view.set` on `ViewEnd` and at most every 100 ms |
+| drawing tools (`PointerMode::Draw`) | E6 / E7: use `DragStart.origin`, the `DragUpdate` stream and `meta.pressure` |
+| eraser | E8: `marquee` or `hit_all_at` along the swept path |
+
+## 9. Planned JS / wasm API
+
+A later task builds `packages/drafftink-canvas` (wasm-bindgen over this crate, `serde-wasm-bindgen` or JSON at the boundary). Input and intents are already serde types, so the JS shapes are the Rust shapes. The goal is a Konva-sized surface:
+
+```ts
+import { Canvas } from "drafftink-canvas";
+
+const canvas = await Canvas.create({ element: htmlCanvas, document?: DocumentJson });   // in-memory store
+
+canvas.camera = { scroll: [0, 0], zoom: 1 };      // clamped 0.1..30
+canvas.resize(width, height, devicePixelRatio);
+canvas.zoomAt(x, y, 1.1); canvas.panBy(dx, dy); canvas.fitToContent({ padding: 40 });
+canvas.worldToScreen([x, y]); canvas.screenToWorld([x, y]);
+
+canvas.hit(x, y, { tolerancePx: 5 }) // -> { id, part } | null
+canvas.hitAll(x, y); canvas.marquee({ x, y, w, h }, "contain" | "intersect"); // -> string[]
+
+canvas.on("click", "#id" | ".name" | "rectangle" | "group:g1" | "stage", (e) => { e.stopPropagation(); });
+canvas.off(handle);
+
+canvas.setSelection(ids); canvas.setEnteredGroup(groupId | null); canvas.setPointerMode("select" | "hand" | "draw");
+canvas.handleInput(inputEvent) // -> Intent[]   (PointerEvent / WheelEvent as in this page, JSON)
+canvas.tick(nowMs) // -> Intent[];  canvas.nextDeadline() // -> number | null
+canvas.takeDirty() // -> { scene, camera, overlay }
+canvas.overlay()   // -> Overlay (outlines as SVG path data)
+
+canvas.transact((tx) => { tx.insert(element); tx.update(id, { x: 10 }); tx.remove(id); }); // one change set
+canvas.toJSON(); canvas.loadJSON(doc);
+canvas.destroy();
+```
+
+A DOM helper in the package (not in the Rust crate) turns `PointerEvent`, `WheelEvent` and touch events of an `HTMLCanvasElement` into `InputEvent`s, feeds `canvas.tick` from one `setTimeout` at `nextDeadline()`, and requests an animation frame only when `takeDirty()` says so. The editor tier (`engine`) is exposed in the same package under `window.drafftink`.
+
+## 10. What it does not do
+
+* No selection model, no tools, no commands, no undo: the editor tier has them. `set_selection` only tells the transformer what to wrap.
+* No drawing: `Overlay` is a description; `render` paints it.
+* No palm rejection, no inertia, no gesture for three or more fingers (they are ignored), no pointer capture across windows. The shell supplies capture and `CancelAll`.
+* Hit testing is geometric. A round-path line is tested against the spline, not against a sketchy (roughened) rendering, and arrowheads count only through the grown bounds, not the exact head outline.
+* No Konva-style pixel hit graph, caching layers or filters: caching of drawn fragments is the render crate's job.
+
+## 11. Konva compared
+
+| Konva | Here |
+|---|---|
+| Stage / Layer / Group / Shape object tree | flat elements (`groupIds` stack, `frame_id`); no tree to maintain |
+| Hit graph canvas, one colour per shape, ~41 MB per layer at 1080p | geometric hit test on an R-tree: O(log n) and no memory per layer; stroke tolerance in screen pixels |
+| draws and hit-tests every node | spatial index plus viewport culling query |
+| events with bubbling; `mouseenter/leave` | the same model; enter/leave fire on groups once, as the DOM's `pointerenter` |
+| `find('.name')`, `#id`, class name | `Selector` (`#id`, `.name`, kind, `group:`), by id, kind, name or group |
+| Transformer scales `scaleX/Y` | handles only describe a drag; resize semantics per kind live in the editor (`element.resize`) |
+| rubber band built by the app | marquee state, overlay rectangle and `marquee(rect, mode)` provided |
+| no selection model, snapping, undo, sync | selection and snapping are in the editor tier, undo and sync in `doc`; the canvas follows any store by change sets |
+| `batchDraw` | `take_dirty()` with three reasons; idle is zero |
