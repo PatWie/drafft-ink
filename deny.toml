@@ -24,6 +24,7 @@ allow = [
     "Unicode-3.0",
     "Unicode-DFS-2016",
     "MPL-2.0", # file-level copyleft, compatible
+    "CDLA-Permissive-2.0", # permissive data licence: Mozilla CA root list (webpki-root-certs, via the S3 client)
     "OFL-1.1", # fonts
     "Ubuntu-font-1.0", # fonts
 ]
