@@ -1,0 +1,623 @@
+//! `CommandSpec`: the static description of one command (docs/commands.md §1.2).
+//!
+//! A family declares its commands as a `pub const COMMANDS: &[CommandSpec]` in `cmd/<family>.rs`. Every
+//! fact is a required field of [`Facts`], so a registration that omits one does not compile. The handler
+//! takes a typed argument struct, never a `Value`: [`Typed`] deserialises, validates and serialises.
+
+use std::any::Any;
+use std::marker::PhantomData;
+
+use schemars::JsonSchema;
+use serde::Serialize;
+use serde::de::DeserializeOwned;
+use serde_json::Value;
+
+use crate::args;
+use crate::ports::PortKind;
+use crate::refusal::Refusal;
+use crate::session::Session;
+
+/// A JSON Schema document.
+pub type Schema = schemars::Schema;
+
+/// How a command takes part in undo history.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+pub enum Undo {
+    /// One undo step when the command changed the document; nothing when it changed nothing.
+    Undoable,
+    /// Never touches history: view, tool, settings, reads, undo itself, document replacement.
+    NoUndo,
+    /// Can run as `gesture.begin/update/end` and is one `Undoable` step at the end. Called plainly it
+    /// behaves as `Undoable`.
+    Gesture,
+}
+
+impl Undo {
+    /// The name used in the catalog and in `engine.commands`.
+    pub const fn name(self) -> &'static str {
+        match self {
+            Self::Undoable => "Undoable",
+            Self::NoUndo => "NoUndo",
+            Self::Gesture => "Gesture",
+        }
+    }
+}
+
+/// Merge rapid repeats of a command on the same targets into one undo step.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Coalesce {
+    /// Steps with the same key may merge. Usually the command id.
+    pub key: &'static str,
+    /// Longest gap between repeats, in milliseconds.
+    pub ms: u64,
+}
+
+macro_rules! bitset {
+    ($(#[$m:meta])* $name:ident { $( $(#[$cm:meta])* $c:ident = $bit:expr => ($letter:literal, $text:literal) ),+ $(,)? }) => {
+        $(#[$m])*
+        #[derive(Clone, Copy, PartialEq, Eq, Hash, Default)]
+        pub struct $name(pub u16);
+
+        impl $name {
+            $( $(#[$cm])* pub const $c: $name = $name($bit); )+
+            /// The empty set.
+            pub const NONE: $name = $name(0);
+            /// Every member with its letter and name.
+            pub const MEMBERS: &'static [($name, &'static str, &'static str)] = &[ $( ($name::$c, $letter, $text) ),+ ];
+
+            /// True when no member is set.
+            pub const fn is_empty(self) -> bool {
+                self.0 == 0
+            }
+
+            /// True when every member of `other` is set.
+            pub const fn contains(self, other: $name) -> bool {
+                self.0 & other.0 == other.0 && other.0 != 0
+            }
+
+            /// The union.
+            #[must_use]
+            pub const fn with(self, other: $name) -> $name {
+                $name(self.0 | other.0)
+            }
+
+            /// Members as letters, for example `"D,O"`; `"-"` when empty.
+            pub fn letters(self) -> String {
+                let v: Vec<&str> = Self::MEMBERS.iter().filter(|(m, _, _)| self.contains(*m)).map(|(_, l, _)| *l).collect();
+                if v.is_empty() { "-".to_owned() } else { v.join(",") }
+            }
+
+            /// Members by name, for JSON.
+            pub fn names(self) -> Vec<&'static str> {
+                Self::MEMBERS.iter().filter(|(m, _, _)| self.contains(*m)).map(|(_, _, n)| *n).collect()
+            }
+        }
+
+        impl std::fmt::Debug for $name {
+            fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                write!(f, "{}({})", stringify!($name), self.letters())
+            }
+        }
+    };
+}
+
+bitset! {
+    /// The state classes a command may change (docs/commands.md §1.1).
+    Mutates {
+        /// `D`: the document.
+        DOC = 1 => ("D", "doc"),
+        /// `O`: observed editor state (selection, editing group, point editor).
+        OBSERVED = 2 => ("O", "observed"),
+        /// `V`: the camera.
+        VIEW = 4 => ("V", "view"),
+        /// `T`: the tool and style defaults.
+        TOOL = 8 => ("T", "tool"),
+        /// `B`: tabs and per-tab document metadata.
+        TABS = 16 => ("B", "tabs"),
+        /// `S`: settings.
+        SETTINGS = 32 => ("S", "settings"),
+        /// `C`: the collab session.
+        COLLAB = 64 => ("C", "collab"),
+        /// `P`: ports and session buffers.
+        PORTS = 128 => ("P", "ports"),
+        /// `E`: a gesture or a text-edit session.
+        EDIT_SESSION = 256 => ("E", "edit_session"),
+    }
+}
+
+bitset! {
+    /// The ports a command may need.
+    PortSet {
+        /// The clipboard.
+        CLIPBOARD = 1 => ("Clipboard", "clipboard"),
+        /// Persistent storage.
+        STORAGE = 2 => ("Storage", "storage"),
+        /// File access.
+        FILES = 4 => ("Files", "files"),
+        /// Offscreen rendering.
+        RENDERER = 8 => ("Renderer", "renderer"),
+        /// The network.
+        NET = 16 => ("Net", "net"),
+        /// The clock.
+        CLOCK = 32 => ("Clock", "clock"),
+    }
+}
+
+impl PortSet {
+    /// The set containing one port kind.
+    pub const fn of(kind: PortKind) -> PortSet {
+        match kind {
+            PortKind::Clipboard => Self::CLIPBOARD,
+            PortKind::Storage => Self::STORAGE,
+            PortKind::Files => Self::FILES,
+            PortKind::Renderer => Self::RENDERER,
+            PortKind::Net => Self::NET,
+            PortKind::Clock => Self::CLOCK,
+        }
+    }
+}
+
+/// Whether the command uses the selection.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Selection {
+    /// Not used.
+    No,
+    /// Used only as a default; an empty selection is not an error.
+    Soft,
+    /// The command has an `ids` argument defaulting to the selection; an empty list refuses `no_target`.
+    Required,
+}
+
+/// Where a command may appear in a batch.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Batch {
+    /// Anywhere.
+    Allowed,
+    /// Only as the final step.
+    Last,
+    /// Not at all.
+    Never,
+}
+
+/// A yes/no gate for a session mode.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Gate {
+    /// The command runs in this mode.
+    Allowed,
+    /// The command refuses in this mode.
+    Refused,
+}
+
+/// What a running text edit does to a command.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum TextGate {
+    /// The command runs during a text edit.
+    Allowed,
+    /// The command refuses with `text_editing`.
+    Refused,
+    /// The engine commits the text edit first, then runs the command.
+    Commit,
+}
+
+/// The dirty reason a successful command sets.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Redraw {
+    /// Nothing to redraw.
+    None,
+    /// Handles, guides and cursors only.
+    Overlay,
+    /// Re-composite cached fragments with a new transform.
+    Camera,
+    /// Re-encode changed element fragments.
+    Scene,
+}
+
+/// Whether the ring records successes.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum RingMode {
+    /// Every call.
+    Always,
+    /// Only a refusal (high-rate commands).
+    Quiet,
+}
+
+/// Where a shortcut applies.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Scope {
+    /// Focus on the canvas, no text edit.
+    Canvas,
+    /// Inside a text edit.
+    Text,
+    /// Everywhere.
+    Always,
+}
+
+/// A default key binding with fixed arguments. `Mod` is Cmd on macOS and Ctrl elsewhere.
+#[derive(Debug, Clone, Copy)]
+pub struct Binding {
+    /// Chords such as `"Mod+Shift+Z"`, `"Esc"`, `"Space"`. All of them trigger the command.
+    pub keys: &'static [&'static str],
+    /// Chords that replace `keys` on macOS when they differ. Empty: the same as `keys`.
+    pub keys_mac: &'static [&'static str],
+    /// The fixed arguments as JSON text (`""` for none). Text because `Value` is not const.
+    pub args: &'static str,
+    /// Where it applies.
+    pub when: Scope,
+    /// Palette entry for this binding, if it has its own.
+    pub title: Option<&'static str>,
+}
+
+impl Binding {
+    /// A binding with the same keys on every platform.
+    pub const fn new(keys: &'static [&'static str], when: Scope) -> Self {
+        Self { keys, keys_mac: &[], args: "", when, title: None }
+    }
+
+    /// Fixes some arguments (JSON text).
+    #[must_use]
+    pub const fn with_args(mut self, args: &'static str) -> Self {
+        self.args = args;
+        self
+    }
+
+    /// Gives the binding its own palette title.
+    #[must_use]
+    pub const fn titled(mut self, title: &'static str) -> Self {
+        self.title = Some(title);
+        self
+    }
+
+    /// Different keys on macOS.
+    #[must_use]
+    pub const fn mac(mut self, keys: &'static [&'static str]) -> Self {
+        self.keys_mac = keys;
+        self
+    }
+
+    /// The chords for a platform.
+    pub fn chords(&self, mac: bool) -> &'static [&'static str] {
+        if mac && !self.keys_mac.is_empty() { self.keys_mac } else { self.keys }
+    }
+}
+
+/// Registered but not built yet, or ready.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Status {
+    /// Works.
+    Stable,
+    /// Registered so that the catalog, palette and tests see it; refuses with `not_supported`.
+    Planned(&'static str),
+}
+
+/// How the executor runs the command.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Txn {
+    /// Steps 5 to 8 of docs/commands.md §1.4 around the handler: rollback on failure, invariants,
+    /// one undo step, port flush.
+    Standard,
+    /// The handler manages document state itself (gesture protocol, history). The executor still does
+    /// lookup, gates, availability, argument checks, panic catching and the ring.
+    Own,
+}
+
+/// The facts every registration must give. A struct literal with no `..Default` is required, so
+/// a missing fact is a compile error. Families share a base value and override with `..BASE`.
+#[derive(Debug, Clone, Copy)]
+pub struct Facts {
+    /// History class.
+    pub undo: Undo,
+    /// True: never changes any state class.
+    pub reads_only: bool,
+    /// State classes it changes.
+    pub mutates: Mutates,
+    /// Selection use.
+    pub needs_selection: Selection,
+    /// Ports it may need.
+    pub ports: PortSet,
+    /// Batch rule.
+    pub batch: Batch,
+    /// Allowed while the document is view-only.
+    pub view_only: Gate,
+    /// Allowed while a gesture runs.
+    pub while_gesture: Gate,
+    /// Behaviour during a text edit.
+    pub while_text_edit: TextGate,
+    /// Dirty reason on success.
+    pub redraw: Redraw,
+    /// Ring mode.
+    pub ring: RingMode,
+    /// Listed in the command palette.
+    pub palette: bool,
+    /// Exposed to agents.
+    pub agent: bool,
+}
+
+impl Facts {
+    /// A read-only command: allowed in every state, changes nothing, exposed to agents, listed in no palette.
+    pub const READ_ONLY: Facts = Facts {
+        undo: Undo::NoUndo,
+        reads_only: true,
+        mutates: Mutates::NONE,
+        needs_selection: Selection::No,
+        ports: PortSet::NONE,
+        batch: Batch::Allowed,
+        view_only: Gate::Allowed,
+        while_gesture: Gate::Allowed,
+        while_text_edit: TextGate::Allowed,
+        redraw: Redraw::None,
+        ring: RingMode::Always,
+        palette: false,
+        agent: true,
+    };
+
+    /// A camera command: changes the view only, allowed in every state.
+    pub const CAMERA: Facts =
+        Facts { reads_only: false, mutates: Mutates::VIEW, redraw: Redraw::Camera, ..Facts::READ_ONLY };
+}
+
+/// One command. Build it with [`CommandSpec::new`] and the optional `const` methods.
+pub struct CommandSpec {
+    // identity
+    /// `family.verb`, lower snake_case, one dot, unique.
+    pub id: &'static str,
+    /// Palette and menu text, sentence case.
+    pub title: &'static str,
+    /// The part of `id` before the dot.
+    pub family: &'static str,
+    /// One sentence for `engine.describe` and MCP.
+    pub summary: &'static str,
+    // contract
+    /// JSON Schema of the argument struct.
+    pub args: fn() -> Schema,
+    /// JSON Schema of the output struct (the common keys are added by `engine.describe`).
+    pub output: fn() -> Schema,
+    /// State-dependent availability. Never looks at the arguments.
+    pub available: Check,
+    /// Checks that need the default arguments (the current selection): `too_few`, `needs_single`. Used by
+    /// `Session::availability`, so a disabled control shows the text `execute` would return.
+    pub default_targets: Option<Check>,
+    /// The typed handler.
+    pub handler: &'static dyn Handler,
+    /// Command-specific refusal codes this command can return (the shared ones are implied).
+    pub refusals: &'static [&'static str],
+    /// A worked example of the arguments, as JSON text.
+    pub example: &'static str,
+    // history
+    /// History class.
+    pub undo: Undo,
+    /// Undo merging.
+    pub coalesce: Option<Coalesce>,
+    // facts
+    /// True: never changes any state class.
+    pub reads_only: bool,
+    /// State classes it changes.
+    pub mutates: Mutates,
+    /// Selection use.
+    pub needs_selection: Selection,
+    /// Ports it may need.
+    pub ports: PortSet,
+    /// Batch rule.
+    pub batch: Batch,
+    /// Allowed while view-only.
+    pub view_only: Gate,
+    /// Allowed during a gesture.
+    pub while_gesture: Gate,
+    /// Behaviour during a text edit.
+    pub while_text_edit: TextGate,
+    /// Dirty reason on success.
+    pub redraw: Redraw,
+    /// Ring mode.
+    pub ring: RingMode,
+    /// In the palette.
+    pub palette: bool,
+    /// Exposed to agents.
+    pub agent: bool,
+    /// Default keys.
+    pub shortcuts: &'static [Binding],
+    /// Stable or planned.
+    pub status: Status,
+    /// How the executor runs it.
+    pub txn: Txn,
+}
+
+impl std::fmt::Debug for CommandSpec {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "CommandSpec({})", self.id)
+    }
+}
+
+/// A state check: `Ok` or the refusal a disabled control shows.
+pub type Check = fn(&Session) -> Result<(), Refusal>;
+
+/// The default `available`: always.
+pub fn always(_: &Session) -> Result<(), Refusal> {
+    Ok(())
+}
+
+fn schema_of<T: JsonSchema>() -> Schema {
+    schemars::schema_for!(T)
+}
+
+impl CommandSpec {
+    /// A registration. `family` must equal the part of `id` before the dot (tested).
+    pub const fn new<A, O>(
+        id: &'static str,
+        family: &'static str,
+        title: &'static str,
+        summary: &'static str,
+        handler: &'static Typed<A, O>,
+        facts: Facts,
+    ) -> Self
+    where
+        A: DeserializeOwned + Serialize + JsonSchema + Clone + 'static,
+        O: Serialize + JsonSchema + 'static,
+    {
+        Self {
+            id,
+            title,
+            family,
+            summary,
+            args: schema_of::<A>,
+            output: schema_of::<O>,
+            available: always,
+            default_targets: None,
+            handler,
+            refusals: &[],
+            example: "",
+            undo: facts.undo,
+            coalesce: None,
+            reads_only: facts.reads_only,
+            mutates: facts.mutates,
+            needs_selection: facts.needs_selection,
+            ports: facts.ports,
+            batch: facts.batch,
+            view_only: facts.view_only,
+            while_gesture: facts.while_gesture,
+            while_text_edit: facts.while_text_edit,
+            redraw: facts.redraw,
+            ring: facts.ring,
+            palette: facts.palette,
+            agent: facts.agent,
+            shortcuts: &[],
+            status: Status::Stable,
+            txn: Txn::Standard,
+        }
+    }
+
+    /// Sets the state-dependent availability check.
+    #[must_use]
+    pub const fn available(mut self, f: Check) -> Self {
+        self.available = f;
+        self
+    }
+
+    /// Sets the check that uses the default arguments.
+    #[must_use]
+    pub const fn default_targets(mut self, f: Check) -> Self {
+        self.default_targets = Some(f);
+        self
+    }
+
+    /// Declares the command-specific refusal codes.
+    #[must_use]
+    pub const fn refusals(mut self, codes: &'static [&'static str]) -> Self {
+        self.refusals = codes;
+        self
+    }
+
+    /// Gives a worked example of the arguments (JSON text).
+    #[must_use]
+    pub const fn example(mut self, json: &'static str) -> Self {
+        self.example = json;
+        self
+    }
+
+    /// Merges rapid repeats into one undo step.
+    #[must_use]
+    pub const fn coalesce(mut self, key: &'static str, ms: u64) -> Self {
+        self.coalesce = Some(Coalesce { key, ms });
+        self
+    }
+
+    /// Sets the default key bindings.
+    #[must_use]
+    pub const fn shortcuts(mut self, b: &'static [Binding]) -> Self {
+        self.shortcuts = b;
+        self
+    }
+
+    /// Marks the command planned: registered, refuses with `not_supported`.
+    #[must_use]
+    pub const fn planned(mut self, reason: &'static str) -> Self {
+        self.status = Status::Planned(reason);
+        self
+    }
+
+    /// The command manages its own document state (gesture protocol, history).
+    #[must_use]
+    pub const fn own_transaction(mut self) -> Self {
+        self.txn = Txn::Own;
+        self
+    }
+
+    /// True when the command manages its own document state (gesture protocol, history).
+    pub fn is_own_transaction(&self) -> bool {
+        self.txn == Txn::Own
+    }
+
+    /// True when the command can be begun as a gesture.
+    pub fn is_gesture(&self) -> bool {
+        self.undo == Undo::Gesture
+    }
+}
+
+/// Type-erased access to a command's typed handler.
+pub trait Handler: Sync {
+    /// Validates JSON against the argument type. `command` is the id, for the message.
+    fn parse(&self, command: &str, args: &Value) -> Result<Box<dyn Any>, Refusal>;
+    /// Runs the handler with parsed arguments (a `Box` from [`Handler::parse`] or a typed caller).
+    fn run(&self, s: &mut Session, args: &dyn Any) -> Result<Value, Refusal>;
+    /// The arguments as JSON, for the ring and the gesture log.
+    fn to_json(&self, args: &dyn Any) -> Option<Value>;
+    /// Boxes a copy of typed arguments if `args` is the right type.
+    fn clone_args(&self, args: &dyn Any) -> Option<Box<dyn Any>>;
+    /// The names of the top-level argument keys, from the schema (empty when the schema has none).
+    fn arg_keys(&self) -> Vec<String>;
+}
+
+/// A typed handler: `fn(&mut Session, A) -> Result<O, Refusal>`.
+pub struct Typed<A, O> {
+    f: fn(&mut Session, A) -> Result<O, Refusal>,
+    _types: PhantomData<fn(A) -> O>,
+}
+
+impl<A, O> Typed<A, O> {
+    /// Wraps a handler.
+    pub const fn new(f: fn(&mut Session, A) -> Result<O, Refusal>) -> Self {
+        Self { f, _types: PhantomData }
+    }
+}
+
+impl<A, O> Handler for Typed<A, O>
+where
+    A: DeserializeOwned + Serialize + JsonSchema + Clone + 'static,
+    O: Serialize + JsonSchema + 'static,
+{
+    fn parse(&self, command: &str, args: &Value) -> Result<Box<dyn Any>, Refusal> {
+        let a: A = args::parse_args(command, args)?;
+        Ok(Box::new(a))
+    }
+
+    fn run(&self, s: &mut Session, args: &dyn Any) -> Result<Value, Refusal> {
+        let Some(a) = args.downcast_ref::<A>().cloned() else {
+            return Err(Refusal::internal(s.cmd(), "the typed arguments do not match this command"));
+        };
+        let out = (self.f)(s, a)?;
+        serde_json::to_value(out).map_err(|e| Refusal::internal(s.cmd(), format!("output is not JSON: {e}")))
+    }
+
+    fn to_json(&self, args: &dyn Any) -> Option<Value> {
+        args.downcast_ref::<A>().and_then(|a| serde_json::to_value(a).ok())
+    }
+
+    fn clone_args(&self, args: &dyn Any) -> Option<Box<dyn Any>> {
+        args.downcast_ref::<A>().map(|a| Box::new(a.clone()) as Box<dyn Any>)
+    }
+
+    fn arg_keys(&self) -> Vec<String> {
+        let info = args::arg_info::<A>();
+        if info.closed { info.keys.clone() } else { Vec::new() }
+    }
+}
+
+/// An argument struct with no fields, for commands that take none.
+#[derive(Debug, Clone, Default, PartialEq, serde::Serialize, serde::Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct NoArgs {}
