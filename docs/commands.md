@@ -1466,27 +1466,24 @@ Sticky note, embeddable and iframe elements, lasso selection, bucket fill, autos
 
 ---
 
-## 9. Open questions for the coordinator
+## 9. Decisions on the open questions (coordinator, 2026-11-07)
 
-1. **Space as a virtual mouse button.** The old app let Space press and release the left button at the cursor (A:4711). It is dropped in favour of pan-while-held. If that was meant as a keyboard-only drawing aid, it needs its own design (a `canvas` input mode, not a command).
-2. **Key 9.** Kept as Math (old app). Image insertion uses `I`. Say if Excalidraw parity matters more.
-3. **Undo depth.** Kept at 50. Other editors use hundreds; the setting allows 1000.
-4. **Drawing tool clears the selection.** `tool.set` clears the selection for drawing tools, like Excalidraw. The old right panel showed selection and tool properties together.
-5. **Esc default.** `tool.cancel` defaults to the old do-everything behaviour (`all=true`). Excalidraw's step-by-step Esc is `all=false`.
-6. **Autosave of several tabs.** Only the active tab is autosaved under `autosave`, as before. Restoring all tabs needs a workspace record; not specified here.
-7. **`Mod+Shift+C`.** Collides with browser devtools. Kept for compatibility with the old app.
-8. **Gesture frames go through the registry.** For move, resize, rotate, point drag and style scrubbing the pointer recognizer calls `Session::gesture_update` per event (typed, no JSON). The cost at 100k elements is bounded by the touched set. If the perf gate fails, the fallback is overlay-only preview for move (like draw) with the bound-arrow solver run on a throttle. That would change E2 to class B in `exceptions.md`.
-9. **Highlighter** is a freehand element with a flag and style defaults, not a separate kind. Existing documents map it to freehand with width at least 12 and alpha 128.
-10. **Zoom range** stays 0.1..10 (old). Excalidraw allows 0.1..30.
-11. **Group names** do not exist (a group is a shared id). `doc.outline` identifies groups by id. Add `group.set_name` if agents need it.
-12. **UI verbs** (§6.3) need sign-off from the `ui` implementer. In particular `no_save_target` driving the picker, and `Commit` gates doing what the UI used to do by hand.
-13. **Theme** (dark mode) is not in the plan and has no setting here.
-14. **`doc.new` and `doc.open` in a room** refuse. A user in a room who wants a fresh document opens a new tab.
-15. **Panic rollback on wasm.** `catch_unwind` needs `panic=unwind`, which `wasm32-unknown-unknown` lacks. The web build cannot roll back a panic; it relies on typed errors and the hostile-params test. Plan §5 says a panic rolls back; that holds on native only. Decide whether that is acceptable or whether the web build should use a wasm-bindgen panic hook that reloads the document from the last autosave.
-16. **Keymap matching** (§1.12) mixes logical and physical keys. The AZERTY and macOS-Option behaviour needs the `ui` implementer to confirm that winit and the browser expose both on every target.
-
-
----
+1. Space: pan while held. The virtual mouse button is dropped.
+2. Key `9` stays Math; image insertion uses `I`.
+3. Undo depth default is 200 (setting range 10..1000).
+4. `tool.set` to a drawing tool clears the selection, as in Excalidraw.
+5. Esc: `tool.cancel` defaults to step-by-step (`all=false`, Excalidraw behaviour). The old do-everything Esc is `all=true`.
+6. Autosave stores a workspace record with all tabs, and restores all of them. Specify it in the `doc`/`tab` family when implementing.
+7. `Mod+Shift+C` kept.
+8. Accepted as written, with the stated fallback if the perf gate fails.
+9. Accepted.
+10. Zoom range is 0.1..30.
+11. Add `group.set_name` (agents name groups like elements; `doc.outline` shows the name).
+12. Deferred to the `ui` implementer; record the outcome in §6.3.
+13. Add a `theme` setting (`light` | `dark` | `system`, default `system`) and `settings.set` handles it; the renderer gets dark canvas colours.
+14. Accepted.
+15. Native rolls back panics. On wasm, a panic hook reports the panic, and the page offers a reload that restores the last autosave (taken at least after every committed command batch, debounced). The hostile-params test is the main defence.
+16. Deferred to the `ui` implementer.
 
 ## 10. Appendix A: declared facts per command
 
