@@ -1,0 +1,12 @@
+allow-unwrap-in-tests = true
+allow-expect-in-tests = true
+allow-panic-in-tests = true
+allow-indexing-slicing-in-tests = true
+
+# std::time::Instant::now and SystemTime::now panic on wasm32-unknown-unknown.
+# Code below L6 takes time from the Clock port (crates/engine) instead.
+# xtask runs natively and opts out in xtask/src/main.rs.
+disallowed-methods = [
+    { path = "std::time::Instant::now", reason = "panics on wasm32; use the Clock port" },
+    { path = "std::time::SystemTime::now", reason = "panics on wasm32; use the Clock port" },
+]

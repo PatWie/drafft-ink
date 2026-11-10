@@ -1,0 +1,48 @@
+# cargo-deny policy. Run through `cargo xtask deny`.
+# The workspace is AGPL-3.0-only, so every dependency licence must be
+# compatible with distributing a combined work under AGPL-3.0.
+
+[graph]
+all-features = true
+
+[licenses]
+# Permissive licences, compatible with AGPL-3.0.
+allow = [
+    "AGPL-3.0-only", # this workspace's own crates
+    "MIT",
+    "MIT-0",
+    "Apache-2.0",
+    "Apache-2.0 WITH LLVM-exception",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "ISC",
+    "Zlib",
+    "0BSD",
+    "CC0-1.0",
+    "Unlicense",
+    "BSL-1.0",
+    "Unicode-3.0",
+    "Unicode-DFS-2016",
+    "MPL-2.0", # file-level copyleft, compatible
+    "OFL-1.1", # fonts
+    "Ubuntu-font-1.0", # fonts
+]
+confidence-threshold = 0.9
+# Not allowed unless added above with a reason: GPL-2.0-only and similar
+# (incompatible with AGPL-3.0), SSPL, Commons Clause, proprietary and
+# "non-commercial" terms.
+
+[advisories]
+unmaintained = "workspace"
+yanked = "warn"
+
+[bans]
+multiple-versions = "warn"
+wildcards = "warn"
+allow-wildcard-paths = true
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]
+allow-git = []

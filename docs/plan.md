@@ -51,7 +51,7 @@ L1  scene       element model: flat elements, ids, fractional z-index, groupIds,
     sketch      roughr hand-drawn path generation, cached by (seed, geometry)
 L2  render      Vello scene encoding: per-element encoded fragments, culling,
                 level of detail, grid. Knows nothing about documents or commands.
-L3  canvas      THE REUSABLE LIBRARY: SceneStore trait, viewport, hit testing on
+L3  canvas      THE REUSABLE LIBRARY: viewport (SceneStore trait lives in scene), hit testing on
                 the spatial index, picking, transformer handles, pointer
                 gesture recognizers, event dispatch. In-memory store included.
     doc         Loro-backed SceneStore: transactions, undo (Loro UndoManager,
