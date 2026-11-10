@@ -57,6 +57,21 @@ pollster = "0.4"
 rfd = "0.18"
 arboard = "3"
 
+# ---- Server (apps/drafftink-server) ----
+axum = { version = "0.8", features = ["ws"] }
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "net", "time", "sync", "signal", "fs"] }
+tower-http = { version = "0.7", default-features = false, features = ["fs"] }
+clap = { version = "4", features = ["derive", "env"] }
+futures-util = { version = "0.3", default-features = false, features = ["std", "sink"] }
+async-trait = "0.1"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", default-features = false, features = ["fmt", "env-filter", "ansi"] }
+rusqlite = { version = "0.41", features = ["bundled"] }
+object_store = { version = "0.14", default-features = false, features = ["aws"] }
+subtle = "2"
+tokio-tungstenite = "0.30"
+tempfile = "3"
+
 # ---- Test / bench ----
 proptest = "1"
 insta = "1"
