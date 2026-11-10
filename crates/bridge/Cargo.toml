@@ -4,8 +4,25 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 rust-version.workspace = true
+description = "Agent bridge (L6): JSON-RPC 2.0 over WebSocket, a transport-neutral core, a loopback-only native server, and the relay for the web page."
 
 [dependencies]
+drafftink-engine = { path = "../engine" }
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+log.workspace = true
+subtle.workspace = true
+
+# The native server, the client and the relay. The core (rpc, core, host, guard) builds everywhere.
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+tokio = { workspace = true, features = ["rt", "net", "time", "sync", "macros"] }
+tokio-tungstenite.workspace = true
+futures-util.workspace = true
+getrandom = "0.3"
+
+[dev-dependencies]
+tempfile.workspace = true
 
 [lints]
 workspace = true

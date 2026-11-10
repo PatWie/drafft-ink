@@ -2,4 +2,3 @@
 # `cargo xtask standards` fails when a listed file exists (delete the line) and
 # when AGENTS.md no longer mentions it.
 docs/testing.md
-docs/agents.md
