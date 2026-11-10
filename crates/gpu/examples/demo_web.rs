@@ -24,3 +24,15 @@ pub fn start(canvas_id: String, tick_ms: u32) -> Result<(), JsValue> {
 pub fn stats() -> Vec<f64> {
     vec![drafftink_gpu::frames_drawn() as f64, drafftink_gpu::vello_runs() as f64]
 }
+
+/// Redraw requests by reason, as `"reason=count"` strings (only non-zero), for the test harness.
+#[wasm_bindgen]
+pub fn redraw_reasons() -> Vec<String> {
+    drafftink_profile::snapshot()
+        .redraws
+        .by_reason
+        .into_iter()
+        .filter(|(_, n)| *n > 0)
+        .map(|(k, n)| format!("{k}={n}"))
+        .collect()
+}

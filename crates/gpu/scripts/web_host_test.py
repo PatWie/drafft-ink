@@ -193,8 +193,9 @@ def test_pen_and_touch_synthetic(page):
     page.evaluate(
         """() => {
             const mk = (x, y) => new PointerEvent('pointermove', {pointerId: 7, pointerType: 'pen', clientX: x, clientY: y, buttons: 1, pressure: 0.4});
-            const main = new PointerEvent('pointermove', {bubbles: true, pointerId: 7, pointerType: 'pen', clientX: 170, clientY: 160, buttons: 1, pressure: 0.6});
+            // Created oldest first: the coalesced events must not have a later time stamp than the main one.
             const a = mk(152, 142), b = mk(161, 151);
+            const main = new PointerEvent('pointermove', {bubbles: true, pointerId: 7, pointerType: 'pen', clientX: 170, clientY: 160, buttons: 1, pressure: 0.6});
             Object.defineProperty(main, 'getCoalescedEvents', {value: () => [a, b, main]});
             document.getElementById('canvas').dispatchEvent(main);
         }"""

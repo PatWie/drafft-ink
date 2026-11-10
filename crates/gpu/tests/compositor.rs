@@ -3,6 +3,7 @@
 //! `VK_ICD_FILENAMES=/usr/share/vulkan/icd.d/lvp_icd.json` to use Mesa lavapipe.
 //! They never skip: no adapter is a failure.
 
+#![cfg(not(target_arch = "wasm32"))]
 #![allow(clippy::panic, clippy::expect_used, clippy::unwrap_used)]
 
 use drafftink_gpu::{Compositor, EguiFrame, Gpu, GpuOptions, Image};

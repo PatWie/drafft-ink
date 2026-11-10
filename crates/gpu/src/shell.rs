@@ -25,9 +25,9 @@ use winit::window::{Window, WindowId};
 
 use crate::app::{EventCx, FrameCx, FrameOutput, Outbox, SetupCx, ShellApp, ViewInfo, Waker};
 use crate::compositor::{Compositor, EguiFrame};
-use crate::events::{ClipboardContent, Handled, PointerPhase, PointerSample, Repaint, ShellEvent};
+use crate::events::{ClipboardContent, Handled, Repaint, ShellEvent};
 #[cfg(not(target_arch = "wasm32"))]
-use crate::events::{PointerKind, PointerPoint, TextInput};
+use crate::events::{PointerKind, PointerPhase, PointerPoint, PointerSample, TextInput};
 use crate::gpu::{Gpu, GpuError, GpuOptions, PresentSurface, create_instance};
 use crate::host::HostEvent;
 #[cfg(not(target_arch = "wasm32"))]
@@ -545,6 +545,7 @@ impl<A: ShellApp> Shell<A> {
         run.applied_text_input = ime_rect;
 
         // ---- Vello ----
+        let ran_vello = self.scene_dirty;
         let render = if self.scene_dirty {
             self.scene_dirty = false;
             in_phase(Phase::GpuSubmit, || run.comp.render_scene(&run.gpu, &self.scene, self.scene_base, size))
@@ -553,8 +554,8 @@ impl<A: ShellApp> Shell<A> {
         };
         if let Err(e) = render {
             log::error!("vello: {e}");
-        } else if run.comp.stats().vello_runs != VELLO_RUNS.load(Ordering::Relaxed) {
-            VELLO_RUNS.store(run.comp.stats().vello_runs, Ordering::Relaxed);
+        } else if ran_vello {
+            VELLO_RUNS.fetch_add(1, Ordering::Relaxed);
         }
 
         // ---- composite + present ----
@@ -979,6 +980,12 @@ impl<A: ShellApp> ApplicationHandler<UserEvent> for Shell<A> {
             WindowEvent::ModifiersChanged(m) => self.modifiers = modifiers_from(m.state()),
             WindowEvent::Occluded(occluded) => self.set_visible(!occluded),
             WindowEvent::Focused(focused) => {
+                // On the web the hidden textarea takes focus from the canvas while the user types. The
+                // host reports that to egui itself; winit's `Focused(false)` would close the text field.
+                #[cfg(target_arch = "wasm32")]
+                if !*focused && self.platform.host.as_ref().is_some_and(|h| h.text_input_focused()) {
+                    return;
+                }
                 self.dispatch(ShellEvent::Focus(*focused));
             }
             WindowEvent::Ime(Ime::Enabled) => self.ime_enabled = true,
@@ -1016,10 +1023,7 @@ impl<A: ShellApp> ApplicationHandler<UserEvent> for Shell<A> {
         // held back from egui: delivering it would make egui ask for a follow-up pass per move and keep
         // the loop running for as long as the pointer moves.
         #[cfg(not(target_arch = "wasm32"))]
-        let sample = self.native_pointer(&event);
-        #[cfg(target_arch = "wasm32")]
-        let sample: Option<PointerSample> = None;
-        if let Some(sample) = sample {
+        if let Some(sample) = self.native_pointer(&event) {
             self.dispatch(ShellEvent::Pointer(sample));
         }
         self.route_to_egui(&window, event);

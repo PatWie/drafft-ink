@@ -1,0 +1,27 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>drafftink-gpu demo</title>
+<link rel="icon" href="data:,">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>html,body{margin:0;height:100%;overflow:hidden;background:#1e1e24}canvas{display:block;width:100vw;height:100vh;outline:none}</style>
+</head>
+<body>
+<canvas id="canvas"></canvas>
+<script type="module">
+  // ?tick=100 asks the demo to request a repaint every 100 ms (tests the timer path).
+  const tick = Number(new URLSearchParams(location.search).get("tick") || 0);
+  const { default: init, start, stats, redraw_reasons } = await import("./pkg/demo.js");
+  window.__stats = stats; window.__reasons = redraw_reasons;
+  try {
+    await init({ module_or_path: "./pkg/demo_bg.wasm" });
+    start("canvas", tick);  // returns at once; winit creates the window, GPU setup is async
+    // "started" = first frame drawn (shader compile done), so measurements start clean.
+    for (let i = 0; i < 600 && stats()[0] === 0; i++) await new Promise(r => setTimeout(r, 50));
+    if (stats()[0] === 0) throw new Error("no first frame after 30 s");
+    window.__started = true;
+  } catch (e) { window.__error = String(e); console.error(e); }
+</script>
+</body>
+</html>
