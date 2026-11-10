@@ -1,0 +1,5 @@
+NotoSans-Regular.ttf, NotoSans-Bold.ttf, NotoSans-Italic.ttf (name table):
+
+  Copyright 2022 The Noto Project Authors (https://github.com/notofonts/latin-greek-cyrillic)
+  Noto is a trademark of Google LLC.
+  Licensed under the SIL Open Font License, Version 1.1 (OFL-1.1.txt in this directory).

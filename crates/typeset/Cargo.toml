@@ -1,11 +1,36 @@
 [package]
 name = "drafftink-typeset"
+description = "Drafft.ink text and math layout: Parley text, ReX math, glyph runs, outlines, caret geometry, bounded caches"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
 rust-version.workspace = true
 
+[features]
+default = ["noto-sans"]
+# Bundle Noto Sans (1.9 MB raw). Old documents can use it, but the old UI hid it.
+noto-sans = []
+
 [dependencies]
+drafftink-profile = { path = "../profile" }
+kurbo = { workspace = true }
+peniko = { workspace = true }
+parley = { workspace = true }
+thiserror = { workspace = true }
+# ReX (math layout), pinned to the commit the old app used. It is a git dependency; see
+# deny.toml `allow-git` and docs/typeset.md.
+rex = { git = "https://github.com/KenyC/ReX", rev = "aeccdba38f3fa54195c469319b65c423e17a77ae", features = ["ttfparser-fontparser"] }
+ttf-parser = "0.25"
+
+[dev-dependencies]
+criterion = { workspace = true }
+proptest = { workspace = true }
+png = { workspace = true }
+serde_json = { workspace = true }
+
+[[bench]]
+name = "typeset"
+harness = false
 
 [lints]
 workspace = true
