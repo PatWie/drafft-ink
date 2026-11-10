@@ -19,6 +19,11 @@ schemars.workspace = true
 drafftink-scene = { path = "../scene", features = ["conformance"] }
 proptest.workspace = true
 insta.workspace = true
+criterion.workspace = true
 
 [lints]
 workspace = true
+
+[[bench]]
+name = "arrows_binding"
+harness = false

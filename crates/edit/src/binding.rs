@@ -1,22 +1,209 @@
 //! Arrow bindings: acquiring, keeping and releasing the attachment of arrow ends to shapes.
 //!
-//! Contract used by other modules (keep this signature; the binding owner fills in the body):
-//! after any change to the geometry of elements (move, resize, rotate, delete, restore), the
-//! caller passes the changed ids to [`update_bound_arrows`] inside the same transaction, and every
-//! arrow bound to one of them is re-solved.
+//! Contract used by other modules (keep this signature): after any change to the geometry of elements
+//! (move, resize, rotate, flip, delete, restore), the caller passes the changed ids to
+//! [`update_bound_arrows`] inside the same transaction, and every arrow bound to one of them is re-solved
+//! once. Arrows named in `changed` are re-solved too.
+//!
+//! The design (`docs/model.md`, research 02f): the binding is stored **on the arrow only**
+//! (`start_binding` / `end_binding`: target, inside or orbit, fixed point). The reverse index is derived
+//! (`DerivedIndex::bound_arrows`) and never stored. An end's position is derived from its binding by the
+//! solver in [`solve`]; the stored point is a cache of it.
+//!
+//! * [`update_bound_arrows`]: re-solve after shapes changed (one pass per transaction, sorted by id).
+//! * [`find_hovered`], [`hover_candidate`], [`plan_end_drag`], [`drag_end`]: acquisition while an end is dragged,
+//!   with the [`BindingCandidate`] to highlight.
+//! * [`unbind_end`], [`unbind_detached`], [`free_ends_bound_to`], [`remap_bindings`], [`heal_bindings`],
+//!   [`mirror_fixed_points`], [`reanchor_to_outline`], [`can_move_with`]: the rules for transforms, deletes,
+//!   copies and loads.
+//!
+//! The algorithms are ported from Excalidraw's `binding.ts` (MIT) in our own code.
 
-use drafftink_scene::{ElementId, SceneTx};
+mod acquire;
+mod lifecycle;
+mod solve;
+mod target;
+
+use std::collections::{BTreeSet, HashSet};
+
+use drafftink_scene::{DerivedIndex, ElementId, PathType, SceneRead, SceneTx, StoreError};
+
+pub use acquire::{
+    BindOpts, BindingCandidate, DragPlan, EndChange, Hovered, drag_end, find_hovered, hover_candidate, plan_end_drag,
+    within_binding_reach,
+};
+pub use lifecycle::{
+    can_move_with, free_ends_bound_to, free_ends_bound_to_with, heal_bindings, mirror_fixed_points,
+    reanchor_to_outline, remap_bindings, unbind_detached, unbind_end,
+};
+pub use solve::bound_end_position;
+pub use target::{Resolved, bind_target, is_bindable, resolve};
+
+use crate::elbow::{self, ElbowError, RouteOpts};
+use crate::linear::{set_world_points, world_points};
+
+/// Which end of a line or arrow.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub enum End {
+    /// The first point.
+    Start,
+    /// The last point.
+    End,
+}
+
+impl End {
+    /// The other end.
+    pub fn other(self) -> End {
+        match self {
+            End::Start => End::End,
+            End::End => End::Start,
+        }
+    }
+}
 
 /// Errors from binding rules.
-#[derive(Debug, thiserror::Error, PartialEq)]
+#[derive(Debug, Clone, PartialEq, thiserror::Error)]
 pub enum BindingError {
     /// The element does not exist.
     #[error("element {0} does not exist")]
     Missing(ElementId),
+    /// The element is not a line or an arrow.
+    #[error("element {0} is not a line or an arrow, so it has no ends to bind")]
+    NotLinear(ElementId),
+    /// A coordinate is not finite.
+    #[error("a binding needs finite coordinates")]
+    NotFinite,
+    /// The line or arrow has fewer than two points.
+    #[error("element {0} has fewer than 2 points, so it has no two ends")]
+    TooFewPoints(ElementId),
+    /// The elbow router refused for this arrow.
+    #[error("arrow {arrow} could not be routed: {source}")]
+    Elbow {
+        /// The arrow.
+        arrow: ElementId,
+        /// Why.
+        #[source]
+        source: ElbowError,
+    },
+    /// The store refused the change.
+    #[error(transparent)]
+    Store(#[from] StoreError),
 }
 
 /// Re-solve every arrow bound to any of `changed` (and arrows in `changed` themselves).
-/// Returns the ids of arrows whose geometry changed.
-pub fn update_bound_arrows<T: SceneTx>(_tx: &mut T, _changed: &[ElementId]) -> Result<Vec<ElementId>, BindingError> {
-    Ok(Vec::new())
+/// Returns the ids of arrows whose geometry changed, sorted.
+///
+/// Scans the transaction's elements once. With many elements and few changes, prefer
+/// [`update_bound_arrows_indexed`].
+pub fn update_bound_arrows<T: SceneTx>(tx: &mut T, changed: &[ElementId]) -> Result<Vec<ElementId>, BindingError> {
+    if changed.is_empty() {
+        return Ok(Vec::new());
+    }
+    let set: HashSet<&ElementId> = changed.iter().collect();
+    let mut affected: BTreeSet<ElementId> = BTreeSet::new();
+    for e in tx.iter() {
+        let Some(d) = e.linear_data() else { continue };
+        let [a, b] = e.binding_targets();
+        let own = set.contains(&e.id);
+        let bound_to_changed = a.is_some_and(|t| set.contains(t)) || b.is_some_and(|t| set.contains(t));
+        if bound_to_changed || (own && (a.is_some() || b.is_some() || d.path == PathType::Elbow)) {
+            affected.insert(e.id.clone());
+        }
+    }
+    solve_all(tx, affected)
+}
+
+/// Like [`update_bound_arrows`], finding the arrows with the committed reverse index instead of scanning. Arrows
+/// that gained a binding earlier in the same transaction are only found if they are in `changed`.
+pub fn update_bound_arrows_indexed<T: SceneTx>(
+    tx: &mut T,
+    changed: &[ElementId],
+    derived: &DerivedIndex,
+) -> Result<Vec<ElementId>, BindingError> {
+    let mut affected: BTreeSet<ElementId> = BTreeSet::new();
+    for id in changed {
+        affected.extend(derived.bound_arrows(id).cloned());
+        if let Some(e) = tx.get(id)
+            && e.tag().is_linear()
+        {
+            affected.insert(id.clone());
+        }
+    }
+    solve_all(tx, affected)
+}
+
+fn solve_all<T: SceneTx>(tx: &mut T, affected: BTreeSet<ElementId>) -> Result<Vec<ElementId>, BindingError> {
+    let mut changed = Vec::new();
+    for id in affected {
+        if solve_one(tx, &id)? {
+            changed.push(id);
+        }
+    }
+    Ok(changed)
+}
+
+pub(crate) fn from_elbow(arrow: &ElementId, err: elbow::ElbowEditError) -> BindingError {
+    match err {
+        elbow::ElbowEditError::Route(source) => BindingError::Elbow { arrow: arrow.clone(), source },
+        elbow::ElbowEditError::Store(s) => BindingError::Store(s),
+        elbow::ElbowEditError::Missing(m) | elbow::ElbowEditError::NotElbow(m) => BindingError::Missing(m),
+    }
+}
+
+const SAME: f64 = 1e-9;
+
+fn same_points(a: &[kurbo::Point], b: &[kurbo::Point]) -> bool {
+    a.len() == b.len() && a.iter().zip(b).all(|(p, q)| (*p - *q).hypot() <= SAME)
+}
+
+fn solve_one<T: SceneTx>(tx: &mut T, id: &ElementId) -> Result<bool, BindingError> {
+    let Some(e) = tx.get(id) else { return Ok(false) };
+    if e.deleted {
+        return Ok(false);
+    }
+    let Some(d) = e.linear_data() else { return Ok(false) };
+    if d.path == PathType::Elbow {
+        return elbow::reroute(tx, id, RouteOpts::default()).map_err(|err| from_elbow(id, err));
+    }
+    let Some(world) = world_points(e) else { return Ok(false) };
+    let Some(next) = solve::simple_points(tx, d, &world, false) else { return Ok(false) };
+    if same_points(&world, &next) {
+        return Ok(false);
+    }
+    let mut updated = e.clone();
+    if !set_world_points(&mut updated, &next, false) {
+        return Ok(false);
+    }
+    tx.update(id, |slot| {
+        slot.transform = updated.transform;
+        slot.kind = updated.kind;
+    })?;
+    Ok(true)
+}
+
+/// Is `scene` free of arrows whose bound ends sit away from where their bindings put them? Returns the
+/// ids of the stale arrows. For tests and consistency checks.
+pub fn stale_arrows<R: SceneRead>(scene: &R) -> Vec<ElementId> {
+    let mut out = Vec::new();
+    for e in scene.iter() {
+        let Some(d) = e.linear_data() else { continue };
+        if d.start_binding.is_none() && d.end_binding.is_none() {
+            continue;
+        }
+        let Some(world) = world_points(e).filter(|w| w.len() >= 2) else { continue };
+        if d.path == PathType::Elbow {
+            let Some((s, en)) = elbow::ends_for(scene, d, &world) else { continue };
+            let (first, last) = (world[0], world[world.len() - 1]);
+            let bad = (s.bound.is_some() && (s.point - first).hypot() > 1e-6)
+                || (en.bound.is_some() && (en.point - last).hypot() > 1e-6);
+            if bad {
+                out.push(e.id.clone());
+            }
+        } else if let Some(next) = solve::simple_points(scene, d, &world, false)
+            && !next.iter().zip(&world).all(|(a, b)| (*a - *b).hypot() < 1e-6)
+        {
+            out.push(e.id.clone());
+        }
+    }
+    out
 }
