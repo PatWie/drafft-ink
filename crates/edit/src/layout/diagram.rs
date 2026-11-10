@@ -1,0 +1,820 @@
+//! `diagram.create`: a diagram from nodes and edges with symbolic ids.
+//!
+//! The spec is plain data (serde and JSON Schema). The Mermaid importer maps into the same spec, so both paths share
+//! the layout, the sizing and the rules below.
+//!
+//! One call creates, in this order: every node (each followed by its label), then every edge as an arrow bound at
+//! both ends (each followed by its label), then the optional frame. Each arrow and label sits directly above what
+//! it belongs to. The caller commits the transaction, so a diagram is one undo step.
+
+use std::collections::{BTreeMap, BTreeSet};
+
+use kurbo::{Point, Rect, Size};
+use schemars::JsonSchema;
+use serde::{Deserialize, Serialize};
+
+use drafftink_scene::{
+    Color, Element, ElementId, ElementKind, FillPattern, FontFamily, FrameData, GroupId, Head, IdSource, IndexError,
+    Kind, PathType, SceneRead, SceneTx, Sloppiness, StoreError, StrokeStyle, Style, TextData, TextStyle, ZIndex,
+};
+
+use super::route::{Heads, NodeBox, RouteParams, arrow_element, route_edge, route_self_loop};
+use super::{Algorithm, LayoutError, LayoutGraph, LayoutOpts, compute_layout, scene_bounds};
+use crate::binding::update_bound_arrows;
+use crate::text_bind::{
+    TextBindError, TextMeasure, container_dim_for_text, create_label, fresh_element_id, inner_size, measure_lines,
+    measure_text, wrap_text,
+};
+
+/// Most nodes in one diagram.
+pub const MAX_NODES: usize = 2000;
+/// Most edges in one diagram.
+pub const MAX_EDGES: usize = 5000;
+/// Smallest automatic node size.
+const MIN_NODE: Size = Size::new(80.0, 48.0);
+/// A node label wraps at this width when the node has no width of its own.
+const AUTO_LABEL_WIDTH: f64 = 240.0;
+const FRAME_PADDING: f64 = 32.0;
+const MAX_SYMBOLIC_LEN: usize = 64;
+
+// ---------------------------------------------------------------------------------------------
+// The spec
+// ---------------------------------------------------------------------------------------------
+
+/// The shape of a node.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum NodeShape {
+    /// Rectangle (the default).
+    #[default]
+    Rectangle,
+    /// Ellipse.
+    Ellipse,
+    /// Diamond.
+    Diamond,
+    /// A free text element that arrows can bind to. Needs a label.
+    Text,
+}
+
+/// The few style properties a node or an edge can set. Everything left out keeps the default.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields, default)]
+pub struct StyleSpec {
+    /// Outline colour (text colour for a text node).
+    pub stroke_color: Option<Color>,
+    /// Outline width.
+    pub stroke_width: Option<f64>,
+    /// Dash pattern.
+    pub stroke_style: Option<StrokeStyle>,
+    /// Fill colour. `"transparent"` means no fill.
+    pub fill_color: Option<Color>,
+    /// Fill pattern.
+    pub fill_pattern: Option<FillPattern>,
+    /// How hand-drawn the outline is.
+    pub sloppiness: Option<Sloppiness>,
+    /// Opacity, 0 to 1.
+    pub opacity: Option<f64>,
+    /// Corner radius.
+    pub corner_radius: Option<f64>,
+    /// Font family of the label.
+    pub font_family: Option<FontFamily>,
+    /// Font size of the label.
+    pub font_size: Option<f64>,
+}
+
+impl StyleSpec {
+    fn apply(&self, s: &mut Style) {
+        if let Some(c) = self.stroke_color {
+            s.stroke_color = c;
+        }
+        if let Some(v) = self.stroke_width {
+            s.stroke_width = v;
+        }
+        if let Some(v) = self.stroke_style {
+            s.stroke_style = v;
+        }
+        if let Some(c) = self.fill_color {
+            s.fill_color = if c.a == 0 { None } else { Some(c) };
+        }
+        if let Some(v) = self.fill_pattern {
+            s.fill_pattern = v;
+        }
+        if let Some(v) = self.sloppiness {
+            s.sloppiness = v;
+        }
+        if let Some(v) = self.opacity {
+            s.opacity = v;
+        }
+        if let Some(v) = self.corner_radius {
+            s.corner_radius = v;
+        }
+    }
+
+    fn font(&self) -> TextStyle {
+        let mut f = TextStyle::default();
+        if let Some(v) = self.font_family {
+            f.family = v;
+        }
+        if let Some(v) = self.font_size {
+            f.size = v;
+        }
+        f
+    }
+}
+
+/// One node of the diagram.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct NodeSpec {
+    /// The symbolic id: a name the edges and groups use, unique in the diagram. The result maps it to the real id.
+    pub id: String,
+    /// The text inside the node. Absent: an empty shape.
+    #[serde(default)]
+    pub label: Option<String>,
+    /// The shape.
+    #[serde(default)]
+    pub shape: NodeShape,
+    /// Style.
+    #[serde(default)]
+    pub style: Option<StyleSpec>,
+    /// Width. Absent: measured from the label, at least 80.
+    #[serde(default)]
+    pub width: Option<f64>,
+    /// Height. Absent: measured from the label, at least 48.
+    #[serde(default)]
+    pub height: Option<f64>,
+    /// Width and height together. `width` and `height` win when both are given.
+    #[serde(default)]
+    pub size: Option<[f64; 2]>,
+    /// The element `name`, so that later calls can say `@name`.
+    #[serde(default)]
+    pub name: Option<String>,
+    /// Position for the `none` layout.
+    #[serde(default)]
+    pub x: Option<f64>,
+    /// Position for the `none` layout.
+    #[serde(default)]
+    pub y: Option<f64>,
+}
+
+impl NodeSpec {
+    /// A node with a label and defaults for everything else.
+    pub fn new(id: impl Into<String>, label: impl Into<String>) -> Self {
+        Self {
+            id: id.into(),
+            label: Some(label.into()),
+            shape: NodeShape::Rectangle,
+            style: None,
+            width: None,
+            height: None,
+            size: None,
+            name: None,
+            x: None,
+            y: None,
+        }
+    }
+}
+
+/// Which ends of an edge have an arrowhead.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum Arrowheads {
+    /// No heads.
+    None,
+    /// A head at the target (the default).
+    #[default]
+    #[serde(alias = "forward")]
+    End,
+    /// A head at the source.
+    #[serde(alias = "backward")]
+    Start,
+    /// Heads at both ends.
+    Both,
+}
+
+/// One edge: an arrow from one node to another.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct EdgeSpec {
+    /// Symbolic id of the source node.
+    pub from: String,
+    /// Symbolic id of the target node. May equal `from` (a self loop).
+    pub to: String,
+    /// Text on the arrow.
+    #[serde(default)]
+    pub label: Option<String>,
+    /// Straight (`sharp`), curved (`round`) or `elbow`. Default `sharp`.
+    #[serde(default, alias = "path")]
+    pub arrow_type: Option<PathType>,
+    /// Which ends have a head. Default: at the target.
+    #[serde(default)]
+    pub arrowheads: Option<Arrowheads>,
+    /// Marker at the source. Overrides `arrowheads`.
+    #[serde(default)]
+    pub start_head: Option<Head>,
+    /// Marker at the target. Overrides `arrowheads`.
+    #[serde(default)]
+    pub end_head: Option<Head>,
+    /// Style of the arrow.
+    #[serde(default)]
+    pub style: Option<StyleSpec>,
+    /// The element `name`.
+    #[serde(default)]
+    pub name: Option<String>,
+}
+
+impl EdgeSpec {
+    /// An unlabelled edge with defaults.
+    pub fn new(from: impl Into<String>, to: impl Into<String>) -> Self {
+        Self {
+            from: from.into(),
+            to: to.into(),
+            label: None,
+            arrow_type: None,
+            arrowheads: None,
+            start_head: None,
+            end_head: None,
+            style: None,
+            name: None,
+        }
+    }
+}
+
+/// A set of nodes that is grouped. Groups may be nested (one contains the other) but not partly overlap.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct GroupSpec {
+    /// A symbolic id for the result, optional.
+    #[serde(default)]
+    pub id: Option<String>,
+    /// Symbolic ids of the member nodes (at least 2).
+    pub members: Vec<String>,
+}
+
+/// A whole diagram.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct DiagramSpec {
+    /// The nodes.
+    pub nodes: Vec<NodeSpec>,
+    /// The edges.
+    #[serde(default)]
+    pub edges: Vec<EdgeSpec>,
+    /// Groups of nodes. Arrows between two members of a group join it.
+    #[serde(default)]
+    pub groups: Vec<GroupSpec>,
+    /// How to place the nodes.
+    #[serde(default)]
+    pub layout: LayoutOpts,
+}
+
+/// Where and how the diagram goes into the scene.
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct CreateOpts {
+    /// Top-left of the diagram. Ignored by the `none` layout, which uses the given positions.
+    pub origin: Point,
+    /// Wrap the diagram in a frame with this name.
+    pub frame: Option<String>,
+}
+
+/// What was created.
+#[derive(Debug, Clone, PartialEq, Serialize, JsonSchema)]
+pub struct DiagramResult {
+    /// Symbolic node id to real element id.
+    pub nodes: BTreeMap<String, ElementId>,
+    /// The arrows, in the order of the spec's edges.
+    pub edges: Vec<ElementId>,
+    /// Symbolic group id (for groups that have one) to the real group id.
+    pub groups: BTreeMap<String, GroupId>,
+    /// Every group created, in spec order.
+    pub group_ids: Vec<GroupId>,
+    /// The frame, when one was asked for.
+    pub frame: Option<ElementId>,
+    /// Bounds of the diagram as `[x, y, w, h]`.
+    pub bounds: [f64; 4],
+    /// Every element created (nodes, labels, arrows, frame), in z-order from the back.
+    pub created: Vec<ElementId>,
+}
+
+// ---------------------------------------------------------------------------------------------
+// Errors
+// ---------------------------------------------------------------------------------------------
+
+/// Why a diagram was refused. Nothing is created in that case (the caller drops the transaction).
+#[derive(Debug, PartialEq, thiserror::Error)]
+pub enum DiagramError {
+    /// No nodes.
+    #[error("Give at least one node.")]
+    NoNodes,
+    /// A node id is used twice.
+    #[error("Node id `{0}` appears twice. Node ids must be unique.")]
+    DuplicateNode(String),
+    /// A node id is empty, too long or has control characters.
+    #[error("Node id `{0}` is not usable. An id is 1 to 64 characters without control characters.")]
+    BadNodeId(String),
+    /// An edge names a node that is not in the spec.
+    #[error("Edge {index} refers to node `{id}`, which is not in `nodes`. Known nodes: {known}.")]
+    UnknownNode {
+        /// Position of the edge in `edges`, 0-based.
+        index: usize,
+        /// The unknown id.
+        id: String,
+        /// The known ids, comma separated (the first 20).
+        known: String,
+    },
+    /// A group names a node that is not in the spec.
+    #[error("Group {index} refers to node `{id}`, which is not in `nodes`. Known nodes: {known}.")]
+    UnknownGroupMember {
+        /// Position of the group, 0-based.
+        index: usize,
+        /// The unknown id.
+        id: String,
+        /// The known ids.
+        known: String,
+    },
+    /// A group is not usable.
+    #[error("Group {index} is not usable: {reason}")]
+    BadGroup {
+        /// Position of the group, 0-based.
+        index: usize,
+        /// What is wrong, with the fix.
+        reason: String,
+    },
+    /// Two groups overlap without one containing the other, or two groups have the same members.
+    #[error("Groups {a} and {b} overlap without one containing the other. Nest them or make them disjoint.")]
+    GroupsOverlap {
+        /// First group.
+        a: usize,
+        /// Second group.
+        b: usize,
+    },
+    /// The tree layout needs a forest.
+    #[error(
+        "The tree layout needs every node to have at most one incoming edge and no cycles, and node `{0}` breaks that. Use algorithm \"layered\", which handles cycles."
+    )]
+    TreeNotForest(String),
+    /// Too many nodes or edges.
+    #[error("Too many {what}: a diagram has at most {max}. Split it into several diagrams.")]
+    LimitExceeded {
+        /// Nodes or edges.
+        what: &'static str,
+        /// The limit.
+        max: usize,
+    },
+    /// A text node needs text.
+    #[error("Node `{0}` is a text node and needs a label.")]
+    EmptyTextNode(String),
+    /// A size is not a positive finite number.
+    #[error("Node `{0}` has a width or height that is not a positive number.")]
+    BadSize(String),
+    /// A `none` layout node has no position.
+    #[error("Node `{0}` has no position. Give x and y for every node when the algorithm is none.")]
+    MissingPosition(String),
+    /// A name is not allowed.
+    #[error(
+        "The name `{0}` is not usable. A name is 1 to 64 characters, does not start with @ or $, and has no control characters."
+    )]
+    BadName(String),
+    /// A name is used twice.
+    #[error(
+        "The name `{name}` is already used by element {other}. Names must be unique so that @{name} is unambiguous. Pick another name."
+    )]
+    NameTaken {
+        /// The name.
+        name: String,
+        /// The element that has it (for a clash inside the spec, the symbolic node id).
+        other: String,
+    },
+    /// The layout refused.
+    #[error(transparent)]
+    Layout(LayoutError),
+    /// A label could not be made.
+    #[error(transparent)]
+    Text(#[from] TextBindError),
+    /// The scene refused a write.
+    #[error(transparent)]
+    Store(#[from] StoreError),
+    /// No z-order key could be made.
+    #[error(transparent)]
+    Index(#[from] IndexError),
+    /// The geometry came out non-finite.
+    #[error("The diagram has coordinates that are not finite numbers. Check sizes and positions.")]
+    NotFinite,
+    /// Re-solving the arrows failed.
+    #[error("re-solving the bound arrows failed: {0}")]
+    Binding(String),
+}
+
+impl DiagramError {
+    /// The refusal code of the command catalog.
+    pub fn code(&self) -> &'static str {
+        match self {
+            DiagramError::DuplicateNode(_) => "duplicate_node",
+            DiagramError::UnknownNode { .. } | DiagramError::UnknownGroupMember { .. } => "unknown_node",
+            DiagramError::TreeNotForest(_) => "tree_not_forest",
+            DiagramError::LimitExceeded { .. } => "limit_exceeded",
+            DiagramError::NameTaken { .. } => "name_taken",
+            DiagramError::BadName(_) => "bad_name",
+            DiagramError::Store(_) | DiagramError::Index(_) | DiagramError::Binding(_) => "internal",
+            _ => "bad_args",
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------------------------
+// Validation
+// ---------------------------------------------------------------------------------------------
+
+fn known_list(spec: &DiagramSpec) -> String {
+    let v: Vec<&str> = spec.nodes.iter().take(20).map(|n| n.id.as_str()).collect();
+    let more = spec.nodes.len().saturating_sub(20);
+    let mut s = v.join(", ");
+    if more > 0 {
+        s.push_str(&format!(", and {more} more"));
+    }
+    s
+}
+
+fn check_name(name: &str) -> bool {
+    let n = name.chars().count();
+    (1..=64).contains(&n) && !name.starts_with('@') && !name.starts_with('$') && !name.chars().any(char::is_control)
+}
+
+/// Group membership per node (innermost first), checked to nest.
+fn resolve_groups(spec: &DiagramSpec, index: &BTreeMap<&str, usize>) -> Result<Vec<Vec<usize>>, DiagramError> {
+    let mut members: Vec<BTreeSet<usize>> = Vec::new();
+    for (gi, g) in spec.groups.iter().enumerate() {
+        let mut set = BTreeSet::new();
+        for m in &g.members {
+            let i = index.get(m.as_str()).copied().ok_or_else(|| DiagramError::UnknownGroupMember {
+                index: gi,
+                id: m.clone(),
+                known: known_list(spec),
+            })?;
+            set.insert(i);
+        }
+        if set.len() < 2 {
+            return Err(DiagramError::BadGroup {
+                index: gi,
+                reason: "a group needs at least 2 different member nodes. Add members or drop the group.".into(),
+            });
+        }
+        members.push(set);
+    }
+    for a in 0..members.len() {
+        for b in a + 1..members.len() {
+            let inter = members[a].intersection(&members[b]).count();
+            if inter == 0 {
+                continue;
+            }
+            let nested = inter == members[a].len() || inter == members[b].len();
+            if !nested || members[a] == members[b] {
+                return Err(DiagramError::GroupsOverlap { a, b });
+            }
+        }
+    }
+    // Per node: the groups it is in, smallest first.
+    let mut per_node: Vec<Vec<usize>> = vec![Vec::new(); spec.nodes.len()];
+    for (gi, set) in members.iter().enumerate() {
+        for &n in set {
+            per_node[n].push(gi);
+        }
+    }
+    for list in &mut per_node {
+        list.sort_by_key(|&g| (members[g].len(), g));
+    }
+    Ok(per_node)
+}
+
+// ---------------------------------------------------------------------------------------------
+// Sizing
+// ---------------------------------------------------------------------------------------------
+
+fn positive(v: f64) -> bool {
+    v.is_finite() && v > 0.0
+}
+
+/// The size of a node that holds `label`.
+fn node_size<M: TextMeasure + ?Sized>(
+    m: &M,
+    kind: Kind,
+    font: &TextStyle,
+    label: Option<&str>,
+    width: Option<f64>,
+    height: Option<f64>,
+) -> Size {
+    let Some(label) = label.filter(|l| !l.trim().is_empty()) else {
+        return Size::new(width.unwrap_or(MIN_NODE.width), height.unwrap_or(MIN_NODE.height));
+    };
+    if kind == Kind::Text {
+        let s = measure_text(m, label, font, width);
+        return Size::new(width.unwrap_or(s.width), height.unwrap_or(s.height).max(s.height));
+    }
+    // Width: given, or what the label needs when wrapped at the automatic width.
+    let natural = {
+        let lines = wrap_text(m, label, font, AUTO_LABEL_WIDTH);
+        measure_lines(m, &lines, font)
+    };
+    let mut w = width.unwrap_or_else(|| container_dim_for_text(natural.width, kind).max(MIN_NODE.width));
+    // Height: whatever the text needs at that width, and at least the given or the minimum height.
+    for _ in 0..2 {
+        let inner = inner_size(kind, Size::new(w, 0.0)).map_or(0.0, |s| s.width);
+        let lines = wrap_text(m, label, font, inner);
+        let text = measure_lines(m, &lines, font);
+        if text.width > inner {
+            w = container_dim_for_text(text.width, kind).max(w);
+        } else {
+            let h = height.unwrap_or(MIN_NODE.height).max(container_dim_for_text(text.height, kind));
+            return Size::new(w, h);
+        }
+    }
+    let inner = inner_size(kind, Size::new(w, 0.0)).map_or(0.0, |s| s.width);
+    let text = measure_lines(m, &wrap_text(m, label, font, inner), font);
+    Size::new(w, height.unwrap_or(MIN_NODE.height).max(container_dim_for_text(text.height, kind)))
+}
+
+/// The origin that puts a diagram `gap` below everything in the scene (the origin for `at: below_content`).
+pub fn below_content_origin<R: SceneRead>(r: &R, gap: f64) -> Point {
+    match scene_bounds(r) {
+        Some(b) => Point::new(b.x0, b.y1 + gap),
+        None => Point::ZERO,
+    }
+}
+
+// ---------------------------------------------------------------------------------------------
+// Creation
+// ---------------------------------------------------------------------------------------------
+
+fn heads_of(e: &EdgeSpec) -> Heads {
+    let base = match e.arrowheads.unwrap_or_default() {
+        Arrowheads::None => Heads { start: Head::None, end: Head::None },
+        Arrowheads::End => Heads { start: Head::None, end: Head::Arrow },
+        Arrowheads::Start => Heads { start: Head::Arrow, end: Head::None },
+        Arrowheads::Both => Heads { start: Head::Arrow, end: Head::Arrow },
+    };
+    Heads { start: e.start_head.unwrap_or(base.start), end: e.end_head.unwrap_or(base.end) }
+}
+
+/// Creates the diagram described by `spec` in `tx`. See the module docs.
+pub fn diagram_create<T: SceneTx, M: TextMeasure + ?Sized>(
+    tx: &mut T,
+    m: &M,
+    ids: &mut dyn IdSource,
+    spec: &DiagramSpec,
+    opts: &CreateOpts,
+) -> Result<DiagramResult, DiagramError> {
+    // ---- validate ----
+    if spec.nodes.is_empty() {
+        return Err(DiagramError::NoNodes);
+    }
+    if spec.nodes.len() > MAX_NODES {
+        return Err(DiagramError::LimitExceeded { what: "nodes", max: MAX_NODES });
+    }
+    if spec.edges.len() > MAX_EDGES {
+        return Err(DiagramError::LimitExceeded { what: "edges", max: MAX_EDGES });
+    }
+    let mut index: BTreeMap<&str, usize> = BTreeMap::new();
+    for (i, n) in spec.nodes.iter().enumerate() {
+        let len = n.id.chars().count();
+        if len == 0 || len > MAX_SYMBOLIC_LEN || n.id.chars().any(char::is_control) {
+            return Err(DiagramError::BadNodeId(n.id.clone()));
+        }
+        if index.insert(n.id.as_str(), i).is_some() {
+            return Err(DiagramError::DuplicateNode(n.id.clone()));
+        }
+    }
+    let mut edge_ends: Vec<(usize, usize)> = Vec::with_capacity(spec.edges.len());
+    for (i, e) in spec.edges.iter().enumerate() {
+        let find = |id: &str| {
+            index.get(id).copied().ok_or_else(|| DiagramError::UnknownNode {
+                index: i,
+                id: id.to_string(),
+                known: known_list(spec),
+            })
+        };
+        edge_ends.push((find(&e.from)?, find(&e.to)?));
+    }
+    let node_groups = resolve_groups(spec, &index)?;
+
+    // Names: unique inside the spec and against the scene.
+    let mut taken: BTreeMap<String, String> =
+        tx.iter().filter_map(|e| e.name.clone().map(|n| (n, e.id.to_string()))).collect();
+    let names = spec
+        .nodes
+        .iter()
+        .map(|n| (n.name.as_ref(), n.id.as_str()))
+        .chain(spec.edges.iter().map(|e| (e.name.as_ref(), "an edge")));
+    for (name, owner) in names {
+        let Some(name) = name else { continue };
+        if !check_name(name) {
+            return Err(DiagramError::BadName(name.clone()));
+        }
+        if let Some(other) = taken.insert(name.clone(), owner.to_string()) {
+            return Err(DiagramError::NameTaken { name: name.clone(), other });
+        }
+    }
+
+    // ---- sizes ----
+    let mut sizes = Vec::with_capacity(spec.nodes.len());
+    let mut fonts = Vec::with_capacity(spec.nodes.len());
+    for n in &spec.nodes {
+        let kind = match n.shape {
+            NodeShape::Rectangle => Kind::Rectangle,
+            NodeShape::Ellipse => Kind::Ellipse,
+            NodeShape::Diamond => Kind::Diamond,
+            NodeShape::Text => Kind::Text,
+        };
+        if kind == Kind::Text && n.label.as_deref().is_none_or(|l| l.trim().is_empty()) {
+            return Err(DiagramError::EmptyTextNode(n.id.clone()));
+        }
+        let width = n.width.or(n.size.map(|s| s[0]));
+        let height = n.height.or(n.size.map(|s| s[1]));
+        if width.is_some_and(|v| !positive(v)) || height.is_some_and(|v| !positive(v)) {
+            return Err(DiagramError::BadSize(n.id.clone()));
+        }
+        let font = n.style.as_ref().map(StyleSpec::font).unwrap_or_default();
+        if !positive(font.size) {
+            return Err(DiagramError::BadSize(n.id.clone()));
+        }
+        sizes.push(node_size(m, kind, &font, n.label.as_deref(), width, height));
+        fonts.push(font);
+    }
+
+    // ---- layout ----
+    let fixed: Vec<Option<Point>> = spec.nodes.iter().map(|n| n.x.zip(n.y).map(|(x, y)| Point::new(x, y))).collect();
+    if spec.layout.algorithm == Algorithm::None
+        && let Some(i) = fixed.iter().position(Option::is_none)
+    {
+        return Err(DiagramError::MissingPosition(spec.nodes[i].id.clone()));
+    }
+    let graph = LayoutGraph { sizes: sizes.clone(), edges: edge_ends.clone(), fixed };
+    let layout = compute_layout(&graph, &spec.layout).map_err(|e| match e {
+        LayoutError::NotForest { node } => DiagramError::TreeNotForest(spec.nodes[node].id.clone()),
+        LayoutError::BadSize { node } => DiagramError::BadSize(spec.nodes[node].id.clone()),
+        LayoutError::MissingPosition { node } => DiagramError::MissingPosition(spec.nodes[node].id.clone()),
+        other => DiagramError::Layout(other),
+    })?;
+    let origin = if spec.layout.algorithm == Algorithm::None { Point::ZERO } else { opts.origin };
+    if !origin.x.is_finite() || !origin.y.is_finite() {
+        return Err(DiagramError::NotFinite);
+    }
+    let shift = origin.to_vec2();
+
+    // ---- groups ----
+    let group_ids: Vec<GroupId> = spec.groups.iter().map(|_| ids.group_id()).collect();
+    let mut groups_out = BTreeMap::new();
+    for (g, id) in spec.groups.iter().zip(&group_ids) {
+        if let Some(sym) = &g.id {
+            groups_out.insert(sym.clone(), id.clone());
+        }
+    }
+
+    // ---- frame id and the nodes' elements ----
+    let frame_id = opts.frame.as_ref().map(|_| fresh_element_id(tx, ids));
+    let mut created: Vec<ElementId> = Vec::new();
+    let mut node_ids: Vec<ElementId> = Vec::with_capacity(spec.nodes.len());
+    let mut boxes: Vec<NodeBox> = Vec::with_capacity(spec.nodes.len());
+    let mut rects: Vec<Rect> = Vec::with_capacity(spec.nodes.len());
+    for (i, n) in spec.nodes.iter().enumerate() {
+        let pos = layout.positions[i] + shift;
+        let size = sizes[i];
+        let id = fresh_element_id(tx, ids);
+        let mut style = Style::default();
+        if let Some(s) = &n.style {
+            s.apply(&mut style);
+        }
+        style.seed = ids.seed();
+        let label = n.label.as_deref().filter(|l| !l.trim().is_empty());
+        let kind = match (n.shape, label) {
+            (NodeShape::Rectangle, _) => ElementKind::Rectangle,
+            (NodeShape::Ellipse, _) => ElementKind::Ellipse,
+            (NodeShape::Diamond, _) => ElementKind::Diamond,
+            (NodeShape::Text, text) => {
+                let mut d = TextData::new(text.unwrap_or_default());
+                d.font = fonts[i].clone();
+                d.font.align = drafftink_scene::TextAlign::Center;
+                d.auto_resize = n.width.is_none();
+                ElementKind::Text(d)
+            }
+        };
+        let mut e = Element::new(id.clone(), kind, tx.next_top_index()?)
+            .with_bounds(pos.x, pos.y, size.width, size.height)
+            .with_style(style);
+        e.name = n.name.clone();
+        e.frame_id = frame_id.clone();
+        for &g in &node_groups[i] {
+            e.group_ids.push(group_ids[g].clone());
+        }
+        let nb = NodeBox::of(&e).ok_or(DiagramError::NotFinite)?;
+        rects.push(e.rect());
+        tx.insert(e)?;
+        created.push(id.clone());
+        if n.shape != NodeShape::Text
+            && let Some(text) = label
+        {
+            let o = create_label(tx, m, ids, &id, text, Some(&fonts[i]))?;
+            created.push(o.label);
+            // The node may have grown if the measure and the real wrap disagree; keep the box current.
+            if o.container_grew
+                && let Some(e) = tx.get(&id)
+            {
+                rects[i] = e.rect();
+            }
+        }
+        boxes.push(match tx.get(&id).and_then(NodeBox::of) {
+            Some(b) => b,
+            None => nb,
+        });
+        node_ids.push(id);
+    }
+
+    // ---- edges ----
+    let mut lanes: BTreeMap<(usize, usize), usize> = BTreeMap::new();
+    let mut totals: BTreeMap<(usize, usize), usize> = BTreeMap::new();
+    for &(a, b) in &edge_ends {
+        *totals.entry((a.min(b), a.max(b))).or_default() += 1;
+    }
+    let mut edge_out = Vec::with_capacity(spec.edges.len());
+    for (k, (e, &(a, b))) in spec.edges.iter().zip(&edge_ends).enumerate() {
+        let key = (a.min(b), a.max(b));
+        let lane_slot = lanes.entry(key).or_default();
+        let lane = (*lane_slot, totals.get(&key).copied().unwrap_or(1));
+        *lane_slot += 1;
+        let path = e.arrow_type.unwrap_or(PathType::Sharp);
+        let route = if a == b {
+            route_self_loop(&boxes[a])
+        } else {
+            let waypoints: Vec<Point> = layout.waypoints[k].iter().map(|p| *p + shift).collect();
+            let obstacles: Vec<Rect> = if waypoints.is_empty() {
+                Vec::new()
+            } else {
+                rects.iter().enumerate().filter(|(i, _)| *i != a && *i != b).map(|(_, r)| *r).collect()
+            };
+            let p = RouteParams { path, waypoints: &waypoints, flow: layout.flow, lane, obstacles: &obstacles };
+            route_edge(&boxes[a], &boxes[b], &p)
+        };
+        let id = fresh_element_id(tx, ids);
+        let mut arrow = arrow_element(id.clone(), tx.next_top_index()?, &route, path, heads_of(e))
+            .ok_or(DiagramError::NotFinite)?;
+        let from_el = tx.get(&node_ids[a]).map(|n| n.style.stroke_color);
+        let mut style = Style::default();
+        if let Some(c) = from_el {
+            style.stroke_color = c;
+        }
+        if let Some(s) = &e.style {
+            s.apply(&mut style);
+        }
+        style.seed = ids.seed();
+        arrow.style = style;
+        arrow.name = e.name.clone();
+        arrow.frame_id = frame_id.clone();
+        // The arrow joins the groups both ends share, innermost first.
+        for &g in &node_groups[a] {
+            if node_groups[b].contains(&g) {
+                arrow.group_ids.push(group_ids[g].clone());
+            }
+        }
+        tx.insert(arrow)?;
+        created.push(id.clone());
+        if let Some(text) = e.label.as_deref().filter(|l| !l.trim().is_empty()) {
+            let font = e.style.as_ref().map(StyleSpec::font).unwrap_or_default();
+            let o = create_label(tx, m, ids, &id, text, Some(&font))?;
+            created.push(o.label);
+        }
+        edge_out.push(id);
+    }
+
+    // ---- frame ----
+    let mut bounds = rects.iter().copied().reduce(|a, b| a.union(b)).unwrap_or(Rect::ZERO);
+    for id in &created {
+        if let Some(e) = tx.get(id) {
+            bounds = bounds.union(e.rect());
+        }
+    }
+    if let (Some(name), Some(fid)) = (&opts.frame, &frame_id) {
+        let r = bounds.inflate(FRAME_PADDING, FRAME_PADDING);
+        let data = FrameData { name: Some(name.clone()), clip: true };
+        let z: ZIndex = tx.next_top_index()?;
+        let mut f =
+            Element::new(fid.clone(), ElementKind::Frame(data), z).with_bounds(r.x0, r.y0, r.width(), r.height());
+        f.style.seed = ids.seed();
+        tx.insert(f)?;
+        created.push(fid.clone());
+        bounds = r;
+    }
+
+    let mut touched: Vec<ElementId> = node_ids.clone();
+    touched.extend(edge_out.iter().cloned());
+    update_bound_arrows(tx, &touched).map_err(|e| DiagramError::Binding(e.to_string()))?;
+
+    let nodes = spec.nodes.iter().zip(&node_ids).map(|(n, id)| (n.id.clone(), id.clone())).collect();
+    Ok(DiagramResult {
+        nodes,
+        edges: edge_out,
+        groups: groups_out,
+        group_ids,
+        frame: frame_id,
+        bounds: [bounds.x0, bounds.y0, bounds.width(), bounds.height()],
+        created,
+    })
+}
