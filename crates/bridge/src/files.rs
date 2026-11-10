@@ -54,7 +54,10 @@ fn private_mode(path: &Path) -> io::Result<bool> {
 pub fn prepare_dir(dir: &Path) -> io::Result<()> {
     match fs::symlink_metadata(dir) {
         Ok(md) if md.file_type().is_symlink() => {
-            return Err(io::Error::other(format!("{} is a symbolic link, refusing to put a token there", dir.display())));
+            return Err(io::Error::other(format!(
+                "{} is a symbolic link, refusing to put a token there",
+                dir.display()
+            )));
         }
         Ok(md) if !md.is_dir() => {
             return Err(io::Error::other(format!("{} exists and is not a directory", dir.display())));
@@ -81,7 +84,10 @@ pub fn prepare_dir(dir: &Path) -> io::Result<()> {
             fs::set_permissions(dir, fs::Permissions::from_mode(0o700))?;
         }
         if !private_mode(dir)? {
-            return Err(io::Error::other(format!("{} is not private to this user and could not be fixed", dir.display())));
+            return Err(io::Error::other(format!(
+                "{} is not private to this user and could not be fixed",
+                dir.display()
+            )));
         }
     }
     Ok(())
@@ -167,7 +173,9 @@ pub struct Found {
 #[derive(Debug, thiserror::Error)]
 pub enum FindError {
     /// There is no file. The app is probably not running.
-    #[error("no running drafft.ink app found: {0} does not exist. Start the desktop app, or pass --port and --token-file")]
+    #[error(
+        "no running drafft.ink app found: {0} does not exist. Start the desktop app, or pass --port and --token-file"
+    )]
     Missing(PathBuf),
     /// The file can be read by other users.
     #[error("{0} can be read by other users, so it is not trusted. Run `chmod 600` on it, or restart the app")]

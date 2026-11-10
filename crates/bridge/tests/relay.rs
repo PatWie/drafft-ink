@@ -20,7 +20,8 @@ use tokio_tungstenite::tungstenite::Message;
 const PAIRING: &str = "pairpairpairpairpairpairpairpairpairpairpairpairpairpairpairpair";
 
 fn relay() -> RelayServer {
-    RelayServer::start(RelayConfig { pairing_token: Some(PAIRING.to_owned()), ..RelayConfig::default() }).expect("relay starts")
+    RelayServer::start(RelayConfig { pairing_token: Some(PAIRING.to_owned()), ..RelayConfig::default() })
+        .expect("relay starts")
 }
 
 #[test]
@@ -46,7 +47,10 @@ fn the_page_pairs_and_the_relay_drives_its_session() {
         let e = relay.call("execute", json!({ "id": "view.zoom_to_fit" })).await.unwrap_err();
         assert!(e.message.contains("`view.center`"), "{}", e.message);
         let recent = relay.call("recent", json!({ "limit": 3 })).await.expect("recent");
-        assert_eq!(recent["entries"].as_array().and_then(|a| a.first()).map(|e| e["source"].clone()), Some(json!("agent")));
+        assert_eq!(
+            recent["entries"].as_array().and_then(|a| a.first()).map(|e| e["source"].clone()),
+            Some(json!("agent"))
+        );
     });
     let state = page.disconnect();
     assert!(state["revision"].is_number(), "the page's own session did the work: {state}");
@@ -151,10 +155,13 @@ fn a_page_that_never_answers_times_out_without_pretending_to_cancel() {
     })
     .expect("relay");
     runtime().block_on(async {
-        let mut req = tokio_tungstenite::tungstenite::client::IntoClientRequest::into_client_request(relay.url()).expect("request");
+        let mut req = tokio_tungstenite::tungstenite::client::IntoClientRequest::into_client_request(relay.url())
+            .expect("request");
         req.headers_mut().insert("origin", "https://drafft.ink".parse().expect("header"));
         let (mut ws, _) = connect_async(req).await.expect("upgrade");
-        ws.send(Message::text(json!({"jsonrpc":"2.0","id":1,"method":"hello","params":{"token":PAIRING}}).to_string())).await.expect("hello");
+        ws.send(Message::text(json!({"jsonrpc":"2.0","id":1,"method":"hello","params":{"token":PAIRING}}).to_string()))
+            .await
+            .expect("hello");
         let Some(Ok(Message::Text(_))) = ws.next().await else { panic!("no hello answer") };
         let e = relay.call("execute", json!({ "id": "view.zoom_in" })).await.unwrap_err();
         assert_eq!(e.code, TIMED_OUT);

@@ -24,7 +24,10 @@ pub struct ShellSim {
 
 impl ShellSim {
     /// Starts the server; `make_session` runs on the shell thread.
-    pub fn start(cfg: BridgeConfig, make_session: impl FnOnce() -> Session + Send + 'static) -> Result<Self, BridgeError> {
+    pub fn start(
+        cfg: BridgeConfig,
+        make_session: impl FnOnce() -> Session + Send + 'static,
+    ) -> Result<Self, BridgeError> {
         let wake = Arc::new((Mutex::new(()), Condvar::new()));
         let waker_wake = wake.clone();
         let (server, mut host) = BridgeServer::start(cfg, Arc::new(move || waker_wake.1.notify_all()))?;

@@ -228,7 +228,10 @@ impl RelayServer {
         {
             let mut p = lock(&pending);
             if p.len() >= MAX_PENDING {
-                return Err(RpcError::new(rpc::BUSY, "the page has too many requests waiting. Wait for the earlier answers"));
+                return Err(RpcError::new(
+                    rpc::BUSY,
+                    "the page has too many requests waiting. Wait for the earlier answers",
+                ));
             }
             p.insert(id, reply_tx);
         }
@@ -239,7 +242,10 @@ impl RelayServer {
         let limit = self.state.cfg.request_timeout;
         match tokio::time::timeout(limit, reply_rx).await {
             Ok(Ok(r)) => r,
-            Ok(Err(_)) => Err(RpcError::new(NOT_PAIRED, "the browser tab disconnected before it answered. The request may or may not have run: check `recent`")),
+            Ok(Err(_)) => Err(RpcError::new(
+                NOT_PAIRED,
+                "the browser tab disconnected before it answered. The request may or may not have run: check `recent`",
+            )),
             Err(_) => {
                 lock(&pending).remove(&id);
                 Err(RpcError::new(
@@ -310,8 +316,11 @@ where
     let _ = ws.close(Some(CloseFrame { code: CloseCode::Policy, reason: "refused".into() })).await;
 }
 
-async fn authenticate(stream: TcpStream, st: &State) -> Option<(WebSocketStream<TcpStream>, Value, Value)> {
-    let mut ws = ws::accept(stream, st.port, Arc::new(st.cfg.allowed_origins.clone()), st.cfg.max_frame_bytes).await.ok()?;
+/// The handshake and `hello`. The answer is returned, not sent: the caller installs the link first, so that a
+/// call made the moment the page sees the answer finds the page connected.
+async fn authenticate(stream: TcpStream, st: &State) -> Option<(WebSocketStream<TcpStream>, String, Value)> {
+    let mut ws =
+        ws::accept(stream, st.port, Arc::new(st.cfg.allowed_origins.clone()), st.cfg.max_frame_bytes).await.ok()?;
     let first = ws::recv_text(&mut ws).await.ok().flatten()?;
     if first.len() > 16 * 1024 {
         reject(&mut ws, None, RpcError::new(NOT_AUTHENTICATED, "the first frame must be a small `hello`")).await;
@@ -319,7 +328,8 @@ async fn authenticate(stream: TcpStream, st: &State) -> Option<(WebSocketStream<
     }
     match rpc::parse(&first) {
         Ok(Incoming::Request { id, method, params }) if method == "hello" => {
-            let p: HelloParams = serde_json::from_value(params).unwrap_or(HelloParams { token: String::new(), page: Value::Null });
+            let p: HelloParams =
+                serde_json::from_value(params).unwrap_or(HelloParams { token: String::new(), page: Value::Null });
             let Some(granted) = grant(st, &p.token) else {
                 let why = "the token is wrong or was already used. Ask for a new pairing link: restart the relay, or reload the tab if it was paired before";
                 reject(&mut ws, Some(&id), RpcError::new(UNAUTHORIZED, why)).await;
@@ -335,8 +345,7 @@ async fn authenticate(stream: TcpStream, st: &State) -> Option<(WebSocketStream<
                 "calls": ["execute", "batch", "commands", "describe", "recent", "state", "ping"],
                 "limits": { "max_frame_bytes": st.cfg.max_frame_bytes },
             });
-            ws.send(Message::text(rpc::response_ok(&id, &hello))).await.ok()?;
-            Some((ws, hello, p.page))
+            Some((ws, rpc::response_ok(&id, &hello), p.page))
         }
         other => {
             let id = match &other {
@@ -344,14 +353,20 @@ async fn authenticate(stream: TcpStream, st: &State) -> Option<(WebSocketStream<
                 Err(m) => m.id.clone(),
                 _ => None,
             };
-            reject(&mut ws, id.as_ref(), RpcError::new(NOT_AUTHENTICATED, "not authenticated: the first message must be `hello` with the token")).await;
+            reject(
+                &mut ws,
+                id.as_ref(),
+                RpcError::new(NOT_AUTHENTICATED, "not authenticated: the first message must be `hello` with the token"),
+            )
+            .await;
             None
         }
     }
 }
 
 async fn serve_page(stream: TcpStream, st: Arc<State>) {
-    let Ok(Some((mut ws, _hello, page))) = tokio::time::timeout(st.cfg.auth_deadline, authenticate(stream, &st)).await else {
+    let Ok(Some((mut ws, answer, page))) = tokio::time::timeout(st.cfg.auth_deadline, authenticate(stream, &st)).await
+    else {
         return;
     };
     let (tx, mut out_rx) = mpsc::unbounded_channel::<String>();
@@ -359,6 +374,10 @@ async fn serve_page(stream: TcpStream, st: Arc<State>) {
     // A new page replaces the old link; the old task notices its channel closed.
     let previous = lock(&st.link).replace(Link { tx: tx.clone(), pending: pending.clone(), page });
     drop(previous);
+    if ws.send(Message::text(answer)).await.is_err() {
+        lock(&st.link).take_if(|l| l.tx.same_channel(&tx));
+        return;
+    }
     loop {
         tokio::select! {
             frame = ws::recv_text(&mut ws) => match frame {

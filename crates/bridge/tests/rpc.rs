@@ -103,7 +103,10 @@ fn a_batch_is_atomic_and_a_failed_step_is_reported() {
     runtime().block_on(async {
         let mut c = connect(shell.server().port()).await;
         let ok = c
-            .call("batch", json!({ "steps": [ { "id": "view.zoom_in" }, { "id": "view.pan", "args": { "dx": 5, "dy": 5 } } ] }))
+            .call(
+                "batch",
+                json!({ "steps": [ { "id": "view.zoom_in" }, { "id": "view.pan", "args": { "dx": 5, "dy": 5 } } ] }),
+            )
             .await
             .expect("batch");
         assert_eq!(ok["completed"], 2, "{ok}");

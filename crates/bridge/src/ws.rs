@@ -30,7 +30,8 @@ pub async fn accept(
     #[allow(clippy::result_large_err)]
     let check = move |req: &Request, resp: Response| -> Result<Response, ErrorResponse> {
         let header = |name: &str| req.headers().get(name).and_then(|v| v.to_str().ok());
-        let verdict = guard::check_host(header("host"), port).and_then(|()| guard::check_origin(header("origin"), &allowed_origins));
+        let verdict = guard::check_host(header("host"), port)
+            .and_then(|()| guard::check_origin(header("origin"), &allowed_origins));
         match verdict {
             Ok(()) => Ok(resp),
             Err(why) => {

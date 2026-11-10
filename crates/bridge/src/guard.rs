@@ -86,9 +86,18 @@ mod tests {
         assert!(check_host(Some("127.0.0.1:4000"), 4000).is_ok());
         assert!(check_host(Some("localhost:4000"), 4000).is_ok());
         assert!(check_host(Some("LocalHost:4000"), 4000).is_ok());
-        for bad in [None, Some(""), Some("127.0.0.1"), Some("127.0.0.1:4001"), Some("evil.com:4000"),
-            Some("127.0.0.1.evil.com:4000"), Some("[::1]:4000"), Some("0.0.0.0:4000"), Some("localhost.evil.com:4000"),
-            Some("127.0.0.1:4000, evil.com")] {
+        for bad in [
+            None,
+            Some(""),
+            Some("127.0.0.1"),
+            Some("127.0.0.1:4001"),
+            Some("evil.com:4000"),
+            Some("127.0.0.1.evil.com:4000"),
+            Some("[::1]:4000"),
+            Some("0.0.0.0:4000"),
+            Some("localhost.evil.com:4000"),
+            Some("127.0.0.1:4000, evil.com"),
+        ] {
             assert!(check_host(bad, 4000).is_err(), "{bad:?}");
         }
     }
@@ -96,13 +105,32 @@ mod tests {
     #[test]
     fn origin_rules() {
         let own = vec!["https://drafft.ink".to_owned()];
-        for ok in [None, Some("https://drafft.ink"), Some("https://DRAFFT.ink"), Some("http://localhost:8080"),
-            Some("http://127.0.0.1:3030"), Some("https://localhost"), Some("http://[::1]:5173")] {
+        for ok in [
+            None,
+            Some("https://drafft.ink"),
+            Some("https://DRAFFT.ink"),
+            Some("http://localhost:8080"),
+            Some("http://127.0.0.1:3030"),
+            Some("https://localhost"),
+            Some("http://[::1]:5173"),
+        ] {
             assert!(check_origin(ok, &own).is_ok(), "{ok:?}");
         }
-        for bad in ["null", "https://evil.com", "https://drafft.ink.evil.com", "http://localhost.evil.com",
-            "http://127.0.0.1@evil.com", "http://127.0.0.1:80/evil", "file://", "http://localhost:abc",
-            "ftp://localhost", "http://", "", "https://drafft.ink:8443", "http://evil.com:80#localhost"] {
+        for bad in [
+            "null",
+            "https://evil.com",
+            "https://drafft.ink.evil.com",
+            "http://localhost.evil.com",
+            "http://127.0.0.1@evil.com",
+            "http://127.0.0.1:80/evil",
+            "file://",
+            "http://localhost:abc",
+            "ftp://localhost",
+            "http://",
+            "",
+            "https://drafft.ink:8443",
+            "http://evil.com:80#localhost",
+        ] {
             assert!(check_origin(Some(bad), &own).is_err(), "{bad:?}");
         }
         assert!(check_origin(Some("https://drafft.ink"), &[]).is_err());

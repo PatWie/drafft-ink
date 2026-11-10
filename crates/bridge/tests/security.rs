@@ -52,7 +52,9 @@ fn a_call_before_hello_is_refused_and_the_connection_closes() {
     let shell = start(config());
     runtime().block_on(async {
         let (mut ws, _) = connect_async(url(shell.server().port())).await.expect("upgrade");
-        ws.send(Message::text(r#"{"jsonrpc":"2.0","id":1,"method":"execute","params":{"id":"view.get"}}"#)).await.expect("send");
+        ws.send(Message::text(r#"{"jsonrpc":"2.0","id":1,"method":"execute","params":{"id":"view.get"}}"#))
+            .await
+            .expect("send");
         let Some(Ok(Message::Text(t))) = ws.next().await else { panic!("no answer") };
         let v: serde_json::Value = serde_json::from_str(t.as_str()).expect("json");
         assert_eq!(v["error"]["code"], NOT_AUTHENTICATED);
@@ -88,7 +90,8 @@ fn a_connection_that_never_finishes_the_upgrade_is_cut_too() {
         let mut s = tokio::net::TcpStream::connect(("127.0.0.1", shell.server().port())).await.expect("connect");
         s.write_all(b"GET / HTTP/1.1\r\nHost: 127.0.0.1\r\n").await.expect("partial request");
         let mut buf = [0u8; 16];
-        let n = tokio::time::timeout(Duration::from_secs(3), s.read(&mut buf)).await.expect("closed in time").unwrap_or(0);
+        let n =
+            tokio::time::timeout(Duration::from_secs(3), s.read(&mut buf)).await.expect("closed in time").unwrap_or(0);
         assert_eq!(n, 0);
     });
 }
@@ -125,7 +128,13 @@ fn a_host_header_that_is_not_this_loopback_port_is_refused() {
     let shell = start(config());
     runtime().block_on(async {
         let port = shell.server().port();
-        for host in ["evil.example", &format!("evil.example:{port}"), &format!("127.0.0.1:{}", port.wrapping_add(1)), "127.0.0.1", ""] {
+        for host in [
+            "evil.example",
+            &format!("evil.example:{port}"),
+            &format!("127.0.0.1:{}", port.wrapping_add(1)),
+            "127.0.0.1",
+            "",
+        ] {
             let line = raw_upgrade(port, host, None).await;
             assert!(line.contains("403"), "{host:?}: {line}");
         }

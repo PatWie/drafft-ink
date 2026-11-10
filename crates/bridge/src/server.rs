@@ -26,7 +26,7 @@ use tokio_tungstenite::tungstenite::Message;
 use tokio_tungstenite::tungstenite::protocol::CloseFrame;
 use tokio_tungstenite::tungstenite::protocol::frame::coding::CloseCode;
 
-use crate::core::{hello_result, SESSION_METHODS};
+use crate::core::{SESSION_METHODS, hello_result};
 use crate::files::{self, TokenFile};
 use crate::guard;
 use crate::host::{BridgeHost, EventSink, Job, JobSender, Waker, channel};
@@ -164,7 +164,8 @@ impl BridgeServer {
         let sink: Arc<dyn EventSink> = events.clone();
         let (jobs, host) = channel(waker, Some(sink));
         let hello = hello_result(&Registry::global(), cfg.max_frame_bytes);
-        let shared = Arc::new(Shared { token: token.clone(), port, cfg, jobs, events, hello, open: AtomicUsize::new(0) });
+        let shared =
+            Arc::new(Shared { token: token.clone(), port, cfg, jobs, events, hello, open: AtomicUsize::new(0) });
         let (shutdown_tx, shutdown_rx) = oneshot::channel();
         let thread = std::thread::Builder::new()
             .name("drafftink-bridge".to_owned())
@@ -307,13 +308,14 @@ where
 
 /// The handshake and `hello`, all inside the auth deadline.
 async fn authenticate(stream: TcpStream, sh: &Shared) -> Option<WebSocketStream<TcpStream>> {
-    let mut ws = match ws::accept(stream, sh.port, Arc::new(sh.cfg.allowed_origins.clone()), sh.cfg.max_frame_bytes).await {
-        Ok(ws) => ws,
-        Err(e) => {
-            log::debug!("bridge: handshake failed: {e}");
-            return None;
-        }
-    };
+    let mut ws =
+        match ws::accept(stream, sh.port, Arc::new(sh.cfg.allowed_origins.clone()), sh.cfg.max_frame_bytes).await {
+            Ok(ws) => ws,
+            Err(e) => {
+                log::debug!("bridge: handshake failed: {e}");
+                return None;
+            }
+        };
     let first = match ws::recv_text(&mut ws).await {
         Ok(Some(t)) => t,
         Ok(None) => return None,
@@ -349,7 +351,8 @@ async fn authenticate(stream: TcpStream, sh: &Shared) -> Option<WebSocketStream<
                 Err(m) => m.id.clone(),
                 _ => None,
             };
-            let err = RpcError::new(NOT_AUTHENTICATED, "not authenticated: the first message must be `hello` with the token");
+            let err =
+                RpcError::new(NOT_AUTHENTICATED, "not authenticated: the first message must be `hello` with the token");
             let _ = send(&mut ws, rpc::response_err(id.as_ref(), &err)).await;
             close(&mut ws, CloseCode::Policy, "hello first").await;
             None
@@ -416,7 +419,10 @@ async fn handle_frame(sh: &Shared, subscribed: &mut bool, text: &str) -> (Option
         Err(e) => rpc::response_err(Some(&id), &e),
     };
     match method.as_str() {
-        "hello" => (Some(reply(Err(RpcError::new(NOT_AUTHENTICATED, "already authenticated: `hello` is only sent once")))), true),
+        "hello" => (
+            Some(reply(Err(RpcError::new(NOT_AUTHENTICATED, "already authenticated: `hello` is only sent once")))),
+            true,
+        ),
         "subscribe" => {
             if !*subscribed {
                 *subscribed = true;
@@ -459,7 +465,9 @@ async fn handle_frame(sh: &Shared, subscribed: &mut bool, text: &str) -> (Option
         other => {
             let e = RpcError::new(
                 rpc::METHOD_NOT_FOUND,
-                format!("unknown method `{other}`. Methods: hello, execute, batch, commands, describe, recent, state, ping, subscribe, unsubscribe"),
+                format!(
+                    "unknown method `{other}`. Methods: hello, execute, batch, commands, describe, recent, state, ping, subscribe, unsubscribe"
+                ),
             );
             (Some(reply(Err(e))), true)
         }

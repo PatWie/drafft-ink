@@ -33,6 +33,7 @@ pub async fn raw_upgrade(port: u16, host: &str, origin: Option<&str>) -> String 
     );
     s.write_all(req.as_bytes()).await.expect("write");
     let mut buf = vec![0u8; 1024];
-    let n = tokio::time::timeout(Duration::from_secs(3), s.read(&mut buf)).await.expect("answer in time").expect("read");
+    let n =
+        tokio::time::timeout(Duration::from_secs(3), s.read(&mut buf)).await.expect("answer in time").expect("read");
     String::from_utf8_lossy(buf.get(..n).unwrap_or_default()).lines().next().unwrap_or("").to_owned()
 }

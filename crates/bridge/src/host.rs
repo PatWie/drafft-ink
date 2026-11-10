@@ -65,7 +65,10 @@ impl JobSender {
                 Ok(())
             }
             Err(TrySendError::Full(j)) => Err((
-                RpcError::new(BUSY, "the app has too many requests waiting. Wait for the earlier answers, then try again"),
+                RpcError::new(
+                    BUSY,
+                    "the app has too many requests waiting. Wait for the earlier answers, then try again",
+                ),
                 j.reply,
             )),
             Err(TrySendError::Disconnected(j)) => {

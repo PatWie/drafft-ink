@@ -45,7 +45,8 @@ impl FakePage {
                 rt.block_on(async move {
                     let opts = ConnectOpts { origin, ..ConnectOpts::default() };
                     let page = json!({ "version": env!("CARGO_PKG_VERSION"), "agent": "fake page" });
-                    let hello = BridgeClient::connect_with_hello(&url, &opts, json!({ "token": token, "page": page })).await;
+                    let hello =
+                        BridgeClient::connect_with_hello(&url, &opts, json!({ "token": token, "page": page })).await;
                     let mut client = match hello {
                         Ok(c) => c,
                         Err(e) => {

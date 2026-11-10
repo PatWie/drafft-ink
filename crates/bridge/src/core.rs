@@ -115,7 +115,9 @@ pub fn dispatch(s: &mut Session, method: &str, params: &Value) -> Result<Value, 
         "state" => run(s, "engine.state", json!({})),
         other => Err(RpcError::new(
             METHOD_NOT_FOUND,
-            format!("unknown method `{other}`. Methods: hello, execute, batch, commands, describe, recent, state, ping, subscribe, unsubscribe"),
+            format!(
+                "unknown method `{other}`. Methods: hello, execute, batch, commands, describe, recent, state, ping, subscribe, unsubscribe"
+            ),
         )),
     }
 }

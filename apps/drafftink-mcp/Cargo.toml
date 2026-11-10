@@ -5,8 +5,36 @@ edition.workspace = true
 license.workspace = true
 rust-version.workspace = true
 publish = false
+description = "MCP server for drafft.ink: headless, attached to the desktop app, or relayed to the web page."
+
+[lib]
+name = "drafftink_mcp"
+path = "src/lib.rs"
+
+[[bin]]
+name = "drafftink-mcp"
+path = "src/main.rs"
 
 [dependencies]
+drafftink-bridge = { path = "../../crates/bridge" }
+drafftink-engine = { path = "../../crates/engine" }
+drafftink-scene = { path = "../../crates/scene" }
+# The official Rust MCP SDK. No default features: the `#[tool]` macros are not used, because the tool list is
+# generated from the command registry at run time.
+rmcp = { version = "3.9", default-features = false, features = ["server", "transport-io"] }
+tokio = { workspace = true, features = ["io-util", "rt-multi-thread", "macros", "time", "sync", "net"] }
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+clap.workspace = true
+log.workspace = true
+env_logger.workspace = true
+base64.workspace = true
+getrandom = "0.3"
+
+[dev-dependencies]
+tempfile.workspace = true
+drafftink-engine = { path = "../../crates/engine" }
 
 [lints]
 workspace = true

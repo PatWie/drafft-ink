@@ -177,7 +177,11 @@ impl BridgeClient {
 
     /// Plays the other side: answers the requests that the peer sends (the relay calling a page) until `stop`
     /// fires or the connection ends. `handle` gets each frame and returns the frame to send back, if any.
-    pub async fn serve(&mut self, mut handle: impl FnMut(&str) -> Option<String>, mut stop: tokio::sync::oneshot::Receiver<()>) {
+    pub async fn serve(
+        &mut self,
+        mut handle: impl FnMut(&str) -> Option<String>,
+        mut stop: tokio::sync::oneshot::Receiver<()>,
+    ) {
         loop {
             tokio::select! {
                 _ = &mut stop => break,
@@ -216,11 +220,27 @@ mod tests {
 
     #[test]
     fn only_loopback_urls_are_allowed() {
-        for ok in ["ws://127.0.0.1:4000", "ws://127.0.0.1:4000/", "ws://localhost:4000/x", "ws://[::1]:9/", "ws://LOCALHOST:1"] {
+        for ok in [
+            "ws://127.0.0.1:4000",
+            "ws://127.0.0.1:4000/",
+            "ws://localhost:4000/x",
+            "ws://[::1]:9/",
+            "ws://LOCALHOST:1",
+        ] {
             assert!(is_loopback_url(ok), "{ok}");
         }
-        for bad in ["wss://127.0.0.1:1", "http://127.0.0.1", "ws://example.com:1", "ws://127.0.0.1.evil.com:1/",
-            "ws://127.0.0.1@evil.com/", "ws://localhost.evil.com", "ws://0.0.0.0:1", "ws://10.0.0.1:1", "", "127.0.0.1:1"] {
+        for bad in [
+            "wss://127.0.0.1:1",
+            "http://127.0.0.1",
+            "ws://example.com:1",
+            "ws://127.0.0.1.evil.com:1/",
+            "ws://127.0.0.1@evil.com/",
+            "ws://localhost.evil.com",
+            "ws://0.0.0.0:1",
+            "ws://10.0.0.1:1",
+            "",
+            "127.0.0.1:1",
+        ] {
             assert!(!is_loopback_url(bad), "{bad}");
         }
     }

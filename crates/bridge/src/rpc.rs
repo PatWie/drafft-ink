@@ -124,8 +124,9 @@ fn usable_id(v: &Value) -> bool {
 /// Parses one frame.
 pub fn parse(text: &str) -> Result<Incoming, Malformed> {
     let bad = |id: Option<Value>, code: i64, msg: &str| Malformed { id, error: RpcError::new(code, msg) };
-    let value: Value = serde_json::from_str(text)
-        .map_err(|e| bad(None, PARSE_ERROR, &format!("the frame is not valid JSON ({e}). Send one JSON-RPC 2.0 object per frame")))?;
+    let value: Value = serde_json::from_str(text).map_err(|e| {
+        bad(None, PARSE_ERROR, &format!("the frame is not valid JSON ({e}). Send one JSON-RPC 2.0 object per frame"))
+    })?;
     let Some(obj) = value.as_object() else {
         return Err(bad(
             None,
@@ -145,7 +146,9 @@ pub fn parse(text: &str) -> Result<Incoming, Malformed> {
         let params = match obj.get("params") {
             None | Some(Value::Null) => json!({}),
             Some(p) if p.is_object() => p.clone(),
-            Some(_) => return Err(bad(echo_id, INVALID_PARAMS, "`params` must be an object (by-name parameters only)")),
+            Some(_) => {
+                return Err(bad(echo_id, INVALID_PARAMS, "`params` must be an object (by-name parameters only)"));
+            }
         };
         return match id {
             None => Ok(Incoming::Notification { method: method.to_owned(), params }),
@@ -201,10 +204,22 @@ mod tests {
 
     #[test]
     fn hostile_frames_are_errors_not_panics() {
-        for t in ["", "{", "[]", "[{}]", "null", "1", "\"x\"", r#"{"jsonrpc":"1.0"}"#, r#"{"jsonrpc":"2.0"}"#,
-            r#"{"jsonrpc":"2.0","method":5}"#, r#"{"jsonrpc":"2.0","id":null,"method":"x"}"#,
-            r#"{"jsonrpc":"2.0","id":{},"method":"x"}"#, r#"{"jsonrpc":"2.0","id":1,"method":"x","params":[1]}"#,
-            r#"{"jsonrpc":"2.0","id":1,"result":1,"error":{}}"#] {
+        for t in [
+            "",
+            "{",
+            "[]",
+            "[{}]",
+            "null",
+            "1",
+            "\"x\"",
+            r#"{"jsonrpc":"1.0"}"#,
+            r#"{"jsonrpc":"2.0"}"#,
+            r#"{"jsonrpc":"2.0","method":5}"#,
+            r#"{"jsonrpc":"2.0","id":null,"method":"x"}"#,
+            r#"{"jsonrpc":"2.0","id":{},"method":"x"}"#,
+            r#"{"jsonrpc":"2.0","id":1,"method":"x","params":[1]}"#,
+            r#"{"jsonrpc":"2.0","id":1,"result":1,"error":{}}"#,
+        ] {
             assert!(parse(t).is_err(), "{t}");
         }
     }
