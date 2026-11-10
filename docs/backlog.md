@@ -8,3 +8,7 @@ Features decided but not yet assigned to a phase agent.
 - Engine: show `LoroStore::blocked_by_schema()` as a read-only status.
 - Perf: `edit::group::Relations::build` is one pass over all live elements per call; gesture frames at 100k elements need a cached relation index.
 - Web: hovering over empty canvas costs ~9% CPU in Chromium with 0 frames drawn (event handling); investigate in the perf phase.
+- Dedupe: `edit::paste::text_element` duplicates `edit::create::text_element`; `Bytes`/`At` helpers in cmd/image.rs and cmd/clipboard/common.rs should be shared with doc.drop.
+- `element.relabel` labels use the default text style, not the tool's text defaults (`text_bind::relabel` takes no font).
+- `image.insert` validates header and size only; damaged pixel data fails at render time.
+- Snap types: `Snap` lives in cmd/arrow.rs but element.move/resize need the same type; move to a shared module.
