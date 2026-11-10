@@ -13,3 +13,4 @@ Features decided but not yet assigned to a phase agent.
 - `image.insert` validates header and size only; damaged pixel data fails at render time.
 - Snap types: `Snap` lives in cmd/arrow.rs but element.move/resize need the same type; move to a shared module.
 - text.edit_end style is a local StyleProps subset and new text uses TextStyle::default(): switch to edit::style (SEAM(f-style) markers in engine session.rs).
+- collab: auth token setting/arg (auth_token always None today); snapshot import blocks the polling thread (move to a worker on native, chunked on web).
