@@ -4,15 +4,6 @@
 arrange.align
 arrange.distribute
 arrange.z_order
-arrow.add_point
-arrow.bind
-arrow.delete_point
-arrow.edit_points
-arrow.move_point
-arrow.reroute
-arrow.set_head
-arrow.set_type
-arrow.unbind
 clipboard.copy
 clipboard.copy_as
 clipboard.copy_style

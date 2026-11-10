@@ -6,12 +6,15 @@
 //! Every mutating function takes a transaction (`T: SceneTx`) so the caller decides the commit
 //! boundary (one commit per command or batch). Module ownership (one agent each while porting):
 //! - `binding`, `elbow`, `linear`: arrow bindings, elbow routing, line/arrow point editing.
+//! - `arrow`: operations of the `arrow` commands that combine them (bind an end to a named target, reroute,
+//!   snapping of a dragged point).
 //! - `group`, `frame`, `zorder`, `arrange`, `transform`, `lifecycle`: groups, frames, z-order,
 //!   align/distribute/flip, move/resize/rotate of selections, duplicate/delete/lock rules.
 //! - `text_bind`, `flowchart`, `layout`, `query`: bound text, flowchart helpers, auto-layout for
 //!   `diagram.create`, element queries and the document outline.
 
 pub mod arrange;
+pub mod arrow;
 pub mod binding;
 pub mod elbow;
 pub mod flowchart;
