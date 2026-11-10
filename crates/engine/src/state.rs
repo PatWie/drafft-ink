@@ -9,7 +9,7 @@ use drafftink_geom::kurbo::Point;
 use drafftink_scene::{ElementId, GroupId, Style};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
-use serde_json::{Value, json};
+use serde_json::Value;
 
 use crate::store::TabDoc;
 
@@ -216,36 +216,9 @@ pub struct Settings {
 }
 
 impl Default for Settings {
+    /// Every key at its default (the table of keys is in `cmd/settings/keys.rs`).
     fn default() -> Self {
-        let defaults = [
-            ("view.grid_style", json!("lines")),
-            ("snap.grid", json!(false)),
-            ("snap.smart_guides", json!(false)),
-            ("snap.angle", json!(false)),
-            ("snap.angle_step", json!(15)),
-            ("export.scale", json!(2)),
-            ("export.padding", json!(20)),
-            ("export.background", json!(true)),
-            ("export.dark", json!(false)),
-            ("export.embed_scene", json!(true)),
-            ("doc.default_background", json!("#ffffff")),
-            ("input.nudge_step", json!(20)),
-            ("input.box_select", json!("overlap")),
-            ("arrow.binding", json!(true)),
-            ("arrow.midpoint_snap", json!(false)),
-            ("frame.clip", json!(true)),
-            ("frame.show_names", json!(true)),
-            ("frame.outline", json!(true)),
-            ("history.depth", json!(50)),
-            ("autosave.enabled", json!(true)),
-            ("autosave.interval_s", json!(5)),
-            ("clipboard.excalidraw_compat", json!(true)),
-            ("collab.server_url", json!("ws://localhost:3030/ws")),
-            ("collab.user_name", json!("")),
-            ("collab.user_color", json!("#6366f1")),
-            ("doc.recent", json!([])),
-        ];
-        Self { values: defaults.into_iter().map(|(k, v)| (k.to_owned(), v)).collect(), revision: 0 }
+        Self { values: crate::cmd::settings::keys::defaults(), revision: 0 }
     }
 }
 
@@ -287,7 +260,7 @@ impl Settings {
 
     /// The configured undo depth.
     pub fn history_depth(&self) -> usize {
-        usize::try_from(self.u64_or("history.depth", 50)).unwrap_or(50).clamp(1, 1000)
+        usize::try_from(self.u64_or("history.depth", 200)).unwrap_or(200).clamp(1, 1000)
     }
 }
 

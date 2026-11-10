@@ -93,7 +93,7 @@ Facts that matter beyond the obvious:
 Registry tests (in `crates/engine/src/registry_tests.rs`, all run in `cargo xtask ci`):
 
 1. ids are unique, match `^[a-z]+\.[a-z_]+$`, and the prefix equals `family`.
-2. Every fact above is declared. `reads_only` implies `mutates` is empty and `undo = NoUndo`. `mutates` containing `Doc` implies `view_only = Refused`, and implies `undo != NoUndo` except for the commands that replace or stream the document: `doc.new`, `doc.open`, `doc.show_intro`, `collab.join_room`, `history.undo`, `history.redo`, `gesture.begin`, `gesture.update`, `gesture.cancel`. `tool.cancel` is on the list for both rules because one of its rungs commits a text edit (as `text.edit_end` does) and another cancels a gesture, and it must keep working in view-only mode. For the view-only rule alone, `gesture.update`, `gesture.end` and `gesture.cancel` are also exempt: a gesture cannot start in view-only mode, and entering it cancels a running gesture, so a gesture command never runs in view-only mode on its own. The exception list is a constant in the test, so a new entry needs a reviewer.
+2. Every fact above is declared. `reads_only` implies `mutates` is empty and `undo = NoUndo`. `mutates` containing `Doc` implies `view_only = Refused`, and implies `undo != NoUndo` except for the commands that replace or stream the document: `doc.new`, `doc.open`, `doc.show_intro`, `collab.join_room`, `history.undo`, `history.redo`, `gesture.begin`, `gesture.update`, `gesture.cancel`. `tool.cancel` is on the list for the view-only rule because it must keep working in view-only mode (one of its rungs commits a text edit, as `text.edit_end` does, and another cancels a gesture); it is `Undoable` (a text edit it commits is one undo step), so the undo exception in the test is not needed for it. For the view-only rule alone, `gesture.update`, `gesture.end` and `gesture.cancel` are also exempt: a gesture cannot start in view-only mode, and entering it cancels a running gesture, so a gesture command never runs in view-only mode on its own. The exception list is a constant in the test, so a new entry needs a reviewer.
 3. Titles are unique. Default shortcuts do not collide within the same `when` scope.
 4. Every `Refusal` code a command can return is in the catalog of §1.5 (checked by `refusal_codes_are_catalogued`, which scans the specs' declared `refusals: &[&str]` lists).
 5. `hostile_params_never_panic`: every command, with every hostile JSON value for every argument key, never panics and never changes the document when it refuses.
@@ -225,7 +225,7 @@ A successful command returns a JSON object defined by its `output` schema. Every
 
 - Local, per-peer undo using Loro's `UndoManager`. One `execute` or one batch or one gesture is one undo step. Undo of a step restores the document and the observed editor state (selection, editing group) as of before the step.
 - Undo is a new edit for collaborators and travels the same CRDT path as any edit. This fixes the old divergence where only the UI path broadcast an undo.
-- Depth is the `history.depth` setting (default 50, as in the old app). Redo clears only when a new document change is made, not when the selection changes.
+- Depth is the `history.depth` setting (default 200, range 10 to 1000; decision §9 item 3). Redo clears only when a new document change is made, not when the selection changes.
 - Selection changes alone never create a step (clicking around must not fill the history). The next document step records the selection from before and after it, so undo restores what was selected.
 - Property changes (style, font, flip, align, z-order) are undoable. In the old app most were not (FIX).
 - A rapid repeat of a command with `coalesce` merges into the previous step.
@@ -394,7 +394,7 @@ A document is the content of a tab. "Dirty" means the document revision differs 
 
 ### 2.2 `tab`: canvas tabs
 
-A tab holds one document with its own selection, camera and history (the old app cleared history on switch and left stale text-edit and gesture state, A:1725; FIX).
+A tab holds one document with its own selection, camera and history (the old app cleared history on switch and left stale text-edit and gesture state, A:1725; FIX). Tab commands never touch the history of the tab they leave. Tabs, their order and the active tab are outside the rollback transaction (§1.7). A tab is named in arguments as a `Tab`: a number is the position shown by `tab.list` (counted from 0), text is a tab id such as `t2`, else a tab name (the first tab with that name). At most 50 tabs are open.
 
 | id | title | undo | keys | source |
 |---|---|---|---|---|
@@ -408,13 +408,29 @@ A tab holds one document with its own selection, camera and history (the old app
 
 | id | args | availability and refusals | effect |
 |---|---|---|---|
-| `tab.new` | `name?: string`, `from: "blank" \| "intro" \| "active" = blank` | `gesture_active` (catalog) while a gesture runs. | Adds a tab after the active one and activates it. A running text edit ends first (committed). |
-| `tab.switch` | `tab: Tab` | `no_such_tab`: "There is no tab `{tab}`. List tabs with `tab.list`." `gesture_active`. | Ends a running text edit (committed), clears hover and linear-editor state, and activates the tab. Does not clone documents. Collab rooms stay bound to their tab. |
-| `tab.close` | `tab?: Tab`, `on_unsaved: OnUnsaved = refuse`, `leave_room: bool = false` | `last_tab`: "The last tab cannot be closed. Open another tab first with `tab.new`, or clear this document with `doc.clear`." `unsaved_changes`. `in_room`: "Tab `{name}` is connected to room {room}. Leave the room first with `collab.leave_room`, or pass leave_room=true." `no_such_tab`. | Closes the tab and activates its right neighbour (the left one if it was last), as the old `close_tab` did. batch: Last when it closes the active tab. |
-| `tab.rename` | `tab?: Tab`, `name: string` | `empty_name` (as `doc.rename`). `no_such_tab`. | Renames that tab's document. One undo step in that tab's history. |
-| `tab.move` | `tab?: Tab`, `to_index: int` | `no_such_tab`. `bad_args` if the index is out of range (message gives the range). | Reorders the tab list. |
-| `tab.duplicate` | `tab?: Tab`, `name?: string` | `no_such_tab`. | Copies the document into a new tab (new document id, not in any room) and activates it. |
-| `tab.list` | none | Always available. | `[{id, index, name, active, dirty, room?}]`. |
+| `tab.new` | `name?: string` (1 to 120 characters after trimming), `from: "blank" \| "intro" \| "active" = blank` | `gesture_active` (catalog) while a gesture runs. Execute: `empty_name` (as `tab.rename`); `too_many_tabs`: "There are already 50 tabs, which is the limit. Close one first with `tab.close`."; `not_supported` (catalog) for from=intro until the built-in intro document ships. | Adds a tab after the active one and activates it. A running text edit ends first (committed). blank: an empty document named "Untitled" with the background of the setting `doc.default_background`. active: a copy of the active tab (content, selection and camera; no history, no room, no save target; dirty when the source is dirty), named "<name> copy". The new tab takes over the viewport size of the tab it was opened from. |
+| `tab.switch` | `tab: Tab` | `no_such_tab`: "There is no tab `{tab}`. List tabs with `tab.list`." `gesture_active`. | Ends a running text edit (committed), leaves the linear point editor of the tab being left, and activates the tab. The tab entered takes over the viewport size. Does not clone documents. Collab rooms stay bound to their tab. Switching to the active tab is Ok with changed=false. Hover is UI state and is cleared by the shell. |
+| `tab.close` | `tab?: Tab`, `on_unsaved: OnUnsaved = refuse`, `leave_room: bool = false` | `last_tab`: "The last tab cannot be closed. Open another tab first with `tab.new`, or clear this document with `doc.clear`." `unsaved_changes` (catalog) when the tab is dirty and on_unsaved is refuse. `in_room`: "Tab `{name}` is connected to room {room}. Leave the room first with `collab.leave_room`, or pass leave_room=true." `no_such_tab`. `bad_args` when on_unsaved=save names a tab that is not the active one. | Closes the tab and activates its right neighbour (the left one if it was last), as the old `close_tab` did; closing another tab keeps the active tab. on_unsaved=save runs `doc.save` on the active tab first. leave_room=true runs `collab.leave_room` first (active tab). batch: Last. |
+| `tab.rename` | `tab?: Tab`, `name: string` | `empty_name`: "The name is empty. Give a name of 1 to 120 characters." (as `doc.rename`); `bad_args` for a name with a control character. `no_such_tab`. | Renames that tab's document (trimmed, cut to 120 characters). One undo step in that tab's history, also when the tab is not the active one. The same name is Ok with changed=false. |
+| `tab.move` | `tab?: Tab`, `to_index: int` | `no_such_tab`. `bad_args` if the index is out of range: "`to_index`: must be a position from 0 to {last}". | Reorders the tab list; the active tab stays the same tab. The same position is Ok with changed=false. |
+| `tab.duplicate` | `tab?: Tab`, `name?: string` | `no_such_tab`. `empty_name`. `too_many_tabs`. | Copies the document into a new tab right after its source (content, selection and camera; new document, no history, not in any room, no save target; dirty when the source is dirty) and activates it. |
+| `tab.list` | none | Always available. | `{tabs: [{id, index, name, active, dirty, room?}]}`. |
+
+#### The workspace record
+
+Decision §9 item 6: the session keeps one workspace record in the `Storage` port and restores all tabs from it. It is written by the engine, not by a command (the shell calls `Session::workspace_tick`, `workspace_next_due_ms` and `flush_workspace`; restoring at start is `Session::restore_workspace`). `doc.autosave` is the command door to the same write (`Session::save_workspace`).
+
+| Part | Where | Content |
+|---|---|---|
+| Index | `Autosave` namespace, key `workspace` | JSON `{format: "drafftink-workspace", schema: 1, saved_ms, active: <tab id number>, tabs: [{id, key, name, dirty, revision, view: {scroll, zoom}, selection: [ids]}]}` |
+| One document per tab | `Autosave` namespace, key `workspace.t<id>` | the native document JSON, as in a saved file |
+
+- History is not saved. A restored tab starts with an empty undo stack, as an opened file does. The viewport size is not saved; the shell reports it with `view.set_viewport`.
+- A save writes only the documents that changed since the last write (by revision and name), then the index, then removes the documents of closed tabs. The index is last, so a crash in between leaves the old index and documents that are at worst newer.
+- Debounce, on the `Clock` port's monotonic time: a write happens when the document has been quiet for 1 second, and in any case no later than `autosave.interval_s` (5) after the first unsaved change. With `autosave.enabled` off nothing is written by the tick or the flush. `workspace_next_due_ms` returns `None` when nothing waits, so an idle session needs no timer. A failed write is retried after a full interval and the reason is in `workspace_error`.
+- A change is a different tab list, order or active tab, or per tab a different revision, name or unsaved state. Camera and selection are saved with the next write but do not cause one.
+- Restore reads the index and every tab it names. A tab whose document is missing or damaged is skipped and listed in the report; the others open. With no readable tab the session stays as it was. A restored tab is dirty when it was dirty at the save. A record with a newer `schema` is neither read nor overwritten.
+
 
 ### 2.3 `tool`: tools
 
@@ -426,7 +442,7 @@ Tool changes are never undoable and never touch the document. `tool.set` is the 
 | `tool.lock` | Keep tool active | NoUndo | `Q` | X:LockButton, actions/shortcuts `toolLock`; NEW |
 | `tool.hold` | Hold tool temporarily | NoUndo | `Space` (hold) with tool=hand | X:App.pan.ts; NEW (replaces A:4711 Space as mouse button) |
 | `tool.release` | Release held tool | NoUndo | `Space` (release) | NEW |
-| `tool.cancel` | Cancel | NoUndo | `Esc` | A:5305 |
+| `tool.cancel` | Cancel | Undoable | `Esc` | A:5305 |
 
 Bindings of `tool.set` (keys fire only without Ctrl/Cmd/Alt, and also without Shift; the old app accepted Shift+letter as the tool key, A:5245, which would collide with Shift+H and Shift+V flip):
 
@@ -449,11 +465,11 @@ Bindings of `tool.set` (keys fire only without Ctrl/Cmd/Alt, and also without Sh
 
 | id | args | availability and refusals | effect |
 |---|---|---|---|
-| `tool.set` | `tool: Tool`, `keep_selection?: bool` (default true for select and hand, false for the other tools) | Always available. Execute refuses: `view_only_tool`: "In view-only mode only the select, hand and laser tools are available. Turn view-only off with `view.set_view_only` (on=false)." `gesture_active`. | Ends a running text edit (committed), abandons a half-drawn multi-point line, leaves the linear point editor, then sets the tool. Switching to a drawing tool clears the selection unless keep_selection is true. The highlighter and the freehand tool share one recognizer and differ in defaults (width 12 or more, alpha 128, see `element.create`). |
-| `tool.lock` | `on?: bool` (omitted toggles) | Always available. | Tool lock keeps the drawing tool after an element is created instead of returning to select. Session state, not persisted. Output `{tool_lock}`. |
-| `tool.hold` | `tool: Tool = hand` | `gesture_active`. | Remembers the current tool and activates `tool` until `tool.release`. While held, key repeat is ignored. Used by Space-drag panning. |
+| `tool.set` | `tool: Tool`, `keep_selection?: bool` (default true for select and hand, false for the other tools) | Always available. Execute refuses: `view_only_tool`: "In view-only mode only the select, hand and laser tools are available. Turn view-only off with `view.set_view_only` (on=false)." `gesture_active`. | Ends a running text edit (committed), leaves the linear point editor, then sets the tool. (A half-drawn multi-point line is a draft of the `element` family, which is abandoned there; `tool.set` has no state of its own for it.) Setting the tool that is already active is Ok with changed=false unless a rung above changed something. A held tool (`tool.hold`) stays held; `tool.set` changes the tool that returns. Switching to a drawing tool clears the selection unless keep_selection is true. The highlighter and the freehand tool share one recognizer and differ in defaults (width 12 or more, alpha 128, see `element.create`). |
+| `tool.lock` | `on?: bool` (omitted toggles) | Always available. | Tool lock keeps the drawing tool after an element is created instead of returning to select. Session state, not persisted. Output: the tool state `{tool, active, held, tool_lock}`, as for every `tool.*` command. |
+| `tool.hold` | `tool: Tool = hand` | `gesture_active`. `view_only_tool` (as `tool.set`). | Remembers the current tool and activates `tool` until `tool.release`. The same hold again (key repeat) is Ok with changed=false. A hold of another tool replaces the held tool. Used by Space-drag panning. |
 | `tool.release` | none | Always available. A release without a hold is not an error: Ok with changed=false. | Restores the tool that was active before `tool.hold`. |
-| `tool.cancel` | `all: bool = true` | Always available (a stray Esc is Ok with changed=false). | One Esc ladder, in this order, each rung only if applicable: cancel the running gesture (`gesture.cancel`); end a text edit (committed); leave the linear point editor; leave the editing group (`group.exit`); clear the selection; switch to the select tool (and clear tool lock). With all=true every rung runs (the old app's single Esc, A:5305). With all=false only the first applicable rung runs, which is Excalidraw's step-by-step Esc. Output lists the rungs that ran. The text-edit rung commits the edit (one undo step, as `text.edit_end`), which is why this command is on the exception list of §1.2 test 2. It runs in view-only mode too, because it is how a user gets out of a state. The UI closes open dialogs and popovers first (verb `ui.close_overlays`); that is not part of this command. |
+| `tool.cancel` | `all: bool = false` | Always available (a stray Esc is Ok with changed=false). | One Esc ladder, in this order, each rung only if applicable: cancel the running gesture (`gesture.cancel`); end a text edit (committed, as `text.edit_end`); leave the linear point editor; leave the editing group (`group.exit`); clear the selection (`selection.clear`); switch to the select tool and turn tool lock off. With all=false (the default, decision §9 item 5) only the first applicable rung runs: Excalidraw's step-by-step Esc. With all=true every applicable rung runs (the old app's single Esc, A:5305). Output `{changed, rungs}` lists the rungs that ran, by name: `gesture`, `text_edit`, `point_editor`, `group`, `selection`, `tool`. The text-edit rung changes the document, so this command is Undoable: a text edit it commits is one undo step labelled "Cancel" (a call that changes no document pushes none). It runs in view-only mode too, because it is how a user gets out of a state; that, the document change and the gesture rung put it on the exception list of §1.2 test 2. A rung that is a command (`group.exit`, `selection.clear`, `text.edit_end`) runs through `run_nested` when its family is registered. The UI closes open dialogs and popovers first (verb `ui.close_overlays`); that is not part of this command. |
 
 ### 2.4 `element`: create, delete, move, resize, rotate, lock
 
@@ -820,11 +836,15 @@ Settings live in the `Storage` settings namespace and are loaded at start (FIX: 
 
 | id | args | availability and refusals | effect |
 |---|---|---|---|
-| `settings.get` | `key?: string` | Execute: `unknown_setting` (below). | One value, or all `{key: value}`. |
-| `settings.set` | `key: string`, `value: any` | Execute: `unknown_setting`: "Unknown setting `{key}`. Did you mean `{a}`? List settings with `settings.get`."; `bad_args`: "Setting `{key}` must be {expected}, and got {got}." | Validates against the key's type and range and persists. |
-| `settings.toggle` | `key: string` | Execute: `unknown_setting`; `bad_args`: "Setting `{key}` is not an on/off setting. Use `settings.set` or `settings.cycle`." | Flips a boolean setting. |
+| `settings.get` | `key?: string` | Execute: `unknown_setting` (below). | Without `key`: `{settings: {key: value}}` for every setting. With `key`: the same for that one key, plus `default`, `accepts` (what the key takes, as a phrase) and `summary`. |
+| `settings.set` | `key: string`, `value: any` | Execute: `unknown_setting`: "Unknown setting `{key}`. Did you mean `{a}`? List settings with `settings.get`." (the "Did you mean" part only when a key is close); `bad_args`: "Setting `{key}` must be {expected}, and got {got}." (`{expected}` is the phrase `settings.get` returns as `accepts`); `bad_args` for a read-only key (`doc.recent`): "Setting `{key}` is read only: `doc.open` and `doc.save` maintain it. Read it with `settings.get`." | Validates against the key's type and range (§5), applies the value to the session at once and queues the write to `Storage`. The same value is Ok with changed=false and writes nothing. Output `{changed, key, value, previous, default}`. Applying live: most settings are read where they are used; `style.defaults` also rebuilds the style of new elements (`tool.style_defaults`); `history.depth` is read at every commit. A session without a storage port keeps the value for the session. |
+| `settings.toggle` | `key: string` | Execute: `unknown_setting`; `bad_args`: "Setting `{key}` is not an on/off setting. Use `settings.set` or `settings.cycle`." | Flips a boolean setting; output as `settings.set`. |
 | `settings.cycle` | `key: string`, `step: int = 1` | Execute: `unknown_setting`; `bad_args`: "Setting `{key}` has no fixed list of values. Use `settings.set`." | Moves to the next value of an enumerated setting, wrapping. Grid style order: none, lines, horizontal_lines, crosses, dots, none (the old `GridStyle::next`). |
-| `settings.reset` | `key?: string`, `all: bool = false` | Execute: `bad_args`: "Give either `key` or all=true." | Restores defaults. Never changes the document. |
+| `settings.reset` | `key?: string`, `all: bool = false` | Execute: `unknown_setting`; `bad_args`: "Give either `key` or all=true." (neither or both given); `bad_args` for a read-only key. | Restores defaults and stores them. all=true leaves read-only keys alone. Output `{changed, reset: [keys that changed]}`. Never changes the document. |
+
+#### The stored record
+
+The settings are one JSON record in the `Settings` namespace of `Storage`, key `settings`: `{"schema": 1, "values": {"snap.grid": true, "theme": "dark"}}`. `values` holds only the keys that differ from their default, so a default that changes in a later release reaches everyone who never chose a value. `Session::load_settings` reads it once at start (not a command). A value that fails its check, or a key this version does not know, is skipped and listed in the report; a damaged record is reported and replaced by the next change. A record with a newer `schema` is read as far as it validates and is never overwritten, so a downgrade cannot destroy what a newer version stored. A write that empties `values` deletes the record.
 
 ### 2.18 `library`: the shape library
 
@@ -980,7 +1000,7 @@ The old app decided these with dialogs, confirm boxes, hidden modifiers or hard-
 | Alt held: resize from the centre, duplicate on drag | resize, move | `from_center`, `duplicate` | off | |
 | Shift held on click, marquee | selection | `mode: replace \| add \| remove \| toggle` | replace | |
 | Ctrl held on click: pick inside a group | selection | `deep: bool` | false | |
-| Esc | `Esc` | `tool.cancel(all)` | true | The old single Esc did everything. |
+| Esc | `Esc` | `tool.cancel(all)` | false | Excalidraw's step-by-step Esc (decision §9 item 5). `all=true` is the old do-everything Esc. |
 | Which tool after drawing | tool lock | `element.create(from_tool)` and `tool.lock` | back to select | Old behaviour; lock is NEW. |
 | Elbow conversion drops hand-placed points | `arrow.set_type` | n/a (undoable) | n/a | Undo is the safety net. |
 | Removing library items | `library.remove` | `items` or `all: true` | no default | Not undoable, so never implicit. |
@@ -997,7 +1017,7 @@ The old app decided these with dialogs, confirm boxes, hidden modifiers or hard-
 
 ## 5. Settings keys
 
-Persisted through the `Storage` settings namespace; read with `settings.get`, written with `settings.set`, `settings.toggle`, `settings.cycle`. A change takes effect at once and is stored at once. An unknown key refuses with `unknown_setting`.
+Persisted through the `Storage` settings namespace; read with `settings.get`, written with `settings.set`, `settings.toggle`, `settings.cycle`, `settings.reset`. A change takes effect at once and is stored at once. An unknown key refuses with `unknown_setting`. Numbers are checked against their range, a whole-number key accepts 15 and 15.0, colours are stored as `#rrggbb` (or `#rrggbbaa`). `doc.recent` is read only for commands.
 
 | Key | Type and range | Default | Old app |
 |---|---|---|---|
@@ -1020,7 +1040,7 @@ Persisted through the `Storage` settings namespace; read with `settings.get`, wr
 | `frame.clip` | bool | true | none |
 | `frame.show_names` | bool | true | none |
 | `frame.outline` | bool | true | none |
-| `history.depth` | int 1..1000 | 50 | 50 |
+| `history.depth` | int 10..1000 | 200 | 50 |
 | `autosave.enabled` | bool | true | web only |
 | `autosave.interval_s` | int 1..300 | 5 | 5 s |
 | `clipboard.excalidraw_compat` | bool | true | none |
@@ -1028,6 +1048,7 @@ Persisted through the `Storage` settings namespace; read with `settings.get`, wr
 | `collab.user_name` | string 0..40 | empty | not persisted |
 | `collab.user_color` | `Color` | `#6366f1` | not persisted |
 | `doc.recent` | list of `FileRef`, at most 10; read only | empty | `recent_documents` |
+| `theme` | `light \| dark \| system` | `system` | none (decision §9 item 13) |
 
 Constants carried over unchanged from the old app, which are not settings: grid size 20; smart guide threshold 8; equal-spacing radius 800 with candidate caps 50 and 200; handle hit tolerance 24; rotate-handle offset 25; handle size 16 divided by zoom; `BASE_ZOOM` 1.68; zoom range 0.1..10; wheel zoom step 1.1 and 0.9; button zoom 1.25 and 0.8; double-click 500 ms and 5 px; minimum shape size 1; eraser radius 10; freehand simplify 2.0; highlighter width 12 and alpha 128; image fit 800; presence panel shows 8 peers; recent documents 10; duplicate offset 20; laser trail 50 points with a 0.33 s fade.
 
