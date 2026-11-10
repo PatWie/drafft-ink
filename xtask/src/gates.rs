@@ -64,7 +64,7 @@ impl Gate {
 
     /// True while the gate has no implementation. When you write one, drop it from this match.
     pub fn is_stub(self) -> bool {
-        matches!(self, Gate::Perf | Gate::Size | Gate::Fixtures | Gate::Harness)
+        matches!(self, Gate::Perf | Gate::Size | Gate::Harness)
     }
 
     fn run(self, root: &Path, args: &[String]) -> Result<(), String> {
@@ -84,10 +84,25 @@ impl Gate {
             Gate::Standards => standards::run(root),
             Gate::Deny => deny(root),
             Gate::Test => test(root, args),
-            Gate::Perf | Gate::Size | Gate::Fixtures | Gate::Harness => {
-                Err(format!("{}: no implementation", self.name()))
-            }
+            Gate::Fixtures => fixtures(root),
+            Gate::Perf | Gate::Size | Gate::Harness => Err(format!("{}: no implementation", self.name())),
         }
+    }
+}
+
+/// Fixture facts: recompute every legacy fixture's facts with the new code and compare with the
+/// checked-in `.facts.json` (crates/io/tests/facts.rs). When the old app is checked out next to
+/// this repo, also regenerate the facts from the old code and compare bytes (the facts are derived
+/// from the fixtures by a tool, never typed by hand).
+fn fixtures(root: &Path) -> Result<(), String> {
+    run(cargo(root).args(["test", "-p", "drafftink-io", "--test", "facts"]))?;
+    let regen = root.join("tests/fixtures/generator/regen.sh");
+    let old = root.join("../drafft-ink/crates");
+    if regen.exists() && old.exists() {
+        run(std::process::Command::new("bash").arg(regen).arg("--check").current_dir(root))
+    } else {
+        eprintln!("fixtures: old app not found next to the repo; skipped the regeneration check");
+        Ok(())
     }
 }
 
@@ -272,6 +287,6 @@ mod tests {
     #[test]
     fn stubs_are_the_pending_gate_names() {
         let stubs: Vec<_> = Gate::ALL.iter().filter(|g| g.is_stub()).map(|g| g.name()).collect();
-        assert_eq!(stubs, ["perf", "size", "fixtures", "harness"]);
+        assert_eq!(stubs, ["perf", "size", "harness"]);
     }
 }
