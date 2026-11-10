@@ -728,7 +728,7 @@ Images are stored once per file (content hash) in the document's files table. Pa
 
 ### 2.14 `view`: camera, modes, screenshots
 
-The camera is a scroll point (the world point at the centre of the viewport) and a zoom. Zoom is clamped to 0.1..10. The UI shows percent as `zoom / 1.68 * 100`. Per-frame camera movement by pointer, wheel or touch is an exception (`docs/exceptions.md`, E10 and E11): the UI applies it to the viewport directly and reports the final camera with `view.set`. The commands below are the scriptable equivalents and the final-state commands.
+The camera is a scroll point (the world point at the centre of the viewport) and a zoom. Zoom is clamped to 0.1..30. The UI shows percent as `zoom / 1.68 * 100`. Per-frame camera movement by pointer, wheel or touch is an exception (`docs/exceptions.md`, E10 and E11): the UI applies it to the viewport directly and reports the final camera with `view.set`. The commands below are the scriptable equivalents and the final-state commands.
 
 | id | title | undo | keys (mac / other) | source |
 |---|---|---|---|---|
@@ -750,7 +750,7 @@ The camera is a scroll point (the world point at the centre of the viewport) and
 |---|---|---|---|
 | `view.set` | `scroll?: Point`, `zoom?: number` | Always available. `bad_args` for a non-finite number. | Sets the camera (zoom clamped). The UI calls it at the end of a pan or zoom gesture and, at most every 100 ms, during one so that `view.get`, follow mode and screenshots stay fresh. |
 | `view.pan` | `dx: number`, `dy: number` (screen pixels; the content moves by the same amount as the pointer would) | Always available. | Pans. A wheel line is 20 px (A:4434). `Shift`+wheel pans horizontally (NEW). |
-| `view.zoom_at` | exactly one of `factor: number`, `zoom: number`; `at: ScreenPoint \| "viewport_center" = viewport_center` | Execute: `bad_args`: "Give exactly one of `factor` or `zoom`." | Zooms keeping the point under `at` fixed. The wheel passes factor 1.1 (in) or 0.9 (out) as the old fixed step; a pinch passes the finger-distance ratio. Clamps to 0.1..10. |
+| `view.zoom_at` | exactly one of `factor: number`, `zoom: number`; `at: ScreenPoint \| "viewport_center" = viewport_center` | Execute: `bad_args`: "Give exactly one of `factor` or `zoom`." | Zooms keeping the point under `at` fixed. The wheel passes factor 1.1 (in) or 0.9 (out) as the old fixed step; a pinch passes the finger-distance ratio. Clamps to 0.1..30. |
 | `view.zoom_in` | `at: ScreenPoint \| "viewport_center" = viewport_center` | Always available. | Multiplies zoom by 1.25. |
 | `view.zoom_out` | `at: ScreenPoint \| "viewport_center" = viewport_center` | Always available. | Multiplies zoom by 0.8. |
 | `view.zoom_reset` | `recenter: bool = false` | Always available. | Sets zoom to 1.68 (shown as 100%). The old command did not keep the centre; recenter=true moves the content centre to the viewport centre. |
@@ -1029,7 +1029,7 @@ Persisted through the `Storage` settings namespace; read with `settings.get`, wr
 | `collab.user_color` | `Color` | `#6366f1` | not persisted |
 | `doc.recent` | list of `FileRef`, at most 10; read only | empty | `recent_documents` |
 
-Constants carried over unchanged from the old app, which are not settings: grid size 20; smart guide threshold 8; equal-spacing radius 800 with candidate caps 50 and 200; handle hit tolerance 24; rotate-handle offset 25; handle size 16 divided by zoom; `BASE_ZOOM` 1.68; zoom range 0.1..10; wheel zoom step 1.1 and 0.9; button zoom 1.25 and 0.8; double-click 500 ms and 5 px; minimum shape size 1; eraser radius 10; freehand simplify 2.0; highlighter width 12 and alpha 128; image fit 800; presence panel shows 8 peers; recent documents 10; duplicate offset 20; laser trail 50 points with a 0.33 s fade.
+Constants carried over unchanged from the old app, which are not settings: grid size 20; smart guide threshold 8; equal-spacing radius 800 with candidate caps 50 and 200; handle hit tolerance 24; rotate-handle offset 25; handle size 16 divided by zoom; `BASE_ZOOM` 1.68; zoom range 0.1..30; wheel zoom step 1.1 and 0.9; button zoom 1.25 and 0.8; double-click 500 ms and 5 px; minimum shape size 1; eraser radius 10; freehand simplify 2.0; highlighter width 12 and alpha 128; image fit 800; presence panel shows 8 peers; recent documents 10; duplicate offset 20; laser trail 50 points with a 0.33 s fade.
 
 ---
 

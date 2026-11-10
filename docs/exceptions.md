@@ -157,7 +157,7 @@ Rules that hold for all classes:
 |---|---|
 | Input | Ctrl/Cmd+wheel, trackpad pinch (wheel events with the ctrl flag in browsers, native pinch events), two-finger touch pinch. |
 | Class | C |
-| What happens | As E10. The zoom factor per wheel notch is 1.1 (in) or 0.9 (out), as in the old app. A pinch uses the ratio of the finger distances (applied when it differs from 1 by more than 0.001, as before). Zoom is clamped to 0.1..10 and keeps the point under the cursor or the pinch centre fixed. |
+| What happens | As E10. The zoom factor per wheel notch is 1.1 (in) or 0.9 (out), as in the old app. A pinch uses the ratio of the finger distances (applied when it differs from 1 by more than 0.001, as before). Zoom is clamped to 0.1..30 and keeps the point under the cursor or the pinch centre fixed. |
 | Reason | As E10. |
 | Final state | `view.set { scroll, zoom }`. The scriptable forms are `view.zoom_at { factor \| zoom, at }`, `view.zoom_in`, `view.zoom_out`. |
 | Test | `exception_E11_zoom_ends_with_view_set`. |

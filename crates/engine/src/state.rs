@@ -18,7 +18,7 @@ pub const BASE_ZOOM: f64 = 1.68;
 /// Smallest zoom.
 pub const ZOOM_MIN: f64 = 0.1;
 /// Largest zoom.
-pub const ZOOM_MAX: f64 = 10.0;
+pub const ZOOM_MAX: f64 = 30.0;
 
 /// Editor state that undo restores (Excalidraw's `ObservedAppState`): selection, editing group and the
 /// linear point editor. Selection changes alone never make an undo step; the next document step records

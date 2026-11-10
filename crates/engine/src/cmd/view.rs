@@ -1,7 +1,7 @@
 //! `view`: camera, view-only mode and screenshots (docs/commands.md §2.14).
 //!
 //! The worked example of a family; `docs/engine.md` walks through it. The camera is a scroll point (the
-//! world point at the centre of the viewport) and a zoom, clamped to 0.1..10. Per-frame camera movement
+//! world point at the centre of the viewport) and a zoom, clamped to 0.1..30. Per-frame camera movement
 //! by pointer or wheel is a documented exception (docs/exceptions.md E10, E11): the shell moves its own
 //! viewport and reports the final camera with `view.set`. The commands here are the scriptable
 //! equivalents and the final-state commands.
@@ -120,7 +120,7 @@ fn zoom_about(v: &mut View, zoom: f64, anchor: Point) {
 pub struct SetArgs {
     /// The world point at the centre of the viewport.
     pub scroll: Option<Pt>,
-    /// Screen pixels per world unit, clamped to 0.1..10.
+    /// Screen pixels per world unit, clamped to 0.1..30.
     pub zoom: Option<f64>,
 }
 
@@ -756,7 +756,7 @@ pub const COMMANDS: &[CommandSpec] = &[
         "view.set",
         "view",
         "Set camera",
-        "Sets the camera: the world point at the centre of the viewport, and the zoom (clamped to 0.1..10).",
+        "Sets the camera: the world point at the centre of the viewport, and the zoom (clamped to 0.1..30).",
         &Typed::new(set),
         QUIET,
     )
