@@ -34,5 +34,6 @@ pub mod query_cmd;
 pub mod selection_cmd;
 pub mod style;
 pub mod text_bind;
+pub mod text_cmd;
 pub mod transform;
 pub mod zorder;

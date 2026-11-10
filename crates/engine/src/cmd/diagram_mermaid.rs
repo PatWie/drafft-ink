@@ -1,0 +1,516 @@
+//! Maps a parsed Mermaid diagram (`drafftink_io::mermaid`) into the diagram spec of `drafftink_edit::layout`.
+//!
+//! This is the one place that knows both formats: `io` and `edit` are both L4 and cannot depend on each other,
+//! so the engine does the mapping. Flowcharts become a [`DiagramSpec`] that `diagram_create` lays out in the
+//! flow direction. Sequence diagrams become participant and note nodes at fixed positions (the `none` layout)
+//! plus lifelines and message arrows that [`Sequence`] describes in coordinates relative to the diagram.
+
+use std::collections::{BTreeMap, BTreeSet};
+
+use drafftink_edit::layout::{
+    Algorithm, Arrowheads, DiagramSpec, Direction, EdgeSpec, GroupSpec, LayoutOpts, NodeShape as SpecShape, NodeSpec,
+    StyleSpec,
+};
+use drafftink_edit::text_bind::{TextMeasure, create_label, fresh_element_id, measure_text};
+use drafftink_geom::kurbo::{Point, Rect, Vec2};
+use drafftink_io::IoError;
+use drafftink_io::mermaid::{self as mm, Diagram};
+use drafftink_scene::{Element, ElementId, ElementKind, FillPattern, Head, IdSource, Kind, PathType, SceneTx, StrokeStyle, TextStyle};
+
+use crate::refusal::Refusal;
+use crate::session::Session;
+
+/// A message arrow of a sequence diagram, in diagram coordinates.
+#[derive(Debug, Clone)]
+pub(super) struct Message {
+    /// Start `(x, y)`.
+    pub from: (f64, f64),
+    /// End `(x, y)`. Equal `x` for a message to self (drawn as a loop).
+    pub to: (f64, f64),
+    /// Text on the arrow.
+    pub text: String,
+    /// Dashed line.
+    pub dashed: bool,
+    /// Marker at the end.
+    pub head: Head,
+    /// Marker at the start.
+    pub start_head: Head,
+}
+
+/// What a sequence diagram needs beyond nodes: lifelines and messages.
+#[derive(Debug, Clone, Default)]
+pub(super) struct Sequence {
+    /// `(x, y_start, y_end)` of each dashed lifeline.
+    pub lifelines: Vec<(f64, f64, f64)>,
+    /// The message arrows.
+    pub messages: Vec<Message>,
+    /// Bounds of the whole diagram.
+    pub bounds: Rect,
+}
+
+/// The result of the mapping.
+#[derive(Debug, Clone)]
+pub(super) struct Built {
+    /// Nodes, edges and layout.
+    pub spec: DiagramSpec,
+    /// Present for sequence diagrams.
+    pub seq: Option<Sequence>,
+    /// Group the whole result (the `group` argument).
+    pub group_all: bool,
+}
+
+const UNSUPPORTED: &[&str] = &[
+    "classDiagram",
+    "stateDiagram",
+    "stateDiagram-v2",
+    "erDiagram",
+    "gantt",
+    "pie",
+    "journey",
+    "mindmap",
+    "gitGraph",
+    "timeline",
+    "quadrantChart",
+    "requirementDiagram",
+    "sankey-beta",
+    "xychart-beta",
+    "block-beta",
+    "architecture-beta",
+    "packet-beta",
+    "kanban",
+    "C4Context",
+    "C4Container",
+    "C4Component",
+    "C4Dynamic",
+    "C4Deployment",
+];
+
+/// The first meaningful line of the text and its 1-based number: skips blank lines, `%%` comments, a code fence
+/// and a front-matter block.
+fn header_line(text: &str) -> Option<(usize, &str)> {
+    let mut in_front = false;
+    let mut seen_front = false;
+    for (i, raw) in text.lines().enumerate() {
+        let l = raw.trim();
+        if l.is_empty() || l.starts_with("%%") || l.starts_with("```") || l.starts_with("~~~") {
+            continue;
+        }
+        if l == "---" && (in_front || !seen_front) {
+            in_front = !in_front;
+            seen_front = true;
+            continue;
+        }
+        if in_front {
+            continue;
+        }
+        return Some((i + 1, l));
+    }
+    None
+}
+
+fn refuse_io(cmd: &str, text: &str, e: IoError) -> Refusal {
+    let hint = "Fix that line and try again.";
+    match &e {
+        IoError::WrongFormat { .. } | IoError::Invalid { .. } | IoError::Parse { .. } => {
+            let (n, first) = header_line(text).unwrap_or((1, ""));
+            let word = first.split_whitespace().next().unwrap_or("");
+            if matches!(e, IoError::WrongFormat { .. }) && UNSUPPORTED.contains(&word) {
+                return Refusal::custom(
+                    "mermaid_unsupported",
+                    cmd,
+                    format!("Mermaid diagram type `{word}` is not supported yet. Supported: flowchart/graph and sequenceDiagram."),
+                );
+            }
+            Refusal::parse_failed(cmd, "The Mermaid text", &format!("{e} (line {n})"), hint)
+        }
+        IoError::Limit { .. } => Refusal::custom(
+            "limit_exceeded",
+            cmd,
+            format!("The Mermaid text is too large: {e}. Split it into several smaller diagrams."),
+        ),
+        other => Refusal::parse_failed(cmd, "The Mermaid text", &other.to_string(), hint),
+    }
+}
+
+/// Parses and maps. Returns the spec and the notes about what Mermaid features were approximated or dropped.
+pub(super) fn to_spec(cmd: &str, text: &str, group: bool, s: &Session) -> Result<(Built, Vec<String>), Refusal> {
+    let diagram = mm::parse(text).map_err(|e| refuse_io(cmd, text, e))?;
+    match diagram {
+        Diagram::Flowchart(g) => Ok(flowchart(&g, group)),
+        Diagram::Sequence(q) => Ok(sequence(&q, group, s.services.edit())),
+    }
+}
+
+fn head(h: mm::Head) -> Head {
+    match h {
+        mm::Head::None => Head::None,
+        mm::Head::Arrow => Head::Arrow,
+        mm::Head::Cross => Head::Bar,
+        mm::Head::Circle => Head::CircleOutline,
+    }
+}
+
+fn direction(d: mm::Direction) -> Direction {
+    match d {
+        mm::Direction::TopToBottom => Direction::Down,
+        mm::Direction::BottomToTop => Direction::Up,
+        mm::Direction::LeftToRight => Direction::Right,
+        mm::Direction::RightToLeft => Direction::Left,
+    }
+}
+
+fn flowchart(g: &mm::MermaidGraph, group: bool) -> (Built, Vec<String>) {
+    let mut warnings: Vec<String> = g.warnings.iter().take(10).cloned().collect();
+    // Symbolic ids: the Mermaid id when it fits, else a short stand-in.
+    let sym: Vec<String> = g
+        .nodes
+        .iter()
+        .enumerate()
+        .map(|(i, n)| {
+            let len = n.id.chars().count();
+            if (1..=64).contains(&len) && !n.id.chars().any(char::is_control) { n.id.clone() } else { format!("n{i}") }
+        })
+        .collect();
+    let by_mermaid: BTreeMap<&str, &str> = g.nodes.iter().zip(&sym).map(|(n, s)| (n.id.as_str(), s.as_str())).collect();
+    let mut approximated = 0usize;
+    let nodes: Vec<NodeSpec> = g
+        .nodes
+        .iter()
+        .zip(&sym)
+        .map(|(n, id)| {
+            let mut style = StyleSpec::default();
+            let (shape, size) = match n.shape {
+                mm::NodeShape::Rectangle | mm::NodeShape::Subroutine => (SpecShape::Rectangle, None),
+                mm::NodeShape::Rounded => {
+                    style.corner_radius = Some(16.0);
+                    (SpecShape::Rectangle, None)
+                }
+                mm::NodeShape::Stadium => {
+                    style.corner_radius = Some(24.0);
+                    (SpecShape::Rectangle, None)
+                }
+                mm::NodeShape::Circle | mm::NodeShape::DoubleCircle => (SpecShape::Ellipse, Some([80.0, 80.0])),
+                mm::NodeShape::Diamond => (SpecShape::Diamond, None),
+                _ => {
+                    approximated += 1;
+                    (SpecShape::Rectangle, None)
+                }
+            };
+            if let Some(st) = &n.style {
+                if let Some(c) = st.fill {
+                    style.fill_color = Some(c);
+                    style.fill_pattern = Some(FillPattern::Solid);
+                }
+                style.stroke_color = st.stroke.or(style.stroke_color);
+                style.stroke_width = st.stroke_width.filter(|w| *w <= 100.0).or(style.stroke_width);
+            }
+            let styled = style != StyleSpec::default();
+            NodeSpec {
+                id: id.clone(),
+                label: Some(n.label.clone()),
+                shape,
+                style: styled.then_some(style),
+                width: None,
+                height: None,
+                size,
+                name: None,
+                x: None,
+                y: None,
+            }
+        })
+        .collect();
+    if approximated > 0 {
+        warnings.push(format!(
+            "{approximated} node(s) have a Mermaid shape that drafft.ink does not draw (hexagon, cylinder, parallelogram, trapezoid, flag); they were drawn as rectangles."
+        ));
+    }
+    let (mut to_subgraph, mut invisible) = (0usize, 0usize);
+    let mut edges = Vec::new();
+    for e in &g.edges {
+        if e.from_subgraph.is_some() || e.to_subgraph.is_some() {
+            to_subgraph += 1;
+            continue;
+        }
+        let (Some(f), Some(t)) = (by_mermaid.get(e.from.as_str()), by_mermaid.get(e.to.as_str())) else { continue };
+        if e.line == mm::Line::Invisible {
+            invisible += 1;
+            continue;
+        }
+        let mut style = StyleSpec::default();
+        match e.line {
+            mm::Line::Dotted => style.stroke_style = Some(StrokeStyle::Dotted),
+            mm::Line::Thick => style.stroke_width = Some(4.0),
+            _ => {}
+        }
+        edges.push(EdgeSpec {
+            from: (*f).to_owned(),
+            to: (*t).to_owned(),
+            label: e.label.clone().filter(|l| !l.trim().is_empty()),
+            arrow_type: Some(PathType::Sharp),
+            arrowheads: Some(Arrowheads::None),
+            start_head: Some(head(e.head_start)),
+            end_head: Some(head(e.head_end)),
+            style: (style != StyleSpec::default()).then_some(style),
+            name: None,
+        });
+    }
+    if to_subgraph > 0 {
+        warnings.push(format!("{to_subgraph} edge(s) that start or end at a whole subgraph were skipped; connect to a node inside it."));
+    }
+    if invisible > 0 {
+        warnings.push(format!("{invisible} invisible link(s) (~~~) were skipped; they only influence Mermaid's own layout."));
+    }
+    // Subgraphs become groups (nested). Their titles are not drawn.
+    let mut groups: Vec<GroupSpec> = Vec::new();
+    if group && !g.subgraphs.is_empty() {
+        let mut members: Vec<BTreeSet<usize>> = vec![BTreeSet::new(); g.subgraphs.len()];
+        for (ni, n) in g.nodes.iter().enumerate() {
+            let mut cur = n.subgraph;
+            let mut guard = 0;
+            while let Some(si) = cur {
+                if guard > 64 || si >= members.len() {
+                    break;
+                }
+                members[si].insert(ni);
+                cur = g.subgraphs[si].parent;
+                guard += 1;
+            }
+        }
+        let mut seen: Vec<BTreeSet<usize>> = Vec::new();
+        for (si, set) in members.iter().enumerate() {
+            if set.len() < 2 || set.len() == g.nodes.len() || seen.contains(set) {
+                continue;
+            }
+            seen.push(set.clone());
+            groups.push(GroupSpec {
+                id: Some(g.subgraphs[si].id.clone()),
+                members: set.iter().map(|i| sym[*i].clone()).collect(),
+            });
+        }
+        warnings.push(format!(
+            "{} subgraph title(s) are not drawn; the subgraph members are grouped.",
+            g.subgraphs.len()
+        ));
+    }
+    if group && nodes.len() >= 2 {
+        groups.push(GroupSpec { id: None, members: sym.clone() });
+    }
+    let layout = LayoutOpts { algorithm: Algorithm::Layered, direction: direction(g.direction), ..LayoutOpts::default() };
+    let built = Built { spec: DiagramSpec { nodes, edges, groups, layout }, seq: None, group_all: false };
+    (built, warnings)
+}
+
+const P_MIN_W: f64 = 120.0;
+const P_H: f64 = 48.0;
+const P_GAP: f64 = 60.0;
+const ROW: f64 = 44.0;
+
+fn sequence(q: &mm::SequenceDiagram, group: bool, m: &dyn TextMeasure) -> (Built, Vec<String>) {
+    let mut warnings: Vec<String> = q.warnings.iter().take(10).cloned().collect();
+    let font = TextStyle::default();
+    let text_w = |t: &str| measure_text(m, t, &font, None);
+    let mut x = 0.0;
+    let mut centre: BTreeMap<&str, f64> = BTreeMap::new();
+    let mut nodes: Vec<NodeSpec> = Vec::new();
+    for (i, p) in q.participants.iter().enumerate() {
+        let w = (text_w(&p.label).width + 40.0).max(P_MIN_W);
+        let mut n = NodeSpec::new(format!("p{i}"), p.label.clone());
+        n.shape = if p.is_actor { SpecShape::Ellipse } else { SpecShape::Rectangle };
+        n.size = Some([w, P_H]);
+        n.x = Some(x);
+        n.y = Some(0.0);
+        centre.insert(p.id.as_str(), x + w / 2.0);
+        nodes.push(n);
+        x += w + P_GAP;
+    }
+    let total_w = (x - P_GAP).max(P_MIN_W);
+    let mut y = P_H + ROW;
+    let mut messages = Vec::new();
+    let mut notes = 0usize;
+    for ev in &q.events {
+        match ev {
+            mm::Event::Message { from, to, text, dashed, head: h, bidirectional, .. } => {
+                let (Some(&x0), Some(&x1)) = (centre.get(from.as_str()), centre.get(to.as_str())) else { continue };
+                let end = match h {
+                    mm::MessageHead::Arrow | mm::MessageHead::Open => Head::Arrow,
+                    mm::MessageHead::Cross => Head::Bar,
+                    mm::MessageHead::None => Head::None,
+                };
+                let self_msg = from == to;
+                messages.push(Message {
+                    from: (x0, y),
+                    to: (x1, if self_msg { y + 24.0 } else { y }),
+                    text: text.clone(),
+                    dashed: *dashed,
+                    head: end,
+                    start_head: if *bidirectional { Head::Arrow } else { Head::None },
+                });
+                y += if self_msg { ROW + 20.0 } else { ROW };
+            }
+            mm::Event::Note { placement, participants, text } => {
+                let xs: Vec<f64> = participants.iter().filter_map(|p| centre.get(p.as_str()).copied()).collect();
+                let (Some(&lo), Some(&hi)) = (
+                    xs.iter().min_by(|a, b| a.total_cmp(b)),
+                    xs.iter().max_by(|a, b| a.total_cmp(b)),
+                ) else {
+                    continue;
+                };
+                let lines = text.lines().count().max(1) as f64;
+                let h = (lines * 25.0 + 16.0).max(40.0);
+                let want = text_w(text).width + 24.0;
+                let (nx, nw) = match placement {
+                    mm::NotePlacement::Over => {
+                        let w = (hi - lo + 40.0).max(want).max(P_MIN_W);
+                        ((lo + hi) / 2.0 - w / 2.0, w)
+                    }
+                    mm::NotePlacement::LeftOf => {
+                        let w = want.max(P_MIN_W);
+                        (lo - 10.0 - w, w)
+                    }
+                    mm::NotePlacement::RightOf => (hi + 10.0, want.max(P_MIN_W)),
+                };
+                let mut n = NodeSpec::new(format!("note:{notes}"), text.clone());
+                n.size = Some([nw, h]);
+                n.x = Some(nx);
+                n.y = Some(y);
+                n.style = Some(StyleSpec {
+                    fill_color: drafftink_scene::Color::parse("#fff3bf").ok(),
+                    fill_pattern: Some(FillPattern::Solid),
+                    ..StyleSpec::default()
+                });
+                nodes.push(n);
+                notes += 1;
+                y += h + 16.0;
+            }
+        }
+    }
+    let y_end = y;
+    let lifelines = q
+        .participants
+        .iter()
+        .filter_map(|p| centre.get(p.id.as_str()).map(|c| (*c, P_H, y_end)))
+        .collect();
+    // Notes may reach beyond the participants.
+    let (mut min_x, mut max_x) = (0.0f64, total_w);
+    for n in &nodes {
+        if let (Some(nx), Some([w, _])) = (n.x, n.size) {
+            min_x = min_x.min(nx);
+            max_x = max_x.max(nx + w);
+        }
+    }
+    let bounds = Rect::new(min_x, 0.0, max_x, y_end);
+    if q.participants.is_empty() {
+        warnings.push("The sequence diagram has no participants.".to_owned());
+    }
+    let layout = LayoutOpts { algorithm: Algorithm::None, ..LayoutOpts::default() };
+    let n = nodes.len();
+    let built = Built {
+        spec: DiagramSpec { nodes, edges: Vec::new(), groups: Vec::new(), layout },
+        seq: Some(Sequence { lifelines, messages, bounds }),
+        group_all: group && n >= 2,
+    };
+    (built, warnings)
+}
+
+/// Creates the lifelines and message arrows of a sequence diagram, `shift` away from the coordinates of `seq`.
+/// Messages are free arrows (a lifeline is a line, which arrows cannot bind to). Returns the ids, lifelines first.
+pub(super) fn sequence_extras<T: SceneTx>(
+    tx: &mut T,
+    m: &dyn TextMeasure,
+    ids: &mut dyn IdSource,
+    seq: &Sequence,
+    shift: Vec2,
+) -> Result<Vec<ElementId>, super::BuildError> {
+    use super::BuildError;
+    let at = |(x, y): (f64, f64)| Point::new(x + shift.x, y + shift.y);
+    let mut out = Vec::new();
+    for &(x, y0, y1) in &seq.lifelines {
+        let id = fresh_element_id(tx, ids);
+        let z = tx.next_top_index().map_err(|e| BuildError::Move(e.to_string()))?;
+        let mut e = Element::linear(id.clone(), Kind::Line, z, &[at((x, y0)), at((x, y1))])
+            .ok_or_else(|| BuildError::Move("a lifeline came out empty".to_owned()))?;
+        e.style.stroke_style = StrokeStyle::Dashed;
+        e.style.seed = ids.seed();
+        tx.insert(e)?;
+        out.push(id);
+    }
+    for msg in &seq.messages {
+        let id = fresh_element_id(tx, ids);
+        let z = tx.next_top_index().map_err(|e| BuildError::Move(e.to_string()))?;
+        let pts: Vec<Point> = if msg.from.0 == msg.to.0 {
+            vec![at(msg.from), at((msg.from.0 + 40.0, msg.from.1)), at((msg.from.0 + 40.0, msg.to.1)), at(msg.to)]
+        } else {
+            vec![at(msg.from), at(msg.to)]
+        };
+        let mut e = Element::linear(id.clone(), Kind::Arrow, z, &pts)
+            .ok_or_else(|| BuildError::Move("a message came out empty".to_owned()))?;
+        if let ElementKind::Arrow(d) = &mut e.kind {
+            d.start_head = msg.start_head;
+            d.end_head = msg.head;
+        }
+        if msg.dashed {
+            e.style.stroke_style = StrokeStyle::Dashed;
+        }
+        e.style.seed = ids.seed();
+        tx.insert(e)?;
+        if !msg.text.trim().is_empty() {
+            create_label(tx, m, ids, &id, &msg.text, None).map_err(|e| BuildError::Move(e.to_string()))?;
+        }
+        out.push(id);
+    }
+    Ok(out)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn flow(text: &str) -> (Built, Vec<String>) {
+        let Ok(Diagram::Flowchart(g)) = mm::parse(text) else { panic!("not a flowchart") };
+        flowchart(&g, true)
+    }
+
+    #[test]
+    fn a_flowchart_keeps_ids_labels_shapes_heads_and_direction() {
+        let (b, w) = flow("graph LR\n A[Start] -->|go| B{Ok?}\n B -.-> C((End))\n C ==> A");
+        assert_eq!(b.spec.layout.direction, Direction::Right);
+        let ids: Vec<&str> = b.spec.nodes.iter().map(|n| n.id.as_str()).collect();
+        assert_eq!(ids, ["A", "B", "C"]);
+        assert_eq!(b.spec.nodes[1].shape, SpecShape::Diamond);
+        assert_eq!(b.spec.nodes[2].shape, SpecShape::Ellipse);
+        assert_eq!(b.spec.edges.len(), 3);
+        assert_eq!(b.spec.edges[0].label.as_deref(), Some("go"));
+        assert_eq!(b.spec.edges[0].end_head, Some(Head::Arrow));
+        assert_eq!(b.spec.edges[1].style.as_ref().and_then(|s| s.stroke_style), Some(StrokeStyle::Dotted));
+        assert_eq!(b.spec.edges[2].style.as_ref().and_then(|s| s.stroke_width), Some(4.0));
+        assert_eq!(b.spec.groups.len(), 1, "the whole diagram is one group");
+        assert!(w.is_empty(), "{w:?}");
+    }
+
+    #[test]
+    fn subgraphs_become_nested_groups_and_unsupported_shapes_are_reported() {
+        let (b, w) = flow("graph TD\n subgraph outer\n A --> B\n subgraph inner\n C --> D\n end\n end\n E[(db)] --> A");
+        let sets: Vec<Vec<&str>> =
+            b.spec.groups.iter().map(|g| g.members.iter().map(String::as_str).collect()).collect();
+        assert!(sets.contains(&vec!["A", "B", "C", "D"]), "{sets:?}");
+        assert!(sets.contains(&vec!["C", "D"]), "{sets:?}");
+        assert!(w.iter().any(|x| x.contains("drawn as rectangles")), "{w:?}");
+        assert!(w.iter().any(|x| x.contains("subgraph title")), "{w:?}");
+    }
+
+    #[test]
+    fn a_sequence_diagram_has_lifelines_and_messages_below_the_participants() {
+        let Ok(Diagram::Sequence(q)) = mm::parse("sequenceDiagram\n participant A\n participant B as Bob\n A->>B: hi\n B-->>B: think\n Note over A,B: shared") else {
+            panic!("not a sequence")
+        };
+        let (b, _) = sequence(&q, true, &drafftink_edit::text_bind::MonospaceMeasure::default());
+        let seq = b.seq.unwrap();
+        assert_eq!(b.spec.nodes.len(), 3);
+        assert_eq!(seq.lifelines.len(), 2);
+        assert_eq!(seq.messages.len(), 2);
+        assert!(seq.messages[0].from.1 > P_H);
+        assert!(seq.messages[1].from.1 > seq.messages[0].from.1);
+        assert_eq!(seq.messages[1].from.0, seq.messages[1].to.0, "a self message loops on its lifeline");
+        assert!(seq.bounds.height() > seq.messages[1].from.1);
+    }
+}
