@@ -670,6 +670,7 @@ A group is a shared `groupIds` entry on its members, innermost first. Element id
 |---|---|---|---|---|
 | `group.create` | Group | Undoable | `Mod+G` | A:4973 (keyboard only in the old app); X:actionGroup |
 | `group.ungroup` | Ungroup | Undoable | `Mod+Shift+G` | A:4973; X:actionGroup |
+| `group.set_name` | Name group | Undoable | none | NEW §9 item 11 |
 | `group.enter` | Enter group | NoUndo | none (double-click on a selected group) | X:App double-click; NEW |
 | `group.exit` | Leave group | NoUndo | none (`Esc` runs `tool.cancel`) | X; NEW |
 
@@ -677,6 +678,7 @@ A group is a shared `groupIds` entry on its members, innermost first. Element id
 |---|---|---|---|
 | `group.create` | `ids: Refs = selection` | `no_target`. `too_few` (n=2): "Grouping needs at least 2 elements, and {have} were given. Select more, or pass `ids`." Execute: `already_grouped`: "These elements already form one group at this level. Ungroup them with `group.ungroup`, or select more elements."; `frame_and_children`: "A frame and its own children cannot be grouped together. Select either the frame or its children."; `locked`. | Adds a new group id as the outermost entry (inside an editing group: just inside it). Members become contiguous in z-order at the position of the topmost member, keeping their relative order; anything that sat between them ends up below. Members from different frames are first removed from their frames. Selection becomes the group. Output `{group, members}`. |
 | `group.ungroup` | `group?: GroupId`, `ids: Refs = selection` | `no_group`: "No group is selected. Select a group first (click it, or `selection.select` with `group`), or pass `group`." Execute: `locked`. | Removes only the selected group level from its members; z-order is unchanged; frame membership of the members is recomputed. Selection becomes the next level (inner groups or members). |
+| `group.set_name` | `group?: GroupId` (default the single selected group), `name: string \| null` | `no_group` (same text as above). Execute: `needs_single` when several groups are selected and `group` is not given; `bad_name`: "A group name must be 1 to 64 characters and must not contain control characters."; `locked`. | Sets or clears (null) the name of the group. The name is stored with every member (`custom["drafftink.group.<id>"]`, deviation D4), so it follows undo, sync and duplicate, and is removed by `group.ungroup`. `doc.outline` shows it. Output `{group, name}`. |
 | `group.enter` | `group?: GroupId` (default the single selected group), `select?: Ref` | `no_group` (same text as above). | Sets the editing group; clicks now select members one level down. `select` selects that element's unit inside the group (the double-click target). |
 | `group.exit` | none | `not_in_group`: "You are not inside a group, so there is nothing to leave." | Clears the editing group and selects that group again. |
 
@@ -1609,6 +1611,7 @@ Legend:
 | `arrange.distribute` | D | req | - | ok | no | no | commit | scene | always | y | y |
 | `group.create` | D,O | req | - | ok | no | no | commit | scene | always | y | y |
 | `group.ungroup` | D,O | soft | - | ok | no | no | commit | scene | always | y | y |
+| `group.set_name` | D | soft | - | ok | no | no | commit | scene | always | n | y |
 | `group.enter` | O | - | - | ok | ok | no | commit | scene | always | y | y |
 | `group.exit` | O | - | - | ok | ok | no | commit | scene | always | y | y |
 | `frame.wrap` | D,O | req | - | ok | no | no | commit | scene | always | y | y |

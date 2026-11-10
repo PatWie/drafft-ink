@@ -82,7 +82,7 @@ pub fn align<T: SceneTx>(
         }
         None => None,
     };
-    let need = if to.is_some() { 1 } else { 2 };
+    let need = if to.is_some() { 1 } else { crate::preflight::MIN_ALIGN_UNITS };
     if us.len() < need {
         return Err(ArrangeError::TooFew { what: "align", need, have: us.len() });
     }
@@ -116,8 +116,12 @@ pub fn distribute<T: SceneTx>(
     }
     let rel = Relations::build(&*tx);
     let us = units(&*tx, &rel, ids, editing)?;
-    if us.len() < 3 {
-        return Err(ArrangeError::TooFew { what: "distribute", need: 3, have: us.len() });
+    if us.len() < crate::preflight::MIN_DISTRIBUTE_UNITS {
+        return Err(ArrangeError::TooFew {
+            what: "distribute",
+            need: crate::preflight::MIN_DISTRIBUTE_UNITS,
+            have: us.len(),
+        });
     }
     let (us, rects) = with_rects(&*tx, us);
     let deltas = match opts.gap {
