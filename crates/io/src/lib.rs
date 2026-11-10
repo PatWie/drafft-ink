@@ -6,6 +6,7 @@
 //!
 //! | Module | Format |
 //! |---|---|
+//! | [`open`] | one entry point: sniff the bytes and route them to the readers below |
 //! | [`native`] | the versioned native JSON, plus format sniffing ([`native::sniff`]) |
 //! | [`legacy`] | old drafft-ink JSON documents and old Loro snapshots, migrated to the native model |
 //! | [`excalidraw`] | `.excalidraw`, `.excalidrawlib` (v1, v2) and the Excalidraw clipboard, import and export |
@@ -24,8 +25,10 @@ pub mod limits;
 pub mod measure;
 pub mod mermaid;
 pub mod native;
+pub mod open;
 pub mod png_meta;
 pub mod svg;
 
 pub use error::{ImportReport, Imported, IoError};
 pub use measure::{EstimateMeasure, MathBox, TextMeasure};
+pub use open::{Opened, open};

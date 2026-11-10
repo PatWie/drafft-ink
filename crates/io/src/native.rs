@@ -91,7 +91,7 @@ fn sniff_json_object(t: &str) -> Format {
     match p.kind.as_deref() {
         Some("excalidraw") => return Format::ExcalidrawScene,
         Some("excalidrawlib") => return Format::ExcalidrawLibrary,
-        Some("excalidraw/clipboard") | Some("excalidraw/clipboard_with_api") => return Format::ExcalidrawClipboard,
+        Some("excalidraw/clipboard") | Some("excalidraw-api/clipboard") => return Format::ExcalidrawClipboard,
         _ => {}
     }
     if p.shapes.is_some() && p.z_order.is_some() { Format::LegacyJson } else { Format::Unknown }
