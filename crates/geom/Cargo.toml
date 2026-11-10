@@ -1,11 +1,23 @@
 [package]
 name = "drafftink-geom"
+description = "Drafft.ink geometry: kurbo re-export, oriented boxes, outline queries, R-tree index, snapping, align/distribute"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
 rust-version.workspace = true
 
 [dependencies]
+kurbo = { workspace = true }
+rstar = { workspace = true }
+
+[dev-dependencies]
+criterion = { workspace = true }
+proptest = { workspace = true }
+
 
 [lints]
 workspace = true
+
+[[bench]]
+name = "spatial"
+harness = false

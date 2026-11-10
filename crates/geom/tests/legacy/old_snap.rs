@@ -1,0 +1,1212 @@
+//! Snap functionality for aligning points to grid and smart guides.
+
+use kurbo::{Point, Rect};
+
+/// Grid size for snapping (matches the visual grid).
+pub const GRID_SIZE: f64 = 20.0;
+
+/// Threshold for smart guide detection (in world units).
+pub const SMART_GUIDE_THRESHOLD: f64 = 8.0;
+
+/// Snap zone radius for equal spacing detection (40 grid units).
+pub const EQUAL_SPACING_SNAP_RADIUS: f64 = GRID_SIZE * 40.0;
+
+/// Snap zone radius for line/arrow endpoint snapping (40 grid units).
+pub const ENDPOINT_SNAP_RADIUS: f64 = GRID_SIZE * 40.0;
+
+/// Snap zone radius for multi-shape move snapping (20 grid units).
+pub const MULTI_MOVE_SNAP_RADIUS: f64 = GRID_SIZE * 20.0;
+
+/// A smart guide line for alignment visualization.
+#[derive(Debug, Clone)]
+pub struct SmartGuide {
+    /// Type of guide.
+    pub kind: SmartGuideKind,
+    /// Position (x for vertical lines, y for horizontal lines).
+    pub position: f64,
+    /// Start of the guide line.
+    pub start: f64,
+    /// End of the guide line.
+    pub end: f64,
+    /// Snap points along the guide (y coords for vertical, x coords for horizontal).
+    pub snap_points: Vec<f64>,
+}
+
+/// Type of smart guide.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SmartGuideKind {
+    /// Vertical alignment line (same x).
+    Vertical,
+    /// Horizontal alignment line (same y).
+    Horizontal,
+    /// Horizontal equal spacing indicator (gaps left/right).
+    EqualSpacingH,
+    /// Vertical equal spacing indicator (gaps top/bottom).
+    EqualSpacingV,
+}
+
+/// Result of smart guide detection.
+#[derive(Debug, Clone, Default)]
+pub struct SmartGuideResult {
+    /// Snapped point.
+    pub point: Point,
+    /// Active guides to render.
+    pub guides: Vec<SmartGuide>,
+    /// Whether x was snapped.
+    pub snapped_x: bool,
+    /// Whether y was snapped.
+    pub snapped_y: bool,
+}
+
+/// Detect smart guides for a dragged bounding box against other shapes.
+pub fn detect_smart_guides(dragged_bounds: Rect, other_bounds: &[Rect], threshold: f64) -> SmartGuideResult {
+    // Separate real shape bounds (non-zero area) from snap points for equal spacing
+    let shape_bounds: Vec<&Rect> = other_bounds.iter().filter(|r| !r.is_zero_area()).collect();
+
+    let mut result = SmartGuideResult {
+        point: Point::new(dragged_bounds.x0, dragged_bounds.y0),
+        guides: Vec::new(),
+        snapped_x: false,
+        snapped_y: false,
+    };
+
+    let dragged_cx = (dragged_bounds.x0 + dragged_bounds.x1) / 2.0;
+    let dragged_cy = (dragged_bounds.y0 + dragged_bounds.y1) / 2.0;
+    let dragged_w = dragged_bounds.x1 - dragged_bounds.x0;
+    let dragged_h = dragged_bounds.y1 - dragged_bounds.y0;
+
+    let mut best_dx: Option<(f64, f64, Rect)> = None;
+    let mut best_dy: Option<(f64, f64, Rect)> = None;
+    let mut best_dist_x = threshold;
+    let mut best_dist_y = threshold;
+
+    // Edge/center alignment
+    for other in other_bounds {
+        let other_cx = (other.x0 + other.x1) / 2.0;
+        let other_cy = (other.y0 + other.y1) / 2.0;
+
+        for dragged_x in [dragged_bounds.x0, dragged_bounds.x1, dragged_cx] {
+            for other_x in [other.x0, other.x1, other_cx] {
+                let dist = (dragged_x - other_x).abs();
+                if dist < best_dist_x {
+                    best_dist_x = dist;
+                    let snap_x = dragged_bounds.x0 + (other_x - dragged_x);
+                    best_dx = Some((snap_x, other_x, *other));
+                }
+            }
+        }
+
+        for dragged_y in [dragged_bounds.y0, dragged_bounds.y1, dragged_cy] {
+            for other_y in [other.y0, other.y1, other_cy] {
+                let dist = (dragged_y - other_y).abs();
+                if dist < best_dist_y {
+                    best_dist_y = dist;
+                    let snap_y = dragged_bounds.y0 + (other_y - dragged_y);
+                    best_dy = Some((snap_y, other_y, *other));
+                }
+            }
+        }
+    }
+
+    // Equal spacing detection - only check real shape bounds (not snap points)
+    // Split into horizontal-cross and vertical-cross pools
+    let max_spacing_candidates = 50;
+    if shape_bounds.len() <= max_spacing_candidates {
+        // Horizontal distribution: shapes that overlap vertically with dragged
+        let h_candidates: Vec<&Rect> =
+            shape_bounds.iter().filter(|b| b.y0 < dragged_bounds.y1 && b.y1 > dragged_bounds.y0).copied().collect();
+        // Vertical distribution: shapes that overlap horizontally with dragged
+        let v_candidates: Vec<&Rect> =
+            shape_bounds.iter().filter(|b| b.x0 < dragged_bounds.x1 && b.x1 > dragged_bounds.x0).copied().collect();
+
+        // Horizontal equal spacing
+        detect_equal_spacing_h(
+            &h_candidates,
+            &dragged_bounds,
+            dragged_cx,
+            dragged_cy,
+            dragged_w,
+            &mut best_dist_x,
+            &mut best_dx,
+            &mut result,
+        );
+
+        // Vertical equal spacing
+        detect_equal_spacing_v(
+            &v_candidates,
+            &dragged_bounds,
+            dragged_cx,
+            dragged_cy,
+            dragged_h,
+            &mut best_dist_y,
+            &mut best_dy,
+            &mut result,
+        );
+    }
+
+    // Apply snaps
+    if let Some((snap_x, guide_x, other)) = best_dx {
+        result.point.x = snap_x;
+        result.snapped_x = true;
+        let snapped_y0 = dragged_bounds.y0;
+        let snapped_y1 = dragged_bounds.y1;
+        let min_y = snapped_y0.min(snapped_y1).min(other.y0).min(other.y1);
+        let max_y = snapped_y0.max(snapped_y1).max(other.y0).max(other.y1);
+
+        // Collect all y-coords that align at guide_x
+        let mut snap_points = vec![snapped_y0, snapped_y1, dragged_cy];
+        for ob in other_bounds {
+            let ob_cx = (ob.x0 + ob.x1) / 2.0;
+            for ob_x in [ob.x0, ob.x1, ob_cx] {
+                if (ob_x - guide_x).abs() < 0.1 {
+                    snap_points.extend([ob.y0, ob.y1, (ob.y0 + ob.y1) / 2.0]);
+                }
+            }
+        }
+
+        result.guides.push(SmartGuide {
+            kind: SmartGuideKind::Vertical,
+            position: guide_x,
+            start: min_y,
+            end: max_y,
+            snap_points,
+        });
+    }
+
+    if let Some((snap_y, guide_y, other)) = best_dy {
+        result.point.y = snap_y;
+        result.snapped_y = true;
+        let snapped_x0 = if result.snapped_x { result.point.x } else { dragged_bounds.x0 };
+        let snapped_x1 = snapped_x0 + dragged_w;
+        let min_x = snapped_x0.min(snapped_x1).min(other.x0).min(other.x1);
+        let max_x = snapped_x0.max(snapped_x1).max(other.x0).max(other.x1);
+
+        // Collect all x-coords that align at guide_y
+        let mut snap_points = vec![snapped_x0, snapped_x1, snapped_x0 + dragged_w / 2.0];
+        for ob in other_bounds {
+            let ob_cy = (ob.y0 + ob.y1) / 2.0;
+            for ob_y in [ob.y0, ob.y1, ob_cy] {
+                if (ob_y - guide_y).abs() < 0.1 {
+                    snap_points.extend([ob.x0, ob.x1, (ob.x0 + ob.x1) / 2.0]);
+                }
+            }
+        }
+
+        result.guides.push(SmartGuide {
+            kind: SmartGuideKind::Horizontal,
+            position: guide_y,
+            start: min_x,
+            end: max_x,
+            snap_points,
+        });
+    }
+
+    result
+}
+
+/// Detect smart guides for a single point (e.g., line/arrow endpoint) against shape bounds.
+pub fn detect_smart_guides_for_point(point: Point, other_bounds: &[Rect], threshold: f64) -> SmartGuideResult {
+    let mut result = SmartGuideResult { point, guides: Vec::new(), snapped_x: false, snapped_y: false };
+
+    let mut best_dx: Option<(f64, f64, f64, f64)> = None; // (snap_x, guide_x, other_y0, other_y1)
+    let mut best_dy: Option<(f64, f64, f64, f64)> = None; // (snap_y, guide_y, other_x0, other_x1)
+    let mut best_dist_x = threshold;
+    let mut best_dist_y = threshold;
+
+    for other in other_bounds {
+        let other_cx = (other.x0 + other.x1) / 2.0;
+        let other_cy = (other.y0 + other.y1) / 2.0;
+
+        // Check vertical alignments (x positions)
+        for other_x in [other.x0, other.x1, other_cx] {
+            let dist = (point.x - other_x).abs();
+            if dist < best_dist_x {
+                best_dist_x = dist;
+                best_dx = Some((other_x, other_x, other.y0, other.y1));
+            }
+        }
+
+        // Check horizontal alignments (y positions)
+        for other_y in [other.y0, other.y1, other_cy] {
+            let dist = (point.y - other_y).abs();
+            if dist < best_dist_y {
+                best_dist_y = dist;
+                best_dy = Some((other_y, other_y, other.x0, other.x1));
+            }
+        }
+    }
+
+    if let Some((snap_x, guide_x, other_y0, other_y1)) = best_dx {
+        result.point.x = snap_x;
+        result.snapped_x = true;
+        let min_y = point.y.min(other_y0).min(other_y1);
+        let max_y = point.y.max(other_y0).max(other_y1);
+
+        // Collect snap points
+        let mut snap_points = vec![point.y];
+        for ob in other_bounds {
+            let ob_cx = (ob.x0 + ob.x1) / 2.0;
+            for ob_x in [ob.x0, ob.x1, ob_cx] {
+                if (ob_x - guide_x).abs() < 0.1 {
+                    snap_points.extend([ob.y0, ob.y1, (ob.y0 + ob.y1) / 2.0]);
+                }
+            }
+        }
+
+        result.guides.push(SmartGuide {
+            kind: SmartGuideKind::Vertical,
+            position: guide_x,
+            start: min_y,
+            end: max_y,
+            snap_points,
+        });
+    }
+
+    if let Some((snap_y, guide_y, other_x0, other_x1)) = best_dy {
+        result.point.y = snap_y;
+        result.snapped_y = true;
+        let snapped_x = if result.snapped_x { result.point.x } else { point.x };
+        let min_x = snapped_x.min(other_x0).min(other_x1);
+        let max_x = snapped_x.max(other_x0).max(other_x1);
+
+        // Collect snap points
+        let mut snap_points = vec![snapped_x];
+        for ob in other_bounds {
+            let ob_cy = (ob.y0 + ob.y1) / 2.0;
+            for ob_y in [ob.y0, ob.y1, ob_cy] {
+                if (ob_y - guide_y).abs() < 0.1 {
+                    snap_points.extend([ob.x0, ob.x1, (ob.x0 + ob.x1) / 2.0]);
+                }
+            }
+        }
+
+        result.guides.push(SmartGuide {
+            kind: SmartGuideKind::Horizontal,
+            position: guide_y,
+            start: min_x,
+            end: max_x,
+            snap_points,
+        });
+    }
+
+    result
+}
+
+/// Snap a point along an angle ray to smart guides.
+/// Returns the intersection of the ray with the nearest aligned shape edge.
+pub fn snap_ray_to_smart_guides(
+    origin: Point,
+    angle_degrees: f64,
+    target_point: Point,
+    other_bounds: &[Rect],
+    threshold: f64,
+) -> SmartGuideResult {
+    let angle_rad = angle_degrees.to_radians();
+    let cos_a = angle_rad.cos();
+    let sin_a = angle_rad.sin();
+
+    let mut result = SmartGuideResult { point: target_point, guides: Vec::new(), snapped_x: false, snapped_y: false };
+
+    let mut best_t: Option<(f64, Point, SmartGuide)> = None;
+    let mut best_dist = f64::MAX;
+
+    for other in other_bounds {
+        let other_cx = (other.x0 + other.x1) / 2.0;
+        let other_cy = (other.y0 + other.y1) / 2.0;
+
+        // Check vertical lines (x positions)
+        if cos_a.abs() > 0.001 {
+            for other_x in [other.x0, other.x1, other_cx] {
+                let t = (other_x - origin.x) / cos_a;
+                if t > 0.0 {
+                    let intersect_y = origin.y + t * sin_a;
+                    let intersect = Point::new(other_x, intersect_y);
+                    let dist = ((intersect.x - target_point.x).powi(2) + (intersect.y - target_point.y).powi(2)).sqrt();
+                    if dist < threshold && dist < best_dist {
+                        best_dist = dist;
+                        let min_y = intersect_y.min(other.y0).min(other.y1);
+                        let max_y = intersect_y.max(other.y0).max(other.y1);
+                        best_t = Some((
+                            t,
+                            intersect,
+                            SmartGuide {
+                                kind: SmartGuideKind::Vertical,
+                                position: other_x,
+                                start: min_y,
+                                end: max_y,
+                                snap_points: vec![intersect_y, other.y0, other.y1, other_cy],
+                            },
+                        ));
+                    }
+                }
+            }
+        }
+
+        // Check horizontal lines (y positions)
+        if sin_a.abs() > 0.001 {
+            for other_y in [other.y0, other.y1, other_cy] {
+                let t = (other_y - origin.y) / sin_a;
+                if t > 0.0 {
+                    let intersect_x = origin.x + t * cos_a;
+                    let intersect = Point::new(intersect_x, other_y);
+                    let dist = ((intersect.x - target_point.x).powi(2) + (intersect.y - target_point.y).powi(2)).sqrt();
+                    if dist < threshold && dist < best_dist {
+                        best_dist = dist;
+                        let min_x = intersect_x.min(other.x0).min(other.x1);
+                        let max_x = intersect_x.max(other.x0).max(other.x1);
+                        best_t = Some((
+                            t,
+                            intersect,
+                            SmartGuide {
+                                kind: SmartGuideKind::Horizontal,
+                                position: other_y,
+                                start: min_x,
+                                end: max_x,
+                                snap_points: vec![intersect_x, other.x0, other.x1, other_cx],
+                            },
+                        ));
+                    }
+                }
+            }
+        }
+    }
+
+    if let Some((_, point, guide)) = best_t {
+        result.point = point;
+        result.snapped_x = true;
+        result.snapped_y = true;
+        result.guides.push(guide);
+    }
+
+    result
+}
+
+/// Result of a snap operation.
+#[derive(Debug, Clone, Copy)]
+pub struct SnapResult {
+    /// The snapped point.
+    pub point: Point,
+    /// Whether the X coordinate was snapped.
+    pub snapped_x: bool,
+    /// Whether the Y coordinate was snapped.
+    pub snapped_y: bool,
+}
+
+impl SnapResult {
+    /// Create a result with no snapping.
+    pub fn none(point: Point) -> Self {
+        Self { point, snapped_x: false, snapped_y: false }
+    }
+
+    /// Check if any snapping occurred.
+    pub fn is_snapped(&self) -> bool {
+        self.snapped_x || self.snapped_y
+    }
+}
+
+/// Angle snap increment in degrees.
+pub const ANGLE_SNAP_INCREMENT: f64 = 15.0;
+
+/// Result of an angle snap operation.
+#[derive(Debug, Clone, Copy)]
+pub struct AngleSnapResult {
+    /// The snapped endpoint.
+    pub point: Point,
+    /// The snapped angle in degrees (0-360).
+    pub angle_degrees: f64,
+    /// The original (unsnapped) angle in degrees.
+    pub original_angle_degrees: f64,
+    /// Whether angle snapping occurred.
+    pub snapped: bool,
+    /// Distance from start point (preserved from original).
+    pub distance: f64,
+}
+
+impl AngleSnapResult {
+    /// Create a result with no snapping.
+    pub fn none(point: Point, start: Point) -> Self {
+        let dx = point.x - start.x;
+        let dy = point.y - start.y;
+        let angle = dy.atan2(dx).to_degrees();
+        // Normalize to 0-360
+        let angle_normalized = if angle < 0.0 { angle + 360.0 } else { angle };
+        let distance = (dx * dx + dy * dy).sqrt();
+
+        Self {
+            point,
+            angle_degrees: angle_normalized,
+            original_angle_degrees: angle_normalized,
+            snapped: false,
+            distance,
+        }
+    }
+}
+
+/// Snap an angle to the nearest increment.
+/// Returns the snapped angle in degrees (0-360).
+pub fn snap_angle(angle_degrees: f64, increment: f64) -> f64 {
+    let snapped = (angle_degrees / increment).round() * increment;
+    // Normalize to 0-360
+    if snapped < 0.0 {
+        snapped + 360.0
+    } else if snapped >= 360.0 {
+        snapped - 360.0
+    } else {
+        snapped
+    }
+}
+
+/// Snap a line endpoint to angle increments from a start point.
+/// This snaps the angle while preserving the distance from start.
+pub fn snap_line_endpoint(start: Point, end: Point, angle_snap_enabled: bool) -> AngleSnapResult {
+    let dx = end.x - start.x;
+    let dy = end.y - start.y;
+    let distance = (dx * dx + dy * dy).sqrt();
+
+    // Handle zero-length case
+    if distance < 0.001 {
+        return AngleSnapResult {
+            point: end,
+            angle_degrees: 0.0,
+            original_angle_degrees: 0.0,
+            snapped: false,
+            distance: 0.0,
+        };
+    }
+
+    let original_angle = dy.atan2(dx).to_degrees();
+    // Normalize to 0-360
+    let original_angle_normalized = if original_angle < 0.0 { original_angle + 360.0 } else { original_angle };
+
+    if !angle_snap_enabled {
+        return AngleSnapResult {
+            point: end,
+            angle_degrees: original_angle_normalized,
+            original_angle_degrees: original_angle_normalized,
+            snapped: false,
+            distance,
+        };
+    }
+
+    // Snap to nearest 15° increment
+    let snapped_angle = snap_angle(original_angle_normalized, ANGLE_SNAP_INCREMENT);
+    let snapped_radians = snapped_angle.to_radians();
+
+    // Calculate new endpoint at snapped angle with same distance
+    let snapped_point =
+        Point::new(start.x + distance * snapped_radians.cos(), start.y + distance * snapped_radians.sin());
+
+    // Check if we actually snapped (angle changed meaningfully)
+    let angle_diff = (snapped_angle - original_angle_normalized).abs();
+    let did_snap = angle_diff > 0.1 && angle_diff < 359.9;
+
+    AngleSnapResult {
+        point: snapped_point,
+        angle_degrees: snapped_angle,
+        original_angle_degrees: original_angle_normalized,
+        snapped: did_snap || angle_diff < 0.1, // Consider it snapped if very close to snap angle
+        distance,
+    }
+}
+
+/// Snap a point to the nearest grid intersection.
+pub fn snap_to_grid(point: Point, grid_size: f64) -> SnapResult {
+    let snapped_x = (point.x / grid_size).round() * grid_size;
+    let snapped_y = (point.y / grid_size).round() * grid_size;
+
+    SnapResult { point: Point::new(snapped_x, snapped_y), snapped_x: true, snapped_y: true }
+}
+
+/// Snap a point to grid if enabled.
+pub fn snap_point(point: Point, grid_enabled: bool, grid_size: f64) -> SnapResult {
+    if grid_enabled { snap_to_grid(point, grid_size) } else { SnapResult::none(point) }
+}
+
+/// Find where a ray from origin at a given angle intersects with grid lines.
+/// Returns the nearest intersection point to the target point.
+///
+/// This snaps to where the angle ray crosses horizontal or vertical grid lines,
+/// NOT to grid corners (which may not be on the ray).
+///
+/// `origin` - The start point of the ray
+/// `angle_degrees` - The angle of the ray in degrees
+/// `target_point` - The point we're trying to snap (used to find nearest intersection)
+/// `grid_size` - The grid cell size
+pub fn snap_ray_to_grid_lines(origin: Point, angle_degrees: f64, target_point: Point, grid_size: f64) -> SnapResult {
+    let angle_rad = angle_degrees.to_radians();
+    let cos_a = angle_rad.cos();
+    let sin_a = angle_rad.sin();
+
+    let mut best_point = target_point;
+    let mut best_dist_to_target = f64::MAX;
+    let mut found = false;
+
+    // Handle special cases for axis-aligned angles
+    let is_horizontal = sin_a.abs() < 0.001;
+    let is_vertical = cos_a.abs() < 0.001;
+
+    if is_horizontal {
+        // Horizontal line: snap to vertical grid lines
+        let y = origin.y;
+        // Find vertical grid lines near target
+        let base_grid_x = (target_point.x / grid_size).round() as i32;
+        for dx in -5..=5 {
+            let grid_x = (base_grid_x + dx) as f64 * grid_size;
+            // Check direction matches
+            if (grid_x - origin.x) * cos_a >= 0.0 || (grid_x - origin.x).abs() < 0.001 {
+                let candidate = Point::new(grid_x, y);
+                let dist = (candidate.x - target_point.x).powi(2) + (candidate.y - target_point.y).powi(2);
+                if dist < best_dist_to_target {
+                    best_dist_to_target = dist;
+                    best_point = candidate;
+                    found = true;
+                }
+            }
+        }
+    } else if is_vertical {
+        // Vertical line: snap to horizontal grid lines
+        let x = origin.x;
+        let base_grid_y = (target_point.y / grid_size).round() as i32;
+        for dy in -5..=5 {
+            let grid_y = (base_grid_y + dy) as f64 * grid_size;
+            // Check direction matches
+            if (grid_y - origin.y) * sin_a >= 0.0 || (grid_y - origin.y).abs() < 0.001 {
+                let candidate = Point::new(x, grid_y);
+                let dist = (candidate.x - target_point.x).powi(2) + (candidate.y - target_point.y).powi(2);
+                if dist < best_dist_to_target {
+                    best_dist_to_target = dist;
+                    best_point = candidate;
+                    found = true;
+                }
+            }
+        }
+    } else {
+        // General case: find intersections with both horizontal and vertical grid lines
+
+        // Intersections with vertical grid lines (x = n * grid_size)
+        let base_grid_x = (target_point.x / grid_size).round() as i32;
+        for dx in -5..=5 {
+            let grid_x = (base_grid_x + dx) as f64 * grid_size;
+            // Ray: x = origin.x + t * cos_a, y = origin.y + t * sin_a
+            // At grid_x: t = (grid_x - origin.x) / cos_a
+            let t = (grid_x - origin.x) / cos_a;
+            if t >= 0.0 {
+                // t must be positive (in direction of ray)
+                let y = origin.y + t * sin_a;
+                let candidate = Point::new(grid_x, y);
+                let dist = (candidate.x - target_point.x).powi(2) + (candidate.y - target_point.y).powi(2);
+                if dist < best_dist_to_target {
+                    best_dist_to_target = dist;
+                    best_point = candidate;
+                    found = true;
+                }
+            }
+        }
+
+        // Intersections with horizontal grid lines (y = n * grid_size)
+        let base_grid_y = (target_point.y / grid_size).round() as i32;
+        for dy in -5..=5 {
+            let grid_y = (base_grid_y + dy) as f64 * grid_size;
+            // At grid_y: t = (grid_y - origin.y) / sin_a
+            let t = (grid_y - origin.y) / sin_a;
+            if t >= 0.0 {
+                let x = origin.x + t * cos_a;
+                let candidate = Point::new(x, grid_y);
+                let dist = (candidate.x - target_point.x).powi(2) + (candidate.y - target_point.y).powi(2);
+                if dist < best_dist_to_target {
+                    best_dist_to_target = dist;
+                    best_point = candidate;
+                    found = true;
+                }
+            }
+        }
+    }
+
+    if found {
+        SnapResult { point: best_point, snapped_x: true, snapped_y: true }
+    } else {
+        SnapResult::none(target_point)
+    }
+}
+
+/// Snap a line endpoint considering both angle snapping and grid snapping.
+///
+/// When BOTH angle_snap AND grid_snap are enabled:
+///   - Snaps to grid LINE intersections (where the angle ray crosses horizontal/vertical grid lines)
+///   - This keeps the endpoint EXACTLY on the snapped angle ray
+///
+/// When only angle_snap is enabled:
+///   - Snaps angle to 15° increments, preserves distance
+///
+/// When only grid_snap is enabled:
+///   - Snaps to nearest grid corner
+///
+/// The `_use_isometric_grid` parameter is kept for API compatibility but is no longer used.
+/// The behavior is now: angle_snap + grid_snap = snap to grid LINE intersections on the angle ray.
+pub fn snap_line_endpoint_isometric(
+    start: Point,
+    end: Point,
+    angle_snap_enabled: bool,
+    grid_snap_enabled: bool,
+    _use_isometric_grid: bool,
+    grid_size: f64,
+) -> AngleSnapResult {
+    let dx = end.x - start.x;
+    let dy = end.y - start.y;
+    let distance = (dx * dx + dy * dy).sqrt();
+
+    // Handle zero-length case
+    if distance < 0.001 {
+        return AngleSnapResult {
+            point: end,
+            angle_degrees: 0.0,
+            original_angle_degrees: 0.0,
+            snapped: false,
+            distance: 0.0,
+        };
+    }
+
+    let original_angle = dy.atan2(dx).to_degrees();
+    let original_angle_normalized = if original_angle < 0.0 { original_angle + 360.0 } else { original_angle };
+
+    // When BOTH angle snap AND grid snap are enabled:
+    // Snap to grid LINE intersections (not corners) - this keeps the point ON the angle ray
+    if angle_snap_enabled && grid_snap_enabled {
+        // First snap to angle
+        let snapped_angle = snap_angle(original_angle_normalized, ANGLE_SNAP_INCREMENT);
+
+        // Calculate point on the snapped angle line at the original distance
+        let snapped_radians = snapped_angle.to_radians();
+        let angle_snapped_point =
+            Point::new(start.x + distance * snapped_radians.cos(), start.y + distance * snapped_radians.sin());
+
+        // Find where this angle ray intersects with grid LINES (not corners)
+        let grid_snap = snap_ray_to_grid_lines(start, snapped_angle, angle_snapped_point, grid_size);
+
+        if grid_snap.is_snapped() {
+            // Recalculate distance for the grid-snapped point
+            let new_dx = grid_snap.point.x - start.x;
+            let new_dy = grid_snap.point.y - start.y;
+            let new_distance = (new_dx * new_dx + new_dy * new_dy).sqrt();
+
+            return AngleSnapResult {
+                point: grid_snap.point,
+                angle_degrees: snapped_angle,
+                original_angle_degrees: original_angle_normalized,
+                snapped: true,
+                distance: new_distance,
+            };
+        }
+
+        // If no grid line intersection found, just use angle snapping
+        return AngleSnapResult {
+            point: angle_snapped_point,
+            angle_degrees: snapped_angle,
+            original_angle_degrees: original_angle_normalized,
+            snapped: true,
+            distance,
+        };
+    }
+
+    // Only grid snap (no angle snap): snap to grid corners
+    if !angle_snap_enabled {
+        if grid_snap_enabled {
+            let grid_snap = snap_to_grid(end, grid_size);
+            return AngleSnapResult {
+                point: grid_snap.point,
+                angle_degrees: original_angle_normalized,
+                original_angle_degrees: original_angle_normalized,
+                snapped: grid_snap.is_snapped(),
+                distance,
+            };
+        }
+        return AngleSnapResult {
+            point: end,
+            angle_degrees: original_angle_normalized,
+            original_angle_degrees: original_angle_normalized,
+            snapped: false,
+            distance,
+        };
+    }
+
+    // Only angle snap (no grid snap): snap angle, preserve distance
+    let snapped_angle = snap_angle(original_angle_normalized, ANGLE_SNAP_INCREMENT);
+    let snapped_radians = snapped_angle.to_radians();
+
+    // Calculate new endpoint at snapped angle with same distance
+    let snapped_point =
+        Point::new(start.x + distance * snapped_radians.cos(), start.y + distance * snapped_radians.sin());
+
+    let angle_diff = (snapped_angle - original_angle_normalized).abs();
+    let did_snap = angle_diff > 0.1 && angle_diff < 359.9;
+
+    AngleSnapResult {
+        point: snapped_point,
+        angle_degrees: snapped_angle,
+        original_angle_degrees: original_angle_normalized,
+        snapped: did_snap || angle_diff < 0.1,
+        distance,
+    }
+}
+
+/// Horizontal equal spacing detection with chain walking.
+/// Finds pairs of shapes sorted left-to-right that overlap vertically with the dragged shape,
+/// then checks if the dragged shape can be placed at equal spacing. Walks outward to find
+/// additional shapes at the same spacing for extended chain visualization.
+#[allow(clippy::too_many_arguments)]
+fn detect_equal_spacing_h(
+    candidates: &[&Rect],
+    dragged: &Rect,
+    _dragged_cx: f64,
+    dragged_cy: f64,
+    dragged_w: f64,
+    best_dist: &mut f64,
+    best_dx: &mut Option<(f64, f64, Rect)>,
+    result: &mut SmartGuideResult,
+) {
+    let mut sorted: Vec<&Rect> = candidates.to_vec();
+    sorted.sort_by(|a, b| a.x0.partial_cmp(&b.x0).unwrap_or(std::cmp::Ordering::Equal));
+
+    let mut best_spacing: Option<f64> = None;
+    let mut best_left_idx: Option<usize> = None;
+    let mut best_right_idx: Option<usize> = None;
+
+    for i in 0..sorted.len() {
+        for j in (i + 1)..sorted.len() {
+            let (left, right) = (sorted[i], sorted[j]);
+            if left.x1 >= right.x0 {
+                continue;
+            }
+            let gap = right.x0 - left.x1;
+            if gap > EQUAL_SPACING_SNAP_RADIUS {
+                continue;
+            }
+
+            // Case 1: dragged between left and right
+            if gap > dragged_w {
+                let target = left.x1 + (gap - dragged_w) / 2.0;
+                let dist = (dragged.x0 - target).abs();
+                if dist < *best_dist {
+                    *best_dist = dist;
+                    *best_dx = Some((target, target + dragged_w / 2.0, *left));
+                    best_spacing = Some((gap - dragged_w) / 2.0);
+                    best_left_idx = Some(i);
+                    best_right_idx = Some(j);
+                    result.guides.retain(|g| !matches!(g.kind, SmartGuideKind::EqualSpacingH));
+                    result.guides.push(SmartGuide {
+                        kind: SmartGuideKind::EqualSpacingH,
+                        position: dragged_cy,
+                        start: left.x1,
+                        end: target,
+                        snap_points: vec![],
+                    });
+                    result.guides.push(SmartGuide {
+                        kind: SmartGuideKind::EqualSpacingH,
+                        position: dragged_cy,
+                        start: target + dragged_w,
+                        end: right.x0,
+                        snap_points: vec![],
+                    });
+                }
+            }
+
+            // Case 2: dragged to the right
+            let target_r = right.x1 + gap;
+            let dist_r = (dragged.x0 - target_r).abs();
+            if dist_r < *best_dist {
+                *best_dist = dist_r;
+                *best_dx = Some((target_r, target_r + dragged_w / 2.0, *right));
+                best_spacing = Some(gap);
+                best_left_idx = Some(i);
+                best_right_idx = Some(j);
+                result.guides.retain(|g| !matches!(g.kind, SmartGuideKind::EqualSpacingH));
+                let y = (left.y0 + left.y1) / 2.0;
+                result.guides.push(SmartGuide {
+                    kind: SmartGuideKind::EqualSpacingH,
+                    position: y,
+                    start: left.x1,
+                    end: right.x0,
+                    snap_points: vec![],
+                });
+                result.guides.push(SmartGuide {
+                    kind: SmartGuideKind::EqualSpacingH,
+                    position: dragged_cy,
+                    start: right.x1,
+                    end: target_r,
+                    snap_points: vec![],
+                });
+            }
+
+            // Case 3: dragged to the left
+            let target_l = left.x0 - gap - dragged_w;
+            let dist_l = (dragged.x0 - target_l).abs();
+            if dist_l < *best_dist {
+                *best_dist = dist_l;
+                *best_dx = Some((target_l, target_l + dragged_w / 2.0, *left));
+                best_spacing = Some(gap);
+                best_left_idx = Some(i);
+                best_right_idx = Some(j);
+                result.guides.retain(|g| !matches!(g.kind, SmartGuideKind::EqualSpacingH));
+                let y = (right.y0 + right.y1) / 2.0;
+                result.guides.push(SmartGuide {
+                    kind: SmartGuideKind::EqualSpacingH,
+                    position: dragged_cy,
+                    start: target_l + dragged_w,
+                    end: left.x0,
+                    snap_points: vec![],
+                });
+                result.guides.push(SmartGuide {
+                    kind: SmartGuideKind::EqualSpacingH,
+                    position: y,
+                    start: left.x1,
+                    end: right.x0,
+                    snap_points: vec![],
+                });
+            }
+        }
+    }
+
+    // Walk outward to find chain of shapes at the same spacing
+    if let (Some(spacing), Some(li), Some(ri)) = (best_spacing, best_left_idx, best_right_idx) {
+        // Walk left from the leftmost shape
+        let mut cur = sorted[li];
+        for k in (0..li).rev() {
+            let candidate = sorted[k];
+            if (candidate.x1 - (cur.x0 - spacing)).abs() < 1.0 {
+                let y = ((candidate.y0 + candidate.y1) / 2.0).min((cur.y0 + cur.y1) / 2.0);
+                result.guides.push(SmartGuide {
+                    kind: SmartGuideKind::EqualSpacingH,
+                    position: y,
+                    start: candidate.x1,
+                    end: cur.x0,
+                    snap_points: vec![],
+                });
+                cur = candidate;
+            }
+        }
+        // Walk right from the rightmost shape
+        cur = sorted[ri];
+        for candidate in &sorted[(ri + 1)..] {
+            if (candidate.x0 - (cur.x1 + spacing)).abs() < 1.0 {
+                let y = ((candidate.y0 + candidate.y1) / 2.0).min((cur.y0 + cur.y1) / 2.0);
+                result.guides.push(SmartGuide {
+                    kind: SmartGuideKind::EqualSpacingH,
+                    position: y,
+                    start: cur.x1,
+                    end: candidate.x0,
+                    snap_points: vec![],
+                });
+                cur = candidate;
+            }
+        }
+    }
+}
+
+/// Vertical equal spacing detection with chain walking.
+#[allow(clippy::too_many_arguments)]
+fn detect_equal_spacing_v(
+    candidates: &[&Rect],
+    dragged: &Rect,
+    dragged_cx: f64,
+    _dragged_cy: f64,
+    dragged_h: f64,
+    best_dist: &mut f64,
+    best_dy: &mut Option<(f64, f64, Rect)>,
+    result: &mut SmartGuideResult,
+) {
+    let mut sorted: Vec<&Rect> = candidates.to_vec();
+    sorted.sort_by(|a, b| a.y0.partial_cmp(&b.y0).unwrap_or(std::cmp::Ordering::Equal));
+
+    let mut best_spacing: Option<f64> = None;
+    let mut best_top_idx: Option<usize> = None;
+    let mut best_bot_idx: Option<usize> = None;
+
+    for i in 0..sorted.len() {
+        for j in (i + 1)..sorted.len() {
+            let (top, bot) = (sorted[i], sorted[j]);
+            if top.y1 >= bot.y0 {
+                continue;
+            }
+            let gap = bot.y0 - top.y1;
+            if gap > EQUAL_SPACING_SNAP_RADIUS {
+                continue;
+            }
+
+            // Case 1: dragged between top and bottom
+            if gap > dragged_h {
+                let target = top.y1 + (gap - dragged_h) / 2.0;
+                let dist = (dragged.y0 - target).abs();
+                if dist < *best_dist {
+                    *best_dist = dist;
+                    *best_dy = Some((target, target + dragged_h / 2.0, *top));
+                    best_spacing = Some((gap - dragged_h) / 2.0);
+                    best_top_idx = Some(i);
+                    best_bot_idx = Some(j);
+                    result.guides.retain(|g| !matches!(g.kind, SmartGuideKind::EqualSpacingV));
+                    result.guides.push(SmartGuide {
+                        kind: SmartGuideKind::EqualSpacingV,
+                        position: dragged_cx,
+                        start: top.y1,
+                        end: target,
+                        snap_points: vec![],
+                    });
+                    result.guides.push(SmartGuide {
+                        kind: SmartGuideKind::EqualSpacingV,
+                        position: dragged_cx,
+                        start: target + dragged_h,
+                        end: bot.y0,
+                        snap_points: vec![],
+                    });
+                }
+            }
+
+            // Case 2: dragged below
+            let target_b = bot.y1 + gap;
+            let dist_b = (dragged.y0 - target_b).abs();
+            if dist_b < *best_dist {
+                *best_dist = dist_b;
+                *best_dy = Some((target_b, target_b + dragged_h / 2.0, *bot));
+                best_spacing = Some(gap);
+                best_top_idx = Some(i);
+                best_bot_idx = Some(j);
+                result.guides.retain(|g| !matches!(g.kind, SmartGuideKind::EqualSpacingV));
+                let x = (top.x0 + top.x1) / 2.0;
+                result.guides.push(SmartGuide {
+                    kind: SmartGuideKind::EqualSpacingV,
+                    position: x,
+                    start: top.y1,
+                    end: bot.y0,
+                    snap_points: vec![],
+                });
+                result.guides.push(SmartGuide {
+                    kind: SmartGuideKind::EqualSpacingV,
+                    position: dragged_cx,
+                    start: bot.y1,
+                    end: target_b,
+                    snap_points: vec![],
+                });
+            }
+
+            // Case 3: dragged above
+            let target_a = top.y0 - gap - dragged_h;
+            let dist_a = (dragged.y0 - target_a).abs();
+            if dist_a < *best_dist {
+                *best_dist = dist_a;
+                *best_dy = Some((target_a, target_a + dragged_h / 2.0, *top));
+                best_spacing = Some(gap);
+                best_top_idx = Some(i);
+                best_bot_idx = Some(j);
+                result.guides.retain(|g| !matches!(g.kind, SmartGuideKind::EqualSpacingV));
+                let x = (bot.x0 + bot.x1) / 2.0;
+                result.guides.push(SmartGuide {
+                    kind: SmartGuideKind::EqualSpacingV,
+                    position: dragged_cx,
+                    start: target_a + dragged_h,
+                    end: top.y0,
+                    snap_points: vec![],
+                });
+                result.guides.push(SmartGuide {
+                    kind: SmartGuideKind::EqualSpacingV,
+                    position: x,
+                    start: top.y1,
+                    end: bot.y0,
+                    snap_points: vec![],
+                });
+            }
+        }
+    }
+
+    // Walk outward to find chain
+    if let (Some(spacing), Some(ti), Some(bi)) = (best_spacing, best_top_idx, best_bot_idx) {
+        let mut cur = sorted[ti];
+        for k in (0..ti).rev() {
+            let candidate = sorted[k];
+            if (candidate.y1 - (cur.y0 - spacing)).abs() < 1.0 {
+                let x = ((candidate.x0 + candidate.x1) / 2.0).min((cur.x0 + cur.x1) / 2.0);
+                result.guides.push(SmartGuide {
+                    kind: SmartGuideKind::EqualSpacingV,
+                    position: x,
+                    start: candidate.y1,
+                    end: cur.y0,
+                    snap_points: vec![],
+                });
+                cur = candidate;
+            }
+        }
+        cur = sorted[bi];
+        for candidate in &sorted[(bi + 1)..] {
+            if (candidate.y0 - (cur.y1 + spacing)).abs() < 1.0 {
+                let x = ((candidate.x0 + candidate.x1) / 2.0).min((cur.x0 + cur.x1) / 2.0);
+                result.guides.push(SmartGuide {
+                    kind: SmartGuideKind::EqualSpacingV,
+                    position: x,
+                    start: cur.y1,
+                    end: candidate.y0,
+                    snap_points: vec![],
+                });
+                cur = candidate;
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_snap_to_grid() {
+        let result = snap_to_grid(Point::new(23.0, 47.0), 20.0);
+        assert_eq!(result.point, Point::new(20.0, 40.0));
+        assert!(result.snapped_x);
+        assert!(result.snapped_y);
+    }
+
+    #[test]
+    fn test_snap_to_grid_exact() {
+        let result = snap_to_grid(Point::new(40.0, 60.0), 20.0);
+        assert_eq!(result.point, Point::new(40.0, 60.0));
+    }
+
+    #[test]
+    fn test_snap_to_grid_round_up() {
+        let result = snap_to_grid(Point::new(31.0, 51.0), 20.0);
+        assert_eq!(result.point, Point::new(40.0, 60.0));
+    }
+
+    #[test]
+    fn test_snap_angle() {
+        // Test snapping to 15° increments
+        assert!((snap_angle(0.0, 15.0) - 0.0).abs() < 0.01);
+        assert!((snap_angle(7.0, 15.0) - 0.0).abs() < 0.01);
+        assert!((snap_angle(8.0, 15.0) - 15.0).abs() < 0.01);
+        assert!((snap_angle(22.0, 15.0) - 15.0).abs() < 0.01);
+        assert!((snap_angle(23.0, 15.0) - 30.0).abs() < 0.01);
+        assert!((snap_angle(45.0, 15.0) - 45.0).abs() < 0.01);
+        assert!((snap_angle(90.0, 15.0) - 90.0).abs() < 0.01);
+        assert!((snap_angle(180.0, 15.0) - 180.0).abs() < 0.01);
+        assert!((snap_angle(270.0, 15.0) - 270.0).abs() < 0.01);
+        assert!((snap_angle(359.0, 15.0) - 0.0).abs() < 0.01);
+    }
+
+    #[test]
+    fn test_snap_line_endpoint_horizontal() {
+        let start = Point::new(0.0, 0.0);
+        let end = Point::new(100.0, 5.0); // Slightly off horizontal
+        let result = snap_line_endpoint(start, end, true);
+
+        // Should snap to 0° (horizontal)
+        assert!(result.snapped);
+        assert!((result.angle_degrees - 0.0).abs() < 0.01);
+        assert!((result.point.y - 0.0).abs() < 0.01);
+    }
+
+    #[test]
+    fn test_snap_line_endpoint_45_degrees() {
+        let start = Point::new(0.0, 0.0);
+        let end = Point::new(100.0, 102.0); // Slightly off 45°
+        let result = snap_line_endpoint(start, end, true);
+
+        // Should snap to 45°
+        assert!(result.snapped);
+        assert!((result.angle_degrees - 45.0).abs() < 0.01);
+    }
+
+    #[test]
+    fn test_snap_line_endpoint_disabled() {
+        let start = Point::new(0.0, 0.0);
+        let end = Point::new(100.0, 5.0);
+        let result = snap_line_endpoint(start, end, false);
+
+        // Should not snap
+        assert!(!result.snapped);
+        assert_eq!(result.point, end);
+    }
+
+    #[test]
+    fn test_snap_line_preserves_distance() {
+        let start = Point::new(0.0, 0.0);
+        let end = Point::new(100.0, 10.0);
+        let result = snap_line_endpoint(start, end, true);
+
+        // Distance should be preserved
+        let original_distance = ((100.0_f64).powi(2) + (10.0_f64).powi(2)).sqrt();
+        assert!((result.distance - original_distance).abs() < 0.01);
+    }
+
+    #[test]
+    fn test_snap_ray_to_grid_lines_horizontal() {
+        // Ray from origin at 0° (horizontal)
+        let origin = Point::new(0.0, 0.0);
+        let target = Point::new(55.0, 0.0);
+
+        // Should snap to nearest vertical grid line intersection
+        let result = snap_ray_to_grid_lines(origin, 0.0, target, 20.0);
+        assert!(result.is_snapped());
+        assert!((result.point.x - 60.0).abs() < 0.01); // Nearest grid line at x=60
+        assert!((result.point.y - 0.0).abs() < 0.01); // Y stays at 0
+    }
+
+    #[test]
+    fn test_snap_ray_to_grid_lines_45_degrees() {
+        // Ray from origin at 45°
+        let origin = Point::new(0.0, 0.0);
+        let target = Point::new(50.0, 50.0);
+
+        // At 45°, the ray crosses grid lines at various points
+        // e.g., crosses x=20 at (20, 20), x=40 at (40, 40), etc.
+        // and crosses y=20 at (20, 20), y=40 at (40, 40), etc.
+        let result = snap_ray_to_grid_lines(origin, 45.0, target, 20.0);
+        assert!(result.is_snapped());
+        // Should snap to (40, 40) or (60, 60) - nearest grid line intersection
+        // At 45°, x should equal y
+        assert!((result.point.x - result.point.y).abs() < 0.01);
+    }
+
+    #[test]
+    fn test_snap_ray_to_grid_lines_30_degrees() {
+        // Ray from origin at 30°
+        let origin = Point::new(0.0, 0.0);
+        let target = Point::new(100.0, 57.7); // approximately 100 * tan(30°)
+
+        let result = snap_ray_to_grid_lines(origin, 30.0, target, 20.0);
+        assert!(result.is_snapped());
+        // Point should be on the 30° ray
+        let angle = (result.point.y / result.point.x).atan().to_degrees();
+        assert!((angle - 30.0).abs() < 0.1);
+    }
+
+    #[test]
+    fn test_snap_line_endpoint_isometric() {
+        let start = Point::new(0.0, 0.0);
+        let end = Point::new(100.0, 5.0); // Slightly off horizontal
+
+        // With isometric grid, should snap to grid LINE (not corner) on 0° ray
+        let result = snap_line_endpoint_isometric(start, end, true, true, true, 20.0);
+
+        // Should be snapped
+        assert!(result.snapped);
+        // Y should be 0 (on horizontal line from origin)
+        assert!((result.point.y).abs() < 0.01);
+        // X should be on a grid line (multiple of 20)
+        assert!((result.point.x % 20.0).abs() < 0.01 || (result.point.x % 20.0 - 20.0).abs() < 0.01);
+    }
+
+    #[test]
+    fn test_snap_line_endpoint_isometric_45_degrees() {
+        let start = Point::new(0.0, 0.0);
+        let end = Point::new(100.0, 102.0); // Slightly off 45°
+
+        // With isometric grid, should snap to grid LINE on 45° ray
+        let result = snap_line_endpoint_isometric(start, end, true, true, true, 20.0);
+
+        // Should be snapped
+        assert!(result.snapped);
+        // Should be on a 45° angle (x ≈ y since from origin)
+        assert!((result.point.x - result.point.y).abs() < 0.1);
+        // Either x or y should be on a grid line
+        let on_x_grid = (result.point.x % 20.0).abs() < 0.01 || (result.point.x % 20.0 - 20.0).abs() < 0.01;
+        let on_y_grid = (result.point.y % 20.0).abs() < 0.01 || (result.point.y % 20.0 - 20.0).abs() < 0.01;
+        assert!(on_x_grid || on_y_grid);
+    }
+}
