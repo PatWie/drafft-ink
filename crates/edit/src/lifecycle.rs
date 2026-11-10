@@ -7,8 +7,8 @@
 //!   a copied frame, otherwise it is cleared. Copies lose their `name` (names address one element), keep their
 //!   group names, and are inserted as one block directly above the topmost original.
 //! * **Delete** is soft (a tombstone, so undo and sync work). A container takes its bound text with it. A frame
-//!   takes its children or releases them. Arrows bound to a deleted element are released by the binding module
-//!   ([`crate::binding::update_bound_arrows`]). A group with fewer than two live members counts as no group.
+//!   takes its children or releases them. Arrows bound to a deleted element keep their position and are freed at that end
+//!   ([`crate::binding::free_ends_bound_to`]); restoring the element does not bind them again (undo does). A group with fewer than two live members counts as no group.
 //! * **Lock** locks the whole outermost group (and bound text), so a group stays one unit.
 //! * **Restore** brings tombstones back together with their bound text.
 
@@ -80,6 +80,8 @@ pub struct DeleteReport {
     pub deleted: Vec<ElementId>,
     /// Frame children that were kept and released.
     pub released: Vec<ElementId>,
+    /// Arrows whose end was bound to a deleted element and is now free (it stays where it was).
+    pub freed: Vec<ElementId>,
     /// Arrows the binding module re-solved.
     pub arrows: Vec<ElementId>,
 }
@@ -125,8 +127,10 @@ pub fn delete<T: SceneTx>(
         }
     }
     sort_z(&*tx, &mut released);
+    // Arrows bound to a deleted element keep their position and become free at that end.
+    let freed = binding::free_ends_bound_to(tx, &all)?;
     let arrows = if all.is_empty() { Vec::new() } else { binding::update_bound_arrows(tx, &all)? };
-    Ok(DeleteReport { deleted: all, released, arrows })
+    Ok(DeleteReport { deleted: all, released, freed, arrows })
 }
 
 /// Outcome of [`restore`].
@@ -136,6 +140,8 @@ pub struct RestoreReport {
     pub restored: Vec<ElementId>,
     /// Bound text that stayed deleted because its container is deleted.
     pub skipped: Vec<ElementId>,
+    /// Restored arrows whose end was bound to an element that is still deleted; that end is free now.
+    pub freed: Vec<ElementId>,
     /// Arrows the binding module re-solved.
     pub arrows: Vec<ElementId>,
 }
@@ -145,7 +151,8 @@ pub struct RestoreReport {
 ///
 /// The structure changed while the elements were gone, so they are reconciled: a restored element joins the groups
 /// around its groups as the live members have them now and moves next to them, a frame that is still deleted is
-/// dropped from it, bound text sits above its container, and bound text whose container is still deleted stays
+/// dropped from it, arrow ends bound to something still deleted are freed, bound text sits above its container,
+/// and bound text whose container is still deleted stays
 /// deleted (it is listed in `skipped`).
 pub fn restore<T: SceneTx>(tx: &mut T, ids: &[ElementId]) -> Result<RestoreReport, LifecycleError> {
     let mut want: BTreeSet<ElementId> = BTreeSet::new();
@@ -232,8 +239,16 @@ pub fn restore<T: SceneTx>(tx: &mut T, ids: &[ElementId]) -> Result<RestoreRepor
         }
     }
     place_restored(tx, &rel, &restored)?;
+    // A restored arrow bound to something that is still deleted cannot stay attached to it.
+    let gone: Vec<ElementId> = restored
+        .iter()
+        .filter_map(|i| tx.get(i))
+        .flat_map(|e| e.binding_targets().into_iter().flatten().cloned().collect::<Vec<_>>())
+        .filter(|t| tx.get(t).is_none_or(|t| t.deleted))
+        .collect();
+    let freed = if gone.is_empty() { Vec::new() } else { binding::free_ends_bound_to(tx, &gone)? };
     let arrows = if restored.is_empty() { Vec::new() } else { binding::update_bound_arrows(tx, &restored)? };
-    Ok(RestoreReport { restored, skipped, arrows })
+    Ok(RestoreReport { restored, skipped, freed, arrows })
 }
 
 /// Puts restored elements next to the structure they belong to: above their container, beside their group, below
@@ -429,17 +444,8 @@ pub fn duplicate<T: SceneTx, I: IdSource>(
         c.transform.y += opts.offset.y;
         c.group_ids = o.group_ids.iter().filter_map(|g| group_map.get(g).cloned().flatten()).collect();
         c.frame_id = o.frame_id.as_ref().and_then(|f| id_map.get(f).cloned());
-        match &mut c.kind {
-            ElementKind::Text(t) => t.container_id = t.container_id.as_ref().and_then(|x| id_map.get(x).cloned()),
-            ElementKind::Line(d) | ElementKind::Arrow(d) => {
-                for b in [&mut d.start_binding, &mut d.end_binding] {
-                    *b = b.take().and_then(|mut b| {
-                        b.target = id_map.get(&b.target).cloned()?;
-                        Some(b)
-                    });
-                }
-            }
-            _ => {}
+        if let ElementKind::Text(t) = &mut c.kind {
+            t.container_id = t.container_id.as_ref().and_then(|x| id_map.get(x).cloned());
         }
         if let Some(custom) = &mut c.custom {
             for (old, new) in &group_map {
@@ -494,6 +500,10 @@ pub fn duplicate<T: SceneTx, I: IdSource>(
     if long {
         zorder::rebalance(tx)?;
     }
+    // Bindings between copies point at copies; a binding to an element that was not copied is dropped.
+    let id_map_std: std::collections::HashMap<ElementId, ElementId> =
+        id_map.iter().map(|(a, b)| (a.clone(), b.clone())).collect();
+    binding::remap_bindings(tx, &new_ids, &id_map_std)?;
     let arrows = binding::update_bound_arrows(tx, &new_ids)?;
     let pairs: Vec<(ElementId, ElementId)> =
         originals.iter().filter_map(|o| id_map.get(&o.id).map(|n| (o.id.clone(), n.clone()))).collect();

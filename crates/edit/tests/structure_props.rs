@@ -379,10 +379,10 @@ proptest! {
             prop_assert!(!report.has_errors(), "after {:?}: {:?}", op, report.errors().collect::<Vec<_>>());
             prop_assert!(keys_increase(&s));
             prop_assert!(group::non_contiguous_groups(&s).is_empty(), "after {:?}", op);
-            // Relations this crate owns never end in a warning (binding targets are the binding module's).
+            // Relations this crate owns never end in a warning: deleting a target frees the arrows bound to it.
             let bad: Vec<_> = report
                 .warnings()
-                .filter(|i| matches!(i.error, DocError::FrameDeleted(_) | DocError::ChildAboveFrame(_) | DocError::ContainerDeleted(_) | DocError::LabelBelowContainer(_)))
+                .filter(|i| matches!(i.error, DocError::FrameDeleted(_) | DocError::ChildAboveFrame(_) | DocError::ContainerDeleted(_) | DocError::LabelBelowContainer(_) | DocError::BindingTargetDeleted { .. }))
                 .collect();
             prop_assert!(bad.is_empty(), "after {:?}: {:?}", op, bad);
         }

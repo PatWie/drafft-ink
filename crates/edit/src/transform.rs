@@ -78,14 +78,7 @@ pub enum TransformError {
 }
 impl_from_target!(TransformError);
 
-/// An end of a line or arrow.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-pub enum End {
-    /// The first point.
-    Start,
-    /// The last point.
-    End,
-}
+pub use crate::binding::End;
 
 /// What a transform did.
 #[derive(Debug, Clone, PartialEq, Default)]
@@ -330,8 +323,8 @@ pub(crate) fn apply<T: SceneTx>(tx: &mut T, items: Vec<Item>) -> Result<Transfor
         news.insert(i.id.clone(), moved(old, i.motion, follower)?);
     }
 
-    // Bindings: keep the ones whose target moves too, drop the rest.
-    let mut unbound: Vec<(ElementId, End)> = Vec::new();
+    // Bindings whose target moves too are kept, with their fixed point carried over a mirror or a non-uniform
+    // scale. The ends whose target stays are freed below by the binding module.
     let ids: Vec<ElementId> = news.keys().cloned().collect();
     for id in &ids {
         let Some(n) = news.get(id) else { continue };
@@ -360,24 +353,13 @@ pub(crate) fn apply<T: SceneTx>(tx: &mut T, items: Vec<Item>) -> Result<Transfor
         if let Some(n) = news.get_mut(id)
             && let ElementKind::Line(d) | ElementKind::Arrow(d) = &mut n.kind
         {
-            for (slot, end) in [(0usize, End::Start), (1, End::End)] {
-                let b = if slot == 0 { &mut d.start_binding } else { &mut d.end_binding };
-                match fix[slot] {
-                    Some(Some(fp)) => {
-                        if let Some(b) = b {
-                            b.fixed_point = fp;
-                        }
-                    }
-                    Some(None) => {
-                        *b = None;
-                        unbound.push((id.clone(), end));
-                    }
-                    None => {}
+            for (slot, b) in [&mut d.start_binding, &mut d.end_binding].into_iter().enumerate() {
+                if let (Some(Some(fp)), Some(b)) = (fix[slot], b) {
+                    b.fixed_point = fp;
                 }
             }
         }
     }
-    // Elbow bookkeeping that refers to a dropped binding is the elbow router's business.
 
     for (id, n) in &news {
         validate_element(n).map_err(|error| TransformError::Invalid { id: id.clone(), error })?;
@@ -393,6 +375,26 @@ pub(crate) fn apply<T: SceneTx>(tx: &mut T, items: Vec<Item>) -> Result<Transfor
             e.kind = k;
         })?;
         changed.push(id);
+    }
+    // The ends whose target is not part of the transform are freed where they are.
+    let all_ids: Vec<ElementId> = olds.keys().cloned().collect();
+    let freed = binding::unbind_detached(tx, &all_ids)?;
+    let mut unbound: Vec<(ElementId, End)> = Vec::new();
+    for id in freed {
+        let (Some(old), Some(now)) =
+            (olds.get(&id).and_then(Element::linear_data), tx.get(&id).and_then(Element::linear_data))
+        else {
+            continue;
+        };
+        if old.start_binding.is_some() && now.start_binding.is_none() {
+            unbound.push((id.clone(), End::Start));
+        }
+        if old.end_binding.is_some() && now.end_binding.is_none() {
+            unbound.push((id.clone(), End::End));
+        }
+        if !changed.contains(&id) {
+            changed.push(id);
+        }
     }
     crate::group::units::sort_z(&*tx, &mut changed);
     let arrows = if changed.is_empty() { Vec::new() } else { binding::update_bound_arrows(tx, &changed)? };

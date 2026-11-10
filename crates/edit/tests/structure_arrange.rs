@@ -329,9 +329,14 @@ fn flip_mirrors_binding_fixed_points_when_the_target_is_flipped_too() {
     let b = get(&s, "arr").linear_data().unwrap().start_binding.clone().unwrap();
     assert!(near(b.fixed_point[0], 0.0) && near(b.fixed_point[1], 0.5), "{:?}", b.fixed_point);
     assert!(near(get(&s, "t").transform.x, 200.0));
-    // The arrow start (100,25) is now at (200, 25): on the mirrored target's left edge.
+    // The binding is in orbit mode, so the solver keeps the start one gap outside the outline: the mirrored target
+    // (200..300) now faces left, and the start sits at 200 - gap, on the mid height (up to the 0.0001 ratio nudge
+    // that keeps a fixed point off the exact centre line).
     let p = world_points(get(&s, "arr")).unwrap();
-    assert!(near(p[0].x, 200.0) && near(p[1].x, 50.0), "{p:?}");
+    let gap = drafftink_geom::binding::binding_gap(get(&s, "arr").style.stroke_width);
+    assert!(near(p[0].x, 200.0 - gap), "start {:?}, gap {gap}", p[0]);
+    assert!((p[0].y - 25.0).abs() < 0.01, "start {:?}", p[0]);
+    assert!(near(p[1].x, 50.0) && near(p[1].y, 25.0), "end {:?}", p[1]);
 }
 
 #[test]

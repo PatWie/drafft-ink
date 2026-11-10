@@ -542,3 +542,105 @@ fn hostile_numbers_never_panic_and_never_break_the_scene() {
         }
     }
 }
+
+// ---- with the real binding solver ------------------------------------------------------------------------------
+
+fn gap_of(s: &MemoryStore, arrow: &str) -> f64 {
+    drafftink_geom::binding::binding_gap(get(s, arrow).style.stroke_width)
+}
+
+fn ends(s: &MemoryStore, arrow: &str) -> Vec<Point> {
+    world_points(get(s, arrow)).unwrap()
+}
+
+/// Distance from `p` to the outline of `target`.
+fn outline_distance(s: &MemoryStore, target: &str, p: Point) -> f64 {
+    use drafftink_geom::Outline;
+    drafftink_edit::transform::geometry::primitive(get(s, target)).unwrap().outline_distance(p)
+}
+
+/// Target `t` at (0,0,100,100); arrow from its right side to (300, 50), bound at the start, orbit.
+fn solved_pair() -> MemoryStore {
+    let mut a = arrow("arr", &[(100.0, 50.0), (300.0, 50.0)]);
+    bind(&mut a, true, "t", [1.0, 0.5]);
+    let mut s = scene(vec![rect("t", 0.0, 0.0, 100.0, 100.0), a]);
+    run(&mut s, |tx| drafftink_edit::binding::update_bound_arrows(tx, &ids(&["t"]))).unwrap();
+    s
+}
+
+#[test]
+fn a_moved_target_drags_the_bound_end_along() {
+    let mut s = solved_pair();
+    let g = gap_of(&s, "arr");
+    assert!((outline_distance(&s, "t", ends(&s, "arr")[0]) - g).abs() < 1e-6);
+    let r = run(&mut s, |tx| transform::move_by(tx, &ids(&["t"]), Vec2::new(40.0, 30.0))).unwrap();
+    assert_eq!(r.arrows, ids(&["arr"]));
+    let p = ends(&s, "arr");
+    assert!((outline_distance(&s, "t", p[0]) - g).abs() < 1e-6, "still one gap from the moved outline: {p:?}");
+    assert!(p[0].x > 140.0 && p[0].y > 60.0, "it followed the target: {p:?}");
+    assert!(near(p[1].x, 300.0) && near(p[1].y, 50.0), "the free end stays");
+    assert_valid(&s);
+}
+
+#[test]
+fn a_resized_or_rotated_target_keeps_the_end_on_its_outline() {
+    let mut s = solved_pair();
+    let g = gap_of(&s, "arr");
+    run(&mut s, |tx| transform::resize(tx, &ids(&["t"]), br(100.0, 0.0))).unwrap();
+    let p = ends(&s, "arr");
+    assert!((p[0].x - (200.0 + g)).abs() < 1e-6, "{p:?}");
+    let mut s = solved_pair();
+    run(&mut s, |tx| transform::rotate(tx, &ids(&["t"]), 0.5, RotateMode::By, None)).unwrap();
+    let p = ends(&s, "arr");
+    assert!((outline_distance(&s, "t", p[0]) - g).abs() < 1e-6, "{p:?}");
+    assert!(get(&s, "arr").linear_data().unwrap().start_binding.is_some());
+}
+
+#[test]
+fn flipping_only_the_target_keeps_the_arrow_bound() {
+    let mut s = solved_pair();
+    let g = gap_of(&s, "arr");
+    // A lone square is its own mirror image, so the end stays on the same side.
+    run(&mut s, |tx| drafftink_edit::arrange::flip(tx, &ids(&["t"]), drafftink_edit::arrange::FlipAxis::Horizontal))
+        .unwrap();
+    assert!(get(&s, "arr").linear_data().unwrap().start_binding.is_some());
+    assert!((ends(&s, "arr")[0].x - (100.0 + g)).abs() < 1e-6);
+}
+
+#[test]
+fn moving_the_arrow_alone_frees_its_end_and_leaves_it_there() {
+    let mut s = solved_pair();
+    let before = ends(&s, "arr");
+    let r = run(&mut s, |tx| transform::move_by(tx, &ids(&["arr"]), Vec2::new(0.0, 60.0))).unwrap();
+    assert_eq!(r.unbound, vec![(id("arr"), End::Start)]);
+    let after = ends(&s, "arr");
+    assert!(near(after[0].x, before[0].x) && near(after[0].y, before[0].y + 60.0));
+    // The target moving later no longer drags the freed end.
+    run(&mut s, |tx| transform::move_by(tx, &ids(&["t"]), Vec2::new(500.0, 0.0))).unwrap();
+    assert_eq!(ends(&s, "arr"), after);
+}
+
+#[test]
+fn moving_target_and_arrow_together_keeps_the_pair_rigid() {
+    let mut s = solved_pair();
+    let before = ends(&s, "arr");
+    let r = run(&mut s, |tx| transform::move_by(tx, &ids(&["t", "arr"]), Vec2::new(25.0, -10.0))).unwrap();
+    assert!(r.unbound.is_empty());
+    let after = ends(&s, "arr");
+    assert!((after[0].x - (before[0].x + 25.0)).abs() < 1e-6 && (after[0].y - (before[0].y - 10.0)).abs() < 1e-6);
+    assert!(near(after[1].x, before[1].x + 25.0));
+}
+
+#[test]
+fn a_frame_moves_arrows_bound_to_its_children() {
+    let mut a = arrow("arr", &[(30.0, 20.0), (300.0, 20.0)]);
+    bind(&mut a, true, "kid", [1.0, 0.5]);
+    let mut s = scene(vec![rect("kid", 10.0, 10.0, 20.0, 20.0).in_frame("f"), frame("f", 0.0, 0.0, 100.0, 100.0), a]);
+    run(&mut s, |tx| drafftink_edit::binding::update_bound_arrows(tx, &ids(&["kid"]))).unwrap();
+    let g = gap_of(&s, "arr");
+    run(&mut s, |tx| transform::move_by(tx, &ids(&["f"]), Vec2::new(0.0, 200.0))).unwrap();
+    let after = ends(&s, "arr")[0];
+    assert!((outline_distance(&s, "kid", after) - g).abs() < 1e-6, "{after:?}");
+    assert!(after.y > 200.0, "{after:?}");
+    assert!(get(&s, "arr").linear_data().unwrap().start_binding.is_some());
+}
