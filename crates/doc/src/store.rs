@@ -371,6 +371,13 @@ impl LoroStore {
         self.core.guard(|| self.core.doc.peer_id()).unwrap_or(0)
     }
 
+    /// The newer schema version that made this store read-only, if any. A peer running a newer app raised
+    /// `meta.schema`; the scene shown is the last one this build understood. Edits, undo and further updates return
+    /// [`DocError::NewerSchema`] ("Update the app") until `replace_from_snapshot` succeeds.
+    pub fn blocked_by_schema(&self) -> Option<u32> {
+        self.core.blocked
+    }
+
     /// True after the CRDT library panicked on some input. The scene can still be read, but edits, sync and undo
     /// return [`DocError::Poisoned`] until [`LoroStore::replace_from_snapshot`] succeeds.
     pub fn is_poisoned(&self) -> bool {

@@ -259,6 +259,7 @@ fn a_newer_schema_is_refused_and_blocks_writes() {
     h.good_rect("from_the_future");
     let err = h.send(&mut s).unwrap_err();
     assert_eq!(err, DocError::NewerSchema { found: 99, max: 1 });
+    assert_eq!(s.blocked_by_schema(), Some(99));
     assert!(err.to_string().contains("Update the app"));
     assert!(s.get(&eid("from_the_future")).is_none());
     // Further edits are refused instead of being written into a document we do not understand.
@@ -339,6 +340,20 @@ fn sample_updates() -> Vec<Vec<u8>> {
 /// After any hostile input the store must still answer. If the CRDT library panicked on the input, the store says
 /// so (`is_poisoned`), refuses edits with an error, keeps serving reads, and recovers on `replace_from_snapshot`.
 fn assert_usable_or_cleanly_poisoned(s: &mut LoroStore, good_snapshot: &[u8]) {
+    // A mutated update can raise `meta.schema`. That is a newer app talking: the store goes read-only with a clear
+    // status, shows the last scene it understood, and recovers by replacing the document.
+    if let Some(found) = s.blocked_by_schema() {
+        assert!(found > 1);
+        assert!(s.get(&eid("fine")).is_some(), "reads still work");
+        let mut tx = s.begin();
+        let _ = tx.update(&eid("fine"), |e| e.transform.x = 8.0);
+        assert!(tx.commit().unwrap_err().to_string().contains("Update the app"));
+        assert!(matches!(s.apply_remote(&[1, 2, 3]).unwrap_err(), DocError::NewerSchema { .. }));
+        assert!(matches!(s.undo().unwrap_err(), DocError::NewerSchema { .. }));
+        assert!(!s.is_poisoned());
+        s.replace_from_snapshot(good_snapshot).unwrap();
+        assert_eq!(s.blocked_by_schema(), None);
+    }
     if s.is_poisoned() {
         assert!(s.get(&eid("fine")).is_some(), "reads still work");
         let mut tx = s.begin();
