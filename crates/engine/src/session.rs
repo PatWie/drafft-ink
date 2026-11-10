@@ -428,6 +428,7 @@ impl Session {
     /// `engine.state` payload.
     pub fn state_json(&self) -> Value {
         let t = self.tab();
+        let collab = self.collab_view();
         json!({
             "tabs": self.tabs.iter().enumerate().map(|(i, t)| json!({
                 "id": t.id.to_string(),
@@ -450,7 +451,7 @@ impl Session {
             })),
             "revision": t.doc.revision(),
             "dirty": t.dirty(),
-            "collab": { "state": if self.ports.net.is_some() { "available" } else { "off" } },
+            "collab": { "state": collab.state, "room": collab.room },
             "settings_revision": self.settings.revision,
         })
     }

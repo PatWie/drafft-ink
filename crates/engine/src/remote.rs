@@ -64,11 +64,7 @@ impl Session {
 
     fn apply_remote_inner(&mut self, tab: TabId, bytes: &[u8]) -> Result<ChangeSet, Refusal> {
         let Some(t) = self.tab_by_id_mut(tab) else {
-            return Err(Refusal::custom(
-                "no_such_tab",
-                REMOTE_RING_ID,
-                format!("There is no tab {tab}, so the update was dropped. It may have been closed."),
-            ));
+            return Err(no_such_tab(tab));
         };
         let cs = t.doc.apply_remote(bytes).map_err(|e| {
             Refusal::parse_failed(
@@ -78,10 +74,17 @@ impl Session {
                 "The update was ignored and the document is unchanged. If edits keep missing, rejoin the room to get the whole document.",
             )
         })?;
+        self.after_remote(tab, &cs);
+        Ok(cs)
+    }
+
+    /// What follows every remote change, whichever way it reached the replicated store: drops what the change
+    /// deleted from the selection and the point editor, and raises the dirty reason.
+    pub(crate) fn after_remote(&mut self, tab: TabId, cs: &ChangeSet) {
         if cs.is_empty() {
-            return Ok(cs);
+            return;
         }
-        // What the update deleted cannot stay selected or in point-edit mode.
+        let Some(t) = self.tab_by_id_mut(tab) else { return };
         let gone: Vec<_> = cs
             .elements
             .iter()
@@ -95,8 +98,47 @@ impl Session {
             t.observed.linear_editor = None;
         }
         self.mark_dirty(Redraw::Scene);
-        Ok(cs)
     }
+
+    /// Takes a change set the collab client already imported into the replicated store: copies it into the
+    /// working store of `tab`, then does what [`Session::apply_remote`] does. One ring entry per call.
+    pub(crate) fn mirror_remote(&mut self, tab: TabId, cs: &ChangeSet) -> Result<(), Refusal> {
+        let res = match self.tab_by_id_mut(tab) {
+            Some(t) => t.doc.mirror_remote(cs).map_err(|e| {
+                Refusal::internal(REMOTE_RING_ID, format!("a collaborator's change could not be shown: {e}"))
+            }),
+            None => Err(no_such_tab(tab)),
+        };
+        if res.is_ok() {
+            self.after_remote(tab, cs);
+        }
+        let args = json!({ "tab": tab.to_string(), "elements": cs.elements.len() });
+        let outcome = match &res {
+            Ok(()) => Outcome::ok(!cs.is_empty(), None),
+            Err(r) => Outcome::refused(r),
+        };
+        let t_ms = self.now_ms();
+        self.ring.push(Record {
+            t_ms,
+            id: REMOTE_RING_ID,
+            args: Some(&args),
+            source: Origin::Remote,
+            outcome,
+            duration_us: 0,
+            steps: None,
+            frames: None,
+            mutating: true,
+        });
+        res
+    }
+}
+
+fn no_such_tab(tab: TabId) -> Refusal {
+    Refusal::custom(
+        "no_such_tab",
+        REMOTE_RING_ID,
+        format!("There is no tab {tab}, so the update was dropped. It may have been closed."),
+    )
 }
 
 #[cfg(test)]

@@ -223,6 +223,9 @@ pub struct TabDoc {
     depth: usize,
     /// The last step written with a coalesce request, while it is still the top of the undo stack.
     last_coalesce: Option<LastCoalesce>,
+    /// Local writes to the replicated store: commits, undo steps and redo steps. Remote updates do not count.
+    /// The collab glue compares it with the value it saw last to know that the peers need an update.
+    local_writes: u64,
 }
 
 impl Default for TabDoc {
@@ -278,6 +281,7 @@ impl TabDoc {
             undone_commits: 0,
             depth: 200,
             last_coalesce: None,
+            local_writes: 0,
         }
     }
 
@@ -290,6 +294,7 @@ impl TabDoc {
             undone_commits: 0,
             depth: 200,
             last_coalesce: None,
+            local_writes: 0,
         })
     }
 
@@ -566,6 +571,7 @@ impl TabDoc {
             }
         }
         tx.commit()?;
+        self.local_writes += 1;
         Ok(())
     }
 
@@ -613,6 +619,19 @@ impl TabDoc {
         Ok(())
     }
 
+    /// How many times this tab wrote to the replicated store itself (commits, undo, redo). It never counts a
+    /// remote update, so a change means "the peers lack something".
+    pub fn local_writes(&self) -> u64 {
+        self.local_writes
+    }
+
+    /// Copies a change set that the replicated store already applied (the collab client imports remote updates
+    /// into it directly) into the working store.
+    pub fn mirror_remote(&mut self, cs: &ChangeSet) -> Result<(), StoreError> {
+        self.last_coalesce = None;
+        self.mirror(cs)
+    }
+
     /// Applies a remote update from a peer and brings the working store up to date. Returns what changed.
     pub fn apply_remote(&mut self, bytes: &[u8]) -> Result<ChangeSet, DocError> {
         let cs = self.loro.apply_remote(bytes)?;
@@ -638,6 +657,7 @@ impl TabDoc {
             let step = if undo { self.loro.undo() } else { self.loro.redo() }
                 .map_err(|e| StoreError::Backend(e.to_string()))?;
             let Some(step) = step else { break };
+            self.local_writes += 1;
             self.mirror(&step.changes)?;
             if step.changes.is_empty() {
                 continue;

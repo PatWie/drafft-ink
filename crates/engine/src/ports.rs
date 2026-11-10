@@ -5,6 +5,7 @@
 //! commands that need it refuse with `port_unavailable`. Nothing here awaits: the shell resolves anything
 //! asynchronous before it calls a command.
 
+use drafftink_collab::Transport;
 use drafftink_scene::{Color, Document, ElementId, IdSource};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -188,28 +189,28 @@ pub trait Renderer {
     fn render_png(&self, scene: &SceneView, req: &RenderRequest) -> Result<Vec<u8>, PortError>;
 }
 
-/// Something that happened on the network.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum NetEvent {
-    /// The connection is open.
-    Opened,
-    /// A message arrived.
-    Message(Vec<u8>),
-    /// The connection closed or failed.
-    Closed(String),
-}
-
-/// The collab transport as the engine sees it. The `collab` crate's `Transport` replaces this
-/// placeholder when collab lands; the shape (connect, send, poll, close) stays.
+/// The network, as the collab client needs it. The shell owns the sockets: it builds a [`Transport`] for each
+/// connection (native WebSocket thread, browser `WebSocket`) and hands it its wake-up hook, so the engine never
+/// polls on a timer. Commands only call this port through the collab family.
 pub trait Net {
-    /// Starts connecting to `url`.
-    fn connect(&mut self, url: &str) -> Result<(), PortError>;
-    /// Sends a message.
-    fn send(&mut self, bytes: &[u8]) -> Result<(), PortError>;
-    /// Events since the last poll.
-    fn poll(&mut self) -> Vec<NetEvent>;
-    /// Closes the connection.
-    fn close(&mut self);
+    /// A new transport for one connection. It is dropped when the connection ends.
+    fn open_transport(&mut self) -> Result<Box<dyn Transport>, PortError>;
+
+    /// 128 random bits for client ids, room names and reconnect jitter. The engine has no random source of
+    /// its own.
+    fn random(&mut self) -> u128;
+
+    /// The WebSocket address of `path` on the server that delivered this app, for web shells (`"/ws"` becomes
+    /// `wss://host/ws`). `None` where there is no such server (native).
+    fn same_origin_url(&self, _path: &str) -> Option<String> {
+        None
+    }
+
+    /// True when plain `ws://` to another machine is allowed. Off by default: the drawing would travel
+    /// unencrypted.
+    fn allow_insecure(&self) -> bool {
+        false
+    }
 }
 
 /// Names a port, for `CommandSpec::ports` and refusal text.
@@ -393,10 +394,11 @@ pub mod fake {
     use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
     use super::{
-        ClipKind, ClipPayload, Clipboard, Clock, FileRef, Files, Net, NetEvent, Ns, PortError, Ports, RenderRequest,
-        Renderer, SceneView, Storage, StoredInfo,
+        ClipKind, ClipPayload, Clipboard, Clock, FileRef, Files, Net, Ns, PortError, Ports, RenderRequest, Renderer,
+        SceneView, Storage, StoredInfo,
     };
-    use drafftink_scene::SeqIds;
+    use drafftink_collab::{LoopbackServer, Transport, loopback};
+    use drafftink_scene::{Rng64, SeqIds, SplitMix64};
 
     fn lock<T>(m: &Mutex<T>) -> MutexGuard<'_, T> {
         m.lock().unwrap_or_else(PoisonError::into_inner)
@@ -607,61 +609,89 @@ pub mod fake {
         }
     }
 
-    /// A transport that records what was sent and replays queued events.
-    #[derive(Debug, Clone, Default)]
+    /// A network whose connections are in-memory loopbacks. Each [`Net::open_transport`] makes a new pair and
+    /// keeps the server end, which a test (or a [`crate::cmd::collab::fake_server::FakeServer`]) drives.
+    #[derive(Clone)]
     pub struct FakeNet {
         state: Arc<Mutex<NetState>>,
     }
 
-    #[derive(Debug, Default)]
     struct NetState {
-        connected_to: Option<String>,
-        sent: Vec<Vec<u8>>,
-        inbox: Vec<NetEvent>,
+        servers: Vec<Arc<LoopbackServer>>,
+        rng: SplitMix64,
+        origin: Option<String>,
+        fail_open: bool,
+    }
+
+    impl std::fmt::Debug for FakeNet {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            f.debug_struct("FakeNet").field("connections", &lock(&self.state).servers.len()).finish()
+        }
+    }
+
+    /// Makes every `FakeNet` of a process hand out different ids, so two sessions in one test are two clients.
+    static NEXT_SEED: AtomicU64 = AtomicU64::new(1);
+
+    impl Default for FakeNet {
+        fn default() -> Self {
+            Self::new()
+        }
     }
 
     impl FakeNet {
-        /// A transport that is not connected.
+        /// A network with no connection yet.
         pub fn new() -> Self {
-            Self::default()
+            let seed = NEXT_SEED.fetch_add(1, Ordering::SeqCst);
+            Self {
+                state: Arc::new(Mutex::new(NetState {
+                    servers: Vec::new(),
+                    rng: SplitMix64::new(seed.wrapping_mul(0x9E37_79B9_7F4A_7C15)),
+                    origin: None,
+                    fail_open: false,
+                })),
+            }
         }
 
-        /// The url passed to `connect`, if connected.
-        pub fn connected_to(&self) -> Option<String> {
-            lock(&self.state).connected_to.clone()
+        /// The server ends of every connection opened so far, oldest first.
+        pub fn servers(&self) -> Vec<Arc<LoopbackServer>> {
+            lock(&self.state).servers.clone()
         }
 
-        /// Messages sent so far.
-        pub fn sent(&self) -> Vec<Vec<u8>> {
-            lock(&self.state).sent.clone()
+        /// The server end of the newest connection.
+        pub fn last_server(&self) -> Option<Arc<LoopbackServer>> {
+            lock(&self.state).servers.last().cloned()
         }
 
-        /// Queues an event for the next `poll`.
-        pub fn push_event(&self, e: NetEvent) {
-            lock(&self.state).inbox.push(e);
+        /// Makes `same_origin_url("/ws")` answer as a web shell would (`ws://page.example`).
+        pub fn set_origin(&self, origin: &str) {
+            lock(&self.state).origin = Some(origin.to_owned());
+        }
+
+        /// Makes the next `open_transport` calls fail, as a shell without sockets would.
+        pub fn set_fail_open(&self, on: bool) {
+            lock(&self.state).fail_open = on;
         }
     }
 
     impl Net for FakeNet {
-        fn connect(&mut self, url: &str) -> Result<(), PortError> {
-            let mut s = lock(&self.state);
-            s.connected_to = Some(url.to_owned());
-            s.inbox.push(NetEvent::Opened);
-            Ok(())
-        }
-        fn send(&mut self, bytes: &[u8]) -> Result<(), PortError> {
-            let mut s = lock(&self.state);
-            if s.connected_to.is_none() {
-                return Err(PortError::Failed("not connected".to_owned()));
+        fn open_transport(&mut self) -> Result<Box<dyn Transport>, PortError> {
+            let mut st = lock(&self.state);
+            if st.fail_open {
+                return Err(PortError::Unsupported("the fake network has no sockets".to_owned()));
             }
-            s.sent.push(bytes.to_vec());
-            Ok(())
+            let (transport, server) = loopback();
+            server.set_auto_accept(true);
+            st.servers.push(Arc::new(server));
+            Ok(Box::new(transport))
         }
-        fn poll(&mut self) -> Vec<NetEvent> {
-            std::mem::take(&mut lock(&self.state).inbox)
+
+        fn random(&mut self) -> u128 {
+            let mut st = lock(&self.state);
+            (u128::from(st.rng.next_u64()) << 64) | u128::from(st.rng.next_u64())
         }
-        fn close(&mut self) {
-            lock(&self.state).connected_to = None;
+
+        fn same_origin_url(&self, path: &str) -> Option<String> {
+            lock(&self.state).origin.as_ref().map(|o| format!("{o}{path}"))
         }
     }
 
@@ -756,16 +786,6 @@ pub mod fake {
             fakes.clock.advance_ms(250);
             assert_eq!(fakes.clock.now_ms(), t0 + 250);
             assert_eq!(fakes.clock.mono_ms(), 250);
-        }
-
-        #[test]
-        fn net_requires_connect_before_send() {
-            let mut net = FakeNet::new();
-            assert!(net.send(b"x").is_err());
-            net.connect("ws://x").unwrap();
-            net.send(b"x").unwrap();
-            assert_eq!(net.poll(), vec![NetEvent::Opened]);
-            assert_eq!(net.sent().len(), 1);
         }
     }
 }

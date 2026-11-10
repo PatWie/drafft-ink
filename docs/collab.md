@@ -2,6 +2,8 @@
 
 The client side of `docs/protocol.md`. The server is `apps/drafftink-server` (`docs/server.md`), the document is `LoroStore` (`docs/crdt.md`). The engine (L5) owns a `CollabSession` and drives it; this crate does not know about commands, the scene, egui or the clock. Builds for wasm32.
 
+The engine side (the `collab` command family, `Session::collab_poll`, the `Net` port) is described in `docs/engine.md` section 4, "Collaboration".
+
 ## Parts
 
 | Part | What it is |
