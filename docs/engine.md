@@ -370,6 +370,28 @@ A label that makes its container grow moves arrows bound to the container, so th
 
 `Session::apply_remote(tab, bytes)` (`crates/engine/src/remote.rs`) takes a Loro update or snapshot for a tab (any tab, not only the active one). It applies it through `TabDoc::apply_remote` (replicated store first, then the touched elements into the working store), drops deleted elements from the selection and the point editor, raises the dirty reason `Scene` when something changed, and returns the `ChangeSet`. It pushes no undo step, runs no invariant pass and is not a command. A bad update is a `parse_failed` refusal and changes nothing; an unknown tab is `no_such_tab`. Each call writes one ring entry, `remote.apply` with origin `remote` and `{tab, bytes, elements}` as arguments (the failure case too), so `engine.recent` shows that something arrived without listing every element. `Session::set_remote_presence` is not built yet.
 
+### Collaboration
+
+The `collab` family (`crates/engine/src/cmd/collab.rs`) owns a `drafftink_collab` client inside the session. A shell does three things:
+
+```rust
+// 1. The Net port: a transport per connection, built with the shell's wake-up hook.
+impl Net for MyNet {
+    fn open_transport(&mut self) -> Result<Box<dyn Transport>, PortError> { /* NativeTransport::new(wake) or WebTransport */ }
+    fn random(&mut self) -> u128 { /* OS randomness */ }
+    fn same_origin_url(&self, path: &str) -> Option<String> { /* web: wss://<host><path> */ }
+}
+// 2. Poll: on a transport wake, at the time it asked for, and after commands. Cheap when nothing is shared.
+let p = s.collab_poll();                 // CollabPoll { redraw, wake_in_ms }
+if p.redraw { /* take_dirty() also reports Overlay */ }
+if let Some(ms) = p.wake_in_ms { set_one_timer(ms) }
+// 3. Read: s.collab_view() (state, room, peers with pointers and selections, loading, laser), s.take_collab_notices().
+```
+
+Commands change the client's inputs only (`collab.connect`, `join_room`, `leave_room`, `set_user`, `set_pointer`, `laser`, `follow`) and never wait for the network. `collab_poll` compares `TabDoc::local_writes` with the value it saw, so every local commit reaches the client whatever wrote it: a command, a gesture end, undo or redo from a key. Remote changes come back as a change set that is already in the replicated store; `Session::mirror_remote` copies it into the working store and does what `apply_remote` does (selection, dirty reason, one `remote.apply` ring entry per batch). The tab that joined a room carries `cmd::tab::RoomBinding`, which `tab.close` and `tab.list` read.
+
+A big catch-up (a snapshot of 100k elements takes about 1.5 s to import) is held back for one poll: the poll that meets it returns `redraw` with `wake_in_ms = 16` and `collab_view().loading = Receiving { bytes }`, the shell draws a progress hint, and the next poll imports it. The `FakeNet` and `cmd::collab::fake_server::FakeServer` make two sessions in one test talk through in-memory loopbacks.
+
 ## 5. The undo model and the one swap point
 
 `crates/engine/src/store.rs` is the only file that knows how a tab's document is held. A tab has two stores:
@@ -411,6 +433,6 @@ Where the code departs from `docs/commands.md`. Items 1 to 7 are intended. Items
 8. **Signatures.** The catalog writes `Session::execute(id, args, source)`. The code has `execute(id, args)`, `execute_from(origin, id, args)` and `execute_typed`.
 9. **Registry list.** The catalog says "a plain list, no macro magic". `crates/engine/src/cmd/mod.rs` uses the small `families!` macro so that one line adds a family.
 10. **Test locations and names.** The catalog puts all registry tests in `crates/engine/src/registry_tests.rs` and calls one `refusal_codes_are_catalogued`. The catalog tests are in `crates/engine/src/catalog_tests.rs`, and that test is `declared_refusal_codes_are_catalogued`.
-11. **`Net` placement.** Section 1.11 of the catalog says `collab` is L5. After D2 in `docs/deviations.md` it is L4, and the engine owns the client. The `Net` trait in `crates/engine/src/ports.rs` is a placeholder until `collab` lands.
+11. **`Net` placement.** Section 1.11 of the catalog says `collab` is L5. After D2 in `docs/deviations.md` it is L4, and the engine owns the client. The `Net` port is a factory of `drafftink_collab::Transport`s plus randomness (see "Collaboration" in section 4).
 12. **Panic rollback on wasm.** D3 in `docs/deviations.md`: on `wasm32-unknown-unknown` a panic cannot be caught. The panic tests run natively only.
 13. **Keymap check.** The comparison of section 6.1 with the registered shortcuts is `crates/engine/src/keymap_tests.rs`, not `catalog_matches_registry`. It covers registered commands only, both platforms, scopes and fixed arguments; the module doc lists the notation it understands (`mac ... / other ...`, `Left/Right/Up/Down`, `Arrow keys`, `key=a, b` paired with the chords in order). A new shortcut needs its row in section 6.1 in the same change.

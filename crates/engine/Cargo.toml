@@ -14,6 +14,8 @@ drafftink-edit = { path = "../edit" }
 drafftink-io = { path = "../io" }
 drafftink-typeset = { path = "../typeset" }
 drafftink-profile = { path = "../profile" }
+drafftink-collab = { path = "../collab" }
+drafftink-protocol = { path = "../protocol" }
 schemars.workspace = true
 serde.workspace = true
 serde_json.workspace = true
