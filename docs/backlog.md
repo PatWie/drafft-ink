@@ -15,3 +15,6 @@ Features decided but not yet assigned to a phase agent.
 - text.edit_end style is a local StyleProps subset and new text uses TextStyle::default(): switch to edit::style (SEAM(f-style) markers in engine session.rs).
 - collab: auth token setting/arg (auth_token always None today); snapshot import blocks the polling thread (move to a worker on native, chunked on web).
 - Perf: loading a 100k scene into a TabDoc takes ~6 s release / 40 s debug (testkit finding); tab rename undo leaves tab dirty:true.
+- HIGH (data loss): `doc.save` marks the document saved before the queued port write succeeds; a failed write is only a warning. Saved state must follow the write result (Files port write must report back, or the save must be synchronous).
+- One-path rule: `clipboard.copy_as` png has its own render path duplicating `doc.export`; route it through the export code.
+- `tab.new from=intro` can use `doc::intro_document`; SVG export embeds no fonts yet (marked call site in cmd/doc/export.rs); dark SVG ignored.
