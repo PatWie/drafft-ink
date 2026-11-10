@@ -8,6 +8,8 @@
 //! - `binding`, `elbow`, `linear`: arrow bindings, elbow routing, line/arrow point editing.
 //! - `arrow`: operations of the `arrow` commands that combine them (bind an end to a named target, reroute,
 //!   snapping of a dragged point).
+//! - `create`: the rules of `element.create`, `element.connect` and `element.set_name` (sizes, names, new
+//!   elements of every kind, binding of new arrow ends, placement).
 //! - `group`, `frame`, `zorder`, `arrange`, `transform`, `lifecycle`: groups, frames, z-order,
 //!   align/distribute/flip, move/resize/rotate of selections, duplicate/delete/lock rules.
 //! - `style`: style properties, applicability, defaults and themes (`style.*` commands).
@@ -17,7 +19,9 @@
 pub mod arrange;
 pub mod arrow;
 pub mod binding;
+pub mod create;
 pub mod elbow;
+pub mod element_cmd;
 pub mod flowchart;
 pub mod frame;
 pub mod group;
@@ -26,6 +30,8 @@ pub mod lifecycle;
 pub mod linear;
 pub mod preflight;
 pub mod query;
+pub mod query_cmd;
+pub mod selection_cmd;
 pub mod style;
 pub mod text_bind;
 pub mod transform;

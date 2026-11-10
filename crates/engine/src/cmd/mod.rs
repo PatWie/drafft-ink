@@ -13,4 +13,9 @@ macro_rules! families {
     };
 }
 
-families! { arrange, arrow, engine, frame, gesture, group, history, perf, settings, style, tab, tool, view }
+pub(crate) mod element_common;
+
+families! {
+    arrange, arrow, element, element_create, element_query, engine, frame, gesture, group, history, perf, selection,
+    settings, style, tab, tool, view
+}

@@ -89,3 +89,28 @@ pub fn rich_session() -> Result<Session, StoreError> {
     }
     Ok(s)
 }
+
+/// Adds an arrow from `from` to `to`, bound at both ends (orbit) and solved, through the rules of the edit
+/// crate and not through a command. The change is a normal journaled commit, not an undo step.
+pub fn create_arrow_between(s: &mut Session, from: &ElementId, to: &ElementId) -> Result<ElementId, StoreError> {
+    use drafftink_edit::create::{ConnectSpec, connect};
+    let spec = ConnectSpec::arrow(s.tool.style_defaults.clone());
+    let id = crate::cmd::element_common::edit_with_ids::<ElementId, StoreError>(s, |tx, ids| {
+        connect(tx, ids, from, to, &spec).map_err(|e| StoreError::Backend(e.to_string()))
+    })?;
+    s.tab_mut().doc.commit_untracked()?;
+    Ok(id)
+}
+
+/// Gives `container` (a rectangle, diamond, ellipse or arrow) a label with `text`, measured by the session's
+/// services, and returns the label's id. Not an undo step.
+pub fn add_text_label(s: &mut Session, container: &ElementId, text: &str) -> Result<ElementId, StoreError> {
+    use drafftink_edit::text_bind::create_label;
+    let id = crate::cmd::element_common::edit_with_measure::<ElementId, StoreError>(s, |tx, measure, ids| {
+        create_label(tx, measure, ids, container, text, None)
+            .map(|o| o.label)
+            .map_err(|e| StoreError::Backend(e.to_string()))
+    })?;
+    s.tab_mut().doc.commit_untracked()?;
+    Ok(id)
+}
