@@ -22,6 +22,8 @@ flate2 = { version = "1", default-features = false, features = ["rust_backend"] 
 
 [dev-dependencies]
 proptest.workspace = true
+png.workspace = true
+roxmltree = "0.21"
 
 [lints]
 workspace = true

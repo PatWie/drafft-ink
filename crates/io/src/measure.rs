@@ -28,8 +28,8 @@ pub trait TextMeasure {
 }
 
 /// The old app's fallback estimate: width is the longest line in bytes times the font size times a factor per
-/// font and weight (at least 20), height is lines times size times the line height. Formulas: `bytes * size * 0.5`
-/// wide, `size` high, `0.3 * size` deep.
+/// font and weight (at least 20), height is lines times size times 1.2 (the `line_height` argument is ignored, as
+/// the old estimate had a fixed 1.2). Formulas: `bytes * size * 0.5` wide, `size` high, `0.3 * size` deep.
 #[derive(Debug, Clone, Copy, Default)]
 pub struct EstimateMeasure;
 
@@ -53,8 +53,15 @@ fn clean(v: f64, fallback: f64) -> f64 {
 }
 
 impl TextMeasure for EstimateMeasure {
-    fn text_size(&self, text: &str, family: FontFamily, weight: FontWeight, size: f64, line_height: f64) -> (f64, f64) {
-        let (size, line_height) = (clean(size, 0.0), clean(line_height, 1.2));
+    fn text_size(
+        &self,
+        text: &str,
+        family: FontFamily,
+        weight: FontWeight,
+        size: f64,
+        _line_height: f64,
+    ) -> (f64, f64) {
+        let (size, line_height) = (clean(size, 0.0), 1.2);
         let longest = text.lines().map(str::len).max().unwrap_or(0) as f64;
         let lines = text.lines().count().max(1) + usize::from(text.ends_with('\n'));
         ((longest * size * char_width_factor(family, weight)).max(20.0), lines as f64 * size * line_height)
