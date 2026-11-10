@@ -84,13 +84,16 @@ pub fn unpack(v: &Value) -> Result<Document, IoError> {
     let Some(doc) = v.get("document") else {
         return Err(IoError::invalid("clipboard", "it has no `document`"));
     };
-    if let Some(found) = doc.get("version").and_then(Value::as_u64).filter(|n| *n > u64::from(drafftink_scene::document::SCHEMA_VERSION)) {
+    if let Some(found) =
+        doc.get("version").and_then(Value::as_u64).filter(|n| *n > u64::from(drafftink_scene::document::SCHEMA_VERSION))
+    {
         return Err(IoError::Document(drafftink_scene::DocumentError::NewerVersion {
             found: u32::try_from(found).unwrap_or(u32::MAX),
             max: drafftink_scene::document::SCHEMA_VERSION,
         }));
     }
-    let document: Document = serde_json::from_value(doc.clone()).map_err(|e| IoError::parse("clipboard", e.to_string()))?;
+    let document: Document =
+        serde_json::from_value(doc.clone()).map_err(|e| IoError::parse("clipboard", e.to_string()))?;
     let report = document.validate();
     if report.has_errors() {
         return Err(IoError::Document(drafftink_scene::DocumentError::Invalid(report)));
@@ -146,7 +149,10 @@ mod tests {
     fn doc() -> Document {
         let z = ZIndex::between(None, None).unwrap();
         let mut d = Document::new();
-        d.elements.push(Element::new(drafftink_scene::ElementId::new("a").unwrap(), ElementKind::Rectangle, z).with_bounds(0.0, 0.0, 10.0, 10.0));
+        d.elements.push(
+            Element::new(drafftink_scene::ElementId::new("a").unwrap(), ElementKind::Rectangle, z)
+                .with_bounds(0.0, 0.0, 10.0, 10.0),
+        );
         d
     }
 

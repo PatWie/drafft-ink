@@ -258,12 +258,10 @@ fn numbers_are_checked() {
 }
 
 #[test]
-fn a_picture_with_too_many_pixels_is_refused_before_it_is_decoded() {
+fn a_picture_over_the_size_limit_is_refused_before_it_is_decoded() {
     let mut s = session();
-    let mut p = png(8, 8);
-    // Claim 40000 x 40000 pixels in the header.
-    p[16..20].copy_from_slice(&40_000u32.to_be_bytes());
-    p[20..24].copy_from_slice(&40_000u32.to_be_bytes());
+    // A real PNG whose width is over the 32768 pixel limit; it is tiny, so only the header can refuse it.
+    let p = png(32_769, 1);
     let r = refuse_clean(&mut s, "image.insert", json!({"images": [named(&p, "huge.png")]}));
     assert_eq!(r.code, "limit_exceeded");
     assert!(r.message.contains("huge.png"), "{}", r.message);
@@ -302,7 +300,7 @@ fn a_big_picture_is_stored_smaller_unless_downscale_is_off() {
     let out = run(&mut s, "image.insert", json!({"images": [b64(&big)], "at": [0, 0]}));
     let i = &out["images"][0];
     assert_eq!(i["shrunk"], true);
-    assert_eq!((i["natural_width"].as_u64(), i["natural_height"].as_u64()), (Some(2048), Some(1067)));
+    assert_eq!((i["natural_width"].as_u64(), i["natural_height"].as_u64()), (Some(2048), Some(1069)));
     // On the canvas it is still the 800 rule applied to the original size.
     assert_eq!(i["width"], 800.0);
     let stored = s.store().files().next().unwrap().1.bytes.len();

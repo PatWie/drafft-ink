@@ -29,11 +29,11 @@ use crate::spec::{
 };
 
 /// Most pictures one call inserts.
-pub const MAX_IMAGES: usize = 20;
+const MAX_IMAGES: usize = 20;
 /// The longest side a picture is shown at, unless the call says otherwise.
-pub const DEFAULT_FIT: f64 = 800.0;
+pub(crate) const DEFAULT_FIT: f64 = 800.0;
 /// The shift of each further picture.
-pub const DEFAULT_OFFSET: f64 = 20.0;
+pub(crate) const DEFAULT_OFFSET: f64 = 20.0;
 
 /// Picture bytes given inline.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
@@ -198,7 +198,7 @@ pub(crate) fn insert_pictures(
 ) -> Result<Vec<Inserted>, Refusal> {
     let cmd = s.cmd();
     let mut ready: Vec<Ready> = Vec::with_capacity(pics.len());
-    for p in &pics {
+    for p in pics {
         let probe = picture::probe(&p.bytes).map_err(|e| picture_refusal(cmd, &p.name, &e))?;
         let shrunk = if place.downscale {
             picture::shrink(&p.bytes, &probe).map_err(|e| picture_refusal(cmd, &p.name, &e))?
@@ -207,7 +207,7 @@ pub(crate) fn insert_pictures(
         };
         let (mime, natural, bytes) = match shrunk {
             Some(sh) => (sh.mime, (sh.width, sh.height), sh.bytes),
-            None => (probe.mime, (probe.width, probe.height), p.bytes.clone()),
+            None => (probe.mime, (probe.width, probe.height), p.bytes),
         };
         // The size on the canvas follows the picture as it was given, not the smaller copy we store.
         let (w, h) = (f64::from(probe.width), f64::from(probe.height));
@@ -382,4 +382,4 @@ pub const COMMANDS: &[CommandSpec] = &[CommandSpec::new(
 
 #[cfg(test)]
 #[path = "image_tests.rs"]
-mod tests;
+pub(crate) mod tests;

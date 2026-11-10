@@ -253,10 +253,10 @@ fn paste_style(s: &mut Session, a: PasteStyleArgs) -> Result<PasteStyleOut, Refu
     let cmd = s.cmd();
     let targets = s.targets(a.ids.as_deref())?;
     let Some(props) = s.ext.with::<StyleBuffer, _>(|b| b.props.clone()) else {
-        return Err(Refusal::nothing_to_do(
+        return Err(Refusal::custom(
+            "nothing_to_do",
             cmd,
-            "paste",
-            "no style has been copied yet. Copy one with `clipboard.copy_style` first",
+            "No style has been copied yet. Copy one with `clipboard.copy_style` first.",
         ));
     };
     let (report, _) = s

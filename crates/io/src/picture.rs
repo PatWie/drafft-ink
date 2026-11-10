@@ -41,7 +41,9 @@ pub enum PictureError {
         size: usize,
     },
     /// More pixels than [`MAX_PIXELS`], or a side over [`MAX_SIDE`].
-    #[error("the picture is {width} x {height} pixels, and the limit is {MAX_PIXELS} pixels in total and {MAX_SIDE} on a side")]
+    #[error(
+        "the picture is {width} x {height} pixels, and the limit is {MAX_PIXELS} pixels in total and {MAX_SIDE} on a side"
+    )]
     TooManyPixels {
         /// Width in pixels.
         width: u32,
@@ -168,7 +170,9 @@ mod tests {
     use super::*;
 
     fn png(w: u32, h: u32) -> Vec<u8> {
-        let img = image::RgbaImage::from_fn(w, h, |x, y| image::Rgba([(x % 256) as u8, (y % 256) as u8, ((x * y) % 256) as u8, 255]));
+        let img = image::RgbaImage::from_fn(w, h, |x, y| {
+            image::Rgba([(x % 256) as u8, (y % 256) as u8, ((x * y) % 256) as u8, 255])
+        });
         let mut out = Cursor::new(Vec::new());
         img.write_to(&mut out, ImageFormat::Png).unwrap();
         out.into_inner()

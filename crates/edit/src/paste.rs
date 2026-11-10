@@ -21,8 +21,8 @@ use std::collections::{BTreeMap, BTreeSet, HashMap};
 use kurbo::{Point, Vec2};
 
 use drafftink_scene::{
-    Element, ElementError, ElementId, ElementKind, FileEntry, FileId, GroupId, IdSource, IndexError,
-    SceneTx, Style, StoreError, TextData, TextStyle, Transform, ZIndex, limits, validate_element,
+    Element, ElementError, ElementId, ElementKind, FileEntry, FileId, GroupId, IdSource, IndexError, SceneTx,
+    StoreError, Style, TextData, TextStyle, Transform, ZIndex, limits, validate_element,
 };
 
 use crate::binding::{self, BindingError};
@@ -218,11 +218,8 @@ pub fn insert_elements<T: SceneTx>(
             }
         }
         if let Some(custom) = &mut c.custom {
-            let old_keys: Vec<(String, GroupId)> = o
-                .group_ids
-                .iter()
-                .filter_map(|g| group_map.get(g).map(|n| (name_key(g), n.clone())))
-                .collect();
+            let old_keys: Vec<(String, GroupId)> =
+                o.group_ids.iter().filter_map(|g| group_map.get(g).map(|n| (name_key(g), n.clone()))).collect();
             let mut kept = BTreeMap::new();
             for (old, new) in old_keys {
                 if let Some(v) = custom.remove(&old) {
