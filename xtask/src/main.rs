@@ -8,6 +8,7 @@
 #![allow(clippy::disallowed_methods)]
 
 mod gates;
+mod harness;
 mod layers;
 mod standards;
 mod tools;
@@ -29,10 +30,12 @@ gates:
   standards       AGENTS.md stays short and cites only files that exist; toolchain pins agree
   deny            cargo deny: licences (AGPL-3.0-only compatible), advisories, bans, sources
   test [ARGS]     cargo nextest run (cargo test if nextest cannot be installed), plus doc tests
+  fixtures        the legacy fixtures against the facts the old code wrote (crates/io/tests/facts.rs)
+  harness         harness accounting: methods have reasons and callers, every family has scenarios (docs/testing.md)
   ci              all of the above in order, then the pending gates, with a summary table
 
 pending gates (not yet implemented; each must be listed in xtask/pending-gates.txt to pass):
-  perf  size  fixtures [--check]  harness
+  perf  size
 ";
 
 fn main() -> ExitCode {

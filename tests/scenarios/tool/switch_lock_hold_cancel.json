@@ -1,0 +1,24 @@
+{
+  "about": "The active tool changes by command: set, lock, hold and release, cancel step by step. An unknown tool is refused and view-only mode allows only the safe tools.",
+  "steps": [
+    { "assert": "engine.state", "expect": [ { "path": "$.tool", "eq": "select" }, { "path": "$.tool_lock", "eq": false } ] },
+    { "execute": "tool.set", "args": { "tool": "rectangle" }, "expect": [ { "path": "$.tool", "eq": "rectangle" }, { "path": "$.changed", "eq": true } ] },
+    { "execute": "tool.set", "args": { "tool": "rectangle" }, "expect": [ { "path": "$.changed", "eq": false } ], "note": "Setting the tool that is already active is Ok and changes nothing." },
+
+    { "execute": "tool.lock", "args": { "on": true }, "expect": [ { "path": "$.tool_lock", "eq": true } ] },
+    { "execute": "tool.hold", "args": { "tool": "hand" }, "expect": [ { "path": "$.tool", "eq": "hand" }, { "path": "$.held", "eq": "hand" } ] },
+    { "assert": "engine.state", "expect": [ { "path": "$.tool", "eq": "hand" } ] },
+    { "execute": "tool.release", "expect": [ { "path": "$.tool", "eq": "rectangle" }, { "path": "$.held", "eq": null } ] },
+    { "execute": "tool.cancel", "expect": [ { "path": "$.rungs", "eq": ["tool"] }, { "path": "$.changed", "eq": true } ] },
+    { "assert": "engine.state", "expect": [ { "path": "$.tool", "eq": "select" }, { "path": "$.tool_lock", "eq": false } ] },
+    { "execute": "tool.cancel", "expect": [ { "path": "$.changed", "eq": false, "note": "Nothing left to cancel." } ] },
+
+    { "execute": "tool.set", "args": { "tool": "banana" }, "refused": "bad_args", "text": ["banana", "rectangle"] },
+
+    { "undo": 1, "refused": "nothing_to_undo", "note": "Tool changes are not document history." },
+
+    { "execute": "view.set_view_only", "args": { "on": true } },
+    { "execute": "tool.set", "args": { "tool": "rectangle" }, "refused": "view_only_tool", "text": "select, hand and laser" },
+    { "execute": "tool.set", "args": { "tool": "laser" }, "expect": [ { "path": "$.tool", "eq": "laser" } ] }
+  ]
+}

@@ -8,7 +8,7 @@ use std::collections::BTreeSet;
 use std::path::Path;
 use std::time::{Duration, Instant};
 
-use crate::{cargo, layers, run, standards, tools, wasm};
+use crate::{cargo, harness, layers, run, standards, tools, wasm};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Gate {
@@ -64,7 +64,7 @@ impl Gate {
 
     /// True while the gate has no implementation. When you write one, drop it from this match.
     pub fn is_stub(self) -> bool {
-        matches!(self, Gate::Perf | Gate::Size | Gate::Harness)
+        matches!(self, Gate::Perf | Gate::Size)
     }
 
     fn run(self, root: &Path, args: &[String]) -> Result<(), String> {
@@ -85,7 +85,8 @@ impl Gate {
             Gate::Deny => deny(root),
             Gate::Test => test(root, args),
             Gate::Fixtures => fixtures(root),
-            Gate::Perf | Gate::Size | Gate::Harness => Err(format!("{}: no implementation", self.name())),
+            Gate::Harness => harness::run_gate(root),
+            Gate::Perf | Gate::Size => Err(format!("{}: no implementation", self.name())),
         }
     }
 }
@@ -287,6 +288,6 @@ mod tests {
     #[test]
     fn stubs_are_the_pending_gate_names() {
         let stubs: Vec<_> = Gate::ALL.iter().filter(|g| g.is_stub()).map(|g| g.name()).collect();
-        assert_eq!(stubs, ["perf", "size", "harness"]);
+        assert_eq!(stubs, ["perf", "size"]);
     }
 }

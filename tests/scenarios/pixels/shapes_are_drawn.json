@@ -1,0 +1,18 @@
+{
+  "about": "Pixel probe: the document is drawn offscreen with Vello, a filled rectangle shows its fill colour at its centre, and the background shows elsewhere. Reports the adapter, hardware or software.",
+  "requires": { "gpu": true },
+  "steps": [
+    { "harness": "load_generated", "args": { "count": 10 } },
+    { "execute": "view.set_viewport", "args": { "width": 600, "height": 400, "scale_factor": 1 } },
+    { "execute": "view.zoom_to_fit", "args": { "padding": 20 } },
+    { "harness": "scene_probe", "args": { "id": "e0" }, "save": { "cx": "$.element.center[0]", "cy": "$.element.center[1]" }, "expect": [ { "path": "$.element.kind", "eq": "rectangle" } ] },
+    { "note": "e0 is the filled rectangle of the generated scene (solid #99e9f2). Colours are compared with a tolerance of 24 per channel because GPU and software rasterisers differ in anti-aliasing and rounding.",
+      "harness": "pixel_probe",
+      "args": { "size": [600, 400], "points": [ { "world": ["{{cx}}", "{{cy}}"] }, { "screen": [2, 2] } ] },
+      "expect": [
+        { "path": "$.adapter", "is": "string" },
+        { "path": "$.ink_px", "gt": 2000, "note": "something was drawn" },
+        { "path": "$.pixels[0]", "near": [153, 233, 242, 255], "tol": 24, "note": "the rectangle's centre has its fill" },
+        { "path": "$.pixels[1]", "near": [255, 255, 255, 255], "tol": 2, "note": "the corner has the document background" } ] }
+  ]
+}

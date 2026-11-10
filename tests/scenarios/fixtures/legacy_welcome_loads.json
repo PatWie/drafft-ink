@@ -1,0 +1,21 @@
+{
+  "about": "The intro document of the old app (tests/fixtures/legacy/welcome.json) opens as a clean, history-free document whose element counts equal the facts the old code wrote, and the camera can frame it.",
+  "steps": [
+    { "note": "The numbers below are tests/fixtures/legacy/welcome.facts.json, doc.counts_total. The old code counted its 2 groups as shapes (54 in all); the new model has 52 elements and the groups as ids.",
+      "harness": "load_fixture", "args": { "path": "legacy/welcome.json" }, "expect": [ { "path": "$.elements", "eq": 52 }, { "path": "$.format", "eq": "LegacyJson" }, { "path": "$.warnings", "len": 0 } ] },
+    { "harness": "scene_probe", "args": { "outline": true }, "expect": [
+        { "path": "$.total", "eq": 52 },
+        { "path": "$.kinds.arrow", "eq": 11 }, { "path": "$.kinds.ellipse", "eq": 1 }, { "path": "$.kinds.freehand", "eq": 3 }, { "path": "$.kinds.line", "eq": 4 },
+        { "path": "$.kinds.math", "eq": 1 }, { "path": "$.kinds.rectangle", "eq": 3 }, { "path": "$.kinds.text", "eq": 29 },
+        { "path": "$.groups", "eq": 2 } ],
+      "save": { "bx": "$.bounds.x", "bw": "$.bounds.w" } },
+    { "assert": "engine.state", "expect": [ { "path": "$.dirty", "eq": false }, { "path": "$.selection.count", "eq": 0 } ] },
+    { "assert": "history.state", "expect": [ { "path": "$.can_undo", "eq": false } ] },
+
+    { "execute": "view.zoom_to_fit" },
+    { "assert": "view.get", "expect": [ { "path": "$.visible.x", "le": "{{bx}}" }, { "path": "$.visible.w", "ge": "{{bw}}" } ] },
+
+    { "snapshot": "outline", "of_harness": "scene_probe", "args": { "outline": true }, "select": "$.outline_text",
+      "note": "The outline of the migrated document. When doc.outline is registered this becomes `of_command: doc.outline`." }
+  ]
+}

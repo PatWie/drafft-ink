@@ -1532,6 +1532,20 @@ dependencies = [
 [[package]]
 name = "drafftink-testkit"
 version = "0.2.0"
+dependencies = [
+ "drafftink-edit",
+ "drafftink-engine",
+ "drafftink-geom",
+ "drafftink-gpu",
+ "drafftink-io",
+ "drafftink-render",
+ "drafftink-scene",
+ "serde",
+ "serde_json",
+ "syn 2.0.119",
+ "thiserror 2.0.21",
+ "wgpu",
+]
 
 [[package]]
 name = "drafftink-typeset"

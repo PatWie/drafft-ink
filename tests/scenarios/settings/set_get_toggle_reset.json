@@ -1,0 +1,22 @@
+{
+  "about": "Settings are read, set, toggled, cycled and reset by command. A wrong key, a wrong type and a read-only key are refused with the fix in the message.",
+  "steps": [
+    { "execute": "settings.get", "args": { "key": "snap.grid" }, "expect": [ { "path": "$.settings['snap.grid']", "eq": false }, { "path": "$.default", "eq": false } ] },
+    { "execute": "settings.set", "args": { "key": "snap.grid", "value": true }, "expect": [
+        { "path": "$.changed", "eq": true }, { "path": "$.previous", "eq": false }, { "path": "$.value", "eq": true } ] },
+    { "execute": "settings.set", "args": { "key": "snap.grid", "value": true }, "expect": [ { "path": "$.changed", "eq": false, "note": "The same value is Ok and changes nothing." } ] },
+    { "execute": "settings.toggle", "args": { "key": "snap.grid" }, "expect": [ { "path": "$.value", "eq": false } ] },
+
+    { "execute": "settings.set", "args": { "key": "snap.angle_step", "value": 30 }, "expect": [ { "path": "$.value", "eq": 30 } ] },
+    { "execute": "settings.cycle", "args": { "key": "view.grid_style", "step": 1 }, "expect": [ { "path": "$.previous", "eq": "lines" }, { "path": "$.value", "eq": "horizontal_lines" } ] },
+    { "execute": "settings.reset", "args": { "key": "view.grid_style" }, "expect": [ { "path": "$.reset", "eq": ["view.grid_style"] } ] },
+    { "execute": "settings.get", "args": { "key": "view.grid_style" }, "expect": [ { "path": "$.settings['view.grid_style']", "eq": "lines" } ] },
+    { "execute": "settings.reset", "args": { "all": true }, "expect": [ { "path": "$.reset", "contains": "snap.angle_step" } ] },
+
+    { "execute": "settings.set", "args": { "key": "snap.gird", "value": true }, "refused": "unknown_setting", "text": "Did you mean `snap.grid`" },
+    { "execute": "settings.set", "args": { "key": "snap.grid", "value": "sure" }, "refused": "bad_args", "text": "true or false" },
+    { "execute": "settings.set", "args": { "key": "doc.recent", "value": [] }, "refused": "bad_args", "text": "read only" },
+
+    { "undo": 1, "refused": "nothing_to_undo", "note": "Settings are not document history." }
+  ]
+}

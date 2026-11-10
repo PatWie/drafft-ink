@@ -1,0 +1,29 @@
+{
+  "about": "style.set changes only the named properties of the named elements, themes restyle in one step, and undo gives the old look back.",
+  "steps": [
+    { "harness": "load_generated", "args": { "count": 6 } },
+    { "assert": "style.get", "args": { "ids": ["e0"] }, "expect": [
+        { "path": "$.kinds", "eq": ["rectangle"] },
+        { "path": "$.props.stroke_width.value", "eq": 2 },
+        { "path": "$.props.fill_color.value", "eq": "#99e9f2" },
+        { "path": "$.props.font_size.applicable", "eq": false, "note": "a rectangle has no font" } ] },
+
+    { "execute": "style.set", "args": { "ids": ["e0"], "props": { "stroke_width": 4 } }, "expect": [
+        { "path": "$.changed", "eq": true }, { "path": "$.applied.e0", "eq": ["stroke_width"] }, { "path": "$.undo_label", "eq": "Set style" } ] },
+    { "assert": "style.get", "args": { "ids": ["e0"], "props": ["stroke_width", "fill_color"] }, "expect": [
+        { "path": "$.props.stroke_width.value", "eq": 4 }, { "path": "$.props.fill_color.value", "eq": "#99e9f2", "note": "untouched" } ] },
+    { "assert": "style.get", "args": { "ids": ["e1"], "props": ["stroke_width"] }, "expect": [ { "path": "$.props.stroke_width.value", "eq": 2, "note": "another element is untouched" } ] },
+
+    { "execute": "style.set", "args": { "ids": ["e0"], "props": { "no_such_property": 1 } }, "refused": "bad_args", "text": "no_such_property" },
+    { "execute": "style.set", "args": { "ids": ["zzz"], "props": { "stroke_width": 4 } }, "refused": "not_found", "text": "zzz" },
+
+    { "assert": "style.list_themes", "expect": [ { "path": "$.themes[name=pastel].props.fill_color", "eq": "#dbeafe" } ], "save": { "fill": "$.themes[name=pastel].props.fill_color" } },
+    { "execute": "style.apply_theme", "args": { "name": "pastel", "ids": ["e0", "e1"] }, "expect": [ { "path": "$.theme", "eq": "pastel" } ] },
+    { "assert": "style.get", "args": { "ids": ["e0"], "props": ["fill_color"] }, "expect": [ { "path": "$.props.fill_color.value", "eq": "{{fill}}" } ] },
+    { "execute": "style.apply_theme", "args": { "name": "no-such-theme", "ids": ["e0"] }, "refused": "unknown_theme" },
+
+    { "undo": 2, "expect": [ { "path": "$.undone", "eq": ["Apply theme", "Set style"] } ] },
+    { "assert": "style.get", "args": { "ids": ["e0"], "props": ["stroke_width", "fill_color"] }, "expect": [
+        { "path": "$.props.stroke_width.value", "eq": 2 }, { "path": "$.props.fill_color.value", "eq": "#99e9f2" } ] }
+  ]
+}

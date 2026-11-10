@@ -1,0 +1,58 @@
+nodes (12):
+a464801a-d072-4463-983e-72553071b66f rectangle (298,186,493x65)
+b5960dbc-ac14-4afc-b978-b5a3daabe231 line (344,369,62x1)
+0e38b771-8eef-449b-83fb-dfc065387fb0 freehand (936,372,0x0)
+82ea95af-f275-41d1-b50f-fd4841f40155 rectangle (287,401,346x41)
+4673a1f8-96f6-498f-8dc6-7ff2eefe606e freehand (1165,431,90x36)
+fb794d69-aa38-4f63-87a1-acdedcb0fb2d freehand (944,536,114x49)
+f462a57e-dcd1-416a-aee6-ba8c047741d3 "x^2 + y^2 = \\int_{x=0}^\\infty R^2 dx" math (982,504,240x117)
+76ac8445-b150-4a6f-a485-91720eadc964 ellipse (517,580,256x62)
+b412e8c5-5289-45d3-af52-4044adf3fae0 line (503,728,39x0)
+e524d881-e3f5-4a60-978f-9306172da10b line (502,735,39x0)
+81e526d4-7d3b-4a7b-b613-25f2394ff101 rectangle (341,706,560x60)
+d5972fc1-dc9a-4e7f-b5d3-a9e0b0e1992f line (502,742,40x0)
+edges (11):
+? -> ? [0e4f6357-54aa-448c-8754-62ccc179851f]
+? -> ? [3ec83310-46c2-4f8d-9253-d48bf4a08aaa]
+? -> ? [5be0ed94-501b-4d40-9c48-4507fb446cb9]
+? -> ? [636858d5-dd1e-46b7-88f3-4bbe6b03de7e]
+? -> ? [78b1b518-2f31-4c63-a11b-671f7b41a721]
+? -> ? round [8f3c4b5c-1373-4c02-b156-da21861acbec]
+? -> ? elbow [908e00aa-d160-4bef-bd2b-6def6d521bdf]
+? -> ? [cd5ad2eb-c60b-4b4f-8dad-1a2ead152413]
+? -> ? [d07a3d20-f7c5-4762-9894-c1d61a13be3c]
+? -> ? [d465e6f1-e986-4d8b-b9f0-381b2655c393]
+? -> ? [ebe55230-d97a-48c2-9ca7-d717cf151525]
+texts (29):
+6f39f12e-f412-49ac-8f1b-ae0f23456666 "select stroke" text (1505,27,109x25)
+2da43eca-8d7d-4bf2-b024-55bff373e047 "live collab" text (146,54,82x60)
+353823b2-21e8-41f0-acf6-5d6456660bc7 "select color" text (849,128,65x98)
+a1c137be-6cb0-4f2b-b69a-f5c1582ebc19 "Welcome to Drafft.Ink" text (320,205,436x45)
+b144e19b-7109-406c-a30e-1fa8761a7815 "select fill" text (913,290,79x56)
+5a2ea263-177c-4434-ad5a-0128bcd33e8f "Effortlessly self-host whiteboards. High-performance, \ncross-platform digital wh…" text (299,273,503x100)
+0e1a8a54-f214-402c-8128-9a120a74f9ab "choose properties" text (1372,401,150x25)
+672ff778-bf3a-4aa3-b077-bad9d4974465 "All data is save locally in your Browser!" text (297,409,325x25)
+89376fe3-9c98-4a69-9c89-c3d8dcda2b31 "code" text (520,460,39x25)
+688927d5-75bf-4c30-927d-e7dee224b42c "https://github.com/PatWie/drafft-ink" text (600,460,298x25)
+67a51385-90ce-4e98-b2cc-33d9fe7ca953 "url" text (520,480,22x25)
+1747ac47-f4b1-4154-9dd5-04ac8b10f19d "https://drafft.ink/" text (600,480,141x25)
+27b33f95-39a5-4b11-a10d-39086a75e8d5 "We also support LaTeX with best-effort\nfor same font" text (937,425,329x173)
+be3b50c7-7491-4e2e-8bda-2313b75d9410 "choose tool" text (107,545,92x68)
+5d9d1ad6-fc13-40bd-9d77-124a60132cc5 "Fonts are from" text (380,600,126x25)
+8011136b-0594-46a0-b794-c5d7190d884d "https://sharasfonts.com/" text (540,600,200x25)
+6e26fd72-7a63-455e-a8c6-8a27ff5f457e "Select a font" text (1107,664,105x25)
+7c00409a-03ec-4645-9595-4aee65c711e7 "Select a font" text (1127,684,109x25)
+bf702f2e-2878-4984-acbf-c697cffe0c4d "Select a font" text (1147,704,114x25)
+8584ea55-b8c1-4fc7-bbc2-956d51fe75df "Select a font" text (1167,724,122x25)
+d5c1b924-8617-4d7a-9c2b-92f6afbcce1d "Click the menu" text (361,726,121x25)
+869a6455-c940-4ed7-b2bf-62c9198c561e "Then \"clear\" to get your empty canvas." text (561,726,319x25)
+57cac866-ff61-429d-81fa-fcc338463a4e "Select a font" text (1187,744,125x25)
+28820735-3aaa-4b2a-832d-a24d9af388c8 "Select a font" text (1207,764,127x25)
+6bb4acdf-d5cd-453f-83ed-00107e1822fc "Select a font" text (1227,784,143x25)
+7851d95c-2805-4d5d-9622-be9f72d3c034 "navigate" text (263,871,69x25)
+f6ab6ff0-2c43-4edc-91d4-95a4d19d0fc5 "snap to grid" text (392,872,100x25)
+7451a4c8-df68-49da-beb4-46c8ba3cb87c "fullCRDT\nhistory" text (69,868,77x50)
+383eab95-4c91-4cbe-a28f-a2c033e0849e "live collab users" text (1703,920,132x25)
+groups (2):
+246e018e-c231-4d5c-b605-e7402ae2e1f0: 4673a1f8-96f6-498f-8dc6-7ff2eefe606e, fb794d69-aa38-4f63-87a1-acdedcb0fb2d, f462a57e-dcd1-416a-aee6-ba8c047741d3, 27b33f95-39a5-4b11-a10d-39086a75e8d5
+e50f4415-7135-43b7-956d-4f670d344f60: fb794d69-aa38-4f63-87a1-acdedcb0fb2d, f462a57e-dcd1-416a-aee6-ba8c047741d3, 27b33f95-39a5-4b11-a10d-39086a75e8d5

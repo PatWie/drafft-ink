@@ -3,4 +3,3 @@
 # `cargo xtask standards` fails if a line is added compared with origin/main.
 perf      # frame time, idle redraw, scene-size scaling (docs/plan.md §7)
 size      # wasm size budget
-harness   # harness accounting: every scenario and command is exercised

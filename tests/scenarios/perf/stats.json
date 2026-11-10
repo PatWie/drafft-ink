@@ -1,0 +1,12 @@
+{
+  "about": "perf.stats reports counters of this session (the commands run so far), reads without changing anything, and refuses an unknown window.",
+  "steps": [
+    { "execute": "view.zoom_in" },
+    { "assert": "perf.stats", "expect": [ { "path": "$.counters.commands", "gt": 0 }, { "path": "$.changed", "eq": false }, { "path": "$.since", "eq": "start" } ], "save": { "n": "$.counters.commands" } },
+    { "execute": "view.zoom_in" },
+    { "assert": "perf.stats", "expect": [ { "path": "$.counters.commands", "gt": "{{n}}" } ] },
+    { "assert": "perf.stats", "args": { "since": "last_call" }, "expect": [ { "path": "$.since", "eq": "last_call" } ] },
+    { "assert": "perf.stats", "args": { "since": "never" }, "refused": "bad_args", "text": "last_call" },
+    { "undo": 1, "refused": "nothing_to_undo" }
+  ]
+}
