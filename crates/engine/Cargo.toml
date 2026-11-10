@@ -4,8 +4,23 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 rust-version.workspace = true
+description = "Command registry, Session, execute / execute_batch, refusals, gesture protocol and ports (L5)."
 
 [dependencies]
+drafftink-scene = { path = "../scene" }
+drafftink-geom = { path = "../geom" }
+drafftink-edit = { path = "../edit" }
+drafftink-profile = { path = "../profile" }
+schemars.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+# Names the key that failed when typed arguments are rejected (bad_args).
+serde_path_to_error = "0.1"
+base64.workspace = true
+
+[dev-dependencies]
+drafftink-scene = { path = "../scene", features = ["conformance"] }
 
 [lints]
 workspace = true
