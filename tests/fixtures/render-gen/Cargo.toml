@@ -1,0 +1,22 @@
+[package]
+name = "render-gen"
+version = "0.1.0"
+edition = "2024"
+publish = false
+description = "Offscreen reference renderer: legacy DrafftInk JSON -> PNG using the OLD drafftink-render (Vello) on headless wgpu"
+
+# Standalone project, not part of the repo workspace.
+[workspace]
+
+[dependencies]
+drafftink-core = { path = "/home/ubuntu/git/drafft-ink/crates/drafftink-core" }
+drafftink-render = { path = "/home/ubuntu/git/drafft-ink/crates/drafftink-render" }
+vello = "0.6.0"
+kurbo = "0.12"
+peniko = "0.5"
+png = "0.17"
+pollster = "0.4"
+
+# Copied from the old workspace Cargo.toml: path dependencies do not inherit its [patch].
+[patch.crates-io]
+vello = { git = "https://github.com/linebender/vello", rev = "1771112ebc0ae04d996ebf493d3a00d73303f014" }

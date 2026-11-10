@@ -1,0 +1,17 @@
+sequenceDiagram
+    autonumber
+    participant A
+    participant B
+    loop every minute
+        A->>B: ping
+    end
+    alt ok
+        B-->>A: pong
+    else fail
+        B-->>A: error
+    end
+    activate A
+    A->>B: after
+    deactivate A
+    %% comment
+    A->>B: inline comment %% ignored

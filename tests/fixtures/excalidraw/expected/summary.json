@@ -1,0 +1,55 @@
+{
+  "files": [
+    {
+      "name": "basic_shapes",
+      "parsed": true,
+      "source_element_types": {"arrow":2,"diamond":1,"ellipse":2,"embeddable":1,"freedraw":1,"line":2,"rectangle":7,"text":3},
+      "imported_shapes": 17
+    },
+    {
+      "name": "bindings",
+      "parsed": true,
+      "source_element_types": {"arrow":3,"ellipse":1,"rectangle":2,"text":1},
+      "imported_shapes": 7
+    },
+    {
+      "name": "closed_paths",
+      "parsed": true,
+      "source_element_types": {"arrow":1,"freedraw":2,"line":5},
+      "imported_shapes": 5
+    },
+    {"name":"elbow_arrows","parsed":true,"source_element_types":{"arrow":3,"rectangle":2},"imported_shapes":5},
+    {
+      "name": "frames",
+      "parsed": true,
+      "source_element_types": {"arrow":1,"ellipse":1,"frame":1,"magicframe":1,"rectangle":3},
+      "imported_shapes": 5
+    },
+    {
+      "name": "groups",
+      "parsed": true,
+      "source_element_types": {"ellipse":1,"rectangle":5,"text":1},
+      "imported_shapes": 7
+    },
+    {
+      "name": "images_and_unsupported",
+      "parsed": true,
+      "source_element_types": {"embeddable":1,"iframe":1,"image":1,"rectangle":1},
+      "imported_shapes": 1
+    },
+    {
+      "name": "minimal_fields",
+      "parsed": true,
+      "source_element_types": {"?":1,"ellipse":1,"rectangle":3,"text":2,"unknown-type":1},
+      "imported_shapes": 6
+    },
+    {"name":"no_elements","parsed":false,"source_element_types":{},"imported_shapes":0},
+    {"name":"not_json","parsed":false,"source_element_types":{},"imported_shapes":0},
+    {
+      "name": "text_containers",
+      "parsed": true,
+      "source_element_types": {"arrow":1,"diamond":1,"ellipse":1,"rectangle":1,"text":7},
+      "imported_shapes": 11
+    }
+  ]
+}

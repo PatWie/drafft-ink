@@ -1,0 +1,10 @@
+{
+  "facts_version": 1,
+  "source": "excalidraw/grouped_library.excalidrawlib",
+  "recognized": true,
+  "items": [
+    {"name":"CloudSearch","bounds":[0.0,0.0,121.00000000000001,84.0],"children":2},
+    {"name":"Item 2","bounds":[0.0,0.0,80.0,30.0],"children":1},
+    {"name":"Arrow pair","bounds":[0.0,-7.5,60.0,27.5],"children":2}
+  ]
+}

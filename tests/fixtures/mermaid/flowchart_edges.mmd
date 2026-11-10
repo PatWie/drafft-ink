@@ -1,0 +1,11 @@
+graph LR
+    A --- B
+    B --> C
+    C -.-> D
+    D ==> E
+    E <--> F
+    A -->|pipe label| C
+    B -- embedded label --> D
+    C -.->|dotted label| E
+    F --x A
+    E --o B

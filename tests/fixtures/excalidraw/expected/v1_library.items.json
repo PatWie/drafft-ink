@@ -1,0 +1,9 @@
+{
+  "facts_version": 1,
+  "source": "excalidraw/v1_library.excalidrawlib",
+  "recognized": true,
+  "items": [
+    {"name":"Item 1","bounds":[0.0,0.0,50.0,30.0],"children":1},
+    {"name":"Item 2","bounds":[0.0,0.0,40.0,40.0],"children":2}
+  ]
+}

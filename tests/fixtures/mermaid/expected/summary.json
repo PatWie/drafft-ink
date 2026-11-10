@@ -1,0 +1,31 @@
+{
+  "inputs": [
+    {"input":"mermaid/flowchart_chain.mmd","accepted":true},
+    {"input":"mermaid/flowchart_comment_before_header.mmd","accepted":true},
+    {"input":"mermaid/flowchart_cycle.mmd","accepted":true},
+    {"input":"mermaid/flowchart_directions_bt.mmd","accepted":true},
+    {"input":"mermaid/flowchart_directions_rl.mmd","accepted":true},
+    {"input":"mermaid/flowchart_edges.mmd","accepted":true},
+    {"input":"mermaid/flowchart_fenced.mmd","accepted":true},
+    {"input":"mermaid/flowchart_large.mmd","accepted":true},
+    {"input":"mermaid/flowchart_quoted_labels.mmd","accepted":true},
+    {"input":"mermaid/flowchart_shapes.mmd","accepted":true},
+    {"input":"mermaid/flowchart_subgraph.mmd","accepted":true},
+    {"input":"mermaid/sequence_arrows.mmd","accepted":true},
+    {"input":"mermaid/sequence_basic.mmd","accepted":true},
+    {"input":"mermaid/sequence_implicit_participants.mmd","accepted":true},
+    {"input":"mermaid/sequence_notes_self.mmd","accepted":true},
+    {"input":"mermaid/sequence_unsupported.mmd","accepted":true},
+    {"input":"mermaid/unicode_labels.mmd","accepted":true},
+    {"input":"mermaid/rejected/class_diagram.mmd","accepted":false},
+    {"input":"mermaid/rejected/empty.mmd","accepted":false},
+    {"input":"mermaid/rejected/er_diagram.mmd","accepted":false},
+    {"input":"mermaid/rejected/gantt.mmd","accepted":false},
+    {"input":"mermaid/rejected/graph_without_content.mmd","accepted":false},
+    {"input":"mermaid/rejected/lowercase_graph.mmd","accepted":false},
+    {"input":"mermaid/rejected/pie.mmd","accepted":false},
+    {"input":"mermaid/rejected/prose.mmd","accepted":false},
+    {"input":"mermaid/rejected/sequence_without_participants.mmd","accepted":false},
+    {"input":"mermaid/rejected/state_diagram.mmd","accepted":false}
+  ]
+}

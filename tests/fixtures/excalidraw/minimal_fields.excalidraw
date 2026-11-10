@@ -1,0 +1,56 @@
+{
+  "type": "excalidraw",
+  "version": 2,
+  "elements": [
+    {
+      "type": "rectangle"
+    },
+    {
+      "type": "ellipse",
+      "x": 10,
+      "y": 20
+    },
+    {
+      "type": "text",
+      "x": 5,
+      "y": 5
+    },
+    {
+      "type": "text",
+      "x": 5,
+      "y": 50,
+      "text": "fontSize as float",
+      "fontSize": 16.5,
+      "opacity": 0.5
+    },
+    {
+      "type": "rectangle",
+      "x": 300,
+      "y": 0,
+      "width": 40,
+      "height": 40,
+      "opacity": 100,
+      "strokeColor": "#12345678",
+      "backgroundColor": "#f00"
+    },
+    {
+      "type": "rectangle",
+      "x": 400,
+      "y": 0,
+      "width": 40,
+      "height": 40,
+      "opacity": 1,
+      "strokeColor": "#xyz",
+      "backgroundColor": "rgb(1,2,3)"
+    },
+    {
+      "type": "unknown-type",
+      "x": 0,
+      "y": 0
+    },
+    {
+      "x": 1,
+      "y": 1
+    }
+  ]
+}

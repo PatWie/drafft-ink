@@ -1,0 +1,6 @@
+{
+  "facts_version": 1,
+  "source": "excalidraw/fixture_library.excalidrawlib",
+  "recognized": true,
+  "items": [{"name":"Item 1","bounds":[21801.0,719.5,21851.0,749.5],"children":1}]
+}
