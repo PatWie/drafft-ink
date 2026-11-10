@@ -323,8 +323,79 @@ fn arb_text() -> impl Strategy<Value = String> {
     ]
 }
 
+/// Calls every geometry method of the caret API. None may panic, and the answers must be sane.
+fn exercise_caret_apis(l: &TextLayout, len: usize) {
+    use kurbo::Point;
+    let w = l.size.width;
+    let h = l.size.height;
+    let points = [
+        Point::new(0.0, 0.0),
+        Point::new(w / 2.0, h / 2.0),
+        Point::new(w, h),
+        Point::new(w * 0.9, 1.0),
+        Point::new(-5.0, h * 0.3),
+        Point::new(w + 100.0, h + 100.0),
+        Point::new(f64::NAN, f64::INFINITY),
+        Point::new(f64::NEG_INFINITY, 1e300),
+    ];
+    let indices = [0, 1, 2, 3, len / 2, len.saturating_sub(1), len, len + 1, usize::MAX];
+    let motions = [
+        Motion::Left,
+        Motion::Right,
+        Motion::WordLeft,
+        Motion::WordRight,
+        Motion::Up,
+        Motion::Down,
+        Motion::LineStart,
+        Motion::LineEnd,
+        Motion::ParagraphStart,
+        Motion::ParagraphEnd,
+        Motion::TextStart,
+        Motion::TextEnd,
+    ];
+    let mut sels = vec![l.select_all()];
+    for &i in &indices {
+        for &j in &indices {
+            sels.push(l.selection_from_range(i, j));
+        }
+        sels.push(l.selection_at_index(i, Affinity::Upstream));
+        sels.push(l.selection_at_index(i, Affinity::Downstream));
+        let _ = l.word_range_at(i);
+        let _ = l.line_of_index(i);
+        let c = l.selection_at_index(i, Affinity::Downstream).focus();
+        let r = l.caret_rect(c, 1.5);
+        assert!(r.x0.is_finite() && r.y0.is_finite() && r.x1.is_finite() && r.y1.is_finite(), "{r:?}");
+        let _ = l.caret_point(c);
+    }
+    for &p in &points {
+        let c = l.caret_at_point(p);
+        assert!(c.index <= len, "{c:?} > {len}");
+        sels.push(l.selection_at_point(p));
+        sels.push(l.word_at_point(p));
+        sels.push(l.line_at_point(p));
+        sels.push(l.paragraph_at_point(p));
+        let _ = l.hit_test(p, 2.0);
+    }
+    for sel in sels.clone() {
+        for m in motions {
+            for extend in [false, true] {
+                let moved = l.move_selection(&sel, m, extend);
+                assert!(moved.range().end <= len);
+            }
+        }
+        for &p in &points {
+            assert!(l.extend_to_point(&sel, p).range().end <= len);
+            assert!(l.shift_click(&sel, p).range().end <= len);
+        }
+        for r in l.selection_rects(&sel) {
+            assert!(r.x0.is_finite() && r.x1.is_finite() && r.y0.is_finite() && r.y1.is_finite(), "{r:?}");
+        }
+        assert!(sel.range().end <= len && sel.range().start <= sel.range().end);
+    }
+}
+
 proptest! {
-    #![proptest_config(ProptestConfig::with_cases(96))]
+    #![proptest_config(ProptestConfig::with_cases(256))]
 
     #[test]
     fn arbitrary_latex_never_panics(src in arb_text()) {
@@ -365,11 +436,7 @@ proptest! {
             for g in &run.glyphs { prop_assert!(g.x.is_finite() && g.y.is_finite()); }
         }
         let _ = l.outline();
-        // Caret APIs on whatever came out.
-        let sel = l.select_all();
-        let _ = l.selection_rects(&sel);
-        let _ = l.caret_rect(sel.focus(), 1.5);
-        let _ = l.caret_at_point(kurbo::Point::new(f64::NAN, f64::INFINITY));
-        let _ = l.word_range_at(usize::MAX);
+        // Every caret API, on whatever came out, with hostile indices and points.
+        exercise_caret_apis(&l, text.len());
     }
 }
