@@ -42,6 +42,7 @@ web-sys = { workspace = true, features = [
     "KeyboardEvent", "InputEvent", "CompositionEvent", "PointerEvent", "FocusEvent", "VisibilityState",
     "CssStyleDeclaration", "DomRect", "Performance", "Location", "console", "AddEventListenerOptions",
     "ResizeObserver", "MediaQueryList", "Permissions", "Url",
+    "MouseEvent", "UiEvent", "FocusOptions", "HtmlHeadElement", "HtmlStyleElement",
 ] }
 
 [dev-dependencies]
