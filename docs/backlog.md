@@ -14,3 +14,4 @@ Features decided but not yet assigned to a phase agent.
 - Snap types: `Snap` lives in cmd/arrow.rs but element.move/resize need the same type; move to a shared module.
 - text.edit_end style is a local StyleProps subset and new text uses TextStyle::default(): switch to edit::style (SEAM(f-style) markers in engine session.rs).
 - collab: auth token setting/arg (auth_token always None today); snapshot import blocks the polling thread (move to a worker on native, chunked on web).
+- Perf: loading a 100k scene into a TabDoc takes ~6 s release / 40 s debug (testkit finding); tab rename undo leaves tab dirty:true.
