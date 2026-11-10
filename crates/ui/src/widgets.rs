@@ -296,7 +296,7 @@ impl<'a> Cx<'a> {
 pub fn paint_button_bg(p: &Painter, rect: Rect, look: Look, pal: &Palette, solid_selected: bool) {
     let r = CornerRadius::same(theme::BUTTON_RADIUS);
     if look.selected {
-        let fill = if solid_selected { pal.accent } else { pal.accent };
+        let fill = pal.accent;
         p.rect_filled(rect, r, if look.enabled { fill } else { fill.gamma_multiply(0.4) });
     } else if look.enabled && (look.hovered || look.pressed) {
         p.rect_filled(rect, r, if look.pressed { pal.border } else { pal.hover });
