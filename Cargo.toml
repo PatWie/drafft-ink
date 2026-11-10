@@ -1,0 +1,35 @@
+[workspace]
+resolver = "3"
+members = ["crates/*", "apps/*", "xtask"]
+
+[workspace.package]
+version = "0.2.0"
+edition = "2024"
+license = "AGPL-3.0-only"
+rust-version = "1.91"
+
+[workspace.dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "2"
+log = "0.4"
+# Graphics stack versions are pinned by the stack spike (docs/stack.md).
+
+[workspace.lints.rust]
+unsafe_code = "forbid"
+
+[workspace.lints.clippy]
+unwrap_used = "deny"
+expect_used = "deny"
+panic = "deny"
+
+[profile.release]
+opt-level = 3
+lto = "thin"
+codegen-units = 1
+
+[profile.release-wasm]
+inherits = "release"
+opt-level = "s"
+lto = "fat"
+panic = "abort"
