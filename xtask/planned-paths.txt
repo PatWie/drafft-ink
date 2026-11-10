@@ -6,4 +6,3 @@ docs/commands.md
 docs/exceptions.md
 docs/testing.md
 docs/agents.md
-docs/formats.md
