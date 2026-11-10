@@ -12,3 +12,4 @@ Features decided but not yet assigned to a phase agent.
 - `element.relabel` labels use the default text style, not the tool's text defaults (`text_bind::relabel` takes no font).
 - `image.insert` validates header and size only; damaged pixel data fails at render time.
 - Snap types: `Snap` lives in cmd/arrow.rs but element.move/resize need the same type; move to a shared module.
+- text.edit_end style is a local StyleProps subset and new text uses TextStyle::default(): switch to edit::style (SEAM(f-style) markers in engine session.rs).
