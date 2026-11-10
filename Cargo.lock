@@ -1277,6 +1277,19 @@ version = "0.2.0"
 [[package]]
 name = "drafftink-bridge"
 version = "0.2.0"
+dependencies = [
+ "drafftink-engine",
+ "futures-util",
+ "getrandom 0.3.4",
+ "log",
+ "serde",
+ "serde_json",
+ "subtle",
+ "tempfile",
+ "thiserror 2.0.21",
+ "tokio",
+ "tokio-tungstenite 0.30.0",
+]
 
 [[package]]
 name = "drafftink-canvas"
