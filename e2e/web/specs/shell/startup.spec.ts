@@ -75,3 +75,48 @@ test("startup: the agent pairing refuses what it should and scrubs the address",
   const where = await page.evaluate(() => location.hash + "|" + location.search);
   expect(where, "the token leaves the address bar, the rest stays").toBe("#room=r1|?x=1");
 });
+
+test("startup: the loading page counts the wasm download as a percentage and ends at 100%", async ({ browser }) => {
+  // No service worker, so that the route below sees the request.
+  const context = await browser.newContext({ serviceWorkers: "block" });
+  const seen: string[] = [];
+  let wasmBytes = 0;
+  await context.route("**/*.wasm*", async (route) => {
+    const response = await route.fetch();
+    const body = await response.body();
+    wasmBytes = body.length;
+    await route.fulfill({ response, body });
+  });
+  await context.addInitScript(() => {
+    const log: string[] = ((window as unknown as { __progressLog: string[] }).__progressLog = []);
+    const watch = () => {
+      const el = document.getElementById("loading-progress");
+      if (!el) return false;
+      new MutationObserver(() => log.push(el.textContent ?? "")).observe(el, { childList: true, characterData: true, subtree: true });
+      return true;
+    };
+    if (!watch()) document.addEventListener("DOMContentLoaded", watch);
+  });
+  const app = await openApp(context, serverInfo().origin);
+  const log = await app.page.evaluate(() => (window as unknown as { __progressLog: string[] }).__progressLog);
+  seen.push(...log);
+  expect(wasmBytes, "the wasm went through the route").toBeGreaterThan(100_000);
+  const progress = await app.page.evaluate(() => window.__loadProgress);
+  expect(progress, "every byte of the module was counted").toEqual({ loaded: wasmBytes, total: wasmBytes });
+  expect(seen.length, "the number was written while loading").toBeGreaterThan(0);
+  for (const text of seen) expect(text, "each reading is a whole percentage").toMatch(/^\d{1,3}%$/);
+  expect(seen[seen.length - 1], "and the last one is complete").toBe("100%");
+  expect(app.consoleErrors).toEqual([]);
+  await context.close();
+});
+
+test("startup: a wasm that cannot be fetched shows the failure page with the reason", async ({ browser }) => {
+  const context = await browser.newContext({ serviceWorkers: "block" });
+  await context.route("**/*.wasm*", (route) => route.fulfill({ status: 404, body: "gone" }));
+  const page = await context.newPage();
+  await page.goto(serverInfo().origin);
+  await page.waitForFunction(() => typeof window.__error === "string", undefined, { timeout: 30_000 });
+  await expect(page.locator("#failure")).toBeVisible();
+  await expect(page.locator("#failure-detail")).toContainText("404");
+  await context.close();
+});

@@ -110,5 +110,7 @@ declare global {
     __started?: boolean;
     /** Set by `index.html` when the app failed to start. */
     __error?: string;
+    /** Set by `index.html` while the wasm downloads: bytes read and the length the server gave (0: unknown). */
+    __loadProgress?: { loaded: number; total: number };
   }
 }
