@@ -39,19 +39,26 @@ fn menu_over(mut f: Fixture, n: usize, at: egui::Pos2, world: Option<[f64; 2]>) 
 
 /// True when a node lies where the menu opened by `menu_with(_, pos2(300, 200))` is drawn. The chrome (tool column on the
 /// left, bottom bar and tab bar at the bottom, right panel) has buttons of the same names ("Undo", "Zoom to fit",
-/// "Align left"), so rows are told apart by position.
-fn in_menu(n: &egui_kittest::Node<'_>) -> bool {
-    let r = n.rect();
-    (290.0..640.0).contains(&r.min.x) && (55.0..745.0).contains(&r.min.y)
+/// "Align left"), so rows are told apart by position: between the top strip and the bottom bar, right of the tool
+/// column.
+fn in_menu(h: &H) -> impl Fn(&egui_kittest::Node<'_>) -> bool {
+    let chrome = h.state().state.chrome;
+    let below = chrome.strip.map_or(0.0, |r| r.max.y);
+    // The controls of the bottom bar start one panel padding below its top edge.
+    let above = chrome.bottom_bar.map_or(f32::MAX, |r| r.min.y + drafftink_ui::widgets::PANEL_INSET_Y);
+    move |n| {
+        let r = n.rect();
+        (290.0..640.0).contains(&r.min.x) && r.min.y >= below && r.min.y < above
+    }
 }
 
 /// The menu row with this text.
 fn row<'a>(h: &'a H, text: &'a str) -> egui_kittest::Node<'a> {
-    h.get_all_by_role_and_label(Role::Button, text).find(in_menu).unwrap_or_else(|| panic!("no menu row {text}"))
+    h.get_all_by_role_and_label(Role::Button, text).find(in_menu(h)).unwrap_or_else(|| panic!("no menu row {text}"))
 }
 
 fn has_row(h: &H, text: &str) -> bool {
-    h.query_all_by_role_and_label(Role::Button, text).any(|n| in_menu(&n))
+    h.query_all_by_role_and_label(Role::Button, text).any(|n| in_menu(h)(&n))
 }
 
 fn click_at(h: &mut H, pos: egui::Pos2) {

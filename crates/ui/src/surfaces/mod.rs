@@ -24,6 +24,7 @@ pub mod palette;
 pub mod preferences;
 pub mod props;
 pub mod shortcuts;
+pub mod strip;
 pub mod tabs;
 pub mod toasts;
 pub mod toolbar;
@@ -32,12 +33,14 @@ pub mod topbar;
 /// Draws everything. Zen mode hides the chrome and keeps dialogs and toasts.
 pub fn show_all(ctx: &Context, cx: &mut Cx<'_>, st: &mut UiState) {
     if !st.zen {
-        toolbar::show(ctx, cx, st);
-        topbar::show(ctx, cx, st);
-        props::show(ctx, cx, st);
-        menu::show(ctx, cx, st);
+        // The order is the order of dependencies: each surface reads the rectangles (`st.chrome`) of the ones
+        // before it. The strip is first, then the bottom chrome, then the panels between them.
+        strip::show(ctx, cx, st);
         bottom::show(ctx, cx, st);
         tabs::show(ctx, cx, st);
+        toolbar::show(ctx, cx, st);
+        props::show(ctx, cx, st);
+        menu::show(ctx, cx, st);
         collab::show_presence(ctx, cx, st);
         library::show(ctx, cx, st);
     }

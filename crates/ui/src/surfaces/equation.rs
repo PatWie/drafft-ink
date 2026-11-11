@@ -3,12 +3,13 @@
 //! the state is closed by `after_command` whatever that answers.
 
 use drafftink_engine::Origin;
-use egui::{Context, FontId, Id, Key, Modal, Modifiers, RichText, TextEdit};
+use egui::{Context, Id, Key, Modal, Modifiers, RichText, TextEdit};
 use serde_json::json;
 
 use crate::action::{Call, HostRequest, UiAction};
 use crate::state::UiState;
 use crate::surfaces::dialogs::{Close, plain_button, show_modal};
+use crate::theme::TextSize;
 use crate::widgets::{Ctl, Cx};
 
 /// The hint under the field.
@@ -48,7 +49,7 @@ pub fn show(ctx: &Context, cx: &mut Cx<'_>, st: &mut UiState) {
         let apply_key = ui.input_mut(|i| i.consume_key(Modifiers::COMMAND, Key::Enter));
         let field = ui.add(
             TextEdit::multiline(&mut eq.latex)
-                .font(FontId::monospace(14.0))
+                .font(TextSize::Label.mono())
                 .desired_rows(3)
                 .desired_width(f32::INFINITY)
                 .hint_text("LaTeX"),
@@ -59,7 +60,7 @@ pub fn show(ctx: &Context, cx: &mut Cx<'_>, st: &mut UiState) {
             eq.focused = true;
         }
         ui.add_space(4.0);
-        ui.label(RichText::new(HINT).size(12.0).color(pal.muted));
+        ui.label(RichText::new(HINT).size(TextSize::Small.points()).color(pal.muted));
         ui.add_space(10.0);
         ui.horizontal(|ui| {
             if plain_button(ui, &pal, "Copy", false).clicked() {

@@ -7,25 +7,24 @@
 
 use drafftink_scene::Color;
 use drafftink_scene::palette::{FAMILIES, SHADES};
-use egui::{Align2, Area, Color32, Context, FontFamily, FontId, Id, Order, Pos2, Rect, RichText, ScrollArea, Ui, vec2};
+use egui::{
+    Align2, Area, Color32, Context, FontFamily, FontId, Id, Order, Pos2, Rect, RichText, ScrollArea, Ui, pos2, vec2,
+};
 use serde_json::{Value, json};
 
 use crate::action::Verb;
+use crate::chrome::ChromeRects;
 use crate::colors;
 use crate::model::Model;
 use crate::state::{ColorTarget, UiState};
 use crate::surfaces::dialogs::{enter_pressed, text_field};
-use crate::theme::{self, MARGIN, RIGHT_PANEL_WIDTH};
+use crate::theme::{self, MARGIN, RIGHT_PANEL_WIDTH, TextSize};
 use crate::widgets::{Ctl, Cx, Look, paint_button_bg, panel_frame, section_label};
 
 /// Side of a colour cell.
 const CELL: f32 = 16.0;
-/// Space under the top bar for a popover that has no remembered anchor.
-const BELOW_TOP_BAR: f32 = 64.0;
-/// Space above the bottom bar for a popover that has no remembered anchor.
-const ABOVE_BOTTOM_BAR: f32 = 64.0;
 /// Gap between a control and the popover it opened.
-const GAP: f32 = 8.0;
+const GAP: f32 = crate::chrome::GAP;
 /// Height the title, the hex field and the frame take around the grid.
 const GRID_CHROME: f32 = 130.0;
 /// Width of a row of the font picker.
@@ -62,23 +61,45 @@ pub fn remember_anchor(ctx: &Context, key: PopoverKey, rect: Rect) {
     ctx.data_mut(|d| d.insert_temp(Id::unique(("popover_anchor", key)), rect));
 }
 
-fn anchor_of(ctx: &Context, key: PopoverKey) -> Option<Rect> {
-    ctx.data(|d| d.get_temp::<Rect>(Id::unique(("popover_anchor", key))))
+/// [`remember_anchor`] for a control drawn in `ui`: nothing is remembered in a hidden sizing pass, which lays the
+/// controls out away from where they will be drawn.
+pub(crate) fn remember_anchor_in(ui: &Ui, key: PopoverKey, rect: Rect) {
+    if !ui.is_sizing_pass() {
+        remember_anchor(ui.ctx(), key, rect);
+    }
 }
 
-/// The area of a popover next to its button, or at a default place.
-fn popover_area(ctx: &Context, id: Id, key: PopoverKey) -> Area {
+/// Forgets the place of a button that is not drawn this frame (the stroke and fill wheels while the top strip shows
+/// the style button instead), so that a popover opened by a shortcut does not appear at the old place.
+pub(crate) fn forget_anchor(ctx: &Context, key: PopoverKey) {
+    ctx.data_mut(|d| d.insert_temp(Id::unique(("popover_anchor", key)), Rect::NOTHING));
+}
+
+fn anchor_of(ctx: &Context, key: PopoverKey) -> Option<Rect> {
+    ctx.data(|d| d.get_temp::<Rect>(Id::unique(("popover_anchor", key)))).filter(|r| r.is_positive())
+}
+
+/// The area of a popover next to its button, or at a default place next to the chrome that is there.
+fn popover_area(ctx: &Context, chrome: &ChromeRects, id: Id, key: PopoverKey) -> Area {
     let area = Area::new(id).order(Order::Foreground);
+    let screen = ctx.content_rect();
+    let under_strip = chrome.below_strip(screen) + GAP;
     match (anchor_of(ctx, key), key) {
         (Some(r), PopoverKey::Stroke | PopoverKey::Fill) => {
             area.pivot(Align2::LEFT_TOP).fixed_pos(r.left_bottom() + vec2(0.0, GAP))
         }
         (Some(r), PopoverKey::Background) => area.pivot(Align2::LEFT_BOTTOM).fixed_pos(r.left_top() - vec2(0.0, GAP)),
         (Some(r), PopoverKey::Font) => area.pivot(Align2::RIGHT_TOP).fixed_pos(r.left_top() - vec2(GAP, 0.0)),
-        (None, PopoverKey::Stroke | PopoverKey::Fill) => area.anchor(Align2::CENTER_TOP, vec2(0.0, BELOW_TOP_BAR)),
-        (None, PopoverKey::Background) => area.anchor(Align2::LEFT_BOTTOM, vec2(MARGIN, -ABOVE_BOTTOM_BAR)),
+        (None, PopoverKey::Stroke | PopoverKey::Fill) => {
+            area.pivot(Align2::CENTER_TOP).fixed_pos(pos2(screen.center().x, under_strip))
+        }
+        (None, PopoverKey::Background) => area
+            .pivot(Align2::LEFT_BOTTOM)
+            .fixed_pos(pos2(screen.left() + MARGIN, chrome.above_bottom_bar(screen) - GAP)),
         (None, PopoverKey::Font) => {
-            area.anchor(Align2::RIGHT_TOP, vec2(-(MARGIN + RIGHT_PANEL_WIDTH + GAP), BELOW_TOP_BAR + MARGIN))
+            let at =
+                chrome.props.map_or(pos2(screen.right() - MARGIN - RIGHT_PANEL_WIDTH, under_strip), |r| r.left_top());
+            area.pivot(Align2::RIGHT_TOP).fixed_pos(at - vec2(GAP, 0.0))
         }
     }
 }
@@ -219,7 +240,7 @@ fn cell(ui: &mut Ui, cx: &mut Cx<'_>, target: ColorTarget, now: Option<Option<Co
 }
 
 /// Draws the popover of a colour target. The pick and the outside click push actions; the pick is also returned.
-fn color_popover(ctx: &Context, cx: &mut Cx<'_>, target: ColorTarget) -> Option<Pick> {
+fn color_popover(ctx: &Context, cx: &mut Cx<'_>, chrome: &ChromeRects, target: ColorTarget) -> Option<Pick> {
     let pal = cx.pal;
     let key = PopoverKey::of(target);
     let now = current(cx.model, target);
@@ -232,14 +253,14 @@ fn color_popover(ctx: &Context, cx: &mut Cx<'_>, target: ColorTarget) -> Option<
     let mut hex: HexDraft = ctx.data_mut(|d| d.get_temp(hex_key)).unwrap_or_default();
     let mut picked: Option<Pick> = None;
 
-    let out = popover_area(ctx, Id::unique("color_popover"), key).show(ctx, |ui| {
+    let out = popover_area(ctx, chrome, Id::unique("color_popover"), key).show(ctx, |ui| {
         panel_frame(&pal).show(ui, |ui| {
             let title = match target {
                 ColorTarget::Stroke => "Stroke colour",
                 ColorTarget::Fill => "Fill colour",
                 ColorTarget::Background => "Background colour",
             };
-            ui.label(RichText::new(title).font(theme::hand(14.0)).color(pal.muted));
+            ui.label(RichText::new(title).font(TextSize::Label.hand()).color(pal.muted));
             ui.add_space(4.0);
             ScrollArea::both().max_width(max_w).max_height(max_h).auto_shrink([true, true]).show(ui, |ui| {
                 ui.spacing_mut().item_spacing = vec2(0.0, 0.0);
@@ -307,7 +328,7 @@ fn hex_row(ui: &mut Ui, cx: &mut Cx<'_>, target: ColorTarget, draft: &mut HexDra
         }
     }
     if let Some(err) = &draft.error {
-        ui.label(RichText::new(err).size(12.0).color(pal.danger));
+        ui.label(RichText::new(err).size(TextSize::Small.points()).color(pal.danger));
     }
     applied
 }
@@ -320,7 +341,7 @@ fn font_choices() -> [(&'static str, &'static str, FontFamily); 4] {
         ("gelpen", "GelPen", FontFamily::Name(theme::HAND_FONT.into())),
         ("gelpen_serif", "GelPen Serif", FontFamily::Name(theme::PREVIEW_SERIF.into())),
         ("vanilla_extract", "Vanilla Extract", FontFamily::Name(theme::PREVIEW_VANILLA.into())),
-        ("noto_sans", "Noto Sans", FontFamily::Proportional),
+        ("noto_sans", "Noto Sans", theme::named(theme::PREVIEW_NOTO, TextSize::Title.points()).family),
     ]
 }
 
@@ -329,19 +350,19 @@ pub(crate) fn font_args(family: &str) -> Value {
     json!({ "props": { "font_family": family } })
 }
 
-fn font_picker(ctx: &Context, cx: &mut Cx<'_>) {
+fn font_picker(ctx: &Context, cx: &mut Cx<'_>, chrome: &ChromeRects) {
     let pal = cx.pal;
     let now = cx.model.style.str_value("font_family").map(str::to_owned);
     let mut picked = false;
-    let out = popover_area(ctx, Id::unique("font_popover"), PopoverKey::Font).show(ctx, |ui| {
+    let out = popover_area(ctx, chrome, Id::unique("font_popover"), PopoverKey::Font).show(ctx, |ui| {
         panel_frame(&pal).show(ui, |ui| {
-            ui.label(RichText::new("Font").font(theme::hand(14.0)).color(pal.muted));
+            ui.label(RichText::new("Font").font(TextSize::Label.hand()).color(pal.muted));
             ui.add_space(4.0);
             ui.spacing_mut().item_spacing = vec2(0.0, 3.0);
             for (value, name, family) in font_choices() {
                 let ctl =
                     Ctl::new("style.set").args(font_args(value)).label(name).selected(now.as_deref() == Some(value));
-                let galley_font = FontId::new(18.0, family);
+                let galley_font = FontId::new(TextSize::Title.points(), family);
                 let resp = cx.command_widget(ui, &ctl, vec2(FONT_ROW_WIDTH, 34.0), |p, rect, look: Look| {
                     paint_button_bg(p, rect, look, &pal, false);
                     let color = if !look.enabled {
@@ -376,7 +397,7 @@ fn paint_tick(p: &egui::Painter, at: Pos2, color: Color32) {
 pub fn show(ctx: &Context, cx: &mut Cx<'_>, st: &mut UiState) {
     match st.color_popover {
         Some(target) => {
-            if let Some(Pick::Color(color)) = color_popover(ctx, cx, target) {
+            if let Some(Pick::Color(color)) = color_popover(ctx, cx, &st.chrome, target) {
                 st.last_picked.remember(target, color);
             }
         }
@@ -385,7 +406,7 @@ pub fn show(ctx: &Context, cx: &mut Cx<'_>, st: &mut UiState) {
         }
     }
     if st.font_picker_open {
-        font_picker(ctx, cx);
+        font_picker(ctx, cx, &st.chrome);
     }
 }
 

@@ -7,6 +7,7 @@ use serde_json::json;
 
 use crate::state::UiState;
 use crate::surfaces::dialogs::{Close, plain_button, show_modal, text_field};
+use crate::theme::TextSize;
 use crate::widgets::{Ctl, Cx};
 
 /// The hint under the field.
@@ -33,7 +34,7 @@ pub fn show(ctx: &Context, cx: &mut Cx<'_>, st: &mut UiState) {
     let focused = &mut editor.focused;
     show_modal(ctx, cx, Modal::new(Id::unique("link_dialog")), "Link", 440.0, &Close::Overlays, |ui, cx| {
         if !one {
-            ui.label(RichText::new(NEEDS_ONE).size(13.0).color(pal.text));
+            ui.label(RichText::new(NEEDS_ONE).size(TextSize::Body.points()).color(pal.text));
             return;
         }
         let field = text_field(ui, text, "https://…", None, None, "Link");
@@ -43,7 +44,7 @@ pub fn show(ctx: &Context, cx: &mut Cx<'_>, st: &mut UiState) {
         }
         let enter = field.lost_focus() && ui.input(|i| i.key_pressed(Key::Enter));
         ui.add_space(4.0);
-        ui.label(RichText::new(HINT).size(12.0).color(pal.muted));
+        ui.label(RichText::new(HINT).size(TextSize::Small.points()).color(pal.muted));
         ui.add_space(10.0);
         ui.horizontal(|ui| {
             let remove = Ctl::new("element.set_link").args(json!({ "link": null })).label("Remove");

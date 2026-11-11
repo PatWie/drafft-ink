@@ -49,6 +49,15 @@ fn kind(h: &mut H) -> String {
 }
 
 #[test]
+fn the_popup_sits_above_the_bottom_chrome() {
+    let h = after_tab("rectangle");
+    let chrome = h.state().state.chrome;
+    let floor = chrome.bottom_bar.unwrap().min.y.min(chrome.tabs.unwrap().min.y);
+    let popup = h.get_by_label("Convert to rectangle").rect();
+    assert!(popup.max.y < floor, "{popup:?} above {floor}");
+}
+
+#[test]
 fn tab_opens_the_popup_with_the_type_it_converted_to() {
     let mut h = after_tab("rectangle");
     assert_eq!(h.state().state.convert_popup.as_ref().and_then(|p| p.current.as_deref()), Some("diamond"));

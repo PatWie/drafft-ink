@@ -11,6 +11,7 @@ use serde_json::{Value, json};
 use crate::action::{HostRequest, UiAction};
 use crate::state::{RenameState, RenameTarget, UiState};
 use crate::surfaces::dialogs::{Close, plain_button, show_modal, text_field};
+use crate::theme::TextSize;
 use crate::widgets::{Ctl, Cx};
 
 /// The longest name the engine takes.
@@ -103,7 +104,9 @@ fn save_as(ctx: &Context, cx: &mut Cx<'_>, st: &mut UiState) {
         }
         let enter = field.lost_focus() && ui.input(|i| i.key_pressed(Key::Enter));
         ui.add_space(4.0);
-        ui.label(RichText::new("You choose the place to save it next.").size(12.0).color(pal.muted));
+        ui.label(
+            RichText::new("You choose the place to save it next.").size(TextSize::Small.points()).color(pal.muted),
+        );
         ui.add_space(10.0);
         ui.horizontal(|ui| {
             if plain_button(ui, &pal, "Cancel", false).clicked() {

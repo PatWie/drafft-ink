@@ -391,8 +391,12 @@ pub const NARROW_WIDTH: f32 = 720.0;
 /// Everything the UI remembers between frames.
 #[derive(Debug, Default)]
 pub struct UiState {
+    /// Where the chrome surfaces are in the frame being drawn (reset at the start of every `draw`).
+    pub chrome: crate::chrome::ChromeRects,
     /// The hamburger menu is open.
     pub menu_open: bool,
+    /// The style popover of a top strip too narrow for the stroke, fill and width controls is open.
+    pub style_open: bool,
     /// The palette, when open.
     pub palette: Option<PaletteState>,
     /// The shortcuts dialog is open.
@@ -479,6 +483,7 @@ impl UiState {
     /// True when something that Esc should close is open.
     pub fn any_overlay_open(&self) -> bool {
         self.menu_open
+            || self.style_open
             || self.palette.is_some()
             || self.shortcuts_open
             || self.about_open
@@ -519,6 +524,7 @@ impl UiState {
     pub fn close_overlays(&mut self) -> bool {
         let was = self.any_overlay_open();
         self.menu_open = false;
+        self.style_open = false;
         self.palette = None;
         self.shortcuts_open = false;
         self.about_open = false;
@@ -674,7 +680,10 @@ impl UiState {
 
     fn toggle_color(&mut self, target: ColorTarget) {
         let next = if self.color_popover == Some(target) { None } else { Some(target) };
+        // The wheels of the stroke and fill colours may sit in the style popover of a narrow strip, which stays.
+        let keep_style = self.style_open && target != ColorTarget::Background;
         self.close_overlays();
+        self.style_open = keep_style;
         self.color_popover = next;
     }
 

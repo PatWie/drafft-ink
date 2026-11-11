@@ -43,14 +43,14 @@ Nothing mutates session state from a widget. `crates/ui/tests/thin.rs` reads the
 | Surface | File | Commands and verbs |
 |---|---|---|
 | Tool column (15 tools, sticky note, tool lock, library) | `surfaces/toolbar.rs` | `tool.set` (the active Lasso button returns to Select), `element.create_sticky`, `tool.lock`; verb `ui.toggle_library` |
-| Top bar: stroke, fill, width | `topbar.rs` | `style.set`; wheels are verbs |
+| Top strip: one bar across the window, flush with the top edge. Left: menu, rooms, title. Centre (centred on the window): stroke, fill, width. Right: an empty slot, where the bottom bar can move (`strip::right_slot`). When the groups do not fit, the centre becomes one style button that opens a popover | `strip.rs` places `menu::buttons` and `topbar.rs` | `style.set`; wheels are verbs; the style button is UI state |
 | Right panel: properties of the selection, or of the tool being drawn with | `props.rs` | `style.set` (also vertical align and line height), `tool.set_arrow` (path and heads of new arrows, with the arrow tool and nothing selected), `arrow.set_type`, `arrow.set_head`, `arrow.swap_heads`, `text.set_autoresize`, `arrange.*`, `element.*`, `group.*`; the link row (`element.open_link`, link dialog); opacity is a scrub |
 | Bottom bar: undo, redo, grid, background, zoom, centre, fit, snap | `bottom.rs` | `history.*`, `settings.cycle`, `settings.toggle`, `view.*` |
 | Tab bar and tab menu | `tabs.rs` | `tab.switch`, `tab.close`, `tab.new`; a double click renames (`tab.rename`); a right click opens the menu: rename, `tab.duplicate`, `tab.move`, `tab.close` |
-| Menu, document title and collaboration button | `menu.rs` | `tab.new`, `doc.*`, `clipboard.copy_as`, `diagram.import_mermaid`, `settings.set` (export scale, theme), `view.set_view_only`; verbs (the title chip is `ui.rename_document`) |
+| Menu (opens under the menu button), document title and collaboration button | `menu.rs` | `tab.new`, `doc.*`, `clipboard.copy_as`, `diagram.import_mermaid`, `settings.set` (export scale, theme), `view.set_view_only`; verbs (the title chip is `ui.rename_document`) |
 | Rename and Save As dialogs | `naming.rs` | `doc.rename`, `tab.rename`, `library.rename`, `frame.rename`; Save As runs `doc.rename` when the name changed and then hands the app `PickSaveTarget` |
 | Export dialog | `export.rs` | `doc.export` (`format` png, svg, json or excalidraw; `scope` selection or all; `scale`, `background`, `dark`, `embed_scene`; `to` a download named after the document), `clipboard.copy_as` |
-| Preferences dialog | `preferences.rs` | `settings.set` / `settings.toggle` for theme, grid, snapping, nudge, box select, arrow and frame keys, export defaults, autosave, history depth, `collab.set_user`; the layout choice is UI state |
+| Preferences dialog | `preferences.rs` | `settings.set` / `settings.toggle` for theme, interface font (`ui.font`: GelPen by default, any bundled canvas font), grid, snapping, nudge, box select, arrow and frame keys, export defaults, autosave, history depth, `collab.set_user`; the layout choice is UI state |
 | Library panel | `library.rs` | `library.add`, `library.insert` (click: middle of the view; drag: the world point under the release), `library.rename`, `library.remove`, `library.export`; Import is a host request |
 | Convert popup | `convert.rs` | `element.convert`; opened by Tab or Shift+Tab (origin `shortcut`) |
 | Colour popover, font popover | `color.rs` | `style.set`, `doc.set_background` |
@@ -61,6 +61,10 @@ Nothing mutates session state from a widget. `crates/ui/tests/thin.rs` reads the
 | Equation editor | `equation.rs` | `text.edit_end` |
 | Confirm, recent documents, search, stats | `dialogs.rs` | `doc.open`, `element.query`, `selection.select`, `view.center`, `element.set_bounds`; the confirm dialog re-runs the refused call |
 | Toasts | `toasts.rs` | suggestion buttons run the suggested command |
+
+**Geometry.** No surface knows the height of another as a number. `chrome::ChromeRects` (in `UiState::chrome`, reset at the start of every `draw`) holds the rectangle of each surface that takes room, recorded when it is drawn; `surfaces::show_all` draws in the order of dependencies (strip, bottom bar, tabs, then the panels, popovers, toasts and the stats panel, which read the rectangles). The tool column and the right panel stay centred on the window and scroll when they would reach the strip (`scroll_when_taller`). A group that must be measured before it is placed (the strip's groups, a column that may scroll) is laid out first in a hidden sizing pass.
+
+**Tokens.** `theme/tokens.rs` has the type scale (`TextSize`), the spacing scale (`space`), the radius ladder (`radius`) and the control heights (`Control`, with the touch heights). A surface asks for `TextSize::Body`, not `13.0`; `tests/tokens.rs` fails on a new literal font size in `surfaces/`. The UI font is the `ui.font` setting (`theme::UiFontChoice`); headings that keep GelPen use `TextSize::hand`.
 
 Look and feel is the old app's: floating cards with a 1 px border, soft shadow, 8 px radius and 12 px margins, the accent blue `#3b82f6` for the active tool, tab and primary button, GelPen for headings (the bytes come from `drafftink_typeset::font_file`, so the binary holds each font file once), the three canvas font families shown in their own faces in the font picker. Icons are drawn with the egui painter (`icons.rs`): no SVG assets, no image loader. All colours come from `theme::Palette`; the dark palette is chosen by the egui theme, which follows the `theme` setting (`light`, `dark`, `system`). Zen mode hides the chrome and keeps dialogs and toasts.
 

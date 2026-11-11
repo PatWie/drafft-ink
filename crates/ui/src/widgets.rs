@@ -12,7 +12,7 @@ use serde_json::{Value, json};
 use crate::action::{HostRequest, UiAction, Verb};
 use crate::icons::{self, Icon};
 use crate::model::Model;
-use crate::theme::{self, Palette};
+use crate::theme::{self, Control, Palette, TextSize, space};
 
 /// How a control looks right now.
 #[derive(Debug, Clone, Copy)]
@@ -96,29 +96,39 @@ impl Default for Layout {
 }
 
 impl Layout {
+    /// The height (and, for an icon button, the side) of a control in this layout.
+    pub fn control(&self, control: Control) -> f32 {
+        control.points(self.compact)
+    }
+
     /// Side of a tool button.
     pub fn tool_side(&self) -> f32 {
-        if self.compact { 44.0 } else { theme::TOOL_BUTTON }
+        self.control(Control::Tool)
     }
 
     /// Side of a small icon button.
     pub fn small_side(&self) -> f32 {
-        if self.compact { 40.0 } else { theme::SMALL_BUTTON }
+        self.control(Control::Small)
     }
 
     /// Height of a menu row.
     pub fn row_height(&self) -> f32 {
-        if self.compact { 40.0 } else { 28.0 }
+        self.control(Control::Small)
     }
 
     /// Height of a small toggle.
     pub fn toggle_height(&self) -> f32 {
-        if self.compact { 36.0 } else { 24.0 }
+        self.control(Control::Toggle)
     }
 
     /// Height of a dialog button.
     pub fn button_height(&self) -> f32 {
-        if self.compact { 44.0 } else { 32.0 }
+        self.control(Control::Button)
+    }
+
+    /// Height of the top strip: one row of small controls with padding above and below.
+    pub fn strip_height(&self) -> f32 {
+        self.control(Control::Small) + 2.0 * space::MD
     }
 
     /// Width of the right panel.
@@ -271,7 +281,7 @@ impl<'a> Cx<'a> {
 
     /// A small text toggle for a property value (`Architect`, `Dashed`): filled with the accent when selected.
     pub fn toggle_button(&mut self, ui: &mut Ui, ctl: &Ctl<'_>, text: &str) -> Response {
-        self.toggle_button_font(ui, ctl, text, egui::FontId::proportional(11.0))
+        self.toggle_button_font(ui, ctl, text, TextSize::Caption.font())
     }
 
     /// Like [`Cx::toggle_button`] with a font, for the font family choices that show their own face.
@@ -294,7 +304,7 @@ impl<'a> Cx<'a> {
     /// `reason` greys it with that tooltip.
     pub fn choice(&mut self, ui: &mut Ui, text: &str, selected: bool, reason: Option<&str>) -> Response {
         let pal = self.pal;
-        let galley = ui.painter().layout_no_wrap(text.to_owned(), egui::FontId::proportional(11.0), pal.text);
+        let galley = ui.painter().layout_no_wrap(text.to_owned(), TextSize::Caption.font(), pal.text);
         let size = vec2((galley.size().x + 16.0).max(34.0), self.layout.toggle_height());
         let enabled = reason.is_none();
         let resp = ui
@@ -331,7 +341,7 @@ impl<'a> Cx<'a> {
     /// A button with a text label and an icon-less look, used for dialog actions that run commands.
     pub fn text_button(&mut self, ui: &mut Ui, ctl: &Ctl<'_>, text: &str, primary: bool) -> Response {
         let pal = self.pal;
-        let font = egui::FontId::proportional(13.0);
+        let font = TextSize::Body.font();
         let galley = ui.painter().layout_no_wrap(text.to_owned(), font, pal.text);
         let size = vec2((galley.size().x + 28.0).max(80.0), self.layout.button_height());
         let ctl = Ctl { label: if ctl.label.is_empty() { text.to_owned() } else { ctl.label.clone() }, ..ctl.clone() };
@@ -370,19 +380,13 @@ impl<'a> Cx<'a> {
                 p.rect_filled(rect, theme::BUTTON_RADIUS, pal.hover);
             }
             let c = if look.enabled { pal.text } else { pal.muted.gamma_multiply(0.6) };
-            p.text(
-                pos2(rect.left() + 10.0, rect.center().y),
-                Align2::LEFT_CENTER,
-                &text,
-                egui::FontId::proportional(13.0),
-                c,
-            );
+            p.text(pos2(rect.left() + 10.0, rect.center().y), Align2::LEFT_CENTER, &text, TextSize::Body.font(), c);
             if let Some(k) = shortcut {
                 p.text(
                     pos2(rect.right() - 10.0, rect.center().y),
                     Align2::RIGHT_CENTER,
                     k,
-                    egui::FontId::proportional(11.0),
+                    TextSize::Caption.font(),
                     pal.muted,
                 );
             }
@@ -414,7 +418,7 @@ impl<'a> Cx<'a> {
                         pos2(rect.left() + 10.0, rect.center().y),
                         Align2::LEFT_CENTER,
                         text,
-                        egui::FontId::proportional(13.0),
+                        TextSize::Body.font(),
                         color,
                     );
                     if let Some(k) = key {
@@ -422,7 +426,7 @@ impl<'a> Cx<'a> {
                             pos2(rect.right() - 10.0, rect.center().y),
                             Align2::RIGHT_CENTER,
                             k,
-                            egui::FontId::proportional(11.0),
+                            TextSize::Caption.font(),
                             pal.muted,
                         );
                     }
@@ -456,7 +460,7 @@ impl<'a> Cx<'a> {
                 pos2(rect.left() + 10.0, rect.center().y),
                 Align2::LEFT_CENTER,
                 text,
-                egui::FontId::proportional(13.0),
+                TextSize::Body.font(),
                 pal.text,
             );
         }
@@ -609,13 +613,16 @@ pub fn paint_swatch(
     }
 }
 
+/// The vertical padding inside a panel frame.
+pub const PANEL_INSET_Y: f32 = 8.0;
+
 /// The frame of a floating panel: the old app's soft white card, in the current theme.
 pub fn panel_frame(pal: &Palette) -> Frame {
     Frame::new()
         .fill(pal.panel)
         .stroke(pal.border_stroke())
         .corner_radius(CornerRadius::same(theme::PANEL_RADIUS))
-        .inner_margin(Margin::symmetric(10, 8))
+        .inner_margin(Margin::symmetric(10, PANEL_INSET_Y as i8))
         .shadow(Shadow { offset: [0, 2], blur: 8, spread: 0, color: pal.shadow })
 }
 
@@ -631,7 +638,7 @@ pub fn dialog_frame(pal: &Palette) -> Frame {
 
 /// A small caption above a group of controls, in the hand-written font.
 pub fn section_label(ui: &mut Ui, pal: &Palette, text: &str) -> Response {
-    ui.label(egui::RichText::new(text).font(theme::hand(13.0)).color(pal.muted))
+    ui.label(egui::RichText::new(text).font(TextSize::Body.hand()).color(pal.muted))
 }
 
 /// A thin vertical line between groups in a row.
@@ -658,6 +665,26 @@ pub enum ScrollDir {
     Vertical,
     /// Left and right, limited in width by the caller.
     Horizontal,
+}
+
+/// Runs `add` in a column that scrolls when it is taller than `max_height`, and plainly when it fits. The height
+/// is measured in a hidden sizing pass first, so the answer is right in the first frame (a scroll area alone
+/// sizes itself from the frame before).
+pub fn scroll_when_taller(ui: &mut Ui, id: &'static str, max_height: f32, mut add: impl FnMut(&mut Ui)) {
+    let bounds = Rect::from_min_size(ui.cursor().min, vec2(ui.available_width(), f32::INFINITY));
+    let mut probe =
+        ui.new_child(egui::UiBuilder::new().id_salt("scroll_probe").max_rect(bounds).sizing_pass().invisible());
+    add(&mut probe);
+    if probe.min_rect().height() <= max_height {
+        add(ui);
+        return;
+    }
+    egui::ScrollArea::vertical()
+        .id_salt(id)
+        .max_height(max_height)
+        .min_scrolled_height(max_height)
+        .auto_shrink([true, false])
+        .show(ui, add);
 }
 
 /// Runs `add` inside a scroll area when `on` (a touch or narrow layout that may not have room), else

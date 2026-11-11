@@ -10,7 +10,7 @@ use egui::{Context, Id, Label, Modal, RichText, Ui};
 use crate::action::{HostRequest, UiAction};
 use crate::state::UiState;
 use crate::surfaces::dialogs::{Close, show_modal};
-use crate::theme::Palette;
+use crate::theme::{Palette, TextSize};
 use crate::widgets::Cx;
 
 /// Width of the dialog.
@@ -38,7 +38,7 @@ fn body(ui: &mut Ui, cx: &mut Cx<'_>) {
     ui.add_space(10.0);
     source(ui, cx, &pal, &about.source_url);
     ui.add_space(10.0);
-    ui.add(Label::new(RichText::new(FONTS_NOTE).size(12.0).color(pal.muted)));
+    ui.add(Label::new(RichText::new(FONTS_NOTE).size(TextSize::Small.points()).color(pal.muted)));
 }
 
 /// The link to the source, and the address in words so that it can be read, copied and checked.
@@ -46,5 +46,5 @@ fn source(ui: &mut Ui, cx: &mut Cx<'_>, pal: &Palette, url: &str) {
     if ui.link("Source code").clicked() {
         cx.emit(UiAction::Host(HostRequest::OpenUrl(url.to_owned())));
     }
-    ui.add(Label::new(RichText::new(url).size(12.0).color(pal.muted)).selectable(true));
+    ui.add(Label::new(RichText::new(url).size(TextSize::Small.points()).color(pal.muted)).selectable(true));
 }

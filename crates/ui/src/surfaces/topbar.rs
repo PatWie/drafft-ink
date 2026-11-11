@@ -1,16 +1,17 @@
-//! The bar at the top: stroke colour, fill colour, stroke width. Every control is `style.set`; with
-//! nothing selected the engine writes the defaults for new elements, so the bar is always useful.
+//! The style controls in the middle of the top strip: stroke colour, fill colour, stroke width. Every control is
+//! `style.set`; with nothing selected the engine writes the defaults for new elements, so they are always useful.
+//! `surfaces::strip` places them.
 
-use egui::{Align2, Area, Context, Id, Order, vec2};
+use egui::vec2;
 use serde_json::{Value, json};
 
 use crate::action::Verb;
 use crate::colors::{self, QUICK_FAMILIES, QUICK_FILL_SHADE, QUICK_STROKE_SHADE};
 use crate::icons::Icon;
-use crate::state::{ColorTarget, LastPicked, UiState};
-use crate::surfaces::color::{PopoverKey, remember_anchor};
-use crate::theme::MARGIN;
-use crate::widgets::{Ctl, Cx, ScrollDir, panel_frame, scroll_if, section_label, vertical_separator};
+use crate::state::{ColorTarget, UiState};
+use crate::surfaces::color::{PopoverKey, remember_anchor_in};
+use crate::theme::{Control, space};
+use crate::widgets::{Ctl, Cx, section_label, vertical_separator};
 
 /// The stroke widths of the old app: name and value.
 pub const STROKE_WIDTHS: [(&str, f64); 4] = [("Thin", 1.0), ("Normal", 2.0), ("Bold", 4.0), ("Extra bold", 8.0)];
@@ -25,40 +26,31 @@ pub fn not_applicable(cx: &Cx<'_>, prop: &str) -> Option<String> {
     }
 }
 
-/// Draws the bar.
-pub fn show(ctx: &Context, cx: &mut Cx<'_>, st: &mut UiState) {
-    // On a narrow window the menu takes the top left, so the bar sits under it and scrolls sideways.
-    let (anchor, offset) = if cx.layout.narrow {
-        (Align2::LEFT_TOP, vec2(MARGIN, MARGIN + cx.layout.small_side() + 24.0))
-    } else {
-        (Align2::CENTER_TOP, vec2(0.0, MARGIN))
-    };
-    let max_width = (ctx.content_rect().width() - 2.0 * MARGIN - 20.0).max(160.0);
-    Area::new(Id::unique("properties_bar")).anchor(anchor, offset).order(Order::Middle).show(ctx, |ui| {
-        panel_frame(&cx.pal).show(ui, |ui| {
-            if cx.layout.narrow {
-                ui.set_max_width(max_width);
-            }
-            scroll_if(ui, cx.layout.narrow, ScrollDir::Horizontal, "properties_scroll", 0.0, |ui| {
-                bar(ui, cx, &st.last_picked)
-            });
-        });
-    });
+/// The stroke, fill and width controls in one row: the centre of the top strip.
+pub(super) fn style_row(ui: &mut egui::Ui, cx: &mut Cx<'_>, st: &UiState) {
+    ui.spacing_mut().item_spacing = vec2(space::SM, 0.0);
+    let height = cx.layout.control(Control::Small) - 2.0 * space::SM;
+    colour_row(ui, cx, "Stroke", "stroke_color", QUICK_STROKE_SHADE, false, st.last_picked.of(ColorTarget::Stroke));
+    ui.add_space(space::MD);
+    vertical_separator(ui, &cx.pal, height);
+    ui.add_space(space::MD);
+    colour_row(ui, cx, "Fill", "fill_color", QUICK_FILL_SHADE, true, st.last_picked.of(ColorTarget::Fill));
+    ui.add_space(space::MD);
+    vertical_separator(ui, &cx.pal, height);
+    ui.add_space(space::MD);
+    width_row(ui, cx);
 }
 
-fn bar(ui: &mut egui::Ui, cx: &mut Cx<'_>, last: &LastPicked) {
-    ui.horizontal(|ui| {
-        ui.spacing_mut().item_spacing = vec2(3.0, 0.0);
-        colour_row(ui, cx, "Stroke", "stroke_color", QUICK_STROKE_SHADE, false, last.of(ColorTarget::Stroke));
-        ui.add_space(6.0);
-        vertical_separator(ui, &cx.pal, 24.0);
-        ui.add_space(6.0);
-        colour_row(ui, cx, "Fill", "fill_color", QUICK_FILL_SHADE, true, last.of(ColorTarget::Fill));
-        ui.add_space(6.0);
-        vertical_separator(ui, &cx.pal, 24.0);
-        ui.add_space(6.0);
-        width_row(ui, cx);
+/// The same controls as rows one under the other, for the popover of a strip with no room for [`style_row`].
+pub(super) fn style_column(ui: &mut egui::Ui, cx: &mut Cx<'_>, st: &UiState) {
+    ui.spacing_mut().item_spacing = vec2(space::SM, space::MD);
+    ui.horizontal_wrapped(|ui| {
+        colour_row(ui, cx, "Stroke", "stroke_color", QUICK_STROKE_SHADE, false, st.last_picked.of(ColorTarget::Stroke));
     });
+    ui.horizontal_wrapped(|ui| {
+        colour_row(ui, cx, "Fill", "fill_color", QUICK_FILL_SHADE, true, st.last_picked.of(ColorTarget::Fill));
+    });
+    ui.horizontal_wrapped(|ui| width_row(ui, cx));
 }
 
 fn colour_row(
@@ -71,8 +63,9 @@ fn colour_row(
     last_picked: Option<&str>,
 ) {
     section_label(ui, &cx.pal, title);
-    ui.add_space(4.0);
-    let swatch = if cx.layout.compact { 28.0 } else { 18.0 };
+    ui.add_space(space::SM);
+    // The swatch cell is a toggle-high square, the same in every row of the strip.
+    let swatch = cx.layout.control(Control::Toggle) - 4.0;
     let dark = cx.pal.dark;
     let current = cx.model.style.prop(prop).and_then(|p| p.value.clone());
     let blocked = not_applicable(cx, prop);
@@ -108,8 +101,8 @@ fn colour_row(
     let verb = if prop == "stroke_color" { Verb::OpenColorStroke } else { Verb::OpenColorFill };
     let wheel_tip = format!("More {} colours", title.to_lowercase());
     let key = if prop == "stroke_color" { PopoverKey::Stroke } else { PopoverKey::Fill };
-    let wheel = cx.verb_button(ui, verb, Icon::Wheel, swatch + 8.0, &wheel_tip, false);
-    remember_anchor(ui.ctx(), key, wheel.rect);
+    let wheel = cx.verb_button(ui, verb, Icon::Wheel, cx.layout.control(Control::Small), &wheel_tip, false);
+    remember_anchor_in(ui, key, wheel.rect);
 }
 
 fn width_row(ui: &mut egui::Ui, cx: &mut Cx<'_>) {
@@ -125,19 +118,16 @@ fn width_row(ui: &mut egui::Ui, cx: &mut Cx<'_>) {
             .blocked(blocked.clone());
         let thickness = [1.0_f32, 2.5, 4.5, 7.0][i];
         let pal = cx.pal;
-        cx.command_widget(
-            ui,
-            &ctl,
-            vec2(if cx.layout.compact { 40.0 } else { 30.0 }, cx.layout.toggle_height()),
-            move |p, rect, look| {
-                crate::widgets::paint_button_bg(p, rect, look, &pal, false);
-                let c = crate::widgets::icon_color(look, &pal);
-                let y = rect.center().y;
-                p.line_segment(
-                    [egui::pos2(rect.left() + 7.0, y), egui::pos2(rect.right() - 7.0, y)],
-                    egui::Stroke::new(thickness, c),
-                );
-            },
-        );
+        let side = cx.layout.control(Control::Small);
+        cx.command_widget(ui, &ctl, vec2(side, side), move |p, rect, look| {
+            crate::widgets::paint_button_bg(p, rect, look, &pal, true);
+            let c = crate::widgets::icon_color(look, &pal);
+            let y = rect.center().y;
+            let inset = side * 0.25;
+            p.line_segment(
+                [egui::pos2(rect.left() + inset, y), egui::pos2(rect.right() - inset, y)],
+                egui::Stroke::new(thickness, c),
+            );
+        });
     }
 }

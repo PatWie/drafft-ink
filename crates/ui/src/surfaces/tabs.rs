@@ -7,10 +7,11 @@ use egui::{Align2, Area, Context, Id, Order, Sense, pos2, vec2};
 use serde_json::json;
 
 use crate::action::Verb;
+use crate::chrome::{GAP, lift_to};
 use crate::icons::Icon;
 use crate::model::TabView;
 use crate::state::{RenameTarget, TabMenu, UiState};
-use crate::theme::MARGIN;
+use crate::theme::{MARGIN, space};
 use crate::widgets::{Ctl, Cx, panel_frame, separator};
 
 /// Width of the tab menu.
@@ -23,45 +24,48 @@ pub fn show(ctx: &Context, cx: &mut Cx<'_>, st: &mut UiState) {
     } else {
         (ctx.content_rect().width() * 0.45).max(220.0)
     };
-    // On a narrow window the bottom bar takes the corner, so the tabs sit above it.
-    let lift = if cx.layout.narrow { cx.layout.small_side() + MARGIN + 28.0 } else { 0.0 };
-    Area::new(Id::unique("tab_bar"))
-        .anchor(Align2::CENTER_BOTTOM, vec2(0.0, -MARGIN - lift))
-        .order(Order::Middle)
-        .show(ctx, |ui| {
-            panel_frame(&cx.pal).show(ui, |ui| {
-                ui.set_max_width(max_width);
-                egui::ScrollArea::horizontal().id_salt("tab_scroll").auto_shrink([true, true]).show(ui, |ui| {
-                    ui.horizontal(|ui| {
-                        ui.spacing_mut().item_spacing = vec2(3.0, 0.0);
-                        let tabs = cx.model.tabs.clone();
-                        let many = tabs.len() > 1;
-                        for tab in &tabs {
-                            let name = if tab.dirty { format!("{} •", tab.name) } else { tab.name.clone() };
-                            let ctl = Ctl::new("tab.switch")
-                                .args(json!({ "tab": tab.index }))
-                                .label(tab.name.clone())
-                                .selected(tab.active);
-                            let resp = cx.toggle_button(ui, &ctl, &name);
-                            if resp.double_clicked() {
-                                st.open_rename(RenameTarget::Tab(tab.id.clone()), tab.name.clone());
-                            } else if resp.secondary_clicked() {
-                                let screen = resp.interact_pointer_pos().unwrap_or_else(|| resp.rect.center_top());
-                                st.close_overlays();
-                                st.tab_menu = Some(TabMenu { tab: tab.id.clone(), screen });
-                            }
-                            if many {
-                                let close = Ctl::new("tab.close")
-                                    .args(json!({ "tab": tab.index }))
-                                    .label(format!("Close {}", tab.name));
-                                cx.icon_button(ui, &close, Icon::Close, cx.layout.small_side() - 8.0);
-                            }
+    // The tabs sit at the bottom centre, beside the bottom bar. Where the bar reaches past the tabs' left edge (a
+    // narrow window, or many tabs) they sit above it instead.
+    let screen = ctx.content_rect();
+    let id = Id::unique("tab_bar");
+    let width = ctx.memory(|m| m.area_rect(id)).map_or(0.0, |r| r.width());
+    let beside = st.chrome.bottom_bar.is_none_or(|bar| bar.right() + GAP + width / 2.0 <= screen.center().x);
+    let lift = if beside { MARGIN } else { lift_to(screen, st.chrome.above_bottom_bar(screen), GAP) };
+    let area = Area::new(id).anchor(Align2::CENTER_BOTTOM, vec2(0.0, -lift)).order(Order::Middle).show(ctx, |ui| {
+        panel_frame(&cx.pal).show(ui, |ui| {
+            ui.set_max_width(max_width);
+            egui::ScrollArea::horizontal().id_salt("tab_scroll").auto_shrink([true, true]).show(ui, |ui| {
+                ui.horizontal(|ui| {
+                    ui.spacing_mut().item_spacing = vec2(space::SM, 0.0);
+                    let tabs = cx.model.tabs.clone();
+                    let many = tabs.len() > 1;
+                    for tab in &tabs {
+                        let name = if tab.dirty { format!("{} •", tab.name) } else { tab.name.clone() };
+                        let ctl = Ctl::new("tab.switch")
+                            .args(json!({ "tab": tab.index }))
+                            .label(tab.name.clone())
+                            .selected(tab.active);
+                        let resp = cx.toggle_button(ui, &ctl, &name);
+                        if resp.double_clicked() {
+                            st.open_rename(RenameTarget::Tab(tab.id.clone()), tab.name.clone());
+                        } else if resp.secondary_clicked() {
+                            let screen = resp.interact_pointer_pos().unwrap_or_else(|| resp.rect.center_top());
+                            st.close_overlays();
+                            st.tab_menu = Some(TabMenu { tab: tab.id.clone(), screen });
                         }
-                        cx.icon_button(ui, &Ctl::new("tab.new"), Icon::Plus, cx.layout.small_side() - 4.0);
-                    });
+                        if many {
+                            let close = Ctl::new("tab.close")
+                                .args(json!({ "tab": tab.index }))
+                                .label(format!("Close {}", tab.name));
+                            cx.icon_button(ui, &close, Icon::Close, cx.layout.small_side() - 8.0);
+                        }
+                    }
+                    cx.icon_button(ui, &Ctl::new("tab.new"), Icon::Plus, cx.layout.small_side() - 4.0);
                 });
             });
         });
+    });
+    st.chrome.tabs = Some(area.response.rect);
     menu(ctx, cx, st);
 }
 

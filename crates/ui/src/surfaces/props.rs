@@ -11,8 +11,8 @@ use crate::icons::Icon;
 use crate::model::StyleView;
 use crate::state::PanelKind;
 use crate::state::UiState;
-use crate::theme::{self, MARGIN};
-use crate::widgets::{Ctl, Cx, ScrollDir, panel_frame, scroll_if, section_label, separator};
+use crate::theme::{self, MARGIN, TextSize, space};
+use crate::widgets::{Ctl, Cx, PANEL_INSET_Y, panel_frame, scroll_when_taller, section_label, separator};
 
 /// Sizes of the text presets.
 pub const FONT_SIZES: [(&str, f64); 4] = [("S", 16.0), ("M", 20.0), ("L", 28.0), ("XL", 36.0)];
@@ -53,6 +53,9 @@ const HEADS: [(&str, &str); 6] = [
 ];
 const BRUSHES: [(&str, &str); 2] = [("Normal", "normal"), ("Calligraphy", "calligraphy")];
 const PRESSURE: [(&str, &str); 3] = [("Uniform", "uniform"), ("Simulated", "simulated"), ("Pen", "device")];
+
+/// The least height the panel scrolls in, on a window too short for it.
+const MIN_SCROLL_HEIGHT: f32 = 160.0;
 
 /// True for the tools that draw an element.
 pub fn is_drawing_tool(t: Tool) -> bool {
@@ -99,16 +102,22 @@ pub fn show(ctx: &Context, cx: &mut Cx<'_>, st: &mut UiState) {
     if selected == 0 && !is_drawing_tool(cx.model.tool) {
         return;
     }
-    let collapsed = st.panel_collapsed(PanelKind::Properties, ctx.content_rect().width());
+    let screen = ctx.content_rect();
+    let collapsed = st.panel_collapsed(PanelKind::Properties, screen.width());
     let compact = cx.layout.compact;
     let side = cx.layout.small_side();
     let width = cx.layout.panel_width();
-    let max_height = (ctx.content_rect().height() - 2.0 * MARGIN - 80.0).max(160.0);
-    Area::new(Id::unique("right_panel")).anchor(Align2::RIGHT_CENTER, vec2(-MARGIN, 0.0)).order(Order::Middle).show(
-        ctx,
-        |ui| {
+    // Centred on the window as before, and never taller than the space under the strip: the sections scroll
+    // instead. The title, the count and the collapse button stay outside the scrolling part.
+    let header =
+        TextSize::Heading.points() + 2.0 * space::SM + if compact { cx.layout.tool_side() + space::SM } else { 0.0 };
+    let max_height = (st.chrome.centred_panel_height(screen) - 2.0 * PANEL_INSET_Y - header).max(MIN_SCROLL_HEIGHT);
+    let area = Area::new(Id::unique("right_panel"))
+        .anchor(Align2::RIGHT_CENTER, vec2(-MARGIN, 0.0))
+        .order(Order::Middle)
+        .show(ctx, |ui| {
             panel_frame(&cx.pal).show(ui, |ui| {
-                ui.spacing_mut().item_spacing = vec2(4.0, 4.0);
+                ui.spacing_mut().item_spacing = vec2(space::SM, space::SM);
                 if compact {
                     let label = if collapsed { "Show the properties" } else { "Hide the properties" };
                     if cx.local_button(ui, Icon::Settings, cx.layout.tool_side(), label, !collapsed).clicked() {
@@ -120,17 +129,21 @@ pub fn show(ctx: &Context, cx: &mut Cx<'_>, st: &mut UiState) {
                 }
                 ui.set_width(width - 20.0);
                 let title = if selected > 0 { "Properties" } else { "New elements" };
-                ui.label(egui::RichText::new(title).font(theme::hand(16.0)).color(cx.pal.text));
+                ui.label(egui::RichText::new(title).font(TextSize::Heading.hand()).color(cx.pal.text));
                 if selected > 1 {
-                    ui.label(egui::RichText::new(format!("{selected} selected")).size(11.0).color(cx.pal.muted));
+                    ui.label(
+                        egui::RichText::new(format!("{selected} selected"))
+                            .size(TextSize::Caption.points())
+                            .color(cx.pal.muted),
+                    );
                 }
-                scroll_if(ui, compact, ScrollDir::Vertical, "props_scroll", max_height, |ui| {
-                    ui.spacing_mut().item_spacing = vec2(4.0, 4.0);
+                scroll_when_taller(ui, "props_scroll", max_height, |ui| {
+                    ui.spacing_mut().item_spacing = vec2(space::SM, space::SM);
                     sections(ui, cx, side);
                 });
             });
-        },
-    );
+        });
+    st.chrome.props = Some(area.response.rect);
 }
 
 fn sections(ui: &mut egui::Ui, cx: &mut Cx<'_>, side: f32) {
@@ -171,7 +184,7 @@ fn choices(ui: &mut egui::Ui, cx: &mut Cx<'_>, title: &str, prop: &str, options:
 fn text_sections(ui: &mut egui::Ui, cx: &mut Cx<'_>) {
     if shows(cx, "font_family") {
         let label = section_label(ui, &cx.pal, "Font");
-        crate::surfaces::color::remember_anchor(ui.ctx(), crate::surfaces::color::PopoverKey::Font, label.rect);
+        crate::surfaces::color::remember_anchor_in(ui, crate::surfaces::color::PopoverKey::Font, label.rect);
         let current = cx.model.style.str_value("font_family").map(str::to_owned);
         ui.horizontal_wrapped(|ui| {
             for (label, value) in FONT_FAMILIES {
@@ -180,10 +193,10 @@ fn text_sections(ui: &mut egui::Ui, cx: &mut Cx<'_>) {
                     .label(label)
                     .selected(current.as_deref() == Some(value));
                 let font = match value {
-                    "gelpen" => theme::hand(13.0),
-                    "gelpen_serif" => theme::named(theme::PREVIEW_SERIF, 13.0),
-                    "vanilla_extract" => theme::named(theme::PREVIEW_VANILLA, 13.0),
-                    _ => egui::FontId::proportional(12.0),
+                    "gelpen" => TextSize::Body.hand(),
+                    "gelpen_serif" => theme::named(theme::PREVIEW_SERIF, TextSize::Body.points()),
+                    "vanilla_extract" => theme::named(theme::PREVIEW_VANILLA, TextSize::Body.points()),
+                    _ => theme::named(theme::PREVIEW_NOTO, TextSize::Body.points()),
                 };
                 cx.toggle_button_font(ui, &ctl, label, font);
             }
@@ -371,7 +384,7 @@ fn opacity_section(ui: &mut egui::Ui, cx: &mut Cx<'_>) {
             .on_disabled_hover_text(blocked.clone().unwrap_or_default());
         resp.widget_info(|| egui::WidgetInfo::slider(blocked.is_none(), f64::from(value), "Opacity"));
         let text = if mixed { "mixed".to_owned() } else { format!("{}%", (value * 100.0).round()) };
-        ui.label(egui::RichText::new(text).size(11.0).color(cx.pal.muted));
+        ui.label(egui::RichText::new(text).size(TextSize::Caption.points()).color(cx.pal.muted));
         let args = json!({ "props": { "opacity": (f64::from(value) * 100.0).round() / 100.0 } });
         if resp.changed() {
             let phase = if cx.model.gesture_running { ScrubPhase::Update } else { ScrubPhase::Begin };
@@ -442,7 +455,7 @@ fn link_section(ui: &mut egui::Ui, cx: &mut Cx<'_>, side: f32) {
         cx.verb_button_gated(ui, Verb::OpenLinkEditor, Icon::Link, side, "Edit the link", has_link, reason);
         if let Some(link) = cx.model.selection_link.clone() {
             let shown: String = link.chars().take(LINK_CHARS).collect();
-            ui.label(egui::RichText::new(shown).size(11.0).color(cx.pal.muted));
+            ui.label(egui::RichText::new(shown).size(TextSize::Caption.points()).color(cx.pal.muted));
         }
         let open = Ctl::new("element.open_link").label("Open the link");
         cx.text_button(ui, &open, "Open", false);
