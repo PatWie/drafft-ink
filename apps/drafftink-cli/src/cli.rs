@@ -9,7 +9,7 @@ use clap::{Args, Parser, Subcommand};
 use crate::error::CliError;
 use crate::format::{InFormat, OutFormat};
 use crate::ops;
-use crate::ports;
+use crate::ports::{self, IdSeed};
 use crate::script::Script;
 
 /// `drafftink-cli`: drafft.ink without a window.
@@ -73,6 +73,10 @@ pub struct RunArgs {
     /// With --batch: the undo label.
     #[arg(long, requires = "batch", value_name = "TEXT")]
     pub label: Option<String>,
+    /// Make element ids and hand-drawn jitter from this seed, so the same script writes the same file every time.
+    /// Without it they are random.
+    #[arg(long, value_name = "N")]
+    pub seed: Option<u64>,
     /// Without --batch: go on after a step that refused (the exit code is still 1).
     #[arg(long, conflicts_with = "batch")]
     pub keep_going: bool,
@@ -159,7 +163,7 @@ fn run(args: &RunArgs, out: &mut dyn Write, err: &mut dyn Write) -> Result<(), C
         return Err(CliError::NeedsGpu);
     }
     let script = Script::parse(&read_script(&args.script)?)?;
-    let mut s = ports::session();
+    let mut s = ports::session(args.seed.map_or(IdSeed::Random, IdSeed::Fixed));
     if let Some(doc) = &args.doc {
         warn(err, &ops::open(&mut s, doc, args.from)?)?;
     }
@@ -180,7 +184,7 @@ fn convert(args: &ConvertArgs, err: &mut dyn Write) -> Result<(), CliError> {
     if format == OutFormat::Png {
         return Err(CliError::NeedsGpu);
     }
-    let mut s = ports::session();
+    let mut s = ports::session(IdSeed::Random);
     warn(err, &ops::open(&mut s, &args.input, args.from)?)?;
     warn(err, &ops::save(&mut s, &args.output, format)?)?;
     writeln!(err, "wrote {}", args.output.display())?;
@@ -193,13 +197,13 @@ pub fn execute(cli: &Cli, out: &mut dyn Write, err: &mut dyn Write) -> Result<()
         Command::Run(a) => run(a, out, err),
         Command::Convert(a) => convert(a, err),
         Command::Outline(a) => {
-            let mut s = ports::session();
+            let mut s = ports::session(IdSeed::Random);
             warn(err, &ops::open(&mut s, &a.input, a.from)?)?;
             writeln!(out, "{}", ops::outline(&mut s, a.json, a.max_nodes)?.trim_end())?;
             Ok(())
         }
         Command::Inspect(a) => {
-            let mut s = ports::session();
+            let mut s = ports::session(IdSeed::Random);
             warn(err, &ops::open(&mut s, &a.input, a.from)?)?;
             writeln!(out, "{}", ops::inspect(&mut s)?)?;
             Ok(())
@@ -209,7 +213,7 @@ pub fn execute(cli: &Cli, out: &mut dyn Write, err: &mut dyn Write) -> Result<()
             Ok(())
         }
         Command::Commands(a) => {
-            let mut s = ports::session();
+            let mut s = ports::session(IdSeed::Random);
             let text = match &a.id {
                 Some(id) => ops::describe(&mut s, id)?,
                 None => ops::commands(&mut s, a.family.as_deref(), a.search.as_deref(), a.json)?,

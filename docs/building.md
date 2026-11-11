@@ -100,6 +100,8 @@ with real X input (the tool keys `r`, `a`, `t`, then mouse drags and typing for 
 Web (`web_check.py --app`, headed Chromium on the same machine, release-wasm build): 0 frames in 10 s idle (0.8 % of one core,
 all Chromium processes), 0 frames in 22 s alone in a room and 0 with a peer. Sizes and the rest are in `web-app.md`.
 
+The welcome document and the README pictures are generated: `cargo xtask intro` and `cargo xtask media` (`media.md`).
+
 ## 5. Where things are
 
 | Path | What |

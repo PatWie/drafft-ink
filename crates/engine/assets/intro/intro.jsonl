@@ -1,0 +1,37 @@
+// The built-in welcome document (placeholder content). One engine command per line.
+// `cargo xtask intro` runs this script (drafftink-cli run --batch --seed ...) and writes intro.json next to it;
+// `cargo xtask intro --check` fails when intro.json is stale. See docs/media.md.
+// Units are world units (the grid is 20). `as` names a step so later steps can say "$name". Colours are palette
+// names like "blue-100" (diagram.create takes #rrggbb only). Elements that `docs/media/shots.json` selects have a `name`.
+// Edit this file, never intro.json.
+
+// ---- title ----
+{"id":"element.create","as":"title","args":{"name":"title","kind":"text","at":[0,0],"text":"Welcome to Drafft.ink","style":{"font_size":48,"stroke_color":"indigo-700"}}}
+{"id":"element.create","as":"lead","args":{"kind":"text","at":[0,70],"width":560,"text":"An infinite canvas for sketching ideas, diagrams and plans. It runs in your browser, saves on your device and needs no account.","style":{"font_size":20,"stroke_color":"slate-600"}}}
+
+// ---- shapes ----
+{"id":"element.create","as":"box","args":{"name":"box","kind":"rectangle","bounds":{"x":0,"y":240,"w":180,"h":100},"style":{"fill_color":"blue-100","stroke_color":"blue-600","fill_pattern":"solid"}}}
+{"id":"element.create","as":"box_label","args":{"kind":"text","container":"$box","text":"Shapes"}}
+{"id":"element.create","as":"oval","args":{"name":"oval","kind":"ellipse","bounds":{"x":260,"y":240,"w":180,"h":100},"style":{"fill_color":"amber-100","stroke_color":"amber-600","fill_pattern":"hachure"}}}
+{"id":"element.create","as":"oval_label","args":{"kind":"text","container":"$oval","text":"Styles"}}
+{"id":"element.create","as":"gem","args":{"name":"gem","kind":"diamond","bounds":{"x":520,"y":230,"w":180,"h":120},"style":{"fill_color":"green-100","stroke_color":"green-600","fill_pattern":"cross_hatch"}}}
+{"id":"element.create","as":"gem_label","args":{"kind":"text","container":"$gem","text":"Fills"}}
+{"id":"element.create","args":{"kind":"arrow","points":[[180,290],[260,290]],"start":{"target":"$box"},"end":{"target":"$oval"}}}
+{"id":"element.create","args":{"kind":"arrow","points":[[440,290],[520,290]],"start":{"target":"$oval"},"end":{"target":"$gem"},"arrow_type":"round"}}
+{"id":"element.create","args":{"kind":"line","points":[[0,390],[700,390]],"style":{"stroke_style":"dashed","stroke_color":"slate-400"}}}
+
+// ---- a diagram built from structure ----
+{"id":"diagram.create","as":"flow","args":{"at":[0,440],"layout":{"direction":"right","node_gap":30,"layer_gap":70},"frame":"A diagram in one command","nodes":[{"id":"idea","label":"Idea","shape":"ellipse","style":{"fill_color":"#fce7f3"}},{"id":"sketch","label":"Sketch","style":{"fill_color":"#dbeafe"}},{"id":"ok","label":"Good?","shape":"diamond","style":{"fill_color":"#fef9c3"}},{"id":"share","label":"Share","style":{"fill_color":"#dcfce7"}}],"edges":[{"from":"idea","to":"sketch"},{"from":"sketch","to":"ok"},{"from":"ok","to":"share","label":"yes"},{"from":"ok","to":"sketch","label":"no","arrow_type":"elbow"}]}}
+
+// ---- sticky notes ----
+{"id":"element.create_sticky","args":{"name":"note_draw","at":[860,120],"size":200,"color":"yellow","text":"Drag, draw and type anywhere"}}
+{"id":"element.create_sticky","args":{"name":"note_collab","at":[1090,150],"size":200,"color":"pink","text":"Collaborate live in a shared room"}}
+{"id":"element.create_sticky","args":{"name":"note_export","at":[975,360],"size":200,"color":"green","text":"Export to PNG, SVG or JSON"}}
+
+// ---- maths and ink ----
+{"id":"element.create","as":"formula","args":{"name":"formula","kind":"math","at":[860,560],"latex":"e^{i\\pi} + 1 = 0","style":{"font_size":36}}}
+{"id":"element.create","args":{"kind":"freehand","points":[[860,660],[900,640],[950,670],[1000,640],[1050,670],[1100,640]],"style":{"stroke_color":"rose-500","stroke_width":4}}}
+{"id":"element.create","as":"hand_note","args":{"kind":"text","at":[860,690],"text":"hand drawn, on purpose","style":{"font_size":20,"font_family":"gelpen_serif"}}}
+
+// ---- finish ----
+{"id":"selection.clear"}

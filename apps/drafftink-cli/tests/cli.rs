@@ -261,3 +261,25 @@ fn mistakes_in_the_input_have_plain_messages_and_the_right_exit_code() {
     assert_eq!(cli(&["run", "x", "--dry-run"]).status.code(), Some(2));
     assert_eq!(cli(&[]).status.code(), Some(2));
 }
+
+#[test]
+fn a_fixed_seed_makes_the_same_ids_and_another_seed_makes_other_ids() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = script(dir.path(), BOXES);
+    let write = |seed: &str, name: &str| {
+        let out = dir.path().join(name);
+        let o = cli(&["run", &path, "--seed", seed, "--out", p(&out)]);
+        assert!(o.status.success(), "{}", text(&o.stderr));
+        std::fs::read_to_string(out).unwrap()
+    };
+    assert_eq!(write("5", "a.drafftink"), write("5", "b.drafftink"));
+    assert_ne!(write("5", "c.drafftink"), write("6", "d.drafftink"));
+}
+
+#[test]
+fn comment_lines_in_a_script_are_skipped() {
+    let dir = tempfile::tempdir().unwrap();
+    let o = cli(&["run", &script(dir.path(), &format!("// two shapes\n{BOXES}// done\n"))]);
+    assert!(o.status.success(), "{}", text(&o.stderr));
+    assert_eq!(text(&o.stdout).lines().count(), 2);
+}

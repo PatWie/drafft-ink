@@ -11,7 +11,9 @@ mod e2e;
 mod exceptions;
 mod gates;
 mod harness;
+mod intro;
 mod layers;
+mod media;
 #[cfg(test)]
 mod parity;
 mod perf;
@@ -57,6 +59,13 @@ gates:
                   --native: builds the shipped binaries (profile dist) and checks their sizes instead (not part of ci)
   ci              all of the above in order, with a summary table
 
+intro [--check]
+                  the welcome document: crates/engine/assets/intro/intro.json is generated from intro.jsonl (a command
+                  script run by drafftink-cli); without --check it rewrites the file, with it a stale file fails
+media [--only NAME]...
+                  renders the README pictures (docs/img/*.png) from the real app, offscreen, as docs/media/shots.json
+                  lists them; uses Mesa lavapipe when VK_ICD_FILENAMES is unset (docs/media.md)
+
 e2e [--types|--web|--native|--no-build]
                   the browser (Playwright) and native (bridge) end-to-end suites on a private Xvfb; needs a display
                   and a GPU, so it is not part of ci (docs/testing.md); `cargo xtask e2e --help`
@@ -75,6 +84,8 @@ fn main() -> ExitCode {
         }
         Some("ci") => gates::run_ci(&root()),
         Some("e2e") => e2e::run_e2e(&root(), rest),
+        Some("intro") => intro::run_intro(&root(), rest),
+        Some("media") => media::run_media(&root(), rest),
         Some(other) => match Gate::from_name(other) {
             Some(gate) => gates::run_one(gate, &root(), rest),
             None => Err(format!("unknown command `{other}`\n\n{USAGE}")),
