@@ -30,6 +30,7 @@
 use std::cmp::Ordering;
 
 use drafftink_geom::kurbo::{Point, Rect};
+use drafftink_geom::lasso::{Lasso, lasso_selects};
 use drafftink_geom::select::{MarqueeMode as GeomMarquee, marquee_selects};
 use drafftink_geom::{HitOpts, Outline, RectShape, SpatialIndex, aabb};
 use drafftink_profile::{Counter, inc};
@@ -363,6 +364,38 @@ impl SceneIndex {
                     marquee_selects(&shape, &rect, GeomMarquee::Contain, false)
                 }
                 (MarqueeMode::Intersect, false) => marquee_selects(&shape, &rect, GeomMarquee::Touch, hits_inside(e)),
+            };
+            if selected {
+                found.push(e);
+            }
+        }
+        found.sort_by(|a, b| z_cmp(a, b));
+        found.into_iter().map(|e| e.id.clone()).collect()
+    }
+
+    /// Elements selected by a lasso (world space), back to front. The rules are those of [`SceneIndex::marquee`]
+    /// with a free-hand outline: `Contain` needs the whole outline inside the lasso, `Intersect` takes what the
+    /// lasso crosses, surrounds or (for a filled shape) lies inside, and a frame always needs `Contain`.
+    pub fn lasso<R: SceneRead>(
+        &self,
+        scene: &R,
+        lasso: &Lasso,
+        mode: MarqueeMode,
+        include_locked: bool,
+    ) -> Vec<ElementId> {
+        inc(Counter::SpatialQueries);
+        let mut found: Vec<&Element> = Vec::new();
+        for (id, _) in self.index.query_rect(&lasso.bounds()) {
+            let Some(e) = scene.get(id) else { continue };
+            if e.deleted || (e.locked && !include_locked) {
+                continue;
+            }
+            let Some(shape) = shape_of(e) else { continue };
+            let selected = match (mode, matches!(e.kind, ElementKind::Frame(_))) {
+                (MarqueeMode::Contain, _) | (MarqueeMode::Intersect, true) => {
+                    lasso_selects(&shape, lasso, GeomMarquee::Contain, false)
+                }
+                (MarqueeMode::Intersect, false) => lasso_selects(&shape, lasso, GeomMarquee::Touch, hits_inside(e)),
             };
             if selected {
                 found.push(e);

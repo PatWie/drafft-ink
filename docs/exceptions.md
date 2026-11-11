@@ -128,16 +128,16 @@ Rules that hold for all classes:
 | Cancel | Drop the path, restore opacity. |
 | Test | `exception_E8_erase_equals_plain_command`. |
 
-### E9 Marquee selection
+### E9 Marquee and lasso selection
 
 | | |
 |---|---|
-| Input | Press on empty canvas and drag, release. |
+| Input | Press on empty canvas and drag, release. With the lasso tool (or Alt held with the select tool) the drag is a free-hand path. |
 | Class | B |
-| What happens | The recognizer draws the rectangle and previews the units it would select. On release, if the rectangle is at least 2 by 2 pixels, it calls one command with the mode from the modifier (Shift adds). |
+| What happens | The recognizer draws the rectangle (or the lasso path) and previews the units it would select. On release, if the rectangle is at least 2 by 2 pixels (or the path has that extent and an area), it calls one command with the mode from the modifier (Shift adds). |
 | Reason | Selection changes per event would make the properties panel and the overlay recompute for each event, and would put intermediate selections in the ring. |
-| Final state | `selection.select_region { rect, mode, contain }`. |
-| Test | `exception_E9_marquee_equals_plain_command`. |
+| Final state | `selection.select_region { rect, mode, contain }`, or `selection.select_lasso { points, mode, simplify }` for the lasso. |
+| Test | `exception_E9_marquee_equals_plain_command`, `exception_E9_lasso_equals_plain_command`. |
 
 ### E10 Pan
 

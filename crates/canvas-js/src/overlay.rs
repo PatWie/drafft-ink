@@ -65,6 +65,7 @@ pub(crate) fn to_render(overlay: &Overlay) -> drafftink_render::Overlay {
         });
     }
     out.marquee = overlay.marquee.map(|m| m.rect);
+    out.lasso = overlay.lasso.as_ref().map(|l| l.points.clone()).unwrap_or_default();
     out.guides = overlay.guides.clone();
     out.binding = overlay
         .bind_candidates

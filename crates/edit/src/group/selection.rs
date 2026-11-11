@@ -18,6 +18,7 @@
 use std::collections::BTreeSet;
 
 use drafftink_geom::kurbo::Rect;
+use drafftink_geom::lasso::{Lasso, lasso_selects};
 use drafftink_geom::select::{MarqueeMode, marquee_selects};
 use drafftink_scene::{Element, ElementId, GroupId, Kind, SceneRead};
 
@@ -378,6 +379,23 @@ impl Default for RegionOpts {
 /// inside the editing group, the next level down). Locked elements and bound text are ignored, and the children
 /// of a selected frame are not selected together with it.
 pub fn select_region<R: SceneRead>(scene: &R, sel: &Selection, rect: Rect, opts: RegionOpts) -> Selection {
+    select_where(scene, sel, opts, |e| in_region(e, &rect, opts.contain))
+}
+
+/// Lasso selection: the marquee rules with a free-hand outline instead of a rectangle (`opts.contain` is the
+/// lasso's `Touch` or `Contain`, see [`drafftink_geom::lasso`]). Any member selected selects its whole unit, locked
+/// elements and bound text are ignored, and the children of a selected frame are not selected together with it.
+pub fn select_lasso<R: SceneRead>(scene: &R, sel: &Selection, lasso: &Lasso, opts: RegionOpts) -> Selection {
+    select_where(scene, sel, opts, |e| in_lasso(e, lasso, opts.contain))
+}
+
+/// The selection after a region gesture whose test is `hit`, combined with `sel` as `opts.mode` says.
+fn select_where<R: SceneRead>(
+    scene: &R,
+    sel: &Selection,
+    opts: RegionOpts,
+    hit: impl Fn(&Element) -> bool,
+) -> Selection {
     let rel = Relations::build(scene);
     let editing = match opts.mode {
         RegionMode::Replace => None,
@@ -386,7 +404,7 @@ pub fn select_region<R: SceneRead>(scene: &R, sel: &Selection, rect: Rect, opts:
     let hits: Vec<ElementId> = scene
         .iter()
         .filter(|e| (opts.include_locked || !e.locked) && !is_label(scene, e))
-        .filter(|e| in_region(e, &rect, opts.contain))
+        .filter(|e| hit(e))
         .map(|e| e.id.clone())
         .collect();
     let mut ids: BTreeSet<ElementId> = match opts.mode {
@@ -406,6 +424,13 @@ pub fn select_region<R: SceneRead>(scene: &R, sel: &Selection, rect: Rect, opts:
 fn in_region(e: &Element, rect: &Rect, mode: MarqueeMode) -> bool {
     match geometry::primitive(e) {
         Some(p) => marquee_selects(&p, rect, mode, geometry::is_filled(e)),
+        None => false,
+    }
+}
+
+fn in_lasso(e: &Element, lasso: &Lasso, mode: MarqueeMode) -> bool {
+    match geometry::primitive(e) {
+        Some(p) => lasso_selects(&p, lasso, mode, geometry::is_filled(e)),
         None => false,
     }
 }

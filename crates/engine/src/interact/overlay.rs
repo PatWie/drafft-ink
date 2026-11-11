@@ -8,7 +8,8 @@
 
 use drafftink_canvas::shape::{element_box, shape_of};
 use drafftink_canvas::{
-    BindCandidate, Handle, HoverOutline, MarqueeOverlay, Overlay, SelectionBox, SelectionFrame, TransformerOverlay,
+    BindCandidate, Handle, HoverOutline, LassoOverlay, MarqueeOverlay, Overlay, SelectionBox, SelectionFrame,
+    TransformerOverlay,
 };
 use drafftink_geom::guides::SmartGuide;
 use drafftink_geom::kurbo::{Point, Rect};
@@ -50,6 +51,8 @@ pub struct LaserPoint {
 pub struct OverlayParts {
     /// The marquee being dragged.
     pub marquee: Option<Rect>,
+    /// The path of the lasso being drawn, in drawing order. Empty when there is none.
+    pub lasso: Vec<Point>,
     /// Smart guides of the running move or resize, or of a drawing snap.
     pub guides: Vec<SmartGuide>,
     /// Elements to highlight: an arrow end would bind to them, or a drag would drop into a frame.
@@ -76,6 +79,7 @@ impl OverlayParts {
     /// True when a gesture shows something.
     pub fn has_gesture_state(&self) -> bool {
         self.marquee.is_some()
+            || !self.lasso.is_empty()
             || !self.guides.is_empty()
             || !self.highlight.is_empty()
             || self.preview.is_some()
@@ -132,6 +136,7 @@ pub(super) fn build(world: &World, s: &Session, parts: &OverlayParts, hover: Opt
         o.hover = Some(HoverOutline { id: id.clone(), shape });
     }
     o.marquee = parts.marquee.map(|rect| MarqueeOverlay { rect });
+    o.lasso = (!parts.lasso.is_empty()).then(|| LassoOverlay { points: parts.lasso.clone() });
     o.guides = parts.guides.clone();
     o.bind_candidates = parts
         .highlight

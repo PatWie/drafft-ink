@@ -139,7 +139,7 @@ pub struct SelectionOut {
 }
 
 /// Writes `next` into the active tab and builds the output. `before` is the observed state from before.
-fn finish(s: &mut Session, before: &Observed, next: &EditSelection, skipped: &[ElementId]) -> SelectionOut {
+pub(super) fn finish(s: &mut Session, before: &Observed, next: &EditSelection, skipped: &[ElementId]) -> SelectionOut {
     apply_selection(s, next);
     if !skipped.is_empty() {
         let n = skipped.len();
@@ -533,7 +533,7 @@ fn navigate(s: &mut Session, a: NavigateArgs) -> Result<SelectionOut, Refusal> {
 // ---- registration ----
 
 /// Selection commands: change only the observed editor state, never make an undo step.
-const SEL: Facts = Facts {
+pub(super) const SEL: Facts = Facts {
     reads_only: false,
     mutates: Mutates::OBSERVED,
     while_gesture: Gate::Refused,

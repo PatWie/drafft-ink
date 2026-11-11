@@ -145,6 +145,7 @@ pub fn clamp_zoom(z: f64) -> f64 {
 #[allow(missing_docs)]
 pub enum Tool {
     Select,
+    Lasso,
     Hand,
     Rectangle,
     Diamond,
@@ -165,6 +166,7 @@ impl Tool {
     pub fn name(self) -> &'static str {
         match self {
             Self::Select => "select",
+            Self::Lasso => "lasso",
             Self::Hand => "hand",
             Self::Rectangle => "rectangle",
             Self::Diamond => "diamond",

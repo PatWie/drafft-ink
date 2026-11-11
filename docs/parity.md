@@ -308,14 +308,14 @@ Row ids (`A-nnn` old app, `B-nnn` Excalidraw) are stable so the gap list can ref
 
 ## 2. Excalidraw features (B)
 
-Rows follow `research/parts/04-features-diff.md` §1.1 to §1.15 and §4. The AI features are `out of scope` by the user's decision. Features that `docs/commands.md` §8.3 lists as "not cataloged" (sticky note, embeds, lasso, bucket fill, autoshape, eyedropper, image crop, links, convert type, list markers, chart paste, follow mode UI, room encryption, pen mode, scrollbars) are `missing` here, because the requirement is to add everything except the AI features. Priorities are in section 4.
+Rows follow `research/parts/04-features-diff.md` §1.1 to §1.15 and §4. The AI features are `out of scope` by the user's decision. Features that `docs/commands.md` §8.3 lists as "not cataloged" (sticky note, embeds, bucket fill, autoshape, eyedropper, image crop, links, convert type, list markers, chart paste, follow mode UI, room encryption, pen mode, scrollbars) are `missing` here, because the requirement is to add everything except the AI features. Priorities are in section 4.
 
 ### 2.1 Tools
 
 | # | Feature | Source | Status | Where | Evidence |
 |---|---|---|---|---|---|
 | B-001 | Selection tool | X:Tools.tsx | done | A-001 | see A-001 |
-| B-002 | Lasso selection | X:lasso/index.ts | missing | No lasso tool or `selection.select_region` shape; only rectangles | none |
+| B-002 | Lasso selection | X:lasso/index.ts | done | `selection.select_lasso` (path in world units; overlap or contain, replace or add, groups, frames, locked, bound text as the marquee) over `geom::lasso` and `edit::group::selection::select_lasso`; the lasso tool (toolbar button, `tool.set` tool=lasso) and Alt-drag with the select tool draw the path (overlay `OverlayParts::lasso`) and run the command on release. Not adopted: live selection while the path grows (the marquee does not either); `contain` selects a group when any member is inside (Excalidraw: all members); a drag from an unselected element starts a lasso only with the lasso tool. | `geom/lasso::tests`, `edit/tests/selection_lasso`, `canvas/tests/hit::lasso_contain_versus_intersect_follows_the_marquee_rules`, `eng/cmd/selection_lasso_tests`, `eng/int/select_lasso_tests` (with `exception_E9_lasso_equals_plain_command`), `S:selection/lasso.json`, `render/tests/overlay::every_part_draws_something` |
 | B-003 | Hand tool, Space-drag, wheel-button drag | X:App.pan.ts | done | `tool.set` hand, `tool.hold` (Space), middle drag | `eng/int/interaction_tests::space_hold_pans_instead_of_selecting_or_moving` |
 | B-004 | Rectangle | X:Tools.tsx | done | A-003 | see A-003 |
 | B-005 | Diamond (`D`, `3`) | X:Tools.tsx | done | `tool.set` diamond, `Kind::Diamond`, hit-test, binding geometry, import (old app turned diamonds into rectangles) | `eng/cmd/element_create_tests::diamond_ellipse_and_frame_are_boxes_of_their_kind`, `geom/src/binding.rs::orbit_on_ellipse_and_diamond` |
@@ -566,7 +566,7 @@ Status here is about the key reaching a working action. Where the default key di
 | # | Feature | Source | Status | Where | Evidence |
 |---|---|---|---|---|---|
 | B-220 | `H` hand | 4.1 | done | `tool.set` hand | A-176 |
-| B-221 | `V`, `1` selection (click again for lasso) | 4.1 | partial | selection yes; no lasso (B-002) | A-175 |
+| B-221 | `V`, `1` selection (click again for lasso) | 4.1 | done | selection yes. Lasso is its own toolbar button after select and `tool.set` tool=lasso (palette), plus Alt-drag with the select tool; no key (Excalidraw's lasso has none, and `S` is the stroke colour picker); a click on the active select button does not switch to lasso | B-002; `ui/surfaces::every_tool_button_runs_tool_set_with_its_tool` |
 | B-222 | `R`/`2`, `D`/`3`, `O`/`4`, `A`/`5`, `L`/`6`, `P`/`7`/`X`, `T`/`8` | 4.1 | done | `tool.set` | `ui/tests/keymap::every_registered_binding_dispatches_to_its_command_on_both_platforms` |
 | B-223 | `N` sticky note | 4.1 | missing | B-011 | none |
 | B-224 | `9` image | 4.1 | done | `I` (UI verb), `9` stays Math (decision 2) | `ui/tests/keymap::ui_verb_keys_do_not_collide_with_command_keys` |
@@ -637,7 +637,7 @@ Priority: **P0** is a promise of the user's requirement ("keep all old features"
 | 2 | P0 | Phone and tablet layout (A-128, B-122) | A touch mode for the egui surfaces (bigger targets, a compact toolbar, no hover-only controls); iPad Safari run | `ui`, `app`, `apps/drafftink-web` | L |
 | 3 | P1 | Hyperlinks and element links (B-055, B-056, B-254) | `element.set_link` command (the `Element.link` field already round-trips through `.excalidraw`), `Mod+K` dialog, link icon overlay, open through `HostRequest::OpenUrl`, copy link to element and navigation | `engine` element family, `edit`, `render` overlay, `ui` | M |
 | 4 | P1 | Library panel (B-181, B-191, completes B-180) | A sidebar with thumbnails, add selection, click or drag to insert, delete, rename; the seven `library.*` commands already exist | `ui` (surface), `render` (thumbnails), `engine` library family | M |
-| 5 | P1 | Lasso selection (B-002, B-221) | A free-path pointer tool; a `selection.select_region` path argument; hit test of the path against element outlines | `canvas` (path hit), `engine/interact`, `engine` selection family | M |
+| 5 | P1 | Lasso selection (B-002, B-221) | **Done** (branch `gaps-features-a`): `selection.select_lasso` (a path argument and the hit test of the path against element outlines in `geom::lasso`, used by `edit`, `canvas` and the engine), the lasso tool and Alt-drag in `engine/interact`, the path overlay through `canvas`, `render` | `geom`, `edit`, `canvas`, `render`, `engine`, `ui` | M |
 | 6 | P1 | Sticky note (B-011, B-223) | New element kind or a rectangle preset with bound text and auto-fit font; tool and key `N` | `scene`, `edit` create, `render`, `engine` element family, `ui` | M |
 | 7 | P1 | Convert element type (B-064, B-232) | `element.convert` between rectangle, diamond, ellipse and arrow types, `Tab` popup | `edit`, `engine` element family, `ui` | S |
 | 8 | P1 | Paste SVG, URL, chart data (B-148, B-149, B-151) | A branch for each in the paste routing; SVG needs a rasteriser (for example resvg) in `io`; chart parse and dialog | `io`, `engine` clipboard family | M |

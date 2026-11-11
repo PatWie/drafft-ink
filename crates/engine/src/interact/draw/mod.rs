@@ -73,8 +73,14 @@ impl DrawTools {
             Tool::Freehand | Tool::Highlighter => stroke::dot(cx, ev),
             Tool::Eraser => eraser::tap(cx, ev),
             Tool::Text | Tool::Math => text::click(cx, ev),
-            Tool::Select | Tool::Hand | Tool::Rectangle | Tool::Diamond | Tool::Ellipse | Tool::Frame | Tool::Laser => {
-            }
+            Tool::Select
+            | Tool::Lasso
+            | Tool::Hand
+            | Tool::Rectangle
+            | Tool::Diamond
+            | Tool::Ellipse
+            | Tool::Frame
+            | Tool::Laser => {}
         }
     }
 
@@ -102,7 +108,7 @@ impl DrawTools {
                 self.gesture = Some(Gesture::Laser);
             }
             Tool::Text | Tool::Math => self.gesture = Some(Gesture::Place),
-            Tool::Select | Tool::Hand => {}
+            Tool::Select | Tool::Lasso | Tool::Hand => {}
         }
         self.drag_update(cx, ev);
     }

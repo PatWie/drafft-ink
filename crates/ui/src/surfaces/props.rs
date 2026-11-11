@@ -52,7 +52,7 @@ const PRESSURE: [(&str, &str); 3] = [("Uniform", "uniform"), ("Simulated", "simu
 
 /// True for the tools that draw an element.
 pub fn is_drawing_tool(t: Tool) -> bool {
-    !matches!(t, Tool::Select | Tool::Hand | Tool::Eraser | Tool::Laser)
+    !matches!(t, Tool::Select | Tool::Lasso | Tool::Hand | Tool::Eraser | Tool::Laser)
 }
 
 /// Whether a property section is relevant to the tool being drawn with (used only when nothing is
@@ -80,7 +80,7 @@ fn tool_shows(tool: Tool, prop: &str) -> bool {
         Tool::Text | Tool::Math => {
             matches!(prop, "font_family" | "font_weight" | "font_size" | "text_align" | "opacity")
         }
-        Tool::Select | Tool::Hand | Tool::Eraser | Tool::Laser => false,
+        Tool::Select | Tool::Lasso | Tool::Hand | Tool::Eraser | Tool::Laser => false,
     }
 }
 

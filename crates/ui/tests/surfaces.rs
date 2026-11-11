@@ -39,6 +39,7 @@ fn every_tool_button_runs_tool_set_with_its_tool() {
     h.run();
     for (label, tool) in [
         ("Select tool", "select"),
+        ("Lasso tool", "lasso"),
         ("Hand tool", "hand"),
         ("Rectangle tool", "rectangle"),
         ("Diamond tool", "diamond"),
