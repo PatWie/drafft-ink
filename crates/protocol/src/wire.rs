@@ -51,6 +51,17 @@ impl Writer {
     pub fn str(&mut self, v: &str) {
         self.bytes(v.as_bytes());
     }
+
+    /// An optional field: a flag byte (0 or 1), then the value when present.
+    pub fn option<T>(&mut self, v: Option<T>, put: impl FnOnce(&mut Self, T)) {
+        match v {
+            Some(v) => {
+                self.u8(1);
+                put(self, v);
+            }
+            None => self.u8(0),
+        }
+    }
     pub fn count(&mut self, n: usize) {
         self.varint(u32::try_from(n).unwrap_or(u32::MAX));
     }
@@ -113,6 +124,15 @@ impl<'a> Reader<'a> {
             1 => Ok(true),
             v => Err(DecodeError::UnknownValue { field: what, value: u32::from(v) }),
         }
+    }
+
+    /// An optional field: reads the flag byte called `flag`, then the value when it is 1.
+    pub fn option<T>(
+        &mut self,
+        flag: &'static str,
+        get: impl FnOnce(&mut Self) -> Result<T, DecodeError>,
+    ) -> Result<Option<T>, DecodeError> {
+        if self.bool(flag)? { get(self).map(Some) } else { Ok(None) }
     }
 
     pub fn varint(&mut self, what: &'static str) -> Result<u32, DecodeError> {
