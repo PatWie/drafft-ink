@@ -32,7 +32,7 @@ pub enum FlowchartError {
     #[error("element {0} does not exist. Look up ids with element.query or doc.outline.")]
     Missing(ElementId),
     /// Only rectangles, diamonds and ellipses can grow nodes.
-    #[error("{id} is a {kind}. Connected nodes can be added to a rectangle, diamond or ellipse.")]
+    #[error("{id} is {}. Connected nodes can be added to a rectangle, diamond or ellipse.", drafftink_scene::words::Article::new(.kind))]
     WrongKind {
         /// The element.
         id: ElementId,

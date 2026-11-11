@@ -68,7 +68,7 @@ pub enum CreateError {
         height: bool,
     },
     /// A line, arrow or stroke has too few points.
-    #[error("a {kind} needs at least {min} points, and {have} were given")]
+    #[error("{} needs at least {min} points, and {have} were given", drafftink_scene::words::Article::new(.kind))]
     TooFewPoints {
         /// Kind name.
         kind: &'static str,
@@ -113,7 +113,7 @@ pub enum CreateError {
     #[error("an element cannot be connected to itself")]
     SameElement,
     /// The element cannot hold a label.
-    #[error("{id} is a {kind}, which cannot hold a label")]
+    #[error("{id} is {}, which cannot hold a label", drafftink_scene::words::Article::new(.kind))]
     NotLabelContainer {
         /// The element.
         id: ElementId,
@@ -151,7 +151,7 @@ pub enum CreateError {
         error: ElementError,
     },
     /// The element named as a frame is not a frame.
-    #[error("{id} is a {kind}, not a frame")]
+    #[error("{id} is {}, not a frame", drafftink_scene::words::Article::new(.kind))]
     NotAFrame {
         /// The element.
         id: ElementId,

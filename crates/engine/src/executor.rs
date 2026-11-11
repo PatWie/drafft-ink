@@ -196,7 +196,12 @@ impl Session {
     }
 
     /// Steps 3 to 8, after the gates have run.
-    fn run_after_gates(&mut self, spec: &'static CommandSpec, input: Input<'_>, mode: Mode) -> Result<StepDone, Refusal> {
+    fn run_after_gates(
+        &mut self,
+        spec: &'static CommandSpec,
+        input: Input<'_>,
+        mode: Mode,
+    ) -> Result<StepDone, Refusal> {
         self.check_available(spec)?;
         let parsed = match input {
             Input::Json(v) => Parsed::Owned(spec.handler.parse(spec.id, v)?),

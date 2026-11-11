@@ -38,7 +38,7 @@ pub enum FrameError {
     #[error("{} element(s) are locked ({}). Unlock them first", .0.len(), crate::group::units::ids_text(.0))]
     Locked(Vec<ElementId>),
     /// The target is not a frame.
-    #[error("{id} is a {kind}, and this works on frames")]
+    #[error("{id} is {}, and this works on frames", drafftink_scene::words::Article::new(.kind))]
     NotAFrame {
         /// The element.
         id: ElementId,

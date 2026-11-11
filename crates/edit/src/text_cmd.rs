@@ -72,7 +72,7 @@ pub enum TextCmdError {
     #[error("{0} is locked. Unlock it first.")]
     Locked(ElementId),
     /// The element is not a math element.
-    #[error("{id} is a {kind}, not a math element. Pass the id of a math element.")]
+    #[error("{id} is {}, not a math element. Pass the id of a math element.", drafftink_scene::words::Article::new(.kind))]
     NotMath {
         /// The element.
         id: ElementId,
@@ -80,7 +80,7 @@ pub enum TextCmdError {
         kind: &'static str,
     },
     /// The element is not a text.
-    #[error("{id} is a {kind}, not a text element. Pass the id of a text.")]
+    #[error("{id} is {}, not a text element. Pass the id of a text.", drafftink_scene::words::Article::new(.kind))]
     NotText {
         /// The element.
         id: ElementId,
