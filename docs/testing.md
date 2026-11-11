@@ -11,8 +11,8 @@ Everything a user can do is a command, so almost everything can be tested end to
 | Domain crates | `crates/{geom,scene,edit,doc,io,...}` | the rules themselves, with typed errors, properties, hostile input | `cargo xtask test` |
 | **Scenarios** | `tests/scenarios/<family>/*.json`, run by `crates/testkit` | a user story as a list of commands with checks. One generated test per file | `cargo xtask test`, `cargo xtask harness` |
 | Pixel probes | scenarios with `requires.gpu`, `Harness::pixel_probe` | the picture, by counting and sampling pixels with a tolerance, never by comparing with a golden image | the same; needs an adapter |
-| Browser e2e *(planned)* | Playwright against `window.drafftink`, headed Chromium on Xvfb with the GPU | the web shell: input, canvas, PWA, file drop | CI job, not written yet |
-| Native e2e *(planned)* | tests that drive the native app through the bridge (`crates/bridge`) | the native shell | not written yet |
+| **Browser e2e** | `e2e/web`: Playwright and TypeScript against `window.drafftink`, headed Chromium on Xvfb with WebGPU | the web shell: input, canvas, drop and paste, storage, service worker, rooms, idle | `cargo xtask e2e`, CI workflow `e2e.yml` (not in `ci`) |
+| **Native e2e** | `e2e/native`: Rust tests that start `drafftink --bridge` and drive it with the bridge client | the native shell and the bridge | `cargo xtask e2e` |
 | Perf | `cargo xtask perf` and the criterion benches | frame time, idle redraw, scale | `docs/performance.md` |
 
 A new test goes to the lowest level that can see the bug. A command that refuses wrongly is a unit test of its family. A story that crosses families ("move a shape, the arrow follows, undo puts both back") is a scenario. Pixels are a scenario with a probe, because only they need the GPU.
@@ -155,6 +155,100 @@ A probe renders the active tab's view offscreen and reports counts and single pi
 - No adapter: a scenario with `requires.gpu` is skipped with a message. `DRAFFTINK_REQUIRE_GPU=1` makes that a failure; set it on the machine that is supposed to have a GPU.
 - No GPU machine: `VK_ICD_FILENAMES=/usr/share/vulkan/icd.d/lvp_icd.json` selects Mesa lavapipe, which reports `software: true`.
 
+## Browser and native e2e
+
+These two suites drive the real apps. They need a display and a GPU, so they are not in `cargo xtask ci`.
+
+```sh
+cargo xtask e2e                 # types, typecheck, accounting, builds, a private Xvfb, then both suites; prints the counts
+cargo xtask e2e --web           # only the browser suite (also --native)
+cargo xtask e2e --no-build      # reuse dist/, the server and the desktop app
+cargo xtask e2e --types         # regenerate e2e/web/generated after the registry changed
+DRAFFTINK_E2E_FILTER='family tab' cargo xtask e2e --web      # one browser test by title
+```
+
+The summary (passed, failed, skipped per suite) is printed and written to `target/e2e/summary.json`. The CI workflow is
+`.github/workflows/e2e.yml` (dispatch, nightly, and pull requests that touch the apps); it is not part of the required `ci` check.
+
+**Rule: the specs drive the app through commands**, the path a user and an agent share (`docs/commands.md`). A browser spec
+calls `window.drafftink.execute`, `batch`, `commands`, `recent`, `perf`, `frames`, or it sends real pointer and key events
+through Playwright. A native test calls `execute` and `batch` on the bridge. Neither suite reaches into the app any other way.
+
+### Browser suite (`e2e/web`)
+
+Node 22 and Playwright 1.58 with the Chromium that `~/.cache/ms-playwright` holds. Headless Chromium draws WebGPU canvases blank
+(`research/web-perf.md`), so the suite runs headed on an Xvfb that `cargo xtask e2e` starts. The flags for the NVIDIA GPU
+(ANGLE on Vulkan) are in `support/env.ts`; `DRAFFTINK_E2E_ADAPTER=swiftshader` selects the CPU adapter, which is slow but needs no GPU.
+The global setup starts `drafftink-server --web-dir dist --storage memory`, asks Chromium for an adapter and prints it. One worker
+runs the specs in turn: the idle checks count frames and must not share the GPU.
+
+| Directory | What it holds |
+|---|---|
+| `specs/families/` | one test per command family (`family <name>: ...`): a command that works, a refusal with its words, the undo (or the fact that there is none). The accounting check fails when a family of the registry has none |
+| `specs/stories/` | the headline stories: an arrow stays attached through move, resize, rotate, delete and undo; grouping, entering and leaving; the agent flowchart with `diagram.create` and `doc.outline`; copy and paste of a bound pair; a legacy fixture loads |
+| `specs/input/` | real input: a mouse drag draws a rectangle, a dragged arrow binds to the shapes it ends on, a marquee selects, wheel, ctrl+wheel and middle-drag move the camera, typing text, shortcuts, file drop, paste |
+| `specs/shell/` | startup and the API surface, idle (0 frames), persistence and offline reload, two pages in one room, pixel checks |
+| `support/` | `app.ts` (the `App` wrapper and the `test` fixture), `api.ts` (the types of `window.drafftink`), `build.ts`, `mouse.ts`, `pixels.ts`, `server.ts` |
+| `harness/` | `window.__drafftinkTest`, see below |
+| `generated/` | `commands.d.ts` and `registry.json`, made from the registry |
+
+**Typed arguments.** `cargo run -p drafftink-e2e --example command_schemas` prints `engine.commands {include_schemas: true}`
+of a fresh session. `scripts/gen-command-types.ts` turns the JSON Schemas of all commands into `generated/commands.d.ts`: a
+namespace per command with `Args` and `Output`, and a `CommandTable`. `app.exec("element.move", { ids, dx })` is then checked by
+`tsc --noEmit` against the schema: a wrong command id, a missing or unknown argument, a wrong type or a value outside an enum is
+a compile error. `support/typecheck.negative.ts` proves it: it holds calls that must not compile, each under `@ts-expect-error`,
+and `tsc` fails if one of them compiles. The generated files are committed; `cargo xtask e2e` fails when they are stale (`--types`
+rewrites them). The startup spec also compares the command ids of the wasm build with `registry.json`.
+
+**Pixel checks** (`support/pixels.ts`) take a screenshot of the page after the app is idle, and count or sample pixels within a
+tolerance (24 per channel). The grid takes about a tenth of the pixels of a region on a dark page, and the checks say so.
+
+**Refusals** are checked by `app.refusal(id, args)`: it fails if the command runs, and returns the refusal. Specs check the code
+and the words the user reads (`expectRefusal`).
+
+### The page harness
+
+A browser has things a command cannot reach, so `harness/harness.page.ts` installs `window.__drafftinkTest` with
+`page.addInitScript`. It is test code: the production page has no such object. It has three methods, and each has a `Reason:` line in
+its doc comment:
+
+| Method | Reason, in short |
+|---|---|
+| `canvasInfo()` | the canvas rectangle and drawing-buffer size live in the DOM; a mouse event needs page coordinates and the buffer must match the device pixel ratio |
+| `dropFiles(files, x, y)` | a real drag from the file manager cannot be scripted; the `DataTransfer` and its `File` objects can only be made in the page. It exercises the shell's drop listener and the route into `doc.drop` |
+| `pasteText(text)` | the system clipboard belongs to the operating system and the browser asks the user before a page reads it; the `paste` event carries the data to the shell's listener |
+
+Fixture loading needs no harness: Node reads `tests/fixtures/...` and passes the bytes to `doc.open {source: {base64}}`. Pixels come
+from Playwright's screenshot, and the scene from `element.query`, `view.get` and `doc.outline`.
+
+### The accounting check
+
+`e2e/web/scripts/accounting.ts` (run by `cargo xtask e2e`, and by `npm run accounting`) reads the specs and the harness with the
+TypeScript compiler API. It fails when:
+
+- a harness method has no real `Reason:` line, or the `DrafftinkTest` interface and the implementation differ;
+- a harness method is declared and no spec calls it (delete it);
+- a spec or a support file calls `probe(page, "name")` for a name that is not declared;
+- a command family of the registry has no `family <name>` test;
+- a story in `e2e/stories.txt` has no test where it says it runs, or the native suite has a `story_*` test that the list does not name;
+- two tests have the same title.
+
+`npm run accounting -- --self-test` feeds each check broken input and demands the matching message.
+
+### Native suite (`e2e/native`)
+
+The crate `drafftink-e2e` has `NativeApp`: it starts `target/release/drafftink --bridge --data-dir <tmp>` with a private
+`DRAFFTINK_BRIDGE_DIR`, finds the app through `current.port` and `<port>.token` as an attached agent does, and connects with the
+loopback client of `drafftink-bridge`. `tests/stories.rs` runs the stories that `e2e/stories.txt` marks `both` (the test of story
+`arrow-attached` is `fn story_arrow_attached`), with `view.screenshot` pixel checks; `tests/bridge.rs` has what only the native shell
+has: the token door, the registry the app lists, pointer-only commands refused with `not_for_agents`, and screenshots that follow commands.
+
+Without `DRAFFTINK_E2E=1` (which `cargo xtask e2e` sets) the tests print `E2E-SKIP` and pass, so `cargo xtask test` never opens a
+window. Without a display or an adapter they skip with the reason; `DRAFFTINK_REQUIRE_GPU=1` makes that a failure. The same variable
+applies to the browser suite (no display, no Chromium, no WebGPU adapter).
+
+What the suites cannot cover is listed in `docs/review/e2e-findings.md` with the bugs they found.
+
 ## Fixtures
 
 `tests/fixtures` holds documents from the old app and the facts the old code computed about them; `tests/fixtures/README.md` is the guide. Facts are generated by a tool, never typed. `cargo xtask fixtures` recomputes every fact with the new code and compares; when the old app is checked out next to this repo it also regenerates the facts from the old code and compares bytes. A scenario that checks counts of a fixture cites the facts file in a `note`, and `cargo xtask fixtures` is the independent proof that the facts are right.
@@ -179,7 +273,11 @@ A probe renders the active tab's view offscreen and reports counts and single pi
 | `DRAFFTINK_SCENARIO_TRACE=1` | print every step's output (use with `--nocapture`) |
 | `DRAFFTINK_SCENARIO_KEEP_GOING=1` | report all failing steps, not only the first |
 | `DRAFFTINK_UPDATE_SNAPSHOTS=1` | write snapshot files instead of comparing |
-| `DRAFFTINK_REQUIRE_GPU=1` | a missing GPU adapter fails instead of skipping |
+| `DRAFFTINK_REQUIRE_GPU=1` | a missing GPU adapter (scenarios, browser and native e2e) fails instead of skipping |
+| `DRAFFTINK_E2E=1` | set by `cargo xtask e2e`; the native e2e tests skip without it |
+| `DRAFFTINK_E2E_ADAPTER=swiftshader` | the browser suite uses Chromium's CPU adapter |
+| `DRAFFTINK_E2E_FILTER=<title>` | run only the browser tests whose title matches |
+| `DRAFFTINK_BIN`, `DRAFFTINK_E2E_SERVER`, `DRAFFTINK_E2E_DIST` | paths of the desktop app, the server and the web build, when they are not under `target/release` and `dist/` |
 
 ## Gates
 
@@ -189,3 +287,4 @@ A probe renders the active tab's view offscreen and reports counts and single pi
 | `cargo xtask harness` | a quick shape check of `tests/scenarios`, then the accounting test, the scenario guard and every scenario |
 | `cargo xtask fixtures` | the fixture facts |
 | `cargo xtask ci` | all gates in order |
+| `cargo xtask e2e` | the browser and native e2e suites (needs a display and a GPU; not part of `ci`) |

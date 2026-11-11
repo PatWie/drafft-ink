@@ -1,0 +1,87 @@
+# The two end-to-end suites that drive the real apps: the browser (Playwright, headed Chromium on Xvfb, WebGPU) and the
+# native app through the agent bridge. They need a display and an adapter, so they are NOT part of the required `ci`
+# aggregate (.github/workflows/ci.yml) and are not run by `cargo xtask ci`. Run them with `cargo xtask e2e`.
+#
+# Where they run:
+#  * workflow_dispatch, nightly, and pull requests that touch the apps or the suites;
+#  * on a runner with an NVIDIA GPU when the repository has one (the `gpu` self-hosted label), with
+#    DRAFFTINK_REQUIRE_GPU=1 so that a missing adapter fails;
+#  * on a hosted runner with Chromium's SwiftShader adapter otherwise (slow, but it checks the same stories).
+name: E2E
+
+on:
+  workflow_dispatch:
+    inputs:
+      runner:
+        description: "Runner: ubuntu-latest (SwiftShader) or gpu (self-hosted with an NVIDIA GPU)"
+        default: ubuntu-latest
+  schedule:
+    - cron: "17 3 * * *"
+  pull_request:
+    branches: [main]
+    paths:
+      - "apps/**"
+      - "crates/**"
+      - "e2e/**"
+      - "web/**"
+      - "xtask/**"
+      - ".github/workflows/e2e.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: e2e-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_TOOLCHAIN: "1.97.1"
+
+jobs:
+  e2e:
+    name: E2E (browser and native)
+    runs-on: ${{ inputs.runner || 'ubuntu-latest' }}
+    timeout-minutes: 60
+    env:
+      # On a hosted runner there is no GPU: Chromium falls back to SwiftShader, and the native app to Mesa's software
+      # Vulkan (lavapipe). On the `gpu` runner the real adapter is required.
+      DRAFFTINK_E2E_ADAPTER: ${{ (inputs.runner == 'gpu') && 'nvidia' || 'swiftshader' }}
+      DRAFFTINK_REQUIRE_GPU: ${{ (inputs.runner == 'gpu') && '1' || '0' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ env.RUST_TOOLCHAIN }}
+          targets: wasm32-unknown-unknown
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: e2e
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: e2e/web/package-lock.json
+      - name: System packages
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y xvfb mesa-vulkan-drivers libvulkan1 binaryen
+      - name: wasm-bindgen
+        run: cargo install wasm-bindgen-cli --version "$(sed -n 's/^wasm-bindgen = "=\([0-9.]*\)".*/\1/p' Cargo.toml | head -1)" --locked
+      - name: Playwright Chromium
+        working-directory: e2e/web
+        run: |
+          npm ci --no-audit --no-fund
+          npx playwright install --with-deps chromium
+      - name: Run both suites
+        run: cargo xtask e2e
+      - name: Keep the reports and failure screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-results
+          path: |
+            target/e2e/summary.json
+            e2e/web/results/report.json
+            e2e/web/results/artifacts/
+          if-no-files-found: ignore

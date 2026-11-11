@@ -75,6 +75,7 @@ pub const TABLE: &[(&str, Class)] = &[
     ("drafftink-server", Class::App),
     ("drafftink-cli", Class::App),
     ("drafftink-mcp", Class::App),
+    ("drafftink-e2e", Class::App),
     // tooling
     ("xtask", Class::Tool),
 ];

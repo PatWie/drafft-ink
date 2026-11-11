@@ -1,0 +1,23 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "types": ["node"],
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "exactOptionalPropertyTypes": false,
+    "noImplicitOverride": true,
+    "noFallthroughCasesInSwitch": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "skipLibCheck": false,
+    "noEmit": true,
+    "allowImportingTsExtensions": true,
+    "resolveJsonModule": true,
+    "isolatedModules": true
+  },
+  "include": ["**/*.ts"],
+  "exclude": ["node_modules", "test-results", "playwright-report"]
+}

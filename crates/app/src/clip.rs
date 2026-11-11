@@ -5,8 +5,9 @@
 //! text (so another program gets the JSON, which Excalidraw also reads when the compatibility setting is on).
 
 use drafftink_engine::ports::{ClipKind, ClipPayload};
+use drafftink_geom::kurbo::Point;
 use drafftink_gpu::{ClipboardContent, ImageBytes};
-use serde_json::Value;
+use serde_json::{Value, json};
 
 /// What to put on the system clipboard for a payload.
 pub(crate) fn to_content(payload: &ClipPayload) -> ClipboardContent {
@@ -44,6 +45,15 @@ pub(crate) fn payload_of(content: &ClipboardContent, kind: ClipKind) -> Option<C
     }
 }
 
+/// The arguments of `clipboard.paste` for a paste event: centred on the pointer when it is over the canvas, else
+/// on the viewport (no `at`). A point is `[x, y]` in command arguments; an object is refused as `bad_args`.
+pub(crate) fn paste_args(pointer: Option<Point>) -> Value {
+    match pointer {
+        Some(p) => json!({ "at": [p.x, p.y] }),
+        None => json!({}),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -77,5 +87,11 @@ mod tests {
         assert!(matches!(payload_of(&svg, ClipKind::Svg), Some(ClipPayload::Svg(_))));
         assert_eq!(payload_of(&ClipboardContent::text("   "), ClipKind::Text), None);
         assert_eq!(payload_of(&ClipboardContent::default(), ClipKind::Image), None);
+    }
+
+    #[test]
+    fn a_paste_event_names_the_pointer_as_a_point_array() {
+        assert_eq!(paste_args(Some(Point::new(905.0, 605.0))), json!({ "at": [905.0, 605.0] }));
+        assert_eq!(paste_args(None), json!({}));
     }
 }

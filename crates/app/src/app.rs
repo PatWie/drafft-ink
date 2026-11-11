@@ -813,10 +813,7 @@ impl ShellApp for App {
                     return (Repaint::Idle, Handled::No);
                 }
                 self.clipboard.set_incoming(Some(content));
-                let args = match self.pointer_world() {
-                    Some(p) => json!({ "at": { "x": p.x, "y": p.y } }),
-                    None => json!({}),
-                };
+                let args = crate::clip::paste_args(self.pointer_world());
                 if let Err(r) = self.session.execute_from(Origin::Shortcut, "clipboard.paste", args)
                     && !drafftink_ui::action::quiet_from_keyboard(r.code)
                 {

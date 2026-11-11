@@ -1,0 +1,25 @@
+[package]
+name = "drafftink-e2e"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+description = "End-to-end support: the native app driven through the agent bridge, and the command schemas the browser specs are typed from."
+publish = false
+
+[dependencies]
+drafftink-bridge = { path = "../../crates/bridge" }
+serde_json.workspace = true
+thiserror.workspace = true
+tokio = { workspace = true, features = ["rt", "time"] }
+base64.workspace = true
+tempfile.workspace = true
+png.workspace = true
+
+[dev-dependencies]
+# The schema dump builds a session to list the registry with its schemas.
+drafftink-testkit = { path = "../../crates/testkit" }
+drafftink-engine = { path = "../../crates/engine" }
+
+[lints]
+workspace = true

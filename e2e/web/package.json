@@ -1,0 +1,21 @@
+{
+  "name": "drafftink-e2e-web",
+  "private": true,
+  "version": "0.0.0",
+  "description": "Browser end-to-end specs for Drafft.ink (Playwright, headed Chromium on Xvfb).",
+  "type": "module",
+  "scripts": {
+    "gen": "tsx scripts/gen-command-types.ts",
+    "typecheck": "tsc --noEmit",
+    "accounting": "tsx scripts/accounting.ts",
+    "test": "playwright test"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.58.0",
+    "@types/node": "22.20.5",
+    "@types/pngjs": "6.0.5",
+    "pngjs": "7.0.0",
+    "tsx": "4.23.15",
+    "typescript": "5.9.3"
+  }
+}

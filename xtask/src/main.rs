@@ -7,6 +7,7 @@
 //! because `Instant::now` panics on wasm32).
 #![allow(clippy::disallowed_methods)]
 
+mod e2e;
 mod gates;
 mod harness;
 mod layers;
@@ -39,6 +40,10 @@ gates:
                   --idle: only the idle and hover tests (perf/README.md)
   ci              all of the above in order, then the pending gates, with a summary table
 
+e2e [--types|--web|--native|--no-build]
+                  the browser (Playwright) and native (bridge) end-to-end suites on a private Xvfb; needs a display
+                  and a GPU, so it is not part of ci (docs/testing.md); `cargo xtask e2e --help`
+
 pending gates (not yet implemented; each must be listed in xtask/pending-gates.txt to pass):
   size
 ";
@@ -53,6 +58,7 @@ fn main() -> ExitCode {
             Ok(())
         }
         Some("ci") => gates::run_ci(&root()),
+        Some("e2e") => e2e::run_e2e(&root(), rest),
         Some(other) => match Gate::from_name(other) {
             Some(gate) => gates::run_one(gate, &root(), rest),
             None => Err(format!("unknown command `{other}`\n\n{USAGE}")),
