@@ -86,9 +86,13 @@ pub struct GuideOut {
     pub end: f64,
     /// Marker coordinates along the guide.
     pub snap_points: Vec<f64>,
+    /// The empty stretch along the guide between the dragged thing and the box it lines up with, as `[from, to]`.
+    /// The overlay shows its length. Absent when they overlap along the guide.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub gap: Option<[f64; 2]>,
 }
 
-fn guide_out(g: &SmartGuide) -> GuideOut {
+pub(super) fn guide_out(g: &SmartGuide) -> GuideOut {
     GuideOut {
         kind: match g.kind {
             SmartGuideKind::Vertical => "vertical",
@@ -100,6 +104,7 @@ fn guide_out(g: &SmartGuide) -> GuideOut {
         start: g.start,
         end: g.end,
         snap_points: g.snap_points.clone(),
+        gap: g.gap.map(|(from, to)| [from, to]),
     }
 }
 
@@ -776,6 +781,8 @@ pub struct AngleBadge {
     pub center: [f64; 2],
     /// The angle shown, in degrees.
     pub degrees: f64,
+    /// The angle was rounded to `snap_degrees`.
+    pub snapped: bool,
 }
 
 /// Result of `element.rotate`.
@@ -810,7 +817,7 @@ fn rotate(s: &mut Session, a: RotateArgs) -> Result<RotateOut, Refusal> {
         }
     };
     let badge = transform::common_bounds(s.store(), &prim)
-        .map(|b| AngleBadge { center: [b.center().x, b.center().y], degrees: shown });
+        .map(|b| AngleBadge { center: [b.center().x, b.center().y], degrees: shown, snapped: step.is_some() });
     Ok(RotateOut { angle: shown, angle_badge: badge })
 }
 

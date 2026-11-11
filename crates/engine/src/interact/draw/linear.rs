@@ -8,13 +8,12 @@ use drafftink_edit::binding::{
     BindOpts, BindingCandidate, End, binding_reach, bound_end_position, find_hovered_among, hover_candidate_for,
 };
 use drafftink_edit::create;
-use drafftink_geom::guides::SmartGuide;
 use drafftink_geom::kurbo::Point;
 use drafftink_scene::{Element, ElementId, ElementKind, Kind, PathType};
 use serde_json::json;
 
 use super::preview;
-use super::snap::{self, Snaps};
+use super::snap::{self, SnapMarks, Snaps};
 use crate::interact::ctx::Ctx;
 use crate::interact::events::Ev;
 use crate::state::Tool;
@@ -36,7 +35,7 @@ struct Hover {
 struct Located {
     point: Point,
     hover: Option<Hover>,
-    guides: Vec<SmartGuide>,
+    marks: SnapMarks,
 }
 
 /// The line or arrow being drawn.
@@ -56,7 +55,8 @@ pub(super) struct Linear {
     end: Option<BindingCandidate>,
     /// The shape highlighted at the tip.
     target: Option<ElementId>,
-    guides: Vec<SmartGuide>,
+    /// What the snapping of the tip shows.
+    marks: SnapMarks,
     /// The modifiers at the last placement. The key that ends a draft carries none, so these decide the binding.
     mods: Modifiers,
 }
@@ -127,11 +127,13 @@ impl Linear {
         let path = path_of(cx);
         let opts = bind_opts(cx, cx.mods);
         if let Some(h) = hover(cx, raw, path, &opts) {
-            return Located { point: raw, hover: Some(h), guides: Vec::new() };
+            return Located { point: raw, hover: Some(h), marks: SnapMarks::default() };
         }
-        let snapped = snap::point(cx, raw, self.points.last().copied(), Snaps::line(cx));
-        let hover = if snapped.point == raw { None } else { hover(cx, snapped.point, path, &opts) };
-        Located { point: snapped.point, hover, guides: snapped.guides }
+        let placed = snap::place(cx, raw, self.points.last().copied(), Snaps::line(cx));
+        let hover = if placed.point == raw { None } else { hover(cx, placed.point, path, &opts) };
+        // A point that binds is not marked as snapped.
+        let marks = if hover.is_some() { SnapMarks::default() } else { placed.marks };
+        Located { point: placed.point, hover, marks }
     }
 
     /// Where the first point at `raw` ends up: the grid only, as in the old app.
@@ -139,11 +141,12 @@ impl Linear {
         let path = path_of(cx);
         let opts = bind_opts(cx, cx.mods);
         if let Some(h) = hover(cx, raw, path, &opts) {
-            return Located { point: raw, hover: Some(h), guides: Vec::new() };
+            return Located { point: raw, hover: Some(h), marks: SnapMarks::default() };
         }
         let point = snap::start(cx, raw);
         let hover = if point == raw { None } else { hover(cx, point, path, &opts) };
-        Located { point, hover, guides: Vec::new() }
+        let marks = SnapMarks { point: (point != raw && hover.is_none()).then_some(point), ..SnapMarks::default() };
+        Located { point, hover, marks }
     }
 
     /// Takes a located point as the pointer position. Returns true when something visible changed.
@@ -154,11 +157,11 @@ impl Linear {
         let target = loc.hover.as_ref().map(|h| h.id.clone());
         let end = loc.hover.and_then(|h| h.candidate);
         let changed =
-            self.tip != tip || self.target != target || self.guides != loc.guides || (placed && self.end != end);
+            self.tip != tip || self.target != target || self.marks != loc.marks || (placed && self.end != end);
         self.tip = tip;
         self.target = target;
         self.end = end;
-        self.guides = loc.guides;
+        self.marks = loc.marks;
         changed
     }
 
@@ -167,7 +170,7 @@ impl Linear {
         let element = self.preview(cx);
         preview::set(cx, element);
         preview::set_highlight(cx, self.target.as_ref());
-        preview::set_guides(cx, self.guides.clone());
+        preview::set_marks(cx, self.marks.clone());
         *shown = true;
     }
 

@@ -4,7 +4,7 @@
 //! [`Interaction::overlay`](super::Interaction::overlay) turns it, with the selection and the hover, into an
 //! [`InteractionOverlay`]: a `drafftink_canvas::Overlay` (selection boxes, handles, hover outline, marquee, guides,
 //! binding highlights) plus the parts that the canvas library has no field for (preview element, faded
-//! elements, badges, laser trail).
+//! elements, badges, laser trail, angle rays, snap point, eraser ring).
 
 use drafftink_canvas::shape::{element_box, shape_of};
 use drafftink_canvas::{
@@ -29,6 +29,8 @@ pub enum Badge {
         center: Point,
         /// The angle shown.
         degrees: f64,
+        /// The angle is rounded to a step (Shift): the guides turn green.
+        snapped: bool,
     },
     /// The size of the resized selection.
     Size {
@@ -37,6 +39,27 @@ pub enum Badge {
         /// Height in world units.
         h: f64,
     },
+}
+
+/// The polar rays of an angle lock: a line or arrow end that is locked to a multiple of `step_degrees` about
+/// `origin`. The painter draws a faint ray at each multiple and the locked one strongly, with an arc.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct AngleRays {
+    /// The neighbouring point the end turns about (world).
+    pub origin: Point,
+    /// The step of the lock, in degrees.
+    pub step_degrees: f64,
+    /// The direction the end is locked to, in degrees from the +x axis, clockwise on the screen (y points down).
+    pub locked_degrees: f64,
+}
+
+/// The ring that shows the radius of the eraser round the pointer.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct EraserRing {
+    /// The pointer (world).
+    pub at: Point,
+    /// The radius in screen pixels. It is a screen size, so it does not grow with the zoom.
+    pub radius_px: f64,
 }
 
 /// One point of the laser trail.
@@ -69,6 +92,12 @@ pub struct OverlayParts {
     pub active_handle: Option<Handle>,
     /// The local laser trail.
     pub laser: Vec<LaserPoint>,
+    /// The polar rays of the angle lock of a line or arrow end.
+    pub angle_rays: Option<AngleRays>,
+    /// The point a dragged point snapped to (grid or guides), marked with a crosshair.
+    pub snap_point: Option<Point>,
+    /// The eraser's radius ring, at the pointer.
+    pub eraser: Option<EraserRing>,
 }
 
 impl OverlayParts {
@@ -88,6 +117,9 @@ impl OverlayParts {
             || !self.faded.is_empty()
             || self.badge.is_some()
             || self.active_handle.is_some()
+            || self.angle_rays.is_some()
+            || self.snap_point.is_some()
+            || self.eraser.is_some()
     }
 }
 
@@ -105,6 +137,12 @@ pub struct InteractionOverlay {
     pub badge: Option<Badge>,
     /// The laser trail, oldest first. The shell drops points older than the fade time.
     pub laser: Vec<LaserPoint>,
+    /// The polar rays of the angle lock.
+    pub angle_rays: Option<AngleRays>,
+    /// The point a dragged point snapped to.
+    pub snap_point: Option<Point>,
+    /// The eraser's radius ring.
+    pub eraser: Option<EraserRing>,
 }
 
 /// Builds the overlay from the parts, the selection and the hover.
@@ -158,5 +196,8 @@ pub(super) fn build(world: &World, s: &Session, parts: &OverlayParts, hover: Opt
         faded: parts.faded.clone(),
         badge: parts.badge,
         laser: parts.laser.clone(),
+        angle_rays: parts.angle_rays,
+        snap_point: parts.snap_point,
+        eraser: parts.eraser,
     }
 }

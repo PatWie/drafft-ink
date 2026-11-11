@@ -829,6 +829,22 @@ fn move_point_snaps_to_the_grid_and_to_an_angle() {
 }
 
 #[test]
+fn move_point_reports_the_snapped_point_for_a_grid_and_the_angle_lock_for_the_rays() {
+    let mut w = world();
+    let line = linear(&mut w.s, "line", &[[0.0, 500.0], [100.0, 500.0]]);
+    let out = run(&mut w.s, "arrow.move_point", json!({"arrow": line, "index": "end", "to": [113, 507], "snap": {"grid": true}}));
+    assert_eq!(out["snapped_to"], json!([120.0, 500.0]), "the grid moved the point");
+    assert!(out.get("angle_snap").is_none(), "no angle lock, no rays");
+    let out = run(&mut w.s, "arrow.move_point", json!({"arrow": line, "index": "end", "to": [100, 540], "snap": {"angle": true}}));
+    assert_eq!(out["angle_snap"]["origin"], json!([0.0, 500.0]), "about the other end");
+    assert_eq!(out["angle_snap"]["step"], 15.0);
+    assert!(out["angle_snap"]["degrees"].as_f64().is_some_and(|d| (d - 15.0).abs() < 1e-6 || (d - 30.0).abs() < 1e-6));
+    assert!(out.get("snapped_to").is_none(), "an angle lock shows rays, not a crosshair");
+    let out = run(&mut w.s, "arrow.move_point", json!({"arrow": line, "index": "end", "to": [113, 507], "snap": "none"}));
+    assert!(out.get("snapped_to").is_none() && out.get("angle_snap").is_none(), "{out}");
+}
+
+#[test]
 fn smart_guides_align_the_point_with_other_elements_and_report_the_guide() {
     let mut w = world();
     let line = linear(&mut w.s, "line", &[[0.0, 500.0], [100.0, 500.0]]);

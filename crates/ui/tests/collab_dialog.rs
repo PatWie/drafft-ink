@@ -33,6 +33,7 @@ fn view(status: CollabStatus, room: Option<&str>, peers: usize) -> CollabView {
             })
             .collect(),
         server_chosen: false,
+        loading: None,
     }
 }
 

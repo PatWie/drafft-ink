@@ -9,7 +9,7 @@ use drafftink_geom::kurbo::Point;
 use crate::cmd::arrow::{BindChoice, MovePointArgs, PointIndex, SegmentArgs};
 use crate::cmd::element::{Handle, MoveArgs, ResizeArgs, RotateArgs, RotateModeArg};
 use crate::interact::events::Ev;
-use crate::snap::{Snap, SnapWord};
+use crate::snap::{Snap, SnapSwitches, SnapWord};
 
 /// The angle step of a rotation with Shift held (degrees).
 const ROTATE_STEP_DEGREES: f64 = 15.0;
@@ -99,6 +99,7 @@ impl Frame {
             Frame::Point(a) => {
                 a.to = [ev.at.world.x, ev.at.world.y];
                 a.bind = bind_choice(mods);
+                a.snap = point_snap(mods);
             }
             Frame::Segment(a) => a.to = Some([ev.at.world.x, ev.at.world.y]),
         }
@@ -153,6 +154,16 @@ fn element_snap(mods: Modifiers) -> Snap {
     if mods.command() { Snap::Word(SnapWord::None) } else { Snap::default() }
 }
 
+/// Ctrl or Cmd switches snapping off. Shift locks the direction of a dragged point to the angle step, on top of
+/// the settings.
+fn point_snap(mods: Modifiers) -> Snap {
+    if mods.shift && !mods.command() {
+        Snap::Switches(SnapSwitches { angle: Some(true), ..SnapSwitches::default() })
+    } else {
+        element_snap(mods)
+    }
+}
+
 /// Ctrl or Cmd: do not bind. Alt: bind inside the shape.
 fn bind_choice(mods: Modifiers) -> BindChoice {
     if mods.command() {
@@ -196,5 +207,14 @@ mod tests {
         assert_eq!(bind_choice(Modifiers::NONE), BindChoice::Auto);
         assert_eq!(element_snap(ctrl), Snap::Word(SnapWord::None));
         assert_eq!(element_snap(Modifiers::NONE), Snap::default());
+    }
+
+    #[test]
+    fn shift_locks_the_angle_of_a_dragged_point_and_ctrl_wins() {
+        let shift = Modifiers { shift: true, ..Modifiers::NONE };
+        let both = Modifiers { shift: true, ctrl: true, ..Modifiers::NONE };
+        assert_eq!(point_snap(shift), Snap::Switches(SnapSwitches { angle: Some(true), ..SnapSwitches::default() }));
+        assert_eq!(point_snap(both), Snap::Word(SnapWord::None));
+        assert_eq!(point_snap(Modifiers::NONE), Snap::default());
     }
 }

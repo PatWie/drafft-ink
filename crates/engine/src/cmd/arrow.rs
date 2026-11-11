@@ -18,7 +18,6 @@ use drafftink_edit::binding::{self, BindOpts, BindingError, EndChange};
 use drafftink_edit::elbow::{self, ElbowEditError, ElbowError, RouteOpts};
 use drafftink_edit::linear::{self, LinearError, world_points};
 use drafftink_geom::binding::FIXED_POINT_BOUND;
-use drafftink_geom::guides::SmartGuideKind;
 use drafftink_geom::kurbo::{Point, Rect};
 use drafftink_scene::words::Article;
 use drafftink_scene::{BindMode, Element, ElementId, ElementKind, Head, PathType, SceneRead, StoreError};
@@ -37,6 +36,7 @@ use crate::state::{BASE_ZOOM, LinearEditor};
 use crate::store::DocTx;
 
 pub use crate::args::Pt;
+use super::element::{GuideOut, guide_out};
 
 // ---------------------------------------------------------------------------------------------
 // Argument types
@@ -311,19 +311,6 @@ pub struct UnbindOut {
     pub freed: Vec<EndWord>,
 }
 
-/// A guide line for the overlay.
-#[derive(Debug, Clone, PartialEq, Serialize, JsonSchema)]
-pub struct GuideOut {
-    /// `vertical`, `horizontal`, `equal_spacing_h` or `equal_spacing_v`.
-    pub kind: &'static str,
-    /// x of a vertical guide, y of a horizontal one.
-    pub position: f64,
-    /// Start along the guide.
-    pub start: f64,
-    /// End along the guide.
-    pub end: f64,
-}
-
 /// Output of `arrow.move_point`, also the frame output of its gesture.
 #[derive(Debug, Clone, PartialEq, Serialize, JsonSchema)]
 pub struct MovePointOut {
@@ -336,6 +323,24 @@ pub struct MovePointOut {
     pub bind_highlight: Option<String>,
     /// Smart guides to draw.
     pub guides: Vec<GuideOut>,
+    /// Where grid, guides or the angle lock put the point, when that is not where the pointer is. The overlay
+    /// marks it with a crosshair.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub snapped_to: Option<Pt>,
+    /// The angle lock that applied, for the overlay's rays.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub angle_snap: Option<AngleSnapOut>,
+}
+
+/// The angle lock of a dragged point: the neighbouring point it turns about and the locked direction.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, JsonSchema)]
+pub struct AngleSnapOut {
+    /// The neighbouring point, in world units.
+    pub origin: Pt,
+    /// The locked direction in degrees, from 0 (right) clockwise on the screen.
+    pub degrees: f64,
+    /// The step of the lock in degrees (`snap.angle_step`): the rays are drawn at multiples of it.
+    pub step: f64,
 }
 
 /// Output of `arrow.add_point`.
@@ -735,20 +740,6 @@ fn unbind(s: &mut Session, a: UnbindArgs) -> Result<UnbindOut, Refusal> {
 // arrow.move_point
 // ---------------------------------------------------------------------------------------------
 
-fn guide_out(g: &drafftink_geom::guides::SmartGuide) -> GuideOut {
-    GuideOut {
-        kind: match g.kind {
-            SmartGuideKind::Vertical => "vertical",
-            SmartGuideKind::Horizontal => "horizontal",
-            SmartGuideKind::EqualSpacingH => "equal_spacing_h",
-            SmartGuideKind::EqualSpacingV => "equal_spacing_v",
-        },
-        position: g.position,
-        start: g.start,
-        end: g.end,
-    }
-}
-
 fn move_point(s: &mut Session, a: MovePointArgs) -> Result<MovePointOut, Refusal> {
     let cmd = s.cmd();
     let to = pt(cmd, "to", a.to)?;
@@ -854,11 +845,18 @@ fn move_point(s: &mut Session, a: MovePointArgs) -> Result<MovePointOut, Refusal
         let point = tx.get(&id).and_then(world_points).and_then(|w| w.get(index).copied()).unwrap_or(to);
         Ok((point, highlight))
     })?;
+    let bound = highlight.is_some();
     Ok(MovePointOut {
         index,
         point: [point.x, point.y],
         bind_highlight: highlight.map(|h| h.as_str().to_owned()),
         guides: snapped.guides.iter().map(guide_out).collect(),
+        snapped_to: (snapped.point != to && !bound && snapped.angle.is_none()).then_some([snapped.point.x, snapped.point.y]),
+        angle_snap: snapped
+            .angle
+            .zip(reference)
+            .filter(|_| !bound)
+            .map(|(degrees, origin)| AngleSnapOut { origin: [origin.x, origin.y], degrees, step }),
     })
 }
 

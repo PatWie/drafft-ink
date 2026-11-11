@@ -3,13 +3,14 @@
 //! the app glues the two (the doc of `drafftink_canvas::overlay` says so).
 
 use drafftink_canvas::{Handle, Overlay as CanvasOverlay, RemoteParts, SelectionFrame};
+use drafftink_engine::interact::{AngleRays as EngineRays, Badge, EraserRing as EngineRing, InteractionOverlay};
 use drafftink_geom::guides::SmartGuide;
 use drafftink_geom::kurbo::{BezPath, Point, Shape};
 use drafftink_geom::select::HandleSet;
 use drafftink_geom::{OrientedBox, Primitive};
 use drafftink_render::{
-    BindingHighlight, LaserTrail, LinkMark, Overlay, PointHandle, PointKind, RemoteCursor, RemoteSelection,
-    SelectionBox, TrailPoint,
+    AngleRays, BindingHighlight, EraserRing, LaserTrail, LinkMark, Overlay, PointHandle, PointKind, RemoteCursor,
+    RemoteSelection, RotationGuide, SelectionBox, TrailPoint,
 };
 
 /// The handles of a selection box that only outlines: none.
@@ -56,6 +57,22 @@ pub(crate) fn to_render(canvas: &CanvasOverlay, remote: &RemoteParts, extra_guid
     out.guides.extend(canvas.guides.iter().cloned());
     out.guides.extend(extra_guides.iter().cloned());
     out
+}
+
+/// Adds what only the interaction layer knows to `out`: the polar rays of an angle lock, the crosshair at a snapped
+/// point, the rotation guides (from the angle badge of a rotation) and the eraser's radius ring.
+pub(crate) fn add_interaction(out: &mut Overlay, interaction: &InteractionOverlay) {
+    out.snap_point = interaction.snap_point;
+    out.angle_rays = interaction.angle_rays.map(|r: EngineRays| AngleRays {
+        origin: r.origin,
+        step_degrees: r.step_degrees,
+        locked_degrees: r.locked_degrees,
+    });
+    out.rotation = match interaction.badge {
+        Some(Badge::Angle { center, degrees, snapped }) => Some(RotationGuide { center, degrees, snapped }),
+        Some(Badge::Size { .. }) | None => None,
+    };
+    out.eraser = interaction.eraser.map(|e: EngineRing| EraserRing { at: e.at, radius_px: e.radius_px });
 }
 
 /// Other people's pointers, selection outlines and laser trails, in their colours.

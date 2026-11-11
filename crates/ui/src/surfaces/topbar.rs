@@ -7,7 +7,7 @@ use serde_json::{Value, json};
 use crate::action::Verb;
 use crate::colors::{self, QUICK_FAMILIES, QUICK_FILL_SHADE, QUICK_STROKE_SHADE};
 use crate::icons::Icon;
-use crate::state::UiState;
+use crate::state::{ColorTarget, LastPicked, UiState};
 use crate::surfaces::color::{PopoverKey, remember_anchor};
 use crate::theme::MARGIN;
 use crate::widgets::{Ctl, Cx, ScrollDir, panel_frame, scroll_if, section_label, vertical_separator};
@@ -26,7 +26,7 @@ pub fn not_applicable(cx: &Cx<'_>, prop: &str) -> Option<String> {
 }
 
 /// Draws the bar.
-pub fn show(ctx: &Context, cx: &mut Cx<'_>, _st: &mut UiState) {
+pub fn show(ctx: &Context, cx: &mut Cx<'_>, st: &mut UiState) {
     // On a narrow window the menu takes the top left, so the bar sits under it and scrolls sideways.
     let (anchor, offset) = if cx.layout.narrow {
         (Align2::LEFT_TOP, vec2(MARGIN, MARGIN + cx.layout.small_side() + 24.0))
@@ -39,19 +39,21 @@ pub fn show(ctx: &Context, cx: &mut Cx<'_>, _st: &mut UiState) {
             if cx.layout.narrow {
                 ui.set_max_width(max_width);
             }
-            scroll_if(ui, cx.layout.narrow, ScrollDir::Horizontal, "properties_scroll", 0.0, |ui| bar(ui, cx));
+            scroll_if(ui, cx.layout.narrow, ScrollDir::Horizontal, "properties_scroll", 0.0, |ui| {
+                bar(ui, cx, &st.last_picked)
+            });
         });
     });
 }
 
-fn bar(ui: &mut egui::Ui, cx: &mut Cx<'_>) {
+fn bar(ui: &mut egui::Ui, cx: &mut Cx<'_>, last: &LastPicked) {
     ui.horizontal(|ui| {
         ui.spacing_mut().item_spacing = vec2(3.0, 0.0);
-        colour_row(ui, cx, "Stroke", "stroke_color", QUICK_STROKE_SHADE, false);
+        colour_row(ui, cx, "Stroke", "stroke_color", QUICK_STROKE_SHADE, false, last.of(ColorTarget::Stroke));
         ui.add_space(6.0);
         vertical_separator(ui, &cx.pal, 24.0);
         ui.add_space(6.0);
-        colour_row(ui, cx, "Fill", "fill_color", QUICK_FILL_SHADE, true);
+        colour_row(ui, cx, "Fill", "fill_color", QUICK_FILL_SHADE, true, last.of(ColorTarget::Fill));
         ui.add_space(6.0);
         vertical_separator(ui, &cx.pal, 24.0);
         ui.add_space(6.0);
@@ -59,7 +61,15 @@ fn bar(ui: &mut egui::Ui, cx: &mut Cx<'_>) {
     });
 }
 
-fn colour_row(ui: &mut egui::Ui, cx: &mut Cx<'_>, title: &str, prop: &str, shade: u16, allow_none: bool) {
+fn colour_row(
+    ui: &mut egui::Ui,
+    cx: &mut Cx<'_>,
+    title: &str,
+    prop: &str,
+    shade: u16,
+    allow_none: bool,
+    last_picked: Option<&str>,
+) {
     section_label(ui, &cx.pal, title);
     ui.add_space(4.0);
     let swatch = if cx.layout.compact { 28.0 } else { 18.0 };
@@ -83,6 +93,16 @@ fn colour_row(ui: &mut egui::Ui, cx: &mut Cx<'_>, title: &str, prop: &str, shade
             .selected(selected)
             .blocked(blocked.clone());
         cx.swatch(ui, &ctl, colors::parse(&name), swatch);
+    }
+    // The colour last picked in the full popover, next to the wheel that opens it.
+    if let Some(name) = last_picked {
+        let selected = current.as_ref().and_then(Value::as_str).is_some_and(|v| colors::same(v, name));
+        let ctl = Ctl::new("style.set")
+            .args(json!({ "props": { prop: name } }))
+            .label(format!("Last picked {}", title.to_lowercase()))
+            .selected(selected)
+            .blocked(blocked.clone());
+        cx.swatch(ui, &ctl, colors::parse(name), swatch);
     }
     let verb = if prop == "stroke_color" { Verb::OpenColorStroke } else { Verb::OpenColorFill };
     let wheel_tip = format!("More {} colours", title.to_lowercase());

@@ -162,6 +162,80 @@ fn smart_guides_snap_the_end_of_a_line_and_show_while_dragging() {
     assert_eq!(points_of(&line)[1].0, 300.0);
 }
 
+#[test]
+fn shift_shows_the_polar_rays_about_the_first_point_while_dragging_and_takes_them_back_at_the_release() {
+    use crate::interact::AngleRays;
+    use drafftink_geom::kurbo::Point;
+    let (mut rig, _, _) = rig_with(Tool::Line);
+    rig.mods.shift = true;
+    rig.down(100.0, 100.0);
+    rig.drag_to(300.0, 130.0);
+    let rays = rig.parts().angle_rays.expect("the angle lock shows its rays");
+    assert_eq!(rays, AngleRays { origin: Point::new(100.0, 100.0), step_degrees: 15.0, locked_degrees: 15.0 });
+    assert_eq!(rig.i.overlay(&rig.s).angle_rays, Some(rays), "the overlay carries them");
+    assert!(rig.parts().snap_point.is_none(), "an angle lock shows rays, not a crosshair");
+    rig.up(300.0, 130.0);
+    assert!(rig.parts().angle_rays.is_none());
+}
+
+#[test]
+fn the_rays_follow_the_angle_step_setting_and_the_setting_alone_shows_them() {
+    let (mut rig, _, _) = rig_with(Tool::Arrow);
+    rig.set("snap.angle", json!(true));
+    rig.set("snap.angle_step", json!(45));
+    rig.down(100.0, 100.0);
+    rig.drag_to(300.0, 140.0);
+    let rays = rig.parts().angle_rays.expect("rays");
+    assert_eq!((rays.step_degrees, rays.locked_degrees), (45.0, 0.0));
+}
+
+#[test]
+fn without_the_angle_lock_no_rays_show() {
+    let (mut rig, _, _) = rig_with(Tool::Line);
+    rig.down(100.0, 100.0);
+    rig.drag_to(300.0, 130.0);
+    assert!(rig.parts().angle_rays.is_none());
+}
+
+#[test]
+fn the_rubber_band_of_a_draft_shows_the_rays_about_the_last_placed_point() {
+    let (mut rig, _, _) = rig_with(Tool::Line);
+    rig.mods.shift = true;
+    rig.click(100.0, 100.0);
+    rig.hover(300.0, 105.0);
+    let rays = rig.parts().angle_rays.expect("rays on hover");
+    assert_eq!((rays.origin.x, rays.origin.y, rays.locked_degrees), (100.0, 100.0, 0.0));
+}
+
+#[test]
+fn a_point_the_grid_moved_is_marked_with_the_snap_crosshair() {
+    use drafftink_geom::kurbo::Point;
+    let (mut rig, _, _) = rig_with(Tool::Line);
+    rig.set("snap.grid", json!(true));
+    rig.down(100.0, 100.0);
+    rig.drag_to(297.0, 143.0);
+    assert_eq!(rig.parts().snap_point, Some(Point::new(300.0, 140.0)));
+    assert_eq!(rig.i.overlay(&rig.s).snap_point, Some(Point::new(300.0, 140.0)));
+    rig.drag_to(300.0, 140.0);
+    assert!(rig.parts().snap_point.is_none(), "a point that is on the grid already needs no mark");
+    rig.up(300.0, 140.0);
+    assert!(rig.parts().snap_point.is_none());
+}
+
+#[test]
+fn a_rectangle_corner_that_snaps_to_a_guide_is_marked() {
+    use drafftink_geom::kurbo::Point;
+    let mut rig = Rig::new();
+    rig.rect(300.0, 100.0, 100.0, 100.0);
+    rig.tool(Tool::Rectangle);
+    rig.set("snap.smart_guides", json!(true));
+    rig.down(50.0, 350.0);
+    rig.drag_to(303.0, 330.0);
+    assert_eq!(rig.parts().snap_point, Some(Point::new(300.0, 330.0)));
+    rig.up(303.0, 330.0);
+    assert!(rig.parts().snap_point.is_none());
+}
+
 // ---- multi-point drafts ----------------------------------------------------------------------------------------------
 
 #[test]

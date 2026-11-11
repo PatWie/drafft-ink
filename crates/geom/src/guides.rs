@@ -30,6 +30,10 @@ pub struct SmartGuide {
     pub end: f64,
     /// Marker coordinates along the guide (y values for vertical, x values for horizontal).
     pub snap_points: Vec<f64>,
+    /// For an alignment guide: the empty stretch along the guide between the dragged thing and the box it lines up
+    /// with, as `(from, to)` in the guide's coordinates. A badge shows its length. `None` when the two overlap along
+    /// the guide, and for spacing guides (which show their own distance).
+    pub gap: Option<(f64, f64)>,
 }
 
 /// The kind of a [`SmartGuide`].
@@ -102,8 +106,20 @@ fn extend_markers(
     }
 }
 
+/// The empty stretch between two ranges on a line, `(from, to)`. `None` when they touch or overlap.
+fn gap_between(a: (f64, f64), b: (f64, f64)) -> Option<(f64, f64)> {
+    let (a, b) = ((a.0.min(a.1), a.0.max(a.1)), (b.0.min(b.1), b.0.max(b.1)));
+    if a.1 < b.0 {
+        Some((a.1, b.0))
+    } else if b.1 < a.0 {
+        Some((b.1, a.0))
+    } else {
+        None
+    }
+}
+
 fn guide(kind: SmartGuideKind, position: f64, start: f64, end: f64) -> SmartGuide {
-    SmartGuide { kind, position, start, end, snap_points: Vec::new() }
+    SmartGuide { kind, position, start, end, snap_points: Vec::new(), gap: None }
 }
 
 /// The closest alignment of the dragged box's left, right and centre with those of any other box, closer than `dist`
@@ -183,6 +199,7 @@ pub fn detect_smart_guides(dragged: Rect, others: &[Rect], threshold: f64) -> Sm
             start: lo,
             end: hi,
             snap_points,
+            gap: gap_between((dragged.y0, dragged.y1), (other.y0, other.y1)),
         });
     }
 
@@ -201,6 +218,7 @@ pub fn detect_smart_guides(dragged: Rect, others: &[Rect], threshold: f64) -> Sm
             start: lo,
             end: hi,
             snap_points,
+            gap: gap_between((x0, x1), (other.x0, other.x1)),
         });
     }
     result
@@ -246,6 +264,7 @@ pub fn detect_smart_guides_for_point(point: Point, others: &[Rect], threshold: f
             start: point.y.min(y0).min(y1),
             end: point.y.max(y0).max(y1),
             snap_points,
+            gap: gap_between((point.y, point.y), (y0, y1)),
         });
     }
     if let Some((gy, x0, x1)) = best_dy {
@@ -260,6 +279,7 @@ pub fn detect_smart_guides_for_point(point: Point, others: &[Rect], threshold: f
             start: sx.min(x0).min(x1),
             end: sx.max(x0).max(x1),
             snap_points,
+            gap: gap_between((sx, sx), (x0, x1)),
         });
     }
     result
@@ -304,6 +324,7 @@ pub fn snap_ray_to_smart_guides(
                                 start: iy.min(o.y0).min(o.y1),
                                 end: iy.max(o.y0).max(o.y1),
                                 snap_points: vec![iy, o.y0, o.y1, ocy],
+                                gap: gap_between((iy, iy), (o.y0, o.y1)),
                             },
                         ));
                     }
@@ -326,6 +347,7 @@ pub fn snap_ray_to_smart_guides(
                                 start: ix.min(o.x0).min(o.x1),
                                 end: ix.max(o.x0).max(o.x1),
                                 snap_points: vec![ix, o.x0, o.x1, ocx],
+                                gap: gap_between((ix, ix), (o.x0, o.x1)),
                             },
                         ));
                     }
@@ -641,5 +663,33 @@ mod tests {
         assert!(res.guides.is_empty());
         let res = snap_ray_to_smart_guides(Point::ZERO, f64::NAN, Point::ZERO, &o, 8.0);
         assert!(res.guides.is_empty());
+    }
+
+    #[test]
+    fn an_alignment_guide_carries_the_empty_stretch_between_the_two_boxes() {
+        // Left edges line up at x = 0; the dragged box ends at y = 20, the other starts at y = 100.
+        let res = detect_smart_guides(r(2.0, 0.0, 10.0, 20.0), &[r(0.0, 100.0, 30.0, 30.0)], 8.0);
+        let g = res.guides.iter().find(|g| g.kind == SmartGuideKind::Vertical);
+        assert_eq!(g.and_then(|g| g.gap), Some((20.0, 100.0)));
+    }
+
+    #[test]
+    fn boxes_that_overlap_along_the_guide_have_no_gap() {
+        let res = detect_smart_guides(r(2.0, 0.0, 10.0, 60.0), &[r(0.0, 40.0, 30.0, 30.0)], 8.0);
+        let g = res.guides.iter().find(|g| g.kind == SmartGuideKind::Vertical);
+        assert_eq!(g.map(|g| g.gap), Some(None));
+    }
+
+    #[test]
+    fn a_dragged_point_has_a_gap_to_the_box_it_aligns_with() {
+        let res = detect_smart_guides_for_point(Point::new(1.0, 10.0), &[r(0.0, 50.0, 20.0, 20.0)], 8.0);
+        let g = res.guides.iter().find(|g| g.kind == SmartGuideKind::Vertical);
+        assert_eq!(g.and_then(|g| g.gap), Some((10.0, 50.0)));
+    }
+
+    #[test]
+    fn spacing_guides_have_no_gap_of_their_own() {
+        let g = guide(SmartGuideKind::EqualSpacingH, 5.0, 0.0, 10.0);
+        assert_eq!(g.gap, None);
     }
 }

@@ -2,10 +2,12 @@
 
 use drafftink_edit::arrow::{PointSnap, SnapFlags, snap_dragged_point};
 use drafftink_geom::aabb;
+use drafftink_geom::guides::SmartGuide;
 use drafftink_geom::kurbo::{Point, Rect};
 use drafftink_geom::snap::{GRID_SIZE, MAX_SNAP_CANDIDATES, MULTI_MOVE_SNAP_RADIUS, snap_to_grid};
 
 use crate::interact::ctx::Ctx;
+use crate::interact::overlay::AngleRays;
 
 /// The default angle step, in degrees, when the setting is missing.
 const DEFAULT_ANGLE_STEP: f64 = 15.0;
@@ -33,6 +35,22 @@ impl Snaps {
     }
 }
 
+/// What a snapped placement shows besides the preview: the smart guides, the polar rays of an angle lock, and the
+/// crosshair at a point that the grid or the guides moved.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub(super) struct SnapMarks {
+    pub(super) guides: Vec<SmartGuide>,
+    pub(super) rays: Option<AngleRays>,
+    pub(super) point: Option<Point>,
+}
+
+/// A placed point and what its snapping shows.
+#[derive(Debug)]
+pub(super) struct Placed {
+    pub(super) point: Point,
+    pub(super) marks: SnapMarks,
+}
+
 /// The start of a drag snaps to the grid only, as in the old app.
 pub(super) fn start(cx: &Ctx<'_>, p: Point) -> Point {
     if cx.setting("snap.grid", false) { snap_to_grid(p, GRID_SIZE).point } else { p }
@@ -44,9 +62,27 @@ pub(super) fn point(cx: &Ctx<'_>, raw: Point, reference: Option<Point>, snaps: S
         return PointSnap { point: raw, guides: Vec::new(), angle: None };
     }
     let others = if snaps.smart { candidates(cx, raw) } else { Vec::new() };
-    let step = cx.s.settings.f64_or("snap.angle_step", DEFAULT_ANGLE_STEP);
     let flags = SnapFlags { grid: snaps.grid, smart: snaps.smart, angle: snaps.angle };
-    snap_dragged_point(raw, reference, &others, flags, step)
+    snap_dragged_point(raw, reference, &others, flags, step(cx))
+}
+
+/// Snaps a placed point like [`point`] and works out what to show for it. An angle lock shows its rays and no
+/// crosshair, as in the old app; the other snaps show a crosshair when they moved the point.
+pub(super) fn place(cx: &Ctx<'_>, raw: Point, reference: Option<Point>, snaps: Snaps) -> Placed {
+    let snapped = point(cx, raw, reference, snaps);
+    let rays = snapped.angle.zip(reference).map(|(locked_degrees, origin)| AngleRays {
+        origin,
+        step_degrees: step(cx),
+        locked_degrees,
+    });
+    let moved = (snapped.point != raw && rays.is_none()).then_some(snapped.point);
+    Placed { point: snapped.point, marks: SnapMarks { guides: snapped.guides, rays, point: moved } }
+}
+
+/// The angle step of the lock, in degrees.
+fn step(cx: &Ctx<'_>) -> f64 {
+    let v = cx.s.settings.f64_or("snap.angle_step", DEFAULT_ANGLE_STEP);
+    if v.is_finite() && v > 0.0 { v } else { DEFAULT_ANGLE_STEP }
 }
 
 /// The boxes of the elements near `around`, from the spatial index (never a scan of the document).

@@ -10,8 +10,9 @@
 //!
 //! Parts with text (the names of collaborators, the distances on spacing guides) need the typesetter, so
 //! [`paint_overlay`] takes one. The drawing of each family of parts is in a module of its own: `overlay_peers`
-//! (cursors with names, selections, laser trails), `overlay_marks` (link icons), `overlay_text` (labels, the
-//! text editor's caret and selection).
+//! (cursors with names, selections, laser trails), `overlay_marks` (link icons), `overlay_snap` (the snap
+//! crosshair, angle rays, rotation guides, eraser ring), `overlay_text` (labels, the text editor's caret and
+//! selection).
 
 use drafftink_geom::OrientedBox;
 use drafftink_geom::guides::{SmartGuide, SmartGuideKind};
@@ -23,6 +24,9 @@ use vello::Scene;
 
 use crate::overlay_marks::{LinkMark, paint_link_marks};
 use crate::overlay_peers::{LaserTrail, RemoteSelection, paint_cursors, paint_selections, paint_trails};
+use crate::overlay_snap::{
+    AngleRays, EraserRing, RotationGuide, paint_angle_rays, paint_eraser, paint_rotation, paint_snap_point,
+};
 use crate::overlay_text::{TextEdit, paint_guide_badges, paint_text_edit};
 use crate::view::View;
 
@@ -145,8 +149,14 @@ pub struct Overlay {
     pub lasso: Vec<Point>,
     /// Alignment and spacing guides.
     pub guides: Vec<SmartGuide>,
-    /// The point a drag snapped to.
+    /// The point a drag snapped to: a crosshair across the view with a ring on the point.
     pub snap_point: Option<Point>,
+    /// The polar rays of an angle lock.
+    pub angle_rays: Option<AngleRays>,
+    /// The guides of a rotation.
+    pub rotation: Option<RotationGuide>,
+    /// The eraser's radius ring.
+    pub eraser: Option<EraserRing>,
     /// Other people's pointers, with their names.
     pub cursors: Vec<RemoteCursor>,
     /// What other people have selected, as outlines in their colours.
@@ -170,6 +180,9 @@ impl Overlay {
             && self.lasso.is_empty()
             && self.guides.is_empty()
             && self.snap_point.is_none()
+            && self.angle_rays.is_none()
+            && self.rotation.is_none()
+            && self.eraser.is_none()
             && self.cursors.is_empty()
             && self.remote_selections.is_empty()
             && self.trails.is_empty()
@@ -259,7 +272,11 @@ pub fn paint_overlay(
         report.items += 1;
     }
     report.items += paint_guide_badges(scene, &mut pen, &overlay.guides);
-    report.items += paint_snap_point(scene, &pen, overlay.snap_point);
+    let view_px = view.device_size();
+    report.items += paint_snap_point(scene, &pen, view_px, overlay.snap_point);
+    report.items += paint_angle_rays(scene, &mut pen, view_px, overlay.angle_rays);
+    report.items += paint_rotation(scene, &pen, overlay.rotation);
+    report.items += paint_eraser(scene, &pen, overlay.eraser);
     report.items += paint_trails(scene, &pen, &overlay.trails);
     report.items += paint_cursors(scene, &mut pen, &overlay.cursors);
     report
@@ -355,19 +372,6 @@ fn paint_point_handles(scene: &mut Scene, pen: &Pen, handles: &[PointHandle]) ->
         scene.stroke(&Stroke::new(width), Affine::IDENTITY, style.accent, None, &circle);
     }
     handles.len()
-}
-
-fn paint_snap_point(scene: &mut Scene, pen: &Pen, snap_point: Option<Point>) -> usize {
-    let Some(p) = snap_point else { return 0 };
-    let c = pen.dev(p);
-    let a = 6.0 * pen.px;
-    let mut path = BezPath::new();
-    path.move_to(Point::new(c.x - a, c.y));
-    path.line_to(Point::new(c.x + a, c.y));
-    path.move_to(Point::new(c.x, c.y - a));
-    path.line_to(Point::new(c.x, c.y + a));
-    scene.stroke(&Stroke::new(pen.px), Affine::IDENTITY, pen.style.guide, None, &path);
-    1
 }
 
 fn paint_rotate_handle(scene: &mut Scene, c: Point, style: &OverlayStyle, px: f64) {

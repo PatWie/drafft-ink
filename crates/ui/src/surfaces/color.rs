@@ -196,16 +196,16 @@ fn quick_column() -> Vec<Choice> {
     out
 }
 
-/// Draws one cell. Returns true when it was clicked (the command is already pushed by the control).
-fn cell(ui: &mut Ui, cx: &mut Cx<'_>, target: ColorTarget, now: Option<Option<Color>>, c: &Choice) -> bool {
+/// Draws one cell. Returns its pick when it was clicked (the command is already pushed by the control).
+fn cell(ui: &mut Ui, cx: &mut Cx<'_>, target: ColorTarget, now: Option<Option<Color>>, c: &Choice) -> Option<Pick> {
     let (id, args) = pick_command(target, &c.pick);
     let selected = now.is_some() && now == Some(pick_value(target, &c.pick));
     let ctl = Ctl::new(id).args(args).label(&c.label).selected(selected);
-    cx.swatch(ui, &ctl, c.shown, CELL).clicked()
+    cx.swatch(ui, &ctl, c.shown, CELL).clicked().then(|| c.pick.clone())
 }
 
-/// Draws the popover of a colour target. Returns nothing: picks and the outside click push actions.
-fn color_popover(ctx: &Context, cx: &mut Cx<'_>, target: ColorTarget) {
+/// Draws the popover of a colour target. The pick and the outside click push actions; the pick is also returned.
+fn color_popover(ctx: &Context, cx: &mut Cx<'_>, target: ColorTarget) -> Option<Pick> {
     let pal = cx.pal;
     let key = PopoverKey::of(target);
     let now = current(cx.model, target);
@@ -215,7 +215,7 @@ fn color_popover(ctx: &Context, cx: &mut Cx<'_>, target: ColorTarget) {
     let max_h = (screen.height() - 2.0 * MARGIN - GRID_CHROME).max(80.0);
     let hex_key = Id::unique("color_hex_draft");
     let mut hex: HexDraft = ctx.data_mut(|d| d.get_temp(hex_key)).unwrap_or_default();
-    let mut picked = false;
+    let mut picked: Option<Pick> = None;
 
     let out = popover_area(ctx, Id::unique("color_popover"), key).show(ctx, |ui| {
         panel_frame(&pal).show(ui, |ui| {
@@ -242,27 +242,28 @@ fn color_popover(ctx: &Context, cx: &mut Cx<'_>, target: ColorTarget) {
                                 pick: Pick::Color(format!("{}-{shade}", fam.name)),
                                 shown: Some(Color32::from_rgb(r, g, b)),
                             };
-                            picked |= cell(ui, cx, target, now, &c);
+                            picked = cell(ui, cx, target, now, &c).or(picked.take());
                         }
                         if let Some(q) = quick.get(row) {
                             ui.add_space(8.0);
-                            picked |= cell(ui, cx, target, now, q);
+                            picked = cell(ui, cx, target, now, q).or(picked.take());
                         }
                     });
                 }
             });
             ui.add_space(8.0);
-            picked |= hex_row(ui, cx, target, &mut hex);
+            picked = hex_row(ui, cx, target, &mut hex).or(picked.take());
         });
     });
 
-    if picked {
+    if picked.is_some() {
         hex = HexDraft::default();
         cx.verb(Verb::CloseOverlays);
     } else if pressed_outside(ctx, out.response.rect) {
         cx.verb(Verb::CloseOverlays);
     }
     ctx.data_mut(|d| d.insert_temp(hex_key, hex));
+    picked
 }
 
 #[derive(Clone, Default)]
@@ -271,20 +272,21 @@ struct HexDraft {
     error: Option<String>,
 }
 
-/// The hex field. Enter applies a valid value; a bad one shows an error under the field.
-fn hex_row(ui: &mut Ui, cx: &mut Cx<'_>, target: ColorTarget, draft: &mut HexDraft) -> bool {
+/// The hex field. Enter applies a valid value and returns it as a pick; a bad one shows an error under the field.
+fn hex_row(ui: &mut Ui, cx: &mut Cx<'_>, target: ColorTarget, draft: &mut HexDraft) -> Option<Pick> {
     let pal = cx.pal;
     let (id, _) = pick_command(target, &Pick::Clear);
     let reason = cx.refusal(id);
     section_label(ui, &pal, "Hex");
     let resp = text_field(ui, &mut draft.text, "#rrggbb, then Enter", reason.clone(), Some(9), "Hex colour");
-    let mut applied = false;
+    let mut applied = None;
     if reason.is_none() && resp.lost_focus() && enter_pressed(ui) {
         match parse_hex(&draft.text) {
             Ok(color) => {
-                let (id, args) = pick_command(target, &Pick::Color(color.to_hex()));
+                let pick = Pick::Color(color.to_hex());
+                let (id, args) = pick_command(target, &pick);
                 cx.run(id, args);
-                applied = true;
+                applied = Some(pick);
             }
             Err(message) => draft.error = Some(message),
         }
@@ -358,7 +360,11 @@ fn paint_tick(p: &egui::Painter, at: Pos2, color: Color32) {
 /// Draws the colour popover and the font picker, whichever is open.
 pub fn show(ctx: &Context, cx: &mut Cx<'_>, st: &mut UiState) {
     match st.color_popover {
-        Some(target) => color_popover(ctx, cx, target),
+        Some(target) => {
+            if let Some(Pick::Color(color)) = color_popover(ctx, cx, target) {
+                st.last_picked.remember(target, color);
+            }
+        }
         None => {
             ctx.data_mut(|d| d.remove_temp::<HexDraft>(Id::unique("color_hex_draft")));
         }

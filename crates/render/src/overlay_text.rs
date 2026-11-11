@@ -104,25 +104,33 @@ impl Label {
     }
 }
 
-/// The distance shown on a spacing guide: its length, rounded to whole world units. `None` for other guides and
-/// for lengths that are not worth a number.
-pub(crate) fn badge_distance(g: &SmartGuide) -> Option<i64> {
-    if !matches!(g.kind, SmartGuideKind::EqualSpacingH | SmartGuideKind::EqualSpacingV) {
-        return None;
+/// The stretch of a guide that a badge measures: a spacing guide's own length, or the empty gap between the
+/// dragged thing and the box an alignment guide lines up with, as `(from, to)` along the guide.
+fn badge_span(g: &SmartGuide) -> Option<(f64, f64)> {
+    match g.kind {
+        SmartGuideKind::EqualSpacingH | SmartGuideKind::EqualSpacingV => Some((g.start, g.end)),
+        SmartGuideKind::Vertical | SmartGuideKind::Horizontal => g.gap,
     }
-    let length = (g.end - g.start).abs();
+}
+
+/// The distance shown on a guide: the length of its [`badge_span`], rounded to whole world units. `None` for
+/// guides without a span and for lengths that are not worth a number.
+pub(crate) fn badge_distance(g: &SmartGuide) -> Option<i64> {
+    let (from, to) = badge_span(g)?;
+    let length = (to - from).abs();
     (0.5..1.0e9).contains(&length).then_some(length.round() as i64)
 }
 
-/// Draws the gap on each spacing guide, in a chip beside the middle of the guide (above a horizontal one, to the
-/// right of a vertical one). Returns the number of badges.
+/// Draws the distance on each guide that has one (the gap of a spacing guide, the space between the dragged thing
+/// and the box it lines up with), in a chip beside the middle of the measured stretch (above a horizontal guide, to
+/// the right of a vertical one). Returns the number of badges.
 pub(crate) fn paint_guide_badges(scene: &mut Scene, pen: &mut Pen, guides: &[SmartGuide]) -> usize {
     let mut drawn = 0;
     for g in guides {
-        let Some(distance) = badge_distance(g) else { continue };
+        let (Some(distance), Some((from, to))) = (badge_distance(g), badge_span(g)) else { continue };
         let Some(label) = Label::new(pen, &distance.to_string()) else { continue };
-        let vertical = g.kind == SmartGuideKind::EqualSpacingV;
-        let along = (g.start + g.end) / 2.0;
+        let vertical = matches!(g.kind, SmartGuideKind::EqualSpacingV | SmartGuideKind::Vertical);
+        let along = (from + to) / 2.0;
         let mid = pen.dev(if vertical { Point::new(g.position, along) } else { Point::new(along, g.position) });
         let size = label.chip_size(pen.px);
         let gap = BADGE_GAP * pen.px;

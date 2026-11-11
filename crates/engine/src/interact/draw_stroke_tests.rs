@@ -516,6 +516,32 @@ fn the_eraser_fades_what_the_path_touches_and_deletes_it_in_one_step_at_the_rele
 }
 
 #[test]
+fn the_eraser_ring_follows_the_pointer_while_erasing_and_goes_at_the_release() {
+    use crate::interact::EraserRing;
+    use drafftink_geom::kurbo::Point;
+    let (mut rig, ..) = erase_rig();
+    assert!(rig.parts().eraser.is_none(), "no ring before the press");
+    rig.down(50.0, 150.0);
+    rig.drag_to(150.0, 150.0);
+    assert_eq!(rig.parts().eraser, Some(EraserRing { at: Point::new(150.0, 150.0), radius_px: 10.0 }));
+    rig.drag_to(250.0, 160.0);
+    assert_eq!(rig.i.overlay(&rig.s).eraser, Some(EraserRing { at: Point::new(250.0, 160.0), radius_px: 10.0 }));
+    rig.up(250.0, 160.0);
+    assert!(rig.parts().eraser.is_none());
+    assert!(rig.i.overlay(&rig.s).eraser.is_none());
+}
+
+#[test]
+fn escape_takes_the_eraser_ring_back() {
+    let (mut rig, ..) = erase_rig();
+    rig.down(50.0, 150.0);
+    rig.drag_to(150.0, 150.0);
+    assert!(rig.parts().eraser.is_some());
+    assert!(rig.key(Key::Escape).handled);
+    assert!(rig.parts().eraser.is_none());
+}
+
+#[test]
 fn escape_restores_everything() {
     let (mut rig, a, b, c) = erase_rig();
     let (ring, undo) = (rig.ring_ids().len(), rig.undo_depth());

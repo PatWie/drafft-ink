@@ -15,6 +15,7 @@ __PRELOAD__
   canvas { display: block; width: 100vw; height: 100vh; outline: none; touch-action: none; }
   #loading { position: fixed; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center;
              gap: 14px; font: 16px/1.4 system-ui, sans-serif; color: #444; pointer-events: none; }
+  #loading-progress { min-height: 1.4em; font-size: 13px; color: #777; font-variant-numeric: tabular-nums; }
   #loading .bar { width: 160px; height: 3px; border-radius: 2px; background: #ddd; overflow: hidden; }
   #loading .bar::after { content: ""; display: block; width: 40%; height: 100%; background: #6d4aff; animation: slide 1.1s ease-in-out infinite; }
   @keyframes slide { from { transform: translateX(-100%); } to { transform: translateX(250%); } }
@@ -29,7 +30,7 @@ __PRELOAD__
 </head>
 <body>
 <canvas id="canvas"></canvas>
-<div id="loading" role="status"><div>Loading Drafft.ink</div><div class="bar"></div></div>
+<div id="loading" role="status"><div>Loading Drafft.ink</div><div id="loading-progress" aria-live="off"></div><div class="bar"></div></div>
 <div id="failure" role="alert"><div><h1>Drafft.ink could not start</h1>
   <p>Drafft.ink draws with WebGPU, or with WebGL2 when WebGPU is missing. Use a current Chrome, Edge, Firefox or Safari.</p><pre id="failure-detail"></pre></div></div>
 <script>window.__assets = __ASSETS__;</script>
@@ -55,6 +56,26 @@ __PRELOAD__
       document.getElementById("failure-detail").textContent = String((e && e.message) || e);
       document.getElementById("failure").style.display = "flex";
     }
+  };
+  // The wasm is the big download. Reading it through a stream lets the page say how far it is, as the old page did:
+  // `N%` when the server gave the length, else the bytes so far. The bytes pass on unchanged to the streaming compiler.
+  const progress = (loaded, total) => {
+    const el = document.getElementById("loading-progress");
+    if (!el) return;
+    el.textContent = total > 0 ? `${Math.min(100, Math.floor((loaded / total) * 100))}%` : `${(loaded / 1048576).toFixed(1)} MB`;
+    window.__loadProgress = { loaded, total };
+  };
+  const fetchWasm = async (url) => {
+    const response = await fetch(url);
+    if (!response.ok) throw new Error(`could not load ${url}: ${response.status}`);
+    if (!response.body) return response;
+    const total = Number(response.headers.get("content-length")) || 0;
+    let loaded = 0;
+    progress(0, total);
+    const counted = response.body.pipeThrough(new TransformStream({
+      transform(chunk, controller) { loaded += chunk.byteLength; progress(loaded, total); controller.enqueue(chunk); },
+    }));
+    return new Response(counted, { status: response.status, headers: { "content-type": "application/wasm" } });
   };
   // Start-up marks in ms since navigation, for the perf driver (window.__marks).
   const mark = (name) => { (window.__marks ||= {})[name] = Math.round(performance.now()); };
@@ -94,7 +115,7 @@ __PRELOAD__
     const [dir, build] = src(renderer);
     const glue = await (renderer === "webgpu" && early ? early : importGlue(renderer));
     mark("glue");
-    await glue.default({ module_or_path: `./${dir}/drafftink_web_bg.wasm?v=${build}` });
+    await glue.default({ module_or_path: await fetchWasm(`./${dir}/drafftink_web_bg.wasm?v=${build}`) });
     mark("wasm");
     await glue.start("canvas");
     mark("started");

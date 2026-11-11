@@ -475,6 +475,22 @@ fn smart_guides_and_the_frame_highlight_reach_the_overlay_during_the_drag() {
 }
 
 #[test]
+fn an_alignment_guide_of_a_move_carries_its_markers_and_the_gap_to_the_other_box() {
+    use drafftink_geom::guides::SmartGuideKind;
+    let mut rig = Rig::new();
+    rig.run("settings.set", json!({ "key": "snap.smart_guides", "value": true }));
+    let _a = rig.rect(100.0, 100.0, 100.0, 100.0);
+    let _b = rig.rect(400.0, 100.0, 100.0, 100.0);
+    rig.hold_drag((150.0, 150.0), (150.0, 154.0));
+    rig.drag_to(150.0, 155.0);
+    let guides = rig.i.overlay(&rig.s).canvas.guides;
+    let top = guides.iter().find(|g| g.kind == SmartGuideKind::Horizontal).expect("a guide on the top edges");
+    assert_eq!(top.gap, Some((200.0, 400.0)), "the empty stretch between the boxes along the guide");
+    assert!(!top.snap_points.is_empty(), "the markers reach the overlay");
+    rig.up(150.0, 155.0);
+}
+
+#[test]
 fn moving_a_rectangle_keeps_the_arrow_attached() {
     let (mut rig, a, b) = two_rects();
     let arrow = testing::create_arrow_between(&mut rig.s, &a, &b).expect("arrow");
@@ -700,9 +716,10 @@ fn rotating_with_the_handle_turns_the_element_and_shows_the_angle() {
     assert!(near(rig.element(&a).transform.angle.to_degrees(), 90.0), "{}", rig.element(&a).transform.angle);
     assert_eq!(rig.i.parts().active_handle, Some(Handle::Rotate));
     match rig.i.parts().badge {
-        Some(Badge::Angle { center, degrees }) => {
+        Some(Badge::Angle { center, degrees, snapped }) => {
             assert_eq!(center, Point::new(300.0, 250.0));
             assert!(near(degrees, 90.0));
+            assert!(!snapped, "no step without Shift");
         }
         other => panic!("expected an angle badge, got {other:?}"),
     }
@@ -721,6 +738,15 @@ fn shift_rotates_in_steps_of_fifteen_degrees() {
     let turned = rig.element(&a).transform.angle.to_degrees();
     assert!(near(turned, 30.0) || near(turned, 45.0), "snapped to a multiple of 15: {turned}");
     assert!(near((turned / 15.0).round() * 15.0, turned), "a multiple of 15: {turned}");
+}
+
+#[test]
+fn the_rotation_badge_says_when_the_angle_is_snapped() {
+    let (mut rig, _) = selected_rect(0.0);
+    let h = rig.handle_pos(&Handle::Rotate);
+    rig.with_mods(SHIFT, |r| r.hold_drag((h.x, h.y), (400.0, 250.0)));
+    assert!(matches!(rig.i.overlay(&rig.s).badge, Some(Badge::Angle { snapped: true, .. })));
+    rig.up(400.0, 250.0);
 }
 
 #[test]
@@ -810,6 +836,31 @@ fn dragging_an_arrow_end_onto_a_rectangle_binds_it_and_shows_the_candidate() {
     assert!(rig.i.parts().highlight.is_empty(), "the highlight goes with the drag");
     assert_eq!(rig.ring_after(setup), vec!["arrow.move_point"]);
     assert_eq!(rig.undo_depth(), undo0 + 1);
+}
+
+#[test]
+fn shift_on_a_dragged_arrow_end_shows_the_rays_about_the_other_end_and_locks_the_angle() {
+    use crate::interact::AngleRays;
+    let (mut rig, arrow, _) = free_arrow();
+    let end = rig.handle_pos(&Handle::Point { element: arrow.clone(), index: 1 });
+    rig.with_mods(SHIFT, |r| r.hold_drag((end.x, end.y), (300.0, 190.0)));
+    // The other end is at (100, 150); the pointer is at 40 units below the line, about 11.3 degrees: 15 is nearest.
+    let rays = rig.i.overlay(&rig.s).angle_rays.expect("rays during the drag");
+    assert_eq!(rays, AngleRays { origin: Point::new(100.0, 150.0), step_degrees: 15.0, locked_degrees: 15.0 });
+    assert!(rig.i.overlay(&rig.s).snap_point.is_none());
+    rig.with_mods(SHIFT, |r| r.up(300.0, 190.0));
+    assert!(rig.i.parts().angle_rays.is_none(), "the rays go with the drag");
+}
+
+#[test]
+fn a_dragged_arrow_end_that_the_grid_moved_shows_the_snap_crosshair() {
+    let (mut rig, arrow, _) = free_arrow();
+    rig.run("settings.set", json!({ "key": "snap.grid", "value": true }));
+    let end = rig.handle_pos(&Handle::Point { element: arrow.clone(), index: 1 });
+    rig.hold_drag((end.x, end.y), (343.0, 189.0));
+    assert_eq!(rig.i.overlay(&rig.s).snap_point, Some(Point::new(340.0, 180.0)));
+    rig.up(343.0, 189.0);
+    assert!(rig.i.parts().snap_point.is_none());
 }
 
 #[test]
