@@ -201,17 +201,24 @@ mod imp {
 
     static NEXT_TID: AtomicU32 = AtomicU32::new(1);
 
+    /// The OS thread name, or `thread N` when it has none.
+    #[cfg(not(target_arch = "wasm32"))]
+    fn thread_name(tid: u32) -> String {
+        std::thread::current().name().map_or_else(|| format!("thread {tid}"), str::to_owned)
+    }
+
+    /// Browser threads have no names.
+    #[cfg(target_arch = "wasm32")]
+    fn thread_name(tid: u32) -> String {
+        format!("thread {tid}")
+    }
+
     impl Local {
         fn new() -> Self {
             let tid = NEXT_TID.fetch_add(1, Ordering::Relaxed);
-            #[cfg(not(target_arch = "wasm32"))]
-            let name = std::thread::current().name().map(str::to_owned);
-            #[cfg(target_arch = "wasm32")]
-            let name: Option<String> = None;
-            let name = name.unwrap_or_else(|| format!("thread {tid}"));
             let mut g = global();
             if g.threads.len() < 256 {
-                g.threads.push((tid, name));
+                g.threads.push((tid, thread_name(tid)));
             }
             Self { tid, stack: Vec::new(), events: Vec::new(), agg: BTreeMap::new() }
         }
