@@ -18,7 +18,7 @@
 use drafftink_engine::{Origin, Refusal, Session};
 use serde_json::{Value, json};
 
-use crate::state::{Toast, UiState};
+use crate::state::{SearchResults, Toast, UiState};
 
 /// One call of a registered command: what [`CommandSink::run`] receives.
 #[derive(Debug, Clone, PartialEq)]
@@ -292,7 +292,7 @@ pub struct Ran {
 }
 
 /// What [`dispatch`] did.
-#[derive(Debug, Default)]
+#[derive(Debug, Clone, Default)]
 pub struct Report {
     /// Every command that ran, in order.
     pub ran: Vec<Ran>,
@@ -345,6 +345,10 @@ impl UiState {
             self.equation = None;
         }
         match (call.id.as_str(), result) {
+            ("element.query", Ok(out)) if self.search_open => {
+                let query = call.args.pointer("/filter/text").and_then(Value::as_str).unwrap_or_default();
+                self.search_results = Some(SearchResults::from_output(query, out));
+            }
             ("gesture.begin", Ok(out)) => {
                 self.set_scrub_gesture(out.get("gesture").and_then(Value::as_str).map(str::to_owned));
             }

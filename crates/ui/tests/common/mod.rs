@@ -3,9 +3,13 @@
 #![allow(dead_code)]
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
-use drafftink_engine::Session;
+use std::sync::Arc;
+
+use drafftink_engine::cmd::FAMILIES;
 use drafftink_engine::ports::fake::Fakes;
 use drafftink_engine::services::Services;
+use drafftink_engine::spec::CommandSpec;
+use drafftink_engine::{Registry, Session};
 use drafftink_ui::{Call, Model, Report, UiAction, UiState, dispatch, draw};
 use egui_kittest::Harness;
 use egui_kittest::kittest::Queryable;
@@ -31,6 +35,18 @@ impl Fixture {
     pub fn new() -> Self {
         let fakes = Fakes::new();
         let session = Session::with_services(fakes.ports(), Services::fake());
+        Self::over(session, fakes)
+    }
+
+    /// A fresh session whose registry leaves out the commands with these ids, as a build that does not
+    /// have them would. Used to test the "not available in this build" behaviour of the controls without
+    /// relying on a gap of the real registry.
+    pub fn without(omit: &[&str]) -> Self {
+        let families: Vec<&'static [CommandSpec]> =
+            FAMILIES.iter().flat_map(|family| family.split(|spec| omit.contains(&spec.id))).collect();
+        let fakes = Fakes::new();
+        let mut session = Session::with_registry(fakes.ports(), Arc::new(Registry::from_families(&families)));
+        session.services = Services::fake();
         Self::over(session, fakes)
     }
 
@@ -69,11 +85,13 @@ impl Fixture {
         self.actions.clear();
     }
 
-    /// Executes the recorded actions on the session as the app would, then clears them.
+    /// Executes the recorded actions on the session as the app would, then clears them. The report is
+    /// returned and also kept in `self.report`.
     pub fn dispatch(&mut self) -> Report {
         let actions = std::mem::take(&mut self.actions);
         let r = dispatch(&mut self.session, &mut self.state, actions, 0.0);
         self.refresh();
+        self.report = r.clone();
         r
     }
 }

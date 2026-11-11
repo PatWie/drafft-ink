@@ -147,6 +147,12 @@ fn clicking_an_enabled_row_runs_it_with_origin_palette_and_closes() {
     let calls = calls(&h);
     assert_eq!(calls, vec![Call::new(Origin::Palette, "tool.set", json!({ "tool": "rectangle" }))]);
     assert!(h.state().state.palette.is_none(), "the palette closed");
+    // The real command ran with the palette as its origin.
+    let report = h.state_mut().dispatch();
+    assert_eq!(report.refusals().count(), 0, "{:?}", report.ran);
+    assert_eq!(h.state().session.active_tool(), drafftink_engine::state::Tool::Rectangle);
+    let recent = h.state().session.ring().recent(1, false, None);
+    assert_eq!(recent.first().map(|e| e.source), Some(Origin::Palette));
 }
 
 #[test]
@@ -267,6 +273,9 @@ fn a_required_args_command_opens_a_form_and_submitting_runs_it_with_the_built_ar
     h.run();
     assert_eq!(calls(&h), vec![Call::new(Origin::Palette, "tab.rename", json!({ "name": "Architecture!" }))]);
     assert!(h.state().state.palette.is_none(), "submitting closes the palette");
+    let report = h.state_mut().dispatch();
+    assert_eq!(report.refusals().count(), 0, "{:?}", report.ran);
+    assert_eq!(h.state().model.tabs[0].name, "Architecture!", "the real command renamed the tab");
 }
 
 #[test]

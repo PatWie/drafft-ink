@@ -250,7 +250,7 @@ fn menu_opens_by_verb_and_its_rows_run_with_the_menu_origin() {
 
 #[test]
 fn menu_rows_for_commands_that_are_not_registered_yet_are_greyed_with_a_reason() {
-    let f = Fixture::new();
+    let f = Fixture::without(&["doc.save"]);
     let reason = f.model.refusal_text("doc.save").unwrap();
     assert!(reason.contains("doc.save"), "{reason}");
     let mut f2 = f;
@@ -302,4 +302,122 @@ fn during_a_text_edit_a_style_choice_goes_to_the_editor_and_not_to_style_set() {
         h.state().actions,
         vec![UiAction::Host(drafftink_ui::HostRequest::TextEditStyle(json!({"stroke_color": "blue-500"})))]
     );
+}
+
+// ---- the real engine: a click runs the real command and the session changes ----
+
+type H = egui_kittest::Harness<'static, Fixture>;
+
+/// Clicks the control, lets the app run what the frame returned, and checks that no command was refused.
+fn click_and_run(h: &mut H, label: &str) {
+    h.state_mut().clear();
+    h.get_by_label(label).click();
+    h.run();
+    let report = h.state_mut().dispatch();
+    assert_eq!(report.refusals().count(), 0, "{label}: {:?}", report.ran);
+    assert!(!report.ran.is_empty(), "{label} ran no command");
+    h.run();
+}
+
+#[test]
+fn clicking_a_tool_changes_the_tool_of_the_session() {
+    let mut h = harness(Fixture::new());
+    h.run();
+    click_and_run(&mut h, "Rectangle tool");
+    assert_eq!(h.state().session.active_tool(), drafftink_engine::state::Tool::Rectangle);
+    assert_eq!(h.state().model.tool, drafftink_engine::state::Tool::Rectangle);
+    click_and_run(&mut h, "Keep tool active");
+    assert!(h.state().model.tool_lock);
+}
+
+#[test]
+fn clicking_a_stroke_swatch_changes_the_style_of_the_session() {
+    let mut h = harness(Fixture::new());
+    h.run();
+    click_and_run(&mut h, "Stroke blue");
+    assert_eq!(h.state().model.style.str_value("stroke_color"), Some("#3b82f6"));
+}
+
+#[test]
+fn clicking_a_property_changes_the_selected_elements() {
+    let mut h = harness(with_two_rects());
+    h.run();
+    click_and_run(&mut h, "Dashed");
+    assert_eq!(h.state().model.style.str_value("stroke_style"), Some("dashed"));
+    // The change is in the document: it is one undo step.
+    assert_eq!(h.state().model.history.undo_label.as_deref(), Some("Set style"));
+}
+
+#[test]
+fn the_align_button_moves_the_elements() {
+    let mut h = harness(with_two_rects());
+    h.run();
+    click_and_run(&mut h, "Align left");
+    let bounds = h.state_mut().session.execute("selection.get", json!({})).unwrap()["bounds"].clone();
+    assert_eq!(bounds["x"], json!(0.0));
+    assert_eq!(bounds["w"], json!(100.0), "both are 100 wide and now start at the same x");
+}
+
+#[test]
+fn the_bottom_bar_changes_the_zoom_and_the_undo_button_undoes() {
+    let mut h = harness(Fixture::new());
+    h.run();
+    click_and_run(&mut h, "Zoom in");
+    assert_eq!(h.state().model.zoom_percent, 125.0);
+    click_and_run(&mut h, "Reset zoom to 100%");
+    assert_eq!(h.state().model.zoom_percent, 100.0);
+    click_and_run(&mut h, "Smart guides");
+    assert!(
+        h.state().model.setting_bool("snap.smart_guides") != Fixture::new().model.setting_bool("snap.smart_guides")
+    );
+
+    let mut f = with_two_rects();
+    f.session.execute("element.delete", json!({})).unwrap();
+    f.refresh();
+    assert_eq!(f.model.selection_count, 0);
+    let mut h = harness(f);
+    h.run();
+    click_and_run(&mut h, "Undo");
+    assert_eq!(h.state_mut().session.execute("element.query", json!({})).unwrap()["total"], json!(2));
+}
+
+#[test]
+fn the_tab_bar_adds_switches_and_closes_tabs() {
+    let mut h = harness(Fixture::new());
+    h.run();
+    click_and_run(&mut h, "New tab");
+    assert_eq!(h.state().model.tabs.len(), 2);
+    assert!(h.state().model.tabs[1].active, "a new tab is the active one");
+    // Name the new tab, so the two can be told apart.
+    h.state_mut().session.execute("doc.rename", json!({"name": "Second"})).unwrap();
+    h.state_mut().refresh();
+    h.run();
+    click_and_run(&mut h, "Untitled");
+    assert!(h.state().model.tabs[0].active);
+    // The renamed tab has unsaved changes: the real command refuses, the UI asks, the answer closes it.
+    h.state_mut().clear();
+    h.get_by_label("Close Second").click();
+    h.run();
+    let report = h.state_mut().dispatch();
+    assert_eq!(report.refusals().map(|r| r.code).collect::<Vec<_>>(), ["unsaved_changes"]);
+    assert_eq!(h.state().model.tabs.len(), 2);
+    h.run();
+    click_and_run(&mut h, "Discard changes");
+    assert_eq!(h.state().model.tabs.len(), 1);
+    assert!(h.state().state.confirm.is_none());
+}
+
+#[test]
+fn the_menu_row_switches_the_session_to_view_only() {
+    let mut f = Fixture::new();
+    f.state.menu_open = true;
+    let mut h = harness(f);
+    h.run();
+    h.state_mut().clear();
+    h.get_by_label("View-only mode").click();
+    h.run();
+    let report = h.state_mut().dispatch();
+    assert_eq!(report.refusals().count(), 0, "{:?}", report.ran);
+    assert!(h.state().session.view_only);
+    assert!(h.state().model.view_only);
 }

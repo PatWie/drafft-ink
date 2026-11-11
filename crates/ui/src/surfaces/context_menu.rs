@@ -1,7 +1,8 @@
 //! The canvas context menu. The canvas layer opens it with `UiState::open_context_menu` on a right click.
 //! Every row is a command (`Ctl`) drawn with `menu_item`, so a command that cannot run now is greyed with
-//! its refusal text as the tooltip, and a command the registry does not have yet is greyed with the
-//! model's "not available in this build" text. Choosing a row closes the menu; a click anywhere else
+//! its refusal text as the tooltip, and a command the registry does not have is greyed with the
+//! model's "not available in this build" text. `Paste` puts its content at the point where the menu was
+//! opened. Choosing a row closes the menu; a click anywhere else
 //! closes it too.
 
 use drafftink_engine::Origin;
@@ -29,12 +30,18 @@ fn item(text: &'static str, id: &'static str, args: Value) -> Item {
     Item { text, id, args }
 }
 
+/// The arguments of `clipboard.paste`: the content lands where the menu was opened, when that point is
+/// known, else in the middle of the canvas (the command's default).
+pub(crate) fn paste_args(world: Option<[f64; 2]>) -> Value {
+    world.map_or_else(|| json!({}), |at| json!({ "at": at }))
+}
+
 /// The rows of the first block: the clipboard and deleting.
-fn edit_items() -> Vec<Item> {
+fn edit_items(world: Option<[f64; 2]>) -> Vec<Item> {
     vec![
         item("Cut", "clipboard.cut", json!({})),
         item("Copy", "clipboard.copy", json!({})),
-        item("Paste", "clipboard.paste", json!({})),
+        item("Paste", "clipboard.paste", paste_args(world)),
         item("Duplicate", "element.duplicate", json!({})),
         item("Delete", "element.delete", json!({})),
     ]
@@ -81,7 +88,7 @@ fn style_items() -> Vec<Item> {
 /// Draws the menu when `st.context_menu` is set.
 pub fn show(ctx: &Context, cx: &mut Cx<'_>, st: &mut UiState) {
     let align_id = Id::unique("context_menu.align_open");
-    let Some(at) = st.context_menu else {
+    let Some(menu) = st.context_menu else {
         ctx.data_mut(|d| d.remove::<bool>(align_id));
         return;
     };
@@ -95,14 +102,14 @@ pub fn show(ctx: &Context, cx: &mut Cx<'_>, st: &mut UiState) {
 
     let mut chosen = false;
     let pos = pos2(
-        at.x.clamp(screen.left() + SCREEN_GAP, (screen.right() - WIDTH - SCREEN_GAP).max(screen.left())),
-        at.y.max(screen.top() + SCREEN_GAP),
+        menu.screen.x.clamp(screen.left() + SCREEN_GAP, (screen.right() - WIDTH - SCREEN_GAP).max(screen.left())),
+        menu.screen.y.max(screen.top() + SCREEN_GAP),
     );
     Area::new(Id::unique("context_menu")).order(Order::Foreground).fixed_pos(pos).constrain(true).show(ctx, |ui| {
         panel_frame(&cx.pal).show(ui, |ui| {
             ui.set_width(WIDTH);
             ui.spacing_mut().item_spacing.y = 1.0;
-            chosen = cx.with_origin(Origin::ContextMenu, |cx| rows(ui, cx, align_id));
+            chosen = cx.with_origin(Origin::ContextMenu, |cx| rows(ui, cx, align_id, menu.world));
         });
     });
     if chosen {
@@ -113,7 +120,7 @@ pub fn show(ctx: &Context, cx: &mut Cx<'_>, st: &mut UiState) {
 }
 
 /// Draws the rows and returns true when one was chosen.
-fn rows(ui: &mut Ui, cx: &mut Cx<'_>, align_id: Id) -> bool {
+fn rows(ui: &mut Ui, cx: &mut Cx<'_>, align_id: Id, world: Option<[f64; 2]>) -> bool {
     let selected = cx.model.selection_count;
     let mut chosen = false;
     let mut block = |ui: &mut Ui, cx: &mut Cx<'_>, items: Vec<Item>, indent: bool| {
@@ -127,7 +134,7 @@ fn rows(ui: &mut Ui, cx: &mut Cx<'_>, align_id: Id) -> bool {
             });
         }
     };
-    block(ui, cx, edit_items(), false);
+    block(ui, cx, edit_items(world), false);
     separator(ui, &cx.pal);
     block(ui, cx, group_items(), false);
     separator(ui, &cx.pal);

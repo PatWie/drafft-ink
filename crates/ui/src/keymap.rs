@@ -190,13 +190,14 @@ pub struct Pointer {
     pub viewport_center: Option<(f64, f64)>,
 }
 
-/// Replaces `"$cursor"` and `"$viewport_center"` in a binding's arguments by points. A key whose
+/// Replaces `"$cursor"` and `"$viewport_center"` in a binding's arguments by points, written `[x, y]` as
+/// the commands take a world point. A key whose
 /// value cannot be filled is dropped, as docs/commands.md §1.12 says.
 pub fn substitute(args: &Value, pointer: &Pointer) -> Value {
     match args {
-        Value::String(s) if s == "$cursor" => pointer.cursor.map_or(Value::Null, |(x, y)| json!({ "x": x, "y": y })),
+        Value::String(s) if s == "$cursor" => pointer.cursor.map_or(Value::Null, |(x, y)| json!([x, y])),
         Value::String(s) if s == "$viewport_center" => {
-            pointer.viewport_center.map_or(Value::Null, |(x, y)| json!({ "x": x, "y": y }))
+            pointer.viewport_center.map_or(Value::Null, |(x, y)| json!([x, y]))
         }
         Value::Object(m) => {
             let mut out = Map::new();
