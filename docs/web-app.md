@@ -55,7 +55,7 @@ draws again. `sw.js` precaches the Ubuntu font with the shell and stores the oth
 
 Sizes of the full app build (2026-11-08, `release-wasm`, wasm-bindgen 0.2.130, binaryen 133 `-Oz` with the explicit feature list;
 MB here are MiB, as in `performance.md`): raw 24.62 MB (wasm-bindgen output), **wasm-opt 11.79 MB**, gzip -9 4.36 MB,
-**brotli -11 3.06 MB**, plus 1.44 MB of font files that the page loads when it needs them. Before the size work it was 28.43 / 17.62 / 6.51 / 4.48 MB
+**brotli -11 3.06 MB** (before WebMCP; the generated tool catalog added 0.14 MB wasm-opt and 0.04 MB brotli: raw 24.88, wasm-opt 11.93, gzip 4.42, brotli 3.10), plus 1.44 MB of font files that the page loads when it needs them. Before the size work it was 28.43 / 17.62 / 6.51 / 4.48 MB
 with the fonts inside. The old app was 10.33 MB raw and 3.46 MB brotli. What was done, what each step gave and what was left out is
 the table in `performance.md`, "Wasm size". `cargo xtask size` checks the numbers against `perf/budgets.json` (it builds the app, so it runs in
 `cargo xtask ci` and as its own CI job).
