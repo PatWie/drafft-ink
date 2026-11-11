@@ -52,3 +52,4 @@ Features decided but not yet assigned to a phase agent.
 - Server refuses and rolls back updates that raise `meta.schema` beyond the served schema (69f08a1).
 - Accepted (F1): `element.relabel`/`text.set` with empty text on a bound label removes the label; only free text refuses `empty_text`.
 - Flaky under heavy load (load avg 170): collab::server leaving_flushes_the_last_edit_and_the_others_see_the_peer_go (timing); make its waits event-driven.
+- App/UI: the on-canvas text editor must draw edited text through TextLayout (inline formulas typeset), set TextSpec::reveal while the caret is inside a formula, use typeset caret APIs (caret_rect, selection_rects, move_selection, formula_at_point/index), and pass inline_math to text.edit_end. Per-character colour editing UI (parity gap 3) belongs to the same editor.
