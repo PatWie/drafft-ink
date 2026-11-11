@@ -229,6 +229,7 @@ In `crates/engine/src/registry_tests.rs`:
 - `examples_parse_and_agent_commands_with_required_arguments_have_one`.
 - `engine_describe_and_commands_cover_every_command`.
 - `hostile_params_never_panic` and `hostile_params_never_panic_in_a_batch`: 34 hostile JSON values, as the whole argument and under every key of the schema. The result may be a refusal or a success. It may not be `internal`, must name the right command, must use a shared or declared code, and a refusal must leave the fingerprint unchanged.
+- `a_command_a_batch_may_run_anywhere_leaves_the_active_tab_alone`: a `batch: allowed` command that changes tabs leaves the active tab as it was (the ones that change it are `batch: last`).
 - `refusal_leaves_state_unchanged`: six situations per command (unknown key, view-only, text edit, no selection, no optional ports, running gesture). Every refusal leaves the fingerprint alone and is in the ring with its code.
 - `availability_and_execute_agree_on_state_refusals`.
 

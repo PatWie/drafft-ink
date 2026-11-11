@@ -403,6 +403,21 @@ fn hostile_params_never_panic() {
 }
 
 #[test]
+fn a_command_a_batch_may_run_anywhere_leaves_the_active_tab_alone() {
+    // A batch holds one journal, the one of the tab it started in. A command that moves the active tab must be
+    // `Batch::Last` (or `Never`); the executor also checks at run time, for commands that do it only sometimes.
+    for spec in specs().into_iter().filter(|s| s.batch == Batch::Allowed && s.mutates.contains(Mutates::TABS)) {
+        let mut s = fixture();
+        s.execute("tab.new", json!({})).unwrap();
+        s.execute("tab.switch", json!({"tab": 0})).unwrap();
+        let before = s.tab().id;
+        let args = serde_json::from_str(spec.example).unwrap_or_else(|_| json!({}));
+        let _ = s.execute(spec.id, args);
+        assert_eq!(s.tab().id, before, "`{}` changed the active tab but is `batch: allowed`", spec.id);
+    }
+}
+
+#[test]
 fn hostile_params_never_panic_in_a_batch() {
     // The same values reach commands as batch steps; preflight or the step refuses.
     let values = hostile_values();

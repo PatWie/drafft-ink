@@ -96,6 +96,14 @@ fn end_text(s: &mut Session, _: EndArgs) -> Result<Value, Refusal> {
     Ok(json!({}))
 }
 
+/// A command that makes the next tab the active one, like `library.import` with `mode: open_as_tab`, but declared
+/// `Batch::Allowed`: the batch executor must catch it at run time.
+fn hop(s: &mut Session, _: NoArgs) -> Result<Value, Refusal> {
+    let next = (s.active_index() + 1) % s.tabs.len();
+    s.set_active_index(next);
+    Ok(json!({}))
+}
+
 const DOC: Facts = Facts {
     undo: Undo::Undoable,
     reads_only: false,
@@ -123,6 +131,14 @@ const OTHERS: &[CommandSpec] = &[
         "Marks the document saved.",
         &Typed::new(save),
         Facts { undo: Undo::NoUndo, mutates: Mutates::TABS, view_only: Gate::Allowed, ..DOC },
+    ),
+    CommandSpec::new(
+        "t.hop",
+        "t",
+        "Hop",
+        "Activates the next tab.",
+        &Typed::new(hop),
+        Facts { undo: Undo::NoUndo, mutates: Mutates::TABS, ..DOC },
     ),
     CommandSpec::new(
         "text.edit_end",
@@ -561,6 +577,74 @@ fn close_is_only_the_last_step_of_a_batch() {
     let out = s.execute_batch(Origin::Test, &steps, &BatchOpts::default());
     assert!(out.failed.is_none());
     assert_eq!(s.tabs.len(), 2);
+}
+
+/// Runs `steps` in the first of two tabs and returns the output.
+fn batch_in_two_tabs(steps: &[BatchStep], opts: &BatchOpts) -> (Session, crate::batch::BatchOutput) {
+    let (mut s, _f) = full();
+    run(&mut s, "tab.new", json!({"name": "B"}));
+    run(&mut s, "tab.switch", json!({"tab": 0}));
+    let out = s.execute_batch(Origin::Test, steps, opts);
+    (s, out)
+}
+
+#[test]
+fn new_switch_and_duplicate_are_only_the_last_step_of_a_batch() {
+    for (id, args) in [("tab.new", json!({})), ("tab.switch", json!({"tab": 1})), ("tab.duplicate", json!({}))] {
+        let steps = [BatchStep::new(id, args), BatchStep::new("t.add", json!({"x": 1.0}))];
+        let (s, out) = batch_in_two_tabs(&steps, &BatchOpts::default());
+        let failed = out.failed.unwrap_or_else(|| panic!("`{id}` before another step is refused"));
+        assert_eq!((failed.index, failed.refusal.code), (0, "must_be_last"), "{id}");
+        assert_eq!(out.completed, 0, "preflight ran nothing: {id}");
+        assert_eq!((s.tabs.len(), s.active_index(), count(&s)), (2, 0, 0), "{id} changed state");
+        assert_eq!(s.tabs[1].doc.undo_depth() + s.tabs[0].doc.undo_depth(), 0, "{id}");
+    }
+}
+
+#[test]
+fn a_tab_change_as_the_last_step_commits_the_edits_before_it_to_the_tab_they_were_made_in() {
+    for (id, args) in [("tab.new", json!({})), ("tab.switch", json!({"tab": 1})), ("tab.duplicate", json!({}))] {
+        let steps = [BatchStep::new("t.add", json!({"x": 1.0})), BatchStep::new(id, args)];
+        let (s, out) = batch_in_two_tabs(&steps, &BatchOpts::default());
+        assert!(out.failed.is_none(), "{id}: {:?}", out.failed);
+        assert_eq!(s.tabs[0].doc.undo_depth(), 1, "{id}: one undo step in the tab the edit was made in");
+        assert!(s.tabs[0].doc.replicated().iter_all().count() >= 1, "{id}: the edit reached the CRDT");
+        assert_ne!(s.active_index(), 0, "{id} activated another tab");
+        assert!(s.tabs[1].doc.store().iter().next().is_none() || id == "tab.duplicate");
+    }
+}
+
+#[test]
+fn a_command_that_turns_out_to_change_the_tab_stops_the_batch_and_rolls_back() {
+    let steps = [
+        BatchStep::new("t.add", json!({"x": 1.0})),
+        BatchStep::new("t.hop", json!({})),
+        BatchStep::new("t.add", json!({"x": 2.0})),
+    ];
+    let (s, out) = batch_in_two_tabs(&steps, &BatchOpts::default());
+    let failed = out.failed.expect("the step after a tab change is refused");
+    assert_eq!((failed.index, failed.refusal.code), (2, "must_be_last"));
+    assert!(failed.refusal.message.contains("`t.hop`"), "{}", failed.refusal.message);
+    assert!(out.rolled_back);
+    assert!(out.not_rolled_back.iter().any(|n| n.id == "t.hop"), "the tab change cannot be taken back, and says so");
+    for (i, t) in s.tabs.iter().enumerate() {
+        assert_eq!(t.doc.store().iter().count(), 0, "tab {i} holds an element of the rolled-back batch");
+        assert_eq!(t.doc.undo_depth(), 0, "tab {i}");
+        assert_eq!(t.doc.replicated().iter_all().count(), 0, "tab {i}: nothing reached the CRDT");
+    }
+}
+
+#[test]
+fn without_atomic_the_steps_before_a_tab_change_stay_in_their_tab_as_one_step() {
+    let steps = [
+        BatchStep::new("t.add", json!({"x": 1.0})),
+        BatchStep::new("t.hop", json!({})),
+        BatchStep::new("t.add", json!({"x": 2.0})),
+    ];
+    let (s, out) = batch_in_two_tabs(&steps, &BatchOpts { atomic: false, ..BatchOpts::default() });
+    assert_eq!(out.failed.map(|f| f.index), Some(2));
+    assert_eq!((s.tabs[0].doc.store().iter().count(), s.tabs[0].doc.undo_depth()), (1, 1));
+    assert_eq!((s.tabs[1].doc.store().iter().count(), s.tabs[1].doc.undo_depth()), (0, 0), "step 2 never ran");
 }
 
 // ---- tab.rename ----
