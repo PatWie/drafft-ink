@@ -383,12 +383,12 @@ impl PathShape {
 
     /// The path mapped through `a`.
     pub fn transformed(&self, a: Affine) -> Self {
-        Self::new(a * self.path.clone())
+        Self::new(a * &self.path)
     }
 
     /// Place a path stored in element-local space into world space.
     pub fn from_frame(frame: &ElementFrame, local: &BezPath) -> Self {
-        Self::new(frame.to_world() * local.clone())
+        Self::new(frame.to_world() * local)
     }
 
     fn el_finite(el: &PathEl) -> bool {
