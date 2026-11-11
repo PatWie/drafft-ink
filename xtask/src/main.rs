@@ -11,6 +11,7 @@ mod gates;
 mod harness;
 mod layers;
 mod perf;
+mod size;
 mod standards;
 mod tools;
 mod wasm;
@@ -37,10 +38,12 @@ gates:
                   work-counter tests at 1k/10k/100k elements checked against perf/budgets.json;
                   --bench: curated criterion benches against the timing limits (not part of ci);
                   --idle: only the idle and hover tests (perf/README.md)
-  ci              all of the above in order, then the pending gates, with a summary table
+  size [--no-build|--wasm FILE]
+                  builds the web app (scripts/build-web.sh), measures the wasm module and the fonts the page loads,
+                  checks them against the `size` section of perf/budgets.json (xtask/src/size.rs)
+  ci              all of the above in order, with a summary table
 
-pending gates (not yet implemented; each must be listed in xtask/pending-gates.txt to pass):
-  size
+gates that are named but not written are listed in xtask/pending-gates.txt (none now)
 ";
 
 fn main() -> ExitCode {

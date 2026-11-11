@@ -471,3 +471,76 @@ What changed. The reverse indexes of the store (bound arrows, group members, fra
 A move or a turn no longer copies elements: `transform::apply` builds a new `Transform` per element and writes only that, so a translate of a 1000-point freehand copies no point vector (the copy is made only for a map of the points or a font scale, and for an arrow whose fixed point is carried).
 
 What did not change, and why. Opening a snapshot is bound by Loro (its map iteration is 0.4 s of 1.3 s) and our field decode (0.6 s, mostly `read_element` building a JSON value per element); a typed decoder would save about 0.3 s and give up the rule that the stored form follows the model's serde output. Writing the 100,000 elements into Loro is 770,000 field inserts at the cost the CRDT library has (1.5 s measured with Loro alone). A fully zoomed-out frame at 100,000 elements is now 22.6 ms: the loop over the candidates remains, and an edit or a gesture frame rebuilds the order (the order is kept only while the store does not change).
+
+## 8. Wasm size
+
+The web app (`apps/drafftink-web`) is the whole editor in one module. `cargo xtask size` builds it as a release is built
+(`scripts/build-web.sh`: `release-wasm`, wasm-bindgen, wasm-opt), measures the module and the font files that the page loads next to it,
+and checks `perf/budgets.json` (section `size`: `wasm.opt_bytes`, `wasm.gzip_bytes`, `wasm.brotli_bytes`, `fonts.brotli_bytes`). On a
+failure it prints the biggest items of the unstripped module (`twiggy top`) and says how to go on. It runs in `cargo xtask ci` (about a
+minute with a warm cache) and as its own CI job. `--no-build` checks the last build; `--wasm FILE` measures a finished module.
+
+### 8.1 Result (2026-11-08, same machine, MiB)
+
+| | Before | After |
+|---|---|---|
+| Module as wasm-bindgen writes it | 28.43 | 24.62 |
+| Module after wasm-opt (what the server sends) | 17.62 | **11.79** |
+| gzip -9 | 6.51 | 4.36 |
+| brotli -11 | 4.48 | **3.06** |
+| Fonts as separate files, brotli (loaded on demand) | in the module | 1.44 |
+| Brotli sent for the first visit of the welcome page (module, Ubuntu Light, STIX) | 4.48 | 3.57 |
+| Old app, for reference (module, brotli) | 3.46 | |
+| Start: navigation to first frame, cold / service worker warm (median, ms) | 676 / 439 | 638 / 394 |
+| Frame of the pan scenario (1000 rectangles, 200 `view.pan`), mean / p95 (ms) | 3.2 to 4.2 / 4.4 to 4.9 | 3.5 to 3.9 / 4.3 to 4.5 |
+
+Start and frame times come from `scripts/web_startup.py` (headed Chromium on Xvfb, NVIDIA L40S, localhost; ten cold loads per build, the
+two builds alternated). They are equal within the noise of the machine (a run varies by 10% to 20%), and the budget "wasm brotli not above 3.5 MB"
+of section 7.5 is met.
+
+### 8.2 What was tried
+
+Brotli is the number that counts for the first load; "opt" is the module after wasm-opt. Every row was built and measured on its own, on the
+state of main at 7e97970 unless said.
+
+| Step | opt | brotli | Decision |
+|---|---|---|---|
+| Baseline: `opt-level="s"`, wasm-opt `-Os`, fonts inside | 17.63 | 4.48 | |
+| `opt-level="3"`, `-O3` | 19.64 | 4.99 | faster to run is not the goal here; rejected |
+| `opt-level="z"`, `-Oz` | 15.98 | 4.21 | see the mixed profile below |
+| `-C target-feature=+simd128`, `-Os` | 15.92 | 4.36 | **kept** |
+| `s` + simd + `-Oz` | 15.70 | 4.37 | |
+| `z` + simd + `-Oz` | 13.97 | 4.02 | smallest, but the frame is 20% to 40% slower |
+| `z` + simd + `-Oz --converge` | 13.96 | 4.01 | no gain; slower build; rejected |
+| Fonts out of the module (7 files, see `web-app.md`), on the `z` + simd row | 11.05 | 2.87 | **kept**. The wire total does not shrink by itself: Noto Sans (0.67), STIX (0.37), Hack and the icon font (0.27) are loaded only when used |
+| Mixed profile: `s` for the per-frame code, `z` for 33 cold crates (engine, io, doc, collab, Loro, serde, wgpu, image decoders, browser glue), wasm-opt `-Oz` | 11.79 | 3.06 | **kept**: 0.19 MiB bigger than `z` everywhere, and as fast as the baseline |
+| Same plus `z` for the text stack (parley, harfrust, skrifa, ICU, ReX) and Loro without its `counter` feature | 11.64 | 3.03 | 1%: not worth the risk of a slower first layout; rejected |
+| Without `serde_path_to_error` (a shim with no key path) | -0.21 | -0.03 | rejected: 1% for losing `bad_arg`'s key path (`bounds.w`), which agents need |
+
+Frame cost of the profiles (UI phase of the pan scenario, mean): baseline 2.6 to 2.8 ms, `z` everywhere 3.0 to 3.9 ms, mixed 2.8 ms. The UI phase
+is egui (layout and tessellation), which is why egui, Vello, kurbo and the render, canvas and ui crates stay at `s`.
+
+What the questions found:
+
+- **`vello_cpu` and `fearless_simd`** (2.1 MiB before wasm-opt) are not ours and not behind a feature. `epaint` 0.37 depends on `vello_cpu`
+  unconditionally, for the glyph rasteriser of egui's text; it is not the PNG export (that is the GPU, `Compositor::render_to_image`). Without
+  SIMD, `fearless_simd` compiles its fallback once per pipeline and per blend mode; with `simd128` the code that remains is 0.45 MiB.
+  Removing it altogether needs a patched `epaint`; not done.
+- **`serde_path_to_error`** (0.5 MiB before wasm-opt) is kept, see the table.
+- **`schemars`** (0.3 to 0.7 MiB before wasm-opt; by the `twiggy` totals about 4% of the brotli, an estimate) is kept. The derive is on 70 types in four crates and the
+  command registry builds the schemas for `commands` and `describe`; taking it out of the wasm needs a stub crate for the derive and the
+  macros, a build step that writes the schemas to a file, and an asynchronous fetch inside the synchronous `describe`. That is days for
+  about 4% of the module; the better order is to move the generation to a build step when the registry is next reworked.
+- **Duplicate crates** (`cargo tree -d`): `hashbrown` x2, `heapless` x3, `itertools` x3, `miniz_oxide` x2, `smol_str` x2, `thiserror` x2, `rustc-hash` x2
+  and some proc-macro crates. They come from Loro, egui, Parley and ReX with different pins; none is large (`miniz_oxide` is the biggest, 50 KB).
+- **Loro features:** the default `counter` feature is the only one; dropping it is in the 1% row above.
+- **Remaining weight** (twiggy, before wasm-opt, about, MiB): `drafftink_engine` 1.3, Loro 0.9, `read_fonts`/`skrifa`/`harfrust` 1.1, `serde_json` 0.5,
+  `serde_path_to_error` 0.5, `drafftink_edit` 0.4, `schemars` 0.3, `egui` 0.3, `generic_btree` 0.2, data (GelPen fonts, ICU tables, the welcome
+  document) 2.0.
+
+### 8.3 Rules
+
+- A size limit is raised only with the reason in its `note`, and lowered in the commit that makes the number better.
+- Do not enable `--all-features` in wasm-opt (`web-app.md`). Do not move a crate that runs every frame to `z`: measure with `scripts/web_startup.py`.
+- A new big asset is a file under `dist/fonts/` (or another hashed folder), not an `include_bytes!` in the module.
+

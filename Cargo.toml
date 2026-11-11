@@ -101,9 +101,118 @@ opt-level = 3
 lto = "thin"
 codegen-units = 1
 
+# `cargo xtask size` compresses a 12 MB module at brotli quality 11; unoptimised that takes minutes.
+[profile.dev.package.brotli]
+opt-level = 3
+
+[profile.dev.package.miniz_oxide]
+opt-level = 3
+
 [profile.release-wasm]
 inherits = "release"
-# "z" is 6% smaller than "s" in brotli (docs/performance.md, "Wasm size"); the speed is in the same table.
-opt-level = "z"
+# "s" for the code that runs every frame (egui, vello, kurbo, the render, canvas and ui crates) and "z" for the code that
+# runs on a command, a message or a file (the table below). "z" everywhere is 6% smaller, but the frame is 20 to 40%
+# slower: the UI phase of the pan scenario goes from 2.8 to 3.2 to 3.9 ms (docs/performance.md, "Wasm size").
+opt-level = "s"
 lto = "fat"
 panic = "abort"
+
+# Cold code: the command engine, file formats, the CRDT, serialisation, image decoders and the browser glue.
+[profile.release-wasm.package.loro]
+opt-level = "z"
+
+[profile.release-wasm.package.loro-internal]
+opt-level = "z"
+
+[profile.release-wasm.package.loro-common]
+opt-level = "z"
+
+[profile.release-wasm.package.loro-rle]
+opt-level = "z"
+
+[profile.release-wasm.package.loro-delta]
+opt-level = "z"
+
+[profile.release-wasm.package.generic-btree]
+opt-level = "z"
+
+[profile.release-wasm.package.serde_columnar]
+opt-level = "z"
+
+[profile.release-wasm.package.serde_json]
+opt-level = "z"
+
+[profile.release-wasm.package.serde]
+opt-level = "z"
+
+[profile.release-wasm.package.schemars]
+opt-level = "z"
+
+[profile.release-wasm.package.drafftink-engine]
+opt-level = "z"
+
+[profile.release-wasm.package.drafftink-io]
+opt-level = "z"
+
+[profile.release-wasm.package.drafftink-doc]
+opt-level = "z"
+
+[profile.release-wasm.package.drafftink-collab]
+opt-level = "z"
+
+[profile.release-wasm.package.drafftink-protocol]
+opt-level = "z"
+
+[profile.release-wasm.package.drafftink-bridge]
+opt-level = "z"
+
+[profile.release-wasm.package.wgpu]
+opt-level = "z"
+
+[profile.release-wasm.package.wgpu-core]
+opt-level = "z"
+
+[profile.release-wasm.package.wgpu-hal]
+opt-level = "z"
+
+[profile.release-wasm.package.naga]
+opt-level = "z"
+
+[profile.release-wasm.package.winit]
+opt-level = "z"
+
+[profile.release-wasm.package.zune-jpeg]
+opt-level = "z"
+
+[profile.release-wasm.package.zune-core]
+opt-level = "z"
+
+[profile.release-wasm.package.image-webp]
+opt-level = "z"
+
+[profile.release-wasm.package.image]
+opt-level = "z"
+
+[profile.release-wasm.package.png]
+opt-level = "z"
+
+[profile.release-wasm.package.fdeflate]
+opt-level = "z"
+
+[profile.release-wasm.package.miniz_oxide]
+opt-level = "z"
+
+[profile.release-wasm.package.base64]
+opt-level = "z"
+
+[profile.release-wasm.package.postcard]
+opt-level = "z"
+
+[profile.release-wasm.package.web-sys]
+opt-level = "z"
+
+[profile.release-wasm.package.js-sys]
+opt-level = "z"
+
+[profile.release-wasm.package.wasm-bindgen]
+opt-level = "z"

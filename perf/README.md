@@ -57,6 +57,13 @@ ten times the median. To change a limit: say why in `note`.
   without `--timing`.
 - Tighten a limit in the commit that makes the number better. Loosening needs a reason in `note`.
 
+## The size budget
+
+`budgets.json` also has a `size` section: `size[<metric>] = {"max": bytes, "note": ...}` for the web app's wasm module and its fonts
+(`wasm.opt_bytes`, `wasm.gzip_bytes`, `wasm.brotli_bytes`, `fonts.brotli_bytes`). `cargo xtask size` builds the app, measures it and
+checks the limits; on a failure it prints the biggest items of the module (`twiggy`). The perf code ignores the section. The numbers and
+the reasons are in `docs/performance.md`, "Wasm size". Tighten a limit in the commit that makes the number better; loosening needs a reason in `note`.
+
 ## Not done yet
 
 The native and web scenario drivers (`--perf-scenario`, `window.drafftink.perf.runScenario`) belong to the app shells.

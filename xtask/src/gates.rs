@@ -8,7 +8,7 @@ use std::collections::BTreeSet;
 use std::path::Path;
 use std::time::{Duration, Instant};
 
-use crate::{cargo, harness, layers, perf, run, standards, tools, wasm};
+use crate::{cargo, harness, layers, perf, run, size, standards, tools, wasm};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Gate {
@@ -64,7 +64,7 @@ impl Gate {
 
     /// True while the gate has no implementation. When you write one, drop it from this match.
     pub fn is_stub(self) -> bool {
-        matches!(self, Gate::Size)
+        false
     }
 
     fn run(self, root: &Path, args: &[String]) -> Result<(), String> {
@@ -87,7 +87,7 @@ impl Gate {
             Gate::Fixtures => fixtures(root),
             Gate::Harness => harness::run_gate(root),
             Gate::Perf => perf::run_gate(root, args),
-            Gate::Size => Err(format!("{}: no implementation", self.name())),
+            Gate::Size => size::run_gate(root, args),
         }
     }
 }
@@ -256,8 +256,8 @@ mod tests {
 
     #[test]
     fn pending_file_parses_comments_and_blank_lines() {
-        let pending = parse_pending("# header\n\nsize # later\n").unwrap();
-        assert_eq!(pending, BTreeSet::from([Gate::Size]));
+        let pending = parse_pending("# header\n\n   # indented comment\n").unwrap();
+        assert_eq!(pending, BTreeSet::new());
     }
 
     #[test]
@@ -265,6 +265,7 @@ mod tests {
         assert!(parse_pending("bogus\n").unwrap_err().contains("not a gate"));
         assert!(parse_pending("layers\n").unwrap_err().contains("only shrinks"));
         assert!(parse_pending("perf\n").unwrap_err().contains("only shrinks"), "perf is written");
+        assert!(parse_pending("size # wasm size budget\n").unwrap_err().contains("only shrinks"), "size is written");
     }
 
     #[test]
@@ -290,6 +291,6 @@ mod tests {
     #[test]
     fn stubs_are_the_pending_gate_names() {
         let stubs: Vec<_> = Gate::ALL.iter().filter(|g| g.is_stub()).map(|g| g.name()).collect();
-        assert_eq!(stubs, ["size"]);
+        assert!(stubs.is_empty(), "every gate is written: {stubs:?}");
     }
 }

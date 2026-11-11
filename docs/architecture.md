@@ -55,9 +55,10 @@ Package names are `drafftink-<crate>`; the desktop app is `drafftink`.
 | Licences, advisories, duplicate versions, sources | `cargo xtask deny` (`deny.toml`). Licences must be compatible with AGPL-3.0-only. Duplicate versions are warnings |
 | AGENTS.md length and paths | `cargo xtask standards` |
 | Tests | `cargo xtask test` (cargo-nextest, then doc tests) |
-| Not yet written | `perf`, `size`, `fixtures`, `harness`. Each passes only while `xtask/pending-gates.txt` lists it. The list only shrinks |
+| Wasm size | `cargo xtask size`: builds the web app, measures the module and the fonts, checks `perf/budgets.json` (`size` section) |
+| Not yet written | none now. A gate that is named but not written passes only while `xtask/pending-gates.txt` lists it. The list only shrinks |
 
-`cargo xtask ci` runs every gate and prints a table. CI (`.github/workflows/ci.yml`) runs one job per gate plus native builds on three operating systems and a wasm build. The `ci` job at the end is the single required check. The `quarantine` job refuses locked crates.io versions younger than seven days (`utils/quarantine_check.py`, exceptions in `utils/quarantine_allow.txt`).
+`cargo xtask ci` runs every gate and prints a table. CI (`.github/workflows/ci.yml`) runs one job per gate plus native builds on three operating systems and the `size` job (the release wasm build and its size). The `ci` job at the end is the single required check. The `quarantine` job refuses locked crates.io versions younger than seven days (`utils/quarantine_check.py`, exceptions in `utils/quarantine_allow.txt`).
 
 ## Changing the layering
 

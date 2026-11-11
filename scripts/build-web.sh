@@ -64,7 +64,7 @@ if [ "$OPT" = 1 ] && [ "$PROFILE" = "release-wasm" ]; then
   if [ -n "$WASM_OPT" ]; then
     # Not --all-features: with binaryen 133 it turns on experimental encodings and Chromium then rejects the
     # module ("unknown import kind 0x7e"). These are the features rustc's wasm32 target emits.
-    # -Oz: 4.0 MiB brotli against 4.2 for -Os on the 2026-11-08 build (docs/performance.md, "Wasm size").
+    # -Oz: smaller than -Os by about 2% brotli, and as fast in the frame measurement (docs/performance.md, "Wasm size").
     timeout 1200 "$WASM_OPT" $OPT_FEATURES --strip-debug --strip-producers -Oz "$OUT" -o "$OUT.opt"
     mv "$OUT.opt" "$OUT"
     OPTSIZE=$(stat -c %s "$OUT")
@@ -120,6 +120,8 @@ printf 'wasm: raw %s | wasm-opt %s | gzip -9 %s | brotli -11 %s\n' "$(mb "$RAW")
 FONT_BR=0
 for f in "$DIST"/fonts/*.ttf "$DIST"/fonts/*.otf; do FONT_BR=$((FONT_BR + $(brotli_size "$f"))); done
 printf 'fonts (loaded on demand, brotli -11): %s in %s files\n' "$(mb "$FONT_BR")" "$(ls "$DIST"/fonts/*.ttf "$DIST"/fonts/*.otf | wc -l)"
+# The numbers `cargo xtask size` checks (xtask/src/size.rs), in bytes.
+printf '{"raw": %s, "opt": %s, "gzip": %s, "brotli": %s, "fonts_brotli": %s}\n' "$RAW" "$OPTSIZE" "$GZ" "$BR" "$FONT_BR" > "$DIST/sizes.json"
 
 # --- precompressed copies: drafftink-server serves .br / .gz when the browser accepts them
 if [ "$PRECOMPRESS" = 1 ]; then
