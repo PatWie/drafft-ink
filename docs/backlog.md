@@ -18,3 +18,6 @@ Features decided but not yet assigned to a phase agent.
 - HIGH (data loss): `doc.save` marks the document saved before the queued port write succeeds; a failed write is only a warning. Saved state must follow the write result (Files port write must report back, or the save must be synchronous).
 - One-path rule: `clipboard.copy_as` png has its own render path duplicating `doc.export`; route it through the export code.
 - `tab.new from=intro` can use `doc::intro_document`; SVG export embeds no fonts yet (marked call site in cmd/doc/export.rs); dark SVG ignored.
+- UI reads selection style via `edit::style::read` directly (to avoid a ring entry per frame). Add `Session::query(id, args)` that runs `reads_only` commands without recording to the ring, and have the UI use `style.get` through it; then drop ui's edit/scene deps if possible.
+- UI embeds GelPen fonts a second time (include_bytes); expose font bytes from typeset.
+- UI: search dialog has no result list; stats panel lacks bounds editing (now possible: selection.get, element.set_bounds); touch-sized mode; context-menu paste should land at the click point.
