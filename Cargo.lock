@@ -1414,6 +1414,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "drafftink-e2e"
+version = "0.2.0"
+dependencies = [
+ "base64 0.22.1",
+ "drafftink-bridge",
+ "drafftink-engine",
+ "drafftink-testkit",
+ "png",
+ "serde_json",
+ "tempfile",
+ "thiserror 2.0.21",
+ "tokio",
+]
+
+[[package]]
 name = "drafftink-edit"
 version = "0.2.0"
 dependencies = [

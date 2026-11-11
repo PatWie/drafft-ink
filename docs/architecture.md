@@ -26,7 +26,7 @@ A crate may depend on workspace crates of strictly lower layers. It may not depe
 | L6 | `bridge` | agent bridge: loopback JSON-RPC over WebSocket, MCP stdio server |
 | L7 | `testkit` | headless harness, scenario runner, deterministic scene generator, probes |
 | L7 | `app` | the application glue shared by the desktop and web apps: `App` (the shell's `ShellApp`), platform ports, input translation, overlay and scene upkeep. Uses any library below L7 and may use `testkit` only as a dev-dependency; only the apps use it |
-| L8 | apps | `drafftink`, `drafftink-web`, `drafftink-canvas-js` (the npm package, `docs/canvas-api.md` section 9), `drafftink-server`, `drafftink-cli`, `drafftink-mcp` |
+| L8 | apps | `drafftink`, `drafftink-web`, `drafftink-canvas-js` (the npm package, `docs/canvas-api.md` section 9), `drafftink-server`, `drafftink-cli`, `drafftink-mcp`, `drafftink-e2e` (the native end-to-end suite, `docs/testing.md`) |
 | none | `xtask` | build tooling. Standalone |
 
 Package names are `drafftink-<crate>`; the desktop app is `drafftink`.

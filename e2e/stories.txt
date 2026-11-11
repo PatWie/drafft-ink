@@ -1,0 +1,21 @@
+# The headline stories, and where each one runs. `cargo xtask e2e` (the accounting step) fails when a story listed here
+# has no test in the suites it names, or when a native story has no entry here.
+#
+#   <id> | <where> | <words the browser test title contains>
+#
+#   where: both = the browser suite (e2e/web/specs) and the native suite (e2e/native/tests/stories.rs, a test
+#          named story_<id with - as _>); web = the browser suite only (it needs a page, the pointer, or a server).
+arrow-attached | both | an arrow stays attached through move, resize, rotate, delete and undo
+grouping | both | grouping, entering a group to move one member, and leaving it
+flowchart | both | an agent builds a flowchart with diagram.create and reads it back with doc.outline
+copy-paste | both | copy and paste a bound pair keeps the binding on the copies
+legacy-fixture | both | the old app's all_shapes.json loads as a clean document with the facts' element counts
+pixels | both | a filled rectangle is the right colour inside
+mouse-rectangle | web | a mouse drag with the rectangle tool draws a rectangle
+mouse-arrow | web | dragging an arrow from one shape onto another binds both ends
+mouse-marquee | web | a marquee drag on empty canvas selects the shapes it covers
+mouse-pan-zoom | web | the wheel pans and ctrl+wheel zooms about the pointer
+mouse-text | web | typing text: the text tool, a click, the keyboard and Ctrl+Enter make one text element
+collab-two-pages | web | an element drawn on one page appears on the other, both ways
+offline-reload | web | with the server stopped, a reload still starts the app and restores the drawing
+idle-zero-frames | web | an open document draws 0 frames in 10 seconds
