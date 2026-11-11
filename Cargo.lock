@@ -1254,6 +1254,17 @@ checksum = "d8b14ccef22fc6f5a8f4d7d768562a182c04ce9a3b3157b91390b52ddfdf1a76"
 [[package]]
 name = "drafftink"
 version = "0.2.0"
+dependencies = [
+ "clap",
+ "drafftink-app",
+ "drafftink-bridge",
+ "drafftink-engine",
+ "drafftink-gpu",
+ "drafftink-profile",
+ "env_logger",
+ "serde_json",
+ "thiserror 2.0.21",
+]
 
 [[package]]
 name = "drafftink-app"
@@ -1264,6 +1275,7 @@ dependencies = [
  "drafftink-bridge",
  "drafftink-canvas",
  "drafftink-collab",
+ "drafftink-edit",
  "drafftink-engine",
  "drafftink-geom",
  "drafftink-gpu",
@@ -1276,11 +1288,13 @@ dependencies = [
  "getrandom 0.3.4",
  "js-sys",
  "log",
+ "png",
  "pollster 0.4.0",
  "rfd",
  "serde",
  "serde_json",
  "thiserror 2.0.21",
+ "vello",
  "wasm-bindgen",
  "wasm-bindgen-futures",
  "web-sys",

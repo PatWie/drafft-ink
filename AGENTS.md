@@ -27,3 +27,4 @@ Drafft.ink is an infinite-canvas whiteboard in Rust (Vello on WebGPU, egui, Loro
 | Rendering, the frame loop, wasm size | `docs/performance.md` |
 | Agent bridge, MCP | `docs/agents.md` |
 | File formats | `docs/formats.md` |
+| Building, running, the desktop and web apps | `docs/building.md` |

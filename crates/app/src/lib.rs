@@ -13,10 +13,16 @@
 // `Instant` and `SystemTime` here come from `web_time` (the clock port); clippy cannot tell them apart.
 #![allow(clippy::disallowed_methods)]
 
-mod clock;
 mod app;
+mod clip;
+mod clock;
 mod config;
+mod editor;
+mod input;
+mod overlay;
 mod platform;
+mod startup;
+mod view;
 
 #[cfg(not(target_arch = "wasm32"))]
 pub mod native;
@@ -26,6 +32,4 @@ pub mod web;
 pub use app::App;
 pub use clock::AppClock;
 pub use config::{AppConfig, StartupLink};
-pub use platform::{
-    Host, HostJob, Inbound, Inbox, NoHost, PickKind, PickedFile, Platform, SharedClipboard, WakeCell,
-};
+pub use platform::{Host, HostJob, Inbound, Inbox, NoHost, PickKind, PickedFile, Platform, SharedClipboard, WakeCell};

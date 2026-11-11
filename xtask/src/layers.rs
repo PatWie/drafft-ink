@@ -551,7 +551,10 @@ mod tests {
         // It may use every library below it (gpu, ui, bridge are L6) and the apps may use it.
         let g = [
             c("drafftink-gpu", &[]),
-            c("drafftink-app", &[("drafftink-gpu", Normal, true), ("drafftink-testkit", Dev, true), ("egui", Normal, false)]),
+            c(
+                "drafftink-app",
+                &[("drafftink-gpu", Normal, true), ("drafftink-testkit", Dev, true), ("egui", Normal, false)],
+            ),
             c("drafftink", &[("drafftink-app", Normal, true)]),
         ];
         assert!(check(&g).is_empty(), "{:?}", check(&g));
