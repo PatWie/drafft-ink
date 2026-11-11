@@ -263,7 +263,7 @@ pub struct Cli {
     #[arg(long, env = "DRAFFTINK_S3_DISABLE_BULK_DELETE")]
     pub s3_disable_bulk_delete: bool,
 
-    /// Origin allowed to open a WebSocket, such as https://draw.example.com. Repeat the flag
+    /// Origin allowed to open a WebSocket, such as `https://draw.example.com`. Repeat the flag
     /// or separate values with commas. The server's own origin is always allowed; `*` allows
     /// every origin.
     #[arg(long = "allowed-origin", env = "DRAFFTINK_ALLOWED_ORIGINS", value_delimiter = ',')]

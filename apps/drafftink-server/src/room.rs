@@ -54,12 +54,46 @@ pub struct PeerSetup {
 
 /// A command from a connection to its room.
 pub enum RoomCmd {
-    Join { peer: Box<PeerSetup>, reply: oneshot::Sender<Result<(), Refusal>> },
-    Update { conn: u64, seq: u32, bytes: Vec<u8> },
-    RequestSync { conn: u64, version: Vec<u8> },
-    Awareness { conn: u64, state: AwarenessState },
-    Leave { conn: u64 },
-    Shutdown { done: oneshot::Sender<()> },
+    /// A client joins. The reply says whether the room accepted it.
+    Join {
+        /// The joining client.
+        peer: Box<PeerSetup>,
+        /// Answered once the join is decided.
+        reply: oneshot::Sender<Result<(), Refusal>>,
+    },
+    /// A client sent a document update.
+    Update {
+        /// The sending connection.
+        conn: u64,
+        /// The client's sequence number, echoed in the acknowledgement.
+        seq: u32,
+        /// The Loro update.
+        bytes: Vec<u8>,
+    },
+    /// A client asks for what it is missing.
+    RequestSync {
+        /// The asking connection.
+        conn: u64,
+        /// The client's version vector, opaque.
+        version: Vec<u8>,
+    },
+    /// A client sent its presence.
+    Awareness {
+        /// The sending connection.
+        conn: u64,
+        /// The presence state.
+        state: AwarenessState,
+    },
+    /// A client left or its connection closed.
+    Leave {
+        /// The leaving connection.
+        conn: u64,
+    },
+    /// Save the room and stop.
+    Shutdown {
+        /// Signalled when the room is saved.
+        done: oneshot::Sender<()>,
+    },
 }
 
 /// A handle to a loaded room.

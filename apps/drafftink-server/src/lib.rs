@@ -4,6 +4,8 @@
 //! `docs/protocol.md`) and `/health`. Rooms live in memory as Loro documents and are saved
 //! through a [`store::RoomStore`]. See `docs/server.md` for running and configuring it.
 
+#![warn(missing_docs)]
+
 pub mod auth;
 pub mod clock;
 pub mod config;
