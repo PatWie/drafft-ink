@@ -5,9 +5,15 @@
 //!   nothing overlaps. It reads their rectangles, and those of the tool column and the properties panel, from
 //!   [`ChromeRects`](crate::chrome::ChromeRects) (they are drawn before it) and records its own there. Where the
 //!   tool column or the properties panel reach down to its height, it is narrower by their width, so that their
-//!   buttons stay free; the toasts, the convert popup and the stats panel sit above it. Its height is a quarter of
+//!   buttons stay free; the toasts, the convert popup and the stats panel sit above it. Its height is 30 % of
 //!   the window until the person drags the top edge; the height they chose is kept in
 //!   [`UiState::library_height`].
+//! * **Sections.** The items are grouped in sections, the person's own first ("My items"), then one per imported
+//!   library, named after its file. A header shows the name and the number of items; a click on it folds the
+//!   section (the tiles of a folded section are not drawn, so none of its pictures is asked for). The buttons at
+//!   its right rename an imported section and remove one; a right click opens the same actions as a menu. Removing
+//!   a section asks first (`library.remove_section` cannot be undone). The search keeps the matching items of each
+//!   section and hides the sections that have none; while it is in use, folded sections show their matches.
 //! * **Tiles.** One tile per item: its picture, its name under it. The picture is the answer of
 //!   `library.thumbnail` (see [`crate::thumbs`]); until it arrives the tile shows an outline with the item's
 //!   proportions. A click inserts the item in the middle of the view (`library.insert`); a drag onto the canvas
@@ -20,7 +26,7 @@
 
 use drafftink_engine::Origin;
 use egui::{
-    Align, Align2, Area, Color32, Context, CursorIcon, Id, LayerId, Layout as Flow, Order, Painter, Rect, Sense,
+    Align, Align2, Area, Color32, Context, CursorIcon, Id, LayerId, Layout as Flow, Modal, Order, Painter, Rect, Sense,
     Stroke, StrokeKind, TextureHandle, TextureId, TextureOptions, Ui, UiBuilder, pos2, vec2,
 };
 use serde_json::{Value, json};
@@ -31,9 +37,10 @@ use crate::action::{HostRequest, UiAction};
 use crate::chrome::{ChromeRects, GAP};
 use crate::icons::Icon;
 use crate::menu_kit::{self, Menu, Popup, Row};
-use crate::model::{LibraryItem, Model, ViewView};
-use crate::state::{LibraryMenu, RenameTarget, UiState};
-use crate::theme::{self, MARGIN, Palette, TextSize, space};
+use crate::model::{LibraryItem, LibrarySection, Model, ViewView};
+use crate::state::{LibraryMenu, LibraryTarget, RenameTarget, UiState};
+use crate::surfaces::dialogs::{Close, plain_button, show_modal};
+use crate::theme::{self, Control, MARGIN, Palette, TextSize, space};
 use crate::thumbs::{Thumb, ThumbImage, ThumbSize};
 use crate::widgets::{Ctl, Cx, Layout, Look, paint_button_bg, panel_frame};
 
@@ -41,13 +48,13 @@ use crate::widgets::{Ctl, Cx, Layout, Look, paint_button_bg, panel_frame};
 pub const EXPORT_FILE: &str = "drafftink.excalidrawlib";
 
 /// The share of the window height the drawer has until the person drags its edge.
-const DEFAULT_SHARE: f32 = 0.25;
+const DEFAULT_SHARE: f32 = 0.3;
 /// The most of the window height the drawer may have.
 const MAX_SHARE: f32 = 0.7;
-/// The least height of the drawer: the header and one row of tiles.
-const MIN_HEIGHT: f32 = 170.0;
+/// The least height of the drawer: the header, the header of a section and one row of tiles.
+const MIN_HEIGHT: f32 = 224.0;
 /// The same on a touch layout, where the header takes two rows and the targets are larger.
-const MIN_HEIGHT_COMPACT: f32 = 320.0;
+const MIN_HEIGHT_COMPACT: f32 = 360.0;
 /// Room left above the drawer for the top bars.
 const TOP_ROOM: f32 = 72.0;
 /// Height of the strip on the top edge that resizes the drawer.
@@ -82,6 +89,11 @@ pub(crate) fn remove_args(item: &str) -> Value {
     json!({ "items": [item] })
 }
 
+/// `library.remove_section` of one section.
+pub(crate) fn remove_section_args(section: &str) -> Value {
+    json!({ "section": section })
+}
+
 /// `library.add`: the selection under the typed name (no name: the engine names it).
 pub(crate) fn add_args(name: &str) -> Value {
     let name = name.trim();
@@ -104,6 +116,27 @@ pub(crate) fn matches_filter(item: &LibraryItem, filter: &str) -> bool {
     filter.is_empty() || item.name.to_lowercase().contains(&filter.to_lowercase())
 }
 
+/// A section with the items the search leaves in it.
+pub(crate) struct Group<'a> {
+    pub section: &'a LibrarySection,
+    pub items: Vec<&'a LibraryItem>,
+}
+
+/// The sections that have items matching `filter`, in the model's order, each with those items. A section with
+/// none is left out, whatever it holds.
+pub(crate) fn groups<'a>(model: &'a Model, filter: &str) -> Vec<Group<'a>> {
+    let mut groups: Vec<Group<'a>> =
+        model.library_sections.iter().map(|section| Group { section, items: Vec::new() }).collect();
+    let at: HashMap<&str, usize> = model.library_sections.iter().enumerate().map(|(n, s)| (s.id.as_str(), n)).collect();
+    for item in model.library.iter().filter(|i| matches_filter(i, filter)) {
+        if let Some(group) = at.get(item.section.as_str()).and_then(|&n| groups.get_mut(n)) {
+            group.items.push(item);
+        }
+    }
+    groups.retain(|g| !g.items.is_empty());
+    groups
+}
+
 // ---- the place of the drawer ----
 
 /// The least and the most height the drawer may have in a window of this size, whose room above the bars ends at
@@ -114,7 +147,7 @@ pub(crate) fn height_limits(screen: egui::Rect, bottom: f32, compact: bool) -> (
     (least, (screen.height() * MAX_SHARE).min(room).max(least))
 }
 
-/// The height of the drawer: what the person dragged it to, else a quarter of the window, kept within limits.
+/// The height of the drawer: what the person dragged it to, else 30 % of the window, kept within limits.
 pub(crate) fn drawer_height(screen: egui::Rect, bottom: f32, compact: bool, chosen: Option<f32>) -> f32 {
     let (least, most) = height_limits(screen, bottom, compact);
     chosen.unwrap_or(screen.height() * DEFAULT_SHARE).clamp(least, most)
@@ -212,6 +245,8 @@ impl TextureCache {
 pub fn show(ctx: &Context, cx: &mut Cx<'_>, st: &mut UiState) {
     if !st.library_open {
         st.library_menu = None;
+        st.library_remove = None;
+        st.library_known = None;
         return;
     }
     st.library_visible.clear();
@@ -240,6 +275,7 @@ pub fn show(ctx: &Context, cx: &mut Cx<'_>, st: &mut UiState) {
     st.library_textures.keep_only(&st.library_visible, st.library_hover.as_deref());
     st.chrome.library = Some(drawn);
     library_menu(ctx, cx, st);
+    remove_section_dialog(ctx, cx, st);
 }
 
 /// The strip on the top edge: dragging it sets the height.
@@ -384,18 +420,173 @@ fn body(ui: &mut Ui, cx: &mut Cx<'_>, st: &mut UiState) {
         ui.label(TextSize::Caption.rich("Nothing here yet. Select shapes and press Add.").color(cx.pal.muted));
         return;
     }
-    let shown: Vec<&LibraryItem> = model.library.iter().filter(|i| matches_filter(i, &st.library_filter)).collect();
-    if shown.is_empty() {
+    let groups = groups(model, &st.library_filter);
+    if groups.is_empty() {
         let text = format!("No item has “{}” in its name.", st.library_filter.trim());
         ui.label(TextSize::Caption.rich(text).color(cx.pal.muted));
         return;
     }
+    let searching = !st.library_filter.trim().is_empty();
     let tile = Tile::of(&cx.layout);
+    // A section that was not there when the drawer last drew is the result of an import: bring it into view.
+    let newest =
+        st.library_known.as_ref().and_then(|known| groups.iter().rev().find(|g| !known.contains(&g.section.id)));
+    let newest = newest.map(|g| g.section.id.clone());
+    st.library_known = Some(model.library_sections.iter().map(|s| s.id.clone()).collect());
     egui::ScrollArea::vertical().id_salt("library_tiles").auto_shrink([false, false]).show(ui, |ui| {
-        ui.horizontal_wrapped(|ui| {
-            ui.spacing_mut().item_spacing = vec2(space::LG, space::LG);
-            for item in shown {
-                show_tile(ui, cx, st, item, &tile);
+        for group in &groups {
+            let open = searching || !st.library_collapsed.contains(&group.section.id);
+            let header = section_header(ui, cx, st, group, open);
+            if newest.as_deref() == Some(group.section.id.as_str()) {
+                ui.scroll_to_rect(header, Some(Align::TOP));
+                ui.ctx().request_repaint();
+            }
+            if open {
+                ui.horizontal_wrapped(|ui| {
+                    ui.spacing_mut().item_spacing = vec2(space::LG, space::LG);
+                    for item in &group.items {
+                        show_tile(ui, cx, st, item, &tile);
+                    }
+                });
+            }
+            ui.add_space(space::SM);
+        }
+    });
+}
+
+// ---- the header of a section ----
+
+/// Folds or unfolds a section.
+fn toggle_section(st: &mut UiState, section: &str) {
+    if !st.library_collapsed.remove(section) {
+        st.library_collapsed.insert(section.to_owned());
+    }
+}
+
+/// Paints one line of text at `at` (its left, vertically centred on `centre_y`), cut with an ellipsis at
+/// `max_width`. Returns its width.
+fn paint_line(painter: &Painter, text: &str, size: TextSize, colour: Color32, at: (f32, f32), max_width: f32) -> f32 {
+    let mut job = egui::text::LayoutJob::single_section(text.to_owned(), egui::TextFormat::simple(size.font(), colour));
+    job.wrap = egui::text::TextWrapping {
+        max_width: max_width.max(0.0),
+        max_rows: 1,
+        break_anywhere: true,
+        overflow_character: Some('…'),
+    };
+    let galley = painter.layout_job(job);
+    let width = galley.size().x;
+    painter.galley(pos2(at.0, at.1 - galley.size().y / 2.0), galley, colour);
+    width
+}
+
+/// The header of a section: the chevron, the name, how many items it holds, and at the right the buttons that
+/// rename and remove it. The whole row folds the section; a right click opens the menu. Returns its rectangle.
+fn section_header(ui: &mut Ui, cx: &mut Cx<'_>, st: &mut UiState, group: &Group<'_>, open: bool) -> Rect {
+    let pal = cx.pal;
+    let section = group.section;
+    let height = cx.layout.control(Control::Small);
+    let (rect, resp) = ui.allocate_exact_size(vec2(ui.available_width(), height), Sense::click());
+    let verb = if open { "Collapse" } else { "Expand" };
+    let label = format!("{verb} {}", section.name);
+    resp.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, label.as_str()));
+    // The buttons sit on the right; the text gets what they leave.
+    let side = height - 4.0;
+    let buttons = if section.mine { 1.0 } else { 2.0 };
+    let tools = buttons * side + (buttons - 1.0) * 2.0 + space::SM;
+    if ui.is_rect_visible(rect) {
+        let painter = ui.painter();
+        if resp.hovered() {
+            painter.rect_filled(rect, theme::BUTTON_RADIUS, pal.hover);
+        }
+        let icon = if open { Icon::ChevronDown } else { Icon::ChevronRight };
+        let arrow = Rect::from_center_size(pos2(rect.left() + space::LG + 8.0, rect.center().y), vec2(16.0, 16.0));
+        crate::icons::paint(painter, arrow, icon, pal.muted);
+        let text_left = arrow.right() + space::MD;
+        let room = rect.right() - tools - text_left;
+        let name = if section.name.is_empty() { "Untitled" } else { section.name.as_str() };
+        let counts = count_text(group.items.len(), section.items);
+        let count_width = TextSize::Caption.font().size * counts.chars().count() as f32 * 0.55;
+        let name_width = paint_line(
+            painter,
+            name,
+            TextSize::Label,
+            pal.text,
+            (text_left, rect.center().y),
+            room - count_width - space::LG,
+        );
+        let count_at = text_left + name_width + space::LG;
+        paint_line(
+            painter,
+            &counts,
+            TextSize::Caption,
+            pal.muted,
+            (count_at, rect.center().y),
+            rect.right() - tools - count_at,
+        );
+    }
+    if resp.clicked() {
+        toggle_section(st, &section.id);
+    }
+    if resp.secondary_clicked() {
+        let at = resp.interact_pointer_pos().unwrap_or_else(|| resp.rect.center());
+        st.close_overlays();
+        st.library_menu = Some(LibraryMenu { target: LibraryTarget::Section(section.id.clone()), screen: at });
+    }
+    // Over the row and not in the layout: a child of the row's own rectangle allocates nothing in the scroll area.
+    let area = Rect::from_min_max(
+        pos2(rect.right() - tools, rect.top() + 2.0),
+        pos2(rect.right() - space::SM, rect.bottom() - 2.0),
+    );
+    let mut tools_ui = ui.new_child(
+        UiBuilder::new()
+            .id_salt(("section_tools", &section.id))
+            .max_rect(area)
+            .layout(Flow::right_to_left(Align::Center)),
+    );
+    tools_ui.spacing_mut().item_spacing = vec2(2.0, 0.0);
+    if cx.local_button(&mut tools_ui, Icon::Delete, side, &format!("Remove section {}", section.name), false).clicked()
+    {
+        st.close_overlays();
+        st.library_remove = Some(section.id.clone());
+    }
+    if !section.mine && rename_button(&mut tools_ui, cx, side, &format!("Rename section {}", section.name)) {
+        st.open_rename(RenameTarget::LibrarySection(section.id.clone()), section.name.clone());
+    }
+    rect
+}
+
+/// The small button with "Aa" on it. True when it was clicked.
+fn rename_button(ui: &mut Ui, cx: &Cx<'_>, side: f32, label: &str) -> bool {
+    let (rect, rename) = ui.allocate_exact_size(vec2(side, side), Sense::click());
+    let look =
+        Look { hovered: rename.hovered(), pressed: rename.is_pointer_button_down_on(), enabled: true, selected: false };
+    paint_button_bg(ui.painter(), rect, look, &cx.pal, false);
+    ui.painter().text(rect.center(), Align2::CENTER_CENTER, "Aa", TextSize::Caption.font(), cx.pal.text);
+    rename.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, label));
+    rename.on_hover_text("Rename").clicked()
+}
+
+/// Asks before a section is removed: its items go with it, and the library has no undo.
+fn remove_section_dialog(ctx: &Context, cx: &mut Cx<'_>, st: &mut UiState) {
+    let Some(id) = st.library_remove.clone() else { return };
+    let Some(section) = cx.model.library_sections.iter().find(|s| s.id == id) else {
+        st.library_remove = None;
+        return;
+    };
+    let pal = cx.pal;
+    let items = if section.items == 1 { "1 item".to_owned() } else { format!("{} items", section.items) };
+    let message = format!("Remove “{}” and its {items} from the library? This cannot be undone.", section.name);
+    let title = "Remove section";
+    show_modal(ctx, cx, Modal::new(Id::unique("library_remove_dialog")), title, 380.0, &Close::Overlays, |ui, cx| {
+        ui.label(TextSize::Body.rich(message).color(pal.text));
+        ui.add_space(14.0);
+        ui.horizontal(|ui| {
+            if plain_button(ui, &pal, "Cancel", false).clicked() {
+                cx.verb(crate::action::Verb::CloseOverlays);
+            }
+            let remove = Ctl::new("library.remove_section").args(remove_section_args(&id)).label("Remove the section");
+            if cx.text_button(ui, &remove, "Remove", true).clicked() {
+                cx.verb(crate::action::Verb::CloseOverlays);
             }
         });
     });
@@ -490,7 +681,7 @@ fn show_tile(ui: &mut Ui, cx: &mut Cx<'_>, st: &mut UiState, item: &LibraryItem,
     if resp.secondary_clicked() {
         let at = resp.interact_pointer_pos().unwrap_or_else(|| resp.rect.center());
         st.close_overlays();
-        st.library_menu = Some(LibraryMenu { item: item.id.clone(), screen: at });
+        st.library_menu = Some(LibraryMenu { target: LibraryTarget::Item(item.id.clone()), screen: at });
     }
     if resp.dragged() {
         ui.ctx().set_cursor_icon(CursorIcon::Grabbing);
@@ -533,7 +724,9 @@ fn paint_drag(ctx: &Context, st: &mut UiState, model: &Model, item: &LibraryItem
     paint_picture(&painter, &mut st.library_textures, pal, item, &picture, &place);
 }
 
-/// Rename and remove, in the top right corner of a tile.
+/// Rename and remove, in the top right corner of a tile. They are drawn over the tile in a child `Ui` that is
+/// not allocated in the parent: the tiles wrap, and a rectangle that the parent has to place would move the tiles
+/// that follow it.
 fn corner_buttons(ui: &mut Ui, cx: &mut Cx<'_>, st: &mut UiState, item: &LibraryItem, box_rect: Rect) {
     let side = cx.layout.small_side() - 6.0;
     let name = display_name(item);
@@ -541,24 +734,15 @@ fn corner_buttons(ui: &mut Ui, cx: &mut Cx<'_>, st: &mut UiState, item: &Library
         pos2(box_rect.right() - 2.0 * side - 8.0, box_rect.top() + 2.0),
         box_rect.right_top() + vec2(-2.0, 2.0 + side),
     );
-    ui.scope_builder(UiBuilder::new().max_rect(area).layout(Flow::right_to_left(Align::Min)), |ui| {
-        ui.spacing_mut().item_spacing = vec2(2.0, 0.0);
-        let remove = Ctl::new("library.remove").args(remove_args(&item.id)).label(format!("Remove {name}"));
-        cx.icon_button(ui, &remove, Icon::Delete, side);
-        let (rect, rename) = ui.allocate_exact_size(vec2(side, side), Sense::click());
-        let look = Look {
-            hovered: rename.hovered(),
-            pressed: rename.is_pointer_button_down_on(),
-            enabled: true,
-            selected: false,
-        };
-        paint_button_bg(ui.painter(), rect, look, &cx.pal, false);
-        ui.painter().text(rect.center(), Align2::CENTER_CENTER, "Aa", TextSize::Caption.font(), cx.pal.text);
-        rename.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, format!("Rename {name}")));
-        if rename.on_hover_text("Rename").clicked() {
-            st.open_rename(RenameTarget::LibraryItem(item.id.clone()), item.name.clone());
-        }
-    });
+    let mut corner = ui.new_child(
+        UiBuilder::new().id_salt(("corner", &item.id)).max_rect(area).layout(Flow::right_to_left(Align::Min)),
+    );
+    corner.spacing_mut().item_spacing = vec2(2.0, 0.0);
+    let remove = Ctl::new("library.remove").args(remove_args(&item.id)).label(format!("Remove {name}"));
+    cx.icon_button(&mut corner, &remove, Icon::Delete, side);
+    if rename_button(&mut corner, cx, side, &format!("Rename {name}")) {
+        st.open_rename(RenameTarget::LibraryItem(item.id.clone()), item.name.clone());
+    }
 }
 
 /// The tooltip of a tile: the larger picture (the tile's own, enlarged, until it arrives), the name, the count.
@@ -583,20 +767,53 @@ fn tooltip(ui: &mut Ui, model: &Model, st: &mut UiState, item: &LibraryItem, pal
 
 // ---- the menu of a tile ----
 
-/// Draws the right-click menu of a tile, when one is open: the same actions as the tile's click and corner buttons.
+/// Draws the right-click menu of a tile or a section header, when one is open: the same actions as the click and
+/// the buttons.
 fn library_menu(ctx: &Context, cx: &mut Cx<'_>, st: &mut UiState) {
     let Some(open) = st.library_menu.clone() else { return };
-    let Some(item) = cx.model.library.iter().find(|i| i.id == open.item) else {
-        st.library_menu = None;
-        return;
+    let model = cx.model;
+    let (label, key) = match &open.target {
+        LibraryTarget::Item(_) => ("Library item menu", "library_menu"),
+        LibraryTarget::Section(_) => ("Library section menu", "library_section_menu"),
     };
-    let spec =
-        Popup { key: Id::unique("library_menu"), label: "Library item menu", pivot: Align2::LEFT_TOP, at: open.screen };
-    let result = cx.with_origin(Origin::ContextMenu, |cx| menu_kit::popup(ctx, cx, &spec, |m| tile_rows(m, st, item)));
+    let spec = Popup { key: Id::unique(key), label, pivot: Align2::LEFT_TOP, at: open.screen };
+    let result = match &open.target {
+        LibraryTarget::Item(id) => {
+            let Some(item) = model.library.iter().find(|i| &i.id == id) else {
+                st.library_menu = None;
+                return;
+            };
+            cx.with_origin(Origin::ContextMenu, |cx| menu_kit::popup(ctx, cx, &spec, |m| tile_rows(m, st, item)))
+        }
+        LibraryTarget::Section(id) => {
+            let Some(section) = model.library_sections.iter().find(|s| &s.id == id) else {
+                st.library_menu = None;
+                return;
+            };
+            cx.with_origin(Origin::ContextMenu, |cx| menu_kit::popup(ctx, cx, &spec, |m| section_rows(m, st, section)))
+        }
+    };
     if result.picked.any() {
         st.library_menu = None;
     } else if result.outside {
         cx.verb(crate::action::Verb::CloseOverlays);
+    }
+}
+
+/// The rows of the menu of a section header.
+fn section_rows(m: &mut Menu<'_, '_, '_>, st: &mut UiState, section: &LibrarySection) {
+    let folded = st.library_collapsed.contains(&section.id);
+    let (text, icon) = if folded { ("Expand", Icon::ChevronDown) } else { ("Collapse", Icon::ChevronRight) };
+    if m.local(text, Row::new().icon(icon)).clicked() {
+        toggle_section(st, &section.id);
+    }
+    if !section.mine && m.local("Rename", Row::new().icon(Icon::Text).dialog()).clicked() {
+        st.open_rename(RenameTarget::LibrarySection(section.id.clone()), section.name.clone());
+    }
+    m.separator();
+    if m.local("Remove section", Row::new().icon(Icon::Delete).dialog()).clicked() {
+        st.close_overlays();
+        st.library_remove = Some(section.id.clone());
     }
 }
 

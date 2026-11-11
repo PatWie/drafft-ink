@@ -215,6 +215,8 @@ pub enum RenameTarget {
     Tab(String),
     /// A library item, by its id: `library.rename`.
     LibraryItem(String),
+    /// A section of the library, by its id: `library.rename_section`.
+    LibrarySection(String),
     /// A frame element, by its id: `frame.rename`.
     Frame(String),
 }
@@ -355,11 +357,20 @@ pub struct TabMenu {
     pub screen: egui::Pos2,
 }
 
-/// The context menu of a tile of the library drawer.
+/// What a right click in the library drawer was on.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum LibraryTarget {
+    /// A tile: the library item id.
+    Item(String),
+    /// A section header: the section id.
+    Section(String),
+}
+
+/// The context menu of a tile or a section header of the library drawer.
 #[derive(Debug, Clone, PartialEq)]
 pub struct LibraryMenu {
-    /// The library item id.
-    pub item: String,
+    /// What was clicked.
+    pub target: LibraryTarget,
     /// Where the right click was, in screen points.
     pub screen: egui::Pos2,
 }
@@ -457,7 +468,7 @@ pub struct UiState {
     pub library_name: String,
     /// The search field of the library drawer: only the items whose name has this text are shown.
     pub library_filter: String,
-    /// The height the person dragged the library drawer to, in points. `None`: a quarter of the window. The app
+    /// The height the person dragged the library drawer to, in points. `None`: 30 % of the window. The app
     /// that wants to keep it between runs reads and writes this field, like [`UiState::layout`].
     pub library_height: Option<f32>,
     /// The items whose tiles the drawer drew this frame (`Model::read_thumbnails` draws those pictures first).
@@ -466,6 +477,13 @@ pub struct UiState {
     pub(crate) library_hover: Option<String>,
     /// The pictures of the items as egui textures.
     pub(crate) library_textures: TextureCache,
+    /// The sections the person folded in the drawer, by id. A search shows its matches whatever is folded.
+    pub library_collapsed: HashSet<String>,
+    /// The sections the drawer showed at its last frame, to tell a section that is new (an import) and bring it into
+    /// view. `None` while the drawer is closed or has not drawn yet.
+    pub(crate) library_known: Option<HashSet<String>>,
+    /// The section the person is asked to confirm the removal of (`library.remove_section`), by id.
+    pub library_remove: Option<String>,
     /// The Tab convert popup, when open.
     pub convert_popup: Option<ConvertPopup>,
     /// The context menu of a tab, when open.
@@ -526,6 +544,7 @@ impl UiState {
             || self.recent_open
             || self.confirm.is_some()
             || self.rename.is_some()
+            || self.library_remove.is_some()
             || self.save_as.is_some()
             || self.export.is_some()
             || self.preferences_open
@@ -551,6 +570,7 @@ impl UiState {
             || self.confirm.is_some()
             || self.search_open
             || self.rename.is_some()
+            || self.library_remove.is_some()
             || self.save_as.is_some()
             || self.export.is_some()
             || self.preferences_open
@@ -575,6 +595,7 @@ impl UiState {
         self.recent_open = false;
         self.confirm = None;
         self.rename = None;
+        self.library_remove = None;
         self.save_as = None;
         self.export = None;
         self.preferences_open = false;

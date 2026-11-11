@@ -379,13 +379,13 @@ fn bar_heights(h: &H) -> [(f32, f32); 2] {
 }
 
 #[test]
-fn the_drawer_opens_at_the_bottom_with_a_quarter_of_the_window_height() {
+fn the_drawer_opens_at_the_bottom_with_30_percent_of_the_window_height() {
     let mut h = at(egui::vec2(1280.0, 800.0), with_item());
     h.run();
     let drawer = drawer_rect(&h);
     let drawn = h.ctx.memory(|m| m.area_rect(egui::Id::unique("library_panel"))).expect("the area is on screen");
     assert_eq!(drawer, drawn, "the rectangle it records is the one it drew");
-    assert!((drawer.height() - 200.0).abs() <= 1.0, "a quarter of 800 points: {drawer:?}");
+    assert!((drawer.height() - 240.0).abs() <= 1.0, "30 percent of 800 points: {drawer:?}");
     assert!(drawer.width() > 900.0 && drawer.left() >= 12.0 && drawer.right() <= 1280.0 - 12.0, "{drawer:?}");
     assert!(drawer.top() > 400.0, "in the lower half: {drawer:?}");
     // Everything it shows is inside it.
@@ -513,19 +513,21 @@ fn dragging_the_top_edge_sets_the_height_within_the_limits() {
     let from = grip(&h);
     drag(&mut h, from, from - egui::vec2(0.0, 100.0));
     let drawer = drawer_rect(&h);
-    assert!((drawer.height() - 300.0).abs() <= 1.0, "{drawer:?}");
+    assert!((drawer.height() - 340.0).abs() <= 1.0, "{drawer:?}");
     assert_eq!(drawer.bottom(), bottom, "the bottom edge stays above the bars");
     assert_eq!(h.state().state.library_height.map(f32::round), Some(drawer.height().round()), "the height is kept");
     // Far past the top of the window: seventy percent of it at most.
     let from = grip(&h);
     drag(&mut h, from, Pos2::new(from.x, 0.0));
     assert_eq!(drawer_rect(&h).height(), 560.0);
-    // Down to the bottom of the window: the least height, which still shows the header and a row of tiles.
+    // Down to the bottom of the window: the least height, which still shows the header, the header of the section
+    // and a whole row of tiles.
     let from = grip(&h);
     drag(&mut h, from, Pos2::new(from.x, 799.0));
     let drawer = drawer_rect(&h);
-    assert_eq!(drawer.height(), 170.0);
-    h.get_by_label("Insert Box");
+    assert_eq!(drawer.height(), 224.0);
+    let tile = h.get_by_label("Insert Box").rect();
+    assert!(drawer.contains_rect(tile), "{tile:?} in {drawer:?}");
 }
 
 #[test]
@@ -535,7 +537,7 @@ fn the_height_the_person_chose_comes_back_when_the_drawer_is_opened_again() {
     let from = grip(&h);
     drag(&mut h, from, from - egui::vec2(0.0, 60.0));
     let chosen = drawer_rect(&h).height();
-    assert!((chosen - 260.0).abs() <= 1.0, "{chosen}");
+    assert!((chosen - 300.0).abs() <= 1.0, "{chosen}");
     for _ in 0..2 {
         h.state_mut().state.apply_verb(Verb::ToggleLibrary, &mut Vec::new());
         h.run();
@@ -554,7 +556,7 @@ fn a_height_kept_from_a_taller_window_is_brought_inside_the_limits() {
     f.state.library_height = Some(1.0);
     let mut h = at(egui::vec2(1280.0, 800.0), f);
     h.run();
-    assert_eq!(drawer_rect(&h).height(), 170.0);
+    assert_eq!(drawer_rect(&h).height(), 224.0);
 }
 
 #[test]
@@ -986,4 +988,328 @@ fn hovering_a_tile_shows_a_larger_picture_and_the_element_count() {
         drawn(h.state(), "Box", ThumbSize::Preview, false).expect("the larger picture was drawn for the tooltip");
     assert_eq!(preview.size[0], 480);
     assert!(opaque_pixels(&preview) > opaque_pixels(&drawn(h.state(), "Box", ThumbSize::Tile, false).unwrap()));
+}
+
+// ---- import ----
+
+/// An `.excalidrawlib` file with one item per `(name, w, h)`, as `library.export` of another session writes it.
+fn library_file(items: &[(&str, f64, f64)]) -> String {
+    let mut other = Session::with_services(Fakes::new().ports(), Services::fake());
+    for (name, w, h) in items {
+        let id = add_rect(&mut other, 0.0, 0.0, *w, *h).unwrap();
+        select(&mut other, std::slice::from_ref(&id));
+        other.execute("library.add", json!({ "name": name })).unwrap();
+    }
+    let out = other.execute("library.export", json!({})).unwrap();
+    out["bytes"]["base64"].as_str().unwrap().to_owned()
+}
+
+#[test]
+fn an_imported_library_gets_real_pictures_without_any_other_interaction() {
+    let renderer = OutlineRenderer::default();
+    let mut h = app_harness(app_with(&renderer, &[("Box", 80.0, 40.0)], "light"));
+    h.run();
+    let kept = drawn(h.state(), "Box", ThumbSize::Tile, false).expect("Box is drawn");
+    // The app runs the import from its inbox, between frames and not through the shell's dispatch.
+    let file = library_file(&[("Wide", 120.0, 30.0), ("Tall", 30.0, 90.0)]);
+    let source = json!({ "base64": file, "name": "shapes.excalidrawlib" });
+    h.state_mut().session.execute_from(Origin::Ui, "library.import", json!({ "source": source })).unwrap();
+    h.run();
+    let wide = drawn(h.state(), "Wide", ThumbSize::Tile, false).expect("the imported item has a picture");
+    let tall = drawn(h.state(), "Tall", ThumbSize::Tile, false).expect("the imported item has a picture");
+    assert!(wide.size[0] > wide.size[1] && tall.size[1] > tall.size[0], "{:?} {:?}", wide.size, tall.size);
+    assert!(opaque_pixels(&wide) > 0 && opaque_pixels(&tall) > 0, "real pictures, not empty ones");
+    assert!(Arc::ptr_eq(&kept, &drawn(h.state(), "Box", ThumbSize::Tile, false).unwrap()), "Box kept its picture");
+    // The new section is brought into view, and its pictures are on the screen.
+    let drawer = h.state().shell.state.chrome.library.expect("the drawer");
+    for name in ["Wide", "Tall"] {
+        let tile = h.get_by_label(&format!("Insert {name}")).rect();
+        assert!(drawer.contains_rect(tile), "{name} at {tile:?} in {drawer:?}");
+        assert!(textured(&h).iter().any(|pic| tile.contains_rect(*pic)), "{name} shows its picture");
+    }
+    assert_eq!(renderer.asked.load(Ordering::SeqCst), 3);
+}
+
+// ---- hover ----
+
+/// The rectangle of every tile, in order.
+fn tile_rects(h: &H, names: &[&str]) -> Vec<egui::Rect> {
+    names.iter().map(|n| h.get_by_label(&format!("Insert {n}")).rect()).collect()
+}
+
+#[test]
+fn hovering_a_tile_moves_and_resizes_no_tile() {
+    let names = ["Box", "Crate", "Arrow", "Frame", "Logo", "Star"];
+    for size in [egui::vec2(1280.0, 800.0), egui::vec2(520.0, 800.0)] {
+        let mut h = at(size, with_named(&names));
+        h.run();
+        let calm = tile_rects(&h, &names);
+        // Far from every tile: the first frame with the pointer in the window changes nothing either.
+        for hovered in [0, 1, names.len() - 1] {
+            h.event(Event::PointerMoved(calm[hovered].center()));
+            h.run();
+            h.get_by_label(&format!("Rename {}", names[hovered]));
+            assert_eq!(tile_rects(&h, &names), calm, "{size:?}: hovering {} moved a tile", names[hovered]);
+        }
+        h.event(Event::PointerMoved(Pos2::new(2.0, 2.0)));
+        h.run();
+        assert_eq!(tile_rects(&h, &names), calm, "{size:?}: the pointer leaving moved a tile");
+    }
+}
+
+// ---- sections ----
+
+/// A fixture with one item of its own, "Box", and a library file "shapes.excalidrawlib" with "Wide" and "Tall"
+/// imported, with the drawer open.
+fn with_sections() -> Fixture {
+    let mut f = dialog::fixture();
+    let id = add_rect(&mut f.session, 0.0, 0.0, 80.0, 40.0).unwrap();
+    select(&mut f.session, std::slice::from_ref(&id));
+    dialog::run(&mut f, "library.add", json!({ "name": "Box" }));
+    let file = library_file(&[("Wide", 120.0, 30.0), ("Tall", 30.0, 90.0)]);
+    dialog::run(&mut f, "library.import", json!({ "source": { "base64": file, "name": "shapes.excalidrawlib" } }));
+    // Tall enough for both sections.
+    f.state.library_height = Some(480.0);
+    open(f)
+}
+
+fn section_id(f: &Fixture, name: &str) -> String {
+    f.model.library_sections.iter().find(|s| s.name == name).unwrap().id.clone()
+}
+
+fn button<'a>(h: &'a H, label: &'a str) -> egui_kittest::Node<'a> {
+    h.get_by_role_and_label(egui::accesskit::Role::Button, label)
+}
+
+#[test]
+fn the_items_are_grouped_in_sections_with_a_header_each() {
+    let f = with_sections();
+    assert_eq!(
+        f.model.library_sections.iter().map(|s| (s.name.as_str(), s.items, s.mine)).collect::<Vec<_>>(),
+        [("My items", 1, true), ("shapes", 2, false)]
+    );
+    let mut h = dialog::harness(f);
+    h.run();
+    let (mine, shapes) = (button(&h, "Collapse My items").rect(), button(&h, "Collapse shapes").rect());
+    assert!(mine.top() < shapes.top(), "the person's own items come first");
+    let (boxed, wide, tall) = (
+        h.get_by_label("Insert Box").rect(),
+        h.get_by_label("Insert Wide").rect(),
+        h.get_by_label("Insert Tall").rect(),
+    );
+    assert!(
+        mine.bottom() <= boxed.top() && boxed.bottom() <= shapes.top(),
+        "Box sits under its header: {mine:?} {boxed:?} {shapes:?}"
+    );
+    assert!(shapes.bottom() <= wide.top() && wide.top() == tall.top(), "{shapes:?} {wide:?} {tall:?}");
+    h.get_by_label("3 items");
+}
+
+#[test]
+fn a_click_on_a_header_folds_and_unfolds_its_section() {
+    let mut h = dialog::harness(with_sections());
+    h.run();
+    h.state_mut().clear();
+    button(&h, "Collapse shapes").click();
+    h.run();
+    assert!(h.state().calls().is_empty(), "folding is the UI's own");
+    assert!(h.query_by_label("Insert Wide").is_none() && h.query_by_label("Insert Tall").is_none());
+    h.get_by_label("Insert Box");
+    button(&h, "Expand shapes").click();
+    h.run();
+    h.get_by_label("Insert Wide");
+}
+
+#[test]
+fn a_folded_section_asks_for_no_pictures() {
+    let renderer = OutlineRenderer::default();
+    let mut app = app_with(&renderer, &[("Box", 80.0, 40.0)], "light");
+    let file = library_file(&[("Wide", 120.0, 30.0)]);
+    let source = json!({ "base64": file, "name": "shapes.excalidrawlib" });
+    app.session.execute("library.import", json!({ "source": source })).unwrap();
+    let id = app.session.execute("library.list", json!({})).unwrap()["sections"][1]["id"].as_str().unwrap().to_owned();
+    app.shell.state.library_collapsed.insert(id);
+    let mut h = app_harness(app);
+    h.run();
+    assert!(drawn(h.state(), "Box", ThumbSize::Tile, false).is_some());
+    assert!(
+        drawn(h.state(), "Wide", ThumbSize::Tile, false).is_none(),
+        "its tile is not drawn, so its picture is not asked for"
+    );
+    assert_eq!(renderer.asked.load(Ordering::SeqCst), 1);
+}
+
+#[test]
+fn the_search_filters_within_sections_hides_empty_ones_and_shows_matches_of_folded_ones() {
+    let mut f = with_sections();
+    f.state.library_collapsed.insert(section_id(&f, "shapes"));
+    let mut h = dialog::harness(f);
+    h.run();
+    dialog::field(&h, "Search the library").focus();
+    h.run();
+    dialog::field(&h, "Search the library").type_text("wid");
+    h.run();
+    h.get_by_label("Insert Wide");
+    assert!(h.query_by_label("Insert Tall").is_none() && h.query_by_label("Insert Box").is_none());
+    assert!(
+        h.query_by_role_and_label(egui::accesskit::Role::Button, "Collapse My items").is_none(),
+        "no match, no header"
+    );
+    assert!(h.query_by_role_and_label(egui::accesskit::Role::Button, "Expand My items").is_none());
+    h.get_by_label("1 of 3 items");
+    h.key_press_modifiers(Modifiers::COMMAND, egui::Key::A);
+    dialog::field(&h, "Search the library").type_text("zzz");
+    h.run();
+    h.get_by_label("No item has “zzz” in its name.");
+    h.key_press_modifiers(Modifiers::COMMAND, egui::Key::A);
+    h.key_press(egui::Key::Backspace);
+    h.run();
+    assert!(h.query_by_label("Insert Wide").is_none(), "folded again once the search is empty");
+    h.get_by_label("Insert Box");
+}
+
+#[test]
+fn removing_a_section_asks_first_and_then_runs_library_remove_section() {
+    let f = with_sections();
+    let id = section_id(&f, "shapes");
+    let mut h = dialog::harness(f);
+    h.run();
+    h.state_mut().clear();
+    button(&h, "Remove section shapes").click();
+    h.run();
+    assert!(h.state().calls().is_empty(), "nothing runs before the answer");
+    h.get_by_label("Remove “shapes” and its 2 items from the library? This cannot be undone.");
+    // Cancel leaves everything.
+    h.state_mut().clear();
+    button(&h, "Cancel").click();
+    h.run();
+    assert!(h.state().calls().is_empty());
+    h.state_mut().dispatch();
+    assert!(h.state().state.library_remove.is_none());
+    assert_eq!(h.state().model.library.len(), 3);
+    // Ask again and confirm.
+    button(&h, "Remove section shapes").click();
+    h.run();
+    h.state_mut().clear();
+    button(&h, "Remove the section").click();
+    h.run();
+    assert_eq!(calls(&h), vec![Call::new(Origin::Ui, "library.remove_section", json!({ "section": id }))]);
+    h.state_mut().dispatch();
+    assert!(h.state().state.library_remove.is_none(), "the dialog closes");
+    let names: Vec<_> = h.state().model.library.iter().map(|i| i.name.as_str()).collect();
+    assert_eq!(names, ["Box"]);
+    assert_eq!(h.state().model.library_sections.len(), 1);
+    h.run();
+    assert!(h.query_by_role_and_label(egui::accesskit::Role::Button, "Collapse shapes").is_none());
+}
+
+#[test]
+fn my_items_has_a_remove_button_and_no_rename_button() {
+    let mut h = dialog::harness(with_sections());
+    h.run();
+    button(&h, "Remove section My items");
+    assert!(h.query_by_label("Rename section My items").is_none());
+    button(&h, "Rename section shapes");
+}
+
+#[test]
+fn the_rename_button_of_a_section_renames_it_with_library_rename_section() {
+    let f = with_sections();
+    let id = section_id(&f, "shapes");
+    let mut h = dialog::harness(f);
+    h.run();
+    button(&h, "Rename section shapes").click();
+    h.run();
+    assert_eq!(h.state().state.rename.as_ref().map(|r| r.text.as_str()), Some("shapes"));
+    dialog::field(&h, "Name").focus();
+    h.run();
+    h.key_press_modifiers(Modifiers::COMMAND, egui::Key::A);
+    dialog::field(&h, "Name").type_text("Flowchart");
+    h.run();
+    h.state_mut().clear();
+    button(&h, "Rename").click();
+    h.run();
+    assert_eq!(
+        calls(&h),
+        vec![Call::new(Origin::Ui, "library.rename_section", json!({ "section": id, "name": "Flowchart" }))]
+    );
+    h.state_mut().dispatch();
+    h.run();
+    assert!(h.state().state.rename.is_none());
+    button(&h, "Collapse Flowchart");
+}
+
+const SECTION_MENU: &str = "Library section menu";
+
+fn section_menu_row<'a>(h: &'a H, text: &'a str) -> egui_kittest::Node<'a> {
+    h.get_by_role_and_label(egui::accesskit::Role::Menu, SECTION_MENU)
+        .query_by_role_and_label(egui::accesskit::Role::Button, text)
+        .unwrap_or_else(|| panic!("no row {text:?} in the section menu"))
+}
+
+#[test]
+fn a_right_click_on_a_header_opens_a_menu_with_collapse_rename_and_remove() {
+    let mut h = dialog::harness(with_sections());
+    h.run();
+    button(&h, "Collapse shapes").click_secondary();
+    h.run();
+    for row in ["Collapse", "Rename…", "Remove section…"] {
+        section_menu_row(&h, row);
+    }
+    assert!(h.state().calls().is_empty(), "opening the menu runs nothing");
+    section_menu_row(&h, "Collapse").click();
+    h.run();
+    assert!(h.query_by_label("Insert Wide").is_none(), "folded");
+    assert!(h.state().state.library_menu.is_none(), "choosing a row closes the menu");
+
+    button(&h, "Expand shapes").click_secondary();
+    h.run();
+    section_menu_row(&h, "Rename…").click();
+    h.run();
+    assert!(h.state().state.rename.is_some());
+
+    let mut h = dialog::harness(with_sections());
+    h.run();
+    button(&h, "Collapse shapes").click_secondary();
+    h.run();
+    section_menu_row(&h, "Remove section…").click();
+    h.run();
+    h.get_by_label("Remove “shapes” and its 2 items from the library? This cannot be undone.");
+    assert!(h.state().calls().is_empty());
+}
+
+#[test]
+fn the_menu_of_my_items_has_no_rename_row() {
+    let mut h = dialog::harness(with_sections());
+    h.run();
+    button(&h, "Collapse My items").click_secondary();
+    h.run();
+    section_menu_row(&h, "Remove section…");
+    let menu = h.get_by_role_and_label(egui::accesskit::Role::Menu, SECTION_MENU);
+    assert!(menu.query_by_role_and_label(egui::accesskit::Role::Button, "Rename…").is_none());
+}
+
+#[test]
+fn the_headers_and_their_buttons_fit_a_narrow_drawer_with_touch_sized_targets() {
+    let mut h = at(egui::vec2(400.0, 800.0), with_sections());
+    h.run();
+    let drawer = drawer_rect(&h);
+    for label in ["Collapse My items", "Collapse shapes", "Remove section shapes", "Rename section shapes"] {
+        let r = h.get_all_by_label(label).map(|n| n.rect()).find(|r| drawer.contains_rect(*r));
+        assert!(r.is_some(), "{label} inside {drawer:?}");
+    }
+    assert!(h.get_by_label("Remove section shapes").rect().height() >= 34.0, "a touch target");
+}
+
+#[test]
+fn a_section_the_person_folded_stays_folded_when_the_library_changes() {
+    let mut f = with_sections();
+    f.state.library_collapsed.insert(section_id(&f, "shapes"));
+    let mut h = dialog::harness(f);
+    h.run();
+    let id = h.state().model.library[0].id.clone();
+    dialog::run(h.state_mut(), "library.rename", json!({ "item": id, "name": "Boxy" }));
+    h.run();
+    assert!(h.query_by_label("Insert Wide").is_none());
+    h.get_by_label("Insert Boxy");
 }

@@ -620,3 +620,277 @@ fn add_and_insert_work_in_one_batch() {
     assert!(out.failed.is_none(), "{:?}", out.failed);
     assert_eq!(count(&s), 4);
 }
+
+// ---- sections ----
+
+fn sections_of(list: &Value) -> Vec<(String, String, String, u64)> {
+    list["sections"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|s| {
+            let text = |k: &str| s[k].as_str().unwrap().to_owned();
+            (text("id"), text("name"), text("kind"), s["items"].as_u64().unwrap())
+        })
+        .collect()
+}
+
+fn import_named(s: &mut Session, bytes: &[u8], file: &str) -> Value {
+    run(s, "library.import", json!({"source": {"base64": b64(bytes), "name": file}}))
+}
+
+/// A session with one item of its own, "Mine", and the fixture library imported from `shapes.excalidrawlib`.
+fn with_imported() -> (Session, Fakes, String) {
+    let (mut s, f) = drawn();
+    run(&mut s, "library.add", json!({"name": "Mine"}));
+    let out = import_named(&mut s, LIB_V2, "/home/me/shapes.excalidrawlib");
+    let section = out["section"].as_str().unwrap().to_owned();
+    (s, f, section)
+}
+
+#[test]
+fn an_item_added_from_the_canvas_is_in_my_items() {
+    let (mut s, _f) = drawn();
+    let out = run(&mut s, "library.add", json!({"name": "Box"}));
+    assert_eq!(out["item"]["section"], "mine");
+    let list = run(&mut s, "library.list", json!({}));
+    assert_eq!(sections_of(&list), [("mine".into(), "My items".into(), "mine".into(), 1)]);
+    assert_eq!(list["items"][0]["section"], "mine");
+}
+
+#[test]
+fn an_empty_library_has_no_sections() {
+    let (mut s, _f) = testing::session();
+    assert!(run(&mut s, "library.list", json!({}))["sections"].as_array().unwrap().is_empty());
+}
+
+#[test]
+fn an_import_makes_a_section_named_after_the_file_and_puts_the_new_items_in_it() {
+    let (mut s, _f, section) = with_imported();
+    let list = run(&mut s, "library.list", json!({}));
+    let sections = sections_of(&list);
+    assert_eq!(sections.len(), 2, "{sections:?}");
+    assert_eq!(sections[0], ("mine".into(), "My items".into(), "mine".into(), 1));
+    let (id, name, kind, items) = &sections[1];
+    assert_eq!((id, name.as_str(), kind.as_str()), (&section, "shapes", "imported"));
+    let in_section = list["items"].as_array().unwrap().iter().filter(|i| i["section"] == section.as_str()).count();
+    assert_eq!(*items as usize, in_section);
+    assert!(in_section > 0 && list["items"][0]["section"] == "mine", "the person's item stays where it was");
+}
+
+#[test]
+fn importing_a_file_of_the_same_name_again_adds_to_its_section_and_a_file_of_duplicates_makes_none() {
+    let (mut s, _f, section) = with_imported();
+    let again = import_named(&mut s, LIB_V2, "shapes.excalidrawlib");
+    assert_eq!(again["added"], 0);
+    assert!(again.get("section").is_none(), "nothing new, so no section: {again}");
+    let more = import_named(&mut s, LIB_V1, "shapes.excalidrawlib");
+    assert_eq!(more["section"], section.as_str(), "the same file name is the same section");
+    let other = import_named(&mut s, LIB_GROUPED, "more.excalidrawlib");
+    assert_ne!(other["section"], section.as_str());
+    let names: Vec<String> = sections_of(&run(&mut s, "library.list", json!({}))).into_iter().map(|s| s.1).collect();
+    assert_eq!(names, ["My items", "shapes", "more"]);
+}
+
+#[test]
+fn a_file_without_a_usable_name_is_called_library() {
+    let (mut s, _f) = testing::session();
+    let out = run(&mut s, "library.import", json!({"source": {"base64": b64(LIB_V2)}}));
+    assert!(out["section"].is_string());
+    assert_eq!(sections_of(&run(&mut s, "library.list", json!({})))[0].1, "Library");
+}
+
+#[test]
+fn replace_leaves_only_the_section_of_the_new_file() {
+    let (mut s, _f, _old) = with_imported();
+    let args = json!({"source": {"base64": b64(LIB_V1), "name": "new.excalidrawlib"}, "mode": "replace"});
+    let out = run(&mut s, "library.import", args);
+    let sections = sections_of(&run(&mut s, "library.list", json!({})));
+    assert_eq!(sections.len(), 1, "{sections:?}");
+    assert_eq!((sections[0].0.as_str(), sections[0].1.as_str()), (out["section"].as_str().unwrap(), "new"));
+}
+
+#[test]
+fn list_can_keep_one_section_by_id_or_name() {
+    let (mut s, _f, section) = with_imported();
+    let by_id = run(&mut s, "library.list", json!({"section": section}));
+    let by_name = run(&mut s, "library.list", json!({"section": "shapes"}));
+    assert_eq!(by_id, by_name);
+    assert!(by_id["items"].as_array().unwrap().iter().all(|i| i["section"] == section.as_str()));
+    let mine = run(&mut s, "library.list", json!({"section": "My items"}));
+    assert_eq!(ids_of(&mine).len(), 1);
+    assert_eq!(sections_of(&mine).len(), 2, "the sections are listed whatever the filter says");
+    assert_eq!(refuse(&mut s, "library.list", json!({"section": "ghost"})).code, "no_such_section");
+}
+
+#[test]
+fn remove_section_removes_its_items_and_their_records_and_nothing_else() {
+    let (mut s, f, section) = with_imported();
+    let before = run(&mut s, "library.list", json!({}));
+    let in_section: Vec<String> = ids_of(&run(&mut s, "library.list", json!({"section": section})));
+    let own: Vec<String> = ids_of(&run(&mut s, "library.list", json!({"section": "mine"})));
+    let out = run(&mut s, "library.remove_section", json!({"section": "shapes"}));
+    assert_eq!((out["changed"].clone(), out["section"].clone()), (json!(true), json!(section)));
+    assert_eq!(out["removed"], json!(in_section));
+    for id in &in_section {
+        assert!(f.storage.bytes(Ns::Library, &item_key(id)).is_none(), "{id}");
+    }
+    let after = run(&mut s, "library.list", json!({}));
+    assert_eq!(ids_of(&after), own, "{before}");
+    assert_eq!(sections_of(&after).iter().map(|s| s.0.as_str()).collect::<Vec<_>>(), ["mine"]);
+    let index: Value = serde_json::from_slice(&f.storage.bytes(Ns::Library, INDEX_KEY).unwrap()).unwrap();
+    assert_eq!(index["sections"], json!([]));
+    let mut again = Session::with_services(f.ports(), Services::fake());
+    assert_eq!(ids_of(&run(&mut again, "library.list", json!({}))), own, "gone from storage too");
+}
+
+#[test]
+fn remove_section_by_id_and_for_my_items() {
+    let (mut s, _f, section) = with_imported();
+    let out = run(&mut s, "library.remove_section", json!({"section": "mine"}));
+    assert_eq!(out["removed"].as_array().unwrap().len(), 1);
+    assert_eq!(run(&mut s, "library.remove_section", json!({"section": "mine"}))["changed"], false, "nothing left in it");
+    run(&mut s, "library.remove_section", json!({"section": section}));
+    assert!(run(&mut s, "library.list", json!({}))["items"].as_array().unwrap().is_empty());
+}
+
+#[test]
+fn remove_section_refuses_an_unknown_or_ambiguous_section_and_a_newer_library() {
+    let (mut s, f, _section) = with_imported();
+    let r = refuse(&mut s, "library.remove_section", json!({"section": "ghost"}));
+    assert_eq!(r.code, "no_such_section");
+    assert_eq!(r.message, "There is no library section `ghost`. List sections with `library.list`.");
+    import_named(&mut s, LIB_GROUPED, "more.excalidrawlib");
+    let first = sections_of(&run(&mut s, "library.list", json!({})))[1].0.clone();
+    run(&mut s, "library.rename_section", json!({"section": "more", "name": "shapes"}));
+    assert_eq!(refuse(&mut s, "library.remove_section", json!({"section": "shapes"})).code, "bad_args");
+    run(&mut s, "library.remove_section", json!({"section": first}));
+    let mut st = f.storage.clone();
+    let mut index: Value = serde_json::from_slice(&st.bytes_of(INDEX_KEY)).unwrap();
+    index["schema"] = json!(99);
+    st.put(Ns::Library, INDEX_KEY, index.to_string().as_bytes()).unwrap();
+    let mut newer = Session::with_services(f.ports(), Services::fake());
+    assert_eq!(refuse(&mut newer, "library.remove_section", json!({"section": "mine"})).code, "library_newer");
+    assert_eq!(refuse(&mut newer, "library.rename_section", json!({"section": "shapes", "name": "x"})).code, "library_newer");
+}
+
+#[test]
+fn removing_the_last_item_of_a_section_takes_the_section_along() {
+    let (mut s, _f, section) = with_imported();
+    let items = ids_of(&run(&mut s, "library.list", json!({"section": section})));
+    run(&mut s, "library.remove", json!({"items": items}));
+    let sections = sections_of(&run(&mut s, "library.list", json!({})));
+    assert_eq!(sections.iter().map(|s| s.0.as_str()).collect::<Vec<_>>(), ["mine"]);
+}
+
+#[test]
+fn rename_section_changes_the_name_and_keeps_the_items() {
+    let (mut s, f, section) = with_imported();
+    let out = run(&mut s, "library.rename_section", json!({"section": "shapes", "name": "  Flowchart  "}));
+    assert_eq!(out["changed"], true);
+    assert_eq!((out["section"]["id"].clone(), out["section"]["name"].clone()), (json!(section), json!("Flowchart")));
+    assert_eq!(run(&mut s, "library.rename_section", json!({"section": section, "name": "Flowchart"}))["changed"], false);
+    let mut again = Session::with_services(f.ports(), Services::fake());
+    let sections = sections_of(&run(&mut again, "library.list", json!({})));
+    assert_eq!(sections[1].1, "Flowchart");
+    assert_eq!(sections[1].3, out["section"]["items"].as_u64().unwrap());
+    // The new name finds the section.
+    assert_eq!(run(&mut s, "library.rename_section", json!({"section": "Flowchart", "name": "Shapes"}))["changed"], true);
+}
+
+#[test]
+fn rename_section_refuses_in_words_and_changes_nothing() {
+    let (mut s, _f, _section) = with_imported();
+    assert_eq!(refuse(&mut s, "library.rename_section", json!({"section": "ghost", "name": "x"})).code, "no_such_section");
+    assert_eq!(refuse(&mut s, "library.rename_section", json!({"section": "shapes", "name": " "})).code, "empty_name");
+    let r = refuse(&mut s, "library.rename_section", json!({"section": "mine", "name": "Mine"}));
+    assert_eq!(r.code, "bad_args");
+    assert!(r.message.contains("My items") && r.message.contains("Rename an imported library"), "{}", r.message);
+}
+
+#[test]
+fn sections_survive_a_new_session_over_the_same_storage() {
+    let (mut s, f, section) = with_imported();
+    let before = run(&mut s, "library.list", json!({}));
+    let mut again = Session::with_services(f.ports(), Services::fake());
+    let after = run(&mut again, "library.list", json!({}));
+    assert_eq!(sections_of(&before), sections_of(&after));
+    assert_eq!(before["items"], after["items"]);
+    assert!(sections_of(&after).iter().any(|s| s.0 == section));
+}
+
+/// Rewrites the storage of a library the way an earlier build wrote it (schema 1: no sections anywhere).
+fn as_written_by_schema_1(f: &Fakes) {
+    let mut st = f.storage.clone();
+    let mut index: Value = serde_json::from_slice(&st.bytes_of(INDEX_KEY)).unwrap();
+    index["schema"] = json!(1);
+    index.as_object_mut().unwrap().remove("sections");
+    st.put(Ns::Library, INDEX_KEY, index.to_string().as_bytes()).unwrap();
+    for id in index["order"].as_array().unwrap() {
+        let key = item_key(id.as_str().unwrap());
+        let mut item: Value = serde_json::from_slice(&st.bytes_of(&key)).unwrap();
+        item.as_object_mut().unwrap().remove("section");
+        st.put(Ns::Library, &key, item.to_string().as_bytes()).unwrap();
+    }
+}
+
+#[test]
+fn a_library_written_before_sections_reads_as_one_my_items_section_and_can_be_changed() {
+    let (mut s, f, _section) = with_imported();
+    let total = run(&mut s, "library.list", json!({}))["items"].as_array().unwrap().len();
+    as_written_by_schema_1(&f);
+    let mut old = Session::with_services(f.ports(), Services::fake());
+    let list = run(&mut old, "library.list", json!({}));
+    assert!(list["warnings"].as_array().unwrap().is_empty(), "an old library is not damaged: {list}");
+    assert_eq!(sections_of(&list), [("mine".into(), "My items".into(), "mine".into(), total as u64)]);
+    assert!(list["items"].as_array().unwrap().iter().all(|i| i["section"] == "mine"));
+    // It can be written: a new import gets its own section, and the old items stay in My items.
+    let out = import_named(&mut old, LIB_GROUPED, "extra.excalidrawlib");
+    assert!(out["added"].as_u64().unwrap() > 0);
+    let sections = sections_of(&run(&mut old, "library.list", json!({})));
+    assert_eq!(sections.len(), 2);
+    assert_eq!(sections[0].3, total as u64);
+    let index: Value = serde_json::from_slice(&f.storage.bytes_of(INDEX_KEY)).unwrap();
+    assert_eq!(index["schema"], 2);
+}
+
+#[test]
+fn items_of_a_section_the_index_has_lost_are_moved_to_my_items_and_not_dropped() {
+    let (mut s, f, _section) = with_imported();
+    let total = run(&mut s, "library.list", json!({}))["items"].as_array().unwrap().len();
+    let mut st = f.storage.clone();
+    let mut index: Value = serde_json::from_slice(&st.bytes_of(INDEX_KEY)).unwrap();
+    index["sections"] = json!([]);
+    st.put(Ns::Library, INDEX_KEY, index.to_string().as_bytes()).unwrap();
+    let mut again = Session::with_services(f.ports(), Services::fake());
+    let list = run(&mut again, "library.list", json!({}));
+    assert_eq!(list["items"].as_array().unwrap().len(), total);
+    assert_eq!(sections_of(&list).len(), 1);
+    assert!(list["warnings"][0].as_str().unwrap().contains("section that is missing"), "{list}");
+}
+
+#[test]
+fn the_revision_counts_writes_and_not_reads() {
+    let (mut s, _f) = drawn();
+    assert_eq!(s.library_revision(), 0);
+    run(&mut s, "library.list", json!({}));
+    assert_eq!(s.library_revision(), 0);
+    run(&mut s, "library.add", json!({"name": "A"}));
+    let added = s.library_revision();
+    assert!(added > 0);
+    run(&mut s, "library.list", json!({}));
+    assert_eq!(s.library_revision(), added);
+    import_named(&mut s, LIB_V2, "shapes.excalidrawlib");
+    assert!(s.library_revision() > added, "an import writes the library");
+    let imported = s.library_revision();
+    run(&mut s, "library.remove_section", json!({"section": "shapes"}));
+    assert!(s.library_revision() > imported);
+}
+
+#[test]
+fn a_library_dropped_on_the_canvas_gets_a_section_named_after_the_file() {
+    let (mut s, _f) = testing::session();
+    let item = json!({"name": "shapes.excalidrawlib", "bytes": {"base64": b64(LIB_V2)}});
+    run(&mut s, "doc.drop", json!({"items": [item]}));
+    assert_eq!(sections_of(&run(&mut s, "library.list", json!({})))[0].1, "shapes");
+}

@@ -215,6 +215,21 @@ pub struct LibraryItem {
     pub height: f64,
     /// A fingerprint of what it draws (`library.list`): a picture of the item is good while this stays the same.
     pub content: String,
+    /// The id of the section it is in (`LibrarySection::id`).
+    pub section: String,
+}
+
+/// One section of the shape library, from `library.list`: an imported library, or the person's own items.
+#[derive(Debug, Clone, PartialEq)]
+pub struct LibrarySection {
+    /// The id, which `library.remove_section` and `library.rename_section` take.
+    pub id: String,
+    /// The name shown in the header.
+    pub name: String,
+    /// The person's own items (it cannot be renamed).
+    pub mine: bool,
+    /// How many items it holds.
+    pub items: usize,
 }
 
 /// A tab as the tab bar shows it.
@@ -478,6 +493,8 @@ pub struct Model {
     pub view: ViewView,
     /// The shape library, read while [`Model::wants_library`] is set.
     pub library: Vec<LibraryItem>,
+    /// The sections of the library, the person's own first; every item is in one of them.
+    pub library_sections: Vec<LibrarySection>,
     /// Why the library could not be read (no storage), as the refusal says.
     pub library_error: Option<String>,
     /// The library panel is open, so [`Model::refresh`] reads `library.list`. Set by the shell.
@@ -527,6 +544,7 @@ impl Default for Model {
             selection: Vec::new(),
             view: ViewView::default(),
             library: Vec::new(),
+            library_sections: Vec::new(),
             library_error: None,
             wants_library: false,
             thumbnails: Thumbnails::default(),
@@ -576,6 +594,9 @@ impl Model {
         (s.tool.active.name(), s.tool.lock, s.tool.temporary.map(Tool::name)).hash(&mut h);
         format!("{:?}", s.tool.style_defaults).hash(&mut h);
         s.view_only.hash(&mut h);
+        // The library is outside the document: an import, an add or a removal changes no document revision, and
+        // the app runs some of them (a picked file, the agent bridge) without going through the shell.
+        s.library_revision().hash(&mut h);
         s.text_edit.is_some().hash(&mut h);
         s.gesture_running().hash(&mut h);
         s.settings.revision.hash(&mut h);
@@ -684,7 +705,11 @@ impl Model {
         self.selection = read.items;
         self.style = read_style(s);
         self.view = read_view(s);
-        (self.library, self.library_error) = if self.wants_library { read_library(s) } else { (Vec::new(), None) };
+        let read = if self.wants_library { read_library(s) } else { Ok(LibraryRead::default()) };
+        (self.library, self.library_sections, self.library_error) = match read {
+            Ok(LibraryRead { items, sections }) => (items, sections, None),
+            Err(why) => (Vec::new(), Vec::new(), Some(why)),
+        };
     }
 
     // ---- reading ----
@@ -917,34 +942,47 @@ fn read_view(s: &mut Session) -> ViewView {
     }
 }
 
-/// Reads the library with `library.list`. A refusal (no storage) is kept as text for the panel.
-fn read_library(s: &mut Session) -> (Vec<LibraryItem>, Option<String>) {
-    match s.query("library.list", json!({})) {
-        Err(r) => (Vec::new(), Some(r.message)),
-        Ok(out) => {
-            let items = out.get("items").and_then(Value::as_array).map(Vec::as_slice).unwrap_or_default();
-            let items = items
-                .iter()
-                .filter_map(|item| {
-                    // `bounds` is `[x, y, w, h]`.
-                    let number = |at: usize| item.pointer(&format!("/bounds/{at}")).and_then(Value::as_f64);
-                    Some(LibraryItem {
-                        id: text_of(item, "id")?.to_owned(),
-                        name: text_of(item, "name").unwrap_or_default().to_owned(),
-                        element_count: item
-                            .get("element_count")
-                            .and_then(Value::as_u64)
-                            .and_then(|n| usize::try_from(n).ok())
-                            .unwrap_or(0),
-                        width: number(2).unwrap_or(0.0),
-                        height: number(3).unwrap_or(0.0),
-                        content: text_of(item, "content").unwrap_or_default().to_owned(),
-                    })
-                })
-                .collect();
-            (items, None)
-        }
-    }
+/// What `library.list` says.
+#[derive(Default)]
+struct LibraryRead {
+    items: Vec<LibraryItem>,
+    sections: Vec<LibrarySection>,
+}
+
+/// Reads the library with `library.list`. A refusal (no storage) is returned as the text for the panel.
+fn read_library(s: &mut Session) -> Result<LibraryRead, String> {
+    let out = s.query("library.list", json!({})).map_err(|r| r.message)?;
+    let list = |key: &str| out.get(key).and_then(Value::as_array).map(Vec::as_slice).unwrap_or_default();
+    let count =
+        |v: &Value, key: &str| v.get(key).and_then(Value::as_u64).and_then(|n| usize::try_from(n).ok()).unwrap_or(0);
+    let items = list("items")
+        .iter()
+        .filter_map(|item| {
+            // `bounds` is `[x, y, w, h]`.
+            let number = |at: usize| item.pointer(&format!("/bounds/{at}")).and_then(Value::as_f64);
+            Some(LibraryItem {
+                id: text_of(item, "id")?.to_owned(),
+                name: text_of(item, "name").unwrap_or_default().to_owned(),
+                element_count: count(item, "element_count"),
+                width: number(2).unwrap_or(0.0),
+                height: number(3).unwrap_or(0.0),
+                content: text_of(item, "content").unwrap_or_default().to_owned(),
+                section: text_of(item, "section")?.to_owned(),
+            })
+        })
+        .collect();
+    let sections = list("sections")
+        .iter()
+        .filter_map(|section| {
+            Some(LibrarySection {
+                id: text_of(section, "id")?.to_owned(),
+                name: text_of(section, "name").unwrap_or_default().to_owned(),
+                mine: text_of(section, "kind") == Some("mine"),
+                items: count(section, "items"),
+            })
+        })
+        .collect();
+    Ok(LibraryRead { items, sections })
 }
 
 /// Reads the style panel's data with `style.get`: the style of the selection, or the defaults for new

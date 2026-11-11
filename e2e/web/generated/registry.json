@@ -1,5 +1,5 @@
 {
- "count": 155,
+ "count": 157,
  "families": [
   "arrange",
   "arrow",
@@ -124,7 +124,9 @@
   "library.insert",
   "library.list",
   "library.remove",
+  "library.remove_section",
   "library.rename",
+  "library.rename_section",
   "library.thumbnail",
   "perf.stats",
   "selection.all",
