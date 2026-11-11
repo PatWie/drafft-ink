@@ -1,5 +1,5 @@
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
-//! The right panel's text box controls (vertical align, line height, auto-resize), the link section, and the
+//! The ribbon's text box controls (vertical align, line height, auto-resize), the link section, and the
 //! toolbar's sticky note and lasso buttons. Each control runs the real command with the right arguments.
 
 mod common;
@@ -24,6 +24,21 @@ fn started(f: Fixture) -> H {
     let mut h = dialog::harness(f);
     h.run();
     h
+}
+
+/// Opens the menu or dropdown of the ribbon with this accessible name.
+fn open(h: &mut H, label: &str) {
+    h.get_by_label(label).click();
+    h.run();
+    // The font dropdown opens its popover by a verb.
+    h.state_mut().dispatch();
+    h.run();
+}
+
+/// Opens a menu of the ribbon and chooses a row of it, like [`press`].
+fn press_in(h: &mut H, menu: &str, label: &str) -> Call {
+    open(h, menu);
+    press(h, label)
 }
 
 /// Clicks the control, returns the one call it made and runs it.
@@ -66,7 +81,7 @@ fn free_text() -> Fixture {
 fn vertical_align_buttons_set_the_property_of_a_labelled_shape() {
     let mut h = started(labelled());
     for (label, value) in [("Middle", "middle"), ("Bottom", "bottom"), ("Top", "top")] {
-        let call = press(&mut h, label);
+        let call = press_in(&mut h, "More options", label);
         assert_eq!(call, Call::new(Origin::Ui, "style.set", json!({ "props": { "vertical_align": value } })));
         assert_eq!(style(&h, "vertical_align"), Some(json!(value)));
     }
@@ -78,10 +93,14 @@ fn vertical_align_is_not_offered_for_a_shape_without_a_label_or_for_free_text() 
     let r = add_rect(&mut f.session, 0.0, 0.0, 50.0, 50.0).unwrap();
     select(&mut f.session, std::slice::from_ref(&r));
     f.refresh();
-    let h = started(f);
+    let mut h = started(f);
+    open(&mut h, "More options");
+    h.get_by_label("Architect");
     assert!(h.query_by_label("Middle").is_none());
     let f = free_text();
-    let h = started(f);
+    let mut h = started(f);
+    open(&mut h, "More options");
+    h.get_by_label("Fixed width");
     assert!(h.query_by_label("Middle").is_none(), "free text has nothing to align in");
 }
 
@@ -90,7 +109,7 @@ fn line_height_presets_set_the_property() {
     let f = free_text();
     let mut h = started(f);
     for height in [1.5, 2.0, 1.0] {
-        let call = press(&mut h, &format!("Line height {height}"));
+        let call = press_in(&mut h, "More options", &format!("Line height {height}"));
         assert_eq!(call, Call::new(Origin::Ui, "style.set", json!({ "props": { "line_height": height } })));
         assert_eq!(style(&h, "line_height").and_then(|v| v.as_f64()), Some(height));
     }
@@ -101,15 +120,15 @@ fn line_height_is_also_offered_before_drawing_text() {
     let mut f = dialog::fixture();
     dialog::run(&mut f, "tool.set", json!({ "tool": "text" }));
     let mut h = started(f);
-    let call = press(&mut h, "Line height 1.5");
+    let call = press_in(&mut h, "More options", "Line height 1.5");
     assert_eq!(call.args, json!({ "props": { "line_height": 1.5 } }));
     assert_eq!(h.state().session.tool.defaults().to_props().line_height, Some(1.5));
 }
 
 #[test]
-fn the_font_row_offers_plex_sans_and_sets_the_family() {
+fn the_font_dropdown_offers_plex_sans_and_sets_the_family() {
     let mut h = started(free_text());
-    let call = press(&mut h, "Plex Sans");
+    let call = press_in(&mut h, "Pick the font", "IBM Plex Sans");
     assert_eq!(call, Call::new(Origin::Ui, "style.set", json!({ "props": { "font_family": "plex_sans" } })));
     assert_eq!(style(&h, "font_family"), Some(json!("plex_sans")));
 }
@@ -118,24 +137,26 @@ fn the_font_row_offers_plex_sans_and_sets_the_family() {
 fn auto_resize_buttons_run_text_set_autoresize() {
     let f = free_text();
     let mut h = started(f);
-    let call = press(&mut h, "Fixed width");
+    let call = press_in(&mut h, "More options", "Fixed width");
     assert_eq!(call, Call::new(Origin::Ui, "text.set_autoresize", json!({ "on": false })));
-    let call = press(&mut h, "Fit to text");
+    let call = press_in(&mut h, "More options", "Fit to text");
     assert_eq!(call.args, json!({ "on": true }));
 }
 
 #[test]
-fn the_box_row_is_only_for_text() {
+fn the_box_choice_is_only_for_text() {
     let mut f = dialog::fixture();
     let r = add_rect(&mut f.session, 0.0, 0.0, 50.0, 50.0).unwrap();
     select(&mut f.session, std::slice::from_ref(&r));
     f.refresh();
-    let h = started(f);
+    let mut h = started(f);
+    open(&mut h, "More options");
+    h.get_by_label("Architect");
     assert!(h.query_by_label("Fit to text").is_none());
 }
 
 #[test]
-fn the_link_section_edits_and_opens_the_link() {
+fn the_link_buttons_edit_and_open_the_link() {
     let mut f = dialog::fixture();
     let r = add_rect(&mut f.session, 0.0, 0.0, 50.0, 50.0).unwrap();
     select(&mut f.session, std::slice::from_ref(&r));
@@ -211,15 +232,15 @@ fn the_library_button_toggles_the_panel() {
 }
 
 #[test]
-fn the_arrow_tool_panel_sets_the_defaults_for_the_next_arrow_with_tool_set_arrow() {
+fn the_arrow_tool_ribbon_sets_the_defaults_for_the_next_arrow_with_tool_set_arrow() {
     let mut f = dialog::fixture();
     dialog::run(&mut f, "tool.set", json!({ "tool": "arrow" }));
     let mut h = started(f);
     let call = press(&mut h, "New arrows: Elbow");
     assert_eq!(call, Call::new(Origin::Ui, "tool.set_arrow", json!({ "arrow_type": "elbow" })));
-    let call = press(&mut h, "New arrows, End head: Bar");
+    let call = press_in(&mut h, "End head", "New arrows, End head: Bar");
     assert_eq!(call.args, json!({ "end_head": "bar" }));
-    let call = press(&mut h, "New arrows, Start head: Dot");
+    let call = press_in(&mut h, "Start head", "New arrows, Start head: Dot");
     assert_eq!(call.args, json!({ "start_head": "circle" }));
     assert_eq!(h.state().model.setting("arrow.type"), Some(&json!("elbow")));
     assert_eq!(h.state().model.setting("arrow.end_head"), Some(&json!("bar")));
@@ -276,7 +297,7 @@ fn a_part_bold_text_has_no_state_and_the_button_makes_all_of_it_bold() {
 }
 
 #[test]
-fn there_is_no_emphasis_row_without_a_text() {
+fn there_are_no_emphasis_buttons_without_a_text() {
     let mut f = dialog::fixture();
     let r = add_rect(&mut f.session, 0.0, 0.0, 50.0, 50.0).unwrap();
     select(&mut f.session, std::slice::from_ref(&r));

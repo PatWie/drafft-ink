@@ -96,14 +96,17 @@ fn top_bar_wheel_opens_the_colour_popover_by_verb_and_runs_no_command() {
 }
 
 #[test]
-fn right_panel_shows_for_a_selection_and_its_buttons_run_style_set() {
+fn the_ribbon_shows_for_a_selection_and_its_buttons_run_style_set() {
     let mut h = harness(with_two_rects());
+    h.run();
+    // Sloppiness is in the "More" menu of the ribbon.
+    h.get_by_label("More options").click();
     h.run();
     let c = click(&mut h, "Cartoonist");
     assert_eq!(c[0].args, json!({"props": {"sloppiness": "cartoonist"}}));
     let c = click(&mut h, "Dashed");
     assert_eq!(c[0].args, json!({"props": {"stroke_style": "dashed"}}));
-    let c = click(&mut h, "Round");
+    let c = click(&mut h, "Corners: Round");
     assert_eq!(c[0].args, json!({"props": {"corner_radius": 32.0}}));
     let c = click(&mut h, "Bring to front");
     assert_eq!((c[0].id.as_str(), &c[0].args), ("arrange.z_order", &json!({"op": "front"})));
@@ -115,7 +118,7 @@ fn right_panel_shows_for_a_selection_and_its_buttons_run_style_set() {
 }
 
 #[test]
-fn right_panel_of_the_arrow_tool_sets_the_type_and_heads_of_new_arrows() {
+fn the_ribbon_of_the_arrow_tool_sets_the_type_and_heads_of_new_arrows() {
     let mut f = Fixture::new();
     f.session.execute("tool.set", json!({ "tool": "arrow" })).unwrap();
     f.refresh();
@@ -123,15 +126,19 @@ fn right_panel_of_the_arrow_tool_sets_the_type_and_heads_of_new_arrows() {
     h.run();
     let c = click(&mut h, "New arrows: Elbow");
     assert_eq!((c[0].id.as_str(), &c[0].args), ("tool.set_arrow", &json!({ "arrow_type": "elbow" })));
+    h.get_by_label("End head").click();
+    h.run();
     let c = click(&mut h, "New arrows, End head: Triangle");
     assert_eq!((c[0].id.as_str(), &c[0].args), ("tool.set_arrow", &json!({ "end_head": "triangle" })));
+    h.get_by_label("Start head").click();
+    h.run();
     let c = click(&mut h, "New arrows, Start head: None");
     assert_eq!((c[0].id.as_str(), &c[0].args), ("tool.set_arrow", &json!({ "start_head": "none" })));
     assert!(h.query_by_label("Swap heads").is_none(), "the swap button is for arrows that exist");
 }
 
 #[test]
-fn right_panel_has_no_text_section_for_rectangles_and_greys_align_for_one_element() {
+fn the_ribbon_has_no_text_group_for_rectangles_and_no_align_group_for_one_element() {
     let mut f = Fixture::new();
     let a = add_rect(&mut f.session, 0.0, 0.0, 100.0, 60.0).unwrap();
     select(&mut f.session, &[a]);
@@ -139,23 +146,24 @@ fn right_panel_has_no_text_section_for_rectangles_and_greys_align_for_one_elemen
     let mut h = harness(f);
     h.run();
     assert!(h.query_by_label("Light").is_none(), "font weight is a text property");
-    // Align stays in the panel and is greyed with the engine's words: it needs two elements.
-    let reason = h.state().model.refusal_text("arrange.align").expect("align is refused for one element");
-    assert!(h.get_by_label("Align left").accesskit_node().is_disabled());
-    h.get_by_label("Align left").hover();
-    h.run();
-    h.get_by_label(&reason);
-    assert!(h.query_by_label("Group").is_some());
+    // The align group follows the engine: `arrange.align` is refused for one element, so there is none.
+    assert!(h.state().model.refusal_text("arrange.align").is_some(), "align is refused for one element");
+    assert!(h.query_by_label("Align left").is_none());
+    assert!(h.query_by_label("Align centres horizontally").is_none());
+    // Layering and the actions are there, and group is a button of its own.
+    assert!(h.query_by_label("Bring to front").is_some() && h.query_by_label("Group").is_some());
 }
 
 #[test]
-fn right_panel_is_hidden_without_selection_for_the_select_tool_and_shows_for_a_drawing_tool() {
+fn the_ribbon_is_hidden_without_selection_for_the_select_tool_and_shows_for_a_drawing_tool() {
     let mut h = harness(Fixture::new());
     h.run();
-    assert!(h.query_by_label("Sloppiness").is_none());
-    assert!(h.query_by_label("Cartoonist").is_none());
+    assert!(h.query_by_label("More options").is_none());
+    assert!(h.state().state.chrome.ribbon.is_none(), "nothing to show: the strip is all there is");
     h.state_mut().session.execute("tool.set", json!({"tool": "rectangle"})).unwrap();
     h.state_mut().refresh();
+    h.run();
+    h.get_by_label("More options").click();
     h.run();
     assert!(h.query_by_label("Cartoonist").is_some(), "drawing with the rectangle tool edits the defaults");
 }

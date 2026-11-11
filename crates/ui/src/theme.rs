@@ -25,8 +25,6 @@ pub const DIALOG_RADIUS: u8 = radius::XL;
 pub const TOOL_BUTTON: f32 = Control::Tool.points(false);
 /// Side of a small icon button.
 pub const SMALL_BUTTON: f32 = Control::Small.points(false);
-/// Width of the right panel.
-pub const RIGHT_PANEL_WIDTH: f32 = 200.0;
 
 /// The name of the egui font family used for headings and labels (GelPen).
 pub const HAND_FONT: &str = "gelpen";

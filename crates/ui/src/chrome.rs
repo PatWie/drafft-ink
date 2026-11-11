@@ -28,8 +28,9 @@ pub struct ChromeRects {
     pub tabs: Option<Rect>,
     /// The tool column.
     pub tools: Option<Rect>,
-    /// The properties panel on the right.
-    pub props: Option<Rect>,
+    /// The ribbon card under the strip: the properties of the selection or of the tool. `None` when it shows
+    /// nothing (the strip's own style row is all there is).
+    pub ribbon: Option<Rect>,
     /// The library drawer, when it is open. It is drawn after every bar and panel above, so it is the highest
     /// of the bottom surfaces: things that float above the bottom chrome sit over it.
     pub library: Option<Rect>,
@@ -41,6 +42,10 @@ impl ChromeRects {
         self.strip.map_or(screen.top(), |r| r.bottom())
     }
 
+    /// The y of the lower edge of the top chrome: the ribbon card when it is shown, else the strip.
+    pub fn below_top(&self, screen: Rect) -> f32 {
+        self.ribbon.map_or_else(|| self.below_strip(screen), |r| r.bottom())
+    }
     /// The y of the upper edge of the bottom-left bar, or of the window bottom when there is none.
     pub fn above_bottom_bar(&self, screen: Rect) -> f32 {
         self.bottom_bar.map_or(screen.bottom(), |r| r.top())

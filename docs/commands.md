@@ -996,8 +996,8 @@ Read-only commands never change any state class (`reads_only = true`). They are 
 | `doc.outline` | compact text and JSON structure (nodes, edges, groups, frames) | agent orientation after edits |
 | `doc.list` | recent and stored documents | open dialogs |
 | `tab.list` | tabs | tab bar |
-| `selection.get` | selected ids, groups, editing group, bounds | properties panel, stats panel |
-| `style.get` | common value or "mixed" per prop, applicability | properties panel |
+| `selection.get` | selected ids, groups, editing group, bounds | ribbon, stats panel |
+| `style.get` | common value or "mixed" per prop, applicability | ribbon |
 | `style.list_themes` | named style bundles | theme pickers, agents |
 | `element.query` | elements matching a filter | find by text, kind, style, region, connection |
 | `element.at` | element at a point | agents, hit-test checks |
@@ -1411,7 +1411,7 @@ Every `UiAction` variant, every keyboard binding, every pointer gesture and ever
 | Tool toolbar (12 tools) | `tool.set`; adds diamond and frame |
 | Top properties bar: stroke swatches, wheel, fill swatches, widths | `style.set`; wheel opens `ui.open_color_picker` |
 | Colour grid popover | UI verb; its picks call `style.set` or `doc.set_background`; "None" picks null |
-| Right panel sections | all `style.set`, `arrow.set_type`, `arrange.*`, `element.flip` |
+| Ribbon groups | all `style.set`, `arrow.set_type`, `arrange.*`, `element.flip` |
 | Hamburger menu rows | see §7.1 rows 5 to 20, 35, 36, 65 |
 | Bottom-left toolbar: undo, redo, grid, background, zoom, centre, fit, snap toggles | §7.1 rows 41, 42, 21, 49, 22 to 25, 54, 26 to 28 |
 | Tab bar: tabs, close, "+ Library" | `tab.switch`, `tab.close`, `library.import` open_as_tab; `tab.new` is NEW |
