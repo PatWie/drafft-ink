@@ -393,6 +393,36 @@ fn the_icon_of_a_selected_element_is_not_live() {
 }
 
 #[test]
+fn the_icon_wins_over_the_element_under_it_and_a_drag_from_it_is_a_marquee_not_a_move() {
+    let mut rig = Rig::new();
+    let a = linked_rect(&mut rig, "https://example.com/x");
+    // A second element lies under the icon (208, 92).
+    let under = rig.rect(190.0, 60.0, 60.0, 60.0);
+    rig.run("selection.clear", json!({}));
+    let out = {
+        rig.down(208.0, 92.0);
+        rig.up(208.0, 92.0)
+    };
+    assert_eq!(out.ui_request, Some(UiRequest::OpenUrl { url: "https://example.com/x".into() }));
+    assert!(rig.selected().is_empty(), "{:?}", rig.selected());
+    let before = (rig.bounds(&a), rig.bounds(&under));
+    rig.drag((208.0, 92.0), (400.0, 400.0));
+    assert_eq!((rig.bounds(&a), rig.bounds(&under)), before, "nothing moved");
+    assert_eq!(rig.selected(), vec![under.as_str().to_owned()], "the rubber band touched the element under the icon");
+}
+
+#[test]
+fn only_the_select_tool_reads_the_icon() {
+    let mut rig = Rig::new();
+    linked_rect(&mut rig, "https://example.com/x");
+    rig.run("selection.clear", json!({}));
+    rig.tool(Tool::Rectangle);
+    rig.down(208.0, 92.0);
+    let out = rig.up(208.0, 92.0);
+    assert_eq!(out.ui_request, None);
+}
+
+#[test]
 fn a_click_on_the_icon_of_an_element_link_goes_to_the_target() {
     let mut rig = Rig::new();
     let a = rig.rect(100.0, 100.0, 100.0, 100.0);
@@ -478,11 +508,11 @@ fn the_overlay_lists_the_link_icons_of_unselected_elements_in_view() {
     let far = rig.rect(5000.0, 5000.0, 50.0, 50.0);
     rig.run("element.set_link", json!({ "id": far.as_str(), "link": "https://example.com/far" }));
     rig.run("selection.clear", json!({}));
-    let icons = rig.i.overlay(&rig.s).link_icons;
+    let icons = rig.i.overlay(&rig.s).canvas.link_icons;
     assert_eq!(icons.len(), 1, "the icon out of view is left out: {icons:?}");
     assert_eq!(icons[0].element, a);
     assert!(!icons[0].to_element);
     assert!(icons[0].rect.contains(Point::new(208.0, 92.0)));
     rig.run("selection.select", json!({ "ids": [a.as_str()] }));
-    assert!(rig.i.overlay(&rig.s).link_icons.is_empty(), "a selected element shows its handles instead");
+    assert!(rig.i.overlay(&rig.s).canvas.link_icons.is_empty(), "a selected element shows its handles instead");
 }

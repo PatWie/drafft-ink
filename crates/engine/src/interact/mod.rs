@@ -402,6 +402,8 @@ impl Interaction {
 
     fn pointer_intent(&mut self, s: &mut Session, intent: Intent, now: f64, mods: Modifiers, out: &mut Outcome) {
         let tool = s.tool.effective();
+        // Only a click has a use for the link icon; a press, a drag or a menu on it is on empty space.
+        let intent = icon_as_empty_space_unless_click(intent);
         match intent {
             Intent::Press { at, target, meta } => {
                 let ev = Ev {
@@ -432,7 +434,8 @@ impl Interaction {
                 match click_route(tool) {
                     Route::Select => self.with_ctx(s, out, now, mods, |cx, m| {
                         if !link::click(cx, &ev) {
-                            m.select.click(cx, &ev);
+                            // Not an icon the machine can use: it is empty space for everything else.
+                            m.select.click(cx, &Ev { target: ev.target.without_link_icon(), ..ev });
                         }
                     }),
                     Route::Draw => self.with_ctx(s, out, now, mods, |cx, m| m.draw.click(cx, &ev)),
@@ -571,6 +574,25 @@ enum Route {
     None,
 }
 
+/// An intent with a link icon as its target, as the same intent on empty space. A click is left alone.
+fn icon_as_empty_space_unless_click(mut intent: Intent) -> Intent {
+    match &mut intent {
+        Intent::Press { target, .. }
+        | Intent::DoubleClick { target, .. }
+        | Intent::LongPress { target, .. }
+        | Intent::ContextMenu { target, .. }
+        | Intent::DragStart { target, .. }
+        | Intent::DragUpdate { target, .. }
+        | Intent::DragEnd { target, .. }
+            if matches!(target, Target::LinkIcon { .. }) =>
+        {
+            *target = Target::Empty;
+        }
+        _ => {}
+    }
+    intent
+}
+
 fn route(tool: Tool, target: &Target) -> Route {
     match tool {
         Tool::Select | Tool::Lasso => Route::Select,
@@ -578,7 +600,7 @@ fn route(tool: Tool, target: &Target) -> Route {
         // The text and math tools click to edit, but their handles and bodies move and resize like any element.
         Tool::Text | Tool::Math => match target {
             Target::Handle(_) | Target::Element { .. } => Route::Select,
-            Target::Empty | Target::None => Route::Draw,
+            Target::Empty | Target::None | Target::LinkIcon { .. } => Route::Draw,
         },
         _ => Route::Draw,
     }

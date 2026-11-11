@@ -42,9 +42,9 @@ use std::collections::HashSet;
 use std::ops::{Deref, DerefMut};
 use std::rc::Rc;
 
+use drafftink_geom::aabb;
 use drafftink_geom::kurbo::{Point, Rect, Size, Vec2};
 use drafftink_geom::lasso::Lasso;
-use drafftink_geom::{OrientedBox, aabb};
 use drafftink_scene::{ChangeSet, Element, ElementId, GroupId, SceneStore, SceneTx, StoreError, SubscriptionId};
 
 use crate::config::{CanvasConfig, PointerMode};
@@ -53,8 +53,8 @@ use crate::index::{Hit, HitOptions, MarqueeMode, SceneIndex, unit_group};
 use crate::input::{InputEvent, PointerKind};
 use crate::intent::{Cursor, Handle, Intent, Meta, Pos, Target};
 use crate::overlay::{
-    BindCandidate, HoverOutline, MarqueeOverlay, Overlay, OverlayInputs, RemoteCursor, RemoteSelection, RemoteUser,
-    SelectionBox, TransformerOverlay,
+    BindCandidate, HoverOutline, MarqueeOverlay, Overlay, OverlayInputs, RemoteUser, SelectionBox, TransformerOverlay,
+    remote_parts,
 };
 use crate::recognizer::{Picker, Recognizer};
 use crate::shape::{element_box, shape_of};
@@ -132,6 +132,7 @@ struct PickCtx<'a, S: SceneStore> {
     frame: &'a SelectionFrame,
     config: &'a CanvasConfig,
     entered: Option<&'a GroupId>,
+    selected: &'a HashSet<ElementId>,
 }
 
 impl<S: SceneStore> Picker for PickCtx<'_, S> {
@@ -148,6 +149,12 @@ impl<S: SceneStore> Picker for PickCtx<'_, S> {
         }
         let tol = if touch { self.config.hit_tolerance_touch_px } else { self.config.hit_tolerance_px };
         let world = self.viewport.screen_to_world(screen);
+        // The icon of a link lies outside its element and wins over what is under it.
+        if let Some(id) =
+            self.index.link_icon_at(self.store, world, self.viewport.zoom(), |e| self.selected.contains(&e.id))
+        {
+            return Target::LinkIcon { id };
+        }
         match self.index.hit(self.store, world, self.viewport.zoom(), &HitOptions::with_tolerance(tol)) {
             Some(hit) => {
                 let group = self
@@ -164,7 +171,7 @@ impl<S: SceneStore> Picker for PickCtx<'_, S> {
         match target {
             Target::Handle(h) => self.frame.cursor_for(h),
             Target::Element { .. } => Cursor::Move,
-            Target::Empty | Target::None => Cursor::Default,
+            Target::Empty | Target::None | Target::LinkIcon { .. } => Cursor::Default,
         }
     }
 }
@@ -178,6 +185,7 @@ macro_rules! picker {
             frame: &$s.frame,
             config: &$s.config,
             entered: $s.entered_group.as_ref(),
+            selected: &$s.selection_set,
         }
     };
 }
@@ -615,6 +623,7 @@ impl<S: SceneStore> Canvas<S> {
                 };
                 (k, None, Some(h.clone()))
             }
+            Target::LinkIcon { id } => (kind, Some(id.clone()), None),
             Target::Empty | Target::None => (kind, None, None),
         };
         if !self.dispatcher.wants(kind) {
@@ -725,28 +734,13 @@ impl<S: SceneStore> Canvas<S> {
             .filter_map(|id| self.store.get(id).filter(|e| !e.deleted))
             .filter_map(|e| shape_of(e).map(|shape| BindCandidate { target: e.id.clone(), shape }))
             .collect();
-        for u in &self.inputs.remote {
-            if let Some(pos) = u.cursor {
-                o.remote_cursors.push(RemoteCursor { user: u.id.clone(), name: u.name.clone(), color: u.color, pos });
-            }
-            if !u.selection.is_empty() {
-                let cap = cfg.max_remote_selection_boxes;
-                let boxes: Vec<OrientedBox> = u
-                    .selection
-                    .iter()
-                    .filter_map(|id| self.store.get(id))
-                    .filter(|e| !e.deleted)
-                    .take(cap)
-                    .map(element_box)
-                    .collect();
-                o.remote_selections.push(RemoteSelection {
-                    user: u.id.clone(),
-                    color: u.color,
-                    truncated: u.selection.len() > cap,
-                    boxes,
-                });
-            }
-        }
+        let remote = remote_parts(&self.store, &self.inputs.remote, cfg.max_remote_selection_boxes);
+        o.remote_cursors = remote.cursors;
+        o.remote_selections = remote.selections;
+        o.remote_trails = remote.trails;
+        o.link_icons = self.index.link_icons(&self.store, &self.viewport.visible_rect(), self.viewport.zoom(), |e| {
+            self.selection_set.contains(&e.id)
+        });
         o
     }
 

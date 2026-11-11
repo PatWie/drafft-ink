@@ -32,11 +32,12 @@ use std::cmp::Ordering;
 use drafftink_geom::kurbo::{Point, Rect};
 use drafftink_geom::lasso::{Lasso, lasso_selects};
 use drafftink_geom::select::{MarqueeMode as GeomMarquee, marquee_selects};
-use drafftink_geom::{Fill, HitOpts, Outline, RectShape, SpatialIndex, aabb};
+use drafftink_geom::{Fill, HitOpts, Outline, RectShape, SpatialIndex, aabb, link_icon};
 use drafftink_profile::{Counter, count, inc};
 use drafftink_scene::{ChangeKind, ChangeSet, Element, ElementId, ElementKind, GroupId, SceneRead};
 use serde::{Deserialize, Serialize};
 
+use crate::overlay::LinkIcon;
 use crate::shape::{element_box, hits_inside, index_bounds, shape_of, stroke_reach_width};
 
 /// A change set that touches more entries than this, and more than half the index, rebuilds in bulk.
@@ -321,6 +322,45 @@ impl SceneIndex {
         best.map(|(e, part)| Hit { id: e.id.clone(), part })
     }
 
+    /// The topmost element whose link icon is under a world point (`drafftink_geom::link_icon`). `skip` names the
+    /// elements that have no live icon (the selected ones show their handles there). The icon sits beside the
+    /// corner of the element, so the query looks a little beyond the element's bounds. Locked elements keep their
+    /// icon.
+    pub fn link_icon_at<R: SceneRead>(
+        &self,
+        scene: &R,
+        world: Point,
+        zoom: f64,
+        skip: impl Fn(&Element) -> bool,
+    ) -> Option<ElementId> {
+        inc(Counter::HitTests);
+        let reach = link_icon::MAX_ICON_DISTANCE * 2.0 + tolerance_world(link_icon::ICON_REACH_PX, zoom);
+        self.index
+            .query_point(world, reach)
+            .filter_map(|(id, _)| scene.get(id))
+            .filter(|e| e.link.is_some() && !e.deleted && !skip(e) && icon_hit(e, world, zoom))
+            .max_by(|a, b| z_cmp(a, b))
+            .map(|e| e.id.clone())
+    }
+
+    /// The link icons that are in the world rectangle `visible` (grown a little, because an icon lies beside the
+    /// corner of its element), back to front. `skip` as in [`Self::link_icon_at`].
+    pub fn link_icons<R: SceneRead>(
+        &self,
+        scene: &R,
+        visible: &Rect,
+        zoom: f64,
+        skip: impl Fn(&Element) -> bool,
+    ) -> Vec<LinkIcon> {
+        let grown = visible.inflate(link_icon::MAX_ICON_DISTANCE * 2.0, link_icon::MAX_ICON_DISTANCE * 2.0);
+        self.in_rect(scene, &grown)
+            .into_iter()
+            .filter(|e| e.link.is_some() && !skip(e))
+            .map(|e| LinkIcon::of(e, zoom))
+            .filter(|icon| icon.rect.overlaps(*visible))
+            .collect()
+    }
+
     /// Every element hit by a world point, topmost first.
     pub fn hit_all<R: SceneRead>(&self, scene: &R, world: Point, zoom: f64, opts: &HitOptions<'_>) -> Vec<Hit> {
         inc(Counter::HitTests);
@@ -409,6 +449,21 @@ impl SceneIndex {
         found.sort_by(|a, b| z_cmp(a, b));
         found.into_iter().map(|e| e.id.clone()).collect()
     }
+}
+
+/// The unrotated box of an element.
+fn frame_of(e: &Element) -> Rect {
+    let t = &e.transform;
+    Rect::new(t.x, t.y, t.x + t.w, t.y + t.h)
+}
+
+fn icon_hit(e: &Element, world: Point, zoom: f64) -> bool {
+    link_icon::hits_icon(frame_of(e), e.transform.angle, world, zoom)
+}
+
+/// The link icon of `e` in world units, and what it links to.
+pub(crate) fn icon_rect_of(e: &Element, zoom: f64) -> Rect {
+    link_icon::icon_rect(frame_of(e), e.transform.angle, zoom)
 }
 
 fn tolerance_world(tolerance_px: f64, zoom: f64) -> f64 {

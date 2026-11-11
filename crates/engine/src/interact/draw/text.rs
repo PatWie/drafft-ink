@@ -15,7 +15,7 @@ pub(super) fn click(cx: &mut Ctx<'_>, ev: &Ev<'_>) {
     let at = ev.at.world;
     match ev.target {
         // A handle belongs to the selection; the select machine has already used the press.
-        Target::Handle(_) | Target::None => {}
+        Target::Handle(_) | Target::None | Target::LinkIcon { .. } => {}
         Target::Element { id, .. } => match edit_kind(cx, id) {
             Some(kind) => edit(cx, id, kind, at),
             None => place(cx, at, None),
