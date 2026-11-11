@@ -328,20 +328,17 @@ impl RoomActor {
             }
         };
         let Some(StoredRoom { snapshot, updates }) = stored else { return Ok(()) };
-        let mut log_bytes = 0u64;
         let snapshot_len = snapshot.as_ref().map_or(0, Vec::len);
         let result = guarded(&mut self.poisoned, || {
             if let Some(s) = &snapshot {
-                self.doc.import(s).map_err(|e| e.to_string())?;
+                self.doc.import(s)?;
             }
             for u in &updates {
-                self.doc.import(u).map_err(|e| e.to_string())?;
+                self.doc.import(u)?;
             }
-            Ok::<(), String>(())
+            Ok::<(), loro::LoroError>(())
         });
-        for u in &updates {
-            log_bytes += u.len() as u64;
-        }
+        let log_bytes: u64 = updates.iter().map(|u| u.len() as u64).sum();
         match result {
             Some(Ok(())) => {}
             Some(Err(e)) => {
