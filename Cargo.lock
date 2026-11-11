@@ -1580,11 +1580,13 @@ dependencies = [
 name = "drafftink-testkit"
 version = "0.2.0"
 dependencies = [
+ "drafftink-canvas",
  "drafftink-edit",
  "drafftink-engine",
  "drafftink-geom",
  "drafftink-gpu",
  "drafftink-io",
+ "drafftink-profile",
  "drafftink-render",
  "drafftink-scene",
  "serde",

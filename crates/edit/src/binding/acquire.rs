@@ -13,6 +13,7 @@
 use drafftink_geom::aabb;
 use drafftink_geom::binding::{BASE_BINDING_GAP, max_binding_distance};
 use drafftink_geom::{HitOpts, Outline};
+use drafftink_profile::{Counter, count};
 use drafftink_scene::{BindMode, Binding, Element, ElementId, ElementKind, PathType, SceneRead, SceneTx};
 use kurbo::{Point, Vec2};
 
@@ -113,13 +114,48 @@ struct Cand<'a> {
 }
 
 /// The shape a dragged end at `p` binds to, or `None`. `skip` ids (the arrow itself, for instance) are ignored.
+///
+/// This looks at every element of the scene. With a large scene, a caller that has a spatial index asks
+/// [`find_hovered_among`] with the elements near the point.
 pub fn find_hovered<R: SceneRead>(scene: &R, p: Point, zoom: f64, skip: &[ElementId]) -> Option<Hovered> {
+    count(Counter::ElementsScanned, u64::try_from(scene.len_all()).unwrap_or(u64::MAX));
+    hovered_in(scene, scene.iter(), p, zoom, skip)
+}
+
+/// Like [`find_hovered`], looking only at the elements named in `near` (in any order; unknown and deleted ids are
+/// ignored). `near` must hold every bindable element whose box is within the binding reach of `p`
+/// ([`binding_reach`] around the point); the spatial index gives that with one query.
+pub fn find_hovered_among<R: SceneRead>(
+    scene: &R,
+    near: &[ElementId],
+    p: Point,
+    zoom: f64,
+    skip: &[ElementId],
+) -> Option<Hovered> {
+    let mut elements: Vec<&Element> = near.iter().filter_map(|id| scene.get(id)).filter(|e| !e.deleted).collect();
+    elements.sort_by(|a, b| a.index.cmp(&b.index).then_with(|| a.id.cmp(&b.id)));
+    hovered_in(scene, elements.into_iter(), p, zoom, skip)
+}
+
+/// How far from a shape's box a point can still bind to it, in world units at `zoom`. A spatial query for the
+/// candidates of [`find_hovered_among`] uses this as its tolerance.
+pub fn binding_reach(zoom: f64) -> f64 {
+    max_binding_distance(zoom) + 1.0
+}
+
+/// `elements` back to front.
+fn hovered_in<'a, R: SceneRead>(
+    scene: &R,
+    elements: impl Iterator<Item = &'a Element>,
+    p: Point,
+    zoom: f64,
+    skip: &[ElementId],
+) -> Option<Hovered> {
     if !p.x.is_finite() || !p.y.is_finite() {
         return None;
     }
     let max = max_binding_distance(zoom);
-    let near: Vec<&Element> = scene
-        .iter()
+    let near: Vec<&Element> = elements
         .filter(|e| !skip.contains(&e.id))
         .filter(|e| match resolve_element(e) {
             Some(r) => aabb::contains_point(&aabb::inflate(r.target.frame.aabb(), max + 1.0), p),
@@ -203,6 +239,20 @@ pub fn hover_candidate<R: SceneRead>(scene: &R, p: Point, elbow: bool, opts: &Bi
         return None;
     }
     let hit = find_hovered(scene, p, opts.zoom, &[])?;
+    hover_candidate_for(scene, &hit, p, elbow, opts)
+}
+
+/// [`hover_candidate`] for a shape the caller found already (with [`find_hovered`] or [`find_hovered_among`]).
+pub fn hover_candidate_for<R: SceneRead>(
+    scene: &R,
+    hit: &Hovered,
+    p: Point,
+    elbow: bool,
+    opts: &BindOpts,
+) -> Option<BindingCandidate> {
+    if opts.disabled {
+        return None;
+    }
     let r = resolve_element(scene.get(&hit.id)?)?;
     if r.target.contains(p) && !elbow {
         return None;
@@ -245,8 +295,49 @@ fn orbit_focus(
     (p, None)
 }
 
+/// Where a lookup of the shape under a point looks.
+#[derive(Clone, Copy)]
+enum Lookup<'a> {
+    /// Every element of the scene.
+    Scene,
+    /// Only these elements, which must include every bindable one within reach of the point.
+    Near(&'a [ElementId]),
+}
+
+impl Lookup<'_> {
+    fn find<R: SceneRead>(self, scene: &R, p: Point, zoom: f64, skip: &[ElementId]) -> Option<Hovered> {
+        match self {
+            Lookup::Scene => find_hovered(scene, p, zoom, skip),
+            Lookup::Near(near) => find_hovered_among(scene, near, p, zoom, skip),
+        }
+    }
+}
+
 /// What dragging `end` of `arrow` to `at` does to its bindings.
 pub fn plan_end_drag<R: SceneRead>(scene: &R, arrow: &Element, end: End, at: Point, opts: &BindOpts) -> DragPlan {
+    plan_end_drag_in(scene, Lookup::Scene, arrow, end, at, opts)
+}
+
+/// Like [`plan_end_drag`], looking for the shape under `at` among `near` only (see [`find_hovered_among`]).
+pub fn plan_end_drag_among<R: SceneRead>(
+    scene: &R,
+    near: &[ElementId],
+    arrow: &Element,
+    end: End,
+    at: Point,
+    opts: &BindOpts,
+) -> DragPlan {
+    plan_end_drag_in(scene, Lookup::Near(near), arrow, end, at, opts)
+}
+
+fn plan_end_drag_in<R: SceneRead>(
+    scene: &R,
+    lookup: Lookup<'_>,
+    arrow: &Element,
+    end: End,
+    at: Point,
+    opts: &BindOpts,
+) -> DragPlan {
     let keep = DragPlan { dragged: EndChange::Keep, other: EndChange::Keep };
     let Some(d) = arrow.linear_data() else { return keep };
     let (this_b, other_b) = match end {
@@ -260,7 +351,7 @@ pub fn plan_end_drag<R: SceneRead>(scene: &R, arrow: &Element, end: End, at: Poi
     if opts.disabled {
         return free;
     }
-    let Some(hit) = find_hovered(scene, at, opts.zoom, std::slice::from_ref(&arrow.id)) else { return free };
+    let Some(hit) = lookup.find(scene, at, opts.zoom, std::slice::from_ref(&arrow.id)) else { return free };
     let Some(r) = scene.get(&hit.id).and_then(resolve_element) else { return free };
 
     if d.path == PathType::Elbow {
@@ -325,6 +416,29 @@ pub fn drag_end<T: SceneTx>(
     at: Point,
     opts: &BindOpts,
 ) -> Result<Option<BindingCandidate>, BindingError> {
+    drag_end_in(tx, Lookup::Scene, arrow, end, at, opts)
+}
+
+/// Like [`drag_end`], looking for the shape under `at` among `near` only (see [`find_hovered_among`]).
+pub fn drag_end_among<T: SceneTx>(
+    tx: &mut T,
+    near: &[ElementId],
+    arrow: &ElementId,
+    end: End,
+    at: Point,
+    opts: &BindOpts,
+) -> Result<Option<BindingCandidate>, BindingError> {
+    drag_end_in(tx, Lookup::Near(near), arrow, end, at, opts)
+}
+
+fn drag_end_in<T: SceneTx>(
+    tx: &mut T,
+    lookup: Lookup<'_>,
+    arrow: &ElementId,
+    end: End,
+    at: Point,
+    opts: &BindOpts,
+) -> Result<Option<BindingCandidate>, BindingError> {
     if !at.x.is_finite() || !at.y.is_finite() {
         return Err(BindingError::NotFinite);
     }
@@ -334,7 +448,7 @@ pub fn drag_end<T: SceneTx>(
     if n < 2 {
         return Err(BindingError::TooFewPoints(arrow.clone()));
     }
-    let plan = plan_end_drag(tx, &el, end, at, opts);
+    let plan = plan_end_drag_in(tx, lookup, &el, end, at, opts);
 
     let mut e = el;
     let elbow = e.linear_data().is_some_and(|d| d.path == PathType::Elbow);

@@ -71,6 +71,9 @@ name_enum! {
         SyncOpsApplied => "sync_ops_applied",
         /// A redraw request was dropped by the idle gate because nothing was dirty.
         RedrawsSkipped => "redraws_skipped",
+        /// An element was visited by a pass over the whole scene (a scan, not an index lookup). An
+        /// operation whose cost must not grow with the scene reports 0 here.
+        ElementsScanned => "elements_scanned",
     }
 }
 

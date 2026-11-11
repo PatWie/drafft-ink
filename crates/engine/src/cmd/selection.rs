@@ -15,7 +15,6 @@ use drafftink_edit::group::selection::{
     ClickMode, ClickOpts, RegionMode, RegionOpts, Selection as EditSelection, SelectionError, Within, click,
     in_z_order, select_all, select_region,
 };
-use drafftink_edit::group::units::Relations;
 use drafftink_edit::layout::Direction;
 use drafftink_edit::query::{AtOpts, QueryCtx, describe_all, elements_at};
 use drafftink_edit::query_cmd::{ALL_FIELDS, RefQuery, all_matches};
@@ -23,7 +22,7 @@ use drafftink_edit::selection_cmd::{Pick, click_target, keeps_multi_selection, p
 use drafftink_edit::transform::common_bounds;
 use drafftink_geom::kurbo::Rect;
 use drafftink_geom::select::MarqueeMode;
-use drafftink_scene::{ElementId, GroupId, Kind, SceneRead};
+use drafftink_scene::{ElementId, GroupId, Kind, SceneRead, SceneStore};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
@@ -363,7 +362,7 @@ fn resolve_within(s: &Session, r: &Ref) -> Result<Within, Refusal> {
         Err(not_found) => {
             if !r.0.starts_with('@')
                 && let Ok(g) = GroupId::new(&r.0)
-                && Relations::build(s.store()).is_group(&g)
+                && s.store().derived().is_group(&g)
             {
                 return Ok(Within::Group(g));
             }

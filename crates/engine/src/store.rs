@@ -23,12 +23,16 @@
 //! within the window is folded into the previous undo step (`LoroTx::merge_with_previous` in the doc crate).
 //! The tab remembers the last coalescing step to decide; anything else that touches undo history resets it.
 
-use std::collections::BTreeMap;
+use std::cell::{Ref, RefCell};
+use std::collections::{BTreeMap, BTreeSet};
+use std::rc::Rc;
 
+use drafftink_canvas::SceneIndex;
 use drafftink_doc::{DocError, LoroStore};
+use drafftink_geom::kurbo::Point;
 use drafftink_scene::{
-    Change, ChangeKind, ChangeSet, DocMeta, Document, Element, ElementId, Fields, FileEntry, FileId, MemoryStore,
-    SceneRead, SceneStore, SceneTx, StoreError, ZIndex,
+    Change, ChangeKind, ChangeSet, DerivedIndex, DocMeta, Document, Element, ElementId, Fields, FileEntry, FileId,
+    MemoryStore, SceneRead, SceneStore, SceneTx, StoreError, ZIndex,
 };
 
 use crate::state::Observed;
@@ -163,6 +167,12 @@ impl SceneRead for DocTx<'_, '_> {
     fn z_neighbors(&self, id: &ElementId) -> (Option<ZIndex>, Option<ZIndex>) {
         self.inner.z_neighbors(id)
     }
+    fn derived_index(&self) -> Option<&DerivedIndex> {
+        self.inner.derived_index()
+    }
+    fn version_stamp(&self) -> Option<u64> {
+        self.inner.version_stamp()
+    }
 }
 
 impl SceneTx for DocTx<'_, '_> {
@@ -211,6 +221,17 @@ impl SceneTx for DocTx<'_, '_> {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct DocMark(usize);
 
+/// Ids of the elements committed to the working store since the spatial index last looked. Every commit adds its
+/// change set, so the index re-reads the touched elements instead of comparing the whole scene with what it saw.
+type TouchedFeed = Rc<RefCell<BTreeSet<ElementId>>>;
+
+/// The spatial index of the working store and the store revision it describes (`None`: not built yet).
+#[derive(Default)]
+struct IndexCache {
+    index: SceneIndex,
+    revision: Option<u64>,
+}
+
 /// One tab's document: the working store, the replicated store and the journal of working-store edits.
 pub struct TabDoc {
     work: WorkStore,
@@ -235,6 +256,10 @@ pub struct TabDoc {
     /// value is the earlier revision. [`TabDoc::same_content`] reads it, so that undoing back to the saved
     /// state does not show the document as changed.
     same_as: BTreeMap<u64, u64>,
+    /// Elements committed to the working store since the spatial index last synced.
+    touched: TouchedFeed,
+    /// The spatial index, built on first use and kept current from `touched`.
+    scene_index: RefCell<IndexCache>,
 }
 
 /// The logical revisions around one undo step.
@@ -293,25 +318,21 @@ pub struct StepMeta<'a> {
 impl TabDoc {
     /// An empty document.
     pub fn new() -> Self {
-        Self {
-            work: WorkStore::new(),
-            loro: DocStore::new(),
-            journal: Vec::new(),
-            undone_commits: 0,
-            depth: 200,
-            last_coalesce: None,
-            local_writes: 0,
-            undo_revs: Vec::new(),
-            redo_revs: Vec::new(),
-            same_as: BTreeMap::new(),
-        }
+        Self::assemble(WorkStore::new(), DocStore::new())
     }
 
     /// A tab document holding `doc`, with no undo history.
     pub fn from_document(doc: &Document) -> Result<Self, StoreError> {
-        Ok(Self {
-            work: WorkStore::from_document(doc)?,
-            loro: DocStore::from_document(doc)?,
+        Ok(Self::assemble(WorkStore::from_document(doc)?, DocStore::from_document(doc)?))
+    }
+
+    fn assemble(mut work: WorkStore, loro: DocStore) -> Self {
+        let touched = TouchedFeed::default();
+        let feed = Rc::clone(&touched);
+        work.subscribe(Box::new(move |cs| feed.borrow_mut().extend(cs.ids().cloned())));
+        Self {
+            work,
+            loro,
             journal: Vec::new(),
             undone_commits: 0,
             depth: 200,
@@ -320,7 +341,42 @@ impl TabDoc {
             undo_revs: Vec::new(),
             redo_revs: Vec::new(),
             same_as: BTreeMap::new(),
-        })
+            touched,
+            scene_index: RefCell::default(),
+        }
+    }
+
+    /// Ids of the indexed elements whose bounds are within `reach` world units of `p`, in no particular order.
+    /// It is one query of [`Self::scene_index`]; the exact rules then run on these few elements.
+    pub fn near(&self, p: Point, reach: f64) -> Vec<ElementId> {
+        drafftink_profile::inc(drafftink_profile::Counter::SpatialQueries);
+        self.scene_index().spatial().query_point(p, reach).map(|(id, _)| id.clone()).collect()
+    }
+
+    /// The spatial index of the working store (hit testing, culling, "what is near this point").
+    ///
+    /// It is built from the whole scene on first use. After that, each call re-reads only the elements committed
+    /// since the previous call (edits, gesture frames, rollbacks, undo, redo and remote updates all count), so
+    /// the cost follows what changed and not the size of the scene. Do not call it while holding the guard it
+    /// returned: the nested call would find the index borrowed and return it as it is.
+    pub fn scene_index(&self) -> Ref<'_, SceneIndex> {
+        if let Ok(mut cache) = self.scene_index.try_borrow_mut() {
+            let revision = self.work.revision();
+            if cache.revision != Some(revision) {
+                let touched = std::mem::take(&mut *self.touched.borrow_mut());
+                if cache.revision.is_none() {
+                    cache.index.rebuild(&self.work);
+                } else if !touched.is_empty() {
+                    let elements = touched
+                        .into_iter()
+                        .map(|id| Change { id, kind: ChangeKind::Updated, fields: Fields::all(), version: 0 })
+                        .collect();
+                    cache.index.apply(&self.work, &ChangeSet { revision, elements, meta: false, files: Vec::new() });
+                }
+                cache.revision = Some(revision);
+            }
+        }
+        Ref::map(self.scene_index.borrow(), |cache| &cache.index)
     }
 
     /// Read access to the working store (what commands and the renderer read).

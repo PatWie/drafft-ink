@@ -52,6 +52,16 @@ impl ScenarioReport {
         }
     }
 
+    /// A report of the work a [`crate::WorkScope`] saw, for a scenario that a test drove on the current thread.
+    /// `meta.source` says so, and `meta.build` is `debug` or `release`.
+    pub fn from_work(scenario: &str, scene_size: Option<u64>, work: &crate::WorkScope) -> Self {
+        let mut report = Self::new(scenario, scene_size, work.stats());
+        report.meta.insert("platform".into(), "native".into());
+        report.meta.insert("source".into(), "work-counter test".into());
+        report.meta.insert("build".into(), if cfg!(debug_assertions) { "debug" } else { "release" }.into());
+        report
+    }
+
     /// The key of this report in the budgets file: `pan@10k`, or `idle` without a scene size.
     pub fn key(&self) -> String {
         scenario_key(&self.scenario, self.scene_size)
@@ -77,7 +87,23 @@ impl ScenarioReport {
     pub fn to_json_pretty(&self) -> String {
         serde_json::to_string_pretty(self).unwrap_or_else(|_| "{}".to_string())
     }
+
+    /// Writes the report to `<dir>/<key>.json` when the environment variable [`PERF_OUT_ENV`] names a directory,
+    /// and does nothing otherwise. Work-counter tests call it with the numbers they measured, so that
+    /// `cargo xtask perf` can check them against `perf/budgets.json`. Returns the path written.
+    #[cfg(not(target_arch = "wasm32"))]
+    pub fn save_if_requested(&self) -> std::io::Result<Option<std::path::PathBuf>> {
+        let Some(dir) = std::env::var_os(PERF_OUT_ENV) else { return Ok(None) };
+        let dir = std::path::PathBuf::from(dir);
+        std::fs::create_dir_all(&dir)?;
+        let path = dir.join(format!("{}.json", self.key()));
+        std::fs::write(&path, self.to_json_pretty())?;
+        Ok(Some(path))
+    }
 }
+
+/// The environment variable that names the directory [`ScenarioReport::save_if_requested`] writes to.
+pub const PERF_OUT_ENV: &str = "DRAFFTINK_PERF_OUT";
 
 /// `name@size` with the size as `1k`, `10k`, `100k`, `1m` when it is round, else the number.
 pub fn scenario_key(scenario: &str, scene_size: Option<u64>) -> String {

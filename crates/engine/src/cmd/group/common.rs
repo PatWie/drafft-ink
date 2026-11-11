@@ -3,9 +3,8 @@
 //! that every structure command maps its domain errors to.
 
 use drafftink_edit::group::selection::Selection as EditSelection;
-use drafftink_edit::group::units::Relations;
 use drafftink_edit::zorder::ZOrderError;
-use drafftink_scene::{ElementId, GroupId, IdSource, StoreError};
+use drafftink_scene::{ElementId, GroupId, IdSource, SceneStore, StoreError};
 use serde_json::json;
 
 use crate::refusal::Refusal;
@@ -33,7 +32,7 @@ pub(crate) fn apply_selection(s: &mut Session, sel: EditSelection) {
 /// The editing group of the active tab, if it still is a group (a group needs two live members).
 pub(crate) fn editing_group(s: &Session) -> Option<GroupId> {
     let g = s.tab().observed.editing_group.clone()?;
-    Relations::build(s.store()).is_group(&g).then_some(g)
+    s.store().derived().is_group(&g).then_some(g)
 }
 
 /// The selected ids as a list, live elements only.

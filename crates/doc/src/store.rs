@@ -134,6 +134,31 @@ impl Core {
     fn with_doc(doc: LoroDoc, config: LoroConfig, migrations: Vec<Migration>) -> Core {
         let shared = Arc::new(Mutex::new(UndoShared::default()));
         let undo = make_manager(&doc, config.undo_depth, &shared);
+        Self::assemble(doc, undo, shared, config, migrations)
+    }
+
+    /// Like [`Core::with_doc`], but the undo manager watches a scratch document until [`Core::attach_undo`].
+    /// Loro hands every commit to an attached manager, which makes a big commit about twice as slow; a document
+    /// that is loaded in one non-undoable commit has no use for it.
+    fn with_doc_unwatched(doc: LoroDoc, config: LoroConfig, migrations: Vec<Migration>) -> Core {
+        let shared = Arc::new(Mutex::new(UndoShared::default()));
+        let undo = make_manager(&LoroDoc::new(), config.undo_depth, &shared);
+        Self::assemble(doc, undo, shared, config, migrations)
+    }
+
+    /// Makes the undo manager watch the real document, with an empty history.
+    fn attach_undo(&mut self) {
+        self.undo = make_manager(&self.doc, self.config.undo_depth, &self.shared);
+        self.marks.clear();
+    }
+
+    fn assemble(
+        doc: LoroDoc,
+        undo: UndoManager,
+        shared: Arc<Mutex<UndoShared>>,
+        config: LoroConfig,
+        migrations: Vec<Migration>,
+    ) -> Core {
         let sent = doc.oplog_vv();
         Core {
             doc,
@@ -159,10 +184,23 @@ impl Core {
 
     /// A new, empty document with the schema version written.
     pub fn create(config: LoroConfig, migrations: Vec<Migration>) -> Result<Core, DocError> {
+        Self::create_with(config, migrations, Self::with_doc)
+    }
+
+    /// Like [`Core::create`], with the undo manager not yet watching the document (see [`Core::with_doc_unwatched`]).
+    pub fn create_unwatched(config: LoroConfig, migrations: Vec<Migration>) -> Result<Core, DocError> {
+        Self::create_with(config, migrations, Self::with_doc_unwatched)
+    }
+
+    fn create_with(
+        config: LoroConfig,
+        migrations: Vec<Migration>,
+        make: fn(LoroDoc, LoroConfig, Vec<Migration>) -> Core,
+    ) -> Result<Core, DocError> {
         let doc = Self::make_doc(&config)?;
         doc.get_map(ROOT_META).insert(META_SCHEMA, i64::from(SCHEMA_VERSION))?;
         doc.commit_with(loro::CommitOptions::new().origin(&format!("{SYSTEM_ORIGIN_PREFIX}init")));
-        let mut core = Self::with_doc(doc, config, migrations);
+        let mut core = make(doc, config, migrations);
         // Nothing of a brand-new document has been sent anywhere, the first operations included.
         core.sent = VersionVector::default();
         Ok(core)
@@ -304,8 +342,14 @@ impl LoroStore {
 
     /// A store holding `doc`, loaded as one non-undoable commit. The document is validated first.
     pub fn from_document(doc: &Document) -> Result<Self, StoreError> {
-        let mut store = Self::new();
+        let config = LoroConfig::default();
+        let core = Core::create_unwatched(config.clone(), Vec::new())
+            .or_else(|_| Core::create_unwatched(LoroConfig { peer_id: None, ..config.clone() }, Vec::new()))
+            .unwrap_or_else(|_| Core::with_doc(LoroDoc::new(), config, Vec::new()));
+        let mut store = Self { view: MemoryStore::new(), core };
         load_document(&mut store, doc)?;
+        // The load is not an undo step, and Loro would not have seen it as one: start watching from here.
+        store.core.attach_undo();
         store.clear_history();
         Ok(store)
     }
@@ -589,6 +633,12 @@ impl SceneRead for LoroStore {
     }
     fn z_neighbors(&self, id: &ElementId) -> (Option<ZIndex>, Option<ZIndex>) {
         self.view.z_neighbors(id)
+    }
+    fn derived_index(&self) -> Option<&DerivedIndex> {
+        self.view.derived_index()
+    }
+    fn version_stamp(&self) -> Option<u64> {
+        self.view.version_stamp()
     }
 }
 

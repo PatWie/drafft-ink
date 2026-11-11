@@ -59,11 +59,12 @@ fn from_env(e: &AABB<[f64; 2]>) -> Rect {
 pub struct SpatialIndex<Id> {
     tree: RTree<Entry<Id>>,
     bounds: HashMap<Id, Rect>,
+    generation: u64,
 }
 
 impl<Id> Default for SpatialIndex<Id> {
     fn default() -> Self {
-        Self { tree: RTree::new(), bounds: HashMap::new() }
+        Self { tree: RTree::new(), bounds: HashMap::new(), generation: 0 }
     }
 }
 
@@ -83,12 +84,20 @@ impl<Id: Clone + Eq + Hash> SpatialIndex<Id> {
             }
         }
         let items: Vec<Entry<Id>> = bounds.iter().map(|(id, r)| Entry { id: id.clone(), env: to_env(r) }).collect();
-        Self { tree: RTree::bulk_load(items), bounds }
+        Self { tree: RTree::bulk_load(items), bounds, generation: 0 }
     }
 
     /// Replace the content with `entries` (see [`SpatialIndex::bulk_load`]).
     pub fn rebuild<I: IntoIterator<Item = (Id, Rect)>>(&mut self, entries: I) {
+        let generation = self.generation.wrapping_add(1);
         *self = Self::bulk_load(entries);
+        self.generation = generation;
+    }
+
+    /// A number that grows with every change to the content (an insert that changes bounds, a removal, a clear,
+    /// a rebuild). A cache of something computed from the index keeps it and rebuilds when it differs.
+    pub fn generation(&self) -> u64 {
+        self.generation
     }
 
     /// Number of ids in the index.
@@ -105,6 +114,7 @@ impl<Id: Clone + Eq + Hash> SpatialIndex<Id> {
     pub fn clear(&mut self) {
         self.tree = RTree::new();
         self.bounds.clear();
+        self.generation = self.generation.wrapping_add(1);
     }
 
     /// True when `id` is in the index.
@@ -132,6 +142,7 @@ impl<Id: Clone + Eq + Hash> SpatialIndex<Id> {
             self.tree.remove(&Entry { id: id.clone(), env: to_env(&old) });
         }
         self.tree.insert(Entry { id, env: to_env(&bounds) });
+        self.generation = self.generation.wrapping_add(1);
         Ok(previous)
     }
 
@@ -150,6 +161,7 @@ impl<Id: Clone + Eq + Hash> SpatialIndex<Id> {
     pub fn remove(&mut self, id: &Id) -> Option<Rect> {
         let old = self.bounds.remove(id)?;
         self.tree.remove(&Entry { id: id.clone(), env: to_env(&old) });
+        self.generation = self.generation.wrapping_add(1);
         Some(old)
     }
 

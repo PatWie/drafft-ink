@@ -16,7 +16,7 @@ use drafftink_edit::arrange::{self, FlipAxis};
 use drafftink_edit::arrow::SnapFlags;
 use drafftink_edit::element_cmd::{self, CommonBounds};
 use drafftink_edit::frame::{self, FrameError};
-use drafftink_edit::group::units::{Relations, primaries, with_companions};
+use drafftink_edit::group::units::{Reverse, primaries, with_companions};
 use drafftink_edit::lifecycle::{self, ChildPolicy, DuplicateOpts, LifecycleError};
 use drafftink_edit::transform::{self, ResizeSpec, RotateMode, TransformError, geometry};
 use drafftink_geom::guides::{SmartGuide, SmartGuideKind, detect_smart_guides, detect_smart_guides_for_point};
@@ -321,8 +321,11 @@ fn snap_candidates(s: &Session, exclude: &BTreeSet<ElementId>, zone: Option<Rect
     let (vx, vy, vw, vh) = s.view().visible();
     let viewport = Rect::new(vx, vy, vx + vw, vy + vh);
     let touches = |a: &Rect, b: &Rect| a.x0 <= b.x1 && b.x0 <= a.x1 && a.y0 <= b.y1 && b.y0 <= a.y1;
+    // Only elements that touch the viewport and the zone count, so the spatial index narrows the scene first.
+    let area = zone.map_or(viewport, |z| z.intersect(viewport).inflate(1.0, 1.0));
+    let index = s.tab().doc.scene_index();
     let mut out = Vec::new();
-    for e in s.store().iter().filter(|e| !exclude.contains(&e.id)) {
+    for e in index.in_rect(s.store(), &area).into_iter().filter(|e| !exclude.contains(&e.id)) {
         let b = geometry::world_bounds(e).inflate(1.0, 1.0);
         if !touches(&viewport, &b) || zone.as_ref().is_some_and(|z| !touches(z, &b)) {
             continue;
@@ -354,7 +357,7 @@ fn snap_move(s: &Session, moved: &[ElementId], dx: f64, dy: f64, on: SnapFlags) 
     let (mut dx, mut dy) = (dx, dy);
     if on.smart {
         let target = reference + Vec2::new(dx, dy);
-        let rel = Relations::build(s.store());
+        let rel = Reverse::of(s.store());
         let exclude: BTreeSet<ElementId> = with_companions(s.store(), &rel, moved, true).into_iter().collect();
         let zone = target.inflate(MULTI_MOVE_SNAP_RADIUS, MULTI_MOVE_SNAP_RADIUS);
         let others = snap_candidates(s, &exclude, Some(zone));
@@ -613,7 +616,7 @@ fn snap_resize(s: &Session, ids: &[ElementId], a: &ResizeArgs, on: SnapFlags) ->
     let mut guides = Vec::new();
     let (mut snapped_x, mut snapped_y) = (false, false);
     if on.smart {
-        let rel = Relations::build(s.store());
+        let rel = Reverse::of(s.store());
         let exclude: BTreeSet<ElementId> = with_companions(s.store(), &rel, &prim, true).into_iter().collect();
         let zone = Rect::from_center_size(target, (MULTI_MOVE_SNAP_RADIUS * 2.0, MULTI_MOVE_SNAP_RADIUS * 2.0));
         let others = snap_candidates(s, &exclude, Some(zone));

@@ -4,7 +4,9 @@
 use std::mem;
 
 use drafftink_canvas::Modifiers;
-use drafftink_edit::binding::{BindOpts, BindingCandidate, End, bound_end_position, find_hovered, hover_candidate};
+use drafftink_edit::binding::{
+    BindOpts, BindingCandidate, End, binding_reach, bound_end_position, find_hovered_among, hover_candidate_for,
+};
 use drafftink_edit::create;
 use drafftink_geom::guides::SmartGuide;
 use drafftink_geom::kurbo::Point;
@@ -101,8 +103,11 @@ fn hover(cx: &Ctx<'_>, p: Point, elbow: bool, opts: &BindOpts) -> Option<Hover> 
         return None;
     }
     let store = cx.s.store();
-    let found = find_hovered(store, p, opts.zoom, &[])?;
-    Some(Hover { id: found.id, candidate: hover_candidate(store, p, elbow, opts) })
+    // The spatial index narrows the scene to the shapes near the point; the rules run on those only.
+    let near = cx.world.near(cx.s, p, binding_reach(opts.zoom));
+    let found = find_hovered_among(store, &near, p, opts.zoom, &[])?;
+    let candidate = hover_candidate_for(store, &found, p, elbow, opts);
+    Some(Hover { id: found.id, candidate })
 }
 
 impl Linear {
