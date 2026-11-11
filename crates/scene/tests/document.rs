@@ -227,3 +227,23 @@ fn store_snapshot_and_json_round_trip() {
     tx.commit().unwrap();
     assert!(snapshot(&store).to_json().unwrap().contains("Edited"));
 }
+
+#[test]
+fn map_colors_reaches_the_background_strokes_fills_and_text_runs() {
+    use drafftink_scene::{Color, ElementKind, TextData, TextRun};
+    let mut doc = Document::new();
+    doc.background = Color::rgb(5, 6, 7);
+    let mut text = TextData::new("ab");
+    text.runs = vec![TextRun { start: 0, end: 1, color: Some(Color::rgb(1, 2, 3)) }];
+    let mut rect = Element::new(ElementId::new("r").unwrap(), ElementKind::Rectangle, ZIndex::first());
+    rect.style.stroke_color = Color::rgb(10, 0, 0);
+    rect.style.fill_color = Some(Color::rgb(0, 20, 0));
+    let t = Element::new(ElementId::new("t").unwrap(), ElementKind::Text(text), ZIndex::first());
+    doc.elements = vec![rect, t];
+    doc.map_colors(|c| Color::rgba(c.r.saturating_add(1), c.g, c.b, c.a));
+    assert_eq!(doc.background, Color::rgb(6, 6, 7));
+    assert_eq!(doc.elements[0].style.stroke_color, Color::rgb(11, 0, 0));
+    assert_eq!(doc.elements[0].style.fill_color, Some(Color::rgb(1, 20, 0)));
+    let ElementKind::Text(t) = &doc.elements[1].kind else { panic!("text") };
+    assert_eq!(t.runs[0].color, Some(Color::rgb(2, 2, 3)));
+}

@@ -12,7 +12,7 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 use crate::color::Color;
-use crate::element::Element;
+use crate::element::{Element, ElementKind};
 use crate::id::FileId;
 use crate::validate::{Report, validate_document};
 
@@ -196,6 +196,21 @@ fn first_error(r: &Report) -> String {
 }
 
 impl Document {
+    /// Replaces every colour the document draws with `f` of it: the background, the stroke and fill of each element
+    /// and the colours of text runs. The theme of a dark export is applied this way, on a copy.
+    pub fn map_colors(&mut self, f: impl Fn(Color) -> Color) {
+        self.background = f(self.background);
+        for e in &mut self.elements {
+            e.style.stroke_color = f(e.style.stroke_color);
+            e.style.fill_color = e.style.fill_color.map(&f);
+            if let ElementKind::Text(t) = &mut e.kind {
+                for run in &mut t.runs {
+                    run.color = run.color.map(&f);
+                }
+            }
+        }
+    }
+
     /// An empty document.
     pub fn new() -> Self {
         Self::default()
