@@ -1227,6 +1227,51 @@ fn export_svg_inline_embeds_the_scene_and_changes_nothing() {
     assert!(!String::from_utf8(unb64(&off["bytes"]["base64"])).unwrap().contains("drafftink-scene"));
 }
 
+/// An svg export of `args` over two texts (GelPen Serif and Vanilla Extract, heavy) in a session with the real typesetter.
+fn svg_of(args: Value, texts: &[(&str, &str)]) -> (String, Value) {
+    let (mut s, _f) = testing::session_typeset();
+    for (i, (family, weight)) in texts.iter().enumerate() {
+        let at = [10.0, 10.0 + 40.0 * i as f64];
+        run(&mut s, "element.create", json!({"kind": "text", "text": "hello", "at": at,
+            "style": {"font_family": family, "font_weight": weight, "stroke_color": "#102030"}}));
+    }
+    let mut a = args;
+    a["format"] = json!("svg");
+    a["scope"] = json!("all");
+    let out = run(&mut s, "doc.export", a);
+    (String::from_utf8(unb64(&out["bytes"]["base64"])).unwrap(), out)
+}
+
+#[test]
+fn export_svg_embeds_the_font_files_of_the_texts_it_draws_and_no_others() {
+    let (svg, _) = svg_of(json!({}), &[("gelpen_serif", "regular"), ("gelpen_serif", "heavy")]);
+    assert_eq!(svg.matches("@font-face{font-family:'GelPen Serif';font-weight:").count(), 2, "regular and heavy");
+    assert!(svg.contains("font-weight:400;src:url(data:font/ttf;base64,"));
+    assert!(svg.contains("font-weight:700;src:url(data:font/ttf;base64,"));
+    assert!(!svg.contains("font-family:'GelPen';"), "a family no text uses is not embedded");
+    assert!(!svg.contains("Vanilla Extract'"));
+    let (plain, _) = svg_of(json!({}), &[("vanilla_extract", "regular")]);
+    assert_eq!(plain.matches("@font-face").count(), 1);
+    assert!(plain.contains("font-family:'Vanilla Extract';font-weight:400;"));
+}
+
+#[test]
+fn export_svg_dark_uses_the_canvas_palette_and_no_longer_warns() {
+    let (light, lo) = svg_of(json!({}), &[("gelpen", "regular")]);
+    let (dark, dout) = svg_of(json!({"dark": true}), &[("gelpen", "regular")]);
+    assert_eq!(dout["warnings"], json!([]), "dark is supported for svg now");
+    assert_eq!(lo["warnings"], json!([]));
+    // The same mapping as the dark PNG: white paper becomes #121212, the ink #102030 is mapped too.
+    assert!(light.contains("fill=\"#ffffff\""), "{light}");
+    assert!(dark.contains("fill=\"#121212\""), "{dark}");
+    let ink = drafftink_scene::Color::rgb(0x10, 0x20, 0x30);
+    assert!(light.contains("fill=\"#102030\"") && !dark.contains("fill=\"#102030\""));
+    assert!(dark.contains(&format!("fill=\"{}\"", &ink.for_dark_theme().to_hex()[..7])), "{dark}");
+    // The scene inside stays as drawn, so the picture opens as the same document.
+    let scene = drafftink_io::svg::extract_scene(&dark).unwrap().unwrap();
+    assert!(scene.contains("#102030") && !scene.contains(&ink.for_dark_theme().to_hex()[..7]), "{scene}");
+}
+
 #[test]
 fn export_draws_inline_math_in_svg_and_keeps_the_source_in_excalidraw_and_json() {
     let (mut s, _f) = testing::session_typeset();

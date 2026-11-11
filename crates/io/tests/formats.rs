@@ -10,7 +10,7 @@ use drafftink_io::native::{self, Format};
 use drafftink_io::png_meta::{self, KEYWORD};
 use drafftink_io::svg::{self, FontFace, MathSvg, SvgOptions, SvgStyle, export_svg};
 use drafftink_scene::{
-    BindMode, Binding, Color, Document, Element, ElementId, ElementKind, FileEntry, FontFamily, FrameData,
+    BindMode, Binding, Color, Document, Element, ElementId, ElementKind, FileEntry, FontFamily, FontWeight, FrameData,
     FreehandData, Head, ImageData, LinearData, MathData, TextData, TextRun, Transform, ZIndex,
 };
 use kurbo::Point;
@@ -439,22 +439,69 @@ fn svg_embedded_scene_round_trips_the_whole_document() {
     assert_eq!(svg::extract_scene("<svg/>").unwrap(), None);
 }
 
+fn face(family: FontFamily, weight: FontWeight, data: &[u8]) -> FontFace {
+    FontFace { family, weight, mime: "font/ttf".into(), data: Arc::from(data) }
+}
+
 #[test]
 fn svg_fonts_are_embedded_only_when_used_and_supplied() {
     let d = sample();
-    let face = FontFace {
-        family: FontFamily::GelPenSerif,
-        mime: "font/ttf".into(),
-        data: Arc::from(vec![1u8, 2, 3].as_slice()),
-    };
-    let unused =
-        FontFace { family: FontFamily::VanillaExtract, mime: "font/ttf".into(), data: Arc::from(vec![9u8].as_slice()) };
-    let svg =
-        export_svg(&d, &SvgOptions { fonts: vec![face, unused], ..SvgOptions::default() }, &EstimateMeasure, None)
-            .unwrap();
-    assert!(svg.contains("@font-face{font-family:'GelPen Serif'"));
+    let fonts = vec![
+        face(FontFamily::GelPenSerif, FontWeight::Regular, &[1, 2, 3]),
+        face(FontFamily::VanillaExtract, FontWeight::Regular, &[9]),
+    ];
+    let svg = export_svg(&d, &SvgOptions { fonts, ..SvgOptions::default() }, &EstimateMeasure, None).unwrap();
+    assert!(svg.contains("@font-face{font-family:'GelPen Serif';font-weight:400;"), "{svg}");
+    assert!(svg.contains("base64,AQID"), "the bytes of the face");
     assert!(!svg.contains("Vanilla Extract'"), "an unused family is not embedded");
     parse(&svg);
+}
+
+#[test]
+fn svg_embeds_one_face_per_used_weight_and_reuses_the_regular_one_for_a_weight_it_lacks() {
+    let mut d = Document::new();
+    let mut keys = ZIndex::rebalance(3).unwrap().into_iter();
+    for (id, weight) in [("a", FontWeight::Light), ("b", FontWeight::Heavy), ("c", FontWeight::Heavy)] {
+        let mut t = TextData::new("hi");
+        t.font.family = FontFamily::GelPen;
+        t.font.weight = weight;
+        let e = Element::new(eid(id), ElementKind::Text(t), keys.next().unwrap()).with_bounds(0.0, 0.0, 20.0, 20.0);
+        d.elements.push(e);
+    }
+    let fonts = vec![
+        face(FontFamily::GelPen, FontWeight::Light, &[1]),
+        face(FontFamily::GelPen, FontWeight::Regular, &[2]),
+        face(FontFamily::GelPen, FontWeight::Heavy, &[3]),
+    ];
+    let svg = export_svg(&d, &SvgOptions { fonts, ..SvgOptions::default() }, &EstimateMeasure, None).unwrap();
+    assert_eq!(svg.matches("@font-face").count(), 2, "light and heavy, once each, not regular: {svg}");
+    assert!(svg.contains("font-weight:300;src:url(data:font/ttf;base64,AQ=="), "{svg}");
+    assert!(svg.contains("font-weight:700;src:url(data:font/ttf;base64,Aw=="), "{svg}");
+    // A weight with no face of its own is drawn with the family's regular face.
+    let only_regular = vec![face(FontFamily::GelPen, FontWeight::Regular, &[2])];
+    let svg =
+        export_svg(&d, &SvgOptions { fonts: only_regular, ..SvgOptions::default() }, &EstimateMeasure, None).unwrap();
+    assert_eq!(svg.matches("@font-face").count(), 2);
+    assert!(svg.contains("font-weight:700;src:url(data:font/ttf;base64,Ag=="), "{svg}");
+}
+
+#[test]
+fn svg_dark_maps_every_colour_like_the_canvas_and_leaves_the_embedded_scene_alone() {
+    let d = sample();
+    let light = export_svg(&d, &SvgOptions::default(), &EstimateMeasure, None).unwrap();
+    let dark = export_svg(&d, &SvgOptions { dark: true, ..SvgOptions::default() }, &EstimateMeasure, None).unwrap();
+    let hex = |c: Color| c.to_hex()[..7].to_owned();
+    // The background (#fafafa is not the default white), a stroke colour and a text run colour.
+    let background = d.background;
+    for c in [background, Color::rgb(10, 20, 30), Color::rgb(0, 128, 0)] {
+        assert!(light.contains(&hex(c)), "light has {c:?}");
+        assert!(dark.contains(&hex(c.for_dark_theme())), "dark has the mapped {c:?}");
+    }
+    assert!(!dark.contains("fill=\"#0a141e\""), "the light text colour is gone");
+    assert_ne!(light, dark);
+    // The scene inside is the document as it was, light colours included.
+    let scene = svg::extract_scene(&dark).unwrap().unwrap();
+    assert_eq!(scene, svg::extract_scene(&light).unwrap().unwrap());
 }
 
 #[test]
