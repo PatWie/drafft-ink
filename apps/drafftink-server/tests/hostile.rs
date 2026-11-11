@@ -196,27 +196,55 @@ async fn update_flood_is_rate_limited_then_the_connection_is_closed() {
     config.limits.max_updates_per_sec = 5;
     config.limits.max_breaches = 8;
     let server = start(config).await.expect("start");
+    // The server's bucket starts when the connection opens: 10 tokens (twice the rate), refilled at 5 per second.
+    let opened = std::time::Instant::now();
     let mut c = Client::connect(server.local_addr(), 1, "flood").await;
     c.join().await;
-    for i in 0..60 {
-        c.edit(&format!("k{i}"), text("v")).await;
-    }
+    // One update at a time, each answered (by an `Ack` or by `RateLimited`) before the next goes out. A client that
+    // keeps sending after the server decided to close would leave unread bytes in the server's socket buffer, and
+    // closing a TCP socket with unread bytes resets the connection and discards what the client has not read yet:
+    // on a loaded machine that made the number of replies the test saw depend on timing.
     let mut limited = 0;
     let mut acks = 0;
     let mut retry = None;
-    loop {
-        match c.next_within(WAIT).await {
-            Event::Msg(ServerMessage::Ack { .. }) => acks += 1,
-            Event::Msg(ServerMessage::Error { code: ErrorCode::RateLimited, retry_after_ms, .. }) => {
-                limited += 1;
-                retry = retry.or(retry_after_ms);
+    let mut closed = false;
+    for i in 0..60 {
+        c.edit(&format!("k{i}"), text("v")).await;
+        loop {
+            match c.next_within(WAIT_FOR_LOADED_MACHINE).await {
+                Event::Msg(ServerMessage::Ack { .. }) => {
+                    acks += 1;
+                    break;
+                }
+                Event::Msg(ServerMessage::Error { code: ErrorCode::RateLimited, retry_after_ms, .. }) => {
+                    limited += 1;
+                    retry = retry.or(retry_after_ms);
+                    break;
+                }
+                Event::Msg(_) => {}
+                Event::Closed => {
+                    closed = true;
+                    break;
+                }
+                Event::Timeout => panic!("update {i} was neither acknowledged nor refused"),
             }
+        }
+        if closed {
+            break;
+        }
+    }
+    // The final refusal is followed by the close.
+    while !closed {
+        match c.next_within(WAIT_FOR_LOADED_MACHINE).await {
+            Event::Closed => closed = true,
             Event::Msg(_) => {}
-            Event::Closed => break,
             Event::Timeout => panic!("not closed"),
         }
     }
-    assert!((1..=12).contains(&acks), "the burst of 2x the rate got through: {acks}");
+    // The burst of 10 always gets in. Beyond it only what the bucket refilled while the test ran (5 per second):
+    // a slow machine lets more through, so the bound follows the elapsed time.
+    let allowed = (10.0 + 5.0 * opened.elapsed().as_secs_f64()).floor() as usize;
+    assert!((10..=allowed).contains(&acks), "{acks} updates got through, allowed 10..={allowed}");
     assert!(limited >= 8, "{limited}");
     assert!(retry.is_some_and(|ms| ms > 0 && ms <= 200), "retry_after_ms tells when to try again: {retry:?}");
     server.shutdown().await;

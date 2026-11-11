@@ -183,7 +183,7 @@ fn text_math_and_frames_stay_inside_their_paint_bounds() {
 #[test]
 fn every_cardinality_marker_stays_inside_the_paint_bounds_of_a_short_arrow() {
     for i in 0..15 {
-        for angle in [0.0f64, 0.7, 1.9, 3.14, 4.5] {
+        for angle in [0.0f64, 0.7, 1.9, std::f64::consts::PI, 4.5] {
             for sw in [0.0, 2.0, 15.04388392299151] {
                 let tip = Point::new(100.0, 100.0) + kurbo::Vec2::new(angle.cos(), angle.sin()) * 17.0;
                 let mut e =

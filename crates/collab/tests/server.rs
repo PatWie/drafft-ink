@@ -145,7 +145,11 @@ fn a_client_that_does_not_read_is_told_to_resync_and_recovers() {
         ..spec(2, &url, "slow")
     });
     w.wait_until("both online", |w| w.peers.iter().all(|p| p.state() == ConnState::Online));
-    // The slow client stops pumping (a stalled UI thread). The writer sends 2200 updates of 4 KiB of random bytes.
+    // The slow client stops pumping (a stalled UI thread). The stall must stay under the protocol's idle limit
+    // (`IDLE_TIMEOUT_MS`, 50 s of wall time; the server drops a silent connection and the client reconnects instead
+    // of being told to resync).
+    // It takes about 2.5 s on an idle machine, so it survives a slowdown of about 20 times. The writer sends 2200
+    // updates of 4 KiB of random bytes.
     let mut seed = 0x9e37_79b9_7f4a_7c15u64;
     for i in 0..2200 {
         let bytes: Vec<u8> = (0..4 * 1024)
@@ -179,7 +183,10 @@ fn a_client_that_does_not_read_is_told_to_resync_and_recovers() {
         w.peers[slow].store.files().count() == 2200 && w.peers[slow].state() == ConnState::Online
     });
     let stats = w.peers[slow].client().stats();
-    assert!(stats.resync_required >= 1, "the server must say so when it drops relays: {stats:?}");
+    assert!(
+        stats.resync_required >= 1,
+        "the server must say so when it drops relays (reconnects > 0 means the stall outlasted the idle limit): {stats:?}"
+    );
     assert!(stats.sync_requests >= 1, "{stats:?}");
     assert_eq!(w.peers[slow].client().stats().reconnects, 0, "a lagging client stays connected");
     assert!(w.all_equal());

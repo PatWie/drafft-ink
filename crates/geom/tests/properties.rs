@@ -97,7 +97,7 @@ fn sweep_extremes(s: &Primitive, bounds: &Rect, lines: usize) -> (f64, f64, f64,
 /// rays reach only 114 of the 146 half-length. The bounds were right; the sampling was too coarse.
 #[test]
 fn bounds_are_tight_for_thin_long_shapes() {
-    for angle in [-4.699265394940027, 0.0, 0.01, 0.5, 1.5707963267948966, 3.0] {
+    for angle in [-4.699265394940027, 0.0, 0.01, 0.5, std::f64::consts::FRAC_PI_2, 3.0] {
         for kind in [Kind::Rect, Kind::Ellipse, Kind::Diamond] {
             for offset in [0.0, 12.0] {
                 let b = OrientedBox::new(Point::new(0.0, 0.0), Size::new(291.6567265735746, 2.0), angle);

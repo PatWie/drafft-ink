@@ -5,7 +5,6 @@ mod common;
 
 use std::net::SocketAddr;
 use std::sync::Arc;
-use std::time::Duration;
 
 use common::live::*;
 use drafftink_collab::*;

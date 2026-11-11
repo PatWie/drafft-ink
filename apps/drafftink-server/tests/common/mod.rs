@@ -20,6 +20,10 @@ use tokio_tungstenite::{MaybeTlsStream, WebSocketStream};
 
 pub const WAIT: Duration = Duration::from_secs(5);
 
+/// How long a test waits for a reply it knows is coming. It is only the bound that ends a hung test: the wait returns
+/// when the reply arrives, and a machine with a load average of 200 needs many times what an idle one does.
+pub const WAIT_FOR_LOADED_MACHINE: Duration = Duration::from_secs(120);
+
 /// A config for tests: loopback, ephemeral port, memory store, store written before every Ack.
 pub fn test_config() -> Config {
     Config {
