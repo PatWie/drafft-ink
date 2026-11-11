@@ -339,3 +339,107 @@ fn the_generated_scene_is_what_the_tests_assume() {
     assert_eq!(kinds.get("arrow"), Some(&5));
     assert!(doc.elements.iter().any(|e| e.id.as_str() == "e44"));
 }
+
+// ---- layouts during a drag ---------------------------------------------------------------------------------------
+
+/// The picture side of a drag frame, as the app does it: follow the commits' touched ids, then compose.
+struct Drawing {
+    composer: drafftink_render::SceneComposer,
+    index: drafftink_render::PaintIndex,
+    scene: drafftink_render::Scene,
+    typesetter: drafftink_engine::services::SharedTypesetter,
+    view: drafftink_render::View,
+}
+
+impl Drawing {
+    /// The view of the `drag` scenario: zoom 0.5, the corner of the grid at (150, 150) on a 1280 x 800 canvas.
+    fn new(h: &mut Harness) -> Self {
+        let store = h.session.tab().doc.store();
+        let view = drafftink_render::View::new(
+            0.5,
+            drafftink_geom::kurbo::Vec2::new(170.0, 170.0),
+            drafftink_geom::kurbo::Size::new(1280.0, 800.0),
+        );
+        let mut me = Self {
+            composer: drafftink_render::SceneComposer::new(),
+            index: drafftink_render::build_paint_index(store),
+            scene: drafftink_render::Scene::new(),
+            typesetter: drafftink_engine::services::LazyTypesetter::shared(),
+            view,
+        };
+        h.session.tab().doc.take_touched();
+        me.compose(h);
+        me
+    }
+
+    fn compose(&mut self, h: &mut Harness) -> drafftink_render::FrameReport {
+        let doc = &h.session.tab().doc;
+        let touched = doc.take_touched();
+        let store = doc.store();
+        let changes = drafftink_scene::ChangeSet {
+            revision: doc.revision(),
+            elements: touched
+                .into_iter()
+                .map(|id| drafftink_scene::Change {
+                    id,
+                    kind: drafftink_scene::ChangeKind::Updated,
+                    fields: drafftink_scene::Fields::all(),
+                    version: 0,
+                })
+                .collect(),
+            meta: false,
+            files: Vec::new(),
+        };
+        drafftink_render::update_paint_index(&mut self.index, store, &changes);
+        let Self { composer, index, scene, typesetter, view } = self;
+        typesetter.with(|ts| composer.compose(store, index, view, ts, scene))
+    }
+}
+
+/// The point the `drag` driver presses, from `scripts/perf_scenarios.py` (`DRAG_GRAB`), so the two cannot drift.
+fn drag_grab() -> (f64, f64) {
+    let script =
+        std::fs::read_to_string(drafftink_testkit::harness::fixtures_dir().join("../../scripts/perf_scenarios.py"))
+            .expect("the driver script");
+    let line = script.lines().find(|l| l.starts_with("DRAG_GRAB")).expect("DRAG_GRAB is defined");
+    let nums: Vec<f64> = line
+        .split(|c: char| !(c.is_ascii_digit() || c == '.'))
+        .filter(|t| !t.is_empty())
+        .filter_map(|t| t.parse().ok())
+        .collect();
+    (nums[0], nums[1])
+}
+
+/// The `drag` scenario without a window (`apps/drafftink`'s `scene_for`): the first hundred elements selected, zoom
+/// 0.5, the grid corner 150 points from the top left of a 1280 x 800 canvas, the driver's press on `DRAG_GRAB`.
+#[test]
+fn the_drag_scenario_moves_its_selection_and_lays_nothing_out_again() {
+    for &n in sizes() {
+        let mut h = loaded(n);
+        h.session.execute("view.set_viewport", json!({ "width": 1280, "height": 800 })).expect("viewport");
+        h.session.execute("view.set", json!({ "scroll": [920, 440], "zoom": 0.5 })).expect("view");
+        let ids: Vec<String> = (0..100).map(|k| format!("e{k}")).collect();
+        h.session.execute("selection.select", json!({ "ids": ids })).expect("select");
+        let before: Vec<_> =
+            ids.iter().map(|id| h.session.store().get(&scene_id(id)).expect("exists").transform).collect();
+        let mut d = Drawing::new(&mut h);
+        let mut p = Pointer { h, i: Interaction::new(), now: 1000.0 };
+        let (gx, gy) = drag_grab();
+        p.hover(gx, gy);
+        p.event(PointerPhase::Down, gx, gy, Button::Primary, Buttons::PRIMARY);
+        let work = WorkScope::begin();
+        for k in 1..=20 {
+            let (dx, dy) = (f64::from(k) * 4.0, f64::from(k) * 3.0);
+            p.event(PointerPhase::Move, gx + dx, gy + dy, Button::None, Buttons::PRIMARY);
+            d.compose(&mut p.h);
+        }
+        assert_eq!(work.count(Counter::Relayouts), 0, "20 drag frames at {n}: {}", work.summary());
+        p.event(PointerPhase::Up, gx + 80.0, gy + 60.0, Button::Primary, Buttons::NONE);
+        // Arrows bound to something that stays put change their size; every other kind keeps its size and moves.
+        for (k, (id, was)) in ids.iter().zip(&before).enumerate().filter(|(k, _)| ![3, 4, 5].contains(&(k % 10))) {
+            let now = p.h.session.store().get(&scene_id(id)).expect("exists").transform;
+            assert_eq!((now.w, now.h), (was.w, was.h), "{id} was moved and not resized at {n}");
+            assert!(now.x > was.x && now.y > was.y, "{id} (element {k}) moved at {n}: {was:?} to {now:?}");
+        }
+    }
+}
