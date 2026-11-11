@@ -7,9 +7,10 @@ use serde_json::{Value, json};
 
 use super::pictograms::{self, Align, LineStyle, Pattern};
 use super::{Group, shows};
-use crate::action::{Scrub, ScrubPhase, UiAction, Verb};
+use crate::action::Verb;
 use crate::icons::{self, Icon};
 use crate::model::StyleProp;
+use crate::scrub::{self, ScrubControl, SliderSpec};
 use crate::state::{OpenRibbonMenu, RibbonMenu, UiState};
 use crate::surfaces::color::{PopoverKey, remember_anchor_in};
 use crate::surfaces::topbar::not_applicable;
@@ -367,7 +368,6 @@ fn more(ui: &mut Ui, cx: &mut Cx<'_>, st: &mut UiState) {
 fn opacity(ui: &mut Ui, cx: &mut Cx<'_>) {
     let current = cx.model.style.num_value("opacity").unwrap_or(1.0);
     let mixed = cx.model.style.prop("opacity").is_some_and(StyleProp::is_mixed);
-    let blocked = cx.refusal("style.set");
     let mut value = current as f32;
     ui.spacing_mut().slider_width = SLIDER_WIDTH;
     // The rail and the part before the handle must show on the card colour, in both themes.
@@ -378,23 +378,19 @@ fn opacity(ui: &mut Ui, cx: &mut Cx<'_>) {
     visuals.widgets.active.bg_fill = pal.border;
     visuals.selection.bg_fill = pal.accent;
     visuals.slider_trailing_fill = true;
-    let resp = ui
-        .add_enabled(blocked.is_none(), egui::Slider::new(&mut value, 0.0..=1.0).show_value(false))
-        .on_disabled_hover_text(blocked.clone().unwrap_or_default());
-    resp.widget_info(|| WidgetInfo::slider(blocked.is_none(), f64::from(value), "Opacity"));
-    let resp = if blocked.is_none() { resp.on_hover_text("Opacity") } else { resp };
+    let spec = SliderSpec { control: ScrubControl::Opacity, label: "Opacity", range: 0.0..=1.0 };
+    scrub::slider(
+        ui,
+        cx,
+        &spec,
+        &mut value,
+        |v| json!({ "props": { "opacity": (f64::from(v) * 100.0).round() / 100.0 } }),
+    );
     let text = if mixed { "mixed".to_owned() } else { format!("{}%", (value * 100.0).round()) };
     ui.add_sized(
         [PERCENT_WIDTH, cx.layout.toggle_height()],
         egui::Label::new(egui::RichText::new(text).size(TextSize::Caption.points()).color(cx.pal.muted)),
     );
-    let args = json!({ "props": { "opacity": (f64::from(value) * 100.0).round() / 100.0 } });
-    if resp.changed() {
-        let phase = if cx.model.gesture_running { ScrubPhase::Update } else { ScrubPhase::Begin };
-        cx.emit(UiAction::Scrub(Scrub { phase, command: "style.set", args }));
-    } else if resp.drag_stopped() {
-        cx.emit(UiAction::Scrub(Scrub { phase: ScrubPhase::End, command: "style.set", args }));
-    }
 }
 
 // ---- arrange ----

@@ -11,7 +11,9 @@ use common::Fixture;
 use drafftink_engine::testing::{add_rect, select};
 use drafftink_engine::{Origin, Refusal};
 use drafftink_ui::action::CommandSink;
-use drafftink_ui::{Call, CollabStatus, CollabView, Scrub, ScrubPhase, UiAction, UiState, Verb, dispatch};
+use drafftink_ui::{
+    Call, CollabStatus, CollabView, Scrub, ScrubControl, ScrubPhase, UiAction, UiState, Verb, dispatch,
+};
 use egui::accesskit::Role;
 use egui::pos2;
 use egui_kittest::kittest::{NodeT, Queryable};
@@ -258,7 +260,12 @@ impl CommandSink for Refusing {
 }
 
 fn scrub(phase: ScrubPhase) -> UiAction {
-    UiAction::Scrub(Scrub { phase, command: "style.set", args: json!({ "props": { "opacity": 0.4 } }) })
+    UiAction::Scrub(Scrub {
+        phase,
+        control: ScrubControl::Opacity,
+        command: "style.set",
+        args: json!({ "props": { "opacity": 0.4 } }),
+    })
 }
 
 #[test]
@@ -292,6 +299,7 @@ fn the_real_engine_refusal_of_a_scrub_reaches_the_screen() {
     // A step the command cannot take: an opacity of 5.
     f.actions = vec![UiAction::Scrub(Scrub {
         phase: ScrubPhase::Update,
+        control: ScrubControl::Opacity,
         command: "style.set",
         args: json!({ "props": { "opacity": 5.0 } }),
     })];

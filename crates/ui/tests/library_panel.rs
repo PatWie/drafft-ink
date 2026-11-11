@@ -445,6 +445,8 @@ fn the_drawer_leaves_the_recorded_side_panels_free_and_the_chrome_above_it_clear
         code: "nothing_to_do".to_owned(),
         born: 0.0,
         suggestion: None,
+        command: String::new(),
+        args: String::new(),
     });
     let h = at(egui::vec2(1280.0, 800.0), f);
     let chrome = h.state().state.chrome;

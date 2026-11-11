@@ -11,6 +11,7 @@ use drafftink_engine::Refusal;
 use serde_json::Value;
 
 use crate::action::{Call, HostRequest, Verb};
+use crate::scrub::ScrubTrack;
 use crate::surfaces::library::TextureCache;
 
 /// How long a toast is fully visible, in seconds.
@@ -31,6 +32,10 @@ pub struct Toast {
     pub born: f64,
     /// A next step offered by the refusal, as a button.
     pub suggestion: Option<Call>,
+    /// The command that was refused (empty for a note).
+    pub command: String,
+    /// A short summary of its arguments, for the text the Copy button copies.
+    pub args: String,
 }
 
 impl Toast {
@@ -43,12 +48,33 @@ impl Toast {
                 s.args.clone().unwrap_or_else(|| serde_json::json!({})),
             )
         });
-        Self { text: r.message.clone(), code: r.code.to_owned(), born: now, suggestion }
+        Self {
+            text: r.message.clone(),
+            code: r.code.to_owned(),
+            born: now,
+            suggestion,
+            command: r.command.clone(),
+            args: String::new(),
+        }
+    }
+
+    /// The same toast with a summary of the arguments of the call that was refused.
+    #[must_use]
+    pub fn with_args(mut self, args: &Value) -> Self {
+        self.args = crate::error_report::summarize_args(args);
+        self
     }
 
     /// A plain note.
     pub fn note(text: impl Into<String>, now: f64) -> Self {
-        Self { text: text.into(), code: "note".to_owned(), born: now, suggestion: None }
+        Self {
+            text: text.into(),
+            code: "note".to_owned(),
+            born: now,
+            suggestion: None,
+            command: String::new(),
+            args: String::new(),
+        }
     }
 
     /// Opacity from 1 down to 0, or `None` when the toast is over.
@@ -522,8 +548,8 @@ pub struct UiState {
     pub toasts: Vec<Toast>,
     /// Text the app pasted for the equation editor.
     pasted_text: Option<String>,
-    /// The id of the gesture a scrubbed control began.
-    scrub: Option<String>,
+    /// The gesture a scrubbed control began.
+    pub(crate) scrub: ScrubTrack,
     /// The theme setting the visuals were last built for.
     pub(crate) applied_theme: Option<String>,
     /// Commands that were refused with `render_pending`: the picture is being drawn (the browser reads it back
@@ -830,10 +856,6 @@ impl UiState {
 
     /// The id of the running scrub gesture.
     pub fn scrub_gesture(&self) -> Option<&str> {
-        self.scrub.as_deref()
-    }
-
-    pub(crate) fn set_scrub_gesture(&mut self, id: Option<String>) {
-        self.scrub = id;
+        self.scrub.gesture()
     }
 }

@@ -62,3 +62,32 @@ fn refusals_of_gesture_commands_are_recorded_in_the_ring() {
     let last = s.ring().iter().last().unwrap();
     assert_eq!((last.id.as_str(), last.outcome.code()), ("gesture.end", Some("no_gesture")));
 }
+
+/// The sequence behind the report "a drag is in progress" after the opacity slider: an open gesture refuses
+/// every other command, and the commands report it as their availability, which greys the whole UI. Ending
+/// the gesture lifts both, and the whole drag is one undo step.
+#[test]
+fn an_open_style_gesture_refuses_other_commands_until_it_ends() {
+    let mut s = testing::headless_session();
+    let id = testing::add_rect(&mut s, 0.0, 0.0, 100.0, 60.0).unwrap();
+    testing::select(&mut s, std::slice::from_ref(&id));
+    let depth = s.tab().doc.undo_depth();
+
+    let begun = s.execute("gesture.begin", json!({"command": "style.set", "args": {"props": {"opacity": 0.9}}})).unwrap();
+    let gesture = begun["gesture"].as_str().unwrap().to_owned();
+    s.execute("gesture.update", json!({"gesture": gesture, "args": {"props": {"opacity": 0.5}}})).unwrap();
+
+    let refused = s.execute("selection.select_at", json!({"point": [500, 500]})).unwrap_err();
+    assert_eq!(refused.code, "gesture_active");
+    assert_eq!(
+        refused.message,
+        "A drag is in progress. Finish it with `gesture.end` or cancel it with `gesture.cancel` before running `selection.select_at`."
+    );
+    let availability = s.registry().find("tool.set").map(|spec| s.availability(spec.id));
+    assert!(availability.as_ref().is_some_and(|a| a.as_ref().is_err_and(|r| r.code == "gesture_active")), "{availability:?}");
+
+    s.execute("gesture.end", json!({"gesture": gesture, "args": {"props": {"opacity": 0.5}}})).unwrap();
+    assert!(!s.gesture_running());
+    s.execute("selection.select_at", json!({"point": [500, 500]})).unwrap();
+    assert_eq!(s.tab().doc.undo_depth(), depth + 1, "a whole drag is one undo step");
+}

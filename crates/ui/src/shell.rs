@@ -180,7 +180,10 @@ pub fn draw(ui: &mut egui::Ui, model: &Model, state: &mut UiState) -> Vec<UiActi
     state.observe_input(&ctx);
     let screen = ctx.content_rect().size();
     let layout = Layout { compact: state.compact(screen.x), narrow: state.narrow(screen.x), screen };
-    let mut cx = Cx::new(model, pal, &mut out).with_layout(layout);
+    let mut cx = Cx::new(model, pal, &mut out).with_layout(layout).with_scrub(state.scrub.frame());
     surfaces::show_all(&ctx, &mut cx, state);
+    let scrubs = std::mem::take(&mut cx.scrub);
+    let focus_lost = ctx.input(|i| i.events.iter().any(|e| matches!(e, egui::Event::WindowFocused(false))));
+    state.scrub.settle(scrubs, focus_lost, &mut out);
     out
 }
