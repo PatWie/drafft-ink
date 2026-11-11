@@ -32,7 +32,7 @@ use std::cmp::Ordering;
 use drafftink_geom::kurbo::{Point, Rect};
 use drafftink_geom::select::{MarqueeMode as GeomMarquee, marquee_selects};
 use drafftink_geom::{HitOpts, Outline, RectShape, SpatialIndex, aabb};
-use drafftink_profile::{Counter, inc};
+use drafftink_profile::{Counter, count, inc};
 use drafftink_scene::{ChangeKind, ChangeSet, Element, ElementId, ElementKind, GroupId, SceneRead};
 use serde::{Deserialize, Serialize};
 
@@ -194,6 +194,7 @@ impl SceneIndex {
 
     /// Replaces the content with a bulk-loaded index of `scene`.
     pub fn rebuild<R: SceneRead>(&mut self, scene: &R) {
+        count(Counter::ElementsScanned, u64::try_from(scene.len_all()).unwrap_or(u64::MAX));
         self.index = SpatialIndex::bulk_load(scene.iter().filter_map(|e| index_bounds(e).map(|b| (e.id.clone(), b))));
         self.bulk_rebuilds += 1;
     }

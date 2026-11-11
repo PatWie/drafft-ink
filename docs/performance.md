@@ -135,6 +135,7 @@ Counters are monotonic. Gauges hold the last value. All are always compiled in.
 | `gpu_submits` | GPU submissions |
 | `sync_ops_applied` | sync operations applied to the document |
 | `redraws_skipped` | redraw requests the idle gate dropped because nothing was dirty |
+| `elements_scanned` | elements visited by a pass over the whole scene (a scan, not an index lookup); 0 for an operation whose cost must not grow with the scene |
 
 | Gauge | Reads |
 |---|---|

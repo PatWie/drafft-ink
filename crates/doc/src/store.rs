@@ -590,6 +590,9 @@ impl SceneRead for LoroStore {
     fn z_neighbors(&self, id: &ElementId) -> (Option<ZIndex>, Option<ZIndex>) {
         self.view.z_neighbors(id)
     }
+    fn derived_index(&self) -> Option<&DerivedIndex> {
+        self.view.derived_index()
+    }
 }
 
 impl SceneStore for LoroStore {

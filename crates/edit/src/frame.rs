@@ -20,9 +20,11 @@ use drafftink_scene::{
     ZIndex, limits,
 };
 
+use drafftink_profile::{Counter, count};
+
 use crate::binding::BindingError;
 use crate::group::units::{
-    Relations, Unit, UnitKey, ensure_unlocked, impl_from_target, live, primaries, units, with_companions,
+    Relations, Reverse, Unit, UnitKey, ensure_unlocked, impl_from_target, live, primaries, units, with_companions,
 };
 use crate::lifecycle::{self, ChildPolicy, LifecycleError};
 use crate::transform::geometry;
@@ -102,14 +104,23 @@ pub fn children_of<R: SceneRead>(scene: &R, frame: &ElementId) -> Result<Vec<Ele
 }
 
 /// The topmost live, unlocked frame under `point`, ignoring `exclude`.
+///
+/// With a derived index (a store, or a transaction that has not written yet) only the frames are looked at;
+/// otherwise the call scans the scene.
 pub fn frame_at<R: SceneRead>(scene: &R, point: Point, exclude: &BTreeSet<ElementId>) -> Option<ElementId> {
-    let mut found = None;
-    for e in scene.iter() {
-        if e.tag() == Kind::Frame && !e.locked && !exclude.contains(&e.id) && aabb::contains_point(&e.rect(), point) {
-            found = Some(e.id.clone());
-        }
+    let under = |e: &Element| {
+        e.tag() == Kind::Frame && !e.locked && !exclude.contains(&e.id) && aabb::contains_point(&e.rect(), point)
+    };
+    if let Some(index) = scene.derived_index() {
+        return index
+            .frames()
+            .filter_map(|id| scene.get(id))
+            .filter(|e| under(e))
+            .max_by(|a, b| a.index.cmp(&b.index).then_with(|| a.id.cmp(&b.id)))
+            .map(|e| e.id.clone());
     }
-    found
+    count(Counter::ElementsScanned, u64::try_from(scene.len_all()).unwrap_or(u64::MAX));
+    scene.iter().filter(|e| under(e)).last().map(|e| e.id.clone())
 }
 
 /// Why an element was not added to a frame.
@@ -438,50 +449,60 @@ pub fn update_membership_after_move<T: SceneTx>(
     moved: &[ElementId],
     pointer: Option<Point>,
 ) -> Result<MembershipReport, FrameError> {
-    let rel = Relations::build(&*tx);
-    let prim = primaries(&*tx, moved)?;
-    let moved_frames: BTreeSet<ElementId> =
-        prim.iter().filter(|i| tx.get(i).is_some_and(|e| e.tag() == Kind::Frame)).cloned().collect();
-    let candidates: Vec<ElementId> = prim
-        .iter()
-        .filter(|i| {
-            tx.get(i).is_some_and(|e| {
-                e.tag() != Kind::Frame && !e.locked && e.frame_id.as_ref().is_none_or(|f| !moved_frames.contains(f))
+    // Read first, write after: the lookups borrow the transaction, and a transaction that has not written yet
+    // answers them from the committed index instead of a pass over the scene.
+    let (leaves, joins, report) = {
+        let scene = &*tx;
+        let rel = Reverse::of(scene);
+        let prim = primaries(scene, moved)?;
+        let moved_frames: BTreeSet<ElementId> =
+            prim.iter().filter(|i| scene.get(i).is_some_and(|e| e.tag() == Kind::Frame)).cloned().collect();
+        let candidates: Vec<ElementId> = prim
+            .iter()
+            .filter(|i| {
+                scene.get(i).is_some_and(|e| {
+                    e.tag() != Kind::Frame && !e.locked && e.frame_id.as_ref().is_none_or(|f| !moved_frames.contains(f))
+                })
             })
-        })
-        .cloned()
-        .collect();
-    let us = units(&*tx, &rel, &candidates, None)?;
-    let mut report = MembershipReport::default();
-    let mut joins: Vec<(ElementId, Vec<ElementId>)> = Vec::new();
-    for u in &us {
-        let Some(rect) = geometry::union_bounds(u.elements.iter().filter_map(|i| tx.get(i))) else { continue };
-        let at = pointer.unwrap_or_else(|| aabb::center(&rect));
-        let target = frame_at(&*tx, at, &moved_frames);
-        let current: BTreeSet<Option<ElementId>> =
-            u.elements.iter().filter_map(|i| tx.get(i)).map(|e| e.frame_id.clone()).collect();
-        if current.len() == 1 && current.contains(&target) {
-            continue;
-        }
-        let all = with_companions(&*tx, &rel, &u.elements, false);
-        if ensure_unlocked(&*tx, &all).is_err() {
-            continue;
-        }
-        match target {
-            Some(f) => {
-                for id in &u.elements {
-                    report.joined.push((id.clone(), f.clone()));
+            .cloned()
+            .collect();
+        let us = units(scene, &rel, &candidates, None)?;
+        let mut report = MembershipReport::default();
+        let mut leaves: Vec<Vec<ElementId>> = Vec::new();
+        let mut joins: Vec<(ElementId, Vec<ElementId>)> = Vec::new();
+        for u in &us {
+            let Some(rect) = geometry::union_bounds(u.elements.iter().filter_map(|i| scene.get(i))) else { continue };
+            let at = pointer.unwrap_or_else(|| aabb::center(&rect));
+            let target = frame_at(scene, at, &moved_frames);
+            let current: BTreeSet<Option<ElementId>> =
+                u.elements.iter().filter_map(|i| scene.get(i)).map(|e| e.frame_id.clone()).collect();
+            if current.len() == 1 && current.contains(&target) {
+                continue;
+            }
+            let all = with_companions(scene, &rel, &u.elements, false);
+            if ensure_unlocked(scene, &all).is_err() {
+                continue;
+            }
+            match target {
+                Some(f) => {
+                    for id in &u.elements {
+                        report.joined.push((id.clone(), f.clone()));
+                    }
+                    match joins.iter_mut().find(|(g, _)| *g == f) {
+                        Some((_, v)) => v.extend(all),
+                        None => joins.push((f, all)),
+                    }
                 }
-                match joins.iter_mut().find(|(g, _)| *g == f) {
-                    Some((_, v)) => v.extend(all),
-                    None => joins.push((f, all)),
+                None => {
+                    leaves.push(all);
+                    report.left.extend(u.elements.iter().cloned());
                 }
             }
-            None => {
-                detach(tx, &all)?;
-                report.left.extend(u.elements.iter().cloned());
-            }
         }
+        (leaves, joins, report)
+    };
+    for all in &leaves {
+        detach(tx, all)?;
     }
     for (f, all) in joins {
         attach(tx, &f, &all)?;

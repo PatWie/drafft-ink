@@ -34,7 +34,7 @@ use drafftink_scene::{
 };
 
 use crate::binding::{self, BindingError};
-use crate::group::units::{Relations, ensure_unlocked, impl_from_target, primaries, with_companions};
+use crate::group::units::{Reverse, ReverseLookup, ensure_unlocked, impl_from_target, primaries, with_companions};
 
 pub mod geometry;
 
@@ -347,6 +347,9 @@ fn carry_fixed_points(
 /// re-solved. All new values are checked before the first write.
 pub(crate) fn apply<T: SceneTx>(tx: &mut T, items: Vec<Item>) -> Result<TransformReport, TransformError> {
     let set: BTreeSet<ElementId> = items.iter().map(|i| i.id.clone()).collect();
+    // Taken before the first write, while a fresh transaction can still answer from the committed index.
+    let all_ids: Vec<ElementId> = set.iter().cloned().collect();
+    let followers = binding::arrows_bound_to(&*tx, &all_ids);
     let mut olds: BTreeMap<ElementId, Element> = BTreeMap::new();
     for i in &items {
         let e = tx.get(&i.id).filter(|e| !e.deleted).ok_or_else(|| TransformError::NotFound(i.id.clone()))?;
@@ -378,7 +381,6 @@ pub(crate) fn apply<T: SceneTx>(tx: &mut T, items: Vec<Item>) -> Result<Transfor
         changed.push(id);
     }
     // The ends whose target is not part of the transform are freed where they are.
-    let all_ids: Vec<ElementId> = olds.keys().cloned().collect();
     let freed = binding::unbind_detached(tx, &all_ids)?;
     let mut unbound: Vec<(ElementId, End)> = Vec::new();
     for id in freed {
@@ -398,7 +400,8 @@ pub(crate) fn apply<T: SceneTx>(tx: &mut T, items: Vec<Item>) -> Result<Transfor
         }
     }
     crate::group::units::sort_z(&*tx, &mut changed);
-    let arrows = if changed.is_empty() { Vec::new() } else { binding::update_bound_arrows(tx, &changed)? };
+    let arrows =
+        if changed.is_empty() { Vec::new() } else { binding::update_bound_arrows_from(tx, &changed, followers)? };
     let bounds = geometry::union_bounds(items.iter().filter_map(|i| tx.get(&i.id)));
     Ok(TransformReport { changed, unbound, arrows, bounds })
 }
@@ -409,23 +412,25 @@ fn finite_vec(v: Vec2) -> Result<(), TransformError> {
 
 /// The primaries of `ids` and everything that travels with them.
 struct Prepared {
-    rel: Relations,
     primary: Vec<ElementId>,
     all: Vec<ElementId>,
+    /// Some primary element belongs to a group that counts (two live members).
+    grouped: bool,
 }
 
 fn prepare<T: SceneTx>(tx: &T, ids: &[ElementId], frame_children: bool) -> Result<Prepared, TransformError> {
     if ids.is_empty() {
         return Err(TransformError::BadArgs("no elements were given"));
     }
-    let rel = Relations::build(tx);
+    let rel = Reverse::of(tx);
     let base = primaries(tx, ids)?;
     let all = with_companions(tx, &rel, &base, frame_children);
     ensure_unlocked(tx, &all)?;
     // The primaries now include frame children (they are members, not followers).
     let primary: Vec<ElementId> =
         all.iter().filter(|i| tx.get(i).is_some_and(|e| !crate::group::units::is_label(tx, e))).cloned().collect();
-    Ok(Prepared { rel, primary, all })
+    let grouped = primary.iter().filter_map(|i| tx.get(i)).any(|e| e.group_ids.iter().any(|g| rel.is_group(g)));
+    Ok(Prepared { primary, all, grouped })
 }
 
 fn items(all: &[ElementId], motion: Motion) -> Vec<Item> {
@@ -515,11 +520,10 @@ pub fn resize<T: SceneTx>(tx: &mut T, ids: &[ElementId], spec: ResizeSpec) -> Re
             _ => false,
         })
     } else {
-        elems.iter().any(|e| {
-            e.transform.angle != 0.0
-                || matches!(e.tag(), Kind::Text | Kind::Math | Kind::Image)
-                || !p.rel.stack(e).is_empty()
-        })
+        p.grouped
+            || elems
+                .iter()
+                .any(|e| e.transform.angle != 0.0 || matches!(e.tag(), Kind::Text | Kind::Math | Kind::Image))
     };
     let target = handle_point(&original, spec.handle, 0.0) + spec.delta;
     let opts = ResizeOpts {

@@ -805,8 +805,12 @@ fn move_point(s: &mut Session, a: MovePointArgs) -> Result<MovePointOut, Refusal
         if v.is_finite() && v > 0.0 { v } else { 15.0 }
     };
     let reference = if a.insert || index > 0 { world.get(index.saturating_sub(1)) } else { world.get(1) }.copied();
+    // The elements near the pointer, from the document's spatial index; the rules below run on these only.
+    let zoom_now = zoom(s);
+    let reach = arrow_ops::snap_reach().max(binding::binding_reach(zoom_now));
+    let mut near = s.tab().doc.near(to, reach);
     let snapped = if flags.grid || flags.smart || flags.angle {
-        let mut others = arrow_ops::snap_candidates(s.store(), std::slice::from_ref(&id), to);
+        let mut others = arrow_ops::snap_candidates_among(s.store(), &near, std::slice::from_ref(&id), to);
         for (i, p) in world.iter().enumerate() {
             if a.insert || i != index {
                 others.push(Rect::new(p.x, p.y, p.x, p.y));
@@ -817,8 +821,12 @@ fn move_point(s: &mut Session, a: MovePointArgs) -> Result<MovePointOut, Refusal
         arrow_ops::PointSnap { point: to, guides: Vec::new(), angle: None }
     };
 
+    // A snapped point can lie a little away from the pointer: the shapes near it count too.
+    if snapped.point != to {
+        near.extend(s.tab().doc.near(snapped.point, reach));
+    }
     let opts = BindOpts {
-        zoom: zoom(s),
+        zoom: zoom_now,
         force_inside: a.bind == BindChoice::Inside,
         disabled: a.bind == BindChoice::Off || (a.bind == BindChoice::Auto && !s.settings.bool_or("arrow.binding", true)),
         midpoint_snap: s.settings.bool_or("arrow.midpoint_snap", false),
@@ -839,10 +847,10 @@ fn move_point(s: &mut Session, a: MovePointArgs) -> Result<MovePointOut, Refusal
         if is_end {
             let end = if index == 0 { binding::End::Start } else { binding::End::End };
             let now = tx.get(&id).cloned().ok_or_else(|| Refusal::not_found(cmd, id.as_str()))?;
-            let plan = binding::plan_end_drag(tx, &now, end, to, &opts);
+            let plan = binding::plan_end_drag_among(tx, &near, &now, end, to, &opts);
             let at = if matches!(plan.dragged, EndChange::Bind(_)) { to } else { snapped.point };
             highlight =
-                binding::drag_end(tx, &id, end, at, &opts).map_err(|e| from_binding(cmd, "to", e))?.map(|c| c.target);
+                binding::drag_end_among(tx, &near, &id, end, at, &opts).map_err(|e| from_binding(cmd, "to", e))?.map(|c| c.target);
         } else {
             linear::move_points(tx, &id, &[(index, snapped.point)]).map_err(|e| from_linear(cmd, "to", e))?;
         }

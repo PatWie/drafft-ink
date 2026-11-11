@@ -290,8 +290,33 @@ pub fn snap_dragged_point(
 }
 
 /// The boxes a dragged point may align with: the bounds of every live element near `around` except the
-/// ones in `skip`, in scene order, at most [`MAX_SNAP_CANDIDATES`].
+/// ones in `skip`, in scene order, at most [`MAX_SNAP_CANDIDATES`]. Looks at the whole scene; a caller with a
+/// spatial index uses [`snap_candidates_among`].
 pub fn snap_candidates<R: SceneRead>(scene: &R, skip: &[ElementId], around: Point) -> Vec<Rect> {
+    drafftink_profile::count(drafftink_profile::Counter::ElementsScanned, scene.len_all() as u64);
+    boxes_near(scene.iter(), skip, around)
+}
+
+/// Like [`snap_candidates`], looking only at the elements named in `near` (any order). `near` must hold every
+/// element whose box is within [`snap_reach`] of `around`.
+pub fn snap_candidates_among<R: SceneRead>(
+    scene: &R,
+    near: &[ElementId],
+    skip: &[ElementId],
+    around: Point,
+) -> Vec<Rect> {
+    let mut elements: Vec<&Element> = near.iter().filter_map(|id| scene.get(id)).filter(|e| !e.deleted).collect();
+    elements.sort_by(|a, b| a.index.cmp(&b.index).then_with(|| a.id.cmp(&b.id)));
+    boxes_near(elements.into_iter(), skip, around)
+}
+
+/// How far from the dragged point a spatial query must look so that [`snap_candidates_among`] sees every box the
+/// snap zone touches (the zone is a square, a query reaches in a circle).
+pub fn snap_reach() -> f64 {
+    ENDPOINT_SNAP_RADIUS * std::f64::consts::SQRT_2
+}
+
+fn boxes_near<'a>(elements: impl Iterator<Item = &'a Element>, skip: &[ElementId], around: Point) -> Vec<Rect> {
     if !drafftink_geom::point_is_finite(around) {
         return Vec::new();
     }
@@ -302,7 +327,7 @@ pub fn snap_candidates<R: SceneRead>(scene: &R, skip: &[ElementId], around: Poin
         around.y + ENDPOINT_SNAP_RADIUS,
     );
     let mut out = Vec::new();
-    for e in scene.iter() {
+    for e in elements {
         if out.len() >= MAX_SNAP_CANDIDATES {
             break;
         }

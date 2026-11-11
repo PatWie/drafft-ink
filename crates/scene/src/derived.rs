@@ -3,7 +3,8 @@
 //! * bound arrows by target (reverse of `start_binding` / `end_binding`),
 //! * members by group (reverse of `group_ids`),
 //! * children by frame (reverse of `frame_id`),
-//! * label text by container (reverse of `container_id`).
+//! * label text by container (reverse of `container_id`),
+//! * the frames themselves (a small set, so "which frame is under this point" need not scan the scene).
 //!
 //! Only live elements are indexed. The index remembers what it recorded for each element, so it updates from a
 //! [`ChangeSet`] and the store's current state without needing the old element values.
@@ -12,7 +13,7 @@ use std::collections::{BTreeSet, HashMap};
 
 use smallvec::SmallVec;
 
-use crate::element::Element;
+use crate::element::{Element, Kind};
 use crate::id::{ElementId, GroupId};
 use crate::store::{ChangeSet, SceneRead};
 
@@ -23,6 +24,7 @@ struct Recorded {
     groups: SmallVec<[GroupId; 2]>,
     frame: Option<ElementId>,
     container: Option<ElementId>,
+    is_frame: bool,
 }
 
 impl Recorded {
@@ -36,9 +38,13 @@ impl Recorded {
             groups: e.group_ids.clone(),
             frame: e.frame_id.clone(),
             container: e.container_id().cloned(),
+            is_frame: e.tag() == Kind::Frame,
         };
-        let empty =
-            r.targets.iter().all(Option::is_none) && r.groups.is_empty() && r.frame.is_none() && r.container.is_none();
+        let empty = r.targets.iter().all(Option::is_none)
+            && r.groups.is_empty()
+            && r.frame.is_none()
+            && r.container.is_none()
+            && !r.is_frame;
         (!empty).then_some(r)
     }
 }
@@ -51,6 +57,7 @@ pub struct DerivedIndex {
     group_members: HashMap<GroupId, BTreeSet<ElementId>>,
     frame_children: HashMap<ElementId, BTreeSet<ElementId>>,
     labels: HashMap<ElementId, BTreeSet<ElementId>>,
+    frames: BTreeSet<ElementId>,
 }
 
 fn add<K: std::hash::Hash + Eq + Clone>(map: &mut HashMap<K, BTreeSet<ElementId>>, key: &K, id: &ElementId) {
@@ -104,6 +111,9 @@ impl DerivedIndex {
         if let Some(c) = &old.container {
             del(&mut self.labels, c, id);
         }
+        if old.is_frame {
+            self.frames.remove(id);
+        }
     }
 
     fn record(&mut self, e: &Element) {
@@ -119,6 +129,9 @@ impl DerivedIndex {
         }
         if let Some(c) = &r.container {
             add(&mut self.labels, c, &e.id);
+        }
+        if r.is_frame {
+            self.frames.insert(e.id.clone());
         }
         self.recorded.insert(e.id.clone(), r);
     }
@@ -156,6 +169,11 @@ impl DerivedIndex {
     /// All live texts that claim `container` as their container.
     pub fn labels_of(&self, container: &ElementId) -> impl Iterator<Item = &ElementId> {
         self.labels.get(container).into_iter().flatten()
+    }
+
+    /// The live frames, sorted by id. Sort by z-order with the store when order matters.
+    pub fn frames(&self) -> impl Iterator<Item = &ElementId> {
+        self.frames.iter()
     }
 
     /// Number of groups with at least one live member.

@@ -56,8 +56,9 @@ fn candidates(cx: &Ctx<'_>, around: Point) -> Vec<Rect> {
         return Vec::new();
     }
     let zone = Rect::from_center_size(around, (MULTI_MOVE_SNAP_RADIUS * 2.0, MULTI_MOVE_SNAP_RADIUS * 2.0));
-    cx.world
-        .index()
+    cx.s.tab()
+        .doc
+        .scene_index()
         .in_rect(cx.s.store(), &zone)
         .into_iter()
         .map(|e| {

@@ -24,6 +24,7 @@
 use std::collections::HashMap;
 
 use drafftink_geom::transform::rotate_point;
+use drafftink_profile::{Counter, count};
 use kurbo::{Point, Rect, Size};
 
 use drafftink_scene::{
@@ -442,11 +443,16 @@ fn text_of<'a, R: SceneRead>(r: &'a R, id: &ElementId) -> Result<(&'a Element, &
 
 /// The live label of a container (the smallest id when several claim it).
 pub fn label_of<R: SceneRead>(r: &R, container: &ElementId) -> Option<ElementId> {
+    if let Some(index) = r.derived_index() {
+        return index.label_of(container).cloned();
+    }
+    count(Counter::ElementsScanned, u64::try_from(r.len_all()).unwrap_or(u64::MAX));
     r.iter().filter(|e| e.container_id() == Some(container)).map(|e| e.id.clone()).min()
 }
 
 /// The label of every container in one pass.
 pub fn label_index<R: SceneRead>(r: &R) -> HashMap<ElementId, ElementId> {
+    count(Counter::ElementsScanned, u64::try_from(r.len_all()).unwrap_or(u64::MAX));
     let mut out: HashMap<ElementId, ElementId> = HashMap::new();
     for e in r.iter() {
         if let Some(c) = e.container_id() {
@@ -459,6 +465,19 @@ pub fn label_index<R: SceneRead>(r: &R) -> HashMap<ElementId, ElementId> {
         }
     }
     out
+}
+
+/// The label of `container`: the smallest id among the texts that claim it.
+fn label_for<R: SceneRead>(
+    r: &R,
+    scanned: Option<&HashMap<ElementId, ElementId>>,
+    container: &ElementId,
+) -> Option<ElementId> {
+    match (r.derived_index(), scanned) {
+        (Some(index), _) => index.label_of(container).cloned(),
+        (None, Some(map)) => map.get(container).cloned(),
+        (None, None) => None,
+    }
 }
 
 fn z_above_container<R: SceneRead>(r: &R, container: &Element) -> Result<ZIndex, IndexError> {
@@ -687,14 +706,15 @@ pub fn refresh_labels<T: SceneTx, M: TextMeasure + ?Sized>(
     changed: &[ElementId],
     anchor: GrowAnchor,
 ) -> Result<Vec<ElementId>, TextBindError> {
-    let index = label_index(tx);
+    // The committed index knows every label; without one, a single pass finds them all.
+    let scanned = if tx.derived_index().is_some() { None } else { Some(label_index(tx)) };
     let mut pairs: Vec<(ElementId, ElementId)> = Vec::new();
     for id in changed {
         let Some(e) = tx.get(id).filter(|e| !e.deleted) else { continue };
         let pair = match e.container_id() {
             Some(c) => (c.clone(), id.clone()),
-            None => match index.get(id) {
-                Some(l) => (id.clone(), l.clone()),
+            None => match label_for(&*tx, scanned.as_ref(), id) {
+                Some(l) => (id.clone(), l),
                 None => continue,
             },
         };

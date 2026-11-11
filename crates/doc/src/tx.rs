@@ -4,8 +4,8 @@ use std::collections::{BTreeSet, HashMap};
 
 use drafftink_scene::memory::MemoryTx;
 use drafftink_scene::{
-    Change, ChangeKind, ChangeSet, Color, DocMeta, Element, ElementId, ElementKind, FileEntry, FileId, SceneRead,
-    SceneTx, StoreError, ZIndex,
+    Change, ChangeKind, ChangeSet, Color, DerivedIndex, DocMeta, Element, ElementId, ElementKind, FileEntry, FileId,
+    SceneRead, SceneTx, StoreError, ZIndex,
 };
 use loro::{CommitOptions, LoroMap, LoroValue};
 
@@ -105,6 +105,9 @@ impl SceneRead for LoroTx<'_> {
     }
     fn z_neighbors(&self, id: &ElementId) -> (Option<ZIndex>, Option<ZIndex>) {
         self.inner.z_neighbors(id)
+    }
+    fn derived_index(&self) -> Option<&DerivedIndex> {
+        self.inner.derived_index()
     }
 }
 
