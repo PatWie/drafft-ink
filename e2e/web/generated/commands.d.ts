@@ -1682,7 +1682,7 @@ export namespace DocExport {
   export type Args = {
     /** Paint the document background. Default: the setting `export.background`. */
     background?: boolean | null;
-    /** Draw with the dark palette (PNG only). Default: the setting `export.dark`. */
+    /** Draw with the dark palette (PNG and SVG). Default: the setting `export.dark`. */
     dark?: boolean | null;
     /** Embed the scene so that the picture can be opened again with `doc.open`. Default: the setting `export.embed_scene`. */
     embed_scene?: boolean | null;
