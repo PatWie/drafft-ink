@@ -26,24 +26,20 @@ use drafftink_typeset::Typesetter;
 use serde_json::{Value, json};
 
 pub(crate) use keys::{EditorKey, KeyRoute, route};
+
+#[cfg(test)]
+mod pixels;
+#[cfg(test)]
+mod tests;
 pub(crate) use subject::Arranged;
 use subject::Subject;
 
 /// How long the caret stays on, and off, in milliseconds.
 const BLINK_HALF_PERIOD_MS: f64 = 530.0;
 
-/// What the app does after the editor saw an event.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum EditorEvent {
-    /// Keep going.
-    None,
-    /// The person finished (Esc or Ctrl/Cmd+Enter).
-    Finish,
-}
-
 /// The text being edited.
 pub(crate) struct TextEditor {
-    model: Editor,
+    pub(super) model: Editor,
     subject: Subject,
     /// Style changes chosen while editing that apply to the whole element (font, size, alignment, opacity).
     props: StyleProps,
@@ -334,11 +330,6 @@ impl TextEditor {
             }
         }
         args
-    }
-
-    /// The container whose label is edited, if any.
-    pub(crate) fn container(&self) -> Option<&ElementId> {
-        self.subject.container()
     }
 }
 

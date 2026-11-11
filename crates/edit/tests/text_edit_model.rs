@@ -7,7 +7,9 @@ use std::sync::Arc;
 use drafftink_edit::text_edit::{Clicks, Editor, Key, KeyAction, Mods, Shown, action_for};
 use drafftink_geom::kurbo::Point;
 use drafftink_scene::{Color, InlineMath, TextRun};
-use drafftink_typeset::{InlineMath as Math, Motion, Rgba8, Span, SpanStyle, TextLayout, TextSpec, TextStyle, Typesetter};
+use drafftink_typeset::{
+    InlineMath as Math, Motion, Rgba8, Span, SpanStyle, TextLayout, TextSpec, TextStyle, Typesetter,
+};
 
 const RED: Color = Color::rgb(220, 30, 30);
 const BLUE: Color = Color::rgb(30, 30, 220);

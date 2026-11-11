@@ -263,6 +263,35 @@ fn text_fills_a_fixed_width_box_when_it_wraps() {
 }
 
 #[test]
+fn a_label_wraps_at_its_box_like_a_fixed_width_text_and_free_text_does_not() {
+    let mut ts = Typesetter::new();
+    let long = "a fairly long line that must wrap inside a narrow box";
+    let mut label = text_el(&mut ts, "t", &ZIndex::first(), 0.0, 0.0, long);
+    if let ElementKind::Text(t) = &mut label.kind {
+        // How a label is stored: it follows its container, so `auto_resize` stays on.
+        t.container_id = Some(ElementId::new("box").unwrap());
+        assert!(t.auto_resize);
+    }
+    label.transform.w = 90.0;
+    let f = paint(&label);
+    assert!(f.bounds.width() <= 90.0 + 1.0, "{:?}", f.bounds);
+    assert!(f.bounds.height() > 40.0, "wrapped into several lines: {:?}", f.bounds);
+
+    // The same text without a container is free text that sizes itself: one line, however narrow its box.
+    let mut free = label.clone();
+    if let ElementKind::Text(t) = &mut free.kind {
+        t.container_id = None;
+    }
+    let f = paint(&free);
+    assert!(f.bounds.width() > 200.0 && f.bounds.height() < 40.0, "{:?}", f.bounds);
+    assert_ne!(paint_hash(&label), paint_hash(&free), "a cached fragment of the free text must not serve the label");
+
+    // A label whose box has no width yet (a file that never measured it) stays on its lines.
+    label.transform.w = 0.0;
+    assert!(paint(&label).bounds.height() < 40.0);
+}
+
+#[test]
 fn math_draws_glyphs_and_rules_and_a_bad_formula_draws_the_old_error_box() {
     let mut ts = Typesetter::new();
     let ok = math_el(&mut ts, "m", &ZIndex::first(), 0.0, 0.0, "\\frac{a}{b}+x^2");

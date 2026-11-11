@@ -136,7 +136,10 @@ mod tests {
         let word = Some(KeyAction::Move { motion: Motion::WordLeft, extend: false });
         assert_eq!(action_for(Key::Left, ctrl, false), word);
         assert_eq!(action_for(Key::Left, alt, true), word);
-        assert_eq!(action_for(Key::Left, ctrl, true), Some(KeyAction::Move { motion: Motion::LineStart, extend: false }));
+        assert_eq!(
+            action_for(Key::Left, ctrl, true),
+            Some(KeyAction::Move { motion: Motion::LineStart, extend: false })
+        );
         assert_eq!(action_for(Key::Backspace, ctrl, false), Some(KeyAction::Backspace { word: true }));
         assert_eq!(action_for(Key::Delete, NONE, false), Some(KeyAction::Delete { word: false }));
     }
@@ -144,7 +147,10 @@ mod tests {
     #[test]
     fn home_end_and_the_ends_of_the_text() {
         let ctrl = Mods { command: true, ..NONE };
-        assert_eq!(action_for(Key::Home, NONE, false), Some(KeyAction::Move { motion: Motion::LineStart, extend: false }));
+        assert_eq!(
+            action_for(Key::Home, NONE, false),
+            Some(KeyAction::Move { motion: Motion::LineStart, extend: false })
+        );
         assert_eq!(action_for(Key::End, ctrl, false), Some(KeyAction::Move { motion: Motion::TextEnd, extend: false }));
     }
 

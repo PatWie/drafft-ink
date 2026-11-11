@@ -11,6 +11,7 @@ use drafftink_bridge::BridgeHost;
 use drafftink_canvas::Camera;
 use drafftink_engine::cmd::view::SetViewportArgs;
 use drafftink_engine::interact::{Badge, ContextTarget, Interaction, InteractionOverlay, Outcome, UiRequest};
+use drafftink_engine::services::SharedTypesetter;
 use drafftink_engine::state::TabId;
 use drafftink_engine::{Origin, Refusal, Session};
 use drafftink_geom::kurbo::{Point, Size};
@@ -18,7 +19,6 @@ use drafftink_gpu::{
     ClipboardContent, DroppedFile, EventCx, FrameCx, FrameOutput, Handled, PointerPhase, RedrawReason, Repaint,
     SetupCx, ShellApp, ShellEvent,
 };
-use drafftink_engine::services::SharedTypesetter;
 use drafftink_render::{GridStyle, RemoteCursor, Theme};
 use drafftink_scene::{ElementKind, SceneRead, SceneStore};
 use drafftink_ui::{FrameInput, HostRequest, Pointer, Toast, UiShell};
@@ -563,7 +563,7 @@ impl App {
     }
 
     fn feed_wheel(&mut self, ctx: &egui::Context, now: f64) {
-        if self.ui.state.modal_open() || self.editor.is_some() {
+        if self.ui.state.modal_open() {
             return;
         }
         let Some(pos) = ctx.input(|i| i.pointer.hover_pos()) else { return };
@@ -877,9 +877,9 @@ impl ShellApp for App {
                 let changed = self.editor.as_mut().is_some_and(|e| e.text_input(&input, now));
                 (if changed { Repaint::Now(RedrawReason::Command) } else { Repaint::Idle }, Handled::Yes)
             }
-            ShellEvent::FileHover(_)
-            | ShellEvent::Visibility(true)
-            | ShellEvent::Focus(true) => (Repaint::Idle, Handled::No),
+            ShellEvent::FileHover(_) | ShellEvent::Visibility(true) | ShellEvent::Focus(true) => {
+                (Repaint::Idle, Handled::No)
+            }
         }
     }
 

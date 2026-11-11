@@ -1312,3 +1312,127 @@ fn dropping_over_a_frame_highlights_it_during_the_drag_and_joins_it_on_release()
     assert!(rig.i.parts().highlight.is_empty());
     assert_eq!(rig.element(&a).frame_id, Some(frame), "membership is set once, by the committed run");
 }
+
+// ---- the text editor session (docs/exceptions.md E16) -------------------------------------------------------------
+
+mod text_editor {
+    use drafftink_edit::text_edit::Editor;
+    use drafftink_scene::{Color, ElementKind, InlineMath, TextRun};
+    use serde_json::{Value, json};
+
+    use super::super::super::testutil::Rig;
+    use crate::interact::UiRequest;
+
+    const RED: Color = Color::rgb(255, 0, 0);
+
+    /// A text "hello" in the rig, and the point in its middle.
+    fn hello(rig: &mut Rig) -> (drafftink_scene::ElementId, f64, f64) {
+        rig.run("element.create", json!({ "kind": "text", "text": "hello", "at": [100, 100] }));
+        let text = rig.elements().into_iter().next().expect("text");
+        let t = text.transform;
+        (text.id, t.x + t.w / 2.0, t.y + t.h / 2.0)
+    }
+
+    /// What the app stages and sends: the editor model's result as `text.edit_end` arguments.
+    fn args_of(editor: &Editor) -> Value {
+        let done = editor.finish();
+        let runs: Vec<Value> = done
+            .runs
+            .iter()
+            .filter_map(|r| r.color.map(|c| json!({ "start": r.start, "end": r.end, "color": c })))
+            .collect();
+        json!({ "commit": true, "text": done.text, "runs": runs })
+    }
+
+    fn content(rig: &Rig, id: &drafftink_scene::ElementId) -> (String, Vec<TextRun>) {
+        let e = rig.s.store().get(id).expect("element");
+        let ElementKind::Text(t) = &e.kind else { panic!("not a text") };
+        (t.content.clone(), t.runs.clone())
+    }
+
+    use drafftink_scene::SceneRead as _;
+
+    #[test]
+    fn double_clicking_text_enters_the_edit_and_asks_for_the_editor() {
+        let mut rig = Rig::new();
+        let (id, x, y) = hello(&mut rig);
+        rig.double_click(x, y);
+        assert_eq!(rig.s.text_edit.as_ref().and_then(|t| t.element.clone()), Some(id.clone()));
+        assert!(
+            matches!(rig.last.ui_request, Some(UiRequest::OpenTextEditor { element: Some(ref e), .. }) if *e == id)
+        );
+    }
+
+    #[test]
+    fn typing_a_coloured_word_and_ending_the_edit_is_one_undo_step() {
+        let mut rig = Rig::new();
+        let (id, x, y) = hello(&mut rig);
+        rig.double_click(x, y);
+        let depth = rig.undo_depth();
+
+        // The editor owns the content while the person types.
+        let mut editor = Editor::new("hello", &[], InlineMath::Auto);
+        editor.insert(" world");
+        editor.select_chars(6..11);
+        assert!(editor.set_color(Some(RED)));
+        assert_eq!(rig.undo_depth(), depth, "typing is not a document change");
+        assert_eq!(content(&rig, &id).0, "hello");
+
+        // Esc ends the edit with what was typed.
+        rig.s.stage_text_edit(args_of(&editor));
+        rig.run("tool.cancel", json!({}));
+        assert!(rig.s.text_edit.is_none());
+        let (text, runs) = content(&rig, &id);
+        assert_eq!(text, "hello world");
+        assert_eq!(runs, vec![TextRun { start: 6, end: 11, color: Some(RED) }]);
+        assert_eq!(rig.undo_depth(), depth + 1, "the whole edit is one undo step");
+
+        rig.run("history.undo", json!({}));
+        let (text, runs) = content(&rig, &id);
+        assert_eq!((text.as_str(), runs.len()), ("hello", 0));
+    }
+
+    #[test]
+    fn cancelling_keeps_the_original() {
+        let mut rig = Rig::new();
+        let (id, x, y) = hello(&mut rig);
+        rig.double_click(x, y);
+        let depth = rig.undo_depth();
+        let mut editor = Editor::new("hello", &[], InlineMath::Auto);
+        editor.insert("!!!");
+        rig.s.stage_text_edit(args_of(&editor));
+        rig.run("text.edit_end", json!({ "commit": false }));
+        assert_eq!(content(&rig, &id).0, "hello");
+        assert_eq!(rig.undo_depth(), depth);
+    }
+
+    #[test]
+    fn a_click_on_empty_canvas_ends_the_edit_with_what_was_typed() {
+        let mut rig = Rig::new();
+        let (id, x, y) = hello(&mut rig);
+        rig.double_click(x, y);
+        let mut editor = Editor::new("hello", &[], InlineMath::Auto);
+        editor.insert(" there");
+        rig.s.stage_text_edit(args_of(&editor));
+        // The click is a command with the commit gate: it ends the edit first, with the staged result.
+        rig.click(600.0, 500.0);
+        assert!(rig.s.text_edit.is_none());
+        assert_eq!(content(&rig, &id).0, "hello there");
+    }
+
+    #[test]
+    fn exception_E16_edit_equals_plain_command() {
+        // A draft: double click on empty canvas, type, end.
+        let mut rig = Rig::new();
+        rig.double_click(300.0, 200.0);
+        assert!(rig.s.text_edit.as_ref().is_some_and(|t| t.draft));
+        let mut editor = Editor::new("", &[], InlineMath::Auto);
+        editor.insert("typed words");
+        rig.s.stage_text_edit(args_of(&editor));
+        rig.run("text.edit_end", args_of(&editor));
+
+        let mut twin = Rig::new();
+        twin.run("element.create", json!({ "kind": "text", "text": "typed words", "at": [300, 200] }));
+        assert_eq!(rig.normalized_doc(), twin.normalized_doc());
+    }
+}

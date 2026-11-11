@@ -12,9 +12,7 @@ use drafftink_engine::Session;
 use drafftink_engine::interact::UiRequest;
 use drafftink_geom::kurbo::{Affine, Point, Size};
 use drafftink_render::{element_to_world, text_spec};
-use drafftink_scene::{
-    Element, ElementId, ElementKind, InlineMath, Kind, SceneRead, TextData, TextRun, ZIndex,
-};
+use drafftink_scene::{Element, ElementId, ElementKind, InlineMath, Kind, SceneRead, TextData, TextRun, ZIndex};
 use drafftink_typeset::{TextLayout, Typesetter, Wrap};
 
 /// Where the text goes.
@@ -137,27 +135,8 @@ impl Subject {
         out
     }
 
-    /// The container whose label is edited.
-    pub(super) fn container(&self) -> Option<&ElementId> {
-        match &self.place {
-            Place::Label { container } => Some(&container.id),
-            Place::Free { .. } => None,
-        }
-    }
-
-    /// The text of the template element as it is stored: its colour and font, for the style panel.
-    pub(super) fn template(&self) -> &Element {
-        &self.template
-    }
-
     /// Lays the shown text out in its place.
-    pub(super) fn arrange(
-        &self,
-        shown: &Shown,
-        math: InlineMath,
-        props: &TextProps,
-        ts: &mut Typesetter,
-    ) -> Arranged {
+    pub(super) fn arrange(&self, shown: &Shown, math: InlineMath, props: &TextProps, ts: &mut Typesetter) -> Arranged {
         let mut text = self.template.clone();
         text.style.stroke_color = props.stroke_color.unwrap_or(text.style.stroke_color);
         text.style.opacity = props.opacity.unwrap_or(text.style.opacity);
