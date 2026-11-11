@@ -58,6 +58,8 @@ pub(crate) struct RunState {
     pub origin: Origin,
     /// The pipeline is running the final command of a gesture (`gesture.end`): its step is not coalesced.
     pub gesture_end: bool,
+    /// The running call is a [`Session::query`]: a success leaves no ring entry.
+    pub quiet_ok: bool,
 }
 
 /// Which dirty reasons are pending since the shell last asked.
