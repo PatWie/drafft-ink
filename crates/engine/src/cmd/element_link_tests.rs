@@ -1,7 +1,7 @@
 //! Tests of `element.set_link` and `element.open_link`: availability, exact refusal text, effect, a negative case
 //! that leaves the fingerprint alone, and undo. No UI, no DOM: a headless session and the fake ports.
 
-use drafftink_scene::{ElementId, SceneRead, SceneTx, StoreError};
+use drafftink_scene::{ElementId, SceneTx, StoreError};
 use serde_json::{Value, json};
 
 use crate::refusal::Refusal;

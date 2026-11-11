@@ -1,3 +1,4 @@
+#![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 //! The link dialog (`Mod+K`, `ui.open_link_editor`) and the way an opened link reaches the app.
 
 mod common;
