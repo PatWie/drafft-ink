@@ -23,6 +23,7 @@ mod storage;
 
 use drafftink_bridge::host::{JobSender, channel};
 use drafftink_engine::Ports;
+use drafftink_engine::services::LazyTypesetter;
 use drafftink_gpu::RedrawReason;
 use drafftink_scene::RandomIds;
 
@@ -100,6 +101,7 @@ pub async fn platform(opts: WebOptions) -> Result<WebPlatform, WebError> {
 
     let wake = WakeCell::new();
     let clipboard = SharedClipboard::new();
+    let typesetter = LazyTypesetter::shared();
     let location = dom::window()?.location();
     let net = WebNet::new(wake.hook(RedrawReason::Collab), &location);
     let ports = Ports::new(Box::new(AppClock::new()), Box::new(RandomIds(CryptoRng)))
@@ -108,12 +110,13 @@ pub async fn platform(opts: WebOptions) -> Result<WebPlatform, WebError> {
         .with_files(Box::new(WebFiles::new(storage.clone())))
         .with_net(Box::new(net));
 
-    let (jobs, bridge) = channel(wake.hook(RedrawReason::Command), None);
+    let (jobs, bridge) = channel(wake.hook(RedrawReason::Load), None);
     let platform = Platform {
         ports,
         host: Box::new(WebHost),
         wake,
         clipboard,
+        typesetter,
         bridge: Some(bridge),
         is_mac: opts.is_mac,
     };
