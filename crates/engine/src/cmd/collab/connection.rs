@@ -9,7 +9,8 @@ use drafftink_scene::{Color, SceneRead};
 use serde_json::Value;
 
 use super::address::RoomName;
-use super::state::{CollabState, GatedTransport, Live};
+use super::poll::finish_import;
+use super::state::{CollabState, GatedTransport, Live, stage_threshold};
 use crate::cmd::tab::RoomBinding;
 use crate::ports::PortError;
 use crate::refusal::Refusal;
@@ -100,6 +101,8 @@ pub(super) fn start(
         follow_view: None,
     };
     s.tab_mut().ext.set(RoomBinding(Some(room.to_string())));
+    // A room that is big enough is decoded in slices by `collab_poll`.
+    s.tab_mut().doc.replicated_mut().set_stage_import_bytes(stage_threshold());
     s.ext.with::<CollabState, _>(|c| {
         c.server = None;
         c.token = token;
@@ -157,7 +160,9 @@ pub(super) fn leave(s: &mut Session, forget_server: bool) -> Option<(String, Tab
     let mut live = live?;
     let room = live.room.to_string();
     let tab = live.tab;
+    finish_import(s, tab);
     if let Some(t) = s.tab_by_id_mut(tab) {
+        t.doc.replicated_mut().set_stage_import_bytes(usize::MAX);
         live.session.client_mut().leave(now, t.doc.replicated_mut());
         // The goodbye and the close are outputs of the client; the pump hands them to the transport.
         live.session.pump(now, t.doc.replicated_mut());

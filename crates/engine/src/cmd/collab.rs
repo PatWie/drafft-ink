@@ -73,6 +73,20 @@ fn not_connected(id: &str) -> Refusal {
         .suggesting("collab.connect", None)
 }
 
+/// The state check of the commands that write the whole document out: a room that is still being filled in slices
+/// would give a document with missing elements.
+pub(crate) fn require_loaded(s: &Session, id: &str) -> Result<(), Refusal> {
+    let Some(p) = s.tab().doc.replicated().import_progress() else { return Ok(()) };
+    Err(Refusal::custom(
+        "room_loading",
+        id,
+        format!(
+            "The room is still loading ({} of {} items), so `{id}` would leave elements out. Wait until it has loaded, then run `{id}` again.",
+            p.done, p.total
+        ),
+    ))
+}
+
 fn not_in_room(id: &str) -> Refusal {
     Refusal::custom("not_in_room", id, "This tab is not in a room, so there is nothing to leave.")
 }

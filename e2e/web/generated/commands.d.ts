@@ -1173,6 +1173,13 @@ export namespace CollabStatus {
     bytes: number;
     phase: "receiving";
     [key: string]: unknown;
+  } | {
+    /** Items (elements, files) shown so far. */
+    done: number;
+    phase: "importing";
+    /** All items of the room. */
+    total: number;
+    [key: string]: unknown;
   };
   /** One other person in the room. */
   type O_PeerView = {

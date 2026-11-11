@@ -15,6 +15,11 @@ use crate::state::{TabId, View};
 /// import blocks the thread (a snapshot of 100k elements takes about 1.5 s).
 pub(super) const BIG_MESSAGE_BYTES: u64 = 256 * 1024;
 
+/// The same limit as the size from which the replicated store decodes a message in slices.
+pub(super) fn stage_threshold() -> usize {
+    usize::try_from(BIG_MESSAGE_BYTES).unwrap_or(usize::MAX)
+}
+
 /// Most notices kept; the oldest are dropped.
 const MAX_NOTICES: usize = 32;
 /// Most points of the local laser trail.
@@ -36,6 +41,9 @@ pub(super) struct Gate {
     pub held: Option<u64>,
     /// The owner agreed to import it now.
     pub release: bool,
+    /// The tab can take a big message in slices, so nothing needs to be held back: the import does not stall the
+    /// thread. Set by every poll before it pumps.
+    pub stage: bool,
 }
 
 /// Wraps the shell's transport and holds one big message until the session releases it. Everything else passes
@@ -79,8 +87,8 @@ impl Transport for GatedTransport {
         let event = self.inner.poll()?;
         if let TransportEvent::Message(bytes) = &event {
             let len = u64::try_from(bytes.len()).unwrap_or(u64::MAX);
-            if len >= BIG_MESSAGE_BYTES {
-                self.gate.set(Gate { held: Some(len), release: false });
+            if len >= BIG_MESSAGE_BYTES && !gate.stage {
+                self.gate.set(Gate { held: Some(len), release: false, stage: false });
                 self.stash = Some(event);
                 return None;
             }

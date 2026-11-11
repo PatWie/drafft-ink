@@ -103,15 +103,7 @@ impl Session {
     /// Takes a change set the collab client already imported into the replicated store: copies it into the
     /// working store of `tab`, then does what [`Session::apply_remote`] does. One ring entry per call.
     pub(crate) fn mirror_remote(&mut self, tab: TabId, cs: &ChangeSet) -> Result<(), Refusal> {
-        let res = match self.tab_by_id_mut(tab) {
-            Some(t) => t.doc.mirror_remote(cs).map_err(|e| {
-                Refusal::internal(REMOTE_RING_ID, format!("a collaborator's change could not be shown: {e}"))
-            }),
-            None => Err(no_such_tab(tab)),
-        };
-        if res.is_ok() {
-            self.after_remote(tab, cs);
-        }
+        let res = self.mirror_import_slice(tab, cs);
         let args = json!({ "tab": tab.to_string(), "elements": cs.elements.len() });
         let outcome = match &res {
             Ok(()) => Outcome::ok(!cs.is_empty(), None),
@@ -130,6 +122,40 @@ impl Session {
             mutating: true,
         });
         res
+    }
+}
+
+impl Session {
+    /// Like [`Session::mirror_remote`] without the ring entry: one slice of a staged import. A big room is hundreds
+    /// of slices, and the ring would hold nothing else. [`Session::record_import_done`] writes the one entry.
+    pub(crate) fn mirror_import_slice(&mut self, tab: TabId, cs: &ChangeSet) -> Result<(), Refusal> {
+        let res = match self.tab_by_id_mut(tab) {
+            Some(t) => t.doc.mirror_remote(cs).map_err(|e| {
+                Refusal::internal(REMOTE_RING_ID, format!("a collaborator's change could not be shown: {e}"))
+            }),
+            None => Err(no_such_tab(tab)),
+        };
+        if res.is_ok() {
+            self.after_remote(tab, cs);
+        }
+        res
+    }
+
+    /// The ring entry of a staged import that is complete: `items` elements, files and metas came in.
+    pub(crate) fn record_import_done(&mut self, tab: TabId, items: usize) {
+        let args = json!({ "tab": tab.to_string(), "elements": items });
+        let t_ms = self.now_ms();
+        self.ring.push(Record {
+            t_ms,
+            id: REMOTE_RING_ID,
+            args: Some(&args),
+            source: Origin::Remote,
+            outcome: Outcome::ok(items > 0, None),
+            duration_us: 0,
+            steps: None,
+            frames: None,
+            mutating: true,
+        });
     }
 }
 

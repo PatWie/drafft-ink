@@ -51,6 +51,14 @@ pub enum Loading {
         /// Size of the update in bytes.
         bytes: u64,
     },
+    /// The room's content is in, and the scene is being filled in slices, a few milliseconds at a time. The app keeps
+    /// answering; elements appear as they are decoded.
+    Importing {
+        /// Items (elements, files) shown so far.
+        done: usize,
+        /// All items of the room.
+        total: usize,
+    },
 }
 
 /// A point of a fading trail.

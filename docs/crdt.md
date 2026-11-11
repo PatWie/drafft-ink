@@ -223,6 +223,8 @@ Release build, AMD EPYC 7R13, criterion means (`cargo bench -p drafftink-doc --b
 | Full snapshot size | 150 KiB | 1.5 MiB | 15.6 MiB | |
 | State-only snapshot size | 96 KiB | 1.0 MiB | 10.3 MiB | |
 
+**Staged import** (`LoroConfig::stage_import_bytes`, `LoroStore::import_step`, `docs/collab.md` "Big rooms"). The CRDT import itself is lazy: 8 ms for the 100,000-element snapshot into a bare document. Into the document in use it takes 1.7 s, because the undo manager asks Loro for the diff of everything the import touches, so a staged import switches the store to a fresh document (the replica must hold nothing of the user's). The call then lists the element ids with `get_value` (80 ms at 100,000) and the view is decoded in slices: 256 items take 4.7 ms at 10,000 and at most 17 ms at 100,000, 1.1 s in total.
+
 A local edit and a remote edit cost the same at 1k and 100k: the work is independent of the scene size. Import is linear (about 14 us per element at 100k, 9 us at 1k), mostly Loro's lazy state load plus a JSON-based decode; a typed decoder could halve it if opening 100k-element files matters.
 
 ## 16. Known limits

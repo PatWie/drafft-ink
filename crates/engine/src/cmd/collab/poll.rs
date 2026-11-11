@@ -9,18 +9,26 @@ use std::collections::VecDeque;
 
 use drafftink_collab::{CollabEvent, ConnState, FollowEnd, Problem, ProblemAction, RemoteKind, TrimmedChoice};
 use drafftink_geom::kurbo::Point;
+use drafftink_doc::ImportProgress;
 use drafftink_protocol::{MAX_SELECTION_IDS, Viewport};
 
-use super::state::{CollabNotice, CollabState, Gate, Live};
+use super::state::{CollabNotice, CollabState, Gate, Live, stage_threshold};
 use super::view::{CollabView, ConnectionState, Loading, PeerView};
 use crate::session::Session;
 use crate::spec::Redraw;
-use crate::state::clamp_zoom;
+use crate::state::{TabId, clamp_zoom};
+use drafftink_profile::now_ns;
 
 /// How long after a held big message the next poll is asked for, so one frame can show the progress hint.
 const HOLD_FRAME_MS: u64 = 16;
 /// The frame interval while the local laser trail fades.
 const LASER_FRAME_MS: u64 = 16;
+/// How long one poll works on a staged import: half a 60 Hz frame, so a frame fits around it.
+const IMPORT_BUDGET_NS: u64 = 8_000_000;
+/// Items one `import_step` call decodes. The budget is checked between calls.
+const IMPORT_STEP_ITEMS: usize = 32;
+/// Most items one poll decodes, whatever the clock says (a fast machine, or a clock that does not move in tests).
+pub(super) const MAX_IMPORT_ITEMS_PER_POLL: usize = 1024;
 
 /// What a poll found, for the shell's loop.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
@@ -72,7 +80,10 @@ impl Session {
         let now = self.ports.clock.mono_ms();
         let Some(state) = self.ext.get::<CollabState>() else { return CollabView::disconnected() };
         let mut view = match (&state.live, &state.server) {
-            (Some(live), _) => live_view(live, now),
+            (Some(live), _) => {
+                let import = self.tab_by_id(live.tab).and_then(|t| t.doc.replicated().import_progress());
+                live_view(live, import, now)
+            }
             (None, Some(server)) => CollabView {
                 state: ConnectionState::Ready,
                 url: Some(server.to_string()),
@@ -95,16 +106,19 @@ impl Session {
     }
 }
 
-fn live_view(live: &Live, now_ms: u64) -> CollabView {
+fn live_view(live: &Live, import: Option<ImportProgress>, now_ms: u64) -> CollabView {
     let client = live.session.client();
     let status = client.status();
     let state = ConnectionState::of(status.state);
     let following = client.following();
     let held = live.gate.get().held;
-    let loading = match (held, live.synced_once, status.state) {
-        (Some(bytes), _, _) => Some(Loading::Receiving { bytes }),
-        (None, false, ConnState::Idle | ConnState::Connecting | ConnState::Reconnecting) => Some(Loading::Connecting),
-        (None, false, ConnState::Syncing | ConnState::Online) => Some(Loading::Syncing),
+    let loading = match (held, import, live.synced_once, status.state) {
+        (Some(bytes), ..) => Some(Loading::Receiving { bytes }),
+        (None, Some(p), ..) => Some(Loading::Importing { done: p.done, total: p.total }),
+        (None, None, false, ConnState::Idle | ConnState::Connecting | ConnState::Reconnecting) => {
+            Some(Loading::Connecting)
+        }
+        (None, None, false, ConnState::Syncing | ConnState::Online) => Some(Loading::Syncing),
         _ => None,
     };
     CollabView {
@@ -124,6 +138,9 @@ fn live_view(live: &Live, now_ms: u64) -> CollabView {
 /// One poll of a running client. `None` when its tab no longer exists.
 fn poll_live(s: &mut Session, live: &mut Live, now: u64) -> Option<CollabPoll> {
     publish_local(s, live, now)?;
+    // A tab without content takes a big message in slices, so there is nothing to hold back for a loading frame.
+    let stage = s.tab_by_id(live.tab)?.doc.replicated().would_stage(stage_threshold());
+    live.gate.set(Gate { stage, ..live.gate.get() });
     if hold_big_message(live) {
         return Some(CollabPoll { redraw: true, wake_in_ms: Some(HOLD_FRAME_MS) });
     }
@@ -144,8 +161,75 @@ fn poll_live(s: &mut Session, live: &mut Live, now: u64) -> Option<CollabPoll> {
         live.announced_hold = true;
         return Some(CollabPoll { redraw: true, wake_in_ms: Some(HOLD_FRAME_MS) });
     }
-    let wake = live.session.client().next_wake_ms().map(|w| w.saturating_sub(now));
-    Some(CollabPoll { redraw: pump.redraw, wake_in_ms: wake })
+    let slice = import_slice(s, live.tab)?;
+    let mut wake = live.session.client().next_wake_ms().map(|w| w.saturating_sub(now));
+    if slice.more {
+        wake = Some(wake.map_or(IMPORT_FRAME_MS, |w| w.min(IMPORT_FRAME_MS)));
+    }
+    Some(CollabPoll { redraw: pump.redraw || slice.changed, wake_in_ms: wake })
+}
+
+/// The pause between two slices of a staged import: one frame, so the app draws and answers in between.
+const IMPORT_FRAME_MS: u64 = 16;
+
+/// What one run of import slices did.
+struct Slice {
+    /// The scene changed.
+    changed: bool,
+    /// More of the import is waiting.
+    more: bool,
+}
+
+/// Decodes the next part of a staged import of `tab` and shows it, for at most [`IMPORT_BUDGET_NS`]. `None` when the
+/// tab is gone.
+fn import_slice(s: &mut Session, tab: TabId) -> Option<Slice> {
+    let started = now_ns();
+    let (mut items, mut changed) = (0, false);
+    let Some(progress) = s.tab_by_id(tab)?.doc.replicated().import_progress() else {
+        return Some(Slice { changed: false, more: false });
+    };
+    let total = progress.total;
+    loop {
+        let t = s.tab_by_id_mut(tab)?;
+        let step = t.doc.replicated_mut().import_step(IMPORT_STEP_ITEMS);
+        items += IMPORT_STEP_ITEMS;
+        match step {
+            Ok(cs) => {
+                changed |= !cs.is_empty();
+                if let Err(refusal) = s.mirror_import_slice(tab, &cs) {
+                    s.collab_notify(CollabNotice::Problem(reload_problem(refusal.message)));
+                }
+            }
+            Err(e) => {
+                // The import stops here; what was decoded stays.
+                s.collab_notify(CollabNotice::Problem(reload_problem(format!("The room could not be shown completely: {e}."))));
+                return Some(Slice { changed, more: false });
+            }
+        }
+        let more = s.tab_by_id(tab)?.doc.replicated().import_progress().is_some();
+        if !more {
+            s.record_import_done(tab, total);
+        }
+        if !more || items >= MAX_IMPORT_ITEMS_PER_POLL || now_ns().saturating_sub(started) >= IMPORT_BUDGET_NS {
+            return Some(Slice { changed, more });
+        }
+    }
+}
+
+fn reload_problem(text: String) -> Problem {
+    Problem { code: None, text, action: ProblemAction::Reload, fatal: false }
+}
+
+/// Decodes everything that is left of a staged import of `tab` now. For a tab that stops sharing: its local copy
+/// must be whole.
+pub(super) fn finish_import(s: &mut Session, tab: TabId) {
+    while s.tab_by_id(tab).is_some_and(|t| t.doc.replicated().import_progress().is_some()) {
+        let Some(t) = s.tab_by_id_mut(tab) else { return };
+        let Ok(cs) = t.doc.replicated_mut().import_step(4096) else { return };
+        if s.mirror_import_slice(tab, &cs).is_err() {
+            return;
+        }
+    }
 }
 
 /// Tells the client about local commits and publishes selection and viewport; ends following when the user
