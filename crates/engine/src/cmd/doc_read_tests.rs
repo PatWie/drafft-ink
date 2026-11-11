@@ -148,6 +148,7 @@ fn inspect_summarises_the_document() {
     let v = run(&mut s, "doc.inspect", json!({}));
     assert_eq!(v["kinds"]["rectangle"], 3);
     assert_eq!(v["kinds"]["arrow"], 1);
+    assert_eq!(v["bound_arrows"], 1, "the diagram arrow is bound at both ends");
     assert_eq!(v["locked"], 1);
     assert_eq!(v["frames"], 0);
     assert_eq!(v["tab"], "t1");
