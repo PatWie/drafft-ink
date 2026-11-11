@@ -13,7 +13,7 @@ use kurbo::{Point, Rect, Vec2};
 
 use crate::aabb;
 use crate::obox::OrientedBox;
-use crate::outline::{Outline, Primitive, Probe, unit};
+use crate::outline::{Outline, Primitive, Probe, cross, unit};
 use crate::shapes::{DiamondShape, EllipseShape, RectShape};
 
 /// Gap between an arrow end and the outline of the shape it is bound to (scene units).
@@ -310,13 +310,13 @@ impl BindTarget {
             }
             // Intersect the finite ray with the diagonal segment.
             let e = r - q;
-            let denom = dir.x * e.y - dir.y * e.x;
+            let denom = cross(dir, e);
             if denom.abs() < 1e-12 {
                 continue;
             }
             let qa = q - a;
-            let t = (qa.x * e.y - qa.y * e.x) / denom;
-            let s = (qa.x * dir.y - qa.y * dir.x) / denom;
+            let t = cross(qa, e) / denom;
+            let s = cross(qa, dir) / denom;
             if (0.0..=reach).contains(&t) && (0.0..=1.0).contains(&s) {
                 let hit = a + dir * t;
                 if best.is_none_or(|(d, _)| t < d) {
@@ -415,7 +415,6 @@ impl BindTarget {
         let [top0, right0, bottom0, left0] = self.frame.side_midpoints();
         let shrink = |v: Point| mid + (v - mid) * 0.95;
         let (top, right, bottom, left) = (shrink(top0), shrink(right0), shrink(bottom0), shrink(left0));
-        let cross = |a: Vec2, b: Vec2| a.x * b.y - a.y * b.x;
         let v = |a: Point, b: Point| a - b;
 
         // Corner cones.
