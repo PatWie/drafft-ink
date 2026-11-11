@@ -186,19 +186,22 @@ fn inspect(s: &mut Session, a: InspectArgs) -> Result<Value, Refusal> {
         }
         let mut kinds: BTreeMap<&str, usize> = BTreeMap::new();
         let mut groups: BTreeMap<&GroupId, usize> = BTreeMap::new();
-        let (mut frames, mut locked, mut count) = (0usize, 0usize, 0usize);
+        let (mut frames, mut locked, mut count, mut labels) = (0usize, 0usize, 0usize, 0usize);
         let mut bounds: Option<Rect> = None;
         for e in store.iter() {
+            // A bound label follows its container: it is counted apart, as `element.query` leaves it out.
+            if e.container_id().is_some() {
+                labels += 1;
+                continue;
+            }
             *kinds.entry(e.tag().name()).or_default() += 1;
             for g in &e.group_ids {
                 *groups.entry(g).or_default() += 1;
             }
             frames += usize::from(e.tag() == Kind::Frame);
             locked += usize::from(e.locked);
-            if e.container_id().is_none() {
-                let b = query::element_bounds(e);
-                bounds = Some(bounds.map_or(b, |x| x.union(b)));
-            }
+            let b = query::element_bounds(e);
+            bounds = Some(bounds.map_or(b, |x| x.union(b)));
             count += 1;
         }
         let tab = s.tab();
@@ -210,6 +213,7 @@ fn inspect(s: &mut Session, a: InspectArgs) -> Result<Value, Refusal> {
             "save_target": Value::Null,
             "background": store.meta().background,
             "elements": count,
+            "labels": labels,
             "kinds": kinds,
             "bounds": bounds.map(RectOut::from),
             "groups": groups.values().filter(|n| **n >= 2).count(),

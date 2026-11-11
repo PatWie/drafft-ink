@@ -158,6 +158,24 @@ fn inspect_summarises_the_document() {
 }
 
 #[test]
+fn inspect_counts_a_shape_with_a_label_once_like_element_query() {
+    let (mut s, _f) = testing::session();
+    let ids: Vec<ElementId> = (0..3).map(|i| testing::add_rect(&mut s, f64::from(i) * 100.0, 0.0, 50.0, 50.0).unwrap()).collect();
+    run(&mut s, "text.set", json!({"id": ids[0].as_str(), "text": "hello"}));
+    run(&mut s, "text.set", json!({"id": ids[1].as_str(), "text": "world"}));
+    run(&mut s, "group.create", json!({"ids": [ids[0].as_str(), ids[1].as_str()]}));
+    let summary = run(&mut s, "doc.inspect", json!({}));
+    let query = run(&mut s, "element.query", json!({}));
+    assert_eq!(summary["elements"], query["total"], "one word, one number");
+    assert_eq!(summary["elements"], 3, "three rectangles; the two labels follow their containers");
+    assert_eq!(summary["labels"], 2);
+    assert_eq!(summary["groups"], 1);
+    assert_eq!(summary["kinds"], json!({"rectangle": 3}), "kinds count the same elements as `elements`");
+    let full = run(&mut s, "doc.inspect", json!({"detail": "full"}));
+    assert_eq!(full["total"], 5, "the full listing has every element, labels included: elements + labels");
+}
+
+#[test]
 fn inspect_full_pages_and_lists_deleted_elements_on_request() {
     let (mut s, _f) = testing::session();
     let ids: Vec<ElementId> = (0..5).map(|i| testing::add_rect(&mut s, f64::from(i) * 100.0, 0.0, 50.0, 50.0).unwrap()).collect();
