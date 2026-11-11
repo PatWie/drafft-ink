@@ -219,10 +219,7 @@ impl Interaction {
         let mut out = Outcome::default();
         self.begin(s, &mut out);
         let mut intents = Vec::new();
-        {
-            let pick = self.world.picker(s);
-            self.recognizer.tick(now_ms, &pick, &mut intents);
-        }
+        self.recognizer.tick(now_ms, &mut intents);
         for intent in intents {
             self.dispatch(s, intent, now_ms, Modifiers::NONE, &mut out);
         }
