@@ -29,6 +29,8 @@ pub struct ShortcutView {
     pub args: Value,
     /// The palette title of this binding, if it has its own.
     pub title: Option<&'static str>,
+    /// The host runs this chord from its clipboard event ([`drafftink_engine::spec::Binding::host_clipboard`]).
+    pub host_clipboard: bool,
 }
 
 /// A registered command as the UI sees it.
@@ -604,6 +606,7 @@ fn shortcuts_of(spec: &CommandSpec, mac: bool) -> Vec<ShortcutView> {
             chords: b.chords(mac).iter().filter_map(|c| parse_chord(c)).collect(),
             args: if b.args.is_empty() { Value::Null } else { serde_json::from_str(b.args).unwrap_or(Value::Null) },
             title: b.title,
+            host_clipboard: b.host_clipboard,
         })
         .collect()
 }

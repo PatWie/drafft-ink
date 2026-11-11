@@ -47,11 +47,21 @@ pub(crate) fn payload_of(content: &ClipboardContent, kind: ClipKind) -> Option<C
 
 /// The arguments of `clipboard.paste` for a paste event: centred on the pointer when it is over the canvas, else
 /// on the viewport (no `at`). A point is `[x, y]` in command arguments; an object is refused as `bad_args`.
-pub(crate) fn paste_args(pointer: Option<Point>) -> Value {
-    match pointer {
+/// `plain_text` is Ctrl+Shift+V, which the key binding `Mod+Shift+V` carries when the keymap runs the paste.
+pub(crate) fn paste_args(pointer: Option<Point>, plain_text: bool) -> Value {
+    let mut args = match pointer {
         Some(p) => json!({ "at": [p.x, p.y] }),
         None => json!({}),
+    };
+    if let (true, Some(map)) = (plain_text, args.as_object_mut()) {
+        map.insert("plain_text".to_owned(), Value::Bool(true));
     }
+    args
+}
+
+/// Is this the paste of Ctrl/Cmd+Shift+V (plain text) and not of Ctrl+V or Shift+Insert?
+pub(crate) fn is_plain_text_paste(m: egui::Modifiers) -> bool {
+    m.command && m.shift && !m.alt
 }
 
 #[cfg(test)]
@@ -91,7 +101,19 @@ mod tests {
 
     #[test]
     fn a_paste_event_names_the_pointer_as_a_point_array() {
-        assert_eq!(paste_args(Some(Point::new(905.0, 605.0))), json!({ "at": [905.0, 605.0] }));
-        assert_eq!(paste_args(None), json!({}));
+        assert_eq!(paste_args(Some(Point::new(905.0, 605.0)), false), json!({ "at": [905.0, 605.0] }));
+        assert_eq!(paste_args(None, false), json!({}));
+    }
+
+    #[test]
+    fn ctrl_shift_v_pastes_plain_text_and_the_other_pastes_do_not() {
+        assert_eq!(paste_args(Some(Point::new(1.0, 2.0)), true), json!({ "at": [1.0, 2.0], "plain_text": true }));
+        assert_eq!(paste_args(None, true), json!({ "plain_text": true }));
+        let ctrl = egui::Modifiers { ctrl: true, command: true, ..egui::Modifiers::NONE };
+        assert!(!is_plain_text_paste(ctrl));
+        assert!(is_plain_text_paste(egui::Modifiers { shift: true, ..ctrl }));
+        // Shift+Insert is a plain paste of the system clipboard, not "as plain text".
+        assert!(!is_plain_text_paste(egui::Modifiers::SHIFT));
+        assert!(!is_plain_text_paste(egui::Modifiers { alt: true, shift: true, ..ctrl }));
     }
 }

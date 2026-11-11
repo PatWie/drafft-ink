@@ -918,7 +918,8 @@ impl ShellApp for App {
                     return (Repaint::Idle, Handled::No);
                 }
                 self.clipboard.set_incoming(Some(content));
-                let args = crate::clip::paste_args(self.pointer_world());
+                let args =
+                    crate::clip::paste_args(self.pointer_world(), crate::clip::is_plain_text_paste(cx.modifiers));
                 if let Err(r) = self.session.execute_from(Origin::Shortcut, "clipboard.paste", args)
                     && !drafftink_ui::action::quiet_from_keyboard(r.code)
                 {
@@ -1037,7 +1038,7 @@ impl ShellApp for App {
             cursor: self.pointer_world().map(|p| (p.x, p.y)),
             viewport_center: Some((self.interaction.camera().scroll.x, self.interaction.camera().scroll.y)),
         };
-        let result = self.ui.frame(ui, &mut self.session, FrameInput { pointer });
+        let result = self.ui.frame(ui, &mut self.session, FrameInput { pointer, host_clipboard: true });
         for request in result.report.host {
             self.handle_host_request(request, cx);
         }

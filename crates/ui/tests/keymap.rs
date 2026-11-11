@@ -36,7 +36,16 @@ fn model(mac: bool) -> Model {
 }
 
 fn resolve(m: &Model, st: &UiState, events: &[Event]) -> Vec<UiAction> {
-    resolve_keys(events, &KeyContext { model: m, state: st, egui_wants_keyboard: false, pointer: Pointer::default() })
+    resolve_keys(
+        events,
+        &KeyContext {
+            model: m,
+            state: st,
+            egui_wants_keyboard: false,
+            pointer: Pointer::default(),
+            host_clipboard: false,
+        },
+    )
 }
 
 fn one(m: &Model, st: &UiState, e: Event) -> Option<UiAction> {
@@ -180,13 +189,61 @@ fn esc_closes_an_overlay_first_and_otherwise_cancels() {
 }
 
 #[test]
+fn a_host_that_delivers_clipboard_events_gets_no_second_command_from_the_keys() {
+    let m = model(false);
+    let st = UiState::new();
+    let ctrl = Modifiers { ctrl: true, command: true, ..Modifiers::NONE };
+    let shifted = Modifiers { shift: true, ..ctrl };
+    let chords = [
+        ("clipboard.copy", press(Key::C, Some(Key::C), ctrl)),
+        ("clipboard.cut", press(Key::X, Some(Key::X), ctrl)),
+        ("clipboard.paste", press(Key::V, Some(Key::V), ctrl)),
+        ("clipboard.paste", press(Key::V, Some(Key::V), shifted)),
+    ];
+    for (id, event) in chords {
+        let by_keys = resolve(&m, &st, std::slice::from_ref(&event));
+        assert_eq!(by_keys.first().and_then(UiAction::as_call).map(|c| c.id.as_str()), Some(id), "{event:?}");
+        let by_host = resolve_keys(
+            std::slice::from_ref(&event),
+            &KeyContext {
+                model: &m,
+                state: &st,
+                egui_wants_keyboard: false,
+                pointer: Pointer::default(),
+                host_clipboard: true,
+            },
+        );
+        assert!(by_host.is_empty(), "{id}: the clipboard event runs it, not the key: {by_host:?}");
+    }
+    // Chords the platform does not turn into a clipboard event keep their binding.
+    let alt = Modifiers { alt: true, ..ctrl };
+    let style = resolve_keys(
+        &[press(Key::C, Some(Key::C), alt)],
+        &KeyContext {
+            model: &m,
+            state: &st,
+            egui_wants_keyboard: false,
+            pointer: Pointer::default(),
+            host_clipboard: true,
+        },
+    );
+    assert_eq!(style.first().and_then(UiAction::as_call).map(|c| c.id.as_str()), Some("clipboard.copy_style"));
+}
+
+#[test]
 fn nothing_fires_while_a_text_field_has_focus() {
     let m = model(false);
     let st = UiState::new();
     let events = [press(Key::R, Some(Key::R), Modifiers::NONE)];
     let out = resolve_keys(
         &events,
-        &KeyContext { model: &m, state: &st, egui_wants_keyboard: true, pointer: Pointer::default() },
+        &KeyContext {
+            model: &m,
+            state: &st,
+            egui_wants_keyboard: true,
+            pointer: Pointer::default(),
+            host_clipboard: false,
+        },
     );
     assert!(out.is_empty());
 }

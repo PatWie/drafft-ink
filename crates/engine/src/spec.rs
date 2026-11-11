@@ -256,12 +256,16 @@ pub struct Binding {
     pub when: Scope,
     /// Palette entry for this binding, if it has its own.
     pub title: Option<&'static str>,
+    /// The platform also delivers this chord as a clipboard event (copy, cut, paste), and the host runs the
+    /// command from that event because only the event carries the system clipboard. A host that does so must
+    /// not run the binding as well, or one key press runs the command twice.
+    pub host_clipboard: bool,
 }
 
 impl Binding {
     /// A binding with the same keys on every platform.
     pub const fn new(keys: &'static [&'static str], when: Scope) -> Self {
-        Self { keys, keys_mac: &[], args: "", when, title: None }
+        Self { keys, keys_mac: &[], args: "", when, title: None, host_clipboard: false }
     }
 
     /// Fixes some arguments (JSON text).
@@ -275,6 +279,13 @@ impl Binding {
     #[must_use]
     pub const fn titled(mut self, title: &'static str) -> Self {
         self.title = Some(title);
+        self
+    }
+
+    /// Marks the chord as one the platform turns into a clipboard event (see [`Binding::host_clipboard`]).
+    #[must_use]
+    pub const fn host_clipboard(mut self) -> Self {
+        self.host_clipboard = true;
         self
     }
 

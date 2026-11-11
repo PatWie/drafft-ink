@@ -227,6 +227,9 @@ pub struct KeyContext<'a> {
     pub egui_wants_keyboard: bool,
     /// Pointer placeholders.
     pub pointer: Pointer,
+    /// The host delivers copy, cut and paste as clipboard events and runs those commands itself, so the bindings
+    /// marked [`drafftink_engine::spec::Binding::host_clipboard`] are not resolved here.
+    pub host_clipboard: bool,
 }
 
 /// The scopes to try, in order, for the current state.
@@ -313,7 +316,7 @@ fn resolve_one(
         }
         // Registered commands.
         for cmd in &cx.model.commands {
-            for b in cmd.shortcuts.iter().filter(|b| b.scope == *scope) {
+            for b in cmd.shortcuts.iter().filter(|b| b.scope == *scope && !(cx.host_clipboard && b.host_clipboard)) {
                 let Some(chord) = b.chords.iter().find(|c| c.matches(key, physical, m, mac)) else {
                     continue;
                 };
