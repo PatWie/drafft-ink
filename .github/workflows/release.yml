@@ -34,7 +34,7 @@ jobs:
       version: ${{ steps.v.outputs.version }}
       prerelease: ${{ steps.v.outputs.prerelease }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - id: v
         shell: bash
         run: |
@@ -53,7 +53,7 @@ jobs:
     needs: version
     runs-on: ubuntu-22.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@master
         with:
           toolchain: ${{ env.RUST_TOOLCHAIN }}
@@ -72,12 +72,12 @@ jobs:
       - run: scripts/build-web.sh
       - run: scripts/package-web.sh
       # The packaged web build, for the server archives of the other jobs.
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v6
         with:
           name: web-dist
           path: dist
           if-no-files-found: error
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v6
         with:
           name: release-web
           path: dist-release/drafftink-web-*
@@ -95,14 +95,14 @@ jobs:
           - { arch: x86_64, os: ubuntu-22.04 }
           - { arch: aarch64, os: ubuntu-22.04-arm }
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@master
         with:
           toolchain: ${{ env.RUST_TOOLCHAIN }}
       - uses: Swatinem/rust-cache@v2
         with:
           key: release-linux-${{ matrix.arch }}
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v7
         with:
           name: web-dist
           path: dist
@@ -133,7 +133,7 @@ jobs:
           if [ "$code" != 124 ]; then echo "::error::the packaged server did not start with --storage sqlite (exit $code)"; exit 1; fi
           out="$("$srv" --storage s3 2>&1 || true)"
           if echo "$out" | grep -qi 'no S3 support'; then echo "::error::the packaged server has no S3 support"; exit 1; fi
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v6
         with:
           name: release-linux-${{ matrix.arch }}
           path: dist-release/*
@@ -144,7 +144,7 @@ jobs:
     needs: [version, web]
     runs-on: macos-15
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@master
         with:
           toolchain: ${{ env.RUST_TOOLCHAIN }}
@@ -152,7 +152,7 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           key: release-macos
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v7
         with:
           name: web-dist
           path: dist
@@ -196,7 +196,7 @@ jobs:
       - name: Remove the keychain
         if: always()
         run: security delete-keychain "$RUNNER_TEMP/build.keychain" 2>/dev/null || true
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v6
         with:
           name: release-macos
           path: dist-release/*
@@ -207,14 +207,14 @@ jobs:
     needs: [version, web]
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@master
         with:
           toolchain: ${{ env.RUST_TOOLCHAIN }}
       - uses: Swatinem/rust-cache@v2
         with:
           key: release-windows
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v7
         with:
           name: web-dist
           path: dist
@@ -223,7 +223,7 @@ jobs:
       - name: Package (zip, MSI)
         shell: pwsh
         run: scripts/package-windows.ps1 -WebDist dist
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v6
         with:
           name: release-windows
           path: dist-release/*
@@ -242,8 +242,8 @@ jobs:
       PRERELEASE: ${{ needs.version.outputs.prerelease }}
       GH_TOKEN: ${{ github.token }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/download-artifact@v4
+      - uses: actions/checkout@v5
+      - uses: actions/download-artifact@v7
         with:
           pattern: release-*
           merge-multiple: true

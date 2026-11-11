@@ -51,7 +51,7 @@ jobs:
       # missing one is a failure and not a skip.
       DRAFFTINK_REQUIRE_GPU: "1"
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@master
         with:
           toolchain: ${{ env.RUST_TOOLCHAIN }}
@@ -59,7 +59,7 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           key: e2e
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
           node-version: "22"
           cache: npm
@@ -83,7 +83,7 @@ jobs:
         run: cargo xtask test
       - name: Keep the reports and failure screenshots
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: e2e-results
           path: |

@@ -30,7 +30,7 @@ jobs:
     name: Build and deploy
     runs-on: ubuntu-22.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@master
         with:
           toolchain: ${{ env.RUST_TOOLCHAIN }}
@@ -48,7 +48,7 @@ jobs:
           echo "$RUNNER_TEMP/binaryen-version_${BINARYEN_VERSION}/bin" >> "$GITHUB_PATH"
       - run: scripts/build-web.sh
       - name: Check out the demo repo
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           repository: drafft-ink/demo
           ssh-key: ${{ secrets.DEMO_DEPLOY_KEY }}
