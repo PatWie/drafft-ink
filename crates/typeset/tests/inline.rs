@@ -392,3 +392,17 @@ fn layouts_with_formulas_are_deterministic() {
         lb.formulas.iter().map(|f| f.rect).collect::<Vec<_>>()
     );
 }
+
+#[test]
+fn inline_superscript_is_smaller_and_raised() {
+    let mut ts = Typesetter::new();
+    let l = ts.text(&auto("$x^2$", 20.0));
+    let [formula] = l.formulas.as_slice() else { panic!("{:?}", l.formulas) };
+    let [base, script] = formula.math.glyphs.as_slice() else { panic!("{:?}", formula.math.glyphs) };
+    assert!(script.size < 0.8 * base.size, "{} vs {}", script.size, base.size);
+    assert!(script.y < base.y - 5.0, "script baseline {} must be above {}", script.y, base.y);
+    assert_eq!(script.font, base.font);
+    // The exports draw the same: the superscript's ink is above the base's x-height.
+    let ink = ink_bbox(&l.outline()).expect("ink");
+    assert!(ink.y0 < formula.origin.y - 15.0, "{ink:?} {:?}", formula.origin);
+}

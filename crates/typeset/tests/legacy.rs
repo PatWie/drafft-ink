@@ -255,18 +255,33 @@ fn math_ink_matches_the_old_render() {
         let (ox0, ox1) = (found.0 as f64 - 20.0, found.2 as f64 + 1.0 - 20.0);
         let (oy0, oy1) = (found.1 as f64 - base_row, found.3 as f64 + 1.0 - base_row);
         let tol = 1.5;
-        assert!(
-            (ink.x0 - ox0).abs() < tol && (ink.x1 - ox1).abs() < tol,
-            "{latex}: x new {}..{} old {ox0}..{ox1}",
-            ink.x0,
-            ink.x1
-        );
-        assert!(
-            (ink.y0 - oy0).abs() < tol && (ink.y1 - oy1).abs() < tol,
-            "{latex}: y new {}..{} old {oy0}..{oy1}",
-            ink.y0,
-            ink.y1
-        );
+        if latex.contains(['^', '_']) {
+            // The old render drew every script in STIX Two Math at 0.7 of the math size, next to a base in GelPen,
+            // so a script was nearly as big as its base. Scripts are now drawn in the text font at the same
+            // 0.7 ratio (`superscript_is_smaller_and_raised` in math.rs). The ink must therefore lie inside the
+            // old ink and still cover most of it.
+            assert!(
+                ink.x0 >= ox0 - tol && ink.x1 <= ox1 + tol && ink.y0 >= oy0 - tol && ink.y1 <= oy1 + tol,
+                "{latex}: new ink {ink:?} must lie inside old x {ox0}..{ox1} y {oy0}..{oy1}"
+            );
+            assert!(
+                ink.width() > 0.85 * (ox1 - ox0) && ink.height() > 0.75 * (oy1 - oy0),
+                "{latex}: new ink {ink:?} covers too little of old x {ox0}..{ox1} y {oy0}..{oy1}"
+            );
+        } else {
+            assert!(
+                (ink.x0 - ox0).abs() < tol && (ink.x1 - ox1).abs() < tol,
+                "{latex}: x new {}..{} old {ox0}..{ox1}",
+                ink.x0,
+                ink.x1
+            );
+            assert!(
+                (ink.y0 - oy0).abs() < tol && (ink.y1 - oy1).abs() < tol,
+                "{latex}: y new {}..{} old {oy0}..{oy1}",
+                ink.y0,
+                ink.y1
+            );
+        }
         compared += 1;
     }
     assert!(compared >= 6, "compared {compared} equations");

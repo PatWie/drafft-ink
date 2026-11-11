@@ -104,6 +104,8 @@ By default letters, digits and symbols that GelPen has are drawn with GelPen at 
 size, as the old app did, so equations match the handwriting; everything else (`\sum`, `\int`,
 braces) uses STIX Two Math. `MathSpec::text_font_fallback = false` switches it off.
 
+Scripts (`x^2`, `x_1`, `e^{i\\pi}`) follow the same rule: ReX asks the math font for the `ssty` script forms (`two.ssty`), and the engine maps each form back to the character of its base glyph, so a script is drawn with GelPen at 0.7 of the base size, raised or lowered by ReX's shift. Without that map the script form fell through to STIX Two Math at 0.93 of the base size and looked like a full-size digit (the old app did the same). Characters GelPen lacks, such as `\\pi`, stay in STIX at script size.
+
 Errors are `MathError { kind: MathErrorKind, span: Range<usize>, message }`. Kinds: `TooLong`,
 `TooComplex`, `UnknownCommand`, `UnknownSymbol`, `UnknownEnvironment`, `UnknownColor`, `BadDimension`,
 `Unbalanced`, `MissingArgument`, `Syntax`, `Layout`, `TooLarge`, `Internal`. ReX reports no
