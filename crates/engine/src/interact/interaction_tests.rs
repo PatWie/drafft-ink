@@ -1,5 +1,4 @@
 //! Tests of the interaction layer itself: hover (E1), pan (E10), zoom (E11), the Space-hold pan, context menus,
-
 //! external camera changes. The tools have their own test files next to their code.
 #![allow(non_snake_case)]
 
@@ -280,4 +279,37 @@ fn a_tool_change_drops_what_the_old_tool_was_doing() {
     rig.tool(Tool::Select);
     rig.up(300.0, 300.0);
     assert!(!rig.i.is_busy());
+}
+
+fn rectangle_script() -> Vec<InputEvent> {
+    let mouse = |phase, x: f64, y: f64, t: f64| {
+        let (button, held) = match phase {
+            PointerPhase::Down => (Button::Primary, Buttons::PRIMARY),
+            PointerPhase::Up => (Button::Primary, Buttons::NONE),
+            _ => (Button::None, Buttons::PRIMARY),
+        };
+        InputEvent::Pointer(PointerEvent::mouse(phase, x, y, t).with_button(button, held))
+    };
+    vec![
+        mouse(PointerPhase::Down, 100.0, 100.0, 1.0),
+        mouse(PointerPhase::Move, 150.0, 130.0, 17.0),
+        mouse(PointerPhase::Move, 200.0, 160.0, 33.0),
+        mouse(PointerPhase::Up, 200.0, 160.0, 49.0),
+    ]
+}
+
+#[test]
+fn a_recorded_script_replays_to_the_same_document() {
+    let script = rectangle_script();
+    let mut a = Rig::new();
+    let mut b = Rig::new();
+    a.tool(Tool::Rectangle);
+    b.tool(Tool::Rectangle);
+    let outcomes = a.i.run_script(&mut a.s, &script);
+    assert_eq!(outcomes.len(), script.len());
+    for ev in &script {
+        b.i.input(&mut b.s, ev);
+    }
+    assert_eq!(a.elements().len(), 1);
+    assert_eq!(a.normalized_doc(), b.normalized_doc());
 }

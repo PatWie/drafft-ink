@@ -23,6 +23,7 @@
 //! | Call | Use |
 //! |---|---|
 //! | [`Interaction::input`] | the normal door: a platform-neutral [`InputEvent`] (pointer, wheel, leave, cancel) |
+//! | [`Interaction::run_script`] | a recorded list of input events (the test harness's pointer script) |
 //! | [`Interaction::handle`] | an already recognized [`Intent`], for tests that script intents |
 //! | [`Interaction::key`] | Enter and Escape, which the layer owns while a drawing or a drag is running |
 //! | [`Interaction::tick`] | time passes: long press, the throttled camera report, the laser fade |
@@ -58,6 +59,7 @@ use drafftink_scene::{ElementId, SceneStore};
 
 use ctx::Ctx;
 use draw::DrawTools;
+pub use draw::NewArrowPath;
 use events::Ev;
 use select::SelectTool;
 use view::ViewSync;
@@ -157,6 +159,12 @@ impl Interaction {
         }
         self.finish(s, now, &mut out);
         out
+    }
+
+    /// Feeds a recorded or scripted sequence of events (the pointer script of the test harness) and returns the
+    /// outcome of each. Events carry their own times, so the run is deterministic.
+    pub fn run_script(&mut self, s: &mut Session, events: &[InputEvent]) -> Vec<Outcome> {
+        events.iter().map(|ev| self.input(s, ev)).collect()
     }
 
     /// Convenience for a pointer event.
