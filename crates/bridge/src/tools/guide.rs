@@ -7,7 +7,7 @@
 
 use drafftink_engine::Registry;
 
-use crate::backend::Mode;
+use super::Mode;
 
 /// The name of the prompt.
 pub const PROMPT_NAME: &str = "drafftink_guide";
@@ -68,6 +68,8 @@ pub fn instructions(reg: &Registry, mode: Mode) -> String {
         Mode::Relay => {
             "You drive the user's browser tab. If `status` says it is not connected, ask the user to open the pairing link."
         }
+        Mode::Desktop => "The user is watching the desktop app: your edits appear on their canvas as you make them.",
+        Mode::Page => "You drive the browser tab that registered these tools: your edits appear on the user's canvas as you make them.",
     };
     let _ = reg;
     format!(
@@ -148,7 +150,7 @@ mod tests {
 
     /// Ids of the catalog that no family has registered yet (`crates/engine/unregistered.txt`).
     fn unregistered() -> BTreeSet<String> {
-        let path = concat!(env!("CARGO_MANIFEST_DIR"), "/../../crates/engine/unregistered.txt");
+        let path = concat!(env!("CARGO_MANIFEST_DIR"), "/../engine/unregistered.txt");
         std::fs::read_to_string(path)
             .map(|t| t.lines().map(|l| l.trim().to_owned()).filter(|l| !l.is_empty() && !l.starts_with('#')).collect())
             .unwrap_or_default()

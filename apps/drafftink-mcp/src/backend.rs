@@ -14,31 +14,10 @@ use drafftink_bridge::core::dispatch;
 use drafftink_bridge::files;
 use drafftink_bridge::relay::{NOT_PAIRED, RelayServer};
 use drafftink_bridge::rpc::{INTERNAL_ERROR, RpcError, TIMED_OUT};
+use drafftink_bridge::tools::{BoxFuture, Caller, Mode};
 use drafftink_engine::Session;
 use serde_json::{Value, json};
 use tokio::sync::{Mutex, oneshot};
-
-/// The mode a server runs in.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Mode {
-    /// Own session, no window.
-    Headless,
-    /// Connected to the desktop app.
-    Attached,
-    /// Listening for the browser tab.
-    Relay,
-}
-
-impl Mode {
-    /// The name used in `status` and in the docs.
-    pub const fn name(self) -> &'static str {
-        match self {
-            Self::Headless => "headless",
-            Self::Attached => "attached",
-            Self::Relay => "relay",
-        }
-    }
-}
 
 struct Job {
     method: String,
@@ -228,17 +207,7 @@ impl Backend {
         Self::Attached(Box::new(Attached::new(target)))
     }
 
-    /// The mode.
-    pub fn mode(&self) -> Mode {
-        match self {
-            Self::Headless(_) => Mode::Headless,
-            Self::Attached(_) => Mode::Attached,
-            Self::Relay { .. } => Mode::Relay,
-        }
-    }
-
-    /// Runs one bridge method.
-    pub async fn call(&self, method: &str, params: Value) -> Result<Value, RpcError> {
+    async fn run(&self, method: &str, params: Value) -> Result<Value, RpcError> {
         match self {
             Self::Headless(h) => h.call(method, params).await,
             Self::Attached(a) => a.call(method, params).await,
@@ -246,8 +215,7 @@ impl Backend {
         }
     }
 
-    /// The answer of the `status` tool.
-    pub async fn status(&self) -> Value {
+    async fn describe(&self) -> Value {
         match self {
             Self::Headless(h) => json!({
                 "mode": "headless",
@@ -269,5 +237,23 @@ impl Backend {
                 v
             }
         }
+    }
+}
+
+impl Caller for Backend {
+    fn mode(&self) -> Mode {
+        match self {
+            Self::Headless(_) => Mode::Headless,
+            Self::Attached(_) => Mode::Attached,
+            Self::Relay { .. } => Mode::Relay,
+        }
+    }
+
+    fn call<'a>(&'a self, method: &'a str, params: Value) -> BoxFuture<'a, Result<Value, RpcError>> {
+        Box::pin(self.run(method, params))
+    }
+
+    fn status(&self) -> BoxFuture<'_, Value> {
+        Box::pin(self.describe())
     }
 }

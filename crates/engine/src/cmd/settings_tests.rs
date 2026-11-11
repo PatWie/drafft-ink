@@ -86,11 +86,11 @@ fn every_key_default_passes_its_own_check_and_the_table_matches_the_catalog() {
         "arrow.type", "arrow.start_head", "arrow.end_head",
         "frame.clip", "frame.show_names", "frame.outline", "history.depth", "autosave.enabled",
         "autosave.interval_s", "clipboard.excalidraw_compat", "collab.server_url", "collab.user_name",
-        "collab.user_color", "doc.recent", "theme",
+        "collab.user_color", "doc.recent", "theme", "agent.mcp_http",
     ] {
         assert!(names.contains(&k), "`{k}` is missing from the table");
     }
-    assert_eq!(names.len(), 31);
+    assert_eq!(names.len(), 32);
 }
 
 #[test]
@@ -255,6 +255,27 @@ fn a_read_only_key_refuses_every_write() {
         let r = refuse(&mut s, id, args);
         assert_eq!((r.code, r.message.as_str()), ("bad_args", text), "{id}");
     }
+}
+
+#[test]
+fn a_key_for_people_only_refuses_an_agent_and_nobody_else() {
+    let mut s = testing::headless_session();
+    assert_eq!(value(&s, "agent.mcp_http"), json!(false), "off by default");
+    for (id, args) in [
+        ("settings.set", json!({"key": "agent.mcp_http", "value": true})),
+        ("settings.toggle", json!({"key": "agent.mcp_http"})),
+        ("settings.reset", json!({"key": "agent.mcp_http"})),
+    ] {
+        let r = s.execute_from(Origin::Agent, id, args).unwrap_err();
+        assert_eq!(r.code, "bad_args", "{id}");
+        assert!(r.message.contains("only be changed by the person at the app"), "{}", r.message);
+    }
+    assert_eq!(value(&s, "agent.mcp_http"), json!(false));
+    run(&mut s, "settings.toggle", json!({"key": "agent.mcp_http"}));
+    assert_eq!(value(&s, "agent.mcp_http"), json!(true), "a person can");
+    // An agent's reset of everything leaves it alone.
+    s.execute_from(Origin::Agent, "settings.reset", json!({"all": true})).unwrap();
+    assert_eq!(value(&s, "agent.mcp_http"), json!(true));
 }
 
 #[test]

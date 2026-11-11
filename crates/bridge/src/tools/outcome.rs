@@ -5,8 +5,7 @@
 
 use base64::Engine as _;
 use base64::engine::general_purpose::STANDARD;
-use drafftink_bridge::RpcError;
-use drafftink_bridge::rpc::REFUSED;
+use crate::rpc::{REFUSED, RpcError};
 use serde_json::Value;
 
 /// One piece of a result.

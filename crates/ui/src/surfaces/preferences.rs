@@ -180,4 +180,28 @@ fn body(ui: &mut Ui, cx: &mut Cx<'_>, layout: &mut LayoutPreference, draft: &mut
 
     section_label(ui, &pal, "Collaboration");
     crate::surfaces::collab::profile(ui, cx, &mut draft.name, &mut draft.sent);
+    agents(ui, cx);
+}
+
+/// The MCP server over HTTP: a switch, and where to connect once it runs. Only where the app can serve one.
+fn agents(ui: &mut Ui, cx: &mut Cx<'_>) {
+    let Some(server) = cx.model.agent_server.clone() else { return };
+    let pal = cx.pal;
+    separator(ui, &pal);
+    section_label(ui, &pal, "Agents");
+    switches(ui, cx, &[("Serve MCP over HTTP", "agent.mcp_http", false)]);
+    match (&server.endpoint, &server.problem) {
+        (Some(endpoint), _) => {
+            ui.label(format!("Listening on {endpoint} (this computer only)."));
+            if let Some(file) = &server.token_file {
+                ui.label(format!("Clients send the token in {file} as a bearer token. docs/agents.md has setups."));
+            }
+        }
+        (None, Some(problem)) => {
+            ui.colored_label(pal.danger, problem);
+        }
+        (None, None) => {
+            ui.label("Off. When on, MCP clients on this computer can draw here with the token the app writes to a private file.");
+        }
+    }
 }

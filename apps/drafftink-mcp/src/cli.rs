@@ -7,14 +7,14 @@ use std::sync::Arc;
 
 use clap::Parser;
 use drafftink_bridge::files;
+use drafftink_bridge::mcp::handler::DrafftHandler;
 use drafftink_bridge::relay::{HOSTED_ORIGIN, RelayConfig, RelayServer};
 use drafftink_bridge::server::BridgeError;
+use drafftink_bridge::tools::service::Service;
 use rmcp::ServiceExt;
 
 use crate::backend::{Backend, Headless, Target, TokenSource};
 use crate::ports::{FileScope, headless_session};
-use crate::server::DrafftHandler;
-use crate::service::Service;
 
 /// The environment variable that carries the bridge token. Preferred over a flag: arguments are visible to
 /// other users of the machine.

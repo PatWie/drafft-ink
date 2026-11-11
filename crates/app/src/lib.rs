@@ -17,6 +17,7 @@ mod app;
 mod clip;
 mod clock;
 mod config;
+mod agent_server;
 mod editor;
 mod input;
 mod offscreen;
@@ -38,5 +39,6 @@ pub use config::{AppConfig, StartupLink};
 pub use perf::scene_for;
 pub use perf::{Look, SceneInstall, SceneLoader};
 pub use platform::{
-    FontFile, Host, HostJob, Inbound, Inbox, NoHost, PickKind, PickedFile, Platform, SharedClipboard, WakeCell,
+    FontFile, Host, HostJob, Inbound, Inbox, McpHttpControl, McpHttpInfo, NoHost, PickKind, PickedFile, Platform,
+    SharedClipboard, WakeCell,
 };

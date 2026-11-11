@@ -76,6 +76,9 @@ pub struct KeyDef {
     pub default: Def,
     /// True: commands cannot write it. Another command maintains it (`doc.recent`).
     pub read_only: bool,
+    /// True: a person may write it, an agent may not. It opens a door to the machine (`agent.mcp_http`), so the
+    /// agent that the door would serve cannot be the one to open it.
+    pub user_only: bool,
     /// One line for people and agents.
     pub summary: &'static str,
 }
@@ -108,7 +111,11 @@ pub const HEAD_NAMES: &[&str] = &[
 pub const MAX_RECENT: usize = 10;
 
 const fn key(name: &'static str, kind: Kind, default: Def, summary: &'static str) -> KeyDef {
-    KeyDef { name, kind, default, read_only: false, summary }
+    KeyDef { name, kind, default, read_only: false, user_only: false, summary }
+}
+
+const fn user_key(name: &'static str, kind: Kind, default: Def, summary: &'static str) -> KeyDef {
+    KeyDef { user_only: true, ..key(name, kind, default, summary) }
 }
 
 /// Every setting, in the order of docs/commands.md §5, then `theme`.
@@ -160,6 +167,12 @@ pub const KEYS: &[KeyDef] = &[
         Def::Str("ws://localhost:3030/ws"),
         "Address of the collaboration server.",
     ),
+    user_key(
+        "agent.mcp_http",
+        Kind::Bool,
+        Def::Bool(false),
+        "Serve MCP to agents over HTTP on 127.0.0.1 (desktop app only; a person turns it on, an agent cannot).",
+    ),
     key("collab.user_name", Kind::Text { max_chars: 40 }, Def::Str(""), "Name other people see."),
     key("collab.user_color", Kind::Color, Def::Str("#6366f1"), "Colour of your cursor for other people."),
     KeyDef {
@@ -167,6 +180,7 @@ pub const KEYS: &[KeyDef] = &[
         kind: Kind::RecentFiles { max: MAX_RECENT },
         default: Def::Empty,
         read_only: true,
+        user_only: false,
         summary: "Recently saved or opened documents. Maintained by `doc.open` and `doc.save`.",
     },
     key("theme", Kind::Choice(THEMES), Def::Str("system"), "Light or dark colours; system follows the device."),

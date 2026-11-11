@@ -5,8 +5,8 @@ use std::sync::Arc;
 
 use drafftink_engine::Session;
 use drafftink_mcp::backend::{Backend, Headless};
-use drafftink_mcp::server::DrafftHandler;
-use drafftink_mcp::service::Service;
+use drafftink_bridge::mcp::handler::DrafftHandler;
+use drafftink_bridge::tools::service::Service;
 use rmcp::ServiceExt;
 use serde_json::{Value, json};
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader, DuplexStream, ReadHalf, WriteHalf};

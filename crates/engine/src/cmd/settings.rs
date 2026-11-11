@@ -19,6 +19,7 @@ use serde_json::Value;
 use self::keys::{Kind, KeyDef};
 use crate::args;
 use crate::refusal::{Refusal, closest, echo};
+use crate::ring::Origin;
 use crate::session::Session;
 use crate::spec::{Binding, CommandSpec, Facts, Mutates, PortSet, Redraw, Scope, Typed};
 
@@ -160,9 +161,26 @@ pub struct SetOut {
     pub default: Value,
 }
 
-fn writable(id: &str, key: &str) -> Result<&'static KeyDef, Refusal> {
+fn user_only(id: &str, key: &str) -> Refusal {
+    Refusal::custom(
+        "bad_args",
+        id,
+        format!("Setting `{key}` can only be changed by the person at the app, not by an agent. Ask them to change it in Preferences."),
+    )
+    .with_details(serde_json::json!({ "key": key }))
+}
+
+/// The key, if the caller may write it: not read only, and not reserved for a person when an agent calls.
+fn writable(s: &Session, key: &str) -> Result<&'static KeyDef, Refusal> {
+    let id = s.cmd();
     let def = key_def(id, key)?;
-    if def.read_only { Err(read_only(id, key)) } else { Ok(def) }
+    if def.read_only {
+        Err(read_only(id, key))
+    } else if def.user_only && s.run.origin == Origin::Agent {
+        Err(user_only(id, key))
+    } else {
+        Ok(def)
+    }
 }
 
 fn finish_one(s: &mut Session, def: &'static KeyDef, st: Stored) -> SetOut {
@@ -179,7 +197,7 @@ fn finish_one(s: &mut Session, def: &'static KeyDef, st: Stored) -> SetOut {
 }
 
 fn set(s: &mut Session, a: SetArgs) -> Result<SetOut, Refusal> {
-    let def = writable(s.cmd(), &a.key)?;
+    let def = writable(s, &a.key)?;
     let st = store_checked(s, def, &a.value)?;
     Ok(finish_one(s, def, st))
 }
@@ -196,7 +214,7 @@ pub struct ToggleArgs {
 
 fn toggle(s: &mut Session, a: ToggleArgs) -> Result<SetOut, Refusal> {
     let id = s.cmd();
-    let def = writable(id, &a.key)?;
+    let def = writable(s, &a.key)?;
     if def.kind != Kind::Bool {
         return Err(Refusal::custom(
             "bad_args",
@@ -228,7 +246,7 @@ fn one() -> i64 {
 
 fn cycle(s: &mut Session, a: CycleArgs) -> Result<SetOut, Refusal> {
     let id = s.cmd();
-    let def = writable(id, &a.key)?;
+    let def = writable(s, &a.key)?;
     let Kind::Choice(list) = def.kind else {
         return Err(Refusal::custom(
             "bad_args",
@@ -271,8 +289,8 @@ pub struct ResetOut {
 fn reset(s: &mut Session, a: ResetArgs) -> Result<ResetOut, Refusal> {
     let id = s.cmd();
     let defs: Vec<&'static KeyDef> = match (&a.key, a.all) {
-        (Some(k), false) => vec![writable(id, k)?],
-        (None, true) => keys::KEYS.iter().filter(|k| !k.read_only).collect(),
+        (Some(k), false) => vec![writable(s, k)?],
+        (None, true) => keys::KEYS.iter().filter(|k| writable(s, k.name).is_ok()).collect(),
         _ => return Err(Refusal::custom("bad_args", id, "Give either `key` or all=true.")),
     };
     let mut done = Vec::new();

@@ -16,6 +16,7 @@ fn platform(fakes: &Fakes) -> Platform {
         clipboard: SharedClipboard::new(),
         typesetter: LazyTypesetter::shared(),
         bridge: None,
+        mcp_http: None,
         is_mac: false,
     }
 }

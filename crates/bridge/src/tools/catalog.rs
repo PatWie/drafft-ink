@@ -17,7 +17,7 @@ use drafftink_engine::spec::Status;
 use drafftink_engine::{CommandSpec, Registry};
 use serde_json::{Value, json};
 
-use crate::signature::signature;
+use super::signature::signature;
 
 /// The longest worked example that a description repeats.
 const MAX_EXAMPLE_CHARS: usize = 110;

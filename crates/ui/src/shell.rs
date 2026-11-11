@@ -5,7 +5,7 @@ use egui::Rect;
 
 use crate::action::{Report, UiAction, dispatch};
 use crate::keymap::{KeyContext, Pointer, resolve_keys};
-use crate::model::{CollabView, Model};
+use crate::model::{AgentServerView, CollabView, Model};
 use crate::state::{TOAST_FADE_S, TOAST_HOLD_S, UiState};
 use crate::surfaces;
 use crate::theme::{self, Palette};
@@ -46,6 +46,11 @@ impl UiShell {
     /// Presence data from the collaboration client, which the app owns.
     pub fn set_collab(&mut self, collab: CollabView) {
         self.model.collab = collab;
+    }
+
+    /// The state of the MCP server over HTTP, which the app owns. `None` where there is none (the web).
+    pub fn set_agent_server(&mut self, view: Option<AgentServerView>) {
+        self.model.agent_server = view;
     }
 
     /// The device is touch-first (a coarse pointer on the web, a tablet). Touch events set it too. The touch

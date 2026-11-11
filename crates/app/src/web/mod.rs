@@ -130,6 +130,7 @@ pub async fn platform(opts: WebOptions) -> Result<WebPlatform, WebError> {
         clipboard,
         typesetter,
         bridge: Some(bridge),
+        mcp_http: None,
         is_mac: opts.is_mac,
     };
     Ok(WebPlatform { platform, jobs, storage })

@@ -1,4 +1,5 @@
-//! The MCP wire: the official `rmcp` SDK serving a [`Service`] over stdio.
+//! The MCP wire: the official `rmcp` SDK serving a [`Service`] over stdio (`drafftink-mcp`) or streamable HTTP
+//! ([`super::http`]).
 //!
 //! Why the SDK and not a hand-written JSON-RPC loop: the protocol keeps changing (the current schema is the
 //! 2026-07-28 revision, with new result types and version negotiation), and the SDK follows it. The tool list
@@ -16,10 +17,10 @@ use rmcp::service::RequestContext;
 use rmcp::{ErrorData, RoleServer, ServerHandler};
 use serde_json::Value;
 
-use crate::catalog::Tool;
-use crate::guide::PROMPT_NAME;
-use crate::outcome::{Block, Outcome};
-use crate::service::Service;
+use crate::tools::catalog::Tool;
+use crate::tools::guide::PROMPT_NAME;
+use crate::tools::outcome::{Block, Outcome};
+use crate::tools::service::Service;
 
 /// The handler that rmcp drives.
 #[derive(Clone)]
