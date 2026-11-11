@@ -339,6 +339,7 @@ impl<A: ShellApp> Shell<A> {
                 waker: &self.waker,
                 view: run.view(),
                 modifiers: self.modifiers,
+                text_input_on: run.applied_text_input.is_some(),
                 out: &mut out,
             };
             self.app.event(&mut cx, event)
@@ -370,6 +371,15 @@ impl<A: ShellApp> Shell<A> {
         if out.lose_device {
             self.lose_device_next = true;
             self.want_frame(RedrawReason::Other);
+        }
+        if let (Some(caret), Some(run)) = (out.text_input, self.running.as_mut())
+            && run.applied_text_input.is_none()
+        {
+            // The editor opened in this event. Focus its input now: a key that arrives before the next frame
+            // would otherwise go to the canvas and be lost.
+            run.text_input = Some(caret);
+            run.applied_text_input = Some(caret);
+            self.platform.set_text_input(Some(caret));
         }
     }
 

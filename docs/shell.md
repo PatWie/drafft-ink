@@ -42,7 +42,9 @@ drafftink_gpu::run(app, Options { title, initial_size, canvas_id })   // native 
   texture of the last Vello run and runs no Vello. The shell keeps the last scene, so a resize or a
   recreated device re-renders it without the app.
 - `FrameOutput` says `canvas_rect` (where hover goes to the app), `text_input` (caret rect for the IME and
-  the soft keyboard), `cursor`, and `repaint`.
+  the soft keyboard), `cursor`, and `repaint`. An event that opens the text editor also calls
+  `EventCx::set_text_input(caret)`: the shell turns the input on in that event, not in the next frame, so a key that
+  arrives right after the click reaches the editor (on the web, the hidden textarea has focus by then).
 - `Waker` (`Clone + Send + Sync`, from `SetupCx`/`EventCx`/`FrameCx`) wakes the loop from any thread or
   task: `waker.wake(RedrawReason::Collab)`. The loop calls `event(Wake(reason))` and draws a frame if the app answers with a repaint request (a wake that changed nothing visible can answer `Idle`).
   Network messages, finished autosaves and image decodes use this. Timers use `Repaint::After`; when a deadline asked with reason `Collab` arrives, the loop sends `event(Wake(Collab))` and draws only if the app answers with a repaint (every other deadline becomes a frame at once).
