@@ -147,30 +147,36 @@ fn move_then_export(s: &mut Session, late: u32, opts: &crate::batch::BatchOpts) 
 }
 
 #[test]
-fn a_batch_that_exports_a_png_waits_for_the_picture_and_then_completes_with_every_result() {
+fn a_batch_with_a_picture_step_last_completes_as_a_whole_and_the_picture_follows() {
     for atomic in [true, false] {
         let (mut s, _f) = drawn(2);
-        let before = s.fingerprint();
         let opts = crate::batch::BatchOpts { atomic, ..Default::default() };
-        let waiting = move_then_export(&mut s, 1, &opts);
-        assert!(waiting.pending_render(), "atomic={atomic}: {waiting:?}");
-        assert!(waiting.rolled_back && !waiting.changed, "atomic={atomic}: nothing stays while it waits");
-        assert_eq!(s.fingerprint(), before, "atomic={atomic}: a waiting batch changes nothing");
-        assert_eq!(waiting.to_json()["pending_render"], json!(true));
+        let out = move_then_export(&mut s, 2, &opts);
+        // The batch is done: nothing is taken back, the move is applied as one undo step.
+        assert!(out.ok() && !out.rolled_back && !out.pending_render(), "atomic={atomic}: {out:?}");
+        assert!(out.changed, "atomic={atomic}: the move stays");
+        assert_eq!(out.completed, 2);
+        assert_eq!(s.tab().doc.undo_depth(), 1);
+        assert_eq!(out.pending.len(), 1);
+        let (step, token) = (&out.pending[0], out.pending[0].token);
+        assert_eq!((step.index, step.id.as_str()), (1, "doc.export"));
+        assert_eq!(out.results[1], json!({ "pending_render": token }), "a placeholder until the picture is in");
+        assert_eq!(out.to_json()["pending"][0]["token"], json!(token));
 
-        // The picture is ready: the same batch, run again, completes with the results of all steps.
-        let done = move_then_export(&mut s, 0, &opts);
-        assert!(done.ok() && !done.pending_render(), "atomic={atomic}: {done:?}");
-        assert_eq!(done.completed, 2);
-        assert_eq!(done.results.len(), 2);
-        assert_eq!(done.results[1]["mime"], "image/png");
-        assert!(done.changed, "the move stays");
-        assert_eq!(done.to_json().get("pending_render"), None);
+        // The picture is not ready for one more call; then the step runs and gives its own output.
+        let before = s.fingerprint();
+        assert_eq!(s.finish_render(token).unwrap(), crate::Finished::Waiting);
+        assert_eq!(s.tab().doc.undo_depth(), 1, "waiting changes nothing");
+        let crate::Finished::Done(export) = s.finish_render(token).unwrap() else { panic!("the picture is ready") };
+        assert_eq!(export["mime"], "image/png");
+        assert_eq!(s.tab().doc.undo_depth(), 1, "the picture is not an undo step");
+        assert_eq!(s.fingerprint().split("saved=").next(), before.split("saved=").next());
+        assert_eq!(s.finish_render(token).unwrap_err().code, "render_unknown", "a token is used once");
     }
 }
 
 #[test]
-fn a_batch_with_steps_that_cannot_be_rolled_back_does_not_wait_for_the_picture() {
+fn a_batch_with_steps_that_cannot_be_rolled_back_completes_and_keeps_them_while_the_picture_waits() {
     let (mut s, _f) = drawn(1);
     s.ports.renderer = Some(Box::new(LateRenderer(std::cell::Cell::new(1))));
     let steps = [
@@ -178,8 +184,56 @@ fn a_batch_with_steps_that_cannot_be_rolled_back_does_not_wait_for_the_picture()
         crate::batch::BatchStep::new("doc.export", json!({"format": "png", "scope": "all"})),
     ];
     let out = s.execute_batch(Origin::Test, &steps, &crate::batch::BatchOpts { atomic: false, ..Default::default() });
-    assert!(!out.pending_render(), "a setting that was changed stays changed");
-    assert_eq!(out.failed.as_ref().map(|f| f.refusal.code), Some("render_pending"));
+    assert!(out.ok() && !out.pending_render(), "{out:?}");
+    assert_eq!(out.pending.len(), 1);
+    assert_eq!(out.not_rolled_back.len(), 1, "the setting is named as outside the transaction");
+    assert!(matches!(s.finish_render(out.pending[0].token).unwrap(), crate::Finished::Done(_)));
+}
+
+#[test]
+fn a_picture_step_followed_by_a_step_that_changes_the_picture_still_waits_the_old_way() {
+    for atomic in [true, false] {
+        let (mut s, _f) = drawn(2);
+        s.ports.renderer = Some(Box::new(LateRenderer(std::cell::Cell::new(1))));
+        let first = s.store().iter().next().unwrap().id.to_string();
+        let steps = [
+            crate::batch::BatchStep::new("doc.export", json!({"format": "png", "scope": "all"})),
+            crate::batch::BatchStep::new("element.move", json!({"ids": [first], "dx": 25, "dy": 0})),
+        ];
+        let opts = crate::batch::BatchOpts { atomic, ..Default::default() };
+        let before = s.fingerprint();
+        let waiting = s.execute_batch(Origin::Test, &steps, &opts);
+        assert!(waiting.pending_render() && waiting.pending.is_empty(), "atomic={atomic}: {waiting:?}");
+        assert!(waiting.rolled_back && !waiting.changed);
+        assert_eq!(s.fingerprint(), before, "a waiting batch changes nothing");
+        // Run again when the picture is ready: the picture is of the document before the move.
+        let done = s.execute_batch(Origin::Test, &steps, &opts);
+        assert!(done.ok() && done.pending.is_empty(), "atomic={atomic}: {done:?}");
+        assert_eq!(done.results[0]["mime"], "image/png");
+        assert!(done.changed);
+    }
+}
+
+#[test]
+fn a_picture_whose_document_changed_while_it_was_drawn_is_refused_not_made_for_the_wrong_state() {
+    let (mut s, _f) = drawn(2);
+    let out = move_then_export(&mut s, 1, &crate::batch::BatchOpts::default());
+    let token = out.pending[0].token;
+    // Someone edits before the picture is read back.
+    testing::add_rect(&mut s, 900.0, 0.0, 10.0, 10.0).unwrap();
+    let r = s.finish_render(token).unwrap_err();
+    assert_eq!(r.code, "render_stale");
+    assert!(r.message.contains("doc.export") && r.message.contains("again"), "{}", r.message);
+    assert_eq!(s.finish_render(token).unwrap_err().code, "render_unknown");
+}
+
+#[test]
+fn a_dry_run_with_a_picture_step_changes_nothing_and_keeps_no_token() {
+    let (mut s, _f) = drawn(2);
+    let before = s.fingerprint();
+    let out = move_then_export(&mut s, 1, &crate::batch::BatchOpts { dry_run: true, ..Default::default() });
+    assert!(out.rolled_back && out.pending.is_empty(), "{out:?}");
+    assert_eq!(s.fingerprint(), before);
 }
 
 // ---- doc.new ----

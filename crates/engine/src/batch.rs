@@ -19,14 +19,13 @@ use serde_json::{Map, Value, json};
 
 use crate::executor::{Input, Mode};
 use crate::refusal::{Refusal, echo};
+use crate::renders::{PendingRender, RENDER_PENDING, picture_neutral};
 use crate::ring::{Origin, Outcome};
 use crate::session::Session;
-use crate::spec::{Batch, Mutates};
+use crate::spec::{Batch, CommandSpec, Mutates};
 use crate::store::StepMeta;
 use drafftink_profile::now_ns;
 
-/// The code of the refusal of a step whose picture is still being drawn.
-const RENDER_PENDING: &str = "render_pending";
 /// Most steps in one batch.
 pub const MAX_STEPS: usize = 10_000;
 /// Largest batch JSON in bytes.
@@ -123,10 +122,16 @@ pub struct BatchOutput {
     pub note: Option<String>,
     /// True when the batch ran, the state changed and it stayed.
     pub changed: bool,
-    /// A step needs a picture that the `Renderer` port is still drawing (the browser reads it back from the GPU).
-    /// Nothing stays applied, even with `atomic` off: run the same batch again when the port wakes the shell, and
-    /// it completes with the results of all steps. Not set when a step outside the transaction (tabs, settings,
-    /// ports, collab) already ran, because running it again would repeat that step.
+    /// Steps whose picture the `Renderer` port is still drawing (the browser reads it back from the GPU). The
+    /// batch is complete and committed; the result of each of these steps is a placeholder until the shell hands
+    /// the token to `Session::finish_render`, which runs the step and returns its output. Only set when no step
+    /// after the picture step can change what it shows; see `renders.rs`.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub pending: Vec<PendingRender>,
+    /// A step needs a picture that the `Renderer` port is still drawing, and a later step changes what the picture
+    /// shows, so it cannot wait. Nothing stays applied, even with `atomic` off: run the same batch again when the
+    /// port wakes the shell, and it completes with the results of all steps. Not set when a step outside the
+    /// transaction (tabs, settings, ports, collab) already ran, because running it again would repeat that step.
     #[serde(skip_serializing_if = "std::ops::Not::not")]
     pub pending_render: bool,
 }
@@ -406,6 +411,7 @@ impl Session {
             not_rolled_back: Vec::new(),
             note: Some(note.to_owned()),
             changed: false,
+            pending: Vec::new(),
             pending_render: false,
         };
         if self.run.depth > 0 {
@@ -451,6 +457,7 @@ impl Session {
         let mut names: HashMap<String, usize> = HashMap::new();
         let mut not_rolled_back = Vec::new();
         let mut failed: Option<BatchFailure> = None;
+        let mut deferred: Vec<(PendingRender, &'static CommandSpec, Value)> = Vec::new();
         let mut first_title = "";
         for (i, step) in steps.iter().enumerate() {
             let Some(spec) = self.registry().find(&step.id) else { continue };
@@ -500,6 +507,21 @@ impl Session {
                     }
                 }
                 Err(refusal) => {
+                    // A picture that is not drawn yet is a wait, not a failure, when nothing after it can change
+                    // what it shows: the batch goes on and the step follows (`renders.rs`).
+                    let later = steps.get(i + 1..).unwrap_or_default();
+                    let can_wait = refusal.code == RENDER_PENDING
+                        && !opts.dry_run
+                        && later.iter().all(|s| self.registry().find(&s.id).is_none_or(picture_neutral));
+                    if can_wait {
+                        let token = self.next_render_token();
+                        if let Some(n) = &step.as_name {
+                            names.insert(n.clone(), i);
+                        }
+                        results.push(json!({ "pending_render": token }));
+                        deferred.push((PendingRender { index: i, id: step.id.clone(), token }, spec, args));
+                        continue;
+                    }
                     failed = Some(BatchFailure { index: i, id: step.id.clone(), refusal });
                     break;
                 }
@@ -548,6 +570,7 @@ impl Session {
                 not_rolled_back,
                 note,
                 changed: false,
+                pending: Vec::new(),
                 pending_render,
             };
         }
@@ -597,7 +620,8 @@ impl Session {
                 not_rolled_back,
                 note: Some("the batch could not be saved, so it was rolled back".to_owned()),
                 changed: false,
-                pending_render: false,
+                pending: Vec::new(),
+            pending_render: false,
             };
         }
         let writes = std::mem::take(&mut self.run.writes);
@@ -618,6 +642,13 @@ impl Session {
                 f.index, f.id, completed
             ));
         }
+        let pending = deferred
+            .into_iter()
+            .map(|(pending, spec, args)| {
+                self.defer_render(pending.token, origin, spec, args);
+                pending
+            })
+            .collect();
         BatchOutput {
             completed,
             results,
@@ -627,6 +658,7 @@ impl Session {
             not_rolled_back,
             note,
             changed,
+            pending,
             pending_render: false,
         }
     }

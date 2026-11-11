@@ -101,6 +101,9 @@ pub struct Session {
     pub(crate) perf_scope: PerfScope,
     /// Document writes that the files port will finish later, with what to do when each is confirmed.
     pub(crate) saves: Vec<(WriteToken, SaveDone)>,
+    /// Batch steps whose picture is still being drawn (`renders.rs`).
+    pub(crate) renders: Vec<(crate::renders::RenderToken, crate::renders::DeferredRender)>,
+    pub(crate) next_render: u64,
 }
 
 /// Which counters `perf.stats` reports.
@@ -148,6 +151,8 @@ impl Session {
             perf_mark: None,
             perf_scope: PerfScope::Process,
             saves: Vec::new(),
+            renders: Vec::new(),
+            next_render: 0,
         }
     }
 

@@ -51,7 +51,7 @@ Implemented (branches backlog-c-perf, -collab, -export, -web; hashes are from th
 - 100k TabDoc load: cost measured and documented, debug builds speed up from 31.6 s to 9 s (43665b6).
 - Collab auth token as `token` argument of `collab.connect` / `collab.join_room`, `--token-file` / `DRAFFTINK_COLLAB_TOKEN`, hidden in the ring and in `Debug` (1d22a25). Decision: argument, not a setting, so it never reaches `settings.get` or the settings file.
 - Collab snapshot import is decoded in 8 ms slices on desktop and web (40a9ba3). Decision: no worker thread, the replicated store holds `Rc`.
-- A web `batch` with a PNG export is taken back with `pending_render` and rerun by the bridge host (f3e0b42).
+- A web `batch` with a PNG export followed by a step that changes the picture is still taken back with `pending_render` and rerun by the bridge host; a picture step with nothing after it that changes the picture completes as a whole (`renders.rs`).
 - SVG export embeds `@font-face` for the fonts the texts use, and `dark` recolours as the PNG does (15bdfad, 3c2f698, 78c8d5d).
 - The UI uses the typesetter's font bytes instead of its own `include_bytes` (1a13afa).
 - Present mode: Fifo on every platform, measured against Immediate and the old driver-first default (0492580, numbers in `performance.md`).
