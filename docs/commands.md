@@ -590,8 +590,8 @@ The props (each applies only to the kinds listed; others are skipped and reporte
 | `sloppiness` | `architect \| artist \| cartoonist \| drunk` | all except text, math, image, freehand | U:1542, A:2996 |
 | `corner_radius` | number from 0 (sharp), at most 1000000. The old "on" was 32. | rectangle, diamond, line, arrow, frame | U:1515, A:2970 |
 | `opacity` | 0 to 1 | all | U:1778, A:3639 |
-| `freehand_style` | `normal \| calligraphy` | freehand | U:1659, A:3609 |
-| `pressure_mode` | `uniform \| simulated \| device` (device is NEW: real pen pressure) | freehand | U:1675, A:3617 |
+| `freehand_style` | `normal \| calligraphy` (smooths the samples of strokes drawn afterwards; `element.create` stores the points it is given) | freehand | U:1659, A:3609 |
+| `pressure_mode` | `uniform \| simulated \| device` (device is NEW: real pen pressure). `uniform` draws a constant width, the others use the stored `pressures`; `simulated` makes them from the pointer speed when a stroke is drawn with a mouse or finger | freehand | U:1675, A:3617 |
 | `font_family` | `gelpen \| gelpen_serif \| vanilla_extract \| noto_sans` | text (a math element has no font family); on a shape or arrow it goes to its label | U:1380, A:2939 |
 | `font_weight` | `light \| regular \| heavy` | text (or the label of a shape or arrow) | U:1417, A:2955 |
 | `font_size` | number above 0, at most 10000 (presets 16, 20, 28, 36; math uses the same sizes, the old `SetMathFontSize` is merged) | text, math (or the label of a shape or arrow) | U:1446-1496, A:2918-2928 |

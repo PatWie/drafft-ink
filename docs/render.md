@@ -171,8 +171,11 @@ Known differences from the old renderer (the first two are excluded from the com
 - A rectangle with a **zero or negative size** was drawn unnormalised by the old app (a dot; a differently jittered
   outline). The model normalises the box, so the zero-size one draws nothing.
 - Frame labels scale with the zoom (they are part of the fragment); Excalidraw keeps them a constant screen size.
-- Calligraphy brushes, `pressure_mode` and bound-text vertical alignment inside a taller box are not applied: pressure
-  is used when `pressures` has one value per point.
+- Bound-text vertical alignment inside a taller box is not applied.
+- Pressure: a freehand stroke is a variable-width outline when its `pressure_mode` is not `uniform` and `pressures`
+  has one value per point; otherwise it is the sketchy line. The calligraphy brush and the simulated pressure are not
+  drawing modes. They shape the samples while the stroke is drawn (`edit/src/brush.rs`, as in the old app), and the
+  stored points and pressures are what the painter draws.
 
 ## 8. Cost (criterion, `cargo bench -p drafftink-render --bench compose`)
 
