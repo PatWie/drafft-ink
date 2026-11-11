@@ -96,11 +96,12 @@ test("family doc: open refuses what it cannot read and unsaved work; merge is on
   expect(await app.count(), "the merge was one undo step").toBe(1);
 });
 
-test("family doc: the web build has no renderer port, so png export refuses in words", async ({ app }) => {
+test("family doc: the web build renders a png export (the renderer port is there)", async ({ app }) => {
   await box(app, 0, 0);
-  const refusal = await app.refusal("doc.export", { format: "png" });
-  expect(refusal.code).toBe("port_unavailable");
-  expect(refusal.message).toContain("renderer");
+  const out = await app.exec("doc.export", { format: "png" });
+  const bytes = out.bytes as { base64: string; mime: string };
+  expect(bytes.mime).toBe("image/png");
+  expect(Buffer.from(bytes.base64, "base64").subarray(0, 8).toString("hex"), "a PNG signature").toBe("89504e470d0a1a0a");
 });
 
 test("family tab: new, rename, switch, duplicate, move and close; closing the last or a dirty tab is refused", async ({ app }) => {

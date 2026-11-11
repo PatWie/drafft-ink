@@ -56,8 +56,7 @@ behaviour every time and not only after other tests have selected text; without 
 - Plain shapes without a fill are grabbed by their outline only, as in Excalidraw; specs that drag a shape give it a fill.
 - `doc.autosave`, `doc.drop`, `text.edit_*`, `gesture.*`, `tool.hold`, `view.set_viewport` and `collab.set_pointer` are refused for agents
   (`not_for_agents`). The specs check the refusal; the user's path to the same effect (a drop, typing, a drag) is covered by real input.
-- On the web `doc.export` with `format: png` and `view.screenshot` are refused with `port_unavailable` (no renderer port; `docs/web-app.md`,
-  "Known gaps"). The native suite checks the screenshot.
+- On the web `doc.export` with `format: png` and `view.screenshot` return a PNG since the web renderer port landed (`docs/web-app.md`, "PNG export"); the family specs check the PNG signature. The native suite checks the screenshot too.
 - `ws://` to another machine is accepted by `collab.connect` when the page itself is on a loopback host (`docs/web-app.md`).
 - `arrow.reroute` on an arrow that is already on its route reports `rerouted: []`.
 

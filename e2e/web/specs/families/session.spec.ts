@@ -30,7 +30,9 @@ test("family view: zoom, pan, fit and centre move only the camera and add no und
   await app.exec("view.set_view_only", { on: true });
   expectRefusal(await app.refusal("element.create", { kind: "rectangle", bounds: { x: 0, y: 0, w: 5, h: 5 } }), "view_only");
   await app.exec("view.set_view_only", { on: false });
-  expectRefusal(await app.refusal("view.screenshot"), "port_unavailable", "renderer");
+  const shot = (await app.exec("view.screenshot")).bytes as { base64: string; mime: string };
+  expect(shot.mime).toBe("image/png");
+  expect(Buffer.from(shot.base64, "base64").subarray(0, 8).toString("hex"), "a PNG signature").toBe("89504e470d0a1a0a");
   expectRefusal(await app.refusal("view.set_viewport", { width: 10, height: 10 }), "not_for_agents");
   expect((await undoDepth(app)).depth, "camera commands are not history").toBe(depth);
 });
