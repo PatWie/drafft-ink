@@ -47,7 +47,7 @@ address into `window.__assets` in `index.html`:
 | `STIXTwoMath-Regular.otf` (formulas) | 381 KB | preloaded with the module; used right after the first frame because the welcome document has a formula. A formula shows as an error box until the font is in, then draws |
 | `Hack-Regular.ttf`, `emoji-icon-font.ttf` (egui's monospace font; arrows, shift and command signs) | 123 KB, 145 KB | after the first frame, in the background |
 | `NotoSans-Regular/Bold/Italic.ttf` | 223 KB, 232 KB, 228 KB | when a text needs them: the family `noto_sans`, or a character that no other font has |
-| `IBMPlexSans-Variable.ttf` (all weights in one file) | PLEXBR | when a text uses the family `plex_sans`, or when the setting `ui.font` is `plex_sans`: one fetch, and `app` gives the bytes to both the typesetter and the UI (`theme::provide_plex_sans`, which also draws the semibold headings) |
+| `IBMPlexSans-Variable.ttf` (all weights in one file) | 238 KB | when a text uses the family `plex_sans`, or when the setting `ui.font` is `plex_sans`: one fetch, and `app` gives the bytes to both the typesetter and the UI (`theme::provide_plex_sans`, which also draws the semibold headings) |
 
 The mechanism is `Typesetter::wanted_fonts` / `provide_font` (`drafftink-typeset`: a layout that needs a font says so and the host
 supplies it; the desktop build has them built in through the Cargo feature `embedded`, so `wanted_fonts` stays empty), `drafftink_ui::theme::UiFont`
@@ -57,7 +57,7 @@ draws again. `sw.js` precaches the Ubuntu font with the shell and stores the oth
 
 Sizes of the full app build (2026-11-08, `release-wasm`, wasm-bindgen 0.2.130, binaryen 133 `-Oz` with the explicit feature list;
 MB here are MiB, as in `performance.md`): raw 24.62 MB (wasm-bindgen output), **wasm-opt 11.79 MB**, gzip -9 4.36 MB,
-**brotli -11 3.06 MB** (before WebMCP; the generated tool catalog added 0.14 MB wasm-opt and 0.04 MB brotli: raw 24.88, wasm-opt 11.93, gzip 4.42, brotli 3.10), plus 1.44 MB of font files that the page loads when it needs them. Before the size work it was 28.43 / 17.62 / 6.51 / 4.48 MB
+**brotli -11 3.06 MB** (before WebMCP; the generated tool catalog added 0.14 MB wasm-opt and 0.04 MB brotli: raw 24.88, wasm-opt 11.93, gzip 4.42, brotli 3.10), plus 1.44 MB of font files that the page loads when it needs them (1.66 MB with IBM Plex Sans, 2026-11-09: the wasm module grew by 70 brotli bytes and 6.5 KB after wasm-opt, because the font is a separate file). Before the size work it was 28.43 / 17.62 / 6.51 / 4.48 MB
 with the fonts inside. The old app was 10.33 MB raw and 3.46 MB brotli. What was done, what each step gave and what was left out is
 the table in `performance.md`, "Wasm size". `cargo xtask size` checks the numbers against `perf/budgets.json` (it builds the app, so it runs in
 `cargo xtask ci` and as its own CI job).

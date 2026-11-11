@@ -1647,8 +1647,8 @@
       "note": "the first-load cost of the code, what browsers are sent. 3,213,885 measured on 2026-11-08 and 3,312,440 on 2026-11-09 with per-run bold and italic, the live arrow preview and the token field (the old app: 3.46 MB; the target of docs/performance.md 7.5 is 3.5 MB); the limit is 3% above the latest"
     },
     "fonts.brotli_bytes": {
-      "max": 1550000,
-      "note": "the seven font files that the page loads when it needs them (Noto Sans, STIX Two Math, three egui fonts). 1,505,581 measured on 2026-11-08; the limit is 3% above"
+      "max": 1796000,
+      "note": "the eight font files that the page loads when it needs them (Noto Sans, IBM Plex Sans, STIX Two Math, three egui fonts). 1,505,581 measured on 2026-11-08 without Plex; 1,744,000 on 2026-11-09 with the variable IBM Plex Sans (238,419 brotli bytes, fetched only when a text or the interface font uses it, never part of the wasm); the limit is 3% above the latest"
     },
     "schemas.brotli_bytes": {
       "max": 35000,
