@@ -197,14 +197,47 @@ pub fn heal_bindings<T: SceneTx>(tx: &mut T, ids: Option<&[ElementId]>) -> Resul
                 return None;
             }
             bind_target(tx.get(&b.target)?)?;
-            let clamp = |v: f64| if v.is_finite() { v.clamp(-FIXED_POINT_BOUND, FIXED_POINT_BOUND) } else { 0.5001 };
-            Some(Binding { fixed_point: [clamp(b.fixed_point[0]), clamp(b.fixed_point[1])], ..b.clone() })
+            Some(clamped(b))
         };
         if rewrite_bindings(tx, id, fix)? {
             changed.push(id.clone());
         }
     }
     Ok(changed)
+}
+
+/// Frees every end of the live lines and arrows in `ids` whose target cannot anchor it any more: the target is
+/// missing, deleted, something an arrow cannot attach to (a label text, a line), or the arrow itself. A fixed
+/// point that is not finite is reset to the centre and one beyond the limit is clamped. The ends stay where they
+/// are, which is what deleting the target does in a command. Idempotent, and writes only an arrow that changes.
+///
+/// This is [`heal_bindings`] for the merge of concurrent edits (`repair`), where a delete can race with a bind and
+/// leave a binding to a tombstone. Returns the arrows changed.
+pub fn free_unreachable_ends<T: SceneTx>(tx: &mut T, ids: &[ElementId]) -> Result<Vec<ElementId>, BindingError> {
+    let mut changed = Vec::new();
+    for id in ids {
+        if tx.get(id).is_none_or(|e| e.deleted) {
+            continue;
+        }
+        let fix = |tx: &T, b: &Binding| {
+            if b.target == *id {
+                return None;
+            }
+            let target = tx.get(&b.target).filter(|t| !t.deleted)?;
+            bind_target(target)?;
+            Some(clamped(b))
+        };
+        if rewrite_bindings(tx, id, fix)? {
+            changed.push(id.clone());
+        }
+    }
+    Ok(changed)
+}
+
+/// The binding with its fixed point made finite and within the limit.
+fn clamped(b: &Binding) -> Binding {
+    let clamp = |v: f64| if v.is_finite() { v.clamp(-FIXED_POINT_BOUND, FIXED_POINT_BOUND) } else { 0.5001 };
+    Binding { fixed_point: [clamp(b.fixed_point[0]), clamp(b.fixed_point[1])], ..b.clone() }
 }
 
 /// Mirrors the fixed points of arrows in `set` whose targets are also in `set`, after the set was flipped.

@@ -34,6 +34,8 @@ drafftink-scene = { path = "../scene", features = ["conformance"] }
 png.workspace = true
 # Builds an update from a newer app for the schema-block tests.
 loro.workspace = true
+# Random edits on three peers (remote_repair_tests).
+proptest.workspace = true
 
 [lints]
 workspace = true

@@ -28,6 +28,7 @@ pub mod ports;
 pub mod refusal;
 pub mod registry;
 mod remote;
+mod remote_repair;
 pub mod ring;
 mod saves;
 pub mod services;

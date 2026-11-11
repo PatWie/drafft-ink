@@ -28,7 +28,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::rc::Rc;
 
 use drafftink_canvas::SceneIndex;
-use drafftink_doc::{DocError, LoroStore};
+use drafftink_doc::{DocError, LoroStore, LoroTx};
 use drafftink_geom::kurbo::Point;
 use drafftink_scene::{
     Change, ChangeKind, ChangeSet, DerivedIndex, DocMeta, Document, Element, ElementId, Fields, FileEntry, FileId,
@@ -803,6 +803,28 @@ impl TabDoc {
         let cs = self.loro.apply_remote(bytes)?;
         self.mirror(&cs).map_err(DocError::backend)?;
         Ok(cs)
+    }
+
+    /// Repairs a merged document: runs `f` in one transaction on the replicated store that undo cannot see, then
+    /// copies what it changed into the working store, outside the journal. The commit is this peer's own write (the
+    /// collab glue sends it, [`TabDoc::local_writes`] counts it) but is on no undo stack, and it reads the
+    /// replicated truth, so a gesture that is running keeps its journal untouched. Returns what `f` returned and
+    /// what the commit changed. An error from `f` writes nothing.
+    pub(crate) fn repair<R, E: From<StoreError>>(
+        &mut self,
+        f: impl FnOnce(&mut LoroTx<'_>) -> Result<R, E>,
+    ) -> Result<(R, ChangeSet), E> {
+        let mut tx = self.loro.begin();
+        tx.not_undoable();
+        tx.set_label("Merge repair");
+        let r = f(&mut tx)?;
+        let cs = tx.commit()?;
+        if !cs.is_empty() {
+            self.local_writes += 1;
+            self.last_coalesce = None;
+            self.mirror(&cs)?;
+        }
+        Ok((r, cs))
     }
 
     /// Takes back up to `n` of this peer's steps. A step that has become a no-op (a collaborator already

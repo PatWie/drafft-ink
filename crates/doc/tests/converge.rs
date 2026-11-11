@@ -431,7 +431,7 @@ struct Op {
 }
 
 fn op() -> impl Strategy<Value = Op> {
-    (0usize..3, 0u8..10, 0u8..8, any::<u8>()).prop_map(|(peer, kind, target, val)| Op { peer, kind, target, val })
+    (0usize..3, 0u8..18, 0u8..8, any::<u8>()).prop_map(|(peer, kind, target, val)| Op { peer, kind, target, val })
 }
 
 fn run_op(s: &mut LoroStore, ops: &Op, counter: &mut u32) {
@@ -482,6 +482,62 @@ fn run_op(s: &mut LoroStore, ops: &Op, counter: &mut u32) {
         (8, Some(id)) => {
             let _ = tx.update(&id, |e| e.locked = !e.locked);
         }
+        // Structure: groups, bindings, frames, arrows, point edits, undo and redo. The relations between elements
+        // that these make can be invalid after a merge; `drafftink-engine` repairs them (`remote_repair`), and its
+        // tests check `validate_scene`. Here the store itself must converge and keep every element valid.
+        (10, Some(id)) => {
+            let group = (!ops.val.is_multiple_of(7)).then(|| GroupId::new(&format!("g{}", ops.val % 3)).unwrap());
+            let _ = tx.update(&id, |e| e.group_ids = group.into_iter().collect());
+        }
+        (11, _) => {
+            *counter += 1;
+            let id = format!("p{}_{}", ops.peer, counter);
+            let top = tx.top_z();
+            let z = ZIndex::between(top.as_ref(), None).unwrap();
+            let _ = tx.insert(arrow(&id, &z));
+        }
+        (12, Some(id)) => {
+            let other = ids.get(usize::from(ops.val) % ids.len()).cloned();
+            let _ = tx.update(&id, |e| {
+                if let (ElementKind::Arrow(d), Some(t)) = (&mut e.kind, other) {
+                    let b = Binding { target: t, mode: BindMode::Orbit, fixed_point: [0.5, 0.5] };
+                    if ops.val.is_multiple_of(2) {
+                        d.start_binding = Some(b);
+                    } else {
+                        d.end_binding = Some(b);
+                    }
+                }
+            });
+        }
+        (13, Some(id)) => {
+            let frame =
+                (!ops.val.is_multiple_of(4)).then(|| ids.get(usize::from(ops.val) % ids.len()).cloned()).flatten();
+            let _ = tx.update(&id, |e| e.frame_id = frame);
+        }
+        (14, Some(id)) => {
+            let _ = tx.update(&id, |e| {
+                if let ElementKind::Arrow(_) = e.kind {
+                    let to = Point::new(20.0 + v, 10.0 + v / 2.0);
+                    if let Some(fresh) =
+                        Element::linear(e.id.clone(), LinearKind::Arrow, e.index.clone(), &[Point::new(0.0, 0.0), to])
+                    {
+                        e.kind = fresh.kind;
+                        e.transform.w = fresh.transform.w;
+                        e.transform.h = fresh.transform.h;
+                    }
+                }
+            });
+        }
+        (15, _) => {
+            drop(tx);
+            let _ = s.undo();
+            return;
+        }
+        (16, _) => {
+            drop(tx);
+            let _ = s.redo();
+            return;
+        }
         (_, Some(id)) => {
             if ops.val.is_multiple_of(5) {
                 let _ = tx.remove(&id);
@@ -522,6 +578,14 @@ proptest! {
         assert_same(&p[1], &p[2]);
         for s in &p {
             assert_view_matches_loro(s);
+            // Each element is valid on its own, whatever the merge did to its fields.
+            let broken: Vec<String> = validate_scene(s)
+                .issues
+                .iter()
+                .filter(|i| matches!(i.error, DocError::Element(_)))
+                .map(ToString::to_string)
+                .collect();
+            assert!(broken.is_empty(), "{}", broken.join("\n"));
         }
     }
 }
