@@ -933,6 +933,9 @@ fn unlock_all(s: &mut Session, a: UnlockAllArgs) -> Result<UnlockOut, Refusal> {
         return Err(Refusal::nothing_to_do(s.cmd(), "unlock", "no element is locked"));
     }
     let report = set_lock(s, &ids, Some(false))?;
+    if report.changed.is_empty() {
+        return Err(Refusal::nothing_to_do(s.cmd(), "unlock", "none of the given elements is locked"));
+    }
     if a.select && !report.changed.is_empty() {
         select_exactly(s, &report.changed, false);
     }

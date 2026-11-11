@@ -52,7 +52,7 @@ const PRESSURE: [(&str, &str); 3] = [("Uniform", "uniform"), ("Simulated", "simu
 
 /// True for the tools that draw an element.
 pub fn is_drawing_tool(t: Tool) -> bool {
-    !matches!(t, Tool::Select | Tool::Hand | Tool::Eraser | Tool::Laser)
+    !matches!(t, Tool::Select | Tool::Lasso | Tool::Hand | Tool::Eraser | Tool::Laser)
 }
 
 /// Whether a property section is relevant to the tool being drawn with (used only when nothing is
@@ -80,7 +80,7 @@ fn tool_shows(tool: Tool, prop: &str) -> bool {
         Tool::Text | Tool::Math => {
             matches!(prop, "font_family" | "font_weight" | "font_size" | "text_align" | "opacity")
         }
-        Tool::Select | Tool::Hand | Tool::Eraser | Tool::Laser => false,
+        Tool::Select | Tool::Lasso | Tool::Hand | Tool::Eraser | Tool::Laser => false,
     }
 }
 
@@ -206,7 +206,45 @@ fn shape_sections(ui: &mut egui::Ui, cx: &mut Cx<'_>) {
 
 use crate::model::StyleProp;
 
+/// The path type and heads of new arrows, for the arrow tool with nothing selected: `tool.set_arrow`, with the
+/// current choice read from the settings the command writes.
+fn new_arrow_sections(ui: &mut egui::Ui, cx: &mut Cx<'_>) {
+    let word = |cx: &Cx<'_>, key: &str, default: &str| {
+        cx.model.settings.get(key).and_then(Value::as_str).unwrap_or(default).to_owned()
+    };
+    let path = word(cx, "arrow.type", "sharp");
+    section_label(ui, &cx.pal, "Path");
+    ui.horizontal_wrapped(|ui| {
+        for (label, value) in ARROW_TYPES {
+            let ctl = Ctl::new("tool.set_arrow")
+                .args(json!({ "arrow_type": value }))
+                .label(format!("New arrows: {label}"))
+                .selected(path == value);
+            cx.toggle_button(ui, &ctl, label);
+        }
+    });
+    for (title, arg, key, default) in
+        [("Start", "start_head", "arrow.start_head", "none"), ("End", "end_head", "arrow.end_head", "arrow")]
+    {
+        let current = word(cx, key, default);
+        section_label(ui, &cx.pal, &format!("{title} head"));
+        ui.horizontal_wrapped(|ui| {
+            for (label, value) in HEADS {
+                let ctl = Ctl::new("tool.set_arrow")
+                    .args(json!({ arg: value }))
+                    .label(format!("New arrows, {title} head: {label}"))
+                    .selected(current == value);
+                cx.toggle_button(ui, &ctl, label);
+            }
+        });
+    }
+}
+
 fn arrow_sections(ui: &mut egui::Ui, cx: &mut Cx<'_>) {
+    if cx.model.selection_count == 0 && cx.model.tool == Tool::Arrow {
+        new_arrow_sections(ui, cx);
+        return;
+    }
     let kinds: &StyleView = &cx.model.style;
     if cx.model.selection_count == 0 || !(kinds.has_kind("arrow") || kinds.has_kind("line")) {
         return;

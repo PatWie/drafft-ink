@@ -60,6 +60,12 @@ pub(super) fn ensure_selected(cx: &mut Ctx<'_>, ev: &Ev<'_>, id: &ElementId) {
     }
 }
 
+/// The release of a click that did not select on its press (the lasso tool over an element that was not
+/// selected): selects what is under the pointer now.
+pub(super) fn select_pressed(cx: &mut Ctx<'_>, ev: &Ev<'_>) {
+    select_at(cx, ev, Pick::REPLACE);
+}
+
 /// A click: the selection changed on press, so only the clicks that have a meaning of their own remain.
 pub(super) fn click(cx: &mut Ctx<'_>, ev: &Ev<'_>, toggle_now: bool) {
     let mods = ev.meta.modifiers;

@@ -1,0 +1,399 @@
+{
+  "about": "A shape gets a web link and a link to another element, unsafe or unusable links are refused in words, opening a web link returns the address and opening an element link goes to the target, one undo step per change, and both file formats keep the links.",
+  "steps": [
+    {
+      "execute": "element.create",
+      "args": {
+        "kind": "rectangle",
+        "bounds": {
+          "x": 0,
+          "y": 0,
+          "w": 100,
+          "h": 60
+        }
+      }
+    },
+    {
+      "execute": "element.create",
+      "args": {
+        "kind": "ellipse",
+        "bounds": {
+          "x": 900,
+          "y": 700,
+          "w": 80,
+          "h": 80
+        },
+        "name": "target"
+      }
+    },
+    {
+      "execute": "element.set_link",
+      "args": {
+        "id": "e1",
+        "link": "HTTPS://example.com/a?b=c"
+      },
+      "expect": [
+        {
+          "path": "$.link",
+          "eq": "https://example.com/a?b=c"
+        },
+        {
+          "path": "$.kind",
+          "eq": "url"
+        },
+        {
+          "path": "$.changed",
+          "eq": true
+        }
+      ]
+    },
+    {
+      "execute": "element.set_link",
+      "args": {
+        "id": "e1",
+        "link": "https://example.com/a?b=c"
+      },
+      "expect": [
+        {
+          "path": "$.changed",
+          "eq": false
+        }
+      ],
+      "note": "The same link again is Ok and pushes no undo step."
+    },
+    {
+      "undo": 1,
+      "note": "One undo step removes the link; the repeated set_link pushed none."
+    },
+    {
+      "assert": "element.query",
+      "args": {
+        "filter": {
+          "ids": [
+            "e1"
+          ]
+        },
+        "fields": [
+          "link"
+        ]
+      },
+      "expect": [
+        {
+          "path": "$.items[0].link",
+          "eq": null
+        }
+      ]
+    },
+    {
+      "redo": 1,
+      "expect": []
+    },
+    {
+      "execute": "element.set_link",
+      "args": {
+        "id": "e1",
+        "link": "javascript:alert(1)"
+      },
+      "refused": "invalid_link",
+      "text": [
+        "not `javascript:`",
+        "https://example.com",
+        "`#id` or `@name`"
+      ]
+    },
+    {
+      "execute": "element.set_link",
+      "args": {
+        "id": "e1",
+        "link": "data:text/html,x"
+      },
+      "refused": "invalid_link",
+      "text": "not `data:`"
+    },
+    {
+      "execute": "element.set_link",
+      "args": {
+        "id": "e1",
+        "link": "file:///etc/passwd"
+      },
+      "refused": "invalid_link",
+      "text": "not `file:`"
+    },
+    {
+      "execute": "element.set_link",
+      "args": {
+        "id": "e1",
+        "link": "hello"
+      },
+      "refused": "invalid_link",
+      "text": [
+        "`hello` is not a web address",
+        "pass null to remove the link"
+      ]
+    },
+    {
+      "execute": "element.set_link",
+      "args": {
+        "id": "e1",
+        "link": "#nope"
+      },
+      "refused": "not_found",
+      "text": "No element matches `nope`"
+    },
+    {
+      "assert": "element.query",
+      "args": {
+        "filter": {
+          "ids": [
+            "e1"
+          ]
+        },
+        "fields": [
+          "link"
+        ]
+      },
+      "expect": [
+        {
+          "path": "$.items[0].link",
+          "eq": "https://example.com/a?b=c"
+        }
+      ],
+      "note": "Every refusal left the link as it was."
+    },
+    {
+      "execute": "element.open_link",
+      "args": {
+        "id": "e1"
+      },
+      "expect": [
+        {
+          "path": "$.kind",
+          "eq": "url"
+        },
+        {
+          "path": "$.url",
+          "eq": "https://example.com/a?b=c"
+        },
+        {
+          "path": "$.changed",
+          "eq": false
+        }
+      ],
+      "note": "The engine returns the address. The shell opens it."
+    },
+    {
+      "execute": "element.open_link",
+      "args": {
+        "id": "e2"
+      },
+      "refused": "no_link",
+      "text": [
+        "Element `e2` has no link",
+        "element.set_link"
+      ]
+    },
+    {
+      "execute": "element.set_link",
+      "args": {
+        "id": "e1",
+        "link": "@target"
+      },
+      "expect": [
+        {
+          "path": "$.link",
+          "eq": "#e2"
+        },
+        {
+          "path": "$.kind",
+          "eq": "element"
+        }
+      ],
+      "note": "A name is stored as the id, so renaming the target keeps the link."
+    },
+    {
+      "execute": "selection.clear"
+    },
+    {
+      "execute": "element.open_link",
+      "args": {
+        "id": "e1"
+      },
+      "expect": [
+        {
+          "path": "$.kind",
+          "eq": "element"
+        },
+        {
+          "path": "$.target",
+          "eq": "e2"
+        },
+        {
+          "path": "$.changed",
+          "eq": true
+        }
+      ]
+    },
+    {
+      "assert": "selection.get",
+      "expect": [
+        {
+          "path": "$.ids",
+          "eq": [
+            "e2"
+          ]
+        }
+      ],
+      "note": "Following an element link selects the target."
+    },
+    {
+      "execute": "element.delete",
+      "args": {
+        "ids": [
+          "e2"
+        ]
+      }
+    },
+    {
+      "execute": "element.open_link",
+      "args": {
+        "id": "e1"
+      },
+      "refused": "not_found",
+      "text": "No element matches `e2`",
+      "note": "A link to an element that is gone refuses."
+    },
+    {
+      "undo": 1
+    },
+    {
+      "execute": "element.open_link",
+      "args": {
+        "id": "e1"
+      },
+      "expect": [
+        {
+          "path": "$.target",
+          "eq": "e2"
+        }
+      ],
+      "note": "Undoing the delete makes the link work again."
+    },
+    {
+      "execute": "element.set_link",
+      "args": {
+        "id": "e1",
+        "link": "https://example.com/final"
+      }
+    },
+    {
+      "execute": "doc.export",
+      "args": {
+        "format": "json",
+        "scope": "all"
+      },
+      "save": {
+        "native": "$.bytes.base64"
+      }
+    },
+    {
+      "execute": "doc.export",
+      "args": {
+        "format": "excalidraw",
+        "scope": "all"
+      },
+      "save": {
+        "xl": "$.bytes.base64"
+      }
+    },
+    {
+      "execute": "doc.new",
+      "args": {
+        "on_unsaved": "discard"
+      }
+    },
+    {
+      "assert": "element.query",
+      "expect": [
+        {
+          "path": "$.total",
+          "eq": 0
+        }
+      ]
+    },
+    {
+      "execute": "doc.open",
+      "args": {
+        "source": {
+          "base64": "{{native}}",
+          "name": "links.json"
+        }
+      }
+    },
+    {
+      "assert": "element.query",
+      "args": {
+        "filter": {
+          "ids": [
+            "e1"
+          ]
+        },
+        "fields": [
+          "link"
+        ]
+      },
+      "expect": [
+        {
+          "path": "$.items[0].link",
+          "eq": "https://example.com/final"
+        }
+      ],
+      "note": "Native JSON keeps the link."
+    },
+    {
+      "execute": "doc.new",
+      "args": {
+        "on_unsaved": "discard"
+      }
+    },
+    {
+      "execute": "doc.open",
+      "args": {
+        "source": {
+          "base64": "{{xl}}",
+          "name": "links.excalidraw"
+        }
+      }
+    },
+    {
+      "assert": "element.query",
+      "args": {
+        "filter": {
+          "kind": "rectangle"
+        },
+        "fields": [
+          "link"
+        ]
+      },
+      "expect": [
+        {
+          "path": "$.items[0].link",
+          "eq": "https://example.com/final"
+        }
+      ],
+      "note": ".excalidraw keeps the link."
+    },
+    {
+      "execute": "element.set_link",
+      "args": {
+        "id": "e1",
+        "link": null
+      },
+      "expect": [
+        {
+          "path": "$.link",
+          "eq": null
+        }
+      ]
+    }
+  ]
+}

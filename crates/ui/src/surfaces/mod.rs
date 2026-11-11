@@ -12,6 +12,7 @@ pub mod color;
 pub mod context_menu;
 pub mod dialogs;
 pub mod equation;
+pub mod link;
 pub mod menu;
 pub mod palette;
 pub mod props;
@@ -36,6 +37,7 @@ pub fn show_all(ctx: &Context, cx: &mut Cx<'_>, st: &mut UiState) {
     dialogs::show(ctx, cx, st);
     collab::show(ctx, cx, st);
     equation::show(ctx, cx, st);
+    link::show(ctx, cx, st);
     shortcuts::show(ctx, cx, st);
     context_menu::show(ctx, cx, st);
     palette::show(ctx, cx, st);

@@ -110,7 +110,7 @@ colour), `set_trace`/`drawn_order` (ids drawn, for tests).
 ## 5. Overlay, grid, pictures
 
 **Overlay.** `paint_overlay(&mut scene, &Overlay, &View, &OverlayStyle)` draws selection boxes with handles (the
-handle set comes from `geom::select`), point handles of lines, the hover outline, binding highlights, the marquee,
+handle set comes from `geom::select`), point handles of lines, the hover outline, binding highlights, the marquee, the lasso path,
 smart guides, the snap point and remote cursors. Sizes are logical pixels, so handles keep their on-screen size at
 any zoom; a dashed box that would need more than 2,000 dashes is drawn solid. The canvas keeps the world scene and
 rebuilds only this one when the pointer moves; `combine` joins them (a memcpy of the encodings).

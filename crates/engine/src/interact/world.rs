@@ -22,7 +22,7 @@ use crate::state::{BASE_ZOOM, Tool};
 pub(super) fn pointer_mode(tool: Tool) -> drafftink_canvas::PointerMode {
     use drafftink_canvas::PointerMode;
     match tool {
-        Tool::Select | Tool::Text | Tool::Math => PointerMode::Select,
+        Tool::Select | Tool::Lasso | Tool::Text | Tool::Math => PointerMode::Select,
         Tool::Hand => PointerMode::Hand,
         Tool::Rectangle
         | Tool::Diamond
@@ -144,6 +144,17 @@ impl World {
         )
     }
 
+    /// The topmost element under a world point when it is locked (locked elements are skipped by the normal hit
+    /// test, so this is what a right click needs to offer Unlock). A label counts as its container. `None` when
+    /// the topmost element is unlocked or nothing is there.
+    pub(crate) fn locked_on_top(&self, s: &Session, world: Point, tolerance_px: f64) -> Option<ElementId> {
+        let opts = HitOptions { include_locked: true, ..HitOptions::with_tolerance(tolerance_px) };
+        let top = s.tab().doc.scene_index().hit(s.store(), world, self.viewport.zoom(), &opts)?;
+        let e = s.store().get(&top.id)?;
+        let owner = e.container_id().and_then(|c| s.store().get(c)).filter(|c| !c.deleted).unwrap_or(e);
+        owner.locked.then(|| owner.id.clone())
+    }
+
     /// The picker the recognizer runs against, borrowing the world and the session.
     pub(crate) fn picker<'a>(&'a self, s: &'a Session) -> impl Picker + 'a {
         Pick { world: self, session: s }
@@ -164,7 +175,7 @@ impl Picker for Pick<'_> {
         let w = self.world;
         let touch = kind == PointerKind::Touch;
         // Handles exist for the select tool, and for text and math, whose handles resize and move the text.
-        if matches!(w.tool, Tool::Select | Tool::Text | Tool::Math) {
+        if matches!(w.tool, Tool::Select | Tool::Lasso | Tool::Text | Tool::Math) {
             let radius =
                 if touch { w.config.transformer.hit_radius_touch_px } else { w.config.transformer.hit_radius_px };
             if let Some(h) = w.frame.hit(&w.viewport, screen, radius, &w.config.transformer) {
@@ -193,9 +204,10 @@ impl Picker for Pick<'_> {
         let w = self.world;
         match w.tool {
             Tool::Hand => Cursor::Grab,
-            Tool::Select | Tool::Text | Tool::Math => match target {
+            Tool::Select | Tool::Lasso | Tool::Text | Tool::Math => match target {
                 Target::Handle(h) => w.frame.cursor_for(h),
                 Target::Element { .. } => Cursor::Move,
+                Target::Empty | Target::None if w.tool == Tool::Lasso => Cursor::Crosshair,
                 Target::Empty | Target::None => Cursor::Default,
             },
             _ => Cursor::Crosshair,

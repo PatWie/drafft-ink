@@ -65,6 +65,13 @@ pub struct MarqueeOverlay {
     pub rect: Rect,
 }
 
+/// The lasso being drawn: the path of the pointer so far. The painter closes it.
+#[derive(Debug, Clone, PartialEq)]
+pub struct LassoOverlay {
+    /// The path in world space, in drawing order.
+    pub points: Vec<Point>,
+}
+
 /// What the host knows about one collaborator.
 #[derive(Debug, Clone, PartialEq)]
 pub struct RemoteUser {
@@ -130,6 +137,8 @@ pub struct Overlay {
     pub hover: Option<HoverOutline>,
     /// The marquee being dragged.
     pub marquee: Option<MarqueeOverlay>,
+    /// The lasso being drawn.
+    pub lasso: Option<LassoOverlay>,
     /// Smart guides.
     pub guides: Vec<SmartGuide>,
     /// Binding highlights.
@@ -147,6 +156,7 @@ impl Overlay {
             && self.transformer.is_none()
             && self.hover.is_none()
             && self.marquee.is_none()
+            && self.lasso.is_none()
             && self.guides.is_empty()
             && self.bind_candidates.is_empty()
             && self.remote_cursors.is_empty()

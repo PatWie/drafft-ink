@@ -7,6 +7,7 @@ use std::f64::consts::{FRAC_PI_2, FRAC_PI_4};
 
 use common::*;
 use drafftink_canvas::geom::kurbo::{Point, Rect};
+use drafftink_canvas::geom::lasso::Lasso;
 use drafftink_canvas::scene::{Element, ElementKind, FreehandData, GroupId, ImageData, SceneRead, SceneTx};
 use drafftink_canvas::{HitOptions, HitPart, MarqueeMode, unit_group};
 use smallvec::smallvec;
@@ -352,6 +353,58 @@ fn marquee_skips_locked_and_deleted() {
     let r = c.marquee(&Rect::new(-5.0, -5.0, 100.0, 20.0), MarqueeMode::Contain);
     assert_eq!(r, vec![id("c")]);
     assert_eq!(live_ids(c.store()).len(), 2);
+}
+
+fn lasso(pts: &[(f64, f64)]) -> Lasso {
+    let pts: Vec<Point> = pts.iter().map(|&(x, y)| p(x, y)).collect();
+    Lasso::new(&pts, 0.0).unwrap()
+}
+
+#[test]
+fn lasso_contain_versus_intersect_follows_the_marquee_rules() {
+    let c = canvas_with(vec![
+        rect("hollow", 100.0, 100.0, 200.0, 200.0),
+        fill(rect("solid", 400.0, 100.0, 200.0, 200.0)),
+        frame("fr", 100.0, 400.0, 200.0, 150.0),
+        text("txt", 400.0, 400.0, 100.0, 30.0),
+    ]);
+    let names = |v: Vec<drafftink_canvas::scene::ElementId>| v.into_iter().map(|i| i.to_string()).collect::<Vec<_>>();
+    // A triangle over the top left: it holds the hollow rectangle, cuts the solid one and misses the rest.
+    let top_half = lasso(&[(50.0, 50.0), (900.0, 50.0), (50.0, 600.0)]);
+    assert_eq!(names(c.lasso(&top_half, MarqueeMode::Contain)), ["hollow"], "the slanted side cuts the solid one");
+    assert_eq!(names(c.lasso(&top_half, MarqueeMode::Intersect)), ["hollow", "solid"]);
+    // Inside the hollow rectangle without touching its outline: nothing. Inside the solid one: it is selected.
+    let in_hollow = lasso(&[(150.0, 150.0), (250.0, 150.0), (200.0, 250.0)]);
+    assert!(c.lasso(&in_hollow, MarqueeMode::Intersect).is_empty());
+    let in_solid = lasso(&[(450.0, 150.0), (550.0, 150.0), (500.0, 250.0)]);
+    assert_eq!(names(c.lasso(&in_solid, MarqueeMode::Intersect)), ["solid"]);
+    assert!(c.lasso(&in_solid, MarqueeMode::Contain).is_empty());
+    // A frame is selected only when contained, never by crossing its border.
+    let across_frame = lasso(&[(150.0, 380.0), (250.0, 380.0), (200.0, 450.0)]);
+    assert!(c.lasso(&across_frame, MarqueeMode::Intersect).is_empty());
+    let around_frame = lasso(&[(90.0, 390.0), (310.0, 390.0), (310.0, 560.0), (90.0, 560.0)]);
+    assert_eq!(names(c.lasso(&around_frame, MarqueeMode::Intersect)), ["fr"]);
+    // Text is a whole box.
+    assert_eq!(
+        names(c.lasso(&lasso(&[(420.0, 405.0), (430.0, 405.0), (425.0, 415.0)]), MarqueeMode::Intersect)),
+        ["txt"]
+    );
+}
+
+#[test]
+fn lasso_skips_locked_and_deleted() {
+    let mut c = canvas_with(vec![
+        fill(rect("a", 0.0, 0.0, 10.0, 10.0)),
+        fill(rect("b", 20.0, 0.0, 10.0, 10.0)),
+        fill(rect("c", 40.0, 0.0, 10.0, 10.0)),
+    ]);
+    c.transact(|tx| {
+        tx.update(&id("a"), |e| e.locked = true)?;
+        tx.update(&id("b"), |e| e.deleted = true)
+    })
+    .unwrap();
+    let all = lasso(&[(-5.0, -5.0), (100.0, -5.0), (100.0, 20.0), (-5.0, 20.0)]);
+    assert_eq!(c.lasso(&all, MarqueeMode::Contain), vec![id("c")]);
 }
 
 #[test]

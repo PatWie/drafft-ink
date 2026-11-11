@@ -109,6 +109,8 @@ pub struct Overlay {
     pub binding: Vec<BindingHighlight>,
     /// The rubber band.
     pub marquee: Option<Rect>,
+    /// The lasso being drawn, in world space. The painter closes it. Empty: none.
+    pub lasso: Vec<Point>,
     /// Alignment and spacing guides.
     pub guides: Vec<SmartGuide>,
     /// The point a drag snapped to.
@@ -125,6 +127,7 @@ impl Overlay {
             && self.hover.is_empty()
             && self.binding.is_empty()
             && self.marquee.is_none()
+            && self.lasso.is_empty()
             && self.guides.is_empty()
             && self.snap_point.is_none()
             && self.cursors.is_empty()
@@ -177,6 +180,13 @@ pub fn paint_overlay(scene: &mut Scene, overlay: &Overlay, view: &View, style: &
             dev(Point::new(r.x0, r.y1)),
         ]);
         scene.fill(Fill::NonZero, id, style.accent.with_alpha(0.1), None, &path);
+        scene.stroke(&Stroke::new(px), id, style.accent, None, &path);
+        report.items += 1;
+    }
+
+    if overlay.lasso.len() >= 2 {
+        let path = polygon(&overlay.lasso.iter().copied().map(dev).collect::<Vec<_>>());
+        scene.fill(Fill::NonZero, id, style.accent.with_alpha(0.05), None, &path);
         scene.stroke(&Stroke::new(px), id, style.accent, None, &path);
         report.items += 1;
     }

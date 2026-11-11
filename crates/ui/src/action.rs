@@ -101,11 +101,13 @@ pub enum Verb {
     ToggleZen,
     /// `ui.open_equation_editor`: the LaTeX dialog.
     OpenEquationEditor,
+    /// `ui.open_link_editor`: the link field for the selected element, ends with `element.set_link`.
+    OpenLinkEditor,
 }
 
 impl Verb {
     /// Every verb, in the order of docs/commands.md §6.3.
-    pub const ALL: [Verb; 17] = [
+    pub const ALL: [Verb; 18] = [
         Verb::CloseOverlays,
         Verb::ToggleMenu,
         Verb::OpenFile,
@@ -123,6 +125,7 @@ impl Verb {
         Verb::ToggleStats,
         Verb::ToggleZen,
         Verb::OpenEquationEditor,
+        Verb::OpenLinkEditor,
     ];
 
     /// The id of the verb in the catalog (§6.3). The three colour targets share `ui.open_color_picker`.
@@ -143,6 +146,7 @@ impl Verb {
             Verb::ToggleStats => "ui.toggle_stats",
             Verb::ToggleZen => "ui.toggle_zen",
             Verb::OpenEquationEditor => "ui.open_equation_editor",
+            Verb::OpenLinkEditor => "ui.open_link_editor",
         }
     }
 
@@ -166,6 +170,7 @@ impl Verb {
             Verb::ToggleStats => "Show or hide the stats panel",
             Verb::ToggleZen => "Zen mode (hide the interface)",
             Verb::OpenEquationEditor => "Edit the equation",
+            Verb::OpenLinkEditor => "Edit the link",
         }
     }
 }
@@ -345,6 +350,14 @@ impl UiState {
             self.equation = None;
         }
         match (call.id.as_str(), result) {
+            // The link dialog closes when the link was set; a refusal keeps it open next to its toast.
+            ("element.set_link", Ok(_)) => self.link_editor = None,
+            // The engine never opens a browser: an address comes back and goes to the app.
+            ("element.open_link", Ok(out)) => {
+                if let Some(url) = out.get("url").and_then(Value::as_str) {
+                    host.push(HostRequest::OpenUrl(url.to_owned()));
+                }
+            }
             ("element.query", Ok(out)) if self.search_open => {
                 let query = call.args.pointer("/filter/text").and_then(Value::as_str).unwrap_or_default();
                 self.search_results = Some(SearchResults::from_output(query, out));

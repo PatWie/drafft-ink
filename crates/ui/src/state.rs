@@ -153,12 +153,23 @@ impl SearchHit {
 }
 
 /// The context menu: where it was asked for.
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct ContextMenu {
     /// The click, in screen points.
     pub screen: egui::Pos2,
     /// The same point in world units, when the canvas layer knows it. `Paste` puts its content here.
     pub world: Option<[f64; 2]>,
+    /// The id of a locked element the menu is about (it cannot be selected): the menu offers to unlock it.
+    pub locked: Option<String>,
+}
+
+/// The link dialog (`ui.open_link_editor`).
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct LinkEditorState {
+    /// The text in the field. `None` until the first frame, when it takes the link of the selected element.
+    pub text: Option<String>,
+    /// Set once the field has been focused, so focus is requested only on the first frame.
+    pub focused: bool,
 }
 
 /// Everything the UI remembers between frames.
@@ -186,6 +197,8 @@ pub struct UiState {
     pub zen: bool,
     /// The equation editor, when open.
     pub equation: Option<EquationState>,
+    /// The link dialog, when open.
+    pub link_editor: Option<LinkEditorState>,
     /// The context menu, when open.
     pub context_menu: Option<ContextMenu>,
     /// The recent documents list is open.
@@ -218,6 +231,7 @@ impl UiState {
             || self.font_picker_open
             || self.search_open
             || self.equation.is_some()
+            || self.link_editor.is_some()
             || self.context_menu.is_some()
             || self.recent_open
             || self.confirm.is_some()
@@ -229,6 +243,7 @@ impl UiState {
             || self.shortcuts_open
             || self.collab_open
             || self.equation.is_some()
+            || self.link_editor.is_some()
             || self.confirm.is_some()
             || self.search_open
     }
@@ -245,6 +260,7 @@ impl UiState {
         self.search_open = false;
         self.search_results = None;
         self.equation = None;
+        self.link_editor = None;
         self.context_menu = None;
         self.recent_open = false;
         self.confirm = None;
@@ -297,6 +313,12 @@ impl UiState {
             }
             Verb::ToggleStats => self.stats_open = !self.stats_open,
             Verb::ToggleZen => self.zen = !self.zen,
+            Verb::OpenLinkEditor => {
+                if self.link_editor.is_none() {
+                    self.close_overlays();
+                    self.link_editor = Some(LinkEditorState::default());
+                }
+            }
             Verb::OpenEquationEditor => {
                 if self.equation.is_none() {
                     self.close_overlays();
@@ -323,7 +345,19 @@ impl UiState {
     /// the world point under it, so that `Paste` can put its content there.
     pub fn open_context_menu(&mut self, screen: egui::Pos2, world: Option<[f64; 2]>) {
         self.close_overlays();
-        self.context_menu = Some(ContextMenu { screen, world });
+        self.context_menu = Some(ContextMenu { screen, world, locked: None });
+    }
+
+    /// Opens the context menu of a locked element, which cannot be selected: it offers to unlock it
+    /// (`element.unlock_all` with this id). The canvas layer calls this for `ContextTarget::Locked`.
+    pub fn open_context_menu_on_locked(
+        &mut self,
+        screen: egui::Pos2,
+        world: Option<[f64; 2]>,
+        element: impl Into<String>,
+    ) {
+        self.close_overlays();
+        self.context_menu = Some(ContextMenu { screen, world, locked: Some(element.into()) });
     }
 
     /// The app answers a [`HostRequest::PasteText`].

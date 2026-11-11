@@ -444,12 +444,14 @@ Tool changes are never undoable and never touch the document. `tool.set` is the 
 | `tool.hold` | Hold tool temporarily | NoUndo | `Space` (hold) with tool=hand | X:App.pan.ts; NEW (replaces A:4711 Space as mouse button) |
 | `tool.release` | Release held tool | NoUndo | `Space` (release) | NEW |
 | `tool.cancel` | Cancel | Undoable | `Esc` | A:5305 |
+| `tool.set_arrow` | Set new arrow style | NoUndo | none | NEW; X:currentItemArrowType, currentItemStartArrowhead, currentItemEndArrowhead |
 
 Bindings of `tool.set` (keys fire only without Ctrl/Cmd/Alt, and also without Shift; the old app accepted Shift+letter as the tool key, A:5245, which would collide with Shift+H and Shift+V flip):
 
 | Tool | Keys | Source |
 |---|---|---|
 | select | `V`, `1` | A:5245 |
+| lasso | none (toolbar button after select, palette `tool.set` tool=lasso; the select tool's Alt-drag is a lasso too). Excalidraw gives its lasso no letter; `S` is the stroke colour picker here, as there. Its select button switches to lasso when clicked while active, which is a separate button here | X:Tools.tsx `lasso`, App.tsx |
 | hand | `H` | A:5250 |
 | rectangle | `R`, `2` | A:5255 |
 | diamond | `D`, `3` | X (NEW; key 3 was unused) |
@@ -466,11 +468,12 @@ Bindings of `tool.set` (keys fire only without Ctrl/Cmd/Alt, and also without Sh
 
 | id | args | availability and refusals | effect |
 |---|---|---|---|
-| `tool.set` | `tool: Tool`, `keep_selection?: bool` (default true for select and hand, false for the other tools) | Always available. Execute refuses: `view_only_tool`: "In view-only mode only the select, hand and laser tools are available. Turn view-only off with `view.set_view_only` (on=false)." `gesture_active`. | Ends a running text edit (committed), leaves the linear point editor, then sets the tool. (A half-drawn multi-point line is a draft of the `element` family, which is abandoned there; `tool.set` has no state of its own for it.) Setting the tool that is already active is Ok with changed=false unless a rung above changed something. A held tool (`tool.hold`) stays held; `tool.set` changes the tool that returns. Switching to a drawing tool clears the selection unless keep_selection is true. The highlighter and the freehand tool share one recognizer and differ in defaults (width 12 or more, alpha 128, see `element.create`). |
+| `tool.set` | `tool: Tool`, `keep_selection?: bool` (default true for select, lasso and hand, false for the other tools) | Always available. Execute refuses: `view_only_tool`: "In view-only mode only the select, hand and laser tools are available. Turn view-only off with `view.set_view_only` (on=false)." `gesture_active`. | Ends a running text edit (committed), leaves the linear point editor, then sets the tool. (A half-drawn multi-point line is a draft of the `element` family, which is abandoned there; `tool.set` has no state of its own for it.) Setting the tool that is already active is Ok with changed=false unless a rung above changed something. A held tool (`tool.hold`) stays held; `tool.set` changes the tool that returns. Switching to a drawing tool clears the selection unless keep_selection is true. The lasso tool is a selection tool: it works in view-only mode and keeps the selection. The highlighter and the freehand tool share one recognizer and differ in defaults (width 12 or more, alpha 128, see `element.create`). |
 | `tool.lock` | `on?: bool` (omitted toggles) | Always available. | Tool lock keeps the drawing tool after an element is created instead of returning to select. Session state, not persisted. Output: the tool state `{tool, active, held, tool_lock}`, as for every `tool.*` command. |
 | `tool.hold` | `tool: Tool = hand` | `gesture_active`. `view_only_tool` (as `tool.set`). | Remembers the current tool and activates `tool` until `tool.release`. The same hold again (key repeat) is Ok with changed=false. A hold of another tool replaces the held tool. Used by Space-drag panning. |
 | `tool.release` | none | Always available. A release without a hold is not an error: Ok with changed=false. | Restores the tool that was active before `tool.hold`. |
 | `tool.cancel` | `all: bool = false` | Always available (a stray Esc is Ok with changed=false). | One Esc ladder, in this order, each rung only if applicable: cancel the running gesture (`gesture.cancel`); end a text edit (committed, as `text.edit_end`); leave the linear point editor; leave the editing group (`group.exit`); clear the selection (`selection.clear`); switch to the select tool and turn tool lock off. With all=false (the default, decision §9 item 5) only the first applicable rung runs: Excalidraw's step-by-step Esc. With all=true every applicable rung runs (the old app's single Esc, A:5305). Output `{changed, rungs}` lists the rungs that ran, by name: `gesture`, `text_edit`, `point_editor`, `group`, `selection`, `tool`. The text-edit rung changes the document, so this command is Undoable: a text edit it commits is one undo step labelled "Cancel" (a call that changes no document pushes none). It runs in view-only mode too, because it is how a user gets out of a state; that, the document change and the gesture rung put it on the exception list of §1.2 test 2. A rung that is a command (`group.exit`, `selection.clear`, `text.edit_end`) runs through `run_nested` when its family is registered. The UI closes open dialogs and popovers first (verb `ui.close_overlays`); that is not part of this command. |
+| `tool.set_arrow` | `arrow_type?: "sharp" \| "round" \| "elbow"`, `start_head?: Head \| null`, `end_head?: Head \| null` | Always available (view-only too). `gesture_active`. Execute: `bad_args` when none of the three is given: "give at least one of `arrow_type`, `start_head` and `end_head`, for example {\"arrow_type\": \"elbow\"}" (and for a word that is not a path type or head). | Sets what the arrow tool gives a new arrow (decision: the choice is a tool default, not a style property, so `style.set` does not carry it and cannot re-type an existing arrow without routing it). A part that is left out keeps its value; `null` or `"none"` is no head. The defaults are session tool state (`Session::tool.arrow_default`) and are kept in the settings `arrow.type`, `arrow.start_head`, `arrow.end_head` (§5), so `settings.set`, `settings.cycle` and `settings.reset` reach the same state and the choice survives a restart. The arrow tool reads them and passes them to `element.create` as `arrow_type`, `start_head` and `end_head`; `element.create` itself ignores the defaults (omitted means sharp with the built-in heads), so a script is not changed by what the tool is set to. The preview of the arrow being drawn shows the heads. Existing arrows are not changed (`arrow.set_type`, `arrow.set_head`). Excalidraw cycles the type when the arrow key is pressed on the active arrow tool; that key behaviour is not adopted (the key runs `tool.set`). Output `{changed, arrow_type, start_head, end_head}` with the values in effect. |
 
 ### 2.4 `element`: create, delete, move, resize, rotate, lock
 
@@ -499,9 +502,13 @@ An element is flat and has a stable id (`scene` crate). Groups are `groupIds` on
 | `element.flip` | Flip | Undoable | `Shift+H` flip horizontal, `Shift+V` flip vertical | U:1753, 1761; A:3625-3632; X:actionFlip |
 | `element.lock` | Lock or unlock | Undoable | `Mod+Shift+L` | X:actionElementLock; NEW |
 | `element.unlock_all` | Unlock all | Undoable | none (context menu) | X:actionElementLock; NEW |
+| `element.set_link` | Link | Undoable | `Mod+K` is the UI verb `ui.open_link_editor`, which calls this | X:actionLink |
+| `element.open_link` | Open link | NoUndo | none (link icon, context menu) | X:Hyperlink, App.redirectToLink |
 | `element.set_name` | Name element | Undoable | none | NEW §11 |
 | `element.relabel` | Change label | Undoable | none | NEW §11 |
 | `element.connect` | Connect elements | Undoable | none | NEW §11 |
+| `element.create_sticky` | Add sticky note | Undoable | `N` | X:stickyNote.ts; NEW |
+| `element.convert` | Convert element type | Undoable | `Tab`, `Shift+Tab` | X:ConvertElementTypePopup.tsx; NEW |
 | `element.erase` | Erase along path | Undoable | none (eraser tool) | E:1285-1311 |
 | `element.query` | Find elements | NoUndo, read-only | none | NEW §11 |
 | `element.at` | Element at point | NoUndo, read-only | none | NEW §11 |
@@ -518,12 +525,16 @@ An element is flat and has a stable id (`scene` crate). Groups are `groupIds` on
 | `element.rotate` | `ids: Refs = selection`, `angle: number`, `mode: "by" \| "to" = by`, `snap_degrees?: number` (the UI passes 15 while Shift is held) | `no_target`. Execute: `locked`; `bad_args`: "mode \"to\" sets an absolute angle and needs exactly one element; use mode \"by\" to rotate several."; `not_rotatable`: "Elbow arrows cannot be rotated. Change the arrow type first with `arrow.set_type` (sharp or round)." or "Frames cannot be rotated." (the whole command refuses and `details.ids` lists the offending elements; nothing is skipped silently) | Rotates about the common centre. Every element's own `angle` changes by the delta (there is no group angle, which fixes the old cosmetic group rotation). mode=to with angle 0 resets the rotation (double-click on the rotate handle, E:447). A single rotated arrow unbinds both its ends; arrows bound to rotated targets follow. snap_degrees rounds the resulting delta. Output: `{angle, angle_badge}`. Gesture command. |
 | `element.flip` | `ids: Refs = selection`, `axis: "horizontal" \| "vertical"` | `no_target`. Execute: `locked`. | Mirrors the elements about their common centre. A group moves as a unit (fixes the old displaced children, core `Group::transform`). Angles are negated, linear points mirrored, images toggle their scale sign, text keeps readable glyphs and only moves. Bound arrows follow. |
 | `element.lock` | `ids: Refs = selection`, `locked?: bool` (omitted toggles: unlock if all are locked, else lock) | `no_target`. | Sets `locked`. Locking an element locks every member of its outermost group, so a group stays one unit. Locked elements leave the selection, are not hit by click or marquee, are not binding targets, and every element, style, arrange, group and text command refuses them with `locked`. They can still be found by `element.query` and addressed by id. |
-| `element.unlock_all` | `ids?: Refs`, `select: bool = true` | `nothing_to_do`: "Nothing to unlock: no element is locked." | Unlocks the given elements, or every locked element, and selects them. |
+| `element.unlock_all` | `ids?: Refs`, `select: bool = true` | `nothing_to_do`: "Nothing to unlock: no element is locked." Execute with `ids` when none of the given elements (nor their groups) is locked: \"Nothing to unlock: none of the given elements is locked.\" | Unlocks the given elements, or every locked element, and selects them. With `ids` this is the unlock of the canvas: a locked element cannot be selected, so the context menu of a locked element (`ContextTarget::Locked`, `docs/interaction.md`) calls it with that one id, as Excalidraw's menu does (it selects the locked element and runs the lock toggle). A locked group unlocks as a whole. `element.lock` with `locked=false` unlocks without selecting. |
+| `element.set_link` | `id?: Ref` (default the single selected element), `link?: string \| null` | `needs_single` when `id` is absent and the selection is not exactly one element. Execute: `invalid_link`, with the text saying what is wrong and how to fix it: "Links can only use http://, https:// or mailto:, not `javascript:`. Use a web address such as https://example.com, or link to an element with `#id` or `@name`." (also for `data:`, `file:`, `vbscript:` and every other scheme), spaces or line breaks, quotes, angle brackets, backslashes or control characters, a link over 2048 bytes, a user name or password in front of the host, a text that is not a web address ("`hello` is not a web address. Write it like https://example.com/page, link to an element with `#id` or `@name`, or pass null to remove the link."); `not_found` for an element link whose target does not exist or is deleted; `locked`; `view_only` as every document command. | Sets, replaces or removes `Element.link`. A web link is `http`, `https` or `mailto`; the scheme is lower-cased and a bare `example.com/page` becomes `https://example.com/page`. An element link is `#e12` or `@name`; both are stored as `#<id>` (the id, so renaming the target keeps the link). `null`, an absent `link` and an empty text remove the link. Setting the link an element already has is Ok with `changed: false` and no undo step. Output `{id, link, kind: "url" \| "element" \| null, changed}`. The link round-trips through the native JSON and `.excalidraw` (`link`); a `.excalidraw` link is checked again when it is opened. Excalidraw's link dialog is the UI verb `ui.open_link_editor` (`Mod+K`, §6.3). |
+| `element.open_link` | `id?: Ref` (default the single selected element) | Available when some element has a link; otherwise `nothing_to_do`: "Nothing to open: no element has a link. Add one with `element.set_link`." Execute: `needs_single`; `no_link`: "Element `{id}` has no link. Add one with `element.set_link`."; `invalid_link` when the stored text is not a safe link (checked again, because a document from outside can hold anything); `not_found` for a link to an element that is gone. | A web link: returns `{kind: "url", url}` and changes nothing; the UI turns it into `HostRequest::OpenUrl` and the shell opens it (the engine never opens a browser). An element link: selects the target (a locked target is not selected) and brings it into view with `view.zoom_to_fit` scope=ids, zooming out when it does not fit but never in (Excalidraw `fit: scale-down`); returns `{kind: "element", target, changed}`. Allowed in a view-only document. Not exposed to agents (they read the link with `element.query` fields=link). |
 | `element.set_name` | `id: Ref`, `name: string \| null` | Execute: `name_taken`: "The name `{name}` is already used by element `{id}`. Names must be unique so that `@{name}` is unambiguous. Pick another name, or clear the other with `element.set_name`."; `bad_name`: "A name must be 1 to 64 characters, must not start with `@` or `$`, and must not contain control characters."; `not_found`. | Sets or clears the element's `name` field (stored in the document and synced). Agents then address the element as `@name`. Not shown on the canvas. |
 | `element.relabel` | `id: Ref`, `text: string`, `create: bool = true` | Execute: `wrong_kind` (allowed: text, rectangle, diamond, ellipse, arrow); `empty_text` (on a free text element only: "A text element cannot be empty. Delete it with `element.delete`."; a bound label given as `id` counts as its container, so empty text removes the label, as with `text.set`); `locked`; `not_found`. | On a text element, replaces its content. On a shape or an arrow, replaces its bound label, creating one when create=true, removing it when `text` is empty. On a bound label, empty `text` removes that label. Re-measures, grows the container when the text no longer fits, and re-centres the label. |
 | `element.connect` | `from: Ref`, `to: Ref`, `kind: "arrow" \| "line" = arrow`, `arrow_type: "sharp" \| "round" \| "elbow" = sharp`, `bind_mode: "orbit" \| "inside" = orbit`, `label?: string`, `start_head?: Head \| null`, `end_head?: Head \| null`, `style?: StyleProps`, `name?: string` | Execute: `name_taken` and `bad_name` (see `element.set_name`); `same_element`: "Cannot connect an element to itself with `element.connect`. Pass two different elements."; `not_bindable`: "{kind} elements cannot be arrow targets. Bindable kinds: rectangle, diamond, ellipse, text, image, frame."; `locked`; `not_found`. | Creates an arrow whose ends are bound to the two elements (the binding is stored on the arrow), starting on the side facing the other element, routed and z-ordered above both. The label becomes the arrow's bound text (kind=arrow only; blank means none). Selects the new arrow. Output `{created: [arrow id]}`. |
+| `element.create_sticky` | `at?: Point \| "viewport_center" \| "$cursor"` (the middle of the note, default the visible canvas), `size: number = 250` (side, at least 75), `bounds?: Rect` (instead of `at` and `size`), `text?: string`, `color: "yellow" \| "pink" \| "green" \| "blue" \| "orange" = yellow`, `font_size?: number` (largest label size, 16 to 512, default 28), `name?`, `id?`, `select: bool = true`, `frame: "auto" \| Ref \| null = auto`, `edit: bool = false` | Always available. Execute refuses: `too_small`: "The sticky note is smaller than 75 units in {width/height}. Give a size, or bounds with w and h, of at least 75."; `bad_args` for `bounds` together with `at` or `size`, and for a `font_size` outside 16 to 512; `id_in_use`, `name_taken`, `bad_name` (see `element.create`); `locked` for a locked frame target; `limit_exceeded` for text over the text limit. | Creates a rectangle with the sticky preset (Excalidraw's sticky note): solid fill in the paper colour (`#ffdf6b` yellow, pink `#fcc2d7`, green `#b2f2bb`, blue `#a5d8ff`, orange `#ffd8a8`), ink `#1e1e1e`, corner radius a quarter of the shorter side up to 32, line width, dash, roughness and opacity from the style defaults. Non-blank `text` becomes its bound label, centred both ways, with the largest font size from `font_size` (default 28) down to 16 in steps of 2 at which the wrapped text fits; when it does not fit at 16 the note grows downwards. No `text` makes an empty note (type with `text.edit_begin`). `edit=true` then starts editing its label (the key `N` passes it). The note is an ordinary rectangle: there is no sticky element kind, no creation-date footer and no drop shadow (the renderer has none), and the label keeps the size it was fitted to when the note is resized or the text is edited. One undo step. Output `{id, label?, bounds, frame?, font_size?}`. |
+| `element.convert` | `ids: Refs = selection`, `to?: "rectangle" \| "diamond" \| "ellipse" \| "line" \| "arrow"`, `arrow_type?: "sharp" \| "round" \| "elbow"` (only with `to`=arrow, default sharp), `reverse: bool = false` (only without `to`) | `no_target`. Execute: `locked`; `not_found`; `wrong_kind` (allowed: rectangle, diamond, ellipse, line, arrow; text, math, image, frame and freehand are refused); `mixed_kinds`: "Shapes (rectangle, diamond, ellipse) and lines or arrows cannot be converted together. Select only shapes, or only lines and arrows."; `not_convertible`: a target from the other family ("`{id}` is a {from} and cannot become a {to}. Shapes become a rectangle, diamond or ellipse; lines and arrows become a line or an arrow."), an arrow bound to a shape or carrying a label that would become a line ("... Detach it first with `arrow.unbind` ...", "... Remove the label first with `element.relabel` (empty text) ..."), a closed line that would become an arrow; `nothing_to_do`: "Nothing to convert: every element is already a {type}."; `bad_args` for `arrow_type` without `to`=arrow and for `reverse` with `to`. | Changes the type in place, keeping the id, box, angle, style, groups, frame and z-order. Shapes (rectangle, diamond, ellipse): the bound label is laid out again for the new inner box and the shape grows about its centre when the text no longer fits; arrows bound to the shape are put back on the new outline (`reanchor_to_outline`) and solved, elbow arrows re-routed. Lines and arrows: the points stay; a line becomes an arrow with an `arrow` end head, an arrow becomes a line without heads, a path change is `arrow.set_type`. Without `to` the element takes the next type of its family (Tab; `reverse` the previous one, Shift+Tab): rectangle, diamond, ellipse; line, sharp arrow, round arrow, elbow arrow (Excalidraw's order). Several elements of one family convert together; elements already of the target type are left alone (listed in `unchanged`). Selection is kept. One undo step. Output `{to, converted, unchanged, followers}`. |
 | `element.erase` | `path: Point[]` (1 or more), `radius: number = 10`, `units: "screen" \| "world" = screen` | Always available. Erasing nothing is Ok with deleted=[] (changed=false). | Deletes every unlocked element hit by the swept path, using exact hit testing, with the rules of `element.delete`, as one undo step (the old app pushed an undo step per drag event and used a fixed 10 world units, E:1285; FIX). Screen units are converted with the current zoom. |
-| `element.query` | `filter?: Query`, `limit: int = 100` (max 1000), `offset: int = 0`, `fields: string[] = [id, kind, name, text, bounds]`, `order: "z" \| "reading" \| "position" = z` | Always available. `bad_args` on a malformed query. | Returns `{total, items, truncated}`. Selectable fields: id, kind, name, text, bounds, style, angle, group_ids, frame, bindings, bound_text, locked, z, points (a line or arrow's points in world coordinates, `[[x, y], ...]`, `null` for other kinds). In the filter, `ids`, `frame`, `bound_text_of` and `connected_to.ref` accept ids and `@name`; an unknown one is `not_found`. Bound text is left out unless the filter asks for kind text, names `ids` or sets `bound_text_of`. `fields` needs 1 to 32 entries; `limit` outside 1..1000 is `bad_args`. |
+| `element.query` | `filter?: Query`, `limit: int = 100` (max 1000), `offset: int = 0`, `fields: string[] = [id, kind, name, text, bounds]`, `order: "z" \| "reading" \| "position" = z` | Always available. `bad_args` on a malformed query. | Returns `{total, items, truncated}`. Selectable fields: id, kind, name, text, bounds, style, angle, group_ids, frame, bindings, bound_text, locked, link, z, points (a line or arrow's points in world coordinates, `[[x, y], ...]`, `null` for other kinds). In the filter, `ids`, `frame`, `bound_text_of` and `connected_to.ref` accept ids and `@name`; an unknown one is `not_found`. Bound text is left out unless the filter asks for kind text, names `ids` or sets `bound_text_of`. `fields` needs 1 to 32 entries; `limit` outside 1..1000 is `bad_args`. |
 | `element.at` | `point: Point`, `tolerance: number = 6` (screen px), `all: bool = false`, `deep: bool = false`, `include_locked: bool = false` | Always available. | Hit-tests the point (`tolerance` screen pixels, divided by the zoom). Returns `{count, hits}`: the topmost unit (the outermost group, or the member with deep=true), or all hits top to bottom. A hit has id, kind, name, text and bounds; a hit that counts as a whole group also has `group` and `members`. Bound text is hit as its container. Frames are hit only on their outline, not their interior. |
 
 ### 2.5 `selection`: selection
@@ -535,6 +546,7 @@ State: selected element ids, selected groups, the editing group, and the linear 
 | `selection.select` | Select | NoUndo | none | E:486-538; X:App.selection |
 | `selection.select_at` | Select at point | NoUndo | none (click) | E:486-538; X:handleSelectionOnPointerDown |
 | `selection.select_region` | Select region | NoUndo | none (marquee) | E:539-547, 714-729 |
+| `selection.select_lasso` | Select with a lasso | NoUndo | none (lasso tool; Alt-drag with the select tool) | NEW; X:lasso/index.ts, lasso/utils.ts |
 | `selection.all` | Select all | NoUndo | `Mod+A` | A:4777; X:actionSelectAll |
 | `selection.clear` | Clear selection | NoUndo | none (`Esc` runs `tool.cancel`) | A:5305 |
 | `selection.get` | Get selection | NoUndo, read-only | none | NEW §11 |
@@ -545,6 +557,7 @@ State: selected element ids, selected groups, the editing group, and the linear 
 | `selection.select` | exactly one of `ids: Refs`, `group: GroupId`, `filter: Query`; `mode: "replace" \| "add" \| "remove" \| "toggle" = replace`, `deep: bool = false`, `include_locked: bool = false` | Always available. Execute: `bad_args`: "Give exactly one of `ids`, `group` or `filter`."; `not_found`. | Selecting a member selects its outermost group (inside an editing group: the next level down) unless deep=true, in which case it selects the element itself and sets the editing group to its innermost group when all targets share it. A selected frame excludes its children. Bound text follows its container. Locked elements are skipped unless include_locked: they are listed in the output as `skipped_locked` and in `warnings`, and a call whose targets are all locked leaves the selection as it was. mode=toggle removes the targets when all of them are selected, else adds them. `group` selects the members of that group with the same rules (a nested group is expanded to its outermost group unless deep). `not_found` also covers a group that has fewer than two members and a filter that matches nothing ("No element matches the filter (kind: freehand). Loosen the filter, or look up ids with `element.query` or `doc.outline`.", the set fields of the filter in plain words, `details.filter` the same text); an empty `ids` list is `bad_args`; more than 10 000 ids is `limit_exceeded`. Output `{changed, selected, groups, editing_group, skipped_locked?}`, `selected` back to front. Shift-click is mode=toggle. |
 | `selection.select_at` | `point: Point`, `mode: "replace" \| "add" \| "remove" \| "toggle" = replace`, `deep: bool = false`, `cycle: bool = false`, `tolerance: number = 6` (screen px), `include_locked: bool = false` | Always available. | Hit-tests at the point and selects the unit as above. A click on empty canvas with mode=replace clears the selection and leaves the editing group unless the point lies inside it. cycle=true (Alt-click) steps through the units under the point, top to bottom. With mode=replace (no deep, no cycle), clicking inside the common bounds of an existing multi-selection of two or more elements keeps it when nothing is under the point or the top hit is already selected (the click that starts a drag); a hit on an unselected element selects that element. Output as `selection.select`. |
 | `selection.select_region` | `rect: Rect`, `mode: "replace" \| "add" = replace`, `contain: "overlap" \| "contain" = settings input.box_select`, `include_locked: bool = false` | Always available. | Selects elements overlapping (the old "touch, not contain" semantics) or fully inside the rectangle. Any member inside selects its whole outermost group. Ignores locked elements and bound text, and never selects the children of a selected frame together with the frame. The recognizer ignores rectangles under 2 by 2 pixels (old minimum-size rule). |
+| `selection.select_lasso` | `points: Point[]` (3 or more, world units; the last point joins the first), `mode: "replace" \| "add" = replace`, `contain: "overlap" \| "contain" = settings input.box_select`, `include_locked: bool = false`, `simplify: number = 1` (world units, 0 keeps every point) | Always available. Execute: `bad_args` naming `points` when the path has fewer than 3 distinct points after simplifying, when all points lie on one line, when a coordinate is not a finite world number, or when `simplify` is negative; `limit_exceeded` above 200 000 points. The messages are "the path has only {n} distinct point(s) after simplifying, and a lasso needs 3" and "the points lie on one line, so the path encloses no area", each followed by "Draw a loop around what you want to select, or give 3 or more points that make a closed shape". | The free-form marquee, with the same rules as `selection.select_region` for groups (any member selected selects its whole outermost group), frames (children are not selected with their frame), locked elements, bound text and the modes replace and add; a lasso over nothing clears in replace mode. Which shapes the path selects is `drafftink_geom::lasso`: `overlap` selects a shape whose outline the path crosses, a shape that lies inside the path, and a shape with a fill that the path lies inside (an unfilled shape is not selected by a path drawn in its hollow middle, as with the marquee); `contain` selects only a shape whose whole outline lies inside the path. "Inside" is the non-zero winding rule, so a path that crosses itself encloses its loops, and a concave path leaves out what sits in its notches. Deviations from Excalidraw: Excalidraw selects while the path grows and applies its `boxSelectionMode` the same way; here the command runs once at the end, as the marquee does, and `contain` selects a group when any member is inside (Excalidraw needs all members). Output as `selection.select`. |
 | `selection.all` | `within?: Ref` (a frame or a group) | `nothing_to_do`: "There are no elements to select." | Selects all unlocked elements, as groups (inside an editing group: that group's members; with `within`: that frame's children or group's members). |
 | `selection.clear` | none | Always available (idempotent). | Clears the selection and leaves the editing group and the linear point editor. |
 | `selection.get` | `detail: "ids" \| "summary" \| "full" = summary` | Always available. | `{ids, groups, editing_group, count, bounds, kinds, linear_editor?}` (`bounds` is null and `kinds` empty with nothing selected); `ids` returns only `{ids, count}`; full adds `elements` with every field of `element.query`. |
@@ -1048,6 +1061,9 @@ Persisted through the `Storage` settings namespace; read with `settings.get`, wr
 | `style.defaults` | `StyleProps` object | see `style` family | `UiState` colours, width, sloppiness; not persisted |
 | `arrow.binding` | bool | true | none |
 | `arrow.midpoint_snap` | bool | false | none |
+| `arrow.type` | `sharp \| round \| elbow`; the path type of new arrows (`tool.set_arrow`) | `sharp` | none (`SetPathStyle`, selected arrows only) |
+| `arrow.start_head` | a `Head` name (`none`, `arrow`, `bar`, `circle`, ...); the start head of new arrows | `none` | none |
+| `arrow.end_head` | a `Head` name; the end head of new arrows | `arrow` | the open V |
 | `frame.clip` | bool | true | none |
 | `frame.show_names` | bool | true | none |
 | `frame.outline` | bool | true | none |
@@ -1084,6 +1100,7 @@ One keymap for every platform. `Mod` is Cmd on macOS and Ctrl elsewhere. Binding
 | `T` `8` | `tool.set` tool=text | canvas | A:5280 |
 | `M` `9` | `tool.set` tool=math | canvas | A:5285 |
 | `F` | `tool.set` tool=frame | canvas | NEW |
+| `N` | `element.create_sticky` at=`$cursor`, edit=true | canvas | X; NEW |
 | `E` `0` | `tool.set` tool=eraser | canvas | A:5290 |
 | `Z` `K` | `tool.set` tool=laser | canvas | A:5295 |
 | `Q` | `tool.lock` | canvas | NEW |
@@ -1105,6 +1122,7 @@ One keymap for every platform. `Mod` is Cmd on macOS and Ctrl elsewhere. Binding
 | `Arrow keys` | `element.nudge` dir | canvas | A:5338 |
 | `Shift+Arrow keys` | `element.nudge` dir, fine=true | canvas | NEW |
 | `Shift+H`, `Shift+V` | `element.flip` axis=horizontal, vertical | canvas | NEW |
+| `Tab`, `Shift+Tab` | `element.convert` reverse=false, true | canvas | X; NEW |
 | `Mod+Shift+L` | `element.lock` | canvas | NEW |
 | `Mod+G` | `group.create` | canvas | A:4973 |
 | `Mod+Shift+G` | `group.ungroup` | canvas | A:4973 |
@@ -1135,6 +1153,7 @@ One keymap for every platform. `Mod` is Cmd on macOS and Ctrl elsewhere. Binding
 | `Mod+Shift+S` | UI verb `ui.save_as` | always | NEW |
 | `Mod+/`, `Mod+Shift+P` | UI verb `ui.open_palette` | always | NEW |
 | `Mod+F` | UI verb `ui.open_search` | canvas | NEW |
+| `Mod+K` | UI verb `ui.open_link_editor` | canvas | X:actionLink |
 | `?` | UI verb `ui.open_shortcuts` | canvas | U:1998 label only |
 | `Alt+Z` | UI verb `ui.toggle_zen` | canvas | NEW |
 | `Alt+/` | UI verb `ui.toggle_stats` | canvas | NEW |
@@ -1162,6 +1181,7 @@ Not commands, never in `engine.commands`. Each ends, when it produces a result, 
 | `ui.open_font_picker` | font family popover | `style.set` | NEW |
 | `ui.open_palette` | command palette, listing `engine.commands` | the chosen command | NEW |
 | `ui.open_search` | search box over `element.query` | `selection.select`, `view.zoom_to_fit` | NEW |
+| `ui.open_link_editor` | link field for the single selected element (the field shows the current link) | `element.set_link` | X:actionLink |
 | `ui.open_shortcuts` | shortcuts dialog built from the keymap | none | U:1998 |
 | `ui.open_collab` | collaboration dialog | `collab.*` | U:2105 |
 | `ui.open_context_menu` | context menu listing available commands | the chosen command | NEW |
@@ -1317,6 +1337,7 @@ Every `UiAction` variant, every keyboard binding, every pointer gesture and ever
 | Click on a shape; Shift+click toggle | `selection.select_at` (mode=replace; toggle with Shift) | E:486-538 |
 | Click on empty canvas | `selection.select_at` mode=replace (clears) | |
 | Marquee drag, release over 2 by 2 px | overlay in the recognizer, then `selection.select_region` | E:539-547, 714-729; E9 |
+| Lasso: drag with the lasso tool (from empty canvas, or from an element that is not selected), or Alt-drag from empty canvas with the select tool; Shift adds | the path is an overlay part; on release one `selection.select_lasso` (`points`, `simplify` = 4 screen px, mode add with Shift). A path under 2 by 2 px or without area selects nothing and says nothing. A press on an unselected element with the lasso tool selects on release when it was a click. Esc drops the path | X:App.tsx lasso trail (Alt-drag `fromSelection`); E9 |
 | Drag a selected shape (grid and smart snap) | `gesture.begin` with `element.move`, `update`, `end` | E2 |
 | Alt+drag to duplicate | the same with duplicate=true | E:514-536 |
 | Corner or edge handle drag, Shift keeps aspect | gesture of `element.resize` (keep_aspect) | E3 |
@@ -1413,7 +1434,7 @@ These are deliberate; each fixes an inventory finding. Reviewers should expect t
 |---|---|
 | `H` hand (toggles back) | `tool.set` hand; Space-hold is `tool.hold` |
 | `V`/`1`, `R`/`2`, `D`/`3`, `O`/`4`, `A`/`5`, `L`/`6`, `P`/`7`/`X`, `T`/`8` | `tool.set` (§2.3) |
-| `N` sticky note | not planned (§8.2) |
+| `N` sticky note | `element.create_sticky` (the key places a note at the pointer and starts the text edit) |
 | `9` image | `I` (UI verb), conflict §6.4 |
 | `E`/`0` eraser, `F` frame, `K` laser | `tool.set` |
 | `B` bucket fill, `Shift+X` autoshape | not planned |
@@ -1422,7 +1443,7 @@ These are deliberate; each fixes an inventory finding. Reviewers should expect t
 | `Esc` | `tool.cancel` |
 | `Enter` edit text or label | `text.edit_begin` |
 | `Mod+Enter` edit line points / finish text | `arrow.edit_points` / editor-local |
-| `Tab`, `Shift+Tab` convert element type | not planned |
+| `Tab`, `Shift+Tab` convert element type | `element.convert` (cycles to the next or previous type of the family) |
 | `Mod` held: do not bind | `bind=off` argument |
 | click, click, click: curved arrow | recognizer collects points, `element.create` points, arrow_type=round |
 | Double-click or `Enter` on image: crop | not planned |
@@ -1460,7 +1481,7 @@ These are deliberate; each fixes an inventory finding. Reviewers should expect t
 | `Shift+H`, `Shift+V` | `element.flip` |
 | `S`, `G` colour pickers; `Shift+F` font picker | UI verbs |
 | `Mod+Shift+<`, `Mod+Shift+>` | `text.step_size` |
-| `Mod+K` link | not planned |
+| `Mod+K` link | UI verb `ui.open_link_editor`, then `element.set_link` |
 | `Mod+O`, `Mod+S`, `Mod+Shift+S` | `ui.open_file`, `doc.save`, `ui.save_as` |
 | `Mod+Shift+E` export dialog | conflict §6.4 (old copy-as-PNG kept) |
 | `Shift` drag constrain, `Alt` drag from centre | `keep_aspect`, `from_center`, `duplicate` arguments |
@@ -1476,7 +1497,7 @@ These are deliberate; each fixes an inventory finding. Reviewers should expect t
 | 5 Text align and wrap | `style.set` text_align, vertical_align, line_height; `text.set_autoresize` |
 | 6 Arrowheads, elbow with A* | `arrow.set_head`, `arrow.set_type`, `arrow.reroute` |
 | 7 Stroke styles | `style.set` stroke_style (all shapes) |
-| 8 Lock | `element.lock`, `element.unlock_all` |
+| 8 Lock | `element.lock`, `element.unlock_all` (also the unlock of a locked element from the context menu) |
 | 9 Distribute | `arrange.distribute` |
 | 10 Edge resize handles | `element.resize` handles n, e, s, w |
 | 11 Context menu | UI verb `ui.open_context_menu` over `engine.commands` |
@@ -1495,7 +1516,7 @@ These are deliberate; each fixes an inventory finding. Reviewers should expect t
 
 These Excalidraw features are outside the plan. They have no ids. If one is added, its family section is added here first.
 
-Sticky note, embeddable and iframe elements, lasso selection, bucket fill, autoshape, eyedropper, image crop, hyperlinks and element links, convert element type, list markers in text, chart paste, magic frame and every AI feature, dark theme and canvas theme switching, i18n, follow mode, room encryption and passwords, pen-only mode, Excalidraw+ export, shareable encrypted links, scrollbars, welcome screen, hint bar.
+Embeddable and iframe elements, bucket fill, autoshape, eyedropper, image crop, list markers in text, chart paste, magic frame and every AI feature, dark theme and canvas theme switching, i18n, follow mode, room encryption and passwords, pen-only mode, Excalidraw+ export, shareable encrypted links, scrollbars, welcome screen, hint bar.
 
 ---
 
@@ -1565,6 +1586,7 @@ Legend:
 | `tool.hold` | T | - | - | ok | ok | no | ok | overlay | always | n | n |
 | `tool.release` | T | - | - | ok | ok | ok | ok | overlay | always | n | n |
 | `tool.cancel` | D,O,T,E | - | - | ok | ok | ok | ok | overlay | always | y | y |
+| `tool.set_arrow` | T,S | - | Storage | ok | ok | no | ok | overlay | always | y | y |
 | `element.create` | D,O,T | - | - | ok | no | no | commit | scene | always | n | y |
 | `element.delete` | D,O | req | - | ok | no | no | commit | scene | always | y | y |
 | `element.duplicate` | D,O | req | - | ok | no | no | commit | scene | always | y | y |
@@ -1576,15 +1598,20 @@ Legend:
 | `element.flip` | D,O | req | - | ok | no | no | commit | scene | always | y | y |
 | `element.lock` | D,O | req | - | ok | no | no | commit | scene | always | y | y |
 | `element.unlock_all` | D,O | soft | - | ok | no | no | commit | scene | always | y | y |
+| `element.set_link` | D | soft | - | ok | no | no | commit | scene | always | y | y |
+| `element.open_link` | O,V | soft | - | ok | ok | no | commit | camera | always | y | n |
 | `element.set_name` | D,O | - | - | ok | no | no | commit | scene | always | n | y |
 | `element.relabel` | D,O | - | - | ok | no | no | commit | scene | always | n | y |
 | `element.connect` | D,O | - | - | ok | no | no | commit | scene | always | n | y |
+| `element.create_sticky` | D,O | - | - | ok | no | no | commit | scene | always | y | y |
+| `element.convert` | D,O | req | - | ok | no | no | commit | scene | always | y | y |
 | `element.erase` | D,O | - | - | ok | no | no | commit | scene | always | n | y |
 | `element.query` | - | - | - | ok | ok | ok | ok | - | always | n | y |
 | `element.at` | - | - | - | ok | ok | ok | ok | - | always | n | y |
 | `selection.select` | O | - | - | ok | ok | no | commit | overlay | always | n | y |
 | `selection.select_at` | O | - | - | ok | ok | no | commit | overlay | always | n | y |
 | `selection.select_region` | O | - | - | ok | ok | no | commit | overlay | always | n | y |
+| `selection.select_lasso` | O | - | - | ok | ok | no | commit | overlay | always | n | y |
 | `selection.all` | O | - | - | ok | ok | no | commit | overlay | always | y | y |
 | `selection.clear` | O | - | - | ok | ok | no | commit | overlay | always | y | y |
 | `selection.get` | - | - | - | ok | ok | ok | ok | - | always | n | y |

@@ -49,8 +49,8 @@ pub use input::{
 };
 pub use intent::{Cursor, Handle, Intent, Meta, Pos, Target, ViewSource};
 pub use overlay::{
-    BindCandidate, HoverOutline, MarqueeOverlay, Overlay, OverlayInputs, OverlaySink, RemoteCursor, RemoteSelection,
-    RemoteUser, SelectionBox, TransformerOverlay,
+    BindCandidate, HoverOutline, LassoOverlay, MarqueeOverlay, Overlay, OverlayInputs, OverlaySink, RemoteCursor,
+    RemoteSelection, RemoteUser, SelectionBox, TransformerOverlay,
 };
 pub use recognizer::{Picker, Recognizer};
 pub use transformer::{HandlePos, SelectionFrame, TransformerConfig, handle_set_for};

@@ -613,6 +613,8 @@ pub enum Field {
     BoundText,
     /// Locked.
     Locked,
+    /// The hyperlink or element link (`null` when none).
+    Link,
     /// The z-order key.
     Z,
     /// The points of a line or arrow in world coordinates, `[[x, y], ...]`; `null` for other kinds.
@@ -662,6 +664,7 @@ fn describe_with<R: SceneRead>(r: &R, labels: &Labels, e: &Element, fields: &[Fi
             }
             Field::BoundText => ("bound_text", json!(labels.by_container.get(&e.id))),
             Field::Locked => ("locked", json!(e.locked)),
+            Field::Link => ("link", json!(e.link)),
             Field::Z => ("z", json!(e.index.as_str())),
             Field::Points => (
                 "points",

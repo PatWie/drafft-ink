@@ -4,7 +4,6 @@ use drafftink_edit::linear::world_points;
 use drafftink_scene::{BindMode, Element, ElementId, Head, Kind, PathType};
 use serde_json::json;
 
-use super::NewArrowPath;
 use crate::interact::Key;
 use crate::interact::testutil::Rig;
 use crate::state::Tool;
@@ -463,7 +462,7 @@ fn a_multi_point_arrow_binds_its_first_and_last_point() {
 fn the_elbow_arrow_type_sends_the_two_ends_and_the_engine_routes_it() {
     let mut rig = Rig::new();
     let (a, b) = two_boxes(&mut rig);
-    rig.s.ext.set(NewArrowPath(PathType::Elbow));
+    rig.run("tool.set_arrow", json!({ "arrow_type": "elbow" }));
     rig.tool(Tool::Arrow);
     rig.click(210.0, 120.0);
     rig.click(300.0, 300.0);
@@ -480,9 +479,59 @@ fn the_elbow_arrow_type_sends_the_two_ends_and_the_engine_routes_it() {
 }
 
 #[test]
+fn the_arrow_tool_draws_with_the_type_and_heads_of_tool_set_arrow() {
+    let mut rig = Rig::new();
+    rig.run("tool.set_arrow", json!({ "arrow_type": "round", "start_head": "circle", "end_head": "triangle" }));
+    rig.tool(Tool::Arrow);
+    rig.drag((100.0, 100.0), (300.0, 200.0));
+    let arrow = rig.only();
+    let d = arrow.linear_data().expect("linear data");
+    assert_eq!((d.path, d.start_head, d.end_head), (PathType::Round, Head::Circle, Head::Triangle));
+    let ring_entries = rig.ring();
+    let args = &ring_entries.last().expect("ring entry").args;
+    assert!(args.contains("\"arrow_type\":\"round\"") && args.contains("\"start_head\":\"circle\""), "{args}");
+}
+
+#[test]
+fn without_tool_set_arrow_the_arrow_tool_draws_a_sharp_arrow_with_an_end_head() {
+    let mut rig = Rig::new();
+    rig.tool(Tool::Arrow);
+    rig.drag((100.0, 100.0), (300.0, 200.0));
+    let d = rig.only().linear_data().cloned().expect("linear data");
+    assert_eq!((d.path, d.start_head, d.end_head), (PathType::Sharp, Head::None, Head::Arrow));
+}
+
+#[test]
+fn the_preview_shows_the_heads_of_the_defaults_and_a_change_applies_to_the_next_arrow_only() {
+    let mut rig = Rig::new();
+    rig.run("tool.set_arrow", json!({ "start_head": "bar", "end_head": null }));
+    rig.tool(Tool::Arrow);
+    rig.click(100.0, 100.0);
+    rig.hover(300.0, 200.0);
+    let preview = rig.parts().preview.clone().expect("a preview");
+    let d = preview.linear_data().expect("linear data");
+    assert_eq!((d.start_head, d.end_head), (Head::Bar, Head::None));
+    rig.double_click(300.0, 200.0);
+    let first = rig.only().linear_data().cloned().expect("linear data");
+    assert_eq!((first.start_head, first.end_head), (Head::Bar, Head::None));
+    rig.run("tool.set_arrow", json!({ "arrow_type": "elbow", "start_head": "none" }));
+    assert_eq!(rig.only().linear_data().map(|d| d.path), Some(PathType::Sharp), "the drawn arrow is left alone");
+}
+
+#[test]
+fn a_line_ignores_the_arrow_heads() {
+    let mut rig = Rig::new();
+    rig.run("tool.set_arrow", json!({ "arrow_type": "round", "start_head": "circle", "end_head": "triangle" }));
+    rig.tool(Tool::Line);
+    rig.drag((100.0, 100.0), (300.0, 200.0));
+    let d = rig.only().linear_data().cloned().expect("linear data");
+    assert_eq!((d.path, d.start_head, d.end_head), (PathType::Sharp, Head::None, Head::None));
+}
+
+#[test]
 fn a_line_is_never_elbow_and_never_sends_an_arrow_type() {
     let mut rig = Rig::new();
-    rig.s.ext.set(NewArrowPath(PathType::Elbow));
+    rig.run("tool.set_arrow", json!({ "arrow_type": "elbow" }));
     rig.tool(Tool::Line);
     rig.drag((100.0, 100.0), (300.0, 200.0));
     let e = rig.only();
@@ -549,7 +598,7 @@ fn exception_E6_draw_equals_plain_command_for_a_multi_point_line() {
 #[allow(non_snake_case)]
 fn exception_E6_draw_equals_plain_command_for_an_elbow_arrow() {
     let mut gesture = boxes_rig(Some(Tool::Arrow));
-    gesture.s.ext.set(NewArrowPath(PathType::Elbow));
+    gesture.run("tool.set_arrow", json!({ "arrow_type": "elbow" }));
     gesture.drag((210.0, 140.0), (390.0, 170.0));
     let mut plain = boxes_rig(None);
     plain.run(

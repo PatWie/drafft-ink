@@ -1,0 +1,46 @@
+{
+  "about": "A lasso selects what a free-hand loop surrounds or crosses (a slanted side leaves out what a rectangle would take), follows the marquee's rules for groups, locked elements and the modes replace and add, refuses a path that encloses nothing, and never adds an undo step.",
+  "steps": [
+    { "execute": "element.create", "args": { "kind": "rectangle", "bounds": { "x": 100, "y": 100, "w": 100, "h": 100 }, "style": { "fill_color": "#ffcc00" } } },
+    { "execute": "element.create", "args": { "kind": "rectangle", "bounds": { "x": 400, "y": 100, "w": 100, "h": 100 }, "style": { "fill_color": "#ffcc00" } } },
+    { "execute": "element.create", "args": { "kind": "rectangle", "bounds": { "x": 100, "y": 400, "w": 100, "h": 100 }, "style": { "fill_color": "#ffcc00" } } },
+    { "execute": "element.create", "args": { "kind": "ellipse", "bounds": { "x": 700, "y": 100, "w": 100, "h": 100 } } },
+    { "assert": "history.state", "save": { "depth": "$.undo_depth" } },
+    { "execute": "selection.clear" },
+    { "execute": "tool.set", "args": { "tool": "lasso" }, "expect": [ { "path": "$.tool", "eq": "lasso" } ], "note": "The lasso tool is a tool of the tool.set family; its drag ends in selection.select_lasso." },
+
+    { "execute": "selection.select_lasso", "args": { "points": [[50, 50], [430, 50], [50, 430]] },
+      "expect": [ { "path": "$.selected", "eq": ["e1"], "note": "The slanted side runs between the first and the other two." }, { "path": "$.changed", "eq": true } ] },
+    { "execute": "selection.select_region", "args": { "rect": { "x": 50, "y": 50, "w": 380, "h": 380 } },
+      "expect": [ { "path": "$.selected", "len": 3, "note": "The marquee over the same area takes all three." } ] },
+
+    { "execute": "selection.select_lasso", "args": { "points": [[50, 50], [550, 50], [550, 250], [50, 250]], "contain": "contain" },
+      "expect": [ { "path": "$.selected", "eq": ["e1", "e2"] } ] },
+    { "execute": "selection.select_lasso", "args": { "points": [[150, 50], [450, 50], [450, 250], [150, 250]], "contain": "contain" },
+      "expect": [ { "path": "$.selected", "eq": [] } ], "note": "Both rectangles are cut by the path, so none lies inside it, and a lasso over nothing clears." },
+    { "execute": "selection.select_lasso", "args": { "points": [[150, 50], [450, 50], [450, 250], [150, 250]], "contain": "overlap" },
+      "expect": [ { "path": "$.selected", "eq": ["e1", "e2"] } ] },
+    { "execute": "selection.select_lasso", "args": { "points": [[740, 140], [760, 140], [750, 170]], "contain": "overlap" },
+      "expect": [ { "path": "$.selected", "eq": [] } ], "note": "A path inside an unfilled shape does not select it, as with the marquee." },
+
+    { "execute": "selection.select_lasso", "args": { "points": [[50, 350], [250, 350], [250, 550], [50, 550]], "contain": "contain" }, "expect": [ { "path": "$.selected", "eq": ["e3"] } ] },
+    { "execute": "selection.select_lasso", "args": { "points": [[50, 50], [250, 50], [250, 250], [50, 250]], "contain": "contain", "mode": "add" },
+      "expect": [ { "path": "$.selected", "eq": ["e1", "e3"], "note": "Add keeps e3." } ] },
+
+    { "execute": "element.lock", "args": { "ids": ["e2"], "locked": true } },
+    { "execute": "selection.select_lasso", "args": { "points": [[350, 50], [550, 50], [550, 250], [350, 250]], "contain": "contain" },
+      "expect": [ { "path": "$.selected", "eq": [] }, { "path": "$.skipped_locked", "exists": false } ], "note": "A locked element is left out." },
+    { "execute": "selection.select_lasso", "args": { "points": [[350, 50], [550, 50], [550, 250], [350, 250]], "contain": "contain", "include_locked": true },
+      "expect": [ { "path": "$.selected", "eq": ["e2"] } ] },
+
+    { "execute": "selection.select_lasso", "args": { "points": [[0, 0], [100, 100]] }, "refused": "bad_args", "text": ["points", "a lasso needs 3", "Draw a loop"] },
+    { "execute": "selection.select_lasso", "args": { "points": [[0, 0], [100, 100], [200, 200]], "simplify": 0 }, "refused": "bad_args", "text": "encloses no area" },
+    { "execute": "selection.select_lasso", "args": { "points": [[0, 0], [100, 0], [0, 100]], "mode": "toggle" }, "refused": "bad_args" },
+    { "assert": "selection.get", "args": { "detail": "ids" }, "expect": [ { "path": "$.ids", "eq": ["e2"], "note": "Refusals left the selection as it was." } ] },
+
+    { "execute": "view.set_view_only", "args": { "on": true } },
+    { "execute": "tool.set", "args": { "tool": "lasso" }, "expect": [ { "path": "$.changed", "eq": false } ], "note": "The lasso tool is allowed in view-only mode." },
+    { "execute": "selection.select_lasso", "args": { "points": [[50, 50], [250, 50], [250, 250], [50, 250]], "contain": "contain" }, "expect": [ { "path": "$.selected", "eq": ["e1"] } ], "note": "So is selecting." },
+    { "assert": "history.state", "expect": [ { "path": "$.undo_depth", "near": "{{depth}}", "plus": 1, "note": "Only the lock is an undo step; the lassos are not." } ] }
+  ]
+}

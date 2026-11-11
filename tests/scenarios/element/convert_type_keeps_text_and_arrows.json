@@ -1,0 +1,45 @@
+{
+  "about": "Converting a labelled shape keeps its id and text and moves attached arrows onto the new outline; Tab cycles the type within the family; lines become arrows and back; labelled or attached arrows cannot become lines; incompatible selections are refused in plain words; everything undoes.",
+  "steps": [
+    { "execute": "element.create", "args": { "kind": "rectangle", "bounds": { "x": 0, "y": 0, "w": 160, "h": 80 }, "name": "a" } },
+    { "execute": "element.create", "args": { "kind": "rectangle", "bounds": { "x": 400, "y": 0, "w": 160, "h": 80 }, "name": "b" } },
+    { "execute": "element.relabel", "args": { "id": "@a", "text": "Start here" } },
+    { "execute": "element.connect", "args": { "from": "@a", "to": "@b", "label": "next" }, "expect": [ { "path": "$.id", "eq": "e4" } ] },
+
+    { "execute": "selection.select", "args": { "ids": ["@a"] } },
+    { "execute": "element.convert", "args": {}, "expect": [ { "path": "$.to", "eq": "diamond" }, { "path": "$.converted", "eq": ["e1"] } ], "note": "Tab: the next shape type." },
+    { "assert": "element.query", "args": { "filter": { "ids": ["@a"] }, "fields": ["kind", "text", "bound_text", "name"] },
+      "expect": [ { "path": "$.items[0].kind", "eq": "diamond" }, { "path": "$.items[0].text", "eq": "Start here" }, { "path": "$.items[0].bound_text", "eq": "e3" }, { "path": "$.items[0].name", "eq": "a" } ] },
+    { "assert": "element.query", "args": { "filter": { "ids": ["e4"] }, "fields": ["bindings"] },
+      "expect": [ { "path": "$.items[0].bindings.start", "eq": "e1" }, { "path": "$.items[0].bindings.end", "eq": "e2" } ], "note": "The arrow is still attached at both ends." },
+    { "execute": "element.convert", "args": {}, "expect": [ { "path": "$.to", "eq": "ellipse" } ] },
+    { "execute": "element.convert", "args": { "reverse": true }, "expect": [ { "path": "$.to", "eq": "diamond" } ], "note": "Shift+Tab goes back." },
+    { "execute": "element.convert", "args": { "to": "diamond" }, "refused": "nothing_to_do", "text": "already a diamond" },
+    { "execute": "element.convert", "args": { "to": "arrow" }, "refused": "not_convertible", "text": ["cannot become a sharp arrow", "become a rectangle, diamond or ellipse"] },
+
+    { "execute": "element.convert", "args": { "ids": ["e4"], "to": "line" }, "refused": "not_convertible", "text": ["is attached to a shape", "arrow.unbind"] },
+    { "execute": "element.convert", "args": { "ids": ["e4"], "to": "arrow", "arrow_type": "elbow" }, "expect": [ { "path": "$.to", "eq": "elbow arrow" } ], "note": "An attached, labelled arrow may still change its path type." },
+    { "assert": "element.query", "args": { "filter": { "ids": ["e4"] }, "fields": ["bindings", "bound_text"] },
+      "expect": [ { "path": "$.items[0].bindings.end", "eq": "e2" }, { "path": "$.items[0].bound_text", "eq": "e5" } ] },
+
+    { "execute": "element.create", "args": { "kind": "line", "points": [[0, 300], [200, 340]], "bind": "off" }, "expect": [ { "path": "$.id", "eq": "e6" } ] },
+    { "execute": "selection.select", "args": { "ids": ["e6"] } },
+    { "execute": "element.convert", "args": {}, "expect": [ { "path": "$.to", "eq": "sharp arrow" } ] },
+    { "assert": "element.query", "args": { "filter": { "ids": ["e6"] }, "fields": ["kind"] }, "expect": [ { "path": "$.items[0].kind", "eq": "arrow" } ] },
+    { "execute": "element.convert", "args": {}, "expect": [ { "path": "$.to", "eq": "round arrow" } ] },
+    { "execute": "element.convert", "args": {}, "expect": [ { "path": "$.to", "eq": "elbow arrow" } ] },
+    { "execute": "element.convert", "args": {}, "expect": [ { "path": "$.to", "eq": "line" } ], "note": "The cycle wraps to the line." },
+
+    { "execute": "element.create", "args": { "kind": "text", "text": "free", "at": [0, 500] }, "expect": [ { "path": "$.id", "eq": "e7" } ] },
+    { "execute": "element.convert", "args": { "ids": ["e7"], "to": "diamond" }, "refused": "wrong_kind", "text": ["does not work on text elements", "rectangles, diamonds, ellipses, lines and arrows"] },
+    { "execute": "element.convert", "args": { "ids": ["e1", "e6"], "to": "diamond" }, "refused": "mixed_kinds", "text": ["cannot be converted together", "only shapes, or only lines and arrows"] },
+    { "execute": "element.lock", "args": { "ids": ["e2"] } },
+    { "execute": "element.convert", "args": { "ids": ["e2"], "to": "ellipse" }, "refused": "locked", "text": ["`e2` is locked", "element.unlock_all"] },
+
+    { "undo": 3 },
+    { "assert": "element.query", "args": { "filter": { "ids": ["e6"] }, "fields": ["kind", "points"] },
+      "expect": [ { "path": "$.items[0].kind", "eq": "arrow" }, { "path": "$.items[0].points", "len": 4, "note": "An elbow route with one jog." } ], "note": "Three undos: the lock, the text, and the conversion of the elbow arrow to a line. The elbow arrow is back." },
+    { "undo": 3 },
+    { "assert": "element.query", "args": { "filter": { "ids": ["e6"] }, "fields": ["kind"] }, "expect": [ { "path": "$.items[0].kind", "eq": "line" } ], "note": "Three more undos take back the elbow, round and sharp arrow steps: a line again." }
+  ]
+}

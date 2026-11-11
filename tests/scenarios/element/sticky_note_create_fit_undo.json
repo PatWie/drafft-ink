@@ -1,0 +1,37 @@
+{
+  "about": "A sticky note is a coloured, rounded rectangle with a centred label whose font is fitted to the note; it can be dropped on a frame, picked up by name, styled like any shape, converted, and one undo takes the note and its label away. Too-small notes and clashing arguments are refused with the way forward.",
+  "steps": [
+    { "execute": "element.create", "args": { "kind": "frame", "bounds": { "x": -300, "y": -300, "w": 1200, "h": 1200 }, "name": "board" }, "expect": [ { "path": "$.id", "eq": "e1" } ] },
+
+    { "execute": "element.create_sticky", "args": { "at": [100, 100], "text": "Ask Sam about the budget", "color": "pink", "name": "note" },
+      "expect": [ { "path": "$.id", "eq": "e2" }, { "path": "$.label", "eq": "e3" }, { "path": "$.bounds.w", "eq": 250 }, { "path": "$.frame", "eq": "e1" }, { "path": "$.font_size", "ge": 16 } ] },
+    { "assert": "element.query", "args": { "filter": { "ids": ["@note"] }, "fields": ["id", "kind", "text", "bound_text", "style", "frame"] },
+      "expect": [ { "path": "$.items[0].kind", "eq": "rectangle" }, { "path": "$.items[0].text", "eq": "Ask Sam about the budget" }, { "path": "$.items[0].bound_text", "eq": "e3" },
+                  { "path": "$.items[0].style.fill_color", "eq": "#fcc2d7" }, { "path": "$.items[0].style.corner_radius", "eq": 32 }, { "path": "$.items[0].frame", "eq": "e1" } ] },
+    { "assert": "selection.get", "expect": [ { "path": "$.ids", "eq": ["e2"] } ], "note": "The new note is selected, not its label." },
+
+    { "execute": "element.create_sticky", "args": { "at": [500, 100], "size": 200, "text": "A very long note that needs a smaller font to fit. It goes on and on and on, line after line, so the fit has to shrink the letters. Even more words here to be sure." },
+      "expect": [ { "path": "$.font_size", "lt": 28 }, { "path": "$.bounds.h", "eq": 200 } ], "note": "The font shrinks before the note grows." },
+
+    { "execute": "element.create_sticky", "args": { "at": [100, 500], "frame": null }, "expect": [ { "path": "$.label", "exists": false } ] },
+    { "assert": "element.query", "args": { "filter": { "ids": ["e6"] }, "fields": ["frame"] }, "expect": [ { "path": "$.items[0].frame", "eq": null } ], "note": "An empty note, outside the frame." },
+
+    { "execute": "element.create_sticky", "args": { "size": 50 }, "refused": "too_small", "text": ["smaller than 75 units", "of at least 75"] },
+    { "execute": "element.create_sticky", "args": { "bounds": { "x": 0, "y": 0, "w": 100, "h": 100 }, "size": 100 }, "refused": "bad_args", "text": ["`size`", "`bounds`"] },
+    { "execute": "element.create_sticky", "args": { "name": "note" }, "refused": "name_taken", "text": ["already used by element `e2`", "@note"] },
+    { "execute": "element.create_sticky", "args": { "font_size": 8, "text": "x" }, "refused": "bad_args", "text": ["`font_size`", "16 to 512"] },
+    { "assert": "element.query", "args": { "filter": { "kind": "rectangle" } }, "expect": [ { "path": "$.total", "eq": 3 } ], "note": "The refusals created nothing." },
+
+    { "execute": "style.set", "args": { "ids": ["@note"], "props": { "fill_color": "#a5d8ff" } } },
+    { "execute": "element.convert", "args": { "ids": ["@note"], "to": "ellipse" }, "expect": [ { "path": "$.to", "eq": "ellipse" } ], "note": "A note is an ordinary rectangle, so it converts; its label stays bound." },
+    { "assert": "element.query", "args": { "filter": { "ids": ["@note"] }, "fields": ["kind", "bound_text", "style"] },
+      "expect": [ { "path": "$.items[0].kind", "eq": "ellipse" }, { "path": "$.items[0].bound_text", "eq": "e3" }, { "path": "$.items[0].style.fill_color", "eq": "#a5d8ff" } ] },
+    { "undo": 2 },
+    { "assert": "element.query", "args": { "filter": { "ids": ["@note"] }, "fields": ["kind", "style"] },
+      "expect": [ { "path": "$.items[0].kind", "eq": "rectangle" }, { "path": "$.items[0].style.fill_color", "eq": "#fcc2d7" } ], "note": "Undo took back the conversion and the recolour." },
+    { "undo": 3 },
+    { "assert": "element.query", "args": { "filter": { "kind": ["rectangle", "text"] } }, "expect": [ { "path": "$.total", "eq": 0 } ], "note": "Each note with its label was one undo step." },
+    { "redo": 1 },
+    { "assert": "element.query", "args": { "filter": { "kind": ["rectangle", "text"] } }, "expect": [ { "path": "$.total", "eq": 2 } ], "note": "Redo brings back the note and its label together." }
+  ]
+}

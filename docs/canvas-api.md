@@ -76,6 +76,7 @@ Reach around an outline is `tolerance_px / zoom + stroke_width / 2` world units:
 
 * `hit(point)` returns the topmost live hit by `(z index, id)`; `hit_all(point)` returns all of them, topmost first. Both return `Hit { id, part: Stroke | Fill | Body }`.
 * `marquee(rect, MarqueeMode::Contain | Intersect)`: *Contain* needs the element's bounds inside the rectangle; *Intersect* selects what the rectangle touches, where an unfilled shape counts only if the rectangle crosses or contains its outline (a marquee inside an empty rectangle selects nothing). Frames are selected only by *Contain*. Locked elements are left out. Results are back to front.
+* `lasso(&Lasso, MarqueeMode::Contain | Intersect)`: the same with a free-hand closed path (`drafftink_geom::lasso::Lasso`, inside by the non-zero winding rule) instead of a rectangle. *Contain* needs the whole outline inside the path; *Intersect* selects what the path crosses or surrounds, and a shape with a fill that the path lies inside. Frames are selected only by *Contain*. Locked elements are left out.
 * `in_rect(rect)` / `Canvas::visible_elements(margin_px)`: the culling query, back to front.
 * `unit_group(element, entered_group, is_group)`: the group a click selects. Without an entered group it is the outermost group. With one, it is the next group inside it, or none when the element is a direct member (then the element itself is the unit). The facade fills `Target::Element { unit_group }` with it and ignores groups with fewer than two live members.
 
@@ -164,6 +165,7 @@ Handle size, hit radius and the rotation offset are in screen pixels, so they sc
 | `transformer` | the frame, the visible handles with positions, the handle size in px, the active handle |
 | `hover` | the outline (`geom::Primitive`) of the hovered element, unless it is selected |
 | `marquee` | the rectangle being dragged |
+| `lasso` | the path being drawn (world points; the painter closes it). Set by the host: the canvas recognizer itself only drags a marquee |
 | `guides` | smart guides, set by the host with `set_guides` |
 | `bind_candidates` | outlines of elements to highlight, from `set_bind_candidates(ids)` |
 | `remote_cursors`, `remote_selections` | from `set_remote_users`; selection boxes capped per user |
@@ -196,7 +198,7 @@ Events: `PointerDown`, `Click`, `DoubleClick`, `LongPress`, `ContextMenu`, `Drag
 | store | `store()`, `store_mut()` (guard), `transact(f)`, `index()`, `sync()` |
 | view | `viewport()`, `camera()`, `set_camera`, `set_viewport_size(size, dpr)`, `update_viewport`, `zoom_at`, `pan_by_screen`, `fit_to_content`, `fit_to_elements` |
 | context | `set_selection`, `selection`, `selection_frame`, `set_entered_group`, `set_pointer_mode`, `config`, `set_config` |
-| queries | `hit_at`, `hit_with`, `hit_all_at`, `pick`, `marquee`, `elements_in_rect`, `visible_elements` |
+| queries | `hit_at`, `hit_with`, `hit_all_at`, `pick`, `marquee`, `lasso`, `elements_in_rect`, `visible_elements` |
 | events | `on`, `off`, `dispatch` |
 | input | `handle_input`, `tick`, `next_deadline`, `hover` |
 | overlay | `overlay`, `set_guides`, `set_bind_candidates`, `set_remote_users`, `take_dirty` |

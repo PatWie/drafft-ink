@@ -165,6 +165,7 @@ pub const VERB_BINDINGS: &[VerbBinding] = &[
     VerbBinding { keys: &["Mod+Shift+S"], scope: Scope::Always, verb: Verb::SaveAs },
     VerbBinding { keys: &["Mod+/", "Mod+Shift+P"], scope: Scope::Always, verb: Verb::OpenPalette },
     VerbBinding { keys: &["Mod+F"], scope: Scope::Canvas, verb: Verb::OpenSearch },
+    VerbBinding { keys: &["Mod+K"], scope: Scope::Canvas, verb: Verb::OpenLinkEditor },
     VerbBinding { keys: &["?"], scope: Scope::Canvas, verb: Verb::OpenShortcuts },
     VerbBinding { keys: &["Alt+Z"], scope: Scope::Canvas, verb: Verb::ToggleZen },
     VerbBinding { keys: &["Alt+/"], scope: Scope::Canvas, verb: Verb::ToggleStats },

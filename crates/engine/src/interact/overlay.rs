@@ -8,7 +8,8 @@
 
 use drafftink_canvas::shape::{element_box, shape_of};
 use drafftink_canvas::{
-    BindCandidate, Handle, HoverOutline, MarqueeOverlay, Overlay, SelectionBox, SelectionFrame, TransformerOverlay,
+    BindCandidate, Handle, HoverOutline, LassoOverlay, MarqueeOverlay, Overlay, SelectionBox, SelectionFrame,
+    TransformerOverlay,
 };
 use drafftink_geom::guides::SmartGuide;
 use drafftink_geom::kurbo::{Point, Rect};
@@ -45,11 +46,24 @@ pub struct LaserPoint {
     pub t_ms: f64,
 }
 
+/// The link icon of an element that has a link, for the overlay pass to draw (`drafftink_edit::link::icon_rect`).
+#[derive(Debug, Clone, PartialEq)]
+pub struct LinkIcon {
+    /// The element that holds the link.
+    pub element: ElementId,
+    /// The upright square of the icon in world units. Its centre turns with the element.
+    pub rect: Rect,
+    /// True for a link to another element, false for a web address: the icon differs.
+    pub to_element: bool,
+}
+
 /// Overlay state owned by the tool machines. Everything is in world space.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct OverlayParts {
     /// The marquee being dragged.
     pub marquee: Option<Rect>,
+    /// The path of the lasso being drawn, in drawing order. Empty when there is none.
+    pub lasso: Vec<Point>,
     /// Smart guides of the running move or resize, or of a drawing snap.
     pub guides: Vec<SmartGuide>,
     /// Elements to highlight: an arrow end would bind to them, or a drag would drop into a frame.
@@ -76,6 +90,7 @@ impl OverlayParts {
     /// True when a gesture shows something.
     pub fn has_gesture_state(&self) -> bool {
         self.marquee.is_some()
+            || !self.lasso.is_empty()
             || !self.guides.is_empty()
             || !self.highlight.is_empty()
             || self.preview.is_some()
@@ -99,6 +114,8 @@ pub struct InteractionOverlay {
     pub badge: Option<Badge>,
     /// The laser trail, oldest first. The shell drops points older than the fade time.
     pub laser: Vec<LaserPoint>,
+    /// The link icons in view, for elements that are not selected (a click on one opens the link).
+    pub link_icons: Vec<LinkIcon>,
 }
 
 /// Builds the overlay from the parts, the selection and the hover.
@@ -132,6 +149,7 @@ pub(super) fn build(world: &World, s: &Session, parts: &OverlayParts, hover: Opt
         o.hover = Some(HoverOutline { id: id.clone(), shape });
     }
     o.marquee = parts.marquee.map(|rect| MarqueeOverlay { rect });
+    o.lasso = (!parts.lasso.is_empty()).then(|| LassoOverlay { points: parts.lasso.clone() });
     o.guides = parts.guides.clone();
     o.bind_candidates = parts
         .highlight
@@ -145,5 +163,24 @@ pub(super) fn build(world: &World, s: &Session, parts: &OverlayParts, hover: Opt
         faded: parts.faded.clone(),
         badge: parts.badge,
         laser: parts.laser.clone(),
+        link_icons: link_icons(world, s),
     }
+}
+
+/// The link icons that are in view. Selected elements show their handles there instead.
+fn link_icons(world: &World, s: &Session) -> Vec<LinkIcon> {
+    let zoom = world.viewport.zoom();
+    let visible = world.viewport.visible_rect();
+    let selection = s.selection();
+    s.store()
+        .iter()
+        .filter(|e| e.link.is_some() && !e.deleted && !selection.contains(&e.id))
+        .map(|e| (e, drafftink_edit::link::icon_rect(e, zoom)))
+        .filter(|(_, rect)| rect.overlaps(visible))
+        .map(|(e, rect)| LinkIcon {
+            element: e.id.clone(),
+            rect,
+            to_element: e.link.as_deref().is_some_and(|l| l.starts_with(drafftink_edit::link::ELEMENT_PREFIX)),
+        })
+        .collect()
 }

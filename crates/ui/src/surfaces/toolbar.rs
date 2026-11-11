@@ -10,9 +10,10 @@ use crate::theme::MARGIN;
 use crate::widgets::{Ctl, Cx, panel_frame};
 use drafftink_engine::state::Tool;
 
-/// The tools, in the order of the old toolbar, with the two additions (diamond, frame).
+/// The tools, in the order of the old toolbar, with the additions (lasso, diamond, frame).
 pub const TOOLS: &[(Tool, Icon)] = &[
     (Tool::Select, Icon::Select),
+    (Tool::Lasso, Icon::Lasso),
     (Tool::Hand, Icon::Hand),
     (Tool::Rectangle, Icon::Rectangle),
     (Tool::Diamond, Icon::Diamond),
@@ -37,7 +38,11 @@ pub fn show(ctx: &Context, cx: &mut Cx<'_>, _st: &mut UiState) {
                 ui.spacing_mut().item_spacing = vec2(0.0, 3.0);
                 for &(tool, icon) in TOOLS {
                     let selected = cx.model.tool == tool;
-                    let ctl = Ctl::new("tool.set").args(json!({ "tool": tool.name() })).selected(selected);
+                    let mut ctl = Ctl::new("tool.set").args(json!({ "tool": tool.name() })).selected(selected);
+                    if tool == Tool::Lasso {
+                        // Not a key binding of `tool.set`, so the command has no title for it.
+                        ctl = ctl.label("Lasso tool");
+                    }
                     cx.tool_button(ui, &ctl, icon);
                 }
                 ui.add_space(4.0);

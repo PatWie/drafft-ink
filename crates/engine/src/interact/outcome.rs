@@ -56,6 +56,13 @@ pub enum UiRequest {
         /// The math element.
         element: ElementId,
     },
+    /// A web address to open in the browser, because a link icon was clicked (`element.open_link` answered
+    /// `kind: url`). The shell opens it; the engine never does. A click on the icon of an element link has
+    /// already moved the view, and sends no request.
+    OpenUrl {
+        /// The checked address (`http`, `https` or `mailto`).
+        url: String,
+    },
     /// The context menu (`ui.open_context_menu`) at a screen position.
     OpenContextMenu {
         /// Logical pixels from the top-left of the canvas.
@@ -72,4 +79,10 @@ pub enum ContextTarget {
     Canvas,
     /// The current selection (the element under the pointer was selected first when it was not).
     Selection,
+    /// A locked element, which cannot be selected. The menu offers to unlock it (`element.unlock_all` with this
+    /// id); the selection was cleared.
+    Locked {
+        /// The topmost element under the pointer, which is locked.
+        element: ElementId,
+    },
 }
