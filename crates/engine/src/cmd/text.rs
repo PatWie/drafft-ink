@@ -9,8 +9,8 @@
 mod session;
 pub(super) mod support;
 
-use drafftink_edit::text_bind::{self, FontStep, Relabeled};
-use drafftink_scene::{Color, ElementId, Kind};
+use drafftink_edit::text_bind::{self, FontStep, Relabeled, TextProps};
+use drafftink_scene::{Color, ElementId, InlineMath, Kind};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
@@ -46,6 +46,11 @@ pub struct SetArgs {
     /// Keep the colours of the unchanged beginning and end of the text.
     #[serde(default = "yes")]
     pub keep_runs: bool,
+    /// Whether `$...$` in the text is typeset as math: `auto` (a formula needs a non-space after the opening `$` and
+    /// before the closing one, and no digit after it, so prices stay prices; `\$` is a dollar sign) or `off`. Absent
+    /// keeps the element's setting, which is `auto` for a new text.
+    #[serde(default)]
+    pub inline_math: Option<InlineMath>,
 }
 
 /// Output of `text.set`.
@@ -70,16 +75,24 @@ fn set(s: &mut Session, a: SetArgs) -> Result<SetOut, Refusal> {
     }
     let text = a.text.as_str();
     let defaults = s.tool.text_defaults.clone();
+    let mode = TextProps { inline_math: a.inline_math, ..TextProps::default() };
     let out = with_doc(s, |tx, m, _math, ids| {
         if kind == Kind::Text {
             let r = text_bind::set_text_content(tx, m, &id, text, a.keep_runs)?;
+            if r.is_some() {
+                text_bind::apply_text_props(tx, m, &id, &mode)?;
+            }
             return Ok(match r {
                 Some(_) => (Some(id.clone()), false),
                 None => (None, true),
             });
         }
-        Ok(match text_bind::relabel(tx, m, ids, &id, text, true, Some(&defaults))? {
-            Relabeled::Updated(o) | Relabeled::Created(o) => (Some(o.label), false),
+        let r = text_bind::relabel(tx, m, ids, &id, text, true, Some(&defaults))?;
+        Ok(match r {
+            Relabeled::Updated(o) | Relabeled::Created(o) => {
+                text_bind::apply_text_props(tx, m, &o.label, &mode)?;
+                (Some(o.label), false)
+            }
             Relabeled::Removed(_) => (None, true),
             Relabeled::Nothing => (None, false),
         })

@@ -5,7 +5,7 @@
 //! [`math_spec`], because the box the editor stores in `transform` has to be the box the renderer draws.
 
 use drafftink_scene::{
-    Color, Element, ElementKind, FillPattern, FontFamily, FontWeight, Head, LinearData, MathData, PathType,
+    Color, Element, ElementKind, FillPattern, FontFamily, FontWeight, Head, InlineMath, LinearData, MathData, PathType,
     PressureMode, Sloppiness, StrokeStyle, TextAlign, TextData,
 };
 use drafftink_sketch as sketch;
@@ -66,7 +66,16 @@ pub fn text_spec(t: &TextData, stroke: Color, box_width: f64) -> typeset::TextSp
     };
     spec.wrap = if t.auto_resize { typeset::Wrap::None } else { typeset::Wrap::Width(box_width as f32) };
     spec.line_height = typeset::LineHeight::FontSize(t.font.line_height as f32);
+    spec.math = inline_math(t.font.inline_math);
     spec
+}
+
+/// The typesetter's name for a text's inline-math setting.
+pub fn inline_math(m: InlineMath) -> typeset::InlineMath {
+    match m {
+        InlineMath::Auto => typeset::InlineMath::Auto,
+        InlineMath::Off => typeset::InlineMath::Off,
+    }
 }
 
 /// The layout input of a math element.

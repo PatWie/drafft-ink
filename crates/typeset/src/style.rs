@@ -217,6 +217,19 @@ impl Span {
     }
 }
 
+/// Whether `$...$` in the text is typeset as inline math.
+///
+/// The rules for what counts as a formula are in [`crate::inline`] (Pandoc's: the opening `$` is followed by a
+/// non-space, the closing `$` is preceded by one and not followed by a digit; `\$` is a literal dollar).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Default)]
+pub enum InlineMath {
+    /// The text is plain: every character is drawn as it is, `\$` included.
+    #[default]
+    Off,
+    /// Matched `$...$` pairs are formulas and `\$` is a dollar sign.
+    Auto,
+}
+
 /// Everything that determines a text layout.
 #[derive(Clone, Debug, PartialEq)]
 pub struct TextSpec {
@@ -232,6 +245,12 @@ pub struct TextSpec {
     pub wrap: Wrap,
     /// Line height.
     pub line_height: LineHeight,
+    /// Whether `$...$` is typeset as math.
+    pub math: InlineMath,
+    /// The formula whose source is shown instead of its typeset form: the one with a byte index of the text strictly
+    /// inside its `$...$`. An editor sets this to the caret index while the caret is inside a formula (see
+    /// [`crate::TextLayout::reveal_index`]); `None` typesets every formula.
+    pub reveal: Option<usize>,
 }
 
 impl TextSpec {
@@ -249,7 +268,15 @@ impl TextSpec {
             align: Align::Left,
             wrap: Wrap::None,
             line_height: LineHeight::Normal,
+            math: InlineMath::Off,
+            reveal: None,
         }
+    }
+
+    /// Typeset `$...$` as math.
+    pub fn with_inline_math(mut self, math: InlineMath) -> Self {
+        self.math = math;
+        self
     }
 
     /// Wrap at `width`.

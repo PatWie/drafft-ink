@@ -106,7 +106,7 @@ fn feed_span_style(h: &mut Hash128, s: &SpanStyle) {
 }
 
 fn feed_text(spec: &TextSpec) -> u128 {
-    let TextSpec { text, style, spans, align, wrap, line_height } = spec;
+    let TextSpec { text, style, spans, align, wrap, line_height, math, reveal } = spec;
     let mut h = Hash128::new();
     text.hash(&mut h);
     feed_text_style(&mut h, style);
@@ -125,6 +125,8 @@ fn feed_text(spec: &TextSpec) -> u128 {
         LineHeight::Metrics(v) => (1u8, Bits::from(*v)).hash(&mut h),
         LineHeight::FontSize(v) => (2u8, Bits::from(*v)).hash(&mut h),
     }
+    // The formulas are in the text, so the text and its size cover them; the mode and the revealed one change the layout.
+    (math, reveal).hash(&mut h);
     h.finish128()
 }
 
@@ -137,6 +139,42 @@ fn feed_math(spec: &MathSpec) -> u128 {
 
 type MathResult = Result<Arc<MathLayout>, MathError>;
 
+/// Math layout with its cache: the ReX engine (built on first use), the cache and the counters.
+struct MathService {
+    engine: Option<Result<MathEngine, MathError>>,
+    cache: Lru<Key, MathResult>,
+    hits: u64,
+    misses: u64,
+}
+
+impl MathService {
+    fn new(cfg: CacheConfig) -> Self {
+        Self { engine: None, cache: Lru::new(cfg.math_entries, cfg.math_bytes), hits: 0, misses: 0 }
+    }
+
+    /// The layout of `spec`, from the cache when possible. Errors are cached too.
+    fn layout(&mut self, spec: &MathSpec, fonts: u64) -> MathResult {
+        let key = Key { digest: feed_math(spec), fonts };
+        if let Some(hit) = self.cache.get(&key) {
+            self.hits += 1;
+            inc(Counter::CacheHit);
+            return hit;
+        }
+        self.misses += 1;
+        inc(Counter::CacheMiss);
+        inc(Counter::Relayouts);
+        let _span = drafftink_profile::span("typeset_math");
+        let engine = self.engine.get_or_insert_with(MathEngine::new);
+        let result: MathResult = match engine {
+            Ok(e) => e.layout(spec, next_id()).map(Arc::new),
+            Err(e) => Err(e.clone()),
+        };
+        let weight = result.as_ref().map_or(256 + spec.latex.len(), |l| l.weight());
+        self.cache.insert(key, result.clone(), weight);
+        result
+    }
+}
+
 /// Lays out text and math and caches the results. One per process in the app; cheap to create in
 /// tests (it registers the bundled fonts, a few milliseconds).
 ///
@@ -144,14 +182,11 @@ type MathResult = Result<Arc<MathLayout>, MathError>;
 /// returned layouts are immutable `Arc`s and can be sent anywhere.
 pub struct Typesetter {
     engine: Engine,
-    math: Option<Result<MathEngine, MathError>>,
+    math: MathService,
     text_cache: Lru<Key, Arc<TextLayout>>,
-    math_cache: Lru<Key, MathResult>,
     font_version: u64,
     text_hits: u64,
     text_misses: u64,
-    math_hits: u64,
-    math_misses: u64,
 }
 
 impl Default for Typesetter {
@@ -170,14 +205,11 @@ impl Typesetter {
     pub fn with_config(cfg: CacheConfig) -> Self {
         Self {
             engine: Engine::new(),
-            math: None,
+            math: MathService::new(cfg),
             text_cache: Lru::new(cfg.text_entries, cfg.text_bytes),
-            math_cache: Lru::new(cfg.math_entries, cfg.math_bytes),
             font_version: 1,
             text_hits: 0,
             text_misses: 0,
-            math_hits: 0,
-            math_misses: 0,
         }
     }
 
@@ -193,7 +225,9 @@ impl Typesetter {
         inc(Counter::CacheMiss);
         inc(Counter::Relayouts);
         let _span = drafftink_profile::span("typeset_text");
-        let built = Arc::new(layout::build(&mut self.engine, spec, next_id()));
+        let fonts = self.font_version;
+        let math = &mut self.math;
+        let built = Arc::new(layout::build(&mut self.engine, spec, next_id(), &mut |m| math.layout(m, fonts)));
         self.text_cache.insert(key, built.clone(), built.weight());
         built
     }
@@ -207,24 +241,7 @@ impl Typesetter {
     /// Lay out a formula. Errors are cached too, so a broken formula costs one parse, not one per
     /// frame.
     pub fn math(&mut self, spec: &MathSpec) -> Result<Arc<MathLayout>, MathError> {
-        let key = Key { digest: feed_math(spec), fonts: self.font_version };
-        if let Some(hit) = self.math_cache.get(&key) {
-            self.math_hits += 1;
-            inc(Counter::CacheHit);
-            return hit;
-        }
-        self.math_misses += 1;
-        inc(Counter::CacheMiss);
-        inc(Counter::Relayouts);
-        let _span = drafftink_profile::span("typeset_math");
-        let engine = self.math.get_or_insert_with(MathEngine::new);
-        let result: MathResult = match engine {
-            Ok(e) => e.layout(spec, next_id()).map(Arc::new),
-            Err(e) => Err(e.clone()),
-        };
-        let weight = result.as_ref().map_or(256 + spec.latex.len(), |l| l.weight());
-        self.math_cache.insert(key, result.clone(), weight);
-        result
+        self.math.layout(spec, self.font_version)
     }
 
     /// Lay out `spec` inside `container`, as Excalidraw does for bound text. `spec.wrap` is
@@ -305,12 +322,12 @@ impl Typesetter {
         TypesetStats {
             text_hits: self.text_hits,
             text_misses: self.text_misses,
-            math_hits: self.math_hits,
-            math_misses: self.math_misses,
+            math_hits: self.math.hits,
+            math_misses: self.math.misses,
             text_entries: self.text_cache.len(),
-            math_entries: self.math_cache.len(),
-            bytes: self.text_cache.weight() + self.math_cache.weight(),
-            evictions: self.text_cache.evictions() + self.math_cache.evictions(),
+            math_entries: self.math.cache.len(),
+            bytes: self.text_cache.weight() + self.math.cache.weight(),
+            evictions: self.text_cache.evictions() + self.math.cache.evictions(),
             font_set_version: self.font_version,
         }
     }
@@ -318,7 +335,7 @@ impl Typesetter {
     /// Drop every cached layout (counters stay).
     pub fn clear_caches(&mut self) {
         self.text_cache.clear();
-        self.math_cache.clear();
+        self.math.cache.clear();
     }
 }
 

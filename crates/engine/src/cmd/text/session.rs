@@ -10,7 +10,7 @@ use drafftink_edit::style::{StyleError, StyleProps};
 use drafftink_edit::text_bind::{self, MathMeasure, NewText, Relabeled, RunSpec, TextBindError, TextProps};
 use drafftink_geom::kurbo::Point;
 use drafftink_scene::{
-    Color, ElementId, ElementKind, Kind, SceneTx,
+    Color, ElementId, ElementKind, InlineMath, Kind, SceneTx,
 };
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -120,7 +120,7 @@ impl<'a> Final<'a> {
             text: a.text.as_deref(),
             latex: a.latex.as_deref(),
             runs: a.runs.as_ref().map(|r| r.iter().map(|r| RunSpec { start: r.start, end: r.end, color: r.color }).collect()),
-            props: text_props(cmd, a.style.as_ref())?,
+            props: TextProps { inline_math: a.inline_math, ..text_props(cmd, a.style.as_ref())? },
         })
     }
 
@@ -338,11 +338,13 @@ pub struct EndArgs {
     /// properties of `style.set` (`stroke_color`, `opacity`, `font_family`, `font_weight`, `font_size`,
     /// `text_align`, `vertical_align`, `line_height`). Other style properties are refused.
     pub style: Option<StyleProps>,
+    /// Whether `$...$` in the text is typeset as math (`auto` or `off`, see `text.set`). Absent keeps the setting.
+    pub inline_math: Option<InlineMath>,
 }
 
 impl Default for EndArgs {
     fn default() -> Self {
-        Self { commit: true, text: None, latex: None, runs: None, style: None }
+        Self { commit: true, text: None, latex: None, runs: None, style: None, inline_math: None }
     }
 }
 

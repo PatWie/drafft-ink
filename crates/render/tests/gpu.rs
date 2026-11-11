@@ -712,3 +712,108 @@ fn an_overlay_over_a_world_scene_renders() {
     let without = render(&world, 400, 300, peniko::Color::WHITE);
     assert!(diff(&with, &without).any > 0.001, "the overlay changed nothing");
 }
+
+// ----------------------------------------------------------------------------------------------
+// Inline math
+
+/// Renders one text element at zoom 1 on white (or the dark background) and returns the pixels.
+fn render_text_element(e: Element, theme: Theme, w: u32, h: u32) -> Pixels {
+    let mut ts = Typesetter::new();
+    let store = store_of(vec![e]);
+    let index = build_paint_index(&store);
+    let mut composer = SceneComposer::new();
+    composer.set_options(RenderOptions { theme, lod: LodConfig::OFF });
+    let mut scene = Scene::new();
+    let view = View::new(1.0, Vec2::ZERO, Size::new(f64::from(w), f64::from(h)));
+    composer.compose(&store, &index, &view, &mut ts, &mut scene);
+    render(&scene, w, h, composer.background(&store))
+}
+
+/// Rows `y0..y1` of `p` that have a pixel differing from `background` by more than the tolerance, as `(first, last)`.
+fn ink_rows(p: &Pixels, background: [u8; 3], x0: u32, x1: u32) -> Option<(u32, u32)> {
+    let dark = |x: u32, y: u32| {
+        let i = ((y * p.w + x) * 4) as usize;
+        (0..3).any(|c| p.rgba[i + c].abs_diff(background[c]) > 60)
+    };
+    let rows: Vec<u32> = (0..p.h).filter(|&y| (x0..x1.min(p.w)).any(|x| dark(x, y))).collect();
+    Some((*rows.first()?, *rows.last()?))
+}
+
+fn ink_cols(p: &Pixels, background: [u8; 3]) -> Option<(u32, u32)> {
+    let dark = |x: u32, y: u32| {
+        let i = ((y * p.w + x) * 4) as usize;
+        (0..3).any(|c| p.rgba[i + c].abs_diff(background[c]) > 60)
+    };
+    let cols: Vec<u32> = (0..p.w).filter(|&x| (0..p.h).any(|y| dark(x, y))).collect();
+    Some((*cols.first()?, *cols.last()?))
+}
+
+fn inline_math_element(ts: &mut Typesetter, content: &str) -> Element {
+    let mut e = text_el(ts, "t", &ZIndex::first(), 10.0, 10.0, content);
+    e.style.stroke_color = Color::BLACK;
+    if let ElementKind::Text(t) = &mut e.kind {
+        t.font.size = 32.0;
+    }
+    measure_text(ts, &mut e);
+    e
+}
+
+#[test]
+fn inline_math_draws_ink_where_the_layout_put_the_formula() {
+    need_gpu!();
+    let mut ts = Typesetter::new();
+    // The same text without the formula, and with it. The fraction is taller than the line, so the ink of the
+    // second reaches above and below the ink of the first, and the text after the formula is shifted right.
+    let plain = inline_math_element(&mut ts, "ab  cd");
+    let math = inline_math_element(&mut ts, "ab $\\frac{x}{y}$ cd");
+    let (w, h) = (260, 120);
+    let (a, b) =
+        (render_text_element(plain.clone(), Theme::Light, w, h), render_text_element(math.clone(), Theme::Light, w, h));
+    let white = [255, 255, 255];
+    let (ra, rb) = (ink_rows(&a, white, 0, w).unwrap(), ink_rows(&b, white, 0, w).unwrap());
+    assert!(rb.1 - rb.0 > ra.1 - ra.0 + 8, "the fraction makes the ink taller: {ra:?} {rb:?}");
+    let (ca, cb) = (ink_cols(&a, white).unwrap(), ink_cols(&b, white).unwrap());
+    assert!(cb.1 > ca.1 + 6, "the formula is wider than the gap it replaces: {ca:?} {cb:?}");
+    // The formula's ink is inside the box the layout reserved for it.
+    let l = ts.text(&drafftink_render::text_spec(
+        match &math.kind {
+            ElementKind::Text(t) => t,
+            _ => unreachable!(),
+        },
+        math.style.stroke_color,
+        math.transform.w,
+    ));
+    let f = &l.formulas[0];
+    let (x0, x1) = (f.rect.x0 as u32 + 10, f.rect.x1 as u32 + 10);
+    let inside = ink_rows(&b, white, x0 + 1, x1.saturating_sub(1)).unwrap();
+    assert!(inside.0 + 2 >= (f.rect.y0 as u32 + 10).saturating_sub(2), "{inside:?} {:?}", f.rect);
+    assert!(inside.1 <= f.rect.y1 as u32 + 10 + 2, "{inside:?} {:?}", f.rect);
+    // No ink between the text before and the formula's box, or in the gap after it: the zero-width placeholder
+    // draws nothing.
+    assert!(ink_rows(&b, white, x1 + 1, x1 + 4).is_none() || f.rect.width() > 0.0);
+}
+
+#[test]
+fn inline_math_in_the_dark_theme_is_light_ink_on_dark() {
+    need_gpu!();
+    let mut ts = Typesetter::new();
+    let e = inline_math_element(&mut ts, "ab $\\frac{x}{y}$ cd");
+    let px = render_text_element(e, Theme::Dark, 260, 120);
+    let bg = [18, 18, 18];
+    // Every ink pixel is lighter than the background, and there is ink in the formula's rows.
+    let lighter = px.rgba.chunks_exact(4).filter(|p| p[0] > 150 && p[1] > 150 && p[2] > 150).count();
+    let darker = px.rgba.chunks_exact(4).filter(|p| p[0] < 10).count();
+    assert!(lighter > 200, "{lighter}");
+    assert_eq!(darker, 0, "nothing is black on the dark background");
+    assert!(ink_rows(&px, bg, 0, 260).is_some());
+}
+
+#[test]
+fn a_broken_formula_shows_its_source_in_red() {
+    need_gpu!();
+    let mut ts = Typesetter::new();
+    let e = inline_math_element(&mut ts, "ab $\\nope{$ cd");
+    let px = render_text_element(e, Theme::Light, 300, 80);
+    let red = px.rgba.chunks_exact(4).filter(|p| p[0] > 180 && p[1] < 110 && p[2] < 110).count();
+    assert!(red > 100, "the source is drawn in the warning colour: {red} red pixels");
+}

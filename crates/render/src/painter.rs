@@ -358,6 +358,10 @@ pub(crate) fn draw_layout(ink: &mut Ink, layout: &drafftink_typeset::TextLayout,
         let color = ink.color(Color::rgba(c.r, c.g, c.b, c.a));
         ink.scene.fill(Fill::NonZero, to, color, None, &d.rect);
     }
+    for f in &layout.formulas {
+        let at = to * Affine::translate(f.origin.to_vec2());
+        draw_formula(ink, &f.math, at, f.color);
+    }
     let b = layout.bounds();
     ink.grow(Rect::new(b.x0 + origin.x, b.y0 + origin.y, b.x1 + origin.x, b.y1 + origin.y));
 }
@@ -379,13 +383,22 @@ fn paint_math(ink: &mut Ink, e: &Element, m: &MathData, ts: &mut Typesetter) {
     };
     // Layout coordinates are relative to the baseline origin; the element box starts `height` above it.
     let to = Affine::translate((0.0, layout.height));
-    let base = ink.color(e.style.stroke_color);
+    let c = e.style.stroke_color;
+    draw_formula(ink, &layout, to, drafftink_typeset::Rgba8::new(c.r, c.g, c.b, c.a));
+    let b = layout.bounds();
+    ink.grow(Rect::new(b.x0, b.y0 + layout.height, b.x1, b.y1 + layout.height));
+}
+
+/// Draws a formula with its baseline origin at the origin of `to`. Glyphs and rules that set no colour of their own
+/// use `base` (the colour of the text, as stored: the theme and the opacity are applied here).
+fn draw_formula(ink: &mut Ink, layout: &drafftink_typeset::MathLayout, to: Affine, base: drafftink_typeset::Rgba8) {
+    let themed = |ink: &Ink, c: Option<drafftink_typeset::Rgba8>| {
+        let c = c.unwrap_or(base);
+        ink.color(Color::rgba(c.r, c.g, c.b, c.a))
+    };
     for run in layout.glyphs.chunk_by(same_run) {
         let Some(first) = run.first() else { continue };
-        let color = match first.color {
-            Some(c) => ink.color(Color::rgba(c.r, c.g, c.b, c.a)),
-            None => base,
-        };
+        let color = themed(ink, first.color);
         let slot: MathFontSlot = first.font;
         ink.scene
             .draw_glyphs(layout.font(slot))
@@ -396,14 +409,9 @@ fn paint_math(ink: &mut Ink, e: &Element, m: &MathData, ts: &mut Typesetter) {
             .draw(Fill::NonZero, run.iter().map(|g| Glyph { id: u32::from(g.id), x: g.x as f32, y: g.y as f32 }));
     }
     for r in &layout.rules {
-        let color = match r.color {
-            Some(c) => ink.color(Color::rgba(c.r, c.g, c.b, c.a)),
-            None => base,
-        };
+        let color = themed(ink, r.color);
         ink.scene.fill(Fill::NonZero, to, color, None, &r.rect);
     }
-    let b = layout.bounds();
-    ink.grow(Rect::new(b.x0, b.y0 + layout.height, b.x1, b.y1 + layout.height));
 }
 
 fn same_run(a: &drafftink_typeset::MathGlyph, b: &drafftink_typeset::MathGlyph) -> bool {

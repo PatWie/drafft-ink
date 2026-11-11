@@ -1,0 +1,15 @@
+{
+  "about": "Pixel probe: a text that is only a formula draws the typeset fraction (some ink on a white background), and with inline math off the same text draws its source (also ink). Zoom-to-fit changes the scale between the two probes, so the amounts are not compared.",
+  "requires": { "gpu": true },
+  "steps": [
+    { "execute": "element.create", "args": { "kind": "text", "text": "$\\frac{x}{y}$", "at": [20, 20], "style": { "stroke_color": "#000000" } } },
+    { "execute": "view.set_viewport", "args": { "width": 300, "height": 200, "scale_factor": 1 } },
+    { "execute": "view.zoom_to_fit", "args": { "padding": 20 } },
+    { "harness": "pixel_probe", "args": { "size": [300, 200], "points": [ { "screen": [2, 2] } ] },
+      "expect": [ { "path": "$.ink_px", "gt": 100, "note": "the fraction was drawn" }, { "path": "$.pixels[0]", "near": [255, 255, 255, 255], "tol": 2 } ] },
+    { "execute": "text.set", "args": { "id": "e1", "text": "$\\frac{x}{y}$", "inline_math": "off" } },
+    { "execute": "view.zoom_to_fit", "args": { "padding": 20 } },
+    { "harness": "pixel_probe", "args": { "size": [300, 200], "points": [ { "screen": [2, 2] } ] },
+      "expect": [ { "path": "$.ink_px", "gt": 100, "note": "the source was drawn" } ] }
+  ]
+}

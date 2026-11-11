@@ -1,0 +1,19 @@
+{
+  "about": "A label with a formula grows its container for the tall formula; a fixed-width text wraps around a formula without splitting it; an edit session that ends with a formula and the setting is one undo step; the doc.outline of a shape shows the label source.",
+  "steps": [
+    { "execute": "element.create", "args": { "kind": "rectangle", "bounds": { "x": 0, "y": 0, "w": 120, "h": 40 } } },
+    { "execute": "text.set", "args": { "id": "e1", "text": "$\\frac{a+b}{c+d}$" }, "expect": [ { "path": "$.id", "eq": "e2" } ] },
+    { "assert": "element.query", "args": { "filter": { "ids": ["e1"] }, "fields": ["bounds"] }, "expect": [ { "path": "$.items[0].bounds.h", "gt": 40, "note": "The container grew for a label taller than 30 units." } ] },
+    { "assert": "element.query", "args": { "filter": { "ids": ["e2"] }, "fields": ["text", "bounds"] }, "expect": [ { "path": "$.items[0].text", "eq": "$\\frac{a+b}{c+d}$" } ] },
+    { "assert": "doc.outline", "args": { "format": "json" }, "expect": [ { "path": "$.outline.nodes[0].label", "eq": "$\\frac{a+b}{c+d}$" } ] },
+
+    { "execute": "element.create", "args": { "kind": "text", "text": "see $a + b + c$ and then some more words after it", "at": [300, 0], "width": 140 } },
+    { "assert": "element.query", "args": { "filter": { "ids": ["e3"] }, "fields": ["bounds"] }, "expect": [ { "path": "$.items[0].bounds.w", "eq": 140 }, { "path": "$.items[0].bounds.h", "gt": 50, "note": "The text wrapped into several lines." } ] },
+
+    { "execute": "text.edit_begin", "args": { "at": [0, 300] } },
+    { "execute": "text.edit_end", "args": { "text": "Area $\\pi r^2$", "inline_math": "auto" }, "expect": [ { "path": "$.committed", "eq": true } ] },
+    { "assert": "history.state", "expect": [ { "path": "$.undo_depth", "gt": 0 } ] },
+    { "undo": 1, "expect": [ { "path": "$.undone", "len": 1 } ] },
+    { "assert": "element.query", "args": { "filter": { "kind": "text" }, "fields": ["id"] }, "expect": [ { "path": "$.total", "eq": 2, "note": "Creation and content were one step: the edited text is gone." } ] }
+  ]
+}

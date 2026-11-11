@@ -20,6 +20,12 @@ pub trait TextMeasure {
         font.size * font.line_height
     }
 
+    /// Height of the wrapped line `line`. A line with an inline formula is as tall as the formula needs, so a measure
+    /// that typesets inline math (`TextStyle::inline_math`) overrides this; the default is [`Self::line_height`].
+    fn line_height_of(&self, _line: &str, font: &TextStyle) -> f64 {
+        self.line_height(font)
+    }
+
     /// Wraps `text` (hard breaks are `\n`) so that no line is wider than `max_width` where that is possible. A
     /// non-finite or negative `max_width` keeps only the hard breaks.
     fn wrap(&self, text: &str, font: &TextStyle, max_width: f64) -> Vec<String> {
@@ -135,11 +141,12 @@ fn wrap_line<M: TextMeasure + ?Sized>(m: &M, line: &str, font: &TextStyle, max: 
 /// Width and height of already wrapped lines. An empty line counts as a line of the normal height.
 pub fn measure_lines<M: TextMeasure + ?Sized>(m: &M, lines: &[String], font: &TextStyle) -> Size {
     let w = lines.iter().map(|l| m.line_width(l, font)).fold(0.0, f64::max);
-    Size::new(w, lines.len().max(1) as f64 * m.line_height(font))
+    let h = if lines.is_empty() { m.line_height(font) } else { lines.iter().map(|l| m.line_height_of(l, font)).sum() };
+    Size::new(w, h)
 }
 
 /// The size of `text` as one box, wrapped at `max_width` (`None`: only at hard breaks).
 pub fn measure_text<M: TextMeasure + ?Sized>(m: &M, text: &str, font: &TextStyle, max_width: Option<f64>) -> Size {
-    let lines = wrap_text(m, text, font, max_width.unwrap_or(f64::INFINITY));
+    let lines = m.wrap(text, font, max_width.unwrap_or(f64::INFINITY));
     measure_lines(m, &lines, font)
 }
