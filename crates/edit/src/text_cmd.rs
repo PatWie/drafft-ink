@@ -8,8 +8,8 @@
 use kurbo::{Point, Size, Vec2};
 
 use drafftink_scene::{
-    Color, Element, ElementId, ElementKind, FontFamily, FontWeight, IdSource, IndexError, Kind, SceneRead,
-    SceneTx, StoreError, Style, TextAlign, TextData, TextRun, TextStyle, Transform, VerticalAlign, ZIndex,
+    Color, Element, ElementId, ElementKind, FontFamily, FontWeight, IdSource, IndexError, Kind, SceneRead, SceneTx,
+    StoreError, Style, TextAlign, TextData, TextRun, TextStyle, Transform, VerticalAlign, ZIndex,
 };
 
 use crate::text_bind::{

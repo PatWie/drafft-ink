@@ -13,9 +13,7 @@
 use drafftink_geom::OrientedBox;
 use kurbo::{Point, Rect};
 
-use drafftink_scene::{
-    Element, ElementId, Head, IdSource, IndexError, Kind, PathType, SceneRead, SceneTx, StoreError,
-};
+use drafftink_scene::{Element, ElementId, Head, IdSource, IndexError, Kind, PathType, SceneRead, SceneTx, StoreError};
 
 use crate::binding::update_bound_arrows;
 use crate::layout::{Direction, Heads, NodeBox, RouteParams, arrow_element, route_edge};

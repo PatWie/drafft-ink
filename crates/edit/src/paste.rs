@@ -22,12 +22,13 @@ use kurbo::{Point, Vec2};
 
 use drafftink_scene::{
     Element, ElementError, ElementId, ElementKind, FileEntry, FileId, GroupId, IdSource, IndexError, SceneTx,
-    StoreError, Style, TextData, TextStyle, Transform, ZIndex, limits, validate_element,
+    StoreError, Style, TextStyle, Transform, ZIndex, limits, validate_element,
 };
 
 use crate::binding::{self, BindingError};
+use crate::create::{self, TextAnchor, TextSpec};
 use crate::group::name_key;
-use crate::text_bind::{TextMeasure, measure_text};
+use crate::text_bind::TextMeasure;
 use crate::transform::geometry::union_bounds;
 use crate::zorder::{self, REBALANCE_LEN, ZOrderError};
 
@@ -303,13 +304,8 @@ pub fn text_element<M: TextMeasure + ?Sized>(
     if n > limits::MAX_TEXT_CHARS {
         return Err(PasteError::TextTooLong { n, max: limits::MAX_TEXT_CHARS });
     }
-    let size = measure_text(m, content, &font, None);
-    let mut data = TextData::new(content);
-    data.font = font;
-    data.auto_resize = true;
-    let mut e = Element::new(id, ElementKind::Text(data), index);
-    e.transform = Transform::new(center.x - size.width / 2.0, center.y - size.height / 2.0, size.width, size.height);
-    e.style = style;
+    let spec = TextSpec { font, at: center, width: None };
+    let e = create::free_text(m, id, index, content, spec, TextAnchor::Center, style);
     if !(finite_box(&e.transform)) {
         return Err(PasteError::NotFinite);
     }
