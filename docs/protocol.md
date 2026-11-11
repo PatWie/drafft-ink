@@ -85,6 +85,7 @@ client A                      server                        client B
 - The server stamps `from`. A client never names its own id in a relayed message.
 - The server never echoes an `Update` to its sender. `Ack` confirms that the update was merged into the room document. Durability follows within the store's flush interval (see §6). The client may use `Ack` for a "saved" indicator and to bound its unacknowledged queue; it does not need it for correctness because the version vector exchange on reconnect repairs any loss.
 - If the server cannot import the bytes, it replies `InvalidUpdate` and does not relay them. The connection stays open.
+- An update that raises `meta.schema` above the schema the server serves (`drafftink_server::schema::SERVED_SCHEMA`, the `SCHEMA_VERSION` of the document crate) is also answered with `InvalidUpdate`, with a message that names both numbers and says to update the app. The server rebuilds the room from before the update, so the update is neither relayed nor stored.
 
 ### Gaps and slow receivers
 

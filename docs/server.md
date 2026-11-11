@@ -56,7 +56,7 @@ Durability: with the default 2 s flush interval, `Ack` means "merged", and a cra
 
 ## How a room works
 
-One task per loaded room owns the Loro document. Joins load the snapshot and log, import them, and answer with `Joined` and a `SyncResponse` computed from the client's version vector (updates when the diff is smaller than a snapshot, otherwise a snapshot). Updates are imported inside `catch_unwind`; bytes Loro rejects get `InvalidUpdate` and are not relayed. A relay goes to each peer through a bounded queue (256 messages and 32 MiB). A full queue drops the queued relays and sends `ResyncRequired`; the client replies with `RequestSync`. Awareness is relayed, never stored, and silently dropped above its rate.
+One task per loaded room owns the Loro document. Joins load the snapshot and log, import them, and answer with `Joined` and a `SyncResponse` computed from the client's version vector (updates when the diff is smaller than a snapshot, otherwise a snapshot). Updates are imported inside `catch_unwind`; bytes Loro rejects get `InvalidUpdate` and are not relayed. So does an update that raises `meta.schema` beyond the schema the server serves: Loro cannot take an import back, so the room document is rebuilt from a snapshot of the state before the update (cost: the size of the room, paid only for such an update). A relay goes to each peer through a bounded queue (256 messages and 32 MiB). A full queue drops the queued relays and sends `ResyncRequired`; the client replies with `RequestSync`. Awareness is relayed, never stored, and silently dropped above its rate.
 
 A storage failure on load answers `Unavailable` and never overwrites stored data. A failed write is retried every second while peers keep editing in memory.
 

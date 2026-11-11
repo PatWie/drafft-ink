@@ -1548,6 +1548,7 @@ dependencies = [
  "async-trait",
  "axum",
  "clap",
+ "drafftink-doc",
  "drafftink-protocol",
  "futures-util",
  "loro",

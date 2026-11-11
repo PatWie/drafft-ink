@@ -14,6 +14,7 @@ mod http;
 pub mod limits;
 pub mod outbox;
 pub mod room;
+pub mod schema;
 pub mod store;
 
 use std::net::SocketAddr;

@@ -2,6 +2,7 @@
 //! to the store. Connections talk to it through a bounded command channel, and it talks back
 //! through each peer's [`Outbox`], which never blocks it.
 
+use std::borrow::Cow;
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
@@ -10,13 +11,14 @@ use std::time::Duration;
 use drafftink_protocol::{
     AwarenessState, ClientId, ErrorCode, MAX_SYNC_BYTES, PeerInfo, RoomId, ServerMessage, SyncKind, UserInfo,
 };
-use loro::{ExportMode, LoroDoc, VersionVector};
+use loro::{ExportMode, Frontiers, LoroDoc, VersionVector};
 use tokio::sync::{Mutex, mpsc, oneshot};
 use tokio::time::Instant;
 use tracing::{debug, error, info, warn};
 
 use crate::config::Config;
 use crate::outbox::{Kind, Outbox};
+use crate::schema;
 use crate::store::{RoomStore, StoreError, StoredRoom};
 
 /// A refusal sent to a client. Boxed because `ServerMessage` is large.
@@ -654,6 +656,7 @@ impl RoomActor {
             return;
         }
         let before = self.doc.oplog_vv();
+        let before_frontiers = self.doc.oplog_frontiers();
         let imported = guarded(&mut self.poisoned, || self.doc.import(&bytes));
         let status = match imported {
             Some(Ok(status)) => status,
@@ -675,6 +678,21 @@ impl RoomActor {
                 return;
             }
         };
+        if let Some(found) = guarded(&mut self.poisoned, || schema::beyond_served(&self.doc)).flatten() {
+            self.roll_back_to(&before_frontiers);
+            warn!("room {}: refused an update that raises meta.schema to {found}", self.tag());
+            outbox.send(
+                Arc::new(ServerMessage::error(
+                    ErrorCode::InvalidUpdate,
+                    format!(
+                        "the update raises the document to schema {found}, and this server serves schema {}. Update the app that sent it",
+                        schema::SERVED_SCHEMA
+                    ),
+                )),
+                Kind::Control,
+            );
+            return;
+        }
         let changed = self.doc.oplog_vv() != before;
         if changed {
             self.dirty = true;
@@ -688,6 +706,27 @@ impl RoomActor {
             self.broadcast(conn, ServerMessage::Update { from, update: bytes }, Kind::Relay);
         }
         outbox.send(Arc::new(ServerMessage::Ack { seq }), Kind::BestEffort);
+    }
+
+    /// Puts the room back to `frontiers`, dropping what was imported after it. Loro cannot take an import back, so
+    /// the document is rebuilt from a snapshot of the older state. That costs the size of the room and only
+    /// happens for an update that was refused after the import. If it cannot be done the room is poisoned and
+    /// stops, so a document in an unknown state is never served.
+    fn roll_back_to(&mut self, frontiers: &Frontiers) {
+        let rebuilt = guarded(&mut self.poisoned, || {
+            let snapshot = self.doc.export(ExportMode::SnapshotAt { version: Cow::Borrowed(frontiers) }).ok()?;
+            let doc = LoroDoc::new();
+            doc.import(&snapshot).ok()?;
+            Some(doc)
+        })
+        .flatten();
+        match rebuilt {
+            Some(doc) => self.doc = doc,
+            None => {
+                error!("room {}: cannot roll back a refused update", self.tag());
+                self.poisoned = true;
+            }
+        }
     }
 
     // ---- persistence ----------------------------------------------------------------------
