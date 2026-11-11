@@ -222,7 +222,8 @@ impl Picker for Pick<'_> {
                 Target::Handle(h) => w.frame.cursor_for(h),
                 Target::Element { .. } => Cursor::Move,
                 Target::Empty | Target::None if w.tool == Tool::Lasso => Cursor::Crosshair,
-                Target::Empty | Target::None | Target::LinkIcon { .. } => Cursor::Default,
+                Target::LinkIcon { .. } => Cursor::Pointer,
+                Target::Empty | Target::None => Cursor::Default,
             },
             _ => Cursor::Crosshair,
         }

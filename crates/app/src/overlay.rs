@@ -2,18 +2,23 @@
 //! crate's overlay (`drafftink_render::Overlay`). Render sits below canvas and cannot name its types, so
 //! the app glues the two (the doc of `drafftink_canvas::overlay` says so).
 
-use drafftink_canvas::{Handle, Overlay as CanvasOverlay, SelectionFrame};
+use drafftink_canvas::{Handle, Overlay as CanvasOverlay, RemoteParts, SelectionFrame};
 use drafftink_geom::guides::SmartGuide;
 use drafftink_geom::kurbo::{BezPath, Point, Shape};
 use drafftink_geom::select::HandleSet;
 use drafftink_geom::{OrientedBox, Primitive};
-use drafftink_render::{BindingHighlight, Overlay, PointHandle, PointKind, SelectionBox};
+use drafftink_render::{
+    BindingHighlight, LaserTrail, LinkMark, Overlay, PointHandle, PointKind, RemoteCursor, RemoteSelection,
+    SelectionBox, TrailPoint,
+};
 
 /// The handles of a selection box that only outlines: none.
 const OUTLINE_ONLY: HandleSet = HandleSet { corners: false, edges: false, rotate: false };
 
-/// Everything the overlay pass should draw for `canvas`, with `extra_guides` appended (a drawing snap).
-pub(crate) fn to_render(canvas: &CanvasOverlay, extra_guides: &[SmartGuide]) -> Overlay {
+/// Everything the overlay pass should draw for `canvas` and the other people in the room (`remote`, from
+/// `drafftink_canvas::remote_parts`; the interaction layer's overlay leaves them empty), with `extra_guides`
+/// appended (a drawing snap).
+pub(crate) fn to_render(canvas: &CanvasOverlay, remote: &RemoteParts, extra_guides: &[SmartGuide]) -> Overlay {
     let mut out = Overlay::default();
     match canvas.transformer.as_ref().map(|t| &t.frame) {
         Some(SelectionFrame::Box { obox, set, multi }) => {
@@ -45,9 +50,29 @@ pub(crate) fn to_render(canvas: &CanvasOverlay, extra_guides: &[SmartGuide]) -> 
     out.binding
         .extend(canvas.bind_candidates.iter().map(|c| BindingHighlight { outline: outline_path(&c.shape), at: None }));
     out.marquee = canvas.marquee.as_ref().map(|m| m.rect);
+    out.lasso = canvas.lasso.iter().flat_map(|l| l.points.iter().copied()).collect();
+    out.link_icons.extend(canvas.link_icons.iter().map(|i| LinkMark { rect: i.rect, to_element: i.to_element }));
+    add_remote(&mut out, remote);
     out.guides.extend(canvas.guides.iter().cloned());
     out.guides.extend(extra_guides.iter().cloned());
     out
+}
+
+/// Other people's pointers, selection outlines and laser trails, in their colours.
+fn add_remote(out: &mut Overlay, remote: &RemoteParts) {
+    out.cursors.extend(remote.cursors.iter().map(|c| {
+        let cursor = RemoteCursor::new(c.pos, c.color.into());
+        match c.name.as_deref().filter(|n| !n.is_empty()) {
+            Some(name) => cursor.named(name),
+            None => cursor,
+        }
+    }));
+    out.remote_selections
+        .extend(remote.selections.iter().map(|s| RemoteSelection { color: s.color.into(), boxes: s.boxes.clone() }));
+    out.trails.extend(remote.trails.iter().map(|t| LaserTrail {
+        color: t.color.into(),
+        points: t.points.iter().map(|p| TrailPoint { at: p.pos, age_ms: p.age_ms }).collect(),
+    }));
 }
 
 fn point_handle(handle: &Handle, at: Point, count: usize) -> Option<PointHandle> {
@@ -100,3 +125,6 @@ fn polygon(points: &[Point], closed: bool) -> BezPath {
     }
     path
 }
+
+#[cfg(test)]
+mod tests;

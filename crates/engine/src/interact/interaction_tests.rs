@@ -383,6 +383,14 @@ fn a_click_on_a_link_icon_asks_the_shell_to_open_the_address() {
 }
 
 #[test]
+fn hovering_a_link_icon_shows_the_pointing_hand_and_leaving_it_the_arrow() {
+    let mut rig = Rig::new();
+    linked_rect(&mut rig, "https://example.com/x");
+    assert_eq!(rig.hover(208.0, 92.0).cursor, Some(Cursor::Pointer));
+    assert_eq!(rig.hover(600.0, 500.0).cursor, Some(Cursor::Default));
+}
+
+#[test]
 fn the_icon_of_a_selected_element_is_not_live() {
     let mut rig = Rig::new();
     let a = linked_rect(&mut rig, "https://example.com/x");

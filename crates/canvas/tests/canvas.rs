@@ -631,6 +631,11 @@ fn the_link_icon_is_a_target_of_its_own_that_wins_over_what_lies_under_it() {
     assert_eq!(c.pick(icon, PointerKind::Mouse).element(), None, "the icon is not the element");
     assert_eq!(c.pick(icon, PointerKind::Mouse).link_icon(), Some(&id("a")));
     assert_eq!(c.pick(icon, PointerKind::Mouse).without_link_icon(), &Target::Empty);
+    // Over the icon the pointer is a pointing hand.
+    let at = c.viewport().world_to_screen(icon);
+    let out = mv(&mut c, at.x, at.y, 1.0);
+    let Some(Intent::Hover { cursor, .. }) = out.last() else { panic!("{out:?}") };
+    assert_eq!(*cursor, Cursor::Pointer);
     // The body of the linked element is the element.
     assert!(
         matches!(c.pick(Point::new(30.0, 25.0), PointerKind::Mouse), Target::Element { id: i, .. } if i == id("a"))

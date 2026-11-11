@@ -138,7 +138,7 @@ followed }], laser }`. The pieces go to the overlay in two steps, the first of w
    resolves it against the scene: `cursors` (only for peers with a pointer), `selections` (a box for each selected element
    that still exists, `truncated` when cut) and `trails`. `Canvas::overlay()` calls the same function with the users from
    `set_remote_users`; the editor's `InteractionOverlay.canvas` leaves the remote fields empty, so the app calls it itself.
-2. The app's `overlay::to_render` maps the canvas overlay to `render::Overlay` (colours with `peniko::Color::from`):
+2. The app's `overlay::to_render(canvas, remote, guides)` maps the canvas overlay and the `RemoteParts` of step 1 to `render::Overlay` (colours with `peniko::Color::from`; the app fills `remote` from `collab_view()` every frame, `app.rs::remote_parts`). It also copies `lasso` and the other parts of the table below:
 
    | `canvas::Overlay` | `render::Overlay` |
    |---|---|
@@ -146,6 +146,7 @@ followed }], laser }`. The pieces go to the overlay in two steps, the first of w
    | `remote_selections[i] { color, boxes }` | `remote_selections: RemoteSelection { color, boxes }` |
    | `remote_trails[i] { color, points }` | `trails: LaserTrail { color, points: [TrailPoint { at: pos, age_ms }] }` |
    | `link_icons[i] { rect, to_element }` | `link_icons: LinkMark { rect, to_element }` |
+   | `lasso { points }` | `lasso` (the path as drawn) |
    | `guides` | `guides` (badges come with them) |
 
    `PeerView::viewport` is for "follow", not for drawing. The local laser trail (`InteractionOverlay::laser`) can use the
@@ -159,7 +160,7 @@ followed }], laser }`. The pieces go to the overlay in two steps, the first of w
    the width of its longest wrapped line; before, a label was measured wrapped and drawn on one line.
 
 The link icon is also a pick target: `canvas::Target::LinkIcon { id }` (only for an element that has a link and is not
-selected; it wins over what lies under it). The editor's pointer path turns a click on it into `element.open_link`.
+selected; it wins over what lies under it). The editor's pointer path turns a click on it into `element.open_link`, the cursor over it is `Cursor::Pointer`, and the app opens the address the command returns (`UiRequest::OpenUrl`).
 
 **Frame labels (§5.1).** A frame's name is drawn by `SceneComposer::compose` (and `compose_transient`) in device space
 after the frame's fragment, from the typesetter's cached layout (`frame_label.rs`). The fragment is only the box, so a

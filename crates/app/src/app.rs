@@ -9,7 +9,7 @@ use std::collections::HashSet;
 use std::time::Duration;
 
 use drafftink_bridge::BridgeHost;
-use drafftink_canvas::Camera;
+use drafftink_canvas::{Camera, CanvasConfig, RemoteParts, remote_parts};
 use drafftink_engine::cmd::view::SetViewportArgs;
 use drafftink_engine::interact::{Badge, ContextTarget, Interaction, InteractionOverlay, Outcome, UiRequest};
 use drafftink_engine::services::SharedTypesetter;
@@ -20,7 +20,7 @@ use drafftink_gpu::{
     ClipboardContent, DroppedFile, EventCx, FrameCx, FrameOutput, Handled, PointerPhase, RedrawReason, Repaint,
     SetupCx, ShellApp, ShellEvent,
 };
-use drafftink_render::{GridStyle, RemoteCursor, Theme};
+use drafftink_render::{GridStyle, Theme};
 use drafftink_scene::{ElementKind, SceneRead, SceneStore};
 use drafftink_ui::{FrameInput, HostRequest, Pointer, Toast, UiShell};
 use serde_json::{Value, json};
@@ -56,8 +56,8 @@ struct WorldKey {
 #[derive(Clone, Debug, PartialEq)]
 struct OverlayKey {
     interaction: InteractionOverlay,
-    /// Pointer (world), colour and name of each peer that has a pointer.
-    peers: Vec<([f64; 2], String, String)>,
+    /// The other people: pointers, selection outlines and laser trails.
+    remote: RemoteParts,
     /// The text editor: its picture, whether the caret shows.
     edit: Option<((u64, u64), bool)>,
 }
@@ -757,16 +757,11 @@ impl App {
         };
         let view = CanvasView::view_of(camera.scroll, camera.zoom, size, dpr);
         let world_stale = look || hidden_changed || self.world_key.as_ref() != Some(&key) || cx.resized;
-        let peers: Vec<([f64; 2], String, String)> = self
-            .session
-            .collab_view()
-            .peers
-            .iter()
-            .filter_map(|p| p.pointer.map(|pt| (pt, p.color.clone(), p.name.clone())))
-            .collect();
+        let remote = self.remote_parts();
         let caret_on = self.editor.as_ref().is_some_and(|e| e.caret_on(now));
         let edit_key = edit_paint.as_ref().map(|(_, picture)| (*picture, caret_on));
-        let overlay_key = OverlayKey { interaction: interaction_overlay.clone(), peers: peers.clone(), edit: edit_key };
+        let overlay_key =
+            OverlayKey { interaction: interaction_overlay.clone(), remote: remote.clone(), edit: edit_key };
         let laser_running = !interaction_overlay.laser.is_empty();
         let overlay_stale = world_stale || laser_running || self.overlay_key.as_ref() != Some(&overlay_key);
         if !world_stale && !overlay_stale {
@@ -777,16 +772,7 @@ impl App {
             self.canvas.compose_world(self.session.store(), &view);
             self.world_key = Some(key);
         }
-        let cursors: Vec<RemoteCursor> = peers
-            .iter()
-            .map(|(pt, color, name)| RemoteCursor {
-                at: Point::new(pt[0], pt[1]),
-                color: parse_hex(color),
-                name: Some(name.clone()).filter(|n| !n.is_empty()),
-            })
-            .collect();
-        let mut render_overlay = overlay::to_render(&interaction_overlay.canvas, &[]);
-        render_overlay.cursors = cursors;
+        let mut render_overlay = overlay::to_render(&interaction_overlay.canvas, &remote, &[]);
         if let Some(editor) = self.editor.as_mut() {
             render_overlay.text_edit = Some(self.typesetter.with(|ts| editor.overlay(ts, theme, now)));
         }
@@ -798,17 +784,18 @@ impl App {
             .map(|p| TrailPoint { at: p.at, age_ms: (now - p.t_ms).max(0.0) })
             .filter(|p| p.age_ms < LASER_FADE_MS)
             .collect();
-        let mut trails = vec![(Color::from_rgba8(239, 68, 68, 255), trail)];
-        for peer in self.session.collab_view().peers {
-            let points =
-                peer.trail.iter().map(|d| TrailPoint { at: Point::new(d.x, d.y), age_ms: d.age_ms as f64 }).collect();
-            trails.push((parse_hex(&peer.color), points));
-        }
-        self.canvas.add_trails(&trails, &view);
+        self.canvas.add_trails(&[(Color::from_rgba8(239, 68, 68, 255), trail)], &view);
         self.overlay_key = Some(overlay_key);
 
         let base = self.canvas.background(self.session.store());
         self.canvas.write_to(cx.scene_mut(base));
+    }
+
+    /// What the other people in the room show: pointers with names, the outlines of what they selected, and their
+    /// laser trails (`docs/render.md` section 5).
+    fn remote_parts(&self) -> RemoteParts {
+        let users: Vec<_> = self.session.collab_view().peers.iter().map(|p| p.to_remote_user()).collect();
+        remote_parts(self.session.store(), &users, CanvasConfig::default().max_remote_selection_boxes)
     }
 
     /// Where the caret is in window points while a text is edited: the input method puts its window there, and the
@@ -894,16 +881,6 @@ impl App {
                 }
             }
         }
-    }
-}
-
-/// `#rrggbb` as a colour (grey when it cannot be read).
-fn parse_hex(text: &str) -> Color {
-    let hex = text.trim_start_matches('#');
-    let channel = |i: usize| hex.get(i..i + 2).and_then(|h| u8::from_str_radix(h, 16).ok());
-    match (channel(0), channel(2), channel(4)) {
-        (Some(r), Some(g), Some(b)) => Color::from_rgba8(r, g, b, 255),
-        _ => Color::from_rgba8(120, 120, 120, 255),
     }
 }
 

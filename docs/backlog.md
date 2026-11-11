@@ -12,10 +12,9 @@ Checked against the code and tests on main at the branch `last-pass`.
 - **TabDoc load at 100k** is 2.6 s release, spent in Loro (field inserts 1.7 s); debug builds set `opt-level = 3` for `loro*` (`performance.md` section 7.9). Only a different Loro load path would change it.
 - **Present**: the X11 copy under Xvfb is 70 to 85 % of the native CPU (1 to 3.5 % without present in `pan@10k`; Fifo and Immediate do not differ). Not our code. Mailbox could not be measured here (the NVIDIA driver offers Fifo and Immediate only).
 - Tab bar: dirty state compares content through undo/redo only; a remote update between an edit and its undo keeps the tab dirty on purpose.
-- **The app does not draw three overlay parts** that `render::Overlay` and `canvas-js` do: the lasso path, link icons and remote selection outlines. `crates/app/src/overlay.rs::to_render` copies none of them (`parity.md` B-002, B-055, B-199). Size S.
 - **Mermaid node shapes** hexagon, cylinder, parallelogram, trapezoid, flag, subroutine and double circle are drawn as the closest shape an arrow can bind to, with a warning; a real outline needs a bindable polygon element kind.
 - **Text editor**: arrows bound to a container that grows during an edit jump when the edit ends; no I-beam cursor over text; RTL weakly tested; no per-run bold or italic; no real OS input method tried; `Esc` commits and cancel is only `text.edit_end commit=false`.
-- **Overlay leftovers**: a `Cursor::Pointer` variant for the hand over a link icon, distance badges for alignment snaps, IME composition in `TextEdit`.
+- **Overlay leftovers**: distance badges for alignment snaps, IME composition in `TextEdit`.
 - **Web**: no CPU fallback for browsers without WebGPU. The Collaborate dialog has no token field (see Collab above).
 
 ## Done (branch final-residuals)
