@@ -196,17 +196,39 @@ try:
     n_before = sum(before.get("counts", {}).values()) if isinstance(before.get("counts"), dict) else None
     print("intro:", json.dumps(before)[:300], flush=True)
     img = shot("native-intro.png")
-    ink = sum(1 for p in img.getdata() if p != img.getpixel((640, 600)))
+    bg = img.getpixel((640, 600)); ink = sum(1 for p in img.get_flattened_data() if p != bg)
     check(ink > 20000, f"the intro document is on screen ({ink} non-background pixels)")
+
+    # Draw through the bridge: two rectangles, an arrow bound to both, then move one and see the arrow follow.
+    f0 = len(frames())
+    ex = lambda i, a: ws.ok("execute", {"id": i, "args": a})
+    ra = ex("element.create", {"kind": "rectangle", "bounds": {"x": 2000, "y": 100, "w": 160, "h": 90}})["id"]
+    rb = ex("element.create", {"kind": "rectangle", "bounds": {"x": 2400, "y": 200, "w": 160, "h": 90}})["id"]
+    arrow = ex("element.create", {"kind": "arrow", "points": [[2160, 145], [2400, 245]], "start": {"target": ra}, "end": {"target": rb}})
+    check(arrow.get("start_target") == ra and arrow.get("end_target") == rb, f"the bridge made an arrow bound to both shapes ({arrow.get('start_target')}, {arrow.get('end_target')})")
+    pts = lambda: ex("doc.inspect", {"ids": [arrow["id"]], "detail": "full"})["items"][0]["points"]
+    p0 = pts()
+    ex("element.move", {"ids": [ra], "dx": 0, "dy": 150})
+    p1 = pts()
+    check(p0 != p1, f"element.move dragged the bound arrow along ({p0} -> {p1})")
+    time.sleep(1.0)
+    check(len(frames()) > f0, f"the bridge commands drew frames ({len(frames()) - f0})")
+    cam = ex("view.get", {})
+    ex("selection.clear", {})
+    ex("view.zoom_to_fit", {"scope": "ids", "ids": [ra, rb, arrow["id"]]})
+    time.sleep(0.8)
+    shot("native-bridge-drawn.png")
+    ex("view.set", {"scroll": cam["scroll"], "zoom": cam["zoom"]})
+    time.sleep(0.5)
 
     # Draw with the toolbar and the mouse: rectangle tool, then arrow tool.
     f0 = len(frames())
-    click(40, 213)
+    click(40, 232)
     drag(640, 610, 790, 700)
-    click(40, 324)
+    click(40, 343)
     drag(830, 700, 930, 620)
     # Text: the text tool, a click, typing, Esc.
-    click(40, 473)
+    click(40, 491)
     focus_app()
     print("after T click:", [(e["id"], e["source"], e["outcome"]) for e in ws.ok("recent", {"limit": 3})["entries"]], flush=True)
     click(700, 740)
@@ -222,6 +244,7 @@ try:
     print("after:", json.dumps(after)[:300], flush=True)
     recent = ws.ok("recent", {"limit": 30, "mutating_only": True})
     creates = [e for e in recent["entries"] if e["id"] == "element.create"]
+    creates = [e for e in creates if e["source"] != "agent"]  # the bridge made three earlier
     check(len(creates) >= 2, f"two element.create calls came from the mouse ({[ (e['id'], e['source']) for e in recent['entries']]})")
     kinds = [json.loads(e["args"]).get("kind") if e["args"].startswith("{") else None for e in creates]
     check("rectangle" in kinds and "arrow" in kinds, f"a rectangle and an arrow were created ({kinds})")
