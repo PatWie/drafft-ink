@@ -125,6 +125,79 @@ name_enum! {
     }
 }
 
+/// A set of [`RedrawReason`]s. A frame can be requested for several reasons at once; the set says which.
+#[derive(Clone, Copy, Default, PartialEq, Eq, Hash)]
+pub struct RedrawReasons(u32);
+
+// One bit per reason.
+const _: () = assert!(RedrawReason::COUNT <= u32::BITS as usize);
+
+impl RedrawReasons {
+    /// No reason: a frame with this set is unexplained.
+    pub const NONE: Self = Self(0);
+
+    const fn bit(reason: RedrawReason) -> u32 {
+        1 << reason.index()
+    }
+
+    /// A set of one reason.
+    pub const fn of(reason: RedrawReason) -> Self {
+        Self(Self::bit(reason))
+    }
+
+    /// Adds `reason`.
+    pub fn insert(&mut self, reason: RedrawReason) {
+        self.0 |= Self::bit(reason);
+    }
+
+    /// True when `reason` is in the set.
+    pub const fn contains(self, reason: RedrawReason) -> bool {
+        self.0 & Self::bit(reason) != 0
+    }
+
+    /// True when the set has no reason.
+    pub const fn is_empty(self) -> bool {
+        self.0 == 0
+    }
+
+    /// The reasons in the set, in declaration order.
+    pub fn iter(self) -> impl Iterator<Item = RedrawReason> {
+        RedrawReason::ALL.iter().copied().filter(move |r| self.contains(*r))
+    }
+
+    /// The set as raw bits, for an atomic.
+    pub(crate) const fn bits(self) -> u32 {
+        self.0
+    }
+
+    /// The set from raw bits taken out of an atomic.
+    pub(crate) const fn from_bits(bits: u32) -> Self {
+        Self(bits)
+    }
+}
+
+impl From<RedrawReason> for RedrawReasons {
+    fn from(reason: RedrawReason) -> Self {
+        Self::of(reason)
+    }
+}
+
+impl FromIterator<RedrawReason> for RedrawReasons {
+    fn from_iter<I: IntoIterator<Item = RedrawReason>>(iter: I) -> Self {
+        let mut set = Self::NONE;
+        for reason in iter {
+            set.insert(reason);
+        }
+        set
+    }
+}
+
+impl std::fmt::Debug for RedrawReasons {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_set().entries(self.iter()).finish()
+    }
+}
+
 name_enum! {
     /// The phases of one frame. A phase is timed with `profile::phase(Phase::X)`; the part of
     /// a frame outside every phase is reported as `other`.
@@ -174,5 +247,24 @@ mod tests {
             assert_eq!(c.index(), i);
         }
         assert_eq!(Phase::COUNT, 6);
+    }
+
+    #[test]
+    fn a_reason_set_holds_what_was_put_in_and_iterates_in_declaration_order() {
+        let mut set = RedrawReasons::NONE;
+        assert!(set.is_empty());
+        set.insert(RedrawReason::Collab);
+        set.insert(RedrawReason::Command);
+        set.insert(RedrawReason::Collab);
+        assert!(!set.is_empty());
+        assert!(set.contains(RedrawReason::Collab) && set.contains(RedrawReason::Command));
+        assert!(!set.contains(RedrawReason::Timer));
+        assert_eq!(set.iter().collect::<Vec<_>>(), vec![RedrawReason::Command, RedrawReason::Collab]);
+        assert_eq!(set, RedrawReasons::from_iter([RedrawReason::Command, RedrawReason::Collab]));
+        // Every reason has its own place in the set.
+        for r in RedrawReason::ALL {
+            assert_eq!(RedrawReasons::of(*r).iter().collect::<Vec<_>>(), vec![*r]);
+        }
+        assert_eq!(format!("{set:?}"), "{Command, Collab}");
     }
 }

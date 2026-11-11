@@ -33,18 +33,16 @@ pub use frame::{
     Histogram, Summary,
 };
 pub use live::{PhaseGuard, begin_frame, end_frame, in_phase, phase, reset, set_frame_window, snapshot};
-pub use names::{Counter, Gauge, Phase, RedrawReason};
+pub use names::{Counter, Gauge, Phase, RedrawReason, RedrawReasons};
 pub use report::{
     BudgetError, Budgets, Limit, PERF_OUT_ENV, REPORT_SCHEMA, ScenarioReport, Violation, is_deterministic, scenario_key,
 };
-pub use spans::{
-    COMPILED, MAX_DEPTH, MAX_NAMES, OTHER, Span, TRACE_CAPACITY, enabled, flush_thread, scope, set_enabled, span,
-};
+pub use spans::{COMPILED, OTHER, Span, enabled, flush_thread, scope, set_enabled, span};
 pub use stats::{
     DocumentError, MAX_SPAN_ROWS, PerfStats, RedrawEvent, RedrawStats, SCHEMA_VERSION, STATS_SCHEMA, SpanStat,
 };
 pub use trace::{chrome_trace, chrome_trace_json, write_chrome_trace};
-pub use work::{MAX_NAMED, RECENT_REDRAWS, WorkScope, count, count_named, inc, redraw, set_gauge};
+pub use work::{WorkScope, count, count_named, inc, redraw, set_gauge};
 
 /// Turn recording on when the environment variable `name` is `1`, `true`, `on` or `yes`.
 /// Returns whether it is on. Not available in the browser, which has no environment; the web
