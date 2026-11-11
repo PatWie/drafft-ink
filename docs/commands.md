@@ -221,7 +221,8 @@ A successful command returns a JSON object defined by its `output` schema. Every
 - **Limits.** 10 000 steps, 10 MB of JSON. `limit_exceeded` otherwise.
 - **Not allowed inside a batch:** commands with `batch = Never`. `doc.new`, `doc.open`, `doc.drop`, `doc.show_intro` and `tab.close` must be the last step (`batch = Last`).
 - `dry_run: true` runs preflight and then the steps, reports the outputs, and rolls everything back.
-- Output: `{completed, results: [Output...], failed?, rolled_back, undo_label}`.
+- **A picture that is still being drawn.** On the web a PNG export answers `render_pending` until the GPU has read the picture back (`web-app.md`). A batch treats that as a wait, not a failure: it takes every step back (also with `atomic: false`), returns `pending_render: true` with the refusal in `failed`, and changes nothing. Run the same batch again when the renderer wakes the shell; it then completes with the results of all steps. The bridge does this by itself, like a single `execute`. If a step outside the transaction (a tab, a setting, a port, collab) already ran, the batch does not wait, because running it again would repeat that step; it fails with `render_pending` as before.
+- Output: `{completed, results: [Output...], failed?, rolled_back, undo_label, pending_render?}`.
 
 ### 1.8 Undo
 

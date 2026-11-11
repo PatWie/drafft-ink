@@ -25,6 +25,8 @@ use crate::spec::{Batch, Mutates};
 use crate::store::StepMeta;
 use drafftink_profile::now_ns;
 
+/// The code of the refusal of a step whose picture is still being drawn.
+const RENDER_PENDING: &str = "render_pending";
 /// Most steps in one batch.
 pub const MAX_STEPS: usize = 10_000;
 /// Largest batch JSON in bytes.
@@ -121,12 +123,23 @@ pub struct BatchOutput {
     pub note: Option<String>,
     /// True when the batch ran, the state changed and it stayed.
     pub changed: bool,
+    /// A step needs a picture that the `Renderer` port is still drawing (the browser reads it back from the GPU).
+    /// Nothing stays applied, even with `atomic` off: run the same batch again when the port wakes the shell, and
+    /// it completes with the results of all steps. Not set when a step outside the transaction (tabs, settings,
+    /// ports, collab) already ran, because running it again would repeat that step.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub pending_render: bool,
 }
 
 impl BatchOutput {
     /// True when every step ran and nothing was rolled back.
     pub fn ok(&self) -> bool {
         self.failed.is_none()
+    }
+
+    /// True when the batch waits for a picture and is to be run again: see [`BatchOutput::pending_render`].
+    pub fn pending_render(&self) -> bool {
+        self.pending_render
     }
 
     /// The output as JSON.
@@ -393,6 +406,7 @@ impl Session {
             not_rolled_back: Vec::new(),
             note: Some(note.to_owned()),
             changed: false,
+            pending_render: false,
         };
         if self.run.depth > 0 {
             let mut o = empty("nothing was run");
@@ -470,7 +484,11 @@ impl Session {
             }
         }
         let completed = results.len();
-        let rollback_all = failed.is_some() && opts.atomic || opts.dry_run;
+        // A picture that is still being drawn is not a failure: take everything back and let the caller run the
+        // batch again. That is only safe when the rollback covers every step that ran.
+        let pending_render =
+            not_rolled_back.is_empty() && failed.as_ref().is_some_and(|f| f.refusal.code == RENDER_PENDING);
+        let rollback_all = failed.is_some() && (opts.atomic || pending_render) || opts.dry_run;
         if rollback_all {
             let r = Refusal::custom("batch_rolled_back", "batch", "rolled back");
             let r = self.rollback(tab_id, mark, &soft, r);
@@ -481,8 +499,16 @@ impl Session {
             self.run.writes.clear();
             self.run.warnings.clear();
             self.dirty = dirty_before;
+            // A rollback that itself failed replaced the refusal: that is no longer a wait.
+            let pending_render = pending_render && failed.as_ref().is_some_and(|f| f.refusal.code == RENDER_PENDING);
             let note = if opts.dry_run && failed.is_none() {
                 Some("dry run: everything was rolled back".to_owned())
+            } else if pending_render {
+                Some(format!(
+                    "step {} (`{}`) waits for a picture that is still being drawn, so nothing was applied yet. Run the batch again when it is ready",
+                    failed.as_ref().map_or(0, |f| f.index),
+                    failed.as_ref().map_or("", |f| f.id.as_str()),
+                ))
             } else {
                 failed.as_ref().map(|f| {
                     format!(
@@ -500,6 +526,7 @@ impl Session {
                 not_rolled_back,
                 note,
                 changed: false,
+                pending_render,
             };
         }
 
@@ -548,6 +575,7 @@ impl Session {
                 not_rolled_back,
                 note: Some("the batch could not be saved, so it was rolled back".to_owned()),
                 changed: false,
+                pending_render: false,
             };
         }
         let writes = std::mem::take(&mut self.run.writes);
@@ -568,6 +596,16 @@ impl Session {
                 f.index, f.id, completed
             ));
         }
-        BatchOutput { completed, results, failed, rolled_back: false, undo_label, not_rolled_back, note, changed }
+        BatchOutput {
+            completed,
+            results,
+            failed,
+            rolled_back: false,
+            undo_label,
+            not_rolled_back,
+            note,
+            changed,
+            pending_render: false,
+        }
     }
 }

@@ -91,6 +91,42 @@ pub(crate) fn record_key(ns: Ns, key: &str) -> String {
     format!("{}/{key}", ns_name(ns))
 }
 
+/// Finished results that wait for the call that asked, newest last. The browser draws one picture at a time and
+/// the engine asks again for the same request, so a `batch` with two exports needs both pictures to be kept:
+/// with one slot the second drawing would throw the first away and the batch would never complete.
+///
+/// A good result stays on the shelf and can be fetched again; a failure is handed out once, so a transient error
+/// is not remembered for the same request. The oldest entry goes when the shelf is full.
+pub(crate) struct Shelf<K, V> {
+    items: std::collections::VecDeque<(K, Result<V, String>)>,
+    capacity: usize,
+}
+
+impl<K: PartialEq, V: Clone> Shelf<K, V> {
+    /// An empty shelf that holds at most `capacity` results (at least one).
+    pub(crate) fn new(capacity: usize) -> Self {
+        Self { items: std::collections::VecDeque::new(), capacity: capacity.max(1) }
+    }
+
+    /// Puts a finished result on the shelf, replacing an older one for the same key.
+    pub(crate) fn put(&mut self, key: K, result: Result<V, String>) {
+        self.items.retain(|(k, _)| *k != key);
+        if self.items.len() >= self.capacity {
+            self.items.pop_front();
+        }
+        self.items.push_back((key, result));
+    }
+
+    /// The result for `key`, if there is one. A failure is removed by this call.
+    pub(crate) fn get(&mut self, key: &K) -> Option<Result<V, String>> {
+        let at = self.items.iter().position(|(k, _)| k == key)?;
+        match &self.items.get(at)?.1 {
+            Ok(v) => Some(Ok(v.clone())),
+            Err(_) => self.items.remove(at).map(|(_, r)| r),
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -152,5 +188,60 @@ mod tests {
         }
         assert_eq!(ns_from_name("nope"), None);
         assert_eq!(record_key(Ns::Autosave, "slot/1"), "autosave/slot/1");
+    }
+
+    #[test]
+    fn a_shelf_keeps_finished_pictures_so_a_batch_with_two_exports_converges() {
+        // Each rerun of the batch asks for picture 1, then picture 2. One drawing runs at a time.
+        let mut shelf: Shelf<u32, Vec<u8>> = Shelf::new(4);
+        let mut drawing: Option<u32> = None;
+        let mut runs = 0;
+        loop {
+            runs += 1;
+            assert!(runs < 10, "the batch never converges");
+            let mut waiting = false;
+            for key in [1, 2] {
+                if shelf.get(&key).is_some() {
+                    continue;
+                }
+                waiting = true;
+                if drawing.is_none() {
+                    drawing = Some(key);
+                }
+                break;
+            }
+            if !waiting {
+                break;
+            }
+            // The drawing ends before the next rerun.
+            if let Some(key) = drawing.take() {
+                shelf.put(key, Ok(vec![key as u8]));
+            }
+        }
+        assert_eq!(runs, 3, "one rerun per picture, then the batch completes");
+    }
+
+    #[test]
+    fn a_shelf_hands_out_a_good_picture_again_but_a_failure_only_once() {
+        let mut shelf: Shelf<&str, u8> = Shelf::new(2);
+        shelf.put("a", Ok(1));
+        shelf.put("b", Err("lost device".to_owned()));
+        assert_eq!(shelf.get(&"a"), Some(Ok(1)));
+        assert_eq!(shelf.get(&"a"), Some(Ok(1)), "the same picture can be asked for again");
+        assert_eq!(shelf.get(&"b"), Some(Err("lost device".to_owned())));
+        assert_eq!(shelf.get(&"b"), None, "a failure is not remembered: the next ask draws again");
+    }
+
+    #[test]
+    fn a_shelf_drops_the_oldest_picture_when_full() {
+        let mut shelf: Shelf<u8, u8> = Shelf::new(2);
+        shelf.put(1, Ok(1));
+        shelf.put(2, Ok(2));
+        shelf.put(3, Ok(3));
+        assert_eq!(shelf.get(&1), None);
+        assert_eq!(shelf.get(&2), Some(Ok(2)));
+        assert_eq!(shelf.get(&3), Some(Ok(3)));
+        shelf.put(3, Ok(4));
+        assert_eq!(shelf.get(&3), Some(Ok(4)), "a new picture of the same request replaces the old one");
     }
 }

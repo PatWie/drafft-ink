@@ -135,6 +135,53 @@ fn export_png_with_a_renderer_that_is_not_ready_refuses_with_render_pending_and_
     assert_eq!(v["mime"], "image/png");
 }
 
+/// A batch that moves the first rectangle and then exports a PNG, for a renderer that needs `late` calls.
+fn move_then_export(s: &mut Session, late: u32, opts: &crate::batch::BatchOpts) -> crate::batch::BatchOutput {
+    s.ports.renderer = Some(Box::new(LateRenderer(std::cell::Cell::new(late))));
+    let first = s.store().iter().next().unwrap().id.to_string();
+    let steps = [
+        crate::batch::BatchStep::new("element.move", json!({"ids": [first], "dx": 25, "dy": 0})),
+        crate::batch::BatchStep::new("doc.export", json!({"format": "png", "scope": "all"})),
+    ];
+    s.execute_batch(Origin::Test, &steps, opts)
+}
+
+#[test]
+fn a_batch_that_exports_a_png_waits_for_the_picture_and_then_completes_with_every_result() {
+    for atomic in [true, false] {
+        let (mut s, _f) = drawn(2);
+        let before = s.fingerprint();
+        let opts = crate::batch::BatchOpts { atomic, ..Default::default() };
+        let waiting = move_then_export(&mut s, 1, &opts);
+        assert!(waiting.pending_render(), "atomic={atomic}: {waiting:?}");
+        assert!(waiting.rolled_back && !waiting.changed, "atomic={atomic}: nothing stays while it waits");
+        assert_eq!(s.fingerprint(), before, "atomic={atomic}: a waiting batch changes nothing");
+        assert_eq!(waiting.to_json()["pending_render"], json!(true));
+
+        // The picture is ready: the same batch, run again, completes with the results of all steps.
+        let done = move_then_export(&mut s, 0, &opts);
+        assert!(done.ok() && !done.pending_render(), "atomic={atomic}: {done:?}");
+        assert_eq!(done.completed, 2);
+        assert_eq!(done.results.len(), 2);
+        assert_eq!(done.results[1]["mime"], "image/png");
+        assert!(done.changed, "the move stays");
+        assert_eq!(done.to_json().get("pending_render"), None);
+    }
+}
+
+#[test]
+fn a_batch_with_steps_that_cannot_be_rolled_back_does_not_wait_for_the_picture() {
+    let (mut s, _f) = drawn(1);
+    s.ports.renderer = Some(Box::new(LateRenderer(std::cell::Cell::new(1))));
+    let steps = [
+        crate::batch::BatchStep::new("settings.set", json!({"key": "snap.grid", "value": true})),
+        crate::batch::BatchStep::new("doc.export", json!({"format": "png", "scope": "all"})),
+    ];
+    let out = s.execute_batch(Origin::Test, &steps, &crate::batch::BatchOpts { atomic: false, ..Default::default() });
+    assert!(!out.pending_render(), "a setting that was changed stays changed");
+    assert_eq!(out.failed.as_ref().map(|f| f.refusal.code), Some("render_pending"));
+}
+
 // ---- doc.new ----
 
 #[test]

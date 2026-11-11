@@ -91,9 +91,17 @@ pub struct Polled {
 const RENDER_PENDING: &str = "render_pending";
 
 /// True when the answer says "run me again when the port is done".
+///
+/// A single command comes back as a refusal. A batch is a normal result whose `pending_render` is true: the engine
+/// has taken every step back, so running the whole batch again is safe.
 fn is_render_pending(out: &Result<Value, RpcError>) -> bool {
-    matches!(out, Err(e) if e.code == REFUSED
-        && e.data.as_ref().and_then(|d| d.get("code")).and_then(Value::as_str) == Some(RENDER_PENDING))
+    match out {
+        Err(e) => {
+            e.code == REFUSED
+                && e.data.as_ref().and_then(|d| d.get("code")).and_then(Value::as_str) == Some(RENDER_PENDING)
+        }
+        Ok(result) => result.get("pending_render").and_then(Value::as_bool) == Some(true),
+    }
 }
 
 /// The shell's end of the queue.
@@ -232,6 +240,41 @@ mod tests {
         let answers = export.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
         let value = answers.first().and_then(|r| r.as_ref().ok()).expect("the third try gets the picture");
         assert!(value.get("bytes").is_some(), "{value}");
+    }
+
+    #[test]
+    fn a_batch_that_exports_a_png_waits_for_the_picture_and_is_answered_with_every_step() {
+        let (mut s, _fakes) = session();
+        let id = add_rect(&mut s, 0.0, 0.0, 50.0, 40.0).unwrap().to_string();
+        s.ports.renderer = Some(Box::new(SlowRenderer { not_ready: Rc::new(Cell::new(2)) }));
+        let (tx, mut host) = channel(Arc::new(|| {}), None);
+
+        let steps = json!([
+            { "id": "element.move", "args": { "ids": [id], "dx": 10, "dy": 0 } },
+            { "id": "doc.export", "args": { "format": "png" } },
+        ]);
+        let batch = submit(&tx, "batch", json!({ "steps": steps }));
+        host.poll(&mut s);
+        assert_eq!(count(&batch), 0, "the batch waits: the picture is not there");
+        host.poll(&mut s);
+        assert_eq!(count(&batch), 0, "still not ready after the second try");
+        host.poll(&mut s);
+        let answers = batch.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+        let value = answers.first().and_then(|r| r.as_ref().ok()).expect("the third try completes the batch");
+        assert!(value.get("failed").is_none(), "{value}");
+        assert_eq!(value["completed"], 2);
+        assert_eq!(value["results"].as_array().map(Vec::len), Some(2));
+        assert!(value["results"][1].get("bytes").is_some(), "{value}");
+    }
+
+    #[test]
+    fn a_batch_that_fails_for_another_reason_is_answered_at_once() {
+        let (mut s, _fakes) = session();
+        let (tx, mut host) = channel(Arc::new(|| {}), None);
+        let batch = submit(&tx, "batch", json!({ "steps": [{ "id": "doc.export", "args": { "format": "png" } }] }));
+        host.poll(&mut s);
+        assert_eq!(count(&batch), 1, "an empty document is nothing_to_do, not a wait");
+        assert!(host.parked.is_empty());
     }
 
     #[test]
