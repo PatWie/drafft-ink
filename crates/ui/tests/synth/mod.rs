@@ -102,7 +102,7 @@ pub fn click_at(h: &mut Harness<'static, Fixture>, pos: Pos2) {
 
 /// Clicks on empty canvas: a point no surface covers.
 pub fn click_canvas(h: &mut Harness<'static, Fixture>) {
-    click_at(h, Pos2::new(640.0, 760.0));
+    click_at(h, Pos2::new(420.0, 420.0));
 }
 
 /// The verbs among the recorded actions.

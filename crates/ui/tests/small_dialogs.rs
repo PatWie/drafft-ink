@@ -252,7 +252,8 @@ fn stats_shows_the_model() {
         "yes",
         "Tabs",
     ] {
-        h.get_by_label(text);
+        // The bottom bar has buttons named Undo, Redo and 100%: the panel's own text is a label.
+        h.get_by_role_and_label(egui::accesskit::Role::Label, text);
     }
 }
 
@@ -287,7 +288,8 @@ fn stats_reads_a_live_session() {
     let mut h = synth::harness(f);
     h.run();
     h.get_by_label("rectangle");
-    h.get_by_label("100%");
+    // The bottom bar's zoom button also shows "100%".
+    assert!(h.query_all_by_role_and_label(egui::accesskit::Role::Label, "100%").count() >= 1);
 }
 
 #[test]

@@ -240,7 +240,8 @@ fn typing_in_the_query_field_filters() {
     h.run();
     assert_eq!(h.state().state.palette.as_ref().map(|p| p.query.as_str()), Some("zoom to fit"));
     row(&h, "Zoom to fit everything");
-    assert!(h.query_by_role_and_label(egui::accesskit::Role::Button, "Undo").is_none());
+    // The Undo row is filtered out; the only "Undo" button left is the one in the bottom bar.
+    assert_eq!(h.query_all_by_role_and_label(egui::accesskit::Role::Button, "Undo").count(), 1);
 }
 
 #[test]

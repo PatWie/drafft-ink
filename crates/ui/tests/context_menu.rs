@@ -33,13 +33,21 @@ fn menu_with(n: usize, at: egui::Pos2) -> H {
     h
 }
 
-/// The menu row with this text. The toolbar can have a button of the same name, so take the last one.
+/// True when a node lies where the menu opened by `menu_with(_, pos2(300, 200))` is drawn. The chrome (tool column on the
+/// left, bottom bar and tab bar at the bottom, right panel) has buttons of the same names ("Undo", "Zoom to fit",
+/// "Align left"), so rows are told apart by position.
+fn in_menu(n: &egui_kittest::Node<'_>) -> bool {
+    let r = n.rect();
+    (290.0..640.0).contains(&r.min.x) && (190.0..735.0).contains(&r.min.y)
+}
+
+/// The menu row with this text.
 fn row<'a>(h: &'a H, text: &'a str) -> egui_kittest::Node<'a> {
-    h.get_all_by_role_and_label(Role::Button, text).last().unwrap_or_else(|| panic!("no menu row {text}"))
+    h.get_all_by_role_and_label(Role::Button, text).find(in_menu).unwrap_or_else(|| panic!("no menu row {text}"))
 }
 
 fn has_row(h: &H, text: &str) -> bool {
-    h.query_all_by_role_and_label(Role::Button, text).next().is_some()
+    h.query_all_by_role_and_label(Role::Button, text).any(|n| in_menu(&n))
 }
 
 fn click_at(h: &mut H, pos: egui::Pos2) {
@@ -234,8 +242,9 @@ fn a_click_elsewhere_closes_the_menu() {
 fn the_menu_stays_inside_the_window() {
     let h = menu_with(1, pos2(1275.0, 795.0));
     let screen = egui::Rect::from_min_size(pos2(0.0, 0.0), egui::vec2(1280.0, 800.0));
-    for text in ["Cut", "Zoom to fit"] {
-        let rect = row(&h, text).rect();
+    // The menu opened in the bottom right corner is pushed back inside; "Cut" exists only in the menu.
+    for text in ["Cut", "Select all"] {
+        let rect = h.get_all_by_role_and_label(Role::Button, text).last().unwrap().rect();
         assert!(screen.contains_rect(rect), "{text} at {rect:?} is outside {screen:?}");
     }
 }

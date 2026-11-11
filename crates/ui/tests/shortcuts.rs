@@ -89,9 +89,10 @@ fn the_dialog_opens_from_the_verb_and_shows_undo_and_its_key() {
 #[test]
 fn searching_filters_the_rows() {
     let h = open("undo", false, false);
-    assert!(count(&h, "Redo") == 0, "Redo does not match `undo`");
-    assert!(count(&h, "Undo") >= 1);
     let all = open("", false, false);
+    // The bottom bar has a Redo button too, so compare with the unfiltered list instead of with zero.
+    assert!(count(&h, "Redo") < count(&all, "Redo"), "Redo does not match `undo`");
+    assert!(count(&h, "Undo") >= 1);
     let first = {
         let f = all.state();
         let rows = all_rows(&f.model);
