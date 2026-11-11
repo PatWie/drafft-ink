@@ -376,8 +376,8 @@ impl Tab {
         }
     }
 
-    /// True when the document changed since it was saved or opened.
+    /// True when the content differs from what was saved or opened. Undoing back to the saved state is clean.
     pub fn dirty(&self) -> bool {
-        self.doc.revision() != self.saved_revision
+        !self.doc.same_content(self.doc.revision(), self.saved_revision)
     }
 }

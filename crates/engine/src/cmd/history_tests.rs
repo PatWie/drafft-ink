@@ -437,3 +437,63 @@ fn a_step_that_a_collaborator_already_reverted_is_consumed_and_undo_says_there_i
     assert_eq!((r.code, r.message.as_str()), ("nothing_to_undo", "There is nothing to undo in this tab."));
     assert!(!a.tab().doc.can_undo(), "the step that changed nothing was consumed");
 }
+
+// ---- dirty ----
+
+fn tab_dirty(s: &mut Session) -> bool {
+    let list = ok(s, "tab.list", json!({}));
+    list["tabs"][0]["dirty"].as_bool().expect("a dirty flag")
+}
+
+#[test]
+fn undoing_back_to_the_saved_content_leaves_the_document_clean() {
+    let (mut s, _f) = testing::session();
+    ok(&mut s, "doc.save", json!({"to": {"path": "/a.json"}}));
+    assert!(!s.tab().dirty());
+    ok(&mut s, "tab.rename", json!({"name": "Renamed"}));
+    assert!(s.tab().dirty() && tab_dirty(&mut s));
+    ok(&mut s, "history.undo", json!({}));
+    assert_eq!(s.store().meta().name, "Untitled");
+    assert!(!s.tab().dirty(), "the content is the saved content again");
+    assert!(!tab_dirty(&mut s), "tab.list says so too");
+    ok(&mut s, "history.redo", json!({}));
+    assert!(s.tab().dirty(), "redo leaves the saved content");
+}
+
+#[test]
+fn undo_across_a_save_and_a_new_edit_keeps_the_dirty_state_honest() {
+    let (mut s, _f) = testing::session();
+    ok(&mut s, "doc.save", json!({"to": {"path": "/a.json"}}));
+    ok(&mut s, "doc.set_background", json!({"color": "#ff0000"}));
+    ok(&mut s, "tab.rename", json!({"name": "One"}));
+    // Saved with both edits: undoing one of them is dirty, undoing back to the same point is clean.
+    ok(&mut s, "doc.save", json!({}));
+    assert!(!s.tab().dirty());
+    ok(&mut s, "history.undo", json!({}));
+    assert!(s.tab().dirty());
+    ok(&mut s, "history.redo", json!({}));
+    assert!(!s.tab().dirty(), "back at the saved point");
+    // Undo twice is further away than the saved point, and a different edit after an undo is dirty.
+    ok(&mut s, "history.undo", json!({"steps": 2}));
+    assert!(s.tab().dirty());
+    ok(&mut s, "tab.rename", json!({"name": "Two"}));
+    ok(&mut s, "history.undo", json!({}));
+    assert!(s.tab().dirty(), "not the saved content: the background is still the old one");
+}
+
+#[test]
+fn a_remote_change_between_an_edit_and_its_undo_keeps_the_document_dirty() {
+    let (mut s, _f) = testing::session();
+    ok(&mut s, "doc.save", json!({"to": {"path": "/a.json"}}));
+    ok(&mut s, "tab.rename", json!({"name": "Mine"}));
+    // Something else changes the document (as a collaborator's update does): it is no longer the saved one.
+    s.tab_mut()
+        .doc
+        .edit::<(), StoreError>(|tx| {
+            tx.set_background(drafftink_scene::Color::parse("#00ff00").unwrap());
+            Ok(())
+        })
+        .unwrap();
+    ok(&mut s, "history.undo", json!({}));
+    assert!(s.tab().dirty());
+}
