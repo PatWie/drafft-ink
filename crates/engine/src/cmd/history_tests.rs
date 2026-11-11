@@ -487,14 +487,14 @@ fn a_remote_change_between_an_edit_and_its_undo_keeps_the_document_dirty() {
     let (mut s, _f) = testing::session();
     ok(&mut s, "doc.save", json!({"to": {"path": "/a.json"}}));
     ok(&mut s, "tab.rename", json!({"name": "Mine"}));
-    // Something else changes the document (as a collaborator's update does): it is no longer the saved one.
-    s.tab_mut()
-        .doc
-        .edit::<(), StoreError>(|tx| {
-            tx.set_background(drafftink_scene::Color::parse("#00ff00").unwrap());
-            Ok(())
-        })
-        .unwrap();
+    // A collaborator changes the background: their update reaches this tab as a remote update, so the document
+    // is no longer the saved one, and undoing the rename does not bring the saved content back.
+    let mut peer = testing::headless_session();
+    ok(&mut peer, "doc.set_background", json!({"color": "#00ff00"}));
+    let vv = s.tab().doc.replicated().version_vector().unwrap();
+    let update = peer.tab().doc.replicated().export_updates_since(&vv).unwrap();
+    let tab = s.tab().id;
+    s.apply_remote(tab, &update).unwrap();
     ok(&mut s, "history.undo", json!({}));
     assert!(s.tab().dirty());
 }

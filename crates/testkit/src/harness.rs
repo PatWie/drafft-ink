@@ -125,8 +125,8 @@ impl Harness {
     fn install(&mut self, doc: &Document) -> Result<(), HarnessError> {
         let td = TabDoc::from_document(doc).map_err(|e| HarnessError::Store(e.to_string()))?;
         let tab = self.session.tab_mut();
-        tab.saved_revision = td.revision();
         tab.doc = td;
+        tab.mark_saved();
         tab.observed = drafftink_engine::state::Observed::default();
         Ok(())
     }

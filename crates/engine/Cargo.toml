@@ -6,6 +6,14 @@ license.workspace = true
 rust-version.workspace = true
 description = "Command registry, Session, execute / execute_batch, refusals, gesture protocol and ports (L5)."
 
+[features]
+default = ["schemas"]
+# Generates the JSON Schemas of the commands from the argument and output types. A build without it (the web app,
+# which depends on this crate with `default-features = false`) neither generates nor links that code:
+# `CommandSpec::args_schema` then reads the table that the host installs (`schemas::install`), which the page
+# fetches as a file (docs/performance.md, "Wasm size"). Every native build and every test has it.
+schemas = []
+
 [dependencies]
 drafftink-scene = { path = "../scene" }
 drafftink-canvas = { path = "../canvas" }

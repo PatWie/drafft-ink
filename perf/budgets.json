@@ -1650,6 +1650,10 @@
       "max": 1550000,
       "note": "the seven font files that the page loads when it needs them (Noto Sans, STIX Two Math, three egui fonts). 1,505,581 measured on 2026-11-08; the limit is 3% above"
     },
+    "schemas.brotli_bytes": {
+      "max": 35000,
+      "note": "the table of command schemas (args and output of every command) that the page fetches next to the module, which no longer carries the code that makes them. 33,875 measured on 2026-11-09; the limit is 3% above"
+    },
     "fallback.opt_bytes": {
       "max": 12600000,
       "note": "the WebGL2 module for browsers without WebGPU (dist/pkg-gl), loaded by those browsers only, so the wasm.* limits do not include it. 12,238,249 measured on 2026-11-09 (whole app, vello_gpu and egui_glow instead of Vello and wgpu, release-wasm, wasm-opt -Oz); the limit is 3% above"

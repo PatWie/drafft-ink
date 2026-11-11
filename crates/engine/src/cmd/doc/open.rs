@@ -310,7 +310,7 @@ pub(super) fn replace_active(
     s.clear_history();
     let t = s.tab_mut();
     t.observed = Observed::default();
-    t.saved_revision = provenance.saved_revision(t.doc.revision());
+    provenance.mark(t);
     files::set_save_target(s, target);
     fit_view(s);
     s.mark_dirty(Redraw::Scene);
@@ -329,7 +329,7 @@ pub(crate) fn open_in_new_tab(
         return Err(too_many_tabs(id));
     }
     let mut tab = tab_from(s, id, doc)?;
-    tab.saved_revision = provenance.saved_revision(tab.doc.revision());
+    provenance.mark(&mut tab);
     tab.ext.set(files::SaveTarget(target));
     activate_new(s, tab);
     fit_view(s);

@@ -1749,6 +1749,7 @@ dependencies = [
  "loro",
  "object_store",
  "rusqlite",
+ "serde_json",
  "subtle",
  "tempfile",
  "thiserror 2.0.21",

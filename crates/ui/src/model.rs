@@ -323,6 +323,32 @@ pub struct AgentServerView {
     pub problem: Option<String>,
 }
 
+/// What the About dialog shows. The shell fills in what only it knows (the commit, the source address of a hosted copy).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AboutInfo {
+    /// The version of the app.
+    pub version: String,
+    /// The commit the app was built from, or `unknown` for a build outside a Git checkout.
+    pub commit: String,
+    /// The licence of the app, as an SPDX identifier.
+    pub license: &'static str,
+    /// Where the corresponding source is offered. AGPL-3.0 section 13 requires this for a copy that users reach over a
+    /// network, so an operator who runs a modified copy sets it to their own source; the default is the project
+    /// repository from the package metadata.
+    pub source_url: String,
+}
+
+impl Default for AboutInfo {
+    fn default() -> Self {
+        Self {
+            version: env!("CARGO_PKG_VERSION").to_owned(),
+            commit: "unknown".to_owned(),
+            license: "AGPL-3.0-only",
+            source_url: env!("CARGO_PKG_REPOSITORY").to_owned(),
+        }
+    }
+}
+
 /// The snapshot.
 #[derive(Debug, Clone)]
 pub struct Model {
@@ -382,6 +408,8 @@ pub struct Model {
     pub collab: CollabView,
     /// The MCP server over HTTP. `None` where the app cannot serve one (the web).
     pub agent_server: Option<AgentServerView>,
+    /// What the About dialog shows. Written by the app through `UiShell::set_about`.
+    pub about: AboutInfo,
     stamp: Option<u64>,
     captured_mac: bool,
 }
@@ -417,6 +445,7 @@ impl Default for Model {
             background: "#ffffff".to_owned(),
             collab: CollabView::default(),
             agent_server: None,
+            about: AboutInfo::default(),
             stamp: None,
             captured_mac: false,
         }
@@ -823,9 +852,15 @@ fn read_style(s: &mut Session) -> StyleView {
 }
 
 /// The JSON Schema of a command's arguments (a JSON object with `properties`, `required`, `$defs`).
+///
+/// `None` for an unknown command, and while the schemas are not there yet (the web build fetches them as a file
+/// when the page starts; see `drafftink_engine::schemas`).
 pub fn args_schema(id: &str) -> Option<Value> {
+    if !drafftink_engine::schemas::available() {
+        return None;
+    }
     let spec = drafftink_engine::Registry::global().find(id)?;
-    serde_json::to_value((spec.args)()).ok()
+    serde_json::to_value(spec.args_schema()).ok()
 }
 
 /// What the engine says about one argument of a command (the doc comment of the field), when it says anything.

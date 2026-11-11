@@ -191,10 +191,10 @@ Nobody sees the refusal in normal use:
 - the UI keeps the call in `UiState::waiting`, shows "Drawing the picture..." and runs it again each frame until it works (the export dialog
   stays open until then).
 
-A `batch` with an export step waits the same way: the engine takes the whole batch back and answers it with `pending_render`
-(`commands.md` §1.7), the bridge parks it and runs it again, and the second run finds the picture. Finished pictures stay on a
-small shelf (4), so a batch with several exports completes after one rerun per picture. Only one picture is drawn at a time; a
-second request waits. `scripts/web_check.py --app` exports a PNG, takes a screenshot and exports a second
+A `batch` with an export step is applied as a whole: the engine commits it and lists the export as a waiting step with a token
+(`commands.md` §1.7), the bridge keeps the answer back and calls `Session::finish_render` on each wake, and the caller gets the
+finished result, picture included. The batch runs once. A batch in which a later step changes what the picture shows is still
+taken back and run again. Only one picture is drawn at a time; a second request waits. `scripts/web_check.py --app` exports a PNG, takes a screenshot and exports a second
 size, and checks the files.
 
 ## `window.drafftink`
@@ -290,7 +290,7 @@ target, because the repository has no wasm test runner).
 
 - **Wire size.** 3.06 MB brotli for the module and about 0.5 MB of fonts for the first load of the welcome page (see above). After the first
   visit the service worker serves everything from cache. Not done, on purpose: the command schemas (`schemars`) are in the module; moving them to a fetched file would save 89 KB brotli (2.8%), measured, and needs every schema reader to become asynchronous (`performance.md` section 8.2).
-- **PNG in a batch.** A `batch` step that exports a PNG on the web is taken back with `pending_render: true` and the bridge host runs the batch again once the picture is drawn; see `docs/agents.md` and `docs/commands.md`.
+- **PNG in a batch.** A `batch` step that exports a PNG on the web is applied with the rest of the batch and answered when the picture is drawn (`pending` steps and `Session::finish_render`); only a batch whose later step changes the picture is taken back and run again. See `docs/agents.md` and `docs/commands.md`.
 - **Idle while in a room.** Fixed on 2026-11-08: a wake from the collaboration socket, and a collaboration deadline, go to the
   app first (`ShellEvent::Wake(Collab)`, `docs/shell.md`); it pumps the session and asks for a frame only when the poll left a
   visible change or a notice. Measured: 0 frames in 22 s alone in a room and in 22 s with a peer, after the join has settled.
@@ -300,9 +300,20 @@ target, because the repository has no wasm test runner).
 - **Clipboard read** for the equation editor needs the browser's permission and a user gesture.
 - **Screenshots** of the canvas by script (`drafftink.screenshot()`) are not offered: the shell exposes no read-back to the page.
 
+## Command schemas
+
+The module is built without the code that makes the JSON Schemas of the commands (`drafftink-engine` without its `schemas` feature; `apps/drafftink-web` and the crates it uses depend on the engine with `default-features = false`, and the desktop apps and the tests turn the feature on). `scripts/build-web.sh` writes what that code would have produced as `schemas/commands.<hash>.json` (`drafftink-cli schemas`), lists it in `window.__assets` as `commands.schema.json`, and preloads it. `drafftink_app::web::schemas_ready()` fetches it once (the entry point starts that first) and installs it in the engine (`drafftink_engine::schemas`). Who waits for it:
+
+- `window.drafftink.describe(id)` and `commands({include_schemas: true})` wait, and reject with the reason if the file could not be loaded; `commands()` without schemas does not wait.
+- The WebMCP tools are built after it (their descriptions spell out each command's arguments).
+- The arguments forms of the palette show nothing for a command until it is in (a few milliseconds after the first frame; the app is woken when it arrives).
+- A request that reaches the engine before it (the relay's `describe` in the first moments) is refused with `schemas_loading`, or `schemas_unavailable` when the load failed; both say what to do.
+
+The file is 33 KB with brotli, against 89 KB that the code cost in the module (`docs/performance.md` section 8.2).
+
 ## WebMCP (docs/agents.md, section 5.5)
 
 When the browser has WebMCP (`document.modelContext`, or the preview `navigator.modelContext`), the page registers the generated agent tools
-with it at start: `apps/drafftink-web/src/webmcp_page.rs` builds them once from the registry (`drafftink_bridge::tools`) and each tool's
+with it at start: `apps/drafftink-web/src/webmcp_page.rs` builds them once from the registry (`drafftink_bridge::tools`; it waits for the command schemas first, see "Command schemas" below; `webmcp.ready` resolves when it is done) and each tool's
 `execute` queues its bridge method on the same job queue as `window.drafftink.execute`. A browser without the API is not affected. The
 address `?webmcp=off` skips the registration. `webmcp.status()` says what the page found.

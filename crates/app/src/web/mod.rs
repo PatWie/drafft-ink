@@ -42,6 +42,41 @@ use net::WebNet;
 use render::WebRenderer;
 use rng::CryptoRng;
 
+thread_local! {
+    /// The one fetch of the schema table, so that every reader waits for the same promise.
+    static SCHEMAS: std::cell::RefCell<Option<js_sys::Promise>> = const { std::cell::RefCell::new(None) };
+}
+
+/// Fetches the table of command schemas once and installs it in the engine (`drafftink_engine::schemas`). The module
+/// is built without the code that makes them, so every reader that needs a schema (`describe`, `commands` with
+/// schemas, the arguments forms, the WebMCP tools) waits for this promise. It resolves to `true`, or rejects with
+/// the reason; the reason is also kept in the engine, which says it in the refusal of a reader that came too soon.
+pub fn schemas_ready() -> js_sys::Promise {
+    SCHEMAS.with(|slot| {
+        slot.borrow_mut()
+            .get_or_insert_with(|| {
+                wasm_bindgen_futures::future_to_promise(async {
+                    let loaded = match assets::fetch_schemas().await {
+                        Ok(text) => drafftink_engine::schemas::install(&text).map_err(|e| e.to_string()),
+                        Err(e) => Err(e.to_string()),
+                    };
+                    match loaded {
+                        Ok(count) => {
+                            log::info!("command schemas: {count} commands");
+                            Ok(wasm_bindgen::JsValue::TRUE)
+                        }
+                        Err(why) => {
+                            log::warn!("the command schemas could not be loaded: {why}");
+                            drafftink_engine::schemas::fail(why.clone());
+                            Err(wasm_bindgen::JsValue::from_str(&why))
+                        }
+                    }
+                })
+            })
+            .clone()
+    })
+}
+
 /// The web platform could not be set up.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum WebError {

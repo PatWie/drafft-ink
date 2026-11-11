@@ -18,6 +18,13 @@ use drafftink_engine::ports::FileRef;
 pub(crate) struct WebHost;
 
 impl Host for WebHost {
+    /// `window.__source`: the address the server that delivered the page offers (`/source.json`, fetched by the page).
+    fn source_url(&self) -> Option<String> {
+        let window = super::dom::window().ok()?;
+        let value = js_sys::Reflect::get(&window, &JsValue::from_str("__source")).ok()?;
+        value.as_string().as_deref().and_then(crate::platform::web_address)
+    }
+
     fn start(&mut self, job: HostJob, reply: Inbox) {
         match job {
             HostJob::PickDocument => pick(PickKind::Document, ACCEPT_DOCUMENT, false, reply),

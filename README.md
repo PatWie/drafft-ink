@@ -131,4 +131,4 @@ Issues and pull requests are welcome. Read [AGENTS.md](AGENTS.md) first, and run
 
 ## Licence
 
-**AGPL-3.0-only.** Use it, modify it, host it, and keep it open, including for a modified copy that you offer over a network. Third-party code that was ported (Excalidraw, MIT, and others) is listed in [ATTRIBUTION.md](ATTRIBUTION.md).
+**AGPL-3.0-only.** Use it, modify it, host it, and keep it open, including for a modified copy that you offer over a network. The app offers its source in the About dialog (main menu), and `drafftink-server` serves the address at `/source`; if you host a modified copy, set `--source-url` to your own source (section 13 of the licence). Third-party code that was ported (Excalidraw, MIT, and others) is listed in [ATTRIBUTION.md](ATTRIBUTION.md).

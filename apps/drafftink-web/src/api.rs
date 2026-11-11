@@ -77,6 +77,11 @@ pub(crate) fn install(jobs: &JobSender) -> Result<(), JsValue> {
 
     let j = jobs.clone();
     method2(&api, "commands", move |opts, _| match options(&opts) {
+        // Only the listing with schemas needs them; the facts alone are answered at once.
+        Ok(p) if p.get("include_schemas").and_then(Value::as_bool) == Some(true) => {
+            let j = j.clone();
+            js::after_schemas(move || js::call(&j, "commands", p)).into()
+        }
         Ok(p) => js::call(&j, "commands", p).into(),
         Err(e) => js::rejected(&e).into(),
     });
@@ -86,7 +91,9 @@ pub(crate) fn install(jobs: &JobSender) -> Result<(), JsValue> {
         let Some(id) = id.as_string() else {
             return bad("`describe` needs the command id as a string, like describe('element.create')");
         };
-        js::call(&j, "describe", json!({ "id": id })).into()
+        let j = j.clone();
+        // `describe` carries the schemas of the command, which the module does not make itself.
+        js::after_schemas(move || js::call(&j, "describe", json!({ "id": id }))).into()
     });
 
     let j = jobs.clone();

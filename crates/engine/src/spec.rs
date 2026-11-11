@@ -633,11 +633,57 @@ pub fn always(_: &Session) -> Result<(), Refusal> {
     Ok(())
 }
 
+/// The schema of a type. A build without `schemas` generates nothing: the schema code of the types is then never
+/// referenced and not linked, and the table of `schemas` answers instead.
+#[cfg(feature = "schemas")]
 fn schema_of<T: JsonSchema>() -> Schema {
     schemars::schema_for!(T)
 }
 
+#[cfg(not(feature = "schemas"))]
+fn schema_of<T: JsonSchema>() -> Schema {
+    crate::schemas::empty()
+}
+
 impl CommandSpec {
+    /// The JSON Schema of the arguments: generated from the argument type, or, in a build without `schemas`, read
+    /// from the installed table (empty until the host installs it, see [`crate::schemas`]).
+    pub fn args_schema(&self) -> Schema {
+        #[cfg(feature = "schemas")]
+        {
+            (self.args)()
+        }
+        #[cfg(not(feature = "schemas"))]
+        {
+            crate::schemas::args_of(self.id)
+        }
+    }
+
+    /// The JSON Schema of the output (without the common keys that `engine.describe` adds).
+    pub fn output_schema(&self) -> Schema {
+        #[cfg(feature = "schemas")]
+        {
+            (self.output)()
+        }
+        #[cfg(not(feature = "schemas"))]
+        {
+            crate::schemas::output_of(self.id)
+        }
+    }
+
+    /// The top-level keys of the arguments when the type refuses other keys, else none.
+    pub fn arg_keys(&self) -> Vec<String> {
+        #[cfg(feature = "schemas")]
+        {
+            self.handler.arg_keys()
+        }
+        #[cfg(not(feature = "schemas"))]
+        {
+            let info = crate::schemas::arg_info_of(self.id);
+            if info.closed { info.keys.clone() } else { Vec::new() }
+        }
+    }
+
     /// A registration. `family` must equal the part of `id` before the dot (tested).
     pub const fn new<A, O>(
         id: &'static str,

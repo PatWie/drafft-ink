@@ -150,6 +150,7 @@ fn menu_rows(ui: &mut egui::Ui, cx: &mut Cx<'_>) -> bool {
     rows.verb(ui, cx, Verb::OpenPreferences, "Preferences…");
     rows.verb(ui, cx, Verb::OpenPalette, "Command palette…");
     rows.verb(ui, cx, Verb::OpenShortcuts, "Keyboard shortcuts");
+    rows.verb(ui, cx, Verb::OpenAbout, "About Drafft.ink…");
     if rows.command {
         cx.verb(Verb::CloseOverlays);
     }

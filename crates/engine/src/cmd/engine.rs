@@ -9,6 +9,7 @@ use serde_json::{Value, json};
 
 use crate::refusal::{Refusal, SHARED_CODES, echo};
 use crate::ring::RingEntry;
+use crate::schemas::SchemaState;
 use crate::session::Session;
 use crate::spec::{Batch, CommandSpec, Facts, Gate, NoArgs, Selection, Status, TextGate, Typed};
 
@@ -121,7 +122,7 @@ fn info_json(s: &Session, spec: &'static CommandSpec, schemas: bool) -> Value {
         "facts": facts_json(spec),
     });
     if schemas && let Value::Object(m) = &mut v {
-        m.insert("args_schema".to_owned(), (spec.args)().to_value());
+        m.insert("args_schema".to_owned(), spec.args_schema().to_value());
         m.insert("output_schema".to_owned(), output_schema_with_common(spec));
     }
     v
@@ -129,7 +130,7 @@ fn info_json(s: &Session, spec: &'static CommandSpec, schemas: bool) -> Value {
 
 /// The output schema of a command with the common keys of §1.6 added to its properties.
 fn output_schema_with_common(spec: &CommandSpec) -> Value {
-    let mut schema = (spec.output)().to_value();
+    let mut schema = spec.output_schema().to_value();
     let common = json!({
         "changed": { "type": "boolean", "description": "True when the command changed any state." },
         "undo_label": { "type": "string", "description": "The label of the undo step the command pushed." },
@@ -179,7 +180,28 @@ pub fn refusal_codes(spec: &CommandSpec) -> Vec<&'static str> {
     codes
 }
 
+/// Refuses while the schemas are not there: a build without them (the web) installs them from a file, and a
+/// reader that asked for schemas must not be given empty ones in place of the real ones.
+fn schemas_ready(id: &str) -> Result<(), Refusal> {
+    match crate::schemas::state() {
+        SchemaState::Ready => Ok(()),
+        SchemaState::Loading => Err(Refusal::custom(
+            "schemas_loading",
+            id,
+            "The argument schemas of the commands are still loading; the page fetches them when it starts. Try again in a moment.",
+        )),
+        SchemaState::Failed(why) => Err(Refusal::custom(
+            "schemas_unavailable",
+            id,
+            format!("The argument schemas of the commands could not be loaded ({why}). Reload the page. `engine.commands` without `include_schemas` still works."),
+        )),
+    }
+}
+
 fn commands(s: &mut Session, a: CommandsArgs) -> Result<Value, Refusal> {
+    if a.include_schemas {
+        schemas_ready(s.cmd())?;
+    }
     let needle = a.search.as_deref().map(str::to_lowercase);
     if let Some(f) = &a.family
         && !s.registry().families().contains(&f.as_str())
@@ -209,6 +231,7 @@ fn commands(s: &mut Session, a: CommandsArgs) -> Result<Value, Refusal> {
 }
 
 fn describe(s: &mut Session, a: DescribeArgs) -> Result<Value, Refusal> {
+    schemas_ready(s.cmd())?;
     let Some(spec) = s.registry().find(&a.id) else {
         return Err(s.registry().unknown(&a.id).raised_by(s.cmd()));
     };
@@ -264,6 +287,7 @@ pub const COMMANDS: &[CommandSpec] = &[
         Facts::READ_ONLY,
     )
     .own_agent_tool()
+    .refusals(&["schemas_loading", "schemas_unavailable"])
     .example(r#"{"family":"view","available_only":true}"#),
     CommandSpec::new(
         "engine.describe",
@@ -274,7 +298,7 @@ pub const COMMANDS: &[CommandSpec] = &[
         Facts::READ_ONLY,
     )
     .own_agent_tool()
-    .refusals(&["unknown_command"])
+    .refusals(&["unknown_command", "schemas_loading", "schemas_unavailable"])
     .example(r#"{"id":"view.pan"}"#),
     CommandSpec::new(
         "engine.recent",

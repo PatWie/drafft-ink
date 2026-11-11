@@ -27,7 +27,9 @@
 //!
 //! The wasm metrics are `wasm.opt_bytes` (the file the server sends), `wasm.gzip_bytes` and `wasm.brotli_bytes` (what goes
 //! over the wire; brotli is what browsers ask for), `fonts.brotli_bytes` (the font files, brotli each; the page loads
-//! them when it needs them) and, when the build ran, `wasm.raw_bytes` (wasm-bindgen's output before wasm-opt).
+//! them when it needs them), `schemas.brotli_bytes` (the table of command schemas that the page fetches instead of the
+//! module carrying the code that makes them) and, when the build ran, `wasm.raw_bytes` (wasm-bindgen's output before
+//! wasm-opt).
 
 use std::collections::BTreeMap;
 use std::fs;
@@ -251,6 +253,7 @@ fn parse_sizes(text: &str) -> Result<Metrics, String> {
         ("gzip", "wasm.gzip_bytes"),
         ("brotli", "wasm.brotli_bytes"),
         ("fonts_brotli", "fonts.brotli_bytes"),
+        ("schemas_brotli", "schemas.brotli_bytes"),
     ] {
         let value = json.get(key).and_then(Value::as_u64).ok_or(format!("`{key}` is missing or not a whole number"))?;
         metrics.insert(name, value);
@@ -380,21 +383,23 @@ mod tests {
 
     #[test]
     fn the_numbers_of_the_build_script_are_read() {
-        let m = parse_sizes(r#"{"raw": 5, "opt": 4, "gzip": 3, "brotli": 2, "fonts_brotli": 1}"#).unwrap();
+        let m = parse_sizes(r#"{"raw": 5, "opt": 4, "gzip": 3, "brotli": 2, "fonts_brotli": 1, "schemas_brotli": 7}"#)
+            .unwrap();
         assert_eq!(m["wasm.brotli_bytes"], 2);
         assert_eq!(m["fonts.brotli_bytes"], 1);
-        assert_eq!(m.len(), 5, "no fallback numbers, no fallback metrics");
+        assert_eq!(m["schemas.brotli_bytes"], 7);
+        assert_eq!(m.len(), 6, "no fallback numbers, no fallback metrics");
         let both = parse_sizes(
-            r#"{"raw": 5, "opt": 4, "gzip": 3, "brotli": 2, "fonts_brotli": 1,
+            r#"{"raw": 5, "opt": 4, "gzip": 3, "brotli": 2, "fonts_brotli": 1, "schemas_brotli": 7,
                 "fallback_raw": 9, "fallback_opt": 8, "fallback_gzip": 7, "fallback_brotli": 6}"#,
         )
         .unwrap();
-        assert_eq!((both["fallback.opt_bytes"], both["fallback.brotli_bytes"], both.len()), (8, 6, 9));
+        assert_eq!((both["fallback.opt_bytes"], both["fallback.brotli_bytes"], both.len()), (8, 6, 10));
         let skipped = parse_sizes(
-            r#"{"raw": 5, "opt": 4, "gzip": 3, "brotli": 2, "fonts_brotli": 1, "fallback_opt": 0, "fallback_brotli": 0}"#,
+            r#"{"raw": 5, "opt": 4, "gzip": 3, "brotli": 2, "fonts_brotli": 1, "schemas_brotli": 7, "fallback_opt": 0, "fallback_brotli": 0}"#,
         )
         .unwrap();
-        assert_eq!(skipped.len(), 5, "a zero means the module was not built");
+        assert_eq!(skipped.len(), 6, "a zero means the module was not built");
         assert!(parse_sizes(r#"{"raw": 5}"#).unwrap_err().contains("`opt`"));
         assert!(parse_sizes("nonsense").is_err());
     }
@@ -408,6 +413,7 @@ mod tests {
             "wasm.gzip_bytes",
             "wasm.brotli_bytes",
             "fonts.brotli_bytes",
+            "schemas.brotli_bytes",
             "fallback.opt_bytes",
             "fallback.gzip_bytes",
             "fallback.brotli_bytes",

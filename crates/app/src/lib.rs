@@ -40,5 +40,5 @@ pub use config::{AppConfig, StartupLink, StartupToken};
 pub use perf::{Look, SceneInstall, SceneLoader, scene_for};
 pub use platform::{
     FontFile, Host, HostJob, Inbound, Inbox, McpHttpControl, McpHttpInfo, NoHost, PickKind, PickedFile, Platform,
-    SharedClipboard, WakeCell,
+    SharedClipboard, WakeCell, web_address,
 };

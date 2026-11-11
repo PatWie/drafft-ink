@@ -22,7 +22,7 @@ use drafftink_gpu::{
 };
 use drafftink_render::{GridStyle, Theme};
 use drafftink_scene::{ElementKind, SceneRead, SceneStore};
-use drafftink_ui::{FrameInput, HostRequest, Pointer, Toast, UiShell};
+use drafftink_ui::{AboutInfo, FrameInput, HostRequest, Pointer, Toast, UiShell};
 use serde_json::{Value, json};
 use vello::peniko::Color;
 
@@ -35,6 +35,7 @@ use crate::overlay;
 use crate::perf::{Look, SceneInstall, SceneLoader, SceneSlot, scene_hook};
 use crate::platform::{
     FontFile, Host, HostJob, Inbound, Inbox, InboxRx, PickKind, PickedFile, Platform, SharedClipboard, WakeCell, inbox,
+    web_address,
 };
 use crate::view::{CanvasView, LASER_FADE_MS, TrailPoint};
 
@@ -104,7 +105,33 @@ pub struct App {
     staged: Option<(u64, u64)>,
 }
 
+/// What the About dialog shows: this build, and the source address the host reports (the web page learns the
+/// operator's address from the server, so it can differ from the first answer later).
+fn about_of(host: &dyn Host) -> AboutInfo {
+    let mut about = AboutInfo { commit: env!("DRAFFTINK_BUILD_COMMIT").to_owned(), ..AboutInfo::default() };
+    if let Some(url) = host.source_url().as_deref().and_then(web_address) {
+        about.source_url = url;
+    }
+    about
+}
+
 impl App {
+    /// What the About dialog shows.
+    pub fn about(&self) -> &AboutInfo {
+        &self.ui.model.about
+    }
+
+    /// While the About dialog is open, follows the source address the host reports.
+    fn refresh_about(&mut self) {
+        if !self.ui.state.about_open {
+            return;
+        }
+        let about = about_of(self.host.as_ref());
+        if about != self.ui.model.about {
+            self.ui.set_about(about);
+        }
+    }
+
     /// An app over a platform. Loads the settings and the workspace, so call it once, before the shell runs.
     pub fn new(platform: Platform, config: AppConfig) -> Self {
         let Platform { ports, host, wake, clipboard, typesetter, bridge, mcp_http, is_mac } = platform;
@@ -112,10 +139,12 @@ impl App {
         let mut session = Session::with_services(ports, services);
         let notices = drafftink_profile::scope("startup_restore", || crate::startup::start(&mut session, &config));
         let (inbox, inbox_rx) = inbox(wake.clone());
+        let mut ui = UiShell::new(is_mac);
+        ui.set_about(about_of(host.as_ref()));
         Self {
             session,
             interaction: Interaction::new(),
-            ui: UiShell::new(is_mac),
+            ui,
             canvas: CanvasView::new(typesetter.clone()),
             editor: None,
             typesetter,
@@ -175,8 +204,8 @@ impl App {
         match drafftink_engine::store::TabDoc::from_document(&doc) {
             Ok(td) => {
                 let tab = self.session.tab_mut();
-                tab.saved_revision = td.revision();
                 tab.doc = td;
+                tab.mark_saved();
                 tab.observed = drafftink_engine::state::Observed::default();
                 self.canvas.forget_index();
                 let scroll = match look {
@@ -1071,6 +1100,7 @@ impl ShellApp for App {
         self.stage_editor();
 
         // The UI.
+        self.refresh_about();
         let collab = collab_view_of(&mut self.session);
         self.ui.set_collab(collab);
         self.ui.set_editor_faces(self.editor.as_ref().map(TextEditor::faces));

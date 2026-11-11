@@ -179,13 +179,22 @@ fn test(root: &Path, args: &[String]) -> Result<Vec<String>, String> {
             outcome?;
             // nextest does not run doc tests.
             run(cargo(root).args(["test", "--workspace", "--all-features", "--doc"]))?;
+            without_schemas(root)?;
             Ok(vec![note])
         }
         Err(e) => {
             eprintln!("warning: {e}\nfalling back to cargo test");
-            run(cargo(root).args(["test", "--workspace", "--all-features"]).args(args)).map(|()| Vec::new())
+            run(cargo(root).args(["test", "--workspace", "--all-features"]).args(args))?;
+            without_schemas(root).map(|()| Vec::new())
         }
     }
+}
+
+/// The engine as the web build has it, without the `schemas` feature: `--all-features` always turns the feature on,
+/// so the behaviour without it (empty schemas, the refusals while the table is missing, the table that fills them)
+/// has a test target of its own, `crates/engine/tests/without_schemas.rs`.
+fn without_schemas(root: &Path) -> Result<(), String> {
+    run(cargo(root).args(["test", "-p", "drafftink-engine", "--no-default-features", "--test", "without_schemas"]))
 }
 
 /// How a gate ended.

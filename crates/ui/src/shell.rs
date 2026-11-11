@@ -56,6 +56,11 @@ impl UiShell {
         self.model.editor_faces = faces;
     }
 
+    /// What the About dialog shows: the commit, and the source address of a hosted copy.
+    pub fn set_about(&mut self, about: crate::model::AboutInfo) {
+        self.model.about = about;
+    }
+
     /// The state of the MCP server over HTTP, which the app owns. `None` where there is none (the web).
     pub fn set_agent_server(&mut self, view: Option<AgentServerView>) {
         self.model.agent_server = view;

@@ -104,6 +104,44 @@ test("family doc: the web build renders a png export (the renderer port is there
   expect(Buffer.from(bytes.base64, "base64").subarray(0, 8).toString("hex"), "a PNG signature").toBe("89504e470d0a1a0a");
 });
 
+function pngWidth(base64: string): number {
+  return Buffer.from(base64, "base64").readUInt32BE(16);
+}
+
+test("a batch with pictures in it completes as a whole: applied once, every picture in the answer, outside steps kept", async ({ app }) => {
+  const before = await undoDepth(app);
+  const scales = [0.5, 1, 1.5, 2, 3];
+  const result = await app.batch([
+    { id: "settings.set", args: { key: "export.padding", value: 0 } },
+    { id: "element.create", args: { kind: "rectangle", bounds: { x: 0, y: 0, w: 100, h: 60 } } },
+    ...scales.map((scale) => ({ id: "doc.export" as const, args: { format: "png" as const, scope: "all" as const, scale } })),
+  ]);
+  expect(result.failed ?? null, "nothing failed").toBeNull();
+  expect(result.rolled_back).toBe(false);
+  expect(result.pending, "the answer comes after the pictures: no placeholder is left").toBeUndefined();
+  expect(result.pending_render, "the batch was not taken back").toBeUndefined();
+  expect(result.completed).toBe(2 + scales.length);
+  const widths = result.results.slice(2).map((r) => pngWidth((r as { bytes: { base64: string } }).bytes.base64));
+  expect(widths, "each picture is of its own size, 100 units wide at its scale").toEqual(scales.map((s) => Math.round(100 * s)));
+  // Applied once: one rectangle, one undo step, and the setting stays.
+  expect(await app.count()).toBe(1);
+  const after = await undoDepth(app);
+  expect(after.depth, "the batch is one undo step").toBe(before.depth + 1);
+  expect(((await app.exec("settings.get", { key: "export.padding" })).settings as Record<string, unknown>)["export.padding"]).toBe(0);
+});
+
+test("a batch whose picture comes before a change is still run once and shows the document before that change", async ({ app }) => {
+  const id = await box(app, 0, 0, 100, 60);
+  const result = await app.batch([
+    { id: "doc.export", args: { format: "png", scope: "all", scale: 1, padding: 0 } },
+    { id: "element.move", args: { ids: [id], dx: 500, dy: 0, snap: "none" } },
+  ]);
+  expect(result.failed ?? null).toBeNull();
+  expect(result.pending_render, "the answer is the finished one").toBeUndefined();
+  expect(pngWidth(((result.results[0] as { bytes: { base64: string } }).bytes.base64))).toBe(100);
+  expect((await app.element(id)).bounds.x).toBe(500);
+});
+
 test("family tab: new, rename, switch, duplicate, move and close; closing the last or a dirty tab is refused", async ({ app }) => {
   const first = (await app.exec("tab.list")).tabs as { id: string }[];
   expect(first).toHaveLength(1);

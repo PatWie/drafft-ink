@@ -201,3 +201,35 @@ mod wake {
         assert_eq!(before, (app.session_mut().tab().doc.revision(), app.session_mut().ring().next_seq()));
     }
 }
+
+/// A host that reports the source address of its operator.
+struct OperatorHost(&'static str);
+
+impl drafftink_app::Host for OperatorHost {
+    fn start(&mut self, _: drafftink_app::HostJob, _: drafftink_app::Inbox) {}
+
+    fn source_url(&self) -> Option<String> {
+        Some(self.0.to_owned())
+    }
+}
+
+#[test]
+fn the_about_dialog_names_the_build_and_the_project_repository_unless_the_host_names_another_source() {
+    let fakes = Fakes::new();
+    let app = App::new(platform(&fakes), AppConfig::default());
+    let about = app.about();
+    assert_eq!(about.source_url, drafftink_ui::AboutInfo::default().source_url);
+    assert!(about.source_url.starts_with("https://"), "{}", about.source_url);
+    assert_eq!(about.version, env!("CARGO_PKG_VERSION"));
+    assert!(!about.commit.is_empty() && about.commit != "unknown", "a checkout knows its commit: {}", about.commit);
+    assert_eq!(about.license, "AGPL-3.0-only");
+
+    let mut own = platform(&fakes);
+    own.host = Box::new(OperatorHost("https://git.example.org/team/fork"));
+    assert_eq!(App::new(own, AppConfig::default()).about().source_url, "https://git.example.org/team/fork");
+
+    // A host cannot send the dialog to anything but a web address.
+    let mut hostile = platform(&fakes);
+    hostile.host = Box::new(OperatorHost("javascript:alert(1)"));
+    assert_eq!(App::new(hostile, AppConfig::default()).about().source_url, about.source_url);
+}

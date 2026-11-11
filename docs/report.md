@@ -301,7 +301,7 @@ Checked item by item on branch `last-pass` (`main` at `52f6d8e`) against the cod
 
 ### Open
 
-1. **Command schemas in the wasm.** `schemars` is a dependency of `crates/engine` and its schemas ship in the web build (89 KB brotli, 2.8%). Every schema reader is synchronous, so they cannot be fetched. First step: a cargo feature that omits schemas from the web build (`performance.md` §8.2).
+1. **Command schemas in the wasm:** done. The web module is built without the schema code (`drafftink-engine` feature `schemas`, off for the web) and the page fetches the table as a file: module -82 KB brotli (-2.5%), file 34 KB, net -48 KB on a first visit (`performance.md` §8.2, `web-app.md` "Command schemas").
 2. **O(scene) work that remains by design**, without a counter: `arrange.z_order`, `clipboard.copy` and `copy_as`, frame capture after a resize, `group_name`, and `element.restore` (the only direct `Relations::build` call left, `edit/src/lifecycle.rs:189`; the other structure commands use `Reverse::of` and scan nothing, `performance.md` §7.8 item 4). The render order is rebuilt whole for a new, removed or reordered element and for a commit of more than an eighth of the scene (`render.md` §8).
 3. **Autosave:** one huge element and the image-file hash check are single steps. The native writer thread and the web storage path have unit tests and a type check, not a run of the real app.
 4. **Collab:** a tab that already has content imports a room snapshot in one piece; the first import call costs about 0.8 us per element. The real-S3 store test runs against an in-process mock by default and against a real endpoint only when `DRAFFTINK_TEST_S3_ENDPOINT` is set.
@@ -311,10 +311,14 @@ Checked item by item on branch `last-pass` (`main` at `52f6d8e`) against the cod
 8. **Tab bar dirty state** compares content through undo and redo only.
 9. **Web PNG export inside a batch:** the renderer is asynchronous, so a batch with a pending render step is taken back and rerun by the bridge host, and the pending step is refused with `render_pending` inside a batch.
 10. **Smaller overlay leftovers:** distance badges for alignment snaps. Parity P0 gaps not yet built: angle-snap rays, snap crosshair, eraser radius ring (A-086, A-088, A-046), loading percentage (A-222), last-picked swatch and rotation guides (A-042, A-087), phone and tablet layout on a real device (`parity.md` §4).
+7. **Text editor:** arrows bound to a container that grows during an edit jump when the edit ends; no I-beam cursor over text (there is no text variant in `canvas::Cursor`); RTL is weakly tested; no per-run bold or italic; no real OS input method tried; `Esc` commits and cancel is only `text.edit_end commit=false`.
+8. **Tab bar dirty state:** fixed. `Tab::dirty` compares a content fingerprint with the one saved (`engine/src/fingerprint.rs`), so a remote revert or a manual re-edit reads clean.
+9. **Web PNG export inside a batch:** a picture step with no picture-changing step after it completes with its batch and the picture follows (`engine/src/renders.rs`). A batch with a later step that changes the picture is still taken back and rerun.
+10. **Smaller overlay leftovers:** distance badges for alignment snaps, IME composition in `TextEdit`. Parity P0 gaps not yet built: angle-snap rays, snap crosshair, eraser radius ring (A-086, A-088, A-046), loading percentage (A-222), last-picked swatch and rotation guides (A-042, A-087), phone and tablet layout on a real device (`parity.md` §4).
 11. **Mermaid node shapes** hexagon, cylinder, parallelogram, trapezoid, flag, subroutine and double circle are drawn as the closest shape an arrow can bind to, and the warning names each one; a real outline needs a bindable polygon element kind. Other Mermaid diagram types are refused with the list of supported ones.
 12. **The WebGL2 fallback** for browsers without WebGPU (D13) was tried in Chromium only and is about 15 times slower per frame than WebGPU on a busy view.
 13. **Windows and macOS** never ran. CI builds them, and `scripts/cross-check.sh` type-checks them from Linux (`packaging.md`); nothing was linked or run.
-14. **AGPL gaps:** no in-app source offer for modified hosted copies; two font redistribution permissions (GelPen, Vanilla Extract) are unconfirmed (`ATTRIBUTION.md`).
+14. **AGPL gaps:** two font redistribution permissions (GelPen, Vanilla Extract) are unconfirmed (`ATTRIBUTION.md`). The source offer exists: About dialog in the web and native apps, `drafftink-server --source-url` with `/source`, `/source.json` and a `Link` header.
 
 ### Closed since the audit
 

@@ -213,10 +213,15 @@ fn status() -> JsValue {
     }))
 }
 
-/// Builds `window.drafftink.webmcp` and, when the browser has WebMCP and the address does not turn it off,
-/// registers the tools.
-pub(crate) fn api(jobs: &JobSender) -> JsValue {
-    let service = Rc::new(Service::new(PageCaller { jobs: jobs.clone() }));
+/// Builds the tools once the command schemas are in (the tool descriptions spell out each command's arguments, and
+/// the module does not make the schemas itself), then registers them when the browser has WebMCP and the address
+/// does not turn it off. False when the schemas could not be loaded: the page then has no tools.
+async fn build(jobs: JobSender) -> bool {
+    if let Err(why) = JsFuture::from(drafftink_app::web::schemas_ready()).await {
+        log::warn!("WebMCP: no tools, because the command schemas could not be loaded: {why:?}");
+        return false;
+    }
+    let service = Rc::new(Service::new(PageCaller { jobs }));
     let tools = service
         .catalog()
         .tools()
@@ -224,12 +229,35 @@ pub(crate) fn api(jobs: &JobSender) -> JsValue {
         .map(|tool| (tool.name.clone(), tool_object(&service, &tool.name, &descriptor(tool))))
         .collect();
     WEBMCP.with(|w| *w.borrow_mut() = Some(WebMcp { tools, controller: None }));
+    let search = web_sys::window().and_then(|w| w.location().search().ok()).unwrap_or_default();
+    if wanted(&search) {
+        register();
+    }
+    true
+}
+
+/// Builds `window.drafftink.webmcp`. Its `ready` promise resolves to true when the tools are built (and, when the
+/// browser has WebMCP and the address does not turn it off, registered). `register()` waits for it and answers
+/// with a promise of whether the tools are registered.
+pub(crate) fn api(jobs: &JobSender) -> JsValue {
+    let ready = future_to_promise({
+        let jobs = jobs.clone();
+        async move { Ok(JsValue::from_bool(build(jobs).await)) }
+    });
 
     let object = Object::new();
+    set(&object, "ready", &ready);
     let report = Closure::<dyn Fn() -> JsValue>::new(status);
     set(&object, "status", report.as_ref());
     report.forget();
-    let on = Closure::<dyn Fn() -> JsValue>::new(|| JsValue::from_bool(register()));
+    let on = Closure::<dyn Fn() -> JsValue>::new(move || {
+        let ready = ready.clone();
+        future_to_promise(async move {
+            JsFuture::from(ready).await?;
+            Ok(JsValue::from_bool(register()))
+        })
+        .into()
+    });
     set(&object, "register", on.as_ref());
     on.forget();
     let off = Closure::<dyn Fn() -> JsValue>::new(|| {
@@ -239,9 +267,5 @@ pub(crate) fn api(jobs: &JobSender) -> JsValue {
     set(&object, "unregister", off.as_ref());
     off.forget();
 
-    let search = web_sys::window().and_then(|w| w.location().search().ok()).unwrap_or_default();
-    if wanted(&search) {
-        register();
-    }
     object.into()
 }

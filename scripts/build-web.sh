@@ -46,6 +46,14 @@ if [ -n "$WANT" ] && [ "$HAVE" != "$WANT" ]; then
   echo "wasm-bindgen CLI is $HAVE but Cargo.toml pins $WANT. Run: cargo install wasm-bindgen-cli --version $WANT --locked --force" >&2; exit 1
 fi
 
+# --- command schemas: a table that the page fetches, not code in the module. The module is built without the
+# `schemas` feature of drafftink-engine (apps/drafftink-web depends on it with default-features = false), and
+# `drafftink-cli schemas` writes what that code would have produced. Made with the native toolchain before the
+# wasm flags below, so the native build is not rebuilt for them.
+SCHEMAS_JSON="$(mktemp)"
+trap 'rm -f "$SCHEMAS_JSON"' EXIT
+CARGO_TARGET_DIR="$TARGET_DIR" cargo run -q -p drafftink-cli -- schemas > "$SCHEMAS_JSON"
+
 # --- build
 # WebAssembly SIMD (every browser with WebGPU has it): the CPU glyph rasteriser that epaint pulls in (vello_cpu with
 # fearless_simd) then uses SIMD instructions instead of a scalar fallback that is copied for every pipeline, which
@@ -117,6 +125,12 @@ add_font() { # add_font <source file>
 }
 for f in NotoSans-Regular.ttf NotoSans-Bold.ttf NotoSans-Italic.ttf STIXTwoMath-Regular.otf; do add_font "crates/typeset/assets/fonts/$f"; done
 for f in Ubuntu-Light.ttf Hack-Regular.ttf emoji-icon-font.ttf; do add_font "$EGUI_FONTS/$f"; done
+# The schema table is a file of the same kind: the hash is in the name, `window.__assets` maps the plain name, and the
+# page preloads it so that it is in flight before the module has started.
+mkdir -p "$DIST/schemas"
+SCHEMAS_FILE="schemas/commands.$(sha256sum "$SCHEMAS_JSON" | cut -c1-10).json"
+cp "$SCHEMAS_JSON" "$DIST/$SCHEMAS_FILE"
+ASSETS="$ASSETS\"commands.schema.json\":\"$SCHEMAS_FILE\","
 ASSETS_JSON="{${ASSETS%,}}"
 FIRST_FONT="$(sed -n 's/.*"Ubuntu-Light.ttf":"\([^"]*\)".*/\1/p' <<<"$ASSETS_JSON")"
 # The welcome document has a formula, so the math font is wanted right after the first frame: fetch it with the module.
@@ -131,7 +145,7 @@ BUILD_GL=none
 [ "$FALLBACK" = 1 ] && BUILD_GL="$(cat "$DIST/pkg-gl/${NAME}_bg.wasm" "$DIST/pkg-gl/$NAME.js" | sha256sum | cut -c1-12)"
 cp web/manifest.webmanifest web/favicon.svg web/icon-192.png web/icon-512.png web/icon-maskable-512.png "$DIST/"
 sed -e "s/__BUILD__/$BUILD/g" -e "s/__BUILD_GL__/$BUILD_GL/g" -e "s|__ASSETS__|$ASSETS_JSON|" \
-    -e "s|__PRELOAD__|<link rel=\"preload\" as=\"fetch\" crossorigin href=\"$FIRST_FONT\"><link rel=\"preload\" as=\"fetch\" crossorigin href=\"$MATH_FONT\">|" web/index.html > "$DIST/index.html"
+    -e "s|__PRELOAD__|<link rel=\"preload\" as=\"fetch\" crossorigin href=\"$FIRST_FONT\"><link rel=\"preload\" as=\"fetch\" crossorigin href=\"$MATH_FONT\"><link rel=\"preload\" as=\"fetch\" crossorigin href=\"$SCHEMAS_FILE\">|" web/index.html > "$DIST/index.html"
 sed -e "s/__BUILD__/$BUILD/g" -e "s/__BUILD_GL__/$BUILD_GL/g" -e "s|__SHELL_FONTS__|[\"$FIRST_FONT\"]|" web/sw.js > "$DIST/sw.js"
 echo "$BUILD" > "$DIST/BUILD"
 
@@ -145,6 +159,7 @@ BR=$(brotli_size "$OUT" 2>/dev/null || echo "?")
 mb() { awk -v n="$1" 'BEGIN { if (n == "?") print "n/a"; else printf "%.2f MB", n/1048576 }'; }
 echo "build $BUILD ($PROFILE)"
 printf 'wasm: raw %s | wasm-opt %s | gzip -9 %s | brotli -11 %s\n' "$(mb "$RAW")" "$(mb "$OPTSIZE")" "$(mb "$GZ")" "$(mb "$BR")"
+SCHEMAS_BR=$(brotli_size "$DIST/$SCHEMAS_FILE" 2>/dev/null || echo 0)
 if [ "$FALLBACK" = 1 ]; then
   FB_GZ=$(gzip -9 -c "$DIST/pkg-gl/${NAME}_bg.wasm" | wc -c)
   FB_BR=$(brotli_size "$DIST/pkg-gl/${NAME}_bg.wasm" 2>/dev/null || echo 0)
@@ -155,12 +170,13 @@ FONT_BR=0
 for f in "$DIST"/fonts/*.ttf "$DIST"/fonts/*.otf; do FONT_BR=$((FONT_BR + $(brotli_size "$f"))); done
 printf 'fonts (loaded on demand, brotli -11): %s in %s files\n' "$(mb "$FONT_BR")" "$(ls "$DIST"/fonts/*.ttf "$DIST"/fonts/*.otf | wc -l)"
 # The numbers `cargo xtask size` checks (xtask/src/size.rs), in bytes.
-printf '{"raw": %s, "opt": %s, "gzip": %s, "brotli": %s, "fonts_brotli": %s, "fallback_raw": %s, "fallback_opt": %s, "fallback_gzip": %s, "fallback_brotli": %s}\n' \
-  "$RAW" "$OPTSIZE" "$GZ" "$BR" "$FONT_BR" "$FB_RAW" "$FB_OPT" "$FB_GZ" "$FB_BR" > "$DIST/sizes.json"
+printf 'command schemas (fetched with the page, brotli -q 11): %s\n' "$(mb "$SCHEMAS_BR")"
+printf '{"raw": %s, "opt": %s, "gzip": %s, "brotli": %s, "fonts_brotli": %s, "schemas_brotli": %s, "fallback_raw": %s, "fallback_opt": %s, "fallback_gzip": %s, "fallback_brotli": %s}\n' \
+  "$RAW" "$OPTSIZE" "$GZ" "$BR" "$FONT_BR" "$SCHEMAS_BR" "$FB_RAW" "$FB_OPT" "$FB_GZ" "$FB_BR" > "$DIST/sizes.json"
 
 # --- precompressed copies: drafftink-server serves .br / .gz when the browser accepts them
 if [ "$PRECOMPRESS" = 1 ]; then
-  find "$DIST" -type f \( -name '*.wasm' -o -name '*.js' -o -name '*.html' -o -name '*.webmanifest' -o -name '*.svg' -o -name '*.ttf' -o -name '*.otf' \) -size +1k | while read -r f; do
+  find "$DIST" -type f \( -name '*.wasm' -o -name '*.js' -o -name '*.json' -o -name '*.html' -o -name '*.webmanifest' -o -name '*.svg' -o -name '*.ttf' -o -name '*.otf' \) -size +1k | while read -r f; do
     gzip -9 -c "$f" > "$f.gz"
     if command -v brotli >/dev/null; then brotli -q 11 -c "$f" > "$f.br"
     else "${PERF_PY:-$HOME/.venvs/perf/bin/python}" -c 'import brotli,sys; open(sys.argv[2],"wb").write(brotli.compress(open(sys.argv[1],"rb").read(), quality=11))' "$f" "$f.br"; fi

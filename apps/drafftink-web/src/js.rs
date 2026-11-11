@@ -8,7 +8,7 @@ use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
 
 use drafftink_bridge::host::{Job, JobSender};
-use drafftink_bridge::rpc::{INVALID_PARAMS, RpcError};
+use drafftink_bridge::rpc::{INTERNAL_ERROR, INVALID_PARAMS, RpcError};
 use js_sys::{Function, Promise};
 use serde_json::Value;
 use wasm_bindgen::prelude::*;
@@ -54,6 +54,22 @@ fn settle(id: u64, outcome: Result<Value, RpcError>) {
         Ok(value) => resolve.call1(&JsValue::NULL, &from_json(&value)),
         Err(error) => reject.call1(&JsValue::NULL, &error_object(&error)),
     };
+}
+
+/// A promise for `next` once the command schemas are in. If they could not be loaded, it rejects with that
+/// reason as an error object, and `next` does not run.
+pub(crate) fn after_schemas(next: impl FnOnce() -> Promise + 'static) -> Promise {
+    wasm_bindgen_futures::future_to_promise(async move {
+        let loaded = wasm_bindgen_futures::JsFuture::from(drafftink_app::web::schemas_ready()).await;
+        if let Err(why) = loaded {
+            let why = why.as_string().unwrap_or_else(|| "unknown reason".to_owned());
+            return Err(error_object(&RpcError::new(
+                INTERNAL_ERROR,
+                format!("the argument schemas of the commands could not be loaded ({why}). Reload the page."),
+            )));
+        }
+        wasm_bindgen_futures::JsFuture::from(next()).await
+    })
 }
 
 /// Queues `method` for the app and returns a promise for its answer. The app runs it between frames.

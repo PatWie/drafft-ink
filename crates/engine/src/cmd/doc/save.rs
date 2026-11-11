@@ -104,7 +104,13 @@ fn prepare(s: &mut Session, id: &str, req: &SaveReq) -> Result<(SaveWrite, SaveO
     };
     let size = bytes.len();
     let t = s.tab();
-    let done = SaveDone { tab: t.id, revision: t.doc.revision(), target: target.clone(), remember: req.remember };
+    let done = SaveDone {
+        tab: t.id,
+        revision: t.doc.revision(),
+        print: t.doc.fingerprint(),
+        target: target.clone(),
+        remember: req.remember,
+    };
     let out = SaveOut { changed: true, saved_to: target, format: req.format, bytes: size };
     Ok((SaveWrite::new(done, bytes.into_bytes(), mime), out))
 }

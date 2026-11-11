@@ -665,18 +665,28 @@ What the questions found:
   SIMD, `fearless_simd` compiles its fallback once per pipeline and per blend mode; with `simd128` the code that remains is 0.45 MiB.
   Removing it altogether needs a patched `epaint`; not done.
 - **`serde_path_to_error`** (0.5 MiB before wasm-opt) is kept, see the table.
-- **`schemars`** (about 0.7 MiB before wasm-opt) is kept. The derive is on 70 types in four crates and the command registry builds the schemas
-  for `commands`, `describe`, the argument forms of the UI, `requires_args`, the registry digest of the bridge, and the error path of
-  `parse_args` (`arg_info`: the keys of a command, for "did you mean"). Measured as an upper bound (2026-11-08, same commit, `schema_of`
-  and `arg_info` stubbed so that no schema code is reachable): module after wasm-opt 11.87 MiB to 11.20 MiB (-0.67 MiB, -5.6%), brotli
-  3.09 MiB to 3.00 MiB (**-89 KB, -2.8%**). The schemas of the 153 commands (args and output) as one JSON file are 368 KB raw, **33 KB
-  brotli**, so a first visit that never opens the palette or a form would save 89 KB, and one that does would save 56 KB net. **Decision:
-  not done.** Every reader is synchronous (`Registry` consumers in `ui`, `bridge`, `drafftink-mcp`, `parse_args`, tests), so the file would
-  need an asynchronous load and a "schemas not here yet" state in each of them, a stub for the derive in the wasm build, and a build step
-  that writes and hashes the file (the registry digest must equal the one the native bridge computes). That is a cross-crate change in the
-  code others are changing, for 2.8% of the first load. Revisit when the registry is reworked or the budget is tight: the cheaper first
-  step is a `schemas` cargo feature of `drafftink-engine` that is off in the web build and makes `describe`/`commands` return the facts
-  without `args_schema`/`output_schema`.
+- **`schemars`** (about 0.7 MiB before wasm-opt) is out of the web module. The derive stays on the 70 types in four crates, but the code
+  it makes is only linked where something calls it, and the web build calls nothing: `drafftink-engine` has a `schemas` cargo feature
+  (default on) that generates the argument and output schemas from the types, and `drafftink-web` and the crates it uses depend on the
+  engine with `default-features = false` (the desktop apps and every test turn it on again; `--all-features` does too, so
+  `crates/engine/tests/without_schemas.rs` has a gate of its own, `cargo xtask test`). Every reader goes through
+  `CommandSpec::args_schema` / `output_schema` / `arg_keys` (`engine/src/schemas.rs`), which read a table when the feature is off. The table is
+  `drafftink-cli schemas`, written by `scripts/build-web.sh` as `schemas/commands.<hash>.json` (33,875 bytes with brotli), listed in
+  `window.__assets` and preloaded; `drafftink_app::web::schemas_ready()` fetches it once at start and installs it. Measured on 2026-11-09,
+  same machine, `main` at `abd8892` against this change:
+
+  | | main | now |
+  |---|---|---|
+  | module after wasm-opt | 12,598,210 | 11,922,866 (-675,344, -5.4%) |
+  | module, brotli -11 | 3,300,460 | 3,218,493 (**-81,967, -2.5%**) |
+  | schemas file, brotli -11 | - | 33,875 |
+  | first visit, module plus file | 3,300,460 | 3,252,368 (-48,092, -1.5%) |
+
+  The saving on the path that blocks the first frame is the full 82 KB; the file is fetched in parallel and nothing waits for it before the
+  first frame. What waits for it: `describe` and `commands` with schemas in `window.drafftink` (a promise), the WebMCP tools (built after it;
+  `webmcp.ready`), the arguments forms of the palette (a few milliseconds after the first frame, the app is woken when it arrives), and a request
+  that reaches the engine first is refused with `schemas_loading` (`web-app.md`, "Command schemas"). The one thing the web module lost: before
+  the table is in, a misspelt key is refused without the "did you mean" (serde still names the key).
 - **Duplicate crates** (`cargo tree -d`): `hashbrown` x2, `heapless` x3, `itertools` x3, `miniz_oxide` x2, `smol_str` x2, `thiserror` x2, `rustc-hash` x2
   and some proc-macro crates. They come from Loro, egui, Parley and ReX with different pins; none is large (`miniz_oxide` is the biggest, 50 KB).
 - **Loro features:** the default `counter` feature is the only one; dropping it is in the 1% row above.

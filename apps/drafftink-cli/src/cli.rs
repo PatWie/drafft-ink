@@ -41,6 +41,9 @@ pub enum Command {
     Inspect(InspectArgs),
     /// List the commands, or describe one with its argument schema, facts and example.
     Commands(CommandsArgs),
+    /// Print the argument and output schemas of every command as one JSON table. `scripts/build-web.sh` writes it
+    /// next to the web app, which fetches it instead of carrying the schema code in its wasm module.
+    Schemas,
 }
 
 /// Arguments of `run`.
@@ -199,6 +202,10 @@ pub fn execute(cli: &Cli, out: &mut dyn Write, err: &mut dyn Write) -> Result<()
             let mut s = ports::session();
             warn(err, &ops::open(&mut s, &a.input, a.from)?)?;
             writeln!(out, "{}", ops::inspect(&mut s)?)?;
+            Ok(())
+        }
+        Command::Schemas => {
+            writeln!(out, "{}", drafftink_engine::schemas::dump(&drafftink_engine::Registry::global()))?;
             Ok(())
         }
         Command::Commands(a) => {

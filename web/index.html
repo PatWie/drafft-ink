@@ -33,6 +33,15 @@ __PRELOAD__
 <div id="failure" role="alert"><div><h1>Drafft.ink could not start</h1>
   <p>Drafft.ink draws with WebGPU, or with WebGL2 when WebGPU is missing. Use a current Chrome, Edge, Firefox or Safari.</p><pre id="failure-detail"></pre></div></div>
 <script>window.__assets = __ASSETS__;</script>
+<script>
+  // AGPL-3.0 section 13: the server that delivered this page says where its source code is. The About dialog reads
+  // window.__source when it opens. Hosted without drafftink-server, there is no such file and the dialog shows the
+  // project repository.
+  fetch("/source.json", { cache: "no-cache" })
+    .then((r) => (r.ok ? r.json() : null))
+    .then((j) => { if (j && typeof j.source_url === "string") window.__source = j.source_url; })
+    .catch(() => {});
+</script>
 <script type="module">
   // The build script puts a hash in place of __BUILD__, so a new build never mixes with a cached old one.
   const BUILD = "__BUILD__";

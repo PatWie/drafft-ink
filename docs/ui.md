@@ -26,7 +26,7 @@ Session ──refresh──> Model (snapshot) ──draw──> Vec<UiAction> �
 | `UiAction::Verb(Verb)` | open or close UI (docs/commands.md §6.3) | `UiState::apply_verb` |
 | `UiAction::Host(HostRequest)` | something only the app can do: file pickers, clipboard text, a link | returned to the app in `Report.host` |
 
-The verbs are the 22 of docs/commands.md §6.3. This work added `ui.open_export`, `ui.open_preferences`, `ui.toggle_library` and `ui.rename_document`; `ui.save_as` now opens a name dialog first.
+The verbs are the 23 of docs/commands.md §6.3 (the last one, `ui.open_about`, is the About dialog with the source offer, `surfaces/about.rs`). This work added `ui.open_export`, `ui.open_preferences`, `ui.toggle_library` and `ui.rename_document`; `ui.save_as` now opens a name dialog first.
 
 `route(&UiAction, &UiState) -> Routed` is the one function that decides this. `dispatch(sink, state, actions, now)` executes in order. `CommandSink` is implemented by `Session`; tests use a recording sink. Origins: `ui` for buttons, `menu`, `context_menu`, `palette` and `shortcut` for the other surfaces. The origin is recorded in the ring and never changes a result.
 

@@ -10,6 +10,12 @@ use drafftink_protocol as proto;
 
 use crate::store::StorageConfig;
 
+/// The project repository, from the package metadata (`repository` in the workspace `Cargo.toml`).
+pub const DEFAULT_SOURCE_URL: &str = env!("CARGO_PKG_REPOSITORY");
+
+/// Longest source URL accepted. It goes into a response header.
+const MAX_SOURCE_URL_BYTES: usize = 2048;
+
 /// Size and rate limits. Every value is at most the hard ceiling in `drafftink-protocol`.
 #[derive(Debug, Clone)]
 pub struct ServerLimits {
@@ -124,6 +130,10 @@ pub struct Config {
     pub auth_tokens: Vec<String>,
     /// Accept the JSON text form on `/ws`.
     pub debug_json: bool,
+    /// Where the corresponding source of this server and its web client can be had: the AGPL-3.0 section 13 offer to
+    /// everyone who uses the app over the network. Served at `/source`, `/source.json` and in a `Link` header, and
+    /// shown in the web app's About dialog. A host that runs a modified version points this at its own source.
+    pub source_url: String,
     /// Limits.
     pub limits: ServerLimits,
     /// Timers.
@@ -139,6 +149,7 @@ impl Default for Config {
             allowed_origins: Vec::new(),
             auth_tokens: Vec::new(),
             debug_json: false,
+            source_url: DEFAULT_SOURCE_URL.to_owned(),
             limits: ServerLimits::default(),
             timing: Timing::default(),
         }
@@ -176,11 +187,25 @@ impl Config {
         if l.max_rooms == 0 || l.max_connections == 0 {
             return Err(bad("max-rooms and max-connections must be at least 1"));
         }
+        if !is_source_url(&self.source_url) {
+            return Err(bad(format!(
+                "source-url must be an http:// or https:// address of at most {MAX_SOURCE_URL_BYTES} bytes without spaces or control characters, got {:?}",
+                self.source_url.chars().take(80).collect::<String>()
+            )));
+        }
         if self.auth_tokens.iter().any(|t| t.is_empty() || t.len() > proto::MAX_AUTH_TOKEN_BYTES) {
             return Err(bad(format!("auth tokens must be 1 to {} bytes", proto::MAX_AUTH_TOKEN_BYTES)));
         }
         Ok(())
     }
+}
+
+/// True for an `http://` or `https://` address that can travel in a header and a redirect.
+fn is_source_url(url: &str) -> bool {
+    let rest = url.strip_prefix("https://").or_else(|| url.strip_prefix("http://"));
+    url.len() <= MAX_SOURCE_URL_BYTES
+        && rest.is_some_and(|r| !r.is_empty())
+        && url.bytes().all(|b| b.is_ascii_graphic())
 }
 
 /// The storage provider named on the command line.
@@ -278,6 +303,11 @@ pub struct Cli {
     /// File with one accepted token per line. Giving it turns auth on.
     #[arg(long, env = "DRAFFTINK_AUTH_TOKEN_FILE")]
     pub auth_token_file: Option<PathBuf>,
+
+    /// Where users of this server get its source code (AGPL-3.0 section 13). Point it at your own repository or
+    /// archive when you run a modified version. Default: the project repository.
+    #[arg(long, env = "DRAFFTINK_SOURCE_URL", default_value = DEFAULT_SOURCE_URL)]
+    pub source_url: String,
 
     /// Accept the JSON text form of the protocol on /ws, for debugging.
     #[arg(long, env = "DRAFFTINK_DEBUG_JSON")]
@@ -421,6 +451,7 @@ impl Cli {
             allowed_origins: self.allowed_origins.into_iter().filter(|o| !o.is_empty()).collect(),
             auth_tokens,
             debug_json: self.debug_json,
+            source_url: self.source_url,
             limits,
             timing,
         };
@@ -437,6 +468,15 @@ mod tests {
         let mut full = vec!["drafftink-server"];
         full.extend_from_slice(args);
         Cli::try_parse_from(full).map_err(|e| bad(e.to_string()))?.into_config()
+    }
+
+    #[test]
+    fn the_source_url_defaults_to_the_repository_and_can_be_set() {
+        assert_eq!(parse(&[]).unwrap().source_url, env!("CARGO_PKG_REPOSITORY"));
+        let set = parse(&["--source-url", "https://git.example.org/me/fork"]).unwrap();
+        assert_eq!(set.source_url, "https://git.example.org/me/fork");
+        let err = parse(&["--source-url", "file:///etc/passwd"]).unwrap_err();
+        assert!(err.0.contains("source-url"), "{}", err.0);
     }
 
     #[test]

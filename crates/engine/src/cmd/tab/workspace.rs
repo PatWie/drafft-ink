@@ -277,8 +277,12 @@ impl Session {
         let doc = Document::from_json(&text).map_err(|e| format!("`{key}` is not a document: {e}"))?;
         let td = TabDoc::from_document(&doc).map_err(|e| format!("`{key}` is not a valid document: {e}"))?;
         let mut t = Tab::new(TabId(id));
-        t.saved_revision = if entry.get("dirty").and_then(Value::as_bool).unwrap_or(false) { NEVER_SAVED } else { td.revision() };
         t.doc = td;
+        if entry.get("dirty").and_then(Value::as_bool).unwrap_or(false) {
+            t.saved_revision = NEVER_SAVED;
+        } else {
+            t.mark_saved();
+        }
         if let Some(v) = entry.get("view") {
             let sc = v.get("scroll").and_then(Value::as_array);
             let (x, y) = (

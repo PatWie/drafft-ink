@@ -52,6 +52,7 @@ pub struct ArgInfo {
 }
 
 /// The [`ArgInfo`] of `A`, from a per-type cache: building a schema is too slow to repeat per call.
+#[cfg(feature = "schemas")]
 pub fn arg_info<A: JsonSchema + 'static>() -> std::sync::Arc<ArgInfo> {
     use std::any::TypeId;
     use std::collections::HashMap;
@@ -66,6 +67,13 @@ pub fn arg_info<A: JsonSchema + 'static>() -> std::sync::Arc<ArgInfo> {
             Arc::new(ArgInfo { keys: schema_keys(&schema), closed: closed_object(&schema) })
         })
         .clone()
+}
+
+/// Without schemas in the build there is no type-level information: the installed table answers by command id
+/// (`parse_args`, `CommandSpec::arg_keys`).
+#[cfg(not(feature = "schemas"))]
+pub fn arg_info<A: JsonSchema + 'static>() -> std::sync::Arc<ArgInfo> {
+    std::sync::Arc::new(ArgInfo { keys: Vec::new(), closed: false })
 }
 
 /// Parses `args` as `A`. See the module docs for the refusal wording. The happy path builds no schema.
@@ -87,7 +95,7 @@ pub fn parse_args<A: DeserializeOwned + JsonSchema + 'static>(command: &str, arg
         Err(e) => {
             let path = e.path().to_string();
             let reason = e.inner().to_string();
-            let info = arg_info::<A>();
+            let info = info_of::<A>(command);
             if info.closed
                 && !info.keys.is_empty()
                 && let Some(bad) = args.as_object().and_then(|o| o.keys().find(|k| !info.keys.iter().any(|v| v == *k)))
@@ -107,6 +115,19 @@ pub fn parse_args<A: DeserializeOwned + JsonSchema + 'static>(command: &str, arg
                 Err(Refusal::bad_arg(command, &path, echo_reason(&reason)))
             }
         }
+    }
+}
+
+/// The keys of command `command`, from its type, or from the installed table in a build without schemas.
+fn info_of<A: JsonSchema + 'static>(command: &str) -> std::sync::Arc<ArgInfo> {
+    #[cfg(feature = "schemas")]
+    {
+        let _ = command;
+        arg_info::<A>()
+    }
+    #[cfg(not(feature = "schemas"))]
+    {
+        crate::schemas::arg_info_of(command)
     }
 }
 
