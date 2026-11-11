@@ -1388,6 +1388,7 @@ dependencies = [
  "kurbo",
  "proptest",
  "rstar",
+ "thiserror 2.0.21",
 ]
 
 [[package]]

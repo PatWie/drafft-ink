@@ -8,7 +8,6 @@
 //! nothing. Bounds are normalised (`x0 <= x1`) on the way in.
 
 use std::collections::HashMap;
-use std::fmt;
 use std::hash::Hash;
 
 use kurbo::{Point, Rect};
@@ -17,24 +16,15 @@ use rstar::{AABB, PointDistance, RTree, RTreeObject};
 use crate::aabb;
 
 /// Why an index operation was refused.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
 pub enum IndexError {
     /// The bounds contain NaN or an infinity.
+    #[error("bounds must be finite numbers")]
     InvalidBounds,
     /// `update` was called for an id that is not in the index.
+    #[error("no entry with that id; use insert to add it")]
     NotFound,
 }
-
-impl fmt::Display for IndexError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            IndexError::InvalidBounds => f.write_str("bounds must be finite numbers"),
-            IndexError::NotFound => f.write_str("no entry with that id; use insert to add it"),
-        }
-    }
-}
-
-impl std::error::Error for IndexError {}
 
 #[derive(Debug, Clone, PartialEq)]
 struct Entry<Id> {
@@ -153,10 +143,7 @@ impl<Id: Clone + Eq + Hash> SpatialIndex<Id> {
         if !self.bounds.contains_key(id) {
             return Err(IndexError::NotFound);
         }
-        match self.insert(id.clone(), bounds)? {
-            Some(old) => Ok(old),
-            None => Err(IndexError::NotFound),
-        }
+        self.insert(id.clone(), bounds)?.ok_or(IndexError::NotFound)
     }
 
     /// Remove an id. Returns its bounds when it was present.
