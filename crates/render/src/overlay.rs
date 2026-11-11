@@ -147,10 +147,9 @@ pub fn combine(world: &Scene, overlay: &Scene, out: &mut Scene) {
 
 fn polygon(points: &[Point]) -> BezPath {
     let mut p = BezPath::new();
-    for (i, q) in points.iter().enumerate() {
-        if i == 0 {
-            p.move_to(*q);
-        } else {
+    if let Some((first, rest)) = points.split_first() {
+        p.move_to(*first);
+        for q in rest {
             p.line_to(*q);
         }
     }
