@@ -12,11 +12,13 @@
 //!   `library.thumbnail` (see [`crate::thumbs`]); until it arrives the tile shows an outline with the item's
 //!   proportions. A click inserts the item in the middle of the view (`library.insert`); a drag onto the canvas
 //!   inserts it where the pointer is released. Rename and remove are buttons in the corner of a tile that appear
-//!   under the pointer (always on a touch layout). The tooltip shows a larger picture and the element count.
+//!   under the pointer (always on a touch layout); a right click opens the same actions as a menu
+//!   ([`crate::menu_kit`]): Insert, Rename…, Remove. The tooltip shows a larger picture and the element count.
 //! * **Header.** Title and count, a search field (it filters by name here, in the UI), the name for the next Add,
 //!   Add (`library.add`), Import… ([`HostRequest::PickLibraryImport`], which ends in `library.import`), Export
 //!   (`library.export`, an `.excalidrawlib` download) and Close.
 
+use drafftink_engine::Origin;
 use egui::{
     Align, Align2, Area, Color32, Context, CursorIcon, Id, LayerId, Layout as Flow, Order, Painter, Rect, Sense,
     Stroke, StrokeKind, TextureHandle, TextureId, TextureOptions, Ui, UiBuilder, pos2, vec2,
@@ -28,8 +30,9 @@ use std::sync::Arc;
 use crate::action::{HostRequest, UiAction};
 use crate::chrome::{ChromeRects, GAP};
 use crate::icons::Icon;
+use crate::menu_kit::{self, Menu, Popup, Row};
 use crate::model::{LibraryItem, Model, ViewView};
-use crate::state::{RenameTarget, UiState};
+use crate::state::{LibraryMenu, RenameTarget, UiState};
 use crate::theme::{self, MARGIN, Palette, TextSize, space};
 use crate::thumbs::{Thumb, ThumbImage, ThumbSize};
 use crate::widgets::{Ctl, Cx, Layout, Look, paint_button_bg, panel_frame};
@@ -72,6 +75,11 @@ pub(crate) fn insert_args(item: &str) -> Value {
 /// `library.insert` for a drop at a screen point.
 pub(crate) fn drop_args(item: &str, view: &ViewView, screen: egui::Pos2) -> Value {
     json!({ "item": item, "at": view.screen_to_world(screen) })
+}
+
+/// `library.remove` of one item.
+pub(crate) fn remove_args(item: &str) -> Value {
+    json!({ "items": [item] })
 }
 
 /// `library.add`: the selection under the typed name (no name: the engine names it).
@@ -203,6 +211,7 @@ impl TextureCache {
 /// Draws the drawer when it is open.
 pub fn show(ctx: &Context, cx: &mut Cx<'_>, st: &mut UiState) {
     if !st.library_open {
+        st.library_menu = None;
         return;
     }
     st.library_visible.clear();
@@ -230,6 +239,7 @@ pub fn show(ctx: &Context, cx: &mut Cx<'_>, st: &mut UiState) {
     });
     st.library_textures.keep_only(&st.library_visible, st.library_hover.as_deref());
     st.chrome.library = Some(drawn);
+    library_menu(ctx, cx, st);
 }
 
 /// The strip on the top edge: dragging it sets the height.
@@ -477,6 +487,11 @@ fn show_tile(ui: &mut Ui, cx: &mut Cx<'_>, st: &mut UiState, item: &LibraryItem,
     if enabled && resp.clicked() {
         cx.run("library.insert", insert_args(&item.id));
     }
+    if resp.secondary_clicked() {
+        let at = resp.interact_pointer_pos().unwrap_or_else(|| resp.rect.center());
+        st.close_overlays();
+        st.library_menu = Some(LibraryMenu { item: item.id.clone(), screen: at });
+    }
     if resp.dragged() {
         ui.ctx().set_cursor_icon(CursorIcon::Grabbing);
         paint_drag(ui.ctx(), st, model, item, &pal, tile.picture);
@@ -528,7 +543,7 @@ fn corner_buttons(ui: &mut Ui, cx: &mut Cx<'_>, st: &mut UiState, item: &Library
     );
     ui.scope_builder(UiBuilder::new().max_rect(area).layout(Flow::right_to_left(Align::Min)), |ui| {
         ui.spacing_mut().item_spacing = vec2(2.0, 0.0);
-        let remove = Ctl::new("library.remove").args(json!({ "items": [item.id] })).label(format!("Remove {name}"));
+        let remove = Ctl::new("library.remove").args(remove_args(&item.id)).label(format!("Remove {name}"));
         cx.icon_button(ui, &remove, Icon::Delete, side);
         let (rect, rename) = ui.allocate_exact_size(vec2(side, side), Sense::click());
         let look = Look {
@@ -564,4 +579,33 @@ fn tooltip(ui: &mut Ui, model: &Model, st: &mut UiState, item: &LibraryItem, pal
         if item.element_count == 1 { "1 element".to_owned() } else { format!("{} elements", item.element_count) };
     ui.label(TextSize::Caption.rich(elements).color(pal.muted));
     ui.label(TextSize::Caption.rich("Click to insert. Drag onto the canvas to place it.").color(pal.muted));
+}
+
+// ---- the menu of a tile ----
+
+/// Draws the right-click menu of a tile, when one is open: the same actions as the tile's click and corner buttons.
+fn library_menu(ctx: &Context, cx: &mut Cx<'_>, st: &mut UiState) {
+    let Some(open) = st.library_menu.clone() else { return };
+    let Some(item) = cx.model.library.iter().find(|i| i.id == open.item) else {
+        st.library_menu = None;
+        return;
+    };
+    let spec =
+        Popup { key: Id::unique("library_menu"), label: "Library item menu", pivot: Align2::LEFT_TOP, at: open.screen };
+    let result = cx.with_origin(Origin::ContextMenu, |cx| menu_kit::popup(ctx, cx, &spec, |m| tile_rows(m, st, item)));
+    if result.picked.any() {
+        st.library_menu = None;
+    } else if result.outside {
+        cx.verb(crate::action::Verb::CloseOverlays);
+    }
+}
+
+/// The rows of the menu of a tile.
+fn tile_rows(m: &mut Menu<'_, '_, '_>, st: &mut UiState, item: &LibraryItem) {
+    m.command(Ctl::new("library.insert").args(insert_args(&item.id)), Row::new().label("Insert").icon(Icon::Library));
+    if m.local("Rename", Row::new().icon(Icon::Text).dialog()).clicked() {
+        st.open_rename(RenameTarget::LibraryItem(item.id.clone()), item.name.clone());
+    }
+    m.separator();
+    m.command(Ctl::new("library.remove").args(remove_args(&item.id)), Row::new().label("Remove").icon(Icon::Delete));
 }

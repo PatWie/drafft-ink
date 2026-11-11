@@ -355,6 +355,15 @@ pub struct TabMenu {
     pub screen: egui::Pos2,
 }
 
+/// The context menu of a tile of the library drawer.
+#[derive(Debug, Clone, PartialEq)]
+pub struct LibraryMenu {
+    /// The library item id.
+    pub item: String,
+    /// Where the right click was, in screen points.
+    pub screen: egui::Pos2,
+}
+
 /// How much room the layout leaves for fingers.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum LayoutPreference {
@@ -461,6 +470,8 @@ pub struct UiState {
     pub convert_popup: Option<ConvertPopup>,
     /// The context menu of a tab, when open.
     pub tab_menu: Option<TabMenu>,
+    /// The right-click menu of a tile of the library drawer, when open.
+    pub library_menu: Option<LibraryMenu>,
     /// How many context menus were opened (the next one's [`ContextMenu::opened`]).
     menus_opened: u64,
     /// The layout preference (kept by the app between runs if it wants to).
@@ -520,12 +531,13 @@ impl UiState {
             || self.preferences_open
             || self.convert_popup.is_some()
             || self.tab_menu.is_some()
+            || self.library_menu.is_some()
     }
 
-    /// True while a popup menu is open (the hamburger, the context menu, a tab menu). The arrow keys and Enter
+    /// True while a popup menu is open (the hamburger, the context menu, a tab menu, a library tile menu). The arrow keys and Enter
     /// belong to it, not to the canvas.
     pub fn popup_menu_open(&self) -> bool {
-        self.menu_open || self.context_menu.is_some() || self.tab_menu.is_some()
+        self.menu_open || self.context_menu.is_some() || self.tab_menu.is_some() || self.library_menu.is_some()
     }
 
     /// True when a modal dialog is open and keys must not reach the canvas.
@@ -568,6 +580,7 @@ impl UiState {
         self.preferences_open = false;
         self.convert_popup = None;
         self.tab_menu = None;
+        self.library_menu = None;
         was
     }
 

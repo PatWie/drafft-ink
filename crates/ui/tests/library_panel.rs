@@ -236,6 +236,87 @@ fn remove_runs_library_remove_for_that_item() {
     assert!(h.state().model.library.is_empty());
 }
 
+/// The menu a right click on the tile "Box" opens.
+const TILE_MENU: &str = "Library item menu";
+
+fn open_tile_menu(h: &mut H) {
+    h.get_by_label("Insert Box").click_secondary();
+    h.run();
+}
+
+fn menu_row<'a>(h: &'a H, text: &'a str) -> egui_kittest::Node<'a> {
+    h.get_by_role_and_label(egui::accesskit::Role::Menu, TILE_MENU)
+        .query_by_role_and_label(egui::accesskit::Role::Button, text)
+        .unwrap_or_else(|| panic!("no row {text:?} in the tile menu"))
+}
+
+#[test]
+fn a_right_click_on_a_tile_opens_a_menu_with_insert_rename_and_remove() {
+    let mut h = dialog::harness(with_item());
+    h.run();
+    assert!(h.query_by_role_and_label(egui::accesskit::Role::Menu, TILE_MENU).is_none());
+    open_tile_menu(&mut h);
+    for row in ["Insert", "Rename…", "Remove"] {
+        menu_row(&h, row);
+    }
+    assert!(h.state().calls().is_empty(), "opening the menu runs nothing");
+}
+
+#[test]
+fn the_tile_menu_inserts_and_removes_the_item_it_was_opened_on() {
+    let f = with_item();
+    let id = item_id(&f);
+    let mut h = dialog::harness(f);
+    h.run();
+    open_tile_menu(&mut h);
+    h.state_mut().clear();
+    menu_row(&h, "Insert").click();
+    h.run();
+    assert_eq!(calls(&h), vec![Call::new(Origin::ContextMenu, "library.insert", json!({ "item": id }))]);
+    assert!(h.state().state.library_menu.is_none(), "choosing a row closes the menu");
+    h.state_mut().dispatch();
+    assert_eq!(element_count(&mut h), 2, "the selected rectangle and its copy");
+
+    open_tile_menu(&mut h);
+    h.state_mut().clear();
+    menu_row(&h, "Remove").click();
+    h.run();
+    assert_eq!(calls(&h), vec![Call::new(Origin::ContextMenu, "library.remove", json!({ "items": [id] }))]);
+    h.state_mut().dispatch();
+    assert!(h.state().model.library.is_empty());
+}
+
+#[test]
+fn the_tile_menu_renames_through_the_dialog_and_a_click_elsewhere_closes_it() {
+    let mut h = dialog::harness(with_item());
+    h.run();
+    open_tile_menu(&mut h);
+    h.state_mut().clear();
+    menu_row(&h, "Rename…").click();
+    h.run();
+    assert!(h.state().calls().is_empty(), "the dialog makes the call, not the row");
+    assert_eq!(h.state().state.rename.as_ref().map(|r| r.text.as_str()), Some("Box"));
+    assert!(h.state().state.library_menu.is_none());
+
+    let mut h = dialog::harness(with_item());
+    h.run();
+    open_tile_menu(&mut h);
+    dialog::click_canvas(&mut h);
+    h.state_mut().dispatch();
+    h.run();
+    assert!(h.state().state.library_menu.is_none());
+    assert!(h.query_by_role_and_label(egui::accesskit::Role::Menu, TILE_MENU).is_none());
+}
+
+#[test]
+fn the_tile_keeps_its_hover_buttons_next_to_the_menu() {
+    let mut h = dialog::harness(with_item());
+    h.run();
+    show_tile_buttons(&mut h);
+    h.get_by_label("Rename Box");
+    h.get_by_label("Remove Box");
+}
+
 #[test]
 fn export_writes_an_excalidrawlib_download_and_import_asks_the_app_for_a_file() {
     let f = with_item();
