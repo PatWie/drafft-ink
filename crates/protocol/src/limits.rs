@@ -69,8 +69,8 @@ pub struct Limits {
     pub max_awareness_per_sec: u16,
 }
 
-// `Limits` stores sizes as u32; the hard ceilings must fit.
-const _: () = assert!(MAX_FRAME_BYTES <= u32::MAX as usize && MAX_UPDATE_BYTES <= u32::MAX as usize);
+// `Limits` stores sizes as u32, and an update must fit in a frame.
+const _: () = assert!(MAX_UPDATE_BYTES < MAX_FRAME_BYTES && MAX_FRAME_BYTES <= u32::MAX as usize);
 
 impl Limits {
     /// The hard-ceiling defaults.
