@@ -16,22 +16,19 @@
 //!
 //! [`insert_text`] makes a free text from plain text with `create::text_element`.
 
-use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::collections::{BTreeMap, BTreeSet};
 
-use kurbo::{Point, Vec2};
+use drafftink_geom::kurbo::{Point, Vec2};
 
 use drafftink_scene::{
-    Element, ElementError, ElementId, ElementKind, FileEntry, FileId, GroupId, IdSource, IndexError, SceneTx,
-    StoreError, Style, TextStyle, ZIndex, limits, validate_element,
+    Element, ElementId, ElementKind, FileEntry, FileId, GroupId, IdSource, IndexError, SceneTx, StoreError, Style,
+    TextStyle, limits,
 };
 
-use crate::binding::{self, BindingError};
-use crate::create::{CreateError, TextPlace, TextSpec, text_element};
-use crate::group::name_key;
-use crate::ids::{fresh_element_id, fresh_group_id};
+use crate::copy::{self, CopyError, Placement};
+use crate::create::{FreeTextError, TextPlace, TextSpec, text_element};
 use crate::text_bind::TextMeasure;
 use crate::transform::geometry::union_bounds;
-use crate::zorder::{self, REBALANCE_LEN, ZOrderError};
 
 /// Why a paste was refused.
 #[derive(Debug, thiserror::Error)]
@@ -47,43 +44,18 @@ pub enum PasteError {
         /// Elements the document can still take.
         max: usize,
     },
-    /// The text is empty or only white space.
-    #[error("the text is empty")]
-    EmptyText,
-    /// The text is longer than a text element can be.
-    #[error("the text has {n} characters, and a text element holds at most {max}")]
-    TextTooLong {
-        /// Characters given.
-        n: usize,
-        /// The limit.
-        max: usize,
-    },
     /// A position or size is not a usable number.
     #[error("the position or size of the pasted elements is not a finite number within the document limits")]
     NotFinite,
-    /// The id source kept returning ids that are in use.
-    #[error("could not make a fresh id; the id source keeps returning used ids")]
-    IdsExhausted,
-    /// A pasted element breaks a rule of the model.
-    #[error("the pasted element {id} is invalid: {error}")]
-    Invalid {
-        /// The original id.
-        id: ElementId,
-        /// The broken rule.
-        error: ElementError,
-    },
+    /// The copies could not be made or written.
+    #[error(transparent)]
+    Copy(#[from] CopyError),
     /// The store refused a write.
     #[error(transparent)]
     Store(#[from] StoreError),
-    /// Bound arrows could not be updated.
+    /// The free text could not be built.
     #[error(transparent)]
-    Binding(#[from] BindingError),
-    /// Z-order keys could not be made.
-    #[error(transparent)]
-    ZOrder(#[from] ZOrderError),
-    /// The free text could not be built for a reason that has no variant of its own.
-    #[error("the text could not be made: {0}")]
-    Text(String),
+    Text(#[from] FreeTextError),
     /// A z-order key could not be made.
     #[error(transparent)]
     Index(#[from] IndexError),
@@ -112,9 +84,6 @@ pub struct PasteReport {
     /// How far the block was moved.
     pub offset: (f64, f64),
 }
-
-/// The start of every `custom` key that holds a group name (see [`name_key`]).
-const GROUP_NAME_PREFIX: &str = "drafftink.group.";
 
 /// Inserts `elements` (with the pictures they use from `files`) into `tx`. See the module docs for the rules.
 /// Deleted elements are skipped; a repeated id is used once.
@@ -150,93 +119,13 @@ pub fn insert_elements<T: SceneTx>(
         return Err(PasteError::NotFinite);
     }
 
-    // New ids.
-    let mut id_map: BTreeMap<ElementId, ElementId> = BTreeMap::new();
-    let mut used: BTreeSet<ElementId> = BTreeSet::new();
-    for e in &src {
-        let n = fresh_element_id(ids, |i| tx.contains(i) || used.contains(i)).map_err(|_| PasteError::IdsExhausted)?;
-        used.insert(n.clone());
-        id_map.insert(e.id.clone(), n);
-    }
-
-    // Groups: every group with two or more pasted members is regenerated; the others are dropped.
-    let mut counts: BTreeMap<&GroupId, usize> = BTreeMap::new();
-    for e in &src {
-        for g in &e.group_ids {
-            *counts.entry(g).or_default() += 1;
-        }
-    }
-    let existing: BTreeSet<GroupId> = tx.iter_all().flat_map(|e| e.group_ids.iter().cloned()).collect();
-    let mut group_map: BTreeMap<GroupId, GroupId> = BTreeMap::new();
-    for (g, n) in counts {
-        if n < 2 {
-            continue;
-        }
-        let candidate = fresh_group_id(ids, |c| existing.contains(c) || group_map.values().any(|v| v == c))
-            .map_err(|_| PasteError::IdsExhausted)?;
-        group_map.insert(g.clone(), candidate);
-    }
-
-    // Build and check every copy before writing anything.
-    let mut copies: Vec<Element> = Vec::with_capacity(src.len());
-    for o in &src {
-        let Some(new_id) = id_map.get(&o.id) else { continue };
-        let mut c = (*o).clone();
-        c.id = new_id.clone();
-        c.version = 0;
-        c.deleted = false;
-        c.name = None;
-        c.style.seed = ids.seed();
-        c.transform.x += offset.x;
-        c.transform.y += offset.y;
-        c.group_ids = o.group_ids.iter().filter_map(|g| group_map.get(g).cloned()).collect();
-        c.frame_id = o.frame_id.as_ref().and_then(|f| id_map.get(f).cloned());
-        if let ElementKind::Text(t) = &mut c.kind {
-            match t.container_id.as_ref().and_then(|x| id_map.get(x)) {
-                Some(n) => t.container_id = Some(n.clone()),
-                None => {
-                    t.container_id = None;
-                    t.label_position = None;
-                }
-            }
-        }
-        if let Some(custom) = &mut c.custom {
-            let old_keys: Vec<(String, GroupId)> =
-                o.group_ids.iter().filter_map(|g| group_map.get(g).map(|n| (name_key(g), n.clone()))).collect();
-            let mut kept = BTreeMap::new();
-            for (old, new) in old_keys {
-                if let Some(v) = custom.remove(&old) {
-                    kept.insert(name_key(&new), v);
-                }
-            }
-            // Names of groups that were not carried over are dropped.
-            custom.retain(|k, _| !k.starts_with(GROUP_NAME_PREFIX));
-            custom.extend(kept);
-            if custom.is_empty() {
-                c.custom = None;
-            }
-        }
-        validate_element(&c).map_err(|error| PasteError::Invalid { id: o.id.clone(), error })?;
-        copies.push(c);
-    }
-
-    // Z-order keys: one block on top.
-    let top = tx.top_z();
-    let keys = match ZIndex::n_between(top.as_ref(), None, copies.len()) {
-        Ok(k) => k,
-        Err(_) => {
-            zorder::rebalance(tx)?;
-            ZIndex::n_between(tx.top_z().as_ref(), None, copies.len())?
-        }
-    };
-    for (c, k) in copies.iter_mut().zip(keys) {
-        c.index = k;
-    }
-    let long = copies.iter().any(|c| c.index.as_str().len() > REBALANCE_LEN);
+    // Every group with two or more pasted members is regenerated; the others are dropped.
+    let params = copy::Params { offset, keep_groups: &BTreeSet::new(), is_group: &|_| true };
+    let mut copies = copy::build(&*tx, &src, &params, ids)?;
 
     // Pictures first, then the elements.
     let mut stored: BTreeSet<&FileId> = BTreeSet::new();
-    for c in &copies {
+    for c in &copies.elements {
         if let ElementKind::Image(i) = &c.kind
             && let Some(f) = &i.file_id
             && let Some(entry) = files.get(f)
@@ -245,27 +134,13 @@ pub fn insert_elements<T: SceneTx>(
             tx.put_file(entry.clone())?;
         }
     }
-    let new_ids: Vec<ElementId> = copies.iter().map(|c| c.id.clone()).collect();
+    let created = copies.new_ids();
     let selection: Vec<ElementId> =
-        copies.iter().filter(|c| c.container_id().is_none()).map(|c| c.id.clone()).collect();
-    for c in copies {
-        tx.insert(c)?;
-    }
-    if long {
-        zorder::rebalance(tx)?;
-    }
-    let map: HashMap<ElementId, ElementId> = id_map.iter().map(|(a, b)| (a.clone(), b.clone())).collect();
-    binding::remap_bindings(tx, &new_ids, &map)?;
-    let arrows = binding::update_bound_arrows(tx, &new_ids)?;
-    let pairs = src.iter().filter_map(|o| id_map.get(&o.id).map(|n| (o.id.clone(), n.clone()))).collect();
-    Ok(PasteReport {
-        copies: pairs,
-        created: new_ids,
-        selection,
-        groups: group_map.into_iter().collect(),
-        arrows,
-        offset: (offset.x, offset.y),
-    })
+        copies.elements.iter().filter(|c| c.container_id().is_none()).map(|c| c.id.clone()).collect();
+    let pairs = copies.pairs(&src);
+    let groups = copies.regenerated_groups();
+    let inserted = copy::insert(tx, &mut copies, Placement::OnTop)?;
+    Ok(PasteReport { copies: pairs, created, selection, groups, arrows: inserted.arrows, offset: (offset.x, offset.y) })
 }
 
 /// Makes a free text of `content` on top of the scene, centred on `center`. Returns its id.
@@ -278,23 +153,11 @@ pub fn insert_text<T: SceneTx, M: TextMeasure + ?Sized>(
     mut style: Style,
     center: Point,
 ) -> Result<ElementId, PasteError> {
-    let id = crate::text_bind::fresh_element_id(&*tx, ids);
+    let id = crate::ids::unused_element_id(&*tx, ids);
     let z = tx.next_top_index()?;
     style.seed = ids.seed();
     let spec = TextSpec { font, place: TextPlace::Center(center), width: None };
-    let e = text_element(m, id.clone(), z, content, spec, style).map_err(PasteError::from)?;
+    let e = text_element(m, id.clone(), z, content, spec, style)?;
     tx.insert(e)?;
     Ok(id)
-}
-
-impl From<CreateError> for PasteError {
-    fn from(e: CreateError) -> Self {
-        match e {
-            CreateError::EmptyText => Self::EmptyText,
-            CreateError::TextTooLong { n, max } => Self::TextTooLong { n, max },
-            CreateError::NotFinite => Self::NotFinite,
-            CreateError::Invalid { id, error } => Self::Invalid { id, error },
-            other => Self::Text(other.to_string()),
-        }
-    }
 }

@@ -37,7 +37,8 @@ fn arrow_spec(cx: &Ctx<'_>, kind: Kind) -> LinearSpec {
 /// A freehand or highlighter stroke through `points`, with `pressures` empty or one per point.
 pub(super) fn stroke(cx: &Ctx<'_>, points: &[Point], pressures: &[f64], highlighter: bool) -> Option<Element> {
     let defaults = cx.s.tool.defaults();
-    let style = if highlighter { create::highlighter_style(defaults.style, false, false) } else { defaults.style };
+    let style =
+        if highlighter { create::highlighter_style(defaults.style, create::Given::default()) } else { defaults.style };
     // The same choice `element.create` makes, so the preview and the result use the same width model.
     let pressure_mode = if defaults.pressure_mode != PressureMode::Uniform {
         defaults.pressure_mode

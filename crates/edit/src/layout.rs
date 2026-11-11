@@ -18,13 +18,16 @@ mod tree;
 use std::collections::{BTreeMap, BTreeSet};
 
 use drafftink_geom::OrientedBox;
-use kurbo::{Point, Rect, Size};
+
+use crate::binding::BindingError;
+use drafftink_geom::kurbo::{Point, Rect, Size};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 use drafftink_scene::{ElementId, Kind, PathType, SceneRead, SceneTx, StoreError};
 
 use crate::binding::update_bound_arrows;
+use crate::target::TargetError;
 use crate::text_bind::{GrowAnchor, TextBindError, TextMeasure, refresh_labels};
 
 pub use diagram::{
@@ -132,6 +135,24 @@ pub struct LayoutResult {
     pub flow: Option<Direction>,
 }
 
+/// Which gap of the layout options is unusable.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Gap {
+    /// The space between nodes of one layer.
+    Node,
+    /// The space between layers.
+    Layer,
+}
+
+impl std::fmt::Display for Gap {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(match self {
+            Gap::Node => "node_gap",
+            Gap::Layer => "layer_gap",
+        })
+    }
+}
+
 /// Why a layout could not run.
 #[derive(Debug, Clone, PartialEq, thiserror::Error)]
 pub enum LayoutError {
@@ -163,16 +184,16 @@ pub enum LayoutError {
     },
     /// A gap is negative or not a number.
     #[error("{0} must be a finite number of 0 or more")]
-    BadGap(&'static str),
+    BadGap(Gap),
 }
 
 /// Runs the layout.
 pub fn compute_layout(g: &LayoutGraph, o: &LayoutOpts) -> Result<LayoutResult, LayoutError> {
     if !o.node_gap.is_finite() || o.node_gap < 0.0 {
-        return Err(LayoutError::BadGap("node_gap"));
+        return Err(LayoutError::BadGap(Gap::Node));
     }
     if !o.layer_gap.is_finite() || o.layer_gap < 0.0 {
-        return Err(LayoutError::BadGap("layer_gap"));
+        return Err(LayoutError::BadGap(Gap::Layer));
     }
     let n = g.sizes.len();
     for (i, s) in g.sizes.iter().enumerate() {
@@ -206,7 +227,7 @@ pub fn compute_layout(g: &LayoutGraph, o: &LayoutOpts) -> Result<LayoutResult, L
     let min_x = result.positions.iter().map(|p| p.x).fold(f64::INFINITY, f64::min);
     let min_y = result.positions.iter().map(|p| p.y).fold(f64::INFINITY, f64::min);
     if min_x.is_finite() && min_y.is_finite() {
-        let shift = kurbo::Vec2::new(-min_x, -min_y);
+        let shift = drafftink_geom::kurbo::Vec2::new(-min_x, -min_y);
         result.positions.iter_mut().for_each(|p| *p += shift);
         result.waypoints.iter_mut().flatten().for_each(|p| *p += shift);
     }
@@ -287,12 +308,9 @@ pub enum ApplyError {
         "Auto-layout needs at least 2 elements to place; {0} given. Select the shapes to arrange, or pass their ids."
     )]
     TooFew(usize),
-    /// An id names nothing.
-    #[error("element {0} does not exist. Look up ids with element.query or doc.outline.")]
-    Missing(ElementId),
-    /// A node is locked.
-    #[error("{0} is locked, so it cannot be moved. Unlock it first, or leave it out of the layout.")]
-    Locked(ElementId),
+    /// An element does not exist, is deleted, or is locked.
+    #[error(transparent)]
+    Target(#[from] TargetError),
     /// Too many nodes or edges.
     #[error("Too many {what}: the layout handles at most {max}. Lay out a smaller part.")]
     LimitExceeded {
@@ -317,22 +335,7 @@ pub enum ApplyError {
     Text(#[from] TextBindError),
     /// Re-solving arrows failed.
     #[error("re-solving the bound arrows failed: {0}")]
-    Binding(String),
-}
-
-impl ApplyError {
-    /// The refusal code of the command catalog.
-    pub fn code(&self) -> &'static str {
-        match self {
-            ApplyError::TooFew(_) => "too_few",
-            ApplyError::Missing(_) => "not_found",
-            ApplyError::Locked(_) => "locked",
-            ApplyError::LimitExceeded { .. } => "limit_exceeded",
-            ApplyError::TreeNotForest(_) => "tree_not_forest",
-            ApplyError::Layout(_) => "bad_args",
-            ApplyError::Store(_) | ApplyError::Text(_) | ApplyError::Binding(_) => "internal",
-        }
-    }
+    Binding(#[from] BindingError),
 }
 
 fn is_node_kind(e: &drafftink_scene::Element) -> bool {
@@ -352,10 +355,11 @@ pub fn layout_apply<T: SceneTx, M: TextMeasure + ?Sized>(
     let mut nodes: Vec<ElementId> = Vec::new();
     let mut seen: BTreeSet<ElementId> = BTreeSet::new();
     for id in ids {
-        let e = tx.get(id).filter(|e| !e.deleted).ok_or_else(|| ApplyError::Missing(id.clone()))?;
+        let e =
+            tx.get(id).filter(|e| !e.deleted).ok_or_else(|| ApplyError::Target(TargetError::NotFound(id.clone())))?;
         if is_node_kind(e) && seen.insert(id.clone()) {
             if e.locked {
-                return Err(ApplyError::Locked(id.clone()));
+                return Err(ApplyError::Target(TargetError::Locked(vec![id.clone()])));
             }
             nodes.push(id.clone());
         }
@@ -391,7 +395,7 @@ pub fn layout_apply<T: SceneTx, M: TextMeasure + ?Sized>(
     // Sizes: the box around each rotated node.
     let mut aabbs: Vec<Rect> = Vec::with_capacity(nodes.len());
     for id in &nodes {
-        let e = tx.get(id).ok_or_else(|| ApplyError::Missing(id.clone()))?;
+        let e = tx.get(id).ok_or_else(|| ApplyError::Target(TargetError::NotFound(id.clone())))?;
         let t = &e.transform;
         aabbs.push(OrientedBox::from_xywh(t.x, t.y, t.w, t.h, t.angle).aabb());
     }
@@ -415,7 +419,7 @@ pub fn layout_apply<T: SceneTx, M: TextMeasure + ?Sized>(
         LayoutAnchor::Center => old.center() - new.center(),
         LayoutAnchor::At(p) => p - new.origin(),
     };
-    let shift = if opts.layout.algorithm == Algorithm::None { kurbo::Vec2::ZERO } else { shift };
+    let shift = if opts.layout.algorithm == Algorithm::None { drafftink_geom::kurbo::Vec2::ZERO } else { shift };
 
     // Move the nodes. The element keeps its offset from its rotated box.
     let mut moved = Vec::new();
@@ -442,7 +446,8 @@ pub fn layout_apply<T: SceneTx, M: TextMeasure + ?Sized>(
             *totals.entry((i.a.min(i.b), i.a.max(i.b))).or_default() += 1;
         }
         for (k, info) in infos.iter().enumerate() {
-            let arrow = tx.get(&info.arrow).ok_or_else(|| ApplyError::Missing(info.arrow.clone()))?;
+            let arrow =
+                tx.get(&info.arrow).ok_or_else(|| ApplyError::Target(TargetError::NotFound(info.arrow.clone())))?;
             if arrow.locked {
                 continue;
             }
@@ -473,7 +478,7 @@ pub fn layout_apply<T: SceneTx, M: TextMeasure + ?Sized>(
     let mut touched: Vec<ElementId> = moved.clone();
     touched.extend(rerouted.iter().cloned());
     refresh_labels(tx, m, &touched, GrowAnchor::Top)?;
-    update_bound_arrows(tx, &moved).map_err(|e| ApplyError::Binding(e.to_string()))?;
+    update_bound_arrows(tx, &moved)?;
     let bounds =
         nodes.iter().filter_map(|id| tx.get(id)).map(|e| e.rect()).reduce(|a, b| a.union(b)).unwrap_or(Rect::ZERO);
     Ok(ApplyResult { moved, rerouted, bounds })

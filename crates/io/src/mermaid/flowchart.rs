@@ -7,8 +7,8 @@ use drafftink_scene::Color;
 
 use super::text::{Cur, clean_label, find_closer, is_id_char, shorten, split_statements, split_word};
 use super::types::{Direction, Edge, Head, Line, MermaidGraph, Node, NodeShape, NodeStyle, Subgraph};
-use super::{FORMAT, MAX_ID_CHARS, MAX_SUBGRAPH_DEPTH, MAX_TOTAL_TEXT_BYTES, Prepared, push_warning};
-use crate::error::IoError;
+use super::{MAX_ID_CHARS, MAX_SUBGRAPH_DEPTH, MAX_TOTAL_TEXT_BYTES, Prepared, push_warning};
+use crate::error::{FormatName, IoError};
 use crate::limits::MAX_DIAGRAM_ITEMS;
 
 /// Most class names kept on one node.
@@ -500,7 +500,7 @@ impl Builder {
         }
 
         if nodes.is_empty() && self.subgraphs.is_empty() {
-            return Err(IoError::invalid(FORMAT, "the flowchart has no nodes"));
+            return Err(IoError::invalid(FormatName::Mermaid, "the flowchart has no nodes"));
         }
         Ok(MermaidGraph {
             direction: self.direction,

@@ -10,8 +10,8 @@ use drafftink_edit::group::{self, selection};
 use drafftink_edit::lifecycle::{self, DuplicateOpts};
 use drafftink_edit::transform::{self, RotateMode, geometry::world_bounds};
 use drafftink_edit::zorder::{self, ZOp};
+use drafftink_geom::kurbo::Vec2;
 use drafftink_scene::*;
-use kurbo::Vec2;
 use proptest::prelude::*;
 use structure_support::*;
 
@@ -365,7 +365,7 @@ proptest! {
                 Op::Drop(x, y) => {
                     let r = run(&mut s, |tx| transform::move_by(tx, &who, Vec2::new(x, y)));
                     if r.is_ok() {
-                        let _ = run(&mut s, |tx| frame::update_membership_after_move(tx, &who, Some(kurbo::Point::new(x, y))));
+                        let _ = run(&mut s, |tx| frame::update_membership_after_move(tx, &who, Some(drafftink_geom::kurbo::Point::new(x, y))));
                     }
                 }
                 Op::SetBounds(w, h) => {

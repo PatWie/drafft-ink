@@ -1,8 +1,8 @@
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic, dead_code)]
 //! Builders shared by the `structure_*` integration tests.
 
+use drafftink_geom::kurbo::Point;
 use drafftink_scene::*;
-use kurbo::Point;
 
 pub fn id(s: &str) -> ElementId {
     ElementId::new(s).unwrap()

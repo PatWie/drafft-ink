@@ -5,7 +5,7 @@
 //! and `element.at` in `element_query.rs`; all three files register commands of the family `element`.
 //!
 //! Every command validates its arguments and delegates to `drafftink-edit` (`transform`, `lifecycle`,
-//! `arrange`, `frame`, `element_cmd`). The transform rule of §2.4 (companions follow, bindings, followers,
+//! `arrange`, `frame`). The transform rule of §2.4 (companions follow, bindings, followers,
 //! locked elements refuse the whole call) is implemented there, never here. The selection is part of the
 //! observed editor state: after a delete or a lock it is pruned, after a duplicate it becomes the copies, and
 //! undo restores it with the step.
@@ -14,11 +14,10 @@ use std::collections::BTreeSet;
 
 use drafftink_edit::arrange::{self, FlipAxis};
 use drafftink_edit::arrow::SnapFlags;
-use drafftink_edit::element_cmd::{self, CommonBounds};
 use drafftink_edit::frame::{self, FrameError};
 use drafftink_edit::group::units::{Reverse, primaries, with_companions};
 use drafftink_edit::lifecycle::{self, ChildPolicy, DuplicateOpts, LifecycleError};
-use drafftink_edit::transform::{self, ResizeSpec, RotateMode, TransformError, geometry};
+use drafftink_edit::transform::{self, CommonBounds, NotRotatableReason, ResizeSpec, RotateMode, TransformError, geometry};
 use drafftink_geom::guides::{SmartGuide, SmartGuideKind, detect_smart_guides, detect_smart_guides_for_point};
 use drafftink_geom::kurbo::{Point, Rect, Vec2};
 use drafftink_geom::select::{BoxHandle, Corner, Edge};
@@ -27,8 +26,9 @@ use drafftink_scene::{ElementId, ElementKind, IdSource, Kind, SceneRead, GroupId
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-use super::element_common::{id_strings, locked_refusal, prune_selection, select_exactly};
+use super::element_common::{id_strings, prune_selection, select_exactly};
 use super::view::RectArg;
+use crate::cmd::element_common::target_refusal;
 use crate::args;
 use crate::refusal::Refusal;
 use crate::session::{Ref, Session};
@@ -107,25 +107,27 @@ fn rect_out(r: Rect) -> RectArg {
 }
 
 /// Maps a transform error to the refusal the catalog names for it.
-fn transform_refusal(s: &Session, cmd: &str, e: TransformError) -> Refusal {
+fn transform_refusal(cmd: &str, e: TransformError) -> Refusal {
     match e {
-        TransformError::NotFound(id) => Refusal::not_found(cmd, id.as_str()),
-        TransformError::Locked(ids) => locked_refusal(cmd, &ids),
-        TransformError::NotRotatable { ids, .. } => {
-            let frames = ids.iter().any(|i| s.element(i).is_some_and(|e| e.tag() == Kind::Frame));
-            let text = if frames {
-                "Frames cannot be rotated."
-            } else {
-                "Elbow arrows cannot be rotated. Change the arrow type first with `arrow.set_type` (sharp or round)."
+        TransformError::Target(t) => target_refusal(cmd, t),
+        TransformError::NotRotatable { ids, reason } => {
+            let text = match reason {
+                NotRotatableReason::Frame => "Frames cannot be rotated.",
+                NotRotatableReason::ElbowArrow => {
+                    "Elbow arrows cannot be rotated. Change the arrow type first with `arrow.set_type` (sharp or round)."
+                }
             };
             Refusal::custom("not_rotatable", cmd, text).with_details(serde_json::json!({ "ids": id_strings(&ids) }))
         }
-        TransformError::BadArgs(m) if m.starts_with("mode \"to\"") => Refusal::custom(
+        TransformError::RotateToNeedsOne => Refusal::custom(
             "bad_args",
             cmd,
             "mode \"to\" sets an absolute angle and needs exactly one element; use mode \"by\" to rotate several.",
         ),
-        TransformError::BadArgs(m) => Refusal::bad_args(cmd, m),
+        e @ (TransformError::NoElements
+        | TransformError::RotateHandle
+        | TransformError::BadBounds
+        | TransformError::NotPositive) => Refusal::bad_args(cmd, e.to_string()),
         TransformError::NotFinite => {
             Refusal::bad_args(cmd, "the result is not a valid number; use smaller values")
         }
@@ -139,8 +141,7 @@ fn transform_refusal(s: &Session, cmd: &str, e: TransformError) -> Refusal {
 
 fn lifecycle_refusal(cmd: &str, e: LifecycleError) -> Refusal {
     match e {
-        LifecycleError::NotFound(id) => Refusal::not_found(cmd, id.as_str()),
-        LifecycleError::Locked(ids) => locked_refusal(cmd, &ids),
+        LifecycleError::Target(t) => target_refusal(cmd, t),
         LifecycleError::NoTarget => Refusal::no_target(cmd),
         LifecycleError::NotFinite => Refusal::bad_args(cmd, "the offset must be a finite number"),
         other => Refusal::internal(cmd, other.to_string()),
@@ -159,7 +160,7 @@ fn edit_t<R>(
     let cmd = s.cmd();
     match s.tab_mut().doc.edit::<R, TransformError>(f) {
         Ok((r, _)) => Ok(r),
-        Err(e) => Err(transform_refusal(s, cmd, e)),
+        Err(e) => Err(transform_refusal(cmd, e)),
     }
 }
 
@@ -660,7 +661,7 @@ fn resize(s: &mut Session, a: ResizeArgs) -> Result<ResizeOut, Refusal> {
     };
     let report = edit_t(s, |tx| {
         let r = transform::resize(tx, &ids, spec)?;
-        element_cmd::tidy(tx, &r.changed)?;
+        transform::tidy(tx, &r.changed)?;
         Ok(r)
     })?;
     if !s.live() {
@@ -726,8 +727,8 @@ fn set_bounds(s: &mut Session, a: SetBoundsArgs) -> Result<ResizeOut, Refusal> {
     let ids = s.targets(a.ids.as_deref())?;
     let spec = CommonBounds { x, y, w, h, center: a.anchor == Anchor::Center, keep_aspect: a.keep_aspect };
     let report = edit_t(s, |tx| {
-        let r = element_cmd::set_common_bounds(tx, &ids, spec)?;
-        element_cmd::tidy(tx, &r.changed)?;
+        let r = transform::set_common_bounds(tx, &ids, spec)?;
+        transform::tidy(tx, &r.changed)?;
         Ok(r)
     })?;
     Ok(ResizeOut {
@@ -1000,7 +1001,7 @@ fn erase(s: &mut Session, a: EraseArgs) -> Result<EraseOut, Refusal> {
         RadiusUnits::World => radius,
         RadiusUnits::Screen => radius / s.view().zoom,
     };
-    let hit = element_cmd::hit_by_path(s.store(), &path, radius);
+    let hit = drafftink_edit::query::hit_by_path(s.store(), &path, radius);
     if hit.is_empty() {
         return Ok(EraseOut { hit: Vec::new() });
     }

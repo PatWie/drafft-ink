@@ -31,6 +31,7 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
+use crate::cmd::element_common::target_refusal;
 use crate::ports::{ClipPayload, PortWrite};
 use crate::refusal::Refusal;
 use crate::session::{Ref, Session};
@@ -62,8 +63,7 @@ fn yes() -> bool {
 
 fn lifecycle_refusal(cmd: &str, e: LifecycleError) -> Refusal {
     match e {
-        LifecycleError::Locked(ids) => Refusal::locked(cmd, ids.first().map_or("", |i| i.as_str())),
-        LifecycleError::NotFound(id) => Refusal::not_found(cmd, id.as_str()),
+        LifecycleError::Target(t) => target_refusal(cmd, t),
         LifecycleError::NoTarget => Refusal::no_target(cmd),
         other => Refusal::internal(cmd, other.to_string()),
     }
@@ -188,8 +188,7 @@ pub struct CopyStyleOut {
 
 fn style_error(cmd: &str, e: StyleError) -> Refusal {
     match e {
-        StyleError::NotFound(id) => Refusal::not_found(cmd, id.as_str()),
-        StyleError::Locked(id) => Refusal::locked(cmd, id.as_str()),
+        StyleError::Target(t) => target_refusal(cmd, t),
         StyleError::NotApplicable { props } => {
             let named = props.iter().map(|p| format!("`{}`", p.name())).collect::<Vec<_>>().join(", ");
             let mut kinds: Vec<&str> = Vec::new();

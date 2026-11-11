@@ -59,7 +59,8 @@ fn scene(n: usize) -> Vec<Element> {
 }
 
 fn loaded(n: usize, peer: u64) -> LoroStore {
-    let mut s = LoroStore::with_config(LoroConfig { peer_id: Some(peer), ..LoroConfig::default() });
+    let mut s = LoroStore::with_config(LoroConfig { peer_id: Some(peer), ..LoroConfig::default() })
+        .expect("the bench peer id is valid");
     let mut tx = s.begin();
     for e in scene(n) {
         let _ = tx.insert(e);
@@ -116,7 +117,7 @@ fn bench_apply_remote(c: &mut Criterion) {
                 || {
                     x += 1.0;
                     // `b` is in sync with `a` before every edit, so a's version before the edit is b's version.
-                    let before = a.version_vector();
+                    let before = a.version_vector().expect("the bench store is not poisoned");
                     let mut tx = a.begin();
                     let _ = tx.update(&target, |e| e.transform.x = x);
                     let _ = tx.commit();

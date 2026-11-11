@@ -5,11 +5,12 @@ mod structure_support;
 
 use std::collections::BTreeSet;
 
+use drafftink_edit::TargetError;
 use drafftink_edit::group::selection::*;
 use drafftink_edit::{group, lifecycle};
+use drafftink_geom::kurbo::Rect;
 use drafftink_geom::select::MarqueeMode;
 use drafftink_scene::*;
-use kurbo::Rect;
 use structure_support::*;
 
 fn set(names: &[&str]) -> BTreeSet<ElementId> {
@@ -148,7 +149,10 @@ fn a_selected_frame_excludes_its_children() {
 #[test]
 fn locked_elements_are_never_selected_unless_asked() {
     let s = scene(vec![rect("a", 0.0, 0.0, 10.0, 10.0).locked(), rect("b", 20.0, 0.0, 10.0, 10.0)]);
-    assert!(matches!(click_el(&s, &Selection::default(), "a", ClickOpts::default()), Err(SelectionError::Locked(_))));
+    assert!(matches!(
+        click_el(&s, &Selection::default(), "a", ClickOpts::default()),
+        Err(SelectionError::Target(TargetError::Locked(_)))
+    ));
     let sel =
         click_el(&s, &Selection::default(), "a", ClickOpts { include_locked: true, ..ClickOpts::default() }).unwrap();
     assert_eq!(sel.ids, set(&["a"]));
@@ -163,10 +167,13 @@ fn locked_elements_are_never_selected_unless_asked() {
 fn unknown_and_deleted_targets_are_not_found() {
     let mut s = scene(vec![rect("a", 0.0, 0.0, 10.0, 10.0), rect("b", 20.0, 0.0, 10.0, 10.0)]);
     run(&mut s, |tx| lifecycle::delete(tx, &ids(&["b"]), lifecycle::ChildPolicy::Delete)).unwrap();
-    assert!(matches!(click_el(&s, &Selection::default(), "b", ClickOpts::default()), Err(SelectionError::NotFound(_))));
+    assert!(matches!(
+        click_el(&s, &Selection::default(), "b", ClickOpts::default()),
+        Err(SelectionError::Target(TargetError::NotFound(_)))
+    ));
     assert!(matches!(
         click_el(&s, &Selection::default(), "nope", ClickOpts::default()),
-        Err(SelectionError::NotFound(_))
+        Err(SelectionError::Target(TargetError::NotFound(_)))
     ));
 }
 

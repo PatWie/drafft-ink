@@ -141,7 +141,7 @@ mod tests {
     #[test]
     fn a_failing_step_names_the_version_it_failed_on() {
         let doc = doc_at(1);
-        let table = [Migration { from: 1, apply: |_| Err(DocError::Backend("boom".into())) }];
+        let table = [Migration { from: 1, apply: |_| Err(DocError::backend("boom")) }];
         match migrate_to(&doc, 1, 2, &table) {
             Err(DocError::Migration { from: 1, reason }) => assert!(reason.contains("boom")),
             other => panic!("{other:?}"),

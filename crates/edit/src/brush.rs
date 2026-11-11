@@ -18,8 +18,8 @@
 //!
 //! `crates/edit/tests/brush_old_app.rs` compares both with the old app's output.
 
+use drafftink_geom::kurbo::{Point, Vec2};
 use drafftink_scene::{Brush, PressureMode};
-use kurbo::{Point, Vec2};
 
 /// Mass of the calligraphy pen. Old: `M`.
 const MASS: f64 = 0.5;

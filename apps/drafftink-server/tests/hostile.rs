@@ -125,7 +125,7 @@ async fn oversize_frames_and_updates_are_refused() {
     c.join().await;
     c.send_raw(vec![0x02; 300 * 1024]).await;
     let codes = c.expect_closed().await;
-    assert!(codes.is_empty() || codes == [ErrorCode::TooLarge], "{codes:?}");
+    assert_eq!(codes, [ErrorCode::TooLarge], "the transport size limit is a typed error, not text matching");
     // Within the frame limit but above the update limit.
     let mut c = Client::connect(addr, 2, "big").await;
     c.join().await;

@@ -10,7 +10,7 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
-use super::element_common::{edit_with_measure, id_strings, locked_refusal};
+use super::element_common::{edit_with_measure, id_strings, target_refusal};
 use crate::refusal::Refusal;
 use crate::session::{Ref, Session};
 use crate::spec::{
@@ -91,10 +91,9 @@ fn ids_of(id: &ElementId) -> Value {
 fn refuse(cmd: &str, e: ConvertError) -> Refusal {
     match e {
         ConvertError::NoElements => Refusal::no_target(cmd),
-        ConvertError::NotFound(id) => Refusal::not_found(cmd, id.as_str()),
-        ConvertError::Locked(ids) => locked_refusal(cmd, &ids),
+        ConvertError::Target(t) => target_refusal(cmd, t),
         ConvertError::NotConvertible { id, kind } => {
-            Refusal::wrong_kind(cmd, kind, CONVERTIBLE).with_details(ids_of(&id))
+            Refusal::wrong_kind(cmd, kind.name(), CONVERTIBLE).with_details(ids_of(&id))
         }
         ConvertError::Mixed => Refusal::custom(
             "mixed_kinds",

@@ -3,6 +3,7 @@
 
 mod structure_support;
 
+use drafftink_edit::TargetError;
 use drafftink_edit::group;
 use drafftink_edit::lifecycle::{self, ChildPolicy};
 use drafftink_edit::zorder::{self, REBALANCE_LEN, ZOp, ZOrderError};
@@ -197,11 +198,11 @@ fn locked_and_unknown_elements_are_refused() {
     let rev = s.revision();
     assert!(matches!(
         run(&mut s, |tx| zorder::z_order(tx, &ids(&["a"]), ZOp::Front, None)),
-        Err(ZOrderError::Locked(_))
+        Err(ZOrderError::Target(TargetError::Locked(_)))
     ));
     assert!(matches!(
         run(&mut s, |tx| zorder::z_order(tx, &ids(&["zz"]), ZOp::Front, None)),
-        Err(ZOrderError::NotFound(_))
+        Err(ZOrderError::Target(TargetError::NotFound(_)))
     ));
     assert_eq!(s.revision(), rev);
 }

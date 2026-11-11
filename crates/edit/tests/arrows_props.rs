@@ -116,7 +116,7 @@ proptest! {
     }
 }
 
-fn clean(pts: &[kurbo::Point]) -> Result<(), String> {
+fn clean(pts: &[drafftink_geom::kurbo::Point]) -> Result<(), String> {
     for w in pts.windows(2) {
         if (w[0].x - w[1].x).abs() > 1e-6 && (w[0].y - w[1].y).abs() > 1e-6 {
             return Err(format!("diagonal segment in {pts:?}"));

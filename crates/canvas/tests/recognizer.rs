@@ -687,3 +687,14 @@ fn a_press_after_a_lost_release_starts_over() {
     assert_eq!(names(&out), ["press", "dragstart", "dragupdate", "dragcancel", "press", "click", "hover"]);
     assert!(r.is_idle());
 }
+
+#[test]
+fn is_dragging_is_true_only_while_content_is_dragged() {
+    let fake = Fake::new();
+    let mut r = Recognizer::default();
+    assert!(!r.is_dragging());
+    run(&mut r, &fake, &[m(Down, 50.0, 50.0, 0.0), mh(60.0, 50.0, 10.0), mh(100.0, 80.0, 20.0)]);
+    assert!(r.is_dragging());
+    run(&mut r, &fake, &[m(Up, 100.0, 80.0, 30.0)]);
+    assert!(!r.is_dragging());
+}

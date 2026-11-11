@@ -344,7 +344,7 @@ impl RoomStore for FaultyStore {
     async fn append_update(&self, room: &RoomId, update: &[u8]) -> Result<(), StoreError> {
         self.faults.append_calls.fetch_add(1, Ordering::SeqCst);
         if self.faults.fail_appends.load(Ordering::SeqCst) {
-            return Err(StoreError::Io("disk on fire".into()));
+            return Err(StoreError::io("disk on fire"));
         }
         self.inner.append_update(room, update).await
     }

@@ -1,13 +1,14 @@
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
-//! `element_cmd`: common bounds of several elements, the eraser path and rounding of resize noise.
+//! Common bounds of several elements, the eraser path and rounding of resize noise.
 
 mod structure_support;
 
-use drafftink_edit::element_cmd::{CommonBounds, hit_by_path, set_common_bounds, tidy};
+use drafftink_edit::query::hit_by_path;
 use drafftink_edit::transform::{self, ResizeSpec};
+use drafftink_edit::transform::{CommonBounds, set_common_bounds, tidy};
+use drafftink_geom::kurbo::{Point, Vec2};
 use drafftink_geom::select::{BoxHandle, Corner};
 use drafftink_scene::SceneStore;
-use kurbo::{Point, Vec2};
 use structure_support::*;
 
 #[test]

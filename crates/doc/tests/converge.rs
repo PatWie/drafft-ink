@@ -328,7 +328,7 @@ fn three_peers_converge_whatever_the_delivery_order() {
     // Replica 0 hears 1 then 2; replica 1 hears 2 then 0; replica 2 hears 0 then 1.
     for (to, order) in [(0usize, [1usize, 2]), (1, [2, 0]), (2, [0, 1])] {
         for from in order {
-            let bytes = p[from].export_updates_since(&p[to].version_vector()).unwrap();
+            let bytes = p[from].export_updates_since(&p[to].version_vector().unwrap()).unwrap();
             p[to].apply_remote(&bytes).unwrap();
         }
     }
@@ -336,7 +336,7 @@ fn three_peers_converge_whatever_the_delivery_order() {
     for to in 0..3 {
         for from in 0..3 {
             if from != to {
-                let bytes = p[from].export_updates_since(&p[to].version_vector()).unwrap();
+                let bytes = p[from].export_updates_since(&p[to].version_vector().unwrap()).unwrap();
                 p[to].apply_remote(&bytes).unwrap();
             }
         }
@@ -372,7 +372,7 @@ fn a_late_joiner_gets_the_state_from_a_snapshot_then_updates() {
 fn pending_remote_operations_are_reported_and_resolved() {
     let mut a = peer(1);
     add(&mut a, vec![rect("one", &zs(1)[0])]);
-    let v1 = a.version_vector();
+    let v1 = a.version_vector().unwrap();
     edit(&mut a, "one", |e| e.transform.x = 1.0);
     let second = a.export_updates_since(&v1).unwrap();
     let mut b = peer(2);
@@ -380,7 +380,7 @@ fn pending_remote_operations_are_reported_and_resolved() {
     let cs = b.apply_remote(&second).unwrap();
     assert!(cs.is_empty());
     assert!(b.has_pending_remote());
-    let all = a.export_updates_since(&b.version_vector()).unwrap();
+    let all = a.export_updates_since(&b.version_vector().unwrap()).unwrap();
     b.apply_remote(&all).unwrap();
     assert!(!b.has_pending_remote());
     assert_same(&a, &b);
@@ -470,7 +470,7 @@ proptest! {
         for (i, o) in ops.iter().enumerate() {
             run_op(&mut p[o.peer], o, &mut counter);
             if i % 3 == 2 && let Some((from, to)) = sync_iter.next() && from != to {
-                let bytes = p[from].export_updates_since(&p[to].version_vector()).unwrap();
+                let bytes = p[from].export_updates_since(&p[to].version_vector().unwrap()).unwrap();
                 p[to].apply_remote(&bytes).unwrap();
             }
         }
@@ -478,7 +478,7 @@ proptest! {
             for to in 0..3 {
                 for from in 0..3 {
                     if from != to {
-                        let bytes = p[from].export_updates_since(&p[to].version_vector()).unwrap();
+                        let bytes = p[from].export_updates_since(&p[to].version_vector().unwrap()).unwrap();
                         p[to].apply_remote(&bytes).unwrap();
                     }
                 }

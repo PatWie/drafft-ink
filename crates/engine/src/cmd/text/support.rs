@@ -1,15 +1,16 @@
 //! Helpers shared by the text, diagram, layout and introspection commands: one document transaction with the
 //! measurers, the mapping from typed text errors to refusals, and a few small output and argument helpers.
 
-use drafftink_edit::text_bind::TextMeasure;
-use drafftink_edit::text_cmd::{MathMeasure, TextCmdError};
+use drafftink_edit::text_bind::{MathMeasure, TextBindError, TextMeasure};
 use drafftink_geom::kurbo::{Rect, Size};
 use drafftink_scene::limits;
+use drafftink_typeset::MathError;
 use drafftink_scene::{ElementId, IdSource};
 use schemars::JsonSchema;
 use serde::Serialize;
 use serde_json::json;
 
+use crate::cmd::element_common::target_refusal;
 use crate::refusal::Refusal;
 use crate::services::Services;
 use crate::session::Session;
@@ -23,14 +24,8 @@ use crate::store::DocTx;
 struct ServicesMath<'a>(&'a Services);
 
 impl MathMeasure for ServicesMath<'_> {
-    fn math_box(&self, latex: &str, size: f64) -> Result<Size, String> {
-        match self.0.math_layout(latex, size) {
-            Ok(l) => Ok(l.size()),
-            Err(e) => {
-                let (line, col) = e.line_col(latex);
-                Err(format!("{} (line {}, column {})", e.message, line + 1, col + 1))
-            }
-        }
+    fn math_box(&self, latex: &str, size: f64) -> Result<Size, MathError> {
+        self.0.math_layout(latex, size).map(|l| l.size())
     }
 }
 
@@ -59,51 +54,41 @@ pub(crate) fn select_only(s: &mut Session, ids: &[ElementId]) {
 }
 
 /// Maps a typed error of the text rules to the refusal of the catalog.
-pub(crate) fn refuse(cmd: &str, e: TextCmdError) -> Refusal {
-    use drafftink_edit::text_bind::TextBindError as B;
+pub(crate) fn refuse(cmd: &str, e: TextBindError) -> Refusal {
+    use TextBindError as B;
     match e {
-        TextCmdError::Missing(id) => Refusal::not_found(cmd, id.as_str()),
-        TextCmdError::Locked(id) => Refusal::locked(cmd, id.as_str()),
-        TextCmdError::NotMath { kind, .. } => Refusal::wrong_kind(cmd, kind, "math elements"),
-        TextCmdError::NotText { kind, .. } => Refusal::wrong_kind(cmd, kind, "text elements"),
-        e @ (TextCmdError::BadRange { .. } | TextCmdError::EmptyRange { .. }) => {
-            Refusal::custom("bad_range", cmd, e.to_string())
+        B::Target(t) => target_refusal(cmd, t),
+        B::NotMath { kind, .. } => Refusal::wrong_kind(cmd, kind.name(), "math elements"),
+        B::NotText { kind, .. } => Refusal::wrong_kind(cmd, kind.name(), "text elements"),
+        B::NotContainer { kind, .. } => {
+            Refusal::wrong_kind(cmd, kind.name(), "rectangles, diamonds, ellipses and arrows (they can hold a label)")
         }
-        e @ TextCmdError::InvalidLatex(_) => Refusal::custom("invalid_latex", cmd, e.to_string()),
-        TextCmdError::NotFinite => Refusal::bad_args(cmd, "a size or position came out as a number that is not finite"),
-        TextCmdError::Text(t) => match t {
-            B::Missing(id) => Refusal::not_found(cmd, id.as_str()),
-            B::NotText { kind, .. } => Refusal::wrong_kind(cmd, kind, "text elements"),
-            B::NotContainer { kind, .. } => {
-                Refusal::wrong_kind(cmd, kind, "rectangles, diamonds, ellipses and arrows (they can hold a label)")
-            }
-            B::AlreadyLabelled { container, .. } => Refusal::custom(
-                "already_bound",
-                cmd,
-                format!("`{container}` already has a label. Remove it first with `text.unbind`."),
-            )
-            .suggesting("text.unbind", None),
-            B::BoundElsewhere { text, container } => Refusal::custom(
-                "already_bound",
-                cmd,
-                format!("`{text}` is already the label of `{container}`. Unbind it first with `text.unbind`."),
-            )
-            .suggesting("text.unbind", Some(json!({ "text": text.as_str() }))),
-            B::NotBound(id) => {
-                Refusal::custom("nothing_to_do", cmd, format!("`{id}` is not a label of any element."))
-            }
-            B::Locked(id) => Refusal::locked(cmd, id.as_str()),
-            B::EmptyText => Refusal::custom(
-                "empty_text",
-                cmd,
-                "A text element cannot be empty. Delete it with `element.delete`.",
-            )
-            .suggesting("element.delete", None),
-            other => Refusal::internal(cmd, other.to_string()),
-        },
-        TextCmdError::Store(e) => Refusal::internal(cmd, e.to_string()),
-        TextCmdError::Frame(e) => Refusal::internal(cmd, e),
-        TextCmdError::Index(e) => Refusal::internal(cmd, e.to_string()),
+        B::AlreadyLabelled { container, .. } => Refusal::custom(
+            "already_bound",
+            cmd,
+            format!("`{container}` already has a label. Remove it first with `text.unbind`."),
+        )
+        .suggesting("text.unbind", None),
+        B::BoundElsewhere { text, container } => Refusal::custom(
+            "already_bound",
+            cmd,
+            format!("`{text}` is already the label of `{container}`. Unbind it first with `text.unbind`."),
+        )
+        .suggesting("text.unbind", Some(json!({ "text": text.as_str() }))),
+        B::NotBound(id) => Refusal::custom("nothing_to_do", cmd, format!("`{id}` is not a label of any element.")),
+        B::EmptyText => {
+            Refusal::custom("empty_text", cmd, "A text element cannot be empty. Delete it with `element.delete`.")
+                .suggesting("element.delete", None)
+        }
+        B::TextTooLong { n, max } => Refusal::limit_exceeded(cmd, n, "characters", max),
+        e @ (B::BadRange { .. } | B::EmptyRange { .. }) => Refusal::custom("bad_range", cmd, e.to_string()),
+        e @ (B::EmptyFormula | B::FormulaTooLong { .. } | B::InvalidLatex { .. }) => {
+            Refusal::custom("invalid_latex", cmd, e.to_string())
+        }
+        B::NotFinite => Refusal::bad_args(cmd, "a size or position came out as a number that is not finite"),
+        other @ (B::Invalid { .. } | B::Store(_) | B::Index(_) | B::Binding(_) | B::Frame(_)) => {
+            Refusal::internal(cmd, other.to_string())
+        }
     }
 }
 

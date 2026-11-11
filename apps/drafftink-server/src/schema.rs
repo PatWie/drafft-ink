@@ -8,10 +8,10 @@ use loro::{LoroDoc, LoroValue, ValueOrContainer};
 
 /// The highest `meta.schema` the server relays and stores. It is the `SCHEMA_VERSION` of `drafftink-doc`
 /// (the `served_schema_is_the_one_of_the_document_crate` test keeps them equal).
-pub const SERVED_SCHEMA: u32 = 1;
+pub(crate) const SERVED_SCHEMA: u32 = 1;
 
 /// The `meta.schema` of `doc` when it is above [`SERVED_SCHEMA`]. A missing or unreadable value is not above.
-pub fn beyond_served(doc: &LoroDoc) -> Option<i64> {
+pub(crate) fn beyond_served(doc: &LoroDoc) -> Option<i64> {
     // `get_by_str_path` does not create the `meta` container the way `get_map` does, so a room that has none
     // stays as it was.
     let found = match doc.get_by_str_path("meta/schema")? {

@@ -34,7 +34,7 @@ fn a_single_element_update_touches_a_single_element() {
     let (mut a, mut b) = big_pair();
     assert_eq!(b.len(), N);
     edit(&mut a, &id_of(1234), |e| e.transform.x = 999.0);
-    let bytes = a.export_updates_since(&b.version_vector()).unwrap();
+    let bytes = a.export_updates_since(&b.version_vector().unwrap()).unwrap();
     b.reset_stats();
     let rev = b.revision();
     let versions: Vec<u64> = b.iter_all().map(|e| e.version).collect();
@@ -66,7 +66,7 @@ fn work_follows_the_number_of_changed_elements_not_the_scene_size() {
     let top = tx.top_z().map(|z| ZIndex::between(Some(&z), None).unwrap()).unwrap();
     tx.insert(rect("fresh", &top)).unwrap();
     tx.commit().unwrap();
-    let bytes = a.export_updates_since(&b.version_vector()).unwrap();
+    let bytes = a.export_updates_since(&b.version_vector().unwrap()).unwrap();
     b.reset_stats();
     let cs = b.apply_remote(&bytes).unwrap();
     assert_eq!(cs.elements.len(), 5);
@@ -109,7 +109,7 @@ fn text_meta_and_file_updates_do_not_decode_other_elements() {
 fn applying_the_same_update_twice_changes_nothing() {
     let (mut a, mut b) = big_pair();
     edit(&mut a, &id_of(5), |e| e.locked = true);
-    let bytes = a.export_updates_since(&b.version_vector()).unwrap();
+    let bytes = a.export_updates_since(&b.version_vector().unwrap()).unwrap();
     assert_eq!(b.apply_remote(&bytes).unwrap().elements.len(), 1);
     b.reset_stats();
     let rev = b.revision();
@@ -190,7 +190,7 @@ fn the_profile_work_counter_sees_one_op_for_one_changed_element() {
     use drafftink_profile::{Counter, WorkScope};
     let (mut a, mut b) = big_pair();
     edit(&mut a, &id_of(1), |e| e.transform.x = 3.0);
-    let bytes = a.export_updates_since(&b.version_vector()).unwrap();
+    let bytes = a.export_updates_since(&b.version_vector().unwrap()).unwrap();
     let scope = WorkScope::begin();
     b.apply_remote(&bytes).unwrap();
     assert_eq!(scope.count(Counter::SyncOpsApplied), 1);

@@ -489,7 +489,7 @@ fn from_linear(cmd: &str, key: &str, e: LinearError) -> Fail {
         LinearError::NoSuchPoint { index, len } => no_such_point(cmd, key, index, len).into(),
         LinearError::TooFewPoints { kind, min, have } => {
             let text = if min <= 2 {
-                format!("{} needs at least 2 points, so no point can be deleted from it.", Article::new(kind).capitalized())
+                format!("{} needs at least 2 points, so no point can be deleted from it.", Article::new(kind.name()).capitalized())
             } else {
                 format!("A closed {kind} needs at least {min} points and this would leave {have}, so no point can be deleted.")
             };
@@ -515,7 +515,7 @@ fn from_arrow(cmd: &str, e: ArrowError) -> Fail {
         ArrowError::NotLinear(id) => {
             Refusal::wrong_kind(cmd, "non-linear", "arrows and lines").with_details(serde_json::json!({ "ids": [id.as_str()] })).into()
         }
-        ArrowError::NotBindable { id, kind, label } => not_bindable(cmd, id.as_str(), kind, label).into(),
+        ArrowError::NotBindable { id, kind, label } => not_bindable(cmd, id.as_str(), kind.name(), label).into(),
         ArrowError::NotFinite => Refusal::bad_arg(cmd, "fixed_point", "must be two finite numbers").into(),
         ArrowError::Binding(e) => from_binding(cmd, "to", e),
         ArrowError::Elbow(e) => from_elbow(cmd, "to", e),
@@ -926,7 +926,7 @@ fn delete_point(s: &mut Session, a: DeletePointArgs) -> Result<DeletePointOut, R
         linear::delete_points(tx, &id, &indices).map_err(|e| match e {
             LinearError::TooFewPoints { kind, min, have } => {
                 let text = if min <= 2 {
-                    format!("{} needs at least 2 points, so no point can be deleted from `{}`.", Article::new(kind).capitalized(), id.as_str())
+                    format!("{} needs at least 2 points, so no point can be deleted from `{}`.", Article::new(kind.name()).capitalized(), id.as_str())
                 } else {
                     format!(
                         "A closed {kind} needs at least {min} points, and this would leave {have}, so no point can be deleted from `{}`.",

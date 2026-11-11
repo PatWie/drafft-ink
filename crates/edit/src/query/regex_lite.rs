@@ -56,6 +56,15 @@ struct Item {
     max: u32,
 }
 
+/// Whether letters must match in case.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Case {
+    /// `a` and `A` differ.
+    Sensitive,
+    /// `a` and `A` match.
+    Insensitive,
+}
+
 /// A compiled pattern.
 #[derive(Debug, Clone)]
 pub struct Regex {
@@ -373,8 +382,9 @@ impl Run<'_> {
 }
 
 impl Regex {
-    /// Compiles `pattern`. With `ignore_case`, letters match in either case.
-    pub fn new(pattern: &str, ignore_case: bool) -> Result<Regex, RegexError> {
+    /// Compiles `pattern`. With [`Case::Insensitive`], letters match in either case.
+    pub fn new(pattern: &str, case: Case) -> Result<Regex, RegexError> {
+        let ignore_case = case == Case::Insensitive;
         let chars: Vec<char> = pattern.chars().collect();
         if chars.len() > MAX_PATTERN {
             return Err(RegexError::TooLong);
@@ -399,7 +409,7 @@ mod tests {
     use super::*;
 
     fn m(p: &str, t: &str) -> bool {
-        Regex::new(p, true).unwrap().is_match(t)
+        Regex::new(p, Case::Insensitive).unwrap().is_match(t)
     }
 
     #[test]
@@ -446,23 +456,23 @@ mod tests {
     fn case_insensitive() {
         assert!(m("START", "start here"));
         assert!(m("[a-z]+", "ABC"));
-        assert!(!Regex::new("START", false).unwrap().is_match("start"));
+        assert!(!Regex::new("START", Case::Sensitive).unwrap().is_match("start"));
     }
 
     #[test]
     fn bad_patterns_are_errors() {
         for p in ["(", ")", "[a", "*a", "a{3,2}", "a{5000}", r"\q", "[z-a]", "(?=a)", "a\\"] {
-            assert!(Regex::new(p, true).is_err(), "{p}");
+            assert!(Regex::new(p, Case::Insensitive).is_err(), "{p}");
         }
-        assert_eq!(Regex::new(&"a".repeat(300), true).unwrap_err(), RegexError::TooLong);
+        assert_eq!(Regex::new(&"a".repeat(300), Case::Insensitive).unwrap_err(), RegexError::TooLong);
         let deep = format!("{}a{}", "(".repeat(40), ")".repeat(40));
-        assert_eq!(Regex::new(&deep, true).unwrap_err(), RegexError::TooDeep);
+        assert_eq!(Regex::new(&deep, Case::Insensitive).unwrap_err(), RegexError::TooDeep);
     }
 
     #[test]
     fn hostile_patterns_end_quickly() {
         // Classic catastrophic backtracking: the step budget turns it into "no match".
-        let re = Regex::new("^(a+)+$", true).unwrap();
+        let re = Regex::new("^(a+)+$", Case::Insensitive).unwrap();
         let text = format!("{}b", "a".repeat(40));
         assert!(!re.is_match(&text));
     }

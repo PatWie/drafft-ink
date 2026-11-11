@@ -122,19 +122,7 @@ impl FromStr for Selector {
         if let Some(g) = s.strip_prefix("group:") {
             return GroupId::new(g).map(Selector::Group).map_err(|_| bad());
         }
-        const KINDS: [Kind; 10] = [
-            Kind::Rectangle,
-            Kind::Diamond,
-            Kind::Ellipse,
-            Kind::Line,
-            Kind::Arrow,
-            Kind::Freehand,
-            Kind::Text,
-            Kind::Math,
-            Kind::Image,
-            Kind::Frame,
-        ];
-        KINDS.iter().find(|k| k.name() == s).map(|k| Selector::Kind(*k)).ok_or_else(bad)
+        s.parse::<Kind>().map(Selector::Kind).map_err(|_| bad())
     }
 }
 

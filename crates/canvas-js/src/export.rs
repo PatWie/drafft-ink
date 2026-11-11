@@ -17,7 +17,6 @@ use serde::Deserialize;
 
 use crate::core::{Core, parse_ids};
 use crate::error::ApiError;
-use crate::fonts::SvgText;
 use crate::options::ThemeOption;
 use crate::target::Renderer;
 
@@ -129,7 +128,7 @@ impl Core {
             svg.scale = scale;
         }
         let doc = self.document();
-        let text = SvgText::new(self.fonts.typesetter());
+        let text = self.fonts.svg_text();
         Ok(export_svg(&doc, &svg, &text, Some(&text))?)
     }
 

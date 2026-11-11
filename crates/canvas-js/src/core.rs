@@ -17,7 +17,7 @@ use serde_json::Value;
 
 use crate::dto::{CameraDto, HitDto, OverlayDto};
 use crate::error::ApiError;
-use crate::fonts::{Fonts, SvgText};
+use crate::fonts::Fonts;
 use crate::frame::Frame;
 use crate::interact::Gesture;
 use crate::json;
@@ -228,7 +228,7 @@ impl Core {
     /// Replaces the scene with the content of a file; see [`crate::load`] for the formats.
     pub fn load_bytes(&mut self, bytes: &[u8]) -> Result<(), ApiError> {
         let mut ids = drafftink_scene::SeqIds::new();
-        let text = SvgText::new(self.fonts.typesetter());
+        let text = self.fonts.svg_text();
         let doc = crate::load::read_document(bytes, &mut ids, &text)?;
         self.load_document(&doc)
     }

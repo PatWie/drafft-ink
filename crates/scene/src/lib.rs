@@ -35,7 +35,7 @@ pub use derived::DerivedIndex;
 pub use document::{DocMeta, Document, DocumentError, FileEntry, SCHEMA_VERSION, json_schema};
 pub use element::{
     BindMode, Binding, Brush, Crop, Element, ElementKind, FixedSegment, FrameData, FreehandData, Head, ImageData, Kind,
-    LinearData, MathData, PathType, PressureMode, TextData, TextRun, Transform,
+    LinearData, MathData, ParseKindError, PathType, PressureMode, TextData, TextRun, Transform,
 };
 pub use id::{ElementId, FileId, GroupId, IdError, IdSource, RandomIds, Rng64, SeqIds, SplitMix64};
 pub use memory::MemoryStore;
@@ -48,6 +48,6 @@ pub use style::{
 };
 pub use validate::{
     DocError, ElementError, Issue, Report, Severity, element_errors, is_image_media_type, is_valid_name,
-    validate_document, validate_element, validate_scene,
+    validate_document, validate_element, validate_scene, validate_transform,
 };
 pub use zindex::{IndexError, ZIndex};

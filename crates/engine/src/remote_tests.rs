@@ -17,7 +17,7 @@ fn peer() -> Session {
 
 /// What `from` has and `to_vv` lacks, as the collab layer would send it.
 fn update_for(from: &Session, to: &Session) -> Vec<u8> {
-    let vv = to.tab().doc.replicated().version_vector();
+    let vv = to.tab().doc.replicated().version_vector().unwrap();
     from.tab().doc.replicated().export_updates_since(&vv).unwrap()
 }
 

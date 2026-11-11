@@ -7,8 +7,7 @@
 
 use drafftink_edit::frame;
 use drafftink_edit::style::{StyleError, StyleProps};
-use drafftink_edit::text_bind::{self, Relabeled};
-use drafftink_edit::text_cmd::{self, MathMeasure, NewText, RunSpec, TextCmdError, TextProps};
+use drafftink_edit::text_bind::{self, MathMeasure, NewText, Relabeled, RunSpec, TextBindError, TextProps};
 use drafftink_geom::kurbo::Point;
 use drafftink_scene::{
     Color, ElementId, ElementKind, Kind, SceneTx,
@@ -126,11 +125,11 @@ impl<'a> Final<'a> {
         tx: &mut T,
         m: &dyn text_bind::TextMeasure,
         id: &ElementId,
-    ) -> Result<(), TextCmdError> {
+    ) -> Result<(), TextBindError> {
         if let Some(runs) = &self.runs {
-            text_cmd::replace_runs(tx, id, runs)?;
+            text_bind::replace_runs(tx, id, runs)?;
         }
-        text_cmd::apply_text_props(tx, m, id, &self.props)?;
+        text_bind::apply_text_props(tx, m, id, &self.props)?;
         Ok(())
     }
 }
@@ -417,7 +416,7 @@ fn end_draft(s: &mut Session, cmd: &str, fin: &Final<'_>) -> Result<EndOut, Refu
             return Ok(label);
         }
         let frame = frame::frame_at(&*tx, at, &Default::default());
-        let id = text_cmd::create_text(tx, m, ids, &NewText { at, content, font, style, width: None, frame })?;
+        let id = text_bind::create_text(tx, m, ids, &NewText { at, content, font, style, width: None, frame })?;
         fin.restyle(tx, m, &id)?;
         Ok(id)
     })
@@ -456,7 +455,7 @@ fn end_math(s: &mut Session, cmd: &str, id: &ElementId, fin: &Final<'_>) -> Resu
     }
     with_doc(s, |tx, _m, math, _ids| {
         if let Some(l) = fin.latex {
-            text_cmd::set_latex(tx, math, id, l)?;
+            text_bind::set_latex(tx, math, id, l)?;
         }
         apply_math_props(tx, math, id, &fin.props)
     })
@@ -527,7 +526,7 @@ fn apply_math_props<T: SceneTx>(
     math: &dyn MathMeasure,
     id: &ElementId,
     props: &TextProps,
-) -> Result<(), TextCmdError> {
+) -> Result<(), TextBindError> {
     if props.stroke_color.is_some() || props.opacity.is_some() {
         tx.update(id, |e| {
             e.style.stroke_color = props.stroke_color.unwrap_or(e.style.stroke_color);
@@ -536,7 +535,7 @@ fn apply_math_props<T: SceneTx>(
     }
     if let (Some(size), Some(ElementKind::Math(m))) = (props.font_size, tx.get(id).map(|e| &e.kind)) {
         let latex = m.latex.clone();
-        text_cmd::set_math_size(tx, math, id, &latex, size)?;
+        text_bind::set_math_size(tx, math, id, &latex, size)?;
     }
     Ok(())
 }

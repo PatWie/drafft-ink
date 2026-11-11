@@ -779,7 +779,7 @@ impl TabDoc {
     /// Applies a remote update from a peer and brings the working store up to date. Returns what changed.
     pub fn apply_remote(&mut self, bytes: &[u8]) -> Result<ChangeSet, DocError> {
         let cs = self.loro.apply_remote(bytes)?;
-        self.mirror(&cs).map_err(|e| DocError::Backend(e.to_string()))?;
+        self.mirror(&cs).map_err(DocError::backend)?;
         Ok(cs)
     }
 

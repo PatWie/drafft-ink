@@ -26,6 +26,7 @@ use drafftink_scene::{
 
 use crate::binding::{self, BindingError};
 use crate::linear::{self, LinearError};
+use crate::target::TargetError;
 use crate::text_bind::{self, GrowAnchor, TextBindError, TextMeasure};
 
 /// The types an element can be converted to.
@@ -121,19 +122,16 @@ pub enum ConvertError {
     /// There is nothing to convert.
     #[error("no element was given")]
     NoElements,
-    /// An element does not exist or is deleted.
-    #[error("element {0} does not exist or is deleted")]
-    NotFound(ElementId),
-    /// Elements are locked.
-    #[error("{} element(s) are locked", .0.len())]
-    Locked(Vec<ElementId>),
+    /// An element does not exist, is deleted, or is locked.
+    #[error(transparent)]
+    Target(#[from] TargetError),
     /// The kind has no other types: text, math, image, frame, freehand.
     #[error("{id} is {kind}, which has no other type")]
     NotConvertible {
         /// The element.
         id: ElementId,
         /// Its kind.
-        kind: &'static str,
+        kind: Kind,
     },
     /// The elements belong to both families.
     #[error("the elements mix shapes and lines or arrows")]
@@ -197,17 +195,17 @@ fn gather<R: SceneRead>(r: &R, ids: &[ElementId]) -> Result<(Family, Vec<Element
     }
     let mut elements = Vec::with_capacity(ids.len());
     for id in ids {
-        let e = r.get(id).filter(|e| !e.deleted).ok_or_else(|| ConvertError::NotFound(id.clone()))?;
+        let e =
+            r.get(id).filter(|e| !e.deleted).ok_or_else(|| ConvertError::Target(TargetError::NotFound(id.clone())))?;
         elements.push(e.clone());
     }
     let locked: Vec<ElementId> = elements.iter().filter(|e| e.locked).map(|e| e.id.clone()).collect();
     if !locked.is_empty() {
-        return Err(ConvertError::Locked(locked));
+        return Err(ConvertError::Target(TargetError::Locked(locked)));
     }
     let mut family = None;
     for e in &elements {
-        let target =
-            Target::of(e).ok_or_else(|| ConvertError::NotConvertible { id: e.id.clone(), kind: e.tag().name() })?;
+        let target = Target::of(e).ok_or_else(|| ConvertError::NotConvertible { id: e.id.clone(), kind: e.tag() })?;
         match family {
             None => family = Some(target.family()),
             Some(f) if f != target.family() => return Err(ConvertError::Mixed),
@@ -397,17 +395,23 @@ mod tests {
         let l = add(
             &mut tx,
             "l",
-            ElementKind::Line(LinearData::new(vec![kurbo::Point::ZERO, kurbo::Point::new(100.0, 60.0)])),
+            ElementKind::Line(LinearData::new(vec![
+                drafftink_geom::kurbo::Point::ZERO,
+                drafftink_geom::kurbo::Point::new(100.0, 60.0),
+            ])),
         );
         let t = add(&mut tx, "t", ElementKind::Text(drafftink_scene::TextData::new("hi")));
         tx.update(&r, |e| e.locked = true).unwrap();
         assert_eq!(convert(&mut tx, &m, &[], None, false), Err(ConvertError::NoElements));
-        assert_eq!(convert(&mut tx, &m, &ids(&[&r]), None, false), Err(ConvertError::Locked(vec![r.clone()])));
+        assert_eq!(
+            convert(&mut tx, &m, &ids(&[&r]), None, false),
+            Err(ConvertError::Target(TargetError::Locked(vec![r.clone()])))
+        );
         tx.update(&r, |e| e.locked = false).unwrap();
         assert_eq!(convert(&mut tx, &m, &ids(&[&r, &l]), None, false), Err(ConvertError::Mixed));
         assert!(matches!(
             convert(&mut tx, &m, &ids(&[&t]), None, false),
-            Err(ConvertError::NotConvertible { kind: "text", .. })
+            Err(ConvertError::NotConvertible { kind: Kind::Text, .. })
         ));
         assert!(matches!(
             convert(&mut tx, &m, &ids(&[&r]), Some(Target::Line), false),

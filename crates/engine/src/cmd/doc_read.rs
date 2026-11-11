@@ -8,7 +8,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use drafftink_edit::query::{self, Outline, OutlineOpts, OutlineScope};
-use drafftink_edit::query_cmd::ALL_FIELDS;
+use drafftink_edit::query::ALL_FIELDS;
 use drafftink_geom::kurbo::Rect;
 use drafftink_scene::{ElementId, GroupId, Kind, SceneRead};
 use schemars::JsonSchema;

@@ -3,6 +3,7 @@
 //! A note is a rectangle with a preset look and a centred label (`drafftink_edit::sticky`). The command validates
 //! its arguments and delegates; the preset, the size rules and the font fit are the domain's.
 
+use drafftink_edit::TargetError;
 use drafftink_edit::create::{CreateError, FrameChoice};
 use drafftink_edit::sticky::{self, NoteColor, NoteSpec, StickyError};
 use drafftink_geom::kurbo::Point;
@@ -179,7 +180,7 @@ fn create_sticky(s: &mut Session, a: StickyArgs) -> Result<StickyOut, Refusal> {
     };
     let (note, rect, font_size) = edit_with_measure::<_, StickyError>(s, |tx, measure, ids| {
         let note = sticky::create_note(tx, measure, ids, &spec)?;
-        let rect = tx.get(&note.id).map(|e| e.transform).ok_or_else(|| CreateError::NotFound(note.id.clone()))?;
+        let rect = tx.get(&note.id).map(|e| e.transform).ok_or_else(|| CreateError::Target(TargetError::NotFound(note.id.clone())))?;
         let font_size = note.label.as_ref().and_then(|l| tx.get(l)).and_then(|e| e.text_data().map(|t| t.font.size));
         Ok((note, rect, font_size))
     })

@@ -15,18 +15,22 @@
 //! - `group`, `frame`, `zorder`, `arrange`, `transform`, `lifecycle`: groups, frames, z-order,
 //!   align/distribute/flip, move/resize/rotate of selections, duplicate/delete/lock rules.
 //! - `style`: style properties, applicability, defaults and themes (`style.*` commands).
-//! - `text_bind`, `text_cmd`, `flowchart`, `layout`, `query`: bound text and text editing, flowchart
-//!   helpers, auto-layout for `diagram.create`, element queries and the document outline.
+//! - `text_bind`, `flowchart`, `layout`, `query`: text measuring and wrapping, bound text, font steps, formulas and
+//!   colour runs; flowchart helpers, auto-layout for `diagram.create`, element queries (also by `@name`), hits
+//!   along a path and the document outline.
 //! - `link`: hyperlinks and element links (`element.set_link`, `element.open_link`).
 //! - `library`: fragments (library items, merged files): take out, insert with new ids, tell apart.
-//! - `paste`, `preflight`: pasting copies into a scene, and the checks that run before a structural change.
+//! - `paste`, `preflight`: pasting copies into a scene, and the checks that run before a structural change. The
+//!   rule for copying elements as one block is in the private `copy` module; `lifecycle::duplicate` and `paste`
+//!   both use it.
 //! - `sticky`: the preset and fit of a sticky note (`element.create_sticky`).
 //! - `convert`: changing the type of shapes, lines and arrows in place (`element.convert`).
-//! - `element_cmd`, `selection_cmd`, `query_cmd`, `text_cmd`: rules the `element.*`, `selection.*` and
-//!   `text.*` commands need that no domain module above owns (common bounds, eraser hits, picking many targets,
-//!   references by `@name`).
+//!
+//! Every rule reports a typed error. An element that is missing, deleted or locked is the shared
+//! [`TargetError`], held as the `Target` variant of each error enum. The errors carry plain-words text and no
+//! command names; the engine adds the advice that belongs to a command.
 
-#![warn(missing_docs)]
+#![warn(missing_docs, unreachable_pub)]
 #![cfg_attr(test, allow(clippy::unwrap_used, clippy::expect_used, clippy::panic))]
 
 pub mod arrange;
@@ -35,9 +39,9 @@ pub mod arrow_defaults;
 pub mod binding;
 pub mod brush;
 pub mod convert;
+mod copy;
 pub mod create;
 pub mod elbow;
-pub mod element_cmd;
 pub mod flowchart;
 pub mod frame;
 pub mod group;
@@ -50,11 +54,13 @@ pub mod link;
 pub mod paste;
 pub mod preflight;
 pub mod query;
-pub mod query_cmd;
-pub mod selection_cmd;
 pub mod sticky;
 pub mod style;
+mod target;
 pub mod text_bind;
-pub mod text_cmd;
 pub mod transform;
 pub mod zorder;
+
+pub use copy::CopyError;
+pub use ids::unused_element_id;
+pub use target::TargetError;

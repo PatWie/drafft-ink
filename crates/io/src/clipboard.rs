@@ -20,7 +20,7 @@
 use drafftink_scene::{Document, IdSource};
 use serde_json::{Value, json};
 
-use crate::error::{ImportReport, Imported, IoError};
+use crate::error::{Expected, FormatName, ImportReport, Imported, IoError};
 use crate::excalidraw;
 use crate::mermaid::{self, Diagram};
 use crate::native::{self, Format};
@@ -44,7 +44,7 @@ pub struct Packed {
 /// Packs the live elements of `doc` (and their pictures) into the envelope. With `excalidraw`, the Excalidraw
 /// flavour is added as `text`; if it cannot be written the envelope has no `text` and the report says why.
 pub fn pack(doc: &Document, excalidraw: bool) -> Result<Packed, IoError> {
-    let document = serde_json::to_value(doc).map_err(|e| IoError::invalid("clipboard", e.to_string()))?;
+    let document = serde_json::to_value(doc).map_err(|e| IoError::invalid(FormatName::Clipboard, e.to_string()))?;
     let mut payload = json!({ "format": FORMAT, "version": VERSION, "document": document });
     let mut report = ImportReport::default();
     if excalidraw {
@@ -70,19 +70,19 @@ pub fn is_envelope(v: &Value) -> bool {
 pub fn unpack(v: &Value) -> Result<Document, IoError> {
     if !is_envelope(v) {
         return Err(IoError::WrongFormat {
-            expected: "drafft.ink clipboard data",
+            expected: Expected::NativeClipboard,
             hint: format!("it says \"format\": \"{FORMAT}\""),
         });
     }
     let version = v.get("version").and_then(Value::as_u64).unwrap_or(0);
     if version == 0 || version > u64::from(VERSION) {
         return Err(IoError::invalid(
-            "clipboard",
+            FormatName::Clipboard,
             format!("its version is {version}, and this build reads version {VERSION}"),
         ));
     }
     let Some(doc) = v.get("document") else {
-        return Err(IoError::invalid("clipboard", "it has no `document`"));
+        return Err(IoError::invalid(FormatName::Clipboard, "it has no `document`"));
     };
     if let Some(found) =
         doc.get("version").and_then(Value::as_u64).filter(|n| *n > u64::from(drafftink_scene::document::SCHEMA_VERSION))
@@ -93,7 +93,7 @@ pub fn unpack(v: &Value) -> Result<Document, IoError> {
         }));
     }
     let document: Document =
-        serde_json::from_value(doc.clone()).map_err(|e| IoError::parse("clipboard", e.to_string()))?;
+        serde_json::from_value(doc.clone()).map_err(|e| IoError::parse(FormatName::Clipboard, e.to_string()))?;
     let report = document.validate();
     if report.has_errors() {
         return Err(IoError::Document(drafftink_scene::DocumentError::Invalid(report)));

@@ -69,10 +69,10 @@ impl LoroStore {
         let bytes = self
             .core
             .guard(|| self.core.doc.export(ExportMode::shallow_snapshot(&frontiers)))?
-            .map_err(|e| DocError::Backend(e.to_string()))?;
+            .map_err(DocError::backend)?;
         check_size(bytes.len(), self.core.config.max_import_bytes)?;
         let fresh = import_fresh(Core::make_doc(&self.core.config)?, &bytes)?;
-        let after = fresh.export(ExportMode::Snapshot).map_err(|e| DocError::Backend(e.to_string()))?.len();
+        let after = fresh.export(ExportMode::Snapshot).map_err(DocError::backend)?.len();
         self.core.reset_doc(fresh);
         Ok(TrimReport { bytes_before: before, bytes_after: after })
     }

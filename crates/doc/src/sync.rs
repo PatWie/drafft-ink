@@ -184,7 +184,7 @@ fn sync_view_inner(view: &mut MemoryStore, core: &mut Core, mut t: Touched) -> R
             }
         }
     }
-    let cs = tx.commit().map_err(|e| DocError::Backend(e.to_string()))?;
+    let cs = tx.commit().map_err(DocError::backend)?;
     #[cfg(feature = "profile")]
     drafftink_profile::count(drafftink_profile::Counter::SyncOpsApplied, u64::try_from(cs.elements.len()).unwrap_or(0));
     Ok(cs)
@@ -215,9 +215,8 @@ pub(crate) fn apply_remote(store: &mut LoroStore, bytes: &[u8]) -> Result<Change
         return Err(DocError::SnapshotStartsLater);
     }
     let LoroStore { view, core } = store;
-    let (imported, touched) = collecting(core, || {
-        core.guard(|| core.doc.import_with(bytes, "remote"))?.map_err(|e| DocError::Import(e.to_string()))
-    });
+    let (imported, touched) =
+        collecting(core, || core.guard(|| core.doc.import_with(bytes, "remote"))?.map_err(DocError::import));
     core.pending = imported?.pending.is_some();
     core.stats.remote_updates += 1;
     mark_remote_as_sent(core)?;

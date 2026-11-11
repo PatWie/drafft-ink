@@ -9,23 +9,29 @@
 //! * [`outline`] summarises the document as nodes, edges, groups and frames in a stable, reading-friendly order,
 //!   with a short text form ([`Outline::to_text`]) meant for an LLM context.
 
+mod path;
+mod refs;
 mod regex_lite;
+
+pub use path::hit_by_path;
+pub use refs::{ALL_FIELDS, RefConnectedTo, RefQuery, all_matches, hit_members};
 
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 
+use drafftink_geom::kurbo::{Point, Rect, Size};
 use drafftink_geom::transform::ElementFrame;
 use drafftink_geom::{DiamondShape, EllipseShape, HitOpts, OrientedBox, Outline as _, Polyline, RectShape};
-use kurbo::{Point, Rect, Size};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
+use crate::target::TargetError;
 use drafftink_scene::{
     Color, Element, ElementId, ElementKind, FillPattern, FontFamily, GroupId, Head, Kind, PathType, SceneRead,
     Sloppiness, StrokeStyle, TextAlign,
 };
 
-pub use regex_lite::{Regex, RegexError};
+pub use regex_lite::{Case, Regex, RegexError};
 
 // ---------------------------------------------------------------------------------------------
 // The filter
@@ -269,8 +275,8 @@ pub enum QueryError {
         reason: String,
     },
     /// An element named in the filter does not exist.
-    #[error("element {0} does not exist. Look up ids with element.query or doc.outline.")]
-    Missing(ElementId),
+    #[error(transparent)]
+    Target(#[from] TargetError),
     /// A reference is not an id.
     #[error("`{0}` is not an element id or an @name. Ids use only letters, digits, '_' and '-'.")]
     BadRef(String),
@@ -278,21 +284,11 @@ pub enum QueryError {
     #[error("The region must have finite numbers for x, y, w and h.")]
     BadRegion,
     /// A `@name` reference matches no element.
-    #[error("No element is named `{0}`. Look up names with element.query, fields [id, name].")]
+    #[error("No element is named `{0}`.")]
     UnknownName(String),
     /// A page size of 0 or more than the maximum.
     #[error("limit must be between 1 and {MAX_LIMIT}.")]
     BadLimit,
-}
-
-impl QueryError {
-    /// The refusal code of the command catalog.
-    pub fn code(&self) -> &'static str {
-        match self {
-            QueryError::Missing(_) | QueryError::UnknownName(_) => "not_found",
-            _ => "bad_args",
-        }
-    }
 }
 
 /// Resolves a reference: an id, or `@name` for the element with that name.
@@ -307,7 +303,7 @@ pub fn resolve_ref<R: SceneRead>(r: &R, reference: &str) -> Result<ElementId, Qu
     let id = ElementId::new(reference).map_err(|_| QueryError::BadRef(reference.to_string()))?;
     match r.get(&id) {
         Some(e) if !e.deleted => Ok(id),
-        _ => Err(QueryError::Missing(id)),
+        _ => Err(QueryError::Target(TargetError::NotFound(id))),
     }
 }
 
@@ -407,7 +403,7 @@ fn compile<'q, R: SceneRead>(r: &R, q: &'q Query) -> Result<Compiled<'q>, QueryE
             contains = c.as_ref().map(|s| s.to_lowercase());
             if let Some(p) = re {
                 regex = Some(
-                    Regex::new(p, true)
+                    Regex::new(p, Case::Insensitive)
                         .map_err(|e| QueryError::BadRegex { pattern: p.clone(), reason: e.to_string() })?,
                 );
             }
@@ -427,7 +423,7 @@ fn compile<'q, R: SceneRead>(r: &R, q: &'q Query) -> Result<Compiled<'q>, QueryE
     let connected = match &q.connected_to {
         Some(c) => {
             if !live_exists(r, &c.target) {
-                return Err(QueryError::Missing(c.target.clone()));
+                return Err(QueryError::Target(TargetError::NotFound(c.target.clone())));
             }
             let want_out = matches!(c.direction, LinkDirection::Out | LinkDirection::Any);
             let want_in = matches!(c.direction, LinkDirection::In | LinkDirection::Any);
@@ -449,7 +445,7 @@ fn compile<'q, R: SceneRead>(r: &R, q: &'q Query) -> Result<Compiled<'q>, QueryE
     };
     for id in [&q.frame, &q.bound_text_of].into_iter().flatten() {
         if !live_exists(r, id) {
-            return Err(QueryError::Missing(id.clone()));
+            return Err(QueryError::Target(TargetError::NotFound(id.clone())));
         }
     }
     let include_bound_text =

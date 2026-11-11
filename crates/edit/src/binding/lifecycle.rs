@@ -7,8 +7,8 @@
 use std::collections::{BTreeSet, HashMap, HashSet};
 
 use drafftink_geom::binding::{FIXED_POINT_BOUND, normalize_fixed_point};
+use drafftink_geom::kurbo::Vec2;
 use drafftink_scene::{BindMode, Binding, DerivedIndex, Element, ElementId, ElementKind, SceneRead, SceneTx};
-use kurbo::Vec2;
 
 use super::target::{bind_target, resolve};
 use super::{BindingError, End};

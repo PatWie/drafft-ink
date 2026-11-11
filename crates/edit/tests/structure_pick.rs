@@ -1,17 +1,19 @@
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
-//! `selection_cmd` and `query_cmd`: picking many targets, picking a group, the pointer rules of select-at, and
-//! the `@name` filter.
+//! `group::selection::pick` and `query::refs`: picking many targets, picking a group, the pointer rules of
+//! select-at, and the `@name` filter.
 
 mod structure_support;
 
 use std::collections::BTreeSet;
 
+use drafftink_edit::TargetError;
 use drafftink_edit::group::selection::*;
-use drafftink_edit::query::{AtHit, AtOpts, Query, QueryCtx, QueryError, elements_at};
-use drafftink_edit::query_cmd::{ALL_FIELDS, RefConnectedTo, RefQuery, all_matches, hit_members};
-use drafftink_edit::selection_cmd::*;
+use drafftink_edit::query::{
+    ALL_FIELDS, AtHit, AtOpts, Query, QueryCtx, QueryError, RefConnectedTo, RefQuery, all_matches, elements_at,
+    hit_members,
+};
+use drafftink_geom::kurbo::Point;
 use drafftink_scene::*;
-use kurbo::Point;
 use structure_support::*;
 
 fn set(names: &[&str]) -> BTreeSet<ElementId> {
@@ -61,7 +63,7 @@ fn pick_of_one_target_equals_click_in_every_mode() {
                                 p.selection, c,
                                 "sel={sel:?} mode={mode:?} deep={deep} hit={hit} include_locked={include_locked}"
                             ),
-                            (Err(SelectionError::Locked(ids)), Ok(p)) => {
+                            (Err(SelectionError::Target(TargetError::Locked(ids))), Ok(p)) => {
                                 assert_eq!(p.selection, sel, "a skipped target changes nothing");
                                 assert_eq!(p.skipped_locked, ids);
                             }
@@ -125,7 +127,7 @@ fn pick_of_only_locked_targets_keeps_the_selection() {
 fn pick_refuses_unknown_and_deleted_ids() {
     let s = world();
     let e = pick(&s, &Selection::default(), &[id("w"), id("nope")], ClickOpts::default()).unwrap_err();
-    assert_eq!(e, SelectionError::NotFound(id("nope")));
+    assert_eq!(e, SelectionError::Target(TargetError::NotFound(id("nope"))));
 }
 
 #[test]
@@ -245,7 +247,7 @@ fn a_click_inside_a_multi_selection_keeps_it_unless_it_hits_something_else() {
     assert!(!keeps_multi_selection(&s, &sel2, &h, at_f));
 }
 
-// ---- query_cmd ----
+// ---- query::refs ----
 
 #[test]
 fn ref_query_resolves_names_and_refuses_unknown_ones() {
@@ -264,7 +266,7 @@ fn ref_query_resolves_names_and_refuses_unknown_ones() {
     let bad = RefQuery { bound_text_of: Some("@nope".into()), ..RefQuery::default() };
     assert_eq!(bad.resolve(&s).unwrap_err(), QueryError::UnknownName("nope".into()));
     let bad = RefQuery { ids: Some(vec!["gone".into()]), ..RefQuery::default() };
-    assert_eq!(bad.resolve(&s).unwrap_err(), QueryError::Missing(id("gone")));
+    assert_eq!(bad.resolve(&s).unwrap_err(), QueryError::Target(TargetError::NotFound(id("gone"))));
     let bad = RefQuery { ids: Some(vec!["../x".into()]), ..RefQuery::default() };
     assert!(matches!(bad.resolve(&s).unwrap_err(), QueryError::BadRef(_)));
 }

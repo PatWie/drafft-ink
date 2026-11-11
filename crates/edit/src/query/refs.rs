@@ -1,4 +1,4 @@
-//! What the `element.query`, `element.at` and `selection.select` commands need on top of [`crate::query`].
+//! Queries as an agent writes them, and helpers that collect every match.
 //!
 //! * [`RefQuery`] is the filter as an agent writes it: elements are given as ids or `@name`
 //!   (docs/commands.md section 1.3, `Ref`). [`RefQuery::resolve`] turns it into the strict [`Query`] with
@@ -12,11 +12,11 @@ use serde::{Deserialize, Serialize};
 
 use drafftink_scene::{ElementId, GroupId, Kind, SceneRead};
 
-use crate::group::units::{Relations, is_label, primary_id, sort_z};
-use crate::query::{
+use super::{
     AtHit, ConnectedTo, Field, LinkDirection, MAX_LIMIT, OneOrMany, Order, Query, QueryCtx, QueryError, QueryOpts,
     RegionFilter, StyleFilter, TextFilter, resolve_ref, run_query,
 };
+use crate::group::units::{Relations, is_label, primary_id, sort_z};
 
 /// Every field of `describe`, in the order of the catalog.
 pub const ALL_FIELDS: [Field; 15] = [

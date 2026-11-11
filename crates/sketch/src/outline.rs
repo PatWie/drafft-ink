@@ -1,6 +1,7 @@
 //! Clean (unsketched) outlines. These match the old app's `Shape::to_path` for rectangles,
 //! ellipses, lines and freehand strokes.
 
+use drafftink_geom::spline::catmull_rom_cubics;
 use kurbo::{BezPath, Ellipse, Point, Rect, RoundedRect, Shape, Vec2};
 
 use crate::input::Curve;
@@ -76,16 +77,8 @@ pub(crate) fn through_points(points: &[Point], curve: Curve, closed: bool) -> Be
             }
         }
         Curve::Smooth => {
-            let tension = 0.5;
-            let last = points.len() - 1;
-            for i in 0..last {
-                let p0 = points[i.saturating_sub(1)];
-                let p1 = points[i];
-                let p2 = points[i + 1];
-                let p3 = points[(i + 2).min(last)];
-                let t1 = Vec2::new((p2.x - p0.x) * tension, (p2.y - p0.y) * tension);
-                let t2 = Vec2::new((p3.x - p1.x) * tension, (p3.y - p1.y) * tension);
-                path.curve_to(p1 + t1 / 3.0, p2 - t2 / 3.0, p2);
+            for c in catmull_rom_cubics(points) {
+                path.curve_to(c.p1, c.p2, c.p3);
             }
         }
     }

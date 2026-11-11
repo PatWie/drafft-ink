@@ -11,7 +11,7 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 
-use super::element_common::locked_refusal;
+use super::element_common::target_refusal;
 use crate::refusal::Refusal;
 use crate::session::{Ref, Session};
 use crate::spec::{Batch, CommandSpec, Facts, Gate, Mutates, PortSet, Redraw, RingMode, Selection, TextGate, Typed, Undo};
@@ -35,8 +35,7 @@ fn one_target(s: &Session, id: Option<&Ref>) -> Result<ElementId, Refusal> {
 
 fn link_refusal(cmd: &str, e: LinkError) -> Refusal {
     match e {
-        LinkError::NotFound(id) => Refusal::not_found(cmd, id.as_str()),
-        LinkError::Locked(id) => locked_refusal(cmd, &[id]),
+        LinkError::Target(t) => target_refusal(cmd, t),
         LinkError::Store(m) => Refusal::internal(cmd, m),
         other => Refusal::custom(INVALID_LINK, cmd, other.to_string()),
     }

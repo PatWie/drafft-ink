@@ -53,7 +53,7 @@ impl SqliteStore {
             Ok(conn)
         })
         .await
-        .map_err(|e| StoreError::Io(format!("storage task failed: {e}")))??;
+        .map_err(|e| StoreError::io(format!("storage task failed: {e}")))??;
         Ok(SqliteStore { conn: Arc::new(Mutex::new(conn)) })
     }
 
@@ -64,7 +64,7 @@ impl SqliteStore {
         let conn = self.conn.clone();
         tokio::task::spawn_blocking(move || f(&mut lock(&conn)).map_err(backend))
             .await
-            .map_err(|e| StoreError::Io(format!("storage task failed: {e}")))?
+            .map_err(|e| StoreError::io(format!("storage task failed: {e}")))?
     }
 }
 

@@ -12,10 +12,10 @@
 
 use drafftink_geom::aabb;
 use drafftink_geom::binding::{BASE_BINDING_GAP, max_binding_distance};
+use drafftink_geom::kurbo::{Point, Vec2};
 use drafftink_geom::{HitOpts, Outline};
 use drafftink_profile::{Counter, count};
 use drafftink_scene::{BindMode, Binding, Element, ElementId, ElementKind, PathType, SceneRead, SceneTx};
-use kurbo::{Point, Vec2};
 
 use super::solve::{self, side};
 use super::target::{Resolved, resolve_element};
@@ -232,14 +232,15 @@ fn candidate_for(
     BindingCandidate { target: r.id.clone(), mode, fixed_point: [v.x, v.y], focus, snap_midpoint, signed_distance }
 }
 
-/// The highlight for a point with no arrow yet (the arrow tool hovering). Orbit is shown for a point outside the
-/// shape; nothing is shown for a point inside (a click there binds `Inside` only once the arrow is dragged).
-pub fn hover_candidate<R: SceneRead>(scene: &R, p: Point, elbow: bool, opts: &BindOpts) -> Option<BindingCandidate> {
+/// The highlight for a point with no arrow yet (the arrow tool hovering) for an arrow of this `path` type. Orbit is
+/// shown for a point outside the shape; nothing is shown for a point inside (a click there binds `Inside` only
+/// once the arrow is dragged), except for an elbow arrow, which snaps to the outline.
+pub fn hover_candidate<R: SceneRead>(scene: &R, p: Point, path: PathType, opts: &BindOpts) -> Option<BindingCandidate> {
     if opts.disabled {
         return None;
     }
     let hit = find_hovered(scene, p, opts.zoom, &[])?;
-    hover_candidate_for(scene, &hit, p, elbow, opts)
+    hover_candidate_for(scene, &hit, p, path, opts)
 }
 
 /// [`hover_candidate`] for a shape the caller found already (with [`find_hovered`] or [`find_hovered_among`]).
@@ -247,12 +248,13 @@ pub fn hover_candidate_for<R: SceneRead>(
     scene: &R,
     hit: &Hovered,
     p: Point,
-    elbow: bool,
+    path: PathType,
     opts: &BindOpts,
 ) -> Option<BindingCandidate> {
     if opts.disabled {
         return None;
     }
+    let elbow = path == PathType::Elbow;
     let r = resolve_element(scene.get(&hit.id)?)?;
     if r.target.contains(p) && !elbow {
         return None;
@@ -478,12 +480,12 @@ fn drag_end_in<T: SceneTx>(
             .map_err(|err| super::from_elbow(arrow, err))?;
         return Ok(candidate);
     }
-    linear::set_world_points(&mut e, &world, false);
+    linear::set_world_points(&mut e, &world, linear::Turn::Keep);
     // Place the bound ends from the new bindings.
     if let Some(d) = e.linear_data() {
         let w = world_points(&e).unwrap_or_default();
         if let Some(pts) = solve::simple_points(tx, d, &w, true) {
-            linear::set_world_points(&mut e, &pts, false);
+            linear::set_world_points(&mut e, &pts, linear::Turn::Keep);
         }
     }
     tx.update(arrow, |slot| {

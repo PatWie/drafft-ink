@@ -98,7 +98,7 @@ fn bind_policy(mods: Modifiers) -> &'static str {
 }
 
 /// The shape that a point binds to, and the orbit candidate when there is one.
-fn hover(cx: &Ctx<'_>, p: Point, elbow: bool, opts: &BindOpts) -> Option<Hover> {
+fn hover(cx: &Ctx<'_>, p: Point, path: PathType, opts: &BindOpts) -> Option<Hover> {
     if opts.disabled {
         return None;
     }
@@ -106,7 +106,7 @@ fn hover(cx: &Ctx<'_>, p: Point, elbow: bool, opts: &BindOpts) -> Option<Hover> 
     // The spatial index narrows the scene to the shapes near the point; the rules run on those only.
     let near = cx.world.near(cx.s, p, binding_reach(opts.zoom));
     let found = find_hovered_among(store, &near, p, opts.zoom, &[])?;
-    let candidate = hover_candidate_for(store, &found, p, elbow, opts);
+    let candidate = hover_candidate_for(store, &found, p, path, opts);
     Some(Hover { id: found.id, candidate })
 }
 
@@ -124,25 +124,25 @@ impl Linear {
     /// Where a point at `raw` ends up. A binding candidate wins over snapping, as in `arrow.move_point`; a
     /// snapped point that falls into a shape's reach binds like the command will.
     fn locate(&self, cx: &Ctx<'_>, raw: Point) -> Located {
-        let elbow = path_of(cx) == PathType::Elbow;
+        let path = path_of(cx);
         let opts = bind_opts(cx, cx.mods);
-        if let Some(h) = hover(cx, raw, elbow, &opts) {
+        if let Some(h) = hover(cx, raw, path, &opts) {
             return Located { point: raw, hover: Some(h), guides: Vec::new() };
         }
         let snapped = snap::point(cx, raw, self.points.last().copied(), Snaps::line(cx));
-        let hover = if snapped.point == raw { None } else { hover(cx, snapped.point, elbow, &opts) };
+        let hover = if snapped.point == raw { None } else { hover(cx, snapped.point, path, &opts) };
         Located { point: snapped.point, hover, guides: snapped.guides }
     }
 
     /// Where the first point at `raw` ends up: the grid only, as in the old app.
     fn locate_start(cx: &Ctx<'_>, raw: Point) -> Located {
-        let elbow = path_of(cx) == PathType::Elbow;
+        let path = path_of(cx);
         let opts = bind_opts(cx, cx.mods);
-        if let Some(h) = hover(cx, raw, elbow, &opts) {
+        if let Some(h) = hover(cx, raw, path, &opts) {
             return Located { point: raw, hover: Some(h), guides: Vec::new() };
         }
         let point = snap::start(cx, raw);
-        let hover = if point == raw { None } else { hover(cx, point, elbow, &opts) };
+        let hover = if point == raw { None } else { hover(cx, point, path, &opts) };
         Located { point, hover, guides: Vec::new() }
     }
 

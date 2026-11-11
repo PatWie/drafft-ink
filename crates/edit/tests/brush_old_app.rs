@@ -14,8 +14,8 @@
 #![allow(clippy::expect_used, clippy::panic, clippy::unwrap_used)]
 
 use drafftink_edit::brush::{StrokeSample, StrokeSampler};
+use drafftink_geom::kurbo::Point;
 use drafftink_scene::{Brush, PressureMode};
-use kurbo::Point;
 use serde_json::Value;
 
 /// The data is the old code's `f64`s written with their shortest round trip. What differs is the order

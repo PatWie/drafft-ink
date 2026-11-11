@@ -12,46 +12,32 @@
 //! * **Lock** locks the whole outermost group (and bound text), so a group stays one unit.
 //! * **Restore** brings tombstones back together with their bound text.
 
-use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::collections::{BTreeMap, BTreeSet};
 
 use drafftink_geom::kurbo::Vec2;
-use drafftink_scene::{
-    Element, ElementError, ElementId, ElementKind, GroupId, IdSource, Kind, SceneTx, StoreError, ZIndex,
-    validate_element,
-};
+use drafftink_scene::{Element, ElementId, GroupId, IdSource, Kind, SceneTx, StoreError};
 
 use crate::binding::{self, BindingError};
-use crate::group::name_key;
-use crate::group::units::{Relations, ensure_unlocked, impl_from_target, primaries, sort_z, units, with_companions};
-use crate::ids::{fresh_element_id, fresh_group_id};
-use crate::zorder::{self, REBALANCE_LEN, ZOrderError};
+use crate::copy::{self, CopyError, Placement};
+use crate::group::units::{Relations, ensure_unlocked, primaries, sort_z, units, with_companions};
+use crate::target::TargetError;
+use crate::zorder::{self, ZOrderError};
 
 /// Why a lifecycle operation was refused.
-#[derive(Debug, thiserror::Error)]
+#[derive(Debug, Clone, PartialEq, thiserror::Error)]
 pub enum LifecycleError {
-    /// No element has this id.
-    #[error("element {0} does not exist")]
-    NotFound(ElementId),
-    /// Locked elements cannot be duplicated or deleted.
-    #[error("{} element(s) are locked ({}). Unlock them first", .0.len(), crate::group::units::ids_text(.0))]
-    Locked(Vec<ElementId>),
+    /// An element does not exist, is deleted, or is locked.
+    #[error(transparent)]
+    Target(#[from] TargetError),
     /// No element was given.
     #[error("no elements were given. Select some, or pass `ids`")]
     NoTarget,
     /// A number is unusable.
     #[error("the offset must be a finite number")]
     NotFinite,
-    /// The id source kept returning ids that are in use.
-    #[error("could not make a fresh id; the id source keeps returning used ids")]
-    IdsExhausted,
-    /// A copy would break a rule of the element.
-    #[error("the copy of {id} would be invalid: {error}")]
-    Invalid {
-        /// The original.
-        id: ElementId,
-        /// The broken rule.
-        error: ElementError,
-    },
+    /// The copies could not be made or written.
+    #[error(transparent)]
+    Copy(#[from] CopyError),
     /// The store refused a write.
     #[error(transparent)]
     Store(#[from] StoreError),
@@ -62,7 +48,6 @@ pub enum LifecycleError {
     #[error(transparent)]
     ZOrder(#[from] ZOrderError),
 }
-impl_from_target!(LifecycleError);
 
 /// What happens to the children of a deleted frame.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -101,7 +86,7 @@ pub fn delete<T: SceneTx>(
     let mut given: Vec<ElementId> = Vec::new();
     for id in ids {
         match tx.get(id) {
-            None => return Err(LifecycleError::NotFound(id.clone())),
+            None => return Err(LifecycleError::Target(TargetError::NotFound(id.clone()))),
             Some(e) if !e.deleted => given.push(id.clone()),
             Some(_) => {}
         }
@@ -159,7 +144,7 @@ pub fn restore<T: SceneTx>(tx: &mut T, ids: &[ElementId]) -> Result<RestoreRepor
     let mut want: BTreeSet<ElementId> = BTreeSet::new();
     for id in ids {
         match tx.get(id) {
-            None => return Err(LifecycleError::NotFound(id.clone())),
+            None => return Err(LifecycleError::Target(TargetError::NotFound(id.clone()))),
             Some(e) if e.deleted => {
                 want.insert(id.clone());
             }
@@ -364,132 +349,32 @@ pub fn duplicate<T: SceneTx, I: IdSource>(
     let all = with_companions(&*tx, &rel, &given, true);
     ensure_unlocked(&*tx, &all)?;
     let originals: Vec<Element> = all.iter().filter_map(|i| tx.get(i).cloned()).collect();
+    let Some(last) = originals.last() else { return Ok(DuplicateReport::default()) };
+    let sources: Vec<&Element> = originals.iter().collect();
 
-    // New element ids.
-    let mut id_map: BTreeMap<ElementId, ElementId> = BTreeMap::new();
-    let mut used: BTreeSet<ElementId> = BTreeSet::new();
-    for o in &originals {
-        let n = fresh_element_id(id_source, |i| tx.contains(i) || used.contains(i))
-            .map_err(|_| LifecycleError::IdsExhausted)?;
-        used.insert(n.clone());
-        id_map.insert(o.id.clone(), n);
-    }
-
-    // Group ids: keep the editing group and the groups around it, regenerate the rest, drop groups the copies
-    // do not fill.
-    let keep: BTreeSet<GroupId> = match &opts.editing {
-        Some(g) => originals
-            .iter()
-            .find_map(|o| {
+    // The copies stay in the editing group and the groups around it.
+    let keep: BTreeSet<GroupId> = opts
+        .editing
+        .as_ref()
+        .and_then(|g| {
+            originals.iter().find_map(|o| {
                 o.group_ids.iter().position(|x| x == g).map(|i| o.group_ids.iter().skip(i).cloned().collect())
             })
-            .unwrap_or_default(),
-        None => BTreeSet::new(),
-    };
-    let mut counts: HashMap<&GroupId, usize> = HashMap::new();
-    for o in &originals {
-        for g in &o.group_ids {
-            *counts.entry(g).or_default() += 1;
-        }
-    }
-    let existing: BTreeSet<&GroupId> = tx.iter_all().flat_map(|e| e.group_ids.iter()).collect();
-    let mut group_map: BTreeMap<GroupId, Option<GroupId>> = BTreeMap::new();
-    let mut fresh_groups: BTreeSet<GroupId> = BTreeSet::new();
-    let mut order: Vec<&GroupId> = counts.keys().copied().collect();
-    order.sort();
-    for g in order {
-        if keep.contains(g) {
-            group_map.insert(g.clone(), Some(g.clone()));
-        } else if counts.get(g).copied().unwrap_or(0) >= 2 && rel.is_group(g) {
-            let n = fresh_group_id(id_source, |n| existing.contains(n) || fresh_groups.contains(n))
-                .map_err(|_| LifecycleError::IdsExhausted)?;
-            fresh_groups.insert(n.clone());
-            group_map.insert(g.clone(), Some(n));
-        } else {
-            group_map.insert(g.clone(), None);
-        }
-    }
+        })
+        .unwrap_or_default();
+    let params = copy::Params { offset: opts.offset, keep_groups: &keep, is_group: &|g| rel.is_group(g) };
+    let mut copies = copy::build(&*tx, &sources, &params, id_source)?;
 
-    // Build and check the copies before writing anything.
-    let mut copies: Vec<Element> = Vec::with_capacity(originals.len());
-    for o in &originals {
-        let Some(new_id) = id_map.get(&o.id) else { continue };
-        let mut c = o.clone();
-        c.id = new_id.clone();
-        c.version = 0;
-        c.deleted = false;
-        c.name = None;
-        c.style.seed = id_source.seed();
-        c.transform.x += opts.offset.x;
-        c.transform.y += opts.offset.y;
-        c.group_ids = o.group_ids.iter().filter_map(|g| group_map.get(g).cloned().flatten()).collect();
-        c.frame_id = o.frame_id.as_ref().and_then(|f| id_map.get(f).cloned());
-        if let ElementKind::Text(t) = &mut c.kind {
-            t.container_id = t.container_id.as_ref().and_then(|x| id_map.get(x).cloned());
-        }
-        if let Some(custom) = &mut c.custom {
-            for (old, new) in &group_map {
-                let key = name_key(old);
-                if let Some(v) = custom.remove(&key)
-                    && let Some(new) = new
-                    && c.group_ids.contains(new)
-                {
-                    custom.insert(name_key(new), v);
-                }
-            }
-            if custom.is_empty() {
-                c.custom = None;
-            }
-        }
-        validate_element(&c).map_err(|error| LifecycleError::Invalid { id: o.id.clone(), error })?;
-        copies.push(c);
-    }
-
-    // Keys: a block directly above the topmost original, but never inside a group the copies do not join, nor
-    // inside the children of a frame they do not join: the block then goes above that group or frame, so groups
-    // and frame blocks stay contiguous.
-    let Some(last) = originals.last() else { return Ok(DuplicateReport::default()) };
-    let anchor = zorder::lift_above_enclosures(&*tx, &rel, last, &|f| id_map.contains_key(f), &|g| {
-        group_map.get(g).cloned().flatten().as_ref() == Some(g)
+    // A block directly above the topmost original, but never inside a group the copies do not join, nor inside
+    // the children of a frame they do not join: the block then goes above that group or frame, so groups and
+    // frame blocks stay contiguous.
+    let anchor = zorder::lift_above_enclosures(&*tx, &rel, last, &|f| copies.ids.contains_key(f), &|g| {
+        copies.groups.get(g).cloned().flatten().as_ref() == Some(g)
     });
-    let top = &anchor;
-    let top_key = top.index.clone();
-    let insert_copies = |tx: &mut T, copies: &mut Vec<Element>| -> Result<(), LifecycleError> {
-        let (_, above) = tx.z_neighbors(&top.id);
-        let keys = ZIndex::n_between(Some(&top_key), above.as_ref(), copies.len());
-        let keys = match keys {
-            Ok(k) => k,
-            Err(_) => {
-                zorder::rebalance(tx)?;
-                let top_key = tx.get(&top.id).map(|e| e.index.clone()).unwrap_or_else(|| top_key.clone());
-                let (_, above) = tx.z_neighbors(&top.id);
-                ZIndex::n_between(Some(&top_key), above.as_ref(), copies.len()).map_err(ZOrderError::from)?
-            }
-        };
-        for (c, k) in copies.iter_mut().zip(keys) {
-            c.index = k;
-        }
-        Ok(())
-    };
-    insert_copies(tx, &mut copies)?;
-    let long = copies.iter().any(|c| c.index.as_str().len() > REBALANCE_LEN);
-    let new_ids: Vec<ElementId> = copies.iter().map(|c| c.id.clone()).collect();
-    for c in copies {
-        tx.insert(c)?;
-    }
-    if long {
-        zorder::rebalance(tx)?;
-    }
-    // Bindings between copies point at copies; a binding to an element that was not copied is dropped.
-    let id_map_std: std::collections::HashMap<ElementId, ElementId> =
-        id_map.iter().map(|(a, b)| (a.clone(), b.clone())).collect();
-    binding::remap_bindings(tx, &new_ids, &id_map_std)?;
-    let arrows = binding::update_bound_arrows(tx, &new_ids)?;
-    let pairs: Vec<(ElementId, ElementId)> =
-        originals.iter().filter_map(|o| id_map.get(&o.id).map(|n| (o.id.clone(), n.clone()))).collect();
-    let selection: Vec<ElementId> = given.iter().filter_map(|g| id_map.get(g).cloned()).collect();
-    let mut selection = selection;
+    let pairs = copies.pairs(&sources);
+    let groups = copies.regenerated_groups();
+    let inserted = copy::insert(tx, &mut copies, Placement::Above(&anchor.id))?;
+    let mut selection: Vec<ElementId> = given.iter().filter_map(|g| copies.ids.get(g).cloned()).collect();
     sort_z(&*tx, &mut selection);
-    let groups = group_map.into_iter().filter_map(|(o, n)| n.filter(|n| *n != o).map(|n| (o, n))).collect();
-    Ok(DuplicateReport { copies: pairs, selection, groups, arrows })
+    Ok(DuplicateReport { copies: pairs, selection, groups, arrows: inserted.arrows })
 }

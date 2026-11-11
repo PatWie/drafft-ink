@@ -14,8 +14,9 @@
 //! The same module owns where the **link icon** of an element sits ([`icon_rect`]) and whether a point hits it
 //! ([`hits_icon`]), so the renderer and the pointer path use one rule (Excalidraw `getLinkHandleFromCoords`).
 
+use crate::target::TargetError;
+use drafftink_geom::kurbo::{Point, Rect, Vec2};
 use drafftink_scene::{Element, ElementId, SceneRead, SceneTx, StoreError, limits::MAX_LINK_BYTES};
-use kurbo::{Point, Rect, Vec2};
 
 /// The character that starts an element link.
 pub const ELEMENT_PREFIX: char = '#';
@@ -59,12 +60,9 @@ pub enum LinkError {
     /// `#` or `@` without anything after it.
     #[error("An element link needs an id or a name after the `#` or `@`, such as `#e1` or `@box`.")]
     EmptyElementRef,
-    /// The element does not exist or was deleted.
-    #[error("element {0} does not exist")]
-    NotFound(ElementId),
-    /// The element is locked.
-    #[error("element {0} is locked")]
-    Locked(ElementId),
+    /// An element does not exist, is deleted, or is locked.
+    #[error(transparent)]
+    Target(#[from] TargetError),
     /// The store refused the change.
     #[error("{0}")]
     Store(String),
@@ -287,9 +285,10 @@ pub fn hits_icon(e: &Element, p: Point, zoom: f64) -> bool {
 /// Sets or clears the `link` of a live, unlocked element. Returns whether it changed. `link` must come from
 /// [`parse_input`] and the session's resolution of an element reference.
 pub fn set<T: SceneTx>(tx: &mut T, id: &ElementId, link: Option<String>) -> Result<bool, LinkError> {
-    let current = tx.get(id).filter(|e| !e.deleted).ok_or_else(|| LinkError::NotFound(id.clone()))?;
+    let current =
+        tx.get(id).filter(|e| !e.deleted).ok_or_else(|| LinkError::Target(TargetError::NotFound(id.clone())))?;
     if current.locked {
-        return Err(LinkError::Locked(id.clone()));
+        return Err(LinkError::Target(TargetError::Locked(vec![id.clone()])));
     }
     if current.link == link {
         return Ok(false);

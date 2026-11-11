@@ -137,14 +137,17 @@ fn set_writes_clears_and_reports_no_change() {
     assert_eq!(set(&mut tx, &id("a"), None), Ok(true));
     assert_eq!(set(&mut tx, &id("a"), None), Ok(false));
     assert_eq!(tx.get(&id("a")).unwrap().link, None);
-    assert_eq!(set(&mut tx, &id("zz"), None), Err(LinkError::NotFound(id("zz"))));
+    assert_eq!(set(&mut tx, &id("zz"), None), Err(LinkError::Target(TargetError::NotFound(id("zz")))));
 }
 
 #[test]
 fn set_refuses_a_locked_element() {
     let mut store = store_with(true);
     let mut tx = store.begin();
-    assert_eq!(set(&mut tx, &id("a"), Some("https://example.com".into())), Err(LinkError::Locked(id("a"))));
+    assert_eq!(
+        set(&mut tx, &id("a"), Some("https://example.com".into())),
+        Err(LinkError::Target(TargetError::Locked(vec![id("a")])))
+    );
     assert!(target_exists(&tx, &id("a")));
     assert!(!target_exists(&tx, &id("zz")));
 }

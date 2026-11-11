@@ -13,7 +13,6 @@ use drafftink_edit::layout::{
     Algorithm, DiagramResult, CreateOpts, Direction, DiagramError, DiagramSpec, EdgeSpec, GroupSpec, LayoutOpts, NodeSpec,
     StyleSpec, below_content_origin,
 };
-use drafftink_edit::text_cmd::TextCmdError;
 use drafftink_edit::transform;
 use drafftink_geom::kurbo::{Point, Vec2};
 use drafftink_scene::limits;
@@ -22,6 +21,7 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 use super::text::support::{RectOut, refuse, select_only, with_doc};
+use crate::cmd::element_common::target_refusal;
 use crate::args;
 use crate::refusal::Refusal;
 use crate::session::{Ref, Session};
@@ -146,7 +146,7 @@ fn refuse_diagram(cmd: &str, e: DiagramError) -> Refusal {
         }
         DiagramError::NameTaken { .. } => Refusal::custom("name_taken", cmd, msg),
         DiagramError::BadName(_) => Refusal::custom("bad_name", cmd, msg),
-        DiagramError::Text(t) => refuse(cmd, TextCmdError::Text(t)),
+        DiagramError::Text(t) => refuse(cmd, t),
         DiagramError::Store(_) | DiagramError::Index(_) | DiagramError::Binding(_) => Refusal::internal(cmd, msg),
         _ => Refusal::custom("bad_args", cmd, msg),
     }
@@ -451,7 +451,7 @@ fn extend(s: &mut Session, a: ExtendArgs) -> Result<ExtendOut, Refusal> {
     let res = with_doc(s, |tx, m, _math, ids| {
         flowchart::create_connected_node(tx, m, ids, &from, dir, &opts)
     })
-    .map_err(|e: FlowchartError| refuse_flow(cmd, &from, e))?;
+    .map_err(|e: FlowchartError| refuse_flow(cmd, e))?;
     let Some(x) = res else {
         return Err(Refusal::nothing_to_do(
             cmd,
@@ -468,13 +468,12 @@ fn extend(s: &mut Session, a: ExtendArgs) -> Result<ExtendOut, Refusal> {
     })
 }
 
-fn refuse_flow(cmd: &str, from: &ElementId, e: FlowchartError) -> Refusal {
+fn refuse_flow(cmd: &str, e: FlowchartError) -> Refusal {
     match e {
-        FlowchartError::Missing(id) => Refusal::not_found(cmd, id.as_str()),
-        FlowchartError::WrongKind { kind, .. } => Refusal::wrong_kind(cmd, kind, "rectangle, diamond and ellipse elements"),
-        FlowchartError::Locked(_) => Refusal::locked(cmd, from.as_str()),
+        FlowchartError::Target(t) => target_refusal(cmd, t),
+        FlowchartError::WrongKind { kind, .. } => Refusal::wrong_kind(cmd, kind.name(), "rectangle, diamond and ellipse elements"),
         FlowchartError::BadGap | FlowchartError::NotFinite => Refusal::bad_args(cmd, e.to_string()),
-        FlowchartError::Text(t) => refuse(cmd, TextCmdError::Text(t)),
+        FlowchartError::Text(t) => refuse(cmd, t),
         other => Refusal::internal(cmd, other.to_string()),
     }
 }

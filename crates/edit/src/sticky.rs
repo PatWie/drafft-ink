@@ -17,8 +17,8 @@
 //!
 //! Callers run these functions inside one transaction.
 
+use drafftink_geom::kurbo::Size;
 use drafftink_scene::{Color, ElementId, IdSource, Kind, SceneTx, StoreError, Style, TextStyle};
-use kurbo::Size;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
@@ -210,7 +210,7 @@ pub fn create_note<T: SceneTx, M: TextMeasure + ?Sized>(
     style.seed = ids.seed();
     let wanted = match &spec.id {
         Some(id) => id.clone(),
-        None => text_bind::fresh_element_id(&*tx, ids),
+        None => crate::ids::unused_element_id(&*tx, ids),
     };
     let id = create::insert_on_top(tx, |z| create::shape_element(wanted, Kind::Rectangle, z, spec.bounds, style))?;
     if let Some(n) = &spec.name {

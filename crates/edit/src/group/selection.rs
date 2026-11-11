@@ -22,7 +22,12 @@ use drafftink_geom::lasso::{Lasso, lasso_selects};
 use drafftink_geom::select::{MarqueeMode, marquee_selects};
 use drafftink_scene::{Element, ElementId, GroupId, Kind, SceneRead};
 
-use super::units::{Relations, UnitKey, impl_from_target, is_label, live, primary_id, sort_z, unit_key, units};
+mod pick;
+
+pub use pick::{Pick, click_target, inside_editing_group, keeps_multi_selection, pick, pick_group};
+
+use super::units::{Relations, UnitKey, is_label, live, primary_id, sort_z, unit_key, units};
+use crate::target::TargetError;
 use crate::transform::geometry;
 
 /// The selection state of a tab.
@@ -83,12 +88,9 @@ pub enum ClickTarget {
 /// Why a selection change was refused.
 #[derive(Debug, Clone, PartialEq, thiserror::Error)]
 pub enum SelectionError {
-    /// No live element has this id.
-    #[error("element {0} does not exist or is deleted")]
-    NotFound(ElementId),
-    /// The element is locked.
-    #[error("{} element(s) are locked ({}). Unlock them first", .0.len(), super::units::ids_text(.0))]
-    Locked(Vec<ElementId>),
+    /// An element does not exist, is deleted, or is locked.
+    #[error(transparent)]
+    Target(#[from] TargetError),
     /// No group to enter.
     #[error("no group is selected. Select a group first (click it), or pass its id")]
     NoGroup,
@@ -102,7 +104,6 @@ pub enum SelectionError {
     #[error("there are no elements to select")]
     NothingToSelect,
 }
-impl_from_target!(SelectionError);
 
 /// Builds a normalized selection from leaf ids: bound text becomes its container, deleted ids are dropped, the
 /// children of a selected frame are dropped, and `groups` is derived. Locked elements are kept.
@@ -180,7 +181,7 @@ pub fn in_z_order<R: SceneRead>(scene: &R, sel: &Selection) -> Vec<ElementId> {
 fn innermost_shared(scene: &impl SceneRead, rel: &Relations, ids: &BTreeSet<ElementId>) -> Option<GroupId> {
     let mut common: Option<GroupId> = None;
     for id in ids {
-        let g = scene.get(id).and_then(|e| rel.stack(e).into_iter().next())?;
+        let g = scene.get(id).and_then(|e| rel.stack(e).next().cloned())?;
         match &common {
             None => common = Some(g),
             Some(c) if *c == g => {}
@@ -214,7 +215,7 @@ pub fn click<R: SceneRead>(
     let primary = primary_id(scene, hit);
     let e = live(scene, &primary)?;
     if e.locked && !opts.include_locked {
-        return Err(SelectionError::Locked(vec![primary]));
+        return Err(SelectionError::Target(TargetError::Locked(vec![primary])));
     }
     let editing = sel.editing_group.as_ref();
     let mut unit: BTreeSet<ElementId> = if opts.deep {
@@ -296,9 +297,10 @@ pub fn exit_group<R: SceneRead>(scene: &R, sel: &Selection) -> Result<Selection,
     };
     let members: BTreeSet<ElementId> = rel.members(&g).iter().map(|m| primary_id(scene, m)).collect();
     let parent = members.iter().next().and_then(|m| scene.get(m)).and_then(|e| {
-        let stack = rel.stack(e);
-        let i = stack.iter().position(|s| *s == g)?;
-        stack.get(i + 1).cloned()
+        // The group around `g`: the one after it in the stack, innermost first.
+        let mut stack = rel.stack(e).skip_while(|s| **s != g);
+        stack.next()?;
+        stack.next().cloned()
     });
     Ok(normalize(scene, &rel, members, parent))
 }

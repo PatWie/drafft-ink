@@ -3,13 +3,14 @@
 
 use std::collections::BTreeSet;
 
+use drafftink_edit::TargetError;
 use drafftink_edit::layout::{CreateOpts, DiagramResult, DiagramSpec, diagram_create};
 use drafftink_edit::query::{
     AtOpts, Field, Order, Query, QueryCtx, QueryError, QueryOpts, describe_all, elements_at, resolve_ref, run_query,
 };
 use drafftink_edit::text_bind::MonospaceMeasure;
+use drafftink_geom::kurbo::Point;
 use drafftink_scene::{Element, ElementId, ElementKind, Kind, MemoryStore, SceneRead, SceneStore, SceneTx, SeqIds};
-use kurbo::Point;
 
 fn q(json: &str) -> Query {
     serde_json::from_str(json).unwrap()
@@ -78,7 +79,6 @@ fn text_matches_labels_case_insensitively_and_by_regex() {
     assert!(run(&s, r#"{"text":{"contains":"yes","regex":"^no$"}}"#).is_empty());
     let err = run_query(&s, &q(r#"{"text":{"regex":"("}}"#), &QueryCtx::default(), &QueryOpts::default()).unwrap_err();
     assert!(matches!(err, QueryError::BadRegex { .. }));
-    assert_eq!(err.code(), "bad_args");
 }
 
 #[test]
@@ -144,8 +144,7 @@ fn connected_to_finds_arrows_and_neighbours() {
     assert_eq!(any.len(), 3);
     let err = run_query(&s, &q(r#"{"connected_to":{"ref":"nope"}}"#), &QueryCtx::default(), &QueryOpts::default())
         .unwrap_err();
-    assert_eq!(err, QueryError::Missing(ElementId::new("nope").unwrap()));
-    assert_eq!(err.code(), "not_found");
+    assert_eq!(err, QueryError::Target(TargetError::NotFound(ElementId::new("nope").unwrap())));
 }
 
 #[test]
@@ -245,7 +244,7 @@ fn resolve_ref_takes_ids_and_names() {
     assert_eq!(resolve_ref(&s, "@start").unwrap(), r.nodes["start"]);
     assert_eq!(resolve_ref(&s, r.nodes["bad"].as_str()).unwrap(), r.nodes["bad"]);
     assert_eq!(resolve_ref(&s, "@nobody").unwrap_err(), QueryError::UnknownName("nobody".into()));
-    assert!(matches!(resolve_ref(&s, "missing"), Err(QueryError::Missing(_))));
+    assert!(matches!(resolve_ref(&s, "missing"), Err(QueryError::Target(TargetError::NotFound(_)))));
     assert!(matches!(resolve_ref(&s, "not an id!"), Err(QueryError::BadRef(_))));
 }
 

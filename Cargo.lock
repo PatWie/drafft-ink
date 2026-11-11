@@ -1371,8 +1371,8 @@ dependencies = [
  "drafftink-geom",
  "drafftink-profile",
  "drafftink-scene",
+ "drafftink-typeset",
  "insta",
- "kurbo",
  "proptest",
  "schemars",
  "serde",
@@ -1447,8 +1447,10 @@ version = "0.2.0"
 dependencies = [
  "base64 0.22.1",
  "drafftink-geom",
+ "drafftink-io",
  "drafftink-scene",
  "drafftink-sketch",
+ "drafftink-typeset",
  "flate2",
  "image",
  "kurbo",
@@ -1562,6 +1564,7 @@ dependencies = [
  "tower-http 0.7.1",
  "tracing",
  "tracing-subscriber",
+ "tungstenite 0.29.0",
 ]
 
 [[package]]
@@ -1569,6 +1572,7 @@ name = "drafftink-sketch"
 version = "0.2.0"
 dependencies = [
  "criterion 0.8.2",
+ "drafftink-geom",
  "getrandom 0.2.17",
  "kurbo",
  "roughr",

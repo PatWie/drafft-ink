@@ -182,7 +182,7 @@ fn blocked_session() -> Session {
     doc.import(&store.export_snapshot().unwrap()).unwrap();
     doc.get_map("meta").insert("schema", 99i64).unwrap();
     doc.commit();
-    let from = loro::VersionVector::decode(&store.version_vector()).unwrap();
+    let from = loro::VersionVector::decode(&store.version_vector().unwrap()).unwrap();
     let update = doc.export(loro::ExportMode::updates(&from)).unwrap();
     assert!(s.apply_remote(tab, &update).is_err(), "the update must be refused");
     s

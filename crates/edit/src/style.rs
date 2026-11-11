@@ -28,6 +28,7 @@ use drafftink_scene::{
     SceneTx, Sloppiness, StoreError, StrokeStyle, Style, TextAlign, TextStyle, VerticalAlign,
 };
 
+use crate::target::TargetError;
 use crate::text_bind::label_index;
 
 /// Smallest line height a command accepts, as a multiple of the font size.
@@ -298,12 +299,9 @@ pub enum StyleError {
         /// What is accepted, as a phrase ("must be a number above 0 and at most 1000").
         expected: String,
     },
-    /// An element does not exist.
-    #[error("element `{0}` does not exist")]
-    NotFound(ElementId),
-    /// An element is locked.
-    #[error("element `{0}` is locked")]
-    Locked(ElementId),
+    /// An element does not exist, is deleted, or is locked.
+    #[error(transparent)]
+    Target(#[from] TargetError),
     /// No target supports any of the properties.
     #[error("none of the targets support {}", names(.props))]
     NotApplicable {
@@ -554,7 +552,7 @@ pub fn read<R: SceneRead>(
 }
 
 fn live<'a, R: SceneRead>(r: &'a R, id: &ElementId) -> Result<&'a Element, StyleError> {
-    r.get(id).filter(|e| !e.deleted).ok_or_else(|| StyleError::NotFound(id.clone()))
+    r.get(id).filter(|e| !e.deleted).ok_or_else(|| StyleError::Target(TargetError::NotFound(id.clone())))
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -593,7 +591,7 @@ pub fn apply<T: SceneTx>(
     for id in targets {
         let e = live(tx, id)?;
         if e.locked {
-            return Err(StyleError::Locked(id.clone()));
+            return Err(StyleError::Target(TargetError::Locked(vec![id.clone()])));
         }
         for &p in &wanted {
             if applies(e, p) {
@@ -605,7 +603,7 @@ pub fn apply<T: SceneTx>(
             match (routed, label) {
                 (true, Some(l)) => {
                     if l.locked {
-                        return Err(StyleError::Locked(l.id.clone()));
+                        return Err(StyleError::Target(TargetError::Locked(vec![l.id.clone()])));
                     }
                     report.applied.entry(l.id.clone()).or_default().insert(p);
                 }
@@ -842,8 +840,8 @@ pub fn theme_names() -> String {
 #[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 mod tests {
     use super::*;
+    use drafftink_geom::kurbo::Point;
     use drafftink_scene::{MemoryStore, SceneStore, TextData};
-    use kurbo::Point;
 
     fn id(s: &str) -> ElementId {
         ElementId::new(s).unwrap()
@@ -983,10 +981,10 @@ mod tests {
         }
         let mut tx = st.begin();
         let err = apply(&mut tx, &[a.clone(), b.clone()], &props(json!({"opacity": 0.2})), true).unwrap_err();
-        assert_eq!(err, StyleError::Locked(b));
+        assert_eq!(err, StyleError::Target(TargetError::Locked(vec![b])));
         assert_eq!(tx.get(&a).unwrap().style.opacity, 1.0);
         let err = apply(&mut tx, &[id("nope")], &props(json!({"opacity": 0.2})), true).unwrap_err();
-        assert_eq!(err, StyleError::NotFound(id("nope")));
+        assert_eq!(err, StyleError::Target(TargetError::NotFound(id("nope"))));
         let err = apply(&mut tx, &[a], &props(json!({"font_size": 30})), true).unwrap_err();
         assert_eq!(err, StyleError::NotApplicable { props: vec![Prop::FontSize] });
     }

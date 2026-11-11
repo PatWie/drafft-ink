@@ -23,8 +23,9 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use serde_json::json;
 
-use super::element_common::{edit_with_measure, id_strings, locked_refusal, prune_selection, select_exactly};
+use super::element_common::{edit_with_measure, id_strings, prune_selection, select_exactly};
 use super::view::{Pt, RectArg};
+use crate::cmd::element_common::target_refusal;
 use crate::args;
 use crate::refusal::Refusal;
 use crate::session::{Ref, Session};
@@ -155,7 +156,7 @@ fn empty_text(cmd: &str) -> Refusal {
 pub(super) fn refuse(cmd: &str, e: CreateError) -> Refusal {
     match e {
         CreateError::TooSmall { kind, width, height } => {
-            let linear = kind == "line" || kind == "arrow";
+            let linear = kind.is_linear();
             let dims = match (width, height) {
                 (true, true) => "width and height",
                 (true, false) => "width",
@@ -185,13 +186,12 @@ pub(super) fn refuse(cmd: &str, e: CreateError) -> Refusal {
             ),
         )
         .with_details(json!({ "name": crate::refusal::echo(&name), "owner": owner.as_str() })),
-        CreateError::NotFound(id) => Refusal::not_found(cmd, id.as_str()),
-        CreateError::Locked(ids) => locked_refusal(cmd, &ids),
+        CreateError::Target(t) => target_refusal(cmd, t),
         CreateError::NotBindable { id, kind, label } => {
             let text = if label {
                 "Text that labels another element cannot be an arrow target. Bind to the labelled element instead.".to_owned()
             } else {
-                let mut k = kind.to_owned();
+                let mut k = kind.name().to_owned();
                 if let Some(first) = k.get_mut(0..1) {
                     first.make_ascii_uppercase();
                 }
@@ -207,7 +207,7 @@ pub(super) fn refuse(cmd: &str, e: CreateError) -> Refusal {
         CreateError::NotLabelContainer { id, kind } => Refusal::custom(
             "wrong_kind",
             cmd,
-            format!("`{id}` is {} and cannot hold a label. Labels go on rectangles, diamonds, ellipses and arrows.", Article::new(kind)),
+            format!("`{id}` is {} and cannot hold a label. Labels go on rectangles, diamonds, ellipses and arrows.", Article::new(kind.name())),
         ),
         CreateError::AlreadyLabelled { container, existing } => Refusal::custom(
             "already_bound",
@@ -216,7 +216,7 @@ pub(super) fn refuse(cmd: &str, e: CreateError) -> Refusal {
         ),
         CreateError::EmptyText => empty_text(cmd),
         CreateError::NotAFrame { id, kind } => {
-            Refusal::custom("wrong_kind", cmd, format!("`{id}` is {}, not a frame. Pass the id of a frame, \"auto\" or null as `frame`.", Article::new(kind)))
+            Refusal::custom("wrong_kind", cmd, format!("`{id}` is {}, not a frame. Pass the id of a frame, \"auto\" or null as `frame`.", Article::new(kind.name())))
         }
         CreateError::NestedFrame => Refusal::bad_arg(cmd, "frame", "a frame cannot be placed inside another frame"),
         CreateError::TextTooLong { n, max } => Refusal::limit_exceeded(cmd, n, "characters", max),
@@ -582,7 +582,7 @@ fn plan_create(s: &Session, a: &CreateArgs) -> Result<Plan, Refusal> {
     let props = a.style.clone().unwrap_or_default();
     let mut defaults = s.tool.defaults();
     if a.kind == Kind::Freehand && a.highlighter == Some(true) {
-        defaults.style = create::highlighter_style(defaults.style, false, false);
+        defaults.style = create::highlighter_style(defaults.style, create::Given::default());
     }
     defaults.apply(&props);
     let style = defaults.style.clone();
@@ -612,7 +612,7 @@ fn plan_create(s: &Session, a: &CreateArgs) -> Result<Plan, Refusal> {
             spec.closed = a.closed.unwrap_or(false);
             let min = if spec.closed { 3 } else { 2 };
             if world.len() < min {
-                return Err(refuse(cmd, CreateError::TooFewPoints { kind: a.kind.name(), min, have: world.len() }));
+                return Err(refuse(cmd, CreateError::TooFewPoints { kind: a.kind, min, have: world.len() }));
             }
             if spec.closed && spec.path == PathType::Elbow {
                 return Err(Refusal::bad_arg(cmd, "closed", "a closed line cannot be an elbow; use arrow_type sharp or round"));
@@ -639,7 +639,7 @@ fn plan_create(s: &Session, a: &CreateArgs) -> Result<Plan, Refusal> {
         Kind::Freehand => {
             let world = world_points(cmd, "points", a.points.as_deref().unwrap_or_default())?;
             if world.is_empty() {
-                return Err(refuse(cmd, CreateError::TooFewPoints { kind: "freehand", min: 1, have: 0 }));
+                return Err(refuse(cmd, CreateError::TooFewPoints { kind: Kind::Freehand, min: 1, have: 0 }));
             }
             let tolerance = match a.simplify {
                 Some(v) => args::in_range(cmd, "simplify", v, 0.0, 1000.0)?,
@@ -716,7 +716,7 @@ fn create_element(s: &mut Session, a: CreateArgs) -> Result<CreateOut, Refusal> 
         let is_label = matches!(plan.body, Body::Label { .. });
         let wanted = match &plan.id {
             Some(i) => i.clone(),
-            None => text_bind::fresh_element_id(&*tx, ids),
+            None => drafftink_edit::unused_element_id(&*tx, ids),
         };
         let mut style = plan.style.clone();
         style.seed = ids.seed();
@@ -744,7 +744,7 @@ fn create_element(s: &mut Session, a: CreateArgs) -> Result<CreateOut, Refusal> 
             })?,
             Body::Text { content, at, width } => create::insert_on_top(tx, |z| {
                 let spec = TextSpec { font: plan.defaults.text.clone(), place: TextPlace::TopLeft(*at), width: *width };
-                create::text_element(measure, wanted.clone(), z, content, spec, style)
+                create::text_element(measure, wanted.clone(), z, content, spec, style).map_err(CreateError::from)
             })?,
             Body::Label { container, content } => {
                 let mut preset = PresetId::new(Some(wanted.clone()), ids);

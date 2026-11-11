@@ -27,24 +27,21 @@ const CONTROL_PER_SEC: u32 = 10;
 /// Rate-limit breaches further apart than this start counting again from zero.
 const BREACH_MEMORY: Duration = Duration::from_secs(10);
 
-fn encode(msg: &ServerMessage, json: bool) -> Option<Message> {
-    if json {
-        match msg.to_json() {
-            Ok(t) => Some(Message::Text(t.into())),
-            Err(e) => {
-                warn!("cannot encode a message: {e}");
-                None
-            }
-        }
-    } else {
-        match msg.encode() {
-            Ok(b) => Some(Message::Binary(b.into())),
-            Err(e) => {
-                warn!("cannot encode a message: {e}");
-                None
-            }
-        }
-    }
+/// How messages go on the wire.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum WireFormat {
+    /// Binary frames (the normal case).
+    Binary,
+    /// Text frames with JSON (debug mode, once the client sent JSON).
+    Json,
+}
+
+fn encode(msg: &ServerMessage, format: WireFormat) -> Option<Message> {
+    let frame = match format {
+        WireFormat::Json => msg.to_json().map(|t| Message::Text(t.into())),
+        WireFormat::Binary => msg.encode().map(|b| Message::Binary(b.into())),
+    };
+    frame.map_err(|e| warn!("cannot encode a message: {e}")).ok()
 }
 
 async fn writer(mut sink: SplitSink<WebSocket, Message>, mut rx: OutboxReceiver, json: Arc<AtomicBool>) {
@@ -56,7 +53,8 @@ async fn writer(mut sink: SplitSink<WebSocket, Message>, mut rx: OutboxReceiver,
             Next::Close => (None, true),
         };
         if let Some(m) = msg
-            && let Some(frame) = encode(&m, json.load(Ordering::Relaxed))
+            && let Some(frame) =
+                encode(&m, if json.load(Ordering::Relaxed) { WireFormat::Json } else { WireFormat::Binary })
             && !matches!(tokio::time::timeout(WRITE_TIMEOUT, sink.send(frame)).await, Ok(Ok(())))
         {
             break;
@@ -89,7 +87,7 @@ struct Conn {
 }
 
 /// Runs a connection until it ends.
-pub async fn serve(socket: WebSocket, app: Arc<AppState>, _permit: OwnedSemaphorePermit) {
+pub(crate) async fn serve(socket: WebSocket, app: Arc<AppState>, _permit: OwnedSemaphorePermit) {
     let (sink, mut stream) = socket.split();
     let (out, rx) = outbox(app.config.limits.outbox_messages, app.config.limits.outbox_bytes);
     let json = Arc::new(AtomicBool::new(false));
@@ -128,11 +126,10 @@ pub async fn serve(socket: WebSocket, app: Arc<AppState>, _permit: OwnedSemaphor
                 match frame {
                     None => break,
                     Some(Err(e)) => {
-                        let text = e.to_string();
-                        if text.contains("too long") || text.contains("Space limit") {
+                        if is_oversize(&e) {
                             conn.fail(ErrorCode::TooLarge, "the message is larger than the server accepts");
                         } else {
-                            debug!("connection error: {text}");
+                            debug!("connection error: {e}");
                         }
                         break;
                     }
@@ -215,9 +212,9 @@ impl Conn {
         self.breaches >= self.app.config.limits.max_breaches
     }
 
-    /// Takes a token from `which`; on refusal tells the client (when `tell`) and says whether
+    /// Takes a token from `which`; on refusal tells the client (with `OnRefusal::TellClient`) and says whether
     /// to close.
-    fn limit(&mut self, which: Bucket, tell: bool) -> Result<(), Flow> {
+    fn limit(&mut self, which: Bucket, on_refusal: OnRefusal) -> Result<(), Flow> {
         let now = Instant::now();
         let bucket = match which {
             Bucket::Update => &mut self.updates,
@@ -229,7 +226,7 @@ impl Conn {
             self.fail(ErrorCode::RateLimited, "too many messages; the connection is closed");
             return Err(Flow::Close);
         }
-        if tell {
+        if on_refusal == OnRefusal::TellClient {
             let ms = u32::try_from(wait.as_millis()).unwrap_or(u32::MAX).max(1);
             let mut msg = ServerMessage::error(ErrorCode::RateLimited, "slow down; this message was dropped");
             if let ServerMessage::Error { retry_after_ms, .. } = &mut msg {
@@ -273,26 +270,26 @@ impl Conn {
                     self.fail(ErrorCode::TooLarge, "the update is larger than this server accepts");
                     return Flow::Close;
                 }
-                if let Err(flow) = self.limit(Bucket::Update, true) {
+                if let Err(flow) = self.limit(Bucket::Update, OnRefusal::TellClient) {
                     return flow;
                 }
                 self.send_to_room(RoomCmd::Update { conn: self.id, seq, bytes: update }).await
             }
             ClientMessage::RequestSync { version } => {
-                if let Err(flow) = self.limit(Bucket::Control, true) {
+                if let Err(flow) = self.limit(Bucket::Control, OnRefusal::TellClient) {
                     return flow;
                 }
                 self.send_to_room(RoomCmd::RequestSync { conn: self.id, version }).await
             }
             ClientMessage::Awareness(state) => {
                 // Presence may be dropped: over the rate it is discarded without an error.
-                if let Err(flow) = self.limit(Bucket::Awareness, false) {
+                if let Err(flow) = self.limit(Bucket::Awareness, OnRefusal::Silent) {
                     return flow;
                 }
                 self.send_to_room(RoomCmd::Awareness { conn: self.id, state }).await
             }
             ClientMessage::Ping { nonce } => {
-                if let Err(flow) = self.limit(Bucket::Control, true) {
+                if let Err(flow) = self.limit(Bucket::Control, OnRefusal::TellClient) {
                     return flow;
                 }
                 self.out.send(Arc::new(ServerMessage::Pong { nonce }), Kind::BestEffort);
@@ -341,8 +338,29 @@ impl Conn {
     }
 }
 
+/// What a rate limit does to the client whose message it drops.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum OnRefusal {
+    /// Send an error with the time to wait.
+    TellClient,
+    /// Drop the message without a word.
+    Silent,
+}
+
 enum Bucket {
     Update,
     Awareness,
     Control,
+}
+
+/// True when the WebSocket layer cut the connection because a message or frame passed the size limit.
+fn is_oversize(e: &axum::Error) -> bool {
+    let mut source: Option<&(dyn std::error::Error + 'static)> = std::error::Error::source(e);
+    while let Some(err) = source {
+        if let Some(tungstenite::Error::Capacity(_)) = err.downcast_ref::<tungstenite::Error>() {
+            return true;
+        }
+        source = err.source();
+    }
+    false
 }

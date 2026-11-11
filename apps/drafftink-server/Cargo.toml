@@ -35,6 +35,7 @@ tracing.workspace = true
 tracing-subscriber.workspace = true
 thiserror.workspace = true
 subtle.workspace = true
+tungstenite.workspace = true
 rusqlite = { workspace = true, optional = true }
 object_store = { workspace = true, optional = true }
 

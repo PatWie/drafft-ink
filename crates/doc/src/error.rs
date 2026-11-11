@@ -1,13 +1,37 @@
 //! Errors of the document layer. Every one has a plain-words message that says what to do next.
 
-use drafftink_scene::StoreError;
+use std::error::Error;
+use std::sync::Arc;
+
+use drafftink_scene::{ElementError, ElementId, StoreError};
+
+/// A failure of the CRDT library, kept as the source of the error. `LoroError` is neither `Clone` nor
+/// `PartialEq`, so two of these compare by their message.
+#[derive(Debug, Clone, thiserror::Error)]
+#[error("{0}")]
+pub struct BackendError(#[source] Arc<dyn Error + Send + Sync>);
+
+impl BackendError {
+    /// Keeps `error` (any error, or a plain message) as the source.
+    pub fn new(error: impl Into<Box<dyn Error + Send + Sync>>) -> Self {
+        Self(Arc::from(error.into()))
+    }
+}
+
+impl PartialEq for BackendError {
+    fn eq(&self, other: &Self) -> bool {
+        self.0.to_string() == other.0.to_string()
+    }
+}
+
+impl Eq for BackendError {}
 
 /// Why a document operation failed. None of these leaves the store half-changed.
-#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+#[derive(Debug, Clone, PartialEq, thiserror::Error)]
 pub enum DocError {
     /// The bytes are not a Loro update or snapshot, or Loro refused them.
     #[error("the data is not a valid update: {0}")]
-    Import(String),
+    Import(#[source] BackendError),
     /// The bytes exceed the configured limit and were not looked at.
     #[error("the update is {size} bytes, over the limit of {limit} bytes")]
     TooLarge {
@@ -59,12 +83,38 @@ pub enum DocError {
     Poisoned,
     /// Loro failed in a way that is not the caller's fault.
     #[error("the CRDT layer failed: {0}")]
-    Backend(String),
+    Backend(#[source] BackendError),
+    /// Loro refuses this peer id (it reserves `u64::MAX`).
+    #[error("{0} cannot be used as a peer id")]
+    BadPeerId(u64),
+    /// A stored value cannot be read back (a wrong type, a number out of range, a broken nesting).
+    #[error("a stored value is malformed: {0}")]
+    Malformed(String),
+    /// A stored element breaks a rule that cannot be repaired. The element is quarantined.
+    #[error("element {id} is invalid: {error}")]
+    BadElement {
+        /// The element.
+        id: ElementId,
+        /// The broken rule.
+        error: ElementError,
+    },
 }
 
 impl From<loro::LoroError> for DocError {
     fn from(e: loro::LoroError) -> Self {
-        DocError::Backend(e.to_string())
+        DocError::Backend(BackendError::new(e))
+    }
+}
+
+impl DocError {
+    /// A CRDT-layer failure from any error or message.
+    pub fn backend(error: impl Into<Box<dyn Error + Send + Sync>>) -> Self {
+        DocError::Backend(BackendError::new(error))
+    }
+
+    /// The data was rejected on import.
+    pub fn import(error: impl Into<Box<dyn Error + Send + Sync>>) -> Self {
+        DocError::Import(BackendError::new(error))
     }
 }
 
