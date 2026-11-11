@@ -74,8 +74,6 @@ pub struct App {
     wake: WakeCell,
     clipboard: SharedClipboard,
     bridge: Option<BridgeHost>,
-    /// The text engine, shared with the session and the render caches.
-    typesetter: SharedTypesetter,
     /// Fonts the host was asked for, so that each is asked for once.
     fonts_requested: HashSet<FontFile>,
     notices: Vec<String>,
@@ -120,7 +118,6 @@ impl App {
             wake,
             clipboard,
             bridge,
-            typesetter,
             fonts_requested: HashSet::new(),
             notices,
             open_urls: Vec::new(),
