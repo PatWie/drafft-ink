@@ -18,12 +18,12 @@ use crate::refusal::{Refusal, echo};
 use crate::session::Session;
 use crate::spec::{CommandSpec, Facts, Typed};
 
-use super::element_common::id_strings;
+use super::element_common::{id_strings, target_refusal};
 
 /// The refusal for a query error. `key` names the argument that held the filter.
 pub(crate) fn query_refusal(cmd: &str, key: &str, e: QueryError) -> Refusal {
     match e {
-        QueryError::Missing(id) => Refusal::not_found(cmd, id.as_str()),
+        QueryError::Target(t) => target_refusal(cmd, t),
         QueryError::UnknownName(n) => Refusal::not_found(cmd, &format!("@{n}")),
         QueryError::BadRegex { pattern, reason } => Refusal::bad_arg(
             cmd,

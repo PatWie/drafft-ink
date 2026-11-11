@@ -145,7 +145,7 @@ fn apply(s: &mut Session, a: ApplyArgs) -> Result<ApplyOut, Refusal> {
             let ctx = QueryCtx { selected: Some(s.selection()) };
             let opts = QueryOpts { limit: drafftink_edit::query::MAX_LIMIT, ..QueryOpts::default() };
             let r = run_query(s.store(), q, &ctx, &opts).map_err(|e| match e {
-                QueryError::Missing(_) | QueryError::UnknownName(_) => Refusal::not_found(cmd, &e.to_string()),
+                QueryError::Target(_) | QueryError::UnknownName(_) => Refusal::not_found(cmd, &e.to_string()),
                 _ => Refusal::bad_args(cmd, e.to_string()),
             })?;
             if r.truncated {

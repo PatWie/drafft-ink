@@ -266,7 +266,7 @@ fn ref_query_resolves_names_and_refuses_unknown_ones() {
     let bad = RefQuery { bound_text_of: Some("@nope".into()), ..RefQuery::default() };
     assert_eq!(bad.resolve(&s).unwrap_err(), QueryError::UnknownName("nope".into()));
     let bad = RefQuery { ids: Some(vec!["gone".into()]), ..RefQuery::default() };
-    assert_eq!(bad.resolve(&s).unwrap_err(), QueryError::Missing(id("gone")));
+    assert_eq!(bad.resolve(&s).unwrap_err(), QueryError::Target(TargetError::NotFound(id("gone"))));
     let bad = RefQuery { ids: Some(vec!["../x".into()]), ..RefQuery::default() };
     assert!(matches!(bad.resolve(&s).unwrap_err(), QueryError::BadRef(_)));
 }
