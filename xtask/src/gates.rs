@@ -76,15 +76,7 @@ impl Gate {
         let plain = |result: Result<(), String>| result.map(|()| Vec::new());
         match self {
             Gate::Fmt => plain(run(cargo(root).args(["fmt", "--all", "--check"]))),
-            Gate::Clippy => plain(run(cargo(root).args([
-                "clippy",
-                "--workspace",
-                "--all-targets",
-                "--all-features",
-                "--",
-                "-D",
-                "warnings",
-            ]))),
+            Gate::Clippy => plain(clippy(root)),
             Gate::Layers => plain(layers::run(root, args.iter().any(|a| a == "--list"))),
             Gate::Wasm => plain(wasm::run(root)),
             Gate::Standards => plain(standards::run(root)),
@@ -97,6 +89,26 @@ impl Gate {
             Gate::Size => plain(size::run_gate(root, args)),
         }
     }
+}
+
+/// Clippy twice. First on every target of the workspace with `clippy.toml`. Then on the library code of every
+/// crate below L6, natively and for wasm32, with `xtask/clippy-below-l6/clippy.toml`, which adds the file system,
+/// the network, threads, processes and UI types to the disallowed lists (those crates do no I/O of their own).
+fn clippy(root: &Path) -> Result<(), String> {
+    run(cargo(root).args(["clippy", "--workspace", "--all-targets", "--all-features", "--", "-D", "warnings"]))?;
+    let strict_config = root.join("xtask/clippy-below-l6");
+    for target in [None, Some(wasm::TARGET)] {
+        let mut command = cargo(root);
+        command.arg("clippy").env("CLIPPY_CONF_DIR", &strict_config);
+        if let Some(target) = target {
+            command.args(["--target", target]);
+        }
+        for package in layers::libraries_below_l6() {
+            command.args(["-p", package]);
+        }
+        run(command.args(["--lib", "--all-features", "--", "-D", "warnings"]))?;
+    }
+    Ok(())
 }
 
 /// Where the old app is checked out, for the gates that compare with it: `DRAFFTINK_OLD_REPO`, else the

@@ -19,6 +19,10 @@
 //!
 //! The functions that take bytes are pure. [`check_fixture_facts`] reads a directory and is not available on wasm.
 
+// Exception to the no-file-system rule below L6 (xtask/clippy-below-l6): this module is the fixture checker behind
+// `cargo xtask fixtures`. It reads `tests/fixtures` from disk, is behind the `facts` feature, and is not on wasm.
+#![allow(clippy::disallowed_methods, clippy::disallowed_types)]
+
 use std::collections::{BTreeMap, BTreeSet};
 
 use drafftink_geom::aabb;
