@@ -7,6 +7,7 @@
 
 pub mod app;
 pub mod compositor;
+mod cursor;
 pub mod events;
 pub mod gpu;
 #[cfg_attr(not(target_arch = "wasm32"), allow(dead_code))]

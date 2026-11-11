@@ -864,19 +864,14 @@ fn frame_interval(window: &Window) -> Duration {
     Duration::from_secs_f64(0.9 * 1000.0 / f64::from(millihertz))
 }
 
+/// Shows `icon` over the window now. On the web winit sets the CSS cursor of the canvas.
 fn set_window_cursor(window: &Window, icon: egui::CursorIcon) {
-    #[cfg(not(target_arch = "wasm32"))]
-    match crate::native::cursor_icon(icon) {
+    match crate::cursor::cursor_icon(icon) {
         Some(c) => {
             window.set_cursor_visible(true);
             window.set_cursor(c);
         }
         None => window.set_cursor_visible(false),
-    }
-    #[cfg(target_arch = "wasm32")]
-    {
-        // winit's web backend maps the same names to CSS cursors.
-        let _ = (window, icon);
     }
 }
 

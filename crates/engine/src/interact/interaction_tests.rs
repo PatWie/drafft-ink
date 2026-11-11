@@ -410,6 +410,25 @@ fn hovering_text_shows_the_i_beam_and_hovering_a_shape_does_so_only_with_the_tex
 }
 
 #[test]
+fn hovering_the_text_of_a_label_shows_the_i_beam_and_the_rest_of_its_shape_does_not() {
+    let mut rig = Rig::new();
+    let shape = rig.rect(100.0, 100.0, 200.0, 120.0);
+    rig.run("text.set", json!({ "id": shape.as_str(), "text": "Label" }));
+    let label = drafftink_edit::text_bind::label_of(rig.s.store(), &shape).expect("a label");
+    let t = rig.s.element(&label).expect("the label").transform;
+    assert_eq!(rig.hover(t.x + t.w / 2.0, t.y + t.h / 2.0).cursor, Some(Cursor::Text), "on the label");
+    assert_eq!(
+        rig.hover(shape_corner(&rig, &shape).0 + 6.0, shape_corner(&rig, &shape).1 + 6.0).cursor,
+        Some(Cursor::Move)
+    );
+}
+
+fn shape_corner(rig: &Rig, id: &drafftink_scene::ElementId) -> (f64, f64) {
+    let t = &rig.s.element(id).expect("the shape").transform;
+    (t.x, t.y)
+}
+
+#[test]
 fn the_icon_of_a_selected_element_is_not_live() {
     let mut rig = Rig::new();
     let a = linked_rect(&mut rig, "https://example.com/x");

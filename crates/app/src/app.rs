@@ -664,7 +664,9 @@ impl App {
     /// of the screen the session recorded.
     fn poll_collab(&mut self, now_ms: u64) -> bool {
         let due = self.collab_due_ms.is_some_and(|d| now_ms >= d);
-        if !due && !self.in_room {
+        // A room joined since the last poll (the dialog's button, an agent) needs polling from now on, so the
+        // question is asked of the session, not of what the last poll found.
+        if !due && self.session.collab_view().room.is_none() {
             return false;
         }
         let poll = self.session.collab_poll();
@@ -1113,3 +1115,7 @@ fn collab_view_of(s: &mut Session) -> drafftink_ui::CollabView {
 #[cfg(all(test, feature = "scenarios"))]
 #[path = "app/install_scene_tests.rs"]
 mod install_scene_tests;
+
+#[cfg(test)]
+#[path = "app/collab_poll_tests.rs"]
+mod collab_poll_tests;

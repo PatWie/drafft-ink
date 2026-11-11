@@ -146,11 +146,17 @@ test.describe("real pointer input", () => {
     await app.until("the editor", async () => (await app.state()).text_edit !== undefined && (await app.state()).text_edit !== null);
     const keys = app.page.keyboard;
     await keys.type("plain ", { delay: 20 });
-    await keys.press("Control+b");
+    // A chord is a key event and the text is a text event: the app takes a key at its next frame, so give the
+    // chord a frame before the next letter, as a person's fingers do.
+    const chord = async (name: string) => {
+      await keys.press(name);
+      await app.page.waitForTimeout(100);
+    };
+    await chord("Control+b");
     await keys.type("bold", { delay: 20 });
-    await keys.press("Control+b");
+    await chord("Control+b");
     await keys.type(" ", { delay: 20 });
-    await keys.press("Control+i");
+    await chord("Control+i");
     await keys.type("slanted", { delay: 20 });
     await keys.press("Control+Enter");
     await app.until("the committed text", async () => (await app.exec("element.query", { filter: { kind: "text" } })).total === 1);
@@ -198,7 +204,12 @@ test.describe("real pointer input", () => {
 
     expect(await cursor(inText), "over text").toBe("text");
     expect(await cursor(inShape), "over a shape with the select tool: it moves").toBe("move");
-    expect(await cursor(empty), "over nothing").toBe("default");
+    expect(await cursor(empty), "over nothing: the browser's arrow").toBe("auto");
+    const labelled = await box(app, 700, 450, 160, 100, { fill: "#ffd8a8" });
+    await app.exec("text.set", { id: labelled, text: "Label" });
+    await app.exec("selection.clear");
+    expect(await cursor(await app.toPage({ x: 780, y: 500 })), "over the label of a shape").toBe("text");
+    expect(await cursor(await app.toPage({ x: 708, y: 458 })), "over the shape beside its label").toBe("move");
     await app.pressToolKey(empty, "t", "text");
     expect(await cursor(inShape), "with the text tool a shape takes a label").toBe("text");
     expect(await cursor(empty), "and empty canvas takes a new text").toBe("text");
@@ -220,13 +231,22 @@ test.describe("real pointer input", () => {
       return new Shot(PNG.sync.read(buffer), clip);
     };
     const before = await shot(region);
-    const inkBefore = before.count(region, [0, 0, 0], 90);
+    // The text is drawn in the default stroke colour, a blue; the grid and the page are light.
+    const ink = (shot: Shot): number => {
+      let n = 0;
+      for (let y = region.y; y < region.y + region.h; y++) for (let x = region.x; x < region.x + region.w; x++) {
+        const [r, , b] = shot.at(x, y);
+        if (b > 150 && r < 150) n++;
+      }
+      return n;
+    };
+    const inkBefore = ink(before);
 
     // The browser's input method: a preedit, then its commit (Chrome DevTools `Input.imeSetComposition`).
     const cdp = await app.page.context().newCDPSession(app.page);
     await cdp.send("Input.imeSetComposition", { text: "nihao", selectionStart: 5, selectionEnd: 5 });
     const composing = await shot(region);
-    const inkComposing = composing.count(region, [0, 0, 0], 90);
+    const inkComposing = ink(composing);
     expect(inkComposing, "the preedit is drawn in the text, with its underline").toBeGreaterThan(inkBefore + 60);
     expect(composing.differing(before, 40), "the picture changed where the text is").toBeGreaterThan(60);
     expect((await app.exec("element.query", { filter: { kind: "text" } })).total, "nothing is in the document until the edit ends").toBe(0);
