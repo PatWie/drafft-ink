@@ -507,6 +507,8 @@ An element is flat and has a stable id (`scene` crate). Groups are `groupIds` on
 | `element.set_name` | Name element | Undoable | none | NEW §11 |
 | `element.relabel` | Change label | Undoable | none | NEW §11 |
 | `element.connect` | Connect elements | Undoable | none | NEW §11 |
+| `element.create_sticky` | Add sticky note | Undoable | `N` | X:stickyNote.ts; NEW |
+| `element.convert` | Convert element type | Undoable | `Tab`, `Shift+Tab` | X:ConvertElementTypePopup.tsx; NEW |
 | `element.erase` | Erase along path | Undoable | none (eraser tool) | E:1285-1311 |
 | `element.query` | Find elements | NoUndo, read-only | none | NEW §11 |
 | `element.at` | Element at point | NoUndo, read-only | none | NEW §11 |
@@ -529,6 +531,8 @@ An element is flat and has a stable id (`scene` crate). Groups are `groupIds` on
 | `element.set_name` | `id: Ref`, `name: string \| null` | Execute: `name_taken`: "The name `{name}` is already used by element `{id}`. Names must be unique so that `@{name}` is unambiguous. Pick another name, or clear the other with `element.set_name`."; `bad_name`: "A name must be 1 to 64 characters, must not start with `@` or `$`, and must not contain control characters."; `not_found`. | Sets or clears the element's `name` field (stored in the document and synced). Agents then address the element as `@name`. Not shown on the canvas. |
 | `element.relabel` | `id: Ref`, `text: string`, `create: bool = true` | Execute: `wrong_kind` (allowed: text, rectangle, diamond, ellipse, arrow); `empty_text` (on a free text element only: "A text element cannot be empty. Delete it with `element.delete`."; a bound label given as `id` counts as its container, so empty text removes the label, as with `text.set`); `locked`; `not_found`. | On a text element, replaces its content. On a shape or an arrow, replaces its bound label, creating one when create=true, removing it when `text` is empty. On a bound label, empty `text` removes that label. Re-measures, grows the container when the text no longer fits, and re-centres the label. |
 | `element.connect` | `from: Ref`, `to: Ref`, `kind: "arrow" \| "line" = arrow`, `arrow_type: "sharp" \| "round" \| "elbow" = sharp`, `bind_mode: "orbit" \| "inside" = orbit`, `label?: string`, `start_head?: Head \| null`, `end_head?: Head \| null`, `style?: StyleProps`, `name?: string` | Execute: `name_taken` and `bad_name` (see `element.set_name`); `same_element`: "Cannot connect an element to itself with `element.connect`. Pass two different elements."; `not_bindable`: "{kind} elements cannot be arrow targets. Bindable kinds: rectangle, diamond, ellipse, text, image, frame."; `locked`; `not_found`. | Creates an arrow whose ends are bound to the two elements (the binding is stored on the arrow), starting on the side facing the other element, routed and z-ordered above both. The label becomes the arrow's bound text (kind=arrow only; blank means none). Selects the new arrow. Output `{created: [arrow id]}`. |
+| `element.create_sticky` | `at?: Point \| "viewport_center" \| "$cursor"` (the middle of the note, default the visible canvas), `size: number = 250` (side, at least 75), `bounds?: Rect` (instead of `at` and `size`), `text?: string`, `color: "yellow" \| "pink" \| "green" \| "blue" \| "orange" = yellow`, `font_size?: number` (largest label size, 16 to 512, default 28), `name?`, `id?`, `select: bool = true`, `frame: "auto" \| Ref \| null = auto`, `edit: bool = false` | Always available. Execute refuses: `too_small`: "The sticky note is smaller than 75 units in {width/height}. Give a size, or bounds with w and h, of at least 75."; `bad_args` for `bounds` together with `at` or `size`, and for a `font_size` outside 16 to 512; `id_in_use`, `name_taken`, `bad_name` (see `element.create`); `locked` for a locked frame target; `limit_exceeded` for text over the text limit. | Creates a rectangle with the sticky preset (Excalidraw's sticky note): solid fill in the paper colour (`#ffdf6b` yellow, pink `#fcc2d7`, green `#b2f2bb`, blue `#a5d8ff`, orange `#ffd8a8`), ink `#1e1e1e`, corner radius a quarter of the shorter side up to 32, line width, dash, roughness and opacity from the style defaults. Non-blank `text` becomes its bound label, centred both ways, with the largest font size from `font_size` (default 28) down to 16 in steps of 2 at which the wrapped text fits; when it does not fit at 16 the note grows downwards. No `text` makes an empty note (type with `text.edit_begin`). `edit=true` then starts editing its label (the key `N` passes it). The note is an ordinary rectangle: there is no sticky element kind, no creation-date footer and no drop shadow (the renderer has none), and the label keeps the size it was fitted to when the note is resized or the text is edited. One undo step. Output `{id, label?, bounds, frame?, font_size?}`. |
+| `element.convert` | `ids: Refs = selection`, `to?: "rectangle" \| "diamond" \| "ellipse" \| "line" \| "arrow"`, `arrow_type?: "sharp" \| "round" \| "elbow"` (only with `to`=arrow, default sharp), `reverse: bool = false` (only without `to`) | `no_target`. Execute: `locked`; `not_found`; `wrong_kind` (allowed: rectangle, diamond, ellipse, line, arrow; text, math, image, frame and freehand are refused); `mixed_kinds`: "Shapes (rectangle, diamond, ellipse) and lines or arrows cannot be converted together. Select only shapes, or only lines and arrows."; `not_convertible`: a target from the other family ("`{id}` is a {from} and cannot become a {to}. Shapes become a rectangle, diamond or ellipse; lines and arrows become a line or an arrow."), an arrow bound to a shape or carrying a label that would become a line ("... Detach it first with `arrow.unbind` ...", "... Remove the label first with `element.relabel` (empty text) ..."), a closed line that would become an arrow; `nothing_to_do`: "Nothing to convert: every element is already a {type}."; `bad_args` for `arrow_type` without `to`=arrow and for `reverse` with `to`. | Changes the type in place, keeping the id, box, angle, style, groups, frame and z-order. Shapes (rectangle, diamond, ellipse): the bound label is laid out again for the new inner box and the shape grows about its centre when the text no longer fits; arrows bound to the shape are put back on the new outline (`reanchor_to_outline`) and solved, elbow arrows re-routed. Lines and arrows: the points stay; a line becomes an arrow with an `arrow` end head, an arrow becomes a line without heads, a path change is `arrow.set_type`. Without `to` the element takes the next type of its family (Tab; `reverse` the previous one, Shift+Tab): rectangle, diamond, ellipse; line, sharp arrow, round arrow, elbow arrow (Excalidraw's order). Several elements of one family convert together; elements already of the target type are left alone (listed in `unchanged`). Selection is kept. One undo step. Output `{to, converted, unchanged, followers}`. |
 | `element.erase` | `path: Point[]` (1 or more), `radius: number = 10`, `units: "screen" \| "world" = screen` | Always available. Erasing nothing is Ok with deleted=[] (changed=false). | Deletes every unlocked element hit by the swept path, using exact hit testing, with the rules of `element.delete`, as one undo step (the old app pushed an undo step per drag event and used a fixed 10 world units, E:1285; FIX). Screen units are converted with the current zoom. |
 | `element.query` | `filter?: Query`, `limit: int = 100` (max 1000), `offset: int = 0`, `fields: string[] = [id, kind, name, text, bounds]`, `order: "z" \| "reading" \| "position" = z` | Always available. `bad_args` on a malformed query. | Returns `{total, items, truncated}`. Selectable fields: id, kind, name, text, bounds, style, angle, group_ids, frame, bindings, bound_text, locked, link, z, points (a line or arrow's points in world coordinates, `[[x, y], ...]`, `null` for other kinds). In the filter, `ids`, `frame`, `bound_text_of` and `connected_to.ref` accept ids and `@name`; an unknown one is `not_found`. Bound text is left out unless the filter asks for kind text, names `ids` or sets `bound_text_of`. `fields` needs 1 to 32 entries; `limit` outside 1..1000 is `bad_args`. |
 | `element.at` | `point: Point`, `tolerance: number = 6` (screen px), `all: bool = false`, `deep: bool = false`, `include_locked: bool = false` | Always available. | Hit-tests the point (`tolerance` screen pixels, divided by the zoom). Returns `{count, hits}`: the topmost unit (the outermost group, or the member with deep=true), or all hits top to bottom. A hit has id, kind, name, text and bounds; a hit that counts as a whole group also has `group` and `members`. Bound text is hit as its container. Frames are hit only on their outline, not their interior. |
@@ -1096,6 +1100,7 @@ One keymap for every platform. `Mod` is Cmd on macOS and Ctrl elsewhere. Binding
 | `T` `8` | `tool.set` tool=text | canvas | A:5280 |
 | `M` `9` | `tool.set` tool=math | canvas | A:5285 |
 | `F` | `tool.set` tool=frame | canvas | NEW |
+| `N` | `element.create_sticky` at=`$cursor`, edit=true | canvas | X; NEW |
 | `E` `0` | `tool.set` tool=eraser | canvas | A:5290 |
 | `Z` `K` | `tool.set` tool=laser | canvas | A:5295 |
 | `Q` | `tool.lock` | canvas | NEW |
@@ -1117,6 +1122,7 @@ One keymap for every platform. `Mod` is Cmd on macOS and Ctrl elsewhere. Binding
 | `Arrow keys` | `element.nudge` dir | canvas | A:5338 |
 | `Shift+Arrow keys` | `element.nudge` dir, fine=true | canvas | NEW |
 | `Shift+H`, `Shift+V` | `element.flip` axis=horizontal, vertical | canvas | NEW |
+| `Tab`, `Shift+Tab` | `element.convert` reverse=false, true | canvas | X; NEW |
 | `Mod+Shift+L` | `element.lock` | canvas | NEW |
 | `Mod+G` | `group.create` | canvas | A:4973 |
 | `Mod+Shift+G` | `group.ungroup` | canvas | A:4973 |
@@ -1428,7 +1434,7 @@ These are deliberate; each fixes an inventory finding. Reviewers should expect t
 |---|---|
 | `H` hand (toggles back) | `tool.set` hand; Space-hold is `tool.hold` |
 | `V`/`1`, `R`/`2`, `D`/`3`, `O`/`4`, `A`/`5`, `L`/`6`, `P`/`7`/`X`, `T`/`8` | `tool.set` (§2.3) |
-| `N` sticky note | not planned (§8.2) |
+| `N` sticky note | `element.create_sticky` (the key places a note at the pointer and starts the text edit) |
 | `9` image | `I` (UI verb), conflict §6.4 |
 | `E`/`0` eraser, `F` frame, `K` laser | `tool.set` |
 | `B` bucket fill, `Shift+X` autoshape | not planned |
@@ -1437,7 +1443,7 @@ These are deliberate; each fixes an inventory finding. Reviewers should expect t
 | `Esc` | `tool.cancel` |
 | `Enter` edit text or label | `text.edit_begin` |
 | `Mod+Enter` edit line points / finish text | `arrow.edit_points` / editor-local |
-| `Tab`, `Shift+Tab` convert element type | not planned |
+| `Tab`, `Shift+Tab` convert element type | `element.convert` (cycles to the next or previous type of the family) |
 | `Mod` held: do not bind | `bind=off` argument |
 | click, click, click: curved arrow | recognizer collects points, `element.create` points, arrow_type=round |
 | Double-click or `Enter` on image: crop | not planned |
@@ -1510,7 +1516,7 @@ These are deliberate; each fixes an inventory finding. Reviewers should expect t
 
 These Excalidraw features are outside the plan. They have no ids. If one is added, its family section is added here first.
 
-Sticky note, embeddable and iframe elements, bucket fill, autoshape, eyedropper, image crop, convert element type, list markers in text, chart paste, magic frame and every AI feature, dark theme and canvas theme switching, i18n, follow mode, room encryption and passwords, pen-only mode, Excalidraw+ export, shareable encrypted links, scrollbars, welcome screen, hint bar.
+Embeddable and iframe elements, bucket fill, autoshape, eyedropper, image crop, list markers in text, chart paste, magic frame and every AI feature, dark theme and canvas theme switching, i18n, follow mode, room encryption and passwords, pen-only mode, Excalidraw+ export, shareable encrypted links, scrollbars, welcome screen, hint bar.
 
 ---
 
@@ -1597,6 +1603,8 @@ Legend:
 | `element.set_name` | D,O | - | - | ok | no | no | commit | scene | always | n | y |
 | `element.relabel` | D,O | - | - | ok | no | no | commit | scene | always | n | y |
 | `element.connect` | D,O | - | - | ok | no | no | commit | scene | always | n | y |
+| `element.create_sticky` | D,O | - | - | ok | no | no | commit | scene | always | y | y |
+| `element.convert` | D,O | req | - | ok | no | no | commit | scene | always | y | y |
 | `element.erase` | D,O | - | - | ok | no | no | commit | scene | always | n | y |
 | `element.query` | - | - | - | ok | ok | ok | ok | - | always | n | y |
 | `element.at` | - | - | - | ok | ok | ok | ok | - | always | n | y |

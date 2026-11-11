@@ -75,7 +75,7 @@ pub enum FrameArg {
 }
 
 impl FrameArg {
-    fn is_auto(&self) -> bool {
+    pub(super) fn is_auto(&self) -> bool {
         *self == FrameArg::Auto
     }
 }
@@ -152,7 +152,7 @@ fn empty_text(cmd: &str) -> Refusal {
 }
 
 /// One catalog refusal per `CreateError` (no blanket conversion).
-fn refuse(cmd: &str, e: CreateError) -> Refusal {
+pub(super) fn refuse(cmd: &str, e: CreateError) -> Refusal {
     match e {
         CreateError::TooSmall { kind, width, height } => {
             let linear = kind == "line" || kind == "arrow";
@@ -486,14 +486,14 @@ fn world_points(cmd: &str, key: &str, pts: &[Pt]) -> Result<Vec<Point>, Refusal>
     pts.iter().enumerate().map(|(i, p)| world_point(cmd, key, i, *p)).collect()
 }
 
-fn resolve_id(s: &Session, cmd: &str, raw: &Option<String>) -> Result<Option<ElementId>, Refusal> {
+pub(super) fn resolve_id(s: &Session, cmd: &str, raw: &Option<String>) -> Result<Option<ElementId>, Refusal> {
     let Some(raw) = raw else { return Ok(None) };
     let id = ElementId::new(raw).map_err(|e| Refusal::bad_arg(cmd, "id", e.to_string()))?;
     create::ensure_id_free(s.store(), &id).map_err(|e| refuse(cmd, e))?;
     Ok(Some(id))
 }
 
-fn check_name(s: &Session, cmd: &str, name: &Option<String>) -> Result<Option<String>, Refusal> {
+pub(super) fn check_name(s: &Session, cmd: &str, name: &Option<String>) -> Result<Option<String>, Refusal> {
     let Some(n) = name else { return Ok(None) };
     create::validate_name(n).map_err(|e| refuse(cmd, e))?;
     create::ensure_name_free(s.store(), n, None).map_err(|e| refuse(cmd, e))?;

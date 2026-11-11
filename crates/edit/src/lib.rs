@@ -20,6 +20,8 @@
 //! - `link`: hyperlinks and element links (`element.set_link`, `element.open_link`).
 //! - `library`: fragments (library items, merged files): take out, insert with new ids, tell apart.
 //! - `paste`, `preflight`: pasting copies into a scene, and the checks that run before a structural change.
+//! - `sticky`: the preset and fit of a sticky note (`element.create_sticky`).
+//! - `convert`: changing the type of shapes, lines and arrows in place (`element.convert`).
 //! - `element_cmd`, `selection_cmd`, `query_cmd`, `text_cmd`: rules the `element.*`, `selection.*` and
 //!   `text.*` commands need that no domain module above owns (common bounds, eraser hits, picking many targets,
 //!   references by `@name`).
@@ -32,6 +34,7 @@ pub mod arrow;
 pub mod arrow_defaults;
 pub mod binding;
 pub mod brush;
+pub mod convert;
 pub mod create;
 pub mod elbow;
 pub mod element_cmd;
@@ -49,6 +52,7 @@ pub mod preflight;
 pub mod query;
 pub mod query_cmd;
 pub mod selection_cmd;
+pub mod sticky;
 pub mod style;
 pub mod text_bind;
 pub mod text_cmd;
