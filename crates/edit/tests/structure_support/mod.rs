@@ -49,18 +49,18 @@ pub fn image(name: &str, x: f64, y: f64, w: f64, h: f64) -> Element {
 
 pub fn line(name: &str, pts: &[(f64, f64)]) -> Element {
     let pts: Vec<Point> = pts.iter().map(|(x, y)| Point::new(*x, *y)).collect();
-    Element::linear(id(name), Kind::Line, placeholder(), &pts).unwrap()
+    Element::linear(id(name), LinearKind::Line, placeholder(), &pts).unwrap()
 }
 
 pub fn arrow(name: &str, pts: &[(f64, f64)]) -> Element {
     let pts: Vec<Point> = pts.iter().map(|(x, y)| Point::new(*x, *y)).collect();
-    Element::linear(id(name), Kind::Arrow, placeholder(), &pts).unwrap()
+    Element::linear(id(name), LinearKind::Arrow, placeholder(), &pts).unwrap()
 }
 
 pub fn freehand(name: &str, pts: &[(f64, f64)]) -> Element {
     let pts: Vec<Point> = pts.iter().map(|(x, y)| Point::new(*x, *y)).collect();
     let mut e = Element::new(id(name), ElementKind::Freehand(FreehandData::new(pts)), placeholder());
-    assert!(e.refit_points());
+    e.refit_points().unwrap();
     e
 }
 

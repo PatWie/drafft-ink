@@ -879,7 +879,7 @@ pub fn set_auto_resize<T: SceneTx, M: TextMeasure + ?Sized>(
 #[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 mod tests {
     use super::*;
-    use drafftink_scene::{MemoryStore, SceneStore, SeqIds, TextRun};
+    use drafftink_scene::{LinearKind, MemoryStore, SceneStore, SeqIds, TextRun};
     use proptest::prelude::*;
 
     fn font() -> TextStyle {
@@ -1101,7 +1101,7 @@ mod tests {
         let z = tx.next_top_index().unwrap();
         let a = Element::linear(
             id("a"),
-            Kind::Arrow,
+            LinearKind::Arrow,
             z,
             &[Point::new(0.0, 0.0), Point::new(100.0, 0.0), Point::new(100.0, 100.0)],
         )

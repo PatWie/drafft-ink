@@ -407,7 +407,7 @@ fn hostile_views_and_elements_never_panic() {
     let mut weird = vec![
         rect_el("a", &z, f64::NAN, f64::INFINITY, -5.0, 1e300),
         ellipse_el("b", &z, 0.0, 0.0, f64::NAN, f64::NAN),
-        line_el("c", &z, Kind::Arrow, &[(0.0, 0.0), (0.0, 0.0)]),
+        line_el("c", &z, LinearKind::Arrow, &[(0.0, 0.0), (0.0, 0.0)]),
     ];
     weird[0].style.stroke_width = f64::NAN;
     weird[0].style.opacity = f64::NAN;

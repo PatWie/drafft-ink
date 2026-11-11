@@ -11,9 +11,10 @@
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fmt;
 
+use drafftink_geom::aabb;
+
 use crate::document::Document;
 use crate::element::{Element, ElementKind, Kind, LinearData, Transform};
-use crate::geom::points_bounds;
 use crate::id::{ElementId, FileId, GroupId};
 use crate::limits::*;
 use crate::store::SceneRead;
@@ -352,11 +353,13 @@ fn points_errors(e: &Element, points: &[kurbo::Point], out: &mut Vec<ElementErro
         out.push(ElementError::TooLong { field: "points", len: points.len(), max: MAX_POINTS });
         return;
     }
-    if points.iter().any(|p| !p.x.is_finite() || !p.y.is_finite()) {
+    // `from_points` skips unusable points, so they must be refused before it is asked for the bounds.
+    if !points.iter().all(|p| drafftink_geom::point_is_finite(*p)) {
         out.push(ElementError::NotFinite { field: "points" });
         return;
     }
-    let Some((min_x, min_y, max_x, max_y)) = points_bounds(points) else { return };
+    let Some(bounds) = aabb::from_points(points.iter().copied()) else { return };
+    let (min_x, min_y, max_x, max_y) = (bounds.x0, bounds.y0, bounds.x1, bounds.y1);
     let tol = |v: f64| BOX_TOLERANCE + v.abs() * 1.0e-9;
     if min_x.abs() > tol(max_x) || min_y.abs() > tol(max_y) {
         out.push(ElementError::PointsNotAtOrigin { x: min_x, y: min_y });

@@ -7,7 +7,7 @@ use drafftink_geom::guides::{detect_smart_guides, detect_smart_guides_for_point,
 use drafftink_geom::kurbo::{Affine, BezPath, PathEl, Point, Rect, Size, Vec2};
 use drafftink_geom::select::{BoxHandle, Corner, Edge, HandleSet, ResizeOpts, resize_box};
 use drafftink_geom::snap::{snap_angle, snap_endpoint, snap_ray_to_grid_lines, snap_to_grid};
-use drafftink_geom::transform::{ElementFrame, map_box};
+use drafftink_geom::transform::{ElementFrame, Flip, map_box};
 use drafftink_geom::{
     DiamondShape, EllipseShape, HitOpts, OrientedBox, Outline, PathShape, Polyline, Primitive, Probe, RectShape,
     SpatialIndex, aabb,
@@ -267,7 +267,7 @@ proptest! {
 
     #[test]
     fn element_frame_round_trips_and_flip_keeps_the_box(f in (coord(), coord(), 1.0..200.0f64, 1.0..200.0f64, -7.0..7.0f64, any::<bool>(), any::<bool>()), p in (coord(), coord())) {
-        let frame = ElementFrame::new(Point::new(f.0, f.1), Size::new(f.2, f.3), f.4).with_flip(f.5, f.6);
+        let frame = ElementFrame::new(Point::new(f.0, f.1), Size::new(f.2, f.3), f.4).with_flip(Flip { x: f.5, y: f.6 });
         let p = Point::new(p.0, p.1);
         prop_assert!((frame.to_local() * (frame.to_world() * p) - p).hypot() < 1e-6);
         // The local box maps onto the same oriented box with or without flip.
@@ -281,7 +281,7 @@ proptest! {
     #[test]
     fn map_box_through_similarity_matches_corner_mapping(b in obox(), s in 0.2..4.0f64, a in -3.0..3.0f64, t in (coord(), coord()), mirror in any::<bool>()) {
         let m = Affine::translate(Vec2::new(t.0, t.1)) * Affine::rotate(a) * Affine::scale_non_uniform(if mirror { -s } else { s }, s);
-        let (mapped, mirrored) = map_box(&b, m).expect("finite");
+        let drafftink_geom::transform::Mapped { obox: mapped, mirrored } = map_box(&b, m).expect("finite");
         prop_assert_eq!(mirrored, mirror);
         let mut want: Vec<Point> = b.corners().iter().map(|c| m * *c).collect();
         for c in mapped.corners() {

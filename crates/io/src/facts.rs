@@ -21,6 +21,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
+use drafftink_geom::aabb;
 use drafftink_scene::{Document, Element, ElementKind, FontFamily, Kind, SeqIds};
 use kurbo::{Point, Rect, Vec2};
 use serde_json::Value;
@@ -221,10 +222,7 @@ fn old_style_bounds(e: &Element, bakes: &[Bake]) -> Option<Rect> {
             }
             match &e.kind {
                 ElementKind::Arrow(d) => Some(legacy_arrow_rect(&pts, d.head_size.unwrap_or(15.0))),
-                _ => {
-                    let (a, b, c, d) = drafftink_scene::geom::points_bounds(&pts)?;
-                    Some(Rect::new(a, b, c, d))
-                }
+                _ => aabb::from_points(pts.iter().copied()),
             }
         }
         ElementKind::Math(_) | ElementKind::Frame(_) | ElementKind::Diamond => None,

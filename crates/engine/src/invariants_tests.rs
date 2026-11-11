@@ -8,7 +8,7 @@ use drafftink_edit::linear::world_points;
 use drafftink_edit::text_bind::{create_label, label_of};
 use drafftink_geom::kurbo::Point;
 use drafftink_scene::{
-    BindMode, Binding, Element, ElementId, ElementKind, Kind, SceneRead, SceneTx, StoreError, TextData, Transform,
+    BindMode, Binding, Element, ElementId, ElementKind, LinearKind, SceneRead, SceneTx, StoreError, TextData, Transform,
 };
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -163,7 +163,7 @@ fn arrow_to(s: &mut Session, name: &str, from: (f64, f64), to: &ElementId) -> El
     let id = ElementId::new(name).unwrap();
     let z = s.tab().doc.store().next_top_index().unwrap();
     let tgt = s.store().get(to).unwrap().rect().center();
-    let mut e = Element::linear(id.clone(), Kind::Arrow, z, &[Point::new(from.0, from.1), tgt]).unwrap();
+    let mut e = Element::linear(id.clone(), LinearKind::Arrow, z, &[Point::new(from.0, from.1), tgt]).unwrap();
     if let ElementKind::Arrow(d) = &mut e.kind {
         d.end_binding = Some(Binding { target: to.clone(), mode: BindMode::Orbit, fixed_point: [0.5, 0.5] });
     }

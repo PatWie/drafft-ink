@@ -64,7 +64,7 @@ fn sample() -> Document {
         d.pressures = vec![0.3, 0.8, 0.5];
         d.pressure_mode = PressureMode::Device;
     }
-    assert!(stroke.refit_points());
+    stroke.refit_points().unwrap();
     stroke.transform.x += 10.0;
     stroke.transform.y += 100.0;
 

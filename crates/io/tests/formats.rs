@@ -70,7 +70,7 @@ fn sample() -> Document {
     push(Element::new(eid("dia"), ElementKind::Diamond, ZIndex::first()).with_bounds(0.0, 100.0, 80.0, 80.0), &mut d);
     let mut arrow = Element::linear(
         eid("arrow"),
-        drafftink_scene::Kind::Arrow,
+        drafftink_scene::LinearKind::Arrow,
         ZIndex::first(),
         &[Point::new(100.0, 30.0), Point::new(150.0, 30.0)],
     )
@@ -83,7 +83,7 @@ fn sample() -> Document {
     push(arrow, &mut d);
     let mut line = Element::linear(
         eid("line"),
-        drafftink_scene::Kind::Line,
+        drafftink_scene::LinearKind::Line,
         ZIndex::first(),
         &[Point::new(0.0, 200.0), Point::new(50.0, 240.0), Point::new(100.0, 200.0)],
     )
@@ -100,7 +100,7 @@ fn sample() -> Document {
         )),
         ZIndex::first(),
     );
-    fh.refit_points();
+    fh.refit_points().unwrap();
     fh.transform.x = 200.0;
     fh.transform.y = 200.0;
     push(fh, &mut d);

@@ -26,8 +26,8 @@ use std::collections::BTreeSet;
 use drafftink_geom::kurbo::{Point, Size};
 use drafftink_scene::{
     BindMode, Brush, Element, ElementError, ElementId, ElementKind, FrameData, FreehandData, Head, IdSource,
-    IndexError, Kind, LinearData, MathData, PathType, PressureMode, SceneRead, SceneTx, StoreError, Style, TextData,
-    TextStyle, Transform, ZIndex, limits, validate_element,
+    IndexError, Kind, LinearData, LinearKind, MathData, PathType, PressureMode, SceneRead, SceneTx, StoreError, Style,
+    TextData, TextStyle, Transform, ZIndex, limits, validate_element,
 };
 
 use crate::arrow::{ArrowError, BindRequest, bind_end};
@@ -468,7 +468,9 @@ pub fn linear_element(
     if world.len() < min {
         return Err(CreateError::TooFewPoints { kind: spec.kind, min, have: world.len() });
     }
-    let mut e = Element::linear(id, spec.kind, index, world)
+    let kind = LinearKind::try_from(spec.kind)
+        .map_err(|k| CreateError::Internal(format!("a {} is not a line or an arrow", k.name())))?;
+    let mut e = Element::linear(id, kind, index, world)
         .ok_or_else(|| CreateError::Internal("the points are not finite".to_owned()))?;
     if let ElementKind::Line(d) | ElementKind::Arrow(d) = &mut e.kind {
         d.start_head = spec.start_head;
@@ -510,9 +512,7 @@ pub fn freehand_element(
     d.highlighter = spec.highlighter;
     let mut e = Element::new(id, ElementKind::Freehand(d), index);
     e.style = style;
-    if !e.refit_points() {
-        return Err(CreateError::Internal("the points are not finite".to_owned()));
-    }
+    e.refit_points().map_err(|e| CreateError::Internal(e.to_string()))?;
     Ok(e)
 }
 

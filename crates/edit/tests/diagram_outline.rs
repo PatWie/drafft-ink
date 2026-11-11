@@ -8,7 +8,8 @@ use drafftink_edit::query::{Outline, OutlineOpts, OutlineScope, outline};
 use drafftink_edit::text_bind::MonospaceMeasure;
 use drafftink_geom::kurbo::{Point, Rect};
 use drafftink_scene::{
-    Element, ElementId, ElementKind, Kind, MemoryStore, SceneRead, SceneStore, SceneTx, SeqIds, TextData, ZIndex,
+    Element, ElementId, ElementKind, Kind, LinearKind, MemoryStore, SceneRead, SceneStore, SceneTx, SeqIds, TextData,
+    ZIndex,
 };
 
 fn build(spec_json: &str, opts: &CreateOpts) -> (MemoryStore, DiagramResult) {
@@ -48,7 +49,7 @@ fn add_loose(store: &mut MemoryStore) {
     let z = tx.next_top_index().unwrap();
     let line = Element::linear(
         ElementId::new("rule").unwrap(),
-        Kind::Line,
+        LinearKind::Line,
         z,
         &[Point::new(0.0, 500.0), Point::new(300.0, 500.0)],
     )
@@ -151,9 +152,13 @@ fn loose_arrow_ends_show_as_question_marks() {
     let mut store = MemoryStore::new();
     let mut tx = store.begin();
     let z = tx.next_top_index().unwrap();
-    let mut a =
-        Element::linear(ElementId::new("arr").unwrap(), Kind::Arrow, z, &[Point::new(0.0, 0.0), Point::new(50.0, 0.0)])
-            .unwrap();
+    let mut a = Element::linear(
+        ElementId::new("arr").unwrap(),
+        LinearKind::Arrow,
+        z,
+        &[Point::new(0.0, 0.0), Point::new(50.0, 0.0)],
+    )
+    .unwrap();
     if let ElementKind::Arrow(d) = &mut a.kind {
         d.end_head = drafftink_scene::Head::Arrow;
     }

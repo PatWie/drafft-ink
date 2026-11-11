@@ -13,7 +13,9 @@ use std::hint::black_box;
 
 use criterion::{BatchSize, BenchmarkId, Criterion, criterion_group, criterion_main};
 use drafftink_canvas::geom::kurbo::{Point, Rect, Size};
-use drafftink_canvas::scene::{Color, Element, ElementId, ElementKind, Kind, MemoryStore, SceneStore, SceneTx, ZIndex};
+use drafftink_canvas::scene::{
+    Color, Element, ElementId, ElementKind, LinearKind, MemoryStore, SceneStore, SceneTx, ZIndex,
+};
 use drafftink_canvas::{Canvas, HitOptions, InputEvent, MarqueeMode, PointerEvent, PointerPhase, SceneIndex, Viewport};
 
 const SIZES: [usize; 3] = [1_000, 10_000, 100_000];
@@ -29,7 +31,9 @@ fn build_store(n: usize) -> MemoryStore {
         let mut e = match i % 4 {
             0 | 1 => Element::new(id, ElementKind::Rectangle, z).with_bounds(x, y, 100.0, 60.0),
             2 => Element::new(id, ElementKind::Ellipse, z).with_bounds(x, y, 100.0, 60.0),
-            _ => Element::linear(id, Kind::Line, z, &[Point::new(x, y), Point::new(x + 100.0, y + 60.0)]).unwrap(),
+            _ => {
+                Element::linear(id, LinearKind::Line, z, &[Point::new(x, y), Point::new(x + 100.0, y + 60.0)]).unwrap()
+            }
         };
         if i % 2 == 0 {
             e.style.fill_color = Some(Color::rgb(10, 20, 30));

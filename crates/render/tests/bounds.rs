@@ -94,7 +94,7 @@ proptest! {
         let world: Vec<Point> = pts.iter().map(|(x, y)| Point::new(*x, *y)).collect();
         prop_assume!(world.windows(2).any(|p| p[0] != p[1]));
         let z = ZIndex::first();
-        let kind = if arrow { Kind::Arrow } else { Kind::Line };
+        let kind = if arrow { LinearKind::Arrow } else { LinearKind::Line };
         let Some(mut e) = Element::linear(id("l"), kind, z, &world) else { return Ok(()) };
         if let ElementKind::Line(d) | ElementKind::Arrow(d) = &mut e.kind {
             if round { d.path = PathType::Round; }

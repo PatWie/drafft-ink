@@ -62,7 +62,7 @@ fn linear_elements_need_points_that_match_the_box() {
         d.points[0] = Point::new(-5.0, 0.0);
     }
     assert!(matches!(first_error(&a), ElementError::PointsNotAtOrigin { .. }));
-    assert!(a.refit_points());
+    a.refit_points().unwrap();
     assert_eq!(validate_element(&a), Ok(()));
 
     if let ElementKind::Arrow(d) = &mut a.kind {
@@ -81,7 +81,7 @@ fn linear_elements_need_points_that_match_the_box() {
 fn closed_needs_three_points_and_only_lines_close() {
     let z = ZIndex::first();
     let pts = [Point::new(0.0, 0.0), Point::new(10.0, 0.0), Point::new(10.0, 10.0)];
-    let mut l = Element::linear(id("l"), Kind::Line, z.clone(), &pts).unwrap();
+    let mut l = Element::linear(id("l"), LinearKind::Line, z.clone(), &pts).unwrap();
     if let ElementKind::Line(d) = &mut l.kind {
         d.closed = true;
     }
@@ -89,10 +89,10 @@ fn closed_needs_three_points_and_only_lines_close() {
     if let ElementKind::Line(d) = &mut l.kind {
         d.points.truncate(2);
     }
-    assert!(l.refit_points());
+    l.refit_points().unwrap();
     assert!(matches!(first_error(&l), ElementError::TooFewPoints { min: 3, .. }));
 
-    let mut a = Element::linear(id("a"), Kind::Arrow, z, &pts).unwrap();
+    let mut a = Element::linear(id("a"), LinearKind::Arrow, z, &pts).unwrap();
     if let ElementKind::Arrow(d) = &mut a.kind {
         d.closed = true;
     }
@@ -137,7 +137,7 @@ fn freehand_pressures_match_points() {
         ElementKind::Freehand(FreehandData::new(vec![Point::new(0.0, 0.0), Point::new(4.0, 4.0)])),
         ZIndex::first(),
     );
-    assert!(f.refit_points());
+    f.refit_points().unwrap();
     assert_eq!(validate_element(&f), Ok(()));
     if let ElementKind::Freehand(d) = &mut f.kind {
         d.pressures = vec![0.5];

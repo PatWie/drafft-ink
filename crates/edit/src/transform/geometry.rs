@@ -1,6 +1,6 @@
 //! Element geometry in world space: frames, bounds and outlines for the structural rules.
 
-use drafftink_geom::kurbo::{Point, Rect, Size};
+use drafftink_geom::kurbo::{Point, Rect};
 use drafftink_geom::shapes::{DiamondShape, EllipseShape, Polyline, RectShape};
 use drafftink_geom::{ElementFrame, OrientedBox, Primitive, aabb};
 use drafftink_scene::{Element, ElementKind};
@@ -8,13 +8,13 @@ use drafftink_scene::{Element, ElementKind};
 /// The oriented box of an element (centre, size, angle).
 pub fn obox(e: &Element) -> OrientedBox {
     let t = &e.transform;
-    OrientedBox::from_xywh(t.x, t.y, t.w, t.h, t.angle)
+    t.obox()
 }
 
 /// The element frame: where its local space (origin at the box top-left) sits in the world.
 pub fn frame_of(e: &Element) -> ElementFrame {
     let t = &e.transform;
-    ElementFrame::new(Point::new(t.x, t.y), Size::new(t.w, t.h), t.angle)
+    t.frame()
 }
 
 /// The vertices of a line, arrow or freehand in world space.

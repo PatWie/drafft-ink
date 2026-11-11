@@ -224,7 +224,7 @@ fn rotated_shapes_are_laid_out_by_their_rotated_bounds() {
         .iter()
         .map(|i| {
             let t = s.get(i).unwrap().transform;
-            drafftink_geom::OrientedBox::from_xywh(t.x, t.y, t.w, t.h, t.angle).aabb()
+            t.obox().aabb()
         })
         .collect();
     assert!(boxes[1].x0 - boxes[0].x1 >= 10.0 - 1e-6, "{boxes:?}");

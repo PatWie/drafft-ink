@@ -30,7 +30,7 @@ pub fn text(id: &str, z: &ZIndex, content: &str) -> Element {
 }
 
 pub fn arrow(id: &str, z: &ZIndex) -> Element {
-    Element::linear(eid(id), Kind::Arrow, z.clone(), &[Point::new(0.0, 0.0), Point::new(50.0, 20.0)]).unwrap()
+    Element::linear(eid(id), LinearKind::Arrow, z.clone(), &[Point::new(0.0, 0.0), Point::new(50.0, 20.0)]).unwrap()
 }
 
 pub fn zs(n: usize) -> Vec<ZIndex> {
@@ -98,7 +98,7 @@ pub fn order(s: &impl SceneRead) -> Vec<String> {
 
 pub fn freehand(id: &str, z: &ZIndex, world_points: &[Point]) -> Element {
     let mut e = Element::new(eid(id), ElementKind::Freehand(FreehandData::new(world_points.to_vec())), z.clone());
-    assert!(e.refit_points());
+    e.refit_points().unwrap();
     e
 }
 pub mod legacy;

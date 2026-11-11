@@ -8,7 +8,7 @@
 
 use base64::Engine as _;
 use drafftink_geom::kurbo::{Point, Rect};
-use drafftink_geom::{OrientedBox, aabb};
+use drafftink_geom::aabb;
 use drafftink_scene::{Element, ElementId, SceneRead};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -243,7 +243,7 @@ fn zoom_out(s: &mut Session, a: ZoomStepArgs) -> Result<CameraOut, Refusal> {
 /// (that is what the transform holds).
 fn element_bounds(e: &Element) -> Rect {
     let t = &e.transform;
-    OrientedBox::from_xywh(t.x, t.y, t.w, t.h, t.angle).aabb()
+    t.obox().aabb()
 }
 
 fn bounds_of(s: &Session, ids: impl IntoIterator<Item = ElementId>) -> Option<Rect> {

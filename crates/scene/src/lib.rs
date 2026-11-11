@@ -16,11 +16,11 @@ pub mod color;
 pub mod derived;
 pub mod document;
 pub mod element;
-pub mod geom;
 pub mod id;
 pub mod limits;
 pub mod memory;
 pub mod palette;
+mod points;
 pub mod store;
 pub mod style;
 pub mod validate;
@@ -35,7 +35,7 @@ pub use derived::DerivedIndex;
 pub use document::{DocMeta, Document, DocumentError, FileEntry, SCHEMA_VERSION, json_schema};
 pub use element::{
     BindMode, Binding, Brush, Crop, Element, ElementKind, FixedSegment, FrameData, FreehandData, Head, ImageData, Kind,
-    LinearData, MathData, ParseKindError, PathType, PressureMode, TextData, TextRun, Transform,
+    LinearData, LinearKind, MathData, ParseKindError, PathType, PressureMode, RefitError, TextData, TextRun, Transform,
 };
 pub use id::{ElementId, FileId, GroupId, IdError, IdSource, RandomIds, Rng64, SeqIds, SplitMix64};
 pub use memory::MemoryStore;

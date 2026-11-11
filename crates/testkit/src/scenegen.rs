@@ -22,7 +22,7 @@
 use drafftink_geom::kurbo::Point;
 use drafftink_scene::{
     BindMode, Binding, Color, Document, Element, ElementId, ElementKind, FillPattern, FreehandData, GroupId, Head,
-    Kind, MathData, Rng64, SplitMix64, TextData, Transform, ZIndex,
+    LinearKind, MathData, Rng64, SplitMix64, TextData, Transform, ZIndex,
 };
 
 /// Distance between cell origins, in world units.
@@ -102,7 +102,7 @@ pub fn generate(count: usize, seed: u64) -> Result<Document, GenError> {
                 e.style.fill_color = Some(Color::rgb(0xff, 0xec, 0x99));
                 e
             }
-            3 => line(&id, Kind::Line, z, &[(x, y), (x + 40.0, y + 30.0), (x + 90.0, y + 10.0)]),
+            3 => line(&id, LinearKind::Line, z, &[(x, y), (x + 40.0, y + 30.0), (x + 90.0, y + 10.0)]),
             4 => bound_arrow(&id, i, z, &out),
             5 => freehand(&id, z, x, y, &mut rng),
             6 => {
@@ -143,7 +143,7 @@ pub fn generate(count: usize, seed: u64) -> Result<Document, GenError> {
     Ok(doc)
 }
 
-fn line(id: &ElementId, kind: Kind, z: ZIndex, pts: &[(f64, f64)]) -> Element {
+fn line(id: &ElementId, kind: LinearKind, z: ZIndex, pts: &[(f64, f64)]) -> Element {
     let pts: Vec<Point> = pts.iter().map(|(x, y)| Point::new(*x, *y)).collect();
     Element::linear(id.clone(), kind, z.clone(), &pts)
         .unwrap_or_else(|| Element::new(id.clone(), ElementKind::Rectangle, z).with_bounds(0.0, 0.0, 1.0, 1.0))
@@ -153,11 +153,11 @@ fn line(id: &ElementId, kind: Kind, z: ZIndex, pts: &[(f64, f64)]) -> Element {
 fn bound_arrow(id: &ElementId, i: usize, z: ZIndex, made: &[Element]) -> Element {
     let (a, b) = (made.get(i.wrapping_sub(4)), made.get(i.wrapping_sub(3)));
     let (Some(a), Some(b)) = (a, b) else {
-        return line(id, Kind::Arrow, z, &[(0.0, 0.0), (60.0, 40.0)]);
+        return line(id, LinearKind::Arrow, z, &[(0.0, 0.0), (60.0, 40.0)]);
     };
     let start = Point::new(a.transform.x + a.transform.w, a.transform.y + a.transform.h / 2.0);
     let end = Point::new(b.transform.x, b.transform.y + b.transform.h / 2.0);
-    let mut e = line(id, Kind::Arrow, z, &[(start.x, start.y), (end.x, end.y)]);
+    let mut e = line(id, LinearKind::Arrow, z, &[(start.x, start.y), (end.x, end.y)]);
     if let ElementKind::Arrow(d) = &mut e.kind {
         d.start_binding = Some(Binding { target: a.id.clone(), mode: BindMode::Orbit, fixed_point: [1.0, 0.5] });
         d.end_binding = Some(Binding { target: b.id.clone(), mode: BindMode::Orbit, fixed_point: [0.0, 0.5] });
@@ -172,7 +172,8 @@ fn freehand(id: &ElementId, z: ZIndex, x: f64, y: f64, rng: &mut Rng) -> Element
         .collect();
     let mut e = Element::new(id.clone(), ElementKind::Freehand(FreehandData::new(pts)), z);
     e.transform = Transform::new(x, y, 0.0, 0.0);
-    e.refit_points();
+    // The generated points are finite, so fitting cannot fail.
+    let _ = e.refit_points();
     e
 }
 

@@ -237,7 +237,7 @@ fn editing_a_point_while_another_peer_moves_the_line_keeps_the_box_consistent() 
         if let ElementKind::Arrow(d) = &mut e.kind {
             d.points[1] = Point::new(300.0, 90.0);
         }
-        e.refit_points();
+        e.refit_points().unwrap();
     });
     sync(&mut a, &mut b);
     assert_same(&a, &b);

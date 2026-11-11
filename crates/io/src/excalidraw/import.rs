@@ -3,6 +3,7 @@
 
 use std::collections::{BTreeMap, HashMap, HashSet};
 
+use drafftink_geom::aabb;
 use drafftink_scene::limits::{
     MAX_COORD, MAX_CORNER_RADIUS, MAX_CUSTOM_KEYS, MAX_ELEMENTS, MAX_FILES, MAX_FIXED_POINT, MAX_FONT_SIZE,
     MAX_GROUP_DEPTH, MAX_LATEX_CHARS, MAX_LINK_BYTES, MAX_NAME_CHARS, MAX_POINTS, MAX_STROKE_WIDTH, MAX_TEXT_CHARS,
@@ -608,7 +609,8 @@ struct Fitted {
 }
 
 fn fit(rel: &[Point], x: f64, y: f64, angle: f64) -> Option<Fitted> {
-    let (min_x, min_y, _, _) = drafftink_scene::geom::points_bounds(rel)?;
+    let bounds = aabb::from_points(rel.iter().copied())?;
+    let (min_x, min_y) = (bounds.x0, bounds.y0);
     let shift = kurbo::Vec2::new(min_x, min_y);
     // A box wider than the coordinate range (only in hostile files) is squeezed to the range.
     let local: Vec<Point> = rel
@@ -618,7 +620,8 @@ fn fit(rel: &[Point], x: f64, y: f64, angle: f64) -> Option<Fitted> {
             Point::new(q.x.clamp(0.0, MAX_COORD), q.y.clamp(0.0, MAX_COORD))
         })
         .collect();
-    let (_, _, w, h) = drafftink_scene::geom::points_bounds(&local)?;
+    let fitted = aabb::from_points(local.iter().copied())?;
+    let (w, h) = (fitted.width(), fitted.height());
     let (tx, ty) = (clamp_coord(x + min_x), clamp_coord(y + min_y));
     Some(Fitted { local, transform: Transform { angle, ..Transform::new(tx, ty, w, h) }, shift })
 }

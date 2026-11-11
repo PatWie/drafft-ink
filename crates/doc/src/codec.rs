@@ -363,7 +363,7 @@ pub(crate) fn read_element(id: &ElementId, map: &LoroMap) -> Result<Element, Doc
     if let Err(first) = validate_element(&e) {
         // A merge of two edits of a line (one changed the points, one the box) can leave the box and the points
         // out of step. Every peer repairs the same way, from the merged points.
-        let still = if e.refit_points() { validate_element(&e).err() } else { Some(first) };
+        let still = if e.refit_points().is_ok() { validate_element(&e).err() } else { Some(first) };
         if let Some(error) = still {
             return Err(DocError::BadElement { id: id.clone(), error });
         }

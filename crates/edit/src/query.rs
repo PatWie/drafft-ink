@@ -18,9 +18,8 @@ pub use refs::{ALL_FIELDS, RefConnectedTo, RefQuery, all_matches, hit_members};
 
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 
-use drafftink_geom::kurbo::{Point, Rect, Size};
-use drafftink_geom::transform::ElementFrame;
-use drafftink_geom::{DiamondShape, EllipseShape, HitOpts, OrientedBox, Outline as _, Polyline, RectShape};
+use drafftink_geom::kurbo::{Point, Rect};
+use drafftink_geom::{DiamondShape, EllipseShape, HitOpts, Outline as _, Polyline, RectShape};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
@@ -310,7 +309,7 @@ pub fn resolve_ref<R: SceneRead>(r: &R, reference: &str) -> Result<ElementId, Qu
 /// The axis-aligned bounds of an element, rotation included.
 pub fn element_bounds(e: &Element) -> Rect {
     let t = &e.transform;
-    OrientedBox::from_xywh(t.x, t.y, t.w, t.h, t.angle).aabb()
+    t.obox().aabb()
 }
 
 fn glob_match(pattern: &[char], text: &[char]) -> bool {
@@ -713,11 +712,11 @@ fn has_fill(e: &Element) -> bool {
 
 fn hit_element(e: &Element, p: Point, tol: f64) -> bool {
     let t = &e.transform;
-    let frame = OrientedBox::from_xywh(t.x, t.y, t.w, t.h, t.angle);
+    let frame = t.obox();
     let sw = e.style.stroke_width;
     let opts = |filled: bool| if filled { HitOpts::filled(tol, sw) } else { HitOpts::stroke(tol, sw) };
     let polyline = |points: &[Point], closed: bool| {
-        let f = ElementFrame::new(Point::new(t.x, t.y), Size::new(t.w, t.h), t.angle);
+        let f = t.frame();
         Polyline::from_frame(&f, points, closed).hit_test(p, opts(closed && has_fill(e)))
     };
     match &e.kind {

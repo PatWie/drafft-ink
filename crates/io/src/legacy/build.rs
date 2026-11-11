@@ -9,13 +9,14 @@
 
 use std::collections::{BTreeMap, HashSet};
 
+use drafftink_geom::aabb;
 use drafftink_scene::limits::{
     MAX_COORD, MAX_CORNER_RADIUS, MAX_ELEMENTS, MAX_FILE_BYTES, MAX_FILES, MAX_FONT_SIZE, MAX_GROUP_DEPTH, MAX_POINTS,
     MAX_STROKE_WIDTH,
 };
 use drafftink_scene::{
     Document, Element, ElementId, ElementKind, FileEntry, FileId, FreehandData, GroupId, Head, IdSource, ImageData,
-    Kind, LinearData, MathData, PressureMode, Style, TextData, Transform, ZIndex,
+    LinearData, LinearKind, MathData, PressureMode, Style, TextData, Transform, ZIndex,
 };
 use kurbo::{Point, Rect, Vec2};
 
@@ -247,7 +248,7 @@ impl Builder<'_> {
             self.report.warn(format!("a line has {} points; only the first {MAX_POINTS} are kept", pts.len()));
             pts.truncate(MAX_POINTS);
         }
-        let kind = if head.is_some() { Kind::Arrow } else { Kind::Line };
+        let kind = if head.is_some() { LinearKind::Arrow } else { LinearKind::Line };
         let id = self.element_id(s.id.as_deref());
         let Some(mut e) = Element::linear(id, kind, ZIndex::first(), &pts) else { return };
         let closed = l.closed && pts.len() >= 3 && head.is_none();
@@ -283,7 +284,7 @@ impl Builder<'_> {
         d.closed = closed;
         let id = self.element_id(s.id.as_deref());
         let mut e = Element::new(id, ElementKind::Freehand(d), ZIndex::first());
-        if e.refit_points() {
+        if e.refit_points().is_ok() {
             self.push(e, &s.style);
         }
     }
@@ -397,10 +398,7 @@ fn boxed(x: f64, y: f64, w: f64, h: f64, angle: f64) -> Transform {
 }
 
 fn points_rect(points: &[Point]) -> Rect {
-    match drafftink_scene::geom::points_bounds(points) {
-        Some((a, b, c, d)) => Rect::new(a, b, c, d),
-        None => Rect::ZERO,
-    }
+    aabb::from_points(points.iter().copied()).unwrap_or(Rect::ZERO)
 }
 
 /// The old arrow bounds: all points plus the two barbs of the head, which points from the first to the last point.
@@ -455,7 +453,8 @@ fn bake_rotation(elements: &mut [Element], pivot: Point, theta: f64) {
                 _ => {}
             }
             e.transform = Transform::new(0.0, 0.0, 0.0, 0.0);
-            e.refit_points();
+            // Hostile coordinates leave the element unfitted; the document validation reports it.
+            let _ = e.refit_points();
         } else {
             let c = rot(e.transform.center());
             e.transform.x = c.x - e.transform.w / 2.0;
