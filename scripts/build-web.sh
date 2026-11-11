@@ -1,10 +1,11 @@
 #!/usr/bin/env bash
 # Build the web app into dist/: release-wasm build -> wasm-bindgen -> wasm-opt -> static files -> sizes.
 #
-# usage: scripts/build-web.sh [--profile NAME] [--no-opt] [--no-precompress]
+# usage: scripts/build-web.sh [--profile NAME] [--no-opt] [--no-precompress] [--features LIST]
 #   --profile NAME     cargo profile (default release-wasm; "release" is quicker to build and bigger)
 #   --no-opt           skip wasm-opt
 #   --no-precompress   do not write .br / .gz next to the files
+#   --features LIST    cargo features of drafftink-web, e.g. `scenarios` for the perf driver (not for shipping)
 # needs: rustup target add wasm32-unknown-unknown
 #        wasm-bindgen CLI, the same version as the wasm-bindgen crate (cargo install wasm-bindgen-cli --version 0.2.130 --locked)
 #        wasm-opt (binaryen >= 117) on PATH or in ~/.cargo/tools/binaryen-version_*/bin
@@ -15,11 +16,13 @@ cd "$(dirname "$0")/.."
 PROFILE=release-wasm
 OPT=1
 PRECOMPRESS=1
+FEATURES=""
 while [ $# -gt 0 ]; do
   case "$1" in
     --profile) PROFILE="${2:?--profile needs a name}"; shift 2 ;;
     --no-opt) OPT=0; shift ;;
     --no-precompress) PRECOMPRESS=0; shift ;;
+    --features) FEATURES="${2:?--features needs a list}"; shift 2 ;;
     -h|--help) sed -n '2,12p' "$0"; exit 0 ;;
     *) echo "unknown argument: $1 (see --help)" >&2; exit 2 ;;
   esac
@@ -45,7 +48,7 @@ fi
 # is 1.7 MiB less code (docs/performance.md, "Wasm size"). Set here and not in .cargo/config.toml so that the
 # npm package (crates/canvas-js) keeps building for plain WebAssembly.
 export RUSTFLAGS="${RUSTFLAGS:-} -C target-feature=+simd128"
-CARGO_TARGET_DIR="$TARGET_DIR" cargo build --profile "$PROFILE" --target wasm32-unknown-unknown -p drafftink-web --lib
+CARGO_TARGET_DIR="$TARGET_DIR" cargo build --profile "$PROFILE" --target wasm32-unknown-unknown -p drafftink-web --lib ${FEATURES:+--features "$FEATURES"}
 WASM="$TARGET_DIR/wasm32-unknown-unknown/$PROFILE/$NAME.wasm"
 
 rm -rf "$DIST"

@@ -27,3 +27,5 @@ mod api;
 mod entry;
 #[cfg(target_arch = "wasm32")]
 mod js;
+#[cfg(target_arch = "wasm32")]
+mod scenario;

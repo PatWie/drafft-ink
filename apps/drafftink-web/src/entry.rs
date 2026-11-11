@@ -44,7 +44,12 @@ pub async fn start(canvas_id: String) -> Result<(), JsValue> {
         perf_overlay: overlay,
         stored_default_target: true,
     };
-    let app = App::new(web.platform, config);
+    #[cfg_attr(not(feature = "scenarios"), allow(unused_mut))]
+    let mut app = App::new(web.platform, config);
+    #[cfg(feature = "scenarios")]
+    crate::scenario::install(app.scene_loader())?;
+    #[cfg(not(feature = "scenarios"))]
+    crate::scenario::install_unavailable()?;
     drafftink_gpu::run(app, drafftink_gpu::Options { canvas_id, ..Default::default() })
         .map_err(|e| JsValue::from_str(&e.to_string()))
 }

@@ -133,7 +133,7 @@ try:
         check(pg.evaluate("()=>window.__started===true"), "first frame drawn", f"{secs}s from navigation")
         print("startup_s", secs, flush=True)
         api = pg.evaluate("()=>Object.keys(window.drafftink).sort()")
-        want = ["agent", "batch", "commands", "describe", "execute", "frames", "perf", "perf_enable", "perf_reset", "recent", "state", "version"]
+        want = ["agent", "batch", "commands", "describe", "execute", "frames", "perf", "perf_enable", "perf_reset", "recent", "runScenario", "scenarioReport", "state", "version"]
         check(api == sorted(want), "window.drafftink has the documented methods", str(api))
         perf = pg.evaluate("()=>window.drafftink.perf()")
         check(isinstance(perf, dict) and "redraws" in perf, "perf() returns PerfStats", str(list(perf)[:6]) if isinstance(perf, dict) else str(perf))

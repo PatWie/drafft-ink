@@ -17,6 +17,10 @@ crate-type = ["cdylib", "rlib"]
 name = "drafftink-web"
 path = "src/main.rs"
 
+[features]
+# The generated scenes of the perf scenarios (`window.drafftink.runScenario`, docs/performance.md section 5.3). Off in shipped builds.
+scenarios = ["drafftink-app/scenarios"]
+
 [dependencies]
 # Pure parts, built and tested on every target.
 drafftink-bridge = { path = "../../crates/bridge" }
@@ -36,7 +40,7 @@ console_error_panic_hook.workspace = true
 console_log.workspace = true
 web-sys = { workspace = true, features = [
     "Window", "Document", "Location", "History", "Storage", "Event", "EventTarget",
-    "WebSocket", "MessageEvent", "CloseEvent", "BinaryType",
+    "WebSocket", "MessageEvent", "CloseEvent", "BinaryType", "Performance",
 ] }
 
 [lints]

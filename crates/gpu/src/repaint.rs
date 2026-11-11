@@ -42,6 +42,7 @@ impl RepaintState {
     /// Pace frames: two frames start at least `interval` apart (the refresh period of the display, less a margin).
     /// Input that arrives faster is drawn once per interval, and a frame that is due too early waits for its
     /// deadline (`control_flow`). A frame after a quiet time is not delayed. Zero turns pacing off.
+    #[cfg_attr(target_arch = "wasm32", allow(dead_code))] // the browser paces frames with requestAnimationFrame
     pub(crate) fn set_min_interval(&mut self, interval: Duration) {
         self.min_interval = interval;
     }
