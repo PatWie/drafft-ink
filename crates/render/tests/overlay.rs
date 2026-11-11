@@ -31,6 +31,7 @@ fn full() -> Overlay {
         hover: vec![OrientedBox::from_xywh(0.0, 0.0, 20.0, 20.0, 0.0)],
         binding: vec![BindingHighlight { outline, at: Some(Point::new(10.0, 0.0)) }],
         marquee: Some(Rect::new(0.0, 0.0, 30.0, 30.0)),
+        lasso: vec![Point::new(0.0, 0.0), Point::new(40.0, 5.0), Point::new(20.0, 35.0)],
         guides: vec![SmartGuide {
             kind: SmartGuideKind::Vertical,
             position: 40.0,
@@ -62,9 +63,9 @@ fn every_part_draws_something() {
     assert!(!o.is_empty());
     let mut s = Scene::new();
     let r = paint_overlay(&mut s, &o, &view(1.0), &OverlayStyle::default());
-    assert_eq!(r.items, 9);
+    assert_eq!(r.items, 10);
     assert!(s.encoding().n_paths > 20, "{}", s.encoding().n_paths);
-    for part in 0..8 {
+    for part in 0..9 {
         let mut o = Overlay::default();
         let f = full();
         match part {
@@ -75,6 +76,7 @@ fn every_part_draws_something() {
             4 => o.marquee = f.marquee,
             5 => o.guides = f.guides,
             6 => o.snap_point = f.snap_point,
+            7 => o.lasso = f.lasso,
             _ => o.cursors = f.cursors,
         }
         let mut s = Scene::new();

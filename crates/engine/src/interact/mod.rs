@@ -36,6 +36,7 @@
 mod ctx;
 mod events;
 mod frame_out;
+mod link;
 mod outcome;
 mod overlay;
 mod view;
@@ -59,7 +60,6 @@ use drafftink_scene::{ElementId, SceneStore};
 
 use ctx::Ctx;
 use draw::DrawTools;
-pub use draw::NewArrowPath;
 use events::Ev;
 use select::SelectTool;
 use view::ViewSync;
@@ -67,7 +67,7 @@ use world::{World, pointer_mode};
 
 pub use events::Key;
 pub use outcome::{ContextTarget, Outcome, UiRequest};
-pub use overlay::{Badge, InteractionOverlay, LaserPoint, OverlayParts};
+pub use overlay::{Badge, InteractionOverlay, LaserPoint, LinkIcon, OverlayParts};
 pub use view::REPORT_EVERY_MS;
 
 use crate::session::Session;
@@ -320,7 +320,7 @@ impl Interaction {
     fn pointer_moved(&mut self, s: &mut Session, p: &PointerEvent, out: &mut Outcome) {
         let world = self.world.viewport.screen_to_world(p.pos);
         let (pos, mods, now) = (p.pos, p.modifiers, p.time_ms);
-        if !matches!(s.tool.effective(), Tool::Select | Tool::Hand) {
+        if !matches!(s.tool.effective(), Tool::Select | Tool::Lasso | Tool::Hand) {
             self.with_ctx(s, out, now, mods, |cx, m| m.draw.pointer_moved(cx, pos, world));
         }
     }
@@ -392,7 +392,7 @@ impl Interaction {
     /// E1: hover costs a redraw only when the outline it shows changes.
     fn hovered(&mut self, s: &Session, to: &Target, cursor: Cursor, out: &mut Outcome) {
         self.set_cursor(cursor, out);
-        let shows_outline = matches!(s.tool.effective(), Tool::Select | Tool::Text | Tool::Math);
+        let shows_outline = matches!(s.tool.effective(), Tool::Select | Tool::Lasso | Tool::Text | Tool::Math);
         let next = to.element().filter(|_| shows_outline).cloned();
         if next != self.hover {
             self.hover = next;
@@ -430,7 +430,11 @@ impl Interaction {
                 };
                 let mods = meta.modifiers;
                 match click_route(tool) {
-                    Route::Select => self.with_ctx(s, out, now, mods, |cx, m| m.select.click(cx, &ev)),
+                    Route::Select => self.with_ctx(s, out, now, mods, |cx, m| {
+                        if !link::click(cx, &ev) {
+                            m.select.click(cx, &ev);
+                        }
+                    }),
                     Route::Draw => self.with_ctx(s, out, now, mods, |cx, m| m.draw.click(cx, &ev)),
                     Route::None => {}
                 }
@@ -521,21 +525,32 @@ impl Interaction {
         out: &mut Outcome,
     ) {
         let on_element = target.element().cloned();
-        let menu_target = self.with_ctx(s, out, now, mods, |cx, _| match on_element {
-            Some(id) => {
-                if !cx.s.selection().contains(&id) {
-                    cx.exec(
-                        "selection.select_at",
-                        serde_json::json!({ "point": [world.x, world.y], "tolerance": cx.world.config.hit_tolerance_px }),
-                    );
-                }
-                ContextTarget::Selection
+        let tolerance = self.world.config.hit_tolerance_px;
+        // The normal hit test skips locked elements. When one is on top of everything it found, the menu is about
+        // that one (it offers Unlock). It cannot be selected, so the selection is cleared.
+        let locked =
+            (!matches!(target, Target::Handle(_))).then(|| self.world.locked_on_top(s, world, tolerance)).flatten();
+        let menu_target = self.with_ctx(s, out, now, mods, |cx, _| {
+            if let Some(element) = locked {
+                cx.exec("selection.clear", serde_json::json!({}));
+                return ContextTarget::Locked { element };
             }
-            None => {
-                if matches!(target, Target::Empty) {
-                    cx.exec("selection.clear", serde_json::json!({}));
+            match on_element {
+                Some(id) => {
+                    if !cx.s.selection().contains(&id) {
+                        cx.exec(
+                            "selection.select_at",
+                            serde_json::json!({ "point": [world.x, world.y], "tolerance": cx.world.config.hit_tolerance_px }),
+                        );
+                    }
+                    ContextTarget::Selection
                 }
-                ContextTarget::Canvas
+                None => {
+                    if matches!(target, Target::Empty) {
+                        cx.exec("selection.clear", serde_json::json!({}));
+                    }
+                    ContextTarget::Canvas
+                }
             }
         });
         out.ui_request = Some(UiRequest::OpenContextMenu { at: screen, target: menu_target });
@@ -558,7 +573,7 @@ enum Route {
 
 fn route(tool: Tool, target: &Target) -> Route {
     match tool {
-        Tool::Select => Route::Select,
+        Tool::Select | Tool::Lasso => Route::Select,
         Tool::Hand => Route::None,
         // The text and math tools click to edit, but their handles and bodies move and resize like any element.
         Tool::Text | Tool::Math => match target {
@@ -571,7 +586,7 @@ fn route(tool: Tool, target: &Target) -> Route {
 
 fn click_route(tool: Tool) -> Route {
     match tool {
-        Tool::Select => Route::Select,
+        Tool::Select | Tool::Lasso => Route::Select,
         Tool::Hand => Route::None,
         _ => Route::Draw,
     }

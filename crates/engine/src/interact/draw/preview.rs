@@ -3,7 +3,7 @@
 use drafftink_edit::create::{self, LinearSpec, StrokeSpec};
 use drafftink_geom::guides::SmartGuide;
 use drafftink_geom::kurbo::Point;
-use drafftink_scene::{Element, ElementId, Kind, PressureMode, ZIndex};
+use drafftink_scene::{Element, ElementId, Kind, PathType, PressureMode, ZIndex};
 
 use crate::interact::ctx::Ctx;
 
@@ -20,11 +20,18 @@ pub(super) fn shape(cx: &Ctx<'_>, kind: Kind, rect: (f64, f64, f64, f64)) -> Opt
     create::shape_element(preview_id()?, kind, ZIndex::first(), rect, style).ok()
 }
 
-/// A line or arrow preview through `points` (at least two). The preview is always drawn with straight
-/// segments, so an elbow arrow shows its two ends joined until the engine routes it.
+/// A line or arrow preview through `points` (at least two). An arrow shows the heads of the tool's arrow
+/// defaults. The preview is always drawn with straight segments, so an elbow arrow shows its two ends joined
+/// until the engine routes it.
 pub(super) fn linear(cx: &Ctx<'_>, kind: Kind, points: &[Point]) -> Option<Element> {
     let style = cx.s.tool.defaults().style;
-    create::linear_element(preview_id()?, ZIndex::first(), points, &LinearSpec::defaults(kind), style).ok()
+    let spec = LinearSpec { path: PathType::Sharp, ..arrow_spec(cx, kind) };
+    create::linear_element(preview_id()?, ZIndex::first(), points, &spec, style).ok()
+}
+
+/// The spec of a new line (the built-in one) or arrow (the tool's defaults).
+fn arrow_spec(cx: &Ctx<'_>, kind: Kind) -> LinearSpec {
+    if kind == Kind::Arrow { cx.s.tool.arrow_default.spec() } else { LinearSpec::defaults(kind) }
 }
 
 /// A freehand or highlighter stroke through `points`, with `pressures` empty or one per point.

@@ -12,6 +12,7 @@
 //! knows is read as far as it validates and is never overwritten, so a downgrade cannot destroy
 //! settings that a newer build wrote.
 
+use drafftink_edit::arrow_defaults::{self, ArrowDefaults};
 use drafftink_scene::Style;
 use serde::Serialize;
 use serde_json::{Map, Value, json};
@@ -177,9 +178,25 @@ pub(super) fn persist(s: &mut Session) {
 /// `style.defaults` is the style new elements get (`s.tool.style_defaults`), and `history.depth` is read
 /// by the executor at every commit.
 pub fn apply_live(s: &mut Session, key: &str) {
-    if key == "style.defaults" {
-        let props = s.settings.get(key).cloned().unwrap_or(Value::Null);
-        s.tool.style_defaults = style_from_props(&props);
+    match key {
+        "style.defaults" => {
+            let props = s.settings.get(key).cloned().unwrap_or(Value::Null);
+            s.tool.style_defaults = style_from_props(&props);
+        }
+        "arrow.type" | "arrow.start_head" | "arrow.end_head" => s.tool.arrow_default = arrow_defaults_of(&s.settings),
+        _ => {}
+    }
+}
+
+/// The path type and heads of new arrows that the three `arrow.*` settings describe. A value that is not a
+/// known word (a stored record from another version) keeps the built-in default for that part.
+fn arrow_defaults_of(settings: &Settings) -> ArrowDefaults {
+    let word = |key: &str| settings.get(key).and_then(Value::as_str);
+    let built_in = ArrowDefaults::default();
+    ArrowDefaults {
+        path: word("arrow.type").and_then(arrow_defaults::path_named).unwrap_or(built_in.path),
+        start_head: word("arrow.start_head").and_then(arrow_defaults::head_named).unwrap_or(built_in.start_head),
+        end_head: word("arrow.end_head").and_then(arrow_defaults::head_named).unwrap_or(built_in.end_head),
     }
 }
 

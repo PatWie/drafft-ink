@@ -15,7 +15,7 @@ Features decided but not yet assigned to a phase agent.
 - UI reads selection style via `edit::style::read` directly (to avoid a ring entry per frame). Add `Session::query(id, args)` that runs `reads_only` commands without recording to the ring, and have the UI use `style.get` through it; then drop ui's edit/scene deps if possible.
 - UI embeds GelPen fonts a second time (include_bytes); expose font bytes from typeset.
 - UI: search dialog has no result list; stats panel lacks bounds editing (now possible: selection.get, element.set_bounds); touch-sized mode; context-menu paste should land at the click point.
-- Interaction: default type of new arrows lives in `Session::ext` (`interact::NewArrowPath`); make it a tool/style default owned by a command. text.edit_begin needs a width arg (text-tool drag = fixed-width box). Elbow preview while drawing is straight. Click on a line vertex should call `arrow.edit_points select_point`. Closed-line closing-segment midpoint drag refused. Interaction tests stub text.edit_begin/collab.laser, now registered: drop the stubs.
+- Interaction: text.edit_begin needs a width arg (text-tool drag = fixed-width box). Elbow preview while drawing is straight. Click on a line vertex should call `arrow.edit_points select_point`. Closed-line closing-segment midpoint drag refused. Interaction tests stub text.edit_begin/collab.laser, now registered: drop the stubs.
 - Size: bundled Noto Sans is ~1 MB brotli of the wasm; load fonts lazily (fetch) or behind a feature; `wasm-opt --all-features` breaks the module with binaryen 133 (use explicit features; fix docs/stack.md and crates/gpu/scripts/build_web_demo.sh).
 - `cargo clippy --target wasm32` fails in drafftink-profile spans.rs:213; add a wasm clippy run to xtask wasm.
 - canvas-js: remote selections not drawn; no image-insert helper; tiny shapes dominated by handles (move on body should win when the shape is smaller than handles).
@@ -41,3 +41,4 @@ Features decided but not yet assigned to a phase agent.
 - DECIDED: opening a non-native file (.excalidraw, legacy, PNG/SVG with scene) sets NO save target; `doc.save` then behaves like save-as (needs `to`), so a foreign file is never overwritten with drafft JSON. Implement + test.
 - Flaky: `cmd::perf::tests::last_call_reports_only_what_happened_since_the_previous_call` under parallel test runs (shared global profile state); make it deterministic.
 - Accepted (F1): `element.relabel`/`text.set` with empty text on a bound label removes the label; only free text refuses `empty_text`.
+- Hang: crates/gpu compositor test binary hung for 3.5 h under plain cargo test (GPU contention?). nextest now terminates after 5 min; find the cause (device wait without timeout?).

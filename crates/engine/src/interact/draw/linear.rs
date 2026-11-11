@@ -13,8 +13,8 @@ use drafftink_geom::kurbo::Point;
 use drafftink_scene::{Element, ElementId, ElementKind, Kind, PathType};
 use serde_json::json;
 
+use super::preview;
 use super::snap::{self, Snaps};
-use super::{NewArrowPath, preview};
 use crate::interact::ctx::Ctx;
 use crate::interact::events::Ev;
 use crate::state::Tool;
@@ -66,10 +66,10 @@ fn kind_of(cx: &Ctx<'_>) -> Kind {
     if cx.tool() == Tool::Arrow { Kind::Arrow } else { Kind::Line }
 }
 
-/// The path type of a new arrow. Lines are always straight.
+/// The path type of a new arrow: the tool's default (`tool.set_arrow`). Lines are always straight.
 fn path_of(cx: &Ctx<'_>) -> PathType {
     match cx.tool() {
-        Tool::Arrow => cx.s.ext.get::<NewArrowPath>().map(|p| p.0).unwrap_or_default(),
+        Tool::Arrow => cx.s.tool.arrow_default.path,
         _ => PathType::Sharp,
     }
 }
@@ -324,7 +324,11 @@ impl Linear {
         let pts: Vec<[f64; 2]> = points.iter().map(|p| [p.x, p.y]).collect();
         let mut args = json!({ "kind": kind.name(), "points": pts, "bind": bind_policy(mods), "from_tool": true });
         if kind == Kind::Arrow {
+            // The tool's defaults go to the command as plain arguments, so the ring entry replays the same arrow.
+            let d = cx.s.tool.arrow_default;
             args["arrow_type"] = json!(path);
+            args["start_head"] = json!(d.start_head);
+            args["end_head"] = json!(d.end_head);
         }
         cx.exec("element.create", args);
     }

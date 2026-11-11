@@ -1,0 +1,3 @@
+# A hung test must fail the run, not stall it (a GPU test once hung for 3.5 hours).
+[profile.default]
+slow-timeout = { period = "60s", terminate-after = 5 }

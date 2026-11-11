@@ -1613,3 +1613,38 @@ mod random {
         }
     }
 }
+
+// ---------------------------------------------------------------------------------------------------------------
+// Links (element.set_link): a link is plain text on the element and travels through the file untouched.
+
+#[test]
+fn web_and_element_links_survive_an_export_and_an_import() {
+    let mut doc = Document::new();
+    let a = base_element(&mut doc, ElementKind::Rectangle, 0.0, 0.0, 100.0, 60.0);
+    let b = base_element(&mut doc, ElementKind::Ellipse, 200.0, 0.0, 50.0, 80.0);
+    let c = base_element(&mut doc, ElementKind::Diamond, 400.0, 0.0, 80.0, 80.0);
+    doc.elements[a].link = Some("https://example.com/a?b=c#d".into());
+    doc.elements[b].link = Some(format!("#{}", doc.elements[a].id.as_str()));
+    doc.elements[c].link = Some("mailto:a@b.example".into());
+    let text = export_scene(&doc).unwrap();
+    let v: Value = serde_json::from_str(&text).unwrap();
+    let links: Vec<&Value> = v["elements"].as_array().unwrap().iter().map(|e| &e["link"]).collect();
+    assert_eq!(links, [&json!("https://example.com/a?b=c#d"), &json!("#n0"), &json!("mailto:a@b.example")]);
+    let back = import_str(&text).unwrap();
+    assert_no_errors(&back.document);
+    let got: Vec<Option<&str>> = back.document.elements.iter().map(|e| e.link.as_deref()).collect();
+    assert_eq!(got, [Some("https://example.com/a?b=c#d"), Some("#n0"), Some("mailto:a@b.example")]);
+}
+
+#[test]
+fn a_link_with_control_characters_is_dropped_with_a_warning_and_an_unsafe_scheme_is_kept_as_text() {
+    let els = json!([
+        {"id": "ctl", "type": "rectangle", "x": 0, "y": 0, "width": 10, "height": 10, "link": "https://a.example/\u{7}x"},
+        {"id": "js", "type": "rectangle", "x": 0, "y": 0, "width": 10, "height": 10, "link": "javascript:alert(1)"},
+    ]);
+    let i = import_elements(els);
+    assert_eq!(get(&i.document, "ctl").link, None);
+    assert!(!i.report.is_clean(), "the dropped link is reported");
+    // The text is not rewritten on import; `element.open_link` refuses it when someone tries to open it.
+    assert_eq!(get(&i.document, "js").link.as_deref(), Some("javascript:alert(1)"));
+}

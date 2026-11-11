@@ -363,3 +363,65 @@ fn closing_the_menu_forgets_the_open_align_block() {
     h.run();
     assert!(!has_row(&h, "Align left"), "a new menu starts closed");
 }
+
+// ---- a locked element ----
+
+/// The menu of a locked element at (300, 200): the fixture has one locked rectangle and nothing selected.
+fn locked_menu() -> H {
+    let mut f = Fixture::new();
+    let id = add_rect(&mut f.session, 40.0, 40.0, 30.0, 30.0).unwrap();
+    f.session.execute("element.lock", json!({ "ids": [id.as_str()], "locked": true })).unwrap();
+    f.refresh();
+    f.state.open_context_menu_on_locked(pos2(300.0, 200.0), Some([55.0, 55.0]), id.as_str());
+    let mut h = themed(f, false);
+    h.run();
+    h
+}
+
+#[test]
+fn the_menu_of_a_locked_element_offers_unlock_and_runs_it_on_that_element() {
+    let mut h = locked_menu();
+    for hidden in ["Cut", "Duplicate", "Delete", "Group", "Lock or unlock", "Link…"] {
+        assert!(!has_row(&h, hidden), "{hidden} is not for a locked element");
+    }
+    row(&h, "Unlock").click();
+    h.run();
+    assert_eq!(calls(&h), vec![Call::new(Origin::ContextMenu, "element.unlock_all", json!({ "ids": ["e1"] }))]);
+    assert!(h.state().state.context_menu.is_none());
+    let f = h.state_mut();
+    f.dispatch();
+    let e1 = drafftink_scene::ElementId::new("e1").unwrap();
+    assert!(!f.session.element(&e1).unwrap().locked, "the element is unlocked");
+    assert_eq!(f.session.selection().len(), 1, "and selected, as Excalidraw leaves it");
+}
+
+#[test]
+fn the_menu_of_one_selected_element_has_a_link_row_that_opens_the_dialog() {
+    let mut h = menu_with(1, pos2(300.0, 200.0));
+    row(&h, "Link…").click();
+    h.run();
+    assert_eq!(
+        h.state()
+            .actions
+            .iter()
+            .filter_map(|a| if let UiAction::Verb(v) = a { Some(*v) } else { None })
+            .collect::<Vec<_>>(),
+        vec![Verb::OpenLinkEditor]
+    );
+    assert!(!has_row(&h, "Open link"), "no link yet");
+}
+
+#[test]
+fn an_element_with_a_link_has_an_open_link_row() {
+    let mut f = Fixture::new();
+    let id = add_rect(&mut f.session, 0.0, 0.0, 30.0, 30.0).unwrap();
+    select(&mut f.session, std::slice::from_ref(&id));
+    f.session.execute("element.set_link", json!({ "link": "https://example.com" })).unwrap();
+    f.refresh();
+    f.state.open_context_menu(pos2(300.0, 200.0), None);
+    let mut h = themed(f, false);
+    h.run();
+    row(&h, "Open link").click();
+    h.run();
+    assert_eq!(calls(&h), vec![Call::new(Origin::ContextMenu, "element.open_link", json!({}))]);
+}

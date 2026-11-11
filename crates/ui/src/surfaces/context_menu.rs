@@ -88,7 +88,7 @@ fn style_items() -> Vec<Item> {
 /// Draws the menu when `st.context_menu` is set.
 pub fn show(ctx: &Context, cx: &mut Cx<'_>, st: &mut UiState) {
     let align_id = Id::unique("context_menu.align_open");
-    let Some(menu) = st.context_menu else {
+    let Some(menu) = st.context_menu.clone() else {
         ctx.data_mut(|d| d.remove::<bool>(align_id));
         return;
     };
@@ -109,7 +109,10 @@ pub fn show(ctx: &Context, cx: &mut Cx<'_>, st: &mut UiState) {
         panel_frame(&cx.pal).show(ui, |ui| {
             ui.set_width(WIDTH);
             ui.spacing_mut().item_spacing.y = 1.0;
-            chosen = cx.with_origin(Origin::ContextMenu, |cx| rows(ui, cx, align_id, menu.world));
+            chosen = cx.with_origin(Origin::ContextMenu, |cx| match &menu.locked {
+                Some(id) => locked_rows(ui, cx, id, menu.world),
+                None => rows(ui, cx, align_id, menu.world),
+            });
         });
     });
     if chosen {
@@ -119,10 +122,34 @@ pub fn show(ctx: &Context, cx: &mut Cx<'_>, st: &mut UiState) {
     }
 }
 
+/// The rows for a locked element, which cannot be selected: Unlock (which selects what it unlocks, as
+/// Excalidraw does), then the rows that do not need a selection.
+fn locked_rows(ui: &mut Ui, cx: &mut Cx<'_>, element: &str, world: Option<[f64; 2]>) -> bool {
+    let mut chosen = false;
+    let unlock = Ctl::new("element.unlock_all").args(unlock_args(element));
+    chosen |= cx.menu_item(ui, &unlock, "Unlock").clicked();
+    separator(ui, &cx.pal);
+    let rest = [
+        item("Paste", "clipboard.paste", paste_args(world)),
+        item("Select all", "selection.all", json!({})),
+        item("Zoom to fit", "view.zoom_to_fit", json!({ "scope": "all" })),
+    ];
+    for it in rest {
+        chosen |= cx.menu_item(ui, &Ctl::new(it.id).args(it.args), it.text).clicked();
+    }
+    chosen
+}
+
+/// The arguments of the Unlock row: that one element (its whole group unlocks with it).
+pub(crate) fn unlock_args(element: &str) -> Value {
+    json!({ "ids": [element] })
+}
+
 /// Draws the rows and returns true when one was chosen.
 fn rows(ui: &mut Ui, cx: &mut Cx<'_>, align_id: Id, world: Option<[f64; 2]>) -> bool {
     let selected = cx.model.selection_count;
     let mut chosen = false;
+    let mut verb_chosen = false;
     let mut block = |ui: &mut Ui, cx: &mut Cx<'_>, items: Vec<Item>, indent: bool| {
         for it in items {
             let ctl = Ctl::new(it.id).args(it.args);
@@ -141,6 +168,12 @@ fn rows(ui: &mut Ui, cx: &mut Cx<'_>, align_id: Id, world: Option<[f64; 2]>) -> 
     block(ui, cx, order_items(), false);
     separator(ui, &cx.pal);
     block(ui, cx, vec![item("Lock or unlock", "element.lock", json!({}))], false);
+    if selected == 1 {
+        verb_chosen = cx.verb_item(ui, Verb::OpenLinkEditor, "Link…").clicked();
+        if cx.model.selection_link.is_some() {
+            block(ui, cx, vec![item("Open link", "element.open_link", json!({}))], false);
+        }
+    }
     if selected >= 2 {
         separator(ui, &cx.pal);
         let open = ui.data_mut(|d| *d.get_temp_mut_or_default::<bool>(align_id));
@@ -158,7 +191,7 @@ fn rows(ui: &mut Ui, cx: &mut Cx<'_>, align_id: Id, world: Option<[f64; 2]>) -> 
     block(ui, cx, vec![item("Select all", "selection.all", json!({}))], false);
     block(ui, cx, style_items(), false);
     block(ui, cx, vec![item("Zoom to fit", "view.zoom_to_fit", json!({ "scope": "all" }))], false);
-    chosen
+    chosen || verb_chosen
 }
 
 /// A row that opens or closes a block of rows. It only changes what the menu shows, so it is not a
