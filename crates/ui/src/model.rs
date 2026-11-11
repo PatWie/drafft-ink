@@ -147,6 +147,16 @@ pub struct SelectedElement {
     pub label: Option<String>,
 }
 
+/// Whether the selected text is bold and italic. `Some(true)`: all of it. `Some(false)`: none of it. `None`: some of
+/// it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct TextFaces {
+    /// The text is bold.
+    pub bold: Option<bool>,
+    /// The text is italic.
+    pub italic: Option<bool>,
+}
+
 /// The camera, from `view.get`.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct ViewView {
@@ -269,6 +279,9 @@ pub struct CollabView {
     pub room: Option<String>,
     /// Who else is in it.
     pub peers: Vec<Peer>,
+    /// A server is chosen (`collab.connect` without a room): no socket is open and no room is joined, and the
+    /// dialog offers the room and the access token. [`CollabView::status`] is still `Disconnected`.
+    pub server_chosen: bool,
 }
 
 impl CollabView {
@@ -289,7 +302,12 @@ impl CollabView {
             .and_then(Value::as_array)
             .map(|a| a.iter().filter_map(Peer::from_status).collect())
             .unwrap_or_default();
-        CollabView { status, room: text("room").map(str::to_owned), peers }
+        CollabView {
+            status,
+            room: text("room").map(str::to_owned),
+            peers,
+            server_chosen: text("state") == Some("ready"),
+        }
     }
 }
 
@@ -329,6 +347,11 @@ pub struct Model {
     pub tool_held: bool,
     /// The point editor has a selected point (the `PointEditor` key scope applies).
     pub point_selected: bool,
+    /// Bold and italic of the selected texts and labels, from the document; `None` when none is selected.
+    pub text_faces: Option<TextFaces>,
+    /// Bold and italic at the selection of the text editor while one runs. The editor owns the text then, so these
+    /// win over [`Model::text_faces`]. Set by the app.
+    pub editor_faces: Option<TextFaces>,
     /// The common bounds of the selection; `None` when nothing is selected.
     pub selection_bounds: Option<BoundsView>,
     /// The link of the selected element, when exactly one is selected and it has a link.
@@ -377,6 +400,8 @@ impl Default for Model {
             gesture_running: false,
             tool_held: false,
             point_selected: false,
+            text_faces: None,
+            editor_faces: None,
             selection_bounds: None,
             selection_link: None,
             selection: Vec::new(),
@@ -513,6 +538,7 @@ impl Model {
             [one] if self.selection_count == 1 => one.link.clone(),
             _ => None,
         };
+        self.text_faces = read_text_faces(s, &read.items);
         self.selection = read.items;
         self.style = read_style(s);
         self.view = read_view(s);
@@ -520,6 +546,12 @@ impl Model {
     }
 
     // ---- reading ----
+
+    /// Bold and italic of the text the panel acts on: the editor's selection while one runs, else the selected
+    /// texts. `None` when there is no text to format.
+    pub fn faces(&self) -> Option<TextFaces> {
+        self.editor_faces.or(self.text_faces)
+    }
 
     /// The command with this id.
     pub fn command(&self, id: &str) -> Option<&CmdView> {
@@ -672,6 +704,47 @@ fn read_selected_elements(s: &mut Session) -> Vec<SelectedElement> {
             })
         })
         .collect()
+}
+
+/// Bold and italic of the selected texts and of the labels of the selected shapes, from the runs `element.query`
+/// reports.
+fn read_text_faces(s: &mut Session, selected: &[SelectedElement]) -> Option<TextFaces> {
+    let ids: Vec<&str> =
+        selected.iter().flat_map(|e| if e.kind == "text" { Some(e.id.as_str()) } else { e.label.as_deref() }).collect();
+    if ids.is_empty() {
+        return None;
+    }
+    let out = s
+        .query(
+            "element.query",
+            json!({ "filter": { "ids": ids }, "fields": ["id", "text", "runs"], "limit": SELECTION_DETAIL_LIMIT }),
+        )
+        .ok()?;
+    let items = out.get("items").and_then(Value::as_array).map(Vec::as_slice).unwrap_or_default();
+    // How many characters have the face, against how many there are, per text.
+    let counts = |item: &Value, face: &str| -> (usize, usize) {
+        let chars = text_of(item, "text").map_or(0, |t| t.chars().count());
+        let runs = item.get("runs").and_then(Value::as_array).map(Vec::as_slice).unwrap_or_default();
+        let with: u64 = runs
+            .iter()
+            .filter(|r| r.get(face).and_then(Value::as_bool).unwrap_or(false))
+            .map(|r| {
+                let bound = |k: &str| r.get(k).and_then(Value::as_u64).unwrap_or(0);
+                bound("end").saturating_sub(bound("start"))
+            })
+            .sum();
+        (usize::try_from(with).unwrap_or(usize::MAX).min(chars), chars)
+    };
+    let state = |face: &str| {
+        let (with, all) = items.iter().map(|i| counts(i, face)).fold((0, 0), |(w, a), (cw, ca)| (w + cw, a + ca));
+        match (with, all) {
+            (_, 0) => Some(false),
+            (0, _) => Some(false),
+            (w, a) if w == a => Some(true),
+            _ => None,
+        }
+    };
+    (!items.is_empty()).then(|| TextFaces { bold: state("bold"), italic: state("italic") })
 }
 
 /// Reads the camera with `view.get`.

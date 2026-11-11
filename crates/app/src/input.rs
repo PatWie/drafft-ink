@@ -190,6 +190,7 @@ pub(crate) fn cursor_icon(c: Cursor) -> egui::CursorIcon {
         Cursor::Pointer => egui::CursorIcon::PointingHand,
         Cursor::Grab => egui::CursorIcon::Grab,
         Cursor::Grabbing => egui::CursorIcon::Grabbing,
+        Cursor::Text => egui::CursorIcon::Text,
         Cursor::Crosshair => egui::CursorIcon::Crosshair,
         Cursor::ResizeNs => egui::CursorIcon::ResizeVertical,
         Cursor::ResizeEw => egui::CursorIcon::ResizeHorizontal,
@@ -218,6 +219,13 @@ mod tests {
             gpu::PointerPoint { pos: egui::pos2(x, y), pressure: None, time_ms: 0.0 },
             egui::Modifiers::NONE,
         )
+    }
+
+    #[test]
+    fn every_cursor_has_an_egui_cursor_and_the_i_beam_is_the_text_cursor() {
+        assert_eq!(cursor_icon(Cursor::Text), egui::CursorIcon::Text);
+        assert_eq!(cursor_icon(Cursor::Pointer), egui::CursorIcon::PointingHand);
+        assert_eq!(cursor_icon(Cursor::Default), egui::CursorIcon::Default);
     }
 
     #[test]

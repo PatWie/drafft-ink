@@ -5,6 +5,8 @@
 
 use drafftink_typeset::Motion;
 
+use super::Face;
+
 /// A key the editor reacts to. Letters are given as characters in lower case.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Key {
@@ -71,6 +73,9 @@ pub enum KeyAction {
     Undo,
     /// The editor's redo.
     Redo,
+    /// Make the selection bold or italic, or take it away when all of it is (with a caret: the style of what is
+    /// typed next).
+    Toggle(Face),
     /// Show the source of the formula at the caret.
     RevealFormula,
     /// Turn typesetting of `$...$` on or off for this text.
@@ -111,6 +116,8 @@ pub fn action_for(key: Key, mods: Mods, mac: bool) -> Option<KeyAction> {
         Key::Letter('a') if command && !shift && !alt => Some(KeyAction::SelectAll),
         Key::Letter('z') if command && !alt => Some(if shift { KeyAction::Redo } else { KeyAction::Undo }),
         Key::Letter('y') if command && !shift && !alt => Some(KeyAction::Redo),
+        Key::Letter('b') if command && !shift && !alt => Some(KeyAction::Toggle(Face::Bold)),
+        Key::Letter('i') if command && !shift && !alt => Some(KeyAction::Toggle(Face::Italic)),
         Key::Letter('m') if command && shift && !alt => Some(KeyAction::ToggleFormulas),
         Key::Enter | Key::F2 | Key::Letter(_) => None,
     }
@@ -163,6 +170,8 @@ mod tests {
         assert_eq!(action_for(Key::Letter('z'), ctrl_shift, false), Some(KeyAction::Redo));
         assert_eq!(action_for(Key::Letter('y'), ctrl, false), Some(KeyAction::Redo));
         assert_eq!(action_for(Key::Letter('m'), ctrl_shift, false), Some(KeyAction::ToggleFormulas));
+        assert_eq!(action_for(Key::Letter('b'), ctrl, false), Some(KeyAction::Toggle(Face::Bold)));
+        assert_eq!(action_for(Key::Letter('i'), ctrl, true), Some(KeyAction::Toggle(Face::Italic)));
         assert_eq!(action_for(Key::Enter, NONE, false), Some(KeyAction::Newline));
         assert_eq!(action_for(Key::F2, NONE, false), Some(KeyAction::RevealFormula));
     }
@@ -170,8 +179,10 @@ mod tests {
     #[test]
     fn other_command_chords_do_nothing() {
         let ctrl = Mods { command: true, ..NONE };
-        assert_eq!(action_for(Key::Letter('b'), ctrl, false), None);
         assert_eq!(action_for(Key::Letter('c'), ctrl, false), None);
+        assert_eq!(action_for(Key::Letter('b'), Mods { shift: true, ..ctrl }, false), None);
+        assert_eq!(action_for(Key::Letter('i'), Mods { alt: true, ..ctrl }, false), None);
+        assert_eq!(action_for(Key::Letter('b'), NONE, false), None, "a plain b is typed text");
         assert_eq!(action_for(Key::Enter, ctrl, false), None);
         assert_eq!(action_for(Key::Letter('a'), NONE, false), None);
     }

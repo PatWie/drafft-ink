@@ -86,6 +86,9 @@ fn collab_status_states_map_to_the_ui_status() {
     };
     assert_eq!(state("disconnected", json!({})), CollabStatus::Disconnected);
     assert_eq!(state("ready", json!({})), CollabStatus::Disconnected);
+    assert!(CollabView::from_status(&json!({ "state": "ready" })).server_chosen, "a chosen server is remembered");
+    assert!(!CollabView::from_status(&json!({ "state": "disconnected" })).server_chosen);
+    assert!(!CollabView::from_status(&json!({ "state": "connected", "room": "r" })).server_chosen);
     assert_eq!(state("connecting", json!({})), CollabStatus::Connecting);
     assert_eq!(state("connected", json!({})), CollabStatus::Connected);
     assert_eq!(state("error", json!({ "error": "timed out", "text": "x" })), CollabStatus::Failed("timed out".into()));

@@ -721,8 +721,10 @@ fn native_documents_survive_a_trip_through_excalidraw() {
     t.font.weight = FontWeight::Light;
     t.font.align = drafftink_scene::TextAlign::Center;
     t.runs = vec![
-        TextRun { start: 0, end: 3, color: Some(Color::rgb(255, 0, 0)) },
-        TextRun { start: 5, end: 6, color: None },
+        TextRun { start: 0, end: 3, color: Some(Color::rgb(255, 0, 0)), ..Default::default() },
+        TextRun { start: 5, end: 6, color: None, ..Default::default() },
+        TextRun { start: 6, end: 8, color: None, bold: true, italic: true },
+        TextRun { start: 8, end: 11, italic: true, ..Default::default() },
     ];
     t.container_id = Some(doc.elements[rect].id.clone());
     let label = base_element(&mut doc, ElementKind::Text(t), 10.0, 20.0, 80.0, 25.0);
@@ -793,6 +795,11 @@ fn native_documents_survive_a_trip_through_excalidraw() {
         v["elements"].as_array().unwrap().iter().find(|e| e["id"] == id).unwrap()["customData"]["drafftink"].clone()
     };
     assert_eq!(note("n10")["math"], true);
+    // Excalidraw has no bold or italic per character: it shows the text plain, and the note keeps the runs.
+    let label = v["elements"].as_array().unwrap().iter().find(|e| e["text"] == "héllo wörld").unwrap()["id"].clone();
+    let runs = note(label.as_str().unwrap())["runs"].clone();
+    assert_eq!(runs[2], json!({"start": 6, "end": 8, "bold": true, "italic": true}), "{runs}");
+    assert_eq!(runs[3], json!({"start": 8, "end": 11, "italic": true}));
     assert_eq!(note("n0")["fill_pattern"], "dots");
     assert_eq!(note("n0")["sloppiness"], "drunk");
     assert_eq!(note("n0")["corner_radius"], 17.0);

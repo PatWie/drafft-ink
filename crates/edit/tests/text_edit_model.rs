@@ -4,11 +4,11 @@
 
 use std::sync::Arc;
 
-use drafftink_edit::text_edit::{Clicks, Editor, Key, KeyAction, Mods, Shown, action_for};
+use drafftink_edit::text_edit::{Clicks, Editor, Face, Key, KeyAction, Mods, Shown, action_for};
 use drafftink_geom::kurbo::Point;
 use drafftink_scene::{Color, InlineMath, TextRun};
 use drafftink_typeset::{
-    InlineMath as Math, Motion, Rgba8, Span, SpanStyle, TextLayout, TextSpec, TextStyle, Typesetter,
+    FontWeight, InlineMath as Math, Motion, Rgba8, Span, SpanStyle, TextLayout, TextSpec, TextStyle, Typesetter,
 };
 
 const RED: Color = Color::rgb(220, 30, 30);
@@ -25,7 +25,15 @@ fn layout(ts: &mut Typesetter, shown: &Shown) -> Arc<TextLayout> {
         .runs
         .spans()
         .iter()
-        .map(|s| Span { range: s.range.clone(), style: SpanStyle::color(rgba(s.color)) })
+        .map(|s| Span {
+            range: s.range.clone(),
+            style: SpanStyle {
+                color: s.style.color.map(rgba),
+                weight: s.style.bold.then_some(FontWeight::Heavy),
+                italic: s.style.italic.then_some(true),
+                ..SpanStyle::default()
+            },
+        })
         .collect();
     spec.math = Math::Auto;
     spec.reveal = shown.reveal;
@@ -71,7 +79,17 @@ const NONE: Mods = Mods { shift: false, alt: false, command: false };
 const CTRL: Mods = Mods { shift: false, alt: false, command: true };
 
 fn spans(ed: &Editor) -> Vec<(std::ops::Range<usize>, Color)> {
-    ed.runs().spans().iter().map(|s| (s.range.clone(), s.color)).collect()
+    ed.runs().spans().iter().filter_map(|s| Some((s.range.clone(), s.style.color?))).collect()
+}
+
+/// The bold stretches, as byte ranges.
+fn bold(ed: &Editor) -> Vec<std::ops::Range<usize>> {
+    ed.runs().spans().iter().filter(|s| s.style.bold).map(|s| s.range.clone()).collect()
+}
+
+/// The italic stretches, as byte ranges.
+fn italic(ed: &Editor) -> Vec<std::ops::Range<usize>> {
+    ed.runs().spans().iter().filter(|s| s.style.italic).map(|s| s.range.clone()).collect()
 }
 
 // ---- insertion and colour --------------------------------------------------------------------------------------
@@ -106,7 +124,7 @@ fn colouring_a_selection_only_changes_that_range_and_is_reported_in_characters()
     assert!(r.ed.set_color(Some(BLUE)));
     let done = r.ed.finish();
     assert_eq!(done.text, "é€ word");
-    assert_eq!(done.runs, vec![TextRun { start: 3, end: 7, color: Some(BLUE) }]);
+    assert_eq!(done.runs, vec![TextRun { start: 3, end: 7, color: Some(BLUE), ..Default::default() }]);
     assert_eq!(r.ed.selection_color(), Some(Some(BLUE)));
     // Clearing goes back to the element's colour.
     assert!(r.ed.set_color(None));
@@ -131,7 +149,7 @@ fn the_colour_of_a_mixed_selection_is_unknown() {
 
 #[test]
 fn runs_from_the_element_come_back_unchanged_when_nothing_is_edited() {
-    let runs = [TextRun { start: 2, end: 4, color: Some(RED) }];
+    let runs = [TextRun { start: 2, end: 4, color: Some(RED), ..Default::default() }];
     let ed = Editor::new("abcdef", &runs, InlineMath::Auto);
     assert_eq!(ed.finish().runs, runs.to_vec());
 }
@@ -568,7 +586,7 @@ fn composed_text_takes_the_colour_before_it_and_finish_ignores_a_running_composi
     assert_eq!(r.ed.shown().runs.spans().iter().map(|s| s.range.clone()).collect::<Vec<_>>(), vec![0..4]);
     let done = r.ed.finish();
     assert_eq!(done.text, "ab");
-    assert_eq!(done.runs, vec![TextRun { start: 0, end: 2, color: Some(RED) }]);
+    assert_eq!(done.runs, vec![TextRun { start: 0, end: 2, color: Some(RED), ..Default::default() }]);
 }
 
 #[test]
@@ -634,4 +652,126 @@ fn hostile_sequences_never_panic_and_keep_the_model_consistent() {
         let shown = r.ed.shown();
         assert!(shown.selection.1 <= shown.text.len());
     }
+}
+
+// ---- bold and italic -------------------------------------------------------------------------------------------
+
+#[test]
+fn mod_b_and_mod_i_toggle_the_selection() {
+    let mut r = Rig::new("ab cd ef");
+    r.ed.select_chars(3..5);
+    assert!(r.key(Key::Letter('b'), CTRL));
+    assert_eq!(bold(&r.ed), vec![3..5]);
+    assert_eq!(r.ed.face_state(Face::Bold), Some(true));
+    assert_eq!(r.ed.face_state(Face::Italic), Some(false));
+    assert!(r.key(Key::Letter('i'), CTRL));
+    assert_eq!(italic(&r.ed), vec![3..5]);
+    // The same chord again takes it off, and a partly bold selection becomes all bold first.
+    assert!(r.key(Key::Letter('b'), CTRL));
+    assert!(bold(&r.ed).is_empty());
+    r.ed.select_chars(0..5);
+    assert!(r.key(Key::Letter('i'), CTRL));
+    assert_eq!(italic(&r.ed), vec![0..5], "a selection that is partly italic becomes all italic");
+    assert_eq!(r.ed.face_state(Face::Italic), Some(true));
+}
+
+#[test]
+fn a_mixed_selection_reports_no_state() {
+    let mut r = Rig::new("abcdef");
+    r.ed.select_chars(0..2);
+    r.ed.set_face(Face::Bold, true);
+    r.ed.select_chars(0..4);
+    assert_eq!(r.ed.face_state(Face::Bold), None);
+}
+
+#[test]
+fn bold_keeps_the_colour_and_colour_keeps_the_bold() {
+    let mut r = Rig::new("abcd");
+    r.ed.select_chars(0..4);
+    r.ed.set_color(Some(RED));
+    r.ed.set_face(Face::Bold, true);
+    assert_eq!(spans(&r.ed), vec![(0..4, RED)]);
+    r.ed.set_color(Some(BLUE));
+    assert_eq!(bold(&r.ed), vec![0..4]);
+    r.ed.set_color(None);
+    assert_eq!(bold(&r.ed), vec![0..4], "taking the colour away leaves the bold");
+    assert!(spans(&r.ed).is_empty());
+}
+
+#[test]
+fn typed_text_continues_the_bold_of_the_character_before_it() {
+    let mut r = Rig::new("ab");
+    r.ed.select_chars(0..2);
+    r.ed.set_face(Face::Bold, true);
+    r.ed.select_chars(2..2);
+    r.ed.insert("cd");
+    assert_eq!(bold(&r.ed), vec![0..4]);
+    r.ed.select_chars(0..0);
+    r.ed.insert("X");
+    assert_eq!(bold(&r.ed), vec![1..5], "text typed before a bold word is not bold");
+}
+
+#[test]
+fn bold_with_a_caret_styles_what_is_typed_next_until_the_caret_moves() {
+    let mut r = Rig::new("ab");
+    assert!(r.key(Key::Letter('b'), CTRL));
+    assert!(bold(&r.ed).is_empty(), "nothing is bold yet");
+    assert_eq!(r.ed.face_state(Face::Bold), Some(true));
+    r.ed.insert("cd");
+    assert_eq!(bold(&r.ed), vec![2..4]);
+    // Toggle off with the caret in a bold word: the next text is regular.
+    assert!(r.key(Key::Letter('b'), CTRL));
+    r.ed.insert("ef");
+    assert_eq!(bold(&r.ed), vec![2..4]);
+    // A moved caret forgets the choice.
+    assert!(r.key(Key::Letter('i'), CTRL));
+    r.go(Motion::Left, false);
+    r.go(Motion::Right, false);
+    r.ed.insert("g");
+    assert!(italic(&r.ed).is_empty());
+}
+
+#[test]
+fn bold_and_italic_are_undone_and_redone_with_the_editor() {
+    let mut r = Rig::new("abcd");
+    r.ed.select_chars(1..3);
+    r.ed.set_face(Face::Bold, true);
+    assert_eq!(bold(&r.ed), vec![1..3]);
+    assert!(r.ed.undo());
+    assert!(bold(&r.ed).is_empty());
+    assert!(r.ed.redo());
+    assert_eq!(bold(&r.ed), vec![1..3]);
+}
+
+#[test]
+fn the_result_carries_bold_and_italic_in_characters() {
+    let mut r = Rig::new("aé€b");
+    r.ed.select_chars(1..3);
+    r.ed.set_face(Face::Bold, true);
+    r.ed.set_face(Face::Italic, true);
+    r.ed.set_color(Some(RED));
+    let done = r.ed.finish();
+    assert_eq!(done.runs, vec![TextRun { start: 1, end: 3, color: Some(RED), bold: true, italic: true }]);
+    // And the same runs open again.
+    let again = Editor::new("aé€b", &done.runs, InlineMath::Auto);
+    assert_eq!(bold(&again), vec![1..6]);
+}
+
+#[test]
+fn a_composition_takes_the_chosen_face_and_blocks_toggling() {
+    let mut r = Rig::new("ab");
+    r.key(Key::Letter('b'), CTRL);
+    r.ed.preedit("ni", None);
+    let shown = r.ed.shown();
+    assert_eq!(
+        shown.runs.spans().iter().filter(|s| s.style.bold).map(|s| s.range.clone()).collect::<Vec<_>>(),
+        vec![2..4]
+    );
+    assert!(!r.ed.set_face(Face::Italic, true), "the input method owns the text while it composes");
+    // The bold text shown is laid out wider than the same text regular.
+    let bold_width = layout(&mut r.ts, &shown).size.width;
+    let mut plain = Rig::new("ab");
+    plain.ed.preedit("ni", None);
+    let regular_width = layout(&mut plain.ts, &plain.ed.shown()).size.width;
+    assert!(bold_width > regular_width, "{bold_width} vs {regular_width}");
 }

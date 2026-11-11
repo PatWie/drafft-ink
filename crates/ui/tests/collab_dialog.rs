@@ -32,6 +32,7 @@ fn view(status: CollabStatus, room: Option<&str>, peers: usize) -> CollabView {
                 has_cursor: false,
             })
             .collect(),
+        server_chosen: false,
     }
 }
 
@@ -361,4 +362,85 @@ fn presence_is_hidden_in_zen_mode() {
     let mut h = dialog::harness(f);
     h.run();
     assert!(h.query_by_label("p1").is_none());
+}
+
+const TOKEN: &str = "s3cret-room-token";
+
+#[test]
+fn the_token_goes_to_join_room_and_is_not_kept_anywhere_else() {
+    let mut h = open(dialog::connected(None), view(CollabStatus::Connected, None, 0));
+    type_into(&mut h, "Room", "plans");
+    type_into(&mut h, "Access token", TOKEN);
+    h.get_by_label("Join room").click();
+    h.run();
+    assert_eq!(calls(&h), [call("collab.join_room", json!({"room": "plans", "token": TOKEN}))]);
+    let report = h.state_mut().dispatch();
+    assert_eq!(report.refusals().count(), 0, "{:?}", report.ran);
+    assert_eq!(status(h.state_mut())["room"], json!("plans"));
+    // Nothing the session or the model keeps holds it: not the settings, not the ring, not the status.
+    let f = h.state();
+    let settings = format!("{:?}", f.model.settings);
+    let ring = serde_json::to_string(&f.session.ring().recent(1000, false, None)).unwrap();
+    assert!(!settings.contains(TOKEN), "settings: {settings}");
+    assert!(!ring.contains(TOKEN) && ring.contains("<hidden>"), "ring: {ring}");
+    assert!(!status(h.state_mut()).to_string().contains(TOKEN));
+}
+
+#[test]
+fn the_token_field_is_masked_and_gone_once_in_a_room() {
+    let mut h = open(dialog::connected(None), view(CollabStatus::Connected, None, 0));
+    type_into(&mut h, "Access token", TOKEN);
+    // A plain field exposes what was typed; the token field does not (egui draws dots).
+    type_into(&mut h, "Display name", "Ada Lovelace");
+    assert!(format!("{:?}", dialog::field(&h, "Display name").accesskit_node().data()).contains("Ada Lovelace"));
+    let node = dialog::field(&h, "Access token");
+    assert_eq!(node.accesskit_node().role(), egui::accesskit::Role::TextInput);
+    assert!(
+        !format!("{:?}", node.accesskit_node().data()).contains(TOKEN),
+        "a masked field does not expose what was typed"
+    );
+    // In a room there is no field, and a new dialog starts empty.
+    let mut h = open(dialog::connected(Some("abc")), view(CollabStatus::Connected, Some("abc"), 1));
+    assert!(h.query_by_label("Access token").is_none());
+    h.get_by_label("Leave room").click();
+    h.run();
+    h.state_mut().dispatch();
+    h.state_mut().state.collab_open = true;
+    h.state_mut().model.collab = view(CollabStatus::Connected, None, 0);
+    h.run();
+    h.state_mut().clear();
+    h.get_by_label("Join room").click();
+    h.run();
+    assert_eq!(calls(&h), [call("collab.join_room", json!({"room": "abc"}))], "no token stayed behind");
+}
+
+#[test]
+fn a_new_room_with_a_token_needs_no_name() {
+    let mut h = open(dialog::connected(None), view(CollabStatus::Connected, None, 0));
+    type_into(&mut h, "Access token", TOKEN);
+    h.get_by_label("Create room").click();
+    h.run();
+    assert_eq!(calls(&h), [call("collab.join_room", json!({"token": TOKEN}))]);
+}
+
+#[test]
+fn once_connect_has_chosen_the_server_the_dialog_offers_the_room_and_the_token() {
+    // The real flow: `collab.connect` only chooses the server (state `ready`), and the app feeds the view from
+    // `collab.status`. The room and the token are for the person to fill in then, not only after a room is joined.
+    let mut f = dialog::connected(None);
+    let chosen = dialog::run(&mut f, "collab.status", json!({}));
+    assert_eq!(chosen["state"], json!("ready"));
+    let view = CollabView::from_status(&chosen);
+    assert_eq!(view.status, CollabStatus::Disconnected);
+    let mut h = open(f, view);
+    h.get_by_label("Server chosen. Not in a room");
+    h.get_by_label("Disconnect");
+    type_into(&mut h, "Room", "plans");
+    type_into(&mut h, "Access token", TOKEN);
+    h.get_by_label("Join room").click();
+    h.run();
+    assert_eq!(calls(&h), [call("collab.join_room", json!({"room": "plans", "token": TOKEN}))]);
+    let report = h.state_mut().dispatch();
+    assert_eq!(report.refusals().count(), 0, "{:?}", report.ran);
+    assert_eq!(status(h.state_mut())["room"], json!("plans"));
 }

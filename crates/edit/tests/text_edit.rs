@@ -121,7 +121,10 @@ fn style_range_sets_clears_and_checks_the_range() {
     let mut tx = store.begin();
     let red = Color::parse("#ff0000").unwrap();
     assert!(style_range(&mut tx, &t, 1, 3, Some(red)).unwrap());
-    assert_eq!(tx.get(&t).unwrap().text_data().unwrap().runs, vec![TextRun { start: 1, end: 3, color: Some(red) }]);
+    assert_eq!(
+        tx.get(&t).unwrap().text_data().unwrap().runs,
+        vec![TextRun { start: 1, end: 3, color: Some(red), ..Default::default() }]
+    );
     assert!(!style_range(&mut tx, &t, 1, 3, Some(red)).unwrap());
     assert!(style_range(&mut tx, &t, 1, 3, None).unwrap());
     assert!(tx.get(&t).unwrap().text_data().unwrap().runs.is_empty());

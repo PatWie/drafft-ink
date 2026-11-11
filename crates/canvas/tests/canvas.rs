@@ -704,3 +704,11 @@ fn remote_parts_make_cursors_boxes_and_trails_and_skip_what_is_gone() {
     assert!(parts.selections[0].truncated);
     assert_eq!(parts.trails[0].points.len(), 1);
 }
+
+#[test]
+fn cursors_serialise_as_their_names_for_the_javascript_shell() {
+    for (cursor, name) in [(Cursor::Text, "Text"), (Cursor::Pointer, "Pointer"), (Cursor::ResizeNwse, "ResizeNwse")] {
+        assert_eq!(serde_json::to_string(&cursor).unwrap(), format!("\"{name}\""));
+        assert_eq!(serde_json::from_str::<Cursor>(&format!("\"{name}\"")).unwrap(), cursor);
+    }
+}

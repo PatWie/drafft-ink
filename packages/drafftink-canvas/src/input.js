@@ -12,6 +12,8 @@ const CURSOR = {
   Move: "move",
   Grab: "grab",
   Grabbing: "grabbing",
+  Pointer: "pointer",
+  Text: "text",
   Crosshair: "crosshair",
   ResizeNs: "ns-resize",
   ResizeEw: "ew-resize",

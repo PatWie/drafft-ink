@@ -40,12 +40,14 @@ async function waitHealthy(origin: string, child: ChildProcess): Promise<void> {
   throw new Error("drafftink-server did not answer /health within 10 s");
 }
 
-/** Starts the server with an in-memory room store. `port` is chosen when omitted. */
-export async function startServer(port?: number): Promise<RunningServer> {
+/** Starts the server with an in-memory room store. `port` is chosen when omitted. With `authToken` a join must carry it. */
+export async function startServer(port?: number, opts: { authToken?: string } = {}): Promise<RunningServer> {
   if (!existsSync(SERVER_BIN)) throw new Error(`${SERVER_BIN} not found. Build it: cargo build --release -p drafftink-server`);
   if (!existsSync(`${DIST}/index.html`)) throw new Error(`${DIST}/index.html not found. Build the web app: scripts/build-web.sh`);
   const chosen = port ?? (await freePort());
-  const child = spawn(SERVER_BIN, ["--web-dir", DIST, "--bind", `127.0.0.1:${chosen}`, "--storage", "memory"], { stdio: "ignore" });
+  // The token goes by the environment, not the command line, which other users can read.
+  const env = opts.authToken ? { ...process.env, DRAFFTINK_AUTH_TOKENS: opts.authToken } : process.env;
+  const child = spawn(SERVER_BIN, ["--web-dir", DIST, "--bind", `127.0.0.1:${chosen}`, "--storage", "memory"], { stdio: "ignore", env });
   const origin = `http://127.0.0.1:${chosen}`;
   await waitHealthy(origin, child);
   return {

@@ -2,12 +2,13 @@
 
 use std::sync::{Arc, Mutex, MutexGuard, OnceLock, PoisonError};
 
-use drafftink_edit::text_bind::{TextMeasure as EditMeasure, wrap_text};
+use drafftink_edit::text_bind::{TextMeasure as EditMeasure, measure_text, wrap_text};
+use drafftink_geom::kurbo::Size;
 use drafftink_io::svg::MathSvg;
-use drafftink_io::typeset_measure::{font_wrapped_lines, math_layout_with};
+use drafftink_io::typeset_measure::{element_text_spec, font_wrapped_lines, math_layout_with};
 use drafftink_io::{MathBox, TextMeasure as IoMeasure, TypesetterHandle, TypesetterMeasure};
 use drafftink_scene as scene;
-use drafftink_typeset::{MathError, MathLayout, TypesetStats, Typesetter};
+use drafftink_typeset::{MathError, MathLayout, Rgba8, TypesetStats, Typesetter};
 
 use super::Measure;
 
@@ -90,6 +91,27 @@ impl EditMeasure for TypesetMeasure {
     /// A line with a formula is as tall as the typesetter makes it.
     fn line_height_of(&self, line: &str, font: &scene::TextStyle) -> f64 {
         if has_inline_math(line, font) { self.text_size_font(line, font).1 } else { self.line_height(font) }
+    }
+
+    /// Bold and italic letters have other widths, so a text with them is measured with its runs, wrapped as the
+    /// renderer wraps it. Without them, as any text.
+    fn block_size(
+        &self,
+        content: &str,
+        runs: &[scene::TextRun],
+        font: &scene::TextStyle,
+        max_width: Option<f64>,
+    ) -> Size {
+        if !runs.iter().any(|r| r.bold || r.italic) {
+            return measure_text(self, content, font, max_width);
+        }
+        let mut data = scene::TextData::new(content);
+        data.runs = runs.to_vec();
+        data.font = font.clone();
+        data.auto_resize = max_width.is_none();
+        let spec = element_text_spec(&data, Rgba8::BLACK, max_width.unwrap_or(0.0));
+        let size = self.ts.with(|t| t.measure(&spec));
+        Size::new(size.width.max(0.0), size.height.max(0.0))
     }
 
     /// Text with a formula wraps as the typesetter wraps it, which never splits a formula. The greedy word wrap of

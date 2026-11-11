@@ -10,10 +10,12 @@
 //! * Indexes are bytes of the text as written (formulas as `$...$`), the typesetter's source indexes.
 //! * A formula is one unit for the caret. The editor shows the source of the formula the caret is inside, and the
 //!   typeset formula otherwise ([`Shown::reveal`]).
-//! * Typed text takes the colour of the character before it. [`Editor::set_color`] colours the selection.
+//! * Typed text takes the style (colour, bold, italic) of the character before it. [`Editor::set_color`] colours the
+//!   selection and [`Editor::set_face`] makes it bold or italic; with a caret they set the style of what is typed next.
 //! * Composition text is shown at the caret and joins the text when the input method commits.
 
 mod clicks;
+mod face;
 mod history;
 mod ime;
 mod keys;
@@ -23,12 +25,13 @@ use std::ops::Range;
 
 use drafftink_geom::kurbo::Point;
 use drafftink_scene::limits::MAX_TEXT_CHARS;
-use drafftink_scene::{Color, InlineMath, TextRun};
+use drafftink_scene::{CharStyle, Color, InlineMath, TextRun};
 use drafftink_typeset::{Motion, TextLayout, TextSelection, formula_ranges};
 
 pub use clicks::Clicks;
+pub use face::Face;
 pub use keys::{Key, KeyAction, Mods, action_for};
-pub use runs::{ColorRuns, ColorSpan};
+pub use runs::{StyleRuns, StyleSpan};
 
 use history::{History, Kind, Snapshot};
 use ime::Composition;
@@ -38,8 +41,8 @@ use ime::Composition;
 pub struct Shown {
     /// The text, with the composition inserted at the caret.
     pub text: String,
-    /// The colour of its characters.
-    pub runs: ColorRuns,
+    /// The style of its characters.
+    pub runs: StyleRuns,
     /// The selection in `text`, anchor first. Equal ends are a caret. While a composition runs it is the caret.
     pub selection: (usize, usize),
     /// The bytes of `text` that belong to the composition (drawn underlined).
@@ -49,7 +52,7 @@ pub struct Shown {
 }
 
 impl Shown {
-    /// The colours as the scene stores them (characters).
+    /// The style runs as the scene stores them (characters).
     pub fn text_runs(&self) -> Vec<TextRun> {
         self.runs.to_text_runs(&self.text)
     }
@@ -60,7 +63,7 @@ impl Shown {
 pub struct Finished {
     /// The final text.
     pub text: String,
-    /// The final colour runs, in characters.
+    /// The final style runs (colour, bold, italic), in characters.
     pub runs: Vec<TextRun>,
     /// Whether `$...$` is typeset.
     pub inline_math: InlineMath,
@@ -70,10 +73,13 @@ pub struct Finished {
 #[derive(Debug, Clone)]
 pub struct Editor {
     text: String,
-    runs: ColorRuns,
+    runs: StyleRuns,
     anchor: usize,
     focus: usize,
     math: InlineMath,
+    /// The style the next typed text gets, chosen with a caret (`Mod+B` with nothing selected). Ends when the caret
+    /// moves.
+    pending: Option<CharStyle>,
     composition: Option<Composition>,
     history: History,
     /// The selection as the typesetter built it, for the layout with this id (keeps the column of Up and Down).
@@ -88,11 +94,12 @@ impl Editor {
         let text: String = text.chars().take(MAX_TEXT_CHARS).collect();
         let end = text.len();
         Self {
-            runs: ColorRuns::from_text_runs(&text, runs),
+            runs: StyleRuns::from_text_runs(&text, runs),
             text,
             anchor: end,
             focus: end,
             math,
+            pending: None,
             composition: None,
             history: History::default(),
             cached: None,
@@ -111,8 +118,8 @@ impl Editor {
         &self.text
     }
 
-    /// The colours of the text without the composition.
-    pub fn runs(&self) -> &ColorRuns {
+    /// The styles of the text without the composition.
+    pub fn runs(&self) -> &StyleRuns {
         &self.runs
     }
 
@@ -165,6 +172,7 @@ impl Editor {
         self.anchor = s.anchor;
         self.focus = s.focus;
         self.cached = None;
+        self.pending = None;
         self.composition = None;
         self.touch();
     }
@@ -197,7 +205,7 @@ impl Editor {
         text.push_str(&c.text);
         text.push_str(self.text.get(at..).unwrap_or_default());
         let mut runs = self.runs.clone();
-        runs.replace(at..at, c.text.len(), self.color_before(at));
+        runs.replace(at..at, c.text.len(), self.typing_style(at));
         let caret = c.caret(at);
         let reveal = self.reveal_for(&text, caret);
         Shown { text, runs, selection: (caret, caret), composition: Some(at..at + c.text.len()), reveal }
@@ -231,20 +239,27 @@ impl Editor {
 
     // ---- editing -----------------------------------------------------------------------------------------
 
-    /// The colour a character typed at `at` gets: that of the character before it.
-    fn color_before(&self, at: usize) -> Option<Color> {
-        at.checked_sub(1).and_then(|i| self.runs.color_at(i))
+    /// The style of the character before `at`.
+    fn style_before(&self, at: usize) -> CharStyle {
+        at.checked_sub(1).map_or_else(CharStyle::default, |i| self.runs.style_at(i))
     }
 
-    /// Replaces `range` by `with`. The new text takes the colour of the first replaced character, or else of the one
-    /// before the range. The caret ends after it.
+    /// The style a character typed at `at` gets: the one chosen with the caret, or else that of the character
+    /// before it.
+    fn typing_style(&self, at: usize) -> CharStyle {
+        self.pending.unwrap_or_else(|| self.style_before(at))
+    }
+
+    /// Replaces `range` by `with`. The new text takes the style of the first replaced character, or else the one
+    /// chosen for typing. The caret ends after it.
     fn replace(&mut self, range: Range<usize>, with: &str, kind: Kind) {
         let joins = !with.chars().any(char::is_whitespace);
         let before = self.snapshot();
         self.history.record(before, kind, joins);
-        let color = if range.is_empty() { self.color_before(range.start) } else { self.runs.color_at(range.start) };
+        let style = if range.is_empty() { self.typing_style(range.start) } else { self.runs.style_at(range.start) };
+        self.pending = None;
         self.text.replace_range(range.clone(), with);
-        self.runs.replace(range.clone(), with.len(), color);
+        self.runs.replace(range.clone(), with.len(), style);
         self.anchor = range.start + with.len();
         self.focus = self.anchor;
         self.cached = None;
@@ -304,6 +319,7 @@ impl Editor {
         self.anchor = self.boundary_before(sel.anchor().index);
         self.focus = self.boundary_before(sel.focus().index);
         self.cached = Some((layout.id, sel));
+        self.pending = None;
         self.history.break_run();
         self.touch();
     }
@@ -331,6 +347,7 @@ impl Editor {
             }
             KeyAction::Undo => self.undo(),
             KeyAction::Redo => self.redo(),
+            KeyAction::Toggle(face) => self.toggle_face(face),
             KeyAction::RevealFormula => self.reveal_formula(layout),
             KeyAction::ToggleFormulas => {
                 self.math = match self.math {
@@ -349,6 +366,7 @@ impl Editor {
         self.anchor = 0;
         self.focus = self.text.len();
         self.cached = None;
+        self.pending = None;
         self.history.break_run();
         self.touch();
     }
@@ -360,6 +378,7 @@ impl Editor {
         self.anchor = a;
         self.focus = b;
         self.cached = None;
+        self.pending = None;
         self.history.break_run();
         self.touch();
     }
@@ -370,6 +389,7 @@ impl Editor {
         self.anchor = at;
         self.focus = at;
         self.cached = None;
+        self.pending = None;
         self.history.break_run();
         self.touch();
         true
@@ -508,6 +528,7 @@ impl Editor {
             self.anchor = at;
             self.focus = at;
             self.cached = None;
+            self.pending = None;
             self.history.break_run();
             self.dragging = false;
             self.touch();

@@ -1,6 +1,8 @@
 import { test, expect } from "../../support/app.ts";
 import { box, camera } from "../../support/build.ts";
 import { drag } from "../../support/mouse.ts";
+import { PNG } from "pngjs";
+import { Shot, type Region } from "../../support/pixels.ts";
 import { seedPrimarySelection } from "../../support/x11.ts";
 
 test.describe("real pointer input", () => {
@@ -135,5 +137,105 @@ test.describe("real pointer input", () => {
     expect(row.bounds.y).toBeCloseTo(300, -1);
     await app.exec("history.undo");
     expect(await app.count(), "typing and committing is one undo step").toBe(0);
+  });
+
+  test("bold and italic: Mod+B and Mod+I in the editor style the typed text, and the result keeps the runs", async ({ app }) => {
+    const spot = await app.toPage({ x: 500, y: 300 });
+    await app.pressToolKey(spot, "t", "text");
+    await app.page.mouse.click(spot.x, spot.y);
+    await app.until("the editor", async () => (await app.state()).text_edit !== undefined && (await app.state()).text_edit !== null);
+    const keys = app.page.keyboard;
+    await keys.type("plain ", { delay: 20 });
+    await keys.press("Control+b");
+    await keys.type("bold", { delay: 20 });
+    await keys.press("Control+b");
+    await keys.type(" ", { delay: 20 });
+    await keys.press("Control+i");
+    await keys.type("slanted", { delay: 20 });
+    await keys.press("Control+Enter");
+    await app.until("the committed text", async () => (await app.exec("element.query", { filter: { kind: "text" } })).total === 1);
+
+    const row = (await app.exec("element.query", { filter: { kind: "text" }, fields: ["id", "text", "bounds", "runs"] })).items[0] as {
+      id: string;
+      text: string;
+      bounds: { w: number };
+      runs: { start: number; end: number; bold?: boolean; italic?: boolean }[];
+    };
+    expect(row.text).toBe("plain bold slanted");
+    expect(row.runs, "bold for `bold`, italic for `slanted`, nothing else").toEqual([
+      { start: 6, end: 10, bold: true },
+      { start: 11, end: 18, italic: true },
+    ]);
+    expect((await app.exec("history.state")).undo_depth, "typing and styling is one undo step").toBe(1);
+
+    // The box is as wide as the styled letters are: wider than the same words in the regular face.
+    const plain = await app.exec("element.create", { kind: "text", text: "plain bold slanted", at: [500, 500] });
+    const plainWidth = ((await app.element(plain.id)).bounds as { w: number }).w;
+    expect(row.bounds.w, "bold and italic letters are wider than regular ones").toBeGreaterThan(plainWidth + 1);
+
+    // The same styling by command: a range of one text, colours stay, one undo step.
+    await app.exec("text.format", { ids: [plain.id], range: [0, 5], bold: true });
+    const formatted = (await app.exec("element.query", { filter: { ids: [plain.id] }, fields: ["runs"] })).items[0] as { runs: unknown[] };
+    expect(formatted.runs).toEqual([{ start: 0, end: 5, bold: true }]);
+    await app.exec("history.undo");
+    const undone = (await app.exec("element.query", { filter: { ids: [plain.id] }, fields: ["runs"] })).items[0] as { runs: unknown[] };
+    expect(undone.runs).toEqual([]);
+  });
+
+  test("the pointer is an I-beam over text and over an editable label, and an arrow elsewhere", async ({ app }) => {
+    const cursor = async (at: { x: number; y: number }) => {
+      await app.page.mouse.move(at.x - 8, at.y - 8);
+      await app.page.mouse.move(at.x, at.y, { steps: 4 });
+      await app.settle(300);
+      return app.page.evaluate(() => getComputedStyle(document.querySelector("canvas") as HTMLCanvasElement).cursor);
+    };
+    const made = await app.exec("element.create", { kind: "text", text: "read me", at: [300, 300] });
+    const text = await app.element(made.id);
+    const inText = await app.toPage({ x: text.bounds.x + text.bounds.w / 2, y: text.bounds.y + text.bounds.h / 2 });
+    const shape = await box(app, 700, 300, 160, 100, { fill: "#a5d8ff" });
+    const inShape = await app.toPage({ x: 780, y: 350 });
+    const empty = await app.toPage({ x: 1000, y: 600 });
+
+    expect(await cursor(inText), "over text").toBe("text");
+    expect(await cursor(inShape), "over a shape with the select tool: it moves").toBe("move");
+    expect(await cursor(empty), "over nothing").toBe("default");
+    await app.pressToolKey(empty, "t", "text");
+    expect(await cursor(inShape), "with the text tool a shape takes a label").toBe("text");
+    expect(await cursor(empty), "and empty canvas takes a new text").toBe("text");
+    await app.exec("tool.set", { tool: "select" });
+    expect(shape).toBeTruthy();
+  });
+
+  test("an input method's composition is drawn inline with an underline and commits as text", async ({ app }) => {
+    const spot = await app.toPage({ x: 500, y: 300 });
+    await app.pressToolKey(spot, "t", "text");
+    await app.page.mouse.click(spot.x, spot.y);
+    await app.until("the editor", async () => (await app.state()).text_edit !== undefined && (await app.state()).text_edit !== null);
+    await app.page.keyboard.type("ab", { delay: 20 });
+    const region: Region = { x: spot.x - 4, y: spot.y - 4, w: 260, h: 48 };
+    // While a text is edited the caret blinks, so the page never goes quiet: take the pictures straight away.
+    const shot = async (clip: Region): Promise<Shot> => {
+      await app.page.waitForTimeout(300);
+      const buffer = await app.page.screenshot({ clip: { x: clip.x, y: clip.y, width: clip.w, height: clip.h }, animations: "disabled" });
+      return new Shot(PNG.sync.read(buffer), clip);
+    };
+    const before = await shot(region);
+    const inkBefore = before.count(region, [0, 0, 0], 90);
+
+    // The browser's input method: a preedit, then its commit (Chrome DevTools `Input.imeSetComposition`).
+    const cdp = await app.page.context().newCDPSession(app.page);
+    await cdp.send("Input.imeSetComposition", { text: "nihao", selectionStart: 5, selectionEnd: 5 });
+    const composing = await shot(region);
+    const inkComposing = composing.count(region, [0, 0, 0], 90);
+    expect(inkComposing, "the preedit is drawn in the text, with its underline").toBeGreaterThan(inkBefore + 60);
+    expect(composing.differing(before, 40), "the picture changed where the text is").toBeGreaterThan(60);
+    expect((await app.exec("element.query", { filter: { kind: "text" } })).total, "nothing is in the document until the edit ends").toBe(0);
+
+    await cdp.send("Input.insertText", { text: "你好" });
+    await app.page.keyboard.press("Control+Enter");
+    await app.until("the committed text", async () => (await app.exec("element.query", { filter: { kind: "text" } })).total === 1);
+    const row = (await app.exec("element.query", { filter: { kind: "text" }, fields: ["text"] })).items[0] as { text: string };
+    expect(row.text, "the committed composition joined the text, the preedit is gone").toBe("ab你好");
+    await cdp.detach();
   });
 });

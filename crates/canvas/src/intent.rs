@@ -149,6 +149,8 @@ pub enum Cursor {
     Pointer,
     /// A closed hand (panning).
     Grabbing,
+    /// The I-beam: over text, over a label that can be edited, and with the text tool.
+    Text,
     /// A crosshair (drawing tools, line point handles).
     Crosshair,
     /// Resize up/down.

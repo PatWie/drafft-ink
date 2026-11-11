@@ -244,7 +244,8 @@ fn the_collab_dialog_greys_the_server_and_the_room_with_the_engine_text() {
     let join = engine_text(&mut f, "collab.join_room", json!({ "room": "other" }));
     assert_eq!(f.model.refusal_text("collab.connect"), Some(connect.clone()));
     assert_eq!(f.model.refusal_text("collab.join_room"), Some(join.clone()));
-    f.model.collab = CollabView { status: CollabStatus::Connected, room: Some("team".to_owned()), peers: Vec::new() };
+    f.model.collab =
+        CollabView { status: CollabStatus::Connected, room: Some("team".to_owned()), ..CollabView::default() };
     f.state.collab_open = true;
     let mut h = dialog::harness(f);
     h.run();

@@ -81,8 +81,11 @@ fn every_kind() -> Document {
 
     let mut t = TextData::new("héllo 😀 wörld\nline two");
     t.runs = vec![
-        TextRun { start: 0, end: 5, color: Some(Color::parse("#ff0000").unwrap()) },
-        TextRun { start: 8, end: 12, color: Some(Color::parse("#0000ff80").unwrap()) },
+        TextRun { start: 0, end: 5, color: Some(Color::parse("#ff0000").unwrap()), ..Default::default() },
+        TextRun { start: 8, end: 12, color: Some(Color::parse("#0000ff80").unwrap()), ..Default::default() },
+        TextRun { start: 12, end: 15, color: None, bold: true, italic: false },
+        TextRun { start: 15, end: 18, color: Some(Color::parse("#00ff00").unwrap()), bold: true, italic: true },
+        TextRun { start: 19, end: 22, color: None, bold: false, italic: true },
     ];
     t.font.family = FontFamily::VanillaExtract;
     t.font.size = 28.0;

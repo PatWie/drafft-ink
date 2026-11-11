@@ -13,7 +13,7 @@ use serde_json::{Value, json};
 use crate::action::Call;
 use crate::model::{CollabStatus, CollabView};
 use crate::state::UiState;
-use crate::surfaces::dialogs::{Close, enter_pressed, show_modal, text_field};
+use crate::surfaces::dialogs::{Close, enter_pressed, secret_field, show_modal, text_field};
 use crate::theme::{self, MARGIN};
 use crate::widgets::{Ctl, Cx, panel_frame, section_label, separator};
 
@@ -53,10 +53,19 @@ pub(crate) fn disconnect_call() -> Call {
     call("collab.disconnect", json!({}))
 }
 
-/// `collab.join_room`. An empty room name leaves it out: the engine then creates a random room.
-pub(crate) fn join_call(room: &str) -> Call {
-    let room = room.trim();
-    call("collab.join_room", if room.is_empty() { json!({}) } else { json!({ "room": room }) })
+/// `collab.join_room`. An empty room name leaves it out: the engine then creates a random room. So does an empty
+/// token, and then the one given to `collab.connect` (if any) applies. The token goes to the command and nowhere
+/// else: the ring records it as hidden, and no setting holds it.
+pub(crate) fn join_call(room: &str, token: &str) -> Call {
+    let (room, token) = (room.trim(), token.trim());
+    let mut args = serde_json::Map::new();
+    if !room.is_empty() {
+        args.insert("room".to_owned(), json!(room));
+    }
+    if !token.is_empty() {
+        args.insert("token".to_owned(), json!(token));
+    }
+    call("collab.join_room", Value::Object(args))
 }
 
 /// `collab.leave_room`.
@@ -99,6 +108,7 @@ pub(crate) enum Tone {
 /// The status line and the colour of its dot.
 pub(crate) fn status_line(c: &CollabView) -> (Tone, String) {
     match (&c.status, &c.room) {
+        (CollabStatus::Disconnected, _) if c.server_chosen => (Tone::Off, "Server chosen. Not in a room".to_owned()),
         (CollabStatus::Connected, Some(room)) => (Tone::Ok, format!("Connected to room: {room}")),
         (CollabStatus::Connected, None) => (Tone::Ok, "Connected (no room)".to_owned()),
         (CollabStatus::Connecting, _) => (Tone::Warn, "Connecting...".to_owned()),
@@ -134,6 +144,8 @@ struct Draft {
     loaded: bool,
     url: String,
     room: String,
+    /// The access token typed for the next room. Lives only here, while the dialog is open: it is never stored.
+    token: String,
     name: String,
     /// The last name that was sent or stored.
     name_sent: String,
@@ -176,7 +188,7 @@ pub fn show(ctx: &Context, cx: &mut Cx<'_>, st: &mut UiState) {
 fn body(ui: &mut Ui, cx: &mut Cx<'_>, draft: &mut Draft) {
     let pal = cx.pal;
     let collab = cx.model.collab.clone();
-    let linked = matches!(collab.status, CollabStatus::Connecting | CollabStatus::Connected);
+    let linked = matches!(collab.status, CollabStatus::Connecting | CollabStatus::Connected) || collab.server_chosen;
 
     // Status.
     let (tone, text) = status_line(&collab);
@@ -203,22 +215,27 @@ fn body(ui: &mut Ui, cx: &mut Cx<'_>, draft: &mut Draft) {
     }
 
     // Room.
-    if collab.status == CollabStatus::Connected {
+    if collab.status == CollabStatus::Connected || collab.server_chosen {
         ui.add_space(10.0);
         separator(ui, &pal);
         ui.add_space(10.0);
         section_label(ui, &pal, "Room");
         if let Some(room) = &collab.room {
             draft.room.clone_from(room);
+            // The token did its work when the room was joined; do not keep it.
+            draft.token.clear();
             text_field(ui, &mut draft.room, "", cx.refusal("collab.join_room"), None, "Room");
             ui.add_space(6.0);
             let c = leave_call();
             cx.text_button(ui, &Ctl::new(&c.id).args(c.args.clone()), "Leave room", false);
         } else {
             let reason = cx.refusal("collab.join_room");
-            text_field(ui, &mut draft.room, "Room name (empty makes a new room)", reason, None, "Room");
+            text_field(ui, &mut draft.room, "Room name (empty makes a new room)", reason.clone(), None, "Room");
             ui.add_space(6.0);
-            let c = join_call(&draft.room);
+            section_label(ui, &pal, "Access token");
+            secret_field(ui, &mut draft.token, "Only if the server asks for one", reason, None, "Access token");
+            ui.add_space(6.0);
+            let c = join_call(&draft.room, &draft.token);
             let text = if draft.room.trim().is_empty() { "Create room" } else { "Join room" };
             cx.text_button(ui, &Ctl::new(&c.id).args(c.args.clone()), text, true);
         }
@@ -327,12 +344,14 @@ mod tests {
         assert_eq!(connect_call("  ").args, json!({}));
         assert_eq!(connect_call("x").id, "collab.connect");
         assert_eq!(disconnect_call().id, "collab.disconnect");
-        assert_eq!(join_call(" abc_1 ").args, json!({"room": "abc_1"}));
-        assert_eq!(join_call("").args, json!({}));
+        assert_eq!(join_call(" abc_1 ", "").args, json!({"room": "abc_1"}));
+        assert_eq!(join_call("", "").args, json!({}));
+        assert_eq!(join_call("r", " s3cret ").args, json!({"room": "r", "token": "s3cret"}), "the token is trimmed");
+        assert_eq!(join_call("", "s3cret").args, json!({"token": "s3cret"}), "a new room can need a token too");
         assert_eq!(leave_call().id, "collab.leave_room");
         assert_eq!(set_user_name_call(" Ada ").args, json!({"name": "Ada"}));
         assert_eq!(set_user_color_call("#3b82f6").args, json!({"color": "#3b82f6"}));
-        for c in [connect_call("x"), join_call("r"), leave_call(), set_user_name_call("n")] {
+        for c in [connect_call("x"), join_call("r", "t"), leave_call(), set_user_name_call("n")] {
             assert_eq!(c.origin, Origin::Ui);
         }
     }

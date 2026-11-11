@@ -52,7 +52,7 @@ fn every_kind(z: &[ZIndex]) -> Vec<Element> {
     t.font.family = FontFamily::VanillaExtract;
     t.font.align = TextAlign::Center;
     t.auto_resize = false;
-    t.runs = vec![TextRun { start: 0, end: 2, color: Some(Color::rgb(255, 0, 0)) }];
+    t.runs = vec![TextRun { start: 0, end: 2, color: Some(Color::rgb(255, 0, 0)), ..Default::default() }];
     v.push(Element::new(id("text"), ElementKind::Text(t), z[6].clone()).with_bounds(0.0, 0.0, 50.0, 40.0));
     v.push(
         Element::new(id("math"), ElementKind::Math(MathData::new("x^2")), z[7].clone())
@@ -286,7 +286,10 @@ fn text_runs_and_old_char_colors_convert_both_ways() {
     let runs = TextData::runs_from_char_colors(&old, 6);
     assert_eq!(
         runs,
-        vec![TextRun { start: 1, end: 3, color: Some(red) }, TextRun { start: 4, end: 6, color: Some(blue) },]
+        vec![
+            TextRun { start: 1, end: 3, color: Some(red), ..Default::default() },
+            TextRun { start: 4, end: 6, color: Some(blue), ..Default::default() },
+        ]
     );
     let mut t = TextData::new("ab😀def");
     assert_eq!(t.char_count(), 6, "characters are scalar values, not bytes");

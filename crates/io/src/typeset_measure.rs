@@ -12,7 +12,7 @@ use std::sync::{Arc, OnceLock};
 use drafftink_scene as scene;
 use drafftink_typeset::{
     Align, ColouredPath, FONT_SIZE_RANGE, FontFamily, FontWeight, InlineMath, LineHeight, MATH_SIZE_RANGE, MathError,
-    MathLayout, MathSpec, Rgba8, Span, TextSpec, TextStyle, Typesetter, Wrap, font_file,
+    MathLayout, MathSpec, Rgba8, Span, SpanStyle, TextSpec, TextStyle, Typesetter, Wrap, font_file,
 };
 
 use crate::measure::{MathBox, TextMeasure};
@@ -183,15 +183,31 @@ pub fn element_text_spec(t: &scene::TextData, stroke: Rgba8, box_width: f64) -> 
         (!t.auto_resize || (t.container_id.is_some() && box_width > 0.0)).then_some(box_width),
     );
     spec.style.color = stroke;
-    let colors: Vec<Option<Rgba8>> =
-        t.char_colors().into_iter().map(|c| c.map(|c| Rgba8::new(c.r, c.g, c.b, c.a))).collect();
-    spec.spans = Span::from_char_colors(&t.content, &colors);
+    spec.spans = run_spans(t);
     spec.align = match t.font.align {
         scene::TextAlign::Left => Align::Left,
         scene::TextAlign::Center => Align::Center,
         scene::TextAlign::Right => Align::Right,
     };
     spec
+}
+
+/// The spans for the style runs of a text: colour, bold and italic, over byte ranges.
+fn run_spans(t: &scene::TextData) -> Vec<Span> {
+    if t.runs.is_empty() {
+        return Vec::new();
+    }
+    let mut at: Vec<usize> = t.content.char_indices().map(|(i, _)| i).collect();
+    at.push(t.content.len());
+    let byte = |char_index: u32| at.get(char_index as usize).copied().unwrap_or(t.content.len());
+    t.runs
+        .iter()
+        .filter(|run| !run.style().is_plain())
+        .map(|run| Span {
+            range: byte(run.start)..byte(run.end),
+            style: SpanStyle::run(run.color.map(|c| Rgba8::new(c.r, c.g, c.b, c.a)), run.bold, run.italic),
+        })
+        .collect()
 }
 
 /// Lays out a formula at `size`, clamped to the sizes the typesetter accepts (a size that is not a number

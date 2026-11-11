@@ -190,6 +190,7 @@ fn text_sections(ui: &mut egui::Ui, cx: &mut Cx<'_>) {
         });
     }
     choices(ui, cx, "Weight", "font_weight", &FONT_WEIGHTS);
+    emphasis_section(ui, cx);
     if shows(cx, "font_size") {
         section_label(ui, &cx.pal, "Size");
         let current = cx.model.style.num_value("font_size");
@@ -207,6 +208,23 @@ fn text_sections(ui: &mut egui::Ui, cx: &mut Cx<'_>) {
     choices(ui, cx, "Vertical align", "vertical_align", &VERTICAL_ALIGNS);
     line_height_section(ui, cx);
     auto_resize_section(ui, cx);
+}
+
+/// Bold and italic for the selected text, or for the part of it the editor has selected: `text.format`. A button
+/// that is on turns the face off.
+fn emphasis_section(ui: &mut egui::Ui, cx: &mut Cx<'_>) {
+    let Some(faces) = cx.model.faces() else { return };
+    section_label(ui, &cx.pal, "Emphasis");
+    ui.horizontal(|ui| {
+        // The labels differ from the stroke width "Bold" on the same panel.
+        for (label, shown, on, arg) in
+            [("Bold text", "Bold", faces.bold, "bold"), ("Italic text", "Italic", faces.italic, "italic")]
+        {
+            let ctl =
+                Ctl::new("text.format").args(json!({ arg: on != Some(true) })).label(label).selected(on == Some(true));
+            cx.toggle_button(ui, &ctl, shown);
+        }
+    });
 }
 
 /// The line height presets: `style.set` `line_height`.

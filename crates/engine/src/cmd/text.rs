@@ -1,6 +1,6 @@
 //! `text`: text, labels and math (docs/commands.md §2.8).
 //!
-//! `set`, `set_latex`, `style_range`, `step_size`, `bind`, `unbind`, `wrap_in_container` and `set_autoresize` are
+//! `set`, `set_latex`, `style_range`, `format`, `step_size`, `bind`, `unbind`, `wrap_in_container` and `set_autoresize` are
 //! here. The text edit session (`edit_begin`, `edit_end`) is in `session.rs`; the helpers shared with the diagram,
 //! layout and introspection commands are in `support.rs`.
 //!
@@ -178,6 +178,59 @@ fn style_range(s: &mut Session, a: StyleRangeArgs) -> Result<StyleRangeOut, Refu
         .map(|t| t.runs.iter().map(|r| json!([r.start, r.end, r.color])).collect())
         .unwrap_or_default();
     Ok(StyleRangeOut { id: id.as_str().to_owned(), runs })
+}
+
+// ---------------------------------------------------------------------------------------------
+// text.format
+// ---------------------------------------------------------------------------------------------
+
+/// Arguments of `text.format`.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct FormatArgs {
+    /// Texts, or shapes and arrows with a label. Default: the selection.
+    #[serde(default)]
+    pub ids: Option<Vec<Ref>>,
+    /// The characters to format, `[start, end]` (0-based, `end` is one past the last), for one text. Default: all
+    /// of each text.
+    #[serde(default)]
+    pub range: Option<[u32; 2]>,
+    /// True: bold. False: regular weight. Absent: leave as it is.
+    #[serde(default)]
+    pub bold: Option<bool>,
+    /// True: italic. False: upright. Absent: leave as it is.
+    #[serde(default)]
+    pub italic: Option<bool>,
+}
+
+/// Output of `text.format`.
+#[derive(Debug, Clone, Serialize, JsonSchema)]
+pub struct FormatOut {
+    /// Texts whose characters changed.
+    pub formatted: Vec<String>,
+    /// Texts that already looked as asked.
+    pub unchanged: Vec<String>,
+    /// Targets that are neither text nor a shape or arrow with a label.
+    pub skipped: Vec<String>,
+}
+
+fn format(s: &mut Session, a: FormatArgs) -> Result<FormatOut, Refusal> {
+    let cmd = s.cmd();
+    if a.bold.is_none() && a.italic.is_none() {
+        return Err(Refusal::bad_args(cmd, "give `bold`, `italic` or both, as true or false"));
+    }
+    let ids = s.targets(a.ids.as_deref())?;
+    let range = a.range.map(|[start, end]| (start, end));
+    let report = with_doc(s, |tx, m, _math, _ids| text_bind::format_texts(tx, m, &ids, range, a.bold, a.italic))
+        .map_err(|e| refuse(cmd, e))?;
+    if !report.applicable() {
+        return Err(Refusal::not_applicable(cmd, "bold or italic", "text elements, and shapes or arrows that have a label"));
+    }
+    Ok(FormatOut {
+        formatted: ids_out(&report.changed),
+        unchanged: ids_out(&report.unchanged),
+        skipped: ids_out(&report.skipped),
+    })
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -501,6 +554,17 @@ pub const COMMANDS: &[CommandSpec] = &[
     )
     .refusals(&["bad_range"])
     .example(r##"{"id":"@title","start":0,"end":5,"color":"#e03131"}"##),
+    CommandSpec::new(
+        "text.format",
+        "text",
+        "Format text",
+        "Makes texts, or a range of one text, bold or italic, or regular again. Colours stay.",
+        &Typed::new(format),
+        Facts { needs_selection: Selection::Required, ..DOC },
+    )
+    .host(Host::text_editor_takes_style())
+    .refusals(&["bad_range"])
+    .example(r#"{"ids":["@title"],"range":[0,5],"bold":true}"#),
     CommandSpec::new(
         "text.step_size",
         "text",

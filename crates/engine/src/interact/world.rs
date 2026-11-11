@@ -13,7 +13,7 @@ use drafftink_canvas::{
     Camera, CanvasConfig, Cursor, Hit, HitOptions, Picker, PointerKind, SelectionFrame, Target, Viewport, unit_group,
 };
 use drafftink_geom::kurbo::{Point, Size};
-use drafftink_scene::{ElementId, GroupId, SceneRead, SceneStore};
+use drafftink_scene::{Element, ElementId, GroupId, Kind, SceneRead, SceneStore};
 
 use crate::session::Session;
 use crate::state::{BASE_ZOOM, Tool};
@@ -220,12 +220,28 @@ impl Picker for Pick<'_> {
             Tool::Hand => Cursor::Grab,
             Tool::Select | Tool::Lasso | Tool::Text | Tool::Math => match target {
                 Target::Handle(h) => w.frame.cursor_for(h),
+                Target::Element { id, .. } if self.invites_typing(id) => Cursor::Text,
                 Target::Element { .. } => Cursor::Move,
                 Target::Empty | Target::None if w.tool == Tool::Lasso => Cursor::Crosshair,
+                // The text tool places a new text on empty canvas.
+                Target::Empty | Target::None if w.tool == Tool::Text => Cursor::Text,
                 Target::LinkIcon { .. } => Cursor::Pointer,
                 Target::Empty | Target::None => Cursor::Default,
             },
             _ => Cursor::Crosshair,
+        }
+    }
+}
+
+impl Pick<'_> {
+    /// Whether a click on this element edits text: a text or a label always, and with the text tool also a shape or
+    /// an arrow, which gets a label.
+    fn invites_typing(&self, id: &ElementId) -> bool {
+        let Some(kind) = self.session.element(id).map(Element::tag) else { return false };
+        match self.world.tool {
+            Tool::Text => matches!(kind, Kind::Text | Kind::Rectangle | Kind::Diamond | Kind::Ellipse | Kind::Arrow),
+            Tool::Select | Tool::Lasso => kind == Kind::Text,
+            _ => false,
         }
     }
 }

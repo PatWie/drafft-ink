@@ -391,6 +391,25 @@ fn hovering_a_link_icon_shows_the_pointing_hand_and_leaving_it_the_arrow() {
 }
 
 #[test]
+fn hovering_text_shows_the_i_beam_and_hovering_a_shape_does_so_only_with_the_text_tool() {
+    let mut rig = Rig::new();
+    rig.run("element.create", json!({ "kind": "text", "text": "hello", "at": [300, 300] }));
+    let text = rig.elements().into_iter().next().expect("text");
+    let t = &text.transform;
+    let on_text = (t.x + t.w / 2.0, t.y + t.h / 2.0);
+    rig.rect(100.0, 100.0, 100.0, 100.0);
+    assert_eq!(rig.hover(on_text.0, on_text.1).cursor, Some(Cursor::Text), "select tool over text");
+    assert_eq!(rig.hover(150.0, 150.0).cursor, Some(Cursor::Move), "select tool over a shape moves it");
+    assert_eq!(rig.hover(600.0, 500.0).cursor, Some(Cursor::Default), "and the empty canvas is the arrow");
+    rig.tool(Tool::Text);
+    assert_eq!(rig.hover(150.0, 150.0).cursor, Some(Cursor::Text), "the text tool edits a shape's label");
+    rig.hover(600.0, 500.0);
+    assert_eq!(rig.i.cursor(), Cursor::Text, "and places a text on empty canvas");
+    rig.tool(Tool::Rectangle);
+    assert_eq!(rig.hover(on_text.0, on_text.1).cursor, Some(Cursor::Crosshair), "a drawing tool keeps its crosshair");
+}
+
+#[test]
 fn the_icon_of_a_selected_element_is_not_live() {
     let mut rig = Rig::new();
     let a = linked_rect(&mut rig, "https://example.com/x");

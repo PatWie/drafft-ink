@@ -187,6 +187,11 @@ impl SpanStyle {
     pub fn color(color: Rgba8) -> Self {
         Self { color: Some(color), ..Self::default() }
     }
+
+    /// The style of a run of an edited text: an optional colour, and the heavy and italic faces when asked for.
+    pub fn run(color: Option<Rgba8>, bold: bool, italic: bool) -> Self {
+        Self { color, weight: bold.then_some(FontWeight::Heavy), italic: italic.then_some(true), ..Self::default() }
+    }
 }
 
 /// A styled byte range of the text. Later spans win over earlier ones where they overlap.

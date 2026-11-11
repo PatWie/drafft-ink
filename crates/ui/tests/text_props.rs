@@ -216,3 +216,86 @@ fn the_arrow_tool_panel_sets_the_defaults_for_the_next_arrow_with_tool_set_arrow
     assert_eq!(h.state().model.setting("arrow.type"), Some(&json!("elbow")));
     assert_eq!(h.state().model.setting("arrow.end_head"), Some(&json!("bar")));
 }
+
+// ---- bold and italic ----
+
+fn runs(h: &H) -> Vec<drafftink_scene::TextRun> {
+    let id = h.state().session.selection().iter().next().expect("a selection");
+    h.state().session.element(id).and_then(|e| e.text_data().map(|t| t.runs.clone())).unwrap_or_default()
+}
+
+fn on(h: &H, label: &str) -> bool {
+    h.get_by_label(label).accesskit_node().toggled() == Some(egui::accesskit::Toggled::True)
+}
+
+#[test]
+fn the_emphasis_buttons_run_text_format_and_show_the_state_of_the_selected_text() {
+    let mut h = started(free_text());
+    assert!(!on(&h, "Bold text") && !on(&h, "Italic text"));
+    let call = press(&mut h, "Bold text");
+    assert_eq!(call, Call::new(Origin::Ui, "text.format", json!({ "bold": true })));
+    assert_eq!(runs(&h), vec![drafftink_scene::TextRun { start: 0, end: 11, bold: true, ..Default::default() }]);
+    assert!(on(&h, "Bold text"), "the button shows that all of the text is bold");
+    assert!(!on(&h, "Italic text"));
+    let call = press(&mut h, "Italic text");
+    assert_eq!(call.args, json!({ "italic": true }));
+    // A button that is on turns its face off.
+    let call = press(&mut h, "Bold text");
+    assert_eq!(call.args, json!({ "bold": false }));
+    assert!(!on(&h, "Bold text") && on(&h, "Italic text"));
+    assert_eq!(runs(&h).iter().filter(|r| r.bold).count(), 0);
+}
+
+#[test]
+fn the_emphasis_buttons_format_the_label_of_a_selected_shape() {
+    let mut h = started(labelled());
+    let call = press(&mut h, "Italic text");
+    assert_eq!(call.args, json!({ "italic": true }));
+    assert!(on(&h, "Italic text"));
+}
+
+#[test]
+fn a_part_bold_text_has_no_state_and_the_button_makes_all_of_it_bold() {
+    let mut f = free_text();
+    let id = f.session.selection().iter().next().expect("a selection").as_str().to_owned();
+    dialog::run(&mut f, "text.format", json!({ "ids": [id], "range": [0, 5], "bold": true }));
+    f.refresh();
+    let mut h = started(f);
+    assert!(!on(&h, "Bold text"), "mixed is not on");
+    let call = press(&mut h, "Bold text");
+    assert_eq!(call.args, json!({ "bold": true }));
+    assert!(on(&h, "Bold text"));
+}
+
+#[test]
+fn there_is_no_emphasis_row_without_a_text() {
+    let mut f = dialog::fixture();
+    let r = add_rect(&mut f.session, 0.0, 0.0, 50.0, 50.0).unwrap();
+    select(&mut f.session, std::slice::from_ref(&r));
+    f.refresh();
+    let h = started(f);
+    assert!(h.query_by_label("Bold text").is_none());
+}
+
+#[test]
+fn while_editing_the_buttons_go_to_the_editor_with_its_state() {
+    use drafftink_ui::UiAction;
+    let mut f = free_text();
+    f.model.text_editing = true;
+    f.model.editor_faces = Some(drafftink_ui::TextFaces { bold: Some(true), italic: Some(false) });
+    let mut h = started(f);
+    assert!(on(&h, "Bold text"), "the editor's selection wins over the stored text");
+    h.state_mut().clear();
+    h.get_by_label("Bold text").click();
+    h.run();
+    assert!(h.state().calls().is_empty(), "no command: {:?}", h.state().actions);
+    assert_eq!(
+        h.state().actions,
+        vec![UiAction::Host(HostRequest::TextEditFormat(json!({ "bold": false })))],
+        "the editor is asked to turn bold off"
+    );
+    h.state_mut().clear();
+    h.get_by_label("Italic text").click();
+    h.run();
+    assert_eq!(h.state().actions, vec![UiAction::Host(HostRequest::TextEditFormat(json!({ "italic": true })))]);
+}

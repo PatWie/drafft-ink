@@ -14,7 +14,7 @@ fn valid_json() -> String {
     set_end_binding(&mut ar, "a");
     let mut t = text("t", &z[2], "héllo 😀");
     if let ElementKind::Text(d) = &mut t.kind {
-        d.runs = vec![TextRun { start: 1, end: 3, color: Some(Color::BLACK) }];
+        d.runs = vec![TextRun { start: 1, end: 3, color: Some(Color::BLACK), ..Default::default() }];
     }
     doc.elements = vec![rect("a", &z[0]), ar, t, frame("f", &z[3])];
     doc.to_json().unwrap()

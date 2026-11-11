@@ -324,7 +324,8 @@ fn sample_updates() -> Vec<Vec<u8>> {
     edit(&mut a, "t1", |e| {
         if let ElementKind::Text(t) = &mut e.kind {
             t.content = "hello wörld".into();
-            t.runs = vec![TextRun { start: 0, end: 3, color: Some(Color::parse("#ff0000").unwrap()) }];
+            t.runs =
+                vec![TextRun { start: 0, end: 3, color: Some(Color::parse("#ff0000").unwrap()), ..Default::default() }];
         }
     });
     let second = a.export_updates_since(&[]).unwrap();

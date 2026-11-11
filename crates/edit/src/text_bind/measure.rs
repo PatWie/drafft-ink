@@ -5,7 +5,7 @@
 //! was sized agree as long as the renderer wraps at the same width with the same measure.
 
 use drafftink_geom::kurbo::Size;
-use drafftink_scene::TextStyle;
+use drafftink_scene::{TextRun, TextStyle};
 
 /// How wide and tall text is. The engine implements it over the typesetter; tests use [`MonospaceMeasure`].
 ///
@@ -24,6 +24,13 @@ pub trait TextMeasure {
     /// that typesets inline math (`TextStyle::inline_math`) overrides this; the default is [`Self::line_height`].
     fn line_height_of(&self, _line: &str, font: &TextStyle) -> f64 {
         self.line_height(font)
+    }
+
+    /// The size of `content` wrapped at `max_width` (`None`: only at hard breaks) when its characters have the style
+    /// `runs` say. A bold or italic character has other widths than a regular one, so a measure that knows the font
+    /// overrides this; the default ignores the runs.
+    fn block_size(&self, content: &str, _runs: &[TextRun], font: &TextStyle, max_width: Option<f64>) -> Size {
+        measure_text(self, content, font, max_width)
     }
 
     /// Wraps `text` (hard breaks are `\n`) so that no line is wider than `max_width` where that is possible. A
@@ -149,4 +156,20 @@ pub fn measure_lines<M: TextMeasure + ?Sized>(m: &M, lines: &[String], font: &Te
 pub fn measure_text<M: TextMeasure + ?Sized>(m: &M, text: &str, font: &TextStyle, max_width: Option<f64>) -> Size {
     let lines = m.wrap(text, font, max_width.unwrap_or(f64::INFINITY));
     measure_lines(m, &lines, font)
+}
+
+/// The size of `content` as one box, wrapped at `max_width`, with the style runs it has. Without runs this is
+/// [`measure_text`].
+pub fn measure_block<M: TextMeasure + ?Sized>(
+    m: &M,
+    content: &str,
+    runs: &[TextRun],
+    font: &TextStyle,
+    max_width: Option<f64>,
+) -> Size {
+    if runs.is_empty() {
+        measure_text(m, content, font, max_width)
+    } else {
+        m.block_size(content, runs, font, max_width)
+    }
 }

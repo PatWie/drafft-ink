@@ -84,7 +84,7 @@ fn set_keeps_colour_runs_of_the_unchanged_ends_unless_asked_not_to() {
     let red = Color::parse("#ff0000").unwrap();
     run(&mut s, "text.style_range", json!({"id": t.as_str(), "start": 0, "end": 2, "color": "#ff0000"}));
     run(&mut s, "text.set", json!({"id": t.as_str(), "text": "heXXXllo"}));
-    assert_eq!(s.element(&t).unwrap().text_data().unwrap().runs, vec![TextRun { start: 0, end: 2, color: Some(red) }]);
+    assert_eq!(s.element(&t).unwrap().text_data().unwrap().runs, vec![TextRun { start: 0, end: 2, color: Some(red), ..Default::default() }]);
     run(&mut s, "text.set", json!({"id": t.as_str(), "text": "other", "keep_runs": false}));
     assert!(s.element(&t).unwrap().text_data().unwrap().runs.is_empty());
 }
@@ -195,6 +195,100 @@ fn style_range_checks_range_and_kind() {
     assert_eq!(refuse(&mut s, "text.style_range", json!({"id": t.as_str(), "start": 3, "end": 3})).code, "bad_range");
     let r = rect(&mut s);
     assert_eq!(refuse(&mut s, "text.style_range", json!({"id": r.as_str(), "start": 0, "end": 1})).code, "wrong_kind");
+}
+
+// ---- text.format ----
+
+fn runs_of(s: &Session, id: &ElementId) -> Vec<TextRun> {
+    s.element(id).unwrap().text_data().unwrap().runs.clone()
+}
+
+fn width_of(s: &Session, id: &ElementId) -> f64 {
+    s.element(id).unwrap().transform.w
+}
+
+#[test]
+fn format_makes_a_range_bold_and_italic_and_keeps_the_colours() {
+    let (mut s, _f) = testing::session();
+    let t = text_at(&mut s, "hello world", 0.0, 0.0);
+    run(&mut s, "text.style_range", json!({"id": t.as_str(), "start": 0, "end": 5, "color": "#ff0000"}));
+    let depth = s.tab().doc.undo_depth();
+    let out = run(&mut s, "text.format", json!({"ids": [t.as_str()], "range": [3, 8], "bold": true}));
+    assert_eq!(out["formatted"], json!([t.as_str()]));
+    let red = Some(Color::parse("#ff0000").unwrap());
+    assert_eq!(
+        runs_of(&s, &t),
+        vec![
+            TextRun { start: 0, end: 3, color: red, ..Default::default() },
+            TextRun { start: 3, end: 5, color: red, bold: true, italic: false },
+            TextRun { start: 5, end: 8, bold: true, ..Default::default() },
+        ]
+    );
+    assert_eq!(s.tab().doc.undo_depth(), depth + 1, "one undo step");
+    run(&mut s, "text.format", json!({"ids": [t.as_str()], "italic": true}));
+    assert!(runs_of(&s, &t).iter().all(|r| r.italic), "no range formats the whole text");
+    // Taking a face away leaves the other, and a colour change leaves both.
+    run(&mut s, "text.format", json!({"ids": [t.as_str()], "bold": false, "italic": false}));
+    assert_eq!(runs_of(&s, &t), vec![TextRun { start: 0, end: 5, color: red, ..Default::default() }]);
+    run(&mut s, "history.undo", json!({}));
+    run(&mut s, "history.undo", json!({}));
+    assert_eq!(runs_of(&s, &t).len(), 3);
+    // The runs are reported to readers.
+    let q = run(&mut s, "element.query", json!({"filter": {"ids": [t.as_str()]}, "fields": ["runs"]}));
+    assert_eq!(q["items"][0]["runs"][1], json!({"start": 3, "end": 5, "color": "#ff0000", "bold": true}));
+}
+
+#[test]
+fn format_acts_on_the_selection_and_on_the_label_of_a_shape() {
+    let (mut s, _f) = testing::session();
+    let r = rect(&mut s);
+    run(&mut s, "text.set", json!({"id": r.as_str(), "text": "Start"}));
+    let label = label_of(&s, &r).expect("a label");
+    testing::select(&mut s, std::slice::from_ref(&r));
+    let out = run(&mut s, "text.format", json!({"bold": true}));
+    assert_eq!(out["formatted"], json!([label.as_str()]));
+    assert_eq!(runs_of(&s, &label), vec![TextRun { start: 0, end: 5, bold: true, ..Default::default() }]);
+    let again = run(&mut s, "text.format", json!({"bold": true}));
+    assert_eq!(again["unchanged"], json!([label.as_str()]), "nothing changes the second time");
+    assert_eq!(again["formatted"], json!([]));
+}
+
+#[test]
+fn format_refuses_in_plain_words_and_changes_nothing() {
+    let (mut s, _f) = testing::session();
+    let t = text_at(&mut s, "hello", 0.0, 0.0);
+    let u = text_at(&mut s, "world", 0.0, 50.0);
+    let r = rect(&mut s);
+    let r1 = refuse(&mut s, "text.format", json!({"ids": [t.as_str()]}));
+    assert_eq!(r1.code, "bad_args");
+    assert!(r1.message.contains("bold") && r1.message.contains("italic"), "{}", r1.message);
+    let r2 = refuse(&mut s, "text.format", json!({"ids": [t.as_str(), u.as_str()], "range": [0, 2], "bold": true}));
+    assert_eq!(r2.code, "bad_args");
+    assert!(r2.message.contains("one text"), "{}", r2.message);
+    assert_eq!(refuse(&mut s, "text.format", json!({"ids": [t.as_str()], "range": [2, 9], "bold": true})).code, "bad_range");
+    assert_eq!(refuse(&mut s, "text.format", json!({"ids": [t.as_str()], "range": [2, 2], "bold": true})).code, "bad_range");
+    // A rectangle without a label has nothing to format.
+    assert_eq!(refuse(&mut s, "text.format", json!({"ids": [r.as_str()], "bold": true})).code, "not_applicable");
+    assert_eq!(refuse(&mut s, "text.format", json!({"ids": [t.as_str()], "bold": "yes"})).code, "bad_args");
+    assert!(runs_of(&s, &t).is_empty());
+}
+
+#[test]
+fn bold_text_is_measured_wider_and_so_is_the_editors_result() {
+    let (mut s, _f) = testing::session_typeset();
+    let t = text_at(&mut s, "a bold claim", 0.0, 0.0);
+    run(&mut s, "text.set", json!({"id": t.as_str(), "text": "a bold claim"}));
+    let regular = width_of(&s, &t);
+    run(&mut s, "text.format", json!({"ids": [t.as_str()], "bold": true}));
+    let bold = width_of(&s, &t);
+    assert!(bold > regular + 1.0, "bold letters are wider: {bold} against {regular}");
+    run(&mut s, "text.format", json!({"ids": [t.as_str()], "bold": false}));
+    assert!((width_of(&s, &t) - regular).abs() < 1e-6, "and regular again is the old width");
+    // The editor's result takes the same path: the runs of `text.edit_end` are measured too.
+    run(&mut s, "text.edit_begin", json!({"id": t.as_str()}));
+    run(&mut s, "text.edit_end", json!({"text": "a bold claim", "runs": [{"start": 0, "end": 12, "bold": true}]}));
+    assert!((width_of(&s, &t) - bold).abs() < 1e-6, "{} against {bold}", width_of(&s, &t));
+    assert_eq!(runs_of(&s, &t), vec![TextRun { start: 0, end: 12, bold: true, ..Default::default() }]);
 }
 
 // ---- text.step_size ----
@@ -369,6 +463,7 @@ fn text_commands_refuse_locked_elements() {
     for (id, args) in [
         ("text.set", json!({"id": t.as_str(), "text": "x"})),
         ("text.style_range", json!({"id": t.as_str(), "start": 0, "end": 1, "color": "#ff0000"})),
+        ("text.format", json!({"ids": [t.as_str()], "bold": true})),
         ("text.step_size", json!({"direction": "increase", "ids": [t.as_str()]})),
         ("text.set_autoresize", json!({"ids": [t.as_str()], "on": false})),
         ("text.wrap_in_container", json!({"ids": [t.as_str()]})),

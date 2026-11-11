@@ -227,8 +227,8 @@ fn text_is_glyph_runs_one_per_colour_and_nothing_when_empty() {
     assert!(plain.bounds.width() > 20.0);
     if let ElementKind::Text(t) = &mut e.kind {
         t.runs = vec![
-            TextRun { start: 0, end: 3, color: Some(Color::rgb(255, 0, 0)) },
-            TextRun { start: 4, end: 9, color: Some(Color::rgb(0, 255, 0)) },
+            TextRun { start: 0, end: 3, color: Some(Color::rgb(255, 0, 0)), ..Default::default() },
+            TextRun { start: 4, end: 9, color: Some(Color::rgb(0, 255, 0)), ..Default::default() },
         ];
     }
     let coloured = paint(&e);
@@ -246,6 +246,45 @@ fn text_is_glyph_runs_one_per_colour_and_nothing_when_empty() {
         t.runs.clear();
     }
     assert!(paint(&e).is_empty());
+}
+
+#[test]
+fn bold_and_italic_runs_change_the_glyphs_the_width_and_the_cache_key() {
+    let mut ts = Typesetter::new();
+    let mut e = text_el(&mut ts, "t", &ZIndex::first(), 0.0, 0.0, "plain bold slanted");
+    let plain = paint(&e);
+    let key = |e: &Element| drafftink_render::paint_hash(e);
+    let plain_key = key(&e);
+    let widths = |e: &Element, runs: Vec<TextRun>| {
+        let mut e = e.clone();
+        if let ElementKind::Text(t) = &mut e.kind {
+            t.runs = runs;
+        }
+        (paint(&e).bounds.width(), key(&e))
+    };
+    let (bold_width, bold_key) = widths(&e, vec![TextRun { start: 0, end: 18, bold: true, ..Default::default() }]);
+    assert!(
+        bold_width > plain.bounds.width() + 1.0,
+        "bold letters are wider: {bold_width} against {}",
+        plain.bounds.width()
+    );
+    assert_ne!(bold_key, plain_key, "a bold run is another picture: the cache must not hand out the plain one");
+    let (italic_width, italic_key) =
+        widths(&e, vec![TextRun { start: 0, end: 18, italic: true, ..Default::default() }]);
+    assert_ne!(italic_key, plain_key);
+    assert_ne!(italic_key, bold_key);
+    assert!(italic_width > 0.0);
+    // Only the run's characters change: a bold word in the middle widens the text by less than all of it bold.
+    let (some_width, _) = widths(&e, vec![TextRun { start: 6, end: 10, bold: true, ..Default::default() }]);
+    assert!(some_width > plain.bounds.width() && some_width < bold_width, "{some_width}");
+    // A run with nothing in it is no run at all.
+    let (same_width, _) = widths(&e, vec![TextRun { start: 6, end: 10, ..Default::default() }]);
+    assert_eq!(same_width, plain.bounds.width());
+    if let ElementKind::Text(t) = &mut e.kind {
+        t.runs = vec![TextRun { start: 0, end: 5, color: Some(Color::rgb(255, 0, 0)), bold: true, italic: false }];
+    }
+    let red_bold = paint(&e);
+    assert!(colors(&red_bold).contains(&packed(PColor::from_rgba8(255, 0, 0, 255))), "colour and bold together");
 }
 
 #[test]
@@ -369,7 +408,12 @@ fn a_formula_keeps_a_colour_it_sets_and_follows_a_colour_run() {
     // "{$..$}" is text around a formula; colour the second formula green with a run.
     let n = if let ElementKind::Text(t) = &e.kind { t.content.chars().count() } else { 0 };
     if let ElementKind::Text(t) = &mut e.kind {
-        t.runs = vec![TextRun { start: (n - 3) as u32, end: n as u32, color: Some(Color::rgb(0, 160, 0)) }];
+        t.runs = vec![TextRun {
+            start: (n - 3) as u32,
+            end: n as u32,
+            color: Some(Color::rgb(0, 160, 0)),
+            ..Default::default()
+        }];
     }
     let c = colors(&paint(&e));
     assert!(c.contains(&packed(PColor::from_rgba8(0, 160, 0, 255))), "the run colours the formula: {c:?}");

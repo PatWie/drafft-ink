@@ -1384,7 +1384,7 @@ mod text_editor {
         assert!(rig.s.text_edit.is_none());
         let (text, runs) = content(&rig, &id);
         assert_eq!(text, "hello world");
-        assert_eq!(runs, vec![TextRun { start: 6, end: 11, color: Some(RED) }]);
+        assert_eq!(runs, vec![TextRun { start: 6, end: 11, color: Some(RED), ..Default::default() }]);
         assert_eq!(rig.undo_depth(), depth + 1, "the whole edit is one undo step");
 
         rig.run("history.undo", json!({}));

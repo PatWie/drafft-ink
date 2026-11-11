@@ -235,7 +235,8 @@ fn undo_covers_text_z_order_meta_and_files() {
     edit(&mut s, "t", |e| {
         if let ElementKind::Text(t) = &mut e.kind {
             t.content = "hello there".into();
-            t.runs = vec![TextRun { start: 0, end: 5, color: Some(Color::parse("#ff0000").unwrap()) }];
+            t.runs =
+                vec![TextRun { start: 0, end: 5, color: Some(Color::parse("#ff0000").unwrap()), ..Default::default() }];
         }
     });
     let top = s.next_top_index().unwrap();

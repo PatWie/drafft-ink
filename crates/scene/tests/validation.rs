@@ -157,7 +157,7 @@ fn freehand_pressures_match_points() {
 #[test]
 fn text_runs_must_be_sorted_inside_the_text() {
     let mut t = text("t", &ZIndex::first(), "héllo");
-    let run = |start, end| TextRun { start, end, color: Some(Color::BLACK) };
+    let run = |start, end| TextRun { start, end, color: Some(Color::BLACK), ..Default::default() };
     for good in [vec![], vec![run(0, 5)], vec![run(0, 2), run(2, 4), run(4, 5)]] {
         if let ElementKind::Text(d) = &mut t.kind {
             d.runs = good;

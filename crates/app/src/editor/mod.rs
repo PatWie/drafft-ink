@@ -15,7 +15,7 @@ mod subject;
 use drafftink_canvas::Camera;
 use drafftink_edit::style::StyleProps;
 use drafftink_edit::text_bind::TextProps;
-use drafftink_edit::text_edit::{Clicks, Editor};
+use drafftink_edit::text_edit::{Clicks, Editor, Face};
 use drafftink_engine::Session;
 use drafftink_engine::interact::UiRequest;
 use drafftink_geom::kurbo::{Point, Rect, Size};
@@ -23,6 +23,7 @@ use drafftink_gpu::TextInput;
 use drafftink_render::{TextEdit as TextEditOverlay, Theme};
 use drafftink_scene::{Color, ElementId, InlineMath};
 use drafftink_typeset::Typesetter;
+use drafftink_ui::TextFaces;
 use serde_json::{Value, json};
 
 pub(crate) use keys::{EditorKey, KeyRoute, route};
@@ -118,8 +119,7 @@ impl TextEditor {
 
     /// The document elements the scene leaves out while the editor draws them.
     pub(crate) fn hidden(&self) -> Vec<ElementId> {
-        let grown = self.arranged.as_ref().is_some_and(|(_, a)| a.grown_container.is_some());
-        self.subject.hidden(grown)
+        self.subject.hidden(self.arranged.as_ref().map(|(_, a)| a))
     }
 
     /// Changes whenever the picture of the editor changes (not the caret blink).
@@ -304,17 +304,32 @@ impl TextEditor {
         changed
     }
 
+    /// Bold or italic chosen in the style panel while editing: the arguments of `text.format`. They apply to the
+    /// selected characters, or to what is typed next. Returns whether the picture changed.
+    pub(crate) fn add_format(&mut self, args: &Value, now_ms: f64) -> bool {
+        let mut changed = false;
+        for (key, face) in [("bold", Face::Bold), ("italic", Face::Italic)] {
+            if let Some(on) = args.get(key).and_then(Value::as_bool) {
+                changed |= self.model.set_face(face, on);
+            }
+        }
+        if changed {
+            self.keep_caret_on(now_ms);
+        }
+        changed
+    }
+
+    /// Bold and italic at the selection, for the style panel.
+    pub(crate) fn faces(&self) -> TextFaces {
+        TextFaces { bold: self.model.face_state(Face::Bold), italic: self.model.face_state(Face::Italic) }
+    }
+
     // ---- the end -----------------------------------------------------------------------------------------
 
     /// Arguments of `text.edit_end`.
     pub(crate) fn finish_args(&self) -> Value {
         let done = self.model.finish();
-        let runs: Vec<Value> = done
-            .runs
-            .iter()
-            .filter_map(|r| r.color.map(|c| json!({ "start": r.start, "end": r.end, "color": c })))
-            .collect();
-        let mut args = json!({ "commit": true, "text": done.text, "runs": runs });
+        let mut args = json!({ "commit": true, "text": done.text, "runs": done.runs });
         if let Some(map) = args.as_object_mut() {
             if self.props != StyleProps::default()
                 && let Ok(style) = serde_json::to_value(&self.props)

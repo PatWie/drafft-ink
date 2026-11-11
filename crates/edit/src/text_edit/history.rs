@@ -2,7 +2,7 @@
 //!
 //! It lives and dies with one edit session. The document sees only the end result, as one undo step.
 
-use super::runs::ColorRuns;
+use super::runs::StyleRuns;
 
 /// Most steps kept.
 const MAX_STEPS: usize = 200;
@@ -24,7 +24,7 @@ pub(super) enum Kind {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) struct Snapshot {
     pub(super) text: String,
-    pub(super) runs: ColorRuns,
+    pub(super) runs: StyleRuns,
     pub(super) anchor: usize,
     pub(super) focus: usize,
 }

@@ -322,10 +322,28 @@ impl FreehandData {
     }
 }
 
-/// A colour override for a range of characters.
+/// What a character carries on top of the element's own text style: a colour, bold, italic.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct CharStyle {
+    /// Text colour. `None` uses the element's stroke colour.
+    pub color: Option<Color>,
+    /// Bold: the heavy face of the family.
+    pub bold: bool,
+    /// Italic: the italic face, or a slanted regular one where the family has none.
+    pub italic: bool,
+}
+
+impl CharStyle {
+    /// Whether the character looks like the element says (no colour of its own, regular, upright).
+    pub fn is_plain(&self) -> bool {
+        *self == Self::default()
+    }
+}
+
+/// A style override for a range of characters: colour, bold and italic.
 ///
 /// Ranges are in Unicode scalar values (`char`s), not bytes or UTF-16 units, exactly like the old `char_colors`.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct TextRun {
     /// First character of the range.
@@ -335,6 +353,24 @@ pub struct TextRun {
     /// Text colour for the range. `None` uses the element's stroke colour.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub color: Option<Color>,
+    /// The range is bold.
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub bold: bool,
+    /// The range is italic.
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub italic: bool,
+}
+
+impl TextRun {
+    /// A run over `start..end` with `style`.
+    pub fn new(start: u32, end: u32, style: CharStyle) -> Self {
+        Self { start, end, color: style.color, bold: style.bold, italic: style.italic }
+    }
+
+    /// What the run gives its characters.
+    pub fn style(&self) -> CharStyle {
+        CharStyle { color: self.color, bold: self.bold, italic: self.italic }
+    }
 }
 
 /// Data of a text element.
@@ -390,6 +426,32 @@ impl TextData {
         out
     }
 
+    /// One entry per character: its colour, bold and italic as the runs give them.
+    pub fn char_styles(&self) -> Vec<CharStyle> {
+        let mut out = vec![CharStyle::default(); self.char_count()];
+        for run in &self.runs {
+            let (s, e) = (run.start as usize, (run.end as usize).min(out.len()));
+            if let Some(slice) = out.get_mut(s..e) {
+                slice.fill(run.style());
+            }
+        }
+        out
+    }
+
+    /// Builds runs from per-character styles. Missing entries count as plain, extra entries are ignored, plain
+    /// characters get no run, and equal neighbours merge.
+    pub fn runs_from_char_styles(styles: &[CharStyle], char_count: usize) -> Vec<TextRun> {
+        let mut runs: Vec<TextRun> = Vec::new();
+        for (i, style) in styles.iter().take(char_count).enumerate().filter(|(_, st)| !st.is_plain()) {
+            let i = u32::try_from(i).unwrap_or(u32::MAX);
+            match runs.last_mut() {
+                Some(last) if last.end == i && last.style() == *style => last.end = i.saturating_add(1),
+                _ => runs.push(TextRun::new(i, i.saturating_add(1), *style)),
+            }
+        }
+        runs
+    }
+
     /// Builds runs from per-character colours. Missing entries count as `None`, extra entries are ignored, and equal
     /// neighbours merge, so any old `char_colors` array loads.
     pub fn runs_from_char_colors(colors: &[Option<Color>], char_count: usize) -> Vec<TextRun> {
@@ -399,7 +461,9 @@ impl TextData {
             let i = u32::try_from(i).unwrap_or(u32::MAX);
             match runs.last_mut() {
                 Some(last) if last.end == i && last.color == Some(*color) => last.end = i.saturating_add(1),
-                _ => runs.push(TextRun { start: i, end: i.saturating_add(1), color: Some(*color) }),
+                _ => {
+                    runs.push(TextRun { start: i, end: i.saturating_add(1), color: Some(*color), ..TextRun::default() })
+                }
             }
         }
         runs
