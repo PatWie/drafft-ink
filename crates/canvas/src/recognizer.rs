@@ -19,14 +19,15 @@
 //!
 //! * One pointer at a time owns a gesture. While it is down, other mouse or pen events are ignored; a second
 //!   finger turns a one-finger gesture into a two-finger view gesture and cancels the first (a running drag ends
-//!   with `cancelled: true`).
+//!   with `cancelled: true`). A pen that touches down takes over from a finger gesture that is running (a palm
+//!   that landed first), and with [`FingerMode::PanOnly`] a single finger only pans.
 //! * A press that never leaves the slop circle is a click; a held touch becomes a long press once
 //!   [`InputConfig::long_press_ms`] has passed (call [`Recognizer::tick`], or just keep sending events).
 //! * Hover is emitted only when the target under an idle mouse or pen changes.
 
 use drafftink_geom::kurbo::{Point, Vec2};
 
-use crate::config::{InputConfig, PointerMode};
+use crate::config::{FingerMode, InputConfig, PointerMode};
 use crate::input::{
     Button, InputEvent, Modifiers, PointerEvent, PointerId, PointerKind, PointerPhase, WheelEvent, WheelUnit,
 };
@@ -113,6 +114,7 @@ struct LastClick {
 pub struct Recognizer {
     cfg: InputConfig,
     mode: PointerMode,
+    fingers: FingerMode,
     state: State,
     touches: Vec<(PointerId, Point)>,
     hover: Target,
@@ -170,6 +172,7 @@ impl Recognizer {
         Self {
             cfg,
             mode: PointerMode::Select,
+            fingers: FingerMode::Full,
             state: State::Idle,
             touches: Vec::new(),
             hover: Target::None,
@@ -196,6 +199,16 @@ impl Recognizer {
     /// The current pointer mode.
     pub fn mode(&self) -> PointerMode {
         self.mode
+    }
+
+    /// What a single finger does from its next press on.
+    pub fn set_fingers(&mut self, fingers: FingerMode) {
+        self.fingers = fingers;
+    }
+
+    /// What a single finger does.
+    pub fn fingers(&self) -> FingerMode {
+        self.fingers
     }
 
     /// The current hover target ([`Target::None`] when the pointer is away).
@@ -310,7 +323,14 @@ impl Recognizer {
         {
             self.abort_gesture(picker, out);
         }
+        // A pen that touches down while a finger gesture runs is the hand writing: the finger was a palm.
+        if ev.kind == PointerKind::Pen && self.finger_gesture_running() {
+            self.abort_gesture(picker, out);
+        }
         match &self.state {
+            State::Idle if ev.kind == PointerKind::Touch && self.fingers == FingerMode::PanOnly => {
+                self.begin_finger_pan(ev, picker);
+            }
             State::Idle => self.begin_press(ev, picker, out),
             State::Pressed(Press { id, kind: PointerKind::Touch, .. })
             | State::Dragging(Drag { id, kind: PointerKind::Touch, .. })
@@ -320,6 +340,32 @@ impl Recognizer {
             }
             _ => {}
         }
+    }
+
+    /// True while fingers own the gesture: one finger pressed or dragging, two navigating, or what is left of that.
+    fn finger_gesture_running(&self) -> bool {
+        matches!(
+            &self.state,
+            State::Pressed(Press { kind: PointerKind::Touch, .. })
+                | State::Dragging(Drag { kind: PointerKind::Touch, .. })
+                | State::Multi(_)
+                | State::Ignoring
+        )
+    }
+
+    /// A finger goes down in [`FingerMode::PanOnly`]: it pans from its first move on and never presses, clicks or
+    /// drags content. A second finger still turns it into the two-finger gesture.
+    fn begin_finger_pan<P: Picker + ?Sized>(&mut self, ev: &PointerEvent, picker: &P) {
+        let origin = pos_of(picker, ev.pos);
+        self.state = State::Dragging(Drag {
+            id: ev.id,
+            kind: ev.kind,
+            button: ev.button,
+            origin,
+            last: ev.pos,
+            target: Target::Empty,
+            purpose: DragPurpose::Pan(ViewSource::Touch),
+        });
     }
 
     fn begin_press<P: Picker + ?Sized>(&mut self, ev: &PointerEvent, picker: &P, out: &mut Vec<Intent>) {

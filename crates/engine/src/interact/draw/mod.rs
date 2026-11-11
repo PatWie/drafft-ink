@@ -100,7 +100,12 @@ impl DrawTools {
             }
             Tool::Line | Tool::Arrow => self.linear.drag_start(cx, ev),
             Tool::Freehand | Tool::Highlighter => {
-                self.gesture = Some(Gesture::Stroke(stroke::Stroke::start(tool)));
+                // The press is the first point. The drag update that follows adds the first move, with its own
+                // pressure (`Stroke::begin`), so this start does not update.
+                let mut stroke = stroke::Stroke::start(tool);
+                stroke.begin(cx, ev);
+                self.gesture = Some(Gesture::Stroke(stroke));
+                return;
             }
             Tool::Eraser => self.gesture = Some(Gesture::Sweep(eraser::Sweep::start())),
             Tool::Laser => {

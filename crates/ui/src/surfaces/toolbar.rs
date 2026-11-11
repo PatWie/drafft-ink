@@ -62,7 +62,14 @@ pub fn show(ctx: &Context, cx: &mut Cx<'_>, st: &mut UiState) {
     let side = cx.layout.tool_side();
     // Centred on the window as before, and never taller than the space under the strip: it scrolls instead.
     let header = if compact { side + space::XS } else { 0.0 };
-    let max_height = (st.chrome.centred_panel_height(screen) - 2.0 * PANEL_INSET_Y - header).max(MIN_SCROLL_HEIGHT);
+    // On a touch screen the buttons are tall and the window is often short (an iPad in landscape): the column then
+    // keeps clear of the bar at the bottom left too. The desktop column keeps its size.
+    let room = if compact {
+        st.chrome.centred_panel_height_above_bottom_bar(screen)
+    } else {
+        st.chrome.centred_panel_height(screen)
+    };
+    let max_height = (room - 2.0 * PANEL_INSET_Y - header).max(MIN_SCROLL_HEIGHT);
     let area = Area::new(Id::unique("toolbar"))
         .anchor(Align2::LEFT_CENTER, vec2(MARGIN, 0.0))
         .order(Order::Middle)

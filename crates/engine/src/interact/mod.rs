@@ -52,8 +52,8 @@ mod testutil;
 mod interaction_tests;
 
 use drafftink_canvas::{
-    Camera, Cursor, InputEvent, Intent, Modifiers, PointerEvent, PointerKind, PointerPhase, Recognizer, Target,
-    ViewSource,
+    Camera, Cursor, FingerMode, InputEvent, Intent, Modifiers, PointerEvent, PointerKind, PointerPhase, Recognizer,
+    Target, ViewSource,
 };
 use drafftink_geom::kurbo::Point;
 use drafftink_scene::{ElementId, SceneStore};
@@ -124,6 +124,12 @@ impl Interaction {
             last_tool: Tool::Select,
             refreshed: None,
         }
+    }
+
+    /// What a single finger does from its next press on. The host sets [`FingerMode::PanOnly`] while a stylus is in
+    /// use, so a resting palm cannot draw. Two fingers always pan and zoom.
+    pub fn set_fingers(&mut self, fingers: FingerMode) {
+        self.recognizer.set_fingers(fingers);
     }
 
     // ---- entry points -----------------------------------------------------------------------------------------

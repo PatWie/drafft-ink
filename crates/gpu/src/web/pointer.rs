@@ -8,6 +8,7 @@
 //! `event.timeStamp` mapped onto the `host::now_ms` clock, so samples keep their real spacing even when
 //! the page handles them late.
 
+use std::cell::RefCell;
 use std::rc::Rc;
 
 use wasm_bindgen::prelude::*;
@@ -37,6 +38,8 @@ struct Pointers {
     is_mac: bool,
     /// `now_ms() - performance.now()`: add to an event time stamp to get the shell clock.
     clock_offset_ms: f64,
+    /// The pens and fingers that are down, by pointer id. See [`Pointers::in_contact`].
+    down: RefCell<Vec<i32>>,
 }
 
 pub(super) fn install(
@@ -51,6 +54,7 @@ pub(super) fn install(
         sink: sink.clone(),
         is_mac,
         clock_offset_ms: now_ms() - performance_now,
+        down: RefCell::new(Vec::new()),
     });
     let target: &EventTarget = canvas.as_ref();
     let opts = ListenOptions::default();
@@ -65,6 +69,7 @@ pub(super) fn install(
             e.prevent_default();
         }
         t.focus_for_pointer_down();
+        p.touch_down(&e);
         // Keep receiving the drag when it leaves the canvas.
         if let Err(err) = p.canvas.set_pointer_capture(e.pointer_id()) {
             log::debug!("setPointerCapture: {}", dom::js_error(&err));
@@ -74,7 +79,7 @@ pub(super) fn install(
 
     let p = Rc::clone(&pointers);
     out.push(Listener::new(target, "pointermove", opts, move |e: PointerEvent| {
-        let phase = if e.buttons() == 0 { PointerPhase::Hover } else { PointerPhase::Move };
+        let phase = if p.in_contact(&e) { PointerPhase::Move } else { PointerPhase::Hover };
         p.send(&e, phase);
     })?);
 
@@ -82,6 +87,7 @@ pub(super) fn install(
     let t = Rc::clone(&text);
     out.push(Listener::new(target, "pointerup", opts, move |e: PointerEvent| {
         p.send(&e, PointerPhase::Up);
+        p.touch_up(&e);
         p.release(&e);
         // A user gesture: the place to bring the soft keyboard back (see `Core::refocus_if_wanted`).
         t.refocus_if_wanted();
@@ -90,6 +96,7 @@ pub(super) fn install(
     let p = Rc::clone(&pointers);
     out.push(Listener::new(target, "pointercancel", opts, move |e: PointerEvent| {
         p.send(&e, PointerPhase::Cancel);
+        p.touch_up(&e);
         p.release(&e);
     })?);
 
@@ -113,12 +120,39 @@ pub(super) fn install(
     Ok(out)
 }
 
+/// `PointerEvent.pointerType` of a finger or a stylus.
+fn is_touch_or_pen(pointer_type: &str) -> bool {
+    matches!(pointer_type, "touch" | "pen")
+}
+
 /// `MouseEvent.button` of the middle button.
 fn is_middle_button(button: i16) -> bool {
     button == 1
 }
 
 impl Pointers {
+    /// A finger or pen touched the surface. The mouse is left out: its buttons say it all, and a lost release
+    /// must not leave a drag running.
+    fn touch_down(&self, event: &PointerEvent) {
+        if is_touch_or_pen(&event.pointer_type()) {
+            let mut down = self.down.borrow_mut();
+            if !down.contains(&event.pointer_id()) {
+                down.push(event.pointer_id());
+            }
+        }
+    }
+
+    fn touch_up(&self, event: &PointerEvent) {
+        self.down.borrow_mut().retain(|id| *id != event.pointer_id());
+    }
+
+    /// Is the pointer touching the surface (or holding a button)? `buttons` alone is not enough for a finger or
+    /// a pen: a browser that reports 0 on a contact move would turn every stroke into a hover and nothing would
+    /// draw. A finger or pen counts as down from its `pointerdown` to its `pointerup` or `pointercancel`.
+    fn in_contact(&self, event: &PointerEvent) -> bool {
+        event.buttons() != 0 || self.down.borrow().contains(&event.pointer_id())
+    }
+
     fn release(&self, event: &PointerEvent) {
         // Capture ends by itself on pointerup; releasing explicitly covers cancel and old engines.
         if self.canvas.has_pointer_capture(event.pointer_id())
@@ -136,7 +170,7 @@ impl Pointers {
         };
         let bounds = self.canvas.get_bounding_client_rect();
         let (left, top) = (bounds.left(), bounds.top());
-        let in_contact = event.buttons() != 0;
+        let in_contact = self.in_contact(event);
         let pressure = match kind {
             PointerKind::Mouse => None,
             // A pen reports its pressure also while hovering (0).

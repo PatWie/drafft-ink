@@ -166,6 +166,19 @@ impl Platform {
         }
     }
 
+    /// The primary pointer is a finger or a stylus. Only the web knows.
+    fn coarse_pointer(&self) -> bool {
+        #[cfg(target_arch = "wasm32")]
+        {
+            self.host.as_ref().is_some_and(|host| host.coarse_pointer())
+        }
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            let _ = self;
+            false
+        }
+    }
+
     fn set_text_input(&mut self, rect: Option<egui::Rect>) {
         #[cfg(target_arch = "wasm32")]
         if let Some(host) = &self.host {
@@ -694,7 +707,14 @@ impl<A: ShellApp> Shell<A> {
         // The shell turns the shortcuts into clipboard events itself, so the app can answer first.
         state.set_clipboard_shortcuts(false);
         let view = ViewInfo { size_px: backend.size(), scale: ctx.pixels_per_point() };
-        self.app.setup(&mut SetupCx { ctx: &ctx, backend: backend.kind(), waker: self.waker.clone(), view });
+        let touch_first = self.platform.coarse_pointer();
+        self.app.setup(&mut SetupCx {
+            ctx: &ctx,
+            backend: backend.kind(),
+            waker: self.waker.clone(),
+            view,
+            touch_first,
+        });
         self.running = Some(Running {
             backend,
             ctx,

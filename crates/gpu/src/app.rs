@@ -77,6 +77,9 @@ pub struct SetupCx<'a> {
     pub backend: BackendKind,
     pub waker: Waker,
     pub view: ViewInfo,
+    /// The device is used with a finger or a stylus: on the web, `(pointer: coarse)`; natively, never. The app
+    /// starts in its touch layout when this is set, before the first touch arrives.
+    pub touch_first: bool,
 }
 
 /// Passed to [`ShellApp::event`].

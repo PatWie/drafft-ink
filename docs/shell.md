@@ -141,7 +141,7 @@ SwiftShader. Browsers hide the adapter name: on the web it is blank and `kind` i
 | | native | web |
 |---|---|---|
 | window | winit 0.30.13 | canvas by id, CSS sizes it; winit's resize observer and DPR handling; `canvas.width/height` come from `surface.configure` |
-| pointer input | winit events; `PointerSample` built from them | DOM pointer events on the canvas (all pointer types, capture, coalesced points); winit's events still drive egui |
+| pointer input | winit events; `PointerSample` built from them | DOM pointer events on the canvas (all pointer types, capture, coalesced points; a finger or pen is down from `pointerdown` to `pointerup` whatever `buttons` says; `touchstart` and `touchmove` are cancelled); winit's events still drive egui |
 | pressure | see below | `PointerEvent.pressure` for pen and touch; tilt for pen |
 | keyboard | winit | winit on the canvas; the hidden textarea takes over while text input is requested |
 | IME / soft keyboard | winit `Ime` events (egui-winit for egui, the shell for `TextInput`) | hidden `<textarea>`: composition, input, key events converted to `egui::Event::Key` |
@@ -198,7 +198,8 @@ manager and Chromium keeps both tabs visible. It tests our listener, not the bro
 - Vello does not accept an encoder, so a frame with a new scene makes two submits. A fork or a later Vello release could fix it.
 - Winit gives no pen pressure on Linux and macOS (section 6). Windows pen and iOS force are unverified.
 - Not tested on real hardware or browsers: Windows, macOS, Wayland (compiled only), Safari, Firefox, a real OS IME,
-  soft keyboards, hi-dpi web (DPR 2 with a matching device-pixel box), pinch on touch screens.
+  soft keyboards, hi-dpi web (DPR 2 with a matching device-pixel box), pinch on touch screens. The iPad checks are listed in
+  `docs/web-app.md`, "Touch devices"; Playwright emulates the device (`e2e/web/specs/input/touch.spec.ts`) but not Safari.
 - The post-click pass costs an extra frame (section 2, rule 4), and egui's wheel smoothing still applies to a wheel over an egui area.
 - `Waker::exit` closes the window from another thread (the scenario runner uses it).
 - Reserved shortcuts on the web are a fixed list in `web/keys.rs`. The app cannot yet say which ones it owns.

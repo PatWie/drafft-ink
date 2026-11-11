@@ -62,6 +62,38 @@ with the fonts inside. The old app was 10.33 MB raw and 3.46 MB brotli. What was
 the table in `performance.md`, "Wasm size". `cargo xtask size` checks the numbers against `perf/budgets.json` (it builds the app, so it runs in
 `cargo xtask ci` and as its own CI job).
 
+## Touch devices (iPad, iPhone)
+
+**The page.** `web/index.html` pins the canvas to the visible page: `position: fixed`, sized `100%` of the viewport less the
+safe-area insets (`env(safe-area-inset-*)`; the meta tag has `viewport-fit=cover`, so the insets are real), and `body` is
+fixed too, so nothing scrolls. It does not use `100vh`: on iOS and iPadOS Safari that is the height of the page with the
+toolbar hidden, and with the toolbar showing the lower part of a `100vh` canvas lies below the screen, with the bottom bar,
+the tab bar and the bottom of the library drawer in it. The canvas also has `touch-action: none` (CSS and style), and
+`touchstart` and `touchmove` are cancelled on it with `passive: false` listeners (`gpu/src/web/mod.rs`), so the page cannot
+scroll, zoom or open a callout under a finger or the Pencil. The glue starts the app in the touch layout when
+`(pointer: coarse)` matches (`SetupCx::touch_first`); a touch event or a stylus sample would switch it on later anyway.
+
+**Input.** The browser's pointer events reach the app twice: winit turns them into mouse and touch events for egui (the bars,
+the dialogs), and `gpu/src/web/pointer.rs` turns them into `PointerSample`s for the canvas (pressure, tilt, coalesced points).
+A finger or a stylus counts as down from `pointerdown` to `pointerup` or `pointercancel`, whatever `buttons` says on the
+moves in between. In the app (`crates/app/src/input.rs`) every pointer has its own press (`Contacts`): a finger that lifts
+cannot end the stroke of the pen, or leave the recognizer waiting for the other finger of a pinch.
+
+**Gestures.** One finger or the Pencil draws, selects and moves with the active tool; two fingers pan and pinch (and cancel
+what one finger had begun); a tap on an element selects it; a finger held still on the canvas with the select tool opens the
+context menu (500 ms). Palm rejection: while a stylus is in contact, hovers, or was seen in the last two seconds
+(`PEN_GRACE_MS`), a single finger only pans the view and a tap does nothing (`FingerMode::PanOnly`), and a stylus that
+touches down takes over from a finger gesture that began first (a palm that landed before the pen).
+
+**Checking on a real iPad** (nothing here was run on one). Serve the build (`scripts/build-web.sh`, `scripts/serve-web.sh 3030`;
+Safari needs `https` or `localhost` for the service worker and the clipboard, so use a tunnel or the server's TLS), open it in
+Safari with the toolbar showing, in portrait and landscape, and check: the bottom-left bar (undo, zoom, snapping) is on the
+screen above the home indicator, and the page does not move; one finger draws with the tool chosen; the Pencil draws, and a
+stroke pressed harder is wider; two fingers pan and pinch and leave no mark; a finger resting next to the Pencil leaves no mark
+and a finger alone draws again after two seconds; a tap selects; holding a finger on a shape opens its menu. Playwright's
+emulation, which cannot show Safari's toolbar, is `e2e/web/specs/input/touch.spec.ts`; run it with
+`DRAFFTINK_E2E_FILTER='an iPad' cargo xtask e2e --web`.
+
 ## What the page does
 
 `index.html` has one `<canvas id="canvas">` that fills the viewport (CSS), a loading bar and a failure box. A module script loads

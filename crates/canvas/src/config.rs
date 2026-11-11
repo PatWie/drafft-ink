@@ -17,6 +17,17 @@ pub enum PointerMode {
     Draw,
 }
 
+/// What a single finger does. Two fingers always pan and zoom the view.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default, Serialize, Deserialize)]
+pub enum FingerMode {
+    /// A finger works like any pointer: it draws, selects and moves with the active tool.
+    #[default]
+    Full,
+    /// A finger only pans the view; a tap does nothing. The host switches to this while a stylus is in use, so a
+    /// resting palm leaves no marks (palm rejection).
+    PanOnly,
+}
+
 /// Gesture thresholds.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct InputConfig {
