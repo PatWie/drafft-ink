@@ -108,6 +108,29 @@ opt-level = 3
 [profile.dev.package.miniz_oxide]
 opt-level = 3
 
+# Loading 100,000 elements into a tab document is 770,000 field inserts into Loro: 29 s with Loro unoptimised in a
+# test run, a tenth of that with it optimised (`docs/performance.md`, section 7.9).
+[profile.dev.package.loro]
+opt-level = 3
+
+[profile.dev.package.loro-internal]
+opt-level = 3
+
+[profile.dev.package.loro-common]
+opt-level = 3
+
+[profile.dev.package.loro-rle]
+opt-level = 3
+
+[profile.dev.package.loro-delta]
+opt-level = 3
+
+[profile.dev.package.generic-btree]
+opt-level = 3
+
+[profile.dev.package.serde_columnar]
+opt-level = 3
+
 [profile.release-wasm]
 inherits = "release"
 # "s" for the code that runs every frame (egui, vello, kurbo, the render, canvas and ui crates) and "z" for the code that

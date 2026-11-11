@@ -514,6 +514,29 @@ What the drivers showed, and what changed for each:
 
 Start-up. Native: the first frame is on screen 320 to 340 ms after the process started (`external.first_frame_ms`); 265 to 290 ms of it is the Vulkan instance, adapter and device (`startup_gpu_ms`), the session and the workspace restore are 6 ms (`startup_app_ms`, `startup_restore_ms`). The driver and the NVIDIA ICD dominate, so there is nothing to gain in our code. Web (headed Chromium on Xvfb, localhost, the precompressed `dist/` of `build-web.sh`; marks in ms since navigation, medians of 8 runs, range in brackets): the page script is loaded at 55 ms [37 to 183], the wasm is instantiated at 160 ms [134 to 289], `start()` is entered at 165 ms, the platform (IndexedDB opened and read) is ready 35 to 40 ms later, `App::new` (session, UI, workspace restore) takes 80 ms, `run()` returns at 305 ms, and the first frame is on screen at 590 ms [556 to 1241; the two slow runs were on a loaded machine]. The 285 ms from `run()` to the first frame are the WebGPU adapter and device, the pipelines and the first frame. Tried and dropped: asking for the adapter from the page script before the module loads (`navigator.gpu.requestAdapter()`), to wake the GPU process while the wasm downloads: no change (590 ms against 590 ms, 8 runs each). The page marks are `window.__marks` and `performance.mark` entries `drafftink:start`, `drafftink:platform`, `drafftink:app`; the driver copies them into the report as `external.startup_*_ms`. The old app's 507 ms to the first app frame and 1.0 s to the first visible one (§7.1) were measured with a cold profile and another harness, so the two are not a like-for-like comparison.
 
+### 7.9 Loading a large scene into a tab document
+
+`TabDoc::from_document` of the generated scene, 100,000 elements (research box, load average 12; the pieces are
+timed inside `Core::write`, 770,000 field inserts in all):
+
+| Piece | Release | Share |
+|---|---|---|
+| `LoroStore::from_document` (the CRDT copy) | 2.7 s | 90 % |
+| of it: `LoroMap::insert` of the fields | 1.7 s | 57 % |
+| of it: `codec::flatten` (`serde_json::to_value` of the style and the key strings) | 0.49 s | 16 % |
+| of it: `ensure_mergeable_map` (one container per element) | 0.29 s | 10 % |
+| of it: Loro's own commit, the view commit | 0.13 s, 0.08 s | 7 % |
+| `MemoryStore::from_document` (the working copy) | 0.3 s | 10 % |
+| Dropping the tab afterwards | 0.3 s | |
+
+The cost is the CRDT: Loro takes about 2 microseconds per field insert, and an element has seven or eight fields. Reading
+a value before the insert (`map.get`) is not the cost: leaving it out for new elements saved 0.05 s. Not done, with their
+gains: flatten on several threads (0.4 s, native only), a typed style writer (0.3 s, and the stored form would no longer be
+what serde writes), a document opened without its CRDT copy until the first edit (3 s, a different design). A debug test
+build took 31.6 s because Loro was not optimised (29 s of it); `[profile.dev.package.loro*]` is now `opt-level = 3`, as for
+`brotli`, and a debug load of 100,000 is 9 s. Loading is still not a test to run at 100k in debug (`sizes()` in the
+work-counter tests stops at 10k there).
+
 ## 8. Wasm size
 
 The web app (`apps/drafftink-web`) is the whole editor in one module. `cargo xtask size` builds it as a release is built
