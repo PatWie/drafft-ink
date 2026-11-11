@@ -2,13 +2,11 @@
 
 <img src="./packaging/icons/logo-original.png" alt="Drafft.ink logo" width="120" align="left">
 
-**Seven red lines, all strictly perpendicular, some in green ink? We have a whiteboard for that.**
+**Seven red lines, all strictly perpendicular, some in green ink? We have a whiteboard for that, built with Rust and WebGPU.**
 
-Three ways in:
+Linux, Windows, macOS, browser, mobile. Real-time collaboration. No account. One binary.
 
-- **Try it now** at [drafft.ink](https://drafft.ink/). No account. We'd have to store your password, and we can't even remember our own.
-- **Run the full app** on your desktop or your own server, and script it or hand it to an AI agent.
-- **Embed just the canvas** in your own web app with the `drafftink-canvas` package, and build something we didn't think of.
+Script it, hand it to an AI agent, or embed just the canvas in your own web app with `drafftink-canvas`, and build something we didn't think of.
 
 <br clear="left"/>
 
