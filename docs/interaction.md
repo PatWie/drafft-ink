@@ -115,7 +115,7 @@ Any other intent first reports a pending camera, so a command never sees a stale
 
 ## 5. Testing without a window
 
-`crates/engine/src/interact/testutil.rs` is the rig that the tests use: a `Session` with the fake text engine and a camera at zoom 1 over an 800 by 600 canvas (a screen position equals a world position), an `Interaction`, and scripted real `PointerEvent`s that go through the real `Recognizer` (`down`, `drag_to`, `up`, `hover`, `drag`, `click`, `double_click`, `key`, `tick`, modifiers in `rig.mods`). `normalized_doc()` returns the elements without ids, versions, z keys and seeds, so a gesture can be compared with the plain command run on a fresh twin: this is the equality test that `docs/exceptions.md` asks for, one per row (`exception_E<n>_*`). Stubs of `text.edit_begin` and `collab.laser` stand in until those families are registered; a real registration wins.
+`crates/engine/src/interact/testutil.rs` is the rig that the tests use: a `Session` with the fake text engine and a camera at zoom 1 over an 800 by 600 canvas (a screen position equals a world position), an `Interaction`, and scripted real `PointerEvent`s that go through the real `Recognizer` (`down`, `drag_to`, `up`, `hover`, `drag`, `click`, `double_click`, `key`, `tick`, modifiers in `rig.mods`). `normalized_doc()` returns the elements without ids, versions, z keys and seeds, so a gesture can be compared with the plain command run on a fresh twin: this is the equality test that `docs/exceptions.md` asks for, one per row (`exception_E<n>_*`).
 
 Test files: `interact/interaction_tests.rs` (hover, pan, zoom, context menu, scripts), `interact/select_tests.rs` (select, move, resize, rotate, points, marquee, double-click), `interact/draw_tests.rs`, `draw_line_tests.rs` and `draw_stroke_tests.rs` (shapes, lines and arrows, freehand, eraser, laser, text, math).
 
@@ -123,9 +123,5 @@ Test files: `interact/interaction_tests.rs` (hover, pan, zoom, context menu, scr
 
 ## 6. Open points and deviations
 
-* **Text tool drag.** `text.edit_begin` has no width argument, so a drag with the text tool starts the edit at the drag origin and does not make a fixed-width box.
-* **Elbow preview.** The preview of an elbow arrow while drawing is the straight segment between its ends; the route appears when the element exists.
 * **Binding candidate cost.** `edit::binding::find_hovered` scans all elements per pointer move while an arrow end is placed. It should use the spatial index for large documents.
-* **Closed line.** Dragging the midpoint of the closing segment of a closed line is refused by `arrow.move_point` (its segment numbering stops at the last point).
-* **Point handle click.** A click on a vertex handle does not yet call `arrow.edit_points select_point`.
 * **Index sync** compares `version` and transform per element when the store revision moved (an O(n) scan, outside gestures). A change feed from the store would remove the scan.

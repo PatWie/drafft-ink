@@ -4,7 +4,7 @@ use drafftink_canvas::PointerPhase;
 use drafftink_scene::{Element, ElementId, ElementKind, Kind, SceneStore};
 use serde_json::json;
 
-use crate::interact::testutil::{LaserLog, Rig};
+use crate::interact::testutil::Rig;
 use crate::interact::{Key, UiRequest};
 use crate::state::Tool;
 
@@ -641,10 +641,6 @@ fn a_stroke_over_nothing_changes_nothing() {
 
 // ---- laser ------------------------------------------------------------------------------------------------------
 
-fn laser_sends(rig: &Rig) -> Vec<Vec<[f64; 2]>> {
-    rig.s.ext.get::<LaserLog>().map(|l| l.0.clone()).unwrap_or_default()
-}
-
 #[test]
 #[allow(non_snake_case)]
 fn exception_E12_laser_leaves_document_unchanged() {
@@ -727,23 +723,25 @@ fn only_points_older_than_the_fade_time_go() {
 #[test]
 fn laser_points_are_sent_at_most_every_33_ms_and_all_arrive() {
     let mut rig = Rig::new();
-    if !rig.stubbed("collab.laser") {
-        return;
-    }
     rig.tool(Tool::Laser);
+    let work = drafftink_profile::WorkScope::begin();
     rig.down(100.0, 100.0);
-    let moves = 20_u32;
+    let moves = 8_u32;
     for k in 1..=moves {
         rig.drag_to(100.0 + 10.0 * f64::from(k), 100.0);
     }
-    rig.up(300.0, 100.0);
-    let sends = laser_sends(&rig);
-    assert!(sends.len() >= 2, "sent in batches: {sends:?}");
-    assert!(sends.len() <= 20 * 16 / 33 + 3, "throttled to one send per 33 ms: {} sends", sends.len());
-    let all: Vec<[f64; 2]> = sends.into_iter().flatten().collect();
-    assert_eq!(all.first(), Some(&[100.0, 100.0]));
-    assert_eq!(all.last(), Some(&[300.0, 100.0]), "the end is sent at the release");
-    assert_eq!(all.len(), moves as usize + 1, "no point is lost");
+    rig.up(180.0, 100.0);
+    // `collab.laser` is quiet (not in the ring) and nothing else runs during a laser stroke, so the commands
+    // counted are the sends. Events are 16 ms apart: 10 events span 160 ms.
+    let sends = work.count(drafftink_profile::Counter::Commands);
+    assert!(sends >= 2, "sent in batches: {sends}");
+    assert!(sends <= 160 / 33 + 3, "throttled to one send per 33 ms: {sends} sends");
+    // Every point arrived in the local trail of the collab state, which the UI reads.
+    let view = rig.s.collab_view();
+    assert_eq!(view.laser.len(), moves as usize + 1, "no point is lost: {:?}", view.laser);
+    let xs: Vec<f64> = view.laser.iter().map(|d| d.x).collect();
+    assert_eq!(xs.first(), Some(&100.0));
+    assert_eq!(xs.last(), Some(&180.0), "the end is sent at the release");
 }
 
 #[test]
@@ -801,7 +799,7 @@ fn a_click_on_empty_canvas_with_the_text_tool_starts_a_draft_at_the_click() {
     let (mut rig, ring, _) = rig_with(Tool::Text);
     rig.click(300.0, 250.0);
     match ui_request(&rig) {
-        Some(UiRequest::OpenTextEditor { element: None, at }) => assert_eq!((at.x, at.y), (300.0, 250.0)),
+        Some(UiRequest::OpenTextEditor { element: None, at, width: None }) => assert_eq!((at.x, at.y), (300.0, 250.0)),
         other => panic!("expected an editor over a new draft, got {other:?}"),
     }
     assert_eq!(editing(&rig), Some((None, true)));
@@ -849,14 +847,52 @@ fn a_click_on_a_line_starts_a_new_draft_because_a_line_has_no_label() {
 }
 
 #[test]
-fn a_text_tool_drag_on_empty_canvas_starts_the_edit_at_the_drag_origin() {
+fn a_text_tool_drag_on_empty_canvas_makes_a_fixed_width_box() {
     let (mut rig, _, _) = rig_with(Tool::Text);
     rig.drag((300.0, 250.0), (420.0, 300.0));
     match ui_request(&rig) {
-        Some(UiRequest::OpenTextEditor { element: None, at }) => assert_eq!((at.x, at.y), (300.0, 250.0)),
-        other => panic!("expected an editor at the origin, got {other:?}"),
+        Some(UiRequest::OpenTextEditor { element: None, at, width: Some(w) }) => {
+            assert_eq!((at.x, at.y, w), (300.0, 250.0, 120.0));
+        }
+        other => panic!("expected an editor over a 120 wide box, got {other:?}"),
     }
     assert_eq!(editing(&rig), Some((None, true)));
+    // The text is committed with the width: it wraps and the box does not follow the content.
+    let out = rig.run("text.edit_end", json!({ "text": "hello" }));
+    let id = ElementId::new(out["id"].as_str().expect("an id")).expect("valid id");
+    let e = rig.element(&id);
+    assert!(matches!(&e.kind, drafftink_scene::ElementKind::Text(t) if !t.auto_resize));
+    assert_eq!((e.transform.x, e.transform.y, e.transform.w), (300.0, 250.0, 120.0));
+}
+
+#[test]
+fn a_text_tool_drag_to_the_left_and_up_still_starts_at_the_top_left() {
+    let (mut rig, _, _) = rig_with(Tool::Text);
+    rig.drag((420.0, 300.0), (300.0, 250.0));
+    match ui_request(&rig) {
+        Some(UiRequest::OpenTextEditor { element: None, at, width: Some(w) }) => {
+            assert_eq!((at.x, at.y, w), (300.0, 250.0, 120.0));
+        }
+        other => panic!("expected an editor over a 120 wide box, got {other:?}"),
+    }
+}
+
+#[test]
+fn a_text_tool_drag_narrower_than_a_box_places_at_the_origin_without_a_width() {
+    let (mut rig, _, _) = rig_with(Tool::Text);
+    rig.drag((300.0, 250.0), (308.0, 290.0));
+    match ui_request(&rig) {
+        Some(UiRequest::OpenTextEditor { element: None, at, width: None }) => assert_eq!((at.x, at.y), (300.0, 250.0)),
+        other => panic!("expected an editor at the origin, got {other:?}"),
+    }
+}
+
+#[test]
+fn a_math_tool_drag_still_places_the_formula_at_the_origin() {
+    let (mut rig, ring, _) = rig_with(Tool::Math);
+    rig.drag((300.0, 250.0), (420.0, 300.0));
+    assert_eq!(rig.commands_since(ring), ["element.create"]);
+    assert_eq!(rig.elements().len(), 1);
 }
 
 #[test]

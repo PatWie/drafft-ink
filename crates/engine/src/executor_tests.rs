@@ -1136,3 +1136,29 @@ fn the_typed_path_builds_no_json_per_frame() {
     assert!(s.gesture_running());
     s.gesture_cancel(Some(gid)).unwrap();
 }
+
+#[test]
+fn query_runs_a_read_without_a_ring_entry_and_refuses_a_command_that_changes_things() {
+    let mut s = crate::testing::headless_session();
+    let before = s.ring().iter().count();
+    let v = s.query("view.get", json!({})).unwrap();
+    assert!(v.get("zoom").is_some(), "{v}");
+    assert_eq!(s.ring().iter().count(), before, "a query leaves no ring entry");
+    // `execute` of the same read does record it.
+    s.execute("view.get", json!({})).unwrap();
+    assert_eq!(s.ring().iter().count(), before + 1);
+    // A command that changes things is not a query. It is refused and nothing runs.
+    let fingerprint = s.fingerprint();
+    let r = s.query("view.set", json!({"zoom": 2})).unwrap_err();
+    assert_eq!(r.code, "not_a_query");
+    assert!(r.message.contains("`view.set` changes things"), "{}", r.message);
+    assert_eq!(s.fingerprint(), fingerprint);
+    // A refusal of the read itself is still recorded, so a bad call can be found afterwards.
+    let n = s.ring().iter().count();
+    assert_eq!(s.query("view.get", json!({"nope": 1})).unwrap_err().code, "bad_args");
+    assert_eq!(s.ring().iter().count(), n + 1);
+    assert_eq!(s.query("no.such", json!({})).unwrap_err().code, "unknown_command");
+    // After a query the next execute records again.
+    s.execute("view.get", json!({})).unwrap();
+    assert_eq!(s.ring().iter().count(), n + 3);
+}

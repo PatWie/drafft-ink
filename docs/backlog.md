@@ -8,20 +8,27 @@ Features decided but not yet assigned to a phase agent.
 - Web: hovering over empty canvas costs ~9% CPU in Chromium with 0 frames drawn (event handling); investigate when the web scenario driver exists (the engine side counts 0 redraws and 0 scans per hover, perf_work).
 - Perf: the native and web scenario drivers (`--perf-scenario`, `runScenario`) are not written; `cargo xtask perf` has the work-counter and bench tiers (perf/README.md).
 - Perf: the render order is rebuilt after every edit and every gesture frame while most of a large scene is visible (one pass, 12 ms at 100k); patch it from the change set if a zoomed-out edit of a 100k scene matters.
-- `image.insert` validates header and size only; damaged pixel data fails at render time.
 - collab: auth token setting/arg (auth_token always None today); snapshot import blocks the polling thread (move to a worker on native, chunked on web).
 - Perf: loading a 100k scene into a TabDoc takes ~6 s release / 40 s debug (testkit finding).
 - SVG export embeds no fonts yet (marked call site in cmd/doc/export.rs); dark SVG ignored.
-- UI reads selection style via `edit::style::read` directly (to avoid a ring entry per frame). Add `Session::query(id, args)` that runs `reads_only` commands without recording to the ring, and have the UI use `style.get` through it; then drop ui's edit/scene deps if possible.
+- UI reads selection style via `edit::style::read` directly (to avoid a ring entry per frame). `Session::query` now exists (backlog-b): have the UI use `style.get` through it; then drop ui's edit/scene deps if possible.
 - UI embeds GelPen fonts a second time (include_bytes); expose font bytes from typeset.
 - UI: search dialog has no result list; stats panel lacks bounds editing (now possible: selection.get, element.set_bounds); touch-sized mode; context-menu paste should land at the click point.
-- Interaction: text.edit_begin needs a width arg (text-tool drag = fixed-width box). Elbow preview while drawing is straight. Click on a line vertex should call `arrow.edit_points select_point`. Closed-line closing-segment midpoint drag refused. Interaction tests stub text.edit_begin/collab.laser, now registered: drop the stubs.
-- Size: bundled Noto Sans is ~1 MB brotli of the wasm; load fonts lazily (fetch) or behind a feature; `wasm-opt --all-features` breaks the module with binaryen 133 (use explicit features; fix docs/stack.md and crates/gpu/scripts/build_web_demo.sh).
-- `cargo clippy --target wasm32` fails in drafftink-profile spans.rs:213; add a wasm clippy run to xtask wasm.
+- Size: bundled Noto Sans is ~1 MB brotli of the wasm; load fonts lazily (fetch) or behind a feature.
 - canvas-js: remote selections not drawn; no image-insert helper; tiny shapes dominated by handles (move on body should win when the shape is smaller than handles).
-- Dedupe left over from the text/paste item: `Bytes`/`At` helpers in cmd/image.rs and cmd/clipboard/common.rs should be shared with doc.drop.
 - Tab bar: dirty state compares content through undo/redo only; a remote update between an edit and its undo keeps the tab dirty on purpose.
-- Save: `Storage::put` (the stored default target on the web) is still synchronous. If the web storage port becomes asynchronous it needs the same pending/`on_write_done` path as `Files::write`. `tab.close`/`doc.new` with `on_unsaved=save` refuse while a write is pending.
+
+## Done (branch backlog-b)
+
+- DECIDED, implemented: opening a non-native file (.excalidraw, legacy, PNG/SVG with scene) sets NO save target, so `doc.save` behaves like save-as and never overwrites a foreign file with drafft JSON; it is still a recent file (e8f5768).
+- `Storage::put_document`: a stored document save can answer pending and is confirmed by `Session::on_write_done`, like `Files::write` (811e514).
+- Flaky `cmd::perf::tests::last_call_reports_only_what_happened_since_the_previous_call`: `Session::count_this_thread_only` and `profile::snapshot_thread` make the test exact (3ed9ec6).
+- The 3.5 h compositor hang was a deadlock inside the NVIDIA Vulkan driver (device destroy on one test thread against the driver's thread-exit destructors on another), not an unbounded wait of ours; the tests now run every device on one worker thread (200 runs, no hang) and the readback wait has a 30 s limit (9b54aa0).
+- `Bytes`, `InlineBytes`, `At` and `Pt` are shared by `image.insert`, `clipboard.paste` and `doc.drop` (59b7e3e).
+- `image.insert` decodes the pixels once and refuses damaged data at insert time (3400a17).
+- Interaction tests run over the real `text.edit_begin` and `collab.laser` (4f7a178). `text.edit_begin` has a `width` argument and a text-tool drag opens a fixed-width box, `OpenTextEditor.width` (93a7f4b; the shell's editor must show the box). A click on a line or arrow vertex runs `arrow.edit_points select_point` (592c94a). The closing segment of a closed line takes a midpoint (b41e508). The elbow preview shows the route (75ac38f).
+- `cargo xtask wasm` also runs clippy for wasm32; the `spans.rs` finding is fixed (a2b4260). `wasm-opt` runs with explicit features in `build_web_demo.sh` and `docs/stack.md` (221a01a).
+- `Session::query(id, args)` runs `reads_only` commands without a ring entry (500c4c9).
 
 ## Done (branch refactor-l3-l4)
 
@@ -38,7 +45,4 @@ Features decided but not yet assigned to a phase agent.
 - Undoing a tab rename (any edit) back to the saved content leaves the tab clean (e773b66).
 - Engine status `blocked_by_schema` in `engine.state`; document-mutating commands refuse with `newer_schema` (72393d9).
 - Server refuses and rolls back updates that raise `meta.schema` beyond the served schema (69f08a1).
-- DECIDED: opening a non-native file (.excalidraw, legacy, PNG/SVG with scene) sets NO save target; `doc.save` then behaves like save-as (needs `to`), so a foreign file is never overwritten with drafft JSON. Implement + test.
-- Flaky: `cmd::perf::tests::last_call_reports_only_what_happened_since_the_previous_call` under parallel test runs (shared global profile state); make it deterministic.
 - Accepted (F1): `element.relabel`/`text.set` with empty text on a bound label removes the label; only free text refuses `empty_text`.
-- Hang: crates/gpu compositor test binary hung for 3.5 h under plain cargo test (GPU contention?). nextest now terminates after 5 min; find the cause (device wait without timeout?).

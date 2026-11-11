@@ -221,6 +221,17 @@ impl WorkScope {
             })
     }
 
+    /// A window that starts when the current thread did: its numbers are everything this thread has done.
+    fn since_thread_start() -> Self {
+        Self {
+            counters: [0; Counter::COUNT],
+            redraws: [0; RedrawReason::COUNT],
+            named: Vec::new(),
+            log_seq: 0,
+            _not_send: PhantomData,
+        }
+    }
+
     /// How much `counter` grew since `begin`.
     pub fn count(&self, counter: Counter) -> u64 {
         let base = self.counters.get(counter.index()).copied().unwrap_or(0);
@@ -302,9 +313,26 @@ impl WorkScope {
     }
 }
 
+/// The work of the current thread since it started, as a [`PerfStats`] (counters, gauges, redraws; no
+/// frames or spans). For a process that runs many independent sessions on different threads (a test suite,
+/// the testkit): `snapshot()` adds them all up, this one shows a single thread's own numbers.
+pub fn snapshot_thread() -> PerfStats {
+    WorkScope::since_thread_start().stats()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_thread_snapshot_holds_this_threads_work_only() {
+        count(Counter::ElementsEncoded, 4);
+        std::thread::spawn(|| count(Counter::ElementsEncoded, 100)).join().unwrap();
+        let first = snapshot_thread().counters["elements_encoded"];
+        count(Counter::ElementsEncoded, 3);
+        assert_eq!(snapshot_thread().counters["elements_encoded"], first + 3);
+        assert_eq!(first, 4);
+    }
 
     #[test]
     fn scope_sees_only_its_own_window() {

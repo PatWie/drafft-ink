@@ -655,6 +655,55 @@ fn move_point_refusals() {
     assert!(r.message.contains("segments 1 to 1"), "{}", r.message);
 }
 
+/// A closed triangle line, as a loaded file has it.
+fn closed_triangle(s: &mut Session) -> String {
+    let line = linear(s, "line", &[[0.0, 0.0], [100.0, 0.0], [100.0, 100.0]]);
+    s.tab_mut()
+        .doc
+        .edit::<(), StoreError>(|tx| {
+            tx.update(&eid(&line), |e| {
+                if let ElementKind::Line(d) = &mut e.kind {
+                    d.closed = true;
+                }
+            })
+        })
+        .unwrap();
+    // Not an undo step: the file arrived this way.
+    s.tab_mut().doc.commit_untracked().unwrap();
+    line
+}
+
+#[test]
+fn the_closing_segment_of_a_closed_line_takes_a_new_point() {
+    let mut s = session();
+    let line = closed_triangle(&mut s);
+    let undo = undo_depth(&s);
+    let out = run(&mut s, "arrow.move_point", json!({"arrow": line, "index": 3, "to": [0, 80], "insert": true, "snap": {"grid": false, "smart": false, "angle": false}}));
+    assert_eq!(out["index"], 3);
+    assert_eq!(pts(&s, &line), vec![Point::new(0.0, 0.0), Point::new(100.0, 0.0), Point::new(100.0, 100.0), Point::new(0.0, 80.0)]);
+    assert_eq!(undo_depth(&s), undo + 1, "one undo step");
+    s.undo_steps(1).unwrap();
+    assert_eq!(pts(&s, &line).len(), 3);
+    // `arrow.add_point` takes the same segment and puts the point in the middle of the closing edge.
+    let out = run(&mut s, "arrow.add_point", json!({"arrow": line, "segment": 3}));
+    assert_eq!(out["index"], 3);
+    assert_eq!(pts(&s, &line)[3], Point::new(50.0, 50.0));
+}
+
+#[test]
+fn an_open_line_has_no_closing_segment_and_the_message_counts_the_right_segments() {
+    let mut s = session();
+    let line = linear(&mut s, "line", &[[0.0, 0.0], [100.0, 0.0], [100.0, 100.0]]);
+    let r = refuse(&mut s, "arrow.move_point", json!({"arrow": line, "index": 3, "to": [0, 80], "insert": true}));
+    assert_eq!(r.code, "bad_args");
+    assert!(r.message.contains("segments 1 to 2"), "{}", r.message);
+    let r = refuse(&mut s, "arrow.add_point", json!({"arrow": line, "segment": 3}));
+    assert!(r.message.contains("segments 1 to 2"), "{}", r.message);
+    let closed = closed_triangle(&mut s);
+    let r = refuse(&mut s, "arrow.add_point", json!({"arrow": closed, "segment": 4}));
+    assert!(r.message.contains("segments 1 to 3"), "{}", r.message);
+}
+
 #[test]
 fn move_point_on_an_elbow_arrow_moves_only_its_ends() {
     let mut w = bound_world();

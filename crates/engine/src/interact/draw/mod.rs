@@ -12,7 +12,7 @@
 //! | freehand, highlighter | drag, or a click (a dot) | `element.create` kind freehand |
 //! | eraser | drag, or a click | `element.erase` with the swept `path` |
 //! | laser | drag | `collab.laser` (throttled, never stored) |
-//! | text | click | `text.edit_begin`, then the shell opens the editor |
+//! | text | click, or drag for a fixed-width box | `text.edit_begin` (with `width` for a drag), then the shell opens the editor |
 //! | math | click | `element.create` kind math, or `text.edit_begin` on an existing formula |
 //!
 //! Every `element.create` carries `from_tool: true`, so the engine returns the tool to select unless the tool
@@ -50,7 +50,7 @@ enum Gesture {
     Stroke(stroke::Stroke),
     Sweep(eraser::Sweep),
     Laser,
-    /// A drag of the text or math tool on empty canvas: it places at the origin when it ends.
+    /// A drag of the text or math tool on empty canvas: when it ends the text tool opens a box as wide as the drag, the math tool places at the origin.
     Place,
 }
 
@@ -160,7 +160,7 @@ impl DrawTools {
             Some(Gesture::Laser) => self.laser.end(cx, ev, cancelled),
             Some(Gesture::Place) => {
                 if !cancelled {
-                    text::place(cx, ev.origin.world);
+                    text::drag_box(cx, ev.origin.world, ev.at.world);
                 }
             }
             None => {

@@ -479,6 +479,46 @@ fn the_elbow_arrow_type_sends_the_two_ends_and_the_engine_routes_it() {
 }
 
 #[test]
+fn the_elbow_preview_shows_the_route_the_arrow_will_get() {
+    // Free ends: a Z through the middle, the same points the created arrow has.
+    let mut rig = Rig::new();
+    rig.run("tool.set_arrow", json!({ "arrow_type": "elbow" }));
+    rig.tool(Tool::Arrow);
+    rig.down(100.0, 100.0);
+    rig.drag_to(300.0, 300.0);
+    let preview = rig.preview().expect("a preview");
+    assert_eq!(preview.linear_data().map(|d| d.path), Some(PathType::Elbow));
+    let shown = points_of(&preview);
+    assert!(shown.len() > 2, "a route, not the straight segment: {shown:?}");
+    rig.up(300.0, 300.0);
+    let arrow = rig.elements().into_iter().find(|e| e.tag() == Kind::Arrow).expect("an arrow");
+    let made = points_of(&arrow);
+    assert_eq!(shown.len(), made.len());
+    shown.iter().zip(&made).for_each(|(a, b)| approx(*a, *b));
+}
+
+#[test]
+fn the_elbow_preview_routes_around_the_shapes_it_is_bound_to() {
+    let mut rig = Rig::new();
+    two_boxes(&mut rig);
+    rig.run("tool.set_arrow", json!({ "arrow_type": "elbow" }));
+    rig.tool(Tool::Arrow);
+    rig.down(210.0, 150.0);
+    rig.drag_to(390.0, 180.0);
+    let shown = points_of(&rig.preview().expect("a preview"));
+    rig.up(390.0, 180.0);
+    let arrow = rig.elements().into_iter().find(|e| e.tag() == Kind::Arrow).expect("an arrow");
+    let made = points_of(&arrow);
+    assert!(made.len() > 2, "the arrow is routed: {made:?}");
+    assert_eq!(shown.len(), made.len(), "{shown:?} vs {made:?}");
+    // The preview binds at the pointer, the command moves a bound end onto the outline of its shape: the two
+    // routes agree to within a unit.
+    for (a, b) in shown.iter().zip(&made) {
+        assert!((a.0 - b.0).abs() < 1.0 && (a.1 - b.1).abs() < 1.0, "{shown:?} vs {made:?}");
+    }
+}
+
+#[test]
 fn the_arrow_tool_draws_with_the_type_and_heads_of_tool_set_arrow() {
     let mut rig = Rig::new();
     rig.run("tool.set_arrow", json!({ "arrow_type": "round", "start_head": "circle", "end_head": "triangle" }));

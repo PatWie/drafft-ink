@@ -98,6 +98,27 @@ impl Session {
         self.execute_from(Origin::Script, id, args)
     }
 
+    /// Runs a command that only reads (`reads_only`) and leaves no ring entry when it succeeds: for the UI, which
+    /// reads state on every frame and would otherwise fill the ring. A refusal is recorded as for any call. A
+    /// command that changes things is refused with `not_a_query` before it runs.
+    pub fn query(&mut self, id: &str, args: Value) -> Result<Value, Refusal> {
+        if let Some(spec) = self.registry().find(id)
+            && !spec.reads_only
+        {
+            return Err(Refusal::custom(
+                "not_a_query",
+                id,
+                format!(
+                    "`{id}` changes things, so it cannot be a query. Run it with `execute`, which records it in the ring."
+                ),
+            ));
+        }
+        self.run.quiet_ok = true;
+        let res = self.execute_from(Origin::Ui, id, args);
+        self.run.quiet_ok = false;
+        res
+    }
+
     /// Runs a command and records who asked.
     pub fn execute_from(&mut self, origin: Origin, id: &str, args: Value) -> Result<Value, Refusal> {
         match self.registry().find(id) {
@@ -161,7 +182,7 @@ impl Session {
             };
             match &res {
                 Ok(done) => {
-                    let skip = spec.ring == RingMode::Quiet || origin == Origin::Remote;
+                    let skip = spec.ring == RingMode::Quiet || origin == Origin::Remote || self.run.quiet_ok;
                     if !skip {
                         self.record(
                             origin,

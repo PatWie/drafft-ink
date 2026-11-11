@@ -115,6 +115,20 @@ pub fn probe(bytes: &[u8]) -> Result<Probe, PictureError> {
     Ok(Probe { mime: mime_of(format), width, height })
 }
 
+/// Decodes the whole picture once, to find damaged pixel data now. [`probe`] reads only the header, so a picture
+/// that is cut short or corrupt would otherwise be stored and fail every time it is drawn. The decoder runs with
+/// the same side and allocation limits as [`shrink`]; the pixels are dropped at once.
+pub fn validate_pixels(bytes: &[u8], probe: &Probe) -> Result<(), PictureError> {
+    let format = format_of(bytes)?;
+    let mut reader = ImageReader::with_format(Cursor::new(bytes), format);
+    let mut limits = Limits::default();
+    limits.max_image_width = Some(probe.width);
+    limits.max_image_height = Some(probe.height);
+    limits.max_alloc = Some(DECODE_ALLOC);
+    reader.limits(limits);
+    reader.decode().map(drop).map_err(|e| PictureError::Unreadable(e.to_string()))
+}
+
 /// A re-encoded picture.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Shrunk {
@@ -212,6 +226,24 @@ mod tests {
         let mut zero = good;
         zero[16..20].copy_from_slice(&0u32.to_be_bytes());
         assert!(probe(&zero).is_err());
+    }
+
+    #[test]
+    fn damaged_pixel_data_is_found_by_validate_and_not_by_probe() {
+        let good = png(40, 40);
+        let p = probe(&good).unwrap();
+        assert_eq!(validate_pixels(&good, &p), Ok(()));
+        // The header is intact, the pixel data is cut short: the size can be read, the picture cannot.
+        let cut = &good[..good.len() - 30];
+        let p = probe(cut).unwrap();
+        assert_eq!((p.width, p.height), (40, 40));
+        assert!(matches!(validate_pixels(cut, &p), Err(PictureError::Unreadable(_))));
+        // A flipped byte inside the compressed data.
+        let mut flipped = good.clone();
+        let mid = flipped.len() / 2;
+        flipped[mid] ^= 0xff;
+        let p = probe(&flipped).unwrap();
+        assert!(matches!(validate_pixels(&flipped, &p), Err(PictureError::Unreadable(_))));
     }
 
     #[test]

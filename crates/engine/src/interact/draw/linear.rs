@@ -179,15 +179,22 @@ impl Linear {
         {
             pts.push(tip);
         }
-        if path_of(cx) == PathType::Elbow {
+        let elbow = path_of(cx) == PathType::Elbow;
+        if elbow {
             pts = ends_of(&pts);
         }
         if pts.len() < 2 {
             return None;
         }
         let kind = kind_of(cx);
-        let drawn = preview::linear(cx, kind, &pts)?;
         let (start, end) = (self.start.as_ref(), self.end.as_ref());
+        if elbow && let (Some(&first), Some(&last)) = (pts.first(), pts.last()) {
+            let bindings = (start.map(BindingCandidate::binding), end.map(BindingCandidate::binding));
+            if let Some(routed) = preview::elbow(cx, first, last, bindings) {
+                return Some(routed);
+            }
+        }
+        let drawn = preview::linear(cx, kind, &pts)?;
         if start.is_none() && end.is_none() {
             return Some(drawn);
         }

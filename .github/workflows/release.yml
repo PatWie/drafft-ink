@@ -1,0 +1,266 @@
+# Release: push a tag `vX.Y.Z` (or `vX.Y.Z-rc.N`) whose version equals [workspace.package] version.
+# Builds the desktop app, the MCP server and the collaboration server for Linux (x86_64, aarch64), macOS
+# (universal) and Windows (x64), packages them (scripts/package-*.sh|ps1), writes SHA256SUMS.txt and creates a
+# DRAFT GitHub release with notes. Publish it by hand after checking it (docs/packaging.md).
+# A manual run (workflow_dispatch) builds everything and uploads the files as workflow artifacts, with no release.
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: 0
+  # Must equal rust-toolchain.toml (`cargo xtask standards` checks ci.yml; this file follows it).
+  RUST_TOOLCHAIN: "1.97.1"
+  WASM_BINDGEN_VERSION: "0.2.130"
+  BINARYEN_VERSION: "133"
+  WIX_VERSION: "5.0.2"
+
+jobs:
+  version:
+    name: Version
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.v.outputs.version }}
+      prerelease: ${{ steps.v.outputs.prerelease }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: v
+        shell: bash
+        run: |
+          version="$(awk '/^\[/ { p = ($0 == "[workspace.package]"); next } p && $1 == "version" { gsub(/[" ]/, "", $3); print $3; exit }' Cargo.toml)"
+          if ! echo "$version" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$'; then
+            echo "::error::Cargo.toml version '$version' is not semver"; exit 1
+          fi
+          if [ "$GITHUB_REF_TYPE" = tag ] && [ "$GITHUB_REF_NAME" != "v$version" ]; then
+            echo "::error::tag $GITHUB_REF_NAME does not match Cargo.toml version $version"; exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          case "$version" in *-*) echo "prerelease=true" >> "$GITHUB_OUTPUT" ;; *) echo "prerelease=false" >> "$GITHUB_OUTPUT" ;; esac
+
+  web:
+    name: Web build
+    needs: version
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ env.RUST_TOOLCHAIN }}
+          targets: wasm32-unknown-unknown
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: release-web
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: wasm-bindgen@${{ env.WASM_BINDGEN_VERSION }}
+      - name: Install binaryen and brotli
+        run: |
+          sudo apt-get update && sudo apt-get install -y brotli
+          curl -fsSL "https://github.com/WebAssembly/binaryen/releases/download/version_${BINARYEN_VERSION}/binaryen-version_${BINARYEN_VERSION}-x86_64-linux.tar.gz" | tar -xz -C "$RUNNER_TEMP"
+          echo "$RUNNER_TEMP/binaryen-version_${BINARYEN_VERSION}/bin" >> "$GITHUB_PATH"
+      - run: scripts/build-web.sh
+      - run: scripts/package-web.sh
+      # The packaged web build, for the server archives of the other jobs.
+      - uses: actions/upload-artifact@v4
+        with:
+          name: web-dist
+          path: dist
+          if-no-files-found: error
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-web
+          path: dist-release/drafftink-web-*
+          if-no-files-found: error
+
+  linux:
+    name: Linux ${{ matrix.arch }}
+    needs: [version, web]
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # The oldest image, so the binaries run on glibc >= 2.35.
+          - { arch: x86_64, os: ubuntu-22.04 }
+          - { arch: aarch64, os: ubuntu-22.04-arm }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ env.RUST_TOOLCHAIN }}
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: release-linux-${{ matrix.arch }}
+      - uses: actions/download-artifact@v4
+        with:
+          name: web-dist
+          path: dist
+      - name: Install packaging tools
+        run: sudo apt-get update && sudo apt-get install -y desktop-file-utils
+      - run: scripts/package-linux.sh
+      - name: Check the packages
+        run: |
+          cd dist-release
+          ls -l
+          tar -tzf drafftink-*-linux-${{ matrix.arch }}.tar.gz | grep -q '/bin/drafftink$'
+          dpkg-deb --info drafftink-*-linux-${{ matrix.arch }}.deb
+          dpkg-deb --contents drafftink-*-linux-${{ matrix.arch }}.deb | grep -q './usr/bin/drafftink$'
+          ldd ../../target/release/drafftink | grep -i 'not found' && exit 1 || true
+          APPIMAGE_EXTRACT_AND_RUN=1 ./drafftink-*-linux-${{ matrix.arch }}.AppImage --version
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-linux-${{ matrix.arch }}
+          path: dist-release/*
+          if-no-files-found: error
+
+  macos:
+    name: macOS universal
+    needs: [version, web]
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ env.RUST_TOOLCHAIN }}
+          targets: aarch64-apple-darwin,x86_64-apple-darwin
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: release-macos
+      - uses: actions/download-artifact@v4
+        with:
+          name: web-dist
+          path: dist
+      # Signing is optional: without the secrets the .dmg is unsigned (docs/packaging.md, "Signing").
+      - name: Import the signing certificate
+        id: sign
+        env:
+          MACOS_CERTIFICATE_P12: ${{ secrets.MACOS_CERTIFICATE_P12 }}
+          MACOS_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
+          MACOS_SIGN_IDENTITY: ${{ secrets.MACOS_SIGN_IDENTITY }}
+        run: |
+          if [ -z "$MACOS_CERTIFICATE_P12" ] || [ -z "$MACOS_SIGN_IDENTITY" ]; then
+            echo "No signing secrets: building an unsigned dmg."
+            echo "sign=false" >> "$GITHUB_OUTPUT"; exit 0
+          fi
+          keychain="$RUNNER_TEMP/build.keychain"
+          pass="$(uuidgen)"
+          echo "$MACOS_CERTIFICATE_P12" | base64 --decode > "$RUNNER_TEMP/cert.p12"
+          security create-keychain -p "$pass" "$keychain"
+          security set-keychain-settings -lut 21600 "$keychain"
+          security unlock-keychain -p "$pass" "$keychain"
+          security import "$RUNNER_TEMP/cert.p12" -k "$keychain" -P "$MACOS_CERTIFICATE_PASSWORD" -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple: -s -k "$pass" "$keychain"
+          security list-keychains -d user -s "$keychain" login.keychain
+          rm -f "$RUNNER_TEMP/cert.p12"
+          echo "sign=true" >> "$GITHUB_OUTPUT"
+      - name: Package
+        env:
+          MACOS_SIGN_IDENTITY: ${{ secrets.MACOS_SIGN_IDENTITY }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          APPLE_APP_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
+          SIGN: ${{ steps.sign.outputs.sign }}
+        run: |
+          flags=()
+          if [ "$SIGN" = true ]; then
+            flags+=(--sign)
+            if [ -n "$APPLE_ID" ] && [ -n "$APPLE_TEAM_ID" ] && [ -n "$APPLE_APP_PASSWORD" ]; then flags+=(--notarize); fi
+          fi
+          scripts/package-macos.sh "${flags[@]}"
+      - name: Remove the keychain
+        if: always()
+        run: security delete-keychain "$RUNNER_TEMP/build.keychain" 2>/dev/null || true
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-macos
+          path: dist-release/*
+          if-no-files-found: error
+
+  windows:
+    name: Windows x64
+    needs: [version, web]
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ env.RUST_TOOLCHAIN }}
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: release-windows
+      - uses: actions/download-artifact@v4
+        with:
+          name: web-dist
+          path: dist
+      - name: Install WiX
+        run: dotnet tool install --global wix --version ${{ env.WIX_VERSION }}
+      - name: Package (zip, MSI)
+        shell: pwsh
+        run: scripts/package-windows.ps1 -WebDist dist
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-windows
+          path: dist-release/*
+          if-no-files-found: error
+
+  release:
+    name: GitHub release
+    # A manual run only builds; a tag run publishes a draft.
+    if: github.ref_type == 'tag'
+    needs: [version, web, linux, macos, windows]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    env:
+      VERSION: ${{ needs.version.outputs.version }}
+      PRERELEASE: ${{ needs.version.outputs.prerelease }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: release-*
+          merge-multiple: true
+          path: assets
+      - name: Fixed-name copies, checksums, notes
+        working-directory: assets
+        run: |
+          # releases/latest/download/<name> works without knowing the version.
+          for f in drafftink-"$VERSION"-*; do
+            case "$f" in *.msi | *.dmg | *.AppImage | *.deb | *-windows-x64.zip | *-linux-*.tar.gz)
+              cp -- "$f" "drafftink-${f#"drafftink-$VERSION-"}" ;;
+            esac
+          done
+          # Every package the release promises must be there.
+          for want in \
+            "drafftink-$VERSION-windows-x64.msi" "drafftink-$VERSION-windows-x64.zip" \
+            "drafftink-$VERSION-macos-universal.dmg" \
+            "drafftink-$VERSION-linux-x86_64.AppImage" "drafftink-$VERSION-linux-aarch64.AppImage" \
+            "drafftink-$VERSION-linux-x86_64.deb" "drafftink-$VERSION-linux-aarch64.deb" \
+            "drafftink-$VERSION-linux-x86_64.tar.gz" "drafftink-$VERSION-linux-aarch64.tar.gz" \
+            "drafftink-server-$VERSION-linux-x86_64.tar.gz" "drafftink-server-$VERSION-linux-aarch64.tar.gz" \
+            "drafftink-server-$VERSION-macos-universal.tar.gz" "drafftink-server-$VERSION-windows-x64.zip" \
+            "drafftink-web-$VERSION.tar.gz"; do
+            [ -f "$want" ] || { echo "::error::missing release file $want"; exit 1; }
+          done
+          sha256sum -- * | tee SHA256SUMS.txt
+          sed "s/{version}/$VERSION/g" ../.github/release-notes.md > ../notes.md
+      - name: Create the draft release
+        run: |
+          flags=()
+          if [ "$PRERELEASE" = true ]; then flags+=(--prerelease --latest=false); fi
+          gh release create "$GITHUB_REF_NAME" --draft "${flags[@]}" \
+            --title "Drafft.ink $VERSION" --verify-tag \
+            --notes-file notes.md --generate-notes \
+            -- assets/*

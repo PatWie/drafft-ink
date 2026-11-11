@@ -385,6 +385,43 @@ fn a_draft_is_created_by_edit_end_in_one_undo_step() {
 }
 
 #[test]
+fn a_draft_with_a_width_becomes_a_fixed_width_wrapping_text() {
+    let (mut s, _f) = testing::session();
+    let out = run(&mut s, "text.edit_begin", json!({"at": [100, 50], "width": 40}));
+    assert_eq!((out["bounds"]["x"].as_f64(), out["bounds"]["w"].as_f64()), (Some(100.0), Some(40.0)));
+    let out = run(&mut s, "text.edit_end", json!({"text": "hello"}));
+    let id = ElementId::new(out["id"].as_str().unwrap()).unwrap();
+    let e = s.element(&id).unwrap();
+    let ElementKind::Text(t) = &e.kind else { panic!("text") };
+    assert!(!t.auto_resize, "a given width fixes the box");
+    // "hello" is 50 wide with the fake text engine: it breaks after four characters.
+    assert_eq!((e.transform.x, e.transform.w, e.transform.h), (100.0, 40.0, 50.0));
+    // Without a width the box follows the content, as before.
+    run(&mut s, "text.edit_begin", json!({"at": [0, 300]}));
+    let out = run(&mut s, "text.edit_end", json!({"text": "hello"}));
+    let id = ElementId::new(out["id"].as_str().unwrap()).unwrap();
+    assert!(matches!(&s.element(&id).unwrap().kind, ElementKind::Text(t) if t.auto_resize));
+}
+
+#[test]
+fn the_width_of_a_draft_is_checked() {
+    let (mut s, _f) = testing::session();
+    let r = refuse(&mut s, "text.edit_begin", json!({"at": [0, 0], "width": 0}));
+    assert_eq!(r.code, "bad_args");
+    let r = refuse(&mut s, "text.edit_begin", json!({"at": [0, 0], "width": -5}));
+    assert_eq!(r.code, "bad_args");
+    let t = text_at(&mut s, "abc", 0.0, 0.0);
+    let r = refuse(&mut s, "text.edit_begin", json!({"id": t.as_str(), "width": 40}));
+    assert_eq!(r.code, "bad_args");
+    assert_eq!(r.message, "`width` only works together with `at`. To change the width of an existing text, use `element.set_bounds`.");
+    let rect = testing::add_rect(&mut s, 0.0, 400.0, 100.0, 60.0).unwrap();
+    let r = refuse(&mut s, "text.edit_begin", json!({"at": [0, 0], "container": rect.as_str(), "width": 40}));
+    assert_eq!(r.code, "bad_args");
+    assert!(r.message.contains("a label takes the width of its shape"), "{}", r.message);
+    assert!(s.text_edit.is_none());
+}
+
+#[test]
 fn a_draft_with_blank_text_or_commit_false_leaves_no_trace() {
     let (mut s, _f) = testing::session();
     run(&mut s, "text.edit_begin", json!({"at": [0, 0]}));

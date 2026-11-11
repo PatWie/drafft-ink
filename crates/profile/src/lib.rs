@@ -7,7 +7,7 @@
 //! | Mark a frame | [`begin_frame`], [`end_frame`] |
 //! | Say why a redraw happens | [`redraw`] with a [`RedrawReason`] |
 //! | Count work | [`count`], [`inc`], [`set_gauge`] with [`Counter`], [`Gauge`] |
-//! | Assert on work in a test | [`WorkScope`] (no clock, per thread) |
+//! | Assert on work in a test | [`WorkScope`] (no clock, per thread), [`snapshot_thread`] |
 //! | Export | [`snapshot`] -> [`PerfStats`] JSON, [`chrome_trace_json`] |
 //! | Gate | [`Budgets`], [`ScenarioReport`] |
 //!
@@ -42,7 +42,7 @@ pub use stats::{
     DocumentError, MAX_SPAN_ROWS, PerfStats, RedrawEvent, RedrawStats, SCHEMA_VERSION, STATS_SCHEMA, SpanStat,
 };
 pub use trace::{chrome_trace, chrome_trace_json, write_chrome_trace};
-pub use work::{WorkScope, count, count_named, inc, redraw, set_gauge};
+pub use work::{WorkScope, count, count_named, inc, redraw, set_gauge, snapshot_thread};
 
 /// Turn recording on when the environment variable `name` is `1`, `true`, `on` or `yes`.
 /// Returns whether it is on. Not available in the browser, which has no environment; the web

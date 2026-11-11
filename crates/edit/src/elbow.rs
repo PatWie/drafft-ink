@@ -140,6 +140,22 @@ pub(crate) fn solve_path<R: SceneRead>(
     update_ends(&path, &s, &en, opts).map(Some)
 }
 
+/// A copy of `e` with its elbow route solved against `scene`, for a preview of an arrow that is not in the
+/// document yet (bound ends sit at their bindings, free ends where the points are). Nothing is written. An
+/// element that is not an elbow line or arrow comes back unchanged.
+pub fn routed_copy<R: SceneRead>(scene: &R, e: &Element, opts: RouteOpts) -> Result<Element, ElbowEditError> {
+    let mut out = e.clone();
+    if e.linear_data().is_none_or(|d| d.path != PathType::Elbow) {
+        return Ok(out);
+    }
+    if let Some(path) = solve_path(scene, e, None, opts, true)?
+        && !write_path(&mut out, &path)
+    {
+        return Err(ElbowEditError::Route(ElbowError::NotFinite));
+    }
+    Ok(out)
+}
+
 fn commit<T: SceneTx>(tx: &mut T, id: &ElementId, e: Element) -> Result<(), StoreError> {
     tx.update(id, |slot| {
         slot.transform = e.transform;

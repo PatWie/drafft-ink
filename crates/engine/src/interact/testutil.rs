@@ -4,99 +4,21 @@
 //! screen position equals a world position and a test can say "press at (100, 100)" and mean both. Events
 //! go through the real `Recognizer` of `drafftink-canvas` (`Interaction::input`).
 //!
-//! Commands the text and collab families will register (`text.edit_begin`, `collab.laser`) are stubbed in the
-//! rig's registry when the global one lacks them, so tests can observe what the interaction layer asked for. A
-//! real registration wins over the stub.
-
-use std::sync::Arc;
+//! The session runs over the global registry: what the interaction layer asks for is the real command.
 
 use drafftink_canvas::{Button, Buttons, InputEvent, Modifiers, PointerEvent, PointerId, PointerKind, PointerPhase};
 use drafftink_geom::kurbo::Point;
 use drafftink_scene::{Color, Element, ElementId, SceneRead, SceneTx, StoreError};
-use schemars::JsonSchema;
-use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
 use super::{Interaction, Key, Outcome};
-use crate::cmd::view::Pt;
 use crate::ports::fake::Fakes;
 use crate::refusal::Refusal;
-use crate::registry::Registry;
 use crate::ring::{Origin, RingEntry};
 use crate::services::Services;
-use crate::session::{Ref, Session};
-use crate::spec::{CommandSpec, Facts, Mutates, Redraw, RingMode, Typed};
-use crate::state::{TextEdit, Tool};
+use crate::session::Session;
+use crate::state::Tool;
 use crate::testing;
-
-// ---- stubs for families that are not registered yet -----------------------------------------------------------
-
-/// What the stub `collab.laser` received.
-#[derive(Debug, Default, Clone)]
-pub(super) struct LaserLog(pub(super) Vec<Vec<[f64; 2]>>);
-
-#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, JsonSchema)]
-#[serde(deny_unknown_fields, default)]
-pub(super) struct StubEditBegin {
-    pub id: Option<Ref>,
-    pub at: Option<Pt>,
-    pub container: Option<Ref>,
-    pub caret: Option<Value>,
-}
-
-#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, JsonSchema)]
-#[serde(deny_unknown_fields, default)]
-pub(super) struct StubLaser {
-    pub points: Vec<Pt>,
-    pub fade_ms: Option<u64>,
-}
-
-fn stub_edit_begin(s: &mut Session, a: StubEditBegin) -> Result<Value, Refusal> {
-    let element = a.id.map(|r| s.resolve_ref(&r)).transpose()?;
-    if let Some(id) = &element {
-        s.tab_mut().observed.selection = std::iter::once(id.clone()).collect();
-    }
-    s.text_edit = Some(TextEdit { draft: element.is_none(), element });
-    Ok(json!({}))
-}
-
-fn stub_laser(s: &mut Session, a: StubLaser) -> Result<Value, Refusal> {
-    s.ext.with::<LaserLog, _>(|l| l.0.push(a.points));
-    Ok(json!({}))
-}
-
-const STUB_FACTS: Facts = Facts {
-    reads_only: false,
-    mutates: Mutates::OBSERVED,
-    redraw: Redraw::Overlay,
-    ring: RingMode::Always,
-    ..Facts::READ_ONLY
-};
-
-static STUBS: [CommandSpec; 2] = [
-    CommandSpec::new(
-        "text.edit_begin",
-        "text",
-        "Start editing text",
-        "Stub of the text family for interaction tests: opens a text edit session.",
-        &Typed::new(stub_edit_begin),
-        STUB_FACTS,
-    ),
-    CommandSpec::new(
-        "collab.laser",
-        "collab",
-        "Laser trail",
-        "Stub of the collab family for interaction tests: records the trail.",
-        &Typed::new(stub_laser),
-        STUB_FACTS,
-    ),
-];
-
-fn registry() -> Arc<Registry> {
-    let mut families: Vec<&'static [CommandSpec]> = crate::cmd::FAMILIES.to_vec();
-    families.push(&STUBS);
-    Arc::new(Registry::from_families(&families))
-}
 
 // ---- the rig --------------------------------------------------------------------------------------------------
 
@@ -120,7 +42,7 @@ impl Rig {
     /// A session with the fake text engine, an 800 by 600 canvas and the camera at zoom 1, scroll (400, 300).
     pub(super) fn new() -> Rig {
         let fakes = Fakes::new();
-        let mut s = Session::with_registry(fakes.ports(), registry());
+        let mut s = Session::new(fakes.ports());
         s.services = Services::fake();
         let mut rig = Rig {
             s,
@@ -308,12 +230,6 @@ impl Rig {
     /// The number of undo steps the active tab holds.
     pub(super) fn undo_depth(&self) -> usize {
         self.s.tab().doc.undo_depth()
-    }
-
-    /// True when the rig's registry runs the stub of `id` (the real family is not registered).
-    pub(super) fn stubbed(&self, id: &str) -> bool {
-        STUBS.iter().any(|spec| spec.id == id)
-            && crate::cmd::FAMILIES.iter().all(|fam| fam.iter().all(|spec| spec.id != id))
     }
 }
 
