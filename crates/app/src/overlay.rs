@@ -18,26 +18,32 @@ pub(crate) fn to_render(canvas: &CanvasOverlay, extra_guides: &[SmartGuide]) -> 
     match canvas.transformer.as_ref().map(|t| &t.frame) {
         Some(SelectionFrame::Box { obox, set, multi }) => {
             if *multi {
-                out.selection.extend(
-                    canvas.selection.iter().map(|b| SelectionBox { obox: b.obox, handles: OUTLINE_ONLY, dashed: true }),
-                );
+                out.selection.extend(canvas.selection.iter().map(|b| SelectionBox {
+                    obox: b.obox,
+                    handles: OUTLINE_ONLY,
+                    dashed: true,
+                }));
             }
             out.selection.push(SelectionBox { obox: *obox, handles: *set, dashed: true });
         }
         Some(SelectionFrame::Linear { points, .. }) => {
             if let Some(t) = &canvas.transformer {
-                out.point_handles.extend(t.handles.iter().filter_map(|h| point_handle(&h.handle, h.world, points.len())));
+                out.point_handles
+                    .extend(t.handles.iter().filter_map(|h| point_handle(&h.handle, h.world, points.len())));
             }
         }
         Some(SelectionFrame::None) | None => {}
     }
     if out.selection.is_empty() && out.point_handles.is_empty() {
-        out.selection.extend(
-            canvas.selection.iter().map(|b| SelectionBox { obox: b.obox, handles: OUTLINE_ONLY, dashed: true }),
-        );
+        out.selection.extend(canvas.selection.iter().map(|b| SelectionBox {
+            obox: b.obox,
+            handles: OUTLINE_ONLY,
+            dashed: true,
+        }));
     }
     out.hover.extend(canvas.hover.iter().filter_map(|h| outline_box(&h.shape)));
-    out.binding.extend(canvas.bind_candidates.iter().map(|c| BindingHighlight { outline: outline_path(&c.shape), at: None }));
+    out.binding
+        .extend(canvas.bind_candidates.iter().map(|c| BindingHighlight { outline: outline_path(&c.shape), at: None }));
     out.marquee = canvas.marquee.as_ref().map(|m| m.rect);
     out.guides.extend(canvas.guides.iter().cloned());
     out.guides.extend(extra_guides.iter().cloned());

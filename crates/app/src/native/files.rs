@@ -30,7 +30,8 @@ impl NativeFiles {
             FileRef::Download { download } => {
                 // A download is a bare file name. A path in it would escape the folder.
                 let name = Path::new(download);
-                let plain = name.components().count() == 1 && matches!(name.components().next(), Some(Component::Normal(_)));
+                let plain =
+                    name.components().count() == 1 && matches!(name.components().next(), Some(Component::Normal(_)));
                 if !plain {
                     return Err(PortError::Failed(format!(
                         "`{download}` is not a plain file name. Use a name without folders, or give a path"
@@ -38,7 +39,9 @@ impl NativeFiles {
                 }
                 Ok(self.downloads_dir().join(name))
             }
-            FileRef::Stored { .. } => Err(PortError::Unsupported("stored documents are served by the storage port".into())),
+            FileRef::Stored { .. } => {
+                Err(PortError::Unsupported("stored documents are served by the storage port".into()))
+            }
             FileRef::Handle { .. } => Err(PortError::Unsupported("file handles exist only in the browser".into())),
         }
     }

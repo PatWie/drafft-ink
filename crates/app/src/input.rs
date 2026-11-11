@@ -54,7 +54,12 @@ fn kind_and_id(s: &gpu::PointerSample) -> (PointerKind, PointerId) {
 
 /// The canvas events for one shell sample, oldest first. `origin` is the canvas corner in window points and
 /// `now_ms` the app clock (the shell's own time stamps start somewhere else). Updates `held`.
-pub(crate) fn pointer_events(s: &gpu::PointerSample, held: &mut Held, origin: egui::Pos2, now_ms: f64) -> Vec<InputEvent> {
+pub(crate) fn pointer_events(
+    s: &gpu::PointerSample,
+    held: &mut Held,
+    origin: egui::Pos2,
+    now_ms: f64,
+) -> Vec<InputEvent> {
     let (kind, id) = kind_and_id(s);
     let at = |p: egui::Pos2| Point::new(f64::from(p.x - origin.x), f64::from(p.y - origin.y));
     let mods = modifiers(s.modifiers);
@@ -75,11 +80,23 @@ pub(crate) fn pointer_events(s: &gpu::PointerSample, held: &mut Held, origin: eg
     let mut out = Vec::new();
     match s.phase {
         gpu::PointerPhase::Hover => {
-            out.push(InputEvent::Pointer(make(PointerPhase::Move, at(s.point.pos), pressure, Button::None, Buttons::NONE)));
+            out.push(InputEvent::Pointer(make(
+                PointerPhase::Move,
+                at(s.point.pos),
+                pressure,
+                Button::None,
+                Buttons::NONE,
+            )));
         }
         gpu::PointerPhase::Down => {
             held.0 |= Held::bit(s.button.unwrap_or(0));
-            out.push(InputEvent::Pointer(make(PointerPhase::Down, at(s.point.pos), pressure, button(s.button), held.buttons())));
+            out.push(InputEvent::Pointer(make(
+                PointerPhase::Down,
+                at(s.point.pos),
+                pressure,
+                button(s.button),
+                held.buttons(),
+            )));
         }
         gpu::PointerPhase::Move => {
             // Intermediate samples first (a pen reports many between two frames), then the latest.
@@ -92,15 +109,33 @@ pub(crate) fn pointer_events(s: &gpu::PointerSample, held: &mut Held, origin: eg
                     held.buttons(),
                 )));
             }
-            out.push(InputEvent::Pointer(make(PointerPhase::Move, at(s.point.pos), pressure, Button::None, held.buttons())));
+            out.push(InputEvent::Pointer(make(
+                PointerPhase::Move,
+                at(s.point.pos),
+                pressure,
+                Button::None,
+                held.buttons(),
+            )));
         }
         gpu::PointerPhase::Up => {
             held.0 &= !Held::bit(s.button.unwrap_or(0));
-            out.push(InputEvent::Pointer(make(PointerPhase::Up, at(s.point.pos), pressure, button(s.button), held.buttons())));
+            out.push(InputEvent::Pointer(make(
+                PointerPhase::Up,
+                at(s.point.pos),
+                pressure,
+                button(s.button),
+                held.buttons(),
+            )));
         }
         gpu::PointerPhase::Cancel => {
             held.0 = 0;
-            out.push(InputEvent::Pointer(make(PointerPhase::Cancel, at(s.point.pos), pressure, Button::Primary, Buttons::NONE)));
+            out.push(InputEvent::Pointer(make(
+                PointerPhase::Cancel,
+                at(s.point.pos),
+                pressure,
+                Button::Primary,
+                Buttons::NONE,
+            )));
         }
         gpu::PointerPhase::Leave => {
             // A pointer that leaves with a button down keeps dragging: the web captures it, winit reports the
@@ -114,7 +149,12 @@ pub(crate) fn pointer_events(s: &gpu::PointerSample, held: &mut Held, origin: eg
 }
 
 /// Wheel and pinch events from egui's raw input of this pass. Positive `delta.y` scrolls down, as in the DOM.
-pub(crate) fn wheel_events(events: &[egui::Event], pos: Point, now_ms: f64, fallback: egui::Modifiers) -> Vec<InputEvent> {
+pub(crate) fn wheel_events(
+    events: &[egui::Event],
+    pos: Point,
+    now_ms: f64,
+    fallback: egui::Modifiers,
+) -> Vec<InputEvent> {
     events
         .iter()
         .filter_map(|e| match e {
@@ -207,7 +247,8 @@ mod tests {
     #[test]
     fn hover_has_no_buttons_and_the_origin_is_subtracted() {
         let mut held = Held::default();
-        let ev = pointer_events(&sample(gpu::PointerPhase::Hover, 110.0, 70.0), &mut held, egui::pos2(100.0, 50.0), 0.0);
+        let ev =
+            pointer_events(&sample(gpu::PointerPhase::Hover, 110.0, 70.0), &mut held, egui::pos2(100.0, 50.0), 0.0);
         let InputEvent::Pointer(p) = &ev[0] else { unreachable!() };
         assert_eq!((p.phase, p.buttons, p.pos), (PointerPhase::Move, Buttons::NONE, Point::new(10.0, 20.0)));
     }
@@ -226,9 +267,14 @@ mod tests {
     #[test]
     fn leave_while_dragging_is_ignored() {
         let mut held = Held(1);
-        assert!(pointer_events(&sample(gpu::PointerPhase::Leave, 0.0, 0.0), &mut held, egui::Pos2::ZERO, 0.0).is_empty());
+        assert!(
+            pointer_events(&sample(gpu::PointerPhase::Leave, 0.0, 0.0), &mut held, egui::Pos2::ZERO, 0.0).is_empty()
+        );
         let mut idle = Held::default();
-        assert_eq!(pointer_events(&sample(gpu::PointerPhase::Leave, 0.0, 0.0), &mut idle, egui::Pos2::ZERO, 0.0).len(), 1);
+        assert_eq!(
+            pointer_events(&sample(gpu::PointerPhase::Leave, 0.0, 0.0), &mut idle, egui::Pos2::ZERO, 0.0).len(),
+            1
+        );
     }
 
     #[test]

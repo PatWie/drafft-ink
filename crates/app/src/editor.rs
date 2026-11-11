@@ -144,12 +144,13 @@ impl TextEditor {
             });
         self.rect = Some(inner.response.rect.expand(4.0));
         let underline = inner.response.rect;
-        ctx.layer_painter(egui::LayerId::new(Order::Foreground, Id::unique("drafftink-text-editor-frame"))).rect_stroke(
-            underline.expand(3.0),
-            3.0,
-            egui::Stroke::new(1.0, Color32::from_rgb(0x3b, 0x82, 0xf6)),
-            egui::StrokeKind::Outside,
-        );
+        ctx.layer_painter(egui::LayerId::new(Order::Foreground, Id::unique("drafftink-text-editor-frame")))
+            .rect_stroke(
+                underline.expand(3.0),
+                3.0,
+                egui::Stroke::new(1.0, Color32::from_rgb(0x3b, 0x82, 0xf6)),
+                egui::StrokeKind::Outside,
+            );
         EditorEvent::None
     }
 }

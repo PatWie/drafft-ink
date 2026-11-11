@@ -160,7 +160,13 @@ impl CanvasView {
             typesetter.with(|ts| composer.compose_transient(store, &faded, view, ts, &mut layer));
             let dev = view.device_size();
             let clip = Rect::new(0.0, 0.0, dev.width, dev.height);
-            preview.push_layer(Fill::NonZero, BlendMode::new(Mix::Normal, Compose::SrcOver), 0.3, Affine::IDENTITY, &clip);
+            preview.push_layer(
+                Fill::NonZero,
+                BlendMode::new(Mix::Normal, Compose::SrcOver),
+                0.3,
+                Affine::IDENTITY,
+                &clip,
+            );
             preview.append(&layer, None);
             preview.pop_layer();
         }
@@ -197,7 +203,13 @@ pub(crate) fn paint_trail(scene: &mut Scene, points: &[TrailPoint], color: Color
             continue;
         }
         let line = drafftink_geom::kurbo::Line::new(to_dev * a.at, to_dev * b.at);
-        scene.stroke(&Stroke::new(4.0 * px).with_caps(drafftink_geom::kurbo::Cap::Round), Affine::IDENTITY, color.with_alpha(alpha), None, &line);
+        scene.stroke(
+            &Stroke::new(4.0 * px).with_caps(drafftink_geom::kurbo::Cap::Round),
+            Affine::IDENTITY,
+            color.with_alpha(alpha),
+            None,
+            &line,
+        );
     }
 }
 

@@ -36,7 +36,8 @@ pub(crate) fn start(session: &mut Session, config: &AppConfig) -> Vec<String> {
                 notes.push(format!("The saved workspace could not be read ({why}). Starting with a blank document."));
             }
             if let Some(n) = r.newer_schema {
-                notes.push(format!("The saved workspace comes from a newer Drafft.ink (format {n}) and is left alone."));
+                notes
+                    .push(format!("The saved workspace comes from a newer Drafft.ink (format {n}) and is left alone."));
             }
             if !r.skipped.is_empty() {
                 notes.push(format!("{} saved tab(s) could not be opened.", r.skipped.len()));

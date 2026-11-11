@@ -27,21 +27,20 @@ pub(crate) fn to_content(payload: &ClipPayload) -> ClipboardContent {
 /// What the system clipboard holds, as the payload of one kind. The engine asks kind by kind, best first.
 pub(crate) fn payload_of(content: &ClipboardContent, kind: ClipKind) -> Option<ClipPayload> {
     match kind {
-        ClipKind::Elements => content
-            .custom
-            .as_deref()
-            .and_then(|b| serde_json::from_slice::<Value>(b).ok())
-            .map(ClipPayload::Elements),
-        ClipKind::Text => content.text.as_deref().filter(|t| !t.trim().is_empty()).map(|t| ClipPayload::Text(t.to_owned())),
+        ClipKind::Elements => {
+            content.custom.as_deref().and_then(|b| serde_json::from_slice::<Value>(b).ok()).map(ClipPayload::Elements)
+        }
+        ClipKind::Text => {
+            content.text.as_deref().filter(|t| !t.trim().is_empty()).map(|t| ClipPayload::Text(t.to_owned()))
+        }
         ClipKind::Svg => content
             .text
             .as_deref()
             .filter(|t| t.trim_start().starts_with("<svg"))
             .map(|t| ClipPayload::Svg(t.to_owned())),
-        ClipKind::Image => content
-            .images
-            .first()
-            .map(|i| ClipPayload::Image { bytes: i.bytes.clone(), mime: i.mime.clone() }),
+        ClipKind::Image => {
+            content.images.first().map(|i| ClipPayload::Image { bytes: i.bytes.clone(), mime: i.mime.clone() })
+        }
     }
 }
 

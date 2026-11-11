@@ -76,7 +76,10 @@ fn run(args: Args) -> Result<(), Failure> {
     // The server must outlive the window: dropping it closes the socket and removes the token file.
     let bridge = match args.bridge {
         Some(port) => {
-            let config = BridgeConfig { addr: SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), port), ..BridgeConfig::default() };
+            let config = BridgeConfig {
+                addr: SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), port),
+                ..BridgeConfig::default()
+            };
             let (server, host) = BridgeServer::start(config, platform.wake.hook(RedrawReason::Load))?;
             platform.bridge = Some(host);
             match server.token_file() {

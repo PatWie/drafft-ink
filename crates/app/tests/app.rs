@@ -65,7 +65,9 @@ fn the_file_argument_opens_in_place_of_the_intro() {
 fn a_room_link_joins_the_room_at_start() {
     let fakes = Fakes::new();
     let config = AppConfig {
-        join: StartupLink { link: RoomLink { room: Some("team-1".into()), server: Some("ws://localhost:3030/ws".into()) } },
+        join: StartupLink {
+            link: RoomLink { room: Some("team-1".into()), server: Some("ws://localhost:3030/ws".into()) },
+        },
         ..AppConfig::default()
     };
     let mut app = App::new(platform(&fakes), config);
@@ -91,7 +93,9 @@ fn a_room_link_keeps_the_work_the_person_already_has_in_its_own_tab() {
         let _first = App::new(platform(&fakes), AppConfig::default());
     }
     let config = AppConfig {
-        join: StartupLink { link: RoomLink { room: Some("team-2".into()), server: Some("ws://localhost:3030/ws".into()) } },
+        join: StartupLink {
+            link: RoomLink { room: Some("team-2".into()), server: Some("ws://localhost:3030/ws".into()) },
+        },
         ..AppConfig::default()
     };
     let mut app = App::new(platform(&fakes), config);

@@ -42,8 +42,8 @@ impl OffscreenRenderer {
         let mut guard = self.device.lock().unwrap_or_else(PoisonError::into_inner);
         if guard.is_none() {
             let gpu = Gpu::headless_blocking(&GpuOptions::default()).map_err(|e| PortError::Failed(e.to_string()))?;
-            let compositor = Compositor::new(&gpu, wgpu::TextureFormat::Rgba8Unorm)
-                .map_err(|e| PortError::Failed(e.to_string()))?;
+            let compositor =
+                Compositor::new(&gpu, wgpu::TextureFormat::Rgba8Unorm).map_err(|e| PortError::Failed(e.to_string()))?;
             *guard = Some(Device { gpu, compositor });
         }
         Ok(guard)

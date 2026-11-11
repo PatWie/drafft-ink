@@ -15,8 +15,8 @@ use drafftink_engine::state::TabId;
 use drafftink_engine::{Origin, Refusal, Session};
 use drafftink_geom::kurbo::{Point, Size};
 use drafftink_gpu::{
-    ClipboardContent, DroppedFile, EventCx, FrameCx, FrameOutput, Handled, PointerPhase, RedrawReason, Repaint, SetupCx,
-    ShellApp, ShellEvent,
+    ClipboardContent, DroppedFile, EventCx, FrameCx, FrameOutput, Handled, PointerPhase, RedrawReason, Repaint,
+    SetupCx, ShellApp, ShellEvent,
 };
 use drafftink_render::{GridStyle, RemoteCursor, Theme};
 use drafftink_scene::{ElementKind, SceneRead, SceneStore};
@@ -28,7 +28,9 @@ use crate::config::AppConfig;
 use crate::editor::{EditorEvent, TextEditor, hidden_by_edit};
 use crate::input::{self, Held};
 use crate::overlay;
-use crate::platform::{Host, HostJob, Inbound, Inbox, InboxRx, PickKind, PickedFile, Platform, SharedClipboard, WakeCell, inbox};
+use crate::platform::{
+    Host, HostJob, Inbound, Inbox, InboxRx, PickKind, PickedFile, Platform, SharedClipboard, WakeCell, inbox,
+};
 use crate::view::{CanvasView, LASER_FADE_MS, TrailPoint};
 
 /// Everything about the picture that, when it changes, makes the document scene stale.
@@ -304,7 +306,11 @@ impl App {
                 }
                 PickKind::Library => {
                     for f in &files {
-                        self.run(Origin::Ui, "library.import", json!({ "source": source_of(f), "mode": "open_as_tab" }));
+                        self.run(
+                            Origin::Ui,
+                            "library.import",
+                            json!({ "source": source_of(f), "mode": "open_as_tab" }),
+                        );
                     }
                 }
             },
@@ -398,7 +404,11 @@ impl App {
             if !pressed {
                 continue;
             }
-            let k = if key == egui::Key::Escape { drafftink_engine::interact::Key::Escape } else { drafftink_engine::interact::Key::Enter };
+            let k = if key == egui::Key::Escape {
+                drafftink_engine::interact::Key::Escape
+            } else {
+                drafftink_engine::interact::Key::Enter
+            };
             let out = self.interaction.key(&mut self.session, k, now);
             if out.handled {
                 ctx.input_mut(|i| i.consume_key(egui::Modifiers::NONE, key));
@@ -466,13 +476,8 @@ impl App {
         };
         let view = CanvasView::view_of(camera.scroll, camera.zoom, size, dpr);
         let world_stale = look || hidden_changed || self.world_key != Some(key) || cx.resized;
-        let peers: Vec<([f64; 2], String)> = self
-            .session
-            .collab_view()
-            .peers
-            .iter()
-            .filter_map(|p| p.pointer.map(|pt| (pt, p.color.clone())))
-            .collect();
+        let peers: Vec<([f64; 2], String)> =
+            self.session.collab_view().peers.iter().filter_map(|p| p.pointer.map(|pt| (pt, p.color.clone()))).collect();
         let overlay_key = OverlayKey { interaction: interaction_overlay.clone(), peers: peers.clone() };
         let laser_running = !interaction_overlay.laser.is_empty();
         let overlay_stale = world_stale || laser_running || self.overlay_key.as_ref() != Some(&overlay_key);
@@ -498,7 +503,8 @@ impl App {
             .collect();
         let mut trails = vec![(Color::from_rgba8(239, 68, 68, 255), trail)];
         for peer in self.session.collab_view().peers {
-            let points = peer.trail.iter().map(|d| TrailPoint { at: Point::new(d.x, d.y), age_ms: d.age_ms as f64 }).collect();
+            let points =
+                peer.trail.iter().map(|d| TrailPoint { at: Point::new(d.x, d.y), age_ms: d.age_ms as f64 }).collect();
             trails.push((parse_hex(&peer.color), points));
         }
         self.canvas.add_trails(&trails, &view);
@@ -539,9 +545,11 @@ impl App {
             r.cache_hits,
             r.cache_misses
         );
-        egui::Area::new(egui::Id::unique("drafftink-perf-hud")).anchor(egui::Align2::LEFT_BOTTOM, egui::vec2(8.0, -8.0)).show(ctx, |ui| {
-            ui.label(egui::RichText::new(text).monospace().size(11.0));
-        });
+        egui::Area::new(egui::Id::unique("drafftink-perf-hud"))
+            .anchor(egui::Align2::LEFT_BOTTOM, egui::vec2(8.0, -8.0))
+            .show(ctx, |ui| {
+                ui.label(egui::RichText::new(text).monospace().size(11.0));
+            });
     }
 
     /// The earliest of the app's own timers as a repaint request.
@@ -565,7 +573,11 @@ impl App {
             None => Repaint::Idle,
             Some((at, reason)) => {
                 let wait = (at - now).max(0.0);
-                if wait < 1.0 { Repaint::Now(reason) } else { Repaint::After(Duration::from_secs_f64(wait / 1000.0), reason) }
+                if wait < 1.0 {
+                    Repaint::Now(reason)
+                } else {
+                    Repaint::After(Duration::from_secs_f64(wait / 1000.0), reason)
+                }
             }
         }
     }
@@ -664,9 +676,10 @@ impl ShellApp for App {
                 (Repaint::Now(RedrawReason::Surface), Handled::No)
             }
             ShellEvent::Wake(reason) => (Repaint::Now(reason), Handled::No),
-            ShellEvent::FileHover(_) | ShellEvent::TextInput(_) | ShellEvent::Visibility(true) | ShellEvent::Focus(true) => {
-                (Repaint::Idle, Handled::No)
-            }
+            ShellEvent::FileHover(_)
+            | ShellEvent::TextInput(_)
+            | ShellEvent::Visibility(true)
+            | ShellEvent::Focus(true) => (Repaint::Idle, Handled::No),
         }
     }
 
@@ -729,7 +742,8 @@ impl ShellApp for App {
         self.apply_outcome(out);
         self.paint_canvas(&ctx, cx, now);
 
-        let over_canvas = ctx.input(|i| i.pointer.hover_pos()).is_some_and(|p| !input::egui_owns(&ctx, self.canvas_rect, p));
+        let over_canvas =
+            ctx.input(|i| i.pointer.hover_pos()).is_some_and(|p| !input::egui_owns(&ctx, self.canvas_rect, p));
         FrameOutput {
             repaint: self.next_wake(now),
             canvas_rect: Some(self.canvas_rect),

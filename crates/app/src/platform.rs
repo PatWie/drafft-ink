@@ -205,11 +205,8 @@ impl drafftink_engine::ports::Clipboard for SharedClipboard {
     fn read(&self, want: &[ClipKind]) -> Result<Option<ClipPayload>, drafftink_engine::PortError> {
         let slots = lock(&self.inner);
         let Some(content) = slots.incoming.as_ref() else { return Ok(None) };
-        let kinds: &[ClipKind] = if want.is_empty() {
-            &[ClipKind::Elements, ClipKind::Image, ClipKind::Svg, ClipKind::Text]
-        } else {
-            want
-        };
+        let kinds: &[ClipKind] =
+            if want.is_empty() { &[ClipKind::Elements, ClipKind::Image, ClipKind::Svg, ClipKind::Text] } else { want };
         Ok(kinds.iter().find_map(|k| crate::clip::payload_of(content, *k)))
     }
 

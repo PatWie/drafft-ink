@@ -32,6 +32,4 @@ pub mod web;
 pub use app::App;
 pub use clock::AppClock;
 pub use config::{AppConfig, StartupLink};
-pub use platform::{
-    Host, HostJob, Inbound, Inbox, NoHost, PickKind, PickedFile, Platform, SharedClipboard, WakeCell,
-};
+pub use platform::{Host, HostJob, Inbound, Inbox, NoHost, PickKind, PickedFile, Platform, SharedClipboard, WakeCell};
