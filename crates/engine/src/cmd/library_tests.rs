@@ -269,7 +269,7 @@ fn remove_by_id_or_name_deletes_from_storage_and_all_needs_to_be_said() {
     assert_eq!(out["removed"].as_array().unwrap().len(), 2);
     assert!(f.storage.bytes(Ns::Library, &item_key(&a)).is_none());
     assert_eq!(run(&mut s, "library.list", json!({}))["items"].as_array().unwrap().len(), 1);
-    assert_eq!(refuse(&mut s, "library.remove", json!({})).message, "Invalid arguments for `library.remove`: Give either `items` or all=true.. See `engine.describe` for the schema.");
+    assert_eq!(refuse(&mut s, "library.remove", json!({})).message, "Invalid arguments for `library.remove`: Give either `items` or all=true. See `engine.describe` for the schema.");
     assert_eq!(refuse(&mut s, "library.remove", json!({"items": ["C"], "all": true})).code, "bad_args");
     assert_eq!(refuse(&mut s, "library.remove", json!({"items": ["ghost"]})).code, "no_such_item");
     let out = run(&mut s, "library.remove", json!({"all": true}));

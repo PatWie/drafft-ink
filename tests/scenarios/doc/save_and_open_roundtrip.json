@@ -1,0 +1,29 @@
+{
+  "about": "Save a drawing through the Files port and open it again with doc.open: saving marks the document clean and is not an undo step, a new target is remembered, the file comes back with its names, and the refusals say what to do (no target, would overwrite, missing file).",
+  "steps": [
+    { "execute": "doc.save", "refused": "no_save_target", "text": "This document has no save location yet. Pass `to` (a path, a stored name or a download name)." },
+    { "execute": "element.create", "args": { "kind": "rectangle", "bounds": { "x": 0, "y": 0, "w": 100, "h": 60 }, "name": "box" } },
+    { "execute": "element.create", "args": { "kind": "ellipse", "bounds": { "x": 200, "y": 0, "w": 100, "h": 60 } } },
+    { "assert": "engine.state", "expect": [ { "path": "$.dirty", "eq": true } ] },
+    { "assert": "doc.inspect", "expect": [ { "path": "$.save_target", "eq": null } ] },
+
+    { "execute": "doc.save", "args": { "to": { "path": "work/a.drafftink" } }, "expect": [ { "path": "$.saved_to.path", "eq": "work/a.drafftink" }, { "path": "$.format", "eq": "drafftink" }, { "path": "$.bytes", "gt": 100 } ] },
+    { "assert": "engine.state", "expect": [ { "path": "$.dirty", "eq": false } ] },
+    { "assert": "doc.inspect", "expect": [ { "path": "$.save_target.path", "eq": "work/a.drafftink", "note": "The target is remembered." } ] },
+    { "assert": "history.state", "expect": [ { "path": "$.undo_depth", "eq": 2, "note": "Saving added no undo step." } ] },
+    { "undo": 1, "expect": [ { "path": "$.undone", "eq": ["Create element"], "note": "Undo takes back the ellipse, not the save." } ] },
+    { "assert": "engine.state", "expect": [ { "path": "$.dirty", "eq": true } ] },
+    { "execute": "doc.save", "expect": [ { "path": "$.saved_to.path", "eq": "work/a.drafftink", "note": "Without `to` the remembered target is used." } ] },
+
+    { "execute": "doc.save", "args": { "to": { "path": "work/other.drafftink" }, "remember": false }, "expect": [ { "path": "$.saved_to.path", "eq": "work/other.drafftink" } ] },
+    { "assert": "doc.inspect", "expect": [ { "path": "$.save_target.path", "eq": "work/a.drafftink", "note": "remember=false leaves the target alone." } ] },
+    { "execute": "doc.save", "args": { "to": { "path": "work/other.drafftink" } }, "refused": "would_overwrite", "text": "`work/other.drafftink` already exists and is not this document's file. Pass overwrite=true to replace it." },
+    { "execute": "doc.save", "args": { "to": { "path": "work/other.drafftink" }, "overwrite": true } },
+    { "execute": "doc.save", "args": { "to": { "path": "work/b.excalidraw" }, "format": "excalidraw" }, "expect": [ { "path": "$.format", "eq": "excalidraw" } ] },
+
+    { "execute": "doc.open", "args": { "source": { "path": "work/a.drafftink" }, "mode": "new_tab" }, "expect": [ { "path": "$.elements", "eq": 1 }, { "path": "$.format", "eq": "drafftink" }, { "path": "$.mode", "eq": "new_tab" }, { "path": "$.tab", "eq": "t2" } ] },
+    { "assert": "element.query", "args": { "filter": { "ids": ["@box"] }, "fields": ["kind", "bounds"] }, "expect": [ { "path": "$.items[0].kind", "eq": "rectangle" }, { "path": "$.items[0].bounds.w", "eq": 100 } ], "note": "The name and the geometry survived the round trip." },
+    { "execute": "doc.open", "args": { "source": { "path": "work/b.excalidraw" }, "mode": "new_tab" }, "expect": [ { "path": "$.format", "eq": "excalidraw" }, { "path": "$.elements", "eq": 1, "note": "The ellipse was undone before the save." } ] },
+    { "execute": "doc.open", "args": { "source": { "path": "work/missing.drafftink" } }, "refused": "io_failed", "text": ["Could not read", "Check the location and permissions"] }
+  ]
+}

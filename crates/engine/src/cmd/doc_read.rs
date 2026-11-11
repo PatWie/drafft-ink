@@ -196,7 +196,7 @@ fn inspect(s: &mut Session, a: InspectArgs) -> Result<Value, Refusal> {
             "tab": tab.id.to_string(),
             "revision": tab.doc.revision(),
             "dirty": tab.dirty(),
-            "save_target": Value::Null,
+            "save_target": super::doc::save_target(s),
             "background": store.meta().background,
             "elements": count,
             "labels": labels,

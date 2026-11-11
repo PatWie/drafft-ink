@@ -159,6 +159,15 @@ fn inspect_summarises_the_document() {
 }
 
 #[test]
+fn inspect_reports_the_save_target() {
+    let (mut s, _f) = testing::session();
+    flow(&mut s);
+    assert_eq!(run(&mut s, "doc.inspect", json!({}))["save_target"], Value::Null);
+    run(&mut s, "doc.save", json!({"to": {"path": "work/plan.drafftink"}}));
+    assert_eq!(run(&mut s, "doc.inspect", json!({}))["save_target"], json!({"path": "work/plan.drafftink"}));
+}
+
+#[test]
 fn inspect_counts_a_shape_with_a_label_once_like_element_query() {
     let (mut s, _f) = testing::session();
     let ids: Vec<ElementId> = (0..3).map(|i| testing::add_rect(&mut s, f64::from(i) * 100.0, 0.0, 50.0, 50.0).unwrap()).collect();

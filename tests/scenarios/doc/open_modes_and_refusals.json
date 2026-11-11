@@ -1,0 +1,26 @@
+{
+  "about": "doc.open puts a document where the mode says (replace, new tab, merge) and refuses in words what it cannot open: unsaved work, a library, Mermaid text, the wrong format. Replacing clears the history; a merge is one undo step.",
+  "steps": [
+    { "harness": "stage_fixture", "args": { "path": "excalidraw/basic_shapes.excalidraw" } },
+    { "harness": "stage_fixture", "args": { "path": "excalidraw/fixture_library.excalidrawlib" } },
+    { "execute": "element.create", "args": { "kind": "rectangle", "bounds": { "x": 0, "y": 0, "w": 100, "h": 60 } } },
+
+    { "execute": "doc.open", "args": { "source": { "path": "fixtures/excalidraw/basic_shapes.excalidraw" } }, "refused": "unsaved_changes", "text": "This document has unsaved changes. Save it with `doc.save`, or pass on_unsaved=\"discard\" to drop them, or on_unsaved=\"save\" to save and continue." },
+    { "assert": "doc.inspect", "expect": [ { "path": "$.elements", "eq": 1, "note": "The refusal changed nothing." } ] },
+    { "execute": "doc.open", "args": { "source": { "path": "fixtures/excalidraw/basic_shapes.excalidraw" }, "on_unsaved": "discard" }, "expect": [ { "path": "$.elements", "eq": 17 }, { "path": "$.format", "eq": "excalidraw" }, { "path": "$.mode", "eq": "replace" }, { "path": "$.warnings", "len": 2, "note": "Two things of the file this app does not read are reported." } ] },
+    { "assert": "history.state", "expect": [ { "path": "$.can_undo", "eq": false, "note": "Replacing the document clears the history." } ] },
+    { "undo": 1, "refused": "nothing_to_undo" },
+    { "assert": "engine.state", "expect": [ { "path": "$.dirty", "eq": false } ] },
+
+    { "execute": "doc.open", "args": { "source": { "path": "fixtures/excalidraw/basic_shapes.excalidraw" }, "mode": "merge", "at": [2000, 0] }, "expect": [ { "path": "$.mode", "eq": "merge" }, { "path": "$.elements", "eq": 17 }, { "path": "$.selected", "eq": 17 }, { "path": "$.undo_label", "eq": "Open document" } ] },
+    { "assert": "doc.inspect", "expect": [ { "path": "$.elements", "eq": 34 } ] },
+    { "undo": 1 },
+    { "assert": "doc.inspect", "expect": [ { "path": "$.elements", "eq": 17, "note": "A merge is one undo step." } ] },
+
+    { "execute": "doc.open", "args": { "source": { "path": "fixtures/excalidraw/fixture_library.excalidrawlib" } }, "refused": "is_library", "text": "`fixture_library.excalidrawlib` is an Excalidraw library, not a document. Add it to the library with `library.import`." },
+    { "execute": "doc.open", "args": { "source": { "base64": "Zmxvd2NoYXJ0IFREOyBBLS0+Qg==", "name": "plan.mmd" } }, "refused": "parse_failed", "text": ["Mermaid diagram text, not a document", "diagram.import_mermaid"] },
+    { "execute": "doc.open", "args": { "source": { "base64": "bm90IGEgZG9jdW1lbnQ=" } }, "refused": "parse_failed", "text": ["The file is not a drafft.ink or Excalidraw document", "Open a .json, .drafftink or .excalidraw file"] },
+    { "execute": "doc.open", "args": { "source": { "path": "fixtures/excalidraw/basic_shapes.excalidraw" }, "format": "png" }, "refused": "parse_failed", "text": "it is excalidraw data, but format=png was asked. Use format=auto" },
+    { "assert": "doc.inspect", "expect": [ { "path": "$.elements", "eq": 17, "note": "None of the refusals changed the document." } ] }
+  ]
+}
