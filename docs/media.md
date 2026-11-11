@@ -38,7 +38,7 @@ The whole script runs as one batch, so a step can be named with `"as"` and later
 
 Pictures: `image.insert {"images": [{"path": "crates/engine/assets/intro/logo.png"}], "at": [x, y], "fit": 200}`. The path is relative to the repository root; the picture is embedded in `intro.json` as base64, so keep it small.
 
-What the script cannot say: a saved camera (the document has none; the app fits the view when it shows the intro), and anything the headless command line has no port for (clipboard, network). `diagram.create` styles use `#rrggbb`, not palette names.
+The first view: a document has no saved camera. `doc.show_intro` fits all content and then frames the element named `home` (a frame that holds the tour) when the script has one, so content outside it, such as the far-right box, is a reward for panning and does not shrink the first view. Without a `home` element the whole content is fitted. What the script cannot say: anything the headless command line has no port for (clipboard, network). `diagram.create` styles use `#rrggbb`, not palette names.
 
 ## README pictures
 
@@ -51,15 +51,15 @@ It runs the example `media` of `drafftink-app` (`crates/app/examples/media`), wh
 
 `docs/media/shots.json` lists the pictures. Each shot has a `name` (the file is `docs/img/<name>.png`), optional `steps` (commands run after the intro is shown, `{"id": "...", "args": {...}}`), and a `kind`:
 
-- `window`: the whole app. `size` in logical pixels, `scale` (physical pixels per logical pixel; the PNG is `size * scale`), `theme` (`light` or `dark`), optional `touch: true` for the phone layout. Use `selection.select` to choose what the ribbon shows and `view.zoom_to_fit` or `view.set` for the camera.
-- `export`: the document alone through the PNG export (`doc.export`), `width` in pixels, `padding`, `theme`.
+- `window`: the whole app. `size` in logical pixels, `scale` (physical pixels per logical pixel; the PNG is `size * scale`), `theme` (`light` or `dark`), optional `touch: true` for the phone layout. Use `selection.select` to choose what the ribbon shows and `view.zoom_to_fit` or `view.set` for the camera (the intro already frames `@home`).
+- `export`: the document alone through the PNG export (`doc.export`), `width` in pixels, `padding`, `theme`, and optionally `ids` (ids or `@name`s) to export only those elements, with the frames' children (the welcome picture uses `@home` and the arrow that leaves it).
 
 | File | What |
 |---|---|
-| `docs/img/screenshot-light.png`, `screenshot-dark.png` | 1600x1000, the app with the welcome document and a selection |
+| `docs/img/screenshot-light.png`, `screenshot-dark.png` | 1600x1000, the app with the welcome document and the `box` selected |
 | `docs/img/screenshot-phone.png` | 780x1688, touch layout |
 | `docs/img/canvas-only.png` | the welcome document through the export path, 1600 px wide |
 
-The shots select elements by `@name`, so keep the `name` arguments in `intro.jsonl` that `shots.json` mentions (`box`, `oval`, `title`, `gem`). A step that refuses (an unknown name) fails the run and says which shot and step. PNGs are written as 8-bit RGB with the best `png` compression, which keeps each under 300 KB for the current content.
+The shots select elements by `@name`, so keep the `name` arguments in `intro.jsonl` that `shots.json` mentions (`box`, `follower`, `home`). A step that refuses (an unknown name) fails the run and says which shot and step. PNGs are written as 8-bit RGB with the best `png` compression, which keeps each under 300 KB for the current content.
 
 To look at a picture without sending it whole to an image reader, scale it down: `ffmpeg -i docs/img/screenshot-light.png -vf scale=1100:-1 /tmp/preview.jpg`.

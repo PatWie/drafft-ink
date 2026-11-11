@@ -31,6 +31,11 @@ use crate::state::{BASE_ZOOM, Observed};
 const INTRO_JSON: &str = include_str!("../../../assets/intro/intro.json");
 /// Name of the shown intro document.
 const INTRO_NAME: &str = "Welcome";
+/// Name of the intro element that the first view frames. The intro keeps one thing far away on purpose (a reward
+/// for panning), so fitting all content would zoom out to it.
+const INTRO_HOME: &str = "home";
+/// Screen pixels kept free around [`INTRO_HOME`], which leaves room for the bars drawn over the canvas.
+const INTRO_HOME_PADDING: f64 = 56.0;
 
 /// Where an opened document goes.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
@@ -569,6 +574,17 @@ pub fn intro_document(s: &mut Session, id: &str) -> Result<Document, Refusal> {
     }
 }
 
+/// Frames the camera on the intro's `home` element, if it has one; otherwise the camera stays as `fit_view` left it.
+fn fit_intro_home(s: &mut Session) {
+    if !s.store().iter().any(|e| !e.deleted && e.name.as_deref() == Some(INTRO_HOME)) {
+        return;
+    }
+    let args = json!({ "scope": "ids", "ids": [format!("@{INTRO_HOME}")], "padding": INTRO_HOME_PADDING });
+    if let Err(r) = s.run_nested("view.zoom_to_fit", args) {
+        s.warn(format!("the camera was not framed on the intro: {}", r.message));
+    }
+}
+
 pub(super) fn show_intro(s: &mut Session, a: IntroArgs) -> Result<OpenOut, Refusal> {
     let id = s.cmd();
     if a.mode == IntroMode::NewTab && s.tabs.len() >= MAX_TABS {
@@ -587,6 +603,7 @@ pub(super) fn show_intro(s: &mut Session, a: IntroArgs) -> Result<OpenOut, Refus
             Mode::NewTab
         }
     };
+    fit_intro_home(s);
     Ok(OpenOut {
         changed: true,
         mode,

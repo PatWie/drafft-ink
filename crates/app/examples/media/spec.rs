@@ -63,6 +63,9 @@ pub enum Output {
         #[serde(default = "default_padding")]
         padding: f64,
         theme: Theme,
+        /// Export only these elements (ids or `@name`) instead of all content, and size the PNG by their width.
+        #[serde(default)]
+        ids: Option<Vec<String>>,
     },
 }
 
