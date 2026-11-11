@@ -71,7 +71,7 @@ impl FileScope {
 
     fn outside(&self, shown: &str) -> PortError {
         PortError::Failed(format!(
-            "`{shown}` is outside the folders this server may use ({}). Ask the user to start drafftink-mcp with --allow-dir <folder> for another folder",
+            "`{shown}` is outside the folders this server may use ({}). Use a path inside one of them, or ask the user to start drafftink-mcp with --allow-dir <folder> for another folder",
             self.describe()
         ))
     }
@@ -191,5 +191,36 @@ mod tests {
     fn only_paths_are_served() {
         let files = DiskFiles { scope: FileScope::Anywhere };
         assert!(files.read(&FileRef::Download { download: "x".into() }).is_err());
+    }
+    /// The refusal reaches the caller of `doc.export`: no success with a warning, and nothing on disk.
+    #[test]
+    fn doc_export_outside_the_allowed_folders_is_refused_and_writes_nothing() {
+        let dir = tempfile::tempdir().unwrap();
+        let other = tempfile::tempdir().unwrap();
+        let mut s = headless_session(FileScope::folders(&[dir.path().to_owned()]));
+        s.execute(
+            "element.create",
+            serde_json::json!({"kind": "rectangle", "bounds": {"x": 0, "y": 0, "w": 40, "h": 30}}),
+        )
+        .unwrap();
+        let target = other.path().join("out.json");
+        let args =
+            |p: &Path| serde_json::json!({"format": "json", "scope": "all", "to": {"path": p.display().to_string()}});
+        let r = s.execute("doc.export", args(&target)).unwrap_err();
+        assert_eq!(r.code, "io_failed");
+        for part in [
+            "did NOT happen",
+            "outside the folders",
+            &dir.path().canonicalize().unwrap().display().to_string(),
+            "--allow-dir",
+            "inline",
+        ] {
+            assert!(r.message.contains(part), "`{part}` missing from: {}", r.message);
+        }
+        assert!(!target.exists(), "nothing was written outside the folder");
+        // Inside the folder the same command succeeds and reports the path.
+        let inside = dir.path().join("out.json");
+        let ok = s.execute("doc.export", args(&inside)).unwrap();
+        assert!(inside.exists(), "{ok}");
     }
 }

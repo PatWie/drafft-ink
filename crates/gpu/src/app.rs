@@ -65,6 +65,7 @@ pub(crate) struct Outbox {
     pub cursor: Option<CursorIcon>,
     pub open_url: Option<(String, bool)>,
     pub lose_device: bool,
+    pub text_input: Option<egui::Rect>,
 }
 
 /// Passed to [`ShellApp::setup`].
@@ -85,6 +86,9 @@ pub struct EventCx<'a> {
     pub view: ViewInfo,
     /// The modifier keys held now. A paste event uses it to tell Ctrl+V from Ctrl+Shift+V.
     pub modifiers: egui::Modifiers,
+    /// The shell has turned the text input on for the app's own text editor, so [`Self::set_text_input`] has
+    /// nothing to do.
+    pub text_input_on: bool,
     pub(crate) out: &'a mut Outbox,
 }
 
@@ -104,6 +108,13 @@ impl EventCx<'_> {
     /// Open a URL in the system browser (a new tab when `new_tab` is set; native always uses the browser).
     pub fn open_url(&mut self, url: impl Into<String>, new_tab: bool) {
         self.out.open_url = Some((url.into(), new_tab));
+    }
+
+    /// A text editor that is not an egui widget just opened: turn the IME and the keyboard on for it now, with
+    /// `caret` (points) as its first position. Without this the shell would do it in the next frame, and keys
+    /// that arrive before that frame go to the canvas, where nothing reads them. A frame moves the caret later.
+    pub fn set_text_input(&mut self, caret: egui::Rect) {
+        self.out.text_input = Some(caret);
     }
 
     /// Test hook: destroy the GPU device so the recovery path runs on the next frame. Not for the app.

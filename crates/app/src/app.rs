@@ -924,15 +924,9 @@ impl Drop for App {
     }
 }
 
-impl ShellApp for App {
-    fn setup(&mut self, cx: &mut SetupCx<'_>) {
-        self.wake.set(cx.waker.clone());
-        // A new egui context has no fonts or theme of ours; the UI installs them on its first pass.
-        self.world_key = None;
-        self.overlay_key = None;
-    }
-
-    fn event(&mut self, cx: &mut EventCx<'_>, event: ShellEvent) -> (Repaint, Handled) {
+impl App {
+    /// What one shell event does.
+    fn handle_event(&mut self, cx: &mut EventCx<'_>, event: ShellEvent) -> (Repaint, Handled) {
         self.egui_time = cx.ctx.input(|i| i.time);
         match event {
             ShellEvent::Pointer(sample) => (self.handle_pointer(cx, sample), Handled::No),
@@ -1015,6 +1009,27 @@ impl ShellApp for App {
                 (Repaint::Idle, Handled::No)
             }
         }
+    }
+}
+
+impl ShellApp for App {
+    fn setup(&mut self, cx: &mut SetupCx<'_>) {
+        self.wake.set(cx.waker.clone());
+        // A new egui context has no fonts or theme of ours; the UI installs them on its first pass.
+        self.world_key = None;
+        self.overlay_key = None;
+    }
+
+    fn event(&mut self, cx: &mut EventCx<'_>, event: ShellEvent) -> (Repaint, Handled) {
+        let answer = self.handle_event(cx, event);
+        if self.editor.is_some()
+            && !cx.text_input_on
+            && let Some(caret) = self.text_input_rect(self.canvas_rect.size())
+        {
+            // A text just opened (or is open): the shell focuses its input now, not with the next frame.
+            cx.set_text_input(caret);
+        }
+        answer
     }
 
     fn frame(&mut self, ui: &mut egui::Ui, cx: &mut FrameCx<'_>) -> FrameOutput {

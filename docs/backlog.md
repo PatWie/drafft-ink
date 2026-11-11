@@ -1,15 +1,22 @@
 # Feature backlog (coordinator)
 
-Features decided but not yet assigned to a phase agent.
+## Open
+
+Checked against the code and tests on main at the branch `last-pass`.
 
 - **Command schemas in the wasm** (`schemars`, 2.8% brotli, 89 KB): not moved. Every schema reader is synchronous; a fetched file needs an async refactor. Cheaper first step: a cargo feature that omits the schemas from the web build (`performance.md` section 8.2).
-- **Relations::build** still serves `arrange.z_order`, `clipboard.copy`/`copy_as`, frame capture after a resize, `element.restore` and `group_name` (O(scene), no counter). Convert them if one shows up in a profile.
-- **Render order**: a new, removed or reordered element still rebuilds the whole order (a move or style edit is patched).
+- **O(scene) by design**, without a counter: `arrange.z_order` (it lists every element), `clipboard.copy`/`copy_as` (a snapshot of the document), frame capture after a resize, `element.restore` (the one direct `Relations::build` call left, `edit/src/lifecycle.rs`) and `group_name`. Convert one if it shows up in a profile.
+- **Render order**: a new, removed or reordered element, or a commit of more than an eighth of the scene, still rebuilds the whole order (a move or style edit is patched, `render.md` section 8).
 - **Autosave**: one huge element and the image-file hash check are still single steps; the native writer thread and the web storage path are covered by unit tests and a type check only, not by a run of the real app.
 - **Collab**: the web Collaborate dialog has no token field (use `collab.join_room token=`); a tab that already has content still imports a room snapshot in one piece; the first import call costs about 0.8 us per element (a frame only up to ~8,000 elements).
 - **TabDoc load at 100k** is 2.6 s release, spent in Loro (field inserts 1.7 s); debug builds set `opt-level = 3` for `loro*` (`performance.md` section 7.9). Only a different Loro load path would change it.
 - **Present**: the X11 copy under Xvfb is 70 to 85 % of the native CPU (1 to 3.5 % without present in `pan@10k`; Fifo and Immediate do not differ). Not our code. Mailbox could not be measured here (the NVIDIA driver offers Fifo and Immediate only).
 - Tab bar: dirty state compares content through undo/redo only; a remote update between an edit and its undo keeps the tab dirty on purpose.
+- **The app does not draw three overlay parts** that `render::Overlay` and `canvas-js` do: the lasso path, link icons and remote selection outlines. `crates/app/src/overlay.rs::to_render` copies none of them (`parity.md` B-002, B-055, B-199). Size S.
+- **Mermaid node shapes** hexagon, cylinder, parallelogram, trapezoid, flag, subroutine and double circle are drawn as the closest shape an arrow can bind to, with a warning; a real outline needs a bindable polygon element kind.
+- **Text editor**: arrows bound to a container that grows during an edit jump when the edit ends; no I-beam cursor over text; RTL weakly tested; no per-run bold or italic; no real OS input method tried; `Esc` commits and cancel is only `text.edit_end commit=false`.
+- **Overlay leftovers**: a `Cursor::Pointer` variant for the hand over a link icon, distance badges for alignment snaps, IME composition in `TextEdit`.
+- **Web**: no CPU fallback for browsers without WebGPU. The Collaborate dialog has no token field (see Collab above).
 
 ## Done (branch final-residuals)
 
@@ -53,7 +60,7 @@ Implemented (branches backlog-c-perf, -collab, -export, -web; hashes are from th
 
 ## Done (branch render-overlays)
 
-- Overlay: pointers with name labels, remote selection outlines, peers' laser trails, link icons (also a pick target, `Target::LinkIcon`), distance badges on equal-spacing guides, caret and selection of the on-canvas text editor (`render::TextEdit`); `paint_overlay` now takes the typesetter. Frame names keep a constant size on screen. Mapping for the app in `docs/render.md` §5.
+- Overlay (the render crate and `canvas-js`; the app glue does not copy lasso, link icons and remote selections yet, see Open): pointers with name labels, remote selection outlines, peers' laser trails, link icons (also a pick target, `Target::LinkIcon`), distance badges on equal-spacing guides, caret and selection of the on-canvas text editor (`render::TextEdit`); `paint_overlay` now takes the typesetter. Frame names keep a constant size on screen. Mapping for the app in `docs/render.md` §5.
 - canvas-js: `setRemoteUsers`, `addImage` (bytes, Blob or File; natural size from `drafftink-io`), the `linkIcon` flag on events; a drag on a tiny selected shape (under 32 px on screen) moves it (`TransformerConfig::tiny_frame_px`, also for the editor).
 - Left over: a `Cursor::Pointer` variant for the hand over a link icon (it would break exhaustive matches in the shells, so the icon uses `Cursor::Default` for now); distance badges for alignment snaps; IME composition in `TextEdit`.
 
@@ -85,10 +92,4 @@ Implemented (branches backlog-c-perf, -collab, -export, -web; hashes are from th
 - Engine status `blocked_by_schema` in `engine.state`; document-mutating commands refuse with `newer_schema` (72393d9).
 - Server refuses and rolls back updates that raise `meta.schema` beyond the served schema (69f08a1).
 - Accepted (F1): `element.relabel`/`text.set` with empty text on a bound label removes the label; only free text refuses `empty_text`.
-- Flaky under heavy load (load avg 170): collab::server leaving_flushes_the_last_edit_and_the_others_see_the_peer_go (timing); make its waits event-driven.
 - Text editor (branch `text-editor`): done and described in `docs/exceptions.md` E16. Left over: the editor draws the grown container of a label but not the arrows bound to it, so they jump when the edit ends; `Esc` commits (E16, `commands.md` §6.2) and there is no key to cancel (`text.edit_end commit=false` from the palette or an agent); no per-run bold or italic (the scene stores colour only); the colour popover does not show the colour of the selected characters; the IME rect and the soft keyboard were checked only on Chromium (the browser textarea path) and never with a real OS input method.
-- Text editor: arrows bound to a container that grows during the edit jump at edit end (re-solve live); I-beam cursor over text; RTL only weakly tested; no real OS IME tested. Esc commits (Excalidraw behaviour); cancel is text.edit_end commit=false.
-- Web PNG export: the async Renderer returns render_pending and re-runs next frame; inside a batch the step is refused with render_pending. Make batches with a pending render step complete (pending/confirm like Files writes).
-- Autosave serializes the whole document on the UI thread (`save_workspace` -> `snapshot().to_json()`): 0.8 s at 100,000 elements. It now waits for a running gesture, but the stall still happens a second after the last change. Needs a worker thread (native) or an incremental write; the web has no threads. Found by the `drag@100k` scenario (`docs/performance.md` section 7.8).
-- The `drag` scenarios show 0.7 to 1 text or formula layouts per frame while 10 texts and 10 formulas are dragged (`relayouts` in `drag@10k`). A move should replay the cached layout; find what invalidates it.
-- `present` is 70 to 85 % of the native process CPU under Xvfb (the X11 copy of every frame). Not our code; on a real display the same app is far cheaper. Measure on real hardware before spending more here.

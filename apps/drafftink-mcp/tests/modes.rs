@@ -191,3 +191,33 @@ async fn headless_png_export_is_refused_with_the_way_out_when_doc_export_exists(
     assert!(is_error(&r), "{r}");
     assert!(text_of(&r).contains("svg"), "{}", text_of(&r));
 }
+
+#[tokio::test]
+async fn headless_export_outside_the_allowed_folders_is_an_error_that_says_where_to_write() {
+    let allowed = tempfile::tempdir().unwrap();
+    let elsewhere = tempfile::tempdir().unwrap();
+    let scope = drafftink_mcp::ports::FileScope::folders(&[allowed.path().to_owned()]);
+    let mut c = Client::start(common::headless_with(move || drafftink_mcp::ports::headless_session(scope))).await;
+    let made = c
+        .tool("element", json!({ "command": "element.create", "args": { "kind": "rectangle", "bounds": { "x": 0, "y": 0, "w": 80, "h": 40 } } }))
+        .await;
+    assert!(!is_error(&made), "{}", text_of(&made));
+
+    let outside = elsewhere.path().join("plan.svg");
+    let r = c.tool("export", json!({ "format": "svg", "path": outside.display().to_string() })).await;
+    let text = text_of(&r);
+    assert!(is_error(&r), "an export that wrote nothing must not look like success: {text}");
+    assert!(text.contains("did NOT happen") && text.contains("Nothing was written"), "{text}");
+    assert!(
+        text.contains("outside the folders")
+            && text.contains(&allowed.path().canonicalize().unwrap().display().to_string()),
+        "{text}"
+    );
+    assert!(text.contains("--allow-dir") && text.contains("inline"), "{text}");
+    assert!(!outside.exists());
+
+    let inside = allowed.path().join("plan.svg");
+    let ok = c.tool("export", json!({ "format": "svg", "path": inside.display().to_string() })).await;
+    assert!(!is_error(&ok), "{}", text_of(&ok));
+    assert!(inside.exists());
+}
