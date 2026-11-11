@@ -7,6 +7,7 @@ use super::*;
 use crate::platform::{NoHost, Platform, SharedClipboard};
 
 #[test]
+#[allow(non_snake_case)]
 fn exception_N4_a_scenario_scene_replaces_the_document() {
     let fakes = drafftink_engine::ports::fake::Fakes::default();
     let platform = Platform {

@@ -335,7 +335,10 @@ const TEST_COMMANDS: &[CommandSpec] = &[
         "End text edit",
         "Commits the text edit and adds a rectangle.",
         &Typed::new(end_text),
-        DOC,
+        // The command that commits a text edit is `Allowed` during one, like the real `text.edit_end`
+        // (`registry_tests::the_command_that_commits_a_text_edit_runs_during_one`); a `Commit` gate on it would
+        // commit forever.
+        Facts { while_text_edit: TextGate::Allowed, ..DOC },
     ),
     CommandSpec::new("t.planned", "t", "Planned", "Not built yet.", &Typed::new(noop), Facts::READ_ONLY)
         .planned("test reason"),
