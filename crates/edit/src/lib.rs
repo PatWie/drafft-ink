@@ -6,6 +6,7 @@
 //! Every mutating function takes a transaction (`T: SceneTx`) so the caller decides the commit
 //! boundary (one commit per command or batch). Where each rule lives:
 //! - `binding`, `elbow`, `linear`: arrow bindings, elbow routing, line/arrow point editing.
+//! - `arrow_defaults`: the path type and heads a new arrow gets from the tool.
 //! - `arrow`: operations of the `arrow` commands that combine them (bind an end to a named target, reroute,
 //!   snapping of a dragged point).
 //! - `brush`: how the samples of a freehand stroke are captured (calligraphy brush, simulated pressure).
@@ -27,6 +28,7 @@
 
 pub mod arrange;
 pub mod arrow;
+pub mod arrow_defaults;
 pub mod binding;
 pub mod brush;
 pub mod create;

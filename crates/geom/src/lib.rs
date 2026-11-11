@@ -19,6 +19,7 @@
 //! - [`snap`], [`guides`]: grid, angle and smart-guide snapping math.
 //! - [`align`]: align and distribute as pure functions.
 //! - [`select`]: handle positions, box resize and rotate math, marquee tests.
+//! - [`lasso`]: the free-hand closed path and its selection test, the counterpart of the marquee.
 
 #![warn(missing_docs)]
 
@@ -29,6 +30,7 @@ pub mod align;
 pub mod binding;
 pub mod guides;
 pub mod index;
+pub mod lasso;
 pub mod obox;
 pub mod outline;
 pub mod select;

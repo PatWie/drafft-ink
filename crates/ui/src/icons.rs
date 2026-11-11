@@ -12,6 +12,7 @@ use egui::{Color32, Painter, Pos2, Rect, Shape, Stroke, StrokeKind, pos2, vec2};
 #[allow(missing_docs)]
 pub enum Icon {
     Select,
+    Lasso,
     Hand,
     Rectangle,
     Diamond,
@@ -134,6 +135,12 @@ pub fn paint(painter: &Painter, rect: Rect, icon: Icon, color: Color32) {
             &[(6.0, 3.5), (6.0, 18.5), (10.0, 14.8), (13.2, 21.0), (15.8, 19.7), (12.8, 13.6), (18.0, 13.6)],
             true,
         ),
+        Icon::Lasso => {
+            pen.curve((6.0, 9.5), (3.0, 4.5), (16.0, 2.5), (19.0, 8.0));
+            pen.curve((19.0, 8.0), (22.0, 13.0), (14.0, 17.0), (9.5, 15.5));
+            pen.curve((9.5, 15.5), (5.5, 14.5), (4.5, 12.0), (6.0, 9.5));
+            pen.curve((9.5, 15.5), (10.5, 18.5), (9.0, 20.5), (6.5, 20.0));
+        }
         Icon::Hand => {
             pen.poly(&[(8.0, 12.0), (8.0, 6.0)], false);
             pen.poly(&[(11.0, 11.0), (11.0, 4.5)], false);

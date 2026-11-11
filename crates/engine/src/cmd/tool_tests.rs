@@ -349,7 +349,7 @@ fn the_keys_of_the_tool_bindings_are_the_ones_of_section_6_1() {
         ("eraser", &["E", "0"]),
         ("laser", &["Z", "K"]),
     ];
-    assert_eq!(seen.len(), expect.len(), "the highlighter has no key");
+    assert_eq!(seen.len(), expect.len(), "the highlighter and the lasso have no key");
     for (tool, keys) in expect {
         assert!(seen.iter().any(|(t, k)| t == tool && k == keys), "{tool}: {keys:?}");
     }

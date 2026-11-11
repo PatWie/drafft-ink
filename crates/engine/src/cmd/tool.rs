@@ -15,7 +15,7 @@ use crate::state::Tool;
 
 /// The tools that work while the document is view-only.
 fn works_in_view_only(t: Tool) -> bool {
-    matches!(t, Tool::Select | Tool::Hand | Tool::Laser)
+    matches!(t, Tool::Select | Tool::Lasso | Tool::Hand | Tool::Laser)
 }
 
 fn check_view_only(s: &Session, id: &str, t: Tool) -> Result<(), Refusal> {
@@ -71,7 +71,7 @@ pub struct SetArgs {
 fn set(s: &mut Session, a: SetArgs) -> Result<ToolOut, Refusal> {
     let id = s.cmd();
     check_view_only(s, id, a.tool)?;
-    let keep = a.keep_selection.unwrap_or(matches!(a.tool, Tool::Select | Tool::Hand));
+    let keep = a.keep_selection.unwrap_or(matches!(a.tool, Tool::Select | Tool::Lasso | Tool::Hand));
     let tool_before = s.tool.clone();
     let observed_before = s.tab().observed.clone();
     // A running text edit was committed by the gate before this handler. Leaving the linear point editor

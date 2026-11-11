@@ -59,7 +59,6 @@ use drafftink_scene::{ElementId, SceneStore};
 
 use ctx::Ctx;
 use draw::DrawTools;
-pub use draw::NewArrowPath;
 use events::Ev;
 use select::SelectTool;
 use view::ViewSync;
@@ -320,7 +319,7 @@ impl Interaction {
     fn pointer_moved(&mut self, s: &mut Session, p: &PointerEvent, out: &mut Outcome) {
         let world = self.world.viewport.screen_to_world(p.pos);
         let (pos, mods, now) = (p.pos, p.modifiers, p.time_ms);
-        if !matches!(s.tool.effective(), Tool::Select | Tool::Hand) {
+        if !matches!(s.tool.effective(), Tool::Select | Tool::Lasso | Tool::Hand) {
             self.with_ctx(s, out, now, mods, |cx, m| m.draw.pointer_moved(cx, pos, world));
         }
     }
@@ -392,7 +391,7 @@ impl Interaction {
     /// E1: hover costs a redraw only when the outline it shows changes.
     fn hovered(&mut self, s: &Session, to: &Target, cursor: Cursor, out: &mut Outcome) {
         self.set_cursor(cursor, out);
-        let shows_outline = matches!(s.tool.effective(), Tool::Select | Tool::Text | Tool::Math);
+        let shows_outline = matches!(s.tool.effective(), Tool::Select | Tool::Lasso | Tool::Text | Tool::Math);
         let next = to.element().filter(|_| shows_outline).cloned();
         if next != self.hover {
             self.hover = next;
@@ -558,7 +557,7 @@ enum Route {
 
 fn route(tool: Tool, target: &Target) -> Route {
     match tool {
-        Tool::Select => Route::Select,
+        Tool::Select | Tool::Lasso => Route::Select,
         Tool::Hand => Route::None,
         // The text and math tools click to edit, but their handles and bodies move and resize like any element.
         Tool::Text | Tool::Math => match target {
@@ -571,7 +570,7 @@ fn route(tool: Tool, target: &Target) -> Route {
 
 fn click_route(tool: Tool) -> Route {
     match tool {
-        Tool::Select => Route::Select,
+        Tool::Select | Tool::Lasso => Route::Select,
         Tool::Hand => Route::None,
         _ => Route::Draw,
     }

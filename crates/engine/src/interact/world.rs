@@ -22,7 +22,7 @@ use crate::state::{BASE_ZOOM, Tool};
 pub(super) fn pointer_mode(tool: Tool) -> drafftink_canvas::PointerMode {
     use drafftink_canvas::PointerMode;
     match tool {
-        Tool::Select | Tool::Text | Tool::Math => PointerMode::Select,
+        Tool::Select | Tool::Lasso | Tool::Text | Tool::Math => PointerMode::Select,
         Tool::Hand => PointerMode::Hand,
         Tool::Rectangle
         | Tool::Diamond
@@ -164,7 +164,7 @@ impl Picker for Pick<'_> {
         let w = self.world;
         let touch = kind == PointerKind::Touch;
         // Handles exist for the select tool, and for text and math, whose handles resize and move the text.
-        if matches!(w.tool, Tool::Select | Tool::Text | Tool::Math) {
+        if matches!(w.tool, Tool::Select | Tool::Lasso | Tool::Text | Tool::Math) {
             let radius =
                 if touch { w.config.transformer.hit_radius_touch_px } else { w.config.transformer.hit_radius_px };
             if let Some(h) = w.frame.hit(&w.viewport, screen, radius, &w.config.transformer) {
@@ -193,9 +193,10 @@ impl Picker for Pick<'_> {
         let w = self.world;
         match w.tool {
             Tool::Hand => Cursor::Grab,
-            Tool::Select | Tool::Text | Tool::Math => match target {
+            Tool::Select | Tool::Lasso | Tool::Text | Tool::Math => match target {
                 Target::Handle(h) => w.frame.cursor_for(h),
                 Target::Element { .. } => Cursor::Move,
+                Target::Empty | Target::None if w.tool == Tool::Lasso => Cursor::Crosshair,
                 Target::Empty | Target::None => Cursor::Default,
             },
             _ => Cursor::Crosshair,

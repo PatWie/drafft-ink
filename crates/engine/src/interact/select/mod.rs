@@ -13,13 +13,16 @@
 mod click;
 mod frame;
 
-use drafftink_canvas::{Handle, Target};
+use drafftink_canvas::{Button, Handle, Target};
+use drafftink_geom::aabb;
 use drafftink_geom::kurbo::{Point, Rect};
+use drafftink_geom::lasso::Lasso;
 use drafftink_scene::{ElementId, PathType};
 
 use self::frame::{Frame, Pivot};
 use crate::cmd::element::Handle as BoxHandle;
 use crate::cmd::selection::{RegionCombine, SelectRegionArgs};
+use crate::cmd::selection_lasso::SelectLassoArgs;
 use crate::cmd::view::RectArg;
 use crate::gesture::GestureId;
 use crate::interact::ctx::Ctx;
@@ -28,6 +31,7 @@ use crate::interact::frame_out;
 use crate::interact::overlay::OverlayParts;
 use crate::ring::Origin;
 use crate::session::Ref;
+use crate::state::Tool;
 
 /// A marquee smaller than this on either side (screen pixels) selects nothing (the old minimum-size rule).
 const MIN_MARQUEE_PX: f64 = 2.0;
@@ -48,6 +52,8 @@ enum Drag {
     Idle,
     /// A marquee from this world point.
     Marquee(Point),
+    /// A lasso; its path is `OverlayParts::lasso`.
+    Lasso,
     /// A gesture frame stream.
     Gesture(Running),
     /// The drag was refused, or its gesture vanished: nothing more happens until it ends.
@@ -61,27 +67,39 @@ pub(crate) struct SelectTool {
     /// Shift was held on a press over a selected element: the toggle waits for the release, so that a drag
     /// keeps the selection.
     toggle_on_click: bool,
+    /// The lasso tool was pressed on an element that is not selected: a drag starts a lasso there, and a click
+    /// selects the element on release.
+    lasso_on_click: bool,
 }
 
 impl SelectTool {
     pub(crate) fn press(&mut self, cx: &mut Ctx<'_>, ev: &Ev<'_>) {
-        self.toggle_on_click = click::press(cx, ev);
+        self.lasso_on_click = lasso_starts_on_press(cx, ev);
+        self.toggle_on_click = !self.lasso_on_click && click::press(cx, ev);
     }
 
     pub(crate) fn click(&mut self, cx: &mut Ctx<'_>, ev: &Ev<'_>) {
+        if std::mem::take(&mut self.lasso_on_click) {
+            click::select_pressed(cx, ev);
+            return;
+        }
         let deferred = std::mem::take(&mut self.toggle_on_click);
         click::click(cx, ev, deferred);
     }
 
     pub(crate) fn double_click(&mut self, cx: &mut Ctx<'_>, ev: &Ev<'_>) {
         self.toggle_on_click = false;
+        self.lasso_on_click = false;
         click::double_click(cx, ev);
     }
 
     pub(crate) fn drag_start(&mut self, cx: &mut Ctx<'_>, ev: &Ev<'_>) {
         self.toggle_on_click = false;
+        let lasso_from_element = std::mem::take(&mut self.lasso_on_click);
         self.drag = Drag::Idle;
         match ev.target {
+            Target::Empty if cx.tool() == Tool::Lasso || cx.mods.alt => self.begin_lasso(cx, ev),
+            Target::Element { .. } if lasso_from_element => self.begin_lasso(cx, ev),
             Target::Empty => {
                 self.drag = Drag::Marquee(ev.origin.world);
                 cx.parts.marquee = Some(marquee_rect(ev.origin.world, ev.at.world));
@@ -111,6 +129,7 @@ impl SelectTool {
                 cx.parts.marquee = Some(marquee_rect(*origin, ev.at.world));
                 cx.overlay_changed();
             }
+            Drag::Lasso => extend_lasso(cx, ev.at.world),
             Drag::Gesture(run) => {
                 run.frame.follow(ev, cx.mods);
                 match cx.s.gesture_update(run.id, run.frame.args()) {
@@ -136,6 +155,12 @@ impl SelectTool {
                     select_region(cx, ev, origin);
                 }
             }
+            Drag::Lasso => {
+                if !cancelled {
+                    extend_lasso(cx, ev.at.world);
+                    select_lasso(cx);
+                }
+            }
             Drag::Gesture(mut run) => {
                 if cx.s.running_gesture() == Some(run.id) {
                     if cancelled {
@@ -158,6 +183,7 @@ impl SelectTool {
     /// Drops whatever is running without a trace (gesture cancelled, marquee dropped).
     pub(crate) fn cancel(&mut self, cx: &mut Ctx<'_>) {
         self.toggle_on_click = false;
+        self.lasso_on_click = false;
         if let Drag::Gesture(run) = std::mem::take(&mut self.drag)
             && cx.s.running_gesture() == Some(run.id)
             && let Err(refusal) = cx.s.gesture_cancel(Some(run.id))
@@ -183,6 +209,13 @@ impl SelectTool {
         self.drag = Drag::Dead;
         clear_parts(cx.parts);
         cx.overlay_changed();
+    }
+
+    /// Starts a lasso at the origin of the drag (the drag has moved to `ev.at` already).
+    fn begin_lasso(&mut self, cx: &mut Ctx<'_>, ev: &Ev<'_>) {
+        self.drag = Drag::Lasso;
+        cx.parts.lasso = vec![ev.origin.world];
+        extend_lasso(cx, ev.at.world);
     }
 
     /// Begins the gesture for `frame` (a refusal is shown once and kills the drag).
@@ -226,6 +259,52 @@ fn select_region(cx: &mut Ctx<'_>, ev: &Ev<'_>, origin: Point) {
     cx.exec_typed("selection.select_region", &args);
 }
 
+/// A lasso path point closer than this to the last one (screen pixels) is not kept.
+const LASSO_STEP_PX: f64 = 2.0;
+
+/// The path of a finished lasso is simplified to this tolerance (screen pixels) before it is tested.
+const LASSO_SIMPLIFY_PX: f64 = 4.0;
+
+/// The lasso tool does not select on a press over an element that is not selected: a drag from there is a lasso.
+fn lasso_starts_on_press(cx: &Ctx<'_>, ev: &Ev<'_>) -> bool {
+    cx.tool() == Tool::Lasso
+        && ev.meta.button == Button::Primary
+        && !ev.meta.modifiers.shift
+        && ev.target.element().is_some_and(|id| !cx.s.selection().contains(id))
+}
+
+/// Adds a point to the lasso path and shows it.
+fn extend_lasso(cx: &mut Ctx<'_>, at: Point) {
+    let zoom = cx.zoom();
+    let far_enough = cx.parts.lasso.last().is_none_or(|last| last.distance(at) * zoom >= LASSO_STEP_PX);
+    if far_enough {
+        cx.parts.lasso.push(at);
+        cx.overlay_changed();
+    }
+}
+
+/// The one `selection.select_lasso` of a finished lasso. A path with no area (a tiny scribble, a straight line)
+/// selects nothing and says nothing, as a marquee under 2 pixels does.
+fn select_lasso(cx: &mut Ctx<'_>) {
+    let path = std::mem::take(&mut cx.parts.lasso);
+    let zoom = cx.zoom();
+    let Some(bounds) = aabb::from_points(path.iter().copied()) else { return };
+    if bounds.width() * zoom < MIN_MARQUEE_PX
+        || bounds.height() * zoom < MIN_MARQUEE_PX
+        || Lasso::new(&path, 0.0).is_err()
+    {
+        return;
+    }
+    let args = SelectLassoArgs {
+        points: path.iter().map(|p| [p.x, p.y]).collect(),
+        mode: if cx.mods.shift { RegionCombine::Add } else { RegionCombine::Replace },
+        contain: None,
+        include_locked: false,
+        simplify: LASSO_SIMPLIFY_PX / zoom,
+    };
+    cx.exec_typed("selection.select_lasso", &args);
+}
+
 /// The frame for a drag that starts on a handle, and the handle to show as active.
 fn frame_for_handle(cx: &Ctx<'_>, ev: &Ev<'_>, handle: &Handle) -> (Option<Frame>, Handle) {
     let frame = match handle {
@@ -264,12 +343,16 @@ pub(super) fn is_elbow(cx: &Ctx<'_>, id: &ElementId) -> bool {
 /// The drawing preview and the laser trail belong to others.
 fn clear_parts(parts: &mut OverlayParts) {
     parts.marquee = None;
+    parts.lasso.clear();
     parts.guides.clear();
     parts.highlight.clear();
     parts.badge = None;
     parts.active_handle = None;
 }
 
+#[cfg(test)]
+#[path = "../select_lasso_tests.rs"]
+mod lasso_tests;
 #[cfg(test)]
 #[path = "../select_tests.rs"]
 mod tests;

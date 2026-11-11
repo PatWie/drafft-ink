@@ -43,6 +43,7 @@ use std::ops::{Deref, DerefMut};
 use std::rc::Rc;
 
 use drafftink_geom::kurbo::{Point, Rect, Size, Vec2};
+use drafftink_geom::lasso::Lasso;
 use drafftink_geom::{OrientedBox, aabb};
 use drafftink_scene::{ChangeSet, Element, ElementId, GroupId, SceneStore, SceneTx, StoreError, SubscriptionId};
 
@@ -455,6 +456,11 @@ impl<S: SceneStore> Canvas<S> {
     /// Elements selected by a world-space marquee, back to front, without locked ones.
     pub fn marquee(&self, rect: &Rect, mode: MarqueeMode) -> Vec<ElementId> {
         self.index.marquee(&self.store, rect, mode, false)
+    }
+
+    /// Elements selected by a world-space lasso, back to front, without locked ones.
+    pub fn lasso(&self, lasso: &Lasso, mode: MarqueeMode) -> Vec<ElementId> {
+        self.index.lasso(&self.store, lasso, mode, false)
     }
 
     /// Live elements whose bounds touch a world rectangle, back to front.
