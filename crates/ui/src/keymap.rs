@@ -330,6 +330,7 @@ fn resolve_one(
                     Value::Null => json!({}),
                     a => substitute(a, &cx.pointer),
                 };
+                let args = crate::surfaces::export::complete_args(cx.model, cmd.id, args);
                 return Some(UiAction::Command(Call::new(Origin::Shortcut, cmd.id, args)));
             }
         }

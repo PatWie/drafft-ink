@@ -5,7 +5,7 @@
 mod common;
 
 use common::Fixture;
-use drafftink_engine::spec::Scope;
+use drafftink_engine::spec::{HostEffect, Scope};
 use drafftink_engine::{Origin, Registry};
 use drafftink_ui::keymap::{
     Chord, KeyContext, Pointer, VERB_BINDINGS, help_rows, parse_chord, resolve_keys, substitute, verb_key_label,
@@ -361,13 +361,21 @@ fn every_registered_binding_dispatches_to_its_command_on_both_platforms() {
                         .as_call()
                         .unwrap_or_else(|| panic!("{} {}: resolved to {first:?}", cmd.id, chord.label(mac)));
                     let want_args = if b.args.is_null() { json!({}) } else { substitute(&b.args, &Pointer::default()) };
-                    assert_eq!(
-                        (c.id.as_str(), &c.args),
-                        (cmd.id, &want_args),
-                        "chord {} (mac={mac}, scope {:?})",
-                        chord.label(mac),
-                        b.scope
-                    );
+                    let what = format!("chord {} (mac={mac}, scope {:?})", chord.label(mac), b.scope);
+                    if cmd.host.effect == HostEffect::CompletesExport {
+                        // An export started by a key is the export of the dialog: the binding's arguments plus
+                        // the ones the dialog would send (the download name, the scope and the look).
+                        assert_eq!(c.id, cmd.id, "{what}");
+                        let given = want_args.as_object().expect("binding arguments are an object");
+                        assert!(given.iter().all(|(k, v)| c.args.get(k) == Some(v)), "{what}: {:?}", c.args);
+                        assert!(
+                            c.args.get("to").is_some_and(|to| to.get("download").is_some()),
+                            "{what}: {:?}",
+                            c.args
+                        );
+                    } else {
+                        assert_eq!((c.id.as_str(), &c.args), (cmd.id, &want_args), "{what}");
+                    }
                     checked += 1;
                 }
             }

@@ -242,3 +242,123 @@ fn an_export_whose_picture_is_not_ready_runs_again_and_closes_the_dialog_when_it
     assert!(state.export.is_none(), "the export succeeded, so the dialog closed");
     assert_eq!(state.toasts.len(), 1, "no error toast for a picture that was only late");
 }
+
+// ---- the direct "Export as PNG" entries run the dialog's command, with the dialog's arguments ----
+
+/// The `doc.export` call that the dialog makes when it is opened and "Export" is clicked at once.
+fn dialog_png_call(f: Fixture) -> Call {
+    let mut h = open(f);
+    export_call(&mut h)
+}
+
+/// The `doc.export` call of the menu row "Export as PNG".
+fn menu_png_call(mut f: Fixture) -> Call {
+    f.state.menu_open = true;
+    let mut h = dialog::harness(f);
+    h.run();
+    h.state_mut().clear();
+    click(&mut h, "Export as PNG");
+    let all = calls(&h);
+    let export: Vec<&Call> = all.iter().filter(|c| c.id == "doc.export").collect();
+    assert_eq!(export.len(), 1, "{all:?}");
+    export[0].clone()
+}
+
+#[test]
+fn the_menu_row_export_as_png_makes_the_call_of_the_dialog() {
+    for select_first in [false, true] {
+        let dialog_call = dialog_png_call(drawing(select_first));
+        let menu_call = menu_png_call(drawing(select_first));
+        assert_eq!(menu_call.origin, Origin::Menu);
+        assert_eq!((&menu_call.id, &menu_call.args), (&dialog_call.id, &dialog_call.args), "selection: {select_first}");
+        assert_eq!(menu_call.args["to"], json!({ "download": "Plan.png" }), "a direct export has a place to go");
+    }
+}
+
+#[test]
+fn the_shortcut_and_the_palette_make_the_call_of_the_dialog_too() {
+    use drafftink_ui::keymap::{KeyContext, Pointer, resolve_keys};
+    let want = dialog_png_call(drawing(false));
+    let f = drawing(false);
+
+    let ctrl_e = egui::Event::Key {
+        key: egui::Key::E,
+        physical_key: Some(egui::Key::E),
+        pressed: true,
+        repeat: false,
+        modifiers: egui::Modifiers::CTRL | egui::Modifiers::COMMAND,
+    };
+    let ctx = KeyContext {
+        model: &f.model,
+        state: &f.state,
+        egui_wants_keyboard: false,
+        pointer: Pointer::default(),
+        host_clipboard: false,
+    };
+    let actions = resolve_keys(&[ctrl_e], &ctx);
+    let call = actions.first().and_then(drafftink_ui::UiAction::as_call).expect("Ctrl+E is a command");
+    assert_eq!(call.origin, Origin::Shortcut);
+    assert_eq!((&call.id, &call.args), (&want.id, &want.args));
+
+    let mut f = f;
+    f.state.palette = Some(drafftink_ui::state::PaletteState { query: "Export as PNG".to_owned(), selected: 0 });
+    let mut h = dialog::harness(f);
+    h.run();
+    h.state_mut().clear();
+    h.key_press(egui::Key::Enter);
+    h.run();
+    let all = calls(&h);
+    let call = all.iter().find(|c| c.id == "doc.export").expect("the palette ran the export");
+    assert_eq!(call.origin, Origin::Palette);
+    assert_eq!((&call.id, &call.args), (&want.id, &want.args));
+}
+
+#[test]
+fn the_menu_row_writes_the_png_download_through_the_real_command() {
+    let mut f = drawing(false);
+    f.state.menu_open = true;
+    let mut h = dialog::harness(f);
+    h.run();
+    h.state_mut().clear();
+    click(&mut h, "Export as PNG");
+    let report = h.state_mut().dispatch();
+    assert!(report.refusals().next().is_none(), "{:?}", report.ran);
+    let written = h.state().fakes.files.bytes(&FileRef::Download { download: "Plan.png".to_owned() });
+    let written = written.expect("the PNG went to the files port as a download");
+    assert!(written.starts_with(b"\x89PNG"), "{:?}", &written[..written.len().min(12)]);
+    assert_eq!(h.state().fakes.renderer.calls(), 1);
+}
+
+#[test]
+fn a_direct_export_that_is_refused_shows_the_engines_words_also_from_the_keyboard() {
+    use drafftink_ui::{CommandSink, dispatch};
+    // Nothing to export: from a menu row, from a shortcut and from the palette the person reads why.
+    for origin in [Origin::Menu, Origin::Shortcut, Origin::Palette] {
+        let mut f = dialog::fixture();
+        dialog::run(&mut f, "doc.rename", json!({ "name": "Empty" }));
+        let mut state = drafftink_ui::UiState::new();
+        let want = f.session.run(origin, "doc.export", json!({ "format": "png", "to": { "download": "Empty.png" } }));
+        let want = want.expect_err("an empty document is refused").message;
+        let call = Call::new(origin, "doc.export", json!({ "format": "png", "to": { "download": "Empty.png" } }));
+        dispatch(&mut f.session, &mut state, vec![drafftink_ui::UiAction::Command(call)], 0.0);
+        let shown: Vec<_> = state.toasts.iter().map(|t| t.text.clone()).collect();
+        assert_eq!(shown, vec![want], "{origin:?}");
+    }
+}
+
+#[test]
+fn a_direct_export_whose_picture_is_late_runs_again_with_the_same_arguments() {
+    let mut f = drawing(false);
+    f.state.menu_open = true;
+    let mut h = dialog::harness(f);
+    h.run();
+    h.state_mut().clear();
+    click(&mut h, "Export as PNG");
+    let first = calls(&h).into_iter().find(|c| c.id == "doc.export").expect("the export call");
+
+    let mut state = drafftink_ui::UiState::new();
+    let mut sink = SlowPicture { not_ready: 1, runs: 0 };
+    drafftink_ui::dispatch(&mut sink, &mut state, vec![drafftink_ui::UiAction::Command(first.clone())], 0.0);
+    assert!(state.waiting_for_picture());
+    assert_eq!(state.retries(), vec![first], "the retry is the very call, `to` included");
+}

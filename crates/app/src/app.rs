@@ -1155,3 +1155,7 @@ mod install_scene_tests;
 #[cfg(test)]
 #[path = "app/collab_poll_tests.rs"]
 mod collab_poll_tests;
+
+#[cfg(test)]
+#[path = "app/export_tests.rs"]
+mod export_tests;
