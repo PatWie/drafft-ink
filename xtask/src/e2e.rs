@@ -233,11 +233,11 @@ fn run_native(root: &Path, display: &str) -> Result<Counts, String> {
     }
 }
 
-/// Sums the `test result:` lines of `cargo test`, and counts the `E2E-SKIP` lines as skipped (such a test passes).
+/// Sums the `test result:` lines of `cargo test`, and counts the `SKIPPED:` lines as skipped (such a test passes).
 fn cargo_test_counts(output: &str) -> Counts {
     let mut c = Counts::default();
     for line in output.lines() {
-        if line.starts_with("E2E-SKIP") {
+        if line.starts_with("SKIPPED:") {
             c.skipped += 1;
         }
         let Some(rest) = line.strip_prefix("test result: ") else { continue };
@@ -354,7 +354,7 @@ mod tests {
 
     #[test]
     fn cargo_test_output_gives_counts_and_skips() {
-        let out = "running 6 tests\nE2E-SKIP a: no display\ntest result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.0s\n\
+        let out = "running 6 tests\nSKIPPED: a: no display\ntest result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.0s\n\
                    test result: FAILED. 3 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.0s\n";
         assert_eq!(cargo_test_counts(out), Counts { passed: 7, failed: 1, skipped: 1 });
     }

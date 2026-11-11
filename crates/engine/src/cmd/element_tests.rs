@@ -509,6 +509,22 @@ fn nudge_moves_by_the_setting_one_unit_when_fine_or_a_given_step() {
     assert_eq!(s.tab().doc.undo_depth(), 3, "repeats on the same element merge; the nudge of e2 and the later one are own steps");
 }
 
+/// docs/exceptions.md E15: holding an arrow key repeats `element.nudge`; the burst is one undo step and
+/// undoing it restores the start.
+#[test]
+fn exception_E15_nudge_burst_is_one_undo_step() {
+    let mut s = shapes();
+    let start = pos(&s, "e1");
+    let depth = s.tab().doc.undo_depth();
+    for _ in 0..30 {
+        run(&mut s, "element.nudge", json!({"dir": "right"}));
+    }
+    assert_eq!(pos(&s, "e1"), (start.0 + 600.0, start.1));
+    assert_eq!(s.tab().doc.undo_depth(), depth + 1, "30 repeats are one step");
+    s.undo_steps(1).unwrap();
+    assert_eq!(pos(&s, "e1"), start);
+}
+
 #[test]
 fn nudge_refuses_a_bad_step_and_locked_elements() {
     let mut s = shapes();

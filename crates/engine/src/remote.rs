@@ -34,6 +34,8 @@ impl Session {
     /// A bad update is a refusal and leaves the document as it was. Works on any tab, not only the active one,
     /// and while a gesture or a text edit runs: the update goes into the document, and the running gesture ends
     /// against the new state.
+    ///
+    /// Non-command write N2 (docs/exceptions.md).
     pub fn apply_remote(&mut self, tab: TabId, bytes: &[u8]) -> Result<ChangeSet, Refusal> {
         let t0 = now_ns();
         let res = self.apply_remote_inner(tab, bytes);

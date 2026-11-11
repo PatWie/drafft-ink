@@ -324,7 +324,7 @@ pub fn gpu_status() -> GpuStatus {
 
 /// True when `DRAFFTINK_REQUIRE_GPU=1`: a missing adapter fails tests instead of skipping them.
 pub fn gpu_required() -> bool {
-    std::env::var("DRAFFTINK_REQUIRE_GPU").is_ok_and(|v| !v.is_empty() && v != "0")
+    drafftink_profile::gpu_required()
 }
 
 #[cfg(test)]

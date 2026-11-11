@@ -536,6 +536,31 @@ fn scrubbing_opacity_is_one_gesture_and_one_undo_step() {
     assert_eq!(el(&f.s, &f.rect).style.opacity, 1.0);
 }
 
+/// docs/exceptions.md E13: a scrub (`gesture.begin`, `update`, `end`) ends in the same document, the same
+/// defaults and the same persisted setting as one plain `style.set` with the final props.
+#[test]
+fn exception_E13_scrub_equals_plain_command() {
+    for (first, last) in [
+        (json!({"opacity": 0.9}), json!({"opacity": 0.2})),
+        (json!({"stroke_width": 3}), json!({"stroke_width": 8, "stroke_color": "teal-500"})),
+    ] {
+        let mut scrubbed = fixture();
+        let begin = run(&mut scrubbed.s, "gesture.begin", json!({"command": "style.set", "args": {"props": first}}));
+        let g = begin["gesture"].as_str().unwrap().to_owned();
+        run(&mut scrubbed.s, "gesture.update", json!({"gesture": g, "args": {"props": last}}));
+        run(&mut scrubbed.s, "gesture.end", json!({"gesture": g}));
+
+        let mut plain = fixture();
+        run(&mut plain.s, "style.set", json!({"props": last}));
+
+        assert_eq!(el(&scrubbed.s, &scrubbed.rect).style, el(&plain.s, &plain.rect).style, "{last}");
+        assert_eq!(scrubbed.s.tool.style_defaults, plain.s.tool.style_defaults, "{last}");
+        assert_eq!(scrubbed.s.settings.get("style.defaults"), plain.s.settings.get("style.defaults"), "{last}");
+        assert_eq!(scrubbed.s.fingerprint(), plain.s.fingerprint(), "{last}");
+        assert_eq!(scrubbed.s.tab().doc.undo_depth(), plain.s.tab().doc.undo_depth(), "one undo step either way");
+    }
+}
+
 #[test]
 fn cancelling_the_gesture_restores_the_element_the_defaults_and_the_setting() {
     let mut f = fixture();

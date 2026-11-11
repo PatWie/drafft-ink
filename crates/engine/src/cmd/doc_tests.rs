@@ -866,7 +866,7 @@ fn a_write_that_finishes_later_keeps_the_document_dirty_until_it_is_confirmed() 
 }
 
 #[test]
-fn a_confirmed_pending_write_marks_the_document_saved() {
+fn exception_N1_a_finished_write_marks_the_tab_saved() {
     let (mut s, _f) = drawn(1);
     s.ports.files = Some(Box::new(LaterFiles(0)));
     run(&mut s, "doc.save", json!({"to": {"path": "/work/plan.json"}}));

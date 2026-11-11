@@ -243,7 +243,7 @@ loopback client of `drafftink-bridge`. `tests/stories.rs` runs the stories that 
 `arrow-attached` is `fn story_arrow_attached`), with `view.screenshot` pixel checks; `tests/bridge.rs` has what only the native shell
 has: the token door, the registry the app lists, pointer-only commands refused with `not_for_agents`, and screenshots that follow commands.
 
-Without `DRAFFTINK_E2E=1` (which `cargo xtask e2e` sets) the tests print `E2E-SKIP` and pass, so `cargo xtask test` never opens a
+Without `DRAFFTINK_E2E=1` (which `cargo xtask e2e` sets) the tests print a `SKIPPED:` line and pass, so `cargo xtask test` never opens a
 window. Without a display or an adapter they skip with the reason; `DRAFFTINK_REQUIRE_GPU=1` makes that a failure. The same variable
 applies to the browser suite (no display, no Chromium, no WebGPU adapter).
 

@@ -47,6 +47,8 @@ mod invariants_tests;
 #[cfg(test)]
 mod keymap_tests;
 #[cfg(test)]
+mod exception_tests;
+#[cfg(test)]
 mod registry_tests;
 #[cfg(test)]
 mod snap_tests;

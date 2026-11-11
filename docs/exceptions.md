@@ -20,14 +20,20 @@ Every exception falls into one of five classes. The class says what may happen b
 
 Rules that hold for all classes:
 
-1. **The final state is a command.** For every row below except E1, E12 and E15 (which change nothing or need no special path), the result of the gesture is also reachable with one plain `execute`, with the same arguments, and gives the same document. A test per row proves it: run the gesture through the recognizer in the testkit, run the final command on a fresh copy of the document, and compare (ids and timestamps aside). The table says which command.
+1. **The final state is a command.** For every row below except E1, E12, E14 and E15 (which change nothing or need no special path), the result of the gesture is also reachable with one plain `execute`, with the same arguments, and gives the same document. A test per row proves it: run the gesture through the recognizer in the testkit, run the final command on a fresh copy of the document, and compare (ids and timestamps aside). The table says which command.
 2. **No private state changes.** A recognizer may hold preview state (points collected so far, the marquee rectangle, a hover) but never edits the document, the selection, the tool or the settings by any route other than a command or the gesture protocol.
 3. **Cancel is clean.** Esc, window blur, pointer cancel, a second finger landing during a one-finger gesture, and a release over a panel all end the gesture without a trace. Class A calls `gesture.cancel` (state restored to before `begin`). Class B drops the preview. Class C keeps the camera where it is (cancelling a camera move is not a thing). Class D follows `text.edit_end` with commit=false.
 4. **Collaborators see the end result.** Live frames are not broadcast (class A) and previews do not exist for others (B). Only the final command is a CRDT edit. Presence (E) is sent on its own volatile channel.
 5. **The gesture is not in the ring frame by frame.** The ring gets one entry at the end with the frame count (`docs/commands.md` §1.9).
 6. **Gates apply at the start.** A gesture begins only if the command it will end with would be allowed now (view-only, locked targets, text editing). Locked elements are not hit in the first place.
 7. **One at a time.** There is at most one running gesture per session (class A). Class B/C/D/E recognizers hold their own state and may overlap with a gesture only as listed per row.
-8. **Enforcement.** `cargo xtask exceptions --check` fails when (a) a command with `undo = Gesture` has no row here, (b) a row names a final command that does not exist, (c) the UI crate calls a document-changing session API outside `execute`, `execute_batch` and the `gesture_*` methods (the layering lint in `xtask layers`, which already forbids the UI from holding a `&mut Document`), (d) a row has no test whose name starts with `exception_<row id>_` (for example `exception_E2_move_equals_plain_command`).
+8. **Enforcement.** `cargo xtask exceptions --check` (part of `cargo xtask ci`) fails when
+   - (a) a row has no test whose name starts with `exception_<row id>_` (for example `exception_E2_move_equals_plain_command`), or a test with that prefix is named in no row, or a named test does not exist in the source;
+   - (b) a command with `undo = Gesture` is named in no class A row, or a row names a final command that is not registered (the registry test `exceptions_doc_matches_the_registry` in `crates/engine`, which the gate runs);
+   - (c) a source file carries a `Non-command write N<k>` marker with no row in section 5, or a row in section 5 names a function or test that does not exist;
+   - (d) the UI crate calls a document-changing session API outside `execute`, `execute_batch` and the `gesture_*` methods (`cargo xtask layers` and `crates/ui/tests/thin.rs`).
+
+   A row for something that is not built says so in its `Not built` line. It does not claim a test for it.
 
 ## 2. The exceptions
 
@@ -53,7 +59,7 @@ Rules that hold for all classes:
 | Between events | Frames are absolute: the engine restores the pre-gesture position of every touched element and re-applies (dx, dy) with snapping. Smart guides, grid snap and the frame-drop highlight come back in the frame output for the overlay. Remote edits to other fields of the same elements merge normally. |
 | Final state | `element.move { ids, dx, dy, duplicate, snap, frame: auto, pointer }`. |
 | Cancel | `gesture.cancel` restores the starting positions, including bound arrows. |
-| Test | `exception_E2_move_equals_plain_command`, and a 1000-frame test with 10 000 elements that checks the frame time budget. |
+| Test | `exception_E2_move_equals_plain_command`. The frame cost is held by the `drag@1k`, `drag@10k` and `drag@100k` work-counter budgets in `perf/budgets.json` (`cargo xtask perf`), not by a frame-time test. |
 
 ### E3 Resize
 
@@ -173,30 +179,31 @@ Rules that hold for all classes:
 | Final state | None for the document. The scriptable form is `collab.laser { points }`. |
 | Test | `exception_E12_laser_leaves_document_unchanged`. |
 
-### E13 Scrubbing sliders and colour pickers
+### E13 Scrubbing the opacity slider
 
 | | |
 |---|---|
-| Input | Dragging the opacity slider or a stroke-width slider, dragging inside a colour picker's saturation or hue area, dragging font size. A click on a swatch is not a gesture. |
+| Input | Dragging the opacity slider in the properties panel (`crates/ui/src/surfaces/props.rs`). A click on a swatch, a stroke-width button or a font-size button is not a gesture. |
 | Class | A |
-| Protocol | `gesture.begin` `style.set` on the first change, `gesture.update` with the full props for each change, `gesture.end` at pointer release (not when the popover closes). |
-| Reason | The user sees the result live on the canvas, and a drag must be one undo step. The old opacity slider pushed an undo step on every tick (A:3639) and the other style props pushed none. |
+| Protocol | `gesture.begin` `style.set` on the first change, `gesture.update` with the full props for each change, `gesture.end` at pointer release. |
+| Reason | The user sees the result live on the canvas, and a drag must be one undo step. The old opacity slider pushed an undo step on every tick (A:3639). |
 | Between events | Live frames skip the history, the broadcast and the defaults update. The end run also updates the defaults and broadcasts. |
-| Final state | `style.set { props, ids, scope }`. A click on a swatch is a plain `style.set`; the colour picker applies a value on release. |
-| Cancel | `gesture.cancel` (Esc during the drag restores the old colour). |
-| Test | `exception_E13_scrub_equals_plain_command`. |
+| Final state | `style.set { props, ids, scope }`. A click is a plain `style.set`. |
+| Cancel | Esc runs `tool.cancel`, which cancels the running gesture and restores the old value. |
+| Not built | Scrubbing a stroke-width or font-size slider and dragging inside a colour picker's saturation or hue area. Those controls send one plain `style.set` per choice. `ScrubPhase::Cancel` exists in the UI action type and no widget sends it. |
+| Test | `exception_E13_scrub_equals_plain_command` (two scrubs, one of them with a colour and a width, each compared with one plain `style.set`). |
 
-### E14 Pointer-driven previews of a pending drag source
+### E14 Releasing a dragged source (library item, dropped file)
 
 | | |
 |---|---|
-| Input | Dragging a library item from the library panel over the canvas, dragging an image file over the window before the drop, dragging a tab to reorder it. |
-| Class | B |
-| What happens | The shell draws a ghost of the item at the pointer. Nothing in the session changes until the drop. |
-| Reason | The thing being dragged is not yet part of the document. |
-| Final state | `library.insert { item, at }`, `doc.drop { items, at }`, `tab.move { tab, to_index }`. |
-| Cancel | Esc or leaving the window drops the ghost. |
-| Test | `exception_E14_drop_equals_plain_command` for each of the three. |
+| Input | Dragging a library item from the library panel onto the canvas, or dropping a file on the window. |
+| Class | not an exception |
+| What happens | Nothing in the session changes while the pointer moves. The release is one plain `execute` with the release point as `at`. A release over the panel is a cancelled drag and runs nothing. |
+| Reason it is listed | To state that a drag source needs no recognizer, no gesture and no preview state in the session. |
+| Final state | `library.insert { item, at }` for a library item, `doc.drop { items, at }` for files. |
+| Not built | A ghost of the item under the pointer, and dragging a tab to reorder it. `tab.move { tab, to_index }` is a plain command with no drag behind it. If a ghost or a tab drag is added, it is class B and gets a row of its own. |
+| Test | `exception_E14_a_library_drop_is_one_plain_command` (no gesture, one undo step, one ring entry). |
 
 ### E15 Hold-and-repeat keys
 
@@ -218,7 +225,7 @@ Rules that hold for all classes:
 | Reason | A caret move or a keystroke is not a document change until the edit ends; IME composition cannot be expressed as commands (it needs preedit state, cursor ranges and cancel). The old app had no IME at all, and swallowed most `Ctrl+letter` chords, including undo. |
 | Final state | `text.edit_end { commit: true, text, runs, style?, inline_math? }` (one undo step including the element's creation). `Esc` and `Mod+Enter` end it from the keyboard. A click on the canvas outside the text runs the clicked command with the `Commit` gate (`while_text_edit = commit`), which commits first. Cancel is `text.edit_end { commit: false }`. |
 | Not covered | Choosing a colour or style while the text edit is open does not call `style.set` (it refuses `text_editing`). The UI sends it to the editor, which applies a colour to the selected characters (`runs`) when some are selected and everything else to the element (`style`), and `text.edit_end` receives both. A text element selected but not being edited uses `style.set` and `text.style_range` as usual. |
-| Test | `exception_E16_edit_equals_plain_command` (typing a string then `text.edit_end` equals one `element.create` kind=text with that `text`), `edit/tests/text_edit_model` (composition: preedit, commit, cancel), `a_staged_result_is_what_a_gate_commit_ends_the_edit_with`, `app/editor/tests` (the editor draws the box the commit measures) and `app/editor/pixels` (equal pixels), and `commands_that_change_text_refuse_during_an_edit_and_others_commit_it` (commands with `while_text_edit = no` refuse). |
+| Test | `exception_E16_edit_equals_plain_command` (typing a string then `text.edit_end` equals one `element.create` kind=text with that `text`), `edit/tests/text_edit_model` (composition: preedit, commit, cancel), the staged-edit test of N3 in section 5, `app/editor/tests` (the editor draws the box the commit measures) and `app/editor/pixels` (equal pixels), and `commands_that_change_text_refuse_during_an_edit_and_others_commit_it` (commands with `while_text_edit = no` refuse). |
 
 ## 3. Things that look like exceptions but are commands
 
@@ -236,3 +243,14 @@ Rules that hold for all classes:
 ## 4. Adding an exception
 
 Add it to this file in the same change as the code, with a class, a reason that is about cost or about the thing not existing yet, the final command, the cancel behaviour and a test id. A reason of "it is easier" is not accepted. The reviewer checks that the final command exists in `docs/commands.md` and that the equality test is real: it must compare the documents, not only check that the call returned.
+
+## 5. Writes that are not commands
+
+Some code changes session state without being an `execute`. None of them is a user action. Each is listed here with its reason and a test, and the source function carries a doc line `Non-command write N<k>.` so that `cargo xtask exceptions --check` can find it from both sides.
+
+| Row | Function | Reason | Test |
+|---|---|---|---|
+| N1 | `Session::on_write_done` | The shell reports that an asynchronous file write ended. The tab counts as saved as of the written revision. The user's action was `doc.save`, which already ran. | `exception_N1_a_finished_write_marks_the_tab_saved` |
+| N2 | `Session::apply_remote` | A collaborator's edit arrives from the network. It is a remote edit, not a local user action (§3). | `exception_N2_a_remote_update_changes_the_document_without_a_command` |
+| N3 | `Session::stage_text_edit` | The text editor (E16) hands its latest result to the session so that a gate commit ends the edit with what was typed. No undo step. | `exception_N3_a_staged_text_edit_is_what_the_commit_ends_with` |
+| N4 | `install_scene` | A scenario driver (`--perf-scenario`, the `scenarios` feature of the app) replaces the active tab's document with a generated scene, then sets the camera and the selection through commands. It exists to measure large documents, leaves no history, and is not reachable by a user. | `exception_N4_a_scenario_scene_replaces_the_document` |

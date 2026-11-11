@@ -39,7 +39,7 @@ export default async function globalSetup(): Promise<() => Promise<void>> {
     await server.stop();
     throw new Error(`${probe.reason} (DRAFFTINK_REQUIRE_GPU is set)`);
   }
-  if ("reason" in probe) console.log(`E2E-SKIP browser suite: ${probe.reason}`);
+  if ("reason" in probe) console.log(`SKIPPED: browser suite: ${probe.reason}`);
   else console.log(`WebGPU adapter (${ADAPTER} flags): ${probe.adapter}`);
   mkdirSync(path.dirname(SERVER_INFO), { recursive: true });
   const skip = "reason" in probe ? probe.reason : null;

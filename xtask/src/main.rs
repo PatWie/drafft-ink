@@ -8,11 +8,13 @@
 #![allow(clippy::disallowed_methods)]
 
 mod e2e;
+mod exceptions;
 mod gates;
 mod harness;
 mod layers;
 mod perf;
 mod size;
+mod skips;
 mod standards;
 mod tools;
 mod wasm;
@@ -31,9 +33,14 @@ gates:
   layers [--list] enforce the crate layering (docs/architecture.md); --list prints the assignments
   wasm            cargo check and clippy -D warnings every crate at L0-L5, plus the wasm apps, for wasm32-unknown-unknown
   standards       AGENTS.md stays short and cites only files that exist; toolchain pins agree
+  exceptions [--check]
+                  docs/exceptions.md against the source: every row has a test that exists, every gesture command has a row,
+                  every non-command write is listed (runs the registry half in crates/engine)
   deny            cargo deny: licences (AGPL-3.0-only compatible), advisories, bans, sources
-  test [ARGS]     cargo nextest run (cargo test if nextest cannot be installed), plus doc tests
-  fixtures        the legacy fixtures against the facts the old code wrote (crates/io/tests/facts.rs)
+  test [ARGS]     cargo nextest run (cargo test if nextest cannot be installed), plus doc tests; prints how many tests
+                  skipped themselves (`SKIPPED:` lines); DRAFFTINK_REQUIRE_GPU=1 makes a missing GPU a failure
+  fixtures        the legacy fixtures against the facts the old code wrote (crates/io/tests/facts.rs); the old app is
+                  DRAFFTINK_OLD_REPO or found next to the main checkout; DRAFFTINK_REQUIRE_OLD=1 fails when it is missing
   harness         harness accounting: methods have reasons and callers, every family has scenarios (docs/testing.md)
   perf [--bench|--idle|--app [native|web|all]]
                   work-counter tests at 1k/10k/100k elements checked against perf/budgets.json;

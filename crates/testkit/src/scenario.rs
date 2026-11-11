@@ -846,7 +846,7 @@ pub fn run_file(path: &Path, opts: Options) -> Result<Outcome, String> {
 pub fn run_file_or_panic(path: &str) {
     match run_file(Path::new(path), Options::from_env()) {
         Ok(Outcome::Passed { steps }) => eprintln!("scenario passed ({steps} steps): {path}"),
-        Ok(Outcome::Skipped { reason }) => eprintln!("SCENARIO SKIPPED: {reason}\n  {path}"),
+        Ok(Outcome::Skipped { reason }) => eprintln!("{}", drafftink_profile::skip_line(path, &reason)),
         Err(e) => panic!("\n{e}\n"),
     }
 }
