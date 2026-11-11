@@ -17,7 +17,7 @@ use kurbo::{Affine, Point, Rect, Vec2};
 
 use crate::aabb;
 use crate::obox::OrientedBox;
-use crate::outline::Outline;
+use crate::outline::{Fill, Outline};
 use crate::snap::snap_rotation;
 use crate::transform::normalize_angle;
 
@@ -325,15 +325,15 @@ pub enum MarqueeMode {
     Contain,
 }
 
-/// Does the marquee `rect` select `shape`? With `Touch`, a shape with `filled` is selected when
+/// Does the marquee `rect` select `shape`? With `Touch`, a shape with a [`Fill::Filled`] fill is selected when
 /// the marquee is inside it; a stroke-only shape only when the marquee crosses or contains its outline.
-pub fn marquee_selects<O: Outline + ?Sized>(shape: &O, rect: &Rect, mode: MarqueeMode, filled: bool) -> bool {
+pub fn marquee_selects<O: Outline + ?Sized>(shape: &O, rect: &Rect, mode: MarqueeMode, fill: Fill) -> bool {
     if !shape.is_valid() || !aabb::is_finite(rect) {
         return false;
     }
     match mode {
         MarqueeMode::Contain => aabb::contains_rect(rect, &shape.bounds()),
-        MarqueeMode::Touch => shape.intersects_rect(rect, filled),
+        MarqueeMode::Touch => shape.intersects_rect(rect, fill),
     }
 }
 
@@ -578,17 +578,17 @@ mod tests {
         let big = Rect::new(-10.0, -10.0, 110.0, 110.0);
         let part = Rect::new(50.0, 50.0, 200.0, 200.0);
         let inside = Rect::new(40.0, 40.0, 60.0, 60.0);
-        assert!(marquee_selects(&shape, &big, MarqueeMode::Contain, true));
-        assert!(!marquee_selects(&shape, &part, MarqueeMode::Contain, true));
-        assert!(marquee_selects(&shape, &part, MarqueeMode::Touch, true));
-        assert!(marquee_selects(&shape, &inside, MarqueeMode::Touch, true));
-        assert!(!marquee_selects(&shape, &inside, MarqueeMode::Touch, false));
+        assert!(marquee_selects(&shape, &big, MarqueeMode::Contain, Fill::Filled));
+        assert!(!marquee_selects(&shape, &part, MarqueeMode::Contain, Fill::Filled));
+        assert!(marquee_selects(&shape, &part, MarqueeMode::Touch, Fill::Filled));
+        assert!(marquee_selects(&shape, &inside, MarqueeMode::Touch, Fill::Filled));
+        assert!(!marquee_selects(&shape, &inside, MarqueeMode::Touch, Fill::Stroke));
         let line = Polyline::new(vec![Point::new(0.0, 0.0), Point::new(100.0, 100.0)], false);
         assert!(
-            !marquee_selects(&line, &Rect::new(60.0, 0.0, 100.0, 30.0), MarqueeMode::Touch, false),
+            !marquee_selects(&line, &Rect::new(60.0, 0.0, 100.0, 30.0), MarqueeMode::Touch, Fill::Stroke),
             "bounds overlap but the line does not touch"
         );
-        assert!(marquee_selects(&line, &Rect::new(40.0, 40.0, 60.0, 60.0), MarqueeMode::Touch, false));
-        assert!(!marquee_selects(&line, &Rect::new(f64::NAN, 0.0, 1.0, 1.0), MarqueeMode::Touch, false));
+        assert!(marquee_selects(&line, &Rect::new(40.0, 40.0, 60.0, 60.0), MarqueeMode::Touch, Fill::Stroke));
+        assert!(!marquee_selects(&line, &Rect::new(f64::NAN, 0.0, 1.0, 1.0), MarqueeMode::Touch, Fill::Stroke));
     }
 }

@@ -87,53 +87,64 @@ pub enum Curve {
     Smooth,
 }
 
-/// The shape of one arrow end.
+/// Whether a closed arrowhead is filled with the stroke colour or only outlined.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
-pub enum HeadKind {
+pub enum HeadFill {
+    /// Outlined only.
+    Open,
+    /// Filled with the stroke colour.
+    #[default]
+    Filled,
+}
+
+/// One arrow end. Only the closed shapes (triangle, circle, diamond) can be filled; the others have no fill to
+/// choose, so there is no way to ask for one. Heads are always drawn solid, even when the shaft is dashed.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
+pub enum Arrowhead {
     /// No head.
     #[default]
     None,
-    /// Two strokes from the tip (the old app's head). `filled` has no effect.
+    /// Two strokes from the tip (the old app's head).
     Arrow,
-    /// A triangle at the tip.
-    Triangle,
-    /// A circle ending at the tip.
-    Circle,
-    /// A short bar across the line at the tip. `filled` has no effect.
+    /// A short bar across the line at the tip.
     Bar,
+    /// A triangle at the tip.
+    Triangle(HeadFill),
+    /// A circle ending at the tip.
+    Circle(HeadFill),
     /// A diamond ending at the tip.
-    Diamond,
-}
-
-/// One arrow end: a kind, and whether closed kinds (triangle, circle, diamond) are filled with the
-/// stroke colour. Heads are always drawn solid, even when the shaft is dashed.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
-pub struct Arrowhead {
-    /// The shape of the head.
-    pub kind: HeadKind,
-    /// Whether closed kinds are filled with the stroke colour.
-    pub filled: bool,
+    Diamond(HeadFill),
 }
 
 impl Arrowhead {
     /// No head.
-    pub const NONE: Arrowhead = Arrowhead { kind: HeadKind::None, filled: false };
+    pub const NONE: Arrowhead = Arrowhead::None;
     /// The old app's arrowhead.
-    pub const ARROW: Arrowhead = Arrowhead { kind: HeadKind::Arrow, filled: false };
+    pub const ARROW: Arrowhead = Arrowhead::Arrow;
     /// A filled triangle.
-    pub const TRIANGLE: Arrowhead = Arrowhead { kind: HeadKind::Triangle, filled: true };
+    pub const TRIANGLE: Arrowhead = Arrowhead::Triangle(HeadFill::Filled);
     /// An outlined triangle.
-    pub const TRIANGLE_OUTLINE: Arrowhead = Arrowhead { kind: HeadKind::Triangle, filled: false };
+    pub const TRIANGLE_OUTLINE: Arrowhead = Arrowhead::Triangle(HeadFill::Open);
     /// A filled circle.
-    pub const CIRCLE: Arrowhead = Arrowhead { kind: HeadKind::Circle, filled: true };
+    pub const CIRCLE: Arrowhead = Arrowhead::Circle(HeadFill::Filled);
     /// An outlined circle.
-    pub const CIRCLE_OUTLINE: Arrowhead = Arrowhead { kind: HeadKind::Circle, filled: false };
+    pub const CIRCLE_OUTLINE: Arrowhead = Arrowhead::Circle(HeadFill::Open);
     /// A bar across the line.
-    pub const BAR: Arrowhead = Arrowhead { kind: HeadKind::Bar, filled: false };
+    pub const BAR: Arrowhead = Arrowhead::Bar;
     /// A filled diamond.
-    pub const DIAMOND: Arrowhead = Arrowhead { kind: HeadKind::Diamond, filled: true };
+    pub const DIAMOND: Arrowhead = Arrowhead::Diamond(HeadFill::Filled);
     /// An outlined diamond.
-    pub const DIAMOND_OUTLINE: Arrowhead = Arrowhead { kind: HeadKind::Diamond, filled: false };
+    pub const DIAMOND_OUTLINE: Arrowhead = Arrowhead::Diamond(HeadFill::Open);
+
+    /// True when the head is filled with the stroke colour.
+    pub const fn is_filled(self) -> bool {
+        matches!(
+            self,
+            Arrowhead::Triangle(HeadFill::Filled)
+                | Arrowhead::Circle(HeadFill::Filled)
+                | Arrowhead::Diamond(HeadFill::Filled)
+        )
+    }
 }
 
 /// Pressure outline settings of the old app (`render_freehand_with_pressure`).

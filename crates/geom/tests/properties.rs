@@ -6,10 +6,10 @@ use drafftink_geom::binding::{BindKind, BindTarget};
 use drafftink_geom::guides::{detect_smart_guides, detect_smart_guides_for_point, snap_ray_to_smart_guides};
 use drafftink_geom::kurbo::{Affine, BezPath, PathEl, Point, Rect, Size, Vec2};
 use drafftink_geom::select::{BoxHandle, Corner, Edge, HandleSet, ResizeOpts, resize_box};
-use drafftink_geom::snap::{snap_angle, snap_endpoint, snap_ray_to_grid_lines, snap_to_grid};
+use drafftink_geom::snap::{EndpointSnap, snap_angle, snap_endpoint, snap_ray_to_grid_lines, snap_to_grid};
 use drafftink_geom::transform::{ElementFrame, Flip, map_box};
 use drafftink_geom::{
-    DiamondShape, EllipseShape, HitOpts, OrientedBox, Outline, PathShape, Polyline, Primitive, Probe, RectShape,
+    DiamondShape, EllipseShape, Fill, HitOpts, OrientedBox, Outline, PathShape, Polyline, Primitive, Probe, RectShape,
     SpatialIndex, aabb,
 };
 use proptest::prelude::*;
@@ -395,7 +395,7 @@ proptest! {
         let probe = Probe::ray(p, Vec2::new(dir.x, dir.y));
         let bounds = s.bounds();
         let _ = (s.is_valid(), s.is_closed(), s.contains(p), s.nearest(q), s.intersect(&probe), s.intersect(&Probe::segment(p, q)), s.intersect(&Probe::line(p, dir.to_vec2())));
-        let _ = (s.outline_distance(p), s.signed_distance(q), s.hit_test(p, HitOpts::filled(tol, sw)), s.bounds_with_stroke(sw), s.intersects_rect(&rect, true), s.intersects_rect(&rect, false));
+        let _ = (s.outline_distance(p), s.signed_distance(q), s.hit_test(p, HitOpts::filled(tol, sw)), s.bounds_with_stroke(sw), s.intersects_rect(&rect, Fill::Filled), s.intersects_rect(&rect, Fill::Stroke));
         if !s.is_valid() {
             prop_assert_eq!(bounds, Rect::ZERO);
             prop_assert!(!s.contains(p) && s.nearest(q).is_none() && s.intersect(&probe).is_empty());
@@ -422,7 +422,7 @@ proptest! {
         let path = PathShape::new(path);
         for s in [Primitive::from(poly.clone()), Primitive::from(path)] {
             let _ = (s.bounds(), s.is_valid(), s.contains(p), s.nearest(q), s.intersect(&Probe::ray(p, q.to_vec2())), s.intersect(&Probe::segment(p, q)));
-            let _ = (s.hit_test(p, HitOpts::filled(tol, tol)), s.intersects_rect(&rect, true));
+            let _ = (s.hit_test(p, HitOpts::filled(tol, tol)), s.intersects_rect(&rect, Fill::Filled));
         }
         let _ = poly.length();
         let _ = poly.transformed(Affine::rotate(p.x));
@@ -434,7 +434,7 @@ proptest! {
         let mut v: Vec<PathEl> = vec![PathEl::MoveTo(p)];
         v.extend(els.iter().map(|(k, a, b, c)| match k { 0 => PathEl::MoveTo(*a), 1 => PathEl::LineTo(*a), 2 => PathEl::QuadTo(*a, *b), 3 => PathEl::CurveTo(*a, *b, *c), _ => PathEl::ClosePath }));
         let s = PathShape::new(BezPath::from_vec(v));
-        let _ = (s.bounds(), s.is_valid(), s.is_closed(), s.contains(p), s.nearest(q), s.intersect(&Probe::ray(p, q.to_vec2())), s.intersects_rect(&Rect::new(0.0, 0.0, 10.0, 10.0), true));
+        let _ = (s.bounds(), s.is_valid(), s.is_closed(), s.contains(p), s.nearest(q), s.intersect(&Probe::ray(p, q.to_vec2())), s.intersects_rect(&Rect::new(0.0, 0.0, 10.0, 10.0), Fill::Filled));
     }
 
     #[test]
@@ -459,7 +459,7 @@ proptest! {
         a in any_point(), b in any_point(), c in any_point(), x in any_f64(), y in any_f64(),
         rects in prop::collection::vec(any_rect(), 0..6), bx in any_obox(), r in any_rect(),
     ) {
-        let _ = (snap_to_grid(a, x), snap_angle(x, y), snap_ray_to_grid_lines(a, x, b, y), snap_endpoint(a, b, true, true, x), snap_endpoint(a, b, false, true, x));
+        let _ = (snap_to_grid(a, x), snap_angle(x, y), snap_ray_to_grid_lines(a, x, b, y), snap_endpoint(a, b, EndpointSnap::AngleAndGrid, x), snap_endpoint(a, b, EndpointSnap::Grid, x));
         let _ = (detect_smart_guides(r, &rects, x), detect_smart_guides_for_point(a, &rects, x), snap_ray_to_smart_guides(a, x, b, &rects, y));
         let _ = (align(&rects, AlignMode::CenterX), distribute(&rects, Axis::Y), aabb::union_all(rects.iter().copied()));
         for handle in [BoxHandle::Corner(Corner::TopLeft), BoxHandle::Edge(Edge::Right), BoxHandle::Rotate] {

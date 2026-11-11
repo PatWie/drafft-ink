@@ -17,6 +17,7 @@
 
 use std::collections::BTreeSet;
 
+use drafftink_geom::Fill;
 use drafftink_geom::kurbo::Rect;
 use drafftink_geom::lasso::{Lasso, lasso_selects};
 use drafftink_geom::select::{MarqueeMode, marquee_selects};
@@ -425,14 +426,14 @@ fn select_where<R: SceneRead>(
 
 fn in_region(e: &Element, rect: &Rect, mode: MarqueeMode) -> bool {
     match geometry::primitive(e) {
-        Some(p) => marquee_selects(&p, rect, mode, geometry::is_filled(e)),
+        Some(p) => marquee_selects(&p, rect, mode, Fill::from(geometry::is_filled(e))),
         None => false,
     }
 }
 
 fn in_lasso(e: &Element, lasso: &Lasso, mode: MarqueeMode) -> bool {
     match geometry::primitive(e) {
-        Some(p) => lasso_selects(&p, lasso, mode, geometry::is_filled(e)),
+        Some(p) => lasso_selects(&p, lasso, mode, Fill::from(geometry::is_filled(e))),
         None => false,
     }
 }

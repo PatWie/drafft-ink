@@ -91,7 +91,7 @@ proptest! {
 
         for (a, g) in [(true, true), (true, false), (false, true), (false, false)] {
             let o = old::snap_line_endpoint_isometric(start, p, a, g, true, grid);
-            let n = new_snap::snap_endpoint(start, p, a, g, grid);
+            let n = new_snap::snap_endpoint(start, p, new_snap::EndpointSnap::from_switches(a, g), grid);
             // The old code used sqrt(dx^2 + dy^2); the new code uses hypot. They differ by an ulp.
             prop_assert!((o.point - n.point).hypot() < 1e-9 && (o.distance - n.distance).abs() < 1e-9, "{:?} vs {:?}", o, n);
             prop_assert_eq!((o.angle_degrees, o.original_angle_degrees), (n.angle_degrees, n.original_angle_degrees));

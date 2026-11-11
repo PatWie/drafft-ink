@@ -47,7 +47,7 @@ mod ellipse;
 
 pub use index::{IndexError, SpatialIndex};
 pub use obox::OrientedBox;
-pub use outline::{Hit, HitOpts, Nearest, Outline, Primitive, Probe};
+pub use outline::{Fill, Hit, HitOpts, Nearest, Outline, Primitive, Probe};
 pub use shapes::{DiamondShape, EllipseShape, PathShape, Polyline, RectShape};
 pub use transform::ElementFrame;
 
