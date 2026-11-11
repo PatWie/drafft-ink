@@ -17,7 +17,7 @@
 use std::collections::BTreeMap;
 
 use drafftink_edit::style::{
-    Prop, StyleError, StyleProps, StyleReport, Theme, apply, read, theme, theme_names, themes,
+    Prop, StyleError, StyleProps, StyleReport, Theme, apply, none_refusal, read, theme, theme_names, themes,
 };
 use drafftink_scene::{Color, Element, ElementId, Head, Kind, SceneRead, SceneTx};
 use schemars::JsonSchema;
@@ -117,9 +117,18 @@ fn refusal(cmd: &str, e: StyleError) -> Refusal {
             }
             Refusal::not_applicable(cmd, &named, &kinds.join("; "))
         }
+        e @ (StyleError::Invisible { .. } | StyleError::DefaultStroke) => invisible(cmd, &e),
         StyleError::Store(e) => Refusal::internal(cmd, e.to_string()),
     }
 }
+
+/// The refusal for a write that would leave nothing to see.
+pub(crate) fn invisible(cmd: &str, e: &StyleError) -> Refusal {
+    Refusal::custom(INVISIBLE, cmd, e.to_string())
+}
+
+/// The code of the refusal of a stroke or fill that would leave an element invisible.
+pub(crate) const INVISIBLE: &str = "invisible";
 
 /// The properties that were skipped for an element.
 #[derive(Debug, Clone, PartialEq, Serialize, JsonSchema)]
@@ -152,6 +161,14 @@ fn run(
 ) -> Result<Done, Refusal> {
     let cmd = s.cmd();
     props.validate().map_err(|e| refusal(cmd, e))?;
+    // New elements always have a stroke. With a target the stroke goes to the target only.
+    let mut for_defaults = props.clone();
+    if props.clears_stroke() && plan.defaults {
+        if plan.targets.is_empty() {
+            return Err(refusal(cmd, StyleError::DefaultStroke));
+        }
+        for_defaults.stroke_color = None;
+    }
 
     let mut report = StyleReport::default();
     let mut background_changed = false;
@@ -182,7 +199,7 @@ fn run(
     let mut defaults_changed = false;
     if plan.defaults {
         let mut d = s.tool.defaults();
-        defaults_changed = d.apply(props);
+        defaults_changed = d.apply(&for_defaults);
         if defaults_changed {
             s.tool.set_defaults(d);
         }
@@ -274,6 +291,11 @@ pub struct PropInfo {
     /// the targets are elements and none of them supports it. A control greys itself with this text.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub reason: Option<String>,
+    /// For `stroke_color` and `fill_color` only: why the property cannot be set to none now (the refusal
+    /// `style.set` would give), when it can be set at all. A control for "no stroke" or "no fill" greys itself with
+    /// this text.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub clear_reason: Option<String>,
 }
 
 /// The heads at the two ends of the lines and arrows among the targets. Heads are not style properties
@@ -339,6 +361,16 @@ pub struct GetOut {
     pub heads: Option<HeadsInfo>,
 }
 
+/// Why `prop` cannot be set to none over the targets of `plan` (or the defaults, when it has none).
+fn none_reason(s: &Session, plan: &Plan, prop: Prop) -> Option<String> {
+    let err = if plan.targets.is_empty() {
+        (prop == Prop::StrokeColor).then_some(StyleError::DefaultStroke)
+    } else {
+        none_refusal(s.store(), &plan.targets, prop)
+    };
+    err.map(|e| e.to_string())
+}
+
 fn get(s: &mut Session, a: GetArgs) -> Result<GetOut, Refusal> {
     let cmd = s.cmd();
     let wanted: Vec<Prop> = match &a.props {
@@ -394,7 +426,8 @@ fn get(s: &mut Session, a: GetArgs) -> Result<GetOut, Refusal> {
             let reason = (!applicable && source == "selection").then(|| {
                 Refusal::not_applicable("style.set", &format!("`{}`", prop.name()), prop.applies_to()).message
             });
-            (prop.name().to_owned(), PropInfo { applicable, value, reason })
+            let clear_reason = applicable.then(|| none_reason(s, &p, prop)).flatten();
+            (prop.name().to_owned(), PropInfo { applicable, value, reason, clear_reason })
         })
         .collect();
     let heads = heads_of(s, &p.targets);
@@ -511,6 +544,7 @@ pub const COMMANDS: &[CommandSpec] = &[
     )
     .host(Host::text_editor_takes_style())
     .coalesce("style.set", 1000)
+    .refusals(&[INVISIBLE])
     .example(r#"{"props":{"stroke_color":"blue-500","fill_color":"blue-100","stroke_width":4}}"#),
     CommandSpec::new(
         "style.get",

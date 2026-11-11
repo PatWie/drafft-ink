@@ -507,6 +507,7 @@ impl Ctx<'_> {
                         opacity_attr("fill-opacity", fill_alpha * a)
                     );
                 }
+                FillKind::Ink if s.stroke_color.a == 0 => {}
                 FillKind::Ink => {
                     put!(
                         self.out,
@@ -526,7 +527,8 @@ impl Ctx<'_> {
                 }
             }
         }
-        for (path, st) in &geometry.strokes {
+        let strokes = if s.stroke_color.a == 0 { &[][..] } else { &geometry.strokes[..] };
+        for (path, st) in strokes {
             let dash = st.dash.map(|[a, b]| format!(" stroke-dasharray=\"{} {}\"", num(a), num(b))).unwrap_or_default();
             put!(
                 self.out,

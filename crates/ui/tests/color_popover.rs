@@ -54,10 +54,31 @@ fn the_quick_column_and_the_shade_rows() {
     h.get_by_label("White").click();
     h.run();
     assert_eq!(calls(&h)[0].1, json!({"props": {"stroke_color": "#ffffff"}}));
+    // With nothing selected the defaults keep their stroke: "None" is greyed with the engine's words.
     h.state_mut().clear();
+    assert!(h.get_by_label("None").accesskit_node().is_disabled());
+    h.get_by_label("None").click();
+    h.run();
+    assert!(calls(&h).is_empty());
+    // A shape with a fill can lose its stroke.
+    let mut h = open(filled_rect(None), ColorTarget::Stroke);
     h.get_by_label("None").click();
     h.run();
     assert_eq!(calls(&h)[0].1, json!({"props": {"stroke_color": "transparent"}}));
+}
+
+/// A selected rectangle with a fill, and a stroke when `stroke` is given.
+fn filled_rect(stroke: Option<&str>) -> Fixture {
+    let mut f = dialog::fixture();
+    let id = drafftink_engine::testing::add_rect(&mut f.session, 0.0, 0.0, 50.0, 50.0).unwrap();
+    drafftink_engine::testing::select(&mut f.session, std::slice::from_ref(&id));
+    let mut props = json!({"fill_color": "blue-100"});
+    if let Some(stroke) = stroke {
+        props["stroke_color"] = json!(stroke);
+    }
+    f.session.execute("style.set", json!({"props": props})).unwrap();
+    f.refresh();
+    f
 }
 
 #[test]
@@ -97,18 +118,12 @@ fn fill_pick_with_a_palette_name() {
 
 #[test]
 fn the_current_colour_is_ringed_and_none_is_not_black() {
-    let mut f = dialog::fixture();
-    f.session.execute("style.set", json!({"props": {"stroke_color": "#00000000"}})).unwrap();
-    f.refresh();
-    let h = open(f, ColorTarget::Stroke);
+    let h = open(filled_rect(Some("transparent")), ColorTarget::Stroke);
     let selected = |label: &str| on(&h, label);
     assert!(selected("None"));
     assert!(!selected("Black"), "a clear stroke is not black");
 
-    let mut f = dialog::fixture();
-    f.session.execute("style.set", json!({"props": {"stroke_color": "#000000"}})).unwrap();
-    f.refresh();
-    let h = open(f, ColorTarget::Stroke);
+    let h = open(filled_rect(Some("#000000")), ColorTarget::Stroke);
     let selected = |label: &str| on(&h, label);
     assert!(selected("Black"));
     assert!(!selected("None"));

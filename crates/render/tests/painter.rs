@@ -510,3 +510,30 @@ fn bytes_are_estimated_and_grow_with_content() {
     let big = paint(&rect(Sloppiness::Architect, Some(Color::rgb(1, 2, 3)), FillPattern::CrossHatch));
     assert!(small.bytes > 0 && big.bytes > small.bytes * 3, "{} vs {}", small.bytes, big.bytes);
 }
+
+#[test]
+fn no_stroke_draws_the_fill_alone() {
+    let green = packed(PColor::from_rgba8(0, 120, 0, 255));
+    for sloppy in [Sloppiness::Architect, Sloppiness::Artist] {
+        let mut e = rect(sloppy, Some(Color::rgb(0, 120, 0)), FillPattern::Solid);
+        e.style.stroke_color = Color::TRANSPARENT;
+        assert_eq!(colors(&paint(&e)), [green], "{sloppy:?}");
+    }
+    // Without a stroke the outline adds nothing to the fragment's bounds.
+    let mut e = rect(Sloppiness::Architect, Some(Color::rgb(0, 120, 0)), FillPattern::Solid);
+    e.style.stroke_width = 20.0;
+    let with = paint(&e).bounds;
+    e.style.stroke_color = Color::TRANSPARENT;
+    let without = paint(&e).bounds;
+    assert_ne!(with, without);
+}
+
+#[test]
+fn no_stroke_skips_arrowheads_and_the_ink_of_an_open_stroke() {
+    let mut a = arrow(Head::Triangle);
+    a.style.stroke_color = Color::TRANSPARENT;
+    assert!(colors(&paint(&a)).is_empty());
+    let mut p = pressure_stroke(PressureMode::Device, Brush::Normal, true);
+    p.style.stroke_color = Color::TRANSPARENT;
+    assert!(colors(&paint(&p)).is_empty());
+}

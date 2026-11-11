@@ -78,6 +78,9 @@ pub struct StyleProp {
     /// The engine's text for why the property cannot be set now (the refusal `style.set` gives), when no target
     /// supports it.
     pub reason: Option<String>,
+    /// For the stroke and the fill colour: the engine's text for why "none" cannot be set now (the element would
+    /// show nothing), when `style.set` would refuse it.
+    pub clear_reason: Option<String>,
 }
 
 impl StyleProp {
@@ -1015,7 +1018,8 @@ fn read_style(s: &mut Session) -> StyleView {
                 .map(|(name, info)| {
                     let applicable = info.get("applicable").and_then(Value::as_bool).unwrap_or(false);
                     let reason = text_of(info, "reason").map(str::to_owned);
-                    (name.clone(), StyleProp { applicable, value: info.get("value").cloned(), reason })
+                    let clear_reason = text_of(info, "clear_reason").map(str::to_owned);
+                    (name.clone(), StyleProp { applicable, value: info.get("value").cloned(), reason, clear_reason })
                 })
                 .collect()
         })

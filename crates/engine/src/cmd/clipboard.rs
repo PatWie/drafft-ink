@@ -199,6 +199,7 @@ fn style_error(cmd: &str, e: StyleError) -> Refusal {
             }
             Refusal::not_applicable(cmd, &named, &kinds.join("; "))
         }
+        e @ (StyleError::Invisible { .. } | StyleError::DefaultStroke) => crate::cmd::style::invisible(cmd, &e),
         other => Refusal::internal(cmd, other.to_string()),
     }
 }
@@ -387,6 +388,7 @@ pub const COMMANDS: &[CommandSpec] = &[
         Facts { mutates: Mutates::DOC, ..WRITE },
     )
     .default_targets(style_copied)
+    .refusals(&["invisible"])
     .shortcuts(PASTE_STYLE_KEYS),
     CommandSpec::new(
         "clipboard.copy_as",

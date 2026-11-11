@@ -144,6 +144,77 @@ fn a_property_that_does_not_apply_is_greyed_with_the_text_style_set_refuses_with
     h.get_by_label_contains(&reason);
 }
 
+#[test]
+fn no_stroke_and_no_fill_are_greyed_with_the_words_style_set_refuses_with() {
+    // A rectangle with a stroke and no fill: "No stroke" would leave nothing to see.
+    let mut f = dialog::fixture();
+    let id = add_rect(&mut f.session, 0.0, 0.0, 50.0, 50.0).unwrap();
+    select(&mut f.session, std::slice::from_ref(&id));
+    f.refresh();
+    let said = engine_text(&mut f, "style.set", json!({ "props": { "stroke_color": "transparent" } }));
+    assert_eq!(f.model.style.prop("stroke_color").and_then(|p| p.clear_reason.clone()), Some(said.clone()));
+    let mut h = support_a::themed_lenient(f, false);
+    h.run();
+    assert!(h.get_by_label("No stroke").accesskit_node().is_disabled());
+    h.get_by_label("No stroke").hover();
+    for _ in 0..10 {
+        h.step();
+    }
+    h.get_by_label_contains(&said);
+    assert!(
+        !h.get_by_label("No fill").accesskit_node().is_disabled(),
+        "there is no fill to remove, but it is not refused"
+    );
+
+    // With a fill the stroke can go, and then the fill is what keeps the shape visible.
+    let mut f = dialog::fixture();
+    let id = add_rect(&mut f.session, 0.0, 0.0, 50.0, 50.0).unwrap();
+    select(&mut f.session, std::slice::from_ref(&id));
+    dialog::run(&mut f, "style.set", json!({ "props": { "fill_color": "blue-100", "stroke_color": "transparent" } }));
+    f.refresh();
+    let said = engine_text(&mut f, "style.set", json!({ "props": { "fill_color": null } }));
+    let mut h = support_a::themed_lenient(f, false);
+    h.run();
+    assert!(!h.get_by_label("No stroke").accesskit_node().is_disabled(), "the fill keeps the shape visible");
+    assert!(h.get_by_label("No fill").accesskit_node().is_disabled());
+    h.get_by_label("No fill").hover();
+    for _ in 0..10 {
+        h.step();
+    }
+    h.get_by_label_contains(&said);
+}
+
+#[test]
+fn no_stroke_is_greyed_for_text_arrows_and_the_defaults() {
+    for (name, f) in [
+        ("text", {
+            let mut f = dialog::fixture();
+            let made = dialog::run(&mut f, "element.create", json!({ "kind": "text", "text": "hi", "at": [0, 0] }));
+            select(&mut f.session, &[drafftink_scene::ElementId::new(made["id"].as_str().unwrap()).unwrap()]);
+            f
+        }),
+        ("arrow", {
+            let mut f = dialog::fixture();
+            let made = dialog::run(&mut f, "element.create", json!({ "kind": "arrow", "points": [[0, 0], [80, 30]] }));
+            select(&mut f.session, &[drafftink_scene::ElementId::new(made["id"].as_str().unwrap()).unwrap()]);
+            f
+        }),
+        ("defaults", dialog::fixture()),
+    ] {
+        let mut f = f;
+        f.refresh();
+        let said = f.model.style.prop("stroke_color").and_then(|p| p.clear_reason.clone());
+        assert_eq!(
+            said.as_deref(),
+            Some(engine_text(&mut f, "style.set", json!({ "props": { "stroke_color": "transparent" } })).as_str()),
+            "{name}"
+        );
+        let mut h = support_a::themed_lenient(f, false);
+        h.run();
+        assert!(h.get_by_label("No stroke").accesskit_node().is_disabled(), "{name}: greyed, not hidden");
+    }
+}
+
 fn two_tabs(f: &mut Fixture) {
     dialog::run(f, "doc.rename", json!({ "name": "First" }));
     dialog::run(f, "tab.new", json!({ "name": "Second" }));

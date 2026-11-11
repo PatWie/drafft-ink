@@ -641,7 +641,9 @@ fn get_reports_values_applicability_and_kinds_for_one_element() {
     assert_eq!(out["source"], "selection");
     assert_eq!(out["ids"], json!([f.rect.as_str()]));
     assert_eq!(out["kinds"], json!(["rectangle"]));
-    assert_eq!(out["props"]["stroke_color"], json!({"applicable": true, "value": "#6366f1"}));
+    // A rectangle without a fill cannot lose its stroke: the cell for "no stroke" greys with the refusal.
+    let keep = refuse(&mut f.s, "style.set", json!({"props": {"stroke_color": "transparent"}, "scope": "selection"}));
+    assert_eq!(out["props"]["stroke_color"], json!({"applicable": true, "value": "#6366f1", "clear_reason": keep.message}));
     assert_eq!(out["props"]["fill_color"], json!({"applicable": true, "value": null}));
     assert_eq!(out["props"]["corner_radius"], json!({"applicable": true, "value": 0.0}));
     // A property that no target supports carries the words `style.set` refuses with for it, so that a control can
@@ -931,4 +933,143 @@ fn style_set_is_recorded_in_the_ring_and_a_refusal_too() {
     last.reverse();
     assert_eq!(last[0], ("style.set".to_owned(), Some("bad_args".to_owned())));
     assert_eq!(last[1], ("style.set".to_owned(), None));
+}
+
+// ---- no stroke ----
+
+fn stroke_of(f: &Fx, id: &ElementId) -> Color {
+    el(&f.s, id).style.stroke_color
+}
+
+#[test]
+fn no_stroke_is_a_clear_stroke_colour_that_one_undo_step_brings_back() {
+    let mut f = fixture();
+    run(&mut f.s, "style.set", json!({"props": {"fill_color": "blue-100"}}));
+    let before = stroke_of(&f, &f.rect);
+    let out = run(&mut f.s, "style.set", json!({"props": {"stroke_color": "transparent"}}));
+    assert_eq!(out["changed"], true);
+    assert_eq!(stroke_of(&f, &f.rect), Color::TRANSPARENT);
+    assert!(el(&f.s, &f.rect).style.fill_color.is_some(), "the fill stays");
+    let got = run(&mut f.s, "style.get", json!({"props": ["stroke_color", "fill_color"]}));
+    assert_eq!(got["props"]["stroke_color"]["value"], "transparent");
+    // The rectangle now needs its fill, and says so.
+    assert!(got["props"]["fill_color"]["clear_reason"].as_str().unwrap().contains("neither a stroke nor a fill"));
+    assert!(got["props"]["stroke_color"].get("clear_reason").is_none(), "it already is none and can stay");
+    run(&mut f.s, "history.undo", json!({}));
+    assert_eq!(stroke_of(&f, &f.rect), before);
+}
+
+#[test]
+fn a_shape_cannot_lose_both_stroke_and_fill() {
+    let mut f = fixture();
+    // No fill yet: the stroke must stay.
+    let r = refuse_clean(&mut f.s, "style.set", json!({"props": {"stroke_color": "transparent"}}));
+    assert_eq!(r.code, "invisible");
+    assert_eq!(r.message, "A rectangle with neither a stroke nor a fill shows nothing. Keep the stroke, or give it a fill first.");
+    // The same call that gives a fill first is fine, in either order of the keys.
+    run(&mut f.s, "style.set", json!({"props": {"stroke_color": "transparent", "fill_color": "blue-100"}}));
+    assert_eq!(stroke_of(&f, &f.rect), Color::TRANSPARENT);
+    // Now the fill must stay, and so must a fill that is fully clear count as none.
+    let r = refuse_clean(&mut f.s, "style.set", json!({"props": {"fill_color": null}}));
+    assert_eq!(r.code, "invisible");
+    let r = refuse_clean(&mut f.s, "style.set", json!({"props": {"fill_color": "transparent"}}));
+    assert_eq!(r.code, "invisible");
+    // A stroke brings it back, with the fill removed in the same call.
+    run(&mut f.s, "style.set", json!({"props": {"stroke_color": "red-500", "fill_color": null}}));
+    assert_eq!(el(&f.s, &f.rect).style.fill_color, None);
+}
+
+#[test]
+fn kinds_drawn_in_their_stroke_colour_cannot_have_none() {
+    let mut f = fixture();
+    for (id, what) in [
+        (f.text.clone(), "A text"),
+        (f.line.clone(), "A line"),
+        (f.freehand.clone(), "A freehand stroke"),
+        (f.math.clone(), "A math"),
+    ] {
+        let r = refuse_clean(&mut f.s, "style.set", json!({"ids": [id.as_str()], "props": {"stroke_color": "transparent"}}));
+        assert_eq!(r.code, "invisible", "{what}");
+        assert!(r.message.contains("is drawn in its stroke colour"), "{}", r.message);
+        // A fill does not help an open line.
+        let tried = refuse_clean(
+            &mut f.s,
+            "style.set",
+            json!({"ids": [id.as_str()], "props": {"stroke_color": "transparent", "fill_color": "blue-100"}}),
+        );
+        assert!(tried.code == "invisible" || tried.code == "not_applicable" || tried.code == "bad_args", "{}", tried.message);
+    }
+    // A closed line is a shape: with a fill it can lose its stroke.
+    run(&mut f.s, "style.set", json!({"ids": [f.closed.as_str()], "props": {"fill_color": "blue-100", "stroke_color": "transparent"}}));
+    assert_eq!(stroke_of(&f, &f.closed), Color::TRANSPARENT);
+}
+
+#[test]
+fn a_selection_with_one_element_that_would_vanish_changes_nothing() {
+    let mut f = fixture();
+    run(&mut f.s, "style.set", json!({"props": {"fill_color": "blue-100"}}));
+    let ids = json!([f.rect.as_str(), f.text.as_str()]);
+    let r = refuse_clean(&mut f.s, "style.set", json!({"ids": ids, "props": {"stroke_color": "transparent"}, "scope": "selection"}));
+    assert_eq!(r.code, "invisible");
+    assert_ne!(stroke_of(&f, &f.rect), Color::TRANSPARENT);
+    // style.get tells the UI the same, from the same rule.
+    testing::select(&mut f.s, &[f.rect.clone(), f.text.clone()]);
+    let got = run(&mut f.s, "style.get", json!({"props": ["stroke_color"]}));
+    assert_eq!(got["props"]["stroke_color"]["clear_reason"], r.message);
+}
+
+#[test]
+fn the_defaults_for_new_elements_always_keep_a_stroke() {
+    let mut f = fixture();
+    testing::select(&mut f.s, &[]);
+    let r = refuse_clean(&mut f.s, "style.set", json!({"props": {"stroke_color": "transparent"}}));
+    assert_eq!(r.code, "invisible");
+    assert!(r.message.starts_with("New elements always get a stroke"), "{}", r.message);
+    let got = run(&mut f.s, "style.get", json!({"props": ["stroke_color", "fill_color"]}));
+    assert_eq!(got["props"]["stroke_color"]["clear_reason"], r.message);
+    assert!(got["props"]["fill_color"].get("clear_reason").is_none());
+    // With a target, the stroke goes to the target and the defaults keep theirs.
+    testing::select(&mut f.s, std::slice::from_ref(&f.rect));
+    let kept = f.s.tool.style_defaults.stroke_color;
+    run(&mut f.s, "style.set", json!({"props": {"fill_color": "blue-100", "stroke_color": "transparent"}}));
+    assert_eq!(stroke_of(&f, &f.rect), Color::TRANSPARENT);
+    assert_eq!(f.s.tool.style_defaults.stroke_color, kept);
+    assert_eq!(f.s.settings.get("style.defaults").unwrap()["stroke_color"], json!(kept.to_hex()));
+    // A stored bundle with a clear stroke is read without it.
+    let stored: StyleProps = serde_json::from_value(json!({"stroke_color": "transparent", "opacity": 0.5})).unwrap();
+    let loaded = drafftink_edit::style::StyleDefaults::from_props(&stored);
+    assert_eq!(loaded.style.stroke_color, drafftink_edit::style::StyleDefaults::default().style.stroke_color);
+    assert_eq!(loaded.style.opacity, 0.5);
+}
+
+#[test]
+fn pasting_a_style_cannot_hide_an_element_either() {
+    let mut f = fixture();
+    run(&mut f.s, "style.set", json!({"props": {"fill_color": "blue-100", "stroke_color": "transparent"}}));
+    run(&mut f.s, "clipboard.copy_style", json!({}));
+    let r = refuse_clean(&mut f.s, "clipboard.paste_style", json!({"ids": [f.text.as_str()]}));
+    assert_eq!(r.code, "invisible");
+}
+
+#[test]
+fn creating_an_element_with_nothing_to_see_is_refused() {
+    let mut f = fixture();
+    let rect = |style: Value| json!({"kind": "rectangle", "bounds": {"x": 0, "y": 500, "w": 50, "h": 50}, "style": style});
+    let r = refuse_clean(&mut f.s, "element.create", rect(json!({"stroke_color": "transparent"})));
+    assert_eq!(r.code, "invisible");
+    run(&mut f.s, "element.create", rect(json!({"stroke_color": "transparent", "fill_color": "blue-100"})));
+    let r = refuse_clean(
+        &mut f.s,
+        "element.create",
+        json!({"kind": "arrow", "points": [[0, 0], [80, 0]], "style": {"stroke_color": "transparent", "fill_color": "blue-100"}}),
+    );
+    assert_eq!(r.code, "invisible", "{}", r.message);
+}
+
+#[test]
+fn ending_a_text_edit_cannot_make_the_text_clear() {
+    let mut f = fixture();
+    f.s.text_edit = Some(TextEdit { element: Some(f.text.clone()), draft: false });
+    let r = refuse_clean(&mut f.s, "text.edit_end", json!({"text": "hi", "style": {"stroke_color": "transparent"}}));
+    assert_eq!(r.code, "invisible");
 }

@@ -5883,6 +5883,12 @@ export namespace StyleGet {
     /** True when at least one target supports the property. */
     applicable: boolean;
     /**
+     * For `stroke_color` and `fill_color` only: why the property cannot be set to none now (the refusal
+     * `style.set` would give), when it can be set at all. A control for "no stroke" or "no fill" greys itself with
+     * this text.
+     */
+    clear_reason?: string | null;
+    /**
      * Why the property cannot be set now: the text `style.set` refuses with for this property alone. Only when
      * the targets are elements and none of them supports it. A control greys itself with this text.
      */

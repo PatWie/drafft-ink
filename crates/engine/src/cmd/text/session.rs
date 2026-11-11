@@ -334,6 +334,10 @@ fn text_props(cmd: &str, style: Option<&StyleProps>) -> Result<TextProps, Refusa
         StyleError::OutOfRange { prop, expected } => Refusal::bad_arg(cmd, &format!("style.{}", prop.name()), expected),
         other => Refusal::bad_arg(cmd, "style", other.to_string()),
     })?;
+    if st.clears_stroke() {
+        let e = StyleError::Invisible { kind: Kind::Text, fill_helps: false };
+        return Err(crate::cmd::style::invisible(cmd, &e));
+    }
     TextProps::from_style(st).map_err(|props| {
         let named = props.iter().map(|p| format!("`{}`", p.name())).collect::<Vec<_>>().join(", ");
         Refusal::not_applicable(cmd, &named, "text, labels and formulas (colour, opacity and the font properties). Use `style.set` for other properties")

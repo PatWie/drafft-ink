@@ -94,7 +94,7 @@ Export: Excalidraw has no inline math, so `text` and `originalText` are the sour
 | `corner_radius` | >= 0 world units | 0 |
 | `seed` | u32, makes the jitter reproducible | 0 (creators take it from `IdSource::seed`) |
 
-Colours are strings: `#rrggbb`, or `#rrggbbaa` when not opaque; `#rgb` and `transparent` are accepted on input. `Color` converts to and from `peniko::Color`. Text colour is `stroke_color`. Font settings live in `TextData.font`, not in `Style`, so shapes carry no dead fields.
+Colours are strings: `#rrggbb`, or `#rrggbbaa` when not opaque; `#rgb` and `transparent` are accepted on input. `Color` converts to and from `peniko::Color`. Text colour is `stroke_color`. A `stroke_color` of alpha 0 is **no stroke** (Excalidraw's `transparent`); the engine keeps every element visible, so only shapes with a fill can have it (`style.set`, "No stroke"). Font settings live in `TextData.font`, not in `Style`, so shapes carry no dead fields.
 
 ## 6. Z-order
 
@@ -205,7 +205,7 @@ Old = `docs/formats.md` section 1 (commit `8ce40ab`). The migration itself belon
 
 Loro schema fields (`formats.md` section 2.3) are covered by the same rows (`has_fill` = `fill_color` present, `intermediate_points`, `content` for math = `latex`).
 
-Excalidraw import (for `io`, not tested here): `angle` -> `transform.angle`; `strokeStyle` -> `style.stroke_style`; `roughness` -> `sloppiness`; `fillStyle` -> `fill_pattern`; `opacity/100` -> `style.opacity`; `roundness` -> `corner_radius` or `path round`; `groupIds` -> `group_ids`; `frameId` -> `frame_id`; `containerId` -> `TextData.container_id`; `boundElements` -> derived, not imported; `startBinding/endBinding {elementId, fixedPoint, mode}` -> `Binding` (`skip` -> none); `startArrowhead/endArrowhead` -> `start_head/end_head`; `elbowed` -> `path elbow`; `fixedSegments`, `startIsSpecial`, `endIsSpecial` -> same names; `index` -> `index`; `isDeleted` -> `deleted`; `locked`, `link`, `customData` -> same; `fontFamily`, `textAlign`, `verticalAlign`, `lineHeight`, `autoResize`, `labelPosition` -> `TextData`; `crop`, `fileId`, `scale` -> `ImageData`, `flip_x/y`; `name` of a frame -> `FrameData.name`; `version/versionNonce/updated/created` -> dropped.
+Excalidraw import (for `io`, not tested here): `strokeColor: "transparent"` <-> a stroke of alpha 0 (written back as `transparent`); `angle` -> `transform.angle`; `strokeStyle` -> `style.stroke_style`; `roughness` -> `sloppiness`; `fillStyle` -> `fill_pattern`; `opacity/100` -> `style.opacity`; `roundness` -> `corner_radius` or `path round`; `groupIds` -> `group_ids`; `frameId` -> `frame_id`; `containerId` -> `TextData.container_id`; `boundElements` -> derived, not imported; `startBinding/endBinding {elementId, fixedPoint, mode}` -> `Binding` (`skip` -> none); `startArrowhead/endArrowhead` -> `start_head/end_head`; `elbowed` -> `path elbow`; `fixedSegments`, `startIsSpecial`, `endIsSpecial` -> same names; `index` -> `index`; `isDeleted` -> `deleted`; `locked`, `link`, `customData` -> same; `fontFamily`, `textAlign`, `verticalAlign`, `lineHeight`, `autoResize`, `labelPosition` -> `TextData`; `crop`, `fileId`, `scale` -> `ImageData`, `flip_x/y`; `name` of a frame -> `FrameData.name`; `version/versionNonce/updated/created` -> dropped.
 
 ## 11. Decisions and deviations
 

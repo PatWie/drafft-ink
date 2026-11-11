@@ -160,7 +160,7 @@ fn element_json(e: &Element, bound: Option<&[Value]>, cx: &mut Cx) -> Value {
     };
     put("id", json!(e.id.as_str()));
     put("angle", json!(t.angle));
-    put("strokeColor", json!(s.stroke_color.to_hex()));
+    put("strokeColor", json!(if s.stroke_color.a == 0 { "transparent".to_owned() } else { s.stroke_color.to_hex() }));
     put("backgroundColor", json!(s.fill_color.map_or_else(|| "transparent".to_owned(), |c| c.to_hex())));
     put("fillStyle", json!(map::fill_to_name(s.fill_pattern)));
     put("strokeWidth", json!(s.stroke_width));
