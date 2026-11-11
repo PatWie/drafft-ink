@@ -293,9 +293,15 @@ fn a_right_click_on_a_locked_element_asks_for_a_menu_about_it_and_selects_nothin
     let out = right_click(&mut rig, 150.0, 150.0);
     assert_eq!(
         out.ui_request,
-        Some(UiRequest::OpenContextMenu { at: Point::new(150.0, 150.0), target: ContextTarget::Locked { element: a.clone() } })
+        Some(UiRequest::OpenContextMenu {
+            at: Point::new(150.0, 150.0),
+            target: ContextTarget::Locked { element: a.clone() }
+        })
     );
-    assert!(rig.selected().is_empty(), "a locked element cannot be selected, and the old selection is not the menu's subject");
+    assert!(
+        rig.selected().is_empty(),
+        "a locked element cannot be selected, and the old selection is not the menu's subject"
+    );
     assert!(out.refusals.is_empty(), "{:?}", out.refusals);
     // The menu's Unlock row: the id goes to `element.unlock_all`, which selects what it unlocks.
     rig.run("element.unlock_all", json!({ "ids": [a.as_str()] }));
@@ -330,7 +336,10 @@ fn a_right_click_where_an_unlocked_element_covers_a_locked_one_is_about_the_unlo
     let out = right_click(&mut rig, 280.0, 280.0);
     assert_eq!(
         out.ui_request,
-        Some(UiRequest::OpenContextMenu { at: Point::new(280.0, 280.0), target: ContextTarget::Locked { element: back } })
+        Some(UiRequest::OpenContextMenu {
+            at: Point::new(280.0, 280.0),
+            target: ContextTarget::Locked { element: back }
+        })
     );
 }
 
@@ -365,7 +374,10 @@ fn a_click_on_a_link_icon_asks_the_shell_to_open_the_address() {
     assert!(rig.selected().is_empty(), "the icon is not the element");
     assert_eq!(rig.undo_depth(), 1, "only the set_link step: opening is not a document change");
     // The body of the element selects it as always, and a click elsewhere opens nothing.
-    let out = { rig.down(150.0, 150.0); rig.up(150.0, 150.0) };
+    let out = {
+        rig.down(150.0, 150.0);
+        rig.up(150.0, 150.0)
+    };
     assert_eq!(out.ui_request, None);
     assert_eq!(rig.selected(), vec![a.as_str().to_owned()]);
 }
@@ -399,10 +411,14 @@ fn a_click_on_the_icon_of_an_element_link_goes_to_the_target() {
 fn a_click_on_an_unsafe_stored_link_shows_the_refusal_and_opens_nothing() {
     let mut rig = Rig::new();
     let a = rig.rect(100.0, 100.0, 100.0, 100.0);
-    rig.s.tab_mut().doc.edit::<(), drafftink_scene::StoreError>(|tx| {
-        use drafftink_scene::SceneTx;
-        tx.update(&a, |e| e.link = Some("javascript:alert(1)".into()))
-    }).unwrap();
+    rig.s
+        .tab_mut()
+        .doc
+        .edit::<(), drafftink_scene::StoreError>(|tx| {
+            use drafftink_scene::SceneTx;
+            tx.update(&a, |e| e.link = Some("javascript:alert(1)".into()))
+        })
+        .unwrap();
     rig.s.tab_mut().doc.commit_untracked().unwrap();
     rig.down(208.0, 92.0);
     let out = rig.up(208.0, 92.0);

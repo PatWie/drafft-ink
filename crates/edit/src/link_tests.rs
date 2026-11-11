@@ -73,7 +73,8 @@ fn schemes_that_can_run_code_or_read_files_are_refused() {
 #[test]
 fn disguised_schemes_do_not_get_through() {
     // Whitespace and control characters inside the scheme, an encoded colon, a missing slash pair.
-    for bad in ["java\nscript:alert(1)", "java script:x", "\u{1}javascript:x", "http:example.com", "https:/example.com"] {
+    for bad in ["java\nscript:alert(1)", "java script:x", "\u{1}javascript:x", "http:example.com", "https:/example.com"]
+    {
         assert!(parse_input(bad).is_err(), "{bad}");
     }
     assert!(matches!(err("java%73cript:alert(1)"), LinkError::NotAnAddress { .. }));

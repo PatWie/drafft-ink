@@ -6,11 +6,12 @@ use egui::{Context, Id, Key, Modal, RichText};
 use serde_json::json;
 
 use crate::state::UiState;
-use crate::surfaces::dialogs::{plain_button, show_modal, text_field, Close};
+use crate::surfaces::dialogs::{Close, plain_button, show_modal, text_field};
 use crate::widgets::{Ctl, Cx};
 
 /// The hint under the field.
-const HINT: &str = "A web address (https://example.com), an email (mailto:name@example.com), or an element: #id or @name";
+const HINT: &str =
+    "A web address (https://example.com), an email (mailto:name@example.com), or an element: #id or @name";
 /// What the dialog says when the selection is not one element.
 const NEEDS_ONE: &str = "Select one element to give it a link.";
 

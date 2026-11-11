@@ -400,7 +400,14 @@ fn the_menu_of_one_selected_element_has_a_link_row_that_opens_the_dialog() {
     let mut h = menu_with(1, pos2(300.0, 200.0));
     row(&h, "Link…").click();
     h.run();
-    assert_eq!(h.state().actions.iter().filter_map(|a| if let UiAction::Verb(v) = a { Some(*v) } else { None }).collect::<Vec<_>>(), vec![Verb::OpenLinkEditor]);
+    assert_eq!(
+        h.state()
+            .actions
+            .iter()
+            .filter_map(|a| if let UiAction::Verb(v) = a { Some(*v) } else { None })
+            .collect::<Vec<_>>(),
+        vec![Verb::OpenLinkEditor]
+    );
     assert!(!has_row(&h, "Open link"), "no link yet");
 }
 

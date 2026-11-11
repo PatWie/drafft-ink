@@ -519,9 +519,8 @@ impl Interaction {
         let tolerance = self.world.config.hit_tolerance_px;
         // The normal hit test skips locked elements. When one is on top of everything it found, the menu is about
         // that one (it offers Unlock). It cannot be selected, so the selection is cleared.
-        let locked = (!matches!(target, Target::Handle(_)))
-            .then(|| self.world.locked_on_top(s, world, tolerance))
-            .flatten();
+        let locked =
+            (!matches!(target, Target::Handle(_))).then(|| self.world.locked_on_top(s, world, tolerance)).flatten();
         let menu_target = self.with_ctx(s, out, now, mods, |cx, _| {
             if let Some(element) = locked {
                 cx.exec("selection.clear", serde_json::json!({}));

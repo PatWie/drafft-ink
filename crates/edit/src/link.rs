@@ -212,7 +212,10 @@ fn split_host_port(authority: &str) -> Option<(&str, Option<&str>)> {
 }
 
 fn is_port(port: &str) -> bool {
-    !port.is_empty() && port.len() <= 5 && port.chars().all(|c| c.is_ascii_digit()) && port.parse::<u32>().is_ok_and(|n| n <= 65_535)
+    !port.is_empty()
+        && port.len() <= 5
+        && port.chars().all(|c| c.is_ascii_digit())
+        && port.parse::<u32>().is_ok_and(|n| n <= 65_535)
 }
 
 fn is_hostname(host: &str) -> bool {

@@ -350,7 +350,12 @@ impl UiState {
 
     /// Opens the context menu of a locked element, which cannot be selected: it offers to unlock it
     /// (`element.unlock_all` with this id). The canvas layer calls this for `ContextTarget::Locked`.
-    pub fn open_context_menu_on_locked(&mut self, screen: egui::Pos2, world: Option<[f64; 2]>, element: impl Into<String>) {
+    pub fn open_context_menu_on_locked(
+        &mut self,
+        screen: egui::Pos2,
+        world: Option<[f64; 2]>,
+        element: impl Into<String>,
+    ) {
         self.close_overlays();
         self.context_menu = Some(ContextMenu { screen, world, locked: Some(element.into()) });
     }
