@@ -942,7 +942,8 @@ fn connect(s: &mut Session, a: ConnectArgs) -> Result<ConnectOut, Refusal> {
 pub struct RelabelArgs {
     /// A text element, or a rectangle, diamond, ellipse or arrow with or without a label: an id or `@name`.
     pub id: Ref,
-    /// The new text. On a shape or arrow, empty text removes the label.
+    /// The new text. Empty text removes the label of a shape or arrow, or a bound label given as `id`. A
+    /// free text element cannot be empty (`empty_text`).
     pub text: String,
     /// Create a label when the shape or arrow has none (default true).
     #[serde(default = "default_true", skip_serializing_if = "is_true")]
