@@ -391,18 +391,26 @@ fn hovering_a_link_icon_shows_the_pointing_hand_and_leaving_it_the_arrow() {
 }
 
 #[test]
-fn hovering_text_shows_the_i_beam_and_hovering_a_shape_does_so_only_with_the_text_tool() {
+fn hovering_text_moves_like_a_shape_and_only_the_text_tool_shows_the_i_beam() {
     let mut rig = Rig::new();
     rig.run("element.create", json!({ "kind": "text", "text": "hello", "at": [300, 300] }));
     let text = rig.elements().into_iter().next().expect("text");
     let t = &text.transform;
     let on_text = (t.x + t.w / 2.0, t.y + t.h / 2.0);
     rig.rect(100.0, 100.0, 100.0, 100.0);
-    assert_eq!(rig.hover(on_text.0, on_text.1).cursor, Some(Cursor::Text), "select tool over text");
-    assert_eq!(rig.hover(150.0, 150.0).cursor, Some(Cursor::Move), "select tool over a shape moves it");
+    rig.hover(150.0, 150.0);
+    let over_shape = rig.i.cursor();
+    assert_eq!(over_shape, Cursor::Move, "select tool over a shape moves it");
+    rig.hover(600.0, 500.0);
+    rig.hover(on_text.0, on_text.1);
+    assert_eq!(rig.i.cursor(), over_shape, "select tool over text is the same cursor");
     assert_eq!(rig.hover(600.0, 500.0).cursor, Some(Cursor::Default), "and the empty canvas is the arrow");
     rig.tool(Tool::Text);
-    assert_eq!(rig.hover(150.0, 150.0).cursor, Some(Cursor::Text), "the text tool edits a shape's label");
+    rig.hover(on_text.0, on_text.1);
+    assert_eq!(rig.i.cursor(), Cursor::Text, "the text tool edits a text");
+    rig.hover(600.0, 500.0);
+    rig.hover(150.0, 150.0);
+    assert_eq!(rig.i.cursor(), Cursor::Text, "the text tool edits a shape's label");
     rig.hover(600.0, 500.0);
     assert_eq!(rig.i.cursor(), Cursor::Text, "and places a text on empty canvas");
     rig.tool(Tool::Rectangle);
@@ -410,17 +418,18 @@ fn hovering_text_shows_the_i_beam_and_hovering_a_shape_does_so_only_with_the_tex
 }
 
 #[test]
-fn hovering_the_text_of_a_label_shows_the_i_beam_and_the_rest_of_its_shape_does_not() {
+fn hovering_the_text_of_a_label_moves_like_the_rest_of_its_shape_with_the_select_tool() {
     let mut rig = Rig::new();
     let shape = rig.rect(100.0, 100.0, 200.0, 120.0);
     rig.run("text.set", json!({ "id": shape.as_str(), "text": "Label" }));
     let label = drafftink_edit::text_bind::label_of(rig.s.store(), &shape).expect("a label");
     let t = rig.s.element(&label).expect("the label").transform;
-    assert_eq!(rig.hover(t.x + t.w / 2.0, t.y + t.h / 2.0).cursor, Some(Cursor::Text), "on the label");
-    assert_eq!(
-        rig.hover(shape_corner(&rig, &shape).0 + 6.0, shape_corner(&rig, &shape).1 + 6.0).cursor,
-        Some(Cursor::Move)
-    );
+    rig.hover(600.0, 500.0);
+    rig.hover(t.x + t.w / 2.0, t.y + t.h / 2.0);
+    assert_eq!(rig.i.cursor(), Cursor::Move, "on the label");
+    rig.hover(600.0, 500.0);
+    rig.hover(shape_corner(&rig, &shape).0 + 6.0, shape_corner(&rig, &shape).1 + 6.0);
+    assert_eq!(rig.i.cursor(), Cursor::Move, "on the rest of the shape");
 }
 
 fn shape_corner(rig: &Rig, id: &drafftink_scene::ElementId) -> (f64, f64) {

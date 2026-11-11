@@ -234,14 +234,11 @@ impl Picker for Pick<'_> {
 }
 
 impl Pick<'_> {
-    /// Whether a click on this element edits text: a text or a label always, and with the text tool also a shape or
-    /// an arrow, which gets a label.
+    /// Whether a click on this element starts a text edit. Only the text tool does: a text, or a shape or an arrow
+    /// that gets a label. The select tool moves a text like any other element, so its cursor is the move cursor.
     fn invites_typing(&self, id: &ElementId) -> bool {
         let Some(kind) = self.session.element(id).map(Element::tag) else { return false };
-        match self.world.tool {
-            Tool::Text => matches!(kind, Kind::Text | Kind::Rectangle | Kind::Diamond | Kind::Ellipse | Kind::Arrow),
-            Tool::Select | Tool::Lasso => kind == Kind::Text,
-            _ => false,
-        }
+        self.world.tool == Tool::Text
+            && matches!(kind, Kind::Text | Kind::Rectangle | Kind::Diamond | Kind::Ellipse | Kind::Arrow)
     }
 }

@@ -471,8 +471,7 @@ impl App {
             PointerPhase::Hover | PointerPhase::Move if !editor.is_pressing() && !over_egui => {
                 // Over the edited text the pointer is an I-beam; off it the canvas's own cursor comes back.
                 let on_text = self.typesetter.with(|ts| editor.hit(ts, world, 6.0 / zoom));
-                self.cursor =
-                    if on_text { egui::CursorIcon::Text } else { input::cursor_icon(self.interaction.cursor()) };
+                self.cursor = input::editing_cursor(on_text, self.interaction.cursor());
                 cx.set_cursor(self.cursor);
                 on_text.then_some(Repaint::Idle)
             }

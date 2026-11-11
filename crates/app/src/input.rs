@@ -200,6 +200,12 @@ pub(crate) fn cursor_icon(c: Cursor) -> egui::CursorIcon {
     }
 }
 
+/// The pointer's icon while a text is edited. The I-beam shows only over the edited text, where a click places the
+/// caret; anywhere else it is the cursor the canvas chose for what lies under the pointer.
+pub(crate) fn editing_cursor(over_edited_text: bool, canvas: Cursor) -> egui::CursorIcon {
+    if over_edited_text { egui::CursorIcon::Text } else { cursor_icon(canvas) }
+}
+
 /// Does egui, not the canvas, own the pointer at `pos`? True while egui drags something, over a floating
 /// egui area (a panel, a popup) and outside the canvas rectangle. The same rule as the shell's.
 pub(crate) fn egui_owns(ctx: &egui::Context, canvas: egui::Rect, pos: egui::Pos2) -> bool {
@@ -226,6 +232,15 @@ mod tests {
         assert_eq!(cursor_icon(Cursor::Text), egui::CursorIcon::Text);
         assert_eq!(cursor_icon(Cursor::Pointer), egui::CursorIcon::PointingHand);
         assert_eq!(cursor_icon(Cursor::Default), egui::CursorIcon::Default);
+    }
+
+    #[test]
+    fn while_editing_the_i_beam_shows_over_the_edited_text_only() {
+        assert_eq!(editing_cursor(true, Cursor::Move), egui::CursorIcon::Text, "over the edited text");
+        assert_eq!(editing_cursor(false, Cursor::Move), cursor_icon(Cursor::Move), "over another element");
+        assert_ne!(editing_cursor(false, Cursor::Move), egui::CursorIcon::Text);
+        assert_eq!(editing_cursor(false, Cursor::Default), egui::CursorIcon::Default, "over empty canvas");
+        assert_eq!(editing_cursor(false, Cursor::Pointer), egui::CursorIcon::PointingHand, "over a link icon");
     }
 
     #[test]
