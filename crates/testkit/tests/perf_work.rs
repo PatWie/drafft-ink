@@ -525,3 +525,90 @@ fn structure_commands_on_a_few_elements_scan_nothing() {
         assert!(offenders.is_empty(), "passes over the scene at {n}: {offenders:?}");
     }
 }
+
+// ---- autosave -------------------------------------------------------------------------------------------------------
+
+/// Elements one call of `workspace_tick` may write: a call is about 5 ms of work (`TICK_BYTES`), the generated elements
+/// are 450 bytes of JSON on average.
+const MAX_ELEMENTS_PER_TICK: u64 = 8_000;
+
+/// Runs `workspace_tick` until a write ends. Returns the calls and the elements each one wrote.
+fn tick_until_written(h: &mut Harness) -> Vec<u64> {
+    let mut per_tick = Vec::new();
+    for _ in 0..10_000 {
+        let work = WorkScope::begin();
+        let ended = h.session.workspace_tick();
+        per_tick.push(work.named("autosave_elements"));
+        if ended {
+            return per_tick;
+        }
+    }
+    panic!("the write did not end in 10,000 calls");
+}
+
+fn stored_document(h: &Harness) -> String {
+    use drafftink_engine::ports::Ns;
+    String::from_utf8(h.fakes.storage.bytes(Ns::Autosave, "workspace.t1").expect("the document of tab 1"))
+        .expect("text")
+}
+
+#[test]
+fn the_autosave_of_a_big_document_is_written_in_pieces_and_is_the_document() {
+    for &n in sizes() {
+        let mut h = loaded(n);
+        h.session.execute("element.move", json!({ "ids": ["e40"], "dx": 5.0, "dy": 5.0 })).expect("an edit");
+        assert!(h.session.workspace_next_due_ms().is_some(), "the edit is seen");
+        h.advance_clock(1_000).expect("clock");
+        let expect = h.session.tab().doc.snapshot().to_json().expect("writable");
+        let calls = tick_until_written(&mut h);
+        assert_eq!(calls.iter().sum::<u64>(), n as u64, "every element is written once at {n}");
+        assert!(calls.iter().all(|&c| c <= MAX_ELEMENTS_PER_TICK), "pieces of bounded work at {n}: {calls:?}");
+        if n >= 10_000 {
+            assert!(calls.len() > n / 8_000, "a big document takes several calls at {n}: {}", calls.len());
+        }
+        assert!(stored_document(&h) == expect, "the text is the text of to_json at {n}");
+        assert_eq!(h.session.workspace_next_due_ms(), None, "nothing is left to write at {n}");
+    }
+}
+
+#[test]
+fn an_autosave_under_way_waits_for_a_gesture_and_writes_the_moment_it_began() {
+    let n = 10_000;
+    let mut h = loaded(n);
+    h.session.execute("element.move", json!({ "ids": ["e40"], "dx": 5.0, "dy": 5.0 })).expect("an edit");
+    assert!(h.session.workspace_next_due_ms().is_some(), "the edit is seen");
+    h.advance_clock(1_000).expect("clock");
+    let expect = h.session.tab().doc.snapshot().to_json().expect("writable");
+    let work = WorkScope::begin();
+    // The first calls take the document and check it; then elements are written.
+    let mut first = 0;
+    for _ in 0..20 {
+        assert!(!h.session.workspace_tick(), "a piece, not the end");
+        first = work.named("autosave_elements");
+        if first > 0 {
+            break;
+        }
+    }
+    assert!(first > 0 && first < n as u64, "some of the elements: {first}");
+    assert_eq!(h.session.workspace_next_due_ms(), Some(0), "the next piece is due at once");
+
+    // A drag starts: the pieces wait, the wake-up comes back slowly.
+    h.session
+        .execute(
+            "gesture.begin",
+            json!({ "command": "element.move", "args": { "ids": ["e41"], "dx": 1.0, "dy": 1.0 } }),
+        )
+        .expect("begin");
+    for _ in 0..5 {
+        assert!(!h.session.workspace_tick());
+    }
+    assert_eq!(work.named("autosave_elements"), first, "no piece during the drag");
+    assert_eq!(h.session.workspace_next_due_ms(), Some(500));
+    h.session.execute("gesture.end", json!({})).expect("end");
+
+    // The edit of the drag came after the job began: it is not in the text, and another write is due.
+    let calls = tick_until_written(&mut h);
+    assert_eq!(calls.iter().sum::<u64>() + first, n as u64);
+    assert!(stored_document(&h) == expect, "the text is the document at the start of the write");
+    assert!(h.session.workspace_next_due_ms().is_some(), "the change of the drag is still to be written");
+}

@@ -286,6 +286,8 @@ pub trait Clipboard {
 pub trait Storage {   // namespaces: Documents, Autosave, Settings, Library
     fn get(&self, ns: Ns, key: &str) -> Result<Option<Vec<u8>>, PortError>;
     fn put(&mut self, ns: Ns, key: &str, bytes: &[u8]) -> Result<(), PortError>;
+    fn put_later(&mut self, ns: Ns, key: &str, bytes: Vec<u8>) -> Result<(), PortError>;  // a write the caller does not wait for (default: put)
+    fn take_write_error(&mut self) -> Option<PortError>;                                    // the first failure of a put_later, once
     fn delete(&mut self, ns: Ns, key: &str) -> Result<(), PortError>;
     fn list(&self, ns: Ns) -> Result<Vec<StoredInfo>, PortError>;               // name, size, modified_ms
 }
@@ -429,6 +431,7 @@ Decision §9 item 6: the session keeps one workspace record in the `Storage` por
 
 - History is not saved. A restored tab starts with an empty undo stack, as an opened file does. The viewport size is not saved; the shell reports it with `view.set_viewport`.
 - A save writes only the documents that changed since the last write (by revision and name), then the index, then removes the documents of closed tabs. The index is last, so a crash in between leaves the old index and documents that are at worst newer.
+- `workspace_tick` writes in pieces. A write takes the documents of the changed tabs without copying them (`TabDoc::share_document`: a list of pointers to the store's elements, the moment the write began), checks them, writes the JSON a slice at a time (`drafftink_scene::JsonJob`, text identical to `Document::to_json`), and hands the finished text to `Storage::put_later`. A call does about 5 ms of work (`workspace_save::TICK_BYTES`), so a small document is written in one call and a document of 100,000 elements in about 25. While a write is under way `workspace_next_due_ms` answers `Some(0)`; a running gesture holds the pieces back (it answers 500). A change made meanwhile is not in the text and is written afterwards. `save_workspace` (the command `doc.autosave`, `flush_workspace`) does the whole write in the call. A native `put_later` is carried out by a writer thread, in order; every other call of the port waits for the writes before it. A failure of a queued write comes back through `take_write_error` and makes the next tick write everything again.
 - Debounce, on the `Clock` port's monotonic time: a write happens when the document has been quiet for 1 second, and in any case no later than `autosave.interval_s` (5) after the first unsaved change. With `autosave.enabled` off nothing is written by the tick or the flush. `workspace_next_due_ms` returns `None` when nothing waits, so an idle session needs no timer. A failed write is retried after a full interval and the reason is in `workspace_error`.
 - A change is a different tab list, order or active tab, or per tab a different revision, name or unsaved state. Camera and selection are saved with the next write but do not cause one.
 - Restore reads the index and every tab it names. A tab whose document is missing or damaged is skipped and listed in the report; the others open. With no readable tab the session stays as it was. A restored tab is dirty when it was dirty at the save. A record with a newer `schema` is neither read nor overwritten.

@@ -319,7 +319,7 @@ let mut s = Session::new(ports);
 let settings = s.load_settings()?;       // SettingsLoad: applied, ignored (with reasons), unreadable, newer_schema
 let workspace = s.restore_workspace()?;  // WorkspaceRestore: restored, skipped tabs with reasons
 // ... later, whenever take_dirty() says something changed, and when the timer below fires:
-s.workspace_tick();                      // writes when a write is due; true when it wrote
+s.workspace_tick();                      // writes when a write is due, a piece (about 5 ms) per call; true when a write ended
 if let Some(ms) = s.workspace_next_due_ms() { set_one_timer(ms) }   // None: no timer at all
 s.flush_workspace();                     // window close
 ```

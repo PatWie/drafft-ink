@@ -535,6 +535,12 @@ impl TabDoc {
         drafftink_scene::snapshot(&self.work)
     }
 
+    /// The content as it is now, without a copy of any element: for a job that takes longer than a frame
+    /// (`drafftink_scene::JsonJob`). Later edits do not show in it.
+    pub fn share_document(&self) -> drafftink_scene::SharedDocument {
+        self.work.share_document()
+    }
+
     /// The current journal position.
     pub fn mark(&self) -> DocMark {
         DocMark(self.journal.len())

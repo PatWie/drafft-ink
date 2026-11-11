@@ -8,6 +8,7 @@
 //! not exist is an error. A reference to a deleted (tombstoned) element is only a warning, because concurrent edits
 //! legitimately produce it and the owner of the reference resolves it as "not attached".
 
+use std::borrow::Borrow;
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fmt;
 
@@ -640,7 +641,7 @@ impl Report {
 }
 
 /// How strictly z-order ties are treated.
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Order {
     /// A file: keys must be strictly increasing.
     Strict,
@@ -657,6 +658,19 @@ pub fn validate_document(doc: &Document) -> Report {
     check_name(&doc.name, &mut report);
     let elements: Vec<&Element> = doc.elements.iter().collect();
     run(&elements, &doc.files.iter().collect::<Vec<_>>(), Order::Strict, &mut report);
+    report
+}
+
+/// [`validate_document`] for elements that are held apart from a [`Document`] (a shared snapshot): the same rules,
+/// the same report.
+pub fn validate_parts(
+    name: &str,
+    elements: &[&Element],
+    files: &BTreeMap<FileId, crate::document::FileEntry>,
+) -> Report {
+    let mut report = Report::default();
+    check_name(name, &mut report);
+    run(elements, &files.iter().collect::<Vec<_>>(), Order::Strict, &mut report);
     report
 }
 
@@ -677,54 +691,163 @@ fn check_name(name: &str, report: &mut Report) {
 }
 
 fn run(elements: &[&Element], files: &[(&FileId, &crate::document::FileEntry)], order: Order, report: &mut Report) {
-    if elements.len() > MAX_ELEMENTS {
-        report.add(None, DocError::TooMany { what: "elements", len: elements.len(), max: MAX_ELEMENTS });
-        return;
-    }
-    if files.len() > MAX_FILES {
-        report.add(None, DocError::TooMany { what: "files", len: files.len(), max: MAX_FILES });
-        return;
-    }
-    let mut by_id: HashMap<&ElementId, &Element> = HashMap::with_capacity(elements.len());
-    for e in elements {
-        if by_id.insert(&e.id, e).is_some() {
-            report.add(Some(&e.id), DocError::DuplicateId);
-        }
-    }
-
-    let mut previous: Option<&Element> = None;
-    for e in elements {
-        for err in element_errors(e) {
-            report.add(Some(&e.id), DocError::Element(err));
-        }
-        if let Some(p) = previous {
-            let bad = if order == Order::Strict { e.index <= p.index } else { e.index < p.index };
-            if bad {
-                report.add(Some(&e.id), DocError::IndexOrder { key: e.index.clone(), previous: p.index.clone() });
-            } else if order == Order::Tolerant && e.index == p.index {
-                // A tie in a live store: reported as a warning-level order issue below.
-                report.issues.push(Issue {
-                    severity: Severity::Warning,
-                    element: Some(e.id.clone()),
-                    error: DocError::IndexOrder { key: e.index.clone(), previous: p.index.clone() },
-                });
-            }
-        }
-        previous = Some(e);
-        if !e.deleted {
-            relations(e, &by_id, report);
-        }
-    }
-
-    check_labels(elements, &by_id, report);
-    check_groups(elements, report);
-    check_names(elements, report);
-    check_files(elements, files, report);
+    let mut v = Validator::new(order);
+    while !v.step(elements, files, usize::MAX) {}
+    report.issues.append(&mut v.finish().issues);
 }
 
-fn relations(e: &Element, by_id: &HashMap<&ElementId, &Element>, report: &mut Report) {
+/// Where an element is by its id: a map of references, or of positions in a list.
+trait Lookup {
+    fn element(&self, id: &ElementId) -> Option<&Element>;
+}
+
+impl Lookup for HashMap<&ElementId, &Element> {
+    fn element(&self, id: &ElementId) -> Option<&Element> {
+        self.get(id).copied()
+    }
+}
+
+/// Positions in `elements` by id, for a validator that does not hold references between its steps.
+struct Indexed<'a, A> {
+    ids: &'a HashMap<ElementId, usize>,
+    elements: &'a [A],
+}
+
+impl<A: Borrow<Element>> Lookup for Indexed<'_, A> {
+    fn element(&self, id: &ElementId) -> Option<&Element> {
+        self.ids.get(id).and_then(|i| self.elements.get(*i)).map(Borrow::borrow)
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Stage {
+    Index,
+    Elements,
+    Rest,
+    Done,
+}
+
+/// The rules of [`validate_document`], applied in steps. A step looks at a bounded number of elements, so a caller
+/// with a frame to keep can spread the work of a big document over many calls; the elements must be the same list
+/// at every call. The report is what one pass reports, in the same order.
+#[derive(Debug)]
+pub struct Validator {
+    order: Order,
+    stage: Stage,
+    ids: HashMap<ElementId, usize>,
+    at: usize,
+    report: Report,
+}
+
+impl Validator {
+    fn new(order: Order) -> Self {
+        Self { order, stage: Stage::Index, ids: HashMap::new(), at: 0, report: Report::default() }
+    }
+
+    /// A validator for a document called `name`: the rules of [`validate_parts`].
+    pub fn for_document(name: &str) -> Self {
+        let mut v = Self::new(Order::Strict);
+        check_name(name, &mut v.report);
+        v
+    }
+
+    /// Looks at up to `budget` more elements. True when everything is checked.
+    pub fn step<A: Borrow<Element>>(
+        &mut self,
+        elements: &[A],
+        files: &[(&FileId, &crate::document::FileEntry)],
+        budget: usize,
+    ) -> bool {
+        match self.stage {
+            Stage::Index => self.index(elements, files, budget),
+            Stage::Elements => self.elements(elements, budget),
+            Stage::Rest => {
+                let refs: Vec<&Element> = elements.iter().map(Borrow::borrow).collect();
+                let lookup = Indexed { ids: &self.ids, elements };
+                check_labels(&refs, &lookup, &mut self.report);
+                check_groups(&refs, &mut self.report);
+                check_names(&refs, &mut self.report);
+                check_files(&refs, files, &mut self.report);
+                self.stage = Stage::Done;
+            }
+            Stage::Done => {}
+        }
+        self.stage == Stage::Done
+    }
+
+    /// The report. Call it when [`Validator::step`] has answered true.
+    pub fn finish(self) -> Report {
+        self.report
+    }
+
+    fn index<A: Borrow<Element>>(
+        &mut self,
+        elements: &[A],
+        files: &[(&FileId, &crate::document::FileEntry)],
+        budget: usize,
+    ) {
+        if self.at == 0 {
+            if elements.len() > MAX_ELEMENTS {
+                self.report.add(None, DocError::TooMany { what: "elements", len: elements.len(), max: MAX_ELEMENTS });
+                self.stage = Stage::Done;
+                return;
+            }
+            if files.len() > MAX_FILES {
+                self.report.add(None, DocError::TooMany { what: "files", len: files.len(), max: MAX_FILES });
+                self.stage = Stage::Done;
+                return;
+            }
+            self.ids.reserve(elements.len());
+        }
+        let end = self.at.saturating_add(budget).min(elements.len());
+        for i in self.at..end {
+            let Some(e) = elements.get(i).map(Borrow::borrow) else { break };
+            if self.ids.insert(e.id.clone(), i).is_some() {
+                self.report.add(Some(&e.id), DocError::DuplicateId);
+            }
+        }
+        self.at = end;
+        if self.at >= elements.len() {
+            self.stage = Stage::Elements;
+            self.at = 0;
+        }
+    }
+
+    fn elements<A: Borrow<Element>>(&mut self, elements: &[A], budget: usize) {
+        let end = self.at.saturating_add(budget).min(elements.len());
+        for i in self.at..end {
+            let Some(e) = elements.get(i).map(Borrow::borrow) else { break };
+            for err in element_errors(e) {
+                self.report.add(Some(&e.id), DocError::Element(err));
+            }
+            if let Some(p) = i.checked_sub(1).and_then(|j| elements.get(j)).map(Borrow::borrow) {
+                let bad = if self.order == Order::Strict { e.index <= p.index } else { e.index < p.index };
+                if bad {
+                    self.report
+                        .add(Some(&e.id), DocError::IndexOrder { key: e.index.clone(), previous: p.index.clone() });
+                } else if self.order == Order::Tolerant && e.index == p.index {
+                    // A tie in a live store: reported as a warning-level order issue below.
+                    self.report.issues.push(Issue {
+                        severity: Severity::Warning,
+                        element: Some(e.id.clone()),
+                        error: DocError::IndexOrder { key: e.index.clone(), previous: p.index.clone() },
+                    });
+                }
+            }
+            if !e.deleted {
+                relations(e, &Indexed { ids: &self.ids, elements }, &mut self.report);
+            }
+        }
+        self.at = end;
+        if self.at >= elements.len() {
+            self.stage = Stage::Rest;
+        }
+    }
+}
+
+fn relations(e: &Element, by_id: &impl Lookup, report: &mut Report) {
     if let Some(fid) = &e.frame_id {
-        match by_id.get(fid) {
+        match by_id.element(fid) {
             None => report.add(Some(&e.id), DocError::FrameMissing(fid.clone())),
             Some(f) if f.tag() != Kind::Frame => {
                 report.add(Some(&e.id), DocError::NotAFrame { id: fid.clone(), kind: f.tag().name() });
@@ -741,7 +864,7 @@ fn relations(e: &Element, by_id: &HashMap<&ElementId, &Element>, report: &mut Re
     if let Some(d) = e.linear_data() {
         for (end, b) in [("start", &d.start_binding), ("end", &d.end_binding)] {
             let Some(b) = b else { continue };
-            match by_id.get(&b.target) {
+            match by_id.element(&b.target) {
                 None => report.add(Some(&e.id), DocError::BindingTargetMissing { end, target: b.target.clone() }),
                 Some(t) if !t.tag().is_bindable() => report.add(
                     Some(&e.id),
@@ -756,11 +879,11 @@ fn relations(e: &Element, by_id: &HashMap<&ElementId, &Element>, report: &mut Re
     }
 }
 
-fn check_labels(elements: &[&Element], by_id: &HashMap<&ElementId, &Element>, report: &mut Report) {
+fn check_labels(elements: &[&Element], by_id: &impl Lookup, report: &mut Report) {
     let mut label_of: HashMap<&ElementId, &ElementId> = HashMap::new();
     for e in elements.iter().filter(|e| !e.deleted) {
         let Some(cid) = e.container_id() else { continue };
-        match by_id.get(cid) {
+        match by_id.element(cid) {
             None => report.add(Some(&e.id), DocError::ContainerMissing(cid.clone())),
             Some(c) if !c.tag().is_label_container() => {
                 report.add(Some(&e.id), DocError::NotAContainer { id: cid.clone(), kind: c.tag().name() });

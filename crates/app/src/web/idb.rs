@@ -74,7 +74,7 @@ fn record(entry: &Entry) -> Result<JsValue, IdbError> {
 fn entry_of(value: &JsValue) -> Option<Entry> {
     let bytes = Reflect::get(value, &"b".into()).ok()?.dyn_into::<Uint8Array>().ok()?.to_vec();
     let modified_ms = Reflect::get(value, &"t".into()).ok()?.as_f64().map_or(0, |t| t as u64);
-    Some(Entry { bytes, modified_ms })
+    Some(Entry { bytes: std::sync::Arc::new(bytes), modified_ms })
 }
 
 /// Every record as `(key, entry)`. A record that does not look like ours is skipped.

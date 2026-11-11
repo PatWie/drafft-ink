@@ -182,3 +182,48 @@ fn a_rejected_file_says_which_rule_it_broke() {
         Err(FileRejection::TooMany { max: MAX_FILES }.into())
     );
 }
+
+#[test]
+fn a_shared_list_of_the_elements_copies_none_and_ignores_later_edits() {
+    let z = zs(1_000);
+    let mut s = MemoryStore::new();
+    let mut tx = s.begin();
+    for (i, k) in z.iter().enumerate() {
+        tx.insert(rect(&format!("e{i}"), k)).unwrap();
+    }
+    tx.commit().unwrap();
+
+    let shared = s.share_all();
+    assert_eq!(shared.len(), 1_000);
+    assert!(
+        shared.iter().zip(s.iter_all()).all(|(a, b)| std::ptr::eq(&**a, b)),
+        "the list points at the stored elements"
+    );
+
+    // Edits, a removal and a new element after the list was taken.
+    let mut tx = s.begin();
+    tx.update(&id("e10"), |e| e.transform.x = 123.0).unwrap();
+    tx.remove(&id("e11")).unwrap();
+    tx.insert(rect("late", &ZIndex::between(Some(&z[999]), None).unwrap())).unwrap();
+    tx.commit().unwrap();
+    assert_eq!(shared.len(), 1_000, "the list does not grow");
+    let old = shared.iter().find(|e| e.id == id("e10")).unwrap();
+    assert_ne!(old.transform.x, 123.0, "the list keeps the old value");
+    assert!(shared.iter().any(|e| e.id == id("e11")), "and the removed element");
+    assert_eq!(s.get(&id("e10")).unwrap().transform.x, 123.0);
+    // Only the edited element and the removed one stopped being shared.
+    let unchanged = shared.iter().filter(|a| s.get(&a.id).is_some_and(|b| std::ptr::eq(&***a, b))).count();
+    assert_eq!(unchanged, 1_000 - 2, "all but the edited and the removed element are still the stored ones");
+
+    // A rolled-back transaction gives back the very same elements.
+    let before = s.share_all();
+    {
+        let mut tx = s.begin();
+        tx.update(&id("e20"), |e| e.transform.y = 9.0).unwrap();
+    }
+    let after = s.share_all();
+    assert!(
+        before.iter().zip(&after).all(|(a, b)| std::sync::Arc::ptr_eq(a, b)),
+        "a rollback restores the same elements"
+    );
+}

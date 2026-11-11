@@ -508,7 +508,7 @@ What the drivers showed, and what changed for each:
   3. The availability checks of `group.ungroup`, `group.create`, `arrange.align` and `arrange.distribute` built the relations of the whole scene (`Relations::build`). In the browser that was 47 ms per frame while zooming at 100k. They use `Reverse::of`, the index when there is one.
   4. The one-shot commands (`group.create`, `group.ungroup`, `arrange.*`, `frame.*`, `element.delete`, `element.duplicate`, `element.lock`, `clipboard.*`, `library.add`, `selection.navigate`) walked the scene once to three times each (`Relations::build`, `arrows_bound_to` after a write). They read first and write after, from the index (`Reverse::of`; `plan_delete`, `plan_add`, `plan_leavers` hold what a write would take away), and `structure_commands_on_a_few_elements_scan_nothing` counts 0 passes at 1k, 10k and 100k. Still O(scene) by design, without a counter: `arrange.z_order` (it lists every element), `clipboard.copy` and `copy_as` (`snapshot()` of the document), `frame` capture after a resize (`free_candidates`), `element.restore`, `group_name`.
   The spatial index of a big document is built in the frame after the load (`App::frame`), not by the first hover (0.7 s at 100k).
-- **Autosave inside a drag.** A drag at 100k showed one frame of 0.8 s: the autosave wrote the whole document (`snapshot().to_json()`) one second after the drag began. A write now waits for the running gesture (`Session::workspace_tick`). The write itself, 0.8 s at 100k on the UI thread, remains after the gesture and is in `docs/backlog.md`.
+- **Autosave inside a drag.** A drag at 100k showed one frame of 0.8 s: the autosave wrote the whole document (`snapshot().to_json()`) one second after the drag began. A write now waits for the running gesture (`Session::workspace_tick`). The write itself was 0.8 s at 100k on the UI thread after the gesture; section 7.10 has what replaced it.
 - **Phases.** `encode` is now measured in the app, and a phase inside another counts for itself only, so `ui` no longer includes the scene composition and the phases add up to the frame.
 - **The drag driver scaled its selection.** `drag` showed 0.7 to 1 text or formula layouts per frame (`relayouts` 671 in `drag@10k`), 12 cache misses and 5 sketches per frame. The driver pressed 4 points from the top left corner of the selection, which is a resize handle, so it scaled 100 elements. It now presses the middle of `e0`: `relayouts` 0 to 1, `cache_miss` 260 to 480, `sketch_regens` 39 to 67 in 10 s (`drag@1k`, `10k`, `100k`). A move replayed its layouts all along (`the_drag_scenario_moves_its_selection_and_lays_nothing_out_again` presses where the driver does).
 
@@ -536,6 +536,33 @@ what serde writes), a document opened without its CRDT copy until the first edit
 build took 31.6 s because Loro was not optimised (29 s of it); `[profile.dev.package.loro*]` is now `opt-level = 3`, as for
 `brotli`, and a debug load of 100,000 is 9 s. Loading is still not a test to run at 100k in debug (`sizes()` in the
 work-counter tests stops at 10k there).
+
+### 7.10 Autosave in pieces
+
+The autosave of a document of 100,000 elements (generated scene, release, the research box): 63 ms to copy the document, 20 ms
+to check it, 115 ms to write 45 MB of JSON, and then the storage port: a native `put` ends with an `fsync` (a 30 MB file
+with `fsync` took 4 s on this machine's disk), and the web cache copied the bytes three times. All of it was one call of
+`workspace_tick` on the UI thread.
+
+Now the write is a job (`cmd/tab/workspace_save.rs`). `MemoryStore` keeps its elements behind `Arc` in both lists (the map
+by id and the z-ordered tree), so `share_document` is a walk of one tree that clones pointers (7 ms at 100k; the copy was
+63 ms). `Validator` checks in steps (the rules of `validate_document`, 25,000 elements a step; the last step, which needs every
+element, is 5 ms at 100k), `JsonJob` writes about 2 MB of text a step (the text of `Document::to_json`, byte for byte), and the
+finished text goes to `Storage::put_later`. The native store hands it to a writer thread; the web cache keeps the vector
+without a copy. The job pauses for a running gesture, as before.
+
+| At 100,000 elements | Before | After |
+|---|---|---|
+| Longest call of `workspace_tick` | about 800 ms (with the disk) | 8.2 ms |
+| Calls for one write | 1 | 28 (one is the 7 ms take, three are the check, 24 write text) |
+| Longest stall of the UI thread by the disk | the whole `fsync` | none: the writer thread |
+| Work counted by `autosave_elements` per call | all | at most 4,700 |
+
+The tests count the work (`the_autosave_of_a_big_document_is_written_in_pieces_and_is_the_document`: every element is written
+once, at most 8,000 per call, the text is the text of `to_json` at 1k, 10k and 100k; `an_autosave_under_way_waits_for_a_gesture_...`:
+no piece during a drag, and the text is the document at the start of the write, not the drag). Times are not asserted.
+Not done: the check of the image files (`FileId::of`, a hash of every picture) is one step, and a single huge element (a
+freehand path of a million points) is one step of its own.
 
 ## 8. Wasm size
 

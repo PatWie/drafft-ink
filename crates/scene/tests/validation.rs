@@ -478,3 +478,67 @@ fn a_name_is_one_to_the_limit_characters_without_control_characters() {
     assert!(!is_valid_name(&"é".repeat(MAX_NAME_CHARS + 1)));
     assert!(!is_valid_name("two\nlines"));
 }
+
+// ---- the same rules in steps ---------------------------------------------------------------------------------------
+
+fn shared_of(doc: &Document) -> SharedDocument {
+    SharedDocument {
+        name: doc.name.clone(),
+        background: doc.background,
+        elements: doc.elements.iter().cloned().map(std::sync::Arc::new).collect(),
+        files: doc.files.clone(),
+    }
+}
+
+fn stepwise(doc: &Document, budget: usize) -> Report {
+    let shared = shared_of(doc);
+    let mut check = shared.checker();
+    let mut steps = 0;
+    while !check.step(&shared, budget) {
+        steps += 1;
+        assert!(steps < 100_000, "the check ends");
+    }
+    match check.finish() {
+        Ok(()) => Report::default(),
+        Err(DocumentError::Invalid(r)) => r,
+        Err(other) => panic!("{other}"),
+    }
+}
+
+#[test]
+fn a_check_in_steps_reports_what_one_pass_reports() {
+    let z = zs(8);
+    let mut broken = Vec::new();
+    broken.push(rect("a", &z[0]));
+    broken.push(rect("a", &z[1])); // a second "a"
+    let mut orphan = rect("b", &z[2]);
+    orphan.frame_id = Some(id("nowhere"));
+    broken.push(orphan);
+    let mut dangling = arrow("c", &z[3], &[(0.0, 0.0), (10.0, 0.0)]);
+    set_end_binding(&mut dangling, "gone");
+    broken.push(dangling);
+    broken.push(rect("d", &z[3])); // the same z key as "c"
+    let mut named_1 = rect("e", &z[5]);
+    named_1.name = Some("same".into());
+    let mut named_2 = rect("f", &z[6]);
+    named_2.name = Some("same".into());
+    broken.push(named_1);
+    broken.push(named_2);
+    let mut label = text("g", &z[7], "x");
+    if let ElementKind::Text(d) = &mut label.kind {
+        d.container_id = Some(id("nobody"));
+    }
+    broken.push(label);
+
+    let valid = doc_of(vec![rect("a", &z[0]), rect("b", &z[1]), text("t", &z[2], "hi")]);
+    for doc in [valid, doc_of(broken)] {
+        let expect = validate_document(&doc);
+        for budget in [1, 2, 3, 100] {
+            assert_eq!(stepwise(&doc, budget), expect, "budget {budget}");
+        }
+    }
+    assert!(
+        validate_document(&doc_of(vec![rect("a", &z[0]), rect("a", &z[1])])).has_errors(),
+        "the broken sample breaks rules"
+    );
+}

@@ -23,6 +23,7 @@ pub mod palette;
 mod points;
 #[cfg(feature = "scenegen")]
 pub mod scenegen;
+mod shared;
 mod store;
 mod style;
 mod validate;
@@ -41,6 +42,7 @@ pub use element::{
 };
 pub use id::{ElementId, FileId, GroupId, IdError, IdSource, MAX_ID_LEN, RandomIds, Rng64, SeqIds, SplitMix64};
 pub use memory::{MemoryStore, MemoryTx};
+pub use shared::{DocumentCheck, JsonJob, SharedDocument};
 pub use store::{
     Change, ChangeKind, ChangeSet, Fields, FileRejection, SceneRead, SceneStore, SceneTx, StoreError, SubscriptionId,
     load_document, snapshot,
@@ -50,7 +52,7 @@ pub use style::{
     VerticalAlign,
 };
 pub use validate::{
-    DocError, ElementError, Issue, Report, Severity, element_errors, is_image_media_type, is_valid_name,
-    validate_document, validate_element, validate_scene, validate_transform,
+    DocError, ElementError, Issue, Report, Severity, Validator, element_errors, is_image_media_type, is_valid_name,
+    validate_document, validate_element, validate_parts, validate_scene, validate_transform,
 };
 pub use zindex::{IndexError, MAX_INDEX_LEN, ZIndex};

@@ -1185,3 +1185,63 @@ fn never_saved_documents_stay_dirty_whatever_their_revision() {
     run(&mut s, "doc.save", json!({}));
     assert!(!s.tab().dirty());
 }
+
+// ---- a write that fails after the call that started it returned ----
+
+/// A storage whose queued writes report one failure later, as a port with a writer thread would.
+#[derive(Clone)]
+struct LateFailure {
+    inner: crate::ports::fake::FakeStorage,
+    queued: Arc<std::sync::atomic::AtomicUsize>,
+    fail_next: Arc<std::sync::atomic::AtomicBool>,
+}
+
+impl Storage for LateFailure {
+    fn get(&self, ns: Ns, key: &str) -> Result<Option<Vec<u8>>, PortError> {
+        self.inner.get(ns, key)
+    }
+    fn put(&mut self, ns: Ns, key: &str, bytes: &[u8]) -> Result<(), PortError> {
+        self.inner.put(ns, key, bytes)
+    }
+    fn put_later(&mut self, ns: Ns, key: &str, bytes: Vec<u8>) -> Result<(), PortError> {
+        self.queued.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        self.inner.put_later(ns, key, bytes)
+    }
+    fn take_write_error(&mut self) -> Option<PortError> {
+        self.fail_next.swap(false, std::sync::atomic::Ordering::SeqCst).then(|| PortError::Failed("the disk is full".into()))
+    }
+    fn delete(&mut self, ns: Ns, key: &str) -> Result<(), PortError> {
+        self.inner.delete(ns, key)
+    }
+    fn list(&self, ns: Ns) -> Result<Vec<StoredInfo>, PortError> {
+        self.inner.list(ns)
+    }
+}
+
+#[test]
+fn a_queued_write_that_fails_later_makes_the_next_write_start_from_nothing() {
+    let (mut s, f) = three();
+    let late = LateFailure {
+        inner: f.storage.clone(),
+        queued: Arc::default(),
+        fail_next: Arc::default(),
+    };
+    s.ports.storage = Some(Box::new(late.clone()));
+    run(&mut s, "t.add", json!({"x": 1}));
+    s.workspace_tick();
+    f.clock.advance_ms(QUIET_MS);
+    assert!(s.workspace_tick(), "written");
+    assert_eq!(late.queued.load(std::sync::atomic::Ordering::SeqCst), 4, "three documents and the index went through put_later");
+    assert_eq!(s.workspace_error(), None);
+    assert_eq!(s.workspace_next_due_ms(), None, "nothing is left to write");
+
+    // The port finds out later that a write did not happen.
+    late.fail_next.store(true, std::sync::atomic::Ordering::SeqCst);
+    assert!(!s.workspace_tick());
+    assert!(s.workspace_error().is_some_and(|e| e.contains("disk is full")), "{:?}", s.workspace_error());
+    assert!(s.workspace_next_due_ms().is_some(), "a write is due again");
+    f.clock.advance_ms(QUIET_MS);
+    assert!(s.workspace_tick());
+    assert_eq!(late.queued.load(std::sync::atomic::Ordering::SeqCst), 8, "all three documents were written again, and the index");
+    assert_eq!(s.workspace_error(), None);
+}
