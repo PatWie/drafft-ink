@@ -63,12 +63,16 @@ CARGO_TARGET_DIR="$TARGET_DIR" cargo run -q -p drafftink-cli -- schemas > "$SCHE
 export RUSTFLAGS="${RUSTFLAGS:-} -C target-feature=+simd128"
 OPT_FEATURES="--enable-bulk-memory --enable-sign-ext --enable-mutable-globals --enable-nontrapping-float-to-int --enable-reference-types --enable-multivalue --enable-simd"
 WASM_OPT=""
+TIMEOUT="$(command -v timeout || command -v gtimeout || true)"   # macOS has neither without coreutils: then no time limit
 if [ "$OPT" = 1 ] && [ "$PROFILE" = "release-wasm" ]; then
   WASM_OPT="$(command -v wasm-opt || true)"
   [ -z "$WASM_OPT" ] && WASM_OPT="$(ls ~/.cargo/tools/binaryen-version_*/bin/wasm-opt 2>/dev/null | sort -V | tail -1 || true)"
   [ -z "$WASM_OPT" ] && echo "wasm-opt not found: skipping (install binaryen >= 117 for a smaller file)" >&2
 fi
 WASM="$TARGET_DIR/wasm32-unknown-unknown/$PROFILE/$NAME.wasm"
+
+# filesize <file>: bytes, with GNU stat (Linux) or BSD stat (macOS).
+filesize() { stat -c %s "$1" 2>/dev/null || stat -f %z "$1"; }
 
 # bindgen_module <package dir under dist/>: wasm-bindgen and wasm-opt for the module cargo just wrote. Sets RAW and OPTSIZE.
 bindgen_module() {
@@ -77,15 +81,15 @@ bindgen_module() {
   # No --keep-debug: the name section alone is 1.9 MB (docs/stack.md).
   wasm-bindgen --target web --no-typescript --out-dir "$out_dir" --out-name "$NAME" "$WASM"
   out="$out_dir/${NAME}_bg.wasm"
-  RAW=$(stat -c %s "$out")
+  RAW=$(filesize "$out")
   OPTSIZE=$RAW
   if [ -n "$WASM_OPT" ]; then
     # Not --all-features: with binaryen 133 it turns on experimental encodings and Chromium then rejects the
     # module ("unknown import kind 0x7e"). These are the features rustc's wasm32 target emits.
     # -Oz: smaller than -Os by about 2% brotli, and as fast in the frame measurement (docs/performance.md, "Wasm size").
-    timeout 1200 "$WASM_OPT" $OPT_FEATURES --strip-debug --strip-producers -Oz "$out" -o "$out.opt"
+    ${TIMEOUT:+$TIMEOUT 1200} "$WASM_OPT" $OPT_FEATURES --strip-debug --strip-producers -Oz "$out" -o "$out.opt"
     mv "$out.opt" "$out"
-    OPTSIZE=$(stat -c %s "$out")
+    OPTSIZE=$(filesize "$out")
   fi
 }
 
