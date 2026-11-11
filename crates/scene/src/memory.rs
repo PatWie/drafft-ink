@@ -336,7 +336,7 @@ impl SceneTx for MemoryTx<'_> {
                     if fields.is_empty() {
                         f.version = o.version;
                     } else {
-                        f.version = o.version + 1;
+                        f.version = o.version.saturating_add(1);
                         elements.push(Change { id, kind: ChangeKind::Updated, fields, version: f.version });
                     }
                 }
