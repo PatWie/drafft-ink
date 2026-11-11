@@ -241,6 +241,78 @@ pub enum CollabStatus {
     Failed(String),
 }
 
+/// Why a joined room is not usable yet, from `collab.status`'s `loading`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RoomLoading {
+    /// Opening the connection.
+    Connecting,
+    /// Joined, waiting for the room's content.
+    Syncing,
+    /// A big update arrived and is about to be applied.
+    Receiving {
+        /// Its size in bytes.
+        bytes: u64,
+    },
+    /// The content is in and the scene fills in slices.
+    Importing {
+        /// Items shown so far.
+        done: usize,
+        /// All items of the room.
+        total: usize,
+    },
+}
+
+impl RoomLoading {
+    /// The state from the `loading` object of `collab.status`; `None` for a missing or unknown phase.
+    pub fn from_status(v: &Value) -> Option<RoomLoading> {
+        let count = |key: &str| v.get(key).and_then(Value::as_u64);
+        match v.get("phase")?.as_str()? {
+            "connecting" => Some(RoomLoading::Connecting),
+            "syncing" => Some(RoomLoading::Syncing),
+            "receiving" => Some(RoomLoading::Receiving { bytes: count("bytes")? }),
+            "importing" => Some(RoomLoading::Importing {
+                done: usize::try_from(count("done")?).ok()?,
+                total: usize::try_from(count("total")?).ok()?,
+            }),
+            _ => None,
+        }
+    }
+
+    /// How far the import is, in `0..=1`, when it is known (only while importing a room with items).
+    pub fn fraction(&self) -> Option<f32> {
+        match *self {
+            RoomLoading::Importing { done, total } if total > 0 => Some((done as f32 / total as f32).clamp(0.0, 1.0)),
+            _ => None,
+        }
+    }
+
+    /// What to tell the user, in plain words. An import shows a whole-number percentage.
+    pub fn text(&self) -> String {
+        match *self {
+            RoomLoading::Connecting => "Connecting to the room...".to_owned(),
+            RoomLoading::Syncing => "Waiting for the room's content...".to_owned(),
+            RoomLoading::Receiving { bytes } => format!("Receiving the room ({})...", byte_size(bytes)),
+            RoomLoading::Importing { .. } => match self.fraction() {
+                Some(f) => format!("Loading the room: {}%", (f * 100.0).floor() as u32),
+                None => "Loading the room...".to_owned(),
+            },
+        }
+    }
+}
+
+/// `bytes` as B, KB or MB with one decimal for the larger two.
+fn byte_size(bytes: u64) -> String {
+    const KB: f64 = 1024.0;
+    let b = bytes as f64;
+    if b < KB {
+        format!("{bytes} B")
+    } else if b < KB * KB {
+        format!("{:.1} KB", b / KB)
+    } else {
+        format!("{:.1} MB", b / (KB * KB))
+    }
+}
+
 /// A collaborator.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Peer {
@@ -282,6 +354,8 @@ pub struct CollabView {
     /// A server is chosen (`collab.connect` without a room): no socket is open and no room is joined, and the
     /// dialog offers the room and the access token. [`CollabView::status`] is still `Disconnected`.
     pub server_chosen: bool,
+    /// Why the room is not usable yet, until its content is in.
+    pub loading: Option<RoomLoading>,
 }
 
 impl CollabView {
@@ -302,10 +376,12 @@ impl CollabView {
             .and_then(Value::as_array)
             .map(|a| a.iter().filter_map(Peer::from_status).collect())
             .unwrap_or_default();
+        let loading = out.get("loading").and_then(RoomLoading::from_status);
         CollabView {
             status,
             room: text("room").map(str::to_owned),
             peers,
+            loading,
             server_chosen: text("state") == Some("ready"),
         }
     }

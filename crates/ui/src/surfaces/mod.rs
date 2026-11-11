@@ -17,6 +17,7 @@ pub mod equation;
 pub mod export;
 pub mod library;
 pub mod link;
+pub mod loading;
 pub mod menu;
 pub mod naming;
 pub mod palette;
@@ -53,5 +54,6 @@ pub fn show_all(ctx: &Context, cx: &mut Cx<'_>, st: &mut UiState) {
     convert::show(ctx, cx, st);
     context_menu::show(ctx, cx, st);
     palette::show(ctx, cx, st);
+    loading::show(ctx, cx, st);
     toasts::show(ctx, cx, st);
 }

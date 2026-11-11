@@ -337,3 +337,47 @@ fn an_outside_click_closes_the_font_picker() {
     dialog::click_canvas(&mut h);
     assert_eq!(dialog::verbs(h.state()), [Verb::CloseOverlays]);
 }
+
+// ---- the last picked colour --------------------------------------------------------------------------------------
+
+#[test]
+fn a_colour_picked_in_the_popover_becomes_the_last_picked_swatch_next_to_the_wheel() {
+    let mut h = open(dialog::fixture(), ColorTarget::Stroke);
+    assert!(h.query_by_label("Last picked stroke").is_none(), "no swatch before a pick");
+    h.get_by_label("Stone 500").click();
+    h.run();
+    assert_eq!(h.state().state.last_picked.of(ColorTarget::Stroke), Some("stone-500"));
+    assert_eq!(h.state().state.last_picked.of(ColorTarget::Fill), None, "the fill has its own");
+    h.state_mut().dispatch();
+    h.run();
+    h.state_mut().clear();
+    // The popover is closed, the top bar shows the swatch and a click on it is the same style.set.
+    h.get_by_label("Last picked stroke").click();
+    h.run();
+    assert_eq!(calls(&h), [("style.set".to_owned(), json!({"props": {"stroke_color": "stone-500"}}), Origin::Ui)]);
+}
+
+#[test]
+fn the_fill_remembers_its_own_pick_and_a_hex_value_counts() {
+    let mut h = open(dialog::fixture(), ColorTarget::Fill);
+    h.get_by_label("Teal 300").click();
+    h.run();
+    assert_eq!(h.state().state.last_picked.of(ColorTarget::Fill), Some("teal-300"));
+    assert_eq!(h.state().state.last_picked.of(ColorTarget::Stroke), None);
+    h.state_mut().dispatch();
+    h.run();
+    h.get_by_label("Last picked fill");
+    assert!(h.query_by_label("Last picked stroke").is_none());
+}
+
+#[test]
+fn none_and_the_background_are_not_remembered() {
+    let mut h = open(dialog::fixture(), ColorTarget::Fill);
+    h.get_by_label("None").click();
+    h.run();
+    assert_eq!(h.state().state.last_picked.of(ColorTarget::Fill), None, "no fill is not a colour");
+    let mut h = open(dialog::fixture(), ColorTarget::Background);
+    h.get_by_label("Blue 500").click();
+    h.run();
+    assert_eq!(h.state().state.last_picked, drafftink_ui::LastPicked::default());
+}

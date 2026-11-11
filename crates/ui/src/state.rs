@@ -72,6 +72,35 @@ pub enum ColorTarget {
     Background,
 }
 
+/// The colours last picked in the full colour popover, one for the stroke and one for the fill. The top bar keeps
+/// a swatch of each next to the colour wheel, so a colour from the grid is one click away afterwards.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct LastPicked {
+    stroke: Option<String>,
+    fill: Option<String>,
+}
+
+impl LastPicked {
+    /// The colour last picked for the stroke or the fill, as a palette name or `#rrggbb[aa]`. The page background
+    /// is not remembered.
+    pub fn of(&self, target: ColorTarget) -> Option<&str> {
+        match target {
+            ColorTarget::Stroke => self.stroke.as_deref(),
+            ColorTarget::Fill => self.fill.as_deref(),
+            ColorTarget::Background => None,
+        }
+    }
+
+    /// Remembers `color` for the stroke or the fill.
+    pub fn remember(&mut self, target: ColorTarget, color: String) {
+        match target {
+            ColorTarget::Stroke => self.stroke = Some(color),
+            ColorTarget::Fill => self.fill = Some(color),
+            ColorTarget::Background => {}
+        }
+    }
+}
+
 /// The command palette.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct PaletteState {
@@ -369,6 +398,8 @@ pub struct UiState {
     pub collab_open: bool,
     /// The colour popover, when open.
     pub color_popover: Option<ColorTarget>,
+    /// The colours last picked in the colour popover.
+    pub last_picked: LastPicked,
     /// The font family popover is open.
     pub font_picker_open: bool,
     /// The search box is open.

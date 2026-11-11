@@ -26,6 +26,8 @@ pub mod widgets;
 
 pub use action::{Call, CommandSink, HostRequest, Report, Routed, Scrub, ScrubPhase, UiAction, Verb, dispatch, route};
 pub use keymap::{Chord, Pointer, help_rows, parse_chord, resolve_keys};
-pub use model::{AboutInfo, AgentServerView, BoundsView, CollabStatus, CollabView, Model, Peer, TextFaces};
+pub use model::{
+    AboutInfo, AgentServerView, BoundsView, CollabStatus, CollabView, Model, Peer, RoomLoading, TextFaces,
+};
 pub use shell::{FrameInput, FrameResult, UiShell, draw};
-pub use state::{ColorTarget, Toast, UiState};
+pub use state::{ColorTarget, LastPicked, Toast, UiState};
