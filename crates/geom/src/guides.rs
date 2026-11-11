@@ -69,6 +69,39 @@ fn mid(a: f64, b: f64) -> f64 {
     (a + b) / 2.0
 }
 
+/// A guide counts as touching a box line when it is this close, in world units.
+const MARKER_TOLERANCE: f64 = 0.1;
+
+/// The three vertical lines of a box: left edge, right edge, centre.
+fn x_lines(r: &Rect) -> [f64; 3] {
+    [r.x0, r.x1, mid(r.x0, r.x1)]
+}
+
+/// The three horizontal lines of a box: top edge, bottom edge, centre.
+fn y_lines(r: &Rect) -> [f64; 3] {
+    [r.y0, r.y1, mid(r.y0, r.y1)]
+}
+
+/// Add the marker coordinates of every box with a line on the guide at `position`.
+///
+/// `along` gives the box lines that run parallel to the guide (compared with `position`);
+/// `across` gives the coordinates to mark on the guide.
+fn extend_markers(
+    markers: &mut Vec<f64>,
+    others: &[Rect],
+    position: f64,
+    along: fn(&Rect) -> [f64; 3],
+    across: fn(&Rect) -> [f64; 3],
+) {
+    for other in others {
+        for line in along(other) {
+            if (line - position).abs() < MARKER_TOLERANCE {
+                markers.extend(across(other));
+            }
+        }
+    }
+}
+
 fn guide(kind: SmartGuideKind, position: f64, start: f64, end: f64) -> SmartGuide {
     SmartGuide { kind, position, start, end, snap_points: Vec::new() }
 }
@@ -144,13 +177,7 @@ pub fn detect_smart_guides(dragged: Rect, others: &[Rect], threshold: f64) -> Sm
         let lo = dragged.y0.min(dragged.y1).min(other.y0).min(other.y1);
         let hi = dragged.y0.max(dragged.y1).max(other.y0).max(other.y1);
         let mut snap_points = vec![dragged.y0, dragged.y1, cy];
-        for ob in &others {
-            for ox in [ob.x0, ob.x1, mid(ob.x0, ob.x1)] {
-                if (ox - guide_x).abs() < 0.1 {
-                    snap_points.extend([ob.y0, ob.y1, mid(ob.y0, ob.y1)]);
-                }
-            }
-        }
+        extend_markers(&mut snap_points, &others, guide_x, x_lines, y_lines);
         result.guides.push(SmartGuide {
             kind: SmartGuideKind::Vertical,
             position: guide_x,
@@ -168,13 +195,7 @@ pub fn detect_smart_guides(dragged: Rect, others: &[Rect], threshold: f64) -> Sm
         let lo = x0.min(x1).min(other.x0).min(other.x1);
         let hi = x0.max(x1).max(other.x0).max(other.x1);
         let mut snap_points = vec![x0, x1, x0 + w / 2.0];
-        for ob in &others {
-            for oy in [ob.y0, ob.y1, mid(ob.y0, ob.y1)] {
-                if (oy - guide_y).abs() < 0.1 {
-                    snap_points.extend([ob.x0, ob.x1, mid(ob.x0, ob.x1)]);
-                }
-            }
-        }
+        extend_markers(&mut snap_points, &others, guide_y, y_lines, x_lines);
         result.guides.push(SmartGuide {
             kind: SmartGuideKind::Horizontal,
             position: guide_y,
@@ -219,13 +240,7 @@ pub fn detect_smart_guides_for_point(point: Point, others: &[Rect], threshold: f
         result.point.x = gx;
         result.snapped_x = true;
         let mut snap_points = vec![point.y];
-        for ob in &others {
-            for ox in [ob.x0, ob.x1, mid(ob.x0, ob.x1)] {
-                if (ox - gx).abs() < 0.1 {
-                    snap_points.extend([ob.y0, ob.y1, mid(ob.y0, ob.y1)]);
-                }
-            }
-        }
+        extend_markers(&mut snap_points, &others, gx, x_lines, y_lines);
         result.guides.push(SmartGuide {
             kind: SmartGuideKind::Vertical,
             position: gx,
@@ -239,13 +254,7 @@ pub fn detect_smart_guides_for_point(point: Point, others: &[Rect], threshold: f
         result.snapped_y = true;
         let sx = if result.snapped_x { result.point.x } else { point.x };
         let mut snap_points = vec![sx];
-        for ob in &others {
-            for oy in [ob.y0, ob.y1, mid(ob.y0, ob.y1)] {
-                if (oy - gy).abs() < 0.1 {
-                    snap_points.extend([ob.x0, ob.x1, mid(ob.x0, ob.x1)]);
-                }
-            }
-        }
+        extend_markers(&mut snap_points, &others, gy, y_lines, x_lines);
         result.guides.push(SmartGuide {
             kind: SmartGuideKind::Horizontal,
             position: gy,
