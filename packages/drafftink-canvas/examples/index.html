@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>drafftink-canvas example</title>
+  <link rel="icon" href="data:,">
+  <style>
+    :root { color-scheme: light dark; }
+    body { margin: 0; font: 14px system-ui, sans-serif; }
+    #bar { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; padding: 6px 8px; height: 32px; }
+    #bar button { font: inherit; padding: 2px 8px; }
+    #status { margin-left: auto; font-variant-numeric: tabular-nums; }
+    canvas { display: block; width: 100vw; height: calc(100vh - 44px); background: #fff; }
+  </style>
+</head>
+<body>
+  <div id="bar">
+    <button id="add">Add</button>
+    <button id="fit">Fit</button>
+    <button id="hand" aria-pressed="false">Hand</button>
+    <button id="group">Group</button>
+    <button id="front">Front</button>
+    <button id="del">Delete</button>
+    <button id="json">JSON</button>
+    <button id="svg">SVG</button>
+    <button id="png">PNG</button>
+    <button id="clear">Clear</button>
+    <span id="status">starting</span>
+  </div>
+  <canvas id="canvas"></canvas>
+  <script type="module">
+    // The whole example. `?n=1000` sets the number of shapes at the start.
+    import { Stage } from "../src/index.js";
+
+    const $ = (id) => document.getElementById(id);
+    const status = (text) => ($("status").textContent = text);
+    const count = Number(new URLSearchParams(location.search).get("n") ?? 200);
+
+    // A grid of shapes with names, to click on and to select with the rubber band.
+    function shapes(n) {
+      const side = Math.ceil(Math.sqrt(n));
+      const colors = ["#ffc9c9", "#b2f2bb", "#a5d8ff", "#ffec99", "#d0bfff"];
+      return Array.from({ length: n }, (_, i) => {
+        const x = (i % side) * 90, y = Math.floor(i / side) * 90;
+        const base = { id: `s${i}`, x, y, w: 70, h: 50, name: i % 2 ? "odd" : "even", style: { fill_color: colors[i % 5], sloppiness: i % 3 ? "artist" : "architect" } };
+        switch (i % 4) {
+          case 0: return { ...base, type: "rectangle" };
+          case 1: return { ...base, type: "ellipse" };
+          case 2: return { ...base, type: "diamond" };
+          default: return { type: "text", id: base.id, x, y: y + 10, content: `#${i}`, name: base.name };
+        }
+      });
+    }
+
+    try {
+      const stage = await Stage.create($("canvas"), { grid: { kind: "dots" } });
+      window.stage = stage;
+      stage.transact((tx) => shapes(count).forEach((s) => tx.add(s)));
+      stage.fitToContent({ padding: 40 });
+
+      stage.on("click", "rectangle", (e) => status(`clicked ${e.target}`));
+      stage.on("selectionchange", (ids) => status(`${ids.length} selected`));
+
+      let n = 0;
+      $("add").onclick = () => {
+        const c = stage.screenToWorld([stage.canvas.clientWidth / 2, stage.canvas.clientHeight / 2]);
+        const id = stage.add({ type: "rectangle", x: c[0] - 40 + (n % 5) * 12, y: c[1] - 25 + (n++ % 5) * 12, w: 80, h: 50, style: { fill_color: "#ffd8a8" } });
+        stage.setSelection([id]);
+      };
+      $("fit").onclick = () => stage.fitToContent({ padding: 40 });
+      $("hand").onclick = (e) => {
+        const on = e.currentTarget.getAttribute("aria-pressed") !== "true";
+        e.currentTarget.setAttribute("aria-pressed", String(on));
+        stage.setPointerMode(on ? "hand" : "select");
+      };
+      $("group").onclick = () => stage.selection.length > 1 && stage.group(stage.selection);
+      $("front").onclick = () => stage.order(stage.selection, "front");
+      $("del").onclick = () => { stage.remove(stage.selection); stage.setSelection([]); };
+      $("clear").onclick = () => stage.clear();
+      const download = (name, blob) => Object.assign(document.createElement("a"), { href: URL.createObjectURL(blob), download: name }).click();
+      $("json").onclick = () => download("scene.json", new Blob([stage.exportJSON(true)], { type: "application/json" }));
+      $("svg").onclick = () => download("scene.svg", new Blob([stage.toSVG()], { type: "image/svg+xml" }));
+      $("png").onclick = async () => download("scene.png", new Blob([await stage.toPNG({ scale: 2 })], { type: "image/png" }));
+
+      status(`${stage.count} shapes`);
+      window.__ready = true;
+    } catch (error) {
+      status(String(error.message ?? error));
+      window.__error = String(error.message ?? error);
+    }
+  </script>
+</body>
+</html>

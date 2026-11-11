@@ -25,7 +25,7 @@ A crate may depend on workspace crates of strictly lower layers. It may not depe
 | L6 | `ui` | egui UI. Reads the registry, calls `execute`, shows refusals. No document logic |
 | L6 | `bridge` | agent bridge: loopback JSON-RPC over WebSocket, MCP stdio server |
 | L7 | `testkit` | headless harness, scenario runner, deterministic scene generator, probes |
-| L8 | apps | `drafftink`, `drafftink-web`, `drafftink-server`, `drafftink-cli`, `drafftink-mcp` |
+| L8 | apps | `drafftink`, `drafftink-web`, `drafftink-canvas-js` (the npm package, `docs/canvas-api.md` section 9), `drafftink-server`, `drafftink-cli`, `drafftink-mcp` |
 | none | `xtask` | build tooling. Standalone |
 
 Package names are `drafftink-<crate>`; the desktop app is `drafftink`.
@@ -40,7 +40,7 @@ Package names are `drafftink-<crate>`; the desktop app is `drafftink`.
 6. **UI and OS crates only at L6 and above.** `egui*`, `eframe`, `winit`, `rfd`, `arboard`, `accesskit*` and `bevy*` may not appear below L6, in any dependency kind. Lower layers reach the OS through port traits in `engine`.
 7. **GPU crates.** `vello*` may appear from L2 (`render`). `wgpu*` may appear in `render`, which names wgpu types that Vello exposes, and from L6. `render` must not create a device or a surface. `gpu` owns the device, the surface and the compositing. Crates at L3 to L5 reach the GPU only through `render`'s encoded scenes.
 8. **Every workspace crate has a layer.** A crate missing from the table fails. A table row without a crate fails too, so the table cannot drift.
-9. **Wasm.** Everything at L0 to L5, and `drafftink-web`, builds for `wasm32-unknown-unknown` (`cargo xtask wasm`). Code below L6 takes time from the `Clock` port: `Instant::now` and `SystemTime::now` are disallowed by `clippy.toml` because they panic in the browser.
+9. **Wasm.** Everything at L0 to L5, `drafftink-web` and `drafftink-canvas-js` build for `wasm32-unknown-unknown` (`cargo xtask wasm`). Code below L6 takes time from the `Clock` port: `Instant::now` and `SystemTime::now` are disallowed by `clippy.toml` because they panic in the browser.
 10. **No crashes.** `unwrap`, `expect`, `panic!` and `unsafe` are denied through `[workspace.lints]`. `clippy.toml` allows them in tests.
 
 ## How it is enforced

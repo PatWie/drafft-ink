@@ -1,0 +1,51 @@
+[package]
+name = "drafftink-canvas-js"
+description = "The wasm-bindgen bindings of the canvas library: Stage, shapes, events, transformer and export for JavaScript (npm package drafftink-canvas)"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+publish = false
+
+[lib]
+# cdylib for wasm-bindgen, rlib for the unit tests and for Rust hosts.
+crate-type = ["cdylib", "rlib"]
+
+[features]
+default = []
+# Tests that render on a real GPU adapter (PNG export, pixel checks). The library never creates a device on native.
+gpu-tests = []
+
+[dependencies]
+drafftink-canvas = { path = "../canvas" }
+drafftink-edit = { path = "../edit" }
+drafftink-geom = { path = "../geom" }
+drafftink-gpu = { path = "../gpu" }
+drafftink-io = { path = "../io" }
+drafftink-render = { path = "../render" }
+drafftink-scene = { path = "../scene" }
+drafftink-typeset = { path = "../typeset" }
+kurbo.workspace = true
+peniko.workspace = true
+png.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+wgpu = { workspace = true, features = ["std", "wgsl"] }
+log.workspace = true
+
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+pollster.workspace = true
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+wgpu = { workspace = true, features = ["webgpu"] }
+wasm-bindgen.workspace = true
+wasm-bindgen-futures.workspace = true
+js-sys.workspace = true
+serde-wasm-bindgen.workspace = true
+console_error_panic_hook.workspace = true
+console_log.workspace = true
+web-sys = { workspace = true, features = ["HtmlCanvasElement", "Element", "Window", "Document", "console"] }
+
+[lints]
+workspace = true
