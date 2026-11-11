@@ -34,7 +34,17 @@ wgpu = { workspace = true }
 pollster = { workspace = true }
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
-# (web platform dependencies: wasm-bindgen, web-sys, js-sys, ...)
+# The web platform (src/web): IndexedDB, downloads, file inputs, the async clipboard, crypto.
+wasm-bindgen = { workspace = true }
+wasm-bindgen-futures = { workspace = true }
+js-sys = { workspace = true }
+web-sys = { workspace = true, features = [
+    "Window", "Document", "Navigator", "Location", "Element", "Node", "HtmlElement", "HtmlAnchorElement",
+    "HtmlInputElement", "CssStyleDeclaration", "Event", "EventTarget", "File", "FileList", "Blob",
+    "BlobPropertyBag", "Url", "Clipboard", "Crypto", "StorageManager", "DomException",
+    "IdbFactory", "IdbDatabase", "IdbObjectStore", "IdbObjectStoreParameters", "IdbOpenDbRequest", "IdbRequest",
+    "IdbTransaction", "IdbTransactionMode", "IdbVersionChangeEvent", "VisibilityState",
+] }
 
 [dev-dependencies]
 drafftink-testkit = { path = "../testkit" }
