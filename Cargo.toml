@@ -57,6 +57,8 @@ env_logger = "0.11"
 pollster = "0.4"
 rfd = "0.18"
 arboard = "3"
+# Windows resource (icon, version) for the desktop exe: apps/drafftink/build.rs
+embed-resource = "3"
 
 # ---- Server (apps/drafftink-server) ----
 axum = { version = "0.8", features = ["ws"] }

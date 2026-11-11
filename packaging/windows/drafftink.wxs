@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Per-machine MSI for Drafft.ink (WiX 5). Built by scripts/package-windows.ps1:
+       wix build drafftink.wxs -arch x64 -d Version=0.2.0 -d BinDir=... -d IconFile=...
+     Unsigned. The UpgradeCode never changes, so a newer MSI replaces an older one. -->
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
+  <Package Name="Drafft.ink" Manufacturer="Drafft.ink" Version="$(Version)" Scope="perMachine"
+           UpgradeCode="3b8f2c1e-6a47-4d52-9c1f-d4a7e0b95a31" Language="1033">
+    <MajorUpgrade DowngradeErrorMessage="A newer version of Drafft.ink is already installed." />
+    <MediaTemplate EmbedCab="yes" />
+    <Icon Id="AppIcon" SourceFile="$(IconFile)" />
+    <Property Id="ARPPRODUCTICON" Value="AppIcon" />
+    <Property Id="ARPURLINFOABOUT" Value="https://drafft.ink" />
+
+    <StandardDirectory Id="ProgramFiles64Folder">
+      <Directory Id="INSTALLFOLDER" Name="Drafft.ink" />
+    </StandardDirectory>
+    <StandardDirectory Id="ProgramMenuFolder">
+      <Directory Id="StartMenuDir" Name="Drafft.ink" />
+    </StandardDirectory>
+
+    <ComponentGroup Id="AppFiles" Directory="INSTALLFOLDER">
+      <Component Id="MainExe" Guid="*">
+        <File Id="DrafftinkExe" Source="$(BinDir)\drafftink.exe" KeyPath="yes">
+          <Shortcut Id="StartMenuShortcut" Directory="StartMenuDir" Name="Drafft.ink" Icon="AppIcon"
+                    Advertise="no" WorkingDirectory="INSTALLFOLDER" />
+        </File>
+        <RemoveFolder Id="RemoveStartMenuDir" Directory="StartMenuDir" On="uninstall" />
+      </Component>
+      <Component Id="McpExe" Guid="*">
+        <File Id="DrafftinkMcpExe" Source="$(BinDir)\drafftink-mcp.exe" KeyPath="yes" />
+      </Component>
+    </ComponentGroup>
+
+    <Feature Id="Main" Title="Drafft.ink" Level="1">
+      <ComponentGroupRef Id="AppFiles" />
+    </Feature>
+  </Package>
+</Wix>

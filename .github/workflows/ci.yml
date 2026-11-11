@@ -115,6 +115,11 @@ jobs:
             ${{ runner.os }}-quarantine-
       - run: python3 utils/quarantine_check.py --min-age-days 7
 
+  # The desktop app, the MCP server and the collaboration server on all three desktop systems.
+  # Linux needs no -dev packages: winit loads X11, Wayland and xkbcommon with dlopen, rusqlite is
+  # bundled, and the fonts are in the binary (docs/building.md). Only a C compiler is needed, and
+  # every runner has one. Windows needs the MSVC tools (preinstalled) for the icon resource in
+  # apps/drafftink/build.rs.
   build-native:
     name: Build (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
@@ -130,7 +135,34 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           key: ${{ matrix.os }}
-      - run: cargo build --workspace --release
+      - run: cargo build --workspace --release --locked
+      # A stub main() or a missing resource fails here.
+      - name: Run every binary with --version
+        shell: bash
+        run: |
+          for bin in drafftink drafftink-mcp drafftink-server; do
+            ./target/release/$bin --version
+          done
+
+  # The Linux packaging script, end to end (tar.gz, .deb, AppImage), on the oldest runner image.
+  # macOS and Windows packaging run in release.yml; they are not exercised here.
+  packaging:
+    name: Packaging (linux)
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ env.RUST_TOOLCHAIN }}
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: packaging
+      - name: Lint the packaging scripts
+        run: |
+          sudo apt-get update && sudo apt-get install -y desktop-file-utils
+          shellcheck --severity=warning scripts/package-*.sh packaging/env.sh packaging/linux/AppRun
+          python3 -c "import plistlib; plistlib.load(open('packaging/macos/entitlements.plist','rb'))"
+      - run: scripts/package-linux.sh --formats "tar deb appimage"
 
   build-wasm:
     name: Build (wasm)
@@ -150,7 +182,7 @@ jobs:
   ci:
     name: ci
     if: always()
-    needs: [fmt, clippy, layers, wasm, test, deny, quarantine, build-native, build-wasm]
+    needs: [fmt, clippy, layers, wasm, test, deny, quarantine, build-native, packaging, build-wasm]
     runs-on: ubuntu-latest
     steps:
       - name: Require every job to succeed
