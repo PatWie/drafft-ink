@@ -12,7 +12,7 @@ use serde_json::{Map, Value};
 
 use super::MAX_NEST;
 use super::model::{Body, ImageFormat, OImage, OLinear, OShape, OStyle, OText, OldDoc};
-use crate::error::{ImportReport, IoError};
+use crate::error::{Expected, ImportReport, IoError};
 
 /// True when `v` has the structure of an old document (`shapes` object and `z_order` array).
 pub(crate) fn looks_like_old_document(v: &Value) -> bool {
@@ -23,7 +23,7 @@ pub(crate) fn looks_like_old_document(v: &Value) -> bool {
 pub(crate) fn read_document(v: &Value, report: &mut ImportReport) -> Result<OldDoc, IoError> {
     let Some(obj) = v.as_object() else {
         return Err(IoError::WrongFormat {
-            expected: "an old drafft.ink document",
+            expected: Expected::LegacyDocument,
             hint: "the top level is not an object".into(),
         });
     };
@@ -31,7 +31,7 @@ pub(crate) fn read_document(v: &Value, report: &mut ImportReport) -> Result<OldD
         (obj.get("shapes").and_then(Value::as_object), obj.get("z_order").and_then(Value::as_array))
     else {
         return Err(IoError::WrongFormat {
-            expected: "an old drafft.ink document",
+            expected: Expected::LegacyDocument,
             hint: "it needs a `shapes` object and a `z_order` array".into(),
         });
     };

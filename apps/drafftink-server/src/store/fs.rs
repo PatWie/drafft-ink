@@ -43,7 +43,7 @@ impl FsStore {
 }
 
 async fn run<T: Send + 'static>(f: impl FnOnce() -> Result<T, StoreError> + Send + 'static) -> Result<T, StoreError> {
-    tokio::task::spawn_blocking(f).await.map_err(|e| StoreError::Io(format!("storage task failed: {e}")))?
+    tokio::task::spawn_blocking(f).await.map_err(|e| StoreError::io(format!("storage task failed: {e}")))?
 }
 
 fn dir_name(room: &RoomId) -> Result<String, StoreError> {
@@ -91,8 +91,8 @@ fn sync_dir(dir: &Path) -> Result<(), StoreError> {
 
 /// Writes `bytes` to `path` atomically.
 fn write_atomic(path: &Path, bytes: &[u8]) -> Result<(), StoreError> {
-    let parent = path.parent().ok_or_else(|| StoreError::Io("path has no parent".into()))?;
-    let name = path.file_name().ok_or_else(|| StoreError::Io("path has no name".into()))?;
+    let parent = path.parent().ok_or_else(|| StoreError::io("path has no parent"))?;
+    let name = path.file_name().ok_or_else(|| StoreError::io("path has no name"))?;
     let mut tmp_name = name.to_os_string();
     tmp_name.push(TMP_SUFFIX);
     let tmp = parent.join(tmp_name);

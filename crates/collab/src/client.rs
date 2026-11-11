@@ -24,7 +24,7 @@ use drafftink_doc::{DocError, LoroStore};
 use drafftink_protocol::{
     AwarenessState, ClientId, ClientMessage, ErrorCode, IDLE_TIMEOUT_MS, Limits, MAX_AUTH_TOKEN_BYTES,
     MAX_UPDATE_BYTES, MIN_PROTOCOL_VERSION, PING_INTERVAL_MS, PROTOCOL_VERSION, PeerInfo, Point, RoomId, ServerMessage,
-    SyncKind, UserInfo, Viewport, reconnect_delay_ms,
+    SyncKind, UserInfo, ValidationError, Viewport, reconnect_delay_ms,
 };
 use drafftink_scene::{ChangeKind, ChangeSet};
 use loro::VersionVector;
@@ -83,7 +83,7 @@ pub enum ConfigError {
     Token,
     /// The display name or colour breaks a protocol rule.
     #[error("The display name or colour is not valid: {0}")]
-    User(String),
+    User(#[from] ValidationError),
 }
 
 /// What the client needs to join a room.
@@ -308,7 +308,7 @@ impl CollabClient {
     /// Makes a client. It does nothing until [`start`](Self::start).
     pub fn new(cfg: CollabConfig) -> Result<Self, ConfigError> {
         if let Some(u) = &cfg.user {
-            u.validate().map_err(|e| ConfigError::User(e.to_string()))?;
+            u.validate().map_err(ConfigError::User)?;
         }
         let presence = LocalPresence::new(cfg.user.clone());
         let rng = cfg.jitter_seed | 1;
@@ -642,6 +642,13 @@ impl CollabClient {
         }
         self.last_rx_ms = now_ms;
         self.last_ping_ms = now_ms;
+        let version = match store.version_vector() {
+            Ok(v) => v,
+            Err(e) => {
+                self.doc_failure(now_ms, &e, true);
+                return;
+            }
+        };
         self.phase = Phase::Joining { since: now_ms };
         let join = ClientMessage::Join {
             min_version: MIN_PROTOCOL_VERSION,
@@ -649,7 +656,7 @@ impl CollabClient {
             room: self.cfg.room.clone(),
             client_id: self.cfg.client_id,
             auth_token: self.cfg.auth_token.as_ref().map(|t| t.0.clone()),
-            version: store.version_vector(),
+            version,
             user: self.presence.state().user.clone(),
         };
         self.send(&join);
@@ -1046,11 +1053,17 @@ impl CollabClient {
         self.inflight.clear();
         self.flush_at = None;
         self.want_flush = false;
-        let server_has_all =
-            match (VersionVector::decode(server_version), VersionVector::decode(&store.version_vector())) {
-                (Ok(server), Ok(local)) => server.includes_vv(&local),
-                _ => false,
-            };
+        let local = match store.version_vector() {
+            Ok(v) => v,
+            Err(e) => {
+                self.doc_failure(now_ms, &e, false);
+                return;
+            }
+        };
+        let server_has_all = match (VersionVector::decode(server_version), VersionVector::decode(&local)) {
+            (Ok(server), Ok(local)) => server.includes_vv(&local),
+            _ => false,
+        };
         if server_has_all {
             // Whatever the document still counts as unsent is already on the server.
             let _ = store.take_unsent_update();
@@ -1099,7 +1112,10 @@ impl CollabClient {
         self.sync_outstanding = Some(now_ms);
         self.last_resync_ms = Some(now_ms);
         self.stats.sync_requests += 1;
-        self.send(&ClientMessage::RequestSync { version: store.version_vector() });
+        match store.version_vector() {
+            Ok(version) => self.send(&ClientMessage::RequestSync { version }),
+            Err(e) => self.doc_failure(now_ms, &e, false),
+        }
     }
 
     // ---- connection loss, stopping ----------------------------------------------------------------------------

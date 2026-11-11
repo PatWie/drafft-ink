@@ -35,7 +35,7 @@ pub struct LoroConfig {
     pub undo_depth: usize,
     /// Loro peer id. `None` (the default) picks a random one, which is what you want: never reuse a peer id on a
     /// second copy of the same document, because two writers with one id corrupt the history. Loro reserves
-    /// `u64::MAX`; [`LoroStore::with_config`] cannot fail, so a refused id silently becomes a random one.
+    /// `u64::MAX`; [`LoroStore::with_config`] then fails with [`DocError::BadPeerId`].
     pub peer_id: Option<u64>,
     /// Largest update or snapshot `apply_remote` / `from_snapshot` look at, in bytes.
     pub max_import_bytes: usize,
@@ -101,7 +101,7 @@ pub(crate) struct Core {
 /// mutation test in `tests/hostile.rs`), so a panic becomes an error here.
 pub(crate) fn guarded<T>(f: impl FnOnce() -> T) -> Result<T, DocError> {
     catch_unwind(AssertUnwindSafe(f))
-        .map_err(|_| DocError::Import("the data is corrupt (the CRDT library rejected it)".into()))
+        .map_err(|_| DocError::import("the data is corrupt (the CRDT library rejected it)"))
 }
 
 /// Runs `f`; a panic poisons `flag`, and a poisoned flag refuses to run anything.
@@ -126,7 +126,7 @@ impl Core {
         let doc = LoroDoc::new();
         text::configure(&doc);
         if let Some(p) = config.peer_id {
-            doc.set_peer_id(p)?;
+            doc.set_peer_id(p).map_err(|_| DocError::BadPeerId(p))?;
         }
         Ok(doc)
     }
@@ -295,10 +295,10 @@ pub(crate) fn check_size(size: usize, limit: usize) -> Result<(), DocError> {
 pub(crate) fn import_fresh(doc: LoroDoc, bytes: &[u8]) -> Result<LoroDoc, DocError> {
     match catch_unwind(AssertUnwindSafe(|| doc.import_with(bytes, "remote"))) {
         Ok(Ok(_)) => Ok(doc),
-        Ok(Err(e)) => Err(DocError::Import(e.to_string())),
+        Ok(Err(e)) => Err(DocError::import(e)),
         Err(_) => {
             std::mem::forget(doc);
-            Err(DocError::Import("the data is corrupt (the CRDT library rejected it)".into()))
+            Err(DocError::import("the data is corrupt (the CRDT library rejected it)"))
         }
     }
 }
@@ -328,16 +328,20 @@ impl Default for LoroStore {
 impl LoroStore {
     /// An empty scene named "Untitled" with a white background.
     pub fn new() -> Self {
-        Self::with_config(LoroConfig::default())
+        // A random peer id is never refused, so `with_config` fails here only when Loro cannot write the schema
+        // stamp. The store then starts from a bare document instead of failing a constructor with no error.
+        Self::with_config(LoroConfig::default()).unwrap_or_else(|_| Self {
+            view: MemoryStore::new(),
+            core: Core::with_doc(LoroDoc::new(), LoroConfig::default(), Vec::new()),
+        })
     }
 
     /// An empty scene with explicit settings.
-    pub fn with_config(config: LoroConfig) -> Self {
-        // Only a peer id that Loro refuses can make `create` fail; a random one cannot.
-        let core = Core::create(config.clone(), Vec::new())
-            .or_else(|_| Core::create(LoroConfig { peer_id: None, ..config.clone() }, Vec::new()))
-            .unwrap_or_else(|_| Core::with_doc(LoroDoc::new(), config, Vec::new()));
-        Self { view: MemoryStore::new(), core }
+    ///
+    /// Fails with [`DocError::BadPeerId`] when `config.peer_id` is an id Loro refuses (the reserved `u64::MAX`).
+    pub fn with_config(config: LoroConfig) -> Result<Self, DocError> {
+        let core = Core::create(config, Vec::new())?;
+        Ok(Self { view: MemoryStore::new(), core })
     }
 
     /// A store holding `doc`, loaded as one non-undoable commit. The document is validated first.
@@ -424,9 +428,9 @@ impl LoroStore {
         self.core.stats = WorkStats::default();
     }
 
-    /// This replica's Loro peer id.
-    pub fn peer_id(&self) -> u64 {
-        self.core.guard(|| self.core.doc.peer_id()).unwrap_or(0)
+    /// This replica's Loro peer id. Fails with [`DocError::Poisoned`] on a store whose CRDT state is lost.
+    pub fn peer_id(&self) -> Result<u64, DocError> {
+        self.core.guard(|| self.core.doc.peer_id())
     }
 
     /// The newer schema version that made this store read-only, if any. A peer running a newer app raised
@@ -449,9 +453,11 @@ impl LoroStore {
 
     // ---- export -----------------------------------------------------------------------------------------------
 
-    /// This replica's version vector, encoded. Opaque to callers; send it in `Join`.
-    pub fn version_vector(&self) -> Vec<u8> {
-        self.core.guard(|| self.core.doc.oplog_vv().encode()).unwrap_or_default()
+    /// This replica's version vector, encoded. Opaque to callers; send it in `Join`. Fails with
+    /// [`DocError::Poisoned`] on a store whose CRDT state is lost: an empty vector would make a peer send the
+    /// whole room to a store that cannot take it.
+    pub fn version_vector(&self) -> Result<Vec<u8>, DocError> {
+        self.core.guard(|| self.core.doc.oplog_vv().encode())
     }
 
     /// Every operation the peer with version vector `vv` lacks. An empty `vv` means "nothing" and yields all
@@ -463,7 +469,7 @@ impl LoroStore {
             if self.core.doc.is_shallow() && !from.includes_vv(&self.shallow_start_vv()) {
                 return Err(DocError::HistoryTrimmed);
             }
-            self.core.doc.export(ExportMode::updates(&from)).map_err(|e| DocError::Backend(e.to_string()))
+            self.core.doc.export(ExportMode::updates(&from)).map_err(DocError::backend)
         })?
     }
 
@@ -485,11 +491,7 @@ impl LoroStore {
             if now == self.core.sent {
                 return Ok::<_, DocError>((now, None));
             }
-            let bytes = self
-                .core
-                .doc
-                .export(ExportMode::updates(&self.core.sent))
-                .map_err(|e| DocError::Backend(e.to_string()))?;
+            let bytes = self.core.doc.export(ExportMode::updates(&self.core.sent)).map_err(DocError::backend)?;
             Ok((now, Some(bytes)))
         })??;
         if bytes.is_some() {
@@ -501,15 +503,13 @@ impl LoroStore {
     /// The whole document with all its history. Largest, and the only form that lets peers merge any past
     /// version.
     pub fn export_snapshot(&self) -> Result<Vec<u8>, DocError> {
-        self.core.guard(|| self.core.doc.export(ExportMode::Snapshot).map_err(|e| DocError::Backend(e.to_string())))?
+        self.core.guard(|| self.core.doc.export(ExportMode::Snapshot).map_err(DocError::backend))?
     }
 
     /// The current state with no history at all (the smallest snapshot). Whoever imports it can read and edit
     /// but cannot merge versions older than this one.
     pub fn export_state_only(&self) -> Result<Vec<u8>, DocError> {
-        self.core.guard(|| {
-            self.core.doc.export(ExportMode::state_only(None)).map_err(|e| DocError::Backend(e.to_string()))
-        })?
+        self.core.guard(|| self.core.doc.export(ExportMode::state_only(None)).map_err(DocError::backend))?
     }
 
     /// The current state with the history of the last `keep_commits` local commits (all of it when fewer exist,
@@ -517,7 +517,7 @@ impl LoroStore {
     pub fn export_shallow_snapshot(&self, keep_commits: usize) -> Result<Vec<u8>, DocError> {
         self.core.guard(|| {
             let frontiers = self.keep_frontiers(keep_commits);
-            self.core.doc.export(ExportMode::shallow_snapshot(&frontiers)).map_err(|e| DocError::Backend(e.to_string()))
+            self.core.doc.export(ExportMode::shallow_snapshot(&frontiers)).map_err(DocError::backend)
         })?
     }
 
@@ -711,7 +711,7 @@ mod tests {
         assert_eq!(s.apply_remote(&good).unwrap_err(), DocError::Poisoned);
         assert_eq!(s.undo().unwrap_err(), DocError::Poisoned);
         assert!(s.export_snapshot().is_err() && s.export_updates_since(&[]).is_err());
-        assert!(s.version_vector().is_empty() && !s.can_undo() && s.take_unsent_update().is_err());
+        assert!(s.version_vector() == Err(DocError::Poisoned) && !s.can_undo() && s.take_unsent_update().is_err());
 
         s.replace_from_snapshot(&good).unwrap();
         assert!(!s.is_poisoned());

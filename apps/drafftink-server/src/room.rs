@@ -309,12 +309,12 @@ impl RoomActor {
 
     async fn store_call<T>(
         &self,
-        what: &str,
+        what: &'static str,
         fut: impl std::future::Future<Output = Result<T, StoreError>>,
     ) -> Result<T, StoreError> {
         match tokio::time::timeout(self.cfg().timing.store_timeout, fut).await {
             Ok(r) => r,
-            Err(_) => Err(StoreError::Io(format!("{what} timed out"))),
+            Err(_) => Err(StoreError::Timeout { what }),
         }
     }
 

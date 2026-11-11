@@ -3,7 +3,7 @@
 use drafftink_scene::Document;
 
 use super::export;
-use crate::error::{ImportReport, IoError};
+use crate::error::{FormatName, ImportReport, IoError};
 
 /// Writes the live elements of `doc` as the JSON Excalidraw puts on the clipboard, so that a copy pastes into
 /// Excalidraw. Returns the text and what could not be written (an image without its picture).
@@ -21,6 +21,7 @@ pub fn export_clipboard(doc: &Document) -> Result<(String, ImportReport), IoErro
         "elements": out.elements,
         "files": out.files,
     });
-    let text = serde_json::to_string(&root).map_err(|e| IoError::invalid("excalidraw clipboard", e.to_string()))?;
+    let text =
+        serde_json::to_string(&root).map_err(|e| IoError::invalid(FormatName::ExcalidrawClipboard, e.to_string()))?;
     Ok((text, report))
 }

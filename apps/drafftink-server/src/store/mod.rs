@@ -36,7 +36,13 @@ pub enum StoreError {
     InvalidRoom(String),
     /// A read or write failed.
     #[error("storage i/o failed: {0}")]
-    Io(String),
+    Io(#[source] Arc<std::io::Error>),
+    /// A storage call did not finish in time.
+    #[error("storage {what} timed out")]
+    Timeout {
+        /// The call: `load`, `append`, ...
+        what: &'static str,
+    },
     /// Stored data does not have the expected shape.
     #[error("stored data is damaged: {0}")]
     Corrupt(String),
@@ -47,7 +53,14 @@ pub enum StoreError {
 
 impl From<std::io::Error> for StoreError {
     fn from(e: std::io::Error) -> Self {
-        StoreError::Io(e.to_string())
+        StoreError::Io(Arc::new(e))
+    }
+}
+
+impl StoreError {
+    /// An i/o failure that has no `std::io::Error` of its own (a failed storage task, a path without a name).
+    pub fn io(message: impl Into<String>) -> Self {
+        StoreError::Io(Arc::new(std::io::Error::other(message.into())))
     }
 }
 

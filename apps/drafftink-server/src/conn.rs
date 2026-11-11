@@ -128,11 +128,10 @@ pub async fn serve(socket: WebSocket, app: Arc<AppState>, _permit: OwnedSemaphor
                 match frame {
                     None => break,
                     Some(Err(e)) => {
-                        let text = e.to_string();
-                        if text.contains("too long") || text.contains("Space limit") {
+                        if is_oversize(&e) {
                             conn.fail(ErrorCode::TooLarge, "the message is larger than the server accepts");
                         } else {
-                            debug!("connection error: {text}");
+                            debug!("connection error: {e}");
                         }
                         break;
                     }
@@ -345,4 +344,16 @@ enum Bucket {
     Update,
     Awareness,
     Control,
+}
+
+/// True when the WebSocket layer cut the connection because a message or frame passed the size limit.
+fn is_oversize(e: &axum::Error) -> bool {
+    let mut source: Option<&(dyn std::error::Error + 'static)> = std::error::Error::source(e);
+    while let Some(err) = source {
+        if let Some(tungstenite::Error::Capacity(_)) = err.downcast_ref::<tungstenite::Error>() {
+            return true;
+        }
+        source = err.source();
+    }
+    false
 }

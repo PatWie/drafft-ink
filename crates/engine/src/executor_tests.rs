@@ -663,7 +663,7 @@ fn a_collaborators_edit_between_repeats_keeps_the_steps_apart() {
         &crate::store::StepMeta { label: "Lock", undoable: true, before: &o, after: &o, depth: 50, coalesce: None },
     )
     .unwrap();
-    let bytes = peer.replicated().export_updates_since(&s.tab().doc.replicated().version_vector()).unwrap();
+    let bytes = peer.replicated().export_updates_since(&s.tab().doc.replicated().version_vector().unwrap()).unwrap();
     let tab = s.tab().id;
     s.apply_remote(tab, &bytes).unwrap();
     ok(&mut s, "t.nudge", json!({"id": a}));

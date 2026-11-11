@@ -67,11 +67,11 @@ fn history_stays_bounded_when_trimmed_periodically() {
 #[test]
 fn trimming_refuses_while_local_changes_are_unacknowledged() {
     let mut s = busy();
-    let acked = s.version_vector();
+    let acked = s.version_vector().unwrap();
     edit(&mut s, "e001", |e| e.locked = true);
     let err = s.trim_history(&TrimOptions { keep_commits: 0, synced_to: Some(acked) }).unwrap_err();
     assert_eq!(err, DocError::UnsyncedChanges);
-    let acked = s.version_vector();
+    let acked = s.version_vector().unwrap();
     s.trim_history(&TrimOptions { keep_commits: 0, synced_to: Some(acked) }).unwrap();
 }
 
@@ -111,13 +111,13 @@ fn a_peer_older_than_the_trim_gets_an_error_and_recovers_from_a_snapshot() {
     server.trim_history(&TrimOptions::default()).unwrap();
     edit(&mut server, "e001", |e| e.transform.y = -1.0);
 
-    let err = server.export_updates_since(&stale.version_vector()).unwrap_err();
+    let err = server.export_updates_since(&stale.version_vector().unwrap()).unwrap_err();
     assert_eq!(err, DocError::HistoryTrimmed);
 
     // A current peer is still served with plain updates.
     let current = LoroStore::from_snapshot(&server.export_shallow_snapshot(0).unwrap()).unwrap();
     edit(&mut server, "e002", |e| e.transform.y = -2.0);
-    assert!(server.export_updates_since(&current.version_vector()).is_ok());
+    assert!(server.export_updates_since(&current.version_vector().unwrap()).is_ok());
 
     // The stale peer replaces its content from a snapshot and is told what changed.
     let cs = stale.replace_from_snapshot(&server.export_shallow_snapshot(0).unwrap()).unwrap();
@@ -152,7 +152,7 @@ fn keep_commits_keeps_recent_history_so_slightly_behind_peers_still_get_updates(
 
     push(&s, &mut near);
     assert_same(&s, &near);
-    assert_eq!(s.export_updates_since(&far.version_vector()).unwrap_err(), DocError::HistoryTrimmed);
+    assert_eq!(s.export_updates_since(&far.version_vector().unwrap()).unwrap_err(), DocError::HistoryTrimmed);
     far.replace_from_snapshot(&s.export_shallow_snapshot(0).unwrap()).unwrap();
     assert_same(&s, &far);
 }

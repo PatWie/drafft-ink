@@ -13,7 +13,7 @@ use std::sync::Arc;
 use drafftink_edit::library as frag;
 use drafftink_io::excalidraw::{self, LibraryItem};
 use drafftink_io::limits::MAX_LIBRARY_ITEMS;
-use drafftink_io::{IoError, native};
+use drafftink_io::{FormatName, IoError, native};
 use drafftink_scene::ElementId;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -373,7 +373,7 @@ fn not_a_library(id: &str, e: &IoError) -> Refusal {
 
 fn parse_library(s: &mut Session, id: &str, loaded: &Loaded) -> Result<excalidraw::Library, Refusal> {
     let text = std::str::from_utf8(&loaded.bytes)
-        .map_err(|_| not_a_library(id, &IoError::parse("excalidraw library", "the data is not UTF-8 text")))?;
+        .map_err(|_| not_a_library(id, &IoError::parse(FormatName::ExcalidrawLibrary, "the data is not UTF-8 text")))?;
     let (lib, report) = excalidraw::import_library(text, &mut *s.ports.ids).map_err(|e| not_a_library(id, &e))?;
     for w in report.warnings {
         s.warn(w);

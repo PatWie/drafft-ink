@@ -1563,6 +1563,7 @@ dependencies = [
  "tower-http 0.7.1",
  "tracing",
  "tracing-subscriber",
+ "tungstenite 0.29.0",
 ]
 
 [[package]]

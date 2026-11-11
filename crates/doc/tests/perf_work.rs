@@ -60,7 +60,7 @@ fn a_remote_update_of_one_element_decodes_one_element_at_every_size() {
         )
         .unwrap();
         edit(&mut a, &name(n / 3), |e| e.transform.y -= 7.0);
-        let bytes = a.export_updates_since(&b.version_vector()).unwrap();
+        let bytes = a.export_updates_since(&b.version_vector().unwrap()).unwrap();
         b.reset_stats();
         let cs = b.apply_remote(&bytes).unwrap();
         let st = b.stats();

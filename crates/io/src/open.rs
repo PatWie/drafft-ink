@@ -6,7 +6,7 @@
 
 use drafftink_scene::IdSource;
 
-use crate::error::{ImportReport, Imported, IoError};
+use crate::error::{Expected, FormatName, ImportReport, Imported, IoError};
 use crate::excalidraw::{self, Library};
 use crate::legacy;
 use crate::measure::TextMeasure;
@@ -45,7 +45,8 @@ const MAX_NESTING: u8 = 3;
 
 fn open_at(bytes: &[u8], ids: &mut dyn IdSource, measure: &dyn TextMeasure, depth: u8) -> Result<Opened, IoError> {
     let format = native::sniff(bytes);
-    let text = || std::str::from_utf8(bytes).map_err(|_| IoError::parse("text", "the data is not UTF-8 text"));
+    let text =
+        || std::str::from_utf8(bytes).map_err(|_| IoError::parse(FormatName::Text, "the data is not UTF-8 text"));
     let doc = |imported: Imported| Opened::Document { imported, source: format };
     match format {
         Format::Native => {
@@ -57,7 +58,7 @@ fn open_at(bytes: &[u8], ids: &mut dyn IdSource, measure: &dyn TextMeasure, dept
         Format::LegacySnapshot => Ok(doc(legacy::migrate_snapshot(bytes, ids, measure)?)),
         Format::Gzip => {
             if depth >= MAX_NESTING {
-                return Err(IoError::invalid("gzip", "compressed data inside compressed data, too deep"));
+                return Err(IoError::invalid(FormatName::Gzip, "compressed data inside compressed data, too deep"));
             }
             open_at(&legacy::gunzip(bytes)?, ids, measure, depth + 1)
         }
@@ -76,12 +77,12 @@ fn open_at(bytes: &[u8], ids: &mut dyn IdSource, measure: &dyn TextMeasure, dept
             };
             let Some(scene) = scene else {
                 return Err(IoError::WrongFormat {
-                    expected: "a drafft.ink document",
+                    expected: Expected::NativeDocument,
                     hint: "this picture has no scene inside it; insert it as an image instead".into(),
                 });
             };
             if depth >= MAX_NESTING {
-                return Err(IoError::invalid("image", "a scene inside a scene inside a scene, too deep"));
+                return Err(IoError::invalid(FormatName::Image, "a scene inside a scene inside a scene, too deep"));
             }
             match open_at(scene.as_bytes(), ids, measure, depth + 1)? {
                 Opened::Document { imported, .. } => Ok(doc(imported)),
@@ -89,7 +90,7 @@ fn open_at(bytes: &[u8], ids: &mut dyn IdSource, measure: &dyn TextMeasure, dept
             }
         }
         Format::Unknown => Err(IoError::WrongFormat {
-            expected: "a supported file",
+            expected: Expected::AnyFile,
             hint: "drafft.ink opens its own .json files, old drafft-ink files, .excalidraw, .excalidrawlib, Mermaid text, and PNG or SVG files exported from drafft.ink".into(),
         }),
     }

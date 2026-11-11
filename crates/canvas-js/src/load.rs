@@ -13,7 +13,7 @@
 //! | gzip of one of these | unpacked, then as above |
 
 use drafftink_io::native::{self, Format};
-use drafftink_io::{IoError, TextMeasure};
+use drafftink_io::{FormatName, IoError, TextMeasure};
 use drafftink_io::{excalidraw, legacy, png_meta, svg};
 use drafftink_scene::{Document, IdSource};
 
@@ -36,7 +36,8 @@ fn read(bytes: &[u8], ids: &mut dyn IdSource, measure: &dyn TextMeasure, depth: 
         return Err(ApiError::invalid("the file holds a scene inside a scene inside a scene; it is too deeply nested"));
     }
     let format = native::sniff(bytes);
-    let text = || std::str::from_utf8(bytes).map_err(|_| IoError::parse("text", "the data is not UTF-8 text"));
+    let text =
+        || std::str::from_utf8(bytes).map_err(|_| IoError::parse(FormatName::Text, "the data is not UTF-8 text"));
     match format {
         Format::Native => Ok(native::load(text()?)?),
         Format::LegacyJson => Ok(legacy::migrate_json(text()?, ids, measure)?.document),

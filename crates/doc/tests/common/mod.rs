@@ -14,7 +14,7 @@ pub fn gid(s: &str) -> GroupId {
 }
 
 pub fn peer(n: u64) -> LoroStore {
-    LoroStore::with_config(LoroConfig { peer_id: Some(n), ..LoroConfig::default() })
+    LoroStore::with_config(LoroConfig { peer_id: Some(n), ..LoroConfig::default() }).unwrap()
 }
 
 pub fn rect(id: &str, z: &ZIndex) -> Element {
@@ -54,7 +54,7 @@ pub fn edit<S: SceneStore>(s: &mut S, id: &str, f: impl FnOnce(&mut Element)) ->
 
 /// Sends everything `from` has and `to` lacks.
 pub fn push(from: &LoroStore, to: &mut LoroStore) -> ChangeSet {
-    let bytes = from.export_updates_since(&to.version_vector()).unwrap();
+    let bytes = from.export_updates_since(&to.version_vector().unwrap()).unwrap();
     to.apply_remote(&bytes).unwrap()
 }
 

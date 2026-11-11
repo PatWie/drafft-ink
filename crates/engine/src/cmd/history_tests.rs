@@ -398,11 +398,11 @@ fn undo_never_reverts_a_collaborators_edit_and_its_inverse_is_a_normal_edit_for_
     let (o, s1) = (Observed::default(), sel(&[&shared]));
     step(&mut a, "Move", &o, &s1, |tx| tx.update(&shared, |e| e.transform.x = 100.0));
     step(&mut b, "Lock", &o, &o, |tx| tx.update(&shared, |e| e.locked = true));
-    let bytes = b.tab().doc.replicated().export_updates_since(&a.tab().doc.replicated().version_vector()).unwrap();
+    let bytes = b.tab().doc.replicated().export_updates_since(&a.tab().doc.replicated().version_vector().unwrap()).unwrap();
     a.apply_remote(ta, &bytes).unwrap();
     assert!(a.element(&shared).unwrap().locked);
 
-    let vv_before = b.tab().doc.replicated().version_vector();
+    let vv_before = b.tab().doc.replicated().version_vector().unwrap();
     ok(&mut a, "history.undo", json!({}));
     let e = a.element(&shared).unwrap();
     assert_eq!(e.transform.x, 0.0, "A's own move is taken back");
@@ -426,11 +426,11 @@ fn a_step_that_a_collaborator_already_reverted_is_consumed_and_undo_says_there_i
     b.apply_remote(b.tab().id, &snapshot).unwrap();
     let o = Observed::default();
     step(&mut a, "Move", &o, &o, |tx| tx.update(&shared, |e| e.transform.x = 100.0));
-    let bytes = a.tab().doc.replicated().export_updates_since(&b.tab().doc.replicated().version_vector()).unwrap();
+    let bytes = a.tab().doc.replicated().export_updates_since(&b.tab().doc.replicated().version_vector().unwrap()).unwrap();
     b.apply_remote(b.tab().id, &bytes).unwrap();
     // B puts it back by hand; A's undo would now change nothing.
     step(&mut b, "Move back", &o, &o, |tx| tx.update(&shared, |e| e.transform.x = 0.0));
-    let bytes = b.tab().doc.replicated().export_updates_since(&a.tab().doc.replicated().version_vector()).unwrap();
+    let bytes = b.tab().doc.replicated().export_updates_since(&a.tab().doc.replicated().version_vector().unwrap()).unwrap();
     a.apply_remote(ta, &bytes).unwrap();
     assert_eq!(x_of(&a, &shared), 0.0);
     let r = refused(&mut a, "history.undo", json!({}));

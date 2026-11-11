@@ -36,7 +36,7 @@ use drafftink_sketch::{
 };
 use kurbo::Rect;
 
-use crate::error::IoError;
+use crate::error::{FormatName, IoError};
 use crate::limits::MAX_EMBEDDED_SCENE_BYTES;
 use crate::measure::TextMeasure;
 
@@ -224,7 +224,7 @@ pub fn export_svg(
             .collect(),
     };
     let Some(bounds) = content_bounds(&chosen) else {
-        return Err(IoError::invalid("svg", "there is nothing to export: no visible elements"));
+        return Err(IoError::invalid(FormatName::Svg, "there is nothing to export: no visible elements"));
     };
     let pad = if opts.padding.is_finite() { opts.padding.clamp(0.0, 10_000.0) } else { 20.0 };
     let scale = if opts.scale.is_finite() { opts.scale.clamp(0.01, 100.0) } else { 1.0 };
@@ -706,8 +706,8 @@ fn opacity_attr(name: &str, a: f64) -> String {
 
 fn embed_payload(json: &str) -> Result<String, IoError> {
     let mut enc = flate2::write::ZlibEncoder::new(Vec::new(), flate2::Compression::default());
-    enc.write_all(json.as_bytes()).map_err(|e| IoError::invalid("svg", e.to_string()))?;
-    let z = enc.finish().map_err(|e| IoError::invalid("svg", e.to_string()))?;
+    enc.write_all(json.as_bytes()).map_err(|e| IoError::invalid(FormatName::Svg, e.to_string()))?;
+    let z = enc.finish().map_err(|e| IoError::invalid(FormatName::Svg, e.to_string()))?;
     Ok(format!(
         "<{SCENE_TAG} xmlns=\"https://drafft.ink/ns\" type=\"application/vnd.drafftink+json\" encoding=\"base64-deflate\">{}</{SCENE_TAG}>",
         STANDARD.encode(z)
@@ -729,17 +729,19 @@ pub fn extract_scene(svg: &str) -> Result<Option<String>, IoError> {
     if tag.contains("encoding=\"base64-deflate\"") {
         let raw = STANDARD
             .decode(body)
-            .map_err(|e| IoError::parse("svg", format!("the embedded scene is not base64: {e}")))?;
+            .map_err(|e| IoError::parse(FormatName::Svg, format!("the embedded scene is not base64: {e}")))?;
         let mut out = Vec::new();
         let limit = u64::try_from(MAX_EMBEDDED_SCENE_BYTES).unwrap_or(u64::MAX);
         flate2::read::ZlibDecoder::new(raw.as_slice())
             .take(limit.saturating_add(1))
             .read_to_end(&mut out)
-            .map_err(|e| IoError::parse("svg", format!("the embedded scene does not inflate: {e}")))?;
+            .map_err(|e| IoError::parse(FormatName::Svg, format!("the embedded scene does not inflate: {e}")))?;
         if out.len() > MAX_EMBEDDED_SCENE_BYTES {
             return Err(IoError::Limit { what: "embedded scene", max: format!("{MAX_EMBEDDED_SCENE_BYTES} bytes") });
         }
-        return String::from_utf8(out).map(Some).map_err(|_| IoError::parse("svg", "the embedded scene is not UTF-8"));
+        return String::from_utf8(out)
+            .map(Some)
+            .map_err(|_| IoError::parse(FormatName::Svg, "the embedded scene is not UTF-8"));
     }
     Ok(None)
 }

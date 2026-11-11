@@ -184,7 +184,8 @@ fn steps_keep_their_own_state_across_several_undos() {
 #[test]
 fn depth_is_configurable_and_defaults_to_200() {
     assert_eq!(LoroConfig::default().undo_depth, 200);
-    let mut s = LoroStore::with_config(LoroConfig { undo_depth: 5, peer_id: Some(1), ..LoroConfig::default() });
+    let mut s =
+        LoroStore::with_config(LoroConfig { undo_depth: 5, peer_id: Some(1), ..LoroConfig::default() }).unwrap();
     add(&mut s, vec![rect("a", &zs(1)[0])]);
     for i in 0..12 {
         edit(&mut s, "a", |e| e.transform.x = f64::from(i) + 1000.0);
@@ -301,7 +302,7 @@ fn an_undo_is_exported_like_any_edit() {
     add(&mut a, vec![rect("r", &zs(1)[0])]);
     edit(&mut a, "r", |e| e.transform.x = 33.0);
     sync(&mut a, &mut b);
-    let vv = b.version_vector();
+    let vv = b.version_vector().unwrap();
     a.undo().unwrap().unwrap();
     let bytes = a.export_updates_since(&vv).unwrap();
     let cs = b.apply_remote(&bytes).unwrap();
@@ -388,7 +389,8 @@ fn merge_with_previous_keeps_steps_apart_after_a_collaborators_edit() {
 
 #[test]
 fn merge_with_previous_is_detected_at_the_depth_limit() {
-    let mut s = LoroStore::with_config(LoroConfig { undo_depth: 2, peer_id: Some(1), ..LoroConfig::default() });
+    let mut s =
+        LoroStore::with_config(LoroConfig { undo_depth: 2, peer_id: Some(1), ..LoroConfig::default() }).unwrap();
     add(&mut s, vec![rect("a", &zs(1)[0])]);
     for i in 0..3 {
         edit(&mut s, "a", |e| e.transform.x = f64::from(i) + 100.0);
