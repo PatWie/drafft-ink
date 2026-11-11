@@ -108,6 +108,7 @@ pub fn migrate_clipboard(text: &str, ids: &mut dyn IdSource, measure: &dyn TextM
 }
 
 /// The bounds the old code gave an arrow: its points plus the two barbs of the head. Used by the facts check.
+#[cfg(feature = "facts")]
 pub(crate) fn arrow_bounds(points: &[kurbo::Point], head_size: f64) -> kurbo::Rect {
     build::arrow_rect(points, head_size)
 }
