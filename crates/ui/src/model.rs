@@ -236,6 +236,20 @@ pub struct Peer {
     pub followed: bool,
 }
 
+impl Peer {
+    /// A peer from one entry of `collab.status`'s `peers`. `None` when the entry has no id.
+    pub fn from_status(v: &Value) -> Option<Peer> {
+        let text = |key: &str| v.get(key).and_then(Value::as_str).map(str::to_owned);
+        Some(Peer {
+            id: text("id")?,
+            name: text("name").unwrap_or_default(),
+            color: text("color").unwrap_or_default(),
+            has_cursor: v.get("pointer").is_some_and(|p| !p.is_null()),
+            followed: v.get("followed").and_then(Value::as_bool).unwrap_or(false),
+        })
+    }
+}
+
 /// Presence data for the collaboration button and panel.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct CollabView {
@@ -245,6 +259,28 @@ pub struct CollabView {
     pub room: Option<String>,
     /// Who else is in it.
     pub peers: Vec<Peer>,
+}
+
+impl CollabView {
+    /// The view from the output of `collab.status` (`Session::query("collab.status", ..)`): the link, the
+    /// room and the peers with their ids and whether this user follows them.
+    pub fn from_status(out: &Value) -> CollabView {
+        let text = |key: &str| out.get(key).and_then(Value::as_str);
+        let status = match text("state") {
+            Some("connecting") => CollabStatus::Connecting,
+            Some("connected") => CollabStatus::Connected,
+            Some("error") => {
+                CollabStatus::Failed(text("error").or_else(|| text("text")).unwrap_or_default().to_owned())
+            }
+            _ => CollabStatus::Disconnected,
+        };
+        let peers = out
+            .get("peers")
+            .and_then(Value::as_array)
+            .map(|a| a.iter().filter_map(Peer::from_status).collect())
+            .unwrap_or_default();
+        CollabView { status, room: text("room").map(str::to_owned), peers }
+    }
 }
 
 /// The snapshot.
@@ -618,7 +654,8 @@ fn read_view(s: &mut Session) -> ViewView {
         return ViewView::default();
     };
     let number = |v: &Value, key: &str| v.get(key).and_then(Value::as_f64);
-    let scroll = got.get("scroll").and_then(Value::as_array).and_then(|a| Some([a.first()?.as_f64()?, a.get(1)?.as_f64()?]));
+    let scroll =
+        got.get("scroll").and_then(Value::as_array).and_then(|a| Some([a.first()?.as_f64()?, a.get(1)?.as_f64()?]));
     let viewport = got.get("viewport");
     match (scroll, number(&got, "zoom"), viewport) {
         (Some(scroll), Some(zoom), Some(vp)) => ViewView {

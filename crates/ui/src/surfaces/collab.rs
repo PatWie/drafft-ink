@@ -230,14 +230,21 @@ fn body(ui: &mut Ui, cx: &mut Cx<'_>, draft: &mut Draft) {
     separator(ui, &pal);
     ui.add_space(10.0);
     section_label(ui, &pal, "Your profile");
+    profile(ui, cx, &mut draft.name, &mut draft.name_sent);
+}
+
+/// The display name field and the nine cursor colours: `collab.set_user`. `name` is the text in the field,
+/// `sent` the last name that was sent or stored. Used by the collaboration dialog and the preferences.
+pub(crate) fn profile(ui: &mut Ui, cx: &mut Cx<'_>, name: &mut String, sent: &mut String) {
+    let pal = cx.pal;
     section_label(ui, &pal, "Display name");
     let reason = cx.refusal("collab.set_user");
-    let resp = text_field(ui, &mut draft.name, "Anonymous", reason, Some(MAX_NAME_CHARS), "Display name");
+    let resp = text_field(ui, name, "Anonymous", reason, Some(MAX_NAME_CHARS), "Display name");
     let left = resp.lost_focus() || (resp.has_focus() && enter_pressed(ui));
-    if let Some(name) = name_to_send(&draft.name, &draft.name_sent).filter(|_| left) {
-        let c = set_user_name_call(&name);
+    if let Some(new) = name_to_send(name, sent).filter(|_| left) {
+        let c = set_user_name_call(&new);
         cx.run(&c.id, c.args);
-        draft.name_sent = name;
+        *sent = new;
     }
     ui.add_space(6.0);
     section_label(ui, &pal, "Cursor colour");
@@ -258,6 +265,26 @@ fn to32(c: Color) -> Color32 {
 
 // ---- presence ----
 
+/// `collab.follow` for a peer: the camera follows it, or stops when it already does.
+pub(crate) fn follow_call(peer: &crate::model::Peer) -> Call {
+    call("collab.follow", if peer.followed { json!({}) } else { json!({ "peer": peer.id }) })
+}
+
+/// One person: a dot in their colour, their name and the Follow button.
+fn peer_row(ui: &mut Ui, cx: &mut Cx<'_>, p: &crate::model::Peer) {
+    let pal = cx.pal;
+    ui.horizontal(|ui| {
+        let color = Color::parse(&p.color).ok().map_or(pal.muted, to32);
+        dot(ui, color, 8.0);
+        let name = if p.name.trim().is_empty() { "Anonymous" } else { p.name.trim() };
+        ui.label(RichText::new(name).size(11.0).color(pal.text));
+        let c = follow_call(p);
+        let label = if p.followed { format!("Stop following {name}") } else { format!("Follow {name}") };
+        let ctl = Ctl::new(&c.id).args(c.args.clone()).label(label).selected(p.followed);
+        cx.icon_button(ui, &ctl, crate::icons::Icon::Eye, cx.layout.small_side() - 8.0);
+    });
+}
+
 /// Draws the presence panel: bottom right, who else is in the room.
 pub fn show_presence(ctx: &Context, cx: &mut Cx<'_>, _st: &mut UiState) {
     let Some((peers, more)) = presence_rows(&cx.model.collab) else {
@@ -271,12 +298,7 @@ pub fn show_presence(ctx: &Context, cx: &mut Cx<'_>, _st: &mut UiState) {
             panel_frame(&pal).show(ui, |ui| {
                 ui.spacing_mut().item_spacing = vec2(6.0, 3.0);
                 for p in peers {
-                    ui.horizontal(|ui| {
-                        let color = Color::parse(&p.color).ok().map_or(pal.muted, to32);
-                        dot(ui, color, 8.0);
-                        let name = if p.name.trim().is_empty() { "Anonymous" } else { p.name.trim() };
-                        ui.label(RichText::new(name).size(11.0).color(pal.text));
-                    });
+                    peer_row(ui, cx, p);
                 }
                 if more > 0 {
                     ui.label(RichText::new(format!("+{more} more")).size(11.0).color(pal.muted));
@@ -291,7 +313,13 @@ mod tests {
     use crate::model::Peer;
 
     fn peer(name: &str) -> Peer {
-        Peer { id: name.to_owned(), name: name.to_owned(), color: "#ef4444".to_owned(), has_cursor: false, followed: false }
+        Peer {
+            id: name.to_owned(),
+            name: name.to_owned(),
+            color: "#ef4444".to_owned(),
+            has_cursor: false,
+            followed: false,
+        }
     }
 
     #[test]

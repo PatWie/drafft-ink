@@ -9,7 +9,7 @@ use crate::action::{HostRequest, UiAction, Verb};
 use crate::icons::{self, Icon};
 use crate::model::CollabStatus;
 use crate::state::UiState;
-use crate::theme::{MARGIN, SMALL_BUTTON};
+use crate::theme::MARGIN;
 use crate::widgets::{Ctl, Cx, panel_frame, separator};
 
 const MENU_WIDTH: f32 = 220.0;
@@ -23,9 +23,11 @@ pub fn show(ctx: &Context, cx: &mut Cx<'_>, st: &mut UiState) {
             panel_frame(&cx.pal).show(ui, |ui| {
                 ui.horizontal(|ui| {
                     ui.spacing_mut().item_spacing = vec2(3.0, 0.0);
-                    let r = cx.verb_button(ui, Verb::ToggleMenu, Icon::Menu, SMALL_BUTTON + 4.0, "Menu", st.menu_open);
+                    let side = cx.layout.small_side() + 4.0;
+                    let r = cx.verb_button(ui, Verb::ToggleMenu, Icon::Menu, side, "Menu", st.menu_open);
                     button_rect = r.rect;
                     collab_button(ui, cx, st);
+                    title_button(ui, cx);
                 });
             });
         },
@@ -100,6 +102,7 @@ fn menu_rows(ui: &mut egui::Ui, cx: &mut Cx<'_>) {
     rows.verb(ui, cx, Verb::OpenRecent, "Open recent…");
     rows.command(ui, cx, Ctl::new("doc.save"), "Save");
     rows.verb(ui, cx, Verb::SaveAs, "Save as…");
+    rows.verb(ui, cx, Verb::RenameDocument, "Rename document…");
     separator(ui, &cx.pal);
     rows.command(
         ui,
@@ -107,6 +110,7 @@ fn menu_rows(ui: &mut egui::Ui, cx: &mut Cx<'_>) {
         Ctl::new("doc.export").args(json!({ "format": "png" })).label("Export as PNG"),
         "Export as PNG",
     );
+    rows.verb(ui, cx, Verb::OpenExport, "Export…");
     rows.command(
         ui,
         cx,
@@ -132,6 +136,8 @@ fn menu_rows(ui: &mut egui::Ui, cx: &mut Cx<'_>) {
     rows.command(ui, cx, Ctl::new("view.set_view_only").selected(view_only), "View-only mode");
     separator(ui, &cx.pal);
     theme_row(ui, cx);
+    rows.verb(ui, cx, Verb::ToggleLibrary, "Library");
+    rows.verb(ui, cx, Verb::OpenPreferences, "Preferences…");
     rows.verb(ui, cx, Verb::OpenPalette, "Command palette…");
     rows.verb(ui, cx, Verb::OpenShortcuts, "Keyboard shortcuts");
     if rows.chosen {
@@ -171,7 +177,7 @@ fn theme_row(ui: &mut egui::Ui, cx: &mut Cx<'_>) {
 
 fn collab_button(ui: &mut egui::Ui, cx: &mut Cx<'_>, st: &UiState) {
     let pal = cx.pal;
-    let side = SMALL_BUTTON + 4.0;
+    let side = cx.layout.small_side() + 4.0;
     let (rect, resp) = ui.allocate_exact_size(vec2(side, side), egui::Sense::click());
     let (dot, tip) = match &cx.model.collab.status {
         CollabStatus::Connected => (pal.ok, "Connected. Manage collaboration".to_owned()),
@@ -189,5 +195,36 @@ fn collab_button(ui: &mut egui::Ui, cx: &mut Cx<'_>, st: &UiState) {
     resp.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, "Collaboration"));
     if resp.on_hover_text(tip).clicked() {
         cx.verb(Verb::OpenCollab);
+    }
+}
+
+/// The longest title shown on the chip, in characters.
+const TITLE_CHARS: usize = 24;
+
+/// The name of the document, next to the menu. A click renames it (`doc.rename`).
+fn title_button(ui: &mut egui::Ui, cx: &mut Cx<'_>) {
+    let Some(active) = cx.model.tabs.iter().find(|t| t.active) else {
+        return;
+    };
+    let pal = cx.pal;
+    let full = if active.dirty { format!("{} •", active.name) } else { active.name.clone() };
+    let shown: String = if full.chars().count() > TITLE_CHARS {
+        full.chars().take(TITLE_CHARS - 1).chain(std::iter::once('~')).collect()
+    } else {
+        full
+    };
+    let galley = ui.painter().layout_no_wrap(shown, egui::FontId::proportional(13.0), pal.text);
+    let height = cx.layout.small_side() + 4.0;
+    let (rect, resp) = ui.allocate_exact_size(vec2(galley.size().x + 16.0, height), egui::Sense::click());
+    if ui.is_rect_visible(rect) {
+        if resp.hovered() || resp.has_focus() {
+            ui.painter().rect_filled(rect, crate::theme::BUTTON_RADIUS, pal.hover);
+        }
+        ui.painter().galley(egui::pos2(rect.left() + 8.0, rect.center().y - galley.size().y / 2.0), galley, pal.text);
+    }
+    let label = format!("Document name: {}", active.name);
+    resp.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, label.as_str()));
+    if resp.on_hover_text("Rename the document").clicked() {
+        cx.verb(Verb::RenameDocument);
     }
 }

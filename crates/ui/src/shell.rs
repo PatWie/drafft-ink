@@ -9,7 +9,7 @@ use crate::model::{CollabView, Model};
 use crate::state::{TOAST_FADE_S, TOAST_HOLD_S, UiState};
 use crate::surfaces;
 use crate::theme::{self, Palette};
-use crate::widgets::Cx;
+use crate::widgets::{Cx, Layout};
 
 /// What the app tells the UI about the frame.
 #[derive(Debug, Clone, Copy, Default)]
@@ -48,10 +48,17 @@ impl UiShell {
         self.model.collab = collab;
     }
 
+    /// The device is touch-first (a coarse pointer on the web, a tablet). Touch events set it too. The touch
+    /// layout follows it unless the preferences say otherwise.
+    pub fn set_touch_first(&mut self, touch_first: bool) {
+        self.state.set_touch_first(touch_first);
+    }
+
     /// Draws one frame and executes the actions it produced. Call once per egui pass.
     pub fn frame(&mut self, ui: &mut egui::Ui, session: &mut Session, input: FrameInput) -> FrameResult {
         let ctx = ui.ctx().clone();
         self.model.mac = ctx.os().is_mac();
+        self.sync_library();
         self.model.refresh(session);
         self.apply_theme(&ctx);
 
@@ -70,6 +77,11 @@ impl UiShell {
 
         let now = ctx.input(|i| i.time);
         let report = dispatch(session, &mut self.state, actions, now);
+        if self.sync_library() {
+            // The library panel was opened or closed by a verb: read (or stop reading) the library.
+            self.model.refresh(session);
+            ctx.request_repaint();
+        }
         if !report.ran.is_empty() {
             self.model.invalidate();
             self.model.refresh(session);
@@ -78,6 +90,16 @@ impl UiShell {
         }
         self.schedule_toasts(&ctx, now);
         FrameResult { report, canvas_rect: ctx.content_rect(), modal: self.state.modal_open() }
+    }
+
+    /// The model reads `library.list` only while the panel is open. Returns true when that changed.
+    fn sync_library(&mut self) -> bool {
+        let changed = self.model.wants_library != self.state.library_open;
+        if changed {
+            self.model.wants_library = self.state.library_open;
+            self.model.invalidate();
+        }
+        changed
     }
 
     fn apply_theme(&mut self, ctx: &egui::Context) {
@@ -116,7 +138,10 @@ pub fn draw(ui: &mut egui::Ui, model: &Model, state: &mut UiState) -> Vec<UiActi
     let ctx = ui.ctx().clone();
     theme::ensure_fonts(&ctx);
     let pal = Palette::of(&ctx);
-    let mut cx = Cx::new(model, pal, &mut out);
+    state.observe_input(&ctx);
+    let screen = ctx.content_rect().size();
+    let layout = Layout { compact: state.compact(screen.x), narrow: state.narrow(screen.x), screen };
+    let mut cx = Cx::new(model, pal, &mut out).with_layout(layout);
     surfaces::show_all(&ctx, &mut cx, state);
     out
 }

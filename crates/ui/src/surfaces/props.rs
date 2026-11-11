@@ -6,12 +6,13 @@ use drafftink_engine::state::Tool;
 use egui::{Align2, Area, Context, Id, Order, vec2};
 use serde_json::{Value, json};
 
-use crate::action::{Scrub, ScrubPhase, UiAction};
+use crate::action::{Scrub, ScrubPhase, UiAction, Verb};
 use crate::icons::Icon;
 use crate::model::StyleView;
+use crate::state::PanelKind;
 use crate::state::UiState;
-use crate::theme::{self, MARGIN, RIGHT_PANEL_WIDTH};
-use crate::widgets::{Ctl, Cx, panel_frame, section_label, separator};
+use crate::theme::{self, MARGIN};
+use crate::widgets::{Ctl, Cx, ScrollDir, panel_frame, scroll_if, section_label, separator};
 
 /// Sizes of the text presets.
 pub const FONT_SIZES: [(&str, f64); 4] = [("S", 16.0), ("M", 20.0), ("L", 28.0), ("XL", 36.0)];
@@ -37,6 +38,9 @@ const FONT_FAMILIES: [(&str, &str); 4] = [
     ("Noto Sans", "noto_sans"),
 ];
 const FONT_WEIGHTS: [(&str, &str); 3] = [("Light", "light"), ("Regular", "regular"), ("Heavy", "heavy")];
+const VERTICAL_ALIGNS: [(&str, &str); 3] = [("Top", "top"), ("Middle", "middle"), ("Bottom", "bottom")];
+/// Line heights offered (the property takes 1.0 to 3.0).
+pub const LINE_HEIGHTS: [f64; 4] = [1.0, 1.25, 1.5, 2.0];
 const TEXT_ALIGNS: [(&str, &str); 3] = [("Left", "left"), ("Center", "center"), ("Right", "right")];
 const ARROW_TYPES: [(&str, &str); 3] = [("Sharp", "sharp"), ("Round", "round"), ("Elbow", "elbow")];
 const HEADS: [(&str, &str); 6] = [
@@ -78,7 +82,7 @@ fn tool_shows(tool: Tool, prop: &str) -> bool {
             matches!(prop, "freehand_style" | "pressure_mode" | "opacity" | "fill_pattern")
         }
         Tool::Text | Tool::Math => {
-            matches!(prop, "font_family" | "font_weight" | "font_size" | "text_align" | "opacity")
+            matches!(prop, "font_family" | "font_weight" | "font_size" | "text_align" | "line_height" | "opacity")
         }
         Tool::Select | Tool::Lasso | Tool::Hand | Tool::Eraser | Tool::Laser => false,
     }
@@ -90,39 +94,62 @@ fn shows(cx: &Cx<'_>, prop: &str) -> bool {
 }
 
 /// Draws the panel.
-pub fn show(ctx: &Context, cx: &mut Cx<'_>, _st: &mut UiState) {
+pub fn show(ctx: &Context, cx: &mut Cx<'_>, st: &mut UiState) {
     let selected = cx.model.selection_count;
     if selected == 0 && !is_drawing_tool(cx.model.tool) {
         return;
     }
+    let collapsed = st.panel_collapsed(PanelKind::Properties, ctx.content_rect().width());
+    let compact = cx.layout.compact;
+    let side = cx.layout.small_side();
+    let width = cx.layout.panel_width();
+    let max_height = (ctx.content_rect().height() - 2.0 * MARGIN - 80.0).max(160.0);
     Area::new(Id::unique("right_panel")).anchor(Align2::RIGHT_CENTER, vec2(-MARGIN, 0.0)).order(Order::Middle).show(
         ctx,
         |ui| {
             panel_frame(&cx.pal).show(ui, |ui| {
-                ui.set_width(RIGHT_PANEL_WIDTH - 20.0);
                 ui.spacing_mut().item_spacing = vec2(4.0, 4.0);
+                if compact {
+                    let label = if collapsed { "Show the properties" } else { "Hide the properties" };
+                    if cx.local_button(ui, Icon::Settings, cx.layout.tool_side(), label, !collapsed).clicked() {
+                        st.set_panel_collapsed(PanelKind::Properties, !collapsed);
+                    }
+                }
+                if collapsed {
+                    return;
+                }
+                ui.set_width(width - 20.0);
                 let title = if selected > 0 { "Properties" } else { "New elements" };
                 ui.label(egui::RichText::new(title).font(theme::hand(16.0)).color(cx.pal.text));
                 if selected > 1 {
                     ui.label(egui::RichText::new(format!("{selected} selected")).size(11.0).color(cx.pal.muted));
                 }
-                text_sections(ui, cx);
-                shape_sections(ui, cx);
-                arrow_sections(ui, cx);
-                freehand_sections(ui, cx);
-                if selected > 0 {
-                    opacity_section(ui, cx);
-                    layer_section(ui, cx);
-                    if selected > 1 {
-                        align_section(ui, cx);
-                    }
-                    action_section(ui, cx);
-                } else if shows(cx, "opacity") {
-                    opacity_section(ui, cx);
-                }
+                scroll_if(ui, compact, ScrollDir::Vertical, "props_scroll", max_height, |ui| {
+                    ui.spacing_mut().item_spacing = vec2(4.0, 4.0);
+                    sections(ui, cx, side);
+                });
             });
         },
     );
+}
+
+fn sections(ui: &mut egui::Ui, cx: &mut Cx<'_>, side: f32) {
+    let selected = cx.model.selection_count;
+    text_sections(ui, cx);
+    shape_sections(ui, cx);
+    arrow_sections(ui, cx);
+    freehand_sections(ui, cx);
+    if selected > 0 {
+        opacity_section(ui, cx);
+        layer_section(ui, cx, side);
+        if selected > 1 {
+            align_section(ui, cx, side);
+        }
+        link_section(ui, cx, side);
+        action_section(ui, cx, side);
+    } else if shows(cx, "opacity") {
+        opacity_section(ui, cx);
+    }
 }
 
 /// One row of choices for a `style.set` property.
@@ -179,6 +206,41 @@ fn text_sections(ui: &mut egui::Ui, cx: &mut Cx<'_>) {
         });
     }
     choices(ui, cx, "Align", "text_align", &TEXT_ALIGNS);
+    choices(ui, cx, "Vertical align", "vertical_align", &VERTICAL_ALIGNS);
+    line_height_section(ui, cx);
+    auto_resize_section(ui, cx);
+}
+
+/// The line height presets: `style.set` `line_height`.
+fn line_height_section(ui: &mut egui::Ui, cx: &mut Cx<'_>) {
+    if !shows(cx, "line_height") {
+        return;
+    }
+    section_label(ui, &cx.pal, "Line height");
+    let current = cx.model.style.num_value("line_height");
+    ui.horizontal_wrapped(|ui| {
+        for height in LINE_HEIGHTS {
+            let ctl = Ctl::new("style.set")
+                .args(json!({ "props": { "line_height": height } }))
+                .label(format!("Line height {height}"))
+                .selected(current.is_some_and(|c| (c - height).abs() < 0.01));
+            cx.toggle_button(ui, &ctl, &format!("{height}"));
+        }
+    });
+}
+
+/// Whether the text box follows its content: `text.set_autoresize`.
+fn auto_resize_section(ui: &mut egui::Ui, cx: &mut Cx<'_>) {
+    if cx.model.selection_count == 0 || !cx.model.style.has_kind("text") {
+        return;
+    }
+    section_label(ui, &cx.pal, "Box");
+    ui.horizontal_wrapped(|ui| {
+        for (label, on) in [("Fit to text", true), ("Fixed width", false)] {
+            let ctl = Ctl::new("text.set_autoresize").args(json!({ "on": on })).label(label);
+            cx.toggle_button(ui, &ctl, label);
+        }
+    });
 }
 
 fn shape_sections(ui: &mut egui::Ui, cx: &mut Cx<'_>) {
@@ -304,7 +366,7 @@ fn opacity_section(ui: &mut egui::Ui, cx: &mut Cx<'_>) {
     });
 }
 
-fn layer_section(ui: &mut egui::Ui, cx: &mut Cx<'_>) {
+fn layer_section(ui: &mut egui::Ui, cx: &mut Cx<'_>, side: f32) {
     section_label(ui, &cx.pal, "Layer");
     ui.horizontal(|ui| {
         for (icon, op, label) in [
@@ -314,7 +376,7 @@ fn layer_section(ui: &mut egui::Ui, cx: &mut Cx<'_>) {
             (Icon::LayerFront, "front", "Bring to front"),
         ] {
             let ctl = Ctl::new("arrange.z_order").args(json!({ "op": op })).label(label);
-            cx.icon_button(ui, &ctl, icon, theme::SMALL_BUTTON);
+            cx.icon_button(ui, &ctl, icon, side);
         }
     });
     section_label(ui, &cx.pal, "Flip");
@@ -323,12 +385,12 @@ fn layer_section(ui: &mut egui::Ui, cx: &mut Cx<'_>) {
             [(Icon::FlipH, "horizontal", "Flip horizontally"), (Icon::FlipV, "vertical", "Flip vertically")]
         {
             let ctl = Ctl::new("element.flip").args(json!({ "axis": axis })).label(label);
-            cx.icon_button(ui, &ctl, icon, theme::SMALL_BUTTON);
+            cx.icon_button(ui, &ctl, icon, side);
         }
     });
 }
 
-fn align_section(ui: &mut egui::Ui, cx: &mut Cx<'_>) {
+fn align_section(ui: &mut egui::Ui, cx: &mut Cx<'_>, side: f32) {
     section_label(ui, &cx.pal, "Align");
     ui.horizontal_wrapped(|ui| {
         for (icon, edge, label) in [
@@ -340,7 +402,7 @@ fn align_section(ui: &mut egui::Ui, cx: &mut Cx<'_>) {
             (Icon::AlignBottom, "bottom", "Align bottom"),
         ] {
             let ctl = Ctl::new("arrange.align").args(json!({ "edge": edge })).label(label);
-            cx.icon_button(ui, &ctl, icon, theme::SMALL_BUTTON);
+            cx.icon_button(ui, &ctl, icon, side);
         }
     });
     ui.horizontal(|ui| {
@@ -349,12 +411,32 @@ fn align_section(ui: &mut egui::Ui, cx: &mut Cx<'_>) {
             (Icon::DistributeV, "vertical", "Distribute vertically"),
         ] {
             let ctl = Ctl::new("arrange.distribute").args(json!({ "axis": axis })).label(label);
-            cx.icon_button(ui, &ctl, icon, theme::SMALL_BUTTON);
+            cx.icon_button(ui, &ctl, icon, side);
         }
     });
 }
 
-fn action_section(ui: &mut egui::Ui, cx: &mut Cx<'_>) {
+/// The link of the selected element: the address, Open (`element.open_link`) and the link dialog.
+fn link_section(ui: &mut egui::Ui, cx: &mut Cx<'_>, side: f32) {
+    if cx.model.selection_count != 1 {
+        return;
+    }
+    section_label(ui, &cx.pal, "Link");
+    ui.horizontal_wrapped(|ui| {
+        cx.verb_button(ui, Verb::OpenLinkEditor, Icon::Link, side, "Edit the link", cx.model.selection_link.is_some());
+        if let Some(link) = cx.model.selection_link.clone() {
+            let shown: String = link.chars().take(LINK_CHARS).collect();
+            ui.label(egui::RichText::new(shown).size(11.0).color(cx.pal.muted));
+            let open = Ctl::new("element.open_link").label("Open the link");
+            cx.text_button(ui, &open, "Open", false);
+        }
+    });
+}
+
+/// The longest link shown in the panel, in characters.
+const LINK_CHARS: usize = 24;
+
+fn action_section(ui: &mut egui::Ui, cx: &mut Cx<'_>, side: f32) {
     separator(ui, &cx.pal);
     ui.horizontal_wrapped(|ui| {
         for (icon, id, label) in [
@@ -365,7 +447,7 @@ fn action_section(ui: &mut egui::Ui, cx: &mut Cx<'_>) {
             (Icon::Delete, "element.delete", "Delete"),
         ] {
             let ctl = Ctl::new(id).label(label);
-            cx.icon_button(ui, &ctl, icon, theme::SMALL_BUTTON);
+            cx.icon_button(ui, &ctl, icon, side);
         }
     });
 }

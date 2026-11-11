@@ -172,6 +172,188 @@ pub struct LinkEditorState {
     pub focused: bool,
 }
 
+/// What a rename dialog renames.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum RenameTarget {
+    /// The document of the active tab: `doc.rename`.
+    Document,
+    /// A tab, by its id: `tab.rename`.
+    Tab(String),
+    /// A library item, by its id: `library.rename`.
+    LibraryItem(String),
+    /// A frame element, by its id: `frame.rename`.
+    Frame(String),
+}
+
+/// The rename dialog: what is renamed and the text in the field.
+#[derive(Debug, Clone, PartialEq)]
+pub struct RenameState {
+    /// What the name belongs to.
+    pub target: RenameTarget,
+    /// The text in the field.
+    pub text: String,
+    /// Set once the field has been focused, so focus is requested only on the first frame.
+    pub focused: bool,
+}
+
+impl RenameState {
+    /// A dialog for a target, starting from its current name.
+    pub fn new(target: RenameTarget, current: impl Into<String>) -> Self {
+        Self { target, text: current.into(), focused: false }
+    }
+}
+
+/// The Save As dialog: the document name, asked before the save picker.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct SaveAsState {
+    /// The text in the field. `None` until the first frame, when it takes the name of the document.
+    pub text: Option<String>,
+    /// Set once the field has been focused.
+    pub focused: bool,
+}
+
+/// What `doc.export` writes.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum ExportFormat {
+    /// A picture.
+    #[default]
+    Png,
+    /// A vector picture.
+    Svg,
+    /// The document in the native format.
+    Json,
+    /// The document as an `.excalidraw` file.
+    Excalidraw,
+}
+
+impl ExportFormat {
+    /// Every format, in the order of the dialog.
+    pub const ALL: [ExportFormat; 4] = [Self::Png, Self::Svg, Self::Json, Self::Excalidraw];
+
+    /// The value of the `format` argument.
+    pub fn arg(self) -> &'static str {
+        match self {
+            Self::Png => "png",
+            Self::Svg => "svg",
+            Self::Json => "json",
+            Self::Excalidraw => "excalidraw",
+        }
+    }
+
+    /// The label on the button.
+    pub fn title(self) -> &'static str {
+        match self {
+            Self::Png => "PNG",
+            Self::Svg => "SVG",
+            Self::Json => "JSON",
+            Self::Excalidraw => ".excalidraw",
+        }
+    }
+
+    /// The file extension, without the dot.
+    pub fn extension(self) -> &'static str {
+        match self {
+            Self::Png => "png",
+            Self::Svg => "svg",
+            Self::Json => "json",
+            Self::Excalidraw => "excalidraw",
+        }
+    }
+
+    /// True for the formats that are pictures: scale, background, dark and padding mean something for them.
+    pub fn is_picture(self) -> bool {
+        matches!(self, Self::Png | Self::Svg)
+    }
+}
+
+/// The export dialog. The options start from the `export.*` settings and are the dialog's own until the user
+/// changes the settings in the preferences.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ExportState {
+    /// The format.
+    pub format: ExportFormat,
+    /// Export only the selected elements (`scope: selection`), else everything (`scope: all`).
+    pub selection_only: bool,
+    /// Pixels per world unit.
+    pub scale: f64,
+    /// Draw the page background.
+    pub background: bool,
+    /// Dark theme colours.
+    pub dark: bool,
+    /// Embed the scene in the picture so that it can be opened again.
+    pub embed_scene: bool,
+    /// The options were taken from the settings.
+    pub loaded: bool,
+}
+
+impl Default for ExportState {
+    fn default() -> Self {
+        Self {
+            format: ExportFormat::Png,
+            selection_only: false,
+            scale: 2.0,
+            background: true,
+            dark: false,
+            embed_scene: true,
+            loaded: false,
+        }
+    }
+}
+
+/// The popup that Tab and Shift+Tab open over a converted selection.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct ConvertPopup {
+    /// The type the last conversion gave (`element.convert`'s `to`).
+    pub current: Option<String>,
+}
+
+/// The context menu of a tab.
+#[derive(Debug, Clone, PartialEq)]
+pub struct TabMenu {
+    /// The tab id.
+    pub tab: String,
+    /// Where the right click was, in screen points.
+    pub screen: egui::Pos2,
+}
+
+/// How much room the layout leaves for fingers.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum LayoutPreference {
+    /// Larger targets and collapsible panels on a narrow window or when touch was used.
+    #[default]
+    Auto,
+    /// Always the touch layout.
+    Touch,
+    /// Always the desktop layout.
+    Desktop,
+}
+
+impl LayoutPreference {
+    /// Every choice, in the order of the preferences.
+    pub const ALL: [LayoutPreference; 3] = [Self::Auto, Self::Touch, Self::Desktop];
+
+    /// The label of the choice.
+    pub fn title(self) -> &'static str {
+        match self {
+            Self::Auto => "Automatic",
+            Self::Touch => "Touch",
+            Self::Desktop => "Desktop",
+        }
+    }
+}
+
+/// The two panels that collapse in the touch layout.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PanelKind {
+    /// The tool column.
+    Tools,
+    /// The properties panel.
+    Properties,
+}
+
+/// Windows narrower than this (in points) get the touch layout when the preference is `Auto`.
+pub const NARROW_WIDTH: f32 = 720.0;
+
 /// Everything the UI remembers between frames.
 #[derive(Debug, Default)]
 pub struct UiState {
@@ -205,6 +387,28 @@ pub struct UiState {
     pub recent_open: bool,
     /// A pending question.
     pub confirm: Option<Confirm>,
+    /// The rename dialog, when open.
+    pub rename: Option<RenameState>,
+    /// The Save As dialog, when open.
+    pub save_as: Option<SaveAsState>,
+    /// The export dialog, when open.
+    pub export: Option<ExportState>,
+    /// The preferences dialog is open.
+    pub preferences_open: bool,
+    /// The library panel is open.
+    pub library_open: bool,
+    /// The name field of the library panel (for `library.add`).
+    pub library_name: String,
+    /// The Tab convert popup, when open.
+    pub convert_popup: Option<ConvertPopup>,
+    /// The context menu of a tab, when open.
+    pub tab_menu: Option<TabMenu>,
+    /// The layout preference (kept by the app between runs if it wants to).
+    pub layout: LayoutPreference,
+    /// A touch event was seen, or the app says the device is touch-first.
+    pub touch_first: bool,
+    /// What the user chose for each collapsible panel (`None`: the default for the window).
+    panel_collapsed: [Option<bool>; 2],
     /// Toasts, oldest first.
     pub toasts: Vec<Toast>,
     /// Text the app pasted for the equation editor.
@@ -235,6 +439,12 @@ impl UiState {
             || self.context_menu.is_some()
             || self.recent_open
             || self.confirm.is_some()
+            || self.rename.is_some()
+            || self.save_as.is_some()
+            || self.export.is_some()
+            || self.preferences_open
+            || self.convert_popup.is_some()
+            || self.tab_menu.is_some()
     }
 
     /// True when a modal dialog is open and keys must not reach the canvas.
@@ -246,6 +456,10 @@ impl UiState {
             || self.link_editor.is_some()
             || self.confirm.is_some()
             || self.search_open
+            || self.rename.is_some()
+            || self.save_as.is_some()
+            || self.export.is_some()
+            || self.preferences_open
     }
 
     /// Closes everything that Esc closes. Returns true when something was open.
@@ -264,6 +478,12 @@ impl UiState {
         self.context_menu = None;
         self.recent_open = false;
         self.confirm = None;
+        self.rename = None;
+        self.save_as = None;
+        self.export = None;
+        self.preferences_open = false;
+        self.convert_popup = None;
+        self.tab_menu = None;
         was
     }
 
@@ -283,7 +503,24 @@ impl UiState {
                 self.close_overlays();
                 self.recent_open = true;
             }
-            Verb::SaveAs => host.push(HostRequest::PickSaveTarget),
+            Verb::SaveAs => {
+                self.close_overlays();
+                self.save_as = Some(SaveAsState::default());
+            }
+            Verb::OpenExport => {
+                self.close_overlays();
+                self.export = Some(ExportState::default());
+            }
+            Verb::OpenPreferences => {
+                self.close_overlays();
+                self.preferences_open = true;
+            }
+            Verb::ToggleLibrary => self.library_open = !self.library_open,
+            Verb::RenameDocument => {
+                self.close_overlays();
+                // The field takes the document's name on the first frame it is drawn.
+                self.rename = Some(RenameState::new(RenameTarget::Document, String::new()));
+            }
             Verb::InsertImage => host.push(HostRequest::PickImage),
             Verb::OpenColorStroke => self.toggle_color(ColorTarget::Stroke),
             Verb::OpenColorFill => self.toggle_color(ColorTarget::Fill),
@@ -326,6 +563,54 @@ impl UiState {
                 }
             }
         }
+    }
+
+    /// Opens the rename dialog for a tab, with its current name.
+    pub fn open_rename(&mut self, target: RenameTarget, current: impl Into<String>) {
+        self.close_overlays();
+        self.rename = Some(RenameState::new(target, current));
+    }
+
+    /// The device is touch-first (the app knows from a media query or the platform). Touch events seen
+    /// by the UI set it too.
+    pub fn set_touch_first(&mut self, touch_first: bool) {
+        self.touch_first = touch_first;
+    }
+
+    /// Looks at the input of the frame: a touch event means the device is used by touch.
+    pub(crate) fn observe_input(&mut self, ctx: &egui::Context) {
+        if !self.touch_first && ctx.input(|i| i.events.iter().any(|e| matches!(e, egui::Event::Touch { .. }))) {
+            self.touch_first = true;
+        }
+    }
+
+    /// True when the touch layout is in effect: chosen in the preferences, or automatic on a narrow window
+    /// or after touch input.
+    pub fn compact(&self, width: f32) -> bool {
+        match self.layout {
+            LayoutPreference::Touch => true,
+            LayoutPreference::Desktop => false,
+            LayoutPreference::Auto => self.touch_first || width < NARROW_WIDTH,
+        }
+    }
+
+    /// True for a window so narrow that panels start collapsed.
+    pub fn narrow(&self, width: f32) -> bool {
+        self.compact(width) && width < NARROW_WIDTH
+    }
+
+    /// True when the panel is collapsed to its button. Only the touch layout collapses panels; there a
+    /// panel starts collapsed on a narrow window and open on a wide one, until the user chooses.
+    pub fn panel_collapsed(&self, panel: PanelKind, width: f32) -> bool {
+        if !self.compact(width) {
+            return false;
+        }
+        self.panel_collapsed[panel as usize].unwrap_or_else(|| self.narrow(width))
+    }
+
+    /// The user collapses or expands a panel of the touch layout.
+    pub fn set_panel_collapsed(&mut self, panel: PanelKind, collapsed: bool) {
+        self.panel_collapsed[panel as usize] = Some(collapsed);
     }
 
     fn toggle_color(&mut self, target: ColorTarget) {
