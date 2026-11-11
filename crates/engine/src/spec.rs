@@ -429,6 +429,9 @@ pub struct CommandSpec {
     pub status: Status,
     /// How the executor runs it.
     pub txn: Txn,
+    /// Runs although the document is blocked by a newer schema, although it mutates the document: it
+    /// replaces the document or ends an edit in progress. See [`CommandSpec::allowed_when_blocked`].
+    pub works_when_blocked: bool,
 }
 
 impl std::fmt::Debug for CommandSpec {
@@ -492,6 +495,7 @@ impl CommandSpec {
             shortcuts: &[],
             status: Status::Stable,
             txn: Txn::Standard,
+            works_when_blocked: false,
         }
     }
 
@@ -541,6 +545,16 @@ impl CommandSpec {
     #[must_use]
     pub const fn planned(mut self, reason: &'static str) -> Self {
         self.status = Status::Planned(reason);
+        self
+    }
+
+    /// The command still runs when a newer version of the app raised the document's schema, so that this build
+    /// holds it read-only (docs/crdt.md §8). Every other command that mutates the document refuses with
+    /// `newer_schema`. Declare it on commands that replace the document or end an edit in progress, so that
+    /// the user is never stuck.
+    #[must_use]
+    pub const fn allowed_when_blocked(mut self) -> Self {
+        self.works_when_blocked = true;
         self
     }
 

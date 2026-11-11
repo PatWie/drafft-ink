@@ -95,6 +95,10 @@ pub const SHARED_CODES: &[CodeInfo] = &[
         code: "unsaved_changes",
         template: "This document has unsaved changes. Save it with `doc.save`, or pass on_unsaved=\"discard\" to drop them, or on_unsaved=\"save\" to save and continue.",
     },
+    CodeInfo {
+        code: "newer_schema",
+        template: "This document was changed by a newer version of drafft. Update the app to edit it.",
+    },
     CodeInfo { code: "wrong_kind", template: "`{id}` does not work on {kind} elements. It works on {allowed}." },
     CodeInfo {
         code: "not_applicable",
@@ -317,6 +321,15 @@ impl Refusal {
         .suggesting("doc.save", None)
     }
 
+    /// `newer_schema`: a newer version of the app changed the document, so this build holds it read-only.
+    pub fn newer_schema(id: &str) -> Self {
+        Self::shared(
+            "newer_schema",
+            id,
+            "This document was changed by a newer version of drafft. Update the app to edit it.".to_owned(),
+        )
+    }
+
     /// `wrong_kind`: the command does not work on this kind of element.
     pub fn wrong_kind(id: &str, kind: &str, allowed: &str) -> Self {
         Self::shared("wrong_kind", id, format!("`{id}` does not work on {kind} elements. It works on {allowed}."))
@@ -517,6 +530,7 @@ mod tests {
             Refusal::gesture_active("x.y"),
             Refusal::text_editing("x.y"),
             Refusal::unsaved_changes("x.y"),
+            Refusal::newer_schema("x.y"),
             Refusal::wrong_kind("x.y", "a", "b"),
             Refusal::not_applicable("x.y", "a", "b"),
             Refusal::too_few("x.y", 2, "elements", 1),

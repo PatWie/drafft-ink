@@ -438,6 +438,7 @@ impl Session {
                 "name": t.doc.store().meta().name,
                 "active": i == self.active_index(),
                 "dirty": t.dirty(),
+                "blocked_by_schema": t.doc.blocked_by_schema(),
             })).collect::<Vec<_>>(),
             "tool": self.tool.effective().name(),
             "tool_lock": self.tool.lock,
@@ -454,6 +455,7 @@ impl Session {
             })),
             "revision": t.doc.revision(),
             "dirty": t.dirty(),
+            "blocked_by_schema": t.doc.blocked_by_schema(),
             "collab": { "state": collab.state, "room": collab.room },
             "settings_revision": self.settings.revision,
         })

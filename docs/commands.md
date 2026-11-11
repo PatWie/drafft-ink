@@ -176,6 +176,7 @@ Shared catalog. Placeholders in braces are filled in; the wording is exact.
 | `gesture_active` | A drag is in progress. Finish it with `gesture.end` or cancel it with `gesture.cancel` before running `{id}`. |
 | `text_editing` | A text element is being edited. Finish with `text.edit_end` before running `{id}`. |
 | `unsaved_changes` | This document has unsaved changes. Save it with `doc.save`, or pass on_unsaved="discard" to drop them, or on_unsaved="save" to save and continue. |
+| `newer_schema` | This document was changed by a newer version of drafft. Update the app to edit it. |
 | `wrong_kind` | `{id}` does not work on {kind} elements. It works on {allowed}. |
 | `not_applicable` | None of the targeted elements support {props}. They apply to {kinds}. |
 | `too_few` | `{id}` needs at least {n} {things}, and {have} were given. Select more, or pass `ids`. |
@@ -934,7 +935,7 @@ These are what `window.drafftink.commands()`, `recent()` and the MCP tool list a
 | `engine.commands` | `family?: string`, `search?: string`, `available_only: bool = false`, `include_schemas: bool = false` | Always available. | `[{id, title, family, summary, undo, reads_only, shortcuts: {mac, other}, available: true \| {code, message}, facts, args_schema?, output_schema?}]`. `shortcuts` are the effective keys (defaults plus user overrides). |
 | `engine.describe` | `id: string` | Execute: `unknown_command` with suggestions. | The spec for one command: summary, args and output JSON Schema, facts, the refusal codes it can return, and one worked example. |
 | `engine.recent` | `limit: int = 50` (max 256), `mutating_only: bool = false`, `since_seq?: int` | Always available. | The newest entries of the ring (§1.9), oldest first. |
-| `engine.state` | none | Always available. | `{tabs: [{id, name, active, dirty}], tool, tool_lock, view_only, selection: {count, groups, editing_group}, gesture?, text_edit?, revision, dirty, collab: {state, room?}, settings_revision}`. |
+| `engine.state` | none | Always available. | `{tabs: [{id, name, active, dirty, blocked_by_schema}], tool, tool_lock, view_only, selection: {count, groups, editing_group}, gesture?, text_edit?, revision, dirty, blocked_by_schema, collab: {state, room?}, settings_revision}`. `blocked_by_schema` is the schema version of a newer app that made the document read-only here (null normally). While it is set, every command that mutates the document refuses with `newer_schema`, except those declared `allowed_when_blocked` (`doc.new`, `doc.open`, `doc.show_intro`, `gesture.cancel`, `text.edit_end`): replacing the document starts a fresh store and clears the block (docs/crdt.md §8). |
 
 ### 2.22 `perf`: counters
 

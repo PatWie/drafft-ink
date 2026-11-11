@@ -462,6 +462,8 @@ pub const COMMANDS: &[CommandSpec] = &[
     )
     .available(editing_now)
     .refusals(&["not_editing", "invalid_latex"])
+    // A blocked document cannot take the result (`edit_end` says so), but the edit can still be discarded.
+    .allowed_when_blocked()
     .shortcuts(EDIT_END_KEYS),
     CommandSpec::new(
         "text.style_range",

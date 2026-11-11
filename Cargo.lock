@@ -1395,6 +1395,7 @@ dependencies = [
  "drafftink-protocol",
  "drafftink-scene",
  "drafftink-typeset",
+ "loro",
  "png",
  "schemars",
  "serde",

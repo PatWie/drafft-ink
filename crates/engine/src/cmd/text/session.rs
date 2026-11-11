@@ -363,6 +363,9 @@ pub(super) fn edit_end(s: &mut Session, a: EndArgs) -> Result<EndOut, Refusal> {
     if !a.commit {
         return Ok(EndOut { discarded: true, ..EndOut::default() });
     }
+    if s.tab().doc.blocked_by_schema().is_some() {
+        return Err(Refusal::newer_schema(cmd));
+    }
     let fin = Final::new(cmd, &a)?;
     match te.element {
         None => end_draft(s, cmd, &fin),

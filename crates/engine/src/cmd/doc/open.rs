@@ -22,6 +22,7 @@ use crate::ports::FileRef;
 use crate::refusal::{Refusal, echo};
 use crate::session::Session;
 use crate::spec::Redraw;
+use crate::store::TabDoc;
 use crate::state::{BASE_ZOOM, Observed};
 
 /// The built-in welcome document, in the format of the old app (migrated when shown).
@@ -294,6 +295,11 @@ pub(super) fn replace_active(
     target: Option<FileRef>,
     provenance: Provenance,
 ) -> Result<(), Refusal> {
+    if s.tab().doc.blocked_by_schema().is_some() {
+        // A document from a newer version is read-only. Replacing it starts a fresh store, which is how it is
+        // left (docs/crdt.md §8: "reopening the document clears it").
+        s.tab_mut().doc = TabDoc::new();
+    }
     let (tab, mark) = (s.tab().id, s.tab().doc.mark());
     s.tab_mut().doc.load(doc).map_err(|e| store_refusal(id, &e))?;
     // The executor runs the invariant pass after the handler. Run it now, so that what it repairs in a loaded
@@ -338,6 +344,9 @@ pub(crate) fn merge_into_active(
     at: Option<Pt>,
     select: bool,
 ) -> Result<InsertReport, Refusal> {
+    if s.tab().doc.blocked_by_schema().is_some() {
+        return Err(Refusal::newer_schema(id));
+    }
     let place = match at {
         Some(p) => Placement::Centre(Point::new(args::world(id, "at[0]", p[0])?, args::world(id, "at[1]", p[1])?)),
         None => Placement::AsIs,

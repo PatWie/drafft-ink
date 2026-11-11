@@ -328,6 +328,11 @@ impl TabDoc {
         &self.work
     }
 
+    /// The schema version of a newer app that made this document read-only, if any (docs/crdt.md §8).
+    pub fn blocked_by_schema(&self) -> Option<u32> {
+        self.loro.blocked_by_schema()
+    }
+
     /// The replicated store, for export and sync glue.
     pub fn replicated(&self) -> &DocStore {
         &self.loro

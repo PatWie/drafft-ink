@@ -13,7 +13,7 @@ use serde_json::{Map, Value, json};
 use crate::refusal::Refusal;
 use crate::ring::{Origin, Outcome, Record};
 use crate::session::{Session, SoftState};
-use crate::spec::{CommandSpec, Gate, RingMode, Selection, Status, TextGate, Txn, Undo};
+use crate::spec::{CommandSpec, Gate, Mutates, RingMode, Selection, Status, TextGate, Txn, Undo};
 use crate::state::TabId;
 use crate::store::{CoalesceReq, DocMark, StepMeta, Summary};
 use drafftink_profile::{Counter, inc, now_ns, span};
@@ -200,6 +200,7 @@ impl Session {
         if self.view_only && spec.view_only == Gate::Refused {
             return Err(Refusal::view_only(spec.id));
         }
+        self.schema_gate(spec)?;
         if !ignore_gesture && self.gesture.is_some() && spec.while_gesture == Gate::Refused {
             return Err(Refusal::gesture_active(spec.id));
         }
@@ -211,6 +212,18 @@ impl Session {
                 TextGate::Commit => {}
                 TextGate::Allowed => {}
             }
+        }
+        Ok(())
+    }
+
+    /// A document that a newer version of the app changed is read-only here: a command that mutates the
+    /// document refuses, unless it replaces the document or ends an edit (`CommandSpec::allowed_when_blocked`).
+    fn schema_gate(&self, spec: &'static CommandSpec) -> Result<(), Refusal> {
+        if spec.mutates.contains(Mutates::DOC)
+            && !spec.works_when_blocked
+            && self.tab().doc.blocked_by_schema().is_some()
+        {
+            return Err(Refusal::newer_schema(spec.id));
         }
         Ok(())
     }
@@ -264,6 +277,12 @@ impl Session {
         }
         if self.view_only && spec.view_only == Gate::Refused {
             return Err(Refusal::view_only(spec.id));
+        }
+        if spec.mutates.contains(Mutates::DOC)
+            && !spec.works_when_blocked
+            && self.tab().doc.blocked_by_schema().is_some()
+        {
+            return Err(Refusal::newer_schema(spec.id));
         }
         if self.gesture.is_some() && spec.while_gesture == Gate::Refused {
             return Err(Refusal::gesture_active(spec.id));
