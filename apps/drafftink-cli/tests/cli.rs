@@ -1,4 +1,5 @@
 //! The command line as a process: arguments in, files and streams out, and the exit code.
+#![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
 use std::path::Path;
 use std::process::{Command, Output, Stdio};
