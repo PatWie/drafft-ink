@@ -34,7 +34,8 @@ pub struct LoroConfig {
     /// Most undo steps kept (default 200). The engine passes its `history.depth` setting.
     pub undo_depth: usize,
     /// Loro peer id. `None` (the default) picks a random one, which is what you want: never reuse a peer id on a
-    /// second copy of the same document, because two writers with one id corrupt the history.
+    /// second copy of the same document, because two writers with one id corrupt the history. Loro reserves
+    /// `u64::MAX`; [`LoroStore::with_config`] cannot fail, so a refused id silently becomes a random one.
     pub peer_id: Option<u64>,
     /// Largest update or snapshot `apply_remote` / `from_snapshot` look at, in bytes.
     pub max_import_bytes: usize,
