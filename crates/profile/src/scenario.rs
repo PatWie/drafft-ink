@@ -92,6 +92,7 @@ impl ScenarioKey {
     pub fn report(&self, platform: &str, stats: PerfStats) -> ScenarioReport {
         let mut report = ScenarioReport::new(self.kind.name(), self.size, stats);
         report.meta.insert("platform".into(), platform.into());
+        report.meta.insert("driver".into(), "app".into());
         report
     }
 }
@@ -163,6 +164,7 @@ mod tests {
         let key: ScenarioKey = "pan@10k".parse().unwrap();
         let report = key.report("web", PerfStats::empty());
         assert_eq!(report.key(), "pan@10k");
+        assert_eq!(report.budget_key(), "web/pan@10k", "an app run is budgeted per platform");
         assert_eq!(report.meta.get("platform").map(String::as_str), Some("web"));
     }
 }

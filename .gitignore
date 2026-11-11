@@ -5,3 +5,4 @@ node_modules/
 *.log
 crates/gpu/web/pkg/
 packages/*/dist/
+__pycache__/

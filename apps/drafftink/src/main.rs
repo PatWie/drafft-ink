@@ -91,7 +91,7 @@ fn run(args: Args) -> Result<(), Failure> {
     if args.perf_dump.is_some() || args.perf_overlay || args.perf_scenario.is_some() || drafftink_profile::enable_from_env("DRAFFTINK_PERF") {
         drafftink_profile::set_enabled(true);
     }
-    let mut platform = native::platform(&NativeOptions { data_dir: args.data_dir.clone() });
+    let mut platform = drafftink_profile::scope("startup_platform", || native::platform(&NativeOptions { data_dir: args.data_dir.clone() }));
     // The server must outlive the window: dropping it closes the socket and removes the token file.
     let bridge = match args.bridge {
         Some(port) => {
@@ -117,7 +117,7 @@ fn run(args: Args) -> Result<(), Failure> {
         stored_default_target: false,
     };
     let wake = platform.wake.clone();
-    let mut app = App::new(platform, config);
+    let mut app = drafftink_profile::scope("startup_app", || App::new(platform, config));
     if let (Some(key), Some(out)) = (args.perf_scenario, args.perf_out) {
         // The thread ends the app itself when the window is over.
         native::spawn_scenario(ScenarioRun { key, out, secs: args.perf_secs }, app.scene_loader(), wake);

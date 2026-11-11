@@ -10,6 +10,10 @@
 //!   benches with short measurement times, reads their medians and checks them against the `bench` limits in
 //!   `perf/budgets.json`, which have generous headroom.
 //!
+//! * **App scenarios** (`--app [native|web]`, not part of `ci`: it needs a GPU and a display). Runs the real app
+//!   under a private Xvfb with real input (`scripts/perf_scenarios.py`) and checks the reports, timing included,
+//!   against the `native/...` or `web/...` entries of `perf/budgets.json`.
+//!
 //! `--idle` runs only the idle and hover tests, the quick check that `AGENTS.md` names.
 //!
 //! xtask uses no workspace crate, so the budget arithmetic lives in the `perf_check` example of
@@ -90,8 +94,15 @@ const TARGETS: &[Target] = &[
 
 pub fn run_gate(root: &Path, args: &[String]) -> Result<(), String> {
     let flag = |name: &str| args.iter().any(|a| a == name);
+    if let Some(at) = args.iter().position(|a| a == "--app") {
+        let others = args.iter().enumerate().any(|(i, a)| a.starts_with("--") && i != at);
+        if others {
+            return Err("perf: --app is a run of its own; it takes `native` or `web` after it".into());
+        }
+        return app(root, args.get(at + 1).map(String::as_str));
+    }
     if let Some(unknown) = args.iter().find(|a| !matches!(a.as_str(), "--bench" | "--idle")) {
-        return Err(format!("perf: unknown argument `{unknown}`; use --bench or --idle"));
+        return Err(format!("perf: unknown argument `{unknown}`; use --bench, --idle or --app"));
     }
     if flag("--bench") && flag("--idle") {
         return Err("perf: --bench and --idle are separate runs".into());
@@ -172,6 +183,90 @@ fn reset_dir(dir: &Path) -> Result<(), String> {
         fs::remove_dir_all(dir).map_err(|e| format!("{}: {e}", dir.display()))?;
     }
     fs::create_dir_all(dir).map_err(|e| format!("{}: {e}", dir.display()))
+}
+
+// ---- app scenarios -----------------------------------------------------------------------------------------------
+
+/// Where the scenarios of one platform run.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Platform {
+    Native,
+    Web,
+}
+
+impl Platform {
+    fn name(self) -> &'static str {
+        match self {
+            Self::Native => "native",
+            Self::Web => "web",
+        }
+    }
+}
+
+/// The scenario keys that `perf/budgets.json` budgets for `platform` (`native/pan@10k` gives `pan@10k`), in file order.
+fn budgeted_keys(budgets: &Value, platform: Platform) -> Vec<String> {
+    let prefix = format!("{}/", platform.name());
+    budgets
+        .get("scenarios")
+        .and_then(Value::as_object)
+        .map(|scenarios| scenarios.keys().filter_map(|k| k.strip_prefix(&prefix)).map(str::to_owned).collect())
+        .unwrap_or_default()
+}
+
+/// The Python that has Xlib, Pillow and Playwright: `$PERF_PY`, else `~/.venvs/perf/bin/python`, else `python3`.
+fn python() -> String {
+    if let Ok(py) = std::env::var("PERF_PY") {
+        return py;
+    }
+    let venv = std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".venvs/perf/bin/python"));
+    match venv {
+        Some(p) if p.is_file() => p.display().to_string(),
+        _ => "python3".to_owned(),
+    }
+}
+
+fn app(root: &Path, which: Option<&str>) -> Result<(), String> {
+    let platforms = match which {
+        None | Some("native") => vec![Platform::Native],
+        Some("web") => vec![Platform::Web],
+        Some("all") => vec![Platform::Native, Platform::Web],
+        Some(other) => return Err(format!("perf: `--app {other}`: use native, web or all")),
+    };
+    let text = fs::read_to_string(root.join(BUDGETS)).map_err(|e| format!("{BUDGETS}: {e}"))?;
+    let budgets: Value = serde_json::from_str(&text).map_err(|e| format!("{BUDGETS}: {e}"))?;
+    run(perf_check(root).args(["validate", BUDGETS]))?;
+    let mut failures = Vec::new();
+    for platform in platforms {
+        let keys = budgeted_keys(&budgets, platform);
+        if keys.is_empty() {
+            return Err(format!("perf: {BUDGETS} has no `{}/...` entries to run", platform.name()));
+        }
+        let out = root.join("target/perf").join(format!("app-{}", platform.name()));
+        reset_dir(&out)?;
+        match platform {
+            Platform::Native => {
+                let mut build = cargo(root);
+                build.args(["build", "--release", "-p", "drafftink"]);
+                run(&mut build)?;
+            }
+            Platform::Web => {
+                if !root.join("dist/pkg").is_dir() {
+                    return Err("perf: no dist/. Build the web app with scenarios first: \
+                                scripts/build-web.sh --features scenarios, and cargo build --release -p drafftink-server"
+                        .into());
+                }
+            }
+        }
+        let mut driver = std::process::Command::new(python());
+        driver.current_dir(root).arg("scripts/perf_scenarios.py").arg(platform.name()).args(&keys).arg("--out").arg(&out);
+        run(&mut driver)?;
+        let prefix = format!("--prefix={}/", platform.name());
+        let check = run(perf_check(root).args(["check", BUDGETS]).arg(&out).args(["--timing", "--require-all", prefix.as_str()]));
+        if let Err(e) = check {
+            failures.push(format!("{}: {e}", platform.name()));
+        }
+    }
+    if failures.is_empty() { Ok(()) } else { Err(failures.join("; ")) }
 }
 
 // ---- timing tier ------------------------------------------------------------------------------------------------
@@ -265,6 +360,16 @@ mod tests {
             assert!(seen.insert(*id), "{id} is listed twice");
             assert!(!id.starts_with('/') && !id.ends_with('/'), "{id}");
         }
+    }
+
+    #[test]
+    fn app_keys_are_the_entries_of_one_platform() {
+        let budgets: Value = serde_json::from_str(
+            r#"{"scenarios":{"idle":{},"pan@1k":{},"native/idle":{},"native/pan@1k":{},"web/idle":{}}}"#,
+        )
+        .unwrap();
+        assert_eq!(budgeted_keys(&budgets, Platform::Native), ["idle", "pan@1k"]);
+        assert_eq!(budgeted_keys(&budgets, Platform::Web), ["idle"]);
     }
 
     #[test]

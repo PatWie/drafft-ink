@@ -13,6 +13,7 @@ use drafftink_edit::binding::{
     update_bound_arrows,
 };
 use drafftink_edit::frame::{frame_at, update_membership_after_move};
+use drafftink_edit::style::{self, StyleProps};
 use drafftink_edit::text_bind::{GrowAnchor, MonospaceMeasure, label_of, refresh_labels};
 use drafftink_edit::transform::geometry::world_bounds;
 use drafftink_edit::transform::{self, ResizeSpec, RotateMode};
@@ -88,6 +89,25 @@ fn scene(n: usize) -> MemoryStore {
 
 fn scanned(work: &WorkScope) -> u64 {
     work.count(Counter::ElementsScanned)
+}
+
+#[test]
+fn reading_and_writing_the_style_of_a_selection_scans_nothing() {
+    // The properties panel reads the style of the selection every time the selection changes; a scan here was an
+    // 0.8 s stall at the start of a drag in a 100,000-element document.
+    for &n in sizes() {
+        let mut store = scene(n);
+        let ids: Vec<ElementId> = (0..100).map(|i| id(&format!("r{}", i * 2))).collect();
+        let work = WorkScope::begin();
+        let styles = style::read(&store, &ids, true).unwrap();
+        assert_eq!(styles.len(), 100);
+        assert_eq!(scanned(&work), 0, "style read at {n}: {}", work.summary());
+        let mut tx = store.begin();
+        let work = WorkScope::begin();
+        let props = StyleProps { font_size: Some(24.0), ..StyleProps::default() };
+        style::apply(&mut tx, &ids, &props, true).unwrap();
+        assert_eq!(scanned(&work), 0, "style apply with a text property at {n}: {}", work.summary());
+    }
 }
 
 #[test]

@@ -125,6 +125,13 @@ fn drive(run: &ScenarioRun, loader: &SceneLoader) -> Result<(), RunError> {
     }
     wait_quiet();
 
+    // The start-up spans (`startup_*`) are in the report as external numbers; the reset drops them from the stats.
+    let startup: Vec<(String, f64)> = drafftink_profile::snapshot()
+        .spans
+        .into_iter()
+        .filter(|s| s.name.starts_with("startup_"))
+        .map(|s| (format!("{}_ms", s.name), s.total_ms))
+        .collect();
     drafftink_profile::reset();
     let (cpu0, t0) = (cpu_seconds(), Instant::now());
     println!("PERF-READY");
@@ -142,6 +149,7 @@ fn drive(run: &ScenarioRun, loader: &SceneLoader) -> Result<(), RunError> {
 
     let mut report = run.key.report("native", drafftink_profile::snapshot());
     report.meta.insert("build".into(), if cfg!(debug_assertions) { "debug" } else { "release" }.into());
+    report.external.extend(startup);
     report.external.insert("window_s".into(), elapsed);
     if let Some(age) = first_frame {
         report.external.insert("first_frame_ms".into(), age * 1000.0);

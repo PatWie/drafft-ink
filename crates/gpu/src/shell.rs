@@ -656,7 +656,7 @@ impl<A: ShellApp> Shell<A> {
         #[cfg(target_arch = "wasm32")]
         wasm_bindgen_futures::spawn_local(init);
         #[cfg(not(target_arch = "wasm32"))]
-        pollster::block_on(init);
+        drafftink_profile::scope("startup_gpu", || pollster::block_on(init));
     }
 
     fn start_recovery(&mut self, window: &Arc<Window>, event_loop: &ActiveEventLoop) {

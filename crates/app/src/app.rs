@@ -105,7 +105,7 @@ impl App {
         let Platform { ports, host, wake, clipboard, typesetter, bridge, is_mac } = platform;
         let services = drafftink_engine::Services::sharing(typesetter.clone());
         let mut session = Session::with_services(ports, services);
-        let notices = crate::startup::start(&mut session, &config);
+        let notices = drafftink_profile::scope("startup_restore", || crate::startup::start(&mut session, &config));
         let (inbox, inbox_rx) = inbox(wake.clone());
         Self {
             session,

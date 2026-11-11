@@ -67,6 +67,16 @@ impl ScenarioReport {
         scenario_key(&self.scenario, self.scene_size)
     }
 
+    /// The key of this report's limits in the budgets file. A run of the real app (`meta.driver` is `app`) is
+    /// budgeted per platform, `native/pan@10k` or `web/pan@10k`: the work of a frame and the speed of the GPU differ
+    /// from the work-counter tests, which use the plain key.
+    pub fn budget_key(&self) -> String {
+        match (self.meta.get("driver"), self.meta.get("platform")) {
+            (Some(driver), Some(platform)) if driver == "app" => format!("{platform}/{}", self.key()),
+            _ => self.key(),
+        }
+    }
+
     /// A number by metric path: `external.<name>` or any path of [`PerfStats::metric`].
     pub fn metric(&self, path: &str) -> Option<f64> {
         match path.strip_prefix("external.") {
@@ -265,7 +275,7 @@ impl Budgets {
     /// Like [`Self::check`]; with `timing` false only the [`is_deterministic`] metrics are
     /// checked, for runners whose hardware is not the reference.
     pub fn check_filtered(&self, report: &ScenarioReport, timing: bool) -> Vec<Violation> {
-        let key = report.key();
+        let key = report.budget_key();
         let Some(metrics) = self.scenarios.get(&key) else {
             return Vec::new();
         };
@@ -310,6 +320,17 @@ mod tests {
         assert_eq!(scenario_key("pan", Some(1_500)), "pan@1500");
         assert_eq!(scenario_key("pan", Some(7)), "pan@7");
         assert_eq!(report().key(), "pan@10k");
+    }
+
+    #[test]
+    fn an_app_run_is_budgeted_per_platform_and_a_work_test_is_not() {
+        let mut r = report();
+        assert_eq!(r.budget_key(), "pan@10k");
+        r.meta.insert("platform".into(), "native".into());
+        r.meta.insert("driver".into(), "app".into());
+        assert_eq!(r.budget_key(), "native/pan@10k");
+        let b = budgets(r#"{"pan@10k":{"frame.p99_ms":{"max":1}},"native/pan@10k":{"frame.p99_ms":{"max":30}}}"#);
+        assert!(b.check(&r).is_empty(), "the native limit applies, not the plain one");
     }
 
     #[test]

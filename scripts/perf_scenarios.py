@@ -230,6 +230,8 @@ def run_web(args, keys):
                     if page.evaluate("()=>window.__started||window.__error||false"): break
                     time.sleep(0.1)
                 startup = time.time() - t0
+                marks = page.evaluate("""()=>({...(window.__marks||{}), ...Object.fromEntries(performance.getEntriesByType('mark')
+                    .map(m=>[m.name.replace('drafftink:',''), Math.round(m.startTime)]))})""")
                 if page.evaluate("()=>window.__error||null"): raise SystemExit(f"{key}: page error {page.evaluate('()=>window.__error')}")
                 info = page.evaluate("async(k)=>await window.drafftink.runScenario(k)", key)
                 c0, w0 = tree_ticks(prof), time.time()
@@ -242,6 +244,9 @@ def run_web(args, keys):
                 ctx.close()
             report.setdefault("external", {}).update({"cpu_pct": round(cpu, 2), "window_s": round(elapsed, 2), "input_events": events,
                                                        "startup_s": round(startup, 2), "install_ms": info.get("install_ms", 0)})
+            # Start-up timeline in ms since navigation: glue loaded, wasm instantiated, app:start (Rust entered), platform,
+            # app (session built), started (run returned), first_frame (polled every 50 ms by the page).
+            report["external"].update({f"startup_{k}_ms": v for k, v in marks.items()})
             report.setdefault("meta", {}).update({"adapter": adapter, "commit": git_commit(), "browser": f"chromium {browser}"})
             json.dump(report, open(out, "w"), indent=2)
             results.append(out)
