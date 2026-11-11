@@ -32,6 +32,7 @@ pub mod element_cmd;
 pub mod flowchart;
 pub mod frame;
 pub mod group;
+mod ids;
 pub mod layout;
 pub mod lifecycle;
 pub mod linear;

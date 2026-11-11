@@ -28,6 +28,7 @@ use drafftink_scene::{
 use crate::binding::{self, BindingError};
 use crate::create::{self, TextAnchor, TextSpec};
 use crate::group::name_key;
+use crate::ids::{fresh_element_id, fresh_group_id};
 use crate::text_bind::TextMeasure;
 use crate::transform::geometry::union_bounds;
 use crate::zorder::{self, REBALANCE_LEN, ZOrderError};
@@ -112,20 +113,6 @@ pub struct PasteReport {
 /// The start of every `custom` key that holds a group name (see [`name_key`]).
 const GROUP_NAME_PREFIX: &str = "drafftink.group.";
 
-fn fresh(
-    src: &mut dyn IdSource,
-    taken: &dyn Fn(&ElementId) -> bool,
-    used: &BTreeSet<ElementId>,
-) -> Result<ElementId, PasteError> {
-    for _ in 0..64 {
-        let id = src.element_id();
-        if !taken(&id) && !used.contains(&id) {
-            return Ok(id);
-        }
-    }
-    Err(PasteError::IdsExhausted)
-}
-
 /// Inserts `elements` (with the pictures they use from `files`) into `tx`. See the module docs for the rules.
 /// Deleted elements are skipped; a repeated id is used once.
 pub fn insert_elements<T: SceneTx>(
@@ -164,7 +151,7 @@ pub fn insert_elements<T: SceneTx>(
     let mut id_map: BTreeMap<ElementId, ElementId> = BTreeMap::new();
     let mut used: BTreeSet<ElementId> = BTreeSet::new();
     for e in &src {
-        let n = fresh(ids, &|i| tx.contains(i), &used)?;
+        let n = fresh_element_id(ids, |i| tx.contains(i) || used.contains(i)).map_err(|_| PasteError::IdsExhausted)?;
         used.insert(n.clone());
         id_map.insert(e.id.clone(), n);
     }
@@ -182,16 +169,8 @@ pub fn insert_elements<T: SceneTx>(
         if n < 2 {
             continue;
         }
-        let mut candidate = ids.group_id();
-        for _ in 0..64 {
-            if !existing.contains(&candidate) && !group_map.values().any(|v| *v == candidate) {
-                break;
-            }
-            candidate = ids.group_id();
-        }
-        if existing.contains(&candidate) || group_map.values().any(|v| *v == candidate) {
-            return Err(PasteError::IdsExhausted);
-        }
+        let candidate = fresh_group_id(ids, |c| existing.contains(c) || group_map.values().any(|v| v == c))
+            .map_err(|_| PasteError::IdsExhausted)?;
         group_map.insert(g.clone(), candidate);
     }
 
