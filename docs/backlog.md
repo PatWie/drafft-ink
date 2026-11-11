@@ -33,3 +33,6 @@ Features decided but not yet assigned to a phase agent.
 - Undoing a tab rename (any edit) back to the saved content leaves the tab clean (e773b66).
 - Engine status `blocked_by_schema` in `engine.state`; document-mutating commands refuse with `newer_schema` (72393d9).
 - Server refuses and rolls back updates that raise `meta.schema` beyond the served schema (69f08a1).
+- DECIDED: opening a non-native file (.excalidraw, legacy, PNG/SVG with scene) sets NO save target; `doc.save` then behaves like save-as (needs `to`), so a foreign file is never overwritten with drafft JSON. Implement + test.
+- Flaky: `cmd::perf::tests::last_call_reports_only_what_happened_since_the_previous_call` under parallel test runs (shared global profile state); make it deterministic.
+- Accepted (F1): `element.relabel`/`text.set` with empty text on a bound label removes the label; only free text refuses `empty_text`.
