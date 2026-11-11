@@ -46,3 +46,4 @@ Features decided but not yet assigned to a phase agent.
 - Engine status `blocked_by_schema` in `engine.state`; document-mutating commands refuse with `newer_schema` (72393d9).
 - Server refuses and rolls back updates that raise `meta.schema` beyond the served schema (69f08a1).
 - Accepted (F1): `element.relabel`/`text.set` with empty text on a bound label removes the label; only free text refuses `empty_text`.
+- Flaky under heavy load (load avg 170): collab::server leaving_flushes_the_last_edit_and_the_others_see_the_peer_go (timing); make its waits event-driven.
