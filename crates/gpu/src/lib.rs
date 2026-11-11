@@ -13,8 +13,8 @@ pub mod app;
 mod backend;
 #[cfg(feature = "wgpu")]
 pub mod compositor;
-pub mod error;
 mod cursor;
+pub mod error;
 pub mod events;
 pub mod frame;
 #[cfg(feature = "webgl")]
