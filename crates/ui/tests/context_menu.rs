@@ -277,8 +277,21 @@ fn a_cursor_shortcut_pastes_at_the_pointer_with_the_real_command() {
 
 #[test]
 fn align_rows_need_two_selected_and_distribute_three() {
-    let h = menu_with(1, pos2(300.0, 60.0));
-    assert!(!has_row(&h, "Align and distribute…"));
+    // With one element selected the block is there and its rows are greyed with the engine's text.
+    let mut h = menu_with(1, pos2(300.0, 60.0));
+    assert!(has_row(&h, "Align and distribute…"));
+    row(&h, "Align and distribute…").click();
+    h.run();
+    let align = h.state().model.refusal_text("arrange.align").expect("align needs two");
+    let distribute = h.state().model.refusal_text("arrange.distribute").expect("distribute needs three");
+    assert_ne!(align, distribute, "each command says what it needs");
+    for (text, _) in ALIGN_EDGES {
+        assert!(row(&h, text).accesskit_node().is_disabled(), "{text} is greyed");
+    }
+    assert!(row(&h, "Distribute horizontally").accesskit_node().is_disabled());
+    row(&h, "Align left").hover();
+    h.run();
+    h.get_by_label(&align);
 
     let mut h = menu_with(2, pos2(300.0, 60.0));
     assert!(has_row(&h, "Align and distribute…"));
@@ -287,8 +300,9 @@ fn align_rows_need_two_selected_and_distribute_three() {
     h.run();
     for (text, _) in ALIGN_EDGES {
         assert!(has_row(&h, text), "missing {text}");
+        assert!(!row(&h, text).accesskit_node().is_disabled(), "{text} can run with two");
     }
-    assert!(!has_row(&h, "Distribute horizontally"), "distribute needs three");
+    assert!(row(&h, "Distribute horizontally").accesskit_node().is_disabled(), "distribute needs three");
     h.state_mut().clear();
     row(&h, "Align left").click();
     h.run();

@@ -11,7 +11,7 @@ use drafftink_engine::testing::{add_rect, add_text_label, select};
 use drafftink_scene::ElementId;
 use drafftink_ui::{Call, HostRequest, Verb};
 use egui_kittest::Harness;
-use egui_kittest::kittest::Queryable;
+use egui_kittest::kittest::{NodeT, Queryable};
 use serde_json::{Value, json};
 
 type H = Harness<'static, Fixture>;
@@ -146,15 +146,16 @@ fn the_link_section_edits_and_opens_the_link() {
 }
 
 #[test]
-fn without_a_link_there_is_no_open_button_and_the_model_has_no_link() {
+fn without_a_link_the_model_has_none_and_the_open_button_is_still_there() {
     let mut f = dialog::fixture();
     let r = add_rect(&mut f.session, 0.0, 0.0, 50.0, 50.0).unwrap();
     select(&mut f.session, std::slice::from_ref(&r));
     f.refresh();
     assert_eq!(f.model.selection_link, None);
     let h = started(f);
-    h.get_by_label("Edit the link");
-    assert!(h.query_by_label("Open the link").is_none());
+    assert!(!h.get_by_label("Edit the link").accesskit_node().is_disabled());
+    // The button is not hidden. The engine decides when it is clicked, and says why in words.
+    h.get_by_label("Open the link");
 }
 
 #[test]

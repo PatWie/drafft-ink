@@ -270,6 +270,10 @@ pub struct PropInfo {
     /// removed fill is `null`.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub value: Option<Value>,
+    /// Why the property cannot be set now: the text `style.set` refuses with for this property alone. Only when
+    /// the targets are elements and none of them supports it. A control greys itself with this text.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub reason: Option<String>,
 }
 
 /// Output of `style.get`.
@@ -338,7 +342,11 @@ fn get(s: &mut Session, a: GetArgs) -> Result<GetOut, Refusal> {
                 Some((first, rest)) if rest.iter().all(|v| v == first) => Some(first.clone()),
                 Some(_) => Some(json!("mixed")),
             };
-            (prop.name().to_owned(), PropInfo { applicable: !values.is_empty(), value })
+            let applicable = !values.is_empty();
+            let reason = (!applicable && source == "selection").then(|| {
+                Refusal::not_applicable("style.set", &format!("`{}`", prop.name()), prop.applies_to()).message
+            });
+            (prop.name().to_owned(), PropInfo { applicable, value, reason })
         })
         .collect();
     Ok(GetOut { changed: false, source: source.to_owned(), ids, kinds, props })

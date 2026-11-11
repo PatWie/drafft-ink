@@ -33,6 +33,5 @@ fn exception_N4_a_scenario_scene_replaces_the_document() {
     assert_eq!(app.session.store().iter().count(), 0, "the new document is installed");
     assert_eq!(app.session.tab().doc.undo_depth(), before, "no undo step");
     assert_eq!(loader.applied(), 1, "the driver sees the install");
-    let view = app.session.query("view.get", json!({})).unwrap();
-    assert_eq!(view["zoom"], json!(2.0), "the camera went through a command");
+    assert_eq!(app.session.tab().view.zoom, 2.0, "the camera went through a command");
 }

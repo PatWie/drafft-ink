@@ -6,7 +6,7 @@
 use egui::{Context, Id, Modal, RichText};
 use serde_json::{Value, json};
 
-use crate::model::Model;
+use crate::model::{Model, arg_doc};
 use crate::state::{ExportFormat, ExportState, UiState};
 use crate::surfaces::dialogs::{Close, plain_button, show_modal};
 use crate::widgets::{Ctl, Cx, section_label};
@@ -85,32 +85,38 @@ pub fn show(ctx: &Context, cx: &mut Cx<'_>, st: &mut UiState) {
             }
         });
         let picture = o.format.is_picture();
-        let off = (!picture).then_some("This format has no picture options.");
+        // A picture option that the chosen format ignores is greyed with what the engine says the option is for.
+        let off = |arg: &str| -> Option<String> {
+            (!picture).then(|| arg_doc("doc.export", arg).unwrap_or_else(|| format!("`{arg}` is for pictures.")))
+        };
+        let (off_scale, off_background, off_dark, off_embed) =
+            (off("scale"), off("background"), off("dark"), off("embed_scene"));
         section_label(ui, &pal, "What");
         let none_selected = cx.model.selection_count == 0;
         ui.horizontal(|ui| {
-            let reason = none_selected.then_some("Nothing is selected.");
-            if cx.choice(ui, "Selection only", o.selection_only && !none_selected, reason).clicked() {
+            // The engine's text for a command that needs a selection and has none.
+            let reason = if none_selected { cx.model.refusal_text("clipboard.copy") } else { None };
+            if cx.choice(ui, "Selection only", o.selection_only && !none_selected, reason.as_deref()).clicked() {
                 o.selection_only = !o.selection_only;
             }
         });
         section_label(ui, &pal, "Scale");
         ui.horizontal(|ui| {
             for scale in SCALES {
-                if cx.choice(ui, &format!("{scale}x"), (o.scale - scale).abs() < 0.01, off).clicked() {
+                if cx.choice(ui, &format!("{scale}x"), (o.scale - scale).abs() < 0.01, off_scale.as_deref()).clicked() {
                     o.scale = scale;
                 }
             }
         });
         section_label(ui, &pal, "Options");
         ui.horizontal_wrapped(|ui| {
-            if cx.choice(ui, "Background", o.background, off).clicked() {
+            if cx.choice(ui, "Background", o.background, off_background.as_deref()).clicked() {
                 o.background = !o.background;
             }
-            if cx.choice(ui, "Dark", o.dark, off).clicked() {
+            if cx.choice(ui, "Dark", o.dark, off_dark.as_deref()).clicked() {
                 o.dark = !o.dark;
             }
-            if cx.choice(ui, "Embed scene", o.embed_scene, off).clicked() {
+            if cx.choice(ui, "Embed scene", o.embed_scene, off_embed.as_deref()).clicked() {
                 o.embed_scene = !o.embed_scene;
             }
         });

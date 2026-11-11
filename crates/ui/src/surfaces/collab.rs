@@ -191,8 +191,7 @@ fn body(ui: &mut Ui, cx: &mut Cx<'_>, draft: &mut Draft) {
 
     // Server.
     section_label(ui, &pal, "Server URL");
-    let reason =
-        if linked { Some("Disconnect first to change the server.".to_owned()) } else { cx.refusal("collab.connect") };
+    let reason = cx.refusal("collab.connect");
     text_field(ui, &mut draft.url, DEFAULT_SERVER, reason, None, "Server URL");
     ui.add_space(6.0);
     if linked {
@@ -211,7 +210,7 @@ fn body(ui: &mut Ui, cx: &mut Cx<'_>, draft: &mut Draft) {
         section_label(ui, &pal, "Room");
         if let Some(room) = &collab.room {
             draft.room.clone_from(room);
-            text_field(ui, &mut draft.room, "", Some("Leave the room to join another.".to_owned()), None, "Room");
+            text_field(ui, &mut draft.room, "", cx.refusal("collab.join_room"), None, "Room");
             ui.add_space(6.0);
             let c = leave_call();
             cx.text_button(ui, &Ctl::new(&c.id).args(c.args.clone()), "Leave room", false);

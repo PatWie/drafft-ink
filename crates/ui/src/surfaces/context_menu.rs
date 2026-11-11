@@ -266,6 +266,12 @@ impl Rows {
         });
     }
 
+    /// A row that applies a UI verb and is greyed, with the engine's text, while `command` is refused.
+    fn gated_verb(&mut self, ui: &mut Ui, cx: &mut Cx<'_>, verb: Verb, text: &str, command: &str) {
+        let reason = cx.refusal(command);
+        self.chosen |= cx.verb_item_gated(ui, verb, text, reason).clicked();
+    }
+
     fn verb(&mut self, ui: &mut Ui, cx: &mut Cx<'_>, verb: Verb, text: &str, indent: bool) {
         ui.horizontal(|ui| {
             if indent {
@@ -292,7 +298,6 @@ impl Rows {
 
 /// Draws the rows of a menu over a selection (or over the empty canvas) and returns true when one was chosen.
 fn rows(ui: &mut Ui, cx: &mut Cx<'_>, st: &mut UiState, world: Option<[f64; 2]>) -> bool {
-    let selected = cx.model.selection_count;
     let sel = cx.model.selection.clone();
     let facts = Facts { sel: &sel };
     let mut r = Rows { chosen: false };
@@ -303,24 +308,16 @@ fn rows(ui: &mut Ui, cx: &mut Cx<'_>, st: &mut UiState, world: Option<[f64; 2]>)
     r.block(ui, cx, order_items(), false);
     separator(ui, &cx.pal);
     r.block(ui, cx, vec![item("Lock or unlock", "element.lock", json!({}))], false);
-    if selected == 1 {
-        r.verb(ui, cx, Verb::OpenLinkEditor, "Link…", false);
-        if cx.model.selection_link.is_some() {
-            r.block(ui, cx, vec![item("Open link", "element.open_link", json!({}))], false);
-        }
-    }
-    if selected >= 1 {
-        separator(ui, &cx.pal);
-        element_blocks(ui, cx, st, &mut r, &facts);
-    }
-    if selected >= 2 {
-        separator(ui, &cx.pal);
-        if r.toggle(ui, cx, "align", "Align and distribute…") {
-            r.block(ui, cx, align_items(), true);
-            if selected >= 3 {
-                r.block(ui, cx, distribute_items(), true);
-            }
-        }
+    // These rows need a selection (of one, of two, of three). They stay in the menu and grey out with the
+    // engine's text when the command is refused; a count the engine only checks when it runs is refused then.
+    r.gated_verb(ui, cx, Verb::OpenLinkEditor, "Link…", "element.set_link");
+    r.block(ui, cx, vec![item("Open link", "element.open_link", json!({}))], false);
+    separator(ui, &cx.pal);
+    element_blocks(ui, cx, st, &mut r, &facts);
+    separator(ui, &cx.pal);
+    if r.toggle(ui, cx, "align", "Align and distribute…") {
+        r.block(ui, cx, align_items(), true);
+        r.block(ui, cx, distribute_items(), true);
     }
     separator(ui, &cx.pal);
     r.block(ui, cx, vec![item("Select all", "selection.all", json!({}))], false);

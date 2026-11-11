@@ -115,11 +115,11 @@ fn rows(ui: &mut egui::Ui, cx: &mut Cx<'_>, st: &mut UiState, tab: &TabView, cou
     }
     chosen |= cx.menu_item(ui, &Ctl::new("tab.duplicate").args(json!({ "tab": tab.id })), "Duplicate").clicked();
     separator(ui, &cx.pal);
-    let first = (tab.index == 0).then(|| "This is the first tab.".to_owned());
-    let last = (tab.index + 1 >= count).then(|| "This is the last tab.".to_owned());
-    let left = Ctl::new("tab.move").args(move_args(&tab.id, tab.index.saturating_sub(1))).blocked(first);
+    // The rows are as available as the command is, with the engine's text when it is not. At either end the target
+    // position is the tab's own, which `tab.move` accepts and leaves as it is.
+    let left = Ctl::new("tab.move").args(move_args(&tab.id, tab.index.saturating_sub(1)));
     chosen |= cx.menu_item(ui, &left, "Move left").clicked();
-    let right = Ctl::new("tab.move").args(move_args(&tab.id, tab.index + 1)).blocked(last);
+    let right = Ctl::new("tab.move").args(move_args(&tab.id, (tab.index + 1).min(count.saturating_sub(1))));
     chosen |= cx.menu_item(ui, &right, "Move right").clicked();
     separator(ui, &cx.pal);
     chosen |= cx.menu_item(ui, &Ctl::new("tab.close").args(json!({ "tab": tab.id })), "Close").clicked();

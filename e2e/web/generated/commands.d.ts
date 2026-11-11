@@ -1393,6 +1393,10 @@ export namespace DiagramCreate {
     bounds: O_RectOut;
     /** True when the command changed any state. */
     changed?: boolean;
+    /** Mermaid subgraphs: symbolic cluster id to the element id of its box. Edges may start or end at a box. */
+    clusters: {
+      [key: string]: string;
+    };
     /** Ids of elements the command made. */
     created?: string[];
     /** Ids of elements the command removed. */
@@ -1510,6 +1514,10 @@ export namespace DiagramImportMermaid {
     bounds: O_RectOut;
     /** True when the command changed any state. */
     changed?: boolean;
+    /** Mermaid subgraphs: symbolic cluster id to the element id of its box. Edges may start or end at a box. */
+    clusters: {
+      [key: string]: string;
+    };
     /** Ids of elements the command made. */
     created?: string[];
     /** Ids of elements the command removed. */
@@ -5638,6 +5646,11 @@ export namespace StyleGet {
   type O_PropInfo = {
     /** True when at least one target supports the property. */
     applicable: boolean;
+    /**
+     * Why the property cannot be set now: the text `style.set` refuses with for this property alone. Only when
+     * the targets are elements and none of them supports it. A control greys itself with this text.
+     */
+    reason?: string | null;
     /**
      * The common value, or the word `"mixed"` when the supporting targets differ. Absent when not applicable. A
      * removed fill is `null`.

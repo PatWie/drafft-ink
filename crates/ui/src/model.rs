@@ -63,6 +63,9 @@ pub struct StyleProp {
     pub applicable: bool,
     /// The common value, `"mixed"`, or `None` when not applicable. A removed fill is `null`.
     pub value: Option<Value>,
+    /// The engine's text for why the property cannot be set now (the refusal `style.set` gives), when no target
+    /// supports it.
+    pub reason: Option<String>,
 }
 
 impl StyleProp {
@@ -92,6 +95,11 @@ impl StyleView {
     /// True when the property applies to some target.
     pub fn applies(&self, name: &str) -> bool {
         self.props.get(name).is_some_and(|p| p.applicable)
+    }
+
+    /// The engine's reason why a property cannot be set, when it cannot.
+    pub fn reason(&self, name: &str) -> Option<&str> {
+        self.props.get(name)?.reason.as_deref()
     }
 
     /// The value as a string, when it is one and not `"mixed"`.
@@ -732,7 +740,8 @@ fn read_style(s: &mut Session) -> StyleView {
             o.iter()
                 .map(|(name, info)| {
                     let applicable = info.get("applicable").and_then(Value::as_bool).unwrap_or(false);
-                    (name.clone(), StyleProp { applicable, value: info.get("value").cloned() })
+                    let reason = text_of(info, "reason").map(str::to_owned);
+                    (name.clone(), StyleProp { applicable, value: info.get("value").cloned(), reason })
                 })
                 .collect()
         })
@@ -744,6 +753,11 @@ fn read_style(s: &mut Session) -> StyleView {
 pub fn args_schema(id: &str) -> Option<Value> {
     let spec = drafftink_engine::Registry::global().find(id)?;
     serde_json::to_value((spec.args)()).ok()
+}
+
+/// What the engine says about one argument of a command (the doc comment of the field), when it says anything.
+pub fn arg_doc(id: &str, arg: &str) -> Option<String> {
+    args_schema(id)?.pointer(&format!("/properties/{arg}/description")).and_then(Value::as_str).map(str::to_owned)
 }
 
 /// The worked example of a command's arguments, when it has one.

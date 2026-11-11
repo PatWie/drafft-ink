@@ -430,6 +430,19 @@ impl Refusal {
         )
     }
 
+    /// `io_failed` for a file write of an export that did not succeed. `target` is a phrase such as `` `plan.png` ``.
+    /// The text says that nothing was written and how to get the data anyway.
+    pub fn not_exported(id: &str, target: &str, msg: &str) -> Self {
+        Self::shared(
+            "io_failed",
+            id,
+            format!(
+                "The export to {target} did NOT happen: {}. Nothing was written. Check the location and permissions and run `{id}` again, or pass `to: \"inline\"` to get the data in the answer.",
+                echo_long(msg)
+            ),
+        )
+    }
+
     /// `parse_failed`: input could not be read.
     pub fn parse_failed(id: &str, what: &str, msg: &str, hint: &str) -> Self {
         Self::shared("parse_failed", id, format!("{what} could not be read: {}. {hint}", echo_long(msg)))

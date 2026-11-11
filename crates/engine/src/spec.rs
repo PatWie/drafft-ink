@@ -320,8 +320,8 @@ impl HostEffect {
 pub enum RefusalToast {
     /// Show it.
     Show,
-    /// Do not: the command is a follow-up of a control that handles the loss itself (a scrub that lost its
-    /// gesture just stops scrubbing).
+    /// Do not, when the refusal is `no_gesture`: the command is a follow-up of a control that handles the loss
+    /// itself (a scrub that lost its gesture just stops scrubbing). Any other refusal of it is shown.
     Silent,
 }
 

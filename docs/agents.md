@@ -254,7 +254,7 @@ A fragment is never sent to a server. The link carries only a port and a token: 
 
 **The relay's checks** are those of the bridge: loopback bind, `Host` check, `Origin` check (the default allow-list is `https://drafft.ink`; `--allow-origin` adds a self-hosted origin; loopback origins always pass, for local development), 5 s to say `hello`, 16 MiB frames. A call to a page that is not connected is error `-32005` whose text says how to pair or reload; a call the page does not answer in 60 s is `-32002` and says that the request was not cancelled.
 
-**Browser notes.** An `https://` page may open `ws://127.0.0.1` in Chrome and Firefox (loopback counts as a secure context); Safari blocks it, so use the desktop app there. Recent Chrome versions ask the user to allow a site to reach local network addresses: the user must allow it. A hidden tab may run late; the timeout text says so.
+**Browser notes.** An `https://` page may open `ws://127.0.0.1` in Chrome and Firefox (loopback counts as a secure context); Safari blocks it, so use the desktop app there. Recent Chrome versions ask the user to allow a site to reach local network addresses: the user must allow it. A hidden tab answers like a visible one: the page runs its queue on the wake and not in a frame (`docs/shell.md`, rule 7); a tab that the browser freezes may still run late, and the timeout text says so.
 
 The fake page `drafftink_bridge::page_sim::FakePage` plays these steps against a real `Session`; `crates/bridge/tests/relay.rs` and `apps/drafftink-mcp/tests/modes.rs` use it. It is the executable form of this section, and the web app's tests should run the same scenarios against the real page.
 

@@ -446,13 +446,14 @@ mod tests {
         m.background = "#ffffff".to_owned();
         assert_eq!(current(&m, ColorTarget::Background), Some(Some(Color::WHITE)));
         assert_eq!(current(&m, ColorTarget::Stroke), None, "unknown without a style");
-        m.style
-            .props
-            .insert("fill_color".to_owned(), crate::model::StyleProp { applicable: true, value: Some(Value::Null) });
+        m.style.props.insert(
+            "fill_color".to_owned(),
+            crate::model::StyleProp { applicable: true, value: Some(Value::Null), reason: None },
+        );
         assert_eq!(current(&m, ColorTarget::Fill), Some(None));
         m.style.props.insert(
             "stroke_color".to_owned(),
-            crate::model::StyleProp { applicable: true, value: Some(json!("#00000000")) },
+            crate::model::StyleProp { applicable: true, value: Some(json!("#00000000")), reason: None },
         );
         assert_eq!(current(&m, ColorTarget::Stroke), Some(Some(Color::TRANSPARENT)));
     }
