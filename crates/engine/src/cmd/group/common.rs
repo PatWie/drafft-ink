@@ -87,7 +87,7 @@ pub(crate) fn edit<R, E>(
 ) -> Result<R, Failed<E>> {
     let idx = s.active_index();
     let Some(tab) = s.tabs.get_mut(idx) else {
-        return Err(Failed::Store(StoreError::Backend("the session has no active tab".to_owned())));
+        return Err(Failed::Store(StoreError::backend("the session has no active tab")));
     };
     let mut ids = Ids(&mut *s.ports.ids);
     let (r, _) = tab.doc.edit::<R, Failed<E>>(|tx| f(tx, &mut ids).map_err(Failed::Domain))?;

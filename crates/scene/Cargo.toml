@@ -15,6 +15,7 @@ conformance = []
 serde.workspace = true
 serde_json = { workspace = true, features = ["float_roundtrip"] }
 thiserror.workspace = true
+drafftink-geom = { path = "../geom" }
 kurbo.workspace = true
 peniko.workspace = true
 schemars.workspace = true

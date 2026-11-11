@@ -23,7 +23,7 @@ pub fn rect(name: &str, z: &ZIndex) -> Element {
 
 pub fn arrow(name: &str, z: &ZIndex, pts: &[(f64, f64)]) -> Element {
     let pts: Vec<Point> = pts.iter().map(|(x, y)| Point::new(*x, *y)).collect();
-    Element::linear(id(name), Kind::Arrow, z.clone(), &pts).unwrap()
+    Element::linear(id(name), LinearKind::Arrow, z.clone(), &pts).unwrap()
 }
 
 pub fn text(name: &str, z: &ZIndex, content: &str) -> Element {

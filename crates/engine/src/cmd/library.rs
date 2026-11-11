@@ -103,7 +103,7 @@ fn needs_storage(s: &Session, id: &str) -> Result<(), Refusal> {
 pub struct AddArgs {
     /// The elements. Default: the selection.
     pub ids: Option<Vec<Ref>>,
-    /// A name for the item (1 to 120 characters).
+    /// A name for the item (1 to 256 characters).
     pub name: Option<String>,
 }
 
@@ -252,7 +252,7 @@ fn remove(s: &mut Session, a: RemoveArgs) -> Result<RemoveOut, Refusal> {
 pub struct RenameArgs {
     /// The item id or name.
     pub item: String,
-    /// The new name (1 to 120 characters).
+    /// The new name (1 to 256 characters).
     pub name: String,
 }
 
@@ -443,7 +443,7 @@ fn import(s: &mut Session, a: ImportArgs) -> Result<ImportOut, Refusal> {
     match a.mode {
         ImportMode::OpenAsTab => {
             let mut doc = excalidraw::library_to_grid_document(&lib, &mut *s.ports.ids);
-            doc.name = stem(&loaded.name).chars().take(120).collect();
+            doc.name = stem(&loaded.name).chars().take(drafftink_scene::limits::MAX_NAME_CHARS).collect();
             open_in_new_tab(s, id, &doc, None, Provenance::Clean)?;
             let total = store::items(s).len();
             Ok(ImportOut { changed: true, added: 0, skipped: 0, total, tab: Some(s.tab().id.to_string()) })

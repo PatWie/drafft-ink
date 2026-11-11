@@ -21,7 +21,7 @@ use drafftink_geom::kurbo::{Point, Vec2};
 use drafftink_geom::select::{BoxHandle, Corner};
 use drafftink_profile::{Counter, WorkScope};
 use drafftink_scene::{
-    BindMode, Binding, Document, Element, ElementId, ElementKind, FrameData, Head, Kind, MemoryStore, SceneRead,
+    BindMode, Binding, Document, Element, ElementId, ElementKind, FrameData, Head, LinearKind, MemoryStore, SceneRead,
     SceneStore, SceneTx, TextData, ZIndex,
 };
 
@@ -58,7 +58,7 @@ fn scene(n: usize) -> MemoryStore {
         let (a, b) = (&elements[i], &elements[i + 1]);
         let start = Point::new(a.transform.x + 80.0, a.transform.y + 30.0);
         let end = Point::new(b.transform.x, b.transform.y + 30.0);
-        let mut arrow = Element::linear(id(&format!("a{i}")), Kind::Arrow, next_key(), &[start, end]).unwrap();
+        let mut arrow = Element::linear(id(&format!("a{i}")), LinearKind::Arrow, next_key(), &[start, end]).unwrap();
         if let ElementKind::Arrow(d) = &mut arrow.kind {
             d.start_binding = Some(Binding { target: a.id.clone(), mode: BindMode::Orbit, fixed_point: [1.0, 0.5] });
             d.end_binding = Some(Binding { target: b.id.clone(), mode: BindMode::Orbit, fixed_point: [0.0, 0.5] });

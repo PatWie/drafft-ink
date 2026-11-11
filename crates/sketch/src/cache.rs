@@ -53,6 +53,11 @@ impl SketchCache {
     /// Like [`get`](Self::get) with a key the caller already has (memoised per element version).
     /// The key must be `sketch_key(input)`.
     pub fn get_with_key(&mut self, key: SketchKey, input: &SketchInput) -> Arc<SketchGeometry> {
+        debug_assert_eq!(
+            key,
+            sketch_key(input),
+            "get_with_key needs the key of this input, or it serves another shape"
+        );
         if let Some(g) = self.current.get(&key) {
             self.stats.hits += 1;
             return Arc::clone(g);

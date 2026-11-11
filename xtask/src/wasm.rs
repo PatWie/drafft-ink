@@ -1,5 +1,6 @@
-//! `cargo xtask wasm`: every crate at L0 to L5 (plus the apps in `WASM_EXTRA`) must compile for
-//! wasm32-unknown-unknown, and pass clippy `-D warnings` for that target.
+//! `cargo xtask wasm`: every crate at L0 to L5 (plus the apps in `WASM_EXTRA`) must compile and
+//! pass clippy `-D warnings` for wasm32-unknown-unknown (`cfg(target_arch = "wasm32")` code is
+//! not seen by the native clippy gate).
 
 use std::path::Path;
 
@@ -19,23 +20,22 @@ pub fn packages() -> Vec<&'static str> {
     out
 }
 
+/// `cargo <subcommand> --target wasm32 --all-features -p <every package>` plus `tail`.
+fn command(root: &Path, subcommand: &str, tail: &[&str]) -> std::process::Command {
+    let mut cmd = cargo(root);
+    cmd.args([subcommand, "--target", TARGET, "--all-features"]);
+    for package in packages() {
+        cmd.args(["-p", package]);
+    }
+    cmd.args(tail);
+    cmd
+}
+
 pub fn run(root: &Path) -> Result<(), String> {
-    let mut check = cargo(root);
-    check.args(["check", "--target", TARGET, "--all-features"]);
-    for package in packages() {
-        check.args(["-p", package]);
-    }
-    crate::run(&mut check).map_err(|e| {
-        format!("{e}\nIf the target is missing: rustup target add {TARGET} (rust-toolchain.toml lists it)")
-    })?;
-    // Code behind `cfg(target_arch = "wasm32")` is not seen by the native clippy run, so lint it for the target too.
-    let mut clippy = cargo(root);
-    clippy.args(["clippy", "--target", TARGET, "--all-features"]);
-    for package in packages() {
-        clippy.args(["-p", package]);
-    }
-    clippy.args(["--", "-D", "warnings"]);
-    crate::run(&mut clippy)
+    let missing_target =
+        |e: String| format!("{e}\nIf the target is missing: rustup target add {TARGET} (rust-toolchain.toml lists it)");
+    crate::run(&mut command(root, "check", &[])).map_err(missing_target)?;
+    crate::run(&mut command(root, "clippy", &["--", "-D", "warnings"]))
 }
 
 #[cfg(test)]

@@ -12,8 +12,8 @@ use criterion::{BatchSize, Criterion, criterion_group, criterion_main};
 use drafftink_edit::binding::{update_bound_arrows, update_bound_arrows_indexed};
 use drafftink_geom::kurbo::Point;
 use drafftink_scene::{
-    BindMode, Binding, Element, ElementId, ElementKind, Kind, LinearData, MemoryStore, PathType, SceneStore, SceneTx,
-    ZIndex,
+    BindMode, Binding, Element, ElementId, ElementKind, LinearData, LinearKind, MemoryStore, PathType, SceneStore,
+    SceneTx, ZIndex,
 };
 
 const SHAPES: usize = 1_000;
@@ -47,7 +47,7 @@ fn scene(elbow: bool) -> (MemoryStore, Vec<ElementId>) {
         let from =
             if elbow { Point::new(cx + 120.0 + 100.0, cy + 160.0) } else { Point::new(cx + 120.0 + 100.0, cy + 40.0) };
         let pts = [from, Point::new(cx + 126.0, cy + 40.0)];
-        let mut e = Element::linear(id("a", i), Kind::Arrow, next(&mut z), &pts).expect("arrow");
+        let mut e = Element::linear(id("a", i), LinearKind::Arrow, next(&mut z), &pts).expect("arrow");
         if let ElementKind::Arrow(d) = &mut e.kind {
             let d: &mut LinearData = d;
             d.end_binding = Some(Binding { target: id("s", i), mode: BindMode::Orbit, fixed_point: [0.5, 0.5] });

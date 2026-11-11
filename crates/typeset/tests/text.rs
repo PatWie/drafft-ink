@@ -262,7 +262,7 @@ fn outline_has_ink_inside_the_layout_box() {
     s.spans.push(Span { range: 1..2, style: SpanStyle::color(Rgba8::rgb(9, 9, 9)) });
     let two = ts.text(&s).outline();
     assert_eq!(two.len(), 2);
-    assert_eq!(two[1].0, Rgba8::rgb(9, 9, 9));
+    assert_eq!(two[1].color, Rgba8::rgb(9, 9, 9));
 }
 
 #[test]

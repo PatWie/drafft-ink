@@ -27,7 +27,7 @@ gates:
   fmt             cargo fmt --all --check
   clippy          cargo clippy on all targets and features, -D warnings
   layers [--list] enforce the crate layering (docs/architecture.md); --list prints the assignments
-  wasm            cargo check every crate at L0-L5, plus the wasm apps, for wasm32-unknown-unknown
+  wasm            cargo check and clippy -D warnings every crate at L0-L5, plus the wasm apps, for wasm32-unknown-unknown
   standards       AGENTS.md stays short and cites only files that exist; toolchain pins agree
   deny            cargo deny: licences (AGPL-3.0-only compatible), advisories, bans, sources
   test [ARGS]     cargo nextest run (cargo test if nextest cannot be installed), plus doc tests

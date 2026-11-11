@@ -338,7 +338,7 @@ mod tests {
     use std::f64::consts::FRAC_PI_2;
 
     use drafftink_geom::kurbo::Size;
-    use drafftink_scene::{MemoryStore, SceneStore, SceneTx, ZIndex};
+    use drafftink_scene::{LinearKind, MemoryStore, SceneStore, SceneTx, ZIndex};
 
     use super::*;
 
@@ -445,7 +445,7 @@ mod tests {
     fn line_has_point_and_midpoint_handles_and_no_box() {
         let line = Element::linear(
             ElementId::new("l").unwrap(),
-            Kind::Line,
+            LinearKind::Line,
             ZIndex::first(),
             &[Point::new(0.0, 0.0), Point::new(200.0, 0.0), Point::new(200.0, 200.0)],
         )

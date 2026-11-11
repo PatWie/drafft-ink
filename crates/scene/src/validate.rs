@@ -11,9 +11,12 @@
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fmt;
 
+use drafftink_geom::aabb;
+
 use crate::document::Document;
-use crate::element::{Element, ElementKind, Kind, LinearData, Transform};
-use crate::geom::points_bounds;
+use crate::element::{
+    Element, ElementKind, FrameData, FreehandData, ImageData, Kind, LinearData, MathData, TextData, Transform,
+};
 use crate::id::{ElementId, FileId, GroupId};
 use crate::limits::*;
 use crate::store::SceneRead;
@@ -253,91 +256,99 @@ fn collect_element_errors(e: &Element, out: &mut Vec<ElementError>) {
 fn kind_errors(e: &Element, out: &mut Vec<ElementError>) {
     match &e.kind {
         ElementKind::Rectangle | ElementKind::Diamond | ElementKind::Ellipse => {}
-        ElementKind::Line(d) | ElementKind::Arrow(d) => {
-            let is_arrow = matches!(e.kind, ElementKind::Arrow(_));
-            let min_points = if d.closed { 3 } else { 2 };
-            if d.points.len() < min_points {
-                put(
-                    out,
-                    Err(ElementError::TooFewPoints { kind: e.tag().name(), min: min_points, have: d.points.len() }),
-                );
-            }
-            points_errors(e, &d.points, out);
-            if d.closed && is_arrow {
-                put(out, Err(ElementError::NotApplicable("`closed` is only for lines; an arrow cannot be closed")));
-            }
-            if let Some(hs) = d.head_size {
-                put(out, ranged("head_size", hs, 0.0, MAX_STROKE_WIDTH * 10.0));
-            }
-            linear_extras(e, d, out);
+        ElementKind::Line(d) | ElementKind::Arrow(d) => linear_errors(e, d, out),
+        ElementKind::Freehand(d) => freehand_errors(e, d, out),
+        ElementKind::Text(d) => text_errors(e, d, out),
+        ElementKind::Math(d) => math_errors(d, out),
+        ElementKind::Image(d) => image_errors(d, out),
+        ElementKind::Frame(d) => frame_errors(e, d, out),
+    }
+}
+
+fn linear_errors(e: &Element, d: &LinearData, out: &mut Vec<ElementError>) {
+    let is_arrow = matches!(e.kind, ElementKind::Arrow(_));
+    let min_points = if d.closed { 3 } else { 2 };
+    if d.points.len() < min_points {
+        put(out, Err(ElementError::TooFewPoints { kind: e.tag().name(), min: min_points, have: d.points.len() }));
+    }
+    points_errors(e, &d.points, out);
+    if d.closed && is_arrow {
+        put(out, Err(ElementError::NotApplicable("`closed` is only for lines; an arrow cannot be closed")));
+    }
+    if let Some(hs) = d.head_size {
+        put(out, ranged("head_size", hs, 0.0, MAX_STROKE_WIDTH * 10.0));
+    }
+    linear_extras(e, d, out);
+}
+
+fn freehand_errors(e: &Element, d: &FreehandData, out: &mut Vec<ElementError>) {
+    if d.points.is_empty() {
+        put(out, Err(ElementError::TooFewPoints { kind: "freehand", min: 1, have: 0 }));
+    }
+    points_errors(e, &d.points, out);
+    if !d.pressures.is_empty() && d.pressures.len() != d.points.len() {
+        put(out, Err(ElementError::PressureCount { pressures: d.pressures.len(), points: d.points.len() }));
+    }
+    if d.pressures.len() > MAX_POINTS {
+        put(out, Err(ElementError::TooLong { field: "pressures", len: d.pressures.len(), max: MAX_POINTS }));
+    } else {
+        for p in &d.pressures {
+            put(out, ranged("pressures", *p, 0.0, 1.0));
         }
-        ElementKind::Freehand(d) => {
-            if d.points.is_empty() {
-                put(out, Err(ElementError::TooFewPoints { kind: "freehand", min: 1, have: 0 }));
-            }
-            points_errors(e, &d.points, out);
-            if !d.pressures.is_empty() && d.pressures.len() != d.points.len() {
-                put(out, Err(ElementError::PressureCount { pressures: d.pressures.len(), points: d.points.len() }));
-            }
-            if d.pressures.len() > MAX_POINTS {
-                put(out, Err(ElementError::TooLong { field: "pressures", len: d.pressures.len(), max: MAX_POINTS }));
-            } else {
-                for p in &d.pressures {
-                    put(out, ranged("pressures", *p, 0.0, 1.0));
-                }
-            }
+    }
+}
+
+fn text_errors(e: &Element, d: &TextData, out: &mut Vec<ElementError>) {
+    let len = d.content.chars().take(MAX_TEXT_CHARS + 1).count();
+    if len > MAX_TEXT_CHARS {
+        put(out, Err(ElementError::TooLong { field: "content", len, max: MAX_TEXT_CHARS }));
+    }
+    put(out, ranged("font.size", d.font.size, f64::MIN_POSITIVE, MAX_FONT_SIZE));
+    put(out, ranged("font.line_height", d.font.line_height, f64::MIN_POSITIVE, 10.0));
+    let mut prev_end = 0u32;
+    for r in &d.runs {
+        let ok = r.start < r.end && r.start >= prev_end && (r.end as usize) <= len;
+        if !ok {
+            put(out, Err(ElementError::TextRun { start: r.start, end: r.end, len }));
+            break;
         }
-        ElementKind::Text(d) => {
-            let len = d.content.chars().take(MAX_TEXT_CHARS + 1).count();
-            if len > MAX_TEXT_CHARS {
-                put(out, Err(ElementError::TooLong { field: "content", len, max: MAX_TEXT_CHARS }));
-            }
-            put(out, ranged("font.size", d.font.size, f64::MIN_POSITIVE, MAX_FONT_SIZE));
-            put(out, ranged("font.line_height", d.font.line_height, f64::MIN_POSITIVE, 10.0));
-            let mut prev_end = 0u32;
-            for r in &d.runs {
-                let ok = r.start < r.end && r.start >= prev_end && (r.end as usize) <= len;
-                if !ok {
-                    put(out, Err(ElementError::TextRun { start: r.start, end: r.end, len }));
-                    break;
-                }
-                prev_end = r.end;
-            }
-            if d.container_id.as_ref() == Some(&e.id) {
-                put(out, Err(ElementError::SelfReference { field: "container_id" }));
-            }
-            if let Some(lp) = d.label_position {
-                put(out, ranged("label_position", lp, 0.0, 1.0));
-            }
-        }
-        ElementKind::Math(d) => {
-            let len = d.latex.chars().take(MAX_LATEX_CHARS + 1).count();
-            if len > MAX_LATEX_CHARS {
-                put(out, Err(ElementError::TooLong { field: "latex", len, max: MAX_LATEX_CHARS }));
-            }
-            put(out, ranged("font_size", d.font_size, f64::MIN_POSITIVE, MAX_FONT_SIZE));
-        }
-        ElementKind::Image(d) => {
-            if let Some(c) = &d.crop {
-                for (f, v) in [("crop.x", c.x), ("crop.y", c.y), ("crop.width", c.width), ("crop.height", c.height)] {
-                    put(out, ranged(f, v, 0.0, MAX_COORD));
-                }
-                if c.width <= 0.0 || c.height <= 0.0 {
-                    put(out, Err(ElementError::NotApplicable("a crop must have a width and height above 0")));
-                }
-            }
-        }
-        ElementKind::Frame(d) => {
-            if let Some(n) = &d.name {
-                put(out, text_ok("frame.name", n));
-            }
-            if e.transform.angle != 0.0 {
-                put(out, Err(ElementError::NotApplicable("frames cannot be rotated")));
-            }
-            if e.frame_id.is_some() {
-                put(out, Err(ElementError::NotApplicable("frames cannot be nested: a frame has no `frame_id`")));
-            }
-        }
+        prev_end = r.end;
+    }
+    if d.container_id.as_ref() == Some(&e.id) {
+        put(out, Err(ElementError::SelfReference { field: "container_id" }));
+    }
+    if let Some(lp) = d.label_position {
+        put(out, ranged("label_position", lp, 0.0, 1.0));
+    }
+}
+
+fn math_errors(d: &MathData, out: &mut Vec<ElementError>) {
+    let len = d.latex.chars().take(MAX_LATEX_CHARS + 1).count();
+    if len > MAX_LATEX_CHARS {
+        put(out, Err(ElementError::TooLong { field: "latex", len, max: MAX_LATEX_CHARS }));
+    }
+    put(out, ranged("font_size", d.font_size, f64::MIN_POSITIVE, MAX_FONT_SIZE));
+}
+
+fn image_errors(d: &ImageData, out: &mut Vec<ElementError>) {
+    let Some(c) = &d.crop else { return };
+    for (f, v) in [("crop.x", c.x), ("crop.y", c.y), ("crop.width", c.width), ("crop.height", c.height)] {
+        put(out, ranged(f, v, 0.0, MAX_COORD));
+    }
+    if c.width <= 0.0 || c.height <= 0.0 {
+        put(out, Err(ElementError::NotApplicable("a crop must have a width and height above 0")));
+    }
+}
+
+fn frame_errors(e: &Element, d: &FrameData, out: &mut Vec<ElementError>) {
+    if let Some(n) = &d.name {
+        put(out, text_ok("frame.name", n));
+    }
+    if e.transform.angle != 0.0 {
+        put(out, Err(ElementError::NotApplicable("frames cannot be rotated")));
+    }
+    if e.frame_id.is_some() {
+        put(out, Err(ElementError::NotApplicable("frames cannot be nested: a frame has no `frame_id`")));
     }
 }
 
@@ -352,11 +363,13 @@ fn points_errors(e: &Element, points: &[kurbo::Point], out: &mut Vec<ElementErro
         out.push(ElementError::TooLong { field: "points", len: points.len(), max: MAX_POINTS });
         return;
     }
-    if points.iter().any(|p| !p.x.is_finite() || !p.y.is_finite()) {
+    // `from_points` skips unusable points, so they must be refused before it is asked for the bounds.
+    if !points.iter().all(|p| drafftink_geom::point_is_finite(*p)) {
         out.push(ElementError::NotFinite { field: "points" });
         return;
     }
-    let Some((min_x, min_y, max_x, max_y)) = points_bounds(points) else { return };
+    let Some(bounds) = aabb::from_points(points.iter().copied()) else { return };
+    let (min_x, min_y, max_x, max_y) = (bounds.x0, bounds.y0, bounds.x1, bounds.y1);
     let tol = |v: f64| BOX_TOLERANCE + v.abs() * 1.0e-9;
     if min_x.abs() > tol(max_x) || min_y.abs() > tol(max_y) {
         out.push(ElementError::PointsNotAtOrigin { x: min_x, y: min_y });

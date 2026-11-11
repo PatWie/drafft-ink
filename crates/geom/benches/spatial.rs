@@ -16,7 +16,7 @@ use criterion::{BenchmarkId, Criterion, criterion_group, criterion_main};
 use drafftink_geom::guides::detect_smart_guides;
 use drafftink_geom::kurbo::{Point, Rect, Size};
 use drafftink_geom::snap::MAX_SNAP_CANDIDATES;
-use drafftink_geom::{EllipseShape, HitOpts, OrientedBox, Outline, Polyline, Primitive, RectShape, SpatialIndex};
+use drafftink_geom::{EllipseShape, Fill, HitOpts, OrientedBox, Outline, Polyline, Primitive, RectShape, SpatialIndex};
 
 const SIZES: [usize; 3] = [1_000, 10_000, 100_000];
 
@@ -81,7 +81,7 @@ fn bench(c: &mut Criterion) {
                 let hits: Vec<u32> = index
                     .query_rect(black_box(&marquee))
                     .map(|(id, _)| *id)
-                    .filter(|id| shapes[*id as usize].intersects_rect(&marquee, false))
+                    .filter(|id| shapes[*id as usize].intersects_rect(&marquee, Fill::Stroke))
                     .collect();
                 black_box(hits)
             })

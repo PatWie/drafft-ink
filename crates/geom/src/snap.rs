@@ -251,16 +251,37 @@ pub fn snap_ray_to_grid_lines(origin: Point, angle_degrees: f64, target: Point, 
     }
 }
 
-/// Snap a line endpoint with angle snap, grid snap, both, or neither.
-///
-/// - both: snap the angle, then move the endpoint along that ray to the nearest grid line
-///   crossing, so it stays exactly on the angle;
-/// - grid only: snap the endpoint to the nearest grid corner;
-/// - angle only: as [`snap_line_endpoint`];
-/// - neither: unchanged.
+/// What [`snap_endpoint`] snaps a line endpoint to.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum EndpointSnap {
+    /// Nothing: the endpoint is unchanged.
+    #[default]
+    None,
+    /// The direction, as [`snap_line_endpoint`].
+    Angle,
+    /// The nearest grid corner.
+    Grid,
+    /// The direction first, then along that ray to the nearest grid line crossing, so the endpoint stays exactly on
+    /// the angle.
+    AngleAndGrid,
+}
+
+impl EndpointSnap {
+    /// The mode for two switches (the angle key and the grid toggle).
+    pub const fn from_switches(angle: bool, grid: bool) -> Self {
+        match (angle, grid) {
+            (false, false) => EndpointSnap::None,
+            (true, false) => EndpointSnap::Angle,
+            (false, true) => EndpointSnap::Grid,
+            (true, true) => EndpointSnap::AngleAndGrid,
+        }
+    }
+}
+
+/// Snap a line endpoint as `mode` says.
 ///
 /// (Called `snap_line_endpoint_isometric` in the old app, which took an unused isometric flag.)
-pub fn snap_endpoint(start: Point, end: Point, angle_snap: bool, grid_snap: bool, grid_size: f64) -> AngleSnapResult {
+pub fn snap_endpoint(start: Point, end: Point, mode: EndpointSnap, grid_size: f64) -> AngleSnapResult {
     let (dx, dy) = (end.x - start.x, end.y - start.y);
     let distance = dx.hypot(dy);
     if !distance.is_finite() || distance < MIN_SNAP_LENGTH {
@@ -268,49 +289,44 @@ pub fn snap_endpoint(start: Point, end: Point, angle_snap: bool, grid_snap: bool
     }
     let original = angle_degrees(dx, dy);
 
-    if angle_snap && grid_snap {
-        let snapped_angle = snap_angle(original, ANGLE_SNAP_INCREMENT);
-        let r = snapped_angle.to_radians();
-        let on_ray = Point::new(start.x + distance * r.cos(), start.y + distance * r.sin());
-        let g = snap_ray_to_grid_lines(start, snapped_angle, on_ray, grid_size);
-        if g.is_snapped() {
-            let d = (g.point.x - start.x).hypot(g.point.y - start.y);
-            return AngleSnapResult {
-                point: g.point,
-                angle_degrees: snapped_angle,
-                original_angle_degrees: original,
-                snapped: true,
-                distance: d,
-            };
-        }
-        return AngleSnapResult {
-            point: on_ray,
-            angle_degrees: snapped_angle,
-            original_angle_degrees: original,
-            snapped: true,
-            distance,
-        };
-    }
-    if !angle_snap {
-        if grid_snap {
-            let g = snap_to_grid(end, grid_size);
-            return AngleSnapResult {
-                point: g.point,
-                angle_degrees: original,
-                original_angle_degrees: original,
-                snapped: g.is_snapped(),
-                distance,
-            };
-        }
-        return AngleSnapResult {
+    match mode {
+        EndpointSnap::None => AngleSnapResult {
             point: end,
             angle_degrees: original,
             original_angle_degrees: original,
             snapped: false,
             distance,
-        };
+        },
+        EndpointSnap::Grid => {
+            let g = snap_to_grid(end, grid_size);
+            AngleSnapResult {
+                point: g.point,
+                angle_degrees: original,
+                original_angle_degrees: original,
+                snapped: g.is_snapped(),
+                distance,
+            }
+        }
+        EndpointSnap::Angle => snap_line_endpoint(start, end, true),
+        EndpointSnap::AngleAndGrid => {
+            let snapped_angle = snap_angle(original, ANGLE_SNAP_INCREMENT);
+            let r = snapped_angle.to_radians();
+            let on_ray = Point::new(start.x + distance * r.cos(), start.y + distance * r.sin());
+            let g = snap_ray_to_grid_lines(start, snapped_angle, on_ray, grid_size);
+            let (point, distance) = if g.is_snapped() {
+                (g.point, (g.point.x - start.x).hypot(g.point.y - start.y))
+            } else {
+                (on_ray, distance)
+            };
+            AngleSnapResult {
+                point,
+                angle_degrees: snapped_angle,
+                original_angle_degrees: original,
+                snapped: true,
+                distance,
+            }
+        }
     }
-    snap_line_endpoint(start, end, true)
 }
 
 #[cfg(test)]
@@ -410,7 +426,7 @@ mod tests {
 
     #[test]
     fn test_snap_endpoint_both_horizontal() {
-        let result = snap_endpoint(Point::new(0.0, 0.0), Point::new(100.0, 5.0), true, true, 20.0);
+        let result = snap_endpoint(Point::new(0.0, 0.0), Point::new(100.0, 5.0), EndpointSnap::AngleAndGrid, 20.0);
         assert!(result.snapped);
         assert!(result.point.y.abs() < 0.01);
         assert!((result.point.x % 20.0).abs() < 0.01 || (result.point.x % 20.0 - 20.0).abs() < 0.01);
@@ -418,7 +434,7 @@ mod tests {
 
     #[test]
     fn test_snap_endpoint_both_45_degrees() {
-        let result = snap_endpoint(Point::new(0.0, 0.0), Point::new(100.0, 102.0), true, true, 20.0);
+        let result = snap_endpoint(Point::new(0.0, 0.0), Point::new(100.0, 102.0), EndpointSnap::AngleAndGrid, 20.0);
         assert!(result.snapped);
         assert!((result.point.x - result.point.y).abs() < 0.1);
         let on_x = (result.point.x % 20.0).abs() < 0.01 || (result.point.x % 20.0 - 20.0).abs() < 0.01;
@@ -467,16 +483,16 @@ mod tests {
     fn zero_length_line_does_not_snap() {
         let r = snap_line_endpoint(Point::new(5.0, 5.0), Point::new(5.0, 5.0), true);
         assert!(!r.snapped && r.distance == 0.0 && r.point == Point::new(5.0, 5.0));
-        let r = snap_endpoint(Point::new(5.0, 5.0), Point::new(5.0, 5.0), true, true, 20.0);
+        let r = snap_endpoint(Point::new(5.0, 5.0), Point::new(5.0, 5.0), EndpointSnap::AngleAndGrid, 20.0);
         assert!(!r.snapped);
     }
 
     #[test]
     fn snap_endpoint_modes() {
         let (s, e) = (Point::new(3.0, 4.0), Point::new(97.0, 41.0));
-        assert_eq!(snap_endpoint(s, e, false, false, 20.0).point, e);
-        assert_eq!(snap_endpoint(s, e, false, true, 20.0).point, Point::new(100.0, 40.0));
-        assert_eq!(snap_endpoint(s, e, true, false, 20.0).point, snap_line_endpoint(s, e, true).point);
+        assert_eq!(snap_endpoint(s, e, EndpointSnap::None, 20.0).point, e);
+        assert_eq!(snap_endpoint(s, e, EndpointSnap::Grid, 20.0).point, Point::new(100.0, 40.0));
+        assert_eq!(snap_endpoint(s, e, EndpointSnap::Angle, 20.0).point, snap_line_endpoint(s, e, true).point);
     }
 
     #[test]
@@ -514,7 +530,7 @@ mod tests {
                 );
                 let _ = (
                     snap_line_endpoint(Point::ZERO, p, true),
-                    snap_endpoint(p, Point::ZERO, true, true, g),
+                    snap_endpoint(p, Point::ZERO, EndpointSnap::AngleAndGrid, g),
                     snap_angle(x, g),
                     snap_rotation(x, g),
                 );

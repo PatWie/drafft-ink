@@ -16,7 +16,7 @@ use drafftink_edit::unused_element_id;
 use drafftink_geom::kurbo::{Point, Rect, Vec2};
 use drafftink_io::IoError;
 use drafftink_io::mermaid::{self as mm, Diagram};
-use drafftink_scene::{Element, ElementId, ElementKind, FillPattern, Head, IdSource, Kind, PathType, SceneTx, StrokeStyle, TextStyle};
+use drafftink_scene::{Element, ElementId, ElementKind, FillPattern, Head, IdSource, LinearKind, PathType, SceneTx, StrokeStyle, TextStyle};
 
 use crate::refusal::Refusal;
 use crate::session::Session;
@@ -428,7 +428,7 @@ pub(super) fn sequence_extras<T: SceneTx>(
     for &(x, y0, y1) in &seq.lifelines {
         let id = unused_element_id(tx, ids);
         let z = tx.next_top_index().map_err(|e| BuildError::Move(e.to_string()))?;
-        let mut e = Element::linear(id.clone(), Kind::Line, z, &[at((x, y0)), at((x, y1))])
+        let mut e = Element::linear(id.clone(), LinearKind::Line, z, &[at((x, y0)), at((x, y1))])
             .ok_or_else(|| BuildError::Move("a lifeline came out empty".to_owned()))?;
         e.style.stroke_style = StrokeStyle::Dashed;
         e.style.seed = ids.seed();
@@ -443,7 +443,7 @@ pub(super) fn sequence_extras<T: SceneTx>(
         } else {
             vec![at(msg.from), at(msg.to)]
         };
-        let mut e = Element::linear(id.clone(), Kind::Arrow, z, &pts)
+        let mut e = Element::linear(id.clone(), LinearKind::Arrow, z, &pts)
             .ok_or_else(|| BuildError::Move("a message came out empty".to_owned()))?;
         if let ElementKind::Arrow(d) = &mut e.kind {
             d.start_head = msg.start_head;

@@ -62,7 +62,7 @@ pub(crate) fn edit_with<R, E: From<StoreError>>(
     let idx = s.active_index();
     let Session { tabs, ports, services, .. } = s;
     let Some(tab) = tabs.get_mut(idx) else {
-        return Err(StoreError::Backend("the session has no active tab".to_owned()).into());
+        return Err(StoreError::backend("the session has no active tab").into());
     };
     let services: &Services = services;
     let (r, _) = tab.doc.edit::<R, E>(|tx| f(tx, &mut *ports.ids, services))?;

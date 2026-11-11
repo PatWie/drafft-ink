@@ -368,7 +368,7 @@ impl Ctx<'_> {
                 put!(
                     css,
                     "@font-face{{font-family:'{}';src:url(data:{mime};base64,{}) ;}}",
-                    fam.renderer_name(),
+                    fam.display_name(),
                     STANDARD.encode(&f.data)
                 );
             }

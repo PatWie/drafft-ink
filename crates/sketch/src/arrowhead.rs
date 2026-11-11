@@ -4,7 +4,7 @@
 
 use kurbo::{BezPath, Circle, Point, Shape, Vec2};
 
-use crate::input::{Arrowhead, HeadKind};
+use crate::input::Arrowhead;
 
 /// Where the subpaths of one head are in the arrow path, and whether it is filled.
 #[derive(Debug, Clone, Copy)]
@@ -30,28 +30,28 @@ pub(crate) fn append(
     let back = tip - dir * size;
     let left = back + perp * (size * 0.5);
     let right = back - perp * (size * 0.5);
-    let count = match head.kind {
-        HeadKind::None => return None,
-        HeadKind::Arrow => {
+    let count = match head {
+        Arrowhead::None => return None,
+        Arrowhead::Arrow => {
             path.move_to(tip);
             path.line_to(left);
             path.move_to(tip);
             path.line_to(right);
             2
         }
-        HeadKind::Triangle => {
+        Arrowhead::Triangle(_) => {
             path.move_to(tip);
             path.line_to(left);
             path.line_to(right);
             path.close_path();
             1
         }
-        HeadKind::Bar => {
+        Arrowhead::Bar => {
             path.move_to(tip + perp * (size * 0.5));
             path.line_to(tip - perp * (size * 0.5));
             1
         }
-        HeadKind::Diamond => {
+        Arrowhead::Diamond(_) => {
             path.move_to(tip);
             path.line_to(tip - dir * (size * 0.5) + perp * (size * 0.3));
             path.line_to(back);
@@ -59,7 +59,7 @@ pub(crate) fn append(
             path.close_path();
             1
         }
-        HeadKind::Circle => {
+        Arrowhead::Circle(_) => {
             let d = size * 0.7;
             let c = Circle::new(tip - dir * (d / 2.0), d / 2.0);
             for el in c.path_elements(0.1) {
@@ -68,8 +68,7 @@ pub(crate) fn append(
             1
         }
     };
-    let filled = head.filled && matches!(head.kind, HeadKind::Triangle | HeadKind::Diamond | HeadKind::Circle);
-    Some(HeadSpan { first: subpaths_so_far, count, filled })
+    Some(HeadSpan { first: subpaths_so_far, count, filled: head.is_filled() })
 }
 
 #[cfg(test)]
@@ -110,10 +109,15 @@ mod tests {
 
     #[test]
     fn only_closed_kinds_can_be_filled() {
-        let mut p = BezPath::new();
-        let a = Arrowhead { kind: HeadKind::Arrow, filled: true };
-        assert!(!append(&mut p, 1, a, Point::ZERO, Vec2::new(1.0, 0.0), 10.0).is_some_and(|s| s.filled));
-        let t = append(&mut p, 2, Arrowhead::TRIANGLE, Point::ZERO, Vec2::new(1.0, 0.0), 10.0);
-        assert!(t.is_some_and(|s| s.filled));
+        let at = |h| append(&mut BezPath::new(), 1, h, Point::ZERO, Vec2::new(1.0, 0.0), 10.0);
+        // An open head has no fill to ask for.
+        assert!(!at(Arrowhead::ARROW).is_some_and(|s| s.filled));
+        assert!(!at(Arrowhead::BAR).is_some_and(|s| s.filled));
+        for filled in [Arrowhead::TRIANGLE, Arrowhead::CIRCLE, Arrowhead::DIAMOND] {
+            assert!(at(filled).is_some_and(|s| s.filled), "{filled:?}");
+        }
+        for outline in [Arrowhead::TRIANGLE_OUTLINE, Arrowhead::CIRCLE_OUTLINE, Arrowhead::DIAMOND_OUTLINE] {
+            assert!(at(outline).is_some_and(|s| !s.filled), "{outline:?}");
+        }
     }
 }

@@ -158,3 +158,27 @@ fn a_version_at_the_maximum_does_not_overflow_on_update() {
     assert_eq!(cs.get(&id("a")).unwrap().version, u64::MAX);
     assert_eq!(s.get(&id("a")).unwrap().version, u64::MAX);
 }
+
+#[test]
+fn a_rejected_file_says_which_rule_it_broke() {
+    use drafftink_scene::limits::{MAX_FILE_BYTES, MAX_FILES};
+    let put = |s: &mut MemoryStore, mime: &str, bytes: Vec<u8>| {
+        let mut tx = s.begin();
+        tx.put_file(FileEntry::new(mime, bytes).1)
+    };
+    let mut s = MemoryStore::new();
+    assert_eq!(put(&mut s, "text/html", vec![1]), Err(FileRejection::MediaType("text/html".into()).into()));
+    assert_eq!(
+        put(&mut s, "image/png", vec![0; MAX_FILE_BYTES + 1]),
+        Err(FileRejection::TooLarge { len: MAX_FILE_BYTES + 1, max: MAX_FILE_BYTES }.into())
+    );
+    for i in 0..MAX_FILES {
+        let mut tx = s.begin();
+        tx.put_file(FileEntry::new("image/png", i.to_le_bytes().to_vec()).1).unwrap();
+        tx.commit().unwrap();
+    }
+    assert_eq!(
+        put(&mut s, "image/png", vec![9, 9, 9, 9, 9, 9, 9, 9, 9]),
+        Err(FileRejection::TooMany { max: MAX_FILES }.into())
+    );
+}

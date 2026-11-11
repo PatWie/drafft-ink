@@ -64,7 +64,7 @@ fn sample() -> Document {
         d.pressures = vec![0.3, 0.8, 0.5];
         d.pressure_mode = PressureMode::Device;
     }
-    assert!(stroke.refit_points());
+    stroke.refit_points().unwrap();
     stroke.transform.x += 10.0;
     stroke.transform.y += 100.0;
 
@@ -164,7 +164,7 @@ fn foreign_and_broken_input_is_refused() {
         assert!(Document::from_json(bad).is_err(), "{bad}");
     }
     let err = Document::from_json("{").unwrap_err();
-    assert!(matches!(err, DocumentError::Parse(_)));
+    assert!(matches!(err, DocumentError::Parse(_)), "{err}");
 }
 
 #[test]

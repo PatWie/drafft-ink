@@ -4,9 +4,9 @@
 #![allow(clippy::expect_used, clippy::panic, clippy::unwrap_used)]
 
 use drafftink_sketch::{
-    Arrowhead, Curve, FillKind, FillStyle, HeadKind, LineDash, MAX_FILL_DOTS, MAX_FILL_SEGMENTS, MAX_HACHURE_LINES,
-    MAX_POINTS, PressureProfile, Roundness, SketchCache, SketchGeometry, SketchInput, SketchParams, SketchShape,
-    sketch, sketch_key,
+    Arrowhead, Curve, FillKind, FillStyle, LineDash, MAX_FILL_DOTS, MAX_FILL_SEGMENTS, MAX_HACHURE_LINES, MAX_POINTS,
+    PressureProfile, Roundness, SketchCache, SketchGeometry, SketchInput, SketchParams, SketchShape, sketch,
+    sketch_key,
 };
 use kurbo::{BezPath, PathEl, Point, Rect};
 
@@ -293,7 +293,7 @@ fn every_head_kind_draws_at_both_ends() {
         let b = both.bounds().expect("bounds");
         assert!(b.x0 <= 0.0 && b.x1 >= 100.0, "{h:?} {b:?}");
         // Filled kinds emit an ink fill per filled head.
-        let expect_fills = usize::from(h.filled) * 2;
+        let expect_fills = usize::from(h.is_filled()) * 2;
         assert_eq!(both.fills.len(), expect_fills, "{h:?}");
         assert!(both.fills.iter().all(|(_, k)| *k == FillKind::Ink));
     }
@@ -345,8 +345,9 @@ fn zero_length_arrow_and_single_point_draw_nothing() {
 }
 
 #[test]
-fn head_kind_is_exposed() {
-    assert_eq!(Arrowhead::default().kind, HeadKind::None);
+fn the_default_arrowhead_is_none() {
+    assert_eq!(Arrowhead::default(), Arrowhead::NONE);
+    assert!(!Arrowhead::NONE.is_filled());
 }
 
 // ---------------------------------------------------------------- fills

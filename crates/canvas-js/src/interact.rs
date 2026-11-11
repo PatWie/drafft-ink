@@ -18,7 +18,7 @@ use drafftink_edit::transform::{ResizeSpec, RotateMode, TransformError, Transfor
 use drafftink_geom::OrientedBox;
 use drafftink_geom::kurbo::{Point, Rect};
 use drafftink_geom::select::{BoxHandle, handle_point};
-use drafftink_scene::memory::MemoryTx;
+use drafftink_scene::MemoryTx;
 use drafftink_scene::{Element, ElementId, GroupId, SceneRead, SceneStore, SceneTx, StoreError};
 
 use crate::core::Core;

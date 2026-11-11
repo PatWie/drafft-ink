@@ -407,7 +407,7 @@ fn hostile_views_and_elements_never_panic() {
     let mut weird = vec![
         rect_el("a", &z, f64::NAN, f64::INFINITY, -5.0, 1e300),
         ellipse_el("b", &z, 0.0, 0.0, f64::NAN, f64::NAN),
-        line_el("c", &z, Kind::Arrow, &[(0.0, 0.0), (0.0, 0.0)]),
+        line_el("c", &z, LinearKind::Arrow, &[(0.0, 0.0), (0.0, 0.0)]),
     ];
     weird[0].style.stroke_width = f64::NAN;
     weird[0].style.opacity = f64::NAN;
@@ -554,4 +554,252 @@ fn the_paint_hash_sees_what_draws_and_ignores_what_does_not() {
         }
         assert_ne!(paint_hash(&e), th, "text {what} must change the hash");
     }
+}
+
+// ---------------------------------------------------------------- the hash covers every field
+
+/// An element of each kind with every field set to a non-default value, so that each one shows up in the JSON.
+fn fully_set_elements() -> Vec<Element> {
+    use kurbo::Point;
+    let z = ZIndex::first();
+    let styled = |mut e: Element| {
+        e.style = Style {
+            stroke_color: Color::rgb(1, 2, 3),
+            stroke_width: 3.0,
+            stroke_style: StrokeStyle::Dashed,
+            fill_color: Some(Color::rgb(4, 5, 6)),
+            fill_pattern: FillPattern::Hachure,
+            sloppiness: Sloppiness::Cartoonist,
+            opacity: 0.8,
+            corner_radius: 4.0,
+            seed: 11,
+        };
+        e.transform = Transform { x: 5.0, y: 6.0, w: 70.0, h: 40.0, angle: 0.5, flip_x: true, flip_y: true };
+        e.group_ids.push(GroupId::new("g").unwrap());
+        e.frame_id = Some(id("frame"));
+        e.locked = true;
+        e.deleted = true;
+        e.name = Some("name".into());
+        e.link = Some("https://example.com".into());
+        e.custom = Some([("k".to_string(), serde_json::json!(1))].into());
+        e.version = 4;
+        e
+    };
+    let pts = vec![Point::new(0.0, 0.0), Point::new(30.0, 10.0), Point::new(70.0, 40.0)];
+    let mut linear = LinearData::new(pts.clone());
+    linear.path = PathType::Elbow;
+    linear.start_binding = Some(Binding { target: id("t"), mode: BindMode::Orbit, fixed_point: [0.5, 0.25] });
+    linear.end_binding = Some(Binding { target: id("u"), mode: BindMode::Inside, fixed_point: [0.1, 0.2] });
+    linear.start_head = Head::Triangle;
+    linear.end_head = Head::Bar;
+    linear.head_size = Some(12.0);
+    linear.fixed_segments = vec![FixedSegment { index: 1, start: Point::new(1.0, 2.0), end: Point::new(3.0, 4.0) }];
+    linear.start_is_special = true;
+    linear.end_is_special = true;
+    linear.closed = true;
+    let mut freehand = FreehandData::new(pts);
+    freehand.pressures = vec![0.2, 0.5, 0.9];
+    freehand.pressure_mode = PressureMode::Device;
+    freehand.brush = Brush::Calligraphy;
+    freehand.highlighter = true;
+    freehand.closed = true;
+    let mut text = TextData::new("hello");
+    text.runs = vec![TextRun { start: 1, end: 3, color: Some(Color::rgb(7, 8, 9)) }];
+    text.font = TextStyle {
+        family: FontFamily::GelPenSerif,
+        size: 22.0,
+        weight: FontWeight::Heavy,
+        align: TextAlign::Center,
+        vertical_align: VerticalAlign::Middle,
+        line_height: 1.5,
+    };
+    text.auto_resize = false;
+    text.container_id = Some(id("box"));
+    text.label_position = Some(0.25);
+    let mut math = MathData::new("x^2");
+    math.font_size = 31.0;
+    let image = ImageData {
+        file_id: Some(FileId::of(b"picture")),
+        natural_width: 64,
+        natural_height: 48,
+        crop: Some(Crop { x: 1.0, y: 2.0, width: 30.0, height: 20.0 }),
+    };
+    let frame = FrameData { name: Some("Frame A".into()), clip: false };
+    [
+        ElementKind::Rectangle,
+        ElementKind::Diamond,
+        ElementKind::Ellipse,
+        ElementKind::Line(linear.clone()),
+        ElementKind::Arrow(linear),
+        ElementKind::Freehand(freehand),
+        ElementKind::Text(text),
+        ElementKind::Math(math),
+        ElementKind::Image(image),
+        ElementKind::Frame(frame),
+    ]
+    .into_iter()
+    .enumerate()
+    .map(|(i, kind)| styled(Element::new(id(&format!("e{i}")), kind, z.clone())))
+    .collect()
+}
+
+/// Every string constant the schema allows (enum variants), for mutating string leaves into other valid values.
+fn schema_strings(v: &serde_json::Value, out: &mut Vec<String>) {
+    match v {
+        serde_json::Value::Object(o) => {
+            for (k, v) in o {
+                if matches!(k.as_str(), "enum" | "const") {
+                    let list = if v.is_array() { v.as_array().cloned().unwrap_or_default() } else { vec![v.clone()] };
+                    out.extend(list.iter().filter_map(|s| s.as_str().map(str::to_owned)));
+                }
+                schema_strings(v, out);
+            }
+        }
+        serde_json::Value::Array(a) => a.iter().for_each(|v| schema_strings(v, out)),
+        _ => {}
+    }
+}
+
+/// Every property name the schema declares, anywhere.
+fn schema_properties(v: &serde_json::Value, out: &mut std::collections::BTreeSet<String>) {
+    match v {
+        serde_json::Value::Object(o) => {
+            for (k, v) in o {
+                if k == "properties" {
+                    out.extend(v.as_object().into_iter().flat_map(|p| p.keys().cloned()));
+                }
+                schema_properties(v, out);
+            }
+        }
+        serde_json::Value::Array(a) => a.iter().for_each(|v| schema_properties(v, out)),
+        _ => {}
+    }
+}
+
+/// The JSON paths of all leaves, with array indices written as `[]`.
+fn leaf_paths(v: &serde_json::Value, path: &mut Vec<String>, out: &mut Vec<Vec<String>>) {
+    match v {
+        serde_json::Value::Object(o) => {
+            for (k, v) in o {
+                path.push(k.clone());
+                leaf_paths(v, path, out);
+                path.pop();
+            }
+        }
+        serde_json::Value::Array(a) => {
+            for v in a {
+                path.push("[]".into());
+                leaf_paths(v, path, out);
+                path.pop();
+            }
+        }
+        serde_json::Value::Null => {}
+        _ => out.push(path.clone()),
+    }
+}
+
+/// The JSON pointer of a leaf path; `[]` stands for the first array entry.
+fn pointer(path: &[String]) -> String {
+    path.iter().map(|seg| format!("/{}", if seg == "[]" { "0" } else { seg })).collect()
+}
+
+#[test]
+fn the_paint_hash_covers_every_field_of_the_element() {
+    // Fields that never change how an element looks once drawn. Position and rotation are applied to the cached
+    // fragment; relations, bindings and routing inputs are already baked into the points.
+    const IGNORED: &[&str] = &[
+        "id",
+        "index",
+        "group_ids.[]",
+        "frame_id",
+        "locked",
+        "deleted",
+        "name",
+        "link",
+        "custom.k",
+        "version",
+        "transform.x",
+        "transform.y",
+        "transform.angle",
+        "transform.flip_x",
+        "transform.flip_y",
+        "kind.start_binding.target",
+        "kind.start_binding.mode",
+        "kind.start_binding.fixed_point.[]",
+        "kind.end_binding.target",
+        "kind.end_binding.mode",
+        "kind.end_binding.fixed_point.[]",
+        "kind.fixed_segments.[].index",
+        "kind.fixed_segments.[].start.[]",
+        "kind.fixed_segments.[].end.[]",
+        "kind.start_is_special",
+        "kind.end_is_special",
+        "kind.container_id",
+        "kind.label_position",
+    ];
+    let schema = serde_json::to_value(schemars::schema_for!(Element)).unwrap();
+    let mut strings = Vec::new();
+    schema_strings(&schema, &mut strings);
+    strings.extend(["#0a0b0c".into(), "#0a0b0c0d".into(), "a".repeat(64), "z9".into(), "https://other.example".into()]);
+
+    let mut seen_names = std::collections::BTreeSet::new();
+    let mut hashed = std::collections::BTreeSet::new();
+    let mut ignored_seen = std::collections::BTreeSet::new();
+    for element in fully_set_elements() {
+        let json = serde_json::to_value(&element).unwrap();
+        let before = paint_hash(&element);
+        let mut paths = Vec::new();
+        leaf_paths(&json, &mut Vec::new(), &mut paths);
+        paths.sort();
+        paths.dedup();
+        for path in &paths {
+            seen_names.extend(path.iter().filter(|s| *s != "[]").cloned());
+            let at = pointer(path);
+            let first = json.pointer(&at).unwrap().clone();
+            let mutants: Vec<serde_json::Value> = match &first {
+                serde_json::Value::Bool(b) => vec![(!b).into()],
+                serde_json::Value::Number(n) if n.is_f64() => vec![(n.as_f64().unwrap() + 1.0).into()],
+                serde_json::Value::Number(n) => vec![(n.as_u64().unwrap() + 1).into()],
+                serde_json::Value::String(s) => {
+                    strings.iter().chain(std::iter::once(&format!("{s}x"))).map(|c| c.clone().into()).collect()
+                }
+                other => panic!("unexpected leaf {other}"),
+            };
+            let changed = mutants
+                .into_iter()
+                .filter(|m| *m != first)
+                .map(|m| {
+                    let mut candidate = json.clone();
+                    *candidate.pointer_mut(&at).unwrap() = m;
+                    candidate
+                })
+                .find_map(|candidate| serde_json::from_value::<Element>(candidate).ok())
+                .map(|mutated| paint_hash(&mutated) != before);
+            let name = path.join(".");
+            let Some(changed) = changed else {
+                panic!("no valid replacement value found for {name}; add one to the candidate list");
+            };
+            if changed {
+                hashed.insert(name.clone());
+                assert!(!IGNORED.contains(&name.as_str()), "{name} is listed as ignored but changes the hash");
+            } else {
+                ignored_seen.insert(name.clone());
+                assert!(
+                    IGNORED.contains(&name.as_str()),
+                    "{name} does not change the paint hash: hash it in render/src/hash.rs, or list it as ignored"
+                );
+            }
+        }
+    }
+    for name in IGNORED {
+        assert!(ignored_seen.contains(*name), "{name} is in the ignore list but was not seen unhashed");
+    }
+
+    // Every property the schema declares must have been exercised, or the sample elements miss a field.
+    let mut declared = std::collections::BTreeSet::new();
+    schema_properties(&schema, &mut declared);
+    // `type` is the kind tag, which the hash covers through the discriminant.
+    declared.remove("type");
+    let missing: Vec<_> = declared.difference(&seen_names).collect();
+    assert!(missing.is_empty(), "fully_set_elements() does not set {missing:?}");
 }

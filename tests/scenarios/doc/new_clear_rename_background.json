@@ -4,7 +4,7 @@
     { "execute": "doc.clear", "refused": "empty_document", "text": "The document is already empty, so there is nothing to clear." },
     { "execute": "doc.rename", "args": { "name": "  Plan  " }, "expect": [ { "path": "$.name", "eq": "Plan", "note": "The name is trimmed." }, { "path": "$.undo_label", "eq": "Rename document" } ] },
     { "execute": "doc.rename", "args": { "name": "Plan" }, "expect": [ { "path": "$.changed", "eq": false, "note": "The same name is Ok and changes nothing." } ] },
-    { "execute": "doc.rename", "args": { "name": "   " }, "refused": "empty_name", "text": "The name is empty. Give a name of 1 to 120 characters." },
+    { "execute": "doc.rename", "args": { "name": "   " }, "refused": "empty_name", "text": "The name is empty. Give a name of 1 to 256 characters." },
     { "undo": 1 },
     { "assert": "doc.inspect", "expect": [ { "path": "$.name", "eq": "Untitled", "note": "Undo takes the name back." } ] },
 

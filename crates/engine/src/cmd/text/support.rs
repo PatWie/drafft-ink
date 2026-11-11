@@ -41,7 +41,7 @@ pub(crate) fn with_doc<R, E: From<drafftink_scene::StoreError>>(
     let ids: &mut dyn IdSource = &mut *s.ports.ids;
     match s.tabs.get_mut(idx) {
         Some(tab) => tab.doc.edit(|tx| f(tx, measure, &math, ids)).map(|(r, _)| r),
-        None => Err(drafftink_scene::StoreError::Backend("there is no active tab".to_owned()).into()),
+        None => Err(drafftink_scene::StoreError::backend("there is no active tab").into()),
     }
 }
 

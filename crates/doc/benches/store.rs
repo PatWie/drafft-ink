@@ -39,7 +39,7 @@ fn scene(n: usize) -> Vec<Element> {
                     .with_bounds(x, y, 120.0, 25.0),
                 2 => Element::linear(
                     id(i),
-                    Kind::Arrow,
+                    LinearKind::Arrow,
                     key.clone(),
                     &[Point::new(x, y), Point::new(x + 80.0, y + 40.0)],
                 )
@@ -47,7 +47,7 @@ fn scene(n: usize) -> Vec<Element> {
                 3 => {
                     let pts: Vec<Point> = (0..30).map(|k| Point::new(x + f64::from(k), y + f64::from(k % 7))).collect();
                     let mut f = Element::new(id(i), ElementKind::Freehand(FreehandData::new(pts)), key);
-                    f.refit_points();
+                    let _ = f.refit_points();
                     f
                 }
                 _ => Element::new(id(i), ElementKind::Rectangle, key).with_bounds(x, y, 100.0, 60.0),

@@ -40,7 +40,7 @@ fn every_kind() -> Document {
 
     let mut arr = Element::linear(
         eid("d_arrow"),
-        Kind::Arrow,
+        LinearKind::Arrow,
         z[3].clone(),
         &[Point::new(0.0, 100.0), Point::new(50.0, 100.0), Point::new(50.0, 150.0), Point::new(120.0, 150.0)],
     )
@@ -59,7 +59,7 @@ fn every_kind() -> Document {
 
     let mut line = Element::linear(
         eid("e_line"),
-        Kind::Line,
+        LinearKind::Line,
         z[4].clone(),
         &[Point::new(0.0, 200.0), Point::new(40.0, 260.0), Point::new(80.0, 200.0)],
     )

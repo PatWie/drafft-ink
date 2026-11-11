@@ -85,14 +85,6 @@ pub fn world_points(e: &drafftink_scene::Element) -> Option<Vec<Point>> {
     Some(pts.iter().map(|p| e.transform.local_to_world(*p)).collect())
 }
 
-/// The inverse of `Transform::local_to_world`.
-pub fn to_local(t: &Transform, p: Point) -> Point {
-    let c = t.center();
-    let (s, co) = (-t.angle).sin_cos();
-    let v = p - c;
-    Point::new(v.x * co - v.y * s + t.w / 2.0, v.x * s + v.y * co + t.h / 2.0)
-}
-
 /// What happens to the rotation of an element whose points are replaced.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Turn {
@@ -116,10 +108,10 @@ pub fn set_world_points(e: &mut drafftink_scene::Element, world: &[Point], turn:
         e.transform = Transform::new(0.0, 0.0, 0.0, 0.0);
     }
     let t = e.transform;
-    let local: Vec<Point> = world.iter().map(|p| to_local(&t, *p)).collect();
+    let local: Vec<Point> = world.iter().map(|p| t.world_to_local(*p)).collect();
     let (ElementKind::Line(d) | ElementKind::Arrow(d)) = &mut e.kind else { return false };
     let old_points = std::mem::replace(&mut d.points, local);
-    if e.refit_points() {
+    if e.refit_points().is_ok() {
         true
     } else {
         if let ElementKind::Line(d) | ElementKind::Arrow(d) = &mut e.kind {
@@ -497,7 +489,7 @@ mod tests {
         let mut t = Transform::new(10.0, 20.0, 30.0, 40.0);
         t.angle = 0.7;
         let p = Point::new(5.0, 9.0);
-        let back = to_local(&t, t.local_to_world(p));
+        let back = t.world_to_local(t.local_to_world(p));
         assert!((back - p).hypot() < 1e-9);
     }
 }

@@ -104,7 +104,7 @@ fn the_dark_theme_maps_colours_while_encoding() {
 }
 
 fn arrow(head: Head) -> Element {
-    let mut e = line_el("a", &ZIndex::first(), Kind::Arrow, &[(0.0, 0.0), (100.0, 40.0)]);
+    let mut e = line_el("a", &ZIndex::first(), LinearKind::Arrow, &[(0.0, 0.0), (100.0, 40.0)]);
     if let ElementKind::Arrow(d) = &mut e.kind {
         d.end_head = head;
     }

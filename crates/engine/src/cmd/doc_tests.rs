@@ -197,7 +197,7 @@ fn new_refuses_a_bad_name_and_a_full_tab_bar() {
     let (mut s, _f) = testing::session();
     let r = refuse(&mut s, "doc.new", json!({"name": "   "}));
     assert_eq!(r.code, "empty_name");
-    assert_eq!(r.message, "The name is empty. Give a name of 1 to 120 characters.");
+    assert_eq!(r.message, "The name is empty. Give a name of 1 to 256 characters.");
     for _ in 1..MAX_TABS {
         run(&mut s, "doc.new", json!({"in_new_tab": true}));
     }
@@ -1063,10 +1063,10 @@ fn rename_refuses_an_empty_name_and_a_line_break() {
     let (mut s, _f) = testing::session();
     let r = refuse(&mut s, "doc.rename", json!({"name": "  "}));
     assert_eq!(r.code, "empty_name");
-    assert_eq!(r.message, "The name is empty. Give a name of 1 to 120 characters.");
+    assert_eq!(r.message, "The name is empty. Give a name of 1 to 256 characters.");
     assert_eq!(refuse(&mut s, "doc.rename", json!({"name": "a\nb"})).code, "bad_args");
     let out = run(&mut s, "doc.rename", json!({"name": "x".repeat(300)}));
-    assert_eq!(out["name"].as_str().map(|n| n.chars().count()), Some(120));
+    assert_eq!(out["name"].as_str().map(|n| n.chars().count()), Some(drafftink_scene::limits::MAX_NAME_CHARS));
 }
 
 // ---- doc.set_background ----
@@ -1195,7 +1195,7 @@ fn export_png_with_a_renderer_that_returns_no_png_warns_and_still_returns_the_by
 }
 
 #[test]
-fn export_png_without_a_renderer_names_the_other_formats() {
+fn export_png_without_a_display_names_the_other_formats() {
     let mut s = testing::headless_session();
     rects(&mut s, 1);
     let r = refuse(&mut s, "doc.export", json!({"format": "png"}));

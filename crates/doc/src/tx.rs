@@ -2,7 +2,7 @@
 
 use std::collections::{BTreeSet, HashMap};
 
-use drafftink_scene::memory::MemoryTx;
+use drafftink_scene::MemoryTx;
 use drafftink_scene::{
     Change, ChangeKind, ChangeSet, Color, DerivedIndex, DocMeta, Element, ElementId, ElementKind, FileEntry, FileId,
     SceneRead, SceneTx, StoreError, ZIndex,

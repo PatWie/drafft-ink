@@ -10,13 +10,13 @@
 //! The module sits beside `binding`, `elbow` and `linear`, which own the solver, the router and the point
 //! editing. Nothing here holds a second copy of their rules.
 
+use drafftink_geom::aabb;
 use drafftink_geom::guides::{SmartGuide, detect_smart_guides_for_point, snap_ray_to_smart_guides};
 use drafftink_geom::kurbo::{Point, Rect, Vec2};
 use drafftink_geom::snap::{
     ENDPOINT_SNAP_RADIUS, GRID_SIZE, MAX_SNAP_CANDIDATES, SMART_GUIDE_THRESHOLD, snap_angle, snap_ray_to_grid_lines,
     snap_to_grid,
 };
-use drafftink_geom::{OrientedBox, aabb};
 use drafftink_scene::{
     BindMode, Binding, Element, ElementId, ElementKind, Kind, PathType, SceneRead, SceneTx, StoreError,
 };
@@ -337,7 +337,7 @@ fn boxes_near<'a>(elements: impl Iterator<Item = &'a Element>, skip: &[ElementId
             continue;
         }
         let t = &e.transform;
-        let b = OrientedBox::from_xywh(t.x, t.y, t.w, t.h, t.angle).aabb();
+        let b = t.obox().aabb();
         if aabb::is_finite(&b) && aabb::intersects(&b, &zone) {
             out.push(b);
         }

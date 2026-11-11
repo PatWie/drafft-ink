@@ -14,7 +14,7 @@ fn every_kind(z: &[ZIndex]) -> Vec<Element> {
     v.push(Element::new(id("ell"), ElementKind::Ellipse, z[2].clone()).with_bounds(1.0, 2.0, 30.0, 40.0));
     let mut line = Element::linear(
         id("line"),
-        Kind::Line,
+        LinearKind::Line,
         z[3].clone(),
         &[Point::new(0.0, 0.0), Point::new(10.0, 5.0), Point::new(20.0, 0.0)],
     )
@@ -46,7 +46,7 @@ fn every_kind(z: &[ZIndex]) -> Vec<Element> {
         d.brush = Brush::Calligraphy;
         d.highlighter = true;
     }
-    assert!(fh.refit_points());
+    fh.refit_points().unwrap();
     v.push(fh);
     let mut t = TextData::new("héllo\nworld");
     t.font.family = FontFamily::VanillaExtract;
@@ -183,7 +183,7 @@ fn enum_names_are_the_catalog_names() {
             .collect();
     assert_eq!(fonts, ["gelpen", "noto_sans", "gelpen_serif", "vanilla_extract"]);
     assert_eq!(Sloppiness::Drunk.roughness(), 3.5);
-    assert_eq!(FontFamily::GelPenSerif.renderer_name(), "GelPen Serif");
+    assert_eq!(FontFamily::GelPenSerif.display_name(), "GelPen Serif");
 }
 
 #[test]
@@ -208,9 +208,10 @@ fn linear_constructor_normalises_the_point_box() {
     assert_eq!((e.transform.x, e.transform.y, e.transform.w, e.transform.h), (100.0, 20.0, 60.0, 70.0));
     assert_eq!(e.points().unwrap()[0], Point::new(0.0, 30.0));
     assert_eq!(validate_element(&e), Ok(()));
-    assert!(Element::linear(id("x"), Kind::Rectangle, ZIndex::first(), &[Point::ZERO]).is_none());
-    assert!(Element::linear(id("x"), Kind::Line, ZIndex::first(), &[]).is_none());
-    assert!(Element::linear(id("x"), Kind::Line, ZIndex::first(), &[Point::new(f64::NAN, 0.0)]).is_none());
+    assert_eq!(LinearKind::try_from(Kind::Rectangle), Err(Kind::Rectangle));
+    assert_eq!(LinearKind::try_from(Kind::Arrow), Ok(LinearKind::Arrow));
+    assert!(Element::linear(id("x"), LinearKind::Line, ZIndex::first(), &[]).is_none());
+    assert!(Element::linear(id("x"), LinearKind::Line, ZIndex::first(), &[Point::new(f64::NAN, 0.0)]).is_none());
 }
 
 #[test]
@@ -224,14 +225,14 @@ fn refit_keeps_world_positions_also_when_rotated() {
     }
     let moved_world_first = e.transform.local_to_world(Point::new(-30.0, -10.0));
     let second_world = world_before[1];
-    assert!(e.refit_points());
+    e.refit_points().unwrap();
     let after: Vec<Point> = e.points().unwrap().iter().map(|p| e.transform.local_to_world(*p)).collect();
     assert!((after[0] - moved_world_first).hypot() < 1e-9, "{:?} vs {:?}", after[0], moved_world_first);
     assert!((after[1] - second_world).hypot() < 1e-9);
     assert_eq!(validate_element(&e), Ok(()));
     // Idempotent.
     let t = e.transform;
-    assert!(e.refit_points());
+    e.refit_points().unwrap();
     assert!((e.transform.x - t.x).abs() < 1e-9 && (e.transform.w - t.w).abs() < 1e-9);
 }
 
@@ -243,7 +244,7 @@ fn refit_shifts_fixed_segments_with_the_points() {
         d.fixed_segments = vec![FixedSegment { index: 1, start: Point::new(0.0, 0.0), end: Point::new(40.0, 0.0) }];
         d.points[2] = Point::new(40.0, -30.0);
     }
-    assert!(e.refit_points());
+    e.refit_points().unwrap();
     let d = e.linear_data().unwrap();
     assert_eq!(d.fixed_segments[0].start, Point::new(0.0, 30.0));
     assert_eq!(validate_element(&e), Ok(()));

@@ -11,7 +11,7 @@
     { "execute": "library.add", "args": { "ids": ["e1", "e3"], "name": "Pair" }, "expect": [
         { "path": "$.item.name", "eq": "Pair" }, { "path": "$.item.element_count", "eq": 3, "note": "The rectangle, its label and the ellipse." },
         { "path": "$.item.bounds", "eq": [0, 0, 300, 60], "note": "Moved so that its top-left corner is at 0, 0." } ], "save": { "pair": "$.item.id" } },
-    { "execute": "library.add", "args": { "ids": ["e1"], "name": "   " }, "refused": "empty_name", "text": "The name is empty. Give a name of 1 to 120 characters." },
+    { "execute": "library.add", "args": { "ids": ["e1"], "name": "   " }, "refused": "empty_name", "text": "The name is empty. Give a name of 1 to 256 characters." },
     { "execute": "library.add", "args": { "ids": ["e3"] }, "expect": [ { "path": "$.item.name", "eq": null } ] },
     { "assert": "library.list", "expect": [ { "path": "$.items", "len": 2 } ] },
     { "assert": "library.list", "args": { "search": "PAIR" }, "expect": [ { "path": "$.items", "len": 1, "note": "The search ignores case." }, { "path": "$.items[0].id", "eq": "{{pair}}" } ] },

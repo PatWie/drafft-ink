@@ -40,7 +40,7 @@ pub fn ellipse_el(name: &str, z: &ZIndex, x: f64, y: f64, w: f64, h: f64) -> Ele
     Element::new(id(name), ElementKind::Ellipse, z.clone()).with_bounds(x, y, w, h)
 }
 
-pub fn line_el(name: &str, z: &ZIndex, kind: Kind, pts: &[(f64, f64)]) -> Element {
+pub fn line_el(name: &str, z: &ZIndex, kind: LinearKind, pts: &[(f64, f64)]) -> Element {
     let pts: Vec<Point> = pts.iter().map(|(x, y)| Point::new(*x, *y)).collect();
     Element::linear(id(name), kind, z.clone(), &pts).unwrap()
 }
@@ -56,7 +56,7 @@ pub fn freehand_el(name: &str, z: &ZIndex, x: f64, y: f64, n: usize, rng: &mut R
     }
     let mut e = Element::new(id(name), ElementKind::Freehand(data), z.clone());
     e.transform = Transform::new(x, y, 0.0, 0.0);
-    assert!(e.refit_points());
+    e.refit_points().unwrap();
     e
 }
 
@@ -113,9 +113,10 @@ pub fn mixed_elements(n: usize, seed: u64, ts: &mut Typesetter) -> Vec<Element> 
                 e
             }
             1 => ellipse_el(&name, z, x, y, rng.range(40.0, 110.0), rng.range(30.0, 90.0)),
-            2 => line_el(&name, z, Kind::Line, &[(x, y), (x + 40.0, y + 30.0), (x + 90.0, y + 10.0)]),
+            2 => line_el(&name, z, LinearKind::Line, &[(x, y), (x + 40.0, y + 30.0), (x + 90.0, y + 10.0)]),
             3 => {
-                let mut e = line_el(&name, z, Kind::Arrow, &[(x, y), (x + 60.0, y + 40.0), (x + 100.0, y + 40.0)]);
+                let mut e =
+                    line_el(&name, z, LinearKind::Arrow, &[(x, y), (x + 60.0, y + 40.0), (x + 100.0, y + 40.0)]);
                 if let ElementKind::Arrow(d) = &mut e.kind {
                     d.end_head = Head::Arrow;
                 }

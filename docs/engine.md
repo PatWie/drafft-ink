@@ -91,7 +91,7 @@ Document edits go through the tab's document:
 ```rust
 let cmd = s.cmd();
 s.tab_mut().doc.edit::<(), StoreError>(|tx| {
-    let z = tx.next_top_index().map_err(|e| StoreError::Backend(e.to_string()))?;
+    let z = tx.next_top_index().map_err(StoreError::backend)?;
     tx.insert(Element::new(id, kind, z))
 }).map_err(|e| Refusal::internal(cmd, e.to_string()))?;
 ```

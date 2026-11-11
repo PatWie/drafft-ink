@@ -38,11 +38,7 @@ pub fn chrome_trace() -> Value {
         events.push(json!({"ph": "X", "name": e.name, "cat": "span", "pid": PID, "tid": e.tid, "ts": us(e.start_ns), "dur": us(e.dur_ns)}));
     }
     for f in frame_records() {
-        let reasons: Vec<&str> = crate::RedrawReason::ALL
-            .iter()
-            .filter(|r| f.reasons & (1u32 << r.index()) != 0)
-            .map(|r| r.name())
-            .collect();
+        let reasons: Vec<&str> = f.reasons.iter().map(|r| r.name()).collect();
         events.push(json!({
             "ph": "X", "name": "frame", "cat": "frame", "pid": PID, "tid": FRAMES_TID,
             "ts": us(f.start_ns), "dur": us(f.total_ns), "args": {"reasons": reasons},

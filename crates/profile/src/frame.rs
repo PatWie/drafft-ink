@@ -8,7 +8,7 @@ use std::collections::{BTreeMap, VecDeque};
 use serde::{Deserialize, Serialize};
 
 use crate::clock::ns_to_ms;
-use crate::names::{Phase, RedrawReason};
+use crate::names::{Phase, RedrawReason, RedrawReasons};
 
 /// Frames kept in the rolling window by default (about 17 s at 60 fps).
 pub const DEFAULT_WINDOW: usize = 1024;
@@ -32,8 +32,8 @@ pub struct FrameRecord {
     pub interval_ns: u64,
     /// Time in each [`Phase`].
     pub phases_ns: [u64; Phase::COUNT],
-    /// Redraw reasons pending when the frame began, one bit per [`RedrawReason`].
-    pub reasons: u32,
+    /// Redraw reasons pending when the frame began.
+    pub reasons: RedrawReasons,
 }
 
 impl FrameRecord {
@@ -47,7 +47,7 @@ impl FrameRecord {
 struct Open {
     start_ns: u64,
     interval_ns: u64,
-    reasons: u32,
+    reasons: RedrawReasons,
     phases_ns: [u64; Phase::COUNT],
 }
 
@@ -86,9 +86,9 @@ impl FrameRecorder {
         self.capacity
     }
 
-    /// Start a frame at `now_ns` that was requested for the reasons in the `reasons` bit mask.
+    /// Start a frame at `now_ns` that was requested for `reasons`.
     /// A frame still open is ended first, at `now_ns`.
-    pub fn begin(&mut self, now_ns: u64, reasons: u32) {
+    pub fn begin(&mut self, now_ns: u64, reasons: RedrawReasons) {
         if self.open.is_some() {
             self.end(now_ns);
         }
@@ -126,13 +126,11 @@ impl FrameRecorder {
         if rec.total_ns > BUDGET_30FPS_NS {
             self.over_budget_30 = self.over_budget_30.saturating_add(1);
         }
-        if rec.reasons == 0 {
+        if rec.reasons.is_empty() {
             self.unexplained = self.unexplained.saturating_add(1);
         }
-        for r in RedrawReason::ALL {
-            if rec.reasons & (1u32 << r.index()) != 0
-                && let Some(c) = self.by_reason.get_mut(r.index())
-            {
+        for r in rec.reasons.iter() {
+            if let Some(c) = self.by_reason.get_mut(r.index()) {
                 *c = c.saturating_add(1);
             }
         }
@@ -287,8 +285,9 @@ mod tests {
     use super::*;
 
     const MS: u64 = 1_000_000;
+    const STARTUP: RedrawReasons = RedrawReasons::of(RedrawReason::Startup);
 
-    fn frame(r: &mut FrameRecorder, start_ms: u64, dur_ms: u64, reasons: u32) {
+    fn frame(r: &mut FrameRecorder, start_ms: u64, dur_ms: u64, reasons: RedrawReasons) {
         r.begin(start_ms * MS, reasons);
         r.end((start_ms + dur_ms) * MS);
     }
@@ -298,7 +297,7 @@ mod tests {
         let mut r = FrameRecorder::new(1000);
         // frame times 1..=100 ms
         for i in 1..=100u64 {
-            frame(&mut r, i * 200, i, 1);
+            frame(&mut r, i * 200, i, STARTUP);
         }
         let s = r.stats();
         assert_eq!(s.window, 100);
@@ -313,7 +312,7 @@ mod tests {
     fn window_rolls_but_totals_keep_counting() {
         let mut r = FrameRecorder::new(10);
         for i in 0..25u64 {
-            frame(&mut r, i * 20, if i < 15 { 40 } else { 5 }, 1);
+            frame(&mut r, i * 20, if i < 15 { 40 } else { 5 }, STARTUP);
         }
         let s = r.stats();
         assert_eq!(s.total, 25);
@@ -327,9 +326,9 @@ mod tests {
     #[test]
     fn budget_thresholds_are_strict() {
         let mut r = FrameRecorder::new(10);
-        r.begin(0, 1);
+        r.begin(0, STARTUP);
         r.end(BUDGET_60FPS_NS);
-        r.begin(100 * MS, 1);
+        r.begin(100 * MS, STARTUP);
         r.end(100 * MS + BUDGET_60FPS_NS + 1);
         assert_eq!(r.stats().over_16_7ms, 1);
     }
@@ -337,7 +336,7 @@ mod tests {
     #[test]
     fn phases_accumulate_and_the_rest_is_other() {
         let mut r = FrameRecorder::new(10);
-        r.begin(0, 1);
+        r.begin(0, STARTUP);
         r.add_phase(Phase::Encode, 3 * MS);
         r.add_phase(Phase::Encode, 2 * MS);
         r.add_phase(Phase::Ui, MS);
@@ -356,7 +355,7 @@ mod tests {
     fn phase_time_outside_a_frame_is_ignored() {
         let mut r = FrameRecorder::new(10);
         r.add_phase(Phase::Encode, MS);
-        r.begin(0, 1);
+        r.begin(0, STARTUP);
         let rec = r.end(MS).unwrap();
         assert_eq!(rec.phases_ns, [0; Phase::COUNT]);
         assert!(r.end(2 * MS).is_none());
@@ -365,11 +364,11 @@ mod tests {
     #[test]
     fn reasons_and_unexplained_frames() {
         let mut r = FrameRecorder::new(10);
-        let hover = 1u32 << RedrawReason::HoverChange.index();
-        let both = hover | (1u32 << RedrawReason::Collab.index());
+        let hover = RedrawReasons::of(RedrawReason::HoverChange);
+        let both = RedrawReasons::from_iter([RedrawReason::HoverChange, RedrawReason::Collab]);
         frame(&mut r, 0, 1, hover);
         frame(&mut r, 20, 1, both);
-        frame(&mut r, 40, 1, 0);
+        frame(&mut r, 40, 1, RedrawReasons::NONE);
         let s = r.stats();
         assert_eq!(s.unexplained, 1);
         assert_eq!(s.by_reason["hover_change"], 2);
@@ -382,7 +381,7 @@ mod tests {
     fn histogram_buckets_are_fixed() {
         let mut r = FrameRecorder::new(100);
         for (i, ms) in [0u64, 1, 2, 9, 16, 17, 600].into_iter().enumerate() {
-            frame(&mut r, i as u64 * 1000, ms, 1);
+            frame(&mut r, i as u64 * 1000, ms, STARTUP);
         }
         let h = r.stats().histogram;
         assert_eq!(h.upper_ms.len() + 1, h.counts.len());
@@ -400,7 +399,7 @@ mod tests {
     fn intervals_and_fps() {
         let mut r = FrameRecorder::new(100);
         for i in 0..11u64 {
-            frame(&mut r, i * 20, 2, 1); // 50 fps
+            frame(&mut r, i * 20, 2, STARTUP); // 50 fps
         }
         let s = r.stats();
         assert_eq!(s.fps, 50.0);
@@ -412,8 +411,8 @@ mod tests {
     #[test]
     fn a_new_begin_ends_an_open_frame() {
         let mut r = FrameRecorder::new(10);
-        r.begin(0, 1);
-        r.begin(5 * MS, 1);
+        r.begin(0, STARTUP);
+        r.begin(5 * MS, STARTUP);
         assert_eq!(r.total_frames(), 1);
         assert!(r.is_open());
         assert_eq!(r.window().next().unwrap().total_ns, 5 * MS);
@@ -431,7 +430,7 @@ mod tests {
     #[test]
     fn reset_clears_but_keeps_capacity() {
         let mut r = FrameRecorder::new(7);
-        frame(&mut r, 0, 1, 0);
+        frame(&mut r, 0, 1, RedrawReasons::NONE);
         r.reset();
         assert_eq!(r.total_frames(), 0);
         assert_eq!(r.stats().unexplained, 0);

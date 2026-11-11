@@ -106,7 +106,7 @@ impl Core {
     /// Runs `f` in one transaction. An error from `f` leaves the scene as it was.
     pub(crate) fn run<T>(
         &mut self,
-        f: impl FnOnce(&mut drafftink_scene::memory::MemoryTx<'_>, &mut OpCx<'_>) -> Result<T, ApiError>,
+        f: impl FnOnce(&mut drafftink_scene::MemoryTx<'_>, &mut OpCx<'_>) -> Result<T, ApiError>,
     ) -> Result<T, ApiError> {
         let Self { canvas, ids, fonts, default_style, .. } = self;
         let mut failure = None;
@@ -114,7 +114,7 @@ impl Core {
             let mut cx = OpCx { ids, fonts, default_style };
             f(tx, &mut cx).map_err(|e| {
                 failure = Some(e);
-                StoreError::Backend("the transaction was aborted".to_owned())
+                StoreError::backend("the transaction was aborted")
             })
         });
         match (result, failure) {

@@ -106,6 +106,25 @@ fn guide(kind: SmartGuideKind, position: f64, start: f64, end: f64) -> SmartGuid
     SmartGuide { kind, position, start, end, snap_points: Vec::new() }
 }
 
+/// The closest alignment of the dragged box's left, right and centre with those of any other box, closer than `dist`
+/// (which is lowered to the distance found): where the dragged box's left edge must go, the guide's x, and the box
+/// aligned with.
+fn closest_alignment(dragged: Rect, others: &[Rect], dist: &mut f64) -> AxisBest {
+    let mut best: AxisBest = None;
+    for other in others {
+        for dx in x_lines(&dragged) {
+            for ox in x_lines(other) {
+                let d = (dx - ox).abs();
+                if d < *dist {
+                    *dist = d;
+                    best = Some((dragged.x0 + (ox - dx), ox, *other));
+                }
+            }
+        }
+    }
+    best
+}
+
 /// Detect smart guides for a dragged box against other boxes.
 ///
 /// Compares the left, centre and right of the dragged box with those of every other box (and top,
@@ -119,35 +138,15 @@ pub fn detect_smart_guides(dragged: Rect, others: &[Rect], threshold: f64) -> Sm
     let dragged = aabb::normalize(dragged);
     let others: Vec<Rect> = others.iter().filter(|r| aabb::is_finite(r)).map(|r| aabb::normalize(*r)).collect();
 
-    let (cx, cy) = (mid(dragged.x0, dragged.x1), mid(dragged.y0, dragged.y1));
-    let w = dragged.x1 - dragged.x0;
+    let (cy, w) = (mid(dragged.y0, dragged.y1), dragged.x1 - dragged.x0);
 
-    let mut best_dx: AxisBest = None;
-    let mut best_dy: AxisBest = None;
     let mut dist_x = threshold;
     let mut dist_y = threshold;
-
-    for other in &others {
-        let (ocx, ocy) = (mid(other.x0, other.x1), mid(other.y0, other.y1));
-        for dx in [dragged.x0, dragged.x1, cx] {
-            for ox in [other.x0, other.x1, ocx] {
-                let d = (dx - ox).abs();
-                if d < dist_x {
-                    dist_x = d;
-                    best_dx = Some((dragged.x0 + (ox - dx), ox, *other));
-                }
-            }
-        }
-        for dy in [dragged.y0, dragged.y1, cy] {
-            for oy in [other.y0, other.y1, ocy] {
-                let d = (dy - oy).abs();
-                if d < dist_y {
-                    dist_y = d;
-                    best_dy = Some((dragged.y0 + (oy - dy), oy, *other));
-                }
-            }
-        }
-    }
+    let mut best_dx: AxisBest = closest_alignment(dragged, &others, &mut dist_x);
+    // The vertical pass is the horizontal pass on transposed rects.
+    let others_t: Vec<Rect> = others.iter().copied().map(transpose).collect();
+    let mut best_dy: AxisBest =
+        closest_alignment(transpose(dragged), &others_t, &mut dist_y).map(|(a, b, r)| (a, b, transpose(r)));
 
     // Equal spacing looks at real boxes only, not points.
     let boxes: Vec<Rect> = others.iter().filter(|r| !r.is_zero_area()).copied().collect();
@@ -207,6 +206,20 @@ pub fn detect_smart_guides(dragged: Rect, others: &[Rect], threshold: f64) -> Sm
     result
 }
 
+/// The line closest to `coord` among `lines` (a position and the extent of the box it belongs to) and closer than
+/// `dist`, which is lowered to the distance found. The first of equally close lines wins.
+fn closest_line(coord: f64, lines: impl Iterator<Item = (f64, (f64, f64))>, dist: &mut f64) -> Option<(f64, f64, f64)> {
+    let mut best = None;
+    for (pos, (lo, hi)) in lines {
+        let d = (coord - pos).abs();
+        if d < *dist {
+            *dist = d;
+            best = Some((pos, lo, hi));
+        }
+    }
+    best
+}
+
 /// Detect smart guides for a single point, such as a line or arrow endpoint, against boxes.
 /// There is no equal spacing for points.
 pub fn detect_smart_guides_for_point(point: Point, others: &[Rect], threshold: f64) -> SmartGuideResult {
@@ -215,26 +228,12 @@ pub fn detect_smart_guides_for_point(point: Point, others: &[Rect], threshold: f
         return result;
     }
     let others: Vec<Rect> = others.iter().filter(|r| aabb::is_finite(r)).map(|r| aabb::normalize(*r)).collect();
-    let mut best_dx: Option<(f64, f64, f64)> = None; // (x, other.y0, other.y1)
-    let mut best_dy: Option<(f64, f64, f64)> = None; // (y, other.x0, other.x1)
-    let (mut dist_x, mut dist_y) = (threshold, threshold);
-
-    for o in &others {
-        for ox in [o.x0, o.x1, mid(o.x0, o.x1)] {
-            let d = (point.x - ox).abs();
-            if d < dist_x {
-                dist_x = d;
-                best_dx = Some((ox, o.y0, o.y1));
-            }
-        }
-        for oy in [o.y0, o.y1, mid(o.y0, o.y1)] {
-            let d = (point.y - oy).abs();
-            if d < dist_y {
-                dist_y = d;
-                best_dy = Some((oy, o.x0, o.x1));
-            }
-        }
-    }
+    let across = |r: &Rect| (r.y0, r.y1);
+    let mut dist_x = threshold;
+    let mut dist_y = threshold;
+    let best_dx = closest_line(point.x, others.iter().flat_map(|o| x_lines(o).map(|ox| (ox, across(o)))), &mut dist_x);
+    let best_dy =
+        closest_line(point.y, others.iter().flat_map(|o| y_lines(o).map(|oy| (oy, (o.x0, o.x1)))), &mut dist_y);
 
     if let Some((gx, y0, y1)) = best_dx {
         result.point.x = gx;

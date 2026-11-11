@@ -192,7 +192,7 @@ pub(super) fn autosave(s: &mut Session, _: crate::spec::NoArgs) -> Result<Autosa
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct RenameArgs {
-    /// The new name, 1 to 120 characters (trimmed).
+    /// The new name, 1 to 256 characters (trimmed).
     pub name: String,
 }
 

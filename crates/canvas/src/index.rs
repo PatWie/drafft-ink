@@ -32,7 +32,7 @@ use std::cmp::Ordering;
 use drafftink_geom::kurbo::{Point, Rect};
 use drafftink_geom::lasso::{Lasso, lasso_selects};
 use drafftink_geom::select::{MarqueeMode as GeomMarquee, marquee_selects};
-use drafftink_geom::{HitOpts, Outline, RectShape, SpatialIndex, aabb};
+use drafftink_geom::{Fill, HitOpts, Outline, RectShape, SpatialIndex, aabb};
 use drafftink_profile::{Counter, count, inc};
 use drafftink_scene::{ChangeKind, ChangeSet, Element, ElementId, ElementKind, GroupId, SceneRead};
 use serde::{Deserialize, Serialize};
@@ -362,9 +362,11 @@ impl SceneIndex {
             let Some(shape) = shape_of(e) else { continue };
             let selected = match (mode, matches!(e.kind, ElementKind::Frame(_))) {
                 (MarqueeMode::Contain, _) | (MarqueeMode::Intersect, true) => {
-                    marquee_selects(&shape, &rect, GeomMarquee::Contain, false)
+                    marquee_selects(&shape, &rect, GeomMarquee::Contain, Fill::Stroke)
                 }
-                (MarqueeMode::Intersect, false) => marquee_selects(&shape, &rect, GeomMarquee::Touch, hits_inside(e)),
+                (MarqueeMode::Intersect, false) => {
+                    marquee_selects(&shape, &rect, GeomMarquee::Touch, Fill::from(hits_inside(e)))
+                }
             };
             if selected {
                 found.push(e);
@@ -394,9 +396,11 @@ impl SceneIndex {
             let Some(shape) = shape_of(e) else { continue };
             let selected = match (mode, matches!(e.kind, ElementKind::Frame(_))) {
                 (MarqueeMode::Contain, _) | (MarqueeMode::Intersect, true) => {
-                    lasso_selects(&shape, lasso, GeomMarquee::Contain, false)
+                    lasso_selects(&shape, lasso, GeomMarquee::Contain, Fill::Stroke)
                 }
-                (MarqueeMode::Intersect, false) => lasso_selects(&shape, lasso, GeomMarquee::Touch, hits_inside(e)),
+                (MarqueeMode::Intersect, false) => {
+                    lasso_selects(&shape, lasso, GeomMarquee::Touch, Fill::from(hits_inside(e)))
+                }
             };
             if selected {
                 found.push(e);

@@ -18,18 +18,15 @@ use std::sync::{Mutex, MutexGuard, PoisonError};
 
 use crate::clock::now_ns;
 use crate::frame::FrameStats;
-use crate::names::{Counter, Gauge, RedrawReason};
+use crate::names::{Counter, Gauge, RedrawReason, RedrawReasons};
 use crate::stats::PerfStats;
 
 /// Named (ad hoc) counters kept per process and per thread; further new names are ignored.
-pub const MAX_NAMED: usize = 64;
+pub(crate) const MAX_NAMED: usize = 64;
 /// Redraw events kept for `PerfStats.redraws.recent` and the trace.
-pub const RECENT_REDRAWS: usize = 256;
+pub(crate) const RECENT_REDRAWS: usize = 256;
 /// Redraw reasons a thread remembers for [`WorkScope::redraw_reasons`].
 const LOG_CAP: usize = 4096;
-
-// Pending redraw reasons are one bit each in a u32.
-const _: () = assert!(RedrawReason::COUNT <= 32);
 
 static COUNTERS: [AtomicU64; Counter::COUNT] = [const { AtomicU64::new(0) }; Counter::COUNT];
 static GAUGES: [AtomicU64; Gauge::COUNT] = [const { AtomicU64::new(0) }; Gauge::COUNT];
@@ -86,7 +83,7 @@ pub fn inc(counter: Counter) {
 }
 
 /// Add `n` to an ad hoc counter that has no [`Counter`] variant, for a quick local check.
-/// It takes a lock, so keep it out of hot loops. At most [`MAX_NAMED`] distinct names are kept.
+/// It takes a lock, so keep it out of hot loops. At most `MAX_NAMED` (64) distinct names are kept.
 pub fn count_named(name: &'static str, n: u64) {
     bump_named(&mut lock(&NAMED), name, n);
     let _ = LOCAL.try_with(|l| bump_named(&mut l.named.borrow_mut(), name, n));
@@ -122,7 +119,7 @@ pub fn redraw(reason: RedrawReason) {
     if let Some(a) = REDRAWS.get(reason.index()) {
         a.fetch_add(1, Ordering::Relaxed);
     }
-    PENDING.fetch_or(1u32 << reason.index(), Ordering::Relaxed);
+    PENDING.fetch_or(RedrawReasons::of(reason).bits(), Ordering::Relaxed);
     {
         let mut recent = lock(&RECENT);
         if recent.len() >= RECENT_REDRAWS {
@@ -143,9 +140,9 @@ pub fn redraw(reason: RedrawReason) {
     });
 }
 
-/// Take (and clear) the reasons requested since the last call, as a bit mask.
-pub(crate) fn take_pending_reasons() -> u32 {
-    PENDING.swap(0, Ordering::Relaxed)
+/// Take (and clear) the reasons requested since the last call.
+pub(crate) fn take_pending_reasons() -> RedrawReasons {
+    RedrawReasons::from_bits(PENDING.swap(0, Ordering::Relaxed))
 }
 
 pub(crate) fn global_counters() -> [u64; Counter::COUNT] {

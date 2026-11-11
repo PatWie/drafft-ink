@@ -1,8 +1,4 @@
-//! The little geometry the model needs itself: serde forms for points and the bounding box of a point list.
-//!
-//! Everything else (hit testing, outlines, snapping) is the `geom` crate's job.
-
-use kurbo::Point;
+//! Serde forms for points. Everything geometric (bounds, hit testing, outlines, snapping) is the `geom` crate's job.
 
 /// Serde for one [`Point`]: written as `[x, y]`, read from `[x, y]` or `{"x": x, "y": y}`.
 pub mod pt {
@@ -49,21 +45,10 @@ pub mod pts {
     }
 }
 
-/// The smallest rectangle `(min_x, min_y, max_x, max_y)` around `points`, or `None` when empty.
-pub fn points_bounds(points: &[Point]) -> Option<(f64, f64, f64, f64)> {
-    let first = points.first()?;
-    let mut b = (first.x, first.y, first.x, first.y);
-    for p in points {
-        b.0 = b.0.min(p.x);
-        b.1 = b.1.min(p.y);
-        b.2 = b.2.max(p.x);
-        b.3 = b.3.max(p.y);
-    }
-    Some(b)
-}
-
 #[cfg(test)]
 mod tests {
+    use kurbo::Point;
+
     use super::*;
 
     #[derive(serde::Serialize, serde::Deserialize, PartialEq, Debug)]
@@ -83,12 +68,5 @@ mod tests {
         assert!(serde_json::from_str::<W>(r#"{"p":[1],"v":[]}"#).is_err());
         assert!(serde_json::from_str::<W>(r#"{"p":[1,2,3],"v":[]}"#).is_err());
         assert!(serde_json::from_str::<W>(r#"{"p":"a","v":[]}"#).is_err());
-    }
-
-    #[test]
-    fn bounds() {
-        assert_eq!(points_bounds(&[]), None);
-        let b = points_bounds(&[Point::new(1.0, 5.0), Point::new(-2.0, 3.0), Point::new(4.0, 9.0)]);
-        assert_eq!(b, Some((-2.0, 3.0, 4.0, 9.0)));
     }
 }

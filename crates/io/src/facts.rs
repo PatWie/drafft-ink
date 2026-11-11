@@ -21,6 +21,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
+use drafftink_geom::aabb;
 use drafftink_scene::{Document, Element, ElementKind, FontFamily, Kind, SeqIds};
 use kurbo::{Point, Rect, Vec2};
 use serde_json::Value;
@@ -221,10 +222,7 @@ fn old_style_bounds(e: &Element, bakes: &[Bake]) -> Option<Rect> {
             }
             match &e.kind {
                 ElementKind::Arrow(d) => Some(legacy_arrow_rect(&pts, d.head_size.unwrap_or(15.0))),
-                _ => {
-                    let (a, b, c, d) = drafftink_scene::geom::points_bounds(&pts)?;
-                    Some(Rect::new(a, b, c, d))
-                }
+                _ => aabb::from_points(pts.iter().copied()),
             }
         }
         ElementKind::Math(_) | ElementKind::Frame(_) | ElementKind::Diamond => None,
@@ -480,9 +478,7 @@ fn leaf_details(r: &mut FixtureReport, e: &Element, l: &Fact, source: Option<&Va
                 format!("{}: character count", e.id)
             });
             if let Some(f) = x.get("font_family").and_then(Value::as_str) {
-                r.check(f == t.font.family.renderer_name(), || {
-                    format!("{}: font {:?}, old {f:?}", e.id, t.font.family)
-                });
+                r.check(f == t.font.family.display_name(), || format!("{}: font {:?}, old {f:?}", e.id, t.font.family));
             }
             if let Some(s) = x.get("font_size").and_then(Value::as_f64) {
                 r.check((t.font.size - s.max(1.0)).abs() <= TOLERANCE, || {

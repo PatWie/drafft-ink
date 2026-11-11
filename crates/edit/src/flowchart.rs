@@ -10,7 +10,6 @@
 //! and so on), then one more row out. [`plan_nodes`] lists these spots so a UI can preview them and cycle through
 //! them with [`next_slot`]; [`create_connected_nodes`] creates the nodes and their bound arrows.
 
-use drafftink_geom::OrientedBox;
 use drafftink_geom::kurbo::{Point, Rect};
 
 use crate::binding::BindingError;
@@ -131,7 +130,7 @@ fn check_parent<'a, R: SceneRead>(r: &'a R, id: &ElementId) -> Result<&'a Elemen
 
 fn aabb(e: &Element) -> Rect {
     let t = &e.transform;
-    OrientedBox::from_xywh(t.x, t.y, t.w, t.h, t.angle).aabb()
+    t.obox().aabb()
 }
 
 /// The free spots for new nodes of the parent's size next to `from`, nearest to straight ahead first. At most

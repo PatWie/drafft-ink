@@ -869,11 +869,11 @@ fn add(s: &mut Session, a: AddArgs) -> Result<Value, Refusal> {
     s.tab_mut()
         .doc
         .edit::<(), StoreError>(|tx| {
-            let z = tx.next_top_index().map_err(|e| StoreError::Backend(e.to_string()))?;
+            let z = tx.next_top_index().map_err(StoreError::backend)?;
             let mut e = Element::new(id, ElementKind::Rectangle, z);
             e.transform = drafftink_scene::Transform::new(a.x, 0.0, 50.0, 50.0);
             if let Some(g) = &a.group {
-                e.group_ids.push(GroupId::new(g).map_err(|e| StoreError::Backend(e.to_string()))?);
+                e.group_ids.push(GroupId::new(g).map_err(StoreError::backend)?);
             }
             tx.insert(e)
         })

@@ -15,7 +15,8 @@ use crate::element::Element;
 use crate::id::{ElementId, FileId};
 use crate::limits::{MAX_ELEMENTS, MAX_FILE_BYTES, MAX_FILES};
 use crate::store::{
-    Change, ChangeKind, ChangeSet, Fields, SceneRead, SceneStore, SceneTx, StoreError, SubscriptionId, load_document,
+    Change, ChangeKind, ChangeSet, Fields, FileRejection, SceneRead, SceneStore, SceneTx, StoreError, SubscriptionId,
+    load_document,
 };
 use crate::validate::{is_image_media_type, is_valid_name, validate_element};
 use crate::zindex::ZIndex;
@@ -299,20 +300,17 @@ impl SceneTx for MemoryTx<'_> {
 
     fn put_file(&mut self, entry: FileEntry) -> Result<FileId, StoreError> {
         if !is_image_media_type(&entry.mime) {
-            return Err(StoreError::BadFile(format!("{:?} is not an image media type like image/png", entry.mime)));
+            return Err(FileRejection::MediaType(entry.mime).into());
         }
         if entry.bytes.len() > MAX_FILE_BYTES {
-            return Err(StoreError::BadFile(format!(
-                "{} bytes is over the {MAX_FILE_BYTES} byte limit",
-                entry.bytes.len()
-            )));
+            return Err(FileRejection::TooLarge { len: entry.bytes.len(), max: MAX_FILE_BYTES }.into());
         }
         let id = FileId::of(&entry.bytes);
         if self.store.files.contains_key(&id) {
             return Ok(id);
         }
         if self.store.files.len() >= MAX_FILES {
-            return Err(StoreError::BadFile(format!("the document already holds {MAX_FILES} files")));
+            return Err(FileRejection::TooMany { max: MAX_FILES }.into());
         }
         self.files.entry(id.clone()).or_insert(None);
         self.store.files.insert(id.clone(), entry);

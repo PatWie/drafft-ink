@@ -18,9 +18,10 @@ use vello::Scene;
 
 use crate::cache::{FragmentCache, Outcome};
 use crate::grid::{GridSpec, GridStats, paint_grid};
-use crate::options::RenderOptions;
+use crate::options::{LodConfig, RenderOptions};
 use crate::painter::ElementPainter;
 use crate::spec::{element_to_world, world_aabb};
+use crate::theme::{Theme, scale_alpha};
 use crate::view::View;
 
 /// What one call to [`SceneComposer::compose`] did.
@@ -234,103 +235,59 @@ impl SceneComposer {
 
         // 2. Draw.
         let files = |id: &FileId| store.file(id).map(|f| Arc::clone(&f.bytes));
-        let mut frames: HashMap<ElementId, Option<FrameClip>> = HashMap::new();
-        let mut open_clip: Option<ElementId> = None;
+        let mut clips = FrameClips::default();
         let mut cheap = 0usize;
         let SceneComposer { painter, cache, options, trace, .. } = self;
         for c in &candidates {
             let el = c.el;
 
             // Frame clipping: cull what lies outside the frame, clip what crosses its edge.
-            let mut crossing: Option<(ElementId, FrameClip)> = None;
-            if let Some(fid) = &el.frame_id {
-                let clip = *frames.entry(fid.clone()).or_insert_with(|| frame_clip(store, fid));
-                if let Some(clip) = clip {
-                    if !aabb::intersects(&clip.world, &c.bounds) {
-                        rep.culled += 1;
-                        continue;
-                    }
-                    if !aabb::contains_rect(&clip.world, &c.bounds) {
-                        crossing = Some((fid.clone(), clip));
-                    }
-                }
-            }
-            if let Some(open) = &open_clip
-                && el.frame_id.as_ref() != Some(open)
-            {
-                scene.pop_layer();
-                open_clip = None;
-            }
-
-            // Level of detail.
-            let px = c.bounds.width().max(c.bounds.height()) * scale;
-            let mut cheap_kind = None;
-            if px < lod.skip_below_px {
-                rep.lod_skipped += 1;
-                continue;
-            } else if px < lod.box_below_px {
-                cheap_kind = Some(Cheap::Box);
-            } else if let ElementKind::Text(t) = &el.kind
-                && t.font.size * scale < lod.greek_text_below_px
-            {
-                cheap_kind = Some(Cheap::Greek);
-            }
-            if let Some(kind) = cheap_kind {
-                if cheap >= lod.max_cheap_per_frame {
-                    rep.lod_dropped += 1;
-                    continue;
-                }
-                cheap += 1;
-                if let Some(t) = trace {
-                    t.push(el.id.clone());
-                }
-                let base = to_dev * element_to_world(el);
-                match kind {
-                    Cheap::Box => {
-                        draw_box(scene, base, el, scale, options.theme);
-                        rep.lod_boxes += 1;
-                    }
-                    Cheap::Greek => {
-                        draw_greek(scene, base, el, options.theme);
-                        rep.lod_greeked += 1;
-                    }
-                }
+            let verdict = clips.verdict(store, el, &c.bounds);
+            if matches!(verdict, FrameVerdict::Outside) {
+                rep.culled += 1;
                 continue;
             }
+            clips.close_if_left(scene, el);
 
-            if let Some((fid, clip)) = crossing
-                && open_clip.is_none()
-            {
-                scene.push_clip_layer(Fill::NonZero, to_dev * clip.to_world, &clip.local);
-                open_clip = Some(fid);
-                rep.clips += 1;
-            }
-
-            // A placeholder whose picture has since arrived is encoded again.
-            let stale = cache
-                .awaiting(&el.id, theme)
-                .is_some_and(|fid| painter.images().changed_since_placeholder(fid, || files(fid).is_some()));
-            let (fragment, outcome) =
-                cache.get_or_paint(el, theme, stale, || painter.paint(el, options, typesetter, &files));
-            match outcome {
-                Outcome::Hit => rep.cache_hits += 1,
-                Outcome::Reuse => rep.cache_reuses += 1,
-                Outcome::Miss => rep.cache_misses += 1,
-            }
-            if fragment.awaiting_image.is_some() {
-                rep.images_pending += 1;
-            }
-            if !fragment.is_empty() {
-                scene.append(&fragment.scene, Some(to_dev * element_to_world(el)));
-            }
-            rep.drawn += 1;
-            if let Some(t) = trace {
-                t.push(el.id.clone());
+            match level_of_detail(&lod, el, &c.bounds, scale) {
+                Detail::Skip => rep.lod_skipped += 1,
+                Detail::Cheap(_) if cheap >= lod.max_cheap_per_frame => rep.lod_dropped += 1,
+                Detail::Cheap(kind) => {
+                    cheap += 1;
+                    if let Some(t) = trace {
+                        t.push(el.id.clone());
+                    }
+                    draw_cheap(scene, kind, to_dev * element_to_world(el), el, scale, options.theme, &mut rep);
+                }
+                Detail::Full => {
+                    if clips.open_for(scene, to_dev, verdict) {
+                        rep.clips += 1;
+                    }
+                    // A placeholder whose picture has since arrived is encoded again.
+                    let stale = cache
+                        .awaiting(&el.id, theme)
+                        .is_some_and(|fid| painter.images().changed_since_placeholder(fid, || files(fid).is_some()));
+                    let (fragment, outcome) =
+                        cache.get_or_paint(el, theme, stale, || painter.paint(el, options, typesetter, &files));
+                    match outcome {
+                        Outcome::Hit => rep.cache_hits += 1,
+                        Outcome::Reuse => rep.cache_reuses += 1,
+                        Outcome::Miss => rep.cache_misses += 1,
+                    }
+                    if fragment.awaiting_image.is_some() {
+                        rep.images_pending += 1;
+                    }
+                    if !fragment.is_empty() {
+                        scene.append(&fragment.scene, Some(to_dev * element_to_world(el)));
+                    }
+                    rep.drawn += 1;
+                    if let Some(t) = trace {
+                        t.push(el.id.clone());
+                    }
+                }
             }
         }
-        if open_clip.is_some() {
-            scene.pop_layer();
-        }
+        clips.close(scene);
 
         count(Counter::ElementsEncoded, (rep.drawn + rep.lod_boxes + rep.lod_greeked) as u64);
         count(Counter::ElementsCulled, rep.culled as u64);
@@ -360,9 +317,120 @@ impl SceneComposer {
     }
 }
 
+/// A cheap stand-in for an element too small to draw properly.
+#[derive(Clone, Copy)]
 enum Cheap {
+    /// A flat box.
     Box,
+    /// Grey bars for text.
     Greek,
+}
+
+/// How much work an element gets at this zoom.
+enum Detail {
+    /// Too small to see.
+    Skip,
+    /// A stand-in.
+    Cheap(Cheap),
+    /// The cached fragment.
+    Full,
+}
+
+fn level_of_detail(lod: &LodConfig, el: &Element, bounds: &Rect, scale: f64) -> Detail {
+    let px = bounds.width().max(bounds.height()) * scale;
+    if px < lod.skip_below_px {
+        Detail::Skip
+    } else if px < lod.box_below_px {
+        Detail::Cheap(Cheap::Box)
+    } else if let ElementKind::Text(t) = &el.kind
+        && t.font.size * scale < lod.greek_text_below_px
+    {
+        Detail::Cheap(Cheap::Greek)
+    } else {
+        Detail::Full
+    }
+}
+
+fn draw_cheap(
+    scene: &mut Scene,
+    kind: Cheap,
+    base: Affine,
+    el: &Element,
+    scale: f64,
+    theme: Theme,
+    rep: &mut FrameReport,
+) {
+    match kind {
+        Cheap::Box => {
+            draw_box(scene, base, el, scale, theme);
+            rep.lod_boxes += 1;
+        }
+        Cheap::Greek => {
+            draw_greek(scene, base, el, theme);
+            rep.lod_greeked += 1;
+        }
+    }
+}
+
+/// What a frame says about an element's visibility.
+enum FrameVerdict {
+    /// The element has a clipping frame and lies entirely outside it.
+    Outside,
+    /// Nothing to clip: no frame, no clip, or the element is inside it.
+    Whole,
+    /// The element crosses the edge of its frame, which clips it.
+    Crossing(ElementId, FrameClip),
+}
+
+/// The clip layers of frames during one compose call: one frame's clip is open at a time, and the clips of frames
+/// already seen are remembered.
+#[derive(Default)]
+struct FrameClips {
+    known: HashMap<ElementId, Option<FrameClip>>,
+    open: Option<ElementId>,
+}
+
+impl FrameClips {
+    fn verdict<S: SceneRead>(&mut self, store: &S, el: &Element, bounds: &Rect) -> FrameVerdict {
+        let Some(fid) = &el.frame_id else { return FrameVerdict::Whole };
+        let Some(clip) = *self.known.entry(fid.clone()).or_insert_with(|| frame_clip(store, fid)) else {
+            return FrameVerdict::Whole;
+        };
+        if !aabb::intersects(&clip.world, bounds) {
+            FrameVerdict::Outside
+        } else if aabb::contains_rect(&clip.world, bounds) {
+            FrameVerdict::Whole
+        } else {
+            FrameVerdict::Crossing(fid.clone(), clip)
+        }
+    }
+
+    /// Ends the open clip when `el` is not a child of its frame.
+    fn close_if_left(&mut self, scene: &mut Scene, el: &Element) {
+        if let Some(open) = &self.open
+            && el.frame_id.as_ref() != Some(open)
+        {
+            self.close(scene);
+        }
+    }
+
+    /// Opens the clip a crossing element needs, unless one is open. True when a layer was pushed.
+    fn open_for(&mut self, scene: &mut Scene, to_dev: Affine, verdict: FrameVerdict) -> bool {
+        match verdict {
+            FrameVerdict::Crossing(fid, clip) if self.open.is_none() => {
+                scene.push_clip_layer(Fill::NonZero, to_dev * clip.to_world, &clip.local);
+                self.open = Some(fid);
+                true
+            }
+            _ => false,
+        }
+    }
+
+    fn close(&mut self, scene: &mut Scene) {
+        if self.open.take().is_some() {
+            scene.pop_layer();
+        }
+    }
 }
 
 fn frame_clip<S: SceneRead>(store: &S, id: &ElementId) -> Option<FrameClip> {
@@ -463,7 +531,7 @@ fn draw_box(scene: &mut Scene, base: Affine, el: &Element, scale: f64, theme: cr
     let (w, h) = (t.w.max(min), t.h.max(min));
     let color = el.style.fill_color.filter(|c| c.a > 0).unwrap_or(el.style.stroke_color);
     let mapped = theme.map(color);
-    let a = (f64::from(mapped.a) * el.style.opacity.clamp(0.0, 1.0) * 0.8) as u8;
+    let a = scale_alpha(mapped.a, el.style.opacity.clamp(0.0, 1.0) * 0.8);
     let c = peniko::Color::from_rgba8(mapped.r, mapped.g, mapped.b, a);
     scene.fill(Fill::NonZero, base, c, None, &Rect::new(0.0, 0.0, w, h));
 }
@@ -476,7 +544,7 @@ fn draw_greek(scene: &mut Scene, base: Affine, el: &Element, theme: crate::theme
     let lines = (t.content.bytes().filter(|b| *b == b'\n').count() + 1).min(64);
     let lh = h / lines as f64;
     let mapped = theme.map(el.style.stroke_color);
-    let a = (f64::from(mapped.a) * el.style.opacity.clamp(0.0, 1.0) * 0.45) as u8;
+    let a = scale_alpha(mapped.a, el.style.opacity.clamp(0.0, 1.0) * 0.45);
     let c = peniko::Color::from_rgba8(mapped.r, mapped.g, mapped.b, a);
     for i in 0..lines {
         let y = i as f64 * lh;

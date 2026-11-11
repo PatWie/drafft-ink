@@ -4,14 +4,13 @@
 //! that turns an [`Element`] into those inputs. Everything that measures text must use [`text_spec`] and
 //! [`math_spec`], because the box the editor stores in `transform` has to be the box the renderer draws.
 
-use drafftink_geom::ElementFrame;
 use drafftink_scene::{
     Color, Element, ElementKind, FillPattern, FontFamily, FontWeight, Head, LinearData, MathData, PathType,
     PressureMode, Sloppiness, StrokeStyle, TextAlign, TextData,
 };
 use drafftink_sketch as sketch;
 use drafftink_typeset as typeset;
-use kurbo::{Affine, Rect, Size};
+use kurbo::{Affine, Rect};
 
 /// Marker size of an arrow whose `head_size` is `None` and whose stroke is thin: the old app's constant.
 pub const DEFAULT_HEAD_SIZE: f64 = 15.0;
@@ -200,11 +199,7 @@ pub fn sketch_input(e: &Element) -> Option<sketch::SketchInput> {
 /// their geometry instead.
 pub fn element_to_world(e: &Element) -> Affine {
     let t = &e.transform;
-    let mut frame = ElementFrame::new(kurbo::Point::new(t.x, t.y), Size::new(t.w, t.h), t.angle);
-    if matches!(e.kind, ElementKind::Image(_)) {
-        frame = frame.with_flip(t.flip_x, t.flip_y);
-    }
-    frame.to_world()
+    if matches!(e.kind, ElementKind::Image(_)) { t.mirrored_frame() } else { t.frame() }.to_world()
 }
 
 /// Space the element's paint may take outside its box, per side.

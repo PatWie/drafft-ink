@@ -21,7 +21,14 @@ pub struct Color {
 /// Why a colour string was rejected.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 #[error("{0:?} is not a colour; use #rgb, #rrggbb, #rrggbbaa or \"transparent\"")]
-pub struct ColorError(pub String);
+pub struct ColorError(String);
+
+impl ColorError {
+    /// The text that was rejected, cut to its first 40 characters.
+    pub fn input(&self) -> &str {
+        &self.0
+    }
+}
 
 impl Color {
     /// Opaque black.

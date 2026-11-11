@@ -12,36 +12,36 @@
 #![cfg_attr(test, allow(clippy::unwrap_used, clippy::expect_used, clippy::panic))]
 #![warn(missing_docs)]
 
-pub mod color;
-pub mod derived;
-pub mod document;
-pub mod element;
-pub mod geom;
-pub mod id;
+mod color;
+mod derived;
+mod document;
+mod element;
+mod id;
 pub mod limits;
-pub mod memory;
+mod memory;
 pub mod palette;
-pub mod store;
-pub mod style;
-pub mod validate;
+mod points;
+mod store;
+mod style;
+mod validate;
 pub mod words;
-pub mod zindex;
+mod zindex;
 
 #[cfg(any(test, feature = "conformance"))]
 pub mod conformance;
 
 pub use color::Color;
 pub use derived::DerivedIndex;
-pub use document::{DocMeta, Document, DocumentError, FileEntry, SCHEMA_VERSION, json_schema};
+pub use document::{DocMeta, Document, DocumentError, FORMAT_NAME, FileEntry, SCHEMA_VERSION, json_schema};
 pub use element::{
     BindMode, Binding, Brush, Crop, Element, ElementKind, FixedSegment, FrameData, FreehandData, Head, ImageData, Kind,
-    LinearData, MathData, ParseKindError, PathType, PressureMode, TextData, TextRun, Transform,
+    LinearData, LinearKind, MathData, ParseKindError, PathType, PressureMode, RefitError, TextData, TextRun, Transform,
 };
-pub use id::{ElementId, FileId, GroupId, IdError, IdSource, RandomIds, Rng64, SeqIds, SplitMix64};
-pub use memory::MemoryStore;
+pub use id::{ElementId, FileId, GroupId, IdError, IdSource, MAX_ID_LEN, RandomIds, Rng64, SeqIds, SplitMix64};
+pub use memory::{MemoryStore, MemoryTx};
 pub use store::{
-    Change, ChangeKind, ChangeSet, Fields, SceneRead, SceneStore, SceneTx, StoreError, SubscriptionId, load_document,
-    snapshot,
+    Change, ChangeKind, ChangeSet, Fields, FileRejection, SceneRead, SceneStore, SceneTx, StoreError, SubscriptionId,
+    load_document, snapshot,
 };
 pub use style::{
     FillPattern, FontFamily, FontWeight, Sloppiness, StrokeStyle, Style, TextAlign, TextStyle, VerticalAlign,
@@ -50,4 +50,4 @@ pub use validate::{
     DocError, ElementError, Issue, Report, Severity, element_errors, is_image_media_type, is_valid_name,
     validate_document, validate_element, validate_scene, validate_transform,
 };
-pub use zindex::{IndexError, ZIndex};
+pub use zindex::{IndexError, MAX_INDEX_LEN, ZIndex};

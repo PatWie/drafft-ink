@@ -26,7 +26,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use drafftink_geom::kurbo::{Affine, Point, Rect, Size, Vec2};
 use drafftink_geom::select::{BoxHandle, Edge, MIN_RESIZE_SIZE, ResizeOpts, handle_point, resize_box};
 use drafftink_geom::snap::snap_rotation;
-use drafftink_geom::transform::{ElementFrame, map_box, normalize_angle, normalize_angle_signed, rotate_point};
+use drafftink_geom::transform::{ElementFrame, Mapped, map_box, normalize_angle, normalize_angle_signed, rotate_point};
 use drafftink_geom::{OrientedBox, aabb};
 use drafftink_scene::{
     Binding, Element, ElementError, ElementId, ElementKind, Kind, PathType, SceneRead, SceneTx, StoreError, Transform,
@@ -284,7 +284,7 @@ fn moved(e: &Element, motion: Motion, follower: bool) -> Result<Next, TransformE
 
 fn affine_element(n: &mut Element, a: Affine, follower: bool) -> Result<(), TransformError> {
     let old = geometry::obox(n);
-    let (nb, mirrored) = map_box(&old, a).ok_or(TransformError::NotFinite)?;
+    let Mapped { obox: nb, mirrored } = map_box(&old, a).ok_or(TransformError::NotFinite)?;
     let tag = n.tag();
     match tag {
         Kind::Rectangle | Kind::Diamond | Kind::Ellipse => {
@@ -363,9 +363,7 @@ fn affine_element(n: &mut Element, a: Affine, follower: bool) -> Result<(), Tran
                 _ => {}
             }
             set_box(n, nb.center, nb.size, angle);
-            if !n.refit_points() {
-                return Err(TransformError::NotFinite);
-            }
+            n.refit_points().map_err(|_| TransformError::NotFinite)?;
         }
     }
     Ok(())

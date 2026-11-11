@@ -371,69 +371,69 @@ fn n_keys_between(a: Option<&str>, b: Option<&str>, n: usize) -> Result<Vec<Stri
     }
 }
 
-/// Repairs a sequence that should be strictly increasing but has ties or inversions (after a merge, or an import).
-///
-/// Elements whose key does not sit strictly between its neighbours get new keys, run by run, so well-ordered
-/// elements keep their keys. If a run cannot be filled, the whole sequence is rebalanced. Returns the positions that
-/// changed. The slice must already be in the intended order (for ties, order by element id first).
-pub fn repair(keys: &mut [ZIndex]) -> Result<Vec<usize>, IndexError> {
-    let n = keys.len();
-    let invalid: Vec<bool> = (0..n)
-        .map(|i| {
-            let key = keys.get(i);
-            let prev = i.checked_sub(1).and_then(|p| keys.get(p));
-            let next = keys.get(i + 1);
-            match key {
-                Some(k) => prev.is_some_and(|p| p >= k) || next.is_some_and(|nx| k >= nx),
-                None => true,
+impl ZIndex {
+    /// Repairs a sequence that should be strictly increasing but has ties or inversions (after a merge, or an import).
+    ///
+    /// Elements whose key does not sit strictly between its neighbours get new keys, run by run, so well-ordered
+    /// elements keep their keys. If a run cannot be filled, the whole sequence is rebalanced. Returns the positions that
+    /// changed. The slice must already be in the intended order (for ties, order by element id first).
+    pub fn repair(keys: &mut [ZIndex]) -> Result<Vec<usize>, IndexError> {
+        let n = keys.len();
+        let invalid: Vec<bool> = keys
+            .iter()
+            .enumerate()
+            .map(|(i, k)| {
+                let prev = i.checked_sub(1).and_then(|p| keys.get(p));
+                let next = keys.get(i + 1);
+                prev.is_some_and(|p| p >= k) || next.is_some_and(|nx| k >= nx)
+            })
+            .collect();
+        if !invalid.iter().any(|b| *b) {
+            return Ok(Vec::new());
+        }
+        let mut new_keys: Vec<ZIndex> = keys.to_vec();
+        let mut changed = Vec::new();
+        let mut i = 0;
+        let mut ok = true;
+        while i < n {
+            if !invalid.get(i).copied().unwrap_or(false) {
+                i += 1;
+                continue;
             }
-        })
-        .collect();
-    if !invalid.iter().any(|b| *b) {
-        return Ok(Vec::new());
-    }
-    let mut new_keys: Vec<ZIndex> = keys.to_vec();
-    let mut changed = Vec::new();
-    let mut i = 0;
-    let mut ok = true;
-    while i < n {
-        if !invalid.get(i).copied().unwrap_or(false) {
-            i += 1;
-            continue;
-        }
-        let start = i;
-        while i < n && invalid.get(i).copied().unwrap_or(false) {
-            i += 1;
-        }
-        let lower = start.checked_sub(1).and_then(|p| keys.get(p));
-        let upper = keys.get(i);
-        match ZIndex::n_between(lower, upper, i - start) {
-            Ok(fresh) => {
-                for (offset, k) in fresh.into_iter().enumerate() {
-                    if let Some(slot) = new_keys.get_mut(start + offset) {
-                        *slot = k;
-                        changed.push(start + offset);
+            let start = i;
+            while i < n && invalid.get(i).copied().unwrap_or(false) {
+                i += 1;
+            }
+            let lower = start.checked_sub(1).and_then(|p| keys.get(p));
+            let upper = keys.get(i);
+            match ZIndex::n_between(lower, upper, i - start) {
+                Ok(fresh) => {
+                    for (offset, k) in fresh.into_iter().enumerate() {
+                        if let Some(slot) = new_keys.get_mut(start + offset) {
+                            *slot = k;
+                            changed.push(start + offset);
+                        }
                     }
                 }
-            }
-            Err(_) => {
-                ok = false;
-                break;
+                Err(_) => {
+                    ok = false;
+                    break;
+                }
             }
         }
-    }
-    if !ok {
-        let fresh = ZIndex::rebalance(n)?;
-        let all: Vec<usize> = (0..n).filter(|i| keys.get(*i) != fresh.get(*i)).collect();
-        for (slot, k) in keys.iter_mut().zip(fresh) {
+        if !ok {
+            let fresh = ZIndex::rebalance(n)?;
+            let all: Vec<usize> = (0..n).filter(|i| keys.get(*i) != fresh.get(*i)).collect();
+            for (slot, k) in keys.iter_mut().zip(fresh) {
+                *slot = k;
+            }
+            return Ok(all);
+        }
+        for (slot, k) in keys.iter_mut().zip(new_keys) {
             *slot = k;
         }
-        return Ok(all);
+        Ok(changed)
     }
-    for (slot, k) in keys.iter_mut().zip(new_keys) {
-        *slot = k;
-    }
-    Ok(changed)
 }
 
 #[cfg(test)]
@@ -533,19 +533,19 @@ mod tests {
     #[test]
     fn repair_fixes_ties_and_inversions_and_keeps_good_keys() {
         let mut keys = vec![z("a1"), z("a1"), z("a2"), z("a3")];
-        let changed = repair(&mut keys).unwrap();
+        let changed = ZIndex::repair(&mut keys).unwrap();
         assert!(!changed.is_empty());
         assert!(keys.windows(2).all(|w| w[0] < w[1]));
         assert_eq!(keys[2], z("a2"));
         assert_eq!(keys[3], z("a3"));
 
         let mut inverted = vec![z("a5"), z("a3"), z("a9"), z("a4")];
-        repair(&mut inverted).unwrap();
+        ZIndex::repair(&mut inverted).unwrap();
         assert!(inverted.windows(2).all(|w| w[0] < w[1]));
 
         let mut fine = vec![z("a0"), z("a1")];
-        assert!(repair(&mut fine).unwrap().is_empty());
-        assert!(repair(&mut []).unwrap().is_empty());
+        assert!(ZIndex::repair(&mut fine).unwrap().is_empty());
+        assert!(ZIndex::repair(&mut []).unwrap().is_empty());
     }
 
     proptest! {
@@ -577,7 +577,7 @@ mod tests {
         #[test]
         fn repair_always_yields_increasing(raw in proptest::collection::vec(0u8..6, 0..30)) {
             let mut keys: Vec<ZIndex> = raw.iter().filter_map(|n| ZIndex::parse(&format!("a{n}")).ok()).collect();
-            repair(&mut keys).unwrap();
+            ZIndex::repair(&mut keys).unwrap();
             prop_assert!(keys.windows(2).all(|w| w[0] < w[1]));
         }
     }

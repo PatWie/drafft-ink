@@ -17,7 +17,7 @@ use kurbo::{Affine, Point, Rect, Vec2};
 
 use crate::aabb;
 use crate::obox::OrientedBox;
-use crate::outline::Outline;
+use crate::outline::{Fill, Outline};
 use crate::snap::snap_rotation;
 use crate::transform::normalize_angle;
 
@@ -226,6 +226,91 @@ fn sgn(v: f64) -> f64 {
     if v < 0.0 { -1.0 } else { 1.0 }
 }
 
+/// The result of resizing a box along one axis.
+#[derive(Clone, Copy)]
+struct AxisResize {
+    size: f64,
+    /// The new centre along the axis, in the original local frame.
+    centre: f64,
+    /// The signed scale: negative when the dragged side crossed the anchor.
+    scale: f64,
+}
+
+/// What one resize drag works from, in the original box's local frame.
+struct Drag {
+    /// Half the original size.
+    half: Vec2,
+    /// The pointer.
+    pointer: Point,
+    opts: ResizeOpts,
+    /// The smallest size, never negative.
+    min: f64,
+}
+
+impl Drag {
+    fn size0(&self) -> Vec2 {
+        self.half * 2.0
+    }
+
+    /// Resizes one axis. `moving` is the handle's coordinate on the axis (a half side with its sign), `pointer` the
+    /// pointer's, `size0` the original size.
+    fn axis(&self, moving: f64, pointer: f64, size0: f64) -> AxisResize {
+        let from_center = self.opts.from_center;
+        let anchor = if from_center { 0.0 } else { -moving };
+        let d = if from_center { pointer } else { pointer - anchor };
+        let dir = if d == 0.0 { sgn(moving) } else { sgn(d) };
+        let size = if from_center { 2.0 * d.abs() } else { d.abs() }.max(self.min);
+        let centre = if from_center { 0.0 } else { anchor + dir * size * 0.5 };
+        let flipped = dir * sgn(moving) < 0.0;
+        let k = if size0 > 0.0 { size / size0 } else { 1.0 };
+        AxisResize { size, centre, scale: if flipped { -k } else { k } }
+    }
+
+    fn corner(&self, c: Corner) -> (AxisResize, AxisResize) {
+        let (mx, my) = corner_sign(c);
+        let (mx, my) = (mx * self.half.x, my * self.half.y);
+        let (w0, h0) = (self.size0().x, self.size0().y);
+        let mut x = self.axis(mx, self.pointer.x, w0);
+        let mut y = self.axis(my, self.pointer.y, h0);
+        if self.opts.keep_aspect && w0 > 0.0 && h0 > 0.0 {
+            let s = (x.size / w0).max(y.size / h0).max(self.min / w0).max(self.min / h0);
+            // Re-derive both axes with the uniform scale, keeping each axis' direction.
+            let uniform = |a: AxisResize, moving: f64, size0: f64| {
+                let dir = if a.scale < 0.0 { -sgn(moving) } else { sgn(moving) };
+                let size = s * size0;
+                let centre = if self.opts.from_center { 0.0 } else { -moving + dir * size * 0.5 };
+                AxisResize { size, centre, scale: if a.scale < 0.0 { -s } else { s } }
+            };
+            (x, y) = (uniform(x, mx, w0), uniform(y, my, h0));
+        }
+        (x, y)
+    }
+
+    fn edge(&self, e: Edge) -> (AxisResize, AxisResize) {
+        let (w0, h0) = (self.size0().x, self.size0().y);
+        let keep = self.opts.keep_aspect;
+        if matches!(e, Edge::Left | Edge::Right) {
+            let mx = if e == Edge::Right { self.half.x } else { -self.half.x };
+            let x = self.axis(mx, self.pointer.x, w0);
+            let y = if keep && w0 > 0.0 {
+                AxisResize { size: (x.size / w0 * h0).max(0.0), centre: 0.0, scale: x.scale.abs() }
+            } else {
+                AxisResize { size: h0, centre: 0.0, scale: 1.0 }
+            };
+            (x, y)
+        } else {
+            let my = if e == Edge::Bottom { self.half.y } else { -self.half.y };
+            let y = self.axis(my, self.pointer.y, h0);
+            let x = if keep && h0 > 0.0 {
+                AxisResize { size: (y.size / h0 * w0).max(0.0), centre: 0.0, scale: y.scale.abs() }
+            } else {
+                AxisResize { size: w0, centre: 0.0, scale: 1.0 }
+            };
+            (x, y)
+        }
+    }
+}
+
 /// Resize `original` by dragging `handle` to the world point `pointer`.
 ///
 /// Returns `None` for the rotate handle, an invalid box, or a non-finite pointer.
@@ -233,69 +318,15 @@ pub fn resize_box(original: &OrientedBox, handle: BoxHandle, pointer: Point, opt
     if !original.is_valid() || !crate::point_is_finite(pointer) || !opts.min_size.is_finite() {
         return None;
     }
-    let min = opts.min_size.max(0.0);
-    let h = original.half();
-    let (w0, h0) = (h.x * 2.0, h.y * 2.0);
-    let p = original.to_local(pointer);
-
-    // Per-axis result: (new size, direction sign relative to the anchor, new centre, signed scale).
-    // `axis` is the moving coordinate of the handle in the original local frame (a half side with sign).
-    let axis = |moving: f64, pointer_coord: f64, size0: f64, from_center: bool| -> (f64, f64, f64) {
-        // returns (size, centre, signed scale)
-        let anchor = if from_center { 0.0 } else { -moving };
-        let d = if from_center { pointer_coord } else { pointer_coord - anchor };
-        let dir = if d == 0.0 { sgn(moving) } else { sgn(d) };
-        let size = if from_center { 2.0 * d.abs() } else { d.abs() };
-        let size = size.max(min);
-        let centre = if from_center { 0.0 } else { anchor + dir * size * 0.5 };
-        let flipped = dir * sgn(moving) < 0.0;
-        let k = if size0 > 0.0 { size / size0 } else { 1.0 };
-        (size, centre, if flipped { -k } else { k })
-    };
-
-    let (sx, sy, cx, cy, kx, ky);
-    match handle {
+    let drag = Drag { half: original.half(), pointer: original.to_local(pointer), opts, min: opts.min_size.max(0.0) };
+    let (x, y) = match handle {
         BoxHandle::Rotate => return None,
-        BoxHandle::Corner(c) => {
-            let (mx, my) = corner_sign(c);
-            let (mx, my) = (mx * h.x, my * h.y);
-            let (mut wx, mut cxx, mut kxx) = axis(mx, p.x, w0, opts.from_center);
-            let (mut wy, mut cyy, mut kyy) = axis(my, p.y, h0, opts.from_center);
-            if opts.keep_aspect && w0 > 0.0 && h0 > 0.0 {
-                let s = (wx / w0).max(wy / h0).max(min / w0).max(min / h0);
-                // Re-derive both axes with the uniform scale, keeping each axis' direction.
-                let dir_x = if kxx < 0.0 { -sgn(mx) } else { sgn(mx) };
-                let dir_y = if kyy < 0.0 { -sgn(my) } else { sgn(my) };
-                wx = s * w0;
-                wy = s * h0;
-                cxx = if opts.from_center { 0.0 } else { -mx + dir_x * wx * 0.5 };
-                cyy = if opts.from_center { 0.0 } else { -my + dir_y * wy * 0.5 };
-                kxx = if kxx < 0.0 { -s } else { s };
-                kyy = if kyy < 0.0 { -s } else { s };
-            }
-            (sx, sy, cx, cy, kx, ky) = (wx, wy, cxx, cyy, kxx, kyy);
-        }
-        BoxHandle::Edge(e) => {
-            let horizontal = matches!(e, Edge::Left | Edge::Right);
-            if horizontal {
-                let mx = if e == Edge::Right { h.x } else { -h.x };
-                let (wx, cxx, kxx) = axis(mx, p.x, w0, opts.from_center);
-                let (wy, kyy) =
-                    if opts.keep_aspect && w0 > 0.0 { ((wx / w0 * h0).max(0.0), kxx.abs()) } else { (h0, 1.0) };
-                (sx, sy, cx, cy, kx, ky) = (wx, wy, cxx, 0.0, kxx, kyy);
-            } else {
-                let my = if e == Edge::Bottom { h.y } else { -h.y };
-                let (wy, cyy, kyy) = axis(my, p.y, h0, opts.from_center);
-                let (wx, kxx) =
-                    if opts.keep_aspect && h0 > 0.0 { ((wy / h0 * w0).max(0.0), kyy.abs()) } else { (w0, 1.0) };
-                (sx, sy, cx, cy, kx, ky) = (wx, wy, 0.0, cyy, kxx, kyy);
-            }
-        }
-    }
-
-    let local_center = Point::new(cx, cy);
-    let obox = OrientedBox::new(original.to_world(local_center), kurbo::Size::new(sx, sy), original.angle);
-    Some(ResizeResult { obox, scale: Vec2::new(kx, ky), local_center })
+        BoxHandle::Corner(c) => drag.corner(c),
+        BoxHandle::Edge(e) => drag.edge(e),
+    };
+    let local_center = Point::new(x.centre, y.centre);
+    let obox = OrientedBox::new(original.to_world(local_center), kurbo::Size::new(x.size, y.size), original.angle);
+    Some(ResizeResult { obox, scale: Vec2::new(x.scale, y.scale), local_center })
 }
 
 /// The rotation that points the top of a box at `pointer`, as the rotate handle does:
@@ -325,15 +356,15 @@ pub enum MarqueeMode {
     Contain,
 }
 
-/// Does the marquee `rect` select `shape`? With `Touch`, a shape with `filled` is selected when
+/// Does the marquee `rect` select `shape`? With `Touch`, a shape with a [`Fill::Filled`] fill is selected when
 /// the marquee is inside it; a stroke-only shape only when the marquee crosses or contains its outline.
-pub fn marquee_selects<O: Outline + ?Sized>(shape: &O, rect: &Rect, mode: MarqueeMode, filled: bool) -> bool {
+pub fn marquee_selects<O: Outline + ?Sized>(shape: &O, rect: &Rect, mode: MarqueeMode, fill: Fill) -> bool {
     if !shape.is_valid() || !aabb::is_finite(rect) {
         return false;
     }
     match mode {
         MarqueeMode::Contain => aabb::contains_rect(rect, &shape.bounds()),
-        MarqueeMode::Touch => shape.intersects_rect(rect, filled),
+        MarqueeMode::Touch => shape.intersects_rect(rect, fill),
     }
 }
 
@@ -578,17 +609,17 @@ mod tests {
         let big = Rect::new(-10.0, -10.0, 110.0, 110.0);
         let part = Rect::new(50.0, 50.0, 200.0, 200.0);
         let inside = Rect::new(40.0, 40.0, 60.0, 60.0);
-        assert!(marquee_selects(&shape, &big, MarqueeMode::Contain, true));
-        assert!(!marquee_selects(&shape, &part, MarqueeMode::Contain, true));
-        assert!(marquee_selects(&shape, &part, MarqueeMode::Touch, true));
-        assert!(marquee_selects(&shape, &inside, MarqueeMode::Touch, true));
-        assert!(!marquee_selects(&shape, &inside, MarqueeMode::Touch, false));
+        assert!(marquee_selects(&shape, &big, MarqueeMode::Contain, Fill::Filled));
+        assert!(!marquee_selects(&shape, &part, MarqueeMode::Contain, Fill::Filled));
+        assert!(marquee_selects(&shape, &part, MarqueeMode::Touch, Fill::Filled));
+        assert!(marquee_selects(&shape, &inside, MarqueeMode::Touch, Fill::Filled));
+        assert!(!marquee_selects(&shape, &inside, MarqueeMode::Touch, Fill::Stroke));
         let line = Polyline::new(vec![Point::new(0.0, 0.0), Point::new(100.0, 100.0)], false);
         assert!(
-            !marquee_selects(&line, &Rect::new(60.0, 0.0, 100.0, 30.0), MarqueeMode::Touch, false),
+            !marquee_selects(&line, &Rect::new(60.0, 0.0, 100.0, 30.0), MarqueeMode::Touch, Fill::Stroke),
             "bounds overlap but the line does not touch"
         );
-        assert!(marquee_selects(&line, &Rect::new(40.0, 40.0, 60.0, 60.0), MarqueeMode::Touch, false));
-        assert!(!marquee_selects(&line, &Rect::new(f64::NAN, 0.0, 1.0, 1.0), MarqueeMode::Touch, false));
+        assert!(marquee_selects(&line, &Rect::new(40.0, 40.0, 60.0, 60.0), MarqueeMode::Touch, Fill::Stroke));
+        assert!(!marquee_selects(&line, &Rect::new(f64::NAN, 0.0, 1.0, 1.0), MarqueeMode::Touch, Fill::Stroke));
     }
 }

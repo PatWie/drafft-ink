@@ -841,7 +841,7 @@ pub fn theme_names() -> String {
 mod tests {
     use super::*;
     use drafftink_geom::kurbo::Point;
-    use drafftink_scene::{MemoryStore, SceneStore, TextData};
+    use drafftink_scene::{LinearKind, MemoryStore, SceneStore, TextData};
 
     fn id(s: &str) -> ElementId {
         ElementId::new(s).unwrap()
@@ -859,7 +859,8 @@ mod tests {
         let mut tx = store.begin();
         let z = tx.next_top_index().unwrap();
         let mut e =
-            Element::linear(id(s), Kind::Line, z, &[Point::ZERO, Point::new(5.0, 5.0), Point::new(0.0, 5.0)]).unwrap();
+            Element::linear(id(s), LinearKind::Line, z, &[Point::ZERO, Point::new(5.0, 5.0), Point::new(0.0, 5.0)])
+                .unwrap();
         if let ElementKind::Line(d) = &mut e.kind {
             d.closed = closed;
         }

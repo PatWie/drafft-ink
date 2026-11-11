@@ -11,13 +11,16 @@
 //!   `f64::INFINITY` for a distance, or the input unchanged for a snap.
 //!
 //! Modules
-//! - [`aabb`], [`obox`], [`transform`]: axis-aligned boxes, oriented boxes, element transforms.
-//! - [`outline`], [`shapes`]: primitive shapes and the [`Outline`] queries (bounds, containment,
-//!   distance, closest point, ray and segment intersection, hit tests).
+//! - [`aabb`], [`transform`]: axis-aligned boxes, element frames and angle helpers. The oriented box
+//!   is [`OrientedBox`].
+//! - The primitive shapes ([`RectShape`], [`EllipseShape`], [`DiamondShape`], [`Polyline`], [`PathShape`]) and the
+//!   [`Outline`] queries (bounds, containment, distance, closest point, ray and segment intersection,
+//!   hit tests) are at the crate root.
 //! - [`binding`]: headings, fixed points and outline helpers used by arrow binding and elbow routing.
-//! - [`index`]: [`SpatialIndex`], an R-tree keyed by id.
+//! - [`SpatialIndex`]: an R-tree keyed by id.
 //! - [`snap`], [`guides`]: grid, angle and smart-guide snapping math.
 //! - [`spline`]: the Catmull-Rom curve of a rounded line.
+//! - [`hash`]: [`hash::Bits`] and [`hash::Hash128`] for cache keys.
 //! - [`align`]: align and distribute as pure functions.
 //! - [`select`]: handle positions, box resize and rotate math, marquee tests.
 //! - [`lasso`]: the free-hand closed path and its selection test, the counterpart of the marquee.
@@ -30,12 +33,13 @@ pub mod aabb;
 pub mod align;
 pub mod binding;
 pub mod guides;
-pub mod index;
+pub mod hash;
+mod index;
 pub mod lasso;
-pub mod obox;
-pub mod outline;
+mod obox;
+mod outline;
 pub mod select;
-pub mod shapes;
+mod shapes;
 pub mod snap;
 pub mod spline;
 pub mod transform;
@@ -45,9 +49,8 @@ mod ellipse;
 
 pub use index::{IndexError, SpatialIndex};
 pub use obox::OrientedBox;
-pub use outline::{Hit, HitOpts, Nearest, Outline, Primitive, Probe};
+pub use outline::{Fill, Hit, HitOpts, Nearest, Outline, Primitive, Probe};
 pub use shapes::{DiamondShape, EllipseShape, PathShape, Polyline, RectShape};
-pub use transform::ElementFrame;
 
 /// Distances and lengths below this are treated as zero.
 pub const EPS: f64 = 1e-9;

@@ -113,7 +113,7 @@ pub const COMMANDS: &[CommandSpec] = &[
         "doc.rename",
         "doc",
         "Rename document",
-        "Sets the document name, 1 to 120 characters; the tab title follows.",
+        "Sets the document name, 1 to 256 characters; the tab title follows.",
         &Typed::new(save::rename),
         Facts { mutates: Mutates::DOC.with(Mutates::TABS), ..EDITS },
     )

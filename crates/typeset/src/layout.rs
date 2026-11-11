@@ -2,17 +2,18 @@
 
 use std::borrow::Cow;
 use std::collections::BTreeSet;
-use std::ops::Range;
+use std::ops::{Range, RangeInclusive};
 use std::sync::Arc;
 
-use kurbo::{BezPath, Point, Rect, Size};
+use kurbo::{Point, Rect, Size};
 use parley::{
     Alignment, AlignmentOptions, FontContext, FontFamily as PFamily, FontFamilyName, FontStyle, FontWeight as PWeight,
     LayoutContext, OverflowWrap, PositionedLayoutItem, StyleProperty,
 };
 
 use crate::fonts::{self, FALLBACK_FAMILY};
-use crate::style::{Align, FontFamily, FontWeight, LineHeight, Rgba8, TextSpec, TextStyle, Wrap};
+use crate::outline::ColouredPath;
+use crate::style::{Align, FontFamily, FontWeight, LineHeight, Rgba8, Span, SpanStyle, TextSpec, TextStyle, Wrap};
 
 /// Longest text laid out, in bytes. Longer text is cut at a `char` boundary and the layout is
 /// marked [`TextLayout::truncated`].
@@ -20,7 +21,7 @@ pub const MAX_TEXT_BYTES: usize = 1 << 20;
 /// Most spans honoured per layout. Later spans are ignored.
 pub const MAX_SPANS: usize = 4096;
 /// Smallest and largest font size, in layout units.
-pub const FONT_SIZE_RANGE: (f32, f32) = (1.0, 2048.0);
+pub const FONT_SIZE_RANGE: RangeInclusive<f32> = 1.0..=2048.0;
 /// Smallest wrap width.
 pub const MIN_WRAP_WIDTH: f32 = 1.0;
 
@@ -212,7 +213,7 @@ impl TextLayout {
     /// The glyph outlines and decorations as filled paths, grouped by colour in paint order.
     /// Used by exports (SVG, PNG without a glyph renderer) and tests. Glyphs the font cannot
     /// outline are skipped. Variable-font coordinates are ignored (the bundled fonts are static).
-    pub fn outline(&self) -> Vec<(Rgba8, BezPath)> {
+    pub fn outline(&self) -> Vec<ColouredPath> {
         crate::outline::text_outline(self)
     }
 }
@@ -246,7 +247,7 @@ struct Clean<'a> {
 }
 
 fn clamp_size(s: f32) -> f32 {
-    if s.is_finite() { s.clamp(FONT_SIZE_RANGE.0, FONT_SIZE_RANGE.1) } else { TextStyle::DEFAULT_SIZE }
+    if s.is_finite() { s.clamp(*FONT_SIZE_RANGE.start(), *FONT_SIZE_RANGE.end()) } else { TextStyle::DEFAULT_SIZE }
 }
 
 fn cut_at_boundary(text: &str, max: usize) -> &str {
@@ -276,77 +277,90 @@ fn clean(spec: &TextSpec) -> Clean<'_> {
         underline: spec.style.underline,
         strike: spec.style.strike,
     };
-    let mut styles = vec![base.clone()];
+    let spans = usable_spans(spec, text, &mut truncated);
+    let (styles, segments) = flatten_spans(&base, &spans, text.len());
+    Clean { text, styles, segments, wrap: sanitize_wrap(spec.wrap), truncated }
+}
 
-    let n = text.len();
-    let mut spans: Vec<(usize, &crate::style::Span)> = Vec::new();
-    for (i, s) in spec.spans.iter().enumerate() {
+/// The spans that can be applied to `text`: not empty, inside it and on `char` boundaries, at most [`MAX_SPANS`]
+/// of them (`truncated` is set when more were given).
+fn usable_spans<'a>(spec: &'a TextSpec, text: &str, truncated: &mut bool) -> Vec<&'a crate::style::Span> {
+    let mut spans = Vec::new();
+    for s in &spec.spans {
         if spans.len() >= MAX_SPANS {
-            truncated = true;
+            *truncated = true;
             break;
         }
         let r = &s.range;
-        if r.start < r.end && r.end <= n && text.is_char_boundary(r.start) && text.is_char_boundary(r.end) {
-            spans.push((i, s));
+        if r.start < r.end && r.end <= text.len() && text.is_char_boundary(r.start) && text.is_char_boundary(r.end) {
+            spans.push(s);
         }
     }
+    spans
+}
+
+/// `base` with the fields `o` overrides.
+fn overridden(base: &RunStyle, o: &SpanStyle) -> RunStyle {
+    let mut st = base.clone();
+    if let Some(v) = &o.family {
+        st.family = v.clone();
+    }
+    st.weight = o.weight.unwrap_or(st.weight);
+    st.italic = o.italic.unwrap_or(st.italic);
+    st.size = o.size.map_or(st.size, clamp_size);
+    st.color = o.color.unwrap_or(st.color);
+    st.underline = o.underline.unwrap_or(st.underline);
+    st.strike = o.strike.unwrap_or(st.strike);
+    st
+}
+
+/// Turns overlapping spans into the table of distinct styles (index 0 is `base`) and the byte ranges that use a style
+/// other than the base. Later spans win where they overlap.
+fn flatten_spans(base: &RunStyle, spans: &[&Span], n: usize) -> (Vec<RunStyle>, Vec<(Range<usize>, u32)>) {
+    let mut styles = vec![base.clone()];
     let mut segments: Vec<(Range<usize>, u32)> = Vec::new();
-    if !spans.is_empty() {
-        // Sweep over the span boundaries, keeping the spans that cover the current segment in
-        // input order so later spans win.
-        let mut points: BTreeSet<usize> = BTreeSet::from([0, n]);
-        for (_, s) in &spans {
-            points.insert(s.range.start);
-            points.insert(s.range.end);
+    if spans.is_empty() {
+        return (styles, segments);
+    }
+    // Sweep over the span boundaries, keeping the spans that cover the current segment in input order.
+    let mut points: BTreeSet<usize> = BTreeSet::from([0, n]);
+    for s in spans {
+        points.insert(s.range.start);
+        points.insert(s.range.end);
+    }
+    let points: Vec<usize> = points.into_iter().collect();
+    let mut by_start: Vec<usize> = (0..spans.len()).collect();
+    by_start.sort_by_key(|&k| spans.get(k).map_or(0, |s| s.range.start));
+    let mut next_start = 0usize;
+    let mut active: BTreeSet<usize> = BTreeSet::new();
+    for w in points.windows(2) {
+        let (a, b) = (w[0], w[1]);
+        while let Some(&k) = by_start.get(next_start) {
+            if spans.get(k).is_some_and(|s| s.range.start <= a) {
+                active.insert(k);
+                next_start += 1;
+            } else {
+                break;
+            }
         }
-        let points: Vec<usize> = points.into_iter().collect();
-        let mut by_start: Vec<usize> = (0..spans.len()).collect();
-        by_start.sort_by_key(|&k| spans.get(k).map_or(0, |(_, s)| s.range.start));
-        let mut next_start = 0usize;
-        let mut active: BTreeSet<usize> = BTreeSet::new();
-        for w in points.windows(2) {
-            let (a, b) = (w[0], w[1]);
-            while let Some(&k) = by_start.get(next_start) {
-                if spans.get(k).is_some_and(|(_, s)| s.range.start <= a) {
-                    active.insert(k);
-                    next_start += 1;
-                } else {
-                    break;
-                }
+        active.retain(|&k| spans.get(k).is_some_and(|s| s.range.end > a));
+        let st = active.iter().filter_map(|&k| spans.get(k)).fold(base.clone(), |st, s| overridden(&st, &s.style));
+        let idx = match styles.iter().position(|x| *x == st) {
+            Some(i) => i,
+            None => {
+                styles.push(st);
+                styles.len() - 1
             }
-            active.retain(|&k| spans.get(k).is_some_and(|(_, s)| s.range.end > a));
-            let mut st = base.clone();
-            for &k in &active {
-                if let Some((_, s)) = spans.get(k) {
-                    let o = &s.style;
-                    if let Some(v) = &o.family {
-                        st.family = v.clone();
-                    }
-                    st.weight = o.weight.unwrap_or(st.weight);
-                    st.italic = o.italic.unwrap_or(st.italic);
-                    st.size = o.size.map_or(st.size, clamp_size);
-                    st.color = o.color.unwrap_or(st.color);
-                    st.underline = o.underline.unwrap_or(st.underline);
-                    st.strike = o.strike.unwrap_or(st.strike);
-                }
-            }
-            let idx = match styles.iter().position(|x| *x == st) {
-                Some(i) => i,
-                None => {
-                    styles.push(st);
-                    styles.len() - 1
-                }
-            };
-            if idx != 0 {
-                let idx = u32::try_from(idx).unwrap_or(u32::MAX);
-                match segments.last_mut() {
-                    Some((r, i)) if *i == idx && r.end == a => r.end = b,
-                    _ => segments.push((a..b, idx)),
-                }
+        };
+        if idx != 0 {
+            let idx = u32::try_from(idx).unwrap_or(u32::MAX);
+            match segments.last_mut() {
+                Some((r, i)) if *i == idx && r.end == a => r.end = b,
+                _ => segments.push((a..b, idx)),
             }
         }
     }
-    Clean { text, styles, segments, wrap: sanitize_wrap(spec.wrap), truncated }
+    (styles, segments)
 }
 
 fn line_height(lh: LineHeight) -> parley::LineHeight {
@@ -417,79 +431,85 @@ pub(crate) fn build(engine: &mut Engine, spec: &TextSpec, id: u64) -> TextLayout
     finish(layout, &c, id, base.size)
 }
 
+fn line_info(line: &parley::Line<'_, StyleId>) -> LineInfo {
+    let m = line.metrics();
+    LineInfo {
+        text_range: line.text_range(),
+        baseline: m.baseline,
+        top: m.block_min_coord,
+        bottom: m.block_max_coord,
+        ascent: m.baseline - m.block_min_coord,
+        descent: m.block_max_coord - m.baseline,
+        x: m.offset,
+        width: (m.advance - m.hanging_advance).max(0.0),
+    }
+}
+
+/// The underline and strikethrough of a run, if its style asks for them.
+fn decorations_of(gr: &parley::GlyphRun<'_, StyleId>, style: &RunStyle, color: Rgba8) -> Vec<Decoration> {
+    let fm = gr.run().font_metrics();
+    let (x0, base_y) = (gr.offset(), gr.baseline());
+    let x1 = x0 + gr.advance();
+    let bar = |kind, top: f32, bottom: f32| Decoration {
+        kind,
+        rect: Rect::new(f64::from(x0), f64::from(top), f64::from(x1), f64::from(bottom)),
+        color,
+    };
+    let mut out = Vec::new();
+    if style.underline {
+        let (off, size) = (fm.underline_offset, fm.underline_size.max(0.5));
+        out.push(bar(DecorationKind::Underline, base_y - off, base_y - off + size));
+    }
+    if style.strike {
+        let (off, size) = (fm.strikethrough_offset, fm.strikethrough_size.max(0.5));
+        out.push(bar(DecorationKind::Strike, base_y - off - size / 2.0, base_y - off + size / 2.0));
+    }
+    out
+}
+
+fn glyph_run(
+    gr: &parley::GlyphRun<'_, StyleId>,
+    glyphs: Vec<Glyph>,
+    style_idx: u32,
+    color: Rgba8,
+    line: usize,
+) -> GlyphRun {
+    let run = gr.run();
+    let syn = run.synthesis();
+    GlyphRun {
+        font: run.font().clone(),
+        font_size: run.font_size(),
+        normalized_coords: run.normalized_coords().iter().map(|c| c.to_bits()).collect(),
+        skew: syn.skew().map(|deg| deg.to_radians().tan()),
+        embolden: syn.embolden(),
+        glyphs,
+        style: style_idx,
+        color,
+        line: u32::try_from(line).unwrap_or(u32::MAX),
+        baseline: gr.baseline(),
+        x: gr.offset(),
+        advance: gr.advance(),
+    }
+}
+
 fn finish(layout: PLayout, c: &Clean<'_>, id: u64, base_size: f32) -> TextLayout {
     let mut lines = Vec::new();
     let mut runs: Vec<GlyphRun> = Vec::new();
     let mut decorations = Vec::new();
     for (li, line) in layout.lines().enumerate() {
-        let m = line.metrics();
-        lines.push(LineInfo {
-            text_range: line.text_range(),
-            baseline: m.baseline,
-            top: m.block_min_coord,
-            bottom: m.block_max_coord,
-            ascent: m.baseline - m.block_min_coord,
-            descent: m.block_max_coord - m.baseline,
-            x: m.offset,
-            width: (m.advance - m.hanging_advance).max(0.0),
-        });
+        lines.push(line_info(&line));
         for item in line.items() {
             let PositionedLayoutItem::GlyphRun(gr) = item else { continue };
-            let run = gr.run();
             let style_idx = gr.style().brush.0;
             let style = c.styles.get(style_idx as usize);
             let color = style.map_or(Rgba8::BLACK, |s| s.color);
-            let glyphs: Vec<Glyph> = gr.positioned_glyphs().map(|g| Glyph { id: g.id, x: g.x, y: g.y }).collect();
-            let syn = run.synthesis();
             if let Some(s) = style {
-                let fm = run.font_metrics();
-                let x0 = gr.offset();
-                let x1 = x0 + gr.advance();
-                let base_y = gr.baseline();
-                if s.underline {
-                    let (off, size) = (fm.underline_offset, fm.underline_size.max(0.5));
-                    decorations.push(Decoration {
-                        kind: DecorationKind::Underline,
-                        rect: Rect::new(
-                            f64::from(x0),
-                            f64::from(base_y - off),
-                            f64::from(x1),
-                            f64::from(base_y - off + size),
-                        ),
-                        color,
-                    });
-                }
-                if s.strike {
-                    let (off, size) = (fm.strikethrough_offset, fm.strikethrough_size.max(0.5));
-                    decorations.push(Decoration {
-                        kind: DecorationKind::Strike,
-                        rect: Rect::new(
-                            f64::from(x0),
-                            f64::from(base_y - off - size / 2.0),
-                            f64::from(x1),
-                            f64::from(base_y - off + size / 2.0),
-                        ),
-                        color,
-                    });
-                }
+                decorations.extend(decorations_of(&gr, s, color));
             }
-            if glyphs.is_empty() {
-                continue;
+            let glyphs: Vec<Glyph> = gr.positioned_glyphs().map(|g| Glyph { id: g.id, x: g.x, y: g.y }).collect();
+            if !glyphs.is_empty() {
+                runs.push(glyph_run(&gr, glyphs, style_idx, color, li));
             }
-            runs.push(GlyphRun {
-                font: run.font().clone(),
-                font_size: run.font_size(),
-                normalized_coords: run.normalized_coords().iter().map(|c| c.to_bits()).collect(),
-                skew: syn.skew().map(|deg| deg.to_radians().tan()),
-                embolden: syn.embolden(),
-                glyphs,
-                style: style_idx,
-                color,
-                line: u32::try_from(li).unwrap_or(u32::MAX),
-                baseline: gr.baseline(),
-                x: gr.offset(),
-                advance: gr.advance(),
-            });
         }
     }
     if c.text.is_empty() {
