@@ -291,7 +291,7 @@ mod tests {
     use crate::model::Peer;
 
     fn peer(name: &str) -> Peer {
-        Peer { name: name.to_owned(), color: "#ef4444".to_owned(), has_cursor: false }
+        Peer { id: name.to_owned(), name: name.to_owned(), color: "#ef4444".to_owned(), has_cursor: false, followed: false }
     }
 
     #[test]
