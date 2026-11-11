@@ -33,6 +33,12 @@ pub const HAND_FONT: &str = "gelpen";
 pub const PREVIEW_SERIF: &str = "gelpen_serif";
 /// Preview of Vanilla Extract.
 pub const PREVIEW_VANILLA: &str = "vanilla_extract";
+/// IBM Plex Sans at its regular weight, where the build has the file.
+pub const PREVIEW_PLEX: &str = "plex_sans";
+/// IBM Plex Sans at its semibold weight (the headings when Plex is the UI font).
+const PLEX_SEMIBOLD: &str = "plex_sans_semibold";
+/// The `wght` of [`PLEX_SEMIBOLD`]. The variable font draws the real weight.
+const SEMIBOLD_WEIGHT: f32 = 600.0;
 
 /// A font file the egui fonts need that the web build does not carry (it has no `default_fonts`: they are
 /// 1 MB of the binary). The host loads each file and gives it to [`provide_font`]. On the desktop egui has them.
@@ -74,6 +80,8 @@ const EGUI_HAS_DEFAULT_FONTS: bool = cfg!(not(target_arch = "wasm32"));
 #[derive(Default)]
 struct Provided {
     files: std::collections::BTreeMap<UiFont, &'static [u8]>,
+    /// IBM Plex Sans, once a build that leaves it out of the binary (the web) has fetched it.
+    plex: Option<&'static [u8]>,
     /// Counts the changes, so each egui context installs the set again once.
     version: u32,
 }
@@ -91,6 +99,29 @@ pub fn provide_font(font: UiFont, bytes: Vec<u8>) {
             p.version += 1;
         }
     });
+}
+
+/// Gives the UI the file of IBM Plex Sans, for a build that does not carry it (the web fetches it when the text
+/// font or the UI font first asks for it, see [`wants_plex_sans`]). The next frame installs it. Like [`provide_font`]
+/// the bytes stay for the life of the page.
+pub fn provide_plex_sans(bytes: Vec<u8>) {
+    PROVIDED.with_borrow_mut(|p| {
+        if p.plex.is_none() {
+            p.plex = Some(Box::leak(bytes.into_boxed_slice()));
+            p.version += 1;
+        }
+    });
+}
+
+thread_local! {
+    /// The UI font setting named Plex while the file was missing.
+    static PLEX_DEMANDED: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+/// True when the `ui.font` setting names IBM Plex Sans and this build has not got the file yet. The host fetches it
+/// and calls [`provide_plex_sans`]. (A canvas text in Plex asks through the typesetter instead.)
+pub fn wants_plex_sans() -> bool {
+    PLEX_DEMANDED.with(std::cell::Cell::get)
 }
 
 /// The UI fonts this build needs and does not have yet.
@@ -129,11 +160,14 @@ pub enum UiFontChoice {
     VanillaExtract,
     /// Noto Sans, where the build carries it.
     NotoSans,
+    /// IBM Plex Sans, with real regular and semibold weights. The web loads it when it is first wanted.
+    PlexSans,
 }
 
 impl UiFontChoice {
     /// Every choice, in the order of the preferences.
-    pub const ALL: [UiFontChoice; 4] = [Self::GelPen, Self::GelPenSerif, Self::VanillaExtract, Self::NotoSans];
+    pub const ALL: [UiFontChoice; 5] =
+        [Self::GelPen, Self::GelPenSerif, Self::VanillaExtract, Self::NotoSans, Self::PlexSans];
 
     /// The value of the `ui.font` setting.
     pub fn setting(self) -> &'static str {
@@ -142,6 +176,7 @@ impl UiFontChoice {
             Self::GelPenSerif => "gelpen_serif",
             Self::VanillaExtract => "vanilla_extract",
             Self::NotoSans => "noto_sans",
+            Self::PlexSans => "plex_sans",
         }
     }
 
@@ -162,11 +197,21 @@ impl UiFontChoice {
             Self::GelPenSerif => "GelPen Serif",
             Self::VanillaExtract => "Vanilla Extract",
             Self::NotoSans => "Noto Sans",
+            Self::PlexSans => "IBM Plex Sans",
         }
     }
 
-    /// True when this build has the font file (Noto Sans is optional in the typesetter).
+    /// True when the preferences offer the font: this build has its file, or can fetch it when it is chosen (Plex
+    /// Sans on the web). Noto Sans is optional in the typesetter and is not fetched for the UI.
     pub fn available(self) -> bool {
+        match self {
+            Self::PlexSans => true,
+            _ => self.loaded(),
+        }
+    }
+
+    /// True when the font file is there now.
+    fn loaded(self) -> bool {
         self.file().is_some_and(|bytes| !bytes.is_empty())
     }
 
@@ -177,6 +222,9 @@ impl UiFontChoice {
             Self::GelPenSerif => Face::GelPenSerif,
             Self::VanillaExtract => Face::VanillaExtract,
             Self::NotoSans => Face::NotoSans,
+            Self::PlexSans => {
+                return font_file(&Face::PlexSans, FontWeight::Regular).or_else(|| PROVIDED.with_borrow(|p| p.plex));
+            }
         };
         font_file(&face, FontWeight::Regular)
     }
@@ -194,6 +242,7 @@ impl UiFontChoice {
             Self::GelPenSerif => PREVIEW_SERIF,
             Self::VanillaExtract => PREVIEW_VANILLA,
             Self::NotoSans => PREVIEW_NOTO,
+            Self::PlexSans => PREVIEW_PLEX,
         }
     }
 }
@@ -299,26 +348,43 @@ pub fn theme_preference(setting: Option<&str>) -> ThemePreference {
     }
 }
 
-thread_local! {
-    static HAND_READY: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+/// Which face the headings are set in, as far as the installed fonts allow.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum HeadingFace {
+    /// The named families are not installed in this pass: the default font.
+    Unavailable,
+    /// GelPen.
+    GelPen,
+    /// IBM Plex Sans semibold, when Plex is the UI font.
+    PlexSemibold,
 }
 
-/// A font id in the hand-written family (GelPen). Falls back to the default font when the families are
-/// not installed in this pass yet; egui would panic on a family without fonts. [`ensure_fonts`] sets
-/// which case applies at the start of every `draw`.
+thread_local! {
+    static HEADING_FACE: std::cell::Cell<HeadingFace> = const { std::cell::Cell::new(HeadingFace::Unavailable) };
+}
+
+/// True when the named families (GelPen and the previews) are installed in this pass.
+fn families_ready() -> bool {
+    HEADING_FACE.with(std::cell::Cell::get) != HeadingFace::Unavailable
+}
+
+/// A font id for headings and labels: GelPen, or IBM Plex Sans semibold when Plex is the UI font and the file is
+/// there. Falls back to the default font when the families are not installed in this pass yet; egui would panic on
+/// a family without fonts. [`ensure_fonts`] sets which case applies at the start of every `draw`.
 pub fn hand(size: f32) -> FontId {
-    if HAND_READY.with(std::cell::Cell::get) {
-        FontId::new(size, FontFamily::Name(HAND_FONT.into()))
-    } else {
-        FontId::proportional(size)
+    match HEADING_FACE.with(std::cell::Cell::get) {
+        HeadingFace::Unavailable => FontId::proportional(size),
+        HeadingFace::GelPen => FontId::new(size, FontFamily::Name(HAND_FONT.into())),
+        HeadingFace::PlexSemibold => FontId::new(size, FontFamily::Name(PLEX_SEMIBOLD.into())),
     }
 }
 
-/// A font id for a named family of this module (`PREVIEW_SERIF`, `PREVIEW_VANILLA`), with the same
-/// fallback as [`hand`].
+/// A font id for a named family of this module (`PREVIEW_SERIF`, `PREVIEW_VANILLA`, ...), with the same
+/// fallback as [`hand`]. A family whose file this build lacks (Noto Sans, Plex Sans before it is fetched) is the
+/// default font.
 pub fn named(family: &str, size: f32) -> FontId {
-    let missing = family == PREVIEW_NOTO && !UiFontChoice::NotoSans.available();
-    if HAND_READY.with(std::cell::Cell::get) && !missing {
+    let missing = UiFontChoice::ALL.into_iter().any(|c| c.family() == family && !c.loaded());
+    if families_ready() && !missing {
         FontId::new(size, FontFamily::Name(family.into()))
     } else {
         FontId::proportional(size)
@@ -346,7 +412,13 @@ pub fn ensure_fonts(ctx: &Context, choice: UiFontChoice) -> bool {
         install_fonts_with(ctx, choice);
     }
     let ready = fonts_present(ctx);
-    HAND_READY.with(|r| r.set(ready));
+    let face = match (ready, choice == UiFontChoice::PlexSans && choice.loaded()) {
+        (false, _) => HeadingFace::Unavailable,
+        (true, false) => HeadingFace::GelPen,
+        (true, true) => HeadingFace::PlexSemibold,
+    };
+    HEADING_FACE.with(|f| f.set(face));
+    PLEX_DEMANDED.with(|d| d.set(choice == UiFontChoice::PlexSans && !choice.loaded()));
     ready
 }
 
@@ -376,15 +448,26 @@ pub fn install_fonts_with(ctx: &Context, choice: UiFontChoice) {
     });
     ctx.data_mut(|d| d.insert_temp::<Installed>(installed_key(), (version, choice)));
     let fallback = fonts.families.get(&FontFamily::Proportional).cloned().unwrap_or_default();
-    let noto = UiFontChoice::NotoSans.file().filter(|bytes| !bytes.is_empty()).map(|bytes| (PREVIEW_NOTO, bytes));
-    for (name, bytes) in hand_fonts().into_iter().chain(noto) {
+    let optional = [UiFontChoice::NotoSans, UiFontChoice::PlexSans]
+        .into_iter()
+        .filter_map(|c| c.file().filter(|bytes| !bytes.is_empty()).map(|bytes| (c.family(), bytes)));
+    for (name, bytes) in hand_fonts().into_iter().chain(optional) {
         fonts.font_data.insert(name.to_owned(), std::sync::Arc::new(FontData::from_static(bytes)));
         // The default proportional fonts follow as the fallback for glyphs the font lacks.
         let mut chain = vec![name.to_owned()];
         chain.extend(fallback.iter().cloned());
         fonts.families.insert(FontFamily::Name(name.into()), chain);
     }
-    // The UI text is the chosen font, then the fallback. A choice this build lacks (Noto Sans on the web) keeps the
+    // Plex is a variable font: the semibold of the headings is the same file at `wght` 600.
+    if let Some(bytes) = UiFontChoice::PlexSans.file().filter(|bytes| !bytes.is_empty()) {
+        let mut data = FontData::from_static(bytes);
+        data.tweak.coords = egui::epaint::text::VariationCoords::new([(b"wght", SEMIBOLD_WEIGHT)]);
+        fonts.font_data.insert(PLEX_SEMIBOLD.to_owned(), std::sync::Arc::new(data));
+        let mut chain = vec![PLEX_SEMIBOLD.to_owned()];
+        chain.extend(fallback.iter().cloned());
+        fonts.families.insert(FontFamily::Name(PLEX_SEMIBOLD.into()), chain);
+    }
+    // The UI text is the chosen font, then the fallback. A choice this build lacks (Noto Sans on the web, Plex Sans until it is fetched) keeps the
     // default font.
     let chosen = choice.family();
     if fonts.font_data.contains_key(chosen) {

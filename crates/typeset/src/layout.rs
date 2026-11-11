@@ -73,8 +73,11 @@ pub struct GlyphRun {
     pub font: peniko::FontData,
     /// Font size in layout units.
     pub font_size: f32,
-    /// Variation coordinates, normalised (empty for the static bundled fonts).
+    /// Variation coordinates, normalised (empty for the static fonts; IBM Plex Sans has a `wght` axis).
     pub normalized_coords: Vec<i16>,
+    /// The same variations as axis settings in font units (`wght` 700), for readers that take those, as
+    /// [`TextLayout::outline`] does.
+    pub variations: Vec<([u8; 4], f32)>,
     /// Horizontal shear for a synthetic italic: `tan(angle)`, `None` when the face is a real italic.
     pub skew: Option<f32>,
     /// A synthetic bold is wanted. The bundled faces never need it.
@@ -259,7 +262,7 @@ impl TextLayout {
 
     /// The glyph outlines and decorations as filled paths, grouped by colour in paint order.
     /// Used by exports (SVG, PNG without a glyph renderer) and tests. Glyphs the font cannot
-    /// outline are skipped. Variable-font coordinates are ignored (the bundled fonts are static).
+    /// outline are skipped. A variable font is drawn at the settings of its run.
     pub fn outline(&self) -> Vec<ColouredPath> {
         crate::outline::text_outline(self)
     }
@@ -280,7 +283,7 @@ impl Engine {
             font_cx.collection.register_fonts(peniko::Blob::new(Arc::new(bytes)), None);
         }
         let mut engine = Self { font_cx, layout_cx: LayoutContext::new() };
-        for font in ExtraFont::NOTO_SANS.into_iter().filter(|_| extras) {
+        for font in ExtraFont::NOTO_SANS.into_iter().chain([ExtraFont::PlexSans]).filter(|_| extras) {
             if let Some(bytes) = font.embedded() {
                 engine.register(Arc::new(bytes));
             }
@@ -426,14 +429,6 @@ fn line_height(lh: LineHeight) -> parley::LineHeight {
     }
 }
 
-fn pweight(style: &RunStyle) -> f32 {
-    let face = fonts::face_for(&style.family, style.weight, style.italic);
-    match (&style.family, style.weight) {
-        (FontFamily::Custom(_), FontWeight::Light) => 300.0,
-        _ => face.weight,
-    }
-}
-
 /// The Parley properties that carry `style`.
 fn properties(style: &RunStyle, id: u32) -> [StyleProperty<'static, StyleId>; 5] {
     let face = fonts::face_for(&style.family, style.weight, style.italic);
@@ -445,7 +440,7 @@ fn properties(style: &RunStyle, id: u32) -> [StyleProperty<'static, StyleId>; 5]
     [
         StyleProperty::FontFamily(PFamily::List(Cow::Owned(names))),
         StyleProperty::FontSize(style.size),
-        StyleProperty::FontWeight(PWeight::new(pweight(style))),
+        StyleProperty::FontWeight(PWeight::new(face.weight)),
         StyleProperty::FontStyle(if face.italic { FontStyle::Italic } else { FontStyle::Normal }),
         StyleProperty::Brush(StyleId(id)),
     ]
@@ -638,6 +633,7 @@ fn glyph_run(
         font: run.font().clone(),
         font_size: run.font_size(),
         normalized_coords: run.normalized_coords().iter().map(|c| c.to_bits()).collect(),
+        variations: syn.variation_settings().iter().map(|(tag, value)| (tag.into_bytes(), *value)).collect(),
         skew: syn.skew().map(|deg| deg.to_radians().tan()),
         embolden: syn.embolden(),
         glyphs,

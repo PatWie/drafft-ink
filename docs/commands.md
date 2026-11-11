@@ -613,7 +613,7 @@ The props (each applies only to the kinds listed; others are skipped and reporte
 | `opacity` | 0 to 1 | all | U:1778, A:3639 |
 | `freehand_style` | `normal \| calligraphy` (smooths the samples of strokes drawn afterwards; `element.create` stores the points it is given) | freehand | U:1659, A:3609 |
 | `pressure_mode` | `uniform \| simulated \| device` (device is NEW: real pen pressure). `uniform` draws a constant width, the others use the stored `pressures`; `simulated` makes them from the pointer speed when a stroke is drawn with a mouse or finger | freehand | U:1675, A:3617 |
-| `font_family` | `gelpen \| gelpen_serif \| vanilla_extract \| noto_sans` | text (a math element has no font family); on a shape or arrow it goes to its label | U:1380, A:2939 |
+| `font_family` | `gelpen \| gelpen_serif \| vanilla_extract \| noto_sans \| plex_sans` | text (a math element has no font family); on a shape or arrow it goes to its label | U:1380, A:2939 |
 | `font_weight` | `light \| regular \| heavy` | text (or the label of a shape or arrow) | U:1417, A:2955 |
 | `font_size` | number above 0, at most 10000 (presets 16, 20, 28, 36; math uses the same sizes, the old `SetMathFontSize` is merged) | text, math (or the label of a shape or arrow) | U:1446-1496, A:2918-2928 |
 | `text_align` | `left \| center \| right` | text (or the label of a shape or arrow) (NEW) | X:actionChangeTextAlign |
@@ -1090,7 +1090,7 @@ Persisted through the `Storage` settings namespace; read with `settings.get`, wr
 | `agent.mcp_http` | bool; a person can write it, an agent cannot (`settings.set`, `toggle` and `reset` refuse it when the origin is `agent`) | false | none (new): serves MCP over HTTP on `127.0.0.1`, desktop only (`agents.md` section 5.4) |
 | `doc.recent` | list of `FileRef`, at most 10; read only | empty | `recent_documents` |
 | `theme` | `light \| dark \| system` | `system` | none (decision §9 item 13). The dark theme changes the UI and draws element colours through `Color::for_dark_theme`; stored colours never change. Every colour the UI shows for an element is shown as the canvas draws it, and a pick stores the colour whose display it is (`ui.md`, "Colours the UI shows"): `style.set` and `doc.set_background` still take stored colours. |
-| `ui.font` | `gelpen \| gelpen_serif \| vanilla_extract \| noto_sans`; the font of menus, bars and dialogs (the canvas fonts that are bundled; Noto Sans only where it is built in) | `gelpen` | none. Only the UI text; the canvas and `font_family` are not affected. |
+| `ui.font` | `gelpen \| gelpen_serif \| vanilla_extract \| noto_sans \| plex_sans`; the font of menus, bars and dialogs (the canvas fonts that are bundled; Noto Sans only where it is built in; IBM Plex Sans everywhere, on the web fetched when first chosen, with semibold headings) | `gelpen` | none. Only the UI text; the canvas and `font_family` are not affected. |
 
 Constants carried over unchanged from the old app, which are not settings: grid size 20; smart guide threshold 8; equal-spacing radius 800 with candidate caps 50 and 200; handle hit tolerance 24; rotate-handle offset 25; handle size 16 divided by zoom; `BASE_ZOOM` 1.68; zoom range 0.1..30; wheel zoom step 1.1 and 0.9; button zoom 1.25 and 0.8; double-click 500 ms and 5 px; minimum shape size 1; eraser radius 10; freehand simplify 2.0; highlighter width 12 and alpha 128; image fit 800; presence panel shows 8 peers; recent documents 10; duplicate offset 20; laser trail 50 points with a 0.33 s fade.
 

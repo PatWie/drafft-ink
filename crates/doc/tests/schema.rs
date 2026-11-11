@@ -276,3 +276,44 @@ fn reloading_a_snapshot_gives_the_same_scene() {
     assert_same(&s, &LoroStore::from_snapshot(&bytes).unwrap());
     edit(&mut s, "a_rect", |e| e.transform.x = 1.0);
 }
+
+#[test]
+fn every_font_family_and_weight_survives_the_crdt_a_second_replica_and_a_snapshot() {
+    let families = [
+        FontFamily::GelPen,
+        FontFamily::NotoSans,
+        FontFamily::GelPenSerif,
+        FontFamily::VanillaExtract,
+        FontFamily::PlexSans,
+    ];
+    let weights = [FontWeight::Light, FontWeight::Regular, FontWeight::Heavy];
+    let z = zs(families.len() * weights.len());
+    let mut doc = Document::new();
+    for (i, (family, weight)) in families.iter().flat_map(|f| weights.iter().map(move |w| (f, w))).enumerate() {
+        let mut t = TextData::new("Plex and the rest");
+        t.font.family = *family;
+        t.font.weight = *weight;
+        doc.elements.push(Element::new(eid(&format!("t{i:02}")), ElementKind::Text(t), z[i].clone()));
+    }
+    let mut s = peer(1);
+    load_document(&mut s, &doc).unwrap();
+    assert_view_matches_loro(&s);
+    let fonts = |s: &LoroStore| -> Vec<(FontFamily, FontWeight)> {
+        content(s)
+            .elements
+            .iter()
+            .filter_map(|e| match &e.kind {
+                ElementKind::Text(t) => Some((t.font.family, t.font.weight)),
+                _ => None,
+            })
+            .collect()
+    };
+    let want: Vec<_> = families.iter().flat_map(|f| weights.iter().map(move |w| (*f, *w))).collect();
+    assert_eq!(fonts(&s), want);
+    let mut other = peer(2);
+    push(&s, &mut other);
+    assert_same(&s, &other);
+    assert_eq!(fonts(&other), want);
+    let bytes = s.export_snapshot().unwrap();
+    assert_eq!(fonts(&LoroStore::from_snapshot(&bytes).unwrap()), want);
+}

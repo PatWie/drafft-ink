@@ -11,7 +11,7 @@ use crate::icons::Icon;
 use crate::model::StyleView;
 use crate::state::PanelKind;
 use crate::state::UiState;
-use crate::theme::{self, MARGIN, TextSize, space};
+use crate::theme::{MARGIN, TextSize, UiFontChoice, space};
 use crate::widgets::{Ctl, Cx, PANEL_INSET_Y, panel_frame, scroll_when_taller, section_label, separator};
 
 /// Sizes of the text presets.
@@ -31,11 +31,12 @@ const FILL_PATTERNS: [(&str, &str); 7] = [
     ("Zigzag line", "zigzag_line"),
 ];
 const STROKE_STYLES: [(&str, &str); 3] = [("Solid", "solid"), ("Dashed", "dashed"), ("Dotted", "dotted")];
-const FONT_FAMILIES: [(&str, &str); 4] = [
+const FONT_FAMILIES: [(&str, &str); 5] = [
     ("GelPen", "gelpen"),
     ("GelPen Serif", "gelpen_serif"),
     ("Vanilla", "vanilla_extract"),
     ("Noto Sans", "noto_sans"),
+    ("Plex Sans", "plex_sans"),
 ];
 const FONT_WEIGHTS: [(&str, &str); 3] = [("Light", "light"), ("Regular", "regular"), ("Heavy", "heavy")];
 const VERTICAL_ALIGNS: [(&str, &str); 3] = [("Top", "top"), ("Middle", "middle"), ("Bottom", "bottom")];
@@ -192,11 +193,9 @@ fn text_sections(ui: &mut egui::Ui, cx: &mut Cx<'_>) {
                     .args(json!({ "props": { "font_family": value } }))
                     .label(label)
                     .selected(current.as_deref() == Some(value));
-                let font = match value {
-                    "gelpen" => TextSize::Body.hand(),
-                    "gelpen_serif" => theme::named(theme::PREVIEW_SERIF, TextSize::Body.points()),
-                    "vanilla_extract" => theme::named(theme::PREVIEW_VANILLA, TextSize::Body.points()),
-                    _ => theme::named(theme::PREVIEW_NOTO, TextSize::Body.points()),
+                let font = match UiFontChoice::from_setting(value) {
+                    Some(choice) => choice.preview(TextSize::Body.points()),
+                    None => TextSize::Body.font(),
                 };
                 cx.toggle_button_font(ui, &ctl, label, font);
             }

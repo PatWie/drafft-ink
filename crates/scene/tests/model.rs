@@ -326,3 +326,20 @@ fn json_schema_describes_the_document() {
         assert!(text.contains(needle), "schema lacks {needle}");
     }
 }
+
+#[test]
+fn plex_sans_is_a_family_with_its_own_word_and_every_old_word_still_parses() {
+    assert_eq!(serde_json::to_value(FontFamily::PlexSans).unwrap(), serde_json::json!("plex_sans"));
+    assert_eq!(FontFamily::PlexSans.display_name(), "IBM Plex Sans");
+    for (word, family) in [
+        ("gelpen", FontFamily::GelPen),
+        ("noto_sans", FontFamily::NotoSans),
+        ("gelpen_serif", FontFamily::GelPenSerif),
+        ("vanilla_extract", FontFamily::VanillaExtract),
+        ("plex_sans", FontFamily::PlexSans),
+    ] {
+        let parsed: FontFamily = serde_json::from_value(serde_json::json!(word)).unwrap();
+        assert_eq!(parsed, family, "{word}");
+    }
+    assert!(serde_json::from_value::<FontFamily>(serde_json::json!("plex")).is_err());
+}

@@ -265,7 +265,7 @@ pub struct StyleProps {
     /// Freehand pressure: uniform, simulated or device.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub pressure_mode: Option<PressureMode>,
-    /// Font: gelpen, gelpen_serif, vanilla_extract or noto_sans.
+    /// Font: gelpen, gelpen_serif, vanilla_extract, noto_sans or plex_sans.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub font_family: Option<FontFamily>,
     /// Font weight: light, regular or heavy.

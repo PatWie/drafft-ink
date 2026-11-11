@@ -144,6 +144,7 @@ pan" with `WorkScope`. Misses run inside a `typeset_text` / `typeset_math` span.
 | `GelPenSerif` | Light, Medium (= Regular), Heavy |
 | `VanillaExtract` | one face |
 | `NotoSans` | Regular, Bold, Italic (an `ExtraFont`: built in with the Cargo feature `noto-sans`, or provided by the host, see below) |
+| `PlexSans` | Light (300), Regular (400), Heavy (700), real weights of one variable file (`IBMPlexSans-Variable.ttf`, an `ExtraFont`: built in with the Cargo feature `plex-sans`, or provided by the host). Parley picks the weight on the `wght` axis; `TextLayout::outline` draws the run's variation settings |
 | `Custom(name)` | any family added with `Typesetter::register_font(bytes)` |
 
 The family-to-face table exists once (`fonts::face_for`); the old app had it twice. Every stack ends
@@ -153,8 +154,8 @@ There is no CJK or emoji font: such characters lay out with the missing-glyph bo
 app. Line breaking of CJK uses per-character fallback (ICU data has no dictionary model; `icu_segmenter`
 prints a notice to stderr).
 
-The big fonts are `ExtraFont`s: Noto Sans (three files) and STIX Two Math. The Cargo feature `embedded` (= `noto-sans` + `stix-math`) builds them into the binary; `drafftink-engine` turns it on for every target except wasm32, and `canvas-js` always. A build without them (the web app) starts with the seven GelPen and Vanilla Extract files only.
-A layout that needs one of the others records that: `Typesetter::wanted_fonts()` lists the files still missing (all three Noto files when the family `noto_sans` is used or a character has no glyph in the loaded fonts; STIX when a formula is laid out), and the host gives
+The big fonts are `ExtraFont`s: Noto Sans (three files), IBM Plex Sans (one variable file) and STIX Two Math. The Cargo feature `embedded` (= `noto-sans` + `plex-sans` + `stix-math`) builds them into the binary; `drafftink-engine` turns it on for every target except wasm32, and `canvas-js` always. A build without them (the web app) starts with the seven GelPen and Vanilla Extract files only.
+A layout that needs one of the others records that: `Typesetter::wanted_fonts()` lists the files still missing (all three Noto files when the family `noto_sans` is used or a character has no glyph in the loaded fonts; the Plex file when the family `plex_sans` is used; STIX when a formula is laid out), and the host gives
 them to `Typesetter::provide_font(font, bytes)`. A formula asked for before STIX is there is the error `MathErrorKind::FontLoading`, which is not cached. Providing a font changes
 `font_set_version`, drops the text and math caches and nothing else; the render crate's fragment caches are the caller's to drop (the app does, `CanvasView::sync_fonts`).
 `Typesetter::without_extra_fonts()` makes this path testable on the desktop. How the web app fetches the files is in `web-app.md`.

@@ -59,7 +59,11 @@ pub(crate) fn text_outline(l: &TextLayout) -> Vec<ColouredPath> {
     let mut out = Vec::new();
     // Paint order: each run's glyphs, then decorations on top.
     for run in &l.runs {
-        let Ok(face) = ttf_parser::Face::parse(run.font.data.as_ref(), run.font.index) else { continue };
+        let Ok(mut face) = ttf_parser::Face::parse(run.font.data.as_ref(), run.font.index) else { continue };
+        for (axis, value) in &run.variations {
+            // A font without the axis ignores the setting.
+            let _ = face.set_variation(ttf_parser::Tag::from_bytes(axis), *value);
+        }
         let mut acc = BezPath::new();
         for g in &run.glyphs {
             let Some((path, upem)) = glyph_path(&face, g.id) else { continue };

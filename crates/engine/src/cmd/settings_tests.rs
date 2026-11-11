@@ -207,7 +207,7 @@ fn set_refuses_a_value_of_the_wrong_type_or_range_with_the_exact_text() {
 fn the_ui_font_takes_the_bundled_canvas_fonts_and_defaults_to_gelpen() {
     let mut s = testing::headless_session();
     assert_eq!(value(&s, "ui.font"), json!("gelpen"));
-    for font in ["gelpen_serif", "vanilla_extract", "noto_sans", "gelpen"] {
+    for font in ["gelpen_serif", "vanilla_extract", "noto_sans", "plex_sans", "gelpen"] {
         run(&mut s, "settings.set", json!({"key": "ui.font", "value": font}));
         assert_eq!(value(&s, "ui.font"), json!(font));
     }
@@ -215,7 +215,7 @@ fn the_ui_font_takes_the_bundled_canvas_fonts_and_defaults_to_gelpen() {
     assert_eq!(r.code, "bad_args");
     assert_eq!(
         r.message,
-        "Setting `ui.font` must be one of `gelpen`, `gelpen_serif`, `vanilla_extract` or `noto_sans`, and got the text \"comic_sans\"."
+        "Setting `ui.font` must be one of `gelpen`, `gelpen_serif`, `vanilla_extract`, `noto_sans` or `plex_sans`, and got the text \"comic_sans\"."
     );
 }
 

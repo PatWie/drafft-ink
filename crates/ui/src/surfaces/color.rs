@@ -18,7 +18,7 @@ use crate::colors;
 use crate::model::Model;
 use crate::state::{ColorTarget, UiState};
 use crate::surfaces::dialogs::{enter_pressed, text_field};
-use crate::theme::{self, MARGIN, RIGHT_PANEL_WIDTH, TextSize};
+use crate::theme::{MARGIN, RIGHT_PANEL_WIDTH, TextSize, UiFontChoice};
 use crate::widgets::{Ctl, Cx, Look, paint_button_bg, panel_frame, section_label};
 
 /// Side of a colour cell.
@@ -336,13 +336,9 @@ fn hex_row(ui: &mut Ui, cx: &mut Cx<'_>, target: ColorTarget, draft: &mut HexDra
 // ---- fonts ----
 
 /// The font families of the canvas: setting value, name, and the family that previews it.
-fn font_choices() -> [(&'static str, &'static str, FontFamily); 4] {
-    [
-        ("gelpen", "GelPen", FontFamily::Name(theme::HAND_FONT.into())),
-        ("gelpen_serif", "GelPen Serif", FontFamily::Name(theme::PREVIEW_SERIF.into())),
-        ("vanilla_extract", "Vanilla Extract", FontFamily::Name(theme::PREVIEW_VANILLA.into())),
-        ("noto_sans", "Noto Sans", theme::named(theme::PREVIEW_NOTO, TextSize::Title.points()).family),
-    ]
+fn font_choices() -> [(&'static str, &'static str, FontFamily); 5] {
+    // A face this build lacks (Noto Sans on the web, Plex Sans before it is fetched) previews in the default font.
+    UiFontChoice::ALL.map(|c| (c.setting(), c.title(), c.preview(TextSize::Title.points()).family))
 }
 
 /// The arguments of `style.set` for a font family.
@@ -501,9 +497,9 @@ mod tests {
     }
 
     #[test]
-    fn font_choices_are_the_four_families() {
+    fn font_choices_are_the_five_families() {
         let ids: Vec<_> = font_choices().iter().map(|c| c.0).collect();
-        assert_eq!(ids, ["gelpen", "gelpen_serif", "vanilla_extract", "noto_sans"]);
+        assert_eq!(ids, ["gelpen", "gelpen_serif", "vanilla_extract", "noto_sans", "plex_sans"]);
         assert_eq!(font_args("noto_sans"), json!({"props": {"font_family": "noto_sans"}}));
     }
 }

@@ -44,7 +44,7 @@ impl From<[u8; 4]> for Rgba8 {
     }
 }
 
-/// A font family. The first four are bundled; [`FontFamily::Custom`] names a family added with
+/// A font family. The first five are bundled; [`FontFamily::Custom`] names a family added with
 /// [`crate::Typesetter::register_font`].
 #[derive(Clone, Debug, PartialEq, Eq, Hash, Default)]
 pub enum FontFamily {
@@ -57,12 +57,15 @@ pub enum FontFamily {
     VanillaExtract,
     /// Noto Sans (bundled with the `noto-sans` feature, on by default).
     NotoSans,
+    /// IBM Plex Sans, a variable font with real light, regular and bold weights (an [`crate::ExtraFont`]: built in
+    /// with the `plex-sans` feature, or provided by the host).
+    PlexSans,
     /// A family registered at run time. Unknown names fall back to GelPen.
     Custom(String),
 }
 
 /// Font weight. Bundled families have three weights (Noto Sans has regular and bold only, Vanilla
-/// Extract one); a request for a missing weight uses the nearest face.
+/// Extract one, IBM Plex Sans draws all three from one variable file); a request for a missing weight uses the nearest face.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Default, PartialOrd, Ord)]
 pub enum FontWeight {
     /// Light.

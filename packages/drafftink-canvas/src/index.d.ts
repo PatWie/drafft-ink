@@ -33,7 +33,7 @@ export interface Style {
   seed: number;
 }
 
-export type FontFamily = "gelpen" | "noto_sans" | "gelpen_serif" | "vanilla_extract";
+export type FontFamily = "gelpen" | "noto_sans" | "gelpen_serif" | "vanilla_extract" | "plex_sans";
 export interface TextStyle {
   family: FontFamily;
   size: number;

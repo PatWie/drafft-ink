@@ -24,8 +24,9 @@ pub(super) fn font_to_number(family: FontFamily, weight: FontWeight) -> i64 {
         (FontFamily::GelPen, _) => 5,
         (FontFamily::GelPenSerif, _) => 1,
         (FontFamily::VanillaExtract, _) => 8,
-        (FontFamily::NotoSans, FontWeight::Heavy) => 7,
-        (FontFamily::NotoSans, _) => 9,
+        // Excalidraw has no IBM Plex Sans: it is written as the plain sans (and comes back as Noto Sans).
+        (FontFamily::NotoSans | FontFamily::PlexSans, FontWeight::Heavy) => 7,
+        (FontFamily::NotoSans | FontFamily::PlexSans, _) => 9,
     }
 }
 
@@ -227,6 +228,13 @@ mod tests {
             font_from_number(font_to_number(FontFamily::NotoSans, FontWeight::Heavy)).map(|f| f.1),
             Some(FontWeight::Heavy)
         );
+        // Plex Sans has no Excalidraw number of its own: it keeps its weight and comes back as the plain sans.
+        for weight in [FontWeight::Regular, FontWeight::Heavy] {
+            assert_eq!(
+                font_from_number(font_to_number(FontFamily::PlexSans, weight)),
+                Some((FontFamily::NotoSans, weight))
+            );
+        }
     }
 
     #[test]

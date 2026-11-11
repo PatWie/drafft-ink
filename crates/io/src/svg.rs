@@ -172,6 +172,7 @@ fn css_family(f: FontFamily) -> &'static str {
         FontFamily::NotoSans => "'Noto Sans', 'Helvetica Neue', Arial, sans-serif",
         FontFamily::GelPenSerif => "'GelPen Serif', Georgia, serif",
         FontFamily::VanillaExtract => "'Vanilla Extract', 'Segoe Print', cursive",
+        FontFamily::PlexSans => "'IBM Plex Sans', 'Helvetica Neue', Arial, sans-serif",
     }
 }
 

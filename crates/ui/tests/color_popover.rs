@@ -286,15 +286,20 @@ fn both_themes_draw() {
 // ---- fonts ----
 
 #[test]
-fn the_font_picker_lists_four_families_and_marks_the_current_one() {
+fn the_font_picker_lists_five_families_and_marks_the_current_one() {
     let mut f = dialog::fixture();
     f.session.execute("style.set", json!({"props": {"font_family": "gelpen_serif"}})).unwrap();
     f.refresh();
     let mut h = dialog::harness(f);
     h.state_mut().state.font_picker_open = true;
     h.run();
-    for (name, current) in [("GelPen", false), ("GelPen Serif", true), ("Vanilla Extract", false), ("Noto Sans", false)]
-    {
+    for (name, current) in [
+        ("GelPen", false),
+        ("GelPen Serif", true),
+        ("Vanilla Extract", false),
+        ("Noto Sans", false),
+        ("IBM Plex Sans", false),
+    ] {
         assert_eq!(on(&h, name), current, "{name}");
     }
 }
@@ -320,6 +325,7 @@ fn every_font_family_has_its_setting_value() {
         ("GelPen Serif", "gelpen_serif"),
         ("Vanilla Extract", "vanilla_extract"),
         ("Noto Sans", "noto_sans"),
+        ("IBM Plex Sans", "plex_sans"),
     ] {
         let mut h = dialog::harness(dialog::fixture());
         h.state_mut().state.font_picker_open = true;

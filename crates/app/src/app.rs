@@ -22,6 +22,7 @@ use drafftink_gpu::{
 };
 use drafftink_render::{GridStyle, Theme};
 use drafftink_scene::{ElementKind, SceneRead, SceneStore};
+use drafftink_typeset::ExtraFont;
 use drafftink_ui::{AboutInfo, FrameInput, HostRequest, Pointer, Toast, UiShell};
 use serde_json::{Value, json};
 use vello::peniko::Color;
@@ -592,9 +593,14 @@ impl App {
     }
 
     /// Asks the host for the fonts the typesetter and the UI need and do not have, once each. Nothing happens
-    /// on a build that carries its fonts.
+    /// on a build that carries its fonts. IBM Plex Sans is one file for both: a text in Plex or the UI font setting
+    /// asks for it, and [`Self::font_loaded`] gives it to both.
     fn request_fonts(&mut self) {
-        let text = self.typesetter.peek(|ts| ts.wanted_fonts()).unwrap_or_default().into_iter().map(FontFile::Text);
+        let mut text = self.typesetter.peek(|ts| ts.wanted_fonts()).unwrap_or_default();
+        if drafftink_ui::theme::wants_plex_sans() && !text.contains(&ExtraFont::PlexSans) {
+            text.push(ExtraFont::PlexSans);
+        }
+        let text = text.into_iter().map(FontFile::Text);
         let ui = drafftink_ui::theme::wanted_fonts().into_iter().map(FontFile::Ui);
         for file in text.chain(ui) {
             if self.fonts_requested.insert(file) {
@@ -608,6 +614,9 @@ impl App {
     fn font_loaded(&mut self, file: FontFile, bytes: Vec<u8>) {
         match file {
             FontFile::Text(font) => {
+                if font == ExtraFont::PlexSans {
+                    drafftink_ui::theme::provide_plex_sans(bytes.clone());
+                }
                 if let Err(e) = self.typesetter.with(|ts| ts.provide_font(font, bytes)) {
                     self.toast(format!("The font {} could not be used: {e}", file.file_name()));
                 }

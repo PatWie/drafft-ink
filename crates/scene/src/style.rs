@@ -116,7 +116,8 @@ impl Default for Style {
     }
 }
 
-/// Font family. `GelPen`, `GelPenSerif` and `VanillaExtract` ship with the app; `NotoSans` is the old fallback.
+/// Font family. `GelPen`, `GelPenSerif`, `VanillaExtract` and `PlexSans` ship with the app; `NotoSans` is the old
+/// fallback.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default, Serialize, Deserialize, JsonSchema)]
 pub enum FontFamily {
     /// Hand-written sans (the default).
@@ -132,6 +133,9 @@ pub enum FontFamily {
     /// Vanilla Extract.
     #[serde(rename = "vanilla_extract")]
     VanillaExtract,
+    /// IBM Plex Sans, a plain sans with real light, regular and bold weights.
+    #[serde(rename = "plex_sans")]
+    PlexSans,
 }
 
 impl FontFamily {
@@ -143,6 +147,7 @@ impl FontFamily {
             FontFamily::NotoSans => "Noto Sans",
             FontFamily::GelPenSerif => "GelPen Serif",
             FontFamily::VanillaExtract => "Vanilla Extract",
+            FontFamily::PlexSans => "IBM Plex Sans",
         }
     }
 }

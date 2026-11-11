@@ -14,7 +14,7 @@ pub(crate) static GELPEN_SERIF_HEAVY: &[u8] = include_bytes!("../assets/fonts/Ge
 pub(crate) static VANILLA_EXTRACT: &[u8] = include_bytes!("../assets/fonts/VanillaExtract.ttf");
 
 /// The font file that draws `family` at `weight`, when this build has it: the bundled GelPen and Vanilla Extract
-/// files always, Noto Sans when it is built in (the Cargo feature `noto-sans`). A custom family has none. The bytes
+/// files always, Noto Sans and IBM Plex Sans when they are built in (the Cargo features `noto-sans` and `plex-sans`). A custom family has none. The bytes
 /// are the statics the typesetter registers, so a host that needs the file (the UI fonts, an SVG export) shares
 /// them instead of embedding a second copy.
 pub fn font_file(family: &FontFamily, weight: FontWeight) -> Option<&'static [u8]> {
@@ -28,6 +28,7 @@ pub fn font_file(family: &FontFamily, weight: FontWeight) -> Option<&'static [u8
         (FontFamily::VanillaExtract, _) => Some(VANILLA_EXTRACT),
         (FontFamily::NotoSans, FontWeight::Heavy) => ExtraFont::NotoSansBold.embedded(),
         (FontFamily::NotoSans, _) => ExtraFont::NotoSansRegular.embedded(),
+        (FontFamily::PlexSans, _) => ExtraFont::PlexSans.embedded(),
         (FontFamily::Custom(_), _) => None,
     }
 }
@@ -58,14 +59,21 @@ pub enum ExtraFont {
     NotoSansBold,
     /// Noto Sans, italic.
     NotoSansItalic,
+    /// IBM Plex Sans, the variable font (weights 100 to 700) of the family `plex_sans`.
+    PlexSans,
     /// STIX Two Math, the font of formulas.
     StixTwoMath,
 }
 
 impl ExtraFont {
     /// Every extra font.
-    pub const ALL: [ExtraFont; 4] =
-        [ExtraFont::NotoSansRegular, ExtraFont::NotoSansBold, ExtraFont::NotoSansItalic, ExtraFont::StixTwoMath];
+    pub const ALL: [ExtraFont; 5] = [
+        ExtraFont::NotoSansRegular,
+        ExtraFont::NotoSansBold,
+        ExtraFont::NotoSansItalic,
+        ExtraFont::PlexSans,
+        ExtraFont::StixTwoMath,
+    ];
 
     /// The three Noto Sans files, which are always wanted together.
     pub const NOTO_SANS: [ExtraFont; 3] =
@@ -77,6 +85,7 @@ impl ExtraFont {
             ExtraFont::NotoSansRegular => "NotoSans-Regular.ttf",
             ExtraFont::NotoSansBold => "NotoSans-Bold.ttf",
             ExtraFont::NotoSansItalic => "NotoSans-Italic.ttf",
+            ExtraFont::PlexSans => "IBMPlexSans-Variable.ttf",
             ExtraFont::StixTwoMath => "STIXTwoMath-Regular.otf",
         }
     }
@@ -90,10 +99,14 @@ impl ExtraFont {
             ExtraFont::NotoSansBold => Some(include_bytes!("../assets/fonts/NotoSans-Bold.ttf")),
             #[cfg(feature = "noto-sans")]
             ExtraFont::NotoSansItalic => Some(include_bytes!("../assets/fonts/NotoSans-Italic.ttf")),
+            #[cfg(feature = "plex-sans")]
+            ExtraFont::PlexSans => Some(include_bytes!("../assets/fonts/IBMPlexSans-Variable.ttf")),
             #[cfg(feature = "stix-math")]
             ExtraFont::StixTwoMath => Some(include_bytes!("../assets/fonts/STIXTwoMath-Regular.otf")),
             #[cfg(not(feature = "noto-sans"))]
             ExtraFont::NotoSansRegular | ExtraFont::NotoSansBold | ExtraFont::NotoSansItalic => None,
+            #[cfg(not(feature = "plex-sans"))]
+            ExtraFont::PlexSans => None,
             #[cfg(not(feature = "stix-math"))]
             ExtraFont::StixTwoMath => None,
         }
@@ -111,6 +124,9 @@ pub(crate) struct Face {
     pub italic: bool,
 }
 
+/// The Parley family name of IBM Plex Sans (the font's own family name).
+const PLEX_SANS_FAMILY: &str = "IBM Plex Sans";
+
 /// The family name used as a glyph fallback for characters the chosen family lacks.
 pub(crate) const FALLBACK_FAMILY: &str = "Noto Sans";
 
@@ -126,8 +142,13 @@ pub(crate) fn face_for(family: &FontFamily, weight: FontWeight, italic: bool) ->
         (FontFamily::GelPenSerif, FontWeight::Heavy) => "GelPenSerifHeavy",
         (FontFamily::VanillaExtract, _) => "Vanilla Extract",
         (FontFamily::NotoSans, _) => FALLBACK_FAMILY,
+        (FontFamily::PlexSans, _) => PLEX_SANS_FAMILY,
         (FontFamily::Custom(name), _) => name.as_str(),
     };
-    let bold = matches!(family, FontFamily::NotoSans | FontFamily::Custom(_)) && weight == FontWeight::Heavy;
-    Face { name: name.to_owned(), weight: if bold { 700.0 } else { 400.0 }, italic }
+    let weight = match (family, weight) {
+        (FontFamily::PlexSans | FontFamily::Custom(_), FontWeight::Light) => 300.0,
+        (FontFamily::NotoSans | FontFamily::PlexSans | FontFamily::Custom(_), FontWeight::Heavy) => 700.0,
+        _ => 400.0,
+    };
+    Face { name: name.to_owned(), weight, italic }
 }

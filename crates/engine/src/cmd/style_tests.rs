@@ -406,6 +406,21 @@ fn math_takes_font_size_only() {
     assert_eq!(r.code, "not_applicable");
 }
 
+#[test]
+fn plex_sans_is_a_font_family_for_text_and_the_label_of_a_container() {
+    let mut f = fixture();
+    testing::select(&mut f.s, &[f.text.clone(), f.boxed.clone()]);
+    let out = run(&mut f.s, "style.set", json!({"scope": "selection", "props": {"font_family": "plex_sans"}}));
+    assert_eq!(font(&f.s, &f.text).family, drafftink_scene::FontFamily::PlexSans);
+    assert_eq!(font(&f.s, &f.label).family, drafftink_scene::FontFamily::PlexSans, "the label of the container too");
+    assert_eq!(out["applied"][f.text.as_str()], json!(["font_family"]));
+    // The next text is made in it, and a bad word names the new one among the accepted.
+    run(&mut f.s, "style.set", json!({"props": {"font_family": "plex_sans"}}));
+    assert_eq!(f.s.tool.text_defaults.family, drafftink_scene::FontFamily::PlexSans);
+    let r = refuse_clean(&mut f.s, "style.set", json!({"props": {"font_family": "plex"}}));
+    assert!(r.message.contains("`plex_sans`"), "{}", r.message);
+}
+
 // ---- style.set: refusals ----
 
 #[test]

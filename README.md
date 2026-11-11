@@ -15,7 +15,7 @@ Drafft.ink is three things in one workspace: a reusable **canvas library** (view
 - **Shapes and drawing.** Rectangle, ellipse, diamond, line, arrow (sharp, round, elbow), freehand with pressure, eraser, laser pointer, lasso, sticky notes, frames.
 - **Arrows that stay attached.** Bound arrows follow their shapes through move, resize, rotate, flip, delete and undo. Bound text in shapes and on arrows.
 - **Groups and frames.** Nested groups with enter and exit, frames that clip, lock, z-order, align and distribute, flip, convert between shapes.
-- **Text.** Three bundled hand-drawn families (GelPen, GelPen Serif, Vanilla Extract) and Noto Sans, per-character colour, inline LaTeX.
+- **Text.** Three bundled hand-drawn families (GelPen, GelPen Serif, Vanilla Extract), Noto Sans and IBM Plex Sans, per-character colour, inline LaTeX.
 - **Sketch style.** Hand-drawn outlines and fills (roughr), seeded so every peer and every export looks the same.
 - **Smart guides.** Alignment, equal spacing, angle and grid snapping.
 - **Images.** Drop, paste or insert; they are stored in the document.
@@ -123,7 +123,7 @@ The new version is larger on disk (the module is 21% bigger before compression, 
 
 ## Fonts
 
-The fonts are separate works and keep their own terms; the AGPL does not cover them. Noto Sans (SIL OFL) and STIX Two Math are redistributable. **GelPen, GelPen Serif and Vanilla Extract are free to use, but their author has not written down permission to redistribute them**; that is an open item in [ATTRIBUTION.md](ATTRIBUTION.md). If you ship a build, check it.
+The fonts are separate works and keep their own terms; the AGPL does not cover them. Noto Sans (SIL OFL), IBM Plex Sans (SIL OFL) and STIX Two Math are redistributable. **GelPen, GelPen Serif and Vanilla Extract are free to use, but their author has not written down permission to redistribute them**; that is an open item in [ATTRIBUTION.md](ATTRIBUTION.md). If you ship a build, check it.
 
 ## Contributing
 

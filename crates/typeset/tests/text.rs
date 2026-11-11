@@ -380,3 +380,70 @@ fn the_bundled_font_files_are_exposed_once_for_every_host() {
     let bold = font_file(&NotoSans, Heavy).unwrap_or_default();
     assert!(!regular.is_empty() && !bold.is_empty() && regular.as_ptr() != bold.as_ptr());
 }
+
+fn plex(text: &str, weight: FontWeight) -> TextSpec {
+    let mut s = plain(text, 24.0);
+    s.style.family = FontFamily::PlexSans;
+    s.style.weight = weight;
+    s
+}
+
+#[test]
+fn plex_sans_lays_out_with_its_own_metrics_and_real_weights() {
+    let mut ts = Typesetter::new();
+    let text = "Handgloves and hamburgefonts";
+    let regular = ts.text(&plex(text, FontWeight::Regular));
+    let heavy = ts.text(&plex(text, FontWeight::Heavy));
+    let light = ts.text(&plex(text, FontWeight::Light));
+    let gelpen = ts.text(&plain(text, 24.0));
+    assert_ne!(regular.size.width, gelpen.size.width, "Plex Sans is not GelPen");
+    assert!(heavy.size.width > regular.size.width, "bold is wider than regular: {:?}", (heavy.size, regular.size));
+    assert!(light.size.width < regular.size.width, "light is narrower than regular: {:?}", (light.size, regular.size));
+    for l in [&regular, &heavy, &light] {
+        assert!(l.runs.iter().flat_map(|r| &r.glyphs).all(|g| g.id != 0), "every letter has a Plex glyph");
+        assert!(!l.runs.iter().any(|r| r.embolden), "the weight comes from the font, not from synthetic bold");
+    }
+    // The three weights are three settings of one file, so the runs carry different variation coordinates.
+    let coords = |l: &TextLayout| l.runs[0].normalized_coords.clone();
+    assert_ne!(coords(&regular), coords(&heavy));
+    assert_ne!(coords(&regular), coords(&light));
+    assert!(std::ptr::eq(
+        font_file(&FontFamily::PlexSans, FontWeight::Regular).unwrap_or_default(),
+        font_file(&FontFamily::PlexSans, FontWeight::Heavy).unwrap_or_default()
+    ));
+}
+
+#[test]
+fn plex_sans_outlines_follow_the_weight() {
+    let mut ts = Typesetter::new();
+    let mut ink = |w| {
+        let l = ts.text(&plex("Hxl", w));
+        let area: f64 = l.outline().iter().map(|p| kurbo::Shape::area(&p.path).abs()).sum();
+        area
+    };
+    let (regular, heavy) = (ink(FontWeight::Regular), ink(FontWeight::Heavy));
+    assert!(heavy > regular * 1.1, "the bold outline has more ink: {regular} -> {heavy}");
+}
+
+#[test]
+fn a_typesetter_without_the_extra_fonts_asks_for_plex_sans_only_when_the_family_is_used() {
+    let mut ts = Typesetter::without_extra_fonts();
+    let _ = ts.text(&plain("hello", 20.0));
+    assert!(ts.wanted_fonts().is_empty());
+    let before = ts.text(&plex("hello", FontWeight::Regular));
+    assert_eq!(ts.wanted_fonts(), [ExtraFont::PlexSans]);
+    // A span in the family asks too.
+    let mut ts = Typesetter::without_extra_fonts();
+    let mut spec = plain("hello", 20.0);
+    spec.spans
+        .push(Span { range: 0..2, style: SpanStyle { family: Some(FontFamily::PlexSans), ..SpanStyle::default() } });
+    let _ = ts.text(&spec);
+    assert_eq!(ts.wanted_fonts(), [ExtraFont::PlexSans]);
+
+    let mut ts = Typesetter::without_extra_fonts();
+    let _ = ts.text(&plex("hello", FontWeight::Regular));
+    ts.provide_font(ExtraFont::PlexSans, font_bytes(ExtraFont::PlexSans.file_name())).expect("a valid font");
+    assert!(ts.wanted_fonts().is_empty());
+    let after = ts.text(&plex("hello", FontWeight::Regular));
+    assert_ne!(before.size.width, after.size.width, "the real face is narrower or wider than the fallback");
+}
