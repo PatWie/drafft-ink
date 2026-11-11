@@ -87,6 +87,12 @@ impl WebHost {
         self.text_agent.has_focus()
     }
 
+    /// The primary input of the device is a finger or a stylus (`(pointer: coarse)`, true on phones and tablets).
+    /// The app starts in its touch layout then, before the first touch.
+    pub(crate) fn coarse_pointer(&self) -> bool {
+        page::coarse_pointer()
+    }
+
     /// Open `http:`, `https:` or `mailto:` links; anything else is logged and ignored.
     pub(crate) fn open_url(&self, url: &str, new_tab: bool) {
         page::open_url(url, new_tab);
@@ -133,6 +139,18 @@ fn canvas_listeners(canvas: &HtmlCanvasElement, is_mac: bool) -> Result<Vec<List
     let active = ListenOptions { capture: false, passive: Some(false) };
     for name in ["wheel", "gesturestart", "gesturechange", "gestureend"] {
         out.push(Listener::new(target, name, active, |e: web_sys::Event| e.prevent_default())?);
+    }
+    // Safari on iOS and iPadOS: a touch that is not cancelled can still scroll or zoom the page, or open the
+    // text-selection and Scribble callouts, even with `touch-action: none` (older versions honour only part of
+    // it). The pointer events carry the input; the touch events are only cancelled, which does not stop the
+    // pointer events. Safari makes `touchstart` and `touchmove` listeners on the document passive by default, so
+    // these sit on the canvas and say `passive: false`.
+    for name in ["touchstart", "touchmove"] {
+        out.push(Listener::new(target, name, active, |e: web_sys::Event| {
+            if e.cancelable() {
+                e.prevent_default();
+            }
+        })?);
     }
     Ok(out)
 }

@@ -107,6 +107,23 @@ fn a_pen_stroke_sends_the_pressure_of_every_sample() {
 }
 
 #[test]
+fn the_first_moved_point_of_a_pen_stroke_has_the_pressure_of_the_move_not_of_the_press() {
+    // A pen touches down with almost no pressure. The point at the press has that; the point of the first move has
+    // what the pen did there (it used to get the pressure of the press, a thin blob at the start of every stroke).
+    let (mut rig, _, _) = rig_with(Tool::Freehand);
+    rig.pen(PointerPhase::Down, 100.0, 100.0, 0.05);
+    for (x, y, p) in [(130.0, 140.0, 0.9), (160.0, 100.0, 0.8), (190.0, 150.0, 0.7)] {
+        rig.pen(PointerPhase::Move, x, y, p);
+    }
+    rig.pen(PointerPhase::Up, 190.0, 150.0, 0.0);
+    let e = rig.only();
+    let pressures = &stroke_of(&e).pressures;
+    assert!(pressures.len() >= 4, "{pressures:?}");
+    assert!((pressures[0] - 0.05).abs() < 1e-6, "the press: {pressures:?}");
+    assert!((pressures[1] - 0.9).abs() < 1e-6, "the first move: {pressures:?}");
+}
+
+#[test]
 fn a_touch_stroke_has_no_pressures() {
     use drafftink_canvas::{Buttons, InputEvent, PointerEvent};
     let (mut rig, _, _) = rig_with(Tool::Freehand);

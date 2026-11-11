@@ -167,3 +167,71 @@ fn the_panels_do_not_cover_each_other_on_a_phone() {
     let undo = h.get_by_label("Undo").rect();
     assert!(tab.max.y <= undo.min.y, "the tab bar sits above the bottom bar: {tab:?} vs {undo:?}");
 }
+
+/// Windows of an iPad Pro 11" in portrait and landscape and of an iPhone 14, in points.
+const TABLET_AND_PHONE: [(f32, f32); 3] = [(820.0, 1180.0), (1180.0, 820.0), (390.0, 844.0)];
+
+/// The device is touch-first from the start (`SetupCx::touch_first`, from `(pointer: coarse)` on the web).
+fn on_a_touch_device(size: Vec2) -> H {
+    let mut f = dialog::fixture();
+    f.state.set_touch_first(true);
+    at(size, f)
+}
+
+#[test]
+fn the_bottom_bar_lies_inside_the_screen_on_an_ipad_and_an_iphone() {
+    for (w, h) in TABLET_AND_PHONE {
+        let screen = egui::Rect::from_min_size(egui::Pos2::ZERO, vec2(w, h));
+        let harness = on_a_touch_device(vec2(w, h));
+        let bar = harness.state().state.chrome.bottom_bar.unwrap_or_else(|| panic!("{w}x{h}: no bottom bar"));
+        assert!(screen.contains_rect(bar), "{w}x{h}: the bottom bar {bar:?} is outside the screen {screen:?}");
+        assert!(bar.width() > 150.0 && bar.height() >= 40.0, "{w}x{h}: a bar you can use with a finger: {bar:?}");
+        // Its buttons are on the screen too, the first and the last that fit.
+        for label in ["Undo", "Redo"] {
+            let r = harness.get_by_label(label).rect();
+            assert!(screen.contains_rect(r) && bar.contains_rect(r), "{w}x{h}: {label} at {r:?}");
+        }
+    }
+}
+
+#[test]
+fn the_bottom_bar_stays_clear_of_the_tab_bar_and_the_tools() {
+    for (w, h) in TABLET_AND_PHONE {
+        let harness = on_a_touch_device(vec2(w, h));
+        let chrome = harness.state().state.chrome;
+        let bar = chrome.bottom_bar.expect("a bottom bar");
+        for (name, other) in [("tabs", chrome.tabs), ("tools", chrome.tools)] {
+            if let Some(other) = other {
+                assert!(!bar.intersects(other), "{w}x{h}: the bottom bar {bar:?} overlaps the {name} {other:?}");
+            }
+        }
+    }
+}
+
+#[test]
+fn the_chrome_keeps_out_of_the_safe_area_insets_a_host_reports() {
+    // A home indicator at the bottom, a notch at the top, rounded corners at the sides (an iPhone in landscape).
+    let insets = egui::SafeAreaInsets(egui::epaint::MarginF32 { left: 47.0, right: 47.0, top: 24.0, bottom: 21.0 });
+    for (w, h) in TABLET_AND_PHONE {
+        let mut harness = on_a_touch_device(vec2(w, h));
+        harness.input_mut().safe_area_insets = Some(insets);
+        harness.run();
+        let safe = egui::Rect::from_min_max(egui::pos2(47.0, 24.0), egui::pos2(w - 47.0, h - 21.0));
+        let chrome = harness.state().state.chrome;
+        let bar = chrome.bottom_bar.expect("a bottom bar");
+        let strip = chrome.strip.expect("a top strip");
+        assert!(
+            bar.bottom() <= safe.bottom() + 0.5 && bar.left() >= safe.left() - 0.5,
+            "{w}x{h}: bar {bar:?} in {safe:?}"
+        );
+        assert!(strip.top() >= safe.top() - 0.5, "{w}x{h}: strip {strip:?} in {safe:?}");
+    }
+}
+
+#[test]
+fn a_touch_device_starts_in_the_touch_layout_before_any_touch() {
+    let h = on_a_touch_device(vec2(1180.0, 820.0));
+    assert!(height_of(&h, "Rectangle tool") >= 44.0 && height_of(&h, "Undo") >= 40.0);
+    let mouse = at(vec2(1180.0, 820.0), dialog::fixture());
+    assert_eq!(height_of(&mouse, "Undo"), 28.0, "a desktop window keeps the desktop sizes");
+}

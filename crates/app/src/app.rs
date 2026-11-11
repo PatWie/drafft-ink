@@ -30,7 +30,7 @@ use vello::peniko::Color;
 use crate::agent_server::McpHttpState;
 use crate::config::AppConfig;
 use crate::editor::{KeyRoute, TextEditor, route};
-use crate::input::{self, Held};
+use crate::input::{self, Contacts, Held, PenWatch};
 use crate::overlay;
 #[cfg(feature = "scenarios")]
 use crate::perf::{Look, SceneInstall, SceneLoader, SceneSlot, scene_hook};
@@ -64,6 +64,19 @@ struct OverlayKey {
     edit: Option<((u64, u64), bool)>,
 }
 
+/// What the canvas made of one pointer sample.
+struct Routed {
+    /// The frame the sample needs.
+    repaint: Repaint,
+    /// The pointer's cursor may have changed: tell the shell now, without waiting for a frame.
+    cursor: bool,
+}
+
+impl Routed {
+    /// The sample was not for the canvas, or changed nothing.
+    const NONE: Self = Self { repaint: Repaint::Idle, cursor: false };
+}
+
 /// The application. Build it with [`App::new`] and give it to `drafftink_gpu::run`.
 pub struct App {
     session: Session,
@@ -86,9 +99,10 @@ pub struct App {
     notices: Vec<String>,
     /// Web addresses a link click asked for; the next event or frame hands them to the shell.
     open_urls: Vec<String>,
-    held: Held,
-    /// A pointer gesture began on the canvas and has not ended.
-    canvas_drag: bool,
+    /// The pointers that pressed on the canvas and have not been released.
+    contacts: Contacts,
+    /// When a stylus was last seen, for palm rejection.
+    pen: PenWatch,
     canvas_rect: egui::Rect,
     egui_time: f64,
     told_viewport: Option<([f64; 2], f64)>,
@@ -160,8 +174,8 @@ impl App {
             fonts_requested: HashSet::new(),
             notices,
             open_urls: Vec::new(),
-            held: Held::default(),
-            canvas_drag: false,
+            contacts: Contacts::default(),
+            pen: PenWatch::default(),
             canvas_rect: egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(1280.0, 720.0)),
             egui_time: 0.0,
             told_viewport: None,
@@ -319,44 +333,50 @@ impl App {
     }
 
     fn handle_pointer(&mut self, cx: &mut EventCx<'_>, s: drafftink_gpu::PointerSample) -> Repaint {
-        let pos = s.point.pos;
-        let over_egui = input::egui_owns(cx.ctx, self.canvas_rect, pos);
-        let now = self.now_ms();
+        let over_egui = input::egui_owns(cx.ctx, self.canvas_rect, s.point.pos);
         if let Some(repaint) = self.editor_pointer(cx, &s, over_egui) {
             return repaint;
         }
-        match s.phase {
-            PointerPhase::Down => {
-                self.canvas_drag = !over_egui && !self.ui.state.modal_open();
-            }
-            PointerPhase::Up | PointerPhase::Cancel => {}
-            PointerPhase::Hover | PointerPhase::Move | PointerPhase::Leave => {
-                if !self.canvas_drag && over_egui && s.phase != PointerPhase::Leave {
-                    return Repaint::Idle;
-                }
-            }
-        }
-        if !self.canvas_drag && !matches!(s.phase, PointerPhase::Hover | PointerPhase::Leave) {
-            if matches!(s.phase, PointerPhase::Up | PointerPhase::Cancel) {
-                self.held = Held::default();
-            }
-            return Repaint::Idle;
-        }
-        let events = input::pointer_events(&s, &mut self.held, self.canvas_rect.min, now);
-        let reason = if s.phase == PointerPhase::Hover { RedrawReason::HoverChange } else { RedrawReason::Gesture };
-        let mut need = self.canvas_input(&events);
+        let routed = self.canvas_pointer(&s, over_egui);
         for url in self.open_urls.drain(..) {
             cx.open_url(url, true);
         }
-        if matches!(s.phase, PointerPhase::Up | PointerPhase::Cancel) && !self.held.any() {
-            self.canvas_drag = false;
-        }
-        self.publish_pointer(now);
-        if need {
+        if routed.cursor {
             cx.set_cursor(self.cursor);
         }
+        routed.repaint
+    }
+
+    /// A pointer sample for the canvas, once the text editor has had its say. `over_egui`: egui owns the pointer at
+    /// the sample (a bar, a panel, a popup, or a drag of its own), so a press there is not for the canvas.
+    fn canvas_pointer(&mut self, s: &drafftink_gpu::PointerSample, over_egui: bool) -> Routed {
+        let now = self.now_ms();
+        let releases = matches!(s.phase, PointerPhase::Up | PointerPhase::Cancel);
+        let hovers = matches!(s.phase, PointerPhase::Hover | PointerPhase::Leave);
+        match s.phase {
+            PointerPhase::Down if !over_egui && !self.ui.state.modal_open() => self.contacts.begin(s),
+            PointerPhase::Hover | PointerPhase::Move if !self.contacts.owns(s) && over_egui => return Routed::NONE,
+            _ => {}
+        }
+        if !hovers && !self.contacts.owns(s) {
+            // Not a press of the canvas's (it began on a bar or a dialog, or it is the release of such a press).
+            return Routed::NONE;
+        }
+        // A stylus in use means a resting palm: a finger then only pans (it still pans with two).
+        self.pen.observe(s.kind, now);
+        self.interaction.set_fingers(self.pen.fingers(now));
+        let mut idle = Held::default();
+        let events =
+            input::pointer_events(s, self.contacts.held_mut(s).unwrap_or(&mut idle), self.canvas_rect.min, now);
+        let reason = if s.phase == PointerPhase::Hover { RedrawReason::HoverChange } else { RedrawReason::Gesture };
+        let mut need = self.canvas_input(&events);
+        if releases {
+            self.contacts.release(s);
+        }
+        self.publish_pointer(now);
+        let cursor = need;
         need |= self.session.dirty().is_some();
-        if need { Repaint::Now(reason) } else { Repaint::Idle }
+        Routed { repaint: if need { Repaint::Now(reason) } else { Repaint::Idle }, cursor }
     }
 
     /// Wheel, scroll and pinch over the canvas, straight from the shell. `None`: not for the canvas now (a modal is
@@ -1015,11 +1035,10 @@ impl App {
             },
             ShellEvent::FilesDropped(files) => (self.handle_files_dropped(files), Handled::No),
             ShellEvent::Visibility(false) | ShellEvent::Focus(false) => {
-                if self.held.any() {
+                if self.contacts.any() {
                     let out = self.interaction.input(&mut self.session, &drafftink_canvas::InputEvent::CancelAll);
                     self.apply_outcome(out);
-                    self.held = Held::default();
-                    self.canvas_drag = false;
+                    self.contacts.clear();
                 }
                 self.session.flush_workspace();
                 (Repaint::Idle, Handled::No)
@@ -1054,6 +1073,10 @@ impl ShellApp for App {
     fn setup(&mut self, cx: &mut SetupCx<'_>) {
         self.wake.set(cx.waker.clone());
         self.canvas.set_backend(cx.backend);
+        if cx.touch_first {
+            // A phone or a tablet: the touch layout from the first frame, not from the first touch.
+            self.ui.set_touch_first(true);
+        }
         // A new egui context has no fonts or theme of ours; the UI installs them on its first pass.
         self.world_key = None;
         self.overlay_key = None;
@@ -1169,3 +1192,7 @@ mod export_tests;
 #[cfg(test)]
 #[path = "app/drop_tests.rs"]
 mod drop_tests;
+
+#[cfg(test)]
+#[path = "app/touch_tests.rs"]
+mod touch_tests;

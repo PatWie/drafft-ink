@@ -38,7 +38,7 @@ pub use drafftink_geom as geom;
 pub use drafftink_scene as scene;
 
 pub use canvas::{Canvas, Dirty, StoreMut};
-pub use config::{CanvasConfig, InputConfig, PointerMode};
+pub use config::{CanvasConfig, FingerMode, InputConfig, PointerMode};
 pub use dispatch::{Dispatcher, ElementEvent, EventKind, Listener, ListenerId, Node, Selector, SelectorError};
 pub use index::{
     ApplyStats, Hit, HitOptions, HitPart, IndexMismatch, MarqueeMode, SceneIndex, hit_element, unit_group, z_cmp,

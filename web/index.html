@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <title>Drafft.ink</title>
-<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<meta name="viewport" content="width=device-width, initial-scale=1, minimum-scale=1, maximum-scale=1, viewport-fit=cover, user-scalable=no">
 <meta name="description" content="An infinite canvas whiteboard. Draw first, sign up never.">
 <meta name="theme-color" content="#ffffff">
 <link rel="icon" type="image/svg+xml" href="favicon.svg">
@@ -11,8 +11,20 @@
 <link rel="manifest" href="manifest.webmanifest">
 __PRELOAD__
 <style>
-  html, body { margin: 0; height: 100%; overflow: hidden; background: #f6f6f8; overscroll-behavior: none; }
-  canvas { display: block; width: 100vw; height: 100vh; outline: none; touch-action: none; }
+  /* The page never scrolls. `100vh` is the height of the largest viewport on iOS and iPadOS Safari: with the toolbar
+     showing, the lower part of a `100vh` canvas lies below the visible page, and the bottom bar with it. The canvas is
+     pinned to the visible viewport instead (`position: fixed`), inside the safe-area insets (home indicator, notch,
+     rounded corners; `viewport-fit=cover` in the meta tag makes the insets non-zero). */
+  html, body { margin: 0; width: 100%; height: 100%; overflow: hidden; background: #f6f6f8; overscroll-behavior: none;
+               -webkit-text-size-adjust: 100%; }
+  body { position: fixed; inset: 0; }
+  canvas { display: block; position: fixed; box-sizing: border-box; outline: none; touch-action: none; user-select: none;
+           -webkit-user-select: none; -webkit-touch-callout: none; -webkit-tap-highlight-color: transparent;
+           top: env(safe-area-inset-top, 0px);
+           left: env(safe-area-inset-left, 0px);
+           /* A canvas is a replaced element: opposite insets do not stretch it, so its size is stated. */
+           width: calc(100% - env(safe-area-inset-left, 0px) - env(safe-area-inset-right, 0px));
+           height: calc(100% - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px)); }
   #loading { position: fixed; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center;
              gap: 14px; font: 16px/1.4 system-ui, sans-serif; color: #444; pointer-events: none; }
   #loading-progress { min-height: 1.4em; font-size: 13px; color: #777; font-variant-numeric: tabular-nums; }
@@ -22,7 +34,7 @@ __PRELOAD__
   #failure { position: fixed; inset: 0; display: none; align-items: center; justify-content: center; padding: 24px;
              font: 16px/1.5 system-ui, sans-serif; color: #222; background: #f6f6f8; text-align: center; }
   #failure pre { white-space: pre-wrap; color: #777; font-size: 13px; }
-  #compat { position: fixed; left: 50%; bottom: 12px; transform: translateX(-50%); z-index: 5; max-width: min(36rem, calc(100vw - 24px));
+  #compat { position: fixed; left: 50%; bottom: calc(12px + env(safe-area-inset-bottom, 0px)); transform: translateX(-50%); z-index: 5; max-width: min(36rem, calc(100vw - 24px));
             display: flex; gap: 10px; align-items: center; padding: 6px 8px 6px 12px; border-radius: 6px;
             font: 13px/1.35 system-ui, sans-serif; color: #5a3b00; background: #fff4d6; border: 1px solid #e8c874; }
   #compat button { all: unset; cursor: pointer; padding: 0 6px; font-size: 18px; line-height: 1; color: #5a3b00; }

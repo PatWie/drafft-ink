@@ -44,24 +44,32 @@ impl Stroke {
     /// The brush and the pressure mode of the session shape the sample here, while it is drawn, as in the old
     /// app: the stored stroke holds the result (`edit::brush`).
     pub(super) fn update(&mut self, cx: &mut Ctx<'_>, ev: &Ev<'_>) {
-        let mut changed = false;
-        if self.sampler.is_none() {
-            let defaults = cx.s.tool.defaults();
-            let (sampler, first) = StrokeSampler::start(
-                defaults.brush,
-                defaults.pressure_mode,
-                ev.origin.world,
-                ev.meta.time_ms,
-                pressure_of(ev),
-            );
-            self.sampler = Some(sampler);
-            self.push(first.point, first.pressure);
-            changed = true;
-        }
+        let mut changed = self.begin(cx, ev);
         changed |= self.add(cx.px(MIN_SPACING_PX), ev);
         if changed {
             preview::set(cx, preview::stroke(cx, &self.points, &self.pressures, self.highlighter));
         }
+    }
+
+    /// The first point of the stroke: the press position, with what the pen did at the press. The drag start carries
+    /// the press, and the drag update that follows it carries the first move: the move's position and pressure must
+    /// not be taken from the press (a pen touches down with almost no pressure). Does nothing once the stroke has
+    /// begun. True when it added the point.
+    pub(super) fn begin(&mut self, cx: &mut Ctx<'_>, ev: &Ev<'_>) -> bool {
+        if self.sampler.is_some() {
+            return false;
+        }
+        let defaults = cx.s.tool.defaults();
+        let (sampler, first) = StrokeSampler::start(
+            defaults.brush,
+            defaults.pressure_mode,
+            ev.origin.world,
+            ev.meta.time_ms,
+            pressure_of(ev),
+        );
+        self.sampler = Some(sampler);
+        self.push(first.point, first.pressure);
+        true
     }
 
     /// Runs the pointer sample through the brush and keeps what comes out. True when the stroke changed.

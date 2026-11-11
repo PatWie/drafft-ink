@@ -7,8 +7,8 @@ use PointerPhase::{Cancel, Down, Move, Up};
 use common::{id, identity_viewport};
 use drafftink_canvas::geom::kurbo::{Point, Rect, Vec2};
 use drafftink_canvas::{
-    Button, Buttons, Cursor, Handle, InputConfig, InputEvent, Intent, Modifiers, Picker, PointerEvent, PointerKind,
-    PointerMode, PointerPhase, Recognizer, Target, ViewSource, Viewport, WheelEvent, WheelUnit,
+    Button, Buttons, Cursor, FingerMode, Handle, InputConfig, InputEvent, Intent, Modifiers, Picker, PointerEvent,
+    PointerKind, PointerMode, PointerPhase, Recognizer, Target, ViewSource, Viewport, WheelEvent, WheelUnit,
 };
 
 /// A scene of rectangles on screen: the first region containing the point wins; the rest is empty.
@@ -697,4 +697,102 @@ fn is_dragging_is_true_only_while_content_is_dragged() {
     assert!(r.is_dragging());
     run(&mut r, &fake, &[m(Up, 100.0, 80.0, 30.0)]);
     assert!(!r.is_dragging());
+}
+
+#[test]
+fn a_pen_that_touches_down_takes_over_from_a_finger_that_landed_first() {
+    let fake = Fake::new();
+    let t = |id, phase, x, y, tm| PointerEvent::touch(id, phase, x, y, tm);
+    let mut r = Recognizer::default();
+    r.set_mode(PointerMode::Draw);
+    // A palm: it pressed and dragged before the pen came.
+    let out = run(&mut r, &fake, &[t(0, Down, 200.0, 200.0, 0.0), t(0, Move, 210.0, 200.0, 5.0)]);
+    assert_eq!(names(&out), ["press", "dragstart", "dragupdate"]);
+
+    let mut mv = PointerEvent::pen(Move, 60.0, 50.0, 0.5, 20.0);
+    mv.buttons = Buttons::PRIMARY;
+    let out = run(&mut r, &fake, &[PointerEvent::pen(Down, 50.0, 50.0, 0.5, 10.0), mv]);
+    assert_eq!(names(&out), ["dragcancel", "press", "dragstart", "dragupdate"], "the palm's drag is cancelled");
+
+    // The palm moves and lifts while the pen draws: nothing from it.
+    let out = run(&mut r, &fake, &[t(0, Move, 220.0, 200.0, 25.0), t(0, Up, 220.0, 200.0, 30.0)]);
+    assert!(out.is_empty(), "{:?}", names(&out));
+    let out = run(&mut r, &fake, &[PointerEvent::pen(Up, 60.0, 50.0, 0.0, 40.0)]);
+    assert_eq!(names(&out), ["dragend", "hover"], "the pen's stroke ends whole; the pen hovers where it lifted");
+    assert!(r.is_idle());
+}
+
+#[test]
+fn a_finger_that_lands_during_a_pen_stroke_is_ignored_and_does_not_start_a_pinch() {
+    let fake = Fake::new();
+    let t = |id, phase, x, y, tm| PointerEvent::touch(id, phase, x, y, tm);
+    let mut r = Recognizer::default();
+    r.set_mode(PointerMode::Draw);
+    let mut mv = PointerEvent::pen(Move, 60.0, 50.0, 0.5, 10.0);
+    mv.buttons = Buttons::PRIMARY;
+    run(&mut r, &fake, &[PointerEvent::pen(Down, 50.0, 50.0, 0.5, 0.0), mv]);
+    let out = run(
+        &mut r,
+        &fake,
+        &[t(0, Down, 300.0, 300.0, 20.0), t(1, Down, 400.0, 300.0, 21.0), t(1, Move, 450.0, 300.0, 30.0)],
+    );
+    assert!(out.is_empty(), "{:?}", names(&out));
+    assert!(r.is_dragging(), "the pen still draws");
+}
+
+#[test]
+fn with_pan_only_fingers_a_single_finger_pans_and_a_tap_does_nothing() {
+    let fake = Fake::new();
+    let t = |id, phase, x, y, tm| PointerEvent::touch(id, phase, x, y, tm);
+    let mut r = Recognizer::default();
+    r.set_mode(PointerMode::Draw);
+    r.set_fingers(FingerMode::PanOnly);
+    let out = run(
+        &mut r,
+        &fake,
+        &[t(0, Down, 200.0, 200.0, 0.0), t(0, Move, 230.0, 210.0, 10.0), t(0, Move, 250.0, 210.0, 20.0)],
+    );
+    assert_eq!(names(&out), ["pan", "pan"], "no press, no drag of content");
+    let Intent::Pan { delta, source: ViewSource::Touch } = &out[0] else { panic!() };
+    assert_eq!(*delta, Vec2::new(30.0, 10.0));
+    let out = run(&mut r, &fake, &[t(0, Up, 250.0, 210.0, 30.0)]);
+    assert_eq!(names(&out), ["viewend"]);
+    assert!(r.is_idle());
+
+    // A tap is not a click: a resting palm selects nothing.
+    let out = run(&mut r, &fake, &[t(0, Down, 50.0, 50.0, 100.0), t(0, Up, 50.0, 50.0, 110.0)]);
+    assert_eq!(names(&out), ["viewend"]);
+
+    // The pen and the mouse are not fingers.
+    let out = run(&mut r, &fake, &[PointerEvent::pen(Down, 50.0, 50.0, 0.5, 200.0)]);
+    assert_eq!(names(&out), ["press"]);
+}
+
+#[test]
+fn pan_only_fingers_still_pinch_with_two() {
+    let fake = Fake::new();
+    let t = |id, phase, x, y, tm| PointerEvent::touch(id, phase, x, y, tm);
+    let mut r = Recognizer::default();
+    r.set_fingers(FingerMode::PanOnly);
+    let out = run(&mut r, &fake, &[t(0, Down, 300.0, 300.0, 0.0), t(1, Down, 400.0, 300.0, 5.0)]);
+    assert_eq!(names(&out), ["viewend"], "the one-finger pan ends and the two-finger gesture begins");
+    let out = run(&mut r, &fake, &[t(1, Move, 500.0, 300.0, 20.0)]);
+    assert_eq!(names(&out), ["pan", "zoom"]);
+}
+
+#[test]
+fn after_a_two_finger_gesture_and_a_pen_stroke_the_recognizer_is_ready_for_the_next_tap() {
+    let fake = Fake::new();
+    let t = |id, phase, x, y, tm| PointerEvent::touch(id, phase, x, y, tm);
+    let mut r = Recognizer::default();
+    // Two fingers land, the pen comes down on top of that gesture and draws, everything lifts.
+    run(&mut r, &fake, &[t(0, Down, 300.0, 300.0, 0.0), t(1, Down, 400.0, 300.0, 5.0)]);
+    run(&mut r, &fake, &[PointerEvent::pen(Down, 50.0, 50.0, 0.5, 10.0)]);
+    run(
+        &mut r,
+        &fake,
+        &[PointerEvent::pen(Up, 50.0, 50.0, 0.0, 20.0), t(0, Up, 300.0, 300.0, 30.0), t(1, Up, 400.0, 300.0, 31.0)],
+    );
+    let out = run(&mut r, &fake, &[t(2, Down, 50.0, 50.0, 100.0), t(2, Up, 50.0, 50.0, 110.0)]);
+    assert_eq!(names(&out), ["press", "click"]);
 }

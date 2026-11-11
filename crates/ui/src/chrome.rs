@@ -67,6 +67,14 @@ impl ChromeRects {
     pub fn centred_panel_height(&self, screen: Rect) -> f32 {
         2.0 * (screen.center().y - self.below_strip(screen) - GAP).max(0.0)
     }
+
+    /// Like [`Self::centred_panel_height`], and also clear of the bottom-left bar (with a gap): for the tool column,
+    /// which stands above that bar at the left edge. Without it, the last tools lie under the bar's first buttons
+    /// on a window that is not tall (an iPad in landscape).
+    pub fn centred_panel_height_above_bottom_bar(&self, screen: Rect) -> f32 {
+        let below = (self.above_bottom_bar(screen) - screen.center().y - GAP).max(0.0);
+        self.centred_panel_height(screen).min(2.0 * below)
+    }
 }
 
 /// How far a surface anchored to the bottom edge must lift to sit `gap` above the line `y`.
@@ -126,6 +134,23 @@ mod tests {
         assert_eq!(r.centred_panel_height(screen()), 2.0 * (400.0 - 40.0 - GAP));
         let short = Rect::from_min_size(pos2(0.0, 0.0), vec2(1000.0, 60.0));
         assert_eq!(r.centred_panel_height(short), 0.0, "never negative");
+    }
+
+    #[test]
+    fn a_panel_above_the_bottom_bar_is_shorter_when_the_bar_is_in_the_way() {
+        let strip = Rect::from_min_size(pos2(0.0, 0.0), vec2(1000.0, 40.0));
+        let bar = Rect::from_min_size(pos2(10.0, 700.0), vec2(300.0, 48.0));
+        let r = ChromeRects { strip: Some(strip), bottom_bar: Some(bar), ..ChromeRects::default() };
+        // The middle is at 400: 312 of room above the bar after the gap, 352 under the strip.
+        assert_eq!(r.centred_panel_height_above_bottom_bar(screen()), 2.0 * (700.0 - 400.0 - GAP));
+        let without_bar = ChromeRects { strip: Some(strip), ..ChromeRects::default() };
+        assert_eq!(
+            without_bar.centred_panel_height_above_bottom_bar(screen()),
+            without_bar.centred_panel_height(screen()),
+            "no bar, no change"
+        );
+        let high_bar = ChromeRects { bottom_bar: Some(Rect::from_min_size(pos2(10.0, 380.0), vec2(300.0, 48.0))), ..r };
+        assert_eq!(high_bar.centred_panel_height_above_bottom_bar(screen()), 0.0, "never negative");
     }
 
     #[test]

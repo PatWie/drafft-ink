@@ -20,6 +20,15 @@ pub fn webgpu_available() -> bool {
         .is_ok_and(|gpu| !gpu.is_undefined() && !gpu.is_null())
 }
 
+/// The primary pointer of the device is imprecise: a finger or a stylus. A mouse or a trackpad is `fine`; an old
+/// browser without media queries answers `false`.
+pub(crate) fn coarse_pointer() -> bool {
+    dom::window()
+        .ok()
+        .and_then(|window| window.match_media("(pointer: coarse)").ok().flatten())
+        .is_some_and(|query| query.matches())
+}
+
 const ERROR_PAGE_CSS: &str = "\
 :root { color-scheme: light dark; }\
 body { margin: 0; font: 16px/1.5 system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif; }\
