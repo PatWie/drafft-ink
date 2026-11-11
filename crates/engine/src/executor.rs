@@ -27,6 +27,21 @@ pub(crate) enum Input<'a> {
     Typed(&'a dyn Any),
 }
 
+/// What a `Commit` gate did before its command ran.
+#[derive(Default)]
+pub(crate) struct GateCommit {
+    /// The state before the commit, when the commit changed no document content. A refusal restores it.
+    restore: Option<SoftState>,
+    /// The ring entry of the commit, written once the command's outcome is known.
+    record: Option<GateRecord>,
+}
+
+struct GateRecord {
+    spec: &'static CommandSpec,
+    args: Value,
+    outcome: Outcome,
+}
+
 enum Parsed<'a> {
     Owned(Box<dyn Any>),
     Borrowed(&'a dyn Any),
@@ -174,7 +189,14 @@ impl Session {
         origin: Origin,
         mode: Mode,
     ) -> Result<StepDone, Refusal> {
-        self.check_gates(spec, origin, mode, false)?;
+        let gate = self.check_gates(spec, origin, mode, false)?;
+        let result = self.run_after_gates(spec, input, mode);
+        self.settle_gate(gate, origin, result.is_ok());
+        result
+    }
+
+    /// Steps 3 to 8, after the gates have run.
+    fn run_after_gates(&mut self, spec: &'static CommandSpec, input: Input<'_>, mode: Mode) -> Result<StepDone, Refusal> {
         self.check_available(spec)?;
         let parsed = match input {
             Input::Json(v) => Parsed::Owned(spec.handler.parse(spec.id, v)?),
@@ -193,7 +215,7 @@ impl Session {
         origin: Origin,
         mode: Mode,
         ignore_gesture: bool,
-    ) -> Result<(), Refusal> {
+    ) -> Result<GateCommit, Refusal> {
         if let Status::Planned(reason) = spec.status {
             return Err(Refusal::not_supported(spec.id, reason));
         }
@@ -208,12 +230,11 @@ impl Session {
             match spec.while_text_edit {
                 TextGate::Refused => return Err(Refusal::text_editing(spec.id)),
                 // `text.edit_end` is the commit itself: it must not trigger another one.
-                TextGate::Commit if spec.id != "text.edit_end" => self.commit_text_edit(origin, mode)?,
-                TextGate::Commit => {}
-                TextGate::Allowed => {}
+                TextGate::Commit if spec.id != "text.edit_end" => return self.commit_text_edit(origin, mode),
+                TextGate::Commit | TextGate::Allowed => {}
             }
         }
-        Ok(())
+        Ok(GateCommit::default())
     }
 
     /// A document that a newer version of the app changed is read-only here: a command that mutates the
@@ -229,27 +250,39 @@ impl Session {
     }
 
     /// Commits the running text edit as its own undo step (`text.edit_end` with `commit: true`).
-    fn commit_text_edit(&mut self, origin: Origin, mode: Mode) -> Result<(), Refusal> {
+    ///
+    /// The commit runs before the command can validate its arguments. [`Session::settle_gate`] takes it
+    /// back when the command then refuses and the commit changed nothing in the document, so a refused
+    /// command leaves the running text edit alone.
+    fn commit_text_edit(&mut self, origin: Origin, mode: Mode) -> Result<GateCommit, Refusal> {
+        let mut gate = GateCommit::default();
         if let Some(end) = self.registry().find("text.edit_end") {
+            let before = self.soft_state();
             let args = json!({ "commit": true });
-            let top_level = mode == Mode::Top;
-            let res = self.run_pipeline(end, Input::Json(&args), origin, mode);
-            if top_level && let Ok(done) = &res {
-                self.record(
-                    origin,
-                    end,
-                    Some(&args),
-                    Outcome::ok(done.changed, done.undo_label.clone()),
-                    0,
-                    None,
-                    None,
-                );
+            // A failed commit has rolled itself back: the edit is still running.
+            let done = self.run_pipeline(end, Input::Json(&args), origin, mode)?;
+            gate.restore = (!done.changed).then_some(before);
+            if mode == Mode::Top {
+                gate.record = Some(GateRecord { spec: end, args, outcome: Outcome::ok(done.changed, done.undo_label) });
             }
-            res?;
         }
         // The family clears the state when it commits. If it is not built yet, the state must not stay.
         self.text_edit = None;
-        Ok(())
+        Ok(gate)
+    }
+
+    /// Finishes a gate commit once the command has succeeded or refused. A refusal after a commit that
+    /// changed no document content puts the text edit and the selection back: the refused command
+    /// changed nothing, and the commit leaves no ring entry. Otherwise the commit gets its ring entry,
+    /// which precedes the command's.
+    pub(crate) fn settle_gate(&mut self, gate: GateCommit, origin: Origin, succeeded: bool) {
+        if !succeeded && let Some(before) = &gate.restore {
+            self.restore_soft(before);
+            return;
+        }
+        if let Some(r) = gate.record {
+            self.record(origin, r.spec, Some(&r.args), r.outcome, 0, None, None);
+        }
     }
 
     fn check_available(&self, spec: &'static CommandSpec) -> Result<(), Refusal> {

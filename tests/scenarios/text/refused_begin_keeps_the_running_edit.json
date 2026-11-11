@@ -1,0 +1,15 @@
+{
+  "about": "A refused text.edit_begin changes nothing, so the edit that is running keeps running and its content is still committed by text.edit_end (docs/commands.md §1.5).",
+  "steps": [
+    { "execute": "element.create", "args": { "kind": "rectangle", "bounds": { "x": 200, "y": 0, "w": 100, "h": 60 } } },
+    { "execute": "text.edit_begin", "args": { "id": "e1" } },
+    { "execute": "text.edit_begin", "args": { "id": "nope" }, "refused": "not_found" },
+    { "assert": "engine.state", "expect": [ { "path": "$.text_edit", "exists": true }, { "path": "$.text_edit", "is": "object" } ] },
+    { "execute": "text.edit_begin", "args": { "at": [0, 0], "id": "e1" }, "refused": "bad_args", "text": "Give `id`, or `at`, or neither" },
+    { "assert": "engine.state", "expect": [ { "path": "$.text_edit", "is": "object" } ], "note": "A bad argument refuses after the gate. It must not have ended the edit either." },
+    { "execute": "text.edit_end", "args": { "text": "Still here" }, "expect": [ { "path": "$.committed", "eq": true } ] },
+    { "assert": "element.query", "args": { "filter": { "ids": ["e1"] }, "fields": ["text"] }, "expect": [ { "path": "$.items[0].text", "eq": "Still here" } ] },
+    { "undo": 1 },
+    { "assert": "element.query", "args": { "filter": { "ids": ["e1"] }, "fields": ["text"] }, "expect": [ { "path": "$.items[0].text", "eq": null } ] }
+  ]
+}

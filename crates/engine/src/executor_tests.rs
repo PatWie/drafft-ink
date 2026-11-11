@@ -181,8 +181,11 @@ fn forget(s: &mut Session, a: AddArgs) -> Result<Value, Refusal> {
     Ok(json!({}))
 }
 
+/// A draft becomes a rectangle when committed; the commit of an edit with nothing typed changes nothing.
 fn end_text(s: &mut Session, _: Value) -> Result<Value, Refusal> {
-    insert_rect(s, 99.0)?;
+    if s.text_edit.as_ref().is_some_and(|t| t.draft) {
+        insert_rect(s, 99.0)?;
+    }
     s.text_edit = None;
     Ok(json!({}))
 }
@@ -517,6 +520,35 @@ fn a_commit_gate_commits_the_text_edit_first_as_its_own_step() {
     assert_eq!(s.tab().doc.undo_depth(), 2);
     let ids: Vec<&str> = s.ring().iter().map(|e| e.id.as_str()).collect();
     assert_eq!(ids, ["text.edit_end", "t.add"]);
+}
+
+#[test]
+fn a_refused_command_leaves_the_running_text_edit_alone() {
+    let (mut s, _) = test_session();
+    s.text_edit = Some(TextEdit { element: None, draft: false });
+    let before = s.fingerprint();
+    let r = refused(&mut s, "t.add_fail", json!({}));
+    assert_eq!(r.code, "nothing_to_do");
+    assert!(s.text_edit.is_some(), "a refusal must not end the text edit");
+    assert_eq!(s.fingerprint(), before);
+    let ids: Vec<&str> = s.ring().iter().map(|e| e.id.as_str()).collect();
+    assert_eq!(ids, ["t.add_fail"], "the commit that was taken back leaves no ring entry");
+    // The same call, refused for a bad argument before the handler runs.
+    let r = refused(&mut s, "t.add", json!({"no_such_key": 1}));
+    assert_eq!(r.code, "bad_args");
+    assert!(s.text_edit.is_some());
+    assert_eq!(s.fingerprint(), before);
+}
+
+#[test]
+fn a_commit_that_changed_the_document_stays_when_the_command_then_refuses() {
+    let (mut s, _) = test_session();
+    s.text_edit = Some(TextEdit { element: None, draft: true });
+    refused(&mut s, "t.add_fail", json!({}));
+    assert!(s.text_edit.is_none(), "the typed content was committed, so the edit is over");
+    assert_eq!(live_elements(&s), 1, "the committed draft is a step of its own");
+    let ids: Vec<&str> = s.ring().iter().map(|e| e.id.as_str()).collect();
+    assert_eq!(ids, ["text.edit_end", "t.add_fail"]);
 }
 
 #[test]
