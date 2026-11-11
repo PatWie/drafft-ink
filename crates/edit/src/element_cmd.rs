@@ -3,7 +3,7 @@
 
 use std::collections::BTreeSet;
 
-use drafftink_geom::kurbo::{Point, Rect, Vec2};
+use drafftink_geom::kurbo::{Point, Vec2};
 use drafftink_geom::select::{BoxHandle, Corner};
 use drafftink_scene::{ElementId, SceneRead, SceneTx};
 
@@ -158,11 +158,6 @@ pub fn hit_by_path<R: SceneRead>(scene: &R, path: &[Point], radius: f64) -> Vec<
         .collect();
     sort_z(scene, &mut out);
     out
-}
-
-/// The rectangle of a point list, for tests and overlays.
-pub fn path_bounds(path: &[Point]) -> Option<Rect> {
-    drafftink_geom::aabb::from_points(path.iter().copied())
 }
 
 /// Smallest unit that [`tidy`] keeps: 1e-9 world units.
