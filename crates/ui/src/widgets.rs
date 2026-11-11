@@ -130,17 +130,6 @@ impl Layout {
     pub fn strip_height(&self) -> f32 {
         self.control(Control::Small) + 2.0 * space::MD
     }
-
-    /// Width of the right panel.
-    pub fn panel_width(&self) -> f32 {
-        if !self.compact {
-            theme::RIGHT_PANEL_WIDTH
-        } else if self.narrow {
-            (self.screen.x * 0.6).clamp(180.0, 260.0)
-        } else {
-            260.0
-        }
-    }
 }
 
 /// What the surfaces draw with: the model to read, the palette, and the list that collects actions.

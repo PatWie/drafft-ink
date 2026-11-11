@@ -449,7 +449,7 @@ fn the_drawer_leaves_the_recorded_side_panels_free_and_the_chrome_above_it_clear
     let h = at(egui::vec2(1280.0, 800.0), f);
     let chrome = h.state().state.chrome;
     let drawer = drawer_rect(&h);
-    for (name, panel) in [("tool column", chrome.tools), ("properties panel", chrome.props)] {
+    for (name, panel) in [("tool column", chrome.tools), ("ribbon card", chrome.ribbon)] {
         if let Some(panel) = panel {
             assert!(!drawer.intersects(panel), "the drawer {drawer:?} covers the {name} {panel:?}");
         }
@@ -548,6 +548,9 @@ fn the_height_the_person_chose_comes_back_when_the_drawer_is_opened_again() {
 #[test]
 fn a_height_kept_from_a_taller_window_is_brought_inside_the_limits() {
     let mut f = with_item();
+    // Nothing selected: with a selection the ribbon card is under the strip and the drawer stays clear of it.
+    select(&mut f.session, &[]);
+    f.refresh();
     f.state.library_height = Some(5000.0);
     let mut h = at(egui::vec2(1280.0, 500.0), f);
     h.run();

@@ -153,14 +153,16 @@ test("keys: Ctrl+V pastes the copy centred on the pointer", async ({ app }) => {
 });
 
 test("keys: Ctrl+V with the pointer over a panel pastes at the middle of the view", async ({ app }) => {
-  // The properties panel opens at the right edge when something is selected. A pointer over it is not on the
+  // The ribbon card hangs under the top strip when something is selected. A pointer over it is not on the
   // canvas, so `$cursor` is omitted and the paste lands at the viewport centre (docs/commands.md section 6.1).
-  // The first version of the pointer spec above hovered this panel and read the result as a lagging cursor (F2).
+  // The first version of the pointer spec above hovered a panel and read the result as a lagging cursor (F2).
   await camera(app, { x: 640, y: 400 }, 1);
   const a = await box(app, 300, 300, 100, 60, { fill: "#ffd8a8" });
   await app.exec("selection.select", { ids: [a] });
   await app.settle();
-  const over = await app.toPage({ x: 1000, y: 400 });
+  // The card is centred under the 40 point strip: (640, 68) is inside it for a rectangle (about 270 to 1010 wide,
+  // 46 to 90 high at 1280 x 800). Page points, not world points: the card does not move with the camera.
+  const over = { x: 640, y: 68 };
   await app.page.mouse.move(over.x - 1, over.y);
   await app.page.waitForTimeout(250);
   await app.page.mouse.move(over.x, over.y);

@@ -22,7 +22,7 @@ pub mod menu;
 pub mod naming;
 pub mod palette;
 pub mod preferences;
-pub mod props;
+pub mod ribbon;
 pub mod shortcuts;
 pub mod strip;
 pub mod tabs;
@@ -39,7 +39,7 @@ pub fn show_all(ctx: &Context, cx: &mut Cx<'_>, st: &mut UiState) {
         bottom::show(ctx, cx, st);
         tabs::show(ctx, cx, st);
         toolbar::show(ctx, cx, st);
-        props::show(ctx, cx, st);
+        ribbon::show(ctx, cx, st);
         menu::show(ctx, cx, st);
         collab::show_presence(ctx, cx, st);
         library::show(ctx, cx, st);

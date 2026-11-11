@@ -88,20 +88,16 @@ fn the_context_menu_leaves_out_rows_the_engine_refuses_and_keeps_the_ones_it_all
 }
 
 #[test]
-fn the_right_panel_keeps_align_and_link_for_one_element_and_greys_them_with_the_engine_text() {
+fn the_ribbon_leaves_align_out_for_one_element_and_greys_the_link_with_the_engine_text() {
     let mut f = dialog::fixture();
     let a = add_rect(&mut f.session, 0.0, 0.0, 50.0, 50.0).unwrap();
     select(&mut f.session, std::slice::from_ref(&a));
     f.refresh();
-    let align = f.model.refusal_text("arrange.align").expect("one element cannot be aligned");
+    assert!(f.model.refusal_text("arrange.align").is_some(), "one element cannot be aligned");
     let mut h = support_a::themed_lenient(f, false);
     h.run();
-    assert!(h.get_by_label("Align left").accesskit_node().is_disabled());
-    h.get_by_label("Align left").hover();
-    for _ in 0..10 {
-        h.step();
-    }
-    h.get_by_label_contains(&align);
+    // The group follows the engine's answer: a command that is refused has no buttons.
+    assert!(h.query_by_label("Align left").is_none());
     // The link controls are there for the one selected element.
     h.get_by_label("Edit the link");
     h.get_by_label("Open the link");

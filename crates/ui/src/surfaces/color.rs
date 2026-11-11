@@ -18,7 +18,7 @@ use crate::colors;
 use crate::model::Model;
 use crate::state::{ColorTarget, UiState};
 use crate::surfaces::dialogs::{enter_pressed, text_field};
-use crate::theme::{MARGIN, RIGHT_PANEL_WIDTH, TextSize, UiFontChoice};
+use crate::theme::{MARGIN, TextSize, UiFontChoice};
 use crate::widgets::{Ctl, Cx, Look, paint_button_bg, panel_frame, section_label};
 
 /// Side of a colour cell.
@@ -55,7 +55,7 @@ impl PopoverKey {
 }
 
 /// Tells the popover for `key` where its button is, in screen points. Call it every frame the button is
-/// drawn. The popover opens below the stroke and fill buttons, above the background button and left of the
+/// drawn. The popover opens below the stroke and fill buttons, above the background button and under the
 /// font button, and is moved back onto the screen when it would not fit.
 pub fn remember_anchor(ctx: &Context, key: PopoverKey, rect: Rect) {
     ctx.data_mut(|d| d.insert_temp(Id::unique(("popover_anchor", key)), rect));
@@ -89,7 +89,7 @@ fn popover_area(ctx: &Context, chrome: &ChromeRects, id: Id, key: PopoverKey) ->
             area.pivot(Align2::LEFT_TOP).fixed_pos(r.left_bottom() + vec2(0.0, GAP))
         }
         (Some(r), PopoverKey::Background) => area.pivot(Align2::LEFT_BOTTOM).fixed_pos(r.left_top() - vec2(0.0, GAP)),
-        (Some(r), PopoverKey::Font) => area.pivot(Align2::RIGHT_TOP).fixed_pos(r.left_top() - vec2(GAP, 0.0)),
+        (Some(r), PopoverKey::Font) => area.pivot(Align2::LEFT_TOP).fixed_pos(r.left_bottom() + vec2(0.0, GAP)),
         (None, PopoverKey::Stroke | PopoverKey::Fill) => {
             area.pivot(Align2::CENTER_TOP).fixed_pos(pos2(screen.center().x, under_strip))
         }
@@ -97,9 +97,8 @@ fn popover_area(ctx: &Context, chrome: &ChromeRects, id: Id, key: PopoverKey) ->
             .pivot(Align2::LEFT_BOTTOM)
             .fixed_pos(pos2(screen.left() + MARGIN, chrome.above_bottom_left(screen) - GAP)),
         (None, PopoverKey::Font) => {
-            let at =
-                chrome.props.map_or(pos2(screen.right() - MARGIN - RIGHT_PANEL_WIDTH, under_strip), |r| r.left_top());
-            area.pivot(Align2::RIGHT_TOP).fixed_pos(at - vec2(GAP, 0.0))
+            let under_top = chrome.below_top(screen) + GAP;
+            area.pivot(Align2::CENTER_TOP).fixed_pos(pos2(screen.center().x, under_top))
         }
     }
 }

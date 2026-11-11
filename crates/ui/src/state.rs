@@ -401,13 +401,31 @@ impl LayoutPreference {
     }
 }
 
-/// The two panels that collapse in the touch layout.
+/// The panels that collapse in the touch layout.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PanelKind {
     /// The tool column.
     Tools,
-    /// The properties panel.
-    Properties,
+}
+
+/// A menu that opens from a control of the ribbon.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum RibbonMenu {
+    /// The properties that did not fit the ribbon: sloppiness, pressure, vertical align, line height, box.
+    More,
+    /// The head at the start of an arrow.
+    StartHead,
+    /// The head at the end of an arrow.
+    EndHead,
+}
+
+/// A ribbon menu that is open, and where its button is.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct OpenRibbonMenu {
+    /// Which menu.
+    pub kind: RibbonMenu,
+    /// The button that opened it, in screen points. The menu opens under it.
+    pub anchor: egui::Rect,
 }
 
 /// Windows narrower than this (in points) get the touch layout when the preference is `Auto`.
@@ -436,6 +454,8 @@ pub struct UiState {
     pub last_picked: LastPicked,
     /// The font family popover is open.
     pub font_picker_open: bool,
+    /// The menu of a ribbon control, when open.
+    pub ribbon_menu: Option<OpenRibbonMenu>,
     /// The search box is open.
     pub search_open: bool,
     /// What the last search found, while the search box is open.
@@ -497,7 +517,7 @@ pub struct UiState {
     /// A touch event was seen, or the app says the device is touch-first.
     pub touch_first: bool,
     /// What the user chose for each collapsible panel (`None`: the default for the window).
-    panel_collapsed: [Option<bool>; 2],
+    panel_collapsed: [Option<bool>; 1],
     /// Toasts, oldest first.
     pub toasts: Vec<Toast>,
     /// Text the app pasted for the equation editor.
@@ -537,6 +557,7 @@ impl UiState {
             || self.collab_open
             || self.color_popover.is_some()
             || self.font_picker_open
+            || self.ribbon_menu.is_some()
             || self.search_open
             || self.equation.is_some()
             || self.link_editor.is_some()
@@ -587,6 +608,7 @@ impl UiState {
         self.collab_open = false;
         self.color_popover = None;
         self.font_picker_open = false;
+        self.ribbon_menu = None;
         self.search_open = false;
         self.search_results = None;
         self.equation = None;

@@ -92,20 +92,43 @@ fn the_app_can_say_the_device_is_touch_first() {
 }
 
 #[test]
-fn panels_start_collapsed_on_a_narrow_window_and_open_with_their_button() {
+fn the_tools_start_collapsed_on_a_narrow_window_and_the_ribbon_scrolls_in_one_row() {
     let mut h = at(vec2(600.0, 900.0), with_selection());
     assert!(h.query_by_label("Rectangle tool").is_none(), "tools are collapsed");
-    assert!(
-        h.query_by_label("Align left").is_none() && h.query_by_label("Duplicate").is_none(),
-        "so are the properties"
-    );
-    h.get_by_label("Show the properties").click();
+    let screen = egui::Rect::from_min_size(egui::Pos2::ZERO, vec2(600.0, 900.0));
+    let ribbon = h.state().state.chrome.ribbon.expect("a ribbon for the selection");
+    assert!(screen.contains_rect(ribbon), "the ribbon {ribbon:?} lies inside the window");
+    assert!(ribbon.height() < 40.0 + 2.0 * 12.0, "one row of 40 point targets: {ribbon:?}");
+    assert!(ribbon.contains_rect(h.get_by_label("Dashed").rect()), "the first group is in view");
+    let delete = h.get_by_label("Delete").rect();
+    assert!(!ribbon.contains_rect(delete), "the last group is scrolled out: {delete:?} vs {ribbon:?}");
+    h.event(Event::PointerMoved(ribbon.center()));
+    h.event(Event::MouseWheel {
+        unit: egui::MouseWheelUnit::Point,
+        delta: vec2(-3000.0, 0.0),
+        modifiers: egui::Modifiers::NONE,
+        phase: egui::TouchPhase::Move,
+        source: egui::MouseWheelSource::Wheel,
+    });
+    for _ in 0..10 {
+        h.step();
+    }
+    let delete = h.get_by_label("Delete").rect();
+    assert!(ribbon.contains_rect(delete), "the sideways scroll brings it into view: {delete:?} vs {ribbon:?}");
+}
+
+#[test]
+fn the_ribbon_has_finger_sized_targets_on_a_touch_device() {
+    let mut f = dialog::fixture();
+    f.state.set_touch_first(true);
+    let mut h = at(vec2(1180.0, 820.0), f);
+    h.state_mut().session.execute("tool.set", serde_json::json!({ "tool": "rectangle" })).unwrap();
+    h.state_mut().refresh();
     h.run();
-    h.get_by_label("Duplicate");
-    assert!(!h.state().state.panel_collapsed(PanelKind::Properties, 600.0));
-    h.get_by_label("Hide the properties").click();
-    h.run();
-    assert!(h.query_by_label("Duplicate").is_none());
+    assert!(h.query_by_label("Bring to front").is_none(), "nothing is selected, so nothing to layer");
+    for label in ["Dashed", "Corners: Round", "More options"] {
+        assert!(height_of(&h, label) >= 36.0, "{label}");
+    }
 }
 
 #[test]

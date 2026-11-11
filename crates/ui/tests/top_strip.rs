@@ -124,10 +124,10 @@ fn the_side_panels_start_under_the_strip_even_in_a_short_window() {
         let h = at(vec2(1280.0, height), with_selection());
         let strip = chrome(&h).strip.unwrap();
         let tools = chrome(&h).tools.unwrap();
-        let props = chrome(&h).props.unwrap();
+        let ribbon = chrome(&h).ribbon.unwrap();
         assert!(tools.min.y >= strip.max.y, "tools {tools:?} under {strip:?} at {height}");
-        assert!(props.min.y >= strip.max.y, "properties {props:?} under {strip:?} at {height}");
-        assert!(tools.max.y <= height && props.max.y <= height, "inside the window");
+        assert!(ribbon.min.y >= strip.max.y, "ribbon {ribbon:?} under {strip:?} at {height}");
+        assert!(tools.max.y <= height && ribbon.max.y <= height, "inside the window");
     }
 }
 

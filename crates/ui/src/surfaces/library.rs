@@ -2,10 +2,10 @@
 //! the window.
 //!
 //! * **Place.** It is as wide as the window less the margins and sits above the bottom bar and the tab bar, so
-//!   nothing overlaps. It reads their rectangles, and those of the tool column and the properties panel, from
+//!   nothing overlaps. It reads their rectangles, and those of the tool column and the ribbon card, from
 //!   [`ChromeRects`](crate::chrome::ChromeRects) (they are drawn before it) and records its own there. Where the
-//!   tool column or the properties panel reach down to its height, it is narrower by their width, so that their
-//!   buttons stay free; the toasts, the convert popup and the stats panel sit above it. Its height is 30 % of
+//!   tool column reaches down to its height, it is narrower by its width, so that its buttons stay free, and it
+//!   never reaches up into the ribbon card; the toasts, the convert popup and the stats panel sit above it. Its height is 30 % of
 //!   the window until the person drags the top edge; the height they chose is kept in
 //!   [`UiState::library_height`].
 //! * **Sections.** The items are grouped in sections, the person's own first ("My items"), then one per imported
@@ -55,7 +55,7 @@ const MAX_SHARE: f32 = 0.7;
 const MIN_HEIGHT: f32 = 224.0;
 /// The same on a touch layout, where the header takes two rows and the targets are larger.
 const MIN_HEIGHT_COMPACT: f32 = 360.0;
-/// Room left above the drawer for the top bars.
+/// Room left above the drawer for the top bars (the strip), when no ribbon card is shown.
 const TOP_ROOM: f32 = 72.0;
 /// Height of the strip on the top edge that resizes the drawer.
 const GRIP: f32 = 10.0;
@@ -67,12 +67,6 @@ const LABEL_HEIGHT: f32 = 20.0;
 const PICTURE_PADDING: f32 = 6.0;
 /// The bounds of the largest picture of the tooltip, in points.
 const TOOLTIP_BOX: egui::Vec2 = vec2(240.0, 200.0);
-
-#[derive(Clone, Copy)]
-enum Side {
-    Left,
-    Right,
-}
 
 /// `library.insert` for a click: the engine puts the item in the middle of the view.
 pub(crate) fn insert_args(item: &str) -> Value {
@@ -141,35 +135,35 @@ pub(crate) fn groups<'a>(model: &'a Model, filter: &str) -> Vec<Group<'a>> {
 
 /// The least and the most height the drawer may have in a window of this size, whose room above the bars ends at
 /// `bottom`.
-pub(crate) fn height_limits(screen: egui::Rect, bottom: f32, compact: bool) -> (f32, f32) {
+pub(crate) fn height_limits(screen: egui::Rect, top: f32, bottom: f32, compact: bool) -> (f32, f32) {
     let least = if compact { MIN_HEIGHT_COMPACT } else { MIN_HEIGHT };
-    let room = bottom - screen.top() - TOP_ROOM;
+    let room = bottom - top;
     (least, (screen.height() * MAX_SHARE).min(room).max(least))
 }
 
 /// The height of the drawer: what the person dragged it to, else 30 % of the window, kept within limits.
-pub(crate) fn drawer_height(screen: egui::Rect, bottom: f32, compact: bool, chosen: Option<f32>) -> f32 {
-    let (least, most) = height_limits(screen, bottom, compact);
+pub(crate) fn drawer_height(screen: egui::Rect, top: f32, bottom: f32, compact: bool, chosen: Option<f32>) -> f32 {
+    let (least, most) = height_limits(screen, top, bottom, compact);
     chosen.unwrap_or(screen.height() * DEFAULT_SHARE).clamp(least, most)
 }
 
-/// `rect` narrowed so that it does not cover the side panels that stand in its way (the tool column and the
-/// properties panel both reach down the sides of the window, so a full-width drawer would cover their lowest
-/// buttons). On a narrow window the panels are collapsed to a button each and the drawer would be left with no
+/// The y of the highest the drawer may reach: below the top bars, and below the ribbon card when it is shown.
+fn top_limit(chrome: &ChromeRects, screen: egui::Rect) -> f32 {
+    (screen.top() + TOP_ROOM).max(chrome.ribbon.map_or(f32::MIN, |r| r.bottom() + GAP))
+}
+
+/// `rect` narrowed so that it does not cover the side panel that stands in its way (the tool column reaches
+/// down the left side of the window, so a full-width drawer would cover its lowest buttons). On a narrow window the panels are collapsed to a button each and the drawer would be left with no
 /// width, so it covers them.
 fn clear_of_side_panels(chrome: &ChromeRects, layout: &Layout, mut rect: Rect) -> Rect {
     if layout.narrow {
         return rect;
     }
-    for (panel, side) in [(chrome.tools, Side::Left), (chrome.props, Side::Right)] {
-        let Some(panel) = panel else { continue };
-        if panel.bottom() <= rect.top() || panel.top() >= rect.bottom() {
-            continue;
-        }
-        match side {
-            Side::Left => rect.min.x = rect.min.x.max(panel.right() + GAP),
-            Side::Right => rect.max.x = rect.max.x.min(panel.left() - GAP),
-        }
+    if let Some(tools) = chrome.tools
+        && tools.bottom() > rect.top()
+        && tools.top() < rect.bottom()
+    {
+        rect.min.x = rect.min.x.max(tools.right() + GAP);
     }
     rect
 }
@@ -253,7 +247,8 @@ pub fn show(ctx: &Context, cx: &mut Cx<'_>, st: &mut UiState) {
     st.library_hover = None;
     let screen = ctx.content_rect();
     let bottom = (st.chrome.bottom_floor(screen) - GAP).min(screen.bottom() - MARGIN);
-    let height = drawer_height(screen, bottom, cx.layout.compact, st.library_height);
+    let top = top_limit(&st.chrome, screen);
+    let height = drawer_height(screen, top, bottom, cx.layout.compact, st.library_height);
     let rect = Rect::from_min_max(pos2(screen.left() + MARGIN, bottom - height), pos2(screen.right() - MARGIN, bottom));
     let rect = clear_of_side_panels(&st.chrome, &cx.layout, rect);
     // Recorded before the tiles are drawn: a drag that ends over the drawer is not a drop on the canvas.
@@ -290,7 +285,7 @@ fn grip(ui: &mut Ui, cx: &Cx<'_>, st: &mut UiState, drawer: Rect, bottom: f32, s
     if resp.dragged()
         && let Some(pointer) = resp.interact_pointer_pos()
     {
-        let (least, most) = height_limits(screen, bottom, cx.layout.compact);
+        let (least, most) = height_limits(screen, top_limit(&st.chrome, screen), bottom, cx.layout.compact);
         st.library_height = Some((bottom - pointer.y).clamp(least, most));
     }
     let colour = if resp.dragged() || resp.hovered() { cx.pal.accent } else { cx.pal.separator };
