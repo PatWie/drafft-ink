@@ -897,6 +897,35 @@ fn escape_during_a_point_drag_restores_the_arrow_and_clears_the_highlight() {
 }
 
 #[test]
+fn dragging_the_midpoint_of_the_closing_segment_of_a_closed_line_inserts_a_point() {
+    let mut rig = Rig::new();
+    rig.run(
+        "element.create",
+        json!({ "kind": "line", "points": [[100, 100], [300, 100], [300, 300]], "closed": true }),
+    );
+    let line = rig.elements().into_iter().next().expect("line").id;
+    rig.pick(&[&line]);
+    let setup = rig.ring_ids().len();
+    // Segment 2 joins the last point (300, 300) back to the first (100, 100).
+    let m = rig.handle_pos(&Handle::Midpoint { element: line.clone(), segment: 2 });
+    assert_eq!((m.x, m.y), (200.0, 200.0));
+    rig.drag((m.x, m.y), (100.0, 300.0));
+    assert!(
+        rig.history.iter().all(|o| o.refusals.is_empty()),
+        "no refusal: {:?}",
+        rig.history.iter().flat_map(|o| &o.refusals).collect::<Vec<_>>()
+    );
+    assert_eq!(rig.ring_after(setup), vec!["arrow.move_point"]);
+    let d = rig.element(&line);
+    let t = d.transform;
+    let world: Vec<Point> =
+        d.linear_data().map(|d| d.points.iter().map(|p| t.local_to_world(*p)).collect()).unwrap_or_default();
+    assert_eq!(world.len(), 4);
+    assert!(near(world[3].x, 100.0) && near(world[3].y, 300.0), "the new point is last: {world:?}");
+    assert!(near(world[0].x, 100.0) && near(world[0].y, 100.0) && near(world[2].x, 300.0) && near(world[2].y, 300.0));
+}
+
+#[test]
 fn a_click_on_a_vertex_handle_selects_that_point_in_the_point_editor() {
     let mut rig = Rig::new();
     rig.run("element.create", json!({ "kind": "line", "points": [[100, 100], [200, 200], [300, 100]] }));

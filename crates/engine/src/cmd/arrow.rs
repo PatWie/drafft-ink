@@ -431,12 +431,8 @@ fn no_such_point(cmd: &str, key: &str, index: usize, len: usize) -> Refusal {
     )
 }
 
-fn no_such_segment(cmd: &str, key: &str, segment: usize, len: usize) -> Refusal {
-    Refusal::bad_arg(
-        cmd,
-        key,
-        format!("segment {segment} does not exist; this element has segments 1 to {}", len.saturating_sub(1)),
-    )
+fn no_such_segment(cmd: &str, key: &str, segment: usize, segments: usize) -> Refusal {
+    Refusal::bad_arg(cmd, key, format!("segment {segment} does not exist; this element has segments 1 to {segments}"))
 }
 
 fn from_binding(cmd: &str, key: &str, e: BindingError) -> Fail {
@@ -777,8 +773,9 @@ fn move_point(s: &mut Session, a: MovePointArgs) -> Result<MovePointOut, Refusal
         if elbow {
             return Err(not_movable(cmd));
         }
-        if segment < 1 || segment >= n {
-            return Err(no_such_segment(cmd, "index", segment, n));
+        let segments = linear::segment_count(&el, n);
+        if segment < 1 || segment > segments {
+            return Err(no_such_segment(cmd, "index", segment, segments));
         }
         segment
     } else {
@@ -832,7 +829,8 @@ fn move_point(s: &mut Session, a: MovePointArgs) -> Result<MovePointOut, Refusal
         angle_locked: flags.angle,
     };
     let insert_at = if a.insert {
-        let (p, q) = (world.get(index - 1).copied(), world.get(index).copied());
+        // The closing segment of a closed line ends at the first point.
+        let (p, q) = (world.get(index - 1).copied(), world.get(index % n).copied());
         p.zip(q).map(|(p, q)| p.midpoint(q))
     } else {
         None
@@ -878,11 +876,12 @@ fn add_point(s: &mut Session, a: AddPointArgs) -> Result<AddPointOut, Refusal> {
         return Err(not_movable(cmd));
     }
     let seg = a.segment;
-    if seg < 1 || seg >= world.len() {
-        return Err(no_such_segment(cmd, "segment", seg, world.len()));
+    let segments = linear::segment_count(&el, world.len());
+    if seg < 1 || seg > segments {
+        return Err(no_such_segment(cmd, "segment", seg, segments));
     }
-    let mid = world.get(seg - 1).copied().zip(world.get(seg).copied()).map(|(p, q)| p.midpoint(q));
-    let place = at.or(mid).ok_or_else(|| no_such_segment(cmd, "segment", seg, world.len()))?;
+    let mid = world.get(seg - 1).copied().zip(world.get(seg % world.len()).copied()).map(|(p, q)| p.midpoint(q));
+    let place = at.or(mid).ok_or_else(|| no_such_segment(cmd, "segment", seg, segments))?;
     let index = edit(s, |tx| linear::insert_midpoint(tx, &id, seg, place).map_err(|e| from_linear(cmd, "segment", e)))?;
     Ok(AddPointOut { index })
 }
@@ -1046,7 +1045,7 @@ fn elbow_target(s: &Session, cmd: &str, a: &SegmentArgs) -> Result<(ElementId, u
     }
     let len = world_points(&el).map_or(0, |w| w.len());
     if a.segment < 1 || a.segment >= len {
-        return Err(no_such_segment(cmd, "segment", a.segment, len));
+        return Err(no_such_segment(cmd, "segment", a.segment, len.saturating_sub(1)));
     }
     Ok((id, len))
 }

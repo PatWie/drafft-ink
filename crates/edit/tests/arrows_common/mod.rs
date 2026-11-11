@@ -72,6 +72,11 @@ impl Scene {
         self.add(Element::linear(id(name), Kind::Arrow, z0(), &pts).unwrap())
     }
 
+    pub fn line(&mut self, name: &str, pts: &[(f64, f64)]) -> ElementId {
+        let pts: Vec<Point> = pts.iter().map(|(x, y)| p(*x, *y)).collect();
+        self.add(Element::linear(id(name), Kind::Line, z0(), &pts).unwrap())
+    }
+
     pub fn edit<F: FnOnce(&mut Element)>(&mut self, eid: &ElementId, f: F) {
         let mut tx = self.store.begin();
         tx.update(eid, f).unwrap();
