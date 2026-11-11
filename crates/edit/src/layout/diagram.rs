@@ -9,7 +9,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use kurbo::{Point, Rect, Size};
+use kurbo::{Point, Rect, Size, Vec2};
 
 use crate::binding::BindingError;
 use schemars::JsonSchema;
@@ -21,7 +21,7 @@ use drafftink_scene::{
 };
 
 use super::route::{Heads, NodeBox, RouteParams, arrow_element, route_edge, route_self_loop};
-use super::{Algorithm, LayoutError, LayoutGraph, LayoutOpts, compute_layout, scene_bounds};
+use super::{Algorithm, LayoutError, LayoutGraph, LayoutOpts, LayoutResult, compute_layout, scene_bounds};
 use crate::binding::update_bound_arrows;
 use crate::ids::unused_element_id;
 use crate::text_bind::{
@@ -542,15 +542,14 @@ fn heads_of(e: &EdgeSpec) -> Heads {
     Heads { start: e.start_head.unwrap_or(base.start), end: e.end_head.unwrap_or(base.end) }
 }
 
-/// Creates the diagram described by `spec` in `tx`. See the module docs.
-pub fn diagram_create<T: SceneTx, M: TextMeasure + ?Sized>(
-    tx: &mut T,
-    m: &M,
-    ids: &mut dyn IdSource,
-    spec: &DiagramSpec,
-    opts: &CreateOpts,
-) -> Result<DiagramResult, DiagramError> {
-    // ---- validate ----
+/// What the checks of a spec found out: the nodes each edge joins and the groups each node is in.
+struct Checked {
+    edge_ends: Vec<(usize, usize)>,
+    node_groups: Vec<Vec<usize>>,
+}
+
+/// Checks counts, ids, edges, groups and names (unique inside the spec and against the scene).
+fn check_spec<R: SceneRead>(scene: &R, spec: &DiagramSpec) -> Result<Checked, DiagramError> {
     if spec.nodes.is_empty() {
         return Err(DiagramError::NoNodes);
     }
@@ -583,9 +582,8 @@ pub fn diagram_create<T: SceneTx, M: TextMeasure + ?Sized>(
     }
     let node_groups = resolve_groups(spec, &index)?;
 
-    // Names: unique inside the spec and against the scene.
     let mut taken: BTreeMap<String, String> =
-        tx.iter().filter_map(|e| e.name.clone().map(|n| (n, e.id.to_string()))).collect();
+        scene.iter().filter_map(|e| e.name.clone().map(|n| (n, e.id.to_string()))).collect();
     let names = spec
         .nodes
         .iter()
@@ -600,8 +598,11 @@ pub fn diagram_create<T: SceneTx, M: TextMeasure + ?Sized>(
             return Err(DiagramError::NameTaken { name: name.clone(), other });
         }
     }
+    Ok(Checked { edge_ends, node_groups })
+}
 
-    // ---- sizes ----
+/// The size and the font of every node.
+fn plan_nodes<M: TextMeasure + ?Sized>(m: &M, spec: &DiagramSpec) -> Result<(Vec<Size>, Vec<TextStyle>), DiagramError> {
     let mut sizes = Vec::with_capacity(spec.nodes.len());
     let mut fonts = Vec::with_capacity(spec.nodes.len());
     for n in &spec.nodes {
@@ -626,154 +627,215 @@ pub fn diagram_create<T: SceneTx, M: TextMeasure + ?Sized>(
         sizes.push(node_size(m, kind, &font, n.label.as_deref(), width, height));
         fonts.push(font);
     }
+    Ok((sizes, fonts))
+}
 
-    // ---- layout ----
+/// Places the nodes. Returns the layout and the shift that moves it to the requested origin.
+fn place_nodes(
+    spec: &DiagramSpec,
+    sizes: &[Size],
+    edge_ends: &[(usize, usize)],
+    requested_origin: Point,
+) -> Result<(LayoutResult, Vec2), DiagramError> {
     let fixed: Vec<Option<Point>> = spec.nodes.iter().map(|n| n.x.zip(n.y).map(|(x, y)| Point::new(x, y))).collect();
     if spec.layout.algorithm == Algorithm::None
         && let Some(i) = fixed.iter().position(Option::is_none)
     {
         return Err(DiagramError::MissingPosition(spec.nodes[i].id.clone()));
     }
-    let graph = LayoutGraph { sizes: sizes.clone(), edges: edge_ends.clone(), fixed };
+    let graph = LayoutGraph { sizes: sizes.to_vec(), edges: edge_ends.to_vec(), fixed };
     let layout = compute_layout(&graph, &spec.layout).map_err(|e| match e {
         LayoutError::NotForest { node } => DiagramError::TreeNotForest(spec.nodes[node].id.clone()),
         LayoutError::BadSize { node } => DiagramError::BadSize(spec.nodes[node].id.clone()),
         LayoutError::MissingPosition { node } => DiagramError::MissingPosition(spec.nodes[node].id.clone()),
         other => DiagramError::Layout(other),
     })?;
-    let origin = if spec.layout.algorithm == Algorithm::None { Point::ZERO } else { opts.origin };
+    let origin = if spec.layout.algorithm == Algorithm::None { Point::ZERO } else { requested_origin };
     if !origin.x.is_finite() || !origin.y.is_finite() {
         return Err(DiagramError::NotFinite);
     }
-    let shift = origin.to_vec2();
+    Ok((layout, origin.to_vec2()))
+}
 
-    // ---- groups ----
-    let group_ids: Vec<GroupId> = spec.groups.iter().map(|_| ids.group_id()).collect();
-    let mut groups_out = BTreeMap::new();
-    for (g, id) in spec.groups.iter().zip(&group_ids) {
-        if let Some(sym) = &g.id {
-            groups_out.insert(sym.clone(), id.clone());
-        }
-    }
+/// What the creation steps share.
+struct Build<'a, M: ?Sized> {
+    m: &'a M,
+    spec: &'a DiagramSpec,
+    node_groups: &'a [Vec<usize>],
+    group_ids: &'a [GroupId],
+    frame_id: Option<&'a ElementId>,
+}
 
-    // ---- frame id and the nodes' elements ----
-    let frame_id = opts.frame.as_ref().map(|_| unused_element_id(tx, ids));
-    let mut created: Vec<ElementId> = Vec::new();
-    let mut node_ids: Vec<ElementId> = Vec::with_capacity(spec.nodes.len());
-    let mut boxes: Vec<NodeBox> = Vec::with_capacity(spec.nodes.len());
-    let mut rects: Vec<Rect> = Vec::with_capacity(spec.nodes.len());
-    for (i, n) in spec.nodes.iter().enumerate() {
-        let pos = layout.positions[i] + shift;
-        let size = sizes[i];
-        let id = unused_element_id(tx, ids);
-        let mut style = Style::default();
-        if let Some(s) = &n.style {
-            s.apply(&mut style);
-        }
-        style.seed = ids.seed();
-        let label = n.label.as_deref().filter(|l| !l.trim().is_empty());
-        let kind = match (n.shape, label) {
-            (NodeShape::Rectangle, _) => ElementKind::Rectangle,
-            (NodeShape::Ellipse, _) => ElementKind::Ellipse,
-            (NodeShape::Diamond, _) => ElementKind::Diamond,
-            (NodeShape::Text, text) => {
-                let mut d = TextData::new(text.unwrap_or_default());
-                d.font = fonts[i].clone();
-                d.font.align = drafftink_scene::TextAlign::Center;
-                d.auto_resize = n.width.is_none();
-                ElementKind::Text(d)
-            }
+/// The elements made for the nodes.
+struct NodeSet {
+    ids: Vec<ElementId>,
+    boxes: Vec<NodeBox>,
+    rects: Vec<Rect>,
+    created: Vec<ElementId>,
+}
+
+impl<M: TextMeasure + ?Sized> Build<'_, M> {
+    fn create_nodes<T: SceneTx>(
+        &self,
+        tx: &mut T,
+        ids: &mut dyn IdSource,
+        layout: &LayoutResult,
+        shift: Vec2,
+        sizes: &[Size],
+        fonts: &[TextStyle],
+    ) -> Result<NodeSet, DiagramError> {
+        let n = self.spec.nodes.len();
+        let mut set = NodeSet {
+            ids: Vec::with_capacity(n),
+            boxes: Vec::with_capacity(n),
+            rects: Vec::with_capacity(n),
+            created: Vec::new(),
         };
-        let mut e = Element::new(id.clone(), kind, tx.next_top_index()?)
-            .with_bounds(pos.x, pos.y, size.width, size.height)
-            .with_style(style);
-        e.name = n.name.clone();
-        e.frame_id = frame_id.clone();
-        for &g in &node_groups[i] {
-            e.group_ids.push(group_ids[g].clone());
-        }
-        let nb = NodeBox::of(&e).ok_or(DiagramError::NotFinite)?;
-        rects.push(e.rect());
-        tx.insert(e)?;
-        created.push(id.clone());
-        if n.shape != NodeShape::Text
-            && let Some(text) = label
-        {
-            let o = create_label(tx, m, ids, &id, text, Some(&fonts[i]))?;
-            created.push(o.label);
-            // The node may have grown if the measure and the real wrap disagree; keep the box current.
-            if o.container_grew
-                && let Some(e) = tx.get(&id)
-            {
-                rects[i] = e.rect();
+        for (i, node) in self.spec.nodes.iter().enumerate() {
+            let pos = layout.positions[i] + shift;
+            let size = sizes[i];
+            let id = unused_element_id(tx, ids);
+            let mut style = Style::default();
+            if let Some(s) = &node.style {
+                s.apply(&mut style);
             }
-        }
-        boxes.push(match tx.get(&id).and_then(NodeBox::of) {
-            Some(b) => b,
-            None => nb,
-        });
-        node_ids.push(id);
-    }
-
-    // ---- edges ----
-    let mut lanes: BTreeMap<(usize, usize), usize> = BTreeMap::new();
-    let mut totals: BTreeMap<(usize, usize), usize> = BTreeMap::new();
-    for &(a, b) in &edge_ends {
-        *totals.entry((a.min(b), a.max(b))).or_default() += 1;
-    }
-    let mut edge_out = Vec::with_capacity(spec.edges.len());
-    for (k, (e, &(a, b))) in spec.edges.iter().zip(&edge_ends).enumerate() {
-        let key = (a.min(b), a.max(b));
-        let lane_slot = lanes.entry(key).or_default();
-        let lane = (*lane_slot, totals.get(&key).copied().unwrap_or(1));
-        *lane_slot += 1;
-        let path = e.arrow_type.unwrap_or(PathType::Sharp);
-        let route = if a == b {
-            route_self_loop(&boxes[a])
-        } else {
-            let waypoints: Vec<Point> = layout.waypoints[k].iter().map(|p| *p + shift).collect();
-            let obstacles: Vec<Rect> = if waypoints.is_empty() {
-                Vec::new()
-            } else {
-                rects.iter().enumerate().filter(|(i, _)| *i != a && *i != b).map(|(_, r)| *r).collect()
+            style.seed = ids.seed();
+            let label = node.label.as_deref().filter(|l| !l.trim().is_empty());
+            let kind = match (node.shape, label) {
+                (NodeShape::Rectangle, _) => ElementKind::Rectangle,
+                (NodeShape::Ellipse, _) => ElementKind::Ellipse,
+                (NodeShape::Diamond, _) => ElementKind::Diamond,
+                (NodeShape::Text, text) => {
+                    let mut d = TextData::new(text.unwrap_or_default());
+                    d.font = fonts[i].clone();
+                    d.font.align = drafftink_scene::TextAlign::Center;
+                    d.auto_resize = node.width.is_none();
+                    ElementKind::Text(d)
+                }
             };
-            let p = RouteParams { path, waypoints: &waypoints, flow: layout.flow, lane, obstacles: &obstacles };
-            route_edge(&boxes[a], &boxes[b], &p)
-        };
-        let id = unused_element_id(tx, ids);
-        let mut arrow = arrow_element(id.clone(), tx.next_top_index()?, &route, path, heads_of(e))
-            .ok_or(DiagramError::NotFinite)?;
-        let from_el = tx.get(&node_ids[a]).map(|n| n.style.stroke_color);
-        let mut style = Style::default();
-        if let Some(c) = from_el {
-            style.stroke_color = c;
-        }
-        if let Some(s) = &e.style {
-            s.apply(&mut style);
-        }
-        style.seed = ids.seed();
-        arrow.style = style;
-        arrow.name = e.name.clone();
-        arrow.frame_id = frame_id.clone();
-        // The arrow joins the groups both ends share, innermost first.
-        for &g in &node_groups[a] {
-            if node_groups[b].contains(&g) {
-                arrow.group_ids.push(group_ids[g].clone());
+            let mut e = Element::new(id.clone(), kind, tx.next_top_index()?)
+                .with_bounds(pos.x, pos.y, size.width, size.height)
+                .with_style(style);
+            e.name = node.name.clone();
+            e.frame_id = self.frame_id.cloned();
+            e.group_ids.extend(self.node_groups[i].iter().map(|&g| self.group_ids[g].clone()));
+            let nb = NodeBox::of(&e).ok_or(DiagramError::NotFinite)?;
+            set.rects.push(e.rect());
+            tx.insert(e)?;
+            set.created.push(id.clone());
+            if node.shape != NodeShape::Text
+                && let Some(text) = label
+            {
+                let o = create_label(tx, self.m, ids, &id, text, Some(&fonts[i]))?;
+                set.created.push(o.label);
+                // The node may have grown if the measure and the real wrap disagree; keep the box current.
+                if o.container_grew
+                    && let Some(e) = tx.get(&id)
+                {
+                    set.rects[i] = e.rect();
+                }
             }
+            set.boxes.push(tx.get(&id).and_then(NodeBox::of).unwrap_or(nb));
+            set.ids.push(id);
         }
-        tx.insert(arrow)?;
-        created.push(id.clone());
-        if let Some(text) = e.label.as_deref().filter(|l| !l.trim().is_empty()) {
-            let font = e.style.as_ref().map(StyleSpec::font).unwrap_or_default();
-            let o = create_label(tx, m, ids, &id, text, Some(&font))?;
-            created.push(o.label);
-        }
-        edge_out.push(id);
+        Ok(set)
     }
 
-    // ---- frame ----
-    let mut bounds = rects.iter().copied().reduce(|a, b| a.union(b)).unwrap_or(Rect::ZERO);
-    for id in &created {
+    /// Makes the arrows. Edges between the same two nodes share the space in lanes.
+    fn create_edges<T: SceneTx>(
+        &self,
+        tx: &mut T,
+        ids: &mut dyn IdSource,
+        layout: &LayoutResult,
+        shift: Vec2,
+        edge_ends: &[(usize, usize)],
+        nodes: &mut NodeSet,
+    ) -> Result<Vec<ElementId>, DiagramError> {
+        let mut lanes: BTreeMap<(usize, usize), usize> = BTreeMap::new();
+        let mut totals: BTreeMap<(usize, usize), usize> = BTreeMap::new();
+        for &(a, b) in edge_ends {
+            *totals.entry((a.min(b), a.max(b))).or_default() += 1;
+        }
+        let mut out = Vec::with_capacity(self.spec.edges.len());
+        for (k, (e, &(a, b))) in self.spec.edges.iter().zip(edge_ends).enumerate() {
+            let key = (a.min(b), a.max(b));
+            let lane_slot = lanes.entry(key).or_default();
+            let lane = (*lane_slot, totals.get(&key).copied().unwrap_or(1));
+            *lane_slot += 1;
+            let path = e.arrow_type.unwrap_or(PathType::Sharp);
+            let route = if a == b {
+                route_self_loop(&nodes.boxes[a])
+            } else {
+                let waypoints: Vec<Point> = layout.waypoints[k].iter().map(|p| *p + shift).collect();
+                let obstacles: Vec<Rect> = if waypoints.is_empty() {
+                    Vec::new()
+                } else {
+                    nodes.rects.iter().enumerate().filter(|(i, _)| *i != a && *i != b).map(|(_, r)| *r).collect()
+                };
+                let p = RouteParams { path, waypoints: &waypoints, flow: layout.flow, lane, obstacles: &obstacles };
+                route_edge(&nodes.boxes[a], &nodes.boxes[b], &p)
+            };
+            let id = unused_element_id(tx, ids);
+            let mut arrow = arrow_element(id.clone(), tx.next_top_index()?, &route, path, heads_of(e))
+                .ok_or(DiagramError::NotFinite)?;
+            let mut style = Style::default();
+            if let Some(c) = tx.get(&nodes.ids[a]).map(|n| n.style.stroke_color) {
+                style.stroke_color = c;
+            }
+            if let Some(s) = &e.style {
+                s.apply(&mut style);
+            }
+            style.seed = ids.seed();
+            arrow.style = style;
+            arrow.name = e.name.clone();
+            arrow.frame_id = self.frame_id.cloned();
+            // The arrow joins the groups both ends share, innermost first.
+            arrow.group_ids.extend(
+                self.node_groups[a]
+                    .iter()
+                    .filter(|g| self.node_groups[b].contains(g))
+                    .map(|&g| self.group_ids[g].clone()),
+            );
+            tx.insert(arrow)?;
+            nodes.created.push(id.clone());
+            if let Some(text) = e.label.as_deref().filter(|l| !l.trim().is_empty()) {
+                let font = e.style.as_ref().map(StyleSpec::font).unwrap_or_default();
+                let o = create_label(tx, self.m, ids, &id, text, Some(&font))?;
+                nodes.created.push(o.label);
+            }
+            out.push(id);
+        }
+        Ok(out)
+    }
+}
+
+/// Creates the diagram described by `spec` in `tx`. See the module docs.
+pub fn diagram_create<T: SceneTx, M: TextMeasure + ?Sized>(
+    tx: &mut T,
+    m: &M,
+    ids: &mut dyn IdSource,
+    spec: &DiagramSpec,
+    opts: &CreateOpts,
+) -> Result<DiagramResult, DiagramError> {
+    let Checked { edge_ends, node_groups } = check_spec(&*tx, spec)?;
+    let (sizes, fonts) = plan_nodes(m, spec)?;
+    let (layout, shift) = place_nodes(spec, &sizes, &edge_ends, opts.origin)?;
+
+    let group_ids: Vec<GroupId> = spec.groups.iter().map(|_| ids.group_id()).collect();
+    let groups_out: BTreeMap<String, GroupId> = spec
+        .groups
+        .iter()
+        .zip(&group_ids)
+        .filter_map(|(g, id)| g.id.as_ref().map(|sym| (sym.clone(), id.clone())))
+        .collect();
+
+    let frame_id = opts.frame.as_ref().map(|_| unused_element_id(tx, ids));
+    let build = Build { m, spec, node_groups: &node_groups, group_ids: &group_ids, frame_id: frame_id.as_ref() };
+    let mut nodes = build.create_nodes(tx, ids, &layout, shift, &sizes, &fonts)?;
+    let edge_out = build.create_edges(tx, ids, &layout, shift, &edge_ends, &mut nodes)?;
+
+    let mut bounds = nodes.rects.iter().copied().reduce(|a, b| a.union(b)).unwrap_or(Rect::ZERO);
+    for id in &nodes.created {
         if let Some(e) = tx.get(id) {
             bounds = bounds.union(e.rect());
         }
@@ -786,22 +848,21 @@ pub fn diagram_create<T: SceneTx, M: TextMeasure + ?Sized>(
             Element::new(fid.clone(), ElementKind::Frame(data), z).with_bounds(r.x0, r.y0, r.width(), r.height());
         f.style.seed = ids.seed();
         tx.insert(f)?;
-        created.push(fid.clone());
+        nodes.created.push(fid.clone());
         bounds = r;
     }
 
-    let mut touched: Vec<ElementId> = node_ids.clone();
-    touched.extend(edge_out.iter().cloned());
+    let touched: Vec<ElementId> = nodes.ids.iter().chain(&edge_out).cloned().collect();
     update_bound_arrows(tx, &touched)?;
 
-    let nodes = spec.nodes.iter().zip(&node_ids).map(|(n, id)| (n.id.clone(), id.clone())).collect();
+    let node_map = spec.nodes.iter().zip(&nodes.ids).map(|(n, id)| (n.id.clone(), id.clone())).collect();
     Ok(DiagramResult {
-        nodes,
+        nodes: node_map,
         edges: edge_out,
         groups: groups_out,
         group_ids,
         frame: frame_id,
         bounds: [bounds.x0, bounds.y0, bounds.width(), bounds.height()],
-        created,
+        created: nodes.created,
     })
 }
