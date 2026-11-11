@@ -379,15 +379,13 @@ impl ZIndex {
     /// changed. The slice must already be in the intended order (for ties, order by element id first).
     pub fn repair(keys: &mut [ZIndex]) -> Result<Vec<usize>, IndexError> {
         let n = keys.len();
-        let invalid: Vec<bool> = (0..n)
-            .map(|i| {
-                let key = keys.get(i);
+        let invalid: Vec<bool> = keys
+            .iter()
+            .enumerate()
+            .map(|(i, k)| {
                 let prev = i.checked_sub(1).and_then(|p| keys.get(p));
                 let next = keys.get(i + 1);
-                match key {
-                    Some(k) => prev.is_some_and(|p| p >= k) || next.is_some_and(|nx| k >= nx),
-                    None => true,
-                }
+                prev.is_some_and(|p| p >= k) || next.is_some_and(|nx| k >= nx)
             })
             .collect();
         if !invalid.iter().any(|b| *b) {

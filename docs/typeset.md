@@ -157,7 +157,9 @@ between 64 and 128. Nested matrices: debug overflowed at 60, release survived 12
 in 4 KiB of source). A stack overflow aborts and cannot be caught. `precheck` counts open groups plus
 runs of consecutive commands and scripts, and 48 leaves a factor of 2.5 or more in release.
 A caught panic inside ReX becomes
-`MathErrorKind::Internal` on targets that unwind. `tests/hostile.rs` runs token-soup, grammar and
+`MathErrorKind::Internal` on targets that unwind. The shipped web build uses `panic = "abort"`, where
+`catch_unwind` catches nothing: there only `precheck` and the fuzz tests protect against a panic in ReX,
+so do not rely on the catch. `tests/hostile.rs` runs token-soup, grammar and
 proptest inputs and a list of pathological shapes on a 1 MiB stack in release builds (4 MiB in
 debug); run `cargo test --release -p drafftink-typeset --test hostile` for the strict check, and
 `TYPESET_FUZZ_ITERS=400000` for a longer fuzz.

@@ -119,8 +119,9 @@ pub fn distribute(rects: &[Rect], axis: Axis) -> Vec<Vec2> {
 
     if step < 0.0 {
         // Distribute centres between the boxes that define the extent.
-        let first = items.iter().position(|i| i.1 == min_start).unwrap_or(0);
-        let last = items.iter().position(|i| i.2 == max_end).unwrap_or(n - 1);
+        // The first box with the smallest start and the first with the largest end define the extent.
+        let first = items.iter().enumerate().min_by(|a, b| a.1.1.total_cmp(&b.1.1)).map_or(0, |(k, _)| k);
+        let last = items.iter().enumerate().min_by(|a, b| b.1.2.total_cmp(&a.1.2)).map_or(n - 1, |(k, _)| k);
         let step = (items[last].3 - items[first].3) / (n - 1) as f64;
         let mut pos = items[first].3;
         for (k, item) in items.iter().enumerate() {

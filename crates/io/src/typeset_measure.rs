@@ -11,8 +11,8 @@ use std::sync::Arc;
 
 use drafftink_scene as scene;
 use drafftink_typeset::{
-    FONT_SIZE_RANGE, FontFamily, FontWeight, LineHeight, MATH_SIZE_RANGE, MathError, MathLayout, MathSpec, Rgba8,
-    TextSpec, TextStyle, Typesetter,
+    ColouredPath, FONT_SIZE_RANGE, FontFamily, FontWeight, LineHeight, MATH_SIZE_RANGE, MathError, MathLayout,
+    MathSpec, Rgba8, TextSpec, TextStyle, Typesetter,
 };
 
 use crate::measure::{MathBox, TextMeasure};
@@ -81,8 +81,11 @@ pub fn plain_text_spec(
     size: f64,
     line_height: f64,
 ) -> TextSpec {
-    let (lo, hi) = FONT_SIZE_RANGE;
-    let size = if size.is_finite() { (size as f32).clamp(lo, hi) } else { TextStyle::DEFAULT_SIZE };
+    let size = if size.is_finite() {
+        (size as f32).clamp(*FONT_SIZE_RANGE.start(), *FONT_SIZE_RANGE.end())
+    } else {
+        TextStyle::DEFAULT_SIZE
+    };
     let lh = if line_height.is_finite() && line_height > 0.0 { line_height } else { DEFAULT_LINE_HEIGHT };
     let mut spec =
         TextSpec::styled(text, TextStyle::from_legacy(family(font_family), weight(font_weight), size, Rgba8::BLACK));
@@ -106,8 +109,7 @@ pub fn text_size_with(
 /// Lays out a formula at `size`, clamped to the sizes the typesetter accepts (a size that is not a number
 /// counts as 20).
 pub fn math_layout_with(ts: &mut Typesetter, latex: &str, size: f64) -> Result<Arc<MathLayout>, MathError> {
-    let (lo, hi) = MATH_SIZE_RANGE;
-    let size = if size.is_finite() { size.clamp(lo, hi) } else { 20.0 };
+    let size = if size.is_finite() { size.clamp(*MATH_SIZE_RANGE.start(), *MATH_SIZE_RANGE.end()) } else { 20.0 };
     ts.math(&MathSpec::new(latex).with_size(size))
 }
 
@@ -133,7 +135,7 @@ impl<H: TypesetterHandle> MathSvg for TypesetterMeasure<H> {
     fn math_svg(&self, latex: &str, size: f64) -> Option<String> {
         let layout = self.0.with_typesetter(|ts| math_layout_with(ts, latex, size)).ok()?;
         let mut out = String::new();
-        for (color, path) in layout.outline(SENTINEL) {
+        for ColouredPath { color, path } in layout.outline(SENTINEL) {
             let d = path.to_svg();
             if color == SENTINEL {
                 let _ = write!(out, r#"<path d="{d}" fill="currentColor"/>"#);

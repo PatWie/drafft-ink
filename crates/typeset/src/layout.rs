@@ -2,16 +2,17 @@
 
 use std::borrow::Cow;
 use std::collections::BTreeSet;
-use std::ops::Range;
+use std::ops::{Range, RangeInclusive};
 use std::sync::Arc;
 
-use kurbo::{BezPath, Point, Rect, Size};
+use kurbo::{Point, Rect, Size};
 use parley::{
     Alignment, AlignmentOptions, FontContext, FontFamily as PFamily, FontFamilyName, FontStyle, FontWeight as PWeight,
     LayoutContext, OverflowWrap, PositionedLayoutItem, StyleProperty,
 };
 
 use crate::fonts::{self, FALLBACK_FAMILY};
+use crate::outline::ColouredPath;
 use crate::style::{Align, FontFamily, FontWeight, LineHeight, Rgba8, Span, SpanStyle, TextSpec, TextStyle, Wrap};
 
 /// Longest text laid out, in bytes. Longer text is cut at a `char` boundary and the layout is
@@ -20,7 +21,7 @@ pub const MAX_TEXT_BYTES: usize = 1 << 20;
 /// Most spans honoured per layout. Later spans are ignored.
 pub const MAX_SPANS: usize = 4096;
 /// Smallest and largest font size, in layout units.
-pub const FONT_SIZE_RANGE: (f32, f32) = (1.0, 2048.0);
+pub const FONT_SIZE_RANGE: RangeInclusive<f32> = 1.0..=2048.0;
 /// Smallest wrap width.
 pub const MIN_WRAP_WIDTH: f32 = 1.0;
 
@@ -212,7 +213,7 @@ impl TextLayout {
     /// The glyph outlines and decorations as filled paths, grouped by colour in paint order.
     /// Used by exports (SVG, PNG without a glyph renderer) and tests. Glyphs the font cannot
     /// outline are skipped. Variable-font coordinates are ignored (the bundled fonts are static).
-    pub fn outline(&self) -> Vec<(Rgba8, BezPath)> {
+    pub fn outline(&self) -> Vec<ColouredPath> {
         crate::outline::text_outline(self)
     }
 }
@@ -246,7 +247,7 @@ struct Clean<'a> {
 }
 
 fn clamp_size(s: f32) -> f32 {
-    if s.is_finite() { s.clamp(FONT_SIZE_RANGE.0, FONT_SIZE_RANGE.1) } else { TextStyle::DEFAULT_SIZE }
+    if s.is_finite() { s.clamp(*FONT_SIZE_RANGE.start(), *FONT_SIZE_RANGE.end()) } else { TextStyle::DEFAULT_SIZE }
 }
 
 fn cut_at_boundary(text: &str, max: usize) -> &str {

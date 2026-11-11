@@ -256,28 +256,27 @@ impl TextLayout {
             }
             // Partly selected line: walk the clusters in visual order and emit one rectangle per
             // contiguous selected stretch.
-            let (mut start_x, mut cur_x) = (x0, x0);
+            let mut cur_x = x0;
+            // Where the current selected stretch began, if one is open.
+            let mut stretch_start: Option<f64> = None;
             let mut selected = 0usize;
             for run in line.runs() {
                 for cluster in run.visual_clusters() {
                     let advance = f64::from(cluster.advance());
                     if range.contains(&cluster.text_range().start) {
                         selected += 1;
-                    } else if cur_x != start_x {
+                        stretch_start.get_or_insert(cur_x);
+                    } else if let Some(start_x) = stretch_start.take()
+                        && cur_x > start_x
+                    {
                         out.push(Rect::new(start_x, top, cur_x, bottom));
-                        start_x = cur_x + advance;
-                        cur_x = start_x;
-                        continue;
-                    } else {
-                        start_x = cur_x + advance;
-                        cur_x = start_x;
-                        continue;
                     }
                     cur_x += advance;
                 }
             }
+            let start_x = stretch_start.unwrap_or(cur_x);
             let end_x = if range.end >= lr.end && selected > 0 { cur_x + newline_space } else { cur_x };
-            if end_x != start_x {
+            if end_x > start_x {
                 out.push(Rect::new(start_x, top, end_x, bottom));
             }
         }

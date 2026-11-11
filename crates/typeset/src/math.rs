@@ -9,7 +9,7 @@
 //! dimensions, and the best guess (an unmatched brace, or the end of the input) for the rest.
 
 use std::collections::HashMap;
-use std::ops::Range;
+use std::ops::{Range, RangeInclusive};
 use std::sync::Arc;
 
 use kurbo::{Rect, Size};
@@ -20,6 +20,7 @@ use rex::parser::error::ParseError;
 use rex::render::{Backend, Cursor, FontBackend, GraphicsBackend, RGBA, Renderer};
 
 use crate::fonts;
+use crate::outline::ColouredPath;
 use crate::style::Rgba8;
 
 /// Longest LaTeX source accepted, in bytes.
@@ -31,7 +32,7 @@ pub const MAX_NESTING: usize = 48;
 /// per token at worst, and wasm has a 1 MB stack.
 pub const MAX_TOKENS: usize = 700;
 /// Smallest and largest font size.
-pub const MATH_SIZE_RANGE: (f64, f64) = (1.0, 1024.0);
+pub const MATH_SIZE_RANGE: RangeInclusive<f64> = 1.0..=1024.0;
 /// Largest laid-out extent in layout units; larger results are an error.
 pub const MAX_EXTENT: f64 = 1.0e6;
 
@@ -224,7 +225,7 @@ impl MathLayout {
 
     /// Filled paths for exports, grouped by colour in paint order. `base` fills glyphs that have
     /// no colour of their own.
-    pub fn outline(&self, base: Rgba8) -> Vec<(Rgba8, kurbo::BezPath)> {
+    pub fn outline(&self, base: Rgba8) -> Vec<ColouredPath> {
         crate::outline::math_outline(self, base)
     }
 }
@@ -272,7 +273,7 @@ impl MathEngine {
         let latex = spec.latex.as_str();
         precheck(latex)?;
         let size = if spec.size.is_finite() {
-            spec.size.clamp(MATH_SIZE_RANGE.0, MATH_SIZE_RANGE.1)
+            spec.size.clamp(*MATH_SIZE_RANGE.start(), *MATH_SIZE_RANGE.end())
         } else {
             MathSpec::DEFAULT_SIZE
         };

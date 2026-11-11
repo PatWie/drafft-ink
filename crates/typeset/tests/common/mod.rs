@@ -2,15 +2,15 @@
 #![allow(dead_code, clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
 use drafftink_typeset::*;
-use kurbo::{BezPath, Rect, Shape};
+use kurbo::{Rect, Shape};
 
 pub fn plain(text: &str, size: f32) -> TextSpec {
     TextSpec::styled(text, TextStyle::with_size(size))
 }
 
 /// Bounding box of all outline paths, `None` when there is no ink.
-pub fn ink_bbox(paths: &[(Rgba8, BezPath)]) -> Option<Rect> {
-    paths.iter().filter(|(_, p)| !p.elements().is_empty()).map(|(_, p)| p.bounding_box()).reduce(|a, b| a.union(b))
+pub fn ink_bbox(paths: &[ColouredPath]) -> Option<Rect> {
+    paths.iter().filter(|p| !p.path.elements().is_empty()).map(|p| p.path.bounding_box()).reduce(|a, b| a.union(b))
 }
 
 pub fn fixture(rel: &str) -> std::path::PathBuf {

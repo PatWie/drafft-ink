@@ -21,7 +21,7 @@ use crate::grid::{GridSpec, GridStats, paint_grid};
 use crate::options::{LodConfig, RenderOptions};
 use crate::painter::ElementPainter;
 use crate::spec::{element_to_world, world_aabb};
-use crate::theme::Theme;
+use crate::theme::{Theme, scale_alpha};
 use crate::view::View;
 
 /// What one call to [`SceneComposer::compose`] did.
@@ -531,7 +531,7 @@ fn draw_box(scene: &mut Scene, base: Affine, el: &Element, scale: f64, theme: cr
     let (w, h) = (t.w.max(min), t.h.max(min));
     let color = el.style.fill_color.filter(|c| c.a > 0).unwrap_or(el.style.stroke_color);
     let mapped = theme.map(color);
-    let a = (f64::from(mapped.a) * el.style.opacity.clamp(0.0, 1.0) * 0.8) as u8;
+    let a = scale_alpha(mapped.a, el.style.opacity.clamp(0.0, 1.0) * 0.8);
     let c = peniko::Color::from_rgba8(mapped.r, mapped.g, mapped.b, a);
     scene.fill(Fill::NonZero, base, c, None, &Rect::new(0.0, 0.0, w, h));
 }
@@ -544,7 +544,7 @@ fn draw_greek(scene: &mut Scene, base: Affine, el: &Element, theme: crate::theme
     let lines = (t.content.bytes().filter(|b| *b == b'\n').count() + 1).min(64);
     let lh = h / lines as f64;
     let mapped = theme.map(el.style.stroke_color);
-    let a = (f64::from(mapped.a) * el.style.opacity.clamp(0.0, 1.0) * 0.45) as u8;
+    let a = scale_alpha(mapped.a, el.style.opacity.clamp(0.0, 1.0) * 0.45);
     let c = peniko::Color::from_rgba8(mapped.r, mapped.g, mapped.b, a);
     for i in 0..lines {
         let y = i as f64 * lh;

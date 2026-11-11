@@ -50,8 +50,12 @@ fn colour_command_colours_only_its_glyphs() {
     assert_eq!(coloured.len(), 1);
     assert_eq!(m.glyphs.iter().filter(|g| g.color.is_none()).count(), m.glyphs.len() - 1);
     let paths = m.outline(Rgba8::rgb(1, 2, 3));
-    assert!(paths.iter().any(|(c, _)| *c == Rgba8::rgb(1, 2, 3)));
-    assert!(paths.iter().any(|(c, _)| c.r == 255 && c.g == 0), "{:?}", paths.iter().map(|p| p.0).collect::<Vec<_>>());
+    assert!(paths.iter().any(|p| p.color == Rgba8::rgb(1, 2, 3)));
+    assert!(
+        paths.iter().any(|p| p.color.r == 255 && p.color.g == 0),
+        "{:?}",
+        paths.iter().map(|p| p.color).collect::<Vec<_>>()
+    );
 }
 
 #[test]
