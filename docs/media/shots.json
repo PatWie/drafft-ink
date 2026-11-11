@@ -7,8 +7,7 @@
       "scale": 1.25,
       "theme": "light",
       "steps": [
-        { "id": "view.zoom_to_fit", "args": { "scope": "all", "padding": 80 } },
-        { "id": "selection.select", "args": { "ids": ["@box", "@oval"] } }
+        { "id": "selection.select", "args": { "ids": ["@box"] } }
       ]
     },
     {
@@ -18,8 +17,7 @@
       "scale": 1.25,
       "theme": "dark",
       "steps": [
-        { "id": "view.zoom_to_fit", "args": { "scope": "all", "padding": 80 } },
-        { "id": "selection.select", "args": { "ids": ["@title"] } }
+        { "id": "selection.select", "args": { "ids": ["@box"] } }
       ]
     },
     {
@@ -30,7 +28,7 @@
       "theme": "light",
       "touch": true,
       "steps": [
-        { "id": "view.zoom_to_fit", "args": { "scope": "ids", "ids": ["@title", "@gem"], "padding": 24 } },
+        { "id": "view.zoom_to_fit", "args": { "scope": "ids", "ids": ["@box", "@follower"], "padding": 72 } },
         { "id": "selection.select", "args": { "ids": ["@box"] } }
       ]
     },
@@ -39,7 +37,8 @@
       "kind": "export",
       "width": 1600,
       "padding": 40,
-      "theme": "light"
+      "theme": "light",
+      "frame": "@home"
     }
   ]
 }

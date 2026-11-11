@@ -70,7 +70,9 @@ pub fn render(shot: &Shot) -> Result<Vec<u8>, RenderError> {
     let data = tempfile::tempdir()?;
     match shot.output {
         Output::Window { size, scale, theme, touch } => window(shot, data.path(), size, scale, theme, touch),
-        Output::Export { width, padding, theme } => export(shot, data.path(), width, padding, theme),
+        Output::Export { width, padding, theme, ref frame } => {
+            export(shot, data.path(), &ExportSpec { width, padding, theme, frame: frame.as_deref() })
+        }
     }
 }
 
@@ -97,24 +99,46 @@ fn export_scale(width: u32, content: f64, padding: f64) -> f64 {
     (f64::from(width) / (content + 2.0 * padding).max(1.0)).clamp(*EXPORT_SCALE.start(), *EXPORT_SCALE.end())
 }
 
-fn export(shot: &Shot, data: &Path, width: u32, padding: f64, theme: Theme) -> Result<Vec<u8>, RenderError> {
+/// What an export shot asks for.
+struct ExportSpec<'a> {
+    width: u32,
+    padding: f64,
+    theme: Theme,
+    /// Export only this frame.
+    frame: Option<&'a str>,
+}
+
+/// The width in world units of what the export draws: the frame, or all content.
+fn export_content_width(app: &mut App, shot: &str, frame: Option<&str>) -> Result<f64, RenderError> {
+    let width = match frame {
+        Some(f) => execute(app, shot, "doc.inspect", json!({ "detail": "full", "ids": [f] }))?
+            .pointer("/items/0/bounds/w")
+            .and_then(Value::as_f64),
+        None => execute(app, shot, "doc.inspect", json!({}))?.pointer("/bounds/w").and_then(Value::as_f64),
+    };
+    Ok(width.unwrap_or_default())
+}
+
+fn export(shot: &Shot, data: &Path, spec: &ExportSpec<'_>) -> Result<Vec<u8>, RenderError> {
     let mut app = app(data);
     run_steps(&mut app, shot)?;
-    let content = execute(&mut app, &shot.name, "doc.inspect", json!({}))?
-        .pointer("/bounds/w")
-        .and_then(Value::as_f64)
-        .unwrap_or_default();
+    let content = export_content_width(&mut app, &shot.name, spec.frame)?;
+    let (scope, frame) = match spec.frame {
+        Some(f) => ("frame", json!(f)),
+        None => ("all", Value::Null),
+    };
     let out = execute(
         &mut app,
         &shot.name,
         "doc.export",
         json!({
             "format": "png",
-            "scope": "all",
-            "scale": export_scale(width, content, padding),
-            "padding": padding,
+            "scope": scope,
+            "frame": frame,
+            "scale": export_scale(spec.width, content, spec.padding),
+            "padding": spec.padding,
             "background": true,
-            "dark": theme == Theme::Dark,
+            "dark": spec.theme == Theme::Dark,
             "embed_scene": false,
         }),
     )?;

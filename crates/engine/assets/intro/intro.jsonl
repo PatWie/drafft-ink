@@ -1,37 +1,69 @@
-// The built-in welcome document (placeholder content). One engine command per line.
+// The built-in welcome document: a one-screen tour. One engine command per line.
 // `cargo xtask intro` runs this script (drafftink-cli run --batch --seed ...) and writes intro.json next to it;
 // `cargo xtask intro --check` fails when intro.json is stale. See docs/media.md.
-// Units are world units (the grid is 20). `as` names a step so later steps can say "$name". Colours are palette
+// Units are world units; the grid is 20. `as` names a step so later steps can say "$name". Colours are palette
 // names like "blue-100" (diagram.create takes #rrggbb only). Elements that `docs/media/shots.json` selects have a `name`.
-// Edit this file, never intro.json.
+// Layout: the frame `home` (0,0 to 1240,780) holds the tour: four columns (x = 40, 340, 640, 940, each 260 wide),
+// a title band, and two rows of pictures with their captions below (y = 220 and 520). The app opens the camera on
+// `home` (doc.show_intro), so the one box far to the right is a reward for panning. Edit this file, never intro.json.
 
-// ---- title ----
-{"id":"element.create","as":"title","args":{"name":"title","kind":"text","at":[0,0],"text":"Welcome to Drafft.ink","style":{"font_size":48,"stroke_color":"indigo-700"}}}
-{"id":"element.create","as":"lead","args":{"kind":"text","at":[0,70],"width":560,"text":"An infinite canvas for sketching ideas, diagrams and plans. It runs in your browser, saves on your device and needs no account.","style":{"font_size":20,"stroke_color":"slate-600"}}}
+// ---- title and the doodle of our attempt ----
+{"id":"element.create","args":{"kind":"text","at":[40,40],"text":"Seven red lines, all strictly perpendicular, some in green ink?","style":{"font_size":40,"stroke_color":"slate-800"},"width":860,"name":"title"}}
+{"id":"element.create","args":{"kind":"text","at":[40,152],"text":"We have a whiteboard for that.","style":{"font_size":28,"stroke_color":"indigo-600"}}}
+{"id":"element.create","args":{"kind":"line","points":[[950,60],[1130,52]],"style":{"stroke_color":"red-500","stroke_width":3}}}
+{"id":"element.create","args":{"kind":"line","points":[[960,84],[1180,124]],"style":{"stroke_color":"red-500","stroke_width":3}}}
+{"id":"element.create","args":{"kind":"line","points":[[1000,40],[1036,140]],"style":{"stroke_color":"red-500","stroke_width":3}}}
+{"id":"element.create","args":{"kind":"line","points":[[1100,44],[1150,136]],"style":{"stroke_color":"red-500","stroke_width":3}}}
+{"id":"element.create","args":{"kind":"line","points":[[950,128],[1100,96]],"style":{"stroke_color":"red-500","stroke_width":3}}}
+{"id":"element.create","args":{"kind":"line","points":[[1060,44],[1190,104]],"style":{"stroke_color":"green-600","stroke_width":3}}}
+{"id":"element.create","args":{"kind":"text","at":[940,152],"text":"We tried.","style":{"font_size":24,"stroke_color":"slate-500"}}}
 
-// ---- shapes ----
-{"id":"element.create","as":"box","args":{"name":"box","kind":"rectangle","bounds":{"x":0,"y":240,"w":180,"h":100},"style":{"fill_color":"blue-100","stroke_color":"blue-600","fill_pattern":"solid"}}}
-{"id":"element.create","as":"box_label","args":{"kind":"text","container":"$box","text":"Shapes"}}
-{"id":"element.create","as":"oval","args":{"name":"oval","kind":"ellipse","bounds":{"x":260,"y":240,"w":180,"h":100},"style":{"fill_color":"amber-100","stroke_color":"amber-600","fill_pattern":"hachure"}}}
-{"id":"element.create","as":"oval_label","args":{"kind":"text","container":"$oval","text":"Styles"}}
-{"id":"element.create","as":"gem","args":{"name":"gem","kind":"diamond","bounds":{"x":520,"y":230,"w":180,"h":120},"style":{"fill_color":"green-100","stroke_color":"green-600","fill_pattern":"cross_hatch"}}}
-{"id":"element.create","as":"gem_label","args":{"kind":"text","container":"$gem","text":"Fills"}}
-{"id":"element.create","args":{"kind":"arrow","points":[[180,290],[260,290]],"start":{"target":"$box"},"end":{"target":"$oval"}}}
-{"id":"element.create","args":{"kind":"arrow","points":[[440,290],[520,290]],"start":{"target":"$oval"},"end":{"target":"$gem"},"arrow_type":"round"}}
-{"id":"element.create","args":{"kind":"line","points":[[0,390],[700,390]],"style":{"stroke_style":"dashed","stroke_color":"slate-400"}}}
+// ---- bound arrows ----
+{"id":"element.create","as":"box","args":{"name":"box","kind":"rectangle","bounds":{"x":40,"y":260,"w":100,"h":60},"style":{"fill_color":"blue-100","stroke_color":"blue-600","fill_pattern":"solid"}}}
+{"id":"element.create","args":{"kind":"text","container":"$box","text":"Move me"}}
+{"id":"element.create","as":"follower","args":{"name":"follower","kind":"rectangle","bounds":{"x":200,"y":260,"w":100,"h":60},"style":{"fill_color":"amber-100","stroke_color":"amber-600","fill_pattern":"solid"}}}
+{"id":"element.create","args":{"kind":"text","container":"$follower","text":"I follow"}}
+{"id":"element.create","args":{"name":"link","kind":"arrow","points":[[140,290],[200,290]],"start":{"target":"$box"},"end":{"target":"$follower"},"style":{"stroke_color":"slate-700","stroke_width":2}}}
+{"id":"element.create","args":{"kind":"text","at":[40,384],"text":"Move the box, the arrow follows. Finally, something in your org that stays connected.","style":{"font_size":18,"stroke_color":"slate-600"},"width":260}}
 
-// ---- a diagram built from structure ----
-{"id":"diagram.create","as":"flow","args":{"at":[0,440],"layout":{"direction":"right","node_gap":30,"layer_gap":70},"frame":"A diagram in one command","nodes":[{"id":"idea","label":"Idea","shape":"ellipse","style":{"fill_color":"#fce7f3"}},{"id":"sketch","label":"Sketch","style":{"fill_color":"#dbeafe"}},{"id":"ok","label":"Good?","shape":"diamond","style":{"fill_color":"#fef9c3"}},{"id":"share","label":"Share","style":{"fill_color":"#dcfce7"}}],"edges":[{"from":"idea","to":"sketch"},{"from":"sketch","to":"ok"},{"from":"ok","to":"share","label":"yes"},{"from":"ok","to":"sketch","label":"no","arrow_type":"elbow"}]}}
+// ---- boxes around boxes ----
+{"id":"element.create","as":"outer","args":{"name":"outer_box","kind":"rectangle","bounds":{"x":340,"y":220,"w":240,"h":140},"style":{"stroke_color":"violet-500","stroke_style":"dashed","stroke_width":2,"fill_color":"transparent"}}}
+{"id":"element.create","args":{"name":"inner_box","kind":"rectangle","bounds":{"x":390,"y":260,"w":140,"h":60},"style":{"stroke_color":"slate-700","stroke_width":2,"fill_color":"transparent"}}}
+{"id":"element.create","args":{"kind":"text","at":[390,275],"text":"lunch","style":{"font_size":24,"stroke_color":"slate-800","text_align":"center"},"width":140}}
+{"id":"element.create","args":{"kind":"text","at":[340,384],"text":"Watch your colleagues draw boxes around things that don't need boxes, in real time.","style":{"font_size":18,"stroke_color":"slate-600"},"width":260}}
+{"id":"element.create","args":{"kind":"text","at":[640,270],"text":"Eraser: for the box someone drew around your box.","style":{"font_size":18,"stroke_color":"violet-600"},"width":240}}
+{"id":"element.create","args":{"kind":"arrow","points":[[630,290],[580,290]],"end":{"target":"$outer"},"style":{"stroke_color":"violet-500","stroke_width":2}}}
 
-// ---- sticky notes ----
-{"id":"element.create_sticky","args":{"name":"note_draw","at":[860,120],"size":200,"color":"yellow","text":"Drag, draw and type anywhere"}}
-{"id":"element.create_sticky","args":{"name":"note_collab","at":[1090,150],"size":200,"color":"pink","text":"Collaborate live in a shared room"}}
-{"id":"element.create_sticky","args":{"name":"note_export","at":[975,360],"size":200,"color":"green","text":"Export to PNG, SVG or JSON"}}
+// ---- a cycle from one command ----
+{"id":"diagram.create","as":"agile","args":{"layout":{"algorithm":"none"},"select":false,"nodes":[{"id":"group","label":"Group","x":940,"y":220,"width":100,"height":48,"style":{"fill_color":"#dbeafe","stroke_color":"#2563eb"}},{"id":"ungroup","label":"Ungroup","x":1100,"y":220,"width":100,"height":48,"style":{"fill_color":"#fef3c7","stroke_color":"#d97706"}},{"id":"regroup","label":"Regroup","x":1020,"y":312,"width":100,"height":48,"style":{"fill_color":"#dcfce7","stroke_color":"#16a34a"}}],"edges":[{"from":"group","to":"ungroup"},{"from":"ungroup","to":"regroup"},{"from":"regroup","to":"group"}]}}
+{"id":"element.create","args":{"kind":"text","at":[940,384],"text":"Group, ungroup, regroup. Basically agile.","style":{"font_size":18,"stroke_color":"slate-600"},"width":260}}
+{"id":"element.create","args":{"kind":"text","at":[940,448],"text":"Drawn by one command. Your AI can do that too. It can also draw too many boxes.","style":{"font_size":14,"stroke_color":"slate-500"},"width":260}}
 
-// ---- maths and ink ----
-{"id":"element.create","as":"formula","args":{"name":"formula","kind":"math","at":[860,560],"latex":"e^{i\\pi} + 1 = 0","style":{"font_size":36}}}
-{"id":"element.create","args":{"kind":"freehand","points":[[860,660],[900,640],[950,670],[1000,640],[1050,670],[1100,640]],"style":{"stroke_color":"rose-500","stroke_width":4}}}
-{"id":"element.create","as":"hand_note","args":{"kind":"text","at":[860,690],"text":"hand drawn, on purpose","style":{"font_size":20,"font_family":"gelpen_serif"}}}
+// ---- sketch style: the same box with sloppiness architect, artist, cartoonist ----
+{"id":"element.create","args":{"name":"sketch_0","kind":"rectangle","bounds":{"x":40,"y":520,"w":60,"h":60},"style":{"fill_color":"blue-100","stroke_color":"blue-600","fill_pattern":"solid","sloppiness":"architect","stroke_width":2}}}
+{"id":"element.create","args":{"kind":"text","at":[20,588],"text":"architect","style":{"font_size":16,"stroke_color":"slate-500","text_align":"center"},"width":100}}
+{"id":"element.create","args":{"name":"sketch_1","kind":"rectangle","bounds":{"x":140,"y":520,"w":60,"h":60},"style":{"fill_color":"amber-100","stroke_color":"amber-600","fill_pattern":"hachure","sloppiness":"artist","stroke_width":2}}}
+{"id":"element.create","args":{"kind":"text","at":[120,588],"text":"artist","style":{"font_size":16,"stroke_color":"slate-500","text_align":"center"},"width":100}}
+{"id":"element.create","args":{"name":"sketch_2","kind":"rectangle","bounds":{"x":240,"y":520,"w":60,"h":60},"style":{"fill_color":"green-100","stroke_color":"green-600","fill_pattern":"cross_hatch","sloppiness":"cartoonist","stroke_width":2}}}
+{"id":"element.create","args":{"kind":"text","at":[220,588],"text":"cartoonist","style":{"font_size":16,"stroke_color":"slate-500","text_align":"center"},"width":100}}
+{"id":"element.create","args":{"kind":"text","at":[40,628],"text":"It looks hand-drawn, so nobody can tell if it's the draft or the final. Neither can you.","style":{"font_size":18,"stroke_color":"slate-600"},"width":260}}
 
-// ---- finish ----
-{"id":"selection.clear"}
+// ---- shortcut card ----
+{"id":"element.create","args":{"name":"card","kind":"rectangle","bounds":{"x":340,"y":520,"w":260,"h":220},"style":{"fill_color":"slate-50","stroke_color":"slate-400","stroke_width":2,"corner_radius":8}}}
+{"id":"element.create","args":{"kind":"text","at":[360,534],"text":"Shortcuts","style":{"font_size":24,"stroke_color":"slate-800"}}}
+{"id":"element.create","args":{"kind":"text","at":[360,568],"text":"R\nO\nA\nT\nP\nSpace + drag\nCtrl + wheel\nCtrl + /","style":{"font_size":16,"stroke_color":"indigo-700","line_height":1.2}}}
+{"id":"element.create","args":{"kind":"text","at":[480,568],"text":"Box\nEllipse\nArrow\nText\nPen\nPan\nZoom\nEvery command","style":{"font_size":16,"stroke_color":"slate-700","line_height":1.2}}}
+
+// ---- sticky note ----
+{"id":"element.create_sticky","args":{"name":"note_done","bounds":{"x":640,"y":520,"w":260,"h":220},"color":"yellow","text":"Done reading? Menu, then Clear the canvas. We won't be offended."}}
+
+// ---- infinite canvas: the arrow points right, the box is 3000 units past the frame ----
+{"id":"element.create","args":{"name":"to_the_right","kind":"arrow","points":[[940,550],[1200,550]],"style":{"stroke_color":"slate-700","stroke_width":3}}}
+{"id":"element.create","args":{"kind":"text","at":[940,590],"text":"The hard problem is over there. Far to the right.","style":{"font_size":18,"stroke_color":"slate-600"},"width":260}}
+{"id":"element.create","as":"far","args":{"name":"far_box","kind":"rectangle","bounds":{"x":4260,"y":520,"w":240,"h":100},"frame":null,"style":{"fill_color":"rose-100","stroke_color":"rose-600","fill_pattern":"hachure","stroke_width":2}}}
+{"id":"element.create","args":{"kind":"text","container":"$far","text":"The hard problem"}}
+
+// ---- the home frame: holds the tour and is what the first view frames ----
+{"id":"element.create","as":"home","args":{"name":"home","kind":"frame","bounds":{"x":0,"y":0,"w":1240,"h":780}}}
+{"id":"frame.rename","args":{"frame":"$home","name":"Welcome to Drafft.ink"}}
+{"id":"selection.clear","args":{}}

@@ -619,6 +619,23 @@ fn show_intro_replaces_the_document_with_the_welcome_document() {
 }
 
 #[test]
+fn show_intro_frames_the_home_area_and_not_the_far_box() {
+    let (mut s, _f) = testing::session();
+    run(&mut s, "doc.show_intro", json!({}));
+    let home = s.store().iter().find(|e| e.name.as_deref() == Some("home")).expect("the intro has a `home` frame");
+    let far = s.store().iter().find(|e| e.name.as_deref() == Some("far_box")).expect("the intro has a far box");
+    let (home, far) = (home.id.clone(), far.id.clone());
+    assert_ne!(home, far);
+    let v = s.view();
+    // The camera is centred on the home frame (0,0 to 1240,780) and its zoom shows the whole width, so the box
+    // 3000 units to the right is out of view.
+    assert!((v.scroll.x - 620.0).abs() < 1.0 && (v.scroll.y - 390.0).abs() < 1.0, "{:?}", v.scroll);
+    let half_w = v.viewport.w / v.zoom / 2.0;
+    assert!(half_w * 2.0 >= 1240.0, "the home frame does not fit: {half_w}");
+    assert!(v.scroll.x + half_w < 4000.0, "the far box is in view");
+}
+
+#[test]
 fn show_intro_refuses_unsaved_changes_and_can_use_a_new_tab() {
     let (mut s, _f) = drawn(1);
     let r = refuse(&mut s, "doc.show_intro", json!({}));

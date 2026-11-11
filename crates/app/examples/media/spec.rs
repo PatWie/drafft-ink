@@ -63,6 +63,9 @@ pub enum Output {
         #[serde(default = "default_padding")]
         padding: f64,
         theme: Theme,
+        /// Export only this frame (an id or `@name`) instead of all content, and size the PNG by its width.
+        #[serde(default)]
+        frame: Option<String>,
     },
 }
 
