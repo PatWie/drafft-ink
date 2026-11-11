@@ -63,8 +63,8 @@ async fn run(text: String, loader: drafftink_app::SceneLoader) -> Result<JsValue
     drafftink_profile::set_enabled(true);
     let t0 = now_ms();
     let mut scene_ms = None;
-    if let Some(install) =
-        drafftink_app::scene_for(&key).map_err(|e| JsValue::from_str(&format!("the scene could not be generated: {e}")))?
+    if let Some(install) = drafftink_app::scene_for(&key)
+        .map_err(|e| JsValue::from_str(&format!("the scene could not be generated: {e}")))?
     {
         let (before, frames) = (loader.applied(), drafftink_gpu::frames_drawn());
         loader.load(install);

@@ -842,7 +842,8 @@ impl<A: ShellApp> Shell<A> {
 /// present never finds the next frame a hair too early. 60 Hz when the display does not say.
 #[cfg(not(target_arch = "wasm32"))]
 fn frame_interval(window: &Window) -> Duration {
-    let millihertz = window.current_monitor().and_then(|m| m.refresh_rate_millihertz()).filter(|r| *r > 0).unwrap_or(60_000);
+    let millihertz =
+        window.current_monitor().and_then(|m| m.refresh_rate_millihertz()).filter(|r| *r > 0).unwrap_or(60_000);
     Duration::from_secs_f64(0.9 * 1000.0 / f64::from(millihertz))
 }
 

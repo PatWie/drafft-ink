@@ -33,6 +33,7 @@ pub mod web;
 
 pub use app::App;
 pub use clock::AppClock;
+pub use config::{AppConfig, StartupLink};
 #[cfg(feature = "scenarios")]
 pub use perf::scene_for;
 pub use perf::{Look, SceneInstall, SceneLoader};

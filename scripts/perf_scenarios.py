@@ -262,13 +262,20 @@ def run_web(args, keys):
 def finish_report(path, meta, external):
     r = json.load(open(path))
     r["meta"].update(meta); r["external"].update(external)
+    # Under Xvfb the NVIDIA driver spends most of the process CPU inside the present call (it copies and waits for every
+    # frame); the same app is far cheaper on a real display. The span `present` is that wait, so what is left is
+    # an estimate of the app's own CPU (a wall-clock span against CPU time, hence "estimate").
+    present_ms = next((sp["total_ms"] for sp in r["stats"]["spans"] if sp["name"] == "present"), None)
+    window_ms = r["external"].get("window_s", 0) * 1000
+    if present_ms is not None and window_ms > 0 and "cpu_pct" in r["external"]:
+        r["external"]["cpu_pct_ex_present"] = round(max(r["external"]["cpu_pct"] - present_ms / window_ms * 100, 0.0), 2)
     json.dump(r, open(path, "w"), indent=2)
 
 
 def print_summary(path):
     r = json.load(open(path)); f = r["stats"]["frames"]
     ph = {k: v for k, v in f["phase_ms"].items() if v and v.get("count")}
-    print(f"{os.path.basename(path)[:-5]:<10} cpu {r['external'].get('cpu_pct', float('nan')):6.1f}%  frames {f['total']:5d} "
+    print(f"{os.path.basename(path)[:-5]:<10} cpu {r['external'].get('cpu_pct', float('nan')):6.1f}% ({r['external'].get('cpu_pct_ex_present', float('nan')):4.1f} ex-present)  frames {f['total']:5d} "
           f"p50 {f['frame_ms'].get('p50_ms', 0):6.2f} p99 {f['frame_ms'].get('p99_ms', 0):6.2f} ms  unexplained {f['unexplained']}  "
           f"redraws {r['stats']['redraws']['total']}  by_reason {json.dumps({k: v for k, v in f['by_reason'].items() if v})}  "
           f"encoded {r['stats']['counters'].get('elements_encoded')}", flush=True)

@@ -8,7 +8,7 @@ use drafftink_scene::{ElementId, GroupId, SceneRead};
 
 use crate::arrange::{ArrangeError, Arrangement};
 use crate::group::GroupError;
-use crate::group::units::{Relations, Unit, UnitKey, primaries, units};
+use crate::group::units::{Relations, ReverseLookup, Unit, UnitKey, primaries, units};
 use crate::target::TargetError;
 
 /// Units needed to group.
@@ -44,9 +44,9 @@ pub fn check_group<R: SceneRead>(scene: &R, ids: &[ElementId], editing: Option<&
 }
 
 /// The groups that `ids` stand for at the level of `editing`: an element of a group stands for its group.
-pub fn groups_of<R: SceneRead>(
+pub fn groups_of<R: SceneRead, L: ReverseLookup + ?Sized>(
     scene: &R,
-    rel: &Relations,
+    rel: &L,
     ids: &[ElementId],
     editing: Option<&GroupId>,
 ) -> Result<Vec<GroupId>, TargetError> {

@@ -697,8 +697,11 @@ impl App {
         let tab = self.session.tab().id;
         let revision = self.session.store().revision();
         // Not drained while the index is current, so ids committed meanwhile are not lost.
-        let touched =
-            if self.canvas.index_is_current(tab, revision) { Vec::new() } else { self.session.tab().doc.take_touched() };
+        let touched = if self.canvas.index_is_current(tab, revision) {
+            Vec::new()
+        } else {
+            self.session.tab().doc.take_touched()
+        };
         self.canvas.sync_index(tab, revision, self.session.store(), &touched);
         let look = self.canvas.set_look(theme, grid) | self.canvas.sync_fonts();
         let hidden_changed = self.canvas.set_hidden(hide);

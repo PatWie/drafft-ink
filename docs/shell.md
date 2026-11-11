@@ -65,15 +65,23 @@ The loop sleeps in `ControlFlow::Wait`, or `WaitUntil(deadline)` when something 
    The held `CursorMoved` is delivered to egui before the next click, wheel, touch or file event that needs a
    position. Consecutive `PointerMoved` events in egui's queue are collapsed, so nothing piles up while idle.
 3. A click or touch always gets a frame (popups close, text fields lose focus). A move over an egui area or
-   during an egui drag gets a frame (reason `gesture`). Wheel and pinch get one when egui wants it.
+   during an egui drag gets a frame (reason `gesture`). Wheel, trackpad scroll and pinch over the canvas go to
+   the app first (`ShellEvent::Wheel`); when the app answers `Handled::Yes` egui never sees them, so the
+   scroll costs one frame (reason `gesture`) and not the two or three that egui's smoothing asks for. Over an
+   egui area, or when the app answers `Handled::No` (a modal is open, the text editor has focus), egui gets the events as before.
 4. egui's own requests are honoured: delay 0 is a frame (`ui`), a delay is a deadline (`timer`). This includes
-   the follow-up pass after a click and egui's wheel smoothing (about two frames per wheel tick). The
+   the follow-up pass after a click and egui's wheel smoothing over an egui area. The
    panel fade-in of a new `egui::Window` costs 50 to 90 frames once after start and after a GPU recovery.
-5. `After(d, reason)` becomes `WaitUntil`. The earliest deadline wins. A deadline far in the future is ignored
+5. Native frames are paced: two frames start at least 0.9 refresh periods apart (60 Hz when the monitor does not
+   say). Input that arrives faster (a 125 Hz mouse, a pen) is drawn once per interval; a frame that is due early
+   waits for its deadline (`RepaintState::set_min_interval`). The app has already applied every event to the
+   camera or the gesture, so nothing is lost, only drawn later by up to one interval. A frame after a quiet time is not
+   delayed. The browser paces with `requestAnimationFrame`.
+6. `After(d, reason)` becomes `WaitUntil`. The earliest deadline wins. A deadline far in the future is ignored
    rather than overflowing. The deadline carries its own reason, which is recorded when it fires.
-6. A hidden window or tab (`Occluded`, `visibilitychange`) draws nothing. Requests stay pending and draw one
+7. A hidden window or tab (`Occluded`, `visibilitychange`) draws nothing. Requests stay pending and draw one
    frame when it becomes visible again. Timers keep running but add no frames.
-7. A frame that cannot be presented (surface outdated or lost) reconfigures the surface and asks again with
+8. A frame that cannot be presented (surface outdated or lost) reconfigures the surface and asks again with
    reason `surface`. The egui texture updates of that frame are kept and applied with the next one.
 
 `drafftink_gpu::frames_drawn()` and `vello_runs()` are process counters for tests; each drawn frame also logs
@@ -175,8 +183,8 @@ manager and Chromium keeps both tabs visible. It tests our listener, not the bro
 - Winit gives no pen pressure on Linux and macOS (section 6). Windows pen and iOS force are unverified.
 - Not tested on real hardware or browsers: Windows, macOS, Wayland (compiled only), Safari, Firefox, a real OS IME,
   soft keyboards, hi-dpi web (DPR 2 with a matching device-pixel box), pinch on touch screens.
-- egui wheel smoothing and the post-click pass cost extra frames (section 2, rule 4). An app that does not want
-  them can read `raw_scroll_delta` and still pays egui's request.
+- The post-click pass costs an extra frame (section 2, rule 4), and egui's wheel smoothing still applies to a wheel over an egui area.
+- `Waker::exit` closes the window from another thread (the scenario runner uses it).
 - Reserved shortcuts on the web are a fixed list in `web/keys.rs`. The app cannot yet say which ones it owns.
 - The web clipboard write of images and custom payloads is async only and may fail under Safari's gesture rule.
   Browsers that skip the `copy` event for an empty selection give no `CopyRequested`.

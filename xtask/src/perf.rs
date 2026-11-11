@@ -258,10 +258,20 @@ fn app(root: &Path, which: Option<&str>) -> Result<(), String> {
             }
         }
         let mut driver = std::process::Command::new(python());
-        driver.current_dir(root).arg("scripts/perf_scenarios.py").arg(platform.name()).args(&keys).arg("--out").arg(&out);
+        driver
+            .current_dir(root)
+            .arg("scripts/perf_scenarios.py")
+            .arg(platform.name())
+            .args(&keys)
+            .arg("--out")
+            .arg(&out);
         run(&mut driver)?;
         let prefix = format!("--prefix={}/", platform.name());
-        let check = run(perf_check(root).args(["check", BUDGETS]).arg(&out).args(["--timing", "--require-all", prefix.as_str()]));
+        let check = run(perf_check(root).args(["check", BUDGETS]).arg(&out).args([
+            "--timing",
+            "--require-all",
+            prefix.as_str(),
+        ]));
         if let Err(e) = check {
             failures.push(format!("{}: {e}", platform.name()));
         }

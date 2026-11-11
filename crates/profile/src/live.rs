@@ -168,7 +168,8 @@ mod tests {
         end_frame();
         spans::set_enabled(false);
         let s = snapshot();
-        let (ui, encode, other) = (s.frames.phase_ms["ui"].max_ms, s.frames.phase_ms["encode"].max_ms, s.frames.phase_ms["other"].max_ms);
+        let (ui, encode, other) =
+            (s.frames.phase_ms["ui"].max_ms, s.frames.phase_ms["encode"].max_ms, s.frames.phase_ms["other"].max_ms);
         assert!((8.0..11.0).contains(&encode), "encode {encode}");
         assert!((2.0..5.0).contains(&ui), "ui keeps its own time only: {ui}");
         assert!(other < 2.0, "the phases add up to the frame: other {other}");

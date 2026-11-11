@@ -85,7 +85,7 @@ profile::end_frame();                         // after present
 | `gpu_submit` | handing the scene to the GPU and presenting |
 | `ui` | egui run and tessellation |
 
-Time in a frame outside every phase is reported as the phase `other`. A phase also records a span of the same name. The profiler keeps the last 1024 frames (`set_frame_window` changes it) and reports, over that window:
+Time in a frame outside every phase is reported as the phase `other`. A phase also records a span of the same name. A phase opened inside another counts for itself only (`encode` inside `ui` is not also `ui`), so the phases of a frame add up to the frame; `other` is what is left. Today the shell opens `ui` around `App::frame`, `gpu_submit` around Vello and the composite, and the app opens `encode` around the composition of the scene; `present` is a span, not a phase, and lands in `other`. The profiler keeps the last 1024 frames (`set_frame_window` changes it) and reports, over that window:
 
 - `frame_ms` (begin to end) and `interval_ms` (start to start): count, mean, p50, p95, p99, max. Percentiles use the nearest-rank method on the exact samples, not on the histogram.
 - `phase_ms`: the same summary for each phase and `other`.
@@ -268,12 +268,15 @@ Scenarios run inside the app (native `--perf-scenario <name>`, web `window.draff
 | Scenario | Scene | Action | What it must show |
 |---|---|---|---|
 | `idle` | the loaded scene | no input for 10 s | at most 1 redraw, 0 unexplained frames, CPU under 1% of a core |
-| `pan` | 1k, 10k, 100k | sinusoidal pan for 10 s at a fixed event rate | frame time within budget; `elements_encoded` tracks visible elements, not total; 0 `sketch_regens` and `relayouts` after the first frame |
-| `zoom` | 1k, 10k, 100k | ctrl+wheel sweep for 10 s | same as pan, plus bounded cache growth |
-| `drag` | 1k, 10k, 100k | drag a selection of 100 elements for 10 s | commit cost independent of scene size; only the dragged elements re-encode |
-| `hover` | 1k, 10k, 100k | 1000 pointer moves, hover state changes on 5% of them | redraws equal the number of hover changes; `redraws_skipped` equals the rest |
+| `pan` | 1k, 10k, 100k | middle-button pan, a sinusoid at 125 moves per second for 10 s | frame time within budget; `elements_encoded` tracks visible elements, not total; 0 `sketch_regens` and `relayouts` after the first frame |
+| `wheel` | 1k, 10k, 100k | 100 wheel ticks per second for 10 s, direction reversed every half second | one frame per tick at most (`redraws.ui` small), otherwise as pan |
+| `zoom` | 1k, 10k, 100k | ctrl+wheel, 60 ticks per second for 10 s, direction reversed every half second | same as pan, plus bounded cache growth |
+| `drag` | 1k, 10k, 100k | drag a selection of 100 elements (`e0` to `e99`, zoom 0.5) with the left button for 10 s | commit cost independent of scene size; only the dragged elements re-encode |
+| `hover` | 1k, 10k, 100k | 1000 pointer moves in 8 s along a Lissajous curve over the canvas; the hover state changes on about 5% of them | redraws equal the number of hover changes; `redraws_skipped` equals the rest |
 
-A scenario key is `name@size`, with size `1k`, `10k` or `100k`: `pan@10k`. `idle` has no size.
+A scenario key is `name@size`, with size `1k`, `10k` or `100k`: `pan@10k`. `idle` has no size. `ScenarioKey` in `drafftink-profile` parses and prints it, so both drivers read it the same way.
+
+The scene is `drafftink_scene::scenegen::generate(size, 1)`, installed by the app itself (`App::scene_loader`, `SceneInstall`: a hook next to the commands, like the test rig's `load_generated`, with no history). The input is real: X11 XTEST events on a private Xvfb for the desktop app, Chromium DevTools mouse, wheel and key events for the web app (the page sees trusted events). Only the scene and the camera are installed from inside. The driver starts a window when the app has drawn the scene and been quiet for a second, and the profiler is reset at that moment.
 
 ### 4.2 ScenarioReport
 
@@ -291,9 +294,10 @@ A driver wraps a `PerfStats` snapshot with what only it can measure:
 }
 ```
 
-- `external.cpu_pct` is process CPU in percent of one core. Native: `utime + stime` from `/proc/<pid>/stat` over the window. Web: the sum over the Chromium process tree.
+- `external.cpu_pct` is process CPU in percent of one core over the window. Native: `utime + stime` of `/proc/self/stat`, read by the app at the start and the end of the window (the app is the one process that knows both moments). Web: the sum over the Chromium process tree, read by the driver from `/proc`; it includes the cost of Chromium receiving the injected input, about 25 to 30 % of a core at 125 events per second (`hover` shows it: almost nothing is drawn).
 - `meta.platform` is `native` or `web`. `meta.adapter` records the GPU adapter, because absolute frame times are only comparable on the same adapter.
-- Other `external` names are free (`wasm_bytes`, `gpu_ms` where timestamp queries exist). A budget may reference any `external.<name>`.
+- Other `external` names are free (`wasm_bytes`, `gpu_ms` where timestamp queries exist). A budget may reference any `external.<name>`. The drivers write `window_s`, `input_events`, `first_frame_ms` (native: process start to the first frame), `scene_to_frame_ms` (the scene is handed over to the first frame that shows it) and `startup_*_ms` (native: spans of start-up; web: the marks of the page and of `start()`, in ms since navigation).
+- `meta.driver` is `app` for a run of the real app. Such a report is budgeted per platform: the key in the budgets file is `native/pan@10k` or `web/pan@10k` (`ScenarioReport::budget_key`). The work-counter tests write plain keys.
 
 ## 5. Budgets and the perf gate
 
@@ -321,7 +325,7 @@ A driver wraps a `PerfStats` snapshot with what only it can measure:
 }
 ```
 
-- Keys: scenario key (§4.1), then a metric path (§3.3), then a limit with `max` and/or `min` (inclusive) and an optional `note`.
+- Keys: scenario key (§4.1), then a metric path (§3.3), then a limit with `max` and/or `min` (inclusive) and an optional `note`. A run of the real app has its own keys, `native/<key>` and `web/<key>`: a frame of the real app does more than a gesture of the test rig, and timing limits belong to one platform. The plain keys hold the limits of the work-counter tests.
 - A budget on a metric the report lacks is a violation. A report whose scenario has no entry produces a warning in the gate output ("unbudgeted scenario"), not a failure.
 - `Budgets::from_json` rejects an unknown `version`, a limit with neither `max` nor `min`, non-finite limits, and `min` above `max`.
 - Deterministic metrics (`counter.*`, `gauge.*`, `redraws.*`, `frame.unexplained`, `span.*.count`) give the same value on every machine and gate everywhere. Timing metrics (`frame.*`, `phase.*`, `interval.*`, `fps`, span times, `external.*`) depend on the hardware: they gate only on the reference runner with a real GPU, and run in report-only mode on software adapters (llvmpipe, SwiftShader). `Budgets::check_filtered(report, false)` does this split.
@@ -337,15 +341,15 @@ A driver wraps a `PerfStats` snapshot with what only it can measure:
 
 The budget arithmetic is `Budgets::check_filtered`; xtask uses no workspace crate, so it runs the `perf_check` example of this crate (`cargo run -p drafftink-profile --example perf_check`).
 
-Not written yet: the scenario drivers of §5.3 (`--perf-scenario`, `window.drafftink.perf.runScenario`), which belong to the app shells and need Xvfb (web: headed Chromium on Xvfb; headless Chromium renders a WebGPU canvas blank, baseline §3.3). When they exist, `cargo xtask perf --native` and `--web` run them and feed their reports to the same `perf_check`. The timing entries of `idle` and `pan@N` in `perf/budgets.json` are for them.
+4. `cargo xtask perf --app [native|web|all]` runs the scenario drivers of §5.3 against the real app and checks their reports, timing included, against the `native/...` or `web/...` entries of `perf/budgets.json`. It is not part of `ci`: it needs a GPU and Xvfb. Run it as a separate CI job on the reference runner (a machine with a GPU, `Xvfb`, Chromium for the web, and the Python environment of `scripts/perf_scenarios.py`: Xlib, Pillow, Playwright; `PERF_PY` names the interpreter). A software adapter (llvmpipe, SwiftShader) runs the scenarios but its timing numbers mean nothing: check those reports without `--timing`. The web run needs `scripts/build-web.sh --features scenarios` (the generated scenes are not part of the shipped wasm) and `cargo build --release -p drafftink-server`.
 
 ### 5.3 What the drivers do
 
-Both drivers run the same scenario names and write the same `ScenarioReport`:
+`scripts/perf_scenarios.py {native|web} KEY...` runs scenarios and writes one `ScenarioReport` per key (`target/perf/app-native/pan@10k.json`). Both platforms use the same input scripts and the same report.
 
-- **Native:** start the binary with `DRAFFTINK_PERF=1 --perf-scenario <key> --perf-out <path>`. The app runs the scenario, calls `profile::snapshot()`, writes the report and exits. The driver adds `external.cpu_pct` from `/proc/<pid>/stat`.
-- **Web:** serve `web/`, launch headed Chromium on Xvfb with the flag set in `research/web-perf.md`, call `window.drafftink.perf.runScenario(key)`, read the JSON, add the process-tree CPU from `/proc`.
-- Both reset the profiler before the scenario (`perf.reset`), so the report covers only that scenario.
+- **Native:** starts `drafftink --perf-scenario <key> --perf-out <path>` under a private Xvfb (NVIDIA Vulkan). The app installs the scene, waits until it has drawn it and been quiet for a second, resets the profiler, prints `PERF-READY` and measures. The driver sends XTEST events (pointer motion, buttons, wheel buttons, Control) and then a line on the app's stdin, which ends the window: the app writes the report (stats, `cpu_pct` of its own process) and closes the window (`Waker::exit`). `--perf-secs N` makes the window self-timed instead (an `idle` run needs no driver).
+- **Web:** serves `dist/` with `drafftink-server`, opens it in headed Chromium on Xvfb, calls `await window.drafftink.runScenario(key)` (installs the scene, waits for quiet, resets the profiler) and sends Playwright mouse, wheel and key events. `window.drafftink.scenarioReport()` returns the report; the driver adds the CPU of the Chromium process tree, the adapter and the start-up marks.
+- Both enable recording (`DRAFFTINK_PERF` is implied by `--perf-scenario`; `runScenario` turns it on) and reset the profiler before the window, so a report covers only that scenario.
 
 ## 6. Redraw rules, checked
 

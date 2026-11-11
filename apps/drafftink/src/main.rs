@@ -88,10 +88,16 @@ fn main() -> ExitCode {
 }
 
 fn run(args: Args) -> Result<(), Failure> {
-    if args.perf_dump.is_some() || args.perf_overlay || args.perf_scenario.is_some() || drafftink_profile::enable_from_env("DRAFFTINK_PERF") {
+    if args.perf_dump.is_some()
+        || args.perf_overlay
+        || args.perf_scenario.is_some()
+        || drafftink_profile::enable_from_env("DRAFFTINK_PERF")
+    {
         drafftink_profile::set_enabled(true);
     }
-    let mut platform = drafftink_profile::scope("startup_platform", || native::platform(&NativeOptions { data_dir: args.data_dir.clone() }));
+    let mut platform = drafftink_profile::scope("startup_platform", || {
+        native::platform(&NativeOptions { data_dir: args.data_dir.clone() })
+    });
     // The server must outlive the window: dropping it closes the socket and removes the token file.
     let bridge = match args.bridge {
         Some(port) => {

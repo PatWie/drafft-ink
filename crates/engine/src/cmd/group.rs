@@ -6,7 +6,7 @@
 //! The old app had group and ungroup on the keyboard only; here every one is a command with a shortcut.
 
 use drafftink_edit::group::selection::{SelectionError, enter_group, exit_group, select_ids};
-use drafftink_edit::group::units::Relations;
+use drafftink_edit::group::units::Reverse;
 use drafftink_edit::group::{self, GroupError};
 use drafftink_scene::{ElementId, GroupId};
 use schemars::JsonSchema;
@@ -176,7 +176,12 @@ fn ungroup(s: &mut Session, a: UngroupArgs) -> Result<UngroupOut, Refusal> {
 fn ungroup_default_targets(s: &Session) -> Result<(), Refusal> {
     let cmd = "group.ungroup";
     let ids = selected_ids(s);
-    let rel = Relations::build(s.store());
+    if ids.is_empty() {
+        return Err(no_group(cmd));
+    }
+    // The committed index answers for the few selected elements; a pass over the scene would cost 50 ms at 100,000
+    // elements, and the UI asks whether ungroup is available whenever the selection or the document changes.
+    let rel = Reverse::of(s.store());
     match drafftink_edit::preflight::groups_of(s.store(), &rel, &ids, editing_group(s).as_ref()) {
         Ok(g) if !g.is_empty() => Ok(()),
         _ => Err(no_group(cmd)),
