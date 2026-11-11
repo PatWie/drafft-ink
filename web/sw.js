@@ -9,7 +9,12 @@
 //    cached file always belongs to the build that asked for it.
 //  * /ws, /health, /source and /source.json (the operator can change them), other origins and non-GET requests are never touched.
 const BUILD = "__BUILD__";
-const CACHE = `drafftink-${BUILD}`;
+const BUILD_GL = "__BUILD_GL__";
+// The page registers `sw.js?r=webgl` when it runs the WebGL2 module (a browser without WebGPU). That worker stores the
+// WebGL2 module and never fetches the 12 MB WebGPU one; any other worker does the opposite.
+const GL = new URL(self.location.href).searchParams.get("r") === "webgl";
+const CACHE = `drafftink-${GL ? BUILD_GL : BUILD}`;
+const MODULE = GL ? ["pkg-gl", BUILD_GL] : ["pkg", BUILD];
 const SHELL = [
   "./",
   "index.html",
@@ -18,8 +23,8 @@ const SHELL = [
   "icon-192.png",
   "icon-512.png",
   "icon-maskable-512.png",
-  `pkg/drafftink_web.js?v=${BUILD}`,
-  `pkg/drafftink_web_bg.wasm?v=${BUILD}`,
+  `${MODULE[0]}/drafftink_web.js?v=${MODULE[1]}`,
+  `${MODULE[0]}/drafftink_web_bg.wasm?v=${MODULE[1]}`,
   // The font of the first frame. The other fonts are stored when the app first asks for them.
   ...__SHELL_FONTS__,
 ];

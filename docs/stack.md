@@ -180,7 +180,7 @@ we need for Vello makes this workable. (3) The draw API differs from `vello::Sce
 must produce an intermediate display list or a small `trait Painter` that two backends implement; do not let `vello::Scene` leak above L2. (4) Glyph drawing works from Parley
 glyph runs the same way. (5) Fallback adds about 3.5 MB raw wasm if shipped in the same module, so ship it as a second wasm module loaded only when `navigator.gpu` is absent.
 The no-WebGPU detection path itself (eframe returns an error from `WebRunner::start`) was not exercised.
-An alternative if the fallback matters more than expected is `vello_gpu` with `webgl`, which keeps GPU speed; evaluate it when the fallback is scheduled.
+An alternative if the fallback matters more than expected is `vello_gpu` with `webgl`, which keeps GPU speed. **That is what was built** (2026-11-09, D13): the same 3,000 shapes and 8,136 glyphs took 63 ms per frame on the NVIDIA GPU through ANGLE/Vulkan (61 ms to build the strips in wasm, 2.5 ms to submit) and 70 ms through SwiftShader; without the text 45 ms. `vello_cpu` needed 350 ms. `docs/web-app.md`, "Browsers without WebGPU".
 
 ## 8. Platform notes
 

@@ -18,6 +18,12 @@ name = "drafftink-web"
 path = "src/main.rs"
 
 [features]
+default = ["wgpu"]
+# The Vello + wgpu renderer: the normal web module (`dist/pkg`).
+wgpu = ["drafftink-app/wgpu", "drafftink-gpu/wgpu"]
+# The WebGL2 renderer for browsers without WebGPU: the fallback module (`dist/pkg-gl`), built with
+# `--no-default-features --features webgl`. With both features the module picks at start-up.
+webgl = ["drafftink-app/webgl", "drafftink-gpu/webgl"]
 # The generated scenes of the perf scenarios (`window.drafftink.runScenario`, docs/performance.md section 5.3). Off in shipped builds.
 scenarios = ["drafftink-app/scenarios"]
 
@@ -29,8 +35,8 @@ serde_json.workspace = true
 thiserror.workspace = true
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
-drafftink-app = { path = "../../crates/app" }
-drafftink-gpu = { path = "../../crates/gpu" }
+drafftink-app = { path = "../../crates/app", default-features = false }
+drafftink-gpu = { path = "../../crates/gpu", default-features = false }
 drafftink-profile = { path = "../../crates/profile" }
 log.workspace = true
 wasm-bindgen.workspace = true

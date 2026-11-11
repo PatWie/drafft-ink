@@ -168,6 +168,8 @@ cargo xtask e2e --types         # regenerate e2e/web/generated after the registr
 DRAFFTINK_E2E_FILTER='family tab' cargo xtask e2e --web      # one browser test by title
 ```
 
+`specs/shell/fallback.spec.ts` runs the app with `navigator.gpu` removed before the page loads, so it uses the WebGL2 module (`docs/web-app.md`, "Browsers without WebGPU"). It checks by pixel, like `pixels.spec.ts`, and prints the frame time of a busy pan.
+
 The summary (passed, failed, skipped per suite) is printed and written to `target/e2e/summary.json`. The CI workflow is
 `.github/workflows/e2e.yml` (dispatch, nightly, and pull requests that touch the apps); it is not part of the required `ci` check.
 

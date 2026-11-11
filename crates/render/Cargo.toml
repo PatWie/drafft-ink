@@ -10,7 +10,7 @@ rust-version.workspace = true
 default = []
 # Pixel tests that render with Vello on a real GPU adapter and compare with tests/fixtures/render.
 # They create a device in test code only; the library never does.
-gpu-tests = ["dep:pollster"]
+gpu-tests = ["dep:pollster", "vello/default"]
 
 [dependencies]
 drafftink-geom = { path = "../geom" }

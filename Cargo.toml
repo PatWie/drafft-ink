@@ -15,7 +15,9 @@ rust-version = "1.91"
 # parley 0.12 both use peniko 0.6 / kurbo 0.13 / linebender_resource_handle 0.1. Bump together or not at all.
 kurbo = { version = "0.13", features = ["serde"] }
 peniko = "=0.6.1"
-vello = { version = "=0.11.0", default-features = true }
+# No default features: `vello/default` is the wgpu renderer (and wgpu's own defaults). Only `drafftink-gpu`'s `wgpu`
+# feature turns it on, so the WebGL2 fallback module carries the scene types and none of the renderer.
+vello = { version = "=0.11.0", default-features = false }
 parley = { version = "=0.12.0", default-features = false, features = ["std"] }
 # wgpu: no default features. The crate that owns the device (gpu) picks backends per target:
 #   native: ["std", "parking_lot", "wgsl", "vulkan", "gles", "metal", "dx12"]; wasm32: ["std", "wgsl", "webgpu"].
@@ -28,6 +30,12 @@ egui-wgpu = { version = "=0.37.0", default-features = false, features = ["fragil
 eframe = { version = "=0.37.0", default-features = false, features = ["wgpu_no_default_features", "default_fonts", "x11", "wayland"] }
 egui_kittest = { version = "=0.37.0", default-features = false }
 winit = "0.30.13"
+# The WebGL2 fallback (crates/gpu feature `webgl`): vello_gpu draws with WebGL2, egui_glow paints egui. vello_gpu 0.3 shares
+# kurbo 0.13 and peniko 0.6 with vello 0.11 and parley 0.12, so the scene's types are the same on both back ends.
+vello_gpu = { version = "=0.3.0", default-features = false, features = ["webgl", "text", "std"] }
+glifo = { version = "0.4", default-features = false, features = ["std"] }
+egui_glow = { version = "=0.37.0", default-features = false }
+glow = "0.17"
 
 # ---- Document, sync, geometry helpers ----
 loro = "1.17"

@@ -15,7 +15,7 @@ Checked against the code and tests on main at the branch `last-pass`.
 - **Mermaid node shapes** hexagon, cylinder, parallelogram, trapezoid, flag, subroutine and double circle are drawn as the closest shape an arrow can bind to, with a warning; a real outline needs a bindable polygon element kind.
 - **Text editor**: arrows bound to a container that grows during an edit jump when the edit ends; no I-beam cursor over text; RTL weakly tested; no per-run bold or italic; no real OS input method tried; `Esc` commits and cancel is only `text.edit_end commit=false`.
 - **Overlay leftovers**: distance badges for alignment snaps, IME composition in `TextEdit`.
-- **Web**: no CPU fallback for browsers without WebGPU. The Collaborate dialog has no token field (see Collab above).
+- **Web**: the WebGL2 fallback for browsers without WebGPU is done (D13); it was tried in Chromium only, and a lost WebGL context shows the error page. The Collaborate dialog has no token field (see Collab above).
 
 ## Done (branch final-residuals)
 

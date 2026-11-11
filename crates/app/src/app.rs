@@ -1021,6 +1021,7 @@ impl App {
 impl ShellApp for App {
     fn setup(&mut self, cx: &mut SetupCx<'_>) {
         self.wake.set(cx.waker.clone());
+        self.canvas.set_backend(cx.backend);
         // A new egui context has no fonts or theme of ours; the UI installs them on its first pass.
         self.world_key = None;
         self.overlay_key = None;

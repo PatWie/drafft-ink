@@ -8,6 +8,11 @@ rust-version.workspace = true
 publish = false
 
 [features]
+default = ["wgpu"]
+# The Vello + wgpu renderer: every native build and the normal web module. The WebGL2 fallback module is built with
+# `--no-default-features --features webgl` (`scripts/build-web.sh`), so it carries no wgpu code.
+wgpu = ["drafftink-gpu/wgpu", "dep:wgpu"]
+webgl = ["drafftink-gpu/webgl"]
 # `perf::scene_for`: the generated scenes of the scenario drivers (`docs/performance.md` section 4). Off in shipped builds.
 scenarios = ["drafftink-scene/scenegen"]
 
@@ -22,7 +27,7 @@ drafftink-edit = { path = "../edit" }
 drafftink-profile = { path = "../profile" }
 drafftink-collab = { path = "../collab" }
 drafftink-bridge = { path = "../bridge" }
-drafftink-gpu = { path = "../gpu" }
+drafftink-gpu = { path = "../gpu", default-features = false }
 drafftink-ui = { path = "../ui" }
 egui = { workspace = true }
 vello = { workspace = true }
@@ -33,7 +38,7 @@ thiserror = { workspace = true }
 log = { workspace = true }
 web-time = { workspace = true }
 png = { workspace = true }
-wgpu = { workspace = true }
+wgpu = { workspace = true, optional = true }
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 egui = { workspace = true, features = ["default_fonts"] }

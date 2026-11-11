@@ -61,7 +61,10 @@ fn build_error_page(title: &str, details: &str) -> Result<(), String> {
     add(&main, make("h1", title)?)?;
     add(
         &main,
-        make("p", "Drafft.ink draws with WebGPU. This browser or device did not provide it, or it is turned off.")?,
+        make(
+            "p",
+            "Drafft.ink draws with WebGPU, or with WebGL2 when WebGPU is missing. This browser or device provided neither, or they are turned off.",
+        )?,
     )?;
     add(&main, make("h2", "Browsers that work")?)?;
     let list = make("ul", "")?;

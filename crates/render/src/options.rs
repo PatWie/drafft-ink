@@ -27,6 +27,12 @@ impl LodConfig {
     /// No level of detail: every element is drawn in full. For export.
     pub const OFF: LodConfig =
         LodConfig { skip_below_px: 0.0, box_below_px: 0.0, greek_text_below_px: 0.0, max_cheap_per_frame: usize::MAX };
+
+    /// The compatibility renderer (WebGL2 in browsers without WebGPU). It turns every path into strips on the CPU
+    /// in WebAssembly, so it gives up detail sooner: elements under 1.5 px are skipped, under 6 px they are boxes,
+    /// text under 7 px is bars, and at most 4,000 of the cheap ones are drawn.
+    pub const COMPAT: LodConfig =
+        LodConfig { skip_below_px: 1.5, box_below_px: 6.0, greek_text_below_px: 7.0, max_cheap_per_frame: 4_000 };
 }
 
 /// How to draw. Part of every fragment's cache key where it matters (the theme), so changing it re-encodes.
