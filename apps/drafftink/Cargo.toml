@@ -10,3 +10,6 @@ publish = false
 
 [lints]
 workspace = true
+
+[build-dependencies]
+embed-resource = { workspace = true }
