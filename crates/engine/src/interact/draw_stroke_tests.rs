@@ -127,6 +127,207 @@ fn a_touch_stroke_has_no_pressures() {
     assert!(stroke_of(&rig.only()).pressures.is_empty());
 }
 
+// ---- brush and pressure -------------------------------------------------------------------------------------------
+
+/// Sets how new strokes are drawn, the way the panel does.
+fn draw_with(rig: &mut Rig, brush: &str, pressure: &str) {
+    rig.run(
+        "style.set",
+        json!({ "scope": "defaults", "props": { "freehand_style": brush, "pressure_mode": pressure } }),
+    );
+}
+
+/// A mouse stroke along y = 100: `slow` steps of 1 unit, then `fast` steps of 40. One event per 16 ms.
+fn slow_then_fast(rig: &mut Rig, slow: usize, fast: usize) {
+    rig.down(100.0, 100.0);
+    let mut x = 100.0;
+    for _ in 0..slow {
+        x += 1.0;
+        rig.drag_to(x, 100.0);
+    }
+    for _ in 0..fast {
+        x += 40.0;
+        rig.drag_to(x, 100.0);
+    }
+    rig.up(x, 100.0);
+}
+
+#[test]
+fn a_simulated_pressure_stroke_is_thick_where_the_mouse_was_slow_and_thin_where_it_was_fast() {
+    let (mut rig, ring, _) = rig_with(Tool::Freehand);
+    draw_with(&mut rig, "normal", "simulated");
+    slow_then_fast(&mut rig, 60, 12);
+
+    assert_eq!(rig.commands_since(ring + 1), ["element.create"]);
+    let e = rig.only();
+    let d = stroke_of(&e);
+    assert_eq!(d.pressure_mode, drafftink_scene::PressureMode::Simulated);
+    assert_eq!(d.pressures.len(), d.points.len(), "one pressure per point");
+    assert!(d.pressures.iter().all(|p| (0.2..=1.0).contains(p)), "{:?}", d.pressures);
+    let first = d.pressures.first().copied().unwrap_or_default();
+    let last = d.pressures.last().copied().unwrap_or_default();
+    assert!(first > 0.95, "the slow start is thick: {first}");
+    assert!(last < 0.4, "the fast end is thin: {last}");
+}
+
+#[test]
+fn the_simulated_pressure_shows_in_the_preview_while_drawing() {
+    let (mut rig, _, _) = rig_with(Tool::Freehand);
+    draw_with(&mut rig, "normal", "simulated");
+    rig.down(100.0, 100.0);
+    for i in 1..=8 {
+        rig.drag_to(100.0 + 40.0 * f64::from(i), 100.0);
+    }
+    let preview = rig.preview().expect("a preview shows");
+    let d = stroke_of(&preview);
+    assert_eq!(d.pressures.len(), d.points.len());
+    assert!(d.pressures.last().is_some_and(|p| *p < 0.8), "{:?}", d.pressures);
+}
+
+#[test]
+fn a_touch_stroke_gets_the_simulated_pressure_because_the_finger_has_none() {
+    use drafftink_canvas::{Buttons, InputEvent, PointerEvent};
+    let (mut rig, _, _) = rig_with(Tool::Freehand);
+    draw_with(&mut rig, "normal", "simulated");
+    for (phase, x) in [
+        (PointerPhase::Down, 100.0),
+        (PointerPhase::Move, 150.0),
+        (PointerPhase::Move, 200.0),
+        (PointerPhase::Move, 250.0),
+        (PointerPhase::Up, 250.0),
+    ] {
+        rig.now += 16.0;
+        let mut ev = PointerEvent::touch(0, phase, x, 100.0, rig.now);
+        if phase == PointerPhase::Move {
+            ev.buttons = Buttons::PRIMARY;
+        }
+        rig.input(InputEvent::Pointer(ev));
+    }
+    let e = rig.only();
+    let d = stroke_of(&e);
+    assert_eq!(d.pressures.len(), d.points.len());
+    assert!(d.pressures.iter().any(|p| *p < 1.0), "{:?}", d.pressures);
+}
+
+#[test]
+fn a_pen_keeps_its_own_pressure_when_the_mode_is_simulated() {
+    let (mut rig, _, _) = rig_with(Tool::Freehand);
+    draw_with(&mut rig, "normal", "simulated");
+    rig.pen(PointerPhase::Down, 100.0, 100.0, 0.3);
+    for (i, p) in [0.35_f32, 0.8, 0.85, 0.5].into_iter().enumerate() {
+        rig.pen(PointerPhase::Move, 100.0 + 60.0 * (i as f64 + 1.0), 100.0 + 25.0 * (i as f64 % 2.0), p);
+    }
+    rig.pen(PointerPhase::Up, 340.0, 100.0, 0.5);
+    let e = rig.only();
+    let d = stroke_of(&e);
+    assert_eq!(d.pressures.len(), d.points.len());
+    assert!(d.pressures.iter().any(|p| (*p - 0.8).abs() < 1e-6), "the pen's value is used: {:?}", d.pressures);
+    assert!(d.pressures.iter().any(|p| (*p - 0.85).abs() < 1e-6), "{:?}", d.pressures);
+}
+
+#[test]
+fn the_uniform_mouse_stroke_still_has_no_pressures_and_the_old_points() {
+    let (mut rig, _, _) = rig_with(Tool::Freehand);
+    draw_with(&mut rig, "normal", "uniform");
+    slow_then_fast(&mut rig, 20, 5);
+    let e = rig.only();
+    assert!(stroke_of(&e).pressures.is_empty());
+}
+
+#[test]
+fn the_calligraphy_brush_trails_behind_the_pointer_and_drops_the_small_moves() {
+    let (mut rig, _, _) = rig_with(Tool::Freehand);
+    draw_with(&mut rig, "calligraphy", "uniform");
+    // 60 steps of 12 units, 16 ms apart.
+    let line: Vec<(f64, f64)> = (0..60).map(|i| (100.0 + 12.0 * f64::from(i), 100.0)).collect();
+    rig.trace(&line);
+    let e = rig.only();
+    let d = stroke_of(&e);
+    assert_eq!(d.brush, drafftink_scene::Brush::Calligraphy);
+    assert!(d.pressures.is_empty(), "the brush alone adds no pressure");
+    let pts = world(&e);
+    let end = pts.last().copied().unwrap_or_default();
+    assert!(end.0 < 100.0 + 12.0 * 59.0 - 30.0, "the pen trails the pointer: {end:?}");
+    assert!(end.0 > 100.0 + 12.0 * 59.0 - 120.0, "but follows it: {end:?}");
+    assert!(pts.windows(2).all(|w| w[1].0 >= w[0].0 - 1e-6), "critical damping never doubles back: {pts:?}");
+}
+
+#[test]
+fn the_calligraphy_brush_rounds_a_corner() {
+    let (mut rig, _, _) = rig_with(Tool::Freehand);
+    draw_with(&mut rig, "calligraphy", "uniform");
+    let mut path: Vec<(f64, f64)> = (0..20).map(|i| (100.0 + 10.0 * f64::from(i), 100.0)).collect();
+    path.extend((1..20).map(|i| (290.0, 100.0 + 10.0 * f64::from(i))));
+    rig.trace(&path);
+    let e = rig.only();
+    let pts = world(&e);
+    // The pointer turned at (290, 100). The pen cut the corner: it never reached x = 290 while at y = 100.
+    assert!(pts.iter().all(|p| p.0 < 289.0 || p.1 > 101.0), "{pts:?}");
+    assert!(pts.iter().any(|p| p.0 > 250.0 && p.1 > 105.0), "it turns inside the corner: {pts:?}");
+}
+
+#[test]
+fn the_same_events_draw_the_same_brush_stroke() {
+    let run = || {
+        let (mut rig, _, _) = rig_with(Tool::Freehand);
+        draw_with(&mut rig, "calligraphy", "simulated");
+        rig.trace(&wave(150));
+        let e = rig.only();
+        (world(&e), stroke_of(&e).pressures.clone())
+    };
+    let (a, b) = (run(), run());
+    assert_eq!(a, b);
+    assert!(!a.0.is_empty() && a.0.len() == a.1.len());
+}
+
+#[test]
+#[allow(non_snake_case)]
+fn exception_E7_a_brush_stroke_equals_the_plain_command_given_its_points() {
+    let (mut gesture, _, _) = rig_with(Tool::Freehand);
+    draw_with(&mut gesture, "calligraphy", "simulated");
+    gesture.trace(&wave(150));
+    let e = gesture.only();
+    let d = stroke_of(&e);
+
+    let (mut plain, _, _) = rig_with(Tool::Freehand);
+    draw_with(&mut plain, "calligraphy", "simulated");
+    let pts: Vec<[f64; 2]> = world(&e).iter().map(|p| [p.0, p.1]).collect();
+    plain.run(
+        "element.create",
+        json!({ "kind": "freehand", "points": pts, "pressures": d.pressures, "highlighter": false, "simplify": 0, "from_tool": true }),
+    );
+    assert_eq!(gesture.normalized_doc(), plain.normalized_doc());
+}
+
+#[test]
+fn hostile_timing_never_breaks_the_stroke() {
+    // Events at the same time, then back in time, then a day later.
+    let (mut rig, _, _) = rig_with(Tool::Freehand);
+    draw_with(&mut rig, "calligraphy", "simulated");
+    rig.down(100.0, 100.0);
+    let mut x = 100.0;
+    for jump in [0.0, -500.0, 0.0, 86_400_000.0, -86_400_000.0, 1e-9, 16.0, 16.0] {
+        rig.now += jump;
+        x += 25.0;
+        rig.drag_to(x, 100.0 + (x * 0.1).sin() * 20.0);
+    }
+    rig.up(x, 100.0);
+    let e = rig.only();
+    let d = stroke_of(&e);
+    assert_eq!(d.pressures.len(), d.points.len());
+    assert!(d.pressures.iter().all(|p| p.is_finite() && (0.2..=1.0).contains(p)), "{:?}", d.pressures);
+    assert!(world(&e).iter().all(|p| p.0.is_finite() && p.1.is_finite()));
+}
+
+#[test]
+fn a_click_with_a_brush_still_makes_one_dot() {
+    let (mut rig, _, _) = rig_with(Tool::Freehand);
+    draw_with(&mut rig, "calligraphy", "simulated");
+    rig.click(200.0, 200.0);
+    let e = rig.only();
+    assert_eq!(stroke_of(&e).points.len(), 1);
+}
+
 #[test]
 fn a_click_makes_a_dot() {
     let (mut rig, ring, _) = rig_with(Tool::Freehand);

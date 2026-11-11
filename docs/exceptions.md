@@ -110,11 +110,11 @@ Rules that hold for all classes:
 |---|---|
 | Input | Press and drag with the freehand or highlighter tool; with a pen, pressure per sample. |
 | Class | B |
-| What happens | The recognizer appends samples (position and pressure) to a buffer and draws the stroke from the buffer (calligraphy smoothing and the pressure model run in the preview). On release it simplifies (RDP tolerance 2.0) and calls one command. |
+| What happens | The recognizer appends samples (position and pressure) to a buffer and draws the stroke from the buffer. The calligraphy brush (spring smoothing) and the simulated pressure (from the pointer speed, when the device has none) run on every sample (`edit/src/brush.rs`), so the preview and the stored stroke are the same points. On release it simplifies (RDP tolerance 2.0) and calls one command. |
 | Reason | Pen input arrives at 240 Hz, and a stroke may have thousands of points. The element does not exist before the release. Real pen pressure comes from the pointer event (`pointerType: pen`, `pressure`), which the old app never read. |
 | Final state | `element.create { kind: freehand, points, pressures, highlighter, simplify, from_tool: true }`. |
 | Cancel | Drop the buffer. A second finger landing cancels a one-finger stroke. |
-| Test | `exception_E7_stroke_equals_plain_command`, and a replay of a recorded pen stroke. |
+| Test | `exception_E7_stroke_equals_plain_command`, `exception_E7_a_brush_stroke_equals_the_plain_command_given_its_points`, and a replay of a recorded pen stroke. |
 
 ### E8 Eraser
 
