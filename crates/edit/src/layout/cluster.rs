@@ -175,10 +175,7 @@ pub(super) fn layout_clustered(inp: &ClusteredInput<'_>, opts: &LayoutOpts) -> R
         let edge_ids: Vec<usize> = (0..homes.len()).filter(|&e| homes[e].scope == scope).collect();
         let graph = LayoutGraph {
             sizes: items.iter().map(|&i| size[i]).collect(),
-            edges: edge_ids
-                .iter()
-                .filter_map(|&e| Some((local(homes[e].a)?, local(homes[e].b)?)))
-                .collect(),
+            edges: edge_ids.iter().filter_map(|&e| Some((local(homes[e].a)?, local(homes[e].b)?))).collect(),
             fixed: Vec::new(),
         };
         let scope_opts = LayoutOpts { direction: flow[slot(scope)], ..opts.clone() };
@@ -204,7 +201,10 @@ pub(super) fn layout_clustered(inp: &ClusteredInput<'_>, opts: &LayoutOpts) -> R
                 let outer_w = (inner_w + 2.0 * CLUSTER_PADDING).max(CLUSTER_MIN_WIDTH);
                 size[n + c] = Size::new(outer_w, content.height() + 2.0 * CLUSTER_PADDING + CLUSTER_TITLE_BAND);
                 // The content is centred when the title is wider than it.
-                Vec2::new(CLUSTER_PADDING + (outer_w - 2.0 * CLUSTER_PADDING - content.width()) / 2.0, CLUSTER_PADDING + CLUSTER_TITLE_BAND)
+                Vec2::new(
+                    CLUSTER_PADDING + (outer_w - 2.0 * CLUSTER_PADDING - content.width()) / 2.0,
+                    CLUSTER_PADDING + CLUSTER_TITLE_BAND,
+                )
             }
         };
         for (&i, p) in items.iter().zip(&laid.positions) {

@@ -478,11 +478,15 @@ fn check_name(name: &str) -> bool {
     (1..=64).contains(&n) && !name.starts_with('@') && !name.starts_with('$') && !name.chars().any(char::is_control)
 }
 
-/// The member sets of the groups, and the groups each node is in (smallest first), checked to nest.
-fn resolve_groups(
-    spec: &DiagramSpec,
-    index: &BTreeMap<&str, usize>,
-) -> Result<(Vec<BTreeSet<usize>>, Vec<Vec<usize>>), DiagramError> {
+/// The groups of a spec, checked to nest.
+struct GroupSets {
+    /// The member set of every group.
+    members: Vec<BTreeSet<usize>>,
+    /// The groups each node is in, smallest first.
+    per_node: Vec<Vec<usize>>,
+}
+
+fn resolve_groups(spec: &DiagramSpec, index: &BTreeMap<&str, usize>) -> Result<GroupSets, DiagramError> {
     let mut members: Vec<BTreeSet<usize>> = Vec::new();
     for (gi, g) in spec.groups.iter().enumerate() {
         let mut set = BTreeSet::new();
@@ -524,7 +528,7 @@ fn resolve_groups(
     for list in &mut per_node {
         list.sort_by_key(|&g| (members[g].len(), g));
     }
-    Ok((members, per_node))
+    Ok(GroupSets { members, per_node })
 }
 
 /// The clusters of a spec, after the checks. Cluster `c` is item `nodes + c`.
@@ -598,7 +602,10 @@ fn resolve_clusters(spec: &DiagramSpec, node_index: &BTreeMap<&str, usize>) -> R
                 known: known_list(spec),
             })?;
             if plan.node_cluster[n].replace(c).is_some() {
-                return Err(bad_cluster(&cl.id, format!("node `{m}` is a member of two clusters. A node belongs to one.")));
+                return Err(bad_cluster(
+                    &cl.id,
+                    format!("node `{m}` is a member of two clusters. A node belongs to one."),
+                ));
             }
         }
     }
@@ -734,7 +741,7 @@ fn check_spec<R: SceneRead>(scene: &R, spec: &DiagramSpec) -> Result<Checked, Di
         };
         edge_ends.push((find(&e.from)?, find(&e.to)?));
     }
-    let (group_members, explicit) = resolve_groups(spec, &index)?;
+    let GroupSets { members: group_members, per_node: explicit } = resolve_groups(spec, &index)?;
     // The group of a cluster comes after the groups of the spec.
     let mut next_group = spec.groups.len();
     let cluster_group: Vec<Option<usize>> = spec
@@ -961,8 +968,12 @@ impl<M: TextMeasure + ?Sized> Build<'_, M> {
                 let tid = unused_element_id(tx, ids);
                 let x = rect.center().x - size.width / 2.0;
                 let y = rect.y0 + CLUSTER_TITLE_BAND / 2.0 - size.height / 2.0;
-                let mut t = Element::new(tid.clone(), ElementKind::Text(d), tx.next_top_index()?)
-                    .with_bounds(x, y, size.width, size.height);
+                let mut t = Element::new(tid.clone(), ElementKind::Text(d), tx.next_top_index()?).with_bounds(
+                    x,
+                    y,
+                    size.width,
+                    size.height,
+                );
                 t.style.seed = ids.seed();
                 t.frame_id = self.frame_id.cloned();
                 t.group_ids.extend(groups);
@@ -971,7 +982,8 @@ impl<M: TextMeasure + ?Sized> Build<'_, M> {
             }
             made[c] = Some((id, node_box));
         }
-        let (ids, boxes): (Vec<_>, Vec<_>) = made.into_iter().collect::<Option<Vec<_>>>().ok_or(DiagramError::NotFinite)?.into_iter().unzip();
+        let (ids, boxes): (Vec<_>, Vec<_>) =
+            made.into_iter().collect::<Option<Vec<_>>>().ok_or(DiagramError::NotFinite)?.into_iter().unzip();
         Ok(ClusterSet { ids, boxes })
     }
 
@@ -1048,10 +1060,10 @@ impl<M: TextMeasure + ?Sized> Build<'_, M> {
         ids: &mut dyn IdSource,
         layout: &LayoutResult,
         shift: Vec2,
-        edge_ends: &[(usize, usize)],
         nodes: &mut NodeSet,
         clusters: &ClusterSet,
     ) -> Result<Vec<ElementId>, DiagramError> {
+        let edge_ends = &self.checked.edge_ends;
         let n = self.spec.nodes.len();
         // The box and the element of an end, which is a node or a cluster.
         let end_box = |i: usize| if i < n { nodes.boxes.get(i) } else { clusters.boxes.get(i - n) };
@@ -1081,7 +1093,13 @@ impl<M: TextMeasure + ?Sized> Build<'_, M> {
                 let obstacles: Vec<Rect> = if waypoints.is_empty() {
                     Vec::new()
                 } else {
-                    nodes.rects.iter().enumerate().filter(|(i, _)| !holds(a, *i) && !holds(b, *i)).map(|(_, r)| *r).collect()
+                    nodes
+                        .rects
+                        .iter()
+                        .enumerate()
+                        .filter(|(i, _)| !holds(a, *i) && !holds(b, *i))
+                        .map(|(_, r)| *r)
+                        .collect()
                 };
                 let p = RouteParams { path, waypoints: &waypoints, flow: layout.flow, lane, obstacles: &obstacles };
                 route_edge(box_a, box_b, &p)
@@ -1154,7 +1172,7 @@ pub fn diagram_create<T: SceneTx, M: TextMeasure + ?Sized>(
     let mut nodes = build.create_nodes(tx, ids, layout, shift, &sizes, &fonts)?;
     created.append(&mut nodes.created);
     nodes.created = created;
-    let edge_out = build.create_edges(tx, ids, layout, shift, &checked.edge_ends, &mut nodes, &cluster_set)?;
+    let edge_out = build.create_edges(tx, ids, layout, shift, &mut nodes, &cluster_set)?;
 
     let mut bounds = nodes.rects.iter().copied().reduce(|a, b| a.union(b)).unwrap_or(Rect::ZERO);
     for id in &nodes.created {

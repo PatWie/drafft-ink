@@ -4,8 +4,8 @@
 use std::collections::BTreeMap;
 
 use drafftink_edit::layout::{
-    Algorithm, Arrowheads, ClusterSpec, CreateOpts, DiagramError, DiagramSpec, Direction, EdgeSpec, LayoutOpts, NodeShape, NodeSpec,
-    diagram_create,
+    Algorithm, Arrowheads, ClusterSpec, CreateOpts, DiagramError, DiagramSpec, Direction, EdgeSpec, LayoutOpts,
+    NodeShape, NodeSpec, diagram_create,
 };
 use drafftink_edit::text_bind::MonospaceMeasure;
 use drafftink_scene::{
@@ -401,7 +401,11 @@ fn a_cluster_is_a_filled_rectangle_with_its_title_text_and_lies_behind_its_membe
         })
         .collect();
     assert_eq!(titles, ["Prep line", "Real kitchen", "Takeout kitchen"]);
-    let title_id = r.created.iter().find(|id| matches!(&store.get(id).unwrap().kind, ElementKind::Text(t) if t.content == "Prep line")).unwrap();
+    let title_id = r
+        .created
+        .iter()
+        .find(|id| matches!(&store.get(id).unwrap().kind, ElementKind::Text(t) if t.content == "Prep line"))
+        .unwrap();
     let title = store.get(title_id).unwrap().rect();
     let boxr = stack.rect();
     assert!(boxr.contains_rect(title), "the title is inside its box");
@@ -431,7 +435,12 @@ fn clusters_nest_and_the_inner_box_is_inside_the_outer_one() {
     assert!(inner.contains_rect(rect(&r.nodes["b"])) && inner.contains_rect(rect(&r.nodes["c"])));
     assert!(outer.intersect(rect(&r.nodes["d"])).area() == 0.0, "d is outside both boxes");
     // The outer box is wider than its long title needs.
-    let title = r.created.iter().map(|id| store.get(id).unwrap()).find(|e| matches!(&e.kind, ElementKind::Text(t) if t.content.starts_with("Outer"))).unwrap();
+    let title = r
+        .created
+        .iter()
+        .map(|id| store.get(id).unwrap())
+        .find(|e| matches!(&e.kind, ElementKind::Text(t) if t.content.starts_with("Outer")))
+        .unwrap();
     assert!(outer.width() >= title.rect().width() + 44.0 - 0.5);
     // z-order: outer box, inner box, then nodes.
     assert!(store.get(&r.clusters["outer"]).unwrap().index < store.get(&r.clusters["inner"]).unwrap().index);
@@ -485,7 +494,10 @@ fn an_empty_cluster_is_still_a_box_and_a_cluster_needs_an_automatic_layout() {
     let fixed = spec(
         r#"{"nodes":[{"id":"a","x":0,"y":0}],"layout":{"algorithm":"none"},"clusters":[{"id":"c","members":["a"]}]}"#,
     );
-    assert!(matches!(create(&mut MemoryStore::new(), &fixed, &CreateOpts::default()), Err(DiagramError::BadCluster { .. })));
+    assert!(matches!(
+        create(&mut MemoryStore::new(), &fixed, &CreateOpts::default()),
+        Err(DiagramError::BadCluster { .. })
+    ));
 }
 
 #[test]
@@ -756,7 +768,7 @@ mod cluster_property {
             let home: Vec<Option<usize>> = homes.iter().map(|h| h.map(|h| h % k)).collect();
             let algorithm = [Algorithm::Layered, Algorithm::Grid, Algorithm::Force, Algorithm::Layered][usize::from(algo)];
             let direction = [Direction::Down, Direction::Up, Direction::Left, Direction::Right][usize::from(dir)];
-            let item = |v: usize| if v % 2 == 0 { format!("n{}", v / 2 % n) } else { format!("c{}", v / 2 % k) };
+            let item = |v: usize| if v.is_multiple_of(2) { format!("n{}", v / 2 % n) } else { format!("c{}", v / 2 % k) };
             let spec = DiagramSpec {
                 nodes: (0..n).map(|i| NodeSpec::new(format!("n{i}"), format!("node {i}"))).collect(),
                 edges: edges.into_iter().map(|(a, b)| EdgeSpec::new(item(a), item(b))).collect(),
@@ -775,9 +787,9 @@ mod cluster_property {
             let r = create(&mut store, &spec, &CreateOpts::default()).unwrap();
             let rect = |id: &drafftink_scene::ElementId| store.get(id).unwrap().rect();
             let chain = |start: Option<usize>| std::iter::successors(start, |&c| parent[c]).collect::<Vec<_>>();
-            for i in 0..n {
+            for (i, h) in home.iter().enumerate() {
                 let node = rect(&r.nodes[&format!("n{i}")]);
-                let around = chain(home[i]);
+                let around = chain(*h);
                 for c in 0..k {
                     let boxr = rect(&r.clusters[&format!("c{c}")]);
                     if around.contains(&c) {
