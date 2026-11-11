@@ -83,13 +83,14 @@ fn every_key_default_passes_its_own_check_and_the_table_matches_the_catalog() {
         "view.grid_style", "snap.grid", "snap.smart_guides", "snap.angle", "snap.angle_step", "export.scale",
         "export.padding", "export.background", "export.dark", "export.embed_scene", "doc.default_background",
         "input.nudge_step", "input.box_select", "style.defaults", "arrow.binding", "arrow.midpoint_snap",
+        "arrow.type", "arrow.start_head", "arrow.end_head",
         "frame.clip", "frame.show_names", "frame.outline", "history.depth", "autosave.enabled",
         "autosave.interval_s", "clipboard.excalidraw_compat", "collab.server_url", "collab.user_name",
         "collab.user_color", "doc.recent", "theme",
     ] {
         assert!(names.contains(&k), "`{k}` is missing from the table");
     }
-    assert_eq!(names.len(), 28);
+    assert_eq!(names.len(), 31);
 }
 
 #[test]

@@ -444,6 +444,7 @@ Tool changes are never undoable and never touch the document. `tool.set` is the 
 | `tool.hold` | Hold tool temporarily | NoUndo | `Space` (hold) with tool=hand | X:App.pan.ts; NEW (replaces A:4711 Space as mouse button) |
 | `tool.release` | Release held tool | NoUndo | `Space` (release) | NEW |
 | `tool.cancel` | Cancel | Undoable | `Esc` | A:5305 |
+| `tool.set_arrow` | Set new arrow style | NoUndo | none | NEW; X:currentItemArrowType, currentItemStartArrowhead, currentItemEndArrowhead |
 
 Bindings of `tool.set` (keys fire only without Ctrl/Cmd/Alt, and also without Shift; the old app accepted Shift+letter as the tool key, A:5245, which would collide with Shift+H and Shift+V flip):
 
@@ -471,6 +472,7 @@ Bindings of `tool.set` (keys fire only without Ctrl/Cmd/Alt, and also without Sh
 | `tool.hold` | `tool: Tool = hand` | `gesture_active`. `view_only_tool` (as `tool.set`). | Remembers the current tool and activates `tool` until `tool.release`. The same hold again (key repeat) is Ok with changed=false. A hold of another tool replaces the held tool. Used by Space-drag panning. |
 | `tool.release` | none | Always available. A release without a hold is not an error: Ok with changed=false. | Restores the tool that was active before `tool.hold`. |
 | `tool.cancel` | `all: bool = false` | Always available (a stray Esc is Ok with changed=false). | One Esc ladder, in this order, each rung only if applicable: cancel the running gesture (`gesture.cancel`); end a text edit (committed, as `text.edit_end`); leave the linear point editor; leave the editing group (`group.exit`); clear the selection (`selection.clear`); switch to the select tool and turn tool lock off. With all=false (the default, decision §9 item 5) only the first applicable rung runs: Excalidraw's step-by-step Esc. With all=true every applicable rung runs (the old app's single Esc, A:5305). Output `{changed, rungs}` lists the rungs that ran, by name: `gesture`, `text_edit`, `point_editor`, `group`, `selection`, `tool`. The text-edit rung changes the document, so this command is Undoable: a text edit it commits is one undo step labelled "Cancel" (a call that changes no document pushes none). It runs in view-only mode too, because it is how a user gets out of a state; that, the document change and the gesture rung put it on the exception list of §1.2 test 2. A rung that is a command (`group.exit`, `selection.clear`, `text.edit_end`) runs through `run_nested` when its family is registered. The UI closes open dialogs and popovers first (verb `ui.close_overlays`); that is not part of this command. |
+| `tool.set_arrow` | `arrow_type?: "sharp" \| "round" \| "elbow"`, `start_head?: Head \| null`, `end_head?: Head \| null` | Always available (view-only too). `gesture_active`. Execute: `bad_args` when none of the three is given: "give at least one of `arrow_type`, `start_head` and `end_head`, for example {\"arrow_type\": \"elbow\"}" (and for a word that is not a path type or head). | Sets what the arrow tool gives a new arrow (decision: the choice is a tool default, not a style property, so `style.set` does not carry it and cannot re-type an existing arrow without routing it). A part that is left out keeps its value; `null` or `"none"` is no head. The defaults are session tool state (`Session::tool.arrow_default`) and are kept in the settings `arrow.type`, `arrow.start_head`, `arrow.end_head` (§5), so `settings.set`, `settings.cycle` and `settings.reset` reach the same state and the choice survives a restart. The arrow tool reads them and passes them to `element.create` as `arrow_type`, `start_head` and `end_head`; `element.create` itself ignores the defaults (omitted means sharp with the built-in heads), so a script is not changed by what the tool is set to. The preview of the arrow being drawn shows the heads. Existing arrows are not changed (`arrow.set_type`, `arrow.set_head`). Excalidraw cycles the type when the arrow key is pressed on the active arrow tool; that key behaviour is not adopted (the key runs `tool.set`). Output `{changed, arrow_type, start_head, end_head}` with the values in effect. |
 
 ### 2.4 `element`: create, delete, move, resize, rotate, lock
 
@@ -1048,6 +1050,9 @@ Persisted through the `Storage` settings namespace; read with `settings.get`, wr
 | `style.defaults` | `StyleProps` object | see `style` family | `UiState` colours, width, sloppiness; not persisted |
 | `arrow.binding` | bool | true | none |
 | `arrow.midpoint_snap` | bool | false | none |
+| `arrow.type` | `sharp \| round \| elbow`; the path type of new arrows (`tool.set_arrow`) | `sharp` | none (`SetPathStyle`, selected arrows only) |
+| `arrow.start_head` | a `Head` name (`none`, `arrow`, `bar`, `circle`, ...); the start head of new arrows | `none` | none |
+| `arrow.end_head` | a `Head` name; the end head of new arrows | `arrow` | the open V |
 | `frame.clip` | bool | true | none |
 | `frame.show_names` | bool | true | none |
 | `frame.outline` | bool | true | none |
@@ -1565,6 +1570,7 @@ Legend:
 | `tool.hold` | T | - | - | ok | ok | no | ok | overlay | always | n | n |
 | `tool.release` | T | - | - | ok | ok | ok | ok | overlay | always | n | n |
 | `tool.cancel` | D,O,T,E | - | - | ok | ok | ok | ok | overlay | always | y | y |
+| `tool.set_arrow` | T,S | - | Storage | ok | ok | no | ok | overlay | always | y | y |
 | `element.create` | D,O,T | - | - | ok | no | no | commit | scene | always | n | y |
 | `element.delete` | D,O | req | - | ok | no | no | commit | scene | always | y | y |
 | `element.duplicate` | D,O | req | - | ok | no | no | commit | scene | always | y | y |

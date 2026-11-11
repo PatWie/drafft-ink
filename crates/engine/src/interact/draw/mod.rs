@@ -38,18 +38,10 @@ mod stroke_tests;
 mod tests;
 
 use drafftink_geom::kurbo::Point;
-use drafftink_scene::PathType;
 
 use crate::interact::ctx::Ctx;
 use crate::interact::events::{Ev, Key};
 use crate::state::Tool;
-
-/// The path type new arrows get (`sharp`, `round` or `elbow`).
-///
-/// It is session state kept in `Session::ext`; a missing value means `sharp`. The family that owns the choice
-/// (the arrow type picker) stores it here with `Session::ext.set`.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub struct NewArrowPath(pub PathType);
 
 /// The pointer drag that is running, other than a line or arrow (those keep their own state in [`linear`]).
 #[derive(Debug)]

@@ -5,6 +5,7 @@ use std::any::{Any, TypeId};
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 use drafftink_doc::ObservedState;
+use drafftink_edit::arrow_defaults::ArrowDefaults;
 use drafftink_edit::style::StyleDefaults;
 use drafftink_geom::kurbo::Point;
 use drafftink_scene::{Brush, ElementId, GroupId, PressureMode, Style, TextStyle};
@@ -198,6 +199,9 @@ pub struct ToolState {
     pub brush_default: Brush,
     /// Pressure mode for new freehand strokes.
     pub pressure_default: PressureMode,
+    /// Path type and heads of new arrows (`tool.set_arrow`; the settings `arrow.type`, `arrow.start_head` and
+    /// `arrow.end_head` keep them).
+    pub arrow_default: ArrowDefaults,
 }
 
 impl Default for ToolState {
@@ -211,6 +215,7 @@ impl Default for ToolState {
             text_defaults: d.text,
             brush_default: d.brush,
             pressure_default: d.pressure_mode,
+            arrow_default: ArrowDefaults::default(),
         }
     }
 }

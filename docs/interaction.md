@@ -121,7 +121,6 @@ Test files: `interact/interaction_tests.rs` (hover, pan, zoom, context menu, scr
 
 ## 6. Open points and deviations
 
-* **The default type of new arrows** (sharp, round, elbow) has no command yet. The arrow tool reads `interact::NewArrowPath` from `Session::ext` (default sharp). The tool settings or style defaults should own this choice and set it, and then the extension goes away.
 * **Text tool drag.** `text.edit_begin` has no width argument, so a drag with the text tool starts the edit at the drag origin and does not make a fixed-width box.
 * **Elbow preview.** The preview of an elbow arrow while drawing is the straight segment between its ends; the route appears when the element exists.
 * **Binding candidate cost.** `edit::binding::find_hovered` scans all elements per pointer move while an arrow end is placed. It should use the spatial index for large documents.

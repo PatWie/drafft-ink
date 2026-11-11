@@ -114,6 +114,22 @@ fn right_panel_shows_for_a_selection_and_its_buttons_run_style_set() {
 }
 
 #[test]
+fn right_panel_of_the_arrow_tool_sets_the_type_and_heads_of_new_arrows() {
+    let mut f = Fixture::new();
+    f.session.execute("tool.set", json!({ "tool": "arrow" })).unwrap();
+    f.refresh();
+    let mut h = harness(f);
+    h.run();
+    let c = click(&mut h, "New arrows: Elbow");
+    assert_eq!((c[0].id.as_str(), &c[0].args), ("tool.set_arrow", &json!({ "arrow_type": "elbow" })));
+    let c = click(&mut h, "New arrows, End head: Triangle");
+    assert_eq!((c[0].id.as_str(), &c[0].args), ("tool.set_arrow", &json!({ "end_head": "triangle" })));
+    let c = click(&mut h, "New arrows, Start head: None");
+    assert_eq!((c[0].id.as_str(), &c[0].args), ("tool.set_arrow", &json!({ "start_head": "none" })));
+    assert!(h.query_by_label("Swap heads").is_none(), "the swap button is for arrows that exist");
+}
+
+#[test]
 fn right_panel_has_no_text_section_for_rectangles_and_no_align_for_one_element() {
     let mut f = Fixture::new();
     let a = add_rect(&mut f.session, 0.0, 0.0, 100.0, 60.0).unwrap();

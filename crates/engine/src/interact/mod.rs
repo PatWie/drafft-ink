@@ -59,7 +59,6 @@ use drafftink_scene::{ElementId, SceneStore};
 
 use ctx::Ctx;
 use draw::DrawTools;
-pub use draw::NewArrowPath;
 use events::Ev;
 use select::SelectTool;
 use view::ViewSync;

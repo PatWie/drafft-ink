@@ -15,4 +15,4 @@ macro_rules! families {
 
 pub(crate) mod element_common;
 
-families! { arrange, arrow, clipboard, collab, diagram, doc, doc_read, element, element_create, element_query, engine, frame, gesture, group, history, image, layout, library, perf, selection, settings, style, tab, text, tool, view }
+families! { arrange, arrow, clipboard, collab, diagram, doc, doc_read, element, element_create, element_query, engine, frame, gesture, group, history, image, layout, library, perf, selection, settings, style, tab, text, tool, tool_arrow, view }
