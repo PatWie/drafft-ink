@@ -32,8 +32,7 @@ fn num(v: &Value) -> f64 {
 
 fn replay(case: &Value) -> Vec<StrokeSample> {
     let brush = if case["calligraphy"].as_bool().expect("bool") { Brush::Calligraphy } else { Brush::Normal };
-    let mode =
-        if case["simulate"].as_bool().expect("bool") { PressureMode::Simulated } else { PressureMode::Uniform };
+    let mode = if case["simulate"].as_bool().expect("bool") { PressureMode::Simulated } else { PressureMode::Uniform };
     let events = case["events"].as_array().expect("events");
     let at = |e: &Value| Point::new(num(&e[0]), num(&e[1]));
     let (first, rest) = events.split_first().expect("a first event");
@@ -79,8 +78,7 @@ fn the_calligraphy_brush_keeps_the_points_the_old_app_kept() {
 #[test]
 fn the_simulated_pressure_is_the_pressure_the_old_app_computed() {
     let doc = load();
-    let cases: Vec<&Value> =
-        doc["cases"].as_array().expect("cases").iter().filter(|c| c["simulate"] == true).collect();
+    let cases: Vec<&Value> = doc["cases"].as_array().expect("cases").iter().filter(|c| c["simulate"] == true).collect();
     assert!(cases.len() >= 4, "the fixture holds the pressure cases");
     let failures: Vec<String> = cases.into_iter().filter_map(|c| compare(c).err()).collect();
     assert!(failures.is_empty(), "{failures:#?}");

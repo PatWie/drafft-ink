@@ -6,8 +6,8 @@
 
 use drafftink_geom::ElementFrame;
 use drafftink_scene::{
-    Color, Element, ElementKind, FillPattern, FontFamily, FontWeight, Head, LinearData, MathData, PathType, Sloppiness,
-    StrokeStyle, TextAlign, TextData,
+    Color, Element, ElementKind, FillPattern, FontFamily, FontWeight, Head, LinearData, MathData, PathType,
+    PressureMode, Sloppiness, StrokeStyle, TextAlign, TextData,
 };
 use drafftink_sketch as sketch;
 use drafftink_typeset as typeset;
@@ -173,7 +173,9 @@ pub fn sketch_input(e: &Element) -> Option<sketch::SketchInput> {
             head_size: head_size(d, e.style.stroke_width),
         },
         ElementKind::Freehand(f) if !f.highlighter => {
-            let pressures = if f.pressures.len() == f.points.len() { f.pressures.clone() } else { Vec::new() };
+            // Pressures shape the width unless the stroke is uniform, and only one per point is usable.
+            let usable = f.pressure_mode != PressureMode::Uniform && f.pressures.len() == f.points.len();
+            let pressures = if usable { f.pressures.clone() } else { Vec::new() };
             sketch::SketchShape::Freehand {
                 points: f.points.clone(),
                 pressures,

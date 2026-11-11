@@ -291,16 +291,14 @@ mod tests {
 
     #[test]
     fn a_pen_keeps_its_own_pressure_even_when_the_mode_is_simulated() {
-        let (mut s, first) =
-            StrokeSampler::start(Brush::Normal, PressureMode::Simulated, p(0.0, 0.0), 0.0, Some(0.7));
+        let (mut s, first) = StrokeSampler::start(Brush::Normal, PressureMode::Simulated, p(0.0, 0.0), 0.0, Some(0.7));
         assert_eq!(first.pressure, Some(0.7));
         assert_eq!(s.push(p(50.0, 0.0), 16.0, Some(0.4)).and_then(|x| x.pressure), Some(0.4));
     }
 
     #[test]
     fn a_mouse_in_simulated_mode_gets_a_pressure_on_every_point() {
-        let (mut s, first) =
-            StrokeSampler::start(Brush::Normal, PressureMode::Simulated, p(0.0, 0.0), 0.0, None);
+        let (mut s, first) = StrokeSampler::start(Brush::Normal, PressureMode::Simulated, p(0.0, 0.0), 0.0, None);
         assert_eq!(first.pressure, Some(1.0));
         let v = s.push(p(60.0, 0.0), 16.0, None).and_then(|x| x.pressure);
         assert!(v.is_some_and(|v| v < 1.0), "{v:?}");
