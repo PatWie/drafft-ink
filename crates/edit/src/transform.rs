@@ -29,8 +29,8 @@ use drafftink_geom::snap::snap_rotation;
 use drafftink_geom::transform::{ElementFrame, map_box, normalize_angle, normalize_angle_signed, rotate_point};
 use drafftink_geom::{OrientedBox, aabb};
 use drafftink_scene::{
-    Binding, Element, ElementError, ElementId, ElementKind, Kind, PathType, SceneRead, SceneTx, StoreError, limits,
-    validate_element,
+    Binding, Element, ElementError, ElementId, ElementKind, Kind, PathType, SceneRead, SceneTx, StoreError, Transform,
+    limits, validate_element, validate_transform,
 };
 
 use crate::binding::{self, BindingError};
@@ -227,31 +227,59 @@ fn set_box(e: &mut Element, center: Point, size: Size, angle: f64) {
     e.transform.angle = angle;
 }
 
+/// What an element becomes under a motion. A move or a turn changes only the box, so it carries no copy of the
+/// element; a map of the points or a font scale needs the whole element.
+enum Next {
+    Transform(Transform),
+    Whole(Box<Element>),
+}
+
+impl Next {
+    fn transform(&self) -> &Transform {
+        match self {
+            Next::Transform(t) => t,
+            Next::Whole(e) => &e.transform,
+        }
+    }
+
+    fn validate(&self) -> Result<(), drafftink_scene::ElementError> {
+        match self {
+            Next::Transform(t) => validate_transform(t),
+            Next::Whole(e) => validate_element(e),
+        }
+    }
+}
+
 /// The element after `motion`. `follower` is bound text that follows its container: it moves and turns but its
 /// size is not scaled.
-fn moved(e: &Element, motion: Motion, follower: bool) -> Result<Element, TransformError> {
-    let mut n = e.clone();
+fn moved(e: &Element, motion: Motion, follower: bool) -> Result<Next, TransformError> {
+    let whole = |via: Affine| -> Result<Next, TransformError> {
+        let mut n = e.clone();
+        affine_element(&mut n, via, follower)?;
+        Ok(Next::Whole(Box::new(n)))
+    };
     match motion {
         Motion::Translate(d) => {
-            n.transform.x += d.x;
-            n.transform.y += d.y;
+            Ok(Next::Transform(Transform { x: e.transform.x + d.x, y: e.transform.y + d.y, ..e.transform }))
         }
         Motion::Rotate { pivot, delta } => {
             let c = rotate_point(e.transform.center(), pivot, delta);
-            n.transform.x = c.x - e.transform.w / 2.0;
-            n.transform.y = c.y - e.transform.h / 2.0;
-            n.transform.angle = clean_angle(e.transform.angle + delta);
+            Ok(Next::Transform(Transform {
+                x: c.x - e.transform.w / 2.0,
+                y: c.y - e.transform.h / 2.0,
+                angle: clean_angle(e.transform.angle + delta),
+                ..e.transform
+            }))
         }
-        Motion::Affine(a) => affine_element(&mut n, a, follower)?,
+        Motion::Affine(a) => whole(a),
         Motion::Exact { to, via } => {
             if e.points().is_some() {
-                affine_element(&mut n, via, follower)?;
+                whole(via)
             } else {
-                n.transform = to;
+                Ok(Next::Transform(to))
             }
         }
     }
-    Ok(n)
 }
 
 fn affine_element(n: &mut Element, a: Affine, follower: bool) -> Result<(), TransformError> {
@@ -358,33 +386,41 @@ fn ratio_in_box(b: &OrientedBox, p: Point) -> [f64; 2] {
 
 /// Bindings whose target is transformed too are kept. After a mirror or a non-uniform scale their fixed point is
 /// carried over to the new target box; the ends whose target stays are freed afterwards by the binding module.
-fn carry_fixed_points(
-    news: &mut BTreeMap<ElementId, Element>,
-    olds: &BTreeMap<ElementId, Element>,
+fn carry_fixed_points<R: SceneRead>(
+    scene: &R,
+    next: &mut BTreeMap<ElementId, Next>,
     motions: &BTreeMap<&ElementId, Motion>,
 ) {
-    let carried = |b: &Binding, news: &BTreeMap<ElementId, Element>| -> Option<[f64; 2]> {
+    let carried = |b: &Binding, next: &BTreeMap<ElementId, Next>| -> Option<[f64; 2]> {
         let motion = motions.get(&b.target).filter(|m| !m.keeps_ratios())?;
-        let (old_t, new_t) = (olds.get(&b.target)?, news.get(&b.target)?);
+        let (old_t, new_t) = (scene.get(&b.target)?, next.get(&b.target)?);
         let old_box = geometry::obox(old_t);
         let g = old_box.to_world(Point::new(
             (b.fixed_point[0] - 0.5) * old_box.size.width,
             (b.fixed_point[1] - 0.5) * old_box.size.height,
         ));
-        Some(ratio_in_box(&geometry::obox(new_t), motion.affine() * g))
+        let t = new_t.transform();
+        let new_box = OrientedBox::from_xywh(t.x, t.y, t.w, t.h, t.angle);
+        Some(ratio_in_box(&new_box, motion.affine() * g))
     };
-    let fixes: Vec<(ElementId, [Option<[f64; 2]>; 2])> = news
-        .iter()
-        .filter_map(|(id, n)| {
-            let d = n.linear_data()?;
-            let fixes = [d.start_binding.as_ref(), d.end_binding.as_ref()].map(|b| carried(b?, news));
+    let fixes: Vec<(ElementId, [Option<[f64; 2]>; 2])> = next
+        .keys()
+        .filter_map(|id| {
+            let d = scene.get(id)?.linear_data()?;
+            let fixes = [d.start_binding.as_ref(), d.end_binding.as_ref()].map(|b| carried(b?, next));
             fixes.iter().any(Option::is_some).then(|| (id.clone(), fixes))
         })
         .collect();
     for (id, [start, end]) in fixes {
-        let Some(ElementKind::Line(d) | ElementKind::Arrow(d)) = news.get_mut(&id).map(|n| &mut n.kind) else {
-            continue;
-        };
+        let Some(slot) = next.get_mut(&id) else { continue };
+        // A plain move carries no copy of the element; only an element whose binding changes needs one.
+        if let Next::Transform(t) = slot {
+            let Some(mut whole) = scene.get(&id).cloned() else { continue };
+            whole.transform = *t;
+            *slot = Next::Whole(Box::new(whole));
+        }
+        let Next::Whole(e) = slot else { continue };
+        let (ElementKind::Line(d) | ElementKind::Arrow(d)) = &mut e.kind else { continue };
         for (fixed, binding) in [(start, d.start_binding.as_mut()), (end, d.end_binding.as_mut())] {
             if let (Some(fp), Some(b)) = (fixed, binding) {
                 b.fixed_point = fp;
@@ -400,52 +436,60 @@ pub(crate) fn apply<T: SceneTx>(tx: &mut T, items: Vec<Item>) -> Result<Transfor
     // Taken before the first write, while a fresh transaction can still answer from the committed index.
     let all_ids: Vec<ElementId> = set.iter().cloned().collect();
     let followers = binding::arrows_bound_to(&*tx, &all_ids);
-    let mut olds: BTreeMap<ElementId, Element> = BTreeMap::new();
+    let motions: BTreeMap<&ElementId, Motion> = items.iter().map(|i| (&i.id, i.motion)).collect();
+
+    let mut next: BTreeMap<ElementId, Next> = BTreeMap::new();
+    let mut was_bound: BTreeMap<ElementId, [bool; 2]> = BTreeMap::new();
     for i in &items {
-        let e = tx
+        let old = tx
             .get(&i.id)
             .filter(|e| !e.deleted)
             .ok_or_else(|| TransformError::Target(TargetError::NotFound(i.id.clone())))?;
-        olds.insert(i.id.clone(), e.clone());
-    }
-    let motions: BTreeMap<&ElementId, Motion> = items.iter().map(|i| (&i.id, i.motion)).collect();
-    let mut news: BTreeMap<ElementId, Element> = BTreeMap::new();
-    for i in &items {
-        let Some(old) = olds.get(&i.id) else { continue };
+        if let Some(d) = old.linear_data() {
+            was_bound.insert(i.id.clone(), [d.start_binding.is_some(), d.end_binding.is_some()]);
+        }
         let follower = old.container_id().is_some_and(|c| set.contains(c));
-        news.insert(i.id.clone(), moved(old, i.motion, follower)?);
+        next.insert(i.id.clone(), moved(old, i.motion, follower)?);
     }
 
-    carry_fixed_points(&mut news, &olds, &motions);
+    carry_fixed_points(&*tx, &mut next, &motions);
 
-    for (id, n) in &news {
-        validate_element(n).map_err(|error| TransformError::Invalid { id: id.clone(), error })?;
+    for (id, n) in &next {
+        n.validate().map_err(|error| TransformError::Invalid { id: id.clone(), error })?;
     }
     let mut changed: Vec<ElementId> = Vec::new();
-    for (id, n) in news {
-        if olds.get(&id).is_some_and(|o| o.transform == n.transform && o.kind == n.kind) {
+    for (id, n) in next {
+        let Some(old) = tx.get(&id) else { continue };
+        let same = match &n {
+            Next::Transform(t) => old.transform == *t,
+            Next::Whole(e) => old.transform == e.transform && old.kind == e.kind,
+        };
+        if same {
             continue;
         }
-        let (t, k) = (n.transform, n.kind);
-        tx.update(&id, |e| {
-            e.transform = t;
-            e.kind = k;
-        })?;
+        match n {
+            Next::Transform(t) => tx.update(&id, |e| e.transform = t)?,
+            Next::Whole(e) => {
+                let e = *e;
+                tx.update(&id, |slot| {
+                    slot.transform = e.transform;
+                    slot.kind = e.kind;
+                })?;
+            }
+        }
         changed.push(id);
     }
     // The ends whose target is not part of the transform are freed where they are.
     let freed = binding::unbind_detached(tx, &all_ids)?;
     let mut unbound: Vec<(ElementId, End)> = Vec::new();
     for id in freed {
-        let (Some(old), Some(now)) =
-            (olds.get(&id).and_then(Element::linear_data), tx.get(&id).and_then(Element::linear_data))
-        else {
+        let (Some([start, end]), Some(now)) = (was_bound.get(&id), tx.get(&id).and_then(Element::linear_data)) else {
             continue;
         };
-        if old.start_binding.is_some() && now.start_binding.is_none() {
+        if *start && now.start_binding.is_none() {
             unbound.push((id.clone(), End::Start));
         }
-        if old.end_binding.is_some() && now.end_binding.is_none() {
+        if *end && now.end_binding.is_none() {
             unbound.push((id.clone(), End::End));
         }
         if !changed.contains(&id) {

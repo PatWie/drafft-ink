@@ -12,7 +12,7 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fmt;
 
 use crate::document::Document;
-use crate::element::{Element, ElementKind, Kind, LinearData};
+use crate::element::{Element, ElementKind, Kind, LinearData, Transform};
 use crate::geom::points_bounds;
 use crate::id::{ElementId, FileId, GroupId};
 use crate::limits::*;
@@ -175,6 +175,25 @@ fn text_ok(field: &'static str, s: &str) -> Result<(), ElementError> {
     if is_valid_name(s) { Ok(()) } else { Err(ElementError::BadText { field, max: MAX_NAME_CHARS }) }
 }
 
+/// Checks the box and angle of a transform. A move or a turn changes nothing else about an element, so this is
+/// all such a change has to check.
+pub fn validate_transform(t: &Transform) -> Result<(), ElementError> {
+    let mut errors = Vec::new();
+    transform_errors(t, &mut errors);
+    errors.into_iter().next().map_or(Ok(()), Err)
+}
+
+fn transform_errors(t: &Transform, out: &mut Vec<ElementError>) {
+    let checks = [
+        ranged("transform.x", t.x, -MAX_COORD, MAX_COORD),
+        ranged("transform.y", t.y, -MAX_COORD, MAX_COORD),
+        ranged("transform.w", t.w, 0.0, MAX_COORD),
+        ranged("transform.h", t.h, 0.0, MAX_COORD),
+        finite("transform.angle", t.angle),
+    ];
+    out.extend(checks.into_iter().filter_map(Result::err));
+}
+
 /// Checks one element on its own and returns the first rule it breaks.
 pub fn validate_element(e: &Element) -> Result<(), ElementError> {
     let mut errors = Vec::new();
@@ -190,17 +209,12 @@ pub fn element_errors(e: &Element) -> Vec<ElementError> {
 }
 
 fn collect_element_errors(e: &Element, out: &mut Vec<ElementError>) {
+    transform_errors(&e.transform, out);
     let mut check = |r: Result<(), ElementError>| {
         if let Err(err) = r {
             out.push(err);
         }
     };
-    let t = &e.transform;
-    check(ranged("transform.x", t.x, -MAX_COORD, MAX_COORD));
-    check(ranged("transform.y", t.y, -MAX_COORD, MAX_COORD));
-    check(ranged("transform.w", t.w, 0.0, MAX_COORD));
-    check(ranged("transform.h", t.h, 0.0, MAX_COORD));
-    check(finite("transform.angle", t.angle));
     let s = &e.style;
     check(ranged("style.stroke_width", s.stroke_width, 0.0, MAX_STROKE_WIDTH));
     check(ranged("style.opacity", s.opacity, 0.0, 1.0));

@@ -48,6 +48,6 @@ pub use style::{
 };
 pub use validate::{
     DocError, ElementError, Issue, Report, Severity, element_errors, is_image_media_type, is_valid_name,
-    validate_document, validate_element, validate_scene,
+    validate_document, validate_element, validate_scene, validate_transform,
 };
 pub use zindex::{IndexError, ZIndex};
