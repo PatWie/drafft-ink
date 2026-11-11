@@ -19,7 +19,7 @@ use crate::query::{
 };
 
 /// Every field of `describe`, in the order of the catalog.
-pub const ALL_FIELDS: [Field; 13] = [
+pub const ALL_FIELDS: [Field; 14] = [
     Field::Id,
     Field::Kind,
     Field::Name,
@@ -32,6 +32,7 @@ pub const ALL_FIELDS: [Field; 13] = [
     Field::Bindings,
     Field::BoundText,
     Field::Locked,
+    Field::Link,
     Field::Z,
 ];
 

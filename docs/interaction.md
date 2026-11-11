@@ -41,7 +41,7 @@ let camera = interaction.camera();                 // use this, not session.view
 
 * `redraw` is what the interaction layer itself needs drawn (`Overlay` for a hover outline, preview, marquee or guides; `Camera` for pan and zoom). A command that ran also sets the session's dirty reason. The shell draws when either says so: `out.redraw.max(session.take_dirty())`.
 * `cursor` is set only when the cursor changed.
-* `ui_request` asks for UI that is not a command: `OpenTextEditor { element | draft at }`, `OpenEquationEditor { element }`, `OpenContextMenu { at, target }`.
+* `ui_request` asks for UI that is not a command: `OpenTextEditor { element | draft at }`, `OpenEquationEditor { element }`, `OpenContextMenu { at, target }` (`target`: `Canvas`, `Selection` or `Locked { element }`), `OpenUrl { url }` (a link icon was clicked).
 * `refusals` are the refusals of the commands the layer ran, in plain words, for a toast.
 * `handled` is true when `key` used the key.
 
@@ -73,7 +73,8 @@ A tool change drops drafts and previews. A gesture that disappeared (`tool.cance
 | Double-click text, shape, arrow, math | `text.edit_begin {id}` and `OpenTextEditor` (math: `OpenEquationEditor`) | |
 | Double-click a line | `arrow.edit_points` | |
 | Double-click empty canvas | `text.edit_begin {at}` and `OpenTextEditor` | |
-| Right click, long press | selects what is under the pointer when it is not selected, then `OpenContextMenu` | |
+| Click on the link icon of an element that is not selected (select tool; the icon sits beside the top-right corner, `edit::link::icon_rect`) | runs `element.open_link` for that element and does not select anything. A web link comes back as `UiRequest::OpenUrl { url }` for the shell to open; an element link has moved the view and selected the target; an unsafe stored link is a refusal toast | Excalidraw `hitLinkElement`, `isPointHittingLink` |
+| Right click, long press | selects what is under the pointer when it is not selected, then `OpenContextMenu`. When the topmost thing under the pointer is a locked element (the normal hit test skips it, so the pointer is over "nothing" or over something behind it), nothing is selected and the request is `OpenContextMenu { target: Locked { element } }`, so that the menu can offer Unlock (`element.unlock_all` with that id). Clicks, marquees and drags still skip locked elements. | Excalidraw `handleCanvasContextMenu` (`includeLockedElements`) |
 | Esc, pointer cancel, a second finger | `gesture_cancel` or the marquee is dropped: no trace | |
 
 ### Drawing tools (class B: preview, one command at the end)

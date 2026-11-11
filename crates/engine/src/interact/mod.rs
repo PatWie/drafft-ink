@@ -36,6 +36,7 @@
 mod ctx;
 mod events;
 mod frame_out;
+mod link;
 mod outcome;
 mod overlay;
 mod view;
@@ -420,7 +421,11 @@ impl Interaction {
                 };
                 let mods = meta.modifiers;
                 match click_route(tool) {
-                    Route::Select => self.with_ctx(s, out, now, mods, |cx, m| m.select.click(cx, &ev)),
+                    Route::Select => self.with_ctx(s, out, now, mods, |cx, m| {
+                        if !link::click(cx, &ev) {
+                            m.select.click(cx, &ev);
+                        }
+                    }),
                     Route::Draw => self.with_ctx(s, out, now, mods, |cx, m| m.draw.click(cx, &ev)),
                     Route::None => {}
                 }
@@ -511,21 +516,33 @@ impl Interaction {
         out: &mut Outcome,
     ) {
         let on_element = target.element().cloned();
-        let menu_target = self.with_ctx(s, out, now, mods, |cx, _| match on_element {
-            Some(id) => {
-                if !cx.s.selection().contains(&id) {
-                    cx.exec(
-                        "selection.select_at",
-                        serde_json::json!({ "point": [world.x, world.y], "tolerance": cx.world.config.hit_tolerance_px }),
-                    );
-                }
-                ContextTarget::Selection
+        let tolerance = self.world.config.hit_tolerance_px;
+        // The normal hit test skips locked elements. When one is on top of everything it found, the menu is about
+        // that one (it offers Unlock). It cannot be selected, so the selection is cleared.
+        let locked = (!matches!(target, Target::Handle(_)))
+            .then(|| self.world.locked_on_top(s, world, tolerance))
+            .flatten();
+        let menu_target = self.with_ctx(s, out, now, mods, |cx, _| {
+            if let Some(element) = locked {
+                cx.exec("selection.clear", serde_json::json!({}));
+                return ContextTarget::Locked { element };
             }
-            None => {
-                if matches!(target, Target::Empty) {
-                    cx.exec("selection.clear", serde_json::json!({}));
+            match on_element {
+                Some(id) => {
+                    if !cx.s.selection().contains(&id) {
+                        cx.exec(
+                            "selection.select_at",
+                            serde_json::json!({ "point": [world.x, world.y], "tolerance": cx.world.config.hit_tolerance_px }),
+                        );
+                    }
+                    ContextTarget::Selection
                 }
-                ContextTarget::Canvas
+                None => {
+                    if matches!(target, Target::Empty) {
+                        cx.exec("selection.clear", serde_json::json!({}));
+                    }
+                    ContextTarget::Canvas
+                }
             }
         });
         out.ui_request = Some(UiRequest::OpenContextMenu { at: screen, target: menu_target });

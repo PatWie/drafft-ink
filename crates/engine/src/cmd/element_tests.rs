@@ -851,6 +851,20 @@ fn unlock_all_with_ids_and_without_selecting() {
     assert_eq!(refuse(&mut s, "element.unlock_all", json!({"ids": ["nope"]})).code, "not_found");
 }
 
+#[test]
+fn unlock_all_with_ids_that_are_not_locked_has_nothing_to_do() {
+    let mut s = shapes();
+    lock_it(&mut s, "e2");
+    let r = refuse(&mut s, "element.unlock_all", json!({"ids": ["e1"]}));
+    assert_eq!((r.code, r.message.as_str()), ("nothing_to_do", "Nothing to unlock: none of the given elements is locked."));
+    assert!(s.element(&eid("e2")).unwrap().locked, "the refusal changed nothing");
+    let out = run(&mut s, "element.unlock_all", json!({"ids": ["e2"]}));
+    assert_eq!(out["ids"], json!(["e2"]));
+    assert_eq!(sel(&s), ["e2"], "the unlocked element is selected, as Excalidraw's menu leaves it");
+    s.undo_steps(1).unwrap();
+    assert!(s.element(&eid("e2")).unwrap().locked);
+}
+
 // ---- element.erase ----
 
 #[test]

@@ -270,6 +270,147 @@ fn a_right_click_asks_for_a_context_menu() {
     assert!(rig.selected().is_empty());
 }
 
+fn right_click(rig: &mut Rig, x: f64, y: f64) -> super::Outcome {
+    let ev = |phase, t: f64| {
+        let held = if phase == PointerPhase::Up { Buttons::NONE } else { Buttons::SECONDARY };
+        InputEvent::Pointer(
+            PointerEvent::new(PointerId(0), PointerKind::Mouse, phase, Point::new(x, y), t)
+                .with_button(Button::Secondary, held),
+        )
+    };
+    rig.now += 100.0;
+    rig.input(ev(PointerPhase::Down, rig.now));
+    rig.input(ev(PointerPhase::Up, rig.now + 16.0))
+}
+
+#[test]
+fn a_right_click_on_a_locked_element_asks_for_a_menu_about_it_and_selects_nothing() {
+    let mut rig = Rig::new();
+    let a = rig.rect(100.0, 100.0, 100.0, 100.0);
+    let b = rig.rect(400.0, 100.0, 100.0, 100.0);
+    rig.run("element.lock", json!({ "ids": [a.as_str()], "locked": true }));
+    rig.run("selection.select", json!({ "ids": [b.as_str()] }));
+    let out = right_click(&mut rig, 150.0, 150.0);
+    assert_eq!(
+        out.ui_request,
+        Some(UiRequest::OpenContextMenu { at: Point::new(150.0, 150.0), target: ContextTarget::Locked { element: a.clone() } })
+    );
+    assert!(rig.selected().is_empty(), "a locked element cannot be selected, and the old selection is not the menu's subject");
+    assert!(out.refusals.is_empty(), "{:?}", out.refusals);
+    // The menu's Unlock row: the id goes to `element.unlock_all`, which selects what it unlocks.
+    rig.run("element.unlock_all", json!({ "ids": [a.as_str()] }));
+    assert_eq!(rig.selected(), vec![a.as_str().to_owned()]);
+    assert!(!rig.element(&a).locked);
+}
+
+#[test]
+fn a_left_click_still_skips_a_locked_element() {
+    let mut rig = Rig::new();
+    let a = rig.rect(100.0, 100.0, 100.0, 100.0);
+    rig.run("element.lock", json!({ "ids": [a.as_str()], "locked": true }));
+    rig.click(150.0, 150.0);
+    assert!(rig.selected().is_empty());
+    rig.hover(150.0, 150.0);
+    assert!(rig.i.overlay(&rig.s).canvas.hover.is_none());
+}
+
+#[test]
+fn a_right_click_where_an_unlocked_element_covers_a_locked_one_is_about_the_unlocked_one() {
+    let mut rig = Rig::new();
+    let back = rig.rect(100.0, 100.0, 200.0, 200.0);
+    let front = rig.rect(150.0, 150.0, 50.0, 50.0);
+    rig.run("element.lock", json!({ "ids": [back.as_str()], "locked": true }));
+    let out = right_click(&mut rig, 170.0, 170.0);
+    assert_eq!(
+        out.ui_request,
+        Some(UiRequest::OpenContextMenu { at: Point::new(170.0, 170.0), target: ContextTarget::Selection })
+    );
+    assert_eq!(rig.selected(), vec![front.as_str().to_owned()]);
+    // Beside the front element, the locked one is on top of nothing.
+    let out = right_click(&mut rig, 280.0, 280.0);
+    assert_eq!(
+        out.ui_request,
+        Some(UiRequest::OpenContextMenu { at: Point::new(280.0, 280.0), target: ContextTarget::Locked { element: back } })
+    );
+}
+
+#[test]
+fn a_right_click_on_the_label_of_a_locked_shape_names_the_shape() {
+    let mut rig = Rig::new();
+    let a = rig.rect(100.0, 100.0, 200.0, 100.0);
+    rig.run("element.relabel", json!({ "id": a.as_str(), "text": "Hi" }));
+    rig.run("element.lock", json!({ "ids": [a.as_str()], "locked": true }));
+    let out = right_click(&mut rig, 200.0, 150.0);
+    assert_eq!(
+        out.ui_request,
+        Some(UiRequest::OpenContextMenu { at: Point::new(200.0, 150.0), target: ContextTarget::Locked { element: a } })
+    );
+}
+
+/// A rectangle at (100, 100, 100, 100) with a link; its icon is centred on (208, 92).
+fn linked_rect(rig: &mut Rig, link: &str) -> drafftink_scene::ElementId {
+    let a = rig.rect(100.0, 100.0, 100.0, 100.0);
+    rig.run("element.set_link", json!({ "id": a.as_str(), "link": link }));
+    a
+}
+
+#[test]
+fn a_click_on_a_link_icon_asks_the_shell_to_open_the_address() {
+    let mut rig = Rig::new();
+    let a = linked_rect(&mut rig, "https://example.com/x");
+    rig.down(208.0, 92.0);
+    let out = rig.up(208.0, 92.0);
+    assert_eq!(out.ui_request, Some(UiRequest::OpenUrl { url: "https://example.com/x".into() }));
+    assert!(out.refusals.is_empty(), "{:?}", out.refusals);
+    assert!(rig.selected().is_empty(), "the icon is not the element");
+    assert_eq!(rig.undo_depth(), 1, "only the set_link step: opening is not a document change");
+    // The body of the element selects it as always, and a click elsewhere opens nothing.
+    let out = { rig.down(150.0, 150.0); rig.up(150.0, 150.0) };
+    assert_eq!(out.ui_request, None);
+    assert_eq!(rig.selected(), vec![a.as_str().to_owned()]);
+}
+
+#[test]
+fn the_icon_of_a_selected_element_is_not_live() {
+    let mut rig = Rig::new();
+    let a = linked_rect(&mut rig, "https://example.com/x");
+    rig.run("selection.select", json!({ "ids": [a.as_str()] }));
+    rig.down(208.0, 92.0);
+    let out = rig.up(208.0, 92.0);
+    assert_eq!(out.ui_request, None, "the handles are there instead");
+}
+
+#[test]
+fn a_click_on_the_icon_of_an_element_link_goes_to_the_target() {
+    let mut rig = Rig::new();
+    let a = rig.rect(100.0, 100.0, 100.0, 100.0);
+    let b = rig.rect(900.0, 700.0, 50.0, 50.0);
+    rig.run("element.set_link", json!({ "id": a.as_str(), "link": format!("#{}", b.as_str()) }));
+    rig.run("selection.clear", json!({}));
+    rig.down(208.0, 92.0);
+    let out = rig.up(208.0, 92.0);
+    assert_eq!(out.ui_request, None, "no browser is involved");
+    assert_eq!(rig.selected(), vec![b.as_str().to_owned()]);
+    let v = rig.s.view();
+    assert!((v.scroll.x - 925.0).abs() < 1e-6 && (v.scroll.y - 725.0).abs() < 1e-6, "{:?}", v.scroll);
+}
+
+#[test]
+fn a_click_on_an_unsafe_stored_link_shows_the_refusal_and_opens_nothing() {
+    let mut rig = Rig::new();
+    let a = rig.rect(100.0, 100.0, 100.0, 100.0);
+    rig.s.tab_mut().doc.edit::<(), drafftink_scene::StoreError>(|tx| {
+        use drafftink_scene::SceneTx;
+        tx.update(&a, |e| e.link = Some("javascript:alert(1)".into()))
+    }).unwrap();
+    rig.s.tab_mut().doc.commit_untracked().unwrap();
+    rig.down(208.0, 92.0);
+    let out = rig.up(208.0, 92.0);
+    assert_eq!(out.ui_request, None);
+    assert_eq!(out.refusals.len(), 1);
+    assert_eq!(out.refusals[0].code, "invalid_link");
+}
+
 #[test]
 fn a_tool_change_drops_what_the_old_tool_was_doing() {
     let mut rig = Rig::new();

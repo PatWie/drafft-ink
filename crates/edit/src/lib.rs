@@ -15,6 +15,7 @@
 //! - `style`: style properties, applicability, defaults and themes (`style.*` commands).
 //! - `text_bind`, `text_cmd`, `flowchart`, `layout`, `query`: bound text and text editing, flowchart
 //!   helpers, auto-layout for `diagram.create`, element queries and the document outline.
+//! - `link`: hyperlinks and element links (`element.set_link`, `element.open_link`).
 //! - `library`: fragments (library items, merged files): take out, insert with new ids, tell apart.
 //! - `paste`, `preflight`: pasting copies into a scene, and the checks that run before a structural change.
 //! - `element_cmd`, `selection_cmd`, `query_cmd`, `text_cmd`: rules the `element.*`, `selection.*` and
@@ -36,6 +37,7 @@ pub mod group;
 mod ids;
 pub mod layout;
 pub mod library;
+pub mod link;
 pub mod lifecycle;
 pub mod linear;
 pub mod paste;
