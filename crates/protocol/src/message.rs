@@ -2,7 +2,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::error::ValidationError;
+use crate::error::{Rule, ValidationError};
 use crate::ids::{ClientId, RoomId};
 use crate::json::hex_bytes;
 use crate::limits::*;
@@ -340,17 +340,17 @@ impl ServerMessage {
 // ---- validation ---------------------------------------------------------------------------
 
 fn check_len(field: &'static str, len: usize, max: usize) -> Result<(), ValidationError> {
-    if len > max { Err(ValidationError::new(field, "is too long")) } else { Ok(()) }
+    if len > max { Err(ValidationError::new(field, Rule::TooLong)) } else { Ok(()) }
 }
 
 fn check_finite(field: &'static str, v: f64) -> Result<(), ValidationError> {
-    if v.is_finite() { Ok(()) } else { Err(ValidationError::new(field, "must be a finite number")) }
+    if v.is_finite() { Ok(()) } else { Err(ValidationError::new(field, Rule::NotFinite)) }
 }
 
 /// A live update payload: not empty, at most [`MAX_UPDATE_BYTES`].
 fn check_update(update: &[u8]) -> Result<(), ValidationError> {
     if update.is_empty() {
-        return Err(ValidationError::new("update", "must not be empty"));
+        return Err(ValidationError::new("update", Rule::Empty));
     }
     check_len("update", update.len(), MAX_UPDATE_BYTES)
 }
@@ -360,7 +360,7 @@ impl UserInfo {
     pub fn validate(&self) -> Result<(), ValidationError> {
         check_len("user.name", self.name.len(), MAX_USER_NAME_BYTES)?;
         if self.color > 0x00ff_ffff {
-            return Err(ValidationError::new("user.color", "must fit in 0xRRGGBB"));
+            return Err(ValidationError::new("user.color", Rule::ColorRange));
         }
         Ok(())
     }
@@ -382,13 +382,13 @@ impl AwarenessState {
             check_finite("viewport.width", v.width)?;
             check_finite("viewport.height", v.height)?;
             if v.width < 0.0 || v.height < 0.0 {
-                return Err(ValidationError::new("viewport", "size must not be negative"));
+                return Err(ValidationError::new("viewport", Rule::NegativeSize));
             }
         }
         check_len("selection", self.selection.len(), MAX_SELECTION_IDS)?;
         for id in &self.selection {
             if id.is_empty() {
-                return Err(ValidationError::new("selection", "ids must not be empty"));
+                return Err(ValidationError::new("selection", Rule::Empty));
             }
             check_len("selection id", id.len(), MAX_ELEMENT_ID_BYTES)?;
         }
@@ -408,10 +408,10 @@ impl PeerInfo {
 impl Limits {
     fn validate(&self) -> Result<(), ValidationError> {
         if self.max_frame_bytes as usize > MAX_FRAME_BYTES {
-            return Err(ValidationError::new("limits.max_frame_bytes", "above the hard limit"));
+            return Err(ValidationError::new("limits.max_frame_bytes", Rule::AboveHardLimit));
         }
         if self.max_update_bytes as usize > MAX_UPDATE_BYTES {
-            return Err(ValidationError::new("limits.max_update_bytes", "above the hard limit"));
+            return Err(ValidationError::new("limits.max_update_bytes", Rule::AboveHardLimit));
         }
         Ok(())
     }
@@ -423,7 +423,7 @@ impl ClientMessage {
         match self {
             ClientMessage::Join { min_version, max_version, auth_token, version, user, .. } => {
                 if min_version > max_version {
-                    return Err(ValidationError::new("version range", "min is above max"));
+                    return Err(ValidationError::new("version range", Rule::InvertedRange));
                 }
                 if let Some(t) = auth_token {
                     check_len("auth_token", t.len(), MAX_AUTH_TOKEN_BYTES)?;

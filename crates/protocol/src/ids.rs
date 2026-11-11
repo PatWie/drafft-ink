@@ -4,7 +4,7 @@ use std::fmt;
 
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
-use crate::error::ValidationError;
+use crate::error::{Rule, ValidationError};
 use crate::limits::MAX_ROOM_ID_BYTES;
 
 /// A room name. 1 to 128 bytes of ASCII letters, digits, `-`, `_` or `.`.
@@ -19,13 +19,13 @@ impl RoomId {
     pub fn new(id: impl Into<String>) -> Result<Self, ValidationError> {
         let id = id.into();
         if id.is_empty() {
-            return Err(ValidationError::new("room", "must not be empty"));
+            return Err(ValidationError::new("room", Rule::Empty));
         }
         if id.len() > MAX_ROOM_ID_BYTES {
-            return Err(ValidationError::new("room", "is too long"));
+            return Err(ValidationError::new("room", Rule::TooLong));
         }
         if !id.bytes().all(|b| b.is_ascii_alphanumeric() || matches!(b, b'-' | b'_' | b'.')) {
-            return Err(ValidationError::new("room", "may only contain letters, digits, '-', '_' and '.'"));
+            return Err(ValidationError::new("room", Rule::BadCharacter));
         }
         Ok(RoomId(id))
     }
@@ -91,7 +91,7 @@ impl ClientId {
         hex_decode(text, Some(16))
             .and_then(|bytes| <[u8; 16]>::try_from(bytes).ok())
             .map(ClientId)
-            .ok_or_else(|| ValidationError::new("client_id", "must be 32 hex characters"))
+            .ok_or_else(|| ValidationError::new("client_id", Rule::NotHex128))
     }
 }
 

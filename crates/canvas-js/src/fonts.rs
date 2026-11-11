@@ -32,7 +32,7 @@ impl Fonts {
     pub(crate) fn settle(&mut self, element: &mut Element) {
         if element.points().is_some() {
             // A false answer means no points or a non-finite one; the store's validation reports that.
-            element.refit_points();
+            let _ = element.refit_points();
         }
         match &element.kind {
             ElementKind::Text(text) => {

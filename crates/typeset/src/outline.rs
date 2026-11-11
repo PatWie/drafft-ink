@@ -38,15 +38,24 @@ fn glyph_path(face: &ttf_parser::Face<'_>, id: u32) -> Option<(BezPath, f64)> {
     Some((b.0, f64::from(face.units_per_em().max(1))))
 }
 
+/// One path of an outline with the colour it is filled with.
+#[derive(Clone, Debug, PartialEq)]
+pub struct ColouredPath {
+    /// The fill colour.
+    pub color: Rgba8,
+    /// The glyph outlines, rules and decorations of this colour, in layout space.
+    pub path: BezPath,
+}
+
 /// Add colour runs: consecutive paths of the same colour share one `BezPath`.
-fn push(out: &mut Vec<(Rgba8, BezPath)>, color: Rgba8, path: &BezPath) {
+fn push(out: &mut Vec<ColouredPath>, color: Rgba8, path: &BezPath) {
     match out.last_mut() {
-        Some((c, p)) if *c == color => p.extend(path.elements().iter().copied()),
-        _ => out.push((color, path.clone())),
+        Some(last) if last.color == color => last.path.extend(path.elements().iter().copied()),
+        _ => out.push(ColouredPath { color, path: path.clone() }),
     }
 }
 
-pub(crate) fn text_outline(l: &TextLayout) -> Vec<(Rgba8, BezPath)> {
+pub(crate) fn text_outline(l: &TextLayout) -> Vec<ColouredPath> {
     let mut out = Vec::new();
     // Paint order: each run's glyphs, then decorations on top.
     for run in &l.runs {
@@ -70,7 +79,7 @@ pub(crate) fn text_outline(l: &TextLayout) -> Vec<(Rgba8, BezPath)> {
     out
 }
 
-pub(crate) fn math_outline(l: &MathLayout, base: Rgba8) -> Vec<(Rgba8, BezPath)> {
+pub(crate) fn math_outline(l: &MathLayout, base: Rgba8) -> Vec<ColouredPath> {
     let mut out = Vec::new();
     let faces = (
         ttf_parser::Face::parse(l.math_font.data.as_ref(), l.math_font.index).ok(),

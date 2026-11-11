@@ -159,7 +159,7 @@ pub(crate) fn insert_pictures(
         for (i, r) in ready.iter().enumerate() {
             tx.put_file(r.entry.clone())?;
             let id = drafftink_edit::unused_element_id(&*tx, ids);
-            let z = tx.next_top_index().map_err(|e| StoreError::Backend(e.to_string()))?;
+            let z = tx.next_top_index().map_err(StoreError::backend)?;
             let shift = place.offset * i as f64;
             let mut e = Element::new(
                 id.clone(),

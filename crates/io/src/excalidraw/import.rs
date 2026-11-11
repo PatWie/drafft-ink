@@ -3,6 +3,7 @@
 
 use std::collections::{BTreeMap, HashMap, HashSet};
 
+use drafftink_geom::aabb;
 use drafftink_scene::limits::{
     MAX_COORD, MAX_CORNER_RADIUS, MAX_CUSTOM_KEYS, MAX_ELEMENTS, MAX_FILES, MAX_FIXED_POINT, MAX_FONT_SIZE,
     MAX_GROUP_DEPTH, MAX_LATEX_CHARS, MAX_LINK_BYTES, MAX_NAME_CHARS, MAX_POINTS, MAX_STROKE_WIDTH, MAX_TEXT_CHARS,
@@ -15,7 +16,7 @@ use drafftink_scene::{
 use kurbo::Point;
 use serde_json::{Map, Value};
 
-use super::image::{decode_data_url, mime_is_accepted, sniff_size};
+use super::image::{decode_data_url, sniff_size};
 use super::map::{self, Roundness};
 use super::notes::{self, Note};
 use super::read::{Rd, pair, warn};
@@ -155,7 +156,7 @@ impl<'a> Files<'a> {
         let declared = entry.get("mimeType").and_then(Value::as_str).map(str::to_ascii_lowercase);
         let mime = [declared.as_deref().unwrap_or(""), url_mime.as_str()]
             .into_iter()
-            .find(|m| mime_is_accepted(m))
+            .find(|m| drafftink_scene::is_image_media_type(m))
             .map(str::to_owned)
             .ok_or_else(|| format!("the picture {raw:?} has a media type that is not an image type"))?;
         let (w, h) = sniff_size(&bytes).unwrap_or((0, 0));
@@ -608,7 +609,8 @@ struct Fitted {
 }
 
 fn fit(rel: &[Point], x: f64, y: f64, angle: f64) -> Option<Fitted> {
-    let (min_x, min_y, _, _) = drafftink_scene::geom::points_bounds(rel)?;
+    let bounds = aabb::from_points(rel.iter().copied())?;
+    let (min_x, min_y) = (bounds.x0, bounds.y0);
     let shift = kurbo::Vec2::new(min_x, min_y);
     // A box wider than the coordinate range (only in hostile files) is squeezed to the range.
     let local: Vec<Point> = rel
@@ -618,7 +620,8 @@ fn fit(rel: &[Point], x: f64, y: f64, angle: f64) -> Option<Fitted> {
             Point::new(q.x.clamp(0.0, MAX_COORD), q.y.clamp(0.0, MAX_COORD))
         })
         .collect();
-    let (_, _, w, h) = drafftink_scene::geom::points_bounds(&local)?;
+    let fitted = aabb::from_points(local.iter().copied())?;
+    let (w, h) = (fitted.width(), fitted.height());
     let (tx, ty) = (clamp_coord(x + min_x), clamp_coord(y + min_y));
     Some(Fitted { local, transform: Transform { angle, ..Transform::new(tx, ty, w, h) }, shift })
 }

@@ -12,7 +12,11 @@
 //! after the same clamping that [`sketch`](crate::sketch) applies, with `-0.0` equal to `0.0` and
 //! all NaNs equal, so equal keys always mean equal output.
 
-use crate::input::{Arrowhead, FillStyle, PressureProfile, Roundness, SketchInput, SketchParams, SketchShape};
+use std::hash::Hash;
+
+use drafftink_geom::hash::{Bits, Hash128};
+
+use crate::input::{FillStyle, PressureProfile, Roundness, SketchInput, SketchParams, SketchShape};
 use crate::limits::{MAX_COORD, MAX_HEAD_SIZE, MAX_ROUGHNESS, MAX_STROKE_WIDTH, bounded, coord, length};
 
 /// Bump when the generation algorithm changes, so keys of a persisted cache stop matching.
@@ -22,124 +26,68 @@ pub const ALGORITHM_VERSION: u32 = 1;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct SketchKey(pub u128);
 
-/// Two multiplicative lanes with different constants, finished with splitmix64.
-struct KeyBuilder {
-    a: u64,
-    b: u64,
-    n: u64,
-}
+// Every function below destructures its input without `..`, so a new field is a compile error until it is hashed.
 
-impl KeyBuilder {
-    fn new() -> Self {
-        Self { a: 0x243f_6a88_85a3_08d3, b: 0x1319_8a2e_0370_7344, n: 0 }
-    }
-
-    fn u64(&mut self, x: u64) {
-        self.a = (self.a.rotate_left(5) ^ x).wrapping_mul(0x517c_c1b7_2722_0a95);
-        self.b = (self.b.rotate_left(23) ^ x.rotate_left(17)).wrapping_mul(0x9e37_79b9_7f4a_7c15);
-        self.n += 1;
-    }
-
-    fn tag(&mut self, x: u8) {
-        self.u64(u64::from(x));
-    }
-
-    fn f64(&mut self, x: f64) {
-        self.u64(x.to_bits());
-    }
-
-    fn point(&mut self, p: kurbo::Point) {
-        self.f64(coord(p.x));
-        self.f64(coord(p.y));
-    }
-
-    fn finish(self) -> SketchKey {
-        fn mix(mut z: u64) -> u64 {
-            z = z.wrapping_add(0x9e37_79b9_7f4a_7c15);
-            z = (z ^ (z >> 30)).wrapping_mul(0xbf58_476d_1ce4_e5b9);
-            z = (z ^ (z >> 27)).wrapping_mul(0x94d0_49bb_1331_11eb);
-            z ^ (z >> 31)
-        }
-        let hi = mix(self.a ^ mix(self.n));
-        let lo = mix(self.b ^ mix(self.a));
-        SketchKey((u128::from(hi) << 64) | u128::from(lo))
-    }
-}
-
-fn roundness(k: &mut KeyBuilder, r: Roundness) {
-    let (t, v) = match r {
-        Roundness::Sharp => (0, 0.0),
+fn roundness(h: &mut Hash128, r: Roundness) {
+    let (tag, v) = match r {
+        Roundness::Sharp => (0u8, 0.0),
         Roundness::Radius(v) => (1, v),
         Roundness::Proportional(v) => (2, v),
         Roundness::Adaptive(v) => (3, v),
     };
-    k.tag(t);
     // NaN is treated as 0 by `Roundness::radius`; any other value is clamped there too, but the
     // clamp depends on the size, which is hashed as well, so the raw value is exact enough.
-    k.f64(if v.is_nan() { 0.0 } else { v + 0.0 });
+    (tag, Bits(if v.is_nan() { 0.0 } else { v })).hash(h);
 }
 
-fn head(k: &mut KeyBuilder, h: Arrowhead) {
-    k.tag(h.kind as u8);
-    k.tag(u8::from(h.filled));
-}
-
-fn points(k: &mut KeyBuilder, pts: &[kurbo::Point]) {
+fn points(h: &mut Hash128, pts: &[kurbo::Point]) {
     // Non-finite points are dropped by `sketch`, so they are skipped here too.
     let mut n = 0u64;
     for p in pts.iter().filter(|p| p.x.is_finite() && p.y.is_finite()) {
-        k.point(*p);
+        (Bits(coord(p.x)), Bits(coord(p.y))).hash(h);
         n += 1;
     }
-    k.u64(n);
+    n.hash(h);
 }
 
-fn shape(k: &mut KeyBuilder, s: &SketchShape) {
+fn shape(h: &mut Hash128, s: &SketchShape) {
     match s {
         SketchShape::Rect { width, height, roundness: r } => {
-            k.tag(1);
-            k.f64(length(*width));
-            k.f64(length(*height));
-            roundness(k, *r);
+            1u8.hash(h);
+            (Bits(length(*width)), Bits(length(*height))).hash(h);
+            roundness(h, *r);
         }
         SketchShape::Ellipse { width, height } => {
-            k.tag(2);
-            k.f64(length(*width));
-            k.f64(length(*height));
+            2u8.hash(h);
+            (Bits(length(*width)), Bits(length(*height))).hash(h);
         }
         SketchShape::Diamond { width, height, roundness: r } => {
-            k.tag(3);
-            k.f64(length(*width));
-            k.f64(length(*height));
-            roundness(k, *r);
+            3u8.hash(h);
+            (Bits(length(*width)), Bits(length(*height))).hash(h);
+            roundness(h, *r);
         }
         SketchShape::Polyline { points: pts, curve, closed } => {
-            k.tag(4);
-            k.tag(*curve as u8);
-            k.tag(u8::from(*closed));
-            points(k, pts);
+            4u8.hash(h);
+            (curve, closed).hash(h);
+            points(h, pts);
         }
         SketchShape::Arrow { points: pts, curve, start, end, head_size } => {
-            k.tag(5);
-            k.tag(*curve as u8);
-            head(k, *start);
-            head(k, *end);
-            k.f64(bounded(*head_size, 0.0, MAX_HEAD_SIZE));
-            points(k, pts);
+            5u8.hash(h);
+            (curve, start, end, Bits(bounded(*head_size, 0.0, MAX_HEAD_SIZE))).hash(h);
+            points(h, pts);
         }
         SketchShape::Freehand { points: pts, pressures, closed, profile } => {
-            k.tag(6);
-            k.tag(u8::from(*closed));
+            6u8.hash(h);
+            closed.hash(h);
             let PressureProfile { size_scale, thinning } = *profile;
-            k.f64(bounded(size_scale, 2.3, 1000.0));
-            k.f64(bounded(thinning, 0.6, 1.0));
-            points(k, pts);
+            (Bits(bounded(size_scale, 2.3, 1000.0)), Bits(bounded(thinning, 0.6, 1.0))).hash(h);
+            points(h, pts);
             // Pressure only matters for open strokes, and indices follow the raw point list.
             if !*closed {
                 for v in pressures {
-                    k.f64(if v.is_finite() { *v + 0.0 } else { 1.0 });
+                    Bits(if v.is_finite() { *v } else { 1.0 }).hash(h);
                 }
-                k.u64(pressures.len() as u64);
+                pressures.len().hash(h);
             }
         }
     }
@@ -155,34 +103,36 @@ fn has_fill(s: &SketchShape, p: &SketchParams) -> bool {
     closed && p.fill != FillStyle::None
 }
 
-fn params(k: &mut KeyBuilder, s: &SketchShape, p: &SketchParams) {
-    let roughness = bounded(p.roughness, 0.0, MAX_ROUGHNESS);
-    let fill = has_fill(s, p);
-    let patterned = fill && p.fill != FillStyle::Solid;
-    k.f64(roughness);
-    k.f64(bounded(p.stroke_width, 0.0, MAX_STROKE_WIDTH));
-    k.tag(p.line as u8);
-    k.tag(if fill { p.fill as u8 } else { FillStyle::None as u8 });
+fn params(h: &mut Hash128, s: &SketchShape, p: &SketchParams) {
+    let SketchParams { roughness, bowing, seed, stroke_width, line, fill, fill_gap, fill_angle } = p;
+    let roughness = bounded(*roughness, 0.0, MAX_ROUGHNESS);
+    let filled = has_fill(s, p);
+    let patterned = filled && *fill != FillStyle::Solid;
+    let fill = if filled { *fill } else { FillStyle::None };
+    (Bits(roughness), Bits(bounded(*stroke_width, 0.0, MAX_STROKE_WIDTH)), line, fill).hash(h);
+    // The seed and bowing only change the output when something is randomised.
     if roughness > 0.0 || patterned {
-        k.u64(u64::from(p.seed));
+        seed.hash(h);
     }
     if roughness > 0.0 {
-        k.f64(bounded(p.bowing, 1.0, MAX_ROUGHNESS));
+        Bits(bounded(*bowing, 1.0, MAX_ROUGHNESS)).hash(h);
     }
     if patterned {
-        k.f64(p.fill_gap.filter(|g| g.is_finite()).map_or(-1.0, |g| g.clamp(0.0, MAX_COORD)));
-        k.f64(p.fill_angle.filter(|a| a.is_finite()).map_or(f64::MAX, |a| a + 0.0));
+        let gap = fill_gap.filter(|g| g.is_finite()).map_or(-1.0, |g| g.clamp(0.0, MAX_COORD));
+        let angle = fill_angle.filter(|a| a.is_finite()).unwrap_or(f64::MAX);
+        (Bits(gap), Bits(angle)).hash(h);
     }
 }
 
 /// The cache key of `input`. Cost is linear in the number of points; callers with versioned
 /// elements should memoise it per version.
 pub fn sketch_key(input: &SketchInput) -> SketchKey {
-    let mut k = KeyBuilder::new();
-    k.u64(u64::from(ALGORITHM_VERSION));
-    shape(&mut k, &input.shape);
-    params(&mut k, &input.shape, &input.params);
-    k.finish()
+    let SketchInput { shape: s, params: p } = input;
+    let mut h = Hash128::new();
+    ALGORITHM_VERSION.hash(&mut h);
+    shape(&mut h, s);
+    params(&mut h, s, p);
+    SketchKey(h.finish128())
 }
 
 impl SketchInput {

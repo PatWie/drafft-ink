@@ -135,8 +135,9 @@ pub enum FontFamily {
 }
 
 impl FontFamily {
-    /// The family name the text layout looks up.
-    pub fn renderer_name(self) -> &'static str {
+    /// The family name people and exported files see (SVG `font-family`, the old app's `font_family`). The text
+    /// layout has its own table of face names in `typeset`; this is not what Parley is asked for.
+    pub fn display_name(self) -> &'static str {
         match self {
             FontFamily::GelPen => "GelPen",
             FontFamily::NotoSans => "Noto Sans",

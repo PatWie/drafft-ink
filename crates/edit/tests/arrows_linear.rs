@@ -6,7 +6,7 @@ mod arrows_common;
 use arrows_common::*;
 use drafftink_edit::binding::{End, stale_arrows};
 use drafftink_edit::linear::{self, LinearError};
-use drafftink_scene::{BindMode, Head, Kind, PathType, SceneRead, SceneStore, SceneTx, validate_element};
+use drafftink_scene::{BindMode, Head, Kind, LinearKind, PathType, SceneRead, SceneStore, SceneTx, validate_element};
 
 fn check_valid(s: &Scene, eid: &drafftink_scene::ElementId) {
     let e = s.get(eid);
@@ -219,10 +219,10 @@ fn straight_curved_and_elbow_conversion() {
 
 #[test]
 fn a_closed_line_cannot_become_an_elbow() {
-    use drafftink_scene::{Element, ElementKind, Kind};
+    use drafftink_scene::{Element, ElementKind};
     let mut s = Scene::new();
     let z = drafftink_scene::ZIndex::between(None, None).unwrap();
-    let mut e = Element::linear(id("l"), Kind::Line, z, &[p(0.0, 0.0), p(100.0, 0.0), p(50.0, 80.0)]).unwrap();
+    let mut e = Element::linear(id("l"), LinearKind::Line, z, &[p(0.0, 0.0), p(100.0, 0.0), p(50.0, 80.0)]).unwrap();
     if let ElementKind::Line(d) = &mut e.kind {
         d.closed = true;
     }

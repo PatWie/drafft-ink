@@ -85,11 +85,11 @@ pub fn unpack(v: &Value) -> Result<Document, IoError> {
         return Err(IoError::invalid(FormatName::Clipboard, "it has no `document`"));
     };
     if let Some(found) =
-        doc.get("version").and_then(Value::as_u64).filter(|n| *n > u64::from(drafftink_scene::document::SCHEMA_VERSION))
+        doc.get("version").and_then(Value::as_u64).filter(|n| *n > u64::from(drafftink_scene::SCHEMA_VERSION))
     {
         return Err(IoError::Document(drafftink_scene::DocumentError::NewerVersion {
             found: u32::try_from(found).unwrap_or(u32::MAX),
-            max: drafftink_scene::document::SCHEMA_VERSION,
+            max: drafftink_scene::SCHEMA_VERSION,
         }));
     }
     let document: Document =

@@ -28,12 +28,12 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Mutex, MutexGuard, PoisonError};
 
 /// Finished spans kept for the Chrome trace; older ones are dropped (and counted).
-pub const TRACE_CAPACITY: usize = 32_768;
+pub(crate) const TRACE_CAPACITY: usize = 32_768;
 /// Deepest span nesting recorded on one thread; deeper spans are ignored.
-pub const MAX_DEPTH: usize = 256;
+pub(crate) const MAX_DEPTH: usize = 256;
 /// Distinct span names aggregated; further new names are folded into `other`.
-pub const MAX_NAMES: usize = 1024;
-/// The name that spans past [`MAX_NAMES`] are aggregated under.
+pub(crate) const MAX_NAMES: usize = 1024;
+/// The name that spans past `MAX_NAMES` (1024) are aggregated under.
 pub const OTHER: &str = "other";
 /// Finished spans a thread buffers before it flushes without waiting for its root span.
 #[cfg(feature = "enabled")]
@@ -201,25 +201,24 @@ mod imp {
 
     static NEXT_TID: AtomicU32 = AtomicU32::new(1);
 
-    /// The name of the current thread, if it has one (the browser has no thread names).
+    /// The OS thread name, or `thread N` when it has none.
     #[cfg(not(target_arch = "wasm32"))]
-    fn thread_name() -> Option<String> {
-        std::thread::current().name().map(str::to_owned)
+    fn thread_name(tid: u32) -> String {
+        std::thread::current().name().map_or_else(|| format!("thread {tid}"), str::to_owned)
     }
 
-    /// The name of the current thread, if it has one (the browser has no thread names).
+    /// Browser threads have no names.
     #[cfg(target_arch = "wasm32")]
-    fn thread_name() -> Option<String> {
-        None
+    fn thread_name(tid: u32) -> String {
+        format!("thread {tid}")
     }
 
     impl Local {
         fn new() -> Self {
             let tid = NEXT_TID.fetch_add(1, Ordering::Relaxed);
-            let name = thread_name().unwrap_or_else(|| format!("thread {tid}"));
             let mut g = global();
             if g.threads.len() < 256 {
-                g.threads.push((tid, name));
+                g.threads.push((tid, thread_name(tid)));
             }
             Self { tid, stack: Vec::new(), events: Vec::new(), agg: BTreeMap::new() }
         }

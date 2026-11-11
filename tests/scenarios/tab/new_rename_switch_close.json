@@ -6,7 +6,7 @@
     { "execute": "tab.new", "args": { "name": "Sketch" }, "expect": [ { "path": "$.id", "eq": "t2" }, { "path": "$.active", "eq": "t2" } ] },
 
     { "execute": "tab.rename", "args": { "name": "Plans" }, "expect": [ { "path": "$.name", "eq": "Plans" }, { "path": "$.undo_label", "eq": "Rename tab" } ] },
-    { "execute": "tab.rename", "args": { "name": "" }, "refused": "empty_name", "text": "1 to 120 characters" },
+    { "execute": "tab.rename", "args": { "name": "" }, "refused": "empty_name", "text": "1 to 256 characters" },
     { "undo": 1, "expect": [ { "path": "$.undone", "eq": ["Rename tab"] } ] },
     { "execute": "tab.list", "expect": [ { "path": "$.tabs[id=t2].name", "eq": "Sketch" } ] },
     { "redo": 1 },

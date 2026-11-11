@@ -77,7 +77,7 @@ pub(crate) fn edit_with_ids<R, E: From<drafftink_scene::StoreError>>(
     let idx = s.active_index();
     let ids: &mut dyn drafftink_scene::IdSource = &mut *s.ports.ids;
     let Some(tab) = s.tabs.get_mut(idx) else {
-        return Err(drafftink_scene::StoreError::Backend("there is no active tab".to_owned()).into());
+        return Err(drafftink_scene::StoreError::backend("there is no active tab").into());
     };
     tab.doc.edit(|tx| f(tx, ids)).map(|(r, _)| r)
 }
@@ -96,7 +96,7 @@ pub(crate) fn edit_with_measure<R, E: From<drafftink_scene::StoreError>>(
     let measure = s.services.edit();
     let ids: &mut dyn drafftink_scene::IdSource = &mut *s.ports.ids;
     let Some(tab) = s.tabs.get_mut(idx) else {
-        return Err(drafftink_scene::StoreError::Backend("there is no active tab".to_owned()).into());
+        return Err(drafftink_scene::StoreError::backend("there is no active tab").into());
     };
     tab.doc.edit(|tx| f(tx, measure, ids)).map(|(r, _)| r)
 }

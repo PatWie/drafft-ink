@@ -44,8 +44,8 @@ impl ElementFrame {
     }
 
     /// The same frame with the given mirror flags.
-    pub fn with_flip(mut self, x: bool, y: bool) -> Self {
-        self.flip = Flip { x, y };
+    pub fn with_flip(mut self, flip: Flip) -> Self {
+        self.flip = flip;
         self
     }
 
@@ -152,13 +152,22 @@ pub fn decompose(a: Affine) -> Option<Trs> {
     Some(Trs { translation: Vec2::new(tx, ty), rotation, scale: Vec2::new(sx, sy) })
 }
 
+/// A box mapped through an affine by [`map_box`].
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Mapped {
+    /// The new box.
+    pub obox: OrientedBox,
+    /// The affine mirrors (its determinant is negative).
+    pub mirrored: bool,
+}
+
 /// Map a box through an affine made of a translation, rotation, uniform or non-uniform scale and
 /// optional mirror. Returns the new box and whether the transform mirrors.
 ///
 /// The centre is mapped as a point; the two box axes are mapped as directions. A mirror turns the
 /// angle around (a mirrored box is the same rectangle at the mirrored angle). Shear is ignored.
 /// `None` when the box or the affine is not finite.
-pub fn map_box(b: &OrientedBox, a: Affine) -> Option<(OrientedBox, bool)> {
+pub fn map_box(b: &OrientedBox, a: Affine) -> Option<Mapped> {
     if !b.is_valid() {
         return None;
     }
@@ -171,7 +180,7 @@ pub fn map_box(b: &OrientedBox, a: Affine) -> Option<(OrientedBox, bool)> {
     let uy = a * Point::new(b.center.x - b.angle.sin(), b.center.y + b.angle.cos()) - center;
     let size = Size::new(b.size.width * ux.hypot(), b.size.height * uy.hypot());
     let angle = ux.y.atan2(ux.x);
-    Some((OrientedBox::new(center, size, angle), det < 0.0))
+    Some(Mapped { obox: OrientedBox::new(center, size, angle), mirrored: det < 0.0 })
 }
 
 #[cfg(test)]
@@ -201,7 +210,8 @@ mod tests {
 
     #[test]
     fn frame_flip_mirrors_local_points_in_place() {
-        let f = ElementFrame::new(Point::new(10.0, 0.0), Size::new(20.0, 10.0), 0.0).with_flip(true, false);
+        let f =
+            ElementFrame::new(Point::new(10.0, 0.0), Size::new(20.0, 10.0), 0.0).with_flip(Flip { x: true, y: false });
         // local (0,0) is the top-left; mirrored it lands at the top-right
         assert!(close(f.to_world() * Point::ZERO, Point::new(30.0, 0.0)));
         assert!(close(f.to_world() * Point::new(20.0, 10.0), Point::new(10.0, 10.0)));
@@ -211,7 +221,7 @@ mod tests {
 
     #[test]
     fn frame_inverse_round_trips() {
-        let f = ElementFrame::new(Point::new(3.0, 4.0), Size::new(7.0, 9.0), 0.4).with_flip(true, true);
+        let f = ElementFrame::new(Point::new(3.0, 4.0), Size::new(7.0, 9.0), 0.4).with_flip(Flip { x: true, y: true });
         let p = Point::new(2.0, 3.0);
         assert!(close(f.to_local() * (f.to_world() * p), p));
         let bad = ElementFrame::new(Point::new(f64::NAN, 0.0), Size::new(1.0, 1.0), 0.0);
@@ -251,7 +261,7 @@ mod tests {
     fn map_box_flip_lands_on_the_mirrored_side() {
         // The old app's flip bug: a box at x 0..20 flipped about x = 50 must land at 80..100.
         let b = OrientedBox::from_xywh(0.0, 0.0, 20.0, 10.0, 0.0);
-        let (m, mirrored) = map_box(&b, flip_x_about(50.0)).unwrap();
+        let Mapped { obox: m, mirrored } = map_box(&b, flip_x_about(50.0)).unwrap();
         assert!(mirrored);
         let r = m.aabb();
         assert!((r.x0 - 80.0).abs() < 1e-9 && (r.x1 - 100.0).abs() < 1e-9, "{r:?}");
@@ -261,7 +271,7 @@ mod tests {
     #[test]
     fn map_box_flip_of_a_rotated_box_negates_its_angle() {
         let b = OrientedBox::from_xywh(0.0, 0.0, 20.0, 10.0, 0.3);
-        let (m, _) = map_box(&b, flip_x_about(0.0)).unwrap();
+        let m = map_box(&b, flip_x_about(0.0)).unwrap().obox;
         let expect = normalize_angle_signed(PI - 0.3);
         assert!(angle_delta(m.angle, expect).abs() < 1e-9, "{} vs {expect}", m.angle);
         // corners of the mirrored box are the mirrored corners
@@ -275,7 +285,7 @@ mod tests {
     #[test]
     fn map_box_scales() {
         let b = OrientedBox::from_xywh(0.0, 0.0, 10.0, 10.0, 0.0);
-        let (m, mirrored) = map_box(&b, Affine::scale_non_uniform(2.0, 3.0)).unwrap();
+        let Mapped { obox: m, mirrored } = map_box(&b, Affine::scale_non_uniform(2.0, 3.0)).unwrap();
         assert!(!mirrored);
         assert!((m.size.width - 20.0).abs() < 1e-9 && (m.size.height - 30.0).abs() < 1e-9);
         assert!(map_box(&b, Affine::translate((f64::NAN, 0.0))).is_none());

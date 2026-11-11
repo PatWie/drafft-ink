@@ -62,7 +62,7 @@ fn linear_elements_need_points_that_match_the_box() {
         d.points[0] = Point::new(-5.0, 0.0);
     }
     assert!(matches!(first_error(&a), ElementError::PointsNotAtOrigin { .. }));
-    assert!(a.refit_points());
+    a.refit_points().unwrap();
     assert_eq!(validate_element(&a), Ok(()));
 
     if let ElementKind::Arrow(d) = &mut a.kind {
@@ -81,7 +81,7 @@ fn linear_elements_need_points_that_match_the_box() {
 fn closed_needs_three_points_and_only_lines_close() {
     let z = ZIndex::first();
     let pts = [Point::new(0.0, 0.0), Point::new(10.0, 0.0), Point::new(10.0, 10.0)];
-    let mut l = Element::linear(id("l"), Kind::Line, z.clone(), &pts).unwrap();
+    let mut l = Element::linear(id("l"), LinearKind::Line, z.clone(), &pts).unwrap();
     if let ElementKind::Line(d) = &mut l.kind {
         d.closed = true;
     }
@@ -89,10 +89,10 @@ fn closed_needs_three_points_and_only_lines_close() {
     if let ElementKind::Line(d) = &mut l.kind {
         d.points.truncate(2);
     }
-    assert!(l.refit_points());
+    l.refit_points().unwrap();
     assert!(matches!(first_error(&l), ElementError::TooFewPoints { min: 3, .. }));
 
-    let mut a = Element::linear(id("a"), Kind::Arrow, z, &pts).unwrap();
+    let mut a = Element::linear(id("a"), LinearKind::Arrow, z, &pts).unwrap();
     if let ElementKind::Arrow(d) = &mut a.kind {
         d.closed = true;
     }
@@ -137,7 +137,7 @@ fn freehand_pressures_match_points() {
         ElementKind::Freehand(FreehandData::new(vec![Point::new(0.0, 0.0), Point::new(4.0, 4.0)])),
         ZIndex::first(),
     );
-    assert!(f.refit_points());
+    f.refit_points().unwrap();
     assert_eq!(validate_element(&f), Ok(()));
     if let ElementKind::Freehand(d) = &mut f.kind {
         d.pressures = vec![0.5];
@@ -241,7 +241,7 @@ fn z_keys_must_be_strictly_increasing_in_a_document() {
     // The repair makes it valid.
     let mut doc = tie;
     let mut keys: Vec<ZIndex> = doc.elements.iter().map(|e| e.index.clone()).collect();
-    zindex::repair(&mut keys).unwrap();
+    ZIndex::repair(&mut keys).unwrap();
     for (e, k) in doc.elements.iter_mut().zip(keys) {
         e.index = k;
     }
@@ -457,4 +457,24 @@ fn every_error_has_a_readable_message() {
     e.style.opacity = 9.0;
     let msg = first_error(&e).to_string();
     assert!(msg.contains("style.opacity") && msg.contains("between"), "{msg}");
+}
+
+#[test]
+fn the_image_media_type_rule_has_one_definition() {
+    assert!(is_image_media_type("image/png"));
+    assert!(is_image_media_type("image/svg+xml"));
+    assert!(!is_image_media_type("image/"));
+    assert!(!is_image_media_type("text/html"));
+    assert!(!is_image_media_type("image/png; charset=x"));
+    assert!(!is_image_media_type(&format!("image/{}", "a".repeat(80))));
+}
+
+#[test]
+fn a_name_is_one_to_the_limit_characters_without_control_characters() {
+    use drafftink_scene::limits::MAX_NAME_CHARS;
+    assert!(is_valid_name("a"));
+    assert!(is_valid_name(&"é".repeat(MAX_NAME_CHARS)));
+    assert!(!is_valid_name(""));
+    assert!(!is_valid_name(&"é".repeat(MAX_NAME_CHARS + 1)));
+    assert!(!is_valid_name("two\nlines"));
 }

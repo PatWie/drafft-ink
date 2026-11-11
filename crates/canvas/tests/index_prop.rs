@@ -6,7 +6,7 @@ mod common;
 
 use common::*;
 use drafftink_canvas::geom::kurbo::{Point, Rect};
-use drafftink_canvas::scene::{Element, ElementId, ElementKind, Kind, MemoryStore, SceneRead, SceneTx, ZIndex};
+use drafftink_canvas::scene::{Element, ElementId, ElementKind, LinearKind, MemoryStore, SceneRead, SceneTx, ZIndex};
 use drafftink_canvas::shape::{index_bounds, shape_of};
 use drafftink_canvas::{Canvas, HitOptions, MarqueeMode, hit_element, z_cmp};
 use proptest::prelude::*;
@@ -63,15 +63,18 @@ fn make(n: usize, kind: u8, x: f64, y: f64, w: f64, h: f64, angle: f64, filled: 
         3 => {
             Element::new(id, ElementKind::Text(drafftink_canvas::scene::TextData::new("t")), z).with_bounds(x, y, w, h)
         }
-        4 => {
-            Element::linear(id, Kind::Arrow, z, &[Point::new(x, y), Point::new(x + w, y + h), Point::new(x + w, y - h)])
-                .unwrap_or_else(|| {
-                    Element::new(ElementId::new(&format!("e{n}")).unwrap(), ElementKind::Rectangle, ZIndex::first())
-                })
-        }
-        _ => Element::linear(id, Kind::Line, z, &[Point::new(x, y), Point::new(x + w, y + h)]).unwrap_or_else(|| {
+        4 => Element::linear(
+            id,
+            LinearKind::Arrow,
+            z,
+            &[Point::new(x, y), Point::new(x + w, y + h), Point::new(x + w, y - h)],
+        )
+        .unwrap_or_else(|| {
             Element::new(ElementId::new(&format!("e{n}")).unwrap(), ElementKind::Rectangle, ZIndex::first())
         }),
+        _ => Element::linear(id, LinearKind::Line, z, &[Point::new(x, y), Point::new(x + w, y + h)]).unwrap_or_else(
+            || Element::new(ElementId::new(&format!("e{n}")).unwrap(), ElementKind::Rectangle, ZIndex::first()),
+        ),
     };
     e.transform.angle = angle;
     if filled {
@@ -149,7 +152,7 @@ impl Model {
                     _ => false,
                 };
                 if moved {
-                    e.refit_points();
+                    let _ = e.refit_points();
                 }
             }),
             Op::Batch { moves } => {

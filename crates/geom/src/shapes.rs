@@ -488,6 +488,7 @@ mod tests {
     use kurbo::{Circle, Size};
 
     use super::*;
+    use crate::outline::Fill;
     use crate::outline::HitOpts;
 
     fn rect(x: f64, y: f64, w: f64, h: f64, a: f64) -> RectShape {
@@ -694,13 +695,16 @@ mod tests {
     fn intersects_rect_cases() {
         let r = rect(0.0, 0.0, 100.0, 100.0, 0.0);
         let inside = Rect::new(40.0, 40.0, 60.0, 60.0);
-        assert!(r.intersects_rect(&inside, true));
-        assert!(!r.intersects_rect(&inside, false), "stroke-only shape is not touched by a rect inside it");
-        assert!(r.intersects_rect(&Rect::new(-10.0, 40.0, 10.0, 60.0), false), "crossing the outline");
-        assert!(r.intersects_rect(&Rect::new(-10.0, -10.0, 200.0, 200.0), false), "marquee around the shape");
-        assert!(!r.intersects_rect(&Rect::new(200.0, 0.0, 300.0, 100.0), true));
+        assert!(r.intersects_rect(&inside, Fill::Filled));
+        assert!(!r.intersects_rect(&inside, Fill::Stroke), "stroke-only shape is not touched by a rect inside it");
+        assert!(r.intersects_rect(&Rect::new(-10.0, 40.0, 10.0, 60.0), Fill::Stroke), "crossing the outline");
+        assert!(r.intersects_rect(&Rect::new(-10.0, -10.0, 200.0, 200.0), Fill::Stroke), "marquee around the shape");
+        assert!(!r.intersects_rect(&Rect::new(200.0, 0.0, 300.0, 100.0), Fill::Filled));
         let e = EllipseShape::new(OrientedBox::new(Point::new(50.0, 50.0), Size::new(100.0, 100.0), 0.0));
-        assert!(!e.intersects_rect(&Rect::new(0.0, 0.0, 10.0, 10.0), true), "corner of the box is outside the ellipse");
+        assert!(
+            !e.intersects_rect(&Rect::new(0.0, 0.0, 10.0, 10.0), Fill::Filled),
+            "corner of the box is outside the ellipse"
+        );
     }
 
     #[test]
@@ -724,7 +728,7 @@ mod tests {
                         p.signed_distance(Point::new(a, a)),
                     );
                     let _ = p.hit_test(Point::new(a, b), HitOpts::filled(a, b));
-                    let _ = p.intersects_rect(&Rect::new(a, b, b, a), true);
+                    let _ = p.intersects_rect(&Rect::new(a, b, b, a), Fill::Filled);
                 }
             }
         }

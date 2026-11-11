@@ -36,7 +36,7 @@ fn a_routed_copy_shows_the_route_of_an_element_that_is_not_in_the_document() {
     let d = s.get(&stored).linear_data().unwrap().clone();
     let mut draft = drafftink_scene::Element::linear(
         id("draft"),
-        drafftink_scene::Kind::Arrow,
+        drafftink_scene::LinearKind::Arrow,
         drafftink_scene::ZIndex::first(),
         &[p(-45.0, -100.0), p(45.0, 100.0)],
     )

@@ -1,7 +1,6 @@
 //! Snapping a point that a drawing tool places: grid, smart guides and angle lock.
 
 use drafftink_edit::arrow::{PointSnap, SnapFlags, snap_dragged_point};
-use drafftink_geom::OrientedBox;
 use drafftink_geom::aabb;
 use drafftink_geom::kurbo::{Point, Rect};
 use drafftink_geom::snap::{GRID_SIZE, MAX_SNAP_CANDIDATES, MULTI_MOVE_SNAP_RADIUS, snap_to_grid};
@@ -63,7 +62,7 @@ fn candidates(cx: &Ctx<'_>, around: Point) -> Vec<Rect> {
         .into_iter()
         .map(|e| {
             let t = &e.transform;
-            OrientedBox::from_xywh(t.x, t.y, t.w, t.h, t.angle).aabb()
+            t.obox().aabb()
         })
         .filter(aabb::is_finite)
         .take(MAX_SNAP_CANDIDATES)

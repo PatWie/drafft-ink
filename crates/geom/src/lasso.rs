@@ -15,7 +15,7 @@
 use kurbo::{Point, Rect};
 
 use crate::aabb;
-use crate::outline::{Outline, Probe};
+use crate::outline::{Fill, Outline, Probe};
 use crate::select::MarqueeMode;
 
 /// Why a path cannot be a lasso.
@@ -115,8 +115,8 @@ impl Lasso {
     }
 }
 
-/// Does the lasso select `shape`? `filled` says the shape's interior counts as part of it (see the module docs).
-pub fn lasso_selects<O: Outline + ?Sized>(shape: &O, lasso: &Lasso, mode: MarqueeMode, filled: bool) -> bool {
+/// Does the lasso select `shape`? `fill` says whether the shape's interior counts as part of it (see the module docs).
+pub fn lasso_selects<O: Outline + ?Sized>(shape: &O, lasso: &Lasso, mode: MarqueeMode, fill: Fill) -> bool {
     if !shape.is_valid() {
         return false;
     }
@@ -131,7 +131,7 @@ pub fn lasso_selects<O: Outline + ?Sized>(shape: &O, lasso: &Lasso, mode: Marque
             aabb::intersects(&lasso.bounds, &bounds)
                 && (lasso.crosses(shape)
                     || outline_inside()
-                    || (filled
+                    || (fill.is_filled()
                         && shape.is_closed()
                         && lasso.points.first().is_some_and(|first| shape.contains(*first))))
         }
@@ -274,9 +274,9 @@ mod tests {
         let crossed = rect(80.0, 80.0, 50.0, 50.0);
         let apart = rect(200.0, 0.0, 20.0, 20.0);
         for filled in [false, true] {
-            assert!(lasso_selects(&surrounded, &l, MarqueeMode::Touch, filled));
-            assert!(lasso_selects(&crossed, &l, MarqueeMode::Touch, filled));
-            assert!(!lasso_selects(&apart, &l, MarqueeMode::Touch, filled));
+            assert!(lasso_selects(&surrounded, &l, MarqueeMode::Touch, Fill::from(filled)));
+            assert!(lasso_selects(&crossed, &l, MarqueeMode::Touch, Fill::from(filled)));
+            assert!(!lasso_selects(&apart, &l, MarqueeMode::Touch, Fill::from(filled)));
         }
     }
 
@@ -284,8 +284,8 @@ mod tests {
     fn touch_in_a_filled_shape_selects_it_and_in_an_empty_one_does_not() {
         let l = square(40.0, 40.0, 60.0, 60.0);
         let big = rect(0.0, 0.0, 100.0, 100.0);
-        assert!(lasso_selects(&big, &l, MarqueeMode::Touch, true));
-        assert!(!lasso_selects(&big, &l, MarqueeMode::Touch, false));
+        assert!(lasso_selects(&big, &l, MarqueeMode::Touch, Fill::Filled));
+        assert!(!lasso_selects(&big, &l, MarqueeMode::Touch, Fill::Stroke));
     }
 
     #[test]
@@ -294,9 +294,9 @@ mod tests {
         let inside = rect(10.0, 10.0, 20.0, 20.0);
         let crossed = rect(80.0, 80.0, 50.0, 50.0);
         let around = rect(-10.0, -10.0, 200.0, 200.0);
-        assert!(lasso_selects(&inside, &l, MarqueeMode::Contain, true));
-        assert!(!lasso_selects(&crossed, &l, MarqueeMode::Contain, true));
-        assert!(!lasso_selects(&around, &l, MarqueeMode::Contain, true));
+        assert!(lasso_selects(&inside, &l, MarqueeMode::Contain, Fill::Filled));
+        assert!(!lasso_selects(&crossed, &l, MarqueeMode::Contain, Fill::Filled));
+        assert!(!lasso_selects(&around, &l, MarqueeMode::Contain, Fill::Filled));
     }
 
     #[test]
@@ -320,11 +320,11 @@ mod tests {
         let in_notch = rect(40.0, 10.0, 20.0, 20.0);
         let in_arm = rect(5.0, 10.0, 20.0, 20.0);
         let across = rect(20.0, 10.0, 30.0, 20.0);
-        assert!(!lasso_selects(&in_notch, &u, MarqueeMode::Contain, true));
-        assert!(!lasso_selects(&in_notch, &u, MarqueeMode::Touch, false));
-        assert!(lasso_selects(&in_arm, &u, MarqueeMode::Contain, true));
-        assert!(!lasso_selects(&across, &u, MarqueeMode::Contain, true));
-        assert!(lasso_selects(&across, &u, MarqueeMode::Touch, false));
+        assert!(!lasso_selects(&in_notch, &u, MarqueeMode::Contain, Fill::Filled));
+        assert!(!lasso_selects(&in_notch, &u, MarqueeMode::Touch, Fill::Stroke));
+        assert!(lasso_selects(&in_arm, &u, MarqueeMode::Contain, Fill::Filled));
+        assert!(!lasso_selects(&across, &u, MarqueeMode::Contain, Fill::Filled));
+        assert!(lasso_selects(&across, &u, MarqueeMode::Touch, Fill::Stroke));
     }
 
     #[test]
@@ -333,19 +333,19 @@ mod tests {
         let line_in = Polyline::new(vec![Point::new(10.0, 10.0), Point::new(90.0, 20.0)], false);
         let line_out = Polyline::new(vec![Point::new(110.0, 10.0), Point::new(190.0, 20.0)], false);
         let line_cross = Polyline::new(vec![Point::new(50.0, 50.0), Point::new(150.0, 50.0)], false);
-        assert!(lasso_selects(&line_in, &l, MarqueeMode::Contain, false));
-        assert!(!lasso_selects(&line_out, &l, MarqueeMode::Touch, false));
-        assert!(lasso_selects(&line_cross, &l, MarqueeMode::Touch, false));
-        assert!(!lasso_selects(&line_cross, &l, MarqueeMode::Contain, false));
+        assert!(lasso_selects(&line_in, &l, MarqueeMode::Contain, Fill::Stroke));
+        assert!(!lasso_selects(&line_out, &l, MarqueeMode::Touch, Fill::Stroke));
+        assert!(lasso_selects(&line_cross, &l, MarqueeMode::Touch, Fill::Stroke));
+        assert!(!lasso_selects(&line_cross, &l, MarqueeMode::Contain, Fill::Stroke));
         let ellipse = EllipseShape::new(crate::OrientedBox::from_xywh(20.0, 20.0, 60.0, 40.0, 0.0));
-        assert!(lasso_selects(&ellipse, &l, MarqueeMode::Contain, true));
+        assert!(lasso_selects(&ellipse, &l, MarqueeMode::Contain, Fill::Filled));
     }
 
     #[test]
     fn a_shape_that_is_not_valid_is_never_selected() {
         let l = square(0.0, 0.0, 100.0, 100.0);
         let bad = rect(f64::NAN, 0.0, 10.0, 10.0);
-        assert!(!lasso_selects(&bad, &l, MarqueeMode::Touch, true));
-        assert!(!lasso_selects(&bad, &l, MarqueeMode::Contain, true));
+        assert!(!lasso_selects(&bad, &l, MarqueeMode::Touch, Fill::Filled));
+        assert!(!lasso_selects(&bad, &l, MarqueeMode::Contain, Fill::Filled));
     }
 }

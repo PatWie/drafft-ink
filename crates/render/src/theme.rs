@@ -52,6 +52,12 @@ fn dark(c: Color) -> Color {
     Color::rgba(out(r2), out(g2), out(b2), c.a)
 }
 
+/// `alpha` scaled by `factor`, truncated like the old app's `stroke_with_opacity` so that drawings keep their look.
+/// (`Color::with_opacity` in the document model rounds; that is for stored colours.) A factor outside 0..=1 saturates.
+pub(crate) fn scale_alpha(alpha: u8, factor: f64) -> u8 {
+    (f64::from(alpha) * factor) as u8
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

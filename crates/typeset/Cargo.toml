@@ -10,8 +10,11 @@ rust-version.workspace = true
 default = ["noto-sans"]
 # Bundle Noto Sans (1.9 MB raw). Old documents can use it, but the old UI hid it.
 noto-sans = []
+# `bench_support`, for the benchmark only. The benchmark enables it through the dev-dependency on this crate.
+bench = []
 
 [dependencies]
+drafftink-geom = { path = "../geom" }
 drafftink-profile = { path = "../profile" }
 kurbo = { workspace = true }
 peniko = { workspace = true }
@@ -24,6 +27,8 @@ ttf-parser = "0.25"
 
 [dev-dependencies]
 criterion = { workspace = true }
+# The benchmark needs `bench_support`; naming the crate here turns the feature on for tests and benches only.
+drafftink-typeset = { path = ".", features = ["bench"] }
 proptest = { workspace = true }
 png = { workspace = true }
 serde_json = { workspace = true }

@@ -6,7 +6,7 @@ use drafftink_edit::binding::{End, update_bound_arrows};
 use drafftink_geom::Outline;
 use drafftink_geom::kurbo::{Point, Vec2};
 use drafftink_scene::{
-    BindMode, Binding, Element, ElementId, ElementKind, Head, Kind, LinearData, MemoryStore, PathType, SceneRead,
+    BindMode, Binding, Element, ElementId, ElementKind, Head, LinearData, LinearKind, MemoryStore, PathType, SceneRead,
     SceneStore, SceneTx, ZIndex,
 };
 
@@ -69,12 +69,12 @@ impl Scene {
     /// An arrow through world points.
     pub fn arrow(&mut self, name: &str, pts: &[(f64, f64)]) -> ElementId {
         let pts: Vec<Point> = pts.iter().map(|(x, y)| p(*x, *y)).collect();
-        self.add(Element::linear(id(name), Kind::Arrow, z0(), &pts).unwrap())
+        self.add(Element::linear(id(name), LinearKind::Arrow, z0(), &pts).unwrap())
     }
 
     pub fn line(&mut self, name: &str, pts: &[(f64, f64)]) -> ElementId {
         let pts: Vec<Point> = pts.iter().map(|(x, y)| p(*x, *y)).collect();
-        self.add(Element::linear(id(name), Kind::Line, z0(), &pts).unwrap())
+        self.add(Element::linear(id(name), LinearKind::Line, z0(), &pts).unwrap())
     }
 
     pub fn edit<F: FnOnce(&mut Element)>(&mut self, eid: &ElementId, f: F) {

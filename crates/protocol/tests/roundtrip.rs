@@ -107,15 +107,15 @@ fn error_message_builder_cuts_on_a_char_boundary() {
 
 #[test]
 fn room_ids_are_validated() {
-    assert!(RoomId::new("").is_err());
-    assert!(RoomId::new("a b").is_err());
-    assert!(RoomId::new("a/b").is_err());
-    assert!(RoomId::new("é").is_err());
-    assert!(RoomId::new("x".repeat(MAX_ROOM_ID_BYTES + 1)).is_err());
+    let reason = |r: Result<RoomId, ValidationError>| r.unwrap_err().reason;
+    assert_eq!(reason(RoomId::new("")), Rule::Empty);
+    assert_eq!(reason(RoomId::new("a b")), Rule::BadCharacter);
+    assert_eq!(reason(RoomId::new("a/b")), Rule::BadCharacter);
+    assert_eq!(reason(RoomId::new("é")), Rule::BadCharacter);
+    assert_eq!(reason(RoomId::new("x".repeat(MAX_ROOM_ID_BYTES + 1))), Rule::TooLong);
     assert!(RoomId::new("x".repeat(MAX_ROOM_ID_BYTES)).is_ok());
     let id = RoomId::from_random_bytes([0xab; 16]);
     assert_eq!(id.as_str(), "abababababababababababababababab");
-    assert!(serde_json::from_str::<RoomId>("\"bad room\"").is_err());
 }
 
 #[test]

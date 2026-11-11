@@ -1,6 +1,5 @@
 //! What an arrow can attach to, and the shape of it.
 
-use drafftink_geom::OrientedBox;
 use drafftink_geom::binding::{BindKind, BindTarget, binding_gap};
 use drafftink_scene::{Element, ElementId, ElementKind, SceneRead};
 
@@ -31,7 +30,7 @@ pub fn bind_target(e: &Element) -> Option<BindTarget> {
         _ => return None,
     };
     let t = &e.transform;
-    let frame = OrientedBox::from_xywh(t.x, t.y, t.w, t.h, t.angle);
+    let frame = t.obox();
     let radius = match &e.kind {
         ElementKind::Rectangle | ElementKind::Diamond => e.style.corner_radius,
         _ => 0.0,

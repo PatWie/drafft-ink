@@ -22,7 +22,7 @@ use smallvec::smallvec;
 use crate::color::Color;
 use crate::derived::DerivedIndex;
 use crate::document::{Document, FileEntry};
-use crate::element::{BindMode, Binding, Element, ElementKind, Kind, LinearData, TextData, Transform};
+use crate::element::{BindMode, Binding, Element, ElementKind, LinearData, LinearKind, TextData, Transform};
 use crate::id::{ElementId, GroupId};
 use crate::store::{
     ChangeKind, ChangeSet, Fields, SceneRead, SceneStore, SceneTx, StoreError, load_document, snapshot,
@@ -79,8 +79,9 @@ fn rect(id: &str, z: &ZIndex) -> Result<Element, String> {
 }
 
 fn arrow(id: &str, z: &ZIndex, start: Option<&str>, end: Option<&str>) -> Result<Element, String> {
-    let mut e = Element::linear(eid(id)?, Kind::Arrow, z.clone(), &[Point::new(0.0, 0.0), Point::new(50.0, 20.0)])
-        .ok_or("could not build an arrow")?;
+    let mut e =
+        Element::linear(eid(id)?, LinearKind::Arrow, z.clone(), &[Point::new(0.0, 0.0), Point::new(50.0, 20.0)])
+            .ok_or("could not build an arrow")?;
     if let ElementKind::Arrow(d) = &mut e.kind {
         let bind = |t: &str| -> Result<Binding, String> {
             Ok(Binding { target: eid(t)?, mode: BindMode::Orbit, fixed_point: [0.5, 0.5] })

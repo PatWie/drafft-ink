@@ -8,6 +8,7 @@
 
 pub mod workspace;
 
+use drafftink_scene::limits::MAX_NAME_CHARS;
 use drafftink_scene::{Color, Document, SceneRead};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -21,8 +22,6 @@ use crate::store::{StepMeta, TabDoc};
 
 /// Most tabs one session holds.
 pub const MAX_TABS: usize = 50;
-/// Longest tab (document) name, in characters.
-pub const MAX_NAME_CHARS: usize = 120;
 /// `Tab::saved_revision` of a document that was never saved: no revision equals it, so it stays dirty.
 pub const NEVER_SAVED: u64 = u64::MAX;
 
@@ -229,7 +228,7 @@ pub enum NewFrom {
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields, default)]
 pub struct NewArgs {
-    /// Name of the new document (1 to 120 characters). Default: "Untitled", or "<name> copy" for `active`.
+    /// Name of the new document (1 to 256 characters). Default: "Untitled", or "<name> copy" for `active`.
     pub name: Option<String>,
     /// What the new tab holds: `blank` (default), `intro` or `active`.
     pub from: NewFrom,
@@ -374,7 +373,7 @@ pub struct RenameArgs {
     /// The tab to rename. Default: the active tab.
     #[serde(default)]
     pub tab: Option<TabRef>,
-    /// The new name, 1 to 120 characters after trimming.
+    /// The new name, 1 to 256 characters after trimming.
     pub name: String,
 }
 

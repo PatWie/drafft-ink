@@ -11,11 +11,10 @@
 //! | text, math, image | the rotated box | always the whole box |
 //! | frame | the rotated box | border only, never the inside |
 
-use drafftink_geom::kurbo::{Point, Rect, Size};
+use drafftink_geom::kurbo::Rect;
 use drafftink_geom::spline::catmull_rom_path;
-use drafftink_geom::{
-    DiamondShape, ElementFrame, EllipseShape, OrientedBox, Outline, PathShape, Polyline, Primitive, RectShape,
-};
+use drafftink_geom::transform::ElementFrame;
+use drafftink_geom::{DiamondShape, EllipseShape, OrientedBox, Outline, PathShape, Polyline, Primitive, RectShape};
 use drafftink_scene::{Element, ElementKind, PathType};
 
 /// Default size of an arrowhead in world units when the element does not set one.
@@ -24,13 +23,13 @@ pub const DEFAULT_HEAD_SIZE: f64 = 15.0;
 /// The rotated box of an element (position, size, angle).
 pub fn element_box(e: &Element) -> OrientedBox {
     let t = &e.transform;
-    OrientedBox::from_xywh(t.x, t.y, t.w, t.h, t.angle)
+    t.obox()
 }
 
 fn element_frame(e: &Element) -> ElementFrame {
     let t = &e.transform;
     // Only images keep a mirror flag and a box is its own mirror image, so flips never change a hit test.
-    ElementFrame::new(Point::new(t.x, t.y), Size::new(t.w, t.h), t.angle)
+    t.frame()
 }
 
 /// The world-space outline of an element. `None` when the element has no usable geometry (non-finite numbers, a
@@ -114,6 +113,7 @@ pub fn stroke_reach_width(e: &Element) -> f64 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use drafftink_geom::kurbo::Point;
     use drafftink_scene::{Color, ElementId, LinearData, ZIndex};
 
     fn id(s: &str) -> ElementId {
@@ -133,7 +133,7 @@ mod tests {
     fn index_bounds_include_stroke_and_heads() {
         let mut e = Element::linear(
             id("l"),
-            drafftink_scene::Kind::Arrow,
+            drafftink_scene::LinearKind::Arrow,
             ZIndex::first(),
             &[Point::new(0.0, 0.0), Point::new(100.0, 0.0)],
         )
@@ -184,7 +184,7 @@ mod tests {
     fn round_paths_follow_the_spline() {
         let mut e = Element::linear(
             id("l"),
-            drafftink_scene::Kind::Line,
+            drafftink_scene::LinearKind::Line,
             ZIndex::first(),
             &[Point::new(0.0, 0.0), Point::new(50.0, 50.0), Point::new(100.0, 0.0)],
         )

@@ -56,7 +56,7 @@ fn put(s: &mut Session, kind: ElementKind, x: f64, y: f64, w: f64, h: f64) -> El
     s.tab_mut()
         .doc
         .edit::<(), StoreError>(|tx| {
-            let z = tx.next_top_index().map_err(|e| StoreError::Backend(e.to_string()))?;
+            let z = tx.next_top_index().map_err(StoreError::backend)?;
             let mut e = Element::new(id, kind, z);
             e.transform = Transform::new(x, y, w, h);
             tx.insert(e)

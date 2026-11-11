@@ -112,11 +112,35 @@ pub struct Nearest {
     pub normal: Vec2,
 }
 
+/// Whether the interior of a shape counts as part of it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum Fill {
+    /// Only the outline counts.
+    #[default]
+    Stroke,
+    /// The interior counts too (for closed shapes).
+    Filled,
+}
+
+impl Fill {
+    /// True for [`Fill::Filled`].
+    pub const fn is_filled(self) -> bool {
+        matches!(self, Fill::Filled)
+    }
+}
+
+impl From<bool> for Fill {
+    /// `true` is [`Fill::Filled`]: for callers that learn from the document whether a shape has a fill.
+    fn from(filled: bool) -> Self {
+        if filled { Fill::Filled } else { Fill::Stroke }
+    }
+}
+
 /// How a pointer hits a shape.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct HitOpts {
-    /// The shape has a fill: the interior hits too. Stroke-only shapes hit near the outline only.
-    pub filled: bool,
+    /// Whether the interior hits too. Stroke-only shapes hit near the outline only.
+    pub fill: Fill,
     /// Extra reach around the outline, in world units (typically `pixels / zoom`).
     pub tolerance: f64,
     /// The stroke width. Half of it is added to the reach.
@@ -126,12 +150,12 @@ pub struct HitOpts {
 impl HitOpts {
     /// Options for a stroke-only shape.
     pub const fn stroke(tolerance: f64, stroke_width: f64) -> Self {
-        Self { filled: false, tolerance, stroke_width }
+        Self { fill: Fill::Stroke, tolerance, stroke_width }
     }
 
     /// Options for a shape with a fill.
     pub const fn filled(tolerance: f64, stroke_width: f64) -> Self {
-        Self { filled: true, tolerance, stroke_width }
+        Self { fill: Fill::Filled, tolerance, stroke_width }
     }
 
     /// The distance from the outline within which the stroke is hit.
@@ -177,7 +201,7 @@ pub trait Outline {
 
     /// Does a pointer at `p` hit the shape?
     fn hit_test(&self, p: Point, opts: HitOpts) -> bool {
-        if opts.filled && self.is_closed() && self.contains(p) {
+        if opts.fill.is_filled() && self.is_closed() && self.contains(p) {
             return true;
         }
         self.outline_distance(p) <= opts.reach()
@@ -194,9 +218,9 @@ pub trait Outline {
         self.intersect(probe).into_iter().next()
     }
 
-    /// Does the shape touch the rect? With `filled` the interior counts, otherwise only the
+    /// Does the shape touch the rect? With [`Fill::Filled`] the interior counts, otherwise only the
     /// outline does. Used for marquee selection.
-    fn intersects_rect(&self, rect: &Rect, filled: bool) -> bool {
+    fn intersects_rect(&self, rect: &Rect, fill: Fill) -> bool {
         if !self.is_valid() || !aabb::is_finite(rect) {
             return false;
         }
@@ -217,7 +241,7 @@ pub trait Outline {
         if self.nearest(aabb::center(&rect)).is_some_and(|n| aabb::contains_point(&rect, n.point)) {
             return true;
         }
-        filled && self.is_closed() && self.contains(aabb::center(&rect))
+        fill.is_filled() && self.is_closed() && self.contains(aabb::center(&rect))
     }
 }
 

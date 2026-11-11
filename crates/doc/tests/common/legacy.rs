@@ -82,7 +82,7 @@ impl Conv {
 
     fn linear(
         &mut self,
-        kind: Kind,
+        kind: LinearKind,
         mut pts: Vec<Point>,
         mut data: LinearData,
         angle: f64,
@@ -95,7 +95,7 @@ impl Conv {
         let mut e = Element::linear(self.ids.element_id(), kind, ZIndex::first(), &pts.split_off(0)).unwrap();
         let (points, transform) = (e.points().unwrap().to_vec(), e.transform);
         data.points = points;
-        e.kind = if kind == Kind::Arrow { ElementKind::Arrow(data) } else { ElementKind::Line(data) };
+        e.kind = if kind == LinearKind::Arrow { ElementKind::Arrow(data) } else { ElementKind::Line(data) };
         e.transform = Transform { angle, ..transform };
         e.style = st;
         e.group_ids = groups.iter().cloned().collect();
@@ -139,7 +139,7 @@ impl Conv {
                     d.head_size = Some(f(v, "head_size", 15.0));
                 }
                 stroke_style(v, &mut st);
-                self.linear(if is_arrow { Kind::Arrow } else { Kind::Line }, pts, d, 0.0, st, groups);
+                self.linear(if is_arrow { LinearKind::Arrow } else { LinearKind::Line }, pts, d, 0.0, st, groups);
             }
             "Freehand" => {
                 let pts: Vec<Point> = v["points"].as_array().into_iter().flatten().map(pt).collect();
@@ -156,7 +156,7 @@ impl Conv {
                     d.points = pts;
                 }
                 e.group_ids = groups.iter().cloned().collect();
-                if e.refit_points() {
+                if e.refit_points().is_ok() {
                     self.elements.push(e);
                 }
             }

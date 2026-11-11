@@ -497,7 +497,7 @@ pub(super) fn open(s: &mut Session, a: OpenArgs) -> Result<OpenOut, Refusal> {
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields, default)]
 pub struct NewArgs {
-    /// Name of the new document (1 to 120 characters). Default: "Untitled".
+    /// Name of the new document (1 to 256 characters). Default: "Untitled".
     pub name: Option<String>,
     /// What to do with unsaved changes when replacing: `refuse` (default), `discard` or `save`.
     pub on_unsaved: OnUnsaved,

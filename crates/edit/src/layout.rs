@@ -17,8 +17,6 @@ mod tree;
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use drafftink_geom::OrientedBox;
-
 use crate::binding::BindingError;
 use drafftink_geom::kurbo::{Point, Rect, Size};
 use schemars::JsonSchema;
@@ -397,7 +395,7 @@ pub fn layout_apply<T: SceneTx, M: TextMeasure + ?Sized>(
     for id in &nodes {
         let e = tx.get(id).ok_or_else(|| ApplyError::Target(TargetError::NotFound(id.clone())))?;
         let t = &e.transform;
-        aabbs.push(OrientedBox::from_xywh(t.x, t.y, t.w, t.h, t.angle).aabb());
+        aabbs.push(t.obox().aabb());
     }
     let graph = LayoutGraph {
         sizes: aabbs.iter().map(|r| r.size()).collect(),
@@ -494,7 +492,7 @@ pub fn scene_bounds<R: SceneRead>(r: &R) -> Option<Rect> {
         .filter(|e| e.container_id().is_none())
         .map(|e| {
             let t = &e.transform;
-            OrientedBox::from_xywh(t.x, t.y, t.w, t.h, t.angle).aabb()
+            t.obox().aabb()
         })
         .reduce(|a, b| a.union(b))
 }

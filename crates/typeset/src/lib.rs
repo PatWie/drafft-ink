@@ -28,5 +28,8 @@ pub use math::{
     MATH_SIZE_RANGE, MAX_EXTENT, MAX_LATEX_BYTES, MAX_NESTING, MAX_TOKENS, MathError, MathErrorKind, MathFontSlot,
     MathGlyph, MathLayout, MathRule, MathSpec,
 };
+pub use outline::ColouredPath;
 pub use style::{Align, FontFamily, FontWeight, LineHeight, Rgba8, Span, SpanStyle, TextSpec, TextStyle, Wrap};
-pub use typesetter::{CacheConfig, FontError, MAX_FONT_BYTES, TypesetStats, Typesetter, bench_support};
+#[cfg(feature = "bench")]
+pub use typesetter::bench_support;
+pub use typesetter::{CacheConfig, FontError, MAX_FONT_BYTES, TypesetStats, Typesetter};

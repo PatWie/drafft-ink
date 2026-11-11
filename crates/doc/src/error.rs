@@ -120,6 +120,6 @@ impl DocError {
 
 impl From<DocError> for StoreError {
     fn from(e: DocError) -> Self {
-        StoreError::Backend(e.to_string())
+        StoreError::backend(e)
     }
 }

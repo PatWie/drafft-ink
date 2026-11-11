@@ -6,13 +6,16 @@
 
 use std::collections::BTreeMap;
 
-use kurbo::{Point, Rect, Vec2};
+use drafftink_geom::transform::ElementFrame;
+use drafftink_geom::transform::{Flip, rotate_point};
+use drafftink_geom::{OrientedBox, aabb};
+use kurbo::{Point, Rect, Size, Vec2};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use smallvec::SmallVec;
 
-use crate::geom::{points_bounds, pt, pts};
 use crate::id::{ElementId, FileId, GroupId};
+use crate::points::{pt, pts};
 use crate::style::{Style, TextStyle};
 use crate::{color::Color, zindex::ZIndex};
 
@@ -58,17 +61,32 @@ impl Transform {
         Point::new(self.x + self.w / 2.0, self.y + self.h / 2.0)
     }
 
-    /// Maps a point in the element's local frame (origin at the box top-left, unrotated) to world space.
-    pub fn local_to_world(&self, p: Point) -> Point {
-        let c = self.center();
-        let rel = Vec2::new(self.x + p.x - c.x, self.y + p.y - c.y);
-        c + rotate(rel, self.angle)
+    /// The box and rotation as a [`geom` frame](ElementFrame), without the mirror flags. Only images keep a mirror flag
+    /// (see [`Transform::flip_x`]); use [`Transform::mirrored_frame`] for those.
+    pub fn frame(&self) -> ElementFrame {
+        ElementFrame::new(Point::new(self.x, self.y), Size::new(self.w, self.h), self.angle)
     }
-}
 
-fn rotate(v: Vec2, angle: f64) -> Vec2 {
-    let (s, c) = angle.sin_cos();
-    Vec2::new(v.x * c - v.y * s, v.x * s + v.y * c)
+    /// Like [`Transform::frame`], with the mirror flags. This is what an image is drawn with.
+    pub fn mirrored_frame(&self) -> ElementFrame {
+        self.frame().with_flip(Flip { x: self.flip_x, y: self.flip_y })
+    }
+
+    /// The rotated box.
+    pub fn obox(&self) -> OrientedBox {
+        self.frame().obox()
+    }
+
+    /// Maps a point in the element's local frame (origin at the box top-left, unrotated) to world space. The mirror
+    /// flags are not applied (see [`Transform::frame`]).
+    pub fn local_to_world(&self, p: Point) -> Point {
+        self.frame().to_world() * p
+    }
+
+    /// The inverse of [`Transform::local_to_world`].
+    pub fn world_to_local(&self, p: Point) -> Point {
+        self.frame().to_local() * p
+    }
 }
 
 fn is_zero(v: &f64) -> bool {
@@ -594,6 +612,48 @@ impl ElementKind {
     }
 }
 
+/// The two kinds that are a list of vertices: what [`Element::linear`] builds.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum LinearKind {
+    /// A line.
+    Line,
+    /// An arrow.
+    Arrow,
+}
+
+impl From<LinearKind> for Kind {
+    fn from(k: LinearKind) -> Self {
+        match k {
+            LinearKind::Line => Kind::Line,
+            LinearKind::Arrow => Kind::Arrow,
+        }
+    }
+}
+
+impl TryFrom<Kind> for LinearKind {
+    /// The kind that is not a line or an arrow.
+    type Error = Kind;
+
+    fn try_from(k: Kind) -> Result<Self, Kind> {
+        match k {
+            Kind::Line => Ok(LinearKind::Line),
+            Kind::Arrow => Ok(LinearKind::Arrow),
+            other => Err(other),
+        }
+    }
+}
+
+/// Why [`Element::refit_points`] changed nothing.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
+pub enum RefitError {
+    /// The element is not a line, arrow or freehand stroke, or it has no points.
+    #[error("the element has no points to fit a box around")]
+    NoPoints,
+    /// A coordinate is NaN, infinite or beyond what the geometry accepts.
+    #[error("a point has a coordinate that is not a usable number")]
+    NotFinite,
+}
+
 /// An element of the scene.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
@@ -672,18 +732,16 @@ impl Element {
         self
     }
 
-    /// A line or arrow through `world_points`. The box and local points are derived; see [`LinearData`].
-    pub fn linear(id: ElementId, kind: Kind, index: ZIndex, world_points: &[Point]) -> Option<Self> {
+    /// A line or arrow through `world_points`. The box and local points are derived; see [`LinearData`]. `None` when
+    /// the points are empty or not usable numbers.
+    pub fn linear(id: ElementId, kind: LinearKind, index: ZIndex, world_points: &[Point]) -> Option<Self> {
         let data = LinearData::new(world_points.to_vec());
-        let ek = if kind == Kind::Arrow {
-            ElementKind::Arrow(data)
-        } else if kind == Kind::Line {
-            ElementKind::Line(data)
-        } else {
-            return None;
+        let kind = match kind {
+            LinearKind::Line => ElementKind::Line(data),
+            LinearKind::Arrow => ElementKind::Arrow(data),
         };
-        let mut e = Element::new(id, ek, index);
-        e.refit_points().then_some(e)
+        let mut e = Element::new(id, kind, index);
+        e.refit_points().ok().map(|()| e)
     }
 
     /// The tag of this element's kind.
@@ -751,17 +809,16 @@ impl Element {
     ///
     /// The points are read in the element's current local frame (they may be anywhere, even negative). Afterwards
     /// their smallest coordinates are 0, `transform.w/h` is their extent, and the world position of every point is
-    /// unchanged, also when the element is rotated. Returns false (and changes nothing) for a kind without points,
-    /// no points, or non-finite coordinates.
-    pub fn refit_points(&mut self) -> bool {
+    /// unchanged, also when the element is rotated. The element is left unchanged when this returns an error.
+    pub fn refit_points(&mut self) -> Result<(), RefitError> {
         let old = self.transform;
-        let Some(points) = self.points() else { return false };
-        if points.iter().any(|p| !p.x.is_finite() || !p.y.is_finite()) {
-            return false;
+        let points = self.points().ok_or(RefitError::NoPoints)?;
+        if !points.iter().all(|p| drafftink_geom::point_is_finite(*p)) {
+            return Err(RefitError::NotFinite);
         }
-        let Some((min_x, min_y, max_x, max_y)) = points_bounds(points) else { return false };
-        let (w, h) = (max_x - min_x, max_y - min_y);
-        let shift = Vec2::new(min_x, min_y);
+        let bounds = aabb::from_points(points.iter().copied()).ok_or(RefitError::NoPoints)?;
+        let (w, h) = (bounds.width(), bounds.height());
+        let shift = Vec2::new(bounds.x0, bounds.y0);
         // World position of the first point under the old transform, which must stay put.
         let first = points.first().copied().unwrap_or(Point::ZERO);
         let world0 = old.local_to_world(first);
@@ -769,7 +826,7 @@ impl Element {
         let half = Vec2::new(w / 2.0, h / 2.0);
         let q0 = first - shift;
         let rel = Vec2::new(q0.x - half.x, q0.y - half.y);
-        let c = world0 - rotate(rel, old.angle);
+        let c = world0 - rotate_point(rel.to_point(), Point::ZERO, old.angle).to_vec2();
         if let Some(pts) = self.points_mut() {
             for p in pts.iter_mut() {
                 *p -= shift;
@@ -786,6 +843,6 @@ impl Element {
         self.transform.y = c.y - half.y;
         self.transform.w = w;
         self.transform.h = h;
-        true
+        Ok(())
     }
 }

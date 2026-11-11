@@ -4,186 +4,143 @@
 //! rotated element keeps its fragment and only gets a new transform. The box size is in, because a resize changes
 //! the geometry. Relations (groups, frame, bindings, text container) and labels do not change the picture.
 
-use std::collections::hash_map::DefaultHasher;
-use std::hash::{Hash, Hasher};
+use std::hash::Hash;
 
-use drafftink_scene::{Color, Element, ElementKind, LinearData, Style};
+use drafftink_geom::hash::{Bits, Hash128};
+use drafftink_scene::{
+    Crop, Element, ElementKind, FrameData, FreehandData, ImageData, LinearData, MathData, Style, TextData, TextRun,
+    TextStyle, Transform,
+};
+use kurbo::Point;
 
-struct Wide(DefaultHasher, DefaultHasher);
+// Every function below destructures its input without `..`. A new field in the model is a compile error here until
+// it is either hashed or named with `: _` (and a reason). That is what keeps a cache from serving a stale picture.
 
-impl Wide {
-    fn new() -> Self {
-        let mut a = DefaultHasher::new();
-        let mut b = DefaultHasher::new();
-        0x5eed_u16.hash(&mut a);
-        0xfeed_u16.hash(&mut b);
-        Self(a, b)
-    }
-
-    fn u8(&mut self, v: u8) {
-        v.hash(&mut self.0);
-        v.hash(&mut self.1);
-    }
-
-    fn u32(&mut self, v: u32) {
-        v.hash(&mut self.0);
-        v.hash(&mut self.1);
-    }
-
-    fn f(&mut self, v: f64) {
-        // -0.0 and 0.0 draw the same.
-        let bits = if v == 0.0 { 0 } else { v.to_bits() };
-        bits.hash(&mut self.0);
-        bits.hash(&mut self.1);
-    }
-
-    fn str(&mut self, s: &str) {
-        s.hash(&mut self.0);
-        s.hash(&mut self.1);
-    }
-
-    fn color(&mut self, c: Color) {
-        self.u32(u32::from_be_bytes([c.r, c.g, c.b, c.a]));
-    }
-
-    fn finish(&self) -> u128 {
-        (u128::from(self.0.finish()) << 64) | u128::from(self.1.finish())
+fn points(h: &mut Hash128, pts: &[Point]) {
+    pts.len().hash(h);
+    for p in pts {
+        (Bits(p.x), Bits(p.y)).hash(h);
     }
 }
 
-fn style(h: &mut Wide, s: &Style) {
-    h.color(s.stroke_color);
-    h.f(s.stroke_width);
-    h.u8(s.stroke_style as u8);
-    match s.fill_color {
-        Some(c) => {
-            h.u8(1);
-            h.color(c);
-        }
-        None => h.u8(0),
-    }
-    h.u8(s.fill_pattern as u8);
-    h.u8(s.sloppiness as u8);
-    h.f(s.opacity);
-    h.f(s.corner_radius);
-    h.u32(s.seed);
+fn style(h: &mut Hash128, s: &Style) {
+    let Style {
+        stroke_color,
+        stroke_width,
+        stroke_style,
+        fill_color,
+        fill_pattern,
+        sloppiness,
+        opacity,
+        corner_radius,
+        seed,
+    } = s;
+    (stroke_color, Bits(*stroke_width), stroke_style, fill_color, fill_pattern, sloppiness).hash(h);
+    (Bits(*opacity), Bits(*corner_radius), seed).hash(h);
 }
 
-fn linear(h: &mut Wide, d: &LinearData) {
-    h.u32(d.points.len() as u32);
-    for p in &d.points {
-        h.f(p.x);
-        h.f(p.y);
+fn linear(h: &mut Hash128, d: &LinearData) {
+    let LinearData {
+        points: pts,
+        path,
+        start_binding: _, // relations: the points are already routed
+        end_binding: _,
+        start_head,
+        end_head,
+        head_size,
+        fixed_segments: _, // routing input; the result is in `points`
+        start_is_special: _,
+        end_is_special: _,
+        closed,
+    } = d;
+    points(h, pts);
+    (path, start_head, end_head, head_size.map(Bits), closed).hash(h);
+}
+
+fn freehand(h: &mut Hash128, f: &FreehandData) {
+    let FreehandData { points: pts, pressures, pressure_mode, brush, highlighter, closed } = f;
+    points(h, pts);
+    pressures.len().hash(h);
+    for v in pressures {
+        Bits(*v).hash(h);
     }
-    h.u8(d.path as u8);
-    h.u8(d.start_head as u8);
-    h.u8(d.end_head as u8);
-    match d.head_size {
-        Some(v) => {
-            h.u8(1);
-            h.f(v);
-        }
-        None => h.u8(0),
+    (pressure_mode, brush, highlighter, closed).hash(h);
+}
+
+fn text(h: &mut Hash128, d: &TextData) {
+    let TextData {
+        content,
+        runs,
+        font,
+        auto_resize,
+        container_id: _,   // relation
+        label_position: _, // placement, not paint
+    } = d;
+    content.hash(h);
+    runs.len().hash(h);
+    for TextRun { start, end, color } in runs {
+        (start, end, color).hash(h);
     }
-    h.u8(u8::from(d.closed));
+    let TextStyle { family, size, weight, align, vertical_align, line_height } = font;
+    (family, Bits(*size), weight, align, vertical_align, Bits(*line_height), auto_resize).hash(h);
+}
+
+fn math(h: &mut Hash128, m: &MathData) {
+    let MathData { latex, font_size } = m;
+    (latex, Bits(*font_size)).hash(h);
+}
+
+fn image(h: &mut Hash128, i: &ImageData) {
+    let ImageData { file_id, natural_width, natural_height, crop } = i;
+    (file_id, natural_width, natural_height).hash(h);
+    crop.as_ref()
+        .map(|c| {
+            let Crop { x, y, width, height } = c;
+            (Bits(*x), Bits(*y), Bits(*width), Bits(*height))
+        })
+        .hash(h);
+}
+
+fn frame(h: &mut Hash128, f: &FrameData) {
+    let FrameData { name, clip } = f;
+    (name, clip).hash(h);
+}
+
+fn kind(h: &mut Hash128, k: &ElementKind) {
+    std::mem::discriminant(k).hash(h);
+    match k {
+        ElementKind::Rectangle | ElementKind::Diamond | ElementKind::Ellipse => {}
+        ElementKind::Line(d) | ElementKind::Arrow(d) => linear(h, d),
+        ElementKind::Freehand(f) => freehand(h, f),
+        ElementKind::Text(d) => text(h, d),
+        ElementKind::Math(m) => math(h, m),
+        ElementKind::Image(i) => image(h, i),
+        ElementKind::Frame(f) => frame(h, f),
+    }
 }
 
 /// A 128-bit digest of the paint-relevant content of `e`.
 pub fn paint_hash(e: &Element) -> u128 {
-    let mut h = Wide::new();
-    let t = &e.transform;
-    h.f(t.w);
-    h.f(t.h);
-    style(&mut h, &e.style);
-    match &e.kind {
-        ElementKind::Rectangle => h.u8(0),
-        ElementKind::Diamond => h.u8(1),
-        ElementKind::Ellipse => h.u8(2),
-        ElementKind::Line(d) => {
-            h.u8(3);
-            linear(&mut h, d);
-        }
-        ElementKind::Arrow(d) => {
-            h.u8(4);
-            linear(&mut h, d);
-        }
-        ElementKind::Freehand(f) => {
-            h.u8(5);
-            h.u32(f.points.len() as u32);
-            for p in &f.points {
-                h.f(p.x);
-                h.f(p.y);
-            }
-            h.u32(f.pressures.len() as u32);
-            for v in &f.pressures {
-                h.f(*v);
-            }
-            h.u8(f.pressure_mode as u8);
-            h.u8(f.brush as u8);
-            h.u8(u8::from(f.highlighter));
-            h.u8(u8::from(f.closed));
-        }
-        ElementKind::Text(d) => {
-            h.u8(6);
-            h.str(&d.content);
-            h.u32(d.runs.len() as u32);
-            for r in &d.runs {
-                h.u32(r.start);
-                h.u32(r.end);
-                match r.color {
-                    Some(c) => {
-                        h.u8(1);
-                        h.color(c);
-                    }
-                    None => h.u8(0),
-                }
-            }
-            h.u8(d.font.family as u8);
-            h.f(d.font.size);
-            h.u8(d.font.weight as u8);
-            h.u8(d.font.align as u8);
-            h.u8(d.font.vertical_align as u8);
-            h.f(d.font.line_height);
-            h.u8(u8::from(d.auto_resize));
-        }
-        ElementKind::Math(m) => {
-            h.u8(7);
-            h.str(&m.latex);
-            h.f(m.font_size);
-        }
-        ElementKind::Image(i) => {
-            h.u8(8);
-            match &i.file_id {
-                Some(f) => {
-                    h.u8(1);
-                    h.str(f.as_str());
-                }
-                None => h.u8(0),
-            }
-            h.u32(i.natural_width);
-            h.u32(i.natural_height);
-            match &i.crop {
-                Some(c) => {
-                    h.u8(1);
-                    h.f(c.x);
-                    h.f(c.y);
-                    h.f(c.width);
-                    h.f(c.height);
-                }
-                None => h.u8(0),
-            }
-        }
-        ElementKind::Frame(f) => {
-            h.u8(9);
-            match &f.name {
-                Some(n) => {
-                    h.u8(1);
-                    h.str(n);
-                }
-                None => h.u8(0),
-            }
-            h.u8(u8::from(f.clip));
-        }
-    }
-    h.finish()
+    let Element {
+        id: _, // identity
+        kind: k,
+        transform,
+        style: s,
+        index: _, // draw order, not looks
+        group_ids: _,
+        frame_id: _,
+        locked: _,
+        deleted: _,
+        name: _,
+        link: _,
+        custom: _,
+        version: _,
+    } = e;
+    // Position, rotation and flip move the finished fragment; only the size changes the geometry.
+    let Transform { x: _, y: _, w, h: height, angle: _, flip_x: _, flip_y: _ } = transform;
+    let mut h = Hash128::new();
+    (Bits(*w), Bits(*height)).hash(&mut h);
+    style(&mut h, s);
+    kind(&mut h, k);
+    h.finish128()
 }

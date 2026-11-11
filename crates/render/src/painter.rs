@@ -26,7 +26,7 @@ use crate::spec::{
     FRAME_LABEL_GAP, FRAME_LABEL_MIN_WIDTH, FRAME_LABEL_ROOM, frame_label_spec, head_size, math_spec, sketch_input,
     text_spec,
 };
-use crate::theme::Theme;
+use crate::theme::{Theme, scale_alpha};
 
 /// A dashed stroke that would have more dashes than this is drawn solid.
 const MAX_DASHES: f64 = 20_000.0;
@@ -154,8 +154,7 @@ impl Ink {
     /// the old app's `stroke_with_opacity`).
     pub fn color(&self, c: Color) -> peniko::Color {
         let m = self.theme.map(c);
-        let a = (f64::from(m.a) * self.opacity) as u8;
-        peniko::Color::from_rgba8(m.r, m.g, m.b, a)
+        peniko::Color::from_rgba8(m.r, m.g, m.b, scale_alpha(m.a, self.opacity))
     }
 
     pub fn grow(&mut self, r: Rect) {
@@ -210,8 +209,7 @@ fn paint_geometry(ink: &mut Ink, e: &Element, g: &SketchGeometry) {
             FillKind::Tint { alpha } => {
                 if let Some(c) = fill {
                     let rgba = c.to_rgba8();
-                    let a = (f64::from(rgba.a) * alpha) as u8;
-                    ink.fill(path, peniko::Color::from_rgba8(rgba.r, rgba.g, rgba.b, a));
+                    ink.fill(path, peniko::Color::from_rgba8(rgba.r, rgba.g, rgba.b, scale_alpha(rgba.a, *alpha)));
                 }
             }
             FillKind::Ink => ink.fill(path, stroke_color),
@@ -415,7 +413,7 @@ fn same_run(a: &drafftink_typeset::MathGlyph, b: &drafftink_typeset::MathGlyph) 
 impl Ink {
     /// A fixed colour (not themed) with only the element opacity applied.
     fn faded(&self, r: u8, g: u8, b: u8, a: u8) -> peniko::Color {
-        peniko::Color::from_rgba8(r, g, b, (f64::from(a) * self.opacity) as u8)
+        peniko::Color::from_rgba8(r, g, b, scale_alpha(a, self.opacity))
     }
 }
 

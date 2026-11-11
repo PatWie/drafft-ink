@@ -4,12 +4,13 @@
 //! The binding module re-solves arrows later (`binding::update_bound_arrows`); this code only has to give each
 //! new arrow a sensible first shape and valid bindings, so a document is correct even before that runs.
 
-use drafftink_geom::OrientedBox;
 use drafftink_geom::aabb::segment_intersects_rect;
 use drafftink_geom::binding::{BindKind, BindTarget, binding_gap};
 use drafftink_geom::kurbo::{Point, Rect, Vec2};
 
-use drafftink_scene::{BindMode, Binding, Element, ElementId, ElementKind, Head, Kind, LinearData, PathType, ZIndex};
+use drafftink_scene::{
+    BindMode, Binding, Element, ElementId, ElementKind, Head, Kind, LinearData, LinearKind, PathType, ZIndex,
+};
 
 use super::Direction;
 
@@ -39,7 +40,7 @@ impl NodeBox {
             _ => return None,
         };
         let t = &e.transform;
-        let frame = OrientedBox::from_xywh(t.x, t.y, t.w, t.h, t.angle);
+        let frame = t.obox();
         let target = BindTarget::new(kind, frame).with_corner_radius(e.style.corner_radius);
         Some(Self { id: e.id.clone(), target, stroke_width: e.style.stroke_width })
     }
@@ -262,7 +263,7 @@ impl Default for Heads {
 
 /// A new arrow element along `route`. `None` when the route has non-finite numbers.
 pub fn arrow_element(id: ElementId, index: ZIndex, route: &Route, path: PathType, heads: Heads) -> Option<Element> {
-    let mut e = Element::linear(id, Kind::Arrow, index, &route.points)?;
+    let mut e = Element::linear(id, LinearKind::Arrow, index, &route.points)?;
     if let ElementKind::Arrow(d) = &mut e.kind {
         d.path = path;
         d.start_binding = Some(route.start.clone());
@@ -298,5 +299,6 @@ pub fn reroute_element(e: &mut Element, route: &Route) {
         *start_is_special = false;
         *end_is_special = false;
     }
-    e.refit_points();
+    // A non-finite route leaves the element as it was; the store validates what is written.
+    let _ = e.refit_points();
 }

@@ -4,21 +4,13 @@
 
 use kurbo::Point;
 
-/// Roughness levels of the old app (`Sloppiness::roughness`). Any value from 0 to
-/// [`MAX_ROUGHNESS`](crate::MAX_ROUGHNESS) is accepted.
-pub mod roughness {
-    /// Clean, precise geometry. No noise, one stroke.
-    pub const ARCHITECT: f64 = 0.0;
-    /// The default of the old app.
-    pub const ARTIST: f64 = 1.0;
-    /// Cartoonist: twice the default roughness.
-    pub const CARTOONIST: f64 = 2.0;
-    /// Drunk: the roughest level of the old app.
-    pub const DRUNK: f64 = 3.5;
-}
+/// The roughness of [`SketchParams::default`]: the old app's default level. Any value from 0 to
+/// [`MAX_ROUGHNESS`](crate::MAX_ROUGHNESS) is accepted. The named levels (architect, artist, cartoonist, drunk) belong
+/// to the document model, not to this crate: see `drafftink_scene::Sloppiness::roughness`.
+pub const DEFAULT_ROUGHNESS: f64 = 1.0;
 
 /// How the outline is drawn.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub enum LineDash {
     /// A continuous line.
     #[default]
@@ -31,7 +23,7 @@ pub enum LineDash {
 
 /// Interior fill. All but `None` and `Solid` are sketched by roughr and clipped to the shape by the
 /// renderer.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub enum FillStyle {
     /// No fill.
     #[default]
@@ -85,7 +77,7 @@ impl Roundness {
 }
 
 /// The path through the points of a line or arrow.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub enum Curve {
     /// Straight segments, sharp corners. Also used for elbow ("angular") connectors: the caller
     /// routes them and passes the corner points.
@@ -95,53 +87,64 @@ pub enum Curve {
     Smooth,
 }
 
-/// The shape of one arrow end.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub enum HeadKind {
+/// Whether a closed arrowhead is filled with the stroke colour or only outlined.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
+pub enum HeadFill {
+    /// Outlined only.
+    Open,
+    /// Filled with the stroke colour.
+    #[default]
+    Filled,
+}
+
+/// One arrow end. Only the closed shapes (triangle, circle, diamond) can be filled; the others have no fill to
+/// choose, so there is no way to ask for one. Heads are always drawn solid, even when the shaft is dashed.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
+pub enum Arrowhead {
     /// No head.
     #[default]
     None,
-    /// Two strokes from the tip (the old app's head). `filled` has no effect.
+    /// Two strokes from the tip (the old app's head).
     Arrow,
-    /// A triangle at the tip.
-    Triangle,
-    /// A circle ending at the tip.
-    Circle,
-    /// A short bar across the line at the tip. `filled` has no effect.
+    /// A short bar across the line at the tip.
     Bar,
+    /// A triangle at the tip.
+    Triangle(HeadFill),
+    /// A circle ending at the tip.
+    Circle(HeadFill),
     /// A diamond ending at the tip.
-    Diamond,
-}
-
-/// One arrow end: a kind, and whether closed kinds (triangle, circle, diamond) are filled with the
-/// stroke colour. Heads are always drawn solid, even when the shaft is dashed.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub struct Arrowhead {
-    /// The shape of the head.
-    pub kind: HeadKind,
-    /// Whether closed kinds are filled with the stroke colour.
-    pub filled: bool,
+    Diamond(HeadFill),
 }
 
 impl Arrowhead {
     /// No head.
-    pub const NONE: Arrowhead = Arrowhead { kind: HeadKind::None, filled: false };
+    pub const NONE: Arrowhead = Arrowhead::None;
     /// The old app's arrowhead.
-    pub const ARROW: Arrowhead = Arrowhead { kind: HeadKind::Arrow, filled: false };
+    pub const ARROW: Arrowhead = Arrowhead::Arrow;
     /// A filled triangle.
-    pub const TRIANGLE: Arrowhead = Arrowhead { kind: HeadKind::Triangle, filled: true };
+    pub const TRIANGLE: Arrowhead = Arrowhead::Triangle(HeadFill::Filled);
     /// An outlined triangle.
-    pub const TRIANGLE_OUTLINE: Arrowhead = Arrowhead { kind: HeadKind::Triangle, filled: false };
+    pub const TRIANGLE_OUTLINE: Arrowhead = Arrowhead::Triangle(HeadFill::Open);
     /// A filled circle.
-    pub const CIRCLE: Arrowhead = Arrowhead { kind: HeadKind::Circle, filled: true };
+    pub const CIRCLE: Arrowhead = Arrowhead::Circle(HeadFill::Filled);
     /// An outlined circle.
-    pub const CIRCLE_OUTLINE: Arrowhead = Arrowhead { kind: HeadKind::Circle, filled: false };
+    pub const CIRCLE_OUTLINE: Arrowhead = Arrowhead::Circle(HeadFill::Open);
     /// A bar across the line.
-    pub const BAR: Arrowhead = Arrowhead { kind: HeadKind::Bar, filled: false };
+    pub const BAR: Arrowhead = Arrowhead::Bar;
     /// A filled diamond.
-    pub const DIAMOND: Arrowhead = Arrowhead { kind: HeadKind::Diamond, filled: true };
+    pub const DIAMOND: Arrowhead = Arrowhead::Diamond(HeadFill::Filled);
     /// An outlined diamond.
-    pub const DIAMOND_OUTLINE: Arrowhead = Arrowhead { kind: HeadKind::Diamond, filled: false };
+    pub const DIAMOND_OUTLINE: Arrowhead = Arrowhead::Diamond(HeadFill::Open);
+
+    /// True when the head is filled with the stroke colour.
+    pub const fn is_filled(self) -> bool {
+        matches!(
+            self,
+            Arrowhead::Triangle(HeadFill::Filled)
+                | Arrowhead::Circle(HeadFill::Filled)
+                | Arrowhead::Diamond(HeadFill::Filled)
+        )
+    }
 }
 
 /// Pressure outline settings of the old app (`render_freehand_with_pressure`).
@@ -249,7 +252,7 @@ pub struct SketchParams {
 impl Default for SketchParams {
     fn default() -> Self {
         Self {
-            roughness: roughness::ARTIST,
+            roughness: DEFAULT_ROUGHNESS,
             bowing: 1.0,
             seed: 1,
             stroke_width: 2.0,

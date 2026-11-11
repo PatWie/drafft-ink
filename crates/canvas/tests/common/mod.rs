@@ -4,8 +4,8 @@
 
 use drafftink_canvas::geom::kurbo::{Point, Size};
 use drafftink_canvas::scene::{
-    Color, Element, ElementId, ElementKind, FrameData, Kind, MemoryStore, SceneRead, SceneStore, SceneTx, TextData,
-    ZIndex,
+    Color, Element, ElementId, ElementKind, FrameData, LinearKind, MemoryStore, SceneRead, SceneStore, SceneTx,
+    TextData, ZIndex,
 };
 use drafftink_canvas::{Canvas, Viewport};
 
@@ -40,7 +40,7 @@ pub fn frame(name: &str, x: f64, y: f64, w: f64, h: f64) -> Element {
 
 pub fn line(name: &str, pts: &[(f64, f64)]) -> Element {
     let pts: Vec<Point> = pts.iter().map(|(x, y)| Point::new(*x, *y)).collect();
-    Element::linear(id(name), Kind::Line, ZIndex::first(), &pts).unwrap()
+    Element::linear(id(name), LinearKind::Line, ZIndex::first(), &pts).unwrap()
 }
 
 /// A viewport where screen pixels equal world units: 800x600, camera centred on (400, 300), zoom 1.

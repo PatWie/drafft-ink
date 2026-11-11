@@ -536,7 +536,7 @@ fn a_big_catch_up_shows_a_loading_state_before_it_blocks() {
             .doc
             .edit::<(), StoreError>(|tx| {
                 for (i, id) in ids.into_iter().enumerate() {
-                    let z = tx.next_top_index().map_err(|e| StoreError::Backend(e.to_string()))?;
+                    let z = tx.next_top_index().map_err(StoreError::backend)?;
                     let mut e = Element::new(id, ElementKind::Rectangle, z);
                     e.transform = Transform::new(i as f64, 0.0, 10.0, 10.0);
                     tx.insert(e)?;

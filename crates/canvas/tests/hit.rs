@@ -173,7 +173,7 @@ fn freehand() -> Element {
         ElementKind::Freehand(FreehandData::new(vec![p(0.0, 0.0), p(100.0, 0.0), p(100.0, 100.0)])),
         drafftink_canvas::scene::ZIndex::first(),
     );
-    assert!(e.refit_points());
+    e.refit_points().unwrap();
     e
 }
 

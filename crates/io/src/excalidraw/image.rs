@@ -60,14 +60,6 @@ pub(super) fn decode_data_url(url: &str) -> Result<(String, Vec<u8>), DataUrlErr
     Ok((mime, bytes))
 }
 
-/// True when the media type passes the scene validator's rule for file entries.
-pub(super) fn mime_is_accepted(mime: &str) -> bool {
-    mime.len() <= 64
-        && mime.starts_with("image/")
-        && mime.len() > 6
-        && mime.bytes().all(|b| b.is_ascii_alphanumeric() || matches!(b, b'/' | b'+' | b'.' | b'-'))
-}
-
 fn be16(b: &[u8], at: usize) -> Option<u32> {
     Some(u32::from(u16::from_be_bytes([*b.get(at)?, *b.get(at + 1)?])))
 }
@@ -162,16 +154,6 @@ mod tests {
         assert_eq!(decode_data_url("data:image/svg+xml;utf8,<svg/>").unwrap_err(), DataUrlError::NotBase64DataUrl);
         assert_eq!(decode_data_url("data:image/png;base64,@@@@").unwrap_err(), DataUrlError::BadBase64);
         assert_eq!(decode_data_url("data:image/png;base64").unwrap_err(), DataUrlError::NotBase64DataUrl);
-    }
-
-    #[test]
-    fn media_type_rule_matches_the_scene_validator() {
-        assert!(mime_is_accepted("image/png"));
-        assert!(mime_is_accepted("image/svg+xml"));
-        assert!(!mime_is_accepted("image/"));
-        assert!(!mime_is_accepted("text/html"));
-        assert!(!mime_is_accepted("image/png; charset=x"));
-        assert!(!mime_is_accepted(&format!("image/{}", "a".repeat(80))));
     }
 
     #[test]

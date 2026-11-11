@@ -21,7 +21,7 @@ mod limits;
 mod message;
 mod wire;
 
-pub use error::{DecodeError, EncodeError, ValidationError};
+pub use error::{DecodeError, EncodeError, Rule, ValidationError};
 pub use ids::{ClientId, RoomId};
 pub use limits::{
     AWARENESS_HEARTBEAT_MS, AWARENESS_MIN_INTERVAL_MS, AWARENESS_TIMEOUT_MS, DEFAULT_MAX_AWARENESS_PER_SEC,
