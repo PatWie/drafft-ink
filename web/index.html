@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Drafft.ink</title>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<meta name="description" content="An infinite canvas whiteboard. Draw first, sign up never.">
+<meta name="theme-color" content="#ffffff">
+<link rel="icon" type="image/svg+xml" href="favicon.svg">
+<link rel="apple-touch-icon" href="icon-192.png">
+<link rel="manifest" href="manifest.webmanifest">
+<style>
+  html, body { margin: 0; height: 100%; overflow: hidden; background: #f6f6f8; overscroll-behavior: none; }
+  canvas { display: block; width: 100vw; height: 100vh; outline: none; touch-action: none; }
+  #loading { position: fixed; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center;
+             gap: 14px; font: 16px/1.4 system-ui, sans-serif; color: #444; pointer-events: none; }
+  #loading .bar { width: 160px; height: 3px; border-radius: 2px; background: #ddd; overflow: hidden; }
+  #loading .bar::after { content: ""; display: block; width: 40%; height: 100%; background: #6d4aff; animation: slide 1.1s ease-in-out infinite; }
+  @keyframes slide { from { transform: translateX(-100%); } to { transform: translateX(250%); } }
+  #failure { position: fixed; inset: 0; display: none; align-items: center; justify-content: center; padding: 24px;
+             font: 16px/1.5 system-ui, sans-serif; color: #222; background: #f6f6f8; text-align: center; }
+  #failure pre { white-space: pre-wrap; color: #777; font-size: 13px; }
+</style>
+</head>
+<body>
+<canvas id="canvas"></canvas>
+<div id="loading" role="status"><div>Loading Drafft.ink</div><div class="bar"></div></div>
+<div id="failure" role="alert"><div><h1>Drafft.ink could not start</h1>
+  <p>Drafft.ink draws with WebGPU. Use a current Chrome, Edge or another browser that offers it.</p><pre id="failure-detail"></pre></div></div>
+<script type="module">
+  // The build script puts a hash in place of __BUILD__, so a new build never mixes with a cached old one.
+  const BUILD = "__BUILD__";
+  const fail = (e) => {
+    console.error(e);
+    window.__error = String(e);
+    // The shell replaces the page with its own error page when WebGPU is missing; this covers the rest
+    // (a failed download, an old browser without WebAssembly).
+    if (document.getElementById("canvas")) {
+      document.getElementById("loading").remove();
+      document.getElementById("failure-detail").textContent = String((e && e.message) || e);
+      document.getElementById("failure").style.display = "flex";
+    }
+  };
+  try {
+    const glue = await import(`./pkg/drafftink_web.js?v=${BUILD}`);
+    await glue.default({ module_or_path: `./pkg/drafftink_web_bg.wasm?v=${BUILD}` });
+    await glue.start("canvas");
+    // "Started" means the first frame is on screen. The poll ends there, so an idle page has no timer.
+    const t0 = performance.now();
+    while (window.drafftink.frames().frames === 0 && performance.now() - t0 < 60000) {
+      await new Promise((r) => setTimeout(r, 50));
+    }
+    document.getElementById("loading")?.remove();
+    window.__started = window.drafftink.frames().frames > 0;
+    if (navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(() => {});
+  } catch (e) { fail(e); }
+
+  // Offline use: the service worker keeps the app shell. Not on file:// or an insecure origin.
+  if ("serviceWorker" in navigator && (location.protocol === "https:" || location.hostname === "localhost" || location.hostname === "127.0.0.1")) {
+    navigator.serviceWorker.register("sw.js").catch((e) => console.warn("service worker:", e));
+  }
+</script>
+</body>
+</html>
