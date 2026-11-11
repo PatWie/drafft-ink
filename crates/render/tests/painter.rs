@@ -290,22 +290,21 @@ fn math_with_its_own_colour_keeps_it() {
 }
 
 #[test]
-fn frames_draw_a_border_and_a_clipped_name() {
+fn a_frame_fragment_is_the_box_only_and_its_name_is_left_to_the_composer() {
     let mut f = frame_el("f", &ZIndex::first(), 0.0, 0.0, 300.0, 200.0);
     let default_name = paint(&f);
-    assert_eq!(default_name.scene.encoding().resources.glyph_runs.len(), 1, "the default label is Frame");
-    assert_eq!(n_draws(&default_name, DrawTag::BEGIN_CLIP), 1);
-    assert!(default_name.bounds.y0 < 0.0, "the label sits above the box");
-    assert!(default_name.bounds.y0 >= -FRAME_LABEL_ROOM - 1.0);
-
-    f.kind = ElementKind::Frame(FrameData { name: Some(String::new()), clip: true });
-    let unnamed = paint(&f);
-    assert_eq!(unnamed.scene.encoding().resources.glyph_runs.len(), 0);
+    assert_eq!(default_name.scene.encoding().resources.glyph_runs.len(), 0, "the label is drawn by the composer");
+    assert_eq!(n_draws(&default_name, DrawTag::BEGIN_CLIP), 0);
+    assert!(default_name.bounds.y0 >= -2.0, "nothing above the box: {:?}", default_name.bounds);
 
     f.kind = ElementKind::Frame(FrameData { name: Some("Wireframes".into()), clip: true });
     f.style.fill_color = Some(Color::rgb(240, 240, 255));
     let named = paint(&f);
-    assert!(colors(&named).len() >= 3, "fill, border, label");
+    assert!(colors(&named).len() >= 2, "fill and border");
+    assert_eq!(paint_hash(&f), {
+        f.kind = ElementKind::Frame(FrameData { name: Some("Another".into()), clip: true });
+        paint_hash(&f)
+    });
 }
 
 #[test]

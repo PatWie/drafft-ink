@@ -150,8 +150,9 @@ fn bench(c: &mut Criterion) {
         ..Overlay::default()
     };
     let mut scene = Scene::new();
+    let mut ts = Typesetter::new();
     g.bench_function("selection_and_marquee", |b| {
-        b.iter(|| paint_overlay(&mut scene, &o, &v, &OverlayStyle::default()));
+        b.iter(|| paint_overlay(&mut scene, &o, &v, &OverlayStyle::default(), &mut ts));
     });
     g.finish();
 

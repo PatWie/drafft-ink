@@ -14,14 +14,19 @@ use kurbo::{Affine, Rect};
 
 /// Marker size of an arrow whose `head_size` is `None` and whose stroke is thin: the old app's constant.
 pub const DEFAULT_HEAD_SIZE: f64 = 15.0;
-/// Font size of a frame's name label, in world units.
+/// Font size of a frame's name label, in logical pixels. The label has the same size on screen at every zoom
+/// (Excalidraw does the same), so the composer draws it in device space after the frame's fragment.
 pub const FRAME_LABEL_SIZE: f64 = 14.0;
-/// Gap between the label and the frame's top edge.
+/// Gap between the label and the frame's top edge, in logical pixels.
 pub const FRAME_LABEL_GAP: f64 = 4.0;
-/// Room reserved above a frame for its label (gap plus the tallest label line).
-pub const FRAME_LABEL_ROOM: f64 = 30.0;
-/// The frame label is cut at the frame's width, but never narrower than this.
+/// Room reserved above a frame for its label (gap plus the tallest label line), in logical pixels.
+pub const FRAME_LABEL_ROOM: f64 = 24.0;
+/// The frame label is cut at the frame's width on screen, but never narrower than this many logical pixels.
 pub const FRAME_LABEL_MIN_WIDTH: f64 = 48.0;
+/// The lowest zoom at which the paint bounds of a frame still cover its label. A label has a fixed size on screen,
+/// so its extent in world units grows as the zoom falls; the bounds (which cannot depend on the zoom) are sized for
+/// this one. Below it, a label can be culled a few pixels early at the edge of the view.
+pub const FRAME_LABEL_MIN_ZOOM: f64 = 0.25;
 
 /// The colour of an element's text or ink as the layout engine sees it.
 pub(crate) fn rgba8(c: Color) -> typeset::Rgba8 {
@@ -263,10 +268,11 @@ pub fn paint_margin(e: &Element) -> Margin {
         }
         ElementKind::Math(m) => Margin::all(0.15 * sane(m.font_size) + 1.0),
         ElementKind::Image(_) => Margin::all(sw / 2.0 + 1.0),
+        // The label is drawn by the composer at a constant size on screen: size the margin for the lowest zoom.
         ElementKind::Frame(_) => Margin {
             left: sw / 2.0 + 1.0,
-            top: sw / 2.0 + 1.0 + FRAME_LABEL_ROOM,
-            right: sw / 2.0 + 1.0 + (FRAME_LABEL_MIN_WIDTH - w).max(0.0),
+            top: sw / 2.0 + 1.0 + FRAME_LABEL_ROOM / FRAME_LABEL_MIN_ZOOM,
+            right: sw / 2.0 + 1.0 + (FRAME_LABEL_MIN_WIDTH / FRAME_LABEL_MIN_ZOOM - w).max(0.0),
             bottom: sw / 2.0 + 1.0,
         },
     }
