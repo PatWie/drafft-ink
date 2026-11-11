@@ -54,6 +54,11 @@ async fn pick(kind: PickKind, inbox: &Inbox) {
 }
 
 impl Host for NativeHost {
+    /// `DRAFFTINK_SOURCE_URL`, for a build that someone distributes with its own source. Unset: the project repository.
+    fn source_url(&self) -> Option<String> {
+        std::env::var("DRAFFTINK_SOURCE_URL").ok().as_deref().and_then(crate::platform::web_address)
+    }
+
     fn start(&mut self, job: HostJob, reply: Inbox) {
         let spawned = std::thread::Builder::new().name("drafftink-dialog".to_owned()).spawn(move || match job {
             HostJob::PickDocument => pollster::block_on(pick(PickKind::Document, &reply)),

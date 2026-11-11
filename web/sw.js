@@ -7,7 +7,7 @@
 //    stored page when the network is gone.
 //  * Everything else of ours is cache first. The script and the wasm carry ?v=<build> in their address, so a
 //    cached file always belongs to the build that asked for it.
-//  * /ws and /health, other origins and non-GET requests are never touched.
+//  * /ws, /health, /source and /source.json (the operator can change them), other origins and non-GET requests are never touched.
 const BUILD = "__BUILD__";
 const CACHE = `drafftink-${BUILD}`;
 const SHELL = [
@@ -23,7 +23,7 @@ const SHELL = [
   // The font of the first frame. The other fonts are stored when the app first asks for them.
   ...__SHELL_FONTS__,
 ];
-const NEVER = new Set(["/ws", "/health"]);
+const NEVER = new Set(["/ws", "/health", "/source", "/source.json"]);
 
 self.addEventListener("install", (event) => {
   event.waitUntil(

@@ -1,4 +1,5 @@
-//! The HTTP side: `/ws`, `/health`, the Origin check and the static web client.
+//! The HTTP side: `/ws`, `/health`, the source offer (`/source`, `/source.json`, a `Link` header), the Origin check
+//! and the static web client.
 
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -105,15 +106,17 @@ pub(crate) fn router(state: Arc<AppState>) -> Router {
     Router::new()
         .route("/ws", get(ws_handler))
         .route("/health", get(health))
+        .route("/source", get(source_redirect))
+        .route("/source.json", get(source_json))
         .fallback_service(web)
-        .layer(middleware::from_fn(security_headers))
+        .layer(middleware::from_fn_with_state(state.clone(), security_headers))
         .with_state(state)
 }
 
 /// Files under this path have the hash of their content in the name (`scripts/build-web.sh`), so a copy never goes stale.
 const IMMUTABLE_DIR: &str = "/fonts/";
 
-async fn security_headers(req: Request<axum::body::Body>, next: Next) -> Response {
+async fn security_headers(State(state): State<Arc<AppState>>, req: Request<axum::body::Body>, next: Next) -> Response {
     let immutable = req.uri().path().starts_with(IMMUTABLE_DIR);
     let mut res = next.run(req).await;
     let ok = res.status().is_success();
@@ -123,7 +126,29 @@ async fn security_headers(req: Request<axum::body::Body>, next: Next) -> Respons
     }
     h.insert(HeaderName::from_static("x-content-type-options"), HeaderValue::from_static("nosniff"));
     h.insert(header::REFERRER_POLICY, HeaderValue::from_static("no-referrer"));
+    // AGPL-3.0 section 13: every response says where the source is. The URL was checked when the config was.
+    if let Ok(link) = HeaderValue::from_str(&format!("<{}>; rel=\"source\"", state.config.source_url)) {
+        h.insert(header::LINK, link);
+    }
     res
+}
+
+/// `/source`: sends the visitor to the corresponding source.
+async fn source_redirect(State(state): State<Arc<AppState>>) -> Response {
+    match HeaderValue::from_str(&state.config.source_url) {
+        Ok(location) => (StatusCode::FOUND, [(header::LOCATION, location)]).into_response(),
+        Err(_) => (StatusCode::INTERNAL_SERVER_ERROR, "the source address of this server is not valid").into_response(),
+    }
+}
+
+/// `/source.json`: the same address for the web app, which shows it in its About dialog.
+async fn source_json(State(state): State<Arc<AppState>>) -> Response {
+    let body = serde_json::json!({
+        "source_url": state.config.source_url,
+        "version": env!("CARGO_PKG_VERSION"),
+        "license": "AGPL-3.0-only",
+    });
+    ([(header::CONTENT_TYPE, "application/json"), (header::CACHE_CONTROL, "no-cache")], body.to_string()).into_response()
 }
 
 async fn health(State(state): State<Arc<AppState>>) -> Response {

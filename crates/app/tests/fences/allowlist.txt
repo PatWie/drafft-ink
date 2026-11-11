@@ -41,4 +41,4 @@ app/src/startup.rs | handed-out | use_stored_default_target | start | - | start-
 app/src/app.rs | call | tab_mut | App::install_scene | scenarios | N4: perf scenarios put a generated scene (1k to 100k elements) in the tab; commands cannot build one in reasonable time. Not in any shipped build
 app/src/app.rs | assign | doc | App::install_scene | scenarios | N4: replaces the tab's document with the generated scene
 app/src/app.rs | assign | observed | App::install_scene | scenarios | N4: resets what the engine observed of the replaced document
-app/src/app.rs | assign | saved_revision | App::install_scene | scenarios | N4: the installed scene counts as saved, so the perf run shows no unsaved-work prompt
+app/src/app.rs | call | mark_saved | App::install_scene | scenarios | N4: the installed scene counts as saved, so the perf run shows no unsaved-work prompt

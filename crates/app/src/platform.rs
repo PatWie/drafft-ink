@@ -194,6 +194,21 @@ pub(crate) fn inbox(wake: WakeCell) -> (Inbox, InboxRx) {
 pub trait Host {
     /// Starts `job`. `reply` delivers the answer, possibly from another thread or a browser callback.
     fn start(&mut self, job: HostJob, reply: Inbox);
+
+    /// Where the operator of this copy offers its source code (the About dialog; AGPL-3.0 section 13), when the
+    /// operator named one. `None` means the project repository. The web page learns it from the server that
+    /// delivered it, so the answer can arrive after the app started: ask when the dialog is open.
+    fn source_url(&self) -> Option<String> {
+        None
+    }
+}
+
+/// `text` if it is an `http://` or `https://` address, else `None`. The About dialog opens what a host reports, so a
+/// `javascript:` or `file:` address from a page or an environment variable must not get through.
+pub fn web_address(text: &str) -> Option<String> {
+    let text = text.trim();
+    let rest = text.strip_prefix("https://").or_else(|| text.strip_prefix("http://"))?;
+    (!rest.is_empty() && text.bytes().all(|b| b.is_ascii_graphic())).then(|| text.to_owned())
 }
 
 /// A host that can do nothing (tests and headless runs): every job is answered with a notice.
@@ -296,4 +311,18 @@ pub struct Platform {
     pub mcp_http: Option<Box<dyn McpHttpControl>>,
     /// macOS: `Mod` is Cmd.
     pub is_mac: bool,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::web_address;
+
+    #[test]
+    fn only_web_addresses_are_taken_as_the_source() {
+        assert_eq!(web_address(" https://git.example.org/fork \n").as_deref(), Some("https://git.example.org/fork"));
+        assert_eq!(web_address("http://localhost:8080/src").as_deref(), Some("http://localhost:8080/src"));
+        for bad in ["", "https://", "javascript:alert(1)", "file:///etc/passwd", "//example.org", "https://a b", "ftp://example.org"] {
+            assert_eq!(web_address(bad), None, "{bad:?}");
+        }
+    }
 }

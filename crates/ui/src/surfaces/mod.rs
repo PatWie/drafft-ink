@@ -6,6 +6,7 @@ use egui::Context;
 use crate::state::UiState;
 use crate::widgets::Cx;
 
+pub mod about;
 pub mod bottom;
 pub mod collab;
 pub mod color;
@@ -48,6 +49,7 @@ pub fn show_all(ctx: &Context, cx: &mut Cx<'_>, st: &mut UiState) {
     export::show(ctx, cx, st);
     preferences::show(ctx, cx, st);
     shortcuts::show(ctx, cx, st);
+    about::show(ctx, cx, st);
     convert::show(ctx, cx, st);
     context_menu::show(ctx, cx, st);
     palette::show(ctx, cx, st);

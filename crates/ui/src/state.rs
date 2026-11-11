@@ -363,6 +363,8 @@ pub struct UiState {
     pub palette: Option<PaletteState>,
     /// The shortcuts dialog is open.
     pub shortcuts_open: bool,
+    /// The About dialog is open.
+    pub about_open: bool,
     /// The collaboration dialog is open.
     pub collab_open: bool,
     /// The colour popover, when open.
@@ -443,6 +445,7 @@ impl UiState {
         self.menu_open
             || self.palette.is_some()
             || self.shortcuts_open
+            || self.about_open
             || self.collab_open
             || self.color_popover.is_some()
             || self.font_picker_open
@@ -464,6 +467,7 @@ impl UiState {
     pub fn modal_open(&self) -> bool {
         self.palette.is_some()
             || self.shortcuts_open
+            || self.about_open
             || self.collab_open
             || self.equation.is_some()
             || self.link_editor.is_some()
@@ -481,6 +485,7 @@ impl UiState {
         self.menu_open = false;
         self.palette = None;
         self.shortcuts_open = false;
+        self.about_open = false;
         self.collab_open = false;
         self.color_popover = None;
         self.font_picker_open = false;
@@ -555,6 +560,11 @@ impl UiState {
                 let open = !self.shortcuts_open;
                 self.close_overlays();
                 self.shortcuts_open = open;
+            }
+            Verb::OpenAbout => {
+                let open = !self.about_open;
+                self.close_overlays();
+                self.about_open = open;
             }
             Verb::OpenCollab => {
                 let open = !self.collab_open;

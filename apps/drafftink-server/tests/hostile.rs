@@ -550,6 +550,58 @@ async fn health_reports_status_rooms_and_connections() {
 }
 
 #[tokio::test]
+async fn the_source_is_offered_by_route_and_by_header_and_is_the_project_repository_by_default() {
+    let server = start(test_config()).await.expect("start");
+    let addr = server.local_addr();
+    let repository = env!("CARGO_PKG_REPOSITORY");
+    assert!(repository.starts_with("https://"), "the package metadata names the repository: {repository}");
+
+    let (status, headers, _) = http_get(addr, "/source").await;
+    assert_eq!(status, 302);
+    assert_eq!(header(&headers, "location"), Some(repository));
+
+    let (status, headers, body) = http_get(addr, "/source.json").await;
+    assert_eq!(status, 200);
+    assert_eq!(header(&headers, "content-type"), Some("application/json"));
+    let json: serde_json::Value = serde_json::from_slice(&body).expect("json");
+    assert_eq!(json["source_url"], repository);
+    assert_eq!(json["license"], "AGPL-3.0-only");
+    assert_eq!(json["version"], env!("CARGO_PKG_VERSION"));
+
+    // Every answer carries the offer, the health check and a missing page included.
+    for path in ["/health", "/no/such/page", "/source"] {
+        let (_, headers, _) = http_get(addr, path).await;
+        assert_eq!(header(&headers, "link"), Some(format!("<{repository}>; rel=\"source\"").as_str()), "{path}");
+    }
+    server.shutdown().await;
+}
+
+#[tokio::test]
+async fn an_operator_points_the_source_offer_at_their_own_copy() {
+    let mut config = test_config();
+    config.source_url = "https://git.example.org/team/drafftink-fork".to_owned();
+    let server = start(config).await.expect("start");
+    let addr = server.local_addr();
+    let (status, headers, _) = http_get(addr, "/source").await;
+    assert_eq!(status, 302);
+    assert_eq!(header(&headers, "location"), Some("https://git.example.org/team/drafftink-fork"));
+    let (_, _, body) = http_get(addr, "/source.json").await;
+    let json: serde_json::Value = serde_json::from_slice(&body).expect("json");
+    assert_eq!(json["source_url"], "https://git.example.org/team/drafftink-fork");
+    server.shutdown().await;
+}
+
+#[tokio::test]
+async fn a_source_url_that_is_not_a_web_address_stops_the_server_from_starting() {
+    for bad in ["", "ftp://example.org/x", "https://", "https://example.org/a b", "https://example.org/\r\nX-Evil: 1", "javascript:alert(1)"] {
+        let mut config = test_config();
+        config.source_url = bad.to_owned();
+        let err = start(config).await.err().unwrap_or_else(|| panic!("{bad:?} should be refused"));
+        assert!(err.to_string().contains("source-url"), "{bad:?}: {err}");
+    }
+}
+
+#[tokio::test]
 async fn static_files_are_served_from_the_web_dir_without_escaping_it() {
     let dir = tempfile::tempdir().expect("tempdir");
     let web = dir.path().join("web-dist");

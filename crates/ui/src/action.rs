@@ -112,11 +112,13 @@ pub enum Verb {
     ToggleLibrary,
     /// `ui.rename_document`: the rename field for the document, ends with `doc.rename`.
     RenameDocument,
+    /// `ui.open_about`: the About dialog: version, licence, and the offer of the source code.
+    OpenAbout,
 }
 
 impl Verb {
     /// Every verb, in the order of docs/commands.md §6.3.
-    pub const ALL: [Verb; 22] = [
+    pub const ALL: [Verb; 23] = [
         Verb::CloseOverlays,
         Verb::ToggleMenu,
         Verb::OpenFile,
@@ -139,6 +141,7 @@ impl Verb {
         Verb::OpenPreferences,
         Verb::ToggleLibrary,
         Verb::RenameDocument,
+        Verb::OpenAbout,
     ];
 
     /// The id of the verb in the catalog (§6.3). The three colour targets share `ui.open_color_picker`.
@@ -164,6 +167,7 @@ impl Verb {
             Verb::OpenPreferences => "ui.open_preferences",
             Verb::ToggleLibrary => "ui.toggle_library",
             Verb::RenameDocument => "ui.rename_document",
+            Verb::OpenAbout => "ui.open_about",
         }
     }
 
@@ -192,6 +196,7 @@ impl Verb {
             Verb::OpenPreferences => "Preferences",
             Verb::ToggleLibrary => "Show or hide the library",
             Verb::RenameDocument => "Rename the document",
+            Verb::OpenAbout => "About Drafft.ink",
         }
     }
 }
