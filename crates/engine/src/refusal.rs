@@ -221,7 +221,11 @@ impl Refusal {
         Self::shared(
             "bad_args",
             id,
-            format!("Invalid arguments for `{id}`: {}. See `engine.describe` for the schema.", detail.as_ref()),
+            // The template supplies the full stop; a detail that has its own must not double it.
+            format!(
+                "Invalid arguments for `{id}`: {}. See `engine.describe` for the schema.",
+                detail.as_ref().trim_end_matches('.')
+            ),
         )
         .suggesting("engine.describe", Some(json!({ "id": id })))
     }
@@ -260,6 +264,19 @@ impl Refusal {
             format!("No element matches `{}`. Look up ids with `element.query` or `doc.outline`.", echo(reference)),
         )
         .with_details(json!({ "ref": echo(reference) }))
+    }
+
+    /// `not_found` for a filter that matches nothing. `filter` says what the filter asked for.
+    pub fn no_match(id: &str, filter: &str) -> Self {
+        Self::shared(
+            "not_found",
+            id,
+            format!(
+                "No element matches the filter ({}). Loosen the filter, or look up ids with `element.query` or `doc.outline`.",
+                echo(filter)
+            ),
+        )
+        .with_details(json!({ "filter": echo(filter) }))
     }
 
     /// `locked`: the element is locked.
@@ -500,6 +517,17 @@ mod tests {
         let r = Refusal::unknown_command("file.open", &near);
         assert!(r.message.contains("Did you mean `doc.open`"), "{}", r.message);
         assert_eq!(r.code, "unknown_command");
+    }
+
+    #[test]
+    fn bad_args_does_not_double_the_full_stop_of_its_detail() {
+        let r = Refusal::bad_args("library.remove", "Give either `items` or all=true.");
+        assert_eq!(
+            r.message,
+            "Invalid arguments for `library.remove`: Give either `items` or all=true. See `engine.describe` for the schema."
+        );
+        let r = Refusal::bad_args("x.y", "`n`: must be a number");
+        assert!(r.message.contains("must be a number. See"), "{}", r.message);
     }
 
     #[test]

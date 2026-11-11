@@ -24,6 +24,7 @@ pub mod palette;
 pub mod store;
 pub mod style;
 pub mod validate;
+pub mod words;
 pub mod zindex;
 
 #[cfg(any(test, feature = "conformance"))]

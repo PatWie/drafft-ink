@@ -5,14 +5,17 @@
     { "harness": "load_generated", "args": { "count": 10 } },
     { "execute": "view.set_viewport", "args": { "width": 600, "height": 400, "scale_factor": 1 } },
     { "execute": "view.zoom_to_fit", "args": { "padding": 20 } },
-    { "harness": "scene_probe", "args": { "id": "e0" }, "save": { "cx": "$.element.center[0]", "cy": "$.element.center[1]" }, "expect": [ { "path": "$.element.kind", "eq": "rectangle" } ] },
+    { "assert": "element.query", "args": { "filter": { "ids": ["e0"] }, "fields": ["kind", "bounds"] }, "expect": [
+        { "path": "$.items[0].kind", "eq": "rectangle" },
+        { "path": "$.items[0].bounds.x", "lt": 20, "note": "The generated rectangle starts in the first 20 units of its cell and is at least 40 by 30, so the world point (30, 25) is inside it." },
+        { "path": "$.items[0].bounds.y", "lt": 20 }, { "path": "$.items[0].bounds.w", "ge": 40 }, { "path": "$.items[0].bounds.h", "ge": 30 } ] },
     { "note": "e0 is the filled rectangle of the generated scene (solid #99e9f2). Colours are compared with a tolerance of 24 per channel because GPU and software rasterisers differ in anti-aliasing and rounding.",
       "harness": "pixel_probe",
-      "args": { "size": [600, 400], "points": [ { "world": ["{{cx}}", "{{cy}}"] }, { "screen": [2, 2] } ] },
+      "args": { "size": [600, 400], "points": [ { "world": [30, 25] }, { "screen": [2, 2] } ] },
       "expect": [
         { "path": "$.adapter", "is": "string" },
         { "path": "$.ink_px", "gt": 2000, "note": "something was drawn" },
-        { "path": "$.pixels[0]", "near": [153, 233, 242, 255], "tol": 24, "note": "the rectangle's centre has its fill" },
+        { "path": "$.pixels[0]", "near": [153, 233, 242, 255], "tol": 24, "note": "a point inside the rectangle has its fill" },
         { "path": "$.pixels[1]", "near": [255, 255, 255, 255], "tol": 2, "note": "the corner has the document background" } ] }
   ]
 }

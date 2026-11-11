@@ -3,9 +3,17 @@
   "steps": [
     {
       "note": "Numbers are tests/fixtures/legacy/all_shapes.json's facts file (all_shapes.facts.json), doc.counts_total. The old code counted its 1 group(s) as shapes (12 in all); the new model has 11 elements and keeps groups as ids.",
-      "harness": "load_fixture",
+      "harness": "stage_fixture",
       "args": {
         "path": "legacy/all_shapes.json"
+      }
+    },
+    {
+      "execute": "doc.open",
+      "args": {
+        "source": {
+          "path": "fixtures/legacy/all_shapes.json"
+        }
       },
       "expect": [
         {
@@ -14,7 +22,11 @@
         },
         {
           "path": "$.format",
-          "eq": "LegacyJson"
+          "eq": "drafftink"
+        },
+        {
+          "path": "$.mode",
+          "eq": "replace"
         },
         {
           "path": "$.warnings",
@@ -47,7 +59,13 @@
         }
       ],
       "assert": "doc.inspect",
-      "note": "doc.inspect summary: element count, count per kind and group count."
+      "note": "doc.inspect summary: element count, count per kind and group count.",
+      "save": {
+        "bx": "$.bounds.x",
+        "by": "$.bounds.y",
+        "bw": "$.bounds.w",
+        "bh": "$.bounds.h"
+      }
     },
     {
       "assert": "engine.state",
@@ -72,22 +90,26 @@
       ]
     },
     {
-      "execute": "view.zoom_to_fit",
-      "expect": [
-        {
-          "path": "$.changed",
-          "eq": true
-        }
-      ]
-    },
-    {
       "assert": "view.get",
       "expect": [
         {
+          "path": "$.visible.x",
+          "le": "{{bx}}"
+        },
+        {
+          "path": "$.visible.y",
+          "le": "{{by}}"
+        },
+        {
           "path": "$.visible.w",
-          "gt": 0
+          "ge": "{{bw}}"
+        },
+        {
+          "path": "$.visible.h",
+          "ge": "{{bh}}"
         }
-      ]
+      ],
+      "note": "doc.open fits the camera to the content: the visible world rectangle covers the whole document."
     }
   ]
 }

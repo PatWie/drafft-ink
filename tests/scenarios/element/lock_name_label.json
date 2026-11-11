@@ -28,6 +28,9 @@
     { "execute": "element.relabel", "args": { "id": "e1", "text": "" }, "expect": [ { "path": "$.action", "eq": "removed" }, { "path": "$.deleted", "eq": ["e3"] } ] },
     { "undo": 1 },
     { "assert": "element.query", "args": { "filter": { "ids": ["e1"] }, "fields": ["text"] }, "expect": [ { "path": "$.items[0].text", "eq": "Other" } ], "note": "Undo restores the label." },
+    { "execute": "element.relabel", "args": { "id": "e3", "text": "" }, "expect": [ { "path": "$.action", "eq": "removed" }, { "path": "$.deleted", "eq": ["e3"] } ],
+      "note": "A bound label given as id counts as its container: empty text removes it, as with text.set. Only free text refuses empty_text (e4 above)." },
+    { "assert": "element.query", "args": { "filter": { "ids": ["e1"] }, "fields": ["bound_text"] }, "expect": [ { "path": "$.items[0].bound_text", "eq": null } ] },
     { "execute": "element.relabel", "args": { "id": "nope", "text": "L" }, "refused": "not_found" }
   ]
 }

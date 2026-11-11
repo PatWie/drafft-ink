@@ -7,7 +7,8 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use drafftink_edit::query::{self, Field, Outline, OutlineOpts, OutlineScope};
+use drafftink_edit::query::{self, Outline, OutlineOpts, OutlineScope};
+use drafftink_edit::query_cmd::ALL_FIELDS;
 use drafftink_geom::kurbo::Rect;
 use drafftink_scene::{ElementId, GroupId, Kind, SceneRead};
 use schemars::JsonSchema;
@@ -19,22 +20,6 @@ use crate::args;
 use crate::refusal::Refusal;
 use crate::session::{Ref, Session};
 use crate::spec::{CommandSpec, Facts, Typed};
-
-const ALL_FIELDS: [Field; 13] = [
-    Field::Id,
-    Field::Kind,
-    Field::Name,
-    Field::Text,
-    Field::Bounds,
-    Field::Style,
-    Field::Angle,
-    Field::GroupIds,
-    Field::Frame,
-    Field::Bindings,
-    Field::BoundText,
-    Field::Locked,
-    Field::Z,
-];
 
 // ---------------------------------------------------------------------------------------------
 // doc.outline
@@ -186,19 +171,23 @@ fn inspect(s: &mut Session, a: InspectArgs) -> Result<Value, Refusal> {
         }
         let mut kinds: BTreeMap<&str, usize> = BTreeMap::new();
         let mut groups: BTreeMap<&GroupId, usize> = BTreeMap::new();
-        let (mut frames, mut locked, mut count) = (0usize, 0usize, 0usize);
+        let (mut frames, mut locked, mut count, mut labels, mut bound_arrows) = (0usize, 0usize, 0usize, 0usize, 0usize);
         let mut bounds: Option<Rect> = None;
         for e in store.iter() {
+            // A bound label follows its container: it is counted apart, as `element.query` leaves it out.
+            if e.container_id().is_some() {
+                labels += 1;
+                continue;
+            }
             *kinds.entry(e.tag().name()).or_default() += 1;
             for g in &e.group_ids {
                 *groups.entry(g).or_default() += 1;
             }
             frames += usize::from(e.tag() == Kind::Frame);
+            bound_arrows += usize::from(e.tag() == Kind::Arrow && e.binding_targets().iter().any(Option::is_some));
             locked += usize::from(e.locked);
-            if e.container_id().is_none() {
-                let b = query::element_bounds(e);
-                bounds = Some(bounds.map_or(b, |x| x.union(b)));
-            }
+            let b = query::element_bounds(e);
+            bounds = Some(bounds.map_or(b, |x| x.union(b)));
             count += 1;
         }
         let tab = s.tab();
@@ -207,13 +196,15 @@ fn inspect(s: &mut Session, a: InspectArgs) -> Result<Value, Refusal> {
             "tab": tab.id.to_string(),
             "revision": tab.doc.revision(),
             "dirty": tab.dirty(),
-            "save_target": Value::Null,
+            "save_target": super::doc::save_target(s),
             "background": store.meta().background,
             "elements": count,
+            "labels": labels,
             "kinds": kinds,
             "bounds": bounds.map(RectOut::from),
             "groups": groups.values().filter(|n| **n >= 2).count(),
             "frames": frames,
+            "bound_arrows": bound_arrows,
             "locked": locked,
         }));
     }

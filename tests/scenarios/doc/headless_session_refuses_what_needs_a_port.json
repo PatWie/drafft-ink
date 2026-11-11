@@ -1,0 +1,16 @@
+{
+  "about": "A session without storage, files or renderer says which port is missing and what to use instead; the commands that need no port (inspect, rename, SVG and JSON export) still work.",
+  "ports": "headless",
+  "steps": [
+    { "execute": "element.create", "args": { "kind": "rectangle", "bounds": { "x": 0, "y": 0, "w": 100, "h": 60 } } },
+    { "execute": "doc.autosave", "refused": "port_unavailable", "text": "`doc.autosave` needs persistent storage, which this session does not provide (storage port missing)." },
+    { "execute": "doc.export", "args": { "format": "png" }, "refused": "port_unavailable", "text": ["`doc.export` with format png needs the renderer", "Use format svg or json."] },
+    { "execute": "doc.save", "args": { "to": { "path": "work/a.drafftink" } }, "refused": "port_unavailable", "text": "`doc.save` needs file access, which this session does not provide (files port missing). To get the bytes without writing a file, use `doc.export` with to=\"inline\"." },
+    { "execute": "doc.open", "args": { "source": { "path": "work/a.drafftink" } }, "refused": "port_unavailable", "text": "Pass the data inline as `{base64, name}` instead." },
+    { "execute": "doc.rename", "args": { "name": "Offline" }, "expect": [ { "path": "$.name", "eq": "Offline" } ] },
+    { "execute": "doc.export", "args": { "format": "svg" }, "expect": [ { "path": "$.mime", "eq": "image/svg+xml" } ] },
+    { "execute": "doc.export", "args": { "format": "json" }, "expect": [ { "path": "$.elements", "eq": 1 } ] },
+    { "assert": "doc.inspect", "expect": [ { "path": "$.name", "eq": "Offline" }, { "path": "$.elements", "eq": 1 } ] },
+    { "undo": 1, "expect": [ { "path": "$.undone", "eq": ["Rename document"], "note": "The refusals left no step; the rename is the last one." } ] }
+  ]
+}

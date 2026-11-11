@@ -19,7 +19,7 @@ use crate::query::{
 };
 
 /// Every field of `describe`, in the order of the catalog.
-pub const ALL_FIELDS: [Field; 13] = [
+pub const ALL_FIELDS: [Field; 14] = [
     Field::Id,
     Field::Kind,
     Field::Name,
@@ -33,6 +33,7 @@ pub const ALL_FIELDS: [Field; 13] = [
     Field::BoundText,
     Field::Locked,
     Field::Z,
+    Field::Points,
 ];
 
 /// Arrows bound to an element, and the elements on their other end. The element is an id or `@name`.
@@ -80,6 +81,20 @@ pub struct RefQuery {
 }
 
 impl RefQuery {
+    /// The fields that are set, in plain words: `kind: freehand, text: {contains: sale}`. For messages
+    /// that say what a filter asked for; fields that are not set are left out.
+    pub fn describe(&self) -> String {
+        let serde_json::Value::Object(fields) = serde_json::to_value(self).unwrap_or_default() else {
+            return String::new();
+        };
+        fields
+            .iter()
+            .filter(|(_, v)| !v.is_null())
+            .map(|(k, v)| format!("{k}: {}", describe_value(v)))
+            .collect::<Vec<_>>()
+            .join(", ")
+    }
+
     /// The strict query: every id and `@name` resolved to a live element.
     pub fn resolve<R: SceneRead>(&self, scene: &R) -> Result<Query, QueryError> {
         let one = |s: &String| resolve_ref(scene, s);
@@ -134,4 +149,20 @@ pub fn hit_members<R: SceneRead>(scene: &R, hit: &AtHit) -> Vec<ElementId> {
     v.dedup();
     sort_z(scene, &mut v);
     v
+}
+
+/// A JSON value as short plain text: strings bare, lists comma-separated, objects as `{key: value}`
+/// without their unset members.
+fn describe_value(v: &serde_json::Value) -> String {
+    use serde_json::Value;
+    match v {
+        Value::String(s) => s.clone(),
+        Value::Array(items) => items.iter().map(describe_value).collect::<Vec<_>>().join(", "),
+        Value::Object(m) => {
+            let inner: Vec<String> =
+                m.iter().filter(|(_, v)| !v.is_null()).map(|(k, v)| format!("{k}: {}", describe_value(v))).collect();
+            format!("{{{}}}", inner.join(", "))
+        }
+        other => other.to_string(),
+    }
 }

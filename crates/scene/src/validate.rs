@@ -51,7 +51,7 @@ pub enum ElementError {
         max: usize,
     },
     /// A line, arrow or stroke has too few points.
-    #[error("a {kind} needs at least {min} points, and has {have}")]
+    #[error("{} needs at least {min} points, and has {have}", crate::words::Article::new(.kind))]
     TooFewPoints {
         /// Kind name.
         kind: &'static str,
@@ -417,7 +417,7 @@ pub enum DocError {
     #[error("frame {0} does not exist")]
     FrameMissing(ElementId),
     /// `frame_id` names an element that is not a frame.
-    #[error("{id} is a {kind}, not a frame, so it cannot be a frame_id")]
+    #[error("{id} is {}, not a frame, so it cannot be a frame_id", crate::words::Article::new(.kind))]
     NotAFrame {
         /// The element named.
         id: ElementId,
@@ -434,7 +434,7 @@ pub enum DocError {
     #[error("the container {0} of this label does not exist")]
     ContainerMissing(ElementId),
     /// The container cannot hold a label.
-    #[error("{id} is a {kind}, which cannot hold a label")]
+    #[error("{id} is {}, which cannot hold a label", crate::words::Article::new(.kind))]
     NotAContainer {
         /// The element named.
         id: ElementId,
@@ -465,7 +465,8 @@ pub enum DocError {
     },
     /// A binding targets a kind arrows cannot attach to.
     #[error(
-        "the {end} binding targets {target}, a {kind}; arrows attach to rectangles, diamonds, ellipses, text, images and frames"
+        "the {end} binding targets {target}, {}; arrows attach to rectangles, diamonds, ellipses, text, images and frames",
+        crate::words::Article::new(.kind)
     )]
     BindingTargetNotBindable {
         /// `start` or `end`.

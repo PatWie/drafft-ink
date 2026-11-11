@@ -615,6 +615,8 @@ pub enum Field {
     Locked,
     /// The z-order key.
     Z,
+    /// The points of a line or arrow in world coordinates, `[[x, y], ...]`; `null` for other kinds.
+    Points,
 }
 
 /// The default fields of `element.query`.
@@ -661,6 +663,13 @@ fn describe_with<R: SceneRead>(r: &R, labels: &Labels, e: &Element, fields: &[Fi
             Field::BoundText => ("bound_text", json!(labels.by_container.get(&e.id))),
             Field::Locked => ("locked", json!(e.locked)),
             Field::Z => ("z", json!(e.index.as_str())),
+            Field::Points => (
+                "points",
+                json!(
+                    crate::linear::world_points(e)
+                        .map(|pts| { pts.iter().map(|p| [round2(p.x), round2(p.y)]).collect::<Vec<_>>() })
+                ),
+            ),
         };
         o.insert(key.to_string(), v);
     }

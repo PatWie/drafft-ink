@@ -3,12 +3,13 @@
   "steps": [
     { "harness": "load_generated", "args": { "count": 5 } },
     { "execute": "arrow.reroute", "args": { "ids": ["e4"] } },
-    { "harness": "scene_probe", "args": { "id": "e4" }, "save": { "x0": "$.element.points[0][0]", "y0": "$.element.points[0][1]" } },
+    { "assert": "element.query", "args": { "filter": { "ids": ["e4"] }, "fields": ["points"] }, "save": { "x0": "$.items[0].points[0][0]", "y0": "$.items[0].points[0][1]" } },
     { "execute": "element.delete", "args": { "ids": ["e0"] }, "expect": [ { "path": "$.deleted", "eq": ["e0"] } ] },
-    { "harness": "scene_probe", "args": { "id": "e4" }, "expect": [
-        { "path": "$.element.binding.start", "eq": null }, { "path": "$.element.binding.end.target", "eq": "e1" },
-        { "path": "$.element.points[0][0]", "near": "{{x0}}", "tol": 0.01 }, { "path": "$.element.points[0][1]", "near": "{{y0}}", "tol": 0.01 } ] },
+    { "assert": "element.query", "args": { "filter": { "ids": ["e4"] }, "fields": ["points", "bindings"] }, "expect": [
+        { "path": "$.items[0].bindings.start", "eq": null }, { "path": "$.items[0].bindings.end", "eq": "e1" },
+        { "path": "$.items[0].points[0][0]", "near": "{{x0}}", "tol": 0.01 }, { "path": "$.items[0].points[0][1]", "near": "{{y0}}", "tol": 0.01 } ] },
     { "undo": 1 },
-    { "harness": "scene_probe", "args": { "id": "e4" }, "expect": [ { "path": "$.element.binding.start.target", "eq": "e0" }, { "path": "$.total", "eq": 5 } ] }
+    { "assert": "element.query", "args": { "filter": { "ids": ["e4"] }, "fields": ["bindings"] }, "expect": [ { "path": "$.items[0].bindings.start", "eq": "e0" } ] },
+    { "assert": "doc.inspect", "expect": [ { "path": "$.elements", "eq": 5 } ] }
   ]
 }

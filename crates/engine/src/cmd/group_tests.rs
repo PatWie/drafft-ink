@@ -86,6 +86,24 @@ fn create_refusals_use_the_catalog_text_and_change_nothing() {
 }
 
 #[test]
+fn a_refused_create_does_not_use_up_a_group_id() {
+    // The first group of a session gets the same id whether or not earlier calls were refused.
+    let (mut clean, ids) = rects(3);
+    let expected = run(&mut clean, "group.create", ids_arg(&[&ids[0], &ids[1]]))["group"].clone();
+
+    let (mut s, ids) = rects(3);
+    lock(&mut s, &ids[2]);
+    let r = refuse(&mut s, "group.create", ids_arg(&[&ids[0]]));
+    assert_eq!(r.code, "too_few");
+    let r = refuse(&mut s, "group.create", ids_arg(&[&ids[0], &ids[2]]));
+    assert_eq!(r.code, "locked");
+    let r = refuse(&mut s, "group.create", json!({"ids": ["r0", "nope"]}));
+    assert_eq!(r.code, "not_found");
+    let got = run(&mut s, "group.create", ids_arg(&[&ids[0], &ids[1]]))["group"].clone();
+    assert_eq!(got, expected);
+}
+
+#[test]
 fn create_refuses_a_frame_and_its_own_children() {
     let (mut s, ids) = rects(2);
     let f = frame(&mut s, "f", -10.0, -10.0, 500.0, 100.0);

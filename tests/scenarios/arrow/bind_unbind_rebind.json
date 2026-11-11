@@ -3,20 +3,22 @@
   "steps": [
     { "note": "Generated scene: e0 rectangle, e1 ellipse, e2 diamond, e3 line, e4 arrow bound from e0 (start) to e1 (end).",
       "harness": "load_generated", "args": { "count": 5 } },
-    { "harness": "scene_probe", "args": { "id": "e4" }, "expect": [
-        { "path": "$.element.binding.start.target", "eq": "e0" }, { "path": "$.element.binding.end.target", "eq": "e1" }, { "path": "$.bound_arrows", "eq": 1 } ] },
+    { "assert": "element.query", "args": { "filter": { "ids": ["e4"] }, "fields": ["bindings"] }, "expect": [
+        { "path": "$.items[0].bindings.start", "eq": "e0" }, { "path": "$.items[0].bindings.end", "eq": "e1" } ] },
+    { "assert": "doc.inspect", "expect": [ { "path": "$.bound_arrows", "eq": 1 } ] },
 
     { "execute": "arrow.unbind", "args": { "arrow": "e4", "end": "both" }, "expect": [ { "path": "$.freed", "eq": ["start", "end"] } ] },
-    { "harness": "scene_probe", "args": { "id": "e4" }, "expect": [
-        { "path": "$.element.binding.start", "eq": null }, { "path": "$.element.binding.end", "eq": null }, { "path": "$.bound_arrows", "eq": 0 } ] },
+    { "assert": "element.query", "args": { "filter": { "ids": ["e4"] }, "fields": ["bindings"] }, "expect": [
+        { "path": "$.items[0].bindings.start", "eq": null }, { "path": "$.items[0].bindings.end", "eq": null } ] },
+    { "assert": "doc.inspect", "expect": [ { "path": "$.bound_arrows", "eq": 0 } ] },
     { "undo": 1 },
-    { "harness": "scene_probe", "args": { "id": "e4" }, "expect": [ { "path": "$.element.binding.start.target", "eq": "e0" } ], "note": "Undo puts the binding back." },
+    { "assert": "element.query", "args": { "filter": { "ids": ["e4"] }, "fields": ["bindings"] }, "expect": [ { "path": "$.items[0].bindings.start", "eq": "e0" } ], "note": "Undo puts the binding back." },
     { "redo": 1 },
 
     { "execute": "arrow.bind", "args": { "arrow": "e4", "end": "start", "target": "e2" }, "expect": [ { "path": "$.binding.target", "eq": "e2" } ] },
-    { "harness": "scene_probe", "args": { "id": "e4" }, "save": { "sx": "$.element.points[0][0]" }, "expect": [
-        { "path": "$.element.binding.start.target", "eq": "e2" }, { "path": "$.element.binding.end", "eq": null },
-        { "path": "$.element.points[0][0]", "gt": 250, "note": "The start moved to the diamond, which lies right of x=286." } ] },
+    { "assert": "element.query", "args": { "filter": { "ids": ["e4"] }, "fields": ["bindings", "points"] }, "save": { "sx": "$.items[0].points[0][0]" }, "expect": [
+        { "path": "$.items[0].bindings.start", "eq": "e2" }, { "path": "$.items[0].bindings.end", "eq": null },
+        { "path": "$.items[0].points[0][0]", "gt": 250, "note": "The start moved to the diamond, which lies right of x=286." } ] },
 
     { "execute": "arrow.bind", "args": { "arrow": "e4", "end": "end", "target": "e3" }, "refused": "not_bindable", "text": "Line elements cannot be arrow targets" },
     { "execute": "arrow.bind", "args": { "arrow": "e4", "end": "end", "target": "nope" }, "refused": "not_found", "text": "nope" },
@@ -24,7 +26,7 @@
     { "assert": "history.state", "expect": [ { "path": "$.undo_depth", "eq": 2 } ], "note": "Unbind and bind are two steps. The three refusals added none." },
 
     { "undo": 2 },
-    { "harness": "scene_probe", "args": { "id": "e4" }, "expect": [
-        { "path": "$.element.binding.start.target", "eq": "e0" }, { "path": "$.element.binding.end.target", "eq": "e1" } ] }
+    { "assert": "element.query", "args": { "filter": { "ids": ["e4"] }, "fields": ["bindings"] }, "expect": [
+        { "path": "$.items[0].bindings.start", "eq": "e0" }, { "path": "$.items[0].bindings.end", "eq": "e1" } ] }
   ]
 }
