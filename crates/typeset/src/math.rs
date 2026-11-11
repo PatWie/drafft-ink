@@ -18,6 +18,7 @@ use rex::font::common::GlyphId;
 use rex::layout::engine::LayoutBuilder;
 use rex::parser::error::ParseError;
 use rex::render::{Backend, Cursor, FontBackend, GraphicsBackend, RGBA, Renderer};
+use ttf_parser::gsub::{SingleSubstitution, SubstitutionSubtable};
 
 use crate::fonts;
 use crate::outline::ColouredPath;
@@ -273,6 +274,11 @@ impl MathEngine {
                 });
             }
         }
+        for (form, base) in script_forms(font.font()) {
+            if let Some(&c) = glyph_to_char.get(&base) {
+                glyph_to_char.insert(form, c);
+            }
+        }
         let data = |bytes: &'static [u8]| peniko::FontData::new(peniko::Blob::new(Arc::new(bytes)), 0);
         Ok(Self { font, text_face, glyph_to_char, math_data: data(math_font), text_data: data(fonts::GELPEN_REGULAR) })
     }
@@ -340,6 +346,48 @@ impl MathEngine {
     pub fn text_face(&self) -> Option<&ttf_parser::Face<'static>> {
         self.text_face.as_ref()
     }
+}
+
+/// The base glyph behind each script-size form (the `ssty` feature) of the math font: `(form, base)`.
+///
+/// ReX draws the glyphs of a superscript or subscript with these forms (`two.ssty`, and a second, smaller one
+/// for scripts of scripts). Some forms are also the glyph of a compatibility character (`two.ssty` is U+00B2),
+/// others have no code point at all. Either way [`Recorder::symbol`] must find the character of the *base* glyph
+/// to draw the script in the text font like the rest of the formula.
+fn script_forms(face: &ttf_parser::Face<'_>) -> Vec<(u16, u16)> {
+    let Some(gsub) = face.tables().gsub else { return Vec::new() };
+    let tag = ttf_parser::Tag::from_bytes(b"ssty");
+    let subtables = gsub
+        .features
+        .into_iter()
+        .filter(|feature| feature.tag == tag)
+        .flat_map(|feature| feature.lookup_indices)
+        .filter_map(|index| gsub.lookups.get(index))
+        .flat_map(|lookup| lookup.subtables.into_iter::<SubstitutionSubtable>());
+    let mut forms = Vec::new();
+    for subtable in subtables {
+        let bases = (0..face.number_of_glyphs()).map(ttf_parser::GlyphId);
+        match subtable {
+            SubstitutionSubtable::Single(SingleSubstitution::Format1 { coverage, delta }) => {
+                forms.extend(
+                    bases
+                        .filter(|&base| coverage.contains(base))
+                        .map(|base| (base.0.wrapping_add_signed(delta), base.0)),
+                );
+            }
+            SubstitutionSubtable::Single(SingleSubstitution::Format2 { coverage, substitutes }) => {
+                forms.extend(bases.filter_map(|base| Some((substitutes.get(coverage.get(base)?)?.0, base.0))));
+            }
+            SubstitutionSubtable::Alternate(alt) => {
+                for base in bases {
+                    let set = alt.coverage.get(base).and_then(|index| alt.alternate_sets.get(index));
+                    forms.extend(set.into_iter().flat_map(|set| set.alternates).map(|form| (form.0, base.0)));
+                }
+            }
+            _ => {}
+        }
+    }
+    forms
 }
 
 /// Map the Unicode math alphanumerics (italic, bold, sans, monospace) to plain ASCII so the text

@@ -257,3 +257,89 @@ fn inline_formulas_are_laid_out_again_when_the_math_font_arrives() {
     let after = ts.text(&spec);
     assert!(after.formula_errors.is_empty() && after.formulas.len() == 1, "{:?}", after.formula_errors);
 }
+
+/// The glyphs of `latex`, base first. Every glyph here is drawn with the text font.
+fn glyphs_of(ts: &mut Typesetter, latex: &str) -> Vec<MathGlyph> {
+    ok(ts, latex).glyphs.clone()
+}
+
+#[test]
+fn superscript_is_smaller_and_raised() {
+    let mut ts = Typesetter::new();
+    for latex in ["x^2", "x^{2}"] {
+        let g = glyphs_of(&mut ts, latex);
+        let [base, script] = g.as_slice() else { panic!("{latex}: {g:?}") };
+        assert_eq!(
+            (base.font, script.font),
+            (MathFontSlot::Text, MathFontSlot::Text),
+            "{latex}: same font as the base"
+        );
+        assert!(script.size < 0.8 * base.size, "{latex}: {} vs {}", script.size, base.size);
+        assert!(script.y < base.y - 5.0, "{latex}: script baseline {} must be above {}", script.y, base.y);
+        assert!(script.x > base.x, "{latex}: the script follows the base");
+    }
+}
+
+#[test]
+fn superscript_ink_is_shorter_than_the_same_digit_at_base_size() {
+    // The ink of the "2" in x^2 runs from the top of the formula down to the script baseline. It must be
+    // clearly shorter than the ink of a "2" at base size.
+    let mut ts = Typesetter::new();
+    let digit = ink_bbox(&ok(&mut ts, "2").outline(Rgba8::BLACK)).expect("ink").height();
+    let m = ok(&mut ts, "x^2");
+    let top = ink_bbox(&m.outline(Rgba8::BLACK)).expect("ink").y0;
+    let script = m.glyphs.get(1).expect("script glyph");
+    assert!(script.y - top < 0.8 * digit, "script ink {} vs base digit {digit}", script.y - top);
+}
+
+#[test]
+fn subscript_is_smaller_and_lowered() {
+    let mut ts = Typesetter::new();
+    let g = glyphs_of(&mut ts, "x_1");
+    let [base, script] = g.as_slice() else { panic!("{g:?}") };
+    assert_eq!(script.font, MathFontSlot::Text);
+    assert!(script.size < 0.8 * base.size, "{} vs {}", script.size, base.size);
+    assert!(script.y > base.y + 5.0, "script baseline {} must be below {}", script.y, base.y);
+    assert!(ok(&mut ts, "x_1").depth < -5.0, "the box reaches below the baseline");
+}
+
+#[test]
+fn superscript_and_subscript_together_sit_on_both_sides_of_the_base() {
+    let mut ts = Typesetter::new();
+    let g = glyphs_of(&mut ts, "x^2_1");
+    let [base, up, down] = g.as_slice() else { panic!("{g:?}") };
+    assert!(up.y < base.y && down.y > base.y);
+    assert!(up.size < base.size && down.size < base.size);
+}
+
+#[test]
+fn a_script_of_a_script_is_smaller_still() {
+    let mut ts = Typesetter::new();
+    let g = glyphs_of(&mut ts, "x^{y^2}");
+    let [base, outer, inner] = g.as_slice() else { panic!("{g:?}") };
+    assert!(outer.size < base.size && inner.size < outer.size, "{} {} {}", base.size, outer.size, inner.size);
+    assert!(inner.y < outer.y, "the inner script is raised above the outer one");
+    assert_eq!(inner.font, MathFontSlot::Text);
+}
+
+#[test]
+fn script_glyphs_beyond_the_text_font_keep_the_math_font_at_script_size() {
+    // GelPen has no \pi: it comes from STIX Two Math, still at script size and raised.
+    let mut ts = Typesetter::new();
+    let g = glyphs_of(&mut ts, "e^{i\\pi}");
+    let [base, i, pi] = g.as_slice() else { panic!("{g:?}") };
+    assert_eq!((i.font, pi.font), (MathFontSlot::Text, MathFontSlot::Math));
+    assert!(i.size < 0.8 * base.size && pi.size < base.size);
+    assert!(i.y < base.y && pi.y < base.y);
+}
+
+#[test]
+fn scripts_without_the_text_font_fallback_stay_in_the_math_font() {
+    let mut ts = Typesetter::new();
+    let mut spec = MathSpec::new("x^2");
+    spec.text_font_fallback = false;
+    let m = ts.math(&spec).expect("layout");
+    assert!(m.glyphs.iter().all(|g| g.font == MathFontSlot::Math));
+    let [base, script] = m.glyphs.as_slice() else { panic!("{:?}", m.glyphs) };
+    assert!(script.size < base.size && script.y < base.y);
+}
