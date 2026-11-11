@@ -62,6 +62,7 @@ web-sys = { workspace = true, features = [
 
 [dev-dependencies]
 drafftink-engine = { path = "../engine", features = ["schemas"] }
+drafftink-io = { path = "../io" }
 drafftink-testkit = { path = "../testkit" }
 # tests/fences reads the source of this crate and of drafftink-ui.
 syn = { version = "2", features = ["full", "visit"] }

@@ -18,6 +18,7 @@ mod app;
 mod clip;
 mod clock;
 mod config;
+mod drop;
 mod editor;
 mod input;
 mod offscreen;

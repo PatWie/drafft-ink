@@ -1383,6 +1383,7 @@ dependencies = [
  "drafftink-engine",
  "drafftink-geom",
  "drafftink-gpu",
+ "drafftink-io",
  "drafftink-profile",
  "drafftink-render",
  "drafftink-scene",
