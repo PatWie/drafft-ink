@@ -613,7 +613,7 @@ impl<S: SceneStore> Canvas<S> {
     #[allow(clippy::too_many_arguments)]
     fn fire(&mut self, kind: EventKind, target: &Target, at: Pos, meta: &Meta, ds: Vec2, dw: Vec2, cancelled: bool) {
         let (kind, element, handle) = match target {
-            Target::Element { id, .. } => (kind, Some(id.clone()), None),
+            Target::Element { id, .. } | Target::LinkIcon { id } => (kind, Some(id.clone()), None),
             Target::Handle(h) => {
                 let k = match kind {
                     EventKind::DragStart => EventKind::TransformStart,
@@ -623,7 +623,6 @@ impl<S: SceneStore> Canvas<S> {
                 };
                 (k, None, Some(h.clone()))
             }
-            Target::LinkIcon { id } => (kind, Some(id.clone()), None),
             Target::Empty | Target::None => (kind, None, None),
         };
         if !self.dispatcher.wants(kind) {
@@ -636,6 +635,7 @@ impl<S: SceneStore> Canvas<S> {
         ev.pointer = meta.kind;
         ev.button = meta.button;
         ev.handle = handle;
+        ev.link_icon = matches!(target, Target::LinkIcon { .. });
         ev.cancelled = cancelled;
         self.dispatcher.dispatch(&self.store, &mut ev);
     }

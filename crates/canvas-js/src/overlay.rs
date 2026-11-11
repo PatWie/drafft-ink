@@ -1,12 +1,16 @@
 //! From the canvas crate's description of the overlay to the render crate's overlay pass.
 //!
-//! The canvas decides what to show (selection, transformer, hover, marquee, highlights, remote cursors); the render
+//! The canvas decides what to show (selection, transformer, hover, marquee, highlights, link icons, and the remote
+//! cursors, selections and trails); the render
 //! crate decides how it looks. The render crate sits below the canvas and cannot name its `Overlay`, so this glue
 //! is the one place that knows both (`docs/canvas-api.md`, "Overlay").
 
 use drafftink_canvas::{Handle, Overlay, SelectionFrame};
 use drafftink_geom::select::HandleSet;
-use drafftink_render::{BindingHighlight, PointHandle, PointKind, RemoteCursor, SelectionBox};
+use drafftink_render::{
+    BindingHighlight, LaserTrail, LinkMark, PointHandle, PointKind, RemoteCursor, RemoteSelection, SelectionBox,
+    TrailPoint,
+};
 
 use crate::dto::primitive_path;
 
@@ -72,6 +76,24 @@ pub(crate) fn to_render(overlay: &Overlay) -> drafftink_render::Overlay {
         .iter()
         .map(|c| BindingHighlight { outline: primitive_path(&c.shape), at: None })
         .collect();
-    out.cursors = overlay.remote_cursors.iter().map(|c| RemoteCursor { at: c.pos, color: c.color.into() }).collect();
+    out.cursors = overlay
+        .remote_cursors
+        .iter()
+        .map(|c| RemoteCursor { at: c.pos, color: c.color.into(), name: c.name.clone() })
+        .collect();
+    out.remote_selections = overlay
+        .remote_selections
+        .iter()
+        .map(|s| RemoteSelection { color: s.color.into(), boxes: s.boxes.clone() })
+        .collect();
+    out.trails = overlay
+        .remote_trails
+        .iter()
+        .map(|t| LaserTrail {
+            color: t.color.into(),
+            points: t.points.iter().map(|p| TrailPoint { at: p.pos, age_ms: p.age_ms }).collect(),
+        })
+        .collect();
+    out.link_icons = overlay.link_icons.iter().map(|i| LinkMark { rect: i.rect, to_element: i.to_element }).collect();
     out
 }

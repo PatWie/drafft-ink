@@ -12,6 +12,7 @@
 //! |---|---|
 //! | [`core`] | [`Core`]: canvas, store, typesetter, listeners, camera, queries |
 //! | `ops` | the write operations and their batches |
+//! | `image`, `remote` | adding a picture from bytes; collaborators (pointer, selection, trail) |
 //! | `interact` | select, drag, transform and rubber band from the canvas crate's intents |
 //! | `frame`, `overlay` | the CPU half of a frame: the store and the overlay as a Vello scene |
 //! | `export`, `load` | JSON, SVG and PNG out; the formats that come in |
@@ -29,12 +30,14 @@ mod error;
 mod export;
 mod fonts;
 mod frame;
+mod image;
 mod interact;
 mod json;
 mod load;
 mod ops;
 mod options;
 mod overlay;
+mod remote;
 mod target;
 #[cfg(target_arch = "wasm32")]
 mod web;
@@ -44,5 +47,7 @@ pub use core::Core;
 pub use dto::{CameraDto, EventDto, HitDto, OverlayDto, event_name, parse_event_kind};
 pub use error::ApiError;
 pub use export::{PngOptions, PngPlan, SvgExport, SvgLook};
+pub use image::ImageSpec;
 pub use options::{GridKind, GridOptions, InteractionOptions, MarqueeOption, StageOptions, ThemeOption};
+pub use remote::{RemoteUserSpec, TrailSpec};
 pub use target::Renderer;

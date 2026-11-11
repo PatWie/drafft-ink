@@ -149,6 +149,8 @@ pub struct ElementEvent {
     pub button: Button,
     /// The handle, for transform events.
     pub handle: Option<Handle>,
+    /// The pointer was on the link icon of `target`, not on the element itself.
+    pub link_icon: bool,
     /// A drag end that was aborted.
     pub cancelled: bool,
     stopped: bool,
@@ -168,6 +170,7 @@ impl ElementEvent {
             pointer: PointerKind::Mouse,
             button: Button::Primary,
             handle: None,
+            link_icon: false,
             cancelled: false,
             stopped: false,
         }
