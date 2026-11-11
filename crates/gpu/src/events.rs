@@ -29,6 +29,15 @@ pub enum PointerPhase {
     Leave,
 }
 
+impl PointerPhase {
+    /// Whether the web shell reads the browser's coalesced points for this phase (`getCoalescedEvents`: a JS
+    /// call and an array of event objects per sample). Only a move with contact draws from them (a pen stroke);
+    /// a hover never uses them, and a mouse hovers 125 times a second.
+    pub fn reads_coalesced(self) -> bool {
+        self == Self::Move
+    }
+}
+
 /// One position of a pointer with its pressure.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct PointerPoint {
@@ -215,6 +224,15 @@ mod tests {
         assert_eq!(Repaint::Idle.min(a), a);
         assert_eq!(a.min(Repaint::Now(RedrawReason::Command)), Repaint::Now(RedrawReason::Command));
         assert_eq!(Repaint::Idle.min(Repaint::Idle), Repaint::Idle);
+    }
+
+    #[test]
+    fn only_a_move_with_contact_reads_coalesced_points() {
+        use PointerPhase::{Cancel, Down, Hover, Leave, Move, Up};
+        assert!(Move.reads_coalesced());
+        for phase in [Hover, Down, Up, Cancel, Leave] {
+            assert!(!phase.reads_coalesced(), "{phase:?}");
+        }
     }
 
     #[test]
