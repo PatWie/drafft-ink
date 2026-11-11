@@ -5639,6 +5639,11 @@ export namespace StyleGet {
     /** True when at least one target supports the property. */
     applicable: boolean;
     /**
+     * Why the property cannot be set now: the text `style.set` refuses with for this property alone. Only when
+     * the targets are elements and none of them supports it. A control greys itself with this text.
+     */
+    reason?: string | null;
+    /**
      * The common value, or the word `"mixed"` when the supporting targets differ. Absent when not applicable. A
      * removed fill is `null`.
      */
