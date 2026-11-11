@@ -123,6 +123,5 @@ Test files: `interact/interaction_tests.rs` (hover, pan, zoom, context menu, scr
 
 ## 6. Open points and deviations
 
-* **Elbow preview.** The preview of an elbow arrow while drawing is the straight segment between its ends; the route appears when the element exists.
 * **Binding candidate cost.** `edit::binding::find_hovered` scans all elements per pointer move while an arrow end is placed. It should use the spatial index for large documents.
 * **Index sync** compares `version` and transform per element when the store revision moved (an O(n) scan, outside gestures). A change feed from the store would remove the scan.
