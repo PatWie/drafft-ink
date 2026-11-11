@@ -483,7 +483,7 @@ fn stats(ctx: &Context, cx: &mut Cx<'_>, st: &UiState) {
     let pal = cx.pal;
     let rows = stats_rows(cx.model);
     let screen = ctx.content_rect();
-    let lift = lift_to(screen, st.chrome.above_bottom_bar(screen), GAP);
+    let lift = lift_to(screen, st.chrome.above_bottom_left(screen), GAP);
     Area::new(Id::unique("stats_panel")).anchor(Align2::LEFT_BOTTOM, vec2(MARGIN, -lift)).order(Order::Middle).show(
         ctx,
         |ui| {

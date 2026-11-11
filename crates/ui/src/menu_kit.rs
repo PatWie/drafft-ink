@@ -16,13 +16,13 @@
 //! the keymap sees the key).
 
 use egui::{
-    Align2, Area, Context, FontId, Id, Key, Order, Painter, Pos2, Rect, Response, Role, Sense, Stroke, Ui, UiBuilder,
-    Vec2, WidgetInfo, pos2, vec2,
+    Align2, Area, Context, Id, Key, Order, Painter, Pos2, Rect, Response, Role, Sense, Stroke, Ui, UiBuilder, Vec2,
+    WidgetInfo, pos2, vec2,
 };
 
 use crate::action::{HostRequest, UiAction, Verb};
 use crate::icons::{self, Icon};
-use crate::theme::{self, MARGIN, Palette};
+use crate::theme::{self, MARGIN, Palette, TextSize, space};
 use crate::widgets::{Ctl, Cx, panel_frame};
 
 /// Width of the rows of every menu, inside the frame.
@@ -33,11 +33,11 @@ const CLOSE_DELAY_S: f64 = 0.25;
 /// What the frame of a menu adds around its rows: the inner margin (10 and 8) and the border.
 const FRAME_PAD: Vec2 = vec2(11.0, 9.0);
 /// Distance of a row's content from the left and right edge of the row.
-pub(crate) const ROW_PAD: f32 = 8.0;
+pub(crate) const ROW_PAD: f32 = space::LG;
 /// Side of the icon slot.
 const ICON_SLOT: f32 = 16.0;
 /// Space between the icon slot and the label.
-const ICON_GAP: f32 = 8.0;
+const ICON_GAP: f32 = space::LG;
 /// How far a flyout reaches over the frame of its parent, so the pointer never crosses a gap.
 const FLYOUT_OVERLAP: f32 = 3.0;
 /// The least distance of a flyout from the window edge.
@@ -45,7 +45,7 @@ const SCREEN_GAP: f32 = MARGIN;
 /// Height of a section heading.
 const HEADING_HEIGHT: f32 = 20.0;
 /// Space above a heading that is not the first.
-const HEADING_GAP: f32 = 6.0;
+const HEADING_GAP: f32 = space::MD;
 /// Height of a separator, which is a hairline with room around it.
 const SEPARATOR_HEIGHT: f32 = 9.0;
 
@@ -156,7 +156,7 @@ fn paint_face(p: &Painter, rect: Rect, pal: &Palette, face: &Face<'_>, hot: bool
         right -= 14.0;
     }
     if let Some(key) = face.shortcut {
-        let galley = p.layout_no_wrap(key.to_owned(), FontId::proportional(11.0), dim);
+        let galley = p.layout_no_wrap(key.to_owned(), TextSize::Caption.font(), dim);
         let at = pos2(right - galley.size().x, rect.center().y - galley.size().y / 2.0);
         right = at.x - ICON_GAP;
         p.galley(at, galley, dim);
@@ -169,7 +169,7 @@ fn paint_face(p: &Painter, rect: Rect, pal: &Palette, face: &Face<'_>, hot: bool
         pos2(left, rect.center().y),
         Align2::LEFT_CENTER,
         face.label,
-        FontId::proportional(13.0),
+        TextSize::Body.font(),
         ink,
     );
 }
@@ -352,7 +352,7 @@ impl<'u, 'c, 'a> Menu<'u, 'c, 'a> {
                 pos2(rect.left() + ROW_PAD + 2.0, rect.bottom() - HEADING_HEIGHT / 2.0),
                 Align2::LEFT_CENTER,
                 text,
-                theme::hand(13.0),
+                TextSize::Body.hand(),
                 pal.muted,
             );
         } else if self.pending_separator {

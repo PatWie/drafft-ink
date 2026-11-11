@@ -17,7 +17,7 @@ use drafftink_engine::testing::{add_rect, select};
 use drafftink_engine::{Origin, Session};
 use drafftink_scene::SceneRead;
 use drafftink_ui::thumbs::{PER_FRAME, Thumb, ThumbImage, ThumbSize};
-use drafftink_ui::{Call, FrameInput, HostRequest, UiShell, Verb};
+use drafftink_ui::{Call, FrameInput, HostRequest, Toast, UiShell, Verb};
 use egui::{Event, Modifiers, PointerButton, Pos2};
 use egui_kittest::Harness;
 use egui_kittest::kittest::Queryable;
@@ -268,8 +268,9 @@ fn an_empty_library_says_how_to_fill_it() {
 
 // ---- the place of the drawer ----
 
-fn drawer_rect(ctx: &egui::Context) -> egui::Rect {
-    ctx.memory(|m| m.area_rect(egui::Id::unique("library_panel"))).expect("the drawer is on screen")
+/// The rectangle the drawer recorded in `ChromeRects` this frame.
+fn drawer_rect(h: &H) -> egui::Rect {
+    h.state().state.chrome.library.expect("the drawer is on screen")
 }
 
 fn at(size: egui::Vec2, f: Fixture) -> H {
@@ -278,7 +279,7 @@ fn at(size: egui::Vec2, f: Fixture) -> H {
 
 /// The control with this label inside the drawer (the toolbar has a button with the label of the Close button).
 fn in_drawer(h: &H, label: &str) -> egui::Rect {
-    let drawer = drawer_rect(&h.ctx);
+    let drawer = drawer_rect(h);
     let found: Vec<egui::Rect> =
         h.get_all_by_label(label).map(|n| n.rect()).filter(|r| drawer.contains_rect(*r)).collect();
     assert_eq!(found.len(), 1, "{label} in the drawer: {found:?}");
@@ -300,7 +301,9 @@ fn bar_heights(h: &H) -> [(f32, f32); 2] {
 fn the_drawer_opens_at_the_bottom_with_a_quarter_of_the_window_height() {
     let mut h = at(egui::vec2(1280.0, 800.0), with_item());
     h.run();
-    let drawer = drawer_rect(&h.ctx);
+    let drawer = drawer_rect(&h);
+    let drawn = h.ctx.memory(|m| m.area_rect(egui::Id::unique("library_panel"))).expect("the area is on screen");
+    assert_eq!(drawer, drawn, "the rectangle it records is the one it drew");
     assert!((drawer.height() - 200.0).abs() <= 1.0, "a quarter of 800 points: {drawer:?}");
     assert!(drawer.width() > 900.0 && drawer.left() >= 12.0 && drawer.right() <= 1280.0 - 12.0, "{drawer:?}");
     assert!(drawer.top() > 400.0, "in the lower half: {drawer:?}");
@@ -316,7 +319,7 @@ fn the_drawer_opens_at_the_bottom_with_a_quarter_of_the_window_height() {
 fn the_drawer_leaves_the_tool_column_and_the_properties_panel_free() {
     let mut h = at(egui::vec2(1280.0, 800.0), with_item());
     h.run();
-    let drawer = drawer_rect(&h.ctx);
+    let drawer = drawer_rect(&h);
     // The toolbar's own button for the library is its lowest control; it stays where it was and works.
     let toggles: Vec<egui::Rect> = h
         .get_all_by_label("Show or hide the library")
@@ -338,13 +341,44 @@ fn the_drawer_does_not_overlap_the_bottom_bar_or_the_tabs() {
     for size in [egui::vec2(1280.0, 800.0), egui::vec2(1280.0, 500.0), egui::vec2(390.0, 800.0)] {
         let mut h = at(size, with_item());
         h.run();
-        let drawer = drawer_rect(&h.ctx);
+        let drawer = drawer_rect(&h);
         for bar in bars(&h) {
             assert!(drawer.bottom() <= bar.top(), "{size:?}: the drawer {drawer:?} reaches into the bar at {bar:?}");
+        }
+        let chrome = h.state().state.chrome;
+        for (name, rect) in [("bottom bar", chrome.bottom_bar), ("tab bar", chrome.tabs)] {
+            let rect = rect.unwrap_or_else(|| panic!("{name} recorded"));
+            assert!(drawer.bottom() <= rect.top(), "{size:?}: the drawer {drawer:?} reaches into the {name} {rect:?}");
         }
         let screen = egui::Rect::from_min_size(Pos2::ZERO, size);
         assert!(screen.contains_rect(drawer), "{size:?}: {drawer:?}");
     }
+}
+
+#[test]
+fn the_drawer_leaves_the_recorded_side_panels_free_and_the_chrome_above_it_clears_it() {
+    let mut f = with_item();
+    f.state.stats_open = true;
+    f.state.push_toast(Toast {
+        text: "Nothing to undo.".to_owned(),
+        code: "nothing_to_do".to_owned(),
+        born: 0.0,
+        suggestion: None,
+    });
+    let h = at(egui::vec2(1280.0, 800.0), f);
+    let chrome = h.state().state.chrome;
+    let drawer = drawer_rect(&h);
+    for (name, panel) in [("tool column", chrome.tools), ("properties panel", chrome.props)] {
+        if let Some(panel) = panel {
+            assert!(!drawer.intersects(panel), "the drawer {drawer:?} covers the {name} {panel:?}");
+        }
+    }
+    let toast = h.get_all_by_label("Nothing to undo.").next().expect("the toast").rect();
+    assert!(toast.max.y <= drawer.top(), "the toast {toast:?} sits above the drawer {drawer:?}");
+    let stats = h.get_all_by_label("Stats").next().expect("the stats panel").rect();
+    assert!(stats.max.y <= drawer.top(), "the stats {stats:?} sit above the drawer {drawer:?}");
+    let closed = at(egui::vec2(1280.0, 800.0), dialog::fixture());
+    assert!(closed.state().state.chrome.library.is_none(), "a closed drawer records nothing");
 }
 
 #[test]
@@ -393,22 +427,22 @@ fn grip(h: &H) -> Pos2 {
 fn dragging_the_top_edge_sets_the_height_within_the_limits() {
     let mut h = at(egui::vec2(1280.0, 800.0), with_item());
     h.run();
-    let bottom = drawer_rect(&h.ctx).bottom();
+    let bottom = drawer_rect(&h).bottom();
     // Up by 100 points: 100 taller.
     let from = grip(&h);
     drag(&mut h, from, from - egui::vec2(0.0, 100.0));
-    let drawer = drawer_rect(&h.ctx);
+    let drawer = drawer_rect(&h);
     assert!((drawer.height() - 300.0).abs() <= 1.0, "{drawer:?}");
     assert_eq!(drawer.bottom(), bottom, "the bottom edge stays above the bars");
     assert_eq!(h.state().state.library_height.map(f32::round), Some(drawer.height().round()), "the height is kept");
     // Far past the top of the window: seventy percent of it at most.
     let from = grip(&h);
     drag(&mut h, from, Pos2::new(from.x, 0.0));
-    assert_eq!(drawer_rect(&h.ctx).height(), 560.0);
+    assert_eq!(drawer_rect(&h).height(), 560.0);
     // Down to the bottom of the window: the least height, which still shows the header and a row of tiles.
     let from = grip(&h);
     drag(&mut h, from, Pos2::new(from.x, 799.0));
-    let drawer = drawer_rect(&h.ctx);
+    let drawer = drawer_rect(&h);
     assert_eq!(drawer.height(), 170.0);
     h.get_by_label("Insert Box");
 }
@@ -419,13 +453,13 @@ fn the_height_the_person_chose_comes_back_when_the_drawer_is_opened_again() {
     h.run();
     let from = grip(&h);
     drag(&mut h, from, from - egui::vec2(0.0, 60.0));
-    let chosen = drawer_rect(&h.ctx).height();
+    let chosen = drawer_rect(&h).height();
     assert!((chosen - 260.0).abs() <= 1.0, "{chosen}");
     for _ in 0..2 {
         h.state_mut().state.apply_verb(Verb::ToggleLibrary, &mut Vec::new());
         h.run();
     }
-    assert_eq!(drawer_rect(&h.ctx).height(), chosen);
+    assert_eq!(drawer_rect(&h).height(), chosen);
 }
 
 #[test]
@@ -434,12 +468,12 @@ fn a_height_kept_from_a_taller_window_is_brought_inside_the_limits() {
     f.state.library_height = Some(5000.0);
     let mut h = at(egui::vec2(1280.0, 500.0), f);
     h.run();
-    assert_eq!(drawer_rect(&h.ctx).height(), 350.0, "seventy percent of 500");
+    assert_eq!(drawer_rect(&h).height(), 350.0, "seventy percent of 500");
     let mut f = with_item();
     f.state.library_height = Some(1.0);
     let mut h = at(egui::vec2(1280.0, 800.0), f);
     h.run();
-    assert_eq!(drawer_rect(&h.ctx).height(), 170.0);
+    assert_eq!(drawer_rect(&h).height(), 170.0);
 }
 
 #[test]
@@ -447,7 +481,7 @@ fn the_drawer_works_at_400_points_wide_with_larger_targets() {
     let mut h = at(egui::vec2(400.0, 800.0), with_item());
     h.run();
     let screen = egui::Rect::from_min_size(Pos2::ZERO, egui::vec2(400.0, 800.0));
-    let drawer = drawer_rect(&h.ctx);
+    let drawer = drawer_rect(&h);
     assert!(drawer.height() >= 320.0, "room for two rows of header and a row of tiles: {drawer:?}");
     for label in ["Add selection to library", "Export library", "Show or hide the library", "Import…", "Insert Box"] {
         let r = in_drawer(&h, label);

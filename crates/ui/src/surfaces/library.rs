@@ -1,10 +1,13 @@
 //! The library drawer (`ui.toggle_library`): the shapes the user keeps, in a panel that opens from the bottom of
 //! the window.
 //!
-//! * **Place.** It is as wide as the window less the margins and sits above the bottom bar and the tab bar (their
-//!   rectangles come from egui's memory of the frame before), so nothing overlaps. Where the tool column or the
-//!   properties panel reach down to its height, it is narrower by their width, so that their buttons stay free. Its height is a quarter of the
-//!   window until the person drags the top edge; the height they chose is kept in [`UiState::library_height`].
+//! * **Place.** It is as wide as the window less the margins and sits above the bottom bar and the tab bar, so
+//!   nothing overlaps. It reads their rectangles, and those of the tool column and the properties panel, from
+//!   [`ChromeRects`](crate::chrome::ChromeRects) (they are drawn before it) and records its own there. Where the
+//!   tool column or the properties panel reach down to its height, it is narrower by their width, so that their
+//!   buttons stay free; the toasts, the convert popup and the stats panel sit above it. Its height is a quarter of
+//!   the window until the person drags the top edge; the height they chose is kept in
+//!   [`UiState::library_height`].
 //! * **Tiles.** One tile per item: its picture, its name under it. The picture is the answer of
 //!   `library.thumbnail` (see [`crate::thumbs`]); until it arrives the tile shows an outline with the item's
 //!   proportions. A click inserts the item in the middle of the view (`library.insert`); a drag onto the canvas
@@ -23,10 +26,11 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use crate::action::{HostRequest, UiAction};
+use crate::chrome::{ChromeRects, GAP};
 use crate::icons::Icon;
 use crate::model::{LibraryItem, Model, ViewView};
 use crate::state::{RenameTarget, UiState};
-use crate::theme::{self, MARGIN, Palette};
+use crate::theme::{self, MARGIN, Palette, TextSize, space};
 use crate::thumbs::{Thumb, ThumbImage, ThumbSize};
 use crate::widgets::{Ctl, Cx, Layout, Look, paint_button_bg, panel_frame};
 
@@ -43,8 +47,6 @@ const MIN_HEIGHT: f32 = 170.0;
 const MIN_HEIGHT_COMPACT: f32 = 320.0;
 /// Room left above the drawer for the top bars.
 const TOP_ROOM: f32 = 72.0;
-/// Space between the drawer and the bars below it.
-const GAP: f32 = 8.0;
 /// Height of the strip on the top edge that resizes the drawer.
 const GRIP: f32 = 10.0;
 /// Width of the Add button, which the fields of the touch layout leave room for.
@@ -55,12 +57,6 @@ const LABEL_HEIGHT: f32 = 20.0;
 const PICTURE_PADDING: f32 = 6.0;
 /// The bounds of the largest picture of the tooltip, in points.
 const TOOLTIP_BOX: egui::Vec2 = vec2(240.0, 200.0);
-
-/// The areas the drawer sits above: the ids that `bottom.rs` and `tabs.rs` give their areas.
-const BARS_BELOW: [&str; 2] = ["bottom_bar", "tab_bar"];
-/// The tool column and the properties panel (`toolbar.rs`, `props.rs`). Both reach down the sides of the window,
-/// so a full-width drawer would cover their lowest buttons; it leaves them free instead.
-const SIDE_PANELS: [(&str, Side); 2] = [("toolbar", Side::Left), ("right_panel", Side::Right)];
 
 #[derive(Clone, Copy)]
 enum Side {
@@ -116,26 +112,16 @@ pub(crate) fn drawer_height(screen: egui::Rect, bottom: f32, compact: bool, chos
     chosen.unwrap_or(screen.height() * DEFAULT_SHARE).clamp(least, most)
 }
 
-/// Where the bars below start: the top of the higher one, as the frame before drew them. Before they have been
-/// drawn, a guess at their height.
-fn bars_top(ctx: &Context, layout: &Layout) -> f32 {
-    let screen = ctx.content_rect();
-    let drawn = BARS_BELOW
-        .iter()
-        .filter_map(|name| ctx.memory(|m| m.area_rect(Id::unique(*name))))
-        .map(|r| r.top())
-        .reduce(f32::min);
-    drawn.unwrap_or_else(|| screen.bottom() - MARGIN - layout.small_side() - 16.0)
-}
-
-/// `rect` narrowed so that it does not cover the side panels that stand in its way. On a narrow window the panels
-/// are collapsed to a button each and the drawer would be left with no width, so it covers them.
-fn clear_of_side_panels(ctx: &Context, layout: &Layout, mut rect: Rect) -> Rect {
+/// `rect` narrowed so that it does not cover the side panels that stand in its way (the tool column and the
+/// properties panel both reach down the sides of the window, so a full-width drawer would cover their lowest
+/// buttons). On a narrow window the panels are collapsed to a button each and the drawer would be left with no
+/// width, so it covers them.
+fn clear_of_side_panels(chrome: &ChromeRects, layout: &Layout, mut rect: Rect) -> Rect {
     if layout.narrow {
         return rect;
     }
-    for (name, side) in SIDE_PANELS {
-        let Some(panel) = ctx.memory(|m| m.area_rect(Id::unique(name))) else { continue };
+    for (panel, side) in [(chrome.tools, Side::Left), (chrome.props, Side::Right)] {
+        let Some(panel) = panel else { continue };
         if panel.bottom() <= rect.top() || panel.top() >= rect.bottom() {
             continue;
         }
@@ -222,10 +208,12 @@ pub fn show(ctx: &Context, cx: &mut Cx<'_>, st: &mut UiState) {
     st.library_visible.clear();
     st.library_hover = None;
     let screen = ctx.content_rect();
-    let bottom = (bars_top(ctx, &cx.layout) - GAP).min(screen.bottom() - MARGIN);
+    let bottom = (st.chrome.bottom_floor(screen) - GAP).min(screen.bottom() - MARGIN);
     let height = drawer_height(screen, bottom, cx.layout.compact, st.library_height);
     let rect = Rect::from_min_max(pos2(screen.left() + MARGIN, bottom - height), pos2(screen.right() - MARGIN, bottom));
-    let rect = clear_of_side_panels(ctx, &cx.layout, rect);
+    let rect = clear_of_side_panels(&st.chrome, &cx.layout, rect);
+    // Recorded before the tiles are drawn: a drag that ends over the drawer is not a drop on the canvas.
+    st.chrome.library = Some(rect);
     let frame = panel_frame(&cx.pal);
     let inner = rect.size() - frame.total_margin().sum();
     let mut drawn = rect;
@@ -233,7 +221,7 @@ pub fn show(ctx: &Context, cx: &mut Cx<'_>, st: &mut UiState) {
         let out = frame.show(ui, |ui| {
             ui.set_width(inner.x);
             ui.set_height(inner.y);
-            ui.spacing_mut().item_spacing = vec2(6.0, 6.0);
+            ui.spacing_mut().item_spacing = vec2(space::MD, space::MD);
             header(ui, cx, st);
             body(ui, cx, st);
         });
@@ -241,7 +229,7 @@ pub fn show(ctx: &Context, cx: &mut Cx<'_>, st: &mut UiState) {
         grip(ui, cx, st, drawn, bottom, screen);
     });
     st.library_textures.keep_only(&st.library_visible, st.library_hover.as_deref());
-    remember_panel(ctx, drawn);
+    st.chrome.library = Some(drawn);
 }
 
 /// The strip on the top edge: dragging it sets the height.
@@ -299,10 +287,10 @@ fn header(ui: &mut Ui, cx: &mut Cx<'_>, st: &mut UiState) {
 }
 
 fn title(ui: &mut Ui, cx: &mut Cx<'_>, filter: &str) {
-    ui.label(egui::RichText::new("Library").font(theme::hand(16.0)).color(cx.pal.text));
+    ui.label(egui::RichText::new("Library").font(TextSize::Heading.hand()).color(cx.pal.text));
     let all = cx.model.library.len();
     let shown = cx.model.library.iter().filter(|i| matches_filter(i, filter)).count();
-    ui.label(egui::RichText::new(count_text(shown, all)).size(11.0).color(cx.pal.muted));
+    ui.label(TextSize::Caption.rich(count_text(shown, all)).color(cx.pal.muted));
 }
 
 /// "3 items", or "1 of 3 items" while the search hides some.
@@ -362,7 +350,7 @@ fn add_button(ui: &mut Ui, cx: &mut Cx<'_>, st: &UiState) {
 }
 
 fn import_button(ui: &mut Ui, cx: &mut Cx<'_>) {
-    let button = egui::Button::new(egui::RichText::new("Import…").size(13.0).color(cx.pal.text))
+    let button = egui::Button::new(TextSize::Body.rich("Import…").color(cx.pal.text))
         .fill(cx.pal.button)
         .corner_radius(theme::BUTTON_RADIUS)
         .min_size(vec2(80.0, cx.layout.button_height()));
@@ -379,23 +367,23 @@ fn export_button(ui: &mut Ui, cx: &mut Cx<'_>) {
 fn body(ui: &mut Ui, cx: &mut Cx<'_>, st: &mut UiState) {
     let model = cx.model;
     if let Some(why) = &model.library_error {
-        ui.label(egui::RichText::new(why.as_str()).size(11.0).color(cx.pal.muted));
+        ui.label(TextSize::Caption.rich(why.as_str()).color(cx.pal.muted));
         return;
     }
     if model.library.is_empty() {
-        ui.label(egui::RichText::new("Nothing here yet. Select shapes and press Add.").size(11.0).color(cx.pal.muted));
+        ui.label(TextSize::Caption.rich("Nothing here yet. Select shapes and press Add.").color(cx.pal.muted));
         return;
     }
     let shown: Vec<&LibraryItem> = model.library.iter().filter(|i| matches_filter(i, &st.library_filter)).collect();
     if shown.is_empty() {
         let text = format!("No item has “{}” in its name.", st.library_filter.trim());
-        ui.label(egui::RichText::new(text).size(11.0).color(cx.pal.muted));
+        ui.label(TextSize::Caption.rich(text).color(cx.pal.muted));
         return;
     }
     let tile = Tile::of(&cx.layout);
     egui::ScrollArea::vertical().id_salt("library_tiles").auto_shrink([false, false]).show(ui, |ui| {
         ui.horizontal_wrapped(|ui| {
-            ui.spacing_mut().item_spacing = vec2(8.0, 8.0);
+            ui.spacing_mut().item_spacing = vec2(space::LG, space::LG);
             for item in shown {
                 show_tile(ui, cx, st, item, &tile);
             }
@@ -495,7 +483,8 @@ fn show_tile(ui: &mut Ui, cx: &mut Cx<'_>, st: &mut UiState, item: &LibraryItem,
     }
     if enabled && resp.drag_stopped() {
         // The release point decides: over the drawer it is a cancelled drag.
-        if let Some(at) = ui.ctx().pointer_latest_pos().filter(|p| !panel_rect(ui).contains(*p)) {
+        let drawer = st.chrome.library.unwrap_or(Rect::NOTHING);
+        if let Some(at) = ui.ctx().pointer_latest_pos().filter(|p| !drawer.contains(*p)) {
             cx.run("library.insert", drop_args(&item.id, &model.view, at));
         }
     }
@@ -508,7 +497,7 @@ fn paint_name(ui: &Ui, pal: &Palette, tile: Rect, box_rect: Rect, name: &str) {
     let width = tile.width() - 8.0;
     let mut job = egui::text::LayoutJob::single_section(
         name.to_owned(),
-        egui::TextFormat::simple(egui::FontId::proportional(12.0), pal.text),
+        egui::TextFormat::simple(TextSize::Small.font(), pal.text),
     );
     job.wrap =
         egui::text::TextWrapping {
@@ -549,7 +538,7 @@ fn corner_buttons(ui: &mut Ui, cx: &mut Cx<'_>, st: &mut UiState, item: &Library
             selected: false,
         };
         paint_button_bg(ui.painter(), rect, look, &cx.pal, false);
-        ui.painter().text(rect.center(), Align2::CENTER_CENTER, "Aa", egui::FontId::proportional(11.0), cx.pal.text);
+        ui.painter().text(rect.center(), Align2::CENTER_CENTER, "Aa", TextSize::Caption.font(), cx.pal.text);
         rename.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, format!("Rename {name}")));
         if rename.on_hover_text("Rename").clicked() {
             st.open_rename(RenameTarget::LibraryItem(item.id.clone()), item.name.clone());
@@ -570,18 +559,9 @@ fn tooltip(ui: &mut Ui, model: &Model, st: &mut UiState, item: &LibraryItem, pal
     ui.painter().rect_filled(rect, theme::BUTTON_RADIUS, pal.button);
     let place = Place { inner: rect.shrink(PICTURE_PADDING), size, tint: Color32::WHITE };
     paint_picture(ui.painter(), &mut st.library_textures, &pal, item, &picture, &place);
-    ui.label(egui::RichText::new(display_name(item)).size(13.0).color(pal.text));
+    ui.label(TextSize::Body.rich(display_name(item)).color(pal.text));
     let elements =
         if item.element_count == 1 { "1 element".to_owned() } else { format!("{} elements", item.element_count) };
-    ui.label(egui::RichText::new(elements).size(11.0).color(pal.muted));
-    ui.label(egui::RichText::new("Click to insert. Drag onto the canvas to place it.").size(11.0).color(pal.muted));
-}
-
-/// The drawer's rectangle, remembered by the last frame (a drop over the drawer is not a drop on the canvas).
-fn panel_rect(ui: &Ui) -> Rect {
-    ui.ctx().data(|d| d.get_temp::<Rect>(Id::unique("library_panel_rect"))).unwrap_or(Rect::NOTHING)
-}
-
-fn remember_panel(ctx: &Context, panel: Rect) {
-    ctx.data_mut(|d| d.insert_temp(Id::unique("library_panel_rect"), panel));
+    ui.label(TextSize::Caption.rich(elements).color(pal.muted));
+    ui.label(TextSize::Caption.rich("Click to insert. Drag onto the canvas to place it.").color(pal.muted));
 }

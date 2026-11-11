@@ -30,6 +30,9 @@ pub struct ChromeRects {
     pub tools: Option<Rect>,
     /// The properties panel on the right.
     pub props: Option<Rect>,
+    /// The library drawer, when it is open. It is drawn after every bar and panel above, so it is the highest
+    /// of the bottom surfaces: things that float above the bottom chrome sit over it.
+    pub library: Option<Rect>,
 }
 
 impl ChromeRects {
@@ -43,10 +46,20 @@ impl ChromeRects {
         self.bottom_bar.map_or(screen.bottom(), |r| r.top())
     }
 
-    /// The y of the highest bottom surface (the bottom bar or the tabs): things that float above the bottom
-    /// chrome (toasts, the convert popup) sit over it.
+    /// The y of the upper edge of what stands on the bottom left (the bottom bar, the library drawer), or of the
+    /// window bottom when there is none: panels anchored to the bottom left sit over it.
+    pub fn above_bottom_left(&self, screen: Rect) -> f32 {
+        [self.bottom_bar, self.library].into_iter().flatten().map(|r| r.top()).fold(screen.bottom(), f32::min)
+    }
+
+    /// The y of the highest bottom surface (the bottom bar, the tabs or the library drawer): things that float
+    /// above the bottom chrome (toasts, the convert popup) sit over it.
     pub fn bottom_floor(&self, screen: Rect) -> f32 {
-        [self.bottom_bar, self.tabs].into_iter().flatten().map(|r| r.top()).fold(screen.bottom(), f32::min)
+        [self.bottom_bar, self.tabs, self.library]
+            .into_iter()
+            .flatten()
+            .map(|r| r.top())
+            .fold(screen.bottom(), f32::min)
     }
 
     /// The tallest a panel can be that is centred on the window's middle and stays clear of the strip (with a
@@ -88,6 +101,19 @@ mod tests {
         };
         assert_eq!(r.bottom_floor(screen()), 700.0);
         assert_eq!(r.above_bottom_bar(screen()), 740.0);
+    }
+
+    #[test]
+    fn the_library_drawer_is_the_highest_bottom_surface_when_it_is_open() {
+        let mut r = ChromeRects {
+            bottom_bar: Some(Rect::from_min_size(pos2(10.0, 740.0), vec2(300.0, 48.0))),
+            tabs: Some(Rect::from_min_size(pos2(400.0, 700.0), vec2(200.0, 48.0))),
+            ..ChromeRects::default()
+        };
+        r.library = Some(Rect::from_min_size(pos2(10.0, 500.0), vec2(980.0, 190.0)));
+        assert_eq!(r.bottom_floor(screen()), 500.0);
+        assert_eq!(r.above_bottom_left(screen()), 500.0);
+        assert_eq!(r.above_bottom_bar(screen()), 740.0, "the bar itself is where it was");
     }
 
     #[test]

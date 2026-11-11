@@ -95,7 +95,7 @@ fn popover_area(ctx: &Context, chrome: &ChromeRects, id: Id, key: PopoverKey) ->
         }
         (None, PopoverKey::Background) => area
             .pivot(Align2::LEFT_BOTTOM)
-            .fixed_pos(pos2(screen.left() + MARGIN, chrome.above_bottom_bar(screen) - GAP)),
+            .fixed_pos(pos2(screen.left() + MARGIN, chrome.above_bottom_left(screen) - GAP)),
         (None, PopoverKey::Font) => {
             let at =
                 chrome.props.map_or(pos2(screen.right() - MARGIN - RIGHT_PANEL_WIDTH, under_strip), |r| r.left_top());
