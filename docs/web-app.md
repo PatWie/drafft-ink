@@ -30,9 +30,15 @@ encodings and Chromium refuses the module (`unknown import kind 0x7e`).
 `dist/` holds `index.html`, `manifest.webmanifest`, `sw.js`, the icons, `BUILD` (the build hash) and `pkg/drafftink_web.js` plus
 `pkg/drafftink_web_bg.wasm`. The build hash (12 hex digits of the wasm and the glue) replaces `__BUILD__` in `index.html` and `sw.js`.
 
-Sizes of the first full app build (2026-11-08): raw 27.8 MB (with the name section), wasm-opt 17.3 MB, gzip -9 6.4 MB,
-**brotli -11 4.4 MB**. The graphics spike was 1.36 MB (docs/stack.md); the rest is the engine, Loro, the image codecs, the bundled
-fonts and the UI. There has been no size work yet.
+Sizes of the full app build (2026-11-08, `release-wasm`, wasm-bindgen 0.2.130, binaryen 133 `-Os` with the explicit feature list;
+MB here are MiB, as in `performance.md`): raw 28.25 MB (with the name section), **wasm-opt 17.50 MB**, gzip -9 6.47 MB,
+**brotli -11 4.46 MB**. The old app was 10.33 MB raw and 3.46 MB brotli, so the budget "brotli not above 3.5 MB" (`performance.md`)
+is missed by about 1 MB; the `size` gate of `cargo xtask ci` is still pending. The graphics spike was 1.36 MB (`stack.md`).
+`twiggy` on the unstripped module (code and data before `wasm-opt`) puts the biggest parts at: the name section 7.8 MB (stripped
+by the build), `.rodata` 5.3 MB, `fearless_simd` and `vello_cpu` about 2.1 MB (the CPU renderer for exports and `view.screenshot`),
+`drafftink_engine` about 1.8 MB, Loro about 1.4 MB, `read_fonts` and `skrifa` 0.9 MB, `serde_path_to_error` 0.5 MB, `schemars` 0.3 MB.
+Candidates for size work: the CPU renderer behind a second module, the command schemas (`schemars`) generated on demand,
+`serde_path_to_error` only in debug builds.
 
 ## What the page does
 
@@ -135,10 +141,10 @@ that asked for it. The worker is registered only on `https:` and on `localhost` 
 `target/release/drafftink-server`). It starts the server on an ephemeral port with `--web-dir dist --storage memory`, a private
 Xvfb and headed Chromium with the WebGPU flags of docs/shell.md, and checks: the page starts and draws; the API surface; the
 pairing refusals; the pairing keys are scrubbed from the address; 0 frames and the CPU of all Chromium processes in a 10 s idle
-window. With `--app`: `state`, `commands`, `describe`, a refusal as a rejected promise, a rectangle, an arrow and a batch, the
-ring shows origin `agent`, a screenshot, 0 frames after commands, the workspace in IndexedDB and back after a reload, two pages
+window. With `--app`: `state`, `commands`, `describe`, a refusal as a rejected promise, two rectangles with an arrow bound to both and `element.move` dragging it along, `commands()` with availability, a batch, the
+ring shows origin `agent`, a real mouse drag with the rectangle tool (key `r`) that draws a rectangle (origin `ui`), a screenshot, 0 frames after commands, the workspace in IndexedDB and back after a reload, two pages
 (`127.0.0.1` and `localhost`, so separate IndexedDB) in one `?room=` seeing each other's elements, 0 frames in a room alone and
-with a peer, the service worker active, and a reload with the server stopped still starting the app.
+with a peer (22 s windows, which cover the server ping and the presence heartbeat), the service worker active, and a reload with the server stopped still starting the app.
 
 Pure rules (address check, pairing link, backoff, frames, download names, address building, the write cache) have unit tests that
 run natively: `cargo test -p drafftink-web` (the files of `crates/app/src/web` that need no browser are compiled into that test
@@ -151,11 +157,10 @@ target, because the repository has no wasm test runner).
 - **PNG export on the web.** The renderer port is missing: reading the GPU texture back is asynchronous and the port is
   synchronous. Commands that need the renderer port (PNG export) refuse with `port_unavailable`. A fix needs an async export path in the app (the shell's
   `Compositor::render_to_image` already works on the web).
-- **Wire size.** 4.4 MB brotli for the first load; no size work yet. After the first visit the service worker serves it from cache.
-- **Idle while in a room.** Every wake from the collaboration socket draws a frame, including the server's ping (every 20 s) and a
-  peer's presence heartbeat (every 10 s): 1 frame in 22 s alone in a room, 5 with one peer (`web_check.py --app` reports this as
-  failing). The app answers `Repaint::Now` to every `Wake`; it could pump the collab session and repaint only when something
-  visible changed.
+- **Wire size.** 4.46 MB brotli for the first load (see above). After the first visit the service worker serves it from cache.
+- **Idle while in a room.** Fixed on 2026-11-08: a wake from the collaboration socket, and a collaboration deadline, go to the
+  app first (`ShellEvent::Wake(Collab)`, `docs/shell.md`); it pumps the session and asks for a frame only when the poll left a
+  visible change or a notice. Measured: 0 frames in 22 s alone in a room and in 22 s with a peer, after the join has settled.
 - **Two tabs.** The IndexedDB is read once per tab; the autosave record belongs to the tab that wrote last.
 - **File System Access** (saving to a chosen place) is not used: saving is a download or a stored document.
 - **Safari and Firefox** were not tried. The service worker, IndexedDB and pickers use standard APIs; WebGPU support decides.
