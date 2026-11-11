@@ -98,7 +98,9 @@ pub fn run_gate(root: &Path, args: &[String]) -> Result<(), String> {
     if let Some(at) = args.iter().position(|a| a == "--app") {
         let others = args.iter().enumerate().any(|(i, a)| a.starts_with("--") && i != at && a != "--no-build");
         if others {
-            return Err("perf: --app is a run of its own; it takes `native`, `web` or `all` after it, and --no-build".into());
+            return Err(
+                "perf: --app is a run of its own; it takes `native`, `web` or `all` after it, and --no-build".into()
+            );
         }
         let which = args.get(at + 1).map(String::as_str).filter(|a| !a.starts_with("--"));
         return app(root, which, !flag("--no-build"));
@@ -236,11 +238,11 @@ fn scenario_dist(root: &Path) -> PathBuf {
 /// What the web scenarios need: the web app built with `--features scenarios`, and the server that serves it.
 fn build_web(root: &Path, dist: &Path) -> Result<(), String> {
     let mut script = std::process::Command::new("bash");
-    script
-        .current_dir(root)
-        .env("DIST_DIR", dist)
-        .arg("scripts/build-web.sh")
-        .args(["--features", "scenarios", "--no-precompress"]);
+    script.current_dir(root).env("DIST_DIR", dist).arg("scripts/build-web.sh").args([
+        "--features",
+        "scenarios",
+        "--no-precompress",
+    ]);
     run(&mut script)?;
     let mut server = cargo(root);
     server.args(["build", "--release", "-p", "drafftink-server"]);
@@ -411,6 +413,15 @@ mod tests {
         .unwrap();
         assert_eq!(budgeted_keys(&budgets, Platform::Native), ["idle", "pan@1k"]);
         assert_eq!(budgeted_keys(&budgets, Platform::Web), ["idle"]);
+    }
+
+    #[test]
+    fn the_web_scenario_build_does_not_replace_the_shipped_dist() {
+        let root = Path::new("/work/repo");
+        let dist = scenario_dist(root);
+        assert_ne!(dist, root.join("dist"));
+        assert!(dist.starts_with(target_dir(root)), "{}", dist.display());
+        assert_eq!(exe("drafftink"), format!("drafftink{}", std::env::consts::EXE_SUFFIX));
     }
 
     #[test]

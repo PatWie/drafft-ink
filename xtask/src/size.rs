@@ -223,7 +223,8 @@ fn measure_native(dir: &Path) -> Result<Metrics, String> {
     let mut metrics = Metrics::new();
     for (bin, metric) in NATIVE_BINARIES {
         let path = dir.join(format!("{bin}{}", std::env::consts::EXE_SUFFIX));
-        let meta = fs::metadata(&path).map_err(|e| format!("{}: {e}. Build it with `cargo xtask size --native`.", path.display()))?;
+        let meta = fs::metadata(&path)
+            .map_err(|e| format!("{}: {e}. Build it with `cargo xtask size --native`.", path.display()))?;
         metrics.insert(metric, meta.len());
     }
     Ok(metrics)
