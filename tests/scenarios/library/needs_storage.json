@@ -8,6 +8,7 @@
     { "execute": "library.insert", "args": { "item": "x" }, "refused": "port_unavailable", "text": "storage" },
     { "execute": "library.rename", "args": { "item": "x", "name": "y" }, "refused": "port_unavailable", "text": "storage" },
     { "execute": "library.remove", "args": { "all": true }, "refused": "port_unavailable", "text": "storage" },
+    { "execute": "library.thumbnail", "args": { "item": "x" }, "refused": "port_unavailable", "text": "storage" },
     { "execute": "library.export", "refused": "port_unavailable", "text": "storage" },
     { "execute": "library.import", "args": { "source": { "base64": "e30=" } }, "refused": "port_unavailable", "text": "storage" },
     { "assert": "doc.inspect", "expect": [ { "path": "$.elements", "eq": 1 } ] },

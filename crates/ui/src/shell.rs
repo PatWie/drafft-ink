@@ -9,6 +9,7 @@ use crate::model::{AgentServerView, CollabView, Model, TextFaces};
 use crate::state::{TOAST_FADE_S, TOAST_HOLD_S, UiState};
 use crate::surfaces;
 use crate::theme::{self, Palette};
+use crate::thumbs::Want;
 use crate::widgets::{Cx, Layout};
 
 /// What the app tells the UI about the frame.
@@ -109,8 +110,24 @@ impl UiShell {
             // The state the user sees changed: one more frame to show it.
             ctx.request_repaint();
         }
+        self.draw_pictures(&ctx, session);
         self.schedule_toasts(&ctx, now);
         FrameResult { report, canvas_rect: ctx.content_rect(), modal: self.state.modal_open() }
+    }
+
+    /// Asks the session for the next few pictures of the library items, for the tiles the drawer just drew. A
+    /// picture that arrives, or work left over the budget, asks for one more frame; a picture the browser is still
+    /// drawing does not (the renderer wakes the app when it is done).
+    fn draw_pictures(&mut self, ctx: &egui::Context, session: &mut Session) {
+        let want = Want {
+            dark: Palette::of(ctx).dark,
+            visible: &self.state.library_visible,
+            hovered: self.state.library_hover.as_deref(),
+        };
+        let progress = self.model.read_thumbnails(session, &want);
+        if progress.changed || progress.more {
+            ctx.request_repaint();
+        }
     }
 
     /// The model reads `library.list` only while the panel is open. Returns true when that changed.

@@ -17,6 +17,7 @@ use drafftink_scene::SceneRead;
 use serde_json::{Value, json};
 
 use crate::keymap::{Chord, parse_chord};
+use crate::thumbs::{Progress, Thumbnails, Want};
 
 /// One default binding of a command, parsed for this platform.
 #[derive(Debug, Clone, PartialEq)]
@@ -201,6 +202,8 @@ pub struct LibraryItem {
     pub width: f64,
     /// Height of its bounds in world units.
     pub height: f64,
+    /// A fingerprint of what it draws (`library.list`): a picture of the item is good while this stays the same.
+    pub content: String,
 }
 
 /// A tab as the tab bar shows it.
@@ -468,6 +471,8 @@ pub struct Model {
     pub library_error: Option<String>,
     /// The library panel is open, so [`Model::refresh`] reads `library.list`. Set by the shell.
     pub wants_library: bool,
+    /// The pictures of the library items, asked for with `library.thumbnail` by [`Model::read_thumbnails`].
+    pub thumbnails: Thumbnails,
     /// The style of the selection or the defaults.
     pub style: StyleView,
     /// Settings by key.
@@ -513,6 +518,7 @@ impl Default for Model {
             library: Vec::new(),
             library_error: None,
             wants_library: false,
+            thumbnails: Thumbnails::default(),
             style: StyleView::default(),
             settings: BTreeMap::new(),
             tabs: Vec::new(),
@@ -567,6 +573,25 @@ impl Model {
         t.doc.redo_depth().hash(&mut h);
         t.dirty().hash(&mut h);
         h.finish()
+    }
+
+    /// Asks the session for the next few pictures of the library items (`library.thumbnail`, a read), within the
+    /// budget of [`crate::thumbs::PER_FRAME`], and keeps the answers. Call it once per frame while the drawer is
+    /// open, after drawing it: `want` says which tiles were on screen. Returns what the caller must do next.
+    pub fn read_thumbnails(&mut self, s: &mut Session, want: &Want<'_>) -> Progress {
+        if !self.wants_library || self.library_error.is_some() {
+            self.thumbnails.clear();
+            return Progress::default();
+        }
+        let (jobs, more) = self.thumbnails.jobs(&self.library, want);
+        let mut progress = Progress { more, ..Progress::default() };
+        for job in &jobs {
+            let step = self.thumbnails.finish(job, s.query("library.thumbnail", job.args()));
+            progress.changed |= step.changed;
+            progress.waiting |= step.waiting;
+        }
+        self.thumbnails.trim(want);
+        progress
     }
 
     /// Forces the next [`Model::refresh`] to recapture (after commands ran).
@@ -881,7 +906,8 @@ fn read_library(s: &mut Session) -> (Vec<LibraryItem>, Option<String>) {
             let items = items
                 .iter()
                 .filter_map(|item| {
-                    let number = |key: &str| item.pointer(&format!("/bounds/{key}")).and_then(Value::as_f64);
+                    // `bounds` is `[x, y, w, h]`.
+                    let number = |at: usize| item.pointer(&format!("/bounds/{at}")).and_then(Value::as_f64);
                     Some(LibraryItem {
                         id: text_of(item, "id")?.to_owned(),
                         name: text_of(item, "name").unwrap_or_default().to_owned(),
@@ -890,8 +916,9 @@ fn read_library(s: &mut Session) -> (Vec<LibraryItem>, Option<String>) {
                             .and_then(Value::as_u64)
                             .and_then(|n| usize::try_from(n).ok())
                             .unwrap_or(0),
-                        width: number("w").unwrap_or(0.0),
-                        height: number("h").unwrap_or(0.0),
+                        width: number(2).unwrap_or(0.0),
+                        height: number(3).unwrap_or(0.0),
+                        content: text_of(item, "content").unwrap_or_default().to_owned(),
                     })
                 })
                 .collect();
