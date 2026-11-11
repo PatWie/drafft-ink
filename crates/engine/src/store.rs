@@ -28,7 +28,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::rc::Rc;
 
 use drafftink_canvas::SceneIndex;
-use drafftink_doc::{DocError, LoroStore};
+use drafftink_doc::{DocError, LoroStore, LoroTx};
 use drafftink_geom::kurbo::Point;
 use drafftink_scene::{
     Change, ChangeKind, ChangeSet, DerivedIndex, DocMeta, Document, Element, ElementId, Fields, FileEntry, FileId,
@@ -627,6 +627,21 @@ impl TabDoc {
         ChangeSet { revision: self.work.revision(), elements, meta: meta.is_some_and(|m| m != self.work.meta()), files }
     }
 
+    /// Ids of the elements the commits since `mark` touched, whether or not they differ from before.
+    pub fn touched_since(&self, mark: DocMark) -> BTreeSet<ElementId> {
+        self.journal.get(mark.0..).unwrap_or(&[]).iter().flat_map(Patch::touched).cloned().collect()
+    }
+
+    /// Copies `ids` from the replicated store into the working store, outside the journal: an element the replicated
+    /// store lacks is removed. For after a rollback that put back an older copy of an element a collaborator changed.
+    pub fn reload(&mut self, ids: &[ElementId]) -> Result<(), StoreError> {
+        let elements = ids
+            .iter()
+            .map(|id| Change { id: id.clone(), kind: ChangeKind::Updated, fields: Fields::all(), version: 0 })
+            .collect();
+        self.mirror(&ChangeSet { revision: self.work.revision(), elements, meta: false, files: Vec::new() })
+    }
+
     /// What the commits since `mark` did, without removing them.
     pub fn summary_since(&self, mark: DocMark) -> Summary {
         self.summarize(self.journal.get(mark.0..).unwrap_or(&[]))
@@ -803,6 +818,28 @@ impl TabDoc {
         let cs = self.loro.apply_remote(bytes)?;
         self.mirror(&cs).map_err(DocError::backend)?;
         Ok(cs)
+    }
+
+    /// Repairs a merged document: runs `f` in one transaction on the replicated store that undo cannot see, then
+    /// copies what it changed into the working store, outside the journal. The commit is this peer's own write (the
+    /// collab glue sends it, [`TabDoc::local_writes`] counts it) but is on no undo stack, and it reads the
+    /// replicated truth, so a gesture that is running keeps its journal untouched. Returns what `f` returned and
+    /// what the commit changed. An error from `f` writes nothing.
+    pub(crate) fn repair<R, E: From<StoreError>>(
+        &mut self,
+        f: impl FnOnce(&mut LoroTx<'_>) -> Result<R, E>,
+    ) -> Result<(R, ChangeSet), E> {
+        let mut tx = self.loro.begin();
+        tx.not_undoable();
+        tx.set_label("Merge repair");
+        let r = f(&mut tx)?;
+        let cs = tx.commit()?;
+        if !cs.is_empty() {
+            self.local_writes += 1;
+            self.last_coalesce = None;
+            self.mirror(&cs)?;
+        }
+        Ok((r, cs))
     }
 
     /// Takes back up to `n` of this peer's steps. A step that has become a no-op (a collaborator already

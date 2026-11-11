@@ -85,7 +85,7 @@ Facts that matter beyond the obvious:
 - `coalesce`: `Some({ key, ms })` merges a repeat of the same command id on the same targets (the elements the step changed) within `ms` of the previous repeat into the previous undo step. Used for nudge, font-size steps and zoom-free repeated style taps. Default `None`. Applies to a plain call only: the last step of a gesture and a batch never merge, and undo, redo, another command's step or a collaborator's edit ends the run.
 - `needs_selection`: `Required` means the command has an `ids` argument whose default is the current selection, and an empty resolved list refuses with `no_target`. `Soft` means the selection is used only as a default when relevant and an empty selection is not an error (`style.set` then edits the defaults). `No` means the selection is not used.
 - `ring = Quiet` keeps high-rate commands from flooding the ring: `view.set`, `view.set_viewport`, `view.pan`, `view.zoom_at`, `collab.set_pointer`, `collab.laser`, `gesture.update`. A Quiet command is written to the ring only when it refuses.
-- `batch = Last` means the command may only be the final step of a batch (`doc.new`, `doc.open`, `doc.drop`, `doc.show_intro`, `tab.close`). `Never` means it cannot appear in a batch at all (gestures, `history.*`, `collab.connect`).
+- `batch = Last` means the command may only be the final step of a batch (`doc.new`, `doc.open`, `doc.drop`, `doc.show_intro`, `tab.new`, `tab.switch`, `tab.duplicate`, `tab.close`). A batch holds one journal, the one of the tab it started in, so a command that makes another tab active must end it. `Never` means it cannot appear in a batch at all (gestures, `history.*`, `collab.connect`).
 - `view_only = Refused` for every command whose `mutates` contains `Doc`.
 - `while_text_edit = Commit` is how a click, a tab switch, `Mod+S` or a tool change ends a text edit without the UI having to call `text.edit_end` first: the engine commits the edit (one undo step), then runs the command.
 - `redraw`: `Scene` re-encodes changed element fragments, `Camera` re-composites the cached fragments with a new transform (pan, zoom), `Overlay` redraws handles, guides and cursors only, `None` requests nothing. This is the dirty reason that `cargo xtask perf --idle` relies on.
@@ -219,7 +219,7 @@ A successful command returns a JSON object defined by its `output` schema. Every
 - **What rollback covers.** The document, selection, editing group, point editor, tool and view. Tabs, settings, the library and the clipboard buffers are outside the transaction. A step that changes them (`mutates` has B, S or P) is allowed, is not undone by a rollback, and is listed in the result under `not_rolled_back` so the caller knows.
 - **`execute_batch` is not a command.** It contains commands. MCP exposes it as the tool `batch`, and `window.drafftink` as `executeBatch`.
 - **Limits.** 10 000 steps, 10 MB of JSON. `limit_exceeded` otherwise.
-- **Not allowed inside a batch:** commands with `batch = Never`. `doc.new`, `doc.open`, `doc.drop`, `doc.show_intro` and `tab.close` must be the last step (`batch = Last`).
+- **Not allowed inside a batch:** commands with `batch = Never`. `doc.new`, `doc.open`, `doc.drop`, `doc.show_intro`, `tab.new`, `tab.switch`, `tab.duplicate` and `tab.close` must be the last step (`batch = Last`). The executor also checks at run time: a step that made another tab active (`library.import` with `mode: open_as_tab`) while steps follow stops the batch with `must_be_last`, and an atomic batch rolls back the tab it started in.
 - `dry_run: true` runs preflight and then the steps, reports the outputs, and rolls everything back.
 - **A picture that is still being drawn.** On the web a PNG export answers `render_pending` until the GPU has read the picture back (`web-app.md`). A batch treats that as a wait, not a failure: it takes every step back (also with `atomic: false`), returns `pending_render: true` with the refusal in `failed`, and changes nothing. Run the same batch again when the renderer wakes the shell; it then completes with the results of all steps. The bridge does this by itself, like a single `execute`. If a step outside the transaction (a tab, a setting, a port, collab) already ran, the batch does not wait, because running it again would repeat that step; it fails with `render_pending` as before.
 - Output: `{completed, results: [Output...], failed?, rolled_back, undo_label, pending_render?}`.
@@ -825,7 +825,7 @@ Local undo per peer, backed by Loro's `UndoManager`. See §1.8.
 
 ### 2.16 `collab`: rooms and presence
 
-Remote edits arrive through `Session::apply_remote` and the same document and CRDT path as local edits. They are not commands and are never undoable by this peer. The wire protocol is versioned and shared with the server (`protocol` crate). Commands only start work: they change the inputs of the collab client and never touch a socket. The shell supplies the transport through the `Net` port and calls `Session::collab_poll` (on a transport wake, at the time it asked for, and after commands), which moves the bytes, hands every local commit (undo and redo included: the poll compares `TabDoc::local_writes`) to the client and applies what the room sent. The connection state is read with `collab.status` or `Session::collab_view`.
+Remote edits arrive through `Session::apply_remote` and the same document and CRDT path as local edits. They are not commands and are never undoable by this peer. The engine repairs what a merge of two peers' edits leaves broken (docs/crdt.md section 10a); those writes are not undoable either. The wire protocol is versioned and shared with the server (`protocol` crate). Commands only start work: they change the inputs of the collab client and never touch a socket. The shell supplies the transport through the `Net` port and calls `Session::collab_poll` (on a transport wake, at the time it asked for, and after commands), which moves the bytes, hands every local commit (undo and redo included: the poll compares `TabDoc::local_writes`) to the client and applies what the room sent. The connection state is read with `collab.status` or `Session::collab_view`.
 
 | id | title | undo | keys | source |
 |---|---|---|---|---|
@@ -1590,12 +1590,12 @@ Legend:
 | `doc.list` | - | - | Files,Storage | ok | ok | ok | ok | - | always | y | y |
 | `doc.inspect` | - | - | - | ok | ok | ok | ok | - | always | y | y |
 | `doc.outline` | - | - | - | ok | ok | ok | ok | - | always | y | y |
-| `tab.new` | B | - | - | ok | ok | no | commit | scene | always | y | y |
-| `tab.switch` | B | - | - | ok | ok | no | commit | scene | always | y | y |
+| `tab.new` | B | - | - | last | ok | no | commit | scene | always | y | y |
+| `tab.switch` | B | - | - | last | ok | no | commit | scene | always | y | y |
 | `tab.close` | B | - | - | last | ok | no | commit | scene | always | y | y |
 | `tab.rename` | D,B | - | - | ok | no | no | commit | scene | always | y | y |
 | `tab.move` | B | - | - | ok | ok | no | commit | scene | always | y | y |
-| `tab.duplicate` | B | - | - | ok | ok | no | commit | scene | always | y | y |
+| `tab.duplicate` | B | - | - | last | ok | no | commit | scene | always | y | y |
 | `tab.list` | - | - | - | ok | ok | ok | ok | - | always | y | y |
 | `tool.set` | T,O | - | - | ok | ok | no | commit | overlay | always | y | y |
 | `tool.lock` | T | - | - | ok | ok | no | ok | overlay | always | y | y |

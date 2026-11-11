@@ -20,8 +20,9 @@
 //! scan of the change set. Both steps are idempotent, which is what makes the repeat safe. The pass stops after
 //! [`MAX_ROUNDS`] rounds; a document that still changes then is left as it is.
 //!
-//! The pass never runs for remote updates ([`Session::apply_remote`](crate::Session::apply_remote)): the peer that
-//! made the edit ran it already, and two peers fixing the same arrow would only race.
+//! The pass never runs for remote updates ([`Session::apply_remote`](crate::Session::apply_remote)): it reads a
+//! command's journal, and the peer that made the edit ran it already. What the merge of two peers' edits needs is
+//! another pass over the merged scene, [`crate::remote_repair`], which writes the same value on every peer.
 
 use drafftink_edit::binding::{self, BindingError};
 use drafftink_edit::text_bind::{self, GrowAnchor, TextBindError};

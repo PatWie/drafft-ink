@@ -9,11 +9,18 @@
 //! What it does besides:
 //!
 //! * raises the dirty reason, so the shell draws one frame;
-//! * drops from the selection, and from the point editor, what the update deleted;
+//! * drops from the selection, and from the point editor, what the update deleted, and cancels a running gesture
+//!   that was changing an element the update deleted (docs/protocol.md section 9);
 //! * writes one ring entry per received batch (`remote.apply`, origin `remote`, the counts as arguments), so
 //!   `engine.recent` shows that something arrived without listing every element;
-//! * does **not** run the invariant pass. The peer that made the edit ran it, and its fixes arrive in the same
-//!   update; two peers solving the same arrow would only race.
+//! * does **not** run the command invariant pass ([`crate::invariants`]), which reads a command's journal; the
+//!   peer that made the edit ran it, and its fixes arrive in the same update. It runs the **merge repair**
+//!   instead ([`crate::remote_repair`], docs/crdt.md section 10a), because the merge of two valid edits can be
+//!   invalid: it frees dangling bindings, labels and frame children, dissolves inconsistent groups and solves
+//!   the arrows bound to what changed again. The repair writes only what differs and only what a deterministic
+//!   rule says, so peers that hold the same scene write the same values and a peer that receives a repair has
+//!   nothing left to fix. Its writes are on no undo stack. Each pass that writes leaves a second ring entry
+//!   (`remote.repair`, origin `remote`).
 
 use drafftink_scene::{ChangeKind, ChangeSet, SceneRead};
 use serde_json::json;
@@ -27,6 +34,9 @@ use drafftink_profile::now_ns;
 
 /// The id under which a received batch appears in the ring.
 pub const REMOTE_RING_ID: &str = "remote.apply";
+
+/// The id under which the repair of a merge appears in the ring, after the batch it repaired.
+pub const REPAIR_RING_ID: &str = "remote.repair";
 
 impl Session {
     /// Applies a Loro update or snapshot received for `tab`. Returns what changed in the scene.
@@ -61,6 +71,9 @@ impl Session {
             frames: None,
             mutating: true,
         });
+        if let Ok(cs) = &res {
+            self.repair_and_record(tab, cs);
+        }
         res
     }
 
@@ -99,6 +112,7 @@ impl Session {
         if t.observed.linear_editor.as_ref().is_some_and(|l| gone.contains(&l.element)) {
             t.observed.linear_editor = None;
         }
+        self.cancel_gesture_on_removed(tab, &gone);
         self.mark_dirty(Redraw::Scene);
     }
 
@@ -123,7 +137,56 @@ impl Session {
             frames: None,
             mutating: true,
         });
+        if res.is_ok() {
+            self.repair_and_record(tab, cs);
+        }
         res
+    }
+
+    /// Repairs the merge of `cs` ([`Session::repair_merge`]) and writes the `remote.repair` ring entry when it wrote
+    /// something or failed. A failed repair does not fail the update: the update is in the document.
+    fn repair_and_record(&mut self, tab: TabId, cs: &ChangeSet) {
+        let t0 = now_ns();
+        let res = self.repair_merge(tab, cs);
+        let dur = now_ns().saturating_sub(t0) / 1000;
+        let (args, outcome) = match &res {
+            Ok(r) if r.is_empty() => return,
+            Ok(r) => (
+                json!({
+                    "tab": tab.to_string(),
+                    "elements": r.touched.len(),
+                    "ends_freed": r.freed_ends,
+                    "labels_released": r.released_labels,
+                    "frame_children_released": r.released_children,
+                    "label_groups_aligned": r.label_groups,
+                    "groups_dissolved": r.dissolved_groups,
+                    "arrows_solved": r.solved_arrows,
+                }),
+                Outcome::ok(true, None),
+            ),
+            Err(msg) => (
+                json!({ "tab": tab.to_string() }),
+                Outcome::refused(&Refusal::internal(
+                    REPAIR_RING_ID,
+                    format!("the merge of a collaborator's change could not be repaired: {msg}"),
+                )),
+            ),
+        };
+        if res.is_ok() {
+            self.mark_dirty(Redraw::Scene);
+        }
+        let t_ms = self.now_ms();
+        self.ring.push(Record {
+            t_ms,
+            id: REPAIR_RING_ID,
+            args: Some(&args),
+            source: Origin::Remote,
+            outcome,
+            duration_us: dur,
+            steps: None,
+            frames: None,
+            mutating: true,
+        });
     }
 }
 

@@ -476,6 +476,28 @@ impl Session {
                         not_rolled_back.push(NotRolledBack { index: i, id: spec.id.to_owned(), classes });
                     }
                     results.push(done.out);
+                    // Preflight keeps tab-changing commands last by their `batch` fact. A command that only
+                    // sometimes changes the tab (or lies about it) is caught here, before the next step would
+                    // edit a document this batch holds no journal for.
+                    if self.tab().id != tab_id
+                        && let Some(next) = steps.get(i + 1)
+                    {
+                        failed = Some(BatchFailure {
+                            index: i + 1,
+                            id: next.id.clone(),
+                            refusal: batch_refusal(
+                                "must_be_last",
+                                spec.id,
+                                format!(
+                                    "`{}` made another tab the active one, so the {} step(s) after it were not run. A batch edits one tab: move `{}` to the end or run the steps after it in a second batch.",
+                                    spec.id,
+                                    steps.len() - i - 1,
+                                    spec.id
+                                ),
+                            ),
+                        });
+                        break;
+                    }
                 }
                 Err(refusal) => {
                     failed = Some(BatchFailure { index: i, id: step.id.clone(), refusal });

@@ -1515,6 +1515,7 @@ dependencies = [
  "drafftink-typeset",
  "loro",
  "png",
+ "proptest",
  "schemars",
  "serde",
  "serde_json",

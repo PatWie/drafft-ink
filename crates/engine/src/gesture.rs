@@ -16,6 +16,7 @@ use std::fmt;
 
 use serde_json::{Value, json};
 
+use crate::cmd::collab::CollabNotice;
 use crate::executor::{Input, Mode, merge_common};
 use crate::refusal::Refusal;
 use crate::ring::{Origin, Outcome};
@@ -24,6 +25,7 @@ use crate::spec::CommandSpec;
 use crate::state::TabId;
 use crate::store::DocMark;
 use drafftink_profile::now_ns;
+use drafftink_scene::ElementId;
 
 /// A running gesture has to receive a frame within this many milliseconds, or the watchdog cancels it.
 pub const WATCHDOG_MS: u64 = 30_000;
@@ -130,6 +132,33 @@ impl Session {
         let now = self.ports.clock.mono_ms();
         let stale = self.gesture.as_ref().is_some_and(|g| now.saturating_sub(g.last_activity_ms) >= WATCHDOG_MS);
         stale && self.cancel_core(None, Origin::Ui).is_ok()
+    }
+
+    /// Cancels the running gesture of `tab` when it was changing an element in `gone` (a collaborator deleted or
+    /// removed it), and tells the person in plain words. The move, resize or edit cannot finish on an element that is
+    /// no longer there, and ending it would write the pre-gesture copy back over the collaborator's delete. The
+    /// working copies of what the gesture touched are then read again from the replicated document, which is the
+    /// truth. Returns true when it cancelled one.
+    pub(crate) fn cancel_gesture_on_removed(&mut self, tab: TabId, gone: &[ElementId]) -> bool {
+        let Some((mark, title)) = self.gesture.as_ref().filter(|g| g.tab == tab).map(|g| (g.mark, g.spec.title)) else {
+            return false;
+        };
+        let touched: Vec<ElementId> =
+            self.tab_by_id(tab).map(|t| t.doc.touched_since(mark).into_iter().collect()).unwrap_or_default();
+        if !touched.iter().any(|id| gone.contains(id)) {
+            return false;
+        }
+        let cancelled = self.cancel_core(None, Origin::Remote).is_ok();
+        if let Some(t) = self.tab_by_id_mut(tab) {
+            // Not fatal: the next remote update or undo reads the elements again.
+            let _ = t.doc.reload(&touched);
+        }
+        if cancelled {
+            self.collab_notify(CollabNotice::Info(format!(
+                "{title} was cancelled: someone else deleted an element you were changing."
+            )));
+        }
+        cancelled
     }
 
     /// The running gesture's id.

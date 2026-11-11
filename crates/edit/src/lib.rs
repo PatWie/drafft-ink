@@ -26,6 +26,8 @@
 //!   rule for copying elements as one block is in the private `copy` module; `lifecycle::duplicate` and `paste`
 //!   both use it.
 //! - `sticky`: the preset and fit of a sticky note (`element.create_sticky`).
+//! - `repair`: the fixes for what a merge of concurrent remote edits leaves broken (dangling references, group
+//!   nesting), as deterministic, idempotent functions.
 //! - `convert`: changing the type of shapes, lines and arrows in place (`element.convert`).
 //!
 //! Every rule reports a typed error. An element that is missing, deleted or locked is the shared
@@ -56,6 +58,7 @@ pub mod link;
 pub mod paste;
 pub mod preflight;
 pub mod query;
+pub mod repair;
 pub mod sticky;
 pub mod style;
 mod target;

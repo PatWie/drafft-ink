@@ -544,7 +544,9 @@ fn list(s: &mut Session, _: NoArgs) -> Result<ListOut, Refusal> {
 // ---- registration ----
 
 /// A tab command: tabs only, no undo, allowed in view-only mode, refused during a drag, ends a text edit
-/// first.
+/// first. Commands that change the active tab (`tab.new`, `tab.switch`, `tab.duplicate`, `tab.close`) override
+/// `batch` with [`Batch::Last`]: a batch edits the tab it started in (one journal, one undo step, one
+/// rollback), so no step may follow a step that moves it to another tab.
 const TABS: Facts = Facts {
     undo: Undo::NoUndo,
     reads_only: false,
@@ -570,7 +572,7 @@ pub const COMMANDS: &[CommandSpec] = &[
         "New tab",
         "Adds a tab after the active one and activates it: a blank document, the intro, or a copy of the active one.",
         &Typed::new(new_tab),
-        TABS,
+        Facts { batch: Batch::Last, ..TABS },
     )
     .refusals(&["empty_name", "too_many_tabs"])
     .example(r#"{"name":"Sketch","from":"blank"}"#),
@@ -580,7 +582,7 @@ pub const COMMANDS: &[CommandSpec] = &[
         "Switch tab",
         "Activates a tab, named by position, id or name. Each tab keeps its own selection, camera and history.",
         &Typed::new(switch),
-        TABS,
+        Facts { batch: Batch::Last, ..TABS },
     )
     .refusals(&["no_such_tab"])
     .example(r#"{"tab":"t2"}"#),
@@ -627,7 +629,7 @@ pub const COMMANDS: &[CommandSpec] = &[
         "Duplicate tab",
         "Copies the document of a tab into a new tab right after it and activates the copy.",
         &Typed::new(duplicate),
-        TABS,
+        Facts { batch: Batch::Last, ..TABS },
     )
     .refusals(&["no_such_tab", "empty_name", "too_many_tabs"])
     .example(r#"{"name":"Draft 2"}"#),

@@ -23,7 +23,7 @@ Files in `crates/engine/src`:
 - `crates/engine/src/registry.rs`: `Registry`, `CommandInfo`, `Session::commands`.
 - `crates/engine/src/invariants.rs`: the post-command invariant pass (arrows, then bound text; a marked call site for frame membership). Tests: `invariants_tests.rs`.
 - `crates/engine/src/services/`: the `Services` a session owns: the text and formula engine behind the measuring traits of `edit` and `io` (`Measure`, `TypesetMeasure`, `FakeMeasure`).
-- `crates/engine/src/remote.rs`: `Session::apply_remote`.
+- `crates/engine/src/remote.rs`: `Session::apply_remote`. `crates/engine/src/remote_repair.rs`: the repair pass that follows a merge (docs/crdt.md section 10a). Tests: `remote_repair_tests.rs`.
 - `crates/engine/src/keymap_tests.rs`: the keymap of `docs/commands.md` section 6.1 against the registered shortcuts.
 - `crates/engine/src/testing.rs`: session and element fixtures for tests.
 - `crates/engine/src/cmd/mod.rs`: the `families!` line. `crates/engine/src/cmd/*.rs`: one file per family.
@@ -229,6 +229,7 @@ In `crates/engine/src/registry_tests.rs`:
 - `examples_parse_and_agent_commands_with_required_arguments_have_one`.
 - `engine_describe_and_commands_cover_every_command`.
 - `hostile_params_never_panic` and `hostile_params_never_panic_in_a_batch`: 34 hostile JSON values, as the whole argument and under every key of the schema. The result may be a refusal or a success. It may not be `internal`, must name the right command, must use a shared or declared code, and a refusal must leave the fingerprint unchanged.
+- `a_command_a_batch_may_run_anywhere_leaves_the_active_tab_alone`: a `batch: allowed` command that changes tabs leaves the active tab as it was (the ones that change it are `batch: last`).
 - `refusal_leaves_state_unchanged`: six situations per command (unknown key, view-only, text edit, no selection, no optional ports, running gesture). Every refusal leaves the fingerprint alone and is in the ring with its code.
 - `availability_and_execute_agree_on_state_refusals`.
 
@@ -370,7 +371,7 @@ A label that makes its container grow moves arrows bound to the container, so th
 
 ### Remote edits
 
-`Session::apply_remote(tab, bytes)` (`crates/engine/src/remote.rs`) takes a Loro update or snapshot for a tab (any tab, not only the active one). It applies it through `TabDoc::apply_remote` (replicated store first, then the touched elements into the working store), drops deleted elements from the selection and the point editor, raises the dirty reason `Scene` when something changed, and returns the `ChangeSet`. It pushes no undo step, runs no invariant pass and is not a command. A bad update is a `parse_failed` refusal and changes nothing; an unknown tab is `no_such_tab`. Each call writes one ring entry, `remote.apply` with origin `remote` and `{tab, bytes, elements}` as arguments (the failure case too), so `engine.recent` shows that something arrived without listing every element. `Session::set_remote_presence` is not built yet.
+`Session::apply_remote(tab, bytes)` (`crates/engine/src/remote.rs`) takes a Loro update or snapshot for a tab (any tab, not only the active one). It applies it through `TabDoc::apply_remote` (replicated store first, then the touched elements into the working store), drops deleted elements from the selection and the point editor, raises the dirty reason `Scene` when something changed, and returns the `ChangeSet`. It pushes no undo step, runs no command invariant pass and is not a command. It then repairs the merge (`remote_repair.rs`, docs/crdt.md section 10a: dangling bindings, labels and frame children, inconsistent groups, equal or misplaced z-order keys, arrows solved again): those writes are this peer's own operations with a system origin, so they are sent to the room but are on no undo stack, and a pass that wrote something adds a `remote.repair` ring entry with origin `remote`. A running gesture that was changing an element the update deleted is cancelled with a notice. A bad update is a `parse_failed` refusal and changes nothing; an unknown tab is `no_such_tab`. Each call writes one ring entry, `remote.apply` with origin `remote` and `{tab, bytes, elements}` as arguments (the failure case too), so `engine.recent` shows that something arrived without listing every element. `Session::set_remote_presence` is not built yet.
 
 ### Collaboration
 
