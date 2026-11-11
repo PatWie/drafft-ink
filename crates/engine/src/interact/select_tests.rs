@@ -9,6 +9,7 @@ use drafftink_canvas::{
     Button, Buttons, Handle, InputEvent, Intent, Meta, Modifiers, PointerEvent, PointerId, PointerKind, PointerPhase,
     Pos, Target,
 };
+use drafftink_geom::guides::SmartGuideKind;
 use drafftink_geom::kurbo::{Point, Vec2};
 use drafftink_scene::{ElementId, ElementKind, Kind, PathType};
 use serde_json::json;
@@ -488,6 +489,64 @@ fn an_alignment_guide_of_a_move_carries_its_markers_and_the_gap_to_the_other_box
     assert_eq!(top.gap, Some((200.0, 400.0)), "the empty stretch between the boxes along the guide");
     assert!(!top.snap_points.is_empty(), "the markers reach the overlay");
     rig.up(150.0, 155.0);
+}
+
+/// Three squares in a row with equal gaps, along x or along y, in a viewport that shows all of them. The squares
+/// are wide enough that the far square of a pair lies outside the square of alignment candidates around the
+/// dragged one.
+fn row_rig(horizontal: bool) -> (Rig, [ElementId; 3]) {
+    let mut rig = Rig::new();
+    rig.run("view.set_viewport", json!({ "width": 1000, "height": 1000 }));
+    rig.run("view.set", json!({ "scroll": [500, 500], "zoom": 1 }));
+    rig.run("settings.set", json!({ "key": "snap.smart_guides", "value": true }));
+    let at = |k: f64| 40.0 + k * 290.0;
+    let ids = [0.0, 1.0, 2.0]
+        .map(|k| if horizontal { rig.rect(at(k), 40.0, 160.0, 160.0) } else { rig.rect(40.0, at(k), 160.0, 160.0) });
+    (rig, ids)
+}
+
+/// Press at `from`, pull away to `via` (past the drag threshold) and come back to `to`, and stay down.
+fn drag_via(rig: &mut Rig, from: (f64, f64), via: (f64, f64), to: (f64, f64)) {
+    rig.down(from.0, from.1);
+    rig.drag_to(via.0, via.1);
+    rig.drag_to(to.0, to.1);
+}
+
+#[test]
+fn dragging_an_outer_rectangle_snaps_it_to_the_equal_gap_of_the_pair() {
+    for horizontal in [true, false] {
+        let along = |k: f64, off: f64| {
+            if horizontal { (40.0 + k * 290.0 + off, 120.0) } else { (120.0, 40.0 + k * 290.0 + off) }
+        };
+        let place = |k: f64| if horizontal { (40.0 + k * 290.0, 40.0) } else { (40.0, 40.0 + k * 290.0) };
+        // The last square, pulled 6 units out of the row.
+        let (mut rig, [_, _, c]) = row_rig(horizontal);
+        drag_via(&mut rig, along(2.0, 80.0), along(2.0, 130.0), along(2.0, 86.0));
+        assert!(
+            rig.i
+                .overlay(&rig.s)
+                .canvas
+                .guides
+                .iter()
+                .any(|g| g.kind == SmartGuideKind::EqualSpacingH || g.kind == SmartGuideKind::EqualSpacingV),
+            "the spacing guides show (horizontal {horizontal})"
+        );
+        rig.up(along(2.0, 86.0).0, along(2.0, 86.0).1);
+        let (x, y, ..) = rig.bounds(&c);
+        assert_eq!((x, y), place(2.0), "last square, horizontal {horizontal}");
+        // The first square, pulled 6 units out of the row to the other side.
+        let (mut rig, [a, _, _]) = row_rig(horizontal);
+        drag_via(&mut rig, along(0.0, 80.0), along(0.0, 30.0), along(0.0, 74.0));
+        rig.up(along(0.0, 74.0).0, along(0.0, 74.0).1);
+        let (x, y, ..) = rig.bounds(&a);
+        assert_eq!((x, y), place(0.0), "first square, horizontal {horizontal}");
+        // The middle square is still caught.
+        let (mut rig, [_, b, _]) = row_rig(horizontal);
+        drag_via(&mut rig, along(1.0, 80.0), along(1.0, 130.0), along(1.0, 86.0));
+        rig.up(along(1.0, 86.0).0, along(1.0, 86.0).1);
+        let (x, y, ..) = rig.bounds(&b);
+        assert_eq!((x, y), place(1.0), "middle square, horizontal {horizontal}");
+    }
 }
 
 #[test]

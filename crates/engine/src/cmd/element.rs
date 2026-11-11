@@ -21,7 +21,7 @@ use drafftink_edit::transform::{self, CommonBounds, NotRotatableReason, ResizeSp
 use drafftink_geom::guides::{SmartGuide, SmartGuideKind, detect_smart_guides, detect_smart_guides_for_point};
 use drafftink_geom::kurbo::{Point, Rect, Vec2};
 use drafftink_geom::select::{BoxHandle, Corner, Edge};
-use drafftink_geom::snap::{GRID_SIZE, MAX_SNAP_CANDIDATES, MULTI_MOVE_SNAP_RADIUS, SMART_GUIDE_THRESHOLD, snap_to_grid};
+use drafftink_geom::snap::{EQUAL_SPACING_REACH, GRID_SIZE, MAX_SNAP_CANDIDATES, MULTI_MOVE_SNAP_RADIUS, SMART_GUIDE_THRESHOLD, snap_to_grid};
 use drafftink_scene::{ElementId, ElementKind, IdSource, Kind, SceneRead, GroupId};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -322,32 +322,49 @@ pub struct MoveOut {
     pub ids: Vec<String>,
 }
 
-/// Boxes of the other elements that guides and spacing look at: the visible ones near `zone`, at most
-/// `MAX_SNAP_CANDIDATES`, plus the vertices of lines and arrows as zero-size boxes (the old app's rule).
-fn snap_candidates(s: &Session, exclude: &BTreeSet<ElementId>, zone: Option<Rect>) -> Vec<Rect> {
+/// Boxes of the other elements that guides and spacing look at: the visible ones that touch one of `zones`, at
+/// most `MAX_SNAP_CANDIDATES`, plus the vertices of lines and arrows as zero-size boxes (the old app's rule).
+/// Every zone is a query on the spatial index, so the scene is never scanned. `None` means the whole viewport.
+fn snap_candidates(s: &Session, exclude: &BTreeSet<ElementId>, zones: Option<&[Rect]>) -> Vec<Rect> {
     let (vx, vy, vw, vh) = s.view().visible();
     let viewport = Rect::new(vx, vy, vx + vw, vy + vh);
     let touches = |a: &Rect, b: &Rect| a.x0 <= b.x1 && b.x0 <= a.x1 && a.y0 <= b.y1 && b.y0 <= a.y1;
-    // Only elements that touch the viewport and the zone count, so the spatial index narrows the scene first.
-    let area = zone.map_or(viewport, |z| z.intersect(viewport).inflate(1.0, 1.0));
     let index = s.tab().doc.scene_index();
+    let mut seen: BTreeSet<&ElementId> = BTreeSet::new();
     let mut out = Vec::new();
-    for e in index.in_rect(s.store(), &area).into_iter().filter(|e| !exclude.contains(&e.id)) {
-        let b = geometry::world_bounds(e).inflate(1.0, 1.0);
-        if !touches(&viewport, &b) || zone.as_ref().is_some_and(|z| !touches(z, &b)) {
-            continue;
-        }
-        if out.len() >= MAX_SNAP_CANDIDATES {
-            break;
-        }
-        out.push(geometry::world_bounds(e));
-        if matches!(e.kind, ElementKind::Line(_) | ElementKind::Arrow(_))
-            && let Some(pts) = geometry::world_points(e)
-        {
-            out.extend(pts.into_iter().map(|p| Rect::new(p.x, p.y, p.x, p.y)));
+    // Only elements that touch the viewport and a zone count, so the spatial index narrows the scene first.
+    for area in zones.map_or_else(|| vec![viewport], |z| z.iter().map(|z| z.intersect(viewport)).collect()) {
+        for e in index.in_rect(s.store(), &area.inflate(1.0, 1.0)) {
+            if exclude.contains(&e.id) || !seen.insert(&e.id) {
+                continue;
+            }
+            let b = geometry::world_bounds(e).inflate(1.0, 1.0);
+            if !touches(&viewport, &b) {
+                continue;
+            }
+            if out.len() >= MAX_SNAP_CANDIDATES {
+                return out;
+            }
+            out.push(geometry::world_bounds(e));
+            if matches!(e.kind, ElementKind::Line(_) | ElementKind::Arrow(_))
+                && let Some(pts) = geometry::world_points(e)
+            {
+                out.extend(pts.into_iter().map(|p| Rect::new(p.x, p.y, p.x, p.y)));
+            }
         }
     }
     out
+}
+
+/// Where the smart guides of a dragged box look: the square of `MULTI_MOVE_SNAP_RADIUS` around it for
+/// alignment, and a row and a column through it, `EQUAL_SPACING_REACH` long on each side, for the boxes of an
+/// equal-spacing pair (the far box of a pair can lie beyond the square when the dragged box is outside it).
+fn move_snap_zones(target: Rect) -> [Rect; 3] {
+    [
+        target.inflate(MULTI_MOVE_SNAP_RADIUS, MULTI_MOVE_SNAP_RADIUS),
+        target.inflate(EQUAL_SPACING_REACH, 0.0),
+        target.inflate(0.0, EQUAL_SPACING_REACH),
+    ]
 }
 
 /// The old movement threshold: a drag under this many units does not snap (it prevents a snap on a click).
@@ -366,8 +383,7 @@ fn snap_move(s: &Session, moved: &[ElementId], dx: f64, dy: f64, on: SnapFlags) 
         let target = reference + Vec2::new(dx, dy);
         let rel = Reverse::of(s.store());
         let exclude: BTreeSet<ElementId> = with_companions(s.store(), &rel, moved, true).into_iter().collect();
-        let zone = target.inflate(MULTI_MOVE_SNAP_RADIUS, MULTI_MOVE_SNAP_RADIUS);
-        let others = snap_candidates(s, &exclude, Some(zone));
+        let others = snap_candidates(s, &exclude, Some(&move_snap_zones(target)));
         let r = detect_smart_guides(target, &others, SMART_GUIDE_THRESHOLD);
         if r.snapped_x || r.snapped_y {
             dx += r.point.x - target.x0;
@@ -626,7 +642,7 @@ fn snap_resize(s: &Session, ids: &[ElementId], a: &ResizeArgs, on: SnapFlags) ->
         let rel = Reverse::of(s.store());
         let exclude: BTreeSet<ElementId> = with_companions(s.store(), &rel, &prim, true).into_iter().collect();
         let zone = Rect::from_center_size(target, (MULTI_MOVE_SNAP_RADIUS * 2.0, MULTI_MOVE_SNAP_RADIUS * 2.0));
-        let others = snap_candidates(s, &exclude, Some(zone));
+        let others = snap_candidates(s, &exclude, Some(&[zone]));
         let r = detect_smart_guides_for_point(target, &others, SMART_GUIDE_THRESHOLD);
         if ax && r.snapped_x {
             target.x = r.point.x;

@@ -572,6 +572,23 @@ mod tests {
     }
 
     #[test]
+    fn an_outer_box_snaps_to_the_gap_of_the_pair_on_both_axes_and_both_sides() {
+        // Three 200 squares with 150 between them, dragged off their place by 5 units.
+        let row = |k: f64| (k * 350.0, 0.0);
+        for (k, off, others_at) in [(2.0, 5.0, [0.0, 1.0]), (0.0, -5.0, [1.0, 2.0]), (2.0, -5.0, [0.0, 1.0])] {
+            let others = others_at.map(|i| r(row(i).0, 0.0, 200.0, 200.0));
+            let res = detect_smart_guides(r(row(k).0 + off, 0.0, 200.0, 200.0), &others, SMART_GUIDE_THRESHOLD);
+            assert!(res.snapped_x, "row position {k}, offset {off}");
+            assert_eq!(res.point.x, row(k).0, "row position {k}, offset {off}");
+            // The same story down a column.
+            let others_v = others_at.map(|i| r(0.0, row(i).0, 200.0, 200.0));
+            let res = detect_smart_guides(r(0.0, row(k).0 + off, 200.0, 200.0), &others_v, SMART_GUIDE_THRESHOLD);
+            assert!(res.snapped_y, "column position {k}, offset {off}");
+            assert_eq!(res.point.y, row(k).0, "column position {k}, offset {off}");
+        }
+    }
+
+    #[test]
     fn spacing_needs_cross_axis_overlap() {
         // Boxes in a row far above the dragged box: no horizontal spacing.
         let others = [r(0.0, 0.0, 100.0, 100.0), r(300.0, 0.0, 100.0, 100.0)];

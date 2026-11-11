@@ -23,6 +23,11 @@ pub const SMART_GUIDE_THRESHOLD: f64 = 8.0;
 /// Snap zone radius for equal spacing detection (40 grid units).
 pub const EQUAL_SPACING_SNAP_RADIUS: f64 = GRID_SIZE * 40.0;
 
+/// How far along the row (or column) equal spacing has to look for the boxes of a pair: dragging a box next to a
+/// pair with the largest gap that counts ([`EQUAL_SPACING_SNAP_RADIUS`]) puts the pair's far box up to two gaps
+/// away from the dragged box.
+pub const EQUAL_SPACING_REACH: f64 = EQUAL_SPACING_SNAP_RADIUS * 2.0;
+
 /// Snap zone radius for line and arrow endpoint snapping (40 grid units).
 pub const ENDPOINT_SNAP_RADIUS: f64 = GRID_SIZE * 40.0;
 
@@ -449,6 +454,7 @@ mod tests {
         assert_eq!(GRID_SIZE, 20.0);
         assert_eq!(SMART_GUIDE_THRESHOLD, 8.0);
         assert_eq!(EQUAL_SPACING_SNAP_RADIUS, 800.0);
+        assert_eq!(EQUAL_SPACING_REACH, 1600.0);
         assert_eq!(ENDPOINT_SNAP_RADIUS, 800.0);
         assert_eq!(MULTI_MOVE_SNAP_RADIUS, 400.0);
         assert_eq!(ANGLE_SNAP_INCREMENT, 15.0);
