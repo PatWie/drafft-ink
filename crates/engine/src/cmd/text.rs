@@ -71,6 +71,7 @@ fn set(s: &mut Session, a: SetArgs) -> Result<SetOut, Refusal> {
         return Err(wrong());
     }
     let text = a.text.as_str();
+    let defaults = s.tool.text_defaults.clone();
     let out = with_doc(s, |tx, m, _math, ids| {
         if kind == Kind::Text {
             let r = text_bind::set_text_content(tx, m, &id, text, a.keep_runs)?;
@@ -79,7 +80,7 @@ fn set(s: &mut Session, a: SetArgs) -> Result<SetOut, Refusal> {
                 None => (None, true),
             });
         }
-        Ok(match text_bind::relabel(tx, m, ids, &id, text, true)? {
+        Ok(match text_bind::relabel(tx, m, ids, &id, text, true, Some(&defaults))? {
             Relabeled::Updated(o) | Relabeled::Created(o) => (Some(o.label), false),
             Relabeled::Removed(_) => (None, true),
             Relabeled::Nothing => (None, false),

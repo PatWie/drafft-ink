@@ -27,6 +27,18 @@ fn refuse(s: &mut Session, id: &str, args: Value) -> Refusal {
     r
 }
 
+/// Like `refuse`, for a command that ends the edit: the session ends it before the refusal, and the
+/// document is untouched.
+fn refuse_keeping_edit(s: &mut Session, id: &str, args: Value) -> Refusal {
+    let doc = s.tab().doc.revision();
+    let r = match s.execute_from(Origin::Test, id, args) {
+        Ok(v) => panic!("{id} should have refused, got {v}"),
+        Err(r) => r,
+    };
+    assert_eq!(s.tab().doc.revision(), doc, "the document must not change");
+    r
+}
+
 fn text_at(s: &mut Session, content: &str, x: f64, y: f64) -> ElementId {
     let w = content.chars().count() as f64 * 10.0;
     testing::add(s, ElementKind::Text(TextData::new(content)), x, y, w, 25.0).unwrap()
@@ -435,6 +447,60 @@ fn edit_end_applies_style_props_in_the_same_step() {
     let out = run(&mut s, "text.edit_end", json!({"text": "new", "style": {"font_size": 36}}));
     let id = ElementId::new(out["id"].as_str().unwrap()).unwrap();
     assert_eq!(font_size(&s, &id), 36.0);
+}
+
+/// Makes 36 the font size of new text, as the style panel does.
+fn default_font_size_36(s: &mut Session) {
+    run(s, "style.set", json!({"props": {"font_size": 36}, "scope": "defaults"}));
+}
+
+#[test]
+fn new_text_from_edit_end_uses_the_text_defaults_of_the_tool() {
+    let (mut s, _f) = testing::session();
+    default_font_size_36(&mut s);
+    run(&mut s, "text.edit_begin", json!({"at": [0, 0]}));
+    let out = run(&mut s, "text.edit_end", json!({"text": "abc"}));
+    let id = ElementId::new(out["id"].as_str().unwrap()).unwrap();
+    assert_eq!(font_size(&s, &id), 36.0);
+    // A style given at the end wins over the defaults.
+    run(&mut s, "text.edit_begin", json!({"at": [0, 200]}));
+    let out = run(&mut s, "text.edit_end", json!({"text": "abc", "style": {"font_size": 20}}));
+    let id = ElementId::new(out["id"].as_str().unwrap()).unwrap();
+    assert_eq!(font_size(&s, &id), 20.0);
+}
+
+#[test]
+fn a_new_label_uses_the_text_defaults_of_the_tool() {
+    let (mut s, _f) = testing::session();
+    default_font_size_36(&mut s);
+    let r = rect(&mut s);
+    run(&mut s, "text.edit_begin", json!({"id": r.as_str()}));
+    run(&mut s, "text.edit_end", json!({"text": "Decision"}));
+    assert_eq!(font_size(&s, &label_of(&s, &r).unwrap()), 36.0);
+    // `text.set` on a shape creates its label the same way.
+    let r2 = testing::add_rect(&mut s, 400.0, 0.0, 200.0, 100.0).unwrap();
+    run(&mut s, "text.set", json!({"id": r2.as_str(), "text": "Other"}));
+    assert_eq!(font_size(&s, &label_of(&s, &r2).unwrap()), 36.0);
+}
+
+#[test]
+fn edit_end_style_takes_the_properties_of_style_set_and_refuses_what_text_cannot_use() {
+    let (mut s, _f) = testing::session();
+    let t = text_at(&mut s, "abc", 0.0, 0.0);
+    run(&mut s, "text.edit_begin", json!({"id": t.as_str()}));
+    // A palette name works, as in `style.set`.
+    run(&mut s, "text.edit_end", json!({"style": {"stroke_color": "red-500"}}));
+    assert_ne!(s.element(&t).unwrap().style.stroke_color, Color::parse("#000000").unwrap());
+    for (style, code) in [
+        (json!({"fill_color": "#ff0000"}), "not_applicable"),
+        (json!({"line_height": 5}), "bad_args"),
+        (json!({"opacity": 2}), "bad_args"),
+    ] {
+        run(&mut s, "text.edit_begin", json!({"id": t.as_str()}));
+        let e = refuse_keeping_edit(&mut s, "text.edit_end", json!({"style": style.clone()}));
+        assert_eq!(e.code, code, "{style}: {}", e.message);
+        s.text_edit = None;
+    }
 }
 
 #[test]

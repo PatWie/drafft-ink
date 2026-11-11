@@ -970,8 +970,9 @@ fn relabel(s: &mut Session, a: RelabelArgs) -> Result<RelabelOut, Refusal> {
     if a.text.chars().count() > MAX_TEXT_CHARS {
         return Err(Refusal::limit_exceeded(cmd, a.text.chars().count(), "characters", MAX_TEXT_CHARS));
     }
+    let defaults = s.tool.text_defaults.clone();
     let outcome = edit_with_measure::<Relabeled, CreateError>(s, |tx, measure, ids| {
-        text_bind::relabel(tx, measure, ids, &id, &a.text, a.create).map_err(CreateError::from)
+        text_bind::relabel(tx, measure, ids, &id, &a.text, a.create, Some(&defaults)).map_err(CreateError::from)
     })
     .map_err(|e| refuse(cmd, e))?;
     let (action, label) = match outcome {
