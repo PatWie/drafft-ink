@@ -468,13 +468,7 @@ fn check_refusal(spec: &CommandSpec, s: &mut Session, args: Value, must_refuse: 
         Ok(_) => assert!(!must_refuse, "`{}` should have refused {args} here", spec.id),
         Err(r) => {
             assert_ne!(r.code, "internal", "`{}` failed unexpectedly on {args}: {}", spec.id, r.message);
-            // A `Commit` gate commits a running text edit before the command refuses; that is its own step.
-            let committed = spec.while_text_edit == TextGate::Commit
-                && before.contains("text=Some")
-                && !s.fingerprint().contains("text=Some");
-            if !committed {
-                assert!(s.fingerprint() == before, "`{}` refused {args} with `{}` but changed state", spec.id, r.code);
-            }
+            assert!(s.fingerprint() == before, "`{}` refused {args} with `{}` but changed state", spec.id, r.code);
             assert!(
                 s.ring().len() > ring_len || s.ring().len() == s.ring().capacity(),
                 "the refusal of `{}` was not recorded in the ring",

@@ -24,7 +24,7 @@ pub(crate) mod common;
 pub(crate) mod testkit;
 
 use common::{
-    apply_selection, current_selection, edit, editing_group, fresh_group_id, locked, no_group, not_found,
+    apply_selection, current_selection, edit, editing_group, locked, no_group, not_found,
     selected_ids, zorder_refusal,
 };
 
@@ -121,8 +121,7 @@ fn create(s: &mut Session, a: CreateArgs) -> Result<CreateOut, Refusal> {
     let cmd = s.cmd();
     let ids = s.targets(a.ids.as_deref())?;
     let editing = editing_group(s);
-    let new_group = fresh_group_id(s).ok_or_else(|| Refusal::internal(cmd, "could not make a fresh group id"))?;
-    let report = edit(s, |tx, _| group::group(tx, &ids, editing.as_ref(), new_group))
+    let report = edit(s, |tx, ids_port| group::group_with_ids(tx, &ids, editing.as_ref(), ids_port))
         .map_err(|e| e.refusal(cmd, |g| group_refusal(cmd, g)))?;
     let sel = select_ids(s.store(), &report.members, editing.as_ref());
     apply_selection(s, sel);

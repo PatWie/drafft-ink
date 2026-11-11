@@ -890,7 +890,7 @@ fn delete_point_refusals() {
     let mut w = world();
     let r = refuse(&mut w.s, "arrow.delete_point", json!({"arrow": w.arrow, "index": 0}));
     assert_eq!(r.code, "too_few");
-    assert_eq!(r.message, format!("A arrow needs at least 2 points, so no point can be deleted from `{}`.", w.arrow));
+    assert_eq!(r.message, format!("An arrow needs at least 2 points, so no point can be deleted from `{}`.", w.arrow));
     let r = refuse(&mut w.s, "arrow.delete_point", json!({}));
     assert_eq!(r.code, "nothing_to_do");
     assert!(r.message.contains("point editor is not open"), "{}", r.message);

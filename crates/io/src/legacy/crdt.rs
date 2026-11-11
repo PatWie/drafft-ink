@@ -215,7 +215,7 @@ fn read_shape(m: &Map<String, Value>, depth: usize, report: &mut ImportReport) -
         return Some(OShape { id, style: OStyle::default(), body: Body::Group { children, rotation: 0.0 } });
     }
     let Some(st) = style(m) else {
-        report.warn(format!("a {kind} shape lacks its stroke fields; skipped"));
+        report.warn(format!("the {kind} shape lacks its stroke fields; skipped"));
         return None;
     };
     let body = match kind {

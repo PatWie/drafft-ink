@@ -352,7 +352,7 @@ pub enum TextBindError {
     #[error("element {0} does not exist. Look up ids with element.query or doc.outline.")]
     Missing(ElementId),
     /// The element is not a text.
-    #[error("{id} is a {kind}, not a text element. Pass the id of a text.")]
+    #[error("{id} is {}, not a text element. Pass the id of a text.", drafftink_scene::words::Article::new(.kind))]
     NotText {
         /// The element.
         id: ElementId,
@@ -360,7 +360,7 @@ pub enum TextBindError {
         kind: &'static str,
     },
     /// The element cannot hold a label.
-    #[error("{id} is a {kind}, which cannot hold a label. Labels go on rectangles, diamonds, ellipses and arrows.")]
+    #[error("{id} is {}, which cannot hold a label. Labels go on rectangles, diamonds, ellipses and arrows.", drafftink_scene::words::Article::new(.kind))]
     NotContainer {
         /// The element.
         id: ElementId,

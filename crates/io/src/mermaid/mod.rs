@@ -223,7 +223,7 @@ fn prepare(text: &str) -> Result<Prepared<'_>, IoError> {
         "sequenceDiagram" => Kind::Sequence,
         _ => {
             let hint = if looks_like_type(word) {
-                format!("this is a {word} diagram; {HINT}")
+                format!("the diagram type `{word}` is not supported; {HINT}")
             } else {
                 format!("the text does not start with a Mermaid diagram type; {HINT}")
             };

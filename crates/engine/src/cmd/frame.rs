@@ -8,6 +8,7 @@
 use drafftink_edit::frame::{self, FrameError, SkipReason, Skipped, WrapOpts};
 use drafftink_edit::group::selection::select_ids;
 use drafftink_edit::lifecycle::LifecycleError;
+use drafftink_scene::words::Article;
 use drafftink_scene::{ElementId, Kind};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -25,7 +26,7 @@ use super::group::common::{apply_selection, edit, editing_group, locked, not_fou
 // ---- errors ----
 
 fn wrong_kind(cmd: &str, id: &ElementId, kind: &str) -> Refusal {
-    Refusal::custom("wrong_kind", cmd, format!("`{cmd}` works on frames, and `{id}` is a {kind}."))
+    Refusal::custom("wrong_kind", cmd, format!("`{cmd}` works on frames, and `{id}` is {}.", Article::new(kind)))
 }
 
 fn frame_refusal(cmd: &str, e: FrameError) -> Refusal {

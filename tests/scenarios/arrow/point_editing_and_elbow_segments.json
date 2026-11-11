@@ -14,7 +14,7 @@
     { "execute": "arrow.edit_points", "args": { "arrow": "e1", "select_point": 1 }, "expect": [ { "path": "$.selected_points", "eq": [1] } ] },
     { "execute": "arrow.delete_point", "expect": [ { "path": "$.removed", "eq": 1 } ], "note": "Without arguments it removes the point selected in the editor." },
     { "assert": "element.query", "args": { "fields": ["bounds"] }, "expect": [ { "path": "$.items[0].bounds.h", "eq": 0 } ] },
-    { "execute": "arrow.delete_point", "args": { "arrow": "e1", "index": 0 }, "refused": "too_few", "text": "needs at least 2 points" },
+    { "execute": "arrow.delete_point", "args": { "arrow": "e1", "index": 0 }, "refused": "too_few", "text": ["An arrow needs at least 2 points", "so no point can be deleted"] },
     { "execute": "arrow.delete_point", "args": { "arrow": "e1", "index": 7 }, "refused": "bad_args", "text": "point 7 does not exist" },
     { "execute": "arrow.edit_points", "args": { "arrow": "e1", "on": false } },
     { "undo": 1 },

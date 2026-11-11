@@ -1,0 +1,18 @@
+{
+  "about": "doc.inspect and element.query count the same elements: a rectangle with a bound label is one element, the label is counted apart (`labels`), and the full listing has both (docs/commands.md, doc.inspect).",
+  "steps": [
+    { "execute": "element.create", "args": { "kind": "rectangle", "bounds": { "x": 0, "y": 0, "w": 100, "h": 60 } } },
+    { "execute": "element.create", "args": { "kind": "ellipse", "bounds": { "x": 200, "y": 0, "w": 100, "h": 60 } } },
+    { "execute": "element.relabel", "args": { "id": "e1", "text": "Start" }, "expect": [ { "path": "$.label", "eq": "e3" } ] },
+    { "assert": "doc.inspect", "expect": [
+        { "path": "$.elements", "eq": 2 }, { "path": "$.labels", "eq": 1 }, { "path": "$.kinds.rectangle", "eq": 1 }, { "path": "$.kinds.ellipse", "eq": 1 },
+        { "path": "$.kinds.text", "exists": false, "note": "The label is not an element of its own here." } ] },
+    { "assert": "element.query", "expect": [ { "path": "$.total", "eq": 2, "note": "The same number as doc.inspect elements." } ] },
+    { "assert": "element.query", "args": { "filter": { "kind": "text" } }, "expect": [ { "path": "$.total", "eq": 1, "note": "Asking for text brings the label back." } ] },
+    { "assert": "doc.inspect", "args": { "detail": "full" }, "expect": [ { "path": "$.total", "eq": 3, "note": "elements + labels" } ] },
+    { "execute": "element.relabel", "args": { "id": "e1", "text": "" }, "expect": [ { "path": "$.action", "eq": "removed" } ] },
+    { "assert": "doc.inspect", "expect": [ { "path": "$.elements", "eq": 2 }, { "path": "$.labels", "eq": 0 } ] },
+    { "undo": 1 },
+    { "assert": "doc.inspect", "expect": [ { "path": "$.elements", "eq": 2 }, { "path": "$.labels", "eq": 1 } ] }
+  ]
+}

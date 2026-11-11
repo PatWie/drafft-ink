@@ -72,6 +72,11 @@ fn closest_first_quadrant(e0: f64, e1: f64, y0: f64, y1: f64) -> (f64, f64) {
             let g = z0 * z0 + z1 * z1 - 1.0;
             if g != 0.0 {
                 let r0 = (e0 / e1) * (e0 / e1);
+                if !r0.is_finite() {
+                    // The ellipse is thinner than a double can express against its width: it is a
+                    // segment along the x axis.
+                    return (y0.min(e0), 0.0);
+                }
                 let sbar = robust_root(r0, z0, z1, g);
                 (r0 * y0 / (sbar + r0), y1 / (sbar + 1.0))
             } else {
@@ -81,10 +86,11 @@ fn closest_first_quadrant(e0: f64, e1: f64, y0: f64, y1: f64) -> (f64, f64) {
             (0.0, e1)
         }
     } else {
-        let numer0 = e0 * y0;
-        let denom0 = e0 * e0 - e1 * e1;
-        if numer0 < denom0 {
-            let xde0 = numer0 / denom0;
+        // `y0 * e0 < e0^2 - e1^2`, divided by `e0^2` so that nothing overflows for huge axes.
+        let t = y0 / e0;
+        let k = 1.0 - (e1 / e0) * (e1 / e0);
+        if t < k {
+            let xde0 = t / k;
             (e0 * xde0, e1 * (1.0 - xde0 * xde0).max(0.0).sqrt())
         } else {
             (e0, 0.0)

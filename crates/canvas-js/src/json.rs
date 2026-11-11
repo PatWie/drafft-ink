@@ -10,6 +10,7 @@
 //!
 //! `update` takes a merge patch (RFC 7396): objects merge key by key, anything else replaces, `null` removes.
 
+use drafftink_scene::words::Article;
 use serde_json::{Map, Value};
 
 use crate::error::ApiError;
@@ -122,7 +123,8 @@ pub(crate) fn check_unit_kind(shape: &Value) -> Result<(), ApiError> {
     }
     match kind.keys().find(|k| *k != "type") {
         Some(extra) => Err(ApiError::invalid(format!(
-            "a {tag} has no field `{extra}`. Its box is x, y, w, h and angle, and its look goes in `style`"
+            "{} has no field `{extra}`. Its box is x, y, w, h and angle, and its look goes in `style`",
+            Article::new(tag)
         ))),
         None => Ok(()),
     }

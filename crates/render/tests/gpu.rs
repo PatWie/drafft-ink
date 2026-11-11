@@ -352,6 +352,9 @@ impl Legacy {
                 d.pressures = v["pressures"].as_array().into_iter().flatten().filter_map(Value::as_f64).collect();
                 if d.pressures.len() != d.points.len() {
                     d.pressures.clear();
+                } else if !d.pressures.is_empty() {
+                    // What the legacy loader makes of a stroke that has pressures.
+                    d.pressure_mode = PressureMode::Device;
                 }
                 d.closed = v["closed"].as_bool().unwrap_or(false);
                 let mut e = Element::new(id("x"), ElementKind::Freehand(d), z).with_style(st);

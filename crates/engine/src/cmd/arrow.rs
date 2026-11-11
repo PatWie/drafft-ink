@@ -20,6 +20,7 @@ use drafftink_edit::linear::{self, LinearError, world_points};
 use drafftink_geom::binding::FIXED_POINT_BOUND;
 use drafftink_geom::guides::SmartGuideKind;
 use drafftink_geom::kurbo::{Point, Rect};
+use drafftink_scene::words::Article;
 use drafftink_scene::{BindMode, Element, ElementId, ElementKind, Head, PathType, SceneRead, StoreError};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -488,7 +489,7 @@ fn from_linear(cmd: &str, key: &str, e: LinearError) -> Fail {
         LinearError::NoSuchPoint { index, len } => no_such_point(cmd, key, index, len).into(),
         LinearError::TooFewPoints { kind, min, have } => {
             let text = if min <= 2 {
-                format!("A {kind} needs at least 2 points, so no point can be deleted from it.")
+                format!("{} needs at least 2 points, so no point can be deleted from it.", Article::new(kind).capitalized())
             } else {
                 format!("A closed {kind} needs at least {min} points and this would leave {have}, so no point can be deleted.")
             };
@@ -917,7 +918,7 @@ fn delete_point(s: &mut Session, a: DeletePointArgs) -> Result<DeletePointOut, R
         linear::delete_points(tx, &id, &indices).map_err(|e| match e {
             LinearError::TooFewPoints { kind, min, have } => {
                 let text = if min <= 2 {
-                    format!("A {kind} needs at least 2 points, so no point can be deleted from `{}`.", id.as_str())
+                    format!("{} needs at least 2 points, so no point can be deleted from `{}`.", Article::new(kind).capitalized(), id.as_str())
                 } else {
                     format!(
                         "A closed {kind} needs at least {min} points, and this would leave {have}, so no point can be deleted from `{}`.",

@@ -16,6 +16,7 @@ use drafftink_edit::frame;
 use drafftink_edit::style::{Prop, StyleDefaults, StyleError, StyleProps, applies};
 use drafftink_edit::text_bind::{self, Relabeled};
 use drafftink_geom::kurbo::{Point, Size};
+use drafftink_scene::words::Article;
 use drafftink_scene::limits::{MAX_LATEX_CHARS, MAX_POINTS, MAX_TEXT_CHARS};
 use drafftink_scene::{BindMode, ElementId, Head, Kind, PathType, PressureMode, SceneRead, SceneTx, Style};
 use schemars::JsonSchema;
@@ -206,7 +207,7 @@ fn refuse(cmd: &str, e: CreateError) -> Refusal {
         CreateError::NotLabelContainer { id, kind } => Refusal::custom(
             "wrong_kind",
             cmd,
-            format!("`{id}` is a {kind} and cannot hold a label. Labels go on rectangles, diamonds, ellipses and arrows."),
+            format!("`{id}` is {} and cannot hold a label. Labels go on rectangles, diamonds, ellipses and arrows.", Article::new(kind)),
         ),
         CreateError::AlreadyLabelled { container, existing } => Refusal::custom(
             "already_bound",
@@ -215,7 +216,7 @@ fn refuse(cmd: &str, e: CreateError) -> Refusal {
         ),
         CreateError::EmptyText => empty_text(cmd),
         CreateError::NotAFrame { id, kind } => {
-            Refusal::custom("wrong_kind", cmd, format!("`{id}` is a {kind}, not a frame. Pass the id of a frame, \"auto\" or null as `frame`."))
+            Refusal::custom("wrong_kind", cmd, format!("`{id}` is {}, not a frame. Pass the id of a frame, \"auto\" or null as `frame`.", Article::new(kind)))
         }
         CreateError::NestedFrame => Refusal::bad_arg(cmd, "frame", "a frame cannot be placed inside another frame"),
         CreateError::TextTooLong { n, max } => Refusal::limit_exceeded(cmd, n, "characters", max),
@@ -436,7 +437,7 @@ fn check_fields(cmd: &str, a: &CreateArgs) -> Result<(), Refusal> {
             return Err(Refusal::bad_arg(
                 cmd,
                 key,
-                format!("does not apply to a {}. It applies to {}", a.kind.name(), kind_list(kinds)),
+                format!("does not apply to {}. It applies to {}", Article::new(a.kind.name()), kind_list(kinds)),
             ));
         }
     }
@@ -445,11 +446,11 @@ fn check_fields(cmd: &str, a: &CreateArgs) -> Result<(), Refusal> {
             return Err(Refusal::bad_arg(
                 cmd,
                 key,
-                format!("does not apply to a {}. It applies to {}", a.kind.name(), kind_list(kinds)),
+                format!("does not apply to {}. It applies to {}", Article::new(a.kind.name()), kind_list(kinds)),
             ));
         }
     }
-    let missing = |key: &str| Refusal::bad_arg(cmd, key, format!("is required for a {}", a.kind.name()));
+    let missing = |key: &str| Refusal::bad_arg(cmd, key, format!("is required for {}", Article::new(a.kind.name())));
     match a.kind {
         k if BOX_KINDS.contains(&k) && a.bounds.is_none() => Err(missing("bounds")),
         k if POINT_KINDS.contains(&k) && a.points.is_none() => Err(missing("points")),
@@ -788,8 +789,8 @@ fn create_element(s: &mut Session, a: CreateArgs) -> Result<CreateOut, Refusal> 
 
     if !made.ignored.is_empty() {
         s.warn(format!(
-            "These style properties do not apply to a {} and were ignored: {}.",
-            a.kind.name(),
+            "These style properties do not apply to {} and were ignored: {}.",
+            Article::new(a.kind.name()),
             made.ignored.join(", ")
         ));
     }
@@ -925,7 +926,7 @@ fn connect(s: &mut Session, a: ConnectArgs) -> Result<ConnectOut, Refusal> {
     })
     .map_err(|e| refuse(cmd, e))?;
     if !ignored.is_empty() {
-        s.warn(format!("These style properties do not apply to an {} and were ignored: {}.", kind.name(), ignored.join(", ")));
+        s.warn(format!("These style properties do not apply to {} and were ignored: {}.", Article::new(kind.name()), ignored.join(", ")));
     }
     select_exactly(s, std::slice::from_ref(&arrow), false);
     Ok(ConnectOut { id: arrow.as_str().to_owned(), label: label_id.map(|l| l.as_str().to_owned()) })
@@ -941,7 +942,8 @@ fn connect(s: &mut Session, a: ConnectArgs) -> Result<ConnectOut, Refusal> {
 pub struct RelabelArgs {
     /// A text element, or a rectangle, diamond, ellipse or arrow with or without a label: an id or `@name`.
     pub id: Ref,
-    /// The new text. On a shape or arrow, empty text removes the label.
+    /// The new text. Empty text removes the label of a shape or arrow, or a bound label given as `id`. A
+    /// free text element cannot be empty (`empty_text`).
     pub text: String,
     /// Create a label when the shape or arrow has none (default true).
     #[serde(default = "default_true", skip_serializing_if = "is_true")]

@@ -250,6 +250,12 @@ fn query_reports_the_selected_fields() {
     assert!(i["z"].is_string() && i["style"].is_object());
     assert_eq!((i["angle"].clone(), i["locked"].clone(), i["group_ids"].clone(), i["frame"].clone()), (json!(0.0), json!(false), json!([]), Value::Null));
     assert!(i.get("id").is_none(), "only the asked-for fields");
+    // Points: world coordinates of a line or arrow, `null` for any other kind.
+    let v = run(&mut w.s, "element.query", json!({"filter": {"ids": [w.arrow.as_str()]}, "fields": ["points"]}));
+    let arrow_points = v["items"][0]["points"].as_array().expect("an arrow has points");
+    assert!(arrow_points.len() >= 2 && arrow_points.iter().all(|p| p.as_array().is_some_and(|c| c.len() == 2 && c.iter().all(Value::is_f64))));
+    let v = run(&mut w.s, "element.query", json!({"filter": {"ids": [w.login.as_str()]}, "fields": ["points"]}));
+    assert_eq!(v["items"][0]["points"], Value::Null, "a rectangle has none");
     let v = run(&mut w.s, "element.query", json!({"filter": {"ids": ["@login_box"]}, "fields": ["bound_text", "frame"]}));
     assert_eq!(v["items"][0]["bound_text"], w.label.as_str());
     let v = run(&mut w.s, "element.query", json!({"filter": {"ids": [w.kid.as_str()]}, "fields": ["frame"]}));

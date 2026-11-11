@@ -68,7 +68,7 @@ fn parse_args<T: DeserializeOwned>(method: &str, args: &Value) -> Result<T, Harn
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
-struct LoadFixtureArgs {
+struct StageFixtureArgs {
     path: String,
 }
 
@@ -88,13 +88,6 @@ fn one() -> u64 {
 #[serde(deny_unknown_fields)]
 struct AdvanceArgs {
     ms: u64,
-}
-
-#[derive(Deserialize, Default)]
-#[serde(deny_unknown_fields, default)]
-struct SceneProbeArgs {
-    id: Option<String>,
-    outline: bool,
 }
 
 /// Declares the scenario-callable harness methods once: the name list and the dispatcher come from the same
@@ -117,10 +110,9 @@ macro_rules! scenario_methods {
 }
 
 scenario_methods! {
-    "load_fixture" => |h, a| { let p: LoadFixtureArgs = parse_args("load_fixture", a)?; h.load_fixture(&p.path) },
+    "stage_fixture" => |h, a| { let p: StageFixtureArgs = parse_args("stage_fixture", a)?; h.stage_fixture(&p.path) },
     "load_generated" => |h, a| { let p: LoadGeneratedArgs = parse_args("load_generated", a)?; h.load_generated(p.count, p.seed) },
     "advance_clock" => |h, a| { let p: AdvanceArgs = parse_args("advance_clock", a)?; h.advance_clock(p.ms) },
-    "scene_probe" => |h, a| { let p: SceneProbeArgs = parse_args("scene_probe", a)?; h.scene_probe(p.id.as_deref(), p.outline) },
     "pixel_probe" => |h, a| { let p: PixelArgs = parse_args("pixel_probe", a)?; h.pixel_probe(&p) },
 }
 
@@ -883,7 +875,7 @@ mod tests {
             assert!(!e.contains("no such harness method"), "{m}: {e}");
         }
         let e = dispatch(&mut h, "nope", &json!({})).unwrap_err().to_string();
-        assert!(e.contains("no such harness method") && e.contains("load_fixture"), "{e}");
+        assert!(e.contains("no such harness method") && e.contains("stage_fixture"), "{e}");
     }
 
     #[test]
@@ -938,12 +930,12 @@ mod tests {
     #[test]
     fn a_harness_error_can_be_expected_by_its_text() {
         let ok = wrap(
-            r#"[{"harness": "load_fixture", "args": {"path": "../x"}, "fails": "not a path inside tests/fixtures"}]"#,
+            r#"[{"harness": "stage_fixture", "args": {"path": "../x"}, "fails": "not a path inside tests/fixtures"}]"#,
         );
         assert_eq!(run_text(&ok), Ok(Outcome::Passed { steps: 1 }));
-        let bad = wrap(r#"[{"harness": "load_fixture", "args": {"path": "../x"}, "fails": "something else"}]"#);
+        let bad = wrap(r#"[{"harness": "stage_fixture", "args": {"path": "../x"}, "fails": "something else"}]"#);
         assert!(run_text(&bad).is_err());
-        let unexpected = wrap(r#"[{"harness": "load_fixture", "args": {"path": "../x"}}]"#);
+        let unexpected = wrap(r#"[{"harness": "stage_fixture", "args": {"path": "../x"}}]"#);
         assert!(run_text(&unexpected).unwrap_err().contains("harness call failed"));
     }
 
@@ -989,7 +981,7 @@ mod tests {
             r#"[{"execute": "view.set", "args": {"zoom": 2}}, {"undo": 2, "refused": "nothing_to_undo"},
                 {"batch": [{"id": "view.zoom_in"}]}, {"assert": "view.get"},
                 {"harness": "advance_clock", "args": {"ms": 1}},
-                {"snapshot": "s", "of_harness": "scene_probe"}, {"snapshot": "t", "of_command": "engine.state"}]"#,
+                {"snapshot": "s", "of_harness": "load_generated"}, {"snapshot": "t", "of_command": "engine.state"}]"#,
         ))
         .unwrap();
         let cmds: Vec<String> = sc.commands().into_iter().collect();
@@ -997,7 +989,7 @@ mod tests {
         let unknown = Scenario::parse(&wrap(r#"[{"execute": "no.such", "refused": "unknown_command"}]"#)).unwrap();
         assert!(unknown.commands().is_empty());
         let calls: Vec<String> = sc.harness_calls().into_iter().collect();
-        assert_eq!(calls, ["advance_clock", "scene_probe"]);
+        assert_eq!(calls, ["advance_clock", "load_generated"]);
     }
 
     #[test]

@@ -10,7 +10,7 @@
       "expect": [ { "path": "$.items[0].id", "eq": "e1" }, { "path": "$.items[3].id", "eq": "e4" } ] },
 
     { "execute": "group.create", "args": { "ids": ["e3"] }, "refused": "too_few", "text": "at least 2 elements" },
-    { "execute": "group.create", "args": { "ids": ["e1", "e3"] }, "save": { "g": "$.group" }, "expect": [ { "path": "$.group", "is": "string" }, { "path": "$.members", "eq": ["e1", "e3"] } ] },
+    { "execute": "group.create", "args": { "ids": ["e1", "e3"] }, "save": { "g": "$.group" }, "expect": [ { "path": "$.group", "eq": "g1", "note": "The refused call before took no group id." }, { "path": "$.members", "eq": ["e1", "e3"] } ] },
     { "execute": "group.create", "args": { "ids": ["e1", "e3"] }, "refused": "already_grouped", "text": "already form one group at this level" },
     { "assert": "element.query", "args": { "fields": ["id", "group_ids"] }, "expect": [
         { "path": "$.items[0].id", "eq": "e2", "note": "The element that sat between the members ends up below the group." },

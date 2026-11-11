@@ -97,8 +97,17 @@ pub fn base64_of(bytes: &[u8]) -> String {
     base64::engine::general_purpose::STANDARD.encode(bytes)
 }
 
-fn no_files(id: &str) -> Refusal {
+fn no_files_to_read(id: &str) -> Refusal {
     Refusal::port_unavailable(id, "file access", "files port missing", "Pass the data inline as `{base64, name}` instead.")
+}
+
+fn no_files_to_write(id: &str) -> Refusal {
+    Refusal::port_unavailable(
+        id,
+        "file access",
+        "files port missing",
+        "To get the bytes without writing a file, use `doc.export` with to=\"inline\".",
+    )
 }
 
 fn no_storage(id: &str) -> Refusal {
@@ -139,7 +148,7 @@ pub fn read_file(s: &Session, id: &str, f: &FileRef) -> Result<Loaded, Refusal> 
             Ok(Loaded { bytes, name, file: Some(f.clone()), provenance: Provenance::Clean })
         }
         _ => {
-            let files = s.ports.files.as_ref().ok_or_else(|| no_files(id))?;
+            let files = s.ports.files.as_ref().ok_or_else(|| no_files_to_read(id))?;
             let bytes = files.read(f).map_err(fail)?;
             let file = if matches!(f, FileRef::Download { .. }) { None } else { Some(f.clone()) };
             Ok(Loaded { bytes, name, file, provenance: Provenance::Clean })
@@ -190,7 +199,7 @@ pub fn require_writable(s: &Session, id: &str, f: &FileRef) -> Result<(), Refusa
     match f {
         FileRef::Stored { .. } if !s.has_port(PortKind::Storage) => Err(no_storage(id)),
         FileRef::Stored { .. } => Ok(()),
-        _ if !s.has_port(PortKind::Files) => Err(no_files(id)),
+        _ if !s.has_port(PortKind::Files) => Err(no_files_to_write(id)),
         _ => Ok(()),
     }
 }

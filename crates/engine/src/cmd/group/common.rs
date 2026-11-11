@@ -5,7 +5,7 @@
 use drafftink_edit::group::selection::Selection as EditSelection;
 use drafftink_edit::group::units::Relations;
 use drafftink_edit::zorder::ZOrderError;
-use drafftink_scene::{ElementId, GroupId, IdSource, SceneRead, StoreError};
+use drafftink_scene::{ElementId, GroupId, IdSource, StoreError};
 use serde_json::json;
 
 use crate::refusal::Refusal;
@@ -39,17 +39,6 @@ pub(crate) fn editing_group(s: &Session) -> Option<GroupId> {
 /// The selected ids as a list, live elements only.
 pub(crate) fn selected_ids(s: &Session) -> Vec<ElementId> {
     s.selection().iter().filter(|i| s.element(i).is_some()).cloned().collect()
-}
-
-/// A group id that no element uses, from the id port.
-pub(crate) fn fresh_group_id(s: &mut Session) -> Option<GroupId> {
-    for _ in 0..8 {
-        let g = s.ports.ids.group_id();
-        if !s.store().iter_all().any(|e| e.group_ids.contains(&g)) {
-            return Some(g);
-        }
-    }
-    None
 }
 
 /// The id port as an [`IdSource`] value (the domain functions are generic over `I: IdSource`).

@@ -289,5 +289,14 @@ fn hit_members_lists_the_group_without_labels() {
     assert_eq!(hit_members(&s, &h), ids(&["x", "y", "z"]));
     let single = AtHit { id: id("w"), group: None };
     assert_eq!(hit_members(&s, &single), ids(&["w"]));
-    assert_eq!(ALL_FIELDS.len(), 13);
+    assert_eq!(ALL_FIELDS.len(), 14);
+}
+
+#[test]
+fn ref_query_describe_names_only_the_fields_that_are_set() {
+    assert_eq!(RefQuery::default().describe(), "");
+    let q = RefQuery { ids: Some(vec!["a".into(), "@b".into()]), locked: Some(true), ..RefQuery::default() };
+    assert_eq!(q.describe(), "ids: a, @b, locked: true");
+    let q = RefQuery { frame: Some("f".into()), ..RefQuery::default() };
+    assert_eq!(q.describe(), "frame: f");
 }

@@ -167,6 +167,56 @@ fn pressure_strokes_are_one_ink_fill() {
     assert_eq!(colors(&f), [ink]);
 }
 
+/// A stroke with one pressure per point, in the given mode and brush.
+fn pressure_stroke(mode: PressureMode, brush: Brush, pressures: bool) -> Element {
+    let mut rng = Rng(1);
+    let mut e = freehand_el("m", &ZIndex::first(), 0.0, 0.0, 30, &mut rng, pressures);
+    if let ElementKind::Freehand(d) = &mut e.kind {
+        d.pressure_mode = mode;
+        d.brush = brush;
+    }
+    e
+}
+
+/// The encoded geometry of a fragment: what the GPU would fill.
+fn geometry(f: &Fragment) -> Vec<u32> {
+    f.scene.encoding().path_data.clone()
+}
+
+#[test]
+fn the_pressure_mode_decides_whether_the_stored_pressures_shape_the_stroke() {
+    let uniform = paint(&pressure_stroke(PressureMode::Uniform, Brush::Normal, true));
+    let device = paint(&pressure_stroke(PressureMode::Device, Brush::Normal, true));
+    let simulated = paint(&pressure_stroke(PressureMode::Simulated, Brush::Normal, true));
+    assert_ne!(geometry(&uniform), geometry(&device), "pressure changes the outline");
+    assert_eq!(geometry(&simulated), geometry(&device), "a simulated pressure is stored like a pen's");
+    // The uniform mode draws the stroke as if it had no pressures.
+    let bare = paint(&pressure_stroke(PressureMode::Uniform, Brush::Normal, false));
+    assert_eq!(geometry(&uniform), geometry(&bare));
+    assert_eq!(colors(&uniform), colors(&bare));
+}
+
+#[test]
+fn a_pressure_stroke_with_the_wrong_number_of_pressures_is_drawn_uniform() {
+    let mut e = pressure_stroke(PressureMode::Device, Brush::Normal, true);
+    if let ElementKind::Freehand(d) = &mut e.kind {
+        d.pressures.pop();
+    }
+    let bare = paint(&pressure_stroke(PressureMode::Uniform, Brush::Normal, false));
+    assert_eq!(geometry(&paint(&e)), geometry(&bare));
+}
+
+#[test]
+fn the_brush_is_applied_while_drawing_so_the_painter_draws_the_stored_points() {
+    // The calligraphy brush smooths the samples as they arrive (`edit::brush`), as in the old app. The
+    // stored points are the result, so the same points are drawn the same way in either brush.
+    for pressures in [false, true] {
+        let normal = paint(&pressure_stroke(PressureMode::Device, Brush::Normal, pressures));
+        let calligraphy = paint(&pressure_stroke(PressureMode::Device, Brush::Calligraphy, pressures));
+        assert_eq!(geometry(&normal), geometry(&calligraphy));
+    }
+}
+
 #[test]
 fn text_is_glyph_runs_one_per_colour_and_nothing_when_empty() {
     let mut ts = Typesetter::new();

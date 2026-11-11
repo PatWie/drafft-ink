@@ -1,0 +1,16 @@
+{
+  "about": "The library lives in the Storage port. A session without storage says so for every library command, and nothing changes.",
+  "ports": "headless",
+  "steps": [
+    { "execute": "element.create", "args": { "kind": "rectangle", "bounds": { "x": 0, "y": 0, "w": 100, "h": 60 } } },
+    { "execute": "library.list", "refused": "port_unavailable", "text": "storage" },
+    { "execute": "library.add", "args": { "ids": ["e1"] }, "refused": "port_unavailable", "text": "storage" },
+    { "execute": "library.insert", "args": { "item": "x" }, "refused": "port_unavailable", "text": "storage" },
+    { "execute": "library.rename", "args": { "item": "x", "name": "y" }, "refused": "port_unavailable", "text": "storage" },
+    { "execute": "library.remove", "args": { "all": true }, "refused": "port_unavailable", "text": "storage" },
+    { "execute": "library.export", "refused": "port_unavailable", "text": "storage" },
+    { "execute": "library.import", "args": { "source": { "base64": "e30=" } }, "refused": "port_unavailable", "text": "storage" },
+    { "assert": "doc.inspect", "expect": [ { "path": "$.elements", "eq": 1 } ] },
+    { "undo": 1, "expect": [ { "path": "$.undone", "len": 1 } ] }
+  ]
+}

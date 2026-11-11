@@ -98,12 +98,12 @@ Paths are JSONPath-lite: `$` the output; `.key` or `['key']`; `[2]` and `[-1]` f
 
 ### Snapshots
 
-`{ "snapshot": "outline", "of_harness": "scene_probe", "args": { "outline": true }, "select": "$.outline_text" }` compares text with `tests/scenarios/<family>/snapshots/<file stem>__<name>.txt`. A missing or different file fails and shows the first differing line. `DRAFFTINK_UPDATE_SNAPSHOTS=1` writes the file; read the diff before you commit it. The planned form is `of_command: doc.outline`, which replaces the scene probe when that command is registered.
+`{ "snapshot": "outline", "of_command": "doc.outline", "args": { "format": "text" }, "select": "$.text" }` compares text with `tests/scenarios/<family>/snapshots/<file stem>__<name>.txt`. A missing or different file fails and shows the first differing line. `DRAFFTINK_UPDATE_SNAPSHOTS=1` writes the file; read the diff before you commit it.
 
 ### Order of work
 
 1. State the story in `about`.
-2. Build the scene with commands. If the scene is big or comes from a file, use `load_generated` or `load_fixture`.
+2. Build the scene with commands. If the scene is big or comes from a file, use `load_generated`, or `stage_fixture` and `doc.open` for a file.
 3. Run the commands. Check the result of each with `expect`, and the state with an `assert` of a read-only command.
 4. Include at least one refusal with its `text`, and an `undo` that proves the step is one step.
 5. Run it with `DRAFFTINK_SCENARIO_TRACE=1`, read what the commands returned, and make the checks say what the documentation promises, not what the output happens to be.
@@ -126,10 +126,9 @@ Every public method of `Harness` that takes `self` has a doc line `Reason:` that
 
 | Method | Reason, in short |
 |---|---|
-| `load_fixture(path)` | reads `tests/fixtures/<path>` from the test machine's disk; the fake `Files` port cannot see it. Becomes "put the bytes into the fake port and run `doc.open`" when that command exists |
+| `stage_fixture(path)` | reads `tests/fixtures/<path>` from the test machine's disk; the fake `Files` port cannot see it. It copies the bytes into the fake port as `fixtures/<path>`, and the scenario runs `doc.open {"source": {"path": "fixtures/<path>"}}` |
 | `load_generated(count, seed)` | 1k to 100k elements cannot be made with commands in reasonable time; scenarios and benches share the generator (`drafftink_testkit::scenegen`) |
 | `advance_clock(ms)` | time is a port; a command cannot move a fake clock. Undo coalescing and autosave depend on it |
-| `scene_probe(id?, outline?)` | no read-only command lists elements yet. Answers from the `drafftink-edit::query` functions that `element.query` and `doc.outline` will call. Goes away with its last caller once those are registered |
 | `pixel_probe(size, points)` | pixels exist only on a GPU, outside every port. Renders with Vello through `drafftink-render` and `drafftink-gpu`, reports the adapter and whether it is `software` or `hardware` |
 
 **Planned, not here yet:** `pointer_script`, which feeds platform-neutral pointer events through the recognizers of `drafftink-canvas` into the engine. It waits for the intent-to-command controller in `drafftink-engine`. Until then a drag is tested as a gesture command (`gesture.begin`, `gesture.update`, `gesture.end`).

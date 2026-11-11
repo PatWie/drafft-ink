@@ -43,7 +43,7 @@ pub enum LinearError {
         len: usize,
     },
     /// The edit would leave too few points.
-    #[error("a {kind} needs at least {min} points and this edit would leave {have}; delete the element instead")]
+    #[error("{} needs at least {min} points and this edit would leave {have}; delete the element instead", drafftink_scene::words::Article::new(.kind))]
     TooFewPoints {
         /// Line or arrow.
         kind: &'static str,

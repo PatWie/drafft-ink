@@ -311,7 +311,14 @@ fn select_refuses_unknown_targets_with_not_found() {
     // A group with fewer than two live members is no group.
     let r = refuse_clean(&mut w.s, "selection.select", json!({"filter": {"kind": "freehand"}}));
     assert_eq!(r.code, "not_found");
-    assert!(r.message.starts_with("No element matches `{"), "{}", r.message);
+    assert_eq!(
+        r.message,
+        "No element matches the filter (kind: freehand). Loosen the filter, or look up ids with `element.query` or `doc.outline`."
+    );
+    assert_eq!(r.details.as_ref().unwrap()["filter"], "kind: freehand");
+    let r = refuse_clean(&mut w.s, "selection.select", json!({"filter": {"text": {"contains": "nothing"}, "locked": true}}));
+    assert_eq!(r.code, "not_found");
+    assert!(r.message.starts_with("No element matches the filter (locked: true, text: {contains: nothing})."), "{}", r.message);
     let r = refuse_clean(&mut w.s, "selection.select", json!({"filter": {"frame": "@ghost"}}));
     assert_eq!(r.code, "not_found");
 }
