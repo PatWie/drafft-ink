@@ -67,7 +67,7 @@ use world::{World, pointer_mode};
 
 pub use events::Key;
 pub use outcome::{ContextTarget, Outcome, UiRequest};
-pub use overlay::{Badge, InteractionOverlay, LaserPoint, LinkIcon, OverlayParts};
+pub use overlay::{AngleRays, Badge, EraserRing, InteractionOverlay, LaserPoint, LinkIcon, OverlayParts};
 pub use view::REPORT_EVERY_MS;
 
 use crate::session::Session;

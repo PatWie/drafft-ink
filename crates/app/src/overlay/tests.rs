@@ -8,7 +8,9 @@ use drafftink_geom::OrientedBox;
 use drafftink_geom::kurbo::{Point, Rect, Size};
 use drafftink_scene::{Color, ElementId};
 
-use super::to_render;
+use drafftink_engine::interact::{AngleRays, Badge, EraserRing, InteractionOverlay};
+
+use super::{add_interaction, to_render};
 
 fn id(text: &str) -> ElementId {
     ElementId::new(text).expect("a valid id")
@@ -84,4 +86,46 @@ fn the_remote_selection_box_keeps_its_turn() {
     };
     let out = to_render(&CanvasOverlay::default(), &remote, &[]);
     assert_eq!(out.remote_selections[0].boxes[0].angle, 0.5);
+}
+
+#[test]
+fn rays_the_snap_crosshair_and_the_eraser_ring_reach_the_render_overlay() {
+    let interaction = InteractionOverlay {
+        angle_rays: Some(AngleRays { origin: Point::new(1.0, 2.0), step_degrees: 15.0, locked_degrees: 45.0 }),
+        snap_point: Some(Point::new(3.0, 4.0)),
+        eraser: Some(EraserRing { at: Point::new(5.0, 6.0), radius_px: 10.0 }),
+        ..InteractionOverlay::default()
+    };
+    let mut out = to_render(&CanvasOverlay::default(), &RemoteParts::default(), &[]);
+    add_interaction(&mut out, &interaction);
+    let rays = out.angle_rays.expect("rays");
+    assert_eq!((rays.origin, rays.step_degrees, rays.locked_degrees), (Point::new(1.0, 2.0), 15.0, 45.0));
+    assert_eq!(out.snap_point, Some(Point::new(3.0, 4.0)));
+    let ring = out.eraser.expect("ring");
+    assert_eq!((ring.at, ring.radius_px), (Point::new(5.0, 6.0), 10.0));
+    assert!(out.rotation.is_none());
+}
+
+#[test]
+fn an_angle_badge_becomes_the_rotation_guides_and_a_size_badge_does_not() {
+    let angle = InteractionOverlay {
+        badge: Some(Badge::Angle { center: Point::new(7.0, 8.0), degrees: 30.0, snapped: true }),
+        ..InteractionOverlay::default()
+    };
+    let mut out = to_render(&CanvasOverlay::default(), &RemoteParts::default(), &[]);
+    add_interaction(&mut out, &angle);
+    let guide = out.rotation.expect("rotation guides");
+    assert_eq!((guide.center, guide.degrees, guide.snapped), (Point::new(7.0, 8.0), 30.0, true));
+
+    let size = InteractionOverlay { badge: Some(Badge::Size { w: 10.0, h: 20.0 }), ..InteractionOverlay::default() };
+    let mut out = to_render(&CanvasOverlay::default(), &RemoteParts::default(), &[]);
+    add_interaction(&mut out, &size);
+    assert!(out.rotation.is_none());
+}
+
+#[test]
+fn an_idle_interaction_adds_nothing() {
+    let mut out = to_render(&CanvasOverlay::default(), &RemoteParts::default(), &[]);
+    add_interaction(&mut out, &InteractionOverlay::default());
+    assert!(out.is_empty());
 }

@@ -8,6 +8,7 @@ use serde_json::json;
 
 use crate::interact::ctx::Ctx;
 use crate::interact::events::Ev;
+use crate::interact::overlay::EraserRing;
 
 /// The eraser's radius in screen pixels.
 const RADIUS_PX: f64 = 10.0;
@@ -35,8 +36,10 @@ impl Sweep {
         self.extend(cx, ev.at.world);
         if self.touched.len() != before {
             cx.parts.faded = self.touched.iter().cloned().collect();
-            cx.overlay_changed();
         }
+        // The ring follows the pointer, so every move redraws the overlay.
+        cx.parts.eraser = Some(EraserRing { at: ev.at.world, radius_px: RADIUS_PX });
+        cx.overlay_changed();
     }
 
     /// The press position is the first point of the path.

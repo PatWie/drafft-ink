@@ -420,8 +420,14 @@ fn overlay_describes_hover_guides_bind_candidates_and_remote_users() {
     c.set_selection(vec![id("a")]);
     assert!(c.overlay().hover.is_none(), "a selected element needs no hover outline");
 
-    let guide =
-        SmartGuide { kind: SmartGuideKind::Vertical, position: 10.0, start: 0.0, end: 100.0, snap_points: vec![] };
+    let guide = SmartGuide {
+        kind: SmartGuideKind::Vertical,
+        position: 10.0,
+        start: 0.0,
+        end: 100.0,
+        snap_points: vec![],
+        gap: None,
+    };
     c.take_dirty();
     assert!(c.set_guides(vec![guide.clone()]));
     assert!(!c.set_guides(vec![guide.clone()]), "same guides: no change");

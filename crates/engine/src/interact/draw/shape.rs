@@ -1,13 +1,12 @@
 //! Rectangle, diamond, ellipse and frame: press, drag, release (E6).
 
 use drafftink_edit::create;
-use drafftink_geom::guides::SmartGuide;
 use drafftink_geom::kurbo::{Point, Rect, Vec2};
 use drafftink_scene::Kind;
 use serde_json::json;
 
 use super::preview;
-use super::snap::{self, Snaps};
+use super::snap::{self, SnapMarks, Snaps};
 use crate::interact::ctx::Ctx;
 use crate::interact::events::Ev;
 use crate::state::Tool;
@@ -47,7 +46,7 @@ pub(super) struct BoxDrag {
     /// Where the press happened, snapped to the grid.
     origin: Point,
     /// The box and guides shown last, to skip a move that changes nothing.
-    shown: Option<(BoxXywh, Vec<SmartGuide>)>,
+    shown: Option<(BoxXywh, SnapMarks)>,
 }
 
 impl BoxDrag {
@@ -55,21 +54,21 @@ impl BoxDrag {
         Some(Self { kind: kind_of(tool)?, origin: snap::start(cx, ev.origin.world), shown: None })
     }
 
-    /// The box for the pointer at `world`, with the guides the snap showed.
-    fn current(&self, cx: &Ctx<'_>, world: Point) -> (BoxXywh, Vec<SmartGuide>) {
-        let snapped = snap::point(cx, world, None, Snaps::corner(cx));
-        let rect = bounds(self.origin, snapped.point, cx.mods.shift, cx.mods.alt);
-        (rect, snapped.guides)
+    /// The box for the pointer at `world`, with what the snap showed.
+    fn current(&self, cx: &Ctx<'_>, world: Point) -> (BoxXywh, SnapMarks) {
+        let placed = snap::place(cx, world, None, Snaps::corner(cx));
+        let rect = bounds(self.origin, placed.point, cx.mods.shift, cx.mods.alt);
+        (rect, placed.marks)
     }
 
     pub(super) fn update(&mut self, cx: &mut Ctx<'_>, ev: &Ev<'_>) {
-        let (rect, guides) = self.current(cx, ev.at.world);
-        if self.shown.as_ref().is_some_and(|(r, g)| *r == rect && *g == guides) {
+        let (rect, marks) = self.current(cx, ev.at.world);
+        if self.shown.as_ref().is_some_and(|(r, m)| *r == rect && *m == marks) {
             return;
         }
         preview::set(cx, preview::shape(cx, self.kind, rect));
-        preview::set_guides(cx, guides.clone());
-        self.shown = Some((rect, guides));
+        preview::set_marks(cx, marks.clone());
+        self.shown = Some((rect, marks));
     }
 
     /// The pointer was released: one `element.create`, unless the box is smaller than the engine allows.

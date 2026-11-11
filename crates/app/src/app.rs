@@ -823,6 +823,7 @@ impl App {
             self.world_key = Some(key);
         }
         let mut render_overlay = overlay::to_render(&interaction_overlay.canvas, &remote, &[]);
+        overlay::add_interaction(&mut render_overlay, &interaction_overlay);
         if let Some(editor) = self.editor.as_mut() {
             render_overlay.text_edit = Some(self.typesetter.with(|ts| editor.overlay(ts, theme, now)));
         }
@@ -834,7 +835,11 @@ impl App {
             .map(|p| TrailPoint { at: p.at, age_ms: (now - p.t_ms).max(0.0) })
             .filter(|p| p.age_ms < LASER_FADE_MS)
             .collect();
+        let head = trail.last().map(|p| p.at);
         self.canvas.add_trails(&[(Color::from_rgba8(239, 68, 68, 255), trail)], &view);
+        if let Some(head) = head {
+            self.canvas.add_laser_head(head, &view);
+        }
         self.overlay_key = Some(overlay_key);
 
         let base = self.canvas.background(self.session.store());

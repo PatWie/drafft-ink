@@ -237,11 +237,57 @@ pub(crate) fn paint_trail(scene: &mut Scene, points: &[TrailPoint], color: Color
     }
 }
 
+/// Draws the head of the local laser at `at`: a glow, a red disc and a white centre, in logical pixels as in the old
+/// app (12, 6 and 2).
+pub(crate) fn paint_laser_head(scene: &mut Scene, at: drafftink_geom::kurbo::Point, view: &View) {
+    use drafftink_geom::kurbo::Circle;
+    let centre = view.world_to_device() * at;
+    let px = view.logical_to_device().as_coeffs()[0];
+    for (radius, color) in
+        [(12.0, Color::from_rgba8(255, 0, 0, 100)), (6.0, Color::from_rgba8(255, 50, 50, 255)), (2.0, Color::WHITE)]
+    {
+        scene.fill(Fill::NonZero, Affine::IDENTITY, color, None, &Circle::new(centre, radius * px));
+    }
+}
+
 impl CanvasView {
+    /// Adds the head of the local laser to the overlay scene.
+    pub(crate) fn add_laser_head(&mut self, at: drafftink_geom::kurbo::Point, view: &View) {
+        paint_laser_head(&mut self.overlay, at, view);
+    }
+
     /// Adds trails to the overlay scene (the local laser, other people's lasers).
     pub(crate) fn add_trails(&mut self, trails: &[(Color, Vec<TrailPoint>)], view: &View) {
         for (color, points) in trails {
             paint_trail(&mut self.overlay, points, *color, view);
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use drafftink_geom::kurbo::{Point, Size, Vec2};
+    use drafftink_render::View;
+    use vello::Scene;
+
+    use super::paint_laser_head;
+
+    #[test]
+    fn the_laser_head_is_a_glow_a_disc_and_a_centre_at_the_pointer() {
+        let view = View::new(2.0, Vec2::new(0.0, 0.0), Size::new(400.0, 300.0));
+        let mut scene = Scene::new();
+        paint_laser_head(&mut scene, Point::new(50.0, 50.0), &view);
+        assert_eq!(scene.encoding().n_paths, 3);
+        let mut other = Scene::new();
+        paint_laser_head(
+            &mut other,
+            Point::new(50.0, 50.0),
+            &View::new(0.1, Vec2::new(0.0, 0.0), Size::new(400.0, 300.0)),
+        );
+        assert_eq!(
+            other.encoding().path_data.len(),
+            scene.encoding().path_data.len(),
+            "the head keeps its screen size at every zoom, so it costs the same"
+        );
     }
 }

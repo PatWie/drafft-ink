@@ -30,6 +30,7 @@ mod options;
 mod overlay;
 mod overlay_marks;
 mod overlay_peers;
+mod overlay_snap;
 mod overlay_text;
 mod painter;
 mod spec;
@@ -56,6 +57,7 @@ pub use overlay::{
 };
 pub use overlay_marks::LinkMark;
 pub use overlay_peers::{LaserTrail, RemoteSelection, TrailPoint};
+pub use overlay_snap::{AngleRays, EraserRing, RotationGuide};
 pub use overlay_text::TextEdit;
 pub use painter::{ElementPainter, FileSource};
 pub use spec::{

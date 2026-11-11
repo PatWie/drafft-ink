@@ -43,6 +43,7 @@ fn full() -> Overlay {
                 start: 0.0,
                 end: 100.0,
                 snap_points: vec![0.0, 100.0],
+                gap: None,
             },
             SmartGuide {
                 kind: SmartGuideKind::EqualSpacingH,
@@ -50,9 +51,13 @@ fn full() -> Overlay {
                 start: 100.0,
                 end: 175.0,
                 snap_points: Vec::new(),
+                gap: None,
             },
         ],
         snap_point: Some(Point::new(40.0, 40.0)),
+        angle_rays: Some(AngleRays { origin: Point::new(10.0, 10.0), step_degrees: 15.0, locked_degrees: 30.0 }),
+        rotation: Some(RotationGuide { center: Point::new(60.0, 40.0), degrees: 45.0, snapped: true }),
+        eraser: Some(EraserRing { at: Point::new(70.0, 70.0), radius_px: 10.0 }),
         cursors: vec![RemoteCursor::new(Point::new(1.0, 2.0), Color::from_rgba8(255, 0, 0, 255)).named("Ada")],
         remote_selections: vec![RemoteSelection {
             color: Color::from_rgba8(0, 160, 0, 255),
@@ -101,8 +106,8 @@ fn every_part_draws_something() {
     let mut s = Scene::new();
     let r = paint_overlay(&mut s, &o, &view(1.0), &OverlayStyle::default(), &mut ts());
     // marquee 1, lasso 1, text edit 1, hover 1, binding 1, remote selections 2, selection 1, point handles 2,
-    // link icons 2, guides 2 and one badge, snap point 1, trail 1, cursor 1.
-    assert_eq!(r.items, 18);
+    // link icons 2, guides 2 and one badge, snap point 1, angle rays 1, rotation 1, eraser 1, trail 1, cursor 1.
+    assert_eq!(r.items, 21);
     assert!(s.encoding().n_paths > 20, "{}", s.encoding().n_paths);
     let f = full();
     for name in PARTS {
@@ -114,7 +119,7 @@ fn every_part_draws_something() {
     }
 }
 
-const PARTS: [&str; 13] = [
+const PARTS: [&str; 16] = [
     "selection",
     "point handles",
     "hover",
@@ -122,6 +127,9 @@ const PARTS: [&str; 13] = [
     "marquee",
     "guides",
     "snap point",
+    "angle rays",
+    "rotation",
+    "eraser",
     "lasso",
     "cursors",
     "remote selections",
@@ -142,6 +150,9 @@ fn only(part: &str, from: &Overlay) -> Overlay {
         "marquee" => o.marquee = f.marquee,
         "guides" => o.guides = f.guides,
         "snap point" => o.snap_point = f.snap_point,
+        "angle rays" => o.angle_rays = f.angle_rays,
+        "rotation" => o.rotation = f.rotation,
+        "eraser" => o.eraser = f.eraser,
         "lasso" => o.lasso = f.lasso,
         "cursors" => o.cursors = f.cursors,
         "remote selections" => o.remote_selections = f.remote_selections,
@@ -346,7 +357,7 @@ fn a_link_icon_is_a_tile_with_a_glyph_and_keeps_to_its_rectangle() {
 #[test]
 fn a_spacing_guide_shows_its_gap_and_an_alignment_guide_does_not() {
     let guide = |kind, start, end| Overlay {
-        guides: vec![SmartGuide { kind, position: 40.0, start, end, snap_points: Vec::new() }],
+        guides: vec![SmartGuide { kind, position: 40.0, start, end, snap_points: Vec::new(), gap: None }],
         ..Overlay::default()
     };
     let (_, runs) = encoded(&guide(SmartGuideKind::EqualSpacingH, 100.0, 175.0), 1.0);
@@ -422,4 +433,88 @@ fn composed_text_is_underlined_line_by_line() {
     let r = paint_overlay(&mut s, &o, &view(1.0), &OverlayStyle::default(), &mut typesetter);
     assert_eq!(r.items, 1);
     assert_eq!(s.encoding().n_paths, 2, "two underline strokes");
+}
+
+#[test]
+fn an_alignment_guide_with_a_gap_shows_the_distance_and_one_without_does_not() {
+    let guide = |gap| Overlay {
+        guides: vec![SmartGuide {
+            kind: SmartGuideKind::Vertical,
+            position: 40.0,
+            start: 0.0,
+            end: 100.0,
+            snap_points: Vec::new(),
+            gap,
+        }],
+        ..Overlay::default()
+    };
+    assert_eq!(encoded(&guide(None), 1.0).1, 0);
+    assert!(encoded(&guide(Some((20.0, 90.0))), 1.0).1 >= 1, "70 is written beside the gap");
+    assert_eq!(encoded(&guide(Some((20.0, 20.2))), 1.0).1, 0, "a gap under half a unit is no number");
+    let horizontal = Overlay {
+        guides: vec![SmartGuide {
+            kind: SmartGuideKind::Horizontal,
+            position: 40.0,
+            start: 0.0,
+            end: 100.0,
+            snap_points: Vec::new(),
+            gap: Some((20.0, 90.0)),
+        }],
+        ..Overlay::default()
+    };
+    assert!(encoded(&horizontal, 1.0).1 >= 1);
+}
+
+#[test]
+fn the_snap_crosshair_is_two_lines_across_the_view_and_a_ring() {
+    let at = |p| Overlay { snap_point: Some(p), ..Overlay::default() };
+    let mut s = Scene::new();
+    let r = paint_overlay(&mut s, &at(Point::new(40.0, 40.0)), &view(1.0), &OverlayStyle::default(), &mut ts());
+    assert_eq!(r.items, 1);
+    assert_eq!(s.encoding().n_paths, 2, "the lines in one path, the ring in another");
+    let mut s = Scene::new();
+    let r = paint_overlay(&mut s, &at(Point::new(f64::NAN, 1.0)), &view(1.0), &OverlayStyle::default(), &mut ts());
+    assert_eq!(r.items, 0, "a point that is not a number draws nothing");
+}
+
+#[test]
+fn angle_rays_draw_rays_an_arc_and_the_angle_and_survive_hostile_numbers() {
+    let rays = |step, locked| Overlay {
+        angle_rays: Some(AngleRays { origin: Point::new(50.0, 50.0), step_degrees: step, locked_degrees: locked }),
+        ..Overlay::default()
+    };
+    let (paths, runs) = encoded(&rays(15.0, 30.0), 1.0);
+    assert!(paths >= 4, "faint rays, the locked ray, the arc and the chip: {paths}");
+    assert!(runs >= 1, "the angle is written as a number");
+    // A negative step, a zero step and a huge step fall back to the default instead of drawing a million rays.
+    for step in [0.0, -5.0, 1.0e-9, f64::NAN, 1.0e9] {
+        let (p, _) = encoded(&rays(step, 30.0), 1.0);
+        assert!(p >= 4 && p < 100, "step {step}: {p} paths");
+    }
+    assert_eq!(encoded(&rays(15.0, f64::NAN), 1.0), (0, 0));
+    assert_eq!(encoded(&rays(15.0, f64::INFINITY), 1.0), (0, 0));
+}
+
+#[test]
+fn the_rotation_guides_turn_green_when_the_angle_is_snapped_and_skip_a_bad_centre() {
+    let guide = |center, degrees, snapped| Overlay {
+        rotation: Some(RotationGuide { center, degrees, snapped }),
+        ..Overlay::default()
+    };
+    let (zero, _) = encoded(&guide(Point::new(50.0, 50.0), 0.0, false), 1.0);
+    let (turned, _) = encoded(&guide(Point::new(50.0, 50.0), 90.0, false), 1.0);
+    assert_eq!(turned, zero + 1, "a turned selection adds the arc");
+    assert_eq!(encoded(&guide(Point::new(f64::NAN, 0.0), 90.0, true), 1.0), (0, 0));
+    assert_eq!(encoded(&guide(Point::new(0.0, 0.0), f64::INFINITY, true), 1.0), (0, 0));
+}
+
+#[test]
+fn the_eraser_ring_keeps_its_screen_size_and_skips_a_bad_radius() {
+    let ring =
+        |r| Overlay { eraser: Some(EraserRing { at: Point::new(50.0, 50.0), radius_px: r }), ..Overlay::default() };
+    let sizes: Vec<usize> = [0.1, 1.0, 8.0, 500.0].iter().map(|z| encoded(&ring(10.0), *z).0).collect();
+    assert!(sizes.iter().all(|n| *n == 2), "a fill and a stroke at every zoom: {sizes:?}");
+    for bad in [0.0, -3.0, f64::NAN, f64::INFINITY] {
+        assert_eq!(encoded(&ring(bad), 1.0), (0, 0), "radius {bad}");
+    }
 }

@@ -348,6 +348,8 @@ fn clear_parts(parts: &mut OverlayParts) {
     parts.highlight.clear();
     parts.badge = None;
     parts.active_handle = None;
+    parts.angle_rays = None;
+    parts.snap_point = None;
 }
 
 #[cfg(test)]

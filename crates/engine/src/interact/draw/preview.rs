@@ -2,10 +2,10 @@
 
 use drafftink_edit::create::{self, LinearSpec, StrokeSpec};
 use drafftink_edit::elbow::{self, RouteOpts};
-use drafftink_geom::guides::SmartGuide;
 use drafftink_geom::kurbo::Point;
 use drafftink_scene::{Binding, Element, ElementId, ElementKind, Kind, PathType, PressureMode, ZIndex};
 
+use super::snap::SnapMarks;
 use crate::interact::ctx::Ctx;
 use crate::state::BASE_ZOOM;
 
@@ -80,10 +80,13 @@ pub(super) fn set(cx: &mut Ctx<'_>, element: Option<Element>) {
     cx.overlay_changed();
 }
 
-/// Shows the guides, asking for a redraw only when they changed.
-pub(super) fn set_guides(cx: &mut Ctx<'_>, guides: Vec<SmartGuide>) {
-    if cx.parts.guides != guides {
-        cx.parts.guides = guides;
+/// Shows the guides, the angle rays and the snap crosshair, asking for a redraw only when they changed.
+pub(super) fn set_marks(cx: &mut Ctx<'_>, marks: SnapMarks) {
+    let parts = &mut *cx.parts;
+    if parts.guides != marks.guides || parts.angle_rays != marks.rays || parts.snap_point != marks.point {
+        parts.guides = marks.guides;
+        parts.angle_rays = marks.rays;
+        parts.snap_point = marks.point;
         cx.overlay_changed();
     }
 }
@@ -101,15 +104,24 @@ pub(super) fn set_highlight(cx: &mut Ctx<'_>, target: Option<&ElementId>) {
     }
 }
 
-/// Takes back everything the drawing tools show: preview, faded elements, guides and highlight.
+/// Takes back everything the drawing tools show: preview, faded elements, guides, rays, snap crosshair, eraser
+/// ring and highlight.
 pub(super) fn clear(cx: &mut Ctx<'_>) {
     let parts = &mut *cx.parts;
-    let shown =
-        parts.preview.is_some() || !parts.faded.is_empty() || !parts.guides.is_empty() || !parts.highlight.is_empty();
+    let shown = parts.preview.is_some()
+        || !parts.faded.is_empty()
+        || !parts.guides.is_empty()
+        || !parts.highlight.is_empty()
+        || parts.angle_rays.is_some()
+        || parts.snap_point.is_some()
+        || parts.eraser.is_some();
     parts.preview = None;
     parts.faded.clear();
     parts.guides.clear();
     parts.highlight.clear();
+    parts.angle_rays = None;
+    parts.snap_point = None;
+    parts.eraser = None;
     if shown {
         cx.overlay_changed();
     }
