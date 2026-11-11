@@ -45,6 +45,17 @@ pub struct LaserPoint {
     pub t_ms: f64,
 }
 
+/// The link icon of an element that has a link, for the overlay pass to draw (`drafftink_edit::link::icon_rect`).
+#[derive(Debug, Clone, PartialEq)]
+pub struct LinkIcon {
+    /// The element that holds the link.
+    pub element: ElementId,
+    /// The upright square of the icon in world units. Its centre turns with the element.
+    pub rect: Rect,
+    /// True for a link to another element, false for a web address: the icon differs.
+    pub to_element: bool,
+}
+
 /// Overlay state owned by the tool machines. Everything is in world space.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct OverlayParts {
@@ -99,6 +110,8 @@ pub struct InteractionOverlay {
     pub badge: Option<Badge>,
     /// The laser trail, oldest first. The shell drops points older than the fade time.
     pub laser: Vec<LaserPoint>,
+    /// The link icons in view, for elements that are not selected (a click on one opens the link).
+    pub link_icons: Vec<LinkIcon>,
 }
 
 /// Builds the overlay from the parts, the selection and the hover.
@@ -145,5 +158,24 @@ pub(super) fn build(world: &World, s: &Session, parts: &OverlayParts, hover: Opt
         faded: parts.faded.clone(),
         badge: parts.badge,
         laser: parts.laser.clone(),
+        link_icons: link_icons(world, s),
     }
+}
+
+/// The link icons that are in view. Selected elements show their handles there instead.
+fn link_icons(world: &World, s: &Session) -> Vec<LinkIcon> {
+    let zoom = world.viewport.zoom();
+    let visible = world.viewport.visible_rect();
+    let selection = s.selection();
+    s.store()
+        .iter()
+        .filter(|e| e.link.is_some() && !e.deleted && !selection.contains(&e.id))
+        .map(|e| (e, drafftink_edit::link::icon_rect(e, zoom)))
+        .filter(|(_, rect)| rect.overlaps(visible))
+        .map(|(e, rect)| LinkIcon {
+            element: e.id.clone(),
+            rect,
+            to_element: e.link.as_deref().is_some_and(|l| l.starts_with(drafftink_edit::link::ELEMENT_PREFIX)),
+        })
+        .collect()
 }

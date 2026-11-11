@@ -454,3 +454,19 @@ fn a_recorded_script_replays_to_the_same_document() {
     assert_eq!(a.elements().len(), 1);
     assert_eq!(a.normalized_doc(), b.normalized_doc());
 }
+
+#[test]
+fn the_overlay_lists_the_link_icons_of_unselected_elements_in_view() {
+    let mut rig = Rig::new();
+    let a = linked_rect(&mut rig, "https://example.com/x");
+    let far = rig.rect(5000.0, 5000.0, 50.0, 50.0);
+    rig.run("element.set_link", json!({ "id": far.as_str(), "link": "https://example.com/far" }));
+    rig.run("selection.clear", json!({}));
+    let icons = rig.i.overlay(&rig.s).link_icons;
+    assert_eq!(icons.len(), 1, "the icon out of view is left out: {icons:?}");
+    assert_eq!(icons[0].element, a);
+    assert!(!icons[0].to_element);
+    assert!(icons[0].rect.contains(Point::new(208.0, 92.0)));
+    rig.run("selection.select", json!({ "ids": [a.as_str()] }));
+    assert!(rig.i.overlay(&rig.s).link_icons.is_empty(), "a selected element shows its handles instead");
+}
