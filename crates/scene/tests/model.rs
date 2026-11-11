@@ -111,6 +111,33 @@ fn json_shape_is_the_documented_one() {
 }
 
 #[test]
+fn inline_math_is_a_font_setting_that_is_written_only_when_off() {
+    let z = zs(2);
+    let mut t = TextData::new("a $x$ b");
+    let on = Element::new(id("on"), ElementKind::Text(t.clone()), z[0].clone());
+    let v = serde_json::to_value(&on).unwrap();
+    assert!(v["kind"]["font"].get("inline_math").is_none(), "auto is the default and is not written: {v}");
+    t.font.inline_math = InlineMath::Off;
+    let off = Element::new(id("off"), ElementKind::Text(t), z[1].clone());
+    let v = serde_json::to_value(&off).unwrap();
+    assert_eq!(v["kind"]["font"]["inline_math"], "off");
+    let back: Element = serde_json::from_value(v).unwrap();
+    assert_eq!(back.text_data().unwrap().font.inline_math, InlineMath::Off);
+    // The content is the source, dollar signs included.
+    assert_eq!(back.text_data().unwrap().content, "a $x$ b");
+    // A file from before the setting reads as auto, and a wrong value is an error.
+    let old: Element = serde_json::from_str(
+        r#"{"id":"t","kind":{"type":"text","content":"x","font":{"size":20}},"transform":{"x":0,"y":0,"w":1,"h":1},"index":"a0"}"#,
+    )
+    .unwrap();
+    assert_eq!(old.text_data().unwrap().font.inline_math, InlineMath::Auto);
+    let bad = serde_json::from_str::<Element>(
+        r#"{"id":"t","kind":{"type":"text","content":"x","font":{"inline_math":"maybe"}},"transform":{"x":0,"y":0,"w":1,"h":1},"index":"a0"}"#,
+    );
+    assert!(bad.is_err());
+}
+
+#[test]
 fn defaults_apply_when_fields_are_missing() {
     let e: Element = serde_json::from_str(
         r#"{"id":"r","kind":{"type":"rectangle"},"transform":{"x":1,"y":2,"w":3,"h":4},"index":"a0"}"#,

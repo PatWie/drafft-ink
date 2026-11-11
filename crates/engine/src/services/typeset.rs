@@ -2,9 +2,9 @@
 
 use std::sync::{Arc, Mutex, MutexGuard, OnceLock, PoisonError};
 
-use drafftink_edit::text_bind::TextMeasure as EditMeasure;
+use drafftink_edit::text_bind::{TextMeasure as EditMeasure, wrap_text};
 use drafftink_io::svg::MathSvg;
-use drafftink_io::typeset_measure::math_layout_with;
+use drafftink_io::typeset_measure::{font_wrapped_lines, math_layout_with};
 use drafftink_io::{MathBox, TextMeasure as IoMeasure, TypesetterHandle, TypesetterMeasure};
 use drafftink_scene as scene;
 use drafftink_typeset::{MathError, MathLayout, TypesetStats, Typesetter};
@@ -69,9 +69,29 @@ impl TypesetMeasure {
     }
 }
 
+/// Whether `text` is laid out differently from plain text in `font`: it has an inline formula or an escaped dollar.
+fn has_inline_math(text: &str, font: &scene::TextStyle) -> bool {
+    font.inline_math == scene::InlineMath::Auto && drafftink_typeset::has_inline_math(text)
+}
+
 impl EditMeasure for TypesetMeasure {
     fn line_width(&self, line: &str, font: &scene::TextStyle) -> f64 {
-        self.text_size(line, font.family, font.weight, font.size, font.line_height).0
+        self.text_size_font(line, font).0
+    }
+
+    /// A line with a formula is as tall as the typesetter makes it.
+    fn line_height_of(&self, line: &str, font: &scene::TextStyle) -> f64 {
+        if has_inline_math(line, font) { self.text_size_font(line, font).1 } else { self.line_height(font) }
+    }
+
+    /// Text with a formula wraps as the typesetter wraps it, which never splits a formula. The greedy word wrap of
+    /// the default would cut `$a + b$` at its spaces.
+    fn wrap(&self, text: &str, font: &scene::TextStyle, max_width: f64) -> Vec<String> {
+        if has_inline_math(text, font) {
+            self.ts.with(|t| font_wrapped_lines(t, text, font, max_width))
+        } else {
+            wrap_text(self, text, font, max_width)
+        }
     }
 }
 
@@ -87,6 +107,10 @@ impl IoMeasure for TypesetMeasure {
         TypesetterMeasure(&self.ts).text_size(text, family, weight, size, line_height)
     }
 
+    fn text_size_font(&self, text: &str, font: &scene::TextStyle) -> (f64, f64) {
+        TypesetterMeasure(&self.ts).text_size_font(text, font)
+    }
+
     fn math_size(&self, latex: &str, size: f64) -> Option<MathBox> {
         TypesetterMeasure(&self.ts).math_size(latex, size)
     }
@@ -95,6 +119,10 @@ impl IoMeasure for TypesetMeasure {
 impl MathSvg for TypesetMeasure {
     fn math_svg(&self, latex: &str, size: f64) -> Option<String> {
         TypesetterMeasure(&self.ts).math_svg(latex, size)
+    }
+
+    fn text_svg(&self, text: &scene::TextData, box_width: f64) -> Option<String> {
+        TypesetterMeasure(&self.ts).text_svg(text, box_width)
     }
 }
 

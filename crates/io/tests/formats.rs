@@ -526,3 +526,58 @@ fn subset_keeps_documents_valid() {
     let ElementKind::Text(t) = &s.elements[1].kind else { panic!() };
     assert!(t.container_id.is_none());
 }
+
+// ---------------------------------------------------------------------------------------------------------------
+// SVG with inline math, through the real typesetter
+// ---------------------------------------------------------------------------------------------------------------
+
+fn inline_math_doc(content: &str, off: bool) -> Document {
+    let mut d = Document::new();
+    let mut t = drafftink_scene::TextData::new(content);
+    if off {
+        t.font.inline_math = drafftink_scene::InlineMath::Off;
+    }
+    let mut e = Element::new(
+        drafftink_scene::ElementId::new("t").unwrap(),
+        drafftink_scene::ElementKind::Text(t),
+        ZIndex::first(),
+    );
+    e.transform = drafftink_scene::Transform::new(10.0, 10.0, 200.0, 30.0);
+    d.elements.push(e);
+    d
+}
+
+fn real_measure()
+-> drafftink_io::typeset_measure::TypesetterMeasure<std::cell::RefCell<&'static mut drafftink_typeset::Typesetter>> {
+    let ts: &'static mut drafftink_typeset::Typesetter = Box::leak(Box::new(drafftink_typeset::Typesetter::new()));
+    drafftink_io::typeset_measure::TypesetterMeasure(std::cell::RefCell::new(ts))
+}
+
+#[test]
+fn svg_draws_inline_math_as_outlines_in_the_text_colour() {
+    let m = real_measure();
+    let d = inline_math_doc("Energy $E = mc^2$ here", false);
+    let svg = export_svg(&d, &SvgOptions::default(), &m, Some(&m)).unwrap();
+    let doc = parse(&svg);
+    let el = doc.descendants().find(|n| n.attribute("id") == Some("e-t")).unwrap();
+    assert!(!el.descendants().any(|n| n.tag_name().name() == "text"), "no <text>: the glyphs are outlines");
+    let g = el.descendants().find(|n| n.attribute("data-text").is_some()).unwrap();
+    assert_eq!(g.attribute("data-text"), Some("Energy $E = mc^2$ here"), "the source stays readable");
+    assert!(g.attribute("color").is_some());
+    let paths = g.descendants().filter(|n| n.tag_name().name() == "path").count();
+    assert!(paths >= 1);
+    assert!(g.descendants().all(|n| n.tag_name().name() != "path" || n.attribute("fill") == Some("currentColor")));
+    // Text without a formula stays <text>, and so does a text with inline math switched off.
+    for (content, off) in [("Energy here", false), ("Energy $E$ here", true), ("costs $5 and $10", false)] {
+        let svg = export_svg(&inline_math_doc(content, off), &SvgOptions::default(), &m, Some(&m)).unwrap();
+        assert!(svg.contains("<text "), "{content:?}");
+        assert!(!svg.contains("data-text"), "{content:?}");
+    }
+}
+
+#[test]
+fn svg_inline_math_without_a_formula_engine_writes_the_source() {
+    let d = inline_math_doc("Energy $E = mc^2$ here", false);
+    let svg = export_svg(&d, &SvgOptions::default(), &EstimateMeasure, None).unwrap();
+    assert!(svg.contains("Energy $E = mc^2$ here"));
+}

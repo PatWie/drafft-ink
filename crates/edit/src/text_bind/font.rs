@@ -2,7 +2,7 @@
 
 use drafftink_geom::kurbo::Vec2;
 use drafftink_scene::{
-    Color, ElementId, ElementKind, FontFamily, FontWeight, Kind, SceneTx, TextAlign, TextStyle, Transform,
+    Color, ElementId, ElementKind, FontFamily, FontWeight, InlineMath, Kind, SceneTx, TextAlign, TextStyle, Transform,
     VerticalAlign,
 };
 
@@ -203,6 +203,8 @@ pub struct TextProps {
     pub vertical_align: Option<VerticalAlign>,
     /// Line height as a multiple of the font size.
     pub line_height: Option<f64>,
+    /// Whether `$...$` is typeset as math.
+    pub inline_math: Option<InlineMath>,
 }
 
 impl TextProps {
@@ -226,6 +228,7 @@ impl TextProps {
             text_align: props.text_align,
             vertical_align: props.vertical_align,
             line_height: props.line_height,
+            inline_math: None,
         })
     }
 
@@ -253,6 +256,9 @@ impl TextProps {
         }
         if let Some(v) = self.line_height {
             f.line_height = v;
+        }
+        if let Some(v) = self.inline_math {
+            f.inline_math = v;
         }
     }
 }

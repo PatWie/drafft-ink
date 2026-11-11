@@ -7,7 +7,7 @@
 //! the element's own `custom` map. Excalidraw keeps `customData` untouched, so a drafftink to Excalidraw to drafftink
 //! trip loses nothing even when Excalidraw edits the file in between.
 
-use drafftink_scene::{Brush, FillPattern, FontFamily, FontWeight, Sloppiness, TextRun};
+use drafftink_scene::{Brush, FillPattern, FontFamily, FontWeight, InlineMath, Sloppiness, TextRun};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
@@ -44,6 +44,9 @@ pub(super) struct Note {
     pub name: Option<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub runs: Vec<TextRun>,
+    /// Inline math of a text. Excalidraw shows the source with its dollar signs; the note only says when it is off.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub inline_math: Option<InlineMath>,
 }
 
 fn is_false(b: &bool) -> bool {
@@ -86,6 +89,7 @@ mod tests {
             frame_clip: Some(false),
             name: Some("n".into()),
             runs: vec![TextRun { start: 0, end: 2, color: None }],
+            inline_math: Some(InlineMath::Off),
         };
         let v = n.to_value().unwrap();
         assert_eq!(Note::from_value(&v).unwrap(), n);

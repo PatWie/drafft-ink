@@ -311,6 +311,21 @@ fn small_text_is_greeked() {
 }
 
 #[test]
+fn text_with_a_formula_is_greeked_by_its_font_size_and_drawn_in_full_when_large() {
+    let mut ts = Typesetter::new();
+    let e = text_el(&mut ts, "t", &ZIndex::first(), 0.0, 0.0, "energy $\\frac{a}{b}$ here\nsecond $x^2$ line");
+    let store = store_of(vec![e]);
+    let index = build_paint_index(&store);
+    let mut composer = SceneComposer::new();
+    let mut scene = Scene::new();
+    let small = View::new(0.15, Vec2::new(10.0, 10.0), Size::new(400.0, 300.0));
+    let rep = composer.compose(&store, &index, &small, &mut ts, &mut scene);
+    assert_eq!((rep.lod_greeked, rep.drawn, rep.cache_misses), (1, 0, 0), "{rep:?}");
+    let rep = composer.compose(&store, &index, &view(1.0, 0.0, 0.0), &mut ts, &mut scene);
+    assert_eq!((rep.lod_greeked, rep.drawn, rep.cache_misses), (0, 1, 1), "{rep:?}");
+}
+
+#[test]
 fn cheap_stand_ins_are_capped_per_frame() {
     let mut ts = Typesetter::new();
     let store = store_of(mixed_elements(1000, 2, &mut ts));
@@ -612,6 +627,7 @@ fn fully_set_elements() -> Vec<Element> {
         align: TextAlign::Center,
         vertical_align: VerticalAlign::Middle,
         line_height: 1.5,
+        inline_math: InlineMath::Off,
     };
     text.auto_resize = false;
     text.container_id = Some(id("box"));

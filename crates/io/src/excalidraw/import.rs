@@ -521,6 +521,9 @@ fn parse_text(
     if let Some(w) = note.font_weight {
         font.weight = w;
     }
+    if let Some(m) = note.inline_math {
+        font.inline_math = m;
+    }
     font.align = match rd.str("textAlign", rep) {
         None | Some("left") => TextAlign::Left,
         Some("center") => TextAlign::Center,

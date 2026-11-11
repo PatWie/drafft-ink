@@ -60,9 +60,21 @@ Linear and freehand elements: the box is the bounding box of the points. `points
 
 `FreehandData`: `points` (>= 1), `pressures` (empty or one per point, 0..1), `pressure_mode` `uniform|simulated|device`, `brush` `normal|calligraphy`, `highlighter`, `closed`.
 
-`TextData`: `content` (source of truth, `\n` for breaks), `runs` `[{start, end, color?}]` (per-character colour; **ranges count Unicode scalar values**, sorted, non-overlapping), `font` (`family` `gelpen|noto_sans|gelpen_serif|vanilla_extract`, `size`, `weight` `light|regular|heavy`, `align` `left|center|right`, `vertical_align` `top|middle|bottom`, `line_height` default 1.25), `auto_resize` (true: box follows content; false: fixed width, wraps), `container_id` (**bound text**: the shape or arrow this text labels; the only authoritative side), `label_position` (arrow label, 0..1 by arc length). The text box size in `transform` is measured by `typeset`; the model only stores it.
+`TextData`: `content` (source of truth, `\n` for breaks), `runs` `[{start, end, color?}]` (per-character colour; **ranges count Unicode scalar values**, sorted, non-overlapping), `font` (`family` `gelpen|noto_sans|gelpen_serif|vanilla_extract`, `size`, `weight` `light|regular|heavy`, `align` `left|center|right`, `vertical_align` `top|middle|bottom`, `line_height` default 1.25, `inline_math` `auto|off`, default `auto`, see Inline math below), `auto_resize` (true: box follows content; false: fixed width, wraps), `container_id` (**bound text**: the shape or arrow this text labels; the only authoritative side), `label_position` (arrow label, 0..1 by arc length). The text box size in `transform` is measured by `typeset`; the model only stores it.
 
 `MathData`: `latex`, `font_size`.
+
+**Inline math** (a formula inside a text). The text stays plain: `content` is the source, `$E = mc^2$` with its dollar signs, and there is no span kind and no second list next to `runs`. Whether `$...$` is a formula is decided when the text is laid out, by the rules below, and `font.inline_math` (`auto`, the default and not written, or `off`) switches the rules off for one element. Why not math spans in the runs: the content is a `LoroText` (`crdt.md`), so a formula typed by two people merges character by character like any text, a colour run that covers a formula is still a plain range, an Excalidraw text carries the same string, and nothing in the schema changes except one font key.
+
+The rules (Pandoc's `tex_math_dollars`, so prices stay prices):
+- A formula is `$latex$` on one line. The opening `$` is followed by a character that is not white space. The closing `$` is the next unescaped `$`; it follows a character that is not white space and is not followed by a digit. When the next `$` does not close, the opening one is an ordinary character and the search continues after it. "it costs $5 and $10" has no formula; "Energy $E = mc^2$ here" has one.
+- `\$` is a dollar sign, in the text and inside a formula. With inline math `auto` the backslash is not drawn (in `off` it is).
+- Two or more `$` in a row are ordinary characters; there is no display math.
+- At most 256 formulas per text. A formula longer than 4096 bytes, or one that ReX refuses, is drawn as its source in red (`#e03131`), dollar signs included; the layout never fails.
+
+The formula is one unit for the caret, selection, Backspace and double-click. To edit its source, the editor lays the text out with `reveal` set to an index inside it (`typeset.md`). Formulas take the size and the colour of the text at the opening `$` (a colour run over it colours the formula, `\color{..}` inside it wins). The element box is measured with the formulas in it: a tall formula makes its line taller.
+
+Export: Excalidraw has no inline math, so `text` and `originalText` are the source with its delimiters and `customData.drafftink.inline_math` is written only when the setting is `off`. SVG draws a text that has a formula as glyph outlines (no `<text>`, no font needed), with the source in `data-text`; plain text stays `<text>`. `doc.outline` and `element.query` show the source.
 
 `ImageData`: `file_id` (None while the blob is not there), `natural_width`, `natural_height` (pixels), `crop` `{x, y, width, height}` in source pixels (None = whole picture).
 

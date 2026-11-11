@@ -394,8 +394,69 @@ fn exercise_caret_apis(l: &TextLayout, len: usize) {
     }
 }
 
+/// Text with dollar signs, formulas good and broken, escapes, line breaks and wide characters.
+fn arb_math_text() -> impl Strategy<Value = String> {
+    proptest::collection::vec(
+        prop_oneof![
+            Just("word "),
+            Just("$x$"),
+            Just("$\\frac{a}{b}$"),
+            Just("$E = mc^2$"),
+            Just("$\\bogus$"),
+            Just("$x^{$"),
+            Just("$\\sqrt\\sqrt\\sqrt{x}$"),
+            Just("\\$"),
+            Just("\\"),
+            Just("$"),
+            Just("$$"),
+            Just(" $ "),
+            Just("\n"),
+            Just("é"),
+            Just("日本語"),
+            Just("😀"),
+            Just("\u{200d}"),
+            Just("5"),
+        ],
+        0..40,
+    )
+    .prop_map(|v| v.concat())
+}
+
 proptest! {
     #![proptest_config(ProptestConfig::with_cases(256))]
+
+    #[test]
+    fn inline_math_text_never_panics_and_keeps_source_indexes(
+        text in arb_math_text(),
+        wrap in prop_oneof![Just(None), Just(Some(1.0f32)), (0.0f32..300.0).prop_map(Some)],
+        reveal in prop_oneof![Just(None), (0usize..200).prop_map(Some)],
+        spans in proptest::collection::vec((0usize..200, 0usize..200), 0..8),
+    ) {
+        let mut spec = TextSpec::styled(text.clone(), TextStyle::with_size(16.0)).with_inline_math(InlineMath::Auto);
+        if let Some(w) = wrap { spec.wrap = Wrap::Width(w); }
+        spec.reveal = reveal;
+        for (a, b) in spans {
+            spec.spans.push(Span { range: a..b, style: SpanStyle::color(Rgba8::rgb(9, 9, 9)) });
+        }
+        let mut ts = Typesetter::new();
+        let l = ts.text(&spec);
+        prop_assert!(l.size.width.is_finite() && l.size.height.is_finite());
+        prop_assert!(l.text_len == text.len());
+        prop_assert!(!l.lines.is_empty());
+        for line in &l.lines {
+            prop_assert!(line.text_range.start <= line.text_range.end && line.text_range.end <= text.len());
+        }
+        // Formulas are on char boundaries of the source, in order, and inside their line.
+        let mut at = 0;
+        for f in &l.formulas {
+            prop_assert!(text.is_char_boundary(f.src.start) && text.is_char_boundary(f.src.end));
+            prop_assert!(f.src.start >= at);
+            at = f.src.end;
+            prop_assert!(f.rect.x0.is_finite() && f.rect.y1.is_finite());
+        }
+        let _ = l.outline();
+        exercise_caret_apis(&l, text.len());
+    }
 
     #[test]
     fn arbitrary_latex_never_panics(src in arb_text()) {

@@ -44,7 +44,8 @@ pub use store::{
     load_document, snapshot,
 };
 pub use style::{
-    FillPattern, FontFamily, FontWeight, Sloppiness, StrokeStyle, Style, TextAlign, TextStyle, VerticalAlign,
+    FillPattern, FontFamily, FontWeight, InlineMath, Sloppiness, StrokeStyle, Style, TextAlign, TextStyle,
+    VerticalAlign,
 };
 pub use validate::{
     DocError, ElementError, Issue, Report, Severity, element_errors, is_image_media_type, is_valid_name,

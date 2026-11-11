@@ -5,7 +5,7 @@
 //! The engine passes an adapter over `typeset`; tests use [`EstimateMeasure`], which reproduces the old app's
 //! fallback estimate (`docs/formats.md` sections 1.6 and 7.3).
 
-use drafftink_scene::{FontFamily, FontWeight};
+use drafftink_scene::{FontFamily, FontWeight, TextStyle};
 
 /// The size of a laid-out formula in world units, relative to its baseline origin.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -22,6 +22,12 @@ pub struct MathBox {
 pub trait TextMeasure {
     /// Size `(width, height)` of `text` (may contain `\n`) in the given font. Never negative or NaN.
     fn text_size(&self, text: &str, family: FontFamily, weight: FontWeight, size: f64, line_height: f64) -> (f64, f64);
+
+    /// Size `(width, height)` of `text` in the font settings of a text element. Differs from [`Self::text_size`]
+    /// only for a measure that typesets inline math (`TextStyle::inline_math`), which sizes formulas as drawn.
+    fn text_size_font(&self, text: &str, font: &TextStyle) -> (f64, f64) {
+        self.text_size(text, font.family, font.weight, font.size, font.line_height)
+    }
 
     /// Size of a LaTeX formula, or `None` when it does not parse (the caller keeps a fallback box).
     fn math_size(&self, latex: &str, size: f64) -> Option<MathBox>;

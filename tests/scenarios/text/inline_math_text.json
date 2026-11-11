@@ -1,0 +1,33 @@
+{
+  "about": "A text with $...$ is measured as the formula is drawn: narrower than its source and taller for a fraction. The content keeps its dollar signs, prices and escaped dollars stay text, a switch turns the formulas off, a broken formula is accepted as text, and every change is one undo step. doc.outline shows the source.",
+  "steps": [
+    { "execute": "element.create", "args": { "kind": "text", "text": "Energy $E = mc^2$ here", "at": [0, 0] }, "expect": [ { "path": "$.id", "eq": "e1" } ] },
+    { "assert": "element.query", "args": { "filter": { "ids": ["e1"] }, "fields": ["text", "bounds"] }, "save": { "w_math": "$.items[0].bounds.w", "h_math": "$.items[0].bounds.h" }, "expect": [ { "path": "$.items[0].text", "eq": "Energy $E = mc^2$ here", "note": "The stored text is the source, dollar signs included." } ] },
+
+    { "execute": "text.set", "args": { "id": "e1", "text": "Energy $E = mc^2$ here", "inline_math": "off" } },
+    { "assert": "element.query", "args": { "filter": { "ids": ["e1"] }, "fields": ["bounds"] }, "expect": [ { "path": "$.items[0].bounds.w", "gt": "{{w_math}}", "note": "As raw text the source is wider than the typeset formula." } ] },
+    { "undo": 1, "expect": [ { "path": "$.undone", "len": 1 } ] },
+    { "assert": "element.query", "args": { "filter": { "ids": ["e1"] }, "fields": ["bounds"] }, "expect": [ { "path": "$.items[0].bounds.w", "near": "{{w_math}}", "tol": 0.01, "note": "Undo puts the setting and the size back in one step." } ] },
+    { "assert": "style.get", "args": { "ids": ["e1"], "props": ["font_size"] }, "expect": [ { "path": "$.props.font_size.value", "eq": 20 } ] },
+
+    { "execute": "text.set", "args": { "id": "e1", "text": "Energy $\\frac{x}{y}$ here" } },
+    { "assert": "element.query", "args": { "filter": { "ids": ["e1"] }, "fields": ["bounds"] }, "expect": [ { "path": "$.items[0].bounds.h", "gt": "{{h_math}}", "note": "A fraction makes its line taller than a line of text." } ] },
+
+    { "execute": "text.set", "args": { "id": "e1", "text": "it costs $5 and $10" } },
+    { "assert": "element.query", "args": { "filter": { "ids": ["e1"] }, "fields": ["bounds"] }, "save": { "w_price": "$.items[0].bounds.w", "h_price": "$.items[0].bounds.h" } },
+    { "execute": "text.set", "args": { "id": "e1", "text": "it costs $5 and $10", "inline_math": "off" } },
+    { "assert": "element.query", "args": { "filter": { "ids": ["e1"] }, "fields": ["bounds"] }, "expect": [ { "path": "$.items[0].bounds.w", "near": "{{w_price}}", "tol": 0.01, "note": "Prices are not formulas, so switching formulas off changes nothing." }, { "path": "$.items[0].bounds.h", "near": "{{h_price}}", "tol": 0.01 } ] },
+
+    { "execute": "text.set", "args": { "id": "e1", "text": "a \\$5 b", "inline_math": "auto" } },
+    { "assert": "element.query", "args": { "filter": { "ids": ["e1"] }, "fields": ["text", "bounds"] }, "save": { "w_escaped": "$.items[0].bounds.w" }, "expect": [ { "path": "$.items[0].text", "eq": "a \\$5 b" } ] },
+    { "execute": "text.set", "args": { "id": "e1", "text": "a $5 b", "inline_math": "off" } },
+    { "assert": "element.query", "args": { "filter": { "ids": ["e1"] }, "fields": ["bounds"] }, "expect": [ { "path": "$.items[0].bounds.w", "near": "{{w_escaped}}", "tol": 0.01, "note": "An escaped dollar is drawn as a dollar sign." } ] },
+
+    { "execute": "text.set", "args": { "id": "e1", "text": "broken $\\nope{$ formula", "inline_math": "auto" }, "expect": [ { "path": "$.removed", "eq": false } ] },
+    { "assert": "element.query", "args": { "filter": { "ids": ["e1"] }, "fields": ["text"] }, "expect": [ { "path": "$.items[0].text", "eq": "broken $\\nope{$ formula", "note": "A formula that does not parse is kept as text; it is drawn as its source in red." } ] },
+    { "execute": "text.set", "args": { "id": "e1", "text": "x", "inline_math": "sometimes" }, "refused": "bad_args" },
+
+    { "execute": "text.set", "args": { "id": "e1", "text": "Energy $E = mc^2$ here" } },
+    { "assert": "doc.outline", "args": { "format": "json" }, "expect": [ { "path": "$.outline.texts[0].label", "eq": "Energy $E = mc^2$ here", "note": "The outline shows the source." } ] }
+  ]
+}

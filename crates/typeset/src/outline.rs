@@ -73,6 +73,12 @@ pub(crate) fn text_outline(l: &TextLayout) -> Vec<ColouredPath> {
             push(&mut out, run.color, &acc);
         }
     }
+    for f in &l.formulas {
+        let to = Affine::translate(f.origin.to_vec2());
+        for ColouredPath { color, path } in math_outline(&f.math, f.color) {
+            push(&mut out, color, &(to * path));
+        }
+    }
     for d in &l.decorations {
         push(&mut out, d.color, &d.rect.to_path(0.1));
     }
