@@ -5,7 +5,7 @@
 # Exports:
 #   ROOT               workspace root
 #   VERSION            [workspace.package] version from Cargo.toml (override: DRAFFTINK_VERSION)
-#   DIST               output directory for release artifacts (default $ROOT/dist/release)
+#   DIST               output directory for release artifacts (default $ROOT/dist-release)
 #   CARGO_TARGET_DIR   cargo's target dir (default $ROOT/target)
 #   APP_ID             reverse-DNS id: desktop file, icon name, Wayland app_id, macOS bundle id
 #   BUILD_DATE         UTC build date, YYYY-MM-DD
@@ -30,7 +30,7 @@ if [ -z "$VERSION" ]; then
 fi
 export VERSION
 
-DIST="${DIST:-$ROOT/dist/release}"
+DIST="${DIST:-$ROOT/dist-release}"
 mkdir -p "$DIST"
 DIST="$(cd "$DIST" && pwd)"
 export DIST

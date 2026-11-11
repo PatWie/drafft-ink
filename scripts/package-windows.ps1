@@ -3,7 +3,7 @@
   Build and package Drafft.ink for Windows x64.
 
 .DESCRIPTION
-  Writes into dist\release (override with -Dist):
+  Writes into dist-release (override with -Dist):
     drafftink-<version>-windows-x64.zip            drafftink.exe + drafftink-mcp.exe (portable)
     drafftink-<version>-windows-x64.msi            installer (WiX 5; skipped with -NoMsi or when `wix` is missing)
     drafftink-server-<version>-windows-x64.zip     drafftink-server.exe + web-dist\ (run it from that folder)
@@ -34,7 +34,7 @@ if (-not $Version) {
   }
 }
 if (-not $Version) { throw "could not read [workspace.package] version from Cargo.toml" }
-if (-not $Dist) { $Dist = Join-Path $Root "dist/release" }
+if (-not $Dist) { $Dist = Join-Path $Root "dist-release" }
 if (-not $WebDist) { $WebDist = Join-Path $Root "dist" }
 New-Item -ItemType Directory -Force $Dist | Out-Null
 $Dist = (Resolve-Path $Dist).Path
