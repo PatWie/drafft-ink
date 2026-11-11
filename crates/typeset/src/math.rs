@@ -49,9 +49,12 @@ pub struct MathSpec {
 }
 
 impl MathSpec {
+    /// The old app's formula size, also used when a size is not a finite number.
+    pub const DEFAULT_SIZE: f64 = 20.0;
+
     /// A formula with the old app's defaults (size 20, GelPen fallback on).
     pub fn new(latex: impl Into<String>) -> Self {
-        Self { latex: latex.into(), size: 20.0, text_font_fallback: true }
+        Self { latex: latex.into(), size: Self::DEFAULT_SIZE, text_font_fallback: true }
     }
 
     /// Set the size.
@@ -268,7 +271,11 @@ impl MathEngine {
     pub fn layout(&self, spec: &MathSpec, id: u64) -> Result<MathLayout, MathError> {
         let latex = spec.latex.as_str();
         precheck(latex)?;
-        let size = if spec.size.is_finite() { spec.size.clamp(MATH_SIZE_RANGE.0, MATH_SIZE_RANGE.1) } else { 20.0 };
+        let size = if spec.size.is_finite() {
+            spec.size.clamp(MATH_SIZE_RANGE.0, MATH_SIZE_RANGE.1)
+        } else {
+            MathSpec::DEFAULT_SIZE
+        };
         let run = || self.run(spec, latex, size, id);
         // ReX is not written to be panic-free on hostile input. On targets that unwind, turn a
         // panic into an error. (With `panic = "abort"` this cannot help, which is why `precheck`
@@ -320,7 +327,7 @@ impl MathEngine {
         })
     }
 
-    /// Outline of one glyph of a slot (font units scaled to `size`), used by exports.
+    /// The text font (GelPen) used for [`MathFontSlot::Text`] glyphs; `None` if it did not parse.
     pub fn text_face(&self) -> Option<&ttf_parser::Face<'static>> {
         self.text_face.as_ref()
     }
