@@ -483,7 +483,8 @@ pub struct MembershipReport {
 
 /// Applies the drop rule after elements were moved: a unit dropped over a frame joins it, a unit dragged out of
 /// its frame leaves it. The drop point is `pointer`, or the centre of the unit. Frames among `moved` never join a
-/// frame, and children that moved together with their frame keep it. Run it on the committed move only.
+/// frame, nor does a group that holds a frame, and children that moved together with their frame keep it. Run it on
+/// the committed move only.
 pub fn update_membership_after_move<T: SceneTx>(
     tx: &mut T,
     moved: &[ElementId],
@@ -512,6 +513,10 @@ pub fn update_membership_after_move<T: SceneTx>(
         let mut joins: Vec<(ElementId, Vec<ElementId>)> = Vec::new();
         for u in &us {
             let Some(rect) = geometry::union_bounds(u.elements.iter().filter_map(|i| scene.get(i))) else { continue };
+            // A group that holds a frame never joins a frame (frames do not nest, and a frame cannot join itself).
+            if u.elements.iter().filter_map(|i| scene.get(i)).any(|e| e.tag() == Kind::Frame) {
+                continue;
+            }
             let at = pointer.unwrap_or_else(|| aabb::center(&rect));
             let target = frame_at(scene, at, &moved_frames);
             let current: BTreeSet<Option<ElementId>> =

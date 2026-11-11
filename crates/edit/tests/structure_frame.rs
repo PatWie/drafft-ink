@@ -403,3 +403,19 @@ fn wrapping_a_child_does_not_split_the_block_of_its_old_frame() {
     assert_valid(&s);
     assert_eq!(validate_scene(&s).warnings().count(), 0);
 }
+
+#[test]
+fn a_group_that_holds_a_frame_never_joins_a_frame_when_one_member_is_dropped() {
+    // Found by the random merge test: moving a member of a group with a frame, where the frame is not in `moved`,
+    // made the frame its own child, and the move failed with an invalid element.
+    let mut s = scene(vec![
+        frame("f", 0.0, 0.0, 100.0, 100.0).grouped(&["g"]),
+        rect("a", 10.0, 10.0, 20.0, 20.0).grouped(&["g"]),
+        rect("kid", 40.0, 40.0, 10.0, 10.0).in_frame("f"),
+    ]);
+    let r = run(&mut s, |tx| frame::update_membership_after_move(tx, &ids(&["a"]), None)).unwrap();
+    assert_eq!(r, frame::MembershipReport::default());
+    assert_eq!(get(&s, "f").frame_id, None);
+    assert_eq!(get(&s, "a").frame_id, None);
+    assert_valid(&s);
+}

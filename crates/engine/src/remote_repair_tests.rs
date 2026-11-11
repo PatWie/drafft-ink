@@ -231,16 +231,16 @@ fn a_repair_is_written_once_and_a_second_pass_changes_nothing() {
     run(&mut p[0], "arrow.bind", json!({"arrow": arrow, "end": "end", "target": r3}));
     settle(&mut p);
     let before = writes(&p);
-    for i in 0..2 {
-        let cs = p[i].tab().doc.store().iter_all().map(|e| drafftink_scene::Change {
+    for (i, peer) in p.iter_mut().enumerate() {
+        let cs = peer.tab().doc.store().iter_all().map(|e| drafftink_scene::Change {
             id: e.id.clone(),
             kind: drafftink_scene::ChangeKind::Updated,
             fields: drafftink_scene::Fields::all(),
             version: 0,
         });
         let cs = drafftink_scene::ChangeSet { revision: 1, elements: cs.collect(), meta: false, files: Vec::new() };
-        let tab = p[i].tab().id;
-        let r = p[i].repair_merge(tab, &cs).unwrap();
+        let tab = peer.tab().id;
+        let r = peer.repair_merge(tab, &cs).unwrap();
         assert!(r.is_empty(), "peer {i} repaired a scene that was repaired already: {r:?}");
     }
     assert_eq!(before, writes(&p), "a repair of a repaired scene wrote");
@@ -394,54 +394,90 @@ fn act() -> impl Strategy<Value = Act> {
     })
 }
 
-fn live_ids(s: &Session) -> Vec<String> {
-    s.store().iter().map(|e| e.id.to_string()).collect()
+/// The ids of the live elements that `keep` accepts, in z-order.
+fn live_where(s: &Session, keep: impl Fn(&Element) -> bool) -> Vec<String> {
+    s.store().iter().filter(|e| keep(e)).map(|e| e.id.to_string()).collect()
 }
 
 fn pick(ids: &[String], i: u8) -> Option<String> {
     (!ids.is_empty()).then(|| ids[usize::from(i) % ids.len()].clone())
 }
 
-/// Runs one action as a command. A refusal is fine (the target may be locked, a wrong kind, already bound); an
-/// internal error or a panic is not.
+/// Runs one action as a command. Targets of the right kind are picked from what that peer sees at the time. A
+/// refusal is fine (the target may be locked, already bound, in the wrong state); an internal error, a panic or a
+/// call with wrong arguments is not.
 fn apply(s: &mut Session, act: &Act) {
-    let ids = live_ids(s);
-    let (x, y) = (pick(&ids, act.a), pick(&ids, act.b));
+    use drafftink_scene::Kind;
+    let any = live_where(s, |_| true);
+    let arrows = live_where(s, |e| e.tag().is_linear());
+    let frames = live_where(s, |e| e.tag() == Kind::Frame);
+    let texts = live_where(s, |e| e.tag() == Kind::Text);
+    let labels = live_where(s, |e| e.container_id().is_some());
+    let containers = live_where(s, |e| e.tag().is_label_container());
+    let targets = live_where(s, |e| e.tag().is_bindable() && e.container_id().is_none());
+    let grouped = live_where(s, |e| !e.group_ids.is_empty());
+    let (x, y) = (pick(&any, act.a), pick(&any, act.b));
     let d = f64::from(act.n) * 3.0;
-    let call: Option<(&str, Value)> = match (act.kind, x, y) {
-        (0 | 1, _, _) => Some((
+    let call: Option<(&str, Value)> = match act.kind {
+        0 | 1 => Some((
             "element.create",
             json!({"kind": if act.kind == 0 { "rectangle" } else { "ellipse" }, "bounds": {"x": d * 2.0, "y": f64::from(act.a), "w": 80, "h": 50}}),
         )),
-        (2, _, _) => Some(("element.create", json!({"kind": "text", "text": "t", "at": [d, f64::from(act.b)]}))),
-        (3 | 4, Some(x), Some(y)) => Some((
-            "element.connect",
-            json!({"from": x, "to": y, "arrow_type": if act.kind == 3 { "sharp" } else { "elbow" }}),
-        )),
-        (5, Some(x), Some(y)) => {
-            Some(("arrow.bind", json!({"arrow": x, "end": if act.n % 2 == 0 { "start" } else { "end" }, "target": y})))
-        }
-        (6, Some(x), _) => Some(("arrow.unbind", json!({"arrow": x}))),
-        (7 | 8, Some(x), _) => Some(("element.move", json!({"ids": [x], "dx": d, "dy": -d / 2.0, "snap": "off"}))),
-        (9, Some(x), _) => Some(("element.resize", json!({"ids": [x], "handle": "se", "dx": d, "dy": d}))),
-        (10 | 11, Some(x), _) => Some(("element.delete", json!({"ids": [x]}))),
-        (12 | 13, Some(x), Some(y)) => Some(("group.create", json!({"ids": [x, y]}))),
-        (14, Some(x), _) => Some(("group.ungroup", json!({"ids": [x]}))),
-        (15, Some(x), Some(y)) => Some(("frame.wrap", json!({"ids": [x, y]}))),
-        (16, Some(x), Some(y)) => Some(("frame.add", json!({"frame": x, "ids": [y]}))),
-        (17, Some(x), _) => Some(("frame.remove", json!({"ids": [x]}))),
-        (18, Some(x), _) => Some(("frame.unwrap", json!({"frame": x}))),
-        (19, Some(x), Some(y)) => Some(("text.bind", json!({"text": x, "container": y}))),
-        (20, Some(x), _) => Some(("text.unbind", json!({"text": x}))),
-        (_, _, _) => None,
+        2 => Some(("element.create", json!({"kind": "text", "text": "t", "at": [d, f64::from(act.b)]}))),
+        3 | 4 => pick(&targets, act.a).zip(pick(&targets, act.b)).map(|(from, to)| {
+            (
+                "element.connect",
+                json!({"from": from, "to": to, "arrow_type": if act.kind == 3 { "sharp" } else { "elbow" }}),
+            )
+        }),
+        5 => pick(&arrows, act.a).zip(pick(&targets, act.b)).map(|(arrow, target)| {
+            (
+                "arrow.bind",
+                json!({"arrow": arrow, "end": if act.n % 2 == 0 { "start" } else { "end" }, "target": target}),
+            )
+        }),
+        6 => pick(&arrows, act.a).map(|arrow| ("arrow.unbind", json!({"arrow": arrow}))),
+        7 | 8 => x.map(|x| ("element.move", json!({"ids": [x], "dx": d, "dy": -d / 2.0, "snap": "none"}))),
+        9 => x.map(|x| ("element.resize", json!({"ids": [x], "handle": "se", "dx": d, "dy": d}))),
+        10 | 11 => x.map(|x| ("element.delete", json!({"ids": [x]}))),
+        12 | 13 => x.zip(y).map(|(x, y)| ("group.create", json!({"ids": [x, y]}))),
+        14 => pick(&grouped, act.a).or(x).map(|x| ("group.ungroup", json!({"ids": [x]}))),
+        15 => x.zip(y).map(|(x, y)| ("frame.wrap", json!({"ids": [x, y]}))),
+        16 => pick(&frames, act.a).zip(y).map(|(f, y)| ("frame.add", json!({"frame": f, "ids": [y]}))),
+        17 => y.map(|y| ("frame.remove", json!({"ids": [y]}))),
+        18 => pick(&frames, act.a).map(|f| ("frame.unwrap", json!({"frame": f}))),
+        19 => pick(&texts, act.a)
+            .zip(pick(&containers, act.b))
+            .map(|(t, c)| ("text.bind", json!({"text": t, "container": c}))),
+        20 => pick(&labels, act.a).map(|t| ("text.unbind", json!({"text": t}))),
+        _ => None,
     };
+    let note = call.as_ref().map(|(id, args)| format!("{id} {args}")).unwrap_or_default();
+    let dump: String = s
+        .store()
+        .iter_all()
+        .map(|e| {
+            format!(
+                "{}{} g={:?} f={:?} c={:?} idx={}",
+                e.id,
+                if e.deleted { "x" } else { "" },
+                e.group_ids,
+                e.frame_id,
+                e.container_id(),
+                e.index
+            )
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
     let result = match call {
         Some((id, args)) => s.execute(id, args).map(|_| ()),
-        None if act.a % 2 == 0 => s.execute("history.undo", json!({})).map(|_| ()),
+        None if act.a.is_multiple_of(2) => s.execute("history.undo", json!({})).map(|_| ()),
         None => s.execute("history.redo", json!({})).map(|_| ()),
     };
     if let Err(r) = result {
-        assert_ne!(r.code, "internal", "{act:?} failed inside the engine: {}", r.message);
+        assert_ne!(r.code, "internal", "{act:?} {note} failed inside the engine: {}\n{dump}", r.message);
+        // A wrong argument is a mistake of this generator, and would hide the command from the test.
+        assert_ne!(r.code, "bad_args", "{act:?} is not a valid call: {}", r.message);
     }
 }
 
@@ -465,7 +501,7 @@ fn settle_from(p: &mut [Session; 3], source: usize) {
 }
 
 proptest! {
-    #![proptest_config(ProptestConfig { cases: 40, ..ProptestConfig::default() })]
+    #![proptest_config(ProptestConfig { cases: 64, ..ProptestConfig::default() })]
 
     #[test]
     fn random_concurrent_commands_on_three_peers_converge_to_a_valid_scene(

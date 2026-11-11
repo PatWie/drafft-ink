@@ -97,32 +97,44 @@ impl Session {
     }
 }
 
+/// True when the change can have broken what a rule looks at: an element was added or removed, or a field in
+/// `fields` changed. A restyle or a rename starts no transaction at all.
+fn touches(changed: &[Change], fields: Fields) -> bool {
+    changed.iter().any(|c| c.kind != ChangeKind::Updated || c.fields.intersects(fields))
+}
+
 fn pass(doc: &mut TabDoc, services: &Services, changed: &[Change]) -> Result<Repaired, PassError> {
     let mut out = Repaired::default();
-
     // Each step also sees what the steps before it wrote.
     let mut seen: Vec<Change> = changed.to_vec();
-    let (released, cs) = doc.repair::<_, PassError>(|tx| Ok(repair::dangling_references(tx, &seen)?))?;
-    out.note(&cs);
-    seen.extend(cs.elements.iter().cloned());
-    out.freed_ends = released.arrow_ends.len();
-    out.released_labels = released.labels.len();
-    out.released_children = released.frame_children.len();
-    out.label_groups = released.label_groups.len();
 
-    let (dissolved, cs) = doc.repair::<_, PassError>(|tx| Ok(repair::inconsistent_groups(tx, &seen)?))?;
-    out.note(&cs);
-    seen.extend(cs.elements.iter().cloned());
-    out.dissolved_groups = dissolved.iter().map(ToString::to_string).collect();
-
-    let (_, cs) = doc.repair::<_, PassError>(|tx| Ok(repair::tied_order_keys(tx, &seen)?))?;
-    out.note(&cs);
-    seen.extend(cs.elements.iter().cloned());
-    let (_, cs) = doc.repair::<_, PassError>(|tx| Ok(repair::children_below_frame(tx, &seen)?))?;
-    out.note(&cs);
-    seen.extend(cs.elements.iter().cloned());
-    let (_, cs) = doc.repair::<_, PassError>(|tx| Ok(repair::labels_above_container(tx, &seen)?))?;
-    out.note(&cs);
+    if touches(&seen, Fields::KIND | Fields::FRAME | Fields::GROUPS | Fields::DELETED) {
+        let (released, cs) = doc.repair::<_, PassError>(|tx| Ok(repair::dangling_references(tx, &seen)?))?;
+        out.note(&cs);
+        out.freed_ends = released.arrow_ends.len();
+        out.released_labels = released.labels.len();
+        out.released_children = released.frame_children.len();
+        out.label_groups = released.label_groups.len();
+        seen.extend(cs.elements.iter().cloned());
+    }
+    if touches(&seen, Fields::GROUPS | Fields::DELETED) {
+        let (dissolved, cs) = doc.repair::<_, PassError>(|tx| Ok(repair::inconsistent_groups(tx, &seen)?))?;
+        out.note(&cs);
+        out.dissolved_groups = dissolved.iter().map(ToString::to_string).collect();
+        seen.extend(cs.elements.iter().cloned());
+    }
+    if touches(&seen, Fields::INDEX) {
+        let (_, cs) = doc.repair::<_, PassError>(|tx| Ok(repair::tied_order_keys(tx, &seen)?))?;
+        out.note(&cs);
+        seen.extend(cs.elements.iter().cloned());
+    }
+    if touches(&seen, Fields::INDEX | Fields::FRAME | Fields::KIND) {
+        let (_, cs) = doc.repair::<_, PassError>(|tx| Ok(repair::children_below_frame(tx, &seen)?))?;
+        out.note(&cs);
+        seen.extend(cs.elements.iter().cloned());
+        let (_, cs) = doc.repair::<_, PassError>(|tx| Ok(repair::labels_above_container(tx, &seen)?))?;
+        out.note(&cs);
+    }
 
     let mut moved: Vec<ElementId> = changed
         .iter()
