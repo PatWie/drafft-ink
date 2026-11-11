@@ -489,7 +489,7 @@ fn angle_rays_draw_rays_an_arc_and_the_angle_and_survive_hostile_numbers() {
     // A negative step, a zero step and a huge step fall back to the default instead of drawing a million rays.
     for step in [0.0, -5.0, 1.0e-9, f64::NAN, 1.0e9] {
         let (p, _) = encoded(&rays(step, 30.0), 1.0);
-        assert!(p >= 4 && p < 100, "step {step}: {p} paths");
+        assert!((4..100).contains(&p), "step {step}: {p} paths");
     }
     assert_eq!(encoded(&rays(15.0, f64::NAN), 1.0), (0, 0));
     assert_eq!(encoded(&rays(15.0, f64::INFINITY), 1.0), (0, 0));
