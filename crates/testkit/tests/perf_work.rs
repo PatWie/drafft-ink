@@ -275,6 +275,12 @@ fn dragging_a_shape_with_the_pointer_scans_nothing() {
             p.event(PointerPhase::Move, x + f64::from(k) * 3.0, y + f64::from(k) * 2.0, Button::None, Buttons::PRIMARY);
         }
         assert_eq!(work.count(Counter::ElementsScanned), 0, "drag frames at {n}: {}", work.summary());
+        assert_eq!(
+            work.count(Counter::HitTests),
+            0,
+            "nothing hit-tests while a button is down, at {n}: {}",
+            work.summary()
+        );
         let work = WorkScope::begin();
         p.event(PointerPhase::Up, x + 60.0, y + 40.0, Button::Primary, Buttons::NONE);
         assert_eq!(work.count(Counter::ElementsScanned), 0, "drop at {n}: {}", work.summary());
