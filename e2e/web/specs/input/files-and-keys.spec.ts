@@ -99,20 +99,28 @@ test("keys: Ctrl+C and Ctrl+V paste a copy of the selected shape", async ({ app 
   await app.page.keyboard.press("Control+v");
   await app.until("a pasted copy", async () => (await app.count()) >= 2);
   await app.settle(800);
-  // How many copies one Ctrl+V makes is F3 (docs/review/e2e-findings.md): this test holds for one or two.
   const rows = (await app.exec("element.query", { fields: ["id", "bounds", "name"] })).items as { id: string; bounds: { w: number; h: number }; name?: string }[];
   const copies = rows.filter((r) => r.id !== a);
-  expect(copies.length).toBeGreaterThanOrEqual(1);
+  expect(copies, "one Ctrl+V makes one copy").toHaveLength(1);
   for (const c of copies) expect(c.bounds, "a copy has the size of the original").toMatchObject({ w: 100, h: 60 });
   const selected = (await app.exec("selection.get")).ids as string[];
   expect(selected.length).toBeGreaterThan(0);
   expect(selected.every((id) => copies.some((c) => c.id === id)), "the selection is the pasted copy").toBe(true);
-  await app.exec("history.undo", { steps: copies.length });
-  expect(await app.count(), "undo removes the copies").toBe(1);
+  await app.exec("history.undo");
+  expect(await app.count(), "one undo removes the copy").toBe(1);
+});
+
+test("keys: one Ctrl+C copies once", async ({ app }) => {
+  await camera(app, { x: 640, y: 400 }, 1);
+  const a = await box(app, 300, 300, 100, 60, { fill: "#ffd8a8" });
+  await app.exec("selection.select", { ids: [a] });
+  await app.page.keyboard.press("Control+c");
+  await app.settle(600);
+  const copies = (await app.recent(30)).filter((e) => e.id === "clipboard.copy" && e.source === "shortcut");
+  expect(copies, "one Ctrl+C is one clipboard.copy").toHaveLength(1);
 });
 
 test("keys: one Ctrl+V pastes once", async ({ app }) => {
-  test.fixme(true, "F3 in docs/review/e2e-findings.md: Ctrl+V runs clipboard.paste twice (the key binding and the browser's paste event)");
   await camera(app, { x: 640, y: 400 }, 1);
   const a = await box(app, 300, 300, 100, 60, { fill: "#ffd8a8" });
   await app.exec("selection.select", { ids: [a] });
@@ -126,11 +134,10 @@ test("keys: one Ctrl+V pastes once", async ({ app }) => {
 });
 
 test("keys: Ctrl+V pastes the copy centred on the pointer", async ({ app }) => {
-  test.fixme(true, "F2 in docs/review/e2e-findings.md: while hovering, the cursor position that Ctrl+V uses is missing or one sample behind");
   await camera(app, { x: 640, y: 400 }, 1);
   const a = await box(app, 300, 300, 100, 60, { fill: "#ffd8a8", name: "orig" });
   await app.exec("selection.select", { ids: [a] });
-  const where = await app.toPage({ x: 900, y: 600 });
+  const where = await app.toPage({ x: 700, y: 520 });
   await app.page.mouse.move(where.x - 1, where.y);
   await app.page.waitForTimeout(250);
   await app.page.mouse.move(where.x, where.y);
@@ -140,6 +147,28 @@ test("keys: Ctrl+V pastes the copy centred on the pointer", async ({ app }) => {
   await app.until("a pasted copy", async () => (await app.count()) === 2);
   const rows = (await app.exec("element.query", { fields: ["id", "bounds"] })).items as { id: string; bounds: { x: number; y: number } }[];
   const copy = rows.find((r) => r.id !== a);
-  expect(copy?.bounds.x, "centred on the pointer (x)").toBeCloseTo(900 - 50, -1);
-  expect(copy?.bounds.y, "centred on the pointer (y)").toBeCloseTo(600 - 30, -1);
+  expect(copy?.bounds.x, "centred on the pointer (x)").toBeCloseTo(700 - 50, -1);
+  expect(copy?.bounds.y, "centred on the pointer (y)").toBeCloseTo(520 - 30, -1);
+});
+
+test("keys: Ctrl+V with the pointer over a panel pastes at the middle of the view", async ({ app }) => {
+  // The properties panel opens at the right edge when something is selected. A pointer over it is not on the
+  // canvas, so `$cursor` is omitted and the paste lands at the viewport centre (docs/commands.md section 6.1).
+  // The first version of the pointer spec above hovered this panel and read the result as a lagging cursor (F2).
+  await camera(app, { x: 640, y: 400 }, 1);
+  const a = await box(app, 300, 300, 100, 60, { fill: "#ffd8a8" });
+  await app.exec("selection.select", { ids: [a] });
+  await app.settle();
+  const over = await app.toPage({ x: 1000, y: 400 });
+  await app.page.mouse.move(over.x - 1, over.y);
+  await app.page.waitForTimeout(250);
+  await app.page.mouse.move(over.x, over.y);
+  await app.page.waitForTimeout(250);
+  await app.page.keyboard.press("Control+c");
+  await app.page.keyboard.press("Control+v");
+  await app.until("a pasted copy", async () => (await app.count()) === 2);
+  const rows = (await app.exec("element.query", { fields: ["id", "bounds"] })).items as { id: string; bounds: { x: number; y: number } }[];
+  const copy = rows.find((r) => r.id !== a);
+  expect(copy?.bounds.x, "centred on the view (x)").toBeCloseTo(640 - 50, -1);
+  expect(copy?.bounds.y, "centred on the view (y)").toBeCloseTo(400 - 30, -1);
 });

@@ -137,6 +137,8 @@ SwiftShader. Browsers hide the adapter name: on the web it is blank and `kind` i
 | links | egui-winit (`webbrowser`) | `window.open` for http, https and mailto only |
 | no GPU | error returned from `run` | self-contained error page, `show_error_page` |
 
+**One path for copy, cut and paste.** Both platforms turn Ctrl/Cmd+C, X and V into `ShellEvent::CopyRequested` and `ShellEvent::Paste`, because only the event carries the system clipboard. The app runs `clipboard.copy`, `clipboard.cut` and `clipboard.paste` from those events (Ctrl+Shift+V adds `plain_text`, read from `EventCx::modifiers`). The keymap must not run them again: the app passes `FrameInput::host_clipboard`, and the keymap skips the bindings that carry `Binding::host_clipboard`. On the web a middle-button press is a pan: `pointer.rs` cancels its `mousedown` and `mouseup`, or Linux browsers paste the primary selection.
+
 **Pen pressure on native** (from winit 0.30.13 sources; not tested on hardware here): Windows reports touch and
 pen force from `WM_POINTER` as `Touch.force`; iOS and Android report force; macOS reports only trackpad
 pressure (`TouchpadPressure`, not forwarded); X11 and Wayland give no pen pressure through winit (no

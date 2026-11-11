@@ -303,13 +303,14 @@ const WRITE: Facts = Facts {
     ..READ
 };
 
-const COPY_KEYS: &[Binding] = &[Binding::new(&["Mod+C"], Scope::Canvas)];
-const CUT_KEYS: &[Binding] = &[Binding::new(&["Mod+X"], Scope::Canvas)];
+const COPY_KEYS: &[Binding] = &[Binding::new(&["Mod+C"], Scope::Canvas).host_clipboard()];
+const CUT_KEYS: &[Binding] = &[Binding::new(&["Mod+X"], Scope::Canvas).host_clipboard()];
 const PASTE_KEYS: &[Binding] = &[
-    Binding::new(&["Mod+V"], Scope::Canvas).with_args(r#"{"at":"$cursor"}"#),
+    Binding::new(&["Mod+V"], Scope::Canvas).with_args(r#"{"at":"$cursor"}"#).host_clipboard(),
     Binding::new(&["Mod+Shift+V"], Scope::Canvas)
         .with_args(r#"{"at":"$cursor","plain_text":true}"#)
-        .titled("Paste as plain text"),
+        .titled("Paste as plain text")
+        .host_clipboard(),
 ];
 const COPY_STYLE_KEYS: &[Binding] = &[Binding::new(&["Mod+Alt+C"], Scope::Canvas)];
 const PASTE_STYLE_KEYS: &[Binding] = &[Binding::new(&["Mod+Alt+V"], Scope::Canvas)];

@@ -1,6 +1,7 @@
 import { test, expect } from "../../support/app.ts";
 import { box, camera } from "../../support/build.ts";
 import { drag } from "../../support/mouse.ts";
+import { seedPrimarySelection } from "../../support/x11.ts";
 
 test.describe("real pointer input", () => {
   test.beforeEach(async ({ app }) => {
@@ -102,7 +103,9 @@ test.describe("real pointer input", () => {
   });
 
   test("a middle-button drag pans the content and pastes nothing", async ({ app }) => {
-    test.fixme(true, "F4 in docs/review/e2e-findings.md: on Linux a middle click runs clipboard.paste when the primary selection holds something");
+    // Linux browsers paste the primary selection on a middle click. Give them something to paste (F4).
+    const seeded = await seedPrimarySelection("text from the primary selection");
+    if (seeded) await app.page.waitForTimeout(200);
     await box(app, 600, 380, 80, 40);
     const centre = await app.toPage({ x: 640, y: 400 });
     const s2 = (await app.exec("view.get")).scroll as [number, number];

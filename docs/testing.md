@@ -179,7 +179,7 @@ through Playwright. A native test calls `execute` and `batch` on the bridge. Nei
 Node 22 and Playwright 1.58 with the Chromium that `~/.cache/ms-playwright` holds. Headless Chromium draws WebGPU canvases blank
 (`research/web-perf.md`), so the suite runs headed on an Xvfb that `cargo xtask e2e` starts. The flags for the NVIDIA GPU
 (ANGLE on Vulkan) are in `support/env.ts`; `DRAFFTINK_E2E_ADAPTER=swiftshader` selects the CPU adapter, which is slow but needs no GPU.
-The global setup starts `drafftink-server --web-dir dist --storage memory`, asks Chromium for an adapter and prints it. One worker
+The middle-button spec seeds the X11 primary selection with `xclip` (`support/x11.ts`; install `xclip`, the spec runs unseeded without it). The global setup starts `drafftink-server --web-dir dist --storage memory`, asks Chromium for an adapter and prints it. One worker
 runs the specs in turn: the idle checks count frames and must not share the GPU.
 
 | Directory | What it holds |
@@ -188,7 +188,7 @@ runs the specs in turn: the idle checks count frames and must not share the GPU.
 | `specs/stories/` | the headline stories: an arrow stays attached through move, resize, rotate, delete and undo; grouping, entering and leaving; the agent flowchart with `diagram.create` and `doc.outline`; copy and paste of a bound pair; a legacy fixture loads |
 | `specs/input/` | real input: a mouse drag draws a rectangle, a dragged arrow binds to the shapes it ends on, a marquee selects, wheel, ctrl+wheel and middle-drag move the camera, typing text, shortcuts, file drop, paste |
 | `specs/shell/` | startup and the API surface, idle (0 frames), persistence and offline reload, two pages in one room, pixel checks |
-| `support/` | `app.ts` (the `App` wrapper and the `test` fixture), `api.ts` (the types of `window.drafftink`), `build.ts`, `mouse.ts`, `pixels.ts`, `server.ts` |
+| `support/` | `app.ts` (the `App` wrapper and the `test` fixture), `api.ts` (the types of `window.drafftink`), `build.ts`, `mouse.ts`, `pixels.ts`, `server.ts`, `x11.ts` |
 | `harness/` | `window.__drafftinkTest`, see below |
 | `generated/` | `commands.d.ts` and `registry.json`, made from the registry |
 

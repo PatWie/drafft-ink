@@ -16,6 +16,9 @@ use crate::widgets::{Cx, Layout};
 pub struct FrameInput {
     /// Pointer placeholders for shortcuts that take a position (`$cursor`).
     pub pointer: Pointer,
+    /// The host delivers copy, cut and paste as clipboard events and runs those commands from them. The keymap
+    /// then leaves the clipboard chords alone, so one key press is one command (`Binding::host_clipboard`).
+    pub host_clipboard: bool,
 }
 
 /// What the UI tells the app about the frame.
@@ -76,6 +79,7 @@ impl UiShell {
                 state: &self.state,
                 egui_wants_keyboard: wants_keyboard,
                 pointer: input.pointer,
+                host_clipboard: input.host_clipboard,
             },
         );
         actions.extend(draw(ui, &self.model, &mut self.state));

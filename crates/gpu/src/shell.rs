@@ -333,7 +333,14 @@ impl<A: ShellApp> Shell<A> {
         let Some(run) = self.running.as_ref() else { return (Handled::No, false) };
         let mut out = Outbox::default();
         let (repaint, handled) = {
-            let mut cx = EventCx { ctx: &run.ctx, gpu: &run.gpu, waker: &self.waker, view: run.view(), out: &mut out };
+            let mut cx = EventCx {
+                ctx: &run.ctx,
+                gpu: &run.gpu,
+                waker: &self.waker,
+                view: run.view(),
+                modifiers: self.modifiers,
+                out: &mut out,
+            };
             self.app.event(&mut cx, event)
         };
         self.apply_repaint(repaint);

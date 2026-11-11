@@ -83,6 +83,8 @@ pub struct EventCx<'a> {
     pub gpu: &'a Gpu,
     pub waker: &'a Waker,
     pub view: ViewInfo,
+    /// The modifier keys held now. A paste event uses it to tell Ctrl+V from Ctrl+Shift+V.
+    pub modifiers: egui::Modifiers,
     pub(crate) out: &'a mut Outbox,
 }
 
