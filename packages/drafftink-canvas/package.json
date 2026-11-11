@@ -1,0 +1,35 @@
+{
+  "name": "drafftink-canvas",
+  "version": "0.2.0",
+  "description": "An infinite-canvas library for the browser, built with Rust and WebGPU: shapes, fast hit testing, Konva-style events, a transformer, and export to JSON, SVG and PNG.",
+  "license": "AGPL-3.0-only",
+  "type": "module",
+  "main": "./src/index.js",
+  "module": "./src/index.js",
+  "types": "./src/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./src/index.d.ts",
+      "default": "./src/index.js"
+    },
+    "./dist/*": "./dist/*"
+  },
+  "files": [
+    "src",
+    "dist",
+    "README.md"
+  ],
+  "sideEffects": false,
+  "keywords": ["canvas", "webgpu", "whiteboard", "wasm", "infinite-canvas", "konva"],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/PatWie/drafft-ink.git",
+    "directory": "packages/drafftink-canvas"
+  },
+  "scripts": {
+    "build": "bash scripts/build.sh",
+    "sizes": "python3 scripts/sizes.py dist/drafftink_canvas_js_bg.wasm",
+    "serve": "python3 -m http.server 8080",
+    "test": "python3 test/smoke.py"
+  }
+}

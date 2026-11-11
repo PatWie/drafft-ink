@@ -218,38 +218,71 @@ The engine owns tools, selection rules and commands; the app routes intents. Int
 | drawing tools (`PointerMode::Draw`) | E6 / E7: use `DragStart.origin`, the `DragUpdate` stream and `meta.pressure` |
 | eraser | E8: `marquee` or `hit_all_at` along the swept path |
 
-## 9. Planned JS / wasm API
+## 9. The JS package
 
-A later task builds `packages/drafftink-canvas` (wasm-bindgen over this crate, `serde-wasm-bindgen` or JSON at the boundary). Input and intents are already serde types, so the JS shapes are the Rust shapes. The goal is a Konva-sized surface:
+`packages/drafftink-canvas` is the npm package `drafftink-canvas`: this library in a browser, for developers who want "Konva, with a spatial index and exact hit testing" and do not want an editor. The wasm module comes from `crates/canvas-js` (`wasm-bindgen`, in-memory store, no Loro, no `doc`). Types: `src/index.d.ts` (hand-written shape model and `Stage`) and `dist/drafftink_canvas_js.d.ts` (generated, for the raw class `RawStage`). Quick start and build: `packages/drafftink-canvas/README.md`; runnable pages: `packages/drafftink-canvas/examples/`.
 
-```ts
-import { Canvas } from "drafftink-canvas";
+```js
+import { Stage } from "drafftink-canvas";
 
-const canvas = await Canvas.create({ element: htmlCanvas, document?: DocumentJson });   // in-memory store
-
-canvas.camera = { scroll: [0, 0], zoom: 1 };      // clamped 0.1..30
-canvas.resize(width, height, devicePixelRatio);
-canvas.zoomAt(x, y, 1.1); canvas.panBy(dx, dy); canvas.fitToContent({ padding: 40 });
-canvas.worldToScreen([x, y]); canvas.screenToWorld([x, y]);
-
-canvas.hit(x, y, { tolerancePx: 5 }) // -> { id, part } | null
-canvas.hitAll(x, y); canvas.marquee({ x, y, w, h }, "contain" | "intersect"); // -> string[]
-
-canvas.on("click", "#id" | ".name" | "rectangle" | "group:g1" | "stage", (e) => { e.stopPropagation(); });
-canvas.off(handle);
-
-canvas.setSelection(ids); canvas.setEnteredGroup(groupId | null); canvas.setPointerMode("select" | "hand" | "draw");
-canvas.handleInput(inputEvent) // -> Intent[]   (PointerEvent / WheelEvent as in this page, JSON)
-canvas.tick(nowMs) // -> Intent[];  canvas.nextDeadline() // -> number | null
-canvas.takeDirty() // -> { scene, camera, overlay }
-canvas.overlay()   // -> Overlay (outlines as SVG path data)
-
-canvas.transact((tx) => { tx.insert(element); tx.update(id, { x: 10 }); tx.remove(id); }); // one change set
-canvas.toJSON(); canvas.loadJSON(doc);
-canvas.destroy();
+const stage = await Stage.create(document.querySelector("canvas"), { defaultStyle: { sloppiness: "architect" } });
+stage.add({ id: "box", type: "rectangle", x: 0, y: 0, w: 160, h: 90, style: { fill_color: "#a5d8ff" }, name: "card" });
+stage.on("click", ".card", (e) => { console.log(e.target, e.world); e.stopPropagation(); });
+stage.transact((tx) => { tx.add({ type: "text", x: 20, y: 30, content: "Hello" }); tx.update("box", { w: 200 }); });
+stage.fitToContent({ padding: 60 });
+const svg = stage.toSVG(), png = await stage.toPNG({ scale: 2 }), doc = stage.toJSON();
 ```
 
-A DOM helper in the package (not in the Rust crate) turns `PointerEvent`, `WheelEvent` and touch events of an `HTMLCanvasElement` into `InputEvent`s, feeds `canvas.tick` from one `setTimeout` at `nextDeadline()`, and requests an animation frame only when `takeDirty()` says so. The editor tier (`engine`) is exposed in the same package under `window.drafftink`.
+### Layer and dependencies
+
+`drafftink-canvas-js` is an app-class crate (`Class::App` in `xtask/src/layers.rs`) and is also checked by `cargo xtask wasm` (`WASM_EXTRA`). It needs `canvas` (L3), `render` (L2), `scene` (L1), `typeset` (L1), `edit` and `io` (L4) and `gpu` (L6). `gpu` is L6, so the crate cannot be a library below L7; nothing depends on it, so it is a leaf. It uses `edit` for the editor's own rules (move, resize, rotate, group, z-order, delete) rather than a second copy, and `io` for SVG, PNG metadata and the file readers. It does not depend on `doc` or `loro` directly. `io` pulls Loro in only through `io::open`, which reads the old app's Loro snapshots; the package therefore routes formats itself (`src/load.rs`) and the linker drops the Loro engine (7.4 MB instead of 9.1 MB).
+
+### What is on top of the Rust facade
+
+| Part | Where | Role |
+|---|---|---|
+| `Stage` | `crates/canvas-js/src/web` | mounts a WebGPU surface on the canvas, owns the scene, answers queries, draws a frame when one is due |
+| `Core` | `crates/canvas-js/src/core.rs` | everything but the browser: tested natively |
+| shape model | `json.rs`, `ops.rs` | the scene's element layout with a flat shorthand; add, merge-patch, remove, batches |
+| built-in pointer behaviour | `interact.rs` | select, drag, rubber band, transformer drags, with the editor's rules from `drafftink-edit` |
+| overlay glue | `overlay.rs` | `canvas::Overlay` to `render::Overlay` (the `OverlaySink` seam of section 5) |
+| export | `export.rs`, `load.rs` | JSON, SVG, PNG with the scene inside; the formats `load` reads |
+| DOM glue | `src/input.js`, `src/index.js` | pointer, wheel, key and resize listeners; one `requestAnimationFrame` only when a frame is due; one timer for the next long press |
+
+### Shapes
+
+A shape is the scene's element, with the same field names as the document file (`docs/model.md`), so `stage.get(id)` is what `toJSON().elements` holds. `add` and `update` also take a flat shorthand: `x`, `y`, `w`, `h`, `angle` at the top level go to `transform`; `type` and every key that is not an element field (`points`, `content`, `latex`, ...) go to `kind`. Points of a line, arrow or stroke are relative to `x`, `y` and may be negative: the box is fitted to them. A text or formula gets the size its content needs. A key a rectangle, diamond or ellipse does not have (a typo such as `colour`) is an error.
+
+| Call | Meaning |
+|---|---|
+| `add(shape) -> id` | on top of everything; a missing `id` is made; `defaultStyle` sits under the shape's `style`; each shape gets its own sketch seed |
+| `update(id, patch)` | RFC 7396 merge patch: objects merge, `null` removes a field. The type cannot change |
+| `remove(...ids)` | removed for good, with bound text and the children of a frame; no tombstone stays |
+| `transact(tx => ...)` | `tx.add/update/remove/order/group/ungroup/lock/move`; one commit, or none when a step fails |
+| `order(ids, "front"\|"back"\|"forward"\|"backward")`, `group(ids)`, `ungroup(ids)` | the rules of `edit::zorder` and `edit::group` |
+| `get`, `all`, `find(selector)`, `count` | `find` takes the selectors of section 6 |
+| `toJSON()`, `exportJSON()`, `load(doc \| text \| bytes)` | native document; `load` also opens a PNG or SVG made by `toPNG`/`toSVG`, `.excalidraw` and old drafft-ink JSON, and replaces the scene in one commit |
+| `toSVG(opts)`, `toPNG(opts)` | `drafftink-io` SVG (sketch or clean, selection, embedded scene); PNG drawn offscreen with the export options of `render` (no level of detail), with the scene in a text chunk, `scale`, `padding`, transparent background, selection |
+
+### Camera, queries, selection
+
+`camera` (`{ scroll, zoom }`, clamped 0.1 to 30), `panBy`, `zoomAt`, `fitToContent({ padding, maxZoom, ids })`, `worldToScreen`, `screenToWorld`, `resize(w, h, dpr)` (automatic with a `ResizeObserver` unless `autoResize: false`; the device pixel ratio follows page zoom). `hit(x, y, { tolerancePx })`, `hitAll`, `marquee(rect, mode)`, `inRect(rect)`, `pick(x, y)` (handles first). `setSelection(ids)` tells the transformer what to wrap (section 4); `selection`, `setEnteredGroup`, `setPointerMode("select"\|"hand"\|"draw")`, `setHighlights(ids)`, `overlay()` (selection boxes, handles, hover outline and highlights as SVG path data, marquee, remote cursors).
+
+### Events
+
+`on(event, selector, callback)` with the events of section 6 under DOM-like names: `pointerdown click dblclick longpress contextmenu dragstart dragmove dragend pointerenter pointerleave transformstart transform transformend`. Without a selector the listener is on the stage. The callback gets `{ type, target, currentTarget, screen, world, deltaScreen, deltaWorld, modifiers, pointer, button, handle, cancelled, stopPropagation() }`. The stage's own events: `selectionchange` (ids), `change` (the scene changed because of input), `intent` (every `Intent` of section 3, in the canvas crate's serde layout). `handleInput(event)` takes the canvas crate's `InputEvent` (JSON of section 3) for replay and for `interactive: false`.
+
+**Listeners may change the stage.** A listener runs while the stage is mutably borrowed. A write made then (`add`, `update`, `remove`, `transact`, `setSelection`, camera, `on`, `off`, ...) is queued and applied when the event has been delivered, in order; `add` returns its id at once. A read (`get`, `hit`, `count`, ...) cannot be answered at that moment and throws "the stage is busy running a listener". The event carries what a listener usually needs.
+
+### Built-in behaviour
+
+`interaction` options (all on by default): a press selects the element or its outermost group (Shift toggles; empty space clears); a drag moves it, or the whole selection when it is part of it (`custom: { draggable: false }` opts a shape out); a drag on a handle of the transformer resizes (Shift keeps the ratio, Alt resizes from the centre), rotates (Shift snaps to 15 degrees) or moves a point of a line, and a midpoint handle inserts one; a drag on empty space is a rubber band (`"contain"`, `"intersect"` or `"off"`). The rules are `edit::transform` and `edit::linear`, so bound text follows its container and arrows follow their targets. A drag does not add up small steps: the first update records what the transform touches, every update restores that and applies the transform for the total movement, and Escape (or a second finger) restores it. A handle that a small shape covers on screen wins over the shape, as in any editor: zoom in or move the selection away first.
+
+### Drawing and idle
+
+The wrapper asks for a frame (`requestAnimationFrame`) only when the stage says one is due (`needsFrame`): the scene, the camera, the size, the theme or the overlay changed. An idle stage has no animation-frame loop, no timer except one for a pending long press, and touches no GPU resource. Moving the pointer over empty space, or inside one element, draws nothing (section 3). Only the elements in view are given to Vello (section 2). Browser test (`test/smoke.py`, headed Chromium on Xvfb with WebGPU on NVIDIA): 1000 shapes, a click event, a drag, hand-tool and wheel pans, 0 frames and 0 animation frames in 5 s idle, 150 moves over empty space with 0 frames, one change gives one frame.
+
+Pictures that are still decoding make the stage ask for one more frame until they are done. A lost GPU device is recovered with a new device and one redraw (`isLost`, `recover`). Without WebGPU `Stage.create` rejects with a plain message; `errorPage: true` replaces the page with the explanation of `drafftink-gpu`.
 
 ## 10. What it does not do
 
