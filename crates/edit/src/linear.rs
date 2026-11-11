@@ -17,6 +17,7 @@ use kurbo::{CubicBez, ParamCurve, ParamCurveArclen, Point};
 
 use crate::binding::{End, update_bound_arrows};
 use crate::elbow::{self, ElbowEditError, RouteOpts};
+use drafftink_geom::spline::catmull_rom_cubics;
 
 /// Radius of a point handle on screen, in pixels.
 pub const POINT_HANDLE_SIZE: f64 = 10.0;
@@ -389,17 +390,7 @@ pub fn set_path<T: SceneTx>(tx: &mut T, id: &ElementId, path: PathType) -> Resul
 /// One cubic per segment of a curved line: the Catmull-Rom spline through `points` with tension 0.5.
 /// Two points give a straight cubic.
 pub fn curve_segments(points: &[Point]) -> Vec<CubicBez> {
-    let n = points.len();
-    let mut out = Vec::with_capacity(n.saturating_sub(1));
-    for i in 0..n.saturating_sub(1) {
-        let p0 = points[i.saturating_sub(1)];
-        let (p1, p2) = (points[i], points[i + 1]);
-        let p3 = points[(i + 2).min(n - 1)];
-        let c1 = p1 + (p2 - p0) / 6.0;
-        let c2 = p2 - (p3 - p1) / 6.0;
-        out.push(CubicBez::new(p1, c1, c2, p2));
-    }
-    out
+    catmull_rom_cubics(points).collect()
 }
 
 /// A segment midpoint handle.

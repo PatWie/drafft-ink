@@ -11,7 +11,8 @@
 //! | text, math, image | the rotated box | always the whole box |
 //! | frame | the rotated box | border only, never the inside |
 
-use drafftink_geom::kurbo::{BezPath, Point, Rect, Size, Vec2};
+use drafftink_geom::kurbo::{Point, Rect, Size};
+use drafftink_geom::spline::catmull_rom_path;
 use drafftink_geom::{
     DiamondShape, ElementFrame, EllipseShape, OrientedBox, Outline, PathShape, Polyline, Primitive, RectShape,
 };
@@ -32,30 +33,6 @@ fn element_frame(e: &Element) -> ElementFrame {
     ElementFrame::new(Point::new(t.x, t.y), Size::new(t.w, t.h), t.angle)
 }
 
-/// Catmull-Rom spline with tension 0.5 through `points`, the curve the renderer draws for `PathType::Round`.
-fn spline(points: &[Point], closed: bool) -> BezPath {
-    let mut path = BezPath::new();
-    let Some((first, rest)) = points.split_first() else { return path };
-    if rest.is_empty() {
-        return path;
-    }
-    path.move_to(*first);
-    let last = points.len() - 1;
-    for i in 0..last {
-        let p1 = points[i];
-        let p0 = points[i.saturating_sub(1)];
-        let p2 = points[i + 1];
-        let p3 = points[(i + 2).min(last)];
-        let t1 = Vec2::new((p2.x - p0.x) * 0.5, (p2.y - p0.y) * 0.5);
-        let t2 = Vec2::new((p3.x - p1.x) * 0.5, (p3.y - p1.y) * 0.5);
-        path.curve_to(p1 + t1 / 3.0, p2 - t2 / 3.0, p2);
-    }
-    if closed {
-        path.close_path();
-    }
-    path
-}
-
 /// The world-space outline of an element. `None` when the element has no usable geometry (non-finite numbers, a
 /// line without two points).
 pub fn shape_of(e: &Element) -> Option<Primitive> {
@@ -72,7 +49,7 @@ pub fn shape_of(e: &Element) -> Option<Primitive> {
                 return None;
             }
             if d.path == PathType::Round {
-                PathShape::from_frame(&element_frame(e), &spline(&d.points, d.closed)).into()
+                PathShape::from_frame(&element_frame(e), &catmull_rom_path(&d.points, d.closed)).into()
             } else {
                 Polyline::from_frame(&element_frame(e), &d.points, d.closed).into()
             }

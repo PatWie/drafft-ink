@@ -1571,6 +1571,7 @@ name = "drafftink-sketch"
 version = "0.2.0"
 dependencies = [
  "criterion 0.8.2",
+ "drafftink-geom",
  "getrandom 0.2.17",
  "kurbo",
  "roughr",

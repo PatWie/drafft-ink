@@ -7,6 +7,7 @@ license.workspace = true
 rust-version.workspace = true
 
 [dependencies]
+drafftink-geom = { path = "../geom" }
 kurbo.workspace = true
 roughr.workspace = true
 
