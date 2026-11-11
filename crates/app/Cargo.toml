@@ -33,6 +33,9 @@ rfd = { version = "0.18", default-features = false, features = ["xdg-portal"] }
 wgpu = { workspace = true }
 pollster = { workspace = true }
 
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+# (web platform dependencies: wasm-bindgen, web-sys, js-sys, ...)
+
 [dev-dependencies]
 drafftink-testkit = { path = "../testkit" }
 
