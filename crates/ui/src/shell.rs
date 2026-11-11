@@ -1,0 +1,122 @@
+//! One frame of the UI: refresh the model, read the keys, draw every surface, execute the actions.
+
+use drafftink_engine::Session;
+use egui::Rect;
+
+use crate::action::{Report, UiAction, dispatch};
+use crate::keymap::{KeyContext, Pointer, resolve_keys};
+use crate::model::{CollabView, Model};
+use crate::state::{TOAST_FADE_S, TOAST_HOLD_S, UiState};
+use crate::surfaces;
+use crate::theme::{self, Palette};
+use crate::widgets::Cx;
+
+/// What the app tells the UI about the frame.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct FrameInput {
+    /// Pointer placeholders for shortcuts that take a position (`$cursor`).
+    pub pointer: Pointer,
+}
+
+/// What the UI tells the app about the frame.
+#[derive(Debug)]
+pub struct FrameResult {
+    /// The commands that ran and the requests for the app.
+    pub report: Report,
+    /// The area the canvas has: the whole window.
+    pub canvas_rect: Rect,
+    /// A modal dialog is open, so pointer events must not reach the canvas.
+    pub modal: bool,
+}
+
+/// The UI: its own state and the model snapshot.
+pub struct UiShell {
+    /// What the UI remembers between frames.
+    pub state: UiState,
+    /// The snapshot of the session.
+    pub model: Model,
+}
+
+impl UiShell {
+    /// A UI. `mac` is true on macOS, where `Mod` is Cmd.
+    pub fn new(mac: bool) -> Self {
+        Self { state: UiState::new(), model: Model::new(mac) }
+    }
+
+    /// Presence data from the collaboration client, which the app owns.
+    pub fn set_collab(&mut self, collab: CollabView) {
+        self.model.collab = collab;
+    }
+
+    /// Draws one frame and executes the actions it produced. Call once per egui pass.
+    pub fn frame(&mut self, ui: &mut egui::Ui, session: &mut Session, input: FrameInput) -> FrameResult {
+        let ctx = ui.ctx().clone();
+        self.model.mac = ctx.os().is_mac();
+        self.model.refresh(session);
+        self.apply_theme(&ctx);
+
+        let events = ctx.input(|i| i.events.clone());
+        let wants_keyboard = ctx.egui_wants_keyboard_input();
+        let mut actions = resolve_keys(
+            &events,
+            &KeyContext {
+                model: &self.model,
+                state: &self.state,
+                egui_wants_keyboard: wants_keyboard,
+                pointer: input.pointer,
+            },
+        );
+        actions.extend(draw(ui, &self.model, &mut self.state));
+
+        let now = ctx.input(|i| i.time);
+        let report = dispatch(session, &mut self.state, actions, now);
+        if !report.ran.is_empty() {
+            self.model.invalidate();
+            self.model.refresh(session);
+            // The state the user sees changed: one more frame to show it.
+            ctx.request_repaint();
+        }
+        self.schedule_toasts(&ctx, now);
+        FrameResult { report, canvas_rect: ctx.content_rect(), modal: self.state.modal_open() }
+    }
+
+    fn apply_theme(&mut self, ctx: &egui::Context) {
+        let want = self.model.setting_str("theme").unwrap_or("system").to_owned();
+        if self.state.applied_theme.as_deref() != Some(want.as_str()) {
+            theme::apply(ctx, Some(&want));
+            self.state.applied_theme = Some(want);
+        }
+    }
+
+    /// Repaints only while a toast is on screen: once when it starts to fade, then at 30 Hz during the fade.
+    fn schedule_toasts(&mut self, ctx: &egui::Context, now: f64) {
+        self.state.expire_toasts(now);
+        let mut next: Option<f64> = None;
+        for t in &self.state.toasts {
+            let age = now - t.born;
+            let wait = if age < TOAST_HOLD_S {
+                TOAST_HOLD_S - age
+            } else if age < TOAST_HOLD_S + TOAST_FADE_S {
+                1.0 / 30.0
+            } else {
+                0.0
+            };
+            next = Some(next.map_or(wait, |n: f64| n.min(wait)));
+        }
+        if let Some(wait) = next {
+            ctx.request_repaint_after(std::time::Duration::from_secs_f64(wait.max(0.0)));
+        }
+    }
+}
+
+/// Draws every surface from the model and returns the actions of the frame, in drawing order.
+/// It reads the session through the model only and changes nothing but `state`.
+pub fn draw(ui: &mut egui::Ui, model: &Model, state: &mut UiState) -> Vec<UiAction> {
+    let mut out = Vec::new();
+    let ctx = ui.ctx().clone();
+    theme::ensure_fonts(&ctx);
+    let pal = Palette::of(&ctx);
+    let mut cx = Cx::new(model, pal, &mut out);
+    surfaces::show_all(&ctx, &mut cx, state);
+    out
+}

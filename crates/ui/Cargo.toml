@@ -4,8 +4,17 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 rust-version.workspace = true
+description = "The egui user interface (L6): reads the command registry and the session, calls Session::execute_from. No document logic."
 
 [dependencies]
+drafftink-engine = { path = "../engine" }
+drafftink-scene = { path = "../scene" }
+drafftink-edit = { path = "../edit" }
+egui = { workspace = true }
+serde_json = { workspace = true }
+
+[dev-dependencies]
+egui_kittest = { workspace = true }
 
 [lints]
 workspace = true
