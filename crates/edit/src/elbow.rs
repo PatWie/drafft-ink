@@ -236,12 +236,6 @@ pub fn release_segment_of<T: SceneTx>(
     with_ends(tx, id, |path, s, e| release_segment(path, s, e, index, opts))
 }
 
-/// Cleans up the stored route of an elbow arrow, as after loading a file or an undo: merges collinear legs,
-/// drops legs under one unit and the pins on them, and routes again when no pin is left.
-pub fn renormalize_of<T: SceneTx>(tx: &mut T, id: &ElementId, opts: RouteOpts) -> Result<(), ElbowEditError> {
-    with_ends(tx, id, |path, s, e| renormalize(path, s, e, opts))
-}
-
 // ---------------------------------------------------------------------------------------------
 // Attaching an elbow end to a shape
 // ---------------------------------------------------------------------------------------------

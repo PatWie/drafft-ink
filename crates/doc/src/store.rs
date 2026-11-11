@@ -21,7 +21,7 @@ use loro::{ExportMode, Frontiers, LoroDoc, UndoManager, VersionVector};
 
 use crate::error::DocError;
 use crate::schema::{self, META_SCHEMA, Migration, ROOT_META, SCHEMA_VERSION, SYSTEM_ORIGIN_PREFIX};
-use crate::sync;
+use crate::sync::{self, Direction};
 use crate::text;
 use crate::tx::LoroTx;
 use crate::undo::{ObservedState, UndoInfo, UndoShared, UndoStep, make_manager};
@@ -34,7 +34,8 @@ pub struct LoroConfig {
     /// Most undo steps kept (default 200). The engine passes its `history.depth` setting.
     pub undo_depth: usize,
     /// Loro peer id. `None` (the default) picks a random one, which is what you want: never reuse a peer id on a
-    /// second copy of the same document, because two writers with one id corrupt the history.
+    /// second copy of the same document, because two writers with one id corrupt the history. Loro reserves
+    /// `u64::MAX`; [`LoroStore::with_config`] cannot fail, so a refused id silently becomes a random one.
     pub peer_id: Option<u64>,
     /// Largest update or snapshot `apply_remote` / `from_snapshot` look at, in bytes.
     pub max_import_bytes: usize,
@@ -120,7 +121,8 @@ pub(crate) fn decode_vv(bytes: &[u8]) -> Result<VersionVector, DocError> {
 }
 
 impl Core {
-    fn make_doc(config: &LoroConfig) -> Result<LoroDoc, DocError> {
+    /// A new `LoroDoc` with the text mark configuration and the configured peer id.
+    pub(crate) fn make_doc(config: &LoroConfig) -> Result<LoroDoc, DocError> {
         let doc = LoroDoc::new();
         text::configure(&doc);
         if let Some(p) = config.peer_id {
@@ -543,12 +545,12 @@ impl LoroStore {
     /// Reverts this peer's most recent step that has not been undone. Never reverts a collaborator's edit.
     /// `Ok(None)` when there is nothing to undo.
     pub fn undo(&mut self) -> Result<Option<UndoStep>, DocError> {
-        sync::undo_redo(self, true)
+        sync::undo_redo(self, Direction::Undo)
     }
 
     /// Re-applies the step most recently undone. `Ok(None)` when there is nothing to redo.
     pub fn redo(&mut self) -> Result<Option<UndoStep>, DocError> {
-        sync::undo_redo(self, false)
+        sync::undo_redo(self, Direction::Redo)
     }
 
     /// The observed editor state recorded with the step undo would revert (`before`), if any.

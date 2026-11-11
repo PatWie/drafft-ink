@@ -100,6 +100,37 @@ pub enum MarqueeMode {
     Intersect,
 }
 
+/// How the index differs from the scene, as reported by [`SceneIndex::verify`].
+#[derive(Debug, Clone, PartialEq, thiserror::Error)]
+pub enum IndexMismatch {
+    /// An element is indexed with other bounds than the scene gives it, or is missing.
+    #[error("{id}: index has {have:?}, scene says {want:?}")]
+    Bounds {
+        /// The element.
+        id: ElementId,
+        /// What the index holds.
+        have: Option<Rect>,
+        /// What a recomputation gives.
+        want: Rect,
+    },
+    /// An element without geometry is indexed.
+    #[error("{id}: index has {have:?}, element has no geometry")]
+    NoGeometry {
+        /// The element.
+        id: ElementId,
+        /// What the index holds.
+        have: Rect,
+    },
+    /// The index holds entries for elements the scene no longer has.
+    #[error("index holds {indexed} entries, scene has {expected} drawable elements")]
+    Count {
+        /// Entries in the index.
+        indexed: usize,
+        /// Drawable elements in the scene.
+        expected: usize,
+    },
+}
+
 /// What [`SceneIndex::apply`] did.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct ApplyStats {
@@ -242,18 +273,18 @@ impl SceneIndex {
 
     /// Compares the index with a full recomputation from `scene`. `Ok` when every live drawable element is indexed
     /// with exactly the bounds [`index_bounds`] gives and nothing else is. The error says what differs first.
-    pub fn verify<R: SceneRead>(&self, scene: &R) -> Result<(), String> {
+    pub fn verify<R: SceneRead>(&self, scene: &R) -> Result<(), IndexMismatch> {
         let mut expected = 0usize;
         for e in scene.iter() {
             match (index_bounds(e), self.index.get(&e.id)) {
                 (Some(want), Some(have)) if want == have => expected += 1,
-                (Some(want), have) => return Err(format!("{}: index has {have:?}, scene says {want:?}", e.id)),
-                (None, Some(have)) => return Err(format!("{}: index has {have:?}, element has no geometry", e.id)),
+                (Some(want), have) => return Err(IndexMismatch::Bounds { id: e.id.clone(), have, want }),
+                (None, Some(have)) => return Err(IndexMismatch::NoGeometry { id: e.id.clone(), have }),
                 (None, None) => {}
             }
         }
         if self.index.len() != expected {
-            return Err(format!("index holds {} entries, scene has {expected} drawable elements", self.index.len()));
+            return Err(IndexMismatch::Count { indexed: self.index.len(), expected });
         }
         Ok(())
     }

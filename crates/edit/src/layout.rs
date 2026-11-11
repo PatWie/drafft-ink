@@ -5,7 +5,7 @@
 //!   It is deterministic and never returns overlapping boxes (except for `none`, which keeps what it is given).
 //! * [`layout_apply`] applies a layout to elements of a scene: moves the nodes, reroutes the arrows between them
 //!   and keeps labels with their shapes.
-//! * [`diagram_create`](diagram::diagram_create) builds a diagram from a [`DiagramSpec`](diagram::DiagramSpec).
+//! * [`diagram_create`] builds a diagram from a [`DiagramSpec`].
 //!
 //! Distances are world units.
 

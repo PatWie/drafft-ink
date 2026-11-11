@@ -653,13 +653,6 @@ pub fn unbind_text<T: SceneTx>(tx: &mut T, text: &ElementId) -> Result<(), TextB
     Ok(())
 }
 
-/// Deletes the label of `container`, if it has one (a tombstone, so undo works). Returns its id.
-pub fn remove_label<T: SceneTx>(tx: &mut T, container: &ElementId) -> Result<Option<ElementId>, TextBindError> {
-    let Some(label) = label_of(tx, container) else { return Ok(None) };
-    tx.update(&label, |e| e.deleted = true)?;
-    Ok(Some(label))
-}
-
 /// Re-wraps and re-places the label of `container` after the container changed (`anchor` says which edge stays when
 /// the container has to grow back to fit the text). `None` when the container has no label.
 pub fn relayout_label<T: SceneTx, M: TextMeasure + ?Sized>(

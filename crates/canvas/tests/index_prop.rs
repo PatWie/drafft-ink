@@ -178,7 +178,7 @@ impl Model {
     fn check(&self, probes: &[(f64, f64)], rects: &[(f64, f64, f64, f64)]) -> Result<(), TestCaseError> {
         let store = self.canvas.store();
         let index = self.canvas.index();
-        index.verify(store).map_err(TestCaseError::fail)?;
+        index.verify(store).map_err(|e| TestCaseError::fail(e.to_string()))?;
 
         let zoom = self.canvas.viewport().zoom();
         let tol_px = 5.0;

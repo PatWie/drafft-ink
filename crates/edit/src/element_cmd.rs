@@ -3,7 +3,7 @@
 
 use std::collections::BTreeSet;
 
-use drafftink_geom::kurbo::{Point, Rect, Vec2};
+use drafftink_geom::kurbo::{Point, Vec2};
 use drafftink_geom::select::{BoxHandle, Corner};
 use drafftink_scene::{ElementId, SceneRead, SceneTx};
 
@@ -47,7 +47,7 @@ pub fn set_common_bounds<T: SceneTx>(
         return Err(TransformError::BadArgs("the width and the height must be above 0"));
     }
     if let [only] = base.as_slice() {
-        let t = tx.get(only).map(|e| e.transform).ok_or(TransformError::NotFinite)?;
+        let t = tx.get(only).map(|e| e.transform).ok_or_else(|| TransformError::NotFound(only.clone()))?;
         let (w, h) = target_size(t.w, t.h, &spec);
         let (x, y) = if spec.center {
             (spec.x.unwrap_or(t.x + t.w / 2.0) - w / 2.0, spec.y.unwrap_or(t.y + t.h / 2.0) - h / 2.0)
@@ -158,11 +158,6 @@ pub fn hit_by_path<R: SceneRead>(scene: &R, path: &[Point], radius: f64) -> Vec<
         .collect();
     sort_z(scene, &mut out);
     out
-}
-
-/// The rectangle of a point list, for tests and overlays.
-pub fn path_bounds(path: &[Point]) -> Option<Rect> {
-    drafftink_geom::aabb::from_points(path.iter().copied())
 }
 
 /// Smallest unit that [`tidy`] keeps: 1e-9 world units.

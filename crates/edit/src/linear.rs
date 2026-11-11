@@ -11,7 +11,7 @@
 //! and a curved line passes through its points as a Catmull-Rom spline.
 
 use drafftink_scene::{ElementId, ElementKind, Head, LinearData, PathType, SceneRead, SceneTx, StoreError, Transform};
-use kurbo::{CubicBez, ParamCurve, ParamCurveArclen, Point, Vec2};
+use kurbo::{CubicBez, ParamCurve, ParamCurveArclen, Point};
 
 use crate::binding::{End, update_bound_arrows};
 use crate::elbow::{self, ElbowEditError, RouteOpts};
@@ -459,18 +459,6 @@ pub fn distance_to(e: &drafftink_scene::Element, p: Point) -> Option<f64> {
         return Some(shape.outline_distance(p));
     }
     Some(Polyline::new(world, d.closed).outline_distance(p))
-}
-
-/// The start-to-end direction helper: the unit vector at the tip of an end, pointing out of the arrow.
-pub fn end_direction(e: &drafftink_scene::Element, end: End) -> Option<Vec2> {
-    let world = world_points(e)?;
-    let (tip, next) = match end {
-        End::Start => (*world.first()?, *world.get(1)?),
-        End::End => (*world.last()?, *world.get(world.len().checked_sub(2)?)?),
-    };
-    let v = tip - next;
-    let l = v.hypot();
-    (l > 0.0).then(|| v / l)
 }
 
 #[cfg(test)]

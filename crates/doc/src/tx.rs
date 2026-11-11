@@ -1,13 +1,13 @@
 //! Transactions: edit the view, then write only the changed fields into Loro in one commit.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeSet, HashMap};
 
 use drafftink_scene::memory::MemoryTx;
 use drafftink_scene::{
-    ChangeKind, ChangeSet, Color, DocMeta, Element, ElementId, ElementKind, FileEntry, FileId, SceneRead, SceneTx,
-    StoreError, ZIndex,
+    Change, ChangeKind, ChangeSet, Color, DocMeta, Element, ElementId, ElementKind, FileEntry, FileId, SceneRead,
+    SceneTx, StoreError, ZIndex,
 };
-use loro::{CommitOptions, LoroValue};
+use loro::{CommitOptions, LoroMap, LoroValue};
 
 use crate::codec::{self, Flat};
 use crate::error::DocError;
@@ -305,53 +305,7 @@ impl Core {
                     else {
                         continue;
                     };
-                    let reset = ch.kind == ChangeKind::Added && self.invalid.contains(&ch.id);
-                    let map = match elements.ensure_mergeable_map(ch.id.as_str()) {
-                        Ok(m) => m,
-                        Err(_) => {
-                            // The key holds something that is not an element container (a hostile or foreign write).
-                            elements.delete(ch.id.as_str())?;
-                            elements.ensure_mergeable_map(ch.id.as_str())?
-                        }
-                    };
-                    let flat = codec::flatten(e, ch.fields)?;
-                    let mut stale: Vec<String> = Vec::new();
-                    map.for_each(|k, _| {
-                        let in_scope = reset || codec::group_of(k).intersects(ch.fields);
-                        if in_scope && !flat.contains_key(k) {
-                            stale.push(k.to_owned());
-                        }
-                    });
-                    for k in &stale {
-                        map.delete(k)?;
-                        self.stats.fields_written += 1;
-                    }
-                    for (k, v) in &flat {
-                        match v {
-                            Flat::Value(val) => {
-                                let same =
-                                    matches!(map.get(k), Some(loro::ValueOrContainer::Value(cur)) if cur == *val);
-                                if !same {
-                                    map.insert(k, val.clone())?;
-                                    self.stats.fields_written += 1;
-                                }
-                            }
-                            Flat::Text { content, runs } => {
-                                let t = match map.ensure_mergeable_text(k) {
-                                    Ok(t) => t,
-                                    Err(_) => {
-                                        map.delete(k)?;
-                                        map.ensure_mergeable_text(k)?
-                                    }
-                                };
-                                if text::write_text(&t, content, runs)? {
-                                    self.stats.fields_written += 1;
-                                }
-                            }
-                        }
-                    }
-                    self.stats.elements_written += 1;
-                    self.invalid.remove(&ch.id);
+                    self.write_element(&elements, ch, e)?;
                 }
             }
         }
@@ -361,17 +315,74 @@ impl Core {
             put_str(&m, META_BACKGROUND, &c.meta.background.to_hex(), "#ffffff")?;
         }
         if !c.cs.files.is_empty() {
-            let files = self.doc.get_map(ROOT_FILES);
-            for (id, entry) in c.files {
-                match entry {
-                    Some(f) => {
-                        let mut m = std::collections::HashMap::new();
-                        m.insert("mime".to_owned(), LoroValue::from(f.mime.as_str()));
-                        m.insert("bytes".to_owned(), LoroValue::from(f.bytes.to_vec()));
-                        files.insert(id.as_str(), LoroValue::from(m))?;
+            self.write_files(c.files)?;
+        }
+        Ok(())
+    }
+
+    /// Writes the fields of one added or updated element that differ from what Loro holds.
+    fn write_element(&mut self, elements: &LoroMap, ch: &Change, e: &Element) -> Result<(), DocError> {
+        let reset = ch.kind == ChangeKind::Added && self.invalid.contains(&ch.id);
+        let map = match elements.ensure_mergeable_map(ch.id.as_str()) {
+            Ok(m) => m,
+            Err(_) => {
+                // The key holds something that is not an element container (a hostile or foreign write).
+                elements.delete(ch.id.as_str())?;
+                elements.ensure_mergeable_map(ch.id.as_str())?
+            }
+        };
+        let flat = codec::flatten(e, ch.fields)?;
+        let mut stale: Vec<String> = Vec::new();
+        map.for_each(|k, _| {
+            let in_scope = reset || codec::group_of(k).intersects(ch.fields);
+            if in_scope && !flat.contains_key(k) {
+                stale.push(k.to_owned());
+            }
+        });
+        for k in &stale {
+            map.delete(k)?;
+            self.stats.fields_written += 1;
+        }
+        for (k, v) in &flat {
+            match v {
+                Flat::Value(val) => {
+                    let same = matches!(map.get(k), Some(loro::ValueOrContainer::Value(cur)) if cur == *val);
+                    if !same {
+                        map.insert(k, val.clone())?;
+                        self.stats.fields_written += 1;
                     }
-                    None => files.delete(id.as_str())?,
                 }
+                Flat::Text { content, runs } => {
+                    let t = match map.ensure_mergeable_text(k) {
+                        Ok(t) => t,
+                        Err(_) => {
+                            map.delete(k)?;
+                            map.ensure_mergeable_text(k)?
+                        }
+                    };
+                    if text::write_text(&t, content, runs)? {
+                        self.stats.fields_written += 1;
+                    }
+                }
+            }
+        }
+        self.stats.elements_written += 1;
+        self.invalid.remove(&ch.id);
+        Ok(())
+    }
+
+    fn write_files(&self, files: &[(FileId, Option<FileEntry>)]) -> Result<(), DocError> {
+        let map = self.doc.get_map(ROOT_FILES);
+        for (id, entry) in files {
+            match entry {
+                Some(f) => {
+                    let blob = HashMap::from([
+                        ("mime".to_owned(), LoroValue::from(f.mime.as_str())),
+                        ("bytes".to_owned(), LoroValue::from(f.bytes.to_vec())),
+                    ]);
+                    map.insert(id.as_str(), LoroValue::from(blob))?;
+                }
+                None => map.delete(id.as_str())?,
             }
         }
         Ok(())

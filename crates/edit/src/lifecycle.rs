@@ -23,6 +23,7 @@ use drafftink_scene::{
 use crate::binding::{self, BindingError};
 use crate::group::name_key;
 use crate::group::units::{Relations, ensure_unlocked, impl_from_target, primaries, sort_z, units, with_companions};
+use crate::ids::{fresh_element_id, fresh_group_id};
 use crate::zorder::{self, REBALANCE_LEN, ZOrderError};
 
 /// Why a lifecycle operation was refused.
@@ -344,20 +345,6 @@ pub struct DuplicateReport {
     pub arrows: Vec<ElementId>,
 }
 
-fn fresh<I: IdSource>(
-    src: &mut I,
-    taken: &dyn Fn(&ElementId) -> bool,
-    used: &BTreeSet<ElementId>,
-) -> Result<ElementId, LifecycleError> {
-    for _ in 0..64 {
-        let id = src.element_id();
-        if !taken(&id) && !used.contains(&id) {
-            return Ok(id);
-        }
-    }
-    Err(LifecycleError::IdsExhausted)
-}
-
 /// Copies the elements. See the module docs for the rules. The copies are inserted as one block directly above
 /// the topmost original.
 pub fn duplicate<T: SceneTx, I: IdSource>(
@@ -382,7 +369,8 @@ pub fn duplicate<T: SceneTx, I: IdSource>(
     let mut id_map: BTreeMap<ElementId, ElementId> = BTreeMap::new();
     let mut used: BTreeSet<ElementId> = BTreeSet::new();
     for o in &originals {
-        let n = fresh(id_source, &|i| tx.contains(i), &used)?;
+        let n = fresh_element_id(id_source, |i| tx.contains(i) || used.contains(i))
+            .map_err(|_| LifecycleError::IdsExhausted)?;
         used.insert(n.clone());
         id_map.insert(o.id.clone(), n);
     }
@@ -413,16 +401,8 @@ pub fn duplicate<T: SceneTx, I: IdSource>(
         if keep.contains(g) {
             group_map.insert(g.clone(), Some(g.clone()));
         } else if counts.get(g).copied().unwrap_or(0) >= 2 && rel.is_group(g) {
-            let mut n = id_source.group_id();
-            for _ in 0..64 {
-                if !existing.contains(&n) && !fresh_groups.contains(&n) {
-                    break;
-                }
-                n = id_source.group_id();
-            }
-            if existing.contains(&n) || fresh_groups.contains(&n) {
-                return Err(LifecycleError::IdsExhausted);
-            }
+            let n = fresh_group_id(id_source, |n| existing.contains(n) || fresh_groups.contains(n))
+                .map_err(|_| LifecycleError::IdsExhausted)?;
             fresh_groups.insert(n.clone());
             group_map.insert(g.clone(), Some(n));
         } else {

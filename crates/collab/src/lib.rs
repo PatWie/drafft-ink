@@ -16,6 +16,7 @@
 //!
 //! Builds for wasm32. No `unwrap`, `expect`, `panic!` or `unsafe` outside tests.
 
+#![warn(missing_docs)]
 #![cfg_attr(test, allow(clippy::unwrap_used, clippy::expect_used, clippy::panic))]
 
 mod awareness;

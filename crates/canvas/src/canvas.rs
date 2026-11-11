@@ -504,10 +504,7 @@ impl<S: SceneStore> Canvas<S> {
     pub fn tick(&mut self, now_ms: f64) -> Vec<Intent> {
         self.sync_inner();
         let mut fresh = Vec::new();
-        {
-            let ctx = picker!(self);
-            self.recognizer.tick(now_ms, &ctx, &mut fresh);
-        }
+        self.recognizer.tick(now_ms, &mut fresh);
         self.absorb(fresh);
         std::mem::take(&mut self.pending)
     }

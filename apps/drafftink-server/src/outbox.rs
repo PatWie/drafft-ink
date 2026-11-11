@@ -26,8 +26,11 @@ pub enum Kind {
 
 /// One queued item. `msg` is `None` for a plain close.
 pub struct Outbound {
+    /// The message, or `None` for a plain close.
     pub msg: Option<Arc<ServerMessage>>,
+    /// How the queue treats it when the connection is slow.
     pub kind: Kind,
+    /// Its encoded size, counted against the queue limit.
     pub bytes: usize,
 }
 

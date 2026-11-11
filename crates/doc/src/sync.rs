@@ -265,8 +265,16 @@ fn is_pristine(store: &LoroStore) -> bool {
         && !store.can_redo()
 }
 
+/// Which way [`undo_redo`] steps through the history.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Direction {
+    Undo,
+    Redo,
+}
+
 /// `LoroStore::undo` and `redo`.
-pub(crate) fn undo_redo(store: &mut LoroStore, undo: bool) -> Result<Option<UndoStep>, DocError> {
+pub(crate) fn undo_redo(store: &mut LoroStore, direction: Direction) -> Result<Option<UndoStep>, DocError> {
+    let undo = direction == Direction::Undo;
     let LoroStore { view, core } = store;
     if let Some(found) = core.blocked {
         return Err(DocError::NewerSchema { found, max: SCHEMA_VERSION });

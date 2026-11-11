@@ -1,9 +1,9 @@
 //! History size and trimming.
 
-use loro::{ExportMode, LoroDoc};
+use loro::ExportMode;
 
 use crate::error::DocError;
-use crate::store::{LoroStore, check_size, decode_vv, import_fresh};
+use crate::store::{Core, LoroStore, check_size, decode_vv, import_fresh};
 
 /// How big the history is.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -71,14 +71,7 @@ impl LoroStore {
             .guard(|| self.core.doc.export(ExportMode::shallow_snapshot(&frontiers)))?
             .map_err(|e| DocError::Backend(e.to_string()))?;
         check_size(bytes.len(), self.core.config.max_import_bytes)?;
-        let fresh: LoroDoc = {
-            let doc = LoroDoc::new();
-            crate::text::configure(&doc);
-            if let Some(p) = self.core.config.peer_id {
-                doc.set_peer_id(p)?;
-            }
-            import_fresh(doc, &bytes)?
-        };
+        let fresh = import_fresh(Core::make_doc(&self.core.config)?, &bytes)?;
         let after = fresh.export(ExportMode::Snapshot).map_err(|e| DocError::Backend(e.to_string()))?.len();
         self.core.reset_doc(fresh);
         Ok(TrimReport { bytes_before: before, bytes_after: after })

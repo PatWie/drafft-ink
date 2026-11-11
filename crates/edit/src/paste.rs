@@ -22,12 +22,14 @@ use kurbo::{Point, Vec2};
 
 use drafftink_scene::{
     Element, ElementError, ElementId, ElementKind, FileEntry, FileId, GroupId, IdSource, IndexError, SceneTx,
-    StoreError, Style, TextData, TextStyle, Transform, ZIndex, limits, validate_element,
+    StoreError, Style, TextStyle, Transform, ZIndex, limits, validate_element,
 };
 
 use crate::binding::{self, BindingError};
+use crate::create::{self, TextAnchor, TextSpec};
 use crate::group::name_key;
-use crate::text_bind::{TextMeasure, measure_text};
+use crate::ids::{fresh_element_id, fresh_group_id};
+use crate::text_bind::TextMeasure;
 use crate::transform::geometry::union_bounds;
 use crate::zorder::{self, REBALANCE_LEN, ZOrderError};
 
@@ -111,20 +113,6 @@ pub struct PasteReport {
 /// The start of every `custom` key that holds a group name (see [`name_key`]).
 const GROUP_NAME_PREFIX: &str = "drafftink.group.";
 
-fn fresh(
-    src: &mut dyn IdSource,
-    taken: &dyn Fn(&ElementId) -> bool,
-    used: &BTreeSet<ElementId>,
-) -> Result<ElementId, PasteError> {
-    for _ in 0..64 {
-        let id = src.element_id();
-        if !taken(&id) && !used.contains(&id) {
-            return Ok(id);
-        }
-    }
-    Err(PasteError::IdsExhausted)
-}
-
 /// Inserts `elements` (with the pictures they use from `files`) into `tx`. See the module docs for the rules.
 /// Deleted elements are skipped; a repeated id is used once.
 pub fn insert_elements<T: SceneTx>(
@@ -163,7 +151,7 @@ pub fn insert_elements<T: SceneTx>(
     let mut id_map: BTreeMap<ElementId, ElementId> = BTreeMap::new();
     let mut used: BTreeSet<ElementId> = BTreeSet::new();
     for e in &src {
-        let n = fresh(ids, &|i| tx.contains(i), &used)?;
+        let n = fresh_element_id(ids, |i| tx.contains(i) || used.contains(i)).map_err(|_| PasteError::IdsExhausted)?;
         used.insert(n.clone());
         id_map.insert(e.id.clone(), n);
     }
@@ -181,16 +169,8 @@ pub fn insert_elements<T: SceneTx>(
         if n < 2 {
             continue;
         }
-        let mut candidate = ids.group_id();
-        for _ in 0..64 {
-            if !existing.contains(&candidate) && !group_map.values().any(|v| *v == candidate) {
-                break;
-            }
-            candidate = ids.group_id();
-        }
-        if existing.contains(&candidate) || group_map.values().any(|v| *v == candidate) {
-            return Err(PasteError::IdsExhausted);
-        }
+        let candidate = fresh_group_id(ids, |c| existing.contains(c) || group_map.values().any(|v| v == c))
+            .map_err(|_| PasteError::IdsExhausted)?;
         group_map.insert(g.clone(), candidate);
     }
 
@@ -303,13 +283,8 @@ pub fn text_element<M: TextMeasure + ?Sized>(
     if n > limits::MAX_TEXT_CHARS {
         return Err(PasteError::TextTooLong { n, max: limits::MAX_TEXT_CHARS });
     }
-    let size = measure_text(m, content, &font, None);
-    let mut data = TextData::new(content);
-    data.font = font;
-    data.auto_resize = true;
-    let mut e = Element::new(id, ElementKind::Text(data), index);
-    e.transform = Transform::new(center.x - size.width / 2.0, center.y - size.height / 2.0, size.width, size.height);
-    e.style = style;
+    let spec = TextSpec { font, at: center, width: None };
+    let e = create::free_text(m, id, index, content, spec, TextAnchor::Center, style);
     if !(finite_box(&e.transform)) {
         return Err(PasteError::NotFinite);
     }

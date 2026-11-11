@@ -6,7 +6,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
 use axum::extract::ws::{Message, WebSocket};
-use drafftink_protocol::{ClientId, ClientMessage, ErrorCode, RoomId, ServerMessage, negotiate_version};
+use drafftink_protocol::{ClientId, ClientMessage, ErrorCode, ServerMessage, negotiate_version};
 use futures_util::stream::SplitSink;
 use futures_util::{SinkExt, StreamExt};
 use tokio::sync::OwnedSemaphorePermit;
@@ -18,6 +18,7 @@ use crate::http::AppState;
 use crate::limits::TokenBucket;
 use crate::outbox::{Kind, Next, OutboxReceiver, outbox};
 use crate::room::{PeerSetup, RoomCmd, RoomHandle};
+use crate::store::{StoreError, check_room};
 
 /// Longest a single socket write may take before the peer counts as dead.
 const WRITE_TIMEOUT: Duration = Duration::from_secs(15);
@@ -73,16 +74,12 @@ enum Flow {
     Close,
 }
 
-struct Joined {
-    room: RoomHandle,
-}
-
 struct Conn {
     app: Arc<AppState>,
     id: u64,
     out: crate::outbox::Outbox,
     json: Arc<AtomicBool>,
-    joined: Option<Joined>,
+    joined: Option<RoomHandle>,
     updates: TokenBucket,
     awareness: TokenBucket,
     control: TokenBucket,
@@ -161,9 +158,9 @@ pub async fn serve(socket: WebSocket, app: Arc<AppState>, _permit: OwnedSemaphor
         }
     }
 
-    if let Some(joined) = conn.joined.take() {
+    if let Some(room) = conn.joined.take() {
         let leave = RoomCmd::Leave { conn: conn.id };
-        let _ = tokio::time::timeout(Duration::from_secs(5), joined.room.tx.send(leave)).await;
+        let _ = tokio::time::timeout(Duration::from_secs(5), room.tx.send(leave)).await;
     }
     if writer_alive {
         out.close();
@@ -244,8 +241,8 @@ impl Conn {
     }
 
     async fn send_to_room(&mut self, cmd: RoomCmd) -> Flow {
-        let Some(joined) = &self.joined else { return Flow::Close };
-        if joined.room.tx.send(cmd).await.is_err() {
+        let Some(room) = &self.joined else { return Flow::Close };
+        if room.tx.send(cmd).await.is_err() {
             self.fail_msg(ServerMessage::Error {
                 code: ErrorCode::Unavailable,
                 message: "the room is not available; reconnect".into(),
@@ -319,8 +316,9 @@ impl Conn {
             self.fail(ErrorCode::Unauthorized, "this server requires a valid token");
             return Flow::Close;
         }
-        if let Some(flow) = self.check_room_id(&room) {
-            return flow;
+        if let Err(StoreError::InvalidRoom(why)) = check_room(&room) {
+            self.fail(ErrorCode::Malformed, why);
+            return Flow::Close;
         }
         let setup = PeerSetup {
             conn: self.id,
@@ -332,7 +330,7 @@ impl Conn {
         };
         match self.app.manager.join(&room, setup).await {
             Ok(handle) => {
-                self.joined = Some(Joined { room: handle });
+                self.joined = Some(handle);
                 Flow::Continue
             }
             Err(msg) => {
@@ -340,14 +338,6 @@ impl Conn {
                 Flow::Close
             }
         }
-    }
-
-    fn check_room_id(&self, room: &RoomId) -> Option<Flow> {
-        if room.as_str().starts_with('.') {
-            self.fail(ErrorCode::Malformed, "room ids must not start with '.'");
-            return Some(Flow::Close);
-        }
-        None
     }
 }
 

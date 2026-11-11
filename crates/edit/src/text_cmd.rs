@@ -8,8 +8,8 @@
 use kurbo::{Point, Size, Vec2};
 
 use drafftink_scene::{
-    Color, Element, ElementId, ElementKind, FontFamily, FontWeight, IdSource, IndexError, Kind, MathData, SceneRead,
-    SceneTx, StoreError, Style, TextAlign, TextData, TextRun, TextStyle, Transform, VerticalAlign, ZIndex,
+    Color, Element, ElementId, ElementKind, FontFamily, FontWeight, IdSource, IndexError, Kind, SceneRead, SceneTx,
+    StoreError, Style, TextAlign, TextData, TextRun, TextStyle, Transform, VerticalAlign, ZIndex,
 };
 
 use crate::text_bind::{
@@ -348,28 +348,6 @@ pub fn set_latex<T: SceneTx>(
     Ok(true)
 }
 
-/// Creates a math element (`element.create` and the equation editor use it for a new formula).
-pub fn create_math<T: SceneTx>(
-    tx: &mut T,
-    math: &dyn MathMeasure,
-    ids: &mut dyn IdSource,
-    at: Point,
-    latex: &str,
-    style: Style,
-) -> Result<ElementId, TextCmdError> {
-    let data = MathData::new(latex);
-    let b = math.math_box(latex, data.font_size).map_err(TextCmdError::InvalidLatex)?;
-    let id = fresh_element_id(tx, ids);
-    let mut style = style;
-    style.seed = ids.seed();
-    let z = tx.next_top_index()?;
-    let e = Element::new(id.clone(), ElementKind::Math(data), z)
-        .with_bounds(at.x, at.y, b.width.max(1.0), b.height.max(1.0))
-        .with_style(style);
-    tx.insert(e)?;
-    Ok(id)
-}
-
 // ---------------------------------------------------------------------------------------------
 // Colour runs
 // ---------------------------------------------------------------------------------------------
@@ -673,7 +651,7 @@ pub fn wrap_in_container<T: SceneTx, M: TextMeasure + ?Sized>(
 mod tests {
     use super::*;
     use crate::text_bind::{MonospaceMeasure, label_of};
-    use drafftink_scene::{MemoryStore, SceneStore, SeqIds};
+    use drafftink_scene::{MathData, MemoryStore, SceneStore, SeqIds};
 
     fn id(s: &str) -> ElementId {
         ElementId::new(s).unwrap()

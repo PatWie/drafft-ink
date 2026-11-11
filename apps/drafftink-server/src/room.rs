@@ -54,12 +54,46 @@ pub struct PeerSetup {
 
 /// A command from a connection to its room.
 pub enum RoomCmd {
-    Join { peer: Box<PeerSetup>, reply: oneshot::Sender<Result<(), Refusal>> },
-    Update { conn: u64, seq: u32, bytes: Vec<u8> },
-    RequestSync { conn: u64, version: Vec<u8> },
-    Awareness { conn: u64, state: AwarenessState },
-    Leave { conn: u64 },
-    Shutdown { done: oneshot::Sender<()> },
+    /// A client joins. The reply says whether the room accepted it.
+    Join {
+        /// The joining client.
+        peer: Box<PeerSetup>,
+        /// Answered once the join is decided.
+        reply: oneshot::Sender<Result<(), Refusal>>,
+    },
+    /// A client sent a document update.
+    Update {
+        /// The sending connection.
+        conn: u64,
+        /// The client's sequence number, echoed in the acknowledgement.
+        seq: u32,
+        /// The Loro update.
+        bytes: Vec<u8>,
+    },
+    /// A client asks for what it is missing.
+    RequestSync {
+        /// The asking connection.
+        conn: u64,
+        /// The client's version vector, opaque.
+        version: Vec<u8>,
+    },
+    /// A client sent its presence.
+    Awareness {
+        /// The sending connection.
+        conn: u64,
+        /// The presence state.
+        state: AwarenessState,
+    },
+    /// A client left or its connection closed.
+    Leave {
+        /// The leaving connection.
+        conn: u64,
+    },
+    /// Save the room and stop.
+    Shutdown {
+        /// Signalled when the room is saved.
+        done: oneshot::Sender<()>,
+    },
 }
 
 /// A handle to a loaded room.
@@ -294,20 +328,17 @@ impl RoomActor {
             }
         };
         let Some(StoredRoom { snapshot, updates }) = stored else { return Ok(()) };
-        let mut log_bytes = 0u64;
         let snapshot_len = snapshot.as_ref().map_or(0, Vec::len);
         let result = guarded(&mut self.poisoned, || {
             if let Some(s) = &snapshot {
-                self.doc.import(s).map_err(|e| e.to_string())?;
+                self.doc.import(s)?;
             }
             for u in &updates {
-                self.doc.import(u).map_err(|e| e.to_string())?;
+                self.doc.import(u)?;
             }
-            Ok::<(), String>(())
+            Ok::<(), loro::LoroError>(())
         });
-        for u in &updates {
-            log_bytes += u.len() as u64;
-        }
+        let log_bytes: u64 = updates.iter().map(|u| u.len() as u64).sum();
         match result {
             Some(Ok(())) => {}
             Some(Err(e)) => {

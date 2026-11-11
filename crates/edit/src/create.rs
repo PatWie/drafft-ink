@@ -520,14 +520,42 @@ pub fn text_element<M: TextMeasure + ?Sized>(
     if content.trim().is_empty() {
         return Err(CreateError::EmptyText);
     }
+    Ok(free_text(m, id, index, content, spec, TextAnchor::TopLeft, style))
+}
+
+/// Which point of a free text's box [`TextSpec::at`] names.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum TextAnchor {
+    /// The top-left corner.
+    TopLeft,
+    /// The middle of the box.
+    Center,
+}
+
+/// The one place a free text element is assembled: measured content, auto-resize unless a wrap width is given.
+/// Does not validate; the callers do.
+pub(crate) fn free_text<M: TextMeasure + ?Sized>(
+    m: &M,
+    id: ElementId,
+    index: ZIndex,
+    content: &str,
+    spec: TextSpec,
+    anchor: TextAnchor,
+    style: Style,
+) -> Element {
     let size = text_bind::measure_text(m, content, &spec.font, spec.width);
+    let (w, h) = (spec.width.unwrap_or(size.width), size.height);
+    let (x, y) = match anchor {
+        TextAnchor::TopLeft => (spec.at.x, spec.at.y),
+        TextAnchor::Center => (spec.at.x - w / 2.0, spec.at.y - h / 2.0),
+    };
     let mut data = TextData::new(content);
     data.font = spec.font;
     data.auto_resize = spec.width.is_none();
     let mut e = Element::new(id, ElementKind::Text(data), index);
-    e.transform = Transform::new(spec.at.x, spec.at.y, spec.width.unwrap_or(size.width), size.height);
+    e.transform = Transform::new(x, y, w, h);
     e.style = style;
-    Ok(e)
+    e
 }
 
 /// A formula whose box (top-left `at`) has the measured `size`.

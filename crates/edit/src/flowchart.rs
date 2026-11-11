@@ -13,9 +13,7 @@
 use drafftink_geom::OrientedBox;
 use kurbo::{Point, Rect};
 
-use drafftink_scene::{
-    Element, ElementId, ElementKind, Head, IdSource, IndexError, Kind, PathType, SceneRead, SceneTx, StoreError,
-};
+use drafftink_scene::{Element, ElementId, Head, IdSource, IndexError, Kind, PathType, SceneRead, SceneTx, StoreError};
 
 use crate::binding::update_bound_arrows;
 use crate::layout::{Direction, Heads, NodeBox, RouteParams, arrow_element, route_edge};
@@ -382,17 +380,12 @@ pub fn navigate<R: SceneRead>(r: &R, from: &ElementId, dir: Direction) -> Option
         .map(|s| s.id.clone())
 }
 
-/// True when the element is a kind that grows connected nodes.
-pub fn can_extend(e: &Element) -> bool {
-    matches!(e.kind, ElementKind::Rectangle | ElementKind::Diamond | ElementKind::Ellipse) && !e.deleted && !e.locked
-}
-
 #[cfg(test)]
 #[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 mod tests {
     use super::*;
     use crate::text_bind::MonospaceMeasure;
-    use drafftink_scene::{MemoryStore, SceneStore, SeqIds, validate_scene};
+    use drafftink_scene::{ElementKind, MemoryStore, SceneStore, SeqIds, validate_scene};
 
     fn shape(store: &mut MemoryStore, id: &str, x: f64, y: f64) -> ElementId {
         shape_kind(store, id, ElementKind::Rectangle, x, y)
