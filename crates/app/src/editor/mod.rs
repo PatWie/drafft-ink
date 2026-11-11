@@ -149,7 +149,7 @@ impl TextEditor {
     /// Whether the caret shows at `now_ms`.
     pub(crate) fn caret_on(&self, now_ms: f64) -> bool {
         let elapsed = (now_ms - self.blink_from_ms).max(0.0);
-        (elapsed / BLINK_HALF_PERIOD_MS) as u64 % 2 == 0
+        ((elapsed / BLINK_HALF_PERIOD_MS) as u64).is_multiple_of(2)
     }
 
     /// When the caret next changes state, on the app clock.

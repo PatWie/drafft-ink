@@ -21,7 +21,7 @@ enum Place {
     /// A free text. The box follows the text, or has the fixed width of a dragged-out box.
     Free { width: Option<f64> },
     /// The label of a shape or an arrow.
-    Label { container: Element },
+    Label { container: Box<Element> },
 }
 
 /// What is being edited.
@@ -85,7 +85,7 @@ impl Subject {
         match &el.kind {
             ElementKind::Text(t) => {
                 let place = match t.container_id.as_ref().and_then(|c| store.get(c)) {
-                    Some(c) => Place::Label { container: c.clone() },
+                    Some(c) => Place::Label { container: Box::new(c.clone()) },
                     None => Place::Free { width: (!t.auto_resize).then_some(el.transform.w) },
                 };
                 let initial = Initial { text: t.content.clone(), runs: t.runs.clone(), math: t.font.inline_math };
@@ -99,7 +99,7 @@ impl Subject {
                         let initial =
                             Initial { text: t.content.clone(), runs: t.runs.clone(), math: t.font.inline_math };
                         let subject = Self {
-                            place: Place::Label { container: el.clone() },
+                            place: Place::Label { container: Box::new(el.clone()) },
                             template: label.clone(),
                             existing: Some(label.id.clone()),
                         };
@@ -122,7 +122,10 @@ impl Subject {
         e.style.stroke_color = container.style.stroke_color;
         e.style.opacity = container.style.opacity;
         let initial = Initial { text: String::new(), runs: Vec::new(), math: data_math(&e) };
-        Some((Self { place: Place::Label { container: container.clone() }, template: e, existing: None }, initial))
+        Some((
+            Self { place: Place::Label { container: Box::new(container.clone()) }, template: e, existing: None },
+            initial,
+        ))
     }
 
     /// The document elements to leave out of the scene while the editor draws them: the text, and the container
@@ -159,8 +162,8 @@ impl Subject {
             Place::Free { width } => {
                 data.auto_resize = width.is_none();
                 let layout = layout_at(&data, width.unwrap_or(0.0), ts);
-                text.transform.w = width.unwrap_or(f64::from(layout.size.width));
-                text.transform.h = f64::from(layout.size.height);
+                text.transform.w = width.unwrap_or(layout.size.width);
+                text.transform.h = layout.size.height;
             }
             Place::Label { container } => {
                 data.auto_resize = true;
@@ -170,12 +173,12 @@ impl Subject {
                     spec.wrap = Wrap::Width(width as f32);
                     spec.reveal = shown.reveal;
                     let size = ts.text(&spec).size;
-                    Size::new(f64::from(size.width), f64::from(size.height))
+                    Size::new(size.width, size.height)
                 });
                 if let Ok(fit) = fit {
                     text.transform = fit.text;
                     if fit.grew {
-                        let mut c = container.clone();
+                        let mut c = Element::clone(container);
                         c.transform.x = fit.container.x0;
                         c.transform.y = fit.container.y0;
                         c.transform.w = fit.container.width();

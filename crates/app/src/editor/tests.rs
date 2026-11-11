@@ -152,7 +152,7 @@ fn a_dragged_out_box_keeps_its_width_and_wraps() {
 fn a_turned_text_keeps_its_angle_and_its_top_left() {
     let mut r = Rig::new();
     let id = r.create(json!({ "kind": "text", "text": "turn", "at": [100, 50] }));
-    r.run("element.rotate", json!({ "ids": [id.as_str()], "mode": "to", "angle": 0.6 }));
+    r.run("element.rotate", json!({ "ids": [id.as_str()], "mode": "to", "angle": 35 }));
     r.begin(json!({ "id": id.as_str() }), request(Some(&id)));
     r.type_text(" me");
     let (drawn, _) = r.drawn();
@@ -240,7 +240,7 @@ fn an_arrow_label_sits_on_the_arrow_like_the_committed_one() {
 fn a_turned_shape_turns_its_label() {
     let mut r = Rig::new();
     let id = r.create(json!({ "kind": "rectangle", "bounds": { "x": 0, "y": 0, "w": 160, "h": 80 } }));
-    r.run("element.rotate", json!({ "ids": [id.as_str()], "mode": "to", "angle": 0.7 }));
+    r.run("element.rotate", json!({ "ids": [id.as_str()], "mode": "to", "angle": 40 }));
     r.begin(json!({ "id": id.as_str() }), request(Some(&id)));
     r.type_text("turned label");
     let (drawn, _) = r.drawn();
