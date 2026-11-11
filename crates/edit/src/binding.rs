@@ -21,6 +21,7 @@
 
 mod acquire;
 mod lifecycle;
+mod preview;
 mod solve;
 mod target;
 
@@ -37,6 +38,7 @@ pub use lifecycle::{
     can_move_with, free_ends_bound_to, free_ends_bound_to_from, free_ends_bound_to_with, free_unreachable_ends,
     heal_bindings, mirror_fixed_points, reanchor_to_outline, remap_bindings, unbind_detached, unbind_end,
 };
+pub use preview::BoundArrows;
 pub use solve::bound_end_position;
 pub use target::{Resolved, bind_target, is_bindable, resolve};
 

@@ -1,5 +1,5 @@
 {
- "count": 153,
+ "count": 154,
  "families": [
   "arrange",
   "arrow",
@@ -153,6 +153,7 @@
   "text.bind",
   "text.edit_begin",
   "text.edit_end",
+  "text.format",
   "text.set",
   "text.set_autoresize",
   "text.set_latex",

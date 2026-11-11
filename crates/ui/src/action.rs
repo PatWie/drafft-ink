@@ -217,6 +217,9 @@ pub enum HostRequest {
     /// A style change made while a text edit is running. The text editor applies it to the selected
     /// range or to the element; `style.set` would refuse with `text_editing` (docs/exceptions.md E16).
     TextEditStyle(Value),
+    /// Bold or italic chosen while a text edit runs: the arguments of `text.format`. The text editor applies them
+    /// to its selection, or to what is typed next when nothing is selected.
+    TextEditFormat(Value),
     /// Open a link in the browser.
     OpenUrl(String),
     /// Show a picker for an Excalidraw library file. The app calls `library.import` with `mode: merge`

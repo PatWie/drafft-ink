@@ -47,6 +47,8 @@ pub(crate) fn route(key: egui::Key, m: egui::Modifiers, mac: bool) -> Option<Key
         K::Enter => Key::Enter,
         K::F2 => Key::F2,
         K::A => Key::Letter('a'),
+        K::B => Key::Letter('b'),
+        K::I => Key::Letter('i'),
         K::Y => Key::Letter('y'),
         K::Z => Key::Letter('z'),
         K::M => Key::Letter('m'),
@@ -75,7 +77,10 @@ mod tests {
     fn editing_keys_go_to_the_editor_and_other_chords_pass() {
         assert!(matches!(route(egui::Key::ArrowLeft, egui::Modifiers::NONE, false), Some(KeyRoute::Editor(_))));
         assert!(matches!(route(egui::Key::Z, cmd(), false), Some(KeyRoute::Editor(_))));
-        assert_eq!(route(egui::Key::B, cmd(), false), None, "Mod+B does nothing in a text");
+        assert!(matches!(route(egui::Key::B, cmd(), false), Some(KeyRoute::Editor(_))), "Mod+B is bold in a text");
+        assert!(matches!(route(egui::Key::I, cmd(), true), Some(KeyRoute::Editor(_))), "Mod+I is italic in a text");
+        assert_eq!(route(egui::Key::B, egui::Modifiers::NONE, false), None, "a plain b is typed text");
+        assert_eq!(route(egui::Key::K, cmd(), false), None, "other chords do nothing in a text");
         assert_eq!(route(egui::Key::S, cmd(), false), None, "Mod+S is the app's");
         assert_eq!(route(egui::Key::Z, egui::Modifiers::NONE, false), None, "a plain letter is typed text");
     }

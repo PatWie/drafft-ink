@@ -1,5 +1,7 @@
 import { test as base, expect, openApp, serverInfo, type App } from "../../support/app.ts";
 import { box } from "../../support/build.ts";
+import { startServer } from "../../support/server.ts";
+import { close, shot } from "../../support/pixels.ts";
 
 /** Two pages with separate storage, in one room of the server that serves the page. */
 const test = base.extend<{ room: { a: App; b: App; name: string } }>({
@@ -108,4 +110,54 @@ test("collab: 0 frames while alone in a room and with a peer (server ping and pr
   const [a1, b1] = [await a.frames(), await b.frames()];
   expect(a1.frames - a0.frames, `page A redraw reasons ${JSON.stringify((await a.perf()).redraws.by_reason)}`).toBe(0);
   expect(b1.frames - b0.frames, `page B redraw reasons ${JSON.stringify((await b.perf()).redraws.by_reason)}`).toBe(0);
+});
+
+test("collab: the dialog offers the access token field, and the token reaches collab.join_room and is kept nowhere", async ({ browser }) => {
+  const token = "e2e-room-token-0123456789";
+  const server = await startServer(undefined, { authToken: token });
+  const room = `e2e-token-${Date.now().toString(36)}`;
+  const context = await browser.newContext();
+  try {
+    const app = await openApp(context, server.origin);
+    await app.exec("doc.new");
+    // Without the token this server turns a join away, and the app says so.
+    await app.exec("collab.connect", { url: "/ws" });
+    await app.exec("collab.join_room", { room: `${room}-no-token` });
+    await app.until("the server refuses the join", async () => (await app.exec("collab.status")).state === "error");
+    await app.exec("collab.leave_room");
+    expect((await app.exec("collab.status")).state).toBe("ready");
+
+    // The dialog: the top bar's collaboration button. With the server chosen it offers a room field and, below it,
+    // the access token field, then the button. These are the pixels of the fields (what they do with text is in
+    // the egui tests: `ui/tests/collab_dialog.rs`).
+    await app.page.mouse.click(74, 37, { delay: 120 });
+    await app.page.waitForTimeout(600);
+    const dialog = await shot(app);
+    const field = (y: number) => dialog.at(780, y);
+    expect(close(field(386), field(434), 1), "the token field looks like the room field (both at the right end, clear of the hint)").toBe(true);
+    expect(close(field(434), dialog.at(470, 434), 1), "and not like the dialog around it").toBe(false);
+
+    // The call the dialog's button makes with a room and a token.
+    await app.exec("collab.join_room", { room, token });
+    await app.until("the room is joined", async () => {
+      const st = await app.exec("collab.status");
+      return st.state === "connected" && st.room === room;
+    });
+
+    // The ring holds the call without the token; the settings and the page's storage do not hold it either.
+    const joins = (await app.recent(50)).filter((e) => e.id === "collab.join_room");
+    expect(joins.length, "collab.join_room is in the ring").toBeGreaterThan(0);
+    expect(JSON.stringify(await app.recent(200)), "the ring never holds the token").not.toContain(token);
+    expect(JSON.stringify(await app.exec("settings.get")), "no setting holds the token").not.toContain(token);
+    const stored = await app.page.evaluate(() => {
+      const out: string[] = [];
+      for (let i = 0; i < localStorage.length; i++) out.push(localStorage.getItem(localStorage.key(i) ?? "") ?? "");
+      return out.join("\n");
+    });
+    expect(stored, "localStorage does not hold the token").not.toContain(token);
+    expect(app.consoleErrors, "the page logged errors").toEqual([]);
+  } finally {
+    await context.close();
+    await server.stop();
+  }
 });

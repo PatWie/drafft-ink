@@ -170,6 +170,7 @@ impl CanvasView {
             typesetter.with(|ts| {
                 if let Some(container) = &edit.grown_container {
                     composer.compose_transient(store, std::slice::from_ref(container), view, ts, preview);
+                    composer.compose_transient(store, &edit.following_arrows, view, ts, preview);
                 }
                 composer.compose_edited_text(&edit.text, edit.reveal, view, ts, preview);
             });

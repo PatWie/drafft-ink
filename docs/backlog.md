@@ -8,7 +8,7 @@ Checked against the code and tests on main at the branch `last-pass`.
 - **O(scene) by design**, without a counter: `arrange.z_order` (it lists every element), `clipboard.copy`/`copy_as` (a snapshot of the document), frame capture after a resize, `element.restore` (the one direct `Relations::build` call left, `edit/src/lifecycle.rs`) and `group_name`. Convert one if it shows up in a profile.
 - **Render order**: a new, removed or reordered element, or a commit of more than an eighth of the scene, still rebuilds the whole order (a move or style edit is patched, `render.md` section 8).
 - **Autosave**: one huge element and the image-file hash check are still single steps; the native writer thread and the web storage path are covered by unit tests and a type check only, not by a run of the real app.
-- **Collab**: the web Collaborate dialog has no token field (use `collab.join_room token=`); a tab that already has content still imports a room snapshot in one piece; the first import call costs about 0.8 us per element (a frame only up to ~8,000 elements).
+- **Collab**: a tab that already has content still imports a room snapshot in one piece; the first import call costs about 0.8 us per element (a frame only up to ~8,000 elements).
 - **TabDoc load at 100k** is 2.6 s release, spent in Loro (field inserts 1.7 s); debug builds set `opt-level = 3` for `loro*` (`performance.md` section 7.9). Only a different Loro load path would change it.
 - **Present**: the X11 copy under Xvfb is 70 to 85 % of the native CPU (1 to 3.5 % without present in `pan@10k`; Fifo and Immediate do not differ). Not our code. Mailbox could not be measured here (the NVIDIA driver offers Fifo and Immediate only).
 - Tab bar: dirty state compares content through undo/redo only; a remote update between an edit and its undo keeps the tab dirty on purpose.
@@ -16,6 +16,9 @@ Checked against the code and tests on main at the branch `last-pass`.
 - **Text editor**: arrows bound to a container that grows during an edit jump when the edit ends; no I-beam cursor over text; RTL weakly tested; no per-run bold or italic; no real OS input method tried; `Esc` commits and cancel is only `text.edit_end commit=false`.
 - **Overlay leftovers**: distance badges for alignment snaps, IME composition in `TextEdit`.
 - **Web**: the WebGL2 fallback for browsers without WebGPU is done (D13); it was tried in Chromium only, and a lost WebGL context shows the error page. The Collaborate dialog has no token field (see Collab above).
+- **Text editor**: RTL weakly tested; no real OS input method tried; `Esc` commits and cancel is only `text.edit_end commit=false`. (Branch `text-polish` fixed: bound arrows follow a growing container, the I-beam, per-run bold and italic, the preedit underline on both shells.)
+- **Overlay leftovers**: distance badges for alignment snaps.
+- **Web**: no CPU fallback for browsers without WebGPU. The Collaborate dialog has a token field (`text-polish`).
 
 ## Done (branch final-residuals)
 

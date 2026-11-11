@@ -7,7 +7,8 @@ use drafftink_engine::services::{LazyTypesetter, Services, SharedTypesetter};
 use drafftink_engine::{Origin, Session};
 use drafftink_geom::kurbo::Point;
 use drafftink_gpu::TextInput;
-use drafftink_scene::{Color, Element, ElementId, SceneRead, Transform};
+use drafftink_scene::{Color, Element, ElementId, SceneRead, TextRun, Transform};
+use drafftink_ui::TextFaces;
 use serde_json::{Value, json};
 
 use super::TextEditor;
@@ -190,6 +191,114 @@ fn a_shape_label_is_drawn_as_the_commit_places_it() {
             }
         }
     }
+}
+
+/// A rectangle at (0, 0, 100, 40) with an arrow from the right whose end is bound to it, and one from below that is
+/// bound at both ends.
+fn box_with_arrows(r: &mut Rig) -> (ElementId, ElementId, ElementId) {
+    let id = r.create(json!({ "kind": "rectangle", "bounds": { "x": 0, "y": 0, "w": 100, "h": 40 } }));
+    let far = r.create(json!({ "kind": "rectangle", "bounds": { "x": 300, "y": 200, "w": 60, "h": 40 } }));
+    let from_right = r.create(json!({ "kind": "arrow", "points": [[300, 20], [110, 20]], "bind": "off" }));
+    r.run("arrow.bind", json!({ "arrow": from_right.as_str(), "end": "end", "target": id.as_str() }));
+    let between = r.create(json!({ "kind": "arrow", "points": [[50, 50], [300, 220]], "bind": "off" }));
+    r.run("arrow.bind", json!({ "arrow": between.as_str(), "end": "start", "target": id.as_str() }));
+    r.run("arrow.bind", json!({ "arrow": between.as_str(), "end": "end", "target": far.as_str() }));
+    (id, from_right, between)
+}
+
+fn world_points(r: &Rig, id: &ElementId) -> Vec<Point> {
+    drafftink_edit::linear::world_points(&r.element(id)).expect("an arrow")
+}
+
+#[test]
+fn arrows_bound_to_a_growing_shape_follow_it_while_typing_and_do_not_jump_when_the_edit_ends() {
+    let mut r = Rig::new();
+    let (id, from_right, between) = box_with_arrows(&mut r);
+    let before = (world_points(&r, &from_right), world_points(&r, &between));
+    r.begin(json!({ "id": id.as_str() }), request(Some(&id)));
+    let ts = r.ts.clone();
+    let editor = r.editor.as_mut().expect("an editor");
+    assert!(ts.with(|ts| editor.paint(ts).following_arrows.is_empty()), "nothing grew yet, nothing follows");
+    assert!(editor.hidden().iter().all(|h| *h != from_right), "the arrows stay in the document scene until then");
+
+    r.type_text(LONG);
+    let editor = r.editor.as_mut().expect("an editor");
+    let live = ts.with(|ts| editor.paint(ts).clone());
+    let grown = live.grown_container.as_ref().expect("the shape grew");
+    assert!(grown.transform.w > 100.0 || grown.transform.h > 40.0, "{:?}", grown.transform);
+    let following: Vec<ElementId> = live.following_arrows.iter().map(|a| a.id.clone()).collect();
+    assert_eq!(following.len(), 2, "both arrows are drawn where the growth puts them");
+    assert!(editor.hidden().contains(&id), "the shape grown on screen replaces the stored one");
+    for a in [&from_right, &between] {
+        assert!(editor.hidden().contains(a), "the stale arrow {a:?} is left out of the document scene");
+    }
+    assert_eq!(world_points(&r, &from_right), before.0, "the document has not been touched yet");
+
+    r.commit();
+    for arrow in &live.following_arrows {
+        let committed = world_points(&r, &arrow.id);
+        let shown = drafftink_edit::linear::world_points(arrow).expect("points");
+        assert_eq!(shown.len(), committed.len());
+        for (a, b) in shown.iter().zip(&committed) {
+            assert!((*a - *b).hypot() < 1e-6, "{}: live {a:?}, committed {b:?}", arrow.id.as_str());
+        }
+    }
+    assert_ne!(world_points(&r, &from_right), before.0, "the arrow did move with the shape");
+}
+
+#[test]
+fn bold_and_italic_chosen_while_editing_apply_to_the_selection_and_commit_with_the_text() {
+    let mut r = Rig::new();
+    let id = r.create(json!({ "kind": "text", "text": "plain words here", "at": [40, 30] }));
+    r.begin(json!({ "id": id.as_str() }), request(Some(&id)));
+    let (plain, _) = r.drawn();
+    r.editor().model.select_chars(6..11);
+    assert!(r.editor().add_format(&json!({ "bold": true }), 1.0));
+    assert!(!r.editor().add_format(&json!({ "bold": true }), 2.0), "the face is on already");
+    assert_eq!(r.editor().faces().bold, Some(true));
+    let (drawn, _) = r.drawn();
+    assert!(
+        drawn.transform.w > plain.transform.w + 1.0,
+        "bold letters are wider: {} against {}",
+        drawn.transform.w,
+        plain.transform.w
+    );
+    let args = r.editor().finish_args();
+    assert_eq!(args["runs"], json!([{ "start": 6, "end": 11, "bold": true }]));
+    r.commit();
+    let stored = r.element(&id);
+    assert_eq!(
+        stored.text_data().expect("text").runs,
+        vec![TextRun { start: 6, end: 11, bold: true, ..Default::default() }]
+    );
+    near(&drawn.transform, &stored.transform, "a bold word: the editor and the commit measure alike");
+}
+
+#[test]
+fn the_panel_sees_the_faces_of_the_selection_in_the_editor() {
+    let mut r = Rig::new();
+    let id = r.create(json!({ "kind": "text", "text": "plain words", "at": [40, 30] }));
+    r.begin(json!({ "id": id.as_str() }), request(Some(&id)));
+    r.editor().model.select_chars(0..5);
+    r.editor().add_format(&json!({ "bold": true }), 1.0);
+    assert_eq!(r.editor().faces(), TextFaces { bold: Some(true), italic: Some(false) });
+    r.editor().model.select_chars(0..11);
+    assert_eq!(r.editor().faces().bold, None, "a selection that is partly bold has no state");
+    r.editor().model.select_chars(6..6);
+    assert_eq!(r.editor().faces().bold, Some(false), "a caret in regular text types regular text");
+}
+
+#[test]
+fn a_label_that_fits_moves_no_arrow() {
+    let mut r = Rig::new();
+    let (id, ..) = box_with_arrows(&mut r);
+    r.begin(json!({ "id": id.as_str() }), request(Some(&id)));
+    r.type_text("ok");
+    let ts = r.ts.clone();
+    let editor = r.editor.as_mut().expect("an editor");
+    let live = ts.with(|ts| editor.paint(ts).clone());
+    assert!(live.grown_container.is_none() && live.following_arrows.is_empty());
+    assert!(editor.hidden().iter().all(|h| r.s.store().get(h).is_none_or(|e| e.text_data().is_some())));
 }
 
 #[test]

@@ -198,9 +198,8 @@ impl<'a> Cx<'a> {
         // While a text edit runs, a style choice goes to the text editor, which applies it to the selected range
         // or to the element and hands the result to `text.edit_end` (docs/exceptions.md E16). `style.set`
         // itself would refuse with `text_editing`, so the control must not grey out for that.
-        let editor_takes_it = self.model.text_editing
-            && ctl.args.get("props").is_some()
-            && self.model.command(ctl.id).is_some_and(|c| c.host.text_editor_takes_style);
+        let editor_takes_it =
+            self.model.text_editing && self.model.command(ctl.id).is_some_and(|c| c.host.text_editor_takes_style);
         let reason =
             if editor_takes_it { ctl.blocked.clone() } else { self.refusal(ctl.id).or_else(|| ctl.blocked.clone()) };
         let enabled = reason.is_none();
@@ -241,8 +240,12 @@ impl<'a> Cx<'a> {
         };
         if resp.clicked() {
             if editor_takes_it {
-                let props = ctl.args.get("props").cloned().unwrap_or(Value::Null);
-                self.emit(UiAction::Host(HostRequest::TextEditStyle(props)));
+                // `style.set` carries its properties under `props`; `text.format` has bold and italic as they are.
+                let request = match ctl.args.get("props") {
+                    Some(props) => HostRequest::TextEditStyle(props.clone()),
+                    None => HostRequest::TextEditFormat(ctl.args.clone()),
+                };
+                self.emit(UiAction::Host(request));
             } else {
                 self.run(ctl.id, ctl.args.clone());
             }

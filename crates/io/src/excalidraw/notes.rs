@@ -88,7 +88,7 @@ mod tests {
             closed: Some(true),
             frame_clip: Some(false),
             name: Some("n".into()),
-            runs: vec![TextRun { start: 0, end: 2, color: None }],
+            runs: vec![TextRun { start: 0, end: 2, color: None, ..Default::default() }],
             inline_math: Some(InlineMath::Off),
         };
         let v = n.to_value().unwrap();

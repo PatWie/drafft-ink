@@ -105,7 +105,7 @@ fn sample() -> Document {
     fh.transform.y = 200.0;
     push(fh, &mut d);
     let mut t = TextData::new("Hello <b>&\nsecond line");
-    t.runs = vec![TextRun { start: 1, end: 3, color: Some(Color::rgb(0, 128, 0)) }];
+    t.runs = vec![TextRun { start: 1, end: 3, color: Some(Color::rgb(0, 128, 0)), ..Default::default() }];
     t.font.family = FontFamily::GelPenSerif;
     let mut text =
         Element::new(eid("text"), ElementKind::Text(t), ZIndex::first()).with_bounds(0.0, 300.0, 140.0, 50.0);

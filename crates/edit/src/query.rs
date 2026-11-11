@@ -614,6 +614,8 @@ pub enum Field {
     Z,
     /// The points of a line or arrow in world coordinates, `[[x, y], ...]`; `null` for other kinds.
     Points,
+    /// The style runs of a text: `[{start, end, color?, bold?, italic?}, ...]` in characters; `null` for other kinds.
+    Runs,
 }
 
 /// The default fields of `element.query`.
@@ -668,6 +670,7 @@ fn describe_with<R: SceneRead>(r: &R, labels: &Labels, e: &Element, fields: &[Fi
                         .map(|pts| { pts.iter().map(|p| [round2(p.x), round2(p.y)]).collect::<Vec<_>>() })
                 ),
             ),
+            Field::Runs => ("runs", e.text_data().map_or(Value::Null, |t| json!(t.runs))),
         };
         o.insert(key.to_string(), v);
     }

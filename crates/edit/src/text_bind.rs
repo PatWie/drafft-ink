@@ -33,8 +33,8 @@ pub use font::{
     apply_text_props, next_font_size, remeasure_text, step_font_size,
 };
 pub use math::{MathMeasure, set_latex, set_math_size};
-pub use measure::{MonospaceMeasure, TextMeasure, measure_lines, measure_text, wrap_text};
-pub use runs::{RunSpec, carry_runs, replace_runs, style_range};
+pub use measure::{MonospaceMeasure, TextMeasure, measure_block, measure_lines, measure_text, wrap_text};
+pub use runs::{FormatReport, carry_runs, format_range, format_texts, replace_runs, style_range};
 
 use std::collections::HashMap;
 
@@ -44,7 +44,7 @@ use drafftink_profile::{Counter, count};
 
 use drafftink_scene::{
     Element, ElementError, ElementId, ElementKind, IdSource, IndexError, Kind, SceneRead, SceneTx, StoreError, Style,
-    TextAlign, TextData, TextStyle, Transform, VerticalAlign, ZIndex,
+    TextAlign, TextData, TextRun, TextStyle, Transform, VerticalAlign, ZIndex,
 };
 use drafftink_typeset::MathError;
 
@@ -158,10 +158,23 @@ pub fn layout_label<M: TextMeasure + ?Sized>(
     label_position: Option<f64>,
     anchor: GrowAnchor,
 ) -> Result<LabelLayout, TextBindError> {
+    layout_label_runs(m, container, font, content, &[], label_position, anchor)
+}
+
+/// Like [`layout_label`], for a label whose characters have the style `runs` say (bold and italic are wider).
+pub fn layout_label_runs<M: TextMeasure + ?Sized>(
+    m: &M,
+    container: &Element,
+    font: &TextStyle,
+    content: &str,
+    runs: &[TextRun],
+    label_position: Option<f64>,
+    anchor: GrowAnchor,
+) -> Result<LabelLayout, TextBindError> {
     let mut lines = Vec::new();
     let fit = fit_label(container, font, label_position, anchor, &mut |width| {
         lines = m.wrap(content, font, width);
-        measure_lines(m, &lines, font)
+        if runs.is_empty() { measure_lines(m, &lines, font) } else { m.block_size(content, runs, font, Some(width)) }
     })?;
     Ok(LabelLayout { lines, text: fit.text, container: fit.container, grew: fit.grew })
 }
@@ -343,6 +356,14 @@ pub enum TextBindError {
         end: u32,
         /// The text length in characters.
         len: usize,
+    },
+    /// A range was given for more than one text.
+    #[error(
+        "A character range belongs to one text, but {n} texts were named. Name one text, or leave the range out to format all of each."
+    )]
+    RangeNeedsOneText {
+        /// How many texts the targets came to.
+        n: usize,
     },
     /// The formula is empty.
     #[error("The LaTeX could not be parsed: the formula is empty. Fix the expression. {LATEX_EXAMPLES}")]
@@ -559,7 +580,7 @@ pub fn bind_text<T: SceneTx, M: TextMeasure + ?Sized>(
     }
     let font = new_label_font(Some(&td.font));
     let position = (ce.tag() == Kind::Arrow).then(|| td.label_position.unwrap_or(DEFAULT_LABEL_POSITION));
-    let layout = layout_label(m, ce, &font, &td.content, position, GrowAnchor::Top)?;
+    let layout = layout_label_runs(m, ce, &font, &td.content, &td.runs, position, GrowAnchor::Top)?;
     let ce = ce.clone();
     let new_index =
         if te.index < ce.index || z_neighbor_is_not(tx, &ce, text) { Some(z_above_container(tx, &ce)?) } else { None };
@@ -706,7 +727,7 @@ fn relayout_pair<T: SceneTx, M: TextMeasure + ?Sized>(
 ) -> Result<LabelOutcome, TextBindError> {
     let (_, td) = text_of(tx, label)?;
     let ce = live(tx, container)?;
-    let layout = layout_label(m, ce, &td.font, &td.content, td.label_position, anchor)?;
+    let layout = layout_label_runs(m, ce, &td.font, &td.content, &td.runs, td.label_position, anchor)?;
     write_layout(tx, container, label, &layout)?;
     Ok(LabelOutcome { label: label.clone(), container_grew: layout.grew })
 }
@@ -821,6 +842,7 @@ pub fn set_text_content<T: SceneTx, M: TextMeasure + ?Sized>(
         tx.update(text, |e| e.deleted = true)?;
         return Ok(None);
     }
+    let size_runs = runs.clone();
     tx.update(text, |e| {
         if let ElementKind::Text(t) = &mut e.kind {
             t.content = content.to_string();
@@ -831,8 +853,7 @@ pub fn set_text_content<T: SceneTx, M: TextMeasure + ?Sized>(
         Some(c) => relayout_pair(tx, m, &c, text, GrowAnchor::Top).map(Some),
         None => {
             // Free text: the box follows the content, or keeps its width and wraps.
-            let size =
-                if auto { measure_text(m, content, &font, None) } else { measure_text(m, content, &font, Some(width)) };
+            let size = measure_block(m, content, &size_runs, &font, if auto { None } else { Some(width) });
             let w = if auto { size.width } else { width };
             tx.update(text, |e| {
                 e.transform.w = w;
@@ -913,7 +934,7 @@ pub fn set_auto_resize<T: SceneTx, M: TextMeasure + ?Sized>(
         return Ok(());
     }
     let (content, font, width) = (td.content.clone(), td.font.clone(), te.transform.w);
-    let size = if on { measure_text(m, &content, &font, None) } else { measure_text(m, &content, &font, Some(width)) };
+    let size = measure_block(m, &content, &td.runs, &font, if on { None } else { Some(width) });
     tx.update(text, |e| {
         if let ElementKind::Text(t) = &mut e.kind {
             t.auto_resize = on;
@@ -1248,9 +1269,9 @@ mod tests {
         tx.update(&t, |e| {
             if let ElementKind::Text(d) = &mut e.kind {
                 d.runs = vec![
-                    TextRun { start: 0, end: 2, color: None },
-                    TextRun { start: 4, end: 6, color: None },
-                    TextRun { start: 2, end: 4, color: None },
+                    TextRun { start: 0, end: 2, color: None, ..Default::default() },
+                    TextRun { start: 4, end: 6, color: None, ..Default::default() },
+                    TextRun { start: 2, end: 4, color: None, ..Default::default() },
                 ];
                 d.runs.sort_by_key(|r| r.start);
             }

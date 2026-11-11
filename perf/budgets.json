@@ -1643,8 +1643,8 @@
       "note": "4,576,123 measured on 2026-11-08; the limit is 3% above"
     },
     "wasm.brotli_bytes": {
-      "max": 3310000,
-      "note": "the first-load cost of the code, what browsers are sent. 3,213,885 measured on 2026-11-08 (the old app: 3.46 MB; the target of docs/performance.md 7.5 is 3.5 MB); the limit is 3% above"
+      "max": 3410000,
+      "note": "the first-load cost of the code, what browsers are sent. 3,213,885 measured on 2026-11-08 and 3,312,440 on 2026-11-09 with per-run bold and italic, the live arrow preview and the token field (the old app: 3.46 MB; the target of docs/performance.md 7.5 is 3.5 MB); the limit is 3% above the latest"
     },
     "fonts.brotli_bytes": {
       "max": 1550000,

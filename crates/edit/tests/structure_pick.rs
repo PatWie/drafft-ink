@@ -291,7 +291,7 @@ fn hit_members_lists_the_group_without_labels() {
     assert_eq!(hit_members(&s, &h), ids(&["x", "y", "z"]));
     let single = AtHit { id: id("w"), group: None };
     assert_eq!(hit_members(&s, &single), ids(&["w"]));
-    assert_eq!(ALL_FIELDS.len(), 15);
+    assert_eq!(ALL_FIELDS.len(), 16);
 }
 
 #[test]

@@ -619,7 +619,7 @@ fn fully_set_elements() -> Vec<Element> {
     freehand.highlighter = true;
     freehand.closed = true;
     let mut text = TextData::new("hello");
-    text.runs = vec![TextRun { start: 1, end: 3, color: Some(Color::rgb(7, 8, 9)) }];
+    text.runs = vec![TextRun { start: 1, end: 3, color: Some(Color::rgb(7, 8, 9)), bold: true, italic: true }];
     text.font = TextStyle {
         family: FontFamily::GelPenSerif,
         size: 22.0,

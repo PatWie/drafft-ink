@@ -82,6 +82,7 @@ pub(crate) fn refuse(cmd: &str, e: TextBindError) -> Refusal {
         }
         B::TextTooLong { n, max } => Refusal::limit_exceeded(cmd, n, "characters", max),
         e @ (B::BadRange { .. } | B::EmptyRange { .. }) => Refusal::custom("bad_range", cmd, e.to_string()),
+        e @ B::RangeNeedsOneText { .. } => Refusal::bad_arg(cmd, "range", e.to_string()),
         e @ (B::EmptyFormula | B::FormulaTooLong { .. } | B::InvalidLatex { .. }) => {
             Refusal::custom("invalid_latex", cmd, e.to_string())
         }

@@ -6,6 +6,7 @@
 
 use std::sync::Arc;
 
+use drafftink_edit::binding::BoundArrows;
 use drafftink_edit::text_bind::{GrowAnchor, TextProps, fit_label, label_of, new_label_font};
 use drafftink_edit::text_edit::Shown;
 use drafftink_engine::Session;
@@ -32,6 +33,8 @@ pub(super) struct Subject {
     template: Element,
     /// The text element that exists in the document (a label that is not made yet, and a draft, have none).
     existing: Option<ElementId>,
+    /// The arrows bound to the container, which follow it while it grows.
+    bound: BoundArrows,
 }
 
 /// The content an edit starts with.
@@ -49,6 +52,8 @@ pub(crate) struct Arranged {
     pub(crate) text: Element,
     /// The container with the size it grows to, when the text no longer fits in it.
     pub(crate) grown_container: Option<Element>,
+    /// The arrows bound to the grown container, where they go with it. Only the ones that move.
+    pub(crate) following_arrows: Vec<Element>,
     /// The layout of the text, as the renderer lays it out (with the formula under the caret open).
     pub(crate) layout: Arc<TextLayout>,
     /// `TextSpec::reveal` of that layout.
@@ -79,7 +84,15 @@ impl Subject {
             e.transform.y = at.y;
             e.transform.w = width.unwrap_or(0.0);
             let initial = Initial { text: String::new(), runs: Vec::new(), math: data_math(&e) };
-            return Some((Self { place: Place::Free { width: *width }, template: e, existing: None }, initial));
+            return Some((
+                Self {
+                    place: Place::Free { width: *width },
+                    template: e,
+                    existing: None,
+                    bound: BoundArrows::default(),
+                },
+                initial,
+            ));
         };
         let el = store.get(id)?;
         match &el.kind {
@@ -89,7 +102,11 @@ impl Subject {
                     None => Place::Free { width: (!t.auto_resize).then_some(el.transform.w) },
                 };
                 let initial = Initial { text: t.content.clone(), runs: t.runs.clone(), math: t.font.inline_math };
-                Some((Self { place, template: el.clone(), existing: Some(id.clone()) }, initial))
+                let bound = match &place {
+                    Place::Label { container } => BoundArrows::capture(store, &container.id),
+                    Place::Free { .. } => BoundArrows::default(),
+                };
+                Some((Self { place, template: el.clone(), existing: Some(id.clone()), bound }, initial))
             }
             kind if el.tag().is_label_container() => {
                 let _ = kind;
@@ -102,6 +119,7 @@ impl Subject {
                             place: Place::Label { container: Box::new(el.clone()) },
                             template: label.clone(),
                             existing: Some(label.id.clone()),
+                            bound: BoundArrows::capture(store, &el.id),
                         };
                         Some((subject, initial))
                     }
@@ -123,17 +141,25 @@ impl Subject {
         e.style.opacity = container.style.opacity;
         let initial = Initial { text: String::new(), runs: Vec::new(), math: data_math(&e) };
         Some((
-            Self { place: Place::Label { container: Box::new(container.clone()) }, template: e, existing: None },
+            Self {
+                place: Place::Label { container: Box::new(container.clone()) },
+                template: e,
+                existing: None,
+                bound: BoundArrows::capture(s.store(), &container.id),
+            },
             initial,
         ))
     }
 
     /// The document elements to leave out of the scene while the editor draws them: the text, and the container
-    /// when it grows.
-    pub(super) fn hidden(&self, grown: bool) -> Vec<ElementId> {
+    /// with the arrows bound to it when it grows.
+    pub(super) fn hidden(&self, grown: Option<&Arranged>) -> Vec<ElementId> {
         let mut out: Vec<ElementId> = self.existing.iter().cloned().collect();
-        if let (true, Place::Label { container }) = (grown, &self.place) {
+        if let (Some(arranged), Place::Label { container }) = (grown, &self.place)
+            && arranged.grown_container.is_some()
+        {
             out.push(container.id.clone());
+            out.extend(arranged.following_arrows.iter().map(|a| a.id.clone()));
         }
         out
     }
@@ -158,6 +184,7 @@ impl Subject {
             ts.text(&spec)
         };
         let mut grown_container = None;
+        let mut following_arrows = Vec::new();
         match &self.place {
             Place::Free { width } => {
                 data.auto_resize = width.is_none();
@@ -183,6 +210,8 @@ impl Subject {
                         c.transform.y = fit.container.y0;
                         c.transform.w = fit.container.width();
                         c.transform.h = fit.container.height();
+                        // Best effort: an arrow that cannot be solved stays where the document has it.
+                        following_arrows = self.bound.follow(&c).unwrap_or_default();
                         grown_container = Some(c);
                     }
                 }
@@ -191,7 +220,7 @@ impl Subject {
         let layout = layout_at(&data, text.transform.w, ts);
         text.kind = ElementKind::Text(data);
         let to_world = element_to_world(&text);
-        Arranged { text, grown_container, layout, reveal: shown.reveal, to_world }
+        Arranged { text, grown_container, following_arrows, layout, reveal: shown.reveal, to_world }
     }
 }
 

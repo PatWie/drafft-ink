@@ -4,7 +4,7 @@
 mod arrows_common;
 
 use arrows_common::*;
-use drafftink_edit::binding::{End, bound_end_position, stale_arrows};
+use drafftink_edit::binding::{BoundArrows, End, bound_end_position, stale_arrows};
 use drafftink_scene::{BindMode, Head};
 
 const GAP: f64 = 6.0; // 5 + stroke 2 / 2
@@ -209,4 +209,52 @@ fn rotated_arrow_is_re_solved_in_the_world_frame() {
     assert_close(after[0], before[0]);
     assert_close(after[1], before[1]);
     assert!((signed(&s, &t, after[2]) - GAP).abs() < 1e-6, "{:?}", after[2]);
+}
+
+#[test]
+fn the_preview_of_a_grown_shape_is_what_the_commit_leaves_behind() {
+    let mut s = Scene::new();
+    let t = s.rect("t", 0.0, 0.0, 100.0, 100.0);
+    let _far = s.rect("far", 400.0, 300.0, 50.0, 50.0);
+    let a = s.arrow("a", &[(300.0, 50.0), (106.0, 50.0)]);
+    s.bind(&a, End::End, "t", BindMode::Orbit, [0.5, 0.5]);
+    let b = s.arrow("b", &[(120.0, 140.0), (410.0, 310.0)]);
+    s.bind(&b, End::Start, "t", BindMode::Inside, [0.5, 1.0]);
+    s.bind(&b, End::End, "far", BindMode::Orbit, [0.5, 0.5]);
+    s.solve(&[&t]);
+    let _unrelated = s.arrow("c", &[(0.0, 500.0), (50.0, 500.0)]);
+    let before = (s.world(&a), s.world(&b));
+
+    let captured = BoundArrows::capture(&s.store, &t);
+    assert_eq!(captured.arrow_ids().cloned().collect::<Vec<_>>(), vec![a.clone(), b.clone()]);
+    let mut grown = s.get(&t);
+    grown.transform.x = -40.0;
+    grown.transform.w = 180.0;
+    grown.transform.h = 160.0;
+    let preview = captured.follow(&grown).unwrap();
+    assert_eq!(preview.len(), 2, "both bound arrows move");
+    assert_eq!((s.world(&a), s.world(&b)), before, "the preview writes nothing");
+
+    s.resize(&t, -40.0, 0.0, 180.0, 160.0);
+    for arrow in &preview {
+        assert_eq!(
+            drafftink_edit::linear::world_points(arrow).unwrap(),
+            s.world(&arrow.id),
+            "the live arrow {} equals the committed one",
+            arrow.id.as_str()
+        );
+    }
+    assert_ne!(s.world(&a), before.0);
+}
+
+#[test]
+fn a_shape_without_bound_arrows_has_nothing_to_preview() {
+    let mut s = Scene::new();
+    let t = s.rect("t", 0.0, 0.0, 100.0, 100.0);
+    let captured = BoundArrows::capture(&s.store, &t);
+    assert!(captured.is_empty());
+    assert!(captured.follow(&s.get(&t)).unwrap().is_empty());
+    // A different shape than the one captured is not followed.
+    let other = s.rect("o", 200.0, 0.0, 10.0, 10.0);
+    assert!(captured.follow(&s.get(&other)).unwrap().is_empty());
 }

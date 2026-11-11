@@ -48,7 +48,7 @@ fn sample() -> Document {
         d.container_id = Some(id("link"));
         d.label_position = Some(0.5);
         d.font.align = TextAlign::Center;
-        d.runs = vec![TextRun { start: 0, end: 1, color: Some(Color::rgb(220, 38, 38)) }];
+        d.runs = vec![TextRun { start: 0, end: 1, color: Some(Color::rgb(220, 38, 38)), ..Default::default() }];
     }
 
     let mut stroke = Element::new(
@@ -314,12 +314,62 @@ fn a_job_refuses_what_to_json_refuses() {
 }
 
 #[test]
+fn bold_and_italic_runs_round_trip_and_documents_without_them_still_open() {
+    use drafftink_scene::{Color, ElementKind, TextData, TextRun};
+    let mut doc = Document::new();
+    let mut text = TextData::new("plain bold both");
+    text.runs = vec![
+        TextRun { start: 6, end: 10, bold: true, ..Default::default() },
+        TextRun { start: 11, end: 15, color: Some(Color::rgb(1, 2, 3)), bold: true, italic: true },
+    ];
+    doc.elements = vec![Element::new(ElementId::new("t").unwrap(), ElementKind::Text(text), ZIndex::first())];
+    let json = doc.to_json().unwrap();
+    assert!(json.contains("\"bold\":true") && json.contains("\"italic\":true"), "{json}");
+    assert!(!json.contains("\"bold\":false"), "a face that is off is not written");
+    let back = Document::from_json(&json).unwrap();
+    assert_eq!(back.elements, doc.elements);
+    // A run written before bold and italic existed has only a range and a colour.
+    let mut value: serde_json::Value = serde_json::from_str(&json).unwrap();
+    for run in value["elements"][0]["kind"]["runs"].as_array_mut().expect("runs") {
+        let run = run.as_object_mut().unwrap();
+        run.remove("bold");
+        run.remove("italic");
+    }
+    let reopened = Document::from_json(&value.to_string()).unwrap();
+    let ElementKind::Text(t) = &reopened.elements[0].kind else { panic!("text") };
+    assert!(t.runs.iter().all(|r| !r.bold && !r.italic), "{:?}", t.runs);
+    assert_eq!(t.runs.len(), 2);
+}
+
+#[test]
+fn char_styles_and_runs_convert_both_ways() {
+    use drafftink_scene::{CharStyle, Color, TextData, TextRun};
+    let bold = CharStyle { bold: true, ..CharStyle::default() };
+    let red = CharStyle { color: Some(Color::rgb(255, 0, 0)), ..CharStyle::default() };
+    let styles = [CharStyle::default(), bold, bold, red, red, CharStyle { italic: true, ..red }, CharStyle::default()];
+    let runs = TextData::runs_from_char_styles(&styles, 7);
+    assert_eq!(
+        runs,
+        vec![
+            TextRun { start: 1, end: 3, bold: true, ..Default::default() },
+            TextRun { start: 3, end: 5, color: red.color, ..Default::default() },
+            TextRun { start: 5, end: 6, color: red.color, bold: false, italic: true },
+        ]
+    );
+    let mut data = TextData::new("abcdefg");
+    data.runs = runs;
+    assert_eq!(data.char_styles(), styles.to_vec());
+    // Runs past the end of the text are cut and short style lists are padded.
+    assert_eq!(TextData::runs_from_char_styles(&[bold, bold, bold], 2).len(), 1);
+}
+
+#[test]
 fn map_colors_reaches_the_background_strokes_fills_and_text_runs() {
     use drafftink_scene::{Color, ElementKind, TextData, TextRun};
     let mut doc = Document::new();
     doc.background = Color::rgb(5, 6, 7);
     let mut text = TextData::new("ab");
-    text.runs = vec![TextRun { start: 0, end: 1, color: Some(Color::rgb(1, 2, 3)) }];
+    text.runs = vec![TextRun { start: 0, end: 1, color: Some(Color::rgb(1, 2, 3)), ..Default::default() }];
     let mut rect = Element::new(ElementId::new("r").unwrap(), ElementKind::Rectangle, ZIndex::first());
     rect.style.stroke_color = Color::rgb(10, 0, 0);
     rect.style.fill_color = Some(Color::rgb(0, 20, 0));

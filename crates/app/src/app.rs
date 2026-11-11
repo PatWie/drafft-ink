@@ -292,7 +292,7 @@ impl App {
         let pos = s.point.pos;
         let over_egui = input::egui_owns(cx.ctx, self.canvas_rect, pos);
         let now = self.now_ms();
-        if let Some(repaint) = self.editor_pointer(&s, over_egui) {
+        if let Some(repaint) = self.editor_pointer(cx, &s, over_egui) {
             return repaint;
         }
         match s.phase {
@@ -411,7 +411,12 @@ impl App {
 
     /// A pointer sample while a text is edited. `Some` when the editor took it: a press on the text, and the drag
     /// and the release that follow. A press anywhere else on the canvas ends the edit and goes on to the canvas.
-    fn editor_pointer(&mut self, s: &drafftink_gpu::PointerSample, over_egui: bool) -> Option<Repaint> {
+    fn editor_pointer(
+        &mut self,
+        cx: &mut EventCx<'_>,
+        s: &drafftink_gpu::PointerSample,
+        over_egui: bool,
+    ) -> Option<Repaint> {
         self.editor.as_ref()?;
         let now = self.now_ms();
         let pos = s.point.pos;
@@ -433,6 +438,14 @@ impl App {
                 self.stage_editor();
                 self.finish_editor();
                 None
+            }
+            PointerPhase::Hover | PointerPhase::Move if !editor.is_pressing() && !over_egui => {
+                // Over the edited text the pointer is an I-beam; off it the canvas's own cursor comes back.
+                let on_text = self.typesetter.with(|ts| editor.hit(ts, world, 6.0 / zoom));
+                self.cursor =
+                    if on_text { egui::CursorIcon::Text } else { input::cursor_icon(self.interaction.cursor()) };
+                cx.set_cursor(self.cursor);
+                on_text.then_some(Repaint::Idle)
             }
             PointerPhase::Move if editor.is_pressing() => {
                 let changed = self.typesetter.with(|ts| editor.drag(ts, world, now));
@@ -596,6 +609,12 @@ impl App {
                     editor.add_style(&props, now);
                 }
             }
+            HostRequest::TextEditFormat(args) => {
+                let now = self.now_ms();
+                if let Some(editor) = self.editor.as_mut() {
+                    editor.add_format(&args, now);
+                }
+            }
             HostRequest::OpenUrl(url) => cx.open_url(url, true),
         }
     }
@@ -645,7 +664,9 @@ impl App {
     /// of the screen the session recorded.
     fn poll_collab(&mut self, now_ms: u64) -> bool {
         let due = self.collab_due_ms.is_some_and(|d| now_ms >= d);
-        if !due && !self.in_room {
+        // A room joined since the last poll (the dialog's button, an agent) needs polling from now on, so the
+        // question is asked of the session, not of what the last poll found.
+        if !due && self.session.collab_view().room.is_none() {
             return false;
         }
         let poll = self.session.collab_poll();
@@ -1052,6 +1073,7 @@ impl ShellApp for App {
         // The UI.
         let collab = collab_view_of(&mut self.session);
         self.ui.set_collab(collab);
+        self.ui.set_editor_faces(self.editor.as_ref().map(TextEditor::faces));
         let pointer = Pointer {
             cursor: self.pointer_world().map(|p| (p.x, p.y)),
             viewport_center: Some((self.interaction.camera().scroll.x, self.interaction.camera().scroll.y)),
@@ -1094,3 +1116,7 @@ fn collab_view_of(s: &mut Session) -> drafftink_ui::CollabView {
 #[cfg(all(test, feature = "scenarios"))]
 #[path = "app/install_scene_tests.rs"]
 mod install_scene_tests;
+
+#[cfg(test)]
+#[path = "app/collab_poll_tests.rs"]
+mod collab_poll_tests;

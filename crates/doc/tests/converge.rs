@@ -228,27 +228,66 @@ fn typing_a_formula_and_switching_inline_math_off_merge() {
 }
 
 #[test]
+fn bold_and_italic_runs_follow_their_characters_and_merge_when_two_people_style_the_same_word() {
+    let mut a = peer(1);
+    let mut b = peer(2);
+    let mut t = TextData::new("abc def");
+    t.runs = vec![TextRun { start: 4, end: 7, bold: true, ..Default::default() }];
+    add(&mut a, vec![Element::new(eid("t"), ElementKind::Text(t), zs(1)[0].clone()).with_bounds(0.0, 0.0, 10.0, 10.0)]);
+    sync(&mut a, &mut b);
+    // B types in front of the bold word: its bold moves with it.
+    edit(&mut b, "t", |e| {
+        if let ElementKind::Text(t) = &mut e.kind {
+            t.content = "XY abc def".into();
+            t.runs = vec![TextRun { start: 7, end: 10, bold: true, ..Default::default() }];
+        }
+    });
+    sync(&mut a, &mut b);
+    let t = a.get(&eid("t")).unwrap().text_data().unwrap().clone();
+    assert_eq!(t.runs, vec![TextRun { start: 7, end: 10, bold: true, ..Default::default() }]);
+    // A makes the word italic while B colours it: each mark stays, nothing overwrites another.
+    edit(&mut a, "t", |e| {
+        if let ElementKind::Text(t) = &mut e.kind {
+            t.runs = vec![TextRun { start: 7, end: 10, bold: true, italic: true, ..Default::default() }];
+        }
+    });
+    edit(&mut b, "t", |e| {
+        if let ElementKind::Text(t) = &mut e.kind {
+            t.runs = vec![TextRun { start: 7, end: 10, color: Some(red()), bold: true, italic: false }];
+        }
+    });
+    sync(&mut a, &mut b);
+    assert_same(&a, &b);
+    let merged = a.get(&eid("t")).unwrap().text_data().unwrap().runs.clone();
+    assert_eq!(merged, vec![TextRun { start: 7, end: 10, color: Some(red()), bold: true, italic: true }]);
+    assert_view_matches_loro(&a);
+}
+
+#[test]
 fn colour_runs_follow_their_characters_when_somebody_types_in_front() {
     let mut a = peer(1);
     let mut b = peer(2);
     let mut t = TextData::new("abc def");
-    t.runs = vec![TextRun { start: 4, end: 7, color: Some(red()) }];
+    t.runs = vec![TextRun { start: 4, end: 7, color: Some(red()), ..Default::default() }];
     add(&mut a, vec![Element::new(eid("t"), ElementKind::Text(t), zs(1)[0].clone()).with_bounds(0.0, 0.0, 10.0, 10.0)]);
     sync(&mut a, &mut b);
     edit(&mut b, "t", |e| {
         if let ElementKind::Text(t) = &mut e.kind {
             t.content = "XY abc def".into();
-            t.runs = vec![TextRun { start: 7, end: 10, color: Some(red()) }];
+            t.runs = vec![TextRun { start: 7, end: 10, color: Some(red()), ..Default::default() }];
         }
     });
     sync(&mut a, &mut b);
     let t = a.get(&eid("t")).unwrap().text_data().unwrap().clone();
     assert_eq!(t.content, "XY abc def");
-    assert_eq!(t.runs, vec![TextRun { start: 7, end: 10, color: Some(red()) }]);
+    assert_eq!(t.runs, vec![TextRun { start: 7, end: 10, color: Some(red()), ..Default::default() }]);
     // Meanwhile A colours the first word; the merge has both runs.
     edit(&mut a, "t", |e| {
         if let ElementKind::Text(t) = &mut e.kind {
-            t.runs.insert(0, TextRun { start: 3, end: 6, color: Some(Color::parse("#0000ff").unwrap()) });
+            t.runs.insert(
+                0,
+                TextRun { start: 3, end: 6, color: Some(Color::parse("#0000ff").unwrap()), ..Default::default() },
+            );
         }
     });
     sync(&mut a, &mut b);

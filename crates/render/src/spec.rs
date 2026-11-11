@@ -61,10 +61,8 @@ pub fn text_spec(t: &TextData, stroke: Color, box_width: f64) -> typeset::TextSp
     style.family = family(t.font.family);
     style.weight = weight(t.font.weight);
     style.color = rgba8(stroke);
-    let colors: Vec<Option<typeset::Rgba8>> =
-        if t.runs.is_empty() { Vec::new() } else { t.char_colors().into_iter().map(|c| c.map(rgba8)).collect() };
     let mut spec = typeset::TextSpec::styled(t.content.as_str(), style);
-    spec.spans = typeset::Span::from_char_colors(&t.content, &colors);
+    spec.spans = spans(t);
     spec.align = match t.font.align {
         TextAlign::Left => typeset::Align::Left,
         TextAlign::Center => typeset::Align::Center,
@@ -76,6 +74,24 @@ pub fn text_spec(t: &TextData, stroke: Color, box_width: f64) -> typeset::TextSp
     spec.line_height = typeset::LineHeight::FontSize(t.font.line_height as f32);
     spec.math = inline_math(t.font.inline_math);
     spec
+}
+
+/// The typesetter's spans for the runs of a text: a run's colour, and its bold (the heavy face) and italic.
+fn spans(t: &TextData) -> Vec<typeset::Span> {
+    if t.runs.is_empty() {
+        return Vec::new();
+    }
+    let mut at: Vec<usize> = t.content.char_indices().map(|(i, _)| i).collect();
+    at.push(t.content.len());
+    let byte = |char_index: u32| at.get(char_index as usize).copied().unwrap_or(t.content.len());
+    t.runs
+        .iter()
+        .filter(|run| !run.style().is_plain())
+        .map(|run| typeset::Span {
+            range: byte(run.start)..byte(run.end),
+            style: typeset::SpanStyle::run(run.color.map(rgba8), run.bold, run.italic),
+        })
+        .collect()
 }
 
 /// The typesetter's name for a text's inline-math setting.

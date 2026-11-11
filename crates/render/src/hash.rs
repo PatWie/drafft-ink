@@ -79,8 +79,8 @@ fn text(h: &mut Hash128, d: &TextData) {
     content.hash(h);
     container_id.is_some().hash(h);
     runs.len().hash(h);
-    for TextRun { start, end, color } in runs {
-        (start, end, color).hash(h);
+    for TextRun { start, end, color, bold, italic } in runs {
+        (start, end, color, bold, italic).hash(h);
     }
     let TextStyle { family, size, weight, align, vertical_align, line_height, inline_math } = font;
     (family, Bits(*size), weight, align, vertical_align, Bits(*line_height), auto_resize, inline_math).hash(h);

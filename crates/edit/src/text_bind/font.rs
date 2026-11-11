@@ -7,7 +7,7 @@ use drafftink_scene::{
 };
 
 use super::math::{MathMeasure, set_math_size};
-use super::{GrowAnchor, TextBindError, TextMeasure, label_of, live, measure_text, relayout_label};
+use super::{GrowAnchor, TextBindError, TextMeasure, label_of, live, measure_block, relayout_label};
 use crate::style::{Prop, StyleProps};
 use crate::target::TargetError;
 
@@ -81,11 +81,7 @@ pub fn remeasure_text<T: SceneTx, M: TextMeasure + ?Sized>(
         relayout_label(tx, m, &c, GrowAnchor::Top)?;
         return Ok(());
     }
-    let size = if td.auto_resize {
-        measure_text(m, &td.content, &td.font, None)
-    } else {
-        measure_text(m, &td.content, &td.font, Some(e.transform.w))
-    };
+    let size = measure_block(m, &td.content, &td.runs, &td.font, (!td.auto_resize).then_some(e.transform.w));
     let w = if td.auto_resize { size.width } else { e.transform.w };
     if !(w.is_finite() && size.height.is_finite()) {
         return Err(TextBindError::NotFinite);

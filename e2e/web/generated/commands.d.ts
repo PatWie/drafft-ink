@@ -3126,7 +3126,7 @@ export namespace ElementQuery {
   /** #rrggbb, or #rrggbbaa for a non-opaque colour. 'transparent' and #rgb are also accepted. */
   type A_Color = string;
   /** A field of `element.query` output. */
-  type A_Field = "id" | "kind" | "name" | "text" | "bounds" | "style" | "angle" | "group_ids" | "frame" | "bindings" | "bound_text" | "locked" | "link" | "z" | "points";
+  type A_Field = "id" | "kind" | "name" | "text" | "bounds" | "style" | "angle" | "group_ids" | "frame" | "bindings" | "bound_text" | "locked" | "link" | "z" | "points" | "runs";
   /** How a filled area is painted. The fill colour itself is `Style::fill_color`; `None` there means no fill. */
   type A_FillPattern = "solid" | "hachure" | "zigzag" | "cross_hatch" | "dots" | "dashed" | "zigzag_line";
   /** Font family. `GelPen`, `GelPenSerif` and `VanillaExtract` ship with the app; `NotoSans` is the old fallback. */
@@ -6255,12 +6255,16 @@ export namespace TextEditEnd {
   type A_InlineMath = "auto" | "off";
   /** How pen pressure shapes a freehand stroke. */
   type A_PressureMode = "uniform" | "simulated" | "device";
-  /** One colour range chosen in the editor. */
+  /** One style range chosen in the editor: a colour, bold, italic. */
   type A_RunArg = {
-    /** The colour of the range. */
-    color: A_Color;
+    /** The range is bold. */
+    bold?: boolean;
+    /** The colour of the range: `#rrggbb`, `#rrggbbaa` or `transparent`. Absent: the element's colour. */
+    color?: A_Color | null;
     /** One past the last character. */
     end: number;
+    /** The range is italic. */
+    italic?: boolean;
     /** First character. */
     start: number;
   };
@@ -6315,7 +6319,7 @@ export namespace TextEditEnd {
     inline_math?: A_InlineMath | null;
     /** The final formula, when a math element is edited. */
     latex?: string | null;
-    /** Colour ranges of the text. Absent keeps the current ones. */
+    /** Style ranges of the text (colour, bold, italic). Absent keeps the current ones. */
     runs?: A_RunArg[] | null;
     /**
      * Text properties chosen during the edit, applied in the same step: the colour, opacity and font
@@ -6342,6 +6346,46 @@ export namespace TextEditEnd {
     id?: string | null;
     /** The element is selected now (the container, for a label). */
     selected?: string | null;
+    /** The label of the undo step the command pushed. */
+    undo_label?: string;
+    /** Non-fatal notes. */
+    warnings?: string[];
+    [key: string]: unknown;
+  };
+}
+
+/** Makes texts, or a range of one text, bold or italic, or regular again. Colours stay. */
+export namespace TextFormat {
+  /** An element reference in arguments: an id, or `"@name"` for the name set with `element.set_name`. */
+  type A_Ref = string;
+  /** Arguments of `text.format`. */
+  export type Args = {
+    /** True: bold. False: regular weight. Absent: leave as it is. */
+    bold?: boolean | null;
+    /** Texts, or shapes and arrows with a label. Default: the selection. */
+    ids?: A_Ref[] | null;
+    /** True: italic. False: upright. Absent: leave as it is. */
+    italic?: boolean | null;
+    /**
+     * The characters to format, `[start, end]` (0-based, `end` is one past the last), for one text. Default: all
+     * of each text.
+     */
+    range?: [number, number] | null;
+  };
+  /** Output of `text.format`. */
+  export type Output = {
+    /** True when the command changed any state. */
+    changed?: boolean;
+    /** Ids of elements the command made. */
+    created?: string[];
+    /** Ids of elements the command removed. */
+    deleted?: string[];
+    /** Texts whose characters changed. */
+    formatted: string[];
+    /** Targets that are neither text nor a shape or arrow with a label. */
+    skipped: string[];
+    /** Texts that already looked as asked. */
+    unchanged: string[];
     /** The label of the undo step the command pushed. */
     undo_label?: string;
     /** Non-fatal notes. */
@@ -7448,6 +7492,7 @@ export interface CommandTable {
   "text.bind": { args: TextBind.Args; output: TextBind.Output };
   "text.edit_begin": { args: TextEditBegin.Args; output: TextEditBegin.Output };
   "text.edit_end": { args: TextEditEnd.Args; output: TextEditEnd.Output };
+  "text.format": { args: TextFormat.Args; output: TextFormat.Output };
   "text.set": { args: TextSet.Args; output: TextSet.Output };
   "text.set_autoresize": { args: TextSetAutoresize.Args; output: TextSetAutoresize.Output };
   "text.set_latex": { args: TextSetLatex.Args; output: TextSetLatex.Output };
@@ -7479,7 +7524,7 @@ export interface CommandTable {
 export type CommandId = keyof CommandTable;
 
 /** Commands whose arguments may all be left out. */
-export type OptionalArgsId = "arrow.delete_point" | "arrow.edit_points" | "arrow.reroute" | "arrow.swap_heads" | "clipboard.copy" | "clipboard.copy_as" | "clipboard.copy_style" | "clipboard.cut" | "clipboard.paste" | "clipboard.paste_style" | "collab.connect" | "collab.disconnect" | "collab.follow" | "collab.join_room" | "collab.leave_room" | "collab.set_pointer" | "collab.set_user" | "collab.status" | "doc.autosave" | "doc.clear" | "doc.export" | "doc.inspect" | "doc.list" | "doc.new" | "doc.outline" | "doc.save" | "doc.show_intro" | "element.convert" | "element.create_sticky" | "element.delete" | "element.duplicate" | "element.lock" | "element.move" | "element.open_link" | "element.query" | "element.set_bounds" | "element.set_link" | "element.unlock_all" | "engine.commands" | "engine.recent" | "engine.state" | "frame.remove" | "frame.select_children" | "frame.unwrap" | "frame.wrap" | "gesture.cancel" | "gesture.end" | "group.create" | "group.enter" | "group.exit" | "group.set_name" | "group.ungroup" | "history.clear" | "history.redo" | "history.state" | "history.undo" | "layout.apply" | "library.add" | "library.export" | "library.list" | "library.remove" | "perf.stats" | "selection.all" | "selection.clear" | "selection.get" | "selection.select" | "settings.get" | "settings.reset" | "style.get" | "style.list_themes" | "tab.close" | "tab.duplicate" | "tab.list" | "tab.new" | "text.edit_begin" | "text.edit_end" | "text.wrap_in_container" | "tool.cancel" | "tool.hold" | "tool.lock" | "tool.release" | "tool.set_arrow" | "view.center" | "view.get" | "view.screenshot" | "view.set" | "view.set_view_only" | "view.zoom_at" | "view.zoom_in" | "view.zoom_out" | "view.zoom_reset" | "view.zoom_to_fit";
+export type OptionalArgsId = "arrow.delete_point" | "arrow.edit_points" | "arrow.reroute" | "arrow.swap_heads" | "clipboard.copy" | "clipboard.copy_as" | "clipboard.copy_style" | "clipboard.cut" | "clipboard.paste" | "clipboard.paste_style" | "collab.connect" | "collab.disconnect" | "collab.follow" | "collab.join_room" | "collab.leave_room" | "collab.set_pointer" | "collab.set_user" | "collab.status" | "doc.autosave" | "doc.clear" | "doc.export" | "doc.inspect" | "doc.list" | "doc.new" | "doc.outline" | "doc.save" | "doc.show_intro" | "element.convert" | "element.create_sticky" | "element.delete" | "element.duplicate" | "element.lock" | "element.move" | "element.open_link" | "element.query" | "element.set_bounds" | "element.set_link" | "element.unlock_all" | "engine.commands" | "engine.recent" | "engine.state" | "frame.remove" | "frame.select_children" | "frame.unwrap" | "frame.wrap" | "gesture.cancel" | "gesture.end" | "group.create" | "group.enter" | "group.exit" | "group.set_name" | "group.ungroup" | "history.clear" | "history.redo" | "history.state" | "history.undo" | "layout.apply" | "library.add" | "library.export" | "library.list" | "library.remove" | "perf.stats" | "selection.all" | "selection.clear" | "selection.get" | "selection.select" | "settings.get" | "settings.reset" | "style.get" | "style.list_themes" | "tab.close" | "tab.duplicate" | "tab.list" | "tab.new" | "text.edit_begin" | "text.edit_end" | "text.format" | "text.wrap_in_container" | "tool.cancel" | "tool.hold" | "tool.lock" | "tool.release" | "tool.set_arrow" | "view.center" | "view.get" | "view.screenshot" | "view.set" | "view.set_view_only" | "view.zoom_at" | "view.zoom_in" | "view.zoom_out" | "view.zoom_reset" | "view.zoom_to_fit";
 
 /** The registry size when the types were made; a spec can compare it with `commands()`. */
-export declare const COMMAND_COUNT: 153;
+export declare const COMMAND_COUNT: 154;

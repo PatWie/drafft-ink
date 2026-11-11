@@ -7,10 +7,10 @@
 
 use drafftink_edit::frame;
 use drafftink_edit::style::{StyleError, StyleProps};
-use drafftink_edit::text_bind::{self, MathMeasure, NewText, Relabeled, RunSpec, TextBindError, TextProps};
+use drafftink_edit::text_bind::{self, MathMeasure, NewText, Relabeled, TextBindError, TextProps};
 use drafftink_geom::kurbo::Point;
 use drafftink_scene::{
-    Color, ElementId, ElementKind, InlineMath, Kind, SceneTx,
+    Color, ElementId, ElementKind, InlineMath, Kind, SceneTx, TextRun,
 };
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -104,7 +104,7 @@ pub struct BeginOut {
 struct Final<'a> {
     text: Option<&'a str>,
     latex: Option<&'a str>,
-    runs: Option<Vec<RunSpec>>,
+    runs: Option<Vec<TextRun>>,
     props: TextProps,
 }
 
@@ -119,7 +119,7 @@ impl<'a> Final<'a> {
         Ok(Self {
             text: a.text.as_deref(),
             latex: a.latex.as_deref(),
-            runs: a.runs.as_ref().map(|r| r.iter().map(|r| RunSpec { start: r.start, end: r.end, color: r.color }).collect()),
+            runs: a.runs.as_ref().map(|r| r.iter().copied().map(RunArg::to_run).collect()),
             props: TextProps { inline_math: a.inline_math, ..text_props(cmd, a.style.as_ref())? },
         })
     }
@@ -131,8 +131,11 @@ impl<'a> Final<'a> {
         m: &dyn text_bind::TextMeasure,
         id: &ElementId,
     ) -> Result<(), TextBindError> {
-        if let Some(runs) = &self.runs {
-            text_bind::replace_runs(tx, id, runs)?;
+        if let Some(runs) = &self.runs
+            && text_bind::replace_runs(tx, id, runs)?
+        {
+            // Bold and italic letters are wider than regular ones.
+            text_bind::remeasure_text(tx, m, id)?;
         }
         text_bind::apply_text_props(tx, m, id, &self.props)?;
         Ok(())
@@ -299,7 +302,7 @@ fn begin_existing(s: &mut Session, cmd: &str, id: Option<&Ref>, caret: Caret) ->
 // text.edit_end
 // ---------------------------------------------------------------------------------------------
 
-/// One colour range chosen in the editor.
+/// One style range chosen in the editor: a colour, bold, italic.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct RunArg {
@@ -307,8 +310,21 @@ pub struct RunArg {
     pub start: u32,
     /// One past the last character.
     pub end: u32,
-    /// The colour of the range.
-    pub color: Color,
+    /// The colour of the range: `#rrggbb`, `#rrggbbaa` or `transparent`. Absent: the element's colour.
+    #[serde(default)]
+    pub color: Option<Color>,
+    /// The range is bold.
+    #[serde(default)]
+    pub bold: bool,
+    /// The range is italic.
+    #[serde(default)]
+    pub italic: bool,
+}
+
+impl RunArg {
+    fn to_run(self) -> TextRun {
+        TextRun { start: self.start, end: self.end, color: self.color, bold: self.bold, italic: self.italic }
+    }
 }
 
 /// The text properties of the `style` argument: validated like `style.set`, and only those text can take.
@@ -334,7 +350,7 @@ pub struct EndArgs {
     pub text: Option<String>,
     /// The final formula, when a math element is edited.
     pub latex: Option<String>,
-    /// Colour ranges of the text. Absent keeps the current ones.
+    /// Style ranges of the text (colour, bold, italic). Absent keeps the current ones.
     pub runs: Option<Vec<RunArg>>,
     /// Text properties chosen during the edit, applied in the same step: the colour, opacity and font
     /// properties of `style.set` (`stroke_color`, `opacity`, `font_family`, `font_weight`, `font_size`,
@@ -472,7 +488,7 @@ fn end_math(s: &mut Session, cmd: &str, id: &ElementId, fin: &Final<'_>) -> Resu
         return Err(Refusal::bad_arg(
             cmd,
             "runs",
-            "colour ranges belong to text. A math element has one colour: use `style.stroke_color`",
+            "style ranges belong to text. A math element has one colour and no bold or italic: use `style.stroke_color`",
         ));
     }
     with_doc(s, |tx, _m, math, _ids| {

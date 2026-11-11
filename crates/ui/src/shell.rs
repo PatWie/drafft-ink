@@ -5,7 +5,7 @@ use egui::Rect;
 
 use crate::action::{Report, UiAction, dispatch};
 use crate::keymap::{KeyContext, Pointer, resolve_keys};
-use crate::model::{AgentServerView, CollabView, Model};
+use crate::model::{AgentServerView, CollabView, Model, TextFaces};
 use crate::state::{TOAST_FADE_S, TOAST_HOLD_S, UiState};
 use crate::surfaces;
 use crate::theme::{self, Palette};
@@ -49,6 +49,11 @@ impl UiShell {
     /// Presence data from the collaboration client, which the app owns.
     pub fn set_collab(&mut self, collab: CollabView) {
         self.model.collab = collab;
+    }
+
+    /// Bold and italic at the selection of the running text editor, which the app owns (`None`: no editor).
+    pub fn set_editor_faces(&mut self, faces: Option<TextFaces>) {
+        self.model.editor_faces = faces;
     }
 
     /// The state of the MCP server over HTTP, which the app owns. `None` where there is none (the web).

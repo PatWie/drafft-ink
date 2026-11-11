@@ -110,7 +110,31 @@ pub(crate) fn text_field(
     char_limit: Option<usize>,
     label: &str,
 ) -> Response {
-    let mut edit = TextEdit::singleline(buf).hint_text(hint).desired_width(f32::INFINITY);
+    field(ui, TextEdit::singleline(buf), hint, reason, char_limit, label)
+}
+
+/// A single-line field that shows dots instead of what is typed (an access token). The text stays in `buf`, in
+/// memory, for as long as the caller keeps it.
+pub(crate) fn secret_field(
+    ui: &mut Ui,
+    buf: &mut String,
+    hint: &str,
+    reason: Option<String>,
+    char_limit: Option<usize>,
+    label: &str,
+) -> Response {
+    field(ui, TextEdit::singleline(buf).password(true), hint, reason, char_limit, label)
+}
+
+fn field(
+    ui: &mut Ui,
+    edit: TextEdit<'_>,
+    hint: &str,
+    reason: Option<String>,
+    char_limit: Option<usize>,
+    label: &str,
+) -> Response {
+    let mut edit = edit.hint_text(hint).desired_width(f32::INFINITY);
     if let Some(n) = char_limit {
         edit = edit.char_limit(n);
     }

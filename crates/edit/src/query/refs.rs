@@ -19,7 +19,7 @@ use super::{
 use crate::group::units::{Reverse, ReverseLookup, is_label, primary_id, sort_z};
 
 /// Every field of `describe`, in the order of the catalog.
-pub const ALL_FIELDS: [Field; 15] = [
+pub const ALL_FIELDS: [Field; 16] = [
     Field::Id,
     Field::Kind,
     Field::Name,
@@ -35,6 +35,7 @@ pub const ALL_FIELDS: [Field; 15] = [
     Field::Link,
     Field::Z,
     Field::Points,
+    Field::Runs,
 ];
 
 /// Arrows bound to an element, and the elements on their other end. The element is an id or `@name`.
