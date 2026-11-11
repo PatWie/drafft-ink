@@ -206,7 +206,8 @@ fn gather<R: SceneRead>(r: &R, ids: &[ElementId]) -> Result<(Family, Vec<Element
     }
     let mut family = None;
     for e in &elements {
-        let target = Target::of(e).ok_or_else(|| ConvertError::NotConvertible { id: e.id.clone(), kind: e.tag().name() })?;
+        let target =
+            Target::of(e).ok_or_else(|| ConvertError::NotConvertible { id: e.id.clone(), kind: e.tag().name() })?;
         match family {
             None => family = Some(target.family()),
             Some(f) if f != target.family() => return Err(ConvertError::Mixed),
@@ -393,14 +394,21 @@ mod tests {
         let mut tx = store.begin();
         let m = MonospaceMeasure::default();
         let r = add(&mut tx, "r", ElementKind::Rectangle);
-        let l = add(&mut tx, "l", ElementKind::Line(LinearData::new(vec![kurbo::Point::ZERO, kurbo::Point::new(100.0, 60.0)])));
+        let l = add(
+            &mut tx,
+            "l",
+            ElementKind::Line(LinearData::new(vec![kurbo::Point::ZERO, kurbo::Point::new(100.0, 60.0)])),
+        );
         let t = add(&mut tx, "t", ElementKind::Text(drafftink_scene::TextData::new("hi")));
         tx.update(&r, |e| e.locked = true).unwrap();
         assert_eq!(convert(&mut tx, &m, &[], None, false), Err(ConvertError::NoElements));
         assert_eq!(convert(&mut tx, &m, &ids(&[&r]), None, false), Err(ConvertError::Locked(vec![r.clone()])));
         tx.update(&r, |e| e.locked = false).unwrap();
         assert_eq!(convert(&mut tx, &m, &ids(&[&r, &l]), None, false), Err(ConvertError::Mixed));
-        assert!(matches!(convert(&mut tx, &m, &ids(&[&t]), None, false), Err(ConvertError::NotConvertible { kind: "text", .. })));
+        assert!(matches!(
+            convert(&mut tx, &m, &ids(&[&t]), None, false),
+            Err(ConvertError::NotConvertible { kind: "text", .. })
+        ));
         assert!(matches!(
             convert(&mut tx, &m, &ids(&[&r]), Some(Target::Line), false),
             Err(ConvertError::WrongFamily { from: "rectangle", to: Target::Line, .. })
