@@ -11,6 +11,7 @@
 //!
 //! Builds for wasm32. Hostile bytes return errors and never panic.
 
+#![warn(missing_docs)]
 #![cfg_attr(test, allow(clippy::unwrap_used, clippy::expect_used, clippy::panic))]
 
 mod codec;

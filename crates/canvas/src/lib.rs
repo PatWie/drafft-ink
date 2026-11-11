@@ -17,6 +17,7 @@
 //!
 //! `docs/canvas-api.md` is the guide, including the planned JS API.
 
+#![warn(missing_docs)]
 #![cfg_attr(test, allow(clippy::unwrap_used, clippy::expect_used, clippy::panic))]
 
 pub mod canvas;

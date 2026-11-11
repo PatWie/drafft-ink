@@ -4,7 +4,7 @@
 //! module of this crate; commands and UI never keep a second copy.
 //!
 //! Every mutating function takes a transaction (`T: SceneTx`) so the caller decides the commit
-//! boundary (one commit per command or batch). Module ownership (one agent each while porting):
+//! boundary (one commit per command or batch). Where each rule lives:
 //! - `binding`, `elbow`, `linear`: arrow bindings, elbow routing, line/arrow point editing.
 //! - `arrow`: operations of the `arrow` commands that combine them (bind an end to a named target, reroute,
 //!   snapping of a dragged point).
@@ -13,8 +13,15 @@
 //! - `group`, `frame`, `zorder`, `arrange`, `transform`, `lifecycle`: groups, frames, z-order,
 //!   align/distribute/flip, move/resize/rotate of selections, duplicate/delete/lock rules.
 //! - `style`: style properties, applicability, defaults and themes (`style.*` commands).
-//! - `text_bind`, `flowchart`, `layout`, `query`: bound text, flowchart helpers, auto-layout for
-//!   `diagram.create`, element queries and the document outline.
+//! - `text_bind`, `text_cmd`, `flowchart`, `layout`, `query`: bound text and text editing, flowchart
+//!   helpers, auto-layout for `diagram.create`, element queries and the document outline.
+//! - `paste`, `preflight`: pasting copies into a scene, and the checks that run before a structural change.
+//! - `element_cmd`, `selection_cmd`, `query_cmd`, `text_cmd`: rules the `element.*`, `selection.*` and
+//!   `text.*` commands need that no domain module above owns (common bounds, eraser hits, picking many targets,
+//!   references by `@name`).
+
+#![warn(missing_docs)]
+#![cfg_attr(test, allow(clippy::unwrap_used, clippy::expect_used, clippy::panic))]
 
 pub mod arrange;
 pub mod arrow;
