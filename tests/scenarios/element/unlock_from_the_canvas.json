@@ -1,0 +1,27 @@
+{
+  "about": "A locked element is skipped by selection but can be found with include_locked, which is what a right click needs to offer Unlock. Unlocking one element by id selects it, takes its whole group along, refuses when nothing given is locked, and is one undo step.",
+  "steps": [
+    { "execute": "element.create", "args": { "kind": "rectangle", "bounds": { "x": 0, "y": 0, "w": 100, "h": 60 } } },
+    { "execute": "element.create", "args": { "kind": "rectangle", "bounds": { "x": 300, "y": 0, "w": 100, "h": 60 } } },
+    { "execute": "element.create", "args": { "kind": "ellipse", "bounds": { "x": 0, "y": 300, "w": 80, "h": 80 } } },
+    { "execute": "group.create", "args": { "ids": ["e1", "e2"] } },
+    { "execute": "element.lock", "args": { "ids": ["e1"], "locked": true }, "expect": [ { "path": "$.ids", "len": 2 } ], "note": "Locking one member locks the whole group." },
+    { "assert": "selection.get", "expect": [ { "path": "$.ids", "eq": [] } ], "note": "Locked elements leave the selection." },
+
+    { "execute": "selection.select_at", "args": { "point": [100, 30] }, "expect": [ { "path": "$.changed", "eq": false } ], "note": "A click skips the locked element." },
+    { "assert": "selection.get", "expect": [ { "path": "$.ids", "eq": [] } ] },
+    { "assert": "element.at", "args": { "point": [100, 30] }, "expect": [ { "path": "$.count", "eq": 0 } ], "note": "The normal hit test does not see it." },
+    { "assert": "element.at", "args": { "point": [100, 30], "include_locked": true }, "expect": [ { "path": "$.count", "eq": 1 }, { "path": "$.hits[0].id", "eq": "e1" } ], "note": "The context menu uses the hit test that includes locked elements." },
+
+    { "execute": "element.unlock_all", "args": { "ids": ["e3"] }, "refused": "nothing_to_do", "text": "none of the given elements is locked" },
+    { "execute": "element.unlock_all", "args": { "ids": ["e1"] }, "expect": [ { "path": "$.ids", "len": 2 } ], "note": "The menu's Unlock row: that element, with its group." },
+    { "assert": "selection.get", "expect": [ { "path": "$.ids", "len": 2 } ], "note": "What was unlocked is selected, as in Excalidraw." },
+    { "execute": "element.move", "args": { "ids": ["e1"], "dx": 1 }, "expect": [ { "path": "$.dx", "eq": 1 } ] },
+    { "undo": 1 },
+    { "undo": 1 },
+    { "execute": "element.move", "args": { "ids": ["e2"], "dx": 1 }, "refused": "locked", "text": "element.unlock_all", "note": "Undoing the unlock locks the group again, and the refusal names the way out." },
+    { "execute": "element.unlock_all", "args": { "ids": ["e2"], "select": false }, "expect": [ { "path": "$.ids", "len": 2 } ] },
+    { "assert": "selection.get", "expect": [ { "path": "$.ids", "eq": [] } ], "note": "select=false leaves the selection alone." },
+    { "execute": "element.unlock_all", "refused": "nothing_to_do", "text": "no element is locked" }
+  ]
+}
