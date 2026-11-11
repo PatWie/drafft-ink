@@ -27,10 +27,11 @@ pub struct SkipGroup {
 
 fn kind_of(reason: &str) -> &'static str {
     let lower = reason.to_lowercase();
-    if lower.contains("gpu") || lower.contains("adapter") {
-        "gpu"
-    } else if lower.contains("e2e") || lower.contains("not run here") || lower.contains("display") {
+    // The e2e message also mentions the GPU ("it needs a display and a GPU"), so it is tested first.
+    if lower.contains("e2e") || lower.contains("not run here") {
         "e2e"
+    } else if lower.contains("gpu") || lower.contains("adapter") {
+        "gpu"
     } else if lower.contains("old app") || lower.contains("old repo") {
         "old repo"
     } else {
@@ -73,7 +74,7 @@ mod tests {
     #[test]
     fn skip_lines_are_counted_by_reason() {
         let text = "ok\nSKIPPED: a: no GPU adapter on this machine\n  SKIPPED: b: no GPU adapter\n\
-                    SKIPPED: c: not run here; `cargo xtask e2e` runs it\nSKIPPED: d: odd\nnot SKIPPED: e\n";
+                    SKIPPED: c: not run here; `cargo xtask e2e` runs the native suite (it needs a display and a GPU)\nSKIPPED: d: odd\nnot SKIPPED: e\n";
         let groups = count(text);
         let xml = "<system-err><![CDATA[SKIPPED: x: no GPU\n]]></system-err>";
         assert_eq!(describe(&count(xml)), "skipped 1 (gpu 1)");
