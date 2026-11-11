@@ -258,6 +258,26 @@ impl drafftink_engine::ports::Clipboard for SharedClipboard {
     }
 }
 
+/// Where the desktop app's MCP server over HTTP listens, and where its token is.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct McpHttpInfo {
+    /// `http://127.0.0.1:<port>/mcp`.
+    pub endpoint: String,
+    /// The private file with this launch's token, if one was written.
+    pub token_file: Option<String>,
+}
+
+/// The MCP server over HTTP that a desktop launcher offers. The app starts and stops it when the setting
+/// `agent.mcp_http` changes; the launcher decides how it listens (docs/agents.md, sections 3 and 5.4). The web has none.
+pub trait McpHttpControl {
+    /// Starts the server. Starting a running server only reports where it listens.
+    fn start(&mut self) -> Result<McpHttpInfo, String>;
+    /// Stops the server. Stopping a stopped server does nothing.
+    fn stop(&mut self);
+    /// Where it listens now, or `None` when it is stopped.
+    fn running(&self) -> Option<McpHttpInfo>;
+}
+
 /// Everything a platform provides to build an [`App`](crate::App).
 pub struct Platform {
     /// The engine ports this platform serves. Build the clipboard port from `clipboard`.
@@ -272,6 +292,8 @@ pub struct Platform {
     pub typesetter: drafftink_engine::services::SharedTypesetter,
     /// Requests from the agent bridge (native server) or the page (web), run once per frame.
     pub bridge: Option<BridgeHost>,
+    /// The MCP server over HTTP that the user can switch on in the preferences. Desktop only.
+    pub mcp_http: Option<Box<dyn McpHttpControl>>,
     /// macOS: `Mod` is Cmd.
     pub is_mac: bool,
 }

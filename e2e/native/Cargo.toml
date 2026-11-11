@@ -17,6 +17,9 @@ tempfile.workspace = true
 png.workspace = true
 
 [dev-dependencies]
+# The MCP client over streamable HTTP that drives the app in `tests/mcp_http.rs`.
+rmcp = { version = "3.9", default-features = false, features = ["client", "transport-streamable-http-client-reqwest"] }
+http = "1"
 # The schema dump builds a session to list the registry with its schemas.
 drafftink-testkit = { path = "../../crates/testkit" }
 drafftink-engine = { path = "../../crates/engine" }

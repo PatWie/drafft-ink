@@ -39,7 +39,7 @@ js-sys.workspace = true
 console_error_panic_hook.workspace = true
 console_log.workspace = true
 web-sys = { workspace = true, features = [
-    "Window", "Document", "Location", "History", "Storage", "Event", "EventTarget",
+    "Window", "Document", "Location", "History", "Storage", "Event", "EventTarget", "Navigator",
     "WebSocket", "MessageEvent", "CloseEvent", "BinaryType", "Performance",
 ] }
 

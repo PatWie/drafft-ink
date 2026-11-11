@@ -4,7 +4,7 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 rust-version.workspace = true
-description = "Agent bridge (L6): JSON-RPC 2.0 over WebSocket, a transport-neutral core, a loopback-only native server, and the relay for the web page."
+description = "Agent bridge (L6): JSON-RPC 2.0 over WebSocket, a transport-neutral core, a loopback-only native server, the relay for the web page, and the agent tools (generated from the registry) with MCP over HTTP."
 
 [dependencies]
 drafftink-engine = { path = "../engine" }
@@ -13,6 +13,7 @@ serde_json.workspace = true
 thiserror.workspace = true
 log.workspace = true
 subtle.workspace = true
+base64.workspace = true
 
 # The native server, the client and the relay. The core (rpc, core, host, guard) builds everywhere.
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
@@ -20,9 +21,16 @@ tokio = { workspace = true, features = ["rt", "net", "time", "sync", "macros"] }
 tokio-tungstenite.workspace = true
 futures-util.workspace = true
 getrandom = "0.3"
+axum.workspace = true
+# The official Rust MCP SDK, for the streamable HTTP server of the desktop app. No default features: the `#[tool]`
+# macros are not used, because the tool list is generated from the command registry at run time.
+rmcp = { version = "3.9", default-features = false, features = ["server", "transport-streamable-http-server"] }
+tokio-util = "0.7"
 
 [dev-dependencies]
 tempfile.workspace = true
+# An MCP client over streamable HTTP, to test the server of the desktop app with what a real client does.
+rmcp = { version = "3.9", default-features = false, features = ["client", "transport-streamable-http-client-reqwest"] }
 
 [lints]
 workspace = true

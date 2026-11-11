@@ -55,7 +55,7 @@ draws again. `sw.js` precaches the Ubuntu font with the shell and stores the oth
 
 Sizes of the full app build (2026-11-08, `release-wasm`, wasm-bindgen 0.2.130, binaryen 133 `-Oz` with the explicit feature list;
 MB here are MiB, as in `performance.md`): raw 24.62 MB (wasm-bindgen output), **wasm-opt 11.79 MB**, gzip -9 4.36 MB,
-**brotli -11 3.06 MB**, plus 1.44 MB of font files that the page loads when it needs them. Before the size work it was 28.43 / 17.62 / 6.51 / 4.48 MB
+**brotli -11 3.06 MB** (before WebMCP; the generated tool catalog added 0.14 MB wasm-opt and 0.04 MB brotli: raw 24.88, wasm-opt 11.93, gzip 4.42, brotli 3.10), plus 1.44 MB of font files that the page loads when it needs them. Before the size work it was 28.43 / 17.62 / 6.51 / 4.48 MB
 with the fonts inside. The old app was 10.33 MB raw and 3.46 MB brotli. What was done, what each step gave and what was left out is
 the table in `performance.md`, "Wasm size". `cargo xtask size` checks the numbers against `perf/budgets.json` (it builds the app, so it runs in
 `cargo xtask ci` and as its own CI job).
@@ -134,6 +134,7 @@ try { await drafftink.execute('nope.nothing'); } catch (e) { console.log(e.code,
 | `frames()` | `{frames, vello_runs}`: frames drawn and frames in which Vello ran since start. Two reads 10 s apart that are equal prove an idle page |
 | `version` | the crate version |
 | `agent.pair(url, token)` (alias `connect`), `agent.disconnect()`, `agent.status()` | next section |
+| `webmcp.status()`, `webmcp.register()`, `webmcp.unregister()` | WebMCP, the section after next |
 
 ## Pairing with an AI agent (docs/agents.md, section 5.2)
 
@@ -206,3 +207,10 @@ target, because the repository has no wasm test runner).
 - **Safari and Firefox** were not tried. The service worker, IndexedDB and pickers use standard APIs; WebGPU support decides.
 - **Clipboard read** for the equation editor needs the browser's permission and a user gesture.
 - **Screenshots** of the canvas by script (`drafftink.screenshot()`) are not offered: the shell exposes no read-back to the page.
+
+## WebMCP (docs/agents.md, section 5.5)
+
+When the browser has WebMCP (`document.modelContext`, or the preview `navigator.modelContext`), the page registers the generated agent tools
+with it at start: `apps/drafftink-web/src/webmcp_page.rs` builds them once from the registry (`drafftink_bridge::tools`) and each tool's
+`execute` queues its bridge method on the same job queue as `window.drafftink.execute`. A browser without the API is not affected. The
+address `?webmcp=off` skips the registration. `webmcp.status()` says what the page found.

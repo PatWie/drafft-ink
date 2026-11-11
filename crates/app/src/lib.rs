@@ -13,6 +13,7 @@
 // `Instant` and `SystemTime` here come from `web_time` (the clock port); clippy cannot tell them apart.
 #![allow(clippy::disallowed_methods)]
 
+mod agent_server;
 mod app;
 mod clip;
 mod clock;
@@ -38,5 +39,6 @@ pub use config::{AppConfig, StartupLink};
 pub use perf::scene_for;
 pub use perf::{Look, SceneInstall, SceneLoader};
 pub use platform::{
-    FontFile, Host, HostJob, Inbound, Inbox, NoHost, PickKind, PickedFile, Platform, SharedClipboard, WakeCell,
+    FontFile, Host, HostJob, Inbound, Inbox, McpHttpControl, McpHttpInfo, NoHost, PickKind, PickedFile, Platform,
+    SharedClipboard, WakeCell,
 };

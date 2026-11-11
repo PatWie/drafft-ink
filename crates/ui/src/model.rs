@@ -281,6 +281,18 @@ impl CollabView {
     }
 }
 
+/// The desktop app's MCP server over HTTP, as the preferences show it. Written by the app through
+/// [`crate::UiShell::set_agent_server`]; the web app has none.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct AgentServerView {
+    /// The address it listens on, while it runs.
+    pub endpoint: Option<String>,
+    /// The file with the token that clients send, while it runs.
+    pub token_file: Option<String>,
+    /// Why it could not start, in plain words.
+    pub problem: Option<String>,
+}
+
 /// The snapshot.
 #[derive(Debug, Clone)]
 pub struct Model {
@@ -333,6 +345,8 @@ pub struct Model {
     pub background: String,
     /// Presence. Written by the app through `UiShell::set_collab`.
     pub collab: CollabView,
+    /// The MCP server over HTTP. `None` where the app cannot serve one (the web).
+    pub agent_server: Option<AgentServerView>,
     stamp: Option<u64>,
     captured_mac: bool,
 }
@@ -365,6 +379,7 @@ impl Default for Model {
             zoom_percent: 100.0,
             background: "#ffffff".to_owned(),
             collab: CollabView::default(),
+            agent_server: None,
             stamp: None,
             captured_mac: false,
         }

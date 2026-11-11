@@ -10,7 +10,7 @@ use js_sys::{Object, Reflect};
 use serde_json::{Value, json};
 use wasm_bindgen::prelude::*;
 
-use crate::{agent, js};
+use crate::{agent, js, webmcp_page};
 
 /// A JS function with two optional arguments.
 type Fn2 = Closure<dyn Fn(JsValue, JsValue) -> JsValue>;
@@ -119,6 +119,7 @@ pub(crate) fn install(jobs: &JobSender) -> Result<(), JsValue> {
     });
 
     set(&api, "agent", &agent::api(jobs));
+    set(&api, "webmcp", &webmcp_page::api(jobs));
     set(&api, "version", &JsValue::from_str(env!("CARGO_PKG_VERSION")));
 
     let window = web_sys::window().ok_or_else(|| JsValue::from_str("no window"))?;

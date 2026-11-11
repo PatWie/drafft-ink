@@ -26,6 +26,7 @@ use drafftink_ui::{FrameInput, HostRequest, Pointer, Toast, UiShell};
 use serde_json::{Value, json};
 use vello::peniko::Color;
 
+use crate::agent_server::McpHttpState;
 use crate::config::AppConfig;
 use crate::editor::{KeyRoute, TextEditor, route};
 use crate::input::{self, Held};
@@ -75,6 +76,8 @@ pub struct App {
     wake: WakeCell,
     clipboard: SharedClipboard,
     bridge: Option<BridgeHost>,
+    /// The MCP server over HTTP, if this platform has one, and the value of `agent.mcp_http` it last followed.
+    mcp_http: Option<McpHttpState>,
     /// Fonts the host was asked for, so that each is asked for once.
     fonts_requested: HashSet<FontFile>,
     notices: Vec<String>,
@@ -102,7 +105,7 @@ pub struct App {
 impl App {
     /// An app over a platform. Loads the settings and the workspace, so call it once, before the shell runs.
     pub fn new(platform: Platform, config: AppConfig) -> Self {
-        let Platform { ports, host, wake, clipboard, typesetter, bridge, is_mac } = platform;
+        let Platform { ports, host, wake, clipboard, typesetter, bridge, mcp_http, is_mac } = platform;
         let services = drafftink_engine::Services::sharing(typesetter.clone());
         let mut session = Session::with_services(ports, services);
         let notices = drafftink_profile::scope("startup_restore", || crate::startup::start(&mut session, &config));
@@ -121,6 +124,7 @@ impl App {
             wake,
             clipboard,
             bridge,
+            mcp_http: mcp_http.map(McpHttpState::new),
             fonts_requested: HashSet::new(),
             notices,
             open_urls: Vec::new(),
@@ -601,6 +605,15 @@ impl App {
         }
     }
 
+    /// Starts or stops the MCP server over HTTP when the person changes `agent.mcp_http`.
+    fn follow_mcp_http_setting(&mut self) {
+        let Some(state) = self.mcp_http.as_mut() else { return };
+        let want = self.session.settings.get("agent.mcp_http").and_then(Value::as_bool).unwrap_or(false);
+        if let Some(view) = state.follow(want) {
+            self.ui.set_agent_server(Some(view));
+        }
+    }
+
     /// Lets the collaboration client work. Returns whether it left something to show: a notice, or a change
     /// of the screen the session recorded.
     fn poll_collab(&mut self, now_ms: u64) -> bool {
@@ -1001,6 +1014,7 @@ impl ShellApp for App {
         if let Some(host) = self.bridge.as_mut() {
             host.poll(&mut self.session);
         }
+        self.follow_mcp_http_setting();
         self.poll_collab(now_ms);
         self.session.workspace_tick();
 

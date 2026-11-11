@@ -1,16 +1,20 @@
 //! Drafft.ink for the desktop.
 //!
 //! ```text
-//! drafftink [FILE] [--room ROOM] [--server URL] [--bridge [PORT]] [--perf-overlay] [--perf-dump FILE]
+//! drafftink [FILE] [--room ROOM] [--server URL] [--bridge [PORT]] [--mcp-http [PORT]] [--perf-overlay] [--perf-dump FILE]
 //!           [--perf-scenario KEY --perf-out FILE [--perf-secs N]]
 //! ```
 //!
 //! The bridge (an agent's door into the running app, `docs/agents.md`) is off unless `--bridge` is given.
-//! It listens on 127.0.0.1 only and writes a token file that only this user can read.
+//! It listens on 127.0.0.1 only and writes a token file that only this user can read. `--mcp-http` serves MCP over
+//! streamable HTTP on 127.0.0.1 for clients that speak HTTP, with the same rules and a bearer token. The
+//! preferences have a switch for it as well. Both are off by default.
 //!
 //! `--perf-scenario` runs a performance scenario (`docs/performance.md` section 5.3): it shows a generated scene,
 //! prints `PERF-READY` when the app is quiet, measures until a line arrives on stdin (or `--perf-secs` have passed),
 //! writes the report to `--perf-out` and exits.
+
+mod mcp_http;
 
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::path::PathBuf;
@@ -19,11 +23,14 @@ use std::process::ExitCode;
 use clap::Parser;
 use drafftink_app::native::{self, NativeOptions, ScenarioRun};
 use drafftink_app::{App, AppConfig, StartupLink};
+use drafftink_bridge::host::channel;
 use drafftink_bridge::{BridgeConfig, BridgeError, BridgeServer};
 use drafftink_engine::cmd::collab::RoomLink;
 use drafftink_engine::ports::FileRef;
 use drafftink_gpu::{Options, RedrawReason, ShellError};
 use drafftink_profile::ScenarioKey;
+
+use crate::mcp_http::McpHttp;
 
 /// Drafft.ink: an infinite canvas whiteboard.
 #[derive(Debug, Parser)]
@@ -41,6 +48,10 @@ struct Args {
     /// Off by default.
     #[arg(long, value_name = "PORT", num_args = 0..=1, default_missing_value = "0")]
     bridge: Option<u16>,
+    /// Serve MCP over streamable HTTP on 127.0.0.1 (PORT, default 3737) for this launch, so that MCP clients that
+    /// speak HTTP connect without a helper. Needs the token that is written to a private file. Off by default.
+    #[arg(long, value_name = "PORT", num_args = 0..=1, default_missing_value = "3737")]
+    mcp_http: Option<u16>,
     /// Show frame counts and cache numbers over the canvas.
     #[arg(long)]
     perf_overlay: bool,
@@ -98,23 +109,33 @@ fn run(args: Args) -> Result<(), Failure> {
     let mut platform = drafftink_profile::scope("startup_platform", || {
         native::platform(&NativeOptions { data_dir: args.data_dir.clone() })
     });
-    // The server must outlive the window: dropping it closes the socket and removes the token file.
-    let bridge = match args.bridge {
+    // The servers must outlive the window: dropping one closes its socket and removes its token file.
+    // Every transport puts its requests on the one queue that the app polls at the top of a frame.
+    let (bridge, jobs, host) = match args.bridge {
         Some(port) => {
             let config = BridgeConfig {
                 addr: SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), port),
                 ..BridgeConfig::default()
             };
             let (server, host) = BridgeServer::start(config, platform.wake.hook(RedrawReason::Load))?;
-            platform.bridge = Some(host);
             match server.token_file() {
                 Some(path) => eprintln!("bridge: {} (token file: {})", server.url(), path.display()),
                 None => eprintln!("bridge: {} (no token file)", server.url()),
             }
-            Some(server)
+            let jobs = server.jobs();
+            (Some(server), jobs, host)
         }
-        None => None,
+        None => {
+            let (jobs, host) = channel(platform.wake.hook(RedrawReason::Load), None);
+            (None, jobs, host)
+        }
     };
+    platform.bridge = Some(host);
+    let mut mcp = McpHttp::new(jobs, args.mcp_http);
+    if args.mcp_http.is_some() {
+        mcp.start_announced()?;
+    }
+    platform.mcp_http = Some(Box::new(mcp));
     let config = AppConfig {
         join: StartupLink { link: RoomLink { room: args.room, server: args.server } },
         default_server: None,

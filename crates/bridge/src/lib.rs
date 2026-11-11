@@ -6,6 +6,9 @@
 //! * [`rpc`], [`core`], [`host`], [`guard`]: JSON-RPC 2.0 messages, the methods, the queue the shell drains
 //!   and the token, `Host` and `Origin` checks. They hold no socket and build for every target, so the web
 //!   page can answer the relay with the same [`core::dispatch`].
+//! * [`tools`]: the agent tools, generated from the registry and run on any [`tools::Caller`]. Builds everywhere:
+//!   the web page registers the same tools with WebMCP.
+//! * [`mcp`] (native): the `rmcp` handler for the tools, and MCP over streamable HTTP for the desktop app.
 //! * [`server`] (native): the loopback WebSocket server of the desktop app.
 //! * [`client`] (native): a small client for the server, used by the MCP app in attached mode and by tests.
 //! * [`relay`] (native): the server that the web page connects out to, and the fake page that plays the
@@ -18,11 +21,14 @@ pub mod core;
 pub mod guard;
 pub mod host;
 pub mod rpc;
+pub mod tools;
 
 #[cfg(not(target_arch = "wasm32"))]
 pub mod client;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod files;
+#[cfg(not(target_arch = "wasm32"))]
+pub mod mcp;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod page_sim;
 #[cfg(not(target_arch = "wasm32"))]

@@ -129,6 +129,7 @@ struct Shared {
 
 /// A running server. Dropping it stops listening and removes the token file.
 pub struct BridgeServer {
+    jobs: JobSender,
     port: u16,
     token: String,
     token_file: Option<TokenFile>,
@@ -164,8 +165,15 @@ impl BridgeServer {
         let sink: Arc<dyn EventSink> = events.clone();
         let (jobs, host) = channel(waker, Some(sink));
         let hello = hello_result(&Registry::global(), cfg.max_frame_bytes);
-        let shared =
-            Arc::new(Shared { token: token.clone(), port, cfg, jobs, events, hello, open: AtomicUsize::new(0) });
+        let shared = Arc::new(Shared {
+            token: token.clone(),
+            port,
+            cfg,
+            jobs: jobs.clone(),
+            events,
+            hello,
+            open: AtomicUsize::new(0),
+        });
         let (shutdown_tx, shutdown_rx) = oneshot::channel();
         let thread = std::thread::Builder::new()
             .name("drafftink-bridge".to_owned())
@@ -185,13 +193,18 @@ impl BridgeServer {
                 });
             })
             .map_err(BridgeError::Thread)?;
-        let server = Self { port, token, token_file, shutdown: Some(shutdown_tx), thread: Some(thread) };
+        let server = Self { jobs, port, token, token_file, shutdown: Some(shutdown_tx), thread: Some(thread) };
         Ok((server, host))
     }
 
     /// The port.
     pub fn port(&self) -> u16 {
         self.port
+    }
+
+    /// A sender for the shell's queue, so that another transport (MCP over HTTP) can share the one host.
+    pub fn jobs(&self) -> JobSender {
+        self.jobs.clone()
     }
 
     /// `ws://127.0.0.1:<port>/`.
@@ -438,28 +451,7 @@ async fn handle_frame(sh: &Shared, subscribed: &mut bool, text: &str) -> (Option
             (Some(reply(Ok(json!({ "subscribed": false })))), false)
         }
         m if SESSION_METHODS.contains(&m) => {
-            let (tx, rx) = oneshot::channel();
-            let job = Job {
-                method: method.clone(),
-                params,
-                reply: Box::new(move |r| {
-                    let _ = tx.send(r);
-                }),
-            };
-            if let Err((err, _)) = sh.jobs.submit(job) {
-                return (Some(reply(Err(err))), false);
-            }
-            let out = match tokio::time::timeout(sh.cfg.request_timeout, rx).await {
-                Ok(Ok(r)) => r,
-                Ok(Err(_)) => Err(RpcError::new(rpc::INTERNAL_ERROR, "the app closed before it ran the request")),
-                Err(_) => Err(RpcError::new(
-                    TIMED_OUT,
-                    format!(
-                        "the app did not run `{method}` within {} s. It may be hidden, busy or showing a dialog. The request was NOT cancelled and may still apply: check `recent` before sending it again",
-                        sh.cfg.request_timeout.as_secs()
-                    ),
-                )),
-            };
+            let out = request(&sh.jobs, &method, params, sh.cfg.request_timeout).await;
             (Some(reply(out)), false)
         }
         other => {
@@ -471,5 +463,29 @@ async fn handle_frame(sh: &Shared, subscribed: &mut bool, text: &str) -> (Option
             );
             (Some(reply(Err(e))), true)
         }
+    }
+}
+
+/// Queues `method` for the shell and waits for its answer, at most `limit`. A timeout does not cancel the request.
+pub(crate) async fn request(jobs: &JobSender, method: &str, params: Value, limit: Duration) -> Result<Value, RpcError> {
+    let (tx, rx) = oneshot::channel();
+    let job = Job {
+        method: method.to_owned(),
+        params,
+        reply: Box::new(move |r| {
+            let _ = tx.send(r);
+        }),
+    };
+    jobs.submit(job).map_err(|(err, _)| err)?;
+    match tokio::time::timeout(limit, rx).await {
+        Ok(Ok(r)) => r,
+        Ok(Err(_)) => Err(RpcError::new(rpc::INTERNAL_ERROR, "the app closed before it ran the request")),
+        Err(_) => Err(RpcError::new(
+            TIMED_OUT,
+            format!(
+                "the app did not run `{method}` within {} s. It may be hidden, busy or showing a dialog. The request was NOT cancelled and may still apply: check `recent` before sending it again",
+                limit.as_secs()
+            ),
+        )),
     }
 }

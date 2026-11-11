@@ -17,7 +17,7 @@ test("startup: the page starts, draws, and shows the intro document", async ({ c
 test("startup: window.drafftink has the documented methods", async ({ context }) => {
   const app = await openApp(context, serverInfo().origin);
   const keys = await app.page.evaluate(() => Object.keys(window.drafftink).sort());
-  expect(keys).toEqual(["agent", "batch", "commands", "describe", "execute", "frames", "perf", "perf_enable", "perf_reset", "recent", "state", "version"]);
+  expect(keys).toEqual(["agent", "batch", "commands", "describe", "execute", "frames", "perf", "perf_enable", "perf_reset", "recent", "runScenario", "scenarioReport", "state", "version", "webmcp"]);
   expect(await app.page.evaluate(() => typeof window.drafftink.version)).toBe("string");
   const perf = await app.perf();
   expect(typeof perf.redraws.by_reason).toBe("object");

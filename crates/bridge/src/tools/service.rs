@@ -1,15 +1,15 @@
-//! The MCP service without the MCP library: tool list, tool calls, prompts. [`crate::server`] puts it on the
-//! wire. Keeping them apart makes the logic testable with plain values.
+//! The MCP service without the MCP library: tool list, tool calls, prompts. The MCP handler ([`crate::mcp`]) and
+//! the web page put it on the wire. Keeping them apart makes the logic testable with plain values.
 
 use std::sync::Arc;
 
 use drafftink_engine::Registry;
 use serde_json::{Map, Value, json};
 
-use crate::backend::Backend;
-use crate::catalog::{Catalog, FileTool, Tool, ToolKind};
-use crate::guide;
-use crate::outcome::{self, Outcome, error_text};
+use super::Caller;
+use super::catalog::{Catalog, FileTool, Tool, ToolKind};
+use super::guide;
+use super::outcome::{self, Outcome, error_text};
 
 /// A call named a tool that does not exist. This is a protocol error, not a tool error.
 #[derive(Debug, thiserror::Error)]
@@ -23,7 +23,7 @@ pub struct UnknownTool {
 
 /// The tools and prompts of one server, and the backend they run on.
 pub struct Service {
-    backend: Backend,
+    caller: Box<dyn Caller>,
     catalog: Catalog,
     registry: Arc<Registry>,
 }
@@ -31,11 +31,11 @@ pub struct Service {
 type Args = Map<String, Value>;
 
 impl Service {
-    /// A service over `backend`, with tools generated from the global registry.
-    pub fn new(backend: Backend) -> Self {
+    /// A service over `caller`, with tools generated from the global registry.
+    pub fn new(caller: impl Caller + 'static) -> Self {
         let registry = Registry::global();
         let catalog = Catalog::build(&registry);
-        Self { backend, catalog, registry }
+        Self { caller: Box::new(caller), catalog, registry }
     }
 
     /// The tool definitions.
@@ -43,19 +43,14 @@ impl Service {
         &self.catalog
     }
 
-    /// The backend.
-    pub fn backend(&self) -> &Backend {
-        &self.backend
-    }
-
     /// The text for the `initialize` result: what the server is and where to learn more.
     pub fn instructions(&self) -> String {
-        guide::instructions(&self.registry, self.backend.mode())
+        guide::instructions(&self.registry, self.caller.mode())
     }
 
     /// The full guide, for `prompts/get`.
     pub fn guide(&self) -> String {
-        guide::guide(&self.registry, self.backend.mode())
+        guide::guide(&self.registry, self.caller.mode())
     }
 
     /// Runs a tool call.
@@ -73,13 +68,13 @@ impl Service {
             ToolKind::Commands => self.list_commands(&args).await,
             ToolKind::Describe => self.describe(&args).await,
             ToolKind::Recent => self.passthrough("recent", Value::Object(args)).await,
-            ToolKind::Status => Outcome::text(self.backend.status().await.to_string()),
+            ToolKind::Status => Outcome::text(self.caller.status().await.to_string()),
             ToolKind::File(ft) => self.file(*ft, &args).await,
         })
     }
 
     async fn passthrough(&self, method: &str, params: Value) -> Outcome {
-        match self.backend.call(method, params).await {
+        match self.caller.call(method, params).await {
             Ok(v) => outcome::success(v),
             Err(e) => Outcome::error(error_text(&e)),
         }
@@ -162,7 +157,7 @@ impl Service {
                 opts.insert(to.to_owned(), v.clone());
             }
         }
-        match self.backend.call("batch", json!({ "steps": out, "opts": opts })).await {
+        match self.caller.call("batch", json!({ "steps": out, "opts": opts })).await {
             Ok(v) => outcome::batch(v),
             Err(e) => Outcome::error(error_text(&e)),
         }
@@ -171,7 +166,7 @@ impl Service {
     async fn list_commands(&self, args: &Args) -> Outcome {
         let mut params = args.clone();
         params.remove("include_schemas");
-        let listing = match self.backend.call("commands", Value::Object(params)).await {
+        let listing = match self.caller.call("commands", Value::Object(params)).await {
             Ok(v) => v,
             Err(e) => return Outcome::error(error_text(&e)),
         };

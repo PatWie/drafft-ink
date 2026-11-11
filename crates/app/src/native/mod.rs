@@ -57,6 +57,7 @@ pub fn platform(options: &NativeOptions) -> Platform {
         clipboard,
         typesetter,
         bridge: None,
+        mcp_http: None,
         is_mac: cfg!(target_os = "macos"),
     }
 }

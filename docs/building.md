@@ -18,6 +18,7 @@ Command line (`drafftink --help`):
 | `FILE` | Open a `.drafftink`, `.json`, `.excalidraw` file or a PNG with an embedded scene. It replaces the intro document on a first run and opens in a new tab otherwise. |
 | `--room ROOM` `--server URL` | Join a room at start (`--server` needs `--room`; default server: the `collab.server_url` setting, `ws://localhost:3030/ws`). With work already open, the room gets a new tab. |
 | `--bridge [PORT]` | Let an AI agent drive this window (`agents.md`). Off by default. Listens on `127.0.0.1` only, on a free port or `PORT`, and prints the token file path. |
+| `--mcp-http [PORT]` | Serve MCP over streamable HTTP on `127.0.0.1:PORT` (default 3737; 0 is a free port) for MCP clients that take a URL (`agents.md` section 5.4). Off by default. Every request needs the bearer token from a private file, and the Preferences have a switch for it. |
 | `--perf-overlay` | Frame counts and cache numbers over the canvas. |
 | `--perf-dump FILE` | At exit write the performance counters (`PerfStats` JSON, `performance.md`). Close the window to get it. |
 | `--data-dir DIR` | Keep settings, documents and the workspace in `DIR`. Default: `$XDG_DATA_HOME/drafftink` or `~/.local/share/drafftink` (Linux), `~/Library/Application Support/drafftink` (macOS), `%APPDATA%\drafftink` (Windows). `DRAFFTINK_DATA_DIR` does the same. |

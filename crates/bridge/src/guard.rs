@@ -37,6 +37,9 @@ pub enum Refused {
     /// The `Origin` header names a page that may not use the bridge.
     #[error("the Origin `{0}` may not use the bridge")]
     Origin(String),
+    /// The `Authorization` header is missing, is not `Bearer <token>`, or carries a wrong token.
+    #[error("the Authorization header must be `Bearer <token>` with this launch's token")]
+    Bearer,
 }
 
 /// Accepts `127.0.0.1:<port>` and `localhost:<port>` (any letter case) and nothing else. A missing header,
@@ -49,6 +52,18 @@ pub fn check_host(host: Option<&str>, port: u16) -> Result<(), Refused> {
         Ok(())
     } else {
         Err(Refused::Host(shown, port))
+    }
+}
+
+/// Accepts `Authorization: Bearer <token>` with the launch's token and nothing else. The scheme name is not
+/// case sensitive (RFC 9110); the token is compared in constant time.
+pub fn check_bearer(authorization: Option<&str>, token: &str) -> Result<(), Refused> {
+    let value = authorization.ok_or(Refused::Bearer)?.trim();
+    let (scheme, given) = value.split_once(' ').ok_or(Refused::Bearer)?;
+    if scheme.eq_ignore_ascii_case("bearer") && tokens_match(given.trim(), token) {
+        Ok(())
+    } else {
+        Err(Refused::Bearer)
     }
 }
 
@@ -134,6 +149,27 @@ mod tests {
             assert!(check_origin(Some(bad), &own).is_err(), "{bad:?}");
         }
         assert!(check_origin(Some("https://drafft.ink"), &[]).is_err());
+    }
+
+    #[test]
+    fn bearer_must_carry_the_token() {
+        let t = "a".repeat(64);
+        for ok in [format!("Bearer {t}"), format!("bearer {t}"), format!("BEARER  {t} ")] {
+            assert!(check_bearer(Some(&ok), &t).is_ok(), "{ok:?}");
+        }
+        for bad in [
+            None,
+            Some(""),
+            Some("Bearer"),
+            Some("Bearer "),
+            Some(&t[..]),
+            Some("Basic YTph"),
+            Some("Bearer wrong"),
+            Some("Token aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"),
+        ] {
+            assert!(check_bearer(bad, &t).is_err(), "{bad:?}");
+        }
+        assert!(check_bearer(Some(&format!("Bearer {t}x")), &t).is_err());
     }
 
     #[test]

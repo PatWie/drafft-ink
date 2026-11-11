@@ -92,3 +92,18 @@ fn the_screen_follows_the_commands() -> Test {
     assert_eq!(num(&app.exec("doc.inspect", json!({}))?, "/elements")?, 1.0);
     Ok(())
 }
+
+#[test]
+fn an_agent_cannot_switch_on_the_http_door_and_no_http_door_is_open_by_default() -> Test {
+    let Some(mut app) = start_or_skip("an_agent_cannot_switch_on_the_http_door_and_no_http_door_is_open_by_default")?
+    else {
+        return Ok(());
+    };
+    let r = app.refusal("settings.set", json!({ "key": "agent.mcp_http", "value": true }))?;
+    assert_eq!(r.code, "bad_args");
+    assert!(r.message.contains("only be changed by the person at the app"), "{}", r.message);
+    let now = app.exec("settings.get", json!({ "key": "agent.mcp_http" }))?;
+    assert_eq!(now.pointer("/settings/agent.mcp_http"), Some(&json!(false)), "{now}");
+    assert!(!app.bridge_dir().join("mcp-http").exists(), "an app started with --bridge only has no HTTP token file");
+    Ok(())
+}

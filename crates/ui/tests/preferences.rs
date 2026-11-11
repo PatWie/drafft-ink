@@ -7,6 +7,7 @@ mod dialog;
 
 use common::Fixture;
 use drafftink_engine::Origin;
+use drafftink_ui::AgentServerView;
 use drafftink_ui::state::LayoutPreference;
 use drafftink_ui::{Call, Verb};
 use egui_kittest::Harness;
@@ -185,4 +186,41 @@ fn the_menu_opens_the_dialog_and_escape_closes_it() {
     assert!(h.state().state.modal_open());
     h.state_mut().state.close_overlays();
     assert!(!h.state().state.preferences_open);
+}
+
+fn open_with(view: Option<AgentServerView>) -> H {
+    let mut f = dialog::fixture();
+    f.model.agent_server = view;
+    f.state.apply_verb(Verb::OpenPreferences, &mut Vec::new());
+    let mut h = dialog::harness(f);
+    h.run();
+    h
+}
+
+#[test]
+fn the_web_has_no_agents_section() {
+    let h = open_with(None);
+    assert!(h.query_by_label("Serve MCP over HTTP").is_none());
+}
+
+#[test]
+fn the_desktop_switch_toggles_the_setting_and_shows_where_to_connect() {
+    let mut h = open_with(Some(AgentServerView::default()));
+    assert_eq!(setting(&h, "agent.mcp_http"), json!(false), "off by default");
+    press(&mut h, "Serve MCP over HTTP", "settings.toggle", json!({ "key": "agent.mcp_http" }));
+    assert_eq!(setting(&h, "agent.mcp_http"), json!(true));
+
+    h.state_mut().model.agent_server = Some(AgentServerView {
+        endpoint: Some("http://127.0.0.1:3737/mcp".to_owned()),
+        token_file: Some("/run/user/1000/drafftink/mcp-http/3737.token".to_owned()),
+        problem: None,
+    });
+    h.run();
+    assert!(h.query_by_label_contains("http://127.0.0.1:3737/mcp").is_some());
+    assert!(h.query_by_label_contains("3737.token").is_some());
+
+    h.state_mut().model.agent_server =
+        Some(AgentServerView { problem: Some("Port 3737 is in use.".to_owned()), ..AgentServerView::default() });
+    h.run();
+    assert!(h.query_by_label_contains("Port 3737 is in use.").is_some());
 }
