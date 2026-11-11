@@ -376,21 +376,7 @@ impl Drawing {
         let doc = &h.session.tab().doc;
         let touched = doc.take_touched();
         let store = doc.store();
-        let changes = drafftink_scene::ChangeSet {
-            revision: doc.revision(),
-            elements: touched
-                .into_iter()
-                .map(|id| drafftink_scene::Change {
-                    id,
-                    kind: drafftink_scene::ChangeKind::Updated,
-                    fields: drafftink_scene::Fields::all(),
-                    version: 0,
-                })
-                .collect(),
-            meta: false,
-            files: Vec::new(),
-        };
-        drafftink_render::update_paint_index(&mut self.index, store, &changes);
+        self.composer.follow_touched(&mut self.index, store, &touched);
         let Self { composer, index, scene, typesetter, view } = self;
         typesetter.with(|ts| composer.compose(store, index, view, ts, scene))
     }
@@ -441,5 +427,40 @@ fn the_drag_scenario_moves_its_selection_and_lays_nothing_out_again() {
             assert_eq!((now.w, now.h), (was.w, was.h), "{id} was moved and not resized at {n}");
             assert!(now.x > was.x && now.y > was.y, "{id} (element {k}) moved at {n}: {was:?} to {now:?}");
         }
+    }
+}
+
+#[test]
+fn dragging_in_a_view_of_the_whole_scene_orders_it_once() {
+    for &n in sizes() {
+        let mut h = loaded(n);
+        let mut d = Drawing::new(&mut h);
+        // Zoomed out so far that every element is in view: the frame needs the z order of the whole scene.
+        let side = scenegen::columns(n) as f64 * scenegen::CELL;
+        d.view = drafftink_render::View::fit(
+            drafftink_geom::kurbo::Rect::new(0.0, 0.0, side, side),
+            drafftink_geom::kurbo::Size::new(1600.0, 900.0),
+            10.0,
+        );
+        let first = WorkScope::begin();
+        d.compose(&mut h);
+        assert_eq!(first.count(Counter::ElementsScanned), n as u64, "the first frame orders the scene at {n}");
+        let ids: Vec<String> = (0..100).map(|k| format!("e{k}")).collect();
+        let frame = |k: f64| json!({ "ids": ids, "dx": 4.0 * k, "dy": 3.0 * k });
+        h.session.execute("gesture.begin", json!({ "command": "element.move", "args": frame(1.0) })).expect("begin");
+        let key = h.session.running_gesture().expect("a gesture runs").to_string();
+        let work = WorkScope::begin();
+        for k in 2..=11 {
+            h.session
+                .execute("gesture.update", json!({ "gesture": key, "args": frame(f64::from(k)) }))
+                .expect("update");
+            let rep = d.compose(&mut h);
+            assert_eq!(rep.in_view, n, "the whole scene is in view at {n}");
+        }
+        assert_eq!(work.count(Counter::ElementsScanned), 0, "ten drag frames at {n}: {}", work.summary());
+        h.session.execute("gesture.end", json!({})).expect("end");
+        let work = WorkScope::begin();
+        d.compose(&mut h);
+        assert_eq!(work.count(Counter::ElementsScanned), 0, "the frame after the drop at {n}: {}", work.summary());
     }
 }

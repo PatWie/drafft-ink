@@ -224,11 +224,56 @@ fn zoomed_out_frames_reuse_the_z_order_until_the_scene_changes() {
             w.compose(&fit(&w, 1.0 + f64::from(k) * 0.05));
         }
         assert_eq!(work.count(Counter::ElementsScanned), 0, "ten more frames at {n}: {}", work.summary());
-        // An edit changes the store: the next frame orders the scene again, and shows the change.
+        // An edit that keeps the z order (a colour, a move) patches the order from the change set: no pass.
         w.edit("e1", |e| e.style.stroke_color = Color::rgb(1, 2, 3));
         let work = WorkScope::begin();
         w.compose(&fit(&w, 1.0));
-        assert_eq!(work.count(Counter::ElementsScanned), n as u64, "after an edit at {n}");
+        assert_eq!(work.count(Counter::ElementsScanned), 0, "after a colour edit at {n}: {}", work.summary());
+        for k in 1..=5 {
+            w.edit("e2", |e| e.transform.x += 3.0 * f64::from(k));
+            let work = WorkScope::begin();
+            w.compose(&fit(&w, 1.0));
+            assert_eq!(work.count(Counter::ElementsScanned), 0, "after move {k} at {n}: {}", work.summary());
+        }
+        // A new z position, a new element or a removed one changes the order itself: the order is built again.
+        let top = w.store.top_z().unwrap();
+        let z = ZIndex::between(Some(&top), None).unwrap();
+        w.edit("e3", |e| e.index = z);
+        let work = WorkScope::begin();
+        w.compose(&fit(&w, 1.0));
+        assert_eq!(work.count(Counter::ElementsScanned), n as u64, "after a reorder at {n}");
+    }
+}
+
+/// The order and the bounds a patched composer draws are the ones a composer that starts from nothing draws.
+#[test]
+fn a_patched_order_draws_what_a_fresh_one_draws() {
+    let n = 1000;
+    let mut w = World::new(n);
+    w.composer.set_trace(true);
+    w.composer.set_options(RenderOptions { lod: LodConfig::OFF, ..RenderOptions::default() });
+    let v = fit(&w, 1.0);
+    w.compose(&v);
+    let fresh = |w: &World| {
+        let mut c = SceneComposer::new();
+        c.set_trace(true);
+        c.set_options(RenderOptions { lod: LodConfig::OFF, ..RenderOptions::default() });
+        let mut ts = Typesetter::new();
+        c.compose(&w.store, &w.index, &fit(w, 1.0), &mut ts, &mut Scene::new());
+        c.drawn_order().to_vec()
+    };
+    let far = w.side * 3.0;
+    type Step = (&'static str, fn(&mut Element, f64));
+    let steps: [Step; 4] = [
+        ("e10", |e, far| e.transform.x += far), // leaves the view
+        ("e11", |e, _| e.transform.y -= 20.0),  // stays in
+        ("e10", |e, far| e.transform.x -= far), // comes back
+        ("e12", |e, _| e.style.stroke_width += 1.0),
+    ];
+    for (k, (name, f)) in steps.into_iter().enumerate() {
+        w.edit(name, |e| f(e, far));
+        w.compose(&v);
+        assert_eq!(w.composer.drawn_order(), fresh(&w).as_slice(), "step {k}: {name}");
     }
 }
 
