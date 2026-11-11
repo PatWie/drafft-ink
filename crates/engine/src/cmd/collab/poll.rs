@@ -101,7 +101,8 @@ impl Session {
         self.ext.with::<CollabState, _>(CollabState::take_notices)
     }
 
-    pub(super) fn collab_notify(&mut self, notice: CollabNotice) {
+    /// Queues a notice for the UI (read with [`Session::take_collab_notices`]).
+    pub(crate) fn collab_notify(&mut self, notice: CollabNotice) {
         self.ext.with::<CollabState, _>(|c| c.notify(notice));
     }
 }

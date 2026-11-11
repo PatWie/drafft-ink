@@ -627,6 +627,21 @@ impl TabDoc {
         ChangeSet { revision: self.work.revision(), elements, meta: meta.is_some_and(|m| m != self.work.meta()), files }
     }
 
+    /// Ids of the elements the commits since `mark` touched, whether or not they differ from before.
+    pub fn touched_since(&self, mark: DocMark) -> BTreeSet<ElementId> {
+        self.journal.get(mark.0..).unwrap_or(&[]).iter().flat_map(Patch::touched).cloned().collect()
+    }
+
+    /// Copies `ids` from the replicated store into the working store, outside the journal: an element the replicated
+    /// store lacks is removed. For after a rollback that put back an older copy of an element a collaborator changed.
+    pub fn reload(&mut self, ids: &[ElementId]) -> Result<(), StoreError> {
+        let elements = ids
+            .iter()
+            .map(|id| Change { id: id.clone(), kind: ChangeKind::Updated, fields: Fields::all(), version: 0 })
+            .collect();
+        self.mirror(&ChangeSet { revision: self.work.revision(), elements, meta: false, files: Vec::new() })
+    }
+
     /// What the commits since `mark` did, without removing them.
     pub fn summary_since(&self, mark: DocMark) -> Summary {
         self.summarize(self.journal.get(mark.0..).unwrap_or(&[]))

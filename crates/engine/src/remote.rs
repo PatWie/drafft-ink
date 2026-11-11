@@ -9,7 +9,8 @@
 //! What it does besides:
 //!
 //! * raises the dirty reason, so the shell draws one frame;
-//! * drops from the selection, and from the point editor, what the update deleted;
+//! * drops from the selection, and from the point editor, what the update deleted, and cancels a running gesture
+//!   that was changing an element the update deleted (docs/protocol.md section 9);
 //! * writes one ring entry per received batch (`remote.apply`, origin `remote`, the counts as arguments), so
 //!   `engine.recent` shows that something arrived without listing every element;
 //! * does **not** run the command invariant pass ([`crate::invariants`]), which reads a command's journal; the
@@ -111,6 +112,7 @@ impl Session {
         if t.observed.linear_editor.as_ref().is_some_and(|l| gone.contains(&l.element)) {
             t.observed.linear_editor = None;
         }
+        self.cancel_gesture_on_removed(tab, &gone);
         self.mark_dirty(Redraw::Scene);
     }
 

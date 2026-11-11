@@ -508,3 +508,40 @@ proptest! {
         prop_assert!(binding::stale_arrows(truth).is_empty());
     }
 }
+
+#[test]
+fn a_gesture_on_an_element_a_peer_deleted_is_cancelled_and_the_delete_stands() {
+    let mut p = [peer("a", 1), peer("b", 2)];
+    let r = rect(&mut p[0], 0.0, 0.0);
+    let other = rect(&mut p[0], 300.0, 0.0);
+    let (a, b) = p.split_at_mut(1);
+    send(&a[0], &mut b[0]);
+    let g = run(&mut p[1], "gesture.begin", json!({"command": "element.move", "args": {"ids": [r], "dx": 5, "dy": 0}}));
+    let gid = g["gesture"].as_str().unwrap().to_owned();
+    run(&mut p[1], "gesture.update", json!({"gesture": gid, "args": {"ids": [r], "dx": 20, "dy": 0}}));
+    run(&mut p[0], "element.delete", json!({"ids": [r]}));
+    let (a, b) = p.split_at_mut(1);
+    send(&a[0], &mut b[0]);
+    assert!(p[1].running_gesture().is_none(), "the gesture on the deleted element is over");
+    let notices = p[1].take_collab_notices();
+    assert!(
+        matches!(&notices[..], [crate::cmd::collab::CollabNotice::Info(t)] if t.contains("Move was cancelled") && t.contains("deleted")),
+        "{notices:?}"
+    );
+    let refusal = p[1].execute("gesture.end", json!({"gesture": gid})).unwrap_err();
+    assert_eq!(refusal.code, "no_gesture");
+    settle(&mut p);
+    assert_converged_and_valid(&p);
+    assert!(element(&p[1], &r).deleted, "the collaborator's delete is not undone by the gesture");
+    assert_eq!(element(&p[1], &other).transform.x, 300.0);
+    assert!(p[1].ring().iter().any(|e| e.id == "gesture.cancel" && e.source == Origin::Remote));
+    // A gesture on something else goes on.
+    let g =
+        run(&mut p[1], "gesture.begin", json!({"command": "element.move", "args": {"ids": [other], "dx": 5, "dy": 0}}));
+    let gid = g["gesture"].as_str().unwrap().to_owned();
+    run(&mut p[0], "element.set_name", json!({"id": other, "name": "x"}));
+    let (a, b) = p.split_at_mut(1);
+    send(&a[0], &mut b[0]);
+    assert!(p[1].running_gesture().is_some());
+    run(&mut p[1], "gesture.end", json!({"gesture": gid}));
+}

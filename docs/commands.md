@@ -825,7 +825,7 @@ Local undo per peer, backed by Loro's `UndoManager`. See §1.8.
 
 ### 2.16 `collab`: rooms and presence
 
-Remote edits arrive through `Session::apply_remote` and the same document and CRDT path as local edits. They are not commands and are never undoable by this peer. The wire protocol is versioned and shared with the server (`protocol` crate). Commands only start work: they change the inputs of the collab client and never touch a socket. The shell supplies the transport through the `Net` port and calls `Session::collab_poll` (on a transport wake, at the time it asked for, and after commands), which moves the bytes, hands every local commit (undo and redo included: the poll compares `TabDoc::local_writes`) to the client and applies what the room sent. The connection state is read with `collab.status` or `Session::collab_view`.
+Remote edits arrive through `Session::apply_remote` and the same document and CRDT path as local edits. They are not commands and are never undoable by this peer. The engine repairs what a merge of two peers' edits leaves broken (docs/crdt.md section 10a); those writes are not undoable either. The wire protocol is versioned and shared with the server (`protocol` crate). Commands only start work: they change the inputs of the collab client and never touch a socket. The shell supplies the transport through the `Net` port and calls `Session::collab_poll` (on a transport wake, at the time it asked for, and after commands), which moves the bytes, hands every local commit (undo and redo included: the poll compares `TabDoc::local_writes`) to the client and applies what the room sent. The connection state is read with `collab.status` or `Session::collab_view`.
 
 | id | title | undo | keys | source |
 |---|---|---|---|---|

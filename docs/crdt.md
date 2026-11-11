@@ -2,7 +2,7 @@
 
 `LoroStore` is the Loro-backed implementation of the `SceneStore` trait from `drafftink-scene` (docs/model.md section 9). This page is the schema (what is stored where, and why), the rules of the store, and the trade-offs of history trimming. The wire protocol around it is `docs/protocol.md`. Builds for wasm32; no `unsafe`, `unwrap`, `expect` or `panic!` outside tests.
 
-Contents: 1 What the old code did and what replaces it, 2 Roots, 3 Element fields, 4 Choices that matter, 5 Z-order, 6 Deleting, 7 Meta and files, 8 Bad data from peers, 9 Transactions, 10 Remote updates, 11 Export, 12 Undo, 13 History and trimming, 14 Schema version and migrations, 15 Measurements, 16 Known limits.
+Contents: 1 What the old code did and what replaces it, 2 Roots, 3 Element fields, 4 Choices that matter, 5 Z-order, 6 Deleting, 7 Meta and files, 8 Bad data from peers, 9 Transactions, 10 Remote updates, 10a Repairing a merge, 11 Export, 12 Undo, 13 History and trimming, 14 Schema version and migrations, 15 Measurements, 16 Known limits.
 
 ## 1. What the old code did and what replaces it
 
@@ -144,6 +144,45 @@ Every peer is hostile. Rules, all tested in `tests/hostile.rs`:
 
 Work is proportional to the change. `tests/remote.rs` asserts it on a 3,000-element scene: one changed element means one decoded element (`WorkStats::elements_decoded == 1`, `full_rebuilds == 0`, and with the `profile` feature `Counter::SyncOpsApplied == 1`), five changed elements mean five, applying the same bytes twice decodes nothing, and the other 2,999 versions do not move.
 
+## 10a. Repairing a merge
+
+The store converges, but it does not know what the fields mean together. Two edits that are valid one after the other can merge into a scene that is not:
+
+| Race | Merged state | `validate_scene` |
+|---|---|---|
+| Peer A moves target 1 of an arrow, peer B moves target 2 | the arrow's points are A's or B's (one key), so one end is off its target | none (the arrow is just wrong) |
+| A binds an arrow end to a shape, B deletes the shape | binding to a tombstone | warning |
+| A hard-removes a shape (undo of its creation), B binds to it | binding to nothing | error |
+| A binds a text to a shape, B binds another text to it | two labels for one container | error |
+| A binds a text to a shape, B groups the text with something | a label in a group its container is not in | none, but `group.create` then fails |
+| A wraps a shape in a frame, B deletes the frame | child of a deleted frame | warning |
+| A and B nest groups differently | members disagree about the groups around a group | error |
+| A and B insert or move to the same spot | equal z-order keys, or a frame child above its frame, or a label below its container | warning |
+
+The doc crate leaves these alone on purpose: it is below the editor rules (L3), and a store that "fixed" fields would write on every import. The engine (L5) repairs them after a merge: `Session::apply_remote` and the collab glue (`mirror_remote`) call `Session::repair_merge` (`crates/engine/src/remote_repair.rs`), which calls the rules in `drafftink_edit::repair` and the solver of `drafftink_edit::binding`. It is not the command invariant pass (`invariants.rs`), which reads a command's journal; it reads the change set of the merge.
+
+**What it does**, in this order, each step in its own commit, on the elements the merge changed and the elements that refer to them (found through the derived index, so the cost follows the change):
+
+1. *References* (`dangling_references`). An arrow end bound to a missing, deleted or unattachable element is freed, and stays where it is (what `element.delete` does when one peer works alone). A label whose container is missing, deleted or cannot hold a label becomes free text; when several texts claim one container the smallest id keeps it (the rule `DerivedIndex::label_of` already applies when reading). A frame child whose frame is missing, deleted or not a frame leaves the frame. A label takes the frame and the groups of its container.
+2. *Groups* (`inconsistent_groups`). A group whose live members disagree about the groups around it is dissolved, smallest id first, and the check runs again until it holds. Dissolving removes the one id from the stacks. It never needs a tie-break by arrival.
+3. *Z-order* (`tied_order_keys`, `children_below_frame`, `labels_above_container`). Equal keys get distinct ones: the smallest id keeps the key and the others get keys between it and the next larger key, in id order, so nothing moves on screen. A frame child above its frame gets a key just below the frame, a label below its container a key just above it.
+4. *Arrows*. `binding::update_bound_arrows` solves the arrows bound to what changed, so an arrow whose targets two peers moved ends on both. Elbow arrows are routed again.
+5. *Labels* of the arrows step 4 moved are placed again, and a container that has to grow to hold its label is followed by its arrows (at most four rounds, as in `invariants.rs`).
+
+**Why peers do not answer each other for ever.** Each rule is a function of the merged scene alone: no clock, peer id, randomness or arrival order. So two peers that hold the same scene compute the same fix and write the same values. A Loro map key written twice with the same value from two peers is one value, and the store reports no change for it, so the second peer's write is not even an event for a third. A rule writes only what differs (arrow points are compared with a tolerance of 1e-9), so on a repaired scene every rule writes nothing: the pass is idempotent. A repair that loses a last-writer race to an older, concurrent value restores the violation the peer that lost sees, and that peer repairs again with a newer timestamp; each such round needs an operation the other side had not seen, and there are finitely many. The random test (below) asserts that after any number of concurrent commands and partial syncs, a full round of delivery makes nobody write.
+
+**Undo.** A repair is one Loro commit per step with a system origin (`sys:`), the same as loading: it syncs like any local write (`TabDoc::local_writes` counts it, the collab glue sends it), and is on no undo stack. Loro's undo manager rebases the peer's own steps over it, as over a collaborator's edit. What it cannot do is bring a binding back: if A deletes a shape while B binds an arrow to it, and A then undoes the delete, the shape returns and the arrow stays free. `TabDoc::repair` writes into the replicated store and copies the result into the working store outside the journal, so a running gesture or batch keeps its journal; a repair that touches an element the gesture is changing is overwritten in the working store like any remote edit (docs/engine.md, "Known limits").
+
+**Ring.** The merge is one `remote.apply` entry as before. A pass that wrote something adds a `remote.repair` entry with origin `remote` and the counts (`elements`, `ends_freed`, `labels_released`, `frame_children_released`, `label_groups_aligned`, `groups_dissolved`, `arrows_solved`); a pass that failed adds a refused entry. A repair never fails the update: the update is already in the document.
+
+**Who repairs.** A view-only session never writes, so it does not repair; the peers that can edit do, and the result reaches it. A document blocked by a newer schema is read-only and not repaired. A joiner repairs what it receives in one piece. The slices of a staged import (docs/collab.md, "Big rooms") are not repaired, because a slice shows only part of the room; the room it joins was repaired by its peers.
+
+**Not repaired**, because readers resolve it and the commands leave it too: a group with fewer than two live members (the stale id goes the next time a group command edits the element, and deleting one member and undoing must bring the group back) and duplicate names (`@name` queries report the ambiguity).
+
+**Gestures.** A running gesture that was changing an element the merge deleted or removed is cancelled with a notice (docs/protocol.md section 9). Ending it would write the copy from before the gesture over the collaborator's delete.
+
+**Tests.** `crates/edit/src/repair.rs` (group rules), `crates/engine/src/remote_repair_tests.rs`: the races of the table above as two-peer tests, an elbow arrow, ring entries, undo stack, view-only, and `random_concurrent_commands_on_three_peers_converge_to_a_valid_scene`: three sessions run random commands (create, connect, bind, unbind, move, resize, delete, group, ungroup, frame wrap/add/remove/unwrap, text bind/unbind, undo, redo) with random partial syncs, then settle, and the test asserts equal scenes, a working store equal to the CRDT, `validate_scene` with no error and no warning but the two above, arrows on their targets (`stale_arrows`), and no writes in the last round. `one_peer_alone_is_valid_after_any_commands` is its baseline without a merge. `crates/doc/tests/converge.rs` has the same operations on the bare store (groups, bindings, frames, arrow points, undo, redo) and asserts convergence and valid elements; the relations are the engine's.
+
 ## 11. Export
 
 | Call | Content | Use |
@@ -232,6 +271,8 @@ A local edit and a remote edit cost the same at 1k and 100k: the work is indepen
 - **Undo and a later overwrite of the same field.** If a peer writes the same key after your edit and you then undo, your undo writes the old value back, because it is a newer write. Other keys and other elements are never touched. A "skip fields that a peer changed since" rule would need per-key authorship (`get_last_editor`) and is not implemented.
 - **Same-key concurrent edits** (two people drag the same element at once, edit the same vertex, or retype the same style field) keep one of the two. This is true of every last-writer-wins field.
 - **Hard removal races with edits** and removal wins (section 6). Commands use tombstones.
+- **A repair does not restore what it freed.** A binding freed because its target was deleted is not bound again when the delete is undone (section 10a).
+- **Label geometry after concurrent edits of a shape and its label text** is not laid out again until the next local edit of either; arrows and their labels are (section 10a).
 - **A trimmed document cannot keep local undo** (section 13).
 - **No collection of unused blobs or old tombstones.**
 - **Read cost**: opening a very large document decodes every element once.
