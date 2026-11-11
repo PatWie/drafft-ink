@@ -114,6 +114,7 @@ pub async fn platform(opts: WebOptions) -> Result<WebPlatform, WebError> {
         host: Box::new(WebHost),
         wake,
         clipboard,
+        typesetter: drafftink_engine::services::LazyTypesetter::shared(),
         bridge: Some(bridge),
         is_mac: opts.is_mac,
     };
