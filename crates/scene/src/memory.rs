@@ -199,7 +199,7 @@ impl SceneRead for MemoryTx<'_> {
     }
     fn derived_index(&self) -> Option<&DerivedIndex> {
         // The index follows commits, so it is exact only while this transaction has written no element.
-        self.touched.is_empty().then(|| &self.store.derived)
+        self.touched.is_empty().then_some(&self.store.derived)
     }
 }
 
