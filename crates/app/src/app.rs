@@ -657,20 +657,13 @@ impl App {
     }
 
     fn handle_files_dropped(&mut self, files: Vec<DroppedFile>) -> Repaint {
-        use base64::Engine as _;
-        let items: Vec<Value> = files
-            .iter()
-            .map(|f| {
-                let b64 = base64::engine::general_purpose::STANDARD.encode(&f.bytes);
-                let mime = (!f.mime.is_empty()).then_some(f.mime.as_str());
-                json!({ "name": f.name, "bytes": { "base64": b64, "name": f.name, "mime": mime }, "mime": mime })
-            })
-            .collect();
-        let at = self.pointer_world().map(|p| json!({ "x": p.x, "y": p.y }));
-        let mut args = json!({ "items": items });
-        if let (Some(at), Some(map)) = (at, args.as_object_mut()) {
-            map.insert("at".to_owned(), at);
-        }
+        let pointer = self.pointer_world();
+        self.drop_files_at(&files, pointer)
+    }
+
+    /// Opens, inserts or imports dropped files with `doc.drop`; `pointer` is where the drop happened, if known.
+    fn drop_files_at(&mut self, files: &[DroppedFile], pointer: Option<Point>) -> Repaint {
+        let args = crate::drop::drop_args(files, pointer);
         self.run(Origin::Ui, "doc.drop", args);
         Repaint::Now(RedrawReason::Load)
     }
@@ -1167,3 +1160,7 @@ mod collab_poll_tests;
 #[cfg(test)]
 #[path = "app/export_tests.rs"]
 mod export_tests;
+
+#[cfg(test)]
+#[path = "app/drop_tests.rs"]
+mod drop_tests;
