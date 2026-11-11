@@ -149,3 +149,25 @@ fn it_does_not_run_the_invariant_pass_and_does_not_need_the_active_tab() {
     assert!(b.tab_by_id(second).unwrap().doc.undo_depth() == 0);
     let _ = json!(null);
 }
+
+#[test]
+fn a_remote_update_that_reverts_an_edit_brings_the_tab_back_to_clean() {
+    let mut a = peer();
+    let mut b = peer();
+    let id = testing::add_rect(&mut a, 5.0, 6.0, 70.0, 80.0).unwrap();
+    let bytes = update_for(&a, &b);
+    b.apply_remote(tab_of(&b), &bytes).unwrap();
+    b.tab_mut().mark_saved();
+    assert!(!b.tab().dirty());
+    // The peer moves the rectangle away: this tab differs from what it saved.
+    step(&mut a, "Move", |tx| tx.update(&id, |e| e.transform.x = 100.0));
+    let bytes = update_for(&a, &b);
+    b.apply_remote(tab_of(&b), &bytes).unwrap();
+    assert!(b.tab().dirty(), "the remote edit changed the content");
+    // The peer moves it back: new revisions, saved content. No undo of this tab is involved.
+    step(&mut a, "Move back", |tx| tx.update(&id, |e| e.transform.x = 5.0));
+    let bytes = update_for(&a, &b);
+    b.apply_remote(tab_of(&b), &bytes).unwrap();
+    assert_eq!(b.tab().doc.undo_depth(), 0);
+    assert!(!b.tab().dirty(), "the content is the saved content again");
+}

@@ -12,6 +12,7 @@ use crate::cmd::tab::workspace::{INDEX_KEY, TAB_KEY_PREFIX};
 use crate::ports::{FileRef, Ns, PortKind, PortWrite};
 use crate::refusal::{Refusal, echo};
 use crate::session::Session;
+use crate::state::Tab;
 
 /// The name under which `{stored: "autosave"}` reads the last autosave (the active tab of the workspace record).
 pub const AUTOSAVE_NAME: &str = "autosave";
@@ -52,11 +53,11 @@ pub enum Provenance {
 }
 
 impl Provenance {
-    /// The value for `Tab::saved_revision` of a document just loaded at `revision`.
-    pub fn saved_revision(self, revision: u64) -> u64 {
+    /// Sets what the tab counts as saved, for a document just loaded into it.
+    pub fn mark(self, tab: &mut Tab) {
         match self {
-            Self::Clean => revision,
-            Self::Autosave => NEVER_SAVED,
+            Self::Clean => tab.mark_saved(),
+            Self::Autosave => tab.saved_revision = NEVER_SAVED,
         }
     }
 }

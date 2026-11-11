@@ -162,7 +162,7 @@ impl Session {
     /// a recent file. A tab that was closed meanwhile is left alone.
     fn apply_saved(&mut self, done: &SaveDone) {
         let Some(t) = self.tab_by_id_mut(done.tab) else { return };
-        t.saved_revision = done.revision;
+        t.mark_saved_as(done.revision, done.print);
         if done.remember && !matches!(done.target, crate::ports::FileRef::Download { .. }) {
             t.ext.set(files::SaveTarget(Some(done.target.clone())));
         }

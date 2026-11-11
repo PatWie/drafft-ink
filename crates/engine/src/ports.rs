@@ -415,6 +415,8 @@ pub(crate) struct SaveDone {
     pub tab: TabId,
     /// The revision of the document that was written.
     pub revision: u64,
+    /// The content of that revision.
+    pub print: crate::fingerprint::Fingerprint,
     /// Where it was written.
     pub target: FileRef,
     /// Make `target` the save target and a recent file.

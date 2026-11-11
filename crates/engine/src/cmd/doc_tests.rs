@@ -793,6 +793,44 @@ fn save_writes_the_document_marks_it_saved_and_remembers_the_target() {
     assert_eq!(live(&b), 3);
 }
 
+#[test]
+fn any_path_back_to_the_saved_content_reads_clean_not_only_undo() {
+    let (mut s, _f) = drawn(2);
+    run(&mut s, "doc.save", json!({"to": {"path": "/work/plan.json"}}));
+    assert!(!s.tab().dirty());
+    let first = s.store().iter().next().unwrap().id.clone();
+    let before = s.tab().doc.revision();
+    // The same edit made again by hand: move away and move back. No undo step is taken.
+    run(&mut s, "element.move", json!({"ids": [first.clone()], "dx": 25, "dy": 0}));
+    assert!(s.tab().dirty());
+    run(&mut s, "element.move", json!({"ids": [first.clone()], "dx": -25, "dy": 0}));
+    assert_ne!(s.tab().doc.revision(), before, "the document went through new revisions");
+    assert!(!s.tab().dirty(), "the content is the saved content");
+    // A different move that does not come back stays dirty, and so does a rename; renaming back is clean.
+    run(&mut s, "element.move", json!({"ids": [first], "dx": 3, "dy": 0}));
+    assert!(s.tab().dirty());
+    run(&mut s, "history.undo", json!({}));
+    assert!(!s.tab().dirty());
+    let old = name(&s);
+    run(&mut s, "doc.rename", json!({"name": "Another"}));
+    assert!(s.tab().dirty());
+    run(&mut s, "doc.rename", json!({"name": old}));
+    assert!(!s.tab().dirty());
+}
+
+#[test]
+fn moving_away_and_back_gives_the_same_fingerprint_though_the_version_counter_differs() {
+    let (mut s, _f) = drawn(1);
+    run(&mut s, "doc.save", json!({"to": {"path": "/work/plan.json"}}));
+    let id = s.store().iter().next().unwrap().id.clone();
+    // Each move raises the element version; the version is not content.
+    let print = s.tab().doc.fingerprint();
+    run(&mut s, "element.move", json!({"ids": [id.clone()], "dx": 1, "dy": 0}));
+    assert_ne!(s.tab().doc.fingerprint(), print, "moving changes the fingerprint");
+    run(&mut s, "element.move", json!({"ids": [id], "dx": -1, "dy": 0}));
+    assert_eq!(s.tab().doc.fingerprint(), print, "the version counter is not content");
+}
+
 /// A files port whose writes fail.
 struct BrokenFiles;
 

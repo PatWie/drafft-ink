@@ -21,6 +21,7 @@ pub mod args;
 pub mod batch;
 pub mod cmd;
 mod executor;
+mod fingerprint;
 pub mod gesture;
 pub mod interact;
 mod invariants;
@@ -55,6 +56,7 @@ mod registry_tests;
 mod snap_tests;
 
 pub use batch::{BatchFailure, BatchOpts, BatchOutput, BatchStep};
+pub use fingerprint::Fingerprint;
 pub use gesture::GestureId;
 pub use ports::{PortError, Ports};
 pub use refusal::{Refusal, Suggestion};

@@ -149,8 +149,8 @@ pub(crate) fn tab_from(s: &mut Session, id: &str, doc: &Document) -> Result<Tab,
     let td = TabDoc::from_document(doc).map_err(|e| Refusal::internal(id, format!("building the tab failed: {e}")))?;
     let tid = s.alloc_tab_id();
     let mut t = Tab::new(tid);
-    t.saved_revision = td.revision();
     t.doc = td;
+    t.mark_saved();
     Ok(t)
 }
 

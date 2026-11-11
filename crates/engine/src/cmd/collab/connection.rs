@@ -143,7 +143,7 @@ fn discard_local(s: &mut Session) {
     let t = s.tab_mut();
     t.doc = TabDoc::new();
     t.observed = Observed::default();
-    t.saved_revision = t.doc.revision();
+    t.mark_saved();
 }
 
 /// Ends the running room: sends what is still waiting, says goodbye, closes, and unbinds the tab. Returns the

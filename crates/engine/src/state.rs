@@ -13,6 +13,7 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
+use crate::fingerprint::Fingerprint;
 use crate::store::TabDoc;
 
 /// Zoom that the UI shows as 100% (`zoom / BASE_ZOOM * 100`).
@@ -370,10 +371,22 @@ pub struct Tab {
     pub observed: Observed,
     /// Camera.
     pub view: View,
-    /// Store revision at the last save or open. The document is dirty when the revision differs.
+    /// Store revision at the last save or open. The document is dirty when the revision differs, unless the
+    /// content is the saved content (`saved_content`).
     pub saved_revision: u64,
+    /// The content at `saved_revision`, set by [`Tab::mark_saved`]. It is trusted only while its revision is
+    /// `saved_revision`, so code that sets that field alone (a document that was never saved) is never
+    /// contradicted by an old fingerprint.
+    saved_content: Option<SavedContent>,
     /// Family-private per-tab state (save target, room, ...).
     pub ext: Extensions,
+}
+
+/// The content of a tab at the revision it was saved.
+#[derive(Debug, Clone, Copy)]
+struct SavedContent {
+    revision: u64,
+    print: Fingerprint,
 }
 
 impl Tab {
@@ -385,12 +398,33 @@ impl Tab {
             observed: Observed::default(),
             view: View::default(),
             saved_revision: 0,
+            saved_content: None,
             ext: Extensions::default(),
         }
     }
 
-    /// True when the content differs from what was saved or opened. Undoing back to the saved state is clean.
+    /// True when the content differs from what was saved or opened. Undoing back to the saved state is clean, and
+    /// so is any other path back to the saved content: a remote update that reverts an edit, or the same edit
+    /// made again by hand.
     pub fn dirty(&self) -> bool {
-        !self.doc.same_content(self.doc.revision(), self.saved_revision)
+        if self.doc.same_content(self.doc.revision(), self.saved_revision) {
+            return false;
+        }
+        match self.saved_content {
+            Some(saved) if saved.revision == self.saved_revision => self.doc.fingerprint() != saved.print,
+            _ => true,
+        }
+    }
+
+    /// Records the document as it is now as the saved one.
+    pub fn mark_saved(&mut self) {
+        self.mark_saved_as(self.doc.revision(), self.doc.fingerprint());
+    }
+
+    /// Records `revision` with its content `print` as the saved state: the write of a save that started at that
+    /// revision has ended, and the document may have changed since.
+    pub(crate) fn mark_saved_as(&mut self, revision: u64, print: Fingerprint) {
+        self.saved_revision = revision;
+        self.saved_content = Some(SavedContent { revision, print });
     }
 }

@@ -35,6 +35,7 @@ use drafftink_scene::{
     MemoryStore, SceneRead, SceneStore, SceneTx, StoreError, ZIndex,
 };
 
+use crate::fingerprint::{Feed, Fingerprint, Tracker};
 use crate::state::Observed;
 
 /// The replicated store behind a tab: the CRDT truth, undo history and sync.
@@ -262,6 +263,10 @@ pub struct TabDoc {
     outside_touched: TouchedFeed,
     /// The spatial index, built on first use and kept current from `touched`.
     scene_index: RefCell<IndexCache>,
+    /// What the working store changed since the content fingerprint caught up.
+    print_feed: Feed,
+    /// The hashes behind [`TabDoc::fingerprint`].
+    print: RefCell<Tracker>,
 }
 
 /// The logical revisions around one undo step.
@@ -331,10 +336,13 @@ impl TabDoc {
     fn assemble(mut work: WorkStore, loro: DocStore) -> Self {
         let touched = TouchedFeed::default();
         let outside_touched = TouchedFeed::default();
-        let (feed, outside_feed) = (Rc::clone(&touched), Rc::clone(&outside_touched));
+        let print_feed = Feed::default();
+        let (feed, outside_feed, print_sink) =
+            (Rc::clone(&touched), Rc::clone(&outside_touched), Rc::clone(&print_feed));
         work.subscribe(Box::new(move |cs| {
             feed.borrow_mut().extend(cs.ids().cloned());
             outside_feed.borrow_mut().extend(cs.ids().cloned());
+            print_sink.borrow_mut().record(cs);
         }));
         Self {
             work,
@@ -350,6 +358,20 @@ impl TabDoc {
             touched,
             outside_touched,
             scene_index: RefCell::default(),
+            print_feed,
+            print: RefCell::default(),
+        }
+    }
+
+    /// The fingerprint of the content now: elements, name, background and file ids, whatever path led here. Two
+    /// states with the same content have the same fingerprint, so a document that came back to what was saved
+    /// (a remote update that reverts an edit, the same edit made again) reads as unchanged. The first call reads
+    /// the whole scene; later calls cost what changed since the previous one.
+    pub fn fingerprint(&self) -> Fingerprint {
+        match self.print.try_borrow_mut() {
+            Ok(mut tracker) => tracker.print(&self.work, &self.print_feed),
+            // Called from inside itself, which cannot happen; a fingerprint nothing equals reads as changed.
+            Err(_) => Fingerprint::default(),
         }
     }
 

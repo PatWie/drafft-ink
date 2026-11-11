@@ -175,8 +175,8 @@ impl App {
         match drafftink_engine::store::TabDoc::from_document(&doc) {
             Ok(td) => {
                 let tab = self.session.tab_mut();
-                tab.saved_revision = td.revision();
                 tab.doc = td;
+                tab.mark_saved();
                 tab.observed = drafftink_engine::state::Observed::default();
                 self.canvas.forget_index();
                 let scroll = match look {
