@@ -188,7 +188,7 @@ test.describe("real pointer input", () => {
     expect(undone.runs).toEqual([]);
   });
 
-  test("the pointer is an I-beam over text and over an editable label, and an arrow elsewhere", async ({ app }) => {
+  test("the pointer moves text like any element, and is an I-beam only with the text tool", async ({ app }) => {
     const cursor = async (at: { x: number; y: number }) => {
       await app.page.mouse.move(at.x - 8, at.y - 8);
       await app.page.mouse.move(at.x, at.y, { steps: 4 });
@@ -202,15 +202,16 @@ test.describe("real pointer input", () => {
     const inShape = await app.toPage({ x: 780, y: 350 });
     const empty = await app.toPage({ x: 1000, y: 600 });
 
-    expect(await cursor(inText), "over text").toBe("text");
+    expect(await cursor(inText), "over text with the select tool: it moves").toBe("move");
     expect(await cursor(inShape), "over a shape with the select tool: it moves").toBe("move");
     expect(await cursor(empty), "over nothing: the browser's arrow").toBe("auto");
     const labelled = await box(app, 700, 450, 160, 100, { fill: "#ffd8a8" });
     await app.exec("text.set", { id: labelled, text: "Label" });
     await app.exec("selection.clear");
-    expect(await cursor(await app.toPage({ x: 780, y: 500 })), "over the label of a shape").toBe("text");
+    expect(await cursor(await app.toPage({ x: 780, y: 500 })), "over the label of a shape: it moves").toBe("move");
     expect(await cursor(await app.toPage({ x: 708, y: 458 })), "over the shape beside its label").toBe("move");
     await app.pressToolKey(empty, "t", "text");
+    expect(await cursor(inText), "with the text tool a text is edited").toBe("text");
     expect(await cursor(inShape), "with the text tool a shape takes a label").toBe("text");
     expect(await cursor(empty), "and empty canvas takes a new text").toBe("text");
     await app.exec("tool.set", { tool: "select" });
