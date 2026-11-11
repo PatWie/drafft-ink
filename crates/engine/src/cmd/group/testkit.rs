@@ -43,7 +43,7 @@ pub(crate) fn add_kind(s: &mut Session, id: &str, kind: ElementKind, x: f64, y: 
     let id = ElementId::new(id).unwrap();
     let ret = id.clone();
     setup(s, |tx| {
-        let z = tx.next_top_index().map_err(|e| StoreError::backend(e))?;
+        let z = tx.next_top_index().map_err(StoreError::backend)?;
         let mut e = Element::new(id, kind, z);
         e.transform = drafftink_scene::Transform::new(x, y, w, h);
         tx.insert(e)

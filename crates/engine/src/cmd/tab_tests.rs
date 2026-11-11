@@ -51,7 +51,7 @@ fn add(s: &mut Session, a: AddArgs) -> Result<Value, Refusal> {
     s.tab_mut()
         .doc
         .edit::<(), StoreError>(|tx| {
-            let z = tx.next_top_index().map_err(|e| StoreError::backend(e))?;
+            let z = tx.next_top_index().map_err(StoreError::backend)?;
             let mut e = Element::new(id, ElementKind::Rectangle, z);
             e.transform = Transform::new(a.x, 0.0, 10.0, 10.0);
             tx.insert(e)

@@ -289,7 +289,7 @@ pub fn insert_fragment<T: SceneTx, I: IdSource + ?Sized>(
         {
             outer.push(g.clone());
         }
-        c.index = tx.next_top_index().map_err(|e| StoreError::backend(e))?;
+        c.index = tx.next_top_index().map_err(StoreError::backend)?;
         tx.insert(c)?;
     }
     // Bindings between copies point at copies; a binding to something outside the fragment is cut.

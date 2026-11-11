@@ -799,7 +799,7 @@ impl TabDoc {
         let mut out = UndoOutcome { labels: Vec::new(), observed: None, touched: Vec::new() };
         while out.labels.len() < n {
             let before_rev = self.revision();
-            let step = if undo { self.loro.undo() } else { self.loro.redo() }.map_err(|e| StoreError::backend(e))?;
+            let step = if undo { self.loro.undo() } else { self.loro.redo() }.map_err(StoreError::backend)?;
             let Some(step) = step else { break };
             self.local_writes += 1;
             self.mirror(&step.changes)?;
