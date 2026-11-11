@@ -26,22 +26,42 @@ fn trace_is_included_on_request() {
 
 #[test]
 fn last_call_reports_only_what_happened_since_the_previous_call() {
+    // Other tests of this process count commands too: this session reads its own thread only, so the
+    // numbers below are exact however many tests run in parallel.
     let mut s = testing::headless_session();
+    s.count_this_thread_only();
+    let count = |v: &Value| v["counters"]["commands"].as_u64().unwrap();
     s.execute("perf.stats", json!({})).unwrap();
     for _ in 0..5 {
         s.execute("view.get", json!({})).unwrap();
     }
     let delta = s.execute("perf.stats", json!({"since": "last_call"})).unwrap();
-    let all = s.execute("perf.stats", json!({"since": "start"})).unwrap();
-    let count = |v: &Value| v["counters"]["commands"].as_u64().unwrap();
-    // Other tests in this process also count commands, so compare the shape of the relation only: the
-    // delta saw at least our five calls (plus the previous perf.stats), and it never exceeds the total.
-    assert!(count(&delta) >= 6, "{}", count(&delta));
-    assert!(count(&delta) <= count(&all));
+    // The five view.get calls and the first perf.stats call.
+    assert_eq!(count(&delta), 6);
     assert_eq!(delta["since"], "last_call");
-    // A second delta right away sees (almost) nothing of ours.
+    let all = s.execute("perf.stats", json!({"since": "start"})).unwrap();
+    assert_eq!(count(&all), 8, "start: first perf.stats, 5 view.get, the last_call perf.stats, itself");
+    // A second delta right away sees the one call that happened in between: the `since=start` call.
     let again = s.execute("perf.stats", json!({"since": "last_call"})).unwrap();
-    assert!(count(&again) < count(&delta) || count(&delta) < 20);
+    assert_eq!(count(&again), 2, "the since=start call and the one before this");
+}
+
+#[test]
+fn one_sessions_commands_do_not_show_in_another_threads_report() {
+    let mut s = testing::headless_session();
+    s.count_this_thread_only();
+    let count = |v: &Value| v["counters"]["commands"].as_u64().unwrap();
+    s.execute("perf.stats", json!({})).unwrap();
+    std::thread::spawn(|| {
+        let mut other = testing::headless_session();
+        for _ in 0..10 {
+            other.execute("view.get", json!({})).unwrap();
+        }
+    })
+    .join()
+    .unwrap();
+    let delta = s.execute("perf.stats", json!({"since": "last_call"})).unwrap();
+    assert_eq!(count(&delta), 1, "only the first perf.stats call of this thread");
 }
 
 #[test]

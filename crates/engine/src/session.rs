@@ -95,11 +95,29 @@ pub struct Session {
     pub(crate) run: RunState,
     pub(crate) dirty: Dirty,
     pub(crate) perf_mark: Option<PerfStats>,
+    /// Whether `perf.stats` reads the whole process or the calling thread.
+    pub(crate) perf_scope: PerfScope,
     /// Document writes that the files port will finish later, with what to do when each is confirmed.
     pub(crate) saves: Vec<(WriteToken, SaveDone)>,
 }
 
+/// Which counters `perf.stats` reports.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum PerfScope {
+    /// Everything the process counted.
+    Process,
+    /// What the thread that calls `perf.stats` counted.
+    Thread,
+}
+
 impl Session {
+    /// Makes `perf.stats` report the work of the calling thread only. Many sessions that share a process (a
+    /// test suite, the testkit) otherwise add their counters to the same process-wide totals, so a session
+    /// could not tell its own work from the others'. The shell of an app leaves the default.
+    pub fn count_this_thread_only(&mut self) {
+        self.perf_scope = PerfScope::Thread;
+    }
+
     /// A session with one empty tab over the global registry.
     pub fn new(ports: Ports) -> Self {
         Self::with_registry(ports, Registry::global())
@@ -126,6 +144,7 @@ impl Session {
             run: RunState::default(),
             dirty: Dirty::default(),
             perf_mark: None,
+            perf_scope: PerfScope::Process,
             saves: Vec::new(),
         }
     }

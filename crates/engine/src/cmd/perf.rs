@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use crate::refusal::Refusal;
-use crate::session::Session;
+use crate::session::{PerfScope, Session};
 use crate::spec::{CommandSpec, Facts, Typed};
 
 /// What `perf.stats` reports.
@@ -40,7 +40,10 @@ impl Default for StatsArgs {
 pub type StatsOut = Value;
 
 fn stats(s: &mut Session, a: StatsArgs) -> Result<StatsOut, Refusal> {
-    let now = drafftink_profile::snapshot();
+    let now = match s.perf_scope {
+        PerfScope::Process => drafftink_profile::snapshot(),
+        PerfScope::Thread => drafftink_profile::snapshot_thread(),
+    };
     let report = match (a.since, s.perf_mark.as_ref()) {
         (Since::LastCall, Some(prev)) => delta(&now, prev),
         _ => now.clone(),
