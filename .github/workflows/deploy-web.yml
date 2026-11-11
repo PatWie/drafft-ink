@@ -1,0 +1,68 @@
+# Deploy the web app to https://drafft.ink/ (the GitHub Pages repo drafft-ink/demo).
+# Every push to main builds the web app as the release job does (scripts/build-web.sh with wasm-opt) and pushes
+# dist/ to drafft-ink/demo as one commit. The demo repo keeps its CNAME; everything else is replaced.
+# Needs the secret DEMO_DEPLOY_KEY: the private half of a deploy key with write access on drafft-ink/demo only.
+name: Deploy web
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# One deploy at a time; a newer push replaces a waiting one.
+concurrency:
+  group: deploy-web
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: 0
+  # Must equal rust-toolchain.toml, as in release.yml.
+  RUST_TOOLCHAIN: "1.97.1"
+  WASM_BINDGEN_VERSION: "0.2.130"
+  BINARYEN_VERSION: "133"
+
+jobs:
+  deploy:
+    name: Build and deploy
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ env.RUST_TOOLCHAIN }}
+          targets: wasm32-unknown-unknown
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: deploy-web
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: wasm-bindgen@${{ env.WASM_BINDGEN_VERSION }}
+      - name: Install binaryen and brotli
+        run: |
+          sudo apt-get update && sudo apt-get install -y brotli
+          curl -fsSL "https://github.com/WebAssembly/binaryen/releases/download/version_${BINARYEN_VERSION}/binaryen-version_${BINARYEN_VERSION}-x86_64-linux.tar.gz" | tar -xz -C "$RUNNER_TEMP"
+          echo "$RUNNER_TEMP/binaryen-version_${BINARYEN_VERSION}/bin" >> "$GITHUB_PATH"
+      - run: scripts/build-web.sh
+      - name: Check out the demo repo
+        uses: actions/checkout@v4
+        with:
+          repository: drafft-ink/demo
+          ssh-key: ${{ secrets.DEMO_DEPLOY_KEY }}
+          path: demo
+          persist-credentials: true
+      - name: Push the build
+        working-directory: demo
+        run: |
+          rsync -a --delete --exclude .git --exclude CNAME ../dist/ ./
+          git add -A
+          if git diff --cached --quiet; then
+            echo "The build is unchanged; nothing to deploy."
+            exit 0
+          fi
+          git -c user.name="github-actions[bot]" -c user.email="41898282+github-actions[bot]@users.noreply.github.com" \
+            commit -q -m "deploy: web build ${GITHUB_SHA::12}" -m "From ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/commit/${GITHUB_SHA}"
+          git push origin HEAD:main
