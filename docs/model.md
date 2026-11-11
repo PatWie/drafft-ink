@@ -188,7 +188,7 @@ Old = `docs/formats.md` section 1 (commit `8ce40ab`). The migration itself belon
 | `Text.position` | `transform.x, y` | Size measured by `typeset` (not stored in the old file). |
 | `.content` | `content` | |
 | `.font_size` | `font.size` | |
-| `.font_family` GelPen, NotoSans, GelPenSerif, VanillaExtract | `font.family` | |
+| `.font_family` GelPen, NotoSans, GelPenSerif, VanillaExtract | `font.family` | The old app has these four. The new model adds `plex_sans` (IBM Plex Sans); old documents never name it. |
 | `.font_weight` Light, Regular, Heavy | `font.weight` | |
 | `.char_colors` (per scalar value, null = default, any length) | `runs` | `TextData::runs_from_char_colors` merges, pads and truncates. |
 | `Math.position` (baseline origin) | `transform.x, y` | `io` converts the baseline to the box top once the formula is laid out. |

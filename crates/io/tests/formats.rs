@@ -628,3 +628,46 @@ fn svg_inline_math_without_a_formula_engine_writes_the_source() {
     let svg = export_svg(&d, &SvgOptions::default(), &EstimateMeasure, None).unwrap();
     assert!(svg.contains("Energy $E = mc^2$ here"));
 }
+
+fn plex_document() -> Document {
+    let mut d = Document::new();
+    let mut keys = ZIndex::rebalance(3).unwrap().into_iter();
+    for (id, weight) in [("light", FontWeight::Light), ("regular", FontWeight::Regular), ("heavy", FontWeight::Heavy)] {
+        let mut t = TextData::new("Plex");
+        t.font.family = FontFamily::PlexSans;
+        t.font.weight = weight;
+        d.elements
+            .push(Element::new(eid(id), ElementKind::Text(t), keys.next().unwrap()).with_bounds(0.0, 0.0, 60.0, 25.0));
+    }
+    d
+}
+
+#[test]
+fn a_document_in_plex_sans_round_trips_the_native_file_and_names_the_family_by_its_word() {
+    let d = plex_document();
+    let text = native::save(&d).unwrap();
+    assert!(text.contains("\"plex_sans\""), "{text}");
+    assert_eq!(native::load(&text).unwrap(), d);
+    assert_eq!(native::load(&native::save_pretty(&d).unwrap()).unwrap(), d);
+}
+
+#[test]
+fn svg_names_plex_sans_and_embeds_its_one_variable_file_for_the_weights_used() {
+    let d = plex_document();
+    let fonts = vec![face(FontFamily::PlexSans, FontWeight::Regular, &[7, 7])];
+    let svg = export_svg(&d, &SvgOptions { fonts, ..SvgOptions::default() }, &EstimateMeasure, None).unwrap();
+    assert!(
+        svg.contains("<text font-family=\"&apos;IBM Plex Sans&apos;, &apos;Helvetica Neue&apos;, Arial, sans-serif\""),
+        "{svg}"
+    );
+    // Light, regular and heavy are each declared, all from the one file.
+    for weight in [300, 400, 700] {
+        assert!(
+            svg.contains(&format!(
+                "@font-face{{font-family:'IBM Plex Sans';font-weight:{weight};src:url(data:font/ttf;base64,Bwc="
+            )),
+            "{weight}: {svg}"
+        );
+    }
+    parse(&svg);
+}

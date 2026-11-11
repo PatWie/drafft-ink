@@ -688,8 +688,11 @@ export namespace ClipboardCopyStyle {
   type O_ColorArg = string;
   /** How a filled area is painted. The fill colour itself is `Style::fill_color`; `None` there means no fill. */
   type O_FillPattern = "solid" | "hachure" | "zigzag" | "cross_hatch" | "dots" | "dashed" | "zigzag_line";
-  /** Font family. `GelPen`, `GelPenSerif` and `VanillaExtract` ship with the app; `NotoSans` is the old fallback. */
-  type O_FontFamily = "gelpen" | "noto_sans" | "gelpen_serif" | "vanilla_extract";
+  /**
+   * Font family. `GelPen`, `GelPenSerif`, `VanillaExtract` and `PlexSans` ship with the app; `NotoSans` is the old
+   * fallback.
+   */
+  type O_FontFamily = "gelpen" | "noto_sans" | "gelpen_serif" | "vanilla_extract" | "plex_sans";
   /** Font weight. */
   type O_FontWeight = "light" | "regular" | "heavy";
   /** The kind tag without data. */
@@ -708,7 +711,7 @@ export namespace ClipboardCopyStyle {
     fill_color?: O_ColorArg | null;
     /** How the fill is painted: solid, hachure, zigzag, cross_hatch, dots, dashed or zigzag_line. */
     fill_pattern?: O_FillPattern | null;
-    /** Font: gelpen, gelpen_serif, vanilla_extract or noto_sans. */
+    /** Font: gelpen, gelpen_serif, vanilla_extract, noto_sans or plex_sans. */
     font_family?: O_FontFamily | null;
     /** Font size in world units, above 0 (presets 16, 20, 28, 36). */
     font_size?: number | null;
@@ -1308,8 +1311,11 @@ export namespace DiagramCreate {
   };
   /** How a filled area is painted. The fill colour itself is `Style::fill_color`; `None` there means no fill. */
   type A_FillPattern = "solid" | "hachure" | "zigzag" | "cross_hatch" | "dots" | "dashed" | "zigzag_line";
-  /** Font family. `GelPen`, `GelPenSerif` and `VanillaExtract` ship with the app; `NotoSans` is the old fallback. */
-  type A_FontFamily = "gelpen" | "noto_sans" | "gelpen_serif" | "vanilla_extract";
+  /**
+   * Font family. `GelPen`, `GelPenSerif`, `VanillaExtract` and `PlexSans` ship with the app; `NotoSans` is the old
+   * fallback.
+   */
+  type A_FontFamily = "gelpen" | "noto_sans" | "gelpen_serif" | "vanilla_extract" | "plex_sans";
   /** What is drawn at an end of a line or arrow. */
   type A_Head = "none" | "arrow" | "bar" | "circle" | "circle_outline" | "triangle" | "triangle_outline" | "diamond" | "diamond_outline" | "cardinality_one" | "cardinality_many" | "cardinality_one_or_many" | "cardinality_exactly_one" | "cardinality_zero_or_one" | "cardinality_zero_or_many";
   /** Layout options (`LayoutOpts` in the command catalog). */
@@ -2371,8 +2377,11 @@ export namespace ElementConnect {
   type A_ConnectKind = "arrow" | "line";
   /** How a filled area is painted. The fill colour itself is `Style::fill_color`; `None` there means no fill. */
   type A_FillPattern = "solid" | "hachure" | "zigzag" | "cross_hatch" | "dots" | "dashed" | "zigzag_line";
-  /** Font family. `GelPen`, `GelPenSerif` and `VanillaExtract` ship with the app; `NotoSans` is the old fallback. */
-  type A_FontFamily = "gelpen" | "noto_sans" | "gelpen_serif" | "vanilla_extract";
+  /**
+   * Font family. `GelPen`, `GelPenSerif`, `VanillaExtract` and `PlexSans` ship with the app; `NotoSans` is the old
+   * fallback.
+   */
+  type A_FontFamily = "gelpen" | "noto_sans" | "gelpen_serif" | "vanilla_extract" | "plex_sans";
   /** Font weight. */
   type A_FontWeight = "light" | "regular" | "heavy";
   /** What is drawn at an end of a line or arrow. */
@@ -2395,7 +2404,7 @@ export namespace ElementConnect {
     fill_color?: A_ColorArg | null;
     /** How the fill is painted: solid, hachure, zigzag, cross_hatch, dots, dashed or zigzag_line. */
     fill_pattern?: A_FillPattern | null;
-    /** Font: gelpen, gelpen_serif, vanilla_extract or noto_sans. */
+    /** Font: gelpen, gelpen_serif, vanilla_extract, noto_sans or plex_sans. */
     font_family?: A_FontFamily | null;
     /** Font size in world units, above 0 (presets 16, 20, 28, 36). */
     font_size?: number | null;
@@ -2542,8 +2551,11 @@ export namespace ElementCreate {
   type A_ColorArg = string;
   /** How a filled area is painted. The fill colour itself is `Style::fill_color`; `None` there means no fill. */
   type A_FillPattern = "solid" | "hachure" | "zigzag" | "cross_hatch" | "dots" | "dashed" | "zigzag_line";
-  /** Font family. `GelPen`, `GelPenSerif` and `VanillaExtract` ship with the app; `NotoSans` is the old fallback. */
-  type A_FontFamily = "gelpen" | "noto_sans" | "gelpen_serif" | "vanilla_extract";
+  /**
+   * Font family. `GelPen`, `GelPenSerif`, `VanillaExtract` and `PlexSans` ship with the app; `NotoSans` is the old
+   * fallback.
+   */
+  type A_FontFamily = "gelpen" | "noto_sans" | "gelpen_serif" | "vanilla_extract" | "plex_sans";
   /** Font weight. */
   type A_FontWeight = "light" | "regular" | "heavy";
   /** "auto" (default): the frame under the new element's centre, if any. An id or "@name": that frame. null: no frame. */
@@ -2581,7 +2593,7 @@ export namespace ElementCreate {
     fill_color?: A_ColorArg | null;
     /** How the fill is painted: solid, hachure, zigzag, cross_hatch, dots, dashed or zigzag_line. */
     fill_pattern?: A_FillPattern | null;
-    /** Font: gelpen, gelpen_serif, vanilla_extract or noto_sans. */
+    /** Font: gelpen, gelpen_serif, vanilla_extract, noto_sans or plex_sans. */
     font_family?: A_FontFamily | null;
     /** Font size in world units, above 0 (presets 16, 20, 28, 36). */
     font_size?: number | null;
@@ -3158,8 +3170,11 @@ export namespace ElementQuery {
   type A_Field = "id" | "kind" | "name" | "text" | "bounds" | "style" | "angle" | "group_ids" | "frame" | "bindings" | "bound_text" | "locked" | "link" | "z" | "points" | "runs";
   /** How a filled area is painted. The fill colour itself is `Style::fill_color`; `None` there means no fill. */
   type A_FillPattern = "solid" | "hachure" | "zigzag" | "cross_hatch" | "dots" | "dashed" | "zigzag_line";
-  /** Font family. `GelPen`, `GelPenSerif` and `VanillaExtract` ship with the app; `NotoSans` is the old fallback. */
-  type A_FontFamily = "gelpen" | "noto_sans" | "gelpen_serif" | "vanilla_extract";
+  /**
+   * Font family. `GelPen`, `GelPenSerif`, `VanillaExtract` and `PlexSans` ship with the app; `NotoSans` is the old
+   * fallback.
+   */
+  type A_FontFamily = "gelpen" | "noto_sans" | "gelpen_serif" | "vanilla_extract" | "plex_sans";
   type A_GroupId = string;
   /** The kind tag without data. */
   type A_Kind = "rectangle" | "diamond" | "ellipse" | "line" | "arrow" | "freehand" | "text" | "math" | "image" | "frame";
@@ -4485,8 +4500,11 @@ export namespace LayoutApply {
   type A_ElementId = string;
   /** How a filled area is painted. The fill colour itself is `Style::fill_color`; `None` there means no fill. */
   type A_FillPattern = "solid" | "hachure" | "zigzag" | "cross_hatch" | "dots" | "dashed" | "zigzag_line";
-  /** Font family. `GelPen`, `GelPenSerif` and `VanillaExtract` ship with the app; `NotoSans` is the old fallback. */
-  type A_FontFamily = "gelpen" | "noto_sans" | "gelpen_serif" | "vanilla_extract";
+  /**
+   * Font family. `GelPen`, `GelPenSerif`, `VanillaExtract` and `PlexSans` ship with the app; `NotoSans` is the old
+   * fallback.
+   */
+  type A_FontFamily = "gelpen" | "noto_sans" | "gelpen_serif" | "vanilla_extract" | "plex_sans";
   type A_GroupId = string;
   /** The kind tag without data. */
   type A_Kind = "rectangle" | "diamond" | "ellipse" | "line" | "arrow" | "freehand" | "text" | "math" | "image" | "frame";
@@ -5215,8 +5233,11 @@ export namespace SelectionSelect {
   type A_Color = string;
   /** How a filled area is painted. The fill colour itself is `Style::fill_color`; `None` there means no fill. */
   type A_FillPattern = "solid" | "hachure" | "zigzag" | "cross_hatch" | "dots" | "dashed" | "zigzag_line";
-  /** Font family. `GelPen`, `GelPenSerif` and `VanillaExtract` ship with the app; `NotoSans` is the old fallback. */
-  type A_FontFamily = "gelpen" | "noto_sans" | "gelpen_serif" | "vanilla_extract";
+  /**
+   * Font family. `GelPen`, `GelPenSerif`, `VanillaExtract` and `PlexSans` ship with the app; `NotoSans` is the old
+   * fallback.
+   */
+  type A_FontFamily = "gelpen" | "noto_sans" | "gelpen_serif" | "vanilla_extract" | "plex_sans";
   type A_GroupId = string;
   /** The kind tag without data. */
   type A_Kind = "rectangle" | "diamond" | "ellipse" | "line" | "arrow" | "freehand" | "text" | "math" | "image" | "frame";
@@ -5793,8 +5814,11 @@ export namespace StyleListThemes {
   type O_ColorArg = string;
   /** How a filled area is painted. The fill colour itself is `Style::fill_color`; `None` there means no fill. */
   type O_FillPattern = "solid" | "hachure" | "zigzag" | "cross_hatch" | "dots" | "dashed" | "zigzag_line";
-  /** Font family. `GelPen`, `GelPenSerif` and `VanillaExtract` ship with the app; `NotoSans` is the old fallback. */
-  type O_FontFamily = "gelpen" | "noto_sans" | "gelpen_serif" | "vanilla_extract";
+  /**
+   * Font family. `GelPen`, `GelPenSerif`, `VanillaExtract` and `PlexSans` ship with the app; `NotoSans` is the old
+   * fallback.
+   */
+  type O_FontFamily = "gelpen" | "noto_sans" | "gelpen_serif" | "vanilla_extract" | "plex_sans";
   /** Font weight. */
   type O_FontWeight = "light" | "regular" | "heavy";
   /** How pen pressure shapes a freehand stroke. */
@@ -5811,7 +5835,7 @@ export namespace StyleListThemes {
     fill_color?: O_ColorArg | null;
     /** How the fill is painted: solid, hachure, zigzag, cross_hatch, dots, dashed or zigzag_line. */
     fill_pattern?: O_FillPattern | null;
-    /** Font: gelpen, gelpen_serif, vanilla_extract or noto_sans. */
+    /** Font: gelpen, gelpen_serif, vanilla_extract, noto_sans or plex_sans. */
     font_family?: O_FontFamily | null;
     /** Font size in world units, above 0 (presets 16, 20, 28, 36). */
     font_size?: number | null;
@@ -5878,8 +5902,11 @@ export namespace StyleSet {
   type A_ColorArg = string;
   /** How a filled area is painted. The fill colour itself is `Style::fill_color`; `None` there means no fill. */
   type A_FillPattern = "solid" | "hachure" | "zigzag" | "cross_hatch" | "dots" | "dashed" | "zigzag_line";
-  /** Font family. `GelPen`, `GelPenSerif` and `VanillaExtract` ship with the app; `NotoSans` is the old fallback. */
-  type A_FontFamily = "gelpen" | "noto_sans" | "gelpen_serif" | "vanilla_extract";
+  /**
+   * Font family. `GelPen`, `GelPenSerif`, `VanillaExtract` and `PlexSans` ship with the app; `NotoSans` is the old
+   * fallback.
+   */
+  type A_FontFamily = "gelpen" | "noto_sans" | "gelpen_serif" | "vanilla_extract" | "plex_sans";
   /** Font weight. */
   type A_FontWeight = "light" | "regular" | "heavy";
   /** How pen pressure shapes a freehand stroke. */
@@ -5900,7 +5927,7 @@ export namespace StyleSet {
     fill_color?: A_ColorArg | null;
     /** How the fill is painted: solid, hachure, zigzag, cross_hatch, dots, dashed or zigzag_line. */
     fill_pattern?: A_FillPattern | null;
-    /** Font: gelpen, gelpen_serif, vanilla_extract or noto_sans. */
+    /** Font: gelpen, gelpen_serif, vanilla_extract, noto_sans or plex_sans. */
     font_family?: A_FontFamily | null;
     /** Font size in world units, above 0 (presets 16, 20, 28, 36). */
     font_size?: number | null;
@@ -6341,8 +6368,11 @@ export namespace TextEditEnd {
   type A_ColorArg = string;
   /** How a filled area is painted. The fill colour itself is `Style::fill_color`; `None` there means no fill. */
   type A_FillPattern = "solid" | "hachure" | "zigzag" | "cross_hatch" | "dots" | "dashed" | "zigzag_line";
-  /** Font family. `GelPen`, `GelPenSerif` and `VanillaExtract` ship with the app; `NotoSans` is the old fallback. */
-  type A_FontFamily = "gelpen" | "noto_sans" | "gelpen_serif" | "vanilla_extract";
+  /**
+   * Font family. `GelPen`, `GelPenSerif`, `VanillaExtract` and `PlexSans` ship with the app; `NotoSans` is the old
+   * fallback.
+   */
+  type A_FontFamily = "gelpen" | "noto_sans" | "gelpen_serif" | "vanilla_extract" | "plex_sans";
   /** Font weight. */
   type A_FontWeight = "light" | "regular" | "heavy";
   /**
@@ -6379,7 +6409,7 @@ export namespace TextEditEnd {
     fill_color?: A_ColorArg | null;
     /** How the fill is painted: solid, hachure, zigzag, cross_hatch, dots, dashed or zigzag_line. */
     fill_pattern?: A_FillPattern | null;
-    /** Font: gelpen, gelpen_serif, vanilla_extract or noto_sans. */
+    /** Font: gelpen, gelpen_serif, vanilla_extract, noto_sans or plex_sans. */
     font_family?: A_FontFamily | null;
     /** Font size in world units, above 0 (presets 16, 20, 28, 36). */
     font_size?: number | null;

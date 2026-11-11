@@ -132,9 +132,9 @@ fn feed_text(spec: &TextSpec) -> u128 {
     h.finish128()
 }
 
-/// True when the text asks for the Noto Sans family itself, not only as the glyph fallback.
-fn uses_noto_sans(spec: &TextSpec) -> bool {
-    spec.style.family == FontFamily::NotoSans || spec.spans.iter().any(|s| s.style.family == Some(FontFamily::NotoSans))
+/// True when the text asks for `family` itself (in its base style or in a span), not only as the glyph fallback.
+fn uses_family(spec: &TextSpec, family: &FontFamily) -> bool {
+    spec.style.family == *family || spec.spans.iter().any(|s| s.style.family.as_ref() == Some(family))
 }
 
 fn feed_math(spec: &MathSpec) -> u128 {
@@ -267,8 +267,11 @@ impl Typesetter {
         let fonts = self.font_version;
         let math = &mut self.math;
         let built = Arc::new(layout::build(&mut self.engine, spec, next_id(), &mut |m| math.layout(m, fonts)));
-        if built.has_missing_glyphs() || uses_noto_sans(spec) {
+        if built.has_missing_glyphs() || uses_family(spec, &FontFamily::NotoSans) {
             self.want(&ExtraFont::NOTO_SANS);
+        }
+        if uses_family(spec, &FontFamily::PlexSans) {
+            self.want(&[ExtraFont::PlexSans]);
         }
         self.text_cache.insert(key, built.clone(), built.weight());
         built

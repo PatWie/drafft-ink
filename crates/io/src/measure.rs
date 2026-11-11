@@ -51,6 +51,9 @@ fn char_width_factor(family: FontFamily, weight: FontWeight) -> f64 {
         (FontFamily::GelPenSerif, FontWeight::Regular) => 0.58,
         (FontFamily::GelPenSerif, FontWeight::Heavy) => 0.60,
         (FontFamily::VanillaExtract, _) => 0.50,
+        (FontFamily::PlexSans, FontWeight::Light) => 0.52,
+        (FontFamily::PlexSans, FontWeight::Regular) => 0.54,
+        (FontFamily::PlexSans, FontWeight::Heavy) => 0.57,
     }
 }
 

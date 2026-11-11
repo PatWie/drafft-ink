@@ -88,7 +88,7 @@ pub const GRID_STYLES: &[&str] = &["none", "lines", "horizontal_lines", "crosses
 /// The theme choices (docs/commands.md §9 item 13).
 pub const THEMES: &[&str] = &["light", "dark", "system"];
 /// The fonts the UI text can use: the canvas families that are bundled (the words of the `font_family` property).
-pub const UI_FONTS: &[&str] = &["gelpen", "gelpen_serif", "vanilla_extract", "noto_sans"];
+pub const UI_FONTS: &[&str] = &["gelpen", "gelpen_serif", "vanilla_extract", "noto_sans", "plex_sans"];
 /// The path types of `arrow.type` (the words of `drafftink_edit::arrow_defaults::path_name`).
 pub const ARROW_TYPES: &[&str] = &["sharp", "round", "elbow"];
 /// The heads of `arrow.start_head` and `arrow.end_head` (the words of `drafftink_edit::arrow_defaults::name_of`).
@@ -238,7 +238,8 @@ const STROKE_STYLES: &[&str] = &["solid", "dashed", "dotted"];
 const SLOPPINESS: &[&str] = &["architect", "artist", "cartoonist", "drunk"];
 const FREEHAND_STYLES: &[&str] = &["normal", "calligraphy"];
 const PRESSURE_MODES: &[&str] = &["uniform", "simulated", "device"];
-const FONT_FAMILIES: &[&str] = &["gelpen", "gelpen_serif", "vanilla_extract", "noto_sans"];
+/// The canvas font families (the words of `font_family`); the UI font is one of them.
+const FONT_FAMILIES: &[&str] = UI_FONTS;
 const FONT_WEIGHTS: &[&str] = &["light", "regular", "heavy"];
 const TEXT_ALIGNS: &[&str] = &["left", "center", "right"];
 const VERTICAL_ALIGNS: &[&str] = &["top", "middle", "bottom"];

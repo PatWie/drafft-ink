@@ -469,7 +469,7 @@ proptest! {
         text in arb_text(),
         size in prop_oneof![Just(f32::NAN), Just(0.0f32), Just(-3.0f32), Just(1e30f32), 0.5f32..400.0],
         wrap in prop_oneof![Just(None), Just(Some(f32::NAN)), Just(Some(0.0f32)), Just(Some(-5.0f32)), Just(Some(f32::INFINITY)), (0.0f32..500.0).prop_map(Some)],
-        spans in proptest::collection::vec((0usize..400, 0usize..400, 0u8..8), 0..20),
+        spans in proptest::collection::vec((0usize..400, 0usize..400, 0u8..9), 0..20),
     ) {
         let mut spec = TextSpec::styled(text.clone(), TextStyle { size, ..TextStyle::default() });
         if let Some(w) = wrap { spec.wrap = Wrap::Width(w); }
@@ -483,7 +483,8 @@ proptest! {
                 4 => st.italic = Some(true),
                 5 => st.underline = Some(true),
                 6 => st.family = Some(FontFamily::Custom("No Such Font".into())),
-                _ => st.family = Some(FontFamily::NotoSans),
+                7 => st.family = Some(FontFamily::NotoSans),
+                _ => st.family = Some(FontFamily::PlexSans),
             }
             spec.spans.push(Span { range: a..b, style: st });
         }

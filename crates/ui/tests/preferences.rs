@@ -85,14 +85,43 @@ fn the_interface_font_buttons_set_ui_font_and_the_text_follows() {
     }
 }
 
+/// The width of a text in an egui font family, at the size of the body text.
+fn width_in(h: &H, family: &str, text: &str) -> f32 {
+    let font = egui::FontId::new(drafftink_ui::theme::TextSize::Body.points(), egui::FontFamily::Name(family.into()));
+    h.ctx.fonts_mut(|f| f.layout_no_wrap(text.to_owned(), font, egui::Color32::BLACK).size().x)
+}
+
+#[test]
+fn plex_sans_is_an_interface_font_with_real_semibold_headings() {
+    let mut h = open();
+    assert!(drafftink_ui::theme::UiFontChoice::PlexSans.available());
+    press(&mut h, "Interface font: IBM Plex Sans", "settings.set", json!({ "key": "ui.font", "value": "plex_sans" }));
+    assert_eq!(setting(&h, "ui.font"), json!("plex_sans"));
+    assert_eq!(ui_font(&h), drafftink_ui::theme::PREVIEW_PLEX, "the text of the next frame is set in Plex");
+    // The UI really draws with it: the same words are another width than in GelPen.
+    let text = "Handgloves and hamburgefonts";
+    let plex = width_in(&h, drafftink_ui::theme::PREVIEW_PLEX, text);
+    let gelpen = width_in(&h, drafftink_ui::theme::HAND_FONT, text);
+    assert!((plex - gelpen).abs() > 1.0, "Plex {plex} and GelPen {gelpen} differ");
+    // Headings are the real semibold of the same variable file, not GelPen and not a synthetic bold.
+    let heading = drafftink_ui::theme::TextSize::Heading.hand();
+    assert_eq!(heading.family, egui::FontFamily::Name("plex_sans_semibold".into()));
+    let semibold = width_in(&h, "plex_sans_semibold", text);
+    assert!(semibold > plex + 0.5, "semibold {semibold} is wider than regular {plex}");
+    // Choosing another font brings the hand-drawn headings back.
+    press(&mut h, "Interface font: GelPen", "settings.set", json!({ "key": "ui.font", "value": "gelpen" }));
+    assert_eq!(ui_font(&h), drafftink_ui::theme::HAND_FONT);
+    assert_eq!(drafftink_ui::theme::TextSize::Heading.hand().family, egui::FontFamily::Name("gelpen".into()));
+}
+
 #[test]
 fn noto_sans_is_offered_only_where_the_build_has_the_file() {
     let h = open();
     let offered = h.query_by_label("Interface font: Noto Sans").is_some();
     assert_eq!(offered, drafftink_ui::theme::UiFontChoice::NotoSans.available());
-    // The four words are the ones the canvas takes for `font_family`; a fifth is refused by the engine.
+    // The five words are the ones the canvas takes for `font_family`; a sixth is refused by the engine.
     let words: Vec<&str> = drafftink_ui::theme::UiFontChoice::ALL.iter().map(|c| c.setting()).collect();
-    assert_eq!(words, ["gelpen", "gelpen_serif", "vanilla_extract", "noto_sans"]);
+    assert_eq!(words, ["gelpen", "gelpen_serif", "vanilla_extract", "noto_sans", "plex_sans"]);
 }
 
 #[test]

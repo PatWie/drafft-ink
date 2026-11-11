@@ -107,6 +107,14 @@ fn line_height_is_also_offered_before_drawing_text() {
 }
 
 #[test]
+fn the_font_row_offers_plex_sans_and_sets_the_family() {
+    let mut h = started(free_text());
+    let call = press(&mut h, "Plex Sans");
+    assert_eq!(call, Call::new(Origin::Ui, "style.set", json!({ "props": { "font_family": "plex_sans" } })));
+    assert_eq!(style(&h, "font_family"), Some(json!("plex_sans")));
+}
+
+#[test]
 fn auto_resize_buttons_run_text_set_autoresize() {
     let f = free_text();
     let mut h = started(f);

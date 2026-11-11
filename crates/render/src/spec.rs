@@ -39,6 +39,7 @@ fn family(f: FontFamily) -> typeset::FontFamily {
         FontFamily::NotoSans => typeset::FontFamily::NotoSans,
         FontFamily::GelPenSerif => typeset::FontFamily::GelPenSerif,
         FontFamily::VanillaExtract => typeset::FontFamily::VanillaExtract,
+        FontFamily::PlexSans => typeset::FontFamily::PlexSans,
     }
 }
 

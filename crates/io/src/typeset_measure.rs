@@ -60,6 +60,7 @@ fn family(f: scene::FontFamily) -> FontFamily {
     match f {
         scene::FontFamily::GelPen => FontFamily::GelPen,
         scene::FontFamily::NotoSans => FontFamily::NotoSans,
+        scene::FontFamily::PlexSans => FontFamily::PlexSans,
         scene::FontFamily::GelPenSerif => FontFamily::GelPenSerif,
         scene::FontFamily::VanillaExtract => FontFamily::VanillaExtract,
     }
@@ -81,8 +82,8 @@ fn inline_math(m: scene::InlineMath) -> InlineMath {
 }
 
 /// The font files this build bundles, as faces for [`SvgOptions::fonts`](crate::svg::SvgOptions::fonts): GelPen and
-/// GelPen Serif in three weights, Vanilla Extract, and Noto Sans (regular and bold) where it is built in (not on
-/// the web, which loads it on demand). The bytes are the typesetter's statics; the list is built once.
+/// GelPen Serif in three weights, Vanilla Extract, Noto Sans (regular and bold) and IBM Plex Sans where they are
+/// built in (not on the web, which loads them on demand). The bytes are the typesetter's statics; the list is built once.
 pub fn bundled_svg_fonts() -> Vec<FontFace> {
     static FACES: OnceLock<Vec<FontFace>> = OnceLock::new();
     FACES
@@ -99,6 +100,9 @@ pub fn bundled_svg_fonts() -> Vec<FontFace> {
                 (F::VanillaExtract, W::Regular),
                 (F::NotoSans, W::Regular),
                 (F::NotoSans, W::Heavy),
+                // One variable file; the SVG's `@font-face` for a bold or light text reuses it and the browser
+                // picks the weight on its `wght` axis.
+                (F::PlexSans, W::Regular),
             ];
             wanted
                 .into_iter()
