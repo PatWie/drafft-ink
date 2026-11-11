@@ -80,8 +80,11 @@ fn free_text() -> Fixture {
 #[test]
 fn vertical_align_buttons_set_the_property_of_a_labelled_shape() {
     let mut h = started(labelled());
-    for (label, value) in [("Middle", "middle"), ("Bottom", "bottom"), ("Top", "top")] {
-        let call = press_in(&mut h, "More options", label);
+    // The vertical align is a row of the text group in the strip (it used to be in the "More" menu).
+    for (label, value) in
+        [("Vertical align: Middle", "middle"), ("Vertical align: Bottom", "bottom"), ("Vertical align: Top", "top")]
+    {
+        let call = press(&mut h, label);
         assert_eq!(call, Call::new(Origin::Ui, "style.set", json!({ "props": { "vertical_align": value } })));
         assert_eq!(style(&h, "vertical_align"), Some(json!(value)));
     }
@@ -96,7 +99,7 @@ fn vertical_align_is_not_offered_for_a_shape_without_a_label_or_for_free_text() 
     let mut h = started(f);
     open(&mut h, "More options");
     h.get_by_label("Architect");
-    assert!(h.query_by_label("Middle").is_none());
+    assert!(h.query_by_label("Vertical align: Middle").is_none());
     let f = free_text();
     let mut h = started(f);
     open(&mut h, "More options");
@@ -224,7 +227,10 @@ fn the_lasso_button_is_a_toggle_between_lasso_and_select() {
 
 #[test]
 fn the_library_button_toggles_the_panel() {
-    let mut h = started(dialog::fixture());
+    // Taller than the default window: with the two-row strip the tool column of an 800 point window scrolls and
+    // its last button (the library) is not on screen.
+    let mut h = dialog::sized(dialog::fixture(), egui::vec2(1280.0, 900.0), egui::Theme::Light);
+    h.run();
     h.state_mut().clear();
     h.get_by_label("Show or hide the library").click();
     h.run();

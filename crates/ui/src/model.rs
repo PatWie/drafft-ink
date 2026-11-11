@@ -87,6 +87,15 @@ impl StyleProp {
     }
 }
 
+/// The heads at the two ends of the selected lines and arrows, from `style.get`: head names, or `"mixed"`.
+#[derive(Debug, Clone, PartialEq)]
+pub struct HeadsView {
+    /// The start head.
+    pub start: String,
+    /// The end head.
+    pub end: String,
+}
+
 /// The style of the selection, or the defaults for new elements when nothing is selected.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct StyleView {
@@ -96,6 +105,8 @@ pub struct StyleView {
     pub kinds: Vec<String>,
     /// Properties by name (`stroke_color`, `fill_color`, ...).
     pub props: BTreeMap<String, StyleProp>,
+    /// The heads of the selected lines and arrows; `None` when none is selected.
+    pub heads: Option<HeadsView>,
 }
 
 impl StyleView {
@@ -1009,7 +1020,10 @@ fn read_style(s: &mut Session) -> StyleView {
                 .collect()
         })
         .unwrap_or_default();
-    StyleView { source: text_of(&got, "source").unwrap_or_default().to_owned(), kinds, props }
+    let heads = got
+        .get("heads")
+        .and_then(|h| Some(HeadsView { start: text_of(h, "start")?.to_owned(), end: text_of(h, "end")?.to_owned() }));
+    StyleView { source: text_of(&got, "source").unwrap_or_default().to_owned(), kinds, props, heads }
 }
 
 /// The JSON Schema of a command's arguments (a JSON object with `properties`, `required`, `$defs`).

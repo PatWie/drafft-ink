@@ -16,11 +16,11 @@ pub const GAP: f32 = space::LG;
 /// The rectangles of the chrome surfaces drawn so far in this frame. `None`: not drawn (zen mode, or not yet).
 #[derive(Debug, Clone, Copy, Default, PartialEq)]
 pub struct ChromeRects {
-    /// The top strip, across the window.
+    /// The top strip, across the window: the menu, the colours and the properties in two rows.
     pub strip: Option<Rect>,
     /// The hamburger button in the strip: the menu opens under it.
     pub menu_button: Option<Rect>,
-    /// The style button of a strip too narrow for the style controls.
+    /// The style button of a strip too narrow for the colour group.
     pub style_button: Option<Rect>,
     /// The bottom-left bar (undo, grid, zoom, snapping).
     pub bottom_bar: Option<Rect>,
@@ -28,9 +28,6 @@ pub struct ChromeRects {
     pub tabs: Option<Rect>,
     /// The tool column.
     pub tools: Option<Rect>,
-    /// The ribbon card under the strip: the properties of the selection or of the tool. `None` when it shows
-    /// nothing (the strip's own style row is all there is).
-    pub ribbon: Option<Rect>,
     /// The library drawer, when it is open. It is drawn after every bar and panel above, so it is the highest
     /// of the bottom surfaces: things that float above the bottom chrome sit over it.
     pub library: Option<Rect>,
@@ -42,10 +39,6 @@ impl ChromeRects {
         self.strip.map_or(screen.top(), |r| r.bottom())
     }
 
-    /// The y of the lower edge of the top chrome: the ribbon card when it is shown, else the strip.
-    pub fn below_top(&self, screen: Rect) -> f32 {
-        self.ribbon.map_or_else(|| self.below_strip(screen), |r| r.bottom())
-    }
     /// The y of the upper edge of the bottom-left bar, or of the window bottom when there is none.
     pub fn above_bottom_bar(&self, screen: Rect) -> f32 {
         self.bottom_bar.map_or(screen.bottom(), |r| r.top())

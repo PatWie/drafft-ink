@@ -1,14 +1,14 @@
-//! The menus that open from the ribbon: the properties that did not fit it ("More") and the heads of an arrow.
-//! They are menu-kit popups, so they look and behave like every other menu: rows with check marks, a click
-//! outside closes them, a greyed row says why.
+//! The menus that open from the strip's groups: "More" (the groups that did not fit the strip, and the properties
+//! that have no control of their own) and the heads of an arrow. They are menu-kit popups, so they look and
+//! behave like every other menu: rows with check marks, a click outside closes them, a greyed row says why.
 
-use egui::{Align2, Context, Id, vec2};
+use egui::{Align2, Context, Id, pos2, vec2};
 use serde_json::{Value, json};
 
 use super::controls::{CORNERS, HEADS, LINE_HEIGHTS, corner_ctl, has_path, new_arrows};
-use super::shows;
+use super::{Group, shows};
 use crate::chrome::GAP;
-use crate::menu_kit::{Menu, Popup, Row, popup};
+use crate::menu_kit::{MENU_WIDTH, Menu, Popup, Row, outer_width, popup_sized};
 use crate::state::{OpenRibbonMenu, RibbonMenu, UiState};
 use crate::widgets::{Ctl, Cx};
 
@@ -19,7 +19,7 @@ struct Choice {
     options: &'static [(&'static str, &'static str)],
 }
 
-const CHOICES: [Choice; 3] = [
+const CHOICES: [Choice; 2] = [
     Choice {
         heading: "Sloppiness",
         prop: "sloppiness",
@@ -30,15 +30,13 @@ const CHOICES: [Choice; 3] = [
         prop: "pressure_mode",
         options: &[("Uniform", "uniform"), ("Simulated", "simulated"), ("Pen", "device")],
     },
-    Choice {
-        heading: "Vertical align",
-        prop: "vertical_align",
-        options: &[("Top", "top"), ("Middle", "middle"), ("Bottom", "bottom")],
-    },
 ];
 
-/// True when the "More" menu has something to offer: the groups show its button only then.
-pub(super) fn has_more(cx: &Cx<'_>) -> bool {
+/// The width of the "More" popup when it holds groups: the widest group (the align row) fits.
+const GROUPS_WIDTH: f32 = 288.0;
+
+/// True when the "More" menu has properties of its own to offer (the strip keeps its button then, whatever fits).
+pub(crate) fn has_more(cx: &Cx<'_>) -> bool {
     CHOICES.iter().any(|c| shows(cx, c.prop)) || shows(cx, "line_height") || box_available(cx) || corners_here(cx)
 }
 
@@ -122,8 +120,9 @@ struct HeadRows {
     end: &'static str,
     /// The argument of `tool.set_arrow`.
     arg: &'static str,
-    /// New arrows are being set up: the choice is read from, and written to, the settings.
+    /// New arrows are being set up: the choice is written to the settings.
     new: bool,
+    /// The head now: the setting for new arrows, else the head of the selected arrows (or `mixed`).
     current: String,
 }
 
@@ -133,8 +132,15 @@ impl HeadRows {
             RibbonMenu::StartHead => ("Start", "start", "start_head", "arrow.start_head"),
             RibbonMenu::EndHead | RibbonMenu::More => ("End", "end", "end_head", "arrow.end_head"),
         };
-        let current = cx.model.settings.get(setting).and_then(Value::as_str).unwrap_or_default().to_owned();
-        Self { side, end, arg, new: new_arrows(cx), current }
+        let new = new_arrows(cx);
+        let current = if new {
+            cx.model.settings.get(setting).and_then(Value::as_str).unwrap_or_default().to_owned()
+        } else {
+            let heads = cx.model.style.heads.as_ref();
+            let head = if end == "start" { heads.map(|h| &h.start) } else { heads.map(|h| &h.end) };
+            head.cloned().unwrap_or_default()
+        };
+        Self { side, end, arg, new, current }
     }
 
     fn draw(&self, menu: &mut Menu<'_, '_, '_>) {
@@ -150,7 +156,7 @@ impl HeadRows {
                     .args(json!({ "end": self.end, "head": head }))
                     .label(format!("{} head: {label}", self.side))
             };
-            menu.command(ctl, Row::new().label(label).checked(self.new && self.current == value));
+            menu.command(ctl, Row::new().label(label).checked(self.current == value));
         }
         if !self.new {
             menu.separator();
@@ -159,31 +165,52 @@ impl HeadRows {
     }
 }
 
-/// Draws the open menu, if any, and closes it after a pick or a click outside.
-pub(super) fn show(ctx: &Context, cx: &mut Cx<'_>, st: &mut UiState) {
+/// Draws the open menu, if any, and closes it after a pick or a click outside. `overflow` are the groups that did
+/// not fit the strip: the "More" popup holds them, one under the other, above the properties of its own.
+pub(crate) fn show(ctx: &Context, cx: &mut Cx<'_>, st: &mut UiState, overflow: &[Group]) {
     let Some(OpenRibbonMenu { kind, anchor }) = st.ribbon_menu else { return };
+    if kind == RibbonMenu::More && overflow.is_empty() && !has_more(cx) {
+        st.ribbon_menu = None;
+        return;
+    }
     let label = match kind {
         RibbonMenu::More => "More options menu",
         RibbonMenu::StartHead => "Start head menu",
         RibbonMenu::EndHead => "End head menu",
     };
-    let spec = Popup {
-        key: Id::unique(("ribbon_menu", kind)),
-        label,
-        pivot: Align2::LEFT_TOP,
-        at: anchor.left_bottom() + vec2(0.0, GAP),
-    };
     let result = match kind {
         RibbonMenu::More => {
+            let content = if overflow.is_empty() { MENU_WIDTH } else { GROUPS_WIDTH };
+            // The button is at the right end of the strip: the popup hangs from its right edge, under the strip.
+            let spec = Popup {
+                key: Id::unique(("ribbon_menu", kind)),
+                label,
+                pivot: Align2::LEFT_TOP,
+                at: pos2(anchor.right() - outer_width(content), st.chrome.below_strip(ctx.content_rect()) + GAP),
+            };
             let rows = MoreRows::read(cx);
-            popup(ctx, cx, &spec, |menu| rows.draw(menu))
+            popup_sized(ctx, cx, &spec, content, |menu| {
+                for group in overflow {
+                    menu.custom(|ui, cx| group.draw(ui, cx, st));
+                    menu.separator();
+                }
+                rows.draw(menu);
+            })
         }
         RibbonMenu::StartHead | RibbonMenu::EndHead => {
+            let spec = Popup {
+                key: Id::unique(("ribbon_menu", kind)),
+                label,
+                pivot: Align2::LEFT_TOP,
+                at: anchor.left_bottom() + vec2(0.0, GAP),
+            };
             let rows = HeadRows::read(cx, kind);
-            popup(ctx, cx, &spec, |menu| rows.draw(menu))
+            popup_sized(ctx, cx, &spec, MENU_WIDTH, |menu| rows.draw(menu))
         }
     };
-    if result.picked.any() || result.outside {
+    // A control inside the popup may have opened another menu (a head menu): that one stays.
+    let still_this = st.ribbon_menu.is_some_and(|m| m.kind == kind);
+    if still_this && (result.picked.any() || result.outside) {
         st.ribbon_menu = None;
     }
 }

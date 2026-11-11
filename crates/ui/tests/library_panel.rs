@@ -76,7 +76,7 @@ fn the_panel_lists_the_items_the_model_read_with_library_list() {
 fn the_panel_is_hidden_until_the_verb_opens_it() {
     let mut f = dialog::fixture();
     f.refresh();
-    let mut h = dialog::harness(f);
+    let mut h = at(egui::vec2(1280.0, 900.0), f);
     h.run();
     assert!(h.query_by_label("Add selection to library").is_none());
     h.get_by_label("Show or hide the library").click();
@@ -398,7 +398,8 @@ fn the_drawer_opens_at_the_bottom_with_30_percent_of_the_window_height() {
 
 #[test]
 fn the_drawer_leaves_the_tool_column_and_the_properties_panel_free() {
-    let mut h = at(egui::vec2(1280.0, 800.0), with_item());
+    // 900 points high: with the two-row strip the tool column of an 800 point window scrolls.
+    let mut h = at(egui::vec2(1280.0, 900.0), with_item());
     h.run();
     let drawer = drawer_rect(&h);
     // The toolbar's own button for the library is its lowest control; it stays where it was and works.
@@ -449,7 +450,7 @@ fn the_drawer_leaves_the_recorded_side_panels_free_and_the_chrome_above_it_clear
     let h = at(egui::vec2(1280.0, 800.0), f);
     let chrome = h.state().state.chrome;
     let drawer = drawer_rect(&h);
-    for (name, panel) in [("tool column", chrome.tools), ("ribbon card", chrome.ribbon)] {
+    for (name, panel) in [("tool column", chrome.tools), ("top strip", chrome.strip)] {
         if let Some(panel) = panel {
             assert!(!drawer.intersects(panel), "the drawer {drawer:?} covers the {name} {panel:?}");
         }

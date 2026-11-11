@@ -5862,6 +5862,20 @@ export namespace StyleGet {
     /** Read the elements, the defaults, or the elements if there are any and the defaults if not. */
     scope?: A_GetScope;
   };
+  /**
+   * The heads at the two ends of the lines and arrows among the targets. Heads are not style properties
+   * (`arrow.set_head` writes them), so they are reported beside `props`.
+   */
+  type O_HeadsInfo = {
+    /** The end head, in the same words. */
+    end: string;
+    /**
+     * The start head, as the name `arrow.set_head` takes (`none`, `arrow`, `bar`, ...), or `"mixed"` when the
+     * lines and arrows differ.
+     */
+    start: string;
+    [key: string]: unknown;
+  };
   /** The kind tag without data. */
   type O_Kind = "rectangle" | "diamond" | "ellipse" | "line" | "arrow" | "freehand" | "text" | "math" | "image" | "frame";
   /** One property over the targets. */
@@ -5888,6 +5902,11 @@ export namespace StyleGet {
     created?: string[];
     /** Ids of elements the command removed. */
     deleted?: string[];
+    /**
+     * The start and end heads of the lines and arrows among the targets. Absent when there are none (and for
+     * the defaults, whose arrow heads are `tool.set_arrow`'s settings).
+     */
+    heads?: O_HeadsInfo | null;
     /** The elements that were read. */
     ids: string[];
     /** The kinds among them, without repeats. */

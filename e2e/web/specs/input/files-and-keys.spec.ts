@@ -153,16 +153,16 @@ test("keys: Ctrl+V pastes the copy centred on the pointer", async ({ app }) => {
 });
 
 test("keys: Ctrl+V with the pointer over a panel pastes at the middle of the view", async ({ app }) => {
-  // The ribbon card hangs under the top strip when something is selected. A pointer over it is not on the
+  // The top strip holds the properties of the selection. A pointer over it is not on the
   // canvas, so `$cursor` is omitted and the paste lands at the viewport centre (docs/commands.md section 6.1).
   // The first version of the pointer spec above hovered a panel and read the result as a lagging cursor (F2).
   await camera(app, { x: 640, y: 400 }, 1);
   const a = await box(app, 300, 300, 100, 60, { fill: "#ffd8a8" });
   await app.exec("selection.select", { ids: [a] });
   await app.settle();
-  // The card is centred under the 40 point strip: (640, 68) is inside it for a rectangle (about 270 to 1010 wide,
-  // 46 to 90 high at 1280 x 800). Page points, not world points: the card does not move with the camera.
-  const over = { x: 640, y: 68 };
+  // The strip is 72 points high and spans the window: (640, 36) is inside it. Page points, not world points: the
+  // strip does not move with the camera.
+  const over = { x: 640, y: 36 };
   await app.page.mouse.move(over.x - 1, over.y);
   await app.page.waitForTimeout(250);
   await app.page.mouse.move(over.x, over.y);
@@ -178,9 +178,9 @@ test("keys: Ctrl+V with the pointer over a panel pastes at the middle of the vie
 
 test.describe("export as PNG without the dialog", () => {
   // The menu button and the row, in page points at zoom 1 (`crates/ui/tests/top_strip.rs` pins the numbers): the button
-  // is at (26, 20) and "Export as PNG" is centred at y = 322, the first row under the "Export" heading.
+  // is at (26, 20) and "Export as PNG" is centred at y = 354 (under the 72 point strip), the first row under the "Export" heading.
   const MENU_BUTTON = { x: 26, y: 20 };
-  const EXPORT_AS_PNG = { x: 50, y: 322 };
+  const EXPORT_AS_PNG = { x: 50, y: 354 };
 
   const PNG_SIGNATURE = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
 

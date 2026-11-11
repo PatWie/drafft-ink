@@ -696,11 +696,27 @@ pub(crate) struct PopupResult {
     pub outside: bool,
 }
 
+/// The width of a popup whose rows are `content` wide, frame included.
+pub(crate) fn outer_width(content: f32) -> f32 {
+    content + 2.0 * FRAME_PAD.x
+}
+
 /// Draws a popup menu over the window with a backdrop that catches the click outside it.
 pub(crate) fn popup(
     ctx: &Context,
     cx: &mut Cx<'_>,
     spec: &Popup<'_>,
+    add: impl FnOnce(&mut Menu<'_, '_, '_>),
+) -> PopupResult {
+    popup_sized(ctx, cx, spec, MENU_WIDTH, add)
+}
+
+/// Like [`popup`] with rows `content` wide, for a menu that holds controls wider than a row of text.
+pub(crate) fn popup_sized(
+    ctx: &Context,
+    cx: &mut Cx<'_>,
+    spec: &Popup<'_>,
+    content: f32,
     add: impl FnOnce(&mut Menu<'_, '_, '_>),
 ) -> PopupResult {
     let screen = ctx.content_rect();
@@ -710,7 +726,7 @@ pub(crate) fn popup(
         .fixed_pos(screen.min)
         .show(ctx, |ui| ui.allocate_rect(screen, Sense::click()));
     let outside = backdrop.inner.clicked() || backdrop.inner.secondary_clicked();
-    let width = MENU_WIDTH + 2.0 * FRAME_PAD.x;
+    let width = outer_width(content);
     let pos = pos2(
         spec.at.x.clamp(screen.left() + SCREEN_GAP, (screen.right() - width - SCREEN_GAP).max(screen.left())),
         spec.at.y.max(screen.top() + SCREEN_GAP),
@@ -719,7 +735,7 @@ pub(crate) fn popup(
     let mut picked = Picked::default();
     Area::new(spec.key).order(Order::Foreground).pivot(spec.pivot).fixed_pos(pos).constrain(true).show(ctx, |ui| {
         panel_frame(&pal).show(ui, |ui| {
-            ui.set_width(MENU_WIDTH);
+            ui.set_width(content);
             picked = Menu::run_in(ui, cx, spec.key.with("rows"), spec.label, add);
         });
     });

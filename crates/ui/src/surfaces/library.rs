@@ -147,9 +147,9 @@ pub(crate) fn drawer_height(screen: egui::Rect, top: f32, bottom: f32, compact: 
     chosen.unwrap_or(screen.height() * DEFAULT_SHARE).clamp(least, most)
 }
 
-/// The y of the highest the drawer may reach: below the top bars, and below the ribbon card when it is shown.
+/// The y of the highest the drawer may reach: below the top bars (the strip).
 fn top_limit(chrome: &ChromeRects, screen: egui::Rect) -> f32 {
-    (screen.top() + TOP_ROOM).max(chrome.ribbon.map_or(f32::MIN, |r| r.bottom() + GAP))
+    (screen.top() + TOP_ROOM).max(chrome.strip.map_or(f32::MIN, |r| r.bottom() + GAP))
 }
 
 /// `rect` narrowed so that it does not cover the side panel that stands in its way (the tool column reaches

@@ -1,7 +1,8 @@
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
-//! The top strip and the geometry that hangs off it: one bar across the window with the menu, rooms and title at
-//! the left, the style controls centred, an empty right slot; side panels below it; popovers, toasts, the stats
-//! panel and the tab bar placed from the rectangles of the surfaces (`UiState::chrome`), not from numbers.
+//! The top strip and the geometry that hangs off it: one bar across the window, two control rows tall, with the
+//! menu, rooms and title at the left, then the colour group (stroke over fill), then the groups of the selection;
+//! side panels below it; popovers, toasts, the stats panel and the tab bar placed from the rectangles of the
+//! surfaces (`UiState::chrome`), not from numbers.
 
 mod common;
 mod dialog;
@@ -18,7 +19,10 @@ use egui_kittest::kittest::Queryable;
 type H = Harness<'static, Fixture>;
 
 const MENU: &str = "Open or close the main menu";
-const STYLE: &str = "Stroke, fill and width";
+const STYLE: &str = "Stroke and fill";
+
+/// The height of the strip: two rows of 28, the gap between them and 6 above and below.
+const STRIP_HEIGHT: f32 = 72.0;
 
 fn at(size: Vec2, f: Fixture) -> H {
     let mut h = dialog::sized(f, size, egui::Theme::Light);
@@ -43,24 +47,28 @@ fn with_selection() -> Fixture {
 }
 
 #[test]
-fn the_strip_spans_the_window_and_holds_menu_rooms_title_and_style_controls() {
+fn the_strip_spans_the_window_and_holds_menu_rooms_title_and_the_colour_group() {
     let h = at(vec2(1280.0, 800.0), dialog::fixture());
     let strip = chrome(&h).strip.unwrap();
-    assert_eq!(strip, Rect::from_min_size(egui::Pos2::ZERO, vec2(1280.0, 40.0)), "flush with the top edge, full width");
+    assert_eq!(
+        strip,
+        Rect::from_min_size(egui::Pos2::ZERO, vec2(1280.0, STRIP_HEIGHT)),
+        "flush with the top edge, full width, two rows"
+    );
     let menu = rect(&h, MENU);
     let rooms = rect(&h, "Collaboration");
     let title = rect(&h, "Document name: Untitled");
     let stroke = rect(&h, "Stroke blue");
     let fill = rect(&h, "Fill blue");
-    let thin = rect(&h, "Thin");
-    for (name, r) in
-        [("menu", menu), ("rooms", rooms), ("title", title), ("stroke", stroke), ("fill", fill), ("width", thin)]
-    {
+    for (name, r) in [("menu", menu), ("rooms", rooms), ("title", title), ("stroke", stroke), ("fill", fill)] {
         assert!(strip.contains_rect(r), "{name} {r:?} is in the strip {strip:?}");
     }
-    assert!(menu.max.x < rooms.min.x && rooms.max.x < title.min.x, "left group order");
-    assert!(title.max.x < stroke.min.x && stroke.max.x < fill.min.x && fill.max.x < thin.min.x, "then the style group");
+    assert!(menu.max.x < rooms.min.x, "the menu and the rooms share the first row");
+    assert!(title.min.y >= menu.max.y && title.min.x <= menu.min.x + 1.0, "the title is under them: {title:?}");
+    assert!(rooms.max.x < stroke.min.x && title.max.x < stroke.min.x, "then the colour group");
+    assert!(stroke.max.x < fill.min.x || fill.min.y > stroke.max.y, "fill is under stroke");
     assert_eq!(menu.min.x, 12.0, "the margin of the window");
+    assert!(h.query_by_label("Thin").is_none(), "no width with nothing to give a width to");
 }
 
 #[test]
@@ -68,34 +76,39 @@ fn every_button_of_the_strip_has_the_same_height() {
     for (size, layout) in
         [(vec2(1280.0, 800.0), LayoutPreference::Desktop), (vec2(1280.0, 800.0), LayoutPreference::Touch)]
     {
-        let mut f = dialog::fixture();
+        let mut f = with_selection();
         f.state.layout = layout;
         let h = at(size, f);
-        let heights: Vec<(&str, f32)> =
-            [MENU, "Collaboration", "Document name: Untitled", "Thin", "Extra bold", "Pick the stroke colour"]
-                .into_iter()
-                .map(|label| (label, rect(&h, label).height()))
-                .collect();
+        let heights: Vec<(&str, f32)> = [
+            MENU,
+            "Collaboration",
+            "Document name: Untitled",
+            "Thin",
+            "Extra bold",
+            "Dashed",
+            "Pick the stroke colour",
+            "Pick the fill colour",
+        ]
+        .into_iter()
+        .map(|label| (label, rect(&h, label).height()))
+        .collect();
         let first = heights[0].1;
         assert!(heights.iter().all(|(_, height)| (*height - first).abs() < 0.01), "{layout:?}: {heights:?}");
     }
 }
 
 #[test]
-fn the_style_group_is_centred_on_the_window_and_the_right_slot_is_empty() {
+fn the_colour_group_follows_the_left_cluster_and_nothing_else_is_in_the_strip_when_nothing_is_selected() {
     for width in [1280.0, 1100.0] {
         let h = at(vec2(width, 800.0), dialog::fixture());
         let strip = chrome(&h).strip.unwrap();
-        let first = rect(&h, "Stroke");
-        let last = rect(&h, "Extra bold");
-        let middle = (first.min.x + last.max.x) / 2.0;
-        assert!((middle - width / 2.0).abs() < 1.5, "centre {middle} vs {} at {width}", width / 2.0);
-        // Nothing in the strip lies right of the style group.
+        let wheel = rect(&h, "Pick the fill colour").max.x.max(rect(&h, "Pick the stroke colour").max.x);
+        assert!(wheel < width / 2.0, "the colour group is at the left, not centred: ends at {wheel}");
         let past = h
             .query_all_by_role(egui::accesskit::Role::Button)
-            .filter(|n| n.rect().max.y <= strip.max.y && n.rect().min.x > last.max.x + 1.0)
+            .filter(|n| n.rect().max.y <= strip.max.y && n.rect().min.x > wheel + 1.0)
             .count();
-        assert_eq!(past, 0, "the right slot holds nothing yet");
+        assert_eq!(past, 0, "no groups and no More button: nothing right of the colour group");
     }
 }
 
@@ -107,15 +120,18 @@ fn the_menu_opens_under_the_menu_button() {
     let strip = chrome(&h).strip.unwrap();
     let menu = rect(&h, MENU);
     let row = h.get_all_by_label("New tab").map(|n| n.rect()).find(|r| r.min.x < 100.0).unwrap();
+    let shift = STRIP_HEIGHT - 40.0;
     assert!(row.min.y >= strip.max.y, "{row:?} under {strip:?}");
     assert!(row.min.x >= menu.min.x && row.min.x < menu.min.x + 20.0, "left-aligned with the button: {row:?}");
     // The numbers the Playwright specs click (`e2e/web/specs/input/pointer.spec.ts`, `shell/collab.spec.ts`).
     assert_eq!((menu.center().x, menu.center().y), (26.0, 20.0));
     assert_eq!((rect(&h, "Collaboration").center().x, rect(&h, "Collaboration").center().y), (58.0, 20.0));
     // The first row sits under the "File" heading. "Export as PNG" is the first row under the "Export" heading.
-    assert!((row.center().y - 92.0).abs() < 1.0 && row.min.x < 50.0 && row.max.x > 50.0, "{row:?}");
+    // The menu hangs under the strip, which is 32 points taller than the one-row strip these numbers were first
+    // taken for (the e2e specs click them).
+    assert!((row.center().y - (92.0 + shift)).abs() < 1.0 && row.min.x < 50.0 && row.max.x > 50.0, "{row:?}");
     let png = h.get_all_by_label("Export as PNG").map(|n| n.rect()).find(|r| r.min.x < 100.0).unwrap();
-    assert!((png.center().y - 322.0).abs() < 1.0 && png.min.x < 50.0 && png.max.x > 50.0, "{png:?}");
+    assert!((png.center().y - (322.0 + shift)).abs() < 1.0 && png.min.x < 50.0 && png.max.x > 50.0, "{png:?}");
 }
 
 #[test]
@@ -124,10 +140,10 @@ fn the_side_panels_start_under_the_strip_even_in_a_short_window() {
         let h = at(vec2(1280.0, height), with_selection());
         let strip = chrome(&h).strip.unwrap();
         let tools = chrome(&h).tools.unwrap();
-        let ribbon = chrome(&h).ribbon.unwrap();
         assert!(tools.min.y >= strip.max.y, "tools {tools:?} under {strip:?} at {height}");
-        assert!(ribbon.min.y >= strip.max.y, "ribbon {ribbon:?} under {strip:?} at {height}");
-        assert!(tools.max.y <= height && ribbon.max.y <= height, "inside the window");
+        assert!(tools.max.y <= height && strip.max.y <= height, "inside the window");
+        let delete = rect(&h, "Delete");
+        assert!(strip.contains_rect(delete), "the groups of the selection are in the strip: {delete:?}");
     }
 }
 
@@ -176,7 +192,7 @@ fn a_narrow_strip_collapses_the_style_controls_into_one_button_that_opens_a_popo
         h.get_by_label(STYLE).click();
         h.run();
         assert!(h.state().state.style_open);
-        let popover = ["Stroke blue", "Fill blue", "Extra bold", "Pick the stroke colour", "Pick the fill colour"];
+        let popover = ["Stroke blue", "Fill blue", "Pick the stroke colour", "Pick the fill colour"];
         for label in popover {
             let r = rect(&h, label);
             assert!(screen.contains_rect(r) && r.min.y >= strip.max.y, "{label} {r:?} at {width}");
@@ -207,10 +223,14 @@ fn the_colour_popover_opened_from_the_style_popover_does_not_close_it() {
 }
 
 #[test]
-fn a_wide_window_that_gets_narrower_collapses_and_a_wider_one_expands_again() {
-    // 800 points is not a touch layout, yet the three groups do not fit side by side.
-    let h = at(vec2(800.0, 600.0), dialog::fixture());
+fn a_window_that_is_too_narrow_for_the_colour_group_collapses_it_and_a_wider_one_expands_again() {
+    // The desktop layout at 340 points is not the phone layout, yet the colour group does not fit beside the
+    // left cluster. The strip keeps its two rows.
+    let mut f = dialog::fixture();
+    f.state.layout = LayoutPreference::Desktop;
+    let h = at(vec2(340.0, 600.0), f);
     assert!(h.query_by_label(STYLE).is_some() && h.query_by_label("Stroke blue").is_none());
+    assert_eq!(chrome(&h).strip.unwrap().height(), STRIP_HEIGHT);
     let h = at(vec2(1280.0, 600.0), dialog::fixture());
     assert!(h.query_by_label(STYLE).is_none() && h.query_by_label("Stroke blue").is_some());
 }

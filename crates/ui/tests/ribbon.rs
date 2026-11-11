@@ -1,7 +1,8 @@
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
-//! The ribbon: which groups show for what is selected or drawn, where the card sits, how it behaves in a small
-//! window and in the dark theme. The controls are found by their accessible names; what a click runs is in
-//! `surfaces.rs`, `text_props.rs` and `refusals.rs`.
+//! The contextual groups of the top strip: which groups show for what is selected or drawn, how they are stacked
+//! in the strip's two rows, how they overflow into "More" in a small window and how they look in the dark theme.
+//! The controls are found by their accessible names; what a click runs is in `surfaces.rs`, `text_props.rs` and
+//! `refusals.rs`.
 
 mod common;
 mod dialog;
@@ -120,21 +121,22 @@ const ALIGN_LEFT: &str = "Align left";
 // ---- nothing selected ----
 
 #[test]
-fn with_nothing_selected_and_a_tool_that_draws_nothing_there_is_no_card() {
+fn with_nothing_selected_and_a_tool_that_draws_nothing_there_only_the_colour_group_shows() {
+    // Decision: the colour group stays (the defaults for new elements are what people reach for first, and the
+    // strip keeps its height); nothing else, in particular no width, which has no meaning without a stroke.
     for tool in ["select", "lasso", "hand", "eraser", "laser"] {
         let h = desk(with_tool(tool));
-        assert!(chrome(&h).ribbon.is_none(), "{tool}: no card");
-        assert!(!has(&h, "More options") && !has(&h, "Dashed"), "{tool}");
-        // The strip still holds the defaults for new elements.
+        assert!(!has(&h, "More options") && !has(&h, "Dashed") && !has(&h, "Thin"), "{tool}");
         h.get_by_label("Stroke blue");
-        h.get_by_label("Thin");
+        h.get_by_label("Fill blue");
+        h.get_by_label("Pick the fill colour");
     }
 }
 
 #[test]
 fn each_drawing_tool_shows_the_groups_of_its_new_elements() {
     let h = desk(with_tool("rectangle"));
-    assert!(has(&h, "Dashed") && has(&h, CORNERS) && has(&h, "More options") && has(&h, "Opacity"));
+    assert!(has(&h, "Dashed") && has(&h, CORNERS) && has(&h, "More options") && has(&h, "Opacity") && has(&h, "Thin"));
     assert!(
         !has(&h, FONT) && !has(&h, "Brush: Normal") && !has(&h, BRING_FRONT),
         "no text, no brush, nothing to layer"
@@ -147,13 +149,14 @@ fn each_drawing_tool_shows_the_groups_of_its_new_elements() {
     assert!(has(&h, "Dashed") && !has(&h, FONT) && !has(&h, "New arrows: Elbow"));
     let h = desk(with_tool("freehand"));
     assert!(has(&h, "Brush: Calligraphy") && has(&h, "More options") && !has(&h, "Dashed"));
+    assert!(has(&h, "Thin"), "a freehand stroke has a width");
     let h = desk(with_tool("highlighter"));
     assert!(has(&h, "Brush: Normal"));
     for tool in ["text", "math"] {
         let h = desk(with_tool(tool));
         assert!(has(&h, FONT) && has(&h, TEXT_SIZE) && has(&h, "Text align: Left"), "{tool}");
         assert!(has(&h, "Heavy") && has(&h, "More options"), "{tool}: weight, line height");
-        assert!(!has(&h, "Dashed") && !has(&h, CORNERS) && !has(&h, BRING_FRONT), "{tool}");
+        assert!(!has(&h, "Dashed") && !has(&h, CORNERS) && !has(&h, BRING_FRONT) && !has(&h, "Thin"), "{tool}");
     }
 }
 
@@ -177,9 +180,12 @@ fn a_rectangle_gets_stroke_corners_opacity_layers_and_actions_but_no_text_align_
         assert!(has(&h, label), "{label}");
     }
     h.get_by_role_and_label(egui::accesskit::Role::Slider, "Opacity");
-    for label in [FONT, TEXT_SIZE, ALIGN_LEFT, "Path: Elbow", "Start head", "Brush: Normal", PATTERN] {
+    for label in
+        [FONT, TEXT_SIZE, ALIGN_LEFT, "Path: Elbow", "Start head", "Brush: Normal", PATTERN, "Vertical align: Top"]
+    {
         assert!(!has(&h, label), "{label}");
     }
+    assert!(has(&h, "Thin") && has(&h, "Extra bold"), "a rectangle has a width");
 }
 
 #[test]
@@ -227,7 +233,7 @@ fn text_gets_font_weight_size_emphasis_and_alignment() {
         assert!(has(&h, label), "{label}");
     }
     assert!(has(&h, BRING_FRONT) && has(&h, "Duplicate") && has(&h, "More options"));
-    for label in ["Dashed", CORNERS, "Path: Sharp"] {
+    for label in ["Dashed", CORNERS, "Path: Sharp", "Thin"] {
         assert!(!has(&h, label), "{label}");
     }
     open(&mut h, "More options");
@@ -245,6 +251,38 @@ fn an_arrow_gets_path_heads_and_a_swap() {
     open(&mut h, "End head");
     h.get_by_label("End head: Triangle");
     h.get_by_label("Swap heads");
+}
+
+#[test]
+fn the_head_buttons_show_the_heads_of_the_selected_arrow() {
+    let mut f = dialog::fixture();
+    let a = create(
+        &mut f,
+        json!({ "kind": "arrow", "points": [[0, 0], [80, 30]], "start_head": "circle", "end_head": "triangle" }),
+    );
+    selecting(&mut f, &[a]);
+    let mut h = desk(f);
+    let heads = h.state().model.style.heads.clone().expect("a selected arrow has heads");
+    assert_eq!((heads.start.as_str(), heads.end.as_str()), ("circle", "triangle"));
+    let on =
+        |h: &H, label: &str| h.get_by_label(label).accesskit_node().toggled() == Some(egui::accesskit::Toggled::True);
+    open(&mut h, "Start head");
+    assert!(on(&h, "Start head: Dot") && !on(&h, "Start head: None"), "the start head is checked in its menu");
+    common::click(&mut h, "Start head: Dot");
+    h.run();
+    open(&mut h, "End head");
+    assert!(on(&h, "End head: Triangle") && !on(&h, "End head: Arrow"), "and so is the end head");
+}
+
+#[test]
+fn two_arrows_with_different_heads_say_mixed() {
+    let mut f = dialog::fixture();
+    let a = create(&mut f, json!({ "kind": "arrow", "points": [[0, 0], [80, 30]], "end_head": "triangle" }));
+    let b = create(&mut f, json!({ "kind": "arrow", "points": [[0, 100], [80, 130]], "end_head": "bar" }));
+    selecting(&mut f, &[a, b]);
+    let h = desk(f);
+    let heads = h.state().model.style.heads.clone().unwrap();
+    assert_eq!((heads.start.as_str(), heads.end.as_str()), ("none", "mixed"));
 }
 
 #[test]
@@ -274,11 +312,15 @@ fn align_needs_two_elements_and_distribute_three() {
 
 #[test]
 fn a_text_and_a_shape_together_get_both_sets_of_groups() {
-    let h = desk(text_and_shape());
-    for label in [FONT, TEXT_SIZE, "Text align: Left", "Dashed", CORNERS, BRING_FRONT, ALIGN_LEFT, "Bold text"] {
+    // Changed with the strip: at 1280 the layer and action groups of this selection do not fit beside the text
+    // groups any more and wait behind "More" (see the overflow tests); they used to hang in the card's second row.
+    let mut h = desk(text_and_shape());
+    for label in [FONT, TEXT_SIZE, "Text align: Left", "Dashed", CORNERS, ALIGN_LEFT, "Bold text"] {
         assert!(has(&h, label), "{label}");
     }
     assert!(!has(&h, "Path: Elbow"));
+    open(&mut h, "More options");
+    h.get_by_label(BRING_FRONT);
 }
 
 #[test]
@@ -289,67 +331,159 @@ fn a_labelled_shape_offers_the_vertical_align_and_bold_of_its_label() {
     selecting(&mut f, &[r]);
     let mut h = desk(f);
     assert!(has(&h, "Bold text") && has(&h, FONT));
-    open(&mut h, "More options");
-    h.get_by_label("Middle");
+    // The vertical align is a row of the text group now, no longer in "More".
+    h.get_by_label("Vertical align: Middle");
+    common::click(&mut h, "Vertical align: Bottom");
+    let calls = h.state().calls().into_iter().cloned().collect::<Vec<_>>();
+    assert_eq!(
+        calls.last().map(|c| (c.id.as_str(), &c.args)),
+        Some(("style.set", &json!({ "props": { "vertical_align": "bottom" } })))
+    );
 }
 
-// ---- the card ----
+// ---- the strip ----
+
+/// The height of the strip: two rows of 28 points, the gap between them, and 6 points above and below.
+const STRIP_HEIGHT: f32 = 2.0 * 28.0 + 4.0 + 2.0 * 6.0;
 
 #[test]
-fn the_groups_keep_their_order_from_left_to_right() {
-    let h = desk(rects(3));
-    let labels = [
-        "Dashed",
-        CORNERS,
-        "More options",
-        "Opacity",
-        ALIGN_LEFT,
-        BRING_FRONT,
-        "Flip horizontally",
-        "Duplicate",
-        "Delete",
+fn the_strip_has_the_same_height_whatever_is_selected() {
+    let states: [(&str, Fixture); 6] = [
+        ("empty", dialog::fixture()),
+        ("rectangle", one_rect()),
+        ("text", free_text()),
+        ("arrow", arrow()),
+        ("three shapes", rects(3)),
+        ("freehand tool", with_tool("freehand")),
     ];
-    let xs: Vec<f32> = labels.iter().map(|l| rect(&h, l).min.x).collect();
-    assert!(xs.windows(2).all(|w| w[0] < w[1]), "{labels:?} at {xs:?}");
-    let ys: Vec<f32> = labels.iter().map(|l| rect(&h, l).center().y).collect();
-    assert!(ys.iter().all(|y| (y - ys[0]).abs() < 1.0), "one row at 1280: {ys:?}");
-}
-
-#[test]
-fn the_card_hangs_under_the_strip_and_is_centred_on_the_window() {
-    for (name, f) in [("rect", one_rect()), ("three", rects(3)), ("arrow", arrow())] {
+    for (name, f) in states {
         let h = desk(f);
-        let (strip, card) = (chrome(&h).strip.unwrap(), chrome(&h).ribbon.unwrap());
-        assert!(
-            card.min.y > strip.max.y && card.min.y - strip.max.y < 12.0,
-            "{name}: attached under the strip: {card:?}"
-        );
-        assert!((card.center().x - 640.0).abs() < 1.5, "{name}: centred, at {:?}", card.center());
+        let strip = chrome(&h).strip.unwrap();
+        assert_eq!(strip.height(), STRIP_HEIGHT, "{name}: {strip:?}");
+        assert_eq!(strip.width(), 1280.0, "{name}");
     }
 }
 
 #[test]
-fn the_card_stays_inside_the_window_and_clear_of_the_other_chrome_at_every_size() {
+fn the_width_group_comes_with_a_stroke_to_set() {
+    let none = desk(dialog::fixture());
+    assert!(!has(&none, "Thin") && !has(&none, "Solid"), "nothing selected and the select tool: no width");
+    for (name, f) in
+        [("rectangle", one_rect()), ("arrow", arrow()), ("freehand", freehand()), ("tool", with_tool("line"))]
+    {
+        let h = desk(f);
+        assert!(has(&h, "Thin") && has(&h, "Extra bold"), "{name}");
+    }
+    assert!(!has(&desk(free_text()), "Thin"), "text has no stroke width");
+}
+
+#[test]
+fn the_colour_rows_are_stacked_and_their_swatches_start_at_the_same_x() {
+    let h = desk(one_rect());
+    let (stroke, fill) = (rect(&h, "Stroke"), rect(&h, "Fill"));
+    assert_eq!(stroke.min.x, fill.min.x, "the labels start together: {stroke:?} {fill:?}");
+    assert!(fill.min.y >= stroke.max.y, "fill is the row under stroke: {stroke:?} over {fill:?}");
+    // The first swatch of both rows: "no fill" under the first stroke colour.
+    let first_stroke = rect(&h, "Stroke blue");
+    let no_fill = rect(&h, "No fill");
+    assert_eq!(first_stroke.min.x, no_fill.min.x, "swatch columns line up");
+    assert!(no_fill.center().y > first_stroke.center().y + 20.0);
+    let (stroke_wheel, fill_wheel) = (rect(&h, "Pick the stroke colour"), rect(&h, "Pick the fill colour"));
+    assert!(fill_wheel.center().y > stroke_wheel.center().y + 20.0, "{stroke_wheel:?} over {fill_wheel:?}");
+}
+
+#[test]
+fn the_groups_lie_right_of_the_colour_group_on_one_band_in_two_rows() {
+    let h = desk(rects(3));
+    let strip = chrome(&h).strip.unwrap();
+    let colour_end = rect(&h, "Pick the stroke colour").max.x.max(rect(&h, "Pick the fill colour").max.x);
+    // Row one: the first control of each group. Row two: the second row of each group.
+    let first = ["Thin", CORNERS, "Opacity", BRING_FRONT, "Duplicate"];
+    let second = ["Dashed", ALIGN_LEFT, "Flip horizontally", "Delete"];
+    for label in first.iter().chain(&second) {
+        let r = rect(&h, label);
+        assert!(r.min.x > colour_end, "{label} {r:?} is right of the colour group (ends {colour_end})");
+        assert!(strip.contains_rect(r), "{label} {r:?} is in the strip {strip:?}");
+    }
+    let ys = |labels: &[&str]| labels.iter().map(|l| rect(&h, l).center().y).collect::<Vec<_>>();
+    let (top, bottom) = (ys(&first), ys(&second));
+    assert!(top.iter().all(|y| (y - top[0]).abs() < 1.0), "one top row: {top:?}");
+    assert!(bottom.iter().all(|y| (y - bottom[0]).abs() < 1.0), "one bottom row: {bottom:?}");
+    assert!(bottom[0] - top[0] > 28.0, "the second row is under the first: {top:?} {bottom:?}");
+    // The colour rows are the same two rows.
+    assert!((rect(&h, "Stroke blue").center().y - top[0]).abs() < 1.0);
+    assert!((rect(&h, "No fill").center().y - bottom[0]).abs() < 1.0);
+}
+
+#[test]
+fn the_groups_keep_their_order_from_left_to_right() {
+    let h = desk(rects(3));
+    let labels = ["Thin", CORNERS, "Opacity", ALIGN_LEFT, BRING_FRONT, "Duplicate", "Delete"];
+    let xs: Vec<f32> = labels.iter().map(|l| rect(&h, l).min.x).collect();
+    assert!(xs.windows(2).all(|w| w[0] <= w[1]), "{labels:?} at {xs:?}");
+    assert!(xs[0] < xs[1] && xs[1] < xs[2] && xs[3] < xs[5], "and the groups are apart: {xs:?}");
+}
+
+#[test]
+fn text_selection_packs_its_groups_left_to_right_in_two_rows() {
+    let h = desk(free_text());
+    let strip = chrome(&h).strip.unwrap();
+    let labels = [FONT, "Text size S (16 px)", "Text align: Left", "Opacity"];
+    let xs: Vec<f32> = labels.iter().map(|l| rect(&h, l).min.x).collect();
+    assert!(xs.windows(2).all(|w| w[0] < w[1]), "{labels:?} at {xs:?}");
+    // Weight is under the family, bold under the size, on the same x.
+    assert_eq!(rect(&h, "Light").min.x, rect(&h, FONT).min.x);
+    assert_eq!(rect(&h, "Bold text").min.x, rect(&h, "Text size S (16 px)").min.x);
+    assert!(rect(&h, "Light").min.y >= rect(&h, FONT).max.y - 1.0);
+    for label in labels {
+        assert!(strip.contains_rect(rect(&h, label)), "{label}");
+    }
+}
+
+#[test]
+fn corners_are_icons_with_the_same_height_as_the_other_buttons() {
+    let h = desk(one_rect());
+    for label in ["Corners: Sharp", CORNERS] {
+        let r = rect(&h, label);
+        assert_eq!((r.width(), r.height()), (28.0, 28.0), "{label} is a square icon button");
+    }
+}
+
+#[test]
+fn the_buttons_of_the_strip_have_the_height_of_their_layout() {
+    let h = desk(one_rect());
+    for label in ["Dashed", BRING_FRONT, "Duplicate", "Thin"] {
+        assert_eq!(rect(&h, label).height(), 28.0, "{label}");
+    }
+    let mut f = one_rect();
+    f.state.layout = LayoutPreference::Touch;
+    let h = desk(f);
+    for label in ["Dashed", "Thin", CORNERS] {
+        assert_eq!(rect(&h, label).height(), 40.0, "{label}");
+    }
+}
+
+#[test]
+fn the_strip_stays_inside_the_window_and_clear_of_the_other_chrome_at_every_size() {
     let sizes = [(1280.0, 800.0), (820.0, 1180.0), (390.0, 844.0), (1180.0, 820.0)];
     for theme in [egui::Theme::Light, egui::Theme::Dark] {
         for (w, height) in sizes {
             for (name, mut f) in [("text and shape", text_and_shape()), ("three", rects(3)), ("arrow", arrow())] {
-                // The drawer is open, the biggest thing the card must keep out of.
+                // The drawer is open, the biggest thing the strip must keep out of.
                 f.state.apply_verb(Verb::ToggleLibrary, &mut Vec::new());
                 f.model.wants_library = true;
                 f.refresh();
                 let h = at(vec2(w, height), theme, f);
                 let screen = Rect::from_min_size(egui::Pos2::ZERO, vec2(w, height));
                 let c = chrome(&h);
-                let card = c.ribbon.unwrap_or_else(|| panic!("{name} at {w}x{height}: no card"));
-                let here = format!("{name} {theme:?} at {w}x{height}: card {card:?}");
-                assert!(screen.contains_rect(card), "{here} is inside the window");
-                assert!(card.min.y >= c.strip.unwrap().max.y, "{here} is under the strip");
+                let strip = c.strip.unwrap();
+                let here = format!("{name} {theme:?} at {w}x{height}: strip {strip:?}");
+                assert!(screen.contains_rect(strip), "{here} is inside the window");
                 for (other, r) in
                     [("tool column", c.tools), ("bottom bar", c.bottom_bar), ("tabs", c.tabs), ("library", c.library)]
                 {
                     if let Some(r) = r {
-                        assert!(!card.intersects(r), "{here} overlaps the {other} {r:?}");
+                        assert!(!strip.intersects(r), "{here} overlaps the {other} {r:?}");
                     }
                 }
             }
@@ -357,46 +491,76 @@ fn the_card_stays_inside_the_window_and_clear_of_the_other_chrome_at_every_size(
     }
 }
 
-#[test]
-fn a_wide_card_wraps_into_rows_and_a_narrow_window_scrolls_one_row() {
-    let wide = desk(free_text());
-    let card = chrome(&wide).ribbon.unwrap();
-    assert!(card.height() > 60.0, "text at 1280 needs two rows: {card:?}");
-    let narrow = at(vec2(390.0, 844.0), egui::Theme::Light, free_text());
-    let card = chrome(&narrow).ribbon.unwrap();
-    assert!(card.height() < 40.0 + 2.0 * 12.0, "one row on a phone: {card:?}");
-    assert!(card.width() <= 390.0 - 2.0 * 12.0 + 0.5, "{card:?}");
+// ---- overflow ----
+
+/// The controls of the strip that are in the window, by role: everything the person can press up there.
+fn in_the_strip(h: &H) -> Vec<Rect> {
+    let strip = chrome(h).strip.unwrap();
+    h.query_all_by_role(egui::accesskit::Role::Button)
+        .map(|n| n.rect())
+        .filter(|r| r.is_positive() && r.max.y <= strip.max.y + 0.5)
+        .collect()
 }
 
 #[test]
-fn the_card_follows_the_selection_without_moving_the_strip_row() {
-    let mut h = desk(dialog::fixture());
-    let before = (rect(&h, "Stroke blue"), rect(&h, "Thin"));
-    assert!(chrome(&h).ribbon.is_none());
-    let a = add_rect(&mut h.state_mut().session, 0.0, 0.0, 50.0, 50.0).unwrap();
-    select(&mut h.state_mut().session, &[a]);
-    h.state_mut().refresh();
-    h.run();
-    assert!(chrome(&h).ribbon.is_some());
-    assert_eq!((rect(&h, "Stroke blue"), rect(&h, "Thin")), before, "stroke, fill and width stay where they were");
-    select(&mut h.state_mut().session, &[]);
-    h.state_mut().refresh();
-    h.run();
-    assert!(chrome(&h).ribbon.is_none(), "and the card goes");
+fn what_does_not_fit_goes_behind_more_from_the_right_end_and_is_reachable_there() {
+    for width in [1024.0, 820.0] {
+        let mut h = at(vec2(width, 800.0), egui::Theme::Light, text_and_shape());
+        let strip = chrome(&h).strip.unwrap();
+        let screen = Rect::from_min_size(egui::Pos2::ZERO, vec2(width, 800.0));
+        assert_eq!(strip.height(), STRIP_HEIGHT, "the strip does not grow at {width}");
+        assert!(has(&h, "More options"), "{width}");
+        assert!(!has(&h, "Delete"), "the actions are the last group, so they go first at {width}");
+        assert!(has(&h, "Dashed") || width < 1000.0, "the first group stays at {width}");
+        for r in in_the_strip(&h) {
+            assert!(screen.contains_rect(r), "{r:?} is inside the window at {width}");
+        }
+        open(&mut h, "More options");
+        let delete = rect(&h, "Delete");
+        let button = rect(&h, "More options");
+        assert!(delete.min.y >= strip.max.y, "the popover is under the strip: {delete:?} at {width}");
+        assert!(delete.max.x <= button.max.x + 1.0 && screen.contains_rect(delete), "{delete:?} at {width}");
+        let calls = common::click(&mut h, "Delete");
+        assert_eq!(calls.last().map(|c| c.id.as_str()), Some("element.delete"), "{width}");
+    }
 }
 
 #[test]
-fn the_buttons_of_the_card_have_the_height_of_their_layout() {
+fn a_window_that_is_wide_enough_has_no_overflow_for_the_properties_of_one_shape() {
     let h = desk(one_rect());
-    for label in ["Dashed", BRING_FRONT, "Duplicate"] {
-        assert_eq!(rect(&h, label).height(), 28.0, "{label}");
+    assert!(has(&h, "Delete") && has(&h, BRING_FRONT) && has(&h, "Duplicate"));
+}
+
+#[test]
+fn the_overflow_keeps_the_groups_in_order_and_hides_only_a_tail() {
+    let widths = [1280.0, 1100.0, 1024.0, 900.0, 820.0];
+    let order = ["Thin", "Corners: Sharp", FONT, TEXT_SIZE, "Text align: Left", "Opacity", BRING_FRONT, "Delete"];
+    let mut last_hidden = 0;
+    for width in widths {
+        let h = at(vec2(width, 800.0), egui::Theme::Light, text_and_shape());
+        let shown: Vec<bool> = order.iter().map(|l| has(&h, l)).collect();
+        let first_hidden = shown.iter().position(|s| !s).unwrap_or(shown.len());
+        assert!(shown[first_hidden..].iter().all(|s| !s), "only a tail is hidden at {width}: {shown:?}");
+        assert!(first_hidden <= order.len() && (width == 1280.0 || first_hidden >= 1), "{width}: {shown:?}");
+        assert!(order.len() - first_hidden >= last_hidden, "a narrower window never shows more: {width}");
+        last_hidden = order.len() - first_hidden;
     }
-    let mut f = one_rect();
-    f.state.layout = LayoutPreference::Touch;
-    let h = desk(f);
-    for label in ["Dashed", BRING_FRONT, "Duplicate"] {
-        assert_eq!(rect(&h, label).height(), 40.0, "{label}");
+}
+
+#[test]
+fn a_phone_keeps_one_row_and_puts_the_groups_behind_more() {
+    let mut h = at(vec2(390.0, 844.0), egui::Theme::Light, free_text());
+    let strip = chrome(&h).strip.unwrap();
+    assert_eq!(strip.height(), 40.0 + 2.0 * 6.0, "one row of finger-sized controls");
+    assert!(!has(&h, FONT) && !has(&h, "Duplicate"), "nothing contextual in the strip");
+    for r in in_the_strip(&h) {
+        assert!(strip.contains_rect(r) && r.max.x <= 390.0, "{r:?}");
     }
+    open(&mut h, "More options");
+    h.get_by_label(FONT);
+    h.get_by_label("Duplicate");
+    assert!(rect(&h, FONT).min.y >= strip.max.y, "under the strip");
+    assert!(rect(&h, "Duplicate").max.x <= 390.0);
 }
 
 // ---- menus ----
@@ -406,8 +570,10 @@ fn a_ribbon_menu_opens_under_its_button_and_closes_on_a_pick_a_click_outside_and
     let mut h = desk(one_rect());
     open(&mut h, "More options");
     let button = rect(&h, "More options");
+    let strip = chrome(&h).strip.unwrap();
     let row = rect(&h, "Cartoonist");
-    assert!(row.min.y >= button.max.y && row.min.x >= button.min.x - 1.0, "{row:?} under {button:?}");
+    // The button is at the right end of the strip, so the menu hangs from its right edge, under the strip.
+    assert!(row.min.y >= strip.max.y && row.max.x <= button.max.x + 1.0, "{row:?} under {strip:?}, {button:?}");
     assert!(h.state().state.ribbon_menu.is_some());
     common::click(&mut h, "Cartoonist");
     h.run();
@@ -453,11 +619,11 @@ fn the_dropdown_shows_the_family_in_use() {
 // ---- themes ----
 
 #[test]
-fn the_card_is_drawn_in_the_dark_theme_with_the_same_controls() {
+fn the_strip_is_drawn_in_the_dark_theme_with_the_same_layout() {
     let light = desk(rects(3));
     let dark = at(vec2(1280.0, 800.0), egui::Theme::Dark, rects(3));
-    assert_eq!(chrome(&light).ribbon, chrome(&dark).ribbon, "the same layout");
-    for label in [ALIGN_LEFT, BRING_FRONT, "Dashed"] {
-        assert!(has(&dark, label), "{label}");
+    assert_eq!(chrome(&light).strip, chrome(&dark).strip, "the same layout");
+    for label in [ALIGN_LEFT, BRING_FRONT, "Dashed", "Thin"] {
+        assert_eq!(rect(&light, label), rect(&dark, label), "{label}");
     }
 }
