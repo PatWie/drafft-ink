@@ -78,7 +78,8 @@ Status: **covered, passing** (the behaviour is asserted by a passing new test), 
 | `storage` | 15 | 8 | 7 | 0 |
 | `sync` | 5 | 0 | 5 | 0 |
 | `tools` | 4 | 4 | 0 | 0 |
-| `vello_impl` | 3 | 3 | 0 | 0 || **Total** | **158** | **126** | **29** | **3** |
+| `vello_impl` | 3 | 3 | 0 | 0 |
+| **Total** | **158** | **126** | **29** | **3** |
 
 Two things the counts hide.
 - Where the 29 "covered differently" rows get their justification. `docs/commands.md` §7.5 or `docs/deviations.md`: 7 rows (the five group-shape tests, item 11 and D4; two autosave tests, item 18). Another design document only: 22 rows (camera formulas, 3: `docs/canvas-api.md`; the sync and collaboration mirror, 7: `docs/protocol.md`, `docs/crdt.md`; Excalidraw library wrappers, 3: `docs/model.md`; autosave manager creation, 1; the byte `Storage` port replacing the typed document storage, 4: `docs/commands.md` §1; the 8-handle transformer, 1: `docs/canvas-api.md`; image format by bytes, 1: `docs/formats.md`; max zoom 30 instead of 10, 1: `docs/commands.md` §3 view; layered layout replacing the old rank code, 1: `docs/commands.md` §2.19). Items outside §7.5 and `deviations.md` could be added there if the coordinator wants one list of every behaviour change.
