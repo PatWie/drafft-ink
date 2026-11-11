@@ -11,15 +11,11 @@ use std::path::PathBuf;
 /// The statuses a row may have, in the order of the columns of the counts table.
 const STATUSES: [&str; 4] = ["done", "partial", "missing", "out of scope"];
 
-/// The dagger that marks a row whose last link is a shell (`docs/parity.md`, "How to read this").
-const SHELL_MARK: &str = "†";
-
 /// One feature row of the audit.
 #[derive(Debug)]
 struct Row {
     id: String,
     status: String,
-    where_cell: String,
 }
 
 impl Row {
@@ -72,18 +68,18 @@ fn parse_rows(text: &str) -> Result<Vec<Row>, String> {
         if !STATUSES.contains(&status) {
             return Err(format!("line {}: row {first} has the status {status:?}", n + 1));
         }
-        rows.push(Row { id: first.to_string(), status: status.to_string(), where_cell: cells[4].to_string() });
+        rows.push(Row { id: first.to_string(), status: status.to_string() });
     }
     Ok(rows)
 }
 
-/// The numbers of one line of the counts table in section 3: done, partial, missing, out of scope, rows, with a dagger.
-fn parse_count_line(line: &str) -> Result<[usize; 6], String> {
+/// The numbers of one line of the counts table in section 3: done, partial, missing, out of scope, rows.
+fn parse_count_line(line: &str) -> Result<[usize; 5], String> {
     let cells = cells(line);
-    if cells.len() != 7 {
-        return Err(format!("counts line {line:?} has {} cells, expected 7", cells.len()));
+    if cells.len() != 6 {
+        return Err(format!("counts line {line:?} has {} cells, expected 6", cells.len()));
     }
-    let mut numbers = [0usize; 6];
+    let mut numbers = [0usize; 5];
     for (slot, cell) in numbers.iter_mut().zip(&cells[1..]) {
         *slot = cell.parse().map_err(|_| format!("counts line {line:?}: {cell:?} is not a number"))?;
     }
@@ -98,17 +94,14 @@ fn section<'a>(text: &'a str, heading: &str) -> Result<&'a str, String> {
     Ok(&rest[..end])
 }
 
-/// What the rows say: per part, the number of rows per status, the number of rows and the done rows with a dagger.
-fn count_rows(rows: &[Row], part: Option<char>) -> [usize; 6] {
-    let mut numbers = [0usize; 6];
+/// What the rows say: the number of rows per status and the number of rows, for one part or for all.
+fn count_rows(rows: &[Row], part: Option<char>) -> [usize; 5] {
+    let mut numbers = [0usize; 5];
     for row in rows.iter().filter(|r| part.is_none_or(|p| r.part() == p)) {
         if let Some(i) = STATUSES.iter().position(|s| *s == row.status) {
             numbers[i] += 1;
         }
         numbers[4] += 1;
-        if row.status == "done" && row.where_cell.contains(SHELL_MARK) {
-            numbers[5] += 1;
-        }
     }
     numbers
 }
@@ -128,7 +121,7 @@ fn counts_table_equals_the_rows_per_status() {
         let actual = count_rows(&rows, part);
         assert_eq!(
             stated, actual,
-            "counts line {prefix:?}: [done, partial, missing, out of scope, rows, done with dagger] stated vs counted from the rows"
+            "counts line {prefix:?}: [done, partial, missing, out of scope, rows] stated vs counted from the rows"
         );
         seen += 1;
     }
@@ -159,21 +152,47 @@ fn section_one_holds_the_a_rows_and_section_two_the_b_rows() {
     }
 }
 
-#[test]
-fn every_row_id_named_in_the_gap_lists_is_a_row() {
-    let text = read_parity().unwrap();
-    let rows = parse_rows(&text).unwrap();
-    let known: Vec<&str> = rows.iter().map(|r| r.id.as_str()).collect();
-    let gaps = section(&text, "\n## 4. Prioritised gap list").unwrap();
-    let mut missing = Vec::new();
+/// The row ids named in the "Gap (rows)" column of the tables in section 4.
+fn gap_list_ids(text: &str) -> Result<Vec<String>, String> {
+    let gaps = section(text, "\n## 4. Prioritised gap list")?;
+    let mut ids = Vec::new();
     for line in gaps.lines().filter(|l| l.starts_with('|')) {
-        // Only the "Gap (rows)" column names rows; the "What is needed" column may cite ids of the old text too.
+        // Only the third column names rows; the "What is needed" column may mention other ids.
         let Some(&gap) = cells(line).get(2) else { continue };
         for word in gap.split(|c: char| !(c.is_ascii_alphanumeric() || c == '-')) {
-            if is_row_id(word) && !known.contains(&word) {
-                missing.push(word.to_string());
+            if is_row_id(word) {
+                ids.push(word.to_string());
             }
         }
     }
-    assert!(missing.is_empty(), "the gap lists name rows that do not exist: {missing:?}");
+    Ok(ids)
+}
+
+#[test]
+fn the_gap_lists_name_rows_that_exist_and_are_not_done() {
+    let text = read_parity().unwrap();
+    let rows = parse_rows(&text).unwrap();
+    let mut bad = Vec::new();
+    for id in gap_list_ids(&text).unwrap() {
+        match rows.iter().find(|r| r.id == id) {
+            None => bad.push(format!("{id} is not a row")),
+            Some(row) if row.status == "done" => bad.push(format!("{id} is done")),
+            Some(_) => {}
+        }
+    }
+    assert!(bad.is_empty(), "the gap lists are out of date: {bad:?}");
+}
+
+#[test]
+fn every_partial_or_missing_row_is_in_a_gap_list() {
+    let text = read_parity().unwrap();
+    let rows = parse_rows(&text).unwrap();
+    let named = gap_list_ids(&text).unwrap();
+    let left_out: Vec<&str> = rows
+        .iter()
+        .filter(|r| r.status == "partial" || r.status == "missing")
+        .map(|r| r.id.as_str())
+        .filter(|id| !named.iter().any(|n| n == id))
+        .collect();
+    assert!(left_out.is_empty(), "partial or missing rows that no gap list names: {left_out:?}");
 }
