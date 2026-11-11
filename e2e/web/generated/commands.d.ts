@@ -1651,8 +1651,8 @@ export namespace DocDrop {
     /** A path the session's file access can read. */
     path: string;
   };
-  /** What to do with a PNG that carries a scene. */
-  type A_ScenePng = "insert" | "open";
+  /** What to do with a PNG that carries a scene (a drafft.ink export, or an Excalidraw export with its scene). */
+  type A_ScenePng = "open" | "insert";
   /** Arguments of `doc.drop`. */
   export type Args = {
     /** World point to put images and merged elements at: a point, `viewport_center` (default) or `$cursor`. */
@@ -1663,7 +1663,10 @@ export namespace DocDrop {
     items: A_DropItem[];
     /** What to do with unsaved changes when a document replaces the active one. */
     on_unsaved?: A_OnUnsaved;
-    /** A PNG with an embedded scene: `insert` it as an image (default) or `open` the scene. */
+    /**
+     * A PNG with an embedded scene: `open` the scene (default, like a dropped document) or `insert` the PNG as
+     * an image.
+     */
     scene_png?: A_ScenePng;
   };
   /** What a drop did. */
@@ -1680,6 +1683,11 @@ export namespace DocDrop {
     images: number;
     /** Library items added. */
     library_items: number;
+    /**
+     * One sentence for each PNG whose embedded scene could not be read and that was inserted as a picture
+     * instead (each is also a warning). A shell shows these to the person.
+     */
+    scene_fallbacks: string[];
     /** Files that were skipped (each is also a warning). */
     skipped: number;
     /** The label of the undo step the command pushed. */

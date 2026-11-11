@@ -123,6 +123,86 @@ fn native_png_and_svg_round_trip_through_open() {
     assert_eq!(imported.document.elements.len(), 11);
 }
 
+/// A PNG with one text chunk, written the way Excalidraw's `png-chunk-text` does (`tEXt`, Latin-1) or as `iTXt`.
+fn png_with_text(keyword: &str, text: &str, international: bool) -> Vec<u8> {
+    let mut out = Vec::new();
+    {
+        let mut enc = png::Encoder::new(&mut out, 2, 2);
+        enc.set_color(png::ColorType::Grayscale);
+        enc.set_depth(png::BitDepth::Eight);
+        if international {
+            enc.add_itxt_chunk(keyword.to_owned(), text.to_owned()).unwrap();
+        } else {
+            enc.add_text_chunk(keyword.to_owned(), text.to_owned()).unwrap();
+        }
+        let mut w = enc.write_header().unwrap();
+        w.write_image_data(&[0, 0, 0, 0]).unwrap();
+    }
+    out
+}
+
+fn excalidraw_png_fixture(name: &str) -> Vec<u8> {
+    std::fs::read(fixtures().join("excalidraw").join(name)).unwrap()
+}
+
+#[test]
+fn pngs_exported_by_excalidraw_open_as_their_scene() {
+    // Both are Excalidraw's own test files and hold one text. `test_embedded_v1.png` keeps the scene JSON in the
+    // chunk (the first export format), `smiley_embedded_v2.png` has the compressed `bstring` envelope.
+    for (name, want) in [("test_embedded_v1.png", "test"), ("smiley_embedded_v2.png", "\u{1f600}")] {
+        let bytes = excalidraw_png_fixture(name);
+        let Opened::Document { imported, source } = run(&bytes).unwrap() else { panic!("{name}") };
+        assert_eq!(source, Format::Png, "{name}");
+        let texts: Vec<_> = imported
+            .document
+            .elements
+            .iter()
+            .filter(|e| !e.deleted)
+            .filter_map(|e| match &e.kind {
+                ElementKind::Text(t) => Some(t.content.clone()),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(texts, [want], "{name}");
+    }
+}
+
+#[test]
+fn excalidraws_chunk_reads_from_text_and_international_text_chunks_and_bad_ones_are_errors() {
+    let scene = std::fs::read_to_string(fixtures().join("excalidraw/basic_shapes.excalidraw")).unwrap();
+    let envelope = |encoded: &str, compressed: bool, encoding: &str| {
+        serde_json::json!({ "version": "1", "encoding": encoding, "compressed": compressed, "encoded": encoded })
+            .to_string()
+    };
+    // Not compressed: the byte string is the UTF-8 bytes of the scene, one character per byte.
+    let bstring: String = scene.bytes().map(char::from).collect();
+    let plain = envelope(&bstring, false, "bstring");
+    for international in [false, true] {
+        let png = png_with_text(png_meta::EXCALIDRAW_KEYWORD, &plain, international);
+        let Opened::Document { imported, .. } = run(&png).unwrap() else { panic!() };
+        assert!(!imported.document.elements.is_empty(), "international {international}");
+    }
+    assert_eq!(
+        png_meta::extract_scene(&png_with_text(png_meta::EXCALIDRAW_KEYWORD, &plain, true)).unwrap().unwrap(),
+        scene
+    );
+    // Damaged payloads are plain errors that name the PNG, never a panic and never "no scene".
+    let not_a_byte = envelope("\u{263a}", false, "bstring");
+    for bad in [
+        "not json".to_owned(),
+        r#"{"version":"1"}"#.to_owned(),
+        envelope("not zlib", true, "bstring"),
+        envelope(&bstring, false, "base64"),
+        not_a_byte,
+    ] {
+        // `iTXt`, because a `tEXt` chunk cannot hold the character above U+00FF of one of the cases.
+        let png = png_with_text(png_meta::EXCALIDRAW_KEYWORD, &bad, true);
+        let e = png_meta::extract_scene(&png).unwrap_err();
+        assert!(matches!(e, IoError::Parse { .. } | IoError::Limit { .. }), "{bad}: {e}");
+        assert!(run(&png).is_err(), "{bad}");
+    }
+}
+
 #[test]
 fn pictures_without_a_scene_and_unknown_bytes_are_plain_errors() {
     let e = run(&png()).unwrap_err();

@@ -525,6 +525,19 @@ fn an_image_on_the_clipboard_is_inserted_with_the_800_rule() {
     assert_eq!(r.code, "unsupported_format");
 }
 
+#[test]
+fn a_png_with_a_scene_on_the_clipboard_is_still_pasted_as_a_picture() {
+    // Excalidraw does the same: a scene is opened by dropping or opening the file, and a pasted picture is a
+    // picture, so copying a screenshot or an export out of another app never replaces or merges a drawing.
+    let png = include_bytes!("../../../../tests/fixtures/excalidraw/smiley_embedded_v2.png");
+    let (mut s, fakes) = fx();
+    fakes.clipboard.set(ClipPayload::Image { bytes: png.to_vec(), mime: "image/png".into() });
+    let out = run(&mut s, "clipboard.paste", json!({"at": [0, 0]}));
+    assert_eq!(out["kind"], "image");
+    let kinds: Vec<_> = s.store().iter().map(|e| e.tag()).collect();
+    assert_eq!(kinds, [drafftink_scene::Kind::Image]);
+}
+
 /// A clipboard that holds several flavours at once, as a real one does.
 #[derive(Clone, Default)]
 struct Multi(Arc<Mutex<Vec<ClipPayload>>>);

@@ -6,6 +6,7 @@ use base64::Engine as _;
 use drafftink_engine::PortError;
 use drafftink_engine::ports::fake::Fakes;
 use drafftink_engine::ports::{RenderRequest, Renderer, SceneView};
+use drafftink_scene::Kind;
 use serde_json::json;
 
 use super::*;
@@ -14,6 +15,8 @@ use crate::platform::{NoHost, Platform, SharedClipboard};
 /// A 1x1 PNG.
 const PNG_1X1: &str = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAAC0lEQVR4nGP4DwQACfsD/fteaysAAAAASUVORK5CYII=";
 const EXCALIDRAW: &[u8] = include_bytes!("../../../../tests/fixtures/excalidraw/basic_shapes.excalidraw");
+/// A PNG exported by Excalidraw (its own test file): one text, a smiley, in a compressed `bstring` chunk.
+const EXCALIDRAW_PNG: &[u8] = include_bytes!("../../../../tests/fixtures/excalidraw/smiley_embedded_v2.png");
 const LIBRARY: &[u8] = include_bytes!("../../../../tests/fixtures/excalidraw/fixture_library.excalidrawlib");
 
 fn png_1x1() -> Vec<u8> {
@@ -76,10 +79,24 @@ fn drafftink_scene_png() -> Vec<u8> {
     export(&mut a, json!({ "format": "png", "embed_scene": true }))
 }
 
-/// A PNG that carries an Excalidraw scene in its metadata.
+/// A PNG with one text chunk, written as Excalidraw's `png-chunk-text` writes: `tEXt`, Latin-1.
+fn png_with_text_chunk(keyword: &str, text: &str) -> Vec<u8> {
+    let mut out = Vec::new();
+    let mut encoder = png::Encoder::new(&mut out, 1, 1);
+    encoder.set_color(png::ColorType::Grayscale);
+    encoder.set_depth(png::BitDepth::Eight);
+    encoder.add_text_chunk(keyword.to_owned(), text.to_owned()).expect("a Latin-1 text");
+    let mut writer = encoder.write_header().expect("a PNG header");
+    writer.write_image_data(&[0]).expect("one pixel");
+    drop(writer);
+    out
+}
+
+/// A PNG that carries an Excalidraw scene in its metadata, in Excalidraw's envelope (not compressed).
 fn excalidraw_scene_png() -> Vec<u8> {
-    let scene = std::str::from_utf8(EXCALIDRAW).expect("a text fixture");
-    drafftink_io::png_meta::embed_scene(&png_1x1(), scene).expect("an embedded scene")
+    let bstring: String = EXCALIDRAW.iter().copied().map(char::from).collect();
+    let envelope = json!({ "version": "1", "encoding": "bstring", "compressed": false, "encoded": bstring });
+    png_with_text_chunk(drafftink_io::png_meta::EXCALIDRAW_KEYWORD, &envelope.to_string())
 }
 
 /// The shell's drop. With `pointer` it is over the canvas, as in the browser (where it always is); without it the
@@ -153,14 +170,51 @@ fn a_dropped_library_file_is_imported() {
     }
 }
 
+fn kinds(app: &App) -> Vec<Kind> {
+    app.session.store().iter().map(|e| e.tag()).collect()
+}
+
 #[test]
-fn a_dropped_png_with_a_scene_is_inserted_as_a_picture() {
+fn a_dropped_png_with_a_scene_opens_the_scene_in_a_new_tab_like_a_document() {
+    // What a dropped `.excalidraw` file yields is what the same scene inside a PNG must yield.
+    let (by_file, _) = drop_one(file("sketch.excalidraw", "", EXCALIDRAW), true);
     for pointer in POINTER {
-        for (what, png) in [("drafft.ink", drafftink_scene_png()), ("Excalidraw", excalidraw_scene_png())] {
-            let (effect, app) = drop_one(file("scene.png", "image/png", &png), pointer);
+        let (effect, app) = drop_one(file("scene.png", "image/png", &drafftink_scene_png()), pointer);
+        no_schema_error(&app);
+        assert_eq!(effect.toasts, Vec::<String>::new(), "drafft.ink scene, pointer {pointer}");
+        assert_eq!((effect.tabs, effect.elements), (2, 1), "drafft.ink scene: a new tab holds the rectangle");
+        assert_eq!(kinds(&app), [Kind::Rectangle]);
+
+        let (effect, app) = drop_one(file("scene.png", "image/png", &excalidraw_scene_png()), pointer);
+        no_schema_error(&app);
+        assert_eq!(effect.toasts, Vec::<String>::new(), "Excalidraw scene, pointer {pointer}");
+        assert_eq!(effect, by_file, "Excalidraw scene: the same as the .excalidraw file");
+        assert!(effect.elements > 1, "{effect:?}");
+
+        // Excalidraw's own export, compressed.
+        let (effect, app) = drop_one(file("smiley.png", "image/png", EXCALIDRAW_PNG), pointer);
+        assert_eq!((effect.tabs, effect.elements, effect.toasts.is_empty()), (2, 1, true), "pointer {pointer}");
+        assert_eq!(kinds(&app), [Kind::Text]);
+    }
+}
+
+#[test]
+fn a_dropped_png_whose_scene_cannot_be_read_is_inserted_and_a_toast_says_why() {
+    let mut zlib_broken = drafftink_scene_png();
+    let at = zlib_broken.windows(4).position(|w| w == b"iTXt").expect("the scene chunk");
+    let len = u32::from_be_bytes([zlib_broken[at - 4], zlib_broken[at - 3], zlib_broken[at - 2], zlib_broken[at - 1]]);
+    let end = at + 4 + usize::try_from(len).expect("a small chunk");
+    zlib_broken[end - 6..end].fill(0xff);
+    let not_a_document = drafftink_io::png_meta::embed_scene(&png_1x1(), "not a scene").expect("a chunk");
+    for (what, png) in [("a broken chunk", zlib_broken), ("text that is no document", not_a_document)] {
+        for pointer in POINTER {
+            let (effect, app) = drop_one(file("broken.png", "image/png", &png), pointer);
             no_schema_error(&app);
-            assert_eq!(effect.toasts, Vec::<String>::new(), "{what} scene, pointer {pointer}");
-            assert_eq!((effect.tabs, effect.elements), (1, 1), "{what} scene: one image element");
+            assert_eq!((effect.tabs, effect.elements), (1, 1), "{what}: the picture, no new tab (pointer {pointer})");
+            assert_eq!(kinds(&app), [Kind::Image], "{what}");
+            assert_eq!(effect.toasts, ["note"], "{what}");
+            let text = &app.ui.state.toasts[0].text;
+            assert!(text.contains("`broken.png`") && text.contains("inserted as a picture only"), "{what}: {text}");
         }
     }
 }

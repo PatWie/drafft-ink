@@ -6,10 +6,12 @@
 //!   `IDAT`, and removes an earlier chunk with that keyword. `iTXt` holds any Unicode text. The old app used `zTXt`,
 //!   which is Latin-1 only, so it could not export a document with a character above U+00FF at all.
 //! * [`extract_scene`] reads the first chunk with that keyword, whether it is `iTXt`, `zTXt` (the old form; the text
-//!   is then Latin-1) or `tEXt`.
+//!   is then Latin-1) or `tEXt`. It also reads Excalidraw's own chunk, keyword [`EXCALIDRAW_KEYWORD`] (see
+//!   [`excalidraw_payload`] for its envelope), so a PNG exported from Excalidraw with "embed scene" opens too.
 //!
 //! The payload is the scene's JSON: native (`Document::to_json`) for files from this app, the old
-//! `CanvasDocument` JSON for PNGs exported by the old app. [`crate::native::sniff`] tells which.
+//! `CanvasDocument` JSON for PNGs exported by the old app, an Excalidraw scene for Excalidraw's.
+//! [`crate::native::sniff`] tells which.
 //! Both functions bound their work: the PNG is limited by [`MAX_PNG_BYTES`], an inflated payload by
 //! [`MAX_EMBEDDED_SCENE_BYTES`], and every chunk length is checked against the bytes left.
 
@@ -18,12 +20,16 @@ use std::io::{Read, Write};
 use flate2::Compression;
 use flate2::read::ZlibDecoder;
 use flate2::write::ZlibEncoder;
+use serde::Deserialize;
 
 use crate::error::{Expected, FormatName, IoError};
 use crate::limits::{MAX_EMBEDDED_SCENE_BYTES, MAX_PNG_BYTES};
 
 /// Keyword of the chunk (the same string the old app used).
 pub const KEYWORD: &str = "application/vnd.drafftink+json";
+
+/// Keyword of the chunk Excalidraw writes (its `MIME_TYPES.excalidraw`). Only read, never written.
+pub const EXCALIDRAW_KEYWORD: &str = "application/vnd.excalidraw+json";
 
 const SIGNATURE: [u8; 8] = [0x89, b'P', b'N', b'G', 0x0d, 0x0a, 0x1a, 0x0a];
 
@@ -140,12 +146,28 @@ fn text_chunk_keyword(c: &Chunk<'_>) -> Option<String> {
     Some(c.data.get(..nul)?.iter().map(|b| char::from(*b)).collect())
 }
 
-/// Reads the scene JSON from the first chunk with [`KEYWORD`]. `Ok(None)` when the PNG has none.
+/// Whose scene a text chunk carries.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Origin {
+    Drafftink,
+    Excalidraw,
+}
+
+impl Origin {
+    fn of_keyword(keyword: &str) -> Option<Self> {
+        match keyword {
+            KEYWORD => Some(Self::Drafftink),
+            EXCALIDRAW_KEYWORD => Some(Self::Excalidraw),
+            _ => None,
+        }
+    }
+}
+
+/// Reads the scene JSON from the first chunk with [`KEYWORD`] or [`EXCALIDRAW_KEYWORD`]. `Ok(None)` when the PNG
+/// has none.
 pub fn extract_scene(png: &[u8]) -> Result<Option<String>, IoError> {
     for c in chunks(png)? {
-        if text_chunk_keyword(&c).as_deref() != Some(KEYWORD) {
-            continue;
-        }
+        let Some(origin) = text_chunk_keyword(&c).as_deref().and_then(Origin::of_keyword) else { continue };
         let Some(nul) = c.data.iter().position(|b| *b == 0) else { continue };
         let rest = c.data.get(nul + 1..).unwrap_or(&[]);
         let text = match &c.kind {
@@ -167,9 +189,55 @@ pub fn extract_scene(png: &[u8]) -> Result<Option<String>, IoError> {
                     .map_err(|_| IoError::parse(FormatName::Png, "the embedded scene is not UTF-8"))?
             }
         };
-        return Ok(Some(text));
+        return match origin {
+            Origin::Drafftink => Ok(Some(text)),
+            Origin::Excalidraw => excalidraw_payload(&text).map(Some),
+        };
     }
     Ok(None)
+}
+
+/// The envelope Excalidraw wraps its scene in (`encode` in its `data/encode.ts`).
+#[derive(Deserialize)]
+struct ExcalidrawEnvelope {
+    /// Absent in the first PNG exports, which store the scene JSON itself.
+    encoded: Option<String>,
+    #[serde(default)]
+    encoding: Option<String>,
+    #[serde(default)]
+    compressed: bool,
+    /// Present in the scene JSON of the first PNG exports.
+    #[serde(default, rename = "type")]
+    kind: Option<String>,
+}
+
+/// The scene JSON inside the text of Excalidraw's chunk.
+///
+/// The text is JSON. Current Excalidraw writes `{version, encoding: "bstring", compressed, encoded}`, where
+/// `encoded` is a byte string (one character per byte, so every character is below U+0100) holding the scene,
+/// zlib-compressed when `compressed` is true. The first exports stored the scene JSON itself (`"type":
+/// "excalidraw"`).
+fn excalidraw_payload(text: &str) -> Result<String, IoError> {
+    let bad = |what: &str| IoError::parse(FormatName::Png, format!("the Excalidraw scene in the PNG {what}"));
+    let envelope: ExcalidrawEnvelope =
+        serde_json::from_str(text).map_err(|e| bad(&format!("is not valid JSON: {e}")))?;
+    let Some(encoded) = envelope.encoded else {
+        return if envelope.kind.as_deref() == Some("excalidraw") {
+            Ok(text.to_owned())
+        } else {
+            Err(bad("has neither an `encoded` payload nor an Excalidraw scene"))
+        };
+    };
+    if envelope.encoding.as_deref().is_some_and(|e| e != "bstring") {
+        return Err(bad("uses an encoding other than `bstring`"));
+    }
+    let bytes = encoded
+        .chars()
+        .map(|c| u8::try_from(u32::from(c)))
+        .collect::<Result<Vec<u8>, _>>()
+        .map_err(|_| bad("holds a character that is not a byte"))?;
+    let bytes = if envelope.compressed { inflate(&bytes)? } else { bytes };
+    String::from_utf8(bytes).map_err(|_| bad("is not UTF-8"))
 }
 
 fn latin1(bytes: &[u8]) -> String {

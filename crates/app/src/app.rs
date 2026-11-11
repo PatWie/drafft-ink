@@ -689,7 +689,12 @@ impl App {
     /// Opens, inserts or imports dropped files with `doc.drop`; `pointer` is where the drop happened, if known.
     fn drop_files_at(&mut self, files: &[DroppedFile], pointer: Option<Point>) -> Repaint {
         let args = crate::drop::drop_args(files, pointer);
-        self.run(Origin::Ui, "doc.drop", args);
+        let dropped = self.run(Origin::Ui, "doc.drop", args);
+        // A PNG whose scene could not be read became a plain picture: say so, so it is not mistaken for the scene.
+        let fallbacks = dropped.as_ref().and_then(|out| out.get("scene_fallbacks")).and_then(Value::as_array);
+        for note in fallbacks.into_iter().flatten().filter_map(Value::as_str) {
+            self.toast(note);
+        }
         Repaint::Now(RedrawReason::Load)
     }
 
