@@ -279,13 +279,21 @@ fn new_from_active_of_a_clean_document_is_clean() {
 }
 
 #[test]
-fn new_from_intro_is_not_available_yet() {
+fn new_from_intro_opens_the_intro_document_in_a_clean_new_tab() {
     let mut s = testing::headless_session();
-    let before = s.fingerprint();
-    let r = refuse(&mut s, "tab.new", json!({"from": "intro"}));
-    assert_eq!(r.code, "not_supported");
-    assert!(r.message.starts_with("`tab.new` is registered but not available yet: the intro document is not shipped yet"), "{}", r.message);
-    assert_eq!(s.fingerprint(), before);
+    let out = run(&mut s, "tab.new", json!({"from": "intro"}));
+    assert_eq!(s.tabs.len(), 2);
+    assert_eq!(out["changed"], json!(true));
+    let intro = super::super::doc::intro_document(&mut s, "test").unwrap();
+    assert_eq!(s.tab().doc.store().meta().name, intro.name, "the name of the intro");
+    assert_eq!(s.store().len(), intro.elements.iter().filter(|e| !e.deleted).count());
+    assert!(s.store().len() > 0);
+    assert!(!s.tab().dirty(), "the intro is not unsaved work");
+    assert_eq!(s.tab().doc.undo_depth(), 0);
+    // `name` renames it, and the other tab is untouched.
+    run(&mut s, "tab.new", json!({"from": "intro", "name": "Welcome"}));
+    assert_eq!(s.tab().doc.store().meta().name, "Welcome");
+    assert_eq!(s.tabs[0].doc.store().len(), 0);
 }
 
 #[test]

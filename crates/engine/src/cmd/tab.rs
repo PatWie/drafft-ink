@@ -245,10 +245,11 @@ fn new_tab(s: &mut Session, a: NewArgs) -> Result<TabOut, Refusal> {
         NewFrom::Blank => blank_tab(s, id, name)?,
         NewFrom::Active => copy_tab(s, id, s.active_index(), name)?,
         NewFrom::Intro => {
-            return Err(Refusal::not_supported(
-                id,
-                "the intro document is not shipped yet, so from=intro has nothing to open. Use from=blank, or from=active for a copy",
-            ));
+            let mut doc = crate::cmd::doc::intro_document(s, id)?;
+            if let Some(n) = name {
+                doc.name = n;
+            }
+            tab_from(s, id, &doc)?
         }
     };
     let (tid, label) = (tab.id, name_of(&tab));
