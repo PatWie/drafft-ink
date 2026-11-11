@@ -20,7 +20,8 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
-use super::{BindChoice, EditPointsArgs, EndWord, MovePointArgs, PointIndex, Snap, SnapSwitches, SnapWord};
+use super::{BindChoice, EditPointsArgs, EndWord, MovePointArgs, PointIndex};
+use crate::snap::{Snap, SnapSwitches, SnapWord};
 use crate::refusal::Refusal;
 use crate::registry::Registry;
 use crate::ring::Origin;

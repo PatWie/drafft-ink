@@ -32,6 +32,7 @@ pub mod ring;
 mod saves;
 pub mod services;
 pub mod session;
+pub mod snap;
 pub mod spec;
 pub mod state;
 pub mod store;
@@ -47,6 +48,8 @@ mod invariants_tests;
 mod keymap_tests;
 #[cfg(test)]
 mod registry_tests;
+#[cfg(test)]
+mod snap_tests;
 
 pub use batch::{BatchFailure, BatchOpts, BatchOutput, BatchStep};
 pub use gesture::GestureId;
