@@ -149,8 +149,7 @@ fn has_fill(s: &SketchShape, p: &SketchParams) -> bool {
     // Only closed shapes take a fill.
     let closed = match s {
         SketchShape::Rect { .. } | SketchShape::Ellipse { .. } | SketchShape::Diamond { .. } => true,
-        SketchShape::Polyline { closed, .. } => *closed,
-        SketchShape::Freehand { closed, .. } => *closed,
+        SketchShape::Polyline { closed, .. } | SketchShape::Freehand { closed, .. } => *closed,
         SketchShape::Arrow { .. } => false,
     };
     closed && p.fill != FillStyle::None

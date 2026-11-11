@@ -42,8 +42,8 @@ pub(crate) fn sketch_pass(path: &BezPath, roughness: f64, bowing: f64, seed: u32
                 let bow_offset = bowing * roughness * len / 200.0;
                 let bow = rng.offset(bow_offset);
                 let (px, py) = if len > 0.001 { (-dy / len, dx / len) } else { (0.0, 0.0) };
-                let mid_x = (last.x + p.x) / 2.0 + px * bow;
-                let mid_y = (last.y + p.y) / 2.0 + py * bow;
+                let mid_x = last.midpoint(*p).x + px * bow;
+                let mid_y = last.midpoint(*p).y + py * bow;
                 let end = Point::new(p.x + rng.offset(max_offset), p.y + rng.offset(max_offset));
                 result.quad_to(Point::new(mid_x, mid_y), end);
                 last = *p;
