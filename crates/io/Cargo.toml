@@ -10,6 +10,7 @@ rust-version.workspace = true
 drafftink-scene = { path = "../scene" }
 drafftink-geom = { path = "../geom" }
 drafftink-sketch = { path = "../sketch" }
+drafftink-typeset = { path = "../typeset", default-features = false }
 kurbo.workspace = true
 serde.workspace = true
 serde_json = { workspace = true, features = ["float_roundtrip"] }

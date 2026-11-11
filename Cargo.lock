@@ -1450,6 +1450,7 @@ dependencies = [
  "drafftink-geom",
  "drafftink-scene",
  "drafftink-sketch",
+ "drafftink-typeset",
  "flate2",
  "image",
  "kurbo",

@@ -33,7 +33,9 @@ pub mod open;
 pub mod picture;
 pub mod png_meta;
 pub mod svg;
+pub mod typeset_measure;
 
 pub use error::{Expected, FormatName, ImportReport, Imported, IoError};
 pub use measure::{EstimateMeasure, MathBox, TextMeasure};
 pub use open::{Opened, open};
+pub use typeset_measure::{TypesetterHandle, TypesetterMeasure};

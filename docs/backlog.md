@@ -16,13 +16,16 @@ Features decided but not yet assigned to a phase agent.
 - UI embeds GelPen fonts a second time (include_bytes); expose font bytes from typeset.
 - UI: search dialog has no result list; stats panel lacks bounds editing (now possible: selection.get, element.set_bounds); touch-sized mode; context-menu paste should land at the click point.
 - Interaction: default type of new arrows lives in `Session::ext` (`interact::NewArrowPath`); make it a tool/style default owned by a command. text.edit_begin needs a width arg (text-tool drag = fixed-width box). Elbow preview while drawing is straight. Click on a line vertex should call `arrow.edit_points select_point`. Closed-line closing-segment midpoint drag refused. Interaction tests stub text.edit_begin/collab.laser, now registered: drop the stubs.
-- Dedupe: canvas-js `src/fonts.rs` duplicates engine `TypesetMeasure`; move the typeset->io/edit measuring adapter into crates/io (L4 may use typeset) and use it from both.
 - Size: bundled Noto Sans is ~1 MB brotli of the wasm; load fonts lazily (fetch) or behind a feature; `wasm-opt --all-features` breaks the module with binaryen 133 (use explicit features; fix docs/stack.md and crates/gpu/scripts/build_web_demo.sh).
 - `cargo clippy --target wasm32` fails in drafftink-profile spans.rs:213; add a wasm clippy run to xtask wasm.
 - canvas-js: remote selections not drawn; no image-insert helper; tiny shapes dominated by handles (move on body should win when the shape is smaller than handles).
 - Dedupe left over from the text/paste item: `Bytes`/`At` helpers in cmd/image.rs and cmd/clipboard/common.rs should be shared with doc.drop.
 - Tab bar: dirty state compares content through undo/redo only; a remote update between an edit and its undo keeps the tab dirty on purpose.
 - Save: `Storage::put` (the stored default target on the web) is still synchronous. If the web storage port becomes asynchronous it needs the same pending/`on_write_done` path as `Files::write`. `tab.close`/`doc.new` with `on_unsaved=save` refuse while a write is pending.
+
+## Done (branch refactor-l3-l4)
+
+- `io::typeset_measure::TypesetterMeasure` is the one typesetter adapter for `io::TextMeasure` and `MathSvg`; the engine's `TypesetMeasure` and canvas-js use it (canvas-js `SvgText` is gone).
 
 ## Done (branch backlog-a)
 
