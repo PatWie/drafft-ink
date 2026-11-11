@@ -127,7 +127,7 @@ test("a batch with pictures in it completes as a whole: applied once, every pict
   expect(await app.count()).toBe(1);
   const after = await undoDepth(app);
   expect(after.depth, "the batch is one undo step").toBe(before.depth + 1);
-  expect((await app.exec("settings.get", { key: "export.padding" })).value).toBe(0);
+  expect(((await app.exec("settings.get", { key: "export.padding" })).settings as Record<string, unknown>)["export.padding"]).toBe(0);
 });
 
 test("a batch whose picture comes before a change is still run once and shows the document before that change", async ({ app }) => {
