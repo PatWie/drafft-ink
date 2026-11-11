@@ -65,8 +65,9 @@ fn chords_parse() {
 fn chords_are_shown_per_platform() {
     let c = parse_chord("Mod+Shift+Z").unwrap();
     assert_eq!(c.label(false), "Ctrl+Shift+Z");
-    assert_eq!(c.label(true), "⇧⌘Z");
-    assert_eq!(parse_chord("Mod+Alt+C").unwrap().label(true), "⌥⌘C");
+    assert_eq!(c.label(true), "Cmd+Shift+Z");
+    assert_eq!(parse_chord("Mod+Alt+C").unwrap().label(true), "Cmd+Opt+C");
+    assert_eq!(parse_chord("Mod+Shift+Left").unwrap().label(false), "Ctrl+Shift+Left");
 }
 
 #[test]

@@ -64,6 +64,7 @@ fn background_button(ui: &mut egui::Ui, cx: &mut Cx<'_>, st: &UiState) {
         crate::widgets::paint_swatch(ui.painter(), rect.center(), 8.0, colour, open, resp.hovered(), &pal, true);
     }
     resp.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, "Background colour"));
+    crate::surfaces::color::remember_anchor(ui.ctx(), crate::surfaces::color::PopoverKey::Background, rect);
     if resp.on_hover_text("Background colour").clicked() {
         cx.verb(Verb::OpenColorBackground);
     }

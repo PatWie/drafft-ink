@@ -145,7 +145,8 @@ fn choices(ui: &mut egui::Ui, cx: &mut Cx<'_>, title: &str, prop: &str, options:
 
 fn text_sections(ui: &mut egui::Ui, cx: &mut Cx<'_>) {
     if shows(cx, "font_family") {
-        section_label(ui, &cx.pal, "Font");
+        let label = section_label(ui, &cx.pal, "Font");
+        crate::surfaces::color::remember_anchor(ui.ctx(), crate::surfaces::color::PopoverKey::Font, label.rect);
         let current = cx.model.style.str_value("font_family").map(str::to_owned);
         ui.horizontal_wrapped(|ui| {
             for (label, value) in FONT_FAMILIES {

@@ -286,3 +286,20 @@ fn a_model_is_the_only_input_of_draw() {
     out.textures_delta.clear();
     let _unused: Option<&Session> = None;
 }
+
+#[test]
+fn during_a_text_edit_a_style_choice_goes_to_the_editor_and_not_to_style_set() {
+    // docs/exceptions.md E16: `style.set` refuses with `text_editing`; the editor takes the choice.
+    let mut f = Fixture::new();
+    f.model.text_editing = true;
+    let mut h = harness(f);
+    h.run();
+    h.state_mut().clear();
+    h.get_by_label("Stroke blue").click();
+    h.run();
+    assert!(h.state().calls().is_empty(), "no command: {:?}", h.state().actions);
+    assert_eq!(
+        h.state().actions,
+        vec![UiAction::Host(drafftink_ui::HostRequest::TextEditStyle(json!({"stroke_color": "blue-500"})))]
+    );
+}

@@ -9,7 +9,7 @@ use egui::{
 };
 use serde_json::{Value, json};
 
-use crate::action::{UiAction, Verb};
+use crate::action::{HostRequest, UiAction, Verb};
 use crate::icons::{self, Icon};
 use crate::model::Model;
 use crate::theme::{self, Palette};
@@ -131,7 +131,12 @@ impl<'a> Cx<'a> {
         size: Vec2,
         paint: impl FnOnce(&Painter, Rect, Look),
     ) -> Response {
-        let reason = self.refusal(ctl.id).or_else(|| ctl.blocked.clone());
+        // While a text edit runs, a style choice goes to the text editor, which applies it to the selected range
+        // or to the element and hands the result to `text.edit_end` (docs/exceptions.md E16). `style.set`
+        // itself would refuse with `text_editing`, so the control must not grey out for that.
+        let editor_takes_it = self.model.text_editing && ctl.id == "style.set" && ctl.args.get("props").is_some();
+        let reason =
+            if editor_takes_it { ctl.blocked.clone() } else { self.refusal(ctl.id).or_else(|| ctl.blocked.clone()) };
         let enabled = reason.is_none();
         let label = if ctl.label.is_empty() { self.model.label(ctl.id, &ctl.args) } else { ctl.label.clone() };
         let resp = ui
@@ -169,7 +174,12 @@ impl<'a> Cx<'a> {
             }
         };
         if resp.clicked() {
-            self.run(ctl.id, ctl.args.clone());
+            if editor_takes_it {
+                let props = ctl.args.get("props").cloned().unwrap_or(Value::Null);
+                self.emit(UiAction::Host(HostRequest::TextEditStyle(props)));
+            } else {
+                self.run(ctl.id, ctl.args.clone());
+            }
         }
         resp
     }
@@ -420,8 +430,8 @@ pub fn dialog_frame(pal: &Palette) -> Frame {
 }
 
 /// A small caption above a group of controls, in the hand-written font.
-pub fn section_label(ui: &mut Ui, pal: &Palette, text: &str) {
-    ui.label(egui::RichText::new(text).font(theme::hand(13.0)).color(pal.muted));
+pub fn section_label(ui: &mut Ui, pal: &Palette, text: &str) -> Response {
+    ui.label(egui::RichText::new(text).font(theme::hand(13.0)).color(pal.muted))
 }
 
 /// A thin vertical line between groups in a row.

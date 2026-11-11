@@ -8,6 +8,7 @@ use crate::action::Verb;
 use crate::colors::{self, QUICK_FAMILIES, QUICK_FILL_SHADE, QUICK_STROKE_SHADE};
 use crate::icons::Icon;
 use crate::state::UiState;
+use crate::surfaces::color::{PopoverKey, remember_anchor};
 use crate::theme::MARGIN;
 use crate::widgets::{Ctl, Cx, panel_frame, section_label, vertical_separator};
 
@@ -71,7 +72,9 @@ fn colour_row(ui: &mut egui::Ui, cx: &mut Cx<'_>, title: &str, prop: &str, shade
     }
     let verb = if prop == "stroke_color" { Verb::OpenColorStroke } else { Verb::OpenColorFill };
     let wheel_tip = format!("More {} colours", title.to_lowercase());
-    cx.verb_button(ui, verb, Icon::Wheel, 26.0, &wheel_tip, false);
+    let key = if prop == "stroke_color" { PopoverKey::Stroke } else { PopoverKey::Fill };
+    let wheel = cx.verb_button(ui, verb, Icon::Wheel, 26.0, &wheel_tip, false);
+    remember_anchor(ui.ctx(), key, wheel.rect);
 }
 
 fn width_row(ui: &mut egui::Ui, cx: &mut Cx<'_>) {

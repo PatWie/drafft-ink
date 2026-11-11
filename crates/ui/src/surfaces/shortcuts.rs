@@ -78,9 +78,9 @@ pub fn all_rows(model: &crate::model::Model) -> Vec<HelpRow> {
 
 /// The fixed rows, with `Mod` spelled for the platform.
 fn fixed_rows(mac: bool) -> Vec<HelpRow> {
-    let m = |rest: &str| if mac { format!("⌘{rest}") } else { format!("Ctrl+{rest}") };
-    let alt = |rest: &str| if mac { format!("⌥{rest}") } else { format!("Alt+{rest}") };
-    let shift = |rest: &str| if mac { format!("⇧{rest}") } else { format!("Shift+{rest}") };
+    let m = |rest: &str| if mac { format!("Cmd+{rest}") } else { format!("Ctrl+{rest}") };
+    let alt = |rest: &str| if mac { format!("Opt+{rest}") } else { format!("Alt+{rest}") };
+    let shift = |rest: &str| format!("Shift+{rest}");
     let row = |group: &str, title: &str, keys: Vec<String>| HelpRow {
         title: title.to_owned(),
         group: group.to_owned(),
@@ -93,9 +93,13 @@ fn fixed_rows(mac: bool) -> Vec<HelpRow> {
         row(TEXT_GROUP, "Select all text", vec![m("A")]),
         row(TEXT_GROUP, "Cut, copy and paste text", vec![m("X"), m("C"), m("V")]),
         row(TEXT_GROUP, "Undo and redo typing", vec![m("Z"), m(&shift("Z"))]),
-        row(TEXT_GROUP, "Move by character", vec![s("←"), s("→")]),
-        row(TEXT_GROUP, "Move by word", vec![if mac { alt("←") } else { m("←") }, if mac { alt("→") } else { m("→") }]),
-        row(TEXT_GROUP, "Extend the selection", vec![shift("←"), shift("→")]),
+        row(TEXT_GROUP, "Move by character", vec![s("Left"), s("Right")]),
+        row(
+            TEXT_GROUP,
+            "Move by word",
+            vec![if mac { alt("Left") } else { m("Left") }, if mac { alt("Right") } else { m("Right") }],
+        ),
+        row(TEXT_GROUP, "Extend the selection", vec![shift("Left"), shift("Right")]),
         row(TEXT_GROUP, "Delete by word", vec![if mac { alt("Backspace") } else { m("Backspace") }]),
         row(MOUSE_GROUP, "Pan", vec![s("Wheel"), s("Space + drag"), s("Middle button + drag")]),
         row(MOUSE_GROUP, "Zoom", vec![m("Wheel"), s("Pinch")]),
@@ -158,7 +162,7 @@ fn show_rows(ui: &mut Ui, pal: &Palette, rows: &[HelpRow], query: &str) {
 /// Splits a chord label into its caps: `Ctrl+Shift+Z` into `Ctrl`, `Shift`, `Z`; `⌘⇧Z` into `⌘`, `⇧`,
 /// `Z`; `Ctrl++` into `Ctrl`, `+`.
 pub(crate) fn split_chord(label: &str) -> Vec<String> {
-    const WORDS: [&str; 3] = ["Ctrl+", "Alt+", "Shift+"];
+    const WORDS: [&str; 5] = ["Ctrl+", "Cmd+", "Opt+", "Alt+", "Shift+"];
     const SYMBOLS: [char; 4] = ['⌃', '⌥', '⇧', '⌘'];
     let mut caps = Vec::new();
     let mut rest = label;
@@ -247,7 +251,7 @@ mod tests {
         assert_eq!(split_chord("Ctrl++"), ["Ctrl", "+"]);
         assert_eq!(split_chord("Esc"), ["Esc"]);
         assert_eq!(split_chord("Alt+PgUp"), ["Alt", "PgUp"]);
-        assert_eq!(split_chord("Shift+←"), ["Shift", "←"]);
+        assert_eq!(split_chord("Shift+Left"), ["Shift", "Left"]);
         assert!(split_chord("").is_empty());
     }
 

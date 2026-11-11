@@ -392,7 +392,7 @@ impl Model {
     }
 
     /// The text of the key combination for the first binding of `id` whose fixed arguments equal
-    /// `args` (`null`/`{}` for none), such as `Ctrl+Z` or `⌘Z`. `None` when there is no such binding.
+    /// `args` (`null`/`{}` for none), such as `Ctrl+Z` or `Cmd+Z`. `None` when there is no such binding.
     pub fn shortcut_label(&self, id: &str, args: &Value) -> Option<String> {
         let cmd = self.command(id)?;
         let want = normalize_args(args);

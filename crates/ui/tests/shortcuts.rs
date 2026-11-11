@@ -1,5 +1,5 @@
 //! The shortcuts dialog: built from the registry and the verb table, grouped, searchable, readable in
-//! both themes, and spelled with `⌘` on a Mac.
+//! both themes, and spelled `Cmd+` on a Mac.
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
 mod common;
@@ -151,28 +151,25 @@ fn mac_labels_use_the_command_symbol() {
     f.refresh();
     let rows = help_rows(&f.model);
     let undo = rows.iter().find(|r| r.title == "Undo").expect("Undo row");
-    assert_eq!(undo.keys, ["⌘Z"]);
-    assert!(rows.iter().filter(|r| r.group != "ui").flat_map(|r| &r.keys).any(|k| k.contains('⌘')));
-    assert!(
-        !rows.iter().flat_map(|r| &r.keys).any(|k| k.contains("Ctrl+") && !k.contains('⌃')),
-        "no Windows-style Mod chord on a Mac"
-    );
+    assert_eq!(undo.keys, ["Cmd+Z"]);
+    assert!(rows.iter().filter(|r| r.group != "ui").flat_map(|r| &r.keys).any(|k| k.contains("Cmd+")));
+    assert!(!rows.iter().flat_map(|r| &r.keys).any(|k| k.contains("Ctrl+")), "no Windows-style Mod chord on a Mac");
     let fixed = all_rows(&f.model);
     let text_undo = fixed.iter().find(|r| r.title == "Undo and redo typing").expect("row");
-    assert_eq!(text_undo.keys[0], "⌘Z");
+    assert_eq!(text_undo.keys[0], "Cmd+Z");
 }
 
 #[test]
 fn on_a_mac_the_caps_are_drawn_without_glyphs_the_fonts_lack() {
     // `themed` fails the test on a missing glyph, so this proves the dialog never asks for ⌘.
     let h = open("undo", true, false);
-    assert!(count(&h, "⌘Z") >= 1, "the chord is one named node");
+    assert!(count(&h, "Cmd+Z") >= 1, "the chord is one named node");
 }
 
 #[test]
-fn arrow_keys_are_drawn_in_a_font_that_has_them() {
+fn arrow_keys_are_spelled_as_words_because_the_fonts_have_no_arrow_glyphs() {
     let h = open("by word", false, false);
-    assert!(count(&h, "Ctrl+←") >= 1);
+    assert!(count(&h, "Ctrl+Left") >= 1);
 }
 
 #[test]

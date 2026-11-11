@@ -103,39 +103,33 @@ impl Chord {
         }
     }
 
-    /// How the chord is shown: `Ctrl+Shift+Z`, or `⌘⇧Z` on macOS.
+    /// How the chord is shown: `Ctrl+Shift+Z`, or `Cmd+Shift+Z` on macOS. The modifier symbols of macOS
+    /// (`⌘ ⌥ ⇧`) are not in the bundled fonts and would show as boxes, so they are spelled out.
     pub fn label(&self, mac: bool) -> String {
-        let key = key_label(self.key);
+        let mut parts: Vec<String> = Vec::new();
         if mac {
-            let mut s = String::new();
             if self.ctrl {
-                s.push('⌃');
-            }
-            if self.alt {
-                s.push('⌥');
-            }
-            if self.shift && !shift_is_implied(self.key) {
-                s.push('⇧');
+                parts.push("Ctrl".to_owned());
             }
             if self.mod_key {
-                s.push('⌘');
+                parts.push("Cmd".to_owned());
             }
-            s.push_str(&key);
-            s
+            if self.alt {
+                parts.push("Opt".to_owned());
+            }
         } else {
-            let mut parts: Vec<String> = Vec::new();
             if self.mod_key || self.ctrl {
                 parts.push("Ctrl".to_owned());
             }
             if self.alt {
                 parts.push("Alt".to_owned());
             }
-            if self.shift && !shift_is_implied(self.key) {
-                parts.push("Shift".to_owned());
-            }
-            parts.push(key);
-            parts.join("+")
         }
+        if self.shift && !shift_is_implied(self.key) {
+            parts.push("Shift".to_owned());
+        }
+        parts.push(key_label(self.key));
+        parts.join("+")
     }
 }
 
@@ -143,10 +137,10 @@ impl Chord {
 pub fn key_label(key: Key) -> String {
     match key {
         Key::Escape => "Esc".to_owned(),
-        Key::ArrowLeft => "←".to_owned(),
-        Key::ArrowRight => "→".to_owned(),
-        Key::ArrowUp => "↑".to_owned(),
-        Key::ArrowDown => "↓".to_owned(),
+        Key::ArrowLeft => "Left".to_owned(),
+        Key::ArrowRight => "Right".to_owned(),
+        Key::ArrowUp => "Up".to_owned(),
+        Key::ArrowDown => "Down".to_owned(),
         Key::PageUp => "PgUp".to_owned(),
         Key::PageDown => "PgDn".to_owned(),
         other => other.symbol_or_name().to_owned(),
