@@ -1,16 +1,28 @@
 [package]
 name = "drafftink-gpu"
-description = "Drafft.ink GPU and shell: wgpu device, Vello + egui compositor, winit shell for native and web"
+description = "Drafft.ink GPU and shell: the winit shell for native and web over two drawing back ends, Vello on wgpu and vello_gpu on WebGL2"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
 rust-version.workspace = true
 
+[features]
+default = ["wgpu"]
+# The Vello + wgpu back end (`Gpu`, `Compositor`, the surface). Every native build and the normal web build.
+wgpu = ["dep:wgpu", "dep:egui-wgpu", "vello/default"]
+# The WebGL2 back end for browsers without WebGPU (wasm32 only; on other targets it is only the pure replay code,
+# which the unit tests use). The fallback web module is built with `--no-default-features --features webgl`.
+webgl = ["dep:vello_gpu", "dep:glifo", "dep:egui_glow", "dep:glow"]
+
 [dependencies]
 drafftink-profile = { path = "../profile" }
 egui = { workspace = true }
-egui-wgpu = { workspace = true }
-wgpu = { workspace = true, features = ["std", "wgsl"] }
+egui-wgpu = { workspace = true, optional = true }
+wgpu = { workspace = true, features = ["std", "wgsl"], optional = true }
+vello_gpu = { workspace = true, optional = true }
+glifo = { workspace = true, optional = true }
+egui_glow = { workspace = true, optional = true }
+glow = { workspace = true, optional = true }
 winit = { workspace = true, features = ["rwh_06"] }
 vello = { workspace = true }
 web-time = { workspace = true }
@@ -21,7 +33,7 @@ png = { workspace = true }
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 egui = { workspace = true, features = ["default_fonts"] }
 egui-winit = { version = "=0.37.0", default-features = false, features = ["x11", "wayland", "clipboard", "links"] }
-wgpu = { workspace = true, features = ["parking_lot", "vulkan", "metal", "dx12"] }
+wgpu = { workspace = true, features = ["parking_lot", "vulkan", "metal", "dx12"], optional = true }
 winit = { workspace = true, features = ["x11", "wayland", "wayland-dlopen", "wayland-csd-adwaita", "rwh_06"] }
 pollster = { workspace = true }
 arboard = { workspace = true, features = ["wayland-data-control"] }
@@ -31,7 +43,7 @@ env_logger = { workspace = true }
 # No `clipboard`/`links` features: arboard and webbrowser do not exist on the web. The web host
 # (src/web) supplies clipboard, links, IME and file drop.
 egui-winit = { version = "=0.37.0", default-features = false }
-wgpu = { workspace = true, features = ["webgpu"] }
+wgpu = { workspace = true, features = ["webgpu"], optional = true }
 wasm-bindgen = { workspace = true }
 wasm-bindgen-futures = { workspace = true }
 js-sys = { workspace = true }
@@ -45,6 +57,7 @@ web-sys = { workspace = true, features = [
     "CssStyleDeclaration", "DomRect", "Performance", "Location", "console", "AddEventListenerOptions",
     "ResizeObserver", "MediaQueryList", "Permissions", "Url",
     "MouseEvent", "UiEvent", "FocusOptions", "HtmlHeadElement", "HtmlStyleElement",
+    "WebGl2RenderingContext", "WebGlFramebuffer", "WebGlTexture", "WebglLoseContext",
 ] }
 
 [dev-dependencies]

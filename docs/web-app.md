@@ -28,7 +28,8 @@ them (`--no-precompress` skips this, `--profile release` builds faster and bigge
 encodings and Chromium refuses the module (`unknown import kind 0x7e`).
 
 `dist/` holds `index.html`, `manifest.webmanifest`, `sw.js`, the icons, `BUILD` (the build hash), `sizes.json` (the numbers `cargo xtask size`
-checks), `pkg/drafftink_web.js` plus `pkg/drafftink_web_bg.wasm`, and `fonts/` (next section). The build hash (12 hex digits of the wasm
+checks), `pkg/drafftink_web.js` plus `pkg/drafftink_web_bg.wasm`, `pkg-gl/` (the same two files of the WebGL2 module, see "Browsers
+without WebGPU"; `--no-fallback` leaves it out), and `fonts/` (next section). The build hash (12 hex digits of the wasm
 and the glue) replaces `__BUILD__` in `index.html` and `sw.js`.
 
 The build uses `-C target-feature=+simd128` (set in the script, not in `.cargo/config.toml`, so the npm package keeps building for plain
@@ -64,8 +65,9 @@ the table in `performance.md`, "Wasm size". `cargo xtask size` checks the number
 
 `index.html` has one `<canvas id="canvas">` that fills the viewport (CSS), a loading bar and a failure box. A module script loads
 the glue, awaits `start("canvas")` and removes the loading bar after the first frame. Then it sets `window.__started`
-(`window.__error` on failure; the check script reads both) and asks the browser for persistent storage. If WebGPU is missing the
-shell shows its own error page.
+(`window.__error` on failure; the check script reads both) and asks the browser for persistent storage. Before it loads the glue it
+picks the module: `pkg` (WebGPU) or `pkg-gl` (WebGL2), see the next section. If neither WebGPU nor WebGL2 works the shell shows its own
+error page.
 
 `start(canvas_id)` (in `entry.rs`):
 
@@ -87,6 +89,94 @@ shell shows its own error page.
 | Clipboard | the shared slot the shell fills from `paste` events. |
 | Renderer | `WebRenderer` (`crates/app/src/web/render.rs`): PNG export, `clipboard.copy_as` png and `view.screenshot`. See "PNG export" below. |
 | Pickers | a hidden `<input type=file>` with accept lists (documents; images, multiple; libraries). The files are read in full and posted as `Inbound::Picked`. Cancel (the input's `cancel` event) sends nothing and removes the input. `PickSaveTarget` answers at once with the download name. `ReadClipboardText` uses `navigator.clipboard.readText()`. |
+
+## Browsers without WebGPU
+
+WebGPU is the renderer. A browser that has no WebGPU adapter gets a second build of the same app that draws with WebGL2
+(Safari and Firefox before their WebGPU releases, Chromium on a blocklisted GPU, old phones). It is the whole app: the same
+engine, UI, commands and `window.drafftink`, with a different renderer under the shell. Only drawing differs. Decision D13
+(`deviations.md`): the earlier plan was a `vello_cpu` fallback that needed about 350 ms per frame; `vello_gpu` on WebGL2 keeps the
+rasterisation on the GPU and costs 36 ms of CPU per frame for a busy view (numbers below).
+
+**Choosing.** `index.html` decides before it fetches anything large. `navigator.gpu` missing, or `requestAdapter()` giving nothing,
+loads `pkg-gl/`; otherwise `pkg/`. The glue of `pkg/` is fetched while the adapter request runs, so a WebGPU browser pays nothing
+for the check. `?renderer=gl` forces the fallback and `?renderer=gpu` forbids it (for testing). The page sets `window.__renderer`
+to `"webgpu"` or `"webgl"`. The service worker is registered as `sw.js?r=webgl` in the fallback, and then stores the WebGL2
+module and never the 12 MB WebGPU one.
+
+**Two builds, one source.** `drafftink-gpu` has two features: `wgpu` (default; Vello on wgpu, every native build and `pkg/`) and
+`webgl` (`pkg-gl/`). `scripts/build-web.sh` builds the second with `--no-default-features --features webgl`, so it holds no wgpu
+and no Vello renderer, and the first has none of the WebGL code. `drafftink-app` and `drafftink-web` forward both features. With
+both on (`--all-features`, the lint gates) the module picks at start-up. `vello` itself is built without its default features,
+and `drafftink-gpu/wgpu` switches the renderer back on.
+
+**The renderer abstraction** is the `Backend` trait in `crates/gpu/src/backend.rs`: size, `render_scene` (draw a Vello scene into
+a retained image), `present` (that image and egui to the screen), device loss. The shell (`shell.rs`) owns the window, events and
+the repaint rules and holds a `Box<dyn Backend>`; `ShellApp`'s contexts carry a `BackendKind` instead of a `Gpu`. `wgpu_backend.rs`
+is the old compositor behind the trait. `gl/` is the new one:
+
+| File | Does |
+|---|---|
+| `gl/replay.rs` | Reads a `vello::Scene` back in drawing order (path tags and data, transforms, styles, draw tags, glyph runs, images, layers) and calls a `Canvas` for each draw object. Pure; native unit tests. |
+| `gl/canvas.rs` | The `Canvas` over `vello_gpu::Scene`. |
+| `gl/renderer.rs` | `vello_gpu`'s `WebGlRenderer` on a canvas; uploads pictures to its atlas and frees the ones a scene stops using. |
+| `gl/backend.rs` | The `Backend`: copies the canvas into a texture after drawing, blits that texture every frame and paints egui over it with `egui_glow`. |
+| `gl/offscreen.rs` | PNG export and screenshots: a hidden canvas, `readPixels`, synchronous. |
+
+The render crate does not change except for one constant (`LodConfig::COMPAT`); the scene it builds is the scene both renderers
+draw. That is why the fallback reads the encoded scene instead of having the painter call a trait: no second copy of the painting
+rules, and the WebGPU path keeps its code. The cost is that the replay must understand Vello's stream format. It does for what the app draws:
+solid fills and strokes, image fills, glyph runs, clip and opacity layers. Gradients, blurs and other blend modes do not occur;
+they would be counted in `ReplayStats::skipped`. The replay's tests build scenes the way the painter does (appended with a
+transform, dashed, closed and open strokes, several subpaths, glyphs between shapes) and check the calls.
+
+**Less work, as it is needed.**
+- Level of detail: `LodConfig::COMPAT` (skip under 1.5 px, boxes under 6 px, bars for text under 7 px, at most 4,000 cheap
+  elements) instead of the default (0.75, 3, 3.5, 20,000). The app picks it from `BackendKind` in `setup`.
+- While moving: a frame whose redraw reason is `gesture` (pan, zoom, drag) draws text as grey bars (`Detail::Moving`). The
+  retained scene is drawn again in full 160 ms after the last gesture frame (`settle.rs`, a `timer` frame, so idle still means idle).
+  The wgpu renderer always draws everything.
+- A frame that only changes egui does not touch the scene: its copy is blitted.
+- A banner: a small dismissible notice at the bottom of the page (`#compat` in `index.html`) says that the browser has no
+  WebGPU, so large drawings are simpler and slower.
+
+**Size.** The fallback module is loaded by browsers without WebGPU only, so the numbers of the normal module do not include
+it (the build table of `performance.md` is unchanged). `cargo xtask size` checks both: `wasm.*` and `fallback.*` in
+`perf/budgets.json`. See the numbers in "Sizes and speed of the fallback" below.
+
+**What is different.** Antialiasing is `vello_gpu`'s (area coverage), so edges differ slightly from Vello's; text keeps the hinting setting of the normal renderer. PNG export works and is synchronous. Losing the WebGL context (a GPU reset) shows the error
+page: reload. Pictures come through the WebGL atlas (it frees what the scene stops using; a picture that does not fit the atlas is left out and logged). A device that offers only a software WebGL (`failIfMajorPerformanceCaveat`) is refused, and the page
+shows the error page.
+
+### Sizes and speed of the fallback
+
+(Measured on 2026-11-09, Chromium 1208 headed on Xvfb, the NVIDIA L40S through ANGLE/Vulkan, 1280 x 800, DPR 1, `navigator.gpu` removed.)
+
+| | WebGPU module (`pkg`) | WebGL2 module (`pkg-gl`) |
+|---|---|---|
+| wasm-opt | 12,602,451 B | 12,238,436 B |
+| gzip -9 | 4,658,820 B | 4,606,281 B |
+| brotli -11 | 3,299,753 B | 3,276,005 B |
+| budget (`perf/budgets.json`) | `wasm.*` | `fallback.*` (3% above the measure) |
+| first frame, local server, no cache | 590 ms (`performance.md`, 8 runs) | 570 to 970 ms after navigation (5 runs; glue 22 to 95 ms, wasm instantiated at 160 to 280 ms) |
+
+The WebGPU module is the same size as before the fallback existed: 12,598,210 B wasm-opt and 3,300,460 B brotli on the parent commit,
+so +4,241 B (0.03%) and -707 B. The pan of the table below, WebGPU, was 16.6 ms median before and after (4 runs, quiet machine; `gpu_submit` 1.6 ms per frame in both). The shell's `Box<dyn Backend>` and the new `error.rs`/`frame.rs` are that difference. The two
+modules are nearly the same size because the app (engine, UI, Loro, typesetting) is most of both; Vello and wgpu on one side and
+`vello_gpu`, `vello_common` strip generation and `egui_glow` on the other are about equal.
+
+Frame time, a pan of 60 px by `view.pan`, from the command to the next frame (a browser at 60 Hz paces frames at 16.7 ms):
+
+| Document and view | WebGPU | WebGL2 |
+|---|---|---|
+| 800 elements (600 shapes, 200 labels), zoom 0.55, `fallback.spec.ts` | not measured | median 24.9 to 33.3 ms, p95 34 to 44 ms (3 runs) |
+| 800 elements, a quarter hachured, zoom 0.45, about 490 in view | median 16.6 ms | median 43 to 50 ms, p95 71 to 78 ms |
+| the same, CPU time of `render_scene` plus `present` per frame (`perf()` span `gpu_submit`) | 2.2 ms | 36 ms |
+| without hachure and labels | not measured | median 17 ms, `gpu_submit` 14.5 ms |
+
+Most of the 36 ms is `vello_gpu` turning paths into strips in WebAssembly; the app's own work (compose, UI, tessellation) is about
+1 ms. Hatch fills (a clip layer and a long stroke) cost 9 ms for the 90 in view, text as bars 5 ms. A small drawing is far below 16.7 ms.
+The spike (`stack.md` §7) measured 63 ms for 3,000 shapes and 8,136 glyphs at 1600 x 900.
 
 ## PNG export
 
@@ -178,7 +268,7 @@ that asked for it. The worker is registered only on `https:` and on `localhost` 
 ## Checks
 
 `scripts/web_startup.py` measures the start (navigation to the first frame, cold and with the service worker warm) and the frame time of a
-pan over 1000 rectangles (results: `performance.md`, "Wasm size"). Each idle window of `web_check.py` starts after the page has settled
+pan over 1000 rectangles (results: `performance.md`, "Wasm size"). `e2e/web/specs/shell/fallback.spec.ts` removes `navigator.gpu` before the page loads and checks the WebGL2 module, the banner, shapes, text and a PNG by pixel, and measures the frame time of a busy pan. Each idle window of `web_check.py` starts after the page has settled
 (no network activity and no frame for 1.5 s), because the fonts that load after the first frame are work, not idling.
 
 `scripts/web_check.py [--app] [--shot docs/img/web-app.png]` (python from `~/.venvs/perf`; needs `dist/` and
@@ -206,7 +296,7 @@ target, because the repository has no wasm test runner).
   visible change or a notice. Measured: 0 frames in 22 s alone in a room and in 22 s with a peer, after the join has settled.
 - **Two tabs.** The IndexedDB is read once per tab; the autosave record belongs to the tab that wrote last.
 - **File System Access** (saving to a chosen place) is not used: saving is a download or a stored document.
-- **Safari and Firefox** were not tried. The service worker, IndexedDB and pickers use standard APIs; WebGPU support decides.
+- **Safari and Firefox** were not tried. The service worker, IndexedDB and pickers use standard APIs; they get the WebGL2 module until they have WebGPU, and that was only tried in Chromium with `navigator.gpu` removed.
 - **Clipboard read** for the equation editor needs the browser's permission and a user gesture.
 - **Screenshots** of the canvas by script (`drafftink.screenshot()`) are not offered: the shell exposes no read-back to the page.
 

@@ -1,12 +1,19 @@
 # Shell: `drafftink-gpu`
 
-`drafftink-gpu` (L6) owns the GPU device, the Vello + egui compositor and the window shell. One shell
-serves native (Linux X11 and Wayland, Windows, macOS) and the web (wasm32, WebGPU). There is no
+`drafftink-gpu` (L6) owns the drawing back ends and the window shell. One shell
+serves native (Linux X11 and Wayland, Windows, macOS) and the web (wasm32, WebGPU, or WebGL2 where there is no WebGPU).
+The shell talks to a `Backend` (`backend.rs`): the Vello + wgpu compositor, or the WebGL2 one (`gl/`, Cargo feature `webgl`;
+`docs/web-app.md`, "Browsers without WebGPU"). There is no
 `eframe` (docs/deviations.md D1). Its only workspace dependency is `drafftink-profile` (L0), for
 redraw reasons and frame stats.
 
 ```
 crates/gpu/src/
+  backend.rs     trait Backend (what the shell needs from a renderer), BackendKind, Detail
+  wgpu_backend.rs  the Vello + wgpu back end (feature `wgpu`)
+  gl/            the WebGL2 back end (feature `webgl`): replay.rs (Vello scene -> calls), canvas, renderer, backend, offscreen
+  settle.rs      reduced detail while moving, and the frame that finishes it (WebGL2 only)
+  error.rs       GpuError, LostInfo       frame.rs  EguiFrame, Image
   gpu.rs         Gpu (instance, adapter, device, queue, GpuInfo, lost-device flag), PresentSurface
   compositor.rs  Compositor: Vello into a reused texture, blit + egui in one pass; offscreen -> Image
   blit.wgsl      the 1:1 copy of the Vello texture
@@ -197,6 +204,6 @@ manager and Chromium keeps both tabs visible. It tests our listener, not the bro
   Browsers that skip the `copy` event for an empty selection give no `CopyRequested`.
 - A second mouse button pressed while another is held gives no Down or Up on the web.
 - Dropped files arrive as one event per file on native.
-- CPU fallback for browsers without WebGPU (docs/stack.md §7) is not part of the shell yet; the error page is.
+- The WebGL2 back end does not recover from a lost context (the shell tries to make a new back end, which fails while the context is lost, and shows the error page).
 - `cargo clippy -p drafftink-gpu --target wasm32-unknown-unknown` also lints `drafftink-profile`, which fails on
   `crates/profile/src/spans.rs:213` (`unnecessary_literal_unwrap`, wasm-only). Not changed here.

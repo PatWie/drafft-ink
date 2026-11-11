@@ -8,9 +8,10 @@ use drafftink_engine::interact::InteractionOverlay;
 use drafftink_engine::services::SharedTypesetter;
 use drafftink_engine::state::TabId;
 use drafftink_geom::kurbo::{Affine, Rect, Size, Vec2};
+use drafftink_gpu::BackendKind;
 use drafftink_render::{
-    FrameReport, GridSpec, GridStyle, Overlay, OverlayStyle, PaintIndex, RenderOptions, Scene, SceneComposer, Theme,
-    View, build_paint_index, paint_overlay,
+    FrameReport, GridSpec, GridStyle, LodConfig, Overlay, OverlayStyle, PaintIndex, RenderOptions, Scene,
+    SceneComposer, Theme, View, build_paint_index, paint_overlay,
 };
 use drafftink_scene::{ElementId, SceneRead};
 
@@ -39,6 +40,7 @@ pub(crate) struct CanvasView {
     last_report: FrameReport,
     /// The font set the cached fragments were encoded with (`Typesetter::font_set_version`).
     fonts: Option<u64>,
+    lod: LodConfig,
 }
 
 impl CanvasView {
@@ -56,6 +58,7 @@ impl CanvasView {
             hidden: Vec::new(),
             last_report: FrameReport::default(),
             fonts: None,
+            lod: LodConfig::default(),
         }
     }
 
@@ -70,10 +73,16 @@ impl CanvasView {
         if changed {
             self.theme = theme;
             self.grid = grid;
-            self.composer.set_options(RenderOptions { theme, ..RenderOptions::default() });
+            self.composer.set_options(RenderOptions { theme, lod: self.lod });
             self.composer.set_grid(GridSpec::new(grid));
         }
         changed
+    }
+
+    /// Tells the view which renderer draws it. The compatibility renderer gets a coarser level of detail.
+    pub(crate) fn set_backend(&mut self, backend: BackendKind) {
+        self.lod = if backend.is_compat() { LodConfig::COMPAT } else { LodConfig::default() };
+        self.composer.set_options(RenderOptions { theme: self.theme, lod: self.lod });
     }
 
     /// Drops the cached fragments when the typesetter's font set changed (a font arrived), because glyphs that

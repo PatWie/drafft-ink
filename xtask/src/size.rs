@@ -21,6 +21,10 @@
 //! `scripts/package-*` ship, built with the profile `dist` (fat LTO, stripped) and the server with its `sqlite` and
 //! `s3` stores. The native run does not belong to `ci`: the build takes about as long as a release.
 //!
+//! The WebGL2 module for browsers without WebGPU (`dist/pkg-gl`) has its own metrics, `fallback.opt_bytes`,
+//! `fallback.gzip_bytes`, `fallback.brotli_bytes` and `fallback.raw_bytes`, with their own limits: it is loaded only by
+//! browsers that have no WebGPU, so the normal module's numbers do not include it.
+//!
 //! The wasm metrics are `wasm.opt_bytes` (the file the server sends), `wasm.gzip_bytes` and `wasm.brotli_bytes` (what goes
 //! over the wire; brotli is what browsers ask for), `fonts.brotli_bytes` (the font files, brotli each; the page loads
 //! them when it needs them) and, when the build ran, `wasm.raw_bytes` (wasm-bindgen's output before wasm-opt).
@@ -251,6 +255,17 @@ fn parse_sizes(text: &str) -> Result<Metrics, String> {
         let value = json.get(key).and_then(Value::as_u64).ok_or(format!("`{key}` is missing or not a whole number"))?;
         metrics.insert(name, value);
     }
+    // The WebGL2 module is optional (`build-web.sh --no-fallback` writes zeros): measured only when it was built.
+    for (key, name) in [
+        ("fallback_raw", "fallback.raw_bytes"),
+        ("fallback_opt", "fallback.opt_bytes"),
+        ("fallback_gzip", "fallback.gzip_bytes"),
+        ("fallback_brotli", "fallback.brotli_bytes"),
+    ] {
+        if let Some(value) = json.get(key).and_then(Value::as_u64).filter(|v| *v > 0) {
+            metrics.insert(name, value);
+        }
+    }
     Ok(metrics)
 }
 
@@ -368,7 +383,18 @@ mod tests {
         let m = parse_sizes(r#"{"raw": 5, "opt": 4, "gzip": 3, "brotli": 2, "fonts_brotli": 1}"#).unwrap();
         assert_eq!(m["wasm.brotli_bytes"], 2);
         assert_eq!(m["fonts.brotli_bytes"], 1);
-        assert_eq!(m.len(), 5);
+        assert_eq!(m.len(), 5, "no fallback numbers, no fallback metrics");
+        let both = parse_sizes(
+            r#"{"raw": 5, "opt": 4, "gzip": 3, "brotli": 2, "fonts_brotli": 1,
+                "fallback_raw": 9, "fallback_opt": 8, "fallback_gzip": 7, "fallback_brotli": 6}"#,
+        )
+        .unwrap();
+        assert_eq!((both["fallback.opt_bytes"], both["fallback.brotli_bytes"], both.len()), (8, 6, 9));
+        let skipped = parse_sizes(
+            r#"{"raw": 5, "opt": 4, "gzip": 3, "brotli": 2, "fonts_brotli": 1, "fallback_opt": 0, "fallback_brotli": 0}"#,
+        )
+        .unwrap();
+        assert_eq!(skipped.len(), 5, "a zero means the module was not built");
         assert!(parse_sizes(r#"{"raw": 5}"#).unwrap_err().contains("`opt`"));
         assert!(parse_sizes("nonsense").is_err());
     }
@@ -377,9 +403,17 @@ mod tests {
     fn the_checked_in_budgets_parse() {
         let text = fs::read_to_string(crate::root().join(BUDGETS)).unwrap();
         let b = parse_budgets(&text).unwrap();
-        for name in ["wasm.opt_bytes", "wasm.gzip_bytes", "wasm.brotli_bytes", "fonts.brotli_bytes"]
-            .into_iter()
-            .chain(NATIVE_BINARIES.iter().map(|(_, metric)| *metric))
+        for name in [
+            "wasm.opt_bytes",
+            "wasm.gzip_bytes",
+            "wasm.brotli_bytes",
+            "fonts.brotli_bytes",
+            "fallback.opt_bytes",
+            "fallback.gzip_bytes",
+            "fallback.brotli_bytes",
+        ]
+        .into_iter()
+        .chain(NATIVE_BINARIES.iter().map(|(_, metric)| *metric))
         {
             assert!(b.contains_key(name), "{name}");
         }

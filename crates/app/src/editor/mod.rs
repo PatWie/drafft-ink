@@ -27,7 +27,7 @@ use serde_json::{Value, json};
 
 pub(crate) use keys::{EditorKey, KeyRoute, route};
 
-#[cfg(test)]
+#[cfg(all(test, feature = "wgpu"))]
 mod pixels;
 #[cfg(test)]
 mod tests;

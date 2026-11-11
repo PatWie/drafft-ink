@@ -60,7 +60,8 @@ The web build and its JavaScript API are described in `web-app.md`. In short:
 rustup target add wasm32-unknown-unknown
 cargo install wasm-bindgen-cli --version 0.2.130 --locked       # must equal the wasm-bindgen pin
 # wasm-opt (binaryen 117 or newer; 133 is what we measured) on PATH or in ~/.cargo/tools
-scripts/build-web.sh                                            # produces dist/ and prints the sizes
+scripts/build-web.sh                                            # produces dist/ (WebGPU module in pkg/, WebGL2 module in pkg-gl/) and prints the sizes
+scripts/build-web.sh --no-fallback                              # without the WebGL2 module for browsers without WebGPU
 scripts/serve-web.sh                                            # builds the server and serves dist/
 cargo xtask size                                                # builds the same way and checks the sizes against perf/budgets.json
 ```

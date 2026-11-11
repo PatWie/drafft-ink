@@ -19,17 +19,72 @@ use std::sync::Arc;
 use drafftink_engine::PortError;
 use drafftink_engine::ports::{RenderRequest, Renderer, SceneView};
 use drafftink_engine::services::SharedTypesetter;
-use drafftink_gpu::{Compositor, Gpu, GpuOptions, create_instance};
 use drafftink_scene::Document;
 use wasm_bindgen_futures::spawn_local;
 
 use super::pure::Shelf;
 use crate::offscreen::{Composed, compose, encode_png};
 
-/// The device the pictures are drawn with: its own, made on first use, so the window's device is never blocked.
-struct Device {
-    gpu: Gpu,
-    compositor: Compositor,
+/// What the pictures are drawn with: its own, made on first use, so the window's device is never blocked. WebGPU when
+/// the browser has it, a hidden WebGL2 canvas when it does not (the fallback module).
+enum Device {
+    #[cfg(feature = "wgpu")]
+    Wgpu(Box<WgpuDevice>),
+    #[cfg(feature = "webgl")]
+    Gl(Box<drafftink_gpu::gl::GlOffscreen>),
+}
+
+#[cfg(feature = "wgpu")]
+struct WgpuDevice {
+    gpu: drafftink_gpu::Gpu,
+    compositor: drafftink_gpu::Compositor,
+}
+
+impl Device {
+    async fn open() -> Result<Self, String> {
+        #[cfg(feature = "wgpu")]
+        if drafftink_gpu::web::webgpu_available() || !cfg!(feature = "webgl") {
+            use drafftink_gpu::{Compositor, Gpu, GpuOptions, create_instance};
+            let gpu = Gpu::request(create_instance(None).await, None, &GpuOptions::default())
+                .await
+                .map_err(|e| e.to_string())?;
+            let compositor = Compositor::new(&gpu, wgpu::TextureFormat::Rgba8Unorm).map_err(|e| e.to_string())?;
+            return Ok(Self::Wgpu(Box::new(WgpuDevice { gpu, compositor })));
+        }
+        #[cfg(feature = "webgl")]
+        {
+            drafftink_gpu::gl::GlOffscreen::new().map(|o| Self::Gl(Box::new(o))).map_err(|e| e.to_string())
+        }
+        #[cfg(not(feature = "webgl"))]
+        {
+            Err("this build has no renderer".to_owned())
+        }
+    }
+
+    async fn render(&mut self, composed: &Composed) -> Result<drafftink_gpu::Image, String> {
+        match self {
+            #[cfg(feature = "wgpu")]
+            Self::Wgpu(device) => device
+                .compositor
+                .render_to_image(&device.gpu, composed.size, Some((&composed.scene, composed.base)), None)
+                .await
+                .map_err(|e| e.to_string()),
+            #[cfg(feature = "webgl")]
+            Self::Gl(offscreen) => {
+                offscreen.render(&composed.scene, composed.base, composed.size).map_err(|e| e.to_string())
+            }
+        }
+    }
+
+    /// The device is gone and must be made again.
+    fn lost(&self) -> bool {
+        match self {
+            #[cfg(feature = "wgpu")]
+            Self::Wgpu(device) => device.gpu.lost().is_some(),
+            #[cfg(feature = "webgl")]
+            Self::Gl(_) => false,
+        }
+    }
 }
 
 /// What was asked for, to recognise the same request again.
@@ -96,21 +151,10 @@ async fn draw(cell: &RefCell<Option<Device>>, composed: Composed) -> Result<Vec<
     let taken = cell.borrow_mut().take();
     let mut device = match taken {
         Some(d) => d,
-        None => {
-            let gpu = Gpu::request(create_instance(None).await, None, &GpuOptions::default())
-                .await
-                .map_err(|e| e.to_string())?;
-            let compositor = Compositor::new(&gpu, wgpu::TextureFormat::Rgba8Unorm).map_err(|e| e.to_string())?;
-            Device { gpu, compositor }
-        }
+        None => Device::open().await?,
     };
-    let image = device
-        .compositor
-        .render_to_image(&device.gpu, composed.size, Some((&composed.scene, composed.base)), None)
-        .await
-        .map_err(|e| e.to_string());
-    let lost = device.gpu.lost().is_some();
-    if !lost {
+    let image = device.render(&composed).await;
+    if !device.lost() {
         *cell.borrow_mut() = Some(device);
     }
     let image = image?;

@@ -242,6 +242,7 @@ fn build_web(root: &Path, dist: &Path) -> Result<(), String> {
         "--features",
         "scenarios",
         "--no-precompress",
+        "--no-fallback",
     ]);
     run(&mut script)?;
     let mut server = cargo(root);

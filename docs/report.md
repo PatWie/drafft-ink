@@ -232,7 +232,7 @@ Bound arrows (move, resize, rotate, flip, delete, undo, focus, gap, highlight), 
 | AI features (text-to-diagram, diagram-to-code, magic frame) | out of scope | Excluded by the user. Agents use MCP. |
 | Excalidraw+, sign-in, cloud, comments | out of scope | A hosted service. |
 | Windows and macOS runs | not verified | No machine available; CI only builds them (D15). |
-| CPU fallback for browsers without WebGPU | missing | D13. |
+| Fallback for browsers without WebGPU | done as WebGL2 | D13: a second wasm module, only Chromium tried. |
 
 ## 6. Deviations
 
@@ -254,7 +254,7 @@ All of `docs/deviations.md` is reproduced in short, then the deviations from the
 | D10 | Native `opt-level=3`, thin LTO | `release` plus `strip`; shipped binaries use profile `dist` (fat LTO, size-optimised cold crates) | 55 MB was 2.2 times the old 24.4 MB; `dist` gives 41 to 42 MB at twice the build time. |
 | D11 | Criterion benches at 1k, 10k, 100k for hit test, snapping, solver, encoding, CRDT, import/export | 19 curated ids, mostly 10k and 100k; no bench for snapping or import/export | Work-counter tests cover scaling at all three sizes exactly; benches add timing of the hot ones. |
 | D12 | Pan frames 16.7 ms p99 | Native app budget 25 ms p99 (`efe3681`) | Measured 8 to 13 ms (pan) and 5 to 20 ms (drag) under Xvfb, whose X11 copy is most of the CPU. |
-| D13 | CPU fallback for web without WebGPU | None; the page says so | `vello_cpu` needs about 350 ms per frame in wasm. |
+| D13 | CPU fallback for web without WebGPU | A WebGL2 fallback module (`vello_gpu`), loaded only without WebGPU | `vello_cpu` needs about 350 ms per frame in wasm; `docs/web-app.md`. |
 | D14 | Server serves the web client in one binary | Server serves a folder (`--web-dir`) | Embedding 12.5 MB plus fonts in every server build was not worth it. |
 | D15 | Native builds for three OSes in CI | Built in CI; tests on Ubuntu only; Windows and macOS packaging jobs never ran | No Mac or Windows machine. |
 | D16 | CLI runs scripts, converts, exports | It does, since 2026-11-08 (before, `main()` was empty). No PNG | PNG needs a GPU device and would pull wgpu into the tool. |
@@ -312,7 +312,7 @@ Checked item by item on branch `last-pass` (`main` at `52f6d8e`) against the cod
 9. **Web PNG export inside a batch:** the renderer is asynchronous, so a batch with a pending render step is taken back and rerun by the bridge host, and the pending step is refused with `render_pending` inside a batch.
 10. **Smaller overlay leftovers:** distance badges for alignment snaps, IME composition in `TextEdit`. Parity P0 gaps not yet built: angle-snap rays, snap crosshair, eraser radius ring (A-086, A-088, A-046), loading percentage (A-222), last-picked swatch and rotation guides (A-042, A-087), phone and tablet layout on a real device (`parity.md` §4).
 11. **Mermaid node shapes** hexagon, cylinder, parallelogram, trapezoid, flag, subroutine and double circle are drawn as the closest shape an arrow can bind to, and the warning names each one; a real outline needs a bindable polygon element kind. Other Mermaid diagram types are refused with the list of supported ones.
-12. **No CPU fallback** for browsers without WebGPU (D13).
+12. **The WebGL2 fallback** for browsers without WebGPU (D13) was tried in Chromium only and is about 15 times slower per frame than WebGPU on a busy view.
 13. **Windows and macOS** never ran. CI builds them, and `scripts/cross-check.sh` type-checks them from Linux (`packaging.md`); nothing was linked or run.
 14. **AGPL gaps:** no in-app source offer for modified hosted copies; two font redistribution permissions (GelPen, Vanilla Extract) are unconfirmed (`ATTRIBUTION.md`).
 

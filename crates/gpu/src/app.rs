@@ -7,8 +7,8 @@ use vello::Scene;
 use vello::peniko::Color;
 use winit::event_loop::EventLoopProxy;
 
+use crate::backend::BackendKind;
 use crate::events::{ClipboardContent, CursorIcon, Handled, Repaint, ShellEvent};
-use crate::gpu::Gpu;
 use crate::shell::UserEvent;
 
 /// Size and scale of the window surface.
@@ -73,7 +73,8 @@ pub struct SetupCx<'a> {
     /// A fresh egui context. Set fonts and style here. The shell calls `setup` again if it has to
     /// recreate the context after a lost GPU device, so do not keep the context.
     pub ctx: &'a egui::Context,
-    pub gpu: &'a Gpu,
+    /// Which renderer draws the canvas.
+    pub backend: BackendKind,
     pub waker: Waker,
     pub view: ViewInfo,
 }
@@ -81,7 +82,8 @@ pub struct SetupCx<'a> {
 /// Passed to [`ShellApp::event`].
 pub struct EventCx<'a> {
     pub ctx: &'a egui::Context,
-    pub gpu: &'a Gpu,
+    /// Which renderer draws the canvas.
+    pub backend: BackendKind,
     pub waker: &'a Waker,
     pub view: ViewInfo,
     /// The modifier keys held now. A paste event uses it to tell Ctrl+V from Ctrl+Shift+V.
@@ -125,7 +127,8 @@ impl EventCx<'_> {
 
 /// Passed to [`ShellApp::frame`].
 pub struct FrameCx<'a> {
-    pub gpu: &'a Gpu,
+    /// Which renderer draws the canvas.
+    pub backend: BackendKind,
     pub waker: &'a Waker,
     pub view: ViewInfo,
     /// Why this frame is drawn (the first reason of the pending ones).

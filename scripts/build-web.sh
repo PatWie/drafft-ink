@@ -1,10 +1,11 @@
 #!/usr/bin/env bash
 # Build the web app into dist/: release-wasm build -> wasm-bindgen -> wasm-opt -> static files -> sizes.
 #
-# usage: scripts/build-web.sh [--profile NAME] [--no-opt] [--no-precompress] [--features LIST]
+# usage: scripts/build-web.sh [--profile NAME] [--no-opt] [--no-precompress] [--no-fallback] [--features LIST]
 #   --profile NAME     cargo profile (default release-wasm; "release" is quicker to build and bigger)
 #   --no-opt           skip wasm-opt
 #   --no-precompress   do not write .br / .gz next to the files
+#   --no-fallback      do not build the WebGL2 module for browsers without WebGPU (dist/pkg-gl)
 #   --features LIST    cargo features of drafftink-web, e.g. `scenarios` for the perf driver (not for shipping)
 # env: DIST_DIR=folder   write the build there instead of dist/
 # needs: rustup target add wasm32-unknown-unknown
@@ -17,12 +18,14 @@ cd "$(dirname "$0")/.."
 PROFILE=release-wasm
 OPT=1
 PRECOMPRESS=1
+FALLBACK=1
 FEATURES=""
 while [ $# -gt 0 ]; do
   case "$1" in
     --profile) PROFILE="${2:?--profile needs a name}"; shift 2 ;;
     --no-opt) OPT=0; shift ;;
     --no-precompress) PRECOMPRESS=0; shift ;;
+    --no-fallback) FALLBACK=0; shift ;;
     --features) FEATURES="${2:?--features needs a list}"; shift 2 ;;
     -h|--help) sed -n '2,12p' "$0"; exit 0 ;;
     *) echo "unknown argument: $1 (see --help)" >&2; exit 2 ;;
@@ -47,35 +50,54 @@ fi
 # WebAssembly SIMD (every browser with WebGPU has it): the CPU glyph rasteriser that epaint pulls in (vello_cpu with
 # fearless_simd) then uses SIMD instructions instead of a scalar fallback that is copied for every pipeline, which
 # is 1.7 MiB less code (docs/performance.md, "Wasm size"). Set here and not in .cargo/config.toml so that the
-# npm package (crates/canvas-js) keeps building for plain WebAssembly.
+# npm package (crates/canvas-js) keeps building for plain WebAssembly. The WebGL2 module needs it even more: its
+# strip generation (vello_common) is SIMD code.
 export RUSTFLAGS="${RUSTFLAGS:-} -C target-feature=+simd128"
-CARGO_TARGET_DIR="$TARGET_DIR" cargo build --profile "$PROFILE" --target wasm32-unknown-unknown -p drafftink-web --lib ${FEATURES:+--features "$FEATURES"}
-WASM="$TARGET_DIR/wasm32-unknown-unknown/$PROFILE/$NAME.wasm"
-
-rm -rf "$DIST"
-mkdir -p "$DIST/pkg"
-# No --keep-debug: the name section alone is 1.9 MB (docs/stack.md).
-wasm-bindgen --target web --no-typescript --out-dir "$DIST/pkg" --out-name "$NAME" "$WASM"
-OUT="$DIST/pkg/${NAME}_bg.wasm"
-RAW=$(stat -c %s "$OUT")
-
-# --- wasm-opt
-OPTSIZE=$RAW
 OPT_FEATURES="--enable-bulk-memory --enable-sign-ext --enable-mutable-globals --enable-nontrapping-float-to-int --enable-reference-types --enable-multivalue --enable-simd"
+WASM_OPT=""
 if [ "$OPT" = 1 ] && [ "$PROFILE" = "release-wasm" ]; then
   WASM_OPT="$(command -v wasm-opt || true)"
   [ -z "$WASM_OPT" ] && WASM_OPT="$(ls ~/.cargo/tools/binaryen-version_*/bin/wasm-opt 2>/dev/null | sort -V | tail -1 || true)"
+  [ -z "$WASM_OPT" ] && echo "wasm-opt not found: skipping (install binaryen >= 117 for a smaller file)" >&2
+fi
+WASM="$TARGET_DIR/wasm32-unknown-unknown/$PROFILE/$NAME.wasm"
+
+# bindgen_module <package dir under dist/>: wasm-bindgen and wasm-opt for the module cargo just wrote. Sets RAW and OPTSIZE.
+bindgen_module() {
+  local out_dir="$DIST/$1" out
+  mkdir -p "$out_dir"
+  # No --keep-debug: the name section alone is 1.9 MB (docs/stack.md).
+  wasm-bindgen --target web --no-typescript --out-dir "$out_dir" --out-name "$NAME" "$WASM"
+  out="$out_dir/${NAME}_bg.wasm"
+  RAW=$(stat -c %s "$out")
+  OPTSIZE=$RAW
   if [ -n "$WASM_OPT" ]; then
     # Not --all-features: with binaryen 133 it turns on experimental encodings and Chromium then rejects the
     # module ("unknown import kind 0x7e"). These are the features rustc's wasm32 target emits.
     # -Oz: smaller than -Os by about 2% brotli, and as fast in the frame measurement (docs/performance.md, "Wasm size").
-    timeout 1200 "$WASM_OPT" $OPT_FEATURES --strip-debug --strip-producers -Oz "$OUT" -o "$OUT.opt"
-    mv "$OUT.opt" "$OUT"
-    OPTSIZE=$(stat -c %s "$OUT")
-  else
-    echo "wasm-opt not found: skipping (install binaryen >= 117 for a smaller file)" >&2
+    timeout 1200 "$WASM_OPT" $OPT_FEATURES --strip-debug --strip-producers -Oz "$out" -o "$out.opt"
+    mv "$out.opt" "$out"
+    OPTSIZE=$(stat -c %s "$out")
   fi
+}
+
+rm -rf "$DIST"
+mkdir -p "$DIST"
+
+# The WebGL2 module first, because cargo writes both builds to the same file and `cargo xtask size` wants the
+# normal module's unstripped copy (twiggy). It is the whole app with the WebGL2 renderer instead of Vello on wgpu,
+# loaded by the page only when the browser has no WebGPU (docs/web-app.md, "Browsers without WebGPU").
+FB_RAW=0; FB_OPT=0; FB_GZ=0; FB_BR=0
+if [ "$FALLBACK" = 1 ]; then
+  CARGO_TARGET_DIR="$TARGET_DIR" cargo build --profile "$PROFILE" --target wasm32-unknown-unknown -p drafftink-web --lib \
+    --no-default-features --features "webgl${FEATURES:+,$FEATURES}"
+  bindgen_module pkg-gl
+  FB_RAW=$RAW; FB_OPT=$OPTSIZE
 fi
+
+CARGO_TARGET_DIR="$TARGET_DIR" cargo build --profile "$PROFILE" --target wasm32-unknown-unknown -p drafftink-web --lib ${FEATURES:+--features "$FEATURES"}
+bindgen_module pkg
+OUT="$DIST/pkg/${NAME}_bg.wasm"
 
 # --- fonts: separate files, not part of the wasm. The name carries a hash of the content, so a cached copy is
 # valid forever. `window.__assets` maps the plain file name to the address; the first frame's font is preloaded
@@ -105,10 +127,12 @@ cp "$EGUI_FONTS"/*.txt "$DIST/fonts/licenses/"
 
 # --- static files, with the build hash in the page and the service worker
 BUILD="$(cat "$OUT" "$DIST/pkg/$NAME.js" | sha256sum | cut -c1-12)"
+BUILD_GL=none
+[ "$FALLBACK" = 1 ] && BUILD_GL="$(cat "$DIST/pkg-gl/${NAME}_bg.wasm" "$DIST/pkg-gl/$NAME.js" | sha256sum | cut -c1-12)"
 cp web/manifest.webmanifest web/favicon.svg web/icon-192.png web/icon-512.png web/icon-maskable-512.png "$DIST/"
-sed -e "s/__BUILD__/$BUILD/g" -e "s|__ASSETS__|$ASSETS_JSON|" \
+sed -e "s/__BUILD__/$BUILD/g" -e "s/__BUILD_GL__/$BUILD_GL/g" -e "s|__ASSETS__|$ASSETS_JSON|" \
     -e "s|__PRELOAD__|<link rel=\"preload\" as=\"fetch\" crossorigin href=\"$FIRST_FONT\"><link rel=\"preload\" as=\"fetch\" crossorigin href=\"$MATH_FONT\">|" web/index.html > "$DIST/index.html"
-sed -e "s/__BUILD__/$BUILD/g" -e "s|__SHELL_FONTS__|[\"$FIRST_FONT\"]|" web/sw.js > "$DIST/sw.js"
+sed -e "s/__BUILD__/$BUILD/g" -e "s/__BUILD_GL__/$BUILD_GL/g" -e "s|__SHELL_FONTS__|[\"$FIRST_FONT\"]|" web/sw.js > "$DIST/sw.js"
 echo "$BUILD" > "$DIST/BUILD"
 
 # --- sizes of the wasm
@@ -121,11 +145,18 @@ BR=$(brotli_size "$OUT" 2>/dev/null || echo "?")
 mb() { awk -v n="$1" 'BEGIN { if (n == "?") print "n/a"; else printf "%.2f MB", n/1048576 }'; }
 echo "build $BUILD ($PROFILE)"
 printf 'wasm: raw %s | wasm-opt %s | gzip -9 %s | brotli -11 %s\n' "$(mb "$RAW")" "$(mb "$OPTSIZE")" "$(mb "$GZ")" "$(mb "$BR")"
+if [ "$FALLBACK" = 1 ]; then
+  FB_GZ=$(gzip -9 -c "$DIST/pkg-gl/${NAME}_bg.wasm" | wc -c)
+  FB_BR=$(brotli_size "$DIST/pkg-gl/${NAME}_bg.wasm" 2>/dev/null || echo 0)
+  printf 'WebGL2 module (loaded only without WebGPU): raw %s | wasm-opt %s | gzip -9 %s | brotli -11 %s\n' \
+    "$(mb "$FB_RAW")" "$(mb "$FB_OPT")" "$(mb "$FB_GZ")" "$(mb "$FB_BR")"
+fi
 FONT_BR=0
 for f in "$DIST"/fonts/*.ttf "$DIST"/fonts/*.otf; do FONT_BR=$((FONT_BR + $(brotli_size "$f"))); done
 printf 'fonts (loaded on demand, brotli -11): %s in %s files\n' "$(mb "$FONT_BR")" "$(ls "$DIST"/fonts/*.ttf "$DIST"/fonts/*.otf | wc -l)"
 # The numbers `cargo xtask size` checks (xtask/src/size.rs), in bytes.
-printf '{"raw": %s, "opt": %s, "gzip": %s, "brotli": %s, "fonts_brotli": %s}\n' "$RAW" "$OPTSIZE" "$GZ" "$BR" "$FONT_BR" > "$DIST/sizes.json"
+printf '{"raw": %s, "opt": %s, "gzip": %s, "brotli": %s, "fonts_brotli": %s, "fallback_raw": %s, "fallback_opt": %s, "fallback_gzip": %s, "fallback_brotli": %s}\n' \
+  "$RAW" "$OPTSIZE" "$GZ" "$BR" "$FONT_BR" "$FB_RAW" "$FB_OPT" "$FB_GZ" "$FB_BR" > "$DIST/sizes.json"
 
 # --- precompressed copies: drafftink-server serves .br / .gz when the browser accepts them
 if [ "$PRECOMPRESS" = 1 ]; then
