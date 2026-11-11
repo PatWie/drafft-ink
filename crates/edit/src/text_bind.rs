@@ -158,28 +158,60 @@ pub fn layout_label<M: TextMeasure + ?Sized>(
     label_position: Option<f64>,
     anchor: GrowAnchor,
 ) -> Result<LabelLayout, TextBindError> {
+    let mut lines = Vec::new();
+    let fit = fit_label(container, font, label_position, anchor, &mut |width| {
+        lines = m.wrap(content, font, width);
+        measure_lines(m, &lines, font)
+    })?;
+    Ok(LabelLayout { lines, text: fit.text, container: fit.container, grew: fit.grew })
+}
+
+/// Where a label goes and whether its container grows. See [`fit_label`].
+#[derive(Debug, Clone, PartialEq)]
+pub struct LabelFit {
+    /// The width the text was last measured at (the wrap width of the label).
+    pub wrap_width: f64,
+    /// The size of the text at that width.
+    pub size: Size,
+    /// Box and angle of the text element.
+    pub text: Transform,
+    /// The container's unrotated box after growth.
+    pub container: Rect,
+    /// The container had to grow.
+    pub grew: bool,
+}
+
+/// The placement rules of a label, for any way of measuring text: `size_at(width)` says how large the label's text
+/// is when wrapped at `width`. The text editor measures with the layout it draws; [`layout_label`] measures lines
+/// with a [`TextMeasure`]. Pure: nothing is written.
+pub fn fit_label(
+    container: &Element,
+    font: &TextStyle,
+    label_position: Option<f64>,
+    anchor: GrowAnchor,
+    size_at: &mut dyn FnMut(f64) -> Size,
+) -> Result<LabelFit, TextBindError> {
     let kind = container.tag();
     let mut rect = container.rect();
     if kind == Kind::Arrow {
         let max_w = (ARROW_LABEL_WIDTH_FRACTION * rect.width()).max(font.size * ARROW_LABEL_MIN_WIDTH_PER_SIZE);
-        let lines = m.wrap(content, font, max_w);
-        let size = measure_lines(m, &lines, font);
+        let size = size_at(max_w);
         let at = arrow_point_at(container, label_position.unwrap_or(DEFAULT_LABEL_POSITION)).unwrap_or(rect.center());
         let text = Transform::new(at.x - size.width / 2.0, at.y - size.height / 2.0, size.width, size.height);
-        return Ok(LabelLayout { lines, text, container: rect, grew: false });
+        return Ok(LabelFit { wrap_width: max_w, size, text, container: rect, grew: false });
     }
     if !kind.is_label_container() {
         return Err(TextBindError::NotContainer { id: container.id.clone(), kind });
     }
 
     let mut grew = false;
-    let mut lines = Vec::new();
     let mut size = Size::ZERO;
+    let mut wrap_width = 0.0;
     // At most two rounds: growing the width changes the wrapping once.
     for _ in 0..2 {
         let inner = inner_size(kind, rect.size()).unwrap_or(Size::ZERO);
-        lines = m.wrap(content, font, inner.width);
-        size = measure_lines(m, &lines, font);
+        wrap_width = inner.width;
+        size = size_at(inner.width);
         let mut next = rect;
         if size.width > inner.width {
             let w = container_dim_for_text(size.width, kind).max(rect.width());
@@ -203,6 +235,14 @@ pub fn layout_label<M: TextMeasure + ?Sized>(
         rect = next;
     }
 
+    let text = place_label(kind, rect, container.transform.angle, font, size);
+    Ok(LabelFit { wrap_width, size, text, container: rect, grew })
+}
+
+/// The box of a label of `size` inside a container of `kind` whose unrotated box is `rect` and which is turned by
+/// `angle`: aligned by the font inside the container's text area, then turned about the container's centre. For
+/// shapes; an arrow's label is centred on the arrow instead.
+pub fn place_label(kind: Kind, rect: Rect, angle: f64, font: &TextStyle, size: Size) -> Transform {
     let inner = inner_box(kind, rect).unwrap_or(rect);
     let y = match font.vertical_align {
         VerticalAlign::Top => inner.y0,
@@ -214,11 +254,10 @@ pub fn layout_label<M: TextMeasure + ?Sized>(
         TextAlign::Center => inner.x0 + (inner.width() - size.width) / 2.0,
         TextAlign::Right => inner.x1 - size.width,
     };
-    let angle = container.transform.angle;
     let centre = rotate_point(Point::new(x + size.width / 2.0, y + size.height / 2.0), rect.center(), angle);
     let mut text = Transform::new(centre.x - size.width / 2.0, centre.y - size.height / 2.0, size.width, size.height);
     text.angle = angle;
-    Ok(LabelLayout { lines, text, container: rect, grew })
+    text
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -463,7 +502,7 @@ fn write_layout<T: SceneTx>(
 }
 
 /// The label font of a new label: centred, middle, colour from the container.
-fn new_label_font(base: Option<&TextStyle>) -> TextStyle {
+pub fn new_label_font(base: Option<&TextStyle>) -> TextStyle {
     let mut f = base.cloned().unwrap_or_default();
     f.align = TextAlign::Center;
     f.vertical_align = VerticalAlign::Middle;

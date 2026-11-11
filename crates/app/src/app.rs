@@ -18,6 +18,7 @@ use drafftink_gpu::{
     ClipboardContent, DroppedFile, EventCx, FrameCx, FrameOutput, Handled, PointerPhase, RedrawReason, Repaint,
     SetupCx, ShellApp, ShellEvent,
 };
+use drafftink_engine::services::SharedTypesetter;
 use drafftink_render::{GridStyle, RemoteCursor, Theme};
 use drafftink_scene::{ElementKind, SceneRead, SceneStore};
 use drafftink_ui::{FrameInput, HostRequest, Pointer, Toast, UiShell};
@@ -25,7 +26,7 @@ use serde_json::{Value, json};
 use vello::peniko::Color;
 
 use crate::config::AppConfig;
-use crate::editor::{EditorEvent, TextEditor, hidden_by_edit};
+use crate::editor::{KeyRoute, TextEditor, route};
 use crate::input::{self, Held};
 use crate::overlay;
 use crate::platform::{
@@ -34,7 +35,7 @@ use crate::platform::{
 use crate::view::{CanvasView, LASER_FADE_MS, TrailPoint};
 
 /// Everything about the picture that, when it changes, makes the document scene stale.
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 struct WorldKey {
     tab: TabId,
     revision: u64,
@@ -43,7 +44,8 @@ struct WorldKey {
     dpr: f64,
     dark: bool,
     grid: GridStyle,
-    editing: bool,
+    /// The elements left out because the editor draws them.
+    editing: Vec<drafftink_scene::ElementId>,
 }
 
 /// Everything the overlay shows, to tell whether it changed.
@@ -52,6 +54,8 @@ struct OverlayKey {
     interaction: InteractionOverlay,
     /// Pointer (world), colour and name of each peer that has a pointer.
     peers: Vec<([f64; 2], String, String)>,
+    /// The text editor: its picture, whether the caret shows.
+    edit: Option<((u64, u64), bool)>,
 }
 
 /// The application. Build it with [`App::new`] and give it to `drafftink_gpu::run`.
@@ -61,6 +65,8 @@ pub struct App {
     ui: UiShell,
     canvas: CanvasView,
     editor: Option<TextEditor>,
+    typesetter: SharedTypesetter,
+    is_mac: bool,
     host: Box<dyn Host>,
     inbox: Inbox,
     inbox_rx: InboxRx,
@@ -83,6 +89,8 @@ pub struct App {
     collab_due_ms: Option<u64>,
     perf_overlay: bool,
     cursor: egui::CursorIcon,
+    /// The picture of the text editor the engine was last told about.
+    staged: Option<(u64, u64)>,
 }
 
 impl App {
@@ -97,8 +105,10 @@ impl App {
             session,
             interaction: Interaction::new(),
             ui: UiShell::new(is_mac),
-            canvas: CanvasView::new(typesetter),
+            canvas: CanvasView::new(typesetter.clone()),
             editor: None,
+            typesetter,
+            is_mac,
             host,
             inbox,
             inbox_rx,
@@ -119,6 +129,7 @@ impl App {
             collab_due_ms: Some(0),
             perf_overlay: config.perf_overlay,
             cursor: egui::CursorIcon::Default,
+            staged: None,
         }
     }
 
@@ -170,7 +181,7 @@ impl App {
 
     fn open_ui(&mut self, request: &UiRequest) {
         match request {
-            UiRequest::OpenTextEditor { .. } => self.editor = TextEditor::open(&self.session, request),
+            UiRequest::OpenTextEditor { at, .. } => self.open_editor(request, Some(*at)),
             UiRequest::OpenEquationEditor { element } => {
                 let latex = self.session.store().get(element).and_then(|e| match &e.kind {
                     ElementKind::Math(m) => Some(m.latex.clone()),
@@ -222,14 +233,11 @@ impl App {
         let pos = s.point.pos;
         let over_egui = input::egui_owns(cx.ctx, self.canvas_rect, pos);
         let now = self.now_ms();
+        if let Some(repaint) = self.editor_pointer(&s, over_egui) {
+            return repaint;
+        }
         match s.phase {
             PointerPhase::Down => {
-                // Text typed in the editor reaches the engine before anything else runs (a click elsewhere
-                // would otherwise commit an empty edit).
-                let outside_editor = self.editor.as_ref().is_some_and(|e| e.rect().is_none_or(|r| !r.contains(pos)));
-                if outside_editor {
-                    self.finish_editor();
-                }
                 self.canvas_drag = !over_egui && !self.ui.state.modal_open();
             }
             PointerPhase::Up | PointerPhase::Cancel => {}
@@ -278,30 +286,134 @@ impl App {
 
     // ---- text editor ----------------------------------------------------------------------------------------
 
+    fn open_editor(&mut self, request: &UiRequest, caret_hint: Option<Point>) {
+        let now = self.now_ms();
+        let session = &self.session;
+        let editor = self.typesetter.with(|ts| TextEditor::open(session, request, caret_hint, ts, now));
+        self.editor = editor;
+        self.staged = None;
+        self.stage_editor();
+    }
+
+    /// Hands the editor's content to the engine, so that a command which ends the edit on its own (a toolbar
+    /// click, `Mod+S`) keeps what was typed.
+    fn stage_editor(&mut self) {
+        let Some(editor) = self.editor.as_ref() else { return };
+        let key = editor.picture_key();
+        if self.staged == Some(key) {
+            return;
+        }
+        self.staged = Some(key);
+        self.session.stage_text_edit(editor.finish_args());
+    }
+
     fn finish_editor(&mut self) {
         let Some(editor) = self.editor.take() else { return };
         if self.session.text_edit.is_some() {
             let args = editor.finish_args();
             self.run(Origin::Ui, "text.edit_end", args);
         }
+        self.staged = None;
     }
 
     /// The engine's text edit and ours must agree: an edit that ended elsewhere (undo, a script, a tool
     /// change) closes the editor, and an edit a script began on an element opens one.
     fn sync_editor(&mut self) {
         match (&self.session.text_edit, &self.editor) {
-            (None, Some(_)) => self.editor = None,
+            (None, Some(_)) => {
+                self.editor = None;
+                self.staged = None;
+            }
             (Some(edit), None) if !self.ui.state.modal_open() => {
                 if let Some(id) = &edit.element {
                     let req = UiRequest::OpenTextEditor { element: Some(id.clone()), at: Point::ZERO, width: None };
                     let is_math = self.session.store().get(id).is_some_and(|e| matches!(e.kind, ElementKind::Math(_)));
                     if !is_math {
-                        self.editor = TextEditor::open(&self.session, &req);
+                        self.open_editor(&req, None);
                     }
                 }
             }
             _ => {}
         }
+    }
+
+    /// A pointer sample while a text is edited. `Some` when the editor took it: a press on the text, and the drag
+    /// and the release that follow. A press anywhere else on the canvas ends the edit and goes on to the canvas.
+    fn editor_pointer(&mut self, s: &drafftink_gpu::PointerSample, over_egui: bool) -> Option<Repaint> {
+        self.editor.as_ref()?;
+        let now = self.now_ms();
+        let pos = s.point.pos;
+        let canvas = Point::new(f64::from(pos.x - self.canvas_rect.min.x), f64::from(pos.y - self.canvas_rect.min.y));
+        let world = self.canvas_to_world(canvas);
+        let zoom = self.interaction.camera().zoom.max(1e-6);
+        let primary = s.button.is_none_or(|b| b == 0);
+        let editor = self.editor.as_mut()?;
+        match s.phase {
+            PointerPhase::Down if !over_egui => {
+                let on_text = primary && self.typesetter.with(|ts| editor.hit(ts, world, 6.0 / zoom));
+                if on_text {
+                    let shift = s.modifiers.shift;
+                    self.typesetter.with(|ts| editor.press(ts, world, canvas, shift, now));
+                    self.stage_editor();
+                    return Some(Repaint::Now(RedrawReason::Gesture));
+                }
+                // A press elsewhere on the canvas ends the edit with what was typed; the canvas then gets the press.
+                self.stage_editor();
+                self.finish_editor();
+                None
+            }
+            PointerPhase::Move if editor.is_pressing() => {
+                let changed = self.typesetter.with(|ts| editor.drag(ts, world, now));
+                Some(if changed { Repaint::Now(RedrawReason::Gesture) } else { Repaint::Idle })
+            }
+            PointerPhase::Up | PointerPhase::Cancel if editor.is_pressing() => {
+                editor.release();
+                Some(Repaint::Now(RedrawReason::Gesture))
+            }
+            _ => None,
+        }
+    }
+
+    /// Esc, `Mod+Enter` and the editing keys of this frame. Returns whether the picture changed.
+    fn editor_keys(&mut self, ctx: &egui::Context, now_ms: f64) -> bool {
+        let Some(editor) = self.editor.as_mut() else { return false };
+        let mac = self.is_mac;
+        let mut finish = false;
+        let mut changed = false;
+        let ts = &self.typesetter;
+        ctx.input_mut(|i| {
+            i.events.retain(|event| {
+                let egui::Event::Key { key, pressed: true, modifiers, .. } = event else { return true };
+                match route(*key, *modifiers, mac) {
+                    Some(KeyRoute::Finish) => finish = true,
+                    Some(KeyRoute::Editor(k)) => changed |= ts.with(|ts| editor.key(k, mac, ts, now_ms)),
+                    None => return true,
+                }
+                false
+            });
+        });
+        if finish {
+            self.stage_editor();
+            self.finish_editor();
+            return true;
+        }
+        changed
+    }
+
+    fn editor_paste(&mut self, content: ClipboardContent) -> Repaint {
+        let now = self.now_ms();
+        let changed = match (self.editor.as_mut(), content.text) {
+            (Some(editor), Some(text)) => editor.paste(&text, now),
+            _ => false,
+        };
+        if changed { Repaint::Now(RedrawReason::Command) } else { Repaint::Idle }
+    }
+
+    fn editor_copy(&mut self, cx: &mut EventCx<'_>, cut: bool) -> Repaint {
+        let now = self.now_ms();
+        let Some(text) = self.editor.as_mut().and_then(|e| e.copy(cut, now)) else { return Repaint::Idle };
+        cx.set_clipboard(ClipboardContent::text(text));
+        if cut { Repaint::Now(RedrawReason::Command) } else { Repaint::Idle }
     }
 
     // ---- background results ---------------------------------------------------------------------------------
@@ -363,8 +475,9 @@ impl App {
             HostRequest::PickRecent => {}
             HostRequest::CopyText(text) => cx.set_clipboard(ClipboardContent::text(text)),
             HostRequest::TextEditStyle(props) => {
+                let now = self.now_ms();
                 if let Some(editor) = self.editor.as_mut() {
-                    editor.add_style(&props);
+                    editor.add_style(&props, now);
                 }
             }
             HostRequest::OpenUrl(url) => cx.open_url(url, true),
@@ -485,7 +598,13 @@ impl App {
         let camera = self.interaction.camera();
         let theme = Self::theme_of(ctx);
         let grid = self.grid_of();
-        let hidden = if self.editor.is_some() { hidden_by_edit(&self.session) } else { Vec::new() };
+        let (hidden, edit_paint) = match self.editor.as_mut() {
+            Some(editor) => {
+                let arranged = self.typesetter.with(|ts| editor.paint(ts).clone());
+                (editor.hidden(), Some((arranged, editor.picture_key())))
+            }
+            None => (Vec::new(), None),
+        };
         let interaction_overlay = self.interaction.overlay(&self.session);
         let mut hide = hidden.clone();
         hide.extend(interaction_overlay.faded.iter().cloned());
@@ -503,10 +622,10 @@ impl App {
             dpr,
             dark: theme == Theme::Dark,
             grid,
-            editing: !hidden.is_empty(),
+            editing: hidden.clone(),
         };
         let view = CanvasView::view_of(camera.scroll, camera.zoom, size, dpr);
-        let world_stale = look || hidden_changed || self.world_key != Some(key) || cx.resized;
+        let world_stale = look || hidden_changed || self.world_key.as_ref() != Some(&key) || cx.resized;
         let peers: Vec<([f64; 2], String, String)> = self
             .session
             .collab_view()
@@ -514,7 +633,9 @@ impl App {
             .iter()
             .filter_map(|p| p.pointer.map(|pt| (pt, p.color.clone(), p.name.clone())))
             .collect();
-        let overlay_key = OverlayKey { interaction: interaction_overlay.clone(), peers: peers.clone() };
+        let caret_on = self.editor.as_ref().is_some_and(|e| e.caret_on(now));
+        let edit_key = edit_paint.as_ref().map(|(_, picture)| (*picture, caret_on));
+        let overlay_key = OverlayKey { interaction: interaction_overlay.clone(), peers: peers.clone(), edit: edit_key };
         let laser_running = !interaction_overlay.laser.is_empty();
         let overlay_stale = world_stale || laser_running || self.overlay_key.as_ref() != Some(&overlay_key);
         if !world_stale && !overlay_stale {
@@ -534,7 +655,11 @@ impl App {
             .collect();
         let mut render_overlay = overlay::to_render(&interaction_overlay.canvas, &[]);
         render_overlay.cursors = cursors;
-        self.canvas.compose_overlay(self.session.store(), &interaction_overlay, &render_overlay, &view);
+        if let Some(editor) = self.editor.as_mut() {
+            render_overlay.text_edit = Some(self.typesetter.with(|ts| editor.overlay(ts, theme, now)));
+        }
+        let edited = edit_paint.as_ref().map(|(arranged, _)| arranged);
+        self.canvas.compose_overlay(self.session.store(), &interaction_overlay, &render_overlay, edited, &view);
         let trail: Vec<TrailPoint> = interaction_overlay
             .laser
             .iter()
@@ -552,6 +677,20 @@ impl App {
 
         let base = self.canvas.background(self.session.store());
         self.canvas.write_to(cx.scene_mut(base));
+    }
+
+    /// Where the caret is in window points while a text is edited: the input method puts its window there, and the
+    /// soft keyboard appears.
+    fn text_input_rect(&mut self, canvas: egui::Vec2) -> Option<egui::Rect> {
+        let editor = self.editor.as_mut()?;
+        let camera = self.interaction.camera();
+        let size = Size::new(f64::from(canvas.x), f64::from(canvas.y));
+        let caret = self.typesetter.with(|ts| editor.caret_on_screen(ts, camera, size))?;
+        let min = self.canvas_rect.min;
+        Some(egui::Rect::from_min_max(
+            egui::pos2(min.x + caret.x0 as f32, min.y + caret.y0 as f32),
+            egui::pos2(min.x + caret.x1 as f32, min.y + caret.y1 as f32),
+        ))
     }
 
     fn badge(&self, ctx: &egui::Context) {
@@ -605,6 +744,9 @@ impl App {
         }
         if let Some(d) = self.collab_due_ms {
             consider(d as f64, RedrawReason::Collab);
+        }
+        if let Some(editor) = self.editor.as_ref() {
+            consider(editor.next_blink_ms(now), RedrawReason::CaretBlink);
         }
         if let Some(ms) = self.session.workspace_next_due_ms() {
             consider(now + ms as f64, RedrawReason::Autosave);
@@ -663,7 +805,10 @@ impl ShellApp for App {
         match event {
             ShellEvent::Pointer(sample) => (self.handle_pointer(cx, sample), Handled::No),
             ShellEvent::Paste(content) => {
-                let take = self.editor.is_none() && !cx.ctx.egui_wants_keyboard_input() && !self.ui.state.modal_open();
+                if self.editor.is_some() {
+                    return (self.editor_paste(content), Handled::Yes);
+                }
+                let take = !cx.ctx.egui_wants_keyboard_input() && !self.ui.state.modal_open();
                 if !take {
                     return (Repaint::Idle, Handled::No);
                 }
@@ -680,7 +825,10 @@ impl ShellApp for App {
                 (Repaint::Now(RedrawReason::Command), Handled::Yes)
             }
             ShellEvent::CopyRequested { cut } => {
-                if self.editor.is_some() || cx.ctx.egui_wants_keyboard_input() || self.ui.state.modal_open() {
+                if self.editor.is_some() {
+                    return (self.editor_copy(cx, cut), Handled::Yes);
+                }
+                if cx.ctx.egui_wants_keyboard_input() || self.ui.state.modal_open() {
                     return (Repaint::Idle, Handled::No);
                 }
                 let id = if cut { "clipboard.cut" } else { "clipboard.copy" };
@@ -724,8 +872,12 @@ impl ShellApp for App {
                 (repaint, Handled::No)
             }
             ShellEvent::Wake(reason) => (Repaint::Now(reason), Handled::No),
+            ShellEvent::TextInput(input) => {
+                let now = self.now_ms();
+                let changed = self.editor.as_mut().is_some_and(|e| e.text_input(&input, now));
+                (if changed { Repaint::Now(RedrawReason::Command) } else { Repaint::Idle }, Handled::Yes)
+            }
             ShellEvent::FileHover(_)
-            | ShellEvent::TextInput(_)
             | ShellEvent::Visibility(true)
             | ShellEvent::Focus(true) => (Repaint::Idle, Handled::No),
         }
@@ -760,15 +912,11 @@ impl ShellApp for App {
         self.feed_keys(&ctx, now);
         self.feed_wheel(&ctx, now);
 
-        // The text editor goes first: it takes Esc and Ctrl+Enter before the keymap sees them.
+        // The text editor goes first: it takes Esc, Ctrl+Enter and the editing keys before the keymap sees them.
         self.sync_editor();
-        if let Some(editor) = self.editor.as_mut() {
-            let camera = self.interaction.camera();
-            let canvas = Size::new(f64::from(size.x), f64::from(size.y));
-            if editor.show(&ctx, camera, canvas) == EditorEvent::Finish {
-                self.finish_editor();
-            }
-        }
+        self.stage_editor();
+        self.editor_keys(&ctx, now);
+        self.stage_editor();
 
         // The UI.
         let collab = collab_view_of(&mut self.session);
@@ -796,10 +944,11 @@ impl ShellApp for App {
 
         let over_canvas =
             ctx.input(|i| i.pointer.hover_pos()).is_some_and(|p| !input::egui_owns(&ctx, self.canvas_rect, p));
+        let text_input = self.text_input_rect(size);
         FrameOutput {
             repaint: self.next_wake(now),
             canvas_rect: Some(self.canvas_rect),
-            text_input: None,
+            text_input,
             cursor: over_canvas.then_some(self.cursor),
         }
     }

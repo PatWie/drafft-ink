@@ -203,6 +203,7 @@ fn begin_draft(
     let caret = resolve_caret(cmd, caret, 0)?;
     let container = container.map(|c| draft_container(s, cmd, c)).transpose()?;
     s.text_edit = Some(TextEdit { element: None, draft: true });
+    s.clear_staged_text_edit();
     let draft = Draft { at: Point::new(x, y), container: container.clone(), width };
     s.ext.with::<Draft, _>(|d| *d = draft);
     select_only(s, &[]);
@@ -289,6 +290,7 @@ fn begin_existing(s: &mut Session, cmd: &str, id: Option<&Ref>, caret: Caret) ->
     };
     let selected = label_container.unwrap_or_else(|| id.clone());
     s.text_edit = Some(TextEdit { element: Some(id), draft: false });
+    s.clear_staged_text_edit();
     select_only(s, std::slice::from_ref(&selected));
     Ok(out)
 }
@@ -378,6 +380,7 @@ pub(super) fn edit_end(s: &mut Session, a: EndArgs) -> Result<EndOut, Refusal> {
     let Some(te) = s.text_edit.take() else {
         return Err(not_editing(cmd));
     };
+    s.clear_staged_text_edit();
     if !a.commit {
         return Ok(EndOut { discarded: true, ..EndOut::default() });
     }

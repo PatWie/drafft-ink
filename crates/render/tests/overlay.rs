@@ -75,6 +75,7 @@ fn full() -> Overlay {
             to_world: kurbo::Affine::translate((10.0, 100.0)),
             caret: Some(Rect::new(5.0, 0.0, 5.0, 20.0)),
             selection: vec![Rect::new(10.0, 0.0, 40.0, 20.0)],
+            composition: Vec::new(),
             caret_color: Color::BLACK,
         }),
     }
@@ -364,7 +365,13 @@ fn a_spacing_guide_shows_its_gap_and_an_alignment_guide_does_not() {
 #[test]
 fn the_text_editor_overlay_draws_a_selection_and_a_caret_that_turn_with_the_element() {
     let edit = |caret, selection: Vec<Rect>| Overlay {
-        text_edit: Some(TextEdit { to_world: kurbo::Affine::rotate(0.4), caret, selection, caret_color: Color::BLACK }),
+        text_edit: Some(TextEdit {
+            to_world: kurbo::Affine::rotate(0.4),
+            caret,
+            selection,
+            composition: Vec::new(),
+            caret_color: Color::BLACK,
+        }),
         ..Overlay::default()
     };
     let counts = |o: &Overlay| {
@@ -399,4 +406,20 @@ fn text_edit_geometry_comes_from_the_typeset_caret_api() {
     assert_eq!(sel.caret, None, "no caret while text is selected");
     assert_eq!(sel.selection.len(), 1);
     assert!(sel.selection[0].width() > 0.0);
+}
+
+#[test]
+fn composed_text_is_underlined_line_by_line() {
+    let mut typesetter = ts();
+    let layout = typesetter.text(&drafftink_typeset::TextSpec::new("ab nihao\ncd"));
+    let collapsed = layout.selection_at_index(8, drafftink_typeset::Affinity::Downstream);
+    let edit = TextEdit::new(kurbo::Affine::IDENTITY, &layout, &collapsed, false, Color::BLACK)
+        .with_composition(&layout, 3..11);
+    assert_eq!(edit.composition.len(), 2, "one underline per line the composition covers");
+    assert!(edit.composition.iter().all(|r| r.width() > 0.0));
+    let o = Overlay { text_edit: Some(edit), ..Overlay::default() };
+    let mut s = Scene::new();
+    let r = paint_overlay(&mut s, &o, &view(1.0), &OverlayStyle::default(), &mut typesetter);
+    assert_eq!(r.items, 1);
+    assert_eq!(s.encoding().n_paths, 2, "two underline strokes");
 }

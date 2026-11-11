@@ -146,7 +146,11 @@ pub fn font_wrapped_lines(ts: &mut Typesetter, text: &str, font: &scene::TextSty
 /// The layout input for a text element as drawn: colours, alignment and the wrap width of a fixed-width box. `stroke` is
 /// the colour of the text.
 pub fn element_text_spec(t: &scene::TextData, stroke: Rgba8, box_width: f64) -> TextSpec {
-    let mut spec = font_text_spec(&t.content, &t.font, (!t.auto_resize).then_some(box_width));
+    let mut spec = font_text_spec(
+        &t.content,
+        &t.font,
+        (!t.auto_resize || (t.container_id.is_some() && box_width > 0.0)).then_some(box_width),
+    );
     spec.style.color = stroke;
     let colors: Vec<Option<Rgba8>> =
         t.char_colors().into_iter().map(|c| c.map(|c| Rgba8::new(c.r, c.g, c.b, c.a))).collect();
