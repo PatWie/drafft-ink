@@ -489,3 +489,66 @@ fn text_only_fragments_are_appended() {
     assert_eq!(scene.encoding().resources.glyph_runs.len(), 1);
     assert!(scene.encoding().path_tags.is_empty(), "the test is about a scene with no path data");
 }
+
+#[test]
+fn the_paint_hash_sees_what_draws_and_ignores_what_does_not() {
+    let z = ZIndex::first();
+    let base = rect_el("a", &z, 10.0, 20.0, 100.0, 50.0);
+    let h0 = paint_hash(&base);
+
+    // Changes that move or turn the element, or that never reach the screen, keep the fragment.
+    let same: [(&str, Box<dyn Fn(&mut Element)>); 7] = [
+        ("x", Box::new(|e| e.transform.x += 5.0)),
+        ("y", Box::new(|e| e.transform.y -= 5.0)),
+        ("angle", Box::new(|e| e.transform.angle = 1.0)),
+        ("locked", Box::new(|e| e.locked = true)),
+        ("name", Box::new(|e| e.name = Some("n".into()))),
+        ("link", Box::new(|e| e.link = Some("https://example.com".into()))),
+        ("version", Box::new(|e| e.version += 7)),
+    ];
+    for (what, f) in &same {
+        let mut e = base.clone();
+        f(&mut e);
+        assert_eq!(paint_hash(&e), h0, "{what} must not change the hash");
+    }
+
+    // Everything that changes the picture must change the hash, or a stale fragment would be drawn.
+    let differs: [(&str, Box<dyn Fn(&mut Element)>); 11] = [
+        ("w", Box::new(|e| e.transform.w += 1.0)),
+        ("h", Box::new(|e| e.transform.h += 1.0)),
+        ("stroke_color", Box::new(|e| e.style.stroke_color = Color::rgb(1, 2, 3))),
+        ("stroke_width", Box::new(|e| e.style.stroke_width += 1.0)),
+        ("stroke_style", Box::new(|e| e.style.stroke_style = StrokeStyle::Dotted)),
+        ("fill_color", Box::new(|e| e.style.fill_color = Some(Color::rgb(9, 9, 9)))),
+        ("fill_pattern", Box::new(|e| e.style.fill_pattern = FillPattern::Dots)),
+        ("sloppiness", Box::new(|e| e.style.sloppiness = Sloppiness::Drunk)),
+        ("opacity", Box::new(|e| e.style.opacity = 0.5)),
+        ("corner_radius", Box::new(|e| e.style.corner_radius = 7.0)),
+        ("seed", Box::new(|e| e.style.seed += 1)),
+    ];
+    for (what, f) in &differs {
+        let mut e = base.clone();
+        f(&mut e);
+        assert_ne!(paint_hash(&e), h0, "{what} must change the hash");
+    }
+
+    // Kind-specific data.
+    let mut ts = Typesetter::new();
+    let text = text_el(&mut ts, "t", &z, 0.0, 0.0, "hello");
+    let th = paint_hash(&text);
+    let text_changes: [(&str, Box<dyn Fn(&mut TextData)>); 6] = [
+        ("content", Box::new(|t| t.content.push('x'))),
+        ("size", Box::new(|t| t.font.size += 1.0)),
+        ("family", Box::new(|t| t.font.family = FontFamily::NotoSans)),
+        ("weight", Box::new(|t| t.font.weight = FontWeight::Heavy)),
+        ("align", Box::new(|t| t.font.align = TextAlign::Right)),
+        ("auto_resize", Box::new(|t| t.auto_resize = !t.auto_resize)),
+    ];
+    for (what, f) in &text_changes {
+        let mut e = text.clone();
+        if let ElementKind::Text(t) = &mut e.kind {
+            f(t);
+        }
+        assert_ne!(paint_hash(&e), th, "text {what} must change the hash");
+    }
+}
