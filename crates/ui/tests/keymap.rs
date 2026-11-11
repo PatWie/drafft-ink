@@ -158,13 +158,7 @@ fn delete_is_arrow_delete_point_in_the_point_editor_and_element_delete_otherwise
     m.point_selected = true;
     assert_eq!(call(&one(&m, &st, del.clone()).unwrap()).0, "arrow.delete_point", "PointEditor is tried before Canvas");
     m.point_selected = false;
-    // `element.delete` is not registered yet in this engine build: with the canvas scope there is no match.
-    let canvas = one(&m, &st, del);
-    if m.command("element.delete").is_some() {
-        assert_eq!(call(&canvas.unwrap()).0, "element.delete");
-    } else {
-        assert!(canvas.is_none());
-    }
+    assert_eq!(call(&one(&m, &st, del).unwrap()).0, "element.delete");
 }
 
 #[test]
@@ -271,7 +265,7 @@ fn all_events_of_a_frame_resolve_in_order() {
 fn placeholders_are_filled_or_the_key_is_dropped() {
     let args = json!({"at": "$cursor", "plain_text": true});
     let with = Pointer { cursor: Some((10.0, 20.0)), viewport_center: Some((0.0, 0.0)) };
-    assert_eq!(substitute(&args, &with), json!({"at": {"x": 10.0, "y": 20.0}, "plain_text": true}));
+    assert_eq!(substitute(&args, &with), json!({"at": [10.0, 20.0], "plain_text": true}));
     assert_eq!(
         substitute(&args, &Pointer::default()),
         json!({"plain_text": true}),
