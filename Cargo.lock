@@ -1521,6 +1521,7 @@ dependencies = [
  "png",
  "pollster",
  "proptest",
+ "schemars",
  "serde_json",
  "thiserror 2.0.21",
  "vello",
@@ -1605,6 +1606,7 @@ name = "drafftink-typeset"
 version = "0.2.0"
 dependencies = [
  "criterion 0.8.2",
+ "drafftink-geom",
  "drafftink-profile",
  "kurbo",
  "parley",

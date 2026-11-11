@@ -18,6 +18,7 @@
 //! - [`index`]: [`SpatialIndex`], an R-tree keyed by id.
 //! - [`snap`], [`guides`]: grid, angle and smart-guide snapping math.
 //! - [`spline`]: the Catmull-Rom curve of a rounded line.
+//! - [`hash`]: [`hash::Bits`] and [`hash::Hash128`] for cache keys.
 //! - [`align`]: align and distribute as pure functions.
 //! - [`select`]: handle positions, box resize and rotate math, marquee tests.
 //! - [`lasso`]: the free-hand closed path and its selection test, the counterpart of the marquee.
@@ -30,6 +31,7 @@ pub mod aabb;
 pub mod align;
 pub mod binding;
 pub mod guides;
+pub mod hash;
 pub mod index;
 pub mod lasso;
 pub mod obox;

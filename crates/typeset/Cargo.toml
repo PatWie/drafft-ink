@@ -12,6 +12,7 @@ default = ["noto-sans"]
 noto-sans = []
 
 [dependencies]
+drafftink-geom = { path = "../geom" }
 drafftink-profile = { path = "../profile" }
 kurbo = { workspace = true }
 peniko = { workspace = true }

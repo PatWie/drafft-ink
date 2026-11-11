@@ -1,7 +1,8 @@
 //! The typesetting service: layout plus bounded caches.
 
-use std::collections::hash_map::DefaultHasher;
-use std::hash::{Hash, Hasher};
+use std::hash::Hash;
+
+use drafftink_geom::hash::{Bits, Hash128};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 
@@ -12,7 +13,7 @@ use crate::bound::{BoundText, Container, ContainerKind, VerticalAlign};
 use crate::cache::Lru;
 use crate::layout::{self, Engine, TextLayout};
 use crate::math::{MathEngine, MathError, MathLayout, MathSpec};
-use crate::style::{Span, SpanStyle, TextSpec, Wrap};
+use crate::style::{LineHeight, Span, SpanStyle, TextSpec, TextStyle, Wrap};
 
 static NEXT_ID: AtomicU64 = AtomicU64::new(1);
 
@@ -87,71 +88,51 @@ pub enum FontError {
 /// Cache key: a 128-bit digest of everything that affects the layout, plus the font set version.
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 struct Key {
-    digest: [u64; 2],
+    digest: u128,
     fonts: u64,
 }
 
-fn digest<F: Fn(&mut DefaultHasher)>(feed: F) -> [u64; 2] {
-    // `DefaultHasher::new()` has fixed keys, so equal input gives equal output in one process.
-    let mut a = DefaultHasher::new();
-    let mut b = DefaultHasher::new();
-    0xA5A5_u16.hash(&mut a);
-    0x5A5A_u16.hash(&mut b);
-    feed(&mut a);
-    feed(&mut b);
-    [a.finish(), b.finish()]
+// The `feed_*` functions destructure their input without `..`: a new field is a compile error until it is
+// hashed here, so a layout can never be served for a spec that differs in a field the key forgot.
+
+fn feed_text_style(h: &mut Hash128, s: &TextStyle) {
+    let TextStyle { family, weight, italic, size, color, underline, strike } = s;
+    (family, weight, italic, Bits::from(*size), color, underline, strike).hash(h);
 }
 
-fn feed_span_style(h: &mut impl Hasher, s: &SpanStyle) {
-    s.family.hash(h);
-    s.weight.hash(h);
-    s.italic.hash(h);
-    s.size.map(f32::to_bits).hash(h);
-    s.color.hash(h);
-    s.underline.hash(h);
-    s.strike.hash(h);
+fn feed_span_style(h: &mut Hash128, s: &SpanStyle) {
+    let SpanStyle { family, weight, italic, size, color, underline, strike } = s;
+    (family, weight, italic, size.map(Bits::from), color, underline, strike).hash(h);
 }
 
-fn feed_text(h: &mut impl Hasher, spec: &TextSpec) {
-    spec.text.hash(h);
-    spec.style.family.hash(h);
-    spec.style.weight.hash(h);
-    spec.style.italic.hash(h);
-    spec.style.size.to_bits().hash(h);
-    spec.style.color.hash(h);
-    spec.style.underline.hash(h);
-    spec.style.strike.hash(h);
-    spec.spans.len().hash(h);
-    for Span { range, style } in &spec.spans {
-        range.start.hash(h);
-        range.end.hash(h);
-        feed_span_style(h, style);
+fn feed_text(spec: &TextSpec) -> u128 {
+    let TextSpec { text, style, spans, align, wrap, line_height } = spec;
+    let mut h = Hash128::new();
+    text.hash(&mut h);
+    feed_text_style(&mut h, style);
+    spans.len().hash(&mut h);
+    for Span { range, style } in spans {
+        (range.start, range.end).hash(&mut h);
+        feed_span_style(&mut h, style);
     }
-    spec.align.hash(h);
-    match spec.wrap {
-        Wrap::None => 0u8.hash(h),
-        Wrap::Width(w) => {
-            1u8.hash(h);
-            w.to_bits().hash(h);
-        }
+    align.hash(&mut h);
+    match wrap {
+        Wrap::None => 0u8.hash(&mut h),
+        Wrap::Width(w) => (1u8, Bits::from(*w)).hash(&mut h),
     }
-    match spec.line_height {
-        crate::style::LineHeight::Normal => 0u8.hash(h),
-        crate::style::LineHeight::Metrics(v) => {
-            1u8.hash(h);
-            v.to_bits().hash(h);
-        }
-        crate::style::LineHeight::FontSize(v) => {
-            2u8.hash(h);
-            v.to_bits().hash(h);
-        }
+    match line_height {
+        LineHeight::Normal => 0u8.hash(&mut h),
+        LineHeight::Metrics(v) => (1u8, Bits::from(*v)).hash(&mut h),
+        LineHeight::FontSize(v) => (2u8, Bits::from(*v)).hash(&mut h),
     }
+    h.finish128()
 }
 
-fn feed_math(h: &mut impl Hasher, spec: &MathSpec) {
-    spec.latex.hash(h);
-    spec.size.to_bits().hash(h);
-    spec.text_font_fallback.hash(h);
+fn feed_math(spec: &MathSpec) -> u128 {
+    let MathSpec { latex, size, text_font_fallback } = spec;
+    let mut h = Hash128::new();
+    (latex, Bits(*size), text_font_fallback).hash(&mut h);
+    h.finish128()
 }
 
 type MathResult = Result<Arc<MathLayout>, MathError>;
@@ -202,7 +183,7 @@ impl Typesetter {
 
     /// Lay out text. Served from the cache when the same spec was laid out before.
     pub fn text(&mut self, spec: &TextSpec) -> Arc<TextLayout> {
-        let key = Key { digest: digest(|h| feed_text(h, spec)), fonts: self.font_version };
+        let key = Key { digest: feed_text(spec), fonts: self.font_version };
         if let Some(hit) = self.text_cache.get(&key) {
             self.text_hits += 1;
             inc(Counter::CacheHit);
@@ -226,7 +207,7 @@ impl Typesetter {
     /// Lay out a formula. Errors are cached too, so a broken formula costs one parse, not one per
     /// frame.
     pub fn math(&mut self, spec: &MathSpec) -> Result<Arc<MathLayout>, MathError> {
-        let key = Key { digest: digest(|h| feed_math(h, spec)), fonts: self.font_version };
+        let key = Key { digest: feed_math(spec), fonts: self.font_version };
         if let Some(hit) = self.math_cache.get(&key) {
             self.math_hits += 1;
             inc(Counter::CacheHit);

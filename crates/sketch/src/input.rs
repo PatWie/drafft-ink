@@ -18,7 +18,7 @@ pub mod roughness {
 }
 
 /// How the outline is drawn.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub enum LineDash {
     /// A continuous line.
     #[default]
@@ -31,7 +31,7 @@ pub enum LineDash {
 
 /// Interior fill. All but `None` and `Solid` are sketched by roughr and clipped to the shape by the
 /// renderer.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub enum FillStyle {
     /// No fill.
     #[default]
@@ -85,7 +85,7 @@ impl Roundness {
 }
 
 /// The path through the points of a line or arrow.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub enum Curve {
     /// Straight segments, sharp corners. Also used for elbow ("angular") connectors: the caller
     /// routes them and passes the corner points.
@@ -96,7 +96,7 @@ pub enum Curve {
 }
 
 /// The shape of one arrow end.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub enum HeadKind {
     /// No head.
     #[default]
@@ -115,7 +115,7 @@ pub enum HeadKind {
 
 /// One arrow end: a kind, and whether closed kinds (triangle, circle, diamond) are filled with the
 /// stroke colour. Heads are always drawn solid, even when the shaft is dashed.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub struct Arrowhead {
     /// The shape of the head.
     pub kind: HeadKind,
