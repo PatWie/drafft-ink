@@ -4,17 +4,15 @@
 //! The document scene is rebuilt only when the document or the camera changed. The overlay scenes are cheap
 //! and are rebuilt on their own, so a hover outline or a marquee never re-encodes an element.
 
-use std::collections::HashMap;
-
 use drafftink_engine::interact::InteractionOverlay;
 use drafftink_engine::services::SharedTypesetter;
 use drafftink_engine::state::TabId;
 use drafftink_geom::kurbo::{Affine, Rect, Size, Vec2};
 use drafftink_render::{
     FrameReport, GridSpec, GridStyle, Overlay, OverlayStyle, PaintIndex, RenderOptions, Scene, SceneComposer, Theme,
-    View, build_paint_index, paint_bounds, paint_overlay,
+    View, build_paint_index, paint_overlay, update_paint_index,
 };
-use drafftink_scene::{ElementId, SceneRead};
+use drafftink_scene::{Change, ChangeKind, ChangeSet, ElementId, Fields, SceneRead};
 
 use crate::editor::Arranged;
 use vello::peniko::{BlendMode, Color, Compose, Fill, Mix};
@@ -30,7 +28,6 @@ struct Synced {
 pub(crate) struct CanvasView {
     composer: SceneComposer,
     index: PaintIndex,
-    versions: HashMap<ElementId, u64>,
     synced: Option<Synced>,
     world: Scene,
     preview: Scene,
@@ -49,7 +46,6 @@ impl CanvasView {
         Self {
             composer: SceneComposer::new(),
             index: build_paint_index(&drafftink_scene::MemoryStore::new()),
-            versions: HashMap::new(),
             synced: None,
             world: Scene::new(),
             preview: Scene::new(),
@@ -103,39 +99,37 @@ impl CanvasView {
         true
     }
 
-    /// Brings the paint index up to date with the store. Cheap when nothing changed: one comparison.
-    pub(crate) fn sync_index<S: SceneRead>(&mut self, tab: TabId, revision: u64, store: &S) {
+    /// Forgets which revision the paint index follows, so the next sync rebuilds it (the document was replaced).
+    pub(crate) fn forget_index(&mut self) {
+        self.synced = None;
+    }
+
+    /// Does the paint index already describe this revision of this tab?
+    pub(crate) fn index_is_current(&self, tab: TabId, revision: u64) -> bool {
+        self.synced == Some(Synced { tab, revision })
+    }
+
+    /// Brings the paint index up to date with the store. Cheap when nothing changed: one comparison. After an
+    /// edit it re-reads the elements the commits touched (`touched`, from `TabDoc::take_touched`), so a drag
+    /// frame costs what it moves and not the size of the document.
+    pub(crate) fn sync_index<S: SceneRead>(&mut self, tab: TabId, revision: u64, store: &S, touched: &[ElementId]) {
         let now = Synced { tab, revision };
         if self.synced == Some(now) {
             return;
         }
+        let _g = drafftink_profile::span("sync_index");
         if self.synced.is_none_or(|s| s.tab != tab) {
-            self.versions.clear();
             self.index = build_paint_index(store);
-            for e in store.iter() {
-                self.versions.insert(e.id.clone(), e.version);
-            }
-            self.synced = Some(now);
-            return;
-        }
-        let mut live = 0usize;
-        for e in store.iter() {
-            live += 1;
-            if self.versions.get(&e.id) != Some(&e.version) {
-                self.versions.insert(e.id.clone(), e.version);
-                if self.index.insert(e.id.clone(), paint_bounds(e)).is_err() {
-                    // Non-finite numbers: such an element has no place on the canvas.
-                    self.index.remove(&e.id);
-                }
-            }
-        }
-        if self.versions.len() != live {
-            let gone: Vec<ElementId> =
-                self.versions.keys().filter(|id| store.get(id).is_none_or(|e| e.deleted)).cloned().collect();
-            for id in gone {
-                self.versions.remove(&id);
-                self.index.remove(&id);
-            }
+        } else {
+            let elements = touched
+                .iter()
+                .map(|id| Change { id: id.clone(), kind: ChangeKind::Updated, fields: Fields::all(), version: 0 })
+                .collect();
+            update_paint_index(
+                &mut self.index,
+                store,
+                &ChangeSet { revision, elements, meta: false, files: Vec::new() },
+            );
         }
         self.synced = Some(now);
     }

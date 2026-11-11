@@ -125,6 +125,9 @@ fn pristine(s: &Session) -> bool {
     s.tabs.len() == 1 && s.tab().doc.revision() == 0
 }
 
+/// How often a write held back by a running gesture is looked at again, in milliseconds.
+const GESTURE_RECHECK_MS: u64 = 500;
+
 impl Session {
     /// Writes the workspace now: the tabs that changed since the last write, then the index, then removes
     /// the documents of closed tabs. Call it on window close, or let `workspace_tick` do it.
@@ -346,7 +349,9 @@ impl Session {
         }
         let now = self.ports.clock.mono_ms();
         match self.workspace_due_at() {
-            Some(due) if now >= due => {
+            // Writing serializes the whole document on this thread (0.8 s at 100,000 elements). Not in the middle of
+            // a drag: the write waits for the gesture to end (`workspace_next_due_ms` keeps the wake-up coming).
+            Some(due) if now >= due && self.running_gesture().is_none() => {
                 if self.save_workspace().is_err() {
                     // Try again after a full interval, not on every call.
                     self.ext.with::<AutosaveState, _>(|st| {
@@ -371,7 +376,9 @@ impl Session {
             return None;
         }
         let now = self.ports.clock.mono_ms();
-        self.workspace_due_at().map(|d| d.saturating_sub(now))
+        let wait = self.workspace_due_at().map(|d| d.saturating_sub(now))?;
+        // A write held back by a running gesture is looked at again soon, not on every frame.
+        Some(if self.running_gesture().is_some() { wait.max(GESTURE_RECHECK_MS) } else { wait })
     }
 
     /// Writes any unsaved change now, for window close. Respects `autosave.enabled`. Returns true when it

@@ -10,6 +10,8 @@ description = "Pure-data element model, fractional z-order, validation and the S
 default = []
 # Exposes `conformance`: a store-generic test suite that every SceneStore implementation must pass.
 conformance = []
+# Exposes `scenegen`: the deterministic scene generator of the perf scenarios, tests and benches (1k to 100k elements).
+scenegen = []
 
 [dependencies]
 serde.workspace = true

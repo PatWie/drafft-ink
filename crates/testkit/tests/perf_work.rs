@@ -132,6 +132,44 @@ fn a_gesture_frame_touches_the_same_few_elements_at_every_size() {
     assert!(touched.windows(2).all(|w| w[0] == w[1]), "commits per frame by scene size: {touched:?}");
 }
 
+// ---- availability ------------------------------------------------------------------------------------------------
+
+#[test]
+fn asking_whether_group_ungroup_align_and_distribute_are_available_scans_nothing() {
+    // The UI asks for every command when the selection or the document changes. A pass over the scene here was
+    // 47 ms per frame at 100,000 elements while zooming in the browser, and three passes at the start of a drag.
+    for &n in sizes() {
+        let mut h = loaded(n);
+        // e8 and e9 form a group, e0 is a plain rectangle.
+        for (select, grouped) in [(None, false), (Some("e0"), false), (Some("e8"), true)] {
+            match select {
+                Some(id) => h.session.execute("selection.select", json!({ "ids": [id] })).expect("select"),
+                None => h.session.execute("selection.clear", json!({})).expect("clear"),
+            };
+            let work = WorkScope::begin();
+            let available = h.session.availability("group.ungroup").is_ok();
+            assert_eq!(available, grouped, "ungroup availability at {n} with {select:?}");
+            for id in ["group.create", "arrange.align", "arrange.distribute"] {
+                let _ = h.session.availability(id);
+            }
+            assert_eq!(work.count(Counter::ElementsScanned), 0, "availability at {n}: {}", work.summary());
+        }
+        // A selection of 100 elements, as in a drag.
+        let ids: Vec<String> = (0..100).map(|i| format!("e{i}")).collect();
+        h.session.execute("selection.select", json!({ "ids": ids })).expect("select");
+        let work = WorkScope::begin();
+        for id in ["group.create", "group.ungroup", "arrange.align", "arrange.distribute"] {
+            let _ = h.session.availability(id);
+        }
+        assert_eq!(
+            work.count(Counter::ElementsScanned),
+            0,
+            "availability of a selection of 100 at {n}: {}",
+            work.summary()
+        );
+    }
+}
+
 // ---- pointer input -----------------------------------------------------------------------------------------------
 
 /// A session, an interaction layer and a clock for scripted pointer events.

@@ -85,7 +85,7 @@ profile::end_frame();                         // after present
 | `gpu_submit` | handing the scene to the GPU and presenting |
 | `ui` | egui run and tessellation |
 
-Time in a frame outside every phase is reported as the phase `other`. A phase also records a span of the same name. The profiler keeps the last 1024 frames (`set_frame_window` changes it) and reports, over that window:
+Time in a frame outside every phase is reported as the phase `other`. A phase also records a span of the same name. A phase opened inside another counts for itself only (`encode` inside `ui` is not also `ui`), so the phases of a frame add up to the frame; `other` is what is left. Today the shell opens `ui` around `App::frame`, `gpu_submit` around Vello and the composite, and the app opens `encode` around the composition of the scene; `present` is a span, not a phase, and lands in `other`. The profiler keeps the last 1024 frames (`set_frame_window` changes it) and reports, over that window:
 
 - `frame_ms` (begin to end) and `interval_ms` (start to start): count, mean, p50, p95, p99, max. Percentiles use the nearest-rank method on the exact samples, not on the histogram.
 - `phase_ms`: the same summary for each phase and `other`.
@@ -268,12 +268,15 @@ Scenarios run inside the app (native `--perf-scenario <name>`, web `window.draff
 | Scenario | Scene | Action | What it must show |
 |---|---|---|---|
 | `idle` | the loaded scene | no input for 10 s | at most 1 redraw, 0 unexplained frames, CPU under 1% of a core |
-| `pan` | 1k, 10k, 100k | sinusoidal pan for 10 s at a fixed event rate | frame time within budget; `elements_encoded` tracks visible elements, not total; 0 `sketch_regens` and `relayouts` after the first frame |
-| `zoom` | 1k, 10k, 100k | ctrl+wheel sweep for 10 s | same as pan, plus bounded cache growth |
-| `drag` | 1k, 10k, 100k | drag a selection of 100 elements for 10 s | commit cost independent of scene size; only the dragged elements re-encode |
-| `hover` | 1k, 10k, 100k | 1000 pointer moves, hover state changes on 5% of them | redraws equal the number of hover changes; `redraws_skipped` equals the rest |
+| `pan` | 1k, 10k, 100k | middle-button pan, a sinusoid at 125 moves per second for 10 s | frame time within budget; `elements_encoded` tracks visible elements, not total; 0 `sketch_regens` and `relayouts` after the first frame |
+| `wheel` | 1k, 10k, 100k | 100 wheel ticks per second for 10 s, direction reversed every half second | one frame per tick at most (`redraws.ui` small), otherwise as pan |
+| `zoom` | 1k, 10k, 100k | ctrl+wheel, 60 ticks per second for 10 s, direction reversed every half second | same as pan, plus bounded cache growth |
+| `drag` | 1k, 10k, 100k | drag a selection of 100 elements (`e0` to `e99`, zoom 0.5) with the left button for 10 s | commit cost independent of scene size; only the dragged elements re-encode |
+| `hover` | 1k, 10k, 100k | 1000 pointer moves in 8 s along a Lissajous curve over the canvas; the hover state changes on about 5% of them | redraws equal the number of hover changes; `redraws_skipped` equals the rest |
 
-A scenario key is `name@size`, with size `1k`, `10k` or `100k`: `pan@10k`. `idle` has no size.
+A scenario key is `name@size`, with size `1k`, `10k` or `100k`: `pan@10k`. `idle` has no size. `ScenarioKey` in `drafftink-profile` parses and prints it, so both drivers read it the same way.
+
+The scene is `drafftink_scene::scenegen::generate(size, 1)`, installed by the app itself (`App::scene_loader`, `SceneInstall`: a hook next to the commands, like the test rig's `load_generated`, with no history). The input is real: X11 XTEST events on a private Xvfb for the desktop app, Chromium DevTools mouse, wheel and key events for the web app (the page sees trusted events). Only the scene and the camera are installed from inside. The driver starts a window when the app has drawn the scene and been quiet for a second, and the profiler is reset at that moment.
 
 ### 4.2 ScenarioReport
 
@@ -291,9 +294,10 @@ A driver wraps a `PerfStats` snapshot with what only it can measure:
 }
 ```
 
-- `external.cpu_pct` is process CPU in percent of one core. Native: `utime + stime` from `/proc/<pid>/stat` over the window. Web: the sum over the Chromium process tree.
+- `external.cpu_pct` is process CPU in percent of one core over the window. Native: `utime + stime` of `/proc/self/stat`, read by the app at the start and the end of the window (the app is the one process that knows both moments). Web: the sum over the Chromium process tree, read by the driver from `/proc`; it includes the cost of Chromium receiving the injected input, about 25 to 30 % of a core at 125 events per second (`hover` shows it: almost nothing is drawn).
 - `meta.platform` is `native` or `web`. `meta.adapter` records the GPU adapter, because absolute frame times are only comparable on the same adapter.
-- Other `external` names are free (`wasm_bytes`, `gpu_ms` where timestamp queries exist). A budget may reference any `external.<name>`.
+- Other `external` names are free (`wasm_bytes`, `gpu_ms` where timestamp queries exist). A budget may reference any `external.<name>`. The drivers write `window_s`, `input_events`, `first_frame_ms` (native: process start to the first frame), `scene_to_frame_ms` (the scene is handed over to the first frame that shows it) and `startup_*_ms` (native: spans of start-up; web: the marks of the page and of `start()`, in ms since navigation).
+- `meta.driver` is `app` for a run of the real app. Such a report is budgeted per platform: the key in the budgets file is `native/pan@10k` or `web/pan@10k` (`ScenarioReport::budget_key`). The work-counter tests write plain keys.
 
 ## 5. Budgets and the perf gate
 
@@ -321,7 +325,7 @@ A driver wraps a `PerfStats` snapshot with what only it can measure:
 }
 ```
 
-- Keys: scenario key (§4.1), then a metric path (§3.3), then a limit with `max` and/or `min` (inclusive) and an optional `note`.
+- Keys: scenario key (§4.1), then a metric path (§3.3), then a limit with `max` and/or `min` (inclusive) and an optional `note`. A run of the real app has its own keys, `native/<key>` and `web/<key>`: a frame of the real app does more than a gesture of the test rig, and timing limits belong to one platform. The plain keys hold the limits of the work-counter tests.
 - A budget on a metric the report lacks is a violation. A report whose scenario has no entry produces a warning in the gate output ("unbudgeted scenario"), not a failure.
 - `Budgets::from_json` rejects an unknown `version`, a limit with neither `max` nor `min`, non-finite limits, and `min` above `max`.
 - Deterministic metrics (`counter.*`, `gauge.*`, `redraws.*`, `frame.unexplained`, `span.*.count`) give the same value on every machine and gate everywhere. Timing metrics (`frame.*`, `phase.*`, `interval.*`, `fps`, span times, `external.*`) depend on the hardware: they gate only on the reference runner with a real GPU, and run in report-only mode on software adapters (llvmpipe, SwiftShader). `Budgets::check_filtered(report, false)` does this split.
@@ -337,15 +341,15 @@ A driver wraps a `PerfStats` snapshot with what only it can measure:
 
 The budget arithmetic is `Budgets::check_filtered`; xtask uses no workspace crate, so it runs the `perf_check` example of this crate (`cargo run -p drafftink-profile --example perf_check`).
 
-Not written yet: the scenario drivers of §5.3 (`--perf-scenario`, `window.drafftink.perf.runScenario`), which belong to the app shells and need Xvfb (web: headed Chromium on Xvfb; headless Chromium renders a WebGPU canvas blank, baseline §3.3). When they exist, `cargo xtask perf --native` and `--web` run them and feed their reports to the same `perf_check`. The timing entries of `idle` and `pan@N` in `perf/budgets.json` are for them.
+4. `cargo xtask perf --app [native|web|all]` runs the scenario drivers of §5.3 against the real app and checks their reports, timing included, against the `native/...` or `web/...` entries of `perf/budgets.json`. It is not part of `ci`: it needs a GPU and Xvfb. Run it as a separate CI job on the reference runner (a machine with a GPU, `Xvfb`, Chromium for the web, and the Python environment of `scripts/perf_scenarios.py`: Xlib, Pillow, Playwright; `PERF_PY` names the interpreter). A software adapter (llvmpipe, SwiftShader) runs the scenarios but its timing numbers mean nothing: check those reports without `--timing`. The web run needs `scripts/build-web.sh --features scenarios` (the generated scenes are not part of the shipped wasm) and `cargo build --release -p drafftink-server`.
 
 ### 5.3 What the drivers do
 
-Both drivers run the same scenario names and write the same `ScenarioReport`:
+`scripts/perf_scenarios.py {native|web} KEY...` runs scenarios and writes one `ScenarioReport` per key (`target/perf/app-native/pan@10k.json`). Both platforms use the same input scripts and the same report.
 
-- **Native:** start the binary with `DRAFFTINK_PERF=1 --perf-scenario <key> --perf-out <path>`. The app runs the scenario, calls `profile::snapshot()`, writes the report and exits. The driver adds `external.cpu_pct` from `/proc/<pid>/stat`.
-- **Web:** serve `web/`, launch headed Chromium on Xvfb with the flag set in `research/web-perf.md`, call `window.drafftink.perf.runScenario(key)`, read the JSON, add the process-tree CPU from `/proc`.
-- Both reset the profiler before the scenario (`perf.reset`), so the report covers only that scenario.
+- **Native:** starts `drafftink --perf-scenario <key> --perf-out <path>` under a private Xvfb (NVIDIA Vulkan). The app installs the scene, waits until it has drawn it and been quiet for a second, resets the profiler, prints `PERF-READY` and measures. The driver sends XTEST events (pointer motion, buttons, wheel buttons, Control) and then a line on the app's stdin, which ends the window: the app writes the report (stats, `cpu_pct` of its own process) and closes the window (`Waker::exit`). `--perf-secs N` makes the window self-timed instead (an `idle` run needs no driver).
+- **Web:** serves `dist/` with `drafftink-server`, opens it in headed Chromium on Xvfb, calls `await window.drafftink.runScenario(key)` (installs the scene, waits for quiet, resets the profiler) and sends Playwright mouse, wheel and key events. `window.drafftink.scenarioReport()` returns the report; the driver adds the CPU of the Chromium process tree, the adapter and the start-up marks.
+- Both enable recording (`DRAFFTINK_PERF` is implied by `--perf-scenario`; `runScenario` turns it on) and reset the profiler before the window, so a report covers only that scenario.
 
 ## 6. Redraw rules, checked
 
@@ -472,6 +476,43 @@ A move or a turn no longer copies elements: `transform::apply` builds a new `Tra
 
 What did not change, and why. Opening a snapshot is bound by Loro (its map iteration is 0.4 s of 1.3 s) and our field decode (0.6 s, mostly `read_element` building a JSON value per element); a typed decoder would save about 0.3 s and give up the rule that the stored form follows the model's serde output. Writing the 100,000 elements into Loro is 770,000 field inserts at the cost the CRDT library has (1.5 s measured with Loro alone). A fully zoomed-out frame at 100,000 elements is now 22.6 ms: the loop over the candidates remains, and an edit or a gesture frame rebuilds the order (the order is kept only while the store does not change).
 
+### 7.8 The scenario drivers and the second perf pass
+
+The drivers of §5.3 run the real app, so they show what the work-counter tests cannot: the cost of a frame with the UI, the display server and the GPU driver in it. Numbers are from the research box (NVIDIA L40S, 64 threads, Xvfb 1400x900, window 1280x800, release build, load average 3 to 20), medians of three alternating runs of 8 s unless said otherwise. "Before" is `main` at `7e97970` with the drivers added and nothing else; "after" is this branch. Frames and CPU come from the report (`stats.frames.total`, `external.cpu_pct`).
+
+| Scenario (events in the window) | Before | After |
+|---|---|---|
+| `wheel@10k`, 800 ticks: frames | 1922 (2.4 per tick, 1920 of them reason `ui`) | 531 (at most one per tick, 2 of reason `ui`) |
+| `wheel@10k`: CPU of one core | 55% | 33% |
+| `zoom@10k`, 480 ticks: frames | 2000 (4.2 per tick) | 482 (1.0 per tick) |
+| `zoom@10k`: CPU | 54% | 30% |
+| `pan@10k`, 1000 moves: frames | 1046 (1.05 per move) | 529 (paced to 66 per second) |
+| `pan@10k`, `pan@100k`: CPU | 34%, 47% | 33%, 43% |
+| `pan@10k`: CPU without the X11 present (estimate) | 13% | 1% to 3% |
+| `drag@100k`, 100 elements: frame time p50, p99 | 26.7 ms, 35.4 ms | 8.9 ms, 9.7 ms |
+| `drag@100k`: worst frame (first drag frame, 10 s windows) | 300 to 811 ms | 56 ms |
+| `drag@100k`: CPU | 89% | 59% |
+| `hover@10k`, 1000 moves: CPU, frames | 6.5%, 78 (one per hover change) | 6.6%, 78 |
+| Web `zoom@100k`: frame p50, frames in 10 s, scene passes | 66 ms, 148, 92 passes of 100,000 elements | 1.6 ms, 271, 0 |
+| Web `drag@N`: scene passes | 3 of N | 0 |
+| `idle` (native, web) | 0 frames, 0.5% (web 1.0% to 2.5%) | same |
+
+What the drivers showed, and what changed for each:
+
+- **Wheel: two frames per tick, three to four with ctrl.** egui smooths a scroll over several frames and asks for a repaint for each. The shell now offers wheel, trackpad scroll and pinch over the canvas to the app first (`ShellEvent::Wheel`, `docs/shell.md` §2); egui never sees what the app takes. One frame per tick at most, reason `gesture`; `redraws.ui` is 2.
+- **Frame pacing.** Native frames start at least 0.9 refresh periods apart (`RepaintState::set_min_interval`). A 125 Hz mouse used to draw 130 frames per second; now 66. The app applies every event to the camera at once, so only the drawing is coalesced. Under Xvfb this does not lower the CPU of `pan` (next point), but it halves the frames, and with them the Vello runs and the GPU work, and it keeps a 1000 Hz pen at the display rate.
+- **Where the CPU of a pan goes.** Spans (`present`, `acquire_surface`, `egui_input`, `tessellate`, `ui`, `gpu_submit`, `encode`) split a frame. In `pan@10k` before: 2.8 ms of 3.8 ms are `present`, the NVIDIA driver's copy to the X server and wait; the app's own work is 1.0 ms (egui 0.3, Vello submit 0.2, `encode` 0.05, tessellation 0.08). Per second, `present` costs about 33% of a core whether 65 or 130 frames are drawn, so it is a property of the display path, not of the app; `perf` could not be used (kernel `perf_event_paranoid=4`), the spans are the profile. `external.cpu_pct_ex_present` subtracts it (an estimate: a wall-clock span against CPU time). The encode side is as the plan says: a pan frame builds 30 to 50 fragments in 10 s (`cache_miss`, the elements that come into view), replays 60 cached fragments per frame (`elements_encoded`), and `encode` is 0.05 to 0.1 ms. Nothing is regenerated. A camera move re-composites cached fragments; what remains is Vello drawing the scene again, which is GPU work.
+- **100k elements.** Pan, wheel and zoom frames cost the same at 1k, 10k and 100k (p50 7.2 / 7.0 / 7.7 ms under pacing, `encode` below 0.2 ms at all three). Three things scaled with the scene and are fixed:
+  1. The app's paint index compared every element's version after each edit (`CanvasView::sync_index`: 32 ms per drag frame at 100k). It now re-reads the ids the commits touched (`TabDoc::take_touched`, the same feed as the spatial index). A drag frame at 100k: 31.9 ms before, 4.1 ms after.
+  2. `style::read` and `style::apply` built the label map of the whole scene for every selection (the properties panel asks on every selection change): 0.8 s at 100k when a drag began. They look up the labels of the selected ids through the derived index (`text_bind::labels_of`).
+  3. The availability checks of `group.ungroup`, `group.create`, `arrange.align` and `arrange.distribute` built the relations of the whole scene (`Relations::build`). In the browser that was 47 ms per frame while zooming at 100k. They use `Reverse::of`, the index when there is one.
+  The spatial index of a big document is built in the frame after the load (`App::frame`), not by the first hover (0.7 s at 100k).
+- **Autosave inside a drag.** A drag at 100k showed one frame of 0.8 s: the autosave wrote the whole document (`snapshot().to_json()`) one second after the drag began. A write now waits for the running gesture (`Session::workspace_tick`). The write itself, 0.8 s at 100k on the UI thread, remains after the gesture and is in `docs/backlog.md`.
+- **Phases.** `encode` is now measured in the app, and a phase inside another counts for itself only, so `ui` no longer includes the scene composition and the phases add up to the frame.
+- **Not changed.** The `drag` scenarios lay out about one text and one formula per frame while ten of each are dragged (`relayouts`); `docs/backlog.md`.
+
+Start-up. Native: the first frame is on screen 320 to 340 ms after the process started (`external.first_frame_ms`); 265 to 290 ms of it is the Vulkan instance, adapter and device (`startup_gpu_ms`), the session and the workspace restore are 6 ms (`startup_app_ms`, `startup_restore_ms`). The driver and the NVIDIA ICD dominate, so there is nothing to gain in our code. Web (headed Chromium on Xvfb, localhost, the precompressed `dist/` of `build-web.sh`; marks in ms since navigation, medians of 8 runs, range in brackets): the page script is loaded at 55 ms [37 to 183], the wasm is instantiated at 160 ms [134 to 289], `start()` is entered at 165 ms, the platform (IndexedDB opened and read) is ready 35 to 40 ms later, `App::new` (session, UI, workspace restore) takes 80 ms, `run()` returns at 305 ms, and the first frame is on screen at 590 ms [556 to 1241; the two slow runs were on a loaded machine]. The 285 ms from `run()` to the first frame are the WebGPU adapter and device, the pipelines and the first frame. Tried and dropped: asking for the adapter from the page script before the module loads (`navigator.gpu.requestAdapter()`), to wake the GPU process while the wasm downloads: no change (590 ms against 590 ms, 8 runs each). The page marks are `window.__marks` and `performance.mark` entries `drafftink:start`, `drafftink:platform`, `drafftink:app`; the driver copies them into the report as `external.startup_*_ms`. The old app's 507 ms to the first app frame and 1.0 s to the first visible one (§7.1) were measured with a cold profile and another harness, so the two are not a like-for-like comparison.
+
 ## 8. Wasm size
 
 The web app (`apps/drafftink-web`) is the whole editor in one module. `cargo xtask size` builds it as a release is built
@@ -543,4 +584,3 @@ What the questions found:
 - A size limit is raised only with the reason in its `note`, and lowered in the commit that makes the number better.
 - Do not enable `--all-features` in wasm-opt (`web-app.md`). Do not move a crate that runs every frame to `z`: measure with `scripts/web_startup.py`.
 - A new big asset is a file under `dist/fonts/` (or another hashed folder), not an `include_bytes!` in the module.
-

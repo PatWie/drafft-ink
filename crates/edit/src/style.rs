@@ -29,7 +29,7 @@ use drafftink_scene::{
 };
 
 use crate::target::TargetError;
-use crate::text_bind::label_index;
+use crate::text_bind::labels_of;
 
 /// Smallest line height a command accepts, as a multiple of the font size.
 pub const MIN_LINE_HEIGHT: f64 = 1.0;
@@ -532,7 +532,7 @@ pub fn read<R: SceneRead>(
     ids: &[ElementId],
     include_bound_text: bool,
 ) -> Result<Vec<(Kind, StyleProps)>, StyleError> {
-    let labels = if include_bound_text { label_index(r) } else { Default::default() };
+    let labels = if include_bound_text { labels_of(r, ids) } else { Default::default() };
     ids.iter()
         .map(|id| {
             let e = live(r, id)?;
@@ -585,7 +585,7 @@ pub fn apply<T: SceneTx>(
     props.validate()?;
     let wanted = props.set_props();
     let wants_text = include_bound_text && wanted.iter().any(|p| p.is_text());
-    let labels = if wants_text { label_index(tx) } else { Default::default() };
+    let labels = if wants_text { labels_of(tx, targets) } else { Default::default() };
 
     let mut report = StyleReport::default();
     for id in targets {

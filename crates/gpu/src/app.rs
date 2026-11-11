@@ -44,6 +44,14 @@ impl Waker {
     }
 }
 
+impl Waker {
+    /// Ask the loop to close the window and return from `run`. Returns `false` when the loop has already exited.
+    /// The scenario drivers end a run with it.
+    pub fn exit(&self) -> bool {
+        self.proxy.send_event(UserEvent::Exit).is_ok()
+    }
+}
+
 impl std::fmt::Debug for Waker {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_str("Waker")

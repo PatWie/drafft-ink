@@ -12,7 +12,9 @@ pub mod expect;
 pub mod harness;
 pub mod path;
 pub mod scenario;
-pub mod scenegen;
 
+/// The deterministic scene generator. It lives in `drafftink-scene` (feature `scenegen`) so the apps can use it
+/// without the test rig; this path keeps the tests and benches as they were.
+pub use drafftink_scene::scenegen;
 pub use harness::{GpuStatus, Harness, HarnessError, PixelArgs, ProbePoint, gpu_required, gpu_status};
 pub use scenario::{Outcome, Scenario};

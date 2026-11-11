@@ -22,6 +22,7 @@ mod frame;
 mod live;
 mod names;
 mod report;
+mod scenario;
 mod spans;
 mod stats;
 mod trace;
@@ -37,6 +38,7 @@ pub use names::{Counter, Gauge, Phase, RedrawReason, RedrawReasons};
 pub use report::{
     BudgetError, Budgets, Limit, PERF_OUT_ENV, REPORT_SCHEMA, ScenarioReport, Violation, is_deterministic, scenario_key,
 };
+pub use scenario::{KeyError, ScenarioKey, ScenarioKind};
 pub use spans::{COMPILED, OTHER, Span, enabled, flush_thread, scope, set_enabled, span};
 pub use stats::{
     DocumentError, MAX_SPAN_ROWS, PerfStats, RedrawEvent, RedrawStats, SCHEMA_VERSION, STATS_SCHEMA, SpanStat,

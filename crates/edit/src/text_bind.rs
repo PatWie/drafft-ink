@@ -429,6 +429,16 @@ pub fn label_of<R: SceneRead>(r: &R, container: &ElementId) -> Option<ElementId>
     r.iter().filter(|e| e.container_id() == Some(container)).map(|e| e.id.clone()).min()
 }
 
+/// The labels of the containers in `ids` (a map from container to label; an id with no label is left out). With the
+/// store's derived index each id costs a lookup, so the cost follows `ids` and not the scene; without one, one pass
+/// finds every label.
+pub fn labels_of<R: SceneRead>(r: &R, ids: &[ElementId]) -> HashMap<ElementId, ElementId> {
+    if r.derived_index().is_none() {
+        return label_index(r);
+    }
+    ids.iter().filter_map(|id| label_of(r, id).map(|label| (id.clone(), label))).collect()
+}
+
 /// The label of every container in one pass.
 pub fn label_index<R: SceneRead>(r: &R) -> HashMap<ElementId, ElementId> {
     count(Counter::ElementsScanned, u64::try_from(r.len_all()).unwrap_or(u64::MAX));

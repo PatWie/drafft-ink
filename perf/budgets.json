@@ -1,47 +1,7 @@
 {
   "version": 1,
   "scenarios": {
-    "idle": {
-      "redraws.total": {
-        "max": 1,
-        "note": "idle means idle (docs/performance.md section 1)"
-      },
-      "frame.unexplained": {
-        "max": 0,
-        "note": "every frame has a dirty reason"
-      },
-      "counter.elements_scanned": {
-        "max": 0,
-        "note": "an idle app walks nothing"
-      },
-      "external.cpu_pct": {
-        "max": 1.0,
-        "note": "driver only: process CPU in percent of one core"
-      }
-    },
-    "hover@1k": {
-      "redraws.total": {
-        "max": 50,
-        "note": "5% of 1000 moves change the hover state; measured 10"
-      },
-      "redraws.other": {
-        "max": 0,
-        "note": "no redraw without a reason"
-      },
-      "counter.redraws_skipped": {
-        "min": 900,
-        "note": "the other moves reach the gate and are dropped there; measured 990"
-      },
-      "counter.elements_scanned": {
-        "max": 0,
-        "note": "a hover test asks the index"
-      },
-      "counter.hit_tests": {
-        "max": 1000,
-        "note": "one hit test per move"
-      }
-    },
-    "drag@1k": {
+    "drag@100k": {
       "counter.elements_scanned": {
         "max": 0,
         "note": "a gesture frame walks no part of the scene that is not dragged"
@@ -49,81 +9,6 @@
       "counter.commands": {
         "max": 12,
         "note": "begin, updates and end; measured 7"
-      }
-    },
-    "pan@1k": {
-      "counter.sketch_regens": {
-        "max": 0,
-        "note": "a pan over a warm cache generates no sketch"
-      },
-      "counter.relayouts": {
-        "max": 0,
-        "note": "and lays no text out"
-      },
-      "counter.cache_miss": {
-        "max": 0
-      },
-      "counter.elements_scanned": {
-        "max": 0
-      },
-      "counter.elements_encoded": {
-        "max": 11999,
-        "note": "60 frames of fewer than 200 visible elements; measured about 1800 at every size"
-      },
-      "gauge.elements_visible": {
-        "max": 199,
-        "note": "what the view shows, not the scene; measured 30"
-      },
-      "gauge.cache_entries": {
-        "max": 199,
-        "note": "the cache holds the visible elements; measured 30"
-      },
-      "frame.p99_ms": {
-        "max": 16.7,
-        "note": "60 fps on the reference GPU; driver only"
-      }
-    },
-    "zoom@1k": {
-      "counter.elements_scanned": {
-        "max": 0
-      },
-      "counter.sketch_regens": {
-        "max": 200,
-        "note": "a zoom sweep regenerates sketches of the visible elements; measured 58 to 65 in 60 frames"
-      },
-      "counter.cache_miss": {
-        "max": 300,
-        "note": "measured 75 to 78"
-      },
-      "gauge.cache_entries": {
-        "max": 399,
-        "note": "bounded cache growth; measured 105 to 108"
-      },
-      "gauge.elements_visible": {
-        "max": 399,
-        "note": "measured 63 to 67"
-      }
-    },
-    "hover@10k": {
-      "redraws.total": {
-        "max": 50,
-        "note": "5% of 1000 moves change the hover state; measured 10"
-      },
-      "redraws.other": {
-        "max": 0,
-        "note": "no redraw without a reason"
-      },
-      "counter.redraws_skipped": {
-        "min": 900,
-        "note": "the other moves reach the gate and are dropped there; measured 990"
-      },
-      "counter.elements_scanned": {
-        "max": 0,
-        "note": "a hover test asks the index"
-      },
-      "counter.hit_tests": {
-        "max": 1000,
-        "note": "one hit test per move"
       }
     },
     "drag@10k": {
@@ -136,61 +21,14 @@
         "note": "begin, updates and end; measured 7"
       }
     },
-    "pan@10k": {
-      "counter.sketch_regens": {
-        "max": 0,
-        "note": "a pan over a warm cache generates no sketch"
-      },
-      "counter.relayouts": {
-        "max": 0,
-        "note": "and lays no text out"
-      },
-      "counter.cache_miss": {
-        "max": 0
-      },
+    "drag@1k": {
       "counter.elements_scanned": {
-        "max": 0
+        "max": 0,
+        "note": "a gesture frame walks no part of the scene that is not dragged"
       },
-      "counter.elements_encoded": {
-        "max": 11999,
-        "note": "60 frames of fewer than 200 visible elements; measured about 1800 at every size"
-      },
-      "gauge.elements_visible": {
-        "max": 199,
-        "note": "what the view shows, not the scene; measured 30"
-      },
-      "gauge.cache_entries": {
-        "max": 199,
-        "note": "the cache holds the visible elements; measured 30"
-      },
-      "frame.p99_ms": {
-        "max": 16.7,
-        "note": "60 fps on the reference GPU; driver only"
-      },
-      "phase.encode.p95_ms": {
-        "max": 4.0,
-        "note": "driver only"
-      }
-    },
-    "zoom@10k": {
-      "counter.elements_scanned": {
-        "max": 0
-      },
-      "counter.sketch_regens": {
-        "max": 200,
-        "note": "a zoom sweep regenerates sketches of the visible elements; measured 58 to 65 in 60 frames"
-      },
-      "counter.cache_miss": {
-        "max": 300,
-        "note": "measured 75 to 78"
-      },
-      "gauge.cache_entries": {
-        "max": 399,
-        "note": "bounded cache growth; measured 105 to 108"
-      },
-      "gauge.elements_visible": {
-        "max": 399,
-        "note": "measured 63 to 67"
+      "counter.commands": {
+        "max": 12,
+        "note": "begin, updates and end; measured 7"
       }
     },
     "hover@100k": {
@@ -215,14 +53,62 @@
         "note": "one hit test per move"
       }
     },
-    "drag@100k": {
+    "hover@10k": {
+      "redraws.total": {
+        "max": 50,
+        "note": "5% of 1000 moves change the hover state; measured 10"
+      },
+      "redraws.other": {
+        "max": 0,
+        "note": "no redraw without a reason"
+      },
+      "counter.redraws_skipped": {
+        "min": 900,
+        "note": "the other moves reach the gate and are dropped there; measured 990"
+      },
       "counter.elements_scanned": {
         "max": 0,
-        "note": "a gesture frame walks no part of the scene that is not dragged"
+        "note": "a hover test asks the index"
       },
-      "counter.commands": {
-        "max": 12,
-        "note": "begin, updates and end; measured 7"
+      "counter.hit_tests": {
+        "max": 1000,
+        "note": "one hit test per move"
+      }
+    },
+    "hover@1k": {
+      "redraws.total": {
+        "max": 50,
+        "note": "5% of 1000 moves change the hover state; measured 10"
+      },
+      "redraws.other": {
+        "max": 0,
+        "note": "no redraw without a reason"
+      },
+      "counter.redraws_skipped": {
+        "min": 900,
+        "note": "the other moves reach the gate and are dropped there; measured 990"
+      },
+      "counter.elements_scanned": {
+        "max": 0,
+        "note": "a hover test asks the index"
+      },
+      "counter.hit_tests": {
+        "max": 1000,
+        "note": "one hit test per move"
+      }
+    },
+    "idle": {
+      "redraws.total": {
+        "max": 1,
+        "note": "idle means idle (docs/performance.md section 1)"
+      },
+      "frame.unexplained": {
+        "max": 0,
+        "note": "every frame has a dirty reason"
+      },
+      "counter.elements_scanned": {
+        "max": 0,
+        "note": "an idle app walks nothing"
       }
     },
     "pan@100k": {
@@ -251,10 +137,62 @@
       "gauge.cache_entries": {
         "max": 199,
         "note": "the cache holds the visible elements; measured 30"
+      }
+    },
+    "pan@10k": {
+      "counter.sketch_regens": {
+        "max": 0,
+        "note": "a pan over a warm cache generates no sketch"
       },
-      "frame.p99_ms": {
-        "max": 33.3,
-        "note": "30 fps at 100k on the reference GPU; driver only"
+      "counter.relayouts": {
+        "max": 0,
+        "note": "and lays no text out"
+      },
+      "counter.cache_miss": {
+        "max": 0
+      },
+      "counter.elements_scanned": {
+        "max": 0
+      },
+      "counter.elements_encoded": {
+        "max": 11999,
+        "note": "60 frames of fewer than 200 visible elements; measured about 1800 at every size"
+      },
+      "gauge.elements_visible": {
+        "max": 199,
+        "note": "what the view shows, not the scene; measured 30"
+      },
+      "gauge.cache_entries": {
+        "max": 199,
+        "note": "the cache holds the visible elements; measured 30"
+      }
+    },
+    "pan@1k": {
+      "counter.sketch_regens": {
+        "max": 0,
+        "note": "a pan over a warm cache generates no sketch"
+      },
+      "counter.relayouts": {
+        "max": 0,
+        "note": "and lays no text out"
+      },
+      "counter.cache_miss": {
+        "max": 0
+      },
+      "counter.elements_scanned": {
+        "max": 0
+      },
+      "counter.elements_encoded": {
+        "max": 11999,
+        "note": "60 frames of fewer than 200 visible elements; measured about 1800 at every size"
+      },
+      "gauge.elements_visible": {
+        "max": 199,
+        "note": "what the view shows, not the scene; measured 30"
+      },
+      "gauge.cache_entries": {
+        "max": 199,
+        "note": "the cache holds the visible elements; measured 30"
       }
     },
     "zoom@100k": {
@@ -276,6 +214,1308 @@
       "gauge.elements_visible": {
         "max": 399,
         "note": "measured 63 to 67"
+      }
+    },
+    "zoom@10k": {
+      "counter.elements_scanned": {
+        "max": 0
+      },
+      "counter.sketch_regens": {
+        "max": 200,
+        "note": "a zoom sweep regenerates sketches of the visible elements; measured 58 to 65 in 60 frames"
+      },
+      "counter.cache_miss": {
+        "max": 300,
+        "note": "measured 75 to 78"
+      },
+      "gauge.cache_entries": {
+        "max": 399,
+        "note": "bounded cache growth; measured 105 to 108"
+      },
+      "gauge.elements_visible": {
+        "max": 399,
+        "note": "measured 63 to 67"
+      }
+    },
+    "zoom@1k": {
+      "counter.elements_scanned": {
+        "max": 0
+      },
+      "counter.sketch_regens": {
+        "max": 200,
+        "note": "a zoom sweep regenerates sketches of the visible elements; measured 58 to 65 in 60 frames"
+      },
+      "counter.cache_miss": {
+        "max": 300,
+        "note": "measured 75 to 78"
+      },
+      "gauge.cache_entries": {
+        "max": 399,
+        "note": "bounded cache growth; measured 105 to 108"
+      },
+      "gauge.elements_visible": {
+        "max": 399,
+        "note": "measured 63 to 67"
+      }
+    },
+    "native/drag@100k": {
+      "frame.unexplained": {
+        "max": 0,
+        "note": "every frame has a dirty reason"
+      },
+      "redraws.other": {
+        "max": 0,
+        "note": "no redraw without a named reason"
+      },
+      "counter.elements_scanned": {
+        "max": 0,
+        "note": "no pass over the scene while the scenario runs; the index and the label lookups answer"
+      },
+      "external.scene_to_frame_ms": {
+        "max": 20000,
+        "note": "handing the scene over to the first frame that shows it; measured 3.2 to 5 s"
+      },
+      "external.cpu_pct": {
+        "max": 90,
+        "note": "measured 38 to 59% of a core"
+      },
+      "frame.p99_ms": {
+        "max": 25.0,
+        "note": "measured 5 to 20 ms; 60 fps frames are 16.7 ms"
+      },
+      "frame.max_ms": {
+        "max": 250.0,
+        "note": "no stall: the worst frame measured was 40 ms"
+      },
+      "phase.encode.p95_ms": {
+        "max": 4.0,
+        "note": "the dragged elements are re-encoded; measured 0.7 to 0.9 ms"
+      },
+      "frames": {
+        "max": 800,
+        "note": "frames are paced to the display (66 per second at 125 moves per second); measured 600 to 665 in 10 s; without pacing 1250"
+      },
+      "gauge.elements_visible": {
+        "max": 299,
+        "note": "zoom 0.5 shows more; measured 135 to 150"
+      },
+      "gauge.cache_entries": {
+        "max": 599,
+        "note": "measured 200 to 260"
+      }
+    },
+    "native/drag@10k": {
+      "frame.unexplained": {
+        "max": 0,
+        "note": "every frame has a dirty reason"
+      },
+      "redraws.other": {
+        "max": 0,
+        "note": "no redraw without a named reason"
+      },
+      "counter.elements_scanned": {
+        "max": 0,
+        "note": "no pass over the scene while the scenario runs; the index and the label lookups answer"
+      },
+      "external.scene_to_frame_ms": {
+        "max": 3000,
+        "note": "handing the scene over to the first frame that shows it; measured 300 to 430 ms"
+      },
+      "external.cpu_pct": {
+        "max": 90,
+        "note": "measured 38 to 59% of a core"
+      },
+      "frame.p99_ms": {
+        "max": 25.0,
+        "note": "measured 5 to 20 ms; 60 fps frames are 16.7 ms"
+      },
+      "frame.max_ms": {
+        "max": 250.0,
+        "note": "no stall: the worst frame measured was 40 ms"
+      },
+      "phase.encode.p95_ms": {
+        "max": 4.0,
+        "note": "the dragged elements are re-encoded; measured 0.7 to 0.9 ms"
+      },
+      "frames": {
+        "max": 800,
+        "note": "frames are paced to the display (66 per second at 125 moves per second); measured 600 to 665 in 10 s; without pacing 1250"
+      },
+      "gauge.elements_visible": {
+        "max": 299,
+        "note": "zoom 0.5 shows more; measured 135 to 150"
+      },
+      "gauge.cache_entries": {
+        "max": 599,
+        "note": "measured 200 to 260"
+      }
+    },
+    "native/drag@1k": {
+      "frame.unexplained": {
+        "max": 0,
+        "note": "every frame has a dirty reason"
+      },
+      "redraws.other": {
+        "max": 0,
+        "note": "no redraw without a named reason"
+      },
+      "counter.elements_scanned": {
+        "max": 0,
+        "note": "no pass over the scene while the scenario runs; the index and the label lookups answer"
+      },
+      "external.scene_to_frame_ms": {
+        "max": 1500,
+        "note": "handing the scene over to the first frame that shows it; measured 40 to 50 ms"
+      },
+      "external.cpu_pct": {
+        "max": 90,
+        "note": "measured 38 to 59% of a core"
+      },
+      "frame.p99_ms": {
+        "max": 25.0,
+        "note": "measured 5 to 20 ms; 60 fps frames are 16.7 ms"
+      },
+      "frame.max_ms": {
+        "max": 250.0,
+        "note": "no stall: the worst frame measured was 40 ms"
+      },
+      "phase.encode.p95_ms": {
+        "max": 4.0,
+        "note": "the dragged elements are re-encoded; measured 0.7 to 0.9 ms"
+      },
+      "frames": {
+        "max": 800,
+        "note": "frames are paced to the display (66 per second at 125 moves per second); measured 600 to 665 in 10 s; without pacing 1250"
+      },
+      "gauge.elements_visible": {
+        "max": 299,
+        "note": "zoom 0.5 shows more; measured 135 to 150"
+      },
+      "gauge.cache_entries": {
+        "max": 599,
+        "note": "measured 200 to 260"
+      }
+    },
+    "native/hover@100k": {
+      "frame.unexplained": {
+        "max": 0,
+        "note": "every frame has a dirty reason"
+      },
+      "redraws.other": {
+        "max": 0,
+        "note": "no redraw without a named reason"
+      },
+      "counter.elements_scanned": {
+        "max": 0,
+        "note": "no pass over the scene while the scenario runs; the index and the label lookups answer"
+      },
+      "external.scene_to_frame_ms": {
+        "max": 20000,
+        "note": "handing the scene over to the first frame that shows it; measured 3.2 to 5 s"
+      },
+      "redraws.total": {
+        "max": 150,
+        "note": "about 5% of the 1000 moves change what is hovered; measured 53 to 78"
+      },
+      "counter.redraws_skipped": {
+        "min": 850,
+        "note": "the other moves reach the gate and are dropped there; measured 920 to 1000"
+      },
+      "counter.hit_tests": {
+        "max": 1100,
+        "note": "one hit test per move"
+      },
+      "external.cpu_pct": {
+        "max": 15.0,
+        "note": "measured 3 to 7%"
+      }
+    },
+    "native/hover@10k": {
+      "frame.unexplained": {
+        "max": 0,
+        "note": "every frame has a dirty reason"
+      },
+      "redraws.other": {
+        "max": 0,
+        "note": "no redraw without a named reason"
+      },
+      "counter.elements_scanned": {
+        "max": 0,
+        "note": "no pass over the scene while the scenario runs; the index and the label lookups answer"
+      },
+      "external.scene_to_frame_ms": {
+        "max": 3000,
+        "note": "handing the scene over to the first frame that shows it; measured 300 to 430 ms"
+      },
+      "redraws.total": {
+        "max": 150,
+        "note": "about 5% of the 1000 moves change what is hovered; measured 53 to 78"
+      },
+      "counter.redraws_skipped": {
+        "min": 850,
+        "note": "the other moves reach the gate and are dropped there; measured 920 to 1000"
+      },
+      "counter.hit_tests": {
+        "max": 1100,
+        "note": "one hit test per move"
+      },
+      "external.cpu_pct": {
+        "max": 15.0,
+        "note": "measured 3 to 7%"
+      }
+    },
+    "native/hover@1k": {
+      "frame.unexplained": {
+        "max": 0,
+        "note": "every frame has a dirty reason"
+      },
+      "redraws.other": {
+        "max": 0,
+        "note": "no redraw without a named reason"
+      },
+      "counter.elements_scanned": {
+        "max": 0,
+        "note": "no pass over the scene while the scenario runs; the index and the label lookups answer"
+      },
+      "external.scene_to_frame_ms": {
+        "max": 1500,
+        "note": "handing the scene over to the first frame that shows it; measured 40 to 50 ms"
+      },
+      "redraws.total": {
+        "max": 150,
+        "note": "about 5% of the 1000 moves change what is hovered; measured 53 to 78"
+      },
+      "counter.redraws_skipped": {
+        "min": 850,
+        "note": "the other moves reach the gate and are dropped there; measured 920 to 1000"
+      },
+      "counter.hit_tests": {
+        "max": 1100,
+        "note": "one hit test per move"
+      },
+      "external.cpu_pct": {
+        "max": 15.0,
+        "note": "measured 3 to 7%"
+      }
+    },
+    "native/idle": {
+      "frame.unexplained": {
+        "max": 0,
+        "note": "every frame has a dirty reason"
+      },
+      "redraws.other": {
+        "max": 0,
+        "note": "no redraw without a named reason"
+      },
+      "counter.elements_scanned": {
+        "max": 0,
+        "note": "no pass over the scene while the scenario runs; the index and the label lookups answer"
+      },
+      "redraws.total": {
+        "max": 1,
+        "note": "idle means idle; measured 0"
+      },
+      "external.cpu_pct": {
+        "max": 1.0,
+        "note": "measured 0.5 to 0.7"
+      },
+      "external.first_frame_ms": {
+        "max": 1500,
+        "note": "process start to the first frame; measured 300 to 650 (about 270 ms of it is Vulkan instance and device creation)"
+      }
+    },
+    "native/pan@100k": {
+      "frame.unexplained": {
+        "max": 0,
+        "note": "every frame has a dirty reason"
+      },
+      "redraws.other": {
+        "max": 0,
+        "note": "no redraw without a named reason"
+      },
+      "counter.elements_scanned": {
+        "max": 0,
+        "note": "no pass over the scene while the scenario runs; the index and the label lookups answer"
+      },
+      "external.scene_to_frame_ms": {
+        "max": 20000,
+        "note": "handing the scene over to the first frame that shows it; measured 3.2 to 5 s"
+      },
+      "external.cpu_pct": {
+        "max": 65,
+        "note": "measured 29 to 44% of a core, almost all of it the X11 present of Xvfb (the old app: 52 to 65%)"
+      },
+      "frame.p99_ms": {
+        "max": 25.0,
+        "note": "measured 5 to 20 ms; 60 fps frames are 16.7 ms"
+      },
+      "frame.max_ms": {
+        "max": 250.0,
+        "note": "no stall: the worst frame measured was 40 ms"
+      },
+      "phase.encode.p95_ms": {
+        "max": 2.0,
+        "note": "measured 0.1 to 0.3 ms: the scene is composed from cached fragments"
+      },
+      "frames": {
+        "max": 800,
+        "note": "frames are paced to the display (66 per second at 125 moves per second); measured 600 to 665 in 10 s; without pacing 1250"
+      },
+      "gauge.elements_visible": {
+        "max": 199,
+        "note": "what the view shows, not the scene; measured 60 to 65"
+      },
+      "gauge.cache_entries": {
+        "max": 599,
+        "note": "measured 150 to 350"
+      },
+      "counter.cache_miss": {
+        "max": 150,
+        "note": "only elements that come into view are built; measured 30 to 50"
+      },
+      "counter.sketch_regens": {
+        "max": 120,
+        "note": "measured 24 to 36"
+      },
+      "counter.relayouts": {
+        "max": 5,
+        "note": "measured 1 to 3"
+      },
+      "redraws.ui": {
+        "max": 20,
+        "note": "measured 2"
+      }
+    },
+    "native/pan@10k": {
+      "frame.unexplained": {
+        "max": 0,
+        "note": "every frame has a dirty reason"
+      },
+      "redraws.other": {
+        "max": 0,
+        "note": "no redraw without a named reason"
+      },
+      "counter.elements_scanned": {
+        "max": 0,
+        "note": "no pass over the scene while the scenario runs; the index and the label lookups answer"
+      },
+      "external.scene_to_frame_ms": {
+        "max": 3000,
+        "note": "handing the scene over to the first frame that shows it; measured 300 to 430 ms"
+      },
+      "external.cpu_pct": {
+        "max": 65,
+        "note": "measured 29 to 44% of a core, almost all of it the X11 present of Xvfb (the old app: 52 to 65%)"
+      },
+      "frame.p99_ms": {
+        "max": 25.0,
+        "note": "measured 5 to 20 ms; 60 fps frames are 16.7 ms"
+      },
+      "frame.max_ms": {
+        "max": 250.0,
+        "note": "no stall: the worst frame measured was 40 ms"
+      },
+      "phase.encode.p95_ms": {
+        "max": 2.0,
+        "note": "measured 0.1 to 0.3 ms: the scene is composed from cached fragments"
+      },
+      "frames": {
+        "max": 800,
+        "note": "frames are paced to the display (66 per second at 125 moves per second); measured 600 to 665 in 10 s; without pacing 1250"
+      },
+      "gauge.elements_visible": {
+        "max": 199,
+        "note": "what the view shows, not the scene; measured 60 to 65"
+      },
+      "gauge.cache_entries": {
+        "max": 599,
+        "note": "measured 150 to 350"
+      },
+      "counter.cache_miss": {
+        "max": 150,
+        "note": "only elements that come into view are built; measured 30 to 50"
+      },
+      "counter.sketch_regens": {
+        "max": 120,
+        "note": "measured 24 to 36"
+      },
+      "counter.relayouts": {
+        "max": 5,
+        "note": "measured 1 to 3"
+      },
+      "redraws.ui": {
+        "max": 20,
+        "note": "measured 2"
+      }
+    },
+    "native/pan@1k": {
+      "frame.unexplained": {
+        "max": 0,
+        "note": "every frame has a dirty reason"
+      },
+      "redraws.other": {
+        "max": 0,
+        "note": "no redraw without a named reason"
+      },
+      "counter.elements_scanned": {
+        "max": 0,
+        "note": "no pass over the scene while the scenario runs; the index and the label lookups answer"
+      },
+      "external.scene_to_frame_ms": {
+        "max": 1500,
+        "note": "handing the scene over to the first frame that shows it; measured 40 to 50 ms"
+      },
+      "external.cpu_pct": {
+        "max": 65,
+        "note": "measured 29 to 44% of a core, almost all of it the X11 present of Xvfb (the old app: 52 to 65%)"
+      },
+      "frame.p99_ms": {
+        "max": 25.0,
+        "note": "measured 5 to 20 ms; 60 fps frames are 16.7 ms"
+      },
+      "frame.max_ms": {
+        "max": 250.0,
+        "note": "no stall: the worst frame measured was 40 ms"
+      },
+      "phase.encode.p95_ms": {
+        "max": 2.0,
+        "note": "measured 0.1 to 0.3 ms: the scene is composed from cached fragments"
+      },
+      "frames": {
+        "max": 800,
+        "note": "frames are paced to the display (66 per second at 125 moves per second); measured 600 to 665 in 10 s; without pacing 1250"
+      },
+      "gauge.elements_visible": {
+        "max": 199,
+        "note": "what the view shows, not the scene; measured 60 to 65"
+      },
+      "gauge.cache_entries": {
+        "max": 599,
+        "note": "measured 150 to 350"
+      },
+      "counter.cache_miss": {
+        "max": 150,
+        "note": "only elements that come into view are built; measured 30 to 50"
+      },
+      "counter.sketch_regens": {
+        "max": 120,
+        "note": "measured 24 to 36"
+      },
+      "counter.relayouts": {
+        "max": 5,
+        "note": "measured 1 to 3"
+      },
+      "redraws.ui": {
+        "max": 20,
+        "note": "measured 2"
+      }
+    },
+    "native/wheel@100k": {
+      "frame.unexplained": {
+        "max": 0,
+        "note": "every frame has a dirty reason"
+      },
+      "redraws.other": {
+        "max": 0,
+        "note": "no redraw without a named reason"
+      },
+      "counter.elements_scanned": {
+        "max": 0,
+        "note": "no pass over the scene while the scenario runs; the index and the label lookups answer"
+      },
+      "external.scene_to_frame_ms": {
+        "max": 20000,
+        "note": "handing the scene over to the first frame that shows it; measured 3.2 to 5 s"
+      },
+      "external.cpu_pct": {
+        "max": 65,
+        "note": "measured 29 to 43% of a core"
+      },
+      "frame.p99_ms": {
+        "max": 25.0,
+        "note": "measured 5 to 20 ms; 60 fps frames are 16.7 ms"
+      },
+      "frame.max_ms": {
+        "max": 250.0,
+        "note": "no stall: the worst frame measured was 40 ms"
+      },
+      "phase.encode.p95_ms": {
+        "max": 2.0,
+        "note": "measured 0.1 to 0.3 ms: the scene is composed from cached fragments"
+      },
+      "frames": {
+        "max": 800,
+        "note": "frames are paced to the display (66 per second at 125 moves per second); measured 600 to 665 in 10 s; without pacing 1250"
+      },
+      "gauge.elements_visible": {
+        "max": 199,
+        "note": "what the view shows, not the scene; measured 60 to 65"
+      },
+      "gauge.cache_entries": {
+        "max": 599,
+        "note": "measured 150 to 350"
+      },
+      "counter.cache_miss": {
+        "max": 500,
+        "note": "a wheel sweep scrolls over new elements; measured 130 to 240"
+      },
+      "counter.relayouts": {
+        "max": 5,
+        "note": "measured 1 to 3"
+      },
+      "redraws.ui": {
+        "max": 20,
+        "note": "one frame per tick: egui does not smooth the scroll (before: 1900 to 2000)"
+      }
+    },
+    "native/wheel@10k": {
+      "frame.unexplained": {
+        "max": 0,
+        "note": "every frame has a dirty reason"
+      },
+      "redraws.other": {
+        "max": 0,
+        "note": "no redraw without a named reason"
+      },
+      "counter.elements_scanned": {
+        "max": 0,
+        "note": "no pass over the scene while the scenario runs; the index and the label lookups answer"
+      },
+      "external.scene_to_frame_ms": {
+        "max": 3000,
+        "note": "handing the scene over to the first frame that shows it; measured 300 to 430 ms"
+      },
+      "external.cpu_pct": {
+        "max": 65,
+        "note": "measured 29 to 43% of a core"
+      },
+      "frame.p99_ms": {
+        "max": 25.0,
+        "note": "measured 5 to 20 ms; 60 fps frames are 16.7 ms"
+      },
+      "frame.max_ms": {
+        "max": 250.0,
+        "note": "no stall: the worst frame measured was 40 ms"
+      },
+      "phase.encode.p95_ms": {
+        "max": 2.0,
+        "note": "measured 0.1 to 0.3 ms: the scene is composed from cached fragments"
+      },
+      "frames": {
+        "max": 800,
+        "note": "frames are paced to the display (66 per second at 125 moves per second); measured 600 to 665 in 10 s; without pacing 1250"
+      },
+      "gauge.elements_visible": {
+        "max": 199,
+        "note": "what the view shows, not the scene; measured 60 to 65"
+      },
+      "gauge.cache_entries": {
+        "max": 599,
+        "note": "measured 150 to 350"
+      },
+      "counter.cache_miss": {
+        "max": 500,
+        "note": "a wheel sweep scrolls over new elements; measured 130 to 240"
+      },
+      "counter.relayouts": {
+        "max": 5,
+        "note": "measured 1 to 3"
+      },
+      "redraws.ui": {
+        "max": 20,
+        "note": "one frame per tick: egui does not smooth the scroll (before: 1900 to 2000)"
+      }
+    },
+    "native/wheel@1k": {
+      "frame.unexplained": {
+        "max": 0,
+        "note": "every frame has a dirty reason"
+      },
+      "redraws.other": {
+        "max": 0,
+        "note": "no redraw without a named reason"
+      },
+      "counter.elements_scanned": {
+        "max": 0,
+        "note": "no pass over the scene while the scenario runs; the index and the label lookups answer"
+      },
+      "external.scene_to_frame_ms": {
+        "max": 1500,
+        "note": "handing the scene over to the first frame that shows it; measured 40 to 50 ms"
+      },
+      "external.cpu_pct": {
+        "max": 65,
+        "note": "measured 29 to 43% of a core"
+      },
+      "frame.p99_ms": {
+        "max": 25.0,
+        "note": "measured 5 to 20 ms; 60 fps frames are 16.7 ms"
+      },
+      "frame.max_ms": {
+        "max": 250.0,
+        "note": "no stall: the worst frame measured was 40 ms"
+      },
+      "phase.encode.p95_ms": {
+        "max": 2.0,
+        "note": "measured 0.1 to 0.3 ms: the scene is composed from cached fragments"
+      },
+      "frames": {
+        "max": 800,
+        "note": "frames are paced to the display (66 per second at 125 moves per second); measured 600 to 665 in 10 s; without pacing 1250"
+      },
+      "gauge.elements_visible": {
+        "max": 199,
+        "note": "what the view shows, not the scene; measured 60 to 65"
+      },
+      "gauge.cache_entries": {
+        "max": 599,
+        "note": "measured 150 to 350"
+      },
+      "counter.cache_miss": {
+        "max": 500,
+        "note": "a wheel sweep scrolls over new elements; measured 130 to 240"
+      },
+      "counter.relayouts": {
+        "max": 5,
+        "note": "measured 1 to 3"
+      },
+      "redraws.ui": {
+        "max": 20,
+        "note": "one frame per tick: egui does not smooth the scroll (before: 1900 to 2000)"
+      }
+    },
+    "native/zoom@100k": {
+      "frame.unexplained": {
+        "max": 0,
+        "note": "every frame has a dirty reason"
+      },
+      "redraws.other": {
+        "max": 0,
+        "note": "no redraw without a named reason"
+      },
+      "counter.elements_scanned": {
+        "max": 0,
+        "note": "no pass over the scene while the scenario runs; the index and the label lookups answer"
+      },
+      "external.scene_to_frame_ms": {
+        "max": 20000,
+        "note": "handing the scene over to the first frame that shows it; measured 3.2 to 5 s"
+      },
+      "external.cpu_pct": {
+        "max": 65,
+        "note": "measured 17 to 35% of a core"
+      },
+      "frame.p99_ms": {
+        "max": 25.0,
+        "note": "measured 5 to 20 ms; 60 fps frames are 16.7 ms"
+      },
+      "frame.max_ms": {
+        "max": 250.0,
+        "note": "no stall: the worst frame measured was 40 ms"
+      },
+      "phase.encode.p95_ms": {
+        "max": 2.0,
+        "note": "measured 0.1 to 0.3 ms: the scene is composed from cached fragments"
+      },
+      "frames": {
+        "max": 800,
+        "note": "frames are paced to the display (66 per second at 125 moves per second); measured 600 to 665 in 10 s; without pacing 1250"
+      },
+      "gauge.elements_visible": {
+        "max": 399,
+        "note": "measured 60"
+      },
+      "gauge.cache_entries": {
+        "max": 599,
+        "note": "measured 150 to 350"
+      },
+      "counter.cache_miss": {
+        "max": 500,
+        "note": "a zoom sweep regenerates sketches of the visible elements; measured 140"
+      },
+      "counter.sketch_regens": {
+        "max": 400,
+        "note": "measured 110 to 190"
+      },
+      "redraws.ui": {
+        "max": 20,
+        "note": "one frame per tick (before: 2000)"
+      }
+    },
+    "native/zoom@10k": {
+      "frame.unexplained": {
+        "max": 0,
+        "note": "every frame has a dirty reason"
+      },
+      "redraws.other": {
+        "max": 0,
+        "note": "no redraw without a named reason"
+      },
+      "counter.elements_scanned": {
+        "max": 0,
+        "note": "no pass over the scene while the scenario runs; the index and the label lookups answer"
+      },
+      "external.scene_to_frame_ms": {
+        "max": 3000,
+        "note": "handing the scene over to the first frame that shows it; measured 300 to 430 ms"
+      },
+      "external.cpu_pct": {
+        "max": 65,
+        "note": "measured 17 to 35% of a core"
+      },
+      "frame.p99_ms": {
+        "max": 25.0,
+        "note": "measured 5 to 20 ms; 60 fps frames are 16.7 ms"
+      },
+      "frame.max_ms": {
+        "max": 250.0,
+        "note": "no stall: the worst frame measured was 40 ms"
+      },
+      "phase.encode.p95_ms": {
+        "max": 2.0,
+        "note": "measured 0.1 to 0.3 ms: the scene is composed from cached fragments"
+      },
+      "frames": {
+        "max": 800,
+        "note": "frames are paced to the display (66 per second at 125 moves per second); measured 600 to 665 in 10 s; without pacing 1250"
+      },
+      "gauge.elements_visible": {
+        "max": 399,
+        "note": "measured 60"
+      },
+      "gauge.cache_entries": {
+        "max": 599,
+        "note": "measured 150 to 350"
+      },
+      "counter.cache_miss": {
+        "max": 500,
+        "note": "a zoom sweep regenerates sketches of the visible elements; measured 140"
+      },
+      "counter.sketch_regens": {
+        "max": 400,
+        "note": "measured 110 to 190"
+      },
+      "redraws.ui": {
+        "max": 20,
+        "note": "one frame per tick (before: 2000)"
+      }
+    },
+    "native/zoom@1k": {
+      "frame.unexplained": {
+        "max": 0,
+        "note": "every frame has a dirty reason"
+      },
+      "redraws.other": {
+        "max": 0,
+        "note": "no redraw without a named reason"
+      },
+      "counter.elements_scanned": {
+        "max": 0,
+        "note": "no pass over the scene while the scenario runs; the index and the label lookups answer"
+      },
+      "external.scene_to_frame_ms": {
+        "max": 1500,
+        "note": "handing the scene over to the first frame that shows it; measured 40 to 50 ms"
+      },
+      "external.cpu_pct": {
+        "max": 65,
+        "note": "measured 17 to 35% of a core"
+      },
+      "frame.p99_ms": {
+        "max": 25.0,
+        "note": "measured 5 to 20 ms; 60 fps frames are 16.7 ms"
+      },
+      "frame.max_ms": {
+        "max": 250.0,
+        "note": "no stall: the worst frame measured was 40 ms"
+      },
+      "phase.encode.p95_ms": {
+        "max": 2.0,
+        "note": "measured 0.1 to 0.3 ms: the scene is composed from cached fragments"
+      },
+      "frames": {
+        "max": 800,
+        "note": "frames are paced to the display (66 per second at 125 moves per second); measured 600 to 665 in 10 s; without pacing 1250"
+      },
+      "gauge.elements_visible": {
+        "max": 399,
+        "note": "measured 60"
+      },
+      "gauge.cache_entries": {
+        "max": 599,
+        "note": "measured 150 to 350"
+      },
+      "counter.cache_miss": {
+        "max": 500,
+        "note": "a zoom sweep regenerates sketches of the visible elements; measured 140"
+      },
+      "counter.sketch_regens": {
+        "max": 400,
+        "note": "measured 110 to 190"
+      },
+      "redraws.ui": {
+        "max": 20,
+        "note": "one frame per tick (before: 2000)"
+      }
+    },
+    "web/drag@100k": {
+      "frame.unexplained": {
+        "max": 0,
+        "note": "every frame has a dirty reason"
+      },
+      "redraws.other": {
+        "max": 0,
+        "note": "no redraw without a named reason"
+      },
+      "counter.elements_scanned": {
+        "max": 0,
+        "note": "no pass over the scene while the scenario runs (zoom@100k scanned 9,200,000 elements before the ungroup availability check used the index)"
+      },
+      "external.cpu_pct": {
+        "max": 250,
+        "note": "measured 133 to 150%. The whole Chromium tree, input injection included (about 25 to 30% at 125 events per second)"
+      },
+      "frame.p99_ms": {
+        "max": 100.0,
+        "note": "measured 2.2 to 42 ms; the wasm main thread draws a frame in 1.5 to 2 ms"
+      },
+      "phase.encode.p95_ms": {
+        "max": 2.0,
+        "note": "measured under 1 ms"
+      }
+    },
+    "web/drag@10k": {
+      "frame.unexplained": {
+        "max": 0,
+        "note": "every frame has a dirty reason"
+      },
+      "redraws.other": {
+        "max": 0,
+        "note": "no redraw without a named reason"
+      },
+      "counter.elements_scanned": {
+        "max": 0,
+        "note": "no pass over the scene while the scenario runs (zoom@100k scanned 9,200,000 elements before the ungroup availability check used the index)"
+      },
+      "external.cpu_pct": {
+        "max": 250,
+        "note": "measured 133 to 150%. The whole Chromium tree, input injection included (about 25 to 30% at 125 events per second)"
+      },
+      "frame.p99_ms": {
+        "max": 100.0,
+        "note": "measured 2.2 to 42 ms; the wasm main thread draws a frame in 1.5 to 2 ms"
+      },
+      "phase.encode.p95_ms": {
+        "max": 2.0,
+        "note": "measured under 1 ms"
+      }
+    },
+    "web/drag@1k": {
+      "frame.unexplained": {
+        "max": 0,
+        "note": "every frame has a dirty reason"
+      },
+      "redraws.other": {
+        "max": 0,
+        "note": "no redraw without a named reason"
+      },
+      "counter.elements_scanned": {
+        "max": 0,
+        "note": "no pass over the scene while the scenario runs (zoom@100k scanned 9,200,000 elements before the ungroup availability check used the index)"
+      },
+      "external.cpu_pct": {
+        "max": 250,
+        "note": "measured 133 to 150%. The whole Chromium tree, input injection included (about 25 to 30% at 125 events per second)"
+      },
+      "frame.p99_ms": {
+        "max": 100.0,
+        "note": "measured 2.2 to 42 ms; the wasm main thread draws a frame in 1.5 to 2 ms"
+      },
+      "phase.encode.p95_ms": {
+        "max": 2.0,
+        "note": "measured under 1 ms"
+      }
+    },
+    "web/hover@100k": {
+      "frame.unexplained": {
+        "max": 0,
+        "note": "every frame has a dirty reason"
+      },
+      "redraws.other": {
+        "max": 0,
+        "note": "no redraw without a named reason"
+      },
+      "counter.elements_scanned": {
+        "max": 0,
+        "note": "no pass over the scene while the scenario runs (zoom@100k scanned 9,200,000 elements before the ungroup availability check used the index)"
+      },
+      "redraws.total": {
+        "max": 100,
+        "note": "measured 27 to 36"
+      },
+      "external.cpu_pct": {
+        "max": 80.0,
+        "note": "input injection only; measured 19 to 36%"
+      }
+    },
+    "web/hover@10k": {
+      "frame.unexplained": {
+        "max": 0,
+        "note": "every frame has a dirty reason"
+      },
+      "redraws.other": {
+        "max": 0,
+        "note": "no redraw without a named reason"
+      },
+      "counter.elements_scanned": {
+        "max": 0,
+        "note": "no pass over the scene while the scenario runs (zoom@100k scanned 9,200,000 elements before the ungroup availability check used the index)"
+      },
+      "redraws.total": {
+        "max": 100,
+        "note": "measured 27 to 36"
+      },
+      "external.cpu_pct": {
+        "max": 80.0,
+        "note": "input injection only; measured 19 to 36%"
+      }
+    },
+    "web/hover@1k": {
+      "frame.unexplained": {
+        "max": 0,
+        "note": "every frame has a dirty reason"
+      },
+      "redraws.other": {
+        "max": 0,
+        "note": "no redraw without a named reason"
+      },
+      "counter.elements_scanned": {
+        "max": 0,
+        "note": "no pass over the scene while the scenario runs (zoom@100k scanned 9,200,000 elements before the ungroup availability check used the index)"
+      },
+      "redraws.total": {
+        "max": 100,
+        "note": "measured 27 to 36"
+      },
+      "external.cpu_pct": {
+        "max": 80.0,
+        "note": "input injection only; measured 19 to 36%"
+      }
+    },
+    "web/idle": {
+      "frame.unexplained": {
+        "max": 0,
+        "note": "every frame has a dirty reason"
+      },
+      "redraws.other": {
+        "max": 0,
+        "note": "no redraw without a named reason"
+      },
+      "counter.elements_scanned": {
+        "max": 0,
+        "note": "no pass over the scene while the scenario runs (zoom@100k scanned 9,200,000 elements before the ungroup availability check used the index)"
+      },
+      "redraws.total": {
+        "max": 1,
+        "note": "idle means idle; measured 0"
+      },
+      "external.cpu_pct": {
+        "max": 4.0,
+        "note": "whole Chromium tree; measured 1.0 to 2.5"
+      }
+    },
+    "web/pan@100k": {
+      "frame.unexplained": {
+        "max": 0,
+        "note": "every frame has a dirty reason"
+      },
+      "redraws.other": {
+        "max": 0,
+        "note": "no redraw without a named reason"
+      },
+      "counter.elements_scanned": {
+        "max": 0,
+        "note": "no pass over the scene while the scenario runs (zoom@100k scanned 9,200,000 elements before the ungroup availability check used the index)"
+      },
+      "external.cpu_pct": {
+        "max": 200,
+        "note": "measured 107 to 113%. The whole Chromium tree, input injection included (about 25 to 30% at 125 events per second)"
+      },
+      "frame.p99_ms": {
+        "max": 100.0,
+        "note": "measured 2.2 to 42 ms; the wasm main thread draws a frame in 1.5 to 2 ms"
+      },
+      "phase.encode.p95_ms": {
+        "max": 2.0,
+        "note": "measured under 1 ms"
+      },
+      "redraws.ui": {
+        "max": 20,
+        "note": "measured 3"
+      }
+    },
+    "web/pan@10k": {
+      "frame.unexplained": {
+        "max": 0,
+        "note": "every frame has a dirty reason"
+      },
+      "redraws.other": {
+        "max": 0,
+        "note": "no redraw without a named reason"
+      },
+      "counter.elements_scanned": {
+        "max": 0,
+        "note": "no pass over the scene while the scenario runs (zoom@100k scanned 9,200,000 elements before the ungroup availability check used the index)"
+      },
+      "external.cpu_pct": {
+        "max": 200,
+        "note": "measured 107 to 113%. The whole Chromium tree, input injection included (about 25 to 30% at 125 events per second)"
+      },
+      "frame.p99_ms": {
+        "max": 100.0,
+        "note": "measured 2.2 to 42 ms; the wasm main thread draws a frame in 1.5 to 2 ms"
+      },
+      "phase.encode.p95_ms": {
+        "max": 2.0,
+        "note": "measured under 1 ms"
+      },
+      "redraws.ui": {
+        "max": 20,
+        "note": "measured 3"
+      }
+    },
+    "web/pan@1k": {
+      "frame.unexplained": {
+        "max": 0,
+        "note": "every frame has a dirty reason"
+      },
+      "redraws.other": {
+        "max": 0,
+        "note": "no redraw without a named reason"
+      },
+      "counter.elements_scanned": {
+        "max": 0,
+        "note": "no pass over the scene while the scenario runs (zoom@100k scanned 9,200,000 elements before the ungroup availability check used the index)"
+      },
+      "external.cpu_pct": {
+        "max": 200,
+        "note": "measured 107 to 113%. The whole Chromium tree, input injection included (about 25 to 30% at 125 events per second)"
+      },
+      "frame.p99_ms": {
+        "max": 100.0,
+        "note": "measured 2.2 to 42 ms; the wasm main thread draws a frame in 1.5 to 2 ms"
+      },
+      "phase.encode.p95_ms": {
+        "max": 2.0,
+        "note": "measured under 1 ms"
+      },
+      "redraws.ui": {
+        "max": 20,
+        "note": "measured 3"
+      }
+    },
+    "web/wheel@100k": {
+      "frame.unexplained": {
+        "max": 0,
+        "note": "every frame has a dirty reason"
+      },
+      "redraws.other": {
+        "max": 0,
+        "note": "no redraw without a named reason"
+      },
+      "counter.elements_scanned": {
+        "max": 0,
+        "note": "no pass over the scene while the scenario runs (zoom@100k scanned 9,200,000 elements before the ungroup availability check used the index)"
+      },
+      "external.cpu_pct": {
+        "max": 150,
+        "note": "measured 67 to 72%. The whole Chromium tree, input injection included (about 25 to 30% at 125 events per second)"
+      },
+      "frame.p99_ms": {
+        "max": 100.0,
+        "note": "measured 2.2 to 42 ms; the wasm main thread draws a frame in 1.5 to 2 ms"
+      },
+      "phase.encode.p95_ms": {
+        "max": 2.0,
+        "note": "measured under 1 ms"
+      },
+      "redraws.ui": {
+        "max": 20,
+        "note": "one frame per tick; measured 3"
+      },
+      "frames": {
+        "max": 400,
+        "note": "the browser driver sends about 30 ticks per second; measured 300"
+      }
+    },
+    "web/wheel@10k": {
+      "frame.unexplained": {
+        "max": 0,
+        "note": "every frame has a dirty reason"
+      },
+      "redraws.other": {
+        "max": 0,
+        "note": "no redraw without a named reason"
+      },
+      "counter.elements_scanned": {
+        "max": 0,
+        "note": "no pass over the scene while the scenario runs (zoom@100k scanned 9,200,000 elements before the ungroup availability check used the index)"
+      },
+      "external.cpu_pct": {
+        "max": 150,
+        "note": "measured 67 to 72%. The whole Chromium tree, input injection included (about 25 to 30% at 125 events per second)"
+      },
+      "frame.p99_ms": {
+        "max": 100.0,
+        "note": "measured 2.2 to 42 ms; the wasm main thread draws a frame in 1.5 to 2 ms"
+      },
+      "phase.encode.p95_ms": {
+        "max": 2.0,
+        "note": "measured under 1 ms"
+      },
+      "redraws.ui": {
+        "max": 20,
+        "note": "one frame per tick; measured 3"
+      },
+      "frames": {
+        "max": 400,
+        "note": "the browser driver sends about 30 ticks per second; measured 300"
+      }
+    },
+    "web/wheel@1k": {
+      "frame.unexplained": {
+        "max": 0,
+        "note": "every frame has a dirty reason"
+      },
+      "redraws.other": {
+        "max": 0,
+        "note": "no redraw without a named reason"
+      },
+      "counter.elements_scanned": {
+        "max": 0,
+        "note": "no pass over the scene while the scenario runs (zoom@100k scanned 9,200,000 elements before the ungroup availability check used the index)"
+      },
+      "external.cpu_pct": {
+        "max": 150,
+        "note": "measured 67 to 72%. The whole Chromium tree, input injection included (about 25 to 30% at 125 events per second)"
+      },
+      "frame.p99_ms": {
+        "max": 100.0,
+        "note": "measured 2.2 to 42 ms; the wasm main thread draws a frame in 1.5 to 2 ms"
+      },
+      "phase.encode.p95_ms": {
+        "max": 2.0,
+        "note": "measured under 1 ms"
+      },
+      "redraws.ui": {
+        "max": 20,
+        "note": "one frame per tick; measured 3"
+      },
+      "frames": {
+        "max": 400,
+        "note": "the browser driver sends about 30 ticks per second; measured 300"
+      }
+    },
+    "web/zoom@100k": {
+      "frame.unexplained": {
+        "max": 0,
+        "note": "every frame has a dirty reason"
+      },
+      "redraws.other": {
+        "max": 0,
+        "note": "no redraw without a named reason"
+      },
+      "counter.elements_scanned": {
+        "max": 0,
+        "note": "no pass over the scene while the scenario runs (zoom@100k scanned 9,200,000 elements before the ungroup availability check used the index)"
+      },
+      "external.cpu_pct": {
+        "max": 150,
+        "note": "measured 65 to 88%. The whole Chromium tree, input injection included (about 25 to 30% at 125 events per second)"
+      },
+      "frame.p99_ms": {
+        "max": 100.0,
+        "note": "measured 2.2 to 42 ms; the wasm main thread draws a frame in 1.5 to 2 ms"
+      },
+      "phase.encode.p95_ms": {
+        "max": 2.0,
+        "note": "measured under 1 ms"
+      },
+      "redraws.ui": {
+        "max": 20,
+        "note": "measured 7"
+      },
+      "frames": {
+        "max": 400,
+        "note": "measured 270 to 310"
+      }
+    },
+    "web/zoom@10k": {
+      "frame.unexplained": {
+        "max": 0,
+        "note": "every frame has a dirty reason"
+      },
+      "redraws.other": {
+        "max": 0,
+        "note": "no redraw without a named reason"
+      },
+      "counter.elements_scanned": {
+        "max": 0,
+        "note": "no pass over the scene while the scenario runs (zoom@100k scanned 9,200,000 elements before the ungroup availability check used the index)"
+      },
+      "external.cpu_pct": {
+        "max": 150,
+        "note": "measured 65 to 88%. The whole Chromium tree, input injection included (about 25 to 30% at 125 events per second)"
+      },
+      "frame.p99_ms": {
+        "max": 100.0,
+        "note": "measured 2.2 to 42 ms; the wasm main thread draws a frame in 1.5 to 2 ms"
+      },
+      "phase.encode.p95_ms": {
+        "max": 2.0,
+        "note": "measured under 1 ms"
+      },
+      "redraws.ui": {
+        "max": 20,
+        "note": "measured 7"
+      },
+      "frames": {
+        "max": 400,
+        "note": "measured 270 to 310"
+      }
+    },
+    "web/zoom@1k": {
+      "frame.unexplained": {
+        "max": 0,
+        "note": "every frame has a dirty reason"
+      },
+      "redraws.other": {
+        "max": 0,
+        "note": "no redraw without a named reason"
+      },
+      "counter.elements_scanned": {
+        "max": 0,
+        "note": "no pass over the scene while the scenario runs (zoom@100k scanned 9,200,000 elements before the ungroup availability check used the index)"
+      },
+      "external.cpu_pct": {
+        "max": 150,
+        "note": "measured 65 to 88%. The whole Chromium tree, input injection included (about 25 to 30% at 125 events per second)"
+      },
+      "frame.p99_ms": {
+        "max": 100.0,
+        "note": "measured 2.2 to 42 ms; the wasm main thread draws a frame in 1.5 to 2 ms"
+      },
+      "phase.encode.p95_ms": {
+        "max": 2.0,
+        "note": "measured under 1 ms"
+      },
+      "redraws.ui": {
+        "max": 20,
+        "note": "measured 7"
+      },
+      "frames": {
+        "max": 400,
+        "note": "measured 270 to 310"
       }
     },
     "bench": {

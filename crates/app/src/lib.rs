@@ -21,6 +21,7 @@ mod editor;
 mod input;
 mod offscreen;
 mod overlay;
+mod perf;
 mod platform;
 mod startup;
 mod view;
@@ -33,6 +34,9 @@ pub mod web;
 pub use app::App;
 pub use clock::AppClock;
 pub use config::{AppConfig, StartupLink};
+#[cfg(feature = "scenarios")]
+pub use perf::scene_for;
+pub use perf::{Look, SceneInstall, SceneLoader};
 pub use platform::{
     FontFile, Host, HostJob, Inbound, Inbox, NoHost, PickKind, PickedFile, Platform, SharedClipboard, WakeCell,
 };

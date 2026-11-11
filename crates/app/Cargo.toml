@@ -7,6 +7,10 @@ license.workspace = true
 rust-version.workspace = true
 publish = false
 
+[features]
+# `perf::scene_for`: the generated scenes of the scenario drivers (`docs/performance.md` section 4). Off in shipped builds.
+scenarios = ["drafftink-scene/scenegen"]
+
 [dependencies]
 drafftink-engine = { path = "../engine" }
 drafftink-canvas = { path = "../canvas" }

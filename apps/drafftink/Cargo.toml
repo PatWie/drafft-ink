@@ -12,7 +12,7 @@ name = "drafftink"
 path = "src/main.rs"
 
 [dependencies]
-drafftink-app = { path = "../../crates/app" }
+drafftink-app = { path = "../../crates/app", features = ["scenarios"] }
 drafftink-bridge = { path = "../../crates/bridge" }
 drafftink-engine = { path = "../../crates/engine" }
 drafftink-gpu = { path = "../../crates/gpu" }

@@ -35,10 +35,12 @@ gates:
   test [ARGS]     cargo nextest run (cargo test if nextest cannot be installed), plus doc tests
   fixtures        the legacy fixtures against the facts the old code wrote (crates/io/tests/facts.rs)
   harness         harness accounting: methods have reasons and callers, every family has scenarios (docs/testing.md)
-  perf [--bench|--idle]
+  perf [--bench|--idle|--app [native|web|all]]
                   work-counter tests at 1k/10k/100k elements checked against perf/budgets.json;
                   --bench: curated criterion benches against the timing limits (not part of ci);
-                  --idle: only the idle and hover tests (perf/README.md)
+                  --idle: only the idle and hover tests (perf/README.md);
+                  --app: the real app under Xvfb with real input, checked with timing against the
+                  native/... or web/... budgets (needs a GPU; not part of ci)
   size [--no-build|--wasm FILE]
                   builds the web app (scripts/build-web.sh), measures the wasm module and the fonts the page loads,
                   checks them against the `size` section of perf/budgets.json (xtask/src/size.rs)

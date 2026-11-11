@@ -127,7 +127,7 @@ Every public method of `Harness` that takes `self` has a doc line `Reason:` that
 | Method | Reason, in short |
 |---|---|
 | `stage_fixture(path)` | reads `tests/fixtures/<path>` from the test machine's disk; the fake `Files` port cannot see it. It copies the bytes into the fake port as `fixtures/<path>`, and the scenario runs `doc.open {"source": {"path": "fixtures/<path>"}}` |
-| `load_generated(count, seed)` | 1k to 100k elements cannot be made with commands in reasonable time; scenarios and benches share the generator (`drafftink_testkit::scenegen`) |
+| `load_generated(count, seed)` | 1k to 100k elements cannot be made with commands in reasonable time; scenarios and benches share the generator (`drafftink_scene::scenegen`, feature `scenegen`; `drafftink_testkit::scenegen` re-exports it) |
 | `advance_clock(ms)` | time is a port; a command cannot move a fake clock. Undo coalescing and autosave depend on it |
 | `pixel_probe(size, points)` | pixels exist only on a GPU, outside every port. Renders with Vello through `drafftink-render` and `drafftink-gpu`, reports the adapter and whether it is `software` or `hardware` |
 
@@ -255,7 +255,7 @@ What the suites cannot cover is listed in `docs/review/e2e-findings.md` with the
 
 ## Scale
 
-`drafftink_testkit::scenegen::generate(count, seed)` builds the same document every time: a grid of cells 140 units apart in a cycle of ten kinds (rectangles, ellipses, diamonds, lines, **bound arrows**, freehand, text, math, and a rectangle and an ellipse that form a **group**). Element `i` has the id `e<i>`. Sizes are 1,000, 10,000 and 100,000 (`scenegen::SIZES`). The perf benches use the same generator, so "the 10k scene" is one scene.
+`drafftink_scene::scenegen::generate(count, seed)` (also `drafftink_testkit::scenegen`) builds the same document every time: a grid of cells 140 units apart in a cycle of ten kinds (rectangles, ellipses, diamonds, lines, **bound arrows**, freehand, text, math, and a rectangle and an ellipse that form a **group**). Element `i` has the id `e<i>`. Sizes are 1,000, 10,000 and 100,000 (`scenegen::SIZES`). The perf benches use the same generator, so "the 10k scene" is one scene.
 
 ## Rules
 

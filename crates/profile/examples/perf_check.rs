@@ -3,12 +3,15 @@
 //!
 //! ```text
 //! cargo run -p drafftink-profile --example perf_check -- validate perf/budgets.json
-//! cargo run -p drafftink-profile --example perf_check -- check perf/budgets.json target/perf/work [--timing] [--require-all] [--only=a,b] [--skip=a,b]
+//! cargo run -p drafftink-profile --example perf_check -- check perf/budgets.json target/perf/work [--timing] [--require-all] [--only=a,b] [--skip=a,b] [--prefix=native/]
 //! cargo run -p drafftink-profile --example perf_check -- bench-report target/perf/bench/bench.json <id>=<microseconds>...
 //! ```
 //!
 //! `bench-report` writes the report of the timing tier: scenario `bench`, one `external.<id>_us` number per
 //! benchmark (`canvas/hit/10000` becomes `external.canvas.hit.10000_us`).
+//!
+//! Runs of the real app are budgeted per platform (`native/pan@10k`). `--prefix=native/` checks those and nothing
+//! else; without it the keys that hold a `/` are left out, so the work-counter gate does not ask for app reports.
 //!
 //! `check` reads every `*.json` ScenarioReport in the directory and prints one line per violation. Without
 //! `--timing` only the deterministic metrics are checked (counters, gauges, redraws), which hold on every machine.
@@ -38,7 +41,7 @@ fn main() -> ExitCode {
         }
         Err(Failure::Usage) => {
             eprintln!(
-                "usage: perf_check validate <budgets.json>\n       perf_check check <budgets.json> <reports-dir> [--timing] [--require-all] [--only=a,b] [--skip=a,b]\n       perf_check bench-report <out.json> <id>=<microseconds>..."
+                "usage: perf_check validate <budgets.json>\n       perf_check check <budgets.json> <reports-dir> [--timing] [--require-all] [--only=a,b] [--skip=a,b] [--prefix=P]\n       perf_check bench-report <out.json> <id>=<microseconds>..."
             );
             ExitCode::from(2)
         }
@@ -111,16 +114,21 @@ fn check(budgets_path: &Path, dir: &Path, flags: &[&str]) -> Result<(), Failure>
         flags.iter().find_map(|f| f.strip_prefix(name)).map(|keys| keys.split(',').collect())
     };
     let (only, skip) = (list("--only="), list("--skip="));
+    let prefix = flags.iter().find_map(|f| f.strip_prefix("--prefix="));
     let mut budgets = load_budgets(budgets_path)?;
     budgets.scenarios.retain(|key, _| {
         only.as_ref().is_none_or(|keys| keys.contains(&key.as_str()))
             && skip.as_ref().is_none_or(|keys| !keys.contains(&key.as_str()))
+            && match prefix {
+                Some(p) => key.starts_with(p),
+                None => !key.contains('/'),
+            }
     });
     let reports = read_reports(dir)?;
     let mut problems = 0;
     let mut seen = BTreeSet::new();
     for (path, report) in &reports {
-        let key = report.key();
+        let key = report.budget_key();
         if !budgets.has(&key) {
             println!("note: {key} ({}) has no budget", path.display());
             continue;

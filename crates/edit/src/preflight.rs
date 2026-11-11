@@ -8,7 +8,7 @@ use drafftink_scene::{ElementId, GroupId, SceneRead};
 
 use crate::arrange::{ArrangeError, Arrangement};
 use crate::group::GroupError;
-use crate::group::units::{Relations, Unit, UnitKey, primaries, units};
+use crate::group::units::{Reverse, ReverseLookup, Unit, UnitKey, primaries, units};
 use crate::target::TargetError;
 
 /// Units needed to group.
@@ -20,9 +20,9 @@ pub const MIN_DISTRIBUTE_UNITS: usize = 3;
 
 /// The units of `prim` (already primaries) when they can form a new group: at least [`MIN_GROUP_UNITS`], and not
 /// one single existing group.
-pub fn groupable_units<R: SceneRead>(
+pub fn groupable_units<R: SceneRead, L: ReverseLookup + ?Sized>(
     scene: &R,
-    rel: &Relations,
+    rel: &L,
     prim: &[ElementId],
     editing: Option<&GroupId>,
 ) -> Result<Vec<Unit>, GroupError> {
@@ -38,15 +38,16 @@ pub fn groupable_units<R: SceneRead>(
 
 /// Checks that `ids` can be grouped (enough units, not one group already), without changing anything.
 pub fn check_group<R: SceneRead>(scene: &R, ids: &[ElementId], editing: Option<&GroupId>) -> Result<(), GroupError> {
-    let rel = Relations::build(scene);
+    // The UI asks this whenever the selection changes: the committed index answers, a pass over the scene does not.
+    let rel = Reverse::of(scene);
     let prim = primaries(scene, ids)?;
     groupable_units(scene, &rel, &prim, editing).map(|_| ())
 }
 
 /// The groups that `ids` stand for at the level of `editing`: an element of a group stands for its group.
-pub fn groups_of<R: SceneRead>(
+pub fn groups_of<R: SceneRead, L: ReverseLookup + ?Sized>(
     scene: &R,
-    rel: &Relations,
+    rel: &L,
     ids: &[ElementId],
     editing: Option<&GroupId>,
 ) -> Result<Vec<GroupId>, TargetError> {
@@ -81,7 +82,7 @@ fn check_count<R: SceneRead>(
     what: Arrangement,
     need: usize,
 ) -> Result<(), ArrangeError> {
-    let rel = Relations::build(scene);
+    let rel = Reverse::of(scene);
     let have = units(scene, &rel, ids, editing)?.len();
     if have < need { Err(ArrangeError::TooFew { what, need, have }) } else { Ok(()) }
 }

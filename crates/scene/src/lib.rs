@@ -21,6 +21,8 @@ pub mod limits;
 mod memory;
 pub mod palette;
 mod points;
+#[cfg(feature = "scenegen")]
+pub mod scenegen;
 mod store;
 mod style;
 mod validate;

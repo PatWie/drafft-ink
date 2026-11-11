@@ -873,6 +873,23 @@ fn a_write_follows_a_quiet_second() {
 }
 
 #[test]
+fn a_write_waits_for_a_running_gesture_and_the_wake_up_keeps_coming() {
+    // Writing serializes the whole document on the UI thread; it must not land in the middle of a drag.
+    let (mut s, f) = full();
+    s.workspace_tick();
+    run(&mut s, "t.add", json!({"x": 1}));
+    run(&mut s, "gesture.begin", json!({"command": "t.drag", "args": {"dx": 9}}));
+    f.clock.advance_ms(60_000);
+    assert!(!s.workspace_tick(), "the drag changed the document just now");
+    f.clock.advance_ms(60_000);
+    assert!(!s.workspace_tick(), "overdue, but a gesture is running");
+    assert!(key_names(&f).is_empty(), "nothing was written");
+    assert_eq!(s.workspace_next_due_ms(), Some(500), "looked at again soon, not on every frame");
+    run(&mut s, "gesture.end", json!({}));
+    assert!(s.workspace_tick(), "written right after the gesture ends");
+}
+
+#[test]
 fn steady_work_is_written_at_the_latest_after_the_interval() {
     let (mut s, f) = full();
     s.workspace_tick();

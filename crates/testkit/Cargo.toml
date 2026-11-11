@@ -9,7 +9,7 @@ build = "build.rs"
 
 [dependencies]
 drafftink-engine = { path = "../engine" }
-drafftink-scene = { path = "../scene" }
+drafftink-scene = { path = "../scene", features = ["scenegen"] }
 drafftink-io = { path = "../io" }
 drafftink-geom = { path = "../geom" }
 drafftink-edit = { path = "../edit" }

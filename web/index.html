@@ -43,15 +43,21 @@ __PRELOAD__
       document.getElementById("failure").style.display = "flex";
     }
   };
+  // Start-up marks in ms since navigation, for the perf driver (window.__marks).
+  const mark = (name) => { (window.__marks ||= {})[name] = Math.round(performance.now()); };
   try {
     const glue = await import(`./pkg/drafftink_web.js?v=${BUILD}`);
+    mark("glue");
     await glue.default({ module_or_path: `./pkg/drafftink_web_bg.wasm?v=${BUILD}` });
+    mark("wasm");
     await glue.start("canvas");
+    mark("started");
     // "Started" means the first frame is on screen. The poll ends there, so an idle page has no timer.
     const t0 = performance.now();
     while (window.drafftink.frames().frames === 0 && performance.now() - t0 < 60000) {
       await new Promise((r) => setTimeout(r, 50));
     }
+    mark("first_frame");
     document.getElementById("loading")?.remove();
     window.__started = window.drafftink.frames().frames > 0;
     if (navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(() => {});

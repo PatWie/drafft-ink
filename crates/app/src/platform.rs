@@ -37,6 +37,11 @@ impl WakeCell {
         lock(&self.0).as_ref().is_some_and(|w| w.wake(reason))
     }
 
+    /// Asks the loop to close the window and return. Returns false when the loop is not running.
+    pub fn exit(&self) -> bool {
+        lock(&self.0).as_ref().is_some_and(Waker::exit)
+    }
+
     /// A closure that wakes the loop with `reason`, for transports and the bridge.
     pub fn hook(&self, reason: RedrawReason) -> Arc<dyn Fn() + Send + Sync> {
         let cell = self.clone();

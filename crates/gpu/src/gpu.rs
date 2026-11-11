@@ -246,6 +246,26 @@ impl std::fmt::Debug for Gpu {
     }
 }
 
+/// `DRAFFTINK_PRESENT_MODE` (`fifo`, `mailbox`, `immediate`, `auto_vsync`, `auto_no_vsync`) for measurements: some
+/// display servers (Xvfb) make `Fifo` present expensive in a way a real display does not. Not for users.
+#[cfg(not(target_arch = "wasm32"))]
+fn present_mode_from_env() -> Option<wgpu::PresentMode> {
+    let value = std::env::var("DRAFFTINK_PRESENT_MODE").ok()?;
+    Some(match value.to_ascii_lowercase().as_str() {
+        "fifo" => wgpu::PresentMode::Fifo,
+        "mailbox" => wgpu::PresentMode::Mailbox,
+        "immediate" => wgpu::PresentMode::Immediate,
+        "auto_vsync" => wgpu::PresentMode::AutoVsync,
+        "auto_no_vsync" => wgpu::PresentMode::AutoNoVsync,
+        _ => return None,
+    })
+}
+
+#[cfg(target_arch = "wasm32")]
+fn present_mode_from_env() -> Option<wgpu::PresentMode> {
+    None
+}
+
 /// A window surface and its configuration.
 pub struct PresentSurface {
     pub surface: wgpu::Surface<'static>,
@@ -271,6 +291,9 @@ impl PresentSurface {
             .ok_or_else(|| GpuError::Surface("the adapter cannot present to this surface".into()))?;
         config.format = format;
         config.view_formats = vec![format];
+        if let Some(mode) = present_mode_from_env().filter(|m| caps.present_modes.contains(m)) {
+            config.present_mode = mode;
+        }
         surface.configure(&gpu.device, &config);
         Ok(Self { surface, config })
     }

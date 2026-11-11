@@ -9,6 +9,7 @@
 cargo xtask perf            # work counters at 1k, 10k, 100k elements; part of `cargo xtask ci`
 cargo xtask perf --idle     # only the idle and hover tests, a few seconds once built
 cargo xtask perf --bench    # curated criterion benches against the timing limits; not part of ci
+cargo xtask perf --app      # the real app under Xvfb with real input, timing limits; needs a GPU; not part of ci
 ```
 
 ### Work counters (default)
@@ -64,7 +65,14 @@ ten times the median. To change a limit: say why in `note`.
 checks the limits; on a failure it prints the biggest items of the module (`twiggy`). The perf code ignores the section. The numbers and
 the reasons are in `docs/performance.md`, "Wasm size". Tighten a limit in the commit that makes the number better; loosening needs a reason in `note`.
 
-## Not done yet
+## App scenarios (`--app`)
 
-The native and web scenario drivers (`--perf-scenario`, `window.drafftink.perf.runScenario`) belong to the app shells.
-When they exist, `cargo xtask perf` runs them and feeds their reports to the same `perf_check`.
+`cargo xtask perf --app [native|web|all]` builds the desktop app (the web app must be built before with
+`scripts/build-web.sh --features scenarios`), runs every scenario that has a `native/...` or `web/...` entry in
+`budgets.json` through `scripts/perf_scenarios.py`, and checks the reports with `perf_check ... --timing --prefix=native/`.
+The scenarios, the input they send and the report are in `docs/performance.md` sections 4 and 5.3. The limits are
+measured values plus headroom (the `note` of each says what was measured); they hold on the reference machine
+(NVIDIA, Xvfb), not on a software adapter. Run the CI job on a runner with a GPU, `Xvfb` and the Python
+environment of the script (Xlib, Pillow, Playwright; `PERF_PY` names the interpreter).
+
+Entries named `native/...` and `web/...` belong to this tier only; the work-counter gate leaves them out.
