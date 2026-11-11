@@ -19,10 +19,12 @@ use crate::dto::{CameraDto, HitDto, OverlayDto};
 use crate::error::ApiError;
 use crate::fonts::Fonts;
 use crate::frame::Frame;
+use crate::image::{self, ImageSpec};
 use crate::interact::Gesture;
 use crate::json;
 use crate::ops::{self, Ids, Op, OpCx, Outcome};
 use crate::options::{InteractionOptions, StageOptions};
+use crate::remote::RemoteUserSpec;
 
 /// Everything about a stage except the browser and the GPU.
 pub struct Core {
@@ -147,6 +149,14 @@ impl Core {
             Some(Outcome::Added(id)) => Ok(id),
             _ => Err(ApiError::invalid("the shape was not added")),
         }
+    }
+
+    /// Adds a picture from the bytes of a PNG, JPEG or WebP file, on top of everything. The bytes are identified by
+    /// their content, stored once in the scene and the shape gets the natural size of the picture unless `spec`
+    /// says otherwise (`ImageSpec`). A damaged or unsupported file is refused and changes nothing.
+    pub fn add_image(&mut self, bytes: &[u8], spec: &ImageSpec) -> Result<ElementId, ApiError> {
+        let prepared = image::prepare(bytes, spec)?;
+        self.run(|tx, cx| image::insert(tx, cx, prepared))
     }
 
     /// Merge-patches a shape.
@@ -503,6 +513,14 @@ impl Core {
     /// Elements highlighted as targets (for example while dragging something over them).
     pub fn set_highlights(&mut self, ids: &[String]) -> Result<(), ApiError> {
         self.canvas.set_bind_candidates(parse_ids(ids)?);
+        Ok(())
+    }
+
+    /// The collaborators to show: a pointer with a name, an outline round each selection, a laser trail. Replaces
+    /// the previous list; an empty list shows nobody.
+    pub fn set_remote_users(&mut self, users: Vec<RemoteUserSpec>) -> Result<(), ApiError> {
+        let users = users.into_iter().map(RemoteUserSpec::into_user).collect::<Result<Vec<_>, _>>()?;
+        self.canvas.set_remote_users(users);
         Ok(())
     }
 

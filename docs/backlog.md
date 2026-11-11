@@ -15,8 +15,13 @@ Features decided but not yet assigned to a phase agent.
 - UI embeds GelPen fonts a second time (include_bytes); expose font bytes from typeset.
 - UI: search dialog has no result list; stats panel lacks bounds editing (now possible: selection.get, element.set_bounds); touch-sized mode; context-menu paste should land at the click point.
 - Size: bundled Noto Sans is ~1 MB brotli of the wasm; load fonts lazily (fetch) or behind a feature.
-- canvas-js: remote selections not drawn; no image-insert helper; tiny shapes dominated by handles (move on body should win when the shape is smaller than handles).
 - Tab bar: dirty state compares content through undo/redo only; a remote update between an edit and its undo keeps the tab dirty on purpose.
+
+## Done (branch render-overlays)
+
+- Overlay: pointers with name labels, remote selection outlines, peers' laser trails, link icons (also a pick target, `Target::LinkIcon`), distance badges on equal-spacing guides, caret and selection of the on-canvas text editor (`render::TextEdit`); `paint_overlay` now takes the typesetter. Frame names keep a constant size on screen. Mapping for the app in `docs/render.md` §5.
+- canvas-js: `setRemoteUsers`, `addImage` (bytes, Blob or File; natural size from `drafftink-io`), the `linkIcon` flag on events; a drag on a tiny selected shape (under 32 px on screen) moves it (`TransformerConfig::tiny_frame_px`, also for the editor).
+- Left over: a `Cursor::Pointer` variant for the hand over a link icon (it would break exhaustive matches in the shells, so the icon uses `Cursor::Default` for now); distance badges for alignment snaps; IME composition in `TextEdit`.
 
 ## Done (branch backlog-b)
 
@@ -46,3 +51,4 @@ Features decided but not yet assigned to a phase agent.
 - Engine status `blocked_by_schema` in `engine.state`; document-mutating commands refuse with `newer_schema` (72393d9).
 - Server refuses and rolls back updates that raise `meta.schema` beyond the served schema (69f08a1).
 - Accepted (F1): `element.relabel`/`text.set` with empty text on a bound label removes the label; only free text refuses `empty_text`.
+- Flaky under heavy load (load avg 170): collab::server leaving_flushes_the_last_edit_and_the_others_see_the_peer_go (timing); make its waits event-driven.

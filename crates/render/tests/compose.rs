@@ -736,6 +736,7 @@ fn the_paint_hash_covers_every_field_of_the_element() {
         "kind.end_is_special",
         "kind.container_id",
         "kind.label_position",
+        "kind.name",
     ];
     let schema = serde_json::to_value(schemars::schema_for!(Element)).unwrap();
     let mut strings = Vec::new();
@@ -802,4 +803,111 @@ fn the_paint_hash_covers_every_field_of_the_element() {
     declared.remove("type");
     let missing: Vec<_> = declared.difference(&seen_names).collect();
     assert!(missing.is_empty(), "fully_set_elements() does not set {missing:?}");
+}
+
+// ----------------------------------------------------------------------------------------------
+// Frame labels: a constant size on screen
+
+/// A scene with one frame named `name` at (100, 100, 200, 100), composed with `view`.
+fn compose_frame(name: Option<&str>, view: &View) -> (Scene, FrameReport) {
+    let mut ts = Typesetter::new();
+    let mut f = frame_el("f", &ZIndex::first(), 100.0, 100.0, 200.0, 100.0);
+    f.kind = ElementKind::Frame(FrameData { name: name.map(str::to_owned), clip: true });
+    let store = store_of(vec![f]);
+    let index = build_paint_index(&store);
+    let mut composer = SceneComposer::new();
+    composer.set_options(no_lod());
+    let mut scene = Scene::new();
+    let rep = composer.compose(&store, &index, view, &mut ts, &mut scene);
+    (scene, rep)
+}
+
+#[test]
+fn a_frame_label_has_the_same_size_and_gap_on_screen_at_every_zoom() {
+    for zoom in [0.3, 0.5, 1.0, 2.0, 8.0] {
+        let (scene, _) = compose_frame(Some("Plan"), &view(zoom, 0.0, 0.0));
+        let runs = &scene.encoding().resources.glyph_runs;
+        assert_eq!(runs.len(), 1, "zoom {zoom}");
+        let run = &runs[0];
+        assert_eq!(run.font_size, FRAME_LABEL_SIZE as f32, "the layout is at 14 px whatever the zoom");
+        assert_eq!(run.transform.matrix[0], 1.0, "and drawn 1:1 on screen (zoom {zoom})");
+        let (x, y) = (f64::from(run.transform.translation[0]), f64::from(run.transform.translation[1]));
+        assert!((x - 100.0 * zoom).abs() < 1e-3, "the label starts at the frame's left edge: {x} (zoom {zoom})");
+        let above = 100.0 * zoom - y;
+        assert!(above > FRAME_LABEL_GAP && above < FRAME_LABEL_ROOM, "{above} px above the top edge (zoom {zoom})");
+    }
+}
+
+#[test]
+fn the_label_scales_with_the_device_pixel_ratio() {
+    let (scene, _) = compose_frame(Some("Plan"), &view(1.0, 0.0, 0.0).with_dpi(2.0));
+    let run = &scene.encoding().resources.glyph_runs[0];
+    assert_eq!(run.transform.matrix[0], 2.0);
+    assert!((f64::from(run.transform.translation[0]) - 200.0).abs() < 1e-3);
+}
+
+#[test]
+fn a_frame_without_a_name_is_called_frame() {
+    // The store refuses an empty name, so "no name" is the only nameless frame (label_text covers the rest).
+    let v = view(1.0, 0.0, 0.0);
+    let glyphs = |name| compose_frame(name, &v).0.encoding().resources.glyphs.len();
+    assert_eq!(glyphs(None), "Frame".len());
+    assert_eq!(glyphs(Some("Plan")), "Plan".len());
+}
+
+#[test]
+fn the_label_is_cut_at_the_width_of_the_frame_on_screen() {
+    // One clip layer for the label, and its right edge follows the frame's width on screen but is never narrower
+    // than the minimum.
+    let (scene, _) = compose_frame(Some("A name that is much longer than the frame"), &view(0.5, 0.0, 0.0));
+    let clips = scene
+        .encoding()
+        .draw_tags
+        .iter()
+        .filter(|t| **t == vello::low_level::vello_encoding::DrawTag::BEGIN_CLIP)
+        .count();
+    assert_eq!(clips, 1);
+}
+
+#[test]
+fn a_frame_just_below_the_view_still_shows_its_label() {
+    // The frame starts 10 px below the bottom edge of the 600 px view; its label sits above it, inside the view.
+    let mut ts = Typesetter::new();
+    let f = frame_el("f", &ZIndex::first(), 100.0, 610.0, 200.0, 100.0);
+    let store = store_of(vec![f]);
+    let index = build_paint_index(&store);
+    let mut composer = SceneComposer::new();
+    composer.set_options(no_lod());
+    let mut scene = Scene::new();
+    let rep = composer.compose(&store, &index, &view(1.0, 0.0, 0.0), &mut ts, &mut scene);
+    assert_eq!(rep.drawn, 1);
+    assert_eq!(scene.encoding().resources.glyph_runs.len(), 1);
+    // Far below the label's reach, the frame is culled with it.
+    let mut ts = Typesetter::new();
+    let store = store_of(vec![frame_el("f", &ZIndex::first(), 100.0, 800.0, 200.0, 100.0)]);
+    let index = build_paint_index(&store);
+    let rep = SceneComposer::new().compose(&store, &index, &view(1.0, 0.0, 0.0), &mut ts, &mut scene);
+    assert_eq!(rep.drawn, 0);
+}
+
+#[test]
+fn renaming_a_frame_reuses_its_fragment_and_redraws_the_label() {
+    let mut ts = Typesetter::new();
+    let mut f = frame_el("f", &ZIndex::first(), 100.0, 100.0, 200.0, 100.0);
+    f.kind = ElementKind::Frame(FrameData { name: Some("One".into()), clip: true });
+    let mut store = store_of(vec![f]);
+    let mut index = build_paint_index(&store);
+    let mut composer = SceneComposer::new();
+    composer.set_options(no_lod());
+    let mut scene = Scene::new();
+    let v = view(1.0, 0.0, 0.0);
+    composer.compose(&store, &index, &v, &mut ts, &mut scene);
+    let one = scene.encoding().resources.glyphs.len();
+    let cs =
+        update(&mut store, "f", |e| e.kind = ElementKind::Frame(FrameData { name: Some("Three".into()), clip: true }));
+    update_paint_index(&mut index, &store, &cs);
+    composer.apply_changes(&cs);
+    let rep = composer.compose(&store, &index, &v, &mut ts, &mut scene);
+    assert_eq!((rep.cache_misses, rep.cache_reuses), (0, 1), "{rep:?}");
+    assert!(scene.encoding().resources.glyphs.len() > one, "five letters instead of three");
 }

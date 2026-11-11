@@ -66,3 +66,17 @@ pub fn assert_box(actual: [f64; 4], expected: [f64; 4]) {
         assert!((a - e).abs() < 1e-6, "{actual:?} is not {expected:?}");
     }
 }
+
+/// The bytes of a PNG of `w` by `h` pixels, one flat colour.
+pub fn png_bytes(w: u32, h: u32) -> Vec<u8> {
+    let mut out = Vec::new();
+    {
+        let mut enc = png::Encoder::new(&mut out, w, h);
+        enc.set_color(png::ColorType::Rgba);
+        enc.set_depth(png::BitDepth::Eight);
+        let mut writer = enc.write_header().unwrap();
+        let pixels: Vec<u8> = (0..w * h).flat_map(|_| [200u8, 40, 40, 255]).collect();
+        writer.write_image_data(&pixels).unwrap();
+    }
+    out
+}

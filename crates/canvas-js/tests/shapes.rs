@@ -227,3 +227,61 @@ fn json_round_trip_and_svg_export() {
     assert_eq!(u.len(), 3);
     assert!(stage().to_svg(&Default::default()).is_err(), "an empty scene has nothing to export");
 }
+
+// ---- pictures ---------------------------------------------------------------------------------------------
+
+use drafftink_canvas_js::ImageSpec;
+
+#[test]
+fn an_image_is_added_from_bytes_at_its_natural_size_and_the_same_bytes_are_stored_once() {
+    let mut s = stage();
+    let bytes = png_bytes(40, 30);
+    let a = s.add_image(&bytes, &ImageSpec::default()).unwrap();
+    let e = s.get(a.as_str()).unwrap();
+    assert_eq!((e.transform.w, e.transform.h), (40.0, 30.0), "the natural size");
+    let drafftink_scene::ElementKind::Image(data) = &e.kind else { panic!("{:?}", e.kind) };
+    assert_eq!((data.natural_width, data.natural_height), (40, 30));
+    let first = data.file_id.clone().unwrap();
+    // Placement and size from the options; the bytes are the same file.
+    let spec = ImageSpec {
+        x: Some(100.0),
+        y: Some(50.0),
+        width: Some(80.0),
+        name: Some("logo".into()),
+        ..ImageSpec::default()
+    };
+    let b = s.add_image(&bytes, &spec).unwrap();
+    assert_box(xywh(&s, b.as_str()), [100.0, 50.0, 80.0, 60.0]);
+    assert_eq!(s.get(b.as_str()).unwrap().name.as_deref(), Some("logo"));
+    assert_eq!(s.document().files.len(), 1, "one copy per content");
+    assert!(s.document().files.contains_key(&first));
+    // It is a shape like any other: hit testing finds it (screen = world + (400, 300)).
+    assert_eq!(s.hit(510.0, 370.0, None).map(|h| h.id), Some(b.as_str().to_owned()));
+    // A big picture can be capped.
+    let big = png_bytes(2000, 1000);
+    let c = s.add_image(&big, &ImageSpec { max_side: Some(800.0), ..ImageSpec::default() }).unwrap();
+    assert_box(xywh(&s, c.as_str()), [0.0, 0.0, 800.0, 400.0]);
+}
+
+#[test]
+fn what_is_not_a_readable_picture_is_refused_and_changes_nothing() {
+    let mut s = stage();
+    s.add(rect("a", 0.0, 0.0, 10.0, 10.0)).unwrap();
+    let revision = s.revision();
+    let text = s.add_image(b"hello", &ImageSpec::default()).unwrap_err().to_string();
+    assert!(text.contains("PNG, JPEG or WebP"), "{text}");
+    assert!(s.add_image(&[], &ImageSpec::default()).is_err());
+    let svg = s.add_image(b"<svg xmlns='http://www.w3.org/2000/svg'/>", &ImageSpec::default()).unwrap_err().to_string();
+    assert!(svg.contains("SVG"), "{svg}");
+    // A cut-off PNG has a header but no pixels.
+    let mut cut = png_bytes(50, 50);
+    cut.truncate(cut.len() / 2);
+    assert!(s.add_image(&cut, &ImageSpec::default()).is_err());
+    // Bad options.
+    let bad = ImageSpec { width: Some(-3.0), ..ImageSpec::default() };
+    assert!(s.add_image(&png_bytes(4, 4), &bad).unwrap_err().to_string().contains("width"));
+    let taken = ImageSpec { id: Some("a".into()), ..ImageSpec::default() };
+    assert!(s.add_image(&png_bytes(4, 4), &taken).is_err(), "an id in use");
+    assert_eq!((s.len(), s.revision()), (1, revision), "nothing changed");
+    assert!(s.document().files.is_empty(), "and no file was kept");
+}

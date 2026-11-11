@@ -440,6 +440,7 @@ fn overlay_describes_hover_guides_bind_candidates_and_remote_users() {
         color: Color::rgb(255, 0, 0),
         cursor: Some(Point::new(5.0, 6.0)),
         selection: vec![id("b"), id("missing")],
+        trail: Vec::new(),
     };
     assert!(c.set_remote_users(vec![user.clone()]));
     assert!(!c.set_remote_users(vec![user]));
@@ -611,4 +612,90 @@ fn the_viewport_centres_zooms_and_tells_what_is_visible() {
     assert!(v.set_zoom(before * 2.0));
     assert!((v.camera().zoom - before * 2.0).abs() < 1e-9);
     assert!(!v.set_zoom(f64::NAN));
+}
+
+fn linked(mut e: drafftink_canvas::scene::Element, link: &str) -> drafftink_canvas::scene::Element {
+    e.link = Some(link.into());
+    e
+}
+
+#[test]
+fn the_link_icon_is_a_target_of_its_own_that_wins_over_what_lies_under_it() {
+    // The icon of "a" sits at about (108, -8) for a box at 0..100; "under" lies there.
+    let mut c = canvas_with(vec![
+        linked(fill(rect("a", 0.0, 0.0, 100.0, 50.0)), "https://example.com"),
+        fill(rect("under", 90.0, -30.0, 60.0, 60.0)),
+    ]);
+    let icon = Point::new(108.0, -8.0);
+    assert_eq!(c.pick(icon, PointerKind::Mouse), Target::LinkIcon { id: id("a") });
+    assert_eq!(c.pick(icon, PointerKind::Mouse).element(), None, "the icon is not the element");
+    assert_eq!(c.pick(icon, PointerKind::Mouse).link_icon(), Some(&id("a")));
+    assert_eq!(c.pick(icon, PointerKind::Mouse).without_link_icon(), &Target::Empty);
+    // The body of the linked element is the element.
+    assert!(
+        matches!(c.pick(Point::new(30.0, 25.0), PointerKind::Mouse), Target::Element { id: i, .. } if i == id("a"))
+    );
+    // A selected element shows its handles there instead.
+    c.set_selection(vec![id("a")]);
+    assert!(!matches!(c.pick(icon, PointerKind::Mouse), Target::LinkIcon { .. }));
+    // An element without a link has none.
+    c.set_selection(Vec::new());
+    assert!(!matches!(c.pick(Point::new(158.0, -38.0), PointerKind::Mouse), Target::LinkIcon { .. }));
+}
+
+#[test]
+fn a_click_on_a_link_icon_is_an_intent_with_that_target_and_the_icon_keeps_its_place_at_any_zoom() {
+    let mut c = canvas_with(vec![linked(fill(rect("a", 0.0, 0.0, 100.0, 50.0)), "#other")]);
+    let at = c.viewport().world_to_screen(Point::new(108.0, -8.0));
+    press(&mut c, at.x, at.y, 0.0);
+    let out = release(&mut c, at.x, at.y, 40.0);
+    assert!(
+        out.iter().any(|i| matches!(i, Intent::Click { target: Target::LinkIcon { id: i }, .. } if *i == id("a"))),
+        "{out:?}"
+    );
+    for zoom in [0.25, 1.0, 4.0] {
+        c.zoom_at(Point::new(400.0, 300.0), zoom / c.viewport().zoom());
+        let world = drafftink_canvas::geom::link_icon::icon_rect(
+            drafftink_canvas::geom::kurbo::Rect::new(0.0, 0.0, 100.0, 50.0),
+            0.0,
+            c.viewport().zoom(),
+        )
+        .center();
+        let screen = c.viewport().world_to_screen(world);
+        assert_eq!(c.pick(screen, PointerKind::Mouse), Target::LinkIcon { id: id("a") }, "zoom {zoom}");
+    }
+}
+
+#[test]
+fn the_overlay_lists_the_link_icons_in_view_that_are_not_selected() {
+    let mut c = canvas_with(vec![
+        linked(fill(rect("web", 0.0, 100.0, 100.0, 50.0)), "https://example.com"),
+        linked(fill(rect("to", 200.0, 100.0, 100.0, 50.0)), "#web"),
+        linked(fill(rect("far", 9000.0, 9000.0, 10.0, 10.0)), "https://example.com/far"),
+        fill(rect("plain", 400.0, 100.0, 100.0, 50.0)),
+    ]);
+    let icons = c.overlay().link_icons;
+    let flags: Vec<_> = icons.iter().map(|i| (i.element.clone(), i.to_element)).collect();
+    assert_eq!(flags, vec![(id("web"), false), (id("to"), true)], "back to front, in view only");
+    c.set_selection(vec![id("web")]);
+    assert_eq!(c.overlay().link_icons.len(), 1, "a selected element shows its handles instead");
+}
+
+#[test]
+fn remote_parts_make_cursors_boxes_and_trails_and_skip_what_is_gone() {
+    use drafftink_canvas::{TrailPoint, remote_parts};
+    let c = canvas_with(vec![fill(rect("a", 0.0, 0.0, 10.0, 10.0)), fill(rect("b", 20.0, 0.0, 10.0, 10.0))]);
+    let user = RemoteUser {
+        id: "u".into(),
+        name: None,
+        color: Color::rgb(0, 255, 0),
+        cursor: None,
+        selection: vec![id("a"), id("b"), id("gone")],
+        trail: vec![TrailPoint { pos: Point::new(1.0, 2.0), age_ms: 30.0 }],
+    };
+    let parts = remote_parts(c.store(), &[user], 1);
+    assert!(parts.cursors.is_empty(), "no pointer: no cursor");
+    assert_eq!(parts.selections[0].boxes.len(), 1);
+    assert!(parts.selections[0].truncated);
+    assert_eq!(parts.trails[0].points.len(), 1);
 }

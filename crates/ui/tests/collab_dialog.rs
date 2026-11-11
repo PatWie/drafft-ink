@@ -25,6 +25,8 @@ fn view(status: CollabStatus, room: Option<&str>, peers: usize) -> CollabView {
         room: room.map(str::to_owned),
         peers: (0..peers)
             .map(|i| Peer {
+                id: format!("p{i}"),
+                followed: false,
                 name: if i == 0 { String::new() } else { format!("p{i}") },
                 color: "#22c55e".into(),
                 has_cursor: false,

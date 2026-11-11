@@ -99,14 +99,39 @@ pub enum Target {
     },
     /// A handle of the transformer. Handles win over elements.
     Handle(Handle),
+    /// The link icon of an element that has a link and is not selected. It sits beside the top-right corner of the
+    /// element, so it can lie outside the element's body; it wins over the element under it. A click on it opens
+    /// the link (`element.open_link`); a host that has no use for it treats it as [`Target::Empty`] (see
+    /// [`Target::without_link_icon`]).
+    LinkIcon {
+        /// The element that holds the link.
+        id: ElementId,
+    },
 }
 
 impl Target {
-    /// The element id when the target is an element.
+    /// The element id when the target is an element. A link icon is not the element.
     pub fn element(&self) -> Option<&ElementId> {
         match self {
             Target::Element { id, .. } => Some(id),
             _ => None,
+        }
+    }
+
+    /// The element whose link icon this is.
+    pub fn link_icon(&self) -> Option<&ElementId> {
+        match self {
+            Target::LinkIcon { id } => Some(id),
+            _ => None,
+        }
+    }
+
+    /// This target, except that a link icon counts as empty space: for the parts of a host that give the icon no
+    /// meaning (a press, a drag or a context menu on it behave as they did before the icon was a target).
+    pub fn without_link_icon(&self) -> &Target {
+        match self {
+            Target::LinkIcon { .. } => &Target::Empty,
+            other => other,
         }
     }
 }

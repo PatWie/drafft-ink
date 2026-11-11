@@ -93,6 +93,22 @@ export class Stage {
     this.#kick();
   }
 
+  /**
+   * Adds a picture and returns the id of its shape. `source` is a `Blob` or `File`, an `ArrayBuffer` or the bytes of
+   * a PNG, JPEG or WebP file; the format is read from the bytes, never from a name or a media type. The shape gets
+   * the natural size of the picture unless `options` say otherwise. Rejects for a file that is not a readable
+   * picture, and then changes nothing.
+   */
+  async addImage(source, options = {}) {
+    const bytes =
+      source instanceof Uint8Array ? source
+        : source instanceof ArrayBuffer ? new Uint8Array(source)
+          : new Uint8Array(await source.arrayBuffer());
+    const id = this.#raw.addImage(bytes, options);
+    this.#kick();
+    return id;
+  }
+
   /** Removes shapes for good, with the text bound to them. */
   remove(...ids) {
     this.#raw.remove(ids.flat());
@@ -305,6 +321,15 @@ export class Stage {
   /** Outlines shapes as targets (for example while something is dragged over them). */
   setHighlights(ids) {
     this.#raw.setHighlights(ids);
+    this.#kick();
+  }
+
+  /**
+   * The people in the room, `[{ id, name?, color, cursor?, selection?, trail? }]`: the stage draws each one's
+   * pointer with a name label, an outline round their selection and their laser trail. Replaces the list.
+   */
+  setRemoteUsers(users) {
+    this.#raw.setRemoteUsers(users);
     this.#kick();
   }
 

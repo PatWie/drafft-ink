@@ -117,6 +117,9 @@ pub struct EventDto {
     pub button: &'static str,
     /// The transformer handle of a `transform*` event.
     pub handle: Option<Handle>,
+    /// The pointer was on the link icon of `target` (a small square beside its top-right corner), not on the
+    /// shape. A `click` with this flag is the host's cue to open `shape.link`.
+    pub link_icon: bool,
     /// A drag that was aborted (Escape, a second finger).
     pub cancelled: bool,
 }
@@ -139,6 +142,7 @@ impl From<&ElementEvent> for EventDto {
             pointer: pointer_name(e.pointer),
             button: button_name(e.button),
             handle: e.handle.clone(),
+            link_icon: e.link_icon,
             cancelled: e.cancelled,
         }
     }
@@ -270,6 +274,32 @@ pub struct CursorDto {
     pub at: Xy,
 }
 
+/// What a remote user has selected.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RemoteSelectionDto {
+    /// The user.
+    pub user: String,
+    /// Their colour, `#rrggbb`.
+    pub color: String,
+    /// One box per selected shape.
+    pub boxes: Vec<BoxDto>,
+    /// The selection had more shapes than `boxes` holds.
+    pub truncated: bool,
+}
+
+/// The link icon of a shape that has a link.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LinkIconDto {
+    /// The shape that holds the link.
+    pub shape: String,
+    /// The square of the icon in world units: `[x, y, w, h]`.
+    pub rect: [f64; 4],
+    /// The link points at another shape (`#id`), not at a web address.
+    pub to_shape: bool,
+}
+
 /// Everything drawn above the scene, for hosts that draw it themselves.
 #[derive(Debug, Clone, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -288,6 +318,10 @@ pub struct OverlayDto {
     pub highlights: Vec<OutlineDto>,
     /// Other users' pointers.
     pub cursors: Vec<CursorDto>,
+    /// What other users have selected.
+    pub remote_selections: Vec<RemoteSelectionDto>,
+    /// The link icons of the shapes in view that are not selected.
+    pub link_icons: Vec<LinkIconDto>,
 }
 
 /// SVG path data of a primitive outline.
@@ -366,6 +400,25 @@ impl OverlayDto {
                 .remote_cursors
                 .iter()
                 .map(|c| CursorDto { user: c.user.clone(), name: c.name.clone(), at: xy(c.pos) })
+                .collect(),
+            remote_selections: overlay
+                .remote_selections
+                .iter()
+                .map(|s| RemoteSelectionDto {
+                    user: s.user.clone(),
+                    color: s.color.to_hex(),
+                    boxes: s.boxes.iter().map(|b| BoxDto::of(None, b)).collect(),
+                    truncated: s.truncated,
+                })
+                .collect(),
+            link_icons: overlay
+                .link_icons
+                .iter()
+                .map(|i| LinkIconDto {
+                    shape: i.element.as_str().to_owned(),
+                    rect: rect_xywh(i.rect),
+                    to_shape: i.to_element,
+                })
                 .collect(),
         }
     }

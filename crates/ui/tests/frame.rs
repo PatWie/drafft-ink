@@ -145,3 +145,39 @@ fn modal_is_reported_while_a_dialog_is_open() {
     assert!(res.modal, "Mod+/ opens the palette");
     assert!(rig.shell.state.palette.is_some());
 }
+
+#[test]
+fn the_library_is_read_only_while_its_panel_is_open() {
+    use drafftink_engine::testing::{add_rect, select};
+    let mut rig = Rig::new();
+    let id = add_rect(&mut rig.session, 0.0, 0.0, 30.0, 30.0).unwrap();
+    select(&mut rig.session, std::slice::from_ref(&id));
+    rig.session.execute("library.add", json!({})).unwrap();
+    rig.frame(vec![]);
+    assert!(rig.shell.model.library.is_empty(), "closed: not read");
+    rig.shell.state.apply_verb(drafftink_ui::Verb::ToggleLibrary, &mut Vec::new());
+    rig.frame(vec![]);
+    assert_eq!(rig.shell.model.library.len(), 1, "open: read in the same frame the verb took effect");
+    rig.shell.state.apply_verb(drafftink_ui::Verb::ToggleLibrary, &mut Vec::new());
+    rig.frame(vec![]);
+    assert!(rig.shell.model.library.is_empty());
+}
+
+#[test]
+fn the_ui_reads_leave_no_entry_in_the_ring() {
+    use drafftink_engine::testing::{add_rect, select};
+    let mut rig = Rig::new();
+    let id = add_rect(&mut rig.session, 0.0, 0.0, 30.0, 30.0).unwrap();
+    select(&mut rig.session, std::slice::from_ref(&id));
+    let recent =
+        |s: &mut Session| s.execute("engine.recent", json!({})).unwrap()["entries"].as_array().map_or(0, Vec::len);
+    rig.frame(vec![]);
+    let before = recent(&mut rig.session);
+    for _ in 0..3 {
+        rig.shell.model.invalidate();
+        rig.frame(vec![]);
+    }
+    // `engine.recent` itself is one entry per call; the model's reads (style.get, selection.get, element.query,
+    // view.get, library.list) add none.
+    assert_eq!(recent(&mut rig.session), before + 1);
+}

@@ -102,8 +102,11 @@ fn image(h: &mut Hash128, i: &ImageData) {
 }
 
 fn frame(h: &mut Hash128, f: &FrameData) {
-    let FrameData { name, clip } = f;
-    (name, clip).hash(h);
+    let FrameData {
+        name: _, // the label is drawn by the composer at a constant size on screen, not by the fragment
+        clip,
+    } = f;
+    clip.hash(h);
 }
 
 fn kind(h: &mut Hash128, k: &ElementKind) {

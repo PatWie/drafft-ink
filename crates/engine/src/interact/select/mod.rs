@@ -113,7 +113,7 @@ impl SelectTool {
                 let (frame, active) = frame_for_handle(cx, ev, handle);
                 self.begin(cx, frame, Some(active));
             }
-            Target::None => self.drag = Drag::Dead,
+            Target::None | Target::LinkIcon { .. } => self.drag = Drag::Dead,
         }
     }
 

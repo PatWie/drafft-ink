@@ -21,11 +21,25 @@ pub fn themed_lenient(fixture: Fixture, dark: bool) -> Harness<'static, Fixture>
     build(fixture, dark, true)
 }
 
+/// Like [`themed_lenient`] in a window of a given size (a menu with all its blocks open is taller than 800).
+pub fn themed_lenient_sized(fixture: Fixture, size: egui::Vec2) -> Harness<'static, Fixture> {
+    build_sized(fixture, false, true, size)
+}
+
 fn build(fixture: Fixture, dark: bool, allow_missing_glyphs: bool) -> Harness<'static, Fixture> {
+    build_sized(fixture, dark, allow_missing_glyphs, egui::vec2(1280.0, 800.0))
+}
+
+fn build_sized(
+    fixture: Fixture,
+    dark: bool,
+    allow_missing_glyphs: bool,
+    size: egui::Vec2,
+) -> Harness<'static, Fixture> {
     let builder = Harness::builder();
     let builder = if allow_missing_glyphs { builder.allow_missing_glyphs() } else { builder };
     builder
-        .with_size(egui::vec2(1280.0, 800.0))
+        .with_size(size)
         .with_theme(if dark { egui::Theme::Dark } else { egui::Theme::Light })
         .with_context_setup(|ctx| {
             theme::install_fonts(ctx);

@@ -119,6 +119,68 @@ pub struct BoundsView {
     pub h: f64,
 }
 
+/// One selected element, as far as the menus need to know it. Read with `element.query`, so it holds only
+/// facts the query reports; a context menu uses them to offer the rows that fit.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SelectedElement {
+    /// The element id.
+    pub id: String,
+    /// What it is: `rectangle`, `text`, `frame`, ...
+    pub kind: String,
+    /// Its link, if it has one.
+    pub link: Option<String>,
+    /// The frame it belongs to.
+    pub frame: Option<String>,
+    /// The id of the text bound to it as its label, when it has one.
+    pub label: Option<String>,
+}
+
+/// The camera, from `view.get`.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct ViewView {
+    /// The world point at the middle of the viewport.
+    pub scroll: [f64; 2],
+    /// Screen pixels per world unit.
+    pub zoom: f64,
+    /// Viewport width in logical pixels.
+    pub width: f64,
+    /// Viewport height in logical pixels.
+    pub height: f64,
+}
+
+impl ViewView {
+    /// The world point under a screen point (logical pixels from the top-left of the canvas), the way
+    /// `view.get` describes the camera. Used for dropping a library item where the pointer was released.
+    pub fn screen_to_world(&self, p: egui::Pos2) -> [f64; 2] {
+        let zoom = if self.zoom > 0.0 { self.zoom } else { 1.0 };
+        [
+            self.scroll[0] + (f64::from(p.x) - self.width / 2.0) / zoom,
+            self.scroll[1] + (f64::from(p.y) - self.height / 2.0) / zoom,
+        ]
+    }
+}
+
+impl Default for ViewView {
+    fn default() -> Self {
+        Self { scroll: [0.0, 0.0], zoom: 1.0, width: 1280.0, height: 720.0 }
+    }
+}
+
+/// One item of the shape library, from `library.list`.
+#[derive(Debug, Clone, PartialEq)]
+pub struct LibraryItem {
+    /// The id, which `library.insert` takes.
+    pub id: String,
+    /// The name.
+    pub name: String,
+    /// How many elements it holds.
+    pub element_count: usize,
+    /// Width of its bounds in world units.
+    pub width: f64,
+    /// Height of its bounds in world units.
+    pub height: f64,
+}
+
 /// A tab as the tab bar shows it.
 #[derive(Debug, Clone, PartialEq)]
 pub struct TabView {
@@ -160,12 +222,30 @@ pub enum CollabStatus {
 /// A collaborator.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Peer {
+    /// The id `collab.status` gives the peer: what `collab.follow` takes (names may repeat or be empty).
+    pub id: String,
     /// The name; empty shows as "Anonymous".
     pub name: String,
     /// Cursor colour as `#rrggbb`.
     pub color: String,
     /// The peer has a cursor on the canvas right now.
     pub has_cursor: bool,
+    /// The camera follows this peer (`collab.follow`).
+    pub followed: bool,
+}
+
+impl Peer {
+    /// A peer from one entry of `collab.status`'s `peers`. `None` when the entry has no id.
+    pub fn from_status(v: &Value) -> Option<Peer> {
+        let text = |key: &str| v.get(key).and_then(Value::as_str).map(str::to_owned);
+        Some(Peer {
+            id: text("id")?,
+            name: text("name").unwrap_or_default(),
+            color: text("color").unwrap_or_default(),
+            has_cursor: v.get("pointer").is_some_and(|p| !p.is_null()),
+            followed: v.get("followed").and_then(Value::as_bool).unwrap_or(false),
+        })
+    }
 }
 
 /// Presence data for the collaboration button and panel.
@@ -177,6 +257,28 @@ pub struct CollabView {
     pub room: Option<String>,
     /// Who else is in it.
     pub peers: Vec<Peer>,
+}
+
+impl CollabView {
+    /// The view from the output of `collab.status` (`Session::query("collab.status", ..)`): the link, the
+    /// room and the peers with their ids and whether this user follows them.
+    pub fn from_status(out: &Value) -> CollabView {
+        let text = |key: &str| out.get(key).and_then(Value::as_str);
+        let status = match text("state") {
+            Some("connecting") => CollabStatus::Connecting,
+            Some("connected") => CollabStatus::Connected,
+            Some("error") => {
+                CollabStatus::Failed(text("error").or_else(|| text("text")).unwrap_or_default().to_owned())
+            }
+            _ => CollabStatus::Disconnected,
+        };
+        let peers = out
+            .get("peers")
+            .and_then(Value::as_array)
+            .map(|a| a.iter().filter_map(Peer::from_status).collect())
+            .unwrap_or_default();
+        CollabView { status, room: text("room").map(str::to_owned), peers }
+    }
 }
 
 /// The snapshot.
@@ -207,6 +309,16 @@ pub struct Model {
     pub selection_bounds: Option<BoundsView>,
     /// The link of the selected element, when exactly one is selected and it has a link.
     pub selection_link: Option<String>,
+    /// The selected elements (the first [`SELECTION_DETAIL_LIMIT`]), with what the menus need.
+    pub selection: Vec<SelectedElement>,
+    /// The camera.
+    pub view: ViewView,
+    /// The shape library, read while [`Model::wants_library`] is set.
+    pub library: Vec<LibraryItem>,
+    /// Why the library could not be read (no storage), as the refusal says.
+    pub library_error: Option<String>,
+    /// The library panel is open, so [`Model::refresh`] reads `library.list`. Set by the shell.
+    pub wants_library: bool,
     /// The style of the selection or the defaults.
     pub style: StyleView,
     /// Settings by key.
@@ -241,6 +353,11 @@ impl Default for Model {
             point_selected: false,
             selection_bounds: None,
             selection_link: None,
+            selection: Vec::new(),
+            view: ViewView::default(),
+            library: Vec::new(),
+            library_error: None,
+            wants_library: false,
             style: StyleView::default(),
             settings: BTreeMap::new(),
             tabs: Vec::new(),
@@ -301,9 +418,10 @@ impl Model {
     }
 
     /// Recaptures from the session when its stamp changed (or after [`Model::invalidate`]). Returns
-    /// true when it recaptured. Reading the style goes through `style.get`, so this takes the session
-    /// mutably; the call is a read and changes no state.
-    pub fn refresh(&mut self, s: &Session) -> bool {
+    /// true when it recaptured. The reads (`style.get`, `selection.get`, `element.query`, `view.get`,
+    /// `library.list`) go through `Session::query`, which takes the session mutably but changes no state and
+    /// leaves no ring entry.
+    pub fn refresh(&mut self, s: &mut Session) -> bool {
         let stamp = Self::stamp_of(s);
         if self.stamp == Some(stamp) && !self.commands.is_empty() && self.captured_mac == self.mac {
             return false;
@@ -314,7 +432,7 @@ impl Model {
         true
     }
 
-    fn capture(&mut self, s: &Session) {
+    fn capture(&mut self, s: &mut Session) {
         let mac = self.mac;
         self.commands = s
             .commands()
@@ -361,9 +479,16 @@ impl Model {
         self.text_editing = s.text_edit.is_some();
         self.gesture_running = s.gesture_running();
         self.settings = s.settings.iter().map(|(k, v)| (k.clone(), v.clone())).collect();
-        self.selection_bounds = read_bounds(s);
-        self.selection_link = read_link(s);
+        let read = read_selection(s);
+        self.selection_bounds = read.bounds;
+        self.selection_link = match read.items.as_slice() {
+            [one] if self.selection_count == 1 => one.link.clone(),
+            _ => None,
+        };
+        self.selection = read.items;
         self.style = read_style(s);
+        self.view = read_view(s);
+        (self.library, self.library_error) = if self.wants_library { read_library(s) } else { (Vec::new(), None) };
     }
 
     // ---- reading ----
@@ -468,53 +593,130 @@ fn shortcuts_of(spec: &CommandSpec, mac: bool) -> Vec<ShortcutView> {
         .collect()
 }
 
-/// The common bounds of the selection: the read half of `selection.get` (same domain function), without a
-/// command call, for the same reason as [`read_style`].
-fn read_link(s: &Session) -> Option<String> {
-    match s.targets(None).ok()?.as_slice() {
-        [one] => s.store().get(one).filter(|e| !e.deleted)?.link.clone(),
-        _ => None,
+/// How many selected elements [`Model::selection`] describes. A larger selection still has its count, bounds and style.
+pub const SELECTION_DETAIL_LIMIT: usize = 50;
+
+/// What the model reads about the selection.
+struct SelectionRead {
+    bounds: Option<BoundsView>,
+    items: Vec<SelectedElement>,
+}
+
+fn text_of<'a>(v: &'a Value, key: &str) -> Option<&'a str> {
+    v.get(key).and_then(Value::as_str)
+}
+
+/// Reads the selection with `selection.get` (the common bounds) and, for a small selection, `element.query`
+/// (the facts the menus need).
+fn read_selection(s: &mut Session) -> SelectionRead {
+    let Ok(got) = s.query("selection.get", json!({})) else {
+        return SelectionRead { bounds: None, items: Vec::new() };
+    };
+    let number = |b: &Value, key: &str| b.get(key).and_then(Value::as_f64);
+    let bounds = got.get("bounds").filter(|b| !b.is_null()).and_then(|b| {
+        Some(BoundsView { x: number(b, "x")?, y: number(b, "y")?, w: number(b, "w")?, h: number(b, "h")? })
+    });
+    let count = got.get("count").and_then(Value::as_u64).unwrap_or(0);
+    let items = if count == 0 { Vec::new() } else { read_selected_elements(s) };
+    SelectionRead { bounds, items }
+}
+
+fn read_selected_elements(s: &mut Session) -> Vec<SelectedElement> {
+    let args = json!({
+        "filter": { "selected": true },
+        "fields": ["id", "kind", "link", "frame", "bound_text"],
+        "limit": SELECTION_DETAIL_LIMIT,
+    });
+    let Ok(out) = s.query("element.query", args) else {
+        return Vec::new();
+    };
+    let items = out.get("items").and_then(Value::as_array).map(Vec::as_slice).unwrap_or_default();
+    items
+        .iter()
+        .filter_map(|item| {
+            Some(SelectedElement {
+                id: text_of(item, "id")?.to_owned(),
+                kind: text_of(item, "kind")?.to_owned(),
+                link: text_of(item, "link").map(str::to_owned),
+                frame: text_of(item, "frame").map(str::to_owned),
+                label: text_of(item, "bound_text").map(str::to_owned),
+            })
+        })
+        .collect()
+}
+
+/// Reads the camera with `view.get`.
+fn read_view(s: &mut Session) -> ViewView {
+    let Ok(got) = s.query("view.get", json!({})) else {
+        return ViewView::default();
+    };
+    let number = |v: &Value, key: &str| v.get(key).and_then(Value::as_f64);
+    let scroll =
+        got.get("scroll").and_then(Value::as_array).and_then(|a| Some([a.first()?.as_f64()?, a.get(1)?.as_f64()?]));
+    let viewport = got.get("viewport");
+    match (scroll, number(&got, "zoom"), viewport) {
+        (Some(scroll), Some(zoom), Some(vp)) => ViewView {
+            scroll,
+            zoom,
+            width: number(vp, "w").unwrap_or(1280.0),
+            height: number(vp, "h").unwrap_or(720.0),
+        },
+        _ => ViewView::default(),
     }
 }
 
-fn read_bounds(s: &Session) -> Option<BoundsView> {
-    let ids = s.targets(None).ok()?;
-    let b = drafftink_edit::transform::common_bounds(s.store(), &ids)?;
-    Some(BoundsView { x: b.x0, y: b.y0, w: b.width(), h: b.height() })
+/// Reads the library with `library.list`. A refusal (no storage) is kept as text for the panel.
+fn read_library(s: &mut Session) -> (Vec<LibraryItem>, Option<String>) {
+    match s.query("library.list", json!({})) {
+        Err(r) => (Vec::new(), Some(r.message)),
+        Ok(out) => {
+            let items = out.get("items").and_then(Value::as_array).map(Vec::as_slice).unwrap_or_default();
+            let items = items
+                .iter()
+                .filter_map(|item| {
+                    let number = |key: &str| item.pointer(&format!("/bounds/{key}")).and_then(Value::as_f64);
+                    Some(LibraryItem {
+                        id: text_of(item, "id")?.to_owned(),
+                        name: text_of(item, "name").unwrap_or_default().to_owned(),
+                        element_count: item
+                            .get("element_count")
+                            .and_then(Value::as_u64)
+                            .and_then(|n| usize::try_from(n).ok())
+                            .unwrap_or(0),
+                        width: number("w").unwrap_or(0.0),
+                        height: number("h").unwrap_or(0.0),
+                    })
+                })
+                .collect();
+            (items, None)
+        }
+    }
 }
 
-/// Reads the style panel's data: the style of the selection, or the defaults for new elements when nothing is
-/// selected. It is the read half of `style.get` (same domain function, same "mixed" rule) without a command
-/// call, because a call would put a ring entry after every user action.
-fn read_style(s: &Session) -> StyleView {
-    use drafftink_edit::style::{Prop, read};
-    let targets = s.targets(None).unwrap_or_default();
-    let (source, kinds, rows): (&str, Vec<String>, Vec<_>) = if targets.is_empty() {
-        ("defaults", Vec::new(), vec![s.tool.defaults().to_props()])
-    } else {
-        match read(s.store(), &targets, true) {
-            Ok(read) => {
-                let mut kinds: Vec<String> = read.iter().map(|(k, _)| k.name().to_owned()).collect();
-                kinds.sort();
-                kinds.dedup();
-                ("selection", kinds, read.into_iter().map(|(_, p)| p).collect())
-            }
-            Err(_) => return StyleView::default(),
-        }
+/// Reads the style panel's data with `style.get`: the style of the selection, or the defaults for new
+/// elements when nothing is selected.
+fn read_style(s: &mut Session) -> StyleView {
+    let Ok(got) = s.query("style.get", json!({})) else {
+        return StyleView::default();
     };
-    let props = Prop::ALL
-        .into_iter()
-        .map(|prop| {
-            let values: Vec<Value> = rows.iter().filter_map(|r| r.value(prop)).collect();
-            let value = match values.split_first() {
-                None => None,
-                Some((first, rest)) if rest.iter().all(|v| v == first) => Some(first.clone()),
-                Some(_) => Some(json!("mixed")),
-            };
-            (prop.name().to_owned(), StyleProp { applicable: !values.is_empty(), value })
+    let kinds = got
+        .get("kinds")
+        .and_then(Value::as_array)
+        .map(|a| a.iter().filter_map(Value::as_str).map(str::to_owned).collect())
+        .unwrap_or_default();
+    let props = got
+        .get("props")
+        .and_then(Value::as_object)
+        .map(|o| {
+            o.iter()
+                .map(|(name, info)| {
+                    let applicable = info.get("applicable").and_then(Value::as_bool).unwrap_or(false);
+                    (name.clone(), StyleProp { applicable, value: info.get("value").cloned() })
+                })
+                .collect()
         })
-        .collect();
-    StyleView { source: source.to_owned(), kinds, props }
+        .unwrap_or_default();
+    StyleView { source: text_of(&got, "source").unwrap_or_default().to_owned(), kinds, props }
 }
 
 /// The JSON Schema of a command's arguments (a JSON object with `properties`, `required`, `$defs`).

@@ -706,9 +706,139 @@ fn an_overlay_over_a_world_scene_renders() {
         }],
         ..Overlay::default()
     };
-    paint_overlay(&mut overlay, &o, &view, &OverlayStyle::default());
+    paint_overlay(&mut overlay, &o, &view, &OverlayStyle::default(), &mut ts);
     combine(&world, &overlay, &mut out);
     let with = render(&out, 400, 300, peniko::Color::WHITE);
     let without = render(&world, 400, 300, peniko::Color::WHITE);
     assert!(diff(&with, &without).any > 0.001, "the overlay changed nothing");
+}
+
+// ----------------------------------------------------------------------------------------------
+// Overlay parts and frame labels
+
+fn rgb_at(p: &Pixels, x: u32, y: u32) -> [u8; 3] {
+    let i = ((y * p.w + x) * 4) as usize;
+    [p.rgba[i], p.rgba[i + 1], p.rgba[i + 2]]
+}
+
+/// An overlay alone on white, 400x300 at zoom 1.
+fn overlay_only(o: &Overlay) -> Pixels {
+    let view = View::new(1.0, Vec2::ZERO, Size::new(400.0, 300.0));
+    let mut scene = Scene::new();
+    paint_overlay(&mut scene, o, &view, &OverlayStyle::default(), &mut Typesetter::new());
+    render(&scene, 400, 300, peniko::Color::WHITE)
+}
+
+fn close(a: [u8; 3], b: [u8; 3]) -> bool {
+    a.iter().zip(b).all(|(x, y)| x.abs_diff(y) <= 24)
+}
+
+#[test]
+fn peers_are_drawn_in_their_own_colours() {
+    need_gpu!();
+    let green = peniko::Color::from_rgba8(0, 160, 0, 255);
+    let red = peniko::Color::from_rgba8(220, 0, 0, 255);
+    let blue = peniko::Color::from_rgba8(0, 0, 220, 255);
+    let o = Overlay {
+        // The outline stands 4 px outside the box, 2 px wide: pixels 95 and 96 on the left edge.
+        remote_selections: vec![RemoteSelection {
+            color: green,
+            boxes: vec![drafftink_geom::OrientedBox::from_xywh(100.0, 100.0, 100.0, 60.0, 0.0)],
+        }],
+        // The label chip starts 14 px right of and 16 px below the tip; its left padding is a plain chip colour.
+        cursors: vec![RemoteCursor::new(Point::new(20.0, 20.0), red).named("Ada")],
+        // The head of the trail is a dot of 3 px radius at the newest point.
+        trails: vec![LaserTrail {
+            color: blue,
+            points: vec![
+                TrailPoint { at: Point::new(300.0, 250.0), age_ms: 200.0 },
+                TrailPoint { at: Point::new(330.0, 250.0), age_ms: 0.0 },
+            ],
+        }],
+        ..Overlay::default()
+    };
+    let p = overlay_only(&o);
+    assert!(close(rgb_at(&p, 96, 130), [0, 160, 0]), "outline: {:?}", rgb_at(&p, 96, 130));
+    assert_eq!(rgb_at(&p, 90, 130), [255, 255, 255], "nothing outside the outline");
+    assert_eq!(rgb_at(&p, 150, 130), [255, 255, 255], "the inside of the box is left alone");
+    assert!(close(rgb_at(&p, 36, 40), [220, 0, 0]), "label chip: {:?}", rgb_at(&p, 36, 40));
+    assert!(close(rgb_at(&p, 330, 250), [0, 0, 220]), "trail head: {:?}", rgb_at(&p, 330, 250));
+    let text_pixels =
+        (36..80).flat_map(|x| (38..56).map(move |y| (x, y))).filter(|(x, y)| rgb_at(&p, *x, *y)[1] > 200).count();
+    assert!(text_pixels > 20, "the name is written in white on the chip: {text_pixels}");
+}
+
+#[test]
+fn link_icons_and_the_text_selection_show() {
+    need_gpu!();
+    let o = Overlay {
+        link_icons: vec![LinkMark { rect: kurbo::Rect::new(100.0, 100.0, 112.0, 112.0), to_element: false }],
+        text_edit: Some(TextEdit {
+            to_world: kurbo::Affine::translate((200.0, 100.0)),
+            caret: Some(kurbo::Rect::new(60.0, 0.0, 60.0, 20.0)),
+            selection: vec![kurbo::Rect::new(0.0, 0.0, 40.0, 20.0)],
+            caret_color: peniko::Color::BLACK,
+        }),
+        ..Overlay::default()
+    };
+    let p = overlay_only(&o);
+    // The tile is white with a bluish border and glyph: some pixels inside the 12 px square are not white.
+    let ink = (100..112)
+        .flat_map(|x| (100..112).map(move |y| (x, y)))
+        .filter(|(x, y)| rgb_at(&p, *x, *y) != [255, 255, 255])
+        .count();
+    assert!(ink > 15, "{ink}");
+    assert_eq!(rgb_at(&p, 90, 90), [255, 255, 255]);
+    // The selection tints the paper with the accent colour; the caret is black.
+    let tint = rgb_at(&p, 220, 110);
+    assert!(tint[2] > tint[0] + 40 && tint[0] < 255, "{tint:?}");
+    // 1.5 px wide, centred on x = 260: the two pixels beside it are three quarters covered.
+    assert!(rgb_at(&p, 260, 110)[0] < 100, "caret: {:?}", rgb_at(&p, 260, 110));
+    assert_eq!(rgb_at(&p, 300, 110), [255, 255, 255]);
+}
+
+/// The rows and columns that hold ink in the region `x0..x1`, `y0..y1`: (min x, max x, min y, max y).
+fn ink_bbox(p: &Pixels, x0: u32, x1: u32, y0: u32, y1: u32) -> Option<(u32, u32, u32, u32)> {
+    let mut b: Option<(u32, u32, u32, u32)> = None;
+    for y in y0..y1 {
+        for x in x0..x1 {
+            if rgb_at(p, x, y)[0] < 160 {
+                b = Some(match b {
+                    None => (x, x, y, y),
+                    Some((a, c, d, e)) => (a.min(x), c.max(x), d.min(y), e.max(y)),
+                });
+            }
+        }
+    }
+    b
+}
+
+#[test]
+fn a_frame_label_is_as_big_on_screen_at_every_zoom() {
+    need_gpu!();
+    let mut ts = Typesetter::new();
+    let mut f = frame_el("f", &ZIndex::first(), 40.0, 40.0, 400.0, 300.0);
+    f.kind = ElementKind::Frame(FrameData { name: Some("Plan".into()), clip: true });
+    f.style.stroke_color = Color::rgb(0, 0, 0);
+    let store = store_of(vec![f]);
+    let index = build_paint_index(&store);
+    let mut sizes = Vec::new();
+    for zoom in [0.5, 1.0, 2.0] {
+        let view = View::new(zoom, Vec2::ZERO, Size::new(1000.0, 800.0));
+        let mut composer = SceneComposer::new();
+        let mut scene = Scene::new();
+        composer.compose(&store, &index, &view, &mut ts, &mut scene);
+        let p = render(&scene, 1000, 800, peniko::Color::WHITE);
+        let top = (40.0 * zoom) as u32;
+        // The label is the ink above the top edge of the frame (rows 0..top-3), starting at its left edge.
+        let (x0, x1, y0, y1) = ink_bbox(&p, 0, 1000, 0, top - 2).unwrap();
+        assert!(y1 < top, "above the frame: zoom {zoom}");
+        assert!(x0 + 2 >= top && x0 <= top + 4, "starts at the left edge ({x0} vs {top}) at zoom {zoom}");
+        sizes.push((x1 - x0, y1 - y0));
+    }
+    let (w0, h0) = sizes[0];
+    for (w, h) in &sizes {
+        assert!(w.abs_diff(w0) <= 2 && h.abs_diff(h0) <= 2, "{sizes:?}");
+    }
+    assert!(h0 >= 8 && w0 >= 20, "a readable label: {sizes:?}");
 }

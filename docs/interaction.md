@@ -34,7 +34,7 @@ let camera = interaction.camera();                 // use this, not session.view
 | `Interaction::key(s, Key, now_ms)` | Enter, Escape |
 | `Interaction::tick(s, now_ms)` | long press, throttled camera report, laser fade |
 | `Interaction::next_deadline()` | when to call `tick`; `None` means no timer |
-| `Interaction::overlay(&s)` | `InteractionOverlay { canvas: Overlay, preview, faded, badge, laser, link_icons }` |
+| `Interaction::overlay(&s)` | `InteractionOverlay { canvas: Overlay (with `link_icons`), preview, faded, badge, laser }` |
 | `Interaction::camera()` / `cursor()` / `is_busy()` | live camera, cursor, "a gesture or draft is running" |
 
 `Outcome { redraw, cursor, ui_request, refusals, handled }`:

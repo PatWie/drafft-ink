@@ -92,7 +92,7 @@ pub(super) fn double_click(cx: &mut Ctx<'_>, ev: &Ev<'_>) {
                 cx.out.ui_request = Some(UiRequest::OpenTextEditor { element: None, at, width: None });
             }
         }
-        Target::None => {}
+        Target::None | Target::LinkIcon { .. } => {}
     }
 }
 

@@ -7,14 +7,23 @@
 //!
 //! The description is plain data. The caller works out *what* to show (which elements are selected, which handle
 //! set a box offers, where the guides are); this module only decides how it looks.
+//!
+//! Parts with text (the names of collaborators, the distances on spacing guides) need the typesetter, so
+//! [`paint_overlay`] takes one. The drawing of each family of parts is in a module of its own: `overlay_peers`
+//! (cursors with names, selections, laser trails), `overlay_marks` (link icons), `overlay_text` (labels, the
+//! text editor's caret and selection).
 
 use drafftink_geom::OrientedBox;
 use drafftink_geom::guides::{SmartGuide, SmartGuideKind};
 use drafftink_geom::select::{BoxHandle, HandleSet, box_handles};
-use kurbo::{Affine, BezPath, Circle, Point, Rect, Stroke, Vec2};
+use drafftink_typeset::Typesetter;
+use kurbo::{Affine, BezPath, Circle, Point, Rect, Stroke};
 use peniko::{Color, Fill};
 use vello::Scene;
 
+use crate::overlay_marks::{LinkMark, paint_link_marks};
+use crate::overlay_peers::{LaserTrail, RemoteSelection, paint_cursors, paint_selections, paint_trails};
+use crate::overlay_text::{TextEdit, paint_guide_badges, paint_text_edit};
 use crate::view::View;
 
 /// Colours and sizes of the overlay, in logical pixels.
@@ -30,6 +39,11 @@ pub struct OverlayStyle {
     pub rotate_offset: f64,
     /// Dash length of the selection box.
     pub dash: f64,
+    /// Font size of the labels (names of collaborators, distances on guides).
+    pub label_size: f64,
+    /// A point of a laser trail older than this is gone; the trail fades towards it, in milliseconds. The
+    /// collaboration layer keeps peers' points for 1.5 s (`drafftink_collab::TRAIL_TTL_MS`).
+    pub laser_fade_ms: f64,
 }
 
 impl Default for OverlayStyle {
@@ -40,6 +54,8 @@ impl Default for OverlayStyle {
             handle: 16.0,
             rotate_offset: 25.0,
             dash: 4.0,
+            label_size: 12.0,
+            laser_fade_ms: 1500.0,
         }
     }
 }
@@ -88,12 +104,28 @@ pub struct BindingHighlight {
 }
 
 /// Another person's pointer.
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct RemoteCursor {
     /// World position.
     pub at: Point,
     /// Their colour.
     pub color: Color,
+    /// Their name, drawn in a label in their colour beside the pointer. `None` or empty: no label.
+    pub name: Option<String>,
+}
+
+impl RemoteCursor {
+    /// A cursor without a name.
+    pub fn new(at: Point, color: Color) -> Self {
+        Self { at, color, name: None }
+    }
+
+    /// The same cursor with a name.
+    #[must_use]
+    pub fn named(mut self, name: impl Into<String>) -> Self {
+        self.name = Some(name.into());
+        self
+    }
 }
 
 /// Everything the overlay shows. All fields default to nothing.
@@ -115,8 +147,16 @@ pub struct Overlay {
     pub guides: Vec<SmartGuide>,
     /// The point a drag snapped to.
     pub snap_point: Option<Point>,
-    /// Other people's pointers.
+    /// Other people's pointers, with their names.
     pub cursors: Vec<RemoteCursor>,
+    /// What other people have selected, as outlines in their colours.
+    pub remote_selections: Vec<RemoteSelection>,
+    /// Other people's laser trails.
+    pub trails: Vec<LaserTrail>,
+    /// Link icons of elements that have a link and are not selected.
+    pub link_icons: Vec<LinkMark>,
+    /// The caret and selection of the text being edited on the canvas.
+    pub text_edit: Option<TextEdit>,
 }
 
 impl Overlay {
@@ -131,6 +171,10 @@ impl Overlay {
             && self.guides.is_empty()
             && self.snap_point.is_none()
             && self.cursors.is_empty()
+            && self.remote_selections.is_empty()
+            && self.trails.is_empty()
+            && self.link_icons.is_empty()
+            && self.text_edit.is_none()
     }
 }
 
@@ -162,47 +206,62 @@ fn polygon(points: &[Point]) -> BezPath {
 
 /// What every overlay item needs to be drawn: the world to device map, one logical pixel in device pixels, the
 /// colours and the zoom.
-struct Pen<'a> {
-    to_dev: Affine,
+pub(crate) struct Pen<'a> {
+    pub(crate) to_dev: Affine,
     /// One logical pixel in device pixels.
-    px: f64,
-    style: &'a OverlayStyle,
-    zoom: f64,
-    scale: f64,
+    pub(crate) px: f64,
+    pub(crate) style: &'a OverlayStyle,
+    pub(crate) zoom: f64,
+    pub(crate) scale: f64,
+    /// For the parts that have text.
+    pub(crate) typesetter: &'a mut Typesetter,
 }
 
 impl Pen<'_> {
-    fn dev(&self, p: Point) -> Point {
+    pub(crate) fn dev(&self, p: Point) -> Point {
         self.to_dev * p
     }
 }
 
-/// Draws the overlay into `scene` (reset first).
-pub fn paint_overlay(scene: &mut Scene, overlay: &Overlay, view: &View, style: &OverlayStyle) -> OverlayReport {
+/// Draws the overlay into `scene` (reset first). `typesetter` lays out the labels; the same one the composer uses
+/// keeps the layouts cached.
+pub fn paint_overlay(
+    scene: &mut Scene,
+    overlay: &Overlay,
+    view: &View,
+    style: &OverlayStyle,
+    typesetter: &mut Typesetter,
+) -> OverlayReport {
     scene.reset();
     let mut report = OverlayReport::default();
     if overlay.is_empty() || !view.is_valid() {
         return report;
     }
-    let pen = Pen {
+    let mut pen = Pen {
         to_dev: view.world_to_device(),
         px: view.logical_to_device().as_coeffs()[0],
         style,
         zoom: view.zoom,
         scale: view.scale(),
+        typesetter,
     };
     report.items += paint_marquee(scene, &pen, overlay.marquee);
     report.items += paint_lasso(scene, &pen, &overlay.lasso);
+    report.items += paint_text_edit(scene, &pen, overlay.text_edit.as_ref());
     report.items += paint_hover(scene, &pen, &overlay.hover);
     report.items += paint_binding(scene, &pen, &overlay.binding);
+    report.items += paint_selections(scene, &pen, &overlay.remote_selections);
     report.items += paint_selection(scene, &pen, &overlay.selection);
     report.items += paint_point_handles(scene, &pen, &overlay.point_handles);
+    report.items += paint_link_marks(scene, &pen, &overlay.link_icons);
     for g in &overlay.guides {
         paint_guide(scene, g, &pen.to_dev, style, pen.px);
         report.items += 1;
     }
+    report.items += paint_guide_badges(scene, &mut pen, &overlay.guides);
     report.items += paint_snap_point(scene, &pen, overlay.snap_point);
-    report.items += paint_cursors(scene, &pen, &overlay.cursors);
+    report.items += paint_trails(scene, &pen, &overlay.trails);
+    report.items += paint_cursors(scene, &mut pen, &overlay.cursors);
     report
 }
 
@@ -309,21 +368,6 @@ fn paint_snap_point(scene: &mut Scene, pen: &Pen, snap_point: Option<Point>) -> 
     path.line_to(Point::new(c.x, c.y + a));
     scene.stroke(&Stroke::new(pen.px), Affine::IDENTITY, pen.style.guide, None, &path);
     1
-}
-
-fn paint_cursors(scene: &mut Scene, pen: &Pen, cursors: &[RemoteCursor]) -> usize {
-    let px = pen.px;
-    for cur in cursors {
-        let c = pen.dev(cur.at);
-        let mut path = BezPath::new();
-        path.move_to(c);
-        path.line_to(c + Vec2::new(0.0, 18.0 * px));
-        path.line_to(c + Vec2::new(12.0 * px, 13.0 * px));
-        path.close_path();
-        scene.fill(Fill::NonZero, Affine::IDENTITY, cur.color, None, &path);
-        scene.stroke(&Stroke::new(1.5 * px), Affine::IDENTITY, Color::WHITE, None, &path);
-    }
-    cursors.len()
 }
 
 fn paint_rotate_handle(scene: &mut Scene, c: Point, style: &OverlayStyle, px: f64) {

@@ -42,7 +42,7 @@ fn menu_over(mut f: Fixture, n: usize, at: egui::Pos2, world: Option<[f64; 2]>) 
 /// "Align left"), so rows are told apart by position.
 fn in_menu(n: &egui_kittest::Node<'_>) -> bool {
     let r = n.rect();
-    (290.0..640.0).contains(&r.min.x) && (190.0..735.0).contains(&r.min.y)
+    (290.0..640.0).contains(&r.min.x) && (55.0..745.0).contains(&r.min.y)
 }
 
 /// The menu row with this text.
@@ -92,7 +92,7 @@ const ROWS: [&str; 15] = [
 
 #[test]
 fn opening_shows_the_rows() {
-    let h = menu_with(1, pos2(300.0, 200.0));
+    let h = menu_with(1, pos2(300.0, 60.0));
     for text in ROWS {
         assert!(has_row(&h, text), "missing row {text}");
     }
@@ -102,7 +102,7 @@ fn opening_shows_the_rows() {
 
 #[test]
 fn a_click_on_a_row_makes_the_call_with_origin_context_menu_and_closes_the_menu() {
-    let mut h = menu_with(1, pos2(300.0, 200.0));
+    let mut h = menu_with(1, pos2(300.0, 60.0));
     row(&h, "Zoom to fit").click();
     h.run();
     assert_eq!(calls(&h), vec![Call::new(Origin::ContextMenu, "view.zoom_to_fit", json!({ "scope": "all" }))]);
@@ -117,7 +117,7 @@ fn z_order_rows_carry_their_op() {
         ("Send backward", "backward"),
         ("Send to back", "back"),
     ] {
-        let mut h = menu_with(2, pos2(300.0, 200.0));
+        let mut h = menu_with(2, pos2(300.0, 60.0));
         row(&h, text).click();
         h.run();
         assert_eq!(calls(&h), vec![Call::new(Origin::ContextMenu, "arrange.z_order", json!({ "op": op }))], "{text}");
@@ -126,7 +126,7 @@ fn z_order_rows_carry_their_op() {
 
 #[test]
 fn group_with_a_selection_makes_the_call() {
-    let mut h = menu_with(2, pos2(300.0, 200.0));
+    let mut h = menu_with(2, pos2(300.0, 60.0));
     row(&h, "Group").click();
     h.run();
     assert_eq!(calls(&h), vec![Call::new(Origin::ContextMenu, "group.create", json!({}))]);
@@ -134,7 +134,7 @@ fn group_with_a_selection_makes_the_call() {
 
 #[test]
 fn a_refused_row_is_disabled_and_a_click_does_nothing() {
-    let mut h = menu_with(0, pos2(300.0, 200.0));
+    let mut h = menu_with(0, pos2(300.0, 60.0));
     let reason = h.state().model.refusal_text("group.create").expect("group.create is refused with nothing selected");
     assert!(row(&h, "Group").accesskit_node().is_disabled());
     h.state_mut().clear();
@@ -151,7 +151,7 @@ fn a_refused_row_is_disabled_and_a_click_does_nothing() {
 #[test]
 fn a_command_the_registry_lacks_is_greyed_with_the_not_available_text() {
     let omitted = ["clipboard.cut", "selection.all", "element.lock"];
-    let mut h = menu_over(Fixture::without(&omitted), 1, pos2(300.0, 200.0), None);
+    let mut h = menu_over(Fixture::without(&omitted), 1, pos2(300.0, 60.0), None);
     for (text, id) in [("Cut", "clipboard.cut"), ("Select all", "selection.all"), ("Lock or unlock", "element.lock")] {
         let reason = h.state().model.refusal_text(id).expect("left out of the registry");
         assert_eq!(reason, format!("`{id}` is not available in this build."));
@@ -167,7 +167,7 @@ fn a_command_the_registry_lacks_is_greyed_with_the_not_available_text() {
 #[test]
 fn rows_of_unregistered_commands_never_run() {
     let omitted = ["clipboard.cut", "clipboard.copy", "clipboard.paste"];
-    let mut h = menu_over(Fixture::without(&omitted), 1, pos2(300.0, 200.0), None);
+    let mut h = menu_over(Fixture::without(&omitted), 1, pos2(300.0, 60.0), None);
     for text in ["Cut", "Copy", "Paste"] {
         h.state_mut().clear();
         row(&h, text).click();
@@ -180,7 +180,7 @@ fn rows_of_unregistered_commands_never_run() {
 #[test]
 fn rows_of_the_real_commands_are_enabled_or_refused_by_the_real_engine() {
     // One rectangle selected: the clipboard, delete and lock rows can run.
-    let h = menu_with(1, pos2(300.0, 200.0));
+    let h = menu_with(1, pos2(300.0, 60.0));
     for (text, id) in [
         ("Cut", "clipboard.cut"),
         ("Copy", "clipboard.copy"),
@@ -193,7 +193,7 @@ fn rows_of_the_real_commands_are_enabled_or_refused_by_the_real_engine() {
         assert!(!row(&h, text).accesskit_node().is_disabled(), "{text}");
     }
     // Nothing selected: the rows that need a selection are refused with the engine's text.
-    let h = menu_with(0, pos2(300.0, 200.0));
+    let h = menu_with(0, pos2(300.0, 60.0));
     for (text, id) in [("Cut", "clipboard.cut"), ("Delete", "element.delete")] {
         assert!(h.state().model.refusal_text(id).is_some_and(|t| !t.contains("not available in this build")), "{id}");
         assert!(row(&h, text).accesskit_node().is_disabled(), "{text}");
@@ -202,7 +202,7 @@ fn rows_of_the_real_commands_are_enabled_or_refused_by_the_real_engine() {
 
 #[test]
 fn delete_removes_the_selected_element_from_the_document() {
-    let mut h = menu_with(2, pos2(300.0, 200.0));
+    let mut h = menu_with(2, pos2(300.0, 60.0));
     row(&h, "Delete").click();
     h.run();
     let report = h.state_mut().dispatch();
@@ -220,7 +220,7 @@ fn paste_menu(world: Option<[f64; 2]>) -> H {
     let r = add_rect(&mut f.session, 0.0, 0.0, 40.0, 20.0).unwrap();
     select(&mut f.session, &[r]);
     f.session.execute("clipboard.copy", json!({})).unwrap();
-    menu_over(f, 0, pos2(300.0, 200.0), world)
+    menu_over(f, 0, pos2(300.0, 60.0), world)
 }
 
 #[test]
@@ -277,10 +277,10 @@ fn a_cursor_shortcut_pastes_at_the_pointer_with_the_real_command() {
 
 #[test]
 fn align_rows_need_two_selected_and_distribute_three() {
-    let h = menu_with(1, pos2(300.0, 200.0));
+    let h = menu_with(1, pos2(300.0, 60.0));
     assert!(!has_row(&h, "Align and distribute…"));
 
-    let mut h = menu_with(2, pos2(300.0, 200.0));
+    let mut h = menu_with(2, pos2(300.0, 60.0));
     assert!(has_row(&h, "Align and distribute…"));
     assert!(!has_row(&h, "Align left"), "the block is closed until it is opened");
     row(&h, "Align and distribute…").click();
@@ -295,7 +295,7 @@ fn align_rows_need_two_selected_and_distribute_three() {
     assert_eq!(calls(&h), vec![Call::new(Origin::ContextMenu, "arrange.align", json!({ "edge": "left" }))]);
     assert!(h.state().state.context_menu.is_none());
 
-    let mut h = menu_with(3, pos2(300.0, 200.0));
+    let mut h = menu_with(3, pos2(300.0, 60.0));
     row(&h, "Align and distribute…").click();
     h.run();
     row(&h, "Distribute vertically").click();
@@ -320,7 +320,7 @@ fn the_align_rows_cover_every_edge_of_the_command() {
 
 #[test]
 fn a_click_elsewhere_closes_the_menu() {
-    let mut h = menu_with(1, pos2(300.0, 200.0));
+    let mut h = menu_with(1, pos2(300.0, 60.0));
     h.state_mut().clear();
     click_at(&mut h, pos2(1000.0, 700.0));
     assert!(
@@ -345,7 +345,7 @@ fn the_menu_stays_inside_the_window() {
 #[test]
 fn the_menu_is_drawn_in_the_dark_theme() {
     let mut f = Fixture::new();
-    f.state.open_context_menu(pos2(300.0, 200.0), None);
+    f.state.open_context_menu(pos2(300.0, 60.0), None);
     let mut h = themed(f, true);
     h.run();
     assert!(has_row(&h, "Zoom to fit"));
@@ -353,13 +353,13 @@ fn the_menu_is_drawn_in_the_dark_theme() {
 
 #[test]
 fn closing_the_menu_forgets_the_open_align_block() {
-    let mut h = menu_with(2, pos2(300.0, 200.0));
+    let mut h = menu_with(2, pos2(300.0, 60.0));
     row(&h, "Align and distribute…").click();
     h.run();
     assert!(has_row(&h, "Align left"));
     h.state_mut().state.context_menu = None;
     h.run();
-    h.state_mut().state.open_context_menu(pos2(300.0, 200.0), None);
+    h.state_mut().state.open_context_menu(pos2(300.0, 60.0), None);
     h.run();
     assert!(!has_row(&h, "Align left"), "a new menu starts closed");
 }
@@ -372,7 +372,7 @@ fn locked_menu() -> H {
     let id = add_rect(&mut f.session, 40.0, 40.0, 30.0, 30.0).unwrap();
     f.session.execute("element.lock", json!({ "ids": [id.as_str()], "locked": true })).unwrap();
     f.refresh();
-    f.state.open_context_menu_on_locked(pos2(300.0, 200.0), Some([55.0, 55.0]), id.as_str());
+    f.state.open_context_menu_on_locked(pos2(300.0, 60.0), Some([55.0, 55.0]), id.as_str());
     let mut h = themed(f, false);
     h.run();
     h
@@ -397,7 +397,7 @@ fn the_menu_of_a_locked_element_offers_unlock_and_runs_it_on_that_element() {
 
 #[test]
 fn the_menu_of_one_selected_element_has_a_link_row_that_opens_the_dialog() {
-    let mut h = menu_with(1, pos2(300.0, 200.0));
+    let mut h = menu_with(1, pos2(300.0, 60.0));
     row(&h, "Link…").click();
     h.run();
     assert_eq!(
@@ -418,7 +418,7 @@ fn an_element_with_a_link_has_an_open_link_row() {
     select(&mut f.session, std::slice::from_ref(&id));
     f.session.execute("element.set_link", json!({ "link": "https://example.com" })).unwrap();
     f.refresh();
-    f.state.open_context_menu(pos2(300.0, 200.0), None);
+    f.state.open_context_menu(pos2(300.0, 60.0), None);
     let mut h = themed(f, false);
     h.run();
     row(&h, "Open link").click();

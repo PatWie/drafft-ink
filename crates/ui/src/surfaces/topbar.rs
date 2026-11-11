@@ -10,7 +10,7 @@ use crate::icons::Icon;
 use crate::state::UiState;
 use crate::surfaces::color::{PopoverKey, remember_anchor};
 use crate::theme::MARGIN;
-use crate::widgets::{Ctl, Cx, panel_frame, section_label, vertical_separator};
+use crate::widgets::{Ctl, Cx, ScrollDir, panel_frame, scroll_if, section_label, vertical_separator};
 
 /// The stroke widths of the old app: name and value.
 pub const STROKE_WIDTHS: [(&str, f64); 4] = [("Thin", 1.0), ("Normal", 2.0), ("Bold", 4.0), ("Extra bold", 8.0)];
@@ -26,30 +26,42 @@ pub fn not_applicable(cx: &Cx<'_>, prop: &str) -> Option<String> {
 
 /// Draws the bar.
 pub fn show(ctx: &Context, cx: &mut Cx<'_>, _st: &mut UiState) {
-    Area::new(Id::unique("properties_bar")).anchor(Align2::CENTER_TOP, vec2(0.0, MARGIN)).order(Order::Middle).show(
-        ctx,
-        |ui| {
-            panel_frame(&cx.pal).show(ui, |ui| {
-                ui.horizontal(|ui| {
-                    ui.spacing_mut().item_spacing = vec2(3.0, 0.0);
-                    colour_row(ui, cx, "Stroke", "stroke_color", QUICK_STROKE_SHADE, false);
-                    ui.add_space(6.0);
-                    vertical_separator(ui, &cx.pal, 24.0);
-                    ui.add_space(6.0);
-                    colour_row(ui, cx, "Fill", "fill_color", QUICK_FILL_SHADE, true);
-                    ui.add_space(6.0);
-                    vertical_separator(ui, &cx.pal, 24.0);
-                    ui.add_space(6.0);
-                    width_row(ui, cx);
-                });
-            });
-        },
-    );
+    // On a narrow window the menu takes the top left, so the bar sits under it and scrolls sideways.
+    let (anchor, offset) = if cx.layout.narrow {
+        (Align2::LEFT_TOP, vec2(MARGIN, MARGIN + cx.layout.small_side() + 24.0))
+    } else {
+        (Align2::CENTER_TOP, vec2(0.0, MARGIN))
+    };
+    let max_width = (ctx.content_rect().width() - 2.0 * MARGIN - 20.0).max(160.0);
+    Area::new(Id::unique("properties_bar")).anchor(anchor, offset).order(Order::Middle).show(ctx, |ui| {
+        panel_frame(&cx.pal).show(ui, |ui| {
+            if cx.layout.narrow {
+                ui.set_max_width(max_width);
+            }
+            scroll_if(ui, cx.layout.narrow, ScrollDir::Horizontal, "properties_scroll", 0.0, |ui| bar(ui, cx));
+        });
+    });
+}
+
+fn bar(ui: &mut egui::Ui, cx: &mut Cx<'_>) {
+    ui.horizontal(|ui| {
+        ui.spacing_mut().item_spacing = vec2(3.0, 0.0);
+        colour_row(ui, cx, "Stroke", "stroke_color", QUICK_STROKE_SHADE, false);
+        ui.add_space(6.0);
+        vertical_separator(ui, &cx.pal, 24.0);
+        ui.add_space(6.0);
+        colour_row(ui, cx, "Fill", "fill_color", QUICK_FILL_SHADE, true);
+        ui.add_space(6.0);
+        vertical_separator(ui, &cx.pal, 24.0);
+        ui.add_space(6.0);
+        width_row(ui, cx);
+    });
 }
 
 fn colour_row(ui: &mut egui::Ui, cx: &mut Cx<'_>, title: &str, prop: &str, shade: u16, allow_none: bool) {
     section_label(ui, &cx.pal, title);
     ui.add_space(4.0);
+    let swatch = if cx.layout.compact { 28.0 } else { 18.0 };
     let current = cx.model.style.prop(prop).and_then(|p| p.value.clone());
     let blocked = not_applicable(cx, prop);
     let is_none = allow_none && matches!(current, Some(Value::Null));
@@ -59,7 +71,7 @@ fn colour_row(ui: &mut egui::Ui, cx: &mut Cx<'_>, title: &str, prop: &str, shade
             .label("No fill")
             .selected(is_none)
             .blocked(blocked.clone());
-        cx.swatch(ui, &ctl, None, 18.0);
+        cx.swatch(ui, &ctl, None, swatch);
     }
     for family in QUICK_FAMILIES {
         let name = colors::quick_name(family, shade);
@@ -69,12 +81,12 @@ fn colour_row(ui: &mut egui::Ui, cx: &mut Cx<'_>, title: &str, prop: &str, shade
             .label(format!("{title} {family}"))
             .selected(selected)
             .blocked(blocked.clone());
-        cx.swatch(ui, &ctl, colors::parse(&name), 18.0);
+        cx.swatch(ui, &ctl, colors::parse(&name), swatch);
     }
     let verb = if prop == "stroke_color" { Verb::OpenColorStroke } else { Verb::OpenColorFill };
     let wheel_tip = format!("More {} colours", title.to_lowercase());
     let key = if prop == "stroke_color" { PopoverKey::Stroke } else { PopoverKey::Fill };
-    let wheel = cx.verb_button(ui, verb, Icon::Wheel, 26.0, &wheel_tip, false);
+    let wheel = cx.verb_button(ui, verb, Icon::Wheel, swatch + 8.0, &wheel_tip, false);
     remember_anchor(ui.ctx(), key, wheel.rect);
 }
 
@@ -91,14 +103,19 @@ fn width_row(ui: &mut egui::Ui, cx: &mut Cx<'_>) {
             .blocked(blocked.clone());
         let thickness = [1.0_f32, 2.5, 4.5, 7.0][i];
         let pal = cx.pal;
-        cx.command_widget(ui, &ctl, vec2(30.0, 24.0), move |p, rect, look| {
-            crate::widgets::paint_button_bg(p, rect, look, &pal, false);
-            let c = crate::widgets::icon_color(look, &pal);
-            let y = rect.center().y;
-            p.line_segment(
-                [egui::pos2(rect.left() + 7.0, y), egui::pos2(rect.right() - 7.0, y)],
-                egui::Stroke::new(thickness, c),
-            );
-        });
+        cx.command_widget(
+            ui,
+            &ctl,
+            vec2(if cx.layout.compact { 40.0 } else { 30.0 }, cx.layout.toggle_height()),
+            move |p, rect, look| {
+                crate::widgets::paint_button_bg(p, rect, look, &pal, false);
+                let c = crate::widgets::icon_color(look, &pal);
+                let y = rect.center().y;
+                p.line_segment(
+                    [egui::pos2(rect.left() + 7.0, y), egui::pos2(rect.right() - 7.0, y)],
+                    egui::Stroke::new(thickness, c),
+                );
+            },
+        );
     }
 }

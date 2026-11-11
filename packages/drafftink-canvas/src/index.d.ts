@@ -242,6 +242,8 @@ export interface StageEvent {
   button: "none" | "primary" | "secondary" | "middle" | "other";
   /** The handle of a `transform*` event. */
   handle: Handle | null;
+  /** The pointer was on the link icon of `target`, not on the shape: open `shape.link` on a `click` with this set. */
+  linkIcon: boolean;
   /** The drag was aborted (Escape, a second finger). */
   cancelled: boolean;
   /** Ends the bubble after the listeners of the current node have run. */
@@ -269,6 +271,37 @@ export interface Overlay {
   marquee: [number, number, number, number] | null;
   highlights: Outline[];
   cursors: { user: string; name: string | null; at: Point }[];
+  /** What other people have selected. */
+  remoteSelections: { user: string; color: Color; boxes: { corners: [Point, Point, Point, Point]; angle: number }[]; truncated: boolean }[];
+  /** The link icons of the shapes in view that are not selected. */
+  linkIcons: { shape: string; /** `[x, y, w, h]` */ rect: [number, number, number, number]; toShape: boolean }[];
+}
+
+/** A person in the room (`stage.setRemoteUsers`). */
+export interface RemoteUser {
+  id: string;
+  /** Shown in a label beside the pointer. */
+  name?: string;
+  color: Color;
+  /** The pointer in world units; leave out when it is outside the canvas. */
+  cursor?: [number, number];
+  /** Ids of the shapes they have selected (unknown ids are skipped). */
+  selection?: string[];
+  /** The recent path of the pointer, oldest first. */
+  trail?: { x: number; y: number; ageMs: number }[];
+}
+
+/** Where and how big `stage.addImage` puts a picture. */
+export interface ImageOptions {
+  id?: string;
+  x?: number;
+  y?: number;
+  /** With only a width the height follows the picture's proportions, and the other way round. */
+  width?: number;
+  height?: number;
+  /** The longer side is at most this: a bigger picture is scaled down, a smaller one is left alone. */
+  maxSide?: number;
+  name?: string;
 }
 
 export interface HandleInfo {
@@ -343,6 +376,8 @@ export interface PngOptions {
 /** A write inside `transact`. */
 export interface Transaction {
   add(shape: ShapeInit): string;
+  /** Adds a PNG, JPEG or WebP picture (from a `Blob`, `File`, `ArrayBuffer` or bytes) at its natural size. */
+  addImage(source: Blob | ArrayBuffer | Uint8Array, options?: ImageOptions): Promise<string>;
   update(id: string, patch: ShapePatch): void;
   remove(...ids: (string | string[])[]): void;
   order(ids: string | string[], to: "front" | "back" | "forward" | "backward"): void;
@@ -399,6 +434,8 @@ export class Stage {
   setEnteredGroup(group: string | null): void;
   setPointerMode(mode: "select" | "hand" | "draw"): void;
   setHighlights(ids: string[]): void;
+  /** Draws the people in the room: pointers with names, outlines of their selections, their laser trails. */
+  setRemoteUsers(users: RemoteUser[]): void;
   overlay(): Overlay;
 
   setTheme(theme: "light" | "dark"): void;
