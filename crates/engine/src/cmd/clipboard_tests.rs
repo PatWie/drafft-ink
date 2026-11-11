@@ -855,6 +855,17 @@ fn copy_as_dark_draws_with_the_dark_palette_without_a_warning() {
 }
 
 #[test]
+fn copy_as_svg_embeds_fonts_and_honours_dark_like_doc_export() {
+    let (mut s, fakes) = fx();
+    run(&mut s, "element.create", json!({"kind": "text", "text": "hi", "at": [0, 0], "style": {"font_family": "gelpen_serif"}}));
+    let out = run(&mut s, "clipboard.copy_as", json!({"format": "svg", "scope": "all", "dark": true}));
+    assert_eq!(out["warnings"], json!([]), "dark is supported for svg now");
+    let Some(ClipPayload::Svg(svg)) = fakes.clipboard.content() else { panic!("no svg") };
+    assert!(svg.contains("@font-face{font-family:'GelPen Serif';font-weight:400;"), "{}", &svg[..svg.len().min(300)]);
+    assert!(svg.contains("fill=\"#121212\""), "the dark background");
+}
+
+#[test]
 fn copy_as_png_and_doc_export_make_the_same_render_request() {
     let (mut s, _) = fx();
     let seen = recording(&mut s);

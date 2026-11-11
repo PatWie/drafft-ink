@@ -7,16 +7,16 @@
 
 use std::cell::RefCell;
 use std::fmt::Write as _;
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 
 use drafftink_scene as scene;
 use drafftink_typeset::{
     Align, ColouredPath, FONT_SIZE_RANGE, FontFamily, FontWeight, InlineMath, LineHeight, MATH_SIZE_RANGE, MathError,
-    MathLayout, MathSpec, Rgba8, Span, TextSpec, TextStyle, Typesetter, Wrap,
+    MathLayout, MathSpec, Rgba8, Span, TextSpec, TextStyle, Typesetter, Wrap, font_file,
 };
 
 use crate::measure::{MathBox, TextMeasure};
-use crate::svg::MathSvg;
+use crate::svg::{FontFace, MathSvg};
 
 /// Something that can lend a [`Typesetter`] for the length of one call.
 pub trait TypesetterHandle {
@@ -78,6 +78,37 @@ fn inline_math(m: scene::InlineMath) -> InlineMath {
         scene::InlineMath::Auto => InlineMath::Auto,
         scene::InlineMath::Off => InlineMath::Off,
     }
+}
+
+/// The font files this build bundles, as faces for [`SvgOptions::fonts`](crate::svg::SvgOptions::fonts): GelPen and
+/// GelPen Serif in three weights, Vanilla Extract, and Noto Sans (regular and bold) where it is built in (not on
+/// the web, which loads it on demand). The bytes are the typesetter's statics; the list is built once.
+pub fn bundled_svg_fonts() -> Vec<FontFace> {
+    static FACES: OnceLock<Vec<FontFace>> = OnceLock::new();
+    FACES
+        .get_or_init(|| {
+            use scene::{FontFamily as F, FontWeight as W};
+            let wanted = [
+                (F::GelPen, W::Light),
+                (F::GelPen, W::Regular),
+                (F::GelPen, W::Heavy),
+                (F::GelPenSerif, W::Light),
+                (F::GelPenSerif, W::Regular),
+                (F::GelPenSerif, W::Heavy),
+                // One face: the other weights use it (the canvas draws it the same way).
+                (F::VanillaExtract, W::Regular),
+                (F::NotoSans, W::Regular),
+                (F::NotoSans, W::Heavy),
+            ];
+            wanted
+                .into_iter()
+                .filter_map(|(f, weight)| {
+                    let data = font_file(&family(f), self::weight(weight))?;
+                    Some(FontFace { family: f, weight, mime: "font/ttf".to_owned(), data: Arc::from(data) })
+                })
+                .collect()
+        })
+        .clone()
 }
 
 /// The layout input for plain text in a scene font: no wrapping, line height as a multiple of the size.
