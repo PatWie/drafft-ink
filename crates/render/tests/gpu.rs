@@ -321,7 +321,7 @@ impl Legacy {
                 pts.extend(v["intermediate_points"].as_array().into_iter().flatten().map(point));
                 pts.push(point(&v["end"]));
                 let closed = v["closed"].as_bool().unwrap_or(false) && pts.len() >= 3;
-                let Some(mut e) = Element::linear(id("x"), if arrow { Kind::Arrow } else { Kind::Line }, z, &pts)
+                let Some(mut e) = Element::linear(id("x"), if arrow { LinearKind::Arrow } else { LinearKind::Line }, z, &pts)
                 else {
                     return;
                 };
@@ -358,7 +358,7 @@ impl Legacy {
                 }
                 d.closed = v["closed"].as_bool().unwrap_or(false);
                 let mut e = Element::new(id("x"), ElementKind::Freehand(d), z).with_style(st);
-                if e.refit_points() {
+                if e.refit_points().is_ok() {
                     self.push(e);
                 }
             }
