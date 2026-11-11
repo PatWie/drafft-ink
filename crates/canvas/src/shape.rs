@@ -11,7 +11,7 @@
 //! | text, math, image | the rotated box | always the whole box |
 //! | frame | the rotated box | border only, never the inside |
 
-use drafftink_geom::kurbo::{Point, Rect};
+use drafftink_geom::kurbo::Rect;
 use drafftink_geom::spline::catmull_rom_path;
 use drafftink_geom::{
     DiamondShape, ElementFrame, EllipseShape, OrientedBox, Outline, PathShape, Polyline, Primitive, RectShape,
@@ -114,6 +114,7 @@ pub fn stroke_reach_width(e: &Element) -> f64 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use drafftink_geom::kurbo::Point;
     use drafftink_scene::{Color, ElementId, LinearData, ZIndex};
 
     fn id(s: &str) -> ElementId {

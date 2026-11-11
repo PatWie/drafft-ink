@@ -17,7 +17,7 @@ use drafftink_geom::aabb;
 use drafftink_geom::kurbo::{Point, Rect};
 use drafftink_scene::{
     Element, ElementId, ElementKind, FrameData, IdSource, IndexError, Kind, SceneRead, SceneTx, StoreError, Style,
-    ZIndex, is_valid_name,
+    ZIndex, is_valid_name, limits,
 };
 
 use drafftink_profile::{Counter, count};
