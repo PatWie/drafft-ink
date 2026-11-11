@@ -1,13 +1,15 @@
 //! Tests of the `library` family. No UI: a session over the fake ports, with the storage shared between
 //! sessions to check that the library survives a restart.
 
+use std::sync::{Arc, Mutex};
+
 use base64::Engine as _;
 use drafftink_scene::{ElementKind, SceneRead};
 use serde_json::{Value, json};
 
 use super::store::{INDEX_KEY, item_key};
 use crate::ports::fake::Fakes;
-use crate::ports::{FileRef, Ns, Storage};
+use crate::ports::{FileRef, Ns, PortError, RenderRequest, Renderer, SceneView, Storage};
 use crate::refusal::Refusal;
 use crate::ring::Origin;
 use crate::services::Services;
@@ -72,7 +74,7 @@ fn count(s: &Session) -> usize {
 #[test]
 fn every_library_command_needs_storage_and_says_so_before_running() {
     let mut s = testing::headless_session();
-    for id in ["library.add", "library.insert", "library.remove", "library.rename", "library.list", "library.import", "library.export"] {
+    for id in ["library.add", "library.insert", "library.remove", "library.rename", "library.list", "library.thumbnail", "library.import", "library.export"] {
         let a = s.availability(id).unwrap_err();
         assert_eq!(a.code, "port_unavailable", "{id}");
         assert_eq!(
@@ -173,6 +175,171 @@ fn a_damaged_item_in_storage_is_skipped_with_a_warning() {
     let list = run(&mut again, "library.list", json!({}));
     assert_eq!(ids_of(&list), vec![id]);
     assert!(list["warnings"][0].as_str().unwrap().contains(&id2), "{list}");
+}
+
+// ---- library.thumbnail ----
+
+/// A renderer that keeps what it was asked for and answers with `answer`.
+#[derive(Clone)]
+struct Recorder {
+    asked: Arc<Mutex<Vec<RenderRequest>>>,
+    answer: Result<Vec<u8>, PortError>,
+}
+
+impl Recorder {
+    fn new(answer: Result<Vec<u8>, PortError>) -> Self {
+        Self { asked: Arc::default(), answer }
+    }
+
+    fn asked(&self) -> Vec<RenderRequest> {
+        self.asked.lock().unwrap().clone()
+    }
+}
+
+impl Renderer for Recorder {
+    fn render_png(&self, _: &SceneView, req: &RenderRequest) -> Result<Vec<u8>, PortError> {
+        self.asked.lock().unwrap().push(req.clone());
+        self.answer.clone()
+    }
+}
+
+/// Like [`drawn`], with `renderer` instead of the fake one, and the selection stored as the item "Pair".
+fn with_renderer(renderer: &Recorder) -> (Session, String) {
+    let fakes = Fakes::new();
+    let mut ports = fakes.ports();
+    ports.renderer = Some(Box::new(renderer.clone()));
+    let mut s = Session::with_services(ports, Services::fake());
+    let a = testing::add_rect(&mut s, 100.0, 100.0, 80.0, 40.0).unwrap();
+    let b = testing::add_rect(&mut s, 300.0, 100.0, 80.0, 40.0).unwrap();
+    testing::select(&mut s, &[a, b]);
+    let id = run(&mut s, "library.add", json!({"name": "Pair"}))["item"]["id"].as_str().unwrap().to_owned();
+    (s, id)
+}
+
+fn picture(out: &Value) -> Vec<u8> {
+    assert_eq!(out["bytes"]["mime"], "image/png");
+    base64::engine::general_purpose::STANDARD.decode(out["bytes"]["base64"].as_str().unwrap()).unwrap()
+}
+
+#[test]
+fn thumbnail_draws_the_item_through_the_renderer_with_its_longer_side_at_max_side() {
+    let (mut s, f) = drawn();
+    let id = run(&mut s, "library.add", json!({"name": "Pair"}))["item"]["id"].as_str().unwrap().to_owned();
+    let out = run(&mut s, "library.thumbnail", json!({"item": "Pair", "max_side": 128}));
+    // 280 by 40 units plus 14 units of air on every side is 308 by 68; 128 / 308 of that is 128 by 28 pixels.
+    assert_eq!((out["width"].as_u64(), out["height"].as_u64()), (Some(128), Some(28)));
+    assert_eq!((out["item"].as_str(), out["changed"].as_bool()), (Some(id.as_str()), Some(false)));
+    assert_eq!(picture(&out), b"\x89PNG-fake 128x28 elements=2");
+    assert_eq!(f.renderer.calls(), 1);
+}
+
+#[test]
+fn thumbnail_asks_for_a_transparent_picture_in_the_palette_that_was_chosen() {
+    let renderer = Recorder::new(Ok(b"png".to_vec()));
+    let (mut s, id) = with_renderer(&renderer);
+    run(&mut s, "library.thumbnail", json!({"item": id}));
+    run(&mut s, "library.thumbnail", json!({"item": id, "dark": true}));
+    let asked = renderer.asked();
+    assert_eq!(asked.len(), 2);
+    assert!(asked.iter().all(|r| !r.background && !r.overlay && r.selection.is_empty()), "{asked:?}");
+    assert_eq!(asked.iter().map(|r| r.dark).collect::<Vec<_>>(), [false, true]);
+    // The region is the item at the origin with its air: 280 by 40 units, 14 units around.
+    assert_eq!(asked[0].region, (-14.0, -14.0, 308.0, 68.0));
+    // The default is 256 pixels on the longer side.
+    assert_eq!(asked[0].size_px.0, 256);
+}
+
+#[test]
+fn thumbnail_enlarges_a_small_item_at_most_eight_times() {
+    let (mut s, _f) = testing::session();
+    let a = testing::add_rect(&mut s, 5.0, 5.0, 10.0, 10.0).unwrap();
+    testing::select(&mut s, &[a]);
+    run(&mut s, "library.add", json!({"name": "Dot"}));
+    // 10 units and 4 of air on both sides is 18 units; eight times that is 144 pixels, not 256.
+    let out = run(&mut s, "library.thumbnail", json!({"item": "Dot"}));
+    assert_eq!((out["width"].as_u64(), out["height"].as_u64()), (Some(144), Some(144)));
+}
+
+#[test]
+fn thumbnail_changes_nothing_and_leaves_no_undo_step() {
+    let (mut s, _f) = drawn();
+    run(&mut s, "library.add", json!({"name": "Pair"}));
+    let before = s.fingerprint();
+    run(&mut s, "library.thumbnail", json!({"item": "Pair"}));
+    assert_eq!(s.fingerprint(), before);
+    assert_eq!(s.tab().doc.undo_depth(), 0);
+    let spec = s.spec("library.thumbnail").unwrap();
+    assert!(spec.reads_only);
+    assert_eq!(spec.undo, Undo::NoUndo);
+}
+
+#[test]
+fn thumbnail_works_as_a_query_for_the_ui() {
+    let (mut s, _f) = drawn();
+    run(&mut s, "library.add", json!({"name": "Pair"}));
+    let out = s.query("library.thumbnail", json!({"item": "Pair", "max_side": 64})).unwrap();
+    assert_eq!(out["width"], 64);
+}
+
+#[test]
+fn thumbnail_refuses_in_words_and_changes_nothing() {
+    let (mut s, _f) = drawn();
+    run(&mut s, "library.add", json!({"name": "Pair"}));
+    let r = refuse(&mut s, "library.thumbnail", json!({"item": "ghost"}));
+    assert_eq!(r.code, "no_such_item");
+    assert!(r.message.contains("library.list"), "{}", r.message);
+    for side in [0, 15, 1025, 100_000] {
+        assert_eq!(refuse(&mut s, "library.thumbnail", json!({"item": "Pair", "max_side": side})).code, "bad_args", "{side}");
+    }
+    assert_eq!(refuse(&mut s, "library.thumbnail", json!({"item": "Pair", "max_side": -1})).code, "bad_args");
+    assert_eq!(refuse(&mut s, "library.thumbnail", json!({"item": "Pair", "extra": 1})).code, "bad_args");
+}
+
+#[test]
+fn thumbnail_needs_the_renderer_and_says_so() {
+    let fakes = Fakes::new();
+    let mut ports = fakes.ports();
+    ports.renderer = None;
+    let mut s = Session::with_services(ports, Services::fake());
+    let a = testing::add_rect(&mut s, 0.0, 0.0, 10.0, 10.0).unwrap();
+    testing::select(&mut s, &[a]);
+    run(&mut s, "library.add", json!({"name": "Box"}));
+    let a = s.availability("library.thumbnail").unwrap_err();
+    assert_eq!(a.code, "port_unavailable");
+    assert!(a.message.contains("renderer"), "{}", a.message);
+    assert_eq!(refuse(&mut s, "library.thumbnail", json!({"item": "Box"})).code, "port_unavailable");
+}
+
+#[test]
+fn thumbnail_is_render_pending_while_the_browsers_renderer_draws_and_a_failure_is_io_failed() {
+    let pending = Recorder::new(Err(PortError::NotReady));
+    let (mut s, id) = with_renderer(&pending);
+    let r = refuse(&mut s, "library.thumbnail", json!({"item": id}));
+    assert_eq!(r.code, "render_pending");
+    let failing = Recorder::new(Err(PortError::Failed("no device".to_owned())));
+    let (mut s, id) = with_renderer(&failing);
+    let r = refuse(&mut s, "library.thumbnail", json!({"item": id}));
+    assert_eq!(r.code, "io_failed");
+    assert!(r.message.contains("no device"), "{}", r.message);
+}
+
+#[test]
+fn list_gives_a_content_fingerprint_that_follows_the_drawing_and_not_the_name() {
+    let (mut s, _f) = drawn();
+    let first = run(&mut s, "library.add", json!({"name": "Pair"}))["item"].clone();
+    let content = first["content"].as_str().unwrap().to_owned();
+    assert_eq!(content.len(), 16);
+    assert!(content.bytes().all(|b| b.is_ascii_hexdigit()), "{content}");
+    // Another name, the same drawing: the same fingerprint.
+    run(&mut s, "library.rename", json!({"item": "Pair", "name": "Twins"}));
+    let list = run(&mut s, "library.list", json!({}));
+    assert_eq!(list["items"][0]["content"], content.as_str());
+    // A different drawing: another fingerprint.
+    let c = testing::add_rect(&mut s, 0.0, 300.0, 50.0, 50.0).unwrap();
+    testing::select(&mut s, &[c]);
+    let other = run(&mut s, "library.add", json!({"name": "Square"}))["item"]["content"].clone();
+    assert_ne!(other, json!(content));
+    assert_eq!(run(&mut s, "library.list", json!({}))["items"][1]["content"], other);
 }
 
 // ---- library.insert ----

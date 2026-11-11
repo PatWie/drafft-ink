@@ -5,10 +5,13 @@
 //! document comes from the [`crate::Model`]. Text-field buffers that belong to one dialog live in
 //! egui's own memory, keyed by the dialog.
 
+use std::collections::HashSet;
+
 use drafftink_engine::Refusal;
 use serde_json::Value;
 
 use crate::action::{Call, HostRequest, Verb};
+use crate::surfaces::library::TextureCache;
 
 /// How long a toast is fully visible, in seconds.
 pub const TOAST_HOLD_S: f64 = 4.0;
@@ -441,8 +444,19 @@ pub struct UiState {
     pub preferences_open: bool,
     /// The library panel is open.
     pub library_open: bool,
-    /// The name field of the library panel (for `library.add`).
+    /// The name field of the library drawer (for `library.add`).
     pub library_name: String,
+    /// The search field of the library drawer: only the items whose name has this text are shown.
+    pub library_filter: String,
+    /// The height the person dragged the library drawer to, in points. `None`: a quarter of the window. The app
+    /// that wants to keep it between runs reads and writes this field, like [`UiState::layout`].
+    pub library_height: Option<f32>,
+    /// The items whose tiles the drawer drew this frame (`Model::read_thumbnails` draws those pictures first).
+    pub(crate) library_visible: HashSet<String>,
+    /// The item under the pointer in the drawer, whose larger picture the tooltip shows.
+    pub(crate) library_hover: Option<String>,
+    /// The pictures of the items as egui textures.
+    pub(crate) library_textures: TextureCache,
     /// The Tab convert popup, when open.
     pub convert_popup: Option<ConvertPopup>,
     /// The context menu of a tab, when open.

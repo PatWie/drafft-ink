@@ -1,14 +1,23 @@
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
-//! The library panel (`ui.toggle_library`): add, insert by click and by drag, rename, remove, export and import.
+//! The library drawer (`ui.toggle_library`): where it sits and how tall it is, its pictures, the search, add, insert by
+//! click and by drag, rename, remove, export and import.
 
 mod common;
 mod dialog;
 
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use std::sync::{Mutex, PoisonError};
+
 use common::Fixture;
-use drafftink_engine::Origin;
-use drafftink_engine::ports::FileRef;
+use drafftink_engine::ports::fake::Fakes;
+use drafftink_engine::ports::{FileRef, PortError, RenderRequest, Renderer, SceneView};
+use drafftink_engine::services::Services;
 use drafftink_engine::testing::{add_rect, select};
-use drafftink_ui::{Call, HostRequest, Verb};
+use drafftink_engine::{Origin, Session};
+use drafftink_scene::SceneRead;
+use drafftink_ui::thumbs::{PER_FRAME, Thumb, ThumbImage, ThumbSize};
+use drafftink_ui::{Call, FrameInput, HostRequest, UiShell, Verb};
 use egui::{Event, Modifiers, PointerButton, Pos2};
 use egui_kittest::Harness;
 use egui_kittest::kittest::Queryable;
@@ -36,6 +45,12 @@ fn calls(h: &H) -> Vec<Call> {
     h.state().calls().into_iter().cloned().collect()
 }
 
+/// Puts the pointer on the tile, which shows its rename and remove buttons.
+fn show_tile_buttons(h: &mut H) {
+    h.get_by_label("Insert Box").hover();
+    h.run();
+}
+
 fn item_id(f: &Fixture) -> String {
     f.model.library[0].id.clone()
 }
@@ -49,6 +64,9 @@ fn the_panel_lists_the_items_the_model_read_with_library_list() {
     let f = with_item();
     assert_eq!(f.model.library.len(), 1);
     assert_eq!((f.model.library[0].name.as_str(), f.model.library[0].element_count), ("Box", 1));
+    // The outline of a tile that has no picture yet has the item's proportions: `library.list` gives `[x, y, w, h]`.
+    assert_eq!((f.model.library[0].width, f.model.library[0].height), (80.0, 40.0));
+    assert_eq!(f.model.library[0].content.len(), 16);
     let mut h = dialog::harness(f);
     h.run();
     h.get_by_label("Insert Box");
@@ -186,6 +204,7 @@ fn rename_opens_the_dialog_and_runs_library_rename() {
     let id = item_id(&f);
     let mut h = dialog::harness(f);
     h.run();
+    show_tile_buttons(&mut h);
     h.get_by_label("Rename Box").click();
     h.run();
     assert_eq!(h.state().state.rename.as_ref().map(|r| r.text.as_str()), Some("Box"));
@@ -208,6 +227,7 @@ fn remove_runs_library_remove_for_that_item() {
     let id = item_id(&f);
     let mut h = dialog::harness(f);
     h.run();
+    show_tile_buttons(&mut h);
     h.state_mut().clear();
     h.get_by_label("Remove Box").click();
     h.run();
@@ -244,4 +264,611 @@ fn an_empty_library_says_how_to_fill_it() {
     let mut h = dialog::harness(open(dialog::fixture()));
     h.run();
     h.get_by_label("Nothing here yet. Select shapes and press Add.");
+}
+
+// ---- the place of the drawer ----
+
+fn drawer_rect(ctx: &egui::Context) -> egui::Rect {
+    ctx.memory(|m| m.area_rect(egui::Id::unique("library_panel"))).expect("the drawer is on screen")
+}
+
+fn at(size: egui::Vec2, f: Fixture) -> H {
+    dialog::sized(f, size, egui::Theme::Light)
+}
+
+/// The control with this label inside the drawer (the toolbar has a button with the label of the Close button).
+fn in_drawer(h: &H, label: &str) -> egui::Rect {
+    let drawer = drawer_rect(&h.ctx);
+    let found: Vec<egui::Rect> =
+        h.get_all_by_label(label).map(|n| n.rect()).filter(|r| drawer.contains_rect(*r)).collect();
+    assert_eq!(found.len(), 1, "{label} in the drawer: {found:?}");
+    found[0]
+}
+
+/// The rectangles of the two bars the drawer must stay clear of: the first button of the bottom bar and the
+/// tab bar's tab.
+fn bars(h: &H) -> [egui::Rect; 2] {
+    [h.get_by_label("Undo").rect(), h.get_all_by_label("Untitled").last().expect("a tab").rect()]
+}
+
+/// The vertical extent of the bars: a tab is wider once the document has changes, so only the heights compare.
+fn bar_heights(h: &H) -> [(f32, f32); 2] {
+    bars(h).map(|r| (r.top(), r.bottom()))
+}
+
+#[test]
+fn the_drawer_opens_at_the_bottom_with_a_quarter_of_the_window_height() {
+    let mut h = at(egui::vec2(1280.0, 800.0), with_item());
+    h.run();
+    let drawer = drawer_rect(&h.ctx);
+    assert!((drawer.height() - 200.0).abs() <= 1.0, "a quarter of 800 points: {drawer:?}");
+    assert!(drawer.width() > 900.0 && drawer.left() >= 12.0 && drawer.right() <= 1280.0 - 12.0, "{drawer:?}");
+    assert!(drawer.top() > 400.0, "in the lower half: {drawer:?}");
+    // Everything it shows is inside it.
+    let tile = h.get_by_label("Insert Box").rect();
+    assert!(drawer.contains_rect(tile), "{tile:?} in {drawer:?}");
+    for label in ["Add selection to library", "Export library", "Show or hide the library", "Import…"] {
+        in_drawer(&h, label);
+    }
+}
+
+#[test]
+fn the_drawer_leaves_the_tool_column_and_the_properties_panel_free() {
+    let mut h = at(egui::vec2(1280.0, 800.0), with_item());
+    h.run();
+    let drawer = drawer_rect(&h.ctx);
+    // The toolbar's own button for the library is its lowest control; it stays where it was and works.
+    let toggles: Vec<egui::Rect> = h
+        .get_all_by_label("Show or hide the library")
+        .map(|n| n.rect())
+        .filter(|r| !drawer.contains_rect(*r))
+        .collect();
+    assert_eq!(toggles.len(), 1, "{toggles:?}");
+    assert!(!drawer.intersects(toggles[0]), "{toggles:?} under {drawer:?}");
+    for label in ["Rectangle tool", "Undo"] {
+        assert!(!drawer.intersects(h.get_by_label(label).rect()), "{label} under {drawer:?}");
+    }
+    h.state_mut().clear();
+    dialog::click_at(&mut h, toggles[0].center());
+    assert_eq!(dialog::verbs(h.state()), vec![Verb::ToggleLibrary], "the toolbar button still closes the drawer");
+}
+
+#[test]
+fn the_drawer_does_not_overlap_the_bottom_bar_or_the_tabs() {
+    for size in [egui::vec2(1280.0, 800.0), egui::vec2(1280.0, 500.0), egui::vec2(390.0, 800.0)] {
+        let mut h = at(size, with_item());
+        h.run();
+        let drawer = drawer_rect(&h.ctx);
+        for bar in bars(&h) {
+            assert!(drawer.bottom() <= bar.top(), "{size:?}: the drawer {drawer:?} reaches into the bar at {bar:?}");
+        }
+        let screen = egui::Rect::from_min_size(Pos2::ZERO, size);
+        assert!(screen.contains_rect(drawer), "{size:?}: {drawer:?}");
+    }
+}
+
+#[test]
+fn the_bars_stay_where_they_were_and_are_still_reachable_with_the_drawer_open() {
+    let closed = {
+        let mut f = dialog::fixture();
+        f.refresh();
+        let mut h = at(egui::vec2(1280.0, 800.0), f);
+        h.run();
+        bar_heights(&h)
+    };
+    let mut h = at(egui::vec2(1280.0, 800.0), with_item());
+    h.run();
+    assert_eq!(bar_heights(&h), closed, "the drawer sits above the bars and moves nothing");
+}
+
+/// Drags the pointer from one point to another with the primary button down.
+fn drag(h: &mut H, from: Pos2, to: Pos2) {
+    h.event(Event::PointerMoved(from));
+    h.run();
+    h.event(Event::PointerButton {
+        pos: from,
+        button: PointerButton::Primary,
+        pressed: true,
+        modifiers: Modifiers::NONE,
+    });
+    h.run();
+    h.event(Event::PointerMoved(from.lerp(to, 0.5)));
+    h.run();
+    h.event(Event::PointerMoved(to));
+    h.run();
+    h.event(Event::PointerButton {
+        pos: to,
+        button: PointerButton::Primary,
+        pressed: false,
+        modifiers: Modifiers::NONE,
+    });
+    h.run();
+}
+
+fn grip(h: &H) -> Pos2 {
+    h.get_by_label("Resize the library").rect().center()
+}
+
+#[test]
+fn dragging_the_top_edge_sets_the_height_within_the_limits() {
+    let mut h = at(egui::vec2(1280.0, 800.0), with_item());
+    h.run();
+    let bottom = drawer_rect(&h.ctx).bottom();
+    // Up by 100 points: 100 taller.
+    let from = grip(&h);
+    drag(&mut h, from, from - egui::vec2(0.0, 100.0));
+    let drawer = drawer_rect(&h.ctx);
+    assert!((drawer.height() - 300.0).abs() <= 1.0, "{drawer:?}");
+    assert_eq!(drawer.bottom(), bottom, "the bottom edge stays above the bars");
+    assert_eq!(h.state().state.library_height.map(f32::round), Some(drawer.height().round()), "the height is kept");
+    // Far past the top of the window: seventy percent of it at most.
+    let from = grip(&h);
+    drag(&mut h, from, Pos2::new(from.x, 0.0));
+    assert_eq!(drawer_rect(&h.ctx).height(), 560.0);
+    // Down to the bottom of the window: the least height, which still shows the header and a row of tiles.
+    let from = grip(&h);
+    drag(&mut h, from, Pos2::new(from.x, 799.0));
+    let drawer = drawer_rect(&h.ctx);
+    assert_eq!(drawer.height(), 170.0);
+    h.get_by_label("Insert Box");
+}
+
+#[test]
+fn the_height_the_person_chose_comes_back_when_the_drawer_is_opened_again() {
+    let mut h = at(egui::vec2(1280.0, 800.0), with_item());
+    h.run();
+    let from = grip(&h);
+    drag(&mut h, from, from - egui::vec2(0.0, 60.0));
+    let chosen = drawer_rect(&h.ctx).height();
+    assert!((chosen - 260.0).abs() <= 1.0, "{chosen}");
+    for _ in 0..2 {
+        h.state_mut().state.apply_verb(Verb::ToggleLibrary, &mut Vec::new());
+        h.run();
+    }
+    assert_eq!(drawer_rect(&h.ctx).height(), chosen);
+}
+
+#[test]
+fn a_height_kept_from_a_taller_window_is_brought_inside_the_limits() {
+    let mut f = with_item();
+    f.state.library_height = Some(5000.0);
+    let mut h = at(egui::vec2(1280.0, 500.0), f);
+    h.run();
+    assert_eq!(drawer_rect(&h.ctx).height(), 350.0, "seventy percent of 500");
+    let mut f = with_item();
+    f.state.library_height = Some(1.0);
+    let mut h = at(egui::vec2(1280.0, 800.0), f);
+    h.run();
+    assert_eq!(drawer_rect(&h.ctx).height(), 170.0);
+}
+
+#[test]
+fn the_drawer_works_at_400_points_wide_with_larger_targets() {
+    let mut h = at(egui::vec2(400.0, 800.0), with_item());
+    h.run();
+    let screen = egui::Rect::from_min_size(Pos2::ZERO, egui::vec2(400.0, 800.0));
+    let drawer = drawer_rect(&h.ctx);
+    assert!(drawer.height() >= 320.0, "room for two rows of header and a row of tiles: {drawer:?}");
+    for label in ["Add selection to library", "Export library", "Show or hide the library", "Import…", "Insert Box"] {
+        let r = in_drawer(&h, label);
+        assert!(screen.contains_rect(r), "{label} at {r:?}");
+    }
+    assert!(in_drawer(&h, "Show or hide the library").height() >= 34.0);
+    assert!(h.get_by_label("Add selection to library").rect().height() >= 44.0);
+    for label in ["Library item name", "Search the library"] {
+        let r = h.get_by_label(label).rect();
+        assert!(drawer.contains_rect(r), "{label} at {r:?}");
+    }
+    // There is no pointer to hover with: the buttons of a tile are there.
+    assert!(drawer.contains_rect(h.get_by_label("Remove Box").rect()));
+    assert!(h.get_by_label("Rename Box").rect().width() >= 34.0);
+    h.state_mut().clear();
+    h.get_by_label("Insert Box").click();
+    h.run();
+    assert_eq!(calls(&h).len(), 1);
+    h.state_mut().clear();
+    let close = in_drawer(&h, "Show or hide the library");
+    dialog::click_at(&mut h, close.center());
+    assert_eq!(dialog::verbs(h.state()), vec![Verb::ToggleLibrary]);
+}
+
+// ---- search ----
+
+/// A fixture with three items named as given, each from its own rectangle.
+fn with_named(names: &[&str]) -> Fixture {
+    let mut f = dialog::fixture();
+    for (n, name) in names.iter().enumerate() {
+        let id = add_rect(&mut f.session, 0.0, 100.0 * n as f64, 60.0 + 20.0 * n as f64, 40.0).unwrap();
+        select(&mut f.session, std::slice::from_ref(&id));
+        dialog::run(&mut f, "library.add", json!({ "name": name }));
+    }
+    open(f)
+}
+
+#[test]
+fn the_search_field_filters_the_tiles_by_name_whatever_the_case() {
+    let mut h = dialog::harness(with_named(&["Box", "Crate", "Arrow"]));
+    h.run();
+    h.get_by_label("3 items");
+    for name in ["Insert Box", "Insert Crate", "Insert Arrow"] {
+        h.get_by_label(name);
+    }
+    dialog::field(&h, "Search the library").focus();
+    h.run();
+    dialog::field(&h, "Search the library").type_text("CRA");
+    h.run();
+    h.get_by_label("Insert Crate");
+    assert!(h.query_by_label("Insert Box").is_none() && h.query_by_label("Insert Arrow").is_none());
+    h.get_by_label("1 of 3 items");
+    // No match says so, and what was typed is kept.
+    h.key_press_modifiers(Modifiers::COMMAND, egui::Key::A);
+    dialog::field(&h, "Search the library").type_text("zzz");
+    h.run();
+    h.get_by_label("No item has “zzz” in its name.");
+    assert!(h.query_by_label("Insert Crate").is_none());
+    // Emptying the field brings every tile back.
+    h.key_press_modifiers(Modifiers::COMMAND, egui::Key::A);
+    h.key_press(egui::Key::Backspace);
+    h.run();
+    for name in ["Insert Box", "Insert Crate", "Insert Arrow"] {
+        h.get_by_label(name);
+    }
+}
+
+#[test]
+fn a_filtered_tile_still_inserts_the_item_it_shows() {
+    let f = with_named(&["Box", "Crate"]);
+    let crate_id = f.model.library[1].id.clone();
+    let mut h = dialog::harness(f);
+    h.run();
+    dialog::field(&h, "Search the library").focus();
+    h.run();
+    dialog::field(&h, "Search the library").type_text("crate");
+    h.run();
+    h.state_mut().clear();
+    h.get_by_label("Insert Crate").click();
+    h.run();
+    assert_eq!(calls(&h), vec![Call::new(Origin::Ui, "library.insert", json!({ "item": crate_id }))]);
+}
+
+// ---- the pictures of the tiles ----
+
+/// A renderer that draws what the engine asks for as a real picture: the outline of the box of every element,
+/// one pixel wide, in black, or in light grey when the dark palette is asked for. The rest is transparent.
+#[derive(Clone, Default)]
+struct OutlineRenderer {
+    /// How many pictures were asked for.
+    asked: Arc<AtomicUsize>,
+    /// The palette of each request.
+    dark: Arc<Mutex<Vec<bool>>>,
+    /// The renderer is still drawing, as the browser's is for a while: it answers `NotReady`.
+    busy: Arc<AtomicBool>,
+}
+
+const LIGHT_INK: [u8; 4] = [0, 0, 0, 255];
+const DARK_INK: [u8; 4] = [230, 230, 230, 255];
+
+impl Renderer for OutlineRenderer {
+    fn render_png(&self, scene: &SceneView, req: &RenderRequest) -> Result<Vec<u8>, PortError> {
+        if self.busy.load(Ordering::SeqCst) {
+            return Err(PortError::NotReady);
+        }
+        self.asked.fetch_add(1, Ordering::SeqCst);
+        self.dark.lock().unwrap_or_else(PoisonError::into_inner).push(req.dark);
+        let (w, h) = req.size_px;
+        let (sx, sy) = (f64::from(w) / req.region.2, f64::from(h) / req.region.3);
+        let ink = if req.dark { DARK_INK } else { LIGHT_INK };
+        let mut rgba = vec![0u8; (w * h * 4) as usize];
+        let mut put = |x: i64, y: i64| {
+            if (0..i64::from(w)).contains(&x) && (0..i64::from(h)).contains(&y) {
+                let at = ((y as u32 * w + x as u32) * 4) as usize;
+                rgba[at..at + 4].copy_from_slice(&ink);
+            }
+        };
+        for e in scene.elements.iter().filter(|e| !e.deleted) {
+            let t = &e.transform;
+            let (x0, y0) = (((t.x - req.region.0) * sx).round() as i64, ((t.y - req.region.1) * sy).round() as i64);
+            let (x1, y1) = (
+                ((t.x + t.w - req.region.0) * sx).round() as i64 - 1,
+                ((t.y + t.h - req.region.1) * sy).round() as i64 - 1,
+            );
+            for x in x0..=x1 {
+                put(x, y0);
+                put(x, y1);
+            }
+            for y in y0..=y1 {
+                put(x0, y);
+                put(x1, y);
+            }
+        }
+        let mut out = Vec::new();
+        let mut enc = png::Encoder::new(&mut out, w, h);
+        enc.set_color(png::ColorType::Rgba);
+        enc.set_depth(png::BitDepth::Eight);
+        let mut writer = enc.write_header().map_err(|e| PortError::Failed(e.to_string()))?;
+        writer.write_image_data(&rgba).map_err(|e| PortError::Failed(e.to_string()))?;
+        writer.finish().map_err(|e| PortError::Failed(e.to_string()))?;
+        Ok(out)
+    }
+}
+
+/// The real shell over a session whose renderer is the [`OutlineRenderer`], with the drawer open.
+struct App {
+    shell: UiShell,
+    session: Session,
+}
+
+fn app_with(renderer: &OutlineRenderer, items: &[(&str, f64, f64)], theme: &str) -> App {
+    let fakes = Fakes::new();
+    let mut ports = fakes.ports();
+    ports.renderer = Some(Box::new(renderer.clone()));
+    let mut session = Session::with_services(ports, Services::fake());
+    for (name, w, h) in items {
+        let id = add_rect(&mut session, 0.0, 0.0, *w, *h).unwrap();
+        select(&mut session, std::slice::from_ref(&id));
+        session.execute("library.add", json!({ "name": name })).unwrap();
+    }
+    // The person's choice of theme, which the shell follows (the test window has no system theme to follow).
+    session.execute("settings.set", json!({ "key": "theme", "value": theme })).unwrap();
+    let mut shell = UiShell::new(false);
+    shell.state.apply_verb(Verb::ToggleLibrary, &mut Vec::new());
+    App { shell, session }
+}
+
+fn app_harness(app: App) -> Harness<'static, App> {
+    Harness::builder()
+        .with_size(egui::vec2(1280.0, 800.0))
+        .with_max_steps(40)
+        .with_context_setup(drafftink_ui::theme::install_fonts)
+        .build_ui_state(
+            |ui, app: &mut App| {
+                app.shell.frame(ui, &mut app.session, FrameInput::default());
+            },
+            app,
+        )
+}
+
+/// The picture of the item with this name, if the model has one that is drawn.
+fn drawn(app: &App, name: &str, size: ThumbSize, dark: bool) -> Option<Arc<ThumbImage>> {
+    let item = app.shell.model.library.iter().find(|i| i.name == name)?;
+    match app.shell.model.thumbnails.picture(item, size, dark)? {
+        Thumb::Ready(image) => Some(Arc::clone(image)),
+        Thumb::Pending | Thumb::Failed(_) => None,
+    }
+}
+
+/// The rectangles of the pictures (meshes with a texture of their own) in what the last frame painted.
+fn textured(h: &Harness<'_, App>) -> Vec<egui::Rect> {
+    fn walk(shape: &egui::Shape, out: &mut Vec<egui::Rect>) {
+        match shape {
+            egui::Shape::Vec(inner) => inner.iter().for_each(|s| walk(s, out)),
+            egui::Shape::Mesh(m) if m.texture_id != egui::TextureId::default() => out.push(m.calc_bounds()),
+            _ => {}
+        }
+    }
+    let mut out = Vec::new();
+    h.output().shapes.iter().for_each(|clipped| walk(&clipped.shape, &mut out));
+    out
+}
+
+fn opaque_pixels(image: &ThumbImage) -> usize {
+    image.rgba.chunks_exact(4).filter(|p| p[3] == 255).count()
+}
+
+#[test]
+fn a_tile_shows_an_outline_until_its_picture_arrives_and_then_the_picture() {
+    let renderer = OutlineRenderer::default();
+    // The renderer is busy, as the browser's is for a while: the tile keeps its outline.
+    renderer.busy.store(true, Ordering::SeqCst);
+    let mut h = app_harness(app_with(&renderer, &[("Box", 80.0, 40.0)], "light"));
+    h.run();
+    let tile = h.get_by_label("Insert Box").rect();
+    let before = (drawn(h.state(), "Box", ThumbSize::Tile, false), textured(&h));
+    assert!(before.0.is_none() && before.1.is_empty(), "no picture yet, so the outline: {before:?}");
+    // The renderer wakes the app, and the frame draws the picture.
+    renderer.busy.store(false, Ordering::SeqCst);
+    h.step();
+    h.run();
+    let picture = drawn(h.state(), "Box", ThumbSize::Tile, false).expect("the picture arrived");
+    let shown = textured(&h);
+    assert_eq!(shown.len(), 1, "one picture on the screen: {shown:?}");
+    assert!(tile.contains_rect(shown[0]), "the picture is inside its tile: {:?} in {tile:?}", shown[0]);
+
+    // 80 by 40 units and 4 units of air around: 88 by 48, drawn 224 pixels wide.
+    assert_eq!(picture.size, [224, 122]);
+    let aspect = |w: f32, h: f32| w / h;
+    assert!(
+        (aspect(shown[0].width(), shown[0].height()) - aspect(224.0, 122.0)).abs() < 0.02,
+        "the picture keeps its proportions: {:?}",
+        shown[0]
+    );
+    // The pixels are the item and not the outline of a placeholder: the box's border in ink, the inside and the
+    // corners of the picture transparent.
+    assert_eq!(picture.pixel(0, 0), Some([0, 0, 0, 0]), "the air is transparent");
+    assert_eq!(picture.pixel(112, 61), Some([0, 0, 0, 0]), "the inside of the box is transparent");
+    assert_eq!(
+        picture.pixel(10, 61),
+        Some(LIGHT_INK),
+        "the left side of the box: 4 units of air at 224/88 pixels each"
+    );
+    assert_eq!(picture.pixel(112, 10), Some(LIGHT_INK), "the top side");
+    let perimeter = 2 * (205 + 102);
+    assert!(opaque_pixels(&picture).abs_diff(perimeter) < 20, "{} opaque pixels", opaque_pixels(&picture));
+}
+
+#[test]
+fn an_item_is_drawn_once_and_the_frames_after_it_are_idle() {
+    let renderer = OutlineRenderer::default();
+    let mut h = app_harness(app_with(&renderer, &[("Box", 80.0, 40.0)], "light"));
+    h.run();
+    assert_eq!(renderer.asked.load(Ordering::SeqCst), 1);
+    // Nothing changed: no repaint is wanted and nothing is asked for again.
+    assert!(h.try_run().is_ok(), "idle means idle");
+    for _ in 0..3 {
+        h.step();
+    }
+    assert_eq!(renderer.asked.load(Ordering::SeqCst), 1);
+}
+
+#[test]
+fn a_full_drawer_asks_for_a_few_pictures_a_frame() {
+    let renderer = OutlineRenderer::default();
+    let items: Vec<(String, f64, f64)> =
+        (0..7).map(|n| (format!("Item {n}"), 40.0 + 10.0 * f64::from(n), 30.0)).collect();
+    let items: Vec<(&str, f64, f64)> = items.iter().map(|(n, w, h)| (n.as_str(), *w, *h)).collect();
+    let mut app = app_with(&renderer, &items, "light");
+    app.shell.state.library_open = false;
+    let mut h = app_harness(app);
+    h.run();
+    assert_eq!(renderer.asked.load(Ordering::SeqCst), 0, "a closed drawer asks for nothing");
+    h.state_mut().shell.state.apply_verb(Verb::ToggleLibrary, &mut Vec::new());
+    let mut asked = vec![0];
+    for _ in 0..8 {
+        h.step();
+        asked.push(renderer.asked.load(Ordering::SeqCst));
+    }
+    let per_frame: Vec<usize> = asked.windows(2).map(|w| w[1] - w[0]).collect();
+    assert!(per_frame.iter().all(|n| *n <= PER_FRAME), "at most {PER_FRAME} pictures a frame: {per_frame:?}");
+    assert!(per_frame.contains(&PER_FRAME), "and the budget is used: {per_frame:?}");
+    assert_eq!(asked.last(), Some(&7), "every tile has its picture in the end");
+    for item in &items {
+        assert!(drawn(h.state(), item.0, ThumbSize::Tile, false).is_some(), "{}", item.0);
+    }
+    assert!(h.try_run().is_ok(), "and the drawer is idle again");
+}
+
+#[test]
+fn tiles_that_are_scrolled_out_of_the_drawer_are_not_drawn_until_they_come_into_view() {
+    let renderer = OutlineRenderer::default();
+    let names: Vec<String> = (0..60).map(|n| format!("Item {n:02}")).collect();
+    let items: Vec<(&str, f64, f64)> = names.iter().map(|n| (n.as_str(), 50.0, 30.0)).collect();
+    let mut h = app_harness(app_with(&renderer, &items, "light"));
+    h.run();
+    let asked = renderer.asked.load(Ordering::SeqCst);
+    assert!(asked > 0 && asked < 60, "only the tiles in the drawer: {asked}");
+    assert!(drawn(h.state(), "Item 59", ThumbSize::Tile, false).is_none());
+    // The mouse wheel over the tiles brings more into view.
+    let tile = h.get_by_label("Insert Item 00").rect().center();
+    h.event(Event::PointerMoved(tile));
+    h.event(Event::MouseWheel {
+        unit: egui::MouseWheelUnit::Point,
+        delta: egui::vec2(0.0, -3000.0),
+        modifiers: Modifiers::NONE,
+        phase: egui::TouchPhase::Move,
+        source: egui::MouseWheelSource::Wheel,
+    });
+    h.run();
+    assert!(renderer.asked.load(Ordering::SeqCst) > asked);
+    assert!(drawn(h.state(), "Item 59", ThumbSize::Tile, false).is_some());
+}
+
+#[test]
+fn the_dark_theme_draws_the_pictures_with_the_dark_palette_and_the_light_one_draws_them_again() {
+    let renderer = OutlineRenderer::default();
+    let mut h = app_harness(app_with(&renderer, &[("Box", 80.0, 40.0)], "dark"));
+    h.run();
+    let dark = drawn(h.state(), "Box", ThumbSize::Tile, true).expect("drawn for the dark canvas");
+    assert_eq!(dark.pixel(10, 61), Some(DARK_INK), "light strokes on the dark panel");
+    assert_eq!(*renderer.dark.lock().unwrap(), vec![true]);
+    assert!(drawn(h.state(), "Box", ThumbSize::Tile, false).is_none(), "and nothing is kept for the other theme");
+    // The setting follows the person's choice.
+    h.state_mut().session.execute("settings.set", json!({ "key": "theme", "value": "light" })).unwrap();
+    h.run();
+    let light = drawn(h.state(), "Box", ThumbSize::Tile, false).expect("drawn again for the light canvas");
+    assert_eq!(light.pixel(10, 61), Some(LIGHT_INK));
+    assert_eq!(*renderer.dark.lock().unwrap(), vec![true, false]);
+    assert_ne!(light.pixel(10, 61), dark.pixel(10, 61));
+}
+
+#[test]
+fn a_new_item_gets_a_picture_and_the_others_keep_theirs() {
+    let renderer = OutlineRenderer::default();
+    let mut h = app_harness(app_with(&renderer, &[("Box", 80.0, 40.0)], "light"));
+    h.run();
+    let before = drawn(h.state(), "Box", ThumbSize::Tile, false).unwrap();
+    let id = add_rect(&mut h.state_mut().session, 0.0, 200.0, 30.0, 60.0).unwrap();
+    select(&mut h.state_mut().session, std::slice::from_ref(&id));
+    h.state_mut().session.execute("library.add", json!({ "name": "Tall" })).unwrap();
+    h.state_mut().shell.model.invalidate();
+    h.run();
+    let tall = drawn(h.state(), "Tall", ThumbSize::Tile, false).expect("the new item has a picture");
+    assert!(tall.size[1] > tall.size[0], "tall: {:?}", tall.size);
+    assert!(Arc::ptr_eq(&before, &drawn(h.state(), "Box", ThumbSize::Tile, false).unwrap()), "Box kept its picture");
+    assert_eq!(renderer.asked.load(Ordering::SeqCst), 2);
+}
+
+#[test]
+fn renaming_an_item_keeps_its_picture() {
+    let renderer = OutlineRenderer::default();
+    let mut h = app_harness(app_with(&renderer, &[("Box", 80.0, 40.0)], "light"));
+    h.run();
+    h.state_mut().session.execute("library.rename", json!({ "item": "Box", "name": "Crate" })).unwrap();
+    h.state_mut().shell.model.invalidate();
+    h.run();
+    assert!(drawn(h.state(), "Crate", ThumbSize::Tile, false).is_some());
+    assert_eq!(renderer.asked.load(Ordering::SeqCst), 1, "the drawing did not change, so nothing is drawn again");
+}
+
+#[test]
+fn a_picture_the_browser_is_still_drawing_is_asked_for_again_when_it_wakes_the_app() {
+    let renderer = OutlineRenderer::default();
+    renderer.busy.store(true, Ordering::SeqCst);
+    let mut h = app_harness(app_with(&renderer, &[("Box", 80.0, 40.0)], "light"));
+    // Busy: the tile keeps its outline, and the app does not spin asking again (the renderer wakes it).
+    assert!(h.try_run().is_ok(), "no repaint is requested while the picture is being drawn");
+    assert!(drawn(h.state(), "Box", ThumbSize::Tile, false).is_none());
+    h.get_by_label("Insert Box");
+    renderer.busy.store(false, Ordering::SeqCst);
+    // The wake-up is a frame.
+    h.run();
+    assert!(drawn(h.state(), "Box", ThumbSize::Tile, false).is_some());
+}
+
+#[test]
+fn a_renderer_that_cannot_draw_leaves_the_outline_and_the_tile_works() {
+    // The fake renderer of the other tests answers bytes that are not a PNG; a session may have no renderer at all.
+    for no_renderer in [false, true] {
+        let fakes = Fakes::new();
+        let mut ports = fakes.ports();
+        if no_renderer {
+            ports.renderer = None;
+        }
+        let mut session = Session::with_services(ports, Services::fake());
+        let id = add_rect(&mut session, 0.0, 0.0, 80.0, 40.0).unwrap();
+        select(&mut session, std::slice::from_ref(&id));
+        session.execute("library.add", json!({ "name": "Box" })).unwrap();
+        session.execute("settings.set", json!({ "key": "theme", "value": "light" })).unwrap();
+        let mut shell = UiShell::new(false);
+        shell.state.apply_verb(Verb::ToggleLibrary, &mut Vec::new());
+        let mut h = app_harness(App { shell, session });
+        h.run();
+        assert!(drawn(h.state(), "Box", ThumbSize::Tile, false).is_none());
+        assert!(textured(&h).is_empty());
+        h.get_by_label("Insert Box").click();
+        h.run();
+        assert_eq!(h.state().session.store().len(), 2, "the click inserted a copy (no_renderer: {no_renderer})");
+    }
+}
+
+#[test]
+fn hovering_a_tile_shows_a_larger_picture_and_the_element_count() {
+    let renderer = OutlineRenderer::default();
+    let mut h = app_harness(app_with(&renderer, &[("Box", 80.0, 40.0)], "light"));
+    h.run();
+    let tile = h.get_by_label("Insert Box").rect();
+    h.event(Event::PointerMoved(tile.center()));
+    // The tooltip opens after the pointer rests on the tile for a moment.
+    for _ in 0..60 {
+        h.step();
+        if h.query_by_label("1 element").is_some() {
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(15));
+    }
+    h.get_by_label("1 element");
+    h.run();
+    let preview =
+        drawn(h.state(), "Box", ThumbSize::Preview, false).expect("the larger picture was drawn for the tooltip");
+    assert_eq!(preview.size[0], 480);
+    assert!(opaque_pixels(&preview) > opaque_pixels(&drawn(h.state(), "Box", ThumbSize::Tile, false).unwrap()));
 }

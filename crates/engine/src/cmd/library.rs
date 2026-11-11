@@ -19,9 +19,10 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 use self::store::Item;
-use super::doc::export::{Dest, ExportBytes};
+use super::doc::export::{Dest, ExportBytes, PngOpts, render_png};
 use super::doc::files::{self, Loaded, Provenance, Source, base64_of};
 use super::doc::open::{merge_into_active, open_in_new_tab};
+use crate::args;
 use crate::cmd::tab::normalize_name;
 use crate::cmd::view::Pt;
 use crate::ports::{FileRef, PortKind};
@@ -45,6 +46,9 @@ pub struct ItemInfo {
     pub bounds: Option<[f64; 4]>,
     /// When it was added, milliseconds since the Unix epoch.
     pub created: u64,
+    /// A fingerprint of what the item draws (16 hex digits). It changes when the drawing does, and not when the
+    /// item is renamed, so a picture of the item stays good for as long as this stays the same.
+    pub content: String,
 }
 
 fn info(i: &Item) -> ItemInfo {
@@ -54,6 +58,7 @@ fn info(i: &Item) -> ItemInfo {
         element_count: i.document.elements.iter().filter(|e| !e.deleted).count(),
         bounds: frag::bounds(&i.document).map(|r| [round2(r.x0), round2(r.y0), round2(r.width()), round2(r.height())]),
         created: i.created_ms,
+        content: format!("{:016x}", i.hash),
     }
 }
 
@@ -316,6 +321,84 @@ fn list(s: &mut Session, a: ListArgs) -> Result<ListOut, Refusal> {
         .map(|i| info(i))
         .collect();
     Ok(ListOut { changed: false, items })
+}
+
+// ---- library.thumbnail ----
+
+/// Smallest and largest `max_side` of `library.thumbnail`, in pixels.
+const THUMB_SIDE: std::ops::RangeInclusive<u32> = 16..=1024;
+/// `max_side` when the caller gives none.
+const THUMB_DEFAULT_SIDE: u32 = 256;
+/// The largest enlargement of a small item: a 10 unit dot is not drawn 200 times as large.
+const THUMB_MAX_SCALE: f64 = 8.0;
+
+/// Arguments of `library.thumbnail`.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct ThumbnailArgs {
+    /// The item id or name.
+    pub item: String,
+    /// Pixels along the longer side of the picture (16 to 1024). Default 256.
+    #[serde(default)]
+    pub max_side: Option<u32>,
+    /// Draw with the dark palette, as the canvas does in the dark theme. Default false.
+    #[serde(default)]
+    pub dark: bool,
+}
+
+/// Output of `library.thumbnail`.
+#[derive(Debug, Clone, PartialEq, Serialize, JsonSchema)]
+pub struct ThumbnailOut {
+    /// Always false.
+    pub changed: bool,
+    /// The item that was drawn.
+    pub item: String,
+    /// Width of the picture in pixels.
+    pub width: u32,
+    /// Height of the picture in pixels.
+    pub height: u32,
+    /// The PNG, with a transparent background.
+    pub bytes: ExportBytes,
+}
+
+fn thumbnail(s: &mut Session, a: ThumbnailArgs) -> Result<ThumbnailOut, Refusal> {
+    let id = s.cmd();
+    let side = a.max_side.unwrap_or(THUMB_DEFAULT_SIDE);
+    args::in_range(id, "max_side", f64::from(side), f64::from(*THUMB_SIDE.start()), f64::from(*THUMB_SIDE.end()))?;
+    let items = store::items(s);
+    store::flush_notes(s);
+    let it = items.get(find(id, &items, &a.item)?).ok_or_else(|| no_such_item(id, &a.item))?;
+    let bounds = frag::bounds(&it.document)
+        .ok_or_else(|| Refusal::nothing_to_do(id, "draw", "the item has nothing visible in it"))?;
+    let longest = bounds.width().max(bounds.height()).max(1.0);
+    // A little air around the drawing, so that strokes at its edge are not cut.
+    let padding = (longest * 0.05).max(4.0);
+    let opts = PngOpts {
+        scale: (f64::from(side) / (longest + 2.0 * padding)).min(THUMB_MAX_SCALE),
+        padding,
+        background: false,
+        dark: a.dark,
+        clip_to_frame: false,
+        max_side_px: f64::from(side) + 2.0,
+    };
+    let picture = render_png(s, id, &it.document, &opts)?;
+    Ok(ThumbnailOut {
+        changed: false,
+        item: it.id.clone(),
+        width: picture.width,
+        height: picture.height,
+        bytes: ExportBytes { base64: base64_of(&picture.bytes), mime: "image/png" },
+    })
+}
+
+fn thumbnail_available(s: &Session) -> Result<(), Refusal> {
+    let id = "library.thumbnail";
+    needs_storage(s, id)?;
+    if s.has_port(PortKind::Renderer) {
+        Ok(())
+    } else {
+        Err(Refusal::port_unavailable(id, "the renderer", "renderer port missing", "Pictures of library items are drawn by the app."))
+    }
 }
 
 // ---- library.import ----
@@ -618,6 +701,26 @@ pub const COMMANDS: &[CommandSpec] = &[
         Facts { reads_only: true, mutates: Mutates::NONE, view_only: Gate::Allowed, while_gesture: Gate::Allowed, while_text_edit: TextGate::Allowed, ..LIB },
     )
     .available(|s| needs_storage(s, "library.list")),
+    CommandSpec::new(
+        "library.thumbnail",
+        "library",
+        "Draw a library item",
+        "Draws a library item as a small PNG with a transparent background, in the light or the dark palette.",
+        &Typed::new(thumbnail),
+        Facts {
+            reads_only: true,
+            mutates: Mutates::NONE,
+            ports: PortSet::STORAGE.with(PortSet::RENDERER),
+            view_only: Gate::Allowed,
+            while_gesture: Gate::Allowed,
+            while_text_edit: TextGate::Allowed,
+            palette: false,
+            ..LIB
+        },
+    )
+    .available(thumbnail_available)
+    .refusals(&["no_such_item"])
+    .example(r#"{"item":"lib_e1","max_side":128,"dark":true}"#),
     CommandSpec::new(
         "library.import",
         "library",

@@ -1817,12 +1817,15 @@ dependencies = [
 name = "drafftink-ui"
 version = "0.2.0"
 dependencies = [
+ "base64 0.22.1",
  "drafftink-engine",
  "drafftink-scene",
  "drafftink-typeset",
  "egui",
  "egui_kittest",
+ "png",
  "serde_json",
+ "thiserror 2.0.21",
 ]
 
 [[package]]

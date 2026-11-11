@@ -24,6 +24,7 @@ pub mod shell;
 pub mod state;
 pub mod surfaces;
 pub mod theme;
+pub mod thumbs;
 pub mod widgets;
 
 pub use action::{Call, CommandSink, HostRequest, Report, Routed, Scrub, ScrubPhase, UiAction, Verb, dispatch, route};

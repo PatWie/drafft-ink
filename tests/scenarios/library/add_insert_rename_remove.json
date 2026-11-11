@@ -16,6 +16,12 @@
     { "assert": "library.list", "expect": [ { "path": "$.items", "len": 2 } ] },
     { "assert": "library.list", "args": { "search": "PAIR" }, "expect": [ { "path": "$.items", "len": 1, "note": "The search ignores case." }, { "path": "$.items[0].id", "eq": "{{pair}}" } ] },
     { "assert": "history.state", "expect": [ { "path": "$.undo_depth", "eq": "{{depth}}", "note": "Adding to the library is not a document step." } ] },
+    { "assert": "library.thumbnail", "args": { "item": "{{pair}}", "max_side": 128 }, "expect": [
+        { "path": "$.width", "eq": 128, "note": "The item is 300 by 60 units with 15 units of air around it: 330 by 90, drawn 128 pixels wide." },
+        { "path": "$.height", "eq": 35 }, { "path": "$.item", "eq": "{{pair}}" }, { "path": "$.bytes.mime", "eq": "image/png" } ] },
+    { "assert": "history.state", "expect": [ { "path": "$.undo_depth", "eq": "{{depth}}", "note": "Drawing an item changes nothing." } ] },
+    { "execute": "library.thumbnail", "args": { "item": "Pair", "max_side": 8 }, "refused": "bad_args", "text": "max_side" },
+    { "execute": "library.thumbnail", "args": { "item": "nope" }, "refused": "no_such_item", "text": "There is no library item `nope`." },
 
     { "execute": "library.insert", "args": { "item": "Pair", "at": [1000, 500] }, "expect": [ { "path": "$.ids", "len": 3 }, { "path": "$.item", "eq": "{{pair}}" }, { "path": "$.undo_label", "eq": "Insert from library" } ] },
     { "assert": "doc.inspect", "expect": [ { "path": "$.elements", "eq": 4 }, { "path": "$.labels", "eq": 2 }, { "path": "$.bounds.w", "gt": 900, "note": "The copy is centred on the point, far from the original." } ] },
