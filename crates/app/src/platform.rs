@@ -10,8 +10,8 @@ use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
 use drafftink_bridge::BridgeHost;
 use drafftink_engine::Ports;
-use drafftink_engine::ports::{ClipPayload, FileRef};
-use drafftink_gpu::{RedrawReason, Waker};
+use drafftink_engine::ports::{ClipKind, ClipPayload, FileRef};
+use drafftink_gpu::{ClipboardContent, RedrawReason, Waker};
 
 fn lock<T>(m: &Mutex<T>) -> MutexGuard<'_, T> {
     m.lock().unwrap_or_else(PoisonError::into_inner)
@@ -170,9 +170,9 @@ impl Host for NoHost {
 /// The system clipboard as the engine's synchronous `Clipboard` port sees it.
 ///
 /// The port cannot wait for the operating system. The shell delivers a paste as an event with the content
-/// already read, and the app stores it here before it runs `clipboard.paste`; the port then reads it back.
-/// A write by `clipboard.copy` lands in the out-slot, and the app hands it to the shell, which writes it to
-/// the system clipboard inside the event that asked for it (the browser requires that).
+/// already read, and the app stores it here before it runs `clipboard.paste`; the port then reads it back, kind
+/// by kind. A write by `clipboard.copy` lands in the out-slot, and the app hands it to the shell, which writes
+/// it to the system clipboard inside the event that asked for it (the browser requires that).
 #[derive(Clone, Default)]
 pub struct SharedClipboard {
     inner: Arc<Mutex<ClipSlots>>,
@@ -180,7 +180,7 @@ pub struct SharedClipboard {
 
 #[derive(Default)]
 struct ClipSlots {
-    incoming: Option<ClipPayload>,
+    incoming: Option<ClipboardContent>,
     outgoing: Option<ClipPayload>,
 }
 
@@ -190,35 +190,34 @@ impl SharedClipboard {
         Self::default()
     }
 
-    /// Stores what the system clipboard held for the next read.
-    pub fn set_incoming(&self, payload: Option<ClipPayload>) {
-        lock(&self.inner).incoming = payload;
+    /// Stores what the system clipboard held, for the next read.
+    pub fn set_incoming(&self, content: Option<ClipboardContent>) {
+        lock(&self.inner).incoming = content;
     }
 
     /// Takes what a command wrote, to hand it to the system clipboard.
-    pub fn take_outgoing(&self) -> Option<ClipPayload> {
-        lock(&self.inner).outgoing.take()
-    }
-
-    pub(crate) fn peek_incoming(&self) -> Option<ClipPayload> {
-        lock(&self.inner).incoming.clone()
-    }
-
-    pub(crate) fn put_outgoing(&self, payload: ClipPayload) {
-        let mut slots = lock(&self.inner);
-        // The next paste inside this app sees what was just copied, whatever the system clipboard says.
-        slots.incoming = Some(payload.clone());
-        slots.outgoing = Some(payload);
+    pub fn take_outgoing(&self) -> Option<ClipboardContent> {
+        lock(&self.inner).outgoing.take().map(|p| crate::clip::to_content(&p))
     }
 }
 
 impl drafftink_engine::ports::Clipboard for SharedClipboard {
-    fn read(&self, want: &[drafftink_engine::ports::ClipKind]) -> Result<Option<ClipPayload>, drafftink_engine::PortError> {
-        Ok(self.peek_incoming().filter(|p| want.is_empty() || want.contains(&p.kind())))
+    fn read(&self, want: &[ClipKind]) -> Result<Option<ClipPayload>, drafftink_engine::PortError> {
+        let slots = lock(&self.inner);
+        let Some(content) = slots.incoming.as_ref() else { return Ok(None) };
+        let kinds: &[ClipKind] = if want.is_empty() {
+            &[ClipKind::Elements, ClipKind::Image, ClipKind::Svg, ClipKind::Text]
+        } else {
+            want
+        };
+        Ok(kinds.iter().find_map(|k| crate::clip::payload_of(content, *k)))
     }
 
     fn write(&mut self, payload: ClipPayload) -> Result<(), drafftink_engine::PortError> {
-        self.put_outgoing(payload);
+        let mut slots = lock(&self.inner);
+        // The next paste inside this app sees what was just copied, whatever the system clipboard says.
+        slots.incoming = Some(crate::clip::to_content(&payload));
+        slots.outgoing = Some(payload);
         Ok(())
     }
 }
@@ -233,6 +232,8 @@ pub struct Platform {
     pub wake: WakeCell,
     /// The clipboard the ports and the app share.
     pub clipboard: SharedClipboard,
+    /// The text engine the session and the renderer share (one set of font caches).
+    pub typesetter: drafftink_engine::services::SharedTypesetter,
     /// Requests from the agent bridge (native server) or the page (web), run once per frame.
     pub bridge: Option<BridgeHost>,
     /// macOS: `Mod` is Cmd.
