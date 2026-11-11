@@ -228,7 +228,7 @@ pub enum NewFrom {
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields, default)]
 pub struct NewArgs {
-    /// Name of the new document (1 to 120 characters). Default: "Untitled", or "<name> copy" for `active`.
+    /// Name of the new document (1 to 256 characters). Default: "Untitled", or "<name> copy" for `active`.
     pub name: Option<String>,
     /// What the new tab holds: `blank` (default), `intro` or `active`.
     pub from: NewFrom,
@@ -373,7 +373,7 @@ pub struct RenameArgs {
     /// The tab to rename. Default: the active tab.
     #[serde(default)]
     pub tab: Option<TabRef>,
-    /// The new name, 1 to 120 characters after trimming.
+    /// The new name, 1 to 256 characters after trimming.
     pub name: String,
 }
 
