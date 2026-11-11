@@ -8,12 +8,13 @@ Starts the server on an ephemeral port with --web-dir dist and --storage memory,
   idle       0 new frames in a 10 s idle window, CPU of all Chromium processes (1 core = 100 %)
   --app      (needs the App core) execute()/state()/commands(), a rectangle and an arrow, a screenshot,
              persistence in IndexedDB, a refusal as a rejected promise
+  --app      hover: 125 mouse moves per second over empty canvas for 5 s draw 0 frames (the CPU is printed)
   --app      the on-canvas text editor: draft, typing, a coloured word, Esc, one undo step
   --app      collab: two pages in the same room (?room=...) see each other's element
   offline    server stopped, reload: the service worker serves the page and the app starts
 usage: ~/.venvs/perf/bin/python scripts/web_check.py [--app] [--display :97] [--shot docs/img/web-app.png] [--json out.json]
 Exit code 0 only if every assertion holds."""
-import argparse, json, os, random, shutil, signal, socket, subprocess, sys, tempfile, time, urllib.request
+import argparse, json, math, os, random, shutil, signal, socket, subprocess, sys, tempfile, time, urllib.request
 from playwright.sync_api import sync_playwright
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -116,6 +117,20 @@ def window(pg, label, secs):
              redraw_requests={k: v - r0.get(k, 0) for k, v in r1.items() if v - r0.get(k, 0)},
              cpu_pct_of_one_core_all_chromium=round((cpu_ticks() - c0) / HZ / el * 100, 1),
              frame_times=[x for x in seen if x[1]])
+    print(json.dumps(r), flush=True); results.append(r); return r
+
+def hover_window(pg, label, secs, rate=125, centre=(1100, 250)):
+    """`rate` pointer moves per second on a small circle over empty canvas (no shape, no panel): the app has nothing to
+    redraw, so no frame may be drawn. Reports the CPU of all Chromium processes while it runs."""
+    settle(pg)
+    pg.mouse.move(*centre); time.sleep(0.3)
+    f0 = frames(pg); c0 = cpu_ticks(); t = time.time(); n = 0
+    while time.time() - t < secs:
+        pg.mouse.move(int(centre[0] + 40 * math.sin(n / 20)), int(centre[1] + 25 * math.cos(n / 20))); n += 1
+        time.sleep(max(t + n / rate - time.time(), 0))
+    el = time.time() - t
+    r = dict(window=label, secs=round(el, 2), moves=n, frames=frames(pg)["frames"] - f0["frames"],
+             cpu_pct_of_one_core_all_chromium=round((cpu_ticks() - c0) / HZ / el * 100, 1))
     print(json.dumps(r), flush=True); results.append(r); return r
 
 xvfb = subprocess.Popen(["Xvfb", args.display, "-screen", "0", "1600x1100x24"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
@@ -221,6 +236,9 @@ try:
             time.sleep(2)
             r = window(pg, f"idle after commands {args.idle_secs:g}s", args.idle_secs)
             check(r["frames"] == 0, "0 frames idle after commands", str(r["frames"]))
+            call(pg, "window.drafftink.execute('selection.clear', {})")   # a selection opens the style panel
+            r = hover_window(pg, "hover over empty canvas 5s", 5)
+            check(r["frames"] == 0, "0 frames while the mouse moves over empty canvas", f'{r["frames"]} frames in {r["moves"]} moves')
             perf_now = pg.evaluate("()=>window.drafftink.perf()")
             check(isinstance(perf_now, dict) and perf_now["redraws"]["by_reason"].get("autosave", 0) >= 0 and frames(pg)["frames"] > 0, "perf() reports redraw reasons and frames() counts frames", str(perf_now["redraws"])[:200])
             # persistence: the workspace reaches IndexedDB

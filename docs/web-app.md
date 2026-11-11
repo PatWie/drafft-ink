@@ -198,7 +198,8 @@ target, because the repository has no wasm test runner).
 ## Known gaps
 
 - **Wire size.** 3.06 MB brotli for the module and about 0.5 MB of fonts for the first load of the welcome page (see above). After the first
-  visit the service worker serves everything from cache. Not done: the command schemas (`schemars`) are in the module.
+  visit the service worker serves everything from cache. Not done, on purpose: the command schemas (`schemars`) are in the module; moving them to a fetched file would save 89 KB brotli (2.8%), measured, and needs every schema reader to become asynchronous (`performance.md` section 8.2).
+- **PNG in a batch.** A `batch` step that exports a PNG on the web is taken back with `pending_render: true` and the bridge host runs the batch again once the picture is drawn; see `docs/agents.md` and `docs/commands.md`.
 - **Idle while in a room.** Fixed on 2026-11-08: a wake from the collaboration socket, and a collaboration deadline, go to the
   app first (`ShellEvent::Wake(Collab)`, `docs/shell.md`); it pumps the session and asks for a frame only when the poll left a
   visible change or a notice. Measured: 0 frames in 22 s alone in a room and in 22 s with a peer, after the join has settled.

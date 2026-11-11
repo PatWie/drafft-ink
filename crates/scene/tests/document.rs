@@ -311,6 +311,7 @@ fn a_job_refuses_what_to_json_refuses() {
     // And a job that is not finished has no text.
     let job = JsonJob::new(MemoryStore::from_document(&sample()).unwrap().share_document()).unwrap();
     assert!(job.finish().is_err());
+}
 
 #[test]
 fn map_colors_reaches_the_background_strokes_fills_and_text_runs() {
