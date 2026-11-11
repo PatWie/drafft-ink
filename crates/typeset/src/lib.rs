@@ -15,10 +15,16 @@ mod outline;
 mod style;
 mod typesetter;
 
-pub use bound::*;
-pub use caret::*;
+pub use bound::{BOUND_TEXT_PADDING, BoundText, Container, ContainerKind, VerticalAlign};
+pub use caret::{Affinity, Caret, Motion, TextSelection};
 pub use fonts::HAS_NOTO_SANS;
-pub use layout::*;
-pub use math::*;
-pub use style::*;
-pub use typesetter::*;
+pub use layout::{
+    Decoration, DecorationKind, FONT_SIZE_RANGE, Glyph, GlyphRun, LineInfo, MAX_SPANS, MAX_TEXT_BYTES, MIN_WRAP_WIDTH,
+    RunStyle, TextLayout,
+};
+pub use math::{
+    MATH_SIZE_RANGE, MAX_EXTENT, MAX_LATEX_BYTES, MAX_NESTING, MAX_TOKENS, MathError, MathErrorKind, MathFontSlot,
+    MathGlyph, MathLayout, MathRule, MathSpec,
+};
+pub use style::{Align, FontFamily, FontWeight, LineHeight, Rgba8, Span, SpanStyle, TextSpec, TextStyle, Wrap};
+pub use typesetter::{CacheConfig, FontError, MAX_FONT_BYTES, TypesetStats, Typesetter, bench_support};
