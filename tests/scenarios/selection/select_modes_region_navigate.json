@@ -18,7 +18,7 @@
     { "execute": "selection.select", "args": { "ids": ["e1"], "filter": { "kind": "ellipse" } }, "refused": "bad_args", "text": "exactly one of `ids`, `group` or `filter`" },
     { "execute": "selection.select", "args": { "ids": [] }, "refused": "bad_args" },
     { "execute": "selection.select", "args": { "ids": ["nope"] }, "refused": "not_found", "text": "nope" },
-    { "execute": "selection.select", "args": { "filter": { "text": "nothing matches this" } }, "refused": "not_found" },
+    { "execute": "selection.select", "args": { "filter": { "text": "nothing matches this" } }, "refused": "not_found", "text": ["No element matches the filter (text: nothing matches this)", "Loosen the filter"] },
 
     { "execute": "selection.all" },
     { "assert": "selection.get", "args": { "detail": "ids" }, "expect": [ { "path": "$.count", "eq": 4, "note": "Three shapes and the arrow." } ] },

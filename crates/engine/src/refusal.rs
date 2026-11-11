@@ -262,6 +262,19 @@ impl Refusal {
         .with_details(json!({ "ref": echo(reference) }))
     }
 
+    /// `not_found` for a filter that matches nothing. `filter` says what the filter asked for.
+    pub fn no_match(id: &str, filter: &str) -> Self {
+        Self::shared(
+            "not_found",
+            id,
+            format!(
+                "No element matches the filter ({}). Loosen the filter, or look up ids with `element.query` or `doc.outline`.",
+                echo(filter)
+            ),
+        )
+        .with_details(json!({ "filter": echo(filter) }))
+    }
+
     /// `locked`: the element is locked.
     pub fn locked(id: &str, element: &str) -> Self {
         Self::shared(

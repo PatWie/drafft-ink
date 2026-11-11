@@ -228,8 +228,7 @@ fn select(s: &mut Session, a: SelectArgs) -> Result<SelectionOut, Refusal> {
         let ctx = QueryCtx { selected: Some(s.selection()) };
         let targets = all_matches(store, &q, &ctx).map_err(|e| query_refusal(cmd, "filter", e))?;
         if targets.is_empty() {
-            let text = serde_json::to_string(f).unwrap_or_default();
-            return Err(Refusal::not_found(cmd, &text));
+            return Err(Refusal::no_match(cmd, &f.describe()));
         }
         pick(store, &sel, &targets, opts).map_err(|e| selection_refusal(cmd, e))?
     } else {
