@@ -1,6 +1,6 @@
 # Final report: the command-layer rewrite of drafft-ink
 
-Written 2026-11-09 against `main` at `f654255` (`merge: audit-b`), branch `final-report`. No code was changed for this report. Numbers marked "run" were produced for this report on 2026-11-09 (Ubuntu x86_64, 64 cores, NVIDIA L40S, Rust 1.97.1). Every other number is copied from the document named next to it, and that document's date and commit are given where they differ from HEAD.
+Written 2026-11-09 against `main` at `f654255` (`merge: audit-b`), branch `final-report`. Sections 3, 5 and 7 were redone on branch `last-pass` (`main` at `52f6d8e` plus the fixes of that branch): the gates were run again there and section 7 was checked item by item against the code and the tests. Numbers marked "run" were produced on 2026-11-09 (Ubuntu x86_64, 64 cores, NVIDIA L40S, Rust 1.97.1). Every other number is copied from the document named next to it, and that document's date and commit are given where they differ from HEAD.
 
 The specification asks for: per family, the commands added, the UI copies of logic removed and those left with the reason, the gates run and their results; and every deviation from the design with its reason. Sections 2 and 6 do that. Sections 1, 3, 4, 5 and 7 give the context the brief asked for.
 
@@ -33,7 +33,7 @@ The design in one paragraph: every user action is `Session::execute(id, args)` o
 - **Old UI logic removed** names the old code (commit `8ce40ab`) that the command replaces. `A:n` is `crates/drafftink-app/src/app.rs`, `U:n` is `ui.rs`, `E:n` is `event_handler.rs`, `X:` is Excalidraw. The mapping is `docs/commands.md` §2 (source column) and §7. The old files do not exist in the new tree. Their logic was not copied into `ui`/`app`; the rewrite's UI crate calls commands (`crates/ui/tests/thin.rs`, `crates/app/tests/fences`). "NEW" means the old app had no such action.
 - **Left in the UI and why** is what a user action still does outside `execute`, per `docs/ui.md` §5, `docs/exceptions.md` and the fence allowlist (section 2.3).
 - **Tests**: `E` = unit tests in `crates/engine/src/cmd/<family>*_tests.rs` (counted with `cargo nextest list`, run); `S` = JSON scenario files under `tests/scenarios/<family>/` (run by `crates/testkit`; 82 files in 26 directories in all); `W` = Playwright specs under `e2e/web/specs` that call a command of the family; `N` = native e2e under `e2e/native/tests`. `W` and `N` were found by searching the specs for the quoted command ids, so a family can be exercised by more specs than it names here through batches or helper functions.
-- **Gate status.** Gates run on the whole workspace, not per family. The engine tests (about 1,350), 4,254 workspace tests, the 82 scenarios and the 153-of-153 command coverage of the harness passed in this run (section 3). The only failing test of this run is a browser e2e in the `text` family (flaky, section 3.3). So every family row is "pass" except `text`/`element` rows that depend on that e2e, marked below.
+- **Gate status.** Gates run on the whole workspace, not per family. The engine tests (about 1,350), 4,267 workspace tests, the 82 scenarios and the 153-of-153 command coverage of the harness passed in the run of branch `last-pass` (section 3). The browser test that failed in the first run (`typing text`, `text` family) is fixed (section 3.3), so every family row is "pass".
 
 ### 2.2 The table
 
@@ -42,11 +42,11 @@ The design in one paragraph: every user action is `Session::execute(id, args)` o
 | `doc` (13) | `new` `open` `drop` `save` `rename` `set_background` `export` `clear` `show_intro` `autosave` `list` `inspect` `outline` | Save/load/download/upload/recent/clear/intro/background/export-PNG branches of the 71-case `UiAction` match (A:2603-3667; rows 5-14, 19, 35, 36, 49 of §7.1): A:2698-2790, 2841, 2855, 3237, 3691; native and web file handlers (file_ops 939+); `Ctrl+S/O/E` (A:4784-4870); drop (A:5376-5468); web autosave keyed on shape count (A:2564-2576, now by revision); start-up restore (A:1860). `doc.new/rename/inspect/outline` are NEW. | File and save pickers and the download write: the UI returns a `HostRequest` and the app calls `doc.open` / `doc.save to=` afterwards (needs the OS). Text buffers of the Save As, Rename and Export dialogs (a draft until Apply). Autosave timer and write on close are engine ticks (`workspace_tick`, `flush_workspace`), on the fence allowlist. Start-up restore (`load_settings`, `restore_workspace`) runs once before the first frame. | E 101 (`doc_tests`, `doc_read_tests`); S 8; W document, persistence, startup, files-and-keys, legacy-fixture, pixels; N bridge, stories, mcp_http | pass |
 | `tab` (7) | `new` `switch` `close` `rename` `move` `duplicate` `list` | `SwitchTab`, `CloseTab` (U:691, 705; A:1746, 3675), tab creation by library import only (A:1734). `new` `rename` `move` `duplicate` `list` are NEW. | Tab bar and tab-menu open state. Tab drag to reorder is not built (`tab.move` is a plain command with no drag behind it, exceptions E14). | E 69; S 1; W document, session, files-and-keys | pass |
 | `tool` (6) | `set` `lock` `hold` `release` `cancel` `set_arrow` | `SetTool` and the two copies of the tool-key table (A:5245-5295, U:745), `Esc` ladder (A:5305), `Space` as a virtual mouse button (A:4711, replaced by `tool.hold`/`release`). `lock`, `set_arrow` are NEW. | `Esc` first closes UI overlays through the verb `ui.close_overlays` (UI state), then runs `tool.cancel`. | E 45 (`tool_tests`, `tool_arrow_tests`); S 2; W pointer, pixels, session | pass |
-| `element` (21) | `delete` `duplicate` `move` `nudge` `resize` `set_bounds` `rotate` `flip` `lock` `unlock_all` `erase` `convert` `create` `set_name` `relabel` `connect` `set_link` `open_link` `query` `at` `create_sticky` | Shape creation per tool (E:566-596, 734-764, 773-846), move with Alt-duplicate (E:514-536, 656-713, 1105-1205), resize (E:609-655, 876-1104), rotate (E:447-462, 611-632, 878-902), eraser (E:1285-1311, one undo step per drag event before), Delete (A:5299), Ctrl+D (A:5210, 3354), arrow-key nudge (A:5338), flip (U:1753, 1761; A:3625-3632). `set_bounds`, `lock`, `convert`, links, names, sticky, `query`, `at`, `connect`, `relabel` are NEW. | Pointer gestures E2 to E8 (move, resize, rotate, point drag, draw, freehand, erase): the recogniser in `engine/interact` runs them as `gesture.begin/update/end` or as an overlay preview and ends in one plain command; hover E1 changes nothing. Stats-panel number buffers. Link dialog buffer. | E 213 (six `element*_tests` files); S 8; W 17 specs; N bridge, stories, mcp_http. `pointer.spec` typing-text test is flaky (3.3) | pass, one flaky e2e |
+| `element` (21) | `delete` `duplicate` `move` `nudge` `resize` `set_bounds` `rotate` `flip` `lock` `unlock_all` `erase` `convert` `create` `set_name` `relabel` `connect` `set_link` `open_link` `query` `at` `create_sticky` | Shape creation per tool (E:566-596, 734-764, 773-846), move with Alt-duplicate (E:514-536, 656-713, 1105-1205), resize (E:609-655, 876-1104), rotate (E:447-462, 611-632, 878-902), eraser (E:1285-1311, one undo step per drag event before), Delete (A:5299), Ctrl+D (A:5210, 3354), arrow-key nudge (A:5338), flip (U:1753, 1761; A:3625-3632). `set_bounds`, `lock`, `convert`, links, names, sticky, `query`, `at`, `connect`, `relabel` are NEW. | Pointer gestures E2 to E8 (move, resize, rotate, point drag, draw, freehand, erase): the recogniser in `engine/interact` runs them as `gesture.begin/update/end` or as an overlay preview and ends in one plain command; hover E1 changes nothing. Stats-panel number buffers. Link dialog buffer. | E 213 (six `element*_tests` files); S 8; W 17 specs; N bridge, stories, mcp_http. `pointer.spec` typing-text test was flaky and is fixed (3.3) | pass |
 | `selection` (8) | `select` `select_at` `select_region` `all` `clear` `get` `navigate` `select_lasso` | Click, Shift-click, marquee (E:486-547, 714-729), `Ctrl+A` (A:4777), `Esc` clear (A:5305). `select_lasso`, `get`, `navigate` are NEW. | Marquee rectangle and lasso path are overlay state in the recogniser (E9); only the release runs `selection.select_region` / `select_lasso`. | E 65 (`selection_tests`, `selection_lasso_tests`); S 2; W 11 specs; N bridge, stories | pass |
 | `clipboard` (6) | `copy` `cut` `paste` `copy_style` `paste_style` `copy_as` | Copy, cut, paste (A:5061-5106, 3384-3428; dead `UiAction` copies), `CopyPng` (A:4801, 4992, 3756; U:1957). Paste had two paths in the old app; there is one. `copy_style`, `paste_style` are NEW. | The system clipboard itself: the shell fills the `Clipboard` port, then runs `clipboard.paste`. Clipboard inside the text editor is editor-local (E16). | E 44; S 3; W copy-paste, elements, files-and-keys, pointer; N stories | pass |
 | `style` (4) | `set` `get` `apply_theme` `list_themes` | The `SetStrokeColor`, `SetFillColor`, `SetStrokeWidth`, font, corner radius, sloppiness, fill pattern, stroke style, opacity, calligraphy and pressure cases (rows 2-4, 29-33, 37-40, 66, 67, 70 of §7.1; U:1020-1855; A:2606-3130, 3639), which each pushed or skipped history on their own. | Opacity slider drag is a gesture (E13: `gesture.begin style.set` / `update` / `end`), one undo step. During a text edit the style goes to the editor, because `style.set` refuses with `text_editing` (E16). Popover open state. | E 37; S 1; W elements, pixels, session | pass |
-| `text` (10) | `set` `set_latex` `edit_begin` `edit_end` `style_range` `step_size` `bind` `unbind` `wrap_in_container` `set_autoresize` | In-place text editing and commit (E:234-297, 378-445, 773-791; A:4640), `UpdateMathLatex` (U:3015, A:3651), per-character colour hack `text_selection_state` (A:2578). Bound text, wrap, autosize, size steps are NEW. | The text editor (E16): content, caret, selection, IME composition, in-text keys, the editor's own undo. It lives in `edit::text_edit::Editor` (no UI types) and `crates/app/src/editor`. The session only knows an edit is running and receives the latest result through `Session::stage_text_edit` (not a command; allowlist and N3). Caret blink timer. | E 46; S 6; W elements; native none by id. `typing text` e2e is flaky (3.3) | pass, one flaky e2e |
+| `text` (10) | `set` `set_latex` `edit_begin` `edit_end` `style_range` `step_size` `bind` `unbind` `wrap_in_container` `set_autoresize` | In-place text editing and commit (E:234-297, 378-445, 773-791; A:4640), `UpdateMathLatex` (U:3015, A:3651), per-character colour hack `text_selection_state` (A:2578). Bound text, wrap, autosize, size steps are NEW. | The text editor (E16): content, caret, selection, IME composition, in-text keys, the editor's own undo. It lives in `edit::text_edit::Editor` (no UI types) and `crates/app/src/editor`. The session only knows an edit is running and receives the latest result through `Session::stage_text_edit` (not a command; allowlist and N3). Caret blink timer. | E 46; S 6; W elements; native none by id. `typing text` e2e was flaky and is fixed (3.3) | pass |
 | `arrange` (3) | `z_order` `align` `distribute` | Bring/send (U:1703-1733; A:3243-3326), align (U:1807-1847; A:3455-3604; the old centre names were swapped), now all undoable. `distribute` is NEW. | None. | E 23; S 1; W structure | pass |
 | `group` (5) | `create` `ungroup` `set_name` `enter` `exit` | `Ctrl+G` and `Ctrl+Shift+G` (A:4973, keyboard only in the old app). Group rotation and id changes were wrong in the old app (§7.5, item 11). `set_name`, `enter`, `exit` are NEW. | Double-click on a selected group is routed by the recogniser to `group.enter`. | E 26; S 2; W grouping, structure, files-and-keys; N stories | pass |
 | `frame` (6) | `wrap` `unwrap` `rename` `add` `remove` `select_children` | Nothing: the old app had no frames. All NEW (Excalidraw). | Frame name edit opens a rename dialog (`naming.rs`); the dialog buffer is UI state. | E 27; S 1; W structure | pass |
@@ -109,37 +109,37 @@ Writes that are not commands (`docs/exceptions.md` §5): N1 `Session::on_write_d
 
 ## 3. Gates and counts
 
-### 3.1 `cargo xtask ci` (run, `timeout 3600`, exit 0, 845.9 s, fresh worktree target dir)
+### 3.1 `cargo xtask ci` (run on `last-pass`, exit 0, 769.2 s, fresh worktree target dir)
 
 | Gate | Result | Time | What it covers |
 |---|---|---|---|
-| fmt | pass | 2.0 s | rustfmt |
+| fmt | pass | 1.9 s | rustfmt |
 | standards | pass | 0.0 s | `AGENTS.md` size and the paths and xtask commands it names; the toolchain matches CI; shrink-only lists (`pending-gates.txt`, `planned-paths.txt`, `unregistered.txt`) |
-| exceptions | pass | 78.6 s | 16 rows, 31 tests, 4 non-command writes; every `Undo::Gesture` command has a row |
+| exceptions | pass | 67.5 s | 16 rows, 31 tests, 4 non-command writes; every `Undo::Gesture` command has a row |
 | layers | pass | 0.0 s | crate layering and the ban on egui/winit/rfd below L6 |
-| clippy | pass | 109.0 s | `--workspace --all-targets -D warnings` |
-| wasm | pass | 41.4 s | every crate below L6 builds for `wasm32-unknown-unknown`, with clippy |
-| deny | pass | 1.5 s | advisories, bans, licences, sources |
-| test | pass | 143.4 s | nextest: 4254 tests run, 4254 passed, 0 skipped; 13 e2e tests skipped by design (they run under `cargo xtask e2e`) |
-| perf | pass | 214.6 s | work-counter tests and `perf/budgets.json` |
-| size | pass | 127.0 s | wasm and font size budgets |
-| fixtures | pass | 60.9 s | "regenerated from the old app": the old app's source was present, so the regeneration half ran |
-| harness | pass | 67.4 s | 82 scenarios, 11 accounting tests, 1 scenario guard |
+| clippy | pass | 100.3 s | `--workspace --all-targets -D warnings` |
+| wasm | pass | 41.0 s | every crate below L6 builds for `wasm32-unknown-unknown`, with clippy |
+| deny | pass | 2.1 s | advisories, bans, licences, sources |
+| test | pass | 128.3 s | nextest: 4267 tests run, 4267 passed, 0 skipped; 13 e2e tests skipped by design (they run under `cargo xtask e2e`) |
+| perf | pass | 201.7 s | work-counter tests and `perf/budgets.json` |
+| size | pass | 119.1 s | wasm and font size budgets |
+| fixtures | pass | 45.9 s | "regenerated from the old app": the old app's source was present, so the regeneration half ran |
+| harness | pass | 61.4 s | 82 scenario files (153 of 153 commands exercised), 11 accounting tests, 1 scenario guard |
 
-The compile warning `drafftink-io (lib) generated 1 warning` in the log is the `arrow_bounds` dead-code warning outside the `facts` feature (design audit item 27). Clippy passes with `-D warnings`.
+The `drafftink-io (lib) generated 1 warning` line of the earlier run (the `arrow_bounds` dead-code warning) is gone from this log (`6ad26b9`). The only warnings left in the log come from the old app's crate (`drafftink-core`, 3 unused imports), which the fixtures gate compiles from `/home/ubuntu/git/drafft-ink`. Clippy passes with `-D warnings`.
 
-### 3.2 `cargo xtask e2e` (run; Xvfb, NVIDIA L40S, headed Chromium with WebGPU, 74 browser tests)
+### 3.2 `cargo xtask e2e` (run on `last-pass`; Xvfb, NVIDIA L40S, headed Chromium with WebGPU, 74 browser tests)
 
 | Suite | Passed | Failed | Skipped |
 |---|---|---|---|
-| Browser (Playwright, `e2e/web`) | 73 | 1 | 0 |
+| Browser (Playwright, `e2e/web`) | 74 | 0 | 0 |
 | Native (`e2e/native`, real `drafftink --bridge`) | 15 | 0 | 0 |
 
-The gate exits 1 because of the one browser failure.
+The gate exits 0. The report written at `f654255` had 73 and 1 in the browser suite; the one failure is the flaky test of section 3.3, now fixed.
 
-### 3.3 The failing test
+### 3.3 The flaky test (fixed)
 
-`specs/input/pointer.spec.ts:124 typing text: the text tool, a click, the keyboard and Ctrl+Enter make one text element` expected `"hello canvas"` and received `"ello canvas"`: the first typed key is lost. I reran only this test through `DRAFFTINK_E2E_FILTER="typing text"` three times: it passed twice and failed once with the same message. So it is intermittent (2 failures in 4 runs, counting the full run), and the cause looks like the first key arriving before the on-canvas text editor takes keyboard focus. The test was not changed and its assertion stands. It belongs to the `text` and `element` families (`text.edit_begin`, `text.edit_end`, the editor in `crates/app/src/editor`). The design audit of 2026-11-08 recorded 73 of 73 browser tests passing at `17667fd`; the suite has since grown by one test and this one is flaky. It is open issue 1 in section 7.
+`specs/input/pointer.spec.ts:124 typing text: the text tool, a click, the keyboard and Ctrl+Enter make one text element` failed in about one run in three with `"ello canvas"` instead of `"hello canvas"`. Cause: a click with the text tool opens the editor inside the pointer event, but the shell turned the hidden text input on only in the next frame (`set_text_input` in `redraw`). A key that arrived in between (the spec types as soon as `state().text_edit` is set) went to the canvas, where nothing reads it. Fix (the app, not the spec): `ShellApp::event` of the app now hands the caret rectangle to the shell through `EventCx::set_text_input` when an editor is open and the shell has not turned the input on yet, and `Shell::flush_outbox` calls `set_text_input` at once, in the same task as the event. On the web that focuses the hidden textarea before the browser can deliver the next key; a frame only moves it afterwards. Proof: the spec was run 20 times in a row (`DRAFFTINK_E2E_FILTER="typing text" cargo xtask e2e --web --no-build`): 20 passed, 0 failed; the full browser suite passed (74 of 74) and so did the full `cargo xtask e2e`. The test and its assertions are unchanged.
 
 ### 3.4 Baseline against HEAD (the "same tests" requirement)
 
@@ -150,9 +150,9 @@ The old unit tests exercise types that no longer exist (`Shape`, `CanvasDocument
 | Baseline `cargo test --workspace` at `8ce40ab` (`regression.md` §1.1) | 158 (155 in `drafftink-core`, 3 in `drafftink-render`) | 0 | 0 |
 | HEAD `cargo nextest run --workspace --all-features` at `b7f8011` (`regression.md` §1.2) | 4,072 | 0 | 0 |
 | HEAD at `17667fd`, design audit | 4,127 | 0 | 0 |
-| HEAD at `f654255`, `cargo xtask ci` (run, this report) | **4,254** | 0 | 0 (13 e2e excluded from this gate) |
-| HEAD harness (run) | 94 (82 scenarios, 11 accounting, 1 guard) | 0 | 0 |
-| HEAD browser e2e (run) | 73 | 1 (flaky) | 0 |
+| HEAD at `last-pass`, `cargo xtask ci` (run) | **4,267** | 0 | 0 (13 e2e excluded from this gate) |
+| HEAD harness (run) | 94 (82 scenario files, 11 accounting, 1 guard) | 0 | 0 |
+| HEAD browser e2e (run) | 74 | 0 | 0 |
 | HEAD native e2e (run) | 15 | 0 | 0 |
 | HEAD fixtures: 20 legacy fixtures, facts from the old code (`regression.md` §1.3) | 53,420 checks, 0 failures | 0 | 0 |
 
@@ -194,7 +194,7 @@ Where the rewrite is not better: the binary is larger, the first-visit download 
 
 ## 5. Features: kept, added, missing
 
-Counts from `docs/parity.md` (audited at branch `audit-e` `25fa072`; `main` has moved since, so these may be a few rows off). Every `path::name` evidence citation was checked to exist by script (505 citations); the Playwright specs behind browser rows were not run for that audit, but 73 of 74 passed in this report's run.
+Counts from `docs/parity.md`, counted from its rows by `cargo test -p xtask parity` (`counts_table_equals_the_rows_per_status`, passes in `cargo xtask ci`). The file was audited at `audit-e` `25fa072` and refreshed after it; on branch `last-pass` every `path::name` citation was checked again by script against the tree (two renamed tests were corrected: `ui/tests/naming::the_tab_menu_moves_a_tab_left_and_right_and_at_an_end_asks_for_the_place_the_tab_has` and `ui/tests/context_menu_rows::a_rectangle_has_wrap_text_greyed_by_the_engine_and_no_label_block`), and the rows that the later branches touched were read again against the code (A-109, A-160, A-170, A-219, B-002, B-055, B-059, B-132, B-186, B-187, B-197, B-199; the three overlay rows stay `partial`: `crates/app/src/overlay.rs::to_render` still copies no lasso path, link icon or remote selection). No status changed, so the counts below are the same as before. The browser specs behind browser rows ran at this tree: 74 of 74 passed, and 15 of 15 native.
 
 | Part | done | partial | missing | out of scope | rows |
 |---|---|---|---|---|---|
@@ -297,35 +297,39 @@ The audit judged 38 clauses at `17667fd`: 20 met, 17 partly met, 1 not met (the 
 
 ## 7. Known open issues
 
-From `docs/backlog.md` (open items at the head of the file), `docs/audit/design-compliance.md` §3 (ranked list, at `17667fd`, some since fixed by later branches that I did not re-audit), `docs/parity.md` §4, and this report's run.
+Checked item by item on branch `last-pass` (`main` at `52f6d8e`) against the code and the tests, from `docs/backlog.md`, `docs/audit/design-compliance.md` §3, `docs/parity.md` §4 and the runs of section 3. Each open item says how it was verified. What the audit listed and later work fixed is in the second list, with its evidence.
 
-Found by this report's run:
+### Open
 
-1. **Flaky browser e2e** `pointer.spec.ts` "typing text": the first typed key is lost in about 1 run in 2 to 4 (section 3.3). The test is right; the app takes the first key before the text editor has focus. Not fixed here.
+1. **Command schemas in the wasm.** `schemars` is a dependency of `crates/engine` and its schemas ship in the web build (89 KB brotli, 2.8%). Every schema reader is synchronous, so they cannot be fetched. First step: a cargo feature that omits schemas from the web build (`performance.md` §8.2).
+2. **O(scene) work that remains by design**, without a counter: `arrange.z_order`, `clipboard.copy` and `copy_as`, frame capture after a resize, `group_name`, and `element.restore` (the only direct `Relations::build` call left, `edit/src/lifecycle.rs:189`; the other structure commands use `Reverse::of` and scan nothing, `performance.md` §7.8 item 4). The render order is rebuilt whole for a new, removed or reordered element and for a commit of more than an eighth of the scene (`render.md` §8).
+3. **Autosave:** one huge element and the image-file hash check are single steps. The native writer thread and the web storage path have unit tests and a type check, not a run of the real app.
+4. **Collab:** the web dialog has no token field (`crates/ui/src/surfaces/collab.rs` has none; use `collab.join_room token=`); a tab that already has content imports a room snapshot in one piece; the first import call costs about 0.8 us per element. The real-S3 store test runs against an in-process mock by default and against a real endpoint only when `DRAFFTINK_TEST_S3_ENDPOINT` is set.
+5. **A 100k-element `TabDoc` load** takes 2.6 s in release, spent in Loro.
+6. **Under Xvfb, `present` is 70 to 85% of the native process CPU.** Not our code, and not measured on real hardware. Mailbox present mode could not be measured (the NVIDIA driver offers Fifo and Immediate).
+7. **Text editor:** arrows bound to a container that grows during an edit jump when the edit ends; no I-beam cursor over text (there is no text variant in `canvas::Cursor`); RTL is weakly tested; no per-run bold or italic; no real OS input method tried; `Esc` commits and cancel is only `text.edit_end commit=false`.
+8. **Tab bar dirty state** compares content through undo and redo only.
+9. **Web PNG export inside a batch:** the renderer is asynchronous, so a batch with a pending render step is taken back and rerun by the bridge host, and the pending step is refused with `render_pending` inside a batch.
+10. **The app does not draw the lasso path, link icons or remote selection outlines.** `render::Overlay`, the canvas overlay and `canvas-js` have them; `crates/app/src/overlay.rs::to_render` copies none (`parity.md` B-002, B-055, B-199). Size S.
+11. **Smaller overlay leftovers:** a `Cursor::Pointer` variant for the link icon, distance badges for alignment snaps, IME composition in `TextEdit`. Parity P0 gaps not yet built: angle-snap rays, snap crosshair, eraser radius ring (A-086, A-088, A-046), loading percentage (A-222), last-picked swatch and rotation guides (A-042, A-087), phone and tablet layout on a real device (`parity.md` §4).
+12. **Mermaid node shapes** hexagon, cylinder, parallelogram, trapezoid, flag, subroutine and double circle are drawn as the closest shape an arrow can bind to, and the warning names each one; a real outline needs a bindable polygon element kind. Other Mermaid diagram types are refused with the list of supported ones.
+13. **No CPU fallback** for browsers without WebGPU (D13).
+14. **Windows and macOS** never ran. CI builds them, and `scripts/cross-check.sh` type-checks them from Linux (`packaging.md`); nothing was linked or run.
+15. **AGPL gaps:** no in-app source offer for modified hosted copies; two font redistribution permissions (GelPen, Vanilla Extract) are unconfirmed (`ATTRIBUTION.md`).
 
-From the backlog (open items):
+### Closed since the audit
 
-2. Schemas in the wasm (`schemars`, 89 KB brotli, 2.8%): not moved out; every schema reader is synchronous. First step: a cargo feature that omits schemas from the web build.
-3. `Relations::build` still serves `arrange.z_order`, `clipboard.copy`/`copy_as`, frame capture after a resize, `element.restore` and `group_name` (O(scene)). Render order is rebuilt whole for a new, removed or reordered element (a move or style edit is patched).
-4. Autosave: one huge element and the image-file hash check are single steps. The native writer thread and the web storage path have unit tests and a type check only, not a run of the real app.
-5. Collab: the web dialog has no token field; a tab that already has content imports a room snapshot in one piece; the first import call costs about 0.8 us per element.
-6. A 100k `TabDoc` load takes 2.6 s in release, spent in Loro.
-7. The backlog line "Web e2e: `document.spec` and `session.spec` still expect ... refused on the web ... `startup.spec` lacks `runScenario`" is stale: `startup.spec.ts:20` lists `runScenario` and `scenarioReport`, and both specs passed in this run. It should be deleted from the backlog.
-8. Under Xvfb, `present` is 70 to 85% of the native process CPU. Not our code; not measured on real hardware. Mailbox present mode could not be measured (the NVIDIA driver offers Fifo and Immediate).
-9. Text editor: arrows bound to a container that grows during an edit jump when the edit ends; no I-beam cursor over text; RTL weakly tested; no per-run bold or italic; no real OS input method tried; `Esc` commits and cancel is only `text.edit_end commit=false`.
-10. Tab bar dirty state compares content through undo and redo only.
-11. Web PNG export inside a batch: the renderer is asynchronous; a batch with a pending render step is taken back and rerun by the bridge host, and the pending step is refused with `render_pending` inside a batch.
-12. Release: `drafftink-cli` is not in the release packages. Mermaid shapes beyond the basic set render as rectangles. No CPU fallback for browsers without WebGPU.
-13. Overlay leftovers: a `Cursor::Pointer` variant for the link icon, distance badges for alignment snaps, IME composition in `TextEdit`.
-
-From the design audit and not listed as closed in `deviations.md` (verify before relying on them):
-
-14. **High:** remote merges run no relation repair (`engine/src/remote.rs`); two peers moving different targets of one arrow can leave it detached, and a delete racing `arrow.bind` can leave a binding to a deleted element. The property-test generator never emits group, binding, frame, point or undo operations. `docs/protocol.md:210` claims a gesture abort that the code does not do.
-15. **High:** a batch that changes tab (`tab.new`, `tab.switch` are `Batch::Allowed`) is not atomic: rollback covers only the start tab.
-16. **High:** calls through `window.drafftink` and WebMCP wait while the tab is hidden (the queue drains inside a frame). The browser e2e now has `shell/hidden.spec.ts` (it simulates a hidden page) and it passed in this run; I did not check whether it covers a call made while hidden, so treat the item as unverified.
-17. `doc.export` to a path outside the allowed folder returns success with only a warning (`engine/src/ports.rs:475`).
-18. The design audit said the packaged server was built without `sqlite` and `s3`. That is closed: `scripts/package-linux.sh:48` now passes `--features drafftink-server/sqlite,drafftink-server/s3` and `release.yml` smoke-tests `--storage sqlite`. Still open from that item: the real-S3 test returns early and passes when its environment variable is unset.
-19. Windows and macOS: CI builds only; no run on either system.
-20. AGPL gaps: no in-app source offer for modified hosted copies; two font redistribution permissions (GelPen, Vanilla Extract) unconfirmed (`ATTRIBUTION.md`).
-21. Parity P0 gaps from `parity.md` §4: angle-snap rays, snap crosshair, eraser radius ring, loading percentage, last-picked swatch, phone and tablet layout run on a real device, app overlay for lasso path, link icons and remote selection outlines (the last was done by branch `render-overlays`, per the backlog; the parity file predates it).
-22. `docs/parity.md` was audited at `25fa072`, and its counts are not regenerated at HEAD.
+| Was | Evidence at `last-pass` |
+|---|---|
+| Flaky browser e2e `typing text` (first key lost) | Fixed in this branch (section 3.3). 20 of 20 runs of the spec pass; full browser suite 74 of 74. |
+| Remote merges run no relation repair; the property test never emitted group, binding, frame, point or undo operations; `protocol.md` claimed a gesture abort the code did not do (audit item 14) | `engine/src/remote_repair.rs` repairs after a remote merge, outside undo, once. Tests: `remote_repair_tests::two_peers_moving_different_targets_of_one_arrow_leave_it_on_both`, `a_delete_racing_a_bind_frees_the_arrow_end_on_every_peer`, `a_repair_is_on_no_undo_stack_and_is_recorded_in_the_ring_as_remote` and the random three-peer test, whose actions include `arrow.bind`, `group.create`, `frame.wrap`, `text.bind`, `history.undo` and point handles. A running gesture on an element a peer deleted is cancelled (`a_gesture_on_an_element_a_peer_deleted_is_cancelled_and_the_delete_stands`; `protocol.md` §9 item 4). Branches `audit-a`, `audit-b`. |
+| A batch that changes tab is not atomic (item 15) | `tab.new`, `tab.switch` and `tab.duplicate` are `batch=last`, and the executor stops and rolls back a batch whose step changed the active tab (`tab_tests::new_switch_and_duplicate_are_only_the_last_step_of_a_batch`, `a_command_that_turns_out_to_change_the_tab_stops_the_batch_and_rolls_back`). `4894b7b`. |
+| Calls through `window.drafftink` and WebMCP wait while the tab is hidden (item 16) | A wake runs queued calls without a frame (`crates/app/tests/app.rs::a_wake_runs_the_queued_page_calls_without_a_frame`). `e2e/web/specs/shell/hidden.spec.ts` hides the page and checks that `state`, `element.create`, a batch and a refused command answer, and that no frame is drawn; it passes. `6285631`, `f6cbe34`. |
+| `doc.export` to a path outside the allowed folder returns success with a warning (item 17) | It already refused when this check started: a failed file write of an export is `io_failed` ("The export to ... did NOT happen ... Nothing was written", `Refusal::not_exported`, `engine/src/saves.rs`), for a single call and in a batch. The refusal text now also names the way out. New tests: `apps/drafftink-mcp/src/ports.rs::doc_export_outside_the_allowed_folders_is_refused_and_writes_nothing` (engine, real `FileScope`) and `apps/drafftink-mcp/tests/modes.rs::headless_export_outside_the_allowed_folders_is_an_error_that_says_where_to_write` (MCP tool `export` over a pipe: `isError`, the allowed folders, `--allow-dir`, `to: "inline"`, no file written; the same call inside the folder succeeds). |
+| The packaged server was built without `sqlite` and `s3` (item 18) | `scripts/package-linux.sh` passes both features; `release.yml` smoke-tests `--storage sqlite`. |
+| `drafftink-cli` is not in the release packages | In the AppImage, deb, tar.gz, dmg, zip and MSI (`d128923`). |
+| Mermaid shapes beyond the basic set render as rectangles without a word | Each maps to the closest bindable shape and the warning names it (`fb868b7`, `diagram_mermaid::every_mermaid_shape_maps_to_a_shape_an_arrow_can_bind_to_and_only_approximations_are_reported`). The approximation itself is open item 12. |
+| Backlog line that `document.spec`, `session.spec` and `startup.spec` expect old behaviour (item 7) | Stale: `startup.spec.ts:20` lists `runScenario` and `scenarioReport`, and all browser specs pass. The line is gone from the backlog. |
+| `arrow_bounds` dead-code warning in every build | `arrow_bounds` is compiled only with the `facts` feature (`6ad26b9`); the `ci` log has no `drafftink-io` warning. |
+| Context-menu rows hidden when they do not apply | Greyed with the engine's text (`7a3e777`, `context_menu_rows::frame_rows_are_greyed_with_the_engine_text_when_the_selection_has_no_frame`). |
+| `docs/parity.md` not regenerated at HEAD; stale rows in `docs/backlog.md` | Counts re-derived and rows re-read (section 5); the backlog keeps its open items and its Done sections only. |
