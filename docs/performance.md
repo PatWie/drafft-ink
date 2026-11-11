@@ -548,3 +548,39 @@ What the questions found:
 - Do not enable `--all-features` in wasm-opt (`web-app.md`). Do not move a crate that runs every frame to `z`: measure with `scripts/web_startup.py`.
 - A new big asset is a file under `dist/fonts/` (or another hashed folder), not an `include_bytes!` in the module.
 
+### 7.8 The scenario drivers and the second perf pass
+
+The drivers of §5.3 run the real app, so they show what the work-counter tests cannot: the cost of a frame with the UI, the display server and the GPU driver in it. Numbers are from the research box (NVIDIA L40S, 64 threads, Xvfb 1400x900, window 1280x800, release build, load average 3 to 20), medians of three alternating runs of 8 s unless said otherwise. "Before" is `main` at `7e97970` with the drivers added and nothing else; "after" is this branch. Frames and CPU come from the report (`stats.frames.total`, `external.cpu_pct`).
+
+| Scenario (events in the window) | Before | After |
+|---|---|---|
+| `wheel@10k`, 800 ticks: frames | 1922 (2.4 per tick, 1920 of them reason `ui`) | 531 (at most one per tick, 2 of reason `ui`) |
+| `wheel@10k`: CPU of one core | 55% | 33% |
+| `zoom@10k`, 480 ticks: frames | 2000 (4.2 per tick) | 482 (1.0 per tick) |
+| `zoom@10k`: CPU | 54% | 30% |
+| `pan@10k`, 1000 moves: frames | 1046 (1.05 per move) | 529 (paced to 66 per second) |
+| `pan@10k`, `pan@100k`: CPU | 34%, 47% | 33%, 43% |
+| `pan@10k`: CPU without the X11 present (estimate) | 13% | 1% to 3% |
+| `drag@100k`, 100 elements: frame time p50, p99 | 26.7 ms, 35.4 ms | 8.9 ms, 9.7 ms |
+| `drag@100k`: worst frame (first drag frame, 10 s windows) | 300 to 811 ms | 56 ms |
+| `drag@100k`: CPU | 89% | 59% |
+| `hover@10k`, 1000 moves: CPU, frames | 6.5%, 78 (one per hover change) | 6.6%, 78 |
+| Web `zoom@100k`: frame p50, frames in 10 s, scene passes | 66 ms, 148, 92 passes of 100,000 elements | 1.6 ms, 271, 0 |
+| Web `drag@N`: scene passes | 3 of N | 0 |
+| `idle` (native, web) | 0 frames, 0.5% (web 1.0% to 2.5%) | same |
+
+What the drivers showed, and what changed for each:
+
+- **Wheel: two frames per tick, three to four with ctrl.** egui smooths a scroll over several frames and asks for a repaint for each. The shell now offers wheel, trackpad scroll and pinch over the canvas to the app first (`ShellEvent::Wheel`, `docs/shell.md` §2); egui never sees what the app takes. One frame per tick at most, reason `gesture`; `redraws.ui` is 2.
+- **Frame pacing.** Native frames start at least 0.9 refresh periods apart (`RepaintState::set_min_interval`). A 125 Hz mouse used to draw 130 frames per second; now 66. The app applies every event to the camera at once, so only the drawing is coalesced. Under Xvfb this does not lower the CPU of `pan` (next point), but it halves the frames, and with them the Vello runs and the GPU work, and it keeps a 1000 Hz pen at the display rate.
+- **Where the CPU of a pan goes.** Spans (`present`, `acquire_surface`, `egui_input`, `tessellate`, `ui`, `gpu_submit`, `encode`) split a frame. In `pan@10k` before: 2.8 ms of 3.8 ms are `present`, the NVIDIA driver's copy to the X server and wait; the app's own work is 1.0 ms (egui 0.3, Vello submit 0.2, `encode` 0.05, tessellation 0.08). Per second, `present` costs about 33% of a core whether 65 or 130 frames are drawn, so it is a property of the display path, not of the app; `perf` could not be used (kernel `perf_event_paranoid=4`), the spans are the profile. `external.cpu_pct_ex_present` subtracts it (an estimate: a wall-clock span against CPU time). The encode side is as the plan says: a pan frame builds 30 to 50 fragments in 10 s (`cache_miss`, the elements that come into view), replays 60 cached fragments per frame (`elements_encoded`), and `encode` is 0.05 to 0.1 ms. Nothing is regenerated. A camera move re-composites cached fragments; what remains is Vello drawing the scene again, which is GPU work.
+- **100k elements.** Pan, wheel and zoom frames cost the same at 1k, 10k and 100k (p50 7.2 / 7.0 / 7.7 ms under pacing, `encode` below 0.2 ms at all three). Three things scaled with the scene and are fixed:
+  1. The app's paint index compared every element's version after each edit (`CanvasView::sync_index`: 32 ms per drag frame at 100k). It now re-reads the ids the commits touched (`TabDoc::take_touched`, the same feed as the spatial index). A drag frame at 100k: 31.9 ms before, 4.1 ms after.
+  2. `style::read` and `style::apply` built the label map of the whole scene for every selection (the properties panel asks on every selection change): 0.8 s at 100k when a drag began. They look up the labels of the selected ids through the derived index (`text_bind::labels_of`).
+  3. The availability checks of `group.ungroup`, `group.create`, `arrange.align` and `arrange.distribute` built the relations of the whole scene (`Relations::build`). In the browser that was 47 ms per frame while zooming at 100k. They use `Reverse::of`, the index when there is one.
+  The spatial index of a big document is built in the frame after the load (`App::frame`), not by the first hover (0.7 s at 100k).
+- **Autosave inside a drag.** A drag at 100k showed one frame of 0.8 s: the autosave wrote the whole document (`snapshot().to_json()`) one second after the drag began. A write now waits for the running gesture (`Session::workspace_tick`). The write itself, 0.8 s at 100k on the UI thread, remains after the gesture and is in `docs/backlog.md`.
+- **Phases.** `encode` is now measured in the app, and a phase inside another counts for itself only, so `ui` no longer includes the scene composition and the phases add up to the frame.
+- **Not changed.** The `drag` scenarios lay out about one text and one formula per frame while ten of each are dragged (`relayouts`); `docs/backlog.md`.
+
+Start-up. Native: the first frame is on screen 320 to 340 ms after the process started (`external.first_frame_ms`); 265 to 290 ms of it is the Vulkan instance, adapter and device (`startup_gpu_ms`), the session and the workspace restore are 6 ms (`startup_app_ms`, `startup_restore_ms`). The driver and the NVIDIA ICD dominate, so there is nothing to gain in our code. Web (headed Chromium on Xvfb, a fresh profile, wasm without compression from `drafftink-server`): the page marks (`window.__marks`, `performance.getEntriesByType('mark')`) split the time. See the table below.

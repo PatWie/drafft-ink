@@ -1,6 +1,6 @@
 //! `cargo xtask perf`: the performance gate (`docs/performance.md` section 5, `perf/README.md`).
 //!
-//! Two tiers:
+//! Three tiers:
 //!
 //! * **Work counters** (the default, part of `cargo xtask ci`). Runs `tests/perf_work.rs` of every crate that has
 //!   one, in release mode, at 1k, 10k and 100k elements. The tests assert on counted work and write a

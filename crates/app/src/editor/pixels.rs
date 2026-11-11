@@ -65,7 +65,7 @@ fn editing(r: &mut Rig, zoom: f64) -> Scene {
     let arranged = ts.with(|ts| editor.paint(ts).clone());
     canvas.set_hidden(editor.hidden());
     let (tab, revision) = (r.s.tab().id, r.s.store().revision());
-    canvas.sync_index(tab, revision, r.s.store());
+    canvas.sync_index(tab, revision, r.s.store(), &[]);
     let view = view(zoom);
     canvas.compose_world(r.s.store(), &view);
     let overlay =
@@ -80,7 +80,7 @@ fn editing(r: &mut Rig, zoom: f64) -> Scene {
 fn committed(r: &mut Rig, zoom: f64) -> Scene {
     let mut canvas = CanvasView::new(r.ts.clone());
     let (tab, revision) = (r.s.tab().id, r.s.store().revision());
-    canvas.sync_index(tab, revision, r.s.store());
+    canvas.sync_index(tab, revision, r.s.store(), &[]);
     canvas.compose_world(r.s.store(), &view(zoom));
     let mut scene = Scene::new();
     canvas.write_to(&mut scene);
@@ -199,7 +199,7 @@ fn the_caret_and_the_selection_are_drawn_over_the_text_and_nothing_else_changes(
         let arranged = ts.with(|ts| editor.paint(ts).clone());
         canvas.set_hidden(editor.hidden());
         let (tab, revision) = (r.s.tab().id, r.s.store().revision());
-        canvas.sync_index(tab, revision, r.s.store());
+        canvas.sync_index(tab, revision, r.s.store(), &[]);
         canvas.compose_world(r.s.store(), &view(1.0));
         let overlay =
             Overlay { text_edit: Some(ts.with(|ts| editor.overlay(ts, Theme::Light, now))), ..Overlay::default() };
