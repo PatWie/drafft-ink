@@ -1,14 +1,26 @@
 import { test, expect, type App } from "../../support/app.ts";
 
-/** Brings another tab of the same window to the front, so that `app.page` is hidden, and waits until it reports it. */
+/**
+ * Makes the page report that it is hidden, and returns the function that shows it again.
+ *
+ * Xvfb has no window manager, so another tab or window never occludes the page and the browser never reports
+ * `hidden`. The page is told the way the shell's own idle checks do it (`crates/gpu/scripts/idle_web.py`): the
+ * `hidden` and `visibilityState` properties are overridden and `visibilitychange` is fired. The app reads
+ * `document.hidden` in that event, so everything after it runs the code path of a hidden tab: the shell draws no
+ * frame and a wake-up has to do its work without one.
+ */
 async function hide(app: App): Promise<() => Promise<void>> {
-  const other = await app.page.context().newPage();
-  await other.goto("about:blank");
-  await other.bringToFront();
-  await app.until("the page to report that it is hidden", async () => (await app.page.evaluate(() => document.visibilityState)) === "hidden");
+  await app.page.evaluate(() => {
+    Object.defineProperty(document, "hidden", { configurable: true, get: () => true });
+    Object.defineProperty(document, "visibilityState", { configurable: true, get: () => "hidden" });
+    document.dispatchEvent(new Event("visibilitychange"));
+  });
   return async () => {
-    await app.page.bringToFront();
-    await other.close();
+    await app.page.evaluate(() => {
+      delete (document as unknown as Record<string, unknown>)["hidden"];
+      delete (document as unknown as Record<string, unknown>)["visibilityState"];
+      document.dispatchEvent(new Event("visibilitychange"));
+    });
   };
 }
 
@@ -32,14 +44,14 @@ test("hidden page: window.drafftink commands run and answer, and no frame is dra
   const before = await app.frames();
 
   const revision = (await within("state", app.state())).revision as number;
-  const made = await within("element.create", app.exec("element.create", { kind: "rectangle", bounds: [10, 20, 120, 80] }));
+  const made = await within("element.create", app.exec("element.create", { kind: "rectangle", bounds: { x: 10, y: 20, w: 120, h: 80 } }));
   expect(made.changed, "the command changed the document").toBe(true);
   expect(((await within("state", app.state())).revision as number), "a read sees the new revision").toBeGreaterThan(revision);
   const batch = await within(
     "batch",
     app.batch([
-      { id: "element.create", args: { kind: "ellipse", bounds: [200, 20, 60, 60] } },
-      { id: "element.create", args: { kind: "rectangle", bounds: [300, 20, 60, 60] } },
+      { id: "element.create", args: { kind: "ellipse", bounds: { x: 200, y: 20, w: 60, h: 60 } } },
+      { id: "element.create", args: { kind: "rectangle", bounds: { x: 300, y: 20, w: 60, h: 60 } } },
     ]),
   );
   expect(batch.failed ?? null, "the batch ran").toBeNull();
@@ -48,7 +60,7 @@ test("hidden page: window.drafftink commands run and answer, and no frame is dra
   expect(refusal.message.length, "a refusal answers with its text").toBeGreaterThan(0);
 
   expect((await app.frames()).frames, "a hidden page draws nothing for these calls").toBe(before.frames);
-  expect(await app.page.evaluate(() => document.visibilityState)).toBe("hidden");
+  expect(await app.page.evaluate(() => document.visibilityState), "the page is still hidden").toBe("hidden");
 
   await show();
   await app.until("the shape on screen after the page is shown again", async () => (await app.frames()).frames > before.frames);

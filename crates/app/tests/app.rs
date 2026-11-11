@@ -172,7 +172,7 @@ mod wake {
         let run = ask(
             &tx,
             "execute",
-            json!({ "id": "element.create", "args": { "kind": "rectangle", "bounds": [0, 0, 80, 60] } }),
+            json!({ "id": "element.create", "args": { "kind": "rectangle", "bounds": { "x": 0, "y": 0, "w": 80, "h": 60 } } }),
         );
         let state = ask(&tx, "state", json!({}));
         assert_eq!(answered(&run) + answered(&state), 0, "nothing runs before the shell wakes the app");
