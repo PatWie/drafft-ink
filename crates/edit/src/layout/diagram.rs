@@ -20,8 +20,9 @@ use drafftink_scene::{
     Kind, PathType, SceneRead, SceneTx, Sloppiness, StoreError, StrokeStyle, Style, TextData, TextStyle, ZIndex,
 };
 
+use super::cluster::{CLUSTER_TITLE_BAND, ClusterIn, ClusteredInput, MAX_CLUSTER_DEPTH, layout_clustered};
 use super::route::{Heads, NodeBox, RouteParams, arrow_element, route_edge, route_self_loop};
-use super::{Algorithm, LayoutError, LayoutGraph, LayoutOpts, LayoutResult, compute_layout, scene_bounds};
+use super::{Algorithm, Direction, LayoutError, LayoutGraph, LayoutOpts, LayoutResult, compute_layout, scene_bounds};
 use crate::binding::update_bound_arrows;
 use crate::ids::unused_element_id;
 use crate::text_bind::{
@@ -38,6 +39,13 @@ const MIN_NODE: Size = Size::new(80.0, 48.0);
 const AUTO_LABEL_WIDTH: f64 = 240.0;
 const FRAME_PADDING: f64 = 32.0;
 const MAX_SYMBOLIC_LEN: usize = 64;
+/// Most clusters in one diagram.
+pub const MAX_CLUSTERS: usize = 1000;
+/// Fill of a cluster box: light slate, so that the nodes inside stay legible.
+const CLUSTER_FILL: Color = Color::rgb(0xf1, 0xf5, 0xf9);
+/// Outline of a cluster box.
+const CLUSTER_STROKE: Color = Color::rgb(0x94, 0xa3, 0xb8);
+const CLUSTER_CORNER_RADIUS: f64 = 8.0;
 
 // ---------------------------------------------------------------------------------------------
 // The spec
@@ -253,6 +261,35 @@ pub struct GroupSpec {
     pub members: Vec<String>,
 }
 
+/// A titled box around some nodes (a Mermaid subgraph). The box is a rectangle with a title above the nodes. The
+/// layout puts the members inside it, and edges may start or end at it.
+///
+/// A cluster is drawn behind its members: a rounded rectangle with a light fill, and a text element with the
+/// title centred in a band at the top. These are plain elements, not a frame: a frame clips what it holds and a
+/// shape can be in one frame only, so frames cannot nest.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct ClusterSpec {
+    /// A symbolic id, unique among the nodes and the clusters. Edges may use it as an end.
+    pub id: String,
+    /// The title. Empty: no title text is made.
+    #[serde(default)]
+    pub title: String,
+    /// The id of the cluster around this one.
+    #[serde(default)]
+    pub parent: Option<String>,
+    /// The ids of the nodes directly inside. A node is in one cluster at most; nodes of nested clusters are not
+    /// listed here.
+    #[serde(default)]
+    pub members: Vec<String>,
+    /// The flow inside this cluster. Absent: the one around it.
+    #[serde(default)]
+    pub direction: Option<Direction>,
+    /// Put the box, the title and everything inside in one group. Groups of nested clusters nest.
+    #[serde(default)]
+    pub group: bool,
+}
+
 /// A whole diagram.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
@@ -262,9 +299,13 @@ pub struct DiagramSpec {
     /// The edges.
     #[serde(default)]
     pub edges: Vec<EdgeSpec>,
-    /// Groups of nodes. Arrows between two members of a group join it.
+    /// Groups of nodes. Arrows between two members of a group join it. When there are clusters, these groups sit
+    /// outside every cluster group, and a cluster box joins the groups that hold all of its nodes.
     #[serde(default)]
     pub groups: Vec<GroupSpec>,
+    /// Titled boxes around nodes.
+    #[serde(default)]
+    pub clusters: Vec<ClusterSpec>,
     /// How to place the nodes.
     #[serde(default)]
     pub layout: LayoutOpts,
@@ -286,8 +327,11 @@ pub struct DiagramResult {
     pub nodes: BTreeMap<String, ElementId>,
     /// The arrows, in the order of the spec's edges.
     pub edges: Vec<ElementId>,
-    /// Symbolic group id (for groups that have one) to the real group id.
+    /// Symbolic group id (for groups that have one) to the real group id. A cluster that is grouped appears under
+    /// its own id.
     pub groups: BTreeMap<String, GroupId>,
+    /// Symbolic cluster id to the element id of its box.
+    pub clusters: BTreeMap<String, ElementId>,
     /// Every group created, in spec order.
     pub group_ids: Vec<GroupId>,
     /// The frame, when one was asked for.
@@ -333,6 +377,14 @@ pub enum DiagramError {
         id: String,
         /// The known ids.
         known: String,
+    },
+    /// A cluster is not usable.
+    #[error("Cluster `{id}` is not usable: {reason}")]
+    BadCluster {
+        /// The cluster's symbolic id.
+        id: String,
+        /// What is wrong, with the fix.
+        reason: String,
     },
     /// A group is not usable.
     #[error("Group {index} is not usable: {reason}")]
@@ -426,8 +478,15 @@ fn check_name(name: &str) -> bool {
     (1..=64).contains(&n) && !name.starts_with('@') && !name.starts_with('$') && !name.chars().any(char::is_control)
 }
 
-/// Group membership per node (innermost first), checked to nest.
-fn resolve_groups(spec: &DiagramSpec, index: &BTreeMap<&str, usize>) -> Result<Vec<Vec<usize>>, DiagramError> {
+/// The groups of a spec, checked to nest.
+struct GroupSets {
+    /// The member set of every group.
+    members: Vec<BTreeSet<usize>>,
+    /// The groups each node is in, smallest first.
+    per_node: Vec<Vec<usize>>,
+}
+
+fn resolve_groups(spec: &DiagramSpec, index: &BTreeMap<&str, usize>) -> Result<GroupSets, DiagramError> {
     let mut members: Vec<BTreeSet<usize>> = Vec::new();
     for (gi, g) in spec.groups.iter().enumerate() {
         let mut set = BTreeSet::new();
@@ -469,7 +528,93 @@ fn resolve_groups(spec: &DiagramSpec, index: &BTreeMap<&str, usize>) -> Result<V
     for list in &mut per_node {
         list.sort_by_key(|&g| (members[g].len(), g));
     }
-    Ok(per_node)
+    Ok(GroupSets { members, per_node })
+}
+
+/// The clusters of a spec, after the checks. Cluster `c` is item `nodes + c`.
+#[derive(Debug, Default)]
+struct ClusterPlan {
+    /// The innermost cluster of every node.
+    node_cluster: Vec<Option<usize>>,
+    /// The cluster around every cluster.
+    parent: Vec<Option<usize>>,
+    /// How deeply every cluster is nested (0: at the top level).
+    depth: Vec<usize>,
+    /// Every node in the cluster, those of nested clusters included.
+    nodes_in: Vec<BTreeSet<usize>>,
+}
+
+impl ClusterPlan {
+    /// The clusters from `start` outwards.
+    fn chain(&self, start: Option<usize>) -> impl Iterator<Item = usize> + '_ {
+        std::iter::successors(start, |&c| self.parent.get(c).copied().flatten())
+    }
+}
+
+fn bad_cluster(id: &str, reason: impl Into<String>) -> DiagramError {
+    DiagramError::BadCluster { id: id.to_owned(), reason: reason.into() }
+}
+
+/// Checks the ids, parents and members of the clusters.
+fn resolve_clusters(spec: &DiagramSpec, node_index: &BTreeMap<&str, usize>) -> Result<ClusterPlan, DiagramError> {
+    if spec.clusters.len() > MAX_CLUSTERS {
+        return Err(DiagramError::LimitExceeded { what: "clusters", max: MAX_CLUSTERS });
+    }
+    let mut cluster_index: BTreeMap<&str, usize> = BTreeMap::new();
+    for (c, cl) in spec.clusters.iter().enumerate() {
+        let len = cl.id.chars().count();
+        if len == 0 || len > MAX_SYMBOLIC_LEN || cl.id.chars().any(char::is_control) {
+            return Err(DiagramError::BadNodeId(cl.id.clone()));
+        }
+        if node_index.contains_key(cl.id.as_str()) || cluster_index.insert(cl.id.as_str(), c).is_some() {
+            return Err(DiagramError::DuplicateNode(cl.id.clone()));
+        }
+    }
+    let mut plan = ClusterPlan {
+        node_cluster: vec![None; spec.nodes.len()],
+        parent: Vec::with_capacity(spec.clusters.len()),
+        depth: Vec::with_capacity(spec.clusters.len()),
+        nodes_in: vec![BTreeSet::new(); spec.clusters.len()],
+    };
+    for cl in &spec.clusters {
+        let parent = match &cl.parent {
+            None => None,
+            Some(p) => Some(cluster_index.get(p.as_str()).copied().ok_or_else(|| {
+                let known: Vec<&str> = spec.clusters.iter().take(20).map(|c| c.id.as_str()).collect();
+                bad_cluster(&cl.id, format!("its parent `{p}` is not a cluster. Known clusters: {}.", known.join(", ")))
+            })?),
+        };
+        plan.parent.push(parent);
+    }
+    for (c, cl) in spec.clusters.iter().enumerate() {
+        let depth = plan.chain(plan.parent[c]).take(MAX_CLUSTER_DEPTH + 1).count();
+        if depth > MAX_CLUSTER_DEPTH {
+            return Err(bad_cluster(
+                &cl.id,
+                format!("clusters are nested more than {MAX_CLUSTER_DEPTH} deep, or around each other. Flatten them."),
+            ));
+        }
+        plan.depth.push(depth);
+        for m in &cl.members {
+            let n = node_index.get(m.as_str()).copied().ok_or_else(|| DiagramError::UnknownGroupMember {
+                index: c,
+                id: m.clone(),
+                known: known_list(spec),
+            })?;
+            if plan.node_cluster[n].replace(c).is_some() {
+                return Err(bad_cluster(
+                    &cl.id,
+                    format!("node `{m}` is a member of two clusters. A node belongs to one."),
+                ));
+            }
+        }
+    }
+    for (n, cluster) in plan.node_cluster.clone().into_iter().enumerate() {
+        for c in plan.chain(cluster).collect::<Vec<_>>() {
+            plan.nodes_in[c].insert(n);
+        }
+    }
+    Ok(plan)
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -541,10 +686,23 @@ fn heads_of(e: &EdgeSpec) -> Heads {
     Heads { start: e.start_head.unwrap_or(base.start), end: e.end_head.unwrap_or(base.end) }
 }
 
-/// What the checks of a spec found out: the nodes each edge joins and the groups each node is in.
+/// What the checks of a spec found out. Items are numbered nodes first, then clusters.
 struct Checked {
+    /// The items each edge joins.
     edge_ends: Vec<(usize, usize)>,
-    node_groups: Vec<Vec<usize>>,
+    /// The groups each item is in, innermost first. An index is into the group ids made for the spec: the groups
+    /// of the spec, then the groups of the clusters that ask for one.
+    item_groups: Vec<Vec<usize>>,
+    /// The index of the group of every cluster that has one.
+    cluster_group: Vec<Option<usize>>,
+    clusters: ClusterPlan,
+}
+
+impl Checked {
+    /// How many groups the diagram makes.
+    fn group_count(&self, spec: &DiagramSpec) -> usize {
+        spec.groups.len() + self.cluster_group.iter().flatten().count()
+    }
 }
 
 /// Checks counts, ids, edges, groups and names (unique inside the spec and against the scene).
@@ -568,10 +726,14 @@ fn check_spec<R: SceneRead>(scene: &R, spec: &DiagramSpec) -> Result<Checked, Di
             return Err(DiagramError::DuplicateNode(n.id.clone()));
         }
     }
+    let clusters = resolve_clusters(spec, &index)?;
+    let n = spec.nodes.len();
+    let cluster_index: BTreeMap<&str, usize> =
+        spec.clusters.iter().enumerate().map(|(c, cl)| (cl.id.as_str(), n + c)).collect();
     let mut edge_ends: Vec<(usize, usize)> = Vec::with_capacity(spec.edges.len());
     for (i, e) in spec.edges.iter().enumerate() {
         let find = |id: &str| {
-            index.get(id).copied().ok_or_else(|| DiagramError::UnknownNode {
+            index.get(id).or_else(|| cluster_index.get(id)).copied().ok_or_else(|| DiagramError::UnknownNode {
                 index: i,
                 id: id.to_string(),
                 known: known_list(spec),
@@ -579,7 +741,35 @@ fn check_spec<R: SceneRead>(scene: &R, spec: &DiagramSpec) -> Result<Checked, Di
         };
         edge_ends.push((find(&e.from)?, find(&e.to)?));
     }
-    let node_groups = resolve_groups(spec, &index)?;
+    let GroupSets { members: group_members, per_node: explicit } = resolve_groups(spec, &index)?;
+    // The group of a cluster comes after the groups of the spec.
+    let mut next_group = spec.groups.len();
+    let cluster_group: Vec<Option<usize>> = spec
+        .clusters
+        .iter()
+        .map(|cl| {
+            cl.group.then(|| {
+                next_group += 1;
+                next_group - 1
+            })
+        })
+        .collect();
+    // A node is in the groups of its clusters (innermost first), then in the groups of the spec.
+    let mut item_groups: Vec<Vec<usize>> = Vec::with_capacity(n + spec.clusters.len());
+    for (node, spec_groups) in explicit.iter().enumerate() {
+        let own = clusters.chain(clusters.node_cluster[node]).filter_map(|c| cluster_group[c]);
+        item_groups.push(own.chain(spec_groups.iter().copied()).collect());
+    }
+    // A cluster box is in its own group and those around it, then in the groups of the spec that hold every node
+    // of the cluster.
+    for c in 0..spec.clusters.len() {
+        let own = clusters.chain(Some(c)).filter_map(|c| cluster_group[c]);
+        let mut outer: Vec<usize> = (0..group_members.len())
+            .filter(|&g| !clusters.nodes_in[c].is_empty() && clusters.nodes_in[c].is_subset(&group_members[g]))
+            .collect();
+        outer.sort_by_key(|&g| (group_members[g].len(), g));
+        item_groups.push(own.chain(outer).collect());
+    }
 
     let mut taken: BTreeMap<String, String> =
         scene.iter().filter_map(|e| e.name.clone().map(|n| (n, e.id.to_string()))).collect();
@@ -597,7 +787,7 @@ fn check_spec<R: SceneRead>(scene: &R, spec: &DiagramSpec) -> Result<Checked, Di
             return Err(DiagramError::NameTaken { name: name.clone(), other });
         }
     }
-    Ok(Checked { edge_ends, node_groups })
+    Ok(Checked { edge_ends, item_groups, cluster_group, clusters })
 }
 
 /// The size and the font of every node.
@@ -629,40 +819,98 @@ fn plan_nodes<M: TextMeasure + ?Sized>(m: &M, spec: &DiagramSpec) -> Result<(Vec
     Ok((sizes, fonts))
 }
 
-/// Places the nodes. Returns the layout and the shift that moves it to the requested origin.
+/// Where the nodes and the cluster boxes go.
+struct Placed {
+    layout: LayoutResult,
+    /// The box of every cluster.
+    boxes: Vec<Rect>,
+}
+
+/// The size of the title text of every cluster. No title: no size.
+fn title_sizes<M: TextMeasure + ?Sized>(m: &M, spec: &DiagramSpec) -> Vec<Size> {
+    let font = TextStyle::default();
+    spec.clusters
+        .iter()
+        .map(|c| if c.title.trim().is_empty() { Size::ZERO } else { measure_text(m, &c.title, &font, None) })
+        .collect()
+}
+
+/// Places the nodes and the clusters. Returns the layout and the shift that moves it to the requested origin.
 fn place_nodes(
     spec: &DiagramSpec,
     sizes: &[Size],
-    edge_ends: &[(usize, usize)],
+    titles: &[Size],
+    checked: &Checked,
     requested_origin: Point,
-) -> Result<(LayoutResult, Vec2), DiagramError> {
-    let fixed: Vec<Option<Point>> = spec.nodes.iter().map(|n| n.x.zip(n.y).map(|(x, y)| Point::new(x, y))).collect();
-    if spec.layout.algorithm == Algorithm::None
-        && let Some(i) = fixed.iter().position(Option::is_none)
-    {
-        return Err(DiagramError::MissingPosition(spec.nodes[i].id.clone()));
-    }
-    let graph = LayoutGraph { sizes: sizes.to_vec(), edges: edge_ends.to_vec(), fixed };
-    let layout = compute_layout(&graph, &spec.layout).map_err(|e| match e {
-        LayoutError::NotForest { node } => DiagramError::TreeNotForest(spec.nodes[node].id.clone()),
-        LayoutError::BadSize { node } => DiagramError::BadSize(spec.nodes[node].id.clone()),
-        LayoutError::MissingPosition { node } => DiagramError::MissingPosition(spec.nodes[node].id.clone()),
+) -> Result<(Placed, Vec2), DiagramError> {
+    let node_id = |i: usize| spec.nodes.get(i).map_or_else(String::new, |n| n.id.clone());
+    let node_error = |e: LayoutError| match e {
+        LayoutError::NotForest { node } => DiagramError::TreeNotForest(node_id(node)),
+        LayoutError::BadSize { node } => DiagramError::BadSize(node_id(node)),
+        LayoutError::MissingPosition { node } => DiagramError::MissingPosition(node_id(node)),
+        LayoutError::BadCluster { cluster } => DiagramError::BadCluster {
+            id: spec.clusters.get(cluster).map_or_else(String::new, |c| c.id.clone()),
+            reason: e.to_string(),
+        },
         other => DiagramError::Layout(other),
-    })?;
+    };
+    let placed = if spec.clusters.is_empty() {
+        let fixed: Vec<Option<Point>> =
+            spec.nodes.iter().map(|n| n.x.zip(n.y).map(|(x, y)| Point::new(x, y))).collect();
+        if spec.layout.algorithm == Algorithm::None
+            && let Some(i) = fixed.iter().position(Option::is_none)
+        {
+            return Err(DiagramError::MissingPosition(spec.nodes[i].id.clone()));
+        }
+        let graph = LayoutGraph { sizes: sizes.to_vec(), edges: checked.edge_ends.clone(), fixed };
+        Placed { layout: compute_layout(&graph, &spec.layout).map_err(node_error)?, boxes: Vec::new() }
+    } else {
+        if spec.layout.algorithm == Algorithm::None {
+            return Err(bad_cluster(
+                &spec.clusters[0].id,
+                "boxes around nodes need an automatic layout. Use layered, tree, grid or force.",
+            ));
+        }
+        let plan = &checked.clusters;
+        let clusters: Vec<ClusterIn> = spec
+            .clusters
+            .iter()
+            .zip(titles)
+            .zip(&plan.parent)
+            .map(|((c, t), &parent)| ClusterIn { parent, title: *t, direction: c.direction })
+            .collect();
+        let input = ClusteredInput {
+            node_sizes: sizes,
+            node_cluster: &plan.node_cluster,
+            clusters: &clusters,
+            edges: &checked.edge_ends,
+        };
+        let laid = layout_clustered(&input, &spec.layout).map_err(node_error)?;
+        Placed {
+            layout: LayoutResult { positions: laid.nodes, waypoints: laid.waypoints, flow: laid.flow },
+            boxes: laid.boxes,
+        }
+    };
     let origin = if spec.layout.algorithm == Algorithm::None { Point::ZERO } else { requested_origin };
     if !origin.x.is_finite() || !origin.y.is_finite() {
         return Err(DiagramError::NotFinite);
     }
-    Ok((layout, origin.to_vec2()))
+    Ok((placed, origin.to_vec2()))
 }
 
 /// What the creation steps share.
 struct Build<'a, M: ?Sized> {
     m: &'a M,
     spec: &'a DiagramSpec,
-    node_groups: &'a [Vec<usize>],
+    checked: &'a Checked,
     group_ids: &'a [GroupId],
     frame_id: Option<&'a ElementId>,
+}
+
+/// The elements made for the clusters, indexed like the clusters of the spec.
+struct ClusterSet {
+    ids: Vec<ElementId>,
+    boxes: Vec<NodeBox>,
 }
 
 /// The elements made for the nodes.
@@ -674,6 +922,71 @@ struct NodeSet {
 }
 
 impl<M: TextMeasure + ?Sized> Build<'_, M> {
+    /// Makes the cluster boxes and their titles, outermost first, so that inner boxes lie on top of outer ones.
+    /// Every id goes into `created` in the order of creation.
+    fn create_clusters<T: SceneTx>(
+        &self,
+        tx: &mut T,
+        ids: &mut dyn IdSource,
+        placed: &Placed,
+        titles: &[Size],
+        shift: Vec2,
+        created: &mut Vec<ElementId>,
+    ) -> Result<ClusterSet, DiagramError> {
+        let n = self.spec.nodes.len();
+        let plan = &self.checked.clusters;
+        let mut order: Vec<usize> = (0..self.spec.clusters.len()).collect();
+        order.sort_by_key(|&c| (plan.depth[c], c));
+        let mut made: Vec<Option<(ElementId, NodeBox)>> = vec![None; order.len()];
+        for c in order {
+            let rect = placed.boxes[c] + shift;
+            let groups: Vec<GroupId> =
+                self.checked.item_groups[n + c].iter().map(|&g| self.group_ids[g].clone()).collect();
+            let id = unused_element_id(tx, ids);
+            let style = Style {
+                stroke_color: CLUSTER_STROKE,
+                stroke_width: 1.5,
+                fill_color: Some(CLUSTER_FILL),
+                fill_pattern: FillPattern::Solid,
+                corner_radius: CLUSTER_CORNER_RADIUS,
+                seed: ids.seed(),
+                ..Style::default()
+            };
+            let mut e = Element::new(id.clone(), ElementKind::Rectangle, tx.next_top_index()?)
+                .with_bounds(rect.x0, rect.y0, rect.width(), rect.height())
+                .with_style(style);
+            e.frame_id = self.frame_id.cloned();
+            e.group_ids.extend(groups.iter().cloned());
+            let node_box = NodeBox::of(&e).ok_or(DiagramError::NotFinite)?;
+            tx.insert(e)?;
+            created.push(id.clone());
+            let title = &self.spec.clusters[c].title;
+            if !title.trim().is_empty() {
+                let size = titles[c];
+                let mut d = TextData::new(title.as_str());
+                d.font.align = drafftink_scene::TextAlign::Center;
+                let tid = unused_element_id(tx, ids);
+                let x = rect.center().x - size.width / 2.0;
+                let y = rect.y0 + CLUSTER_TITLE_BAND / 2.0 - size.height / 2.0;
+                let mut t = Element::new(tid.clone(), ElementKind::Text(d), tx.next_top_index()?).with_bounds(
+                    x,
+                    y,
+                    size.width,
+                    size.height,
+                );
+                t.style.seed = ids.seed();
+                t.frame_id = self.frame_id.cloned();
+                t.group_ids.extend(groups);
+                tx.insert(t)?;
+                created.push(tid);
+            }
+            made[c] = Some((id, node_box));
+        }
+        let (ids, boxes): (Vec<_>, Vec<_>) =
+            made.into_iter().collect::<Option<Vec<_>>>().ok_or(DiagramError::NotFinite)?.into_iter().unzip();
+        Ok(ClusterSet { ids, boxes })
+    }
+
     fn create_nodes<T: SceneTx>(
         &self,
         tx: &mut T,
@@ -717,7 +1030,7 @@ impl<M: TextMeasure + ?Sized> Build<'_, M> {
                 .with_style(style);
             e.name = node.name.clone();
             e.frame_id = self.frame_id.cloned();
-            e.group_ids.extend(self.node_groups[i].iter().map(|&g| self.group_ids[g].clone()));
+            e.group_ids.extend(self.checked.item_groups[i].iter().map(|&g| self.group_ids[g].clone()));
             let nb = NodeBox::of(&e).ok_or(DiagramError::NotFinite)?;
             set.rects.push(e.rect());
             tx.insert(e)?;
@@ -747,9 +1060,19 @@ impl<M: TextMeasure + ?Sized> Build<'_, M> {
         ids: &mut dyn IdSource,
         layout: &LayoutResult,
         shift: Vec2,
-        edge_ends: &[(usize, usize)],
         nodes: &mut NodeSet,
+        clusters: &ClusterSet,
     ) -> Result<Vec<ElementId>, DiagramError> {
+        let edge_ends = &self.checked.edge_ends;
+        let n = self.spec.nodes.len();
+        // The box and the element of an end, which is a node or a cluster.
+        let end_box = |i: usize| if i < n { nodes.boxes.get(i) } else { clusters.boxes.get(i - n) };
+        let end_id = |i: usize| if i < n { nodes.ids.get(i) } else { clusters.ids.get(i - n) };
+        // The nodes an end holds: itself, or everything in the cluster.
+        let holds = |i: usize, node: usize| match i.checked_sub(n) {
+            None => i == node,
+            Some(c) => self.checked.clusters.nodes_in.get(c).is_some_and(|set| set.contains(&node)),
+        };
         let mut lanes: BTreeMap<(usize, usize), usize> = BTreeMap::new();
         let mut totals: BTreeMap<(usize, usize), usize> = BTreeMap::new();
         for &(a, b) in edge_ends {
@@ -762,23 +1085,30 @@ impl<M: TextMeasure + ?Sized> Build<'_, M> {
             let lane = (*lane_slot, totals.get(&key).copied().unwrap_or(1));
             *lane_slot += 1;
             let path = e.arrow_type.unwrap_or(PathType::Sharp);
+            let (Some(box_a), Some(box_b)) = (end_box(a), end_box(b)) else { return Err(DiagramError::NotFinite) };
             let route = if a == b {
-                route_self_loop(&nodes.boxes[a])
+                route_self_loop(box_a)
             } else {
                 let waypoints: Vec<Point> = layout.waypoints[k].iter().map(|p| *p + shift).collect();
                 let obstacles: Vec<Rect> = if waypoints.is_empty() {
                     Vec::new()
                 } else {
-                    nodes.rects.iter().enumerate().filter(|(i, _)| *i != a && *i != b).map(|(_, r)| *r).collect()
+                    nodes
+                        .rects
+                        .iter()
+                        .enumerate()
+                        .filter(|(i, _)| !holds(a, *i) && !holds(b, *i))
+                        .map(|(_, r)| *r)
+                        .collect()
                 };
                 let p = RouteParams { path, waypoints: &waypoints, flow: layout.flow, lane, obstacles: &obstacles };
-                route_edge(&nodes.boxes[a], &nodes.boxes[b], &p)
+                route_edge(box_a, box_b, &p)
             };
             let id = unused_element_id(tx, ids);
             let mut arrow = arrow_element(id.clone(), tx.next_top_index()?, &route, path, heads_of(e))
                 .ok_or(DiagramError::NotFinite)?;
             let mut style = Style::default();
-            if let Some(c) = tx.get(&nodes.ids[a]).map(|n| n.style.stroke_color) {
+            if let Some(c) = end_id(a).and_then(|id| tx.get(id)).map(|n| n.style.stroke_color) {
                 style.stroke_color = c;
             }
             if let Some(s) = &e.style {
@@ -790,9 +1120,9 @@ impl<M: TextMeasure + ?Sized> Build<'_, M> {
             arrow.frame_id = self.frame_id.cloned();
             // The arrow joins the groups both ends share, innermost first.
             arrow.group_ids.extend(
-                self.node_groups[a]
+                self.checked.item_groups[a]
                     .iter()
-                    .filter(|g| self.node_groups[b].contains(g))
+                    .filter(|g| self.checked.item_groups[b].contains(g))
                     .map(|&g| self.group_ids[g].clone()),
             );
             tx.insert(arrow)?;
@@ -816,22 +1146,33 @@ pub fn diagram_create<T: SceneTx, M: TextMeasure + ?Sized>(
     spec: &DiagramSpec,
     opts: &CreateOpts,
 ) -> Result<DiagramResult, DiagramError> {
-    let Checked { edge_ends, node_groups } = check_spec(&*tx, spec)?;
+    let checked = check_spec(&*tx, spec)?;
     let (sizes, fonts) = plan_nodes(m, spec)?;
-    let (layout, shift) = place_nodes(spec, &sizes, &edge_ends, opts.origin)?;
+    let titles = title_sizes(m, spec);
+    let (placed, shift) = place_nodes(spec, &sizes, &titles, &checked, opts.origin)?;
+    let layout = &placed.layout;
 
-    let group_ids: Vec<GroupId> = spec.groups.iter().map(|_| ids.group_id()).collect();
-    let groups_out: BTreeMap<String, GroupId> = spec
-        .groups
-        .iter()
-        .zip(&group_ids)
-        .filter_map(|(g, id)| g.id.as_ref().map(|sym| (sym.clone(), id.clone())))
-        .collect();
+    let group_ids: Vec<GroupId> = (0..checked.group_count(spec)).map(|_| ids.group_id()).collect();
+    let mut groups_out: BTreeMap<String, GroupId> = BTreeMap::new();
+    for (g, id) in spec.groups.iter().zip(&group_ids) {
+        if let Some(sym) = &g.id {
+            groups_out.insert(sym.clone(), id.clone());
+        }
+    }
+    for (c, slot) in spec.clusters.iter().zip(&checked.cluster_group) {
+        if let Some(id) = slot.and_then(|g| group_ids.get(g)) {
+            groups_out.insert(c.id.clone(), id.clone());
+        }
+    }
 
     let frame_id = opts.frame.as_ref().map(|_| unused_element_id(tx, ids));
-    let build = Build { m, spec, node_groups: &node_groups, group_ids: &group_ids, frame_id: frame_id.as_ref() };
-    let mut nodes = build.create_nodes(tx, ids, &layout, shift, &sizes, &fonts)?;
-    let edge_out = build.create_edges(tx, ids, &layout, shift, &edge_ends, &mut nodes)?;
+    let build = Build { m, spec, checked: &checked, group_ids: &group_ids, frame_id: frame_id.as_ref() };
+    let mut created = Vec::new();
+    let cluster_set = build.create_clusters(tx, ids, &placed, &titles, shift, &mut created)?;
+    let mut nodes = build.create_nodes(tx, ids, layout, shift, &sizes, &fonts)?;
+    created.append(&mut nodes.created);
+    nodes.created = created;
+    let edge_out = build.create_edges(tx, ids, layout, shift, &mut nodes, &cluster_set)?;
 
     let mut bounds = nodes.rects.iter().copied().reduce(|a, b| a.union(b)).unwrap_or(Rect::ZERO);
     for id in &nodes.created {
@@ -851,7 +1192,7 @@ pub fn diagram_create<T: SceneTx, M: TextMeasure + ?Sized>(
         bounds = r;
     }
 
-    let touched: Vec<ElementId> = nodes.ids.iter().chain(&edge_out).cloned().collect();
+    let touched: Vec<ElementId> = nodes.ids.iter().chain(&cluster_set.ids).chain(&edge_out).cloned().collect();
     update_bound_arrows(tx, &touched)?;
 
     let node_map = spec.nodes.iter().zip(&nodes.ids).map(|(n, id)| (n.id.clone(), id.clone())).collect();
@@ -859,6 +1200,7 @@ pub fn diagram_create<T: SceneTx, M: TextMeasure + ?Sized>(
         nodes: node_map,
         edges: edge_out,
         groups: groups_out,
+        clusters: spec.clusters.iter().map(|c| c.id.clone()).zip(cluster_set.ids).collect(),
         group_ids,
         frame: frame_id,
         bounds: [bounds.x0, bounds.y0, bounds.width(), bounds.height()],

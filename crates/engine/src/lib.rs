@@ -41,6 +41,8 @@ pub mod testing;
 #[cfg(test)]
 mod catalog_tests;
 #[cfg(test)]
+mod exception_tests;
+#[cfg(test)]
 mod executor_tests;
 #[cfg(test)]
 mod invariants_tests;

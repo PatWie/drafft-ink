@@ -47,7 +47,7 @@ jobs:
       - run: cargo xtask clippy
 
   layers:
-    name: Layers and standards
+    name: Layers, exceptions and standards
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -59,6 +59,7 @@ jobs:
           toolchain: ${{ env.RUST_TOOLCHAIN }}
       - uses: Swatinem/rust-cache@v2
       - run: cargo xtask layers
+      - run: cargo xtask exceptions --check
       - run: cargo xtask standards
         env:
           XTASK_BASE_REF: ${{ github.event_name == 'pull_request' && format('origin/{0}', github.base_ref) || 'origin/main' }}
@@ -85,7 +86,30 @@ jobs:
           toolchain: ${{ env.RUST_TOOLCHAIN }}
       - uses: Swatinem/rust-cache@v2
       - uses: taiki-e/install-action@nextest
+      # No GPU on this runner: the GPU tests and the native e2e tests print `SKIPPED:` and pass, and `cargo xtask test`
+      # prints how many (the e2e workflow runs them with DRAFFTINK_REQUIRE_GPU=1).
       - run: cargo xtask test
+
+  # The fixture facts against what the old app's code writes now (docs/testing.md). The old app is checked out at the
+  # commit the facts were made from. `DRAFFTINK_REQUIRE_OLD=1` makes a missing old app a failure and not a skipped half.
+  fixtures:
+    name: Fixtures (regenerated from the old app)
+    runs-on: ubuntu-latest
+    env:
+      DRAFFTINK_REQUIRE_OLD: "1"
+      DRAFFTINK_OLD_REPO: ${{ github.workspace }}/old-app
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: PatWie/drafft-ink
+          ref: 8ce40ab2cf3cde7efa78a7e077fc9267fd4b3761
+          path: old-app
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ env.RUST_TOOLCHAIN }}
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo xtask fixtures
 
   deny:
     name: Dependencies (cargo-deny)
@@ -205,7 +229,7 @@ jobs:
   ci:
     name: ci
     if: always()
-    needs: [fmt, clippy, layers, wasm, test, deny, quarantine, build-native, packaging, size]
+    needs: [fmt, clippy, layers, wasm, test, fixtures, deny, quarantine, build-native, packaging, size]
     runs-on: ubuntu-latest
     steps:
       - name: Require every job to succeed

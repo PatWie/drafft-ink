@@ -17,6 +17,7 @@ use crate::cmd::element_common::target_refusal;
 use crate::args;
 use crate::refusal::Refusal;
 use crate::session::{Ref, Session};
+use crate::spec::{Host, HostEffect};
 use crate::spec::{
     Batch, Binding, CommandSpec, Facts, Gate, Mutates, PortSet, Redraw, RingMode, Scope, Selection, TextGate, Typed,
     Undo,
@@ -344,6 +345,7 @@ const DOC: Facts = Facts {
     ring: RingMode::Always,
     palette: true,
     agent: true,
+    doc_write: crate::spec::DocWrite::Edit,
 };
 
 const WRAP_KEYS: &[Binding] = &[Binding::new(&["W"], Scope::Canvas)];
@@ -376,6 +378,7 @@ pub const COMMANDS: &[CommandSpec] = &[
         &Typed::new(rename),
         Facts { needs_selection: Selection::No, ..DOC },
     )
+    .host(Host::effect(HostEffect::CompletesRename))
     .example(r#"{"frame":"f1","name":"Login"}"#),
     CommandSpec::new(
         "frame.add",
@@ -405,6 +408,7 @@ pub const COMMANDS: &[CommandSpec] = &[
             mutates: Mutates::OBSERVED,
             needs_selection: Selection::No,
             view_only: Gate::Allowed,
+            doc_write: crate::spec::DocWrite::NotDocument,
             ..DOC
         },
     )

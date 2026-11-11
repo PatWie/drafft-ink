@@ -93,7 +93,7 @@ Facts that matter beyond the obvious:
 Registry tests (in `crates/engine/src/registry_tests.rs`, all run in `cargo xtask ci`):
 
 1. ids are unique, match `^[a-z]+\.[a-z_]+$`, and the prefix equals `family`.
-2. Every fact above is declared. `reads_only` implies `mutates` is empty and `undo = NoUndo`. `mutates` containing `Doc` implies `view_only = Refused`, and implies `undo != NoUndo` except for the commands that replace or stream the document: `doc.new`, `doc.open`, `doc.show_intro`, `collab.join_room`, `history.undo`, `history.redo`, `gesture.begin`, `gesture.update`, `gesture.cancel`. `tool.cancel` is on the list for the view-only rule because it must keep working in view-only mode (one of its rungs commits a text edit, as `text.edit_end` does, and another cancels a gesture); it is `Undoable` (a text edit it commits is one undo step), so the undo exception in the test is not needed for it. For the view-only rule alone, `gesture.update`, `gesture.end` and `gesture.cancel` are also exempt: a gesture cannot start in view-only mode, and entering it cancels a running gesture, so a gesture command never runs in view-only mode on its own. The exception list is a constant in the test, so a new entry needs a reviewer.
+2. Every fact above is declared. `reads_only` implies `mutates` is empty and `undo = NoUndo`. A command whose `mutates` contains `D` declares how it relates to the document (`doc_write`, Appendix A2): an `edit` refuses in view-only mode and has an undo class other than `NoUndo`; a command that `replaces` the document (`doc.new`, `doc.open`, `doc.show_intro`, `collab.join_room`) refuses in view-only mode and is not a gesture; the commands that are `managed` (`history.undo`, `history.redo`, the `gesture` commands, `tool.cancel`) carry no further rule. The rule is derived from the declared fact, not from a list of ids in the test, and a command that manages its own transaction is never an `edit` or a `replaces`.
 3. Titles are unique. Default shortcuts do not collide within the same `when` scope.
 4. Every `Refusal` code a command can return is in the catalog of §1.5 (checked by `refusal_codes_are_catalogued`, which scans the specs' declared `refusals: &[&str]` lists).
 5. `hostile_params_never_panic`: every command, with every hostile JSON value for every argument key, never panics and never changes the document when it refuses.
@@ -915,7 +915,7 @@ Types: `Node = {id: string, label?: string, shape?: "rectangle" | "ellipse" | "d
 | id | args | availability and refusals | effect |
 |---|---|---|---|
 | `diagram.create` | `nodes: Node[]`, `edges: Edge[] = []`, `layout: LayoutOpts`, `at: Point \| "viewport_center" \| "below_content" = viewport_center`, `group: bool = false`, `frame?: string` (wraps the result in a frame with this name), `select: bool = true` | Execute: `bad_args`: "Give at least one node."; `duplicate_node`: "Node id `{id}` appears twice. Node ids must be unique."; `unknown_node`: "Edge {index} refers to node `{id}`, which is not in `nodes`. Known nodes: {list}."; `tree_not_forest`: "The tree layout needs every node to have at most one incoming edge and no cycles, and node `{id}` breaks that. Use algorithm \"layered\", which handles cycles."; `limit_exceeded` (2000 nodes, 5000 edges); `name_taken`, `bad_name` (as `element.set_name`, for a node or edge `name`). | Creates the nodes (size measured from the label with a minimum of 80 by 48, label stored as bound text), places them with the layout, and creates one bound arrow per edge (both ends bound in orbit mode, edge label as the arrow's bound text, routed). One undo step. Output `{nodes: {symbolic: id}, edges: [ids], bounds, created}`. In a batch the symbolic ids are available as `$<step>.<node>`. |
-| `diagram.import_mermaid` | `source: "clipboard" \| {text: string}`, `at: Point \| "viewport_center" = viewport_center`, `group: bool = true`, `select: bool = true` | Execute: `mermaid_unsupported`: "Mermaid diagram type `{type}` is not supported yet. Supported: flowchart/graph and sequenceDiagram."; `parse_failed`: "The Mermaid text could not be read: {msg} (line {n}). Fix that line and try again."; `clipboard_empty`; `port_unavailable` for source clipboard without the `Clipboard`. | Parses with the native Mermaid parser (flowchart and graph with LR/RL/TB/TD/BT, seven node shapes, solid/dotted/thick edges, labels, subgraphs; sequenceDiagram with participants, messages, self-messages, notes), creates elements with bound arrows (the old import made straight arrows that knew nothing about the shapes), groups them when group=true (the old import always made one group), and uses Mermaid's own layout. Same output as `diagram.create`. |
+| `diagram.import_mermaid` | `source: "clipboard" \| {text: string}`, `at: Point \| "viewport_center" = viewport_center`, `group: bool = true`, `select: bool = true` | Execute: `mermaid_unsupported`: "Mermaid diagram type `{type}` is not supported yet. Supported: flowchart/graph and sequenceDiagram."; `parse_failed`: "The Mermaid text could not be read: {msg} (line {n}). Fix that line and try again."; `clipboard_empty`; `port_unavailable` for source clipboard without the `Clipboard`. | Parses with the native Mermaid parser (flowchart and graph with LR/RL/TB/TD/BT, seven node shapes, solid/dotted/thick edges, labels, subgraphs; sequenceDiagram with participants, messages, self-messages, notes), creates elements with bound arrows (the old import made straight arrows that knew nothing about the shapes), groups them when group=true (the old import always made one group), and uses a layered layout in the Mermaid direction. Each `subgraph` becomes a **cluster box**: a rounded rectangle with a light slate fill and a text element with the title centred in a 32 unit band at the top, plus 22 units of padding around the members. Boxes nest as the subgraphs do and lie behind their members. Titled rectangles were chosen over frames because a frame clips what it holds and an element belongs to one frame, so frames cannot nest. With group=true the box, its title and everything inside form one group, and the groups nest innermost first; with group=false the boxes are drawn and nothing is grouped. The members of a subgraph are laid out as a graph of their own, so they always lie inside the box and sibling boxes never overlap; a `direction` line inside a subgraph sets the flow inside it. An edge to a subgraph id ends at its box. Output is as `diagram.create`, plus `clusters` (subgraph id to the element id of the box). |
 | `diagram.extend` | `from?: Ref` (default: the single selected element), `direction: "up" \| "down" \| "left" \| "right"`, `label?: string`, `gap: number = 80` | Execute: `wrong_kind` (allowed: rectangle, diamond, ellipse); `locked`; `not_found`; `needs_single` when `from` is omitted and the selection is not one element. | Creates a node of the same kind and style next to `from` in that direction with a bound arrow from `from` to it, and selects it. If the spot is taken it picks the next free one in the same direction. |
 | `layout.apply` | `algorithm: "layered" \| "tree" \| "grid" \| "force" = layered`, `ids?: Refs`, `filter?: Query`, `direction`, `node_gap`, `layer_gap`, `columns` (as LayoutOpts), `anchor: "keep" \| "top_left" \| "center" = keep`, `at?: Point` (with anchor=top_left: where the top-left of the result goes; without `at`, top_left is the same as keep), `reroute: bool = true` | Default targets: the selection. `too_few` (n=2, things "elements"). Execute: `tree_not_forest` (as above); `locked`; `limit_exceeded`. | Treats non-arrow elements as nodes and arrows bound between them as edges, moves the nodes, re-routes the bound arrows (elbow routes once, after all moves), and keeps bound text with its shapes. anchor=keep leaves the top-left of the set's bounds where it was. |
 
@@ -1435,6 +1435,10 @@ These are deliberate; each fixes an inventory finding. Reviewers should expect t
 19. In the text editor `Mod+Enter` ends the edit (it inserted a newline), `Alt` moves by word, IME composition works, and `Mod+Z` is the editor's own undo.
 20. Closing a tab activates the right neighbour as before; a tab can be created empty with `tab.new`.
 21. Paste routing keeps the old native order: own payload, Excalidraw, Mermaid, image, then plain text as a new text element.
+22. The maximum zoom is 30 (it was 10). The minimum is still 0.1 and the default is still 100% (zoom 1.68). `view.set` and `view.zoom` clamp to this range (`canvas::Viewport`).
+23. The camera is a centre point (`scroll`) and a `zoom`, not a screen offset, so the same document opens at the same place in a window of any size.
+24. A Mermaid subgraph is a titled box around its members (section 2.19), as in the first version. Edges that start or end at a whole subgraph are drawn, bound to the box (the first version drew them from the box edge without binding).
+25. The native document extension is `.drafftink`; `.json` and the first version's files still open (`docs/deviations.md` section 4).
 
 ---
 
@@ -1733,3 +1737,46 @@ Notes on the table:
 - Commands with `agent` = `n` are UI plumbing (`doc.drop`, `doc.autosave`, `tool.hold`, `tool.release`, `text.edit_begin`, `text.edit_end`, `view.set_viewport`, `collab.set_pointer`, `gesture.*`). For `gesture.*` an agent uses the plain command; the others have no meaning outside a running UI.
 - `settings.*` use `redraw = scene` because grid style, frame rendering and snap overlays change what is drawn. A setting that changes nothing visible still sets the reason, and the idle gate counts a redraw only if one was requested.
 - `view.*` camera commands use `redraw = camera`: the renderer re-composites cached element fragments with the new transform and does not re-encode them.
+
+### Appendix A2: document, host and agent-tool facts
+
+Four more facts of a registration, kept apart from the table above because most commands have the default value. A command that is not listed has the default for all of them, and `registry_tests` / `catalog_tests` (`facts_match_appendix_a2`) fail when a registration differs from its row, when a row lists nothing but defaults, and when a row names an unregistered id.
+
+| Column | Values |
+|---|---|
+| doc write | `not_document`: the command does not change the document (`mutates` has no `D`). `edit`: an ordinary edit of the open document: an undo class other than `NoUndo`, refuses in view-only mode. `replaces`: replaces the document wholesale (`doc.new`, `doc.open`, `doc.show_intro`, `collab.join_room`): refuses in view-only mode and is not a gesture. `managed`: manages the document state itself (`history.undo`, `history.redo`, the `gesture` commands, `tool.cancel`). Default: `edit` when `mutates` has `D`, else `not_document`. |
+| host effect | What a host (the UI) does after the command ran, read from the registration instead of matched by id. `-` is the default. `completes_rename`, `completes_rename_then_save_as`, `completes_export`, `completes_library_add`, `completes_link_edit`: success closes the dialog or clears the field that asked for it. `shows_convert_popup`: success after a keyboard conversion shows the popup. `returns_url_to_open`: success returns a `url` for the host to open. `shows_search_results`: success fills the open search panel. `begins_gesture`, `ends_gesture`, `ends_gesture_on_refusal`: the host's scrub follows the gesture commands. `ends_equation_edit`: any answer closes the equation editor. |
+| refusal toast | `show` (default), or `silent`: the host does not toast a `no_gesture` refusal (a scrub that lost its gesture just stops); any other refusal of the command is shown. |
+| key repeat | `repeats` (default), or `first_press_only`: auto-repeat of a held key does not run the command again (`tool.hold`). |
+| editor takes style | `y`: during a text edit the host sends a style choice to the text editor instead of running this command, which refuses with `text_editing` (`style.set`). Default `n`. |
+| own agent tool | `y`: the agent bridge gives the command a tool of its own, so no family tool lists it. Default `n`. |
+
+| id | doc write | host effect | refusal toast | key repeat | editor takes style | own agent tool |
+|---|---|---|---|---|---|---|
+| `collab.join_room` | replaces | - | show | repeats | n | n |
+| `doc.new` | replaces | - | show | repeats | n | n |
+| `doc.open` | replaces | - | show | repeats | n | n |
+| `doc.rename` | edit | completes_rename_then_save_as | show | repeats | n | n |
+| `doc.export` | not_document | completes_export | show | repeats | n | n |
+| `doc.show_intro` | replaces | - | show | repeats | n | n |
+| `element.convert` | edit | shows_convert_popup | show | repeats | n | n |
+| `element.set_link` | edit | completes_link_edit | show | repeats | n | n |
+| `element.open_link` | not_document | returns_url_to_open | show | repeats | n | n |
+| `element.query` | not_document | shows_search_results | show | repeats | n | n |
+| `engine.commands` | not_document | - | show | repeats | n | y |
+| `engine.describe` | not_document | - | show | repeats | n | y |
+| `engine.recent` | not_document | - | show | repeats | n | y |
+| `frame.rename` | edit | completes_rename | show | repeats | n | n |
+| `gesture.begin` | managed | begins_gesture | show | repeats | n | n |
+| `gesture.update` | managed | ends_gesture_on_refusal | silent | repeats | n | n |
+| `gesture.end` | managed | ends_gesture | silent | repeats | n | n |
+| `gesture.cancel` | managed | ends_gesture | silent | repeats | n | n |
+| `history.undo` | managed | - | show | repeats | n | n |
+| `history.redo` | managed | - | show | repeats | n | n |
+| `library.add` | not_document | completes_library_add | show | repeats | n | n |
+| `library.rename` | not_document | completes_rename | show | repeats | n | n |
+| `style.set` | edit | - | show | repeats | y | n |
+| `tab.rename` | edit | completes_rename | show | repeats | n | n |
+| `text.edit_end` | edit | ends_equation_edit | show | repeats | n | n |
+| `tool.hold` | not_document | - | show | first_press_only | n | n |
+| `tool.cancel` | managed | - | show | repeats | n | n |

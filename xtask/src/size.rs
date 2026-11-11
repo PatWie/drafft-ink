@@ -9,13 +9,19 @@
 //! cargo xtask size                  build, measure, check
 //! cargo xtask size --no-build       measure the existing dist/ (after scripts/build-web.sh)
 //! cargo xtask size --wasm <file>    measure a finished wasm module (the one wasm-opt wrote); fonts come from dist/ if there
+//! cargo xtask size --native         build the shipped binaries (profile `dist`) and check their sizes
+//! cargo xtask size --native --no-build   measure the binaries that are already in target/dist
 //! ```
 //!
 //! The build script measures the module and the fonts with the C compressors (`gzip -9`, `brotli -q 11`) and
 //! writes `dist/sizes.json`; the gate reads that file. `--wasm` compresses in this process instead, which is
 //! slow for the brotli part (minutes) unless the `brotli` program is installed.
 //!
-//! The metrics are `wasm.opt_bytes` (the file the server sends), `wasm.gzip_bytes` and `wasm.brotli_bytes` (what goes
+//! The native metrics are `native.drafftink_bytes`, `native.mcp_bytes` and `native.server_bytes`: the files that
+//! `scripts/package-*` ship, built with the profile `dist` (fat LTO, stripped) and the server with its `sqlite` and
+//! `s3` stores. The native run does not belong to `ci`: the build takes about as long as a release.
+//!
+//! The wasm metrics are `wasm.opt_bytes` (the file the server sends), `wasm.gzip_bytes` and `wasm.brotli_bytes` (what goes
 //! over the wire; brotli is what browsers ask for), `fonts.brotli_bytes` (the font files, brotli each; the page loads
 //! them when it needs them) and, when the build ran, `wasm.raw_bytes` (wasm-bindgen's output before wasm-opt).
 
@@ -28,6 +34,7 @@ use std::process::{Command, Stdio};
 use serde_json::Value;
 
 use crate::run;
+use crate::tools::target_dir;
 
 const BUDGETS: &str = "perf/budgets.json";
 const BUILD_SCRIPT: &str = "scripts/build-web.sh";
@@ -47,6 +54,8 @@ struct Options {
     no_build: bool,
     /// A finished module to measure instead of `dist/pkg`.
     wasm: Option<PathBuf>,
+    /// Measure the native binaries instead of the web app.
+    native: bool,
 }
 
 fn parse_args(args: &[String]) -> Result<Options, String> {
@@ -55,12 +64,16 @@ fn parse_args(args: &[String]) -> Result<Options, String> {
     while let Some(arg) = it.next() {
         match arg.as_str() {
             "--no-build" => options.no_build = true,
+            "--native" => options.native = true,
             "--wasm" => {
                 let path = it.next().ok_or("--wasm needs the path of a .wasm file")?;
                 options.wasm = Some(PathBuf::from(path));
             }
             other => return Err(format!("unknown argument `{other}` (see the top of xtask/src/size.rs)")),
         }
+    }
+    if options.native && options.wasm.is_some() {
+        return Err("--native and --wasm measure different things; use one".into());
     }
     Ok(options)
 }
@@ -184,6 +197,39 @@ fn measure(root: &Path, wasm: &Path) -> Result<Metrics, String> {
     Ok(metrics)
 }
 
+/// The shipped binaries and the metric each one is measured as.
+const NATIVE_BINARIES: [(&str, &str); 3] = [
+    ("drafftink", "native.drafftink_bytes"),
+    ("drafftink-mcp", "native.mcp_bytes"),
+    ("drafftink-server", "native.server_bytes"),
+];
+
+/// The cargo profile of the shipped binaries (`Cargo.toml`, `scripts/package-*`).
+const DIST_PROFILE: &str = "dist";
+
+/// Builds the binaries the way `scripts/package-linux.sh` does.
+fn build_native(root: &Path) -> Result<(), String> {
+    let mut build = crate::cargo(root);
+    build.args(["build", "--profile", DIST_PROFILE, "--locked"]);
+    for (bin, _) in NATIVE_BINARIES {
+        build.args(["-p", bin]);
+    }
+    build.args(["--features", "drafftink-server/sqlite,drafftink-server/s3"]);
+    run(&mut build)
+}
+
+/// The sizes of the binaries in `dir`.
+fn measure_native(dir: &Path) -> Result<Metrics, String> {
+    let mut metrics = Metrics::new();
+    for (bin, metric) in NATIVE_BINARIES {
+        let path = dir.join(format!("{bin}{}", std::env::consts::EXE_SUFFIX));
+        let meta = fs::metadata(&path)
+            .map_err(|e| format!("{}: {e}. Build it with `cargo xtask size --native`.", path.display()))?;
+        metrics.insert(metric, meta.len());
+    }
+    Ok(metrics)
+}
+
 /// The numbers the build script measured with the C compressors (`dist/sizes.json`).
 fn from_build_script(root: &Path) -> Result<Metrics, String> {
     let path = root.join(SIZES_FILE);
@@ -232,8 +278,28 @@ fn top_list(root: &Path, wasm: &Path) -> String {
 
 pub fn run_gate(root: &Path, args: &[String]) -> Result<(), String> {
     let options = parse_args(args)?;
-    let budgets =
+    let mut budgets =
         parse_budgets(&read(&root.join(BUDGETS)).and_then(|b| String::from_utf8(b).map_err(|e| e.to_string()))?)?;
+    // The web and the native runs each check their own metrics.
+    budgets.retain(|name, _| name.starts_with("native.") == options.native);
+    if options.native {
+        if !options.no_build {
+            build_native(root)?;
+        }
+        let dir = target_dir(root).join(DIST_PROFILE);
+        let metrics = measure_native(&dir)?;
+        print!("\n{}", table(&metrics, &budgets));
+        let mut skipped = Vec::new();
+        let broken = check(&metrics, &budgets, &mut skipped);
+        if broken.is_empty() {
+            println!("size: the binaries in {} are within the budgets of {BUDGETS}", dir.display());
+            return Ok(());
+        }
+        return Err(format!(
+            "{}\nFind what grew with `nm --size-sort -C <binary> | tail -50` on a build without `strip`, or `cargo bloat --profile dist --crates`. Shrink it, or raise the limit in {BUDGETS} with the reason in its `note`.",
+            broken.join("\n")
+        ));
+    }
 
     let (wasm, unstripped) = match &options.wasm {
         Some(path) => (path.clone(), path.clone()),
@@ -284,6 +350,8 @@ mod tests {
         assert!(o.no_build && o.wasm == Some(PathBuf::from("a.wasm")));
         assert!(parse_args(&["--wasm".into()]).is_err());
         assert!(parse_args(&["--bogus".into()]).unwrap_err().contains("--bogus"));
+        assert!(parse_args(&["--native".into()]).unwrap().native);
+        assert!(parse_args(&["--native".into(), "--wasm".into(), "a.wasm".into()]).is_err());
     }
 
     #[test]
@@ -309,9 +377,25 @@ mod tests {
     fn the_checked_in_budgets_parse() {
         let text = fs::read_to_string(crate::root().join(BUDGETS)).unwrap();
         let b = parse_budgets(&text).unwrap();
-        for name in ["wasm.opt_bytes", "wasm.gzip_bytes", "wasm.brotli_bytes", "fonts.brotli_bytes"] {
+        for name in ["wasm.opt_bytes", "wasm.gzip_bytes", "wasm.brotli_bytes", "fonts.brotli_bytes"]
+            .into_iter()
+            .chain(NATIVE_BINARIES.iter().map(|(_, metric)| *metric))
+        {
             assert!(b.contains_key(name), "{name}");
         }
+    }
+
+    #[test]
+    fn the_native_sizes_are_the_sizes_of_the_files() {
+        let dir = std::env::temp_dir().join(format!("xtask-size-{}", std::process::id()));
+        fs::create_dir_all(&dir).unwrap();
+        assert!(measure_native(&dir).unwrap_err().contains("cargo xtask size --native"), "missing binaries are named");
+        for (i, (bin, _)) in NATIVE_BINARIES.iter().enumerate() {
+            fs::write(dir.join(format!("{bin}{}", std::env::consts::EXE_SUFFIX)), vec![0u8; 100 * (i + 1)]).unwrap();
+        }
+        let m = measure_native(&dir).unwrap();
+        assert_eq!((m["native.drafftink_bytes"], m["native.mcp_bytes"], m["native.server_bytes"]), (100, 200, 300));
+        fs::remove_dir_all(&dir).unwrap();
     }
 
     #[test]

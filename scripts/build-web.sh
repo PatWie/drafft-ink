@@ -6,6 +6,7 @@
 #   --no-opt           skip wasm-opt
 #   --no-precompress   do not write .br / .gz next to the files
 #   --features LIST    cargo features of drafftink-web, e.g. `scenarios` for the perf driver (not for shipping)
+# env: DIST_DIR=folder   write the build there instead of dist/
 # needs: rustup target add wasm32-unknown-unknown
 #        wasm-bindgen CLI, the same version as the wasm-bindgen crate (cargo install wasm-bindgen-cli --version 0.2.130 --locked)
 #        wasm-opt (binaryen >= 117) on PATH or in ~/.cargo/tools/binaryen-version_*/bin
@@ -29,7 +30,7 @@ while [ $# -gt 0 ]; do
 done
 
 TARGET_DIR="${CARGO_TARGET_DIR:-$PWD/target}"
-DIST=dist
+DIST="${DIST_DIR:-dist}"   # DIST_DIR: another output folder, e.g. the scenario build of `cargo xtask perf --app web`
 NAME=drafftink_web
 
 # --- wasm-bindgen: the CLI must match the crate (a mismatch fails at run time with a confusing error)

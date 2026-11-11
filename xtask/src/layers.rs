@@ -129,11 +129,78 @@ pub const EXTERNAL_RULES: &[ExternalRule] = &[
     },
 ];
 
+/// External crates that every library below L6 may use, whatever its layer: plain data and error handling.
+pub const COMMON_EXTERNAL: &[&str] = &["serde", "serde_json", "thiserror"];
+
+/// External crates that any library below L6 may use as a dev-dependency (benches, property tests, snapshots,
+/// temporary directories). They never ship.
+pub const TEST_TOOLING: &[&str] = &["criterion", "proptest", "insta", "tempfile"];
+
+/// The allowlist: which external crates each library below L6 may depend on, on top of [`COMMON_EXTERNAL`] (and,
+/// for dev-dependencies, [`TEST_TOOLING`]). Every other external crate is a violation, so a UI toolkit, a window
+/// system, a GPU API, a filesystem or HTTP crate cannot arrive by the back door (the denylist in
+/// [`EXTERNAL_RULES`] only knows the names someone thought of). A new dependency needs a line here, in the same
+/// change, and a reviewer sees it. A line that no longer matches a dependency is a violation too, so the list
+/// cannot hold crates a layer stopped using.
+///
+/// The network, browser and file system crates of `drafftink-collab` (L4) are the only ones below L6; collab owns
+/// the connection to a room behind the engine's ports, and the L0 to L5 wasm build (`cargo xtask wasm`) holds it
+/// to browser-safe code.
+pub const ALLOWED_EXTERNAL: &[(&str, &[&str])] = &[
+    // L0
+    ("drafftink-geom", &["kurbo", "rstar"]),
+    ("drafftink-profile", &["web-time"]),
+    ("drafftink-protocol", &[]),
+    // L1
+    ("drafftink-scene", &["base64", "kurbo", "peniko", "schemars", "sha2", "smallvec", "smol_str"]),
+    ("drafftink-typeset", &["kurbo", "parley", "peniko", "png", "rex", "ttf-parser"]),
+    ("drafftink-sketch", &["getrandom", "kurbo", "roughr"]),
+    // L2
+    ("drafftink-render", &["base64", "image", "kurbo", "peniko", "png", "pollster", "schemars", "vello"]),
+    // L3
+    ("drafftink-canvas", &["smallvec"]),
+    ("drafftink-doc", &["base64", "flate2", "kurbo", "loro", "smallvec", "xxhash-rust"]),
+    // L4
+    ("drafftink-edit", &["schemars"]),
+    ("drafftink-io", &["base64", "flate2", "image", "kurbo", "loro", "png", "roxmltree", "sha2"]),
+    (
+        "drafftink-collab",
+        &[
+            "futures-util",
+            "js-sys",
+            "log",
+            "loro",
+            "rustls",
+            "rustls-native-certs",
+            "tokio",
+            "tokio-rustls",
+            "tokio-tungstenite",
+            "wasm-bindgen",
+            "web-sys",
+            "webpki-roots",
+        ],
+    ),
+    // L5
+    ("drafftink-engine", &["base64", "loro", "png", "schemars", "serde_path_to_error"]),
+];
+
+/// The layers whose crates the allowlist covers: everything below L6.
+pub const ALLOWLIST_BELOW: u8 = 6;
+
 fn matches_pattern(pattern: &str, name: &str) -> bool {
     match pattern.strip_suffix('*') {
         Some(prefix) => name.starts_with(prefix),
         None => name == pattern,
     }
+}
+
+/// The libraries below L6, which `cargo xtask clippy` holds to `xtask/clippy-below-l6/clippy.toml`.
+pub fn libraries_below_l6() -> Vec<&'static str> {
+    TABLE
+        .iter()
+        .filter(|(_, class)| matches!(class, Class::Layer(l) if *l < ALLOWLIST_BELOW))
+        .map(|(name, _)| *name)
+        .collect()
 }
 
 pub fn classify(package: &str) -> Option<Class> {
@@ -191,6 +258,22 @@ pub enum Violation {
         min_layer: u8,
         why: &'static str,
     },
+    /// An external crate that the allowlist of the crate does not name.
+    NotAllowed {
+        krate: String,
+        dep: String,
+        layer: u8,
+        kind: DepKind,
+    },
+    /// A library below L6 with no row in [`ALLOWED_EXTERNAL`].
+    NoAllowlist {
+        krate: String,
+    },
+    /// An allowlist entry for a crate the library does not depend on.
+    UnusedAllowance {
+        krate: String,
+        dep: String,
+    },
 }
 
 impl std::fmt::Display for Violation {
@@ -222,6 +305,18 @@ impl std::fmt::Display for Violation {
             Violation::External { krate, dep, layer, min_layer, why } => {
                 write!(f, "{krate} (L{layer}) depends on `{dep}`, allowed from L{min_layer}: {why}")
             }
+            Violation::NotAllowed { krate, dep, layer, kind } => write!(
+                f,
+                "{krate} (L{layer}) has the external dependency `{dep}` [{kind:?}], which is not on its allowlist; \
+                 if the layer really needs it, add it to ALLOWED_EXTERNAL in xtask/src/layers.rs with the change"
+            ),
+            Violation::NoAllowlist { krate } => write!(
+                f,
+                "{krate}: a library below L{ALLOWLIST_BELOW} needs a row in ALLOWED_EXTERNAL in xtask/src/layers.rs"
+            ),
+            Violation::UnusedAllowance { krate, dep } => {
+                write!(f, "{krate}: ALLOWED_EXTERNAL allows `{dep}`, which the crate does not use; remove it")
+            }
         }
     }
 }
@@ -246,7 +341,7 @@ pub fn check(crates: &[Crate]) -> Vec<Violation> {
             if d.workspace {
                 check_workspace_edge(&mut out, c, class, d);
             } else if let Some(layer) = class.layer() {
-                check_external(&mut out, &c.name, layer, &d.name);
+                check_external(&mut out, &c.name, layer, &d.name, d.kind);
             }
         }
     }
@@ -278,7 +373,8 @@ fn check_workspace_edge(out: &mut Vec<Violation>, c: &Crate, class: Class, d: &D
     out.push(Violation::Edge { krate: c.name.clone(), dep: d.name.clone(), from, to, kind: d.kind });
 }
 
-fn check_external(out: &mut Vec<Violation>, krate: &str, layer: u8, dep: &str) {
+fn check_external(out: &mut Vec<Violation>, krate: &str, layer: u8, dep: &str, kind: DepKind) {
+    let before = out.len();
     for rule in EXTERNAL_RULES {
         if layer < rule.min_layer
             && rule.names.iter().any(|p| matches_pattern(p, dep))
@@ -293,6 +389,36 @@ fn check_external(out: &mut Vec<Violation>, krate: &str, layer: u8, dep: &str) {
             });
         }
     }
+    // The denylist message is the more specific one; the allowlist speaks when nothing named the crate.
+    if out.len() == before && layer < ALLOWLIST_BELOW {
+        let allowed = ALLOWED_EXTERNAL.iter().find(|(name, _)| *name == krate).map(|(_, list)| *list);
+        match allowed {
+            None => out.push(Violation::NoAllowlist { krate: krate.to_owned() }),
+            Some(list) => {
+                let ok = COMMON_EXTERNAL.contains(&dep)
+                    || list.contains(&dep)
+                    || (kind == DepKind::Dev && TEST_TOOLING.contains(&dep));
+                if !ok {
+                    out.push(Violation::NotAllowed { krate: krate.to_owned(), dep: dep.to_owned(), layer, kind });
+                }
+            }
+        }
+    }
+}
+
+/// Allowlist entries that name a dependency the crate does not have, and rows for crates that are not in the
+/// workspace.
+pub fn check_unused_allowances(crates: &[Crate]) -> Vec<Violation> {
+    let mut out = Vec::new();
+    for (krate, list) in ALLOWED_EXTERNAL {
+        let Some(c) = crates.iter().find(|c| c.name == *krate) else { continue };
+        for dep in *list {
+            if !c.deps.iter().any(|d| !d.workspace && d.name == *dep) {
+                out.push(Violation::UnusedAllowance { krate: (*krate).to_owned(), dep: (*dep).to_owned() });
+            }
+        }
+    }
+    out
 }
 
 /// Table rows that name a package the workspace does not have.
@@ -319,7 +445,8 @@ pub fn from_metadata(meta: &Value) -> Result<Vec<Crate>, String> {
                 Some("build") => DepKind::Build,
                 _ => DepKind::Normal,
             };
-            let workspace = members.contains(&dep_name.as_str()) || d["path"].is_string();
+            // A path dependency that is not a member is not ours to trust: it is external and is held to the allowlist.
+            let workspace = members.contains(&dep_name.as_str());
             deps.push(Dep { name: dep_name, kind, workspace });
         }
         out.push(Crate { name, deps });
@@ -365,6 +492,7 @@ pub fn run(root: &Path, list: bool) -> Result<(), String> {
     }
     let mut violations = check(&crates);
     violations.extend(check_stale(&crates));
+    violations.extend(check_unused_allowances(&crates));
     if violations.is_empty() {
         println!("layers: {} crates, no violations", crates.len());
         return Ok(());
@@ -510,7 +638,9 @@ mod tests {
             let v = check(&[c(krate, &[("wgpu", Normal, false)])]);
             assert!(matches!(only(&v), Violation::External { min_layer: 6, .. }), "{krate}");
         }
-        assert!(check(&[c("drafftink-render", &[("wgpu", Normal, false), ("wgpu-types", Normal, false)])]).is_empty());
+        // render may name wgpu types in principle (the denylist exception), but its allowlist does not list them.
+        let v = check(&[c("drafftink-render", &[("wgpu", Normal, false)])]);
+        assert!(matches!(only(&v), Violation::NotAllowed { .. }), "{v:?}");
         assert!(check(&[c("drafftink-gpu", &[("wgpu", Normal, false)])]).is_empty());
         assert!(check(&[c("drafftink-web", &[("wgpu", Normal, false)])]).is_empty());
     }
@@ -522,7 +652,102 @@ mod tests {
             assert!(matches!(only(&v), Violation::External { min_layer: 2, .. }), "{krate}");
         }
         assert!(check(&[c("drafftink-render", &[("vello", Normal, false)])]).is_empty());
-        assert!(check(&[c("drafftink-canvas", &[("vello", Normal, false)])]).is_empty());
+        let v = check(&[c("drafftink-canvas", &[("vello", Normal, false)])]);
+        assert!(matches!(only(&v), Violation::NotAllowed { .. }), "canvas is L3 but does not use vello: {v:?}");
+    }
+
+    /// The second clippy pass reads this file; losing a line would silently let I/O into the libraries.
+    #[test]
+    fn the_strict_clippy_config_bans_io_threads_and_the_wall_clock_below_l6() {
+        let config = include_str!("../clippy-below-l6/clippy.toml");
+        for path in [
+            "std::fs::read",
+            "std::fs::read_to_string",
+            "std::fs::write",
+            "std::fs::File",
+            "std::net::TcpStream",
+            "std::net::TcpListener",
+            "std::thread::spawn",
+            "std::time::Instant::now",
+            "std::time::Instant",
+            "std::process::Command",
+            "egui::Context",
+            "rfd::FileDialog",
+            "web_sys::Window",
+        ] {
+            assert!(config.contains(&format!("path = \"{path}\"")), "xtask/clippy-below-l6/clippy.toml lacks {path}");
+        }
+        assert!(libraries_below_l6().contains(&"drafftink-engine") && !libraries_below_l6().contains(&"drafftink-gpu"));
+    }
+
+    #[test]
+    fn every_library_below_l6_has_an_allowlist_row_and_every_row_a_library() {
+        for (name, class) in TABLE {
+            if class.layer().is_some_and(|l| l < ALLOWLIST_BELOW) && matches!(class, Class::Layer(_)) {
+                assert!(ALLOWED_EXTERNAL.iter().any(|(n, _)| n == name), "{name} has no row in ALLOWED_EXTERNAL");
+            }
+        }
+        for (name, list) in ALLOWED_EXTERNAL {
+            let layer = classify(name).and_then(Class::layer);
+            assert!(layer.is_some_and(|l| l < ALLOWLIST_BELOW), "{name} is not a library below L{ALLOWLIST_BELOW}");
+            assert!(list.windows(2).all(|w| w[0] < w[1]), "{name}: keep the list sorted and free of repeats");
+        }
+    }
+
+    #[test]
+    fn the_allowlist_refuses_crates_the_denylist_never_heard_of() {
+        // None of these names is in EXTERNAL_RULES: a denylist lets them through.
+        for (krate, dep) in [
+            ("drafftink-engine", "epaint"),
+            ("drafftink-engine", "web-sys"),
+            ("drafftink-engine", "tokio"),
+            ("drafftink-scene", "native-dialog"),
+            ("drafftink-edit", "tao"),
+            ("drafftink-io", "reqwest"),
+            ("drafftink-doc", "iced"),
+            ("drafftink-geom", "notify"),
+        ] {
+            let v = check(&[c(krate, &[(dep, Normal, false)])]);
+            assert!(matches!(only(&v), Violation::NotAllowed { .. }), "{krate} -> {dep}: {v:?}");
+            assert!(v[0].to_string().contains("ALLOWED_EXTERNAL"));
+        }
+        // Each layer keeps what it needs.
+        assert!(check(&[c("drafftink-collab", &[("tokio", Normal, false), ("web-sys", Normal, false)])]).is_empty());
+        assert!(check(&[c("drafftink-engine", &[("serde", Normal, false), ("loro", Normal, false)])]).is_empty());
+    }
+
+    #[test]
+    fn test_tooling_is_allowed_only_as_a_dev_dependency() {
+        assert!(check(&[c("drafftink-engine", &[("proptest", Dev, false)])]).is_empty());
+        let v = check(&[c("drafftink-engine", &[("proptest", Normal, false)])]);
+        assert!(matches!(only(&v), Violation::NotAllowed { kind: Normal, .. }));
+    }
+
+    #[test]
+    fn the_denylist_message_wins_when_both_rules_name_a_crate() {
+        let v = check(&[c("drafftink-engine", &[("egui", Normal, false)])]);
+        assert!(matches!(only(&v), Violation::External { .. }), "{v:?}");
+    }
+
+    #[test]
+    fn a_path_dependency_outside_the_workspace_is_external() {
+        let meta: Value = serde_json::from_str(
+            r#"{"packages":[
+                {"name":"drafftink-geom","dependencies":[
+                    {"name":"vendored-ui","kind":null,"path":"/elsewhere/vendored-ui"}]}
+            ]}"#,
+        )
+        .unwrap();
+        let g = from_metadata(&meta).unwrap();
+        assert!(!g[0].deps[0].workspace);
+        assert!(matches!(only(&check(&g)), Violation::NotAllowed { .. }));
+    }
+
+    #[test]
+    fn an_allowance_nobody_uses_is_reported() {
+        let v = check_unused_allowances(&[c("drafftink-geom", &[("kurbo", Normal, false)])]);
+        assert_eq!(v, [Violation::UnusedAllowance { krate: "drafftink-geom".into(), dep: "rstar".into() }]);
+        assert!(v[0].to_string().contains("remove it"));
     }
 
     #[test]

@@ -20,6 +20,7 @@ use self::support::{RectOut, check_latex_len, check_text_len, ids_out, refuse, s
 use crate::args;
 use crate::refusal::Refusal;
 use crate::session::{Ref, Session};
+use crate::spec::{Host, HostEffect};
 use crate::spec::{
     Batch, Binding, CommandSpec, Facts, Gate, Mutates, Redraw, RingMode, Scope, Selection, TextGate, Typed, Undo,
 };
@@ -405,6 +406,7 @@ const DOC: Facts = Facts {
     ring: RingMode::Always,
     palette: false,
     agent: true,
+    doc_write: crate::spec::DocWrite::Edit,
 };
 
 const STEP_KEYS: &[Binding] = &[
@@ -453,6 +455,7 @@ pub const COMMANDS: &[CommandSpec] = &[
             while_text_edit: TextGate::Commit,
             redraw: Redraw::Overlay,
             agent: false,
+            doc_write: crate::spec::DocWrite::NotDocument,
             ..DOC
         },
     )
@@ -471,6 +474,7 @@ pub const COMMANDS: &[CommandSpec] = &[
             ..DOC
         },
     )
+    .host(Host::effect(HostEffect::EndsEquationEdit))
     .available(editing_now)
     .refusals(&["not_editing", "invalid_latex"])
     // A blocked document cannot take the result (`edit_end` says so), but the edit can still be discarded.

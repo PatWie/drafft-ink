@@ -9,7 +9,10 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use crate::refusal::is_shared_code;
 use crate::registry::Registry;
-use crate::spec::{Batch, CommandSpec, Gate, Redraw, RingMode, Selection, TextGate, Undo};
+use crate::spec::{
+    Batch, CommandSpec, DocWrite, Facts, Gate, Host, HostEffect, KeyRepeat, Redraw, RefusalToast, RingMode, Selection,
+    TextGate, Undo,
+};
 
 const COMMANDS_MD: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../../docs/commands.md");
 const UNREGISTERED_TXT: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/unregistered.txt");
@@ -367,22 +370,48 @@ fn yn(b: bool) -> &'static str {
 }
 
 /// Compares a spec with its Appendix A row; pushes one line per mismatching column.
+///
+/// `Facts` is destructured without `..`: a new fact cannot be added to a registration without deciding here
+/// how it is compared with the catalog.
 fn compare_facts(spec: &CommandSpec, row: &[String], problems: &mut Vec<String>) {
+    let Facts {
+        // The identity tables of §2 carry the undo class (`catalog_matches_registry`, `identity_tables_match`).
+        undo: _,
+        reads_only,
+        mutates,
+        needs_selection,
+        ports,
+        batch,
+        view_only,
+        while_gesture,
+        while_text_edit,
+        redraw,
+        ring,
+        palette,
+        agent,
+        // Appendix A2 (`facts_match_appendix_a2`).
+        doc_write: _,
+    } = spec.facts();
     let cell = |i: usize| row.get(i).map_or("", String::as_str);
     let mut text = |col: &str, i: usize, reg: &str| {
         if cell(i) != reg {
             problems.push(format!("{} | {col} | catalog `{}` | registry `{reg}`", spec.id, cell(i)));
         }
     };
-    text("selection", 2, selection_word(spec.needs_selection));
-    text("batch", 4, batch_word(spec.batch));
-    text("view-only", 5, gate_word(spec.view_only));
-    text("during gesture", 6, gate_word(spec.while_gesture));
-    text("during text edit", 7, text_gate_word(spec.while_text_edit));
-    text("redraw", 8, redraw_word(spec.redraw));
-    text("ring", 9, ring_word(spec.ring));
-    text("palette", 10, yn(spec.palette));
-    text("agent", 11, yn(spec.agent));
+    text("selection", 2, selection_word(needs_selection));
+    text("batch", 4, batch_word(batch));
+    text("view-only", 5, gate_word(view_only));
+    text("during gesture", 6, gate_word(while_gesture));
+    text("during text edit", 7, text_gate_word(while_text_edit));
+    text("redraw", 8, redraw_word(redraw));
+    text("ring", 9, ring_word(ring));
+    text("palette", 10, yn(palette));
+    text("agent", 11, yn(agent));
+    // `reads_only` is the empty `mutates` column.
+    text("mutates (reads_only)", 1, if reads_only { "-" } else { cell(1) });
+    if !reads_only && item_set(cell(1)).is_empty() {
+        problems.push(format!("{} | mutates | catalog `-` | registry is not reads_only", spec.id));
+    }
 
     let mut set = |col: &str, i: usize, reg: BTreeSet<String>| {
         let cat = item_set(cell(i));
@@ -395,8 +424,8 @@ fn compare_facts(spec: &CommandSpec, row: &[String], problems: &mut Vec<String>)
             ));
         }
     };
-    set("mutates", 1, item_set(&spec.mutates.letters()));
-    set("ports", 3, spec.ports.names().into_iter().map(str::to_owned).collect());
+    set("mutates", 1, item_set(&mutates.letters()));
+    set("ports", 3, ports.names().into_iter().map(str::to_owned).collect());
 }
 
 #[test]
@@ -426,6 +455,140 @@ fn facts_match_appendix_a() {
         "Appendix A (docs/commands.md §10) and the registry disagree (id | column | catalog | registry):\n{}",
         problems.join("\n")
     );
+}
+
+// ---------------------------------------------------------------------------------------------------
+// 3b. Appendix A2: document, host and agent-tool facts
+// ---------------------------------------------------------------------------------------------------
+
+/// The heading that opens Appendix A2.
+const A2_PREFIX: &str = "### Appendix A2";
+/// Number of columns in an Appendix A2 row.
+const A2_COLUMNS: usize = 7;
+
+fn toast_word(t: RefusalToast) -> &'static str {
+    match t {
+        RefusalToast::Show => "show",
+        RefusalToast::Silent => "silent",
+    }
+}
+
+fn repeat_word(r: KeyRepeat) -> &'static str {
+    match r {
+        KeyRepeat::Repeats => "repeats",
+        KeyRepeat::FirstPressOnly => "first_press_only",
+    }
+}
+
+/// The cells of Appendix A2 for a registration: doc write, host effect, refusal toast, key repeat, editor takes
+/// style, own agent tool.
+fn a2_cells(spec: &CommandSpec) -> Vec<String> {
+    let Host { effect, refusal, repeat, text_editor_takes_style } = spec.host;
+    vec![
+        spec.doc_write.name().to_owned(),
+        effect.name().to_owned(),
+        toast_word(refusal).to_owned(),
+        repeat_word(repeat).to_owned(),
+        yn(text_editor_takes_style).to_owned(),
+        yn(spec.own_agent_tool).to_owned(),
+    ]
+}
+
+/// What a registration has when its Appendix A2 row is absent.
+fn a2_default(spec: &CommandSpec) -> Vec<String> {
+    let doc = if spec.mutates.contains(crate::spec::Mutates::DOC) { DocWrite::Edit } else { DocWrite::NotDocument };
+    vec![
+        doc.name().to_owned(),
+        HostEffect::None.name().to_owned(),
+        toast_word(RefusalToast::Show).to_owned(),
+        repeat_word(KeyRepeat::Repeats).to_owned(),
+        yn(false).to_owned(),
+        yn(false).to_owned(),
+    ]
+}
+
+fn parse_a2(md: &str) -> (BTreeMap<String, Vec<String>>, Vec<String>) {
+    let lines = section_from_prefix(md, A2_PREFIX);
+    let mut rows = BTreeMap::new();
+    let mut duplicates = Vec::new();
+    for (id, cells) in id_rows(&lines) {
+        if cells.len() != A2_COLUMNS {
+            continue;
+        }
+        let values = cells.get(1..).unwrap_or_default().to_vec();
+        if rows.insert(id.clone(), values).is_some() {
+            duplicates.push(id);
+        }
+    }
+    (rows, duplicates)
+}
+
+#[test]
+fn facts_match_appendix_a2() {
+    let md = read_catalog_text();
+    let (rows, duplicates) = parse_a2(&md);
+    let mut problems: Vec<String> = Vec::new();
+    if rows.is_empty() {
+        problems.push(format!("no Appendix A2 rows ({A2_COLUMNS} columns) found after `{A2_PREFIX}`"));
+    }
+    for id in duplicates {
+        problems.push(format!("{id}: appears more than once in Appendix A2"));
+    }
+    let reg = registered();
+    for id in rows.keys() {
+        if !reg.iter().any(|s| s.id == id) {
+            problems.push(format!("{id}: Appendix A2 names a command that is not registered"));
+        }
+    }
+    for spec in reg {
+        let actual = a2_cells(spec);
+        match rows.get(spec.id) {
+            None if actual != a2_default(spec) => problems.push(format!(
+                "{} | registry {actual:?} differs from the default {:?} and Appendix A2 has no row",
+                spec.id,
+                a2_default(spec)
+            )),
+            None => {}
+            Some(row) if *row == a2_default(spec) => {
+                problems.push(format!("{} | Appendix A2 row lists only defaults; delete it", spec.id));
+            }
+            Some(row) if *row != actual => {
+                problems.push(format!("{} | catalog {row:?} | registry {actual:?}", spec.id));
+            }
+            Some(_) => {}
+        }
+    }
+    assert!(
+        problems.is_empty(),
+        "Appendix A2 (docs/commands.md §10) and the registry disagree:\n{}",
+        problems.join("\n")
+    );
+}
+
+/// A host that reads `Host` from the registration has something to read: every effect other than `None` is
+/// declared by at least one command, so a variant cannot go dead, and the neutral value is the one most commands
+/// carry.
+#[test]
+fn every_host_effect_is_declared_by_a_command() {
+    let reg = registered();
+    let used: BTreeSet<&str> = reg.iter().map(|s| s.host.effect.name()).collect();
+    for effect in [
+        HostEffect::CompletesRename,
+        HostEffect::CompletesRenameThenSaveAs,
+        HostEffect::CompletesExport,
+        HostEffect::CompletesLibraryAdd,
+        HostEffect::ShowsConvertPopup,
+        HostEffect::CompletesLinkEdit,
+        HostEffect::ReturnsUrlToOpen,
+        HostEffect::ShowsSearchResults,
+        HostEffect::BeginsGesture,
+        HostEffect::EndsGestureOnRefusal,
+        HostEffect::EndsGesture,
+        HostEffect::EndsEquationEdit,
+    ] {
+        assert!(used.contains(effect.name()), "no command declares the host effect `{}`", effect.name());
+    }
+    assert!(reg.iter().filter(|s| s.host.is_none()).count() > reg.len() / 2);
 }
 
 // ---------------------------------------------------------------------------------------------------

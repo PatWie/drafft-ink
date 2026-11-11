@@ -270,7 +270,7 @@ fn present_mode_from_env() -> Option<wgpu::PresentMode> {
 /// surface supports it. Otherwise `Fifo`, never the first mode the driver lists: that order is the driver's own,
 /// so it could be `Immediate` (tearing, frames as fast as we ask) or `Mailbox` (an extra image and GPU work for
 /// frames nobody sees). The app paces its own frames (`RepaintState::set_min_interval`), and `Fifo` is the mode
-/// every Vulkan, Metal and DX12 surface has (the browser's canvas supports no other, `docs/performance.md` 7.9).
+/// every Vulkan, Metal and DX12 surface has (the browser's canvas supports no other, `docs/performance.md` 7.11).
 fn choose_present_mode(supported: &[wgpu::PresentMode], requested: Option<wgpu::PresentMode>) -> wgpu::PresentMode {
     use wgpu::PresentMode::Fifo;
     requested.filter(|m| supported.contains(m)).unwrap_or_else(|| match supported {

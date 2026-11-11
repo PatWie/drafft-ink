@@ -13,7 +13,7 @@ path = "src/main.rs"
 
 [features]
 # `--perf-scenario`: shows a generated scene for the perf gate (`cargo xtask perf --app native` builds with it). Off in
-# every shipped build, because it replaces the open document outside a command (docs/exceptions.md, E17).
+# every shipped build, because it replaces the open document outside a command (docs/exceptions.md, N4).
 scenarios = ["drafftink-app/scenarios"]
 
 [dependencies]

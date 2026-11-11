@@ -1,7 +1,8 @@
 //! `CommandSpec`: the static description of one command (docs/commands.md §1.2).
 //!
 //! A family declares its commands as a `pub const COMMANDS: &[CommandSpec]` in `cmd/<family>.rs`. Every
-//! fact is a required field of [`Facts`], so a registration that omits one does not compile. The handler
+//! fact is a required field of [`Facts`], so a base value that omits one does not compile, and a registration that
+//! inherits a fact from its base (`..BASE`) is checked against `docs/commands.md` Appendix A for every field. The handler
 //! takes a typed argument struct, never a `Value`: [`Typed`] deserialises, validates and serialises.
 
 use std::any::Any;
@@ -227,6 +228,166 @@ pub enum RingMode {
     Quiet,
 }
 
+/// How a command that changes the document relates to undo and to view-only mode (docs/commands.md §1.2, test 2).
+///
+/// Every registration declares it. The registry tests derive the rules from it instead of keeping lists of ids:
+/// a command whose `mutates` has `DOC` is `Edit`, `Replaces` or `Managed`, and any other command is `NotDocument`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum DocWrite {
+    /// The command does not change the document.
+    NotDocument,
+    /// An ordinary edit: it has an undo class other than `NoUndo` and refuses in view-only mode.
+    Edit,
+    /// It replaces the document wholesale (`doc.new`, `doc.open`, `doc.show_intro`, `collab.join_room`): `NoUndo`
+    /// because the old document is gone, and allowed in view-only mode because it is not an edit of the open one.
+    Replaces,
+    /// It manages the document state itself (`history.undo`, `history.redo`, the `gesture` commands, `tool.cancel`):
+    /// allowed in view-only mode, and its undo class is its own business (it restores or streams steps).
+    Managed,
+}
+
+impl DocWrite {
+    /// The word in `docs/commands.md` Appendix A2.
+    pub const fn name(self) -> &'static str {
+        match self {
+            Self::NotDocument => "not_document",
+            Self::Edit => "edit",
+            Self::Replaces => "replaces",
+            Self::Managed => "managed",
+        }
+    }
+}
+
+/// What a host (the UI shell) does after the command ran, besides showing the result. A host reads this fact
+/// from the registration; it never matches on a command id. `docs/commands.md` Appendix A2 lists every command
+/// that has one.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum HostEffect {
+    /// Nothing special.
+    None,
+    /// Success closes the rename dialog that asked for it (`doc.rename`, `tab.rename`, `library.rename`, `frame.rename`).
+    CompletesRename,
+    /// Like `CompletesRename`, and a pending Save As goes on to ask for the place (`doc.rename`).
+    CompletesRenameThenSaveAs,
+    /// Success closes the export dialog.
+    CompletesExport,
+    /// Success clears the name field of the library panel.
+    CompletesLibraryAdd,
+    /// Success after a keyboard conversion, or inside the open popup, shows the popup with the type it became.
+    ShowsConvertPopup,
+    /// Success closes the link editor.
+    CompletesLinkEdit,
+    /// Success returns an address in `url` for the host to open (the engine never opens a browser).
+    ReturnsUrlToOpen,
+    /// Success fills the search panel while it is open.
+    ShowsSearchResults,
+    /// Success starts a scrub gesture of the host.
+    BeginsGesture,
+    /// A refusal ends the host's scrub.
+    EndsGestureOnRefusal,
+    /// Any answer ends the host's scrub.
+    EndsGesture,
+    /// Any answer closes the equation editor, which ends with this command.
+    EndsEquationEdit,
+}
+
+impl HostEffect {
+    /// The word in `docs/commands.md` Appendix A2.
+    pub const fn name(self) -> &'static str {
+        match self {
+            Self::None => "-",
+            Self::CompletesRename => "completes_rename",
+            Self::CompletesRenameThenSaveAs => "completes_rename_then_save_as",
+            Self::CompletesExport => "completes_export",
+            Self::CompletesLibraryAdd => "completes_library_add",
+            Self::ShowsConvertPopup => "shows_convert_popup",
+            Self::CompletesLinkEdit => "completes_link_edit",
+            Self::ReturnsUrlToOpen => "returns_url_to_open",
+            Self::ShowsSearchResults => "shows_search_results",
+            Self::BeginsGesture => "begins_gesture",
+            Self::EndsGestureOnRefusal => "ends_gesture_on_refusal",
+            Self::EndsGesture => "ends_gesture",
+            Self::EndsEquationEdit => "ends_equation_edit",
+        }
+    }
+}
+
+/// Whether a host shows a refusal of the command as a toast.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum RefusalToast {
+    /// Show it.
+    Show,
+    /// Do not, when the refusal is `no_gesture`: the command is a follow-up of a control that handles the loss
+    /// itself (a scrub that lost its gesture just stops scrubbing). Any other refusal of it is shown.
+    Silent,
+}
+
+/// What a held key does with the command.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum KeyRepeat {
+    /// Every auto-repeat event runs the command again (`element.nudge`, zoom keys).
+    Repeats,
+    /// Only the first press runs it; auto-repeat events are ignored (`tool.hold`).
+    FirstPressOnly,
+}
+
+/// The facts a host needs about a command, apart from the ones the engine itself enforces. Every field has a
+/// neutral value in [`Host::NONE`]; a registration states the ones that differ with [`CommandSpec::host`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Host {
+    /// What the host does after a success or a refusal.
+    pub effect: HostEffect,
+    /// Whether the host toasts a refusal.
+    pub refusal: RefusalToast,
+    /// What a held key does.
+    pub repeat: KeyRepeat,
+    /// During a text edit the host sends a style choice to the text editor (which applies it to the selected
+    /// range or to the element and hands it to `text.edit_end`) instead of running this command, which
+    /// refuses with `text_editing`.
+    pub text_editor_takes_style: bool,
+}
+
+impl Host {
+    /// The neutral value: nothing special.
+    pub const NONE: Host = Host {
+        effect: HostEffect::None,
+        refusal: RefusalToast::Show,
+        repeat: KeyRepeat::Repeats,
+        text_editor_takes_style: false,
+    };
+
+    /// Only the effect differs from [`Host::NONE`].
+    pub const fn effect(effect: HostEffect) -> Host {
+        Host { effect, ..Self::NONE }
+    }
+
+    /// Only the key repeat differs: auto-repeat events do not run the command again.
+    pub const fn first_press_only() -> Host {
+        Host { repeat: KeyRepeat::FirstPressOnly, ..Self::NONE }
+    }
+
+    /// Only the style hand-over differs: see [`Host::text_editor_takes_style`].
+    pub const fn text_editor_takes_style() -> Host {
+        Host { text_editor_takes_style: true, ..Self::NONE }
+    }
+
+    /// The host does not toast a refusal.
+    #[must_use]
+    pub const fn silent_refusals(mut self) -> Host {
+        self.refusal = RefusalToast::Silent;
+        self
+    }
+
+    /// True for the neutral value.
+    pub fn is_none(&self) -> bool {
+        *self == Self::NONE
+    }
+}
+
 /// Where a shortcut applies.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize)]
 #[serde(rename_all = "snake_case")]
@@ -352,6 +513,8 @@ pub struct Facts {
     pub palette: bool,
     /// Exposed to agents.
     pub agent: bool,
+    /// How the command relates to the document, undo and view-only mode.
+    pub doc_write: DocWrite,
 }
 
 impl Facts {
@@ -370,6 +533,7 @@ impl Facts {
         ring: RingMode::Always,
         palette: false,
         agent: true,
+        doc_write: DocWrite::NotDocument,
     };
 
     /// A camera command: changes the view only, allowed in every state.
@@ -434,6 +598,13 @@ pub struct CommandSpec {
     pub palette: bool,
     /// Exposed to agents.
     pub agent: bool,
+    /// How it relates to the document, undo and view-only mode.
+    pub doc_write: DocWrite,
+    /// What a host does around it. [`Host::NONE`] for most commands.
+    pub host: Host,
+    /// The agent bridge gives the command a tool of its own (`engine.commands`, `engine.describe`,
+    /// `engine.recent`), so no family tool lists it.
+    pub own_agent_tool: bool,
     /// Default keys.
     pub shortcuts: &'static [Binding],
     /// Stable or planned.
@@ -506,6 +677,9 @@ impl CommandSpec {
             ring: facts.ring,
             palette: facts.palette,
             agent: facts.agent,
+            doc_write: facts.doc_write,
+            host: Host::NONE,
+            own_agent_tool: false,
             shortcuts: &[],
             status: Status::Stable,
             txn: Txn::Standard,
@@ -518,6 +692,21 @@ impl CommandSpec {
     #[must_use]
     pub const fn available(mut self, f: Check) -> Self {
         self.available = f;
+        self
+    }
+
+    /// States what a host does around the command (a dialog it closes, a toast it skips, a key that does not
+    /// repeat). Listed in `docs/commands.md` Appendix A2; a test compares the two.
+    #[must_use]
+    pub const fn host(mut self, host: Host) -> Self {
+        self.host = host;
+        self
+    }
+
+    /// The agent bridge has a tool of its own for this command.
+    #[must_use]
+    pub const fn own_agent_tool(mut self) -> Self {
+        self.own_agent_tool = true;
         self
     }
 
@@ -585,6 +774,27 @@ impl CommandSpec {
     pub const fn own_transaction(mut self) -> Self {
         self.txn = Txn::Own;
         self
+    }
+
+    /// The facts of this registration as one value. Tests destructure it without `..`, so a new fact cannot be
+    /// added without deciding how it is compared with `docs/commands.md`.
+    pub fn facts(&self) -> Facts {
+        Facts {
+            undo: self.undo,
+            reads_only: self.reads_only,
+            mutates: self.mutates,
+            needs_selection: self.needs_selection,
+            ports: self.ports,
+            batch: self.batch,
+            view_only: self.view_only,
+            while_gesture: self.while_gesture,
+            while_text_edit: self.while_text_edit,
+            redraw: self.redraw,
+            ring: self.ring,
+            palette: self.palette,
+            agent: self.agent,
+            doc_write: self.doc_write,
+        }
     }
 
     /// True when the command manages its own document state (gesture protocol, history).

@@ -1393,6 +1393,10 @@ export namespace DiagramCreate {
     bounds: O_RectOut;
     /** True when the command changed any state. */
     changed?: boolean;
+    /** Mermaid subgraphs: symbolic cluster id to the element id of its box. Edges may start or end at a box. */
+    clusters: {
+      [key: string]: string;
+    };
     /** Ids of elements the command made. */
     created?: string[];
     /** Ids of elements the command removed. */
@@ -1485,7 +1489,7 @@ export namespace DiagramImportMermaid {
   export type Args = {
     /** Where the diagram goes: a top-left point, or `"viewport_center"` (default). */
     at?: A_DiagramAt;
-    /** Group the whole diagram, and every Mermaid subgraph. */
+    /** Group the whole diagram, and every Mermaid subgraph with its box and title. */
     group?: boolean;
     /** Select the result. */
     select?: boolean;
@@ -1510,6 +1514,10 @@ export namespace DiagramImportMermaid {
     bounds: O_RectOut;
     /** True when the command changed any state. */
     changed?: boolean;
+    /** Mermaid subgraphs: symbolic cluster id to the element id of its box. Edges may start or end at a box. */
+    clusters: {
+      [key: string]: string;
+    };
     /** Ids of elements the command made. */
     created?: string[];
     /** Ids of elements the command removed. */

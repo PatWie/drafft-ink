@@ -40,11 +40,7 @@ fn gpu_opt() -> Option<&'static Mutex<Gpu>> {
     GPU.get_or_init(|| {
         let mut cx = vello::util::RenderContext::new();
         let Some(id) = pollster::block_on(cx.device(None)) else {
-            assert!(
-                std::env::var_os("DRAFFTINK_REQUIRE_GPU").is_none(),
-                "no GPU adapter and DRAFFTINK_REQUIRE_GPU is set"
-            );
-            eprintln!("skipped: no GPU adapter on this machine");
+            assert!(!drafftink_profile::gpu_required(), "no GPU adapter and DRAFFTINK_REQUIRE_GPU is set");
             return None;
         };
         let handle = &cx.devices[id];
@@ -67,6 +63,9 @@ fn gpu() -> &'static Mutex<Gpu> {
 macro_rules! need_gpu {
     () => {
         if gpu_opt().is_none() {
+            drafftink_profile::report_skip(
+                "no GPU adapter on this machine; set DRAFFTINK_REQUIRE_GPU=1 to fail instead",
+            );
             return;
         }
     };

@@ -107,6 +107,9 @@ pub(crate) fn guard<T>(id: &str, f: impl FnOnce() -> Result<T, Refusal>) -> Resu
     }
 }
 
+/// The command that ends a text edit. A command with the `Commit` gate runs it first. Its own gate is `Allowed`.
+pub(crate) const TEXT_EDIT_END: &str = "text.edit_end";
+
 impl Session {
     /// Runs a command from a script. The origin recorded in the ring is `script`.
     pub fn execute(&mut self, id: &str, args: Value) -> Result<Value, Refusal> {
@@ -270,9 +273,9 @@ impl Session {
         if self.text_edit.is_some() {
             match spec.while_text_edit {
                 TextGate::Refused => return Err(Refusal::text_editing(spec.id)),
-                // `text.edit_end` is the commit itself: it must not trigger another one.
-                TextGate::Commit if spec.id != "text.edit_end" => return self.commit_text_edit(origin, mode),
-                TextGate::Commit | TextGate::Allowed => {}
+                // The commit itself (`TEXT_EDIT_END`) is `Allowed`, so it never triggers another commit; a test pins that.
+                TextGate::Commit => return self.commit_text_edit(origin, mode),
+                TextGate::Allowed => {}
             }
         }
         Ok(GateCommit::default())
@@ -297,7 +300,7 @@ impl Session {
     /// command leaves the running text edit alone.
     fn commit_text_edit(&mut self, origin: Origin, mode: Mode) -> Result<GateCommit, Refusal> {
         let mut gate = GateCommit::default();
-        if let Some(end) = self.registry().find("text.edit_end") {
+        if let Some(end) = self.registry().find(TEXT_EDIT_END) {
             let before = self.soft_state();
             // The editor's own result when it staged one, else an empty commit (an absent `text` keeps the content).
             let args = self.staged_text_edit().unwrap_or_else(|| json!({ "commit": true }));

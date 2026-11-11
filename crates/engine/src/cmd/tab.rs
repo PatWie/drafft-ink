@@ -17,6 +17,7 @@ use serde_json::json;
 
 use crate::refusal::{Refusal, echo};
 use crate::session::Session;
+use crate::spec::{Host, HostEffect};
 use crate::spec::{Batch, CommandSpec, Facts, Gate, Mutates, NoArgs, PortSet, Redraw, RingMode, Selection, TextGate, Typed, Undo};
 use crate::state::{Tab, TabId};
 use crate::store::{StepMeta, TabDoc};
@@ -558,6 +559,7 @@ const TABS: Facts = Facts {
     ring: RingMode::Always,
     palette: true,
     agent: true,
+    doc_write: crate::spec::DocWrite::NotDocument,
 };
 
 /// The tab family.
@@ -598,8 +600,15 @@ pub const COMMANDS: &[CommandSpec] = &[
         "Rename tab",
         "Renames the document of a tab. One undo step in that tab's history.",
         &Typed::new(rename),
-        Facts { undo: Undo::Undoable, mutates: Mutates::DOC.with(Mutates::TABS), view_only: Gate::Refused, ..TABS },
+        Facts {
+            undo: Undo::Undoable,
+            mutates: Mutates::DOC.with(Mutates::TABS),
+            view_only: Gate::Refused,
+            doc_write: crate::spec::DocWrite::Edit,
+            ..TABS
+        },
     )
+    .host(Host::effect(HostEffect::CompletesRename))
     .refusals(&["no_such_tab", "empty_name"])
     .example(r#"{"name":"Architecture"}"#),
     CommandSpec::new(

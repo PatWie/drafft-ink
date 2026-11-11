@@ -154,7 +154,7 @@ impl App {
     }
 
     /// The door for a scenario driver: scenes sent through it replace the active tab's document at the next frame.
-    /// Call it before the shell runs. Only in builds with the `scenarios` feature (`docs/exceptions.md`, E17).
+    /// Call it before the shell runs. Only in builds with the `scenarios` feature (`docs/exceptions.md`, N4).
     #[cfg(feature = "scenarios")]
     pub fn scene_loader(&mut self) -> SceneLoader {
         let (loader, slot) = scene_hook(self.wake.clone());
@@ -165,7 +165,9 @@ impl App {
     /// Installs the scene a driver sent, if one is waiting: the document, the camera, the selection. Like the test
     /// rig's `load_generated`, it is not a command and leaves no history. It exists only in builds with the
     /// `scenarios` feature, which no shipped build has: the one place the app replaces a document outside a command
-    /// (`docs/exceptions.md`, E17).
+    /// (`docs/exceptions.md`, N4).
+    ///
+    /// Non-command write N4 (docs/exceptions.md).
     #[cfg(feature = "scenarios")]
     fn install_scene(&mut self, canvas: Size) {
         let Some(install) = self.scenes.as_ref().and_then(SceneSlot::take) else { return };
@@ -1095,3 +1097,7 @@ impl ShellApp for App {
 fn collab_view_of(s: &mut Session) -> drafftink_ui::CollabView {
     s.query("collab.status", json!({})).map(|out| drafftink_ui::CollabView::from_status(&out)).unwrap_or_default()
 }
+
+#[cfg(all(test, feature = "scenarios"))]
+#[path = "app/install_scene_tests.rs"]
+mod install_scene_tests;

@@ -161,6 +161,8 @@ pub struct DiagramOut {
     pub edges: Vec<String>,
     /// The groups made, in order.
     pub groups: Vec<String>,
+    /// Mermaid subgraphs: symbolic cluster id to the element id of its box. Edges may start or end at a box.
+    pub clusters: BTreeMap<String, String>,
     /// The frame, when one was asked for.
     pub frame: Option<String>,
     /// Bounds of the whole diagram.
@@ -239,6 +241,7 @@ fn build(
     })?;
     if select {
         let mut sel: Vec<ElementId> = res.nodes.values().cloned().collect();
+        sel.extend(res.clusters.values().cloned());
         sel.extend(res.edges.iter().cloned());
         sel.extend(extra.iter().cloned());
         select_only(s, &sel);
@@ -248,6 +251,7 @@ fn build(
         nodes: res.nodes.iter().map(|(k, v)| (k.clone(), v.as_str().to_owned())).collect(),
         edges: res.edges.iter().chain(extra.iter()).map(|e| e.as_str().to_owned()).collect(),
         groups: group_ids,
+        clusters: res.clusters.iter().map(|(k, v)| (k.clone(), v.as_str().to_owned())).collect(),
         frame: res.frame.map(|f| f.as_str().to_owned()),
         bounds: RectOut { x: x.round(), y: y.round(), w: w.round(), h: h.round() },
     })
@@ -306,7 +310,7 @@ fn create(s: &mut Session, a: CreateArgs) -> Result<DiagramOut, Refusal> {
     if a.nodes.is_empty() {
         return Err(Refusal::custom("bad_args", cmd, "Give at least one node."));
     }
-    let mut spec = DiagramSpec { nodes: a.nodes, edges: a.edges, groups: Vec::new(), layout: a.layout };
+    let mut spec = DiagramSpec { nodes: a.nodes, edges: a.edges, groups: Vec::new(), clusters: Vec::new(), layout: a.layout };
     if a.group && spec.nodes.len() >= 2 {
         spec.groups.push(GroupSpec { id: None, members: spec.nodes.iter().map(|n| n.id.clone()).collect() });
     }
@@ -347,7 +351,7 @@ pub struct ImportArgs {
     /// Where the diagram goes: a top-left point, or `"viewport_center"` (default).
     #[serde(default)]
     pub at: DiagramAt,
-    /// Group the whole diagram, and every Mermaid subgraph.
+    /// Group the whole diagram, and every Mermaid subgraph with its box and title.
     #[serde(default = "yes")]
     pub group: bool,
     /// Select the result.
@@ -496,6 +500,7 @@ const DOC: Facts = Facts {
     ring: RingMode::Always,
     palette: false,
     agent: true,
+    doc_write: crate::spec::DocWrite::Edit,
 };
 
 const EXTEND_KEYS: &[Binding] = &[

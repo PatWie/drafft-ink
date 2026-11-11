@@ -12,6 +12,15 @@ Features decided but not yet assigned to a phase agent.
 - **Present**: the X11 copy under Xvfb is 70 to 85 % of the native CPU (1 to 3.5 % without present in `pan@10k`; Fifo and Immediate do not differ). Not our code. Mailbox could not be measured here (the NVIDIA driver offers Fifo and Immediate only).
 - Tab bar: dirty state compares content through undo/redo only; a remote update between an edit and its undo keeps the tab dirty on purpose.
 
+## Done (branch audit-e)
+
+- Mermaid subgraphs are drawn as titled cluster boxes again, nested, with the layout placing the members inside; edges to a subgraph are drawn and bound to the box. The three old tests are ported (`diagram_tests.rs`, `diagram_create.rs`). Decision: titled rectangles, not frames (`commands.md` 2.19).
+- Native binary: `strip` in `release` (55.2 to 46.9 MB), the `dist` profile for packages (42.2 MB), budgets `native.*` in `perf/budgets.json`, `cargo xtask size --native` (`performance.md` 8.3).
+- `xtask perf --bench` and `--app` follow `CARGO_TARGET_DIR`; `--app web` builds the scenario web app and the server itself.
+- The packaged server has the sqlite and s3 stores; `release.yml` smoke-tests it.
+- `drafftink-cli` is a real tool (`docs/cli.md`). README, deviations and parity are current.
+- Left open: Mermaid node shapes other than rectangle, round, stadium, circle and diamond are drawn as rectangles with a warning; the CLI is not in the release packages; no CPU fallback for browsers without WebGPU.
+
 ## Done (branch backlog-c)
 
 Stale (done by earlier branches, verified in code and tests):
@@ -75,7 +84,4 @@ Implemented (branches backlog-c-perf, -collab, -export, -web; hashes are from th
 - Autosave serializes the whole document on the UI thread (`save_workspace` -> `snapshot().to_json()`): 0.8 s at 100,000 elements. It now waits for a running gesture, but the stall still happens a second after the last change. Needs a worker thread (native) or an incremental write; the web has no threads. Found by the `drag@100k` scenario (`docs/performance.md` section 7.8).
 - The `drag` scenarios show 0.7 to 1 text or formula layouts per frame while 10 texts and 10 formulas are dragged (`relayouts` in `drag@10k`). A move should replay the cached layout; find what invalidates it.
 - `present` is 70 to 85 % of the native process CPU under Xvfb (the X11 copy of every frame). Not our code; on a real display the same app is far cheaper. Measure on real hardware before spending more here.
-- REGRESSION (old feature): Mermaid subgraphs drew cluster boxes in the old app (old tests nested_diagram_imports_and_draws_cluster_boxes, nested_layout_places_cluster_children_inside_the_cluster_box, user_diagram_builds_without_panic_as_single_group); the new import only groups members. Draw subgraph boxes (frames or titled rectangles) with layout placing children inside; port the 3 tests.
-- Native binary 53.8 MB vs old 24.4 MB: check strip/debug info in release, panic strategy, duplicate deps; add a native size budget.
-- xtask perf --bench/--app ignore CARGO_TARGET_DIR; perf --app web needs a build with --features scenarios (build it automatically).
-- docs/commands.md §7.5: list the max zoom change 10 -> 30.
+- Release: include drafftink-cli in release packages. Mermaid shapes beyond the basic set (hexagon, cylinder, parallelogram, trapezoid, flag) render as rectangles.

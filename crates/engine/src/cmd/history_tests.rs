@@ -275,6 +275,7 @@ mod synthetic {
         ring: RingMode::Always,
         palette: false,
         agent: true,
+    doc_write: crate::spec::DocWrite::Edit,
     };
 
     const T: &[CommandSpec] = &[

@@ -24,6 +24,7 @@ use std::path::{Path, PathBuf};
 
 use serde_json::Value;
 
+use crate::tools::target_dir;
 use crate::{cargo, run};
 
 const BUDGETS: &str = "perf/budgets.json";
@@ -95,11 +96,14 @@ const TARGETS: &[Target] = &[
 pub fn run_gate(root: &Path, args: &[String]) -> Result<(), String> {
     let flag = |name: &str| args.iter().any(|a| a == name);
     if let Some(at) = args.iter().position(|a| a == "--app") {
-        let others = args.iter().enumerate().any(|(i, a)| a.starts_with("--") && i != at);
+        let others = args.iter().enumerate().any(|(i, a)| a.starts_with("--") && i != at && a != "--no-build");
         if others {
-            return Err("perf: --app is a run of its own; it takes `native` or `web` after it".into());
+            return Err(
+                "perf: --app is a run of its own; it takes `native`, `web` or `all` after it, and --no-build".into()
+            );
         }
-        return app(root, args.get(at + 1).map(String::as_str));
+        let which = args.get(at + 1).map(String::as_str).filter(|a| !a.starts_with("--"));
+        return app(root, which, !flag("--no-build"));
     }
     if let Some(unknown) = args.iter().find(|a| !matches!(a.as_str(), "--bench" | "--idle")) {
         return Err(format!("perf: unknown argument `{unknown}`; use --bench, --idle or --app"));
@@ -159,7 +163,7 @@ fn work(root: &Path) -> Result<(), String> {
     if packages.is_empty() {
         return Err("perf: no crate has tests/perf_work.rs".into());
     }
-    let out = root.join("target/perf/work");
+    let out = target_dir(root).join("perf/work");
     reset_dir(&out)?;
     run(perf_check(root).args(["validate", BUDGETS]))?;
     let mut test = cargo(root);
@@ -225,7 +229,27 @@ fn python() -> String {
     }
 }
 
-fn app(root: &Path, which: Option<&str>) -> Result<(), String> {
+/// Where the web build with the generated scenes goes. It is not `dist/`: that one is the shipped build, and the
+/// scenes are not for shipping.
+fn scenario_dist(root: &Path) -> PathBuf {
+    target_dir(root).join("perf/web-dist")
+}
+
+/// What the web scenarios need: the web app built with `--features scenarios`, and the server that serves it.
+fn build_web(root: &Path, dist: &Path) -> Result<(), String> {
+    let mut script = std::process::Command::new("bash");
+    script.current_dir(root).env("DIST_DIR", dist).arg("scripts/build-web.sh").args([
+        "--features",
+        "scenarios",
+        "--no-precompress",
+    ]);
+    run(&mut script)?;
+    let mut server = cargo(root);
+    server.args(["build", "--release", "-p", "drafftink-server"]);
+    run(&mut server)
+}
+
+fn app(root: &Path, which: Option<&str>, build: bool) -> Result<(), String> {
     let platforms = match which {
         None | Some("native") => vec![Platform::Native],
         Some("web") => vec![Platform::Web],
@@ -235,37 +259,41 @@ fn app(root: &Path, which: Option<&str>) -> Result<(), String> {
     let text = fs::read_to_string(root.join(BUDGETS)).map_err(|e| format!("{BUDGETS}: {e}"))?;
     let budgets: Value = serde_json::from_str(&text).map_err(|e| format!("{BUDGETS}: {e}"))?;
     run(perf_check(root).args(["validate", BUDGETS]))?;
+    let release = target_dir(root).join("release");
     let mut failures = Vec::new();
     for platform in platforms {
         let keys = budgeted_keys(&budgets, platform);
         if keys.is_empty() {
             return Err(format!("perf: {BUDGETS} has no `{}/...` entries to run", platform.name()));
         }
-        let out = root.join("target/perf").join(format!("app-{}", platform.name()));
+        let out = target_dir(root).join("perf").join(format!("app-{}", platform.name()));
         reset_dir(&out)?;
+        let mut driver = std::process::Command::new(python());
+        driver.current_dir(root).arg("scripts/perf_scenarios.py").arg(platform.name()).args(&keys);
         match platform {
             Platform::Native => {
-                let mut build = cargo(root);
-                // `--perf-scenario` is compiled in only for this build; the shipped binary has no way to swap the document.
-                build.args(["build", "--release", "-p", "drafftink", "--features", "scenarios"]);
-                run(&mut build)?;
+                if build {
+                    let mut build = cargo(root);
+                    // `--perf-scenario` is compiled in only for this build; the shipped binary has no way to swap the document.
+                    build.args(["build", "--release", "-p", "drafftink", "--features", "scenarios"]);
+                    run(&mut build)?;
+                }
+                driver.arg("--binary").arg(release.join(exe("drafftink")));
             }
             Platform::Web => {
-                if !root.join("dist/pkg").is_dir() {
-                    return Err("perf: no dist/. Build the web app with scenarios first: \
-                                scripts/build-web.sh --features scenarios, and cargo build --release -p drafftink-server"
-                        .into());
+                let dist = scenario_dist(root);
+                if build {
+                    build_web(root, &dist)?;
+                } else if !dist.join("pkg").is_dir() {
+                    return Err(format!(
+                        "perf: --no-build, but {} has no web build. Run `cargo xtask perf --app web` once without it.",
+                        dist.display()
+                    ));
                 }
+                driver.arg("--dist").arg(&dist).arg("--server").arg(release.join(exe("drafftink-server")));
             }
         }
-        let mut driver = std::process::Command::new(python());
-        driver
-            .current_dir(root)
-            .arg("scripts/perf_scenarios.py")
-            .arg(platform.name())
-            .args(&keys)
-            .arg("--out")
-            .arg(&out);
+        driver.arg("--out").arg(&out);
         run(&mut driver)?;
         let prefix = format!("--prefix={}/", platform.name());
         let check = run(perf_check(root).args(["check", BUDGETS]).arg(&out).args([
@@ -280,10 +308,15 @@ fn app(root: &Path, which: Option<&str>) -> Result<(), String> {
     if failures.is_empty() { Ok(()) } else { Err(failures.join("; ")) }
 }
 
+/// `name` with the platform's executable suffix.
+fn exe(name: &str) -> String {
+    format!("{name}{}", std::env::consts::EXE_SUFFIX)
+}
+
 // ---- timing tier ------------------------------------------------------------------------------------------------
 
 fn bench(root: &Path) -> Result<(), String> {
-    let criterion = root.join("target/criterion");
+    let criterion = target_dir(root).join("criterion");
     for id in TARGETS.iter().flat_map(|t| t.ids) {
         // A result left by an earlier run must not pass for this one.
         let dir = criterion.join(id);
@@ -307,7 +340,7 @@ fn bench(root: &Path) -> Result<(), String> {
     for (id, ns) in &medians {
         println!("  {id:<64} {}", pretty(*ns));
     }
-    let out = root.join("target/perf/bench");
+    let out = target_dir(root).join("perf/bench");
     reset_dir(&out)?;
     let report = out.join("bench.json");
     let mut make = perf_check(root);
@@ -381,6 +414,15 @@ mod tests {
         .unwrap();
         assert_eq!(budgeted_keys(&budgets, Platform::Native), ["idle", "pan@1k"]);
         assert_eq!(budgeted_keys(&budgets, Platform::Web), ["idle"]);
+    }
+
+    #[test]
+    fn the_web_scenario_build_does_not_replace_the_shipped_dist() {
+        let root = Path::new("/work/repo");
+        let dist = scenario_dist(root);
+        assert_ne!(dist, root.join("dist"));
+        assert!(dist.starts_with(target_dir(root)), "{}", dist.display());
+        assert_eq!(exe("drafftink"), format!("drafftink{}", std::env::consts::EXE_SUFFIX));
     }
 
     #[test]

@@ -4,8 +4,8 @@
 use std::collections::BTreeMap;
 
 use drafftink_edit::layout::{
-    Algorithm, Arrowheads, CreateOpts, DiagramError, DiagramSpec, Direction, EdgeSpec, LayoutOpts, NodeShape, NodeSpec,
-    diagram_create,
+    Algorithm, Arrowheads, ClusterSpec, CreateOpts, DiagramError, DiagramSpec, Direction, EdgeSpec, LayoutOpts,
+    NodeShape, NodeSpec, diagram_create,
 };
 use drafftink_edit::text_bind::MonospaceMeasure;
 use drafftink_scene::{
@@ -335,6 +335,192 @@ fn groups_nest_and_arrows_between_members_join_them() {
     assert!(!report.has_errors(), "{report:?}");
 }
 
+// ---- clusters: titled boxes around nodes (Mermaid subgraphs) ----
+
+/// The old app's `NESTED` test diagram as a spec: `Prep line` holds two nodes, `Real kitchen` and `Takeout kitchen` two
+/// each, and the edges join the boxes and the node `swap`.
+fn nested_clusters() -> DiagramSpec {
+    spec(
+        r#"{
+        "nodes": [
+            {"id": "a", "label": "mixer"}, {"id": "b", "label": "shaper"}, {"id": "swap", "label": "counter tickets"},
+            {"id": "r1", "label": "oven"}, {"id": "r2", "label": "toppings"},
+            {"id": "m1", "label": "prep bot"}, {"id": "m2", "label": "sim oven"}
+        ],
+        "edges": [
+            {"from": "a", "to": "b"}, {"from": "stack", "to": "swap"},
+            {"from": "swap", "to": "real"}, {"from": "swap", "to": "sim"},
+            {"from": "r1", "to": "r2"}, {"from": "m1", "to": "m2"}
+        ],
+        "clusters": [
+            {"id": "stack", "title": "Prep line", "members": ["a", "b"], "direction": "down"},
+            {"id": "real", "title": "Real kitchen", "members": ["r1", "r2"]},
+            {"id": "sim", "title": "Takeout kitchen", "members": ["m1", "m2"]}
+        ]
+    }"#,
+    )
+}
+
+#[test]
+fn children_of_a_cluster_sit_inside_the_box_below_the_title_band() {
+    // The old test `nested_layout_places_cluster_children_inside_the_cluster_box`, with the stronger statement that
+    // the whole child (not only its centre) is inside, and that the boxes do not overlap each other.
+    let mut store = MemoryStore::new();
+    let r = create(&mut store, &nested_clusters(), &CreateOpts::default()).unwrap();
+    assert_eq!(r.clusters.len(), 3);
+    let rect = |id: &drafftink_scene::ElementId| store.get(id).unwrap().rect();
+    for (cluster, members) in [("stack", ["a", "b"]), ("real", ["r1", "r2"]), ("sim", ["m1", "m2"])] {
+        let boxr = rect(&r.clusters[cluster]);
+        for m in members {
+            let child = rect(&r.nodes[m]);
+            assert!(boxr.contains_rect(child), "{m} {child:?} escaped the box of {cluster} {boxr:?}");
+            assert!(child.y0 >= boxr.y0 + 32.0, "{m} overlaps the title band of {cluster}");
+        }
+    }
+    let boxes: Vec<_> = r.clusters.values().map(rect).collect();
+    assert!(!drafftink_edit::layout::rects_overlap(&boxes, 0.5), "sibling boxes overlap: {boxes:?}");
+    let swap = rect(&r.nodes["swap"]);
+    assert!(boxes.iter().all(|b| b.intersect(swap).area() == 0.0), "a node outside lies on a box");
+    let report = validate_scene(&store);
+    assert!(!report.has_errors(), "{report:?}");
+}
+
+#[test]
+fn a_cluster_is_a_filled_rectangle_with_its_title_text_and_lies_behind_its_members() {
+    let mut store = MemoryStore::new();
+    let r = create(&mut store, &nested_clusters(), &CreateOpts::default()).unwrap();
+    let stack = store.get(&r.clusters["stack"]).unwrap();
+    assert_eq!(stack.tag(), Kind::Rectangle);
+    assert!(stack.style.fill_color.is_some());
+    let titles: Vec<String> = r
+        .created
+        .iter()
+        .filter_map(|id| match &store.get(id).unwrap().kind {
+            ElementKind::Text(t) if store.get(id).unwrap().container_id().is_none() => Some(t.content.clone()),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(titles, ["Prep line", "Real kitchen", "Takeout kitchen"]);
+    let title_id = r
+        .created
+        .iter()
+        .find(|id| matches!(&store.get(id).unwrap().kind, ElementKind::Text(t) if t.content == "Prep line"))
+        .unwrap();
+    let title = store.get(title_id).unwrap().rect();
+    let boxr = stack.rect();
+    assert!(boxr.contains_rect(title), "the title is inside its box");
+    assert!(title.y1 <= boxr.y0 + 32.0 + 0.5, "the title is in the band at the top");
+    assert!((title.center().x - boxr.center().x).abs() < 0.5, "the title is centred");
+    let z = |id: &drafftink_scene::ElementId| store.get(id).unwrap().index.clone();
+    for m in ["a", "b"] {
+        assert!(z(&r.clusters["stack"]) < z(&r.nodes[m]), "the box lies behind {m}");
+    }
+}
+
+#[test]
+fn clusters_nest_and_the_inner_box_is_inside_the_outer_one() {
+    let s = spec(
+        r#"{"nodes":[{"id":"a"},{"id":"b"},{"id":"c"},{"id":"d"}],
+            "edges":[{"from":"a","to":"b"},{"from":"b","to":"c"},{"from":"c","to":"d"}],
+            "clusters":[
+                {"id":"outer","title":"Outer title that is rather long","members":["a"],"group":true},
+                {"id":"inner","title":"Inner","parent":"outer","members":["b","c"],"group":true}]}"#,
+    );
+    let mut store = MemoryStore::new();
+    let r = create(&mut store, &s, &CreateOpts::default()).unwrap();
+    let rect = |id: &drafftink_scene::ElementId| store.get(id).unwrap().rect();
+    let (outer, inner) = (rect(&r.clusters["outer"]), rect(&r.clusters["inner"]));
+    assert!(outer.contains_rect(inner), "{inner:?} is not inside {outer:?}");
+    assert!(outer.contains_rect(rect(&r.nodes["a"])));
+    assert!(inner.contains_rect(rect(&r.nodes["b"])) && inner.contains_rect(rect(&r.nodes["c"])));
+    assert!(outer.intersect(rect(&r.nodes["d"])).area() == 0.0, "d is outside both boxes");
+    // The outer box is wider than its long title needs.
+    let title = r
+        .created
+        .iter()
+        .map(|id| store.get(id).unwrap())
+        .find(|e| matches!(&e.kind, ElementKind::Text(t) if t.content.starts_with("Outer")))
+        .unwrap();
+    assert!(outer.width() >= title.rect().width() + 44.0 - 0.5);
+    // z-order: outer box, inner box, then nodes.
+    assert!(store.get(&r.clusters["outer"]).unwrap().index < store.get(&r.clusters["inner"]).unwrap().index);
+    // Groups: the box, its title and its nodes share the cluster group; the groups nest innermost first.
+    let (go, gi) = (&r.groups["outer"], &r.groups["inner"]);
+    assert_eq!(store.get(&r.nodes["b"]).unwrap().group_ids.as_slice(), &[gi.clone(), go.clone()]);
+    assert_eq!(store.get(&r.nodes["a"]).unwrap().group_ids.as_slice(), std::slice::from_ref(go));
+    assert_eq!(store.get(&r.clusters["inner"]).unwrap().group_ids.as_slice(), &[gi.clone(), go.clone()]);
+    assert_eq!(store.get(&r.clusters["outer"]).unwrap().group_ids.as_slice(), std::slice::from_ref(go));
+    assert!(store.get(&r.nodes["d"]).unwrap().group_ids.is_empty());
+    let report = validate_scene(&store);
+    assert!(!report.has_errors(), "{report:?}");
+}
+
+#[test]
+fn an_edge_may_end_at_a_cluster_and_is_bound_to_its_box() {
+    let mut store = MemoryStore::new();
+    let r = create(&mut store, &nested_clusters(), &CreateOpts::default()).unwrap();
+    // `stack` -> `swap` starts at the box.
+    let arrow = store.get(&r.edges[1]).unwrap();
+    let [start, end] = arrow.binding_targets();
+    assert_eq!(start, Some(&r.clusters["stack"]));
+    assert_eq!(end, Some(&r.nodes["swap"]));
+    // Every arrow is bound at both ends.
+    for e in &r.edges {
+        assert!(store.get(e).unwrap().binding_targets().iter().all(Option::is_some), "{e}");
+    }
+}
+
+#[test]
+fn flow_direction_of_a_cluster_applies_inside_it() {
+    let s = spec(
+        r#"{"nodes":[{"id":"a"},{"id":"b"},{"id":"c"},{"id":"d"}],
+            "edges":[{"from":"a","to":"b"},{"from":"c","to":"d"}],
+            "layout":{"direction":"down"},
+            "clusters":[{"id":"h","title":"Across","members":["a","b"],"direction":"right"}]}"#,
+    );
+    let mut store = MemoryStore::new();
+    let r = create(&mut store, &s, &CreateOpts::default()).unwrap();
+    let rect = |n: &str| store.get(&r.nodes[n]).unwrap().rect();
+    assert!(rect("a").x1 <= rect("b").x0, "inside the cluster, b follows a to the right");
+    assert!(rect("c").y1 <= rect("d").y0, "outside, d follows c downwards");
+}
+
+#[test]
+fn an_empty_cluster_is_still_a_box_and_a_cluster_needs_an_automatic_layout() {
+    let s = spec(r#"{"nodes":[{"id":"a"}],"clusters":[{"id":"e","title":"Nothing yet"}]}"#);
+    let mut store = MemoryStore::new();
+    let r = create(&mut store, &s, &CreateOpts::default()).unwrap();
+    assert!(store.get(&r.clusters["e"]).unwrap().rect().width() >= 120.0);
+    let fixed = spec(
+        r#"{"nodes":[{"id":"a","x":0,"y":0}],"layout":{"algorithm":"none"},"clusters":[{"id":"c","members":["a"]}]}"#,
+    );
+    assert!(matches!(
+        create(&mut MemoryStore::new(), &fixed, &CreateOpts::default()),
+        Err(DiagramError::BadCluster { .. })
+    ));
+}
+
+#[test]
+fn bad_clusters_are_refused_with_their_id() {
+    let cases = [
+        r#"{"nodes":[{"id":"a"}],"clusters":[{"id":"a"}]}"#,
+        r#"{"nodes":[{"id":"a"}],"clusters":[{"id":"c"},{"id":"c"}]}"#,
+        r#"{"nodes":[{"id":"a"}],"clusters":[{"id":"c","parent":"nope"}]}"#,
+        r#"{"nodes":[{"id":"a"}],"clusters":[{"id":"c","parent":"c"}]}"#,
+        r#"{"nodes":[{"id":"a"}],"clusters":[{"id":"c","parent":"d"},{"id":"d","parent":"c"}]}"#,
+        r#"{"nodes":[{"id":"a"}],"clusters":[{"id":"c","members":["a"]},{"id":"d","members":["a"]}]}"#,
+    ];
+    for json in cases {
+        let e = create(&mut MemoryStore::new(), &spec(json), &CreateOpts::default()).unwrap_err();
+        assert!(matches!(e, DiagramError::BadCluster { .. } | DiagramError::DuplicateNode(_)), "{json}: {e}");
+    }
+    let unknown = spec(r#"{"nodes":[{"id":"a"}],"clusters":[{"id":"c","members":["zz"]}]}"#);
+    assert!(matches!(
+        create(&mut MemoryStore::new(), &unknown, &CreateOpts::default()),
+        Err(DiagramError::UnknownGroupMember { .. })
+    ));
+}
+
 #[test]
 fn bad_groups_are_refused() {
     let mut store = MemoryStore::new();
@@ -536,6 +722,7 @@ mod hostile {
                     })
                     .collect(),
                 groups: Vec::new(),
+                clusters: Vec::new(),
                 layout: LayoutOpts { algorithm, direction, node_gap: ng, layer_gap: lg, columns: cols },
             };
             let mut store = MemoryStore::new();
@@ -553,6 +740,78 @@ mod hostile {
                 drop(tx);
                 prop_assert_eq!(store.len_all(), 0);
             }
+        }
+    }
+}
+
+mod cluster_property {
+    use super::*;
+    use proptest::prelude::*;
+
+    proptest! {
+        #![proptest_config(ProptestConfig::with_cases(200))]
+
+        /// Any tree of clusters: every node is inside the box of each cluster around it, a box is inside the box
+        /// around it, boxes with the same parent do not overlap, and a node outside a box does not lie on it.
+        #[test]
+        fn boxes_hold_exactly_their_members(
+            parents in prop::collection::vec(prop::option::of(0usize..6), 1..6),
+            homes in prop::collection::vec(prop::option::of(0usize..6), 1..12),
+            edges in prop::collection::vec((0usize..30, 0usize..30), 0..14),
+            titles in prop::collection::vec("[a-z ]{0,30}", 6),
+            algo in 0u8..4, dir in 0u8..4,
+        ) {
+            let k = parents.len();
+            // Parent of cluster c is a smaller index, so the clusters form a forest.
+            let parent: Vec<Option<usize>> = parents.iter().enumerate().map(|(c, p)| p.filter(|_| c > 0).map(|p| p % c)).collect();
+            let n = homes.len();
+            let home: Vec<Option<usize>> = homes.iter().map(|h| h.map(|h| h % k)).collect();
+            let algorithm = [Algorithm::Layered, Algorithm::Grid, Algorithm::Force, Algorithm::Layered][usize::from(algo)];
+            let direction = [Direction::Down, Direction::Up, Direction::Left, Direction::Right][usize::from(dir)];
+            let item = |v: usize| if v.is_multiple_of(2) { format!("n{}", v / 2 % n) } else { format!("c{}", v / 2 % k) };
+            let spec = DiagramSpec {
+                nodes: (0..n).map(|i| NodeSpec::new(format!("n{i}"), format!("node {i}"))).collect(),
+                edges: edges.into_iter().map(|(a, b)| EdgeSpec::new(item(a), item(b))).collect(),
+                groups: Vec::new(),
+                clusters: (0..k).map(|c| ClusterSpec {
+                    id: format!("c{c}"),
+                    title: titles[c].clone(),
+                    parent: parent[c].map(|p| format!("c{p}")),
+                    members: (0..n).filter(|&i| home[i] == Some(c)).map(|i| format!("n{i}")).collect(),
+                    direction: None,
+                    group: c % 2 == 0,
+                }).collect(),
+                layout: LayoutOpts { algorithm, direction, ..LayoutOpts::default() },
+            };
+            let mut store = MemoryStore::new();
+            let r = create(&mut store, &spec, &CreateOpts::default()).unwrap();
+            let rect = |id: &drafftink_scene::ElementId| store.get(id).unwrap().rect();
+            let chain = |start: Option<usize>| std::iter::successors(start, |&c| parent[c]).collect::<Vec<_>>();
+            for (i, h) in home.iter().enumerate() {
+                let node = rect(&r.nodes[&format!("n{i}")]);
+                let around = chain(*h);
+                for c in 0..k {
+                    let boxr = rect(&r.clusters[&format!("c{c}")]);
+                    if around.contains(&c) {
+                        prop_assert!(boxr.contains_rect(node), "n{i} escaped c{c}");
+                    } else {
+                        prop_assert!(boxr.intersect(node).area() < 0.5, "n{i} lies on c{c}");
+                    }
+                }
+            }
+            for c in 0..k {
+                let boxr = rect(&r.clusters[&format!("c{c}")]);
+                if let Some(p) = parent[c] {
+                    prop_assert!(rect(&r.clusters[&format!("c{p}")]).contains_rect(boxr), "c{c} escaped c{p}");
+                }
+                for d in c + 1..k {
+                    if parent[c] == parent[d] {
+                        prop_assert!(boxr.intersect(rect(&r.clusters[&format!("c{d}")])).area() < 0.5, "c{c} and c{d} overlap");
+                    }
+                }
+            }
+            let report = validate_scene(&store);
+            prop_assert!(!report.has_errors(), "{report:?}");
         }
     }
 }

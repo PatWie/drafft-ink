@@ -8,11 +8,15 @@
 #![allow(clippy::disallowed_methods)]
 
 mod e2e;
+mod exceptions;
 mod gates;
 mod harness;
 mod layers;
+#[cfg(test)]
+mod parity;
 mod perf;
 mod size;
+mod skips;
 mod standards;
 mod tools;
 mod wasm;
@@ -31,19 +35,26 @@ gates:
   layers [--list] enforce the crate layering (docs/architecture.md); --list prints the assignments
   wasm            cargo check and clippy -D warnings every crate at L0-L5, plus the wasm apps, for wasm32-unknown-unknown
   standards       AGENTS.md stays short and cites only files that exist; toolchain pins agree
+  exceptions [--check]
+                  docs/exceptions.md against the source: every row has a test that exists, every gesture command has a row,
+                  every non-command write is listed (runs the registry half in crates/engine)
   deny            cargo deny: licences (AGPL-3.0-only compatible), advisories, bans, sources
-  test [ARGS]     cargo nextest run (cargo test if nextest cannot be installed), plus doc tests
-  fixtures        the legacy fixtures against the facts the old code wrote (crates/io/tests/facts.rs)
+  test [ARGS]     cargo nextest run (cargo test if nextest cannot be installed), plus doc tests; prints how many tests
+                  skipped themselves (`SKIPPED:` lines); DRAFFTINK_REQUIRE_GPU=1 makes a missing GPU a failure
+  fixtures        the legacy fixtures against the facts the old code wrote (crates/io/tests/facts.rs); the old app is
+                  DRAFFTINK_OLD_REPO or found next to the main checkout; DRAFFTINK_REQUIRE_OLD=1 fails when it is missing
   harness         harness accounting: methods have reasons and callers, every family has scenarios (docs/testing.md)
   perf [--bench|--idle|--app [native|web|all]]
                   work-counter tests at 1k/10k/100k elements checked against perf/budgets.json;
                   --bench: curated criterion benches against the timing limits (not part of ci);
                   --idle: only the idle and hover tests (perf/README.md);
                   --app: the real app under Xvfb with real input, checked with timing against the
-                  native/... or web/... budgets (needs a GPU; not part of ci)
-  size [--no-build|--wasm FILE]
+                  native/... or web/... budgets (needs a GPU; not part of ci); the web run builds the app with
+                  --features scenarios itself; --no-build reuses the last build
+  size [--no-build|--wasm FILE|--native]
                   builds the web app (scripts/build-web.sh), measures the wasm module and the fonts the page loads,
-                  checks them against the `size` section of perf/budgets.json (xtask/src/size.rs)
+                  checks them against the `size` section of perf/budgets.json (xtask/src/size.rs);
+                  --native: builds the shipped binaries (profile dist) and checks their sizes instead (not part of ci)
   ci              all of the above in order, with a summary table
 
 e2e [--types|--web|--native|--no-build]

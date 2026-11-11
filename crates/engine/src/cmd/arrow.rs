@@ -1103,6 +1103,7 @@ const DOC: Facts = Facts {
     ring: RingMode::Always,
     palette: false,
     agent: true,
+    doc_write: crate::spec::DocWrite::Edit,
 };
 
 const ON_SELECTION: Facts = Facts { needs_selection: Selection::Required, palette: true, ..DOC };
@@ -1193,7 +1194,13 @@ pub const COMMANDS: &[CommandSpec] = &[
         "Edit points",
         "Turns the point editor of a line or arrow on or off and selects a point in it.",
         &Typed::new(edit_points),
-        Facts { undo: Undo::NoUndo, mutates: Mutates::OBSERVED, needs_selection: Selection::Soft, ..DOC },
+        Facts {
+            undo: Undo::NoUndo,
+            mutates: Mutates::OBSERVED,
+            needs_selection: Selection::Soft,
+            doc_write: crate::spec::DocWrite::NotDocument,
+            ..DOC
+        },
     )
     .default_targets(edit_points_available)
     .shortcuts(EDIT_POINTS_KEYS),

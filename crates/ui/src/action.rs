@@ -15,7 +15,8 @@
 //!
 //! [`route`] is the only place that decides which command an action runs.
 
-use drafftink_engine::{Origin, Refusal, Session};
+use drafftink_engine::spec::{Host, HostEffect, RefusalToast};
+use drafftink_engine::{Origin, Refusal, Registry, Session};
 use serde_json::{Value, json};
 
 use crate::state::{ConvertPopup, SearchResults, Toast, UiState};
@@ -368,48 +369,50 @@ impl UiState {
         now: f64,
         host: &mut Vec<HostRequest>,
     ) {
-        if call.id == "text.edit_end" {
+        // What the command asks of a host is a fact of its registration (`CommandSpec::host`), not a list of ids here.
+        let facts = Registry::global().find(&call.id).map_or(Host::NONE, |spec| spec.host);
+        match (facts.effect, result) {
             // The equation editor ends with this command, whatever it answered.
-            self.equation = None;
-        }
-        match (call.id.as_str(), result) {
+            (HostEffect::EndsEquationEdit, _) => self.equation = None,
             // A rename dialog closes when the name was taken; a refusal (empty name) keeps it open next to its toast.
-            ("doc.rename" | "tab.rename" | "library.rename" | "frame.rename", Ok(_)) => {
+            (HostEffect::CompletesRename | HostEffect::CompletesRenameThenSaveAs, Ok(_)) => {
                 self.rename = None;
                 // Save As renames first and asks for the place afterwards.
-                if self.save_as.take().is_some() && call.id == "doc.rename" {
+                if self.save_as.take().is_some() && facts.effect == HostEffect::CompletesRenameThenSaveAs {
                     host.push(HostRequest::PickSaveTarget);
                 }
             }
             // A write the port finishes later is not done yet: the dialog stays, so that the person can see that
             // nothing is confirmed and try again. A refused write never gets here; it is a refusal with the reason.
-            ("doc.export", Ok(out)) if out.get("pending_write").is_some() => {
+            (HostEffect::CompletesExport, Ok(out)) if out.get("pending_write").is_some() => {
                 self.push_toast(Toast::note("The export has started, but the file is not confirmed yet.", now));
             }
-            ("doc.export", Ok(_)) => self.export = None,
-            ("library.add", Ok(_)) => self.library_name.clear(),
+            (HostEffect::CompletesExport, Ok(_)) => self.export = None,
+            (HostEffect::CompletesLibraryAdd, Ok(_)) => self.library_name.clear(),
             // Tab or Shift+Tab converted the selection: show the popup with the type it became. Once the popup is
             // open, a click on one of its types updates it too.
-            ("element.convert", Ok(out)) if call.origin == Origin::Shortcut || self.convert_popup.is_some() => {
+            (HostEffect::ShowsConvertPopup, Ok(out))
+                if call.origin == Origin::Shortcut || self.convert_popup.is_some() =>
+            {
                 let to = out.get("to").and_then(Value::as_str).map(str::to_owned);
                 self.convert_popup = Some(ConvertPopup { current: to });
             }
             // The link dialog closes when the link was set; a refusal keeps it open next to its toast.
-            ("element.set_link", Ok(_)) => self.link_editor = None,
+            (HostEffect::CompletesLinkEdit, Ok(_)) => self.link_editor = None,
             // The engine never opens a browser: an address comes back and goes to the app.
-            ("element.open_link", Ok(out)) => {
+            (HostEffect::ReturnsUrlToOpen, Ok(out)) => {
                 if let Some(url) = out.get("url").and_then(Value::as_str) {
                     host.push(HostRequest::OpenUrl(url.to_owned()));
                 }
             }
-            ("element.query", Ok(out)) if self.search_open => {
+            (HostEffect::ShowsSearchResults, Ok(out)) if self.search_open => {
                 let query = call.args.pointer("/filter/text").and_then(Value::as_str).unwrap_or_default();
                 self.search_results = Some(SearchResults::from_output(query, out));
             }
-            ("gesture.begin", Ok(out)) => {
+            (HostEffect::BeginsGesture, Ok(out)) => {
                 self.set_scrub_gesture(out.get("gesture").and_then(Value::as_str).map(str::to_owned));
             }
-            ("gesture.end" | "gesture.cancel", _) | ("gesture.update", Err(_)) => self.set_scrub_gesture(None),
+            (HostEffect::EndsGesture, _) | (HostEffect::EndsGestureOnRefusal, Err(_)) => self.set_scrub_gesture(None),
             _ => {}
         }
         let waited = self.waiting.iter().position(|c| c == call);
@@ -440,11 +443,15 @@ impl UiState {
         if call.origin == Origin::Shortcut && quiet_from_keyboard(refusal.code) {
             return;
         }
-        if call.id.starts_with("gesture.") && refusal.code == "no_gesture" {
+        if facts.refusal == RefusalToast::Silent && refusal.code == "no_gesture" {
             // A scrub that lost its gesture (the engine ended it, or it was cancelled) is not worth a toast: the
-            // control just stops scrubbing. Every other refusal of a gesture command is shown.
+            // control just stops scrubbing. Every other refusal of such a command (a locked element, say) is shown.
             return;
         }
         self.push_toast(Toast::from_refusal(refusal, now));
     }
 }
+
+#[cfg(test)]
+#[path = "host_facts_tests.rs"]
+mod host_facts_tests;

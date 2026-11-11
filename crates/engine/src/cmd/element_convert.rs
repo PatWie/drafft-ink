@@ -13,6 +13,7 @@ use serde_json::{Value, json};
 use super::element_common::{edit_with_measure, id_strings, target_refusal};
 use crate::refusal::Refusal;
 use crate::session::{Ref, Session};
+use crate::spec::{Host, HostEffect};
 use crate::spec::{
     Batch, Binding, CommandSpec, Facts, Gate, Mutates, PortSet, Redraw, RingMode, Scope, Selection, TextGate, Typed, Undo,
 };
@@ -165,6 +166,7 @@ const FACTS: Facts = Facts {
     ring: RingMode::Always,
     palette: true,
     agent: true,
+    doc_write: crate::spec::DocWrite::Edit,
 };
 
 const KEYS: &[Binding] = &[
@@ -181,6 +183,7 @@ pub const COMMANDS: &[CommandSpec] = &[CommandSpec::new(
     &Typed::new(convert_elements),
     FACTS,
 )
+    .host(Host::effect(HostEffect::ShowsConvertPopup))
 .shortcuts(KEYS)
 .refusals(&["mixed_kinds", "not_convertible"])
 .example(r#"{"ids":["e1"],"to":"diamond"}"#)];

@@ -260,6 +260,7 @@ const DOC: Facts = Facts {
     ring: RingMode::Always,
     palette: true,
     agent: true,
+    doc_write: crate::spec::DocWrite::Edit,
 };
 
 const Z_KEYS: &[Binding] = &[

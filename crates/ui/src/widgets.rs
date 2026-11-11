@@ -198,7 +198,9 @@ impl<'a> Cx<'a> {
         // While a text edit runs, a style choice goes to the text editor, which applies it to the selected range
         // or to the element and hands the result to `text.edit_end` (docs/exceptions.md E16). `style.set`
         // itself would refuse with `text_editing`, so the control must not grey out for that.
-        let editor_takes_it = self.model.text_editing && ctl.id == "style.set" && ctl.args.get("props").is_some();
+        let editor_takes_it = self.model.text_editing
+            && ctl.args.get("props").is_some()
+            && self.model.command(ctl.id).is_some_and(|c| c.host.text_editor_takes_style);
         let reason =
             if editor_takes_it { ctl.blocked.clone() } else { self.refusal(ctl.id).or_else(|| ctl.blocked.clone()) };
         let enabled = reason.is_none();

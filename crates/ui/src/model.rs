@@ -10,7 +10,7 @@
 use std::collections::{BTreeMap, HashMap};
 use std::hash::{DefaultHasher, Hash, Hasher};
 
-use drafftink_engine::spec::{CommandSpec, Scope, TextGate};
+use drafftink_engine::spec::{CommandSpec, Host, Scope, TextGate};
 use drafftink_engine::state::Tool;
 use drafftink_engine::{Refusal, Session};
 use drafftink_scene::SceneRead;
@@ -48,6 +48,8 @@ pub struct CmdView {
     pub palette: bool,
     /// What a text edit does with it: `Commit` commands may run from a shortcut during a text edit.
     pub while_text_edit: TextGate,
+    /// What a host does around the command (a dialog it closes, a toast it skips, a key that does not repeat).
+    pub host: Host,
     /// `Ok(())`, or the refusal `execute` would return now. The text is the tooltip of a greyed control.
     pub available: Result<(), Refusal>,
     /// Default bindings.
@@ -471,6 +473,7 @@ impl Model {
                     summary: c.summary,
                     palette: spec.is_some_and(|sp| sp.palette),
                     while_text_edit: spec.map_or(TextGate::Refused, |sp| sp.while_text_edit),
+                    host: spec.map_or(Host::NONE, |sp| sp.host),
                     available: c.available,
                     shortcuts: spec.map(|sp| shortcuts_of(sp, mac)).unwrap_or_default(),
                 }

@@ -263,6 +263,7 @@ pub const COMMANDS: &[CommandSpec] = &[
         &Typed::new(commands),
         Facts::READ_ONLY,
     )
+    .own_agent_tool()
     .example(r#"{"family":"view","available_only":true}"#),
     CommandSpec::new(
         "engine.describe",
@@ -272,6 +273,7 @@ pub const COMMANDS: &[CommandSpec] = &[
         &Typed::new(describe),
         Facts::READ_ONLY,
     )
+    .own_agent_tool()
     .refusals(&["unknown_command"])
     .example(r#"{"id":"view.pan"}"#),
     CommandSpec::new(
@@ -282,6 +284,7 @@ pub const COMMANDS: &[CommandSpec] = &[
         &Typed::new(recent),
         Facts::READ_ONLY,
     )
+    .own_agent_tool()
     .example(r#"{"limit":10,"mutating_only":true}"#),
     CommandSpec::new(
         "engine.state",

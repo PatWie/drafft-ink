@@ -10,6 +10,7 @@
 //! | Assert on work in a test | [`WorkScope`] (no clock, per thread), [`snapshot_thread`] |
 //! | Export | [`snapshot`] -> [`PerfStats`] JSON, [`chrome_trace_json`] |
 //! | Gate | [`Budgets`], [`ScenarioReport`] |
+//! | Skip a test loudly | [`skip_without_gpu`], [`report_skip`] (`SKIPPED:` lines, counted by `cargo xtask test`) |
 //!
 //! Spans, phases and frames record only while [`set_enabled`]`(true)` and only when the
 //! `enabled` cargo feature (on by default) is compiled in. Counters and redraw reasons are
@@ -23,6 +24,7 @@ mod live;
 mod names;
 mod report;
 mod scenario;
+mod skip;
 mod spans;
 mod stats;
 mod trace;
@@ -39,6 +41,10 @@ pub use report::{
     BudgetError, Budgets, Limit, PERF_OUT_ENV, REPORT_SCHEMA, ScenarioReport, Violation, is_deterministic, scenario_key,
 };
 pub use scenario::{KeyError, ScenarioKey, ScenarioKind};
+pub use skip::{
+    MARKER as SKIP_MARKER, REQUIRE_GPU_ENV, env_flag, flag_value, gpu_required, report_skip, skip_line,
+    skip_without_gpu,
+};
 pub use spans::{COMPILED, OTHER, Span, enabled, flush_thread, scope, set_enabled, span};
 pub use stats::{
     DocumentError, MAX_SPAN_ROWS, PerfStats, RedrawEvent, RedrawStats, SCHEMA_VERSION, STATS_SCHEMA, SpanStat,

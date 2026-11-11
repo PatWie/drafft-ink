@@ -291,6 +291,7 @@ const READ: Facts = Facts {
     ring: RingMode::Always,
     palette: true,
     agent: true,
+    doc_write: crate::spec::DocWrite::NotDocument,
 };
 
 /// Changing the document.
@@ -300,6 +301,7 @@ const WRITE: Facts = Facts {
     view_only: Gate::Refused,
     while_text_edit: TextGate::Commit,
     redraw: Redraw::Scene,
+    doc_write: crate::spec::DocWrite::Edit,
     ..READ
 };
 

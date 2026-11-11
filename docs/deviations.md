@@ -1,6 +1,8 @@
 # Deviations from the plan
 
-A running log of every place where the work departs from `docs/plan.md`, with the reason. The final report lists all of them.
+A running log of every place where the work departs from `docs/plan.md` or from the design specification the user gave, with the reason. Section 1 is the departures from the plan, section 2 the departures from the specification, section 3 the Excalidraw features that are not built, and section 4 the behaviour changes from the first version. A row is deleted in the commit that removes the departure.
+
+## 1. Departures from the plan
 
 | # | Date | Plan said | We do | Why |
 |---|---|---|---|---|
@@ -9,3 +11,58 @@ A running log of every place where the work departs from `docs/plan.md`, with th
 | D3 | 2026-11-07 | A panic inside a command rolls back (§5) | Native only. On wasm (panic=abort) a panic hook reports and offers a reload from the last autosave. | `catch_unwind` needs unwinding, which wasm32-unknown-unknown lacks. |
 | D4 | 2026-11-07 | Group names as a first-class field | Stored per member in `custom["drafftink.group.<id>"]` | The scene model has no group table; per-member storage merges under the CRDT without a new container. Revisit if group metadata grows. |
 | D5 | 2026-11-07 | One document store per tab | The engine keeps a working in-memory store plus the Loro store, written once per command/batch/gesture end | Rollback of refused commands and live gesture frames must never reach Loro, and the doc crate has no transaction that stays open across a command. Cost: a second in-memory copy of the scene. |
+
+| D6 | 2026-11-08 | Headless scenarios use egui kittest (§8) | JSON scenario files run by `crates/testkit` against a `Session` (and a harness for pixel probes). `egui_kittest` is used for the UI tests of `crates/ui`, not for the scenarios | A scenario is a list of commands with checks, and commands are JSON already; a UI-driven runner would test the widgets, not the command layer, and needs a second parser or code per step. The UI has its own tests in `crates/ui/tests`. |
+| D7 | 2026-11-08 | CI runs "browser e2e, the perf budgets" and one aggregate `ci` job is the required check (§8, §7) | `cargo xtask ci` runs fmt, standards, layers, clippy, wasm, deny, test, perf (work counters), size and fixtures and harness. Not in it: the browser and native e2e (`cargo xtask e2e`), the timing tiers (`perf --bench`, `perf --app`), `size --native`, and the regeneration half of `fixtures` | They need a display, a GPU and a quiet machine, or the old app's source tree. A timing gate on a shared runner flakes, and a flaky gate is turned off. They are run by hand before a release; `.github/workflows/e2e.yml` runs the e2e suites nightly and on pull requests that touch the apps, outside the required check. |
+| D8 | 2026-11-08 | The npm package exposes the canvas layer and the editor layer (§4 `packages/`) | `packages/drafftink-canvas` is the canvas library only: stage, shapes, events, transformer, export. No commands, undo or selection model | The editor needs the whole registry and the Loro document store, which the library leaves out on purpose (the package is 7.4 MB of wasm, the app 12.5 MB). The editor is available in the browser as `window.drafftink` of the app. A second package would be a third build of the same code. |
+| D9 | 2026-11-08 | The app is built on a reusable canvas API, and the editor sits on it (§4 "how the products map") | The editor uses the primitives of `drafftink-canvas` (viewport, hit testing, transformer, recogniser, overlay) but not its `Canvas<S>` facade and dispatcher. The facade is used by the npm package | The engine owns its own event flow because every pointer event has to end in a command or a gesture command; routing it through the facade's callbacks would put state changes where the layering test cannot see them. Two integration paths exist. The canvas library also has no layer nodes, tweens or cache API (`canvas-api.md` §10). |
+| D10 | 2026-11-08 | Native builds use `opt-level=3` with thin LTO (§7) | `release` is as planned, plus `strip = "symbols"`. The binaries that are shipped use the profile `dist`: fat LTO, and size-optimised code for the packages that run on a command, a message or a file (Loro, serde, schemars, image decoders, rmcp) | 55 MB was 2.2 times the first version's 24.4 MB. `dist` gives 41 MB and costs twice the build time, so it is for packages (`scripts/package-*`, `cargo xtask size --native`) and not for `cargo run --release`. |
+| D11 | 2026-11-08 | Criterion benches cover hit test, snapping, binding solver, encoding, CRDT apply and import/export at 1k, 10k and 100k (§7) | `cargo xtask perf --bench` runs 19 curated ids, mostly at 10k and 100k. Snapping and import/export have no bench in the gate | The work-counter tests (`perf_work.rs`) cover the scaling of the same operations at 1k, 10k and 100k and are exact on any machine; the benches add the timing of the hot ones. |
+| D12 | 2026-11-08 | Pan frames meet 16.7 ms p99 (the plan's 60 fps) | The native app budget is 25 ms p99 for pan, zoom, wheel and drag (`efe3681`) | See `perf/README.md`, "Frame-time budgets": measured p99 is 8 to 13 ms for pan and 5 to 20 ms for drag, under Xvfb, whose X11 copy of every frame is most of the process CPU and is not our code. |
+| D13 | 2026-11-08 | A CPU fallback renders the web app where WebGPU is missing, or at least shows it read-only (§10.4) | None. A browser without WebGPU gets a page that says so. | `docs/stack.md` §7: `vello_cpu` needs about 350 ms per frame in wasm for a real scene and a second version of `vello_cpu` in the build. The WebGPU path is where the work went. |
+| D14 | 2026-11-08 | `drafftink-server` serves the web client, which "makes one binary true" (§4) | The server serves a folder (`--web-dir dist`). The wasm is not embedded in the binary | Embedding 12.5 MB plus the fonts in every server build, including the ones that only host rooms, was not worth it. A release archive ships the binary and `web-dist/` together. |
+| D15 | 2026-11-08 | Native builds for Linux, Windows and macOS run in CI (§8) | All three are built in CI (`ci.yml`, `release.yml`). Tests run on Ubuntu only. The Windows and macOS packaging jobs have never run, and the apps have not been run on either system | No Mac or Windows machine was available (`docs/building.md`, `docs/packaging.md`). |
+| D16 | 2026-11-08 | The CLI is a headless runner for command scripts, conversion and export (§4 `drafftink-cli`) | It is, since this date. Until then `main()` was empty. PNG export is not in it | PNG needs a GPU device, which would pull wgpu and the whole renderer into a tool that otherwise starts in milliseconds. `docs/cli.md`. |
+| D17 | 2026-11-08 | The first load stays within the old app's transfer (target 3.5 MB brotli, §7.5 of `performance.md`) | The module is 5.6% smaller than the old one in brotli (3,267,207 against 3,462,376 bytes). The first visit of the welcome page, with the JS glue and the two fonts it loads, is 3,816,214 bytes, 9.7% above the old 3,478,229 | The editor is larger than the first version's (the engine, bound arrows, frames, the MCP door), and the fonts were moved out of the module to load on demand. `perf/budgets.json` limits the module and the fonts, not their sum. |
+
+## 2. Departures from the design specification
+
+These were found by the audit in `docs/audit/design-compliance.md` (clause numbers in the first column). Each is a place where the code does less than the specification says. They are listed so that nobody reads the specification as a description of the code. A row is removed when the audit's issue is closed.
+
+| Audit clause | The specification says | The code does | Audit issue |
+|---|---|---|---|
+| audit D2 | Nothing else changes app state for a user action | The app glue replaces the active document without history to install a generated scene for the perf drivers (`install_scene`, behind the `scenarios` feature of `drafftink-app`, which the native binary enables). `Session` has public fields that the UI could write to; the fence is a text test | 5 |
+| audit D3 | The command layer has no UI dependency, enforced by a lint and a layering test | The layering test is a deny list of external crates (now with an allow list per layer where `xtask layers` has it) and a source scan on `engine` only | 9 |
+| audit D5 | The UI shows the reason; an agent gets the same text | A few UI texts are the UI's own, some rows are hidden instead of disabled with a reason, `gesture.*` refusals other than `begin` are not shown, and MCP adds a `Try:` line | 8 |
+| audit D7 | No second copy of a rule | Zoom limits, snap composition, export limits, Mermaid keyword lists and image sniffing exist twice in places | 7 |
+| audit D8 | Facts are fields, not name lists | About 60 registrations inherit a family base, and a few name lists remain (`DOC_EXEMPT_UNDO` and others) | 6 |
+| audit D9 | `window.<app>` has `execute`, `batch`, `commands()` and `recent()` | It has, and more. Calls wait while the tab is hidden, because the bridge queue drains in a frame; schemas are returned on request, not by default | 3 |
+| audit D10 | Each high-frequency exception is written down | Done in `docs/exceptions.md`; check the file for the rows that describe features that are not built | 4 |
+| audit T5 | Fixture facts come from a tool with a `--check` mode | The tool exists. In CI and in a worktree the regeneration half is skipped when the old app's source is absent; some scenario files hold fixture counts typed by hand | 12 |
+| audit T6 | Never weaken an assertion | No weakened assertion was found. GPU tests pass silently when no adapter exists unless `DRAFFTINK_REQUIRE_GPU` is set | 13 |
+| audit P2 | The same tests on baseline and HEAD, with counts for both | The old unit tests test types that no longer exist, so they cannot run on HEAD. `docs/audit/regression.md` maps all 158 by behaviour (126 covered, 29 covered differently, 3 were not covered: Mermaid cluster boxes, now covered) | 14 |
+| audit P3 | A report per family: commands added, UI copies removed and left, gates | No such report in the repository; the plan and `commands.md` hold the pieces | 14 |
+| Process | Agents can easily create and edit diagrams | `diagram.create` and `diagram.import_mermaid` do. Mermaid types other than flowchart and sequence diagram are refused with a message | none |
+
+## 3. Excalidraw features that are not built
+
+The user asked for the Excalidraw features except AI. `docs/commands.md` section 8 maps the rest. These are not built:
+
+| Feature | Why not |
+|---|---|
+| Embeddables (iframes, YouTube and others) | Needs a sandboxed web view per element; the native app has no web view. Out of scope for a canvas that must also run headless. |
+| Image crop (command and handles) | Elements have a `crop` field and the painter honours it, but no command or UI sets it yet. Planned. |
+| Bucket fill, eyedropper, pen mode (palm rejection), autoshape (shape recognition), hover "+" connectors, list markers in text, chart paste | Smaller than the work they would take next to bound arrows, frames and the engine; none is in the plan's priority list (§6). Eyedropper in particular needs a pixel read-back that the browser gates behind a permission. |
+| Excalidraw+ features, sign-in, cloud, comments | A hosted service. The collaboration server is self-hosted. |
+| Mermaid diagram types beyond flowchart and sequence (class, state, ER, gantt, ...) | The parser and the layout for each type are separate work. They are refused with the list of supported types. |
+| The AI features (text-to-diagram, diagram-to-code, magic frame) | Excluded by the user. Agents drive the editor through MCP instead. |
+
+## 4. Behaviour changes from the first version
+
+Twenty-one deliberate changes (undo from every surface, Cmd on macOS, one paste path, group rotation, autosave by revision, and others) and the changes of limits and names are listed in `docs/commands.md` section 7.5. The ones that a user of the first version meets first:
+
+- The native document extension is `.drafftink`. `.json` still opens and still saves as native JSON.
+- The maximum zoom is 30 (it was 10).
+- The collaboration wire protocol is new (binary frames, versioned): an old client cannot join a new server, and the other way round. Documents in the old Loro format open.
+- `drafftink-server` binds `127.0.0.1` by default (it was `0.0.0.0`). `--bind 0.0.0.0:3030` is the explicit opt-in and logs a warning.
+- A Mermaid subgraph is drawn as a titled box again (see the cluster box row in `docs/commands.md` 2.19). The first version of the rewrite grouped the members and dropped the box; it was restored after the regression audit.

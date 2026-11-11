@@ -406,6 +406,8 @@ impl Session {
     /// The text editor's latest result, as `text.edit_end` arguments (docs/exceptions.md E16). A command with the
     /// `Commit` gate ends the running text edit with these arguments instead of an empty commit. It does nothing
     /// when no text is being edited. It is not a command: it changes no document and no undo step.
+    ///
+    /// Non-command write N3 (docs/exceptions.md).
     pub fn stage_text_edit(&mut self, args: serde_json::Value) {
         if self.text_edit.is_some() {
             self.ext.with::<crate::state::StagedEdit, _>(|st| st.0 = Some(args));

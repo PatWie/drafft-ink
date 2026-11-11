@@ -5,8 +5,27 @@ edition.workspace = true
 license.workspace = true
 rust-version.workspace = true
 publish = false
+description = "Headless command line for drafft.ink: run command scripts, convert documents, print outlines, list commands."
+
+[lib]
+name = "drafftink_cli"
+path = "src/lib.rs"
+
+[[bin]]
+name = "drafftink-cli"
+path = "src/main.rs"
 
 [dependencies]
+drafftink-engine = { path = "../../crates/engine" }
+drafftink-scene = { path = "../../crates/scene" }
+clap.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+getrandom = "0.3"
+
+[dev-dependencies]
+tempfile.workspace = true
 
 [lints]
 workspace = true

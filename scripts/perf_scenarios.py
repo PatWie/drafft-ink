@@ -15,6 +15,8 @@ checking against perf/budgets.json is `cargo run -p drafftink-profile --example 
 import argparse, json, math, os, shutil, socket, subprocess, sys, tempfile, threading, time, urllib.request
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+# cargo's target folder, which CARGO_TARGET_DIR moves (relative to the repository root, where xtask runs cargo)
+TARGET = os.path.join(ROOT, os.environ.get("CARGO_TARGET_DIR") or "target")
 HZ = os.sysconf("SC_CLK_TCK")
 
 # Seconds of each window (docs/performance.md 4.1; the same as ScenarioKind::default_secs in drafftink-profile).
@@ -118,7 +120,7 @@ def start_xvfb(display_name, size="1400x900x24"):
 
 def run_native(args, keys):
     binary = os.path.abspath(args.binary)
-    out_dir = args.out or os.path.join(ROOT, "target/perf/app-native")
+    out_dir = args.out or os.path.join(TARGET, "perf/app-native")
     os.makedirs(out_dir, exist_ok=True)
     xvfb = start_xvfb(args.display)
     results = []
@@ -200,7 +202,7 @@ def tree_ticks(profile_dir):
 
 def run_web(args, keys):
     from playwright.sync_api import sync_playwright
-    out_dir = args.out or os.path.join(ROOT, "target/perf/app-web")
+    out_dir = args.out or os.path.join(TARGET, "perf/app-web")
     os.makedirs(out_dir, exist_ok=True)
     dist, server_bin = os.path.abspath(args.dist), os.path.abspath(args.server)
     port = free_port()
@@ -288,9 +290,9 @@ def main():
     ap.add_argument("platform", choices=["native", "web"])
     ap.add_argument("keys", nargs="+", help="scenario keys: idle, pan@10k, wheel@1k, zoom@100k, drag@10k, hover@1k ...")
     ap.add_argument("--out"); ap.add_argument("--secs", type=float); ap.add_argument("--display", default=":95")
-    ap.add_argument("--binary", default=os.path.join(ROOT, "target/release/drafftink"))
+    ap.add_argument("--binary", default=os.path.join(TARGET, "release/drafftink"))
     ap.add_argument("--dist", default=os.path.join(ROOT, "dist"))
-    ap.add_argument("--server", default=os.path.join(ROOT, "target/release/drafftink-server"))
+    ap.add_argument("--server", default=os.path.join(TARGET, "release/drafftink-server"))
     ap.add_argument("--adapter", default="nvidia", choices=["nvidia", "swiftshader"])
     args = ap.parse_args()
     (run_native if args.platform == "native" else run_web)(args, args.keys)

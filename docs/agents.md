@@ -75,7 +75,7 @@ Or commit a `.mcp.json` next to your project:
 
 ### Other MCP clients (Cursor, Zed, VS Code, Codex, Gemini CLI, ...)
 
-Any client that starts a stdio server works. Give it the command and the arguments of the mode you want. Clients that list tools with a hard cap (some stop at 40 across all servers) are the reason for the grouped tool design in section 4: this server offers about 20 tools.
+Any client that starts a stdio server works. Give it the command and the arguments of the mode you want. Clients that list tools with a hard cap (some stop at 40 across all servers) are the reason for the grouped tool design in section 4: this server offers 29 tools (`tools/list` of the headless mode; the number follows the registry).
 
 ### Streamable HTTP (the desktop app)
 
@@ -194,7 +194,7 @@ The tool list is generated from the command registry. Nothing is written by hand
 
 - Each family that changes state is one tool taking `{command, args}`: `element`, `style`, `diagram`, `arrange`, `arrow`, `frame`, `group`, `history`, `tab`, `tool`, `view`, `settings`, ... The tool description lists every command of the family with its summary, its argument signature cut from the command's own schema, and a short example, so the model usually does not need a second call.
 - All read-only commands (`doc.outline`, `doc.inspect`, `element.query`, `element.at`, `selection.get`, `view.get`, `history.state`, `view.screenshot`, ...) form one tool, `inspect`, with `readOnlyHint: true`. A client can auto-approve reads without approving edits. A read-only command called through an editing tool, or the reverse, is a tool error that names the right tool.
-- Fixed tools: `batch` (several commands as one atomic undo step), `commands` (the registry with live availability), `describe` (full schema, example and refusal codes of one command), `recent` (the newest calls by everyone), `status` (mode and connection; in relay mode, the pairing link).
+- Fixed tools: `batch` (several commands as one atomic undo step), `commands` (the registry with live availability), `describe` (full schema, example and refusal codes of one command; the argument is `command`, and the bridge method it calls takes `id`, section 5.1), `recent` (the newest calls by everyone), `status` (mode and connection; in relay mode, the pairing link).
 - File tools `open`, `save` and `export` exist when `doc.open`, `doc.save` and `doc.export` are registered. They are shortcuts with a `path` argument for those commands.
 
 Results: a successful call returns the command's output as compact JSON. A picture (`view.screenshot`, PNG export without a path) becomes an MCP image block. A refusal is a tool result with `isError: true` whose text is the refusal's plain words (and `Try: ...` lines for its suggestions); the model reads how to proceed. A failed batch starts with `Step N (`id`) refused: ...` and says whether it was rolled back. An unknown tool name is a JSON-RPC error `-32602` that lists the real tools.

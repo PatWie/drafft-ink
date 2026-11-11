@@ -20,9 +20,10 @@ mod save;
 pub use files::{AUTOSAVE_NAME, SaveTarget, save_target, set_save_target, use_stored_default_target};
 pub use open::intro_document;
 
+use crate::spec::{Host, HostEffect};
 use crate::spec::{
-    Batch, Binding, CommandSpec, Facts, Gate, Mutates, PortSet, Redraw, RingMode, Scope, Selection, TextGate, Typed,
-    Undo,
+    Batch, Binding, CommandSpec, DocWrite, Facts, Gate, Mutates, PortSet, Redraw, RingMode, Scope, Selection, TextGate,
+    Typed, Undo,
 };
 
 /// A command that replaces or adds documents: tabs, selection, camera and the document change.
@@ -40,6 +41,7 @@ const REPLACES: Facts = Facts {
     ring: RingMode::Always,
     palette: true,
     agent: true,
+    doc_write: DocWrite::Replaces,
 };
 
 /// A command that edits the document.
@@ -48,6 +50,7 @@ const EDITS: Facts = Facts {
     mutates: Mutates::DOC,
     ports: PortSet::NONE,
     batch: Batch::Allowed,
+    doc_write: DocWrite::Edit,
     ..REPLACES
 };
 
@@ -57,6 +60,7 @@ const PORTS: Facts = Facts {
     view_only: Gate::Allowed,
     redraw: Redraw::None,
     batch: Batch::Allowed,
+    doc_write: DocWrite::NotDocument,
     ..REPLACES
 };
 
@@ -103,7 +107,7 @@ pub const COMMANDS: &[CommandSpec] = &[
         "Open dropped files",
         "Routes dropped files by content: images are inserted, documents opened, libraries imported.",
         &Typed::new(open::drop_files),
-        Facts { undo: Undo::Undoable, palette: false, agent: false, ..REPLACES },
+        Facts { undo: Undo::Undoable, palette: false, agent: false, doc_write: DocWrite::Edit, ..REPLACES },
     )
     .refusals(&["in_room", "no_save_target", "too_many_tabs"]),
     CommandSpec::new(
@@ -126,6 +130,7 @@ pub const COMMANDS: &[CommandSpec] = &[
         &Typed::new(save::rename),
         Facts { mutates: Mutates::DOC.with(Mutates::TABS), ..EDITS },
     )
+    .host(Host::effect(HostEffect::CompletesRenameThenSaveAs))
     .refusals(&["empty_name"])
     .example(r#"{"name":"Architecture"}"#),
     CommandSpec::new(
@@ -149,6 +154,7 @@ pub const COMMANDS: &[CommandSpec] = &[
             ..PORTS
         },
     )
+    .host(Host::effect(HostEffect::CompletesExport))
     .available(export_loaded)
     .shortcuts(EXPORT_KEYS)
     .refusals(&["room_loading"])

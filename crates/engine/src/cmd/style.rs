@@ -27,6 +27,7 @@ use serde_json::{Value, json};
 use crate::cmd::element_common::target_refusal;
 use crate::refusal::{Refusal, echo};
 use crate::session::{Ref, Session};
+use crate::spec::{Host};
 use crate::spec::{
     CommandSpec, Facts, Gate, Mutates, NoArgs, PortSet, Redraw, RingMode, Selection, TextGate, Typed, Undo,
 };
@@ -446,6 +447,7 @@ const WRITE: Facts = Facts {
     ring: RingMode::Always,
     palette: false,
     agent: true,
+    doc_write: crate::spec::DocWrite::Edit,
 };
 
 /// The style family.
@@ -458,6 +460,7 @@ pub const COMMANDS: &[CommandSpec] = &[
         &Typed::new(set),
         WRITE,
     )
+    .host(Host::text_editor_takes_style())
     .coalesce("style.set", 1000)
     .example(r#"{"props":{"stroke_color":"blue-500","fill_color":"blue-100","stroke_width":4}}"#),
     CommandSpec::new(

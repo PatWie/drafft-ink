@@ -236,18 +236,185 @@ fn a_mermaid_flowchart_becomes_a_grouped_diagram_with_bound_arrows() {
     assert!(out["groups"].as_array().unwrap().is_empty());
 }
 
+/// The rectangles that are subgraph boxes: the cluster fill (light slate), as in the old app.
+fn cluster_boxes(s: &Session) -> Vec<ElementId> {
+    let fill = drafftink_scene::Color::rgb(0xf1, 0xf5, 0xf9);
+    s.store()
+        .iter()
+        .filter(|e| e.tag() == Kind::Rectangle && e.style.fill_color == Some(fill))
+        .map(|e| e.id.clone())
+        .collect()
+}
+
+fn free_texts(s: &Session) -> Vec<String> {
+    let mut v: Vec<String> = s
+        .store()
+        .iter()
+        .filter(|e| e.container_id().is_none())
+        .filter_map(|e| e.text_data().map(|t| t.content.clone()))
+        .collect();
+    v.sort();
+    v
+}
+
 #[test]
-fn mermaid_subgraphs_are_nested_groups_and_the_loss_is_reported() {
+fn mermaid_subgraphs_are_titled_boxes_in_nested_groups_and_nothing_is_reported_lost() {
     let (mut s, _f) = testing::session();
     let out = run(
         &mut s,
         "diagram.import_mermaid",
         json!({"source": {"text": "graph TD\nsubgraph one\nA-->B\nend\nB-->C[(db)]"}}),
     );
-    assert_eq!(out["groups"].as_array().unwrap().len(), 2, "{out}");
+    assert_eq!(out["groups"].as_array().unwrap().len(), 2, "the subgraph, then the whole diagram: {out}");
+    assert_eq!(out["clusters"].as_object().unwrap().len(), 1, "{out}");
     let w: Vec<&str> = out["warnings"].as_array().unwrap().iter().map(|x| x.as_str().unwrap()).collect();
     assert!(w.iter().any(|x| x.contains("drawn as rectangles")), "{w:?}");
-    assert!(w.iter().any(|x| x.contains("subgraph title")), "{w:?}");
+    assert!(!w.iter().any(|x| x.contains("subgraph")), "a subgraph is drawn, so nothing is reported: {w:?}");
+    assert_eq!(cluster_boxes(&s).len(), 1);
+    assert_eq!(free_texts(&s), ["one"], "the title is a text element of its own");
+    // A and B are inside the box; C is not.
+    let box_rect = s.element(&cluster_boxes(&s)[0]).unwrap().rect();
+    let nodes = out["nodes"].as_object().unwrap();
+    for inside in ["A", "B"] {
+        assert!(box_rect.contains_rect(s.element(&eid(&nodes[inside])).unwrap().rect()), "{inside}");
+    }
+    assert_eq!(box_rect.intersect(s.element(&eid(&nodes["C"])).unwrap().rect()).area(), 0.0);
+    assert_eq!(s.tab().doc.undo_depth(), 1);
+    s.undo_steps(1).unwrap();
+    assert!(cluster_boxes(&s).is_empty() && free_texts(&s).is_empty(), "one undo takes the boxes away too");
+}
+
+/// The nested test diagram of the old app (`flowchart.rs` `NESTED`).
+const NESTED: &str = "flowchart TB\n\
+    subgraph STACK[\"Prep line\"]\n\
+        direction TB\n\
+        A[mixer]\n\
+        B[shaper]\n\
+        A <--> B\n\
+    end\n\
+    STACK --- SWAP{{\"counter<br/>tickets\"}}\n\
+    SWAP -.->|\"dine-in\"| REAL\n\
+    SWAP ==>|\"takeout\"| SIM\n\
+    subgraph REAL[\"Real kitchen\"]\n\
+        direction TB\n\
+        R1[oven]\n\
+        R2[toppings]\n\
+        R1 --- R2\n\
+    end\n\
+    subgraph SIM[\"Takeout kitchen\"]\n\
+        direction TB\n\
+        M1[prep bot]\n\
+        M2[sim oven]\n\
+        M1 --- M2\n\
+    end\n";
+
+#[test]
+fn nested_diagram_imports_and_draws_cluster_boxes() {
+    // Port of the old `nested_diagram_imports_and_draws_cluster_boxes`: three boxes, and at least five connectors.
+    let (mut s, _f) = testing::session();
+    let out = run(&mut s, "diagram.import_mermaid", json!({"source": {"text": NESTED}}));
+    assert_eq!(cluster_boxes(&s).len(), 3, "STACK, REAL and SIM");
+    assert_eq!(free_texts(&s), ["Prep line", "Real kitchen", "Takeout kitchen"]);
+    let edges = out["edges"].as_array().unwrap();
+    assert_eq!(edges.len(), 6, "A<->B, STACK---SWAP, SWAP-.->REAL, SWAP==>SIM, R1---R2, M1---M2");
+    // The three edges that start or end at a whole subgraph are no longer skipped: they are bound to the boxes.
+    let boxes: Vec<ElementId> = cluster_boxes(&s);
+    let at_a_box = edges
+        .iter()
+        .filter(|e| s.element(&eid(e)).unwrap().binding_targets().iter().flatten().any(|t| boxes.contains(t)))
+        .count();
+    assert_eq!(at_a_box, 3);
+    for e in edges {
+        assert!(s.element(&eid(e)).unwrap().binding_targets().iter().all(Option::is_some));
+    }
+    let w: Vec<&str> = out["warnings"].as_array().unwrap().iter().map(|x| x.as_str().unwrap()).collect();
+    assert!(!w.iter().any(|x| x.contains("subgraph") || x.contains("skipped")), "{w:?}");
+}
+
+#[test]
+fn nested_layout_places_cluster_children_inside_the_cluster_box() {
+    // Port of the old `nested_layout_places_cluster_children_inside_the_cluster_box`, on the elements that are drawn.
+    let (mut s, _f) = testing::session();
+    let out = run(&mut s, "diagram.import_mermaid", json!({"source": {"text": NESTED}}));
+    let nodes = out["nodes"].as_object().unwrap();
+    let clusters = out["clusters"].as_object().unwrap();
+    let rect = |id: &Value| s.element(&eid(id)).unwrap().rect();
+    for (cluster, members) in [("STACK", ["A", "B"]), ("REAL", ["R1", "R2"]), ("SIM", ["M1", "M2"])] {
+        let boxr = rect(&clusters[cluster]);
+        for m in members {
+            let child = rect(&nodes[m]);
+            assert!(boxr.contains_rect(child), "{m} {child:?} escaped {cluster} {boxr:?}");
+        }
+        assert!(boxr.intersect(rect(&nodes["SWAP"])).area() == 0.0, "SWAP lies on {cluster}");
+    }
+    // Each label sits inside its node, so the labels are inside the boxes as well.
+    for e in s.store().iter().filter(|e| e.container_id().is_some()) {
+        let in_a_box = cluster_boxes(&s).iter().any(|b| s.element(b).unwrap().rect().contains_rect(e.rect()));
+        let is_swap_label = e.container_id() == Some(&eid(&nodes["SWAP"]))
+            || s.element(e.container_id().unwrap()).is_some_and(|c| c.tag() == Kind::Arrow);
+        assert!(in_a_box || is_swap_label, "label {:?} is outside every box", e.id);
+    }
+}
+
+/// The long diagram that was reported against the old app: a chain, a hexagon with a `<br/>` label, and three
+/// subgraphs, two of them joined to the hexagon with pipe-labelled dotted and thick links.
+const USER_DIAGRAM: &str = "flowchart TB\n\
+    subgraph KITCHEN[\"The order pipeline — unchanged\"]\n\
+        direction TB\n\
+        A[counter / customer]\n\
+        B[cashier bridge]\n\
+        C[kitchen coordinator]\n\
+        D[menu / stock / prep board]\n\
+        A <--> B <--> C <--> D\n\
+    end\n\
+    KITCHEN --- MODE{{\"service boundary — same tickets either way<br/>▼ orders · recipes   ▲ status · timers · counts\"}}\n\
+    MODE -.->|\"dine-in\"| REAL\n\
+    MODE ==>|\"takeout (offline, no oven)\"| SIM\n\
+    subgraph REAL[\"Real kitchen\"]\n\
+        direction TB\n\
+        R1[stone oven + peels]\n\
+        R2[fresh basil · mozzarella · tomatoes]\n\
+        R3[the dining room]\n\
+        R1 --- R2 --- R3\n\
+    end\n\
+    subgraph SIM[\"takeout — drop-in replacement\"]\n\
+        direction TB\n\
+        M1[prep_bot + bake_sim / chill_sim]\n\
+        M2[simulated oven · timer_feed · scales]\n\
+        M3[recipe scene + packing world]\n\
+        M1 --- M2 --- M3\n\
+    end\n";
+
+#[test]
+fn user_diagram_builds_without_panic_as_single_group() {
+    // Port of the old `user_diagram_builds_without_panic_as_single_group`: it builds, it has the three cluster
+    // boxes (KITCHEN, REAL, SIM), and everything on the canvas belongs to the one outer group.
+    let (mut s, _f) = testing::session();
+    let out = run(&mut s, "diagram.import_mermaid", json!({"source": {"text": USER_DIAGRAM}}));
+    assert_eq!(cluster_boxes(&s).len(), 3, "KITCHEN, REAL, SIM cluster boxes");
+    assert_eq!(out["groups"].as_array().unwrap().len(), 4, "three subgraphs and the whole: {out}");
+    let all: Vec<_> = s.store().iter().collect();
+    assert!(all.len() > 20);
+    let outer = all[0].group_ids.last().cloned().expect("the first element is grouped");
+    for e in &all {
+        assert_eq!(e.group_ids.last(), Some(&outer), "{:?} is not in the outer group", e.id);
+    }
+    // KITCHEN joins the hexagon, and the hexagon joins REAL and SIM: edges to whole subgraphs are drawn.
+    assert_eq!(out["edges"].as_array().unwrap().len(), 3 + 1 + 2 + 2 + 2, "every link of the diagram is an arrow");
+    assert_eq!(s.tab().doc.undo_depth(), 1);
+}
+
+#[test]
+fn subgraphs_are_boxes_even_when_the_import_is_not_grouped() {
+    let (mut s, _f) = testing::session();
+    let out = run(
+        &mut s,
+        "diagram.import_mermaid",
+        json!({"source": {"text": "graph TD\nsubgraph one\nA-->B\nend"}, "group": false}),
+    );
+    assert!(out["groups"].as_array().unwrap().is_empty());
+    assert_eq!(cluster_boxes(&s).len(), 1);
+    assert!(s.store().iter().all(|e| e.group_ids.is_empty()));
 }
 
 #[test]

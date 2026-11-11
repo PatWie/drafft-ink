@@ -47,7 +47,9 @@ jobs:
       # On a hosted runner there is no GPU: Chromium falls back to SwiftShader, and the native app to Mesa's software
       # Vulkan (lavapipe). On the `gpu` runner the real adapter is required.
       DRAFFTINK_E2E_ADAPTER: ${{ (inputs.runner == 'gpu') && 'nvidia' || 'swiftshader' }}
-      DRAFFTINK_REQUIRE_GPU: ${{ (inputs.runner == 'gpu') && '1' || '0' }}
+      # Both runners have an adapter (the GPU, or Chromium's SwiftShader and Mesa's lavapipe, installed below), so a
+      # missing one is a failure and not a skip.
+      DRAFFTINK_REQUIRE_GPU: "1"
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@master
@@ -75,6 +77,10 @@ jobs:
           npx playwright install --with-deps chromium
       - name: Run both suites
         run: cargo xtask e2e
+      # The GPU pixel tests and the scenarios that need an adapter print `SKIPPED:` and pass on a machine without one;
+      # here DRAFFTINK_REQUIRE_GPU=1 turns that into a failure, and the summary line says how many tests skipped.
+      - name: GPU tests (render, app, testkit)
+        run: cargo xtask test
       - name: Keep the reports and failure screenshots
         if: always()
         uses: actions/upload-artifact@v4

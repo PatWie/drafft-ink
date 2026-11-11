@@ -1411,6 +1411,16 @@ dependencies = [
 [[package]]
 name = "drafftink-cli"
 version = "0.2.0"
+dependencies = [
+ "clap",
+ "drafftink-engine",
+ "drafftink-scene",
+ "getrandom 0.3.4",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror 2.0.21",
+]
 
 [[package]]
 name = "drafftink-collab"
