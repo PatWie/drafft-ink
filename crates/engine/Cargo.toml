@@ -8,6 +8,7 @@ description = "Command registry, Session, execute / execute_batch, refusals, ges
 
 [dependencies]
 drafftink-scene = { path = "../scene" }
+drafftink-canvas = { path = "../canvas" }
 drafftink-doc = { path = "../doc" }
 drafftink-geom = { path = "../geom" }
 drafftink-edit = { path = "../edit" }

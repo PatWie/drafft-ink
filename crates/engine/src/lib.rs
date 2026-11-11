@@ -22,6 +22,7 @@ pub mod batch;
 pub mod cmd;
 mod executor;
 pub mod gesture;
+pub mod interact;
 mod invariants;
 pub mod ports;
 pub mod refusal;

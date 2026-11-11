@@ -1363,6 +1363,7 @@ name = "drafftink-engine"
 version = "0.2.0"
 dependencies = [
  "base64 0.22.1",
+ "drafftink-canvas",
  "drafftink-doc",
  "drafftink-edit",
  "drafftink-geom",
