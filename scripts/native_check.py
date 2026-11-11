@@ -77,7 +77,9 @@ xvfb = subprocess.Popen(["Xvfb", DISP, "-screen", "0", "1400x900x24", "+extensio
 time.sleep(1.5)
 log = open(os.path.join(work, "app.log"), "w+")
 perf_json = os.path.join(work, "perf.json")
-env = dict(os.environ, DISPLAY=DISP, DRAFFTINK_BRIDGE_DIR=os.path.join(work, "bridge"),
+# A private home with a Downloads folder: "Export as PNG" writes its download there, never into the real one.
+home = os.path.join(work, "home"); os.makedirs(os.path.join(home, "Downloads"))
+env = dict(os.environ, DISPLAY=DISP, HOME=home, DRAFFTINK_BRIDGE_DIR=os.path.join(work, "bridge"),
            RUST_LOG="drafftink_gpu::frame=debug,drafftink_gpu=info,warn")
 proc = subprocess.Popen([binary, "--bridge", "--data-dir", os.path.join(work, "data"), "--perf-dump", perf_json], env=env, stderr=log, stdout=subprocess.DEVNULL)
 d = display.Display(DISP)
@@ -210,6 +212,30 @@ try:
         move(bx, by); time.sleep(0.2); button(1, True); button(1, False); time.sleep(0.5)
         check(ui_tool_sets()[len(before_sets):] == [name], f"one click on the {name} toolbar button after hovering the canvas ran tool.set once ({ui_tool_sets()[len(before_sets):]})")
     ws.ok("execute", {"id": "tool.set", "args": {"tool": "select"}})
+
+    # "Export as PNG" without the dialog: a real click on the menu row and Ctrl+E both write the PNG download (the
+    # same call as the export dialog's: format png, to a download named after the document).
+    tabs = ws.ok("execute", {"id": "tab.list", "args": {}})["tabs"]
+    png_name = next(t["name"] for t in tabs if t["active"]) + ".png"
+    png_path = os.path.join(home, "Downloads", png_name)
+    exports = lambda: [e for e in ws.ok("recent", {"limit": 50})["entries"] if e["id"] == "doc.export"]
+    def wait_for_png():
+        for _ in range(100):
+            if os.path.exists(png_path) and os.path.getsize(png_path) > 0: return True
+            time.sleep(0.2)
+        return False
+    move(900, 500); time.sleep(0.3)
+    click(39, 37); time.sleep(0.4)          # the menu button
+    click(50, 88 + 6 * 29 + 2)              # the seventh row: "Export as PNG"
+    check(wait_for_png(), f"the menu row 'Export as PNG' wrote {png_name} to the downloads folder")
+    if os.path.exists(png_path):
+        check(open(png_path, "rb").read(8) == b"\x89PNG\r\n\x1a\n", "the downloaded file is a PNG")
+        os.remove(png_path)
+    check([e["source"] for e in exports()][-1:] == ["menu"], f"the click ran doc.export from the menu ({[e['source'] for e in exports()]})")
+    focus_app(); press("Control_L", "e")
+    check(wait_for_png(), f"Ctrl+E wrote {png_name} too")
+    check([e["source"] for e in exports()][-1:] == ["shortcut"], f"the key ran doc.export as a shortcut ({[e['source'] for e in exports()]})")
+    if os.path.exists(png_path): os.remove(png_path)
 
     # Draw through the bridge: two rectangles, an arrow bound to both, then move one and see the arrow follow.
     f0 = len(frames())

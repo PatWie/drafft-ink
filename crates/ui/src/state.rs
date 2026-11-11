@@ -269,6 +269,11 @@ impl ExportFormat {
         }
     }
 
+    /// The format of a `format` argument (`png`, `svg`, `json`, `excalidraw`).
+    pub fn from_arg(word: &str) -> Option<Self> {
+        Self::ALL.into_iter().find(|f| f.arg() == word)
+    }
+
     /// The label on the button.
     pub fn title(self) -> &'static str {
         match self {

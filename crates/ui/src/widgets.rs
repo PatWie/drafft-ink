@@ -166,6 +166,7 @@ impl<'a> Cx<'a> {
 
     /// Adds a command call with the current origin.
     pub fn run(&mut self, id: &str, args: Value) {
+        let args = crate::surfaces::export::complete_args(self.model, id, args);
         self.out.push(UiAction::run_from(self.origin, id, args));
     }
 

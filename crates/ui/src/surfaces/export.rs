@@ -3,6 +3,7 @@
 //! from the `export.*` settings; changing them here changes only this export (the preferences change the
 //! settings).
 
+use drafftink_engine::spec::HostEffect;
 use egui::{Context, Id, Modal, RichText};
 use serde_json::{Value, json};
 
@@ -54,17 +55,50 @@ pub(crate) fn copy_args(o: &ExportState) -> Value {
     })
 }
 
+/// The dialog's options as the settings give them, for a document with or without a selection.
+fn options(m: &Model, format: ExportFormat) -> ExportState {
+    ExportState {
+        format,
+        selection_only: m.selection_count > 0,
+        scale: m.setting_f64("export.scale").unwrap_or(2.0),
+        background: m.setting("export.background").and_then(Value::as_bool).unwrap_or(true),
+        dark: m.setting_bool("export.dark"),
+        embed_scene: m.setting("export.embed_scene").and_then(Value::as_bool).unwrap_or(true),
+        loaded: true,
+    }
+}
+
 /// Takes the options from the settings the first time the dialog is drawn.
 fn load(o: &mut ExportState, m: &Model) {
-    if o.loaded {
-        return;
+    if !o.loaded {
+        *o = options(m, o.format);
     }
-    o.loaded = true;
-    o.scale = m.setting_f64("export.scale").unwrap_or(2.0);
-    o.background = m.setting("export.background").and_then(Value::as_bool).unwrap_or(true);
-    o.dark = m.setting_bool("export.dark");
-    o.embed_scene = m.setting("export.embed_scene").and_then(Value::as_bool).unwrap_or(true);
-    o.selection_only = m.selection_count > 0;
+}
+
+/// The name of the active document.
+fn active_name(m: &Model) -> String {
+    m.tabs.iter().find(|t| t.active).map(|t| t.name.clone()).unwrap_or_default()
+}
+
+/// The arguments of a `doc.export` that a person started without the dialog (a menu row, `Mod+E`, the palette):
+/// what the person gave, and for everything missing what the dialog would send for a document that is exported
+/// at once. So every way to export a picture is the same call and writes the same file (a download on the web,
+/// a file in the downloads folder on the desktop); only the `inline` default is for agents, who read the bytes.
+/// Other commands and arguments that are not an object come back unchanged.
+pub(crate) fn complete_args(model: &Model, id: &str, args: Value) -> Value {
+    let completes_export = model.command(id).is_some_and(|c| c.host.effect == HostEffect::CompletesExport);
+    let Value::Object(given) = args else {
+        return args;
+    };
+    if !completes_export {
+        return Value::Object(given);
+    }
+    let format = given.get("format").and_then(Value::as_str).and_then(ExportFormat::from_arg).unwrap_or_default();
+    let mut full = export_args(&options(model, format), &file_name(&active_name(model), format));
+    if let Some(map) = full.as_object_mut() {
+        map.extend(given);
+    }
+    full
 }
 
 /// Draws the dialog.
@@ -73,7 +107,7 @@ pub fn show(ctx: &Context, cx: &mut Cx<'_>, st: &mut UiState) {
         return;
     };
     load(o, cx.model);
-    let document = cx.model.tabs.iter().find(|t| t.active).map(|t| t.name.clone()).unwrap_or_default();
+    let document = active_name(cx.model);
     let pal = cx.pal;
     show_modal(ctx, cx, Modal::new(Id::unique("export_dialog")), "Export", 420.0, &Close::Overlays, |ui, cx| {
         section_label(ui, &pal, "Format");

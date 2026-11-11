@@ -1,4 +1,5 @@
-import { test, expect, fixtureBase64, probe } from "../../support/app.ts";
+import type { Download } from "@playwright/test";
+import { test, expect, fixtureBase64, probe, type App } from "../../support/app.ts";
 import { box, camera } from "../../support/build.ts";
 import { solidPng } from "../../support/png.ts";
 import { close, hex, shot } from "../../support/pixels.ts";
@@ -171,4 +172,60 @@ test("keys: Ctrl+V with the pointer over a panel pastes at the middle of the vie
   const copy = rows.find((r) => r.id !== a);
   expect(copy?.bounds.x, "centred on the view (x)").toBeCloseTo(640 - 50, -1);
   expect(copy?.bounds.y, "centred on the view (y)").toBeCloseTo(400 - 30, -1);
+});
+
+test.describe("export as PNG without the dialog", () => {
+  // The menu button and the menu rows, in page points at zoom 1 (`crates/ui/src/surfaces/menu.rs`): the button is at
+  // (39, 37), the first row is centred at y = 88, a row is 28 high with 1 between rows, a separator takes 1 + 2 x 1.
+  const MENU_BUTTON = { x: 39, y: 37 };
+  const ROW_STEP = 29;
+  /** "Export as PNG" is the seventh row: six rows (New tab ... Rename document) and a separator above it. */
+  const EXPORT_AS_PNG = { x: 50, y: 88 + 6 * ROW_STEP + 2 };
+
+  const PNG_SIGNATURE = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+
+  async function activeName(app: App): Promise<string> {
+    const tabs = (await app.exec("tab.list")).tabs as { active: boolean; name: string }[];
+    return tabs.find((t) => t.active)?.name ?? "";
+  }
+
+  async function readAll(download: Download): Promise<Buffer> {
+    const chunks: Buffer[] = [];
+    for await (const chunk of (await download.createReadStream()) as AsyncIterable<Buffer>) chunks.push(chunk);
+    return Buffer.concat(chunks);
+  }
+
+  test("a real click on the menu row 'Export as PNG' downloads a PNG named after the document", async ({ app }) => {
+    await camera(app, { x: 640, y: 400 }, 1);
+    await box(app, 600, 360, 120, 80, { fill: "#ffd43b" });
+    await app.exec("selection.clear");
+    const name = await activeName(app);
+
+    await app.page.mouse.move(MENU_BUTTON.x, MENU_BUTTON.y);
+    await app.page.mouse.click(MENU_BUTTON.x, MENU_BUTTON.y);
+    await app.page.waitForTimeout(400);
+    const downloaded = app.page.waitForEvent("download", { timeout: 20_000 });
+    await app.page.mouse.click(EXPORT_AS_PNG.x, EXPORT_AS_PNG.y);
+    const download = await downloaded;
+
+    expect(download.suggestedFilename()).toBe(`${name}.png`);
+    const bytes = await readAll(download);
+    expect(bytes.subarray(0, 8).equals(PNG_SIGNATURE), "the file is a PNG").toBe(true);
+    const ring = (await app.recent(50)).filter((e) => e.id === "doc.export");
+    expect(ring.at(-1)?.source, "the click ran doc.export from the menu").toBe("menu");
+  });
+
+  test("Ctrl+E downloads the same PNG as the click", async ({ app }) => {
+    await camera(app, { x: 640, y: 400 }, 1);
+    await box(app, 600, 360, 120, 80, { fill: "#ffd43b" });
+    await app.exec("selection.clear");
+    const name = await activeName(app);
+
+    await app.page.mouse.move(900, 600);
+    const downloaded = app.page.waitForEvent("download", { timeout: 20_000 });
+    await app.page.keyboard.press("Control+e");
+    const download = await downloaded;
+    expect(download.suggestedFilename()).toBe(`${name}.png`);
+    expect((await readAll(download)).subarray(0, 8).equals(PNG_SIGNATURE)).toBe(true);
+  });
 });
