@@ -223,13 +223,12 @@ try:
 
     # Draw with the toolbar and the mouse: rectangle tool, then arrow tool.
     f0 = len(frames())
-    click(40, 232)
+    focus_app(); press("r")
     drag(640, 610, 790, 700)
-    click(40, 343)
+    focus_app(); press("a")
     drag(830, 700, 930, 620)
     # Text: the text tool, a click, typing, Esc.
-    click(40, 491)
-    focus_app()
+    focus_app(); press("t")
     print("after T click:", [(e["id"], e["source"], e["outcome"]) for e in ws.ok("recent", {"limit": 3})["entries"]], flush=True)
     click(700, 740)
     time.sleep(0.5)

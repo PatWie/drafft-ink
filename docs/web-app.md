@@ -31,8 +31,8 @@ encodings and Chromium refuses the module (`unknown import kind 0x7e`).
 `pkg/drafftink_web_bg.wasm`. The build hash (12 hex digits of the wasm and the glue) replaces `__BUILD__` in `index.html` and `sw.js`.
 
 Sizes of the full app build (2026-11-08, `release-wasm`, wasm-bindgen 0.2.130, binaryen 133 `-Os` with the explicit feature list;
-MB here are MiB, as in `performance.md`): raw 28.25 MB (with the name section), **wasm-opt 17.50 MB**, gzip -9 6.47 MB,
-**brotli -11 4.46 MB**. The old app was 10.33 MB raw and 3.46 MB brotli, so the budget "brotli not above 3.5 MB" (`performance.md`)
+MB here are MiB, as in `performance.md`): raw 28.43 MB (with the name section), **wasm-opt 17.62 MB**, gzip -9 6.51 MB,
+**brotli -11 4.48 MB**. The old app was 10.33 MB raw and 3.46 MB brotli, so the budget "brotli not above 3.5 MB" (`performance.md`)
 is missed by about 1 MB; the `size` gate of `cargo xtask ci` is still pending. The graphics spike was 1.36 MB (`stack.md`).
 `twiggy` on the unstripped module (code and data before `wasm-opt`) puts the biggest parts at: the name section 7.8 MB (stripped
 by the build), `.rodata` 5.3 MB, `fearless_simd` and `vello_cpu` about 2.1 MB (the CPU renderer for exports and `view.screenshot`),
@@ -157,7 +157,7 @@ target, because the repository has no wasm test runner).
 - **PNG export on the web.** The renderer port is missing: reading the GPU texture back is asynchronous and the port is
   synchronous. Commands that need the renderer port (PNG export) refuse with `port_unavailable`. A fix needs an async export path in the app (the shell's
   `Compositor::render_to_image` already works on the web).
-- **Wire size.** 4.46 MB brotli for the first load (see above). After the first visit the service worker serves it from cache.
+- **Wire size.** 4.48 MB brotli for the first load (see above). After the first visit the service worker serves it from cache.
 - **Idle while in a room.** Fixed on 2026-11-08: a wake from the collaboration socket, and a collaboration deadline, go to the
   app first (`ShellEvent::Wake(Collab)`, `docs/shell.md`); it pumps the session and asks for a frame only when the poll left a
   visible change or a notice. Measured: 0 frames in 22 s alone in a room and in 22 s with a peer, after the join has settled.

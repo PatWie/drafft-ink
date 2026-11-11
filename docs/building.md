@@ -80,16 +80,15 @@ The browser needs WebGPU: Chromium-based browsers 113 and newer. Firefox and Saf
 | idle 10 s | 0 | 0.4 |
 | hover over empty canvas 10 s, 125 moves/s | 0 | 1.6 |
 | idle 3 s after hover | 0 | 0.7 |
-| middle-button pan 5 s, 125 moves/s | about 1 per move (631) | 39 |
+| middle-button pan 5 s, 125 moves/s | about 1 per move (600 to 630) | 39 to 58 (four runs) |
 | idle 10 s after pan | 0 | 0.5 |
-| wheel 5 s, 100 ticks/s | about 2 per tick (938; egui smooths the wheel) | 62 |
+| wheel 5 s, 100 ticks/s | about 2 per tick (940 to 1050; egui smooths the wheel) | 62 to 64 |
 | idle 10 s after wheel | 0 | 0.4 |
 | idle 5 s after undo | 0 | 0.6 |
 
 The scene is the 52-element intro document; frames are counted from the shell's `drafftink_gpu::frame` log lines. The script also
 draws through the bridge (two rectangles, an arrow bound to both, `element.move` drags the arrow along, `view.screenshot`) and
-with real X input (rectangle, arrow and text with the toolbar and the mouse; toolbar positions are fixed in the script and need a
-change when the toolbar changes). Screenshots: `img/native-intro.png`, `img/native-bridge-drawn.png`, `img/native-text-edit.png`,
+with real X input (the tool keys `r`, `a`, `t`, then mouse drags and typing for a rectangle, an arrow and a text). Screenshots: `img/native-intro.png`, `img/native-bridge-drawn.png`, `img/native-text-edit.png`,
 `img/native-drawn.png`, `img/native-view-screenshot.png`.
 
 Web (`web_check.py --app`, headed Chromium on the same machine, release-wasm build): 0 frames in 10 s idle (0.8 % of one core,
