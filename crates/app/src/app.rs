@@ -620,10 +620,10 @@ impl ShellApp for App {
                     Some(p) => json!({ "at": { "x": p.x, "y": p.y } }),
                     None => json!({}),
                 };
-                if let Err(r) = self.session.execute_from(Origin::Shortcut, "clipboard.paste", args) {
-                    if !drafftink_ui::action::quiet_from_keyboard(r.code) {
-                        self.toast_refusal(&r);
-                    }
+                if let Err(r) = self.session.execute_from(Origin::Shortcut, "clipboard.paste", args)
+                    && !drafftink_ui::action::quiet_from_keyboard(r.code)
+                {
+                    self.toast_refusal(&r);
                 }
                 (Repaint::Now(RedrawReason::Command), Handled::Yes)
             }
@@ -696,6 +696,16 @@ impl ShellApp for App {
         self.feed_keys(&ctx, now);
         self.feed_wheel(&ctx, now);
 
+        // The text editor goes first: it takes Esc and Ctrl+Enter before the keymap sees them.
+        self.sync_editor();
+        if let Some(editor) = self.editor.as_mut() {
+            let camera = self.interaction.camera();
+            let canvas = Size::new(f64::from(size.x), f64::from(size.y));
+            if editor.show(&ctx, camera, canvas) == EditorEvent::Finish {
+                self.finish_editor();
+            }
+        }
+
         // The UI.
         self.ui.set_collab(collab_view_of(&self.session));
         let pointer = Pointer {
@@ -707,13 +717,6 @@ impl ShellApp for App {
             self.handle_host_request(request, cx);
         }
         self.sync_editor();
-        if let Some(editor) = self.editor.as_mut() {
-            let camera = self.interaction.camera();
-            let canvas = Size::new(f64::from(size.x), f64::from(size.y));
-            if editor.show(&ctx, camera, canvas) == EditorEvent::Finish {
-                self.finish_editor();
-            }
-        }
         self.badge(&ctx);
         self.perf_hud(&ctx);
         if let Some(content) = self.clipboard.take_outgoing() {

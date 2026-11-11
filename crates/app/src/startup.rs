@@ -2,6 +2,7 @@
 
 use drafftink_engine::cmd::doc::use_stored_default_target;
 use drafftink_engine::{Origin, Session};
+use drafftink_scene::SceneRead;
 use serde_json::{Value, json};
 
 use crate::config::AppConfig;
@@ -43,20 +44,26 @@ pub(crate) fn start(session: &mut Session, config: &AppConfig) -> Vec<String> {
         }
         Err(r) => notes.push(r.message),
     }
-    let mut run = |id: &str, args: Value| {
-        if let Err(r) = session.execute_from(Origin::Ui, id, args) {
-            notes.push(r.message);
-        }
-    };
     if let Some(file) = &config.open {
         let mode = if restored == 0 { "replace" } else { "new_tab" };
-        run("doc.open", json!({ "source": file, "mode": mode }));
-    } else if !found && restored == 0 {
-        run("doc.show_intro", json!({}));
+        run(session, &mut notes, "doc.open", json!({ "source": file, "mode": mode }));
+    } else if !found && restored == 0 && config.join.link.room.is_none() {
+        run(session, &mut notes, "doc.show_intro", json!({}));
     }
     if let Some(room) = &config.join.link.room {
+        // A room fills an empty tab. Work the person already has stays in its own tab.
+        if session.store().len() > 0 {
+            run(session, &mut notes, "tab.new", json!({}));
+        }
         let server = config.join.link.server.clone().or_else(|| config.default_server.clone());
-        run("collab.connect", json!({ "url": server, "room": room }));
+        run(session, &mut notes, "collab.connect", json!({ "url": server, "room": room }));
     }
     notes
+}
+
+/// Runs a command for the person; a refusal becomes a note.
+fn run(session: &mut Session, notes: &mut Vec<String>, id: &str, args: Value) {
+    if let Err(r) = session.execute_from(Origin::Ui, id, args) {
+        notes.push(r.message);
+    }
 }

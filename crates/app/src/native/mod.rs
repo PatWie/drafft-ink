@@ -48,7 +48,7 @@ pub fn platform(options: &NativeOptions) -> Platform {
         .with_net(Box::new(net::NativeNet::new(wake.hook(RedrawReason::Collab))));
     Platform {
         ports,
-        host: Box::new(host::NativeHost::default()),
+        host: Box::new(host::NativeHost),
         wake,
         clipboard,
         typesetter,

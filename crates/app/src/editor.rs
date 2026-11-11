@@ -70,13 +70,7 @@ impl TextEditor {
             _ => (String::new(), theme::HAND_FONT, 20.0),
         };
         let t = &target.transform;
-        let at = if centred && !matches!(target.kind, ElementKind::Text(_)) {
-            Point::new(t.x + t.w / 2.0, t.y + t.h / 2.0)
-        } else if centred {
-            Point::new(t.x + t.w / 2.0, t.y + t.h / 2.0)
-        } else {
-            Point::new(t.x, t.y)
-        };
+        let at = if centred { Point::new(t.x + t.w / 2.0, t.y + t.h / 2.0) } else { Point::new(t.x, t.y) };
         Some(Self::new(text, at, centred, family, size))
     }
 
@@ -109,6 +103,13 @@ impl TextEditor {
 
     /// Draws the field and reports whether the person finished. `size` is the canvas in points.
     pub(crate) fn show(&mut self, ctx: &egui::Context, camera: Camera, size: Size) -> EditorEvent {
+        // Before the field is drawn: egui's own text field gives up focus on Esc.
+        let finish = ctx.input_mut(|i| {
+            i.consume_key(Modifiers::NONE, Key::Escape) || i.consume_key(Modifiers::COMMAND, Key::Enter)
+        });
+        if finish {
+            return EditorEvent::Finish;
+        }
         let zoom = camera.zoom;
         let to_screen = |p: Point| {
             egui::pos2(
@@ -120,7 +121,6 @@ impl TextEditor {
         let font = theme::named(self.family, (self.size * zoom) as f32);
         let width = (self.size * zoom * 8.0).max(120.0) as f32;
         let anchor = if self.centred { Align2::CENTER_CENTER } else { Align2::LEFT_TOP };
-        let mut event = EditorEvent::None;
         let inner = egui::Area::new(Id::unique("drafftink-text-editor"))
             .order(Order::Foreground)
             .fixed_pos(pos)
@@ -142,7 +142,6 @@ impl TextEditor {
                 }
                 out.response
             });
-        let response = inner.inner;
         self.rect = Some(inner.response.rect.expand(4.0));
         let underline = inner.response.rect;
         ctx.layer_painter(egui::LayerId::new(Order::Foreground, Id::unique("drafftink-text-editor-frame"))).rect_stroke(
@@ -151,19 +150,7 @@ impl TextEditor {
             egui::Stroke::new(1.0, Color32::from_rgb(0x3b, 0x82, 0xf6)),
             egui::StrokeKind::Outside,
         );
-        let finish = ctx.input_mut(|i| {
-            i.consume_key(Modifiers::NONE, Key::Escape) || i.consume_key(Modifiers::COMMAND, Key::Enter)
-        });
-        if finish && response.has_focus() {
-            event = EditorEvent::Finish;
-        }
-        event
-    }
-
-    /// The editor's ids for tests.
-    #[cfg(test)]
-    pub(crate) fn text(&self) -> &str {
-        &self.buffer
+        EditorEvent::None
     }
 }
 
@@ -176,5 +163,24 @@ pub(crate) fn hidden_by_edit(s: &Session) -> Vec<ElementId> {
         Some(ElementKind::Text(_)) => vec![id.clone()],
         Some(_) => label_of(store, id).into_iter().collect(),
         None => Vec::new(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_result_carries_the_text_and_the_styles_chosen_while_editing() {
+        let mut e = TextEditor::new("hello".into(), Point::new(1.0, 2.0), false, "gelpen", 20.0);
+        assert_eq!(e.finish_args(), json!({ "commit": true, "text": "hello" }));
+        e.add_style(&json!({ "stroke_color": "red-600" }));
+        e.add_style(&json!({ "font_size": 28 }));
+        assert_eq!(
+            e.finish_args(),
+            json!({ "commit": true, "text": "hello", "style": { "stroke_color": "red-600", "font_size": 28 } })
+        );
+        e.add_style(&json!(5));
+        assert!(e.finish_args()["style"].is_object());
     }
 }
