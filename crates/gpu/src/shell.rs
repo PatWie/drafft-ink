@@ -24,15 +24,17 @@ use winit::event_loop::{ActiveEventLoop, ControlFlow, EventLoop, EventLoopProxy,
 use winit::window::{Window, WindowId};
 
 use crate::app::{EventCx, FrameCx, FrameOutput, Outbox, SetupCx, ShellApp, ViewInfo, Waker};
-use crate::compositor::{Compositor, EguiFrame};
+use crate::backend::{Backend, Presented};
+use crate::error::GpuError;
 use crate::events::{ClipboardContent, Handled, Repaint, ShellEvent, WheelInput};
 #[cfg(not(target_arch = "wasm32"))]
 use crate::events::{PointerKind, PointerPhase, PointerPoint, PointerSample, TextInput};
-use crate::gpu::{Gpu, GpuError, GpuOptions, PresentSurface, create_instance};
+use crate::frame::EguiFrame;
 use crate::host::HostEvent;
 #[cfg(not(target_arch = "wasm32"))]
 use crate::host::now_ms;
 use crate::repaint::{RepaintState, coalesce_pointer_moves, egui_owns_pointer};
+use crate::settle::Settle;
 
 /// Window setup.
 #[derive(Clone, Debug)]
@@ -90,13 +92,11 @@ pub fn vello_runs() -> u64 {
     VELLO_RUNS.load(Ordering::Relaxed)
 }
 
-type GpuSlot = Rc<RefCell<Option<Result<(Gpu, PresentSurface), GpuError>>>>;
+type GpuSlot = Rc<RefCell<Option<Result<Box<dyn Backend>, GpuError>>>>;
 
 /// State that exists once the GPU is ready.
 struct Running {
-    gpu: Gpu,
-    surface: PresentSurface,
-    comp: Compositor,
+    backend: Box<dyn Backend>,
     ctx: egui::Context,
     state: egui_winit::State,
     canvas_rect: Option<egui::Rect>,
@@ -122,7 +122,7 @@ impl Drop for Running {
 
 impl Running {
     fn view(&self) -> ViewInfo {
-        ViewInfo { size_px: self.surface.size(), scale: self.ctx.pixels_per_point() }
+        ViewInfo { size_px: self.backend.size(), scale: self.ctx.pixels_per_point() }
     }
 }
 
@@ -214,6 +214,8 @@ struct Shell<A: ShellApp> {
     scene: Scene,
     scene_dirty: bool,
     scene_base: Color,
+    /// The compatibility renderer's reduced-detail bookkeeping (`settle.rs`).
+    settle: Settle,
     /// The app has submitted a scene at least once (so a resized or recreated target is re-rendered).
     scene_submitted: bool,
     recovering: bool,
@@ -233,7 +235,7 @@ struct Shell<A: ShellApp> {
 pub fn run<A: ShellApp>(app: A, options: Options) -> Result<(), ShellError> {
     #[cfg(target_arch = "wasm32")]
     {
-        if !crate::web::webgpu_available() {
+        if !crate::web::webgpu_available() && !cfg!(feature = "webgl") {
             let msg = "navigator.gpu is not available";
             crate::web::show_error_page("This browser cannot run Drafft.ink", msg);
             return Err(ShellError::Unsupported(msg.into()));
@@ -289,6 +291,7 @@ impl<A: ShellApp> Shell<A> {
             scene: Scene::new(),
             scene_dirty: false,
             scene_base: Color::BLACK,
+            settle: Settle::default(),
             scene_submitted: false,
             recovering: false,
             modifiers: egui::Modifiers::NONE,
@@ -335,7 +338,7 @@ impl<A: ShellApp> Shell<A> {
         let (repaint, handled) = {
             let mut cx = EventCx {
                 ctx: &run.ctx,
-                gpu: &run.gpu,
+                backend: run.backend.kind(),
                 waker: &self.waker,
                 view: run.view(),
                 modifiers: self.modifiers,
@@ -480,10 +483,10 @@ impl<A: ShellApp> Shell<A> {
         if self.lose_device_next {
             self.lose_device_next = false;
             if let Some(run) = &self.running {
-                run.gpu.destroy_for_test();
+                run.backend.destroy_for_test();
             }
         }
-        if self.running.as_ref().is_some_and(|r| r.gpu.lost().is_some()) {
+        if self.running.as_ref().is_some_and(|r| r.backend.lost().is_some()) {
             self.repaint.keep(RedrawReason::Surface);
             self.start_recovery(&window, event_loop);
             return;
@@ -507,11 +510,11 @@ impl<A: ShellApp> Shell<A> {
 
     fn draw(&mut self, window: &Arc<Window>, reason: RedrawReason, size: [u32; 2]) -> bool {
         let Some(run) = self.running.as_mut() else { return false };
-        let resized = run.surface.resize(&run.gpu, size);
+        let resized = run.backend.resize(size);
         let scale = run.ctx.pixels_per_point();
         let scale_changed = (scale - run.last_scale).abs() > f32::EPSILON;
         run.last_scale = scale;
-        if run.comp.ensure_scene_target(&run.gpu, size) && self.scene_submitted {
+        if run.backend.ensure_scene_target(size) && self.scene_submitted {
             // The target was recreated (size change, new device): draw the retained scene again.
             self.scene_dirty = true;
         }
@@ -528,10 +531,10 @@ impl<A: ShellApp> Shell<A> {
         let view = ViewInfo { size_px: size, scale };
         let mut out = Outbox::default();
         let mut output = in_phase(Phase::Ui, || {
-            let gpu = &run.gpu;
+            let backend = run.backend.kind();
             run.ctx.run_ui(raw, |ui| {
                 let mut cx = FrameCx {
-                    gpu,
+                    backend,
                     waker: &self.waker,
                     view,
                     reason,
@@ -584,10 +587,15 @@ impl<A: ShellApp> Shell<A> {
         run.applied_text_input = ime_rect;
 
         // ---- Vello ----
+        let plan = self.settle.plan(Instant::now(), run.backend.kind().is_compat(), reason, self.scene_dirty);
+        if plan.redraw_scene {
+            self.scene_dirty = true;
+        }
+        let settle_after = plan.settle_after;
         let ran_vello = self.scene_dirty;
         let render = if self.scene_dirty {
             self.scene_dirty = false;
-            in_phase(Phase::GpuSubmit, || run.comp.render_scene(&run.gpu, &self.scene, self.scene_base, size))
+            in_phase(Phase::GpuSubmit, || run.backend.render_scene(&self.scene, self.scene_base, size, plan.detail))
         } else {
             Ok(())
         };
@@ -604,43 +612,21 @@ impl<A: ShellApp> Shell<A> {
             merged.append(std::mem::take(&mut frame.textures_delta));
             frame.textures_delta = merged;
         }
-        let acquire = drafftink_profile::span("acquire_surface");
-        let acquired = run.surface.surface.get_current_texture();
-        drop(acquire);
-        let surface_texture = match acquired {
-            wgpu::CurrentSurfaceTexture::Success(t) => Some(t),
-            wgpu::CurrentSurfaceTexture::Suboptimal(t) => {
-                run.surface.reconfigure(&run.gpu);
-                Some(t)
+        let drawn = match run.backend.present(window, &mut frame, size) {
+            Ok(Presented::Shown) => true,
+            Ok(presented) => {
+                if presented == Presented::Retry {
+                    self.repaint.keep(RedrawReason::Surface);
+                }
+                run.stashed_textures = std::mem::take(&mut frame.textures_delta);
+                false
             }
-            wgpu::CurrentSurfaceTexture::Outdated | wgpu::CurrentSurfaceTexture::Lost => {
-                run.surface.reconfigure(&run.gpu);
-                self.repaint.keep(RedrawReason::Surface);
-                None
-            }
-            other => {
-                log::debug!("skipping frame: {other:?}");
-                None
+            Err(e) => {
+                log::error!("present: {e}");
+                false
             }
         };
-        let drawn = if let Some(texture) = surface_texture {
-            let target = texture.texture.create_view(&wgpu::TextureViewDescriptor::default());
-            let result = in_phase(Phase::GpuSubmit, || run.comp.composite(&run.gpu, &mut frame, &target, size));
-            match result {
-                Ok(()) => {
-                    window.pre_present_notify();
-                    drafftink_profile::scope("present", || run.gpu.queue.present(texture));
-                    true
-                }
-                Err(e) => {
-                    log::error!("composite: {e}");
-                    false
-                }
-            }
-        } else {
-            run.stashed_textures = std::mem::take(&mut frame.textures_delta);
-            false
-        };
+
         // Pointer hover state for the next move event.
         run.over_egui = egui_owns_pointer(&run.ctx, run.canvas_rect, self.last_pos);
         let (pending_ime, ime_for_platform) = (ime_changed, ime_rect);
@@ -655,6 +641,10 @@ impl<A: ShellApp> Shell<A> {
         }
         self.flush_outbox(out);
         self.apply_repaint(frame_out.repaint);
+        if let Some(delay) = settle_after {
+            // The scene was drawn with less detail; one more frame finishes it when the gesture is over.
+            self.apply_repaint(Repaint::After(delay, RedrawReason::Timer));
+        }
         inc(Counter::SceneBuilds);
         drawn
     }
@@ -666,7 +656,7 @@ impl<A: ShellApp> Shell<A> {
         let proxy = self.proxy.clone();
         let size = window.inner_size();
         let init = async move {
-            let result = init_gpu(window, display, [size.width, size.height]).await;
+            let result = init_backend(window, display, [size.width, size.height]).await;
             *slot.borrow_mut() = Some(result);
             let _ = proxy.send_event(UserEvent::GpuReady);
         };
@@ -683,9 +673,9 @@ impl<A: ShellApp> Shell<A> {
         self.start_gpu(window.clone(), event_loop.owned_display_handle());
     }
 
-    fn on_gpu_ready(&mut self, gpu: Gpu, surface: PresentSurface) -> Result<(), GpuError> {
+    fn on_gpu_ready(&mut self, backend: Box<dyn Backend>) -> Result<(), GpuError> {
         let Some(window) = self.window.clone() else { return Ok(()) };
-        let comp = Compositor::new(&gpu, surface.format())?;
+        log::info!("renderer: {}", backend.describe());
         let ctx = egui::Context::default();
         // egui's own repaint requests (animation, tooltip delay, `request_repaint_after`). The callback may
         // run on any thread, so it goes through the event loop.
@@ -699,16 +689,14 @@ impl<A: ShellApp> Shell<A> {
             &*window,
             Some(window.scale_factor() as f32),
             window.theme(),
-            Some(gpu.info().max_texture_dimension_2d as usize),
+            Some(backend.max_texture_side() as usize),
         );
         // The shell turns the shortcuts into clipboard events itself, so the app can answer first.
         state.set_clipboard_shortcuts(false);
-        let view = ViewInfo { size_px: surface.size(), scale: ctx.pixels_per_point() };
-        self.app.setup(&mut SetupCx { ctx: &ctx, gpu: &gpu, waker: self.waker.clone(), view });
+        let view = ViewInfo { size_px: backend.size(), scale: ctx.pixels_per_point() };
+        self.app.setup(&mut SetupCx { ctx: &ctx, backend: backend.kind(), waker: self.waker.clone(), view });
         self.running = Some(Running {
-            gpu,
-            surface,
-            comp,
+            backend,
             ctx,
             state,
             canvas_rect: None,
@@ -1018,8 +1006,8 @@ impl<A: ShellApp> ApplicationHandler<UserEvent> for Shell<A> {
     fn user_event(&mut self, event_loop: &ActiveEventLoop, event: UserEvent) {
         match event {
             UserEvent::GpuReady => match self.gpu_slot.take() {
-                Some(Ok((gpu, surface))) => {
-                    if let Err(e) = self.on_gpu_ready(gpu, surface) {
+                Some(Ok(backend)) => {
+                    if let Err(e) = self.on_gpu_ready(backend) {
                         self.fail(event_loop, e.into());
                     }
                 }
@@ -1122,15 +1110,26 @@ impl<A: ShellApp> ApplicationHandler<UserEvent> for Shell<A> {
     }
 }
 
-/// Create instance, surface, adapter and device for the window.
-async fn init_gpu(
+/// Create the drawing back end for the window: WebGPU (or the native API) when there is one, WebGL2 when the build
+/// has the fallback and the browser has no WebGPU.
+async fn init_backend(
     window: Arc<Window>,
     display: OwnedDisplayHandle,
     size: [u32; 2],
-) -> Result<(Gpu, PresentSurface), GpuError> {
-    let instance = create_instance(Some(Box::new(display))).await;
-    let surface = PresentSurface::create(&instance, window)?;
-    let gpu = Gpu::request(instance, Some(&surface), &GpuOptions::default()).await?;
-    let surface = PresentSurface::configure(&gpu, surface, size)?;
-    Ok((gpu, surface))
+) -> Result<Box<dyn Backend>, GpuError> {
+    #[cfg(all(target_arch = "wasm32", feature = "webgl"))]
+    if !cfg!(feature = "wgpu") || !crate::web::webgpu_available() {
+        use winit::platform::web::WindowExtWebSys;
+        let canvas = window.canvas().ok_or_else(|| GpuError::WebGl("the window has no canvas".into()))?;
+        return Ok(Box::new(crate::gl::GlBackend::create(&canvas, size)?));
+    }
+    #[cfg(feature = "wgpu")]
+    {
+        Ok(Box::new(crate::wgpu_backend::WgpuBackend::create(window, display, size).await?))
+    }
+    #[cfg(not(feature = "wgpu"))]
+    {
+        let _ = (window, display, size);
+        Err(GpuError::NoAdapter("this build has no WebGPU renderer".into()))
+    }
 }

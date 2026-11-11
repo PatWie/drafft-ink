@@ -21,13 +21,17 @@ __PRELOAD__
   #failure { position: fixed; inset: 0; display: none; align-items: center; justify-content: center; padding: 24px;
              font: 16px/1.5 system-ui, sans-serif; color: #222; background: #f6f6f8; text-align: center; }
   #failure pre { white-space: pre-wrap; color: #777; font-size: 13px; }
+  #compat { position: fixed; left: 50%; bottom: 12px; transform: translateX(-50%); z-index: 5; max-width: min(36rem, calc(100vw - 24px));
+            display: flex; gap: 10px; align-items: center; padding: 6px 8px 6px 12px; border-radius: 6px;
+            font: 13px/1.35 system-ui, sans-serif; color: #5a3b00; background: #fff4d6; border: 1px solid #e8c874; }
+  #compat button { all: unset; cursor: pointer; padding: 0 6px; font-size: 18px; line-height: 1; color: #5a3b00; }
 </style>
 </head>
 <body>
 <canvas id="canvas"></canvas>
 <div id="loading" role="status"><div>Loading Drafft.ink</div><div class="bar"></div></div>
 <div id="failure" role="alert"><div><h1>Drafft.ink could not start</h1>
-  <p>Drafft.ink draws with WebGPU. Use a current Chrome, Edge or another browser that offers it.</p><pre id="failure-detail"></pre></div></div>
+  <p>Drafft.ink draws with WebGPU, or with WebGL2 when WebGPU is missing. Use a current Chrome, Edge, Firefox or Safari.</p><pre id="failure-detail"></pre></div></div>
 <script>window.__assets = __ASSETS__;</script>
 <script type="module">
   // The build script puts a hash in place of __BUILD__, so a new build never mixes with a cached old one.
@@ -45,10 +49,43 @@ __PRELOAD__
   };
   // Start-up marks in ms since navigation, for the perf driver (window.__marks).
   const mark = (name) => { (window.__marks ||= {})[name] = Math.round(performance.now()); };
+  // Two builds of the app. `pkg` draws with WebGPU. `pkg-gl` draws with WebGL2 and is fetched only when the browser has
+  // no WebGPU adapter (`?renderer=gl` forces it, `?renderer=gpu` forbids it), so the normal build is never slowed or grown by it.
+  const BUILD_GL = "__BUILD_GL__";
+  const adapterOk = async () => {
+    try { return Boolean(navigator.gpu && await navigator.gpu.requestAdapter()); } catch (_) { return false; }
+  };
+  const forced = new URLSearchParams(location.search).get("renderer");
+  const src = (renderer) => renderer === "webgl" ? ["pkg-gl", BUILD_GL] : ["pkg", BUILD];
+  const importGlue = (renderer) => { const [dir, build] = src(renderer); return import(`./${dir}/drafftink_web.js?v=${build}`); };
+  // The normal glue (a small script; the wasm comes later) is fetched while the adapter request runs, so the check costs no time.
+  const early = !forced && navigator.gpu ? importGlue("webgpu") : null;
+  early?.catch(() => {});
+  const chooseRenderer = async () => {
+    if (forced === "gl") return "webgl";
+    if (forced === "gpu") return "webgpu";
+    return (await adapterOk()) ? "webgpu" : "webgl";
+  };
+  const showCompatBanner = () => {
+    const bar = document.createElement("div");
+    bar.id = "compat";
+    bar.setAttribute("role", "status");
+    bar.textContent = "Compatibility mode: this browser has no WebGPU, so Drafft.ink draws with WebGL2. Large drawings are simpler and slower.";
+    const close = document.createElement("button");
+    close.type = "button";
+    close.textContent = "\u00d7";
+    close.setAttribute("aria-label", "Dismiss");
+    close.addEventListener("click", () => bar.remove());
+    bar.append(close);
+    document.body.append(bar);
+  };
   try {
-    const glue = await import(`./pkg/drafftink_web.js?v=${BUILD}`);
+    const renderer = await chooseRenderer();
+    window.__renderer = renderer;
+    const [dir, build] = src(renderer);
+    const glue = await (renderer === "webgpu" && early ? early : importGlue(renderer));
     mark("glue");
-    await glue.default({ module_or_path: `./pkg/drafftink_web_bg.wasm?v=${BUILD}` });
+    await glue.default({ module_or_path: `./${dir}/drafftink_web_bg.wasm?v=${build}` });
     mark("wasm");
     await glue.start("canvas");
     mark("started");
@@ -59,13 +96,14 @@ __PRELOAD__
     }
     mark("first_frame");
     document.getElementById("loading")?.remove();
+    if (renderer === "webgl") showCompatBanner();
     window.__started = window.drafftink.frames().frames > 0;
     if (navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(() => {});
   } catch (e) { fail(e); }
 
   // Offline use: the service worker keeps the app shell. Not on file:// or an insecure origin.
   if ("serviceWorker" in navigator && (location.protocol === "https:" || location.hostname === "localhost" || location.hostname === "127.0.0.1")) {
-    navigator.serviceWorker.register("sw.js").catch((e) => console.warn("service worker:", e));
+    navigator.serviceWorker.register(window.__renderer === "webgl" ? "sw.js?r=webgl" : "sw.js").catch((e) => console.warn("service worker:", e));
   }
 </script>
 </body>

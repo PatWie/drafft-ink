@@ -11,35 +11,13 @@ use std::sync::{Arc, Mutex, PoisonError};
 use std::task::{Context, Poll, Waker};
 
 use drafftink_profile::{Counter, inc};
-use egui::epaint::ClippedPrimitive;
+
 use vello::peniko::Color;
 use vello::{AaConfig, AaSupport, RenderParams, Renderer, RendererOptions, Scene};
 
-use crate::gpu::{Gpu, GpuError};
-
-/// What egui produced for one frame, ready to paint.
-pub struct EguiFrame {
-    pub primitives: Vec<ClippedPrimitive>,
-    pub textures_delta: egui::TexturesDelta,
-    pub pixels_per_point: f32,
-}
-
-impl EguiFrame {
-    /// Nothing from egui (scene only).
-    pub fn empty() -> Self {
-        Self { primitives: Vec::new(), textures_delta: egui::TexturesDelta::default(), pixels_per_point: 1.0 }
-    }
-
-    /// Tessellate the output of `ctx.run_ui` / `ctx.run`. Platform output stays with the caller.
-    pub fn from_output(ctx: &egui::Context, output: egui::FullOutput) -> Self {
-        let pixels_per_point = output.pixels_per_point;
-        Self {
-            primitives: ctx.tessellate(output.shapes, pixels_per_point),
-            textures_delta: output.textures_delta,
-            pixels_per_point,
-        }
-    }
-}
+use crate::error::GpuError;
+use crate::frame::{EguiFrame, Image};
+use crate::gpu::Gpu;
 
 /// Counters that tests read to prove nothing is reallocated or redone per frame.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -67,26 +45,6 @@ struct Offscreen {
     size: [u32; 2],
     readback: wgpu::Buffer,
     padded_row: u32,
-}
-
-/// An RGBA8 image read back from the GPU. Rows are tightly packed, top row first.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct Image {
-    pub width: u32,
-    pub height: u32,
-    pub rgba: Vec<u8>,
-}
-
-impl Image {
-    /// The pixel at (x, y), or `None` outside the image.
-    pub fn pixel(&self, x: u32, y: u32) -> Option<[u8; 4]> {
-        if x >= self.width || y >= self.height {
-            return None;
-        }
-        let i = (y as usize * self.width as usize + x as usize) * 4;
-        let p = self.rgba.get(i..i + 4)?;
-        Some([p[0], p[1], p[2], p[3]])
-    }
 }
 
 /// Composites a Vello scene and egui into a target of one fixed format.
