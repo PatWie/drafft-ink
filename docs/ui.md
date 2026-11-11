@@ -30,7 +30,7 @@ Session ──refresh──> Model (snapshot) ──draw──> Vec<UiAction> �
 
 Refusals: any refusal becomes a toast with the text unchanged (plus a button for the first `suggest` entry). Three cases are handled differently: a refusal that comes from a shortcut with the code `no_target`, `nothing_to_do` or `not_applicable` is silent (`QUIET_FROM_KEYBOARD`); `unsaved_changes` opens a confirm dialog that re-runs the call with `on_unsaved` set; `no_save_target` asks the app for a save picker.
 
-Controls (`widgets.rs`): every control that does something is `Cx::command_widget` underneath. It looks the command up in the model, greys out when `available` refuses and shows the refusal text as the tooltip, names itself for accessibility from the binding title (`Rectangle tool`) or the command title, and pushes the call on a click. A command the registry does not have yet is greyed with "`x` is not available in this build." and cannot run. A property that does not apply to the selection is greyed with its own reason (`Ctl::blocked`).
+Controls (`widgets.rs`): every control that does something is `Cx::command_widget` underneath. It looks the command up in the model, greys out when `available` refuses and shows the refusal text as the tooltip, names itself for accessibility from the binding title (`Rectangle tool`) or the command title, and pushes the call on a click. A command the registry does not have (a build without it) is greyed with "`x` is not available in this build." and cannot run. Every catalog command is registered now, so the tests build that case with `Fixture::without(&["x"])`. A property that does not apply to the selection is greyed with its own reason (`Ctl::blocked`).
 
 Nothing mutates session state from a widget. `crates/ui/tests/thin.rs` reads the crate source and fails when: a file other than `shell.rs`, `model.rs` or `action.rs` names `Session`; `&mut Session` appears outside the shell and the sink; any call that changes state is used (`tab_mut`, `set_raw`, `queue_write`, the `gesture_*` methods, `SceneTx`, ...); an `execute*` name other than `execute`, `execute_from`, `execute_batch` appears; or the model reads something from the session that is not on the read list.
 
@@ -50,7 +50,7 @@ Nothing mutates session state from a widget. `crates/ui/tests/thin.rs` reads the
 | Context menu | `context_menu.rs` | clipboard, element, group, arrange, view commands |
 | Collaboration dialog, presence panel | `collab.rs` | `collab.*` |
 | Equation editor | `equation.rs` | `text.edit_end` |
-| Confirm, recent documents, search, stats | `dialogs.rs` | `doc.open`, `element.query`; the confirm dialog re-runs the refused call |
+| Confirm, recent documents, search, stats | `dialogs.rs` | `doc.open`, `element.query`, `selection.select`, `view.center`, `element.set_bounds`; the confirm dialog re-runs the refused call |
 | Toasts | `toasts.rs` | suggestion buttons run the suggested command |
 
 Look and feel is the old app's: floating cards with a 1 px border, soft shadow, 8 px radius and 12 px margins, the accent blue `#3b82f6` for the active tool, tab and primary button, GelPen for headings (the font is embedded from `crates/typeset/assets/fonts`, 21 KB), the three canvas font families shown in their own faces in the font picker. Icons are drawn with the egui painter (`icons.rs`): no SVG assets, no image loader. All colours come from `theme::Palette`; the dark palette is chosen by the egui theme, which follows the `theme` setting (`light`, `dark`, `system`). Zen mode hides the chrome and keeps dialogs and toasts.
@@ -67,7 +67,7 @@ Shortcuts are data on the registrations (`Binding`). `keymap::resolve_keys(event
 * Nothing is handled while an egui text field has focus (`egui_wants_keyboard_input`). Text editing keys stay inside the text widgets.
 * `Esc` closes an open overlay first (`ui.close_overlays`); with the equation editor open it cancels the edit (`text.edit_end` with `commit: false`); otherwise it runs its registered binding (`tool.cancel`).
 * `Space` runs `tool.hold`; releasing it runs `tool.release`. Key repeat of the held key does nothing.
-* `$cursor` and `$viewport_center` in binding arguments are filled from `FrameInput.pointer`; a key whose placeholder cannot be filled is dropped.
+* `$cursor` and `$viewport_center` in binding arguments are filled from `FrameInput.pointer` with a world point `[x, y]`, the form the commands take; a key whose placeholder cannot be filled is dropped.
 * The UI verbs that have keys (`Mod+O`, `Mod+Shift+S`, `Mod+/`, `?`, `S`, `G`, ...) are `keymap::VERB_BINDINGS`. A test compares the table with the "UI verb" rows of docs/commands.md §6.1 and another checks that no verb key collides with a command key.
 * Labels use words on every platform (`Ctrl+Shift+Z`, `Cmd+Shift+Z`, `Opt`, `Left`) because the bundled egui fonts have no glyph for the Mac modifier symbols or the arrows.
 
@@ -81,7 +81,7 @@ Shortcuts are data on the registrations (`Binding`). `keymap::resolve_keys(event
 | Pointer gestures on the canvas (drag, resize, rotate, draw, pan, zoom, hover) | The canvas and interaction layer, not this crate. They use the typed gesture API and are listed in docs/exceptions.md. This crate never executes a command per pointer move. |
 | The opacity slider drag | A gesture (E13): `gesture.begin`, `update`, `end` with `style.set`; a click is a plain `style.set`. |
 | Style choice during a text edit | `style.set` refuses with `text_editing`; the control hands the props to the text editor as `HostRequest::TextEditStyle` (E16), which applies them and passes the result to `text.edit_end`. |
-| Opening the context menu and the equation editor | The canvas layer calls `UiState::open_context_menu` and `UiState::open_equation`. |
+| Opening the context menu and the equation editor | The canvas layer calls `UiState::open_context_menu(screen, world)` (the world point is where `Paste` puts its content) and `UiState::open_equation`. |
 
 ## 6. Repaints
 
@@ -106,12 +106,13 @@ Pointer events go to the canvas only when `!res.modal` and egui does not own the
 * `routing.rs`: `route`, `dispatch`, scrubs, toasts, confirm and save-picker flows, the origin in the ring.
 * `keymap.rs`: scope resolution, `Mod` per platform, layouts, Esc and Space, and a test that replays every registered binding on both platforms and checks it resolves to its command with its arguments.
 * `frame.rs`: a whole `UiShell::frame`: all key actions run, no idle repaint, theme follows the setting.
-* `palette.rs`, `args_form.rs`, `shortcuts.rs`, `context_menu.rs`, `color_popover.rs`, `collab_dialog.rs`, `equation_dialog.rs`, `small_dialogs.rs`: the dialogs. `tests/synth` adds stand-ins for commands the engine has not registered yet; the real command wins as soon as one exists.
+* `palette.rs`, `args_form.rs`, `shortcuts.rs`, `context_menu.rs`, `color_popover.rs`, `collab_dialog.rs`, `equation_dialog.rs`, `small_dialogs.rs`: the dialogs. `tests/dialog` has the harness and the set-up helpers (a connected collaboration session, a session editing a formula, a stored document). The dialog tests run the real commands: they dispatch what the click produced and check the session. `common::Fixture::without(&[ids])` builds a session whose registry leaves those commands out, for the "not available in this build" look of a control.
 * `thin.rs`: the grep test of section 2.
 
 ## 9. Open points
 
-* The context menu, the menu and the palette show `clipboard.*`, `element.*`, `doc.*`, `collab.*`, `selection.*` greyed until the engine registers them.
-* The search dialog only sends `element.query`; it shows no result list yet. The stats panel shows what the model has (selection count, tool, zoom, undo labels); editing bounds waits for `selection.get` and `element.set_bounds`.
+* Search results show the text, the kind and the first page (100) of `element.query`; there is no paging control.
+* The stats panel reads the bounds of the selection with the same domain function as `selection.get` (like the style panel with `style.get`, to avoid a ring entry per frame) and edits them with `element.set_bounds`, one value at a time. A rotated selection shows the bounds `selection.get` reports.
+* The menu, the context menu and the palette no longer wait for commands: every catalog command is registered.
 * Touch: hit targets are 24 to 34 px; a larger touch mode is not built.
 * The UI fonts for the hand-written headings are embedded a second time from `crates/typeset/assets/fonts` (about 65 KB with the two preview fonts). `typeset` could expose the bytes.

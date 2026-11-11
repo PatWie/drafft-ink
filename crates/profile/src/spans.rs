@@ -38,9 +38,6 @@ pub const OTHER: &str = "other";
 /// Finished spans a thread buffers before it flushes without waiting for its root span.
 #[cfg(feature = "enabled")]
 const FLUSH_AT: usize = 256;
-#[cfg(feature = "enabled")]
-const NONE: u32 = u32::MAX;
-
 static ON: AtomicBool = AtomicBool::new(false);
 
 /// Is recording on? Always false when the `enabled` feature is off.
@@ -105,16 +102,17 @@ fn global() -> MutexGuard<'static, Global> {
 /// A running span; it ends when dropped, also while a panic unwinds.
 #[must_use = "a span measures until it is dropped"]
 pub struct Span {
+    /// Stack depth of this span, or `None` when it is not recording.
     #[cfg(feature = "enabled")]
-    depth: u32,
+    depth: Option<u32>,
 }
 
 impl Drop for Span {
     #[inline]
     fn drop(&mut self) {
         #[cfg(feature = "enabled")]
-        if self.depth != NONE {
-            imp::close(self.depth);
+        if let Some(depth) = self.depth {
+            imp::close(depth);
         }
     }
 }
@@ -125,7 +123,7 @@ impl Drop for Span {
 pub fn span(name: &'static str) -> Span {
     #[cfg(feature = "enabled")]
     {
-        Span { depth: if ON.load(Ordering::Relaxed) { imp::open(name) } else { NONE } }
+        Span { depth: if ON.load(Ordering::Relaxed) { imp::open(name) } else { None } }
     }
     #[cfg(not(feature = "enabled"))]
     {
@@ -184,7 +182,7 @@ mod imp {
     use std::cell::RefCell;
 
     use super::{
-        Agg, AtomicU32, BTreeMap, Event, FLUSH_AT, MAX_DEPTH, MAX_NAMES, NONE, OTHER, Ordering, TRACE_CAPACITY, global,
+        Agg, AtomicU32, BTreeMap, Event, FLUSH_AT, MAX_DEPTH, MAX_NAMES, OTHER, Ordering, TRACE_CAPACITY, global,
     };
     use crate::clock::now_ns;
 
@@ -203,14 +201,22 @@ mod imp {
 
     static NEXT_TID: AtomicU32 = AtomicU32::new(1);
 
+    /// The name of the current thread, if it has one (the browser has no thread names).
+    #[cfg(not(target_arch = "wasm32"))]
+    fn thread_name() -> Option<String> {
+        std::thread::current().name().map(str::to_owned)
+    }
+
+    /// The name of the current thread, if it has one (the browser has no thread names).
+    #[cfg(target_arch = "wasm32")]
+    fn thread_name() -> Option<String> {
+        None
+    }
+
     impl Local {
         fn new() -> Self {
             let tid = NEXT_TID.fetch_add(1, Ordering::Relaxed);
-            #[cfg(not(target_arch = "wasm32"))]
-            let name = std::thread::current().name().map(str::to_owned);
-            #[cfg(target_arch = "wasm32")]
-            let name: Option<String> = None;
-            let name = name.unwrap_or_else(|| format!("thread {tid}"));
+            let name = thread_name().unwrap_or_else(|| format!("thread {tid}"));
             let mut g = global();
             if g.threads.len() < 256 {
                 g.threads.push((tid, name));
@@ -247,20 +253,20 @@ mod imp {
         static LOCAL: RefCell<Local> = RefCell::new(Local::new());
     }
 
-    pub(super) fn open(name: &'static str) -> u32 {
+    /// Push a frame; the depth to pass to [`close`], or `None` when the span is not recorded.
+    pub(super) fn open(name: &'static str) -> Option<u32> {
         LOCAL
             .try_with(|l| {
-                let Ok(mut l) = l.try_borrow_mut() else {
-                    return NONE;
-                };
+                let mut l = l.try_borrow_mut().ok()?;
                 if l.stack.len() >= MAX_DEPTH {
-                    return NONE;
+                    return None;
                 }
-                let depth = l.stack.len() as u32;
+                let depth = u32::try_from(l.stack.len()).ok()?;
                 l.stack.push(Frame { name, start_ns: now_ns(), child_ns: 0 });
-                depth
+                Some(depth)
             })
-            .unwrap_or(NONE)
+            .ok()
+            .flatten()
     }
 
     pub(super) fn close(depth: u32) {

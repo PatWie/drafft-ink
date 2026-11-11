@@ -34,42 +34,60 @@ pub const ROTATE_HANDLE_OFFSET: f64 = 25.0;
 /// Smallest side a resize produces, as in the old app.
 pub const MIN_RESIZE_SIZE: f64 = 1.0;
 
+/// A corner of a box, clockwise from the top left.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Corner {
+    /// Top left.
     TopLeft,
+    /// Top right.
     TopRight,
+    /// Bottom right.
     BottomRight,
+    /// Bottom left.
     BottomLeft,
 }
 
+/// A side of a box, clockwise from the top.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Edge {
+    /// Top side.
     Top,
+    /// Right side.
     Right,
+    /// Bottom side.
     Bottom,
+    /// Left side.
     Left,
 }
 
 /// A handle of a selection box.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum BoxHandle {
+    /// A resize handle on a corner.
     Corner(Corner),
+    /// A resize handle in the middle of a side.
     Edge(Edge),
+    /// The rotate handle above the top edge.
     Rotate,
 }
 
 /// Which handles a box offers.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct HandleSet {
+    /// Offer the four corner handles.
     pub corners: bool,
+    /// Offer the four edge handles.
     pub edges: bool,
+    /// Offer the rotate handle.
     pub rotate: bool,
 }
 
 impl HandleSet {
+    /// Every handle.
     pub const ALL: Self = Self { corners: true, edges: true, rotate: true };
     /// What the old app offered for rectangles, ellipses and images.
     pub const CORNERS_AND_ROTATE: Self = Self { corners: true, edges: false, rotate: true };
+    /// Only the rotate handle (lines and other shapes that do not resize by box).
     pub const ROTATE_ONLY: Self = Self { corners: false, edges: false, rotate: true };
 }
 
@@ -184,10 +202,12 @@ pub struct ResizeResult {
 }
 
 impl ResizeResult {
+    /// True when the content is mirrored horizontally.
     pub fn flip_x(&self) -> bool {
         self.scale.x < 0.0
     }
 
+    /// True when the content is mirrored vertically.
     pub fn flip_y(&self) -> bool {
         self.scale.y < 0.0
     }

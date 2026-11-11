@@ -6,7 +6,7 @@ mod arrows_common;
 use arrows_common::*;
 use drafftink_edit::binding::{End, stale_arrows};
 use drafftink_edit::linear::{self, LinearError};
-use drafftink_scene::{BindMode, Head, PathType, SceneRead, SceneStore, SceneTx, validate_element};
+use drafftink_scene::{BindMode, Head, Kind, PathType, SceneRead, SceneStore, SceneTx, validate_element};
 
 fn check_valid(s: &Scene, eid: &drafftink_scene::ElementId) {
     let e = s.get(eid);
@@ -91,6 +91,36 @@ fn add_and_insert_points() {
 }
 
 #[test]
+fn a_closed_line_has_one_more_segment_the_one_that_closes_it() {
+    let mut s = Scene::new();
+    let line = s.line("l", &[(0.0, 0.0), (100.0, 0.0), (100.0, 100.0)]);
+    // An open line has segments 1 and 2 (between points 0-1 and 1-2); segment 3 does not exist.
+    let mut tx = s.store.begin();
+    assert_eq!(
+        linear::insert_midpoint(&mut tx, &line, 3, p(0.0, 50.0)),
+        Err(LinearError::NoSuchPoint { index: 3, len: 3 })
+    );
+    drop(tx);
+    s.edit(&line, |e| {
+        if let drafftink_scene::ElementKind::Line(d) = &mut e.kind {
+            d.closed = true;
+        }
+    });
+    // Closed, segment 3 runs from the last point back to the first. The new point comes last.
+    let mut tx = s.store.begin();
+    assert_eq!(linear::insert_midpoint(&mut tx, &line, 3, p(0.0, 50.0)).unwrap(), 3);
+    tx.commit().unwrap();
+    assert_eq!(s.world(&line), vec![p(0.0, 0.0), p(100.0, 0.0), p(100.0, 100.0), p(0.0, 50.0)]);
+    check_valid(&s, &line);
+    // Four points now: segment 5 is still out of range.
+    let mut tx = s.store.begin();
+    assert_eq!(
+        linear::insert_midpoint(&mut tx, &line, 5, p(0.0, 0.0)),
+        Err(LinearError::NoSuchPoint { index: 5, len: 4 })
+    );
+}
+
+#[test]
 fn adding_a_new_end_frees_the_binding_of_the_old_end() {
     let mut s = Scene::new();
     s.rect("t", 0.0, 0.0, 100.0, 100.0);
@@ -111,7 +141,7 @@ fn deleting_points_keeps_at_least_two() {
     let d = linear::delete_points(&mut tx, &a, &[1, 1]).unwrap();
     assert_eq!(d.removed, 1);
     let err = linear::delete_points(&mut tx, &a, &[0]).unwrap_err();
-    assert_eq!(err, LinearError::TooFewPoints { kind: "arrow", min: 2, have: 1 });
+    assert_eq!(err, LinearError::TooFewPoints { kind: Kind::Arrow, min: 2, have: 1 });
     assert!(err.to_string().contains("delete the element"));
     tx.commit().unwrap();
     assert_eq!(s.world(&a), vec![p(0.0, 0.0), p(200.0, 0.0)]);

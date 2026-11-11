@@ -9,8 +9,8 @@
 //! focus. Dangling bindings (target missing, deleted or not bindable) leave their end where it is.
 
 use drafftink_geom::binding::BASE_ARROW_MIN_LENGTH;
+use drafftink_geom::kurbo::{Point, Vec2};
 use drafftink_scene::{BindMode, Binding, Element, Head, LinearData, SceneRead};
-use kurbo::{Point, Vec2};
 
 use super::End;
 use super::target::{Resolved, resolve};

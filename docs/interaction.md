@@ -34,14 +34,14 @@ let camera = interaction.camera();                 // use this, not session.view
 | `Interaction::key(s, Key, now_ms)` | Enter, Escape |
 | `Interaction::tick(s, now_ms)` | long press, throttled camera report, laser fade |
 | `Interaction::next_deadline()` | when to call `tick`; `None` means no timer |
-| `Interaction::overlay(&s)` | `InteractionOverlay { canvas: Overlay, preview, faded, badge, laser }` |
+| `Interaction::overlay(&s)` | `InteractionOverlay { canvas: Overlay, preview, faded, badge, laser, link_icons }` |
 | `Interaction::camera()` / `cursor()` / `is_busy()` | live camera, cursor, "a gesture or draft is running" |
 
 `Outcome { redraw, cursor, ui_request, refusals, handled }`:
 
 * `redraw` is what the interaction layer itself needs drawn (`Overlay` for a hover outline, preview, marquee or guides; `Camera` for pan and zoom). A command that ran also sets the session's dirty reason. The shell draws when either says so: `out.redraw.max(session.take_dirty())`.
 * `cursor` is set only when the cursor changed.
-* `ui_request` asks for UI that is not a command: `OpenTextEditor { element | draft at }`, `OpenEquationEditor { element }`, `OpenContextMenu { at, target }`.
+* `ui_request` asks for UI that is not a command: `OpenTextEditor { element | draft at }`, `OpenEquationEditor { element }`, `OpenContextMenu { at, target }` (`target`: `Canvas`, `Selection` or `Locked { element }`), `OpenUrl { url }` (a link icon was clicked).
 * `refusals` are the refusals of the commands the layer ran, in plain words, for a toast.
 * `handled` is true when `key` used the key.
 
@@ -51,7 +51,7 @@ let camera = interaction.camera();                 // use this, not session.view
 * A `canvas::SceneIndex` of the working store for hit testing, kept by a scan that compares each element's `version` and transform when the store revision moved. It does not run while a gesture runs (live frames rewrite elements and nothing hit-tests during a drag).
 * A `canvas::Viewport`. It follows the session camera (`view.set`, `view.fit`, scripts) unless the layer moved it itself and has not reported it yet.
 * The selection frame (box or line points) for handle hits, cached by store revision and selection.
-* `OverlayParts`: the marquee, guides, highlight ids, the preview element, faded ids, the badge, the active handle, the laser trail. Machines write them; `overlay()` turns them into data for `render`.
+* `OverlayParts`: the marquee, the lasso path, guides, highlight ids, the preview element, faded ids, the badge, the active handle, the laser trail. Machines write them; `overlay()` turns them into data for `render`.
 
 A tool change drops drafts and previews. A gesture that disappeared (`tool.cancel`, a script) is forgotten quietly. After a command changed the scene or the camera, the layer picks again under the resting pointer, so an element that moved away from under it stops being hovered.
 
@@ -64,6 +64,7 @@ A tool change drops drafts and previews. A gesture that disappeared (`tool.cance
 | Press on an element | `selection.select_at` (replace; Shift toggles, Ctrl/Cmd `deep`). Shift on an already selected element toggles at the click, so a Shift-drag keeps the selection | |
 | Click on empty canvas | `selection.select_at` (clears). Alt-click on an element: `cycle` | |
 | Drag on empty canvas | marquee overlay; on release (at least 2 by 2 px) one `selection.select_region` (Shift adds) | E9 |
+| Drag on empty canvas with Alt held; or any drag of the lasso tool on empty canvas or on an element that is not selected | lasso path overlay (`OverlayParts::lasso`); on release one `selection.select_lasso` (Shift adds). The lasso tool otherwise behaves as the select tool (handles, moving a selected element, click) | E9 |
 | Drag an element or selection | gesture `element.move` (Alt `duplicate`, Ctrl/Cmd no snap, `pointer` for frame drops). Guides and frame highlight from the frame output | E2 |
 | Drag one of 8 handles | gesture `element.resize` (Shift `keep_aspect`, Alt `from_center`), size badge | E3 |
 | Drag the rotate handle | gesture `element.rotate mode=by` (Shift `snap_degrees` 15), angle badge. Double-click it: `element.rotate mode=to angle=0` | E4 |
@@ -73,7 +74,8 @@ A tool change drops drafts and previews. A gesture that disappeared (`tool.cance
 | Double-click text, shape, arrow, math | `text.edit_begin {id}` and `OpenTextEditor` (math: `OpenEquationEditor`) | |
 | Double-click a line | `arrow.edit_points` | |
 | Double-click empty canvas | `text.edit_begin {at}` and `OpenTextEditor` | |
-| Right click, long press | selects what is under the pointer when it is not selected, then `OpenContextMenu` | |
+| Click on the link icon of an element that is not selected (select tool; the icon sits beside the top-right corner, `edit::link::icon_rect`) | runs `element.open_link` for that element and does not select anything. A web link comes back as `UiRequest::OpenUrl { url }` for the shell to open; an element link has moved the view and selected the target; an unsafe stored link is a refusal toast | Excalidraw `hitLinkElement`, `isPointHittingLink` |
+| Right click, long press | selects what is under the pointer when it is not selected, then `OpenContextMenu`. When the topmost thing under the pointer is a locked element (the normal hit test skips it, so the pointer is over "nothing" or over something behind it), nothing is selected and the request is `OpenContextMenu { target: Locked { element } }`, so that the menu can offer Unlock (`element.unlock_all` with that id). Clicks, marquees and drags still skip locked elements. | Excalidraw `handleCanvasContextMenu` (`includeLockedElements`) |
 | Esc, pointer cancel, a second finger | `gesture_cancel` or the marquee is dropped: no trace | |
 
 ### Drawing tools (class B: preview, one command at the end)
@@ -113,7 +115,7 @@ Any other intent first reports a pending camera, so a command never sees a stale
 
 ## 5. Testing without a window
 
-`crates/engine/src/interact/testutil.rs` is the rig that the tests use: a `Session` with the fake text engine and a camera at zoom 1 over an 800 by 600 canvas (a screen position equals a world position), an `Interaction`, and scripted real `PointerEvent`s that go through the real `Recognizer` (`down`, `drag_to`, `up`, `hover`, `drag`, `click`, `double_click`, `key`, `tick`, modifiers in `rig.mods`). `normalized_doc()` returns the elements without ids, versions, z keys and seeds, so a gesture can be compared with the plain command run on a fresh twin: this is the equality test that `docs/exceptions.md` asks for, one per row (`exception_E<n>_*`). Stubs of `text.edit_begin` and `collab.laser` stand in until those families are registered; a real registration wins.
+`crates/engine/src/interact/testutil.rs` is the rig that the tests use: a `Session` with the fake text engine and a camera at zoom 1 over an 800 by 600 canvas (a screen position equals a world position), an `Interaction`, and scripted real `PointerEvent`s that go through the real `Recognizer` (`down`, `drag_to`, `up`, `hover`, `drag`, `click`, `double_click`, `key`, `tick`, modifiers in `rig.mods`). `normalized_doc()` returns the elements without ids, versions, z keys and seeds, so a gesture can be compared with the plain command run on a fresh twin: this is the equality test that `docs/exceptions.md` asks for, one per row (`exception_E<n>_*`).
 
 Test files: `interact/interaction_tests.rs` (hover, pan, zoom, context menu, scripts), `interact/select_tests.rs` (select, move, resize, rotate, points, marquee, double-click), `interact/draw_tests.rs`, `draw_line_tests.rs` and `draw_stroke_tests.rs` (shapes, lines and arrows, freehand, eraser, laser, text, math).
 
@@ -121,10 +123,5 @@ Test files: `interact/interaction_tests.rs` (hover, pan, zoom, context menu, scr
 
 ## 6. Open points and deviations
 
-* **The default type of new arrows** (sharp, round, elbow) has no command yet. The arrow tool reads `interact::NewArrowPath` from `Session::ext` (default sharp). The tool settings or style defaults should own this choice and set it, and then the extension goes away.
-* **Text tool drag.** `text.edit_begin` has no width argument, so a drag with the text tool starts the edit at the drag origin and does not make a fixed-width box.
-* **Elbow preview.** The preview of an elbow arrow while drawing is the straight segment between its ends; the route appears when the element exists.
 * **Binding candidate cost.** `edit::binding::find_hovered` scans all elements per pointer move while an arrow end is placed. It should use the spatial index for large documents.
-* **Closed line.** Dragging the midpoint of the closing segment of a closed line is refused by `arrow.move_point` (its segment numbering stops at the last point).
-* **Point handle click.** A click on a vertex handle does not yet call `arrow.edit_points select_point`.
 * **Index sync** compares `version` and transform per element when the store revision moved (an O(n) scan, outside gestures). A change feed from the store would remove the scan.

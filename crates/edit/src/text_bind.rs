@@ -21,17 +21,38 @@
 //! Callers run these functions inside one transaction. After a change that moves, resizes, rotates or reroutes a
 //! container, call [`refresh_labels`] with the changed ids (after `binding::update_bound_arrows`).
 
+mod container;
+mod font;
+mod math;
+mod measure;
+mod runs;
+
+pub use container::{Wrapped, wrap_in_container};
+pub use font::{
+    FONT_PRESETS, FONT_STEP, FontStep, MAX_FONT_SIZE, MIN_FONT_SIZE, StepReport, TextProps, anchor_top_left,
+    apply_text_props, next_font_size, remeasure_text, step_font_size,
+};
+pub use math::{MathMeasure, set_latex, set_math_size};
+pub use measure::{MonospaceMeasure, TextMeasure, measure_lines, measure_text, wrap_text};
+pub use runs::{RunSpec, carry_runs, replace_runs, style_range};
+
 use std::collections::HashMap;
 
+use drafftink_geom::kurbo::{Point, Rect, Size};
 use drafftink_geom::transform::rotate_point;
-use kurbo::{Point, Rect, Size};
+use drafftink_profile::{Counter, count};
 
 use drafftink_scene::{
-    Element, ElementId, ElementKind, IdSource, IndexError, Kind, SceneRead, SceneTx, StoreError, TextAlign, TextData,
-    TextRun, TextStyle, Transform, VerticalAlign, ZIndex,
+    Element, ElementError, ElementId, ElementKind, IdSource, IndexError, Kind, SceneRead, SceneTx, StoreError, Style,
+    TextAlign, TextData, TextStyle, Transform, VerticalAlign, ZIndex,
 };
+use drafftink_typeset::MathError;
 
 use crate::binding::{BindingError, update_bound_arrows};
+use crate::create::{FreeTextError, TextPlace, TextSpec, text_element};
+use crate::frame::FrameError;
+use crate::ids::unused_element_id;
+use crate::target::TargetError;
 
 /// Space between a container's outline and its label, on every side.
 pub const BOUND_TEXT_PADDING: f64 = 5.0;
@@ -42,147 +63,6 @@ pub const ARROW_LABEL_WIDTH_FRACTION: f64 = 0.7;
 pub const ARROW_LABEL_MIN_WIDTH_PER_SIZE: f64 = 11.0;
 /// Where an arrow label sits by default: the middle of the arrow.
 pub const DEFAULT_LABEL_POSITION: f64 = 0.5;
-
-// ---------------------------------------------------------------------------------------------
-// Measuring and wrapping
-// ---------------------------------------------------------------------------------------------
-
-/// How wide and tall text is. The engine implements it over the typesetter; tests use [`MonospaceMeasure`].
-///
-/// Only [`TextMeasure::line_width`] is required. The wrapping default is a greedy word wrap that breaks a word
-/// character by character when it does not fit on a line by itself.
-pub trait TextMeasure {
-    /// Advance width of one line of text (no line breaks in it), in world units.
-    fn line_width(&self, line: &str, font: &TextStyle) -> f64;
-
-    /// Height of one line.
-    fn line_height(&self, font: &TextStyle) -> f64 {
-        font.size * font.line_height
-    }
-
-    /// Wraps `text` (hard breaks are `\n`) so that no line is wider than `max_width` where that is possible. A
-    /// non-finite or negative `max_width` keeps only the hard breaks.
-    fn wrap(&self, text: &str, font: &TextStyle, max_width: f64) -> Vec<String> {
-        wrap_text(self, text, font, max_width)
-    }
-}
-
-/// A deterministic stand-in for a real font: every character is `advance_em` times the font size wide (wide East
-/// Asian characters count double). For tests and headless runs.
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub struct MonospaceMeasure {
-    /// Width of one narrow character as a multiple of the font size.
-    pub advance_em: f64,
-}
-
-impl Default for MonospaceMeasure {
-    fn default() -> Self {
-        Self { advance_em: 0.5 }
-    }
-}
-
-fn is_wide(c: char) -> bool {
-    matches!(c as u32, 0x1100..=0x115F | 0x2E80..=0xA4CF | 0xAC00..=0xD7A3 | 0xF900..=0xFAFF | 0xFE30..=0xFE6F | 0xFF00..=0xFF60 | 0x1F300..=0x1FAFF)
-}
-
-impl TextMeasure for MonospaceMeasure {
-    fn line_width(&self, line: &str, font: &TextStyle) -> f64 {
-        let cells: usize = line.chars().map(|c| if is_wide(c) { 2 } else { 1 }).sum();
-        cells as f64 * self.advance_em * font.size
-    }
-}
-
-/// The wrapping the trait uses by default.
-pub fn wrap_text<M: TextMeasure + ?Sized>(m: &M, text: &str, font: &TextStyle, max_width: f64) -> Vec<String> {
-    let mut out = Vec::new();
-    let limit = max_width.is_finite() && max_width >= 0.0;
-    for hard in text.split('\n') {
-        if !limit || m.line_width(hard, font) <= max_width {
-            out.push(hard.to_string());
-            continue;
-        }
-        wrap_line(m, hard, font, max_width, &mut out);
-    }
-    out
-}
-
-/// Splits a line into tokens: a word with the spaces after it. Leading spaces form a token of their own.
-fn tokens(line: &str) -> Vec<&str> {
-    let mut out = Vec::new();
-    let mut start = 0usize;
-    let mut in_space = false;
-    let mut seen_word = false;
-    for (i, c) in line.char_indices() {
-        let space = c.is_whitespace();
-        if in_space && !space {
-            if seen_word || start < i {
-                out.push(line.get(start..i).unwrap_or_default());
-            }
-            start = i;
-            in_space = false;
-            seen_word = true;
-        } else if !in_space && space {
-            in_space = true;
-        }
-        if !space {
-            seen_word = true;
-        }
-    }
-    if start < line.len() {
-        out.push(line.get(start..).unwrap_or_default());
-    }
-    out
-}
-
-fn wrap_line<M: TextMeasure + ?Sized>(m: &M, line: &str, font: &TextStyle, max: f64, out: &mut Vec<String>) {
-    let mut cur = String::new();
-    for token in tokens(line) {
-        let mut token = token.to_string();
-        loop {
-            let candidate = format!("{cur}{}", token.trim_end());
-            if m.line_width(&candidate, font) <= max {
-                cur.push_str(&token);
-                break;
-            }
-            if cur.trim().is_empty() {
-                // The token alone is too wide: cut it character by character.
-                let mut piece = String::new();
-                let mut rest = token.as_str();
-                while let Some(c) = rest.chars().next() {
-                    let mut next = piece.clone();
-                    next.push(c);
-                    if !piece.is_empty() && m.line_width(next.trim_end(), font) > max {
-                        out.push(std::mem::take(&mut piece));
-                    }
-                    piece.push(c);
-                    rest = rest.get(c.len_utf8()..).unwrap_or_default();
-                }
-                cur = piece;
-                break;
-            }
-            out.push(cur.trim_end().to_string());
-            cur.clear();
-            // Retry the same token on the new line.
-            token = token.trim_start().to_string();
-            if token.is_empty() {
-                break;
-            }
-        }
-    }
-    out.push(cur.trim_end().to_string());
-}
-
-/// Width and height of already wrapped lines. An empty line counts as a line of the normal height.
-pub fn measure_lines<M: TextMeasure + ?Sized>(m: &M, lines: &[String], font: &TextStyle) -> Size {
-    let w = lines.iter().map(|l| m.line_width(l, font)).fold(0.0, f64::max);
-    Size::new(w, lines.len().max(1) as f64 * m.line_height(font))
-}
-
-/// The size of `text` as one box, wrapped at `max_width` (`None`: only at hard breaks).
-pub fn measure_text<M: TextMeasure + ?Sized>(m: &M, text: &str, font: &TextStyle, max_width: Option<f64>) -> Size {
-    let lines = wrap_text(m, text, font, max_width.unwrap_or(f64::INFINITY));
-    measure_lines(m, &lines, font)
-}
 
 // ---------------------------------------------------------------------------------------------
 // Container geometry
@@ -289,7 +169,7 @@ pub fn layout_label<M: TextMeasure + ?Sized>(
         return Ok(LabelLayout { lines, text, container: rect, grew: false });
     }
     if !kind.is_label_container() {
-        return Err(TextBindError::NotContainer { id: container.id.clone(), kind: kind.name() });
+        return Err(TextBindError::NotContainer { id: container.id.clone(), kind });
     }
 
     let mut grew = false;
@@ -348,27 +228,35 @@ pub fn layout_label<M: TextMeasure + ?Sized>(
 /// Why a text rule refused.
 #[derive(Debug, Clone, PartialEq, thiserror::Error)]
 pub enum TextBindError {
-    /// The element does not exist (or is deleted).
-    #[error("element {0} does not exist. Look up ids with element.query or doc.outline.")]
-    Missing(ElementId),
+    /// An element does not exist, is deleted, or is locked.
+    #[error(transparent)]
+    Target(#[from] TargetError),
     /// The element is not a text.
-    #[error("{id} is a {kind}, not a text element. Pass the id of a text.")]
+    #[error("{id} is {}, not a text element. Pass the id of a text.", drafftink_scene::words::Article::new(.kind.name()))]
     NotText {
         /// The element.
         id: ElementId,
         /// Its kind.
-        kind: &'static str,
+        kind: Kind,
+    },
+    /// The element is not a math element.
+    #[error("{id} is {}, not a math element. Pass the id of a math element.", drafftink_scene::words::Article::new(.kind.name()))]
+    NotMath {
+        /// The element.
+        id: ElementId,
+        /// Its kind.
+        kind: Kind,
     },
     /// The element cannot hold a label.
-    #[error("{id} is a {kind}, which cannot hold a label. Labels go on rectangles, diamonds, ellipses and arrows.")]
+    #[error("{id} is {}, which cannot hold a label. Labels go on rectangles, diamonds, ellipses and arrows.", drafftink_scene::words::Article::new(.kind.name()))]
     NotContainer {
         /// The element.
         id: ElementId,
         /// Its kind.
-        kind: &'static str,
+        kind: Kind,
     },
     /// The container already has a label.
-    #[error("{container} already has a label ({existing}). Remove it first with text.unbind.")]
+    #[error("{container} already has a label ({existing}). Remove it first.")]
     AlreadyLabelled {
         /// The container.
         container: ElementId,
@@ -376,7 +264,7 @@ pub enum TextBindError {
         existing: ElementId,
     },
     /// The text is the label of another container.
-    #[error("{text} is already the label of {container}. Unbind it first with text.unbind.")]
+    #[error("{text} is already the label of {container}. Unbind it first.")]
     BoundElsewhere {
         /// The text.
         text: ElementId,
@@ -386,12 +274,69 @@ pub enum TextBindError {
     /// The text is not a label.
     #[error("{0} is not the label of any element.")]
     NotBound(ElementId),
-    /// The element is locked.
-    #[error("{0} is locked. Unlock it first.")]
-    Locked(ElementId),
     /// The text is empty.
     #[error("A text element cannot be empty. Give some text, or remove the label.")]
     EmptyText,
+    /// The text is longer than a text element can be.
+    #[error("the text has {n} characters, and a text element holds at most {max}")]
+    TextTooLong {
+        /// Characters given.
+        n: usize,
+        /// The limit.
+        max: usize,
+    },
+    /// The range does not lie inside the text.
+    #[error("The range {start}..{end} is outside the text, which has {len} characters. Use a range within 0..{len}.")]
+    BadRange {
+        /// First character.
+        start: u32,
+        /// One past the last character.
+        end: u32,
+        /// The text length in characters.
+        len: usize,
+    },
+    /// The range is empty or backwards.
+    #[error("The range {start}..{end} is empty. Give a start below the end, within 0..{len}.")]
+    EmptyRange {
+        /// First character.
+        start: u32,
+        /// One past the last character.
+        end: u32,
+        /// The text length in characters.
+        len: usize,
+    },
+    /// The formula is empty.
+    #[error("The LaTeX could not be parsed: the formula is empty. Fix the expression. {LATEX_EXAMPLES}")]
+    EmptyFormula,
+    /// The formula is longer than the model allows.
+    #[error(
+        "The LaTeX could not be parsed: the formula has more than {max} characters. Fix the expression. {LATEX_EXAMPLES}"
+    )]
+    FormulaTooLong {
+        /// The limit.
+        max: usize,
+    },
+    /// The formula does not parse.
+    #[error("The LaTeX could not be parsed: {} (line {line}, column {column}). Fix the expression. {LATEX_EXAMPLES}", .error.message)]
+    InvalidLatex {
+        /// What the typesetter said.
+        error: MathError,
+        /// Line of the mistake, counted from 1.
+        line: usize,
+        /// Column of the mistake, counted from 1.
+        column: usize,
+    },
+    /// A size or position is not a finite number, or is outside the document limits.
+    #[error("The result has a size or position that is not a finite number. Use smaller values.")]
+    NotFinite,
+    /// The new text breaks a rule of the model.
+    #[error("the new element {id} is invalid: {error}")]
+    Invalid {
+        /// The element.
+        id: ElementId,
+        /// The broken rule.
+        error: ElementError,
+    },
     /// The scene refused a write.
     #[error(transparent)]
     Store(#[from] StoreError),
@@ -399,27 +344,23 @@ pub enum TextBindError {
     #[error(transparent)]
     Index(#[from] IndexError),
     /// Re-solving the arrows bound to a grown container failed.
-    #[error("re-solving the arrows bound to the container failed: {0}")]
-    Binding(String),
+    #[error(transparent)]
+    Binding(#[from] BindingError),
+    /// Joining a frame failed.
+    #[error("joining the frame failed: {0}")]
+    Frame(Box<FrameError>),
 }
 
-impl From<BindingError> for TextBindError {
-    fn from(e: BindingError) -> Self {
-        TextBindError::Binding(e.to_string())
-    }
-}
+/// Formulas that parse, for the message of a formula that does not.
+const LATEX_EXAMPLES: &str = "Examples: `x^2`, `\\frac{a}{b}`, `\\sqrt{x}`, `\\sum_{i=1}^n i`.";
 
-impl TextBindError {
-    /// The refusal code of the command catalog.
-    pub fn code(&self) -> &'static str {
-        match self {
-            TextBindError::Missing(_) => "not_found",
-            TextBindError::NotText { .. } | TextBindError::NotContainer { .. } => "wrong_kind",
-            TextBindError::AlreadyLabelled { .. } | TextBindError::BoundElsewhere { .. } => "already_bound",
-            TextBindError::NotBound(_) => "nothing_to_do",
-            TextBindError::Locked(_) => "locked",
-            TextBindError::EmptyText => "empty_text",
-            TextBindError::Store(_) | TextBindError::Index(_) | TextBindError::Binding(_) => "internal",
+impl From<FreeTextError> for TextBindError {
+    fn from(e: FreeTextError) -> Self {
+        match e {
+            FreeTextError::Empty => TextBindError::EmptyText,
+            FreeTextError::TooLong { n, max } => TextBindError::TextTooLong { n, max },
+            FreeTextError::NotFinite => TextBindError::NotFinite,
+            FreeTextError::Invalid { id, error } => TextBindError::Invalid { id, error },
         }
     }
 }
@@ -429,24 +370,29 @@ impl TextBindError {
 // ---------------------------------------------------------------------------------------------
 
 fn live<'a, R: SceneRead>(r: &'a R, id: &ElementId) -> Result<&'a Element, TextBindError> {
-    r.get(id).filter(|e| !e.deleted).ok_or_else(|| TextBindError::Missing(id.clone()))
+    r.get(id).filter(|e| !e.deleted).ok_or_else(|| TextBindError::Target(TargetError::NotFound(id.clone())))
 }
 
 fn text_of<'a, R: SceneRead>(r: &'a R, id: &ElementId) -> Result<(&'a Element, &'a TextData), TextBindError> {
     let e = live(r, id)?;
     match &e.kind {
         ElementKind::Text(t) => Ok((e, t)),
-        _ => Err(TextBindError::NotText { id: id.clone(), kind: e.tag().name() }),
+        _ => Err(TextBindError::NotText { id: id.clone(), kind: e.tag() }),
     }
 }
 
 /// The live label of a container (the smallest id when several claim it).
 pub fn label_of<R: SceneRead>(r: &R, container: &ElementId) -> Option<ElementId> {
+    if let Some(index) = r.derived_index() {
+        return index.label_of(container).cloned();
+    }
+    count(Counter::ElementsScanned, u64::try_from(r.len_all()).unwrap_or(u64::MAX));
     r.iter().filter(|e| e.container_id() == Some(container)).map(|e| e.id.clone()).min()
 }
 
 /// The label of every container in one pass.
 pub fn label_index<R: SceneRead>(r: &R) -> HashMap<ElementId, ElementId> {
+    count(Counter::ElementsScanned, u64::try_from(r.len_all()).unwrap_or(u64::MAX));
     let mut out: HashMap<ElementId, ElementId> = HashMap::new();
     for e in r.iter() {
         if let Some(c) = e.container_id() {
@@ -459,6 +405,19 @@ pub fn label_index<R: SceneRead>(r: &R) -> HashMap<ElementId, ElementId> {
         }
     }
     out
+}
+
+/// The label of `container`: the smallest id among the texts that claim it.
+fn label_for<R: SceneRead>(
+    r: &R,
+    scanned: Option<&HashMap<ElementId, ElementId>>,
+    container: &ElementId,
+) -> Option<ElementId> {
+    match (r.derived_index(), scanned) {
+        (Some(index), _) => index.label_of(container).cloned(),
+        (None, Some(map)) => map.get(container).cloned(),
+        (None, None) => None,
+    }
 }
 
 fn z_above_container<R: SceneRead>(r: &R, container: &Element) -> Result<ZIndex, IndexError> {
@@ -532,13 +491,13 @@ pub fn bind_text<T: SceneTx, M: TextMeasure + ?Sized>(
     let (te, td) = text_of(tx, text)?;
     let ce = live(tx, container)?;
     if !ce.tag().is_label_container() {
-        return Err(TextBindError::NotContainer { id: container.clone(), kind: ce.tag().name() });
+        return Err(TextBindError::NotContainer { id: container.clone(), kind: ce.tag() });
     }
     if te.locked {
-        return Err(TextBindError::Locked(text.clone()));
+        return Err(TextBindError::Target(TargetError::Locked(vec![text.clone()])));
     }
     if ce.locked {
-        return Err(TextBindError::Locked(container.clone()));
+        return Err(TextBindError::Target(TargetError::Locked(vec![container.clone()])));
     }
     if let Some(other) = td.container_id.as_ref().filter(|c| *c != container) {
         return Err(TextBindError::BoundElsewhere { text: text.clone(), container: other.clone() });
@@ -591,10 +550,10 @@ pub fn create_label<T: SceneTx, M: TextMeasure + ?Sized>(
 ) -> Result<LabelOutcome, TextBindError> {
     let ce = live(tx, container)?.clone();
     if !ce.tag().is_label_container() {
-        return Err(TextBindError::NotContainer { id: container.clone(), kind: ce.tag().name() });
+        return Err(TextBindError::NotContainer { id: container.clone(), kind: ce.tag() });
     }
     if ce.locked {
-        return Err(TextBindError::Locked(container.clone()));
+        return Err(TextBindError::Target(TargetError::Locked(vec![container.clone()])));
     }
     if let Some(existing) = label_of(tx, container) {
         return Err(TextBindError::AlreadyLabelled { container: container.clone(), existing });
@@ -609,7 +568,7 @@ pub fn create_label<T: SceneTx, M: TextMeasure + ?Sized>(
     data.font = font;
     data.container_id = Some(ce.id.clone());
     data.label_position = position;
-    let id = fresh_element_id(tx, ids);
+    let id = unused_element_id(tx, ids);
     let mut e = Element::new(id.clone(), ElementKind::Text(data), z_above_container(tx, &ce)?);
     e.style.stroke_color = ce.style.stroke_color;
     e.style.opacity = ce.style.opacity;
@@ -621,17 +580,41 @@ pub fn create_label<T: SceneTx, M: TextMeasure + ?Sized>(
     Ok(LabelOutcome { label: id, container_grew: layout.grew })
 }
 
-/// An element id that is not used in `r` (live or deleted).
-pub fn fresh_element_id<R: SceneRead>(r: &R, ids: &mut dyn IdSource) -> ElementId {
-    // A source that keeps returning used ids would loop for ever; give up after a bound and let the insert report it.
-    let mut id = ids.element_id();
-    for _ in 0..10_000 {
-        if !r.contains(&id) {
-            break;
-        }
-        id = ids.element_id();
+/// A new free text.
+#[derive(Debug, Clone)]
+pub struct NewText<'a> {
+    /// Top-left corner.
+    pub at: Point,
+    /// The content (not blank).
+    pub content: &'a str,
+    /// Font.
+    pub font: TextStyle,
+    /// Style (colour, opacity). The seed is replaced.
+    pub style: Style,
+    /// A fixed width: the text wraps and auto-resize is off. `None`: the box follows the content.
+    pub width: Option<f64>,
+    /// The frame the text joins, if any.
+    pub frame: Option<ElementId>,
+}
+
+/// Creates a free text on top of the scene, sized by `m`. Used when a text edit of a draft ends.
+pub fn create_text<T: SceneTx, M: TextMeasure + ?Sized>(
+    tx: &mut T,
+    m: &M,
+    ids: &mut dyn IdSource,
+    spec: &NewText<'_>,
+) -> Result<ElementId, TextBindError> {
+    let id = unused_element_id(&*tx, ids);
+    let z = tx.next_top_index()?;
+    let mut style = spec.style.clone();
+    style.seed = ids.seed();
+    let place = TextSpec { font: spec.font.clone(), place: TextPlace::TopLeft(spec.at), width: spec.width };
+    let e = text_element(m, id.clone(), z, spec.content, place, style)?;
+    tx.insert(e)?;
+    if let Some(f) = &spec.frame {
+        crate::frame::add_to_frame(tx, f, std::slice::from_ref(&id)).map_err(|e| TextBindError::Frame(Box::new(e)))?;
     }
-    id
+    Ok(id)
 }
 
 /// Detaches a label (`text.unbind`). The text keeps its place and size as a free text with a fixed width.
@@ -641,7 +624,7 @@ pub fn unbind_text<T: SceneTx>(tx: &mut T, text: &ElementId) -> Result<(), TextB
         return Err(TextBindError::NotBound(text.clone()));
     }
     if te.locked {
-        return Err(TextBindError::Locked(text.clone()));
+        return Err(TextBindError::Target(TargetError::Locked(vec![text.clone()])));
     }
     tx.update(text, |e| {
         if let ElementKind::Text(t) = &mut e.kind {
@@ -651,13 +634,6 @@ pub fn unbind_text<T: SceneTx>(tx: &mut T, text: &ElementId) -> Result<(), TextB
         }
     })?;
     Ok(())
-}
-
-/// Deletes the label of `container`, if it has one (a tombstone, so undo works). Returns its id.
-pub fn remove_label<T: SceneTx>(tx: &mut T, container: &ElementId) -> Result<Option<ElementId>, TextBindError> {
-    let Some(label) = label_of(tx, container) else { return Ok(None) };
-    tx.update(&label, |e| e.deleted = true)?;
-    Ok(Some(label))
 }
 
 /// Re-wraps and re-places the label of `container` after the container changed (`anchor` says which edge stays when
@@ -694,14 +670,15 @@ pub fn refresh_labels<T: SceneTx, M: TextMeasure + ?Sized>(
     changed: &[ElementId],
     anchor: GrowAnchor,
 ) -> Result<Vec<ElementId>, TextBindError> {
-    let index = label_index(tx);
+    // The committed index knows every label; without one, a single pass finds them all.
+    let scanned = if tx.derived_index().is_some() { None } else { Some(label_index(tx)) };
     let mut pairs: Vec<(ElementId, ElementId)> = Vec::new();
     for id in changed {
         let Some(e) = tx.get(id).filter(|e| !e.deleted) else { continue };
         let pair = match e.container_id() {
             Some(c) => (c.clone(), id.clone()),
-            None => match index.get(id) {
-                Some(l) => (id.clone(), l.clone()),
+            None => match label_for(&*tx, scanned.as_ref(), id) {
+                Some(l) => (id.clone(), l),
                 None => continue,
             },
         };
@@ -732,7 +709,7 @@ pub fn move_arrow_label<T: SceneTx, M: TextMeasure + ?Sized>(
     let cid = td.container_id.clone().ok_or_else(|| TextBindError::NotBound(label.clone()))?;
     let arrow = live(tx, &cid)?;
     if arrow.tag() != Kind::Arrow {
-        return Err(TextBindError::NotContainer { id: cid, kind: arrow.tag().name() });
+        return Err(TextBindError::NotContainer { id: cid, kind: arrow.tag() });
     }
     let t = param_at_point(arrow, p);
     tx.update(label, |e| {
@@ -771,37 +748,6 @@ pub fn param_at_point(arrow: &Element, p: Point) -> f64 {
 // Editing the content
 // ---------------------------------------------------------------------------------------------
 
-/// Keeps the colour runs that lie in the unchanged beginning and end of the text.
-pub fn carry_runs(old: &str, new: &str, runs: &[TextRun]) -> Vec<TextRun> {
-    let (a, b): (Vec<char>, Vec<char>) = (old.chars().collect(), new.chars().collect());
-    let prefix = a.iter().zip(&b).take_while(|(x, y)| x == y).count();
-    let suffix =
-        a.iter().rev().zip(b.iter().rev()).take(a.len().min(b.len()) - prefix).take_while(|(x, y)| x == y).count();
-    let (old_len, new_len) = (a.len(), b.len());
-    let to_u32 = |v: usize| u32::try_from(v).unwrap_or(u32::MAX);
-    let mut out = Vec::new();
-    for r in runs {
-        let (s, e) = (r.start as usize, r.end as usize);
-        if e <= prefix {
-            out.push(r.clone());
-        } else if s < prefix {
-            out.push(TextRun { start: r.start, end: to_u32(prefix), color: r.color });
-        } else if s >= old_len.saturating_sub(suffix) {
-            let shift = |v: usize| (v + new_len).saturating_sub(old_len);
-            out.push(TextRun { start: to_u32(shift(s)), end: to_u32(shift(e)), color: r.color });
-        } else if e > old_len.saturating_sub(suffix) {
-            let start = new_len.saturating_sub(suffix);
-            out.push(TextRun {
-                start: to_u32(start),
-                end: to_u32(new_len.min((e + new_len).saturating_sub(old_len))),
-                color: r.color,
-            });
-        }
-    }
-    out.retain(|r| r.start < r.end && (r.end as usize) <= new_len);
-    out
-}
-
 /// Replaces the content of a text element or label (`text.set`). A label may be emptied: that removes it and the
 /// result is `None`. A free text cannot be emptied. The container grows or the label is re-centred as needed.
 pub fn set_text_content<T: SceneTx, M: TextMeasure + ?Sized>(
@@ -813,7 +759,7 @@ pub fn set_text_content<T: SceneTx, M: TextMeasure + ?Sized>(
 ) -> Result<Option<LabelOutcome>, TextBindError> {
     let (te, td) = text_of(tx, text)?;
     if te.locked {
-        return Err(TextBindError::Locked(text.clone()));
+        return Err(TextBindError::Target(TargetError::Locked(vec![text.clone()])));
     }
     let empty = content.trim().is_empty();
     if empty && td.container_id.is_none() {
@@ -862,7 +808,8 @@ pub enum Relabeled {
 }
 
 /// `element.relabel`: sets the text of `id`. On a text element it replaces the content. On a shape or an arrow it
-/// replaces the label, creates one when `create` is set, and removes it when `content` is empty.
+/// replaces the label, creates one when `create` is set, and removes it when `content` is empty. A new label
+/// gets `font` (the tool's text defaults), or the scene default when it is `None`.
 pub fn relabel<T: SceneTx, M: TextMeasure + ?Sized>(
     tx: &mut T,
     m: &M,
@@ -870,10 +817,11 @@ pub fn relabel<T: SceneTx, M: TextMeasure + ?Sized>(
     id: &ElementId,
     content: &str,
     create: bool,
+    font: Option<&TextStyle>,
 ) -> Result<Relabeled, TextBindError> {
     let e = live(tx, id)?;
     if e.locked {
-        return Err(TextBindError::Locked(id.clone()));
+        return Err(TextBindError::Target(TargetError::Locked(vec![id.clone()])));
     }
     match e.tag() {
         Kind::Text => match set_text_content(tx, m, id, content, true)? {
@@ -892,11 +840,11 @@ pub fn relabel<T: SceneTx, M: TextMeasure + ?Sized>(
                     o.map(Relabeled::Updated).ok_or(TextBindError::EmptyText)
                 }
                 (None, true) => Ok(Relabeled::Nothing),
-                (None, false) if create => create_label(tx, m, ids, id, content, None).map(Relabeled::Created),
+                (None, false) if create => create_label(tx, m, ids, id, content, font).map(Relabeled::Created),
                 (None, false) => Ok(Relabeled::Nothing),
             }
         }
-        k => Err(TextBindError::NotContainer { id: id.clone(), kind: k.name() }),
+        k => Err(TextBindError::NotContainer { id: id.clone(), kind: k }),
     }
 }
 
@@ -910,7 +858,7 @@ pub fn set_auto_resize<T: SceneTx, M: TextMeasure + ?Sized>(
 ) -> Result<(), TextBindError> {
     let (te, td) = text_of(tx, text)?;
     if te.locked {
-        return Err(TextBindError::Locked(text.clone()));
+        return Err(TextBindError::Target(TargetError::Locked(vec![text.clone()])));
     }
     if td.container_id.is_some() {
         return Ok(());
@@ -931,7 +879,7 @@ pub fn set_auto_resize<T: SceneTx, M: TextMeasure + ?Sized>(
 #[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 mod tests {
     use super::*;
-    use drafftink_scene::{MemoryStore, SceneStore, SeqIds};
+    use drafftink_scene::{MemoryStore, SceneStore, SeqIds, TextRun};
     use proptest::prelude::*;
 
     fn font() -> TextStyle {
@@ -1185,7 +1133,10 @@ mod tests {
         let t2 = free_text(&mut s, "t2", "b");
         let t3 = free_text(&mut s, "t3", "   ");
         let mut tx = s.begin();
-        assert_eq!(bind_text(&mut tx, &m(), &id("nope"), &r), Err(TextBindError::Missing(id("nope"))));
+        assert_eq!(
+            bind_text(&mut tx, &m(), &id("nope"), &r),
+            Err(TextBindError::Target(TargetError::NotFound(id("nope"))))
+        );
         assert!(matches!(bind_text(&mut tx, &m(), &r, &r), Err(TextBindError::NotText { .. })));
         assert!(matches!(bind_text(&mut tx, &m(), &t1, &t2), Err(TextBindError::NotContainer { .. })));
         assert_eq!(bind_text(&mut tx, &m(), &t3, &r), Err(TextBindError::EmptyText));
@@ -1195,8 +1146,7 @@ mod tests {
         assert!(matches!(bind_text(&mut tx, &m(), &t1, &r2), Err(TextBindError::BoundElsewhere { .. })));
         assert_eq!(unbind_text(&mut tx, &t2), Err(TextBindError::NotBound(t2.clone())));
         tx.update(&r, |e| e.locked = true).unwrap();
-        assert_eq!(bind_text(&mut tx, &m(), &t2, &r), Err(TextBindError::Locked(r.clone())));
-        assert_eq!(TextBindError::EmptyText.code(), "empty_text");
+        assert_eq!(bind_text(&mut tx, &m(), &t2, &r), Err(TextBindError::Target(TargetError::Locked(vec![r.clone()]))));
     }
 
     fn fresh(tx: &mut impl SceneTx, s: &str) -> ElementId {
@@ -1229,13 +1179,13 @@ mod tests {
         let c = shape(&mut s, "c", ElementKind::Rectangle, 0.0, 0.0, 80.0, 40.0);
         let mut ids = SeqIds::new();
         let mut tx = s.begin();
-        assert_eq!(relabel(&mut tx, &m(), &mut ids, &c, "x", false).unwrap(), Relabeled::Nothing);
-        let created = relabel(&mut tx, &m(), &mut ids, &c, "x", true).unwrap();
+        assert_eq!(relabel(&mut tx, &m(), &mut ids, &c, "x", false, None).unwrap(), Relabeled::Nothing);
+        let created = relabel(&mut tx, &m(), &mut ids, &c, "x", true, None).unwrap();
         let Relabeled::Created(o) = created else { panic!("{created:?}") };
-        let upd = relabel(&mut tx, &m(), &mut ids, &c, "y", true).unwrap();
+        let upd = relabel(&mut tx, &m(), &mut ids, &c, "y", true, None).unwrap();
         assert!(matches!(upd, Relabeled::Updated(_)));
         assert_eq!(tx.get(&o.label).unwrap().text_data().unwrap().content, "y");
-        let rem = relabel(&mut tx, &m(), &mut ids, &c, "", true).unwrap();
+        let rem = relabel(&mut tx, &m(), &mut ids, &c, "", true, None).unwrap();
         assert_eq!(rem, Relabeled::Removed(o.label.clone()));
         assert_eq!(label_of(&tx, &c), None);
         tx.commit().unwrap();

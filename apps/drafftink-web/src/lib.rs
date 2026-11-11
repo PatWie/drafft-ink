@@ -11,13 +11,13 @@ pub mod pairing;
 // The pure rules of the web platform live in `crates/app/src/web`, which only exists on wasm32. Compiling the
 // same files here runs their tests on the build machine (the repository has no wasm test runner).
 #[cfg(test)]
-#[path = "../../../crates/app/src/web/pure.rs"]
-#[allow(dead_code)]
-mod platform_pure;
-#[cfg(test)]
 #[path = "../../../crates/app/src/web/cache.rs"]
 #[allow(dead_code)]
 mod platform_cache;
+#[cfg(test)]
+#[path = "../../../crates/app/src/web/pure.rs"]
+#[allow(dead_code)]
+mod platform_pure;
 
 #[cfg(target_arch = "wasm32")]
 mod agent;

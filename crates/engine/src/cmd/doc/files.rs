@@ -18,19 +18,7 @@ pub const AUTOSAVE_NAME: &str = "autosave";
 /// Most files in the recent list.
 pub const RECENT_MAX: usize = 10;
 
-/// Bytes given in the arguments.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
-#[serde(deny_unknown_fields)]
-pub struct InlineBytes {
-    /// The content, base64 (standard alphabet).
-    pub base64: String,
-    /// The file name, for messages and to name the document.
-    #[serde(default)]
-    pub name: Option<String>,
-    /// The media type, if known.
-    #[serde(default)]
-    pub mime: Option<String>,
-}
+pub use crate::cmd::bytes::InlineBytes;
 
 /// Where the data of a command comes from: inline bytes, or a file or stored name that the session reads.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
@@ -83,13 +71,9 @@ pub fn display_name(f: &FileRef) -> String {
     }
 }
 
-/// Decodes inline base64, with or without padding.
-pub fn decode_base64(id: &str, key: &str, text: &str) -> Result<Vec<u8>, Refusal> {
-    let t: String = text.chars().filter(|c| !c.is_whitespace()).collect();
-    base64::engine::general_purpose::STANDARD
-        .decode(t.as_bytes())
-        .or_else(|_| base64::engine::general_purpose::STANDARD_NO_PAD.decode(t.as_bytes()))
-        .map_err(|_| Refusal::bad_arg(id, key, "is not valid base64"))
+/// Decodes inline bytes (padding optional, a `data:` prefix accepted).
+pub fn decode_inline(id: &str, key: &str, b: &InlineBytes) -> Result<Vec<u8>, Refusal> {
+    b.decode().map_err(|_| Refusal::bad_arg(id, key, "is not valid base64"))
 }
 
 /// Standard base64 of some bytes.
@@ -97,8 +81,17 @@ pub fn base64_of(bytes: &[u8]) -> String {
     base64::engine::general_purpose::STANDARD.encode(bytes)
 }
 
-fn no_files(id: &str) -> Refusal {
+fn no_files_to_read(id: &str) -> Refusal {
     Refusal::port_unavailable(id, "file access", "files port missing", "Pass the data inline as `{base64, name}` instead.")
+}
+
+fn no_files_to_write(id: &str) -> Refusal {
+    Refusal::port_unavailable(
+        id,
+        "file access",
+        "files port missing",
+        "To get the bytes without writing a file, use `doc.export` with to=\"inline\".",
+    )
 }
 
 fn no_storage(id: &str) -> Refusal {
@@ -109,7 +102,7 @@ fn no_storage(id: &str) -> Refusal {
 pub fn read_source(s: &Session, id: &str, src: &Source, key: &str) -> Result<Loaded, Refusal> {
     match src {
         Source::Inline(b) => Ok(Loaded {
-            bytes: decode_base64(id, &format!("{key}.base64"), &b.base64)?,
+            bytes: decode_inline(id, &format!("{key}.base64"), b)?,
             name: b.name.clone().filter(|n| !n.trim().is_empty()).unwrap_or_else(|| "the data".to_owned()),
             file: None,
             provenance: Provenance::Clean,
@@ -139,7 +132,7 @@ pub fn read_file(s: &Session, id: &str, f: &FileRef) -> Result<Loaded, Refusal> 
             Ok(Loaded { bytes, name, file: Some(f.clone()), provenance: Provenance::Clean })
         }
         _ => {
-            let files = s.ports.files.as_ref().ok_or_else(|| no_files(id))?;
+            let files = s.ports.files.as_ref().ok_or_else(|| no_files_to_read(id))?;
             let bytes = files.read(f).map_err(fail)?;
             let file = if matches!(f, FileRef::Download { .. }) { None } else { Some(f.clone()) };
             Ok(Loaded { bytes, name, file, provenance: Provenance::Clean })
@@ -190,7 +183,7 @@ pub fn require_writable(s: &Session, id: &str, f: &FileRef) -> Result<(), Refusa
     match f {
         FileRef::Stored { .. } if !s.has_port(PortKind::Storage) => Err(no_storage(id)),
         FileRef::Stored { .. } => Ok(()),
-        _ if !s.has_port(PortKind::Files) => Err(no_files(id)),
+        _ if !s.has_port(PortKind::Files) => Err(no_files_to_write(id)),
         _ => Ok(()),
     }
 }

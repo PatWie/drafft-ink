@@ -46,11 +46,17 @@ const MAX_NAME_CHARS: usize = 120;
 
 /// A file name that is safe to hand to the browser: no path separators, no control characters, never empty.
 pub(crate) fn download_name(name: &str) -> String {
-    let cleaned: String = name
-        .chars()
-        .map(|c| if c.is_control() || matches!(c, '/' | '\\' | ':' | '*' | '?' | '"' | '<' | '>' | '|') { '_' } else { c })
-        .take(MAX_NAME_CHARS)
-        .collect();
+    let cleaned: String =
+        name.chars()
+            .map(|c| {
+                if c.is_control() || matches!(c, '/' | '\\' | ':' | '*' | '?' | '"' | '<' | '>' | '|') {
+                    '_'
+                } else {
+                    c
+                }
+            })
+            .take(MAX_NAME_CHARS)
+            .collect();
     let cleaned = cleaned.trim().trim_start_matches('.').to_owned();
     if cleaned.is_empty() { "Untitled.drafftink".to_owned() } else { cleaned }
 }
@@ -91,7 +97,10 @@ mod tests {
 
     #[test]
     fn same_origin_follows_the_page_protocol() {
-        assert_eq!(same_origin_ws_url("https:", "draw.example.com", "/ws").as_deref(), Some("wss://draw.example.com/ws"));
+        assert_eq!(
+            same_origin_ws_url("https:", "draw.example.com", "/ws").as_deref(),
+            Some("wss://draw.example.com/ws")
+        );
         assert_eq!(same_origin_ws_url("http:", "127.0.0.1:3030", "/ws").as_deref(), Some("ws://127.0.0.1:3030/ws"));
         assert_eq!(same_origin_ws_url("file:", "", "/ws"), None);
         assert_eq!(same_origin_ws_url("https:", "a.b", "ws"), None);

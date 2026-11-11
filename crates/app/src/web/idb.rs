@@ -85,11 +85,7 @@ pub(crate) async fn load_all(db: &IdbDatabase) -> Result<Vec<(String, Entry)>, I
     let values_request = store.get_all().map_err(|e| failed(&e))?;
     let keys = Array::from(&finished(&keys_request).await?);
     let values = Array::from(&finished(&values_request).await?);
-    Ok(keys
-        .iter()
-        .zip(values.iter())
-        .filter_map(|(k, v)| Some((k.as_string()?, entry_of(&v)?)))
-        .collect())
+    Ok(keys.iter().zip(values.iter()).filter_map(|(k, v)| Some((k.as_string()?, entry_of(&v)?))).collect())
 }
 
 /// Starts one transaction that applies `batch`. `done` is called with the outcome when the browser has

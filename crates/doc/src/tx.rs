@@ -1,13 +1,13 @@
 //! Transactions: edit the view, then write only the changed fields into Loro in one commit.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeSet, HashMap};
 
 use drafftink_scene::memory::MemoryTx;
 use drafftink_scene::{
-    ChangeKind, ChangeSet, Color, DocMeta, Element, ElementId, ElementKind, FileEntry, FileId, SceneRead, SceneTx,
-    StoreError, ZIndex,
+    Change, ChangeKind, ChangeSet, Color, DerivedIndex, DocMeta, Element, ElementId, ElementKind, FileEntry, FileId,
+    SceneRead, SceneTx, StoreError, ZIndex,
 };
-use loro::{CommitOptions, LoroValue};
+use loro::{CommitOptions, LoroMap, LoroValue};
 
 use crate::codec::{self, Flat};
 use crate::error::DocError;
@@ -27,8 +27,18 @@ pub struct LoroTx<'a> {
     touched_files: BTreeSet<FileId>,
     label: Option<String>,
     info: Option<UndoInfo>,
-    undoable: bool,
-    merge: bool,
+    history: History,
+}
+
+/// How a commit appears in the undo history.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum History {
+    /// Its own undo step.
+    Step,
+    /// Folded into the step below it.
+    MergeIntoPrevious,
+    /// Not in the history at all: syncs, but undo does not see it.
+    Hidden,
 }
 
 impl<'a> LoroTx<'a> {
@@ -40,8 +50,7 @@ impl<'a> LoroTx<'a> {
             touched_files: BTreeSet::new(),
             label: None,
             info: None,
-            undoable: true,
-            merge: false,
+            history: History::Step,
         }
     }
 
@@ -66,12 +75,15 @@ impl<'a> LoroTx<'a> {
     ///
     /// [`LoroStore::last_commit_merged`]: crate::LoroStore::last_commit_merged
     pub fn merge_with_previous(&mut self) {
-        self.merge = true;
+        // A commit that is not undoable has no step to fold into, whichever call came first.
+        if self.history == History::Step {
+            self.history = History::MergeIntoPrevious;
+        }
     }
 
     /// Makes this commit invisible to undo (loading a document, applying a migration). It still syncs.
     pub fn not_undoable(&mut self) {
-        self.undoable = false;
+        self.history = History::Hidden;
     }
 }
 
@@ -105,6 +117,12 @@ impl SceneRead for LoroTx<'_> {
     }
     fn z_neighbors(&self, id: &ElementId) -> (Option<ZIndex>, Option<ZIndex>) {
         self.inner.z_neighbors(id)
+    }
+    fn derived_index(&self) -> Option<&DerivedIndex> {
+        self.inner.derived_index()
+    }
+    fn version_stamp(&self) -> Option<u64> {
+        self.inner.version_stamp()
     }
 }
 
@@ -161,7 +179,7 @@ impl SceneTx for LoroTx<'_> {
     }
 
     fn commit(self) -> Result<ChangeSet, StoreError> {
-        let LoroTx { inner, core, touched, touched_files, label, info, undoable, merge } = self;
+        let LoroTx { inner, core, touched, touched_files, label, info, history } = self;
         if let Some(found) = core.blocked {
             return Err(DocError::NewerSchema { found, max: crate::schema::SCHEMA_VERSION }.into());
         }
@@ -191,7 +209,7 @@ impl SceneTx for LoroTx<'_> {
         let info = info.or_else(|| {
             Some(UndoInfo { label: label.clone().unwrap_or_else(|| "edit".to_owned()), ..UndoInfo::default() })
         });
-        let commit = Commit { cs: &cs, news: &news, meta: &meta, files: &files, label, info, undoable, merge };
+        let commit = Commit { cs: &cs, news: &news, meta: &meta, files: &files, label, info, history };
         let flag = std::rc::Rc::clone(&core.poisoned);
         let written = crate::store::guard(&flag, || core.write(&commit)).and_then(|r| r);
         if let Err(e) = written {
@@ -219,8 +237,7 @@ struct Commit<'a> {
     files: &'a [(FileId, Option<FileEntry>)],
     label: Option<String>,
     info: Option<UndoInfo>,
-    undoable: bool,
-    merge: bool,
+    history: History,
 }
 
 impl Core {
@@ -230,15 +247,16 @@ impl Core {
         let result = self.write_ops(c);
         // Always commit what was written, even after an error, so that the pending Loro transaction does not leak
         // into the next commit. The caller resyncs the view after an error.
-        let origin = if c.undoable { "local".to_owned() } else { format!("{SYSTEM_ORIGIN_PREFIX}local") };
+        let undoable = c.history != History::Hidden;
+        let origin = if undoable { "local".to_owned() } else { format!("{SYSTEM_ORIGIN_PREFIX}local") };
         let msg = c.label.as_deref().unwrap_or("edit");
-        let merge = c.undoable && c.merge;
+        let merge = c.history == History::MergeIntoPrevious;
         self.last_merged = false;
         self.commit_seq += 1;
         let seq = self.commit_seq;
         {
             let mut g = lock(&self.shared);
-            g.pending = if c.undoable {
+            g.pending = if undoable {
                 c.info.clone().map(|i| UndoInfo { seq, ..i }).as_ref().and_then(UndoInfo::to_loro)
             } else {
                 None
@@ -254,7 +272,7 @@ impl Core {
         lock(&self.shared).pending = None;
         result?;
         self.stats.commits += 1;
-        if c.undoable && self.doc.oplog_frontiers() != before {
+        if undoable && self.doc.oplog_frontiers() != before {
             self.note_merge(merge, seq, c.info.as_ref());
             self.marks.push_back(before);
             let cap = self.config.undo_depth.saturating_add(1).max(2);
@@ -305,53 +323,7 @@ impl Core {
                     else {
                         continue;
                     };
-                    let reset = ch.kind == ChangeKind::Added && self.invalid.contains(&ch.id);
-                    let map = match elements.ensure_mergeable_map(ch.id.as_str()) {
-                        Ok(m) => m,
-                        Err(_) => {
-                            // The key holds something that is not an element container (a hostile or foreign write).
-                            elements.delete(ch.id.as_str())?;
-                            elements.ensure_mergeable_map(ch.id.as_str())?
-                        }
-                    };
-                    let flat = codec::flatten(e, ch.fields)?;
-                    let mut stale: Vec<String> = Vec::new();
-                    map.for_each(|k, _| {
-                        let in_scope = reset || codec::group_of(k).intersects(ch.fields);
-                        if in_scope && !flat.contains_key(k) {
-                            stale.push(k.to_owned());
-                        }
-                    });
-                    for k in &stale {
-                        map.delete(k)?;
-                        self.stats.fields_written += 1;
-                    }
-                    for (k, v) in &flat {
-                        match v {
-                            Flat::Value(val) => {
-                                let same =
-                                    matches!(map.get(k), Some(loro::ValueOrContainer::Value(cur)) if cur == *val);
-                                if !same {
-                                    map.insert(k, val.clone())?;
-                                    self.stats.fields_written += 1;
-                                }
-                            }
-                            Flat::Text { content, runs } => {
-                                let t = match map.ensure_mergeable_text(k) {
-                                    Ok(t) => t,
-                                    Err(_) => {
-                                        map.delete(k)?;
-                                        map.ensure_mergeable_text(k)?
-                                    }
-                                };
-                                if text::write_text(&t, content, runs)? {
-                                    self.stats.fields_written += 1;
-                                }
-                            }
-                        }
-                    }
-                    self.stats.elements_written += 1;
-                    self.invalid.remove(&ch.id);
+                    self.write_element(&elements, ch, e)?;
                 }
             }
         }
@@ -361,17 +333,74 @@ impl Core {
             put_str(&m, META_BACKGROUND, &c.meta.background.to_hex(), "#ffffff")?;
         }
         if !c.cs.files.is_empty() {
-            let files = self.doc.get_map(ROOT_FILES);
-            for (id, entry) in c.files {
-                match entry {
-                    Some(f) => {
-                        let mut m = std::collections::HashMap::new();
-                        m.insert("mime".to_owned(), LoroValue::from(f.mime.as_str()));
-                        m.insert("bytes".to_owned(), LoroValue::from(f.bytes.to_vec()));
-                        files.insert(id.as_str(), LoroValue::from(m))?;
+            self.write_files(c.files)?;
+        }
+        Ok(())
+    }
+
+    /// Writes the fields of one added or updated element that differ from what Loro holds.
+    fn write_element(&mut self, elements: &LoroMap, ch: &Change, e: &Element) -> Result<(), DocError> {
+        let reset = ch.kind == ChangeKind::Added && self.invalid.contains(&ch.id);
+        let map = match elements.ensure_mergeable_map(ch.id.as_str()) {
+            Ok(m) => m,
+            Err(_) => {
+                // The key holds something that is not an element container (a hostile or foreign write).
+                elements.delete(ch.id.as_str())?;
+                elements.ensure_mergeable_map(ch.id.as_str())?
+            }
+        };
+        let flat = codec::flatten(e, ch.fields)?;
+        let mut stale: Vec<String> = Vec::new();
+        map.for_each(|k, _| {
+            let in_scope = reset || codec::group_of(k).intersects(ch.fields);
+            if in_scope && !flat.contains_key(k) {
+                stale.push(k.to_owned());
+            }
+        });
+        for k in &stale {
+            map.delete(k)?;
+            self.stats.fields_written += 1;
+        }
+        for (k, v) in &flat {
+            match v {
+                Flat::Value(val) => {
+                    let same = matches!(map.get(k), Some(loro::ValueOrContainer::Value(cur)) if cur == *val);
+                    if !same {
+                        map.insert(k, val.clone())?;
+                        self.stats.fields_written += 1;
                     }
-                    None => files.delete(id.as_str())?,
                 }
+                Flat::Text { content, runs } => {
+                    let t = match map.ensure_mergeable_text(k) {
+                        Ok(t) => t,
+                        Err(_) => {
+                            map.delete(k)?;
+                            map.ensure_mergeable_text(k)?
+                        }
+                    };
+                    if text::write_text(&t, content, runs)? {
+                        self.stats.fields_written += 1;
+                    }
+                }
+            }
+        }
+        self.stats.elements_written += 1;
+        self.invalid.remove(&ch.id);
+        Ok(())
+    }
+
+    fn write_files(&self, files: &[(FileId, Option<FileEntry>)]) -> Result<(), DocError> {
+        let map = self.doc.get_map(ROOT_FILES);
+        for (id, entry) in files {
+            match entry {
+                Some(f) => {
+                    let blob = HashMap::from([
+                        ("mime".to_owned(), LoroValue::from(f.mime.as_str())),
+                        ("bytes".to_owned(), LoroValue::from(f.bytes.to_vec())),
+                    ]);
+                    map.insert(id.as_str(), LoroValue::from(blob))?;
+                }
+                None => map.delete(id.as_str())?,
             }
         }
         Ok(())

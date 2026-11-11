@@ -11,7 +11,7 @@ use super::import::{Source, convert, fresh_element_id as fresh_element, fresh_gr
 use super::read::warn;
 use super::{Library, LibraryItem, parse_json};
 use crate::limits::MAX_LIBRARY_ITEMS;
-use crate::{ImportReport, IoError};
+use crate::{Expected, FormatName, ImportReport, IoError};
 
 /// Space on each side of an item in the grid, in world units.
 pub const GRID_CELL_PADDING: f64 = 24.0;
@@ -19,16 +19,16 @@ pub const GRID_CELL_PADDING: f64 = 24.0;
 pub const GRID_MAX_COLUMNS: usize = 10;
 
 pub(super) fn import(text: &str, ids: &mut dyn IdSource) -> Result<(Library, ImportReport), IoError> {
-    let v = parse_json(text, "excalidraw library")?;
+    let v = parse_json(text, FormatName::ExcalidrawLibrary)?;
     let Some(obj) = v.as_object() else {
         return Err(IoError::WrongFormat {
-            expected: "an Excalidraw library",
+            expected: Expected::ExcalidrawLibrary,
             hint: "the top level of a library file is a JSON object".to_owned(),
         });
     };
     if obj.get("type").and_then(Value::as_str) != Some("excalidrawlib") {
         return Err(IoError::WrongFormat {
-            expected: "an Excalidraw library",
+            expected: Expected::ExcalidrawLibrary,
             hint: "an Excalidraw library file says \"type\": \"excalidrawlib\". To open a drawing, use Open instead"
                 .to_owned(),
         });
@@ -67,7 +67,7 @@ pub(super) fn import(text: &str, ids: &mut dyn IdSource) -> Result<(Library, Imp
             });
             break;
         }
-        let conv = convert(Source { elements, files: None, prefix: &prefix }, ids, &mut rep);
+        let conv = convert(Source { elements, files: None, prefix: &prefix }, ids, &mut rep)?;
         if conv.elements.is_empty() {
             warn(&mut rep, || format!("{prefix}has nothing this app can import and is skipped"));
             continue;
@@ -221,7 +221,7 @@ pub(super) fn export(lib: &Library) -> Result<(String, ImportReport), IoError> {
         items.push(Value::Object(m));
     }
     let root = json!({"type": "excalidrawlib", "version": 2, "source": SOURCE, "libraryItems": items});
-    let text =
-        serde_json::to_string_pretty(&root).map_err(|e| IoError::invalid("excalidraw library", e.to_string()))?;
+    let text = serde_json::to_string_pretty(&root)
+        .map_err(|e| IoError::invalid(FormatName::ExcalidrawLibrary, e.to_string()))?;
     Ok((text, rep))
 }

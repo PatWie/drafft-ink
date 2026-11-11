@@ -478,3 +478,21 @@ proptest! {
 fn crate_finite(p: Point) -> bool {
     p.x.is_finite() && p.y.is_finite()
 }
+
+/// The shrunk input of a failure found by `hostile_shapes`: an ellipse of height 0 and width about
+/// 1e148 whose centre is the smallest normal double. A finite query point must give a finite distance.
+#[test]
+fn degenerate_ellipse_gives_a_finite_distance_regression() {
+    let frame = OrientedBox::new(
+        Point::new(2.2250738585072014e-308, 0.0),
+        Size::new(1.4546800786768307e148, 0.0),
+        -15.028060024101233,
+    );
+    let shape: Primitive = EllipseShape::new(frame).with_offset(0.0).into();
+    for q in [Point::new(0.0, 0.0), Point::new(3.0, -4.0), Point::new(1e148, 1e-3)] {
+        if let Some(n) = shape.nearest(q) {
+            assert!(n.distance.is_finite(), "distance {} for {q:?}", n.distance);
+            assert!(crate_finite(n.point), "nearest point {:?} for {q:?}", n.point);
+        }
+    }
+}

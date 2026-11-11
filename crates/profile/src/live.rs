@@ -42,25 +42,22 @@ pub fn set_frame_window(frames_kept: usize) {
 #[must_use = "a phase measures until it is dropped"]
 pub struct PhaseGuard {
     phase: Phase,
-    start_ns: u64,
+    /// When timing started; `None` while recording is off.
+    start_ns: Option<u64>,
     _span: Span,
 }
 
 /// Start timing `phase` of the current frame.
 #[inline]
 pub fn phase(phase: Phase) -> PhaseGuard {
-    if spans::enabled() {
-        PhaseGuard { phase, start_ns: now_ns(), _span: spans::span(phase.name()) }
-    } else {
-        PhaseGuard { phase, start_ns: u64::MAX, _span: spans::span(phase.name()) }
-    }
+    PhaseGuard { phase, start_ns: spans::enabled().then(now_ns), _span: spans::span(phase.name()) }
 }
 
 impl Drop for PhaseGuard {
     #[inline]
     fn drop(&mut self) {
-        if self.start_ns != u64::MAX {
-            let took = now_ns().saturating_sub(self.start_ns);
+        if let Some(start_ns) = self.start_ns {
+            let took = now_ns().saturating_sub(start_ns);
             frames().add_phase(self.phase, took);
         }
     }

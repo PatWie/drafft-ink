@@ -1,0 +1,55 @@
+{
+  "about": "Headline: group two shapes that are not neighbours in z-order; the members become contiguous, a click selects the whole group, entering the group lets one member be selected and moved alone, exiting selects the group again, and ungroup restores the loose members with the same ids and the same z-order.",
+  "steps": [
+    { "note": "Four filled shapes in a row, e1 to e4 from the back to the front. e1 and e3 get grouped; e2 sits between them.",
+      "execute": "element.create", "args": { "kind": "rectangle", "bounds": { "x": 0, "y": 0, "w": 100, "h": 60 }, "style": { "fill_color": "#ffcc00" } } },
+    { "execute": "element.create", "args": { "kind": "ellipse", "bounds": { "x": 200, "y": 0, "w": 100, "h": 60 }, "style": { "fill_color": "#ffcc00" } } },
+    { "execute": "element.create", "args": { "kind": "diamond", "bounds": { "x": 400, "y": 0, "w": 100, "h": 60 }, "style": { "fill_color": "#ffcc00" } } },
+    { "execute": "element.create", "args": { "kind": "rectangle", "bounds": { "x": 600, "y": 0, "w": 100, "h": 60 }, "style": { "fill_color": "#ffcc00" } } },
+    { "assert": "element.query", "args": { "fields": ["id", "z"] }, "save": { "z1": "$.items[0].z", "z2": "$.items[1].z", "z3": "$.items[2].z", "z4": "$.items[3].z" },
+      "expect": [ { "path": "$.items[0].id", "eq": "e1" }, { "path": "$.items[3].id", "eq": "e4" } ] },
+
+    { "execute": "group.create", "args": { "ids": ["e3"] }, "refused": "too_few", "text": "at least 2 elements" },
+    { "execute": "group.create", "args": { "ids": ["e1", "e3"] }, "save": { "g": "$.group" }, "expect": [ { "path": "$.group", "eq": "g1", "note": "The refused call before took no group id." }, { "path": "$.members", "eq": ["e1", "e3"] } ] },
+    { "execute": "group.create", "args": { "ids": ["e1", "e3"] }, "refused": "already_grouped", "text": "already form one group at this level" },
+    { "assert": "element.query", "args": { "fields": ["id", "group_ids"] }, "expect": [
+        { "path": "$.items[0].id", "eq": "e2", "note": "The element that sat between the members ends up below the group." },
+        { "path": "$.items[1].id", "eq": "e1" }, { "path": "$.items[2].id", "eq": "e3" }, { "path": "$.items[3].id", "eq": "e4" },
+        { "path": "$.items[1].group_ids", "eq": ["{{g}}"] }, { "path": "$.items[2].group_ids", "eq": ["{{g}}"] }, { "path": "$.items[0].group_ids", "eq": [] } ] },
+    { "assert": "selection.get", "expect": [ { "path": "$.groups", "eq": ["{{g}}"] }, { "path": "$.count", "eq": 2 } ], "note": "The new group is the selection." },
+
+    { "execute": "selection.clear" },
+    { "execute": "selection.select_at", "args": { "point": [50, 30] }, "expect": [ { "path": "$.selected", "eq": ["e1", "e3"] }, { "path": "$.groups", "eq": ["{{g}}"] } ], "note": "A click on a member selects the whole group." },
+    { "assert": "element.at", "args": { "point": [50, 30] }, "expect": [ { "path": "$.hits[0].group", "eq": "{{g}}" }, { "path": "$.hits[0].members", "eq": ["e1", "e3"] } ] },
+    { "assert": "element.at", "args": { "point": [50, 30], "deep": true }, "expect": [ { "path": "$.hits[0].id", "eq": "e1" } ], "note": "deep=true hits the member itself." },
+
+    { "execute": "group.enter", "args": { "select": "e3" }, "expect": [ { "path": "$.editing_group", "eq": "{{g}}" }, { "path": "$.selected", "eq": ["e3"] } ] },
+    { "assert": "selection.get", "expect": [ { "path": "$.editing_group", "eq": "{{g}}" }, { "path": "$.ids", "eq": ["e3"] } ] },
+    { "execute": "element.move", "args": { "dx": 0, "dy": 100 }, "expect": [ { "path": "$.dy", "eq": 100 } ] },
+    { "assert": "element.query", "args": { "filter": { "ids": ["e1", "e3"] }, "fields": ["id", "bounds"] }, "expect": [
+        { "path": "$.items[0].bounds.y", "eq": 0, "note": "e1 stayed." }, { "path": "$.items[1].bounds.y", "eq": 100, "note": "Only e3 moved." } ] },
+    { "execute": "group.exit", "expect": [ { "path": "$.editing_group", "eq": null } ] },
+    { "assert": "selection.get", "expect": [ { "path": "$.groups", "eq": ["{{g}}"] }, { "path": "$.ids", "eq": ["e1", "e3"] } ], "note": "Leaving selects the group again." },
+    { "execute": "group.exit", "refused": "not_in_group", "text": "not inside a group" },
+
+    { "execute": "group.set_name", "args": { "name": "pair" }, "expect": [ { "path": "$.name", "eq": "pair" } ] },
+    { "execute": "group.ungroup", "expect": [ { "path": "$.removed", "eq": ["{{g}}"] }, { "path": "$.members", "eq": ["e1", "e3"] } ] },
+    { "assert": "element.query", "args": { "fields": ["id", "group_ids", "z"] }, "expect": [
+        { "path": "$.total", "eq": 4 },
+        { "path": "$.items[0].id", "eq": "e2" }, { "path": "$.items[1].id", "eq": "e1" }, { "path": "$.items[2].id", "eq": "e3" }, { "path": "$.items[3].id", "eq": "e4" },
+        { "path": "$.items[1].group_ids", "eq": [] }, { "path": "$.items[2].group_ids", "eq": [] } ],
+      "note": "Ids are unchanged; the order is the one grouping made. Ungroup does not reorder." },
+    { "execute": "group.ungroup", "refused": "no_group", "text": "No group is selected" },
+
+    { "undo": 1 },
+    { "assert": "selection.get", "expect": [ { "path": "$.groups", "eq": ["{{g}}"] } ], "note": "Undo of ungroup brings the group back and selects it." },
+    { "undo": 1 },
+    { "assert": "element.query", "args": { "fields": ["id", "group_ids"] }, "expect": [ { "path": "$.items[1].group_ids", "eq": ["{{g}}"] } ], "note": "Undo of the name leaves the group; the one before it is the move." },
+    { "undo": 2 },
+    { "assert": "element.query", "args": { "fields": ["id", "group_ids"] }, "expect": [
+        { "path": "$.items[0].id", "eq": "e1" }, { "path": "$.items[1].id", "eq": "e2" }, { "path": "$.items[2].id", "eq": "e3" }, { "path": "$.items[3].id", "eq": "e4" },
+        { "path": "$.items[0].group_ids", "eq": [] } ], "note": "Undoing the move and the grouping returns the original order." },
+    { "redo": 2 },
+    { "assert": "element.query", "args": { "filter": { "ids": ["e3"] }, "fields": ["bounds"] }, "expect": [ { "path": "$.items[0].bounds.y", "eq": 100 } ] }
+  ]
+}

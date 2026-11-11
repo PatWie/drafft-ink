@@ -1,0 +1,112 @@
+{
+  "about": "The old app's Loro snapshot crdt/text_char_colors.loro opens through doc.open as a clean, history-free document with the same elements, kinds and groups as the JSON document it was built from (text_char_colors.json); the io fixture check proves the two equal, this proves the command path.",
+  "steps": [
+    {
+      "note": "Numbers are those of legacy_text_char_colors_loads.json: the snapshot was written from text_char_colors.json (crdt/text_char_colors.facts.json, built_from). The old CRDT lost only the closed flag of lines and freehand strokes, which no count here depends on.",
+      "harness": "stage_fixture",
+      "args": {
+        "path": "legacy/crdt/text_char_colors.loro"
+      }
+    },
+    {
+      "execute": "doc.open",
+      "args": {
+        "source": {
+          "path": "fixtures/legacy/crdt/text_char_colors.loro"
+        }
+      },
+      "expect": [
+        {
+          "path": "$.elements",
+          "eq": 8
+        },
+        {
+          "path": "$.format",
+          "eq": "drafftink"
+        },
+        {
+          "path": "$.mode",
+          "eq": "replace"
+        },
+        {
+          "path": "$.name",
+          "eq": "text_char_colors"
+        },
+        {
+          "path": "$.warnings",
+          "len": 0
+        }
+      ]
+    },
+    {
+      "assert": "doc.inspect",
+      "expect": [
+        {
+          "path": "$.elements",
+          "eq": 8
+        },
+        {
+          "path": "$.kinds",
+          "eq": {
+            "text": 8
+          }
+        },
+        {
+          "path": "$.groups",
+          "eq": 0
+        }
+      ],
+      "save": {
+        "bx": "$.bounds.x",
+        "by": "$.bounds.y",
+        "bw": "$.bounds.w",
+        "bh": "$.bounds.h"
+      },
+      "note": "doc.inspect summary: element count, count per kind and group count."
+    },
+    {
+      "assert": "engine.state",
+      "expect": [
+        {
+          "path": "$.dirty",
+          "eq": false
+        },
+        {
+          "path": "$.selection.count",
+          "eq": 0
+        }
+      ]
+    },
+    {
+      "assert": "history.state",
+      "expect": [
+        {
+          "path": "$.can_undo",
+          "eq": false
+        }
+      ]
+    },
+    {
+      "assert": "view.get",
+      "expect": [
+        {
+          "path": "$.visible.x",
+          "le": "{{bx}}"
+        },
+        {
+          "path": "$.visible.y",
+          "le": "{{by}}"
+        },
+        {
+          "path": "$.visible.w",
+          "ge": "{{bw}}"
+        },
+        {
+          "path": "$.visible.h",
+          "ge": "{{bh}}"
+        }
+      ],
+      "note": "doc.open fits the camera to the content."
+    }
+  ]
+}

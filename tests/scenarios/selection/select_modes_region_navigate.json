@@ -1,0 +1,48 @@
+{
+  "about": "Selection by id, filter, point and region follows the documented modes (replace, add, remove, toggle), skips locked elements with a note, follows connectors with navigate, and never adds an undo step.",
+  "steps": [
+    { "execute": "element.create", "args": { "kind": "rectangle", "bounds": { "x": 0, "y": 0, "w": 100, "h": 60 }, "style": { "fill_color": "#ffcc00" } } },
+    { "execute": "element.create", "args": { "kind": "ellipse", "bounds": { "x": 300, "y": 0, "w": 100, "h": 60 }, "style": { "fill_color": "#ffcc00" } } },
+    { "execute": "element.create", "args": { "kind": "diamond", "bounds": { "x": 600, "y": 0, "w": 100, "h": 60 }, "style": { "fill_color": "#ffcc00" } } },
+    { "execute": "element.connect", "args": { "from": "e1", "to": "e2" }, "expect": [ { "path": "$.id", "eq": "e4" } ] },
+    { "assert": "history.state", "save": { "depth": "$.undo_depth" } },
+
+    { "execute": "selection.clear" },
+    { "assert": "selection.get", "expect": [ { "path": "$.count", "eq": 0 }, { "path": "$.bounds", "eq": null } ] },
+    { "execute": "selection.select", "args": { "ids": ["e1"] }, "expect": [ { "path": "$.selected", "eq": ["e1"] } ] },
+    { "execute": "selection.select", "args": { "ids": ["e2"], "mode": "add" }, "expect": [ { "path": "$.selected", "len": 2 } ] },
+    { "execute": "selection.select", "args": { "ids": ["e1"], "mode": "toggle" }, "expect": [ { "path": "$.selected", "eq": ["e2"] } ], "note": "Toggle removes a selected target." },
+    { "execute": "selection.select", "args": { "ids": ["e3"], "mode": "toggle" }, "expect": [ { "path": "$.selected", "len": 2 } ] },
+    { "execute": "selection.select", "args": { "ids": ["e2"], "mode": "remove" }, "expect": [ { "path": "$.selected", "eq": ["e3"] } ] },
+    { "execute": "selection.select", "args": { "filter": { "kind": "ellipse" } }, "expect": [ { "path": "$.selected", "eq": ["e2"] } ] },
+    { "execute": "selection.select", "args": { "ids": ["e1"], "filter": { "kind": "ellipse" } }, "refused": "bad_args", "text": "exactly one of `ids`, `group` or `filter`" },
+    { "execute": "selection.select", "args": { "ids": [] }, "refused": "bad_args" },
+    { "execute": "selection.select", "args": { "ids": ["nope"] }, "refused": "not_found", "text": "nope" },
+    { "execute": "selection.select", "args": { "filter": { "text": "nothing matches this" } }, "refused": "not_found", "text": ["No element matches the filter (text: nothing matches this)", "Loosen the filter"] },
+
+    { "execute": "selection.all" },
+    { "assert": "selection.get", "args": { "detail": "ids" }, "expect": [ { "path": "$.count", "eq": 4, "note": "Three shapes and the arrow." } ] },
+    { "execute": "selection.clear" },
+    { "execute": "selection.select_at", "args": { "point": [650, 30] }, "expect": [ { "path": "$.selected", "eq": ["e3"] } ] },
+    { "execute": "selection.select_at", "args": { "point": [350, 30], "mode": "add" }, "expect": [ { "path": "$.selected", "len": 2 } ] },
+    { "execute": "selection.select_at", "args": { "point": [500, 400] }, "expect": [ { "path": "$.selected", "eq": [] } ], "note": "A click on empty canvas clears." },
+    { "execute": "selection.select_region", "args": { "rect": { "x": -10, "y": -10, "w": 105, "h": 90 } }, "expect": [ { "path": "$.selected", "eq": ["e1"] } ] },
+    { "execute": "selection.select_region", "args": { "rect": { "x": -10, "y": -10, "w": 450, "h": 90 }, "contain": "contain" }, "expect": [ { "path": "$.selected", "contains": "e2" } ] },
+
+    { "execute": "element.lock", "args": { "ids": ["e3"] } },
+    { "execute": "selection.select", "args": { "ids": ["e3"] }, "expect": [ { "path": "$.skipped_locked", "eq": ["e3"] } ], "note": "A locked element is skipped and named." },
+    { "execute": "selection.select", "args": { "ids": ["e3"], "include_locked": true }, "expect": [ { "path": "$.selected", "eq": ["e3"] } ] },
+    { "execute": "element.unlock_all", "args": { "select": false } },
+
+    { "execute": "selection.select", "args": { "ids": ["e1"] } },
+    { "execute": "selection.navigate", "args": { "direction": "right" }, "expect": [ { "path": "$.selected", "eq": ["e2"] } ], "note": "e1 is connected to e2 on its right." },
+    { "execute": "selection.navigate", "args": { "direction": "up" }, "refused": "nothing_to_do", "text": "has no connected element to the up" },
+    { "execute": "selection.select", "args": { "ids": ["e1", "e2"] } },
+    { "execute": "selection.navigate", "args": { "direction": "right" }, "refused": "needs_single" },
+
+    { "assert": "history.state", "expect": [ { "path": "$.undo_depth", "near": "{{depth}}", "plus": 2, "tol": 0, "note": "Dozens of selection commands added no step. Only lock and unlock did: two more than at the first reading." } ] },
+    { "execute": "selection.select", "args": { "ids": ["e2"] } },
+    { "undo": 1 },
+    { "assert": "element.query", "args": { "filter": { "locked": true }, "fields": ["id"] }, "expect": [ { "path": "$.total", "eq": 1 }, { "path": "$.items[0].id", "eq": "e3" } ], "note": "The selection change added no step, so the undo reverted the unlock and e3 is locked again." }
+  ]
+}

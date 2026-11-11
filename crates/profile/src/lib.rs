@@ -7,7 +7,7 @@
 //! | Mark a frame | [`begin_frame`], [`end_frame`] |
 //! | Say why a redraw happens | [`redraw`] with a [`RedrawReason`] |
 //! | Count work | [`count`], [`inc`], [`set_gauge`] with [`Counter`], [`Gauge`] |
-//! | Assert on work in a test | [`WorkScope`] (no clock, per thread) |
+//! | Assert on work in a test | [`WorkScope`] (no clock, per thread), [`snapshot_thread`] |
 //! | Export | [`snapshot`] -> [`PerfStats`] JSON, [`chrome_trace_json`] |
 //! | Gate | [`Budgets`], [`ScenarioReport`] |
 //!
@@ -15,6 +15,7 @@
 //! `enabled` cargo feature (on by default) is compiled in. Counters and redraw reasons are
 //! always on. `docs/performance.md` is the full guide.
 #![cfg_attr(test, allow(clippy::unwrap_used, clippy::expect_used, clippy::panic))]
+#![warn(missing_docs)]
 
 mod clock;
 mod frame;
@@ -34,14 +35,16 @@ pub use frame::{
 pub use live::{PhaseGuard, begin_frame, end_frame, in_phase, phase, reset, set_frame_window, snapshot};
 pub use names::{Counter, Gauge, Phase, RedrawReason};
 pub use report::{
-    BudgetError, Budgets, Limit, REPORT_SCHEMA, ScenarioReport, Violation, is_deterministic, scenario_key,
+    BudgetError, Budgets, Limit, PERF_OUT_ENV, REPORT_SCHEMA, ScenarioReport, Violation, is_deterministic, scenario_key,
 };
 pub use spans::{
     COMPILED, MAX_DEPTH, MAX_NAMES, OTHER, Span, TRACE_CAPACITY, enabled, flush_thread, scope, set_enabled, span,
 };
-pub use stats::{MAX_SPAN_ROWS, PerfStats, RedrawEvent, RedrawStats, SCHEMA_VERSION, STATS_SCHEMA, SpanStat};
+pub use stats::{
+    DocumentError, MAX_SPAN_ROWS, PerfStats, RedrawEvent, RedrawStats, SCHEMA_VERSION, STATS_SCHEMA, SpanStat,
+};
 pub use trace::{chrome_trace, chrome_trace_json, write_chrome_trace};
-pub use work::{MAX_NAMED, RECENT_REDRAWS, WorkScope, count, count_named, inc, redraw, set_gauge};
+pub use work::{MAX_NAMED, RECENT_REDRAWS, WorkScope, count, count_named, inc, redraw, set_gauge, snapshot_thread};
 
 /// Turn recording on when the environment variable `name` is `1`, `true`, `on` or `yes`.
 /// Returns whether it is on. Not available in the browser, which has no environment; the web

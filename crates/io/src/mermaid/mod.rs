@@ -71,7 +71,7 @@ mod types;
 
 pub use types::*;
 
-use crate::error::IoError;
+use crate::error::{Expected, FormatName, IoError};
 use crate::limits::{MAX_DIAGRAM_LINES, MAX_INPUT_BYTES};
 
 /// Longest label kept, in chars. Longer text is cut.
@@ -85,8 +85,6 @@ pub const MAX_ID_CHARS: usize = 1_000;
 /// product is copied to every edge).
 pub const MAX_TOTAL_TEXT_BYTES: usize = 64 * 1024 * 1024;
 
-pub(crate) const FORMAT: &str = "mermaid";
-const SUPPORTED: &str = "a Mermaid flowchart or sequence diagram";
 const HINT: &str = "only flowcharts (graph, flowchart) and sequenceDiagram can be imported";
 
 /// Parses Mermaid text of a supported type.
@@ -112,7 +110,7 @@ pub fn parse_flowchart(text: &str) -> Result<MermaidGraph, IoError> {
     match p.kind {
         Kind::Flowchart => flowchart::parse(&p),
         Kind::Sequence => Err(IoError::WrongFormat {
-            expected: "a Mermaid flowchart",
+            expected: Expected::MermaidFlowchart,
             hint: "this is a sequenceDiagram; use parse or parse_sequence".to_string(),
         }),
     }
@@ -127,7 +125,7 @@ pub fn parse_sequence(text: &str) -> Result<SequenceDiagram, IoError> {
     match p.kind {
         Kind::Sequence => sequence::parse(&p),
         Kind::Flowchart => Err(IoError::WrongFormat {
-            expected: "a Mermaid sequence diagram",
+            expected: Expected::MermaidSequence,
             hint: "this is a flowchart; use parse or parse_flowchart".to_string(),
         }),
     }
@@ -213,7 +211,7 @@ fn prepare(text: &str) -> Result<Prepared<'_>, IoError> {
         lines.push(line);
     }
     let Some(header) = header else {
-        return Err(IoError::parse(FORMAT, "the text is empty"));
+        return Err(IoError::parse(FormatName::Mermaid, "the text is empty"));
     };
     let word_end = header.find(|c: char| c.is_whitespace() || c == ';').unwrap_or(header.len());
     let word = header.get(..word_end).unwrap_or("");
@@ -223,11 +221,11 @@ fn prepare(text: &str) -> Result<Prepared<'_>, IoError> {
         "sequenceDiagram" => Kind::Sequence,
         _ => {
             let hint = if looks_like_type(word) {
-                format!("this is a {word} diagram; {HINT}")
+                format!("the diagram type `{word}` is not supported; {HINT}")
             } else {
                 format!("the text does not start with a Mermaid diagram type; {HINT}")
             };
-            return Err(IoError::WrongFormat { expected: SUPPORTED, hint });
+            return Err(IoError::WrongFormat { expected: Expected::MermaidAny, hint });
         }
     };
     Ok(Prepared { kind, header_rest, lines })
@@ -280,7 +278,7 @@ fn skip_front_matter(all: &[&str], start: &mut usize, end: usize) -> Result<(), 
         }
         i += 1;
     }
-    Err(IoError::parse(FORMAT, "the front matter starts with --- but is never closed"))
+    Err(IoError::parse(FormatName::Mermaid, "the front matter starts with --- but is never closed"))
 }
 
 /// Pushes a warning unless the cap is reached.

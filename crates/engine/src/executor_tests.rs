@@ -181,8 +181,11 @@ fn forget(s: &mut Session, a: AddArgs) -> Result<Value, Refusal> {
     Ok(json!({}))
 }
 
+/// A draft becomes a rectangle when committed; the commit of an edit with nothing typed changes nothing.
 fn end_text(s: &mut Session, _: Value) -> Result<Value, Refusal> {
-    insert_rect(s, 99.0)?;
+    if s.text_edit.as_ref().is_some_and(|t| t.draft) {
+        insert_rect(s, 99.0)?;
+    }
     s.text_edit = None;
     Ok(json!({}))
 }
@@ -520,6 +523,35 @@ fn a_commit_gate_commits_the_text_edit_first_as_its_own_step() {
 }
 
 #[test]
+fn a_refused_command_leaves_the_running_text_edit_alone() {
+    let (mut s, _) = test_session();
+    s.text_edit = Some(TextEdit { element: None, draft: false });
+    let before = s.fingerprint();
+    let r = refused(&mut s, "t.add_fail", json!({}));
+    assert_eq!(r.code, "nothing_to_do");
+    assert!(s.text_edit.is_some(), "a refusal must not end the text edit");
+    assert_eq!(s.fingerprint(), before);
+    let ids: Vec<&str> = s.ring().iter().map(|e| e.id.as_str()).collect();
+    assert_eq!(ids, ["t.add_fail"], "the commit that was taken back leaves no ring entry");
+    // The same call, refused for a bad argument before the handler runs.
+    let r = refused(&mut s, "t.add", json!({"no_such_key": 1}));
+    assert_eq!(r.code, "bad_args");
+    assert!(s.text_edit.is_some());
+    assert_eq!(s.fingerprint(), before);
+}
+
+#[test]
+fn a_commit_that_changed_the_document_stays_when_the_command_then_refuses() {
+    let (mut s, _) = test_session();
+    s.text_edit = Some(TextEdit { element: None, draft: true });
+    refused(&mut s, "t.add_fail", json!({}));
+    assert!(s.text_edit.is_none(), "the typed content was committed, so the edit is over");
+    assert_eq!(live_elements(&s), 1, "the committed draft is a step of its own");
+    let ids: Vec<&str> = s.ring().iter().map(|e| e.id.as_str()).collect();
+    assert_eq!(ids, ["text.edit_end", "t.add_fail"]);
+}
+
+#[test]
 fn coalesce_merges_repeats_on_the_same_target_within_the_window() {
     let (mut s, fakes) = test_session();
     let id = first_created(&ok(&mut s, "t.add", json!({})));
@@ -631,7 +663,7 @@ fn a_collaborators_edit_between_repeats_keeps_the_steps_apart() {
         &crate::store::StepMeta { label: "Lock", undoable: true, before: &o, after: &o, depth: 50, coalesce: None },
     )
     .unwrap();
-    let bytes = peer.replicated().export_updates_since(&s.tab().doc.replicated().version_vector()).unwrap();
+    let bytes = peer.replicated().export_updates_since(&s.tab().doc.replicated().version_vector().unwrap()).unwrap();
     let tab = s.tab().id;
     s.apply_remote(tab, &bytes).unwrap();
     ok(&mut s, "t.nudge", json!({"id": a}));
@@ -1103,4 +1135,30 @@ fn the_typed_path_builds_no_json_per_frame() {
     assert_eq!(s.gesture_update(gid, &AddArgs { x: 1.0 }).unwrap_err().code, "internal");
     assert!(s.gesture_running());
     s.gesture_cancel(Some(gid)).unwrap();
+}
+
+#[test]
+fn query_runs_a_read_without_a_ring_entry_and_refuses_a_command_that_changes_things() {
+    let mut s = crate::testing::headless_session();
+    let before = s.ring().iter().count();
+    let v = s.query("view.get", json!({})).unwrap();
+    assert!(v.get("zoom").is_some(), "{v}");
+    assert_eq!(s.ring().iter().count(), before, "a query leaves no ring entry");
+    // `execute` of the same read does record it.
+    s.execute("view.get", json!({})).unwrap();
+    assert_eq!(s.ring().iter().count(), before + 1);
+    // A command that changes things is not a query. It is refused and nothing runs.
+    let fingerprint = s.fingerprint();
+    let r = s.query("view.set", json!({"zoom": 2})).unwrap_err();
+    assert_eq!(r.code, "not_a_query");
+    assert!(r.message.contains("`view.set` changes things"), "{}", r.message);
+    assert_eq!(s.fingerprint(), fingerprint);
+    // A refusal of the read itself is still recorded, so a bad call can be found afterwards.
+    let n = s.ring().iter().count();
+    assert_eq!(s.query("view.get", json!({"nope": 1})).unwrap_err().code, "bad_args");
+    assert_eq!(s.ring().iter().count(), n + 1);
+    assert_eq!(s.query("no.such", json!({})).unwrap_err().code, "unknown_command");
+    // After a query the next execute records again.
+    s.execute("view.get", json!({})).unwrap();
+    assert_eq!(s.ring().iter().count(), n + 3);
 }

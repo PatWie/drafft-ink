@@ -1,0 +1,36 @@
+{
+  "about": "Locking refuses every edit with the id of the locked element, unlock_all frees it, names are unique and checked, and a label can be added, changed and removed; all of it undoes.",
+  "steps": [
+    { "execute": "element.create", "args": { "kind": "rectangle", "bounds": { "x": 0, "y": 0, "w": 100, "h": 60 } } },
+    { "execute": "element.create", "args": { "kind": "ellipse", "bounds": { "x": 300, "y": 100, "w": 100, "h": 60 } } },
+
+    { "execute": "element.lock", "args": { "ids": ["e1"] }, "expect": [ { "path": "$.locked", "eq": true } ] },
+    { "execute": "element.move", "args": { "ids": ["e1"], "dx": 1 }, "refused": "locked", "text": ["`e1` is locked", "element.unlock_all"] },
+    { "execute": "element.delete", "args": { "ids": ["e1", "e2"] }, "refused": "locked", "text": "`e1`" },
+    { "assert": "element.query", "expect": [ { "path": "$.total", "eq": 2 } ], "note": "The refusal is all or nothing: e2 is still there." },
+    { "execute": "element.unlock_all", "expect": [ { "path": "$.ids", "eq": ["e1"] } ] },
+    { "execute": "element.unlock_all", "refused": "nothing_to_do", "text": "no element is locked" },
+    { "execute": "element.move", "args": { "ids": ["e1"], "dx": 1 }, "expect": [ { "path": "$.dx", "eq": 1 } ] },
+
+    { "execute": "element.set_name", "args": { "id": "e1", "name": "box" }, "expect": [ { "path": "$.name", "eq": "box" } ] },
+    { "execute": "element.set_name", "args": { "id": "e2", "name": "box" }, "refused": "name_taken", "text": ["already used by element `e1`", "@box"] },
+    { "execute": "element.set_name", "args": { "id": "e2", "name": "@x" }, "refused": "bad_name", "text": "must not start with `@` or `$`" },
+    { "execute": "element.set_name", "args": { "id": "nope", "name": "x" }, "refused": "not_found" },
+    { "execute": "element.set_name", "args": { "id": "e1", "name": null } },
+    { "execute": "element.set_name", "args": { "id": "e2", "name": "box" }, "note": "Clearing e1's name made it free." },
+
+    { "execute": "element.relabel", "args": { "id": "e1", "text": "Label" }, "expect": [ { "path": "$.action", "eq": "created" }, { "path": "$.label", "eq": "e3" } ] },
+    { "assert": "element.query", "args": { "filter": { "ids": ["e1"] }, "fields": ["id", "text", "bound_text"] }, "expect": [ { "path": "$.items[0].text", "eq": "Label" }, { "path": "$.items[0].bound_text", "eq": "e3" } ] },
+    { "execute": "element.relabel", "args": { "id": "e1", "text": "Other" }, "expect": [ { "path": "$.action", "ne": "created" } ] },
+    { "execute": "element.create", "args": { "kind": "text", "text": "free", "at": [0, 300] }, "expect": [ { "path": "$.id", "eq": "e4" } ] },
+    { "execute": "element.relabel", "args": { "id": "e4", "text": "" }, "refused": "empty_text", "text": "Delete it with `element.delete`" },
+    { "execute": "element.relabel", "args": { "id": "e4", "text": "changed" }, "note": "On a free text element relabel replaces the content." },
+    { "execute": "element.relabel", "args": { "id": "e1", "text": "" }, "expect": [ { "path": "$.action", "eq": "removed" }, { "path": "$.deleted", "eq": ["e3"] } ] },
+    { "undo": 1 },
+    { "assert": "element.query", "args": { "filter": { "ids": ["e1"] }, "fields": ["text"] }, "expect": [ { "path": "$.items[0].text", "eq": "Other" } ], "note": "Undo restores the label." },
+    { "execute": "element.relabel", "args": { "id": "e3", "text": "" }, "expect": [ { "path": "$.action", "eq": "removed" }, { "path": "$.deleted", "eq": ["e3"] } ],
+      "note": "A bound label given as id counts as its container: empty text removes it, as with text.set. Only free text refuses empty_text (e4 above)." },
+    { "assert": "element.query", "args": { "filter": { "ids": ["e1"] }, "fields": ["bound_text"] }, "expect": [ { "path": "$.items[0].bound_text", "eq": null } ] },
+    { "execute": "element.relabel", "args": { "id": "nope", "text": "L" }, "refused": "not_found" }
+  ]
+}

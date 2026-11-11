@@ -16,11 +16,11 @@ mod route;
 mod segments;
 
 use drafftink_geom::binding::{BASE_BINDING_GAP, BindTarget, Heading, max_binding_distance};
+use drafftink_geom::kurbo::{BezPath, Point, Vec2};
 use drafftink_scene::{
     BindMode, Binding, Element, ElementId, ElementKind, FixedSegment, LinearData, PathType, SceneRead, SceneTx,
     StoreError,
 };
-use kurbo::{BezPath, Point, Vec2};
 
 pub use route::{
     BASE_PADDING, Bounds, CORNER_RADIUS, DEDUP_THRESHOLD, ElbowEnd, ElbowError, ElbowTarget, RouteOpts, heading_of_end,
@@ -81,7 +81,7 @@ pub(crate) fn path_of(e: &Element, d: &LinearData, world: &[Point]) -> ElbowPath
 
 /// Writes a route into an element: points, pins and stub flags. Elbow arrows are never rotated.
 pub(crate) fn write_path(e: &mut Element, path: &ElbowPath) -> bool {
-    if !linear::set_world_points(e, &path.points, true) {
+    if !linear::set_world_points(e, &path.points, linear::Turn::Upright) {
         return false;
     }
     let (x, y) = (e.transform.x, e.transform.y);
@@ -138,6 +138,22 @@ pub(crate) fn solve_path<R: SceneRead>(
         return Ok(Some(ElbowPath::free(route(&s, &en, opts)?)));
     }
     update_ends(&path, &s, &en, opts).map(Some)
+}
+
+/// A copy of `e` with its elbow route solved against `scene`, for a preview of an arrow that is not in the
+/// document yet (bound ends sit at their bindings, free ends where the points are). Nothing is written. An
+/// element that is not an elbow line or arrow comes back unchanged.
+pub fn routed_copy<R: SceneRead>(scene: &R, e: &Element, opts: RouteOpts) -> Result<Element, ElbowEditError> {
+    let mut out = e.clone();
+    if e.linear_data().is_none_or(|d| d.path != PathType::Elbow) {
+        return Ok(out);
+    }
+    if let Some(path) = solve_path(scene, e, None, opts, true)?
+        && !write_path(&mut out, &path)
+    {
+        return Err(ElbowEditError::Route(ElbowError::NotFinite));
+    }
+    Ok(out)
 }
 
 fn commit<T: SceneTx>(tx: &mut T, id: &ElementId, e: Element) -> Result<(), StoreError> {
@@ -234,12 +250,6 @@ pub fn release_segment_of<T: SceneTx>(
     opts: RouteOpts,
 ) -> Result<(), ElbowEditError> {
     with_ends(tx, id, |path, s, e| release_segment(path, s, e, index, opts))
-}
-
-/// Cleans up the stored route of an elbow arrow, as after loading a file or an undo: merges collinear legs,
-/// drops legs under one unit and the pins on them, and routes again when no pin is left.
-pub fn renormalize_of<T: SceneTx>(tx: &mut T, id: &ElementId, opts: RouteOpts) -> Result<(), ElbowEditError> {
-    with_ends(tx, id, |path, s, e| renormalize(path, s, e, opts))
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -446,7 +456,10 @@ mod tests {
         let p = rounded_path(&pts, 16.0);
         // corner = min(16, 10, 50) = 10: the curve starts 10 before the corner
         let els: Vec<_> = p.elements().to_vec();
-        assert!(matches!(els[1], kurbo::PathEl::LineTo(q) if (q - Point::new(10.0, 0.0)).hypot() < 1e-9), "{els:?}");
+        assert!(
+            matches!(els[1], drafftink_geom::kurbo::PathEl::LineTo(q) if (q - Point::new(10.0, 0.0)).hypot() < 1e-9),
+            "{els:?}"
+        );
     }
 
     #[test]

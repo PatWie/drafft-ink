@@ -66,7 +66,7 @@ pub(crate) fn face_for(family: &FontFamily, weight: FontWeight, italic: bool) ->
         (FontFamily::GelPenSerif, FontWeight::Regular) => "GelPenSerif",
         (FontFamily::GelPenSerif, FontWeight::Heavy) => "GelPenSerifHeavy",
         (FontFamily::VanillaExtract, _) => "Vanilla Extract",
-        (FontFamily::NotoSans, _) => "Noto Sans",
+        (FontFamily::NotoSans, _) => FALLBACK_FAMILY,
         (FontFamily::Custom(name), _) => name.as_str(),
     };
     let bold = matches!(family, FontFamily::NotoSans | FontFamily::Custom(_)) && weight == FontWeight::Heavy;

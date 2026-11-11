@@ -1,5 +1,7 @@
 target/
 /dist/
+/dist-release/
 node_modules/
 *.log
 crates/gpu/web/pkg/
+packages/*/dist/

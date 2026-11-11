@@ -1,15 +1,16 @@
 //! `layout_apply`: re-layout of existing elements, arrows and labels follow.
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
+use drafftink_edit::TargetError;
 use drafftink_edit::layout::{
     Algorithm, ApplyError, ApplyOpts, CreateOpts, DiagramResult, DiagramSpec, Direction, LayoutAnchor, LayoutOpts,
     diagram_create, layout_apply,
 };
 use drafftink_edit::text_bind::MonospaceMeasure;
+use drafftink_geom::kurbo::Point;
 use drafftink_scene::{
     Element, ElementId, ElementKind, Kind, MemoryStore, SceneRead, SceneStore, SceneTx, SeqIds, validate_scene,
 };
-use kurbo::Point;
 
 fn build(json: &str, origin: Point) -> (MemoryStore, DiagramResult) {
     let spec: DiagramSpec = serde_json::from_str(json).unwrap();
@@ -150,18 +151,16 @@ fn refusals() {
     let b = r.nodes["b"].clone();
     let err = apply(&mut s, std::slice::from_ref(&a), &layered(Direction::Down)).unwrap_err();
     assert_eq!(err, ApplyError::TooFew(1));
-    assert_eq!(err.code(), "too_few");
     let missing = ElementId::new("zzz").unwrap();
     assert_eq!(
         apply(&mut s, &[a.clone(), missing.clone()], &layered(Direction::Down)).unwrap_err(),
-        ApplyError::Missing(missing)
+        ApplyError::Target(TargetError::NotFound(missing))
     );
     let mut tx = s.begin();
     tx.update(&b, |e| e.locked = true).unwrap();
     tx.commit().unwrap();
     let err = apply(&mut s, &[a.clone(), b.clone()], &layered(Direction::Down)).unwrap_err();
-    assert_eq!(err, ApplyError::Locked(b.clone()));
-    assert_eq!(err.code(), "locked");
+    assert_eq!(err, ApplyError::Target(TargetError::Locked(vec![b.clone()])));
     // Tree layout on a diamond-shaped graph: the node with two parents is named.
     let (mut s2, r2) = build(
         r#"{"nodes":[{"id":"r"},{"id":"x"},{"id":"y"},{"id":"z"}],"edges":[{"from":"r","to":"x"},{"from":"r","to":"y"},{"from":"x","to":"z"},{"from":"y","to":"z"}]}"#,
@@ -175,7 +174,6 @@ fn refusals() {
     let before: Vec<_> = ids.iter().map(|i| s2.get(i).unwrap().rect()).collect();
     let err = apply(&mut s2, &ids, &tree).unwrap_err();
     assert_eq!(err, ApplyError::TreeNotForest(r2.nodes["z"].clone()));
-    assert_eq!(err.code(), "tree_not_forest");
     let after: Vec<_> = ids.iter().map(|i| s2.get(i).unwrap().rect()).collect();
     assert_eq!(before, after, "a refusal changes nothing");
 }

@@ -1,0 +1,15 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>drafftink-canvas: minimal</title>
+<link rel="icon" href="data:,">
+<canvas id="c" style="width: 100%; height: 400px"></canvas>
+<script type="module">
+  import { Stage } from "../src/index.js";
+
+  const stage = await Stage.create(document.getElementById("c"), { defaultStyle: { sloppiness: "architect" } });
+  stage.add({ id: "box", type: "rectangle", x: 0, y: 0, w: 160, h: 90, style: { fill_color: "#a5d8ff" } });
+  stage.add({ type: "text", x: 20, y: 30, content: "Hello" });
+  stage.add({ type: "arrow", x: 160, y: 45, points: [[0, 0], [120, 0]] });
+  stage.on("click", "#box", (e) => console.log("clicked", e.target, e.world));
+  stage.fitToContent({ padding: 60 });
+</script>

@@ -2,13 +2,12 @@
 //!
 //! Both commands are pure reads over the working store. The matching, ordering, paging, describing and
 //! hit-testing rules are in `drafftink_edit::query`; the filter that accepts `@name` references is
-//! `drafftink_edit::query_cmd::RefQuery`. The commands validate the arguments and shape the output.
+//! `drafftink_edit::query::RefQuery`. The commands validate the arguments and shape the output.
 
 use drafftink_edit::query::{
     AtOpts, DEFAULT_FIELDS, Field, MAX_LIMIT, Order, QueryCtx, QueryError, QueryOpts, describe, describe_all,
-    elements_at, run_query,
+    elements_at, run_query, RefQuery, hit_members,
 };
-use drafftink_edit::query_cmd::{RefQuery, hit_members};
 use drafftink_geom::kurbo::Point;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -19,12 +18,12 @@ use crate::refusal::{Refusal, echo};
 use crate::session::Session;
 use crate::spec::{CommandSpec, Facts, Typed};
 
-use super::element_common::id_strings;
+use super::element_common::{id_strings, target_refusal};
 
 /// The refusal for a query error. `key` names the argument that held the filter.
 pub(crate) fn query_refusal(cmd: &str, key: &str, e: QueryError) -> Refusal {
     match e {
-        QueryError::Missing(id) => Refusal::not_found(cmd, id.as_str()),
+        QueryError::Target(t) => target_refusal(cmd, t),
         QueryError::UnknownName(n) => Refusal::not_found(cmd, &format!("@{n}")),
         QueryError::BadRegex { pattern, reason } => Refusal::bad_arg(
             cmd,

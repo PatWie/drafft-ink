@@ -7,8 +7,8 @@
 use std::collections::{BTreeSet, HashMap, HashSet};
 
 use drafftink_geom::binding::{FIXED_POINT_BOUND, normalize_fixed_point};
-use drafftink_scene::{BindMode, Binding, DerivedIndex, ElementId, ElementKind, SceneRead, SceneTx};
-use kurbo::Vec2;
+use drafftink_geom::kurbo::Vec2;
+use drafftink_scene::{BindMode, Binding, DerivedIndex, Element, ElementId, ElementKind, SceneRead, SceneTx};
 
 use super::target::{bind_target, resolve};
 use super::{BindingError, End};
@@ -25,18 +25,35 @@ where
     Ok(())
 }
 
-fn binding_of(d: &drafftink_scene::LinearData, end: End) -> &Option<Binding> {
-    match end {
-        End::Start => &d.start_binding,
-        End::End => &d.end_binding,
+/// Applies `f` to every binding of the arrow `id` (a free end stays free; `f` returns `None` to free a bound
+/// one) and writes both ends back only when one changed. Returns whether it wrote. An element that is missing or
+/// not linear is `Ok(false)`.
+fn rewrite_bindings<T: SceneTx>(
+    tx: &mut T,
+    id: &ElementId,
+    f: impl Fn(&T, &Binding) -> Option<Binding>,
+) -> Result<bool, BindingError> {
+    let Some(d) = tx.get(id).and_then(Element::linear_data) else { return Ok(false) };
+    let rewrite = |b: &Option<Binding>| b.as_ref().and_then(|b| f(&*tx, b));
+    let (start, end) = (rewrite(&d.start_binding), rewrite(&d.end_binding));
+    if start == d.start_binding && end == d.end_binding {
+        return Ok(false);
     }
+    modify(tx, id, |d| {
+        d.start_binding = start;
+        d.end_binding = end;
+    })?;
+    Ok(true)
 }
 
 /// Frees one end of an arrow. The end stays where it is. Returns whether the end was bound. Total: an element
 /// that is not an arrow, or an end that is not bound, is `Ok(false)`; only a missing arrow is an error.
 pub fn unbind_end<T: SceneTx>(tx: &mut T, arrow: &ElementId, end: End) -> Result<bool, BindingError> {
     let e = tx.get(arrow).ok_or_else(|| BindingError::Missing(arrow.clone()))?;
-    let bound = e.linear_data().is_some_and(|d| binding_of(d, end).is_some());
+    let bound = e.linear_data().is_some_and(|d| match end {
+        End::Start => d.start_binding.is_some(),
+        End::End => d.end_binding.is_some(),
+    });
     if !bound {
         return Ok(false);
     }
@@ -90,21 +107,9 @@ pub fn free_ends_bound_to_with<T: SceneTx>(
     let set: HashSet<&ElementId> = deleted.iter().collect();
     let mut changed = Vec::new();
     for id in bound_to(tx, &set, derived) {
-        let Some(e) = tx.get(&id) else { continue };
-        let Some(d) = e.linear_data() else { continue };
-        let hit = |b: &Option<Binding>| b.as_ref().is_some_and(|b| set.contains(&b.target));
-        if !(hit(&d.start_binding) || hit(&d.end_binding)) {
-            continue;
+        if rewrite_bindings(tx, &id, |_, b| (!set.contains(&b.target)).then(|| b.clone()))? {
+            changed.push(id);
         }
-        modify(tx, &id, |d| {
-            if d.start_binding.as_ref().is_some_and(|b| set.contains(&b.target)) {
-                d.start_binding = None;
-            }
-            if d.end_binding.as_ref().is_some_and(|b| set.contains(&b.target)) {
-                d.end_binding = None;
-            }
-        })?;
-        changed.push(id);
     }
     Ok(changed)
 }
@@ -117,21 +122,9 @@ pub fn unbind_detached<T: SceneTx>(tx: &mut T, set: &[ElementId]) -> Result<Vec<
     let members: HashSet<&ElementId> = set.iter().collect();
     let mut changed = Vec::new();
     for id in set {
-        let Some(e) = tx.get(id) else { continue };
-        let Some(d) = e.linear_data() else { continue };
-        let detached = |b: &Option<Binding>| b.as_ref().is_some_and(|b| !members.contains(&b.target));
-        if !(detached(&d.start_binding) || detached(&d.end_binding)) {
-            continue;
+        if rewrite_bindings(tx, id, |_, b| members.contains(&b.target).then(|| b.clone()))? {
+            changed.push(id.clone());
         }
-        modify(tx, id, |d| {
-            if d.start_binding.as_ref().is_some_and(|b| !members.contains(&b.target)) {
-                d.start_binding = None;
-            }
-            if d.end_binding.as_ref().is_some_and(|b| !members.contains(&b.target)) {
-                d.end_binding = None;
-            }
-        })?;
-        changed.push(id.clone());
     }
     Ok(changed)
 }
@@ -158,24 +151,10 @@ pub fn remap_bindings<T: SceneTx>(
 ) -> Result<Vec<ElementId>, BindingError> {
     let mut changed = Vec::new();
     for id in arrows {
-        let Some(e) = tx.get(id) else { continue };
-        let Some(d) = e.linear_data() else { continue };
-        if d.start_binding.is_none() && d.end_binding.is_none() {
-            continue;
+        let remap = |_: &T, b: &Binding| map.get(&b.target).map(|t| Binding { target: t.clone(), ..b.clone() });
+        if rewrite_bindings(tx, id, remap)? {
+            changed.push(id.clone());
         }
-        let remap = |b: &Option<Binding>| -> Option<Binding> {
-            let b = b.as_ref()?;
-            map.get(&b.target).map(|t| Binding { target: t.clone(), ..b.clone() })
-        };
-        let (s, en) = (remap(&d.start_binding), remap(&d.end_binding));
-        if s == d.start_binding && en == d.end_binding {
-            continue;
-        }
-        modify(tx, id, |d| {
-            d.start_binding = s;
-            d.end_binding = en;
-        })?;
-        changed.push(id.clone());
     }
     Ok(changed)
 }
@@ -196,32 +175,17 @@ pub fn heal_bindings<T: SceneTx>(tx: &mut T, ids: Option<&[ElementId]>) -> Resul
     };
     let mut changed = Vec::new();
     for id in list {
-        let Some(e) = tx.get(id) else { continue };
-        let Some(d) = e.linear_data() else { continue };
-        let fix = |b: &Option<Binding>| -> Option<Binding> {
-            let b = b.as_ref()?;
+        let fix = |tx: &T, b: &Binding| {
             if b.target == *id {
                 return None;
             }
-            let t = tx.get(&b.target)?;
-            bind_target(t)?;
-            let fix = |v: f64| if v.is_finite() { v.clamp(-FIXED_POINT_BOUND, FIXED_POINT_BOUND) } else { 0.5001 };
-            Some(Binding { fixed_point: [fix(b.fixed_point[0]), fix(b.fixed_point[1])], ..b.clone() })
+            bind_target(tx.get(&b.target)?)?;
+            let clamp = |v: f64| if v.is_finite() { v.clamp(-FIXED_POINT_BOUND, FIXED_POINT_BOUND) } else { 0.5001 };
+            Some(Binding { fixed_point: [clamp(b.fixed_point[0]), clamp(b.fixed_point[1])], ..b.clone() })
         };
-        let (s, en) = (fix(&d.start_binding), fix(&d.end_binding));
-        let unchanged = |old: &Option<Binding>, new: &Option<Binding>| match (old, new) {
-            (None, None) => true,
-            (Some(a), Some(b)) => a.target == b.target && a.mode == b.mode && a.fixed_point == b.fixed_point,
-            _ => false,
-        };
-        if unchanged(&d.start_binding, &s) && unchanged(&d.end_binding, &en) {
-            continue;
+        if rewrite_bindings(tx, id, fix)? {
+            changed.push(id.clone());
         }
-        modify(tx, id, |d| {
-            d.start_binding = s;
-            d.end_binding = en;
-        })?;
-        changed.push(id.clone());
     }
     Ok(changed)
 }
@@ -239,10 +203,7 @@ pub fn mirror_fixed_points<T: SceneTx>(
     let members: HashSet<&ElementId> = set.iter().collect();
     let mut changed = Vec::new();
     for id in set {
-        let Some(e) = tx.get(id) else { continue };
-        let Some(d) = e.linear_data() else { continue };
-        let mirror = |b: &Option<Binding>| -> Option<Binding> {
-            let b = b.as_ref()?;
+        let mirror = |_: &T, b: &Binding| {
             if !members.contains(&b.target) {
                 return Some(b.clone());
             }
@@ -251,15 +212,9 @@ pub fn mirror_fixed_points<T: SceneTx>(
             let v = normalize_fixed_point(Vec2::new(fx, fy));
             Some(Binding { fixed_point: [v.x, v.y], ..b.clone() })
         };
-        let (s, en) = (mirror(&d.start_binding), mirror(&d.end_binding));
-        if s == d.start_binding && en == d.end_binding {
-            continue;
+        if rewrite_bindings(tx, id, mirror)? {
+            changed.push(id.clone());
         }
-        modify(tx, id, |d| {
-            d.start_binding = s;
-            d.end_binding = en;
-        })?;
-        changed.push(id.clone());
     }
     Ok(changed)
 }
@@ -274,45 +229,40 @@ pub fn reanchor_to_outline<T: SceneTx>(
     let set: HashSet<&ElementId> = changed_shapes.iter().collect();
     let mut changed = Vec::new();
     for id in bound_to(tx, &set, None) {
-        let Some(e) = tx.get(&id) else { continue };
-        let Some(d) = e.linear_data() else { continue };
-        let fix = |b: &Option<Binding>| -> Option<Binding> {
-            let b = b.as_ref()?;
+        let reanchor = |tx: &T, b: &Binding| {
             if !set.contains(&b.target) || b.mode != BindMode::Orbit {
                 return Some(b.clone());
             }
-            let Some(r) = resolve(tx, &b.target) else { return Some(b.clone()) };
-            let focus = r.target.global_fixed_point(Vec2::new(b.fixed_point[0], b.fixed_point[1]));
-            if r.target.within_reach(focus, r.gap) {
-                return Some(b.clone());
-            }
-            let center = r.target.center();
-            let reach = r.target.frame.size.width.max(r.target.frame.size.height) * 2.0;
-            let dir = focus - center;
-            let len = dir.hypot();
-            if len <= 0.0 {
-                return Some(b.clone());
-            }
-            let far = center + dir / len * reach;
-            let mut hits = r.target.intersect_segment(center, far, r.gap);
-            hits.sort_by(|a, b2| (*a - focus).hypot2().total_cmp(&(*b2 - focus).hypot2()));
-            match hits.first() {
-                Some(h) => {
-                    let v = r.target.fixed_point_from_global(*h, r.gap);
-                    Some(Binding { fixed_point: [v.x, v.y], ..b.clone() })
-                }
-                None => Some(b.clone()),
-            }
+            Some(reanchored(tx, b).unwrap_or_else(|| b.clone()))
         };
-        let (s, en) = (fix(&d.start_binding), fix(&d.end_binding));
-        if s == d.start_binding && en == d.end_binding {
-            continue;
+        if rewrite_bindings(tx, &id, reanchor)? {
+            changed.push(id);
         }
-        modify(tx, &id, |d| {
-            d.start_binding = s;
-            d.end_binding = en;
-        })?;
-        changed.push(id);
     }
     Ok(changed)
+}
+
+/// The orbit binding `b` with its focus moved back onto the outline of its target along the ray from the centre.
+/// `None` when the focus is still within reach of the outline or the geometry gives no better point.
+fn reanchored<R: SceneRead>(scene: &R, b: &Binding) -> Option<Binding> {
+    let r = resolve(scene, &b.target)?;
+    let focus = r.target.global_fixed_point(Vec2::new(b.fixed_point[0], b.fixed_point[1]));
+    if r.target.within_reach(focus, r.gap) {
+        return None;
+    }
+    let center = r.target.center();
+    let reach = r.target.frame.size.width.max(r.target.frame.size.height) * 2.0;
+    let dir = focus - center;
+    let len = dir.hypot();
+    if len <= 0.0 {
+        return None;
+    }
+    let far = center + dir / len * reach;
+    let nearest = r
+        .target
+        .intersect_segment(center, far, r.gap)
+        .into_iter()
+        .min_by(|a, b2| (*a - focus).hypot2().total_cmp(&(*b2 - focus).hypot2()))?;
+    let v = r.target.fixed_point_from_global(nearest, r.gap);
+    Some(Binding { fixed_point: [v.x, v.y], ..b.clone() })
 }

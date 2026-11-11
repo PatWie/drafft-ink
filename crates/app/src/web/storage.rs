@@ -93,7 +93,8 @@ impl WebStorage {
         };
         let this = self.clone();
         let kept = batch.clone();
-        let started = idb::write(&db, &batch, |(ns, key)| record_key(*ns, key), move |outcome| this.finished(kept, outcome));
+        let started =
+            idb::write(&db, &batch, |(ns, key)| record_key(*ns, key), move |outcome| this.finished(kept, outcome));
         if let Err(e) = started {
             self.finished(batch, Err(e));
         }

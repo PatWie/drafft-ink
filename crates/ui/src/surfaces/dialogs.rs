@@ -9,8 +9,8 @@ use serde_json::{Value, json};
 
 use crate::action::{Call, Verb};
 use crate::icons::Icon;
-use crate::model::Model;
-use crate::state::UiState;
+use crate::model::{BoundsView, Model};
+use crate::state::{SearchHit, SearchResults, UiState};
 use crate::theme::{self, MARGIN, Palette, SMALL_BUTTON};
 use crate::widgets::{Ctl, Cx, panel_frame};
 
@@ -18,6 +18,10 @@ use crate::widgets::{Ctl, Cx, panel_frame};
 const ABOVE_BOTTOM_BAR: f32 = 64.0;
 /// Width of the stats card.
 const STATS_WIDTH: f32 = 190.0;
+/// Tallest the list of search results grows before it scrolls.
+const RESULTS_HEIGHT: f32 = 240.0;
+/// The longest label of a search result row, in characters.
+const RESULT_LABEL_CHARS: usize = 48;
 
 // ---- shared helpers ----
 
@@ -270,6 +274,46 @@ struct SearchDraft {
     focused: bool,
 }
 
+/// The text of a result row: what the element says (or its name, or its id) and its kind.
+pub(crate) fn result_row_text(hit: &SearchHit) -> String {
+    let flat = hit.label.split_whitespace().collect::<Vec<_>>().join(" ");
+    let label: String = if flat.chars().count() > RESULT_LABEL_CHARS {
+        flat.chars().take(RESULT_LABEL_CHARS).chain(std::iter::once('~')).collect()
+    } else {
+        flat
+    };
+    format!("{label} ({})", hit.kind)
+}
+
+/// The line above the result list.
+pub(crate) fn results_summary(found: &SearchResults) -> String {
+    match (found.total, found.hits.len()) {
+        (0, _) => format!("Nothing contains \"{}\".", found.query),
+        (1, _) => "1 element found.".to_owned(),
+        (total, shown) if total > shown => format!("{total} elements found, showing the first {shown}."),
+        (total, _) => format!("{total} elements found."),
+    }
+}
+
+/// The list of what the last search found. Choosing a row selects the element and centres the view on it.
+fn results(ui: &mut Ui, cx: &mut Cx<'_>, found: &SearchResults) {
+    ui.add_space(6.0);
+    ui.label(muted(&cx.pal, results_summary(found)));
+    ScrollArea::vertical().max_height(RESULTS_HEIGHT).auto_shrink([false, true]).show(ui, |ui| {
+        for hit in &found.hits {
+            let text = result_row_text(hit);
+            let ctl = Ctl::new("selection.select").args(json!({ "ids": [hit.id] })).label(&text);
+            // The row runs `selection.select`; the view then moves to the element.
+            if cx.menu_item(ui, &ctl, &text).clicked() {
+                if let Some(point) = hit.center {
+                    cx.run("view.center", json!({ "on": "point", "point": point }));
+                }
+                cx.verb(Verb::CloseOverlays);
+            }
+        }
+    });
+}
+
 fn search(ctx: &Context, cx: &mut Cx<'_>, st: &UiState) {
     let key = Id::unique("search_draft");
     if !st.search_open {
@@ -293,18 +337,107 @@ fn search(ctx: &Context, cx: &mut Cx<'_>, st: &UiState) {
                 ui.label(RichText::new(r).size(12.0).color(pal.danger));
             }
             None => {
-                ui.label(muted(&pal, "Press Enter to search. Results come from `element.query`."));
+                ui.label(muted(&pal, "Press Enter to search."));
             }
         }
         if reason.is_none() && resp.lost_focus() && enter_pressed(ui) && !draft.text.trim().is_empty() {
             cx.run("element.query", query_args(&draft.text));
-            cx.verb(Verb::CloseOverlays);
+            // Stay in the field, so the search can be refined.
+            resp.request_focus();
+        }
+        if let Some(found) = &st.search_results {
+            results(ui, cx, found);
         }
     });
     ctx.data_mut(|d| d.insert_temp(key, draft));
 }
 
 // ---- stats ----
+
+/// The four fields of the bounds editor: the caption, the accessible name and the argument of
+/// `element.set_bounds`.
+const BOUNDS_FIELDS: [(&str, &str, &str); 4] = [
+    ("X", "Selection X", "x"),
+    ("Y", "Selection Y", "y"),
+    ("W", "Selection width", "w"),
+    ("H", "Selection height", "h"),
+];
+/// Width of one bounds field.
+const BOUNDS_FIELD_WIDTH: f32 = 52.0;
+
+/// A coordinate as the field shows it: at most two decimals, no trailing zeros.
+pub(crate) fn bounds_text(v: f64) -> String {
+    let rounded = (v * 100.0).round() / 100.0;
+    // Never "-0".
+    format!("{}", if rounded == 0.0 { 0.0 } else { rounded })
+}
+
+/// The arguments of `element.set_bounds` for an edited field, or `None` when the text is not a number
+/// the command accepts or does not change the value the field shows. Only the edited value is sent, so
+/// the rest of the box stays as it is.
+pub(crate) fn bounds_args(key: &str, text: &str, now: BoundsView) -> Option<Value> {
+    let v: f64 = text.trim().parse().ok().filter(|v: &f64| v.is_finite())?;
+    let current = match key {
+        "x" => now.x,
+        "y" => now.y,
+        "w" => now.w,
+        _ => now.h,
+    };
+    let size = matches!(key, "w" | "h");
+    ((v - current).abs() >= 0.005 && (!size || v > 0.0)).then(|| json!({ key: v }))
+}
+
+/// What the bounds fields hold while the panel is open.
+#[derive(Clone, Default)]
+struct BoundsDraft {
+    /// The bounds the texts were made from. A different bounds of the model reloads the texts.
+    shown: Option<BoundsView>,
+    text: [String; 4],
+}
+
+impl BoundsDraft {
+    fn load(b: BoundsView) -> Self {
+        Self { shown: Some(b), text: [b.x, b.y, b.w, b.h].map(bounds_text) }
+    }
+}
+
+/// Position and size of the selection, edited with `element.set_bounds`. A value is sent when a field
+/// loses focus (Enter or a click elsewhere), never while typing; Esc drops the edit.
+fn bounds_editor(ui: &mut Ui, cx: &mut Cx<'_>, now: BoundsView) {
+    let pal = cx.pal;
+    let key = Id::unique("stats_bounds_draft");
+    let mut draft: BoundsDraft = ui.data_mut(|d| d.get_temp(key)).unwrap_or_default();
+    if draft.shown != Some(now) {
+        draft = BoundsDraft::load(now);
+    }
+    let reason = cx.refusal("element.set_bounds");
+    let escaped = ui.input(|i| i.key_pressed(Key::Escape));
+    let mut reload = false;
+    ui.add_space(4.0);
+    egui::Grid::new(Id::unique("stats_bounds_grid")).num_columns(4).spacing(vec2(6.0, 3.0)).show(ui, |ui| {
+        for (i, ((caption, label, arg), text)) in BOUNDS_FIELDS.iter().zip(draft.text.iter_mut()).enumerate() {
+            ui.label(muted(&pal, *caption));
+            let resp = ui
+                .allocate_ui(vec2(BOUNDS_FIELD_WIDTH, 20.0), |ui| {
+                    text_field(ui, text, "", reason.clone(), Some(12), label)
+                })
+                .inner;
+            if reason.is_none() && resp.lost_focus() {
+                if !escaped && let Some(args) = bounds_args(arg, text, now) {
+                    cx.run("element.set_bounds", args);
+                }
+                reload = true;
+            }
+            if i % 2 == 1 {
+                ui.end_row();
+            }
+        }
+    });
+    if reload {
+        draft.shown = None;
+    }
+    ui.data_mut(|d| d.insert_temp(key, draft));
+}
 
 /// The rows of the stats panel: a name and the value, read from the model.
 pub(crate) fn stats_rows(m: &Model) -> Vec<(&'static str, String)> {
@@ -340,6 +473,9 @@ fn stats(ctx: &Context, cx: &mut Cx<'_>, st: &UiState) {
                         ui.end_row();
                     }
                 });
+                if let Some(bounds) = cx.model.selection_bounds {
+                    bounds_editor(ui, cx, bounds);
+                }
             });
         });
 }
@@ -388,6 +524,36 @@ mod tests {
         assert_eq!(query_args("  box "), json!({"filter": {"text": "box"}}));
         let src = json!({"stored": "A"});
         assert_eq!(open_recent_args(&src), json!({"source": {"stored": "A"}, "mode": "replace"}));
+    }
+
+    #[test]
+    fn bounds_text_and_arguments() {
+        let now = BoundsView { x: 10.0, y: 20.0, w: 100.0, h: 60.0 };
+        assert_eq!(bounds_text(10.0), "10");
+        assert_eq!(bounds_text(10.126), "10.13");
+        assert_eq!(bounds_text(-0.004), "0");
+        assert_eq!(bounds_args("x", " 12 ", now), Some(json!({"x": 12.0})));
+        assert_eq!(bounds_args("x", "10", now), None);
+        assert_eq!(bounds_args("x", "10.001", now), None, "below the precision the field shows");
+        assert_eq!(bounds_args("y", "-3", now), Some(json!({"y": -3.0})), "positions may be negative");
+        assert_eq!(bounds_args("w", "0", now), None);
+        assert_eq!(bounds_args("h", "-1", now), None);
+        assert_eq!(bounds_args("h", "61", now), Some(json!({"h": 61.0})));
+        assert_eq!(bounds_args("w", "1e999", now), None);
+        assert_eq!(bounds_args("w", "NaN", now), None);
+    }
+
+    #[test]
+    fn result_rows_and_summary() {
+        let hit = |label: &str| SearchHit { id: "e1".into(), kind: "text".into(), label: label.into(), center: None };
+        assert_eq!(result_row_text(&hit("Login\n  box")), "Login box (text)");
+        let long = "x".repeat(60);
+        assert_eq!(result_row_text(&hit(&long)), format!("{}~ (text)", "x".repeat(RESULT_LABEL_CHARS)));
+        let found = |total, n| SearchResults { query: "q".into(), total, hits: vec![hit("a"); n] };
+        assert_eq!(results_summary(&found(0, 0)), "Nothing contains \"q\".");
+        assert_eq!(results_summary(&found(1, 1)), "1 element found.");
+        assert_eq!(results_summary(&found(7, 7)), "7 elements found.");
+        assert_eq!(results_summary(&found(250, 100)), "250 elements found, showing the first 100.");
     }
 
     #[test]

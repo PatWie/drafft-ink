@@ -135,6 +135,7 @@ Counters are monotonic. Gauges hold the last value. All are always compiled in.
 | `gpu_submits` | GPU submissions |
 | `sync_ops_applied` | sync operations applied to the document |
 | `redraws_skipped` | redraw requests the idle gate dropped because nothing was dirty |
+| `elements_scanned` | elements visited by a pass over the whole scene (a scan, not an index lookup); 0 for an operation whose cost must not grow with the scene |
 
 | Gauge | Reads |
 |---|---|
@@ -328,14 +329,15 @@ A driver wraps a `PerfStats` snapshot with what only it can measure:
 
 ### 5.2 `cargo xtask perf`
 
-`cargo xtask perf` is the gate. It is built on the types in this crate (`ScenarioReport`, `Budgets`):
+`cargo xtask perf` is the gate. Its checks are written in `perf/README.md`; in short:
 
-1. `cargo xtask perf --idle` runs the idle scenario natively (Xvfb, `--perf-scenario idle`, headless harness) and checks the idle budget. This is the check `AGENTS.md` names.
-2. `cargo xtask perf` runs every scenario in `perf/budgets.json` through the native driver, writes one `ScenarioReport` per scenario to `target/perf/<key>.json`, loads the budgets, and prints one line per violation (`Violation` implements `Display`: `pan@10k frame.p99_ms: 20 but must be at most 16.7`). Exit status is non-zero on any violation.
-3. `cargo xtask perf --web` does the same through the browser driver.
-4. Reports and Chrome traces are uploaded as CI artifacts.
+1. **Work counters** (default, part of `cargo xtask ci`). Runs `tests/perf_work.rs` of `doc`, `canvas`, `edit`, `render` and `testkit` in release mode at 1k, 10k and 100k elements. The tests assert on counted work (`elements_scanned`, `cache_miss`, `redraws`, the store's `WorkStats`). The tests that drive a scenario of §4.1 (`idle`, `hover`, `drag`, `pan`, `zoom`) also write a `ScenarioReport` to `target/perf/work` (`ScenarioReport::save_if_requested`, `DRAFFTINK_PERF_OUT`), and the gate checks the reports against the deterministic limits of `perf/budgets.json`. A budgeted scenario without a report fails the gate. A debug `cargo test` runs the same tests at 1k and 10k.
+2. `cargo xtask perf --idle` runs only the idle and hover tests.
+3. `cargo xtask perf --bench` runs a curated set of criterion benches with short measurement times, writes the medians as the report `bench` and checks the `bench` limits of `perf/budgets.json` (about ten times the measured median). Timing on a busy machine is noisy, so this is not part of `ci`; run it alone.
 
-The unit-level work-counter tests (§2.5) run in `cargo xtask ci` and need no GPU. The scenario runs need Xvfb, and the web ones need headed Chromium on Xvfb (headless Chromium renders a WebGPU canvas blank; baseline §3.3).
+The budget arithmetic is `Budgets::check_filtered`; xtask uses no workspace crate, so it runs the `perf_check` example of this crate (`cargo run -p drafftink-profile --example perf_check`).
+
+Not written yet: the scenario drivers of §5.3 (`--perf-scenario`, `window.drafftink.perf.runScenario`), which belong to the app shells and need Xvfb (web: headed Chromium on Xvfb; headless Chromium renders a WebGPU canvas blank, baseline §3.3). When they exist, `cargo xtask perf --native` and `--web` run them and feed their reports to the same `perf_check`. The timing entries of `idle` and `pan@N` in `perf/budgets.json` are for them.
 
 ### 5.3 What the drivers do
 
@@ -448,3 +450,24 @@ At 60 fps with 20 spans per frame, recording costs about 2.3 us per frame (0.014
 - Prove that the output is unchanged (scene golden, pixel probe) before claiming a speed-up.
 - Use exact bounds for culling, never a coarse box.
 - Prefer a work-counter assertion (§2.5) to a timing when the claim is "this no longer happens".
+
+### 7.7 Fixes of the first perf pass
+
+Release build, the research box (load average 8 to 20), medians. "Frame" is one `gesture.update` of `element.move` of one rectangle with a bound arrow, as the engine runs it for every pointer move of a drag. Work counters (`elements_scanned`) are in `crates/*/tests/perf_work.rs`.
+
+| What | Before | After |
+|---|---|---|
+| Move frame, 1,000 / 10,000 / 100,000 elements | 105 us / 1.15 ms / 37 ms | 15 us / 16 us / 14 us |
+| `gesture.end` of the move, same sizes | 0.38 ms / 2.7 ms / 85 ms | 80 us / 84 us / 81 us |
+| `element.move` with smart guides, `arrow.move_point`, hover while placing an arrow end | scanned the scene once or twice per call | 0 elements scanned |
+| Interaction's spatial index after an edit | one pass over the scene per revision | the touched elements (`TabDoc::scene_index`) |
+| `LoroStore::from_document`, 100,000 elements | 5.2 s | 2.7 s |
+| Load a generated scene into a `TabDoc` (engine), 1,000 / 10,000 / 100,000 | 44 ms / 0.49 s / 5.5 s | 26 ms / 0.29 s / 3.2 s |
+| Open a Loro snapshot, 100,000 elements | 1.3 to 1.4 s | unchanged |
+| Compose, everything visible, level of detail, warm, 10,000 / 100,000 | 7.9 ms / 49.6 ms | 3.8 ms / 22.6 ms |
+
+What changed. The reverse indexes of the store (bound arrows, group members, frame children, labels, and now the frames) answer the lookups of `transform`, frame membership, label refresh and `update_bound_arrows` for a store and for a transaction that has not written yet (`SceneRead::derived_index`); a transaction that has written falls back to a scan, which `elements_scanned` makes visible. `find_hovered_among`, `plan_end_drag_among`, `drag_end_among` and `snap_candidates_among` take their candidates from the tab's spatial index. The tab's index follows the ids its commits touched. Loro hands every commit to an attached undo manager, which doubled the cost of the one big load commit; `from_document` attaches it after the load.
+
+A move or a turn no longer copies elements: `transform::apply` builds a new `Transform` per element and writes only that, so a translate of a 1000-point freehand copies no point vector (the copy is made only for a map of the points or a font scale, and for an arrow whose fixed point is carried).
+
+What did not change, and why. Opening a snapshot is bound by Loro (its map iteration is 0.4 s of 1.3 s) and our field decode (0.6 s, mostly `read_element` building a JSON value per element); a typed decoder would save about 0.3 s and give up the rule that the stored form follows the model's serde output. Writing the 100,000 elements into Loro is 770,000 field inserts at the cost the CRDT library has (1.5 s measured with Loro alone). A fully zoomed-out frame at 100,000 elements is now 22.6 ms: the loop over the candidates remains, and an edit or a gesture frame rebuilds the order (the order is kept only while the store does not change).

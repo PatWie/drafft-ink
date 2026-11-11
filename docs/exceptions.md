@@ -110,11 +110,11 @@ Rules that hold for all classes:
 |---|---|
 | Input | Press and drag with the freehand or highlighter tool; with a pen, pressure per sample. |
 | Class | B |
-| What happens | The recognizer appends samples (position and pressure) to a buffer and draws the stroke from the buffer (calligraphy smoothing and the pressure model run in the preview). On release it simplifies (RDP tolerance 2.0) and calls one command. |
+| What happens | The recognizer appends samples (position and pressure) to a buffer and draws the stroke from the buffer. The calligraphy brush (spring smoothing) and the simulated pressure (from the pointer speed, when the device has none) run on every sample (`edit/src/brush.rs`), so the preview and the stored stroke are the same points. On release it simplifies (RDP tolerance 2.0) and calls one command. |
 | Reason | Pen input arrives at 240 Hz, and a stroke may have thousands of points. The element does not exist before the release. Real pen pressure comes from the pointer event (`pointerType: pen`, `pressure`), which the old app never read. |
 | Final state | `element.create { kind: freehand, points, pressures, highlighter, simplify, from_tool: true }`. |
 | Cancel | Drop the buffer. A second finger landing cancels a one-finger stroke. |
-| Test | `exception_E7_stroke_equals_plain_command`, and a replay of a recorded pen stroke. |
+| Test | `exception_E7_stroke_equals_plain_command`, `exception_E7_a_brush_stroke_equals_the_plain_command_given_its_points`, and a replay of a recorded pen stroke. |
 
 ### E8 Eraser
 
@@ -128,16 +128,16 @@ Rules that hold for all classes:
 | Cancel | Drop the path, restore opacity. |
 | Test | `exception_E8_erase_equals_plain_command`. |
 
-### E9 Marquee selection
+### E9 Marquee and lasso selection
 
 | | |
 |---|---|
-| Input | Press on empty canvas and drag, release. |
+| Input | Press on empty canvas and drag, release. With the lasso tool (or Alt held with the select tool) the drag is a free-hand path. |
 | Class | B |
-| What happens | The recognizer draws the rectangle and previews the units it would select. On release, if the rectangle is at least 2 by 2 pixels, it calls one command with the mode from the modifier (Shift adds). |
+| What happens | The recognizer draws the rectangle (or the lasso path) and previews the units it would select. On release, if the rectangle is at least 2 by 2 pixels (or the path has that extent and an area), it calls one command with the mode from the modifier (Shift adds). |
 | Reason | Selection changes per event would make the properties panel and the overlay recompute for each event, and would put intermediate selections in the ring. |
-| Final state | `selection.select_region { rect, mode, contain }`. |
-| Test | `exception_E9_marquee_equals_plain_command`. |
+| Final state | `selection.select_region { rect, mode, contain }`, or `selection.select_lasso { points, mode, simplify }` for the lasso. |
+| Test | `exception_E9_marquee_equals_plain_command`, `exception_E9_lasso_equals_plain_command`. |
 
 ### E10 Pan
 

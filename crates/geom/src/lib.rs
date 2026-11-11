@@ -17,8 +17,12 @@
 //! - [`binding`]: headings, fixed points and outline helpers used by arrow binding and elbow routing.
 //! - [`index`]: [`SpatialIndex`], an R-tree keyed by id.
 //! - [`snap`], [`guides`]: grid, angle and smart-guide snapping math.
+//! - [`spline`]: the Catmull-Rom curve of a rounded line.
 //! - [`align`]: align and distribute as pure functions.
 //! - [`select`]: handle positions, box resize and rotate math, marquee tests.
+//! - [`lasso`]: the free-hand closed path and its selection test, the counterpart of the marquee.
+
+#![warn(missing_docs)]
 
 pub use kurbo;
 
@@ -27,11 +31,13 @@ pub mod align;
 pub mod binding;
 pub mod guides;
 pub mod index;
+pub mod lasso;
 pub mod obox;
 pub mod outline;
 pub mod select;
 pub mod shapes;
 pub mod snap;
+pub mod spline;
 pub mod transform;
 
 mod convex;

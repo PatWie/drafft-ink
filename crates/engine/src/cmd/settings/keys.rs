@@ -84,6 +84,26 @@ pub struct KeyDef {
 pub const GRID_STYLES: &[&str] = &["none", "lines", "horizontal_lines", "crosses", "dots"];
 /// The theme choices (docs/commands.md §9 item 13).
 pub const THEMES: &[&str] = &["light", "dark", "system"];
+/// The path types of `arrow.type` (the words of `drafftink_edit::arrow_defaults::path_name`).
+pub const ARROW_TYPES: &[&str] = &["sharp", "round", "elbow"];
+/// The heads of `arrow.start_head` and `arrow.end_head` (the words of `drafftink_edit::arrow_defaults::name_of`).
+pub const HEAD_NAMES: &[&str] = &[
+    "none",
+    "arrow",
+    "bar",
+    "circle",
+    "circle_outline",
+    "triangle",
+    "triangle_outline",
+    "diamond",
+    "diamond_outline",
+    "cardinality_one",
+    "cardinality_many",
+    "cardinality_one_or_many",
+    "cardinality_exactly_one",
+    "cardinality_zero_or_one",
+    "cardinality_zero_or_many",
+];
 /// Most entries of `doc.recent`.
 pub const MAX_RECENT: usize = 10;
 
@@ -119,6 +139,14 @@ pub const KEYS: &[KeyDef] = &[
     key("style.defaults", Kind::StyleProps, Def::Empty, "Style properties that new elements start with."),
     key("arrow.binding", Kind::Bool, Def::Bool(true), "Bind arrow ends to shapes."),
     key("arrow.midpoint_snap", Kind::Bool, Def::Bool(false), "Snap arrow ends to the middle of a shape's edge."),
+    key(
+        "arrow.type",
+        Kind::Choice(ARROW_TYPES),
+        Def::Str("sharp"),
+        "Path type of new arrows (the arrow tool): straight, curved or elbow.",
+    ),
+    key("arrow.start_head", Kind::Choice(HEAD_NAMES), Def::Str("none"), "Head at the start of new arrows."),
+    key("arrow.end_head", Kind::Choice(HEAD_NAMES), Def::Str("arrow"), "Head at the end of new arrows."),
     key("frame.clip", Kind::Bool, Def::Bool(true), "Clip frame children to the frame."),
     key("frame.show_names", Kind::Bool, Def::Bool(true), "Show frame names."),
     key("frame.outline", Kind::Bool, Def::Bool(true), "Draw the frame outline."),

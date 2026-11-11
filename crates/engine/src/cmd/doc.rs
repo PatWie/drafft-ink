@@ -76,6 +76,7 @@ pub const COMMANDS: &[CommandSpec] = &[
         REPLACES,
     )
     .refusals(&["empty_name", "in_room", "no_save_target", "too_many_tabs"])
+    .allowed_when_blocked()
     .example(r#"{"name":"Sketch","in_new_tab":true}"#),
     CommandSpec::new(
         "doc.open",
@@ -86,6 +87,7 @@ pub const COMMANDS: &[CommandSpec] = &[
         Facts { undo: Undo::Undoable, ..REPLACES },
     )
     .refusals(&["is_library", "newer_version", "in_room", "no_save_target", "too_many_tabs"])
+    .allowed_when_blocked()
     .example(r#"{"source":{"path":"/home/me/plan.json"},"mode":"new_tab"}"#),
     CommandSpec::new(
         "doc.drop",
@@ -159,7 +161,8 @@ pub const COMMANDS: &[CommandSpec] = &[
         &Typed::new(open::show_intro),
         Facts { ports: PortSet::NONE, ..REPLACES },
     )
-    .refusals(&["in_room", "no_save_target", "too_many_tabs"]),
+    .refusals(&["in_room", "no_save_target", "too_many_tabs"])
+    .allowed_when_blocked(),
     CommandSpec::new(
         "doc.autosave",
         "doc",

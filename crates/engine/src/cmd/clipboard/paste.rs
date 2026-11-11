@@ -9,6 +9,8 @@
 //! bindings, centred on `at`), an image through the `image.insert` logic, a diagram through
 //! `diagram.import_mermaid`, and text becomes a text element in the default font.
 
+use drafftink_edit::CopyError;
+use drafftink_edit::create::FreeTextError;
 use drafftink_geom::kurbo::Point;
 use drafftink_io::clipboard::{self as wire, TextKind};
 use drafftink_io::{Imported, native};
@@ -19,7 +21,8 @@ use serde_json::{Value, json};
 
 use super::common::{At, edit_with, resolve_at, select_only};
 use super::CopyBuffer;
-use crate::cmd::image::{Bytes, DEFAULT_FIT, DEFAULT_OFFSET, Loaded, Placement, insert_pictures};
+use crate::cmd::bytes::{Bytes, Loaded};
+use crate::cmd::image::{DEFAULT_FIT, DEFAULT_OFFSET, Placement, insert_pictures, load_picture};
 use crate::ports::{ClipKind, ClipPayload};
 use crate::refusal::{Refusal, echo};
 use crate::session::Session;
@@ -285,7 +288,7 @@ fn find(s: &mut Session, a: &PasteArgs) -> Result<Found, Refusal> {
         Source::Text(t) if t.text.trim().is_empty() => Err(empty(cmd)),
         Source::Text(t) if a.plain_text => Ok(Found::Text(t.text.clone())),
         Source::Text(t) => from_text(s, &t.text),
-        Source::Image(i) => Ok(Found::Image(i.image.load(s, "the pasted image")?)),
+        Source::Image(i) => Ok(Found::Image(load_picture(s, &i.image, "the pasted image")?)),
         Source::Elements(e) => from_elements(s, &e.elements),
     }
 }
@@ -293,11 +296,11 @@ fn find(s: &mut Session, a: &PasteArgs) -> Result<Found, Refusal> {
 fn paste_refusal(cmd: &str, e: drafftink_edit::paste::PasteError) -> Refusal {
     use drafftink_edit::paste::PasteError as E;
     match e {
-        E::Empty | E::EmptyText => empty(cmd),
+        E::Empty | E::Text(FreeTextError::Empty) => empty(cmd),
         E::TooMany { n, max } => Refusal::limit_exceeded(cmd, n, "elements to paste", max),
-        E::TextTooLong { n, max } => Refusal::limit_exceeded(cmd, n, "characters of text", max),
+        E::Text(FreeTextError::TooLong { n, max }) => Refusal::limit_exceeded(cmd, n, "characters of text", max),
         E::NotFinite => Refusal::bad_arg(cmd, "at", "puts the pasted elements outside the area the document allows"),
-        E::Invalid { .. } => unreadable(cmd, "The pasted elements", &e.to_string(), "Copy them again."),
+        E::Copy(CopyError::Invalid { .. }) => unreadable(cmd, "The pasted elements", &e.to_string(), "Copy them again."),
         other => Refusal::internal(cmd, other.to_string()),
     }
 }

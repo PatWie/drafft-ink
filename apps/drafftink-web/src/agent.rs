@@ -16,8 +16,8 @@ use web_sys::{CloseEvent, MessageEvent, WebSocket};
 
 use crate::js;
 use crate::pairing::{
-    AgentUrl, Backoff, CLOSE_POLICY, HelloAnswer, PairingError, Remembered, check_agent_url, hello_frame, is_token, parse_hello_answer,
-    relay_url, take_pairing,
+    AgentUrl, Backoff, CLOSE_POLICY, HelloAnswer, PairingError, Remembered, check_agent_url, hello_frame, is_token,
+    parse_hello_answer, relay_url, take_pairing,
 };
 
 const STORAGE_KEY: &str = "drafftink-agent";
@@ -157,7 +157,8 @@ pub(crate) fn start_from_page() {
         });
         return;
     }
-    let remembered = session_storage().and_then(|s| s.get_item(STORAGE_KEY).ok().flatten()).and_then(|t| Remembered::from_text(&t));
+    let remembered =
+        session_storage().and_then(|s| s.get_item(STORAGE_KEY).ok().flatten()).and_then(|t| Remembered::from_text(&t));
     if let Some(r) = remembered {
         with(|a| {
             a.port = Some(r.port);
@@ -176,7 +177,8 @@ fn describe(e: &JsValue) -> String {
 fn scrub_address(window: &web_sys::Window, rest_of_hash: &str) {
     let location = window.location();
     let (Ok(path), Ok(search)) = (location.pathname(), location.search()) else { return };
-    let url = if rest_of_hash.is_empty() { format!("{path}{search}") } else { format!("{path}{search}#{rest_of_hash}") };
+    let url =
+        if rest_of_hash.is_empty() { format!("{path}{search}") } else { format!("{path}{search}#{rest_of_hash}") };
     if let Ok(history) = window.history() {
         let _ = history.replace_state_with_url(&JsValue::NULL, "", Some(&url));
     }
@@ -188,7 +190,10 @@ fn refusal(error: &PairingError) -> Promise {
 
 fn pair(url: &JsValue, token: &JsValue) -> Promise {
     let (Some(url), Some(token)) = (url.as_string(), token.as_string()) else {
-        return js::rejected(&RpcError::new(rpc::INVALID_PARAMS, "pair needs two strings: pair('ws://127.0.0.1:<port>/', '<64 hex token>')"));
+        return js::rejected(&RpcError::new(
+            rpc::INVALID_PARAMS,
+            "pair needs two strings: pair('ws://127.0.0.1:<port>/', '<64 hex token>')",
+        ));
     };
     let AgentUrl { url, port } = match check_agent_url(&url) {
         Ok(u) => u,
@@ -214,7 +219,10 @@ fn start_pairing(url: &str, port: u16, token: &str) -> Promise {
             a.backoff.reset();
         });
         if started.is_none() {
-            let _ = reject.call1(&JsValue::NULL, &js::error_object(&RpcError::new(rpc::INTERNAL_ERROR, "the agent API is not ready")));
+            let _ = reject.call1(
+                &JsValue::NULL,
+                &js::error_object(&RpcError::new(rpc::INTERNAL_ERROR, "the agent API is not ready")),
+            );
             return;
         }
         connect(&url);
@@ -252,7 +260,8 @@ fn connect(url: &str) {
     socket.set_onopen(Some(open.as_ref().unchecked_ref()));
     socket.set_onmessage(Some(message.as_ref().unchecked_ref()));
     socket.set_onclose(Some(close.as_ref().unchecked_ref()));
-    let old = with(|a| a.link.replace(Link { generation, socket, _open: open, _message: message, _close: close })).flatten();
+    let old =
+        with(|a| a.link.replace(Link { generation, socket, _open: open, _message: message, _close: close })).flatten();
     drop_link(old);
 }
 
@@ -267,7 +276,9 @@ fn drop_link(link: Option<Link>) {
 
 fn send(generation: u64, frame: &str) {
     with(|a| {
-        if let Some(l) = a.link.as_ref().filter(|l| l.generation == generation && l.socket.ready_state() == WebSocket::OPEN) {
+        if let Some(l) =
+            a.link.as_ref().filter(|l| l.generation == generation && l.socket.ready_state() == WebSocket::OPEN)
+        {
             let _ = l.socket.send_with_str(frame);
         }
     });
@@ -280,7 +291,12 @@ fn on_open(generation: u64) {
         }
         let token = a.token.clone()?;
         let registry = drafftink_engine::Registry::global();
-        Some(hello_frame(&token, env!("CARGO_PKG_VERSION"), registry.len(), &drafftink_bridge::core::registry_digest(&registry)))
+        Some(hello_frame(
+            &token,
+            env!("CARGO_PKG_VERSION"),
+            registry.len(),
+            &drafftink_bridge::core::registry_digest(&registry),
+        ))
     })
     .flatten();
     if let Some(frame) = frame {
@@ -387,7 +403,9 @@ fn failed(generation: u64, why: &str) {
     let first_try = with(|a| a.generation == generation && a.waiter.is_some()).unwrap_or(false);
     if first_try {
         let port = with(|a| a.port).flatten().unwrap_or(0);
-        let text = format!("Could not reach the agent relay on 127.0.0.1:{port}. Is `drafftink-mcp --relay` running, and did the browser allow the local connection?");
+        let text = format!(
+            "Could not reach the agent relay on 127.0.0.1:{port}. Is `drafftink-mcp --relay` running, and did the browser allow the local connection?"
+        );
         end(generation, State::Idle, &text);
         return;
     }
@@ -408,7 +426,10 @@ fn failed(generation: u64, why: &str) {
         Some(ms) => schedule(generation, ms),
         None => {
             forget();
-            with(|a| a.message = Some("The agent relay did not come back for ten minutes. Pair again with a new link.".to_owned()));
+            with(|a| {
+                a.message =
+                    Some("The agent relay did not come back for ten minutes. Pair again with a new link.".to_owned())
+            });
         }
     }
 }
@@ -448,7 +469,10 @@ fn disconnect() {
         }
         drop_link(link);
         if let Some((_, reject)) = waiter {
-            let _ = reject.call1(&JsValue::NULL, &js::error_object(&RpcError::new(rpc::INTERNAL_ERROR, "pairing was cancelled by disconnect()")));
+            let _ = reject.call1(
+                &JsValue::NULL,
+                &js::error_object(&RpcError::new(rpc::INTERNAL_ERROR, "pairing was cancelled by disconnect()")),
+            );
         }
     }
 }

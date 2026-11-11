@@ -4,14 +4,12 @@
 //! here. The text edit session (`edit_begin`, `edit_end`) is in `session.rs`; the helpers shared with the diagram,
 //! layout and introspection commands are in `support.rs`.
 //!
-//! The rules live in `drafftink_edit::text_bind` (labels) and `drafftink_edit::text_cmd` (font steps, formulas,
-//! colour runs, wrapping, creation). A command validates, delegates, and maps typed errors to refusals.
+//! The rules live in `drafftink_edit::text_bind` (labels, font steps, formulas, colour runs, wrapping, creation). A command validates, delegates, and maps typed errors to refusals.
 
 mod session;
 pub(super) mod support;
 
-use drafftink_edit::text_bind::{self, Relabeled};
-use drafftink_edit::text_cmd::{self, FontStep};
+use drafftink_edit::text_bind::{self, FontStep, Relabeled};
 use drafftink_scene::{Color, ElementId, Kind};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -71,6 +69,7 @@ fn set(s: &mut Session, a: SetArgs) -> Result<SetOut, Refusal> {
         return Err(wrong());
     }
     let text = a.text.as_str();
+    let defaults = s.tool.text_defaults.clone();
     let out = with_doc(s, |tx, m, _math, ids| {
         if kind == Kind::Text {
             let r = text_bind::set_text_content(tx, m, &id, text, a.keep_runs)?;
@@ -79,7 +78,7 @@ fn set(s: &mut Session, a: SetArgs) -> Result<SetOut, Refusal> {
                 None => (None, true),
             });
         }
-        Ok(match text_bind::relabel(tx, m, ids, &id, text, true)? {
+        Ok(match text_bind::relabel(tx, m, ids, &id, text, true, Some(&defaults))? {
             Relabeled::Updated(o) | Relabeled::Created(o) => (Some(o.label), false),
             Relabeled::Removed(_) => (None, true),
             Relabeled::Nothing => (None, false),
@@ -121,7 +120,7 @@ fn set_latex(s: &mut Session, a: SetLatexArgs) -> Result<SetLatexOut, Refusal> {
     if s.element(&id).map(|e| e.tag()) != Some(Kind::Math) {
         return Err(Refusal::custom("wrong_kind", cmd, SET_LATEX_WRONG_KIND));
     }
-    with_doc(s, |tx, _m, math, _ids| text_cmd::set_latex(tx, math, &id, &a.latex)).map_err(|e| refuse(cmd, e))?;
+    with_doc(s, |tx, _m, math, _ids| text_bind::set_latex(tx, math, &id, &a.latex)).map_err(|e| refuse(cmd, e))?;
     let bounds = s.element(&id).map(|e| RectOut::from(e.rect())).unwrap_or(RectOut { x: 0.0, y: 0.0, w: 0.0, h: 0.0 });
     Ok(SetLatexOut { id: id.as_str().to_owned(), bounds })
 }
@@ -158,7 +157,7 @@ pub struct StyleRangeOut {
 fn style_range(s: &mut Session, a: StyleRangeArgs) -> Result<StyleRangeOut, Refusal> {
     let cmd = s.cmd();
     let id = s.resolve_ref(&a.id)?;
-    with_doc(s, |tx, _m, _math, _ids| text_cmd::style_range(tx, &id, a.start, a.end, a.color)).map_err(|e| refuse(cmd, e))?;
+    with_doc(s, |tx, _m, _math, _ids| text_bind::style_range(tx, &id, a.start, a.end, a.color)).map_err(|e| refuse(cmd, e))?;
     let runs = s
         .element(&id)
         .and_then(|e| e.text_data())
@@ -196,7 +195,7 @@ pub struct StepSizeOut {
 fn step_size(s: &mut Session, a: StepSizeArgs) -> Result<StepSizeOut, Refusal> {
     let cmd = s.cmd();
     let ids = s.targets(a.ids.as_deref())?;
-    let report = with_doc(s, |tx, m, math, _ids| text_cmd::step_font_size(tx, m, math, &ids, a.direction))
+    let report = with_doc(s, |tx, m, math, _ids| text_bind::step_font_size(tx, m, math, &ids, a.direction))
         .map_err(|e| refuse(cmd, e))?;
     if !report.applicable() {
         return Err(Refusal::not_applicable(cmd, "a font size", "text and math elements, and shapes or arrows that have a label"));
@@ -237,7 +236,7 @@ fn bind(s: &mut Session, a: BindArgs) -> Result<BindOut, Refusal> {
     let cmd = s.cmd();
     let text = s.resolve_ref(&a.text)?;
     let container = s.resolve_ref(&a.container)?;
-    let o = with_doc(s, |tx, m, _math, _ids| Ok(text_bind::bind_text(tx, m, &text, &container)?)).map_err(|e| refuse(cmd, e))?;
+    let o = with_doc(s, |tx, m, _math, _ids| text_bind::bind_text(tx, m, &text, &container)).map_err(|e| refuse(cmd, e))?;
     Ok(BindOut { text: text.as_str().to_owned(), container: container.as_str().to_owned(), container_grew: o.container_grew })
 }
 
@@ -259,7 +258,7 @@ pub struct UnbindOut {
 fn unbind(s: &mut Session, a: UnbindArgs) -> Result<UnbindOut, Refusal> {
     let cmd = s.cmd();
     let text = s.resolve_ref(&a.text)?;
-    with_doc(s, |tx, _m, _math, _ids| Ok(text_bind::unbind_text(tx, &text)?)).map_err(|e| refuse(cmd, e))?;
+    with_doc(s, |tx, _m, _math, _ids| text_bind::unbind_text(tx, &text)).map_err(|e| refuse(cmd, e))?;
     Ok(UnbindOut { text: text.as_str().to_owned() })
 }
 
@@ -319,7 +318,7 @@ fn wrap_in_container(s: &mut Session, a: WrapArgs) -> Result<WrapOut, Refusal> {
         WrapShape::Diamond => Kind::Diamond,
     };
     let (wrapped, skipped) =
-        with_doc(s, |tx, m, _math, ids_src| text_cmd::wrap_in_container(tx, m, ids_src, &ids, shape, padding))
+        with_doc(s, |tx, m, _math, ids_src| text_bind::wrap_in_container(tx, m, ids_src, &ids, shape, padding))
             .map_err(|e| refuse(cmd, e))?;
     if wrapped.is_empty() {
         return Err(Refusal::not_applicable(cmd, "a container", "free text elements (a text that is already a label is skipped)"));
@@ -461,6 +460,8 @@ pub const COMMANDS: &[CommandSpec] = &[
     )
     .available(editing_now)
     .refusals(&["not_editing", "invalid_latex"])
+    // A blocked document cannot take the result (`edit_end` says so), but the edit can still be discarded.
+    .allowed_when_blocked()
     .shortcuts(EDIT_END_KEYS),
     CommandSpec::new(
         "text.style_range",

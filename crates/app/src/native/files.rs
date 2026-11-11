@@ -4,7 +4,7 @@ use std::fs;
 use std::path::{Component, Path, PathBuf};
 
 use drafftink_engine::PortError;
-use drafftink_engine::ports::{FileRef, Files};
+use drafftink_engine::ports::{FileRef, Files, WriteOutcome};
 
 /// Reads and writes the files the user names.
 pub(crate) struct NativeFiles {
@@ -60,16 +60,16 @@ impl Files for NativeFiles {
         self.target(file).is_ok_and(|p| p.exists())
     }
 
-    fn write(&mut self, file: &FileRef, bytes: &[u8], _mime: &str) -> Result<FileRef, PortError> {
+    fn write(&mut self, file: &FileRef, bytes: &[u8], _mime: &str) -> Result<WriteOutcome, PortError> {
         let path = self.target(file)?;
         if let Some(parent) = path.parent().filter(|p| !p.as_os_str().is_empty()) {
             fs::create_dir_all(parent).map_err(|e| PortError::Failed(format!("{}: {e}", parent.display())))?;
         }
         fs::write(&path, bytes).map_err(|e| PortError::Failed(format!("{}: {e}", path.display())))?;
-        Ok(match file {
+        Ok(WriteOutcome::Done(match file {
             FileRef::Download { .. } => FileRef::Path { path: path.display().to_string() },
             other => other.clone(),
-        })
+        }))
     }
 }
 

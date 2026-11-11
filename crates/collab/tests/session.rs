@@ -42,13 +42,13 @@ fn pump_connects_joins_syncs_and_reports_what_happened() {
         room: room(),
         client_id: cid(1),
         peers: vec![],
-        server_version: doc_server.version_vector(),
+        server_version: doc_server.version_vector().unwrap(),
         limits: Default::default(),
     });
     server.push(&ServerMessage::SyncResponse {
         kind: drafftink_protocol::SyncKind::Updates,
-        data: doc_server.export_updates_since(&store.version_vector()).unwrap(),
-        server_version: doc_server.version_vector(),
+        data: doc_server.export_updates_since(&store.version_vector().unwrap()).unwrap(),
+        server_version: doc_server.version_vector().unwrap(),
     });
     assert_eq!(wakes.load(Ordering::SeqCst), 2, "the transport woke its owner for each event");
     let p = s.pump(10, &mut store);
@@ -79,13 +79,13 @@ fn an_idle_pump_asks_for_no_redraw_and_no_early_wake() {
         room: room(),
         client_id: cid(1),
         peers: vec![],
-        server_version: doc_server.version_vector(),
+        server_version: doc_server.version_vector().unwrap(),
         limits: Default::default(),
     });
     server.push(&ServerMessage::SyncResponse {
         kind: drafftink_protocol::SyncKind::Updates,
         data: vec![],
-        server_version: doc_server.version_vector(),
+        server_version: doc_server.version_vector().unwrap(),
     });
     s.pump(5, &mut store);
     let acks: Vec<_> = server
@@ -170,13 +170,13 @@ fn leaving_through_the_session_sends_leave_and_closes_the_transport() {
         room: room(),
         client_id: cid(1),
         peers: vec![],
-        server_version: doc_server.version_vector(),
+        server_version: doc_server.version_vector().unwrap(),
         limits: Default::default(),
     });
     server.push(&ServerMessage::SyncResponse {
         kind: drafftink_protocol::SyncKind::Updates,
         data: vec![],
-        server_version: doc_server.version_vector(),
+        server_version: doc_server.version_vector().unwrap(),
     });
     s.pump(1, &mut store);
     server.recv_all();

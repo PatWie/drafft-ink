@@ -11,7 +11,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
 use crate::gesture::GestureState;
-use crate::ports::{PortKind, PortWrite, Ports};
+use crate::ports::{PortKind, PortWrite, Ports, SaveDone, WriteToken};
 use crate::refusal::Refusal;
 use crate::registry::Registry;
 use crate::ring::{Origin, Ring};
@@ -58,6 +58,8 @@ pub(crate) struct RunState {
     pub origin: Origin,
     /// The pipeline is running the final command of a gesture (`gesture.end`): its step is not coalesced.
     pub gesture_end: bool,
+    /// The running call is a [`Session::query`]: a success leaves no ring entry.
+    pub quiet_ok: bool,
 }
 
 /// Which dirty reasons are pending since the shell last asked.
@@ -95,9 +97,29 @@ pub struct Session {
     pub(crate) run: RunState,
     pub(crate) dirty: Dirty,
     pub(crate) perf_mark: Option<PerfStats>,
+    /// Whether `perf.stats` reads the whole process or the calling thread.
+    pub(crate) perf_scope: PerfScope,
+    /// Document writes that the files port will finish later, with what to do when each is confirmed.
+    pub(crate) saves: Vec<(WriteToken, SaveDone)>,
+}
+
+/// Which counters `perf.stats` reports.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum PerfScope {
+    /// Everything the process counted.
+    Process,
+    /// What the thread that calls `perf.stats` counted.
+    Thread,
 }
 
 impl Session {
+    /// Makes `perf.stats` report the work of the calling thread only. Many sessions that share a process (a
+    /// test suite, the testkit) otherwise add their counters to the same process-wide totals, so a session
+    /// could not tell its own work from the others'. The shell of an app leaves the default.
+    pub fn count_this_thread_only(&mut self) {
+        self.perf_scope = PerfScope::Thread;
+    }
+
     /// A session with one empty tab over the global registry.
     pub fn new(ports: Ports) -> Self {
         Self::with_registry(ports, Registry::global())
@@ -124,6 +146,8 @@ impl Session {
             run: RunState::default(),
             dirty: Dirty::default(),
             perf_mark: None,
+            perf_scope: PerfScope::Process,
+            saves: Vec::new(),
         }
     }
 
@@ -435,6 +459,7 @@ impl Session {
                 "name": t.doc.store().meta().name,
                 "active": i == self.active_index(),
                 "dirty": t.dirty(),
+                "blocked_by_schema": t.doc.blocked_by_schema(),
             })).collect::<Vec<_>>(),
             "tool": self.tool.effective().name(),
             "tool_lock": self.tool.lock,
@@ -451,6 +476,7 @@ impl Session {
             })),
             "revision": t.doc.revision(),
             "dirty": t.dirty(),
+            "blocked_by_schema": t.doc.blocked_by_schema(),
             "collab": { "state": collab.state, "room": collab.room },
             "settings_revision": self.settings.revision,
         })

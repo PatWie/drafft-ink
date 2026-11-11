@@ -239,6 +239,18 @@ impl Client {
         seq
     }
 
+    /// Writes `meta.<key>` (the document's own bookkeeping, not an element) and sends the update. Returns its `seq`.
+    pub async fn edit_meta(&mut self, key: &str, value: LoroValue) -> u32 {
+        self.doc.get_map("meta").insert(key, value).expect("insert");
+        self.doc.commit();
+        let bytes = self.doc.export(ExportMode::updates(&self.exported)).expect("export");
+        self.exported = self.doc.oplog_vv();
+        self.seq += 1;
+        let seq = self.seq;
+        self.send(&ClientMessage::Update { seq, update: bytes }).await;
+        seq
+    }
+
     /// Edits and waits for the `Ack`.
     pub async fn edit_acked(&mut self, key: &str, value: LoroValue) {
         let seq = self.edit(key, value).await;

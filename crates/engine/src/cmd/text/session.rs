@@ -6,12 +6,11 @@
 //! `text.edit_end` commits it.
 
 use drafftink_edit::frame;
-use drafftink_edit::text_bind::{self, Relabeled};
-use drafftink_edit::text_cmd::{self, MathMeasure, NewText, RunSpec, TextCmdError, TextProps};
+use drafftink_edit::style::{StyleError, StyleProps};
+use drafftink_edit::text_bind::{self, MathMeasure, NewText, Relabeled, RunSpec, TextBindError, TextProps};
 use drafftink_geom::kurbo::Point;
-use drafftink_scene::limits;
 use drafftink_scene::{
-    Color, ElementId, ElementKind, FontFamily, FontWeight, Kind, SceneTx, TextAlign, TextStyle, VerticalAlign,
+    Color, ElementId, ElementKind, Kind, SceneTx,
 };
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -32,6 +31,8 @@ use crate::state::TextEdit;
 struct Draft {
     at: Point,
     container: Option<ElementId>,
+    /// A fixed width for the new text (it wraps); `None` lets the box follow the content.
+    width: Option<f64>,
 }
 
 /// Where the caret starts.
@@ -72,6 +73,9 @@ pub struct BeginArgs {
     pub at: Option<[f64; 2]>,
     /// With `at`: the shape or arrow that the new text becomes the label of.
     pub container: Option<Ref>,
+    /// With `at`: a fixed width for the new text, in world units. The text wraps at it and the box does not follow
+    /// the content (a drag with the text tool). Absent: the box follows the content.
+    pub width: Option<f64>,
     /// Where the caret starts: `end`, `start`, `all`, or a character index.
     pub caret: Caret,
 }
@@ -116,7 +120,7 @@ impl<'a> Final<'a> {
             text: a.text.as_deref(),
             latex: a.latex.as_deref(),
             runs: a.runs.as_ref().map(|r| r.iter().map(|r| RunSpec { start: r.start, end: r.end, color: r.color }).collect()),
-            props: a.style.as_ref().map(|st| st.props(cmd)).transpose()?.unwrap_or_default(),
+            props: text_props(cmd, a.style.as_ref())?,
         })
     }
 
@@ -126,11 +130,11 @@ impl<'a> Final<'a> {
         tx: &mut T,
         m: &dyn text_bind::TextMeasure,
         id: &ElementId,
-    ) -> Result<(), TextCmdError> {
+    ) -> Result<(), TextBindError> {
         if let Some(runs) = &self.runs {
-            text_cmd::replace_runs(tx, id, runs)?;
+            text_bind::replace_runs(tx, id, runs)?;
         }
-        text_cmd::apply_text_props(tx, m, id, &self.props)?;
+        text_bind::apply_text_props(tx, m, id, &self.props)?;
         Ok(())
     }
 }
@@ -159,6 +163,13 @@ fn resolve_caret(cmd: &str, caret: Caret, len: usize) -> Result<[u32; 2], Refusa
 
 pub(super) fn edit_begin(s: &mut Session, a: BeginArgs) -> Result<BeginOut, Refusal> {
     let cmd = s.cmd();
+    if a.width.is_some() && a.at.is_none() {
+        return Err(Refusal::custom(
+            "bad_args",
+            cmd,
+            "`width` only works together with `at`. To change the width of an existing text, use `element.set_bounds`.",
+        ));
+    }
     match (a.id.as_ref(), a.at, a.container.as_ref()) {
         (Some(_), Some(_), _) => Err(Refusal::custom(
             "bad_args",
@@ -170,7 +181,7 @@ pub(super) fn edit_begin(s: &mut Session, a: BeginArgs) -> Result<BeginOut, Refu
             cmd,
             "`container` only works together with `at`. To edit the label of a shape, pass the shape as `id`.",
         )),
-        (_, Some(at), container) => begin_draft(s, cmd, at, container, a.caret),
+        (_, Some(at), container) => begin_draft(s, cmd, at, container, a.width, a.caret),
         (id, None, None) => begin_existing(s, cmd, id, a.caret),
     }
 }
@@ -181,13 +192,18 @@ fn begin_draft(
     cmd: &str,
     at: [f64; 2],
     container: Option<&Ref>,
+    width: Option<f64>,
     caret: Caret,
 ) -> Result<BeginOut, Refusal> {
     let (x, y) = (args::world(cmd, "at[0]", at[0])?, args::world(cmd, "at[1]", at[1])?);
+    let width = width.map(|w| args::positive(cmd, "width", w, args::MAX_WORLD)).transpose()?;
+    if width.is_some() && container.is_some() {
+        return Err(Refusal::bad_arg(cmd, "width", "does not apply to a label: a label takes the width of its shape"));
+    }
     let caret = resolve_caret(cmd, caret, 0)?;
     let container = container.map(|c| draft_container(s, cmd, c)).transpose()?;
     s.text_edit = Some(TextEdit { element: None, draft: true });
-    let draft = Draft { at: Point::new(x, y), container: container.clone() };
+    let draft = Draft { at: Point::new(x, y), container: container.clone(), width };
     s.ext.with::<Draft, _>(|d| *d = draft);
     select_only(s, &[]);
     Ok(BeginOut {
@@ -196,7 +212,7 @@ fn begin_draft(
         draft: true,
         text: String::new(),
         latex: None,
-        bounds: RectOut { x: round2(x), y: round2(y), w: 0.0, h: 0.0 },
+        bounds: RectOut { x: round2(x), y: round2(y), w: width.map_or(0.0, round2), h: 0.0 },
         caret,
     })
 }
@@ -293,45 +309,17 @@ pub struct RunArg {
     pub color: Color,
 }
 
-/// Text properties chosen during the edit, applied in the same step. The names are those of the style
-/// properties of the same name.
-///
-/// SEAM(f-style): `StyleProps` of `style.set` is not on main yet. Replace this struct with it, or keep it as a
-/// subset, once `drafftink_edit::style` lands. Colours accept `#rrggbb`, `#rrggbbaa` and `transparent` here.
-#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, JsonSchema)]
-#[serde(deny_unknown_fields, default)]
-pub struct TextStyleArgs {
-    /// Text colour.
-    pub stroke_color: Option<Color>,
-    /// Opacity, 0 to 1.
-    pub opacity: Option<f64>,
-    /// Font family: `gelpen`, `noto_sans`, `gelpen_serif` or `vanilla_extract`.
-    pub font_family: Option<FontFamily>,
-    /// Font weight: `light`, `regular` or `heavy`.
-    pub font_weight: Option<FontWeight>,
-    /// Font size in world units.
-    pub font_size: Option<f64>,
-    /// Horizontal alignment: `left`, `center` or `right`.
-    pub text_align: Option<TextAlign>,
-    /// Vertical alignment: `top`, `middle` or `bottom`.
-    pub vertical_align: Option<VerticalAlign>,
-    /// Line height as a multiple of the font size.
-    pub line_height: Option<f64>,
-}
-
-impl TextStyleArgs {
-    fn props(&self, cmd: &str) -> Result<TextProps, Refusal> {
-        Ok(TextProps {
-            stroke_color: self.stroke_color,
-            opacity: self.opacity.map(|v| args::in_range(cmd, "style.opacity", v, 0.0, 1.0)).transpose()?,
-            font_family: self.font_family,
-            font_weight: self.font_weight,
-            font_size: self.font_size.map(|v| args::positive(cmd, "style.font_size", v, limits::MAX_FONT_SIZE)).transpose()?,
-            text_align: self.text_align,
-            vertical_align: self.vertical_align,
-            line_height: self.line_height.map(|v| args::positive(cmd, "style.line_height", v, 10.0)).transpose()?,
-        })
-    }
+/// The text properties of the `style` argument: validated like `style.set`, and only those text can take.
+fn text_props(cmd: &str, style: Option<&StyleProps>) -> Result<TextProps, Refusal> {
+    let Some(st) = style.filter(|st| !st.is_empty()) else { return Ok(TextProps::default()) };
+    st.validate().map_err(|e| match e {
+        StyleError::OutOfRange { prop, expected } => Refusal::bad_arg(cmd, &format!("style.{}", prop.name()), expected),
+        other => Refusal::bad_arg(cmd, "style", other.to_string()),
+    })?;
+    TextProps::from_style(st).map_err(|props| {
+        let named = props.iter().map(|p| format!("`{}`", p.name())).collect::<Vec<_>>().join(", ");
+        Refusal::not_applicable(cmd, &named, "text, labels and formulas (colour, opacity and the font properties). Use `style.set` for other properties")
+    })
 }
 
 /// Arguments of `text.edit_end`.
@@ -346,8 +334,10 @@ pub struct EndArgs {
     pub latex: Option<String>,
     /// Colour ranges of the text. Absent keeps the current ones.
     pub runs: Option<Vec<RunArg>>,
-    /// Text properties chosen during the edit.
-    pub style: Option<TextStyleArgs>,
+    /// Text properties chosen during the edit, applied in the same step: the colour, opacity and font
+    /// properties of `style.set` (`stroke_color`, `opacity`, `font_family`, `font_weight`, `font_size`,
+    /// `text_align`, `vertical_align`, `line_height`). Other style properties are refused.
+    pub style: Option<StyleProps>,
 }
 
 impl Default for EndArgs {
@@ -389,6 +379,9 @@ pub(super) fn edit_end(s: &mut Session, a: EndArgs) -> Result<EndOut, Refusal> {
     if !a.commit {
         return Ok(EndOut { discarded: true, ..EndOut::default() });
     }
+    if s.tab().doc.blocked_by_schema().is_some() {
+        return Err(Refusal::newer_schema(cmd));
+    }
     let fin = Final::new(cmd, &a)?;
     match te.element {
         None => end_draft(s, cmd, &fin),
@@ -419,20 +412,19 @@ fn end_draft(s: &mut Session, cmd: &str, fin: &Final<'_>) -> Result<EndOut, Refu
     if fin.latex.is_some() {
         return Err(Refusal::bad_arg(cmd, "latex", "is for a math element. A new text is created with `text`"));
     }
-    let Draft { at, container } = s.ext.with::<Draft, _>(|d| d.clone());
+    let Draft { at, container, width } = s.ext.with::<Draft, _>(|d| d.clone());
     let Some(content) = fin.text.filter(|t| !t.trim().is_empty()) else {
         return Ok(gone(false));
     };
-    // SEAM(f-style): `s.tool.text_defaults` (branch f-style) is the font of a new text. Until it is on main, the
-    // scene defaults are used.
-    let mut font = TextStyle::default();
+    let defaults = s.tool.text_defaults.clone();
+    let mut font = defaults.clone();
     fin.props.apply_font(&mut font);
     let mut style = s.tool.style_defaults.clone();
     style.stroke_color = fin.props.stroke_color.unwrap_or(style.stroke_color);
     style.opacity = fin.props.opacity.unwrap_or(style.opacity);
     let id = with_doc(s, |tx, m, _math, ids| {
         if let Some(c) = &container {
-            let label = match text_bind::relabel(tx, m, ids, c, content, true)? {
+            let label = match text_bind::relabel(tx, m, ids, c, content, true, Some(&defaults))? {
                 Relabeled::Created(o) | Relabeled::Updated(o) => o.label,
                 Relabeled::Removed(id) => id,
                 Relabeled::Nothing => c.clone(),
@@ -441,7 +433,7 @@ fn end_draft(s: &mut Session, cmd: &str, fin: &Final<'_>) -> Result<EndOut, Refu
             return Ok(label);
         }
         let frame = frame::frame_at(&*tx, at, &Default::default());
-        let id = text_cmd::create_text(tx, m, ids, &NewText { at, content, font, style, width: None, frame })?;
+        let id = text_bind::create_text(tx, m, ids, &NewText { at, content, font, style, width, frame })?;
         fin.restyle(tx, m, &id)?;
         Ok(id)
     })
@@ -480,7 +472,7 @@ fn end_math(s: &mut Session, cmd: &str, id: &ElementId, fin: &Final<'_>) -> Resu
     }
     with_doc(s, |tx, _m, math, _ids| {
         if let Some(l) = fin.latex {
-            text_cmd::set_latex(tx, math, id, l)?;
+            text_bind::set_latex(tx, math, id, l)?;
         }
         apply_math_props(tx, math, id, &fin.props)
     })
@@ -525,10 +517,11 @@ fn end_container(s: &mut Session, cmd: &str, id: &ElementId, fin: &Final<'_>) ->
     if fin.latex.is_some() {
         return Err(Refusal::bad_arg(cmd, "latex", "is for a math element. A label is edited with `text`"));
     }
+    let defaults = s.tool.text_defaults.clone();
     let label = with_doc(s, |tx, m, _math, ids| {
         let mut label = text_bind::label_of(&*tx, id);
         if let Some(c) = fin.text {
-            label = match text_bind::relabel(tx, m, ids, id, c, true)? {
+            label = match text_bind::relabel(tx, m, ids, id, c, true, Some(&defaults))? {
                 Relabeled::Created(o) | Relabeled::Updated(o) => Some(o.label),
                 Relabeled::Removed(_) | Relabeled::Nothing => None,
             };
@@ -550,7 +543,7 @@ fn apply_math_props<T: SceneTx>(
     math: &dyn MathMeasure,
     id: &ElementId,
     props: &TextProps,
-) -> Result<(), TextCmdError> {
+) -> Result<(), TextBindError> {
     if props.stroke_color.is_some() || props.opacity.is_some() {
         tx.update(id, |e| {
             e.style.stroke_color = props.stroke_color.unwrap_or(e.style.stroke_color);
@@ -559,7 +552,7 @@ fn apply_math_props<T: SceneTx>(
     }
     if let (Some(size), Some(ElementKind::Math(m))) = (props.font_size, tx.get(id).map(|e| &e.kind)) {
         let latex = m.latex.clone();
-        text_cmd::set_math_size(tx, math, id, &latex, size)?;
+        text_bind::set_math_size(tx, math, id, &latex, size)?;
     }
     Ok(())
 }

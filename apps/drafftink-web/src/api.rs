@@ -53,7 +53,9 @@ pub(crate) fn install(jobs: &JobSender) -> Result<(), JsValue> {
 
     let j = jobs.clone();
     method2(&api, "execute", move |id, args| {
-        let Some(id) = id.as_string() else { return bad("`execute` needs the command id as a string, like execute('element.create', {...})") };
+        let Some(id) = id.as_string() else {
+            return bad("`execute` needs the command id as a string, like execute('element.create', {...})");
+        };
         match js::to_json(&args) {
             Ok(args) => js::call(&j, "execute", json!({ "id": id, "args": args })).into(),
             Err(e) => js::rejected(&e).into(),
@@ -81,7 +83,9 @@ pub(crate) fn install(jobs: &JobSender) -> Result<(), JsValue> {
 
     let j = jobs.clone();
     method2(&api, "describe", move |id, _| {
-        let Some(id) = id.as_string() else { return bad("`describe` needs the command id as a string, like describe('element.create')") };
+        let Some(id) = id.as_string() else {
+            return bad("`describe` needs the command id as a string, like describe('element.create')");
+        };
         js::call(&j, "describe", json!({ "id": id })).into()
     });
 

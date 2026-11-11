@@ -131,6 +131,7 @@ pub const COMMANDS: &[CommandSpec] = &[
         Facts { while_text_edit: TextGate::Allowed, ..GESTURE },
     )
     .own_transaction()
+    .allowed_when_blocked()
     .example(r#"{}"#),
 ];
 

@@ -25,10 +25,11 @@ use std::path::{Path, PathBuf};
 use std::sync::{Mutex, MutexGuard, OnceLock, PoisonError};
 
 use drafftink_engine::Session;
+use drafftink_engine::ports::FileRef;
 use drafftink_engine::ports::fake::Fakes;
 use drafftink_engine::services::{LazyTypesetter, Services, SharedTypesetter};
 use drafftink_engine::store::TabDoc;
-use drafftink_scene::{Document, Element, ElementId, ElementKind, Kind, SceneRead};
+use drafftink_scene::{Document, SceneRead};
 use serde::Deserialize;
 use serde_json::{Value, json};
 
@@ -52,22 +53,9 @@ pub enum HarnessError {
         /// What the file system said.
         why: String,
     },
-    /// Bytes that the io crate cannot open as a document.
-    #[error("cannot open `{path}` as a document: {why}")]
-    NotADocument {
-        /// The path as given.
-        path: String,
-        /// What the importer said.
-        why: String,
-    },
     /// The scene crate rejected the content.
     #[error("the scene store refused the document: {0}")]
     Store(String),
-    /// A scene probe asked for an element that is not there.
-    #[error(
-        "no element `{0}` in the active tab. Probe without `id` to see the counts, or list ids with `doc.outline`."
-    )]
-    NoSuchElement(String),
     /// Arguments of a harness call that do not fit its signature.
     #[error("bad arguments for harness method `{method}`: {why}")]
     BadArgs {
@@ -143,40 +131,24 @@ impl Harness {
         Ok(())
     }
 
-    /// Opens `tests/fixtures/<path>` (native, old drafft-ink, Excalidraw, gzip) as the active tab's document.
-    /// Output: `{path, format, elements, warnings}`.
+    /// Copies `tests/fixtures/<path>` (native, old drafft-ink, Excalidraw, gzip, Loro snapshot) into the fake
+    /// `Files` port under the name `fixtures/<path>`. A scenario then opens it with
+    /// `doc.open {"source": {"path": "fixtures/<path>"}}`. Output: `{file: {path}, size}`.
     ///
-    /// Reason: a file on the test machine's disk is outside every port. `doc.open` reads through the `Files` port,
-    /// and the fake keeps files in memory, so it cannot see `tests/fixtures`. Once `doc.open` is registered this
-    /// method should copy the bytes into the fake `Files` port and run that command instead.
-    pub fn load_fixture(&mut self, path: &str) -> HarnessResult {
+    /// Reason: a file on the test machine's disk is outside every port. `doc.open` reads through the `Files`
+    /// port, and the fake keeps its files in memory, so it cannot see `tests/fixtures` until the bytes are put
+    /// there. Nothing else is done here: parsing, migration and loading are the command's.
+    pub fn stage_fixture(&mut self, path: &str) -> HarnessResult {
         let rel = Path::new(path);
         let climbs = rel.components().any(|c| !matches!(c, std::path::Component::Normal(_)));
         if path.is_empty() || climbs {
             return Err(HarnessError::BadPath(path.to_owned()));
         }
-        let full = self.fixtures.join(rel);
-        let bytes =
-            std::fs::read(&full).map_err(|e| HarnessError::Unreadable { path: path.to_owned(), why: e.to_string() })?;
-        let opened = {
-            let s = &mut self.session;
-            drafftink_io::open(&bytes, &mut *s.ports.ids, s.services.io())
-                .map_err(|e| HarnessError::NotADocument { path: path.to_owned(), why: e.to_string() })?
-        };
-        let drafftink_io::Opened::Document { imported, source } = opened else {
-            return Err(HarnessError::NotADocument {
-                path: path.to_owned(),
-                why: "it is a library or a diagram, not a document".to_owned(),
-            });
-        };
-        let warnings = imported.report.warnings.clone();
-        self.install(&imported.document)?;
-        Ok(json!({
-            "path": path,
-            "format": format!("{source:?}"),
-            "elements": self.session.tab().doc.store().len(),
-            "warnings": warnings,
-        }))
+        let bytes = std::fs::read(self.fixtures.join(rel))
+            .map_err(|e| HarnessError::Unreadable { path: path.to_owned(), why: e.to_string() })?;
+        let name = format!("fixtures/{path}");
+        self.fakes.files.insert(&FileRef::Path { path: name.clone() }, &bytes, "application/octet-stream");
+        Ok(json!({ "file": { "path": name }, "size": bytes.len() }))
     }
 
     /// Replaces the active tab's document with the generated scene of [`crate::scenegen`] (`count` elements, `seed`).
@@ -197,68 +169,6 @@ impl Harness {
     pub fn advance_clock(&mut self, ms: u64) -> HarnessResult {
         self.fakes.clock.advance_ms(ms);
         Ok(json!({ "now_ms": drafftink_engine::ports::Clock::now_ms(&self.fakes.clock) }))
-    }
-
-    /// Looks inside the active tab's scene. Without `id`: `{total, kinds, groups, bound_arrows, bounds}`.
-    /// With `id`: also `element`, that element's `{id, kind, name, bounds, angle, group_ids, frame, bindings,
-    /// locked}`, its `center`, its `points` in world coordinates (lines and arrows) and its `binding` records. With `outline`:
-    /// also `outline_text`, the text form of the document outline.
-    ///
-    /// Reason: no read-only command lists elements yet. `element.query` and `doc.outline` (docs/commands.md) will
-    /// answer all of this from the same `drafftink-edit::query` functions this method calls. When they are
-    /// registered, scenarios should move to them, and this method goes away with its last caller.
-    pub fn scene_probe(&self, id: Option<&str>, outline: bool) -> HarnessResult {
-        use drafftink_edit::query::{self, Field, OutlineOpts};
-        let store = self.session.tab().doc.store();
-        let mut kinds = std::collections::BTreeMap::<&'static str, usize>::new();
-        let (mut groups, mut bound_arrows) = (std::collections::BTreeSet::new(), 0usize);
-        let mut bounds: Option<drafftink_geom::kurbo::Rect> = None;
-        for e in store.iter() {
-            *kinds.entry(e.tag().name()).or_insert(0) += 1;
-            groups.extend(e.group_ids.iter().cloned());
-            if e.tag() == Kind::Arrow && e.binding_targets().iter().any(Option::is_some) {
-                bound_arrows += 1;
-            }
-            let b = query::element_bounds(e);
-            bounds = Some(bounds.map_or(b, |u| u.union(b)));
-        }
-        let mut out = json!({
-            "total": store.len(),
-            "kinds": kinds,
-            "groups": groups.len(),
-            "bound_arrows": bound_arrows,
-            "bounds": bounds.map(|b| json!({ "x": b.x0, "y": b.y0, "w": b.width(), "h": b.height() })),
-        });
-        let Value::Object(map) = &mut out else { return Ok(out) };
-        if let Some(raw) = id {
-            let eid = ElementId::new(raw).map_err(|_| HarnessError::NoSuchElement(raw.to_owned()))?;
-            let el =
-                store.get(&eid).filter(|e| !e.deleted).ok_or_else(|| HarnessError::NoSuchElement(raw.to_owned()))?;
-            let fields = [
-                Field::Id,
-                Field::Kind,
-                Field::Name,
-                Field::Bounds,
-                Field::Angle,
-                Field::GroupIds,
-                Field::Frame,
-                Field::Bindings,
-                Field::Locked,
-            ];
-            let mut described = query::describe(store, &eid, &fields);
-            if let Value::Object(d) = &mut described {
-                let c = el.transform.center();
-                d.insert("center".to_owned(), json!([c.x, c.y]));
-                d.insert("points".to_owned(), world_points_json(el));
-                d.insert("binding".to_owned(), binding_json(el));
-            }
-            map.insert("element".to_owned(), described);
-        }
-        if outline {
-            let text = query::outline(store, &OutlineOpts::default()).to_text();
-            map.insert("outline_text".to_owned(), Value::String(text));
-        }
-        Ok(out)
     }
 
     /// Renders the active tab's current view offscreen (Vello through `drafftink-render` and `drafftink-gpu`) and
@@ -355,25 +265,6 @@ pub enum ProbePoint {
     },
 }
 
-fn world_points_json(e: &Element) -> Value {
-    drafftink_edit::linear::world_points(e)
-        .map_or(Value::Null, |pts| Value::Array(pts.iter().map(|p| json!([p.x, p.y])).collect()))
-}
-
-fn binding_json(e: &Element) -> Value {
-    let one = |b: &Option<drafftink_scene::Binding>| {
-        b.as_ref().map_or(Value::Null, |b| {
-            json!({ "target": b.target, "mode": format!("{:?}", b.mode).to_lowercase(), "fixed_point": b.fixed_point })
-        })
-    };
-    match &e.kind {
-        ElementKind::Line(d) | ElementKind::Arrow(d) => {
-            json!({ "start": one(&d.start_binding), "end": one(&d.end_binding) })
-        }
-        _ => Value::Null,
-    }
-}
-
 // ---------------------------------------------------------------------------------------------
 // The GPU
 // ---------------------------------------------------------------------------------------------
@@ -455,17 +346,22 @@ mod tests {
     fn fixture_paths_cannot_leave_the_fixture_directory() {
         let mut h = Harness::new();
         for bad in ["", "/etc/passwd", "../Cargo.toml", "legacy/../../Cargo.toml"] {
-            assert_eq!(h.load_fixture(bad), Err(HarnessError::BadPath(bad.to_owned())), "{bad}");
+            assert_eq!(h.stage_fixture(bad), Err(HarnessError::BadPath(bad.to_owned())), "{bad}");
         }
-        let e = h.load_fixture("legacy/does_not_exist.json").unwrap_err();
+        let e = h.stage_fixture("legacy/does_not_exist.json").unwrap_err();
         assert!(matches!(e, HarnessError::Unreadable { .. }), "{e}");
+        assert!(h.fakes.files.is_empty());
     }
 
     #[test]
-    fn a_fixture_replaces_the_document_without_history_and_is_not_dirty() {
+    fn a_staged_fixture_is_a_file_that_doc_open_opens_without_history_and_not_dirty() {
         let mut h = Harness::new();
-        let out = h.load_fixture("legacy/welcome.json").unwrap();
-        assert_eq!(out["elements"], json!(h.session.tab().doc.store().len()));
+        let out = h.stage_fixture("legacy/welcome.json").unwrap();
+        assert_eq!(out["file"]["path"], "fixtures/legacy/welcome.json");
+        assert!(out["size"].as_u64().unwrap() > 1000);
+        assert_eq!(h.session.tab().doc.store().len(), 0, "staging does not open anything");
+        let opened = h.session.execute("doc.open", json!({ "source": out["file"] })).unwrap();
+        assert_eq!(opened["elements"], json!(h.session.tab().doc.store().len()));
         assert!(h.session.tab().doc.store().len() > 40);
         assert!(!h.session.tab().dirty());
         assert!(!h.session.tab().doc.can_undo());
@@ -478,23 +374,6 @@ mod tests {
         let t1 = h.advance_clock(250).unwrap()["now_ms"].as_u64().unwrap();
         assert_eq!(t1, t0 + 250);
         assert_eq!(h.session.now_ms(), t1);
-    }
-
-    #[test]
-    fn the_scene_probe_counts_kinds_groups_bindings_and_reads_one_element() {
-        let mut h = Harness::new();
-        h.load_generated(20, 1).unwrap();
-        let p = h.scene_probe(Some("e4"), true).unwrap();
-        assert_eq!(p["total"], json!(20));
-        assert_eq!(p["kinds"]["arrow"], json!(2));
-        assert_eq!(p["bound_arrows"], json!(2));
-        assert_eq!(p["groups"], json!(2));
-        assert_eq!(p["element"]["kind"], json!("arrow"));
-        assert_eq!(p["element"]["binding"]["start"]["target"], json!("e0"));
-        assert_eq!(p["element"]["binding"]["end"]["target"], json!("e1"));
-        assert_eq!(p["element"]["points"].as_array().map(Vec::len), Some(2));
-        assert!(p["outline_text"].as_str().unwrap().contains("e4"));
-        assert_eq!(h.scene_probe(Some("nope"), false), Err(HarnessError::NoSuchElement("nope".into())));
     }
 
     #[test]

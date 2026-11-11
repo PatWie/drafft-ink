@@ -180,6 +180,7 @@ impl<'a> PeerSpec<'a> {
 
 pub fn make_store(n: u8) -> LoroStore {
     LoroStore::with_config(drafftink_doc::LoroConfig { peer_id: Some(u64::from(n) + 1000), ..Default::default() })
+        .unwrap()
 }
 
 impl Peer {

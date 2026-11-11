@@ -1,0 +1,45 @@
+{
+  "about": "A group is one unit for layer order, locking and ungrouping; deleting members until one is left dissolves the group everywhere; refusals name the missing group; all of it undoes.",
+  "steps": [
+    { "execute": "element.create", "args": { "kind": "rectangle", "bounds": { "x": 0, "y": 0, "w": 100, "h": 60 }, "style": { "fill_color": "#ffcc00" } } },
+    { "execute": "element.create", "args": { "kind": "ellipse", "bounds": { "x": 200, "y": 0, "w": 100, "h": 60 }, "style": { "fill_color": "#ffcc00" } } },
+    { "execute": "element.create", "args": { "kind": "diamond", "bounds": { "x": 400, "y": 0, "w": 100, "h": 60 }, "style": { "fill_color": "#ffcc00" } } },
+    { "execute": "element.create", "args": { "kind": "rectangle", "bounds": { "x": 600, "y": 0, "w": 100, "h": 60 }, "style": { "fill_color": "#ffcc00" } } },
+    { "execute": "group.create", "args": { "ids": ["e1", "e2"] }, "save": { "g1": "$.group" } },
+    { "execute": "group.create", "args": { "ids": ["e3", "e4"] }, "save": { "g2": "$.group" } },
+
+    { "note": "Layer order moves the whole group: bringing e1 to the front takes e2 with it.",
+      "execute": "arrange.z_order", "args": { "ids": ["e1"], "op": "front" }, "expect": [ { "path": "$.moved", "eq": ["e1", "e2"] } ] },
+    { "assert": "element.query", "args": { "fields": ["id"] }, "expect": [ { "path": "$.items[0].id", "eq": "e3" }, { "path": "$.items[2].id", "eq": "e1" }, { "path": "$.items[3].id", "eq": "e2" } ] },
+    { "undo": 1 },
+    { "assert": "element.query", "args": { "fields": ["id"] }, "expect": [ { "path": "$.items[0].id", "eq": "e1" } ] },
+
+    { "note": "Locking one member locks the group.",
+      "execute": "element.lock", "args": { "ids": ["e3"] }, "expect": [ { "path": "$.ids", "eq": ["e3", "e4"] } ] },
+    { "execute": "group.ungroup", "args": { "ids": ["e3"] }, "refused": "locked", "text": "`e3` is locked" },
+    { "execute": "element.unlock_all", "args": { "select": false } },
+
+    { "execute": "group.ungroup", "args": { "group": "{{g1}}" }, "expect": [ { "path": "$.removed", "eq": ["{{g1}}"] } ] },
+    { "assert": "doc.inspect", "expect": [ { "path": "$.groups", "eq": 1 } ] },
+    { "undo": 1 },
+    { "assert": "doc.inspect", "expect": [ { "path": "$.groups", "eq": 2 } ] },
+
+    { "note": "Deleting one of two members leaves a group of one, which counts as no group.",
+      "execute": "element.delete", "args": { "ids": ["e1"] } },
+    { "assert": "doc.inspect", "expect": [ { "path": "$.groups", "eq": 1 } ] },
+    { "assert": "doc.outline", "args": { "format": "json" }, "expect": [ { "path": "$.outline.groups", "len": 1 }, { "path": "$.outline.groups[0].members", "eq": ["e3", "e4"] } ] },
+    { "undo": 1 },
+    { "assert": "doc.inspect", "expect": [ { "path": "$.groups", "eq": 2 } ], "note": "Undo brings the member back and the group with it." },
+
+    { "execute": "selection.clear" },
+    { "execute": "group.ungroup", "refused": "no_group", "text": "No group is selected" },
+    { "execute": "group.set_name", "args": { "name": "x" }, "refused": "no_group" },
+    { "execute": "group.enter", "refused": "no_group" },
+    { "execute": "selection.select", "args": { "group": "{{g2}}" }, "expect": [ { "path": "$.selected", "eq": ["e3", "e4"] }, { "path": "$.groups", "eq": ["{{g2}}"] } ] },
+    { "execute": "group.set_name", "args": { "name": "pair" }, "expect": [ { "path": "$.name", "eq": "pair" } ] },
+    { "execute": "group.set_name", "args": { "name": "" }, "refused": "bad_name", "text": "1 to 64 characters" },
+    { "assert": "doc.inspect", "args": { "detail": "full", "ids": ["e3"] }, "expect": [ { "path": "$.items[0].group_ids", "eq": ["{{g2}}"] } ] },
+    { "undo": 1 },
+    { "assert": "history.state", "expect": [ { "path": "$.undo_label", "ne": "Name group", "note": "The name was one undo step." } ] }
+  ]
+}

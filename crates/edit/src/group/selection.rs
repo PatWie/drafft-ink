@@ -18,10 +18,16 @@
 use std::collections::BTreeSet;
 
 use drafftink_geom::kurbo::Rect;
+use drafftink_geom::lasso::{Lasso, lasso_selects};
 use drafftink_geom::select::{MarqueeMode, marquee_selects};
 use drafftink_scene::{Element, ElementId, GroupId, Kind, SceneRead};
 
-use super::units::{Relations, UnitKey, impl_from_target, is_label, live, primary_id, sort_z, unit_key, units};
+mod pick;
+
+pub use pick::{Pick, click_target, inside_editing_group, keeps_multi_selection, pick, pick_group};
+
+use super::units::{Relations, UnitKey, is_label, live, primary_id, sort_z, unit_key, units};
+use crate::target::TargetError;
 use crate::transform::geometry;
 
 /// The selection state of a tab.
@@ -82,12 +88,9 @@ pub enum ClickTarget {
 /// Why a selection change was refused.
 #[derive(Debug, Clone, PartialEq, thiserror::Error)]
 pub enum SelectionError {
-    /// No live element has this id.
-    #[error("element {0} does not exist or is deleted")]
-    NotFound(ElementId),
-    /// The element is locked.
-    #[error("{} element(s) are locked ({}). Unlock them first", .0.len(), super::units::ids_text(.0))]
-    Locked(Vec<ElementId>),
+    /// An element does not exist, is deleted, or is locked.
+    #[error(transparent)]
+    Target(#[from] TargetError),
     /// No group to enter.
     #[error("no group is selected. Select a group first (click it), or pass its id")]
     NoGroup,
@@ -101,7 +104,6 @@ pub enum SelectionError {
     #[error("there are no elements to select")]
     NothingToSelect,
 }
-impl_from_target!(SelectionError);
 
 /// Builds a normalized selection from leaf ids: bound text becomes its container, deleted ids are dropped, the
 /// children of a selected frame are dropped, and `groups` is derived. Locked elements are kept.
@@ -179,7 +181,7 @@ pub fn in_z_order<R: SceneRead>(scene: &R, sel: &Selection) -> Vec<ElementId> {
 fn innermost_shared(scene: &impl SceneRead, rel: &Relations, ids: &BTreeSet<ElementId>) -> Option<GroupId> {
     let mut common: Option<GroupId> = None;
     for id in ids {
-        let g = scene.get(id).and_then(|e| rel.stack(e).into_iter().next())?;
+        let g = scene.get(id).and_then(|e| rel.stack(e).next().cloned())?;
         match &common {
             None => common = Some(g),
             Some(c) if *c == g => {}
@@ -213,7 +215,7 @@ pub fn click<R: SceneRead>(
     let primary = primary_id(scene, hit);
     let e = live(scene, &primary)?;
     if e.locked && !opts.include_locked {
-        return Err(SelectionError::Locked(vec![primary]));
+        return Err(SelectionError::Target(TargetError::Locked(vec![primary])));
     }
     let editing = sel.editing_group.as_ref();
     let mut unit: BTreeSet<ElementId> = if opts.deep {
@@ -295,9 +297,10 @@ pub fn exit_group<R: SceneRead>(scene: &R, sel: &Selection) -> Result<Selection,
     };
     let members: BTreeSet<ElementId> = rel.members(&g).iter().map(|m| primary_id(scene, m)).collect();
     let parent = members.iter().next().and_then(|m| scene.get(m)).and_then(|e| {
-        let stack = rel.stack(e);
-        let i = stack.iter().position(|s| *s == g)?;
-        stack.get(i + 1).cloned()
+        // The group around `g`: the one after it in the stack, innermost first.
+        let mut stack = rel.stack(e).skip_while(|s| **s != g);
+        stack.next()?;
+        stack.next().cloned()
     });
     Ok(normalize(scene, &rel, members, parent))
 }
@@ -378,6 +381,23 @@ impl Default for RegionOpts {
 /// inside the editing group, the next level down). Locked elements and bound text are ignored, and the children
 /// of a selected frame are not selected together with it.
 pub fn select_region<R: SceneRead>(scene: &R, sel: &Selection, rect: Rect, opts: RegionOpts) -> Selection {
+    select_where(scene, sel, opts, |e| in_region(e, &rect, opts.contain))
+}
+
+/// Lasso selection: the marquee rules with a free-hand outline instead of a rectangle (`opts.contain` is the
+/// lasso's `Touch` or `Contain`, see [`drafftink_geom::lasso`]). Any member selected selects its whole unit, locked
+/// elements and bound text are ignored, and the children of a selected frame are not selected together with it.
+pub fn select_lasso<R: SceneRead>(scene: &R, sel: &Selection, lasso: &Lasso, opts: RegionOpts) -> Selection {
+    select_where(scene, sel, opts, |e| in_lasso(e, lasso, opts.contain))
+}
+
+/// The selection after a region gesture whose test is `hit`, combined with `sel` as `opts.mode` says.
+fn select_where<R: SceneRead>(
+    scene: &R,
+    sel: &Selection,
+    opts: RegionOpts,
+    hit: impl Fn(&Element) -> bool,
+) -> Selection {
     let rel = Relations::build(scene);
     let editing = match opts.mode {
         RegionMode::Replace => None,
@@ -386,7 +406,7 @@ pub fn select_region<R: SceneRead>(scene: &R, sel: &Selection, rect: Rect, opts:
     let hits: Vec<ElementId> = scene
         .iter()
         .filter(|e| (opts.include_locked || !e.locked) && !is_label(scene, e))
-        .filter(|e| in_region(e, &rect, opts.contain))
+        .filter(|e| hit(e))
         .map(|e| e.id.clone())
         .collect();
     let mut ids: BTreeSet<ElementId> = match opts.mode {
@@ -406,6 +426,13 @@ pub fn select_region<R: SceneRead>(scene: &R, sel: &Selection, rect: Rect, opts:
 fn in_region(e: &Element, rect: &Rect, mode: MarqueeMode) -> bool {
     match geometry::primitive(e) {
         Some(p) => marquee_selects(&p, rect, mode, geometry::is_filled(e)),
+        None => false,
+    }
+}
+
+fn in_lasso(e: &Element, lasso: &Lasso, mode: MarqueeMode) -> bool {
+    match geometry::primitive(e) {
+        Some(p) => lasso_selects(&p, lasso, mode, geometry::is_filled(e)),
         None => false,
     }
 }

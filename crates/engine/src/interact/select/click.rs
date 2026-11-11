@@ -60,6 +60,12 @@ pub(super) fn ensure_selected(cx: &mut Ctx<'_>, ev: &Ev<'_>, id: &ElementId) {
     }
 }
 
+/// The release of a click that did not select on its press (the lasso tool over an element that was not
+/// selected): selects what is under the pointer now.
+pub(super) fn select_pressed(cx: &mut Ctx<'_>, ev: &Ev<'_>) {
+    select_at(cx, ev, Pick::REPLACE);
+}
+
 /// A click: the selection changed on press, so only the clicks that have a meaning of their own remain.
 pub(super) fn click(cx: &mut Ctx<'_>, ev: &Ev<'_>, toggle_now: bool) {
     let mods = ev.meta.modifiers;
@@ -67,6 +73,10 @@ pub(super) fn click(cx: &mut Ctx<'_>, ev: &Ev<'_>, toggle_now: bool) {
         Target::Empty if !mods.shift => select_at(cx, ev, Pick::REPLACE),
         Target::Element { .. } if toggle_now => select_at(cx, ev, Pick::TOGGLE),
         Target::Element { .. } if mods.alt => select_at(cx, ev, Pick::CYCLE),
+        // A vertex of the selected line or arrow: select that point (the point editor opens if it was off).
+        Target::Handle(Handle::Point { element, index }) => {
+            cx.exec("arrow.edit_points", json!({ "arrow": element.as_str(), "select_point": index }));
+        }
         _ => {}
     }
 }
@@ -79,7 +89,7 @@ pub(super) fn double_click(cx: &mut Ctx<'_>, ev: &Ev<'_>) {
         Target::Empty => {
             let at = ev.at.world;
             if cx.exec("text.edit_begin", json!({ "at": [at.x, at.y] })).is_some() {
-                cx.out.ui_request = Some(UiRequest::OpenTextEditor { element: None, at });
+                cx.out.ui_request = Some(UiRequest::OpenTextEditor { element: None, at, width: None });
             }
         }
         Target::None => {}
@@ -111,7 +121,7 @@ fn on_element(cx: &mut Ctx<'_>, ev: &Ev<'_>, id: &ElementId, unit_group: Option<
                 cx.out.ui_request = Some(if kind == Kind::Math {
                     UiRequest::OpenEquationEditor { element: id.clone() }
                 } else {
-                    UiRequest::OpenTextEditor { element: Some(id.clone()), at: ev.at.world }
+                    UiRequest::OpenTextEditor { element: Some(id.clone()), at: ev.at.world, width: None }
                 });
             }
         }

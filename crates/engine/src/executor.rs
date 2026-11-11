@@ -13,7 +13,7 @@ use serde_json::{Map, Value, json};
 use crate::refusal::Refusal;
 use crate::ring::{Origin, Outcome, Record};
 use crate::session::{Session, SoftState};
-use crate::spec::{CommandSpec, Gate, RingMode, Selection, Status, TextGate, Txn, Undo};
+use crate::spec::{CommandSpec, Gate, Mutates, RingMode, Selection, Status, TextGate, Txn, Undo};
 use crate::state::TabId;
 use crate::store::{CoalesceReq, DocMark, StepMeta, Summary};
 use drafftink_profile::{Counter, inc, now_ns, span};
@@ -25,6 +25,21 @@ pub(crate) enum Input<'a> {
     Json(&'a Value),
     /// Already typed, from a shell that builds the struct directly (no JSON per pointer event).
     Typed(&'a dyn Any),
+}
+
+/// What a `Commit` gate did before its command ran.
+#[derive(Default)]
+pub(crate) struct GateCommit {
+    /// The state before the commit, when the commit changed no document content. A refusal restores it.
+    restore: Option<SoftState>,
+    /// The ring entry of the commit, written once the command's outcome is known.
+    record: Option<GateRecord>,
+}
+
+struct GateRecord {
+    spec: &'static CommandSpec,
+    args: Value,
+    outcome: Outcome,
 }
 
 enum Parsed<'a> {
@@ -81,6 +96,27 @@ impl Session {
     /// Runs a command from a script. The origin recorded in the ring is `script`.
     pub fn execute(&mut self, id: &str, args: Value) -> Result<Value, Refusal> {
         self.execute_from(Origin::Script, id, args)
+    }
+
+    /// Runs a command that only reads (`reads_only`) and leaves no ring entry when it succeeds: for the UI, which
+    /// reads state on every frame and would otherwise fill the ring. A refusal is recorded as for any call. A
+    /// command that changes things is refused with `not_a_query` before it runs.
+    pub fn query(&mut self, id: &str, args: Value) -> Result<Value, Refusal> {
+        if let Some(spec) = self.registry().find(id)
+            && !spec.reads_only
+        {
+            return Err(Refusal::custom(
+                "not_a_query",
+                id,
+                format!(
+                    "`{id}` changes things, so it cannot be a query. Run it with `execute`, which records it in the ring."
+                ),
+            ));
+        }
+        self.run.quiet_ok = true;
+        let res = self.execute_from(Origin::Ui, id, args);
+        self.run.quiet_ok = false;
+        res
     }
 
     /// Runs a command and records who asked.
@@ -146,7 +182,7 @@ impl Session {
             };
             match &res {
                 Ok(done) => {
-                    let skip = spec.ring == RingMode::Quiet || origin == Origin::Remote;
+                    let skip = spec.ring == RingMode::Quiet || origin == Origin::Remote || self.run.quiet_ok;
                     if !skip {
                         self.record(
                             origin,
@@ -174,7 +210,19 @@ impl Session {
         origin: Origin,
         mode: Mode,
     ) -> Result<StepDone, Refusal> {
-        self.check_gates(spec, origin, mode, false)?;
+        let gate = self.check_gates(spec, origin, mode, false)?;
+        let result = self.run_after_gates(spec, input, mode);
+        self.settle_gate(gate, origin, result.is_ok());
+        result
+    }
+
+    /// Steps 3 to 8, after the gates have run.
+    fn run_after_gates(
+        &mut self,
+        spec: &'static CommandSpec,
+        input: Input<'_>,
+        mode: Mode,
+    ) -> Result<StepDone, Refusal> {
         self.check_available(spec)?;
         let parsed = match input {
             Input::Json(v) => Parsed::Owned(spec.handler.parse(spec.id, v)?),
@@ -193,13 +241,14 @@ impl Session {
         origin: Origin,
         mode: Mode,
         ignore_gesture: bool,
-    ) -> Result<(), Refusal> {
+    ) -> Result<GateCommit, Refusal> {
         if let Status::Planned(reason) = spec.status {
             return Err(Refusal::not_supported(spec.id, reason));
         }
         if self.view_only && spec.view_only == Gate::Refused {
             return Err(Refusal::view_only(spec.id));
         }
+        self.schema_gate(spec)?;
         if !ignore_gesture && self.gesture.is_some() && spec.while_gesture == Gate::Refused {
             return Err(Refusal::gesture_active(spec.id));
         }
@@ -207,36 +256,59 @@ impl Session {
             match spec.while_text_edit {
                 TextGate::Refused => return Err(Refusal::text_editing(spec.id)),
                 // `text.edit_end` is the commit itself: it must not trigger another one.
-                TextGate::Commit if spec.id != "text.edit_end" => self.commit_text_edit(origin, mode)?,
-                TextGate::Commit => {}
-                TextGate::Allowed => {}
+                TextGate::Commit if spec.id != "text.edit_end" => return self.commit_text_edit(origin, mode),
+                TextGate::Commit | TextGate::Allowed => {}
             }
+        }
+        Ok(GateCommit::default())
+    }
+
+    /// A document that a newer version of the app changed is read-only here: a command that mutates the
+    /// document refuses, unless it replaces the document or ends an edit (`CommandSpec::allowed_when_blocked`).
+    fn schema_gate(&self, spec: &'static CommandSpec) -> Result<(), Refusal> {
+        if spec.mutates.contains(Mutates::DOC)
+            && !spec.works_when_blocked
+            && self.tab().doc.blocked_by_schema().is_some()
+        {
+            return Err(Refusal::newer_schema(spec.id));
         }
         Ok(())
     }
 
     /// Commits the running text edit as its own undo step (`text.edit_end` with `commit: true`).
-    fn commit_text_edit(&mut self, origin: Origin, mode: Mode) -> Result<(), Refusal> {
+    ///
+    /// The commit runs before the command can validate its arguments. [`Session::settle_gate`] takes it
+    /// back when the command then refuses and the commit changed nothing in the document, so a refused
+    /// command leaves the running text edit alone.
+    fn commit_text_edit(&mut self, origin: Origin, mode: Mode) -> Result<GateCommit, Refusal> {
+        let mut gate = GateCommit::default();
         if let Some(end) = self.registry().find("text.edit_end") {
+            let before = self.soft_state();
             let args = json!({ "commit": true });
-            let top_level = mode == Mode::Top;
-            let res = self.run_pipeline(end, Input::Json(&args), origin, mode);
-            if top_level && let Ok(done) = &res {
-                self.record(
-                    origin,
-                    end,
-                    Some(&args),
-                    Outcome::ok(done.changed, done.undo_label.clone()),
-                    0,
-                    None,
-                    None,
-                );
+            // A failed commit has rolled itself back: the edit is still running.
+            let done = self.run_pipeline(end, Input::Json(&args), origin, mode)?;
+            gate.restore = (!done.changed).then_some(before);
+            if mode == Mode::Top {
+                gate.record = Some(GateRecord { spec: end, args, outcome: Outcome::ok(done.changed, done.undo_label) });
             }
-            res?;
         }
         // The family clears the state when it commits. If it is not built yet, the state must not stay.
         self.text_edit = None;
-        Ok(())
+        Ok(gate)
+    }
+
+    /// Finishes a gate commit once the command has succeeded or refused. A refusal after a commit that
+    /// changed no document content puts the text edit and the selection back: the refused command
+    /// changed nothing, and the commit leaves no ring entry. Otherwise the commit gets its ring entry,
+    /// which precedes the command's.
+    pub(crate) fn settle_gate(&mut self, gate: GateCommit, origin: Origin, succeeded: bool) {
+        if !succeeded && let Some(before) = &gate.restore {
+            self.restore_soft(before);
+            return;
+        }
+        if let Some(r) = gate.record {
+            self.record(origin, r.spec, Some(&r.args), r.outcome, 0, None, None);
+        }
     }
 
     fn check_available(&self, spec: &'static CommandSpec) -> Result<(), Refusal> {
@@ -264,6 +336,12 @@ impl Session {
         }
         if self.view_only && spec.view_only == Gate::Refused {
             return Err(Refusal::view_only(spec.id));
+        }
+        if spec.mutates.contains(Mutates::DOC)
+            && !spec.works_when_blocked
+            && self.tab().doc.blocked_by_schema().is_some()
+        {
+            return Err(Refusal::newer_schema(spec.id));
         }
         if self.gesture.is_some() && spec.while_gesture == Gate::Refused {
             return Err(Refusal::gesture_active(spec.id));
@@ -375,6 +453,7 @@ impl Session {
     ) -> Result<StepDone, Refusal> {
         let mut undo_label = None;
         let summary: Summary;
+        let mut pending = crate::saves::Flushed::default();
         if mode == Mode::Top {
             let depth = self.settings.history_depth();
             let reset = self.run.history_reset;
@@ -418,8 +497,14 @@ impl Session {
                 None => summary = Summary::default(),
             }
             let writes = std::mem::take(&mut self.run.writes);
-            let flush_warnings = self.ports.flush(writes);
-            self.run.warnings.extend(flush_warnings);
+            let flushed = self.flush_writes(writes);
+            if let Some(r) = flushed.failed_save {
+                // Only `doc.save` queues a document write, and it changes nothing else: refuse.
+                self.run.warnings.clear();
+                return Err(r);
+            }
+            self.run.warnings.extend(flushed.warnings.iter().cloned());
+            pending = flushed;
         } else {
             summary = self.tab_by_id(tab_id).map(|t| t.doc.summary_since(mark)).unwrap_or_default();
         }
@@ -428,6 +513,7 @@ impl Session {
         } else {
             self.run.warnings.split_off(warn_len.min(self.run.warnings.len()))
         };
+        let out = pending.annotate(out);
         let (out, changed) = merge_common(out, summary.changed, undo_label.as_deref(), &summary, warnings);
         if changed {
             self.mark_dirty(spec.redraw);
@@ -443,8 +529,13 @@ impl Session {
         match self.invoke(spec, parsed.any()) {
             Ok(out) => {
                 let writes = std::mem::take(&mut self.run.writes);
-                let flush_warnings = self.ports.flush(writes);
-                self.run.warnings.extend(flush_warnings);
+                let flushed = self.flush_writes(writes);
+                if let Some(r) = flushed.failed_save {
+                    self.run.warnings.clear();
+                    return Err(r);
+                }
+                self.run.warnings.extend(flushed.warnings.iter().cloned());
+                let out = flushed.annotate(out);
                 let warnings = std::mem::take(&mut self.run.warnings);
                 let (out, changed) = merge_common(out, false, None, &Summary::default(), warnings);
                 if changed {

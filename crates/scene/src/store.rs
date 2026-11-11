@@ -340,6 +340,22 @@ pub trait SceneRead {
     /// The keys of the elements directly below and above `id` (tombstones included), for making a key between.
     fn z_neighbors(&self, id: &ElementId) -> (Option<ZIndex>, Option<ZIndex>);
 
+    /// The derived indexes (bound arrows, group members, frame children, labels) when they describe exactly
+    /// what this reader sees: always for a store, and for an open transaction only until its first element
+    /// write. `None` means "scan instead". It lets a function that takes any reader skip a pass over the
+    /// scene when it is handed a store or a fresh transaction.
+    fn derived_index(&self) -> Option<&DerivedIndex> {
+        None
+    }
+
+    /// A number that differs after every change to the elements: an edit, a move, a reorder, an undo, a remote
+    /// update. A store returns its revision, and an open transaction its store's revision until its first
+    /// element write. `None` means "no such number; assume it changed". A cache of something derived from the
+    /// whole scene (the render order) keeps the stamp it was built at and rebuilds when it differs.
+    fn version_stamp(&self) -> Option<u64> {
+        None
+    }
+
     /// Live elements, back to front.
     fn iter(&self) -> impl Iterator<Item = &Element> {
         self.iter_all().filter(|e| !e.deleted)

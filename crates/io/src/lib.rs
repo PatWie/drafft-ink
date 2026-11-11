@@ -6,7 +6,7 @@
 //!
 //! | Module | Format |
 //! |---|---|
-//! | [`open`] | one entry point: sniff the bytes and route them to the readers below |
+//! | [`open()`] | one entry point: sniff the bytes and route them to the readers below |
 //! | [`native`] | the versioned native JSON, plus format sniffing ([`native::sniff`]) |
 //! | [`legacy`] | old drafft-ink JSON documents and old Loro snapshots, migrated to the native model |
 //! | [`excalidraw`] | `.excalidraw`, `.excalidrawlib` (v1, v2) and the Excalidraw clipboard, import and export |
@@ -15,13 +15,15 @@
 //! | [`clipboard`] | the drafft.ink clipboard envelope, and what pasted text is |
 //! | [`picture`] | size, format and bounded re-encoding of PNG, JPEG and WebP pictures |
 //! | [`png_meta`] | scene JSON inside a PNG text chunk, writer and reader |
-//! | [`facts`] | recomputes the facts of the legacy fixtures and compares them (`cargo xtask fixtures --check`) |
+//! | `facts` (feature `facts`) | recomputes the facts of the legacy fixtures and compares them (`cargo xtask fixtures --check`) |
 
+#![warn(missing_docs)]
 #![cfg_attr(test, allow(clippy::unwrap_used, clippy::expect_used, clippy::panic))]
 
 pub mod clipboard;
 pub mod error;
 pub mod excalidraw;
+#[cfg(feature = "facts")]
 pub mod facts;
 pub mod legacy;
 pub mod limits;
@@ -32,7 +34,9 @@ pub mod open;
 pub mod picture;
 pub mod png_meta;
 pub mod svg;
+pub mod typeset_measure;
 
-pub use error::{ImportReport, Imported, IoError};
+pub use error::{Expected, FormatName, ImportReport, Imported, IoError};
 pub use measure::{EstimateMeasure, MathBox, TextMeasure};
 pub use open::{Opened, open};
+pub use typeset_measure::{TypesetterHandle, TypesetterMeasure};

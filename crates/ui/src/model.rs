@@ -106,6 +106,19 @@ impl StyleView {
     }
 }
 
+/// The common bounds of the selection, as `selection.get` reports them, in world units.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct BoundsView {
+    /// Left edge.
+    pub x: f64,
+    /// Top edge.
+    pub y: f64,
+    /// Width.
+    pub w: f64,
+    /// Height.
+    pub h: f64,
+}
+
 /// A tab as the tab bar shows it.
 #[derive(Debug, Clone, PartialEq)]
 pub struct TabView {
@@ -190,6 +203,10 @@ pub struct Model {
     pub tool_held: bool,
     /// The point editor has a selected point (the `PointEditor` key scope applies).
     pub point_selected: bool,
+    /// The common bounds of the selection; `None` when nothing is selected.
+    pub selection_bounds: Option<BoundsView>,
+    /// The link of the selected element, when exactly one is selected and it has a link.
+    pub selection_link: Option<String>,
     /// The style of the selection or the defaults.
     pub style: StyleView,
     /// Settings by key.
@@ -222,6 +239,8 @@ impl Default for Model {
             gesture_running: false,
             tool_held: false,
             point_selected: false,
+            selection_bounds: None,
+            selection_link: None,
             style: StyleView::default(),
             settings: BTreeMap::new(),
             tabs: Vec::new(),
@@ -342,6 +361,8 @@ impl Model {
         self.text_editing = s.text_edit.is_some();
         self.gesture_running = s.gesture_running();
         self.settings = s.settings.iter().map(|(k, v)| (k.clone(), v.clone())).collect();
+        self.selection_bounds = read_bounds(s);
+        self.selection_link = read_link(s);
         self.style = read_style(s);
     }
 
@@ -445,6 +466,21 @@ fn shortcuts_of(spec: &CommandSpec, mac: bool) -> Vec<ShortcutView> {
             title: b.title,
         })
         .collect()
+}
+
+/// The common bounds of the selection: the read half of `selection.get` (same domain function), without a
+/// command call, for the same reason as [`read_style`].
+fn read_link(s: &Session) -> Option<String> {
+    match s.targets(None).ok()?.as_slice() {
+        [one] => s.store().get(one).filter(|e| !e.deleted)?.link.clone(),
+        _ => None,
+    }
+}
+
+fn read_bounds(s: &Session) -> Option<BoundsView> {
+    let ids = s.targets(None).ok()?;
+    let b = drafftink_edit::transform::common_bounds(s.store(), &ids)?;
+    Some(BoundsView { x: b.x0, y: b.y0, w: b.width(), h: b.height() })
 }
 
 /// Reads the style panel's data: the style of the selection, or the defaults for new elements when nothing is

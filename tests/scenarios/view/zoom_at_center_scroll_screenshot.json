@@ -1,0 +1,21 @@
+{
+  "about": "zoom_at keeps the point under the cursor fixed, zoom_reset returns to 100%, center moves the camera without zooming, scroll_page moves by a fraction of the viewport, and a screenshot of a region has the region's size; none of it touches the history.",
+  "steps": [
+    { "execute": "element.create", "args": { "kind": "rectangle", "bounds": { "x": 1000, "y": 1000, "w": 100, "h": 60 } } },
+    { "assert": "view.get", "expect": [ { "path": "$.percent", "near": 100, "tol": 1e-9 }, { "path": "$.zoom", "eq": 1.68 } ], "save": { "z0": "$.zoom" } },
+    { "execute": "view.zoom_at", "args": { "factor": 2 }, "expect": [ { "path": "$.zoom", "near": "{{z0}}", "plus": 1.68, "tol": 1e-9 }, { "path": "$.percent", "near": 200, "tol": 1e-9 } ] },
+    { "execute": "view.zoom_at", "args": { "factor": 2, "zoom": 1 }, "refused": "bad_args", "text": "Give exactly one of `factor` or `zoom`" },
+    { "execute": "view.zoom_reset", "expect": [ { "path": "$.zoom", "near": "{{z0}}", "tol": 1e-9 } ] },
+
+    { "execute": "view.center", "args": { "on": "content" }, "expect": [ { "path": "$.scroll", "near": [1050, 1030] } ], "note": "The centre of the rectangle." },
+    { "assert": "view.get", "expect": [ { "path": "$.zoom", "near": "{{z0}}", "tol": 1e-9, "note": "Centring does not zoom." } ] },
+    { "execute": "view.center", "args": { "on": "point", "point": [5, 5] }, "expect": [ { "path": "$.scroll", "near": [5, 5] } ] },
+    { "execute": "view.scroll_page", "args": { "direction": "right" }, "expect": [ { "path": "$.scroll[0]", "near": 5, "plus": 609.5238095238095, "tol": 0.01, "note": "0.8 of the visible width, 761.9 at 100%." } ] },
+    { "execute": "view.scroll_page", "args": { "direction": "sideways" }, "refused": "bad_args" },
+
+    { "execute": "view.screenshot", "args": { "region": "all" }, "expect": [ { "path": "$.width", "eq": 100 }, { "path": "$.height", "eq": 60 }, { "path": "$.bytes.mime", "eq": "image/png" } ] },
+    { "execute": "selection.clear" },
+    { "assert": "view.get", "expect": [ { "path": "$.view_only", "eq": false } ] },
+    { "assert": "history.state", "expect": [ { "path": "$.undo_depth", "eq": 1, "note": "Only the rectangle. The camera commands added no step." } ] }
+  ]
+}

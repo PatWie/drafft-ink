@@ -1,7 +1,7 @@
 //! The colour popover and the font family popover.
 
 mod common;
-mod synth;
+mod dialog;
 
 use common::Fixture;
 use drafftink_engine::Origin;
@@ -12,7 +12,7 @@ use egui_kittest::kittest::{NodeT, Queryable};
 use serde_json::{Value, json};
 
 fn open(fixture: Fixture, target: ColorTarget) -> egui_kittest::Harness<'static, Fixture> {
-    let mut h = synth::harness(fixture);
+    let mut h = dialog::harness(fixture);
     h.state_mut().state.color_popover = Some(target);
     h.run();
     h
@@ -28,11 +28,11 @@ fn calls(h: &egui_kittest::Harness<'static, Fixture>) -> Vec<(String, Value, Ori
 
 #[test]
 fn stroke_pick_is_the_exact_style_set_call_and_closes() {
-    let mut h = open(synth::fixture(), ColorTarget::Stroke);
+    let mut h = open(dialog::fixture(), ColorTarget::Stroke);
     h.get_by_label("Blue 500").click();
     h.run();
     assert_eq!(calls(&h), [("style.set".to_owned(), json!({"props": {"stroke_color": "blue-500"}}), Origin::Ui)]);
-    assert_eq!(synth::verbs(h.state()), [Verb::CloseOverlays]);
+    assert_eq!(dialog::verbs(h.state()), [Verb::CloseOverlays]);
     // The calls run on the real engine and the popover closes.
     h.state_mut().dispatch();
     assert_eq!(h.state().model.style.str_value("stroke_color"), Some("#3b82f6"));
@@ -41,7 +41,7 @@ fn stroke_pick_is_the_exact_style_set_call_and_closes() {
 
 #[test]
 fn the_quick_column_and_the_shade_rows() {
-    let mut h = open(synth::fixture(), ColorTarget::Stroke);
+    let mut h = open(dialog::fixture(), ColorTarget::Stroke);
     h.get_by_label("Emerald").click();
     h.run();
     assert_eq!(calls(&h)[0].1, json!({"props": {"stroke_color": "emerald-500"}}));
@@ -61,7 +61,7 @@ fn the_quick_column_and_the_shade_rows() {
 
 #[test]
 fn the_grid_has_22_families_by_11_shades_and_a_quick_column_of_9() {
-    let h = open(synth::fixture(), ColorTarget::Stroke);
+    let h = open(dialog::fixture(), ColorTarget::Stroke);
     let labels: Vec<String> =
         h.get_all_by_role(egui::accesskit::Role::Button).filter_map(|n| n.accesskit_node().label()).collect();
     let shaded = labels.iter().filter(|l| l.rsplit(' ').next().is_some_and(|s| s.parse::<u16>().is_ok())).count();
@@ -77,7 +77,7 @@ fn the_grid_has_22_families_by_11_shades_and_a_quick_column_of_9() {
 
 #[test]
 fn fill_none_removes_the_fill_with_null() {
-    let mut h = open(synth::fixture(), ColorTarget::Fill);
+    let mut h = open(dialog::fixture(), ColorTarget::Fill);
     h.get_by_label("None").click();
     h.run();
     assert_eq!(calls(&h), [("style.set".to_owned(), json!({"props": {"fill_color": null}}), Origin::Ui)]);
@@ -88,7 +88,7 @@ fn fill_none_removes_the_fill_with_null() {
 
 #[test]
 fn fill_pick_with_a_palette_name() {
-    let mut h = open(synth::fixture(), ColorTarget::Fill);
+    let mut h = open(dialog::fixture(), ColorTarget::Fill);
     h.get_by_label("Amber 100").click();
     h.run();
     assert_eq!(calls(&h)[0].1, json!({"props": {"fill_color": "amber-100"}}));
@@ -96,7 +96,7 @@ fn fill_pick_with_a_palette_name() {
 
 #[test]
 fn the_current_colour_is_ringed_and_none_is_not_black() {
-    let mut f = synth::fixture();
+    let mut f = dialog::fixture();
     f.session.execute("style.set", json!({"props": {"stroke_color": "#00000000"}})).unwrap();
     f.refresh();
     let h = open(f, ColorTarget::Stroke);
@@ -104,7 +104,7 @@ fn the_current_colour_is_ringed_and_none_is_not_black() {
     assert!(selected("None"));
     assert!(!selected("Black"), "a clear stroke is not black");
 
-    let mut f = synth::fixture();
+    let mut f = dialog::fixture();
     f.session.execute("style.set", json!({"props": {"stroke_color": "#000000"}})).unwrap();
     f.refresh();
     let h = open(f, ColorTarget::Stroke);
@@ -115,7 +115,7 @@ fn the_current_colour_is_ringed_and_none_is_not_black() {
 
 #[test]
 fn fill_without_a_fill_rings_none_only() {
-    let mut f = synth::fixture();
+    let mut f = dialog::fixture();
     f.session.execute("style.set", json!({"props": {"fill_color": null}})).unwrap();
     f.refresh();
     let h = open(f, ColorTarget::Fill);
@@ -125,7 +125,7 @@ fn fill_without_a_fill_rings_none_only() {
 
 #[test]
 fn the_ring_follows_a_palette_colour() {
-    let mut f = synth::fixture();
+    let mut f = dialog::fixture();
     f.session.execute("style.set", json!({"props": {"stroke_color": "red-500"}})).unwrap();
     f.refresh();
     let h = open(f, ColorTarget::Stroke);
@@ -136,7 +136,7 @@ fn the_ring_follows_a_palette_colour() {
 
 #[test]
 fn background_pick_produces_set_background() {
-    let mut h = open(synth::fixture(), ColorTarget::Background);
+    let mut h = open(dialog::fixture(), ColorTarget::Background);
     h.get_by_label("Slate 100").click();
     h.run();
     let got = calls(&h);
@@ -144,16 +144,17 @@ fn background_pick_produces_set_background() {
     // route() sends it to the command.
     let action = UiAction::run("doc.set_background", json!({"color": "slate-100"}));
     assert!(matches!(route(&action, &h.state().state), Routed::Command(c) if c.id == "doc.set_background"));
-    h.state_mut().dispatch();
-    assert_eq!(h.state().report.refusals().count(), 0);
+    assert_eq!(h.state().model.background, "#ffffff");
+    let report = h.state_mut().dispatch();
+    assert_eq!(report.refusals().count(), 0, "{:?}", report.ran);
     assert_eq!(h.state().state.color_popover, None);
+    // The real command changed the page of the document.
+    assert_eq!(h.state().model.background, "#f1f5f9");
 }
 
 #[test]
 fn background_cell_is_greyed_when_the_command_is_not_registered() {
-    // The real engine has no doc.set_background yet. When it gets one, this test must use another
-    // reason to grey (the view-only test below does).
-    let f = Fixture::new();
+    let f = Fixture::without(&["doc.set_background"]);
     let text = f.model.refusal_text("doc.set_background").expect("not registered in this build");
     let mut h = common_harness_with_fonts(f);
     h.state_mut().state.color_popover = Some(ColorTarget::Background);
@@ -167,12 +168,12 @@ fn background_cell_is_greyed_when_the_command_is_not_registered() {
 }
 
 fn common_harness_with_fonts(f: Fixture) -> egui_kittest::Harness<'static, Fixture> {
-    synth::harness(f)
+    dialog::harness(f)
 }
 
 #[test]
 fn a_refusal_greys_the_cells_with_its_text_as_the_tooltip() {
-    let mut f = synth::fixture();
+    let mut f = dialog::fixture();
     f.session.view_only = true;
     f.refresh();
     let text = f.model.refusal_text("style.set").expect("style.set refuses in a view-only document");
@@ -191,7 +192,7 @@ fn a_refusal_greys_the_cells_with_its_text_as_the_tooltip() {
 
 #[test]
 fn hex_field_applies_on_enter() {
-    let mut h = open(synth::fixture(), ColorTarget::Stroke);
+    let mut h = open(dialog::fixture(), ColorTarget::Stroke);
     let field = h.get_by_label("Hex colour");
     field.focus();
     h.run();
@@ -201,12 +202,12 @@ fn hex_field_applies_on_enter() {
     h.key_press(Key::Enter);
     h.run();
     assert_eq!(calls(&h), [("style.set".to_owned(), json!({"props": {"stroke_color": "#3b82f6"}}), Origin::Ui)]);
-    assert_eq!(synth::verbs(h.state()), [Verb::CloseOverlays]);
+    assert_eq!(dialog::verbs(h.state()), [Verb::CloseOverlays]);
 }
 
 #[test]
 fn hex_field_takes_short_and_alpha_forms_for_the_background() {
-    let mut h = open(synth::fixture(), ColorTarget::Background);
+    let mut h = open(dialog::fixture(), ColorTarget::Background);
     h.get_by_label("Hex colour").focus();
     h.run();
     h.get_by_label("Hex colour").type_text("abc");
@@ -218,7 +219,7 @@ fn hex_field_takes_short_and_alpha_forms_for_the_background() {
 
 #[test]
 fn a_bad_hex_value_shows_an_error_and_pushes_nothing() {
-    let mut h = open(synth::fixture(), ColorTarget::Fill);
+    let mut h = open(dialog::fixture(), ColorTarget::Fill);
     h.get_by_label("Hex colour").focus();
     h.run();
     h.get_by_label("Hex colour").type_text("#12");
@@ -228,17 +229,17 @@ fn a_bad_hex_value_shows_an_error_and_pushes_nothing() {
     h.run();
     assert!(h.state().calls().is_empty());
     h.get_by_label_contains("is not a colour");
-    assert!(synth::verbs(h.state()).is_empty(), "the popover stays open");
+    assert!(dialog::verbs(h.state()).is_empty(), "the popover stays open");
 }
 
 #[test]
 fn an_outside_click_closes_and_an_inside_click_does_not() {
-    let mut h = open(synth::fixture(), ColorTarget::Stroke);
+    let mut h = open(dialog::fixture(), ColorTarget::Stroke);
     let title = h.get_by_label("Stroke colour").rect().center();
-    synth::click_at(&mut h, title);
-    assert!(synth::verbs(h.state()).is_empty(), "a click inside the popover keeps it");
-    synth::click_canvas(&mut h);
-    assert_eq!(synth::verbs(h.state()), [Verb::CloseOverlays]);
+    dialog::click_at(&mut h, title);
+    assert!(dialog::verbs(h.state()).is_empty(), "a click inside the popover keeps it");
+    dialog::click_canvas(&mut h);
+    assert_eq!(dialog::verbs(h.state()), [Verb::CloseOverlays]);
     assert!(h.state().calls().is_empty());
 }
 
@@ -248,7 +249,7 @@ fn the_popover_stays_on_the_screen() {
     let size = egui::vec2(700.0, 500.0);
     let corner = Rect::from_min_size(pos2(660.0, 470.0), egui::vec2(28.0, 24.0));
     let hook = move |ctx: &egui::Context| remember_anchor(ctx, PopoverKey::Fill, corner);
-    let mut h = synth::with_frame_hook(synth::fixture(), size, egui::Theme::Light, hook);
+    let mut h = dialog::with_frame_hook(dialog::fixture(), size, egui::Theme::Light, hook);
     h.state_mut().state.color_popover = Some(ColorTarget::Fill);
     h.run();
     let screen = Rect::from_min_size(pos2(0.0, 0.0), size);
@@ -261,7 +262,7 @@ fn the_popover_stays_on_the_screen() {
 #[test]
 fn a_short_screen_gets_a_scrolling_grid_inside_the_screen() {
     let size = egui::vec2(420.0, 300.0);
-    let mut h = synth::sized(synth::fixture(), size, egui::Theme::Light);
+    let mut h = dialog::sized(dialog::fixture(), size, egui::Theme::Light);
     h.state_mut().state.color_popover = Some(ColorTarget::Stroke);
     h.run();
     let screen = Rect::from_min_size(pos2(0.0, 0.0), size);
@@ -272,7 +273,7 @@ fn a_short_screen_gets_a_scrolling_grid_inside_the_screen() {
 #[test]
 fn both_themes_draw() {
     for theme in [egui::Theme::Light, egui::Theme::Dark] {
-        let mut h = synth::sized(synth::fixture(), egui::vec2(1280.0, 800.0), theme);
+        let mut h = dialog::sized(dialog::fixture(), egui::vec2(1280.0, 800.0), theme);
         h.state_mut().state.color_popover = Some(ColorTarget::Fill);
         h.state_mut().state.font_picker_open = true;
         h.run();
@@ -285,10 +286,10 @@ fn both_themes_draw() {
 
 #[test]
 fn the_font_picker_lists_four_families_and_marks_the_current_one() {
-    let mut f = synth::fixture();
+    let mut f = dialog::fixture();
     f.session.execute("style.set", json!({"props": {"font_family": "gelpen_serif"}})).unwrap();
     f.refresh();
-    let mut h = synth::harness(f);
+    let mut h = dialog::harness(f);
     h.state_mut().state.font_picker_open = true;
     h.run();
     for (name, current) in [("GelPen", false), ("GelPen Serif", true), ("Vanilla Extract", false), ("Noto Sans", false)]
@@ -299,13 +300,13 @@ fn the_font_picker_lists_four_families_and_marks_the_current_one() {
 
 #[test]
 fn picking_a_font_runs_style_set_and_closes() {
-    let mut h = synth::harness(synth::fixture());
+    let mut h = dialog::harness(dialog::fixture());
     h.state_mut().state.font_picker_open = true;
     h.run();
     h.get_by_label("Vanilla Extract").click();
     h.run();
     assert_eq!(calls(&h), [("style.set".to_owned(), json!({"props": {"font_family": "vanilla_extract"}}), Origin::Ui)]);
-    assert_eq!(synth::verbs(h.state()), [Verb::CloseOverlays]);
+    assert_eq!(dialog::verbs(h.state()), [Verb::CloseOverlays]);
     h.state_mut().dispatch();
     assert_eq!(h.state().model.style.str_value("font_family"), Some("vanilla_extract"));
     assert!(!h.state().state.font_picker_open);
@@ -319,7 +320,7 @@ fn every_font_family_has_its_setting_value() {
         ("Vanilla Extract", "vanilla_extract"),
         ("Noto Sans", "noto_sans"),
     ] {
-        let mut h = synth::harness(synth::fixture());
+        let mut h = dialog::harness(dialog::fixture());
         h.state_mut().state.font_picker_open = true;
         h.run();
         h.get_by_label(label).click();
@@ -330,9 +331,9 @@ fn every_font_family_has_its_setting_value() {
 
 #[test]
 fn an_outside_click_closes_the_font_picker() {
-    let mut h = synth::harness(synth::fixture());
+    let mut h = dialog::harness(dialog::fixture());
     h.state_mut().state.font_picker_open = true;
     h.run();
-    synth::click_canvas(&mut h);
-    assert_eq!(synth::verbs(h.state()), [Verb::CloseOverlays]);
+    dialog::click_canvas(&mut h);
+    assert_eq!(dialog::verbs(h.state()), [Verb::CloseOverlays]);
 }

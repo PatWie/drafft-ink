@@ -36,7 +36,7 @@ fn start_connects_then_joins_with_the_documents_version_and_the_token() {
     assert_eq!((*min_version, *max_version), (1, 1));
     assert_eq!((room, *client_id), (&common::room(), cid(1)));
     assert_eq!(auth_token.as_deref(), Some("s3cret-token"));
-    assert_eq!(version, &h.store.version_vector());
+    assert_eq!(version, &h.store.version_vector().unwrap());
     assert_eq!(user.as_ref().map(|u| u.name.as_str()), Some("me"));
 }
 
@@ -56,18 +56,18 @@ fn joining_imports_the_servers_data_and_uploads_what_the_server_lacks() {
     h.start();
     h.event(TransportEvent::Opened);
     h.take_frames();
-    let joined = h.joined(vec![ana()], h.server.version_vector());
+    let joined = h.joined(vec![ana()], h.server.version_vector().unwrap());
     h.feed(&joined);
     assert_eq!(h.client.status().state, ConnState::Syncing);
     assert_eq!(h.client.peers().len(), 1);
-    let sync = h.sync_from(&h.store.version_vector());
+    let sync = h.sync_from(&h.store.version_vector().unwrap());
     h.feed(&sync);
     assert_eq!(h.client.status().state, ConnState::Online);
     let events = h.take_events();
     let batches = Harness::remote_batches(&events);
     assert_eq!(batches.len(), 1);
     assert_eq!(batches[0].kind, RemoteKind::CatchUp);
-    assert_eq!(batches[0].counts(), (1, 0, 0));
+    assert_eq!(batches[0].counts(), ChangeCounts { added: 1, updated: 0, removed: 0 });
     assert_eq!(ids(&h.store), ["from-server", "made-offline"].map(String::from));
     // The offline edit goes up.
     let frames = h.take_frames();
@@ -85,15 +85,18 @@ fn a_snapshot_goes_through_the_same_path_and_is_reported_as_one() {
     add(&mut h.server, &["a", "b", "c"]);
     h.start();
     h.event(TransportEvent::Opened);
-    let joined = h.joined(vec![], h.server.version_vector());
+    let joined = h.joined(vec![], h.server.version_vector().unwrap());
     h.feed(&joined);
     h.feed(&ServerMessage::SyncResponse {
         kind: SyncKind::Snapshot,
         data: h.server.export_snapshot().unwrap(),
-        server_version: h.server.version_vector(),
+        server_version: h.server.version_vector().unwrap(),
     });
     let batches = Harness::remote_batches(&h.take_events());
-    assert_eq!((batches[0].kind, batches[0].counts()), (RemoteKind::Snapshot, (3, 0, 0)));
+    assert_eq!(
+        (batches[0].kind, batches[0].counts()),
+        (RemoteKind::Snapshot, ChangeCounts { added: 3, updated: 0, removed: 0 })
+    );
     assert_eq!(ids(&h.store).len(), 3);
 }
 
@@ -189,7 +192,7 @@ fn an_update_that_is_never_acknowledged_makes_the_client_reconcile() {
 fn remote_operations_are_never_echoed_back() {
     let mut h = Harness::new();
     h.go_online(vec![ana()]);
-    let before = h.server.version_vector();
+    let before = h.server.version_vector().unwrap();
     let ids_50: Vec<String> = (0..50).map(|i| format!("r{i}")).collect();
     add(&mut h.server, &ids_50.iter().map(String::as_str).collect::<Vec<_>>());
     let update = h.server.export_updates_since(&before).unwrap();
@@ -200,7 +203,7 @@ fn remote_operations_are_never_echoed_back() {
         (batches[0].kind, batches[0].from, batches[0].who.as_deref()),
         (RemoteKind::Live, Some(cid(2)), Some("ana"))
     );
-    assert_eq!(batches[0].counts(), (50, 0, 0));
+    assert_eq!(batches[0].counts(), ChangeCounts { added: 50, updated: 0, removed: 0 });
     h.advance(500);
     assert!(Harness::updates(&h.take_frames()).is_empty(), "applying a remote update sends nothing");
     // A local commit afterwards carries only the local operations.
@@ -220,16 +223,16 @@ fn remote_operations_are_never_echoed_back() {
 fn an_update_that_arrives_before_its_predecessor_triggers_a_sync_request() {
     let mut h = Harness::new();
     h.go_online(vec![]);
-    let v0 = h.server.version_vector();
+    let v0 = h.server.version_vector().unwrap();
     add(&mut h.server, &["first"]);
-    let v1 = h.server.version_vector();
+    let v1 = h.server.version_vector().unwrap();
     add(&mut h.server, &["second"]);
     let late = h.server.export_updates_since(&v1).unwrap();
     h.feed(&ServerMessage::Update { from: cid(2), update: late });
     h.advance(10);
     let frames = h.take_frames();
     let [ClientMessage::RequestSync { version }] = &frames[..] else { panic!("{frames:?}") };
-    assert_eq!(version, &h.store.version_vector());
+    assert_eq!(version, &h.store.version_vector().unwrap());
     assert!(ids(&h.store).is_empty(), "the update waits for its predecessor");
     // The answer fills the gap.
     let sync = h.sync_from(&v0);
@@ -243,7 +246,7 @@ fn an_update_too_large_for_the_server_is_kept_and_reported_not_sent() {
     h.start();
     h.event(TransportEvent::Opened);
     let small = Limits { max_update_bytes: 400, ..Limits::DEFAULT };
-    let mut joined = h.joined(vec![], h.server.version_vector());
+    let mut joined = h.joined(vec![], h.server.version_vector().unwrap());
     if let ServerMessage::Joined { limits, .. } = &mut joined {
         *limits = small;
     }
@@ -309,7 +312,7 @@ fn the_backoff_is_capped_and_resets_after_a_stable_connection() {
     h.now = h.client.status().retry_at_ms.unwrap();
     h.tick();
     h.event(TransportEvent::Opened);
-    let joined = h.joined(vec![], h.server.version_vector());
+    let joined = h.joined(vec![], h.server.version_vector().unwrap());
     h.feed(&joined);
     let sync = h.sync_response();
     h.feed(&sync);
@@ -362,10 +365,12 @@ fn edits_made_offline_and_updates_lost_in_flight_are_uploaded_after_reconnect() 
     h.tick();
     h.event(TransportEvent::Opened);
     let frames = h.take_frames();
-    assert!(matches!(&frames[..], [ClientMessage::Join { version, .. }] if version == &h.store.version_vector()));
-    let joined = h.joined(vec![], h.server.version_vector());
+    assert!(
+        matches!(&frames[..], [ClientMessage::Join { version, .. }] if version == &h.store.version_vector().unwrap())
+    );
+    let joined = h.joined(vec![], h.server.version_vector().unwrap());
     h.feed(&joined);
-    let sync = h.sync_from(&h.store.version_vector());
+    let sync = h.sync_from(&h.store.version_vector().unwrap());
     h.feed(&sync);
     let frames = h.take_frames();
     let updates = Harness::updates(&frames);
@@ -442,7 +447,7 @@ fn resync_required_sends_the_current_version_and_imports_the_answer() {
     h.feed(&error(ErrorCode::ResyncRequired));
     let frames = h.take_frames();
     let [ClientMessage::RequestSync { version }] = &frames[..] else { panic!("{frames:?}") };
-    assert_eq!(version, &h.store.version_vector());
+    assert_eq!(version, &h.store.version_vector().unwrap());
     let sync = h.sync_from(version);
     h.feed(&sync);
     assert_eq!(ids(&h.store), vec!["missed".to_owned()]);
@@ -471,7 +476,7 @@ fn rate_limited_pauses_updates_then_repairs_by_reconciling() {
     let frames = h.take_frames();
     assert!(frames.iter().any(|m| matches!(m, ClientMessage::RequestSync { .. })), "{frames:?}");
     all.extend(frames);
-    let sync = h.sync_from(&h.store.version_vector());
+    let sync = h.sync_from(&h.store.version_vector().unwrap());
     h.feed(&sync);
     all.extend(h.take_frames());
     h.server_applies(&all);
@@ -589,12 +594,12 @@ fn trimmed_setup(replace: bool) -> Harness {
     add(&mut h.store, &["mine"]);
     h.start();
     h.event(TransportEvent::Opened);
-    let joined = h.joined(vec![], h.server.version_vector());
+    let joined = h.joined(vec![], h.server.version_vector().unwrap());
     h.feed(&joined);
     h.feed(&ServerMessage::SyncResponse {
         kind: SyncKind::Snapshot,
         data: h.server.export_shallow_snapshot(0).unwrap(),
-        server_version: h.server.version_vector(),
+        server_version: h.server.version_vector().unwrap(),
     });
     h
 }
@@ -830,7 +835,7 @@ fn status_changes_are_events_and_repeat_nothing() {
     let mut h = Harness::new();
     h.start();
     h.event(TransportEvent::Opened);
-    let joined = h.joined(vec![], h.server.version_vector());
+    let joined = h.joined(vec![], h.server.version_vector().unwrap());
     h.feed(&joined);
     let sync = h.sync_response();
     h.feed(&sync);

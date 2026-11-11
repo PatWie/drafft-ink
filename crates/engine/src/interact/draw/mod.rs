@@ -12,7 +12,7 @@
 //! | freehand, highlighter | drag, or a click (a dot) | `element.create` kind freehand |
 //! | eraser | drag, or a click | `element.erase` with the swept `path` |
 //! | laser | drag | `collab.laser` (throttled, never stored) |
-//! | text | click | `text.edit_begin`, then the shell opens the editor |
+//! | text | click, or drag for a fixed-width box | `text.edit_begin` (with `width` for a drag), then the shell opens the editor |
 //! | math | click | `element.create` kind math, or `text.edit_begin` on an existing formula |
 //!
 //! Every `element.create` carries `from_tool: true`, so the engine returns the tool to select unless the tool
@@ -38,18 +38,10 @@ mod stroke_tests;
 mod tests;
 
 use drafftink_geom::kurbo::Point;
-use drafftink_scene::PathType;
 
 use crate::interact::ctx::Ctx;
 use crate::interact::events::{Ev, Key};
 use crate::state::Tool;
-
-/// The path type new arrows get (`sharp`, `round` or `elbow`).
-///
-/// It is session state kept in `Session::ext`; a missing value means `sharp`. The family that owns the choice
-/// (the arrow type picker) stores it here with `Session::ext.set`.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub struct NewArrowPath(pub PathType);
 
 /// The pointer drag that is running, other than a line or arrow (those keep their own state in [`linear`]).
 #[derive(Debug)]
@@ -58,7 +50,7 @@ enum Gesture {
     Stroke(stroke::Stroke),
     Sweep(eraser::Sweep),
     Laser,
-    /// A drag of the text or math tool on empty canvas: it places at the origin when it ends.
+    /// A drag of the text or math tool on empty canvas: when it ends the text tool opens a box as wide as the drag, the math tool places at the origin.
     Place,
 }
 
@@ -81,8 +73,14 @@ impl DrawTools {
             Tool::Freehand | Tool::Highlighter => stroke::dot(cx, ev),
             Tool::Eraser => eraser::tap(cx, ev),
             Tool::Text | Tool::Math => text::click(cx, ev),
-            Tool::Select | Tool::Hand | Tool::Rectangle | Tool::Diamond | Tool::Ellipse | Tool::Frame | Tool::Laser => {
-            }
+            Tool::Select
+            | Tool::Lasso
+            | Tool::Hand
+            | Tool::Rectangle
+            | Tool::Diamond
+            | Tool::Ellipse
+            | Tool::Frame
+            | Tool::Laser => {}
         }
     }
 
@@ -110,7 +108,7 @@ impl DrawTools {
                 self.gesture = Some(Gesture::Laser);
             }
             Tool::Text | Tool::Math => self.gesture = Some(Gesture::Place),
-            Tool::Select | Tool::Hand => {}
+            Tool::Select | Tool::Lasso | Tool::Hand => {}
         }
         self.drag_update(cx, ev);
     }
@@ -162,7 +160,7 @@ impl DrawTools {
             Some(Gesture::Laser) => self.laser.end(cx, ev, cancelled),
             Some(Gesture::Place) => {
                 if !cancelled {
-                    text::place(cx, ev.origin.world);
+                    text::drag_box(cx, ev.origin.world, ev.at.world);
                 }
             }
             None => {

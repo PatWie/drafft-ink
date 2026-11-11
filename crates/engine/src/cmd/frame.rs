@@ -8,10 +8,12 @@
 use drafftink_edit::frame::{self, FrameError, SkipReason, Skipped, WrapOpts};
 use drafftink_edit::group::selection::select_ids;
 use drafftink_edit::lifecycle::LifecycleError;
+use drafftink_scene::words::Article;
 use drafftink_scene::{ElementId, Kind};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
+use crate::cmd::element_common::target_refusal;
 use crate::args;
 use crate::refusal::Refusal;
 use crate::session::{Ref, Session};
@@ -20,29 +22,29 @@ use crate::spec::{
     Undo,
 };
 
-use super::group::common::{apply_selection, edit, editing_group, locked, not_found, selected_ids, zorder_refusal};
+use super::group::common::{apply_selection, edit, editing_group, selected_ids, zorder_refusal};
 
 // ---- errors ----
 
 fn wrong_kind(cmd: &str, id: &ElementId, kind: &str) -> Refusal {
-    Refusal::custom("wrong_kind", cmd, format!("`{cmd}` works on frames, and `{id}` is a {kind}."))
+    Refusal::custom("wrong_kind", cmd, format!("`{cmd}` works on frames, and `{id}` is {}.", Article::new(kind)))
 }
 
 fn frame_refusal(cmd: &str, e: FrameError) -> Refusal {
     match e {
-        FrameError::NotFound(id) => not_found(cmd, &id),
-        FrameError::Locked(ids) => locked(cmd, &ids),
-        FrameError::NotAFrame { id, kind } => wrong_kind(cmd, &id, kind),
+        FrameError::Target(t) => target_refusal(cmd, t),
+        FrameError::NotAFrame { id, kind } => wrong_kind(cmd, &id, kind.name()),
         FrameError::NestedFrame(_) => Refusal::custom(
             "nested_frame",
             cmd,
             "Frames cannot be nested. Remove the frame from the selection, or unwrap it with `frame.unwrap`.",
         )
         .suggesting("frame.unwrap", None),
-        FrameError::BadArgs(m) => Refusal::bad_args(cmd, m),
+        e @ (FrameError::BadPadding | FrameError::NothingToWrap | FrameError::BadName) => {
+            Refusal::bad_args(cmd, e.to_string())
+        }
         FrameError::ZOrder(z) => zorder_refusal(cmd, z),
-        FrameError::Lifecycle(LifecycleError::NotFound(id)) => not_found(cmd, &id),
-        FrameError::Lifecycle(LifecycleError::Locked(ids)) => locked(cmd, &ids),
+        FrameError::Lifecycle(LifecycleError::Target(t)) => target_refusal(cmd, t),
         other @ (FrameError::Store(_) | FrameError::Index(_) | FrameError::Binding(_) | FrameError::Lifecycle(_)) => {
             Refusal::internal(cmd, other.to_string())
         }
@@ -52,7 +54,7 @@ fn frame_refusal(cmd: &str, e: FrameError) -> Refusal {
 /// A frame name outside 1 to 256 characters is the caller's mistake: name the key.
 fn name_refusal(cmd: &str, e: FrameError) -> Refusal {
     match e {
-        FrameError::BadArgs(m) => Refusal::bad_arg(cmd, "name", m),
+        e @ FrameError::BadName => Refusal::bad_arg(cmd, "name", e.to_string()),
         other => frame_refusal(cmd, other),
     }
 }

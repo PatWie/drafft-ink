@@ -10,11 +10,14 @@
 //! end, deleting an end point frees the end it belonged to, elbow arrows only have two movable points,
 //! and a curved line passes through its points as a Catmull-Rom spline.
 
-use drafftink_scene::{ElementId, ElementKind, Head, LinearData, PathType, SceneRead, SceneTx, StoreError, Transform};
-use kurbo::{CubicBez, ParamCurve, ParamCurveArclen, Point, Vec2};
+use drafftink_geom::kurbo::{CubicBez, ParamCurve, ParamCurveArclen, Point};
+use drafftink_scene::{
+    ElementId, ElementKind, Head, Kind, LinearData, PathType, SceneRead, SceneTx, StoreError, Transform,
+};
 
 use crate::binding::{End, update_bound_arrows};
 use crate::elbow::{self, ElbowEditError, RouteOpts};
+use drafftink_geom::spline::catmull_rom_cubics;
 
 /// Radius of a point handle on screen, in pixels.
 pub const POINT_HANDLE_SIZE: f64 = 10.0;
@@ -43,10 +46,10 @@ pub enum LinearError {
         len: usize,
     },
     /// The edit would leave too few points.
-    #[error("a {kind} needs at least {min} points and this edit would leave {have}; delete the element instead")]
+    #[error("{} needs at least {min} points and this edit would leave {have}; delete the element instead", drafftink_scene::words::Article::new(.kind.name()))]
     TooFewPoints {
         /// Line or arrow.
-        kind: &'static str,
+        kind: Kind,
         /// The fewest points allowed.
         min: usize,
         /// How many would be left.
@@ -90,10 +93,18 @@ pub fn to_local(t: &Transform, p: Point) -> Point {
     Point::new(v.x * co - v.y * s + t.w / 2.0, v.x * s + v.y * co + t.h / 2.0)
 }
 
-/// Replaces the points of a line or arrow by `world` and refits the box. With `upright` the element's
-/// rotation is reset to 0 first (elbow arrows cannot be rotated). Returns false, changing nothing, for a
-/// wrong kind, no points or a non-finite coordinate.
-pub fn set_world_points(e: &mut drafftink_scene::Element, world: &[Point], upright: bool) -> bool {
+/// What happens to the rotation of an element whose points are replaced.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Turn {
+    /// The element keeps its angle.
+    Keep,
+    /// The element's box is reset to an unrotated one first (elbow arrows cannot be rotated).
+    Upright,
+}
+
+/// Replaces the points of a line or arrow by `world` and refits the box; `turn` says what happens to the
+/// rotation. Returns false, changing nothing, for a wrong kind, no points or a non-finite coordinate.
+pub fn set_world_points(e: &mut drafftink_scene::Element, world: &[Point], turn: Turn) -> bool {
     if world.is_empty() || world.iter().any(|p| !p.x.is_finite() || !p.y.is_finite()) {
         return false;
     }
@@ -101,7 +112,7 @@ pub fn set_world_points(e: &mut drafftink_scene::Element, world: &[Point], uprig
         return false;
     }
     let before = e.transform;
-    if upright {
+    if turn == Turn::Upright {
         e.transform = Transform::new(0.0, 0.0, 0.0, 0.0);
     }
     let t = e.transform;
@@ -138,7 +149,7 @@ pub(crate) fn linear_of<R: SceneRead>(
     let e = scene.get(id).ok_or_else(|| LinearError::Missing(id.clone()))?;
     let world = world_points(e).ok_or_else(|| LinearError::NotLinear(id.clone()))?;
     if world.len() < 2 {
-        return Err(LinearError::TooFewPoints { kind: e.tag().name(), min: 2, have: world.len() });
+        return Err(LinearError::TooFewPoints { kind: e.tag(), min: 2, have: world.len() });
     }
     Ok((e.clone(), world))
 }
@@ -213,7 +224,7 @@ pub fn move_points<T: SceneTx>(tx: &mut T, id: &ElementId, moves: &[(usize, Poin
         commit(tx, id, e)?;
         elbow::reroute_with(tx, id, Some((world[0], world[len - 1])), RouteOpts::default())?;
     } else {
-        set_world_points(&mut e, &world, false);
+        set_world_points(&mut e, &world, Turn::Keep);
         commit(tx, id, e)?;
     }
     finish(tx, id)
@@ -242,21 +253,29 @@ pub fn add_point<T: SceneTx>(tx: &mut T, id: &ElementId, index: usize, at: Point
             d.end_binding = None;
         }
     }
-    set_world_points(&mut e, &world, false);
+    set_world_points(&mut e, &world, Turn::Keep);
     commit(tx, id, e)?;
     finish(tx, id)
 }
 
-/// Inserts a point in segment `segment` (1 to len-1, the index of the segment's end point) at `at` and
-/// returns the new point's index. This is what dragging a midpoint handle does.
+/// The segments of a line or arrow with `len` points, numbered by the index of their end point: 1 to len-1, and
+/// for a closed line also `len`, the one that joins the last point back to the first.
+pub fn segment_count(e: &drafftink_scene::Element, len: usize) -> usize {
+    let closed = e.linear_data().is_some_and(|d| d.closed);
+    if closed { len } else { len.saturating_sub(1) }
+}
+
+/// Inserts a point in segment `segment` (the index of the segment's end point, see [`segment_count`]) at `at`
+/// and returns the new point's index. The segment that closes a closed line gets its point last. This is what
+/// dragging a midpoint handle does.
 pub fn insert_midpoint<T: SceneTx>(
     tx: &mut T,
     id: &ElementId,
     segment: usize,
     at: Point,
 ) -> Result<usize, LinearError> {
-    let (_, world) = linear_of(tx, id)?;
-    if segment < 1 || segment >= world.len() {
+    let (e, world) = linear_of(tx, id)?;
+    if segment < 1 || segment > segment_count(&e, world.len()) {
         return Err(LinearError::NoSuchPoint { index: segment, len: world.len() });
     }
     add_point(tx, id, segment, at)?;
@@ -288,7 +307,7 @@ pub fn delete_points<T: SceneTx>(tx: &mut T, id: &ElementId, indices: &[usize]) 
     let have = len - drop.len();
     let min = min_points(&e);
     if have < min {
-        let kind = e.tag().name();
+        let kind = e.tag();
         return Err(LinearError::TooFewPoints { kind, min, have });
     }
     if drop.is_empty() {
@@ -304,7 +323,7 @@ pub fn delete_points<T: SceneTx>(tx: &mut T, id: &ElementId, indices: &[usize]) 
             d.end_binding = None;
         }
     }
-    set_world_points(&mut e, &kept, false);
+    set_world_points(&mut e, &kept, Turn::Keep);
     commit(tx, id, e)?;
     finish(tx, id)?;
     Ok(Deleted { removed: drop.len() })
@@ -387,17 +406,7 @@ pub fn set_path<T: SceneTx>(tx: &mut T, id: &ElementId, path: PathType) -> Resul
 /// One cubic per segment of a curved line: the Catmull-Rom spline through `points` with tension 0.5.
 /// Two points give a straight cubic.
 pub fn curve_segments(points: &[Point]) -> Vec<CubicBez> {
-    let n = points.len();
-    let mut out = Vec::with_capacity(n.saturating_sub(1));
-    for i in 0..n.saturating_sub(1) {
-        let p0 = points[i.saturating_sub(1)];
-        let (p1, p2) = (points[i], points[i + 1]);
-        let p3 = points[(i + 2).min(n - 1)];
-        let c1 = p1 + (p2 - p0) / 6.0;
-        let c2 = p2 - (p3 - p1) / 6.0;
-        out.push(CubicBez::new(p1, c1, c2, p2));
-    }
-    out
+    catmull_rom_cubics(points).collect()
 }
 
 /// A segment midpoint handle.
@@ -450,7 +459,7 @@ pub fn distance_to(e: &drafftink_scene::Element, p: Point) -> Option<f64> {
     let world = world_points(e)?;
     let d = e.linear_data()?;
     if d.path == PathType::Round && world.len() > 2 {
-        let mut path = kurbo::BezPath::new();
+        let mut path = drafftink_geom::kurbo::BezPath::new();
         path.move_to(*world.first()?);
         for c in curve_segments(&world) {
             path.curve_to(c.p1, c.p2, c.p3);
@@ -459,18 +468,6 @@ pub fn distance_to(e: &drafftink_scene::Element, p: Point) -> Option<f64> {
         return Some(shape.outline_distance(p));
     }
     Some(Polyline::new(world, d.closed).outline_distance(p))
-}
-
-/// The start-to-end direction helper: the unit vector at the tip of an end, pointing out of the arrow.
-pub fn end_direction(e: &drafftink_scene::Element, end: End) -> Option<Vec2> {
-    let world = world_points(e)?;
-    let (tip, next) = match end {
-        End::Start => (*world.first()?, *world.get(1)?),
-        End::End => (*world.last()?, *world.get(world.len().checked_sub(2)?)?),
-    };
-    let v = tip - next;
-    let l = v.hypot();
-    (l > 0.0).then(|| v / l)
 }
 
 #[cfg(test)]

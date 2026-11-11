@@ -19,7 +19,7 @@ use super::image::{decode_data_url, mime_is_accepted, sniff_size};
 use super::map::{self, Roundness};
 use super::notes::{self, Note};
 use super::read::{Rd, pair, warn};
-use crate::ImportReport;
+use crate::error::{FormatName, ImportReport, IoError};
 use crate::measure::{EstimateMeasure, TextMeasure};
 
 /// Excalidraw's own default stroke colour, used when a colour is missing or unreadable.
@@ -76,7 +76,7 @@ struct Ctx<'a, 'b> {
 }
 
 /// Converts the elements of one scene, clipboard or library item.
-pub(super) fn convert(src: Source<'_>, ids: &mut dyn IdSource, rep: &mut ImportReport) -> Converted {
+pub(super) fn convert(src: Source<'_>, ids: &mut dyn IdSource, rep: &mut ImportReport) -> Result<Converted, IoError> {
     let mut ctx = Ctx { rep: &mut *rep, ids: &mut *ids, files: Files::new(src.files) };
     let mut drafts: Vec<Draft> = Vec::new();
     if src.elements.len() > MAX_ELEMENTS {
@@ -103,7 +103,7 @@ pub(super) fn convert(src: Source<'_>, ids: &mut dyn IdSource, rep: &mut ImportR
         }
     }
     let files = std::mem::take(&mut ctx.files.out);
-    let elements = resolve(drafts, ids, rep, src.prefix);
+    let elements = resolve(drafts, ids, rep, src.prefix)?;
     // Keep only the blobs a surviving image refers to.
     let used: HashSet<&FileId> = elements
         .iter()
@@ -113,7 +113,7 @@ pub(super) fn convert(src: Source<'_>, ids: &mut dyn IdSource, rep: &mut ImportR
         })
         .collect();
     let files = files.into_iter().filter(|(k, _)| used.contains(k)).collect();
-    Converted { elements, files }
+    Ok(Converted { elements, files })
 }
 
 // ---------------------------------------------------------------------------------------------------------------
@@ -823,7 +823,12 @@ pub(super) fn fresh_group_id(ids: &mut dyn IdSource, used: &HashSet<GroupId>) ->
     }
 }
 
-fn resolve(drafts: Vec<Draft>, ids: &mut dyn IdSource, rep: &mut ImportReport, prefix: &str) -> Vec<Element> {
+fn resolve(
+    drafts: Vec<Draft>,
+    ids: &mut dyn IdSource,
+    rep: &mut ImportReport,
+    prefix: &str,
+) -> Result<Vec<Element>, IoError> {
     let count = drafts.len();
     // 1. Element ids. Raw ids that are clean and first-seen keep their text; the rest get fresh ones.
     let mut by_raw: HashMap<String, usize> = HashMap::with_capacity(count);
@@ -874,7 +879,7 @@ fn resolve(drafts: Vec<Draft>, ids: &mut dyn IdSource, rep: &mut ImportReport, p
     let final_ids: Vec<ElementId> = final_ids.into_iter().flatten().collect();
     if final_ids.len() != count {
         // Unreachable: every slot was filled above. Refuse to continue with misaligned data.
-        return Vec::new();
+        return Ok(Vec::new());
     }
     // raw id -> position, for references. A raw id that did not keep its text still resolves to its element.
     let pos_of = |raw: &str| by_raw.get(raw).copied();
@@ -985,11 +990,11 @@ fn resolve(drafts: Vec<Draft>, ids: &mut dyn IdSource, rep: &mut ImportReport, p
     }
 
     // 5. Z-order keys.
-    let keys = assign_indexes(cands, ordered.len());
+    let keys = assign_indexes(cands, ordered.len())?;
     for (e, k) in ordered.iter_mut().zip(keys) {
         e.index = k;
     }
-    ordered
+    Ok(ordered)
 }
 
 /// The binding for one arrow end. A missing mode or fixed point is worked out from where the arrow end lies.
@@ -1129,7 +1134,7 @@ fn reorder(elements: &[Element]) -> Vec<usize> {
 }
 
 /// Z-order keys for `n` elements: the file's own keys where they already increase, new keys in the gaps.
-pub(super) fn assign_indexes(cands: Vec<Option<ZIndex>>, n: usize) -> Vec<ZIndex> {
+pub(super) fn assign_indexes(cands: Vec<Option<ZIndex>>, n: usize) -> Result<Vec<ZIndex>, IoError> {
     // Keep a candidate only if it is above the last one kept.
     let mut kept: Vec<Option<ZIndex>> = Vec::with_capacity(n);
     let mut last: Option<ZIndex> = None;
@@ -1142,7 +1147,10 @@ pub(super) fn assign_indexes(cands: Vec<Option<ZIndex>>, n: usize) -> Vec<ZIndex
             _ => kept.push(None),
         }
     }
-    let fresh_all = || ZIndex::rebalance(n).unwrap_or_default();
+    let fresh_all = || {
+        ZIndex::rebalance(n)
+            .map_err(|e| IoError::invalid(FormatName::Excalidraw, format!("cannot order {n} elements: {e}")))
+    };
     let mut out: Vec<ZIndex> = Vec::with_capacity(n);
     let mut i = 0;
     while i < kept.len() {
@@ -1162,7 +1170,7 @@ pub(super) fn assign_indexes(cands: Vec<Option<ZIndex>>, n: usize) -> Vec<ZIndex
             Err(_) => return fresh_all(),
         }
     }
-    out
+    Ok(out)
 }
 
 #[cfg(test)]
@@ -1190,14 +1198,14 @@ mod tests {
     #[test]
     fn indexes_keep_good_keys_and_fill_gaps() {
         let k = |s: &str| Some(ZIndex::parse(s).unwrap());
-        let out = assign_indexes(vec![k("a0"), None, k("a1"), k("a0"), None], 5);
+        let out = assign_indexes(vec![k("a0"), None, k("a1"), k("a0"), None], 5).unwrap();
         assert_eq!(out.len(), 5);
         assert!(out.windows(2).all(|w| w[0] < w[1]), "{out:?}");
         assert_eq!(out[0].as_str(), "a0");
         assert_eq!(out[2].as_str(), "a1");
-        let all_none = assign_indexes(vec![None; 4], 4);
+        let all_none = assign_indexes(vec![None; 4], 4).unwrap();
         assert!(all_none.windows(2).all(|w| w[0] < w[1]));
-        assert!(assign_indexes(Vec::new(), 0).is_empty());
+        assert!(assign_indexes(Vec::new(), 0).unwrap().is_empty());
     }
 
     #[test]

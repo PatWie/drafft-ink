@@ -43,6 +43,7 @@ use std::ops::{Deref, DerefMut};
 use std::rc::Rc;
 
 use drafftink_geom::kurbo::{Point, Rect, Size, Vec2};
+use drafftink_geom::lasso::Lasso;
 use drafftink_geom::{OrientedBox, aabb};
 use drafftink_scene::{ChangeSet, Element, ElementId, GroupId, SceneStore, SceneTx, StoreError, SubscriptionId};
 
@@ -457,6 +458,11 @@ impl<S: SceneStore> Canvas<S> {
         self.index.marquee(&self.store, rect, mode, false)
     }
 
+    /// Elements selected by a world-space lasso, back to front, without locked ones.
+    pub fn lasso(&self, lasso: &Lasso, mode: MarqueeMode) -> Vec<ElementId> {
+        self.index.lasso(&self.store, lasso, mode, false)
+    }
+
     /// Live elements whose bounds touch a world rectangle, back to front.
     pub fn elements_in_rect(&self, rect: &Rect) -> Vec<&Element> {
         self.index.in_rect(&self.store, rect)
@@ -504,10 +510,7 @@ impl<S: SceneStore> Canvas<S> {
     pub fn tick(&mut self, now_ms: f64) -> Vec<Intent> {
         self.sync_inner();
         let mut fresh = Vec::new();
-        {
-            let ctx = picker!(self);
-            self.recognizer.tick(now_ms, &ctx, &mut fresh);
-        }
+        self.recognizer.tick(now_ms, &mut fresh);
         self.absorb(fresh);
         std::mem::take(&mut self.pending)
     }

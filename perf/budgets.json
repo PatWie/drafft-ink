@@ -1,0 +1,360 @@
+{
+  "version": 1,
+  "scenarios": {
+    "idle": {
+      "redraws.total": {
+        "max": 1,
+        "note": "idle means idle (docs/performance.md section 1)"
+      },
+      "frame.unexplained": {
+        "max": 0,
+        "note": "every frame has a dirty reason"
+      },
+      "counter.elements_scanned": {
+        "max": 0,
+        "note": "an idle app walks nothing"
+      },
+      "external.cpu_pct": {
+        "max": 1.0,
+        "note": "driver only: process CPU in percent of one core"
+      }
+    },
+    "hover@1k": {
+      "redraws.total": {
+        "max": 50,
+        "note": "5% of 1000 moves change the hover state; measured 10"
+      },
+      "redraws.other": {
+        "max": 0,
+        "note": "no redraw without a reason"
+      },
+      "counter.redraws_skipped": {
+        "min": 900,
+        "note": "the other moves reach the gate and are dropped there; measured 990"
+      },
+      "counter.elements_scanned": {
+        "max": 0,
+        "note": "a hover test asks the index"
+      },
+      "counter.hit_tests": {
+        "max": 1000,
+        "note": "one hit test per move"
+      }
+    },
+    "drag@1k": {
+      "counter.elements_scanned": {
+        "max": 0,
+        "note": "a gesture frame walks no part of the scene that is not dragged"
+      },
+      "counter.commands": {
+        "max": 12,
+        "note": "begin, updates and end; measured 7"
+      }
+    },
+    "pan@1k": {
+      "counter.sketch_regens": {
+        "max": 0,
+        "note": "a pan over a warm cache generates no sketch"
+      },
+      "counter.relayouts": {
+        "max": 0,
+        "note": "and lays no text out"
+      },
+      "counter.cache_miss": {
+        "max": 0
+      },
+      "counter.elements_scanned": {
+        "max": 0
+      },
+      "counter.elements_encoded": {
+        "max": 11999,
+        "note": "60 frames of fewer than 200 visible elements; measured about 1800 at every size"
+      },
+      "gauge.elements_visible": {
+        "max": 199,
+        "note": "what the view shows, not the scene; measured 30"
+      },
+      "gauge.cache_entries": {
+        "max": 199,
+        "note": "the cache holds the visible elements; measured 30"
+      },
+      "frame.p99_ms": {
+        "max": 16.7,
+        "note": "60 fps on the reference GPU; driver only"
+      }
+    },
+    "zoom@1k": {
+      "counter.elements_scanned": {
+        "max": 0
+      },
+      "counter.sketch_regens": {
+        "max": 200,
+        "note": "a zoom sweep regenerates sketches of the visible elements; measured 58 to 65 in 60 frames"
+      },
+      "counter.cache_miss": {
+        "max": 300,
+        "note": "measured 75 to 78"
+      },
+      "gauge.cache_entries": {
+        "max": 399,
+        "note": "bounded cache growth; measured 105 to 108"
+      },
+      "gauge.elements_visible": {
+        "max": 399,
+        "note": "measured 63 to 67"
+      }
+    },
+    "hover@10k": {
+      "redraws.total": {
+        "max": 50,
+        "note": "5% of 1000 moves change the hover state; measured 10"
+      },
+      "redraws.other": {
+        "max": 0,
+        "note": "no redraw without a reason"
+      },
+      "counter.redraws_skipped": {
+        "min": 900,
+        "note": "the other moves reach the gate and are dropped there; measured 990"
+      },
+      "counter.elements_scanned": {
+        "max": 0,
+        "note": "a hover test asks the index"
+      },
+      "counter.hit_tests": {
+        "max": 1000,
+        "note": "one hit test per move"
+      }
+    },
+    "drag@10k": {
+      "counter.elements_scanned": {
+        "max": 0,
+        "note": "a gesture frame walks no part of the scene that is not dragged"
+      },
+      "counter.commands": {
+        "max": 12,
+        "note": "begin, updates and end; measured 7"
+      }
+    },
+    "pan@10k": {
+      "counter.sketch_regens": {
+        "max": 0,
+        "note": "a pan over a warm cache generates no sketch"
+      },
+      "counter.relayouts": {
+        "max": 0,
+        "note": "and lays no text out"
+      },
+      "counter.cache_miss": {
+        "max": 0
+      },
+      "counter.elements_scanned": {
+        "max": 0
+      },
+      "counter.elements_encoded": {
+        "max": 11999,
+        "note": "60 frames of fewer than 200 visible elements; measured about 1800 at every size"
+      },
+      "gauge.elements_visible": {
+        "max": 199,
+        "note": "what the view shows, not the scene; measured 30"
+      },
+      "gauge.cache_entries": {
+        "max": 199,
+        "note": "the cache holds the visible elements; measured 30"
+      },
+      "frame.p99_ms": {
+        "max": 16.7,
+        "note": "60 fps on the reference GPU; driver only"
+      },
+      "phase.encode.p95_ms": {
+        "max": 4.0,
+        "note": "driver only"
+      }
+    },
+    "zoom@10k": {
+      "counter.elements_scanned": {
+        "max": 0
+      },
+      "counter.sketch_regens": {
+        "max": 200,
+        "note": "a zoom sweep regenerates sketches of the visible elements; measured 58 to 65 in 60 frames"
+      },
+      "counter.cache_miss": {
+        "max": 300,
+        "note": "measured 75 to 78"
+      },
+      "gauge.cache_entries": {
+        "max": 399,
+        "note": "bounded cache growth; measured 105 to 108"
+      },
+      "gauge.elements_visible": {
+        "max": 399,
+        "note": "measured 63 to 67"
+      }
+    },
+    "hover@100k": {
+      "redraws.total": {
+        "max": 50,
+        "note": "5% of 1000 moves change the hover state; measured 10"
+      },
+      "redraws.other": {
+        "max": 0,
+        "note": "no redraw without a reason"
+      },
+      "counter.redraws_skipped": {
+        "min": 900,
+        "note": "the other moves reach the gate and are dropped there; measured 990"
+      },
+      "counter.elements_scanned": {
+        "max": 0,
+        "note": "a hover test asks the index"
+      },
+      "counter.hit_tests": {
+        "max": 1000,
+        "note": "one hit test per move"
+      }
+    },
+    "drag@100k": {
+      "counter.elements_scanned": {
+        "max": 0,
+        "note": "a gesture frame walks no part of the scene that is not dragged"
+      },
+      "counter.commands": {
+        "max": 12,
+        "note": "begin, updates and end; measured 7"
+      }
+    },
+    "pan@100k": {
+      "counter.sketch_regens": {
+        "max": 0,
+        "note": "a pan over a warm cache generates no sketch"
+      },
+      "counter.relayouts": {
+        "max": 0,
+        "note": "and lays no text out"
+      },
+      "counter.cache_miss": {
+        "max": 0
+      },
+      "counter.elements_scanned": {
+        "max": 0
+      },
+      "counter.elements_encoded": {
+        "max": 11999,
+        "note": "60 frames of fewer than 200 visible elements; measured about 1800 at every size"
+      },
+      "gauge.elements_visible": {
+        "max": 199,
+        "note": "what the view shows, not the scene; measured 30"
+      },
+      "gauge.cache_entries": {
+        "max": 199,
+        "note": "the cache holds the visible elements; measured 30"
+      },
+      "frame.p99_ms": {
+        "max": 33.3,
+        "note": "30 fps at 100k on the reference GPU; driver only"
+      }
+    },
+    "zoom@100k": {
+      "counter.elements_scanned": {
+        "max": 0
+      },
+      "counter.sketch_regens": {
+        "max": 200,
+        "note": "a zoom sweep regenerates sketches of the visible elements; measured 58 to 65 in 60 frames"
+      },
+      "counter.cache_miss": {
+        "max": 300,
+        "note": "measured 75 to 78"
+      },
+      "gauge.cache_entries": {
+        "max": 399,
+        "note": "bounded cache growth; measured 105 to 108"
+      },
+      "gauge.elements_visible": {
+        "max": 399,
+        "note": "measured 63 to 67"
+      }
+    },
+    "bench": {
+      "external.geom.index_query_point.10000_us": {
+        "max": 2,
+        "note": "median 0.13 us measured on 2026-11-08 (64-core x86_64, load 19); the limit leaves about 10x for a loaded machine"
+      },
+      "external.geom.index_query_rect_800x600.10000_us": {
+        "max": 5,
+        "note": "median 0.51 us measured on 2026-11-08 (64-core x86_64, load 19); the limit leaves about 10x for a loaded machine"
+      },
+      "external.geom.update_one.10000_us": {
+        "max": 4,
+        "note": "median 0.37 us measured on 2026-11-08 (64-core x86_64, load 19); the limit leaves about 10x for a loaded machine"
+      },
+      "external.canvas.hit.10000_us": {
+        "max": 3,
+        "note": "median 0.26 us measured on 2026-11-08 (64-core x86_64, load 19); the limit leaves about 10x for a loaded machine"
+      },
+      "external.canvas.hit.100000_us": {
+        "max": 3,
+        "note": "median 0.19 us measured on 2026-11-08 (64-core x86_64, load 19); the limit leaves about 10x for a loaded machine"
+      },
+      "external.canvas.index_apply_one_move.10000_us": {
+        "max": 3,
+        "note": "median 0.3 us measured on 2026-11-08 (64-core x86_64, load 19); the limit leaves about 10x for a loaded machine"
+      },
+      "external.canvas.canvas_hover_move.10000_us": {
+        "max": 4,
+        "note": "median 0.32 us measured on 2026-11-08 (64-core x86_64, load 19); the limit leaves about 10x for a loaded machine"
+      },
+      "external.compose.zoomed_in_warm.10k_us": {
+        "max": 60,
+        "note": "median 5.7 us measured on 2026-11-08 (64-core x86_64, load 19); the limit leaves about 10x for a loaded machine"
+      },
+      "external.compose.zoomed_in_warm.100k_us": {
+        "max": 60,
+        "note": "median 6.1 us measured on 2026-11-08 (64-core x86_64, load 19); the limit leaves about 10x for a loaded machine"
+      },
+      "external.compose.pan_warm.100k_us": {
+        "max": 70,
+        "note": "median 6.2 us measured on 2026-11-08 (64-core x86_64, load 19); the limit leaves about 10x for a loaded machine"
+      },
+      "external.compose.drag_one_element.10k_us": {
+        "max": 80,
+        "note": "median 7.3 us measured on 2026-11-08 (64-core x86_64, load 19); the limit leaves about 10x for a loaded machine"
+      },
+      "external.local_edit_commit.move_one_element.10000_us": {
+        "max": 130,
+        "note": "median 12.6 us measured on 2026-11-08 (64-core x86_64, load 19); the limit leaves about 10x for a loaded machine"
+      },
+      "external.apply_remote_single_element.move.10000_us": {
+        "max": 500,
+        "note": "median 51 us measured on 2026-11-08 (64-core x86_64, load 19); the limit leaves about 10x for a loaded machine"
+      },
+      "external.update_bound_arrows_1k_arrows_1k_shapes_100_moved.indexed_us": {
+        "max": 2800,
+        "note": "median 280 us measured on 2026-11-08 (64-core x86_64, load 19); the limit leaves about 10x for a loaded machine"
+      },
+      "external.rect_outline_300x200_us": {
+        "max": 3,
+        "note": "median 0.3 us measured on 2026-11-08 (64-core x86_64, load 19); the limit leaves about 10x for a loaded machine"
+      },
+      "external.hachure_fill_300x200_us": {
+        "max": 250,
+        "note": "median 23.6 us measured on 2026-11-08 (64-core x86_64, load 19); the limit leaves about 10x for a loaded machine"
+      },
+      "external.text_1k_labels.warm_us": {
+        "max": 3200,
+        "note": "median 314 us measured on 2026-11-08 (64-core x86_64, load 19); the limit leaves about 10x for a loaded machine"
+      },
+      "external.span.on_us": {
+        "max": 1.0,
+        "note": "median 0.114 us measured on 2026-11-08 (64-core x86_64, load 19); the limit leaves about 10x for a loaded machine"
+      },
+      "external.always_on.count_us": {
+        "max": 0.05,
+        "note": "median 0.0019 us measured on 2026-11-08 (64-core x86_64, load 19); the limit leaves about 10x for a loaded machine"
+      }
+    }
+  }
+}

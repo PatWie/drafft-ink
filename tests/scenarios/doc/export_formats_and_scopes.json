@@ -1,0 +1,28 @@
+{
+  "about": "doc.export writes the document as JSON, SVG, Excalidraw or PNG, inline or to a file through the Files port; auto exports the selection when there is one; an exported JSON file opens again; nothing to export and bad scopes are refused in words. Exporting never changes the document.",
+  "steps": [
+    { "execute": "doc.export", "args": { "format": "json" }, "refused": "nothing_to_do", "text": "Nothing to export: the document has no elements. Draw something first, or pass `ids`." },
+    { "execute": "element.create", "args": { "kind": "rectangle", "bounds": { "x": 0, "y": 0, "w": 100, "h": 60 } } },
+    { "execute": "element.create", "args": { "kind": "ellipse", "bounds": { "x": 200, "y": 0, "w": 100, "h": 60 } } },
+    { "assert": "history.state", "save": { "depth": "$.undo_depth" } },
+
+    { "execute": "doc.export", "args": { "format": "json" }, "expect": [ { "path": "$.format", "eq": "json" }, { "path": "$.elements", "eq": 1, "note": "auto exports the selection, and the ellipse made last is selected." }, { "path": "$.bytes.base64", "is": "string" } ] },
+    { "execute": "doc.export", "args": { "format": "json", "scope": "all" }, "expect": [ { "path": "$.elements", "eq": 2 } ] },
+    { "execute": "selection.clear" },
+    { "execute": "doc.export", "args": { "format": "json" }, "expect": [ { "path": "$.elements", "eq": 2, "note": "With no selection auto exports everything." } ] },
+    { "execute": "doc.export", "args": { "format": "svg" }, "expect": [ { "path": "$.mime", "eq": "image/svg+xml" }, { "path": "$.elements", "eq": 2 } ] },
+    { "execute": "doc.export", "args": { "format": "excalidraw", "ids": ["e1"], "scope": "ids", "to": { "download": "box.excalidraw" } }, "expect": [ { "path": "$.saved_to.download", "eq": "box.excalidraw" }, { "path": "$.elements", "eq": 1 } ] },
+    { "execute": "doc.export", "args": { "format": "png", "scale": 2, "padding": 10, "to": { "path": "out/drawing.png" } }, "expect": [ { "path": "$.mime", "eq": "image/png" }, { "path": "$.saved_to.path", "eq": "out/drawing.png" }, { "path": "$.width", "gt": 0 } ] },
+
+    { "execute": "doc.export", "args": { "format": "json", "scope": "all", "to": { "path": "out/all.json" } }, "expect": [ { "path": "$.saved_to.path", "eq": "out/all.json" } ] },
+    { "execute": "doc.open", "args": { "source": { "path": "out/all.json" }, "mode": "new_tab" }, "expect": [ { "path": "$.elements", "eq": 2, "note": "An exported JSON file opens again." }, { "path": "$.format", "eq": "drafftink" } ] },
+    { "execute": "tab.close", "args": { "tab": "t2" } },
+
+    { "execute": "doc.export", "args": { "format": "json", "scope": "selection" }, "refused": "no_target", "text": "Nothing to act on: no elements are selected." },
+    { "execute": "doc.export", "args": { "format": "json", "scope": "ids", "ids": ["nope"] }, "refused": "not_found", "text": "No element matches `nope`." },
+    { "execute": "doc.export", "args": { "format": "json", "scale": 100 }, "refused": "bad_args", "text": "scale" },
+    { "assert": "history.state", "expect": [ { "path": "$.undo_depth", "eq": "{{depth}}", "note": "Exports added no undo step." } ] },
+    { "undo": 1, "expect": [ { "path": "$.undone", "len": 1, "note": "Undo still takes back the last drawing step, not an export." } ] },
+    { "assert": "doc.inspect", "expect": [ { "path": "$.elements", "eq": 1 } ] }
+  ]
+}

@@ -33,6 +33,8 @@ pub(crate) struct TextEditor {
     centred: bool,
     family: &'static str,
     size: f64,
+    /// The fixed width of a dragged-out text box, in world units. `None`: the field follows the text.
+    width: Option<f64>,
     /// Style changes chosen while editing, applied with the result.
     style: Option<Value>,
     focused: bool,
@@ -52,10 +54,12 @@ fn family_name(f: FontFamily) -> &'static str {
 impl TextEditor {
     /// An editor for what `request` names, or `None` when the element is gone.
     pub(crate) fn open(s: &Session, request: &UiRequest) -> Option<Self> {
-        let UiRequest::OpenTextEditor { element, at } = request else { return None };
+        let UiRequest::OpenTextEditor { element, at, width } = request else { return None };
         let store = s.store();
         let Some(id) = element else {
-            return Some(Self::new(String::new(), *at, false, "gelpen", 20.0));
+            let mut editor = Self::new(String::new(), *at, false, "gelpen", 20.0);
+            editor.width = *width;
+            return Some(editor);
         };
         let el = store.get(id)?;
         let (target, centred) = match &el.kind {
@@ -75,7 +79,7 @@ impl TextEditor {
     }
 
     fn new(buffer: String, at: Point, centred: bool, family: &'static str, size: f64) -> Self {
-        Self { buffer, at, centred, family, size, style: None, focused: false, rect: None }
+        Self { buffer, at, centred, family, size, width: None, style: None, focused: false, rect: None }
     }
 
     /// The field's rectangle in the last frame.
@@ -119,7 +123,7 @@ impl TextEditor {
         };
         let pos = to_screen(self.at);
         let font = theme::named(self.family, (self.size * zoom) as f32);
-        let width = (self.size * zoom * 8.0).max(120.0) as f32;
+        let width = self.width.map_or_else(|| (self.size * zoom * 8.0).max(120.0), |w| w * zoom) as f32;
         let anchor = if self.centred { Align2::CENTER_CENTER } else { Align2::LEFT_TOP };
         let inner = egui::Area::new(Id::unique("drafftink-text-editor"))
             .order(Order::Foreground)

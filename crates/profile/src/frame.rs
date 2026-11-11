@@ -237,7 +237,7 @@ impl Summary {
         let sum: u128 = v.iter().map(|x| u128::from(*x)).sum();
         Self {
             count: n as u64,
-            mean_ms: ns_to_ms((sum / n as u128) as u64),
+            mean_ms: ns_to_ms(u64::try_from(sum / n as u128).unwrap_or(u64::MAX)),
             p50_ms: ns_to_ms(rank(50)),
             p95_ms: ns_to_ms(rank(95)),
             p99_ms: ns_to_ms(rank(99)),

@@ -5,7 +5,7 @@
 //! point editor). These commands change only that state, so none of them makes an undo step; the next
 //! document step records the selection from before and after it, and undo restores it. The rules (which
 //! ids and groups a click, a list of ids, a marquee or select-all selects) are in `drafftink_edit`
-//! (`group::selection`, `selection_cmd`, `query`, `flowchart`). A handler here validates arguments, calls
+//! (`group::selection`, `query`, `flowchart`). A handler here validates arguments, calls
 //! them, writes the result into the observed state and shapes the output.
 
 use std::collections::BTreeMap;
@@ -13,21 +13,19 @@ use std::collections::BTreeMap;
 use drafftink_edit::flowchart;
 use drafftink_edit::group::selection::{
     ClickMode, ClickOpts, RegionMode, RegionOpts, Selection as EditSelection, SelectionError, Within, click,
-    in_z_order, select_all, select_region,
+    in_z_order, select_all, select_region, Pick, click_target, keeps_multi_selection, pick, pick_group,
 };
-use drafftink_edit::group::units::Relations;
 use drafftink_edit::layout::Direction;
-use drafftink_edit::query::{AtOpts, QueryCtx, describe_all, elements_at};
-use drafftink_edit::query_cmd::{ALL_FIELDS, RefQuery, all_matches};
-use drafftink_edit::selection_cmd::{Pick, click_target, keeps_multi_selection, pick, pick_group};
+use drafftink_edit::query::{ALL_FIELDS, AtOpts, QueryCtx, RefQuery, all_matches, describe_all, elements_at};
 use drafftink_edit::transform::common_bounds;
 use drafftink_geom::kurbo::Rect;
 use drafftink_geom::select::MarqueeMode;
-use drafftink_scene::{ElementId, GroupId, Kind, SceneRead};
+use drafftink_scene::{ElementId, GroupId, Kind, SceneRead, SceneStore};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
+use crate::cmd::element_common::target_refusal;
 use crate::args;
 use crate::refusal::{Refusal, echo};
 use crate::session::{Ref, Session};
@@ -139,7 +137,7 @@ pub struct SelectionOut {
 }
 
 /// Writes `next` into the active tab and builds the output. `before` is the observed state from before.
-fn finish(s: &mut Session, before: &Observed, next: &EditSelection, skipped: &[ElementId]) -> SelectionOut {
+pub(super) fn finish(s: &mut Session, before: &Observed, next: &EditSelection, skipped: &[ElementId]) -> SelectionOut {
     apply_selection(s, next);
     if !skipped.is_empty() {
         let n = skipped.len();
@@ -167,8 +165,7 @@ fn report(s: &Session, before: &Observed, skipped: &[ElementId]) -> SelectionOut
 /// The refusal for an error of the edit crate's selection rules.
 fn selection_refusal(cmd: &str, e: SelectionError) -> Refusal {
     match e {
-        SelectionError::NotFound(id) => Refusal::not_found(cmd, id.as_str()),
-        SelectionError::Locked(ids) => locked_refusal(cmd, &ids),
+        SelectionError::Target(t) => target_refusal(cmd, t),
         SelectionError::NothingToSelect => nothing_to_select(cmd),
         other => Refusal::bad_args(cmd, echo(&other.to_string())),
     }
@@ -228,8 +225,7 @@ fn select(s: &mut Session, a: SelectArgs) -> Result<SelectionOut, Refusal> {
         let ctx = QueryCtx { selected: Some(s.selection()) };
         let targets = all_matches(store, &q, &ctx).map_err(|e| query_refusal(cmd, "filter", e))?;
         if targets.is_empty() {
-            let text = serde_json::to_string(f).unwrap_or_default();
-            return Err(Refusal::not_found(cmd, &text));
+            return Err(Refusal::no_match(cmd, &f.describe()));
         }
         pick(store, &sel, &targets, opts).map_err(|e| selection_refusal(cmd, e))?
     } else {
@@ -364,7 +360,7 @@ fn resolve_within(s: &Session, r: &Ref) -> Result<Within, Refusal> {
         Err(not_found) => {
             if !r.0.starts_with('@')
                 && let Ok(g) = GroupId::new(&r.0)
-                && Relations::build(s.store()).is_group(&g)
+                && s.store().derived().is_group(&g)
             {
                 return Ok(Within::Group(g));
             }
@@ -534,7 +530,7 @@ fn navigate(s: &mut Session, a: NavigateArgs) -> Result<SelectionOut, Refusal> {
 // ---- registration ----
 
 /// Selection commands: change only the observed editor state, never make an undo step.
-const SEL: Facts = Facts {
+pub(super) const SEL: Facts = Facts {
     reads_only: false,
     mutates: Mutates::OBSERVED,
     while_gesture: Gate::Refused,

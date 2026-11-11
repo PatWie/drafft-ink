@@ -40,7 +40,10 @@ fn notice(reply: &Inbox, text: String) {
 /// or a failure.
 fn pick(kind: PickKind, accept: &'static str, multiple: bool, reply: Inbox) {
     if let Err(why) = open_chooser(kind, accept, multiple, &reply) {
-        notice(&reply, format!("The file chooser could not open ({why}). Try again, or drop the file onto the canvas."));
+        notice(
+            &reply,
+            format!("The file chooser could not open ({why}). Try again, or drop the file onto the canvas."),
+        );
     }
 }
 
@@ -65,10 +68,8 @@ fn open_chooser(kind: PickKind, accept: &'static str, multiple: bool, reply: &In
         let reply = reply.clone();
         Closure::once_into_js(move || {
             let Some(input) = slot.borrow_mut().take() else { return };
-            let files: Vec<File> = input
-                .files()
-                .map(|list| (0..list.length()).filter_map(|i| list.item(i)).collect())
-                .unwrap_or_default();
+            let files: Vec<File> =
+                input.files().map(|list| (0..list.length()).filter_map(|i| list.item(i)).collect()).unwrap_or_default();
             input.remove();
             spawn_local(read_files(kind, files, reply));
         })
@@ -81,12 +82,8 @@ fn open_chooser(kind: PickKind, accept: &'static str, multiple: bool, reply: &In
             }
         })
     };
-    input
-        .add_event_listener_with_callback("change", on_change.unchecked_ref())
-        .map_err(|e| js_error(&e))?;
-    input
-        .add_event_listener_with_callback("cancel", on_cancel.unchecked_ref())
-        .map_err(|e| js_error(&e))?;
+    input.add_event_listener_with_callback("change", on_change.unchecked_ref()).map_err(|e| js_error(&e))?;
+    input.add_event_listener_with_callback("cancel", on_cancel.unchecked_ref()).map_err(|e| js_error(&e))?;
     input.click();
     Ok(())
 }

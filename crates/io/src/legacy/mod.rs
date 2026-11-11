@@ -28,7 +28,7 @@ use std::io::Read;
 use drafftink_scene::IdSource;
 use serde_json::Value;
 
-use crate::error::{ImportReport, Imported, IoError};
+use crate::error::{Expected, FormatName, ImportReport, Imported, IoError};
 use crate::limits::{MAX_INFLATED_BYTES, MAX_INPUT_BYTES};
 use crate::measure::TextMeasure;
 
@@ -46,7 +46,7 @@ pub fn migrate_json(text: &str, ids: &mut dyn IdSource, measure: &dyn TextMeasur
         return Err(IoError::Limit { what: "document", max: format!("{MAX_INPUT_BYTES} bytes") });
     }
     let value: Value = serde_json::from_str(text.trim_start_matches('\u{feff}'))
-        .map_err(|e| IoError::parse("legacy document", e.to_string()))?;
+        .map_err(|e| IoError::parse(FormatName::LegacyDocument, e.to_string()))?;
     let mut report = ImportReport::default();
     let old = json::read_document(&value, &mut report)?;
     build::build(&old, ids, measure, report)
@@ -56,7 +56,7 @@ pub fn migrate_json(text: &str, ids: &mut dyn IdSource, measure: &dyn TextMeasur
 pub fn migrate_gzip(bytes: &[u8], ids: &mut dyn IdSource, measure: &dyn TextMeasure) -> Result<Imported, IoError> {
     let text = gunzip(bytes)?;
     let text = String::from_utf8(text)
-        .map_err(|_| IoError::parse("legacy document", "the decompressed data is not UTF-8 text"))?;
+        .map_err(|_| IoError::parse(FormatName::LegacyDocument, "the decompressed data is not UTF-8 text"))?;
     migrate_json(&text, ids, measure)
 }
 
@@ -72,7 +72,7 @@ pub fn gunzip_limited(bytes: &[u8], max: usize) -> Result<Vec<u8>, IoError> {
     flate2::read::GzDecoder::new(bytes)
         .take(limit.saturating_add(1))
         .read_to_end(&mut out)
-        .map_err(|e| IoError::parse("gzip", e.to_string()))?;
+        .map_err(|e| IoError::parse(FormatName::Gzip, e.to_string()))?;
     if out.len() > max {
         return Err(IoError::Limit { what: "decompressed data", max: format!("{max} bytes") });
     }
@@ -94,10 +94,11 @@ pub fn migrate_clipboard(text: &str, ids: &mut dyn IdSource, measure: &dyn TextM
     if text.len() > MAX_INPUT_BYTES {
         return Err(IoError::Limit { what: "clipboard", max: format!("{MAX_INPUT_BYTES} bytes") });
     }
-    let value: Value = serde_json::from_str(text).map_err(|e| IoError::parse("legacy clipboard", e.to_string()))?;
+    let value: Value =
+        serde_json::from_str(text).map_err(|e| IoError::parse(FormatName::LegacyClipboard, e.to_string()))?;
     if !value.is_array() {
         return Err(IoError::WrongFormat {
-            expected: "an old shape list",
+            expected: Expected::LegacyShapeList,
             hint: "the clipboard holds a JSON array of shapes".into(),
         });
     }

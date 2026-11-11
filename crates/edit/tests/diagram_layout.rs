@@ -1,11 +1,11 @@
 //! Layout properties: deterministic, no overlapping nodes, respects spacing and direction.
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
-use drafftink_edit::layout::{Algorithm, Direction, LayoutError, LayoutGraph, LayoutOpts, compute_layout};
-use kurbo::{Rect, Size};
+use drafftink_edit::layout::{Algorithm, Direction, Gap, LayoutError, LayoutGraph, LayoutOpts, compute_layout};
+use drafftink_geom::kurbo::{Rect, Size};
 use proptest::prelude::*;
 
-fn rects(g: &LayoutGraph, pos: &[kurbo::Point]) -> Vec<Rect> {
+fn rects(g: &LayoutGraph, pos: &[drafftink_geom::kurbo::Point]) -> Vec<Rect> {
     pos.iter().zip(&g.sizes).map(|(p, s)| Rect::from_origin_size(*p, *s)).collect()
 }
 
@@ -214,7 +214,7 @@ fn force_pulls_connected_nodes_closer_than_unconnected_ones() {
     // 0-1-2 are connected in a chain, 3-4-5 in another.
     let g = graph(&sizes, &[(0, 1), (1, 2), (3, 4), (4, 5)]);
     let r = compute_layout(&g, &opts(Algorithm::Force, Direction::Down, 20.0, 40.0)).unwrap();
-    let c = |i: usize| r.positions[i] + kurbo::Vec2::new(20.0, 20.0);
+    let c = |i: usize| r.positions[i] + drafftink_geom::kurbo::Vec2::new(20.0, 20.0);
     let d = |a: usize, b: usize| (c(a) - c(b)).hypot();
     let near = (d(0, 1) + d(1, 2) + d(3, 4) + d(4, 5)) / 4.0;
     let far = (d(0, 3) + d(2, 5) + d(0, 5) + d(2, 3)) / 4.0;
@@ -255,7 +255,7 @@ fn bad_input_is_a_typed_error() {
     assert_eq!(compute_layout(&g, &LayoutOpts::default()), Err(LayoutError::BadEdge { edge: 0 }));
     let g = graph(&[(40.0, 20.0)], &[]);
     let bad = LayoutOpts { node_gap: -1.0, ..LayoutOpts::default() };
-    assert_eq!(compute_layout(&g, &bad), Err(LayoutError::BadGap("node_gap")));
+    assert_eq!(compute_layout(&g, &bad), Err(LayoutError::BadGap(Gap::Node)));
     let none = LayoutOpts { algorithm: Algorithm::None, ..LayoutOpts::default() };
     assert_eq!(compute_layout(&g, &none), Err(LayoutError::MissingPosition { node: 0 }));
     // An empty graph is fine.

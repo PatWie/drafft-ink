@@ -11,6 +11,8 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
+use crate::state::TabId;
+
 /// A port call failed.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum PortError {
@@ -108,6 +110,12 @@ pub trait Storage {
     fn get(&self, ns: Ns, key: &str) -> Result<Option<Vec<u8>>, PortError>;
     /// Stores bytes under `key`.
     fn put(&mut self, ns: Ns, key: &str, bytes: &[u8]) -> Result<(), PortError>;
+    /// Stores a document under `name` in [`Ns::Documents`] for `doc.save`. A synchronous port needs nothing
+    /// beyond [`Storage::put`]. A browser port, whose write completes after this call, returns
+    /// [`PutOutcome::Pending`] and reports the end with `Session::on_write_done`, like [`Files::write`].
+    fn put_document(&mut self, name: &str, bytes: &[u8]) -> Result<PutOutcome, PortError> {
+        self.put(Ns::Documents, name, bytes).map(|()| PutOutcome::Done)
+    }
     /// Removes `key`. Removing a missing key is not an error.
     fn delete(&mut self, ns: Ns, key: &str) -> Result<(), PortError>;
     /// Every entry of the namespace, sorted by name.
@@ -140,14 +148,32 @@ pub enum FileRef {
     },
 }
 
+/// Names a file write that the port has accepted and will finish later (a browser file handle, a download
+/// prompt). The shell reports the end with `Session::on_write_done`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
+#[serde(transparent)]
+pub struct WriteToken(pub u64);
+
+/// How a [`Files::write`] ended, as far as the port knows when it returns.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum WriteOutcome {
+    /// The bytes are written. Holds where the file ended up.
+    Done(FileRef),
+    /// The port started the write and will finish it later. Until the shell calls `Session::on_write_done`
+    /// with this token, the document stays unsaved.
+    Pending(WriteToken),
+}
+
 /// File access by [`FileRef`].
 pub trait Files {
     /// Reads a whole file.
     fn read(&self, file: &FileRef) -> Result<Vec<u8>, PortError>;
     /// True when the file exists.
     fn exists(&self, file: &FileRef) -> bool;
-    /// Writes a file and returns where it ended up. A download hands the bytes to the shell.
-    fn write(&mut self, file: &FileRef, bytes: &[u8], mime: &str) -> Result<FileRef, PortError>;
+    /// Writes a file. A native port returns [`WriteOutcome::Done`] or the error. A browser port, whose write
+    /// completes after this call, returns [`WriteOutcome::Pending`] and reports the end later. A download
+    /// hands the bytes to the shell.
+    fn write(&mut self, file: &FileRef, bytes: &[u8], mime: &str) -> Result<WriteOutcome, PortError>;
 }
 
 /// Wall time for timestamps and monotonic time for timing. Code below L6 never calls
@@ -353,36 +379,110 @@ pub enum PortWrite {
         /// Media type.
         mime: String,
     },
+    /// Write a document. The tab counts as saved only when this write is confirmed (see [`SaveWrite`]).
+    Save(SaveWrite),
+}
+
+/// How a [`Storage::put_document`] ended, as far as the port knows when it returns.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PutOutcome {
+    /// The bytes are stored.
+    Done,
+    /// The port started the write and will finish it later. Until the shell calls `Session::on_write_done`
+    /// with this token, the document stays unsaved.
+    Pending(WriteToken),
+}
+
+/// What must happen to a tab when its document write is confirmed.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct SaveDone {
+    /// The tab that was saved.
+    pub tab: TabId,
+    /// The revision of the document that was written.
+    pub revision: u64,
+    /// Where it was written.
+    pub target: FileRef,
+    /// Make `target` the save target and a recent file.
+    pub remember: bool,
+}
+
+/// A document write queued by `doc.save`. Unlike a plain file write, its result decides whether the tab is
+/// dirty: a failed write leaves it dirty and refuses the command, a pending write keeps it dirty until the
+/// shell confirms.
+#[derive(Debug, Clone, PartialEq)]
+pub struct SaveWrite {
+    pub(crate) done: SaveDone,
+    pub(crate) bytes: Vec<u8>,
+    pub(crate) mime: String,
+}
+
+impl SaveWrite {
+    pub(crate) fn new(done: SaveDone, bytes: Vec<u8>, mime: &str) -> Self {
+        Self { done, bytes, mime: mime.to_owned() }
+    }
+}
+
+/// What a performed write left open.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Performed {
+    /// Finished.
+    Done,
+    /// The port finishes it later.
+    Pending(WriteToken),
 }
 
 impl Ports {
-    /// Performs queued writes in order. A failed write does not stop the others; it becomes a warning.
-    pub(crate) fn flush(&mut self, writes: Vec<PortWrite>) -> Vec<String> {
-        let mut warnings = Vec::new();
-        for w in writes {
-            let result = match w {
-                PortWrite::Clipboard(p) => match self.clipboard.as_mut() {
-                    Some(c) => c.write(p).map_err(|e| format!("clipboard write failed: {e}")),
-                    None => Err("clipboard write skipped: no clipboard port".to_owned()),
-                },
-                PortWrite::StoragePut { ns, key, bytes } => match self.storage.as_mut() {
-                    Some(s) => s.put(ns, &key, &bytes).map_err(|e| format!("storage write of `{key}` failed: {e}")),
-                    None => Err(format!("storage write of `{key}` skipped: no storage port")),
-                },
-                PortWrite::StorageDelete { ns, key } => match self.storage.as_mut() {
-                    Some(s) => s.delete(ns, &key).map_err(|e| format!("storage delete of `{key}` failed: {e}")),
-                    None => Err(format!("storage delete of `{key}` skipped: no storage port")),
-                },
-                PortWrite::File { file, bytes, mime } => match self.files.as_mut() {
-                    Some(f) => f.write(&file, &bytes, &mime).map(|_| ()).map_err(|e| format!("file write failed: {e}")),
-                    None => Err("file write skipped: no files port".to_owned()),
-                },
-            };
-            if let Err(w) = result {
-                warnings.push(w);
+    /// Performs one write. A save of a document returns the raw port error; the other writes return a
+    /// sentence for the warnings.
+    pub(crate) fn perform(&mut self, w: &PortWrite) -> Result<Performed, String> {
+        match w {
+            PortWrite::Clipboard(p) => match self.clipboard.as_mut() {
+                Some(c) => {
+                    c.write(p.clone()).map(|()| Performed::Done).map_err(|e| format!("clipboard write failed: {e}"))
+                }
+                None => Err("clipboard write skipped: no clipboard port".to_owned()),
+            },
+            PortWrite::StoragePut { ns, key, bytes } => match self.storage.as_mut() {
+                Some(s) => s
+                    .put(*ns, key, bytes)
+                    .map(|()| Performed::Done)
+                    .map_err(|e| format!("storage write of `{key}` failed: {e}")),
+                None => Err(format!("storage write of `{key}` skipped: no storage port")),
+            },
+            PortWrite::StorageDelete { ns, key } => match self.storage.as_mut() {
+                Some(s) => s
+                    .delete(*ns, key)
+                    .map(|()| Performed::Done)
+                    .map_err(|e| format!("storage delete of `{key}` failed: {e}")),
+                None => Err(format!("storage delete of `{key}` skipped: no storage port")),
+            },
+            PortWrite::File { file, bytes, mime } => {
+                self.write_file(file, bytes, mime).map_err(|e| format!("file write failed: {e}"))
             }
+            PortWrite::Save(save) => match &save.done.target {
+                FileRef::Stored { stored } => match self.storage.as_mut() {
+                    Some(s) => s
+                        .put_document(stored, &save.bytes)
+                        .map(|o| match o {
+                            PutOutcome::Done => Performed::Done,
+                            PutOutcome::Pending(t) => Performed::Pending(t),
+                        })
+                        .map_err(|e| e.to_string()),
+                    None => Err("there is no storage port".to_owned()),
+                },
+                file => self.write_file(file, &save.bytes, &save.mime).map_err(|e| e.to_string()),
+            },
         }
-        warnings
+    }
+
+    fn write_file(&mut self, file: &FileRef, bytes: &[u8], mime: &str) -> Result<Performed, PortError> {
+        match self.files.as_mut() {
+            Some(f) => Ok(match f.write(file, bytes, mime)? {
+                WriteOutcome::Done(_) => Performed::Done,
+                WriteOutcome::Pending(t) => Performed::Pending(t),
+            }),
+            None => Err(PortError::Unsupported("there is no files port".to_owned())),
+        }
     }
 }
 
@@ -392,12 +492,12 @@ impl Ports {
 /// keeps another to inspect what the session did.
 pub mod fake {
     use std::collections::BTreeMap;
-    use std::sync::atomic::{AtomicU64, Ordering};
+    use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
     use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
     use super::{
         ClipKind, ClipPayload, Clipboard, Clock, FileRef, Files, Net, Ns, PortError, Ports, RenderRequest, Renderer,
-        SceneView, Storage, StoredInfo,
+        SceneView, Storage, StoredInfo, WriteOutcome,
     };
     use drafftink_collab::{LoopbackServer, Transport, loopback};
     use drafftink_scene::{Rng64, SeqIds, SplitMix64};
@@ -531,6 +631,7 @@ pub mod fake {
     #[derive(Debug, Clone, Default)]
     pub struct FakeFiles {
         data: Arc<Mutex<FileMap>>,
+        fail_writes: Arc<AtomicBool>,
     }
 
     fn file_key(f: &FileRef) -> String {
@@ -551,6 +652,11 @@ pub mod fake {
         /// Puts a file there as if it already existed.
         pub fn insert(&self, file: &FileRef, bytes: &[u8], mime: &str) {
             lock(&self.data).insert(file_key(file), (bytes.to_vec(), mime.to_owned()));
+        }
+
+        /// Makes every later write fail (`true`) or work again (`false`), for tests of a full disk.
+        pub fn fail_writes(&self, on: bool) {
+            self.fail_writes.store(on, Ordering::SeqCst);
         }
 
         /// The bytes of a file, for assertions.
@@ -576,9 +682,12 @@ pub mod fake {
         fn exists(&self, file: &FileRef) -> bool {
             lock(&self.data).contains_key(&file_key(file))
         }
-        fn write(&mut self, file: &FileRef, bytes: &[u8], mime: &str) -> Result<FileRef, PortError> {
+        fn write(&mut self, file: &FileRef, bytes: &[u8], mime: &str) -> Result<WriteOutcome, PortError> {
+            if self.fail_writes.load(Ordering::SeqCst) {
+                return Err(PortError::Failed("the disk is full".to_owned()));
+            }
             self.insert(file, bytes, mime);
-            Ok(file.clone())
+            Ok(WriteOutcome::Done(file.clone()))
         }
     }
 

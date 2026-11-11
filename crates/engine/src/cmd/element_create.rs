@@ -10,20 +10,22 @@
 
 use drafftink_edit::create::{
     self, AutoBind, ConnectSpec, CreateError, DEFAULT_MATH, DEFAULT_SIMPLIFY, EndBinding, FrameChoice, Joined,
-    LinearSpec, PresetId, StrokeSpec, TextSpec,
+    LinearSpec, PresetId, StrokeSpec, TextPlace, TextSpec,
 };
 use drafftink_edit::frame;
 use drafftink_edit::style::{Prop, StyleDefaults, StyleError, StyleProps, applies};
 use drafftink_edit::text_bind::{self, Relabeled};
 use drafftink_geom::kurbo::{Point, Size};
+use drafftink_scene::words::Article;
 use drafftink_scene::limits::{MAX_LATEX_CHARS, MAX_POINTS, MAX_TEXT_CHARS};
 use drafftink_scene::{BindMode, ElementId, Head, Kind, PathType, PressureMode, SceneRead, SceneTx, Style};
 use schemars::JsonSchema;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use serde_json::json;
 
-use super::element_common::{edit_with_measure, id_strings, locked_refusal, prune_selection, select_exactly};
+use super::element_common::{edit_with_measure, id_strings, prune_selection, select_exactly};
 use super::view::{Pt, RectArg};
+use crate::cmd::element_common::target_refusal;
 use crate::args;
 use crate::refusal::Refusal;
 use crate::session::{Ref, Session};
@@ -74,7 +76,7 @@ pub enum FrameArg {
 }
 
 impl FrameArg {
-    fn is_auto(&self) -> bool {
+    pub(super) fn is_auto(&self) -> bool {
         *self == FrameArg::Auto
     }
 }
@@ -151,10 +153,10 @@ fn empty_text(cmd: &str) -> Refusal {
 }
 
 /// One catalog refusal per `CreateError` (no blanket conversion).
-fn refuse(cmd: &str, e: CreateError) -> Refusal {
+pub(super) fn refuse(cmd: &str, e: CreateError) -> Refusal {
     match e {
         CreateError::TooSmall { kind, width, height } => {
-            let linear = kind == "line" || kind == "arrow";
+            let linear = kind.is_linear();
             let dims = match (width, height) {
                 (true, true) => "width and height",
                 (true, false) => "width",
@@ -184,13 +186,12 @@ fn refuse(cmd: &str, e: CreateError) -> Refusal {
             ),
         )
         .with_details(json!({ "name": crate::refusal::echo(&name), "owner": owner.as_str() })),
-        CreateError::NotFound(id) => Refusal::not_found(cmd, id.as_str()),
-        CreateError::Locked(ids) => locked_refusal(cmd, &ids),
+        CreateError::Target(t) => target_refusal(cmd, t),
         CreateError::NotBindable { id, kind, label } => {
             let text = if label {
                 "Text that labels another element cannot be an arrow target. Bind to the labelled element instead.".to_owned()
             } else {
-                let mut k = kind.to_owned();
+                let mut k = kind.name().to_owned();
                 if let Some(first) = k.get_mut(0..1) {
                     first.make_ascii_uppercase();
                 }
@@ -206,7 +207,7 @@ fn refuse(cmd: &str, e: CreateError) -> Refusal {
         CreateError::NotLabelContainer { id, kind } => Refusal::custom(
             "wrong_kind",
             cmd,
-            format!("`{id}` is a {kind} and cannot hold a label. Labels go on rectangles, diamonds, ellipses and arrows."),
+            format!("`{id}` is {} and cannot hold a label. Labels go on rectangles, diamonds, ellipses and arrows.", Article::new(kind.name())),
         ),
         CreateError::AlreadyLabelled { container, existing } => Refusal::custom(
             "already_bound",
@@ -215,9 +216,12 @@ fn refuse(cmd: &str, e: CreateError) -> Refusal {
         ),
         CreateError::EmptyText => empty_text(cmd),
         CreateError::NotAFrame { id, kind } => {
-            Refusal::custom("wrong_kind", cmd, format!("`{id}` is a {kind}, not a frame. Pass the id of a frame, \"auto\" or null as `frame`."))
+            Refusal::custom("wrong_kind", cmd, format!("`{id}` is {}, not a frame. Pass the id of a frame, \"auto\" or null as `frame`.", Article::new(kind.name())))
         }
         CreateError::NestedFrame => Refusal::bad_arg(cmd, "frame", "a frame cannot be placed inside another frame"),
+        CreateError::TextTooLong { n, max } => Refusal::limit_exceeded(cmd, n, "characters", max),
+        CreateError::NotFinite => Refusal::bad_arg(cmd, "at", "must be finite numbers within the document limits"),
+        e @ CreateError::Invalid { .. } => Refusal::internal(cmd, e.to_string()),
         CreateError::Internal(m) => Refusal::internal(cmd, m),
     }
 }
@@ -433,7 +437,7 @@ fn check_fields(cmd: &str, a: &CreateArgs) -> Result<(), Refusal> {
             return Err(Refusal::bad_arg(
                 cmd,
                 key,
-                format!("does not apply to a {}. It applies to {}", a.kind.name(), kind_list(kinds)),
+                format!("does not apply to {}. It applies to {}", Article::new(a.kind.name()), kind_list(kinds)),
             ));
         }
     }
@@ -442,11 +446,11 @@ fn check_fields(cmd: &str, a: &CreateArgs) -> Result<(), Refusal> {
             return Err(Refusal::bad_arg(
                 cmd,
                 key,
-                format!("does not apply to a {}. It applies to {}", a.kind.name(), kind_list(kinds)),
+                format!("does not apply to {}. It applies to {}", Article::new(a.kind.name()), kind_list(kinds)),
             ));
         }
     }
-    let missing = |key: &str| Refusal::bad_arg(cmd, key, format!("is required for a {}", a.kind.name()));
+    let missing = |key: &str| Refusal::bad_arg(cmd, key, format!("is required for {}", Article::new(a.kind.name())));
     match a.kind {
         k if BOX_KINDS.contains(&k) && a.bounds.is_none() => Err(missing("bounds")),
         k if POINT_KINDS.contains(&k) && a.points.is_none() => Err(missing("points")),
@@ -482,14 +486,14 @@ fn world_points(cmd: &str, key: &str, pts: &[Pt]) -> Result<Vec<Point>, Refusal>
     pts.iter().enumerate().map(|(i, p)| world_point(cmd, key, i, *p)).collect()
 }
 
-fn resolve_id(s: &Session, cmd: &str, raw: &Option<String>) -> Result<Option<ElementId>, Refusal> {
+pub(super) fn resolve_id(s: &Session, cmd: &str, raw: &Option<String>) -> Result<Option<ElementId>, Refusal> {
     let Some(raw) = raw else { return Ok(None) };
     let id = ElementId::new(raw).map_err(|e| Refusal::bad_arg(cmd, "id", e.to_string()))?;
     create::ensure_id_free(s.store(), &id).map_err(|e| refuse(cmd, e))?;
     Ok(Some(id))
 }
 
-fn check_name(s: &Session, cmd: &str, name: &Option<String>) -> Result<Option<String>, Refusal> {
+pub(super) fn check_name(s: &Session, cmd: &str, name: &Option<String>) -> Result<Option<String>, Refusal> {
     let Some(n) = name else { return Ok(None) };
     create::validate_name(n).map_err(|e| refuse(cmd, e))?;
     create::ensure_name_free(s.store(), n, None).map_err(|e| refuse(cmd, e))?;
@@ -578,7 +582,7 @@ fn plan_create(s: &Session, a: &CreateArgs) -> Result<Plan, Refusal> {
     let props = a.style.clone().unwrap_or_default();
     let mut defaults = s.tool.defaults();
     if a.kind == Kind::Freehand && a.highlighter == Some(true) {
-        defaults.style = create::highlighter_style(defaults.style, false, false);
+        defaults.style = create::highlighter_style(defaults.style, create::Given::default());
     }
     defaults.apply(&props);
     let style = defaults.style.clone();
@@ -608,7 +612,7 @@ fn plan_create(s: &Session, a: &CreateArgs) -> Result<Plan, Refusal> {
             spec.closed = a.closed.unwrap_or(false);
             let min = if spec.closed { 3 } else { 2 };
             if world.len() < min {
-                return Err(refuse(cmd, CreateError::TooFewPoints { kind: a.kind.name(), min, have: world.len() }));
+                return Err(refuse(cmd, CreateError::TooFewPoints { kind: a.kind, min, have: world.len() }));
             }
             if spec.closed && spec.path == PathType::Elbow {
                 return Err(Refusal::bad_arg(cmd, "closed", "a closed line cannot be an elbow; use arrow_type sharp or round"));
@@ -635,7 +639,7 @@ fn plan_create(s: &Session, a: &CreateArgs) -> Result<Plan, Refusal> {
         Kind::Freehand => {
             let world = world_points(cmd, "points", a.points.as_deref().unwrap_or_default())?;
             if world.is_empty() {
-                return Err(refuse(cmd, CreateError::TooFewPoints { kind: "freehand", min: 1, have: 0 }));
+                return Err(refuse(cmd, CreateError::TooFewPoints { kind: Kind::Freehand, min: 1, have: 0 }));
             }
             let tolerance = match a.simplify {
                 Some(v) => args::in_range(cmd, "simplify", v, 0.0, 1000.0)?,
@@ -712,7 +716,7 @@ fn create_element(s: &mut Session, a: CreateArgs) -> Result<CreateOut, Refusal> 
         let is_label = matches!(plan.body, Body::Label { .. });
         let wanted = match &plan.id {
             Some(i) => i.clone(),
-            None => text_bind::fresh_element_id(&*tx, ids),
+            None => drafftink_edit::unused_element_id(&*tx, ids),
         };
         let mut style = plan.style.clone();
         style.seed = ids.seed();
@@ -739,8 +743,8 @@ fn create_element(s: &mut Session, a: CreateArgs) -> Result<CreateOut, Refusal> 
                 create::freehand_element(wanted.clone(), z, world, spec, style)
             })?,
             Body::Text { content, at, width } => create::insert_on_top(tx, |z| {
-                let spec = TextSpec { font: plan.defaults.text.clone(), at: *at, width: *width };
-                create::text_element(measure, wanted.clone(), z, content, spec, style)
+                let spec = TextSpec { font: plan.defaults.text.clone(), place: TextPlace::TopLeft(*at), width: *width };
+                create::text_element(measure, wanted.clone(), z, content, spec, style).map_err(CreateError::from)
             })?,
             Body::Label { container, content } => {
                 let mut preset = PresetId::new(Some(wanted.clone()), ids);
@@ -785,8 +789,8 @@ fn create_element(s: &mut Session, a: CreateArgs) -> Result<CreateOut, Refusal> 
 
     if !made.ignored.is_empty() {
         s.warn(format!(
-            "These style properties do not apply to a {} and were ignored: {}.",
-            a.kind.name(),
+            "These style properties do not apply to {} and were ignored: {}.",
+            Article::new(a.kind.name()),
             made.ignored.join(", ")
         ));
     }
@@ -922,7 +926,7 @@ fn connect(s: &mut Session, a: ConnectArgs) -> Result<ConnectOut, Refusal> {
     })
     .map_err(|e| refuse(cmd, e))?;
     if !ignored.is_empty() {
-        s.warn(format!("These style properties do not apply to an {} and were ignored: {}.", kind.name(), ignored.join(", ")));
+        s.warn(format!("These style properties do not apply to {} and were ignored: {}.", Article::new(kind.name()), ignored.join(", ")));
     }
     select_exactly(s, std::slice::from_ref(&arrow), false);
     Ok(ConnectOut { id: arrow.as_str().to_owned(), label: label_id.map(|l| l.as_str().to_owned()) })
@@ -938,7 +942,8 @@ fn connect(s: &mut Session, a: ConnectArgs) -> Result<ConnectOut, Refusal> {
 pub struct RelabelArgs {
     /// A text element, or a rectangle, diamond, ellipse or arrow with or without a label: an id or `@name`.
     pub id: Ref,
-    /// The new text. On a shape or arrow, empty text removes the label.
+    /// The new text. Empty text removes the label of a shape or arrow, or a bound label given as `id`. A
+    /// free text element cannot be empty (`empty_text`).
     pub text: String,
     /// Create a label when the shape or arrow has none (default true).
     #[serde(default = "default_true", skip_serializing_if = "is_true")]
@@ -967,8 +972,9 @@ fn relabel(s: &mut Session, a: RelabelArgs) -> Result<RelabelOut, Refusal> {
     if a.text.chars().count() > MAX_TEXT_CHARS {
         return Err(Refusal::limit_exceeded(cmd, a.text.chars().count(), "characters", MAX_TEXT_CHARS));
     }
+    let defaults = s.tool.text_defaults.clone();
     let outcome = edit_with_measure::<Relabeled, CreateError>(s, |tx, measure, ids| {
-        text_bind::relabel(tx, measure, ids, &id, &a.text, a.create).map_err(CreateError::from)
+        text_bind::relabel(tx, measure, ids, &id, &a.text, a.create, Some(&defaults)).map_err(CreateError::from)
     })
     .map_err(|e| refuse(cmd, e))?;
     let (action, label) = match outcome {

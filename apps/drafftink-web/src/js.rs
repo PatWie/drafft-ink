@@ -18,11 +18,11 @@ pub(crate) fn to_json(value: &JsValue) -> Result<Value, RpcError> {
     if value.is_undefined() || value.is_null() {
         return Ok(Value::Null);
     }
-    let text = js_sys::JSON::stringify(value)
-        .ok()
-        .and_then(|s| s.as_string())
-        .ok_or_else(|| RpcError::new(INVALID_PARAMS, "the argument cannot be turned into JSON (a function, a cycle or a BigInt?)"))?;
-    serde_json::from_str(&text).map_err(|e| RpcError::new(INVALID_PARAMS, format!("the argument is not valid JSON ({e})")))
+    let text = js_sys::JSON::stringify(value).ok().and_then(|s| s.as_string()).ok_or_else(|| {
+        RpcError::new(INVALID_PARAMS, "the argument cannot be turned into JSON (a function, a cycle or a BigInt?)")
+    })?;
+    serde_json::from_str(&text)
+        .map_err(|e| RpcError::new(INVALID_PARAMS, format!("the argument is not valid JSON ({e})")))
 }
 
 /// JSON as a JS value.

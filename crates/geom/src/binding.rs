@@ -13,7 +13,7 @@ use kurbo::{Point, Rect, Vec2};
 
 use crate::aabb;
 use crate::obox::OrientedBox;
-use crate::outline::{Outline, Primitive, Probe, unit};
+use crate::outline::{Outline, Primitive, Probe, cross, unit};
 use crate::shapes::{DiamondShape, EllipseShape, RectShape};
 
 /// Gap between an arrow end and the outline of the shape it is bound to (scene units).
@@ -61,13 +61,18 @@ pub fn normalize_fixed_point(fp: Vec2) -> Vec2 {
 /// One of the four axis directions an elbow arrow can leave or enter a shape.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Heading {
+    /// Towards negative y (up on screen).
     Up,
+    /// Towards positive x.
     Right,
+    /// Towards positive y (down on screen).
     Down,
+    /// Towards negative x.
     Left,
 }
 
 impl Heading {
+    /// All four headings, clockwise from [`Heading::Up`].
     pub const ALL: [Heading; 4] = [Heading::Up, Heading::Right, Heading::Down, Heading::Left];
 
     /// The unit vector (y points down).
@@ -100,6 +105,7 @@ impl Heading {
         Heading::from_vector(p - origin)
     }
 
+    /// The opposite heading.
     pub fn flip(self) -> Heading {
         match self {
             Heading::Up => Heading::Down,
@@ -109,10 +115,12 @@ impl Heading {
         }
     }
 
+    /// True for [`Heading::Left`] and [`Heading::Right`].
     pub fn is_horizontal(self) -> bool {
         matches!(self, Heading::Left | Heading::Right)
     }
 
+    /// True for [`Heading::Up`] and [`Heading::Down`].
     pub fn is_vertical(self) -> bool {
         !self.is_horizontal()
     }
@@ -137,30 +145,38 @@ pub fn grow_rect(r: Rect, offsets: [f64; 4]) -> Rect {
 /// Which outline a bind target has.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum BindKind {
+    /// A rectangle, possibly with rounded corners.
     Rect,
+    /// An ellipse inscribed in the box.
     Ellipse,
+    /// A diamond whose vertices are the midpoints of the box sides.
     Diamond,
 }
 
 /// A shape an arrow can bind to.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct BindTarget {
+    /// Which outline the target has.
     pub kind: BindKind,
+    /// The oriented box of the target.
     pub frame: OrientedBox,
     /// Corner radius of a rectangle or diamond. Ignored for an ellipse.
     pub corner_radius: f64,
 }
 
 impl BindTarget {
+    /// A target of `kind` in `frame` with sharp corners.
     pub fn new(kind: BindKind, frame: OrientedBox) -> Self {
         Self { kind, frame, corner_radius: 0.0 }
     }
 
+    /// The same target with the given corner radius.
     pub fn with_corner_radius(mut self, r: f64) -> Self {
         self.corner_radius = r;
         self
     }
 
+    /// True when the frame and the corner radius are usable numbers.
     pub fn is_valid(&self) -> bool {
         self.frame.is_valid() && crate::num_is_sane(self.corner_radius)
     }
@@ -178,6 +194,7 @@ impl BindTarget {
         }
     }
 
+    /// The centre of the target.
     pub fn center(&self) -> Point {
         self.frame.center
     }
@@ -293,13 +310,13 @@ impl BindTarget {
             }
             // Intersect the finite ray with the diagonal segment.
             let e = r - q;
-            let denom = dir.x * e.y - dir.y * e.x;
+            let denom = cross(dir, e);
             if denom.abs() < 1e-12 {
                 continue;
             }
             let qa = q - a;
-            let t = (qa.x * e.y - qa.y * e.x) / denom;
-            let s = (qa.x * dir.y - qa.y * dir.x) / denom;
+            let t = cross(qa, e) / denom;
+            let s = cross(qa, dir) / denom;
             if (0.0..=reach).contains(&t) && (0.0..=1.0).contains(&s) {
                 let hit = a + dir * t;
                 if best.is_none_or(|(d, _)| t < d) {
@@ -398,7 +415,6 @@ impl BindTarget {
         let [top0, right0, bottom0, left0] = self.frame.side_midpoints();
         let shrink = |v: Point| mid + (v - mid) * 0.95;
         let (top, right, bottom, left) = (shrink(top0), shrink(right0), shrink(bottom0), shrink(left0));
-        let cross = |a: Vec2, b: Vec2| a.x * b.y - a.y * b.x;
         let v = |a: Point, b: Point| a - b;
 
         // Corner cones.

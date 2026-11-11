@@ -184,7 +184,7 @@ fn sync_view_inner(view: &mut MemoryStore, core: &mut Core, mut t: Touched) -> R
             }
         }
     }
-    let cs = tx.commit().map_err(|e| DocError::Backend(e.to_string()))?;
+    let cs = tx.commit().map_err(DocError::backend)?;
     #[cfg(feature = "profile")]
     drafftink_profile::count(drafftink_profile::Counter::SyncOpsApplied, u64::try_from(cs.elements.len()).unwrap_or(0));
     Ok(cs)
@@ -215,9 +215,8 @@ pub(crate) fn apply_remote(store: &mut LoroStore, bytes: &[u8]) -> Result<Change
         return Err(DocError::SnapshotStartsLater);
     }
     let LoroStore { view, core } = store;
-    let (imported, touched) = collecting(core, || {
-        core.guard(|| core.doc.import_with(bytes, "remote"))?.map_err(|e| DocError::Import(e.to_string()))
-    });
+    let (imported, touched) =
+        collecting(core, || core.guard(|| core.doc.import_with(bytes, "remote"))?.map_err(DocError::import));
     core.pending = imported?.pending.is_some();
     core.stats.remote_updates += 1;
     mark_remote_as_sent(core)?;
@@ -265,8 +264,16 @@ fn is_pristine(store: &LoroStore) -> bool {
         && !store.can_redo()
 }
 
+/// Which way [`undo_redo`] steps through the history.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Direction {
+    Undo,
+    Redo,
+}
+
 /// `LoroStore::undo` and `redo`.
-pub(crate) fn undo_redo(store: &mut LoroStore, undo: bool) -> Result<Option<UndoStep>, DocError> {
+pub(crate) fn undo_redo(store: &mut LoroStore, direction: Direction) -> Result<Option<UndoStep>, DocError> {
+    let undo = direction == Direction::Undo;
     let LoroStore { view, core } = store;
     if let Some(found) = core.blocked {
         return Err(DocError::NewerSchema { found, max: SCHEMA_VERSION });

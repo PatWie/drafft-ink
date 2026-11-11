@@ -10,11 +10,11 @@ use std::hint::black_box;
 
 use criterion::{BatchSize, Criterion, criterion_group, criterion_main};
 use drafftink_edit::binding::{update_bound_arrows, update_bound_arrows_indexed};
+use drafftink_geom::kurbo::Point;
 use drafftink_scene::{
     BindMode, Binding, Element, ElementId, ElementKind, Kind, LinearData, MemoryStore, PathType, SceneStore, SceneTx,
     ZIndex,
 };
-use kurbo::Point;
 
 const SHAPES: usize = 1_000;
 const MOVED: usize = 100;

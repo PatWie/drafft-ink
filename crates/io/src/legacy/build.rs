@@ -20,7 +20,7 @@ use drafftink_scene::{
 use kurbo::{Point, Rect, Vec2};
 
 use super::model::{Body, ImageFormat, OImage, OLinear, OShape, OStyle, OText, OldDoc, leaf_count};
-use crate::error::{ImportReport, Imported, IoError};
+use crate::error::{FormatName, ImportReport, Imported, IoError};
 use crate::measure::{EstimateMeasure, MathBox, TextMeasure};
 
 /// Group rotations below this are not drawn by the old renderer, so they are not baked either.
@@ -60,7 +60,8 @@ pub(crate) fn build(
             before - elements.len()
         ));
     }
-    let keys = ZIndex::rebalance(elements.len()).map_err(|e| IoError::invalid("legacy document", e.to_string()))?;
+    let keys =
+        ZIndex::rebalance(elements.len()).map_err(|e| IoError::invalid(FormatName::LegacyDocument, e.to_string()))?;
     for (e, k) in elements.iter_mut().zip(keys) {
         e.index = k;
     }

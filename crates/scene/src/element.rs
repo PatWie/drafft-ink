@@ -511,6 +511,20 @@ pub enum Kind {
 }
 
 impl Kind {
+    /// Every kind, in the order of the enum.
+    pub const ALL: [Kind; 10] = [
+        Kind::Rectangle,
+        Kind::Diamond,
+        Kind::Ellipse,
+        Kind::Line,
+        Kind::Arrow,
+        Kind::Freehand,
+        Kind::Text,
+        Kind::Math,
+        Kind::Image,
+        Kind::Frame,
+    ];
+
     /// Lowercase name, as used in JSON and in command arguments.
     pub fn name(self) -> &'static str {
         match self {
@@ -540,6 +554,25 @@ impl Kind {
     /// Line or arrow.
     pub fn is_linear(self) -> bool {
         matches!(self, Kind::Line | Kind::Arrow)
+    }
+}
+
+impl std::fmt::Display for Kind {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.name())
+    }
+}
+
+/// A word that names no element kind.
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+#[error("`{0}` is not an element kind")]
+pub struct ParseKindError(String);
+
+impl std::str::FromStr for Kind {
+    type Err = ParseKindError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        Kind::ALL.into_iter().find(|k| k.name() == s).ok_or_else(|| ParseKindError(s.to_owned()))
     }
 }
 
@@ -734,7 +767,7 @@ impl Element {
         let world0 = old.local_to_world(first);
         // New centre: world0 = c' + R(q0 - half) with q0 the shifted first point.
         let half = Vec2::new(w / 2.0, h / 2.0);
-        let q0 = (first - shift) - Vec2::ZERO;
+        let q0 = first - shift;
         let rel = Vec2::new(q0.x - half.x, q0.y - half.y);
         let c = world0 - rotate(rel, old.angle);
         if let Some(pts) = self.points_mut() {

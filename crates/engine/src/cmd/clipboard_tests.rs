@@ -9,7 +9,7 @@ use serde_json::{Value, json};
 
 use super::{COMPAT_KEY, CopyBuffer};
 use crate::ports::fake::Fakes;
-use crate::ports::{ClipKind, ClipPayload, Clipboard, PortError, Ports};
+use crate::ports::{ClipKind, ClipPayload, Clipboard, PortError, Ports, RenderRequest, Renderer, SceneView};
 use crate::refusal::Refusal;
 use crate::registry::Registry;
 use crate::ring::Origin;
@@ -821,12 +821,53 @@ fn copy_as_refusals() {
     run(&mut s, "clipboard.copy_as", json!({"format": "svg"}));
 }
 
+/// A renderer that records every request.
+#[derive(Clone, Default)]
+struct RecordingRenderer(Arc<Mutex<Vec<RenderRequest>>>);
+
+impl Renderer for RecordingRenderer {
+    fn render_png(&self, _: &SceneView, req: &RenderRequest) -> Result<Vec<u8>, PortError> {
+        self.0.lock().unwrap().push(req.clone());
+        Ok(b"\x89PNG-recorded".to_vec())
+    }
+}
+
+fn recording(s: &mut Session) -> RecordingRenderer {
+    let r = RecordingRenderer::default();
+    s.ports.renderer = Some(Box::new(r.clone()));
+    r
+}
+
 #[test]
-fn copy_as_dark_is_ignored_with_a_warning() {
+fn copy_as_dark_draws_with_the_dark_palette_without_a_warning() {
     let (mut s, _) = fx();
+    let seen = recording(&mut s);
     two_rects(&mut s);
     let out = run(&mut s, "clipboard.copy_as", json!({"dark": true}));
-    assert!(out["warnings"][0].as_str().unwrap().contains("dark theme"), "{out}");
+    assert_eq!(out["warnings"], json!([]), "dark is supported now");
+    assert!(seen.0.lock().unwrap().last().unwrap().dark);
+    // The setting `export.dark` is the default, as for `doc.export`.
+    run(&mut s, "settings.set", json!({"key": "export.dark", "value": true}));
+    run(&mut s, "clipboard.copy_as", json!({}));
+    assert!(seen.0.lock().unwrap().last().unwrap().dark);
+    run(&mut s, "clipboard.copy_as", json!({"dark": false}));
+    assert!(!seen.0.lock().unwrap().last().unwrap().dark);
+}
+
+#[test]
+fn copy_as_png_and_doc_export_make_the_same_render_request() {
+    let (mut s, _) = fx();
+    let seen = recording(&mut s);
+    two_rects(&mut s);
+    let args = json!({"scale": 1.5, "padding": 7, "background": false, "dark": true});
+    run(&mut s, "clipboard.copy_as", args.clone());
+    let mut export = args;
+    export["scope"] = json!("selection");
+    export["embed_scene"] = json!(false);
+    run(&mut s, "doc.export", export);
+    let reqs = seen.0.lock().unwrap();
+    assert_eq!(reqs.len(), 2);
+    assert_eq!(reqs[0], reqs[1], "one PNG implementation: the same scene and options give the same request");
 }
 
 // ---- hostile input ----

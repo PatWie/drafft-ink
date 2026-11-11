@@ -4,7 +4,7 @@
 //! simulation, overlapping boxes are pushed apart. If that does not finish, the whole layout is stretched until no
 //! two boxes overlap, so the result never has overlapping nodes.
 
-use kurbo::{Point, Rect, Size};
+use drafftink_geom::kurbo::{Point, Rect, Size};
 
 use super::{LayoutGraph, LayoutOpts, LayoutResult};
 

@@ -1,0 +1,39 @@
+{
+  "about": "Cut removes and keeps the elements for paste in one undo step, a copied style applies to other shapes, plain text pastes as a text element, copy_as reports what it wrote to the system clipboard, and the empty cases refuse in words.",
+  "steps": [
+    { "execute": "element.create", "args": { "kind": "rectangle", "bounds": { "x": 0, "y": 0, "w": 100, "h": 60 }, "style": { "fill_color": "#ffcc00", "stroke_width": 4 } } },
+    { "execute": "element.create", "args": { "kind": "ellipse", "bounds": { "x": 300, "y": 0, "w": 100, "h": 60 } } },
+
+    { "execute": "clipboard.paste_style", "args": { "ids": ["e2"] }, "refused": "nothing_to_do", "text": "No style has been copied yet" },
+    { "execute": "clipboard.copy_style", "args": { "from": "e1" }, "expect": [ { "path": "$.props.fill_color", "eq": "#ffcc00" }, { "path": "$.props.stroke_width", "eq": 4 } ] },
+    { "execute": "clipboard.paste_style", "args": { "ids": ["e2"] }, "expect": [ { "path": "$.changed", "eq": true } ] },
+    { "assert": "style.get", "args": { "ids": ["e2"], "props": ["fill_color", "stroke_width"] }, "expect": [ { "path": "$.props.fill_color.value", "eq": "#ffcc00" }, { "path": "$.props.stroke_width.value", "eq": 4 } ] },
+    { "undo": 1 },
+    { "assert": "style.get", "args": { "ids": ["e2"], "props": ["stroke_width"] }, "expect": [ { "path": "$.props.stroke_width.value", "eq": 2 } ] },
+
+    { "execute": "selection.select", "args": { "ids": ["e1"] } },
+    { "execute": "clipboard.cut", "expect": [ { "path": "$.deleted", "eq": ["e1"] } ] },
+    { "assert": "element.query", "expect": [ { "path": "$.total", "eq": 1 } ] },
+    { "execute": "clipboard.paste", "args": { "at": [200, 200] }, "expect": [ { "path": "$.kind", "eq": "elements" } ] },
+    { "assert": "element.query", "args": { "fields": ["kind"] }, "expect": [ { "path": "$.total", "eq": 2 } ] },
+    { "undo": 1 },
+    { "undo": 1 },
+    { "assert": "element.query", "args": { "fields": ["id", "kind"] }, "expect": [ { "path": "$.total", "eq": 2 }, { "path": "$.items[id=e1].kind", "eq": "rectangle" } ], "note": "The paste is one step and the cut is one step; both undone, e1 is back under its own id." },
+    { "execute": "selection.clear" },
+    { "execute": "clipboard.cut", "refused": "no_target", "text": "no elements are selected" },
+    { "execute": "clipboard.copy", "refused": "no_target" },
+
+    { "execute": "clipboard.paste", "args": { "source": { "text": "plain words" } }, "expect": [ { "path": "$.kind", "eq": "text" } ] },
+    { "assert": "element.query", "args": { "filter": { "kind": "text" }, "fields": ["text"] }, "expect": [ { "path": "$.items[0].text", "eq": "plain words" } ] },
+    { "execute": "clipboard.paste", "args": { "source": { "text": "x" }, "plain_text": true }, "expect": [ { "path": "$.kind", "eq": "text" } ] },
+    { "execute": "clipboard.paste", "args": { "source": "internal", "plain_text": true }, "refused": "bad_args" },
+    { "execute": "clipboard.paste", "args": { "source": { "elements": { "nonsense": true } } }, "refused": "parse_failed" },
+
+    { "execute": "clipboard.copy_as", "args": { "format": "text", "scope": "all" }, "expect": [ { "path": "$.format", "eq": "text" }, { "path": "$.count", "eq": 4, "note": "Two shapes (no text) and two pasted texts." } ] },
+    { "execute": "clipboard.copy_as", "args": { "format": "svg", "scope": "all" }, "expect": [ { "path": "$.format", "eq": "svg" }, { "path": "$.bytes", "gt": 100 } ] },
+    { "execute": "clipboard.copy_as", "args": { "format": "png", "scope": "all" }, "expect": [ { "path": "$.format", "eq": "png" }, { "path": "$.size_px", "len": 2 } ] },
+    { "execute": "selection.clear" },
+    { "execute": "clipboard.copy_as", "args": { "format": "png" }, "refused": "no_target", "text": "no elements are selected" },
+    { "execute": "clipboard.copy_as", "args": { "format": "text", "scope": "all" }, "expect": [ { "path": "$.changed", "eq": false } ], "note": "Copying never changes the document." }
+  ]
+}

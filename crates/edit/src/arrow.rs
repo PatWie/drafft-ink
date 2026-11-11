@@ -11,13 +11,15 @@
 //! editing. Nothing here holds a second copy of their rules.
 
 use drafftink_geom::guides::{SmartGuide, detect_smart_guides_for_point, snap_ray_to_smart_guides};
+use drafftink_geom::kurbo::{Point, Rect, Vec2};
 use drafftink_geom::snap::{
     ENDPOINT_SNAP_RADIUS, GRID_SIZE, MAX_SNAP_CANDIDATES, SMART_GUIDE_THRESHOLD, snap_angle, snap_ray_to_grid_lines,
     snap_to_grid,
 };
 use drafftink_geom::{OrientedBox, aabb};
-use drafftink_scene::{BindMode, Binding, Element, ElementId, ElementKind, PathType, SceneRead, SceneTx, StoreError};
-use kurbo::{Point, Rect, Vec2};
+use drafftink_scene::{
+    BindMode, Binding, Element, ElementId, ElementKind, Kind, PathType, SceneRead, SceneTx, StoreError,
+};
 
 use crate::binding::{BindingError, End, resolve, update_bound_arrows};
 use crate::elbow::{self, ElbowEditError, RouteOpts};
@@ -38,7 +40,7 @@ pub enum ArrowError {
         /// The element.
         id: ElementId,
         /// Its kind, lower case.
-        kind: &'static str,
+        kind: Kind,
         /// True for text that labels another element.
         label: bool,
     },
@@ -109,7 +111,7 @@ pub fn bind_end<T: SceneTx>(
     let t = tx.get(req.target).filter(|e| !e.deleted).ok_or_else(|| ArrowError::Missing(req.target.clone()))?;
     let not_bindable = |t: &Element| ArrowError::NotBindable {
         id: t.id.clone(),
-        kind: t.tag().name(),
+        kind: t.tag(),
         label: matches!(&t.kind, ElementKind::Text(x) if x.container_id.is_some()),
     };
     if req.target == arrow {
@@ -290,8 +292,33 @@ pub fn snap_dragged_point(
 }
 
 /// The boxes a dragged point may align with: the bounds of every live element near `around` except the
-/// ones in `skip`, in scene order, at most [`MAX_SNAP_CANDIDATES`].
+/// ones in `skip`, in scene order, at most [`MAX_SNAP_CANDIDATES`]. Looks at the whole scene; a caller with a
+/// spatial index uses [`snap_candidates_among`].
 pub fn snap_candidates<R: SceneRead>(scene: &R, skip: &[ElementId], around: Point) -> Vec<Rect> {
+    drafftink_profile::count(drafftink_profile::Counter::ElementsScanned, scene.len_all() as u64);
+    boxes_near(scene.iter(), skip, around)
+}
+
+/// Like [`snap_candidates`], looking only at the elements named in `near` (any order). `near` must hold every
+/// element whose box is within [`snap_reach`] of `around`.
+pub fn snap_candidates_among<R: SceneRead>(
+    scene: &R,
+    near: &[ElementId],
+    skip: &[ElementId],
+    around: Point,
+) -> Vec<Rect> {
+    let mut elements: Vec<&Element> = near.iter().filter_map(|id| scene.get(id)).filter(|e| !e.deleted).collect();
+    elements.sort_by(|a, b| a.index.cmp(&b.index).then_with(|| a.id.cmp(&b.id)));
+    boxes_near(elements.into_iter(), skip, around)
+}
+
+/// How far from the dragged point a spatial query must look so that [`snap_candidates_among`] sees every box the
+/// snap zone touches (the zone is a square, a query reaches in a circle).
+pub fn snap_reach() -> f64 {
+    ENDPOINT_SNAP_RADIUS * std::f64::consts::SQRT_2
+}
+
+fn boxes_near<'a>(elements: impl Iterator<Item = &'a Element>, skip: &[ElementId], around: Point) -> Vec<Rect> {
     if !drafftink_geom::point_is_finite(around) {
         return Vec::new();
     }
@@ -302,7 +329,7 @@ pub fn snap_candidates<R: SceneRead>(scene: &R, skip: &[ElementId], around: Poin
         around.y + ENDPOINT_SNAP_RADIUS,
     );
     let mut out = Vec::new();
-    for e in scene.iter() {
+    for e in elements {
         if out.len() >= MAX_SNAP_CANDIDATES {
             break;
         }

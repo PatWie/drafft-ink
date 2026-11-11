@@ -1,0 +1,60 @@
+{
+  "about": "Headline: an agent builds a flowchart with diagram.create, reads it back with doc.outline, relabels a node, adds a node and connects it by name, extends from a node, and undoes the steps one by one; every node and edge it asked for is in the outline with its label.",
+  "steps": [
+    { "execute": "diagram.create", "args": {
+        "nodes": [
+          { "id": "start", "label": "Start", "shape": "ellipse", "name": "start" },
+          { "id": "check", "label": "Valid?", "shape": "diamond", "name": "check" },
+          { "id": "ok", "label": "Process", "name": "ok" },
+          { "id": "bad", "label": "Reject", "name": "bad" } ],
+        "edges": [ { "from": "start", "to": "check" }, { "from": "check", "to": "ok", "label": "yes" }, { "from": "check", "to": "bad", "label": "no" } ],
+        "layout": { "algorithm": "layered", "direction": "down" }, "at": [0, 0] },
+      "expect": [ { "path": "$.nodes", "len": 4 }, { "path": "$.edges", "len": 3 }, { "path": "$.nodes.start", "eq": "e1" }, { "path": "$.nodes.check", "eq": "e3" }, { "path": "$.nodes.ok", "eq": "e5" }, { "path": "$.nodes.bad", "eq": "e7" } ],
+      "note": "The ids are sequential in the test session: start e1, its label e2, check e3, ok e5, bad e7. Edges follow the nodes." },
+
+    { "assert": "doc.outline", "args": { "format": "json" }, "expect": [
+        { "path": "$.outline.nodes", "len": 4 }, { "path": "$.outline.edges", "len": 3 },
+        { "path": "$.outline.nodes[id=e3].kind", "eq": "diamond" }, { "path": "$.outline.nodes[id=e3].label", "eq": "Valid?" },
+        { "path": "$.outline.nodes[id=e1].kind", "eq": "ellipse" },
+        { "path": "$.outline.edges[0].from", "eq": "e1" }, { "path": "$.outline.edges[0].to", "eq": "e3" },
+        { "path": "$.outline.edges[1].label", "eq": "yes" }, { "path": "$.outline.edges[2].label", "eq": "no" } ] },
+    { "assert": "doc.outline", "args": { "format": "text" }, "expect": [
+        { "path": "$.text", "contains": "\"Valid?\" diamond" }, { "path": "$.text", "contains": "\"yes\"" }, { "path": "$.text", "contains": "nodes (4):" } ] },
+    { "assert": "element.query", "args": { "filter": { "ids": ["@start", "@check", "@ok", "@bad"] }, "fields": ["id", "name", "bounds"] }, "expect": [
+        { "path": "$.items[id=e1].name", "eq": "start", "note": "Names given to nodes become @names." },
+        { "path": "$.items[id=e1].bounds.y", "lt": 100, "note": "Layered, direction down: start on top, then the decision, then the two outcomes side by side." },
+        { "path": "$.items[id=e3].bounds.y", "gt": 100 }, { "path": "$.items[id=e3].bounds.y", "lt": 250 },
+        { "path": "$.items[id=e5].bounds.y", "gt": 250 }, { "path": "$.items[id=e7].bounds.y", "gt": 250 }, { "path": "$.items[id=e5].bounds.x", "lt": 100 }, { "path": "$.items[id=e7].bounds.x", "gt": 100 } ] },
+    { "assert": "history.state", "expect": [ { "path": "$.undo_depth", "eq": 1, "note": "The whole diagram, nodes and arrows, is one undo step." } ] },
+
+    { "execute": "element.relabel", "args": { "id": "@bad", "text": "Reject request" }, "expect": [ { "path": "$.changed", "eq": true } ] },
+    { "assert": "doc.outline", "args": { "format": "json" }, "expect": [ { "path": "$.outline.nodes[id=e7].label", "eq": "Reject request" } ] },
+
+    { "execute": "element.create", "args": { "kind": "rectangle", "bounds": { "x": 120, "y": 480, "w": 120, "h": 60 }, "name": "log" } },
+    { "execute": "element.relabel", "args": { "id": "@log", "text": "Write log" } },
+    { "execute": "element.connect", "args": { "from": "@bad", "to": "@log", "label": "then" }, "expect": [ { "path": "$.created", "len": 2 } ] },
+    { "assert": "doc.outline", "args": { "format": "json" }, "expect": [
+        { "path": "$.outline.nodes", "len": 5 }, { "path": "$.outline.edges", "len": 4 },
+        { "path": "$.outline.edges[-1].from", "eq": "e7" }, { "path": "$.outline.edges[-1].label", "eq": "then" } ] },
+
+    { "execute": "diagram.extend", "args": { "from": "@ok", "direction": "down", "label": "Done" }, "expect": [ { "path": "$.changed", "eq": true } ] },
+    { "assert": "doc.outline", "args": { "format": "json" }, "expect": [ { "path": "$.outline.nodes", "len": 6 }, { "path": "$.outline.edges", "len": 5 } ] },
+    { "execute": "diagram.extend", "args": { "from": "@start", "direction": "sideways" }, "refused": "bad_args" },
+    { "execute": "diagram.extend", "args": { "from": "nope", "direction": "down" }, "refused": "not_found" },
+
+    { "undo": 1 },
+    { "assert": "doc.outline", "args": { "format": "json" }, "expect": [ { "path": "$.outline.nodes", "len": 5 }, { "path": "$.outline.edges", "len": 4 } ], "note": "Undo took back the extension: node and arrow together." },
+    { "undo": 1 },
+    { "assert": "doc.outline", "args": { "format": "json" }, "expect": [ { "path": "$.outline.nodes", "len": 5 }, { "path": "$.outline.edges", "len": 3 }, { "path": "$.outline.nodes[id=e7].label", "eq": "Reject request" } ], "note": "Undo took back the connect, with its label." },
+    { "undo": 3 },
+    { "assert": "doc.outline", "args": { "format": "json" }, "expect": [ { "path": "$.outline.nodes", "len": 4 }, { "path": "$.outline.nodes[id=e7].label", "eq": "Reject" } ], "note": "Create, label and relabel are three more steps. Now the diagram is as the first command made it." },
+    { "undo": 1 },
+    { "assert": "doc.outline", "args": { "format": "json" }, "expect": [ { "path": "$.outline.nodes", "len": 0 }, { "path": "$.outline.edges", "len": 0 } ] },
+    { "redo": 1 },
+    { "assert": "doc.outline", "args": { "format": "json" }, "expect": [ { "path": "$.outline.nodes", "len": 4 }, { "path": "$.outline.edges", "len": 3 } ] },
+
+    { "execute": "diagram.create", "args": { "nodes": [], "layout": {} }, "refused": "bad_args", "text": "Give at least one node" },
+    { "execute": "diagram.create", "args": { "nodes": [ { "id": "a" }, { "id": "a" } ], "layout": {} }, "refused": "duplicate_node", "text": "Node ids must be unique" },
+    { "execute": "diagram.create", "args": { "nodes": [ { "id": "a" } ], "edges": [ { "from": "a", "to": "zz" } ], "layout": {} }, "refused": "unknown_node", "text": ["Edge 0 refers to node `zz`", "Known nodes: a"] }
+  ]
+}

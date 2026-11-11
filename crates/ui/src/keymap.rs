@@ -165,6 +165,7 @@ pub const VERB_BINDINGS: &[VerbBinding] = &[
     VerbBinding { keys: &["Mod+Shift+S"], scope: Scope::Always, verb: Verb::SaveAs },
     VerbBinding { keys: &["Mod+/", "Mod+Shift+P"], scope: Scope::Always, verb: Verb::OpenPalette },
     VerbBinding { keys: &["Mod+F"], scope: Scope::Canvas, verb: Verb::OpenSearch },
+    VerbBinding { keys: &["Mod+K"], scope: Scope::Canvas, verb: Verb::OpenLinkEditor },
     VerbBinding { keys: &["?"], scope: Scope::Canvas, verb: Verb::OpenShortcuts },
     VerbBinding { keys: &["Alt+Z"], scope: Scope::Canvas, verb: Verb::ToggleZen },
     VerbBinding { keys: &["Alt+/"], scope: Scope::Canvas, verb: Verb::ToggleStats },
@@ -190,13 +191,14 @@ pub struct Pointer {
     pub viewport_center: Option<(f64, f64)>,
 }
 
-/// Replaces `"$cursor"` and `"$viewport_center"` in a binding's arguments by points. A key whose
+/// Replaces `"$cursor"` and `"$viewport_center"` in a binding's arguments by points, written `[x, y]` as
+/// the commands take a world point. A key whose
 /// value cannot be filled is dropped, as docs/commands.md §1.12 says.
 pub fn substitute(args: &Value, pointer: &Pointer) -> Value {
     match args {
-        Value::String(s) if s == "$cursor" => pointer.cursor.map_or(Value::Null, |(x, y)| json!({ "x": x, "y": y })),
+        Value::String(s) if s == "$cursor" => pointer.cursor.map_or(Value::Null, |(x, y)| json!([x, y])),
         Value::String(s) if s == "$viewport_center" => {
-            pointer.viewport_center.map_or(Value::Null, |(x, y)| json!({ "x": x, "y": y }))
+            pointer.viewport_center.map_or(Value::Null, |(x, y)| json!([x, y]))
         }
         Value::Object(m) => {
             let mut out = Map::new();

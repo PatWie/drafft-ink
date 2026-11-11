@@ -29,35 +29,68 @@ use drafftink_geom::snap::snap_rotation;
 use drafftink_geom::transform::{ElementFrame, map_box, normalize_angle, normalize_angle_signed, rotate_point};
 use drafftink_geom::{OrientedBox, aabb};
 use drafftink_scene::{
-    Element, ElementError, ElementId, ElementKind, Kind, PathType, SceneRead, SceneTx, StoreError, limits,
-    validate_element,
+    Binding, Element, ElementError, ElementId, ElementKind, Kind, PathType, SceneRead, SceneTx, StoreError, Transform,
+    limits, validate_element, validate_transform,
 };
 
 use crate::binding::{self, BindingError};
-use crate::group::units::{Relations, ensure_unlocked, impl_from_target, primaries, with_companions};
+use crate::group::units::{Reverse, ReverseLookup, ensure_unlocked, primaries, with_companions};
+use crate::target::TargetError;
 
+mod common;
 pub mod geometry;
+
+pub use common::{CommonBounds, set_common_bounds, tidy};
+
+/// Why elements cannot be rotated.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum NotRotatableReason {
+    /// A frame is among them.
+    Frame,
+    /// An elbow arrow is among them.
+    ElbowArrow,
+}
+
+impl std::fmt::Display for NotRotatableReason {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(match self {
+            NotRotatableReason::Frame => "frames cannot be rotated",
+            NotRotatableReason::ElbowArrow => {
+                "elbow arrows cannot be rotated; change the arrow type to sharp or round first"
+            }
+        })
+    }
+}
 
 /// Why a transform was refused. Nothing was changed.
 #[derive(Debug, thiserror::Error)]
 pub enum TransformError {
-    /// No live element has this id.
-    #[error("element {0} does not exist or is deleted")]
-    NotFound(ElementId),
-    /// Locked elements cannot be transformed.
-    #[error("{} element(s) are locked ({}). Unlock them first", .0.len(), crate::group::units::ids_text(.0))]
-    Locked(Vec<ElementId>),
+    /// An element does not exist, is deleted, or is locked.
+    #[error(transparent)]
+    Target(#[from] TargetError),
     /// Frames and elbow arrows cannot be rotated.
-    #[error("{reason} (elements: {})", crate::group::units::ids_text(.ids))]
+    #[error("{reason} (elements: {})", crate::target::ids_text(.ids))]
     NotRotatable {
         /// The elements that cannot rotate.
         ids: Vec<ElementId>,
-        /// What to do instead.
-        reason: &'static str,
+        /// Why not.
+        reason: NotRotatableReason,
     },
-    /// An argument is not usable.
-    #[error("{0}")]
-    BadArgs(&'static str),
+    /// No element was given.
+    #[error("no elements were given")]
+    NoElements,
+    /// The rotate handle was given to a resize.
+    #[error("the rotate handle does not resize; use rotate")]
+    RotateHandle,
+    /// A requested box is not finite or has a negative size.
+    #[error("bounds must be finite and the size 0 or more")]
+    BadBounds,
+    /// A requested size is zero or negative.
+    #[error("the width and the height must be above 0")]
+    NotPositive,
+    /// An absolute angle needs one element.
+    #[error("mode \"to\" sets an absolute angle and needs exactly one element; use mode \"by\" to rotate several")]
+    RotateToNeedsOne,
     /// A number is not finite, or the result would leave the allowed range.
     #[error("the result is not a valid number; use smaller values")]
     NotFinite,
@@ -76,7 +109,6 @@ pub enum TransformError {
     #[error(transparent)]
     Binding(#[from] BindingError),
 }
-impl_from_target!(TransformError);
 
 pub use crate::binding::End;
 
@@ -91,6 +123,24 @@ pub struct TransformReport {
     pub arrows: Vec<ElementId>,
     /// The common bounds of the transformed elements after the change.
     pub bounds: Option<Rect>,
+}
+
+impl TransformReport {
+    /// Adds what `other` did to this report: ids once each, bounds of the later step.
+    pub fn merge(&mut self, other: TransformReport) {
+        for id in other.changed {
+            if !self.changed.contains(&id) {
+                self.changed.push(id);
+            }
+        }
+        self.unbound.extend(other.unbound);
+        for id in other.arrows {
+            if !self.arrows.contains(&id) {
+                self.arrows.push(id);
+            }
+        }
+        self.bounds = other.bounds.or(self.bounds);
+    }
 }
 
 /// How one element moves.
@@ -177,31 +227,59 @@ fn set_box(e: &mut Element, center: Point, size: Size, angle: f64) {
     e.transform.angle = angle;
 }
 
+/// What an element becomes under a motion. A move or a turn changes only the box, so it carries no copy of the
+/// element; a map of the points or a font scale needs the whole element.
+enum Next {
+    Transform(Transform),
+    Whole(Box<Element>),
+}
+
+impl Next {
+    fn transform(&self) -> &Transform {
+        match self {
+            Next::Transform(t) => t,
+            Next::Whole(e) => &e.transform,
+        }
+    }
+
+    fn validate(&self) -> Result<(), drafftink_scene::ElementError> {
+        match self {
+            Next::Transform(t) => validate_transform(t),
+            Next::Whole(e) => validate_element(e),
+        }
+    }
+}
+
 /// The element after `motion`. `follower` is bound text that follows its container: it moves and turns but its
 /// size is not scaled.
-fn moved(e: &Element, motion: Motion, follower: bool) -> Result<Element, TransformError> {
-    let mut n = e.clone();
+fn moved(e: &Element, motion: Motion, follower: bool) -> Result<Next, TransformError> {
+    let whole = |via: Affine| -> Result<Next, TransformError> {
+        let mut n = e.clone();
+        affine_element(&mut n, via, follower)?;
+        Ok(Next::Whole(Box::new(n)))
+    };
     match motion {
         Motion::Translate(d) => {
-            n.transform.x += d.x;
-            n.transform.y += d.y;
+            Ok(Next::Transform(Transform { x: e.transform.x + d.x, y: e.transform.y + d.y, ..e.transform }))
         }
         Motion::Rotate { pivot, delta } => {
             let c = rotate_point(e.transform.center(), pivot, delta);
-            n.transform.x = c.x - e.transform.w / 2.0;
-            n.transform.y = c.y - e.transform.h / 2.0;
-            n.transform.angle = clean_angle(e.transform.angle + delta);
+            Ok(Next::Transform(Transform {
+                x: c.x - e.transform.w / 2.0,
+                y: c.y - e.transform.h / 2.0,
+                angle: clean_angle(e.transform.angle + delta),
+                ..e.transform
+            }))
         }
-        Motion::Affine(a) => affine_element(&mut n, a, follower)?,
+        Motion::Affine(a) => whole(a),
         Motion::Exact { to, via } => {
             if e.points().is_some() {
-                affine_element(&mut n, via, follower)?;
+                whole(via)
             } else {
-                n.transform = to;
+                Ok(Next::Transform(to))
             }
         }
     }
-    Ok(n)
 }
 
 fn affine_element(n: &mut Element, a: Affine, follower: bool) -> Result<(), TransformError> {
@@ -306,90 +384,112 @@ fn ratio_in_box(b: &OrientedBox, p: Point) -> [f64; 2] {
     [ratio(l.x + b.size.width / 2.0, b.size.width), ratio(l.y + b.size.height / 2.0, b.size.height)]
 }
 
+/// Bindings whose target is transformed too are kept. After a mirror or a non-uniform scale their fixed point is
+/// carried over to the new target box; the ends whose target stays are freed afterwards by the binding module.
+fn carry_fixed_points<R: SceneRead>(
+    scene: &R,
+    next: &mut BTreeMap<ElementId, Next>,
+    motions: &BTreeMap<&ElementId, Motion>,
+) {
+    let carried = |b: &Binding, next: &BTreeMap<ElementId, Next>| -> Option<[f64; 2]> {
+        let motion = motions.get(&b.target).filter(|m| !m.keeps_ratios())?;
+        let (old_t, new_t) = (scene.get(&b.target)?, next.get(&b.target)?);
+        let old_box = geometry::obox(old_t);
+        let g = old_box.to_world(Point::new(
+            (b.fixed_point[0] - 0.5) * old_box.size.width,
+            (b.fixed_point[1] - 0.5) * old_box.size.height,
+        ));
+        let t = new_t.transform();
+        let new_box = OrientedBox::from_xywh(t.x, t.y, t.w, t.h, t.angle);
+        Some(ratio_in_box(&new_box, motion.affine() * g))
+    };
+    let fixes: Vec<(ElementId, [Option<[f64; 2]>; 2])> = next
+        .keys()
+        .filter_map(|id| {
+            let d = scene.get(id)?.linear_data()?;
+            let fixes = [d.start_binding.as_ref(), d.end_binding.as_ref()].map(|b| carried(b?, next));
+            fixes.iter().any(Option::is_some).then(|| (id.clone(), fixes))
+        })
+        .collect();
+    for (id, [start, end]) in fixes {
+        let Some(slot) = next.get_mut(&id) else { continue };
+        // A plain move carries no copy of the element; only an element whose binding changes needs one.
+        if let Next::Transform(t) = slot {
+            let Some(mut whole) = scene.get(&id).cloned() else { continue };
+            whole.transform = *t;
+            *slot = Next::Whole(Box::new(whole));
+        }
+        let Next::Whole(e) = slot else { continue };
+        let (ElementKind::Line(d) | ElementKind::Arrow(d)) = &mut e.kind else { continue };
+        for (fixed, binding) in [(start, d.start_binding.as_mut()), (end, d.end_binding.as_mut())] {
+            if let (Some(fp), Some(b)) = (fixed, binding) {
+                b.fixed_point = fp;
+            }
+        }
+    }
+}
+
 /// Applies the motions to the scene: companion text follows, bindings are kept or dropped, bound arrows are
 /// re-solved. All new values are checked before the first write.
 pub(crate) fn apply<T: SceneTx>(tx: &mut T, items: Vec<Item>) -> Result<TransformReport, TransformError> {
     let set: BTreeSet<ElementId> = items.iter().map(|i| i.id.clone()).collect();
-    let mut olds: BTreeMap<ElementId, Element> = BTreeMap::new();
-    for i in &items {
-        let e = tx.get(&i.id).filter(|e| !e.deleted).ok_or_else(|| TransformError::NotFound(i.id.clone()))?;
-        olds.insert(i.id.clone(), e.clone());
-    }
+    // Taken before the first write, while a fresh transaction can still answer from the committed index.
+    let all_ids: Vec<ElementId> = set.iter().cloned().collect();
+    let followers = binding::arrows_bound_to(&*tx, &all_ids);
     let motions: BTreeMap<&ElementId, Motion> = items.iter().map(|i| (&i.id, i.motion)).collect();
-    let mut news: BTreeMap<ElementId, Element> = BTreeMap::new();
+
+    let mut next: BTreeMap<ElementId, Next> = BTreeMap::new();
+    let mut was_bound: BTreeMap<ElementId, [bool; 2]> = BTreeMap::new();
     for i in &items {
-        let Some(old) = olds.get(&i.id) else { continue };
+        let old = tx
+            .get(&i.id)
+            .filter(|e| !e.deleted)
+            .ok_or_else(|| TransformError::Target(TargetError::NotFound(i.id.clone())))?;
+        if let Some(d) = old.linear_data() {
+            was_bound.insert(i.id.clone(), [d.start_binding.is_some(), d.end_binding.is_some()]);
+        }
         let follower = old.container_id().is_some_and(|c| set.contains(c));
-        news.insert(i.id.clone(), moved(old, i.motion, follower)?);
+        next.insert(i.id.clone(), moved(old, i.motion, follower)?);
     }
 
-    // Bindings whose target moves too are kept, with their fixed point carried over a mirror or a non-uniform
-    // scale. The ends whose target stays are freed below by the binding module.
-    let ids: Vec<ElementId> = news.keys().cloned().collect();
-    for id in &ids {
-        let Some(n) = news.get(id) else { continue };
-        let Some(d) = n.linear_data() else { continue };
-        let mut fix: [Option<Option<[f64; 2]>>; 2] = [None, None];
-        for (slot, b) in [d.start_binding.as_ref(), d.end_binding.as_ref()].into_iter().enumerate() {
-            let Some(b) = b else { continue };
-            fix[slot] = Some(
-                match (set.contains(&b.target), motions.get(&b.target), olds.get(&b.target), news.get(&b.target)) {
-                    (true, Some(m), Some(old_t), Some(new_t)) if !m.keeps_ratios() => {
-                        let old_box = geometry::obox(old_t);
-                        let g = old_box.to_world(Point::new(
-                            (b.fixed_point[0] - 0.5) * old_box.size.width,
-                            (b.fixed_point[1] - 0.5) * old_box.size.height,
-                        ));
-                        Some(ratio_in_box(&geometry::obox(new_t), m.affine() * g))
-                    }
-                    (true, _, _, _) => Some(b.fixed_point),
-                    _ => None,
-                },
-            );
-        }
-        if fix.iter().all(Option::is_none) {
-            continue;
-        }
-        if let Some(n) = news.get_mut(id)
-            && let ElementKind::Line(d) | ElementKind::Arrow(d) = &mut n.kind
-        {
-            for (slot, b) in [&mut d.start_binding, &mut d.end_binding].into_iter().enumerate() {
-                if let (Some(Some(fp)), Some(b)) = (fix[slot], b) {
-                    b.fixed_point = fp;
-                }
-            }
-        }
-    }
+    carry_fixed_points(&*tx, &mut next, &motions);
 
-    for (id, n) in &news {
-        validate_element(n).map_err(|error| TransformError::Invalid { id: id.clone(), error })?;
+    for (id, n) in &next {
+        n.validate().map_err(|error| TransformError::Invalid { id: id.clone(), error })?;
     }
     let mut changed: Vec<ElementId> = Vec::new();
-    for (id, n) in news {
-        if olds.get(&id).is_some_and(|o| o.transform == n.transform && o.kind == n.kind) {
+    for (id, n) in next {
+        let Some(old) = tx.get(&id) else { continue };
+        let same = match &n {
+            Next::Transform(t) => old.transform == *t,
+            Next::Whole(e) => old.transform == e.transform && old.kind == e.kind,
+        };
+        if same {
             continue;
         }
-        let (t, k) = (n.transform, n.kind);
-        tx.update(&id, |e| {
-            e.transform = t;
-            e.kind = k;
-        })?;
+        match n {
+            Next::Transform(t) => tx.update(&id, |e| e.transform = t)?,
+            Next::Whole(e) => {
+                let e = *e;
+                tx.update(&id, |slot| {
+                    slot.transform = e.transform;
+                    slot.kind = e.kind;
+                })?;
+            }
+        }
         changed.push(id);
     }
     // The ends whose target is not part of the transform are freed where they are.
-    let all_ids: Vec<ElementId> = olds.keys().cloned().collect();
     let freed = binding::unbind_detached(tx, &all_ids)?;
     let mut unbound: Vec<(ElementId, End)> = Vec::new();
     for id in freed {
-        let (Some(old), Some(now)) =
-            (olds.get(&id).and_then(Element::linear_data), tx.get(&id).and_then(Element::linear_data))
-        else {
+        let (Some([start, end]), Some(now)) = (was_bound.get(&id), tx.get(&id).and_then(Element::linear_data)) else {
             continue;
         };
-        if old.start_binding.is_some() && now.start_binding.is_none() {
+        if *start && now.start_binding.is_none() {
             unbound.push((id.clone(), End::Start));
         }
-        if old.end_binding.is_some() && now.end_binding.is_none() {
+        if *end && now.end_binding.is_none() {
             unbound.push((id.clone(), End::End));
         }
         if !changed.contains(&id) {
@@ -397,7 +497,8 @@ pub(crate) fn apply<T: SceneTx>(tx: &mut T, items: Vec<Item>) -> Result<Transfor
         }
     }
     crate::group::units::sort_z(&*tx, &mut changed);
-    let arrows = if changed.is_empty() { Vec::new() } else { binding::update_bound_arrows(tx, &changed)? };
+    let arrows =
+        if changed.is_empty() { Vec::new() } else { binding::update_bound_arrows_from(tx, &changed, followers)? };
     let bounds = geometry::union_bounds(items.iter().filter_map(|i| tx.get(&i.id)));
     Ok(TransformReport { changed, unbound, arrows, bounds })
 }
@@ -408,23 +509,25 @@ fn finite_vec(v: Vec2) -> Result<(), TransformError> {
 
 /// The primaries of `ids` and everything that travels with them.
 struct Prepared {
-    rel: Relations,
     primary: Vec<ElementId>,
     all: Vec<ElementId>,
+    /// Some primary element belongs to a group that counts (two live members).
+    grouped: bool,
 }
 
 fn prepare<T: SceneTx>(tx: &T, ids: &[ElementId], frame_children: bool) -> Result<Prepared, TransformError> {
     if ids.is_empty() {
-        return Err(TransformError::BadArgs("no elements were given"));
+        return Err(TransformError::NoElements);
     }
-    let rel = Relations::build(tx);
+    let rel = Reverse::of(tx);
     let base = primaries(tx, ids)?;
     let all = with_companions(tx, &rel, &base, frame_children);
     ensure_unlocked(tx, &all)?;
     // The primaries now include frame children (they are members, not followers).
     let primary: Vec<ElementId> =
         all.iter().filter(|i| tx.get(i).is_some_and(|e| !crate::group::units::is_label(tx, e))).cloned().collect();
-    Ok(Prepared { rel, primary, all })
+    let grouped = primary.iter().filter_map(|i| tx.get(i)).any(|e| e.group_ids.iter().any(|g| rel.is_group(g)));
+    Ok(Prepared { primary, all, grouped })
 }
 
 fn items(all: &[ElementId], motion: Motion) -> Vec<Item> {
@@ -495,7 +598,7 @@ pub struct ResizeSpec {
 /// drops below 1 unit. The membership of a resized frame is for [`crate::frame::recompute_after_resize`].
 pub fn resize<T: SceneTx>(tx: &mut T, ids: &[ElementId], spec: ResizeSpec) -> Result<TransformReport, TransformError> {
     if spec.handle == BoxHandle::Rotate {
-        return Err(TransformError::BadArgs("the rotate handle does not resize; use rotate"));
+        return Err(TransformError::RotateHandle);
     }
     finite_vec(spec.delta)?;
     let base = primaries(&*tx, ids)?;
@@ -514,11 +617,10 @@ pub fn resize<T: SceneTx>(tx: &mut T, ids: &[ElementId], spec: ResizeSpec) -> Re
             _ => false,
         })
     } else {
-        elems.iter().any(|e| {
-            e.transform.angle != 0.0
-                || matches!(e.tag(), Kind::Text | Kind::Math | Kind::Image)
-                || !p.rel.stack(e).is_empty()
-        })
+        p.grouped
+            || elems
+                .iter()
+                .any(|e| e.transform.angle != 0.0 || matches!(e.tag(), Kind::Text | Kind::Math | Kind::Image))
     };
     let target = handle_point(&original, spec.handle, 0.0) + spec.delta;
     let opts = ResizeOpts {
@@ -549,13 +651,14 @@ pub struct BoundsSpec {
 /// rotated element keeps its angle and scales in its own frame.
 pub fn set_bounds<T: SceneTx>(tx: &mut T, id: &ElementId, spec: BoundsSpec) -> Result<TransformReport, TransformError> {
     let p = prepare(&*tx, std::slice::from_ref(id), false)?;
-    let e = tx.get(id).filter(|e| !e.deleted).ok_or_else(|| TransformError::NotFound(id.clone()))?;
+    let e =
+        tx.get(id).filter(|e| !e.deleted).ok_or_else(|| TransformError::Target(TargetError::NotFound(id.clone())))?;
     let old = geometry::obox(e);
     let t = e.transform;
     let (x, y) = (spec.x.unwrap_or(t.x), spec.y.unwrap_or(t.y));
     let (w, h) = (spec.w.unwrap_or(t.w), spec.h.unwrap_or(t.h));
     if ![x, y, w, h].iter().all(|v| v.is_finite()) || w < 0.0 || h < 0.0 {
-        return Err(TransformError::BadArgs("bounds must be finite and the size 0 or more"));
+        return Err(TransformError::BadBounds);
     }
     let new = OrientedBox::from_xywh(x, y, w, h, t.angle);
     let a = new.to_world_affine() * Affine::scale_non_uniform(ratio(w, t.w), ratio(h, t.h)) * old.to_local_affine();
@@ -607,9 +710,9 @@ pub fn rotate<T: SceneTx>(
         .collect();
     if !blocked.is_empty() {
         let reason = if blocked.iter().any(|i| tx.get(i).is_some_and(|e| e.tag() == Kind::Frame)) {
-            "frames cannot be rotated"
+            NotRotatableReason::Frame
         } else {
-            "elbow arrows cannot be rotated; change the arrow type to sharp or round first"
+            NotRotatableReason::ElbowArrow
         };
         return Err(TransformError::NotRotatable { ids: blocked, reason });
     }
@@ -622,9 +725,7 @@ pub fn rotate<T: SceneTx>(
         },
         RotateMode::To => {
             let [only] = elems.as_slice() else {
-                return Err(TransformError::BadArgs(
-                    "mode \"to\" sets an absolute angle and needs exactly one element; use mode \"by\" to rotate several",
-                ));
+                return Err(TransformError::RotateToNeedsOne);
             };
             let target = match step {
                 Some(s) => snap_rotation(angle, s),

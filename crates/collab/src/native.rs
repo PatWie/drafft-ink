@@ -13,7 +13,7 @@
 
 use std::collections::VecDeque;
 use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::{Arc, Mutex, MutexGuard, OnceLock, PoisonError};
+use std::sync::{Arc, Mutex, OnceLock};
 use std::time::Duration;
 
 use drafftink_protocol::MAX_FRAME_BYTES;
@@ -26,7 +26,7 @@ use tokio_tungstenite::tungstenite::protocol::{Message, WebSocketConfig};
 use tokio_tungstenite::{Connector, client_async_tls_with_config};
 
 use crate::client::CONNECT_TIMEOUT_MS;
-use crate::transport::{Transport, TransportError, TransportEvent, WakeFn};
+use crate::transport::{Transport, TransportError, TransportEvent, WakeFn, lock};
 use crate::url::ServerUrl;
 
 /// Extra trust for `wss://`.
@@ -68,10 +68,6 @@ struct Shared {
     recv_buffer: Option<u32>,
 }
 
-fn lock<T>(m: &Mutex<T>) -> MutexGuard<'_, T> {
-    m.lock().unwrap_or_else(PoisonError::into_inner)
-}
-
 struct Runtime {
     handle: tokio::runtime::Handle,
     stop: Option<tokio::sync::oneshot::Sender<()>>,
@@ -97,7 +93,7 @@ pub struct NativeTransport {
 
 struct TlsCell {
     options: TlsOptions,
-    config: OnceLock<Result<Arc<rustls::ClientConfig>, String>>,
+    config: OnceLock<Result<Arc<rustls::ClientConfig>, ConnectError>>,
 }
 
 impl NativeTransport {
@@ -212,6 +208,25 @@ struct Connection {
     wake: WakeFn,
 }
 
+/// Why a connection attempt or a running connection failed. Its text goes to the status line and the log.
+#[derive(Debug, Clone, thiserror::Error)]
+enum ConnectError {
+    #[error("the server name has no address")]
+    NoAddress,
+    #[error("{0}")]
+    Io(String),
+    #[error("{0}")]
+    Handshake(String),
+    #[error("a trusted certificate is not valid: {0}")]
+    BadCertificate(String),
+    #[error("{0}")]
+    Tls(String),
+    #[error("timed out")]
+    TimedOut,
+    #[error("{0}")]
+    Socket(String),
+}
+
 enum Ended {
     /// We closed it; report nothing.
     ByUs,
@@ -228,21 +243,25 @@ impl Connection {
         (self.wake)();
     }
 
-    async fn tcp(&self) -> Result<TcpStream, String> {
-        let addrs = tokio::net::lookup_host((self.url.host(), self.url.port())).await.map_err(|e| e.to_string())?;
-        let mut last = "the server name has no address".to_owned();
+    async fn tcp(&self) -> Result<TcpStream, ConnectError> {
+        let addrs = tokio::net::lookup_host((self.url.host(), self.url.port()))
+            .await
+            .map_err(|e| ConnectError::Io(e.to_string()))?;
+        let mut last = ConnectError::NoAddress;
         for addr in addrs {
-            let socket =
-                if addr.is_ipv4() { TcpSocket::new_v4() } else { TcpSocket::new_v6() }.map_err(|e| e.to_string())?;
+            let socket = if addr.is_ipv4() { TcpSocket::new_v4() } else { TcpSocket::new_v6() }
+                .map_err(|e| ConnectError::Io(e.to_string()))?;
             if let Some(n) = self.shared.recv_buffer {
+                // A hint: the operating system may refuse it, and the connection works without it.
                 let _ = socket.set_recv_buffer_size(n);
             }
             match socket.connect(addr).await {
                 Ok(stream) => {
+                    // Also a hint: it lowers latency but nothing depends on it.
                     let _ = stream.set_nodelay(true);
                     return Ok(stream);
                 }
-                Err(e) => last = e.to_string(),
+                Err(e) => last = ConnectError::Io(e.to_string()),
             }
         }
         Err(last)
@@ -252,18 +271,18 @@ impl Connection {
         match self.session(&mut rx).await {
             Ok(Ended::ByUs) => {}
             Ok(Ended::ByPeer) => self.push(TransportEvent::Closed { error: None }),
-            Err(e) => self.push(TransportEvent::Closed { error: Some(e) }),
+            Err(e) => self.push(TransportEvent::Closed { error: Some(e.to_string()) }),
         }
     }
 
-    async fn session(&self, rx: &mut UnboundedReceiver<Out>) -> Result<Ended, String> {
-        let request = self.url.to_string().into_client_request().map_err(|e| e.to_string())?;
+    async fn session(&self, rx: &mut UnboundedReceiver<Out>) -> Result<Ended, ConnectError> {
+        let request = self.url.to_string().into_client_request().map_err(|e| ConnectError::Handshake(e.to_string()))?;
         let connector = if self.url.is_secure() {
             let tls = Arc::clone(&self.tls);
             let config =
                 tokio::task::spawn_blocking(move || tls.config.get_or_init(|| build_tls(&tls.options)).clone())
                     .await
-                    .map_err(|e| e.to_string())??;
+                    .map_err(|e| ConnectError::Tls(e.to_string()))??;
             Connector::Rustls(config)
         } else {
             Connector::Plain
@@ -274,14 +293,14 @@ impl Connection {
             let stream = self.tcp().await?;
             client_async_tls_with_config(request, stream, Some(limits), Some(connector))
                 .await
-                .map_err(|e| e.to_string())
+                .map_err(|e| ConnectError::Handshake(e.to_string()))
         };
         let timeout = Duration::from_millis(CONNECT_TIMEOUT_MS);
         let mut ws = tokio::select! {
             r = tokio::time::timeout(timeout, connect) => match r {
                 Ok(Ok((ws, _))) => ws,
                 Ok(Err(e)) => return Err(e),
-                Err(_) => return Err("timed out".to_owned()),
+                Err(_) => return Err(ConnectError::TimedOut),
             },
             // The owner closed or dropped the transport while connecting.
             _ = rx.recv() => return Ok(Ended::ByUs),
@@ -297,12 +316,12 @@ impl Connection {
                     Some(Ok(Message::Close(_))) | None => return Ok(Ended::ByPeer),
                     // Pings are answered by the library; the server sends no text.
                     Some(Ok(_)) => {}
-                    Some(Err(e)) => return Err(e.to_string()),
+                    Some(Err(e)) => return Err(ConnectError::Socket(e.to_string())),
                 },
                 outgoing = rx.recv() => match outgoing {
                     Some(Out::Frame(f)) => {
                         if let Err(e) = ws.send(Message::Binary(f.into())).await {
-                            return Err(e.to_string());
+                            return Err(ConnectError::Socket(e.to_string()));
                         }
                     }
                     Some(Out::Close) | None => {
@@ -315,7 +334,7 @@ impl Connection {
     }
 }
 
-fn build_tls(options: &TlsOptions) -> Result<Arc<rustls::ClientConfig>, String> {
+fn build_tls(options: &TlsOptions) -> Result<Arc<rustls::ClientConfig>, ConnectError> {
     use rustls::pki_types::CertificateDer;
     let mut roots = rustls::RootCertStore::empty();
     for cert in rustls_native_certs::load_native_certs().certs {
@@ -326,14 +345,14 @@ fn build_tls(options: &TlsOptions) -> Result<Arc<rustls::ClientConfig>, String> 
         roots.extend(webpki_roots::TLS_SERVER_ROOTS.iter().cloned());
     }
     for der in &options.extra_roots_der {
-        roots.add(CertificateDer::from(der.clone())).map_err(|e| format!("a trusted certificate is not valid: {e}"))?;
+        roots.add(CertificateDer::from(der.clone())).map_err(|e| ConnectError::BadCertificate(e.to_string()))?;
     }
     // The provider is named here instead of installed process-wide, so another crate that enables a different one
     // cannot make `builder()` panic.
     let provider = Arc::new(rustls::crypto::ring::default_provider());
     let config = rustls::ClientConfig::builder_with_provider(provider)
         .with_safe_default_protocol_versions()
-        .map_err(|e| e.to_string())?
+        .map_err(|e| ConnectError::Tls(e.to_string()))?
         .with_root_certificates(roots)
         .with_no_client_auth();
     Ok(Arc::new(config))

@@ -1,0 +1,92 @@
+{
+  "about": "The old app's document large_10000.json.gz opens as a clean, history-free document whose element counts per kind and group count equal the facts the old code wrote.",
+  "steps": [
+    {
+      "note": "Numbers are tests/fixtures/legacy/large_10000.json.gz's facts file (large_10000.facts.json.gz), doc.counts_total. The old code counted its 280 group(s) as shapes (10843 in all); the new model has 10563 elements and keeps groups as ids.",
+      "harness": "stage_fixture",
+      "args": {
+        "path": "legacy/large_10000.json.gz"
+      }
+    },
+    {
+      "execute": "doc.open",
+      "args": {
+        "source": {
+          "path": "fixtures/legacy/large_10000.json.gz"
+        }
+      },
+      "expect": [
+        {
+          "path": "$.elements",
+          "eq": 10563
+        },
+        {
+          "path": "$.format",
+          "eq": "drafftink"
+        },
+        {
+          "path": "$.mode",
+          "eq": "replace"
+        },
+        {
+          "path": "$.warnings",
+          "len": 0
+        }
+      ]
+    },
+    {
+      "expect": [
+        {
+          "path": "$.elements",
+          "eq": 10563
+        },
+        {
+          "path": "$.kinds",
+          "eq": {
+            "arrow": 975,
+            "ellipse": 1484,
+            "freehand": 1006,
+            "line": 1019,
+            "math": 207,
+            "rectangle": 3865,
+            "text": 2007
+          }
+        },
+        {
+          "path": "$.groups",
+          "eq": 280
+        }
+      ],
+      "assert": "doc.inspect",
+      "note": "doc.inspect summary: element count, count per kind and group count.",
+      "save": {
+        "bx": "$.bounds.x",
+        "by": "$.bounds.y",
+        "bw": "$.bounds.w",
+        "bh": "$.bounds.h"
+      }
+    },
+    {
+      "assert": "engine.state",
+      "expect": [
+        {
+          "path": "$.dirty",
+          "eq": false
+        },
+        {
+          "path": "$.selection.count",
+          "eq": 0
+        }
+      ]
+    },
+    {
+      "assert": "history.state",
+      "expect": [
+        {
+          "path": "$.can_undo",
+          "eq": false
+        }
+      ]
+    }
+  ]
+}

@@ -1,6 +1,6 @@
 //! Tree layout (a forest of rooted trees), grid layout, and the shared main-axis placement.
 
-use kurbo::{Point, Size};
+use drafftink_geom::kurbo::{Point, Size};
 
 use super::{Direction, LayoutError, LayoutGraph, LayoutOpts, LayoutResult};
 

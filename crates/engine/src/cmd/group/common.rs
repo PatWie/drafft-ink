@@ -3,11 +3,10 @@
 //! that every structure command maps its domain errors to.
 
 use drafftink_edit::group::selection::Selection as EditSelection;
-use drafftink_edit::group::units::Relations;
 use drafftink_edit::zorder::ZOrderError;
-use drafftink_scene::{ElementId, GroupId, IdSource, SceneRead, StoreError};
-use serde_json::json;
+use drafftink_scene::{ElementId, GroupId, IdSource, SceneStore, StoreError};
 
+use crate::cmd::element_common::target_refusal;
 use crate::refusal::Refusal;
 use crate::session::Session;
 use crate::store::DocTx;
@@ -33,23 +32,12 @@ pub(crate) fn apply_selection(s: &mut Session, sel: EditSelection) {
 /// The editing group of the active tab, if it still is a group (a group needs two live members).
 pub(crate) fn editing_group(s: &Session) -> Option<GroupId> {
     let g = s.tab().observed.editing_group.clone()?;
-    Relations::build(s.store()).is_group(&g).then_some(g)
+    s.store().derived().is_group(&g).then_some(g)
 }
 
 /// The selected ids as a list, live elements only.
 pub(crate) fn selected_ids(s: &Session) -> Vec<ElementId> {
     s.selection().iter().filter(|i| s.element(i).is_some()).cloned().collect()
-}
-
-/// A group id that no element uses, from the id port.
-pub(crate) fn fresh_group_id(s: &mut Session) -> Option<GroupId> {
-    for _ in 0..8 {
-        let g = s.ports.ids.group_id();
-        if !s.store().iter_all().any(|e| e.group_ids.contains(&g)) {
-            return Some(g);
-        }
-    }
-    None
 }
 
 /// The id port as an [`IdSource`] value (the domain functions are generic over `I: IdSource`).
@@ -106,23 +94,10 @@ pub(crate) fn edit<R, E>(
     Ok(r)
 }
 
-/// `locked` with every offending id in `details.ids`.
-pub(crate) fn locked(cmd: &str, ids: &[ElementId]) -> Refusal {
-    let first = ids.first().map_or("", ElementId::as_str);
-    let all: Vec<&str> = ids.iter().map(ElementId::as_str).collect();
-    Refusal::locked(cmd, first).with_details(json!({ "ids": all }))
-}
-
-/// `not_found` for an element id.
-pub(crate) fn not_found(cmd: &str, id: &ElementId) -> Refusal {
-    Refusal::not_found(cmd, id.as_str())
-}
-
 /// The refusal for a z-order error.
 pub(crate) fn zorder_refusal(cmd: &str, e: ZOrderError) -> Refusal {
     match e {
-        ZOrderError::NotFound(id) => not_found(cmd, &id),
-        ZOrderError::Locked(ids) => locked(cmd, &ids),
+        ZOrderError::Target(t) => target_refusal(cmd, t),
         other => Refusal::internal(cmd, other.to_string()),
     }
 }

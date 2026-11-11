@@ -6,10 +6,10 @@ use std::collections::BTreeSet;
 use drafftink_edit::layout::{CreateOpts, DiagramResult, DiagramSpec, diagram_create};
 use drafftink_edit::query::{Outline, OutlineOpts, OutlineScope, outline};
 use drafftink_edit::text_bind::MonospaceMeasure;
+use drafftink_geom::kurbo::{Point, Rect};
 use drafftink_scene::{
     Element, ElementId, ElementKind, Kind, MemoryStore, SceneRead, SceneStore, SceneTx, SeqIds, TextData, ZIndex,
 };
-use kurbo::{Point, Rect};
 
 fn build(spec_json: &str, opts: &CreateOpts) -> (MemoryStore, DiagramResult) {
     let spec: DiagramSpec = serde_json::from_str(spec_json).unwrap();

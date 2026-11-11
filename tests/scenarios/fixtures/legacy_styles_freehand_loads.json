@@ -1,0 +1,108 @@
+{
+  "about": "The old app's document styles_freehand.json opens as a clean, history-free document whose element counts per kind and group count equal the facts the old code wrote.",
+  "steps": [
+    {
+      "note": "Numbers are tests/fixtures/legacy/styles_freehand.json's facts file (styles_freehand.facts.json), doc.counts_total. The old code counted its 0 group(s) as shapes (12 in all); the new model has 12 elements and keeps groups as ids.",
+      "harness": "stage_fixture",
+      "args": {
+        "path": "legacy/styles_freehand.json"
+      }
+    },
+    {
+      "execute": "doc.open",
+      "args": {
+        "source": {
+          "path": "fixtures/legacy/styles_freehand.json"
+        }
+      },
+      "expect": [
+        {
+          "path": "$.elements",
+          "eq": 12
+        },
+        {
+          "path": "$.format",
+          "eq": "drafftink"
+        },
+        {
+          "path": "$.mode",
+          "eq": "replace"
+        },
+        {
+          "path": "$.warnings",
+          "len": 0
+        }
+      ]
+    },
+    {
+      "expect": [
+        {
+          "path": "$.elements",
+          "eq": 12
+        },
+        {
+          "path": "$.kinds",
+          "eq": {
+            "freehand": 12
+          }
+        },
+        {
+          "path": "$.groups",
+          "eq": 0
+        }
+      ],
+      "assert": "doc.inspect",
+      "note": "doc.inspect summary: element count, count per kind and group count.",
+      "save": {
+        "bx": "$.bounds.x",
+        "by": "$.bounds.y",
+        "bw": "$.bounds.w",
+        "bh": "$.bounds.h"
+      }
+    },
+    {
+      "assert": "engine.state",
+      "expect": [
+        {
+          "path": "$.dirty",
+          "eq": false
+        },
+        {
+          "path": "$.selection.count",
+          "eq": 0
+        }
+      ]
+    },
+    {
+      "assert": "history.state",
+      "expect": [
+        {
+          "path": "$.can_undo",
+          "eq": false
+        }
+      ]
+    },
+    {
+      "assert": "view.get",
+      "expect": [
+        {
+          "path": "$.visible.x",
+          "le": "{{bx}}"
+        },
+        {
+          "path": "$.visible.y",
+          "le": "{{by}}"
+        },
+        {
+          "path": "$.visible.w",
+          "ge": "{{bw}}"
+        },
+        {
+          "path": "$.visible.h",
+          "ge": "{{bh}}"
+        }
+      ],
+      "note": "doc.open fits the camera to the content: the visible world rectangle covers the whole document."
+    }
+  ]
+}

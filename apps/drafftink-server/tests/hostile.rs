@@ -125,7 +125,7 @@ async fn oversize_frames_and_updates_are_refused() {
     c.join().await;
     c.send_raw(vec![0x02; 300 * 1024]).await;
     let codes = c.expect_closed().await;
-    assert!(codes.is_empty() || codes == [ErrorCode::TooLarge], "{codes:?}");
+    assert_eq!(codes, [ErrorCode::TooLarge], "the transport size limit is a typed error, not text matching");
     // Within the frame limit but above the update limit.
     let mut c = Client::connect(addr, 2, "big").await;
     c.join().await;
@@ -153,6 +153,40 @@ async fn invalid_update_bytes_are_refused_and_not_relayed_and_the_connection_sta
     a.edit_acked("still", text("works")).await;
     // B only ever saw the one good update.
     b.converge_to(&state(&a.doc)).await;
+    server.shutdown().await;
+}
+
+#[tokio::test]
+async fn an_update_that_raises_the_schema_beyond_the_server_is_refused_rolled_back_and_not_relayed() {
+    let server = start(test_config()).await.expect("start");
+    let addr = server.local_addr();
+    let mut a = Client::connect(addr, 1, "newer-schema").await;
+    let mut b = Client::connect(addr, 2, "newer-schema").await;
+    a.join().await;
+    b.join().await;
+    // The schema this server serves is accepted, so a normal document is not affected.
+    let ok = a.edit_meta("schema", LoroValue::from(1i64)).await;
+    a.recv_until(|m| matches!(m, ServerMessage::Ack { seq } if *seq == ok).then_some(())).await;
+    a.edit_acked("fine", text("v")).await;
+    b.converge_to(&state(&a.doc)).await;
+    let good = state(&b.doc);
+
+    // A newer app (or a hostile client) raises it.
+    a.edit_meta("schema", LoroValue::from(99i64)).await;
+    let m =
+        a.recv_until(|m| matches!(m, ServerMessage::Error { .. } | ServerMessage::Ack { .. }).then(|| m.clone())).await;
+    let ServerMessage::Error { code, message, .. } = m else { panic!("expected an error, got {m:?}") };
+    assert_eq!(code, ErrorCode::InvalidUpdate);
+    assert!(message.contains("schema 99") && message.contains("Update the app"), "{message}");
+
+    // Nobody else saw it, a client that joins later gets the room as it was, and the room keeps working.
+    let mut c = Client::connect(addr, 3, "newer-schema").await;
+    c.join().await;
+    assert_eq!(state(&c.doc), good, "the room was rolled back");
+    c.edit_acked("later", text("w")).await;
+    let want = state(&c.doc);
+    // B's document equals C's, so the refused update never reached it.
+    b.converge_to(&want).await;
     server.shutdown().await;
 }
 

@@ -212,10 +212,12 @@ pub enum HelloAnswer {
 /// Reads the relay's answer to `hello`.
 pub fn parse_hello_answer(frame: &str) -> HelloAnswer {
     match rpc::parse(frame) {
-        Ok(Incoming::Response { outcome: Ok(result), .. }) => match result.get("resume_token").and_then(Value::as_str) {
-            Some(t) if is_token(t) => HelloAnswer::Welcome { resume_token: t.to_owned() },
-            _ => HelloAnswer::Failed("the relay did not send a resume token".to_owned()),
-        },
+        Ok(Incoming::Response { outcome: Ok(result), .. }) => {
+            match result.get("resume_token").and_then(Value::as_str) {
+                Some(t) if is_token(t) => HelloAnswer::Welcome { resume_token: t.to_owned() },
+                _ => HelloAnswer::Failed("the relay did not send a resume token".to_owned()),
+            }
+        }
         Ok(Incoming::Response { outcome: Err(e), .. }) if e.code == UNAUTHORIZED => HelloAnswer::Unauthorized,
         Ok(Incoming::Response { outcome: Err(e), .. }) => HelloAnswer::Failed(e.message),
         _ => HelloAnswer::Failed("the relay did not answer hello".to_owned()),
@@ -284,7 +286,16 @@ mod tests {
 
     #[test]
     fn malformed_addresses_are_refused_in_plain_words() {
-        for url in ["", "127.0.0.1:4555", "ftp://127.0.0.1/", "ws://127.0.0.1:0/", "ws://127.0.0.1:99999/", "ws://127.0.0.1:x/", "ws://127.0.0.1/ a", "ws://127.0.0.1/#frag"] {
+        for url in [
+            "",
+            "127.0.0.1:4555",
+            "ftp://127.0.0.1/",
+            "ws://127.0.0.1:0/",
+            "ws://127.0.0.1:99999/",
+            "ws://127.0.0.1:x/",
+            "ws://127.0.0.1/ a",
+            "ws://127.0.0.1/#frag",
+        ] {
             assert!(matches!(check_agent_url(url), Err(PairingError::BadUrl(_))), "{url}");
         }
     }
@@ -374,7 +385,14 @@ mod tests {
     fn remembered_pairing_round_trips_and_rejects_junk() {
         let r = Remembered { port: 4555, resume_token: TOKEN.to_owned() };
         assert_eq!(Remembered::from_text(&r.to_text()), Some(r));
-        for junk in ["", "{}", "[]", r#"{"port":0,"resume_token":"x"}"#, r#"{"port":70000,"resume_token":"x"}"#, &format!(r#"{{"port":1,"resume_token":"{}"}}"#, &TOKEN[2..])] {
+        for junk in [
+            "",
+            "{}",
+            "[]",
+            r#"{"port":0,"resume_token":"x"}"#,
+            r#"{"port":70000,"resume_token":"x"}"#,
+            &format!(r#"{{"port":1,"resume_token":"{}"}}"#, &TOKEN[2..]),
+        ] {
             assert_eq!(Remembered::from_text(junk), None, "{junk}");
         }
     }

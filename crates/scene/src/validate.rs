@@ -12,7 +12,7 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fmt;
 
 use crate::document::Document;
-use crate::element::{Element, ElementKind, Kind, LinearData};
+use crate::element::{Element, ElementKind, Kind, LinearData, Transform};
 use crate::geom::points_bounds;
 use crate::id::{ElementId, FileId, GroupId};
 use crate::limits::*;
@@ -51,7 +51,7 @@ pub enum ElementError {
         max: usize,
     },
     /// A line, arrow or stroke has too few points.
-    #[error("a {kind} needs at least {min} points, and has {have}")]
+    #[error("{} needs at least {min} points, and has {have}", crate::words::Article::new(.kind))]
     TooFewPoints {
         /// Kind name.
         kind: &'static str,
@@ -156,12 +156,42 @@ fn ranged(field: &'static str, v: f64, min: f64, max: f64) -> Result<(), Element
     if v < min || v > max { Err(ElementError::OutOfRange { field, value: v, min, max }) } else { Ok(()) }
 }
 
+/// Is `name` a valid element or document name? It has 1 to [`MAX_NAME_CHARS`] characters and no control
+/// characters. Stores and importers use this one rule.
+pub fn is_valid_name(name: &str) -> bool {
+    !name.is_empty() && name.chars().count() <= MAX_NAME_CHARS && !name.chars().any(char::is_control)
+}
+
+/// Is `mime` an image media type like `image/png`? At most 64 bytes of letters, digits and `/ + . -`, starting
+/// with `image/` and naming a subtype. Stores and importers use this one rule.
+pub fn is_image_media_type(mime: &str) -> bool {
+    mime.len() <= 64
+        && mime.len() > "image/".len()
+        && mime.starts_with("image/")
+        && mime.bytes().all(|b| b.is_ascii_alphanumeric() || matches!(b, b'/' | b'+' | b'.' | b'-'))
+}
+
 fn text_ok(field: &'static str, s: &str) -> Result<(), ElementError> {
-    if s.is_empty() || s.chars().count() > MAX_NAME_CHARS || s.chars().any(char::is_control) {
-        Err(ElementError::BadText { field, max: MAX_NAME_CHARS })
-    } else {
-        Ok(())
-    }
+    if is_valid_name(s) { Ok(()) } else { Err(ElementError::BadText { field, max: MAX_NAME_CHARS }) }
+}
+
+/// Checks the box and angle of a transform. A move or a turn changes nothing else about an element, so this is
+/// all such a change has to check.
+pub fn validate_transform(t: &Transform) -> Result<(), ElementError> {
+    let mut errors = Vec::new();
+    transform_errors(t, &mut errors);
+    errors.into_iter().next().map_or(Ok(()), Err)
+}
+
+fn transform_errors(t: &Transform, out: &mut Vec<ElementError>) {
+    let checks = [
+        ranged("transform.x", t.x, -MAX_COORD, MAX_COORD),
+        ranged("transform.y", t.y, -MAX_COORD, MAX_COORD),
+        ranged("transform.w", t.w, 0.0, MAX_COORD),
+        ranged("transform.h", t.h, 0.0, MAX_COORD),
+        finite("transform.angle", t.angle),
+    ];
+    out.extend(checks.into_iter().filter_map(Result::err));
 }
 
 /// Checks one element on its own and returns the first rule it breaks.
@@ -179,17 +209,12 @@ pub fn element_errors(e: &Element) -> Vec<ElementError> {
 }
 
 fn collect_element_errors(e: &Element, out: &mut Vec<ElementError>) {
+    transform_errors(&e.transform, out);
     let mut check = |r: Result<(), ElementError>| {
         if let Err(err) = r {
             out.push(err);
         }
     };
-    let t = &e.transform;
-    check(ranged("transform.x", t.x, -MAX_COORD, MAX_COORD));
-    check(ranged("transform.y", t.y, -MAX_COORD, MAX_COORD));
-    check(ranged("transform.w", t.w, 0.0, MAX_COORD));
-    check(ranged("transform.h", t.h, 0.0, MAX_COORD));
-    check(finite("transform.angle", t.angle));
     let s = &e.style;
     check(ranged("style.stroke_width", s.stroke_width, 0.0, MAX_STROKE_WIDTH));
     check(ranged("style.opacity", s.opacity, 0.0, 1.0));
@@ -406,7 +431,7 @@ pub enum DocError {
     #[error("frame {0} does not exist")]
     FrameMissing(ElementId),
     /// `frame_id` names an element that is not a frame.
-    #[error("{id} is a {kind}, not a frame, so it cannot be a frame_id")]
+    #[error("{id} is {}, not a frame, so it cannot be a frame_id", crate::words::Article::new(.kind))]
     NotAFrame {
         /// The element named.
         id: ElementId,
@@ -423,7 +448,7 @@ pub enum DocError {
     #[error("the container {0} of this label does not exist")]
     ContainerMissing(ElementId),
     /// The container cannot hold a label.
-    #[error("{id} is a {kind}, which cannot hold a label")]
+    #[error("{id} is {}, which cannot hold a label", crate::words::Article::new(.kind))]
     NotAContainer {
         /// The element named.
         id: ElementId,
@@ -454,7 +479,8 @@ pub enum DocError {
     },
     /// A binding targets a kind arrows cannot attach to.
     #[error(
-        "the {end} binding targets {target}, a {kind}; arrows attach to rectangles, diamonds, ellipses, text, images and frames"
+        "the {end} binding targets {target}, {}; arrows attach to rectangles, diamonds, ellipses, text, images and frames",
+        crate::words::Article::new(.kind)
     )]
     BindingTargetNotBindable {
         /// `start` or `end`.
@@ -632,7 +658,7 @@ pub fn validate_scene<R: SceneRead>(r: &R) -> Report {
 }
 
 fn check_name(name: &str, report: &mut Report) {
-    if name.is_empty() || name.chars().count() > MAX_NAME_CHARS || name.chars().any(char::is_control) {
+    if !is_valid_name(name) {
         report.add(None, DocError::BadDocName);
     }
 }
@@ -791,11 +817,7 @@ fn check_files(elements: &[&Element], files: &[(&FileId, &crate::document::FileE
         }
     }
     for (id, entry) in files {
-        let mime_ok = entry.mime.len() <= 64
-            && entry.mime.starts_with("image/")
-            && entry.mime.len() > 6
-            && entry.mime.bytes().all(|b| b.is_ascii_alphanumeric() || matches!(b, b'/' | b'+' | b'.' | b'-'));
-        if !mime_ok {
+        if !is_image_media_type(&entry.mime) {
             report.add(None, DocError::BadMime { id: (*id).clone(), mime: entry.mime.chars().take(80).collect() });
         }
         if entry.bytes.len() > MAX_FILE_BYTES {

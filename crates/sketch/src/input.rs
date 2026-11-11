@@ -11,13 +11,16 @@ pub mod roughness {
     pub const ARCHITECT: f64 = 0.0;
     /// The default of the old app.
     pub const ARTIST: f64 = 1.0;
+    /// Cartoonist: twice the default roughness.
     pub const CARTOONIST: f64 = 2.0;
+    /// Drunk: the roughest level of the old app.
     pub const DRUNK: f64 = 3.5;
 }
 
 /// How the outline is drawn.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum LineDash {
+    /// A continuous line.
     #[default]
     Solid,
     /// Dash `4w`, gap `2w` for stroke width `w` (the old app).
@@ -30,8 +33,10 @@ pub enum LineDash {
 /// renderer.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum FillStyle {
+    /// No fill.
     #[default]
     None,
+    /// A flat fill with the fill colour.
     Solid,
     /// Parallel lines.
     Hachure,
@@ -50,6 +55,7 @@ pub enum FillStyle {
 /// Corner rounding of rectangles and diamonds.
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub enum Roundness {
+    /// Sharp corners.
     #[default]
     Sharp,
     /// A fixed radius in local units (the old app's `corner_radius`).
@@ -92,6 +98,7 @@ pub enum Curve {
 /// The shape of one arrow end.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum HeadKind {
+    /// No head.
     #[default]
     None,
     /// Two strokes from the tip (the old app's head). `filled` has no effect.
@@ -110,20 +117,30 @@ pub enum HeadKind {
 /// stroke colour. Heads are always drawn solid, even when the shaft is dashed.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct Arrowhead {
+    /// The shape of the head.
     pub kind: HeadKind,
+    /// Whether closed kinds are filled with the stroke colour.
     pub filled: bool,
 }
 
 impl Arrowhead {
+    /// No head.
     pub const NONE: Arrowhead = Arrowhead { kind: HeadKind::None, filled: false };
     /// The old app's arrowhead.
     pub const ARROW: Arrowhead = Arrowhead { kind: HeadKind::Arrow, filled: false };
+    /// A filled triangle.
     pub const TRIANGLE: Arrowhead = Arrowhead { kind: HeadKind::Triangle, filled: true };
+    /// An outlined triangle.
     pub const TRIANGLE_OUTLINE: Arrowhead = Arrowhead { kind: HeadKind::Triangle, filled: false };
+    /// A filled circle.
     pub const CIRCLE: Arrowhead = Arrowhead { kind: HeadKind::Circle, filled: true };
+    /// An outlined circle.
     pub const CIRCLE_OUTLINE: Arrowhead = Arrowhead { kind: HeadKind::Circle, filled: false };
+    /// A bar across the line.
     pub const BAR: Arrowhead = Arrowhead { kind: HeadKind::Bar, filled: false };
+    /// A filled diamond.
     pub const DIAMOND: Arrowhead = Arrowhead { kind: HeadKind::Diamond, filled: true };
+    /// An outlined diamond.
     pub const DIAMOND_OUTLINE: Arrowhead = Arrowhead { kind: HeadKind::Diamond, filled: false };
 }
 
@@ -146,20 +163,66 @@ impl Default for PressureProfile {
 #[derive(Debug, Clone, PartialEq)]
 pub enum SketchShape {
     /// Corner at (0, 0), size `width` x `height`.
-    Rect { width: f64, height: f64, roundness: Roundness },
+    Rect {
+        /// Width in local units.
+        width: f64,
+        /// Height in local units.
+        height: f64,
+        /// Corner rounding.
+        roundness: Roundness,
+    },
     /// Inscribed in the box (0, 0) to (`width`, `height`).
-    Ellipse { width: f64, height: f64 },
+    Ellipse {
+        /// Width in local units.
+        width: f64,
+        /// Height in local units.
+        height: f64,
+    },
     /// Corners at the middles of the sides of the box (0, 0) to (`width`, `height`).
-    Diamond { width: f64, height: f64, roundness: Roundness },
+    Diamond {
+        /// Width in local units.
+        width: f64,
+        /// Height in local units.
+        height: f64,
+        /// Corner rounding.
+        roundness: Roundness,
+    },
     /// A line through the points. Closed lines are filled when `SketchParams::fill` asks for it.
-    Polyline { points: Vec<Point>, curve: Curve, closed: bool },
+    Polyline {
+        /// The vertices.
+        points: Vec<Point>,
+        /// Straight segments or a spline.
+        curve: Curve,
+        /// Join the last point to the first.
+        closed: bool,
+    },
     /// A line through the points with a head at either end. `head_size` is the head length.
     /// The old app's arrow is `end: Arrowhead::ARROW, head_size: 15.0`.
-    Arrow { points: Vec<Point>, curve: Curve, start: Arrowhead, end: Arrowhead, head_size: f64 },
+    Arrow {
+        /// The vertices of the shaft.
+        points: Vec<Point>,
+        /// Straight segments or a spline.
+        curve: Curve,
+        /// The head at the first point.
+        start: Arrowhead,
+        /// The head at the last point.
+        end: Arrowhead,
+        /// Head length in local units.
+        head_size: f64,
+    },
     /// A drawn stroke. With `pressures` (one per point, 0 to 1; missing entries count as 1) and not
     /// closed, the stroke is a variable-width outline, drawn as a fill. Without pressure it is a
     /// sketchy line like a polyline. Closed strokes are polygons with an optional fill.
-    Freehand { points: Vec<Point>, pressures: Vec<f64>, closed: bool, profile: PressureProfile },
+    Freehand {
+        /// The sampled points.
+        points: Vec<Point>,
+        /// Pressure per point, or empty for none.
+        pressures: Vec<f64>,
+        /// Join the last point to the first.
+        closed: bool,
+        /// How pressure maps to width.
+        profile: PressureProfile,
+    },
 }
 
 /// How the shape looks.
@@ -171,8 +234,11 @@ pub struct SketchParams {
     pub bowing: f64,
     /// Seed of all randomness. The same seed gives the same drawing.
     pub seed: u32,
+    /// Stroke width in local units.
     pub stroke_width: f64,
+    /// How the outline is dashed.
     pub line: LineDash,
+    /// The interior fill.
     pub fill: FillStyle,
     /// Distance between fill lines. `None`: four times the stroke width (the old app).
     pub fill_gap: Option<f64>,
@@ -199,11 +265,14 @@ impl Default for SketchParams {
 /// [`SketchKey`](crate::SketchKey) identifies.
 #[derive(Debug, Clone, PartialEq)]
 pub struct SketchInput {
+    /// The geometry to sketch.
     pub shape: SketchShape,
+    /// How it looks.
     pub params: SketchParams,
 }
 
 impl SketchInput {
+    /// A shape with the given look.
     pub fn new(shape: SketchShape, params: SketchParams) -> Self {
         Self { shape, params }
     }

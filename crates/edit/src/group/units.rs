@@ -12,41 +12,10 @@
 
 use std::collections::{BTreeSet, HashMap};
 
-use drafftink_scene::{Element, ElementId, GroupId, Kind, SceneRead};
+use drafftink_profile::{Counter, count};
+use drafftink_scene::{DerivedIndex, Element, ElementId, GroupId, Kind, SceneRead};
 
-/// Why an element cannot be the target of an operation.
-#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
-pub enum TargetError {
-    /// No live element has this id.
-    #[error("element {0} does not exist or is deleted")]
-    NotFound(ElementId),
-    /// Some of the elements are locked. Unlock them first; nothing was changed.
-    #[error("{} element(s) are locked ({}). Unlock them first", .0.len(), ids_text(.0))]
-    Locked(Vec<ElementId>),
-}
-
-pub(crate) fn ids_text(ids: &[ElementId]) -> String {
-    let mut s: Vec<&str> = ids.iter().take(5).map(ElementId::as_str).collect();
-    if ids.len() > 5 {
-        s.push("...");
-    }
-    s.join(", ")
-}
-
-/// Gives a domain error enum the two target variants `NotFound(ElementId)` and `Locked(Vec<ElementId>)`.
-macro_rules! impl_from_target {
-    ($t:ident) => {
-        impl From<$crate::group::units::TargetError> for $t {
-            fn from(e: $crate::group::units::TargetError) -> Self {
-                match e {
-                    $crate::group::units::TargetError::NotFound(id) => $t::NotFound(id),
-                    $crate::group::units::TargetError::Locked(ids) => $t::Locked(ids),
-                }
-            }
-        }
-    };
-}
-pub(crate) use impl_from_target;
+use crate::target::TargetError;
 
 /// The reverse relations of a scene, built in one pass over the live elements.
 #[derive(Debug, Clone, Default)]
@@ -59,6 +28,7 @@ pub struct Relations {
 impl Relations {
     /// Builds the relations of the live elements. Every list is in z-order, back to front.
     pub fn build<R: SceneRead>(scene: &R) -> Self {
+        count(Counter::ElementsScanned, u64::try_from(scene.len_all()).unwrap_or(u64::MAX));
         let mut rel = Relations::default();
         for e in scene.iter() {
             for g in &e.group_ids {
@@ -95,13 +65,103 @@ impl Relations {
     }
 
     /// The groups of `e` that count (at least two live members), innermost first.
-    pub fn stack(&self, e: &Element) -> Vec<GroupId> {
-        e.group_ids.iter().filter(|g| self.is_group(g)).cloned().collect()
+    pub fn stack<'a>(&'a self, e: &'a Element) -> impl Iterator<Item = &'a GroupId> + 'a {
+        e.group_ids.iter().filter(|g| self.is_group(g))
     }
 
     /// Group ids on `e` that no longer have two live members.
     pub fn stale_groups(&self, e: &Element) -> Vec<GroupId> {
         e.group_ids.iter().filter(|g| !self.is_group(g)).cloned().collect()
+    }
+}
+
+/// The reverse lookups [`with_companions`] needs, so that a caller can answer them from [`Relations`] (one pass
+/// over the scene) or from the committed [`DerivedIndex`] (no pass).
+pub trait ReverseLookup {
+    /// Live texts that claim `container` as their container.
+    fn labels_of(&self, container: &ElementId) -> Vec<ElementId>;
+    /// Live children of `frame`.
+    fn children_of(&self, frame: &ElementId) -> Vec<ElementId>;
+    /// Live members of a group, in no particular order.
+    fn members_of(&self, group: &GroupId) -> Vec<ElementId>;
+    /// Does the group have two live members?
+    fn is_group(&self, group: &GroupId) -> bool;
+}
+
+impl ReverseLookup for Relations {
+    fn labels_of(&self, container: &ElementId) -> Vec<ElementId> {
+        self.labels(container).to_vec()
+    }
+    fn children_of(&self, frame: &ElementId) -> Vec<ElementId> {
+        self.children(frame).to_vec()
+    }
+    fn members_of(&self, group: &GroupId) -> Vec<ElementId> {
+        self.members(group).to_vec()
+    }
+    fn is_group(&self, group: &GroupId) -> bool {
+        Relations::is_group(self, group)
+    }
+}
+
+impl ReverseLookup for DerivedIndex {
+    fn labels_of(&self, container: &ElementId) -> Vec<ElementId> {
+        DerivedIndex::labels_of(self, container).cloned().collect()
+    }
+    fn children_of(&self, frame: &ElementId) -> Vec<ElementId> {
+        self.frame_children(frame).cloned().collect()
+    }
+    fn members_of(&self, group: &GroupId) -> Vec<ElementId> {
+        self.group_members(group).cloned().collect()
+    }
+    fn is_group(&self, group: &GroupId) -> bool {
+        DerivedIndex::is_group(self, group)
+    }
+}
+
+/// Reverse lookups for a few elements of `scene`: the committed index when the reader offers one (a store, or a
+/// transaction that has not written yet), else one pass over the scene. The lookups cost O(answer) in the first
+/// case, so a gesture frame on a large scene does not walk the scene.
+pub enum Reverse<'a> {
+    /// Answered by the derived index.
+    Index(&'a DerivedIndex),
+    /// Answered by relations built with a pass.
+    Scan(Relations),
+}
+
+impl<'a> Reverse<'a> {
+    /// The cheapest source `scene` offers.
+    pub fn of<R: SceneRead>(scene: &'a R) -> Self {
+        match scene.derived_index() {
+            Some(index) => Reverse::Index(index),
+            None => Reverse::Scan(Relations::build(scene)),
+        }
+    }
+}
+
+impl ReverseLookup for Reverse<'_> {
+    fn labels_of(&self, container: &ElementId) -> Vec<ElementId> {
+        match self {
+            Reverse::Index(i) => ReverseLookup::labels_of(*i, container),
+            Reverse::Scan(r) => r.labels_of(container),
+        }
+    }
+    fn children_of(&self, frame: &ElementId) -> Vec<ElementId> {
+        match self {
+            Reverse::Index(i) => i.children_of(frame),
+            Reverse::Scan(r) => r.children_of(frame),
+        }
+    }
+    fn members_of(&self, group: &GroupId) -> Vec<ElementId> {
+        match self {
+            Reverse::Index(i) => ReverseLookup::members_of(*i, group),
+            Reverse::Scan(r) => r.members_of(group),
+        }
+    }
+    fn is_group(&self, group: &GroupId) -> bool {
+        match self {
+            Reverse::Index(i) => ReverseLookup::is_group(*i, group),
+            Reverse::Scan(r) => ReverseLookup::is_group(r, group),
+        }
     }
 }
 
@@ -124,18 +184,18 @@ pub struct Unit {
 }
 
 /// The unit that `e` belongs to when `editing` is the editing group.
-pub fn unit_key(rel: &Relations, e: &Element, editing: Option<&GroupId>) -> UnitKey {
-    let stack = rel.stack(e);
+pub fn unit_key<L: ReverseLookup + ?Sized>(rel: &L, e: &Element, editing: Option<&GroupId>) -> UnitKey {
+    let stack: Vec<&GroupId> = e.group_ids.iter().filter(|g| rel.is_group(g)).collect();
     if let Some(g) = editing
-        && let Some(i) = stack.iter().position(|s| s == g)
+        && let Some(i) = stack.iter().position(|s| *s == g)
     {
         return match i.checked_sub(1).and_then(|j| stack.get(j)) {
-            Some(inner) => UnitKey::Group(inner.clone()),
+            Some(inner) => UnitKey::Group((*inner).clone()),
             None => UnitKey::Element(e.id.clone()),
         };
     }
     match stack.last() {
-        Some(g) => UnitKey::Group(g.clone()),
+        Some(g) => UnitKey::Group((*g).clone()),
         None => UnitKey::Element(e.id.clone()),
     }
 }
@@ -182,9 +242,9 @@ pub fn sort_z<R: SceneRead>(scene: &R, ids: &mut [ElementId]) {
 
 /// The units of `ids` (bound text counts as its container), topmost unit last. A group unit has all its live
 /// members, also those not in `ids`.
-pub fn units<R: SceneRead>(
+pub fn units<R: SceneRead, L: ReverseLookup + ?Sized>(
     scene: &R,
-    rel: &Relations,
+    rel: &L,
     ids: &[ElementId],
     editing: Option<&GroupId>,
 ) -> Result<Vec<Unit>, TargetError> {
@@ -197,7 +257,7 @@ pub fn units<R: SceneRead>(
             continue;
         }
         let elements = match &key {
-            UnitKey::Group(g) => rel.members(g).to_vec(),
+            UnitKey::Group(g) => rel.members_of(g),
             UnitKey::Element(x) => vec![x.clone()],
         };
         // A group may contain bound text (it carries its container's groups). Keep the primaries only.
@@ -215,9 +275,9 @@ pub fn units<R: SceneRead>(
 
 /// `ids` plus the bound text of each, and (with `frame_children`) the children of each frame with their bound
 /// text. No duplicates, in z-order. Deleted elements are skipped.
-pub fn with_companions<R: SceneRead>(
+pub fn with_companions<R: SceneRead, L: ReverseLookup + ?Sized>(
     scene: &R,
-    rel: &Relations,
+    rel: &L,
     ids: &[ElementId],
     frame_children: bool,
 ) -> Vec<ElementId> {
@@ -225,16 +285,14 @@ pub fn with_companions<R: SceneRead>(
     let add = |set: &mut BTreeSet<ElementId>, id: &ElementId| {
         if scene.get(id).is_some_and(|e| !e.deleted) {
             set.insert(id.clone());
-            for l in rel.labels(id) {
-                set.insert(l.clone());
-            }
+            set.extend(rel.labels_of(id));
         }
     };
     for id in ids {
         add(&mut set, id);
         if frame_children && scene.get(id).is_some_and(|e| e.tag() == Kind::Frame) {
-            for c in rel.children(id) {
-                add(&mut set, c);
+            for c in rel.children_of(id) {
+                add(&mut set, &c);
             }
         }
     }

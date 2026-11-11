@@ -4,15 +4,17 @@
 use std::mem;
 
 use drafftink_canvas::Modifiers;
-use drafftink_edit::binding::{BindOpts, BindingCandidate, End, bound_end_position, find_hovered, hover_candidate};
+use drafftink_edit::binding::{
+    BindOpts, BindingCandidate, End, binding_reach, bound_end_position, find_hovered_among, hover_candidate_for,
+};
 use drafftink_edit::create;
 use drafftink_geom::guides::SmartGuide;
 use drafftink_geom::kurbo::Point;
 use drafftink_scene::{Element, ElementId, ElementKind, Kind, PathType};
 use serde_json::json;
 
+use super::preview;
 use super::snap::{self, Snaps};
-use super::{NewArrowPath, preview};
 use crate::interact::ctx::Ctx;
 use crate::interact::events::Ev;
 use crate::state::Tool;
@@ -64,10 +66,10 @@ fn kind_of(cx: &Ctx<'_>) -> Kind {
     if cx.tool() == Tool::Arrow { Kind::Arrow } else { Kind::Line }
 }
 
-/// The path type of a new arrow. Lines are always straight.
+/// The path type of a new arrow: the tool's default (`tool.set_arrow`). Lines are always straight.
 fn path_of(cx: &Ctx<'_>) -> PathType {
     match cx.tool() {
-        Tool::Arrow => cx.s.ext.get::<NewArrowPath>().map(|p| p.0).unwrap_or_default(),
+        Tool::Arrow => cx.s.tool.arrow_default.path,
         _ => PathType::Sharp,
     }
 }
@@ -96,13 +98,16 @@ fn bind_policy(mods: Modifiers) -> &'static str {
 }
 
 /// The shape that a point binds to, and the orbit candidate when there is one.
-fn hover(cx: &Ctx<'_>, p: Point, elbow: bool, opts: &BindOpts) -> Option<Hover> {
+fn hover(cx: &Ctx<'_>, p: Point, path: PathType, opts: &BindOpts) -> Option<Hover> {
     if opts.disabled {
         return None;
     }
     let store = cx.s.store();
-    let found = find_hovered(store, p, opts.zoom, &[])?;
-    Some(Hover { id: found.id, candidate: hover_candidate(store, p, elbow, opts) })
+    // The spatial index narrows the scene to the shapes near the point; the rules run on those only.
+    let near = cx.world.near(cx.s, p, binding_reach(opts.zoom));
+    let found = find_hovered_among(store, &near, p, opts.zoom, &[])?;
+    let candidate = hover_candidate_for(store, &found, p, path, opts);
+    Some(Hover { id: found.id, candidate })
 }
 
 impl Linear {
@@ -119,25 +124,25 @@ impl Linear {
     /// Where a point at `raw` ends up. A binding candidate wins over snapping, as in `arrow.move_point`; a
     /// snapped point that falls into a shape's reach binds like the command will.
     fn locate(&self, cx: &Ctx<'_>, raw: Point) -> Located {
-        let elbow = path_of(cx) == PathType::Elbow;
+        let path = path_of(cx);
         let opts = bind_opts(cx, cx.mods);
-        if let Some(h) = hover(cx, raw, elbow, &opts) {
+        if let Some(h) = hover(cx, raw, path, &opts) {
             return Located { point: raw, hover: Some(h), guides: Vec::new() };
         }
         let snapped = snap::point(cx, raw, self.points.last().copied(), Snaps::line(cx));
-        let hover = if snapped.point == raw { None } else { hover(cx, snapped.point, elbow, &opts) };
+        let hover = if snapped.point == raw { None } else { hover(cx, snapped.point, path, &opts) };
         Located { point: snapped.point, hover, guides: snapped.guides }
     }
 
     /// Where the first point at `raw` ends up: the grid only, as in the old app.
     fn locate_start(cx: &Ctx<'_>, raw: Point) -> Located {
-        let elbow = path_of(cx) == PathType::Elbow;
+        let path = path_of(cx);
         let opts = bind_opts(cx, cx.mods);
-        if let Some(h) = hover(cx, raw, elbow, &opts) {
+        if let Some(h) = hover(cx, raw, path, &opts) {
             return Located { point: raw, hover: Some(h), guides: Vec::new() };
         }
         let point = snap::start(cx, raw);
-        let hover = if point == raw { None } else { hover(cx, point, elbow, &opts) };
+        let hover = if point == raw { None } else { hover(cx, point, path, &opts) };
         Located { point, hover, guides: Vec::new() }
     }
 
@@ -174,15 +179,22 @@ impl Linear {
         {
             pts.push(tip);
         }
-        if path_of(cx) == PathType::Elbow {
+        let elbow = path_of(cx) == PathType::Elbow;
+        if elbow {
             pts = ends_of(&pts);
         }
         if pts.len() < 2 {
             return None;
         }
         let kind = kind_of(cx);
-        let drawn = preview::linear(cx, kind, &pts)?;
         let (start, end) = (self.start.as_ref(), self.end.as_ref());
+        if elbow && let (Some(&first), Some(&last)) = (pts.first(), pts.last()) {
+            let bindings = (start.map(BindingCandidate::binding), end.map(BindingCandidate::binding));
+            if let Some(routed) = preview::elbow(cx, first, last, bindings) {
+                return Some(routed);
+            }
+        }
+        let drawn = preview::linear(cx, kind, &pts)?;
         if start.is_none() && end.is_none() {
             return Some(drawn);
         }
@@ -319,7 +331,11 @@ impl Linear {
         let pts: Vec<[f64; 2]> = points.iter().map(|p| [p.x, p.y]).collect();
         let mut args = json!({ "kind": kind.name(), "points": pts, "bind": bind_policy(mods), "from_tool": true });
         if kind == Kind::Arrow {
+            // The tool's defaults go to the command as plain arguments, so the ring entry replays the same arrow.
+            let d = cx.s.tool.arrow_default;
             args["arrow_type"] = json!(path);
+            args["start_head"] = json!(d.start_head);
+            args["end_head"] = json!(d.end_head);
         }
         cx.exec("element.create", args);
     }

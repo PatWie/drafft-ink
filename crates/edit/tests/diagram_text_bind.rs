@@ -51,7 +51,7 @@ proptest! {
         }
         // The text box lies inside the inner box of the (grown) container.
         let inner = inner_box(kind, l.container).unwrap();
-        let t = kurbo::Rect::new(l.text.x, l.text.y, l.text.x + l.text.w, l.text.y + l.text.h);
+        let t = drafftink_geom::kurbo::Rect::new(l.text.x, l.text.y, l.text.x + l.text.w, l.text.y + l.text.h);
         prop_assert!(t.x0 >= inner.x0 - 1e-6 && t.x1 <= inner.x1 + 1e-6, "x: {t:?} in {inner:?}");
         prop_assert!(t.y0 >= inner.y0 - 1e-6 && t.y1 <= inner.y1 + 1e-6, "y: {t:?} in {inner:?}");
         // The box is exactly what the wrapped lines measure.

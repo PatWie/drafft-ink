@@ -9,8 +9,6 @@
 //! * The bytes go into the document's file table by content hash. The same picture inserted twice is stored once.
 //! * Everything is checked before the first change, so a bad third picture leaves the document alone.
 
-use base64::Engine as _;
-use base64::engine::general_purpose::STANDARD;
 use drafftink_geom::kurbo::Point;
 use drafftink_io::picture::{self, MAX_PICTURE_BYTES, PictureError};
 use drafftink_scene::{
@@ -19,9 +17,9 @@ use drafftink_scene::{
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
+use super::bytes::{Bytes, BytesError, Loaded};
 use super::clipboard::common::{At, edit_with, resolve_at, select_only};
 use crate::args;
-use crate::ports::FileRef;
 use crate::refusal::{Refusal, echo};
 use crate::session::Session;
 use crate::spec::{
@@ -35,97 +33,27 @@ pub(crate) const DEFAULT_FIT: f64 = 800.0;
 /// The shift of each further picture.
 pub(crate) const DEFAULT_OFFSET: f64 = 20.0;
 
-/// Picture bytes given inline.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
-#[serde(deny_unknown_fields)]
-pub struct InlineBytes {
-    /// The bytes as base64 (standard alphabet). A `data:...;base64,` prefix is accepted.
-    pub base64: String,
-    /// The file name, used in messages.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub name: Option<String>,
-    /// The media type the sender claims. It is not trusted: the content decides.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub mime: Option<String>,
+/// Reads the bytes of one picture, refusing one over the picture limit before it is decoded.
+pub(crate) fn load_picture(s: &Session, bytes: &Bytes, fallback: &str) -> Result<Loaded, Refusal> {
+    bytes.load(s, fallback, MAX_PICTURE_BYTES).map_err(|e| bytes_refusal(s.cmd(), e))
 }
 
-/// Picture bytes read from a file through the `Files` port.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
-#[serde(deny_unknown_fields)]
-pub struct PathBytes {
-    /// A path the session's file access can read.
-    pub path: String,
-}
-
-/// Bytes: inline as base64, or a path.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
-#[serde(untagged)]
-pub enum Bytes {
-    /// `{base64, name?, mime?}`.
-    Inline(InlineBytes),
-    /// `{path}`.
-    Path(PathBytes),
-}
-
-/// Bytes read and named.
-pub(crate) struct Loaded {
-    pub bytes: Vec<u8>,
-    pub name: String,
-}
-
-impl Bytes {
-    /// The bytes. `fallback` names a picture that carries no name. Refuses a payload over the picture limit
-    /// before decoding it.
-    pub(crate) fn load(&self, s: &Session, fallback: &str) -> Result<Loaded, Refusal> {
-        let cmd = s.cmd();
-        match self {
-            Bytes::Inline(b) => {
-                let name = b.name.clone().filter(|n| !n.is_empty()).unwrap_or_else(|| fallback.to_owned());
-                let text = b.base64.trim();
-                let text = match text.find("base64,") {
-                    Some(i) if text.starts_with("data:") => text.get(i + 7..).unwrap_or(""),
-                    _ => text,
-                };
-                if text.len() / 4 * 3 > MAX_PICTURE_BYTES + 3 {
-                    return Err(Refusal::limit_exceeded(cmd, text.len() / 4 * 3, "bytes in one image", MAX_PICTURE_BYTES));
-                }
-                let clean: String;
-                let text = if text.bytes().any(|c| c.is_ascii_whitespace()) {
-                    clean = text.chars().filter(|c| !c.is_ascii_whitespace()).collect();
-                    clean.as_str()
-                } else {
-                    text
-                };
-                let bytes = STANDARD.decode(text).map_err(|e| {
-                    Refusal::custom(
-                        "parse_failed",
-                        cmd,
-                        format!("{} could not be read as an image: its base64 text is damaged ({e}). Try another file.", echo(&name)),
-                    )
-                })?;
-                Ok(Loaded { bytes, name })
-            }
-            Bytes::Path(p) => {
-                let name = p.path.rsplit(['/', '\\']).next().filter(|n| !n.is_empty()).unwrap_or(fallback).to_owned();
-                if s.ports.files.is_none() {
-                    return Err(Refusal::port_unavailable(
-                        cmd,
-                        "file access",
-                        "this session cannot read files",
-                        "Pass the image as `base64` instead of `path`.",
-                    ));
-                }
-                let file = FileRef::Path { path: p.path.clone() };
-                let bytes = match s.ports.files.as_ref() {
-                    Some(f) => f.read(&file).map_err(|e| Refusal::io_failed(cmd, "read", &p.path, &e.to_string()))?,
-                    None => return Err(Refusal::internal(cmd, "the file port disappeared")),
-                };
-                if bytes.len() > MAX_PICTURE_BYTES {
-                    return Err(Refusal::limit_exceeded(cmd, bytes.len(), "bytes in one image", MAX_PICTURE_BYTES));
-                }
-                Ok(Loaded { bytes, name })
-            }
-        }
+/// A picture refused while its bytes were read.
+fn bytes_refusal(cmd: &str, e: BytesError) -> Refusal {
+    match e {
+        BytesError::Base64 { name, source } => Refusal::custom(
+            "parse_failed",
+            cmd,
+            format!("{} could not be read as an image: its base64 text is damaged ({source}). Try another file.", echo(&name)),
+        ),
+        BytesError::TooLarge { size } => Refusal::limit_exceeded(cmd, size, "bytes in one image", MAX_PICTURE_BYTES),
+        BytesError::NoFiles => Refusal::port_unavailable(
+            cmd,
+            "file access",
+            "this session cannot read files",
+            "Pass the image as `base64` instead of `path`.",
+        ),
+        BytesError::Read { path, message } => Refusal::io_failed(cmd, "read", &path, &message),
     }
 }
 
@@ -205,6 +133,10 @@ pub(crate) fn insert_pictures(
         } else {
             None
         };
+        if shrunk.is_none() {
+            // Only the header was read so far: damaged pixel data must fail here and not at every draw.
+            picture::validate_pixels(&p.bytes, &probe).map_err(|e| picture_refusal(cmd, &p.name, &e))?;
+        }
         let (mime, natural, bytes) = match shrunk {
             Some(sh) => (sh.mime, (sh.width, sh.height), sh.bytes),
             None => (probe.mime, (probe.width, probe.height), p.bytes),
@@ -226,7 +158,7 @@ pub(crate) fn insert_pictures(
         let mut created: Vec<ElementId> = Vec::with_capacity(ready.len());
         for (i, r) in ready.iter().enumerate() {
             tx.put_file(r.entry.clone())?;
-            let id = drafftink_edit::text_bind::fresh_element_id(&*tx, ids);
+            let id = drafftink_edit::unused_element_id(&*tx, ids);
             let z = tx.next_top_index().map_err(|e| StoreError::Backend(e.to_string()))?;
             let shift = place.offset * i as f64;
             let mut e = Element::new(
@@ -344,7 +276,7 @@ fn insert(s: &mut Session, a: InsertArgs) -> Result<InsertOut, Refusal> {
             (Some(n), _) if !n.is_empty() => format!("{n} {}", i + 1),
             _ => format!("image {}", i + 1),
         };
-        loaded.push(b.load(s, &fallback)?);
+        loaded.push(load_picture(s, b, &fallback)?);
     }
     let images = insert_pictures(s, loaded, &Placement { at, fit, offset, select: a.select, downscale: a.downscale })?;
     Ok(InsertOut { ids: images.iter().map(|i| i.id.clone()).collect(), images })

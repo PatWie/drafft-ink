@@ -13,13 +13,14 @@
 //! Beyond the nine commands of the catalog this family has `arrow.swap_heads`, `arrow.move_segment`
 //! and `arrow.release_segment`, which expose `edit::linear::swap_heads` and the elbow pin functions.
 
-use drafftink_edit::arrow::{self as arrow_ops, ArrowError, BindRequest, SnapFlags};
+use drafftink_edit::arrow::{self as arrow_ops, ArrowError, BindRequest};
 use drafftink_edit::binding::{self, BindOpts, BindingError, EndChange};
 use drafftink_edit::elbow::{self, ElbowEditError, ElbowError, RouteOpts};
 use drafftink_edit::linear::{self, LinearError, world_points};
 use drafftink_geom::binding::FIXED_POINT_BOUND;
 use drafftink_geom::guides::SmartGuideKind;
 use drafftink_geom::kurbo::{Point, Rect};
+use drafftink_scene::words::Article;
 use drafftink_scene::{BindMode, Element, ElementId, ElementKind, Head, PathType, SceneRead, StoreError};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -27,6 +28,7 @@ use serde::{Deserialize, Serialize};
 use crate::args;
 use crate::refusal::Refusal;
 use crate::session::{Ref, Session};
+use crate::snap::Snap;
 use crate::spec::{
     Batch, Binding, CommandSpec, Facts, Gate, Mutates, PortSet, Redraw, RingMode, Scope, Selection, TextGate, Typed,
     Undo,
@@ -34,8 +36,7 @@ use crate::spec::{
 use crate::state::{BASE_ZOOM, LinearEditor};
 use crate::store::DocTx;
 
-/// A point in world units: `[x, y]`.
-pub type Pt = [f64; 2];
+pub use crate::args::Pt;
 
 // ---------------------------------------------------------------------------------------------
 // Argument types
@@ -103,44 +104,6 @@ pub enum BindChoice {
     Off,
     /// Bind inside the target under the pointer (Alt held).
     Inside,
-}
-
-/// The words `snap` accepts.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
-#[serde(rename_all = "snake_case")]
-pub enum SnapWord {
-    /// Follow the settings `snap.grid`, `snap.smart_guides` and `snap.angle`.
-    Auto,
-    /// No snapping.
-    None,
-}
-
-/// Snap switches; a missing key follows its setting.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize, JsonSchema)]
-#[serde(deny_unknown_fields, default)]
-pub struct SnapSwitches {
-    /// Snap to the grid.
-    pub grid: Option<bool>,
-    /// Snap to the edges and centres of other elements.
-    pub smart: Option<bool>,
-    /// Lock the direction to a multiple of the angle step (`snap.angle_step`, 15 degrees).
-    pub angle: Option<bool>,
-}
-
-/// `auto`, `none`, or switches.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
-#[serde(untagged)]
-pub enum Snap {
-    /// `"auto"` or `"none"`.
-    Word(SnapWord),
-    /// `{grid?, smart?, angle?}`.
-    Switches(SnapSwitches),
-}
-
-impl Default for Snap {
-    fn default() -> Self {
-        Snap::Word(SnapWord::Auto)
-    }
 }
 
 fn some_value<'de, D, T>(d: D) -> Result<Option<Option<T>>, D::Error>
@@ -468,12 +431,8 @@ fn no_such_point(cmd: &str, key: &str, index: usize, len: usize) -> Refusal {
     )
 }
 
-fn no_such_segment(cmd: &str, key: &str, segment: usize, len: usize) -> Refusal {
-    Refusal::bad_arg(
-        cmd,
-        key,
-        format!("segment {segment} does not exist; this element has segments 1 to {}", len.saturating_sub(1)),
-    )
+fn no_such_segment(cmd: &str, key: &str, segment: usize, segments: usize) -> Refusal {
+    Refusal::bad_arg(cmd, key, format!("segment {segment} does not exist; this element has segments 1 to {segments}"))
 }
 
 fn from_binding(cmd: &str, key: &str, e: BindingError) -> Fail {
@@ -525,7 +484,7 @@ fn from_linear(cmd: &str, key: &str, e: LinearError) -> Fail {
         LinearError::NoSuchPoint { index, len } => no_such_point(cmd, key, index, len).into(),
         LinearError::TooFewPoints { kind, min, have } => {
             let text = if min <= 2 {
-                format!("A {kind} needs at least 2 points, so no point can be deleted from it.")
+                format!("{} needs at least 2 points, so no point can be deleted from it.", Article::new(kind.name()).capitalized())
             } else {
                 format!("A closed {kind} needs at least {min} points and this would leave {have}, so no point can be deleted.")
             };
@@ -551,7 +510,7 @@ fn from_arrow(cmd: &str, e: ArrowError) -> Fail {
         ArrowError::NotLinear(id) => {
             Refusal::wrong_kind(cmd, "non-linear", "arrows and lines").with_details(serde_json::json!({ "ids": [id.as_str()] })).into()
         }
-        ArrowError::NotBindable { id, kind, label } => not_bindable(cmd, id.as_str(), kind, label).into(),
+        ArrowError::NotBindable { id, kind, label } => not_bindable(cmd, id.as_str(), kind.name(), label).into(),
         ArrowError::NotFinite => Refusal::bad_arg(cmd, "fixed_point", "must be two finite numbers").into(),
         ArrowError::Binding(e) => from_binding(cmd, "to", e),
         ArrowError::Elbow(e) => from_elbow(cmd, "to", e),
@@ -776,23 +735,6 @@ fn unbind(s: &mut Session, a: UnbindArgs) -> Result<UnbindOut, Refusal> {
 // arrow.move_point
 // ---------------------------------------------------------------------------------------------
 
-fn snap_flags(s: &Session, snap: &Snap) -> SnapFlags {
-    let setting = SnapFlags {
-        grid: s.settings.bool_or("snap.grid", false),
-        smart: s.settings.bool_or("snap.smart_guides", false),
-        angle: s.settings.bool_or("snap.angle", false),
-    };
-    match snap {
-        Snap::Word(SnapWord::Auto) => setting,
-        Snap::Word(SnapWord::None) => SnapFlags::default(),
-        Snap::Switches(w) => SnapFlags {
-            grid: w.grid.unwrap_or(setting.grid),
-            smart: w.smart.unwrap_or(setting.smart),
-            angle: w.angle.unwrap_or(setting.angle),
-        },
-    }
-}
-
 fn guide_out(g: &drafftink_geom::guides::SmartGuide) -> GuideOut {
     GuideOut {
         kind: match g.kind {
@@ -831,8 +773,9 @@ fn move_point(s: &mut Session, a: MovePointArgs) -> Result<MovePointOut, Refusal
         if elbow {
             return Err(not_movable(cmd));
         }
-        if segment < 1 || segment >= n {
-            return Err(no_such_segment(cmd, "index", segment, n));
+        let segments = linear::segment_count(&el, n);
+        if segment < 1 || segment > segments {
+            return Err(no_such_segment(cmd, "index", segment, segments));
         }
         segment
     } else {
@@ -852,14 +795,18 @@ fn move_point(s: &mut Session, a: MovePointArgs) -> Result<MovePointOut, Refusal
     let is_end = !a.insert && (index == 0 || index + 1 == n);
 
     // Snapping: guides and angle use the neighbouring point as the origin.
-    let flags = snap_flags(s, &a.snap);
+    let flags = a.snap.resolve(s);
     let step = {
         let v = s.settings.f64_or("snap.angle_step", 15.0);
         if v.is_finite() && v > 0.0 { v } else { 15.0 }
     };
     let reference = if a.insert || index > 0 { world.get(index.saturating_sub(1)) } else { world.get(1) }.copied();
+    // The elements near the pointer, from the document's spatial index; the rules below run on these only.
+    let zoom_now = zoom(s);
+    let reach = arrow_ops::snap_reach().max(binding::binding_reach(zoom_now));
+    let mut near = s.tab().doc.near(to, reach);
     let snapped = if flags.grid || flags.smart || flags.angle {
-        let mut others = arrow_ops::snap_candidates(s.store(), std::slice::from_ref(&id), to);
+        let mut others = arrow_ops::snap_candidates_among(s.store(), &near, std::slice::from_ref(&id), to);
         for (i, p) in world.iter().enumerate() {
             if a.insert || i != index {
                 others.push(Rect::new(p.x, p.y, p.x, p.y));
@@ -870,15 +817,20 @@ fn move_point(s: &mut Session, a: MovePointArgs) -> Result<MovePointOut, Refusal
         arrow_ops::PointSnap { point: to, guides: Vec::new(), angle: None }
     };
 
+    // A snapped point can lie a little away from the pointer: the shapes near it count too.
+    if snapped.point != to {
+        near.extend(s.tab().doc.near(snapped.point, reach));
+    }
     let opts = BindOpts {
-        zoom: zoom(s),
+        zoom: zoom_now,
         force_inside: a.bind == BindChoice::Inside,
         disabled: a.bind == BindChoice::Off || (a.bind == BindChoice::Auto && !s.settings.bool_or("arrow.binding", true)),
         midpoint_snap: s.settings.bool_or("arrow.midpoint_snap", false),
         angle_locked: flags.angle,
     };
     let insert_at = if a.insert {
-        let (p, q) = (world.get(index - 1).copied(), world.get(index).copied());
+        // The closing segment of a closed line ends at the first point.
+        let (p, q) = (world.get(index - 1).copied(), world.get(index % n).copied());
         p.zip(q).map(|(p, q)| p.midpoint(q))
     } else {
         None
@@ -892,10 +844,10 @@ fn move_point(s: &mut Session, a: MovePointArgs) -> Result<MovePointOut, Refusal
         if is_end {
             let end = if index == 0 { binding::End::Start } else { binding::End::End };
             let now = tx.get(&id).cloned().ok_or_else(|| Refusal::not_found(cmd, id.as_str()))?;
-            let plan = binding::plan_end_drag(tx, &now, end, to, &opts);
+            let plan = binding::plan_end_drag_among(tx, &near, &now, end, to, &opts);
             let at = if matches!(plan.dragged, EndChange::Bind(_)) { to } else { snapped.point };
             highlight =
-                binding::drag_end(tx, &id, end, at, &opts).map_err(|e| from_binding(cmd, "to", e))?.map(|c| c.target);
+                binding::drag_end_among(tx, &near, &id, end, at, &opts).map_err(|e| from_binding(cmd, "to", e))?.map(|c| c.target);
         } else {
             linear::move_points(tx, &id, &[(index, snapped.point)]).map_err(|e| from_linear(cmd, "to", e))?;
         }
@@ -924,11 +876,12 @@ fn add_point(s: &mut Session, a: AddPointArgs) -> Result<AddPointOut, Refusal> {
         return Err(not_movable(cmd));
     }
     let seg = a.segment;
-    if seg < 1 || seg >= world.len() {
-        return Err(no_such_segment(cmd, "segment", seg, world.len()));
+    let segments = linear::segment_count(&el, world.len());
+    if seg < 1 || seg > segments {
+        return Err(no_such_segment(cmd, "segment", seg, segments));
     }
-    let mid = world.get(seg - 1).copied().zip(world.get(seg).copied()).map(|(p, q)| p.midpoint(q));
-    let place = at.or(mid).ok_or_else(|| no_such_segment(cmd, "segment", seg, world.len()))?;
+    let mid = world.get(seg - 1).copied().zip(world.get(seg % world.len()).copied()).map(|(p, q)| p.midpoint(q));
+    let place = at.or(mid).ok_or_else(|| no_such_segment(cmd, "segment", seg, segments))?;
     let index = edit(s, |tx| linear::insert_midpoint(tx, &id, seg, place).map_err(|e| from_linear(cmd, "segment", e)))?;
     Ok(AddPointOut { index })
 }
@@ -971,7 +924,7 @@ fn delete_point(s: &mut Session, a: DeletePointArgs) -> Result<DeletePointOut, R
         linear::delete_points(tx, &id, &indices).map_err(|e| match e {
             LinearError::TooFewPoints { kind, min, have } => {
                 let text = if min <= 2 {
-                    format!("A {kind} needs at least 2 points, so no point can be deleted from `{}`.", id.as_str())
+                    format!("{} needs at least 2 points, so no point can be deleted from `{}`.", Article::new(kind.name()).capitalized(), id.as_str())
                 } else {
                     format!(
                         "A closed {kind} needs at least {min} points, and this would leave {have}, so no point can be deleted from `{}`.",
@@ -1092,7 +1045,7 @@ fn elbow_target(s: &Session, cmd: &str, a: &SegmentArgs) -> Result<(ElementId, u
     }
     let len = world_points(&el).map_or(0, |w| w.len());
     if a.segment < 1 || a.segment >= len {
-        return Err(no_such_segment(cmd, "segment", a.segment, len));
+        return Err(no_such_segment(cmd, "segment", a.segment, len.saturating_sub(1)));
     }
     Ok((id, len))
 }

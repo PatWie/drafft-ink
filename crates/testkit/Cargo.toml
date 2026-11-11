@@ -21,6 +21,9 @@ serde_json.workspace = true
 thiserror.workspace = true
 
 [dev-dependencies]
+# Work counters and the interaction layer's input events for tests/perf_work.rs.
+drafftink-profile = { path = "../profile" }
+drafftink-canvas = { path = "../canvas" }
 # Reads src/harness.rs for the accounting test (tests/accounting.rs). Already in the lock file.
 syn = { version = "2", features = ["full", "visit"] }
 

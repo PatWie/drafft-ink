@@ -6,6 +6,7 @@
 //! egui's own memory, keyed by the dialog.
 
 use drafftink_engine::Refusal;
+use serde_json::Value;
 
 use crate::action::{Call, HostRequest, Verb};
 
@@ -99,6 +100,78 @@ pub struct Confirm {
     pub message: String,
 }
 
+/// One element a search found.
+#[derive(Debug, Clone, PartialEq)]
+pub struct SearchHit {
+    /// The element id (the argument of `selection.select`).
+    pub id: String,
+    /// What the element is: `rectangle`, `text`, ...
+    pub kind: String,
+    /// The text of the element, else its name, else its id.
+    pub label: String,
+    /// The middle of the element in world units, for centring the view on it.
+    pub center: Option<[f64; 2]>,
+}
+
+/// What the last `element.query` of the search box found.
+#[derive(Debug, Clone, PartialEq)]
+pub struct SearchResults {
+    /// The text that was searched for.
+    pub query: String,
+    /// How many elements match (more than `hits` holds when the page was cut).
+    pub total: usize,
+    /// The elements of the page, in the order the command gave them.
+    pub hits: Vec<SearchHit>,
+}
+
+impl SearchResults {
+    /// Reads the output of `element.query`. Items that lack an id are skipped.
+    pub(crate) fn from_output(query: &str, out: &Value) -> Self {
+        let items = out.get("items").and_then(Value::as_array).map(Vec::as_slice).unwrap_or_default();
+        let hits: Vec<SearchHit> = items.iter().filter_map(SearchHit::from_item).collect();
+        let total =
+            out.get("total").and_then(Value::as_u64).and_then(|n| usize::try_from(n).ok()).unwrap_or(hits.len());
+        Self { query: query.to_owned(), total, hits }
+    }
+}
+
+impl SearchHit {
+    fn from_item(item: &Value) -> Option<Self> {
+        let text = |key: &str| item.get(key).and_then(Value::as_str).map(str::trim).filter(|s| !s.is_empty());
+        let id = text("id")?;
+        let number = |b: &Value, key: &str| b.get(key).and_then(Value::as_f64);
+        let center = item
+            .get("bounds")
+            .and_then(|b| Some([number(b, "x")? + number(b, "w")? / 2.0, number(b, "y")? + number(b, "h")? / 2.0]));
+        Some(Self {
+            id: id.to_owned(),
+            kind: text("kind").unwrap_or("element").to_owned(),
+            label: text("text").or_else(|| text("name")).unwrap_or(id).to_owned(),
+            center,
+        })
+    }
+}
+
+/// The context menu: where it was asked for.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ContextMenu {
+    /// The click, in screen points.
+    pub screen: egui::Pos2,
+    /// The same point in world units, when the canvas layer knows it. `Paste` puts its content here.
+    pub world: Option<[f64; 2]>,
+    /// The id of a locked element the menu is about (it cannot be selected): the menu offers to unlock it.
+    pub locked: Option<String>,
+}
+
+/// The link dialog (`ui.open_link_editor`).
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct LinkEditorState {
+    /// The text in the field. `None` until the first frame, when it takes the link of the selected element.
+    pub text: Option<String>,
+    /// Set once the field has been focused, so focus is requested only on the first frame.
+    pub focused: bool,
+}
+
 /// Everything the UI remembers between frames.
 #[derive(Debug, Default)]
 pub struct UiState {
@@ -116,14 +189,18 @@ pub struct UiState {
     pub font_picker_open: bool,
     /// The search box is open.
     pub search_open: bool,
+    /// What the last search found, while the search box is open.
+    pub search_results: Option<SearchResults>,
     /// The stats panel is shown.
     pub stats_open: bool,
     /// The chrome is hidden.
     pub zen: bool,
     /// The equation editor, when open.
     pub equation: Option<EquationState>,
-    /// The context menu, when open: where it was asked for, in screen points.
-    pub context_menu: Option<egui::Pos2>,
+    /// The link dialog, when open.
+    pub link_editor: Option<LinkEditorState>,
+    /// The context menu, when open.
+    pub context_menu: Option<ContextMenu>,
     /// The recent documents list is open.
     pub recent_open: bool,
     /// A pending question.
@@ -154,6 +231,7 @@ impl UiState {
             || self.font_picker_open
             || self.search_open
             || self.equation.is_some()
+            || self.link_editor.is_some()
             || self.context_menu.is_some()
             || self.recent_open
             || self.confirm.is_some()
@@ -165,6 +243,7 @@ impl UiState {
             || self.shortcuts_open
             || self.collab_open
             || self.equation.is_some()
+            || self.link_editor.is_some()
             || self.confirm.is_some()
             || self.search_open
     }
@@ -179,7 +258,9 @@ impl UiState {
         self.color_popover = None;
         self.font_picker_open = false;
         self.search_open = false;
+        self.search_results = None;
         self.equation = None;
+        self.link_editor = None;
         self.context_menu = None;
         self.recent_open = false;
         self.confirm = None;
@@ -232,6 +313,12 @@ impl UiState {
             }
             Verb::ToggleStats => self.stats_open = !self.stats_open,
             Verb::ToggleZen => self.zen = !self.zen,
+            Verb::OpenLinkEditor => {
+                if self.link_editor.is_none() {
+                    self.close_overlays();
+                    self.link_editor = Some(LinkEditorState::default());
+                }
+            }
             Verb::OpenEquationEditor => {
                 if self.equation.is_none() {
                     self.close_overlays();
@@ -254,10 +341,23 @@ impl UiState {
         self.equation = Some(EquationState { latex: latex.into(), focused: false });
     }
 
-    /// Opens the context menu at a screen position. The canvas layer calls this on a right click.
-    pub fn open_context_menu(&mut self, at: egui::Pos2) {
+    /// Opens the context menu at a screen position. The canvas layer calls this on a right click and passes
+    /// the world point under it, so that `Paste` can put its content there.
+    pub fn open_context_menu(&mut self, screen: egui::Pos2, world: Option<[f64; 2]>) {
         self.close_overlays();
-        self.context_menu = Some(at);
+        self.context_menu = Some(ContextMenu { screen, world, locked: None });
+    }
+
+    /// Opens the context menu of a locked element, which cannot be selected: it offers to unlock it
+    /// (`element.unlock_all` with this id). The canvas layer calls this for `ContextTarget::Locked`.
+    pub fn open_context_menu_on_locked(
+        &mut self,
+        screen: egui::Pos2,
+        world: Option<[f64; 2]>,
+        element: impl Into<String>,
+    ) {
+        self.close_overlays();
+        self.context_menu = Some(ContextMenu { screen, world, locked: Some(element.into()) });
     }
 
     /// The app answers a [`HostRequest::PasteText`].

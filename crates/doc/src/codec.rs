@@ -72,7 +72,7 @@ fn last_segment(key: &str) -> &str {
 // ---------------------------------------------------------------------------------------------------------------
 
 fn bad(msg: impl Into<String>) -> DocError {
-    DocError::Backend(msg.into())
+    DocError::Malformed(msg.into())
 }
 
 pub(crate) fn json_to_loro(v: &Value, depth: usize) -> Result<LoroValue, DocError> {
@@ -360,12 +360,12 @@ pub(crate) fn read_element(id: &ElementId, map: &LoroMap) -> Result<Element, Doc
     top.insert("kind".into(), Value::Object(kind));
     top.insert("style".into(), Value::Object(style));
     let mut e: Element = serde_json::from_value(Value::Object(top)).map_err(|er| bad(er.to_string()))?;
-    if validate_element(&e).is_err() {
+    if let Err(first) = validate_element(&e) {
         // A merge of two edits of a line (one changed the points, one the box) can leave the box and the points
         // out of step. Every peer repairs the same way, from the merged points.
-        if !(e.refit_points() && validate_element(&e).is_ok()) {
-            let why = validate_element(&e).err().map(|x| x.to_string()).unwrap_or_default();
-            return Err(bad(format!("element {id} is invalid: {why}")));
+        let still = if e.refit_points() { validate_element(&e).err() } else { Some(first) };
+        if let Some(error) = still {
+            return Err(DocError::BadElement { id: id.clone(), error });
         }
     }
     Ok(e)
@@ -424,14 +424,13 @@ fn field_json(key: &str, voc: ValueOrContainer) -> Result<Value, DocError> {
     match (&v, last_segment(key)) {
         (LoroValue::Binary(b), PACKED_PAIRS) => {
             let nums = unpack(b, MAX_POINTS.saturating_mul(2))?;
-            let mut pts = Vec::with_capacity(nums.len() / 2);
-            for p in nums.chunks_exact(2) {
-                let (x, y) = (p.first().copied().unwrap_or(0.0), p.get(1).copied().unwrap_or(0.0));
-                pts.push(Value::Array(vec![num(x)?, num(y)?]));
-            }
             if nums.len() % 2 != 0 {
                 return Err(bad("odd number of coordinates"));
             }
+            let pts = nums
+                .chunks_exact(2)
+                .map(|p| p.iter().copied().map(num).collect::<Result<Vec<_>, _>>().map(Value::Array))
+                .collect::<Result<Vec<_>, _>>()?;
             Ok(Value::Array(pts))
         }
         (LoroValue::Binary(b), PACKED_SINGLES) => {

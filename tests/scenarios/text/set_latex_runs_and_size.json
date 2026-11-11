@@ -1,0 +1,34 @@
+{
+  "about": "Text content, LaTeX, per-character colours and font steps change through commands; wrong kinds, empty text, bad LaTeX and ranges outside the text are refused with the way forward; each change is one undo step and undo puts the old content back.",
+  "steps": [
+    { "execute": "element.create", "args": { "kind": "text", "text": "hello world", "at": [0, 0] } },
+    { "execute": "element.create", "args": { "kind": "math", "latex": "x^2", "at": [0, 200] } },
+
+    { "execute": "text.set", "args": { "id": "e1", "text": "hello there" }, "expect": [ { "path": "$.removed", "eq": false } ] },
+    { "assert": "element.query", "args": { "filter": { "ids": ["e1"] }, "fields": ["text"] }, "expect": [ { "path": "$.items[0].text", "eq": "hello there" } ] },
+    { "execute": "text.set", "args": { "id": "e1", "text": "" }, "refused": "empty_text", "text": "Delete it with `element.delete`" },
+    { "execute": "text.set", "args": { "id": "e2", "text": "x" }, "refused": "wrong_kind", "text": "use `text.set_latex`" },
+    { "execute": "text.set", "args": { "id": "nope", "text": "x" }, "refused": "not_found" },
+
+    { "execute": "text.set_latex", "args": { "id": "e2", "latex": "\\frac{a}{b}" } },
+    { "assert": "element.query", "args": { "filter": { "ids": ["e2"] }, "fields": ["text"] }, "expect": [ { "path": "$.items[0].text", "eq": "\\frac{a}{b}" } ] },
+    { "execute": "text.set_latex", "args": { "id": "e2", "latex": "\\frac{" }, "refused": "invalid_latex", "text": ["could not be parsed", "\\frac{a}{b}"] },
+    { "assert": "element.query", "args": { "filter": { "ids": ["e2"] }, "fields": ["text"] }, "expect": [ { "path": "$.items[0].text", "eq": "\\frac{a}{b}", "note": "On a parse error the element is unchanged." } ] },
+    { "execute": "text.set_latex", "args": { "id": "e1", "latex": "x" }, "refused": "wrong_kind", "text": "use `text.set`" },
+
+    { "execute": "text.style_range", "args": { "id": "e1", "start": 0, "end": 5, "color": "#ff0000" }, "expect": [ { "path": "$.runs", "eq": [[0, 5, "#ff0000"]] } ] },
+    { "execute": "text.style_range", "args": { "id": "e1", "start": 0, "end": 500, "color": "#ff0000" }, "refused": "bad_range", "text": ["outside the text", "11 characters"] },
+    { "execute": "text.style_range", "args": { "id": "e1", "start": 0, "end": 5, "color": null }, "expect": [ { "path": "$.runs", "len": 0, "note": "null clears the colour." } ] },
+
+    { "execute": "text.step_size", "args": { "direction": "increase", "ids": ["e1"] }, "expect": [ { "path": "$.resized", "eq": ["e1"] } ] },
+    { "assert": "style.get", "args": { "ids": ["e1"], "props": ["font_size"] }, "expect": [ { "path": "$.props.font_size.value", "eq": 28, "note": "The presets go 16, 20, 28, 36." } ] },
+    { "harness": "advance_clock", "args": { "ms": 2000 }, "note": "Font steps within one second merge into one undo step, so move the clock to keep the two steps apart." },
+    { "execute": "text.step_size", "args": { "direction": "decrease", "ids": ["e1"] } },
+    { "assert": "style.get", "args": { "ids": ["e1"], "props": ["font_size"] }, "expect": [ { "path": "$.props.font_size.value", "eq": 20 } ] },
+    { "execute": "element.create", "args": { "kind": "rectangle", "bounds": { "x": 200, "y": 0, "w": 100, "h": 60 } } },
+    { "execute": "text.step_size", "args": { "direction": "increase", "ids": ["e3"] }, "refused": "not_applicable", "text": "support" },
+
+    { "undo": 2 },
+    { "assert": "style.get", "args": { "ids": ["e1"], "props": ["font_size"] }, "expect": [ { "path": "$.props.font_size.value", "eq": 28, "note": "The rectangle creation and the decrease are undone; the increase is still there." } ] }
+  ]
+}

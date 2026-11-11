@@ -221,6 +221,20 @@ fn a_damaged_picture_is_parse_failed() {
 }
 
 #[test]
+fn a_picture_with_damaged_pixel_data_is_refused_when_inserted_not_when_drawn() {
+    let mut s = session();
+    let good = png(64, 64);
+    // The header says 64 x 64 and is fine; the pixel data ends early.
+    let r = refuse_clean(&mut s, "image.insert", json!({"images": [named(&good[..good.len() - 12], "half.png")]}));
+    assert_eq!(r.code, "parse_failed");
+    assert!(r.message.starts_with("half.png could not be read as an image: "), "{}", r.message);
+    assert!(s.store().files().next().is_none(), "nothing was stored");
+    // The same picture whole is inserted.
+    run(&mut s, "image.insert", json!({"images": [named(&good, "whole.png")]}));
+    assert_eq!(s.store().files().count(), 1);
+}
+
+#[test]
 fn a_bad_picture_among_good_ones_changes_nothing() {
     let mut s = session();
     let r = refuse_clean(&mut s, "image.insert", json!({"images": [b64(&png(8, 8)), b64(b"junk"), b64(&png(9, 9))]}));

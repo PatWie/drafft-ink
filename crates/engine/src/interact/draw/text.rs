@@ -18,9 +18,9 @@ pub(super) fn click(cx: &mut Ctx<'_>, ev: &Ev<'_>) {
         Target::Handle(_) | Target::None => {}
         Target::Element { id, .. } => match edit_kind(cx, id) {
             Some(kind) => edit(cx, id, kind, at),
-            None => place(cx, at),
+            None => place(cx, at, None),
         },
-        Target::Empty => place(cx, at),
+        Target::Empty => place(cx, at, None),
     }
 }
 
@@ -50,21 +50,39 @@ fn edit(cx: &mut Ctx<'_>, id: &ElementId, editor: Editor, at: Point) {
         return;
     }
     cx.out.ui_request = Some(match editor {
-        Editor::Text => UiRequest::OpenTextEditor { element: Some(id.clone()), at },
+        Editor::Text => UiRequest::OpenTextEditor { element: Some(id.clone()), at, width: None },
         Editor::Equation => UiRequest::OpenEquationEditor { element: id.clone() },
     });
 }
 
-/// A new text draft (text tool) or a new formula (math tool) at `at`.
-pub(super) fn place(cx: &mut Ctx<'_>, at: Point) {
+/// A drag with the text tool ended: a text box as wide as the drag, with its top-left at the drag's top-left.
+/// A drag narrower than [`MIN_BOX_PX`] screen pixels is a click that moved a little, and places at the origin.
+pub(super) fn drag_box(cx: &mut Ctx<'_>, origin: Point, end: Point) {
+    let width = (end.x - origin.x).abs();
+    if cx.tool() != Tool::Text || width < cx.px(MIN_BOX_PX) {
+        place(cx, origin, None);
+        return;
+    }
+    place(cx, Point::new(origin.x.min(end.x), origin.y.min(end.y)), Some(width));
+}
+
+/// The narrowest text box a drag makes, in screen pixels.
+const MIN_BOX_PX: f64 = 20.0;
+
+/// A new text draft (text tool) or a new formula (math tool) at `at`; `width` fixes the width of the text.
+pub(super) fn place(cx: &mut Ctx<'_>, at: Point, width: Option<f64>) {
     match cx.tool() {
         Tool::Math => {
             // The placeholder formula is the command's default; no editor opens (the old behaviour).
             cx.exec("element.create", json!({ "kind": "math", "at": [at.x, at.y], "from_tool": true }));
         }
         _ => {
-            if cx.exec("text.edit_begin", json!({ "at": [at.x, at.y] })).is_some() {
-                cx.out.ui_request = Some(UiRequest::OpenTextEditor { element: None, at });
+            let mut args = json!({ "at": [at.x, at.y] });
+            if let Some(w) = width {
+                args["width"] = json!(w);
+            }
+            if cx.exec("text.edit_begin", args).is_some() {
+                cx.out.ui_request = Some(UiRequest::OpenTextEditor { element: None, at, width });
             }
         }
     }

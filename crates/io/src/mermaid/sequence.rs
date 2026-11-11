@@ -5,8 +5,8 @@ use std::collections::HashMap;
 
 use super::text::{clean_label, shorten, split_word, strip_comment};
 use super::types::{Activation, Event, MessageHead, NotePlacement, Participant, SequenceDiagram};
-use super::{FORMAT, MAX_ID_CHARS, MAX_TOTAL_TEXT_BYTES, Prepared, push_warning};
-use crate::error::IoError;
+use super::{MAX_ID_CHARS, MAX_TOTAL_TEXT_BYTES, Prepared, push_warning};
+use crate::error::{FormatName, IoError};
 use crate::limits::MAX_DIAGRAM_ITEMS;
 
 /// Words that open, continue, close or configure a block and never start a message.
@@ -73,7 +73,7 @@ pub(super) fn parse(p: &Prepared<'_>) -> Result<SequenceDiagram, IoError> {
         b.line(strip_comment(line).trim())?;
     }
     if b.participants.is_empty() && b.events.is_empty() {
-        return Err(IoError::invalid(FORMAT, "the sequence diagram has no participants and no messages"));
+        return Err(IoError::invalid(FormatName::Mermaid, "the sequence diagram has no participants and no messages"));
     }
     Ok(SequenceDiagram { participants: b.participants, events: b.events, warnings: b.warnings })
 }

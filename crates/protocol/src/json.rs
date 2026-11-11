@@ -17,7 +17,7 @@ pub(crate) mod hex_bytes {
 
     pub fn deserialize<'de, D: Deserializer<'de>>(d: D) -> Result<Vec<u8>, D::Error> {
         let text = String::deserialize(d)?;
-        hex_decode(&text, 0).ok_or_else(|| serde::de::Error::custom("expected a hex string"))
+        hex_decode(&text, None).ok_or_else(|| serde::de::Error::custom("expected a hex string"))
     }
 }
 

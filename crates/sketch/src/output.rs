@@ -6,6 +6,7 @@ use kurbo::{BezPath, Rect};
 /// the old app.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct StrokeStyle {
+    /// Line width in local units.
     pub width: f64,
     /// Dash and gap lengths, `None` for a solid line.
     pub dash: Option<[f64; 2]>,
@@ -19,22 +20,33 @@ pub enum FillKind {
     Solid,
     /// Fill the path with the fill colour at `alpha` times its own opacity. This is the pale
     /// background under hatch lines (the old app: 0.15).
-    Tint { alpha: f64 },
+    Tint {
+        /// Opacity factor, 0 to 1.
+        alpha: f64,
+    },
     /// Fill the path with the stroke colour. Used for filled arrowheads and pressure outlines.
     Ink,
     /// The path is a set of lines. Stroke them with the fill colour at width `line_width`, clipped
     /// to `clip`.
-    Hatch { line_width: f64, clip: BezPath },
+    Hatch {
+        /// Width of the lines.
+        line_width: f64,
+        /// The region the lines are clipped to.
+        clip: BezPath,
+    },
 }
 
 /// The sketched shape. Draw `fills` first, in order, then `strokes`, in order.
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct SketchGeometry {
+    /// Paths to stroke, in drawing order.
     pub strokes: Vec<(BezPath, StrokeStyle)>,
+    /// Paths to fill, in drawing order.
     pub fills: Vec<(BezPath, FillKind)>,
 }
 
 impl SketchGeometry {
+    /// True when there is nothing to draw.
     pub fn is_empty(&self) -> bool {
         self.strokes.is_empty() && self.fills.is_empty()
     }

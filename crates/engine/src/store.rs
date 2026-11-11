@@ -23,12 +23,16 @@
 //! within the window is folded into the previous undo step (`LoroTx::merge_with_previous` in the doc crate).
 //! The tab remembers the last coalescing step to decide; anything else that touches undo history resets it.
 
-use std::collections::BTreeMap;
+use std::cell::{Ref, RefCell};
+use std::collections::{BTreeMap, BTreeSet};
+use std::rc::Rc;
 
+use drafftink_canvas::SceneIndex;
 use drafftink_doc::{DocError, LoroStore};
+use drafftink_geom::kurbo::Point;
 use drafftink_scene::{
-    Change, ChangeKind, ChangeSet, DocMeta, Document, Element, ElementId, Fields, FileEntry, FileId, MemoryStore,
-    SceneRead, SceneStore, SceneTx, StoreError, ZIndex,
+    Change, ChangeKind, ChangeSet, DerivedIndex, DocMeta, Document, Element, ElementId, Fields, FileEntry, FileId,
+    MemoryStore, SceneRead, SceneStore, SceneTx, StoreError, ZIndex,
 };
 
 use crate::state::Observed;
@@ -163,6 +167,12 @@ impl SceneRead for DocTx<'_, '_> {
     fn z_neighbors(&self, id: &ElementId) -> (Option<ZIndex>, Option<ZIndex>) {
         self.inner.z_neighbors(id)
     }
+    fn derived_index(&self) -> Option<&DerivedIndex> {
+        self.inner.derived_index()
+    }
+    fn version_stamp(&self) -> Option<u64> {
+        self.inner.version_stamp()
+    }
 }
 
 impl SceneTx for DocTx<'_, '_> {
@@ -211,6 +221,17 @@ impl SceneTx for DocTx<'_, '_> {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct DocMark(usize);
 
+/// Ids of the elements committed to the working store since the spatial index last looked. Every commit adds its
+/// change set, so the index re-reads the touched elements instead of comparing the whole scene with what it saw.
+type TouchedFeed = Rc<RefCell<BTreeSet<ElementId>>>;
+
+/// The spatial index of the working store and the store revision it describes (`None`: not built yet).
+#[derive(Default)]
+struct IndexCache {
+    index: SceneIndex,
+    revision: Option<u64>,
+}
+
 /// One tab's document: the working store, the replicated store and the journal of working-store edits.
 pub struct TabDoc {
     work: WorkStore,
@@ -226,7 +247,30 @@ pub struct TabDoc {
     /// Local writes to the replicated store: commits, undo steps and redo steps. Remote updates do not count.
     /// The collab glue compares it with the value it saw last to know that the peers need an update.
     local_writes: u64,
+    /// The revisions before and after each undo step, oldest first. It mirrors the undo stack of the replicated
+    /// store, so that undo can tell that it brought the document back to an earlier revision.
+    undo_revs: Vec<StepRevs>,
+    /// The same for the redo stack.
+    redo_revs: Vec<StepRevs>,
+    /// Revisions whose content is the content of an earlier revision, because undo or redo restored it. The
+    /// value is the earlier revision. [`TabDoc::same_content`] reads it, so that undoing back to the saved
+    /// state does not show the document as changed.
+    same_as: BTreeMap<u64, u64>,
+    /// Elements committed to the working store since the spatial index last synced.
+    touched: TouchedFeed,
+    /// The spatial index, built on first use and kept current from `touched`.
+    scene_index: RefCell<IndexCache>,
 }
+
+/// The logical revisions around one undo step.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct StepRevs {
+    before: u64,
+    after: u64,
+}
+
+/// Most revisions remembered as equal to an earlier one. Forgetting is safe: a document then counts as changed.
+const MAX_SAME_AS: usize = 4096;
 
 impl Default for TabDoc {
     fn default() -> Self {
@@ -274,33 +318,75 @@ pub struct StepMeta<'a> {
 impl TabDoc {
     /// An empty document.
     pub fn new() -> Self {
-        Self {
-            work: WorkStore::new(),
-            loro: DocStore::new(),
-            journal: Vec::new(),
-            undone_commits: 0,
-            depth: 200,
-            last_coalesce: None,
-            local_writes: 0,
-        }
+        Self::assemble(WorkStore::new(), DocStore::new())
     }
 
     /// A tab document holding `doc`, with no undo history.
     pub fn from_document(doc: &Document) -> Result<Self, StoreError> {
-        Ok(Self {
-            work: WorkStore::from_document(doc)?,
-            loro: DocStore::from_document(doc)?,
+        Ok(Self::assemble(WorkStore::from_document(doc)?, DocStore::from_document(doc)?))
+    }
+
+    fn assemble(mut work: WorkStore, loro: DocStore) -> Self {
+        let touched = TouchedFeed::default();
+        let feed = Rc::clone(&touched);
+        work.subscribe(Box::new(move |cs| feed.borrow_mut().extend(cs.ids().cloned())));
+        Self {
+            work,
+            loro,
             journal: Vec::new(),
             undone_commits: 0,
             depth: 200,
             last_coalesce: None,
             local_writes: 0,
-        })
+            undo_revs: Vec::new(),
+            redo_revs: Vec::new(),
+            same_as: BTreeMap::new(),
+            touched,
+            scene_index: RefCell::default(),
+        }
+    }
+
+    /// Ids of the indexed elements whose bounds are within `reach` world units of `p`, in no particular order.
+    /// It is one query of [`Self::scene_index`]; the exact rules then run on these few elements.
+    pub fn near(&self, p: Point, reach: f64) -> Vec<ElementId> {
+        drafftink_profile::inc(drafftink_profile::Counter::SpatialQueries);
+        self.scene_index().spatial().query_point(p, reach).map(|(id, _)| id.clone()).collect()
+    }
+
+    /// The spatial index of the working store (hit testing, culling, "what is near this point").
+    ///
+    /// It is built from the whole scene on first use. After that, each call re-reads only the elements committed
+    /// since the previous call (edits, gesture frames, rollbacks, undo, redo and remote updates all count), so
+    /// the cost follows what changed and not the size of the scene. Do not call it while holding the guard it
+    /// returned: the nested call would find the index borrowed and return it as it is.
+    pub fn scene_index(&self) -> Ref<'_, SceneIndex> {
+        if let Ok(mut cache) = self.scene_index.try_borrow_mut() {
+            let revision = self.work.revision();
+            if cache.revision != Some(revision) {
+                let touched = std::mem::take(&mut *self.touched.borrow_mut());
+                if cache.revision.is_none() {
+                    cache.index.rebuild(&self.work);
+                } else if !touched.is_empty() {
+                    let elements = touched
+                        .into_iter()
+                        .map(|id| Change { id, kind: ChangeKind::Updated, fields: Fields::all(), version: 0 })
+                        .collect();
+                    cache.index.apply(&self.work, &ChangeSet { revision, elements, meta: false, files: Vec::new() });
+                }
+                cache.revision = Some(revision);
+            }
+        }
+        Ref::map(self.scene_index.borrow(), |cache| &cache.index)
     }
 
     /// Read access to the working store (what commands and the renderer read).
     pub fn store(&self) -> &WorkStore {
         &self.work
+    }
+
+    /// The schema version of a newer app that made this document read-only, if any (docs/crdt.md §8).
+    pub fn blocked_by_schema(&self) -> Option<u32> {
+        self.loro.blocked_by_schema()
     }
 
     /// The replicated store, for export and sync glue.
@@ -318,6 +404,53 @@ impl TabDoc {
     /// change that was rolled back does not count.
     pub fn revision(&self) -> u64 {
         self.work.revision().saturating_sub(self.undone_commits)
+    }
+
+    /// True when revisions `a` and `b` hold the same content: they are the same, or undo or redo brought the
+    /// document from one back to the other with nothing else changed in between.
+    pub fn same_content(&self, a: u64, b: u64) -> bool {
+        self.canonical(a) == self.canonical(b)
+    }
+
+    fn canonical(&self, mut r: u64) -> u64 {
+        // An entry always points at a revision that is not itself an alias, so one hop is enough; the bound
+        // keeps a corrupt map from looping.
+        for _ in 0..4 {
+            match self.same_as.get(&r) {
+                Some(&p) => r = p,
+                None => break,
+            }
+        }
+        r
+    }
+
+    fn remember_same(&mut self, now: u64, earlier: u64) {
+        if self.same_as.len() >= MAX_SAME_AS {
+            self.same_as.clear();
+        }
+        let target = self.canonical(earlier);
+        if now != target {
+            self.same_as.insert(now, target);
+        }
+    }
+
+    /// Checks that the revision stacks have the sizes of the stacks of the replicated store, and forgets all
+    /// of them when they do not (an undo step that was dropped at the depth limit is the usual reason, and
+    /// then the oldest entries go).
+    fn align_revs(&mut self) {
+        let (u, r) = (self.loro.undo_depth(), self.loro.redo_depth());
+        if self.undo_revs.len() > u {
+            let excess = self.undo_revs.len() - u;
+            self.undo_revs.drain(..excess);
+        }
+        if self.redo_revs.len() > r {
+            let excess = self.redo_revs.len() - r;
+            self.redo_revs.drain(..excess);
+        }
+        if self.undo_revs.len() != u || self.redo_revs.len() != r {
+            self.undo_revs.clear();
+            self.redo_revs.clear();
+        }
     }
 
     /// Runs `f` in one transaction. Commits and journals it when `f` returns `Ok`; drops the transaction
@@ -481,6 +614,8 @@ impl TabDoc {
     /// `meta.label` and carrying the editor state before and after. This is the one place that touches
     /// the CRDT for a command, a batch or the end of a gesture. Returns the summary of what changed.
     pub fn commit_since(&mut self, mark: DocMark, meta: &StepMeta<'_>) -> Result<Summary, StoreError> {
+        // Every journaled commit raised the logical revision by one.
+        let commits = self.journal.len().saturating_sub(mark.0) as u64;
         let (patch, summary) = self.take_since(mark);
         if !summary.changed {
             return Ok(summary);
@@ -493,6 +628,15 @@ impl TabDoc {
             return Err(e);
         }
         self.note_coalesce(meta, &summary);
+        if meta.undoable {
+            let after = self.revision();
+            match self.undo_revs.last_mut() {
+                Some(top) if merge => top.after = after,
+                _ => self.undo_revs.push(StepRevs { before: after.saturating_sub(commits), after }),
+            }
+            self.redo_revs.clear();
+        }
+        self.align_revs();
         Ok(summary)
     }
 
@@ -635,7 +779,7 @@ impl TabDoc {
     /// Applies a remote update from a peer and brings the working store up to date. Returns what changed.
     pub fn apply_remote(&mut self, bytes: &[u8]) -> Result<ChangeSet, DocError> {
         let cs = self.loro.apply_remote(bytes)?;
-        self.mirror(&cs).map_err(|e| DocError::Backend(e.to_string()))?;
+        self.mirror(&cs).map_err(DocError::backend)?;
         Ok(cs)
     }
 
@@ -654,11 +798,13 @@ impl TabDoc {
         self.last_coalesce = None;
         let mut out = UndoOutcome { labels: Vec::new(), observed: None, touched: Vec::new() };
         while out.labels.len() < n {
+            let before_rev = self.revision();
             let step = if undo { self.loro.undo() } else { self.loro.redo() }
                 .map_err(|e| StoreError::Backend(e.to_string()))?;
             let Some(step) = step else { break };
             self.local_writes += 1;
             self.mirror(&step.changes)?;
+            self.move_step_revs(undo, before_rev, !step.changes.is_empty());
             if step.changes.is_empty() {
                 continue;
             }
@@ -666,7 +812,23 @@ impl TabDoc {
             out.labels.push(step.label);
             out.observed = Some(Observed::from_state(&step.restore));
         }
+        self.align_revs();
         Ok(out)
+    }
+
+    /// Moves the revisions of the step that undo or redo just took to the other stack. When the document was
+    /// at the revision the step started from (its end for undo, its start for redo), it is now at the other
+    /// one, and the revision it has now is remembered as equal to it.
+    fn move_step_revs(&mut self, undo: bool, revision_before: u64, applied: bool) {
+        let (from, to) =
+            if undo { (&mut self.undo_revs, &mut self.redo_revs) } else { (&mut self.redo_revs, &mut self.undo_revs) };
+        let Some(step) = from.pop() else { return };
+        to.push(step);
+        let (was_at, now_at) = if undo { (step.after, step.before) } else { (step.before, step.after) };
+        if applied && self.same_content(revision_before, was_at) {
+            let now = self.revision();
+            self.remember_same(now, now_at);
+        }
     }
 
     /// True when there is a step to undo.
@@ -702,6 +864,8 @@ impl TabDoc {
     /// Drops both stacks.
     pub fn clear_history(&mut self) {
         self.loro.clear_history();
+        self.undo_revs.clear();
+        self.redo_revs.clear();
         self.last_coalesce = None;
     }
 

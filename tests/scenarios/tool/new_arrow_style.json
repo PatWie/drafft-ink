@@ -1,0 +1,37 @@
+{
+  "about": "The type and heads of new arrows are tool defaults: tool.set_arrow sets them, settings.get shows the same state, element.create is not changed by them, an unknown word and an empty call are refused, and none of it is undo history.",
+  "steps": [
+    { "assert": "settings.get", "args": { "key": "arrow.type" }, "expect": [ { "path": "$.settings['arrow.type']", "eq": "sharp" } ] },
+    { "execute": "tool.set_arrow", "args": { "arrow_type": "elbow", "start_head": "circle", "end_head": null },
+      "expect": [
+        { "path": "$.changed", "eq": true },
+        { "path": "$.arrow_type", "eq": "elbow" },
+        { "path": "$.start_head", "eq": "circle" },
+        { "path": "$.end_head", "eq": "none" }
+      ] },
+    { "assert": "settings.get", "args": { "key": "arrow.end_head" }, "expect": [ { "path": "$.settings['arrow.end_head']", "eq": "none" } ], "note": "The settings hold the same state, so they survive a restart." },
+    { "execute": "tool.set_arrow", "args": { "end_head": "triangle" }, "expect": [ { "path": "$.arrow_type", "eq": "elbow", "note": "A part that is left out keeps its value." }, { "path": "$.end_head", "eq": "triangle" } ] },
+    { "execute": "tool.set_arrow", "args": { "end_head": "triangle" }, "expect": [ { "path": "$.changed", "eq": false } ] },
+
+    { "execute": "element.create", "args": { "kind": "arrow", "points": [[0, 0], [100, 0]] },
+      "expect": [ { "path": "$.changed", "eq": true } ],
+      "save": { "plain": "$.id" },
+      "note": "element.create ignores the tool defaults: a script that omits arrow_type gets the sharp arrow with the built-in end head." },
+
+    { "execute": "arrow.set_type", "args": { "ids": ["{{plain}}"], "type": "sharp" }, "expect": [ { "path": "$.changed", "eq": false, "note": "The arrow was already sharp." } ] },
+    { "execute": "arrow.set_head", "args": { "ids": ["{{plain}}"], "end": "end", "head": "arrow" }, "expect": [ { "path": "$.changed", "eq": false, "note": "The arrow already had the built-in end head." } ] },
+
+    { "execute": "tool.set_arrow", "args": {}, "refused": "bad_args", "text": ["arrow_type", "start_head", "end_head"] },
+    { "execute": "tool.set_arrow", "args": { "arrow_type": "wavy" }, "refused": "bad_args", "text": ["wavy", "sharp"] },
+
+    { "undo": 1, "expect": [ { "path": "$.changed", "eq": true } ], "note": "The one undo step is the arrow that element.create made." },
+    { "undo": 1, "refused": "nothing_to_undo", "note": "tool.set_arrow made no history." },
+    { "assert": "settings.get", "args": { "key": "arrow.type" }, "expect": [ { "path": "$.settings['arrow.type']", "eq": "elbow", "note": "Undo does not touch tool defaults." } ] },
+
+    { "execute": "settings.reset", "args": { "key": "arrow.type" } },
+    { "execute": "tool.set_arrow", "args": { "start_head": "none" }, "expect": [ { "path": "$.arrow_type", "eq": "sharp", "note": "settings.reset reaches the tool default." } ] },
+
+    { "execute": "view.set_view_only", "args": { "on": true } },
+    { "execute": "tool.set_arrow", "args": { "arrow_type": "round" }, "expect": [ { "path": "$.arrow_type", "eq": "round" } ], "note": "Tool state works in view-only mode." }
+  ]
+}

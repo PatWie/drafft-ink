@@ -1,0 +1,45 @@
+{
+  "about": "Layer order moves one unit at a time, align and distribute move shapes to documented positions, refusals say how many elements were missing, and each command is one undo step.",
+  "steps": [
+    { "execute": "element.create", "args": { "kind": "rectangle", "bounds": { "x": 0, "y": 0, "w": 100, "h": 60 } } },
+    { "execute": "element.create", "args": { "kind": "rectangle", "bounds": { "x": 150, "y": 40, "w": 80, "h": 40 } } },
+    { "execute": "element.create", "args": { "kind": "rectangle", "bounds": { "x": 400, "y": 100, "w": 60, "h": 30 } } },
+    { "assert": "element.query", "args": { "fields": ["id"] }, "expect": [ { "path": "$.items[0].id", "eq": "e1" }, { "path": "$.items[2].id", "eq": "e3" } ] },
+
+    { "execute": "arrange.z_order", "args": { "ids": ["e1"], "op": "front" } },
+    { "assert": "element.query", "args": { "fields": ["id"] }, "expect": [ { "path": "$.items[2].id", "eq": "e1" }, { "path": "$.items[0].id", "eq": "e2" } ] },
+    { "execute": "arrange.z_order", "args": { "ids": ["e1"], "op": "front" }, "expect": [ { "path": "$.changed", "eq": false } ], "note": "Already at the end is Ok and changes nothing." },
+    { "execute": "arrange.z_order", "args": { "ids": ["e1"], "op": "backward" } },
+    { "assert": "element.query", "args": { "fields": ["id"] }, "expect": [ { "path": "$.items[1].id", "eq": "e1" }, { "path": "$.items[2].id", "eq": "e3" } ] },
+    { "execute": "arrange.z_order", "args": { "ids": ["e1"], "op": "back" } },
+    { "assert": "element.query", "args": { "fields": ["id"] }, "expect": [ { "path": "$.items[0].id", "eq": "e1" }, { "path": "$.items[1].id", "eq": "e2" }, { "path": "$.items[2].id", "eq": "e3" } ] },
+    { "undo": 1 },
+    { "assert": "element.query", "args": { "fields": ["id"] }, "expect": [ { "path": "$.items[0].id", "eq": "e2" }, { "path": "$.items[1].id", "eq": "e1" } ], "note": "Undo of back restores the middle position." },
+
+    { "execute": "selection.clear" },
+    { "execute": "arrange.z_order", "args": { "op": "front" }, "refused": "no_target", "text": "no elements are selected" },
+
+    { "execute": "arrange.align", "args": { "ids": ["e1", "e2", "e3"], "edge": "top" }, "expect": [ { "path": "$.changed", "eq": true } ] },
+    { "assert": "element.query", "args": { "fields": ["id", "bounds"] }, "expect": [ { "path": "$.items[0].bounds.y", "eq": 0 }, { "path": "$.items[1].bounds.y", "eq": 0 }, { "path": "$.items[2].bounds.y", "eq": 0 } ] },
+    { "execute": "arrange.align", "args": { "ids": ["e1", "e2", "e3"], "edge": "center_y" } },
+    { "assert": "element.query", "args": { "filter": { "ids": ["e1", "e2", "e3"] }, "fields": ["id", "bounds"], "order": "position" }, "save": { "cy": "$.items[0].bounds.y" } },
+    { "execute": "arrange.align", "args": { "ids": ["e1"], "edge": "left" }, "refused": "too_few", "text": "Align needs at least 2 elements" },
+    { "execute": "arrange.align", "args": { "ids": ["e1"], "edge": "left", "to": "e3" }, "note": "With `to`, one element is enough." },
+    { "assert": "element.query", "args": { "filter": { "ids": ["e1"] }, "fields": ["bounds"] }, "expect": [ { "path": "$.items[0].bounds.x", "eq": 400 } ] },
+    { "undo": 1 },
+
+    { "execute": "arrange.align", "args": { "ids": ["e1", "e2", "e3"], "edge": "left" } },
+    { "assert": "element.query", "args": { "fields": ["id", "bounds"] }, "expect": [ { "path": "$.items[id=e1].bounds.x", "eq": 0 }, { "path": "$.items[id=e2].bounds.x", "eq": 0 }, { "path": "$.items[id=e3].bounds.x", "eq": 0 } ] },
+    { "undo": 1 },
+
+    { "note": "Distribute: the outer two stay, the gaps between all three become equal.",
+      "execute": "arrange.distribute", "args": { "ids": ["e1", "e2", "e3"], "axis": "horizontal" } },
+    { "assert": "element.query", "args": { "fields": ["id", "bounds"] }, "expect": [ { "path": "$.items[id=e1].bounds.x", "eq": 0 }, { "path": "$.items[id=e3].bounds.x", "eq": 400 },
+        { "path": "$.items[id=e2].bounds.x", "near": 210, "tol": 0.01, "note": "The span is 460 wide and the widths sum to 240, so two gaps of 110: e2 starts at 100 + 110." } ] },
+    { "execute": "arrange.distribute", "args": { "ids": ["e1", "e2"], "axis": "horizontal" }, "refused": "too_few", "text": "Distribute needs at least 3 elements" },
+    { "execute": "arrange.distribute", "args": { "ids": ["e1", "e2", "e3"], "axis": "vertical", "gap": 10 } },
+    { "undo": 2 },
+    { "assert": "element.query", "args": { "filter": { "ids": ["e2"] }, "fields": ["bounds"] }, "expect": [ { "path": "$.items[0].bounds.x", "eq": 150, "note": "Undo twice took back both distributes, so e2 is where the centre alignment left it." }, { "path": "$.items[0].bounds.y", "eq": 10 } ] },
+    { "assert": "history.state", "expect": [ { "path": "$.undo_depth", "eq": 7 }, { "path": "$.redo_depth", "eq": 2 } ] }
+  ]
+}

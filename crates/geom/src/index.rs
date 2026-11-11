@@ -8,7 +8,6 @@
 //! nothing. Bounds are normalised (`x0 <= x1`) on the way in.
 
 use std::collections::HashMap;
-use std::fmt;
 use std::hash::Hash;
 
 use kurbo::{Point, Rect};
@@ -17,24 +16,15 @@ use rstar::{AABB, PointDistance, RTree, RTreeObject};
 use crate::aabb;
 
 /// Why an index operation was refused.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
 pub enum IndexError {
     /// The bounds contain NaN or an infinity.
+    #[error("bounds must be finite numbers")]
     InvalidBounds,
     /// `update` was called for an id that is not in the index.
+    #[error("no entry with that id; use insert to add it")]
     NotFound,
 }
-
-impl fmt::Display for IndexError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            IndexError::InvalidBounds => f.write_str("bounds must be finite numbers"),
-            IndexError::NotFound => f.write_str("no entry with that id; use insert to add it"),
-        }
-    }
-}
-
-impl std::error::Error for IndexError {}
 
 #[derive(Debug, Clone, PartialEq)]
 struct Entry<Id> {
@@ -69,15 +59,17 @@ fn from_env(e: &AABB<[f64; 2]>) -> Rect {
 pub struct SpatialIndex<Id> {
     tree: RTree<Entry<Id>>,
     bounds: HashMap<Id, Rect>,
+    generation: u64,
 }
 
 impl<Id> Default for SpatialIndex<Id> {
     fn default() -> Self {
-        Self { tree: RTree::new(), bounds: HashMap::new() }
+        Self { tree: RTree::new(), bounds: HashMap::new(), generation: 0 }
     }
 }
 
 impl<Id: Clone + Eq + Hash> SpatialIndex<Id> {
+    /// An empty index.
     pub fn new() -> Self {
         Self::default()
     }
@@ -92,27 +84,40 @@ impl<Id: Clone + Eq + Hash> SpatialIndex<Id> {
             }
         }
         let items: Vec<Entry<Id>> = bounds.iter().map(|(id, r)| Entry { id: id.clone(), env: to_env(r) }).collect();
-        Self { tree: RTree::bulk_load(items), bounds }
+        Self { tree: RTree::bulk_load(items), bounds, generation: 0 }
     }
 
     /// Replace the content with `entries` (see [`SpatialIndex::bulk_load`]).
     pub fn rebuild<I: IntoIterator<Item = (Id, Rect)>>(&mut self, entries: I) {
+        let generation = self.generation.wrapping_add(1);
         *self = Self::bulk_load(entries);
+        self.generation = generation;
     }
 
+    /// A number that grows with every change to the content (an insert that changes bounds, a removal, a clear,
+    /// a rebuild). A cache of something computed from the index keeps it and rebuilds when it differs.
+    pub fn generation(&self) -> u64 {
+        self.generation
+    }
+
+    /// Number of ids in the index.
     pub fn len(&self) -> usize {
         self.bounds.len()
     }
 
+    /// True when the index holds no id.
     pub fn is_empty(&self) -> bool {
         self.bounds.is_empty()
     }
 
+    /// Remove every entry.
     pub fn clear(&mut self) {
         self.tree = RTree::new();
         self.bounds.clear();
+        self.generation = self.generation.wrapping_add(1);
     }
 
+    /// True when `id` is in the index.
     pub fn contains(&self, id: &Id) -> bool {
         self.bounds.contains_key(id)
     }
@@ -137,6 +142,7 @@ impl<Id: Clone + Eq + Hash> SpatialIndex<Id> {
             self.tree.remove(&Entry { id: id.clone(), env: to_env(&old) });
         }
         self.tree.insert(Entry { id, env: to_env(&bounds) });
+        self.generation = self.generation.wrapping_add(1);
         Ok(previous)
     }
 
@@ -148,16 +154,14 @@ impl<Id: Clone + Eq + Hash> SpatialIndex<Id> {
         if !self.bounds.contains_key(id) {
             return Err(IndexError::NotFound);
         }
-        match self.insert(id.clone(), bounds)? {
-            Some(old) => Ok(old),
-            None => Err(IndexError::NotFound),
-        }
+        self.insert(id.clone(), bounds)?.ok_or(IndexError::NotFound)
     }
 
     /// Remove an id. Returns its bounds when it was present.
     pub fn remove(&mut self, id: &Id) -> Option<Rect> {
         let old = self.bounds.remove(id)?;
         self.tree.remove(&Entry { id: id.clone(), env: to_env(&old) });
+        self.generation = self.generation.wrapping_add(1);
         Some(old)
     }
 

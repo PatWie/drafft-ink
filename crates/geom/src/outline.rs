@@ -16,9 +16,13 @@ use crate::shapes::{DiamondShape, EllipseShape, PathShape, Polyline, RectShape};
 /// `dir` need not be a unit vector; the returned `t` is in units of `dir`.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Probe {
+    /// Start point.
     pub origin: Point,
+    /// Direction; not necessarily a unit vector.
     pub dir: Vec2,
+    /// Smallest parameter of the probe.
     pub t_min: f64,
+    /// Largest parameter of the probe.
     pub t_max: f64,
 }
 
@@ -88,6 +92,7 @@ impl Probe {
 /// An intersection of a [`Probe`] with an outline.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Hit {
+    /// Where the probe crosses the outline.
     pub point: Point,
     /// Parameter along the probe.
     pub t: f64,
@@ -99,6 +104,7 @@ pub struct Hit {
 /// The closest point of an outline to a query point.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Nearest {
+    /// The closest outline point.
     pub point: Point,
     /// Unsigned distance from the query point to `point`.
     pub distance: f64,
@@ -118,10 +124,12 @@ pub struct HitOpts {
 }
 
 impl HitOpts {
+    /// Options for a stroke-only shape.
     pub const fn stroke(tolerance: f64, stroke_width: f64) -> Self {
         Self { filled: false, tolerance, stroke_width }
     }
 
+    /// Options for a shape with a fill.
     pub const fn filled(tolerance: f64, stroke_width: f64) -> Self {
         Self { filled: true, tolerance, stroke_width }
     }
@@ -197,8 +205,9 @@ pub trait Outline {
             return false;
         }
         let c = aabb::corners(&rect);
-        for i in 0..4 {
-            let probe = Probe::segment(c[i], c[(i + 1) % 4]);
+        let next = c.iter().copied().cycle().skip(1);
+        for (a, b) in c.iter().copied().zip(next) {
+            let probe = Probe::segment(a, b);
             if probe.is_valid() && !self.intersect(&probe).is_empty() {
                 return true;
             }
@@ -215,10 +224,15 @@ pub trait Outline {
 /// Any primitive shape, for dispatch without generics.
 #[derive(Debug, Clone, PartialEq)]
 pub enum Primitive {
+    /// A rectangle.
     Rect(RectShape),
+    /// An ellipse.
     Ellipse(EllipseShape),
+    /// A diamond.
     Diamond(DiamondShape),
+    /// A polyline or polygon.
     Polyline(Polyline),
+    /// A bezier path.
     Path(PathShape),
 }
 
@@ -287,6 +301,25 @@ pub(crate) fn finish_hits(mut hits: Vec<Hit>) -> Vec<Hit> {
     hits.sort_by(|a, b| a.t.total_cmp(&b.t));
     hits.dedup_by(|b, a| (b.t - a.t).abs() <= 1e-9 * (1.0 + a.t.abs()));
     hits
+}
+
+/// Tolerance on the parameter range of a probe: a crossing this far outside it still counts.
+const RANGE_TOL: f64 = 1e-12;
+
+/// `t` clamped into `[t0, t1]`, or `None` when it is more than [`RANGE_TOL`] outside the range.
+pub(crate) fn clamp_to_range(t: f64, t0: f64, t1: f64) -> Option<f64> {
+    (t >= t0 - RANGE_TOL && t <= t1 + RANGE_TOL).then(|| t.clamp(t0, t1))
+}
+
+/// Real roots of `a t^2 + b t + c = 0`, smaller first; none when `a` is not positive or the
+/// discriminant is negative. A double root is reported once.
+pub(crate) fn quadratic_roots(a: f64, b: f64, c: f64) -> [Option<f64>; 2] {
+    let disc = b * b - 4.0 * a * c;
+    if a <= 0.0 || disc < 0.0 {
+        return [None, None];
+    }
+    let sq = disc.sqrt();
+    if sq == 0.0 { [Some(-b / (2.0 * a)), None] } else { [Some((-b - sq) / (2.0 * a)), Some((-b + sq) / (2.0 * a))] }
 }
 
 /// A unit vector, or zero for a zero or non-finite input.

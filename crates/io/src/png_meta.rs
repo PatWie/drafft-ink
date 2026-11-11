@@ -19,7 +19,7 @@ use flate2::Compression;
 use flate2::read::ZlibDecoder;
 use flate2::write::ZlibEncoder;
 
-use crate::error::IoError;
+use crate::error::{Expected, FormatName, IoError};
 use crate::limits::{MAX_EMBEDDED_SCENE_BYTES, MAX_PNG_BYTES};
 
 /// Keyword of the chunk (the same string the old app used).
@@ -40,12 +40,12 @@ fn chunks(png: &[u8]) -> Result<Vec<Chunk<'_>>, IoError> {
         return Err(IoError::Limit { what: "PNG", max: format!("{MAX_PNG_BYTES} bytes") });
     }
     if !png.starts_with(&SIGNATURE) {
-        return Err(IoError::WrongFormat { expected: "a PNG image", hint: "the PNG signature is missing".into() });
+        return Err(IoError::WrongFormat { expected: Expected::Png, hint: "the PNG signature is missing".into() });
     }
     let mut out = Vec::new();
     let mut pos = SIGNATURE.len();
     while pos < png.len() {
-        let bad = |what: &str| IoError::parse("png", format!("{what} at byte {pos}"));
+        let bad = |what: &str| IoError::parse(FormatName::Png, format!("{what} at byte {pos}"));
         let head = png.get(pos..pos + 8).ok_or_else(|| bad("a truncated chunk header"))?;
         let len = usize::try_from(u32::from_be_bytes([head[0], head[1], head[2], head[3]]))
             .map_err(|_| bad("a chunk length"))?;
@@ -71,8 +71,8 @@ fn crc(kind: &[u8; 4], data: &[u8]) -> u32 {
 
 fn deflate(data: &[u8]) -> Result<Vec<u8>, IoError> {
     let mut enc = ZlibEncoder::new(Vec::new(), Compression::default());
-    enc.write_all(data).map_err(|e| IoError::invalid("png", e.to_string()))?;
-    enc.finish().map_err(|e| IoError::invalid("png", e.to_string()))
+    enc.write_all(data).map_err(|e| IoError::invalid(FormatName::Png, e.to_string()))?;
+    enc.finish().map_err(|e| IoError::invalid(FormatName::Png, e.to_string()))
 }
 
 /// Inflates zlib data, refusing more than `max` bytes of output.
@@ -82,7 +82,7 @@ pub(crate) fn inflate_limited(data: &[u8], max: usize) -> Result<Vec<u8>, IoErro
     ZlibDecoder::new(data)
         .take(limit.saturating_add(1))
         .read_to_end(&mut out)
-        .map_err(|e| IoError::parse("png", format!("bad compressed text: {e}")))?;
+        .map_err(|e| IoError::parse(FormatName::Png, format!("bad compressed text: {e}")))?;
     if out.len() > max {
         return Err(IoError::Limit { what: "embedded scene", max: format!("{max} bytes") });
     }
@@ -127,7 +127,7 @@ pub fn embed_scene(png: &[u8], scene_json: &str) -> Result<Vec<u8>, IoError> {
         out.extend_from_slice(c.raw);
     }
     if !placed {
-        return Err(IoError::parse("png", "the PNG has no IDAT or IEND chunk"));
+        return Err(IoError::parse(FormatName::Png, "the PNG has no IDAT or IEND chunk"));
     }
     Ok(out)
 }
@@ -163,7 +163,8 @@ pub fn extract_scene(png: &[u8]) -> Result<Option<String>, IoError> {
                 };
                 let body = skip_nul(&skip_nul(rest));
                 let bytes = if flag == 1 { inflate(&body)? } else { body };
-                String::from_utf8(bytes).map_err(|_| IoError::parse("png", "the embedded scene is not UTF-8"))?
+                String::from_utf8(bytes)
+                    .map_err(|_| IoError::parse(FormatName::Png, "the embedded scene is not UTF-8"))?
             }
         };
         return Ok(Some(text));

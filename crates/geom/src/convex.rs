@@ -9,7 +9,7 @@
 use kurbo::Rect;
 use kurbo::{Point, Vec2};
 
-use crate::outline::{Hit, cross, unit};
+use crate::outline::{Hit, clamp_to_range, cross, quadratic_roots, unit};
 
 const MAX_N: usize = 4;
 const SECTOR_EPS: f64 = 1e-12;
@@ -69,10 +69,10 @@ impl Convex {
             arc: false,
         };
         let mut c = [blank; MAX_N];
-        for i in 0..n {
-            let prev = verts[(i + n - 1) % n];
-            let cur = verts[i];
-            let next = verts[(i + 1) % n];
+        let verts = &verts[..n];
+        let prevs = verts.iter().cycle().skip(n.saturating_sub(1));
+        let nexts = verts.iter().cycle().skip(1);
+        for (slot, ((&prev, &cur), &next)) in c.iter_mut().zip(prevs.zip(verts).zip(nexts)) {
             let (d1, d2) = (cur - prev, next - cur);
             let (l1, l2) = (d1.hypot(), d2.hypot());
             let (e1, e2) = (unit(d1), unit(d2));
@@ -88,7 +88,7 @@ impl Convex {
             };
             let center = if r > 0.0 { cur - e1 * tangent_len - n_in * r } else { cur };
             let big_r = r + offset;
-            c[i] = Corner { v: cur, center, radius: big_r, n_in, n_out, arc: big_r > 0.0 && turn > 1e-6 };
+            *slot = Corner { v: cur, center, radius: big_r, n_in, n_out, arc: big_r > 0.0 && turn > 1e-6 };
         }
         Convex { n, c, offset }
     }
@@ -96,6 +96,12 @@ impl Convex {
     #[inline]
     fn corners(&self) -> &[Corner] {
         &self.c[..self.n]
+    }
+
+    /// Each corner paired with the corner that follows it, so the pair spans one side.
+    fn sides(&self) -> impl Iterator<Item = (&Corner, &Corner)> {
+        let corners = self.corners();
+        corners.iter().zip(corners.iter().cycle().skip(1))
     }
 
     /// Is `w` (relative to a corner centre) in the sector swept by the arc?
@@ -148,9 +154,7 @@ impl Convex {
                 best = (q, d, normal);
             }
         };
-        for i in 0..self.n {
-            let k = &self.c[i];
-            let k2 = &self.c[(i + 1) % self.n];
+        for (k, k2) in self.sides() {
             if k.arc {
                 let w = p - k.center;
                 if Self::in_sector(k, w) {
@@ -171,9 +175,7 @@ impl Convex {
 
     pub(crate) fn intersect(&self, o: Point, d: Vec2, t0: f64, t1: f64, out: &mut Vec<Hit>) {
         let tol = 1e-12;
-        for i in 0..self.n {
-            let k = &self.c[i];
-            let k2 = &self.c[(i + 1) % self.n];
+        for (k, k2) in self.sides() {
             // Side from the end of this corner's arc to the start of the next one.
             let a = k.center + k.n_out * k.radius;
             let b = k2.center + k.n_out * k2.radius;
@@ -183,33 +185,18 @@ impl Convex {
                 let ao = a - o;
                 let t = cross(ao, e) / denom;
                 let s = cross(ao, d) / denom;
-                if (-tol..=1.0 + tol).contains(&s) && t >= t0 - tol && t <= t1 + tol {
-                    let t = t.clamp(t0, t1);
+                if let (true, Some(t)) = ((-tol..=1.0 + tol).contains(&s), clamp_to_range(t, t0, t1)) {
                     out.push(Hit { point: o + d * t, t, normal: k.n_out });
                 }
             }
             if k.arc {
-                let a2 = d.hypot2();
                 let oc = o - k.center;
-                let b2 = 2.0 * d.dot(oc);
-                let c2 = oc.hypot2() - k.radius * k.radius;
-                let disc = b2 * b2 - 4.0 * a2 * c2;
-                if disc >= 0.0 && a2 > 0.0 {
-                    let sq = disc.sqrt();
-                    let roots = if sq == 0.0 {
-                        [Some(-b2 / (2.0 * a2)), None]
-                    } else {
-                        [Some((-b2 - sq) / (2.0 * a2)), Some((-b2 + sq) / (2.0 * a2))]
-                    };
-                    for t in roots.into_iter().flatten() {
-                        if t >= t0 - tol && t <= t1 + tol {
-                            let t = t.clamp(t0, t1);
-                            let q = o + d * t;
-                            let w = q - k.center;
-                            if Self::in_sector(k, w) {
-                                out.push(Hit { point: q, t, normal: unit(w) });
-                            }
-                        }
+                let roots = quadratic_roots(d.hypot2(), 2.0 * d.dot(oc), oc.hypot2() - k.radius * k.radius);
+                for t in roots.into_iter().flatten().filter_map(|t| clamp_to_range(t, t0, t1)) {
+                    let q = o + d * t;
+                    let w = q - k.center;
+                    if Self::in_sector(k, w) {
+                        out.push(Hit { point: q, t, normal: unit(w) });
                     }
                 }
             }

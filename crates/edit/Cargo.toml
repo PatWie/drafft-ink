@@ -9,7 +9,7 @@ rust-version.workspace = true
 drafftink-geom = { path = "../geom" }
 drafftink-scene = { path = "../scene" }
 drafftink-profile = { path = "../profile" }
-kurbo.workspace = true
+drafftink-typeset = { path = "../typeset", default-features = false }
 thiserror.workspace = true
 serde.workspace = true
 serde_json.workspace = true

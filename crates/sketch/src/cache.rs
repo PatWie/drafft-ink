@@ -16,13 +16,16 @@ use crate::key::{SketchKey, sketch_key};
 use crate::output::SketchGeometry;
 use crate::sketch::sketch;
 
+/// Hit and miss counts of a [`SketchCache`].
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct CacheStats {
+    /// Lookups served from the cache.
     pub hits: u64,
     /// Number of times the geometry was generated.
     pub misses: u64,
 }
 
+/// The cache itself; see the module docs for how entries age out.
 #[derive(Debug)]
 pub struct SketchCache {
     current: HashMap<SketchKey, Arc<SketchGeometry>>,
@@ -72,18 +75,22 @@ impl SketchCache {
         self.current.insert(key, g);
     }
 
+    /// Entries held over both generations.
     pub fn len(&self) -> usize {
         self.current.len() + self.previous.len()
     }
 
+    /// True when no entry is held.
     pub fn is_empty(&self) -> bool {
         self.len() == 0
     }
 
+    /// Hit and miss counts since creation.
     pub fn stats(&self) -> CacheStats {
         self.stats
     }
 
+    /// Drop every entry. The counters are kept.
     pub fn clear(&mut self) {
         self.current.clear();
         self.previous.clear();

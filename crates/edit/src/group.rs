@@ -18,24 +18,22 @@
 //! Selection rules (which ids and groups a click selects, entering and leaving a group, marquee) are in
 //! [`selection`]. The shared unit and relation helpers are in [`units`].
 
-use drafftink_scene::{Element, ElementId, GroupId, Kind, SceneRead, SceneTx, StoreError, limits};
+use drafftink_scene::{Element, ElementId, GroupId, IdSource, Kind, SceneRead, SceneTx, StoreError, limits};
 
+use crate::target::TargetError;
 use crate::zorder::{Place, ZOrderError, ZReport, move_block};
 
 pub mod selection;
 pub mod units;
 
-use units::{Relations, ensure_unlocked, impl_from_target, primaries, with_companions};
+use units::{Relations, ensure_unlocked, primaries, with_companions};
 
 /// Why a group operation was refused.
 #[derive(Debug, Clone, PartialEq, thiserror::Error)]
 pub enum GroupError {
-    /// No live element has this id.
-    #[error("element {0} does not exist or is deleted")]
-    NotFound(ElementId),
-    /// Locked elements cannot be grouped or ungrouped.
-    #[error("{} element(s) are locked ({}). Unlock them first", .0.len(), units::ids_text(.0))]
-    Locked(Vec<ElementId>),
+    /// An element does not exist, is deleted, or is locked.
+    #[error(transparent)]
+    Target(#[from] TargetError),
     /// Fewer than two units were given.
     #[error("grouping needs at least 2 elements, and {have} were given. Select more")]
     TooFew {
@@ -78,7 +76,6 @@ pub enum GroupError {
     #[error(transparent)]
     ZOrder(#[from] ZOrderError),
 }
-impl_from_target!(GroupError);
 
 /// Longest group name, in characters.
 pub const MAX_GROUP_NAME_CHARS: usize = 64;
@@ -104,18 +101,56 @@ pub struct GroupReport {
 /// Groups the units of `ids` under `new_group`.
 ///
 /// `editing` is the editing group: units are the next level down and the new group sits just inside it.
-/// The caller supplies a fresh `new_group` (from an `IdSource`).
+/// The caller supplies a fresh `new_group` (from an `IdSource`). A caller that draws ids from a source
+/// should use [`group_with_ids`], which takes an id only when the grouping can succeed.
 pub fn group<T: SceneTx>(
     tx: &mut T,
     ids: &[ElementId],
     editing: Option<&GroupId>,
     new_group: GroupId,
 ) -> Result<GroupReport, GroupError> {
+    group_by(tx, ids, editing, |tx| {
+        if tx.iter_all().any(|e| e.group_ids.contains(&new_group)) {
+            return Err(GroupError::GroupIdInUse(new_group));
+        }
+        Ok(new_group)
+    })
+}
+
+/// How many ids [`group_with_ids`] draws before it gives up on finding an unused one.
+const GROUP_ID_ATTEMPTS: usize = 8;
+
+/// Like [`group`], but draws the id of the new group from `source` after every rule has passed. A
+/// refused grouping therefore takes no id, and the next successful one gets the id it would have had
+/// anyway.
+pub fn group_with_ids<T: SceneTx, I: IdSource>(
+    tx: &mut T,
+    ids: &[ElementId],
+    editing: Option<&GroupId>,
+    source: &mut I,
+) -> Result<GroupReport, GroupError> {
+    group_by(tx, ids, editing, |tx| {
+        let in_use = |g: &GroupId| tx.iter_all().any(|e| e.group_ids.contains(g));
+        let mut candidate = source.group_id();
+        for _ in 1..GROUP_ID_ATTEMPTS {
+            if !in_use(&candidate) {
+                break;
+            }
+            candidate = source.group_id();
+        }
+        if in_use(&candidate) { Err(GroupError::GroupIdInUse(candidate)) } else { Ok(candidate) }
+    })
+}
+
+/// The grouping itself. `new_group` is called once, after the rules have passed and before the first write.
+fn group_by<T: SceneTx>(
+    tx: &mut T,
+    ids: &[ElementId],
+    editing: Option<&GroupId>,
+    new_group: impl FnOnce(&T) -> Result<GroupId, GroupError>,
+) -> Result<GroupReport, GroupError> {
     let rel = Relations::build(&*tx);
     let prim = primaries(&*tx, ids)?;
-    if tx.iter_all().any(|e| e.group_ids.contains(&new_group)) {
-        return Err(GroupError::GroupIdInUse(new_group));
-    }
     if let Some(g) = editing {
         for id in &prim {
             if tx.get(id).is_some_and(|e| !rel.is_group(g) || !e.group_ids.contains(g)) {
@@ -131,16 +166,18 @@ pub fn group<T: SceneTx>(
     };
     let all = with_companions(&*tx, &rel, &members, false);
     ensure_unlocked(&*tx, &all)?;
+    let member_set: std::collections::HashSet<&ElementId> = members.iter().collect();
     for m in &members {
         let Some(e) = tx.get(m) else { continue };
-        if e.tag() == Kind::Frame && rel.children(m).iter().any(|c| members.contains(c)) {
+        if e.tag() == Kind::Frame && rel.children(m).iter().any(|c| member_set.contains(c)) {
             return Err(GroupError::FrameAndChildren { frame: m.clone() });
         }
-        let stack = rel.stack(e).len();
+        let stack = rel.stack(e).count();
         if stack + 1 > limits::MAX_GROUP_DEPTH {
             return Err(GroupError::TooDeep { id: m.clone(), max: limits::MAX_GROUP_DEPTH });
         }
     }
+    let new_group = new_group(&*tx)?;
     // Members from different frames leave their frames first.
     let frames: Vec<Option<ElementId>> = members.iter().filter_map(|m| tx.get(m)).map(|e| e.frame_id.clone()).collect();
     let same_frame = frames.windows(2).all(|w| w[0] == w[1]);
@@ -228,11 +265,10 @@ pub fn ungroup<T: SceneTx>(
     members.sort();
     members.dedup();
     ensure_unlocked(&*tx, &members)?;
+    let keys: Vec<String> = targets.iter().map(name_key).collect();
     for id in &members {
-        let keys: Vec<String> = targets.iter().map(name_key).collect();
-        let t = targets.clone();
-        tx.update(id, move |e| {
-            e.group_ids.retain(|g| !t.contains(g));
+        tx.update(id, |e| {
+            e.group_ids.retain(|g| !targets.contains(g));
             remove_custom(e, &keys);
         })?;
     }
@@ -285,12 +321,11 @@ pub fn set_group_name<T: SceneTx>(
     ensure_unlocked(&*tx, &members)?;
     let key = name_key(group);
     for m in &members {
-        let key = key.clone();
         tx.update(m, |e| match name {
             Some(n) => {
-                e.custom.get_or_insert_with(Default::default).insert(key, n.into());
+                e.custom.get_or_insert_with(Default::default).insert(key.clone(), n.into());
             }
-            None => remove_custom(e, &[key]),
+            None => remove_custom(e, std::slice::from_ref(&key)),
         })?;
     }
     Ok(members)

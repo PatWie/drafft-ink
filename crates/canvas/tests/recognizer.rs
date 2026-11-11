@@ -246,12 +246,12 @@ fn touch_long_press_by_tick_and_by_event_time() {
     let mut out = Vec::new();
     r.handle(&t(Down, 50.0, 0.0).into(), &fake, &mut out);
     assert_eq!(r.next_deadline(), Some(500.0));
-    r.tick(499.0, &fake, &mut out);
+    r.tick(499.0, &mut out);
     assert_eq!(names(&out), ["press"]);
-    r.tick(500.0, &fake, &mut out);
+    r.tick(500.0, &mut out);
     assert_eq!(names(&out), ["press", "longpress"]);
     assert_eq!(r.next_deadline(), None, "only once");
-    r.tick(900.0, &fake, &mut out);
+    r.tick(900.0, &mut out);
     r.handle(&t(Up, 50.0, 1000.0).into(), &fake, &mut out);
     assert_eq!(names(&out), ["press", "longpress"], "the release after a long press is not a click");
 
@@ -263,7 +263,7 @@ fn touch_long_press_by_tick_and_by_event_time() {
     // Moving past the slop first makes it a drag and cancels the long press.
     let mut r = Recognizer::default();
     let mut out = run(&mut r, &fake, &[t(Down, 50.0, 0.0), t(Move, 70.0, 100.0)]);
-    r.tick(900.0, &fake, &mut out);
+    r.tick(900.0, &mut out);
     assert!(!names(&out).contains(&"longpress") && names(&out).contains(&"dragstart"));
     assert_eq!(r.next_deadline(), None);
 }
@@ -274,15 +274,15 @@ fn a_mouse_has_no_long_press_unless_enabled() {
     let mut r = Recognizer::default();
     let mut out = run(&mut r, &fake, &[m(Down, 50.0, 50.0, 0.0)]);
     assert_eq!(r.next_deadline(), None);
-    r.tick(5000.0, &fake, &mut out);
+    r.tick(5000.0, &mut out);
     assert_eq!(names(&out), ["press"]);
     let mut r = Recognizer::new(InputConfig { long_press_mouse: true, ..InputConfig::default() });
     let mut out = run(&mut r, &fake, &[m(Down, 50.0, 50.0, 0.0)]);
-    r.tick(600.0, &fake, &mut out);
+    r.tick(600.0, &mut out);
     assert_eq!(names(&out), ["press", "longpress"]);
     let mut r = Recognizer::new(InputConfig { long_press_ms: None, long_press_mouse: true, ..InputConfig::default() });
     let mut out = run(&mut r, &fake, &[m(Down, 50.0, 50.0, 0.0)]);
-    r.tick(6000.0, &fake, &mut out);
+    r.tick(6000.0, &mut out);
     assert_eq!(names(&out), ["press"]);
 }
 
@@ -669,7 +669,7 @@ fn hostile_events_do_not_panic_or_corrupt_state() {
     );
     assert_eq!(names(&out), ["hover"]);
     let mut out = Vec::new();
-    r.tick(f64::NAN, &fake, &mut out);
+    r.tick(f64::NAN, &mut out);
     r.handle(&InputEvent::CancelAll, &fake, &mut out);
     assert_eq!(out.len(), 0);
 }
@@ -686,4 +686,15 @@ fn a_press_after_a_lost_release_starts_over() {
     );
     assert_eq!(names(&out), ["press", "dragstart", "dragupdate", "dragcancel", "press", "click", "hover"]);
     assert!(r.is_idle());
+}
+
+#[test]
+fn is_dragging_is_true_only_while_content_is_dragged() {
+    let fake = Fake::new();
+    let mut r = Recognizer::default();
+    assert!(!r.is_dragging());
+    run(&mut r, &fake, &[m(Down, 50.0, 50.0, 0.0), mh(60.0, 50.0, 10.0), mh(100.0, 80.0, 20.0)]);
+    assert!(r.is_dragging());
+    run(&mut r, &fake, &[m(Up, 100.0, 80.0, 30.0)]);
+    assert!(!r.is_dragging());
 }

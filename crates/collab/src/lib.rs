@@ -16,6 +16,7 @@
 //!
 //! Builds for wasm32. No `unwrap`, `expect`, `panic!` or `unsafe` outside tests.
 
+#![warn(missing_docs)]
 #![cfg_attr(test, allow(clippy::unwrap_used, clippy::expect_used, clippy::panic))]
 
 mod awareness;
@@ -31,8 +32,8 @@ mod web;
 
 pub use awareness::{LocalPresence, Peer, PeerTable, TRAIL_MAX_POINTS, TRAIL_TTL_MS, Trail};
 pub use client::{
-    ACK_TIMEOUT_MS, AuthToken, CONNECT_TIMEOUT_MS, CollabClient, CollabConfig, CollabEvent, ConfigError, FollowEnd,
-    JOIN_TIMEOUT_MS, MAX_INFLIGHT, Output, RESYNC_MAX_GAP_MS, RESYNC_MIN_GAP_MS, RemoteBatch, RemoteKind,
+    ACK_TIMEOUT_MS, AuthToken, CONNECT_TIMEOUT_MS, ChangeCounts, CollabClient, CollabConfig, CollabEvent, ConfigError,
+    FollowEnd, JOIN_TIMEOUT_MS, MAX_INFLIGHT, Output, RESYNC_MAX_GAP_MS, RESYNC_MIN_GAP_MS, RemoteBatch, RemoteKind,
     SEND_DEBOUNCE_MS, STABLE_MS, SYNC_REPLY_TIMEOUT_MS, Stats, TrimmedChoice,
 };
 #[cfg(not(target_arch = "wasm32"))]

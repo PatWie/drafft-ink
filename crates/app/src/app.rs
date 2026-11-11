@@ -10,7 +10,7 @@ use std::time::Duration;
 use drafftink_bridge::BridgeHost;
 use drafftink_canvas::Camera;
 use drafftink_engine::cmd::view::SetViewportArgs;
-use drafftink_engine::interact::{Badge, Interaction, InteractionOverlay, Outcome, UiRequest};
+use drafftink_engine::interact::{Badge, ContextTarget, Interaction, InteractionOverlay, Outcome, UiRequest};
 use drafftink_engine::state::TabId;
 use drafftink_engine::{Origin, Refusal, Session};
 use drafftink_geom::kurbo::{Point, Size};
@@ -67,6 +67,8 @@ pub struct App {
     clipboard: SharedClipboard,
     bridge: Option<BridgeHost>,
     notices: Vec<String>,
+    /// Web addresses a link click asked for; the next event or frame hands them to the shell.
+    open_urls: Vec<String>,
     held: Held,
     /// A pointer gesture began on the canvas and has not ended.
     canvas_drag: bool,
@@ -103,6 +105,7 @@ impl App {
             clipboard,
             bridge,
             notices,
+            open_urls: Vec::new(),
             held: Held::default(),
             canvas_drag: false,
             canvas_rect: egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(1280.0, 720.0)),
@@ -174,9 +177,18 @@ impl App {
                 });
                 self.ui.state.open_equation(latex.unwrap_or_default());
             }
-            UiRequest::OpenContextMenu { at, .. } => {
+            UiRequest::OpenUrl { url } => self.open_urls.push(url.clone()),
+            UiRequest::OpenContextMenu { at, target } => {
                 let origin = self.canvas_rect.min;
-                self.ui.state.open_context_menu(egui::pos2(at.x as f32 + origin.x, at.y as f32 + origin.y));
+                let screen = egui::pos2(at.x as f32 + origin.x, at.y as f32 + origin.y);
+                let world = self.canvas_to_world(*at);
+                let world = Some([world.x, world.y]);
+                match target {
+                    ContextTarget::Locked { element } => {
+                        self.ui.state.open_context_menu_on_locked(screen, world, element.as_str());
+                    }
+                    ContextTarget::Canvas | ContextTarget::Selection => self.ui.state.open_context_menu(screen, world),
+                }
             }
         }
     }
@@ -192,13 +204,17 @@ impl App {
 
     /// Where the pointer is in world units, if it was seen over the canvas.
     fn pointer_world(&self) -> Option<Point> {
-        let p = self.interaction.pointer_position()?;
+        self.interaction.pointer_position().map(|p| self.canvas_to_world(p))
+    }
+
+    /// A point in canvas points (origin at the canvas corner) as world units.
+    fn canvas_to_world(&self, p: Point) -> Point {
         let cam = self.interaction.camera();
         let size = self.canvas_rect.size();
-        Some(Point::new(
+        Point::new(
             (p.x - f64::from(size.x) / 2.0) / cam.zoom + cam.scroll.x,
             (p.y - f64::from(size.y) / 2.0) / cam.zoom + cam.scroll.y,
-        ))
+        )
     }
 
     fn handle_pointer(&mut self, cx: &mut EventCx<'_>, s: drafftink_gpu::PointerSample) -> Repaint {
@@ -231,6 +247,9 @@ impl App {
         let events = input::pointer_events(&s, &mut self.held, self.canvas_rect.min, now);
         let reason = if s.phase == PointerPhase::Hover { RedrawReason::HoverChange } else { RedrawReason::Gesture };
         let mut need = self.canvas_input(&events);
+        for url in self.open_urls.drain(..) {
+            cx.open_url(url, true);
+        }
         if matches!(s.phase, PointerPhase::Up | PointerPhase::Cancel) && !self.held.any() {
             self.canvas_drag = false;
         }
@@ -273,7 +292,7 @@ impl App {
             (None, Some(_)) => self.editor = None,
             (Some(edit), None) if !self.ui.state.modal_open() => {
                 if let Some(id) = &edit.element {
-                    let req = UiRequest::OpenTextEditor { element: Some(id.clone()), at: Point::ZERO };
+                    let req = UiRequest::OpenTextEditor { element: Some(id.clone()), at: Point::ZERO, width: None };
                     let is_math = self.session.store().get(id).is_some_and(|e| matches!(e.kind, ElementKind::Math(_)));
                     if !is_math {
                         self.editor = TextEditor::open(&self.session, &req);
@@ -695,6 +714,9 @@ impl ShellApp for App {
         let size = self.canvas_rect.size();
         self.sync_viewport(Size::new(f64::from(size.x), f64::from(size.y)), f64::from(cx.view.scale));
 
+        for url in self.open_urls.drain(..) {
+            cx.open_url(url, true);
+        }
         // Work that arrived while no frame ran.
         self.drain_inbox();
         if let Some(host) = self.bridge.as_mut() {

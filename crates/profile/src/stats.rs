@@ -20,6 +20,51 @@ pub const STATS_SCHEMA: &str = "drafftink.perf";
 /// Spans listed in `PerfStats.spans`, most self time first.
 pub const MAX_SPAN_ROWS: usize = 64;
 
+/// Why a `PerfStats` or `ScenarioReport` document could not be read.
+#[derive(Debug, thiserror::Error)]
+pub enum DocumentError {
+    /// The text is not JSON, or does not have the fields of the document.
+    #[error("not a {what} document: {source}")]
+    Json {
+        /// The kind of document that was expected.
+        what: &'static str,
+        /// The parser's error.
+        source: serde_json::Error,
+    },
+    /// The `schema` field names a different kind of document.
+    #[error("schema is \"{found}\", expected \"{expected}\"")]
+    Schema {
+        /// The value in the document.
+        found: String,
+        /// The value this reader accepts.
+        expected: &'static str,
+    },
+    /// The producer is newer than this reader.
+    #[error("{what} version {found} is newer than this reader ({SCHEMA_VERSION})")]
+    Newer {
+        /// The kind of document.
+        what: &'static str,
+        /// The `version` in the document.
+        found: u32,
+    },
+}
+
+/// Check the `schema` and `version` header shared by every document of this crate.
+pub(crate) fn check_header(
+    what: &'static str,
+    found_schema: &str,
+    expected_schema: &'static str,
+    version: u32,
+) -> Result<(), DocumentError> {
+    if found_schema != expected_schema {
+        return Err(DocumentError::Schema { found: found_schema.to_owned(), expected: expected_schema });
+    }
+    if version > SCHEMA_VERSION {
+        return Err(DocumentError::Newer { what, found: version });
+    }
+    Ok(())
+}
+
 /// A snapshot of everything the profiler knows. Returned by `profile::snapshot()` and by the
 /// read-only `perf.stats` command; serialized as JSON for the drivers.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -96,14 +141,10 @@ impl PerfStats {
 
     /// Parse JSON produced by [`Self::to_json`]. Unknown fields are ignored; a producer with a
     /// newer major `version` is rejected so a gate never reads a layout it does not know.
-    pub fn from_json(json: &str) -> Result<Self, String> {
-        let stats: Self = serde_json::from_str(json).map_err(|e| format!("not a PerfStats document: {e}"))?;
-        if stats.schema != STATS_SCHEMA {
-            return Err(format!("schema is \"{}\", expected \"{STATS_SCHEMA}\"", stats.schema));
-        }
-        if stats.version > SCHEMA_VERSION {
-            return Err(format!("PerfStats version {} is newer than this reader ({SCHEMA_VERSION})", stats.version));
-        }
+    pub fn from_json(json: &str) -> Result<Self, DocumentError> {
+        const WHAT: &str = "PerfStats";
+        let stats: Self = serde_json::from_str(json).map_err(|source| DocumentError::Json { what: WHAT, source })?;
+        check_header(WHAT, &stats.schema, STATS_SCHEMA, stats.version)?;
         Ok(stats)
     }
 
@@ -329,11 +370,11 @@ mod tests {
         v["added_later"] = serde_json::json!({"x": 1});
         assert!(PerfStats::from_json(&v.to_string()).is_ok());
         v["version"] = serde_json::json!(SCHEMA_VERSION + 1);
-        assert!(PerfStats::from_json(&v.to_string()).unwrap_err().contains("newer"));
+        assert!(matches!(PerfStats::from_json(&v.to_string()), Err(DocumentError::Newer { .. })));
         v["version"] = serde_json::json!(SCHEMA_VERSION);
         v["schema"] = serde_json::json!("something.else");
-        assert!(PerfStats::from_json(&v.to_string()).unwrap_err().contains("schema"));
-        assert!(PerfStats::from_json("[]").is_err());
+        assert!(matches!(PerfStats::from_json(&v.to_string()), Err(DocumentError::Schema { .. })));
+        assert!(matches!(PerfStats::from_json("[]"), Err(DocumentError::Json { .. })));
     }
 
     #[test]

@@ -56,7 +56,11 @@ impl Cache {
         self.entries
             .iter()
             .filter(|((n, _), _)| *n == ns)
-            .map(|((_, key), e)| StoredInfo { name: key.clone(), size: e.bytes.len() as u64, modified_ms: e.modified_ms })
+            .map(|((_, key), e)| StoredInfo {
+                name: key.clone(),
+                size: e.bytes.len() as u64,
+                modified_ms: e.modified_ms,
+            })
             .collect()
     }
 
@@ -147,7 +151,8 @@ mod tests {
         c.put(Ns::Documents, "a", b"new", 2);
         c.requeue(failed);
         let batch = c.take_pending();
-        let bytes = |k: &str| batch.get(&(Ns::Documents, k.to_owned())).and_then(|w| w.as_ref().map(|e| e.bytes.clone()));
+        let bytes =
+            |k: &str| batch.get(&(Ns::Documents, k.to_owned())).and_then(|w| w.as_ref().map(|e| e.bytes.clone()));
         assert_eq!(bytes("a"), Some(b"new".to_vec()));
         assert_eq!(bytes("b"), Some(b"keep".to_vec()));
     }

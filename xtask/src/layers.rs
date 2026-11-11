@@ -71,6 +71,7 @@ pub const TABLE: &[(&str, Class)] = &[
     // apps
     ("drafftink", Class::App),
     ("drafftink-web", Class::App),
+    ("drafftink-canvas-js", Class::App),
     ("drafftink-server", Class::App),
     ("drafftink-cli", Class::App),
     ("drafftink-mcp", Class::App),
@@ -80,7 +81,7 @@ pub const TABLE: &[(&str, Class)] = &[
 
 /// Apps (and other non-library packages) that also build for wasm32-unknown-unknown, on top of
 /// every crate at L0 to L5.
-pub const WASM_EXTRA: &[&str] = &["drafftink-app", "drafftink-web"];
+pub const WASM_EXTRA: &[&str] = &["drafftink-app", "drafftink-web", "drafftink-canvas-js"];
 
 /// A same-layer edge that is allowed, with the reason. Earlier name may be used by the later one.
 /// Keep this list short: each entry is a hole in the layering.

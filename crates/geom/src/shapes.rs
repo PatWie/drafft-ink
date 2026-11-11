@@ -11,7 +11,7 @@ use crate::aabb;
 use crate::convex::Convex;
 use crate::ellipse::LocalEllipse;
 use crate::obox::OrientedBox;
-use crate::outline::{Hit, Nearest, Outline, Probe, cross, finish_hits, unit};
+use crate::outline::{Hit, Nearest, Outline, Probe, clamp_to_range, cross, finish_hits, unit};
 use crate::transform::ElementFrame;
 
 // ---------------------------------------------------------------------------------------------
@@ -91,25 +91,32 @@ macro_rules! framed_outline {
 /// gap" outline: an arrow end bound in orbit mode sits on the rectangle offset by the gap.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct RectShape {
+    /// The oriented box the shape is inscribed in.
     pub frame: OrientedBox,
+    /// Corner radius; clamped to half the shorter side.
     pub corner_radius: f64,
+    /// Distance the outline is pushed outward (0 for the shape itself).
     pub offset: f64,
 }
 
 impl RectShape {
+    /// A sharp-cornered rectangle filling `frame`.
     pub fn new(frame: OrientedBox) -> Self {
         Self { frame, corner_radius: 0.0, offset: 0.0 }
     }
 
+    /// An unrotated rectangle covering `r`.
     pub fn from_rect(r: Rect) -> Self {
         Self::new(OrientedBox::from_rect(r))
     }
 
+    /// The same rectangle with rounded corners.
     pub fn with_corner_radius(mut self, r: f64) -> Self {
         self.corner_radius = r;
         self
     }
 
+    /// The same rectangle with its outline pushed outward by `d`.
     pub fn with_offset(mut self, d: f64) -> Self {
         self.offset = d;
         self
@@ -129,21 +136,27 @@ framed_outline!(RectShape, |s| s.convex());
 /// A diamond (rhombus) whose vertices are the midpoints of the sides of its box.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct DiamondShape {
+    /// The oriented box the diamond is inscribed in.
     pub frame: OrientedBox,
+    /// Corner radius of the vertices.
     pub corner_radius: f64,
+    /// Distance the outline is pushed outward (0 for the shape itself).
     pub offset: f64,
 }
 
 impl DiamondShape {
+    /// A sharp-cornered diamond inscribed in `frame`.
     pub fn new(frame: OrientedBox) -> Self {
         Self { frame, corner_radius: 0.0, offset: 0.0 }
     }
 
+    /// The same diamond with rounded vertices.
     pub fn with_corner_radius(mut self, r: f64) -> Self {
         self.corner_radius = r;
         self
     }
 
+    /// The same diamond with its outline pushed outward by `d`.
     pub fn with_offset(mut self, d: f64) -> Self {
         self.offset = d;
         self
@@ -168,15 +181,19 @@ framed_outline!(DiamondShape, |s| s.convex());
 /// An ellipse inscribed in its box. `offset` enlarges both semi-axes by that distance.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct EllipseShape {
+    /// The oriented box the ellipse is inscribed in.
     pub frame: OrientedBox,
+    /// Distance both semi-axes are enlarged by (0 for the shape itself).
     pub offset: f64,
 }
 
 impl EllipseShape {
+    /// An ellipse inscribed in `frame`.
     pub fn new(frame: OrientedBox) -> Self {
         Self { frame, offset: 0.0 }
     }
 
+    /// The same ellipse with both semi-axes enlarged by `d`.
     pub fn with_offset(mut self, d: f64) -> Self {
         self.offset = d;
         self
@@ -201,11 +218,14 @@ framed_outline!(EllipseShape, |s| s.local());
 /// A polyline, or a polygon when `closed`. A closed polyline needs three points to enclose area.
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct Polyline {
+    /// The vertices.
     pub points: Vec<Point>,
+    /// True for a polygon: the last point joins the first.
     pub closed: bool,
 }
 
 impl Polyline {
+    /// A polyline, or a polygon when `closed`.
     pub fn new(points: Vec<Point>, closed: bool) -> Self {
         Self { points, closed }
     }
@@ -216,6 +236,7 @@ impl Polyline {
         Self::new(local_points.iter().map(|p| a * *p).collect(), closed)
     }
 
+    /// The polyline with every point mapped through `a`.
     pub fn transformed(&self, a: Affine) -> Self {
         Self::new(self.points.iter().map(|p| a * *p).collect(), self.closed)
     }
@@ -233,37 +254,26 @@ impl Polyline {
         }
     }
 
-    fn segment(&self, i: usize) -> (Point, Point) {
-        let n = self.points.len();
-        (self.points[i], self.points[(i + 1) % n])
+    /// The segments in order, including the closing one of an enclosing polygon.
+    fn segments(&self) -> impl Iterator<Item = (Point, Point)> + '_ {
+        let next = self.points.iter().copied().cycle().skip(1);
+        self.points.iter().copied().zip(next).take(self.segment_count())
     }
 
     /// +1 when the polygon runs clockwise on screen (positive shoelace sum in y-down), else -1.
     fn orientation(&self) -> f64 {
-        let n = self.points.len();
-        let mut sum = 0.0;
-        for i in 0..n {
-            let (a, b) = (self.points[i], self.points[(i + 1) % n]);
-            sum += a.x * b.y - b.x * a.y;
-        }
+        let sum: f64 = self.segments().map(|(a, b)| a.x * b.y - b.x * a.y).sum();
         if sum >= 0.0 { 1.0 } else { -1.0 }
     }
 
     /// Total length of the outline.
     pub fn length(&self) -> f64 {
-        (0..self.segment_count())
-            .map(|i| {
-                let (a, b) = self.segment(i);
-                (b - a).hypot()
-            })
-            .sum()
+        self.segments().map(|(a, b)| (b - a).hypot()).sum()
     }
 
     fn winding(&self, p: Point) -> i32 {
-        let n = self.points.len();
         let mut w = 0;
-        for i in 0..n {
-            let (a, b) = (self.points[i], self.points[(i + 1) % n]);
+        for (a, b) in self.segments() {
             if a.y <= p.y {
                 if b.y > p.y && cross(b - a, p - a) > 0.0 {
                     w += 1;
@@ -313,8 +323,7 @@ impl Outline for Polyline {
         }
         let orient = if self.encloses() { self.orientation() } else { 1.0 };
         let mut best: Option<Nearest> = None;
-        for i in 0..self.segment_count() {
-            let (a, b) = self.segment(i);
+        for (a, b) in self.segments() {
             let e = b - a;
             let l2 = e.hypot2();
             let s = if l2 > 0.0 { ((p - a).dot(e) / l2).clamp(0.0, 1.0) } else { 0.0 };
@@ -336,8 +345,7 @@ impl Outline for Polyline {
         let (o, d) = (probe.origin, probe.dir);
         let tol = 1e-12;
         let mut out = Vec::new();
-        for i in 0..self.segment_count() {
-            let (a, b) = self.segment(i);
+        for (a, b) in self.segments() {
             let e = b - a;
             let denom = cross(d, e);
             if e.hypot2() == 0.0 || denom.abs() <= 1e-14 * d.hypot() * e.hypot() {
@@ -346,8 +354,7 @@ impl Outline for Polyline {
             let ao = a - o;
             let t = cross(ao, e) / denom;
             let s = cross(ao, d) / denom;
-            if (-tol..=1.0 + tol).contains(&s) && t >= probe.t_min - tol && t <= probe.t_max + tol {
-                let t = t.clamp(probe.t_min, probe.t_max);
+            if let (true, Some(t)) = ((-tol..=1.0 + tol).contains(&s), clamp_to_range(t, probe.t_min, probe.t_max)) {
                 let u = unit(e);
                 out.push(Hit { point: o + d * t, t, normal: Vec2::new(u.y, -u.x) * orient });
             }
@@ -364,21 +371,24 @@ impl Outline for Polyline {
 /// closed implicitly for the fill, as in SVG.
 #[derive(Debug, Clone, PartialEq)]
 pub struct PathShape {
+    /// The path, in world space.
     pub path: BezPath,
 }
 
 impl PathShape {
+    /// A shape over `path`.
     pub fn new(path: BezPath) -> Self {
         Self { path }
     }
 
+    /// The path mapped through `a`.
     pub fn transformed(&self, a: Affine) -> Self {
-        Self::new(a * self.path.clone())
+        Self::new(a * &self.path)
     }
 
     /// Place a path stored in element-local space into world space.
     pub fn from_frame(frame: &ElementFrame, local: &BezPath) -> Self {
-        Self::new(frame.to_world() * local.clone())
+        Self::new(frame.to_world() * local)
     }
 
     fn el_finite(el: &PathEl) -> bool {

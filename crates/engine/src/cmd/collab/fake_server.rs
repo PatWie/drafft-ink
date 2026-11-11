@@ -35,7 +35,8 @@ impl Default for FakeServer {
 impl FakeServer {
     /// A server with an empty document.
     pub fn new() -> Self {
-        Self { store: LoroStore::with_config(LoroConfig { peer_id: Some(u64::MAX - 1), ..LoroConfig::default() }), links: Vec::new() }
+        Self { store: LoroStore::with_config(LoroConfig { peer_id: Some(u64::MAX - 1), ..LoroConfig::default() })
+                .unwrap_or_default(), links: Vec::new() }
     }
 
     /// Serves the connections `net` opened since the last call.
@@ -141,7 +142,7 @@ impl FakeServer {
                 room,
                 client_id,
                 peers,
-                server_version: self.store.version_vector(),
+                server_version: self.store.version_vector().unwrap_or_default(),
                 limits: Limits::default(),
             },
         );
@@ -155,6 +156,6 @@ impl FakeServer {
             Err(DocError::HistoryTrimmed) => (SyncKind::Snapshot, self.store.export_snapshot().unwrap_or_default()),
             Err(_) => return,
         };
-        self.send(i, &ServerMessage::SyncResponse { kind, data, server_version: self.store.version_vector() });
+        self.send(i, &ServerMessage::SyncResponse { kind, data, server_version: self.store.version_vector().unwrap_or_default() });
     }
 }

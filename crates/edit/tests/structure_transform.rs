@@ -5,13 +5,14 @@ mod structure_support;
 
 use std::f64::consts::{FRAC_PI_2, PI};
 
+use drafftink_edit::TargetError;
 use drafftink_edit::group;
 use drafftink_edit::transform::{
     self, BoundsSpec, End, ResizeSpec, RotateMode, TransformError, geometry::world_bounds, geometry::world_points,
 };
+use drafftink_geom::kurbo::{Point, Vec2};
 use drafftink_geom::select::{BoxHandle, Corner, Edge};
 use drafftink_scene::*;
-use kurbo::{Point, Vec2};
 use structure_support::*;
 
 fn br(dx: f64, dy: f64) -> ResizeSpec {
@@ -87,12 +88,12 @@ fn locked_elements_refuse_everything_and_change_nothing() {
     let mut s = scene(vec![rect("a", 0.0, 0.0, 10.0, 10.0), rect("b", 50.0, 0.0, 10.0, 10.0).locked()]);
     let rev = s.revision();
     let r = run(&mut s, |tx| transform::move_by(tx, &ids(&["a", "b"]), Vec2::new(1.0, 1.0)));
-    assert!(matches!(r, Err(TransformError::Locked(ref v)) if v == &ids(&["b"])));
+    assert!(matches!(r, Err(TransformError::Target(TargetError::Locked(ref v))) if v == &ids(&["b"])));
     assert_eq!(s.revision(), rev);
     let r = run(&mut s, |tx| transform::rotate(tx, &ids(&["a", "b"]), 1.0, RotateMode::By, None));
-    assert!(matches!(r, Err(TransformError::Locked(_))));
+    assert!(matches!(r, Err(TransformError::Target(TargetError::Locked(_)))));
     let r = run(&mut s, |tx| transform::resize(tx, &ids(&["a", "b"]), br(5.0, 5.0)));
-    assert!(matches!(r, Err(TransformError::Locked(_))));
+    assert!(matches!(r, Err(TransformError::Target(TargetError::Locked(_)))));
 }
 
 #[test]
@@ -113,11 +114,11 @@ fn hostile_numbers_are_refused_without_changes() {
     ));
     assert!(matches!(
         run(&mut s, |tx| transform::move_by(tx, &[], Vec2::new(1.0, 0.0))),
-        Err(TransformError::BadArgs(_))
+        Err(TransformError::NoElements)
     ));
     assert!(matches!(
         run(&mut s, |tx| transform::move_by(tx, &ids(&["zz"]), Vec2::new(1.0, 0.0))),
-        Err(TransformError::NotFound(_))
+        Err(TransformError::Target(TargetError::NotFound(_)))
     ));
     assert_eq!(s.revision(), rev);
 }
@@ -300,7 +301,7 @@ fn dragging_past_the_opposite_side_mirrors_and_the_size_never_drops_below_one() 
 fn the_rotate_handle_does_not_resize() {
     let mut s = scene(vec![rect("r", 0.0, 0.0, 100.0, 100.0)]);
     let spec = ResizeSpec { handle: BoxHandle::Rotate, ..br(1.0, 1.0) };
-    assert!(matches!(run(&mut s, |tx| transform::resize(tx, &ids(&["r"]), spec)), Err(TransformError::BadArgs(_))));
+    assert!(matches!(run(&mut s, |tx| transform::resize(tx, &ids(&["r"]), spec)), Err(TransformError::RotateHandle)));
 }
 
 #[test]
@@ -423,7 +424,7 @@ fn rotate_to_sets_an_absolute_angle_for_one_element() {
     let mut s = scene(vec![rect("a", 0.0, 0.0, 10.0, 10.0), rect("b", 20.0, 0.0, 10.0, 10.0)]);
     assert!(matches!(
         run(&mut s, |tx| transform::rotate(tx, &ids(&["a", "b"]), 1.0, RotateMode::To, None)),
-        Err(TransformError::BadArgs(_))
+        Err(TransformError::RotateToNeedsOne)
     ));
 }
 
@@ -492,7 +493,7 @@ fn set_bounds_sets_the_unrotated_box() {
     assert!(near(b.width(), 40.0) && near(b.height(), 20.0));
     assert!(matches!(
         run(&mut s, |tx| transform::set_bounds(tx, &id("r"), BoundsSpec { w: Some(-1.0), ..BoundsSpec::default() })),
-        Err(TransformError::BadArgs(_))
+        Err(TransformError::BadBounds)
     ));
 }
 

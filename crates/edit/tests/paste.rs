@@ -3,13 +3,15 @@
 
 use std::collections::BTreeMap;
 
+use drafftink_edit::CopyError;
+use drafftink_edit::create::FreeTextError;
 use drafftink_edit::paste::{PasteError, PasteOpts, insert_elements, insert_text};
 use drafftink_edit::text_bind::MonospaceMeasure;
+use drafftink_geom::kurbo::Point;
 use drafftink_scene::{
     BindMode, Binding, Element, ElementId, ElementKind, FileEntry, GroupId, ImageData, LinearData, MemoryStore,
     SceneRead, SceneStore, SceneTx, SeqIds, Style, TextStyle, ZIndex,
 };
-use kurbo::Point;
 
 fn id(s: &str) -> ElementId {
     ElementId::new(s).unwrap()
@@ -146,7 +148,7 @@ fn refusals_leave_the_transaction_untouched() {
     bad.transform.w = f64::NAN;
     assert!(matches!(
         insert_elements(&mut tx, &[bad], &none, &PasteOpts::default(), ids),
-        Err(PasteError::Invalid { .. })
+        Err(PasteError::Copy(CopyError::Invalid { .. }))
     ));
     assert_eq!(tx.len_all(), 0);
 }
@@ -166,11 +168,39 @@ fn text_is_measured_centred_and_limited() {
     let ids = &mut SeqIds::new();
     assert!(matches!(
         insert_text(&mut tx, &m, ids, "  \n", font.clone(), Style::default(), Point::ORIGIN),
-        Err(PasteError::EmptyText)
+        Err(PasteError::Text(FreeTextError::Empty))
     ));
     let long = "x".repeat(1_000_001);
     assert!(matches!(
         insert_text(&mut tx, &m, ids, &long, font, Style::default(), Point::ORIGIN),
-        Err(PasteError::TextTooLong { .. })
+        Err(PasteError::Text(FreeTextError::TooLong { .. }))
     ));
+}
+
+#[test]
+fn pasted_and_created_free_text_are_built_by_one_function() {
+    use drafftink_edit::create::{TextPlace, TextSpec, text_element};
+    let m = MonospaceMeasure::default();
+    let font = TextStyle::default();
+    let mut store = MemoryStore::new();
+    let mut tx = store.begin();
+    let pasted =
+        insert_text(&mut tx, &m, &mut SeqIds::new(), "abcd", font.clone(), Style::default(), Point::new(50.0, 30.0))
+            .unwrap();
+    let pasted = tx.get(&pasted).unwrap().clone();
+    // The same text, built by the creation code with the same centre, is the same element.
+    let spec = TextSpec { font: font.clone(), place: TextPlace::Center(Point::new(50.0, 30.0)), width: None };
+    let mut created =
+        text_element(&m, pasted.id.clone(), pasted.index.clone(), "abcd", spec, pasted.style.clone()).unwrap();
+    created.version = pasted.version;
+    assert_eq!(created, pasted);
+    // The rules of the single builder apply to creation as well.
+    let long = "x".repeat(1_000_001);
+    let at = TextPlace::TopLeft(Point::ORIGIN);
+    let spec = || TextSpec { font: font.clone(), place: at, width: None };
+    let make =
+        |content: &str, spec| text_element(&m, id("t1"), ZIndex::parse("a0").unwrap(), content, spec, Style::default());
+    assert!(matches!(make(&long, spec()), Err(FreeTextError::TooLong { .. })));
+    let far = TextSpec { font: font.clone(), place: TextPlace::TopLeft(Point::new(f64::NAN, 0.0)), width: None };
+    assert!(matches!(make("abcd", far), Err(FreeTextError::NotFinite)));
 }

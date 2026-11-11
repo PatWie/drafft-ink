@@ -109,6 +109,8 @@ pub struct Overlay {
     pub binding: Vec<BindingHighlight>,
     /// The rubber band.
     pub marquee: Option<Rect>,
+    /// The lasso being drawn, in world space. The painter closes it. Empty: none.
+    pub lasso: Vec<Point>,
     /// Alignment and spacing guides.
     pub guides: Vec<SmartGuide>,
     /// The point a drag snapped to.
@@ -125,6 +127,7 @@ impl Overlay {
             && self.hover.is_empty()
             && self.binding.is_empty()
             && self.marquee.is_none()
+            && self.lasso.is_empty()
             && self.guides.is_empty()
             && self.snap_point.is_none()
             && self.cursors.is_empty()
@@ -147,10 +150,9 @@ pub fn combine(world: &Scene, overlay: &Scene, out: &mut Scene) {
 
 fn polygon(points: &[Point]) -> BezPath {
     let mut p = BezPath::new();
-    for (i, q) in points.iter().enumerate() {
-        if i == 0 {
-            p.move_to(*q);
-        } else {
+    if let Some((first, rest)) = points.split_first() {
+        p.move_to(*first);
+        for q in rest {
             p.line_to(*q);
         }
     }
@@ -182,6 +184,13 @@ pub fn paint_overlay(scene: &mut Scene, overlay: &Overlay, view: &View, style: &
         report.items += 1;
     }
 
+    if overlay.lasso.len() >= 2 {
+        let path = polygon(&overlay.lasso.iter().copied().map(dev).collect::<Vec<_>>());
+        scene.fill(Fill::NonZero, id, style.accent.with_alpha(0.05), None, &path);
+        scene.stroke(&Stroke::new(px), id, style.accent, None, &path);
+        report.items += 1;
+    }
+
     for b in &overlay.hover {
         if b.is_valid() {
             let path = polygon(&b.corners().map(dev));
@@ -191,7 +200,7 @@ pub fn paint_overlay(scene: &mut Scene, overlay: &Overlay, view: &View, style: &
     }
 
     for h in &overlay.binding {
-        let path = to_dev * h.outline.clone();
+        let path = to_dev * &h.outline;
         scene.stroke(&Stroke::new(5.0 * px), id, style.accent.with_alpha(0.35), None, &path);
         if let Some(p) = h.at {
             let c = Circle::new(dev(p), 4.0 * px);

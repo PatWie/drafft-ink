@@ -203,7 +203,18 @@ impl Session {
                 ),
             ));
         }
-        self.check_gates(spec, origin, Mode::Top, true)?;
+        let gate = self.check_gates(spec, origin, Mode::Top, true)?;
+        let begun = self.begin_after_gates(origin, spec, input);
+        self.settle_gate(gate, origin, begun.is_ok());
+        begun
+    }
+
+    fn begin_after_gates(
+        &mut self,
+        origin: Origin,
+        spec: &'static CommandSpec,
+        input: Input<'_>,
+    ) -> Result<(GestureId, Value), Refusal> {
         self.check_gesture_available(spec)?;
         let args: Box<dyn Any> = match input {
             Input::Json(v) => spec.handler.parse(spec.id, v)?,

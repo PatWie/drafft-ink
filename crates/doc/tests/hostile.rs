@@ -39,7 +39,7 @@ impl Hostile {
 
     fn send(&self, to: &mut LoroStore) -> Result<ChangeSet, DocError> {
         self.doc.commit();
-        let from = loro::VersionVector::decode(&to.version_vector()).unwrap();
+        let from = loro::VersionVector::decode(&to.version_vector().unwrap()).unwrap();
         let bytes = self.doc.export(ExportMode::updates(&from)).unwrap();
         to.apply_remote(&bytes)
     }
@@ -276,7 +276,7 @@ fn a_newer_schema_is_refused_and_blocks_writes() {
 
 #[test]
 fn input_over_the_size_limit_is_not_looked_at() {
-    let mut s = LoroStore::with_config(LoroConfig { max_import_bytes: 64, ..LoroConfig::default() });
+    let mut s = LoroStore::with_config(LoroConfig { max_import_bytes: 64, ..LoroConfig::default() }).unwrap();
     let err = s.apply_remote(&[0u8; 65]).unwrap_err();
     assert!(matches!(err, DocError::TooLarge { size: 65, limit: 64 }));
     assert!(matches!(
@@ -362,7 +362,7 @@ fn assert_usable_or_cleanly_poisoned(s: &mut LoroStore, good_snapshot: &[u8]) {
         assert_eq!(s.apply_remote(&[1, 2, 3]).unwrap_err(), DocError::Poisoned);
         assert_eq!(s.undo().unwrap_err(), DocError::Poisoned);
         assert!(s.export_snapshot().is_err());
-        assert!(s.version_vector().is_empty());
+        assert!(s.version_vector().unwrap().is_empty());
         s.replace_from_snapshot(good_snapshot).unwrap();
         assert!(!s.is_poisoned());
     }
@@ -458,4 +458,12 @@ proptest! {
         let _ = LoroStore::from_snapshot(&bytes);
         assert_usable_or_cleanly_poisoned(&mut s, &good);
     }
+}
+
+#[test]
+fn a_peer_id_that_loro_reserves_is_refused_not_replaced() {
+    let r = LoroStore::with_config(LoroConfig { peer_id: Some(u64::MAX), ..LoroConfig::default() });
+    assert_eq!(r.err(), Some(DocError::BadPeerId(u64::MAX)));
+    let ok = LoroStore::with_config(LoroConfig { peer_id: Some(7), ..LoroConfig::default() }).unwrap();
+    assert_eq!(ok.peer_id(), Ok(7));
 }

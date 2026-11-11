@@ -14,7 +14,7 @@ use serde_json::{Map, Value};
 use super::MAX_NEST;
 use super::json::{num, points};
 use super::model::{Body, ImageFormat, OImage, OLinear, OShape, OStyle, OText, OldDoc};
-use crate::error::{ImportReport, IoError};
+use crate::error::{Expected, FormatName, ImportReport, IoError};
 
 /// Deepest Loro value tree this reader walks.
 const MAX_VALUE_DEPTH: usize = 160;
@@ -22,11 +22,11 @@ const MAX_VALUE_DEPTH: usize = 160;
 /// Decodes a snapshot (or update) into an old document.
 pub(crate) fn read_snapshot(bytes: &[u8], report: &mut ImportReport) -> Result<OldDoc, IoError> {
     let doc = LoroDoc::new();
-    doc.import(bytes).map_err(|e| IoError::parse("loro snapshot", e.to_string()))?;
+    doc.import(bytes).map_err(|e| IoError::parse(FormatName::LoroSnapshot, e.to_string()))?;
     let root = to_json(&doc.get_deep_value(), 0);
     let Some(obj) = root.as_object() else {
         return Err(IoError::WrongFormat {
-            expected: "an old drafft.ink collaboration snapshot",
+            expected: Expected::LegacySnapshot,
             hint: "the snapshot has no root containers".into(),
         });
     };
@@ -34,7 +34,7 @@ pub(crate) fn read_snapshot(bytes: &[u8], report: &mut ImportReport) -> Result<O
         (obj.get("shapes").and_then(Value::as_object), obj.get("z_order").and_then(Value::as_array))
     else {
         return Err(IoError::WrongFormat {
-            expected: "an old drafft.ink collaboration snapshot",
+            expected: Expected::LegacySnapshot,
             hint: "it needs a `shapes` map and a `z_order` list".into(),
         });
     };
@@ -215,7 +215,7 @@ fn read_shape(m: &Map<String, Value>, depth: usize, report: &mut ImportReport) -
         return Some(OShape { id, style: OStyle::default(), body: Body::Group { children, rotation: 0.0 } });
     }
     let Some(st) = style(m) else {
-        report.warn(format!("a {kind} shape lacks its stroke fields; skipped"));
+        report.warn(format!("the {kind} shape lacks its stroke fields; skipped"));
         return None;
     };
     let body = match kind {

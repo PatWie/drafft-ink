@@ -14,6 +14,8 @@ use serde::{Deserialize, Serialize};
 use serde_json::json;
 
 use super::files::{self, InlineBytes, Loaded, Provenance, Source, base64_of};
+use crate::cmd::bytes::{Bytes, BytesError};
+use crate::cmd::clipboard::common::{At, resolve_at};
 use super::save;
 use crate::args;
 use crate::cmd::view::Pt;
@@ -22,6 +24,7 @@ use crate::ports::FileRef;
 use crate::refusal::{Refusal, echo};
 use crate::session::Session;
 use crate::spec::Redraw;
+use crate::store::TabDoc;
 use crate::state::{BASE_ZOOM, Observed};
 
 /// The built-in welcome document, in the format of the old app (migrated when shown).
@@ -265,7 +268,7 @@ pub(super) fn guard_replace(s: &mut Session, id: &str, on_unsaved: OnUnsaved, in
     match on_unsaved {
         OnUnsaved::Refuse => Err(Refusal::unsaved_changes(id)),
         OnUnsaved::Discard => Ok(()),
-        OnUnsaved::Save => save::save_active(s, id, &save::SaveReq::default()).map(|_| ()),
+        OnUnsaved::Save => save::save_active_now(s, id, &save::SaveReq::default()).map(|_| ()),
     }
 }
 
@@ -294,6 +297,11 @@ pub(super) fn replace_active(
     target: Option<FileRef>,
     provenance: Provenance,
 ) -> Result<(), Refusal> {
+    if s.tab().doc.blocked_by_schema().is_some() {
+        // A document from a newer version is read-only. Replacing it starts a fresh store, which is how it is
+        // left (docs/crdt.md §8: "reopening the document clears it").
+        s.tab_mut().doc = TabDoc::new();
+    }
     let (tab, mark) = (s.tab().id, s.tab().doc.mark());
     s.tab_mut().doc.load(doc).map_err(|e| store_refusal(id, &e))?;
     // The executor runs the invariant pass after the handler. Run it now, so that what it repairs in a loaded
@@ -338,6 +346,9 @@ pub(crate) fn merge_into_active(
     at: Option<Pt>,
     select: bool,
 ) -> Result<InsertReport, Refusal> {
+    if s.tab().doc.blocked_by_schema().is_some() {
+        return Err(Refusal::newer_schema(id));
+    }
     let place = match at {
         Some(p) => Placement::Centre(Point::new(args::world(id, "at[0]", p[0])?, args::world(id, "at[1]", p[1])?)),
         None => Placement::AsIs,
@@ -396,7 +407,11 @@ pub(super) fn open_document(s: &mut Session, id: &str, spec: &OpenSpec<'_>) -> R
     }
     let doc = imported.document;
     let count = doc.elements.iter().filter(|e| !e.deleted).count();
-    let target = spec.loaded.file.clone();
+    // Only a file in the drafft.ink format becomes the save target. Saving over an Excalidraw, legacy, PNG or
+    // SVG file would replace it with drafft.ink JSON, so `doc.save` then asks where to write (save-as).
+    let target = spec.loaded.file.clone().filter(|_| source == Format::Native);
+    // The recent list still remembers the file that was opened.
+    let opened_file = spec.loaded.file.clone();
     match spec.mode {
         Mode::Replace => {
             if let Some(on_unsaved) = spec.on_unsaved {
@@ -418,7 +433,7 @@ pub(super) fn open_document(s: &mut Session, id: &str, spec: &OpenSpec<'_>) -> R
             });
         }
     }
-    if let Some(f) = &target {
+    if let Some(f) = &opened_file {
         files::remember(s, f)?;
     }
     Ok(OpenOut {
@@ -597,7 +612,7 @@ pub struct DropItem {
     /// The file name.
     pub name: String,
     /// The content: `{base64}` or `{path}`.
-    pub bytes: Source,
+    pub bytes: Bytes,
     /// The media type, if known.
     #[serde(default)]
     pub mime: Option<String>,
@@ -633,9 +648,9 @@ pub enum DropDocs {
 pub struct DropArgs {
     /// The dropped files (1 to 50).
     pub items: Vec<DropItem>,
-    /// World point to put images and merged elements at. Default: the centre of the viewport.
+    /// World point to put images and merged elements at: a point, `viewport_center` (default) or `$cursor`.
     #[serde(default)]
-    pub at: Option<Pt>,
+    pub at: At,
     /// A PNG with an embedded scene: `insert` it as an image (default) or `open` the scene.
     #[serde(default)]
     pub scene_png: ScenePng,
@@ -697,28 +712,49 @@ fn classify(bytes: &[u8], scene_png: ScenePng) -> Class {
     }
 }
 
+/// Why a dropped file that could not be read is skipped.
+fn skip_reason(e: &BytesError) -> String {
+    match e {
+        BytesError::Base64 { source, .. } => format!("its base64 text is damaged ({source})"),
+        BytesError::TooLarge { size } => format!("it has {size} bytes, which is too many"),
+        BytesError::NoFiles => "this session cannot read files. Pass the data inline as `{base64, name}` instead".to_owned(),
+        BytesError::Read { path, message } => format!("`{}` could not be read: {}", echo(path), files::cut(message)),
+    }
+}
+
 pub(super) fn drop_files(s: &mut Session, a: DropArgs) -> Result<DropOut, Refusal> {
     let id = s.cmd();
     if a.items.len() > DROP_MAX {
         return Err(Refusal::limit_exceeded(id, a.items.len(), "files", DROP_MAX));
     }
     let n = a.items.len();
+    let at = resolve_at(s, &a.at)?;
+    let at = [at.x, at.y];
     // Read and sort everything first; nothing has changed yet.
     let mut docs: Vec<Loaded> = Vec::new();
     let mut libs: Vec<Loaded> = Vec::new();
     let mut images: Vec<(Loaded, Option<String>)> = Vec::new();
     let mut skipped = 0usize;
     for (i, item) in a.items.iter().enumerate() {
-        let mut loaded = match files::read_source(s, id, &item.bytes, &format!("items[{i}].bytes")) {
-            Ok(l) => l,
-            Err(r) if r.code == "bad_args" => return Err(r),
-            Err(r) => {
-                s.warn(format!("`{}` was skipped: {}", echo(&item.name), r.message));
+        let loaded = match item.bytes.load(s, &item.name, usize::MAX) {
+            Ok(l) => Loaded {
+                bytes: l.bytes,
+                name: item.name.clone(),
+                file: match &item.bytes {
+                    Bytes::Path(p) => Some(FileRef::Path { path: p.path.clone() }),
+                    Bytes::Inline(_) => None,
+                },
+                provenance: Provenance::Clean,
+            },
+            Err(BytesError::Base64 { .. }) => {
+                return Err(Refusal::bad_arg(id, &format!("items[{i}].bytes.base64"), "is not valid base64"));
+            }
+            Err(e) => {
+                s.warn(format!("`{}` was skipped: {}", echo(&item.name), skip_reason(&e)));
                 skipped += 1;
                 continue;
             }
         };
-        loaded.name = item.name.clone();
         match classify(&loaded.bytes, a.scene_png) {
             Class::Image => images.push((loaded, item.mime.clone())),
             Class::Document => docs.push(loaded),
@@ -764,7 +800,7 @@ pub(super) fn drop_files(s: &mut Session, a: DropArgs) -> Result<DropOut, Refusa
             mode,
             format: FormatWord::Auto,
             on_unsaved: None,
-            at: a.at,
+            at: Some(at),
             select: true,
             loaded,
         };
@@ -799,10 +835,6 @@ pub(super) fn drop_files(s: &mut Session, a: DropArgs) -> Result<DropOut, Refusa
                 json!({ "base64": b.base64, "name": b.name, "mime": b.mime })
             })
             .collect();
-        let at = a.at.unwrap_or_else(|| {
-            let v = s.view();
-            [v.scroll.x, v.scroll.y]
-        });
         match s.run_nested("image.insert", json!({ "images": list, "at": at, "offset": 20 })) {
             Ok(_) => {
                 out.images = images.len();

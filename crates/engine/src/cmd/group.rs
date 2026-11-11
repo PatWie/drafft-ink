@@ -12,6 +12,7 @@ use drafftink_scene::{ElementId, GroupId};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
+use crate::cmd::element_common::target_refusal;
 use crate::refusal::Refusal;
 use crate::session::{Ref, Session};
 use crate::spec::{
@@ -24,7 +25,7 @@ pub(crate) mod common;
 pub(crate) mod testkit;
 
 use common::{
-    apply_selection, current_selection, edit, editing_group, fresh_group_id, locked, no_group, not_found,
+    apply_selection, current_selection, edit, editing_group, no_group,
     selected_ids, zorder_refusal,
 };
 
@@ -32,8 +33,7 @@ use common::{
 
 fn group_refusal(cmd: &str, e: GroupError) -> Refusal {
     match e {
-        GroupError::NotFound(id) => not_found(cmd, &id),
-        GroupError::Locked(ids) => locked(cmd, &ids),
+        GroupError::Target(t) => target_refusal(cmd, t),
         GroupError::TooFew { have } => Refusal::custom(
             "too_few",
             cmd,
@@ -79,8 +79,7 @@ fn bad_name(cmd: &str) -> Refusal {
 
 fn selection_refusal(cmd: &str, e: SelectionError) -> Refusal {
     match e {
-        SelectionError::NotFound(id) => not_found(cmd, &id),
-        SelectionError::Locked(ids) => locked(cmd, &ids),
+        SelectionError::Target(t) => target_refusal(cmd, t),
         SelectionError::NoGroup => no_group(cmd),
         SelectionError::NotEditing => not_in_group(cmd),
         SelectionError::NotInGroup(id) => Refusal::bad_arg(
@@ -121,8 +120,7 @@ fn create(s: &mut Session, a: CreateArgs) -> Result<CreateOut, Refusal> {
     let cmd = s.cmd();
     let ids = s.targets(a.ids.as_deref())?;
     let editing = editing_group(s);
-    let new_group = fresh_group_id(s).ok_or_else(|| Refusal::internal(cmd, "could not make a fresh group id"))?;
-    let report = edit(s, |tx, _| group::group(tx, &ids, editing.as_ref(), new_group))
+    let report = edit(s, |tx, ids_port| group::group_with_ids(tx, &ids, editing.as_ref(), ids_port))
         .map_err(|e| e.refusal(cmd, |g| group_refusal(cmd, g)))?;
     let sel = select_ids(s.store(), &report.members, editing.as_ref());
     apply_selection(s, sel);

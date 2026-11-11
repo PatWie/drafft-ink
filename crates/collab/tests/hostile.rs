@@ -215,26 +215,26 @@ fn run(script: Vec<Op>, replace: bool) {
             Op::Join(kind) => {
                 h.event(TransportEvent::Opened);
                 let peers = if kind % 2 == 0 { vec![] } else { vec![PeerInfo { client_id: cid(2), user: None }] };
-                let joined = h.joined(peers, h.server.version_vector());
+                let joined = h.joined(peers, h.server.version_vector().unwrap());
                 h.feed(&joined);
                 let sync = match kind % 3 {
-                    0 => h.sync_from(&h.store.version_vector()),
+                    0 => h.sync_from(&h.store.version_vector().unwrap()),
                     1 => ServerMessage::SyncResponse {
                         kind: SyncKind::Snapshot,
                         data: h.server.export_snapshot().unwrap(),
-                        server_version: h.server.version_vector(),
+                        server_version: h.server.version_vector().unwrap(),
                     },
                     _ => ServerMessage::SyncResponse {
                         kind: SyncKind::Snapshot,
                         data: h.server.export_shallow_snapshot(0).unwrap(),
-                        server_version: h.server.version_vector(),
+                        server_version: h.server.version_vector().unwrap(),
                     },
                 };
                 h.feed(&sync);
             }
             Op::ServerEdit => {
                 server_edits += 1;
-                let before = h.server.version_vector();
+                let before = h.server.version_vector().unwrap();
                 add(&mut h.server, &[&format!("srv{server_edits}")]);
                 let update = h.server.export_updates_since(&before).unwrap();
                 h.feed(&ServerMessage::Update { from: cid(2), update });
@@ -265,7 +265,7 @@ fn run(script: Vec<Op>, replace: bool) {
         h.take_frames();
     }
     // The document is still usable, and the client can leave cleanly.
-    let _ = h.store.version_vector();
+    let _ = h.store.version_vector().unwrap();
     h.client.leave(h.now, &mut h.store);
     h.drain();
 }

@@ -21,6 +21,20 @@
 
 use std::collections::{HashMap, HashSet};
 use std::fmt::Write as _;
+
+/// Appends formatted text to a `String`. Writing to a `String` cannot fail, so there is no result to handle.
+macro_rules! put {
+    ($out:expr, $($arg:tt)*) => {{
+        let _ = write!($out, $($arg)*);
+    }};
+}
+
+/// [`put!`] followed by a newline.
+macro_rules! putln {
+    ($out:expr, $($arg:tt)*) => {{
+        let _ = writeln!($out, $($arg)*);
+    }};
+}
 use std::io::Write as _;
 use std::sync::Arc;
 
@@ -36,7 +50,7 @@ use drafftink_sketch::{
 };
 use kurbo::Rect;
 
-use crate::error::IoError;
+use crate::error::{FormatName, IoError};
 use crate::limits::MAX_EMBEDDED_SCENE_BYTES;
 use crate::measure::TextMeasure;
 
@@ -224,7 +238,7 @@ pub fn export_svg(
             .collect(),
     };
     let Some(bounds) = content_bounds(&chosen) else {
-        return Err(IoError::invalid("svg", "there is nothing to export: no visible elements"));
+        return Err(IoError::invalid(FormatName::Svg, "there is nothing to export: no visible elements"));
     };
     let pad = if opts.padding.is_finite() { opts.padding.clamp(0.0, 10_000.0) } else { 20.0 };
     let scale = if opts.scale.is_finite() { opts.scale.clamp(0.01, 100.0) } else { 1.0 };
@@ -242,7 +256,7 @@ pub fn export_svg(
         frame_clips: HashMap::new(),
     };
     if opts.background {
-        let _ = writeln!(
+        putln!(
             cx.out,
             "<rect x=\"{}\" y=\"{}\" width=\"{}\" height=\"{}\" fill=\"{}\"{}/>",
             num(view.x0),
@@ -264,7 +278,7 @@ pub fn export_svg(
     }
 
     let mut svg = String::with_capacity(cx.out.len() + 1024);
-    let _ = write!(
+    put!(
         svg,
         "<svg xmlns=\"http://www.w3.org/2000/svg\" version=\"1.1\" width=\"{}\" height=\"{}\" viewBox=\"{} {} {} {}\">",
         num(view.width() * scale),
@@ -279,13 +293,13 @@ pub fn export_svg(
         let ids: HashSet<ElementId> = chosen.iter().map(|e| e.id.clone()).collect();
         let sub = crate::native::subset(doc, &ids);
         let json = sub.to_json()?;
-        let _ = writeln!(svg, "<metadata>{}</metadata>", embed_payload(&json)?);
+        putln!(svg, "<metadata>{}</metadata>", embed_payload(&json)?);
     }
     let fonts = cx.font_css();
     if !cx.defs.is_empty() || !fonts.is_empty() {
         svg.push_str("<defs>");
         if !fonts.is_empty() {
-            let _ = write!(svg, "<style>{fonts}</style>");
+            put!(svg, "<style>{fonts}</style>");
         }
         svg.push_str(&cx.defs);
         svg.push_str("</defs>\n");
@@ -330,7 +344,7 @@ impl Ctx<'_> {
         {
             let id = self.fresh_id("clip");
             let t = frame.transform;
-            let _ = write!(
+            put!(
                 self.defs,
                 "<clipPath id=\"{id}\"><rect x=\"{}\" y=\"{}\" width=\"{}\" height=\"{}\"/></clipPath>",
                 num(t.x),
@@ -351,7 +365,7 @@ impl Ctx<'_> {
                     .chars()
                     .filter(|c| c.is_ascii_alphanumeric() || matches!(c, '/' | '+' | '.' | '-'))
                     .collect();
-                let _ = write!(
+                put!(
                     css,
                     "@font-face{{font-family:'{}';src:url(data:{mime};base64,{}) ;}}",
                     fam.renderer_name(),
@@ -366,11 +380,11 @@ impl Ctx<'_> {
         let t = e.transform;
         let mut attrs = String::new();
         if e.style.opacity < 1.0 {
-            let _ = write!(attrs, " opacity=\"{}\"", num(e.style.opacity));
+            put!(attrs, " opacity=\"{}\"", num(e.style.opacity));
         }
         if t.angle != 0.0 {
             let c = t.center();
-            let _ = write!(
+            put!(
                 attrs,
                 " transform=\"rotate({} {} {}) translate({} {})\"",
                 num(t.angle.to_degrees()),
@@ -380,13 +394,13 @@ impl Ctx<'_> {
                 num(t.y)
             );
         } else {
-            let _ = write!(attrs, " transform=\"translate({} {})\"", num(t.x), num(t.y));
+            put!(attrs, " transform=\"translate({} {})\"", num(t.x), num(t.y));
         }
         let clip = e.frame_id.as_ref().filter(|f| chosen.contains(f)).and_then(|f| self.frame_clips.get(f)).cloned();
         if let Some(c) = &clip {
-            let _ = write!(self.out, "<g clip-path=\"url(#{c})\">");
+            put!(self.out, "<g clip-path=\"url(#{c})\">");
         }
-        let _ = write!(self.out, "<g id=\"e-{}\"{attrs}>", e.id);
+        put!(self.out, "<g id=\"e-{}\"{attrs}>", e.id);
         match &e.kind {
             ElementKind::Rectangle => {
                 let r = Roundness::Radius(e.style.corner_radius);
@@ -462,21 +476,17 @@ impl Ctx<'_> {
             let d = esc(&path.to_svg());
             match kind {
                 FillKind::Solid => {
-                    let _ = write!(
-                        self.out,
-                        "<path d=\"{d}\" fill=\"{fill_hex}\"{}/>",
-                        opacity_attr("fill-opacity", fill_alpha)
-                    );
+                    put!(self.out, "<path d=\"{d}\" fill=\"{fill_hex}\"{}/>", opacity_attr("fill-opacity", fill_alpha));
                 }
                 FillKind::Tint { alpha: a } => {
-                    let _ = write!(
+                    put!(
                         self.out,
                         "<path d=\"{d}\" fill=\"{fill_hex}\"{}/>",
                         opacity_attr("fill-opacity", fill_alpha * a)
                     );
                 }
                 FillKind::Ink => {
-                    let _ = write!(
+                    put!(
                         self.out,
                         "<path d=\"{d}\" fill=\"{stroke}\"{}/>",
                         stroke_op.as_ref().map(|a| format!(" fill-opacity=\"{a}\"")).unwrap_or_default()
@@ -484,8 +494,8 @@ impl Ctx<'_> {
                 }
                 FillKind::Hatch { line_width, clip } => {
                     let id = self.fresh_id("hatch");
-                    let _ = write!(self.defs, "<clipPath id=\"{id}\"><path d=\"{}\"/></clipPath>", esc(&clip.to_svg()));
-                    let _ = write!(
+                    put!(self.defs, "<clipPath id=\"{id}\"><path d=\"{}\"/></clipPath>", esc(&clip.to_svg()));
+                    put!(
                         self.out,
                         "<path d=\"{d}\" fill=\"none\" stroke=\"{fill_hex}\" stroke-width=\"{}\" clip-path=\"url(#{id})\"{}/>",
                         num(*line_width),
@@ -496,7 +506,7 @@ impl Ctx<'_> {
         }
         for (path, st) in &geometry.strokes {
             let dash = st.dash.map(|[a, b]| format!(" stroke-dasharray=\"{} {}\"", num(a), num(b))).unwrap_or_default();
-            let _ = write!(
+            put!(
                 self.out,
                 "<path d=\"{}\" fill=\"none\" stroke=\"{stroke}\" stroke-width=\"{}\" stroke-linejoin=\"round\"{dash}{}/>",
                 esc(&path.to_svg()),
@@ -523,7 +533,7 @@ impl Ctx<'_> {
             TextAlign::Right => ("end", t.w),
         };
         let colors = d.char_colors();
-        let _ = write!(
+        put!(
             self.out,
             "<text font-family=\"{}\" font-size=\"{}\" font-weight=\"{}\" fill=\"{}\"{} text-anchor=\"{anchor}\" xml:space=\"preserve\">",
             esc(css_family(d.font.family)),
@@ -542,7 +552,7 @@ impl Ctx<'_> {
             let skip_to = rest.find(line.as_str()).unwrap_or(0);
             index += rest.get(..skip_to).map_or(0, |s| s.chars().count());
             rest = rest.get(skip_to..).unwrap_or("");
-            let _ = write!(self.out, "<tspan x=\"{}\" y=\"{}\">", num(x), num(first + line_h * line_no as f64));
+            put!(self.out, "<tspan x=\"{}\" y=\"{}\">", num(x), num(first + line_h * line_no as f64));
             let mut seg = String::new();
             let mut seg_color: Option<Color> = None;
             for (i, ch) in line.chars().enumerate() {
@@ -568,7 +578,7 @@ impl Ctx<'_> {
     fn span(&mut self, text: &str, color: Option<Color>) {
         match color {
             Some(c) => {
-                let _ = write!(
+                put!(
                     self.out,
                     "<tspan fill=\"{}\"{}>{}</tspan>",
                     paint(c),
@@ -616,9 +626,9 @@ impl Ctx<'_> {
             // The formula's baseline origin sits `height` below the top of the box; the exporter does not know the
             // split, so it places the baseline at the box bottom minus the depth estimate of 0.25 em.
             let base = (e.transform.h - size * 0.25).max(0.0);
-            let _ = write!(self.out, "<g color=\"{color}\" transform=\"translate(0 {})\">{svg}</g>", num(base));
+            put!(self.out, "<g color=\"{color}\" transform=\"translate(0 {})\">{svg}</g>", num(base));
         } else {
-            let _ = write!(
+            put!(
                 self.out,
                 "<text font-style=\"italic\" font-family=\"serif\" font-size=\"{}\" fill=\"{color}\" data-latex=\"{}\" y=\"{}\">{}</text>",
                 num(size),
@@ -633,7 +643,7 @@ impl Ctx<'_> {
         let t = e.transform;
         let blob = i.file_id.as_ref().and_then(|f| self.doc.files.get(f));
         let Some(blob) = blob else {
-            let _ = write!(
+            put!(
                 self.out,
                 "<rect width=\"{}\" height=\"{}\" fill=\"none\" stroke=\"#9ca3af\" stroke-dasharray=\"6 4\"/>",
                 num(t.w),
@@ -654,10 +664,10 @@ impl Ctx<'_> {
                 if fy { "-1" } else { "1" }
             ),
         };
-        let _ = write!(self.out, "<g{flip}>");
+        put!(self.out, "<g{flip}>");
         match &i.crop {
             Some(c) => {
-                let _ = write!(
+                put!(
                     self.out,
                     "<svg width=\"{}\" height=\"{}\" viewBox=\"{} {} {} {}\" preserveAspectRatio=\"none\"><image href=\"{href}\" width=\"{}\" height=\"{}\" preserveAspectRatio=\"none\"/></svg>",
                     num(t.w),
@@ -671,7 +681,7 @@ impl Ctx<'_> {
                 );
             }
             None => {
-                let _ = write!(
+                put!(
                     self.out,
                     "<image href=\"{href}\" width=\"{}\" height=\"{}\" preserveAspectRatio=\"none\"/>",
                     num(t.w),
@@ -684,7 +694,7 @@ impl Ctx<'_> {
 
     fn frame(&mut self, e: &Element, name: Option<&str>) {
         let t = e.transform;
-        let _ = write!(
+        put!(
             self.out,
             "<rect width=\"{}\" height=\"{}\" fill=\"none\" stroke=\"{}\" stroke-width=\"{}\"/>",
             num(t.w),
@@ -692,7 +702,7 @@ impl Ctx<'_> {
             paint(e.style.stroke_color),
             num(e.style.stroke_width.min(2.0))
         );
-        let _ = write!(
+        put!(
             self.out,
             "<text y=\"-6\" font-size=\"14\" font-family=\"sans-serif\" fill=\"#6b7280\">{}</text>",
             esc(name.unwrap_or("Frame"))
@@ -706,8 +716,8 @@ fn opacity_attr(name: &str, a: f64) -> String {
 
 fn embed_payload(json: &str) -> Result<String, IoError> {
     let mut enc = flate2::write::ZlibEncoder::new(Vec::new(), flate2::Compression::default());
-    enc.write_all(json.as_bytes()).map_err(|e| IoError::invalid("svg", e.to_string()))?;
-    let z = enc.finish().map_err(|e| IoError::invalid("svg", e.to_string()))?;
+    enc.write_all(json.as_bytes()).map_err(|e| IoError::invalid(FormatName::Svg, e.to_string()))?;
+    let z = enc.finish().map_err(|e| IoError::invalid(FormatName::Svg, e.to_string()))?;
     Ok(format!(
         "<{SCENE_TAG} xmlns=\"https://drafft.ink/ns\" type=\"application/vnd.drafftink+json\" encoding=\"base64-deflate\">{}</{SCENE_TAG}>",
         STANDARD.encode(z)
@@ -729,17 +739,19 @@ pub fn extract_scene(svg: &str) -> Result<Option<String>, IoError> {
     if tag.contains("encoding=\"base64-deflate\"") {
         let raw = STANDARD
             .decode(body)
-            .map_err(|e| IoError::parse("svg", format!("the embedded scene is not base64: {e}")))?;
+            .map_err(|e| IoError::parse(FormatName::Svg, format!("the embedded scene is not base64: {e}")))?;
         let mut out = Vec::new();
         let limit = u64::try_from(MAX_EMBEDDED_SCENE_BYTES).unwrap_or(u64::MAX);
         flate2::read::ZlibDecoder::new(raw.as_slice())
             .take(limit.saturating_add(1))
             .read_to_end(&mut out)
-            .map_err(|e| IoError::parse("svg", format!("the embedded scene does not inflate: {e}")))?;
+            .map_err(|e| IoError::parse(FormatName::Svg, format!("the embedded scene does not inflate: {e}")))?;
         if out.len() > MAX_EMBEDDED_SCENE_BYTES {
             return Err(IoError::Limit { what: "embedded scene", max: format!("{MAX_EMBEDDED_SCENE_BYTES} bytes") });
         }
-        return String::from_utf8(out).map(Some).map_err(|_| IoError::parse("svg", "the embedded scene is not UTF-8"));
+        return String::from_utf8(out)
+            .map(Some)
+            .map_err(|_| IoError::parse(FormatName::Svg, "the embedded scene is not UTF-8"));
     }
     Ok(None)
 }

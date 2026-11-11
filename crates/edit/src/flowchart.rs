@@ -11,15 +11,17 @@
 //! them with [`next_slot`]; [`create_connected_nodes`] creates the nodes and their bound arrows.
 
 use drafftink_geom::OrientedBox;
-use kurbo::{Point, Rect};
+use drafftink_geom::kurbo::{Point, Rect};
 
-use drafftink_scene::{
-    Element, ElementId, ElementKind, Head, IdSource, IndexError, Kind, PathType, SceneRead, SceneTx, StoreError,
-};
+use crate::binding::BindingError;
+
+use drafftink_scene::{Element, ElementId, Head, IdSource, IndexError, Kind, PathType, SceneRead, SceneTx, StoreError};
 
 use crate::binding::update_bound_arrows;
+use crate::ids::unused_element_id;
 use crate::layout::{Direction, Heads, NodeBox, RouteParams, arrow_element, route_edge};
-use crate::text_bind::{TextBindError, TextMeasure, create_label, fresh_element_id};
+use crate::target::TargetError;
+use crate::text_bind::{TextBindError, TextMeasure, create_label};
 
 /// The default distance between a node and the node grown from it.
 pub const DEFAULT_GAP: f64 = 80.0;
@@ -30,20 +32,17 @@ const ROWS: usize = 8;
 /// Why a flowchart step refused.
 #[derive(Debug, PartialEq, thiserror::Error)]
 pub enum FlowchartError {
-    /// The element does not exist.
-    #[error("element {0} does not exist. Look up ids with element.query or doc.outline.")]
-    Missing(ElementId),
+    /// An element does not exist, is deleted, or is locked.
+    #[error(transparent)]
+    Target(#[from] TargetError),
     /// Only rectangles, diamonds and ellipses can grow nodes.
-    #[error("{id} is a {kind}. Connected nodes can be added to a rectangle, diamond or ellipse.")]
+    #[error("{id} is {}. Connected nodes can be added to a rectangle, diamond or ellipse.", drafftink_scene::words::Article::new(.kind.name()))]
     WrongKind {
         /// The element.
         id: ElementId,
         /// Its kind.
-        kind: &'static str,
+        kind: Kind,
     },
-    /// The element is locked.
-    #[error("{0} is locked. Unlock it first.")]
-    Locked(ElementId),
     /// The gap is not a number of 0 or more.
     #[error("The gap must be a finite number of 0 or more.")]
     BadGap,
@@ -61,20 +60,7 @@ pub enum FlowchartError {
     NotFinite,
     /// Re-solving the arrows failed.
     #[error("re-solving the bound arrows failed: {0}")]
-    Binding(String),
-}
-
-impl FlowchartError {
-    /// The refusal code of the command catalog.
-    pub fn code(&self) -> &'static str {
-        match self {
-            FlowchartError::Missing(_) => "not_found",
-            FlowchartError::WrongKind { .. } => "wrong_kind",
-            FlowchartError::Locked(_) => "locked",
-            FlowchartError::BadGap | FlowchartError::NotFinite => "bad_args",
-            _ => "internal",
-        }
-    }
+    Binding(#[from] BindingError),
 }
 
 /// Options for new nodes.
@@ -129,16 +115,16 @@ fn is_obstacle(e: &Element) -> bool {
 }
 
 fn live<'a, R: SceneRead>(r: &'a R, id: &ElementId) -> Result<&'a Element, FlowchartError> {
-    r.get(id).filter(|e| !e.deleted).ok_or_else(|| FlowchartError::Missing(id.clone()))
+    r.get(id).filter(|e| !e.deleted).ok_or_else(|| FlowchartError::Target(TargetError::NotFound(id.clone())))
 }
 
 fn check_parent<'a, R: SceneRead>(r: &'a R, id: &ElementId) -> Result<&'a Element, FlowchartError> {
     let e = live(r, id)?;
     if !matches!(e.tag(), Kind::Rectangle | Kind::Diamond | Kind::Ellipse) {
-        return Err(FlowchartError::WrongKind { id: id.clone(), kind: e.tag().name() });
+        return Err(FlowchartError::WrongKind { id: id.clone(), kind: e.tag() });
     }
     if e.locked {
-        return Err(FlowchartError::Locked(id.clone()));
+        return Err(FlowchartError::Target(TargetError::Locked(vec![id.clone()])));
     }
     Ok(e)
 }
@@ -239,7 +225,7 @@ pub fn create_connected_nodes<T: SceneTx, M: TextMeasure + ?Sized>(
     }
     let mut touched = vec![from.clone()];
     touched.extend(out.iter().map(|e| e.node.clone()));
-    update_bound_arrows(tx, &touched).map_err(|e| FlowchartError::Binding(e.to_string()))?;
+    update_bound_arrows(tx, &touched)?;
     Ok(out)
 }
 
@@ -269,7 +255,7 @@ fn create_one<T: SceneTx, M: TextMeasure + ?Sized>(
         }
     };
 
-    let node_id = fresh_element_id(tx, ids);
+    let node_id = unused_element_id(tx, ids);
     let mut node = Element::new(node_id.clone(), parent.kind.clone(), index_for(tx)?)
         .with_bounds(rect.x0, rect.y0, rect.width(), rect.height())
         .with_style(parent.style.clone());
@@ -281,7 +267,7 @@ fn create_one<T: SceneTx, M: TextMeasure + ?Sized>(
     let parent_box = NodeBox::of(parent).ok_or(FlowchartError::NotFinite)?;
     let params = RouteParams { path: opts.path, waypoints: &[], flow: Some(dir), lane: (0, 1), obstacles: &[] };
     let route = route_edge(&parent_box, &node_box, &params);
-    let arrow_id = fresh_element_id(tx, ids);
+    let arrow_id = unused_element_id(tx, ids);
     let mut arrow = arrow_element(arrow_id.clone(), index_for(tx)?, &route, opts.path, opts.heads)
         .ok_or(FlowchartError::NotFinite)?;
     arrow.style.stroke_color = parent.style.stroke_color;
@@ -382,17 +368,12 @@ pub fn navigate<R: SceneRead>(r: &R, from: &ElementId, dir: Direction) -> Option
         .map(|s| s.id.clone())
 }
 
-/// True when the element is a kind that grows connected nodes.
-pub fn can_extend(e: &Element) -> bool {
-    matches!(e.kind, ElementKind::Rectangle | ElementKind::Diamond | ElementKind::Ellipse) && !e.deleted && !e.locked
-}
-
 #[cfg(test)]
 #[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 mod tests {
     use super::*;
     use crate::text_bind::MonospaceMeasure;
-    use drafftink_scene::{MemoryStore, SceneStore, SeqIds, validate_scene};
+    use drafftink_scene::{ElementKind, MemoryStore, SceneStore, SeqIds, validate_scene};
 
     fn shape(store: &mut MemoryStore, id: &str, x: f64, y: f64) -> ElementId {
         shape_kind(store, id, ElementKind::Rectangle, x, y)
@@ -538,16 +519,16 @@ mod tests {
         let m = MonospaceMeasure::default();
         let o = ExtendOpts::default();
         let err = create_connected_nodes(&mut tx, &m, &mut ids, &t, Direction::Up, &o, 1).unwrap_err();
-        assert_eq!(err.code(), "wrong_kind");
+        assert!(matches!(err, FlowchartError::WrongKind { kind: Kind::Text, .. }), "{err:?}");
         let missing = ElementId::new("zz").unwrap();
         assert_eq!(
-            create_connected_nodes(&mut tx, &m, &mut ids, &missing, Direction::Up, &o, 1).unwrap_err().code(),
-            "not_found"
+            create_connected_nodes(&mut tx, &m, &mut ids, &missing, Direction::Up, &o, 1).unwrap_err(),
+            FlowchartError::Target(TargetError::NotFound(missing.clone()))
         );
         tx.update(&a, |e| e.locked = true).unwrap();
         assert_eq!(
-            create_connected_nodes(&mut tx, &m, &mut ids, &a, Direction::Up, &o, 1).unwrap_err().code(),
-            "locked"
+            create_connected_nodes(&mut tx, &m, &mut ids, &a, Direction::Up, &o, 1).unwrap_err(),
+            FlowchartError::Target(TargetError::Locked(vec![a.clone()]))
         );
         let bad = ExtendOpts { gap: f64::NAN, ..ExtendOpts::default() };
         tx.update(&a, |e| e.locked = false).unwrap();

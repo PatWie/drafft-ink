@@ -240,8 +240,7 @@ impl Recognizer {
     }
 
     /// Advances time without an event: produces a long press when one is due.
-    pub fn tick<P: Picker + ?Sized>(&mut self, now_ms: f64, picker: &P, out: &mut Vec<Intent>) {
-        let _ = picker;
+    pub fn tick(&mut self, now_ms: f64, out: &mut Vec<Intent>) {
         if !now_ms.is_finite() {
             return;
         }
@@ -268,7 +267,7 @@ impl Recognizer {
         match ev {
             InputEvent::Pointer(p) => self.pointer(p, picker, out),
             InputEvent::Wheel(w) => self.wheel(w, picker.viewport(), out),
-            InputEvent::PointerLeave { id } => self.leave(*id, picker, out),
+            InputEvent::PointerLeave { .. } => self.leave(picker, out),
             InputEvent::CancelAll => self.cancel_all(picker, out),
         }
     }
@@ -591,8 +590,7 @@ impl Recognizer {
         }
     }
 
-    fn leave<P: Picker + ?Sized>(&mut self, id: PointerId, picker: &P, out: &mut Vec<Intent>) {
-        let _ = id;
+    fn leave<P: Picker + ?Sized>(&mut self, picker: &P, out: &mut Vec<Intent>) {
         if !self.is_idle() {
             return;
         }

@@ -1,0 +1,36 @@
+{
+  "about": "A shape is created with a command, resized, rotated, set to exact bounds, nudged and deleted; each change is one undo step, undo puts the exact old box back, and bad input is refused in words.",
+  "steps": [
+    { "execute": "element.create", "args": { "kind": "rectangle", "bounds": { "x": 0, "y": 0, "w": 100, "h": 60 } },
+      "expect": [ { "path": "$.id", "eq": "e1" }, { "path": "$.created", "eq": ["e1"] }, { "path": "$.bounds.w", "eq": 100 } ] },
+    { "assert": "selection.get", "expect": [ { "path": "$.ids", "eq": ["e1"], "note": "A new element is selected." } ] },
+    { "execute": "element.create", "args": { "kind": "rectangle", "bounds": { "x": 0, "y": 0, "w": 0, "h": 60 } }, "refused": "too_small", "text": "smaller than 1 unit in width" },
+    { "execute": "element.create", "args": { "kind": "rectangle", "id": "e1", "bounds": { "x": 0, "y": 0, "w": 5, "h": 5 } }, "refused": "id_in_use", "text": "already used by another element" },
+    { "execute": "element.create", "args": { "kind": "image" }, "refused": "wrong_kind", "text": "image.insert" },
+    { "assert": "history.state", "expect": [ { "path": "$.undo_depth", "eq": 1 } ], "note": "Three refusals pushed nothing." },
+
+    { "execute": "element.resize", "args": { "ids": ["e1"], "handle": "se", "dx": 20, "dy": 10 },
+      "expect": [ { "path": "$.bounds.w", "eq": 120 }, { "path": "$.bounds.h", "eq": 70 }, { "path": "$.bounds.x", "eq": 0 } ] },
+    { "execute": "element.rotate", "args": { "ids": ["e1"], "angle": 30 }, "expect": [ { "path": "$.angle_badge.degrees", "near": 30, "tol": 0.001 } ] },
+    { "execute": "element.rotate", "args": { "ids": ["e1"], "angle": 0, "mode": "to" }, "expect": [ { "path": "$.angle_badge.degrees", "near": 0, "tol": 0.001 } ] },
+    { "execute": "element.set_bounds", "args": { "ids": ["e1"], "x": 10, "w": 50 }, "expect": [ { "path": "$.bounds", "eq": { "x": 10, "y": 0, "w": 50, "h": 70 } } ] },
+    { "execute": "element.nudge", "args": { "ids": ["e1"], "dir": "left", "step": 25 }, "expect": [ { "path": "$.dx", "eq": -25 } ] },
+    { "assert": "element.query", "args": { "filter": { "ids": ["e1"] } }, "expect": [ { "path": "$.items[0].bounds", "eq": { "x": -15, "y": 0, "w": 50, "h": 70 } } ] },
+
+    { "undo": 1 },
+    { "assert": "element.query", "args": { "filter": { "ids": ["e1"] } }, "expect": [ { "path": "$.items[0].bounds", "eq": { "x": 10, "y": 0, "w": 50, "h": 70 } } ], "note": "The nudge was one step." },
+    { "undo": 3 },
+    { "assert": "element.query", "args": { "filter": { "ids": ["e1"] }, "fields": ["bounds", "angle"] }, "expect": [ { "path": "$.items[0].bounds", "eq": { "x": 0, "y": 0, "w": 120, "h": 70 } }, { "path": "$.items[0].angle", "near": 0, "tol": 0.001 } ],
+      "note": "Three more undos took back set_bounds and both rotations; the box is the resized one, and the resize itself is intact." },
+    { "redo": 3 },
+
+    { "execute": "element.delete", "args": { "ids": ["e1"] }, "expect": [ { "path": "$.deleted", "eq": ["e1"] } ] },
+    { "assert": "element.query", "expect": [ { "path": "$.total", "eq": 0 } ] },
+    { "execute": "element.delete", "args": { "ids": ["e1"] }, "refused": "not_found", "text": "No element matches `e1`" },
+    { "undo": 1 },
+    { "assert": "element.query", "expect": [ { "path": "$.total", "eq": 1 }, { "path": "$.items[0].id", "eq": "e1" } ], "note": "Undo brings the same id back." },
+    { "execute": "selection.clear" },
+    { "execute": "element.delete", "refused": "no_target", "text": "no elements are selected" },
+    { "execute": "element.set_bounds", "args": { "ids": ["e1"], "w": 0 }, "refused": "bad_args" }
+  ]
+}

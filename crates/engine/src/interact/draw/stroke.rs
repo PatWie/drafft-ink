@@ -1,6 +1,7 @@
 //! Freehand and highlighter strokes (E7).
 
 use drafftink_canvas::PointerKind;
+use drafftink_edit::brush::{StrokeSample, StrokeSampler};
 use drafftink_geom::kurbo::Point;
 use serde_json::json;
 
@@ -20,9 +21,12 @@ const SIMPLIFY: f64 = 2.0;
 #[derive(Debug)]
 pub(super) struct Stroke {
     points: Vec<Point>,
-    /// One pressure per point, only for a pen. Empty for a mouse or a finger.
+    /// One pressure per point: the pen's, or simulated from the speed. Empty for a mouse or a finger
+    /// with the uniform mode.
     pressures: Vec<f64>,
     highlighter: bool,
+    /// Brush and pressure model of this stroke. It starts with the first sample, which brings the time.
+    sampler: Option<StrokeSampler>,
 }
 
 /// The pressure of a sample: only a pen reports one.
@@ -32,20 +36,38 @@ fn pressure_of(ev: &Ev<'_>) -> Option<f64> {
 
 impl Stroke {
     pub(super) fn start(tool: Tool) -> Self {
-        Self { points: Vec::new(), pressures: Vec::new(), highlighter: tool == Tool::Highlighter }
+        Self { points: Vec::new(), pressures: Vec::new(), highlighter: tool == Tool::Highlighter, sampler: None }
     }
 
     /// Adds the sample at the pointer (and the press position for the first one).
+    ///
+    /// The brush and the pressure mode of the session shape the sample here, while it is drawn, as in the old
+    /// app: the stored stroke holds the result (`edit::brush`).
     pub(super) fn update(&mut self, cx: &mut Ctx<'_>, ev: &Ev<'_>) {
         let mut changed = false;
-        if self.points.is_empty() {
-            self.push(ev.origin.world, pressure_of(ev));
+        if self.sampler.is_none() {
+            let defaults = cx.s.tool.defaults();
+            let (sampler, first) = StrokeSampler::start(
+                defaults.brush,
+                defaults.pressure_mode,
+                ev.origin.world,
+                ev.meta.time_ms,
+                pressure_of(ev),
+            );
+            self.sampler = Some(sampler);
+            self.push(first.point, first.pressure);
             changed = true;
         }
-        changed |= self.push_spaced(cx.px(MIN_SPACING_PX), ev.at.world, pressure_of(ev));
+        changed |= self.add(cx.px(MIN_SPACING_PX), ev);
         if changed {
             preview::set(cx, preview::stroke(cx, &self.points, &self.pressures, self.highlighter));
         }
+    }
+
+    /// Runs the pointer sample through the brush and keeps what comes out. True when the stroke changed.
+    fn add(&mut self, min_gap: f64, ev: &Ev<'_>) -> bool {
+        let sample = self.sampler.as_mut().and_then(|s| s.push(ev.at.world, ev.meta.time_ms, pressure_of(ev)));
+        sample.is_some_and(|StrokeSample { point, pressure }| self.push_spaced(min_gap, point, pressure))
     }
 
     fn push(&mut self, p: Point, pressure: Option<f64>) {
@@ -81,7 +103,7 @@ impl Stroke {
 
     /// The pointer was released: one `element.create`.
     pub(super) fn finish(mut self, cx: &mut Ctx<'_>, ev: &Ev<'_>) {
-        self.push_spaced(cx.px(MIN_SPACING_PX), ev.at.world, pressure_of(ev));
+        self.add(cx.px(MIN_SPACING_PX), ev);
         create(cx, &self.points, &self.pressures, self.highlighter);
     }
 }

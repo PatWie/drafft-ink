@@ -8,17 +8,17 @@ use loro::{LoroDoc, LoroValue};
 use crate::error::DocError;
 
 /// Root map: elements by id.
-pub const ROOT_ELEMENTS: &str = "elements";
+pub(crate) const ROOT_ELEMENTS: &str = "elements";
 /// Root map: schema version, name, background.
-pub const ROOT_META: &str = "meta";
+pub(crate) const ROOT_META: &str = "meta";
 /// Root map: image blobs by content hash.
-pub const ROOT_FILES: &str = "files";
+pub(crate) const ROOT_FILES: &str = "files";
 /// Key in `meta`: schema version (integer).
-pub const META_SCHEMA: &str = "schema";
+pub(crate) const META_SCHEMA: &str = "schema";
 /// Key in `meta`: document name.
-pub const META_NAME: &str = "name";
+pub(crate) const META_NAME: &str = "name";
 /// Key in `meta`: background colour, `#rrggbb[aa]`.
-pub const META_BACKGROUND: &str = "background";
+pub(crate) const META_BACKGROUND: &str = "background";
 
 /// The schema version this build writes and reads without migration.
 pub const SCHEMA_VERSION: u32 = 1;
@@ -141,7 +141,7 @@ mod tests {
     #[test]
     fn a_failing_step_names_the_version_it_failed_on() {
         let doc = doc_at(1);
-        let table = [Migration { from: 1, apply: |_| Err(DocError::Backend("boom".into())) }];
+        let table = [Migration { from: 1, apply: |_| Err(DocError::backend("boom")) }];
         match migrate_to(&doc, 1, 2, &table) {
             Err(DocError::Migration { from: 1, reason }) => assert!(reason.contains("boom")),
             other => panic!("{other:?}"),

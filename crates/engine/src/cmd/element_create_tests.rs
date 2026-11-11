@@ -1260,6 +1260,36 @@ fn relabel_creates_updates_and_removes_a_label() {
 }
 
 #[test]
+fn relabel_creates_the_label_with_the_text_defaults_of_the_tool() {
+    let mut s = testing::headless_session();
+    run(&mut s, "style.set", json!({"props": {"font_size": 36}, "scope": "defaults"}));
+    let (a, _b) = two_boxes(&mut s);
+    let out = run(&mut s, "element.relabel", json!({"id": a.as_str(), "text": "hello"}));
+    assert_eq!(out["action"], "created");
+    let label = el(&s, out["label"].as_str().unwrap());
+    assert_eq!(label.text_data().unwrap().font.size, 36.0);
+}
+
+#[test]
+fn relabel_with_empty_text_on_a_bound_label_removes_the_label_but_refuses_on_free_text() {
+    let mut s = testing::headless_session();
+    let r = new_id(&create(&mut s, rect_args(0.0, 0.0, 200.0, 100.0)));
+    let label = run(&mut s, "element.relabel", json!({"id": r, "text": "one"}))["label"].as_str().expect("label id").to_owned();
+    // The label given as `id` counts as its container: the same as `text.set` with empty text.
+    let out = run(&mut s, "element.relabel", json!({"id": label, "text": ""}));
+    assert_eq!((out["action"].as_str(), out["deleted"].clone()), (Some("removed"), json!([label])));
+    assert!(s.element(&eid(&label)).is_none());
+    assert!(s.element(&eid(&r)).is_some(), "the container stays");
+
+    let free = new_id(&create(&mut s, json!({"kind": "text", "text": "free", "at": [0, 300]})));
+    let before = s.fingerprint();
+    let e = s.execute("element.relabel", json!({"id": free, "text": ""})).unwrap_err();
+    assert_eq!(e.code, "empty_text");
+    assert_eq!(e.message, "A text element cannot be empty. Delete it with `element.delete`.");
+    assert_eq!(s.fingerprint(), before);
+}
+
+#[test]
 fn relabel_on_a_text_element_replaces_its_content_and_re_measures() {
     let mut s = testing::headless_session();
     let t = new_id(&create(&mut s, json!({"kind": "text", "text": "hello", "at": [0, 0]})));

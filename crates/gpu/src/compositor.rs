@@ -425,6 +425,11 @@ impl Compositor {
     }
 }
 
+/// Longest a native readback waits for the GPU. A device that never answers (a lost GPU, a driver stuck
+/// behind another process) becomes a [`GpuError::Readback`] instead of a frozen caller.
+#[cfg(not(target_arch = "wasm32"))]
+const READBACK_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(30);
+
 /// A one-shot future completed from a wgpu callback.
 type MapState = Arc<Mutex<(Option<Result<(), wgpu::BufferAsyncError>>, Option<Waker>)>>;
 
@@ -463,7 +468,9 @@ async fn read_buffer(
     });
     // Native: drive the callback now. On the web the browser runs it from the event loop.
     #[cfg(not(target_arch = "wasm32"))]
-    gpu.device.poll(wgpu::PollType::wait_indefinitely()).map_err(|e| GpuError::Readback(e.to_string()))?;
+    gpu.device.poll(wgpu::PollType::Wait { submission_index: None, timeout: Some(READBACK_TIMEOUT) }).map_err(|e| {
+        GpuError::Readback(format!("the GPU did not hand back the image within {READBACK_TIMEOUT:?} ({e})"))
+    })?;
     #[cfg(target_arch = "wasm32")]
     let _ = gpu;
     MapFuture { state }.await.map_err(|e| GpuError::Readback(e.to_string()))?;

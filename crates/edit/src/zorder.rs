@@ -11,13 +11,14 @@
 //! * Only the elements that move get new keys ([`ZIndex::n_between`]). Tombstones keep their place. When a key
 //!   cannot be made (or would grow past [`REBALANCE_LEN`]) all keys are rewritten once and the report says so.
 //!
-//! The same machinery places a block of elements at a spot ([`move_block`]); `group`, `frame` and `lifecycle` use it.
+//! The same machinery places a block of elements at a spot (`move_block`); `group`, `frame` and `lifecycle` use it.
 
 use std::collections::BTreeSet;
 
 use drafftink_scene::{Element, ElementId, GroupId, IndexError, Kind, SceneRead, SceneTx, StoreError, ZIndex};
 
-use crate::group::units::{Relations, UnitKey, ensure_unlocked, impl_from_target, unit_key, units, with_companions};
+use crate::group::units::{Relations, UnitKey, ensure_unlocked, unit_key, units, with_companions};
+use crate::target::TargetError;
 
 /// Keys longer than this make the whole order get rewritten with short keys.
 pub const REBALANCE_LEN: usize = 48;
@@ -25,12 +26,9 @@ pub const REBALANCE_LEN: usize = 48;
 /// Why a z-order change was refused.
 #[derive(Debug, Clone, PartialEq, thiserror::Error)]
 pub enum ZOrderError {
-    /// No live element has this id.
-    #[error("element {0} does not exist or is deleted")]
-    NotFound(ElementId),
-    /// Locked elements cannot be reordered.
-    #[error("{} element(s) are locked ({}). Unlock them first", .0.len(), crate::group::units::ids_text(.0))]
-    Locked(Vec<ElementId>),
+    /// An element does not exist, is deleted, or is locked.
+    #[error(transparent)]
+    Target(#[from] TargetError),
     /// The anchor of a placement is missing or is one of the moved elements.
     #[error("cannot place relative to {0}: it does not exist or is moving itself")]
     BadAnchor(ElementId),
@@ -41,7 +39,6 @@ pub enum ZOrderError {
     #[error("z-order keys are exhausted: {0}")]
     Index(#[from] IndexError),
 }
-impl_from_target!(ZOrderError);
 
 /// A z-order step.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -460,11 +457,11 @@ pub(crate) fn lift_above_enclosures<R: SceneRead>(
         }
         if lifted.is_none() {
             for g in rel.stack(&anchor) {
-                if joins_group(&g) {
+                if joins_group(g) {
                     break;
                 }
                 let topmost = rel
-                    .members(&g)
+                    .members(g)
                     .iter()
                     .filter_map(|m| scene.get(m))
                     .max_by(|a, b| a.index.cmp(&b.index).then_with(|| a.id.cmp(&b.id)));

@@ -3,6 +3,7 @@
 
 mod structure_support;
 
+use drafftink_edit::TargetError;
 use drafftink_edit::group::{self, GroupError};
 use drafftink_scene::*;
 use structure_support::*;
@@ -27,6 +28,24 @@ fn group_adds_one_new_outermost_id_and_keeps_element_ids() {
     assert!(stack(&s, "c").is_empty());
     assert_eq!(order(&s), strs(&["a", "b", "c", "d"]));
     assert_valid(&s);
+}
+
+#[test]
+fn group_with_ids_takes_an_id_only_when_the_grouping_succeeds() {
+    let mut s = four();
+    let mut source = SeqIds::new();
+    assert!(matches!(
+        run(&mut s, |tx| group::group_with_ids(tx, &ids(&["a"]), None, &mut source)),
+        Err(GroupError::TooFew { .. })
+    ));
+    assert!(matches!(
+        run(&mut s, |tx| group::group_with_ids(tx, &ids(&["a", "zz"]), None, &mut source)),
+        Err(GroupError::Target(TargetError::NotFound(_)))
+    ));
+    let first = run(&mut s, |tx| group::group_with_ids(tx, &ids(&["a", "b"]), None, &mut source)).unwrap();
+    assert_eq!(first.group, SeqIds::new().group_id(), "the refused calls drew no id");
+    let second = run(&mut s, |tx| group::group_with_ids(tx, &ids(&["c", "d"]), None, &mut source)).unwrap();
+    assert_ne!(second.group, first.group);
 }
 
 #[test]
@@ -61,7 +80,7 @@ fn old_failed_grouping_changes_nothing() {
     ));
     assert!(matches!(
         run(&mut s, |tx| group::group(tx, &ids(&["a", "zz"]), None, gid("g1"))),
-        Err(GroupError::NotFound(_))
+        Err(GroupError::Target(TargetError::NotFound(_)))
     ));
     assert_eq!(s.revision(), rev);
 }
@@ -133,7 +152,7 @@ fn locked_elements_refuse_the_whole_call() {
     let mut s = scene(vec![rect("a", 0.0, 0.0, 1.0, 1.0), rect("b", 5.0, 0.0, 1.0, 1.0).locked()]);
     let rev = s.revision();
     let r = run(&mut s, |tx| group::group(tx, &ids(&["a", "b"]), None, gid("g1")));
-    assert!(matches!(r, Err(GroupError::Locked(ref v)) if v == &ids(&["b"])));
+    assert!(matches!(r, Err(GroupError::Target(TargetError::Locked(ref v))) if v == &ids(&["b"])));
     assert_eq!(s.revision(), rev);
 }
 

@@ -110,7 +110,7 @@ colour), `set_trace`/`drawn_order` (ids drawn, for tests).
 ## 5. Overlay, grid, pictures
 
 **Overlay.** `paint_overlay(&mut scene, &Overlay, &View, &OverlayStyle)` draws selection boxes with handles (the
-handle set comes from `geom::select`), point handles of lines, the hover outline, binding highlights, the marquee,
+handle set comes from `geom::select`), point handles of lines, the hover outline, binding highlights, the marquee, the lasso path,
 smart guides, the snap point and remote cursors. Sizes are logical pixels, so handles keep their on-screen size at
 any zoom; a dashed box that would need more than 2,000 dashes is drawn solid. The canvas keeps the world scene and
 rebuilds only this one when the pointer moves; `combine` joins them (a memcpy of the encodings).
@@ -171,8 +171,11 @@ Known differences from the old renderer (the first two are excluded from the com
 - A rectangle with a **zero or negative size** was drawn unnormalised by the old app (a dot; a differently jittered
   outline). The model normalises the box, so the zero-size one draws nothing.
 - Frame labels scale with the zoom (they are part of the fragment); Excalidraw keeps them a constant screen size.
-- Calligraphy brushes, `pressure_mode` and bound-text vertical alignment inside a taller box are not applied: pressure
-  is used when `pressures` has one value per point.
+- Bound-text vertical alignment inside a taller box is not applied.
+- Pressure: a freehand stroke is a variable-width outline when its `pressure_mode` is not `uniform` and `pressures`
+  has one value per point; otherwise it is the sketchy line. The calligraphy brush and the simulated pressure are not
+  drawing modes. They shape the samples while the stroke is drawn (`edit/src/brush.rs`, as in the old app), and the
+  stored points and pressures are what the painter draws.
 
 ## 8. Cost (criterion, `cargo bench -p drafftink-render --bench compose`)
 
@@ -186,9 +189,9 @@ the number of elements the view shows. Cold: empty fragment cache and sketch cac
 | zoomed in, cold | 139 µs | 93 µs | 102 µs |
 | pan, warm | 6.5 µs | 7.3 µs | 6.2 µs |
 | drag one element (edit + index + compose) | 6.8 µs | 7.9 µs | 10.3 µs |
-| everything visible, full detail, warm | 0.25 ms | 9.9 ms | not run |
+| everything visible, full detail, warm | 0.20 ms (was 0.25) | 3.3 ms (was 9.9) | not run |
 | everything visible, full detail, cold | 3.6 ms | 58.6 ms | not run |
-| everything visible, level of detail, warm | 0.25 ms | 7.9 ms | 49.6 ms |
+| everything visible, level of detail, warm | 0.21 ms (was 0.25) | 3.8 ms (was 7.9) | 22.6 ms (was 49.6) |
 | everything visible, level of detail, cold | 3.3 ms | 50.0 ms | 57.7 ms |
 
 Old renderer, `build_scene` (`docs/performance.md` §7.2, `opt-level=z`): zoomed in with almost everything culled
@@ -197,9 +200,12 @@ now independent of the document size (about 6 µs for 30 elements). The old "eve
 the whole scene each frame; the warm number here is an append of cached fragments, and the cold number includes
 sketch generation for every element. At 10k all visible, the warm cost is the copy of about 10k fragments; the level
 of detail does not help much there because most elements are still above the 3 px box threshold at that zoom. At
-100k, 20,000 boxes are drawn and the rest dropped; the time is the walk over the store and the index for 100k
-elements (two hash lookups each), which is where a future version should save: keep a z-ordered array of visible
-candidates between frames.
+100k, 20,000 boxes are drawn and the rest dropped. The walk over the store and the index (two hash lookups per
+element, 23 of the 33 ms in a profile) is gone: the composer keeps the z order of the whole scene between frames,
+keyed to the store's `version_stamp` and the index's `generation`, and rebuilds it when either changes. A pan or a
+zoom of a large scene therefore costs the candidate loop only (22.6 ms at 100k, the warm rows above). The first frame
+and the first frame after an edit still order the scene once (`Counter::ElementsScanned` counts it); a one-shot
+frame, as in an export, pays for the order and is about 12 ms slower at 100k (cold row: 57 ms, was 45 ms).
 
 Grid (`cargo bench`, 1920x1080): lines 7 to 18 µs, dots 0.15 to 0.4 ms at any zoom. Overlay with a selection and a
 marquee: 12 µs.

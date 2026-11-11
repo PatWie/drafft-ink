@@ -17,7 +17,9 @@ use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
 use std::sync::{Mutex, MutexGuard, PoisonError};
 
 use crate::clock::now_ns;
+use crate::frame::FrameStats;
 use crate::names::{Counter, Gauge, RedrawReason};
+use crate::stats::PerfStats;
 
 /// Named (ad hoc) counters kept per process and per thread; further new names are ignored.
 pub const MAX_NAMED: usize = 64;
@@ -222,6 +224,17 @@ impl WorkScope {
             })
     }
 
+    /// A window that starts when the current thread did: its numbers are everything this thread has done.
+    fn since_thread_start() -> Self {
+        Self {
+            counters: [0; Counter::COUNT],
+            redraws: [0; RedrawReason::COUNT],
+            named: Vec::new(),
+            log_seq: 0,
+            _not_send: PhantomData,
+        }
+    }
+
     /// How much `counter` grew since `begin`.
     pub fn count(&self, counter: Counter) -> u64 {
         let base = self.counters.get(counter.index()).copied().unwrap_or(0);
@@ -261,6 +274,31 @@ impl WorkScope {
             .unwrap_or_default()
     }
 
+    /// What this scope saw as a [`PerfStats`]: the counter deltas, the gauges as they are now and the redraws
+    /// requested since `begin`. There are no frames or spans. A work-counter test wraps it in a
+    /// [`crate::ScenarioReport`] to check its numbers against `perf/budgets.json`.
+    pub fn stats(&self) -> PerfStats {
+        let mut counters = [0; Counter::COUNT];
+        for c in Counter::ALL {
+            if let Some(slot) = counters.get_mut(c.index()) {
+                *slot = self.count(*c);
+            }
+        }
+        let mut gauges = [0; Gauge::COUNT];
+        for g in Gauge::ALL {
+            if let Some(slot) = gauges.get_mut(g.index()) {
+                *slot = self.gauge(*g);
+            }
+        }
+        let mut redraws = [0; RedrawReason::COUNT];
+        for r in RedrawReason::ALL {
+            if let Some(slot) = redraws.get_mut(r.index()) {
+                *slot = self.redraws_for(*r);
+            }
+        }
+        PerfStats::assemble(FrameStats::default(), counters, gauges, redraws, Vec::new(), Vec::new(), Vec::new(), 0)
+    }
+
     /// Every counter that grew since `begin`, as `name=delta` text, for assertion messages.
     pub fn summary(&self) -> String {
         let mut parts: Vec<String> = Counter::ALL
@@ -278,9 +316,26 @@ impl WorkScope {
     }
 }
 
+/// The work of the current thread since it started, as a [`PerfStats`] (counters, gauges, redraws; no
+/// frames or spans). For a process that runs many independent sessions on different threads (a test suite,
+/// the testkit): `snapshot()` adds them all up, this one shows a single thread's own numbers.
+pub fn snapshot_thread() -> PerfStats {
+    WorkScope::since_thread_start().stats()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_thread_snapshot_holds_this_threads_work_only() {
+        count(Counter::ElementsEncoded, 4);
+        std::thread::spawn(|| count(Counter::ElementsEncoded, 100)).join().unwrap();
+        let first = snapshot_thread().counters["elements_encoded"];
+        count(Counter::ElementsEncoded, 3);
+        assert_eq!(snapshot_thread().counters["elements_encoded"], first + 3);
+        assert_eq!(first, 4);
+    }
 
     #[test]
     fn scope_sees_only_its_own_window() {

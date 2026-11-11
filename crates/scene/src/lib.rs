@@ -10,6 +10,7 @@
 //! No clock, no global randomness, no I/O: ids and seeds come from an injected [`IdSource`].
 
 #![cfg_attr(test, allow(clippy::unwrap_used, clippy::expect_used, clippy::panic))]
+#![warn(missing_docs)]
 
 pub mod color;
 pub mod derived;
@@ -23,6 +24,7 @@ pub mod palette;
 pub mod store;
 pub mod style;
 pub mod validate;
+pub mod words;
 pub mod zindex;
 
 #[cfg(any(test, feature = "conformance"))]
@@ -33,7 +35,7 @@ pub use derived::DerivedIndex;
 pub use document::{DocMeta, Document, DocumentError, FileEntry, SCHEMA_VERSION, json_schema};
 pub use element::{
     BindMode, Binding, Brush, Crop, Element, ElementKind, FixedSegment, FrameData, FreehandData, Head, ImageData, Kind,
-    LinearData, MathData, PathType, PressureMode, TextData, TextRun, Transform,
+    LinearData, MathData, ParseKindError, PathType, PressureMode, TextData, TextRun, Transform,
 };
 pub use id::{ElementId, FileId, GroupId, IdError, IdSource, RandomIds, Rng64, SeqIds, SplitMix64};
 pub use memory::MemoryStore;
@@ -45,7 +47,7 @@ pub use style::{
     FillPattern, FontFamily, FontWeight, Sloppiness, StrokeStyle, Style, TextAlign, TextStyle, VerticalAlign,
 };
 pub use validate::{
-    DocError, ElementError, Issue, Report, Severity, element_errors, validate_document, validate_element,
-    validate_scene,
+    DocError, ElementError, Issue, Report, Severity, element_errors, is_image_media_type, is_valid_name,
+    validate_document, validate_element, validate_scene, validate_transform,
 };
 pub use zindex::{IndexError, ZIndex};

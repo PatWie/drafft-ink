@@ -1,6 +1,7 @@
 //! Helpers shared by the `element` and `selection` command families (and by other families that act on
 //! elements and the selection). Nothing here holds a domain rule; the rules are in `drafftink-edit`.
 
+use drafftink_edit::TargetError;
 use drafftink_edit::group::selection::{Selection as EditSelection, select_ids};
 use drafftink_scene::ElementId;
 use serde_json::json;
@@ -13,6 +14,14 @@ pub(crate) fn locked_refusal(cmd: &str, ids: &[ElementId]) -> Refusal {
     let first = ids.first().map_or("", ElementId::as_str);
     Refusal::locked(cmd, first)
         .with_details(json!({ "ids": ids.iter().map(|i| i.as_str().to_owned()).collect::<Vec<_>>() }))
+}
+
+/// The refusal for an element that is missing, deleted or locked.
+pub(crate) fn target_refusal(cmd: &str, e: TargetError) -> Refusal {
+    match e {
+        TargetError::NotFound(id) => Refusal::not_found(cmd, id.as_str()),
+        TargetError::Locked(ids) => locked_refusal(cmd, &ids),
+    }
 }
 
 /// The observed selection of the active tab in the form the edit crate takes.

@@ -1,0 +1,22 @@
+{
+  "about": "An Excalidraw library file is imported (merged without duplicates, or opened as a tab), the library is exported inline and to a file, and what is not a library is refused in words.",
+  "steps": [
+    { "harness": "stage_fixture", "args": { "path": "excalidraw/fixture_library.excalidrawlib" } },
+    { "harness": "stage_fixture", "args": { "path": "excalidraw/not_a_library.excalidrawlib" } },
+    { "execute": "library.export", "refused": "nothing_to_do", "text": "The library is empty, so there is nothing to export." },
+
+    { "execute": "library.import", "args": { "source": { "path": "fixtures/excalidraw/fixture_library.excalidrawlib" } }, "expect": [ { "path": "$.added", "eq": 1 }, { "path": "$.skipped", "eq": 0 }, { "path": "$.total", "eq": 1 } ] },
+    { "execute": "library.import", "args": { "source": { "path": "fixtures/excalidraw/fixture_library.excalidrawlib" } }, "expect": [ { "path": "$.added", "eq": 0 }, { "path": "$.skipped", "eq": 1, "note": "The same shapes are skipped by content." }, { "path": "$.changed", "eq": false } ] },
+    { "execute": "library.import", "args": { "source": { "path": "fixtures/excalidraw/not_a_library.excalidrawlib" } }, "refused": "parse_failed", "text": ["The file is not an Excalidraw library", "Libraries are .excalidrawlib files."] },
+    { "execute": "library.import", "args": { "source": { "path": "fixtures/excalidraw/missing.excalidrawlib" } }, "refused": "io_failed", "text": "Could not read" },
+    { "assert": "library.list", "expect": [ { "path": "$.items", "len": 1 }, { "path": "$.items[0].element_count", "eq": 1 } ] },
+
+    { "execute": "library.export", "expect": [ { "path": "$.items", "eq": 1 }, { "path": "$.bytes.base64", "is": "string" } ] },
+    { "execute": "library.export", "args": { "to": { "download": "mine.excalidrawlib" } }, "expect": [ { "path": "$.saved_to.download", "eq": "mine.excalidrawlib" } ] },
+    { "execute": "library.export", "args": { "items": ["nope"] }, "refused": "no_such_item", "text": "There is no library item `nope`." },
+    { "execute": "library.import", "args": { "source": { "path": "fixtures/excalidraw/fixture_library.excalidrawlib" }, "mode": "open_as_tab" }, "expect": [ { "path": "$.tab", "eq": "t2" } ] },
+    { "assert": "tab.list", "expect": [ { "path": "$.tabs", "len": 2 } ] },
+    { "execute": "library.import", "args": { "source": { "path": "fixtures/excalidraw/fixture_library.excalidrawlib" }, "mode": "replace" }, "expect": [ { "path": "$.total", "eq": 1 } ] },
+    { "assert": "history.state", "expect": [ { "path": "$.undo_depth", "eq": 0, "note": "No library command is a document step." } ] }
+  ]
+}

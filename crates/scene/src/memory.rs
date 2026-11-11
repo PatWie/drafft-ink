@@ -13,11 +13,11 @@ use crate::derived::DerivedIndex;
 use crate::document::{DocMeta, Document, FileEntry};
 use crate::element::Element;
 use crate::id::{ElementId, FileId};
-use crate::limits::{MAX_ELEMENTS, MAX_FILE_BYTES, MAX_FILES, MAX_NAME_CHARS};
+use crate::limits::{MAX_ELEMENTS, MAX_FILE_BYTES, MAX_FILES};
 use crate::store::{
     Change, ChangeKind, ChangeSet, Fields, SceneRead, SceneStore, SceneTx, StoreError, SubscriptionId, load_document,
 };
-use crate::validate::validate_element;
+use crate::validate::{is_image_media_type, is_valid_name, validate_element};
 use crate::zindex::ZIndex;
 
 type Callback = Box<dyn FnMut(&ChangeSet)>;
@@ -114,6 +114,14 @@ impl SceneRead for MemoryStore {
         self.order.first().map(|(z, _)| z.clone())
     }
 
+    fn derived_index(&self) -> Option<&DerivedIndex> {
+        Some(&self.derived)
+    }
+
+    fn version_stamp(&self) -> Option<u64> {
+        Some(self.revision)
+    }
+
     fn z_neighbors(&self, id: &ElementId) -> (Option<ZIndex>, Option<ZIndex>) {
         let Some(e) = self.elements.get(id) else { return (None, None) };
         let key = (e.index.clone(), e.id.clone());
@@ -193,6 +201,13 @@ impl SceneRead for MemoryTx<'_> {
     fn z_neighbors(&self, id: &ElementId) -> (Option<ZIndex>, Option<ZIndex>) {
         self.store.z_neighbors(id)
     }
+    fn derived_index(&self) -> Option<&DerivedIndex> {
+        // The index follows commits, so it is exact only while this transaction has written no element.
+        self.touched.is_empty().then_some(&self.store.derived)
+    }
+    fn version_stamp(&self) -> Option<u64> {
+        self.touched.is_empty().then_some(self.store.revision)
+    }
 }
 
 impl MemoryTx<'_> {
@@ -265,7 +280,7 @@ impl SceneTx for MemoryTx<'_> {
     }
 
     fn set_name(&mut self, name: &str) -> Result<(), StoreError> {
-        if name.is_empty() || name.chars().count() > MAX_NAME_CHARS || name.chars().any(char::is_control) {
+        if !is_valid_name(name) {
             return Err(StoreError::BadName);
         }
         if self.meta.is_none() {
@@ -283,11 +298,7 @@ impl SceneTx for MemoryTx<'_> {
     }
 
     fn put_file(&mut self, entry: FileEntry) -> Result<FileId, StoreError> {
-        let mime_ok = entry.mime.len() <= 64
-            && entry.mime.len() > 6
-            && entry.mime.starts_with("image/")
-            && entry.mime.bytes().all(|b| b.is_ascii_alphanumeric() || matches!(b, b'/' | b'+' | b'.' | b'-'));
-        if !mime_ok {
+        if !is_image_media_type(&entry.mime) {
             return Err(StoreError::BadFile(format!("{:?} is not an image media type like image/png", entry.mime)));
         }
         if entry.bytes.len() > MAX_FILE_BYTES {
@@ -336,7 +347,7 @@ impl SceneTx for MemoryTx<'_> {
                     if fields.is_empty() {
                         f.version = o.version;
                     } else {
-                        f.version = o.version + 1;
+                        f.version = o.version.saturating_add(1);
                         elements.push(Change { id, kind: ChangeKind::Updated, fields, version: f.version });
                     }
                 }

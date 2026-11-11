@@ -30,9 +30,10 @@
 use std::cmp::Ordering;
 
 use drafftink_geom::kurbo::{Point, Rect};
+use drafftink_geom::lasso::{Lasso, lasso_selects};
 use drafftink_geom::select::{MarqueeMode as GeomMarquee, marquee_selects};
 use drafftink_geom::{HitOpts, Outline, RectShape, SpatialIndex, aabb};
-use drafftink_profile::{Counter, inc};
+use drafftink_profile::{Counter, count, inc};
 use drafftink_scene::{ChangeKind, ChangeSet, Element, ElementId, ElementKind, GroupId, SceneRead};
 use serde::{Deserialize, Serialize};
 
@@ -100,6 +101,37 @@ pub enum MarqueeMode {
     Intersect,
 }
 
+/// How the index differs from the scene, as reported by [`SceneIndex::verify`].
+#[derive(Debug, Clone, PartialEq, thiserror::Error)]
+pub enum IndexMismatch {
+    /// An element is indexed with other bounds than the scene gives it, or is missing.
+    #[error("{id}: index has {have:?}, scene says {want:?}")]
+    Bounds {
+        /// The element.
+        id: ElementId,
+        /// What the index holds.
+        have: Option<Rect>,
+        /// What a recomputation gives.
+        want: Rect,
+    },
+    /// An element without geometry is indexed.
+    #[error("{id}: index has {have:?}, element has no geometry")]
+    NoGeometry {
+        /// The element.
+        id: ElementId,
+        /// What the index holds.
+        have: Rect,
+    },
+    /// The index holds entries for elements the scene no longer has.
+    #[error("index holds {indexed} entries, scene has {expected} drawable elements")]
+    Count {
+        /// Entries in the index.
+        indexed: usize,
+        /// Drawable elements in the scene.
+        expected: usize,
+    },
+}
+
 /// What [`SceneIndex::apply`] did.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct ApplyStats {
@@ -163,6 +195,7 @@ impl SceneIndex {
 
     /// Replaces the content with a bulk-loaded index of `scene`.
     pub fn rebuild<R: SceneRead>(&mut self, scene: &R) {
+        count(Counter::ElementsScanned, u64::try_from(scene.len_all()).unwrap_or(u64::MAX));
         self.index = SpatialIndex::bulk_load(scene.iter().filter_map(|e| index_bounds(e).map(|b| (e.id.clone(), b))));
         self.bulk_rebuilds += 1;
     }
@@ -242,18 +275,18 @@ impl SceneIndex {
 
     /// Compares the index with a full recomputation from `scene`. `Ok` when every live drawable element is indexed
     /// with exactly the bounds [`index_bounds`] gives and nothing else is. The error says what differs first.
-    pub fn verify<R: SceneRead>(&self, scene: &R) -> Result<(), String> {
+    pub fn verify<R: SceneRead>(&self, scene: &R) -> Result<(), IndexMismatch> {
         let mut expected = 0usize;
         for e in scene.iter() {
             match (index_bounds(e), self.index.get(&e.id)) {
                 (Some(want), Some(have)) if want == have => expected += 1,
-                (Some(want), have) => return Err(format!("{}: index has {have:?}, scene says {want:?}", e.id)),
-                (None, Some(have)) => return Err(format!("{}: index has {have:?}, element has no geometry", e.id)),
+                (Some(want), have) => return Err(IndexMismatch::Bounds { id: e.id.clone(), have, want }),
+                (None, Some(have)) => return Err(IndexMismatch::NoGeometry { id: e.id.clone(), have }),
                 (None, None) => {}
             }
         }
         if self.index.len() != expected {
-            return Err(format!("index holds {} entries, scene has {expected} drawable elements", self.index.len()));
+            return Err(IndexMismatch::Count { indexed: self.index.len(), expected });
         }
         Ok(())
     }
@@ -332,6 +365,38 @@ impl SceneIndex {
                     marquee_selects(&shape, &rect, GeomMarquee::Contain, false)
                 }
                 (MarqueeMode::Intersect, false) => marquee_selects(&shape, &rect, GeomMarquee::Touch, hits_inside(e)),
+            };
+            if selected {
+                found.push(e);
+            }
+        }
+        found.sort_by(|a, b| z_cmp(a, b));
+        found.into_iter().map(|e| e.id.clone()).collect()
+    }
+
+    /// Elements selected by a lasso (world space), back to front. The rules are those of [`SceneIndex::marquee`]
+    /// with a free-hand outline: `Contain` needs the whole outline inside the lasso, `Intersect` takes what the
+    /// lasso crosses, surrounds or (for a filled shape) lies inside, and a frame always needs `Contain`.
+    pub fn lasso<R: SceneRead>(
+        &self,
+        scene: &R,
+        lasso: &Lasso,
+        mode: MarqueeMode,
+        include_locked: bool,
+    ) -> Vec<ElementId> {
+        inc(Counter::SpatialQueries);
+        let mut found: Vec<&Element> = Vec::new();
+        for (id, _) in self.index.query_rect(&lasso.bounds()) {
+            let Some(e) = scene.get(id) else { continue };
+            if e.deleted || (e.locked && !include_locked) {
+                continue;
+            }
+            let Some(shape) = shape_of(e) else { continue };
+            let selected = match (mode, matches!(e.kind, ElementKind::Frame(_))) {
+                (MarqueeMode::Contain, _) | (MarqueeMode::Intersect, true) => {
+                    lasso_selects(&shape, lasso, GeomMarquee::Contain, false)
+                }
+                (MarqueeMode::Intersect, false) => lasso_selects(&shape, lasso, GeomMarquee::Touch, hits_inside(e)),
             };
             if selected {
                 found.push(e);

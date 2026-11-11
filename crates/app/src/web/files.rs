@@ -4,7 +4,7 @@
 //! lives in the `Documents` namespace of the storage. Paths and File System Access handles are not offered.
 
 use drafftink_engine::PortError;
-use drafftink_engine::ports::{FileRef, Files, Ns, Storage};
+use drafftink_engine::ports::{FileRef, Files, Ns, Storage, WriteOutcome};
 use js_sys::{Array, Uint8Array};
 use wasm_bindgen::JsCast;
 use web_sys::{Blob, BlobPropertyBag, HtmlAnchorElement, Url};
@@ -81,16 +81,16 @@ impl Files for WebFiles {
         }
     }
 
-    fn write(&mut self, file: &FileRef, bytes: &[u8], mime: &str) -> Result<FileRef, PortError> {
+    fn write(&mut self, file: &FileRef, bytes: &[u8], mime: &str) -> Result<WriteOutcome, PortError> {
         match file {
             FileRef::Download { download: name } => {
                 let name = download_name(name);
                 download(&name, bytes, mime)?;
-                Ok(FileRef::Download { download: name })
+                Ok(WriteOutcome::Done(FileRef::Download { download: name }))
             }
             FileRef::Stored { stored } => {
                 self.storage.put(Ns::Documents, stored, bytes)?;
-                Ok(file.clone())
+                Ok(WriteOutcome::Done(file.clone()))
             }
             FileRef::Path { .. } => Err(unsupported("File paths")),
             FileRef::Handle { .. } => Err(unsupported("File handles")),

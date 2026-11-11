@@ -8,7 +8,7 @@
 //! The design (`docs/model.md`, research 02f): the binding is stored **on the arrow only**
 //! (`start_binding` / `end_binding`: target, inside or orbit, fixed point). The reverse index is derived
 //! (`DerivedIndex::bound_arrows`) and never stored. An end's position is derived from its binding by the
-//! solver in [`solve`]; the stored point is a cache of it.
+//! solver in `solve`; the stored point is a cache of it.
 //!
 //! * [`update_bound_arrows`]: re-solve after shapes changed (one pass per transaction, sorted by id).
 //! * [`find_hovered`], [`hover_candidate`], [`plan_end_drag`], [`drag_end`]: acquisition while an end is dragged,
@@ -26,11 +26,12 @@ mod target;
 
 use std::collections::{BTreeSet, HashSet};
 
+use drafftink_profile::{Counter, count};
 use drafftink_scene::{DerivedIndex, ElementId, PathType, SceneRead, SceneTx, StoreError};
 
 pub use acquire::{
-    BindOpts, BindingCandidate, DragPlan, EndChange, Hovered, drag_end, find_hovered, hover_candidate, plan_end_drag,
-    within_binding_reach,
+    BindOpts, BindingCandidate, DragPlan, EndChange, Hovered, binding_reach, drag_end, drag_end_among, find_hovered,
+    find_hovered_among, hover_candidate, hover_candidate_for, plan_end_drag, plan_end_drag_among, within_binding_reach,
 };
 pub use lifecycle::{
     can_move_with, free_ends_bound_to, free_ends_bound_to_with, heal_bindings, mirror_fixed_points,
@@ -40,7 +41,7 @@ pub use solve::bound_end_position;
 pub use target::{Resolved, bind_target, is_bindable, resolve};
 
 use crate::elbow::{self, ElbowError, RouteOpts};
-use crate::linear::{set_world_points, world_points};
+use crate::linear::{Turn, set_world_points, world_points};
 
 /// Which end of a line or arrow.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
@@ -93,20 +94,53 @@ pub enum BindingError {
 /// Re-solve every arrow bound to any of `changed` (and arrows in `changed` themselves).
 /// Returns the ids of arrows whose geometry changed, sorted.
 ///
-/// Scans the transaction's elements once. With many elements and few changes, prefer
-/// [`update_bound_arrows_indexed`].
+/// The arrows are found with the reader's committed reverse index when it offers one (a store, or a transaction
+/// that has not written yet), so the cost follows the number of bound arrows. Otherwise the call scans the
+/// transaction's elements once. A caller that writes before it calls, and that has many elements, takes the
+/// candidates first with [`arrows_bound_to`] and calls [`update_bound_arrows_from`].
 pub fn update_bound_arrows<T: SceneTx>(tx: &mut T, changed: &[ElementId]) -> Result<Vec<ElementId>, BindingError> {
+    if changed.is_empty() {
+        return Ok(Vec::new());
+    }
+    let candidates = arrows_bound_to(&*tx, changed);
+    update_bound_arrows_from(tx, changed, candidates)
+}
+
+/// The lines and arrows with an end bound to any of `ids`, as the reader sees them now. With a derived index this
+/// is a lookup per id; without one it is a pass over the scene.
+pub fn arrows_bound_to<R: SceneRead>(scene: &R, ids: &[ElementId]) -> BTreeSet<ElementId> {
+    if let Some(index) = scene.derived_index() {
+        return ids.iter().flat_map(|id| index.bound_arrows(id)).cloned().collect();
+    }
+    count(Counter::ElementsScanned, u64::try_from(scene.len_all()).unwrap_or(u64::MAX));
+    let set: HashSet<&ElementId> = ids.iter().collect();
+    scene
+        .iter()
+        .filter(|e| e.binding_targets().into_iter().flatten().any(|t| set.contains(t)))
+        .map(|e| e.id.clone())
+        .collect()
+}
+
+/// Like [`update_bound_arrows`], with the arrows bound to `changed` given by the caller (from
+/// [`arrows_bound_to`], taken before it wrote). A candidate that is no longer bound to a changed id is left
+/// alone. Arrows named in `changed` are re-solved when they are bound or elbow arrows.
+pub fn update_bound_arrows_from<T: SceneTx>(
+    tx: &mut T,
+    changed: &[ElementId],
+    candidates: BTreeSet<ElementId>,
+) -> Result<Vec<ElementId>, BindingError> {
     if changed.is_empty() {
         return Ok(Vec::new());
     }
     let set: HashSet<&ElementId> = changed.iter().collect();
     let mut affected: BTreeSet<ElementId> = BTreeSet::new();
-    for e in tx.iter() {
+    for id in candidates.iter().chain(changed) {
+        let Some(e) = tx.get(id) else { continue };
         let Some(d) = e.linear_data() else { continue };
         let [a, b] = e.binding_targets();
-        let own = set.contains(&e.id);
         let bound_to_changed = a.is_some_and(|t| set.contains(t)) || b.is_some_and(|t| set.contains(t));
-        if bound_to_changed || (own && (a.is_some() || b.is_some() || d.path == PathType::Elbow)) {
+        let own = set.contains(&e.id) && (a.is_some() || b.is_some() || d.path == PathType::Elbow);
+        if bound_to_changed || own {
             affected.insert(e.id.clone());
         }
     }
@@ -152,7 +186,7 @@ pub(crate) fn from_elbow(arrow: &ElementId, err: elbow::ElbowEditError) -> Bindi
 
 const SAME: f64 = 1e-9;
 
-fn same_points(a: &[kurbo::Point], b: &[kurbo::Point]) -> bool {
+fn same_points(a: &[drafftink_geom::kurbo::Point], b: &[drafftink_geom::kurbo::Point]) -> bool {
     a.len() == b.len() && a.iter().zip(b).all(|(p, q)| (*p - *q).hypot() <= SAME)
 }
 
@@ -171,7 +205,7 @@ fn solve_one<T: SceneTx>(tx: &mut T, id: &ElementId) -> Result<bool, BindingErro
         return Ok(false);
     }
     let mut updated = e.clone();
-    if !set_world_points(&mut updated, &next, false) {
+    if !set_world_points(&mut updated, &next, Turn::Keep) {
         return Ok(false);
     }
     tx.update(id, |slot| {

@@ -21,7 +21,7 @@ pub fn user(name: &str) -> UserInfo {
 }
 
 pub fn store(peer: u64) -> LoroStore {
-    LoroStore::with_config(LoroConfig { peer_id: Some(peer), ..LoroConfig::default() })
+    LoroStore::with_config(LoroConfig { peer_id: Some(peer), ..LoroConfig::default() }).unwrap()
 }
 
 pub fn rect(id: &str) -> Element {
@@ -152,7 +152,7 @@ impl Harness {
     }
 
     pub fn sync_response(&self) -> ServerMessage {
-        self.sync_from(&self.store.version_vector())
+        self.sync_from(&self.store.version_vector().unwrap())
     }
 
     /// What the server would send a client at version `vv`.
@@ -160,7 +160,7 @@ impl Harness {
         ServerMessage::SyncResponse {
             kind: SyncKind::Updates,
             data: self.server.export_updates_since(vv).unwrap(),
-            server_version: self.server.version_vector(),
+            server_version: self.server.version_vector().unwrap(),
         }
     }
 
@@ -169,7 +169,7 @@ impl Harness {
         self.start();
         assert_eq!(self.client.status().state, ConnState::Connecting);
         self.event(TransportEvent::Opened);
-        let joined = self.joined(peers, self.server.version_vector());
+        let joined = self.joined(peers, self.server.version_vector().unwrap());
         self.feed(&joined);
         let sync = self.sync_response();
         self.feed(&sync);

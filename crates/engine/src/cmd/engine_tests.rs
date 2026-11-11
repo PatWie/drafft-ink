@@ -167,3 +167,67 @@ fn introspection_is_allowed_in_every_state_and_changes_nothing() {
     assert_eq!(s.fingerprint(), before);
     assert_eq!(s.take_dirty(), None);
 }
+
+// ---- a document from a newer version ----
+
+const NEWER: &str = "This document was changed by a newer version of drafft. Update the app to edit it.";
+
+/// A session whose tab received an update that raised `meta.schema` beyond this build.
+fn blocked_session() -> Session {
+    let mut s = testing::headless_session();
+    let tab = s.tab().id;
+    let store = s.tab().doc.replicated();
+    let doc = loro::LoroDoc::new();
+    doc.set_peer_id(777).unwrap();
+    doc.import(&store.export_snapshot().unwrap()).unwrap();
+    doc.get_map("meta").insert("schema", 99i64).unwrap();
+    doc.commit();
+    let from = loro::VersionVector::decode(&store.version_vector().unwrap()).unwrap();
+    let update = doc.export(loro::ExportMode::updates(&from)).unwrap();
+    assert!(s.apply_remote(tab, &update).is_err(), "the update must be refused");
+    s
+}
+
+#[test]
+fn state_shows_whether_the_document_is_blocked_by_a_newer_schema() {
+    let mut s = testing::headless_session();
+    let v = run(&mut s, "engine.state", json!({}));
+    assert_eq!(v["blocked_by_schema"], Value::Null);
+    assert_eq!(v["tabs"][0]["blocked_by_schema"], Value::Null);
+    let mut s = blocked_session();
+    let v = run(&mut s, "engine.state", json!({}));
+    assert_eq!(v["blocked_by_schema"], 99);
+    assert_eq!(v["tabs"][0]["blocked_by_schema"], 99);
+}
+
+#[test]
+fn a_blocked_document_refuses_every_command_that_changes_it_in_plain_words() {
+    let mut s = blocked_session();
+    for (id, args) in [
+        ("doc.rename", json!({"name": "x"})),
+        ("doc.set_background", json!({"color": "#ff0000"})),
+        ("element.create", json!({"kind": "rectangle", "bounds": {"x": 0, "y": 0, "w": 10, "h": 10}})),
+        ("history.undo", json!({})),
+    ] {
+        let before = s.fingerprint();
+        assert_eq!(s.availability(id).unwrap_err().message, NEWER, "{id}");
+        let r = s.execute(id, args).unwrap_err();
+        assert_eq!((r.code, r.message.as_str()), ("newer_schema", NEWER), "{id}");
+        assert_eq!(s.fingerprint(), before, "{id}");
+    }
+    // Looking and exporting still work.
+    run(&mut s, "engine.state", json!({}));
+    run(&mut s, "view.zoom_in", json!({}));
+}
+
+#[test]
+fn a_blocked_tab_is_replaced_by_a_new_document_and_other_tabs_are_not_blocked() {
+    let mut s = blocked_session();
+    run(&mut s, "tab.new", json!({}));
+    run(&mut s, "doc.rename", json!({"name": "other tab"}));
+    run(&mut s, "tab.switch", json!({"tab": 0}));
+    run(&mut s, "doc.new", json!({}));
+    let v = run(&mut s, "engine.state", json!({}));
+    assert_eq!(v["blocked_by_schema"], Value::Null);
+    run(&mut s, "doc.rename", json!({"name": "fresh"}));
+}

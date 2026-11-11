@@ -141,3 +141,20 @@ fn versions_are_cache_keys() {
     }
     assert_eq!(seen, [1, 2, 3, 4, 5, 6]);
 }
+
+#[test]
+fn a_version_at_the_maximum_does_not_overflow_on_update() {
+    // A hostile document can carry any `version`; the next edit must not panic or wrap to 0.
+    let z = ZIndex::first();
+    let mut s = MemoryStore::new();
+    let mut e = rect("a", &z);
+    e.version = u64::MAX;
+    let mut tx = s.begin();
+    tx.insert(e).unwrap();
+    tx.commit().unwrap();
+    let mut tx = s.begin();
+    tx.update(&id("a"), |e| e.transform.x = 5.0).unwrap();
+    let cs = tx.commit().unwrap();
+    assert_eq!(cs.get(&id("a")).unwrap().version, u64::MAX);
+    assert_eq!(s.get(&id("a")).unwrap().version, u64::MAX);
+}

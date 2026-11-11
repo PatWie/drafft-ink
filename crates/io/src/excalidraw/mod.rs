@@ -1,5 +1,5 @@
 //! Excalidraw files: `.excalidraw` scenes, the Excalidraw clipboard, and `.excalidrawlib` libraries, in both
-//! directions. Pure: text in, [`Document`](drafftink_scene::Document) out, no file access.
+//! directions. Pure: text in, [`Document`] out, no file access.
 //!
 //! Every input is hostile. Wrong types fall back to a default and add a warning to the [`ImportReport`]; numbers are
 //! clamped to the scene limits; a document this module returns always passes [`Document::validate`] without errors.
@@ -73,7 +73,7 @@ use drafftink_scene::{Color, Document, IdSource};
 use serde_json::Value;
 
 use crate::limits::MAX_INPUT_BYTES;
-use crate::{ImportReport, Imported, IoError};
+use crate::{Expected, FormatName, ImportReport, Imported, IoError};
 
 mod clipboard;
 mod export;
@@ -110,7 +110,7 @@ fn check_size(len: usize, max: usize) -> Result<(), IoError> {
     Ok(())
 }
 
-fn parse_json(text: &str, format: &'static str) -> Result<Value, IoError> {
+fn parse_json(text: &str, format: FormatName) -> Result<Value, IoError> {
     check_size(text.len(), MAX_INPUT_BYTES)?;
     // serde_json refuses nesting deeper than 128 levels, so hostile input cannot overflow the stack.
     serde_json::from_str(text).map_err(|e| IoError::parse(format, e.to_string()))
@@ -122,14 +122,14 @@ const CLIPBOARD_TYPES: [&str; 2] = ["excalidraw/clipboard", "excalidraw-api/clip
 fn convert_scene(
     obj: &serde_json::Map<String, Value>,
     ids: &mut dyn IdSource,
-    format: &'static str,
+    format: FormatName,
 ) -> Result<Imported, IoError> {
     let Some(elements) = obj.get("elements").and_then(Value::as_array) else {
         return Err(IoError::invalid(format, "there is no `elements` list"));
     };
     let mut report = ImportReport::default();
     let files = obj.get("files").and_then(Value::as_object);
-    let conv = import::convert(import::Source { elements, files, prefix: "" }, ids, &mut report);
+    let conv = import::convert(import::Source { elements, files, prefix: "" }, ids, &mut report)?;
     let mut document = Document { elements: conv.elements, files: conv.files, ..Document::new() };
     if let Some(bg) = obj.get("appState").and_then(|a| a.get("viewBackgroundColor")).and_then(Value::as_str) {
         match Color::parse(bg.trim()) {
@@ -151,10 +151,10 @@ fn convert_scene(
 /// ([`IoError::Limit`]). A scene whose elements are all unsupported is not an error: the document is empty and the
 /// report says why.
 pub fn import_scene(text: &str, ids: &mut dyn IdSource) -> Result<Imported, IoError> {
-    let v = parse_json(text, "excalidraw")?;
+    let v = parse_json(text, FormatName::Excalidraw)?;
     let Some(obj) = v.as_object() else {
         return Err(IoError::WrongFormat {
-            expected: "an Excalidraw scene",
+            expected: Expected::ExcalidrawScene,
             hint: "the top level of an Excalidraw file is a JSON object".to_owned(),
         });
     };
@@ -163,13 +163,13 @@ pub fn import_scene(text: &str, ids: &mut dyn IdSource) -> Result<Imported, IoEr
         Some(t) if SCENE_TYPES.contains(&t) => {}
         Some("excalidrawlib") => {
             return Err(IoError::WrongFormat {
-                expected: "an Excalidraw scene",
+                expected: Expected::ExcalidrawScene,
                 hint: "this is an Excalidraw library; open it as a library".to_owned(),
             });
         }
         Some(other) => {
             return Err(IoError::WrongFormat {
-                expected: "an Excalidraw scene",
+                expected: Expected::ExcalidrawScene,
                 hint: format!(
                     "its \"type\" is {:?}, and a scene says \"excalidraw\"",
                     other.chars().take(40).collect::<String>()
@@ -177,7 +177,7 @@ pub fn import_scene(text: &str, ids: &mut dyn IdSource) -> Result<Imported, IoEr
             });
         }
     }
-    convert_scene(obj, ids, "excalidraw")
+    convert_scene(obj, ids, FormatName::Excalidraw)
 }
 
 /// Reads the JSON Excalidraw puts on the clipboard (`excalidraw/clipboard`, or `excalidraw-api/clipboard`).
@@ -186,18 +186,18 @@ pub fn import_scene(text: &str, ids: &mut dyn IdSource) -> Result<Imported, IoEr
 /// A clipboard with nothing importable is an error ([`IoError::Invalid`]) so a paste handler can fall back to
 /// other formats.
 pub fn import_clipboard(text: &str, ids: &mut dyn IdSource) -> Result<Imported, IoError> {
-    let v = parse_json(text, "excalidraw clipboard")?;
+    let v = parse_json(text, FormatName::ExcalidrawClipboard)?;
     let ty = v.get("type").and_then(Value::as_str);
     let Some(obj) = v.as_object().filter(|_| ty.is_some_and(|t| CLIPBOARD_TYPES.contains(&t))) else {
         let hint = match ty {
             Some("excalidraw") => "this is a saved Excalidraw scene, not clipboard data; open it as a file".to_owned(),
             _ => "Excalidraw clipboard data says \"type\": \"excalidraw/clipboard\"".to_owned(),
         };
-        return Err(IoError::WrongFormat { expected: "Excalidraw clipboard data", hint });
+        return Err(IoError::WrongFormat { expected: Expected::ExcalidrawClipboard, hint });
     };
-    let imported = convert_scene(obj, ids, "excalidraw clipboard")?;
+    let imported = convert_scene(obj, ids, FormatName::ExcalidrawClipboard)?;
     if imported.document.elements.is_empty() {
-        return Err(IoError::invalid("excalidraw clipboard", "it holds no elements this app can paste"));
+        return Err(IoError::invalid(FormatName::ExcalidrawClipboard, "it holds no elements this app can paste"));
     }
     Ok(imported)
 }
@@ -240,7 +240,8 @@ pub fn export_scene_with_report(doc: &Document) -> Result<(String, ImportReport)
         "appState": {"gridSize": null, "viewBackgroundColor": doc.background.to_hex()},
         "files": out.files,
     });
-    let text = serde_json::to_string_pretty(&root).map_err(|e| IoError::invalid("excalidraw", e.to_string()))?;
+    let text =
+        serde_json::to_string_pretty(&root).map_err(|e| IoError::invalid(FormatName::Excalidraw, e.to_string()))?;
     Ok((text, report))
 }
 

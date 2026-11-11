@@ -1,5 +1,5 @@
 //! `cargo xtask wasm`: every crate at L0 to L5 (plus the apps in `WASM_EXTRA`) must compile for
-//! wasm32-unknown-unknown.
+//! wasm32-unknown-unknown, and pass clippy `-D warnings` for that target.
 
 use std::path::Path;
 
@@ -27,7 +27,15 @@ pub fn run(root: &Path) -> Result<(), String> {
     }
     crate::run(&mut check).map_err(|e| {
         format!("{e}\nIf the target is missing: rustup target add {TARGET} (rust-toolchain.toml lists it)")
-    })
+    })?;
+    // Code behind `cfg(target_arch = "wasm32")` is not seen by the native clippy run, so lint it for the target too.
+    let mut clippy = cargo(root);
+    clippy.args(["clippy", "--target", TARGET, "--all-features"]);
+    for package in packages() {
+        clippy.args(["-p", package]);
+    }
+    clippy.args(["--", "-D", "warnings"]);
+    crate::run(&mut clippy)
 }
 
 #[cfg(test)]

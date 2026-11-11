@@ -4,14 +4,17 @@
 //! `docs/protocol.md`) and `/health`. Rooms live in memory as Loro documents and are saved
 //! through a [`store::RoomStore`]. See `docs/server.md` for running and configuring it.
 
-pub mod auth;
+#![warn(missing_docs, unreachable_pub)]
+
+mod auth;
 pub mod clock;
 pub mod config;
 mod conn;
 mod http;
-pub mod limits;
+mod limits;
 pub mod outbox;
 pub mod room;
+mod schema;
 pub mod store;
 
 use std::net::SocketAddr;

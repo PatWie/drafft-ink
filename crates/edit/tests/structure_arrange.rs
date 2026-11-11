@@ -5,6 +5,7 @@ mod structure_support;
 
 use std::f64::consts::PI;
 
+use drafftink_edit::TargetError;
 use drafftink_edit::arrange::{self, AlignMode, ArrangeError, Axis, DistributeOpts, FlipAxis};
 use drafftink_edit::transform::geometry::{world_bounds, world_points};
 use drafftink_scene::*;
@@ -95,11 +96,11 @@ fn align_with_locked_or_missing_elements_changes_nothing() {
     let rev = s.revision();
     assert!(matches!(
         run(&mut s, |tx| arrange::align(tx, &ids(&["a", "b"]), AlignMode::Right, None, None)),
-        Err(ArrangeError::Locked(_))
+        Err(ArrangeError::Target(TargetError::Locked(_)))
     ));
     assert!(matches!(
         run(&mut s, |tx| arrange::align(tx, &ids(&["a", "zz"]), AlignMode::Right, None, None)),
-        Err(ArrangeError::NotFound(_))
+        Err(ArrangeError::Target(TargetError::NotFound(_)))
     ));
     assert_eq!(s.revision(), rev);
 }
