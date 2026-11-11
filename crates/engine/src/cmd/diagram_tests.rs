@@ -268,7 +268,7 @@ fn mermaid_subgraphs_are_titled_boxes_in_nested_groups_and_nothing_is_reported_l
     assert_eq!(out["groups"].as_array().unwrap().len(), 2, "the subgraph, then the whole diagram: {out}");
     assert_eq!(out["clusters"].as_object().unwrap().len(), 1, "{out}");
     let w: Vec<&str> = out["warnings"].as_array().unwrap().iter().map(|x| x.as_str().unwrap()).collect();
-    assert!(w.iter().any(|x| x.contains("drawn as rectangles")), "{w:?}");
+    assert!(w.iter().any(|x| x.contains("closest shape") && x.contains("cylinder")), "{w:?}");
     assert!(!w.iter().any(|x| x.contains("subgraph")), "a subgraph is drawn, so nothing is reported: {w:?}");
     assert_eq!(cluster_boxes(&s).len(), 1);
     assert_eq!(free_texts(&s), ["one"], "the title is a text element of its own");
@@ -282,6 +282,30 @@ fn mermaid_subgraphs_are_titled_boxes_in_nested_groups_and_nothing_is_reported_l
     assert_eq!(s.tab().doc.undo_depth(), 1);
     s.undo_steps(1).unwrap();
     assert!(cluster_boxes(&s).is_empty() && free_texts(&s).is_empty(), "one undo takes the boxes away too");
+}
+
+#[test]
+fn mermaid_shapes_without_an_outline_are_drawn_as_bound_rounded_boxes_and_ellipses() {
+    let (mut s, _f) = testing::session();
+    let src = "graph LR\nH{{hex}} --> C[(db)]\nC --> P[/slant/]\nP --> D(((two)))\nD --> F>flag]";
+    let out = run(&mut s, "diagram.import_mermaid", json!({"source": {"text": src}}));
+    let nodes = out["nodes"].as_object().unwrap();
+    let element = |name: &str| s.element(&eid(&nodes[name])).unwrap();
+    for name in ["H", "C", "P", "F"] {
+        assert_eq!(element(name).tag(), Kind::Rectangle, "{name}");
+        assert!(element(name).style.corner_radius > 0.0, "{name} is rounded, unlike a plain box");
+    }
+    assert_eq!(element("D").tag(), Kind::Ellipse);
+    assert!(element("D").rect().width() > 80.0, "a double circle is larger than a circle");
+    // Every arrow ends on a node, so the diagram stays connected when a node moves.
+    for e in out["edges"].as_array().unwrap() {
+        assert!(s.element(&eid(e)).unwrap().binding_targets().iter().all(Option::is_some));
+    }
+    let w: Vec<&str> = out["warnings"].as_array().unwrap().iter().map(|x| x.as_str().unwrap()).collect();
+    assert_eq!(w.len(), 1, "{w:?}");
+    for name in ["hexagon", "cylinder", "parallelogram", "double circle", "flag"] {
+        assert!(w[0].contains(name), "{name}: {w:?}");
+    }
 }
 
 /// The nested test diagram of the old app (`flowchart.rs` `NESTED`).

@@ -160,6 +160,60 @@ fn direction(d: mm::Direction) -> Direction {
     }
 }
 
+/// How a Mermaid node outline is drawn. Arrows bind to rectangles, ellipses and diamonds only, so every Mermaid
+/// outline maps to one of those three.
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct DrawnShape {
+    shape: SpecShape,
+    /// Fixed `[width, height]`, for the round shapes.
+    size: Option<[f64; 2]>,
+    corner_radius: Option<f64>,
+    /// The Mermaid name of the shape when the drawing only resembles it, for the warning.
+    approximates: Option<&'static str>,
+}
+
+impl DrawnShape {
+    const fn exact(shape: SpecShape) -> Self {
+        Self { shape, size: None, corner_radius: None, approximates: None }
+    }
+
+    const fn rounded(radius: f64) -> Self {
+        Self { shape: SpecShape::Rectangle, size: None, corner_radius: Some(radius), approximates: None }
+    }
+
+    /// The same drawing, reported as an approximation of `name`.
+    const fn approximating(self, name: &'static str) -> Self {
+        Self { approximates: Some(name), ..self }
+    }
+}
+
+/// Side of the round nodes. A double circle gets a larger one so that it stays apart from a circle.
+const CIRCLE: f64 = 80.0;
+const DOUBLE_CIRCLE: f64 = 96.0;
+
+/// The closest drawable shape for a Mermaid node shape. Hexagon, cylinder, parallelograms, trapezoids, the flag
+/// and the subroutine would need an outline that the scene has no element for (a polygon cannot hold a label or
+/// take a binding), so they are rectangles whose corner rounding tells them apart from a plain box.
+fn drawn_shape(shape: mm::NodeShape) -> DrawnShape {
+    use mm::NodeShape as M;
+    match shape {
+        M::Rectangle => DrawnShape::exact(SpecShape::Rectangle),
+        M::Rounded => DrawnShape::rounded(16.0),
+        M::Stadium => DrawnShape::rounded(24.0),
+        M::Circle => DrawnShape { size: Some([CIRCLE; 2]), ..DrawnShape::exact(SpecShape::Ellipse) },
+        M::DoubleCircle => {
+            DrawnShape { size: Some([DOUBLE_CIRCLE; 2]), ..DrawnShape::exact(SpecShape::Ellipse) }.approximating("double circle")
+        }
+        M::Diamond => DrawnShape::exact(SpecShape::Diamond),
+        M::Subroutine => DrawnShape::exact(SpecShape::Rectangle).approximating("subroutine"),
+        M::Hexagon => DrawnShape::rounded(20.0).approximating("hexagon"),
+        M::Cylinder => DrawnShape::rounded(10.0).approximating("cylinder"),
+        M::Parallelogram | M::ParallelogramAlt => DrawnShape::rounded(6.0).approximating("parallelogram"),
+        M::Trapezoid | M::TrapezoidAlt => DrawnShape::rounded(4.0).approximating("trapezoid"),
+        M::Asymmetric => DrawnShape::rounded(2.0).approximating("flag"),
+    }
+}
+
 fn flowchart(g: &mm::MermaidGraph, group: bool) -> (Built, Vec<String>) {
     let mut warnings: Vec<String> = g.warnings.iter().take(10).cloned().collect();
     // Symbolic ids: the Mermaid id when it fits, else a short stand-in.
@@ -173,30 +227,19 @@ fn flowchart(g: &mm::MermaidGraph, group: bool) -> (Built, Vec<String>) {
         })
         .collect();
     let by_mermaid: BTreeMap<&str, &str> = g.nodes.iter().zip(&sym).map(|(n, s)| (n.id.as_str(), s.as_str())).collect();
-    let mut approximated = 0usize;
+    let mut approximated: BTreeSet<&'static str> = BTreeSet::new();
     let nodes: Vec<NodeSpec> = g
         .nodes
         .iter()
         .zip(&sym)
         .map(|(n, id)| {
             let mut style = StyleSpec::default();
-            let (shape, size) = match n.shape {
-                mm::NodeShape::Rectangle | mm::NodeShape::Subroutine => (SpecShape::Rectangle, None),
-                mm::NodeShape::Rounded => {
-                    style.corner_radius = Some(16.0);
-                    (SpecShape::Rectangle, None)
-                }
-                mm::NodeShape::Stadium => {
-                    style.corner_radius = Some(24.0);
-                    (SpecShape::Rectangle, None)
-                }
-                mm::NodeShape::Circle | mm::NodeShape::DoubleCircle => (SpecShape::Ellipse, Some([80.0, 80.0])),
-                mm::NodeShape::Diamond => (SpecShape::Diamond, None),
-                _ => {
-                    approximated += 1;
-                    (SpecShape::Rectangle, None)
-                }
-            };
+            let drawn = drawn_shape(n.shape);
+            if let Some(name) = drawn.approximates {
+                approximated.insert(name);
+            }
+            let (shape, size) = (drawn.shape, drawn.size);
+            style.corner_radius = drawn.corner_radius;
             if let Some(st) = &n.style {
                 if let Some(c) = st.fill {
                     style.fill_color = Some(c);
@@ -220,9 +263,10 @@ fn flowchart(g: &mm::MermaidGraph, group: bool) -> (Built, Vec<String>) {
             }
         })
         .collect();
-    if approximated > 0 {
+    if !approximated.is_empty() {
+        let names = approximated.into_iter().collect::<Vec<_>>().join(", ");
         warnings.push(format!(
-            "{approximated} node(s) have a Mermaid shape that drafft.ink does not draw (hexagon, cylinder, parallelogram, trapezoid, flag); they were drawn as rectangles."
+            "Mermaid shapes that drafft.ink has no outline for were drawn as the closest shape (rectangle with rounded corners, or ellipse): {names}."
         ));
     }
     // Subgraphs become boxes with a title. The symbolic id of a box is the Mermaid id, or a stand-in that no node has.
@@ -507,8 +551,62 @@ mod tests {
         assert_eq!(c, [("outer", None, vec!["A", "B"]), ("inner", Some("outer"), vec!["C", "D"])]);
         assert!(b.spec.clusters.iter().all(|c| c.group), "group=true groups every box with what is inside");
         assert_eq!(b.spec.groups.len(), 1, "and the whole diagram");
-        assert!(w.iter().any(|x| x.contains("drawn as rectangles")), "{w:?}");
+        assert!(w.iter().any(|x| x.contains("closest shape") && x.contains("cylinder")), "{w:?}");
         assert!(!w.iter().any(|x| x.contains("subgraph")), "{w:?}");
+    }
+
+    #[test]
+    fn every_mermaid_shape_maps_to_a_shape_an_arrow_can_bind_to_and_only_approximations_are_reported() {
+        use mm::NodeShape as M;
+        let all = [
+            (M::Rectangle, "A[x]"),
+            (M::Rounded, "A(x)"),
+            (M::Stadium, "A([x])"),
+            (M::Subroutine, "A[[x]]"),
+            (M::Circle, "A((x))"),
+            (M::DoubleCircle, "A(((x)))"),
+            (M::Diamond, "A{x}"),
+            (M::Hexagon, "A{{x}}"),
+            (M::Cylinder, "A[(x)]"),
+            (M::Parallelogram, "A[/x/]"),
+            (M::ParallelogramAlt, "A[\\x\\]"),
+            (M::Trapezoid, "A[/x\\]"),
+            (M::TrapezoidAlt, "A[\\x/]"),
+            (M::Asymmetric, "A>x]"),
+        ];
+        for (shape, src) in all {
+            let (b, w) = flow(&format!("graph TD\n {src} --> B"));
+            let spec = &b.spec.nodes[0];
+            let drawn = drawn_shape(shape);
+            assert!(matches!(spec.shape, SpecShape::Rectangle | SpecShape::Ellipse | SpecShape::Diamond), "{src}");
+            assert_eq!(spec.shape, drawn.shape, "{src}");
+            assert_eq!(spec.size, drawn.size, "{src}");
+            assert_eq!(spec.style.as_ref().and_then(|s| s.corner_radius), drawn.corner_radius, "{src}");
+            assert_eq!(w.len(), usize::from(drawn.approximates.is_some()), "{src}: {w:?}");
+            if let Some(name) = drawn.approximates {
+                assert!(w[0].contains(name), "{src}: {w:?}");
+            }
+        }
+    }
+
+    #[test]
+    fn the_warning_names_each_approximated_shape_once() {
+        let (_, w) = flow("graph TD\n A{{h1}} --> B{{h2}}\n B --> C[/p/]\n C --> D[(db)]\n D --> E[x]");
+        assert_eq!(w.len(), 1, "{w:?}");
+        for name in ["hexagon", "parallelogram", "cylinder"] {
+            assert_eq!(w[0].matches(name).count(), 1, "{name} in {w:?}");
+        }
+        assert!(!w[0].contains("trapezoid"), "{w:?}");
+    }
+
+    #[test]
+    fn approximated_shapes_look_different_from_a_plain_box_and_from_each_other() {
+        use mm::NodeShape as M;
+        let radius = |s| drawn_shape(s).corner_radius;
+        assert_eq!(radius(M::Rectangle), None);
+        assert!(radius(M::Stadium) > radius(M::Hexagon) && radius(M::Hexagon) > radius(M::Cylinder));
+        assert!(radius(M::Hexagon).is_some() && radius(M::Asymmetric).is_some());
+        assert!(drawn_shape(M::DoubleCircle).size > drawn_shape(M::Circle).size);
     }
 
     #[test]
