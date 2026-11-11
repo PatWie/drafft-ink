@@ -177,3 +177,27 @@ fn text_math_and_frames_stay_inside_their_paint_bounds() {
         assert_eq!(contained(e, &mut painter, &mut ts), Ok(()), "{:?}", e.id);
     }
 }
+
+/// The zero-or-many marker puts a ring 1.58 head sizes behind the tip; the paint bounds must hold it, on a short
+/// arrow in every direction (found by the property test as a sporadic failure).
+#[test]
+fn every_cardinality_marker_stays_inside_the_paint_bounds_of_a_short_arrow() {
+    for i in 0..15 {
+        for angle in [0.0f64, 0.7, 1.9, std::f64::consts::PI, 4.5] {
+            for sw in [0.0, 2.0, 15.04388392299151] {
+                let tip = Point::new(100.0, 100.0) + kurbo::Vec2::new(angle.cos(), angle.sin()) * 17.0;
+                let mut e =
+                    Element::linear(id("l"), LinearKind::Arrow, ZIndex::first(), &[Point::new(100.0, 100.0), tip])
+                        .unwrap();
+                if let ElementKind::Arrow(d) = &mut e.kind {
+                    d.start_head = head(i);
+                    d.end_head = head(14 - i);
+                }
+                e.style.stroke_width = sw;
+                let mut painter = ElementPainter::new();
+                let mut ts = Typesetter::new();
+                assert_eq!(contained(&e, &mut painter, &mut ts), Ok(()), "head {i} angle {angle} sw {sw}");
+            }
+        }
+    }
+}

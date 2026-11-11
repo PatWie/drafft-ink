@@ -5,7 +5,6 @@ mod common;
 
 use std::net::SocketAddr;
 use std::sync::Arc;
-use std::time::Duration;
 
 use common::live::*;
 use drafftink_collab::*;
@@ -45,7 +44,7 @@ fn tls_proxy(target: SocketAddr) -> SocketAddr {
             }
         });
     });
-    rx.recv_timeout(Duration::from_secs(10)).unwrap()
+    rx.recv_timeout(PATIENCE).unwrap()
 }
 
 fn trusting() -> NativeOptions {
@@ -62,12 +61,12 @@ fn wss_works_with_a_trusted_certificate_and_is_refused_without_trust() {
     let b = w.spawn(PeerSpec { token: Some("tls-secret"), options: trusting(), ..PeerSpec::new(2, &url, "tls") });
     // A client that was not told to trust the test certificate never gets as far as sending its token.
     let stranger = w.spawn(PeerSpec { token: Some("tls-secret"), ..PeerSpec::new(3, &url, "tls") });
-    w.wait_until("trusted clients online", 20, |w| {
+    w.wait_until("trusted clients online", |w| {
         w.peers[a].state() == ConnState::Online && w.peers[b].state() == ConnState::Online
     });
     w.peers[a].add("over-tls");
-    w.wait_until("B sees the edit through TLS", 20, |w| w.peers[b].ids() == vec!["over-tls".to_owned()]);
-    w.wait_until("the stranger has failed at least twice", 20, |w| w.peers[stranger].client().stats().reconnects >= 2);
+    w.wait_until("B sees the edit through TLS", |w| w.peers[b].ids() == vec!["over-tls".to_owned()]);
+    w.wait_until("the stranger has failed at least twice", |w| w.peers[stranger].client().stats().reconnects >= 2);
     let st = w.peers[stranger].client().status();
     assert_eq!(st.state, ConnState::Reconnecting, "{st:?}");
     assert_eq!(w.peers[stranger].client().stats().joins, 0);
@@ -81,6 +80,6 @@ fn wss_to_a_plain_ws_port_fails_without_sending_the_token() {
     let url = format!("wss://localhost:{}", server.addr.port());
     let mut w = World::new();
     let a = w.spawn(PeerSpec { token: Some("tls-secret"), options: trusting(), ..PeerSpec::new(1, &url, "tls2") });
-    w.wait_until("A fails to connect twice", 20, |w| w.peers[a].client().stats().reconnects >= 2);
+    w.wait_until("A fails to connect twice", |w| w.peers[a].client().stats().reconnects >= 2);
     assert_eq!(w.peers[a].client().stats().joins, 0);
 }

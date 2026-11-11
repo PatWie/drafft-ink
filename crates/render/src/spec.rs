@@ -126,6 +126,12 @@ fn params(e: &Element, fillable: bool) -> sketch::SketchParams {
     }
 }
 
+/// How far, in head sizes, a head reaches from the end of its line. The farthest part is the ring of the
+/// zero-or-many marker: its centre is 1.3 sizes behind the tip and its radius is 0.28 sizes (`cardinality_path`),
+/// 1.58 in all. The stroke half-width is in the margin already. The value was 1.2 before, and a 14.5 x 3 arrow with
+/// that marker painted 2.9 units outside its bounds.
+const HEAD_REACH: f64 = 1.6;
+
 /// The size of an arrow head: the element's own value, or a default that grows with the stroke.
 pub fn head_size(d: &LinearData, stroke_width: f64) -> f64 {
     d.head_size.unwrap_or_else(|| (stroke_width * 7.5).max(DEFAULT_HEAD_SIZE))
@@ -263,7 +269,7 @@ pub fn paint_margin(e: &Element) -> Margin {
             let heads =
                 matches!(e.kind, ElementKind::Arrow(_)) && (d.start_head != Head::None || d.end_head != Head::None);
             if heads {
-                m += sane(head_size(d, sw)) * 1.2;
+                m += sane(head_size(d, sw)) * HEAD_REACH;
             }
             Margin::all(m)
         }

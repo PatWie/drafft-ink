@@ -30,13 +30,13 @@ fn concurrent_edits_of_three_clients_converge() {
     for n in 1..=3 {
         w.spawn(spec(n, &url, "converge"));
     }
-    w.wait_until("everyone online", 20, |w| w.peers.iter().all(|p| p.state() == ConnState::Online));
+    w.wait_until("everyone online", |w| w.peers.iter().all(|p| p.state() == ConnState::Online));
     // The same starting scene for everyone.
     w.peers[0].edit(|tx| {
         tx.insert(rect("shared")).unwrap();
         tx.insert(rect("other")).unwrap();
     });
-    w.converged(20);
+    w.converged();
     // Concurrent edits, all in the same instant, with no pumping in between: A moves `shared`, B recolors it,
     // C locks it; each also adds its own element.
     w.peers[0].edit(|tx| {
@@ -51,7 +51,7 @@ fn concurrent_edits_of_three_clients_converge() {
         tx.update(&ElementId::new("shared").unwrap(), |e| e.locked = true).unwrap();
         tx.insert(rect("from-c")).unwrap();
     });
-    w.converged(20);
+    w.converged();
     let shared = w.peers[0].store.get(&ElementId::new("shared").unwrap()).unwrap().clone();
     assert_eq!(shared.transform.x, 500.0, "the move survived");
     assert_eq!(shared.style.stroke_color, color("#ff0000"), "the recolor survived");
@@ -71,17 +71,17 @@ fn a_late_joiner_catches_up_and_then_follows_live_edits() {
     let url = server.url();
     let mut w = World::new();
     let a = w.spawn(spec(1, &url, "late"));
-    w.wait_until("A online", 20, |w| w.peers[a].state() == ConnState::Online);
+    w.wait_until("A online", |w| w.peers[a].state() == ConnState::Online);
     for i in 0..20 {
         w.peers[a].add(&format!("e{i}"));
         w.pump_all();
     }
-    w.converged(20);
+    w.converged();
     let b = w.spawn(spec(2, &url, "late"));
-    w.wait_until("B has the scene", 20, |w| w.peers[b].ids().len() == 20 && w.peers[b].state() == ConnState::Online);
+    w.wait_until("B has the scene", |w| w.peers[b].ids().len() == 20 && w.peers[b].state() == ConnState::Online);
     assert!(w.peers[b].remote_batches().iter().any(|b| matches!(b.kind, RemoteKind::CatchUp | RemoteKind::Snapshot)));
     w.peers[a].add("after");
-    w.wait_until("B sees the live edit", 20, |w| w.peers[b].ids().len() == 21);
+    w.wait_until("B sees the live edit", |w| w.peers[b].ids().len() == 21);
     assert_eq!(w.peers[b].remote_batches().last().unwrap().kind, RemoteKind::Live);
     assert!(w.all_equal());
 }
@@ -93,14 +93,14 @@ fn edits_made_while_the_server_is_down_sync_after_it_returns() {
     let mut w = World::new();
     let a = w.spawn(spec(1, &url, "outage"));
     let b = w.spawn(spec(2, &url, "outage"));
-    w.wait_until("both online", 20, |w| w.peers.iter().all(|p| p.state() == ConnState::Online));
+    w.wait_until("both online", |w| w.peers.iter().all(|p| p.state() == ConnState::Online));
     w.peers[a].add("before");
-    w.converged(20);
+    w.converged();
     // An edit that was sent but may not have been acknowledged when the server dies.
     w.peers[a].add("in-flight");
     w.pump_all();
     server.kill();
-    w.wait_until("both notice", 20, |w| w.peers.iter().all(|p| p.state() != ConnState::Online));
+    w.wait_until("both notice", |w| w.peers.iter().all(|p| p.state() != ConnState::Online));
     for p in &w.peers {
         assert!(matches!(p.state(), ConnState::Reconnecting | ConnState::Connecting));
     }
@@ -109,13 +109,13 @@ fn edits_made_while_the_server_is_down_sync_after_it_returns() {
     w.peers[a].edit(|tx| tx.update(&ElementId::new("before").unwrap(), |e| e.transform.x = 77.0).unwrap());
     w.peers[b].add("b-offline");
     w.peers[b].edit(|tx| tx.update(&ElementId::new("before").unwrap(), |e| e.locked = true).unwrap());
-    w.wait_until("edits are kept and shown as unsynced", 5, |w| {
+    w.wait_until("edits are kept and shown as unsynced", |w| {
         w.peers.iter().all(|p| p.client().status().unsynced) && w.peers[a].ids().len() >= 3
     });
     std::thread::sleep(Duration::from_millis(700));
     w.pump_all();
     server.restart();
-    w.converged(60);
+    w.converged();
     let ids = w.peers[a].ids();
     for want in ["before", "in-flight", "a-offline", "b-offline"] {
         assert!(ids.iter().any(|i| i == want), "{want} missing from {ids:?}");
@@ -125,7 +125,7 @@ fn edits_made_while_the_server_is_down_sync_after_it_returns() {
     assert!(w.peers[a].client().stats().reconnects >= 1);
     // A brand new client sees the same thing: the server holds everything.
     let c = w.spawn(spec(3, &url, "outage"));
-    w.wait_until("C has everything", 20, |w| w.peers[c].ids().len() == 4);
+    w.wait_until("C has everything", |w| w.peers[c].ids().len() == 4);
     assert!(w.all_equal());
 }
 
@@ -144,8 +144,12 @@ fn a_client_that_does_not_read_is_told_to_resync_and_recovers() {
         },
         ..spec(2, &url, "slow")
     });
-    w.wait_until("both online", 20, |w| w.peers.iter().all(|p| p.state() == ConnState::Online));
-    // The slow client stops pumping (a stalled UI thread). The writer sends 2200 updates of 4 KiB of random bytes.
+    w.wait_until("both online", |w| w.peers.iter().all(|p| p.state() == ConnState::Online));
+    // The slow client stops pumping (a stalled UI thread). The stall must stay under the protocol's idle limit
+    // (`IDLE_TIMEOUT_MS`, 50 s of wall time; the server drops a silent connection and the client reconnects instead
+    // of being told to resync).
+    // It takes about 2.5 s on an idle machine, so it survives a slowdown of about 20 times. The writer sends 2200
+    // updates of 4 KiB of random bytes.
     let mut seed = 0x9e37_79b9_7f4a_7c15u64;
     for i in 0..2200 {
         let bytes: Vec<u8> = (0..4 * 1024)
@@ -168,18 +172,21 @@ fn a_client_that_does_not_read_is_told_to_resync_and_recovers() {
         }
     }
     // Settle the writer without touching the slow client.
-    let deadline = std::time::Instant::now() + Duration::from_secs(30);
+    let deadline = std::time::Instant::now() + PATIENCE;
     while w.peers[writer].client().status().unsynced && std::time::Instant::now() < deadline {
         w.peers[writer].pump();
         w.waker.wait(Duration::from_millis(5));
     }
     assert!(!w.peers[writer].client().status().unsynced, "{:?}", w.peers[writer].client().status());
     // Now the slow client reads again: it must see ResyncRequired, ask, and end up equal.
-    w.wait_until("the slow client to catch up", 60, |w| {
+    w.wait_until("the slow client to catch up", |w| {
         w.peers[slow].store.files().count() == 2200 && w.peers[slow].state() == ConnState::Online
     });
     let stats = w.peers[slow].client().stats();
-    assert!(stats.resync_required >= 1, "the server must say so when it drops relays: {stats:?}");
+    assert!(
+        stats.resync_required >= 1,
+        "the server must say so when it drops relays (reconnects > 0 means the stall outlasted the idle limit): {stats:?}"
+    );
     assert!(stats.sync_requests >= 1, "{stats:?}");
     assert_eq!(w.peers[slow].client().stats().reconnects, 0, "a lagging client stays connected");
     assert!(w.all_equal());
@@ -192,7 +199,7 @@ fn auth_off_ignores_the_token_and_auth_on_checks_it() {
     let off_url = off.url();
     let mut w = World::new();
     let a = w.spawn(PeerSpec { token: Some("whatever"), ..spec(1, &off_url, "auth") });
-    w.wait_until("online without auth", 20, |w| w.peers[a].state() == ConnState::Online);
+    w.wait_until("online without auth", |w| w.peers[a].state() == ConnState::Online);
     drop(w);
     drop(off);
 
@@ -203,7 +210,7 @@ fn auth_off_ignores_the_token_and_auth_on_checks_it() {
     let good = w.spawn(PeerSpec { token: Some("open-sesame"), ..spec(1, &url, "auth") });
     let bad = w.spawn(PeerSpec { token: Some("wrong"), ..spec(2, &url, "auth") });
     let none = w.spawn(spec(3, &url, "auth"));
-    w.wait_until("good online and bad ones stopped", 20, |w| {
+    w.wait_until("good online and bad ones stopped", |w| {
         w.peers[good].state() == ConnState::Online
             && w.peers[bad].state() == ConnState::Stopped
             && w.peers[none].state() == ConnState::Stopped
@@ -222,7 +229,7 @@ fn auth_off_ignores_the_token_and_auth_on_checks_it() {
     assert_eq!(w.peers[bad].client().stats().connects, before);
     // The good client edits normally.
     w.peers[good].add("x");
-    w.wait_until("good client acknowledged", 20, |w| !w.peers[good].client().status().unsynced);
+    w.wait_until("good client acknowledged", |w| !w.peers[good].client().status().unsynced);
 }
 
 #[test]
@@ -280,9 +287,9 @@ fn the_same_identity_joining_again_replaces_the_first_connection_and_the_first_s
     let url = server.url();
     let mut w = World::new();
     let first = w.spawn(spec(1, &url, "twin"));
-    w.wait_until("first online", 20, |w| w.peers[first].state() == ConnState::Online);
+    w.wait_until("first online", |w| w.peers[first].state() == ConnState::Online);
     let second = w.spawn(spec(1, &url, "twin"));
-    w.wait_until("first replaced, second online", 20, |w| {
+    w.wait_until("first replaced, second online", |w| {
         w.peers[second].state() == ConnState::Online && w.peers[first].state() == ConnState::Stopped
     });
     let st = w.peers[first].client().status();
@@ -302,17 +309,17 @@ fn presence_travels_between_clients_and_never_enters_the_document() {
     let a = w.spawn(spec(1, &url, "presence"));
     let b = w.spawn(spec(2, &url, "presence"));
     let c = w.spawn(spec(3, &url, "presence"));
-    w.wait_until("everyone sees two peers", 20, |w| w.peers.iter().all(|p| p.client().peers().len() == 2));
+    w.wait_until("everyone sees two peers", |w| w.peers.iter().all(|p| p.client().peers().len() == 2));
     let names: Vec<_> = w.peers[a].client().peers().iter().filter_map(|p| p.user.clone().map(|u| u.name)).collect();
     assert_eq!(names, vec!["user2".to_owned(), "user3".to_owned()]);
-    w.converged(20);
+    w.converged();
     let sent_before = w.peers[a].client().stats().updates_sent;
     let me = w.peers[a].now();
     w.peers[a].session.client_mut().set_cursor(me, Some(Point { x: 12.5, y: -3.0 }));
     w.peers[a].session.client_mut().set_selection(["e1".to_owned(), "e2".to_owned()]);
     w.peers[a].session.client_mut().set_viewport(Some(Viewport { x: 0.0, y: 0.0, width: 800.0, height: 600.0 }));
     let id_a = w.peers[a].client().config().client_id;
-    w.wait_until("B and C see A's presence", 20, |w| {
+    w.wait_until("B and C see A's presence", |w| {
         [b, c].iter().all(|i| {
             w.peers[*i].client().peers().get(&id_a).is_some_and(|p| {
                 p.cursor == Some(Point { x: 12.5, y: -3.0 }) && p.selection.len() == 2 && p.viewport.is_some()
@@ -325,7 +332,7 @@ fn presence_travels_between_clients_and_never_enters_the_document() {
     let now = w.peers[a].now();
     w.peers[a].session.client_mut().set_viewport(Some(Viewport { x: 100.0, y: 50.0, width: 800.0, height: 600.0 }));
     let _ = now;
-    w.wait_until("B is told where A went", 20, |w| {
+    w.wait_until("B is told where A went", |w| {
         w.peers[b].events.iter().any(|e| matches!(e, CollabEvent::FollowViewport(v) if v.x == 100.0))
     });
     // Presence is not the document: nobody's store changed and no update was sent for it.
@@ -344,7 +351,7 @@ fn presence_travels_between_clients_and_never_enters_the_document() {
         i += 1.0;
         std::thread::sleep(Duration::from_millis(1));
     }
-    w.wait_until("B sees the last cursor", 20, |w| {
+    w.wait_until("B sees the last cursor", |w| {
         w.peers[b].client().peers().get(&id_a).and_then(|p| p.cursor).is_some_and(|c| c.x >= i - 3.0)
     });
     let received = awareness_count(&w, b) - before;
@@ -364,7 +371,7 @@ fn leaving_flushes_the_last_edit_and_the_others_see_the_peer_go() {
     let mut w = World::new();
     let a = w.spawn(spec(1, &url, "leave"));
     let b = w.spawn(spec(2, &url, "leave"));
-    w.wait_until("both online", 20, |w| {
+    w.wait_until("both online", |w| {
         w.peers.iter().all(|p| p.state() == ConnState::Online && p.client().peers().len() == 1)
     });
     w.peers[a].add("last-words");
@@ -372,7 +379,7 @@ fn leaving_flushes_the_last_edit_and_the_others_see_the_peer_go() {
     let p = &mut w.peers[a];
     p.session.client_mut().leave(now, &mut p.store);
     p.pump();
-    w.wait_until("B has the edit and sees A leave", 20, |w| {
+    w.wait_until("B has the edit and sees A leave", |w| {
         w.peers[b].ids() == vec!["last-words".to_owned()] && w.peers[b].client().peers().is_empty()
     });
     assert!(w.peers[b].events.iter().any(|e| matches!(e, CollabEvent::PeerLeft { name, .. } if name == "user1")));
@@ -385,8 +392,8 @@ fn an_idle_connected_client_causes_no_redraw_requests() {
     let url = server.url();
     let mut w = World::new();
     let a = w.spawn(spec(1, &url, "idle"));
-    w.wait_until("online", 20, |w| w.peers[a].state() == ConnState::Online);
-    w.converged(20);
+    w.wait_until("online", |w| w.peers[a].state() == ConnState::Online);
+    w.converged();
     let before = w.peers[a].redraws;
     let wakes_before = w.peers[a].client().stats();
     // Two seconds with nothing to do: the owner sleeps on the wake hook and the pump asks for no frame.

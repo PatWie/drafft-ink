@@ -52,11 +52,11 @@ fn the_token_is_not_logged_by_the_client_or_the_transport() {
     let url = server.url();
     let mut w = World::new();
     let a = w.spawn(PeerSpec { token: Some(TOKEN), ..PeerSpec::new(1, &url, "log") });
-    w.wait_until("online", 20, |w| w.peers[a].state() == ConnState::Online);
+    w.wait_until("online", |w| w.peers[a].state() == ConnState::Online);
     w.peers[a].add("x");
-    w.converged(20);
+    w.converged();
     let wrong = w.spawn(PeerSpec { token: Some("another-secret-ABC"), ..PeerSpec::new(2, &url, "log") });
-    w.wait_until("stopped", 20, |w| w.peers[wrong].state() == ConnState::Stopped);
+    w.wait_until("stopped", |w| w.peers[wrong].state() == ConnState::Stopped);
 
     let log = captured();
     assert!(!log.is_empty(), "the capture works");

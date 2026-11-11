@@ -38,6 +38,11 @@ fn kind() -> impl Strategy<Value = Kind> {
     prop::sample::select(vec![Kind::Rect, Kind::Ellipse, Kind::Diamond])
 }
 
+/// The kinds whose offset is a parallel curve (an ellipse's offset grows its axes instead).
+fn offsettable_kind() -> impl Strategy<Value = Kind> {
+    prop::sample::select(vec![Kind::Rect, Kind::Diamond])
+}
+
 fn make(kind: Kind, b: OrientedBox, radius: f64, offset: f64) -> Primitive {
     match kind {
         Kind::Rect => RectShape::new(b).with_corner_radius(radius).with_offset(offset).into(),
@@ -65,6 +70,48 @@ fn outline_samples(s: &Primitive, b: &OrientedBox, n: usize) -> Vec<Point> {
             s.intersect(&Probe::ray(b.center, Vec2::new(a.cos(), a.sin()))).first().map(|h| h.point)
         })
         .collect()
+}
+
+/// Number of parallel lines per axis in [`sweep_extremes`].
+const SWEEP_LINES: usize = 1440;
+
+/// The extreme x and y of the outline of `s`, found by intersecting `lines` horizontal and `lines` vertical lines,
+/// spread evenly over `bounds` (the first and the last sit on its edges), with the shape. Returns
+/// `(min_x, max_x, min_y, max_y)`.
+fn sweep_extremes(s: &Primitive, bounds: &Rect, lines: usize) -> (f64, f64, f64, f64) {
+    let at = |lo: f64, hi: f64, i: usize| lo + (hi - lo) * i as f64 / (lines - 1) as f64;
+    let mut ext = (f64::INFINITY, f64::NEG_INFINITY, f64::INFINITY, f64::NEG_INFINITY);
+    let mut take = |p: Point| {
+        ext = (ext.0.min(p.x), ext.1.max(p.x), ext.2.min(p.y), ext.3.max(p.y));
+    };
+    for i in 0..lines {
+        let y = at(bounds.y0, bounds.y1, i);
+        s.intersect(&Probe::line(Point::new(bounds.x0, y), Vec2::new(1.0, 0.0))).iter().for_each(|h| take(h.point));
+        let x = at(bounds.x0, bounds.x1, i);
+        s.intersect(&Probe::line(Point::new(x, bounds.y0), Vec2::new(0.0, 1.0))).iter().for_each(|h| take(h.point));
+    }
+    ext
+}
+
+/// Inputs on which the former ray-from-the-centre version of `bounds_are_tight` failed: thin, long shapes, where 720
+/// rays reach only 114 of the 146 half-length. The bounds were right; the sampling was too coarse.
+#[test]
+fn bounds_are_tight_for_thin_long_shapes() {
+    for angle in [-4.699265394940027, 0.0, 0.01, 0.5, std::f64::consts::FRAC_PI_2, 3.0] {
+        for kind in [Kind::Rect, Kind::Ellipse, Kind::Diamond] {
+            for offset in [0.0, 12.0] {
+                let b = OrientedBox::new(Point::new(0.0, 0.0), Size::new(291.6567265735746, 2.0), angle);
+                let s = make(kind, b, 0.0, offset);
+                let r = s.bounds();
+                let (min_x, max_x, min_y, max_y) = sweep_extremes(&s, &r, SWEEP_LINES);
+                let slack = (r.width() + r.height()) / SWEEP_LINES as f64 + 1e-6;
+                assert!(
+                    min_x - r.x0 <= slack && r.x1 - max_x <= slack && min_y - r.y0 <= slack && r.y1 - max_y <= slack,
+                    "{kind:?} angle {angle} offset {offset}: {r:?} vs x {min_x}..{max_x} y {min_y}..{max_y}"
+                );
+            }
+        }
+    }
 }
 
 proptest! {
@@ -95,16 +142,22 @@ proptest! {
     }
 
     #[test]
-    fn bounds_are_tight(((s, b), _) in (shape(), 0u8..1)) {
-        // The extreme outline points touch the bounds on all four sides.
+    fn bounds_are_tight(((s, _), _) in (shape(), 0u8..1)) {
+        // The extreme outline points touch the bounds on all four sides. They are found with axis-parallel lines
+        // swept across the bounds (rays from the centre cannot reach the far ends of a thin, long shape: at 0.5
+        // degrees a 292 x 2 rectangle is reached only 114 units from the centre, not 146).
         let r = s.bounds();
-        let pts = outline_samples(&s, &b, 720);
-        let min_x = pts.iter().map(|p| p.x).fold(f64::INFINITY, f64::min);
-        let max_x = pts.iter().map(|p| p.x).fold(f64::NEG_INFINITY, f64::max);
-        let min_y = pts.iter().map(|p| p.y).fold(f64::INFINITY, f64::min);
-        let max_y = pts.iter().map(|p| p.y).fold(f64::NEG_INFINITY, f64::max);
-        let slack = 0.02 * (r.width() + r.height()) + 1.0;
-        prop_assert!(min_x - r.x0 < slack && r.x1 - max_x < slack && min_y - r.y0 < slack && r.y1 - max_y < slack, "{r:?} vs {min_x} {max_x} {min_y} {max_y}");
+        let (min_x, max_x, min_y, max_y) = sweep_extremes(&s, &r, SWEEP_LINES);
+        // Between two neighbouring lines the outline moves sideways by up to (extent / lines) times the cotangent of its
+        // slope. Over 20,000 random shapes the largest gap seen was 0.3 * (width + height) / lines; the allowance is
+        // 1.0 * that (about 0.6 units for a 400 x 400 shape), against 0.02 * (width + height) + 1 before.
+        let slack = (r.width() + r.height()) / SWEEP_LINES as f64 + 1e-6;
+        prop_assert!(
+            min_x - r.x0 <= slack && r.x1 - max_x <= slack && min_y - r.y0 <= slack && r.y1 - max_y <= slack,
+            "{r:?} vs x {min_x}..{max_x} y {min_y}..{max_y}, slack {slack}"
+        );
+        // And nothing sticks out of the bounds.
+        prop_assert!(min_x >= r.x0 - 1e-6 && max_x <= r.x1 + 1e-6 && min_y >= r.y0 - 1e-6 && max_y <= r.y1 + 1e-6);
     }
 
     #[test]
@@ -187,8 +240,7 @@ proptest! {
     }
 
     #[test]
-    fn offset_outline_is_the_original_pushed_out(((kind, b, r), off, angle) in (kind(), obox(), 0.0..30.0f64).prop_flat_map(|(k, b, r)| (Just((k, b, r)), 0.5..20.0f64, 0.0..std::f64::consts::TAU))) {
-        prop_assume!(!matches!(kind, Kind::Ellipse)); // ellipse offset is axis growth, not a parallel curve
+    fn offset_outline_is_the_original_pushed_out(((kind, b, r), off, angle) in (offsettable_kind(), obox(), 0.0..30.0f64).prop_flat_map(|(k, b, r)| (Just((k, b, r)), 0.5..20.0f64, 0.0..std::f64::consts::TAU))) {
         let base = make(kind, b, r, 0.0);
         let grown = make(kind, b, r, off);
         let dir = Vec2::new(angle.cos(), angle.sin());

@@ -97,7 +97,7 @@ impl Server {
                 }
             }
         });
-        let addr = rx.recv_timeout(Duration::from_secs(30)).expect("the server prints its address");
+        let addr = rx.recv_timeout(PATIENCE).expect("the server prints its address");
         Server { child: Some(child), addr: addr.parse().expect("socket address"), data_dir, args }
     }
 
@@ -127,6 +127,10 @@ impl Drop for Server {
         self.kill();
     }
 }
+
+/// The longest any test waits for an event. Waits return as soon as the event happens; this bound only ends a test
+/// that hangs, and it is generous so that a machine with a load average of 200 does not fail a correct test.
+pub const PATIENCE: Duration = Duration::from_secs(300);
 
 /// Wakes the test thread from any transport thread.
 #[derive(Default)]
@@ -286,9 +290,11 @@ impl World {
         }
     }
 
-    /// Pumps every peer, and sleeps on the wake-up hook between rounds, until `cond` holds.
-    pub fn wait_until(&mut self, what: &str, secs: u64, cond: impl Fn(&World) -> bool) {
-        let deadline = Instant::now() + Duration::from_secs(secs);
+    /// Pumps every peer, and sleeps on the wake-up hook between rounds, until `cond` holds. There is no tuned
+    /// timeout: the wait ends when the event happens, and [`PATIENCE`] is only the bound that keeps a hung test from
+    /// running forever (a test machine under heavy load needs many times the time of an idle one).
+    pub fn wait_until(&mut self, what: &str, cond: impl Fn(&World) -> bool) {
+        let deadline = Instant::now() + PATIENCE;
         loop {
             self.pump_all();
             if cond(self) {
@@ -309,7 +315,7 @@ impl World {
                         )
                     })
                     .collect();
-                panic!("timed out after {secs}s waiting for {what}:\n{}", report.join("\n"));
+                panic!("timed out after {}s waiting for {what}:\n{}", PATIENCE.as_secs(), report.join("\n"));
             }
             // Wake for the next timer of any peer, but never sleep long: new events call the hook.
             let wait = self
@@ -327,8 +333,8 @@ impl World {
         self.peers.iter().all(|p| content(&p.store) == first)
     }
 
-    pub fn converged(&mut self, secs: u64) {
-        self.wait_until("all documents to be equal and acknowledged", secs, |w| {
+    pub fn converged(&mut self) {
+        self.wait_until("all documents to be equal and acknowledged", |w| {
             w.all_equal() && w.peers.iter().all(|p| p.state() == ConnState::Online && !p.client().status().unsynced)
         });
     }
