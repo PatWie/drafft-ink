@@ -7,7 +7,21 @@ mod common;
 
 use common::*;
 use drafftink_canvas_js::{PngOptions, Renderer};
+use drafftink_gpu::GpuError;
 use serde_json::json;
+
+/// A headless renderer, or `None` on a machine without a GPU adapter. Such a machine skips the test with a
+/// `SKIPPED:` line (counted by `cargo xtask test`); `DRAFFTINK_REQUIRE_GPU=1` makes the missing adapter a failure.
+fn renderer() -> Option<Renderer> {
+    match Renderer::headless() {
+        Ok(renderer) => Some(renderer),
+        Err(GpuError::NoAdapter(why)) => {
+            drafftink_profile::skip_without_gpu(&why).unwrap();
+            None
+        }
+        Err(e) => panic!("the headless renderer failed to start: {e}"),
+    }
+}
 
 fn decode(bytes: &[u8]) -> (u32, u32, Vec<u8>) {
     let decoder = png::Decoder::new(std::io::Cursor::new(bytes));
@@ -24,7 +38,7 @@ fn pixel(img: &(u32, u32, Vec<u8>), x: u32, y: u32) -> [u8; 4] {
 
 #[test]
 fn a_png_shows_the_scene_at_the_scale_and_holds_the_scene() {
-    let mut renderer = Renderer::headless().unwrap();
+    let Some(mut renderer) = renderer() else { return };
     let mut s = stage();
     s.add(json!({"id": "a", "type": "rectangle", "x": 0, "y": 0, "w": 100, "h": 50,
                  "style": {"fill_color": "#ff0000", "sloppiness": "architect", "stroke_width": 2}}))
@@ -47,7 +61,7 @@ fn a_png_shows_the_scene_at_the_scale_and_holds_the_scene() {
 
 #[test]
 fn background_off_leaves_it_transparent_and_a_selection_exports_alone() {
-    let mut renderer = Renderer::headless().unwrap();
+    let Some(mut renderer) = renderer() else { return };
     let mut s = stage();
     let fill = |id: &str, x: f64, color: &str| {
         json!({"id": id, "type": "rectangle", "x": x, "y": 0, "w": 50, "h": 50,
@@ -71,7 +85,7 @@ fn background_off_leaves_it_transparent_and_a_selection_exports_alone() {
 
 #[test]
 fn an_image_too_large_for_the_device_is_refused_with_advice() {
-    let renderer = Renderer::headless().unwrap();
+    let Some(renderer) = renderer() else { return };
     let mut s = stage();
     s.add(rect("a", 0.0, 0.0, 1000.0, 1000.0)).unwrap();
     let err =

@@ -92,7 +92,7 @@ The browser needs WebGPU: Chromium-based browsers 113 and newer. Firefox and Saf
 | idle 10 s after wheel | 0 | 0.4 |
 | idle 5 s after undo | 0 | 0.6 |
 
-The scene is the 52-element intro document; frames are counted from the shell's `drafftink_gpu::frame` log lines. The script also
+The scene is the 35-element intro document; frames are counted from the shell's `drafftink_gpu::frame` log lines. The script also
 draws through the bridge (two rectangles, an arrow bound to both, `element.move` drags the arrow along, `view.screenshot`) and
 with real X input (the tool keys `r`, `a`, `t`, then mouse drags and typing for a rectangle, an arrow and a text). Screenshots: `img/native-intro.png`, `img/native-bridge-drawn.png`, `img/native-text-edit.png`,
 `img/native-drawn.png`, `img/native-view-screenshot.png`.

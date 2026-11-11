@@ -47,5 +47,8 @@ console_error_panic_hook.workspace = true
 console_log.workspace = true
 web-sys = { workspace = true, features = ["HtmlCanvasElement", "Element", "Window", "Document", "console"] }
 
+[dev-dependencies]
+drafftink-profile = { path = "../profile" }
+
 [lints]
 workspace = true

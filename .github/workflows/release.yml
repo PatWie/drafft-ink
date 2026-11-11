@@ -118,7 +118,7 @@ jobs:
           dpkg-deb --contents drafftink-*-linux-${{ matrix.arch }}.deb | grep -q './usr/bin/drafftink$'
           tar -tzf drafftink-*-linux-${{ matrix.arch }}.tar.gz | grep -q '/bin/drafftink-cli$'
           dpkg-deb --contents drafftink-*-linux-${{ matrix.arch }}.deb | grep -q './usr/bin/drafftink-cli$'
-          ldd ../../target/dist/drafftink | grep -i 'not found' && exit 1 || true
+          ldd ../target/dist/drafftink | grep -i 'not found' && exit 1 || true
           APPIMAGE_EXTRACT_AND_RUN=1 ./drafftink-*-linux-${{ matrix.arch }}.AppImage --version
       - name: Native size budget
         if: matrix.arch == 'x86_64'

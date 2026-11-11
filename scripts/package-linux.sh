@@ -45,7 +45,7 @@ echo "==> Drafft.ink $VERSION for Linux $ARCH ($FORMATS)"
 
 if [ "$SKIP_BUILD" = 0 ]; then
   # The server ships with every room store: sqlite and s3 are cargo features that are off by default.
-  cargo_args=(build --profile dist --locked -p drafftink -p drafftink-mcp -p drafftink-cli -p drafftink-server --features drafftink-server/sqlite,drafftink-server/s3)
+  cargo_args=(build --profile dist --locked -p drafftink -p drafftink-mcp -p drafftink-cli -p drafftink-server --features "drafftink-server/sqlite,drafftink-server/s3")
   if [ -n "${CROSS_TARGET:-}" ]; then cargo_args+=(--target "$CROSS_TARGET"); fi
   (cd "$ROOT" && cargo "${cargo_args[@]}")
 fi
