@@ -260,6 +260,8 @@ fn toasts_and_the_stats_panel_sit_above_the_bottom_chrome() {
         code: "nothing_to_do".to_owned(),
         born: 0.0,
         suggestion: None,
+        command: String::new(),
+        args: String::new(),
     });
     for width in [1280.0, 390.0] {
         let mut f2 = dialog::fixture();
@@ -269,6 +271,8 @@ fn toasts_and_the_stats_panel_sit_above_the_bottom_chrome() {
             code: "nothing_to_do".to_owned(),
             born: 0.0,
             suggestion: None,
+            command: String::new(),
+            args: String::new(),
         });
         let h = at(vec2(width, 800.0), f2);
         let c = chrome(&h);

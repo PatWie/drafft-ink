@@ -183,14 +183,15 @@ Rules that hold for all classes:
 
 | | |
 |---|---|
-| Input | Dragging the opacity slider in the ribbon (`crates/ui/src/surfaces/ribbon/controls.rs`). A click on a swatch, a stroke-width button or a font-size button is not a gesture. |
+| Input | Dragging the opacity slider in the ribbon. Every scrubbing control goes through the one helper `crates/ui/src/scrub.rs` (`scrub::slider`), which owns the rules below. A click on a swatch, a stroke-width button or a font-size button is not a gesture. |
 | Class | A |
 | Protocol | `gesture.begin` `style.set` on the first change, `gesture.update` with the full props for each change, `gesture.end` at pointer release. |
 | Reason | The user sees the result live on the canvas, and a drag must be one undo step. The old opacity slider pushed an undo step on every tick (A:3639). |
 | Between events | Live frames skip the history, the broadcast and the defaults update. The end run also updates the defaults and broadcasts. |
 | Final state | `style.set { props, ids, scope }`. A click is a plain `style.set`. |
-| Cancel | Esc runs `tool.cancel`, which cancels the running gesture and restores the old value. |
-| Not built | Scrubbing a stroke-width or font-size slider and dragging inside a colour picker's saturation or hue area. Those controls send one plain `style.set` per choice. `ScrubPhase::Cancel` exists in the UI action type and no widget sends it. |
+| Cancel | Esc cancels the running gesture and restores the old value (the slider sends `gesture.cancel`; the shortcut `tool.cancel` does the same in the engine) and ignores the rest of that drag. |
+| Never left open | The slider stays enabled while its own gesture runs (every other command is refused then). If the slider is not drawn in a frame (the ribbon regrouped) or the window loses the focus, the frame ends the gesture. An arrow key on the slider is one plain `style.set`. |
+| Not built | Scrubbing a stroke-width or font-size slider and dragging inside a colour picker's saturation or hue area. Those controls send one plain `style.set` per choice. |
 | Test | `exception_E13_scrub_equals_plain_command` (two scrubs, one of them with a colour and a width, each compared with one plain `style.set`). |
 
 ### E14 Releasing a dragged source (library item, dropped file)

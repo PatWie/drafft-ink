@@ -12,6 +12,7 @@ use serde_json::{Value, json};
 use crate::action::{HostRequest, UiAction, Verb};
 use crate::icons::{self, Icon};
 use crate::model::Model;
+use crate::scrub::ScrubFrame;
 use crate::theme::{self, Control, Palette, TextSize, space};
 
 /// How a control looks right now.
@@ -150,18 +151,27 @@ pub struct Cx<'a> {
     /// Sizes and positions for this window.
     pub layout: Layout,
     out: &'a mut Vec<UiAction>,
+    /// The scrubbing controls of this frame (`crate::scrub`).
+    pub(crate) scrub: ScrubFrame,
 }
 
 impl<'a> Cx<'a> {
     /// A drawing context over an action list.
     pub fn new(model: &'a Model, pal: Palette, out: &'a mut Vec<UiAction>) -> Self {
-        Self { model, pal, origin: Origin::Ui, layout: Layout::default(), out }
+        Self { model, pal, origin: Origin::Ui, layout: Layout::default(), out, scrub: ScrubFrame::default() }
     }
 
     /// The same context with a layout.
     #[must_use]
     pub fn with_layout(mut self, layout: Layout) -> Self {
         self.layout = layout;
+        self
+    }
+
+    /// The same context with the scrubs of the UI state.
+    #[must_use]
+    pub(crate) fn with_scrub(mut self, scrub: ScrubFrame) -> Self {
+        self.scrub = scrub;
         self
     }
 

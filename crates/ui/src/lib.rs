@@ -16,10 +16,12 @@ pub mod action;
 pub mod args_form;
 pub mod chrome;
 pub mod colors;
+pub(crate) mod error_report;
 pub mod icons;
 pub mod keymap;
 pub(crate) mod menu_kit;
 pub mod model;
+pub mod scrub;
 pub mod shell;
 pub mod state;
 pub mod surfaces;
@@ -32,5 +34,6 @@ pub use keymap::{Chord, Pointer, help_rows, parse_chord, resolve_keys};
 pub use model::{
     AboutInfo, AgentServerView, BoundsView, CollabStatus, CollabView, Model, Peer, RoomLoading, TextFaces,
 };
+pub use scrub::ScrubControl;
 pub use shell::{FrameInput, FrameResult, UiShell, draw};
 pub use state::{ColorTarget, LastPicked, Toast, UiState};

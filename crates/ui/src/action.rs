@@ -19,6 +19,7 @@ use drafftink_engine::spec::{Host, HostEffect, RefusalToast};
 use drafftink_engine::{Origin, Refusal, Registry, Session};
 use serde_json::{Value, json};
 
+use crate::scrub::ScrubControl;
 use crate::state::{ConvertPopup, SearchResults, Toast, UiState};
 
 /// One call of a registered command: what [`CommandSink::run`] receives.
@@ -58,7 +59,9 @@ pub enum ScrubPhase {
 pub struct Scrub {
     /// Where in the drag.
     pub phase: ScrubPhase,
-    /// The command the gesture ends with, such as `style.set`.
+    /// The control that scrubs.
+    pub control: ScrubControl,
+    /// The command the gesture ends with, such as `style.set` (that of the control).
     pub command: &'static str,
     /// The full arguments of this frame (absolute, never an increment).
     pub args: Value,
@@ -355,6 +358,9 @@ pub fn quiet_from_keyboard(code: &str) -> bool {
 pub fn dispatch<S: CommandSink>(sink: &mut S, state: &mut UiState, actions: Vec<UiAction>, now: f64) -> Report {
     let mut report = Report::default();
     for action in &actions {
+        if let UiAction::Scrub(s) = action {
+            state.scrub.routed(s);
+        }
         match route(action, state) {
             Routed::Local(v) => state.apply_verb(v, &mut report.host),
             Routed::Host(h) => report.host.push(h),
@@ -418,9 +424,11 @@ impl UiState {
                 self.search_results = Some(SearchResults::from_output(query, out));
             }
             (HostEffect::BeginsGesture, Ok(out)) => {
-                self.set_scrub_gesture(out.get("gesture").and_then(Value::as_str).map(str::to_owned));
+                self.scrub.began(out.get("gesture").and_then(Value::as_str).map(str::to_owned));
             }
-            (HostEffect::EndsGesture, _) | (HostEffect::EndsGestureOnRefusal, Err(_)) => self.set_scrub_gesture(None),
+            (HostEffect::BeginsGesture, Err(_)) => self.scrub.began(None),
+            (HostEffect::EndsGestureOnRefusal, Err(_)) => self.scrub.lost(),
+            (HostEffect::EndsGesture, _) => self.scrub.ended(),
             _ => {}
         }
         let waited = self.waiting.iter().position(|c| c == call);
@@ -460,7 +468,7 @@ impl UiState {
             // control just stops scrubbing. Every other refusal of such a command (a locked element, say) is shown.
             return;
         }
-        self.push_toast(Toast::from_refusal(refusal, now));
+        self.push_toast(Toast::from_refusal(refusal, now).with_args(&call.args));
     }
 }
 

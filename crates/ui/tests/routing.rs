@@ -8,7 +8,9 @@ use common::Fixture;
 use drafftink_engine::testing::{add_rect, select};
 use drafftink_engine::{Origin, Refusal};
 use drafftink_ui::action::{CommandSink, Ran};
-use drafftink_ui::{Call, HostRequest, Routed, Scrub, ScrubPhase, UiAction, UiState, Verb, dispatch, route};
+use drafftink_ui::{
+    Call, HostRequest, Routed, Scrub, ScrubControl, ScrubPhase, UiAction, UiState, Verb, dispatch, route,
+};
 use serde_json::{Value, json};
 
 /// A sink that records what it was asked to run and answers from a script.
@@ -41,7 +43,12 @@ fn route_maps_each_kind_of_action() {
 fn a_scrub_becomes_the_gesture_commands_with_the_running_gesture_id() {
     let mut st = UiState::new();
     let args = json!({"props": {"opacity": 0.5}});
-    let begin = UiAction::Scrub(Scrub { phase: ScrubPhase::Begin, command: "style.set", args: args.clone() });
+    let begin = UiAction::Scrub(Scrub {
+        phase: ScrubPhase::Begin,
+        control: ScrubControl::Opacity,
+        command: "style.set",
+        args: args.clone(),
+    });
     let Routed::Command(c) = route(&begin, &st) else { panic!("not a command") };
     assert_eq!(c.id, "gesture.begin");
     assert_eq!(c.args, json!({"command": "style.set", "args": args}));
@@ -52,6 +59,7 @@ fn a_scrub_becomes_the_gesture_commands_with_the_running_gesture_id() {
     assert_eq!(st.scrub_gesture(), Some("g1"));
     let update = UiAction::Scrub(Scrub {
         phase: ScrubPhase::Update,
+        control: ScrubControl::Opacity,
         command: "style.set",
         args: json!({"props": {"opacity": 0.3}}),
     });
@@ -62,6 +70,7 @@ fn a_scrub_becomes_the_gesture_commands_with_the_running_gesture_id() {
     );
     let end = UiAction::Scrub(Scrub {
         phase: ScrubPhase::End,
+        control: ScrubControl::Opacity,
         command: "style.set",
         args: json!({"props": {"opacity": 0.3}}),
     });
@@ -80,7 +89,12 @@ fn a_drag_of_the_opacity_slider_is_one_undo_step_on_a_real_session() {
     let steps = |f: &Fixture| f.session.tab().doc.undo_depth();
     let before = steps(&f);
     let frame = |opacity: f64, phase| {
-        UiAction::Scrub(Scrub { phase, command: "style.set", args: json!({"props": {"opacity": opacity}}) })
+        UiAction::Scrub(Scrub {
+            phase,
+            control: ScrubControl::Opacity,
+            command: "style.set",
+            args: json!({"props": {"opacity": opacity}}),
+        })
     };
     f.actions = vec![frame(0.9, ScrubPhase::Begin)];
     f.dispatch();
