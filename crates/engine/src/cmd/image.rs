@@ -133,6 +133,10 @@ pub(crate) fn insert_pictures(
         } else {
             None
         };
+        if shrunk.is_none() {
+            // Only the header was read so far: damaged pixel data must fail here and not at every draw.
+            picture::validate_pixels(&p.bytes, &probe).map_err(|e| picture_refusal(cmd, &p.name, &e))?;
+        }
         let (mime, natural, bytes) = match shrunk {
             Some(sh) => (sh.mime, (sh.width, sh.height), sh.bytes),
             None => (probe.mime, (probe.width, probe.height), p.bytes),
