@@ -571,3 +571,44 @@ fn viewport_default_is_usable() {
     let v = Viewport::default();
     assert_eq!(v.size(), Size::new(800.0, 600.0));
 }
+
+#[test]
+fn a_listener_that_stops_propagation_is_seen_on_the_returned_event() {
+    let mut c = canvas_with(vec![fill(rect("a", 100.0, 100.0, 100.0, 100.0))]);
+    c.on(EventKind::Click, Selector::Id(id("a")), Box::new(ElementEvent::stop_propagation));
+    let pos = drafftink_canvas::Pos { screen: Point::ZERO, world: Point::ZERO };
+    let ev = c.dispatch(ElementEvent::new(EventKind::Click, Some(id("a")), pos));
+    assert!(ev.is_propagation_stopped());
+    let other = c.dispatch(ElementEvent::new(EventKind::Click, None, pos));
+    assert!(!other.is_propagation_stopped());
+}
+
+#[test]
+fn elements_in_rect_lists_what_touches_the_rectangle_back_to_front() {
+    let c = canvas_with(vec![
+        rect("a", 0.0, 0.0, 50.0, 50.0),
+        rect("b", 40.0, 40.0, 50.0, 50.0),
+        rect("far", 500.0, 500.0, 10.0, 10.0),
+    ]);
+    let hit: Vec<&str> = c
+        .elements_in_rect(&drafftink_canvas::geom::kurbo::Rect::new(45.0, 45.0, 60.0, 60.0))
+        .iter()
+        .map(|e| e.id.as_str())
+        .collect();
+    assert_eq!(hit.len(), 2);
+    assert!(hit.contains(&"a") && hit.contains(&"b") && !hit.contains(&"far"));
+}
+
+#[test]
+fn the_viewport_centres_zooms_and_tells_what_is_visible() {
+    let mut v = Viewport::default();
+    let r = drafftink_canvas::geom::kurbo::Rect::new(1000.0, 1000.0, 1010.0, 1010.0);
+    assert!(!v.is_visible(&r));
+    assert!(v.center_on(Point::new(1005.0, 1005.0)));
+    assert!(v.is_visible(&r));
+    assert!(!v.center_on(Point::new(1005.0, 1005.0)), "centring on the same point changes nothing");
+    let before = v.camera().zoom;
+    assert!(v.set_zoom(before * 2.0));
+    assert!((v.camera().zoom - before * 2.0).abs() < 1e-9);
+    assert!(!v.set_zoom(f64::NAN));
+}

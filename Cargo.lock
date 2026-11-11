@@ -1448,6 +1448,7 @@ version = "0.2.0"
 dependencies = [
  "base64 0.22.1",
  "drafftink-geom",
+ "drafftink-io",
  "drafftink-scene",
  "drafftink-sketch",
  "drafftink-typeset",

@@ -169,13 +169,13 @@ pub(crate) struct NextIndex {
 }
 
 impl NextIndex {
-    pub fn get(&self, room: &RoomId) -> Option<u64> {
+    pub(crate) fn get(&self, room: &RoomId) -> Option<u64> {
         lock(&self.map).get(room.as_str()).copied()
     }
-    pub fn set(&self, room: &RoomId, next: u64) {
+    pub(crate) fn set(&self, room: &RoomId, next: u64) {
         lock(&self.map).insert(room.as_str().to_owned(), next);
     }
-    pub fn forget(&self, room: &RoomId) {
+    pub(crate) fn forget(&self, room: &RoomId) {
         lock(&self.map).remove(room.as_str());
     }
 }

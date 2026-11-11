@@ -6,6 +6,10 @@ edition.workspace = true
 license.workspace = true
 rust-version.workspace = true
 
+[features]
+# The fixture fact checks (`io::facts`): test support, not part of the shipped library.
+facts = []
+
 [dependencies]
 drafftink-scene = { path = "../scene" }
 drafftink-geom = { path = "../geom" }
@@ -24,6 +28,8 @@ loro.workspace = true
 flate2 = { version = "1", default-features = false, features = ["rust_backend"] }
 
 [dev-dependencies]
+# The tests use the fact checks.
+drafftink-io = { path = ".", features = ["facts"] }
 proptest.workspace = true
 png.workspace = true
 roxmltree = "0.21"

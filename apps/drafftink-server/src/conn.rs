@@ -89,7 +89,7 @@ struct Conn {
 }
 
 /// Runs a connection until it ends.
-pub async fn serve(socket: WebSocket, app: Arc<AppState>, _permit: OwnedSemaphorePermit) {
+pub(crate) async fn serve(socket: WebSocket, app: Arc<AppState>, _permit: OwnedSemaphorePermit) {
     let (sink, mut stream) = socket.split();
     let (out, rx) = outbox(app.config.limits.outbox_messages, app.config.limits.outbox_bytes);
     let json = Arc::new(AtomicBool::new(false));

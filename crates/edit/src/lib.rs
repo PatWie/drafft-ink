@@ -26,7 +26,7 @@
 //! [`TargetError`], held as the `Target` variant of each error enum. The errors carry plain-words text and no
 //! command names; the engine adds the advice that belongs to a command.
 
-#![warn(missing_docs)]
+#![warn(missing_docs, unreachable_pub)]
 #![cfg_attr(test, allow(clippy::unwrap_used, clippy::expect_used, clippy::panic))]
 
 pub mod arrange;

@@ -78,7 +78,7 @@ impl OriginPolicy {
 }
 
 /// State shared by every request.
-pub struct AppState {
+pub(crate) struct AppState {
     pub config: Arc<Config>,
     pub manager: Arc<RoomManager>,
     pub auth: Auth,
@@ -89,13 +89,13 @@ pub struct AppState {
 
 impl AppState {
     /// A fresh connection id.
-    pub fn new_conn_id(&self) -> u64 {
+    pub(crate) fn new_conn_id(&self) -> u64 {
         self.next_conn.fetch_add(1, Ordering::Relaxed)
     }
 }
 
 /// Builds the router.
-pub fn router(state: Arc<AppState>) -> Router {
+pub(crate) fn router(state: Arc<AppState>) -> Router {
     let index = state.config.web_dir.join("index.html");
     let web = ServeDir::new(&state.config.web_dir)
         .precompressed_br()

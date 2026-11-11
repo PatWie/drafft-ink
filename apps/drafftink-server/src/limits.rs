@@ -6,7 +6,7 @@ use tokio::time::Instant;
 
 /// A token bucket. `rate` tokens per second refill it up to `burst` tokens.
 #[derive(Debug, Clone)]
-pub struct TokenBucket {
+pub(crate) struct TokenBucket {
     rate: f64,
     burst: f64,
     tokens: f64,
@@ -15,13 +15,13 @@ pub struct TokenBucket {
 
 impl TokenBucket {
     /// A full bucket. A rate of 0 is treated as 1 so a bucket never blocks for ever.
-    pub fn new(rate_per_sec: u32, burst: u32, now: Instant) -> Self {
+    pub(crate) fn new(rate_per_sec: u32, burst: u32, now: Instant) -> Self {
         let burst = f64::from(burst.max(1));
         TokenBucket { rate: f64::from(rate_per_sec.max(1)), burst, tokens: burst, last: now }
     }
 
     /// Takes one token, or says how long to wait until one is available.
-    pub fn take(&mut self, now: Instant) -> Result<(), Duration> {
+    pub(crate) fn take(&mut self, now: Instant) -> Result<(), Duration> {
         let elapsed = now.saturating_duration_since(self.last).as_secs_f64();
         self.last = now;
         self.tokens = (self.tokens + elapsed * self.rate).min(self.burst);
