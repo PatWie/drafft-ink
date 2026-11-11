@@ -38,21 +38,6 @@ impl Outcome {
             self.redraw = Some(level);
         }
     }
-
-    /// Folds `later` into this outcome: the stronger redraw, the newest cursor and request, all refusals.
-    pub(crate) fn absorb(&mut self, later: Outcome) {
-        if let Some(r) = later.redraw {
-            self.redraw_at_least(r);
-        }
-        if later.cursor.is_some() {
-            self.cursor = later.cursor;
-        }
-        if later.ui_request.is_some() {
-            self.ui_request = later.ui_request;
-        }
-        self.refusals.extend(later.refusals);
-        self.handled |= later.handled;
-    }
 }
 
 /// UI the shell should open because of a pointer event. None of these change the document.

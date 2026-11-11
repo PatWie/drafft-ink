@@ -175,6 +175,7 @@ impl Rig {
 
     fn event(&mut self, phase: PointerPhase, x: f64, y: f64, button: Button, buttons: Buttons) -> Outcome {
         self.now += 16.0;
+        self.fakes.clock.advance_ms(16);
         let ev = PointerEvent::new(PointerId(0), PointerKind::Mouse, phase, Point::new(x, y), self.now)
             .with_button(button, buttons)
             .with_modifiers(self.mods);

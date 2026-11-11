@@ -83,9 +83,4 @@ impl ViewSync {
     pub(crate) fn deadline(&self) -> Option<f64> {
         self.unreported.then(|| self.last_report_ms.map_or(0.0, |t| t + REPORT_EVERY_MS))
     }
-
-    /// True while a camera move waits to be reported.
-    pub(crate) fn has_unreported(&self) -> bool {
-        self.unreported
-    }
 }

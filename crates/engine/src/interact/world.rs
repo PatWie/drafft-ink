@@ -12,10 +12,10 @@
 use std::collections::HashMap;
 
 use drafftink_canvas::{
-    Camera, CanvasConfig, Cursor, Handle, Hit, HitOptions, MarqueeMode, Picker, PointerKind, SceneIndex,
-    SelectionFrame, Target, Viewport, unit_group,
+    Camera, CanvasConfig, Cursor, Hit, HitOptions, Picker, PointerKind, SceneIndex, SelectionFrame, Target, Viewport,
+    unit_group,
 };
-use drafftink_geom::kurbo::{Point, Rect, Size};
+use drafftink_geom::kurbo::{Point, Size};
 use drafftink_scene::{Change, ChangeKind, ChangeSet, Element, ElementId, Fields, GroupId, SceneRead, SceneStore};
 
 use crate::session::Session;
@@ -163,11 +163,6 @@ impl World {
         &self.frame
     }
 
-    /// The group the user entered.
-    pub(crate) fn entered_group(&self) -> Option<&GroupId> {
-        self.entered.as_ref()
-    }
-
     /// Reads the index against the store.
     pub(crate) fn index(&self) -> &SceneIndex {
         &self.index
@@ -202,24 +197,9 @@ impl World {
         self.viewport.px_to_world(px)
     }
 
-    /// The topmost element at a world point, `tolerance_px` screen pixels around outlines.
-    pub(crate) fn hit(&self, s: &Session, world: Point, tolerance_px: f64) -> Option<Hit> {
-        self.index.hit(s.store(), world, self.viewport.zoom(), &HitOptions::with_tolerance(tolerance_px))
-    }
-
     /// Every element at a world point, topmost first.
     pub(crate) fn hit_all(&self, s: &Session, world: Point, tolerance_px: f64) -> Vec<Hit> {
         self.index.hit_all(s.store(), world, self.viewport.zoom(), &HitOptions::with_tolerance(tolerance_px))
-    }
-
-    /// Elements a world rectangle selects, back to front, without locked ones.
-    pub(crate) fn marquee(&self, s: &Session, rect: &Rect, mode: MarqueeMode) -> Vec<ElementId> {
-        self.index.marquee(s.store(), rect, mode, false)
-    }
-
-    /// What the recognizer sees under a screen point.
-    pub(crate) fn pick(&self, s: &Session, screen: Point, kind: PointerKind) -> Target {
-        Pick { world: self, session: s }.pick(screen, kind)
     }
 
     /// The picker the recognizer runs against, borrowing the world and the session.
@@ -274,9 +254,4 @@ impl Picker for Pick<'_> {
             _ => Cursor::Crosshair,
         }
     }
-}
-
-/// True for the handles that stretch or turn a box.
-pub(crate) fn is_box_handle(h: &Handle) -> bool {
-    h.to_box().is_some()
 }

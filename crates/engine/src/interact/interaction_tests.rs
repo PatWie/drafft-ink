@@ -1,5 +1,7 @@
 //! Tests of the interaction layer itself: hover (E1), pan (E10), zoom (E11), the Space-hold pan, context menus,
+
 //! external camera changes. The tools have their own test files next to their code.
+#![allow(non_snake_case)]
 
 use drafftink_canvas::{
     Button, Buttons, Cursor, InputEvent, PointerEvent, PointerId, PointerKind, PointerPhase, WheelEvent, WheelUnit,
@@ -42,7 +44,7 @@ fn the_rig_starts_with_screen_equal_to_world() {
 }
 
 #[test]
-fn exception_e1_hover_requests_redraw_only_on_change() {
+fn exception_E1_hover_requests_redraw_only_on_change() {
     let mut rig = Rig::new();
     let a = rig.rect(100.0, 100.0, 100.0, 100.0);
     rig.hover(10.0, 10.0);
@@ -92,7 +94,7 @@ fn the_hover_follows_an_element_that_moves_away_from_under_the_pointer() {
 }
 
 #[test]
-fn exception_e10_pan_ends_with_view_set() {
+fn exception_E10_pan_ends_with_view_set() {
     let mut rig = Rig::new();
     rig.rect(100.0, 100.0, 100.0, 100.0);
     rig.tool(Tool::Hand);
@@ -180,7 +182,7 @@ fn a_middle_button_drag_pans_whatever_the_tool() {
 }
 
 #[test]
-fn exception_e11_zoom_ends_with_view_set() {
+fn exception_E11_zoom_ends_with_view_set() {
     let mut rig = Rig::new();
     // One ctrl-wheel notch zooms by 1.1 about the pointer.
     let before = rig.s.view().screen_to_world(Point::new(200.0, 100.0));
