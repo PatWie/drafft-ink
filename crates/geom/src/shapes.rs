@@ -11,7 +11,7 @@ use crate::aabb;
 use crate::convex::Convex;
 use crate::ellipse::LocalEllipse;
 use crate::obox::OrientedBox;
-use crate::outline::{Hit, Nearest, Outline, Probe, cross, finish_hits, unit};
+use crate::outline::{Hit, Nearest, Outline, Probe, clamp_to_range, cross, finish_hits, unit};
 use crate::transform::ElementFrame;
 
 // ---------------------------------------------------------------------------------------------
@@ -254,37 +254,26 @@ impl Polyline {
         }
     }
 
-    fn segment(&self, i: usize) -> (Point, Point) {
-        let n = self.points.len();
-        (self.points[i], self.points[(i + 1) % n])
+    /// The segments in order, including the closing one of an enclosing polygon.
+    fn segments(&self) -> impl Iterator<Item = (Point, Point)> + '_ {
+        let next = self.points.iter().copied().cycle().skip(1);
+        self.points.iter().copied().zip(next).take(self.segment_count())
     }
 
     /// +1 when the polygon runs clockwise on screen (positive shoelace sum in y-down), else -1.
     fn orientation(&self) -> f64 {
-        let n = self.points.len();
-        let mut sum = 0.0;
-        for i in 0..n {
-            let (a, b) = (self.points[i], self.points[(i + 1) % n]);
-            sum += a.x * b.y - b.x * a.y;
-        }
+        let sum: f64 = self.segments().map(|(a, b)| a.x * b.y - b.x * a.y).sum();
         if sum >= 0.0 { 1.0 } else { -1.0 }
     }
 
     /// Total length of the outline.
     pub fn length(&self) -> f64 {
-        (0..self.segment_count())
-            .map(|i| {
-                let (a, b) = self.segment(i);
-                (b - a).hypot()
-            })
-            .sum()
+        self.segments().map(|(a, b)| (b - a).hypot()).sum()
     }
 
     fn winding(&self, p: Point) -> i32 {
-        let n = self.points.len();
         let mut w = 0;
-        for i in 0..n {
-            let (a, b) = (self.points[i], self.points[(i + 1) % n]);
+        for (a, b) in self.segments() {
             if a.y <= p.y {
                 if b.y > p.y && cross(b - a, p - a) > 0.0 {
                     w += 1;
@@ -334,8 +323,7 @@ impl Outline for Polyline {
         }
         let orient = if self.encloses() { self.orientation() } else { 1.0 };
         let mut best: Option<Nearest> = None;
-        for i in 0..self.segment_count() {
-            let (a, b) = self.segment(i);
+        for (a, b) in self.segments() {
             let e = b - a;
             let l2 = e.hypot2();
             let s = if l2 > 0.0 { ((p - a).dot(e) / l2).clamp(0.0, 1.0) } else { 0.0 };
@@ -357,8 +345,7 @@ impl Outline for Polyline {
         let (o, d) = (probe.origin, probe.dir);
         let tol = 1e-12;
         let mut out = Vec::new();
-        for i in 0..self.segment_count() {
-            let (a, b) = self.segment(i);
+        for (a, b) in self.segments() {
             let e = b - a;
             let denom = cross(d, e);
             if e.hypot2() == 0.0 || denom.abs() <= 1e-14 * d.hypot() * e.hypot() {
@@ -367,8 +354,7 @@ impl Outline for Polyline {
             let ao = a - o;
             let t = cross(ao, e) / denom;
             let s = cross(ao, d) / denom;
-            if (-tol..=1.0 + tol).contains(&s) && t >= probe.t_min - tol && t <= probe.t_max + tol {
-                let t = t.clamp(probe.t_min, probe.t_max);
+            if let (true, Some(t)) = ((-tol..=1.0 + tol).contains(&s), clamp_to_range(t, probe.t_min, probe.t_max)) {
                 let u = unit(e);
                 out.push(Hit { point: o + d * t, t, normal: Vec2::new(u.y, -u.x) * orient });
             }
