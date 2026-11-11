@@ -12,11 +12,11 @@
     { "execute": "doc.drop", "args": { "items": [ { "name": "lib.excalidrawlib", "bytes": { "path": "fixtures/excalidraw/fixture_library.excalidrawlib" } } ] }, "expect": [ { "path": "$.library_items", "eq": 1 }, { "path": "$.documents", "eq": 0 } ] },
     { "assert": "library.list", "expect": [ { "path": "$.items", "len": 1 } ] },
 
-    { "execute": "doc.show_intro", "args": { "mode": "new_tab" }, "expect": [ { "path": "$.format", "eq": "intro" }, { "path": "$.name", "eq": "Welcome" }, { "path": "$.elements", "eq": 35 } ] },
+    { "execute": "doc.show_intro", "args": { "mode": "new_tab" }, "expect": [ { "path": "$.format", "eq": "intro" }, { "path": "$.name", "eq": "Welcome" }, { "path": "$.elements", "eq": 50 } ] },
     { "assert": "history.state", "expect": [ { "path": "$.can_undo", "eq": false } ] },
     { "execute": "element.create", "args": { "kind": "rectangle", "bounds": { "x": 0, "y": 0, "w": 100, "h": 60 } } },
     { "execute": "doc.show_intro", "refused": "unsaved_changes", "text": "This document has unsaved changes. Save it with `doc.save`" },
-    { "execute": "doc.show_intro", "args": { "on_unsaved": "discard" }, "expect": [ { "path": "$.mode", "eq": "replace" }, { "path": "$.elements", "eq": 35 } ] },
+    { "execute": "doc.show_intro", "args": { "on_unsaved": "discard" }, "expect": [ { "path": "$.mode", "eq": "replace" }, { "path": "$.elements", "eq": 50 } ] },
 
     { "assert": "doc.list", "expect": [ { "path": "$.documents", "len": 1, "note": "Only the dropped file that was opened is recent so far." }, { "path": "$.documents[0].name", "eq": "basic_shapes.excalidraw" } ] },
     { "execute": "doc.save", "args": { "to": { "path": "work/welcome.drafftink" } } },
