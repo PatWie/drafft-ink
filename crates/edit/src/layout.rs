@@ -9,6 +9,7 @@
 //!
 //! Distances are world units.
 
+mod cluster;
 mod diagram;
 mod force;
 mod layered;
@@ -29,8 +30,8 @@ use crate::target::TargetError;
 use crate::text_bind::{GrowAnchor, TextBindError, TextMeasure, refresh_labels};
 
 pub use diagram::{
-    Arrowheads, CreateOpts, DiagramError, DiagramResult, DiagramSpec, EdgeSpec, GroupSpec, MAX_EDGES, MAX_NODES,
-    NodeShape, NodeSpec, StyleSpec, below_content_origin, diagram_create,
+    Arrowheads, ClusterSpec, CreateOpts, DiagramError, DiagramResult, DiagramSpec, EdgeSpec, GroupSpec, MAX_CLUSTERS,
+    MAX_EDGES, MAX_NODES, NodeShape, NodeSpec, StyleSpec, below_content_origin, diagram_create,
 };
 pub use route::{
     Heads, NodeBox, Route, RouteParams, Side, arrow_element, pick_sides, reroute_element, route_edge, route_self_loop,
@@ -183,6 +184,12 @@ pub enum LayoutError {
     /// A gap is negative or not a number.
     #[error("{0} must be a finite number of 0 or more")]
     BadGap(Gap),
+    /// A cluster names a parent that does not exist, is its own ancestor, or is nested too deeply.
+    #[error("cluster {cluster} is not usable: its parent chain is broken, loops, or is nested too deeply")]
+    BadCluster {
+        /// Index of the cluster.
+        cluster: usize,
+    },
 }
 
 /// Runs the layout.
