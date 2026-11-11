@@ -29,6 +29,9 @@ use drafftink_protocol::{
 use drafftink_scene::{ChangeKind, ChangeSet};
 use loro::VersionVector;
 
+mod parts;
+
+use self::parts::{Health, Reconcile, Uploads};
 use crate::awareness::{LocalPresence, Peer, PeerTable};
 use crate::status::{ConnState, Problem, ProblemAction, Status, StopReason, explain, stop_reason};
 use crate::transport::TransportEvent;
@@ -273,33 +276,9 @@ pub struct CollabClient {
     presence_changed: bool,
     limits: Limits,
 
-    // connection health
-    last_tick_ms: u64,
-    last_rx_ms: u64,
-    last_ping_ms: u64,
-    ping_nonce: u64,
-    stable_since: Option<u64>,
-    attempt: u32,
-    rng: u64,
-    offline_reason: String,
-    server_retry_ms: Option<u64>,
-
-    // updates
-    next_seq: u32,
-    inflight: VecDeque<Inflight>,
-    flush_at: Option<u64>,
-    want_flush: bool,
-    last_update_sent_ms: Option<u64>,
-    send_not_before: u64,
-    blocked: Option<Block>,
-    local_dirty: bool,
-
-    // reconciling
-    resync_due: Option<u64>,
-    sync_outstanding: Option<u64>,
-    resync_gap_ms: u64,
-    last_resync_ms: Option<u64>,
-    pending_snapshot: Option<PendingSnapshot>,
+    health: Health,
+    uploads: Uploads,
+    reconcile: Reconcile,
     problem: Option<Problem>,
     stats: Stats,
 }
@@ -323,28 +302,9 @@ impl CollabClient {
             following: None,
             presence_changed: false,
             limits: Limits::DEFAULT,
-            last_tick_ms: 0,
-            last_rx_ms: 0,
-            last_ping_ms: 0,
-            ping_nonce: 0,
-            stable_since: None,
-            attempt: 0,
-            rng,
-            offline_reason: String::new(),
-            server_retry_ms: None,
-            next_seq: 1,
-            inflight: VecDeque::new(),
-            flush_at: None,
-            want_flush: false,
-            last_update_sent_ms: None,
-            send_not_before: 0,
-            blocked: None,
-            local_dirty: false,
-            resync_due: None,
-            sync_outstanding: None,
-            resync_gap_ms: RESYNC_MIN_GAP_MS,
-            last_resync_ms: None,
-            pending_snapshot: None,
+            health: Health::new(rng),
+            uploads: Uploads::new(),
+            reconcile: Reconcile::new(),
             problem: None,
             stats: Stats::default(),
         })
@@ -410,39 +370,39 @@ impl CollabClient {
             Phase::Backoff { until } => at(until),
             Phase::Connecting { since } => at(since.saturating_add(CONNECT_TIMEOUT_MS)),
             Phase::Joining { since } | Phase::Syncing { since } => {
-                if self.pending_snapshot.is_none() {
+                if self.reconcile.pending_snapshot.is_none() {
                     at(since.saturating_add(JOIN_TIMEOUT_MS));
                 }
             }
             Phase::Online => {}
         }
         if self.is_connected() || matches!(self.phase, Phase::Joining { .. }) {
-            at(self.last_rx_ms.max(self.last_ping_ms).saturating_add(u64::from(PING_INTERVAL_MS)));
-            at(self.last_rx_ms.saturating_add(u64::from(IDLE_TIMEOUT_MS)));
+            at(self.health.last_rx_ms.max(self.health.last_ping_ms).saturating_add(u64::from(PING_INTERVAL_MS)));
+            at(self.health.last_rx_ms.saturating_add(u64::from(IDLE_TIMEOUT_MS)));
         }
         if matches!(self.phase, Phase::Online) {
-            if let Some(t) = self.flush_at.filter(|_| self.blocked.is_none()) {
-                at(t.max(self.send_not_before));
+            if let Some(t) = self.uploads.flush_at.filter(|_| self.uploads.blocked.is_none()) {
+                at(t.max(self.uploads.send_not_before));
             }
-            if let Some(t) = self.resync_due {
+            if let Some(t) = self.reconcile.resync_due {
                 at(t);
             }
-            if let Some(f) = self.inflight.front() {
+            if let Some(f) = self.uploads.inflight.front() {
                 at(f.sent_at.saturating_add(ACK_TIMEOUT_MS));
             }
             if let Some(t) =
-                self.presence.next_due(self.last_tick_ms, self.awareness_interval(), !self.peers.is_empty())
+                self.presence.next_due(self.health.last_tick_ms, self.awareness_interval(), !self.peers.is_empty())
             {
                 at(t);
             }
-            if let Some(t) = self.stable_since.filter(|_| self.attempt > 0) {
+            if let Some(t) = self.health.stable_since.filter(|_| self.health.attempt > 0) {
                 at(t.saturating_add(STABLE_MS));
             }
         }
         if let Some(t) = self.peers.next_expiry() {
             at(t);
         }
-        if let Some(t) = self.peers.next_trail_expiry(self.last_tick_ms) {
+        if let Some(t) = self.peers.next_trail_expiry(self.health.last_tick_ms) {
             at(t);
         }
         wake
@@ -455,9 +415,9 @@ impl CollabClient {
     pub fn start(&mut self, now_ms: u64) {
         if matches!(self.phase, Phase::Idle | Phase::Stopped(_)) {
             self.problem = None;
-            self.attempt = 0;
+            self.health.attempt = 0;
             self.phase = Phase::Backoff { until: now_ms };
-            self.offline_reason = String::new();
+            self.health.offline_reason = String::new();
             self.refresh_status();
         }
     }
@@ -471,7 +431,7 @@ impl CollabClient {
 
     /// Leaves the room: sends the edits still waiting, says goodbye, closes. No reconnect follows.
     pub fn leave(&mut self, now_ms: u64, store: &mut LoroStore) {
-        if matches!(self.phase, Phase::Online) && self.blocked.is_none() {
+        if matches!(self.phase, Phase::Online) && self.uploads.blocked.is_none() {
             self.flush_updates(now_ms, store);
         }
         if self.is_connected() {
@@ -490,11 +450,11 @@ impl CollabClient {
     /// The document got a local commit. Call it after every commit; it is cheap. The update goes out within
     /// [`SEND_DEBOUNCE_MS`] while online, and after the next sync otherwise.
     pub fn local_changed(&mut self, now_ms: u64) {
-        self.local_dirty = true;
-        if matches!(self.phase, Phase::Online) && self.flush_at.is_none() && self.blocked.is_none() {
+        self.uploads.local_dirty = true;
+        if matches!(self.phase, Phase::Online) && self.uploads.flush_at.is_none() && self.uploads.blocked.is_none() {
             let gap = self.update_interval_ms();
-            let earliest = self.last_update_sent_ms.map_or(0, |t| t.saturating_add(gap));
-            self.flush_at = Some(now_ms.saturating_add(SEND_DEBOUNCE_MS).max(earliest));
+            let earliest = self.uploads.last_update_sent_ms.map_or(0, |t| t.saturating_add(gap));
+            self.uploads.flush_at = Some(now_ms.saturating_add(SEND_DEBOUNCE_MS).max(earliest));
         }
         self.refresh_status();
     }
@@ -542,7 +502,7 @@ impl CollabClient {
 
     /// Answers [`CollabEvent::NeedsDecision`].
     pub fn resolve_trimmed(&mut self, now_ms: u64, store: &mut LoroStore, choice: TrimmedChoice) {
-        let Some(pending) = self.pending_snapshot.take() else { return };
+        let Some(pending) = self.reconcile.pending_snapshot.take() else { return };
         match choice {
             TrimmedChoice::KeepMine => {
                 self.out.push_back(Output::Close);
@@ -574,45 +534,47 @@ impl CollabClient {
                 self.fail_connection(now_ms, "The server did not answer in time");
             }
             Phase::Joining { since } | Phase::Syncing { since }
-                if self.pending_snapshot.is_none() && now_ms.saturating_sub(since) >= JOIN_TIMEOUT_MS =>
+                if self.reconcile.pending_snapshot.is_none() && now_ms.saturating_sub(since) >= JOIN_TIMEOUT_MS =>
             {
                 self.fail_connection(now_ms, "The server did not finish the join in time");
             }
             _ => {}
         }
         if self.is_connected() || matches!(self.phase, Phase::Joining { .. }) {
-            if now_ms.saturating_sub(self.last_rx_ms) >= u64::from(IDLE_TIMEOUT_MS) {
+            if now_ms.saturating_sub(self.health.last_rx_ms) >= u64::from(IDLE_TIMEOUT_MS) {
                 self.fail_connection(now_ms, "The connection went quiet");
-            } else if now_ms.saturating_sub(self.last_rx_ms.max(self.last_ping_ms)) >= u64::from(PING_INTERVAL_MS) {
-                self.ping_nonce = self.ping_nonce.wrapping_add(1);
-                self.last_ping_ms = now_ms;
-                self.send(&ClientMessage::Ping { nonce: self.ping_nonce });
+            } else if now_ms.saturating_sub(self.health.last_rx_ms.max(self.health.last_ping_ms))
+                >= u64::from(PING_INTERVAL_MS)
+            {
+                self.health.ping_nonce = self.health.ping_nonce.wrapping_add(1);
+                self.health.last_ping_ms = now_ms;
+                self.send(&ClientMessage::Ping { nonce: self.health.ping_nonce });
             }
         }
         if matches!(self.phase, Phase::Online) {
             self.tick_online(now_ms, store);
         }
         self.expire_peers(now_ms);
-        self.last_tick_ms = now_ms;
+        self.health.last_tick_ms = now_ms;
         self.flush_events();
     }
 
     fn tick_online(&mut self, now_ms: u64, store: &mut LoroStore) {
-        if self.stable_since.is_some_and(|t| now_ms.saturating_sub(t) >= STABLE_MS) {
-            self.attempt = 0;
+        if self.health.stable_since.is_some_and(|t| now_ms.saturating_sub(t) >= STABLE_MS) {
+            self.health.attempt = 0;
         }
-        let waiting = self.inflight.len();
-        self.inflight.retain(|f| now_ms.saturating_sub(f.sent_at) < ACK_TIMEOUT_MS);
-        if self.inflight.len() < waiting {
+        let waiting = self.uploads.inflight.len();
+        self.uploads.inflight.retain(|f| now_ms.saturating_sub(f.sent_at) < ACK_TIMEOUT_MS);
+        if self.uploads.inflight.len() < waiting {
             // Updates with no acknowledgement: the server may have dropped them. Reconcile instead of waiting.
             self.want_resync(now_ms);
         }
-        if self.resync_due.is_some_and(|t| t <= now_ms) {
+        if self.reconcile.resync_due.is_some_and(|t| t <= now_ms) {
             self.send_resync(now_ms, store);
         }
-        if self.blocked.is_none() && now_ms >= self.send_not_before {
-            let due =
-                self.flush_at.is_some_and(|t| t <= now_ms) || (self.want_flush && self.inflight.len() < MAX_INFLIGHT);
+        if self.uploads.blocked.is_none() && now_ms >= self.uploads.send_not_before {
+            let due = self.uploads.flush_at.is_some_and(|t| t <= now_ms)
+                || (self.uploads.want_flush && self.uploads.inflight.len() < MAX_INFLIGHT);
             if due {
                 self.flush_updates(now_ms, store);
             }
@@ -640,8 +602,8 @@ impl CollabClient {
         if !matches!(self.phase, Phase::Connecting { .. }) {
             return;
         }
-        self.last_rx_ms = now_ms;
-        self.last_ping_ms = now_ms;
+        self.health.last_rx_ms = now_ms;
+        self.health.last_ping_ms = now_ms;
         let version = match store.version_vector() {
             Ok(v) => v,
             Err(e) => {
@@ -683,7 +645,7 @@ impl CollabClient {
         if matches!(self.phase, Phase::Idle | Phase::Stopped(_) | Phase::Backoff { .. } | Phase::Connecting { .. }) {
             return;
         }
-        self.last_rx_ms = now_ms;
+        self.health.last_rx_ms = now_ms;
         let msg = match ServerMessage::decode(bytes) {
             Ok(m) => m,
             Err(e) => {
@@ -731,7 +693,7 @@ impl CollabClient {
         self.limits = limits;
         self.peers.replace(self.cfg.client_id, peers);
         self.phase = Phase::Syncing { since: now_ms };
-        self.blocked = None;
+        self.uploads.blocked = None;
         self.presence_changed = true;
         self.refresh_status();
     }
@@ -742,7 +704,7 @@ impl CollabClient {
             Phase::Online => false,
             _ => return,
         };
-        self.sync_outstanding = None;
+        self.reconcile.sync_outstanding = None;
         if !data.is_empty() {
             let batch = if kind == SyncKind::Snapshot { RemoteKind::Snapshot } else { RemoteKind::CatchUp };
             match self.apply(now_ms, store, data, None, batch) {
@@ -757,7 +719,8 @@ impl CollabClient {
                 }
                 Applied::Stopped => return,
                 Applied::NeedsDecision => {
-                    self.pending_snapshot = Some(PendingSnapshot { bytes: data.to_vec(), server_version: sv, joining });
+                    self.reconcile.pending_snapshot =
+                        Some(PendingSnapshot { bytes: data.to_vec(), server_version: sv, joining });
                     return;
                 }
             }
@@ -770,28 +733,28 @@ impl CollabClient {
         if joining {
             self.stats.joins += 1;
             self.phase = Phase::Online;
-            self.stable_since = Some(now_ms);
+            self.health.stable_since = Some(now_ms);
             self.presence.reset_sent();
             self.problem = None;
         }
         if store.has_pending_remote() {
             self.resync_failed(now_ms);
         } else {
-            self.resync_gap_ms = RESYNC_MIN_GAP_MS;
+            self.reconcile.resync_gap_ms = RESYNC_MIN_GAP_MS;
         }
         self.upload_missing(now_ms, store, server_version);
         self.refresh_status();
     }
 
     fn on_live_update(&mut self, now_ms: u64, store: &mut LoroStore, from: ClientId, update: &[u8]) {
-        if !matches!(self.phase, Phase::Syncing { .. } | Phase::Online) || self.pending_snapshot.is_some() {
+        if !matches!(self.phase, Phase::Syncing { .. } | Phase::Online) || self.reconcile.pending_snapshot.is_some() {
             return;
         }
         match self.apply(now_ms, store, update, Some(from), RemoteKind::Live) {
             Applied::Ok | Applied::Stopped => {}
             Applied::Failed => self.resync_failed(now_ms),
             Applied::NeedsDecision => {
-                self.pending_snapshot =
+                self.reconcile.pending_snapshot =
                     Some(PendingSnapshot { bytes: update.to_vec(), server_version: Vec::new(), joining: false });
             }
         }
@@ -799,14 +762,18 @@ impl CollabClient {
 
     fn on_ack(&mut self, now_ms: u64, seq: u32) {
         self.stats.acks += 1;
-        if let Some(i) = self.inflight.iter().position(|f| f.seq == seq) {
-            self.inflight.remove(i);
+        if let Some(i) = self.uploads.inflight.iter().position(|f| f.seq == seq) {
+            self.uploads.inflight.remove(i);
         }
-        if self.inflight.is_empty() && self.flush_at.is_none() && !self.want_flush && self.sync_outstanding.is_none() {
-            self.local_dirty = false;
+        if self.uploads.inflight.is_empty()
+            && self.uploads.flush_at.is_none()
+            && !self.uploads.want_flush
+            && self.reconcile.sync_outstanding.is_none()
+        {
+            self.uploads.local_dirty = false;
         }
-        if self.want_flush && self.inflight.len() < MAX_INFLIGHT {
-            self.flush_at = Some(now_ms);
+        if self.uploads.want_flush && self.uploads.inflight.len() < MAX_INFLIGHT {
+            self.uploads.flush_at = Some(now_ms);
         }
         self.refresh_status();
     }
@@ -860,20 +827,24 @@ impl CollabClient {
             ErrorCode::ResyncRequired => {
                 self.stats.resync_required += 1;
                 self.want_resync(now_ms);
-                self.resync_gap_ms = RESYNC_MIN_GAP_MS;
+                self.reconcile.resync_gap_ms = RESYNC_MIN_GAP_MS;
             }
             ErrorCode::RateLimited => {
                 let wait = retry.unwrap_or(1000).clamp(50, RESYNC_MAX_GAP_MS);
-                self.send_not_before = now_ms.saturating_add(wait);
-                self.resync_due = Some(self.resync_due.map_or(self.send_not_before, |d| d.max(self.send_not_before)));
+                self.uploads.send_not_before = now_ms.saturating_add(wait);
+                self.reconcile.resync_due = Some(
+                    self.reconcile
+                        .resync_due
+                        .map_or(self.uploads.send_not_before, |d| d.max(self.uploads.send_not_before)),
+                );
             }
             ErrorCode::InvalidUpdate => {
-                self.blocked = Some(Block::Rejected);
+                self.uploads.blocked = Some(Block::Rejected);
                 self.problem = Some(problem.clone());
                 self.events.push(CollabEvent::Problem(problem));
             }
             ErrorCode::TooLarge if !joining => {
-                self.blocked = Some(Block::Oversize);
+                self.uploads.blocked = Some(Block::Oversize);
                 self.problem = Some(problem.clone());
                 self.events.push(CollabEvent::Problem(problem));
             }
@@ -885,7 +856,7 @@ impl CollabClient {
                     self.enter_stopped(reason, Some(problem));
                 } else {
                     // The server closes the connection after these; reconnect with its hint, if it gave one.
-                    self.server_retry_ms = retry;
+                    self.health.server_retry_ms = retry;
                     self.events.push(CollabEvent::Problem(problem.clone()));
                     self.fail_connection(now_ms, &problem.text);
                 }
@@ -1005,17 +976,17 @@ impl CollabClient {
 
     /// Sends the document's unsent operations as one update.
     fn flush_updates(&mut self, now_ms: u64, store: &mut LoroStore) {
-        self.flush_at = None;
-        if self.inflight.len() >= MAX_INFLIGHT {
-            self.want_flush = true;
+        self.uploads.flush_at = None;
+        if self.uploads.inflight.len() >= MAX_INFLIGHT {
+            self.uploads.want_flush = true;
             return;
         }
-        self.want_flush = false;
+        self.uploads.want_flush = false;
         match store.take_unsent_update() {
             Ok(Some(bytes)) => self.send_update(now_ms, bytes),
             Ok(None) => {
-                if self.inflight.is_empty() {
-                    self.local_dirty = false;
+                if self.uploads.inflight.is_empty() {
+                    self.uploads.local_dirty = false;
                 }
             }
             Err(e) => self.doc_failure(now_ms, &e, false),
@@ -1026,33 +997,33 @@ impl CollabClient {
     fn send_update(&mut self, now_ms: u64, bytes: Vec<u8>) {
         if bytes.len() > self.max_update_bytes() {
             let problem = explain(ErrorCode::TooLarge, false);
-            self.blocked = Some(Block::Oversize);
+            self.uploads.blocked = Some(Block::Oversize);
             self.problem = Some(problem.clone());
             self.events.push(CollabEvent::Problem(problem));
             return;
         }
-        let seq = self.next_seq;
+        let seq = self.uploads.next_seq;
         let msg = ClientMessage::Update { seq, update: bytes };
         match msg.encode() {
             Ok(frame) => {
-                self.next_seq = self.next_seq.wrapping_add(1);
-                self.inflight.push_back(Inflight { seq, sent_at: now_ms });
-                self.last_update_sent_ms = Some(now_ms);
+                self.uploads.next_seq = self.uploads.next_seq.wrapping_add(1);
+                self.uploads.inflight.push_back(Inflight { seq, sent_at: now_ms });
+                self.uploads.last_update_sent_ms = Some(now_ms);
                 self.stats.updates_sent += 1;
                 self.out.push_back(Output::Send(frame));
             }
             Err(e) => {
                 log::warn!("collab: an update was not sent: {e}");
-                self.blocked = Some(Block::Oversize);
+                self.uploads.blocked = Some(Block::Oversize);
             }
         }
     }
 
     /// Uploads what the server's version lacks. This single step repairs reconnects, dropped updates and rate limits.
     fn upload_missing(&mut self, now_ms: u64, store: &mut LoroStore, server_version: &[u8]) {
-        self.inflight.clear();
-        self.flush_at = None;
-        self.want_flush = false;
+        self.uploads.inflight.clear();
+        self.uploads.flush_at = None;
+        self.uploads.want_flush = false;
         let local = match store.version_vector() {
             Ok(v) => v,
             Err(e) => {
@@ -1067,7 +1038,7 @@ impl CollabClient {
         if server_has_all {
             // Whatever the document still counts as unsent is already on the server.
             let _ = store.take_unsent_update();
-            self.local_dirty = false;
+            self.uploads.local_dirty = false;
             return;
         }
         let bytes = match store.export_updates_since(server_version) {
@@ -1080,8 +1051,8 @@ impl CollabClient {
         };
         // The export covers everything the document counts as unsent.
         let _ = store.take_unsent_update();
-        self.local_dirty = true;
-        if self.blocked.is_none() {
+        self.uploads.local_dirty = true;
+        if self.uploads.blocked.is_none() {
             self.send_update(now_ms, bytes);
         }
     }
@@ -1089,28 +1060,28 @@ impl CollabClient {
     // ---- reconciling ------------------------------------------------------------------------------------------
 
     fn want_resync(&mut self, now_ms: u64) {
-        if self.sync_outstanding.is_some() {
+        if self.reconcile.sync_outstanding.is_some() {
             return;
         }
-        let earliest = self.last_resync_ms.map_or(0, |t| t.saturating_add(self.resync_gap_ms));
+        let earliest = self.reconcile.last_resync_ms.map_or(0, |t| t.saturating_add(self.reconcile.resync_gap_ms));
         let at = now_ms.max(earliest);
-        self.resync_due = Some(self.resync_due.map_or(at, |d| d.min(at)));
+        self.reconcile.resync_due = Some(self.reconcile.resync_due.map_or(at, |d| d.min(at)));
     }
 
     fn resync_failed(&mut self, now_ms: u64) {
-        self.resync_gap_ms = (self.resync_gap_ms.saturating_mul(2)).min(RESYNC_MAX_GAP_MS);
+        self.reconcile.resync_gap_ms = (self.reconcile.resync_gap_ms.saturating_mul(2)).min(RESYNC_MAX_GAP_MS);
         self.want_resync(now_ms);
     }
 
     fn send_resync(&mut self, now_ms: u64, store: &LoroStore) {
-        self.resync_due = None;
-        if let Some(t) = self.sync_outstanding
+        self.reconcile.resync_due = None;
+        if let Some(t) = self.reconcile.sync_outstanding
             && now_ms.saturating_sub(t) < SYNC_REPLY_TIMEOUT_MS
         {
             return;
         }
-        self.sync_outstanding = Some(now_ms);
-        self.last_resync_ms = Some(now_ms);
+        self.reconcile.sync_outstanding = Some(now_ms);
+        self.reconcile.last_resync_ms = Some(now_ms);
         self.stats.sync_requests += 1;
         match store.version_vector() {
             Ok(version) => self.send(&ClientMessage::RequestSync { version }),
@@ -1130,29 +1101,29 @@ impl CollabClient {
             self.out.push_back(Output::Close);
         }
         let jitter = self.next_random();
-        let mut delay = u64::from(reconnect_delay_ms(self.attempt, jitter));
-        if let Some(hint) = self.server_retry_ms.take() {
+        let mut delay = u64::from(reconnect_delay_ms(self.health.attempt, jitter));
+        if let Some(hint) = self.health.server_retry_ms.take() {
             delay = delay.max(hint);
         }
-        self.attempt = self.attempt.saturating_add(1);
+        self.health.attempt = self.health.attempt.saturating_add(1);
         self.stats.reconnects += 1;
         self.phase = Phase::Backoff { until: now_ms.saturating_add(delay) };
-        self.offline_reason = why.to_owned();
+        self.health.offline_reason = why.to_owned();
         self.reset_session();
         self.refresh_status();
     }
 
     /// Forget everything that belongs to one connection. The document and unsent edits stay.
     fn reset_session(&mut self) {
-        self.inflight.clear();
-        self.flush_at = None;
-        self.want_flush = false;
-        self.resync_due = None;
-        self.sync_outstanding = None;
-        self.pending_snapshot = None;
-        self.stable_since = None;
-        self.blocked = None;
-        self.send_not_before = 0;
+        self.uploads.inflight.clear();
+        self.uploads.flush_at = None;
+        self.uploads.want_flush = false;
+        self.reconcile.resync_due = None;
+        self.reconcile.sync_outstanding = None;
+        self.reconcile.pending_snapshot = None;
+        self.health.stable_since = None;
+        self.uploads.blocked = None;
+        self.uploads.send_not_before = 0;
         self.limits = Limits::DEFAULT;
         self.presence.reset_sent();
         if !self.peers.is_empty() {
@@ -1179,17 +1150,17 @@ impl CollabClient {
             self.presence_changed = true;
         }
         // A trail whose last point just expired needs one more redraw.
-        if self.peers.next_trail_expiry(self.last_tick_ms).is_some_and(|t| t <= now_ms) {
+        if self.peers.next_trail_expiry(self.health.last_tick_ms).is_some_and(|t| t <= now_ms) {
             self.presence_changed = true;
         }
     }
 
     fn next_random(&mut self) -> u32 {
-        let mut x = self.rng;
+        let mut x = self.health.rng;
         x ^= x << 13;
         x ^= x >> 7;
         x ^= x << 17;
-        self.rng = x;
+        self.health.rng = x;
         (x >> 16) as u32
     }
 
@@ -1212,11 +1183,15 @@ impl CollabClient {
     }
 
     fn build_status(&self) -> Status {
-        let unsynced = self.local_dirty || !self.inflight.is_empty() || self.flush_at.is_some() || self.want_flush;
+        let unsynced = self.uploads.local_dirty
+            || !self.uploads.inflight.is_empty()
+            || self.uploads.flush_at.is_some()
+            || self.uploads.want_flush;
         let (state, stopped, text, retry_at_ms) = match self.phase {
             Phase::Idle => return Status::idle(),
             Phase::Backoff { until } => {
-                let hint = if self.offline_reason.is_empty() { "Offline" } else { self.offline_reason.as_str() };
+                let hint =
+                    if self.health.offline_reason.is_empty() { "Offline" } else { self.health.offline_reason.as_str() };
                 (
                     ConnState::Reconnecting,
                     None,
