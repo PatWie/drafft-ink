@@ -14,7 +14,7 @@
 //!   new, and the pictures that image elements use are stored by content hash (the same bytes are stored once).
 //! * With `center`, the block is moved so that the middle of its bounds (labels excluded) is at that point.
 //!
-//! [`text_element`] and [`insert_text`] make a free text from plain text.
+//! [`insert_text`] makes a free text from plain text with `create::text_element`.
 
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 
@@ -22,11 +22,11 @@ use kurbo::{Point, Vec2};
 
 use drafftink_scene::{
     Element, ElementError, ElementId, ElementKind, FileEntry, FileId, GroupId, IdSource, IndexError, SceneTx,
-    StoreError, Style, TextStyle, Transform, ZIndex, limits, validate_element,
+    StoreError, Style, TextStyle, ZIndex, limits, validate_element,
 };
 
 use crate::binding::{self, BindingError};
-use crate::create::{self, TextAnchor, TextSpec};
+use crate::create::{CreateError, TextPlace, TextSpec, text_element};
 use crate::group::name_key;
 use crate::ids::{fresh_element_id, fresh_group_id};
 use crate::text_bind::TextMeasure;
@@ -81,6 +81,9 @@ pub enum PasteError {
     /// Z-order keys could not be made.
     #[error(transparent)]
     ZOrder(#[from] ZOrderError),
+    /// The free text could not be built for a reason that has no variant of its own.
+    #[error("the text could not be made: {0}")]
+    Text(String),
     /// A z-order key could not be made.
     #[error(transparent)]
     Index(#[from] IndexError),
@@ -265,37 +268,6 @@ pub fn insert_elements<T: SceneTx>(
     })
 }
 
-/// A free text with its middle at `center`: the box follows the content (auto-resize on).
-/// Blank text and text over the length limit are refused.
-pub fn text_element<M: TextMeasure + ?Sized>(
-    m: &M,
-    id: ElementId,
-    index: ZIndex,
-    content: &str,
-    font: TextStyle,
-    style: Style,
-    center: Point,
-) -> Result<Element, PasteError> {
-    if content.trim().is_empty() {
-        return Err(PasteError::EmptyText);
-    }
-    let n = content.chars().count();
-    if n > limits::MAX_TEXT_CHARS {
-        return Err(PasteError::TextTooLong { n, max: limits::MAX_TEXT_CHARS });
-    }
-    let spec = TextSpec { font, at: center, width: None };
-    let e = create::free_text(m, id, index, content, spec, TextAnchor::Center, style);
-    if !(finite_box(&e.transform)) {
-        return Err(PasteError::NotFinite);
-    }
-    validate_element(&e).map_err(|error| PasteError::Invalid { id: e.id.clone(), error })?;
-    Ok(e)
-}
-
-fn finite_box(t: &Transform) -> bool {
-    [t.x, t.y, t.w, t.h].iter().all(|v| v.is_finite() && v.abs() <= limits::MAX_COORD)
-}
-
 /// Makes a free text of `content` on top of the scene, centred on `center`. Returns its id.
 pub fn insert_text<T: SceneTx, M: TextMeasure + ?Sized>(
     tx: &mut T,
@@ -309,7 +281,20 @@ pub fn insert_text<T: SceneTx, M: TextMeasure + ?Sized>(
     let id = crate::text_bind::fresh_element_id(&*tx, ids);
     let z = tx.next_top_index()?;
     style.seed = ids.seed();
-    let e = text_element(m, id.clone(), z, content, font, style, center)?;
+    let spec = TextSpec { font, place: TextPlace::Center(center), width: None };
+    let e = text_element(m, id.clone(), z, content, spec, style).map_err(PasteError::from)?;
     tx.insert(e)?;
     Ok(id)
+}
+
+impl From<CreateError> for PasteError {
+    fn from(e: CreateError) -> Self {
+        match e {
+            CreateError::EmptyText => Self::EmptyText,
+            CreateError::TextTooLong { n, max } => Self::TextTooLong { n, max },
+            CreateError::NotFinite => Self::NotFinite,
+            CreateError::Invalid { id, error } => Self::Invalid { id, error },
+            other => Self::Text(other.to_string()),
+        }
+    }
 }

@@ -10,7 +10,7 @@
 
 use drafftink_edit::create::{
     self, AutoBind, ConnectSpec, CreateError, DEFAULT_MATH, DEFAULT_SIMPLIFY, EndBinding, FrameChoice, Joined,
-    LinearSpec, PresetId, StrokeSpec, TextSpec,
+    LinearSpec, PresetId, StrokeSpec, TextPlace, TextSpec,
 };
 use drafftink_edit::frame;
 use drafftink_edit::style::{Prop, StyleDefaults, StyleError, StyleProps, applies};
@@ -218,6 +218,9 @@ fn refuse(cmd: &str, e: CreateError) -> Refusal {
             Refusal::custom("wrong_kind", cmd, format!("`{id}` is a {kind}, not a frame. Pass the id of a frame, \"auto\" or null as `frame`."))
         }
         CreateError::NestedFrame => Refusal::bad_arg(cmd, "frame", "a frame cannot be placed inside another frame"),
+        CreateError::TextTooLong { n, max } => Refusal::limit_exceeded(cmd, n, "characters", max),
+        CreateError::NotFinite => Refusal::bad_arg(cmd, "at", "must be finite numbers within the document limits"),
+        e @ CreateError::Invalid { .. } => Refusal::internal(cmd, e.to_string()),
         CreateError::Internal(m) => Refusal::internal(cmd, m),
     }
 }
@@ -739,7 +742,7 @@ fn create_element(s: &mut Session, a: CreateArgs) -> Result<CreateOut, Refusal> 
                 create::freehand_element(wanted.clone(), z, world, spec, style)
             })?,
             Body::Text { content, at, width } => create::insert_on_top(tx, |z| {
-                let spec = TextSpec { font: plan.defaults.text.clone(), at: *at, width: *width };
+                let spec = TextSpec { font: plan.defaults.text.clone(), place: TextPlace::TopLeft(*at), width: *width };
                 create::text_element(measure, wanted.clone(), z, content, spec, style)
             })?,
             Body::Label { container, content } => {
