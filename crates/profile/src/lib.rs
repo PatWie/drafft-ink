@@ -15,6 +15,7 @@
 //! `enabled` cargo feature (on by default) is compiled in. Counters and redraw reasons are
 //! always on. `docs/performance.md` is the full guide.
 #![cfg_attr(test, allow(clippy::unwrap_used, clippy::expect_used, clippy::panic))]
+#![warn(missing_docs)]
 
 mod clock;
 mod frame;

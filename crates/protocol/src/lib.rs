@@ -11,6 +11,8 @@
 //! - Every decoder takes hostile input: it returns a [`DecodeError`], never panics, and
 //!   allocates no more than the input holds.
 
+#![warn(missing_docs)]
+
 mod binary;
 mod error;
 mod ids;

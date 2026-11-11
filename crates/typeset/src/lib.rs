@@ -5,6 +5,8 @@
 //! Bounds and hit tests come from the layout, measured once when the content changes and never
 //! during render. See `docs/typeset.md`.
 
+#![warn(missing_docs)]
+
 mod bound;
 mod cache;
 mod caret;

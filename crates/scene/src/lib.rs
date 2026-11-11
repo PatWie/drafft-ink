@@ -10,6 +10,7 @@
 //! No clock, no global randomness, no I/O: ids and seeds come from an injected [`IdSource`].
 
 #![cfg_attr(test, allow(clippy::unwrap_used, clippy::expect_used, clippy::panic))]
+#![warn(missing_docs)]
 
 pub mod color;
 pub mod derived;
