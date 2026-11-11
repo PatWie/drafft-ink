@@ -18,7 +18,7 @@
 use drafftink_engine::{Origin, Refusal, Session};
 use serde_json::{Value, json};
 
-use crate::state::{SearchResults, Toast, UiState};
+use crate::state::{ConvertPopup, SearchResults, Toast, UiState};
 
 /// One call of a registered command: what [`CommandSink::run`] receives.
 #[derive(Debug, Clone, PartialEq)]
@@ -75,7 +75,7 @@ pub enum Verb {
     OpenFile,
     /// `ui.open_recent`: the list of recent documents, ends with `doc.open`.
     OpenRecent,
-    /// `ui.save_as`: save picker, ends with `doc.save` with `to`.
+    /// `ui.save_as`: a name field, then the save picker; ends with `doc.rename` and `doc.save` with `to`.
     SaveAs,
     /// `ui.insert_image`: image picker, ends with `image.insert`.
     InsertImage,
@@ -103,11 +103,19 @@ pub enum Verb {
     OpenEquationEditor,
     /// `ui.open_link_editor`: the link field for the selected element, ends with `element.set_link`.
     OpenLinkEditor,
+    /// `ui.open_export`: the export dialog, ends with `doc.export` or `clipboard.copy_as`.
+    OpenExport,
+    /// `ui.open_preferences`: the preferences dialog, ends with `settings.set` and `settings.toggle`.
+    OpenPreferences,
+    /// `ui.toggle_library`: the library panel, ends with `library.*`.
+    ToggleLibrary,
+    /// `ui.rename_document`: the rename field for the document, ends with `doc.rename`.
+    RenameDocument,
 }
 
 impl Verb {
     /// Every verb, in the order of docs/commands.md §6.3.
-    pub const ALL: [Verb; 18] = [
+    pub const ALL: [Verb; 22] = [
         Verb::CloseOverlays,
         Verb::ToggleMenu,
         Verb::OpenFile,
@@ -126,6 +134,10 @@ impl Verb {
         Verb::ToggleZen,
         Verb::OpenEquationEditor,
         Verb::OpenLinkEditor,
+        Verb::OpenExport,
+        Verb::OpenPreferences,
+        Verb::ToggleLibrary,
+        Verb::RenameDocument,
     ];
 
     /// The id of the verb in the catalog (§6.3). The three colour targets share `ui.open_color_picker`.
@@ -147,6 +159,10 @@ impl Verb {
             Verb::ToggleZen => "ui.toggle_zen",
             Verb::OpenEquationEditor => "ui.open_equation_editor",
             Verb::OpenLinkEditor => "ui.open_link_editor",
+            Verb::OpenExport => "ui.open_export",
+            Verb::OpenPreferences => "ui.open_preferences",
+            Verb::ToggleLibrary => "ui.toggle_library",
+            Verb::RenameDocument => "ui.rename_document",
         }
     }
 
@@ -171,6 +187,10 @@ impl Verb {
             Verb::ToggleZen => "Zen mode (hide the interface)",
             Verb::OpenEquationEditor => "Edit the equation",
             Verb::OpenLinkEditor => "Edit the link",
+            Verb::OpenExport => "Export…",
+            Verb::OpenPreferences => "Preferences",
+            Verb::ToggleLibrary => "Show or hide the library",
+            Verb::RenameDocument => "Rename the document",
         }
     }
 }
@@ -198,6 +218,9 @@ pub enum HostRequest {
     TextEditStyle(Value),
     /// Open a link in the browser.
     OpenUrl(String),
+    /// Show a picker for an Excalidraw library file. The app calls `library.import` with `mode: merge`
+    /// (the library panel's Import button; `PickLibrary` opens a library as a tab instead).
+    PickLibraryImport,
 }
 
 /// One thing the user did.
@@ -350,6 +373,22 @@ impl UiState {
             self.equation = None;
         }
         match (call.id.as_str(), result) {
+            // A rename dialog closes when the name was taken; a refusal (empty name) keeps it open next to its toast.
+            ("doc.rename" | "tab.rename" | "library.rename" | "frame.rename", Ok(_)) => {
+                self.rename = None;
+                // Save As renames first and asks for the place afterwards.
+                if self.save_as.take().is_some() && call.id == "doc.rename" {
+                    host.push(HostRequest::PickSaveTarget);
+                }
+            }
+            ("doc.export", Ok(_)) => self.export = None,
+            ("library.add", Ok(_)) => self.library_name.clear(),
+            // Tab or Shift+Tab converted the selection: show the popup with the type it became. Once the popup is
+            // open, a click on one of its types updates it too.
+            ("element.convert", Ok(out)) if call.origin == Origin::Shortcut || self.convert_popup.is_some() => {
+                let to = out.get("to").and_then(Value::as_str).map(str::to_owned);
+                self.convert_popup = Some(ConvertPopup { current: to });
+            }
             // The link dialog closes when the link was set; a refusal keeps it open next to its toast.
             ("element.set_link", Ok(_)) => self.link_editor = None,
             // The engine never opens a browser: an address comes back and goes to the app.

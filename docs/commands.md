@@ -1175,7 +1175,7 @@ Not commands, never in `engine.commands`. Each ends, when it produces a result, 
 | `ui.toggle_menu` | the hamburger menu | none | `menu_open` |
 | `ui.open_file` | file picker (native `rfd`, browser input) or the list of stored documents | `doc.open` | U:1907-1912, A:373-398 |
 | `ui.open_recent` | recent documents list | `doc.open` | U:1912 |
-| `ui.save_as` | save dialog or picker | `doc.save` with `to` | U:1900, 2631 |
+| `ui.save_as` | name field, then the save picker | `doc.rename` (when the name changed), then `doc.save` with `to` | U:1900, 2631 |
 | `ui.insert_image` | image picker | `image.insert` | NEW |
 | `ui.open_color_picker` | colour popover (stroke, fill or background) | `style.set` or `doc.set_background` | U:1166-1195, 1007 |
 | `ui.open_font_picker` | font family popover | `style.set` | NEW |
@@ -1187,6 +1187,10 @@ Not commands, never in `engine.commands`. Each ends, when it produces a result, 
 | `ui.open_context_menu` | context menu listing available commands | the chosen command | NEW |
 | `ui.toggle_stats` | stats panel (reads `selection.get`, edits with `element.set_bounds`, `style.set`) | those commands | NEW |
 | `ui.toggle_zen` | hides the chrome | none | NEW |
+| `ui.open_export` | export dialog (format, scope, scale, background, dark, embed scene) | `doc.export` or `clipboard.copy_as` | X:ImageExportDialog |
+| `ui.open_preferences` | preferences dialog | `settings.set`, `settings.toggle`, `collab.set_user` | X:DefaultItems |
+| `ui.toggle_library` | library panel | `library.*` | X:LibraryMenu |
+| `ui.rename_document` | rename field for the document | `doc.rename` | X:ProjectName |
 | `ui.open_equation_editor` | LaTeX dialog (opened after `text.edit_begin` on a math element) | `text.edit_end` | U:2911 |
 
 ### 6.4 Conflicts and how they were resolved

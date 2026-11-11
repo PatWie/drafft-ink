@@ -78,6 +78,61 @@ impl<'a> Ctl<'a> {
     }
 }
 
+/// How the surfaces are laid out: sizes of the targets and where panels sit.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Layout {
+    /// The touch layout: larger targets, collapsible panels.
+    pub compact: bool,
+    /// The window is narrow, so the touch layout also moves the bars and starts panels collapsed.
+    pub narrow: bool,
+    /// The window size in points.
+    pub screen: Vec2,
+}
+
+impl Default for Layout {
+    fn default() -> Self {
+        Self { compact: false, narrow: false, screen: vec2(1280.0, 800.0) }
+    }
+}
+
+impl Layout {
+    /// Side of a tool button.
+    pub fn tool_side(&self) -> f32 {
+        if self.compact { 44.0 } else { theme::TOOL_BUTTON }
+    }
+
+    /// Side of a small icon button.
+    pub fn small_side(&self) -> f32 {
+        if self.compact { 40.0 } else { theme::SMALL_BUTTON }
+    }
+
+    /// Height of a menu row.
+    pub fn row_height(&self) -> f32 {
+        if self.compact { 40.0 } else { 28.0 }
+    }
+
+    /// Height of a small toggle.
+    pub fn toggle_height(&self) -> f32 {
+        if self.compact { 36.0 } else { 24.0 }
+    }
+
+    /// Height of a dialog button.
+    pub fn button_height(&self) -> f32 {
+        if self.compact { 44.0 } else { 32.0 }
+    }
+
+    /// Width of the right panel.
+    pub fn panel_width(&self) -> f32 {
+        if !self.compact {
+            theme::RIGHT_PANEL_WIDTH
+        } else if self.narrow {
+            (self.screen.x * 0.6).clamp(180.0, 260.0)
+        } else {
+            260.0
+        }
+    }
+}
+
 /// What the surfaces draw with: the model to read, the palette, and the list that collects actions.
 pub struct Cx<'a> {
     /// The model.
@@ -86,13 +141,22 @@ pub struct Cx<'a> {
     pub pal: Palette,
     /// Which surface the actions come from.
     pub origin: Origin,
+    /// Sizes and positions for this window.
+    pub layout: Layout,
     out: &'a mut Vec<UiAction>,
 }
 
 impl<'a> Cx<'a> {
     /// A drawing context over an action list.
     pub fn new(model: &'a Model, pal: Palette, out: &'a mut Vec<UiAction>) -> Self {
-        Self { model, pal, origin: Origin::Ui, out }
+        Self { model, pal, origin: Origin::Ui, layout: Layout::default(), out }
+    }
+
+    /// The same context with a layout.
+    #[must_use]
+    pub fn with_layout(mut self, layout: Layout) -> Self {
+        self.layout = layout;
+        self
     }
 
     /// Adds an action.
@@ -196,7 +260,7 @@ impl<'a> Cx<'a> {
 
     /// The big tool button.
     pub fn tool_button(&mut self, ui: &mut Ui, ctl: &Ctl<'_>, icon: Icon) -> Response {
-        self.icon_button(ui, ctl, icon, theme::TOOL_BUTTON)
+        self.icon_button(ui, ctl, icon, self.layout.tool_side())
     }
 
     /// A small text toggle for a property value (`Architect`, `Dashed`): filled with the accent when selected.
@@ -208,7 +272,7 @@ impl<'a> Cx<'a> {
     pub fn toggle_button_font(&mut self, ui: &mut Ui, ctl: &Ctl<'_>, text: &str, font: egui::FontId) -> Response {
         let pal = self.pal;
         let galley = ui.painter().layout_no_wrap(text.to_owned(), font, pal.text);
-        let size = vec2((galley.size().x + 16.0).max(34.0), 24.0);
+        let size = vec2((galley.size().x + 16.0).max(34.0), self.layout.toggle_height());
         let ctl = Ctl { label: if ctl.label.is_empty() { text.to_owned() } else { ctl.label.clone() }, ..ctl.clone() };
         self.command_widget(ui, &ctl, size, move |p, rect, look| {
             paint_button_bg(p, rect, look, &pal, false);
@@ -220,12 +284,50 @@ impl<'a> Cx<'a> {
         })
     }
 
+    /// A small text toggle that runs no command: it changes a choice inside a dialog (the export format).
+    /// `reason` greys it with that tooltip.
+    pub fn choice(&mut self, ui: &mut Ui, text: &str, selected: bool, reason: Option<&str>) -> Response {
+        let pal = self.pal;
+        let galley = ui.painter().layout_no_wrap(text.to_owned(), egui::FontId::proportional(11.0), pal.text);
+        let size = vec2((galley.size().x + 16.0).max(34.0), self.layout.toggle_height());
+        let enabled = reason.is_none();
+        let resp = ui
+            .add_enabled_ui(enabled, |ui| {
+                let (rect, resp) = ui.allocate_exact_size(size, Sense::click());
+                let look = Look {
+                    hovered: resp.hovered() || resp.has_focus(),
+                    pressed: resp.is_pointer_button_down_on(),
+                    enabled,
+                    selected,
+                };
+                if ui.is_rect_visible(rect) {
+                    paint_button_bg(ui.painter(), rect, look, &pal, false);
+                    ui.painter().galley(
+                        pos2(rect.center().x - galley.size().x / 2.0, rect.center().y - galley.size().y / 2.0),
+                        galley,
+                        text_color(look, &pal),
+                    );
+                }
+                resp.widget_info(|| {
+                    let mut info = WidgetInfo::labeled(Role::Button, enabled, text);
+                    info.selected = Some(selected);
+                    info
+                });
+                resp
+            })
+            .inner;
+        match reason {
+            Some(r) => resp.on_disabled_hover_text(r),
+            None => resp,
+        }
+    }
+
     /// A button with a text label and an icon-less look, used for dialog actions that run commands.
     pub fn text_button(&mut self, ui: &mut Ui, ctl: &Ctl<'_>, text: &str, primary: bool) -> Response {
         let pal = self.pal;
         let font = egui::FontId::proportional(13.0);
         let galley = ui.painter().layout_no_wrap(text.to_owned(), font, pal.text);
-        let size = vec2((galley.size().x + 28.0).max(80.0), 32.0);
+        let size = vec2((galley.size().x + 28.0).max(80.0), self.layout.button_height());
         let ctl = Ctl { label: if ctl.label.is_empty() { text.to_owned() } else { ctl.label.clone() }, ..ctl.clone() };
         self.command_widget(ui, &ctl, size, move |p, rect, look| {
             let fill = if primary {
@@ -257,7 +359,7 @@ impl<'a> Cx<'a> {
         let width = ui.available_width().max(160.0);
         let ctl = Ctl { label: if ctl.label.is_empty() { text.to_owned() } else { ctl.label.clone() }, ..ctl.clone() };
         let text = text.to_owned();
-        self.command_widget(ui, &ctl, vec2(width, 28.0), move |p, rect, look| {
+        self.command_widget(ui, &ctl, vec2(width, self.layout.row_height()), move |p, rect, look| {
             if look.hovered && look.enabled {
                 p.rect_filled(rect, theme::BUTTON_RADIUS, pal.hover);
             }
@@ -285,7 +387,8 @@ impl<'a> Cx<'a> {
     pub fn verb_item(&mut self, ui: &mut Ui, verb: Verb, text: &str) -> Response {
         let pal = self.pal;
         let key = crate::keymap::verb_key_label(verb, self.model.mac);
-        let (rect, resp) = ui.allocate_exact_size(vec2(ui.available_width().max(160.0), 28.0), Sense::click());
+        let (rect, resp) =
+            ui.allocate_exact_size(vec2(ui.available_width().max(160.0), self.layout.row_height()), Sense::click());
         if ui.is_rect_visible(rect) {
             if resp.hovered() {
                 ui.painter().rect_filled(rect, theme::BUTTON_RADIUS, pal.hover);
@@ -312,6 +415,51 @@ impl<'a> Cx<'a> {
             self.verb(verb);
         }
         resp
+    }
+
+    /// A menu row that only changes what the UI shows (opens a block of rows, opens a dialog). It is not a
+    /// command and is never greyed.
+    pub fn plain_row(&mut self, ui: &mut Ui, text: &str) -> Response {
+        let pal = self.pal;
+        let (rect, resp) =
+            ui.allocate_exact_size(vec2(ui.available_width().max(160.0), self.layout.row_height()), Sense::click());
+        if ui.is_rect_visible(rect) {
+            if resp.hovered() || resp.has_focus() {
+                ui.painter().rect_filled(rect, theme::BUTTON_RADIUS, pal.hover);
+            }
+            ui.painter().text(
+                pos2(rect.left() + 10.0, rect.center().y),
+                Align2::LEFT_CENTER,
+                text,
+                egui::FontId::proportional(13.0),
+                pal.text,
+            );
+        }
+        resp.widget_info(|| WidgetInfo::labeled(Role::Button, true, text));
+        resp
+    }
+
+    /// An icon button that only changes what the UI shows and is not a verb of the catalog (collapsing a panel
+    /// of the touch layout). The caller reads `clicked()` and changes the UI state.
+    pub fn local_button(&mut self, ui: &mut Ui, icon: Icon, side: f32, label: &str, selected: bool) -> Response {
+        let pal = self.pal;
+        let (rect, resp) = ui.allocate_exact_size(vec2(side, side), Sense::click());
+        let look = Look {
+            hovered: resp.hovered() || resp.has_focus(),
+            pressed: resp.is_pointer_button_down_on(),
+            enabled: true,
+            selected,
+        };
+        if ui.is_rect_visible(rect) {
+            paint_button_bg(ui.painter(), rect, look, &pal, true);
+            icons::paint(ui.painter(), rect.shrink(side * 0.2), icon, icon_color(look, &pal));
+        }
+        resp.widget_info(|| {
+            let mut info = WidgetInfo::labeled(Role::Button, true, label);
+            info.selected = Some(selected);
+            info
+        });
+        resp.on_hover_text(label)
     }
 
     /// A control that opens something in the UI (no command, never greyed).
@@ -449,4 +597,27 @@ pub fn separator(ui: &mut Ui, pal: &Palette) {
 /// A rectangle outline used by the tab bar and the property rows.
 pub fn outline(p: &Painter, rect: Rect, pal: &Palette) {
     p.rect_stroke(rect, theme::BUTTON_RADIUS, Stroke::new(1.0, pal.border), StrokeKind::Inside);
+}
+
+/// Which way a [`scroll_if`] area scrolls.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ScrollDir {
+    /// Up and down, limited in height.
+    Vertical,
+    /// Left and right, limited in width by the caller.
+    Horizontal,
+}
+
+/// Runs `add` inside a scroll area when `on` (a touch or narrow layout that may not have room), else
+/// directly: a panel that fits is drawn plainly.
+pub fn scroll_if(ui: &mut Ui, on: bool, dir: ScrollDir, id: &'static str, max_height: f32, add: impl FnOnce(&mut Ui)) {
+    if !on {
+        add(ui);
+        return;
+    }
+    let area = match dir {
+        ScrollDir::Vertical => egui::ScrollArea::vertical().max_height(max_height),
+        ScrollDir::Horizontal => egui::ScrollArea::horizontal(),
+    };
+    area.id_salt(id).auto_shrink([true, true]).show(ui, add);
 }

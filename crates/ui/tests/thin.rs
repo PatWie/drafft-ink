@@ -94,7 +94,13 @@ fn a_mutable_session_appears_only_where_commands_are_executed() {
         for (no, line) in src.lines().enumerate() {
             if line.contains("&mut Session") {
                 found.push(format!("{n}:{}", no + 1));
-                assert!(n == "shell.rs" || n == "action.rs", "{n}:{} takes `&mut Session`", no + 1);
+                // The model takes it only to read through `Session::query` (which needs `&mut self` to run the
+                // command machinery but changes nothing and leaves no ring entry); the test below checks that.
+                assert!(
+                    matches!(n.as_str(), "shell.rs" | "action.rs" | "model.rs"),
+                    "{n}:{} takes `&mut Session`",
+                    no + 1
+                );
             }
         }
     }
@@ -183,8 +189,7 @@ const READS: &[&str] = &[
     "view_only",
     "text_edit",
     "gesture_running",
-    "targets",
-    "store",
+    "query",
 ];
 
 #[test]
@@ -245,10 +250,18 @@ fn the_tool_and_settings_of_a_session_are_only_read() {
 }
 
 #[test]
-fn widgets_never_write_through_the_model() {
-    // The model is a snapshot: it has no `&mut self` method that takes a session besides refresh.
+fn the_model_takes_a_mutable_session_only_to_query_it() {
+    // The model is a snapshot. Its readers take `&mut Session` because `Session::query` does, and the only
+    // methods they call on it are the ones on the read list (`query` among them, never `execute*`).
     let (_, src) = sources().into_iter().find(|(p, _)| name(p) == "model.rs").unwrap();
-    for line in src.lines().filter(|l| l.contains("Session")) {
-        assert!(!line.contains("&mut Session"), "model.rs: {line}");
+    let mutable: Vec<&str> = src.lines().filter(|l| l.contains("&mut Session")).collect();
+    assert!(!mutable.is_empty(), "model.rs reads with `Session::query`");
+    for line in mutable {
+        assert!(
+            line.contains("fn refresh") || line.contains("fn capture") || line.contains("fn read_"),
+            "model.rs: only the readers take `&mut Session`: {line}"
+        );
     }
+    assert!(!src.contains("execute"), "model.rs must not run commands");
+    assert!(src.contains(".query("), "model.rs reads through Session::query");
 }

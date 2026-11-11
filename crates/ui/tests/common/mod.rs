@@ -67,7 +67,7 @@ impl Fixture {
     /// Recaptures the model.
     pub fn refresh(&mut self) {
         self.model.invalidate();
-        self.model.refresh(&self.session);
+        self.model.refresh(&mut self.session);
     }
 
     /// The commands among the recorded actions.
