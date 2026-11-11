@@ -63,6 +63,18 @@ export interface AgentStatus {
   attempts: number;
 }
 
+/** What `webmcp.status()` says (docs/agents.md, section 6). */
+export interface WebMcpStatus {
+  /** The browser has WebMCP (`document.modelContext`, or the preview `navigator.modelContext`). */
+  supported: boolean;
+  /** Where it was found. */
+  api: "document.modelContext" | "navigator.modelContext" | null;
+  /** The tools are registered now. */
+  registered: boolean;
+  /** The names of the tools of this page. */
+  tools: string[];
+}
+
 /** `window.drafftink`. */
 export interface DrafftinkApi {
   execute<K extends CommandId>(id: K, ...args: ArgsParam<K>): Promise<Output<K>>;
@@ -76,6 +88,11 @@ export interface DrafftinkApi {
   perf_enable(on: boolean): boolean;
   frames(): { frames: number; vello_runs: number };
   version: string;
+  webmcp: {
+    status(): WebMcpStatus;
+    register(): boolean;
+    unregister(): void;
+  };
   agent: {
     pair(url: string, token: string): Promise<unknown>;
     connect(url: string, token: string): Promise<unknown>;
