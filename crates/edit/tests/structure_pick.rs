@@ -1,15 +1,16 @@
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
-//! `selection_cmd` and `query_cmd`: picking many targets, picking a group, the pointer rules of select-at, and
-//! the `@name` filter.
+//! `group::selection::pick` and `query::refs`: picking many targets, picking a group, the pointer rules of
+//! select-at, and the `@name` filter.
 
 mod structure_support;
 
 use std::collections::BTreeSet;
 
 use drafftink_edit::group::selection::*;
-use drafftink_edit::query::{AtHit, AtOpts, Query, QueryCtx, QueryError, elements_at};
-use drafftink_edit::query_cmd::{ALL_FIELDS, RefConnectedTo, RefQuery, all_matches, hit_members};
-use drafftink_edit::selection_cmd::*;
+use drafftink_edit::query::{
+    ALL_FIELDS, AtHit, AtOpts, Query, QueryCtx, QueryError, RefConnectedTo, RefQuery, all_matches, elements_at,
+    hit_members,
+};
 use drafftink_scene::*;
 use kurbo::Point;
 use structure_support::*;
@@ -245,7 +246,7 @@ fn a_click_inside_a_multi_selection_keeps_it_unless_it_hits_something_else() {
     assert!(!keeps_multi_selection(&s, &sel2, &h, at_f));
 }
 
-// ---- query_cmd ----
+// ---- query::refs ----
 
 #[test]
 fn ref_query_resolves_names_and_refuses_unknown_ones() {

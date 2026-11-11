@@ -21,6 +21,10 @@ use drafftink_geom::kurbo::Rect;
 use drafftink_geom::select::{MarqueeMode, marquee_selects};
 use drafftink_scene::{Element, ElementId, GroupId, Kind, SceneRead};
 
+mod pick;
+
+pub use pick::{Pick, click_target, inside_editing_group, keeps_multi_selection, pick, pick_group};
+
 use super::units::{Relations, UnitKey, impl_from_target, is_label, live, primary_id, sort_z, unit_key, units};
 use crate::transform::geometry;
 

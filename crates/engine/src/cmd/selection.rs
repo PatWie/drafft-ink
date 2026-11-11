@@ -5,7 +5,7 @@
 //! point editor). These commands change only that state, so none of them makes an undo step; the next
 //! document step records the selection from before and after it, and undo restores it. The rules (which
 //! ids and groups a click, a list of ids, a marquee or select-all selects) are in `drafftink_edit`
-//! (`group::selection`, `selection_cmd`, `query`, `flowchart`). A handler here validates arguments, calls
+//! (`group::selection`, `query`, `flowchart`). A handler here validates arguments, calls
 //! them, writes the result into the observed state and shapes the output.
 
 use std::collections::BTreeMap;
@@ -13,12 +13,10 @@ use std::collections::BTreeMap;
 use drafftink_edit::flowchart;
 use drafftink_edit::group::selection::{
     ClickMode, ClickOpts, RegionMode, RegionOpts, Selection as EditSelection, SelectionError, Within, click,
-    in_z_order, select_all, select_region,
+    in_z_order, select_all, select_region, Pick, click_target, keeps_multi_selection, pick, pick_group,
 };
 use drafftink_edit::layout::Direction;
-use drafftink_edit::query::{AtOpts, QueryCtx, describe_all, elements_at};
-use drafftink_edit::query_cmd::{ALL_FIELDS, RefQuery, all_matches};
-use drafftink_edit::selection_cmd::{Pick, click_target, keeps_multi_selection, pick, pick_group};
+use drafftink_edit::query::{ALL_FIELDS, AtOpts, QueryCtx, RefQuery, all_matches, describe_all, elements_at};
 use drafftink_edit::transform::common_bounds;
 use drafftink_geom::kurbo::Rect;
 use drafftink_geom::select::MarqueeMode;

@@ -5,7 +5,7 @@
 //! and `element.at` in `element_query.rs`; all three files register commands of the family `element`.
 //!
 //! Every command validates its arguments and delegates to `drafftink-edit` (`transform`, `lifecycle`,
-//! `arrange`, `frame`, `element_cmd`). The transform rule of §2.4 (companions follow, bindings, followers,
+//! `arrange`, `frame`). The transform rule of §2.4 (companions follow, bindings, followers,
 //! locked elements refuse the whole call) is implemented there, never here. The selection is part of the
 //! observed editor state: after a delete or a lock it is pruned, after a duplicate it becomes the copies, and
 //! undo restores it with the step.
@@ -14,11 +14,10 @@ use std::collections::BTreeSet;
 
 use drafftink_edit::arrange::{self, FlipAxis};
 use drafftink_edit::arrow::SnapFlags;
-use drafftink_edit::element_cmd::{self, CommonBounds};
 use drafftink_edit::frame::{self, FrameError};
 use drafftink_edit::group::units::{Reverse, primaries, with_companions};
 use drafftink_edit::lifecycle::{self, ChildPolicy, DuplicateOpts, LifecycleError};
-use drafftink_edit::transform::{self, ResizeSpec, RotateMode, TransformError, geometry};
+use drafftink_edit::transform::{self, CommonBounds, ResizeSpec, RotateMode, TransformError, geometry};
 use drafftink_geom::guides::{SmartGuide, SmartGuideKind, detect_smart_guides, detect_smart_guides_for_point};
 use drafftink_geom::kurbo::{Point, Rect, Vec2};
 use drafftink_geom::select::{BoxHandle, Corner, Edge};
@@ -660,7 +659,7 @@ fn resize(s: &mut Session, a: ResizeArgs) -> Result<ResizeOut, Refusal> {
     };
     let report = edit_t(s, |tx| {
         let r = transform::resize(tx, &ids, spec)?;
-        element_cmd::tidy(tx, &r.changed)?;
+        transform::tidy(tx, &r.changed)?;
         Ok(r)
     })?;
     if !s.live() {
@@ -726,8 +725,8 @@ fn set_bounds(s: &mut Session, a: SetBoundsArgs) -> Result<ResizeOut, Refusal> {
     let ids = s.targets(a.ids.as_deref())?;
     let spec = CommonBounds { x, y, w, h, center: a.anchor == Anchor::Center, keep_aspect: a.keep_aspect };
     let report = edit_t(s, |tx| {
-        let r = element_cmd::set_common_bounds(tx, &ids, spec)?;
-        element_cmd::tidy(tx, &r.changed)?;
+        let r = transform::set_common_bounds(tx, &ids, spec)?;
+        transform::tidy(tx, &r.changed)?;
         Ok(r)
     })?;
     Ok(ResizeOut {
@@ -997,7 +996,7 @@ fn erase(s: &mut Session, a: EraseArgs) -> Result<EraseOut, Refusal> {
         RadiusUnits::World => radius,
         RadiusUnits::Screen => radius / s.view().zoom,
     };
-    let hit = element_cmd::hit_by_path(s.store(), &path, radius);
+    let hit = drafftink_edit::query::hit_by_path(s.store(), &path, radius);
     if hit.is_empty() {
         return Ok(EraseOut { hit: Vec::new() });
     }

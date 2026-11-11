@@ -1,17 +1,12 @@
-//! Domain rules the `element` commands need that no other module of this crate owns: setting the common
-//! bounds of several elements, and the elements hit by an eraser path.
+//! Setting the common bounds of several elements (`element.set_bounds`), and rounding the noise a resize leaves.
 
-use std::collections::BTreeSet;
 
 use drafftink_geom::kurbo::{Point, Vec2};
 use drafftink_geom::select::{BoxHandle, Corner};
-use drafftink_scene::{ElementId, SceneRead, SceneTx};
+use drafftink_scene::{ElementId, ElementKind, SceneTx, StoreError};
 
-use crate::group::units::{Relations, ensure_unlocked, primaries, sort_z, with_companions};
-use crate::query::{AtOpts, elements_at};
-use crate::transform::{
-    BoundsSpec, ResizeSpec, TransformError, TransformReport, common_bounds, move_by, resize, set_bounds,
-};
+use super::{BoundsSpec, ResizeSpec, TransformError, TransformReport, common_bounds, move_by, resize, set_bounds};
+use crate::group::units::primaries;
 
 /// What `element.set_bounds` asks for. `None` keeps the current value.
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
@@ -71,7 +66,7 @@ pub fn set_common_bounds<T: SceneTx>(
                 from_center: false,
             },
         )?;
-        merge(&mut report, r);
+        report.merge(r);
     }
     let now = common_bounds(&*tx, &base).ok_or(TransformError::NotFinite)?;
     let (cx, cy) = (
@@ -82,7 +77,7 @@ pub fn set_common_bounds<T: SceneTx>(
     let d = Vec2::new(x0 - now.x0, y0 - now.y0);
     if d.x != 0.0 || d.y != 0.0 {
         let r = move_by(tx, &base, d)?;
-        merge(&mut report, r);
+        report.merge(r);
     }
     report.bounds = common_bounds(&*tx, &base);
     Ok(report)
@@ -97,69 +92,6 @@ fn target_size(ow: f64, oh: f64, spec: &CommonBounds) -> (f64, f64) {
     }
 }
 
-fn merge(into: &mut TransformReport, r: TransformReport) {
-    for id in r.changed {
-        if !into.changed.contains(&id) {
-            into.changed.push(id);
-        }
-    }
-    into.unbound.extend(r.unbound);
-    for id in r.arrows {
-        if !into.arrows.contains(&id) {
-            into.arrows.push(id);
-        }
-    }
-    into.bounds = r.bounds.or(into.bounds);
-}
-
-/// The smallest number of samples per radius along an eraser stroke. Two samples per radius keep a stroke from
-/// skipping a thin element.
-const SAMPLES_PER_RADIUS: f64 = 2.0;
-/// No path is sampled with more points than this.
-const MAX_SAMPLES: usize = 20_000;
-
-/// The unlocked elements hit by a stroke of `radius` along `path` (world units), by exact hit testing. Group
-/// members are hit as themselves; a bound text counts as its container. A hit that has a locked member in its
-/// closure (its bound text, or the children of a frame) is left out. The result is in z-order.
-pub fn hit_by_path<R: SceneRead>(scene: &R, path: &[Point], radius: f64) -> Vec<ElementId> {
-    let radius = if radius.is_finite() { radius.max(0.0) } else { 0.0 };
-    let opts = AtOpts { tolerance: radius, all: true, deep: true, include_locked: false };
-    let mut hit: BTreeSet<ElementId> = BTreeSet::new();
-    let step = (radius / SAMPLES_PER_RADIUS).max(0.5);
-    let mut samples = 0usize;
-    let probe = |p: Point, hit: &mut BTreeSet<ElementId>| {
-        for h in elements_at(scene, p, &opts) {
-            hit.insert(h.id);
-        }
-    };
-    for (i, p) in path.iter().enumerate() {
-        probe(*p, &mut hit);
-        let Some(next) = path.get(i + 1) else { continue };
-        let len = p.distance(*next);
-        if !len.is_finite() {
-            continue;
-        }
-        let n = (len / step).ceil();
-        let n = if n.is_finite() { n.min(MAX_SAMPLES as f64) as usize } else { 0 };
-        for k in 1..n {
-            samples += 1;
-            if samples > MAX_SAMPLES {
-                break;
-            }
-            let t = k as f64 / n as f64;
-            probe(p.lerp(*next, t), &mut hit);
-        }
-    }
-    // A hit whose whole closure (bound text, frame children) is not unlocked is skipped, never half-deleted.
-    let rel = Relations::build(scene);
-    let mut out: Vec<ElementId> = hit
-        .into_iter()
-        .filter(|id| ensure_unlocked(scene, &with_companions(scene, &rel, std::slice::from_ref(id), true)).is_ok())
-        .collect();
-    sort_z(scene, &mut out);
-    out
-}
-
 /// Smallest unit that [`tidy`] keeps: 1e-9 world units.
 const TIDY: f64 = 1.0e9;
 
@@ -171,7 +103,7 @@ fn tidy_value(v: f64) -> f64 {
 /// Rounds the geometry of `ids` (box and points) to 1e-9 world units. A resize composes several affine
 /// maps, and the result of dragging a box to 140 wide would otherwise be 139.99999999999915, which shows up in
 /// a numeric panel and breaks grid alignment. Nothing is rounded that is visible at any zoom.
-pub fn tidy<T: SceneTx>(tx: &mut T, ids: &[ElementId]) -> Result<(), drafftink_scene::StoreError> {
+pub fn tidy<T: SceneTx>(tx: &mut T, ids: &[ElementId]) -> Result<(), StoreError> {
     for id in ids {
         let Some(e) = tx.get(id).filter(|e| !e.deleted) else { continue };
         let mut n = e.clone();
@@ -180,12 +112,12 @@ pub fn tidy<T: SceneTx>(tx: &mut T, ids: &[ElementId]) -> Result<(), drafftink_s
         n.transform.w = tidy_value(n.transform.w);
         n.transform.h = tidy_value(n.transform.h);
         match &mut n.kind {
-            drafftink_scene::ElementKind::Line(d) | drafftink_scene::ElementKind::Arrow(d) => {
+            ElementKind::Line(d) | ElementKind::Arrow(d) => {
                 for p in &mut d.points {
                     *p = Point::new(tidy_value(p.x), tidy_value(p.y));
                 }
             }
-            drafftink_scene::ElementKind::Freehand(d) => {
+            ElementKind::Freehand(d) => {
                 for p in &mut d.points {
                     *p = Point::new(tidy_value(p.x), tidy_value(p.y));
                 }

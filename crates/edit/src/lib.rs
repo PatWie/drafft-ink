@@ -18,9 +18,6 @@
 //!   helpers, auto-layout for `diagram.create`, element queries and the document outline.
 //! - `library`: fragments (library items, merged files): take out, insert with new ids, tell apart.
 //! - `paste`, `preflight`: pasting copies into a scene, and the checks that run before a structural change.
-//! - `element_cmd`, `selection_cmd`, `query_cmd`, `text_cmd`: rules the `element.*`, `selection.*` and
-//!   `text.*` commands need that no domain module above owns (common bounds, eraser hits, picking many targets,
-//!   references by `@name`).
 
 #![warn(missing_docs)]
 #![cfg_attr(test, allow(clippy::unwrap_used, clippy::expect_used, clippy::panic))]
@@ -31,7 +28,6 @@ pub mod binding;
 pub mod brush;
 pub mod create;
 pub mod elbow;
-pub mod element_cmd;
 pub mod flowchart;
 pub mod frame;
 pub mod group;
@@ -43,8 +39,6 @@ pub mod linear;
 pub mod paste;
 pub mod preflight;
 pub mod query;
-pub mod query_cmd;
-pub mod selection_cmd;
 pub mod style;
 pub mod text_bind;
 pub mod text_cmd;

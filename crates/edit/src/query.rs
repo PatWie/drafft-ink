@@ -9,7 +9,12 @@
 //! * [`outline`] summarises the document as nodes, edges, groups and frames in a stable, reading-friendly order,
 //!   with a short text form ([`Outline::to_text`]) meant for an LLM context.
 
+mod path;
+mod refs;
 mod regex_lite;
+
+pub use path::hit_by_path;
+pub use refs::{ALL_FIELDS, RefConnectedTo, RefQuery, all_matches, hit_members};
 
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 

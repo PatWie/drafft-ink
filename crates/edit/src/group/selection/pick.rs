@@ -1,18 +1,17 @@
-//! Selection rules that the `selection.*` commands need beyond [`crate::group::selection`]: selecting many
-//! targets at once, selecting a group by id, and the pointer rules of `selection.select_at`.
+//! Selecting many targets at once, selecting a group by id, and the pointer rules of a click on the canvas.
 //!
-//! [`pick`] is [`click`](crate::group::selection::click) for a list of targets: one pass over the scene instead
+//! [`pick`] is [`click`](super::click) for a list of targets: one pass over the scene instead
 //! of one per target. For one target it gives the same result as `click` (a test checks every mode). The
 //! differences are the ones a list needs: a locked target is skipped and reported instead of refused, and
 //! toggle removes the targets only when all of them are selected.
 
 use std::collections::BTreeSet;
 
-use kurbo::{Point, Rect};
+use drafftink_geom::kurbo::{Point, Rect};
 
 use drafftink_scene::{ElementId, GroupId, SceneRead};
 
-use crate::group::selection::{ClickMode, ClickOpts, ClickTarget, Selection, SelectionError, select_ids};
+use super::{ClickMode, ClickOpts, ClickTarget, Selection, SelectionError, select_ids};
 use crate::group::units::{Relations, UnitKey, primaries, unit_key, units};
 use crate::query::AtHit;
 use crate::transform::common_bounds;

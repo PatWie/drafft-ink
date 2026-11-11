@@ -2,13 +2,12 @@
 //!
 //! Both commands are pure reads over the working store. The matching, ordering, paging, describing and
 //! hit-testing rules are in `drafftink_edit::query`; the filter that accepts `@name` references is
-//! `drafftink_edit::query_cmd::RefQuery`. The commands validate the arguments and shape the output.
+//! `drafftink_edit::query::RefQuery`. The commands validate the arguments and shape the output.
 
 use drafftink_edit::query::{
     AtOpts, DEFAULT_FIELDS, Field, MAX_LIMIT, Order, QueryCtx, QueryError, QueryOpts, describe, describe_all,
-    elements_at, run_query,
+    elements_at, run_query, RefQuery, hit_members,
 };
-use drafftink_edit::query_cmd::{RefQuery, hit_members};
 use drafftink_geom::kurbo::Point;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};

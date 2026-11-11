@@ -36,7 +36,10 @@ use drafftink_scene::{
 use crate::binding::{self, BindingError};
 use crate::group::units::{Reverse, ReverseLookup, ensure_unlocked, impl_from_target, primaries, with_companions};
 
+mod common;
 pub mod geometry;
+
+pub use common::{CommonBounds, set_common_bounds, tidy};
 
 /// Why a transform was refused. Nothing was changed.
 #[derive(Debug, thiserror::Error)]
@@ -91,6 +94,24 @@ pub struct TransformReport {
     pub arrows: Vec<ElementId>,
     /// The common bounds of the transformed elements after the change.
     pub bounds: Option<Rect>,
+}
+
+impl TransformReport {
+    /// Adds what `other` did to this report: ids once each, bounds of the later step.
+    pub fn merge(&mut self, other: TransformReport) {
+        for id in other.changed {
+            if !self.changed.contains(&id) {
+                self.changed.push(id);
+            }
+        }
+        self.unbound.extend(other.unbound);
+        for id in other.arrows {
+            if !self.arrows.contains(&id) {
+                self.arrows.push(id);
+            }
+        }
+        self.bounds = other.bounds.or(self.bounds);
+    }
 }
 
 /// How one element moves.
