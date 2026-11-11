@@ -16,7 +16,7 @@ use drafftink_scene::{
 use kurbo::Point;
 use serde_json::{Map, Value};
 
-use super::image::{decode_data_url, mime_is_accepted, sniff_size};
+use super::image::{decode_data_url, sniff_size};
 use super::map::{self, Roundness};
 use super::notes::{self, Note};
 use super::read::{Rd, pair, warn};
@@ -156,7 +156,7 @@ impl<'a> Files<'a> {
         let declared = entry.get("mimeType").and_then(Value::as_str).map(str::to_ascii_lowercase);
         let mime = [declared.as_deref().unwrap_or(""), url_mime.as_str()]
             .into_iter()
-            .find(|m| mime_is_accepted(m))
+            .find(|m| drafftink_scene::is_image_media_type(m))
             .map(str::to_owned)
             .ok_or_else(|| format!("the picture {raw:?} has a media type that is not an image type"))?;
         let (w, h) = sniff_size(&bytes).unwrap_or((0, 0));

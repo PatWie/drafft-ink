@@ -183,7 +183,7 @@ fn enum_names_are_the_catalog_names() {
             .collect();
     assert_eq!(fonts, ["gelpen", "noto_sans", "gelpen_serif", "vanilla_extract"]);
     assert_eq!(Sloppiness::Drunk.roughness(), 3.5);
-    assert_eq!(FontFamily::GelPenSerif.renderer_name(), "GelPen Serif");
+    assert_eq!(FontFamily::GelPenSerif.display_name(), "GelPen Serif");
 }
 
 #[test]

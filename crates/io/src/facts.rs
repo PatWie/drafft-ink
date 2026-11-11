@@ -478,9 +478,7 @@ fn leaf_details(r: &mut FixtureReport, e: &Element, l: &Fact, source: Option<&Va
                 format!("{}: character count", e.id)
             });
             if let Some(f) = x.get("font_family").and_then(Value::as_str) {
-                r.check(f == t.font.family.renderer_name(), || {
-                    format!("{}: font {:?}, old {f:?}", e.id, t.font.family)
-                });
+                r.check(f == t.font.family.display_name(), || format!("{}: font {:?}, old {f:?}", e.id, t.font.family));
             }
             if let Some(s) = x.get("font_size").and_then(Value::as_f64) {
                 r.check((t.font.size - s.max(1.0)).abs() <= TOLERANCE, || {

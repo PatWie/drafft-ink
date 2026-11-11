@@ -241,7 +241,7 @@ fn new_refuses_an_empty_name_and_a_name_with_a_line_break() {
     let mut s = testing::headless_session();
     let before = s.fingerprint();
     let r = refuse(&mut s, "tab.new", json!({"name": "   "}));
-    assert_eq!((r.code, r.message.as_str()), ("empty_name", "The name is empty. Give a name of 1 to 120 characters."));
+    assert_eq!((r.code, r.message.as_str()), ("empty_name", "The name is empty. Give a name of 1 to 256 characters."));
     assert_eq!(refuse(&mut s, "tab.new", json!({"name": "a\nb"})).code, "bad_args");
     assert_eq!(s.tabs.len(), 1);
     assert_eq!(s.fingerprint(), before);
@@ -607,7 +607,7 @@ fn rename_refuses_an_empty_name_a_missing_tab_and_view_only_mode() {
     let (mut s, _f) = three();
     let before = s.fingerprint();
     let r = refuse(&mut s, "tab.rename", json!({"name": ""}));
-    assert_eq!((r.code, r.message.as_str()), ("empty_name", "The name is empty. Give a name of 1 to 120 characters."));
+    assert_eq!((r.code, r.message.as_str()), ("empty_name", "The name is empty. Give a name of 1 to 256 characters."));
     assert_eq!(refuse(&mut s, "tab.rename", json!({"tab": 9, "name": "x"})).code, "no_such_tab");
     assert_eq!(refuse(&mut s, "tab.rename", json!({"name": "a\u{7}b"})).code, "bad_args");
     assert_eq!(refuse(&mut s, "tab.rename", json!({})).code, "bad_args");
@@ -618,10 +618,10 @@ fn rename_refuses_an_empty_name_a_missing_tab_and_view_only_mode() {
 }
 
 #[test]
-fn rename_cuts_a_long_name_to_120_characters() {
+fn rename_cuts_a_long_name_to_the_scene_limit() {
     let mut s = testing::headless_session();
-    run(&mut s, "tab.rename", json!({"name": "é".repeat(200)}));
-    assert_eq!(active_name(&s).chars().count(), 120);
+    run(&mut s, "tab.rename", json!({"name": "é".repeat(drafftink_scene::limits::MAX_NAME_CHARS + 100)}));
+    assert_eq!(active_name(&s).chars().count(), drafftink_scene::limits::MAX_NAME_CHARS);
 }
 
 // ---- tab.move ----

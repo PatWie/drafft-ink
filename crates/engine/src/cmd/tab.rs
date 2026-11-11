@@ -8,6 +8,7 @@
 
 pub mod workspace;
 
+use drafftink_scene::limits::MAX_NAME_CHARS;
 use drafftink_scene::{Color, Document, SceneRead};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -21,8 +22,6 @@ use crate::store::{StepMeta, TabDoc};
 
 /// Most tabs one session holds.
 pub const MAX_TABS: usize = 50;
-/// Longest tab (document) name, in characters.
-pub const MAX_NAME_CHARS: usize = 120;
 /// `Tab::saved_revision` of a document that was never saved: no revision equals it, so it stays dirty.
 pub const NEVER_SAVED: u64 = u64::MAX;
 

@@ -17,7 +17,7 @@ use drafftink_geom::aabb;
 use drafftink_geom::kurbo::{Point, Rect};
 use drafftink_scene::{
     Element, ElementId, ElementKind, FrameData, IdSource, IndexError, Kind, SceneRead, SceneTx, StoreError, Style,
-    ZIndex, limits,
+    ZIndex, is_valid_name,
 };
 
 use drafftink_profile::{Counter, count};
@@ -422,7 +422,7 @@ pub fn rename<T: SceneTx>(tx: &mut T, frame: &ElementId, name: Option<&str>) -> 
         return Err(FrameError::Target(TargetError::Locked(vec![frame.clone()])));
     }
     if let Some(n) = name
-        && (n.is_empty() || n.chars().count() > limits::MAX_NAME_CHARS || n.chars().any(char::is_control))
+        && !is_valid_name(n)
     {
         return Err(FrameError::BadName);
     }

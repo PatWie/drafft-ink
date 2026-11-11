@@ -458,3 +458,23 @@ fn every_error_has_a_readable_message() {
     let msg = first_error(&e).to_string();
     assert!(msg.contains("style.opacity") && msg.contains("between"), "{msg}");
 }
+
+#[test]
+fn the_image_media_type_rule_has_one_definition() {
+    assert!(is_image_media_type("image/png"));
+    assert!(is_image_media_type("image/svg+xml"));
+    assert!(!is_image_media_type("image/"));
+    assert!(!is_image_media_type("text/html"));
+    assert!(!is_image_media_type("image/png; charset=x"));
+    assert!(!is_image_media_type(&format!("image/{}", "a".repeat(80))));
+}
+
+#[test]
+fn a_name_is_one_to_the_limit_characters_without_control_characters() {
+    use drafftink_scene::limits::MAX_NAME_CHARS;
+    assert!(is_valid_name("a"));
+    assert!(is_valid_name(&"é".repeat(MAX_NAME_CHARS)));
+    assert!(!is_valid_name(""));
+    assert!(!is_valid_name(&"é".repeat(MAX_NAME_CHARS + 1)));
+    assert!(!is_valid_name("two\nlines"));
+}

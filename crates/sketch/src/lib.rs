@@ -76,8 +76,8 @@ mod sketch;
 
 pub use cache::{CacheStats, SketchCache};
 pub use input::{
-    Arrowhead, Curve, FillStyle, HeadKind, LineDash, PressureProfile, Roundness, SketchInput, SketchParams,
-    SketchShape, roughness,
+    Arrowhead, Curve, DEFAULT_ROUGHNESS, FillStyle, HeadKind, LineDash, PressureProfile, Roundness, SketchInput,
+    SketchParams, SketchShape,
 };
 pub use key::{ALGORITHM_VERSION, SketchKey, sketch_key};
 pub use limits::{

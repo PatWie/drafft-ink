@@ -4,18 +4,10 @@
 
 use kurbo::Point;
 
-/// Roughness levels of the old app (`Sloppiness::roughness`). Any value from 0 to
-/// [`MAX_ROUGHNESS`](crate::MAX_ROUGHNESS) is accepted.
-pub mod roughness {
-    /// Clean, precise geometry. No noise, one stroke.
-    pub const ARCHITECT: f64 = 0.0;
-    /// The default of the old app.
-    pub const ARTIST: f64 = 1.0;
-    /// Cartoonist: twice the default roughness.
-    pub const CARTOONIST: f64 = 2.0;
-    /// Drunk: the roughest level of the old app.
-    pub const DRUNK: f64 = 3.5;
-}
+/// The roughness of [`SketchParams::default`]: the old app's default level. Any value from 0 to
+/// [`MAX_ROUGHNESS`](crate::MAX_ROUGHNESS) is accepted. The named levels (architect, artist, cartoonist, drunk) belong
+/// to the document model, not to this crate: see `drafftink_scene::Sloppiness::roughness`.
+pub const DEFAULT_ROUGHNESS: f64 = 1.0;
 
 /// How the outline is drawn.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
@@ -249,7 +241,7 @@ pub struct SketchParams {
 impl Default for SketchParams {
     fn default() -> Self {
         Self {
-            roughness: roughness::ARTIST,
+            roughness: DEFAULT_ROUGHNESS,
             bowing: 1.0,
             seed: 1,
             stroke_width: 2.0,

@@ -1059,7 +1059,7 @@ fn export_png_with_a_renderer_that_returns_no_png_warns_and_still_returns_the_by
 }
 
 #[test]
-fn export_png_without_a_renderer_names_the_other_formats() {
+fn export_png_without_a_display_names_the_other_formats() {
     let mut s = testing::headless_session();
     rects(&mut s, 1);
     let r = refuse(&mut s, "doc.export", json!({"format": "png"}));
