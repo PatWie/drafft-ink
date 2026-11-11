@@ -108,7 +108,7 @@ pub async fn platform(opts: WebOptions) -> Result<WebPlatform, WebError> {
         .with_files(Box::new(WebFiles::new(storage.clone())))
         .with_net(Box::new(net));
 
-    let (jobs, bridge) = channel(wake.hook(RedrawReason::Command), None);
+    let (jobs, bridge) = channel(wake.hook(RedrawReason::Load), None);
     let platform = Platform {
         ports,
         host: Box::new(WebHost),

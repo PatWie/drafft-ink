@@ -87,10 +87,14 @@ def call(pg, expr):
 
 def frames(pg): return pg.evaluate("()=>window.drafftink.frames()")
 
+def reasons(pg):
+    return pg.evaluate("()=>window.drafftink.perf().redraws.by_reason")
+
 def window(pg, label, secs):
-    f0 = frames(pg); c0 = cpu_ticks(); t = time.time(); time.sleep(secs); el = time.time() - t
-    f1 = frames(pg)
+    f0 = frames(pg); r0 = reasons(pg); c0 = cpu_ticks(); t = time.time(); time.sleep(secs); el = time.time() - t
+    f1 = frames(pg); r1 = reasons(pg)
     r = dict(window=label, secs=round(el, 2), frames=f1["frames"] - f0["frames"], vello_runs=f1["vello_runs"] - f0["vello_runs"],
+             redraw_requests={k: v - r0.get(k, 0) for k, v in r1.items() if v - r0.get(k, 0)},
              cpu_pct_of_one_core_all_chromium=round((cpu_ticks() - c0) / HZ / el * 100, 1))
     print(json.dumps(r), flush=True); results.append(r); return r
 
@@ -149,7 +153,7 @@ try:
             r = call(pg, "window.drafftink.batch([{id:'element.create', args:{kind:'ellipse', bounds:{x:470,y:80,w:140,h:90}}}], {label:'ellipse'})")
             check(r["ok"], "batch() resolves", str(r)[:200])
             r = call(pg, "window.drafftink.recent({limit:5})")
-            check(r["ok"] and any(e.get("origin") == "agent" for e in r["value"].get("entries", [])), "recent() shows origin agent", str(r)[:200])
+            check(r["ok"] and any(e.get("source") == "agent" for e in r["value"].get("entries", [])), "recent() shows origin agent", str(r)[:200])
             time.sleep(1.5)
             q = call(pg, "window.drafftink.execute('element.query', {})")
             check(q["ok"] and q["value"].get("total", 0) >= 3, "element.query sees 3 elements", str(q)[:160])
@@ -172,6 +176,10 @@ try:
             # collab: page A on 127.0.0.1, page B on localhost (separate IndexedDB), same room
             room = "web-check-" + "".join(random.choice("abcdefghij") for _ in range(8))
             a, _ = open_app(ctx, f"{base}/?room={room}")
+            time.sleep(3)
+            # The server pings every 20 s and a peer sends presence every 10 s; 22 s covers both.
+            r = window(a, "alone in a room, idle 22s", 22)
+            check(r["frames"] == 0, "0 frames idle, alone in a room (server ping included)", f'{r["frames"]} frames, {r["redraw_requests"]}')
             b, _ = open_app(ctx, f"http://localhost:{port}/?room={room}")
             time.sleep(2.5)
             call(a, "window.drafftink.execute('element.create', {kind:'rectangle', name:'from-a', bounds:{x:0,y:0,w:80,h:50}})")
@@ -191,8 +199,8 @@ try:
             if args.shot:
                 a.screenshot(path=args.shot.replace(".png", "-collab.png"))
             time.sleep(1.5)
-            r = window(a, "collab page idle 10s", 10)
-            check(r["frames"] == 0, "0 frames idle while connected to a room", str(r["frames"]))
+            r = window(a, "with a peer in the room, idle 22s", 22)
+            check(r["frames"] == 0, "0 frames idle with a peer in the room (presence heartbeat included)", f'{r["frames"]} frames, {r["redraw_requests"]}')
             a.close(); b.close()
         # ---------------------------------------------------------------- offline
         pg.close()

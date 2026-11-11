@@ -52,11 +52,14 @@ RAW=$(stat -c %s "$OUT")
 
 # --- wasm-opt
 OPTSIZE=$RAW
+OPT_FEATURES="--enable-bulk-memory --enable-sign-ext --enable-mutable-globals --enable-nontrapping-float-to-int --enable-reference-types --enable-multivalue --enable-simd"
 if [ "$OPT" = 1 ] && [ "$PROFILE" = "release-wasm" ]; then
   WASM_OPT="$(command -v wasm-opt || true)"
   [ -z "$WASM_OPT" ] && WASM_OPT="$(ls ~/.cargo/tools/binaryen-version_*/bin/wasm-opt 2>/dev/null | sort -V | tail -1 || true)"
   if [ -n "$WASM_OPT" ]; then
-    "$WASM_OPT" --all-features --strip-debug --strip-producers -Os "$OUT" -o "$OUT.opt"
+    # Not --all-features: with binaryen 133 it turns on experimental encodings and Chromium then rejects the
+    # module ("unknown import kind 0x7e"). These are the features rustc's wasm32 target emits.
+    "$WASM_OPT" $OPT_FEATURES --strip-debug --strip-producers -Os "$OUT" -o "$OUT.opt"
     mv "$OUT.opt" "$OUT"
     OPTSIZE=$(stat -c %s "$OUT")
   else
