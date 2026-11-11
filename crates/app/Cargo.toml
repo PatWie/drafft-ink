@@ -1,0 +1,56 @@
+[package]
+name = "drafftink-app"
+description = "The application glue (L7): one App for the desktop and the web. Owns the Session, the interaction layer, the UI and the render caches, and implements the shell's ShellApp."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+publish = false
+
+[dependencies]
+drafftink-engine = { path = "../engine" }
+drafftink-canvas = { path = "../canvas" }
+drafftink-geom = { path = "../geom" }
+drafftink-scene = { path = "../scene" }
+drafftink-render = { path = "../render" }
+drafftink-edit = { path = "../edit" }
+drafftink-profile = { path = "../profile" }
+drafftink-collab = { path = "../collab" }
+drafftink-bridge = { path = "../bridge" }
+drafftink-gpu = { path = "../gpu" }
+drafftink-ui = { path = "../ui" }
+egui = { workspace = true }
+vello = { workspace = true }
+base64 = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+log = { workspace = true }
+web-time = { workspace = true }
+
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+arboard = { workspace = true, features = ["wayland-data-control"] }
+png = { workspace = true }
+getrandom = "0.3"
+rfd = { version = "0.18", default-features = false, features = ["xdg-portal"] }
+wgpu = { workspace = true }
+pollster = { workspace = true }
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+# The web platform (src/web): IndexedDB, downloads, file inputs, the async clipboard, crypto.
+wasm-bindgen = { workspace = true }
+wasm-bindgen-futures = { workspace = true }
+js-sys = { workspace = true }
+web-sys = { workspace = true, features = [
+    "Window", "Document", "Navigator", "Location", "Element", "Node", "HtmlElement", "HtmlAnchorElement",
+    "HtmlInputElement", "CssStyleDeclaration", "Event", "EventTarget", "File", "FileList", "Blob",
+    "BlobPropertyBag", "Url", "Clipboard", "Crypto", "StorageManager", "DomException",
+    "IdbFactory", "IdbDatabase", "IdbObjectStore", "IdbObjectStoreParameters", "IdbOpenDbRequest", "IdbRequest",
+    "IdbTransaction", "IdbTransactionMode", "IdbVersionChangeEvent", "VisibilityState",
+] }
+
+[dev-dependencies]
+drafftink-testkit = { path = "../testkit" }
+
+[lints]
+workspace = true

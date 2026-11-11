@@ -67,16 +67,16 @@ impl RepaintState {
         }
     }
 
-    /// A wake-up arrived. If the deadline passed it becomes a pending frame (reason `timer`
-    /// unless the request named another). Returns true when `Window::request_redraw` must be called.
-    pub(crate) fn tick(&mut self, now: Instant) -> bool {
+    /// A wake-up arrived. If the deadline passed, returns the reason it was asked with (`timer` unless the
+    /// request named another) and clears it; the caller decides whether that becomes a frame
+    /// ([`RepaintState::request_now`]) or goes to the app first.
+    pub(crate) fn expired(&mut self, now: Instant) -> Option<RedrawReason> {
         match self.later {
             Some((at, reason)) if at <= now => {
                 self.later = None;
-                // Delayed requests carry their own reason (autosave, caret blink, ...).
-                self.request_now(reason)
+                Some(reason)
             }
-            _ => false,
+            _ => None,
         }
     }
 
@@ -187,9 +187,11 @@ mod tests {
         assert!(!s.apply(t0, Repaint::After(ms(100), RedrawReason::Autosave)));
         assert!(!s.apply(t0, Repaint::After(ms(300), RedrawReason::Timer)), "later request does not replace");
         assert!(matches!(s.control_flow(), ControlFlow::WaitUntil(at) if at == t0 + ms(100)));
-        assert!(!s.tick(t0 + ms(50)), "too early");
+        assert_eq!(s.expired(t0 + ms(50)), None, "too early");
         let scope = WorkScope::begin();
-        assert!(s.tick(t0 + ms(100)));
+        assert_eq!(s.expired(t0 + ms(100)), Some(RedrawReason::Autosave));
+        assert!(scope.redraw_reasons().is_empty(), "an expired deadline is not a frame request by itself");
+        assert!(s.request_now(RedrawReason::Autosave));
         assert_eq!(scope.redraw_reasons(), vec![RedrawReason::Autosave]);
         assert!(matches!(s.control_flow(), ControlFlow::Wait));
         assert_eq!(s.take(), Some(RedrawReason::Autosave));

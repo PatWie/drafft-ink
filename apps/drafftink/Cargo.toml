@@ -1,12 +1,26 @@
 [package]
 name = "drafftink"
+description = "Drafft.ink for the desktop: an infinite canvas whiteboard."
 version.workspace = true
 edition.workspace = true
 license.workspace = true
 rust-version.workspace = true
 publish = false
 
+[[bin]]
+name = "drafftink"
+path = "src/main.rs"
+
 [dependencies]
+drafftink-app = { path = "../../crates/app" }
+drafftink-bridge = { path = "../../crates/bridge" }
+drafftink-engine = { path = "../../crates/engine" }
+drafftink-gpu = { path = "../../crates/gpu" }
+drafftink-profile = { path = "../../crates/profile" }
+clap = { workspace = true }
+env_logger = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
 
 [lints]
 workspace = true

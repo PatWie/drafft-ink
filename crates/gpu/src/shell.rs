@@ -958,17 +958,27 @@ impl<A: ShellApp> ApplicationHandler<UserEvent> for Shell<A> {
                 self.apply_repaint(Repaint::After(delay, reason));
             }
             UserEvent::Wake(reason) => {
+                // The app answers with the repaint it needs (usually `Now(reason)`; none when the wake changed
+                // nothing visible).
                 self.dispatch(ShellEvent::Wake(reason));
-                self.want_frame(reason);
             }
             UserEvent::Host(ev) => self.handle_host_event(ev),
         }
     }
 
     fn new_events(&mut self, _: &ActiveEventLoop, cause: StartCause) {
-        // A `WaitUntil` deadline passed: the delayed request becomes a frame.
-        if matches!(cause, StartCause::ResumeTimeReached { .. }) && self.repaint.tick(Instant::now()) {
-            self.request_redraw();
+        // A `WaitUntil` deadline passed. Usually the delayed request becomes a frame. A collaboration deadline
+        // goes to the app as a wake instead: most of them (a heartbeat, a retry check) change nothing visible,
+        // and the app answers with a repaint only when something did.
+        if !matches!(cause, StartCause::ResumeTimeReached { .. }) {
+            return;
+        }
+        match self.repaint.expired(Instant::now()) {
+            Some(RedrawReason::Collab) => {
+                self.dispatch(ShellEvent::Wake(RedrawReason::Collab));
+            }
+            Some(reason) => self.want_frame(reason),
+            None => {}
         }
     }
 

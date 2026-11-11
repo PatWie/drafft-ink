@@ -44,8 +44,8 @@ drafftink_gpu::run(app, Options { title, initial_size, canvas_id })   // native 
 - `FrameOutput` says `canvas_rect` (where hover goes to the app), `text_input` (caret rect for the IME and
   the soft keyboard), `cursor`, and `repaint`.
 - `Waker` (`Clone + Send + Sync`, from `SetupCx`/`EventCx`/`FrameCx`) wakes the loop from any thread or
-  task: `waker.wake(RedrawReason::Collab)`. The loop calls `event(Wake(reason))` and then draws a frame.
-  Network messages, finished autosaves and image decodes use this. Timers use `Repaint::After`.
+  task: `waker.wake(RedrawReason::Collab)`. The loop calls `event(Wake(reason))` and draws a frame if the app answers with a repaint request (a wake that changed nothing visible can answer `Idle`).
+  Network messages, finished autosaves and image decodes use this. Timers use `Repaint::After`; when a deadline asked with reason `Collab` arrives, the loop sends `event(Wake(Collab))` and draws only if the app answers with a repaint (every other deadline becomes a frame at once).
 - `EventCx::set_clipboard(ClipboardContent)` writes text, PNG images and an app-private payload.
   `open_url`, `set_cursor` are there too. `debug_lose_device` is a test hook.
 
