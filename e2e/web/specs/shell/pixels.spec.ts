@@ -83,4 +83,34 @@ test.describe("pixels: the screen shows what the commands built", () => {
     const s = await shot(app);
     expect(s.share({ x: 520, y: 320, w: 160, h: 80 }, hex("#ff00ff"), TOL)).toBeGreaterThan(0.95);
   });
+  test("dark theme: the colour a pick of White stores draws a white line on screen, and the document keeps the stored colour", async ({ app }) => {
+    // What the colour popover stores for its White cell in the dark theme: the inverse of the display mapping of
+    // white (`Color::WHITE.from_dark_theme()`, pinned by a test in drafftink-scene and by the ui test
+    // `in_the_dark_theme_a_palette_pick_stores_...`). The canvas draws it through the same mapping.
+    const STORED = "#010001";
+    await app.exec("settings.set", { key: "theme", value: "dark" });
+    await app.settle();
+    await app.exec("tool.set", { tool: "line" });
+    const from = await app.toPage({ x: 500, y: 400 });
+    const to = await app.toPage({ x: 700, y: 400 });
+    await app.page.mouse.move(from.x, from.y);
+    await app.page.mouse.down();
+    for (let i = 1; i <= 12; i++) await app.page.mouse.move(from.x + ((to.x - from.x) * i) / 12, from.y);
+    await app.page.mouse.up();
+    const id = (await app.exec("element.query", { fields: ["id"] })).items[0] as { id: string };
+    await app.exec("style.set", { ids: [id.id], props: { stroke_color: STORED, stroke_width: 8, sloppiness: "architect" } });
+    await app.exec("selection.clear");
+    await app.settle();
+    const onDark = await shot(app);
+    expect(onDark.share({ x: 800, y: 500, w: 200, h: 150 }, hex("#121212"), TOL), "the page is drawn dark in the dark theme").toBeGreaterThan(0.85);
+    const line = onDark.at(600, 400);
+    expect(close(line, [237, 237, 237], TOL), `the line is white on screen: ${line}`).toBe(true);
+    const held = await app.exec("style.get", { ids: [id.id], props: ["stroke_color"] });
+    expect(held.props.stroke_color?.value, "the document holds the stored colour").toBe(STORED);
+
+    await app.exec("settings.set", { key: "theme", value: "light" });
+    await app.settle();
+    const onLight = await shot(app);
+    expect(close(onLight.at(600, 400), [0, 0, 0], TOL), `and the same element is black in the light theme: ${onLight.at(600, 400)}`).toBe(true);
+  });
 });

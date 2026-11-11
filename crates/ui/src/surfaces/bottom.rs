@@ -69,7 +69,8 @@ fn bar(ui: &mut egui::Ui, cx: &mut Cx<'_>, st: &mut UiState, side: f32) {
 
 fn background_button(ui: &mut egui::Ui, cx: &mut Cx<'_>, st: &UiState, side: f32) {
     let pal = cx.pal;
-    let colour = colors::parse(&cx.model.background);
+    // The page as the canvas draws it in this theme.
+    let colour = colors::displayed(&cx.model.background, pal.dark);
     let (rect, resp) = ui.allocate_exact_size(vec2(side, side), egui::Sense::click());
     let open = st.color_popover == Some(crate::state::ColorTarget::Background);
     if ui.is_rect_visible(rect) {

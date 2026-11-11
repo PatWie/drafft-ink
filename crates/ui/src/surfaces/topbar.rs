@@ -73,6 +73,7 @@ fn colour_row(
     section_label(ui, &cx.pal, title);
     ui.add_space(4.0);
     let swatch = if cx.layout.compact { 28.0 } else { 18.0 };
+    let dark = cx.pal.dark;
     let current = cx.model.style.prop(prop).and_then(|p| p.value.clone());
     let blocked = not_applicable(cx, prop);
     let is_none = allow_none && matches!(current, Some(Value::Null));
@@ -92,7 +93,7 @@ fn colour_row(
             .label(format!("{title} {family}"))
             .selected(selected)
             .blocked(blocked.clone());
-        cx.swatch(ui, &ctl, colors::parse(&name), swatch);
+        cx.swatch(ui, &ctl, colors::displayed(&name, dark), swatch);
     }
     // The colour last picked in the full popover, next to the wheel that opens it.
     if let Some(name) = last_picked {
@@ -102,7 +103,7 @@ fn colour_row(
             .label(format!("Last picked {}", title.to_lowercase()))
             .selected(selected)
             .blocked(blocked.clone());
-        cx.swatch(ui, &ctl, colors::parse(name), swatch);
+        cx.swatch(ui, &ctl, colors::displayed(name, dark), swatch);
     }
     let verb = if prop == "stroke_color" { Verb::OpenColorStroke } else { Verb::OpenColorFill };
     let wheel_tip = format!("More {} colours", title.to_lowercase());

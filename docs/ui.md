@@ -64,6 +64,29 @@ Nothing mutates session state from a widget. `crates/ui/tests/thin.rs` reads the
 
 Look and feel is the old app's: floating cards with a 1 px border, soft shadow, 8 px radius and 12 px margins, the accent blue `#3b82f6` for the active tool, tab and primary button, GelPen for headings (the bytes come from `drafftink_typeset::font_file`, so the binary holds each font file once), the three canvas font families shown in their own faces in the font picker. Icons are drawn with the egui painter (`icons.rs`): no SVG assets, no image loader. All colours come from `theme::Palette`; the dark palette is chosen by the egui theme, which follows the `theme` setting (`light`, `dark`, `system`). Zen mode hides the chrome and keeps dialogs and toasts.
 
+### Colours the UI shows
+
+The canvas draws stored element colours through the dark mapping in the dark theme (`render.md`, "Dark theme"), so
+the UI never shows a stored colour as it is: `colors.rs` is the one place that applies `Color::for_dark_theme` and its
+inverse `Color::from_dark_theme` (the same functions as the renderer, no second copy). In the light theme both are
+the identity and nothing below changes.
+
+* **Swatches show the display.** The quick swatches of the top bar and the properties panel, the last-picked
+  swatch, the cells of the colour popover (grid and quick column) and the page-colour button show
+  `for_dark_theme(stored)`. A palette cell is a stored colour: a pick sends the palette name as before
+  (`style.set {stroke_color: "blue-500"}`), so the document holds the same colour in both themes and a light-theme
+  viewer sees the intended one. The swatch is exactly the colour of the line that gets drawn.
+* **Colours named by their look store the inverse.** The Black and White cells of the quick column, and a colour
+  typed in the hex field, mean "this colour on screen": the pick stores `from_dark_theme(seen)` and the swatch shows
+  what that draws. In the dark theme White stores `#010001` and is drawn `#eeedee`, the lightest the dark canvas has.
+  A colour the filter cannot show is stored as the one whose display is nearest; the swatch shows that display.
+* **The ring** (which swatch is current) compares stored colours, so it is the same in both themes.
+* Not recoloured: peer cursors and user colours (`collab.rs`), the accent and the chrome (`theme::Palette`).
+
+Tests: `tests/color_popover.rs` reads the circle painted for each swatch (dark: every grid cell equals
+`for_dark_theme(palette colour)`, picks store the palette colour or the inverse, the top bar, the last-picked swatch
+and the page button follow) and `app/tests/app.rs` compares the swatch with the colour the painter encodes.
+
 The palette lists a row per titled binding and one per other palette command, with the first shortcut and, for a refused command, the refusal text inline. A command with required arguments and no binding that fixes them opens a form generated from its JSON Schema (`args_form.rs`; enum, boolean, number, string, `Option`, raw JSON fallback with an inline error). The shortcuts dialog is generated from `keymap::help_rows`, which reads the registry, so it cannot go stale (the old list had 19 stale entries).
 
 ## 4. Keymap

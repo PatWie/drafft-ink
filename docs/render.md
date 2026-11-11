@@ -47,6 +47,20 @@ Dark theme (`RenderOptions::theme`) is a colour mapping applied while encoding: 
 `invert(93%) hue-rotate(180deg)` that Excalidraw uses, so `#ffffff` becomes `#121212`. Pictures are not mapped.
 Each theme has its own fragments, so switching back and forth costs nothing after the first pass.
 
+The mapping lives in one place, `Color::for_dark_theme` (drafftink-scene), and so does its inverse,
+`Color::from_dark_theme`. The UI uses both so that a colour it shows for an element is the colour drawn: a swatch
+shows `for_dark_theme(stored)`, and a pick of a colour *as seen* stores `from_dark_theme(seen)` (see `ui.md`,
+"Colours the UI shows"). The map is affine in RGB (invert 93 %, then the hue-rotate matrix) and clamped, so it is
+invertible exactly where it does not clamp. The dark theme cannot show pure white (the lightest it draws is
+`#ededed`, the display of black) or fully saturated hues: 170 of the 265 palette colours are outside the cube the
+filter reaches when asked for them as seen. For such a colour `from_dark_theme` returns the stored colour whose
+display is nearest (least squared RGB distance, found by solving the affine map and searching two steps around the
+clamped solution), and the display of every stored colour is always exactly reachable, which is why palette
+swatches are shown the other way round (stored colour in, display out). Alpha is untouched by both. Tests:
+`scene/src/color.rs` (round trip over the cube, nearest colour for unreachable ones), `app/tests/app.rs` (for every
+palette colour the swatch equals the colour the painter encodes for what the pick stores, in both themes) and the
+browser spec `pixels.spec.ts` (dark theme, the stored pick of White draws a white line).
+
 ### One text path for measuring and drawing
 
 `text_spec(&TextData, stroke, box_width)` and `math_spec(&MathData)` convert an element into the layout input.
