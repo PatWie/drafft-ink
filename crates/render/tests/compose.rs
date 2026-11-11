@@ -490,6 +490,9 @@ fn text_only_fragments_are_appended() {
     assert!(scene.encoding().path_tags.is_empty(), "the test is about a scene with no path data");
 }
 
+/// A change applied to a copy of an element or its text data.
+type Tweak<T> = Box<dyn Fn(&mut T)>;
+
 #[test]
 fn the_paint_hash_sees_what_draws_and_ignores_what_does_not() {
     let z = ZIndex::first();
@@ -497,7 +500,7 @@ fn the_paint_hash_sees_what_draws_and_ignores_what_does_not() {
     let h0 = paint_hash(&base);
 
     // Changes that move or turn the element, or that never reach the screen, keep the fragment.
-    let same: [(&str, Box<dyn Fn(&mut Element)>); 7] = [
+    let same: [(&str, Tweak<Element>); 7] = [
         ("x", Box::new(|e| e.transform.x += 5.0)),
         ("y", Box::new(|e| e.transform.y -= 5.0)),
         ("angle", Box::new(|e| e.transform.angle = 1.0)),
@@ -513,7 +516,7 @@ fn the_paint_hash_sees_what_draws_and_ignores_what_does_not() {
     }
 
     // Everything that changes the picture must change the hash, or a stale fragment would be drawn.
-    let differs: [(&str, Box<dyn Fn(&mut Element)>); 11] = [
+    let differs: [(&str, Tweak<Element>); 11] = [
         ("w", Box::new(|e| e.transform.w += 1.0)),
         ("h", Box::new(|e| e.transform.h += 1.0)),
         ("stroke_color", Box::new(|e| e.style.stroke_color = Color::rgb(1, 2, 3))),
@@ -536,7 +539,7 @@ fn the_paint_hash_sees_what_draws_and_ignores_what_does_not() {
     let mut ts = Typesetter::new();
     let text = text_el(&mut ts, "t", &z, 0.0, 0.0, "hello");
     let th = paint_hash(&text);
-    let text_changes: [(&str, Box<dyn Fn(&mut TextData)>); 6] = [
+    let text_changes: [(&str, Tweak<TextData>); 6] = [
         ("content", Box::new(|t| t.content.push('x'))),
         ("size", Box::new(|t| t.font.size += 1.0)),
         ("family", Box::new(|t| t.font.family = FontFamily::NotoSans)),
