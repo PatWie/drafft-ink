@@ -333,7 +333,8 @@ impl SceneIndex {
         zoom: f64,
         skip: impl Fn(&Element) -> bool,
     ) -> Option<ElementId> {
-        inc(Counter::HitTests);
+        // One more spatial query for the same pick, not a second hit test (the perf budget counts one per move).
+        inc(Counter::SpatialQueries);
         let reach = link_icon::MAX_ICON_DISTANCE * 2.0 + tolerance_world(link_icon::ICON_REACH_PX, zoom);
         self.index
             .query_point(world, reach)

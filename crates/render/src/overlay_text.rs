@@ -108,7 +108,7 @@ pub(crate) fn badge_distance(g: &SmartGuide) -> Option<i64> {
         return None;
     }
     let length = (g.end - g.start).abs();
-    (length.is_finite() && length >= 0.5 && length < 1.0e9).then_some(length.round() as i64)
+    (0.5..1.0e9).contains(&length).then_some(length.round() as i64)
 }
 
 /// Draws the gap on each spacing guide, in a chip beside the middle of the guide (above a horizontal one, to the

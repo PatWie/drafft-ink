@@ -104,107 +104,52 @@ fn every_part_draws_something() {
     assert_eq!(r.items, 18);
     assert!(s.encoding().n_paths > 20, "{}", s.encoding().n_paths);
     let f = full();
-    let parts: [(&str, Box<dyn Fn(&mut Overlay)>); 13] = [
-        (
-            "selection",
-            Box::new({
-                let v = f.selection.clone();
-                move |o| o.selection = v.clone()
-            }),
-        ),
-        (
-            "point handles",
-            Box::new({
-                let v = f.point_handles.clone();
-                move |o| o.point_handles = v.clone()
-            }),
-        ),
-        (
-            "hover",
-            Box::new({
-                let v = f.hover.clone();
-                move |o| o.hover = v.clone()
-            }),
-        ),
-        (
-            "binding",
-            Box::new({
-                let v = f.binding.clone();
-                move |o| o.binding = v.clone()
-            }),
-        ),
-        (
-            "marquee",
-            Box::new({
-                let v = f.marquee;
-                move |o| o.marquee = v
-            }),
-        ),
-        (
-            "guides",
-            Box::new({
-                let v = f.guides.clone();
-                move |o| o.guides = v.clone()
-            }),
-        ),
-        (
-            "snap point",
-            Box::new({
-                let v = f.snap_point;
-                move |o| o.snap_point = v
-            }),
-        ),
-        (
-            "lasso",
-            Box::new({
-                let v = f.lasso.clone();
-                move |o| o.lasso = v.clone()
-            }),
-        ),
-        (
-            "cursors",
-            Box::new({
-                let v = f.cursors.clone();
-                move |o| o.cursors = v.clone()
-            }),
-        ),
-        (
-            "remote selections",
-            Box::new({
-                let v = f.remote_selections.clone();
-                move |o| o.remote_selections = v.clone()
-            }),
-        ),
-        (
-            "trails",
-            Box::new({
-                let v = f.trails.clone();
-                move |o| o.trails = v.clone()
-            }),
-        ),
-        (
-            "link icons",
-            Box::new({
-                let v = f.link_icons.clone();
-                move |o| o.link_icons = v.clone()
-            }),
-        ),
-        (
-            "text edit",
-            Box::new({
-                let v = f.text_edit.clone();
-                move |o| o.text_edit = v.clone()
-            }),
-        ),
-    ];
-    for (name, set) in &parts {
-        let mut o = Overlay::default();
-        set(&mut o);
+    for name in PARTS {
+        let o = only(name, &f);
         assert!(!o.is_empty(), "{name}");
         let mut s = Scene::new();
         assert!(paint_overlay(&mut s, &o, &view(1.0), &OverlayStyle::default(), &mut ts()).items >= 1, "part {name}");
         assert!(!s.encoding().is_empty(), "part {name}");
     }
+}
+
+const PARTS: [&str; 13] = [
+    "selection",
+    "point handles",
+    "hover",
+    "binding",
+    "marquee",
+    "guides",
+    "snap point",
+    "lasso",
+    "cursors",
+    "remote selections",
+    "trails",
+    "link icons",
+    "text edit",
+];
+
+/// A copy of `from` that has only the named part.
+fn only(part: &str, from: &Overlay) -> Overlay {
+    let mut o = Overlay::default();
+    let f = from.clone();
+    match part {
+        "selection" => o.selection = f.selection,
+        "point handles" => o.point_handles = f.point_handles,
+        "hover" => o.hover = f.hover,
+        "binding" => o.binding = f.binding,
+        "marquee" => o.marquee = f.marquee,
+        "guides" => o.guides = f.guides,
+        "snap point" => o.snap_point = f.snap_point,
+        "lasso" => o.lasso = f.lasso,
+        "cursors" => o.cursors = f.cursors,
+        "remote selections" => o.remote_selections = f.remote_selections,
+        "trails" => o.trails = f.trails,
+        "link icons" => o.link_icons = f.link_icons,
+        "text edit" => o.text_edit = f.text_edit,
+        other => panic!("no part called {other}"),
+    }
+    o
 }
 
 #[test]

@@ -17,6 +17,9 @@ use serde_json::json;
 
 type Log = Rc<RefCell<Vec<String>>>;
 
+/// The target of a click and whether it was on the link icon.
+type Clicked = (Option<String>, bool);
+
 fn listen(core: &mut Core, kind: EventKind, selector: &str, log: &Log, stop: bool) -> u32 {
     let log = Rc::clone(log);
     let tag = selector.to_owned();
@@ -182,7 +185,7 @@ fn a_click_on_the_link_icon_of_a_shape_is_an_event_with_the_flag_set_and_does_no
     let mut s = stage();
     s.add(rect("a", 0.0, 0.0, 100.0, 100.0)).unwrap();
     s.update("a", json!({"link": "https://example.com"})).unwrap();
-    let seen: Rc<RefCell<Vec<(Option<String>, bool)>>> = Rc::default();
+    let seen: Rc<RefCell<Vec<Clicked>>> = Rc::default();
     let sink = Rc::clone(&seen);
     s.on(
         EventKind::Click,
