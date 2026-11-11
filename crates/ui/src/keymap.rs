@@ -15,7 +15,7 @@
 //! * `Esc` closes an open overlay first (`ui.close_overlays`), else runs its registered binding.
 
 use drafftink_engine::Origin;
-use drafftink_engine::spec::{Scope, TextGate};
+use drafftink_engine::spec::{KeyRepeat, Scope, TextGate};
 use egui::{Event, Key, Modifiers};
 use serde_json::{Map, Value, json};
 
@@ -323,7 +323,7 @@ fn resolve_one(
                 if cx.model.text_editing && !allowed_in_text_edit(chord, b.scope, Some(cmd.while_text_edit)) {
                     continue;
                 }
-                if repeat && cmd.id == "tool.hold" {
+                if repeat && cmd.host.repeat == KeyRepeat::FirstPressOnly {
                     return None;
                 }
                 let args = match &b.args {

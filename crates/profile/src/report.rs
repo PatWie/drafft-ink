@@ -101,6 +101,9 @@ impl ScenarioReport {
     /// Writes the report to `<dir>/<key>.json` when the environment variable [`PERF_OUT_ENV`] names a directory,
     /// and does nothing otherwise. Work-counter tests call it with the numbers they measured, so that
     /// `cargo xtask perf` can check them against `perf/budgets.json`. Returns the path written.
+    // Exception to the no-file-system rule below L6 (xtask/clippy-below-l6): native only, and only when a test
+    // run asked for it with the environment variable. The report is the hand-over to `cargo xtask perf`.
+    #[allow(clippy::disallowed_methods)]
     #[cfg(not(target_arch = "wasm32"))]
     pub fn save_if_requested(&self) -> std::io::Result<Option<std::path::PathBuf>> {
         let Some(dir) = std::env::var_os(PERF_OUT_ENV) else { return Ok(None) };

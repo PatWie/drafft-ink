@@ -10,6 +10,7 @@ use serde_json::Value;
 
 use crate::refusal::Refusal;
 use crate::session::Session;
+use crate::spec::{Host, HostEffect};
 use crate::spec::{Batch, CommandSpec, Facts, Gate, Mutates, Redraw, RingMode, TextGate, Typed, Undo};
 
 /// Arguments of `gesture.begin`.
@@ -85,6 +86,7 @@ const GESTURE: Facts = Facts {
     ring: RingMode::Always,
     palette: false,
     agent: false,
+    doc_write: crate::spec::DocWrite::Managed,
 };
 
 /// The gesture family.
@@ -97,6 +99,7 @@ pub const COMMANDS: &[CommandSpec] = &[
         &Typed::new(begin),
         Facts { while_gesture: Gate::Refused, ..GESTURE },
     )
+    .host(Host::effect(HostEffect::BeginsGesture))
     .refusals(&["not_gesturable"])
     .own_transaction()
     .example(r#"{"command":"element.move","args":{"dx":10,"dy":0}}"#),
@@ -108,6 +111,7 @@ pub const COMMANDS: &[CommandSpec] = &[
         &Typed::new(update),
         Facts { ring: RingMode::Quiet, while_text_edit: TextGate::Allowed, ..GESTURE },
     )
+    .host(Host::effect(HostEffect::EndsGestureOnRefusal).silent_refusals())
     .refusals(&["no_gesture"])
     .own_transaction()
     .example(r#"{"gesture":"g1","args":{"dx":40,"dy":5}}"#),
@@ -119,6 +123,7 @@ pub const COMMANDS: &[CommandSpec] = &[
         &Typed::new(end),
         Facts { undo: Undo::Undoable, mutates: Mutates::DOC.with(Mutates::OBSERVED).with(Mutates::EDIT_SESSION), while_text_edit: TextGate::Allowed, ..GESTURE },
     )
+    .host(Host::effect(HostEffect::EndsGesture).silent_refusals())
     .refusals(&["no_gesture"])
     .own_transaction()
     .example(r#"{"args":{"dx":40,"dy":5}}"#),
@@ -130,6 +135,7 @@ pub const COMMANDS: &[CommandSpec] = &[
         &Typed::new(cancel),
         Facts { while_text_edit: TextGate::Allowed, ..GESTURE },
     )
+    .host(Host::effect(HostEffect::EndsGesture).silent_refusals())
     .own_transaction()
     .allowed_when_blocked()
     .example(r#"{}"#),

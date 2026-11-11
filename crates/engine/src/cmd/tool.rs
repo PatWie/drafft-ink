@@ -10,6 +10,7 @@ use serde_json::json;
 
 use crate::refusal::Refusal;
 use crate::session::Session;
+use crate::spec::{Host};
 use crate::spec::{Batch, Binding, CommandSpec, Facts, Gate, Mutates, NoArgs, PortSet, Redraw, RingMode, Scope, Selection, TextGate, Typed, Undo};
 use crate::state::Tool;
 
@@ -244,6 +245,7 @@ const TOOL: Facts = Facts {
     ring: RingMode::Always,
     palette: true,
     agent: true,
+    doc_write: crate::spec::DocWrite::NotDocument,
 };
 
 const SET_KEYS: &[Binding] = &[
@@ -296,6 +298,7 @@ pub const COMMANDS: &[CommandSpec] = &[
         &Typed::new(hold),
         Facts { palette: false, agent: false, ..TOOL },
     )
+    .host(Host::first_press_only())
     .refusals(&["view_only_tool"])
     .shortcuts(HOLD_KEYS),
     CommandSpec::new(
@@ -316,6 +319,7 @@ pub const COMMANDS: &[CommandSpec] = &[
             undo: Undo::Undoable,
             mutates: Mutates::DOC.with(Mutates::OBSERVED).with(Mutates::TOOL).with(Mutates::EDIT_SESSION),
             while_gesture: Gate::Allowed,
+            doc_write: crate::spec::DocWrite::Managed,
             ..TOOL
         },
     )

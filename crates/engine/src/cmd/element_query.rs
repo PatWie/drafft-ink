@@ -16,6 +16,7 @@ use serde_json::Value;
 use crate::args;
 use crate::refusal::{Refusal, echo};
 use crate::session::Session;
+use crate::spec::{Host, HostEffect};
 use crate::spec::{CommandSpec, Facts, Typed};
 
 use super::element_common::{id_strings, target_refusal};
@@ -181,6 +182,7 @@ pub const COMMANDS: &[CommandSpec] = &[
         &Typed::new(query),
         READ,
     )
+    .host(Host::effect(HostEffect::ShowsSearchResults))
     .example(r#"{"filter":{"kind":["rectangle","ellipse"],"text":"login"},"limit":20}"#),
     CommandSpec::new(
         "element.at",

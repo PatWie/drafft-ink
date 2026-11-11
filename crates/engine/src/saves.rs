@@ -126,6 +126,8 @@ impl Session {
     /// The shell calls this when a write that answered `Pending` has ended. On success the tab counts as
     /// saved as of the revision that was written (edits since then keep it dirty); on failure it stays
     /// dirty and the refusal says that the document was NOT saved.
+    ///
+    /// Non-command write N1 (docs/exceptions.md).
     pub fn on_write_done(&mut self, token: WriteToken, result: Result<(), PortError>) -> Result<(), Refusal> {
         let Some(i) = self.saves.iter().position(|(t, _)| *t == token) else {
             return Err(Refusal::custom(

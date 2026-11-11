@@ -324,6 +324,7 @@ const WRITE: Facts = Facts {
     ring: crate::spec::RingMode::Always,
     palette: false,
     agent: true,
+    doc_write: crate::spec::DocWrite::NotDocument,
 };
 
 const TOGGLE_KEYS: &[Binding] =

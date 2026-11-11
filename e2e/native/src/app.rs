@@ -23,6 +23,7 @@ const CALL_LIMIT: Duration = Duration::from_secs(60);
 
 /// True when `DRAFFTINK_REQUIRE_GPU` is set: a missing display or GPU fails instead of skipping.
 pub fn require_gpu() -> bool {
+    // The same rule as `drafftink_profile::gpu_required` (this crate does not link the profile crate).
     std::env::var("DRAFFTINK_REQUIRE_GPU").is_ok_and(|v| !v.is_empty() && v != "0")
 }
 
@@ -109,7 +110,7 @@ impl Drop for McpHttpApp {
 pub fn start_mcp_http_or_skip(test: &str) -> Result<Option<McpHttpApp>, E2eError> {
     if std::env::var_os("DRAFFTINK_E2E").is_none_or(|v| v.is_empty()) {
         println!(
-            "E2E-SKIP {test}: not run here; `cargo xtask e2e` runs the native suite (it needs a display and a GPU)"
+            "SKIPPED: {test}: not run here; `cargo xtask e2e` runs the native suite (it needs a display and a GPU)"
         );
         return Ok(None);
     }
@@ -117,7 +118,7 @@ pub fn start_mcp_http_or_skip(test: &str) -> Result<Option<McpHttpApp>, E2eError
         Ok(app) => Ok(Some(app)),
         Err(reason) if require_gpu() => Err(E2eError::Required(reason)),
         Err(reason) => {
-            println!("E2E-SKIP {test}: {reason}");
+            println!("SKIPPED: {test}: {reason}");
             Ok(None)
         }
     }
@@ -169,14 +170,14 @@ fn looks_like_no_gpu(log: &str) -> bool {
 }
 
 /// Starts the app for the test `test`, or says why not. `Ok(None)` is a skip: the reason is printed as an
-/// `E2E-SKIP` line (the `cargo xtask e2e` summary counts those) and the test returns. With
+/// `SKIPPED:` line (the `cargo xtask e2e` summary counts those) and the test returns. With
 /// `DRAFFTINK_REQUIRE_GPU=1` a skip is an error.
 pub fn start_or_skip(test: &str) -> Result<Option<NativeApp>, E2eError> {
     // `cargo xtask test` runs every test of the workspace on a machine that may have a display. The native
     // suite opens windows, so it runs only under `cargo xtask e2e`, which sets this variable.
     if std::env::var_os("DRAFFTINK_E2E").is_none_or(|v| v.is_empty()) {
         println!(
-            "E2E-SKIP {test}: not run here; `cargo xtask e2e` runs the native suite (it needs a display and a GPU)"
+            "SKIPPED: {test}: not run here; `cargo xtask e2e` runs the native suite (it needs a display and a GPU)"
         );
         return Ok(None);
     }
@@ -184,7 +185,7 @@ pub fn start_or_skip(test: &str) -> Result<Option<NativeApp>, E2eError> {
         Launch::Running(app) => Ok(Some(*app)),
         Launch::Skipped(reason) if require_gpu() => Err(E2eError::Required(reason)),
         Launch::Skipped(reason) => {
-            println!("E2E-SKIP {test}: {reason}");
+            println!("SKIPPED: {test}: {reason}");
             Ok(None)
         }
     }

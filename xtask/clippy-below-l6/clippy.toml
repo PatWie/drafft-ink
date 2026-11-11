@@ -1,0 +1,66 @@
+# The clippy configuration of the second pass of `cargo xtask clippy`: the library code (no tests, benches or
+# examples) of every crate below L6. CLIPPY_CONF_DIR points here, and a config directory replaces the root
+# clippy.toml, so the root file's rules are repeated at the top.
+#
+# Crates below L6 do no I/O of their own: files, sockets, threads, processes and the wall clock arrive through
+# the ports of the engine (crates/engine/src/ports.rs) or through the Clock port. The apps and L6 crates own
+# the real implementations. Test code is outside this pass because tests read fixtures from disk.
+#
+# Documented exceptions are `#[allow(clippy::disallowed_methods)]` or `#[allow(clippy::disallowed_types)]` on
+# the item, with a comment that says why. The server app (apps/drafftink-server) and the other apps are L8:
+# they are not in this pass and use the file system and the network freely. `drafftink-collab` (L4) owns the
+# connection to a room and uses tokio for it; tokio's types are not std::net types, so they are not listed.
+#
+# The UI types below (egui, rfd, web_sys::Window) are in the list for the same reason as the manifest rule of
+# `cargo xtask layers`: if a crate below L6 ever depends on them, the type cannot be named. A path that does not
+# resolve in a crate is ignored by clippy, so the entries cost nothing elsewhere.
+allow-unwrap-in-tests = true
+allow-expect-in-tests = true
+allow-panic-in-tests = true
+allow-indexing-slicing-in-tests = true
+
+disallowed-methods = [
+    { path = "std::time::Instant::now", reason = "panics on wasm32; use the Clock port" },
+    { path = "std::time::SystemTime::now", reason = "panics on wasm32; use the Clock port" },
+    { path = "std::thread::spawn", reason = "no threads of its own below L6; the shell runs work (and wasm has no threads)" },
+    { path = "std::thread::Builder::spawn", reason = "no threads of its own below L6; the shell runs work (and wasm has no threads)" },
+    { path = "std::thread::sleep", reason = "blocks, and wasm cannot sleep; use the Clock port and a timer in the shell" },
+    { path = "std::process::Command::new", reason = "no processes below L6" },
+    { path = "std::fs::read", reason = "files go through the Files and Storage ports" },
+    { path = "std::fs::read_to_string", reason = "files go through the Files and Storage ports" },
+    { path = "std::fs::read_dir", reason = "files go through the Files and Storage ports" },
+    { path = "std::fs::write", reason = "files go through the Files and Storage ports" },
+    { path = "std::fs::create_dir", reason = "files go through the Files and Storage ports" },
+    { path = "std::fs::create_dir_all", reason = "files go through the Files and Storage ports" },
+    { path = "std::fs::remove_file", reason = "files go through the Files and Storage ports" },
+    { path = "std::fs::remove_dir", reason = "files go through the Files and Storage ports" },
+    { path = "std::fs::remove_dir_all", reason = "files go through the Files and Storage ports" },
+    { path = "std::fs::rename", reason = "files go through the Files and Storage ports" },
+    { path = "std::fs::copy", reason = "files go through the Files and Storage ports" },
+    { path = "std::fs::metadata", reason = "files go through the Files and Storage ports" },
+    { path = "std::fs::canonicalize", reason = "files go through the Files and Storage ports" },
+    { path = "std::fs::File::open", reason = "files go through the Files and Storage ports" },
+    { path = "std::fs::File::create", reason = "files go through the Files and Storage ports" },
+    { path = "std::fs::OpenOptions::open", reason = "files go through the Files and Storage ports" },
+    { path = "std::path::Path::exists", reason = "files go through the Files and Storage ports" },
+    { path = "std::path::Path::is_file", reason = "files go through the Files and Storage ports" },
+    { path = "std::path::Path::is_dir", reason = "files go through the Files and Storage ports" },
+]
+
+disallowed-types = [
+    { path = "std::time::Instant", reason = "panics on wasm32; use the Clock port (or web_time::Instant in drafftink-profile)" },
+    { path = "std::time::SystemTime", reason = "panics on wasm32; use the Clock port" },
+    { path = "std::fs::File", reason = "files go through the Files and Storage ports" },
+    { path = "std::fs::OpenOptions", reason = "files go through the Files and Storage ports" },
+    { path = "std::net::TcpStream", reason = "sockets belong to the shell or to drafftink-collab (tokio)" },
+    { path = "std::net::TcpListener", reason = "no servers below L6" },
+    { path = "std::net::UdpSocket", reason = "no sockets below L6" },
+    { path = "std::process::Command", reason = "no processes below L6" },
+    { path = "std::process::Child", reason = "no processes below L6" },
+    { path = "egui::Context", reason = "UI types belong to L6 and the apps" },
+    { path = "egui::Ui", reason = "UI types belong to L6 and the apps" },
+    { path = "rfd::FileDialog", reason = "dialogs belong to L6 and the apps; a command never opens one" },
+    { path = "rfd::AsyncFileDialog", reason = "dialogs belong to L6 and the apps; a command never opens one" },
+    { path = "web_sys::Window", reason = "the DOM belongs to the web shell (apps/drafftink-web), not to the libraries" },
+    { path = "web_sys::Document", reason = "the DOM belongs to the web shell (apps/drafftink-web), not to the libraries" },
+]

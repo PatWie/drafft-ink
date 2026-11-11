@@ -27,6 +27,7 @@ use crate::cmd::view::Pt;
 use crate::ports::{FileRef, PortKind};
 use crate::refusal::{Refusal, echo};
 use crate::session::{Ref, Session};
+use crate::spec::{Host, HostEffect};
 use crate::spec::{
     Batch, CommandSpec, Facts, Gate, Mutates, PortSet, Redraw, RingMode, Selection, TextGate, Typed, Undo,
 };
@@ -550,6 +551,7 @@ const LIB: Facts = Facts {
     ring: RingMode::Always,
     palette: true,
     agent: true,
+    doc_write: crate::spec::DocWrite::NotDocument,
 };
 
 /// The library family.
@@ -562,6 +564,7 @@ pub const COMMANDS: &[CommandSpec] = &[
         &Typed::new(add),
         Facts { needs_selection: Selection::Required, ..LIB },
     )
+    .host(Host::effect(HostEffect::CompletesLibraryAdd))
     .available(|s| needs_storage(s, "library.add"))
     .refusals(&["empty_name", "library_newer"])
     .example(r#"{"name":"Login box"}"#),
@@ -571,7 +574,14 @@ pub const COMMANDS: &[CommandSpec] = &[
         "Insert from library",
         "Inserts a library item like a paste: new ids, centred on a point, selected.",
         &Typed::new(insert),
-        Facts { undo: Undo::Undoable, mutates: Mutates::DOC.with(Mutates::OBSERVED), view_only: Gate::Refused, redraw: Redraw::Scene, ..LIB },
+        Facts {
+            undo: Undo::Undoable,
+            mutates: Mutates::DOC.with(Mutates::OBSERVED),
+            view_only: Gate::Refused,
+            redraw: Redraw::Scene,
+            doc_write: crate::spec::DocWrite::Edit,
+            ..LIB
+        },
     )
     .available(|s| needs_storage(s, "library.insert"))
     .refusals(&["no_such_item"])
@@ -595,6 +605,7 @@ pub const COMMANDS: &[CommandSpec] = &[
         &Typed::new(rename),
         LIB,
     )
+    .host(Host::effect(HostEffect::CompletesRename))
     .available(|s| needs_storage(s, "library.rename"))
     .refusals(&["no_such_item", "empty_name", "library_newer"])
     .example(r#"{"item":"lib_e1","name":"Login box"}"#),

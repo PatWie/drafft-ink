@@ -1,3 +1,13 @@
 # A hung test must fail the run, not stall it (a GPU test once hung for 3.5 hours).
 [profile.default]
 slow-timeout = { period = "60s", terminate-after = 5 }
+
+# `cargo xtask test` runs this profile. The JUnit file keeps the output of passing tests, so that the gate can
+# count the `SKIPPED:` lines of tests that skipped themselves (no GPU, no display; crates/profile/src/skip.rs).
+[profile.ci]
+slow-timeout = { period = "60s", terminate-after = 5 }
+
+[profile.ci.junit]
+path = "junit.xml"
+store-success-output = true
+store-failure-output = true

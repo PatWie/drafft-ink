@@ -200,6 +200,23 @@ fn insert_puts_a_copy_centred_on_the_point_selects_it_and_undoes_in_one_step() {
     assert_eq!(count(&s), 2);
 }
 
+/// docs/exceptions.md E14: releasing a dragged library item is one plain `library.insert` at the release point.
+/// No gesture runs, so nothing is half-done before the release, and one release is one ring entry.
+#[test]
+#[allow(non_snake_case)]
+fn exception_E14_a_library_drop_is_one_plain_command() {
+    let (mut s, _f) = drawn();
+    run(&mut s, "library.add", json!({"name": "Pair"}));
+    s.tab_mut().doc.clear_history();
+    let ring_before = s.ring().iter().count();
+    assert!(!s.spec("library.insert").unwrap().is_gesture(), "a drop is not a gesture command");
+    run(&mut s, "library.insert", json!({"item": "Pair", "at": [400.0, 300.0]}));
+    assert!(!s.gesture_running());
+    assert_eq!(s.tab().doc.undo_depth(), 1);
+    assert_eq!(s.ring().iter().count(), ring_before + 1, "one ring entry for the release");
+    assert_eq!(s.ring().iter().last().map(|e| e.id.as_str()), Some("library.insert"));
+}
+
 #[test]
 fn insert_twice_gives_distinct_ids_and_defaults_to_the_viewport_centre() {
     let (mut s, _f) = drawn();

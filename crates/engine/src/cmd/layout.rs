@@ -237,6 +237,7 @@ pub const COMMANDS: &[CommandSpec] = &[CommandSpec::new(
         ring: RingMode::Always,
         palette: true,
         agent: true,
+    doc_write: crate::spec::DocWrite::Edit,
     },
 )
 .default_targets(default_targets)

@@ -130,16 +130,17 @@ impl NativeTransport {
             .map_err(|e| TransportError::Failed(format!("cannot start the network thread: {e}")))?;
         let handle = rt.handle().clone();
         let (stop, stopped) = tokio::sync::oneshot::channel::<()>();
-        std::thread::Builder::new()
-            .name("drafftink-collab".to_owned())
-            .spawn(move || {
-                rt.block_on(async {
-                    let _ = stopped.await;
-                });
-                // Connection tasks are dropped with the runtime.
-                rt.shutdown_background();
-            })
-            .map_err(|e| TransportError::Failed(format!("cannot start the network thread: {e}")))?;
+        // Exception to the no-threads rule below L6 (xtask/clippy-below-l6): the native transport owns its network
+        // thread. The browser transport (`web.rs`) has none.
+        #[allow(clippy::disallowed_methods)]
+        let spawned = std::thread::Builder::new().name("drafftink-collab".to_owned()).spawn(move || {
+            rt.block_on(async {
+                let _ = stopped.await;
+            });
+            // Connection tasks are dropped with the runtime.
+            rt.shutdown_background();
+        });
+        spawned.map_err(|e| TransportError::Failed(format!("cannot start the network thread: {e}")))?;
         self.runtime = Some(Runtime { handle: handle.clone(), stop: Some(stop) });
         Ok(handle)
     }

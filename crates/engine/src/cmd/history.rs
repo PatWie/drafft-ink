@@ -195,6 +195,7 @@ const STEP: Facts = Facts {
     ring: RingMode::Always,
     palette: true,
     agent: true,
+    doc_write: crate::spec::DocWrite::Managed,
 };
 
 const UNDO_KEYS: &[Binding] = &[Binding::new(&["Mod+Z"], Scope::Canvas)];
@@ -237,6 +238,7 @@ pub const COMMANDS: &[CommandSpec] = &[
             mutates: Mutates::OBSERVED,
             view_only: Gate::Allowed,
             palette: false,
+            doc_write: crate::spec::DocWrite::NotDocument,
             ..STEP
         },
     )

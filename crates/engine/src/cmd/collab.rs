@@ -586,6 +586,7 @@ pub const COMMANDS: &[CommandSpec] = &[
             view_only: Gate::Refused,
             while_gesture: Gate::Refused,
             while_text_edit: TextGate::Commit,
+            doc_write: crate::spec::DocWrite::Replaces,
             ..NET
         },
     )

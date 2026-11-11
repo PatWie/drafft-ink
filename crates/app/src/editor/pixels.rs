@@ -34,14 +34,13 @@ fn device() -> Option<MutexGuard<'static, Device>> {
             Some(Mutex::new(Device { gpu, compositor }))
         }
         Err(e) => {
-            assert!(
-                std::env::var_os("DRAFFTINK_REQUIRE_GPU").is_none(),
-                "no GPU adapter and DRAFFTINK_REQUIRE_GPU is set: {e}"
-            );
-            eprintln!("skipped: no GPU adapter on this machine");
+            assert!(!drafftink_profile::gpu_required(), "no GPU adapter and DRAFFTINK_REQUIRE_GPU is set: {e}");
             None
         }
     });
+    if shared.is_none() {
+        drafftink_profile::report_skip("no GPU adapter on this machine; set DRAFFTINK_REQUIRE_GPU=1 to fail instead");
+    }
     shared.as_ref().map(|m| m.lock().unwrap_or_else(PoisonError::into_inner))
 }
 

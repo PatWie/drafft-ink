@@ -4,7 +4,7 @@ Drafft.ink is an infinite-canvas whiteboard in Rust (Vello on WebGPU, egui, Loro
 
 ## Hard rules (and what enforces each)
 - Everything a user can do is a command in the registry (`crates/engine`). Buttons, shortcuts, menus, the palette, scripts, MCP and tests all call `Session::execute` / `execute_batch`. Nothing else changes state for a user action: `cargo xtask layers`, the registry tests.
-- High-frequency gestures (pointer drag, pan, pinch) are the only exception. Each one is listed in `docs/exceptions.md` with its reason, and its final state is reachable as a command.
+- High-frequency gestures (pointer drag, pan, pinch) are the only exception. Each one is listed in `docs/exceptions.md` with its reason, and its final state is reachable as a command: `cargo xtask exceptions`.
 - Layering: geom/profile/protocol (L0), scene/typeset/sketch (L1), render (L2), canvas/doc (L3), edit/io/collab (L4), engine (L5), gpu/ui/bridge (L6), testkit (L7), then apps. No upward or sideways edges, and no egui, eframe, winit or rfd below L6: `cargo xtask layers`.
 - A refusal is a value (`Refusal`) with plain-words text that says how to proceed, never a panic or a silent no-op. Commands never open dialogs: a decision is an argument with a safe default.
 - Domain rules live in the domain crate (`edit`, `doc`, `io`) with typed errors. A command validates and delegates, and never holds a second copy of a rule.

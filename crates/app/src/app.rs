@@ -160,6 +160,8 @@ impl App {
 
     /// Installs the scene a driver sent, if one is waiting: the document, the camera, the selection. Like the test
     /// rig's `load_generated`, it is not a command and leaves no history.
+    ///
+    /// Non-command write N4 (docs/exceptions.md).
     fn install_scene(&mut self, canvas: Size) {
         let Some(install) = self.scenes.as_ref().and_then(SceneSlot::take) else { return };
         let SceneInstall { doc, look, zoom, select } = install;
@@ -1072,3 +1074,7 @@ impl ShellApp for App {
 fn collab_view_of(s: &mut Session) -> drafftink_ui::CollabView {
     s.query("collab.status", json!({})).map(|out| drafftink_ui::CollabView::from_status(&out)).unwrap_or_default()
 }
+
+#[cfg(test)]
+#[path = "app/install_scene_tests.rs"]
+mod install_scene_tests;

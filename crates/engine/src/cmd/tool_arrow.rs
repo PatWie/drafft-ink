@@ -109,6 +109,7 @@ pub const COMMANDS: &[CommandSpec] = &[CommandSpec::new(
         ring: RingMode::Always,
         palette: true,
         agent: true,
+    doc_write: crate::spec::DocWrite::NotDocument,
     },
 )
 .example(r#"{"arrow_type":"elbow","end_head":"triangle"}"#)];
