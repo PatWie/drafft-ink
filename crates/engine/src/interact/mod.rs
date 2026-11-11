@@ -34,6 +34,7 @@
 
 mod ctx;
 mod events;
+mod frame_out;
 mod outcome;
 mod overlay;
 mod view;
