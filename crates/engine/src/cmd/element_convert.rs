@@ -13,7 +13,7 @@ use serde_json::{Value, json};
 use super::element_common::{edit_with_measure, id_strings, target_refusal};
 use crate::refusal::Refusal;
 use crate::session::{Ref, Session};
-use crate::spec::{Host, HostEffect};
+use crate::spec::{Host, HostEffect, Variant};
 use crate::spec::{
     Batch, Binding, CommandSpec, Facts, Gate, Mutates, PortSet, Redraw, RingMode, Scope, Selection, TextGate, Typed, Undo,
 };
@@ -174,6 +174,17 @@ const KEYS: &[Binding] = &[
     Binding::new(&["Shift+Tab"], Scope::Canvas).with_args(r#"{"reverse":true}"#).titled("Previous element type"),
 ];
 
+/// The targets, named once for the context menu, the palette and agents.
+const VARIANTS: &[Variant] = &[
+    Variant::new(r#"{"to":"rectangle"}"#, "Convert to rectangle"),
+    Variant::new(r#"{"to":"diamond"}"#, "Convert to diamond"),
+    Variant::new(r#"{"to":"ellipse"}"#, "Convert to ellipse"),
+    Variant::new(r#"{"to":"line"}"#, "Convert to line"),
+    Variant::new(r#"{"to":"arrow","arrow_type":"sharp"}"#, "Convert to sharp arrow"),
+    Variant::new(r#"{"to":"arrow","arrow_type":"round"}"#, "Convert to round arrow"),
+    Variant::new(r#"{"to":"arrow","arrow_type":"elbow"}"#, "Convert to elbow arrow"),
+];
+
 /// Commands of this file.
 pub const COMMANDS: &[CommandSpec] = &[CommandSpec::new(
     "element.convert",
@@ -185,6 +196,7 @@ pub const COMMANDS: &[CommandSpec] = &[CommandSpec::new(
 )
     .host(Host::effect(HostEffect::ShowsConvertPopup))
 .shortcuts(KEYS)
+.variants(VARIANTS)
 .refusals(&["mixed_kinds", "not_convertible"])
 .example(r#"{"ids":["e1"],"to":"diamond"}"#)];
 

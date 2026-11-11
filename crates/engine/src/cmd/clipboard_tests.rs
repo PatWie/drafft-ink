@@ -127,6 +127,19 @@ fn copy_cut_and_the_style_commands_need_a_selection_and_say_so() {
 }
 
 #[test]
+fn paste_style_is_unavailable_until_a_style_was_copied() {
+    let (mut s, _) = fx();
+    two_rects(&mut s);
+    let r = s.availability("clipboard.paste_style").unwrap_err();
+    assert_eq!(r.code, "nothing_to_do");
+    assert!(r.message.contains("clipboard.copy_style"), "{}", r.message);
+    let e = refuse_clean(&mut s, "clipboard.paste_style", json!({}));
+    assert_eq!((e.code, e.message.as_str()), (r.code, r.message.as_str()));
+    run(&mut s, "clipboard.copy_style", json!({}));
+    assert!(s.availability("clipboard.paste_style").is_ok());
+}
+
+#[test]
 fn view_only_blocks_what_changes_the_document_and_allows_copying() {
     let (mut s, _) = fx();
     two_rects(&mut s);

@@ -190,6 +190,8 @@ pub struct ContextMenu {
     pub world: Option<[f64; 2]>,
     /// The id of a locked element the menu is about (it cannot be selected): the menu offers to unlock it.
     pub locked: Option<String>,
+    /// Which opening this is, so that a menu opened again starts with no flyout open.
+    pub opened: u64,
 }
 
 /// The link dialog (`ui.open_link_editor`).
@@ -441,6 +443,8 @@ pub struct UiState {
     pub convert_popup: Option<ConvertPopup>,
     /// The context menu of a tab, when open.
     pub tab_menu: Option<TabMenu>,
+    /// How many context menus were opened (the next one's [`ContextMenu::opened`]).
+    menus_opened: u64,
     /// The layout preference (kept by the app between runs if it wants to).
     pub layout: LayoutPreference,
     /// A touch event was seen, or the app says the device is touch-first.
@@ -497,6 +501,12 @@ impl UiState {
             || self.preferences_open
             || self.convert_popup.is_some()
             || self.tab_menu.is_some()
+    }
+
+    /// True while a popup menu is open (the hamburger, the context menu, a tab menu). The arrow keys and Enter
+    /// belong to it, not to the canvas.
+    pub fn popup_menu_open(&self) -> bool {
+        self.menu_open || self.context_menu.is_some() || self.tab_menu.is_some()
     }
 
     /// True when a modal dialog is open and keys must not reach the canvas.
@@ -689,7 +699,8 @@ impl UiState {
     /// the world point under it, so that `Paste` can put its content there.
     pub fn open_context_menu(&mut self, screen: egui::Pos2, world: Option<[f64; 2]>) {
         self.close_overlays();
-        self.context_menu = Some(ContextMenu { screen, world, locked: None });
+        self.menus_opened += 1;
+        self.context_menu = Some(ContextMenu { screen, world, locked: None, opened: self.menus_opened });
     }
 
     /// Opens the context menu of a locked element, which cannot be selected: it offers to unlock it
@@ -701,7 +712,9 @@ impl UiState {
         element: impl Into<String>,
     ) {
         self.close_overlays();
-        self.context_menu = Some(ContextMenu { screen, world, locked: Some(element.into()) });
+        self.menus_opened += 1;
+        self.context_menu =
+            Some(ContextMenu { screen, world, locked: Some(element.into()), opened: self.menus_opened });
     }
 
     /// The app answers a [`HostRequest::PasteText`].

@@ -1,37 +1,25 @@
 //! The canvas context menu. The canvas layer opens it with `UiState::open_context_menu` on a right click.
-//! Every row is a command (`Ctl`) drawn with `menu_item`, so a command that cannot run now is greyed with
-//! its refusal text as the tooltip, and a command the registry does not have is greyed with the
-//! model's "not available in this build" text. `Paste` puts its content at the point where the menu was
-//! opened. Choosing a row closes the menu; a click anywhere else
-//! closes it too.
-
-use std::collections::BTreeSet;
+//!
+//! The menu is built per target (the empty canvas, a selection, a locked element) as a list of entries, and the
+//! entries the engine refuses are left out: availability is `Session::availability` (the model's refusal text), not
+//! a rule of this file. `Paste` stays and greys, because the clipboard is not the document. A command the registry
+//! does not have stays too, greyed with the model's "not available in this build" text.
+//!
+//! Labels come from the registry (`Model::label`), so a command reads the same here, in the panel, in the palette and
+//! in the hamburger menu. The rows live in [`crate::menu_kit`]; groups of rows open as flyouts. `Paste` puts its
+//! content at the point where the menu was opened. Choosing a row closes the menu; a click anywhere else closes it
+//! too.
 
 use drafftink_engine::Origin;
-use egui::{Area, Context, Id, Order, Sense, Ui, pos2};
+use egui::{Align2, Context};
 use serde_json::{Value, json};
 
 use crate::action::Verb;
-use crate::model::SelectedElement;
+use crate::icons::Icon;
+use crate::menu_kit::{Menu, Popup, Row};
+use crate::model::{Model, SelectedElement};
 use crate::state::{RenameTarget, UiState};
-use crate::theme::MARGIN;
-use crate::widgets::{Ctl, Cx, panel_frame, separator};
-
-/// Width of the menu.
-const WIDTH: f32 = 230.0;
-/// The least distance of the menu from the window edge.
-const SCREEN_GAP: f32 = MARGIN;
-
-/// One row: the text, the command and its arguments.
-struct Item {
-    text: &'static str,
-    id: &'static str,
-    args: Value,
-}
-
-fn item(text: &'static str, id: &'static str, args: Value) -> Item {
-    Item { text, id, args }
-}
+use crate::widgets::{Ctl, Cx};
 
 /// The arguments of `clipboard.paste`: the content lands where the menu was opened, when that point is
 /// known, else in the middle of the canvas (the command's default).
@@ -39,85 +27,23 @@ pub(crate) fn paste_args(world: Option<[f64; 2]>) -> Value {
     world.map_or_else(|| json!({}), |at| json!({ "at": at }))
 }
 
-/// The rows of the first block: the clipboard and deleting.
-fn edit_items(world: Option<[f64; 2]>) -> Vec<Item> {
-    vec![
-        item("Cut", "clipboard.cut", json!({})),
-        item("Copy", "clipboard.copy", json!({})),
-        item("Paste", "clipboard.paste", paste_args(world)),
-        item("Duplicate", "element.duplicate", json!({})),
-        item("Delete", "element.delete", json!({})),
-    ]
-}
-
-fn group_items() -> Vec<Item> {
-    vec![item("Group", "group.create", json!({})), item("Ungroup", "group.ungroup", json!({}))]
-}
-
-fn order_items() -> Vec<Item> {
-    vec![
-        item("Bring to front", "arrange.z_order", json!({ "op": "front" })),
-        item("Bring forward", "arrange.z_order", json!({ "op": "forward" })),
-        item("Send backward", "arrange.z_order", json!({ "op": "backward" })),
-        item("Send to back", "arrange.z_order", json!({ "op": "back" })),
-    ]
-}
-
 /// The edges of the Align block, in the order of the menu.
-pub const ALIGN_EDGES: [(&str, &str); 6] = [
-    ("Align left", "left"),
-    ("Align right", "right"),
-    ("Align top", "top"),
-    ("Align bottom", "bottom"),
-    ("Align horizontal centres", "center_x"),
-    ("Align vertical centres", "center_y"),
-];
-
-fn align_items() -> Vec<Item> {
-    ALIGN_EDGES.iter().map(|&(text, edge)| item(text, "arrange.align", json!({ "edge": edge }))).collect()
-}
-
-fn distribute_items() -> Vec<Item> {
-    vec![
-        item("Distribute horizontally", "arrange.distribute", json!({ "axis": "horizontal" })),
-        item("Distribute vertically", "arrange.distribute", json!({ "axis": "vertical" })),
-    ]
-}
-
-fn style_items() -> Vec<Item> {
-    vec![item("Copy style", "clipboard.copy_style", json!({})), item("Paste style", "clipboard.paste_style", json!({}))]
-}
-
-/// The blocks of rows the user opened (a block is a group of rows behind a row of its own), kept while the
-/// menu is open.
-#[derive(Clone, Default)]
-struct OpenBlocks(BTreeSet<&'static str>);
-
-fn blocks_id() -> Id {
-    Id::unique("context_menu.blocks")
-}
+pub const ALIGN_EDGES: [&str; 6] = ["left", "center_x", "right", "top", "center_y", "bottom"];
 
 /// The kinds that are shapes (`element.convert` turns one into another).
 const SHAPES: [&str; 3] = ["rectangle", "diamond", "ellipse"];
 /// The kinds that are lines or arrows.
 const LINEAR: [&str; 2] = ["line", "arrow"];
 
-/// What the selection allows, worked out from the model once per frame.
-struct Facts<'a> {
-    sel: &'a [SelectedElement],
+fn all_of(sel: &[SelectedElement], kinds: &[&str]) -> bool {
+    !sel.is_empty() && sel.iter().all(|e| kinds.contains(&e.kind.as_str()))
 }
 
-impl<'a> Facts<'a> {
-    fn all_of(&self, kinds: &[&str]) -> bool {
-        !self.sel.is_empty() && self.sel.iter().all(|e| kinds.contains(&e.kind.as_str()))
-    }
-
-    /// The only selected element, when exactly one is selected.
-    fn single(&self) -> Option<&'a SelectedElement> {
-        match self.sel {
-            [one] => Some(one),
-            _ => None,
-        }
+/// The only selected element, when exactly one is selected.
+fn single(sel: &[SelectedElement]) -> Option<&SelectedElement> {
+    match sel {
+        [one] => Some(one),
+        _ => None,
     }
 }
 
@@ -145,93 +71,21 @@ pub(crate) fn in_frame_ids(sel: &[SelectedElement]) -> Vec<&str> {
     sel.iter().filter(|e| e.frame.is_some()).map(|e| e.id.as_str()).collect()
 }
 
-/// The `element.convert` targets that apply to this selection, as (row text, arguments). Shapes become
-/// shapes and lines and arrows become lines and arrows, as the command says.
-pub(crate) fn convert_targets(sel: &[SelectedElement]) -> Vec<(&'static str, Value)> {
-    let f = Facts { sel };
-    if f.all_of(&SHAPES) {
+/// The `element.convert` arguments that apply to this selection: shapes become shapes and lines and arrows become
+/// lines and arrows, as the command says. The titles are the command's variants.
+pub(crate) fn convert_targets(sel: &[SelectedElement]) -> Vec<Value> {
+    if all_of(sel, &SHAPES) {
+        vec![json!({ "to": "rectangle" }), json!({ "to": "diamond" }), json!({ "to": "ellipse" })]
+    } else if all_of(sel, &LINEAR) {
         vec![
-            ("Convert to rectangle", json!({ "to": "rectangle" })),
-            ("Convert to diamond", json!({ "to": "diamond" })),
-            ("Convert to ellipse", json!({ "to": "ellipse" })),
-        ]
-    } else if f.all_of(&LINEAR) {
-        vec![
-            ("Convert to line", json!({ "to": "line" })),
-            ("Convert to sharp arrow", json!({ "to": "arrow", "arrow_type": "sharp" })),
-            ("Convert to round arrow", json!({ "to": "arrow", "arrow_type": "round" })),
-            ("Convert to elbow arrow", json!({ "to": "arrow", "arrow_type": "elbow" })),
+            json!({ "to": "line" }),
+            json!({ "to": "arrow", "arrow_type": "sharp" }),
+            json!({ "to": "arrow", "arrow_type": "round" }),
+            json!({ "to": "arrow", "arrow_type": "elbow" }),
         ]
     } else {
         Vec::new()
     }
-}
-
-/// Draws the menu when `st.context_menu` is set.
-pub fn show(ctx: &Context, cx: &mut Cx<'_>, st: &mut UiState) {
-    let Some(menu) = st.context_menu.clone() else {
-        ctx.data_mut(|d| d.remove::<OpenBlocks>(blocks_id()));
-        return;
-    };
-    let screen = ctx.content_rect();
-    // A click anywhere else closes the menu. The backdrop lies under the menu and over everything else.
-    let backdrop = Area::new(Id::unique("context_menu.backdrop"))
-        .order(Order::Foreground)
-        .fixed_pos(screen.min)
-        .show(ctx, |ui| ui.allocate_rect(screen, Sense::click()));
-    let outside = backdrop.inner.clicked() || backdrop.inner.secondary_clicked();
-
-    let mut chosen = false;
-    let pos = pos2(
-        menu.screen.x.clamp(screen.left() + SCREEN_GAP, (screen.right() - WIDTH - SCREEN_GAP).max(screen.left())),
-        menu.screen.y.max(screen.top() + SCREEN_GAP),
-    );
-    let max_height = (screen.height() - 2.0 * SCREEN_GAP).max(120.0);
-    let compact = cx.layout.compact;
-    Area::new(Id::unique("context_menu")).order(Order::Foreground).fixed_pos(pos).constrain(true).show(ctx, |ui| {
-        panel_frame(&cx.pal).show(ui, |ui| {
-            ui.set_width(WIDTH);
-            ui.spacing_mut().item_spacing.y = 1.0;
-            let mut draw_rows = |ui: &mut Ui| {
-                chosen = cx.with_origin(Origin::ContextMenu, |cx| match &menu.locked {
-                    Some(id) => locked_rows(ui, cx, id, menu.world),
-                    None => rows(ui, cx, st, menu.world),
-                });
-            };
-            // A short touch screen scrolls the menu; elsewhere it is as tall as its rows.
-            if compact {
-                egui::ScrollArea::vertical()
-                    .max_height(max_height - 24.0)
-                    .auto_shrink([true, true])
-                    .show(ui, draw_rows);
-            } else {
-                draw_rows(ui);
-            }
-        });
-    });
-    if chosen {
-        st.context_menu = None;
-    } else if outside {
-        cx.verb(Verb::CloseOverlays);
-    }
-}
-
-/// The rows for a locked element, which cannot be selected: Unlock (which selects what it unlocks, as
-/// Excalidraw does), then the rows that do not need a selection.
-fn locked_rows(ui: &mut Ui, cx: &mut Cx<'_>, element: &str, world: Option<[f64; 2]>) -> bool {
-    let mut chosen = false;
-    let unlock = Ctl::new("element.unlock_all").args(unlock_args(element));
-    chosen |= cx.menu_item(ui, &unlock, "Unlock").clicked();
-    separator(ui, &cx.pal);
-    let rest = [
-        item("Paste", "clipboard.paste", paste_args(world)),
-        item("Select all", "selection.all", json!({})),
-        item("Zoom to fit", "view.zoom_to_fit", json!({ "scope": "all" })),
-    ];
-    for it in rest {
-        chosen |= cx.menu_item(ui, &Ctl::new(it.id).args(it.args), it.text).clicked();
-    }
-    chosen
 }
 
 /// The arguments of the Unlock row: that one element (its whole group unlocks with it).
@@ -239,164 +93,335 @@ pub(crate) fn unlock_args(element: &str) -> Value {
     json!({ "ids": [element] })
 }
 
-/// Draws rows and remembers whether one was chosen.
-struct Rows {
-    chosen: bool,
+// ---- the entries ----
+
+/// When a row is left out.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Show {
+    /// While the engine does not refuse the command.
+    WhenAvailable,
+    /// Always; a refused row greys.
+    Always,
 }
 
-impl Rows {
-    fn block(&mut self, ui: &mut Ui, cx: &mut Cx<'_>, items: Vec<Item>, indent: bool) {
-        for it in items {
-            let ctl = Ctl::new(it.id).args(it.args);
-            ui.horizontal(|ui| {
-                if indent {
-                    ui.add_space(12.0);
-                }
-                self.chosen |= cx.menu_item(ui, &ctl, it.text).clicked();
-            });
-        }
+/// What a row does.
+enum Act {
+    /// Calls a command. The label is the registry's unless the row has its own.
+    Command(String, Value),
+    /// Applies a UI verb. The verb leads to `gate`, whose refusal leaves the row out.
+    Verb { verb: Verb, label: &'static str, gate: Option<&'static str> },
+    /// Opens the rename dialog of a frame.
+    RenameFrame(String),
+    /// Opens a flyout.
+    Submenu { label: &'static str, entries: Vec<Entry> },
+}
+
+/// One entry of a menu.
+struct Entry {
+    act: Act,
+    icon: Option<Icon>,
+    /// A label of the row's own, for calls whose arguments no registry title names.
+    label: Option<&'static str>,
+    check: Option<bool>,
+    show: Show,
+    dialog: bool,
+    /// Starts a new section.
+    sep_before: bool,
+}
+
+impl Entry {
+    fn new(act: Act) -> Self {
+        Self { act, icon: None, label: None, check: None, show: Show::WhenAvailable, dialog: false, sep_before: false }
     }
 
-    fn row(&mut self, ui: &mut Ui, cx: &mut Cx<'_>, ctl: Ctl<'_>, text: &str, indent: bool) {
-        ui.horizontal(|ui| {
-            if indent {
-                ui.add_space(12.0);
+    fn command(id: &str) -> Self {
+        Self::with_args(id, json!({}))
+    }
+
+    fn with_args(id: &str, args: Value) -> Self {
+        Self::new(Act::Command(id.to_owned(), args))
+    }
+
+    fn verb(verb: Verb, label: &'static str, gate: Option<&'static str>) -> Self {
+        Self::new(Act::Verb { verb, label, gate })
+    }
+
+    fn submenu(label: &'static str, icon: Icon, entries: Vec<Entry>) -> Self {
+        Self::new(Act::Submenu { label, entries }).icon(icon)
+    }
+
+    fn icon(mut self, icon: Icon) -> Self {
+        self.icon = Some(icon);
+        self
+    }
+
+    fn label(mut self, label: &'static str) -> Self {
+        self.label = Some(label);
+        self
+    }
+
+    fn checked(mut self, on: bool) -> Self {
+        self.check = Some(on);
+        self
+    }
+
+    fn always(mut self) -> Self {
+        self.show = Show::Always;
+        self
+    }
+
+    fn dialog(mut self) -> Self {
+        self.dialog = true;
+        self
+    }
+
+    fn section(mut self) -> Self {
+        self.sep_before = true;
+        self
+    }
+
+    /// The command this entry stands on, if it has one.
+    fn command_id(&self) -> Option<&str> {
+        match &self.act {
+            Act::Command(id, _) => Some(id),
+            Act::Verb { gate, .. } => *gate,
+            Act::RenameFrame(_) | Act::Submenu { .. } => None,
+        }
+    }
+}
+
+/// What the menu is about.
+enum Target<'a> {
+    /// Nothing under the pointer.
+    Empty,
+    /// The selection.
+    Selection(&'a [SelectedElement]),
+    /// A locked element, which cannot be selected.
+    Locked(&'a str),
+}
+
+/// The entries of the menu for a target. `stats` and `zen` are the states of the two view toggles that live in the
+/// UI.
+fn entries(target: &Target<'_>, model: &Model, world: Option<[f64; 2]>, stats: bool, zen: bool) -> Vec<Entry> {
+    let paste = || Entry::with_args("clipboard.paste", paste_args(world)).icon(Icon::Paste).always();
+    let select_all = || Entry::command("selection.all").icon(Icon::SelectAll);
+    let fit = || Entry::with_args("view.zoom_to_fit", json!({ "scope": "all" })).icon(Icon::ZoomFit);
+    match target {
+        Target::Empty => vec![
+            paste(),
+            select_all().section(),
+            fit(),
+            Entry::submenu("View", Icon::Eye, view_entries(model, stats, zen)).section(),
+        ],
+        Target::Locked(id) => vec![
+            Entry::with_args("element.unlock_all", unlock_args(id)).label("Unlock").icon(Icon::Unlock).always(),
+            paste().section(),
+            select_all(),
+            fit(),
+        ],
+        Target::Selection(sel) => selection_entries(sel, paste()),
+    }
+}
+
+fn view_entries(model: &Model, stats: bool, zen: bool) -> Vec<Entry> {
+    vec![
+        Entry::with_args("settings.cycle", json!({ "key": "view.grid_style" })).icon(Icon::GridLines).always(),
+        Entry::with_args("settings.toggle", json!({ "key": "snap.grid" }))
+            .icon(Icon::SnapGrid)
+            .checked(model.setting_bool("snap.grid"))
+            .always(),
+        Entry::verb(Verb::ToggleZen, "Zen mode", None).checked(zen),
+        Entry::command("view.set_view_only").checked(model.view_only).always(),
+        Entry::verb(Verb::ToggleStats, "Stats panel", None).checked(stats),
+        Entry::command("element.unlock_all").icon(Icon::Unlock).section(),
+    ]
+}
+
+fn selection_entries(sel: &[SelectedElement], paste: Entry) -> Vec<Entry> {
+    let out = vec![
+        Entry::command("clipboard.cut").icon(Icon::Cut),
+        Entry::command("clipboard.copy").icon(Icon::Copy),
+        paste,
+        Entry::command("element.duplicate").icon(Icon::Duplicate),
+        Entry::command("element.delete").icon(Icon::Delete),
+        Entry::command("group.create").icon(Icon::Group).section(),
+        Entry::command("group.ungroup").icon(Icon::Ungroup),
+        Entry::submenu("Arrange", Icon::Layers, arrange_entries()).section(),
+        Entry::submenu("Align", Icon::AlignLeft, align_entries()),
+        Entry::submenu("Flip & convert", Icon::Convert, flip_entries(sel)),
+        Entry::submenu("Frame", Icon::Frame, frame_entries(sel)),
+        Entry::submenu("Text", Icon::Text, text_entries(sel)),
+        Entry::submenu("Copy as", Icon::Export, copy_as_entries()),
+        Entry::command("element.lock").icon(Icon::Lock).section(),
+        Entry::verb(Verb::OpenLinkEditor, "Link", Some("element.set_link")).icon(Icon::Link).dialog(),
+        Entry::command("element.open_link").icon(Icon::Link),
+        Entry::command("library.add").icon(Icon::Library),
+        Entry::command("clipboard.copy_style").icon(Icon::Brush).section(),
+        Entry::command("clipboard.paste_style").icon(Icon::Brush),
+    ];
+    out
+}
+
+fn arrange_entries() -> Vec<Entry> {
+    let z = |op: &str, icon: Icon| Entry::with_args("arrange.z_order", json!({ "op": op })).icon(icon);
+    vec![
+        z("front", Icon::LayerFront),
+        z("forward", Icon::LayerForward),
+        z("backward", Icon::LayerBackward),
+        z("back", Icon::LayerBack),
+        Entry::command("frame.wrap").icon(Icon::Frame).section(),
+    ]
+}
+
+fn align_entries() -> Vec<Entry> {
+    let icons =
+        [Icon::AlignLeft, Icon::AlignCenterX, Icon::AlignRight, Icon::AlignTop, Icon::AlignCenterY, Icon::AlignBottom];
+    let mut out: Vec<Entry> = ALIGN_EDGES
+        .iter()
+        .zip(icons)
+        .map(|(edge, icon)| Entry::with_args("arrange.align", json!({ "edge": edge })).icon(icon))
+        .collect();
+    out.push(Entry::with_args("arrange.distribute", json!({ "axis": "horizontal" })).icon(Icon::DistributeH).section());
+    out.push(Entry::with_args("arrange.distribute", json!({ "axis": "vertical" })).icon(Icon::DistributeV));
+    out
+}
+
+fn flip_entries(sel: &[SelectedElement]) -> Vec<Entry> {
+    let mut out = vec![
+        Entry::with_args("element.flip", json!({ "axis": "horizontal" })).icon(Icon::FlipH),
+        Entry::with_args("element.flip", json!({ "axis": "vertical" })).icon(Icon::FlipV),
+    ];
+    let targets = convert_targets(sel);
+    for (i, args) in targets.into_iter().enumerate() {
+        let entry = Entry::with_args("element.convert", args);
+        out.push(if i == 0 { entry.section() } else { entry });
+    }
+    out.push(Entry::command("arrow.edit_points").section());
+    out.push(Entry::command("text.wrap_in_container"));
+    out
+}
+
+fn frame_entries(sel: &[SelectedElement]) -> Vec<Entry> {
+    // With one frame selected the rows name it; otherwise the commands take "the selected frame" and the engine
+    // says why they cannot.
+    let frame = single(sel).filter(|e| e.kind == "frame");
+    let frame_args = frame.map_or_else(|| json!({}), |e| json!({ "frame": e.id }));
+    let inside = in_frame_ids(sel);
+    let remove_args = if inside.is_empty() { json!({}) } else { json!({ "ids": inside }) };
+    let mut out = vec![
+        Entry::with_args("frame.unwrap", frame_args.clone()),
+        Entry::with_args("frame.select_children", frame_args),
+    ];
+    if let Some(frame) = frame {
+        out.push(Entry::new(Act::RenameFrame(frame.id.clone())).label("Rename frame").dialog().always());
+    }
+    out.push(Entry::with_args("frame.remove", remove_args));
+    out
+}
+
+fn text_entries(sel: &[SelectedElement]) -> Vec<Entry> {
+    let mut out = Vec::new();
+    if let Some(args) = bind_args(sel) {
+        out.push(Entry::with_args("text.bind", args));
+    }
+    if let Some(args) = unbind_args(sel) {
+        out.push(Entry::with_args("text.unbind", args));
+    }
+    out
+}
+
+fn copy_as_entries() -> Vec<Entry> {
+    // Whether the selection holds a text is checked when the copy runs, and a click on the row says so.
+    ["png", "svg", "text"].map(|format| Entry::with_args("clipboard.copy_as", json!({ "format": format }))).into()
+}
+
+/// Leaves out what the engine refuses (see the module text), and the flyouts that end up empty.
+fn prune(entries: Vec<Entry>, model: &Model) -> Vec<Entry> {
+    let mut out: Vec<Entry> = Vec::new();
+    let mut section = false;
+    for mut entry in entries {
+        section |= entry.sep_before;
+        if let Act::Submenu { entries, .. } = &mut entry.act {
+            *entries = prune(std::mem::take(entries), model);
+            if entries.is_empty() {
+                continue;
             }
-            self.chosen |= cx.menu_item(ui, &ctl, text).clicked();
-        });
+        }
+        let registered_and_refused =
+            entry.command_id().is_some_and(|id| model.command(id).is_some() && model.refusal_text(id).is_some());
+        if entry.show == Show::WhenAvailable && registered_and_refused {
+            continue;
+        }
+        entry.sep_before = section && !out.is_empty();
+        section = false;
+        out.push(entry);
     }
+    out
+}
 
-    /// A row that applies a UI verb and is greyed, with the engine's text, while `command` is refused.
-    fn gated_verb(&mut self, ui: &mut Ui, cx: &mut Cx<'_>, verb: Verb, text: &str, command: &str) {
-        let reason = cx.refusal(command);
-        self.chosen |= cx.verb_item_gated(ui, verb, text, reason).clicked();
-    }
-
-    fn verb(&mut self, ui: &mut Ui, cx: &mut Cx<'_>, verb: Verb, text: &str, indent: bool) {
-        ui.horizontal(|ui| {
-            if indent {
-                ui.add_space(12.0);
-            }
-            self.chosen |= cx.verb_item(ui, verb, text).clicked();
-        });
-    }
-
-    /// A row that opens or closes a block of rows; returns whether the block is open.
-    fn toggle(&mut self, ui: &mut Ui, cx: &mut Cx<'_>, key: &'static str, title: &str) -> bool {
-        let open = ui.data_mut(|d| d.get_temp_mut_or_default::<OpenBlocks>(blocks_id()).0.contains(key));
-        if cx.plain_row(ui, title).clicked() {
-            ui.data_mut(|d| {
-                let blocks = &mut d.get_temp_mut_or_default::<OpenBlocks>(blocks_id()).0;
-                if !blocks.remove(key) {
-                    blocks.insert(key);
+/// Draws the entries into a menu.
+fn draw(menu: &mut Menu<'_, '_, '_>, entries: Vec<Entry>, st: &mut UiState) {
+    for entry in entries {
+        if entry.sep_before {
+            menu.separator();
+        }
+        let mut row = Row::new();
+        if let Some(icon) = entry.icon {
+            row = row.icon(icon);
+        }
+        if let Some(on) = entry.check {
+            row = row.checked(on);
+        }
+        if entry.dialog {
+            row = row.dialog();
+        }
+        match entry.act {
+            Act::Command(id, args) => {
+                if let Some(label) = entry.label {
+                    row = row.label(label);
                 }
-            });
-        }
-        open
-    }
-}
-
-/// Draws the rows of a menu over a selection (or over the empty canvas) and returns true when one was chosen.
-fn rows(ui: &mut Ui, cx: &mut Cx<'_>, st: &mut UiState, world: Option<[f64; 2]>) -> bool {
-    let sel = cx.model.selection.clone();
-    let facts = Facts { sel: &sel };
-    let mut r = Rows { chosen: false };
-    r.block(ui, cx, edit_items(world), false);
-    separator(ui, &cx.pal);
-    r.block(ui, cx, group_items(), false);
-    separator(ui, &cx.pal);
-    r.block(ui, cx, order_items(), false);
-    separator(ui, &cx.pal);
-    r.block(ui, cx, vec![item("Lock or unlock", "element.lock", json!({}))], false);
-    // These rows need a selection (of one, of two, of three). They stay in the menu and grey out with the
-    // engine's text when the command is refused; a count the engine only checks when it runs is refused then.
-    r.gated_verb(ui, cx, Verb::OpenLinkEditor, "Link…", "element.set_link");
-    r.block(ui, cx, vec![item("Open link", "element.open_link", json!({}))], false);
-    separator(ui, &cx.pal);
-    element_blocks(ui, cx, st, &mut r, &facts);
-    separator(ui, &cx.pal);
-    if r.toggle(ui, cx, "align", "Align and distribute…") {
-        r.block(ui, cx, align_items(), true);
-        r.block(ui, cx, distribute_items(), true);
-    }
-    separator(ui, &cx.pal);
-    r.block(ui, cx, vec![item("Select all", "selection.all", json!({}))], false);
-    r.block(ui, cx, style_items(), false);
-    r.block(ui, cx, vec![item("Zoom to fit", "view.zoom_to_fit", json!({ "scope": "all" }))], false);
-    separator(ui, &cx.pal);
-    view_block(ui, cx, &mut r);
-    r.chosen
-}
-
-/// The blocks that act on the selected elements: copy as, flip and convert, frame, text.
-///
-/// A row whose command does not apply to this selection is greyed, not left out, and its tooltip is the
-/// engine's own text (`Session::availability` runs the same check as `execute`). Left out are only the rows
-/// that need an argument the selection cannot give: the convert targets (they depend on the kind), binding and
-/// unbinding a label (they name the text and the container, so their block shows only when the selection has both)
-/// and the rename dialog of a frame.
-fn element_blocks(ui: &mut Ui, cx: &mut Cx<'_>, st: &mut UiState, r: &mut Rows, f: &Facts<'_>) {
-    if r.toggle(ui, cx, "copy_as", "Copy as…") {
-        // Whether the selection holds a text is checked when the copy runs, and a click on this row says so.
-        for (text, format) in [("Copy as PNG", "png"), ("Copy as SVG", "svg"), ("Copy as text", "text")] {
-            r.row(ui, cx, Ctl::new("clipboard.copy_as").args(json!({ "format": format })), text, true);
-        }
-    }
-    if r.toggle(ui, cx, "transform", "Flip and convert…") {
-        for (text, axis) in [("Flip horizontal", "horizontal"), ("Flip vertical", "vertical")] {
-            r.row(ui, cx, Ctl::new("element.flip").args(json!({ "axis": axis })), text, true);
-        }
-        for (text, args) in convert_targets(f.sel) {
-            r.row(ui, cx, Ctl::new("element.convert").args(args), text, true);
-        }
-        r.row(ui, cx, Ctl::new("arrow.edit_points"), "Edit line points", true);
-        r.row(ui, cx, Ctl::new("text.wrap_in_container"), "Wrap text in a shape", true);
-        r.row(ui, cx, Ctl::new("library.add"), "Add to library", true);
-    }
-    if r.toggle(ui, cx, "frame", "Frame…") {
-        // With one frame selected the rows name it; otherwise the command takes "the selected frame" and the
-        // engine says why it cannot.
-        let frame = f.single().filter(|e| e.kind == "frame");
-        let frame_args = frame.map_or_else(|| json!({}), |e| json!({ "frame": e.id }));
-        r.row(ui, cx, Ctl::new("frame.wrap"), "Wrap in frame", true);
-        r.row(ui, cx, Ctl::new("frame.unwrap").args(frame_args.clone()), "Unwrap frame", true);
-        r.row(ui, cx, Ctl::new("frame.select_children").args(frame_args), "Select all in frame", true);
-        if let Some(frame) = frame
-            && cx.plain_row(ui, "Rename frame…").clicked()
-        {
-            st.open_rename(RenameTarget::Frame(frame.id.clone()), "");
-        }
-        let inside = in_frame_ids(f.sel);
-        let remove_args = if inside.is_empty() { json!({}) } else { json!({ "ids": inside }) };
-        r.row(ui, cx, Ctl::new("frame.remove").args(remove_args), "Remove from frame", true);
-    }
-    let bind = bind_args(f.sel);
-    let unbind = unbind_args(f.sel);
-    if (bind.is_some() || unbind.is_some()) && r.toggle(ui, cx, "text", "Text…") {
-        if let Some(args) = bind {
-            r.row(ui, cx, Ctl::new("text.bind").args(args), "Bind text to shape", true);
-        }
-        if let Some(args) = unbind {
-            r.row(ui, cx, Ctl::new("text.unbind").args(args), "Unbind text", true);
+                menu.command(Ctl::new(&id).args(args), row);
+            }
+            Act::Verb { verb, label, gate } => {
+                let reason = gate.and_then(|id| menu.refusal(id));
+                menu.verb(verb, label, row, reason);
+            }
+            Act::RenameFrame(frame) => {
+                let label = entry.label.unwrap_or("Rename frame");
+                if menu.local(label, row).clicked() {
+                    st.open_rename(RenameTarget::Frame(frame), "");
+                }
+            }
+            Act::Submenu { label, entries } => {
+                menu.submenu(label, row, |flyout| draw(flyout, entries, st));
+            }
         }
     }
 }
 
-/// The view block: grid, snapping, zen, view-only, stats and unlock all.
-fn view_block(ui: &mut Ui, cx: &mut Cx<'_>, r: &mut Rows) {
-    if !r.toggle(ui, cx, "view", "View and snapping…") {
+/// Draws the menu when `st.context_menu` is set.
+pub fn show(ctx: &Context, cx: &mut Cx<'_>, st: &mut UiState) {
+    let Some(menu) = st.context_menu.clone() else {
         return;
+    };
+    let sel = cx.model.selection.clone();
+    let target = match &menu.locked {
+        Some(id) => Target::Locked(id),
+        None if sel.is_empty() => Target::Empty,
+        None => Target::Selection(&sel),
+    };
+    let list = prune(entries(&target, cx.model, menu.world, st.stats_open, st.zen), cx.model);
+    let spec = Popup {
+        key: egui::Id::unique(("context_menu", menu.opened)),
+        label: "Context menu",
+        pivot: Align2::LEFT_TOP,
+        at: menu.screen,
+    };
+    let result =
+        cx.with_origin(Origin::ContextMenu, |cx| crate::menu_kit::popup(ctx, cx, &spec, |m| draw(m, list, st)));
+    if result.picked.any() {
+        st.context_menu = None;
+    } else if result.outside {
+        cx.verb(Verb::CloseOverlays);
     }
-    let grid = Ctl::new("settings.cycle").args(json!({ "key": "view.grid_style" })).label("Change the grid");
-    r.row(ui, cx, grid, "Change the grid", true);
-    let snap = Ctl::new("settings.toggle")
-        .args(json!({ "key": "snap.grid" }))
-        .label("Snap to grid")
-        .selected(cx.model.setting_bool("snap.grid"));
-    r.row(ui, cx, snap, "Snap to grid", true);
-    r.verb(ui, cx, Verb::ToggleZen, "Zen mode", true);
-    let view_only = Ctl::new("view.set_view_only").selected(cx.model.view_only);
-    r.row(ui, cx, view_only, "View-only mode", true);
-    r.verb(ui, cx, Verb::ToggleStats, "Stats panel", true);
-    r.row(ui, cx, Ctl::new("element.unlock_all"), "Unlock all", true);
 }

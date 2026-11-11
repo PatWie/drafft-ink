@@ -217,7 +217,7 @@ fn the_tab_menu_duplicates_the_tab_it_was_opened_on() {
     open_tab_menu(&mut h, "First");
     assert!(h.state().state.tab_menu.is_some());
     h.state_mut().clear();
-    h.get_by_label("Duplicate").click();
+    h.get_by_label("Duplicate tab").click();
     h.run();
     assert_eq!(calls(&h), vec![Call::new(Origin::ContextMenu, "tab.duplicate", json!({ "tab": first }))]);
     apply(&mut h);
@@ -269,7 +269,7 @@ fn the_tab_menu_renames_and_closes_its_tab() {
     let mut h = dialog::harness(f);
     h.run();
     open_tab_menu(&mut h, "A");
-    h.get_by_label("Rename…").click();
+    h.get_by_label("Rename tab…").click();
     h.run();
     assert!(h.state().state.tab_menu.is_none());
     assert_eq!(h.state().state.rename.as_ref().map(|r| r.text.as_str()), Some("A"));
@@ -278,7 +278,7 @@ fn the_tab_menu_renames_and_closes_its_tab() {
 
     open_tab_menu(&mut h, "A");
     h.state_mut().clear();
-    h.get_by_label("Close").click();
+    h.get_by_label("Close tab").click();
     h.run();
     assert_eq!(calls(&h), vec![Call::new(Origin::ContextMenu, "tab.close", json!({ "tab": a }))]);
     let report = apply(&mut h);

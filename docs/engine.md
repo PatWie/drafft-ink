@@ -147,6 +147,7 @@ Optional builders, all `const`, chained after `new`:
 | `.example(r#"{..}"#)` | A worked argument example as JSON text. Required when an `agent: true` command has required arguments. It must parse. |
 | `.coalesce("key", ms)` | Merge a repeat of the command on the same elements within `ms` of the previous repeat into the previous undo step (section 5). Applies to a plain call only: the last step of a gesture and a batch never merge. |
 | `.shortcuts(&[Binding])` | Default keys. `Binding::new(&["Mod+0"], Scope::Canvas)`, then `.with_args(json)`, `.titled("...")`, `.mac(&[..])`. Section 6.1 of `docs/commands.md` is the source of the keys. See item 13 of section 6. |
+| `.variants(&[Variant])` | Titles for calls without keys: `Variant::new(r#"{"edge":"center_x"}"#, "Align centres horizontally")`. A binding with `.titled` names its call by its keys; a variant names a call that has none. Menus, panels and the palette show these titles (`Model::label`). A test checks that the arguments parse and that no title is used twice. |
 | `.planned("reason")` | Registered but refuses with `not_supported`. The catalog, palette and tests still see it. |
 | `.own_transaction()` | `Txn::Own`: the handler manages document state. Only the `gesture` and `history` families may use it (tested). |
 

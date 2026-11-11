@@ -4,8 +4,8 @@
 
 use drafftink_engine::Origin;
 use egui::{
-    Align2, Color32, CornerRadius, Frame, Margin, Painter, Rect, Response, Role, Sense, Shadow, Stroke, StrokeKind, Ui,
-    Vec2, WidgetInfo, pos2, vec2,
+    Color32, CornerRadius, Frame, Margin, Painter, Rect, Response, Role, Sense, Shadow, Stroke, StrokeKind, Ui, Vec2,
+    WidgetInfo, pos2, vec2,
 };
 use serde_json::{Value, json};
 
@@ -196,6 +196,29 @@ impl<'a> Cx<'a> {
         size: Vec2,
         paint: impl FnOnce(&Painter, Rect, Look),
     ) -> Response {
+        self.command_widget_with(ui, ctl, size, true, paint)
+    }
+
+    /// Like [`Cx::command_widget`] without a tooltip while the command can run: a menu row already shows its
+    /// label and shortcut. The refusal text is still the tooltip of a greyed row.
+    pub(crate) fn command_widget_quiet(
+        &mut self,
+        ui: &mut Ui,
+        ctl: &Ctl<'_>,
+        size: Vec2,
+        paint: impl FnOnce(&Painter, Rect, Look),
+    ) -> Response {
+        self.command_widget_with(ui, ctl, size, false, paint)
+    }
+
+    fn command_widget_with(
+        &mut self,
+        ui: &mut Ui,
+        ctl: &Ctl<'_>,
+        size: Vec2,
+        tooltip: bool,
+        paint: impl FnOnce(&Painter, Rect, Look),
+    ) -> Response {
         // While a text edit runs, a style choice goes to the text editor, which applies it to the selected range
         // or to the element and hands the result to `text.edit_end` (docs/exceptions.md E16). `style.set`
         // itself would refuse with `text_editing`, so the control must not grey out for that.
@@ -227,6 +250,7 @@ impl<'a> Cx<'a> {
             .inner;
         let resp = match reason {
             Some(r) => resp.on_disabled_hover_text(r),
+            None if !tooltip => resp,
             None => {
                 let tip = if ctl.label.is_empty() {
                     self.model.tooltip(ctl.id, &ctl.args)
@@ -358,110 +382,9 @@ impl<'a> Cx<'a> {
         })
     }
 
-    /// A row of a menu: label left, shortcut right.
+    /// A row of a menu or list that runs a command, with `text` as its label (see [`crate::menu_kit`]).
     pub fn menu_item(&mut self, ui: &mut Ui, ctl: &Ctl<'_>, text: &str) -> Response {
-        let pal = self.pal;
-        let shortcut = self.model.shortcut_label(ctl.id, &ctl.args);
-        let width = ui.available_width().max(160.0);
-        let ctl = Ctl { label: if ctl.label.is_empty() { text.to_owned() } else { ctl.label.clone() }, ..ctl.clone() };
-        let text = text.to_owned();
-        self.command_widget(ui, &ctl, vec2(width, self.layout.row_height()), move |p, rect, look| {
-            if look.hovered && look.enabled {
-                p.rect_filled(rect, theme::BUTTON_RADIUS, pal.hover);
-            }
-            let c = if look.enabled { pal.text } else { pal.muted.gamma_multiply(0.6) };
-            p.text(
-                pos2(rect.left() + 10.0, rect.center().y),
-                Align2::LEFT_CENTER,
-                &text,
-                egui::FontId::proportional(13.0),
-                c,
-            );
-            if let Some(k) = shortcut {
-                p.text(
-                    pos2(rect.right() - 10.0, rect.center().y),
-                    Align2::RIGHT_CENTER,
-                    k,
-                    egui::FontId::proportional(11.0),
-                    pal.muted,
-                );
-            }
-        })
-    }
-
-    /// A menu row that applies a UI verb. The key is the verb's own key from the keymap, if it has one.
-    pub fn verb_item(&mut self, ui: &mut Ui, verb: Verb, text: &str) -> Response {
-        self.verb_item_gated(ui, verb, text, None)
-    }
-
-    /// Like [`Cx::verb_item`], greyed with `reason` as its tooltip when `reason` is `Some`. The reason is the text
-    /// of the refusal of the command the verb leads to; a greyed row does nothing.
-    pub fn verb_item_gated(&mut self, ui: &mut Ui, verb: Verb, text: &str, reason: Option<String>) -> Response {
-        let pal = self.pal;
-        let enabled = reason.is_none();
-        let key = crate::keymap::verb_key_label(verb, self.model.mac);
-        let row_height = self.layout.row_height();
-        let resp = ui
-            .add_enabled_ui(enabled, |ui| {
-                let (rect, resp) =
-                    ui.allocate_exact_size(vec2(ui.available_width().max(160.0), row_height), Sense::click());
-                if ui.is_rect_visible(rect) {
-                    if resp.hovered() && enabled {
-                        ui.painter().rect_filled(rect, theme::BUTTON_RADIUS, pal.hover);
-                    }
-                    let color = if enabled { pal.text } else { pal.muted.gamma_multiply(0.6) };
-                    ui.painter().text(
-                        pos2(rect.left() + 10.0, rect.center().y),
-                        Align2::LEFT_CENTER,
-                        text,
-                        egui::FontId::proportional(13.0),
-                        color,
-                    );
-                    if let Some(k) = key {
-                        ui.painter().text(
-                            pos2(rect.right() - 10.0, rect.center().y),
-                            Align2::RIGHT_CENTER,
-                            k,
-                            egui::FontId::proportional(11.0),
-                            pal.muted,
-                        );
-                    }
-                }
-                resp.widget_info(|| WidgetInfo::labeled(Role::Button, enabled, text));
-                resp
-            })
-            .inner;
-        match reason {
-            Some(r) => resp.on_disabled_hover_text(r),
-            None => {
-                if resp.clicked() {
-                    self.verb(verb);
-                }
-                resp
-            }
-        }
-    }
-
-    /// A menu row that only changes what the UI shows (opens a block of rows, opens a dialog). It is not a
-    /// command and is never greyed.
-    pub fn plain_row(&mut self, ui: &mut Ui, text: &str) -> Response {
-        let pal = self.pal;
-        let (rect, resp) =
-            ui.allocate_exact_size(vec2(ui.available_width().max(160.0), self.layout.row_height()), Sense::click());
-        if ui.is_rect_visible(rect) {
-            if resp.hovered() || resp.has_focus() {
-                ui.painter().rect_filled(rect, theme::BUTTON_RADIUS, pal.hover);
-            }
-            ui.painter().text(
-                pos2(rect.left() + 10.0, rect.center().y),
-                Align2::LEFT_CENTER,
-                text,
-                egui::FontId::proportional(13.0),
-                pal.text,
-            );
-        }
-        resp.widget_info(|| WidgetInfo::labeled(Role::Button, true, text));
-        resp
+        crate::menu_kit::command_row(self, ui, ctl, &crate::menu_kit::Row::new().label(text))
     }
 
     /// An icon button that only changes what the UI shows and is not a verb of the catalog (collapsing a panel

@@ -5,14 +5,13 @@ use drafftink_engine::Origin;
 use egui::{Align2, Area, Context, Id, Order, Rect, vec2};
 use serde_json::json;
 
-use crate::action::{HostRequest, UiAction, Verb};
+use crate::action::{HostRequest, Verb};
 use crate::icons::{self, Icon};
+use crate::menu_kit::{MENU_WIDTH, Menu, Row};
 use crate::model::CollabStatus;
 use crate::state::UiState;
 use crate::theme::MARGIN;
-use crate::widgets::{Ctl, Cx, panel_frame, separator};
-
-const MENU_WIDTH: f32 = 220.0;
+use crate::widgets::{Ctl, Cx, panel_frame};
 
 /// Draws the two buttons and, when open, the menu.
 pub fn show(ctx: &Context, cx: &mut Cx<'_>, st: &mut UiState) {
@@ -59,108 +58,63 @@ pub fn show(ctx: &Context, cx: &mut Cx<'_>, st: &mut UiState) {
     }
 }
 
-/// Collects which kind of row was chosen, so the menu closes after one.
-struct Rows {
-    /// A command ran: the menu closes with `ui.close_overlays`, which comes after the command.
-    command: bool,
-    /// A verb or a request for the app: the verb opens what it opens (and closes the menu itself), so the menu is
-    /// closed without a second verb that would close the dialog the first one opened.
-    local: bool,
-}
-
-impl Rows {
-    fn command(&mut self, ui: &mut egui::Ui, cx: &mut Cx<'_>, ctl: Ctl<'_>, text: &str) {
-        if cx.menu_item(ui, &ctl, text).clicked() {
-            self.command = true;
-        }
-    }
-
-    fn verb(&mut self, ui: &mut egui::Ui, cx: &mut Cx<'_>, verb: Verb, text: &str) {
-        if cx.verb_item(ui, verb, text).clicked() {
-            self.local = true;
-        }
-    }
-
-    fn host(&mut self, ui: &mut egui::Ui, cx: &mut Cx<'_>, request: HostRequest, text: &str) {
-        let (rect, resp) =
-            ui.allocate_exact_size(vec2(ui.available_width().max(160.0), cx.layout.row_height()), egui::Sense::click());
-        if ui.is_rect_visible(rect) {
-            if resp.hovered() {
-                ui.painter().rect_filled(rect, crate::theme::BUTTON_RADIUS, cx.pal.hover);
-            }
-            ui.painter().text(
-                egui::pos2(rect.left() + 10.0, rect.center().y),
-                Align2::LEFT_CENTER,
-                text,
-                egui::FontId::proportional(13.0),
-                cx.pal.text,
-            );
-        }
-        resp.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, text));
-        if resp.clicked() {
-            cx.emit(UiAction::Host(request));
-            self.local = true;
-        }
-    }
-}
-
-/// Draws the rows. Returns true when a verb or app request was chosen and the menu must be closed by the caller.
+/// Draws the rows, grouped under headings. Returns true when a verb or app request was chosen and the menu must be
+/// closed by the caller; a command closes it here, after the call is made.
 fn menu_rows(ui: &mut egui::Ui, cx: &mut Cx<'_>) -> bool {
-    let mut rows = Rows { command: false, local: false };
-    rows.command(ui, cx, Ctl::new("tab.new"), "New tab");
-    rows.verb(ui, cx, Verb::OpenFile, "Open…");
-    rows.verb(ui, cx, Verb::OpenRecent, "Open recent…");
-    rows.command(ui, cx, Ctl::new("doc.save"), "Save");
-    rows.verb(ui, cx, Verb::SaveAs, "Save as…");
-    rows.verb(ui, cx, Verb::RenameDocument, "Rename document…");
-    separator(ui, &cx.pal);
-    rows.command(
-        ui,
-        cx,
-        Ctl::new("doc.export").args(json!({ "format": "png" })).label("Export as PNG"),
-        "Export as PNG",
-    );
-    rows.verb(ui, cx, Verb::OpenExport, "Export…");
-    rows.command(
-        ui,
-        cx,
-        Ctl::new("clipboard.copy_as").args(json!({ "format": "png" })).label("Copy selection as PNG"),
-        "Copy selection as PNG",
-    );
-    export_scale_row(ui, cx);
-    separator(ui, &cx.pal);
-    rows.verb(ui, cx, Verb::InsertImage, "Insert image…");
-    rows.host(ui, cx, HostRequest::PickLibrary, "Open a library as a tab…");
-    rows.command(
-        ui,
-        cx,
-        Ctl::new("diagram.import_mermaid")
-            .args(json!({ "source": "clipboard" }))
-            .label("Import Mermaid from clipboard"),
-        "Import Mermaid from clipboard",
-    );
-    separator(ui, &cx.pal);
-    rows.command(ui, cx, Ctl::new("doc.clear"), "Clear the canvas");
-    rows.command(ui, cx, Ctl::new("doc.show_intro"), "Show the intro");
     let view_only = cx.model.view_only;
-    rows.command(ui, cx, Ctl::new("view.set_view_only").selected(view_only), "View-only mode");
-    separator(ui, &cx.pal);
-    theme_row(ui, cx);
-    rows.verb(ui, cx, Verb::ToggleLibrary, "Library");
-    rows.verb(ui, cx, Verb::OpenPreferences, "Preferences…");
-    rows.verb(ui, cx, Verb::OpenPalette, "Command palette…");
-    rows.verb(ui, cx, Verb::OpenShortcuts, "Keyboard shortcuts");
-    rows.verb(ui, cx, Verb::OpenAbout, "About Drafft.ink…");
-    if rows.command {
+    let picked = Menu::run_in(ui, cx, Id::unique("main_menu.rows"), "Main menu", |m| {
+        m.heading("File");
+        m.command(Ctl::new("tab.new"), Row::new().icon(Icon::Plus));
+        m.verb(Verb::OpenFile, "Open", Row::new().icon(Icon::Open).dialog(), None);
+        m.verb(Verb::OpenRecent, "Open recent", Row::new().dialog(), None);
+        m.command(Ctl::new("doc.save"), Row::new().icon(Icon::Save));
+        m.verb(Verb::SaveAs, "Save as", Row::new().dialog(), None);
+        m.verb(Verb::RenameDocument, "Rename document", Row::new().dialog(), None);
+        m.command(Ctl::new("doc.clear"), Row::new().icon(Icon::Delete));
+
+        m.heading("Export");
+        m.command(png_export(), Row::new().icon(Icon::Export));
+        m.verb(Verb::OpenExport, "Export", Row::new().dialog(), None);
+        m.command(png_copy(), Row::new().icon(Icon::Copy));
+        m.custom(export_scale_row);
+
+        m.heading("Insert");
+        m.verb(Verb::InsertImage, "Insert image", Row::new().icon(Icon::Image).dialog(), None);
+        m.host(HostRequest::PickLibrary, "Open a library as a tab", Row::new().icon(Icon::Library).dialog());
+        m.command(Ctl::new("diagram.import_mermaid").args(json!({ "source": "clipboard" })), Row::new());
+
+        m.heading("View");
+        m.command(Ctl::new("view.set_view_only"), Row::new().icon(Icon::Eye).checked(view_only));
+        m.verb(Verb::ToggleLibrary, "Library", Row::new().icon(Icon::Library), None);
+        m.verb(Verb::OpenPreferences, "Preferences", Row::new().icon(Icon::Settings).dialog(), None);
+        m.custom(theme_row);
+
+        m.heading("Help");
+        m.verb(Verb::OpenPalette, "Command palette", Row::new().icon(Icon::Search).dialog(), None);
+        m.verb(Verb::OpenShortcuts, "Keyboard shortcuts", Row::new().icon(Icon::Keyboard), None);
+        m.command(Ctl::new("doc.show_intro"), Row::new().icon(Icon::Help));
+        m.verb(Verb::OpenAbout, "About Drafft.ink", Row::new().icon(Icon::Info).dialog(), None);
+    });
+    if picked.command {
         cx.verb(Verb::CloseOverlays);
     }
-    rows.local
+    picked.local
+}
+
+/// `doc.export` as a PNG, titled by the registry.
+fn png_export() -> Ctl<'static> {
+    Ctl::new("doc.export").args(json!({ "format": "png" }))
+}
+
+/// `clipboard.copy_as` as a PNG, titled by the registry.
+fn png_copy() -> Ctl<'static> {
+    Ctl::new("clipboard.copy_as").args(json!({ "format": "png" }))
 }
 
 fn export_scale_row(ui: &mut egui::Ui, cx: &mut Cx<'_>) {
     let current = cx.model.setting_f64("export.scale").unwrap_or(2.0);
     ui.horizontal(|ui| {
-        ui.add_space(10.0);
+        ui.add_space(crate::menu_kit::ROW_PAD);
         ui.label(egui::RichText::new("Export scale").size(11.0).color(cx.pal.muted));
         for scale in [1.0, 2.0, 3.0] {
             let ctl = Ctl::new("settings.set")
@@ -175,7 +129,7 @@ fn export_scale_row(ui: &mut egui::Ui, cx: &mut Cx<'_>) {
 fn theme_row(ui: &mut egui::Ui, cx: &mut Cx<'_>) {
     let current = cx.model.setting_str("theme").unwrap_or("system").to_owned();
     ui.horizontal(|ui| {
-        ui.add_space(10.0);
+        ui.add_space(crate::menu_kit::ROW_PAD);
         ui.label(egui::RichText::new("Theme").size(11.0).color(cx.pal.muted));
         for (label, value) in [("Light", "light"), ("Dark", "dark"), ("System", "system")] {
             let ctl = Ctl::new("settings.set")

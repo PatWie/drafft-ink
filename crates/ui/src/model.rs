@@ -54,6 +54,17 @@ pub struct CmdView {
     pub available: Result<(), Refusal>,
     /// Default bindings.
     pub shortcuts: Vec<ShortcutView>,
+    /// The calls without keys that have a title of their own.
+    pub variants: Vec<VariantView>,
+}
+
+/// A named call of a command that has no key: fixed arguments and the title every surface shows for it.
+#[derive(Debug, Clone, PartialEq)]
+pub struct VariantView {
+    /// The fixed arguments.
+    pub args: Value,
+    /// The title.
+    pub title: &'static str,
 }
 
 /// One property of the style panel, from `style.get`.
@@ -606,6 +617,7 @@ impl Model {
                     host: spec.map_or(Host::NONE, |sp| sp.host),
                     available: c.available,
                     shortcuts: spec.map(|sp| shortcuts_of(sp, mac)).unwrap_or_default(),
+                    variants: spec.map(variants_of).unwrap_or_default(),
                 }
             })
             .collect();
@@ -713,8 +725,8 @@ impl Model {
             .map(|b| b.chords.iter().map(|c| c.label(self.mac)).collect::<Vec<_>>().join(" / "))
     }
 
-    /// The name of a control for a command with these arguments: the title of the binding that fixes the
-    /// same arguments (`Rectangle tool`), else the title of the command (`Undo`).
+    /// The name of a control for a command with these arguments: the title of the binding or variant that fixes
+    /// the same arguments (`Rectangle tool`, `Copy as SVG`), else the title of the command (`Undo`).
     pub fn label(&self, id: &str, args: &Value) -> String {
         let Some(c) = self.command(id) else {
             return id.to_owned();
@@ -724,6 +736,7 @@ impl Model {
             .iter()
             .find(|b| normalize_args(&b.args) == want && b.title.is_some())
             .and_then(|b| b.title)
+            .or_else(|| c.variants.iter().find(|v| v.args == want).map(|v| v.title))
             .unwrap_or(c.title)
             .to_owned()
     }
@@ -744,6 +757,13 @@ fn normalize_args(v: &Value) -> Value {
         Value::Null => json!({}),
         other => other.clone(),
     }
+}
+
+fn variants_of(spec: &CommandSpec) -> Vec<VariantView> {
+    spec.variants
+        .iter()
+        .map(|v| VariantView { args: serde_json::from_str(v.args).unwrap_or(Value::Null), title: v.title })
+        .collect()
 }
 
 fn shortcuts_of(spec: &CommandSpec, mac: bool) -> Vec<ShortcutView> {

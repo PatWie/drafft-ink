@@ -37,7 +37,7 @@ use crate::refusal::Refusal;
 use crate::session::{Ref, Session};
 use crate::spec::{
     Batch, Binding, CommandSpec, Facts, Gate, Mutates, PortSet, Redraw, RingMode, Scope, Selection, TextGate, Typed,
-    Undo,
+    Undo, Variant,
 };
 
 pub use common::{At, AtWord};
@@ -248,6 +248,19 @@ pub struct Skipped {
     pub props: Vec<String>,
 }
 
+/// Pasting a style needs one that was copied.
+fn style_copied(s: &Session) -> Result<(), Refusal> {
+    if s.ext.get::<StyleBuffer>().is_some_and(|b| b.props.is_some()) {
+        Ok(())
+    } else {
+        Err(Refusal::custom(
+            "nothing_to_do",
+            s.cmd(),
+            "No style has been copied yet. Copy one with `clipboard.copy_style` first.",
+        ))
+    }
+}
+
 fn paste_style(s: &mut Session, a: PasteStyleArgs) -> Result<PasteStyleOut, Refusal> {
     let cmd = s.cmd();
     let targets = s.targets(a.ids.as_deref())?;
@@ -321,6 +334,11 @@ const COPY_AS_KEYS: &[Binding] = &[Binding::new(&["Mod+Shift+E", "Mod+Shift+C", 
     .titled("Copy as PNG")];
 
 /// The clipboard family.
+const COPY_AS_VARIANTS: &[Variant] = &[
+    Variant::new(r#"{"format":"svg"}"#, "Copy as SVG"),
+    Variant::new(r#"{"format":"text"}"#, "Copy as text"),
+];
+
 pub const COMMANDS: &[CommandSpec] = &[
     CommandSpec::new(
         "clipboard.copy",
@@ -368,6 +386,7 @@ pub const COMMANDS: &[CommandSpec] = &[
         &Typed::new(paste_style),
         Facts { mutates: Mutates::DOC, ..WRITE },
     )
+    .default_targets(style_copied)
     .shortcuts(PASTE_STYLE_KEYS),
     CommandSpec::new(
         "clipboard.copy_as",
@@ -381,7 +400,8 @@ pub const COMMANDS: &[CommandSpec] = &[
             ..READ
         },
     )
-    .shortcuts(COPY_AS_KEYS),
+    .shortcuts(COPY_AS_KEYS)
+    .variants(COPY_AS_VARIANTS),
 ];
 
 #[cfg(test)]

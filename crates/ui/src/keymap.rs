@@ -303,6 +303,13 @@ fn resolve_one(
     if key == Key::Escape && cx.state.any_overlay_open() {
         return Some(UiAction::Verb(Verb::CloseOverlays));
     }
+    // A popup menu is driven with the arrow keys and Enter (see `menu_kit`); they must not nudge the selection.
+    if cx.state.popup_menu_open()
+        && !m.any()
+        && matches!(key, Key::ArrowUp | Key::ArrowDown | Key::ArrowLeft | Key::ArrowRight | Key::Enter)
+    {
+        return None;
+    }
     for scope in scopes {
         // UI verbs.
         for vb in VERB_BINDINGS.iter().filter(|v| v.scope == *scope) {

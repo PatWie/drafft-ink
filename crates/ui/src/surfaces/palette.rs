@@ -81,7 +81,7 @@ pub(crate) fn family_title(family: &str) -> String {
 }
 
 /// Every row of the palette: one per titled binding of a palette command, one for a palette command
-/// without titled bindings, then one per UI verb. Arguments with `$cursor` placeholders lose them,
+/// without titled bindings, one per variant (a named call without keys), then one per UI verb. Arguments with `$cursor` placeholders lose them,
 /// because the palette has no pointer.
 pub fn rows(model: &Model) -> Vec<Row> {
     let mut out = Vec::new();
@@ -111,6 +111,10 @@ pub fn rows(model: &Model) -> Vec<Row> {
                 };
                 out.push(make(title, &binding.args, RowAction::Command { id: cmd.id.to_owned(), args }));
             }
+        }
+        for variant in &cmd.variants {
+            let action = RowAction::Command { id: cmd.id.to_owned(), args: variant.args.clone() };
+            out.push(make(variant.title, &variant.args, action));
         }
     }
     for verb in Verb::ALL {

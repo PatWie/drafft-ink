@@ -280,7 +280,9 @@ fn menu_rows_for_commands_that_are_not_registered_yet_are_greyed_with_a_reason()
     let mut h = harness(f2);
     h.run();
     h.state_mut().clear();
-    h.get_by_label("Save").click();
+    // A command the registry lacks has no title, so its row is named by its id.
+    assert!(h.get_by_label("doc.save").accesskit_node().is_disabled());
+    h.get_by_label("doc.save").click();
     h.run();
     assert!(h.state().calls().is_empty());
 }

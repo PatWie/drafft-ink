@@ -385,22 +385,20 @@ fn opacity_section(ui: &mut egui::Ui, cx: &mut Cx<'_>) {
 fn layer_section(ui: &mut egui::Ui, cx: &mut Cx<'_>, side: f32) {
     section_label(ui, &cx.pal, "Layer");
     ui.horizontal(|ui| {
-        for (icon, op, label) in [
-            (Icon::LayerBack, "back", "Send to back"),
-            (Icon::LayerBackward, "backward", "Send backward"),
-            (Icon::LayerForward, "forward", "Bring forward"),
-            (Icon::LayerFront, "front", "Bring to front"),
+        for (icon, op) in [
+            (Icon::LayerBack, "back"),
+            (Icon::LayerBackward, "backward"),
+            (Icon::LayerForward, "forward"),
+            (Icon::LayerFront, "front"),
         ] {
-            let ctl = Ctl::new("arrange.z_order").args(json!({ "op": op })).label(label);
+            let ctl = Ctl::new("arrange.z_order").args(json!({ "op": op }));
             cx.icon_button(ui, &ctl, icon, side);
         }
     });
     section_label(ui, &cx.pal, "Flip");
     ui.horizontal(|ui| {
-        for (icon, axis, label) in
-            [(Icon::FlipH, "horizontal", "Flip horizontally"), (Icon::FlipV, "vertical", "Flip vertically")]
-        {
-            let ctl = Ctl::new("element.flip").args(json!({ "axis": axis })).label(label);
+        for (icon, axis) in [(Icon::FlipH, "horizontal"), (Icon::FlipV, "vertical")] {
+            let ctl = Ctl::new("element.flip").args(json!({ "axis": axis }));
             cx.icon_button(ui, &ctl, icon, side);
         }
     });
@@ -409,24 +407,21 @@ fn layer_section(ui: &mut egui::Ui, cx: &mut Cx<'_>, side: f32) {
 fn align_section(ui: &mut egui::Ui, cx: &mut Cx<'_>, side: f32) {
     section_label(ui, &cx.pal, "Align");
     ui.horizontal_wrapped(|ui| {
-        for (icon, edge, label) in [
-            (Icon::AlignLeft, "left", "Align left"),
-            (Icon::AlignCenterX, "center_x", "Align centres horizontally"),
-            (Icon::AlignRight, "right", "Align right"),
-            (Icon::AlignTop, "top", "Align top"),
-            (Icon::AlignCenterY, "center_y", "Align centres vertically"),
-            (Icon::AlignBottom, "bottom", "Align bottom"),
+        for (icon, edge) in [
+            (Icon::AlignLeft, "left"),
+            (Icon::AlignCenterX, "center_x"),
+            (Icon::AlignRight, "right"),
+            (Icon::AlignTop, "top"),
+            (Icon::AlignCenterY, "center_y"),
+            (Icon::AlignBottom, "bottom"),
         ] {
-            let ctl = Ctl::new("arrange.align").args(json!({ "edge": edge })).label(label);
+            let ctl = Ctl::new("arrange.align").args(json!({ "edge": edge }));
             cx.icon_button(ui, &ctl, icon, side);
         }
     });
     ui.horizontal(|ui| {
-        for (icon, axis, label) in [
-            (Icon::DistributeH, "horizontal", "Distribute horizontally"),
-            (Icon::DistributeV, "vertical", "Distribute vertically"),
-        ] {
-            let ctl = Ctl::new("arrange.distribute").args(json!({ "axis": axis })).label(label);
+        for (icon, axis) in [(Icon::DistributeH, "horizontal"), (Icon::DistributeV, "vertical")] {
+            let ctl = Ctl::new("arrange.distribute").args(json!({ "axis": axis }));
             cx.icon_button(ui, &ctl, icon, side);
         }
     });
@@ -455,14 +450,14 @@ const LINK_CHARS: usize = 24;
 fn action_section(ui: &mut egui::Ui, cx: &mut Cx<'_>, side: f32) {
     separator(ui, &cx.pal);
     ui.horizontal_wrapped(|ui| {
-        for (icon, id, label) in [
-            (Icon::Duplicate, "element.duplicate", "Duplicate"),
-            (Icon::Group, "group.create", "Group"),
-            (Icon::Ungroup, "group.ungroup", "Ungroup"),
-            (Icon::Lock, "element.lock", "Lock"),
-            (Icon::Delete, "element.delete", "Delete"),
+        for (icon, id) in [
+            (Icon::Duplicate, "element.duplicate"),
+            (Icon::Group, "group.create"),
+            (Icon::Ungroup, "group.ungroup"),
+            (Icon::Lock, "element.lock"),
+            (Icon::Delete, "element.delete"),
         ] {
-            let ctl = Ctl::new(id).label(label);
+            let ctl = Ctl::new(id);
             cx.icon_button(ui, &ctl, icon, side);
         }
     });
