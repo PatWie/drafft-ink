@@ -77,19 +77,6 @@ impl Default for McpHttpConfig {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn the_default_setup_is_loopback_on_the_default_port_with_a_token_file() {
-        let cfg = McpHttpConfig::default();
-        assert_eq!(cfg.addr, SocketAddr::from(([127, 0, 0, 1], DEFAULT_PORT)));
-        assert!(cfg.write_token_file && cfg.token.is_none() && cfg.dir.is_none());
-        assert_eq!(McpHttpConfig::on_port(0).addr.port(), 0);
-    }
-}
-
 struct Gate {
     token: String,
     port: u16,
@@ -124,7 +111,12 @@ impl McpHttpServer {
         let token_file = if cfg.write_token_file {
             let dir = match cfg.dir.clone() {
                 Some(d) => d,
-                None => files::default_dir().ok_or(BridgeError::NoDir)?.join(TOKEN_SUBDIR),
+                None => {
+                    // The runtime folder is private to the user, like the bridge's own.
+                    let base = files::default_dir().ok_or(BridgeError::NoDir)?;
+                    files::prepare_dir(&base).map_err(BridgeError::Files)?;
+                    base.join(TOKEN_SUBDIR)
+                }
             };
             Some(TokenFile::write(&dir, port, &token).map_err(BridgeError::Files)?)
         } else {
@@ -235,7 +227,7 @@ impl Drop for McpHttpServer {
     }
 }
 
-fn header_text<'a>(headers: &'a HeaderMap, name: header::HeaderName) -> Option<&'a str> {
+fn header_text(headers: &HeaderMap, name: header::HeaderName) -> Option<&str> {
     headers.get(name).and_then(|v| v.to_str().ok())
 }
 
@@ -291,4 +283,17 @@ async fn check(State(gate): State<Arc<Gate>>, request: Request, next: Next) -> R
     let response = next.run(request).await;
     drop(slot);
     response
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_default_setup_is_loopback_on_the_default_port_with_a_token_file() {
+        let cfg = McpHttpConfig::default();
+        assert_eq!(cfg.addr, SocketAddr::from(([127, 0, 0, 1], DEFAULT_PORT)));
+        assert!(cfg.write_token_file && cfg.token.is_none() && cfg.dir.is_none());
+        assert_eq!(McpHttpConfig::on_port(0).addr.port(), 0);
+    }
 }
