@@ -42,7 +42,7 @@ Element { id, kind, transform, style, index, group_ids, frame_id, locked, delete
 | `custom` | map string to JSON? | Free data for the host app, at most 256 keys. |
 | `version` | u64 | Local change counter. The store raises it by exactly one per reported change. Renderers key caches by `(id, version)`. Not a sync clock, not guaranteed equal across stores. 0 = never stored. |
 
-Linear and freehand elements: the box is the bounding box of the points. `points` are in the **local frame whose origin is the top-left of that box**, so the smallest x and y are 0 and the largest are `w` and `h`. This differs from Excalidraw (where `x, y` is the first point and points may be negative); `Element::refit_points()` restores the invariant after any point edit and keeps every point's world position, also when the element is rotated. `Element::linear(...)` builds an element from world points.
+Linear and freehand elements: the box is the bounding box of the points. `points` are in the **local frame whose origin is the top-left of that box**, so the smallest x and y are 0 and the largest are `w` and `h`. This differs from Excalidraw (where `x, y` is the first point and points may be negative); `Element::refit_points()` restores the invariant after any point edit and keeps every point's world position, also when the element is rotated; it returns `Result<(), RefitError>` and changes nothing on an error. `Element::linear(id, LinearKind, index, world_points)` builds an element from world points. The geometry of a `Transform` (`frame()`, `obox()`, `local_to_world()`) is `geom::ElementFrame`; the model holds no second copy of the rotation math.
 
 ## 4. Kinds
 
