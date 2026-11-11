@@ -5,6 +5,7 @@ use drafftink_scene::{
 use kurbo::Point;
 
 use super::*;
+use crate::target::TargetError;
 
 fn id(s: &str) -> ElementId {
     ElementId::new(s).unwrap()
@@ -147,7 +148,7 @@ fn members_adds_labels_and_frame_children_and_refuses_nothing() {
     let m = members(&store, &[id("f")]).unwrap();
     assert_eq!(m.len(), 5, "a frame brings its children");
     assert!(matches!(members(&store, &[]), Err(LibraryError::NoTarget)));
-    assert!(matches!(members(&store, &[id("nope")]), Err(LibraryError::NotFound(_))));
+    assert!(matches!(members(&store, &[id("nope")]), Err(LibraryError::Target(TargetError::NotFound(_)))));
 }
 
 #[test]

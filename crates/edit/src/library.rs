@@ -24,8 +24,9 @@ use serde_json::Value;
 
 use crate::binding::{self, BindingError};
 use crate::group::name_key;
-use crate::group::units::{Relations, TargetError, primaries, with_companions};
+use crate::group::units::{Relations, primaries, with_companions};
 use crate::query::element_bounds;
+use crate::target::TargetError;
 
 /// Why a fragment could not be taken or inserted.
 #[derive(Debug, thiserror::Error)]
@@ -33,9 +34,9 @@ pub enum LibraryError {
     /// No element was given.
     #[error("no elements were given. Select some, or pass `ids`")]
     NoTarget,
-    /// The target is missing or deleted.
-    #[error("element {0} does not exist or is deleted")]
-    NotFound(ElementId),
+    /// An element does not exist, is deleted, or is locked.
+    #[error(transparent)]
+    Target(#[from] TargetError),
     /// The fragment has no visible element.
     #[error("the fragment has no elements")]
     Empty,
@@ -61,13 +62,6 @@ pub enum LibraryError {
     Binding(#[from] BindingError),
 }
 
-fn target(e: TargetError) -> LibraryError {
-    match e {
-        TargetError::NotFound(id) => LibraryError::NotFound(id),
-        _ => LibraryError::NoTarget,
-    }
-}
-
 /// The elements a library item is made of: `ids` with every bound text replaced by its container, then the
 /// bound text of each and the children of each frame. In z-order. Errors when `ids` is empty or names a
 /// missing element.
@@ -75,7 +69,7 @@ pub fn members<R: SceneRead>(scene: &R, ids: &[ElementId]) -> Result<Vec<Element
     if ids.is_empty() {
         return Err(LibraryError::NoTarget);
     }
-    let given = primaries(scene, ids).map_err(target)?;
+    let given = primaries(scene, ids)?;
     let rel = Relations::build(scene);
     Ok(with_companions(scene, &rel, &given, true))
 }

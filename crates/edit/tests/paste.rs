@@ -4,7 +4,7 @@
 use std::collections::BTreeMap;
 
 use drafftink_edit::CopyError;
-use drafftink_edit::create::CreateError;
+use drafftink_edit::create::FreeTextError;
 use drafftink_edit::paste::{PasteError, PasteOpts, insert_elements, insert_text};
 use drafftink_edit::text_bind::MonospaceMeasure;
 use drafftink_scene::{
@@ -168,18 +168,18 @@ fn text_is_measured_centred_and_limited() {
     let ids = &mut SeqIds::new();
     assert!(matches!(
         insert_text(&mut tx, &m, ids, "  \n", font.clone(), Style::default(), Point::ORIGIN),
-        Err(PasteError::Text(CreateError::EmptyText))
+        Err(PasteError::Text(FreeTextError::Empty))
     ));
     let long = "x".repeat(1_000_001);
     assert!(matches!(
         insert_text(&mut tx, &m, ids, &long, font, Style::default(), Point::ORIGIN),
-        Err(PasteError::Text(CreateError::TextTooLong { .. }))
+        Err(PasteError::Text(FreeTextError::TooLong { .. }))
     ));
 }
 
 #[test]
 fn pasted_and_created_free_text_are_built_by_one_function() {
-    use drafftink_edit::create::{CreateError, TextPlace, TextSpec, text_element};
+    use drafftink_edit::create::{TextPlace, TextSpec, text_element};
     let m = MonospaceMeasure::default();
     let font = TextStyle::default();
     let mut store = MemoryStore::new();
@@ -200,7 +200,7 @@ fn pasted_and_created_free_text_are_built_by_one_function() {
     let spec = || TextSpec { font: font.clone(), place: at, width: None };
     let make =
         |content: &str, spec| text_element(&m, id("t1"), ZIndex::parse("a0").unwrap(), content, spec, Style::default());
-    assert!(matches!(make(&long, spec()), Err(CreateError::TextTooLong { .. })));
+    assert!(matches!(make(&long, spec()), Err(FreeTextError::TooLong { .. })));
     let far = TextSpec { font: font.clone(), place: TextPlace::TopLeft(Point::new(f64::NAN, 0.0)), width: None };
-    assert!(matches!(make("abcd", far), Err(CreateError::NotFinite)));
+    assert!(matches!(make("abcd", far), Err(FreeTextError::NotFinite)));
 }

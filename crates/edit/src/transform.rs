@@ -34,33 +34,63 @@ use drafftink_scene::{
 };
 
 use crate::binding::{self, BindingError};
-use crate::group::units::{Reverse, ReverseLookup, ensure_unlocked, impl_from_target, primaries, with_companions};
+use crate::group::units::{Reverse, ReverseLookup, ensure_unlocked, primaries, with_companions};
+use crate::target::TargetError;
 
 mod common;
 pub mod geometry;
 
 pub use common::{CommonBounds, set_common_bounds, tidy};
 
+/// Why elements cannot be rotated.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum NotRotatableReason {
+    /// A frame is among them.
+    Frame,
+    /// An elbow arrow is among them.
+    ElbowArrow,
+}
+
+impl std::fmt::Display for NotRotatableReason {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(match self {
+            NotRotatableReason::Frame => "frames cannot be rotated",
+            NotRotatableReason::ElbowArrow => {
+                "elbow arrows cannot be rotated; change the arrow type to sharp or round first"
+            }
+        })
+    }
+}
+
 /// Why a transform was refused. Nothing was changed.
 #[derive(Debug, thiserror::Error)]
 pub enum TransformError {
-    /// No live element has this id.
-    #[error("element {0} does not exist or is deleted")]
-    NotFound(ElementId),
-    /// Locked elements cannot be transformed.
-    #[error("{} element(s) are locked ({}). Unlock them first", .0.len(), crate::group::units::ids_text(.0))]
-    Locked(Vec<ElementId>),
+    /// An element does not exist, is deleted, or is locked.
+    #[error(transparent)]
+    Target(#[from] TargetError),
     /// Frames and elbow arrows cannot be rotated.
-    #[error("{reason} (elements: {})", crate::group::units::ids_text(.ids))]
+    #[error("{reason} (elements: {})", crate::target::ids_text(.ids))]
     NotRotatable {
         /// The elements that cannot rotate.
         ids: Vec<ElementId>,
-        /// What to do instead.
-        reason: &'static str,
+        /// Why not.
+        reason: NotRotatableReason,
     },
-    /// An argument is not usable.
-    #[error("{0}")]
-    BadArgs(&'static str),
+    /// No element was given.
+    #[error("no elements were given")]
+    NoElements,
+    /// The rotate handle was given to a resize.
+    #[error("the rotate handle does not resize; use rotate")]
+    RotateHandle,
+    /// A requested box is not finite or has a negative size.
+    #[error("bounds must be finite and the size 0 or more")]
+    BadBounds,
+    /// A requested size is zero or negative.
+    #[error("the width and the height must be above 0")]
+    NotPositive,
+    /// An absolute angle needs one element.
+    #[error("mode \"to\" sets an absolute angle and needs exactly one element; use mode \"by\" to rotate several")]
+    RotateToNeedsOne,
     /// A number is not finite, or the result would leave the allowed range.
     #[error("the result is not a valid number; use smaller values")]
     NotFinite,
@@ -79,7 +109,6 @@ pub enum TransformError {
     #[error(transparent)]
     Binding(#[from] BindingError),
 }
-impl_from_target!(TransformError);
 
 pub use crate::binding::End;
 
@@ -373,7 +402,10 @@ pub(crate) fn apply<T: SceneTx>(tx: &mut T, items: Vec<Item>) -> Result<Transfor
     let followers = binding::arrows_bound_to(&*tx, &all_ids);
     let mut olds: BTreeMap<ElementId, Element> = BTreeMap::new();
     for i in &items {
-        let e = tx.get(&i.id).filter(|e| !e.deleted).ok_or_else(|| TransformError::NotFound(i.id.clone()))?;
+        let e = tx
+            .get(&i.id)
+            .filter(|e| !e.deleted)
+            .ok_or_else(|| TransformError::Target(TargetError::NotFound(i.id.clone())))?;
         olds.insert(i.id.clone(), e.clone());
     }
     let motions: BTreeMap<&ElementId, Motion> = items.iter().map(|i| (&i.id, i.motion)).collect();
@@ -441,7 +473,7 @@ struct Prepared {
 
 fn prepare<T: SceneTx>(tx: &T, ids: &[ElementId], frame_children: bool) -> Result<Prepared, TransformError> {
     if ids.is_empty() {
-        return Err(TransformError::BadArgs("no elements were given"));
+        return Err(TransformError::NoElements);
     }
     let rel = Reverse::of(tx);
     let base = primaries(tx, ids)?;
@@ -522,7 +554,7 @@ pub struct ResizeSpec {
 /// drops below 1 unit. The membership of a resized frame is for [`crate::frame::recompute_after_resize`].
 pub fn resize<T: SceneTx>(tx: &mut T, ids: &[ElementId], spec: ResizeSpec) -> Result<TransformReport, TransformError> {
     if spec.handle == BoxHandle::Rotate {
-        return Err(TransformError::BadArgs("the rotate handle does not resize; use rotate"));
+        return Err(TransformError::RotateHandle);
     }
     finite_vec(spec.delta)?;
     let base = primaries(&*tx, ids)?;
@@ -575,13 +607,14 @@ pub struct BoundsSpec {
 /// rotated element keeps its angle and scales in its own frame.
 pub fn set_bounds<T: SceneTx>(tx: &mut T, id: &ElementId, spec: BoundsSpec) -> Result<TransformReport, TransformError> {
     let p = prepare(&*tx, std::slice::from_ref(id), false)?;
-    let e = tx.get(id).filter(|e| !e.deleted).ok_or_else(|| TransformError::NotFound(id.clone()))?;
+    let e =
+        tx.get(id).filter(|e| !e.deleted).ok_or_else(|| TransformError::Target(TargetError::NotFound(id.clone())))?;
     let old = geometry::obox(e);
     let t = e.transform;
     let (x, y) = (spec.x.unwrap_or(t.x), spec.y.unwrap_or(t.y));
     let (w, h) = (spec.w.unwrap_or(t.w), spec.h.unwrap_or(t.h));
     if ![x, y, w, h].iter().all(|v| v.is_finite()) || w < 0.0 || h < 0.0 {
-        return Err(TransformError::BadArgs("bounds must be finite and the size 0 or more"));
+        return Err(TransformError::BadBounds);
     }
     let new = OrientedBox::from_xywh(x, y, w, h, t.angle);
     let a = new.to_world_affine() * Affine::scale_non_uniform(ratio(w, t.w), ratio(h, t.h)) * old.to_local_affine();
@@ -633,9 +666,9 @@ pub fn rotate<T: SceneTx>(
         .collect();
     if !blocked.is_empty() {
         let reason = if blocked.iter().any(|i| tx.get(i).is_some_and(|e| e.tag() == Kind::Frame)) {
-            "frames cannot be rotated"
+            NotRotatableReason::Frame
         } else {
-            "elbow arrows cannot be rotated; change the arrow type to sharp or round first"
+            NotRotatableReason::ElbowArrow
         };
         return Err(TransformError::NotRotatable { ids: blocked, reason });
     }
@@ -648,9 +681,7 @@ pub fn rotate<T: SceneTx>(
         },
         RotateMode::To => {
             let [only] = elems.as_slice() else {
-                return Err(TransformError::BadArgs(
-                    "mode \"to\" sets an absolute angle and needs exactly one element; use mode \"by\" to rotate several",
-                ));
+                return Err(TransformError::RotateToNeedsOne);
             };
             let target = match step {
                 Some(s) => snap_rotation(angle, s),

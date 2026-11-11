@@ -15,25 +15,39 @@ use drafftink_scene::{ElementId, GroupId, SceneRead, SceneTx};
 
 pub use drafftink_geom::align::{AlignMode, Axis};
 
-use crate::group::units::{
-    Relations, Unit, ensure_unlocked, impl_from_target, live, primary_id, units, with_companions,
-};
+use crate::group::units::{Relations, Unit, ensure_unlocked, live, primary_id, units, with_companions};
+use crate::target::TargetError;
 use crate::transform::{TransformError, TransformReport, affine_all, geometry, translate_each};
+
+/// What an arrangement does.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Arrangement {
+    /// Line elements up along an edge or a centre.
+    Align,
+    /// Even out the gaps between elements.
+    Distribute,
+}
+
+impl std::fmt::Display for Arrangement {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(match self {
+            Arrangement::Align => "align",
+            Arrangement::Distribute => "distribute",
+        })
+    }
+}
 
 /// Why an arrangement was refused.
 #[derive(Debug, thiserror::Error)]
 pub enum ArrangeError {
-    /// No live element has this id.
-    #[error("element {0} does not exist or is deleted")]
-    NotFound(ElementId),
-    /// Locked elements cannot be arranged.
-    #[error("{} element(s) are locked ({}). Unlock them first", .0.len(), crate::group::units::ids_text(.0))]
-    Locked(Vec<ElementId>),
+    /// An element does not exist, is deleted, or is locked.
+    #[error(transparent)]
+    Target(#[from] TargetError),
     /// Not enough units.
     #[error("{what} needs at least {need} elements (a group counts as one), and {have} were given. Select more")]
     TooFew {
-        /// Align or distribute.
-        what: &'static str,
+        /// What was asked for.
+        what: Arrangement,
         /// The minimum.
         need: usize,
         /// Units given.
@@ -46,7 +60,6 @@ pub enum ArrangeError {
     #[error(transparent)]
     Transform(#[from] TransformError),
 }
-impl_from_target!(ArrangeError);
 
 /// The units that have bounds, with their bounds, in the same order.
 fn with_rects<R: SceneRead>(scene: &R, us: Vec<Unit>) -> (Vec<Unit>, Vec<Rect>) {
@@ -84,7 +97,7 @@ pub fn align<T: SceneTx>(
     };
     let need = if to.is_some() { 1 } else { crate::preflight::MIN_ALIGN_UNITS };
     if us.len() < need {
-        return Err(ArrangeError::TooFew { what: "align", need, have: us.len() });
+        return Err(ArrangeError::TooFew { what: Arrangement::Align, need, have: us.len() });
     }
     let (us, rects) = with_rects(&*tx, us);
     let reference = reference.or_else(|| aabb::union_all(rects.iter().copied()));
@@ -118,7 +131,7 @@ pub fn distribute<T: SceneTx>(
     let us = units(&*tx, &rel, ids, editing)?;
     if us.len() < crate::preflight::MIN_DISTRIBUTE_UNITS {
         return Err(ArrangeError::TooFew {
-            what: "distribute",
+            what: Arrangement::Distribute,
             need: crate::preflight::MIN_DISTRIBUTE_UNITS,
             have: us.len(),
         });

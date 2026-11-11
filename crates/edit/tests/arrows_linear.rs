@@ -6,7 +6,7 @@ mod arrows_common;
 use arrows_common::*;
 use drafftink_edit::binding::{End, stale_arrows};
 use drafftink_edit::linear::{self, LinearError};
-use drafftink_scene::{BindMode, Head, PathType, SceneRead, SceneStore, SceneTx, validate_element};
+use drafftink_scene::{BindMode, Head, Kind, PathType, SceneRead, SceneStore, SceneTx, validate_element};
 
 fn check_valid(s: &Scene, eid: &drafftink_scene::ElementId) {
     let e = s.get(eid);
@@ -111,7 +111,7 @@ fn deleting_points_keeps_at_least_two() {
     let d = linear::delete_points(&mut tx, &a, &[1, 1]).unwrap();
     assert_eq!(d.removed, 1);
     let err = linear::delete_points(&mut tx, &a, &[0]).unwrap_err();
-    assert_eq!(err, LinearError::TooFewPoints { kind: "arrow", min: 2, have: 1 });
+    assert_eq!(err, LinearError::TooFewPoints { kind: Kind::Arrow, min: 2, have: 1 });
     assert!(err.to_string().contains("delete the element"));
     tx.commit().unwrap();
     assert_eq!(s.world(&a), vec![p(0.0, 0.0), p(200.0, 0.0)]);

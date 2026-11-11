@@ -6,6 +6,7 @@ mod structure_support;
 
 use std::collections::BTreeSet;
 
+use drafftink_edit::TargetError;
 use drafftink_edit::group::selection::*;
 use drafftink_edit::query::{
     ALL_FIELDS, AtHit, AtOpts, Query, QueryCtx, QueryError, RefConnectedTo, RefQuery, all_matches, elements_at,
@@ -62,7 +63,7 @@ fn pick_of_one_target_equals_click_in_every_mode() {
                                 p.selection, c,
                                 "sel={sel:?} mode={mode:?} deep={deep} hit={hit} include_locked={include_locked}"
                             ),
-                            (Err(SelectionError::Locked(ids)), Ok(p)) => {
+                            (Err(SelectionError::Target(TargetError::Locked(ids))), Ok(p)) => {
                                 assert_eq!(p.selection, sel, "a skipped target changes nothing");
                                 assert_eq!(p.skipped_locked, ids);
                             }
@@ -126,7 +127,7 @@ fn pick_of_only_locked_targets_keeps_the_selection() {
 fn pick_refuses_unknown_and_deleted_ids() {
     let s = world();
     let e = pick(&s, &Selection::default(), &[id("w"), id("nope")], ClickOpts::default()).unwrap_err();
-    assert_eq!(e, SelectionError::NotFound(id("nope")));
+    assert_eq!(e, SelectionError::Target(TargetError::NotFound(id("nope"))));
 }
 
 #[test]

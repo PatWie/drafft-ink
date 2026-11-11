@@ -6,6 +6,7 @@ use drafftink_scene::{ElementId, ElementKind, SceneTx, StoreError};
 
 use super::{BoundsSpec, ResizeSpec, TransformError, TransformReport, common_bounds, move_by, resize, set_bounds};
 use crate::group::units::primaries;
+use crate::target::TargetError;
 
 /// What `element.set_bounds` asks for. `None` keeps the current value.
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
@@ -38,10 +39,13 @@ pub fn set_common_bounds<T: SceneTx>(
         return Err(TransformError::NotFinite);
     }
     if spec.w.is_some_and(|w| w <= 0.0) || spec.h.is_some_and(|h| h <= 0.0) {
-        return Err(TransformError::BadArgs("the width and the height must be above 0"));
+        return Err(TransformError::NotPositive);
     }
     if let [only] = base.as_slice() {
-        let t = tx.get(only).map(|e| e.transform).ok_or_else(|| TransformError::NotFound(only.clone()))?;
+        let t = tx
+            .get(only)
+            .map(|e| e.transform)
+            .ok_or_else(|| TransformError::Target(TargetError::NotFound(only.clone())))?;
         let (w, h) = target_size(t.w, t.h, &spec);
         let (x, y) = if spec.center {
             (spec.x.unwrap_or(t.x + t.w / 2.0) - w / 2.0, spec.y.unwrap_or(t.y + t.h / 2.0) - h / 2.0)

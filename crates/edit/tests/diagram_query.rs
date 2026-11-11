@@ -78,7 +78,6 @@ fn text_matches_labels_case_insensitively_and_by_regex() {
     assert!(run(&s, r#"{"text":{"contains":"yes","regex":"^no$"}}"#).is_empty());
     let err = run_query(&s, &q(r#"{"text":{"regex":"("}}"#), &QueryCtx::default(), &QueryOpts::default()).unwrap_err();
     assert!(matches!(err, QueryError::BadRegex { .. }));
-    assert_eq!(err.code(), "bad_args");
 }
 
 #[test]
@@ -145,7 +144,6 @@ fn connected_to_finds_arrows_and_neighbours() {
     let err = run_query(&s, &q(r#"{"connected_to":{"ref":"nope"}}"#), &QueryCtx::default(), &QueryOpts::default())
         .unwrap_err();
     assert_eq!(err, QueryError::Missing(ElementId::new("nope").unwrap()));
-    assert_eq!(err.code(), "not_found");
 }
 
 #[test]

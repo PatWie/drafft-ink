@@ -6,6 +6,7 @@
 //! command with a shortcut now, and the old inverted names of the centre alignments are fixed (`center_x`
 //! makes the x-centres equal).
 
+use drafftink_edit::arrange::Arrangement;
 use drafftink_edit::arrange::{self, AlignMode, ArrangeError, Axis, DistributeOpts};
 use drafftink_edit::transform::TransformError;
 use drafftink_edit::zorder::{self, ZOp};
@@ -13,6 +14,7 @@ use drafftink_scene::ElementId;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
+use crate::cmd::element_common::target_refusal;
 use crate::args;
 use crate::refusal::Refusal;
 use crate::session::{Ref, Session};
@@ -21,25 +23,27 @@ use crate::spec::{
     Undo,
 };
 
-use super::group::common::{edit, editing_group, locked, not_found, selected_ids, zorder_refusal};
+use super::group::common::{edit, editing_group, selected_ids, zorder_refusal};
 
 // ---- errors ----
 
 fn transform_refusal(cmd: &str, e: TransformError) -> Refusal {
     match e {
-        TransformError::NotFound(id) => not_found(cmd, &id),
-        TransformError::Locked(ids) => locked(cmd, &ids),
+        TransformError::Target(t) => target_refusal(cmd, t),
         TransformError::NotFinite => Refusal::bad_args(cmd, "the result would not be a valid number, so use smaller values"),
-        TransformError::BadArgs(m) => Refusal::bad_args(cmd, m),
+        e @ (TransformError::NoElements
+        | TransformError::RotateHandle
+        | TransformError::BadBounds
+        | TransformError::NotPositive
+        | TransformError::RotateToNeedsOne) => Refusal::bad_args(cmd, e.to_string()),
         other => Refusal::internal(cmd, other.to_string()),
     }
 }
 
 fn arrange_refusal(cmd: &str, e: ArrangeError) -> Refusal {
     match e {
-        ArrangeError::NotFound(id) => not_found(cmd, &id),
-        ArrangeError::Locked(ids) => locked(cmd, &ids),
-        ArrangeError::TooFew { what: "align", have, .. } => Refusal::custom(
+        ArrangeError::Target(t) => target_refusal(cmd, t),
+        ArrangeError::TooFew { what: Arrangement::Align, have, .. } => Refusal::custom(
             "too_few",
             cmd,
             format!(

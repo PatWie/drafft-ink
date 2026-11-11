@@ -24,35 +24,39 @@ use drafftink_profile::{Counter, count};
 
 use crate::binding::BindingError;
 use crate::group::units::{
-    Relations, Reverse, Unit, UnitKey, ensure_unlocked, impl_from_target, live, primaries, units, with_companions,
+    Relations, Reverse, Unit, UnitKey, ensure_unlocked, live, primaries, units, with_companions,
 };
 use crate::lifecycle::{self, ChildPolicy, LifecycleError};
+use crate::target::TargetError;
 use crate::transform::geometry;
 use crate::zorder::{self, Place, ZOrderError, ZReport, move_block, settle_leavers};
 
 /// Why a frame operation was refused.
-#[derive(Debug, thiserror::Error)]
+#[derive(Debug, Clone, PartialEq, thiserror::Error)]
 pub enum FrameError {
-    /// No live element has this id.
-    #[error("element {0} does not exist or is deleted")]
-    NotFound(ElementId),
-    /// Locked elements cannot change frames.
-    #[error("{} element(s) are locked ({}). Unlock them first", .0.len(), crate::group::units::ids_text(.0))]
-    Locked(Vec<ElementId>),
+    /// An element does not exist, is deleted, or is locked.
+    #[error(transparent)]
+    Target(#[from] TargetError),
     /// The target is not a frame.
-    #[error("{id} is {}, and this works on frames", drafftink_scene::words::Article::new(.kind))]
+    #[error("{id} is {}, and this works on frames", drafftink_scene::words::Article::new(.kind.name()))]
     NotAFrame {
         /// The element.
         id: ElementId,
         /// Its kind.
-        kind: &'static str,
+        kind: Kind,
     },
     /// Frames cannot be nested.
     #[error("frames cannot be nested ({0} is a frame). Remove the frame from the selection, or unwrap it first")]
     NestedFrame(ElementId),
-    /// A number is unusable.
-    #[error("{0}")]
-    BadArgs(&'static str),
+    /// The padding is negative or not a number.
+    #[error("padding must be a number of 0 or more")]
+    BadPadding,
+    /// There is nothing to wrap.
+    #[error("nothing to wrap")]
+    NothingToWrap,
+    /// The name breaks the name rules.
+    #[error("a frame name must be 1 to {} characters without control characters", limits::MAX_NAME_CHARS)]
+    BadName,
     /// The store refused a write.
     #[error(transparent)]
     Store(#[from] StoreError),
@@ -69,7 +73,6 @@ pub enum FrameError {
     #[error(transparent)]
     Lifecycle(#[from] LifecycleError),
 }
-impl_from_target!(FrameError);
 
 /// A frame that clips: what the renderer needs.
 #[derive(Debug, Clone, PartialEq)]
@@ -94,7 +97,7 @@ pub fn clips<R: SceneRead>(scene: &R) -> Vec<FrameClip> {
 
 fn frame_of<'a, R: SceneRead>(scene: &'a R, id: &ElementId) -> Result<&'a Element, FrameError> {
     let e = live(scene, id)?;
-    if e.tag() == Kind::Frame { Ok(e) } else { Err(FrameError::NotAFrame { id: id.clone(), kind: e.tag().name() }) }
+    if e.tag() == Kind::Frame { Ok(e) } else { Err(FrameError::NotAFrame { id: id.clone(), kind: e.tag() }) }
 }
 
 /// The live children of a frame, back to front.
@@ -187,7 +190,7 @@ fn unit_ids(u: &Unit) -> impl Iterator<Item = &ElementId> {
 pub fn add_to_frame<T: SceneTx>(tx: &mut T, frame: &ElementId, ids: &[ElementId]) -> Result<AddReport, FrameError> {
     let f = frame_of(&*tx, frame)?;
     if f.locked {
-        return Err(FrameError::Locked(vec![frame.clone()]));
+        return Err(FrameError::Target(TargetError::Locked(vec![frame.clone()])));
     }
     let rel = Relations::build(&*tx);
     let prim = primaries(&*tx, ids)?;
@@ -312,7 +315,7 @@ fn free_candidates<R: SceneRead>(scene: &R, frame: &ElementId) -> Vec<ElementId>
 pub fn capture_contained<T: SceneTx>(tx: &mut T, frame: &ElementId) -> Result<AddReport, FrameError> {
     let f = frame_of(&*tx, frame)?;
     if f.locked {
-        return Err(FrameError::Locked(vec![frame.clone()]));
+        return Err(FrameError::Target(TargetError::Locked(vec![frame.clone()])));
     }
     let rect = f.rect();
     let rel = Relations::build(&*tx);
@@ -360,7 +363,7 @@ pub fn wrap<T: SceneTx, I: IdSource>(
     opts: &WrapOpts,
 ) -> Result<WrapReport, FrameError> {
     if !opts.padding.is_finite() || opts.padding < 0.0 {
-        return Err(FrameError::BadArgs("padding must be a number of 0 or more"));
+        return Err(FrameError::BadPadding);
     }
     let rel = Relations::build(&*tx);
     let prim = primaries(&*tx, ids)?;
@@ -372,14 +375,14 @@ pub fn wrap<T: SceneTx, I: IdSource>(
     let all = with_companions(&*tx, &rel, &members, false);
     ensure_unlocked(&*tx, &all)?;
     let elems: Vec<&Element> = members.iter().filter_map(|i| tx.get(i)).collect();
-    let bounds = geometry::union_bounds(elems.iter().copied()).ok_or(FrameError::BadArgs("nothing to wrap"))?;
+    let bounds = geometry::union_bounds(elems.iter().copied()).ok_or(FrameError::NothingToWrap)?;
     let pad = if elems.iter().any(|e| e.tag() == Kind::Image) { 0.0 } else { opts.padding };
     let top = members
         .iter()
         .filter_map(|i| tx.get(i))
         .max_by(|a, b| a.index.cmp(&b.index).then_with(|| a.id.cmp(&b.id)))
         .cloned()
-        .ok_or(FrameError::BadArgs("nothing to wrap"))?;
+        .ok_or(FrameError::NothingToWrap)?;
     // Directly above the members, but not inside the block of children of the frame they leave, nor inside a group.
     let top = zorder::lift_above_enclosures(&*tx, &rel, &top, &|_| false, &|_| false);
     let (_, above) = tx.z_neighbors(&top.id);
@@ -405,7 +408,7 @@ pub fn wrap<T: SceneTx, I: IdSource>(
 pub fn unwrap<T: SceneTx>(tx: &mut T, frame: &ElementId) -> Result<Vec<ElementId>, FrameError> {
     let f = frame_of(&*tx, frame)?;
     if f.locked {
-        return Err(FrameError::Locked(vec![frame.clone()]));
+        return Err(FrameError::Target(TargetError::Locked(vec![frame.clone()])));
     }
     let children = remove_all_children(tx, frame)?;
     lifecycle::delete(tx, std::slice::from_ref(frame), ChildPolicy::Release)?;
@@ -416,12 +419,12 @@ pub fn unwrap<T: SceneTx>(tx: &mut T, frame: &ElementId) -> Result<Vec<ElementId
 pub fn rename<T: SceneTx>(tx: &mut T, frame: &ElementId, name: Option<&str>) -> Result<(), FrameError> {
     let f = frame_of(&*tx, frame)?;
     if f.locked {
-        return Err(FrameError::Locked(vec![frame.clone()]));
+        return Err(FrameError::Target(TargetError::Locked(vec![frame.clone()])));
     }
     if let Some(n) = name
         && (n.is_empty() || n.chars().count() > limits::MAX_NAME_CHARS || n.chars().any(char::is_control))
     {
-        return Err(FrameError::BadArgs("a frame name must be 1 to 256 characters without control characters"));
+        return Err(FrameError::BadName);
     }
     let name = name.map(str::to_owned);
     tx.update(frame, |e| {

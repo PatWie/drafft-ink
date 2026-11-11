@@ -35,7 +35,7 @@ pub use derived::DerivedIndex;
 pub use document::{DocMeta, Document, DocumentError, FileEntry, SCHEMA_VERSION, json_schema};
 pub use element::{
     BindMode, Binding, Brush, Crop, Element, ElementKind, FixedSegment, FrameData, FreehandData, Head, ImageData, Kind,
-    LinearData, MathData, PathType, PressureMode, TextData, TextRun, Transform,
+    LinearData, MathData, ParseKindError, PathType, PressureMode, TextData, TextRun, Transform,
 };
 pub use id::{ElementId, FileId, GroupId, IdError, IdSource, RandomIds, Rng64, SeqIds, SplitMix64};
 pub use memory::MemoryStore;

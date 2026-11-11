@@ -5,6 +5,7 @@ mod structure_support;
 
 use std::collections::BTreeSet;
 
+use drafftink_edit::TargetError;
 use drafftink_edit::frame::{self, FrameError, SkipReason, WrapOpts};
 use drafftink_edit::transform::{self, ResizeSpec};
 use drafftink_geom::select::{BoxHandle, Corner};
@@ -128,12 +129,15 @@ fn add_refusals() {
     ));
     assert!(matches!(
         run(&mut s, |tx| frame::add_to_frame(tx, &id("f"), &ids(&["a", "lk"]))),
-        Err(FrameError::Locked(_))
+        Err(FrameError::Target(TargetError::Locked(_)))
     ));
-    assert!(matches!(run(&mut s, |tx| frame::add_to_frame(tx, &id("lf"), &ids(&["a"]))), Err(FrameError::Locked(_))));
+    assert!(matches!(
+        run(&mut s, |tx| frame::add_to_frame(tx, &id("lf"), &ids(&["a"]))),
+        Err(FrameError::Target(TargetError::Locked(_)))
+    ));
     assert!(matches!(
         run(&mut s, |tx| frame::add_to_frame(tx, &id("f"), &ids(&["nope"]))),
-        Err(FrameError::NotFound(_))
+        Err(FrameError::Target(TargetError::NotFound(_)))
     ));
     assert_eq!(s.revision(), rev);
 }
@@ -236,7 +240,7 @@ fn wrap_without_padding_for_images_and_nested_frames_refused() {
     ));
     assert!(matches!(
         run(&mut s, |tx| frame::wrap(tx, &ids(&["i"]), &mut src, &WrapOpts { padding: -1.0, name: None })),
-        Err(FrameError::BadArgs(_))
+        Err(FrameError::BadPadding)
     ));
     assert_eq!(s.revision(), rev);
 }
@@ -259,7 +263,7 @@ fn rename_sets_and_clears_the_label() {
     assert!(matches!(&get(&s, "f").kind, ElementKind::Frame(d) if d.name.as_deref() == Some("Hero")));
     run(&mut s, |tx| frame::rename(tx, &id("f"), None)).unwrap();
     assert!(matches!(&get(&s, "f").kind, ElementKind::Frame(d) if d.name.is_none()));
-    assert!(matches!(run(&mut s, |tx| frame::rename(tx, &id("f"), Some(""))), Err(FrameError::BadArgs(_))));
+    assert!(matches!(run(&mut s, |tx| frame::rename(tx, &id("f"), Some(""))), Err(FrameError::BadName)));
     assert!(matches!(run(&mut s, |tx| frame::rename(tx, &id("a"), Some("x"))), Err(FrameError::NotAFrame { .. })));
 }
 

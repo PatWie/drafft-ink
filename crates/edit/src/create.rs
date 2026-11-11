@@ -34,8 +34,9 @@ use crate::arrow::{ArrowError, BindRequest, bind_end};
 use crate::binding::{self, BindOpts, BindingError, End};
 use crate::elbow::ElbowEditError;
 use crate::frame::{self, FrameError};
-use crate::group::units::{Relations, TargetError};
+use crate::group::units::Relations;
 use crate::linear::{self, LinearError, world_points};
+use crate::target::TargetError;
 use crate::text_bind::{self, TextBindError, TextMeasure};
 use crate::zorder::{self, Place, ZOrderError};
 
@@ -61,17 +62,17 @@ pub enum CreateError {
     #[error("the {kind} is smaller than {MIN_SIZE} unit in {}", dims(*width, *height))]
     TooSmall {
         /// Kind name.
-        kind: &'static str,
+        kind: Kind,
         /// The width is under the minimum.
         width: bool,
         /// The height is under the minimum.
         height: bool,
     },
     /// A line, arrow or stroke has too few points.
-    #[error("{} needs at least {min} points, and {have} were given", drafftink_scene::words::Article::new(.kind))]
+    #[error("{} needs at least {min} points, and {have} were given", drafftink_scene::words::Article::new(.kind.name()))]
     TooFewPoints {
         /// Kind name.
-        kind: &'static str,
+        kind: Kind,
         /// Fewest points.
         min: usize,
         /// Points given.
@@ -93,19 +94,16 @@ pub enum CreateError {
         /// Its owner.
         owner: ElementId,
     },
-    /// No live element has this id.
-    #[error("element {0} does not exist or is deleted")]
-    NotFound(ElementId),
-    /// Elements are locked.
-    #[error("{} element(s) are locked", .0.len())]
-    Locked(Vec<ElementId>),
+    /// An element does not exist, is deleted, or is locked.
+    #[error(transparent)]
+    Target(#[from] TargetError),
     /// An arrow end cannot attach to this element.
     #[error("{kind} elements cannot be arrow targets")]
     NotBindable {
         /// The element.
         id: ElementId,
         /// Its kind.
-        kind: &'static str,
+        kind: Kind,
         /// True for text that labels another element.
         label: bool,
     },
@@ -113,12 +111,12 @@ pub enum CreateError {
     #[error("an element cannot be connected to itself")]
     SameElement,
     /// The element cannot hold a label.
-    #[error("{id} is {}, which cannot hold a label", drafftink_scene::words::Article::new(.kind))]
+    #[error("{id} is {}, which cannot hold a label", drafftink_scene::words::Article::new(.kind.name()))]
     NotLabelContainer {
         /// The element.
         id: ElementId,
         /// Its kind.
-        kind: &'static str,
+        kind: Kind,
     },
     /// The container has a label already.
     #[error("{container} already has a label ({existing})")]
@@ -151,12 +149,12 @@ pub enum CreateError {
         error: ElementError,
     },
     /// The element named as a frame is not a frame.
-    #[error("{id} is {}, not a frame", drafftink_scene::words::Article::new(.kind))]
+    #[error("{id} is {}, not a frame", drafftink_scene::words::Article::new(.kind.name()))]
     NotAFrame {
         /// The element.
         id: ElementId,
         /// Its kind.
-        kind: &'static str,
+        kind: Kind,
     },
     /// A frame cannot be inside a frame.
     #[error("frames cannot be nested")]
@@ -187,7 +185,7 @@ impl From<IndexError> for CreateError {
 impl From<BindingError> for CreateError {
     fn from(e: BindingError) -> Self {
         match e {
-            BindingError::Missing(id) => CreateError::NotFound(id),
+            BindingError::Missing(id) => CreateError::Target(TargetError::NotFound(id)),
             other => CreateError::Internal(other.to_string()),
         }
     }
@@ -205,7 +203,7 @@ impl From<LinearError> for CreateError {
 impl From<ArrowError> for CreateError {
     fn from(e: ArrowError) -> Self {
         match e {
-            ArrowError::Missing(id) => CreateError::NotFound(id),
+            ArrowError::Missing(id) => CreateError::Target(TargetError::NotFound(id)),
             ArrowError::NotBindable { id, kind, label } => CreateError::NotBindable { id, kind, label },
             other => CreateError::Internal(other.to_string()),
         }
@@ -214,8 +212,7 @@ impl From<ArrowError> for CreateError {
 impl From<FrameError> for CreateError {
     fn from(e: FrameError) -> Self {
         match e {
-            FrameError::NotFound(id) => CreateError::NotFound(id),
-            FrameError::Locked(ids) => CreateError::Locked(ids),
+            FrameError::Target(t) => CreateError::Target(t),
             FrameError::NotAFrame { id, kind } => CreateError::NotAFrame { id, kind },
             FrameError::NestedFrame(_) => CreateError::NestedFrame,
             other => CreateError::Internal(other.to_string()),
@@ -225,29 +222,19 @@ impl From<FrameError> for CreateError {
 impl From<ZOrderError> for CreateError {
     fn from(e: ZOrderError) -> Self {
         match e {
-            ZOrderError::NotFound(id) => CreateError::NotFound(id),
-            ZOrderError::Locked(ids) => CreateError::Locked(ids),
+            ZOrderError::Target(t) => CreateError::Target(t),
             other => CreateError::Internal(other.to_string()),
-        }
-    }
-}
-impl From<TargetError> for CreateError {
-    fn from(e: TargetError) -> Self {
-        match e {
-            TargetError::NotFound(id) => CreateError::NotFound(id),
-            TargetError::Locked(ids) => CreateError::Locked(ids),
         }
     }
 }
 impl From<TextBindError> for CreateError {
     fn from(e: TextBindError) -> Self {
         match e {
-            TextBindError::Missing(id) => CreateError::NotFound(id),
+            TextBindError::Target(t) => CreateError::Target(t),
             TextBindError::NotContainer { id, kind } => CreateError::NotLabelContainer { id, kind },
             TextBindError::AlreadyLabelled { container, existing } => {
                 CreateError::AlreadyLabelled { container, existing }
             }
-            TextBindError::Locked(id) => CreateError::Locked(vec![id]),
             TextBindError::EmptyText => CreateError::EmptyText,
             other => CreateError::Internal(other.to_string()),
         }
@@ -269,7 +256,7 @@ pub fn normalized_box(x: f64, y: f64, w: f64, h: f64) -> (f64, f64, f64, f64) {
 pub fn check_box_size(kind: Kind, w: f64, h: f64) -> Result<(), CreateError> {
     let (bad_w, bad_h) = (w < MIN_SIZE, h < MIN_SIZE);
     if bad_w || bad_h {
-        return Err(CreateError::TooSmall { kind: kind.name(), width: bad_w, height: bad_h });
+        return Err(CreateError::TooSmall { kind, width: bad_w, height: bad_h });
     }
     Ok(())
 }
@@ -278,7 +265,7 @@ pub fn check_box_size(kind: Kind, w: f64, h: f64) -> Result<(), CreateError> {
 /// rule: add when width or height is above 1). A horizontal line has height 0 and is fine.
 pub fn check_extent(kind: Kind, w: f64, h: f64) -> Result<(), CreateError> {
     if w < MIN_SIZE && h < MIN_SIZE {
-        return Err(CreateError::TooSmall { kind: kind.name(), width: true, height: true });
+        return Err(CreateError::TooSmall { kind, width: true, height: true });
     }
     Ok(())
 }
@@ -312,7 +299,12 @@ pub fn ensure_name_free<R: SceneRead>(scene: &R, name: &str, except: Option<&Ele
 
 /// Sets or clears the name of a live element after checking the rules. Returns whether it changed.
 pub fn set_name<T: SceneTx>(tx: &mut T, id: &ElementId, name: Option<&str>) -> Result<bool, CreateError> {
-    let current = tx.get(id).filter(|e| !e.deleted).ok_or_else(|| CreateError::NotFound(id.clone()))?.name.clone();
+    let current = tx
+        .get(id)
+        .filter(|e| !e.deleted)
+        .ok_or_else(|| CreateError::Target(TargetError::NotFound(id.clone())))?
+        .name
+        .clone();
     if let Some(n) = name {
         validate_name(n)?;
         ensure_name_free(&*tx, n, Some(id))?;
@@ -465,7 +457,7 @@ pub fn linear_element(
 ) -> Result<Element, CreateError> {
     let min = if spec.closed { 3 } else { 2 };
     if world.len() < min {
-        return Err(CreateError::TooFewPoints { kind: spec.kind.name(), min, have: world.len() });
+        return Err(CreateError::TooFewPoints { kind: spec.kind, min, have: world.len() });
     }
     let mut e = Element::linear(id, spec.kind, index, world)
         .ok_or_else(|| CreateError::Internal("the points are not finite".to_owned()))?;
@@ -500,7 +492,7 @@ pub fn freehand_element(
     style: Style,
 ) -> Result<Element, CreateError> {
     if world.is_empty() {
-        return Err(CreateError::TooFewPoints { kind: "freehand", min: 1, have: 0 });
+        return Err(CreateError::TooFewPoints { kind: Kind::Freehand, min: 1, have: 0 });
     }
     let mut d = FreehandData::new(world.to_vec());
     d.pressures = spec.pressures;
@@ -536,6 +528,44 @@ pub struct TextSpec {
     pub width: Option<f64>,
 }
 
+/// Why a free text could not be built.
+#[derive(Debug, Clone, PartialEq, thiserror::Error)]
+pub enum FreeTextError {
+    /// The text is empty or only white space.
+    #[error("a text element cannot be empty")]
+    Empty,
+    /// The text is longer than a text element can be.
+    #[error("the text has {n} characters, and a text element holds at most {max}")]
+    TooLong {
+        /// Characters given.
+        n: usize,
+        /// The limit.
+        max: usize,
+    },
+    /// A position or size is not a usable number.
+    #[error("the position or size is not a finite number within the document limits")]
+    NotFinite,
+    /// The text breaks a rule of the model.
+    #[error("the new element {id} is invalid: {error}")]
+    Invalid {
+        /// The element.
+        id: ElementId,
+        /// The broken rule.
+        error: ElementError,
+    },
+}
+
+impl From<FreeTextError> for CreateError {
+    fn from(e: FreeTextError) -> Self {
+        match e {
+            FreeTextError::Empty => CreateError::EmptyText,
+            FreeTextError::TooLong { n, max } => CreateError::TextTooLong { n, max },
+            FreeTextError::NotFinite => CreateError::NotFinite,
+            FreeTextError::Invalid { id, error } => CreateError::Invalid { id, error },
+        }
+    }
+}
+
 /// A free text: the one builder for typed, created and pasted text. Blank text, text over the length limit,
 /// a box that is not a finite number within the document limits, and a text that breaks a model rule are
 /// refused.
@@ -546,13 +576,13 @@ pub fn text_element<M: TextMeasure + ?Sized>(
     content: &str,
     spec: TextSpec,
     style: Style,
-) -> Result<Element, CreateError> {
+) -> Result<Element, FreeTextError> {
     if content.trim().is_empty() {
-        return Err(CreateError::EmptyText);
+        return Err(FreeTextError::Empty);
     }
     let n = content.chars().count();
     if n > limits::MAX_TEXT_CHARS {
-        return Err(CreateError::TextTooLong { n, max: limits::MAX_TEXT_CHARS });
+        return Err(FreeTextError::TooLong { n, max: limits::MAX_TEXT_CHARS });
     }
     let size = text_bind::measure_text(m, content, &spec.font, spec.width);
     let (w, h) = (spec.width.unwrap_or(size.width), size.height);
@@ -567,9 +597,9 @@ pub fn text_element<M: TextMeasure + ?Sized>(
     e.transform = Transform::new(x, y, w, h);
     e.style = style;
     if ![x, y, w, h].iter().all(|v| v.is_finite() && v.abs() <= limits::MAX_COORD) {
-        return Err(CreateError::NotFinite);
+        return Err(FreeTextError::NotFinite);
     }
-    validate_element(&e).map_err(|error| CreateError::Invalid { id: e.id.clone(), error })?;
+    validate_element(&e).map_err(|error| FreeTextError::Invalid { id: e.id.clone(), error })?;
     Ok(e)
 }
 
@@ -687,10 +717,14 @@ pub fn bind_new_ends<T: SceneTx>(
     zoom: f64,
     midpoint_snap: bool,
 ) -> Result<BoundEnds, CreateError> {
-    let el = tx.get(arrow).filter(|e| !e.deleted).ok_or_else(|| CreateError::NotFound(arrow.clone()))?.clone();
+    let el = tx
+        .get(arrow)
+        .filter(|e| !e.deleted)
+        .ok_or_else(|| CreateError::Target(TargetError::NotFound(arrow.clone())))?
+        .clone();
     let world = world_points(&el).ok_or_else(|| CreateError::Internal(format!("{arrow} is not a line or arrow")))?;
     let (Some(first), Some(last)) = (world.first().copied(), world.last().copied()) else {
-        return Err(CreateError::TooFewPoints { kind: el.tag().name(), min: 2, have: world.len() });
+        return Err(CreateError::TooFewPoints { kind: el.tag(), min: 2, have: world.len() });
     };
     for (which, spec) in [(End::Start, start), (End::End, end)] {
         if let EndBinding::Target { target, mode, fixed_point } = spec {
@@ -755,7 +789,11 @@ pub struct Joined {
 /// Puts the new element `id` into a frame by `choice`. A frame never joins a frame. With `Auto`, the topmost
 /// unlocked frame under the element's centre is used; an element the frame does not take stays out silently.
 pub fn join_frame<T: SceneTx>(tx: &mut T, id: &ElementId, choice: &FrameChoice) -> Result<Joined, CreateError> {
-    let e = tx.get(id).filter(|e| !e.deleted).ok_or_else(|| CreateError::NotFound(id.clone()))?.clone();
+    let e = tx
+        .get(id)
+        .filter(|e| !e.deleted)
+        .ok_or_else(|| CreateError::Target(TargetError::NotFound(id.clone())))?
+        .clone();
     let target = match choice {
         FrameChoice::None => return Ok(Joined::default()),
         FrameChoice::Auto if e.tag() == Kind::Frame => return Ok(Joined::default()),
@@ -789,7 +827,11 @@ pub fn place_above<T: SceneTx>(tx: &mut T, id: &ElementId, after: &ElementId) ->
     if id == after {
         return Ok(());
     }
-    let start = tx.get(after).filter(|e| !e.deleted).ok_or_else(|| CreateError::NotFound(after.clone()))?.clone();
+    let start = tx
+        .get(after)
+        .filter(|e| !e.deleted)
+        .ok_or_else(|| CreateError::Target(TargetError::NotFound(after.clone())))?
+        .clone();
     let joined_frame = tx.get(id).and_then(|e| e.frame_id.clone());
     let rel = Relations::build(&*tx);
     let anchor = zorder::lift_above_enclosures(&*tx, &rel, &start, &|f| joined_frame.as_ref() == Some(f), &|_| false);
@@ -852,17 +894,25 @@ pub fn connect<T: SceneTx>(
     if from == to {
         return Err(CreateError::SameElement);
     }
-    let a = tx.get(from).filter(|e| !e.deleted).ok_or_else(|| CreateError::NotFound(from.clone()))?.clone();
-    let b = tx.get(to).filter(|e| !e.deleted).ok_or_else(|| CreateError::NotFound(to.clone()))?.clone();
+    let a = tx
+        .get(from)
+        .filter(|e| !e.deleted)
+        .ok_or_else(|| CreateError::Target(TargetError::NotFound(from.clone())))?
+        .clone();
+    let b = tx
+        .get(to)
+        .filter(|e| !e.deleted)
+        .ok_or_else(|| CreateError::Target(TargetError::NotFound(to.clone())))?
+        .clone();
     for e in [&a, &b] {
         if binding::resolve(&*tx, &e.id).is_none() {
             let label = matches!(&e.kind, ElementKind::Text(t) if t.container_id.is_some());
-            return Err(CreateError::NotBindable { id: e.id.clone(), kind: e.tag().name(), label });
+            return Err(CreateError::NotBindable { id: e.id.clone(), kind: e.tag(), label });
         }
     }
     let locked: Vec<ElementId> = [&a, &b].into_iter().filter(|e| e.locked).map(|e| e.id.clone()).collect();
     if !locked.is_empty() {
-        return Err(CreateError::Locked(locked));
+        return Err(CreateError::Target(TargetError::Locked(locked)));
     }
     let (ca, mut cb) = (a.transform.center(), b.transform.center());
     if (ca - cb).hypot() < 1e-6 {
@@ -908,7 +958,7 @@ mod tests {
         assert!(check_box_size(Kind::Rectangle, 1.0, 1.0).is_ok());
         assert_eq!(
             check_box_size(Kind::Rectangle, 0.5, 40.0),
-            Err(CreateError::TooSmall { kind: "rectangle", width: true, height: false })
+            Err(CreateError::TooSmall { kind: Kind::Rectangle, width: true, height: false })
         );
         assert!(check_extent(Kind::Line, 100.0, 0.0).is_ok());
         assert!(check_extent(Kind::Arrow, 0.2, 0.9).is_err());
@@ -1006,7 +1056,7 @@ mod tests {
         assert_eq!(set_name(&mut tx, &b, Some("box")), Ok(true));
         assert_eq!(
             set_name(&mut tx, &ElementId::new("zz").unwrap(), Some("x")),
-            Err(CreateError::NotFound(ElementId::new("zz").unwrap()))
+            Err(CreateError::Target(TargetError::NotFound(ElementId::new("zz").unwrap())))
         );
     }
 
@@ -1044,7 +1094,7 @@ mod tests {
         assert_eq!(order, ["a", "n", "b", "c"]);
         assert_eq!(
             place_above(&mut tx, &n, &ElementId::new("zz").unwrap()),
-            Err(CreateError::NotFound(ElementId::new("zz").unwrap()))
+            Err(CreateError::Target(TargetError::NotFound(ElementId::new("zz").unwrap())))
         );
     }
 

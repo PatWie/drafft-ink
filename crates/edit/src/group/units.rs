@@ -15,39 +15,7 @@ use std::collections::{BTreeSet, HashMap};
 use drafftink_profile::{Counter, count};
 use drafftink_scene::{DerivedIndex, Element, ElementId, GroupId, Kind, SceneRead};
 
-/// Why an element cannot be the target of an operation.
-#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
-pub enum TargetError {
-    /// No live element has this id.
-    #[error("element {0} does not exist or is deleted")]
-    NotFound(ElementId),
-    /// Some of the elements are locked. Unlock them first; nothing was changed.
-    #[error("{} element(s) are locked ({}). Unlock them first", .0.len(), ids_text(.0))]
-    Locked(Vec<ElementId>),
-}
-
-pub(crate) fn ids_text(ids: &[ElementId]) -> String {
-    let mut s: Vec<&str> = ids.iter().take(5).map(ElementId::as_str).collect();
-    if ids.len() > 5 {
-        s.push("...");
-    }
-    s.join(", ")
-}
-
-/// Gives a domain error enum the two target variants `NotFound(ElementId)` and `Locked(Vec<ElementId>)`.
-macro_rules! impl_from_target {
-    ($t:ident) => {
-        impl From<$crate::group::units::TargetError> for $t {
-            fn from(e: $crate::group::units::TargetError) -> Self {
-                match e {
-                    $crate::group::units::TargetError::NotFound(id) => $t::NotFound(id),
-                    $crate::group::units::TargetError::Locked(ids) => $t::Locked(ids),
-                }
-            }
-        }
-    };
-}
-pub(crate) use impl_from_target;
+use crate::target::TargetError;
 
 /// The reverse relations of a scene, built in one pass over the live elements.
 #[derive(Debug, Clone, Default)]

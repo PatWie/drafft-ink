@@ -6,6 +6,7 @@ mod structure_support;
 use std::collections::BTreeSet;
 
 use drafftink_edit::CopyError;
+use drafftink_edit::TargetError;
 use drafftink_edit::group;
 use drafftink_edit::lifecycle::{self, ChildPolicy, DuplicateOpts, LifecycleError};
 use drafftink_edit::transform;
@@ -201,12 +202,12 @@ fn duplicate_refusals_change_nothing() {
     let o = DuplicateOpts { offset: Vec2::new(20.0, 20.0), editing: None };
     assert!(matches!(
         run(&mut s, |tx| lifecycle::duplicate(tx, &ids(&["a", "lk"]), &o, &mut src)),
-        Err(LifecycleError::Locked(_))
+        Err(LifecycleError::Target(TargetError::Locked(_)))
     ));
     assert!(matches!(run(&mut s, |tx| lifecycle::duplicate(tx, &[], &o, &mut src)), Err(LifecycleError::NoTarget)));
     assert!(matches!(
         run(&mut s, |tx| lifecycle::duplicate(tx, &ids(&["zz"]), &o, &mut src)),
-        Err(LifecycleError::NotFound(_))
+        Err(LifecycleError::Target(TargetError::NotFound(_)))
     ));
     let bad = DuplicateOpts { offset: Vec2::new(f64::NAN, 0.0), editing: None };
     assert!(matches!(
@@ -272,7 +273,7 @@ fn delete_is_soft_and_takes_bound_text_along() {
     assert_eq!(s.revision(), rev);
     assert!(matches!(
         run(&mut s, |tx| lifecycle::delete(tx, &ids(&["zz"]), ChildPolicy::Delete)),
-        Err(LifecycleError::NotFound(_))
+        Err(LifecycleError::Target(TargetError::NotFound(_)))
     ));
     assert!(matches!(run(&mut s, |tx| lifecycle::delete(tx, &[], ChildPolicy::Delete)), Err(LifecycleError::NoTarget)));
 }
@@ -316,15 +317,15 @@ fn deleting_a_locked_element_or_a_frame_with_a_locked_child_is_refused() {
     let rev = s.revision();
     assert!(matches!(
         run(&mut s, |tx| lifecycle::delete(tx, &ids(&["lk"]), ChildPolicy::Delete)),
-        Err(LifecycleError::Locked(_))
+        Err(LifecycleError::Target(TargetError::Locked(_)))
     ));
     assert!(matches!(
         run(&mut s, |tx| lifecycle::delete(tx, &ids(&["f"]), ChildPolicy::Delete)),
-        Err(LifecycleError::Locked(_))
+        Err(LifecycleError::Target(TargetError::Locked(_)))
     ));
     assert!(matches!(
         run(&mut s, |tx| lifecycle::delete(tx, &ids(&["f"]), ChildPolicy::Release)),
-        Err(LifecycleError::Locked(_))
+        Err(LifecycleError::Target(TargetError::Locked(_)))
     ));
     assert_eq!(s.revision(), rev);
 }
@@ -360,7 +361,10 @@ fn restore_brings_back_the_element_and_its_text() {
     let rev = s.revision();
     assert!(run(&mut s, |tx| lifecycle::restore(tx, &ids(&["a"]))).unwrap().restored.is_empty());
     assert_eq!(s.revision(), rev);
-    assert!(matches!(run(&mut s, |tx| lifecycle::restore(tx, &ids(&["zz"]))), Err(LifecycleError::NotFound(_))));
+    assert!(matches!(
+        run(&mut s, |tx| lifecycle::restore(tx, &ids(&["zz"]))),
+        Err(LifecycleError::Target(TargetError::NotFound(_)))
+    ));
 }
 
 #[test]
@@ -398,7 +402,7 @@ fn locking_locks_the_whole_outermost_group_and_bound_text() {
     assert!(get(&s, "a").locked && get(&s, "la").locked && get(&s, "b").locked && !get(&s, "c").locked);
     assert!(matches!(
         run(&mut s, |tx| transform::move_by(tx, &ids(&["a"]), Vec2::new(1.0, 0.0))),
-        Err(transform::TransformError::Locked(_))
+        Err(transform::TransformError::Target(TargetError::Locked(_)))
     ));
     // Toggle: everything is locked, so it unlocks.
     let r = run(&mut s, |tx| lifecycle::lock(tx, &ids(&["a"]), None)).unwrap();

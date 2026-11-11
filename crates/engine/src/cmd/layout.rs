@@ -6,7 +6,7 @@
 use drafftink_edit::layout::{
     Algorithm, ApplyError, ApplyOpts, ApplyResult, Direction, LayoutAnchor, LayoutOpts, layout_apply,
 };
-use drafftink_edit::query::{Query, QueryCtx, QueryOpts, run_query};
+use drafftink_edit::query::{Query, QueryCtx, QueryError, QueryOpts, run_query};
 use drafftink_geom::kurbo::Point;
 use drafftink_scene::{ElementId, Kind};
 use schemars::JsonSchema;
@@ -14,6 +14,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::json;
 
 use super::text::support::{RectOut, with_doc};
+use crate::cmd::element_common::target_refusal;
 use crate::args;
 use crate::refusal::Refusal;
 use crate::session::{Ref, Session};
@@ -143,8 +144,8 @@ fn apply(s: &mut Session, a: ApplyArgs) -> Result<ApplyOut, Refusal> {
         (None, Some(q)) => {
             let ctx = QueryCtx { selected: Some(s.selection()) };
             let opts = QueryOpts { limit: drafftink_edit::query::MAX_LIMIT, ..QueryOpts::default() };
-            let r = run_query(s.store(), q, &ctx, &opts).map_err(|e| match e.code() {
-                "not_found" => Refusal::not_found(cmd, &e.to_string()),
+            let r = run_query(s.store(), q, &ctx, &opts).map_err(|e| match e {
+                QueryError::Missing(_) | QueryError::UnknownName(_) => Refusal::not_found(cmd, &e.to_string()),
                 _ => Refusal::bad_args(cmd, e.to_string()),
             })?;
             if r.truncated {
@@ -201,8 +202,7 @@ fn refuse_apply(cmd: &str, e: ApplyError) -> Refusal {
     let msg = e.to_string();
     match e {
         ApplyError::TooFew(n) => Refusal::too_few(cmd, 2, "elements", n),
-        ApplyError::Missing(id) => Refusal::not_found(cmd, id.as_str()),
-        ApplyError::Locked(id) => Refusal::locked(cmd, id.as_str()),
+        ApplyError::Target(t) => target_refusal(cmd, t),
         ApplyError::LimitExceeded { what, max } => Refusal::custom(
             "limit_exceeded",
             cmd,

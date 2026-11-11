@@ -16,7 +16,9 @@ use drafftink_geom::snap::{
     snap_to_grid,
 };
 use drafftink_geom::{OrientedBox, aabb};
-use drafftink_scene::{BindMode, Binding, Element, ElementId, ElementKind, PathType, SceneRead, SceneTx, StoreError};
+use drafftink_scene::{
+    BindMode, Binding, Element, ElementId, ElementKind, Kind, PathType, SceneRead, SceneTx, StoreError,
+};
 use kurbo::{Point, Rect, Vec2};
 
 use crate::binding::{BindingError, End, resolve, update_bound_arrows};
@@ -38,7 +40,7 @@ pub enum ArrowError {
         /// The element.
         id: ElementId,
         /// Its kind, lower case.
-        kind: &'static str,
+        kind: Kind,
         /// True for text that labels another element.
         label: bool,
     },
@@ -109,7 +111,7 @@ pub fn bind_end<T: SceneTx>(
     let t = tx.get(req.target).filter(|e| !e.deleted).ok_or_else(|| ArrowError::Missing(req.target.clone()))?;
     let not_bindable = |t: &Element| ArrowError::NotBindable {
         id: t.id.clone(),
-        kind: t.tag().name(),
+        kind: t.tag(),
         label: matches!(&t.kind, ElementKind::Text(x) if x.container_id.is_some()),
     };
     if req.target == arrow {

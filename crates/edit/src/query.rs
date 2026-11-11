@@ -290,16 +290,6 @@ pub enum QueryError {
     BadLimit,
 }
 
-impl QueryError {
-    /// The refusal code of the command catalog.
-    pub fn code(&self) -> &'static str {
-        match self {
-            QueryError::Missing(_) | QueryError::UnknownName(_) => "not_found",
-            _ => "bad_args",
-        }
-    }
-}
-
 /// Resolves a reference: an id, or `@name` for the element with that name.
 pub fn resolve_ref<R: SceneRead>(r: &R, reference: &str) -> Result<ElementId, QueryError> {
     if let Some(name) = reference.strip_prefix('@') {

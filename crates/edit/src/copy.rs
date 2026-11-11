@@ -30,7 +30,7 @@ use crate::zorder::{self, REBALANCE_LEN, ZOrderError};
 const GROUP_NAME_PREFIX: &str = "drafftink.group.";
 
 /// Why a block of copies could not be made or written.
-#[derive(Debug, thiserror::Error)]
+#[derive(Debug, Clone, PartialEq, thiserror::Error)]
 pub enum CopyError {
     /// The id source kept returning ids that are in use.
     #[error("could not make a fresh id; the id source keeps returning used ids")]

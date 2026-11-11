@@ -10,7 +10,7 @@
 //! `diagram.import_mermaid`, and text becomes a text element in the default font.
 
 use drafftink_edit::CopyError;
-use drafftink_edit::create::CreateError;
+use drafftink_edit::create::FreeTextError;
 use drafftink_geom::kurbo::Point;
 use drafftink_io::clipboard::{self as wire, TextKind};
 use drafftink_io::{Imported, native};
@@ -295,9 +295,9 @@ fn find(s: &mut Session, a: &PasteArgs) -> Result<Found, Refusal> {
 fn paste_refusal(cmd: &str, e: drafftink_edit::paste::PasteError) -> Refusal {
     use drafftink_edit::paste::PasteError as E;
     match e {
-        E::Empty | E::Text(CreateError::EmptyText) => empty(cmd),
+        E::Empty | E::Text(FreeTextError::Empty) => empty(cmd),
         E::TooMany { n, max } => Refusal::limit_exceeded(cmd, n, "elements to paste", max),
-        E::Text(CreateError::TextTooLong { n, max }) => Refusal::limit_exceeded(cmd, n, "characters of text", max),
+        E::Text(FreeTextError::TooLong { n, max }) => Refusal::limit_exceeded(cmd, n, "characters of text", max),
         E::NotFinite => Refusal::bad_arg(cmd, "at", "puts the pasted elements outside the area the document allows"),
         E::Copy(CopyError::Invalid { .. }) => unreadable(cmd, "The pasted elements", &e.to_string(), "Copy them again."),
         other => Refusal::internal(cmd, other.to_string()),

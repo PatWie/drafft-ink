@@ -10,7 +10,9 @@
 //! end, deleting an end point frees the end it belonged to, elbow arrows only have two movable points,
 //! and a curved line passes through its points as a Catmull-Rom spline.
 
-use drafftink_scene::{ElementId, ElementKind, Head, LinearData, PathType, SceneRead, SceneTx, StoreError, Transform};
+use drafftink_scene::{
+    ElementId, ElementKind, Head, Kind, LinearData, PathType, SceneRead, SceneTx, StoreError, Transform,
+};
 use kurbo::{CubicBez, ParamCurve, ParamCurveArclen, Point};
 
 use crate::binding::{End, update_bound_arrows};
@@ -43,10 +45,10 @@ pub enum LinearError {
         len: usize,
     },
     /// The edit would leave too few points.
-    #[error("{} needs at least {min} points and this edit would leave {have}; delete the element instead", drafftink_scene::words::Article::new(.kind))]
+    #[error("{} needs at least {min} points and this edit would leave {have}; delete the element instead", drafftink_scene::words::Article::new(.kind.name()))]
     TooFewPoints {
         /// Line or arrow.
-        kind: &'static str,
+        kind: Kind,
         /// The fewest points allowed.
         min: usize,
         /// How many would be left.
@@ -138,7 +140,7 @@ pub(crate) fn linear_of<R: SceneRead>(
     let e = scene.get(id).ok_or_else(|| LinearError::Missing(id.clone()))?;
     let world = world_points(e).ok_or_else(|| LinearError::NotLinear(id.clone()))?;
     if world.len() < 2 {
-        return Err(LinearError::TooFewPoints { kind: e.tag().name(), min: 2, have: world.len() });
+        return Err(LinearError::TooFewPoints { kind: e.tag(), min: 2, have: world.len() });
     }
     Ok((e.clone(), world))
 }
@@ -288,7 +290,7 @@ pub fn delete_points<T: SceneTx>(tx: &mut T, id: &ElementId, indices: &[usize]) 
     let have = len - drop.len();
     let min = min_points(&e);
     if have < min {
-        let kind = e.tag().name();
+        let kind = e.tag();
         return Err(LinearError::TooFewPoints { kind, min, have });
     }
     if drop.is_empty() {

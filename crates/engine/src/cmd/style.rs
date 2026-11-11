@@ -24,6 +24,7 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
+use crate::cmd::element_common::target_refusal;
 use crate::refusal::{Refusal, echo};
 use crate::session::{Ref, Session};
 use crate::spec::{
@@ -104,8 +105,7 @@ fn refusal(cmd: &str, e: StyleError) -> Refusal {
             "give at least one style property, for example {\"stroke_color\": \"blue-500\"}",
         ),
         StyleError::OutOfRange { prop, expected } => Refusal::bad_arg(cmd, &format!("props.{}", prop.name()), expected),
-        StyleError::NotFound(id) => Refusal::not_found(cmd, id.as_str()),
-        StyleError::Locked(id) => Refusal::locked(cmd, id.as_str()),
+        StyleError::Target(t) => target_refusal(cmd, t),
         StyleError::NotApplicable { props } => {
             let named = props.iter().map(|p| format!("`{}`", p.name())).collect::<Vec<_>>().join(", ");
             let mut kinds: Vec<&str> = Vec::new();

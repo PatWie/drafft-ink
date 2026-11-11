@@ -1,7 +1,7 @@
 //! Layout properties: deterministic, no overlapping nodes, respects spacing and direction.
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
-use drafftink_edit::layout::{Algorithm, Direction, LayoutError, LayoutGraph, LayoutOpts, compute_layout};
+use drafftink_edit::layout::{Algorithm, Direction, Gap, LayoutError, LayoutGraph, LayoutOpts, compute_layout};
 use kurbo::{Rect, Size};
 use proptest::prelude::*;
 
@@ -255,7 +255,7 @@ fn bad_input_is_a_typed_error() {
     assert_eq!(compute_layout(&g, &LayoutOpts::default()), Err(LayoutError::BadEdge { edge: 0 }));
     let g = graph(&[(40.0, 20.0)], &[]);
     let bad = LayoutOpts { node_gap: -1.0, ..LayoutOpts::default() };
-    assert_eq!(compute_layout(&g, &bad), Err(LayoutError::BadGap("node_gap")));
+    assert_eq!(compute_layout(&g, &bad), Err(LayoutError::BadGap(Gap::Node)));
     let none = LayoutOpts { algorithm: Algorithm::None, ..LayoutOpts::default() };
     assert_eq!(compute_layout(&g, &none), Err(LayoutError::MissingPosition { node: 0 }));
     // An empty graph is fine.

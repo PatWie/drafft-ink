@@ -1371,6 +1371,7 @@ dependencies = [
  "drafftink-geom",
  "drafftink-profile",
  "drafftink-scene",
+ "drafftink-typeset",
  "insta",
  "kurbo",
  "proptest",

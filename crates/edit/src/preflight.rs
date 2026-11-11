@@ -6,9 +6,10 @@
 
 use drafftink_scene::{ElementId, GroupId, SceneRead};
 
-use crate::arrange::ArrangeError;
+use crate::arrange::{ArrangeError, Arrangement};
 use crate::group::GroupError;
-use crate::group::units::{Relations, TargetError, Unit, UnitKey, primaries, units};
+use crate::group::units::{Relations, Unit, UnitKey, primaries, units};
+use crate::target::TargetError;
 
 /// Units needed to group.
 pub const MIN_GROUP_UNITS: usize = 2;
@@ -61,7 +62,7 @@ pub fn groups_of<R: SceneRead>(
 
 /// Checks that `ids` give at least [`MIN_ALIGN_UNITS`] units to align.
 pub fn check_align<R: SceneRead>(scene: &R, ids: &[ElementId], editing: Option<&GroupId>) -> Result<(), ArrangeError> {
-    check_count(scene, ids, editing, "align", MIN_ALIGN_UNITS)
+    check_count(scene, ids, editing, Arrangement::Align, MIN_ALIGN_UNITS)
 }
 
 /// Checks that `ids` give at least [`MIN_DISTRIBUTE_UNITS`] units to distribute.
@@ -70,14 +71,14 @@ pub fn check_distribute<R: SceneRead>(
     ids: &[ElementId],
     editing: Option<&GroupId>,
 ) -> Result<(), ArrangeError> {
-    check_count(scene, ids, editing, "distribute", MIN_DISTRIBUTE_UNITS)
+    check_count(scene, ids, editing, Arrangement::Distribute, MIN_DISTRIBUTE_UNITS)
 }
 
 fn check_count<R: SceneRead>(
     scene: &R,
     ids: &[ElementId],
     editing: Option<&GroupId>,
-    what: &'static str,
+    what: Arrangement,
     need: usize,
 ) -> Result<(), ArrangeError> {
     let rel = Relations::build(scene);

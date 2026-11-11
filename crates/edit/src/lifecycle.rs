@@ -19,18 +19,16 @@ use drafftink_scene::{Element, ElementId, GroupId, IdSource, Kind, SceneTx, Stor
 
 use crate::binding::{self, BindingError};
 use crate::copy::{self, CopyError, Placement};
-use crate::group::units::{Relations, ensure_unlocked, impl_from_target, primaries, sort_z, units, with_companions};
+use crate::group::units::{Relations, ensure_unlocked, primaries, sort_z, units, with_companions};
+use crate::target::TargetError;
 use crate::zorder::{self, ZOrderError};
 
 /// Why a lifecycle operation was refused.
-#[derive(Debug, thiserror::Error)]
+#[derive(Debug, Clone, PartialEq, thiserror::Error)]
 pub enum LifecycleError {
-    /// No element has this id.
-    #[error("element {0} does not exist")]
-    NotFound(ElementId),
-    /// Locked elements cannot be duplicated or deleted.
-    #[error("{} element(s) are locked ({}). Unlock them first", .0.len(), crate::group::units::ids_text(.0))]
-    Locked(Vec<ElementId>),
+    /// An element does not exist, is deleted, or is locked.
+    #[error(transparent)]
+    Target(#[from] TargetError),
     /// No element was given.
     #[error("no elements were given. Select some, or pass `ids`")]
     NoTarget,
@@ -50,7 +48,6 @@ pub enum LifecycleError {
     #[error(transparent)]
     ZOrder(#[from] ZOrderError),
 }
-impl_from_target!(LifecycleError);
 
 /// What happens to the children of a deleted frame.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -89,7 +86,7 @@ pub fn delete<T: SceneTx>(
     let mut given: Vec<ElementId> = Vec::new();
     for id in ids {
         match tx.get(id) {
-            None => return Err(LifecycleError::NotFound(id.clone())),
+            None => return Err(LifecycleError::Target(TargetError::NotFound(id.clone()))),
             Some(e) if !e.deleted => given.push(id.clone()),
             Some(_) => {}
         }
@@ -147,7 +144,7 @@ pub fn restore<T: SceneTx>(tx: &mut T, ids: &[ElementId]) -> Result<RestoreRepor
     let mut want: BTreeSet<ElementId> = BTreeSet::new();
     for id in ids {
         match tx.get(id) {
-            None => return Err(LifecycleError::NotFound(id.clone())),
+            None => return Err(LifecycleError::Target(TargetError::NotFound(id.clone()))),
             Some(e) if e.deleted => {
                 want.insert(id.clone());
             }

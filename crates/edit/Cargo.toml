@@ -9,6 +9,7 @@ rust-version.workspace = true
 drafftink-geom = { path = "../geom" }
 drafftink-scene = { path = "../scene" }
 drafftink-profile = { path = "../profile" }
+drafftink-typeset = { path = "../typeset", default-features = false }
 kurbo.workspace = true
 thiserror.workspace = true
 serde.workspace = true

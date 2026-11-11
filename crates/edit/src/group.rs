@@ -20,22 +20,20 @@
 
 use drafftink_scene::{Element, ElementId, GroupId, IdSource, Kind, SceneRead, SceneTx, StoreError, limits};
 
+use crate::target::TargetError;
 use crate::zorder::{Place, ZOrderError, ZReport, move_block};
 
 pub mod selection;
 pub mod units;
 
-use units::{Relations, ensure_unlocked, impl_from_target, primaries, with_companions};
+use units::{Relations, ensure_unlocked, primaries, with_companions};
 
 /// Why a group operation was refused.
 #[derive(Debug, Clone, PartialEq, thiserror::Error)]
 pub enum GroupError {
-    /// No live element has this id.
-    #[error("element {0} does not exist or is deleted")]
-    NotFound(ElementId),
-    /// Locked elements cannot be grouped or ungrouped.
-    #[error("{} element(s) are locked ({}). Unlock them first", .0.len(), units::ids_text(.0))]
-    Locked(Vec<ElementId>),
+    /// An element does not exist, is deleted, or is locked.
+    #[error(transparent)]
+    Target(#[from] TargetError),
     /// Fewer than two units were given.
     #[error("grouping needs at least 2 elements, and {have} were given. Select more")]
     TooFew {
@@ -78,7 +76,6 @@ pub enum GroupError {
     #[error(transparent)]
     ZOrder(#[from] ZOrderError),
 }
-impl_from_target!(GroupError);
 
 /// Longest group name, in characters.
 pub const MAX_GROUP_NAME_CHARS: usize = 64;

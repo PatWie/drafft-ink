@@ -14,10 +14,17 @@
 //! - `group`, `frame`, `zorder`, `arrange`, `transform`, `lifecycle`: groups, frames, z-order,
 //!   align/distribute/flip, move/resize/rotate of selections, duplicate/delete/lock rules.
 //! - `style`: style properties, applicability, defaults and themes (`style.*` commands).
-//! - `text_bind`, `text_cmd`, `flowchart`, `layout`, `query`: bound text and text editing, flowchart
-//!   helpers, auto-layout for `diagram.create`, element queries and the document outline.
+//! - `text_bind`, `flowchart`, `layout`, `query`: text measuring and wrapping, bound text, font steps, formulas and
+//!   colour runs; flowchart helpers, auto-layout for `diagram.create`, element queries (also by `@name`), hits
+//!   along a path and the document outline.
 //! - `library`: fragments (library items, merged files): take out, insert with new ids, tell apart.
-//! - `paste`, `preflight`: pasting copies into a scene, and the checks that run before a structural change.
+//! - `paste`, `preflight`: pasting copies into a scene, and the checks that run before a structural change. The
+//!   rule for copying elements as one block is in the private `copy` module; `lifecycle::duplicate` and `paste`
+//!   both use it.
+//!
+//! Every rule reports a typed error. An element that is missing, deleted or locked is the shared
+//! [`TargetError`], held as the `Target` variant of each error enum. The errors carry plain-words text and no
+//! command names; the engine adds the advice that belongs to a command.
 
 #![warn(missing_docs)]
 #![cfg_attr(test, allow(clippy::unwrap_used, clippy::expect_used, clippy::panic))]
@@ -41,10 +48,11 @@ pub mod paste;
 pub mod preflight;
 pub mod query;
 pub mod style;
+mod target;
 pub mod text_bind;
-pub mod text_cmd;
 pub mod transform;
 pub mod zorder;
 
 pub use copy::CopyError;
 pub use ids::unused_element_id;
+pub use target::TargetError;

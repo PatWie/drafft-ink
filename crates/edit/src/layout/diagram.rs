@@ -10,6 +10,8 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use kurbo::{Point, Rect, Size};
+
+use crate::binding::BindingError;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
@@ -403,23 +405,7 @@ pub enum DiagramError {
     NotFinite,
     /// Re-solving the arrows failed.
     #[error("re-solving the bound arrows failed: {0}")]
-    Binding(String),
-}
-
-impl DiagramError {
-    /// The refusal code of the command catalog.
-    pub fn code(&self) -> &'static str {
-        match self {
-            DiagramError::DuplicateNode(_) => "duplicate_node",
-            DiagramError::UnknownNode { .. } | DiagramError::UnknownGroupMember { .. } => "unknown_node",
-            DiagramError::TreeNotForest(_) => "tree_not_forest",
-            DiagramError::LimitExceeded { .. } => "limit_exceeded",
-            DiagramError::NameTaken { .. } => "name_taken",
-            DiagramError::BadName(_) => "bad_name",
-            DiagramError::Store(_) | DiagramError::Index(_) | DiagramError::Binding(_) => "internal",
-            _ => "bad_args",
-        }
-    }
+    Binding(#[from] BindingError),
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -806,7 +792,7 @@ pub fn diagram_create<T: SceneTx, M: TextMeasure + ?Sized>(
 
     let mut touched: Vec<ElementId> = node_ids.clone();
     touched.extend(edge_out.iter().cloned());
-    update_bound_arrows(tx, &touched).map_err(|e| DiagramError::Binding(e.to_string()))?;
+    update_bound_arrows(tx, &touched)?;
 
     let nodes = spec.nodes.iter().zip(&node_ids).map(|(n, id)| (n.id.clone(), id.clone())).collect();
     Ok(DiagramResult {

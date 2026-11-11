@@ -8,7 +8,7 @@ use drafftink_edit::arrow::{
     ArrowError, BindRequest, SnapFlags, bind_end, reroute, snap_candidates, snap_dragged_point,
 };
 use drafftink_edit::binding::{End, stale_arrows};
-use drafftink_scene::{BindMode, PathType, SceneStore, SceneTx};
+use drafftink_scene::{BindMode, Kind, PathType, SceneStore, SceneTx};
 use kurbo::{Point, Rect};
 
 const GAP: f64 = 6.0; // 5 + stroke 2 / 2
@@ -60,7 +60,7 @@ fn bind_end_refuses_what_an_arrow_cannot_attach_to() {
     let a = s.arrow("a", &[(0.0, 0.0), (100.0, 0.0)]);
     let other = s.arrow("b", &[(0.0, 50.0), (100.0, 60.0)]);
     let r = run_bind(&mut s, &a, End::End, &request(&other, BindMode::Orbit));
-    assert!(matches!(r, Err(ArrowError::NotBindable { kind: "arrow", label: false, .. })), "{r:?}");
+    assert!(matches!(r, Err(ArrowError::NotBindable { kind: Kind::Arrow, label: false, .. })), "{r:?}");
     let r = run_bind(&mut s, &a, End::End, &request(&a, BindMode::Orbit));
     assert!(matches!(r, Err(ArrowError::NotBindable { .. })), "{r:?}");
     let ghost = arrows_common::id("ghost");

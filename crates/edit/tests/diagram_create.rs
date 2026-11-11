@@ -124,7 +124,6 @@ fn unknown_symbolic_id_names_it_and_lists_the_known_ones() {
     let mut store = MemoryStore::new();
     let err = create(&mut store, &s, &CreateOpts::default()).unwrap_err();
     assert_eq!(err, DiagramError::UnknownNode { index: 1, id: "zzz".into(), known: "a, b".into() });
-    assert_eq!(err.code(), "unknown_node");
     assert_eq!(err.to_string(), "Edge 1 refers to node `zzz`, which is not in `nodes`. Known nodes: a, b.");
     assert_eq!(store.len(), 0, "nothing is created on error");
 }
@@ -154,7 +153,7 @@ fn limits_are_enforced() {
     let s = DiagramSpec { nodes, ..DiagramSpec::default() };
     let mut store = MemoryStore::new();
     let err = create(&mut store, &s, &CreateOpts::default()).unwrap_err();
-    assert_eq!(err.code(), "limit_exceeded");
+    assert!(matches!(err, DiagramError::LimitExceeded { .. }), "{err:?}");
 }
 
 #[test]
@@ -181,7 +180,6 @@ fn tree_layout_needs_a_forest_and_names_the_node() {
     let mut store = MemoryStore::new();
     let err = create(&mut store, &s, &CreateOpts::default()).unwrap_err();
     assert_eq!(err, DiagramError::TreeNotForest("c".into()));
-    assert_eq!(err.code(), "tree_not_forest");
     // A cycle is not a forest either.
     let mut cyc = spec(r#"{"nodes":[{"id":"a"},{"id":"b"}],"edges":[{"from":"a","to":"b"},{"from":"b","to":"a"}]}"#);
     cyc.layout.algorithm = Algorithm::Tree;
@@ -301,11 +299,11 @@ fn names_must_be_unique_and_valid() {
     let s = spec(r#"{"nodes":[{"id":"a","name":"x"},{"id":"b","name":"x"}]}"#);
     assert!(matches!(create(&mut store, &s, &CreateOpts::default()), Err(DiagramError::NameTaken { .. })));
     let s = spec(r#"{"nodes":[{"id":"a","name":"@x"}]}"#);
-    assert_eq!(create(&mut store, &s, &CreateOpts::default()).unwrap_err().code(), "bad_name");
+    assert!(matches!(create(&mut store, &s, &CreateOpts::default()), Err(DiagramError::BadName(_))));
     // A name already in the scene clashes too.
     let ok = spec(r#"{"nodes":[{"id":"a","name":"keep"}]}"#);
     create(&mut store, &ok, &CreateOpts::default()).unwrap();
-    assert_eq!(create(&mut store, &ok, &CreateOpts::default()).unwrap_err().code(), "name_taken");
+    assert!(matches!(create(&mut store, &ok, &CreateOpts::default()), Err(DiagramError::NameTaken { .. })));
 }
 
 #[test]
@@ -342,7 +340,10 @@ fn bad_groups_are_refused() {
     let single = spec(r#"{"nodes":[{"id":"a"},{"id":"b"}],"groups":[{"members":["a"]}]}"#);
     assert!(matches!(create(&mut store, &single, &CreateOpts::default()), Err(DiagramError::BadGroup { .. })));
     let unknown = spec(r#"{"nodes":[{"id":"a"},{"id":"b"}],"groups":[{"members":["a","q"]}]}"#);
-    assert_eq!(create(&mut store, &unknown, &CreateOpts::default()).unwrap_err().code(), "unknown_node");
+    assert!(matches!(
+        create(&mut store, &unknown, &CreateOpts::default()),
+        Err(DiagramError::UnknownGroupMember { .. })
+    ));
 }
 
 #[test]

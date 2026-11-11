@@ -25,7 +25,8 @@ mod pick;
 
 pub use pick::{Pick, click_target, inside_editing_group, keeps_multi_selection, pick, pick_group};
 
-use super::units::{Relations, UnitKey, impl_from_target, is_label, live, primary_id, sort_z, unit_key, units};
+use super::units::{Relations, UnitKey, is_label, live, primary_id, sort_z, unit_key, units};
+use crate::target::TargetError;
 use crate::transform::geometry;
 
 /// The selection state of a tab.
@@ -86,12 +87,9 @@ pub enum ClickTarget {
 /// Why a selection change was refused.
 #[derive(Debug, Clone, PartialEq, thiserror::Error)]
 pub enum SelectionError {
-    /// No live element has this id.
-    #[error("element {0} does not exist or is deleted")]
-    NotFound(ElementId),
-    /// The element is locked.
-    #[error("{} element(s) are locked ({}). Unlock them first", .0.len(), super::units::ids_text(.0))]
-    Locked(Vec<ElementId>),
+    /// An element does not exist, is deleted, or is locked.
+    #[error(transparent)]
+    Target(#[from] TargetError),
     /// No group to enter.
     #[error("no group is selected. Select a group first (click it), or pass its id")]
     NoGroup,
@@ -105,7 +103,6 @@ pub enum SelectionError {
     #[error("there are no elements to select")]
     NothingToSelect,
 }
-impl_from_target!(SelectionError);
 
 /// Builds a normalized selection from leaf ids: bound text becomes its container, deleted ids are dropped, the
 /// children of a selected frame are dropped, and `groups` is derived. Locked elements are kept.
@@ -217,7 +214,7 @@ pub fn click<R: SceneRead>(
     let primary = primary_id(scene, hit);
     let e = live(scene, &primary)?;
     if e.locked && !opts.include_locked {
-        return Err(SelectionError::Locked(vec![primary]));
+        return Err(SelectionError::Target(TargetError::Locked(vec![primary])));
     }
     let editing = sel.editing_group.as_ref();
     let mut unit: BTreeSet<ElementId> = if opts.deep {

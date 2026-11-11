@@ -25,6 +25,7 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
+use crate::cmd::element_common::target_refusal;
 use crate::args;
 use crate::refusal::{Refusal, echo};
 use crate::session::{Ref, Session};
@@ -164,8 +165,7 @@ fn report(s: &Session, before: &Observed, skipped: &[ElementId]) -> SelectionOut
 /// The refusal for an error of the edit crate's selection rules.
 fn selection_refusal(cmd: &str, e: SelectionError) -> Refusal {
     match e {
-        SelectionError::NotFound(id) => Refusal::not_found(cmd, id.as_str()),
-        SelectionError::Locked(ids) => locked_refusal(cmd, &ids),
+        SelectionError::Target(t) => target_refusal(cmd, t),
         SelectionError::NothingToSelect => nothing_to_select(cmd),
         other => Refusal::bad_args(cmd, echo(&other.to_string())),
     }

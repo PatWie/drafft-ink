@@ -26,7 +26,7 @@ use drafftink_scene::{
 };
 
 use crate::copy::{self, CopyError, Placement};
-use crate::create::{CreateError, TextPlace, TextSpec, text_element};
+use crate::create::{FreeTextError, TextPlace, TextSpec, text_element};
 use crate::text_bind::TextMeasure;
 use crate::transform::geometry::union_bounds;
 
@@ -55,7 +55,7 @@ pub enum PasteError {
     Store(#[from] StoreError),
     /// The free text could not be built.
     #[error(transparent)]
-    Text(#[from] CreateError),
+    Text(#[from] FreeTextError),
     /// A z-order key could not be made.
     #[error(transparent)]
     Index(#[from] IndexError),

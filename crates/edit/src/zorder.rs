@@ -17,7 +17,8 @@ use std::collections::BTreeSet;
 
 use drafftink_scene::{Element, ElementId, GroupId, IndexError, Kind, SceneRead, SceneTx, StoreError, ZIndex};
 
-use crate::group::units::{Relations, UnitKey, ensure_unlocked, impl_from_target, unit_key, units, with_companions};
+use crate::group::units::{Relations, UnitKey, ensure_unlocked, unit_key, units, with_companions};
+use crate::target::TargetError;
 
 /// Keys longer than this make the whole order get rewritten with short keys.
 pub const REBALANCE_LEN: usize = 48;
@@ -25,12 +26,9 @@ pub const REBALANCE_LEN: usize = 48;
 /// Why a z-order change was refused.
 #[derive(Debug, Clone, PartialEq, thiserror::Error)]
 pub enum ZOrderError {
-    /// No live element has this id.
-    #[error("element {0} does not exist or is deleted")]
-    NotFound(ElementId),
-    /// Locked elements cannot be reordered.
-    #[error("{} element(s) are locked ({}). Unlock them first", .0.len(), crate::group::units::ids_text(.0))]
-    Locked(Vec<ElementId>),
+    /// An element does not exist, is deleted, or is locked.
+    #[error(transparent)]
+    Target(#[from] TargetError),
     /// The anchor of a placement is missing or is one of the moved elements.
     #[error("cannot place relative to {0}: it does not exist or is moving itself")]
     BadAnchor(ElementId),
@@ -41,7 +39,6 @@ pub enum ZOrderError {
     #[error("z-order keys are exhausted: {0}")]
     Index(#[from] IndexError),
 }
-impl_from_target!(ZOrderError);
 
 /// A z-order step.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
