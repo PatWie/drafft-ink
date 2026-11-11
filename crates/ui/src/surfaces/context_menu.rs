@@ -329,14 +329,17 @@ fn rows(ui: &mut Ui, cx: &mut Cx<'_>, st: &mut UiState, world: Option<[f64; 2]>)
 }
 
 /// The blocks that act on the selected elements: copy as, flip and convert, frame, text.
+///
+/// A row whose command does not apply to this selection is greyed, not left out, and its tooltip is the
+/// engine's own text (`Session::availability` runs the same check as `execute`). Left out are only the rows
+/// that need an argument the selection cannot give: the convert targets (they depend on the kind), binding and
+/// unbinding a label (they name the text and the container, so their block shows only when the selection has both)
+/// and the rename dialog of a frame.
 fn element_blocks(ui: &mut Ui, cx: &mut Cx<'_>, st: &mut UiState, r: &mut Rows, f: &Facts<'_>) {
     if r.toggle(ui, cx, "copy_as", "Copy as…") {
-        let mut rows = vec![("Copy as PNG", json!({ "format": "png" })), ("Copy as SVG", json!({ "format": "svg" }))];
-        if f.sel.iter().any(|e| e.kind == "text") {
-            rows.push(("Copy as text", json!({ "format": "text" })));
-        }
-        for (text, args) in rows {
-            r.row(ui, cx, Ctl::new("clipboard.copy_as").args(args), text, true);
+        // Whether the selection holds a text is checked when the copy runs, and a click on this row says so.
+        for (text, format) in [("Copy as PNG", "png"), ("Copy as SVG", "svg"), ("Copy as text", "text")] {
+            r.row(ui, cx, Ctl::new("clipboard.copy_as").args(json!({ "format": format })), text, true);
         }
     }
     if r.toggle(ui, cx, "transform", "Flip and convert…") {
@@ -346,38 +349,30 @@ fn element_blocks(ui: &mut Ui, cx: &mut Cx<'_>, st: &mut UiState, r: &mut Rows, 
         for (text, args) in convert_targets(f.sel) {
             r.row(ui, cx, Ctl::new("element.convert").args(args), text, true);
         }
-        if f.single().is_some_and(|e| LINEAR.contains(&e.kind.as_str())) {
-            r.row(ui, cx, Ctl::new("arrow.edit_points"), "Edit line points", true);
-        }
+        r.row(ui, cx, Ctl::new("arrow.edit_points"), "Edit line points", true);
+        r.row(ui, cx, Ctl::new("text.wrap_in_container"), "Wrap text in a shape", true);
         r.row(ui, cx, Ctl::new("library.add"), "Add to library", true);
     }
     if r.toggle(ui, cx, "frame", "Frame…") {
+        // With one frame selected the rows name it; otherwise the command takes "the selected frame" and the
+        // engine says why it cannot.
+        let frame = f.single().filter(|e| e.kind == "frame");
+        let frame_args = frame.map_or_else(|| json!({}), |e| json!({ "frame": e.id }));
         r.row(ui, cx, Ctl::new("frame.wrap"), "Wrap in frame", true);
-        if let Some(frame) = f.single().filter(|e| e.kind == "frame") {
-            r.row(ui, cx, Ctl::new("frame.unwrap").args(json!({ "frame": frame.id })), "Unwrap frame", true);
-            r.row(
-                ui,
-                cx,
-                Ctl::new("frame.select_children").args(json!({ "frame": frame.id })),
-                "Select all in frame",
-                true,
-            );
-            if cx.plain_row(ui, "Rename frame…").clicked() {
-                st.open_rename(RenameTarget::Frame(frame.id.clone()), "");
-            }
+        r.row(ui, cx, Ctl::new("frame.unwrap").args(frame_args.clone()), "Unwrap frame", true);
+        r.row(ui, cx, Ctl::new("frame.select_children").args(frame_args), "Select all in frame", true);
+        if let Some(frame) = frame
+            && cx.plain_row(ui, "Rename frame…").clicked()
+        {
+            st.open_rename(RenameTarget::Frame(frame.id.clone()), "");
         }
         let inside = in_frame_ids(f.sel);
-        if !inside.is_empty() {
-            r.row(ui, cx, Ctl::new("frame.remove").args(json!({ "ids": inside })), "Remove from frame", true);
-        }
+        let remove_args = if inside.is_empty() { json!({}) } else { json!({ "ids": inside }) };
+        r.row(ui, cx, Ctl::new("frame.remove").args(remove_args), "Remove from frame", true);
     }
-    let has_text = f.sel.iter().any(|e| e.kind == "text");
     let bind = bind_args(f.sel);
     let unbind = unbind_args(f.sel);
-    if (has_text || bind.is_some() || unbind.is_some()) && r.toggle(ui, cx, "text", "Text…") {
-        if has_text {
-            r.row(ui, cx, Ctl::new("text.wrap_in_container"), "Wrap text in a shape", true);
-        }
+    if (bind.is_some() || unbind.is_some()) && r.toggle(ui, cx, "text", "Text…") {
         if let Some(args) = bind {
             r.row(ui, cx, Ctl::new("text.bind").args(args), "Bind text to shape", true);
         }

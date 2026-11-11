@@ -327,6 +327,23 @@ fn wrap_in_container_boxes_each_free_text_and_selects_the_shapes() {
 }
 
 #[test]
+fn wrap_in_container_is_unavailable_without_a_free_text_and_says_so_like_execute() {
+    let (mut s, _f) = testing::session();
+    let r = rect(&mut s);
+    testing::select(&mut s, std::slice::from_ref(&r));
+    let shown = s.availability("text.wrap_in_container").unwrap_err();
+    assert_eq!(shown.code, "not_applicable");
+    assert_eq!(shown.message, refuse(&mut s, "text.wrap_in_container", json!({})).message);
+    let t = text_at(&mut s, "alpha", 400.0, 0.0);
+    testing::select(&mut s, &[r.clone(), t]);
+    assert!(s.availability("text.wrap_in_container").is_ok());
+    run(&mut s, "text.wrap_in_container", json!({}));
+    let label_free = s.selection().iter().all(|i| label_of(&s, i).is_some());
+    assert!(label_free, "the new containers hold the labels");
+    assert!(s.availability("text.wrap_in_container").is_err(), "a label is no free text");
+}
+
+#[test]
 fn set_autoresize_toggles_between_following_the_content_and_wrapping() {
     let (mut s, _f) = testing::session();
     let t = text_at(&mut s, "aaaa bbbb cccc", 0.0, 0.0);

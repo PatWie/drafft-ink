@@ -323,6 +323,19 @@ fn the_family_registers_every_catalog_command_and_its_extras() {
 }
 
 #[test]
+fn edit_points_is_unavailable_for_a_shape_and_for_several_elements() {
+    let mut s = session();
+    let r = rect(&mut s, 0.0, 0.0, 40.0, 40.0);
+    let a = arrow(&mut s, &[[0.0, 100.0], [80.0, 130.0]]);
+    testing::select(&mut s, &[eid(&r)]);
+    assert_eq!(s.availability("arrow.edit_points").unwrap_err().code, "wrong_kind");
+    testing::select(&mut s, &[eid(&r), eid(&a)]);
+    assert_eq!(s.availability("arrow.edit_points").unwrap_err().code, "needs_single");
+    testing::select(&mut s, &[eid(&a)]);
+    assert!(s.availability("arrow.edit_points").is_ok());
+}
+
+#[test]
 fn edit_points_has_its_shortcut() {
     let spec = Registry::global().find("arrow.edit_points").unwrap();
     assert_eq!(spec.shortcuts.len(), 1);
@@ -975,9 +988,10 @@ fn edit_points_needs_a_single_line_or_arrow() {
         "`arrow.edit_points` needs exactly one line or arrow selected, and 0 are selected. Select one line or arrow first, or pass it by id."
     );
     testing::select(&mut w.s, &[eid(&w.a)]);
-    assert!(w.s.availability("arrow.edit_points").is_ok(), "one element is selected; its kind is checked on execute");
+    let shown = w.s.availability("arrow.edit_points").unwrap_err();
     let r = refuse(&mut w.s, "arrow.edit_points", json!({}));
     assert_eq!(r.code, "wrong_kind");
+    assert_eq!((shown.code, shown.message), (r.code, r.message), "a disabled control shows the text execute gives");
     testing::select(&mut w.s, &[eid(&w.a), eid(&w.b)]);
     let r = refuse(&mut w.s, "arrow.edit_points", json!({}));
     assert_eq!(r.code, "needs_single");

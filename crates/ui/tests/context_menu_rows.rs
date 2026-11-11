@@ -14,7 +14,7 @@ use drafftink_ui::state::RenameTarget;
 use drafftink_ui::{Call, Verb};
 use egui::accesskit::Role;
 use egui::pos2;
-use egui_kittest::kittest::Queryable;
+use egui_kittest::kittest::{NodeT, Queryable};
 use serde_json::{Value, json};
 use support_a::themed_lenient_sized;
 
@@ -99,7 +99,20 @@ fn the_blocks_start_closed_and_open_with_their_row() {
     row(&h, "Copy as…").click();
     h.run();
     assert!(has_row(&h, "Copy as PNG") && has_row(&h, "Copy as SVG"));
-    assert!(!has_row(&h, "Copy as text"), "no text in the selection");
+    assert!(has_row(&h, "Copy as text"), "the row is there for every selection");
+}
+
+/// Greys-out checks: the row is disabled and its tooltip is the engine's text for the command.
+fn assert_greyed_with_engine_text(h: &mut H, text: &str, command: &str) {
+    let reason = h.state().model.refusal_text(command).unwrap_or_else(|| panic!("{command} is available"));
+    assert!(row(h, text).accesskit_node().is_disabled(), "{text} is greyed");
+    row(h, text).hover();
+    h.run();
+    h.get_by_label(&reason);
+}
+
+fn assert_enabled(h: &H, text: &str) {
+    assert!(!row(h, text).accesskit_node().is_disabled(), "{text} is enabled");
 }
 
 #[test]
@@ -122,6 +135,20 @@ fn copy_as_png_and_svg_run_copy_as_and_svg_reaches_the_clipboard() {
     );
     let report = h.state_mut().dispatch();
     assert!(report.refusals().next().is_none(), "{:?}", report.ran);
+}
+
+#[test]
+fn copy_as_text_on_a_selection_without_text_is_refused_by_the_engine_in_words() {
+    let mut f = dialog::fixture();
+    let a = add_rect(&mut f.session, 0.0, 0.0, 30.0, 30.0).unwrap();
+    let mut h = open(f, &[a]);
+    assert_eq!(
+        choose(&mut h, "Copy as…", "Copy as text"),
+        vec![ctx_call("clipboard.copy_as", json!({ "format": "text" }))]
+    );
+    let report = h.state_mut().dispatch();
+    let refusal = report.refusals().next().expect("the engine refuses: no element holds text");
+    assert!(refusal.message.contains("none of the elements holds text"), "{}", refusal.message);
 }
 
 #[test]
@@ -207,7 +234,10 @@ fn a_line_has_an_edit_points_row_and_everything_has_add_to_library() {
     let mut f = dialog::fixture();
     let r = add_rect(&mut f.session, 0.0, 0.0, 30.0, 30.0).unwrap();
     let mut h = open(f, &[r]);
-    assert!(!has_row(&h, "Edit line points"));
+    row(&h, "Flip and convert…").click();
+    h.run();
+    assert!(has_row(&h, "Edit line points"), "the row stays for a shape");
+    assert_greyed_with_engine_text(&mut h, "Edit line points", "arrow.edit_points");
     assert_eq!(choose(&mut h, "Flip and convert…", "Add to library"), vec![ctx_call("library.add", json!({}))]);
     let report = h.state_mut().dispatch();
     assert!(report.refusals().next().is_none(), "{:?}", report.ran);
@@ -321,17 +351,64 @@ fn text_rows_bind_unbind_and_wrap() {
     let t = text(&mut f, 0.0);
     let mut h = open(f, &[t]);
     assert!(!has_row(&h, "Unbind text") && !has_row(&h, "Bind text to shape"));
-    assert_eq!(choose(&mut h, "Text…", "Wrap text in a shape"), vec![ctx_call("text.wrap_in_container", json!({}))]);
+    assert_eq!(
+        choose(&mut h, "Flip and convert…", "Wrap text in a shape"),
+        vec![ctx_call("text.wrap_in_container", json!({}))]
+    );
     let report = h.state_mut().dispatch();
     assert!(report.refusals().next().is_none(), "{:?}", report.ran);
 }
 
 #[test]
-fn a_rectangle_has_no_text_block() {
+fn a_rectangle_has_wrap_text_greyed_by_the_engine_and_no_label_block() {
     let mut f = dialog::fixture();
     let a = add_rect(&mut f.session, 0.0, 0.0, 30.0, 30.0).unwrap();
-    let h = open(f, &[a]);
+    let mut h = open(f, &[a]);
+    row(&h, "Flip and convert…").click();
+    h.run();
+    assert_greyed_with_engine_text(&mut h, "Wrap text in a shape", "text.wrap_in_container");
+    // Binding names a text and a container, so its block is there only when the selection has them.
     assert!(!has_row(&h, "Text…"));
+}
+
+#[test]
+fn frame_rows_are_greyed_with_the_engine_text_when_the_selection_has_no_frame() {
+    let mut f = dialog::fixture();
+    let a = add_rect(&mut f.session, 0.0, 0.0, 30.0, 30.0).unwrap();
+    let mut h = open(f, &[a]);
+    row(&h, "Frame…").click();
+    h.run();
+    assert_enabled(&h, "Wrap in frame");
+    for (text, command) in [
+        ("Unwrap frame", "frame.unwrap"),
+        ("Select all in frame", "frame.select_children"),
+        ("Remove from frame", "frame.remove"),
+    ] {
+        assert!(has_row(&h, text), "{text} stays in the menu");
+        assert_greyed_with_engine_text(&mut h, text, command);
+    }
+    let unwrap = h.state().model.refusal_text("frame.unwrap").unwrap();
+    assert!(unwrap.contains("works on frames"), "{unwrap}");
+    // The rename dialog needs the frame, so that row is only there with a frame selected.
+    assert!(!has_row(&h, "Rename frame…"));
+}
+
+#[test]
+fn frame_rows_are_enabled_for_a_frame_and_the_unwrap_row_names_it() {
+    let mut f = dialog::fixture();
+    let a = add_rect(&mut f.session, 0.0, 0.0, 30.0, 30.0).unwrap();
+    select(&mut f.session, &[a]);
+    dialog::run(&mut f, "frame.wrap", json!({}));
+    let mut h = themed_lenient_sized(f, egui::vec2(1280.0, 1400.0));
+    h.state_mut().state.open_context_menu(pos2(300.0, 60.0), None);
+    h.run();
+    row(&h, "Frame…").click();
+    h.run();
+    for text in ["Unwrap frame", "Select all in frame", "Rename frame…"] {
+        assert_enabled(&h, text);
+    }
+    let mut h = h;
+    assert_greyed_with_engine_text(&mut h, "Remove from frame", "frame.remove");
 }
 
 #[test]

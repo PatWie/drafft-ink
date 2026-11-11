@@ -4,7 +4,7 @@
 
 .DESCRIPTION
   Writes into dist-release (override with -Dist):
-    drafftink-<version>-windows-x64.zip            drafftink.exe + drafftink-mcp.exe (portable)
+    drafftink-<version>-windows-x64.zip            drafftink.exe + drafftink-mcp.exe + drafftink-cli.exe (portable)
     drafftink-<version>-windows-x64.msi            installer (WiX 5; skipped with -NoMsi or when `wix` is missing)
     drafftink-server-<version>-windows-x64.zip     drafftink-server.exe + web-dist\ (run it from that folder)
   The script ends by running every packaged exe with --version.
@@ -44,10 +44,10 @@ if ($env:BIN_DIR) { $Bin = $env:BIN_DIR }
 
 Write-Host "==> Drafft.ink $Version for Windows x64"
 if (-not $SkipBuild) {
-  cargo build --profile dist --locked -p drafftink -p drafftink-mcp -p drafftink-server --features drafftink-server/sqlite,drafftink-server/s3
+  cargo build --profile dist --locked -p drafftink -p drafftink-mcp -p drafftink-cli -p drafftink-server --features drafftink-server/sqlite,drafftink-server/s3
   if ($LASTEXITCODE -ne 0) { throw "cargo build failed" }
 }
-foreach ($exe in "drafftink", "drafftink-mcp", "drafftink-server") {
+foreach ($exe in "drafftink", "drafftink-mcp", "drafftink-cli", "drafftink-server") {
   if (-not (Test-Path (Join-Path $Bin "$exe.exe"))) { throw "$Bin\$exe.exe not found" }
 }
 
@@ -59,7 +59,7 @@ New-Item -ItemType Directory -Force $Work | Out-Null
 $Name = "drafftink-$Version-windows-x64"
 $Portable = Join-Path $Work $Name
 New-Item -ItemType Directory -Force $Portable | Out-Null
-foreach ($exe in "drafftink", "drafftink-mcp") { Copy-Item (Join-Path $Bin "$exe.exe") $Portable }
+foreach ($exe in "drafftink", "drafftink-mcp", "drafftink-cli") { Copy-Item (Join-Path $Bin "$exe.exe") $Portable }
 foreach ($f in "README.md", "LICENSE") { if (Test-Path $f) { Copy-Item $f $Portable } }
 $Zip = Join-Path $Dist "$Name.zip"
 if (Test-Path $Zip) { Remove-Item $Zip }
@@ -100,7 +100,7 @@ if (-not $NoMsi) {
 }
 
 # ---- smoke ---------------------------------------------------------------------------------------
-foreach ($exe in "drafftink", "drafftink-mcp", "drafftink-server") {
+foreach ($exe in "drafftink", "drafftink-mcp", "drafftink-cli", "drafftink-server") {
   $out = & (Join-Path $Bin "$exe.exe") --version 2>&1 | Out-String
   if ($LASTEXITCODE -ne 0 -or -not $out.Contains($Version)) { throw "$exe.exe --version printed '$out', expected $Version" }
   Write-Host "smoke: $($out.Trim())"

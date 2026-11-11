@@ -8,12 +8,12 @@ How Drafft.ink is built for every system and shipped. The design follows solidcr
 
 | File | Contents | Built by |
 |---|---|---|
-| `drafftink-<v>-linux-<arch>.AppImage` | desktop app + `drafftink-mcp`, one file, any distro with glibc 2.35 or newer | `scripts/package-linux.sh` |
+| `drafftink-<v>-linux-<arch>.AppImage` | desktop app + `drafftink-mcp` + `drafftink-cli`, one file (`DRAFFTINK_APPIMAGE_RUN=drafftink-cli` runs the command line), any distro with glibc 2.35 or newer | `scripts/package-linux.sh` |
 | `drafftink-<v>-linux-<arch>.deb` | the same, as a Debian package | same |
 | `drafftink-<v>-linux-<arch>.tar.gz` | the same as an FHS tree (`bin/`, `share/`) | same |
-| `drafftink-<v>-macos-universal.dmg` | `Drafftink.app` (arm64 + x86_64 in one binary, `drafftink-mcp` inside it) | `scripts/package-macos.sh` |
+| `drafftink-<v>-macos-universal.dmg` | `Drafftink.app` (arm64 + x86_64 in one binary, `drafftink-mcp` and `drafftink-cli` inside it) | `scripts/package-macos.sh` |
 | `drafftink-<v>-windows-x64.msi` | per-machine installer with a Start menu entry | `scripts/package-windows.ps1` |
-| `drafftink-<v>-windows-x64.zip` | portable `drafftink.exe` + `drafftink-mcp.exe` | same |
+| `drafftink-<v>-windows-x64.zip` | portable `drafftink.exe` + `drafftink-mcp.exe` + `drafftink-cli.exe` | same |
 | `drafftink-server-<v>-<os>-<arch>.tar.gz` (`.zip` on Windows) | `drafftink-server` + `web-dist/` (the web build) in one folder | the three scripts above |
 | `drafftink-web-<v>.tar.gz`, `.zip` | the web build only, for any static host | `scripts/package-web.sh` |
 | `SHA256SUMS.txt` | checksums of all of the above | `release.yml` |
@@ -22,9 +22,9 @@ Every versioned desktop file is also attached once more without the version (`dr
 
 **One binary.** The server does not embed the web build. It serves the folder named by `--web-dir` (default `./web-dist`), and the server archive ships that folder next to the binary, so "unpack and run `./drafftink-server`" serves the app on `http://127.0.0.1:3030`. Embedding the 12.5 MB wasm and its precompressed copies in the binary would make every server build depend on the wasm build and bloat it; revisit if single-file deployment becomes a requirement.
 
-**How the binaries are built.** The scripts build with the cargo profile `dist` (fat LTO, stripped, size-optimised code for the parts that do not run per frame; `Cargo.toml`), and the server with `--features drafftink-server/sqlite,drafftink-server/s3`, so a released server offers every room store: `--storage fs|sqlite|s3|memory`. Without those features a build prints "this build has no SQLite support" when asked for them. `release.yml` starts the packaged Linux server with `--storage sqlite` and checks that it listens, and runs `cargo xtask size --native --no-build` against the budgets of `perf/budgets.json` (section `size`, `native.*`). `drafftink-cli` is not packaged yet.
+**How the binaries are built.** The scripts build with the cargo profile `dist` (fat LTO, stripped, size-optimised code for the parts that do not run per frame; `Cargo.toml`), and the server with `--features drafftink-server/sqlite,drafftink-server/s3`, so a released server offers every room store: `--storage fs|sqlite|s3|memory`. Without those features a build prints "this build has no SQLite support" when asked for them. `release.yml` starts the packaged Linux server with `--storage sqlite` and checks that it listens, and runs `cargo xtask size --native --no-build` against the budgets of `perf/budgets.json` (section `size`, `native.*`).
 
-The desktop packages carry no server, and the server archives carry no desktop app. `drafftink-mcp` ships with the desktop app because an MCP client starts it (`drafftink-mcp --attach`) and the app is what it attaches to.
+The desktop packages carry no server, and the server archives carry no desktop app. `drafftink-mcp` ships with the desktop app because an MCP client starts it (`drafftink-mcp --attach`) and the app is what it attaches to. `drafftink-cli` (`docs/cli.md`) ships there too: it is a user tool that runs command scripts and converts documents without a window, and it is small next to the app.
 
 ## Names that are fixed once chosen
 
@@ -55,6 +55,7 @@ scripts/package-linux.sh --skip-build --formats "tar deb"
 scripts/package-web.sh                       # dist-release/drafftink-web-<v>.tar.gz and .zip
 scripts/package-macos.sh [--sign [--notarize]]   # macOS only
 pwsh scripts/package-windows.ps1 [-NoMsi]        # Windows only
+scripts/cross-check.sh [target ...]          # cargo check for Windows and macOS from Linux (no linking)
 ```
 
 All scripts read the version from `Cargo.toml`, write to `dist-release/` (override with `DIST=`), and end by running the packaged binaries with `--version`, which fails on a stub `main()`. `BIN_DIR=` packages binaries built elsewhere. `CROSS_TARGET=aarch64-unknown-linux-gnu CROSS_ARCH=aarch64` packages a cross build (the smoke step is skipped, as the binary cannot run on the host).
@@ -65,7 +66,7 @@ The Windows exe gets its icon and version resource from `apps/drafftink/build.rs
 
 ## CI (`.github/workflows/ci.yml`)
 
-- `build-native`: `cargo build --workspace --release --locked` on ubuntu, windows and macos with `rust-cache` (the default features: the server without sqlite and s3; the packages add them), then each of `drafftink`, `drafftink-mcp`, `drafftink-server` with `--version`.
+- `build-native`: `cargo build --workspace --release --locked` on ubuntu, windows and macos with `rust-cache` (the default features: the server without sqlite and s3; the packages add them), then each of `drafftink`, `drafftink-mcp`, `drafftink-cli`, `drafftink-server` with `--version`.
 - `packaging`: on ubuntu-22.04, shellcheck over the scripts, then `scripts/package-linux.sh --formats "tar deb appimage"` end to end.
 - Both are in the `needs` of the aggregate `ci` job. macOS and Windows packaging are only exercised by `release.yml`.
 
@@ -105,8 +106,19 @@ Verified on the development machine (Ubuntu 24.04, x86_64):
 - `scripts/package-linux.sh` end to end: tar.gz, deb (`dpkg-deb --info/--contents`), AppImage (built, run with `--version`, and `DRAFFTINK_APPIMAGE_RUN=drafftink-mcp`), and the server archive with the real web build; the unpacked server answered `/health`, `/` and the wasm with 200.
 - A clean `ubuntu:22.04` container (no `-dev` packages) running the same script.
 - `scripts/package-web.sh` with the real web build (`scripts/build-web.sh`).
-- `cargo check` of `drafftink`, `drafftink-mcp`, `drafftink-server` for `aarch64-unknown-linux-gnu` (C code via `zig cc`) and `x86_64-pc-windows-gnu` (zig cc plus a stand-in `windres`; the generated `.rc` was inspected). These are type checks, not links.
+- `cargo check` of `drafftink`, `drafftink-mcp`, `drafftink-server` for `aarch64-unknown-linux-gnu` (C code via `zig cc`). These are type checks, not links.
 - YAML syntax of the workflows, XML syntax of `Info.plist.in`, `drafftink.wxs`, the entitlements.
+
+Cross type checks (branch `final-residuals`, `scripts/cross-check.sh`; Rust 1.97.1, llvm-mingw 20250114 for the C compiler, no root):
+
+| Target | Command | Result |
+|---|---|---|
+| `x86_64-pc-windows-gnu` | `cargo check -p drafftink -p drafftink-mcp -p drafftink-cli -p drafftink-server`, then `cargo check --workspace --all-targets`, then `-p drafftink-server --features sqlite,s3` (bundled SQLite compiles with mingw) | no errors, no cfg fixes needed |
+| `aarch64-apple-darwin` | the same two package and workspace checks | no errors |
+| `x86_64-apple-darwin` | the package check | no errors |
+| `x86_64-pc-windows-msvc` | installed, **not checked**: `ring`, `stacker` and `psm` compile C against the Windows SDK headers, which are not here. `windows-gnu` covers the `cfg(windows)` code | none |
+
+Without an Apple SDK, `ring` compiles with `clang --target=<triple> -ffreestanding -nostdlibinc` and three stub headers (`TargetConditionals.h`, `assert.h`, `string.h`); the script writes them to a temporary directory. That is enough for `cargo check` and produces no usable objects, so these checks prove that the Rust code and the target-specific crates (`objc2`, `windows-sys`, winit's backends) compile, not that the apps link or run. A link with the `x86_64-pc-windows-gnu` target failed on the llvm-mingw toolchain (`-lgcc_eh` is missing: that target wants GCC's runtime, and `x86_64-pc-windows-gnullvm` is the matching Rust target); it was not pursued. No Windows or macOS binary has been run.
 
 Only in CI (never run by us): the macOS, Windows and aarch64 jobs, `lipo`, `hdiutil`, `codesign`, `wix build`, the real `embed-resource` compile with `rc.exe`, the `release` job and `gh release create`. Expect to fix small things on the first tag; use the manual run first.
 

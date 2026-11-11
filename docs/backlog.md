@@ -8,9 +8,17 @@ Features decided but not yet assigned to a phase agent.
 - **Autosave**: one huge element and the image-file hash check are still single steps; the native writer thread and the web storage path are covered by unit tests and a type check only, not by a run of the real app.
 - **Collab**: the web Collaborate dialog has no token field (use `collab.join_room token=`); a tab that already has content still imports a room snapshot in one piece; the first import call costs about 0.8 us per element (a frame only up to ~8,000 elements).
 - **TabDoc load at 100k** is 2.6 s release, spent in Loro (field inserts 1.7 s); debug builds set `opt-level = 3` for `loro*` (`performance.md` section 7.9). Only a different Loro load path would change it.
-- **Web e2e**: `document.spec` and `session.spec` still expect `doc.export` png / `view.screenshot` to be refused on the web (the renderer port 659763f made them work), and `startup.spec` lacks `runScenario`/`scenarioReport` in its `window.drafftink` key list. Fix the tests (not the app).
 - **Present**: the X11 copy under Xvfb is 70 to 85 % of the native CPU (1 to 3.5 % without present in `pan@10k`; Fifo and Immediate do not differ). Not our code. Mailbox could not be measured here (the NVIDIA driver offers Fifo and Immediate only).
 - Tab bar: dirty state compares content through undo/redo only; a remote update between an edit and its undo keeps the tab dirty on purpose.
+
+## Done (branch final-residuals)
+
+- `cargo xtask e2e` on this tree: 74 browser and 15 native tests pass (no fixes needed). The backlog item about `document.spec`, `session.spec` and `startup.spec` was stale: the specs already match the renderer port.
+- Mermaid shapes: hexagon, cylinder, parallelogram, trapezoid, flag, subroutine and double circle map to the closest shape an arrow can bind to (rectangle with its own corner rounding, larger ellipse) and the warning names each approximation once; a real polygon outline would need a bindable element kind that holds a label (fb868b7, `commands.md` 2.19).
+- `drafftink-cli` is in the AppImage, deb, tar.gz, dmg, zip and MSI (d128923).
+- Context-menu rows are greyed with the engine's text instead of hidden: `frame.unwrap`, `frame.select_children`, `frame.remove`, `text.wrap_in_container`, `arrow.edit_points` answer availability from the selection (7a3e777, `ui.md`). Decisions: Copy as text is always listed and the engine refuses at the click; the convert targets, bind/unbind and the frame rename dialog stay conditional because they need an argument the selection cannot give; the properties panel keeps hiding a section that applies to no selected element.
+- Windows and macOS: `cargo check` of the four binaries (and `--workspace --all-targets` for windows-gnu and aarch64-apple-darwin) passes with no cfg fixes needed; `scripts/cross-check.sh` repeats it; recorded in `packaging.md` (d128923). Nothing was linked or run; `x86_64-pc-windows-msvc` needs the Windows SDK and was not checked.
+- `io::legacy::arrow_bounds` is compiled only with the `facts` feature, which removes the dead-code warning of every build (6ad26b9).
 
 ## Done (branch audit-e)
 
@@ -19,7 +27,7 @@ Features decided but not yet assigned to a phase agent.
 - `xtask perf --bench` and `--app` follow `CARGO_TARGET_DIR`; `--app web` builds the scenario web app and the server itself.
 - The packaged server has the sqlite and s3 stores; `release.yml` smoke-tests it.
 - `drafftink-cli` is a real tool (`docs/cli.md`). README, deviations and parity are current.
-- Left open: Mermaid node shapes other than rectangle, round, stadium, circle and diamond are drawn as rectangles with a warning; the CLI is not in the release packages; no CPU fallback for browsers without WebGPU.
+- Left open: no CPU fallback for browsers without WebGPU. (The Mermaid node shapes and the CLI in the release packages are done in branch final-residuals, below.)
 
 ## Done (branch backlog-c)
 
@@ -84,4 +92,3 @@ Implemented (branches backlog-c-perf, -collab, -export, -web; hashes are from th
 - Autosave serializes the whole document on the UI thread (`save_workspace` -> `snapshot().to_json()`): 0.8 s at 100,000 elements. It now waits for a running gesture, but the stall still happens a second after the last change. Needs a worker thread (native) or an incremental write; the web has no threads. Found by the `drag@100k` scenario (`docs/performance.md` section 7.8).
 - The `drag` scenarios show 0.7 to 1 text or formula layouts per frame while 10 texts and 10 formulas are dragged (`relayouts` in `drag@10k`). A move should replay the cached layout; find what invalidates it.
 - `present` is 70 to 85 % of the native process CPU under Xvfb (the X11 copy of every frame). Not our code; on a real display the same app is far cheaper. Measure on real hardware before spending more here.
-- Release: include drafftink-cli in release packages. Mermaid shapes beyond the basic set (hexagon, cylinder, parallelogram, trapezoid, flag) render as rectangles.

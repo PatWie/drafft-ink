@@ -164,7 +164,7 @@ jobs:
       - name: Run every binary with --version
         shell: bash
         run: |
-          for bin in drafftink drafftink-mcp drafftink-server; do
+          for bin in drafftink drafftink-mcp drafftink-cli drafftink-server; do
             ./target/release/$bin --version
           done
 
@@ -184,7 +184,7 @@ jobs:
       - name: Lint the packaging scripts
         run: |
           sudo apt-get update && sudo apt-get install -y desktop-file-utils
-          shellcheck --severity=warning scripts/package-*.sh packaging/env.sh packaging/linux/AppRun
+          shellcheck --severity=warning scripts/package-*.sh scripts/cross-check.sh packaging/env.sh packaging/linux/AppRun
           python3 -c "import plistlib; plistlib.load(open('packaging/macos/entitlements.plist','rb'))"
       - run: scripts/package-linux.sh --formats "tar deb appimage"
 

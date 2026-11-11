@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Build and package Drafft.ink for Linux (x86_64 or aarch64, the host's architecture unless CROSS_ARCH is set):
 #
-#   $DIST/drafftink-<version>-linux-<arch>.tar.gz          desktop app + drafftink-mcp, FHS tree (bin/, share/)
+#   $DIST/drafftink-<version>-linux-<arch>.tar.gz          desktop app + drafftink-mcp + drafftink-cli, FHS tree (bin/, share/)
 #   $DIST/drafftink-<version>-linux-<arch>.AppImage        the same, one file (any distro with glibc >= the build host's)
 #   $DIST/drafftink-<version>-linux-<arch>.deb             Debian, Ubuntu, Mint (dpkg-deb; no nfpm needed)
 #   $DIST/drafftink-server-<version>-linux-<arch>.tar.gz   drafftink-server + web-dist/ (the web build), run it from that folder
@@ -45,7 +45,7 @@ echo "==> Drafft.ink $VERSION for Linux $ARCH ($FORMATS)"
 
 if [ "$SKIP_BUILD" = 0 ]; then
   # The server ships with every room store: sqlite and s3 are cargo features that are off by default.
-  cargo_args=(build --profile dist --locked -p drafftink -p drafftink-mcp -p drafftink-server --features drafftink-server/sqlite,drafftink-server/s3)
+  cargo_args=(build --profile dist --locked -p drafftink -p drafftink-mcp -p drafftink-cli -p drafftink-server --features drafftink-server/sqlite,drafftink-server/s3)
   if [ -n "${CROSS_TARGET:-}" ]; then cargo_args+=(--target "$CROSS_TARGET"); fi
   (cd "$ROOT" && cargo "${cargo_args[@]}")
 fi

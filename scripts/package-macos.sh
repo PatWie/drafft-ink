@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Build and package Drafft.ink for macOS (runs on macOS only: lipo, hdiutil, codesign are Apple tools).
 #
-#   $DIST/drafftink-<version>-macos-universal.dmg          Drafftink.app (+ drafftink-mcp inside it) and an Applications link
+#   $DIST/drafftink-<version>-macos-universal.dmg          Drafftink.app (+ drafftink-mcp and drafftink-cli inside it) and an Applications link
 #   $DIST/drafftink-server-<version>-macos-universal.tar.gz  drafftink-server + web-dist/ (needs the web build)
 #
 # Usage: scripts/package-macos.sh [--skip-build] [--sign] [--notarize] [--web-dist DIR]
@@ -39,7 +39,7 @@ echo "==> Drafft.ink $VERSION for macOS (universal)"
 if [ "$SKIP_BUILD" = 0 ]; then
   for t in $TRIPLES; do
     rustup target add "$t"
-    (cd "$ROOT" && cargo build --profile dist --locked -p drafftink -p drafftink-mcp -p drafftink-server --features drafftink-server/sqlite,drafftink-server/s3 --target "$t")
+    (cd "$ROOT" && cargo build --profile dist --locked -p drafftink -p drafftink-mcp -p drafftink-cli -p drafftink-server --features drafftink-server/sqlite,drafftink-server/s3 --target "$t")
   done
 fi
 
@@ -64,6 +64,7 @@ sign() { codesign --force --timestamp --options runtime --entitlements "$HERE/en
 if [ "$SIGN" = 1 ]; then
   # Inside out: the helper first, then the bundle.
   sign "$APP/Contents/MacOS/drafftink-mcp"
+  sign "$APP/Contents/MacOS/drafftink-cli"
   sign "$APP"
   codesign --verify --deep --strict --verbose=2 "$APP"
 else
@@ -104,6 +105,7 @@ fi
 # The runner's architecture runs its own slice of each universal binary.
 smoke_version "$APP/Contents/MacOS/drafftink"
 smoke_version "$APP/Contents/MacOS/drafftink-mcp"
+smoke_version "$APP/Contents/MacOS/drafftink-cli"
 smoke_version "$WORK/universal/$SERVER_BIN"
 lipo -archs "$APP/Contents/MacOS/drafftink"
 echo "==> done"
