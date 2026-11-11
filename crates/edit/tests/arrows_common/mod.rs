@@ -4,11 +4,11 @@
 
 use drafftink_edit::binding::{End, update_bound_arrows};
 use drafftink_geom::Outline;
+use drafftink_geom::kurbo::{Point, Vec2};
 use drafftink_scene::{
     BindMode, Binding, Element, ElementId, ElementKind, Head, Kind, LinearData, MemoryStore, PathType, SceneRead,
     SceneStore, SceneTx, ZIndex,
 };
-use kurbo::{Point, Vec2};
 
 pub fn id(s: &str) -> ElementId {
     ElementId::new(s).unwrap()

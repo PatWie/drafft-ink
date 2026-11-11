@@ -840,8 +840,8 @@ pub fn theme_names() -> String {
 #[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 mod tests {
     use super::*;
+    use drafftink_geom::kurbo::Point;
     use drafftink_scene::{MemoryStore, SceneStore, TextData};
-    use kurbo::Point;
 
     fn id(s: &str) -> ElementId {
         ElementId::new(s).unwrap()

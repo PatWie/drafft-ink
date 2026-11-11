@@ -16,12 +16,12 @@ fn the_pointer_in_the_margin_highlights_with_orbit_and_inside_does_not_for_the_a
     let mut s = Scene::new();
     let t = s.rect("t", 0.0, 0.0, 100.0, 100.0);
     let opts = BindOpts::default();
-    let c = hover_candidate(&s.store, p(110.0, 20.0), false, &opts).unwrap();
+    let c = hover_candidate(&s.store, p(110.0, 20.0), PathType::Sharp, &opts).unwrap();
     assert_eq!((c.target.clone(), c.mode), (t.clone(), BindMode::Orbit));
     assert!(c.signed_distance > 0.0 && c.signed_distance < 15.0);
-    assert!(hover_candidate(&s.store, p(50.0, 50.0), false, &opts).is_none(), "inside: nothing is suggested");
-    assert!(hover_candidate(&s.store, p(130.0, 50.0), false, &opts).is_none(), "too far");
-    assert!(hover_candidate(&s.store, p(110.0, 20.0), false, &BindOpts { disabled: true, ..opts }).is_none());
+    assert!(hover_candidate(&s.store, p(50.0, 50.0), PathType::Sharp, &opts).is_none(), "inside: nothing is suggested");
+    assert!(hover_candidate(&s.store, p(130.0, 50.0), PathType::Sharp, &opts).is_none(), "too far");
+    assert!(hover_candidate(&s.store, p(110.0, 20.0), PathType::Sharp, &BindOpts { disabled: true, ..opts }).is_none());
 }
 
 #[test]
@@ -235,7 +235,12 @@ fn hostile_input_is_an_error_not_a_panic() {
     drop(tx);
     assert!(find_hovered(&s.store, p(f64::INFINITY, 0.0), 1.0, &[]).is_none());
     assert!(
-        hover_candidate(&s.store, p(f64::NAN, 0.0), false, &BindOpts { zoom: f64::NAN, ..BindOpts::default() })
-            .is_none()
+        hover_candidate(
+            &s.store,
+            p(f64::NAN, 0.0),
+            PathType::Sharp,
+            &BindOpts { zoom: f64::NAN, ..BindOpts::default() }
+        )
+        .is_none()
     );
 }

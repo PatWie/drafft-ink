@@ -1,8 +1,8 @@
+use drafftink_geom::kurbo::Point;
 use drafftink_scene::{
     BindMode, Binding, Document, Element, ElementId, ElementKind, GroupId, LinearData, MemoryStore, SceneRead,
     SceneStore, SceneTx, SeqIds, TextData, ZIndex,
 };
-use kurbo::Point;
 
 use super::*;
 use crate::target::TargetError;

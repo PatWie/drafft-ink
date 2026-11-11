@@ -10,9 +10,9 @@ use drafftink_edit::group;
 use drafftink_edit::transform::{
     self, BoundsSpec, End, ResizeSpec, RotateMode, TransformError, geometry::world_bounds, geometry::world_points,
 };
+use drafftink_geom::kurbo::{Point, Vec2};
 use drafftink_geom::select::{BoxHandle, Corner, Edge};
 use drafftink_scene::*;
-use kurbo::{Point, Vec2};
 use structure_support::*;
 
 fn br(dx: f64, dy: f64) -> ResizeSpec {

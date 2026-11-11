@@ -148,11 +148,22 @@ pub struct RemoteBatch {
     pub changes: ChangeSet,
 }
 
+/// How many elements a batch added, updated and removed.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct ChangeCounts {
+    /// Elements that are new.
+    pub added: usize,
+    /// Elements that changed.
+    pub updated: usize,
+    /// Elements that are gone.
+    pub removed: usize,
+}
+
 impl RemoteBatch {
     /// Elements added, updated and removed.
-    pub fn counts(&self) -> (usize, usize, usize) {
+    pub fn counts(&self) -> ChangeCounts {
         let n = |k: ChangeKind| self.changes.elements.iter().filter(|c| c.kind == k).count();
-        (n(ChangeKind::Added), n(ChangeKind::Updated), n(ChangeKind::Removed))
+        ChangeCounts { added: n(ChangeKind::Added), updated: n(ChangeKind::Updated), removed: n(ChangeKind::Removed) }
     }
 }
 

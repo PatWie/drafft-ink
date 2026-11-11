@@ -67,7 +67,7 @@ fn joining_imports_the_servers_data_and_uploads_what_the_server_lacks() {
     let batches = Harness::remote_batches(&events);
     assert_eq!(batches.len(), 1);
     assert_eq!(batches[0].kind, RemoteKind::CatchUp);
-    assert_eq!(batches[0].counts(), (1, 0, 0));
+    assert_eq!(batches[0].counts(), ChangeCounts { added: 1, updated: 0, removed: 0 });
     assert_eq!(ids(&h.store), ["from-server", "made-offline"].map(String::from));
     // The offline edit goes up.
     let frames = h.take_frames();
@@ -93,7 +93,10 @@ fn a_snapshot_goes_through_the_same_path_and_is_reported_as_one() {
         server_version: h.server.version_vector().unwrap(),
     });
     let batches = Harness::remote_batches(&h.take_events());
-    assert_eq!((batches[0].kind, batches[0].counts()), (RemoteKind::Snapshot, (3, 0, 0)));
+    assert_eq!(
+        (batches[0].kind, batches[0].counts()),
+        (RemoteKind::Snapshot, ChangeCounts { added: 3, updated: 0, removed: 0 })
+    );
     assert_eq!(ids(&h.store).len(), 3);
 }
 
@@ -200,7 +203,7 @@ fn remote_operations_are_never_echoed_back() {
         (batches[0].kind, batches[0].from, batches[0].who.as_deref()),
         (RemoteKind::Live, Some(cid(2)), Some("ana"))
     );
-    assert_eq!(batches[0].counts(), (50, 0, 0));
+    assert_eq!(batches[0].counts(), ChangeCounts { added: 50, updated: 0, removed: 0 });
     h.advance(500);
     assert!(Harness::updates(&h.take_frames()).is_empty(), "applying a remote update sends nothing");
     // A local commit afterwards carries only the local operations.

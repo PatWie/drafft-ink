@@ -8,9 +8,9 @@ use std::collections::BTreeSet;
 use drafftink_edit::TargetError;
 use drafftink_edit::frame::{self, FrameError, SkipReason, WrapOpts};
 use drafftink_edit::transform::{self, ResizeSpec};
+use drafftink_geom::kurbo::{Point, Vec2};
 use drafftink_geom::select::{BoxHandle, Corner};
 use drafftink_scene::*;
-use kurbo::{Point, Vec2};
 use structure_support::*;
 
 fn base() -> MemoryStore {
@@ -193,7 +193,7 @@ fn clip_data_lists_clipping_frames_with_children_in_z_order() {
     let clips = frame::clips(&s);
     assert_eq!(clips.len(), 1);
     assert_eq!(clips[0].frame, id("f"));
-    assert_eq!(clips[0].rect, kurbo::Rect::new(0.0, 0.0, 100.0, 80.0));
+    assert_eq!(clips[0].rect, drafftink_geom::kurbo::Rect::new(0.0, 0.0, 100.0, 80.0));
     assert_eq!(clips[0].children, ids(&["k1", "k2"]));
 }
 

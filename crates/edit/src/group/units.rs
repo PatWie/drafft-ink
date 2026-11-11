@@ -65,8 +65,8 @@ impl Relations {
     }
 
     /// The groups of `e` that count (at least two live members), innermost first.
-    pub fn stack(&self, e: &Element) -> Vec<GroupId> {
-        e.group_ids.iter().filter(|g| self.is_group(g)).cloned().collect()
+    pub fn stack<'a>(&'a self, e: &'a Element) -> impl Iterator<Item = &'a GroupId> + 'a {
+        e.group_ids.iter().filter(|g| self.is_group(g))
     }
 
     /// Group ids on `e` that no longer have two live members.

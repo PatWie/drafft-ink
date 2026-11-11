@@ -16,11 +16,11 @@ mod route;
 mod segments;
 
 use drafftink_geom::binding::{BASE_BINDING_GAP, BindTarget, Heading, max_binding_distance};
+use drafftink_geom::kurbo::{BezPath, Point, Vec2};
 use drafftink_scene::{
     BindMode, Binding, Element, ElementId, ElementKind, FixedSegment, LinearData, PathType, SceneRead, SceneTx,
     StoreError,
 };
-use kurbo::{BezPath, Point, Vec2};
 
 pub use route::{
     BASE_PADDING, Bounds, CORNER_RADIUS, DEDUP_THRESHOLD, ElbowEnd, ElbowError, ElbowTarget, RouteOpts, heading_of_end,
@@ -81,7 +81,7 @@ pub(crate) fn path_of(e: &Element, d: &LinearData, world: &[Point]) -> ElbowPath
 
 /// Writes a route into an element: points, pins and stub flags. Elbow arrows are never rotated.
 pub(crate) fn write_path(e: &mut Element, path: &ElbowPath) -> bool {
-    if !linear::set_world_points(e, &path.points, true) {
+    if !linear::set_world_points(e, &path.points, linear::Turn::Upright) {
         return false;
     }
     let (x, y) = (e.transform.x, e.transform.y);
@@ -440,7 +440,10 @@ mod tests {
         let p = rounded_path(&pts, 16.0);
         // corner = min(16, 10, 50) = 10: the curve starts 10 before the corner
         let els: Vec<_> = p.elements().to_vec();
-        assert!(matches!(els[1], kurbo::PathEl::LineTo(q) if (q - Point::new(10.0, 0.0)).hypot() < 1e-9), "{els:?}");
+        assert!(
+            matches!(els[1], drafftink_geom::kurbo::PathEl::LineTo(q) if (q - Point::new(10.0, 0.0)).hypot() < 1e-9),
+            "{els:?}"
+        );
     }
 
     #[test]

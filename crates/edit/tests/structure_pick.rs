@@ -12,8 +12,8 @@ use drafftink_edit::query::{
     ALL_FIELDS, AtHit, AtOpts, Query, QueryCtx, QueryError, RefConnectedTo, RefQuery, all_matches, elements_at,
     hit_members,
 };
+use drafftink_geom::kurbo::Point;
 use drafftink_scene::*;
-use kurbo::Point;
 use structure_support::*;
 
 fn set(names: &[&str]) -> BTreeSet<ElementId> {

@@ -10,7 +10,7 @@
 //! elements is in [`crate::elbow`].
 
 use drafftink_geom::binding::Heading;
-use kurbo::Point;
+use drafftink_geom::kurbo::Point;
 
 use super::route::{
     BASE_PADDING, DEDUP_THRESHOLD, ElbowEnd, ElbowError, RouteOpts, heading_of_end, is_orthogonal, route,

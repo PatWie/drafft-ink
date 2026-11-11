@@ -14,9 +14,9 @@ use std::collections::BinaryHeap;
 use drafftink_geom::binding::{
     BASE_BINDING_GAP, BindTarget, ELBOW_BASE_PADDING, Heading, grow_rect, max_binding_distance, offset_from_heading,
 };
+use drafftink_geom::kurbo::{Point, Rect, Vec2};
 use drafftink_geom::{Outline, point_is_finite};
 use drafftink_scene::{ElementId, Head};
-use kurbo::{Point, Rect, Vec2};
 
 use crate::linear::head_size;
 

@@ -8,9 +8,9 @@ use std::collections::BTreeSet;
 use drafftink_edit::TargetError;
 use drafftink_edit::group::selection::*;
 use drafftink_edit::{group, lifecycle};
+use drafftink_geom::kurbo::Rect;
 use drafftink_geom::select::MarqueeMode;
 use drafftink_scene::*;
-use kurbo::Rect;
 use structure_support::*;
 
 fn set(names: &[&str]) -> BTreeSet<ElementId> {

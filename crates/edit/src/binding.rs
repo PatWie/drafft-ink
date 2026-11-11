@@ -41,7 +41,7 @@ pub use solve::bound_end_position;
 pub use target::{Resolved, bind_target, is_bindable, resolve};
 
 use crate::elbow::{self, ElbowError, RouteOpts};
-use crate::linear::{set_world_points, world_points};
+use crate::linear::{Turn, set_world_points, world_points};
 
 /// Which end of a line or arrow.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
@@ -186,7 +186,7 @@ pub(crate) fn from_elbow(arrow: &ElementId, err: elbow::ElbowEditError) -> Bindi
 
 const SAME: f64 = 1e-9;
 
-fn same_points(a: &[kurbo::Point], b: &[kurbo::Point]) -> bool {
+fn same_points(a: &[drafftink_geom::kurbo::Point], b: &[drafftink_geom::kurbo::Point]) -> bool {
     a.len() == b.len() && a.iter().zip(b).all(|(p, q)| (*p - *q).hypot() <= SAME)
 }
 
@@ -205,7 +205,7 @@ fn solve_one<T: SceneTx>(tx: &mut T, id: &ElementId) -> Result<bool, BindingErro
         return Ok(false);
     }
     let mut updated = e.clone();
-    if !set_world_points(&mut updated, &next, false) {
+    if !set_world_points(&mut updated, &next, Turn::Keep) {
         return Ok(false);
     }
     tx.update(id, |slot| {

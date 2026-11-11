@@ -1,9 +1,9 @@
 //! Formulas: sizing a math element from its layout. Math cannot be laid out here (the typesetter sits above
 //! this crate's layout of text), so the caller passes a [`MathMeasure`] and this module only writes the result.
 
+use drafftink_geom::kurbo::Size;
 use drafftink_scene::{ElementId, ElementKind, SceneTx};
 use drafftink_typeset::MathError;
-use kurbo::Size;
 
 use super::font::anchor_top_left;
 use super::{TextBindError, live};

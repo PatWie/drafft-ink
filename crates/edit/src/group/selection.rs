@@ -180,7 +180,7 @@ pub fn in_z_order<R: SceneRead>(scene: &R, sel: &Selection) -> Vec<ElementId> {
 fn innermost_shared(scene: &impl SceneRead, rel: &Relations, ids: &BTreeSet<ElementId>) -> Option<GroupId> {
     let mut common: Option<GroupId> = None;
     for id in ids {
-        let g = scene.get(id).and_then(|e| rel.stack(e).into_iter().next())?;
+        let g = scene.get(id).and_then(|e| rel.stack(e).next().cloned())?;
         match &common {
             None => common = Some(g),
             Some(c) if *c == g => {}
@@ -296,9 +296,10 @@ pub fn exit_group<R: SceneRead>(scene: &R, sel: &Selection) -> Result<Selection,
     };
     let members: BTreeSet<ElementId> = rel.members(&g).iter().map(|m| primary_id(scene, m)).collect();
     let parent = members.iter().next().and_then(|m| scene.get(m)).and_then(|e| {
-        let stack = rel.stack(e);
-        let i = stack.iter().position(|s| *s == g)?;
-        stack.get(i + 1).cloned()
+        // The group around `g`: the one after it in the stack, innermost first.
+        let mut stack = rel.stack(e).skip_while(|s| **s != g);
+        stack.next()?;
+        stack.next().cloned()
     });
     Ok(normalize(scene, &rel, members, parent))
 }

@@ -18,7 +18,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use kurbo::{Point, Vec2};
+use drafftink_geom::kurbo::{Point, Vec2};
 
 use drafftink_scene::{
     Element, ElementId, ElementKind, FileEntry, FileId, GroupId, IdSource, IndexError, SceneTx, StoreError, Style,

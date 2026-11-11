@@ -5,12 +5,12 @@ use drafftink_edit::text_bind::{
     FontStep, MathMeasure, MonospaceMeasure, TextBindError, anchor_top_left, create_label, label_of, measure_text,
     next_font_size, set_latex, step_font_size, style_range, wrap_in_container,
 };
+use drafftink_geom::kurbo::{Point, Size};
 use drafftink_scene::{
     Color, Element, ElementId, ElementKind, Kind, MathData, MemoryStore, SceneRead, SceneStore, SceneTx, SeqIds,
     TextData, TextRun, Transform,
 };
 use drafftink_typeset::{MathError, MathErrorKind};
-use kurbo::{Point, Size};
 
 fn id(s: &str) -> ElementId {
     ElementId::new(s).unwrap()

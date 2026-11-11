@@ -20,7 +20,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use drafftink_geom::OrientedBox;
 
 use crate::binding::BindingError;
-use kurbo::{Point, Rect, Size};
+use drafftink_geom::kurbo::{Point, Rect, Size};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
@@ -227,7 +227,7 @@ pub fn compute_layout(g: &LayoutGraph, o: &LayoutOpts) -> Result<LayoutResult, L
     let min_x = result.positions.iter().map(|p| p.x).fold(f64::INFINITY, f64::min);
     let min_y = result.positions.iter().map(|p| p.y).fold(f64::INFINITY, f64::min);
     if min_x.is_finite() && min_y.is_finite() {
-        let shift = kurbo::Vec2::new(-min_x, -min_y);
+        let shift = drafftink_geom::kurbo::Vec2::new(-min_x, -min_y);
         result.positions.iter_mut().for_each(|p| *p += shift);
         result.waypoints.iter_mut().flatten().for_each(|p| *p += shift);
     }
@@ -419,7 +419,7 @@ pub fn layout_apply<T: SceneTx, M: TextMeasure + ?Sized>(
         LayoutAnchor::Center => old.center() - new.center(),
         LayoutAnchor::At(p) => p - new.origin(),
     };
-    let shift = if opts.layout.algorithm == Algorithm::None { kurbo::Vec2::ZERO } else { shift };
+    let shift = if opts.layout.algorithm == Algorithm::None { drafftink_geom::kurbo::Vec2::ZERO } else { shift };
 
     // Move the nodes. The element keeps its offset from its rotated box.
     let mut moved = Vec::new();

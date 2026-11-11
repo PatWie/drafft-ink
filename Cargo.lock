@@ -1373,7 +1373,6 @@ dependencies = [
  "drafftink-scene",
  "drafftink-typeset",
  "insta",
- "kurbo",
  "proptest",
  "schemars",
  "serde",

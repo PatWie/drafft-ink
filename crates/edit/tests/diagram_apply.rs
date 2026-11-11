@@ -7,10 +7,10 @@ use drafftink_edit::layout::{
     diagram_create, layout_apply,
 };
 use drafftink_edit::text_bind::MonospaceMeasure;
+use drafftink_geom::kurbo::Point;
 use drafftink_scene::{
     Element, ElementId, ElementKind, Kind, MemoryStore, SceneRead, SceneStore, SceneTx, SeqIds, validate_scene,
 };
-use kurbo::Point;
 
 fn build(json: &str, origin: Point) -> (MemoryStore, DiagramResult) {
     let spec: DiagramSpec = serde_json::from_str(json).unwrap();

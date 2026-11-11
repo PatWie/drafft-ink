@@ -7,7 +7,7 @@
 use drafftink_geom::OrientedBox;
 use drafftink_geom::aabb::segment_intersects_rect;
 use drafftink_geom::binding::{BindKind, BindTarget, binding_gap};
-use kurbo::{Point, Rect, Vec2};
+use drafftink_geom::kurbo::{Point, Rect, Vec2};
 
 use drafftink_scene::{BindMode, Binding, Element, ElementId, ElementKind, Head, Kind, LinearData, PathType, ZIndex};
 

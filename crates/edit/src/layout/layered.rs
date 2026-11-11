@@ -11,7 +11,7 @@
 
 use std::collections::BTreeSet;
 
-use kurbo::{Point, Size};
+use drafftink_geom::kurbo::{Point, Size};
 
 use super::{Direction, LayoutGraph, LayoutOpts, LayoutResult};
 

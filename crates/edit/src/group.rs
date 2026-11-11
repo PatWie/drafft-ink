@@ -166,12 +166,13 @@ fn group_by<T: SceneTx>(
     };
     let all = with_companions(&*tx, &rel, &members, false);
     ensure_unlocked(&*tx, &all)?;
+    let member_set: std::collections::HashSet<&ElementId> = members.iter().collect();
     for m in &members {
         let Some(e) = tx.get(m) else { continue };
-        if e.tag() == Kind::Frame && rel.children(m).iter().any(|c| members.contains(c)) {
+        if e.tag() == Kind::Frame && rel.children(m).iter().any(|c| member_set.contains(c)) {
             return Err(GroupError::FrameAndChildren { frame: m.clone() });
         }
-        let stack = rel.stack(e).len();
+        let stack = rel.stack(e).count();
         if stack + 1 > limits::MAX_GROUP_DEPTH {
             return Err(GroupError::TooDeep { id: m.clone(), max: limits::MAX_GROUP_DEPTH });
         }

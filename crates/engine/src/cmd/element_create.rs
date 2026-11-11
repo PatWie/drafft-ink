@@ -582,7 +582,7 @@ fn plan_create(s: &Session, a: &CreateArgs) -> Result<Plan, Refusal> {
     let props = a.style.clone().unwrap_or_default();
     let mut defaults = s.tool.defaults();
     if a.kind == Kind::Freehand && a.highlighter == Some(true) {
-        defaults.style = create::highlighter_style(defaults.style, false, false);
+        defaults.style = create::highlighter_style(defaults.style, create::Given::default());
     }
     defaults.apply(&props);
     let style = defaults.style.clone();

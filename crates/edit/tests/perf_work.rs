@@ -17,13 +17,13 @@ use drafftink_edit::text_bind::{GrowAnchor, MonospaceMeasure, label_of, refresh_
 use drafftink_edit::transform::geometry::world_bounds;
 use drafftink_edit::transform::{self, ResizeSpec, RotateMode};
 use drafftink_geom::SpatialIndex;
+use drafftink_geom::kurbo::{Point, Vec2};
 use drafftink_geom::select::{BoxHandle, Corner};
 use drafftink_profile::{Counter, WorkScope};
 use drafftink_scene::{
     BindMode, Binding, Document, Element, ElementId, ElementKind, FrameData, Head, Kind, MemoryStore, SceneRead,
     SceneStore, SceneTx, TextData, ZIndex,
 };
-use kurbo::{Point, Vec2};
 
 /// Scene sizes. Debug builds stop at 10k: building 100k elements unoptimized takes tens of seconds.
 fn sizes() -> &'static [usize] {

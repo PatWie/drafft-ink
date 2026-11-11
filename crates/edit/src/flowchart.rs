@@ -11,7 +11,7 @@
 //! them with [`next_slot`]; [`create_connected_nodes`] creates the nodes and their bound arrows.
 
 use drafftink_geom::OrientedBox;
-use kurbo::{Point, Rect};
+use drafftink_geom::kurbo::{Point, Rect};
 
 use crate::binding::BindingError;
 

@@ -134,7 +134,7 @@ fn sorted(mut v: Vec<ElementId>) -> Vec<ElementId> {
 fn innermost_shared<R: SceneRead>(scene: &R, rel: &Relations, ids: &BTreeSet<ElementId>) -> Option<GroupId> {
     let mut common: Option<GroupId> = None;
     for id in ids {
-        let g = scene.get(id).and_then(|e| rel.stack(e).into_iter().next())?;
+        let g = scene.get(id).and_then(|e| rel.stack(e).next().cloned())?;
         match &common {
             None => common = Some(g),
             Some(c) if *c == g => {}

@@ -11,6 +11,7 @@
 //! editing. Nothing here holds a second copy of their rules.
 
 use drafftink_geom::guides::{SmartGuide, detect_smart_guides_for_point, snap_ray_to_smart_guides};
+use drafftink_geom::kurbo::{Point, Rect, Vec2};
 use drafftink_geom::snap::{
     ENDPOINT_SNAP_RADIUS, GRID_SIZE, MAX_SNAP_CANDIDATES, SMART_GUIDE_THRESHOLD, snap_angle, snap_ray_to_grid_lines,
     snap_to_grid,
@@ -19,7 +20,6 @@ use drafftink_geom::{OrientedBox, aabb};
 use drafftink_scene::{
     BindMode, Binding, Element, ElementId, ElementKind, Kind, PathType, SceneRead, SceneTx, StoreError,
 };
-use kurbo::{Point, Rect, Vec2};
 
 use crate::binding::{BindingError, End, resolve, update_bound_arrows};
 use crate::elbow::{self, ElbowEditError, RouteOpts};

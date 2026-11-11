@@ -8,8 +8,8 @@ use drafftink_edit::arrow::{
     ArrowError, BindRequest, SnapFlags, bind_end, reroute, snap_candidates, snap_dragged_point,
 };
 use drafftink_edit::binding::{End, stale_arrows};
+use drafftink_geom::kurbo::{Point, Rect};
 use drafftink_scene::{BindMode, Kind, PathType, SceneStore, SceneTx};
-use kurbo::{Point, Rect};
 
 const GAP: f64 = 6.0; // 5 + stroke 2 / 2
 

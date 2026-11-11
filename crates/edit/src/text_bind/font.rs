@@ -1,10 +1,10 @@
 //! Font size steps, text properties chosen during an edit, and re-measuring after a font change.
 
+use drafftink_geom::kurbo::Vec2;
 use drafftink_scene::{
     Color, ElementId, ElementKind, FontFamily, FontWeight, Kind, SceneTx, TextAlign, TextStyle, Transform,
     VerticalAlign,
 };
-use kurbo::Vec2;
 
 use super::math::{MathMeasure, set_math_size};
 use super::{GrowAnchor, TextBindError, TextMeasure, label_of, live, measure_text, relayout_label};

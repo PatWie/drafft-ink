@@ -10,8 +10,8 @@ use drafftink_edit::TargetError;
 use drafftink_edit::group;
 use drafftink_edit::lifecycle::{self, ChildPolicy, DuplicateOpts, LifecycleError};
 use drafftink_edit::transform;
+use drafftink_geom::kurbo::Vec2;
 use drafftink_scene::*;
-use kurbo::Vec2;
 use structure_support::*;
 
 fn dup(s: &mut MemoryStore, who: &[&str], editing: Option<GroupId>) -> lifecycle::DuplicateReport {

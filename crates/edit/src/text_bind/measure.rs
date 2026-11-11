@@ -4,8 +4,8 @@
 //! [`MonospaceMeasure`]. Wrapping is a function of the measure, so the shape that is drawn and the shape that
 //! was sized agree as long as the renderer wraps at the same width with the same measure.
 
+use drafftink_geom::kurbo::Size;
 use drafftink_scene::TextStyle;
-use kurbo::Size;
 
 /// How wide and tall text is. The engine implements it over the typesetter; tests use [`MonospaceMeasure`].
 ///

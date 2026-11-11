@@ -23,12 +23,12 @@
 
 use std::collections::BTreeSet;
 
+use drafftink_geom::kurbo::{Point, Size};
 use drafftink_scene::{
     BindMode, Brush, Element, ElementError, ElementId, ElementKind, FrameData, FreehandData, Head, IdSource,
     IndexError, Kind, LinearData, MathData, PathType, PressureMode, SceneRead, SceneTx, StoreError, Style, TextData,
     TextStyle, Transform, ZIndex, limits, validate_element,
 };
-use kurbo::{Point, Size};
 
 use crate::arrow::{ArrowError, BindRequest, bind_end};
 use crate::binding::{self, BindOpts, BindingError, End};
@@ -321,13 +321,22 @@ pub fn set_name<T: SceneTx>(tx: &mut T, id: &ElementId, name: Option<&str>) -> R
 // Styles and strokes
 // ---------------------------------------------------------------------------------------------
 
+/// Which style properties the caller chose, so the highlighter keeps them.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct Given {
+    /// The caller gave a stroke width.
+    pub width: bool,
+    /// The caller gave a stroke colour.
+    pub color: bool,
+}
+
 /// The style of a highlighter stroke: `base` with the width raised to [`MIN_HIGHLIGHTER_WIDTH`] unless the caller
 /// gave a width, and the alpha of the colour set to [`HIGHLIGHTER_ALPHA`] unless the caller gave a colour.
-pub fn highlighter_style(mut base: Style, width_given: bool, color_given: bool) -> Style {
-    if !width_given {
+pub fn highlighter_style(mut base: Style, given: Given) -> Style {
+    if !given.width {
         base.stroke_width = base.stroke_width.max(MIN_HIGHLIGHTER_WIDTH);
     }
-    if !color_given {
+    if !given.color {
         base.stroke_color.a = HIGHLIGHTER_ALPHA;
     }
     base
@@ -987,9 +996,9 @@ mod tests {
     #[test]
     fn highlighter_raises_width_and_sets_alpha_unless_told() {
         let base = Style::default();
-        let h = highlighter_style(base.clone(), false, false);
+        let h = highlighter_style(base.clone(), Given::default());
         assert_eq!((h.stroke_width, h.stroke_color.a), (12.0, 128));
-        let kept = highlighter_style(base, true, true);
+        let kept = highlighter_style(base, Given { width: true, color: true });
         assert_eq!((kept.stroke_width, kept.stroke_color.a), (2.0, 255));
     }
 

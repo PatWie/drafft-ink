@@ -9,7 +9,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use kurbo::{Point, Rect, Size, Vec2};
+use drafftink_geom::kurbo::{Point, Rect, Size, Vec2};
 
 use crate::binding::BindingError;
 use schemars::JsonSchema;

@@ -38,9 +38,9 @@ pub use runs::{RunSpec, carry_runs, replace_runs, style_range};
 
 use std::collections::HashMap;
 
+use drafftink_geom::kurbo::{Point, Rect, Size};
 use drafftink_geom::transform::rotate_point;
 use drafftink_profile::{Counter, count};
-use kurbo::{Point, Rect, Size};
 
 use drafftink_scene::{
     Element, ElementError, ElementId, ElementKind, IdSource, IndexError, Kind, SceneRead, SceneTx, StoreError, Style,

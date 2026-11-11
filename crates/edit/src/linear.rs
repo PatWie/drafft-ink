@@ -10,10 +10,10 @@
 //! end, deleting an end point frees the end it belonged to, elbow arrows only have two movable points,
 //! and a curved line passes through its points as a Catmull-Rom spline.
 
+use drafftink_geom::kurbo::{CubicBez, ParamCurve, ParamCurveArclen, Point};
 use drafftink_scene::{
     ElementId, ElementKind, Head, Kind, LinearData, PathType, SceneRead, SceneTx, StoreError, Transform,
 };
-use kurbo::{CubicBez, ParamCurve, ParamCurveArclen, Point};
 
 use crate::binding::{End, update_bound_arrows};
 use crate::elbow::{self, ElbowEditError, RouteOpts};
@@ -93,10 +93,18 @@ pub fn to_local(t: &Transform, p: Point) -> Point {
     Point::new(v.x * co - v.y * s + t.w / 2.0, v.x * s + v.y * co + t.h / 2.0)
 }
 
-/// Replaces the points of a line or arrow by `world` and refits the box. With `upright` the element's
-/// rotation is reset to 0 first (elbow arrows cannot be rotated). Returns false, changing nothing, for a
-/// wrong kind, no points or a non-finite coordinate.
-pub fn set_world_points(e: &mut drafftink_scene::Element, world: &[Point], upright: bool) -> bool {
+/// What happens to the rotation of an element whose points are replaced.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Turn {
+    /// The element keeps its angle.
+    Keep,
+    /// The element's box is reset to an unrotated one first (elbow arrows cannot be rotated).
+    Upright,
+}
+
+/// Replaces the points of a line or arrow by `world` and refits the box; `turn` says what happens to the
+/// rotation. Returns false, changing nothing, for a wrong kind, no points or a non-finite coordinate.
+pub fn set_world_points(e: &mut drafftink_scene::Element, world: &[Point], turn: Turn) -> bool {
     if world.is_empty() || world.iter().any(|p| !p.x.is_finite() || !p.y.is_finite()) {
         return false;
     }
@@ -104,7 +112,7 @@ pub fn set_world_points(e: &mut drafftink_scene::Element, world: &[Point], uprig
         return false;
     }
     let before = e.transform;
-    if upright {
+    if turn == Turn::Upright {
         e.transform = Transform::new(0.0, 0.0, 0.0, 0.0);
     }
     let t = e.transform;
@@ -216,7 +224,7 @@ pub fn move_points<T: SceneTx>(tx: &mut T, id: &ElementId, moves: &[(usize, Poin
         commit(tx, id, e)?;
         elbow::reroute_with(tx, id, Some((world[0], world[len - 1])), RouteOpts::default())?;
     } else {
-        set_world_points(&mut e, &world, false);
+        set_world_points(&mut e, &world, Turn::Keep);
         commit(tx, id, e)?;
     }
     finish(tx, id)
@@ -245,7 +253,7 @@ pub fn add_point<T: SceneTx>(tx: &mut T, id: &ElementId, index: usize, at: Point
             d.end_binding = None;
         }
     }
-    set_world_points(&mut e, &world, false);
+    set_world_points(&mut e, &world, Turn::Keep);
     commit(tx, id, e)?;
     finish(tx, id)
 }
@@ -307,7 +315,7 @@ pub fn delete_points<T: SceneTx>(tx: &mut T, id: &ElementId, indices: &[usize]) 
             d.end_binding = None;
         }
     }
-    set_world_points(&mut e, &kept, false);
+    set_world_points(&mut e, &kept, Turn::Keep);
     commit(tx, id, e)?;
     finish(tx, id)?;
     Ok(Deleted { removed: drop.len() })
@@ -443,7 +451,7 @@ pub fn distance_to(e: &drafftink_scene::Element, p: Point) -> Option<f64> {
     let world = world_points(e)?;
     let d = e.linear_data()?;
     if d.path == PathType::Round && world.len() > 2 {
-        let mut path = kurbo::BezPath::new();
+        let mut path = drafftink_geom::kurbo::BezPath::new();
         path.move_to(*world.first()?);
         for c in curve_segments(&world) {
             path.curve_to(c.p1, c.p2, c.p3);

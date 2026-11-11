@@ -7,11 +7,11 @@ use drafftink_edit::CopyError;
 use drafftink_edit::create::FreeTextError;
 use drafftink_edit::paste::{PasteError, PasteOpts, insert_elements, insert_text};
 use drafftink_edit::text_bind::MonospaceMeasure;
+use drafftink_geom::kurbo::Point;
 use drafftink_scene::{
     BindMode, Binding, Element, ElementId, ElementKind, FileEntry, GroupId, ImageData, LinearData, MemoryStore,
     SceneRead, SceneStore, SceneTx, SeqIds, Style, TextStyle, ZIndex,
 };
-use kurbo::Point;
 
 fn id(s: &str) -> ElementId {
     ElementId::new(s).unwrap()

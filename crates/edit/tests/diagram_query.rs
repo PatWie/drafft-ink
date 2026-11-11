@@ -8,8 +8,8 @@ use drafftink_edit::query::{
     AtOpts, Field, Order, Query, QueryCtx, QueryError, QueryOpts, describe_all, elements_at, resolve_ref, run_query,
 };
 use drafftink_edit::text_bind::MonospaceMeasure;
+use drafftink_geom::kurbo::Point;
 use drafftink_scene::{Element, ElementId, ElementKind, Kind, MemoryStore, SceneRead, SceneStore, SceneTx, SeqIds};
-use kurbo::Point;
 
 fn q(json: &str) -> Query {
     serde_json::from_str(json).unwrap()

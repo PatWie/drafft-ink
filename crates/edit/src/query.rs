@@ -18,9 +18,9 @@ pub use refs::{ALL_FIELDS, RefConnectedTo, RefQuery, all_matches, hit_members};
 
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 
+use drafftink_geom::kurbo::{Point, Rect, Size};
 use drafftink_geom::transform::ElementFrame;
 use drafftink_geom::{DiamondShape, EllipseShape, HitOpts, OrientedBox, Outline as _, Polyline, RectShape};
-use kurbo::{Point, Rect, Size};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
@@ -30,7 +30,7 @@ use drafftink_scene::{
     Sloppiness, StrokeStyle, TextAlign,
 };
 
-pub use regex_lite::{Regex, RegexError};
+pub use regex_lite::{Case, Regex, RegexError};
 
 // ---------------------------------------------------------------------------------------------
 // The filter
@@ -402,7 +402,7 @@ fn compile<'q, R: SceneRead>(r: &R, q: &'q Query) -> Result<Compiled<'q>, QueryE
             contains = c.as_ref().map(|s| s.to_lowercase());
             if let Some(p) = re {
                 regex = Some(
-                    Regex::new(p, true)
+                    Regex::new(p, Case::Insensitive)
                         .map_err(|e| QueryError::BadRegex { pattern: p.clone(), reason: e.to_string() })?,
                 );
             }

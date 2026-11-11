@@ -81,7 +81,12 @@ fn creates_nodes_labels_and_bound_arrows_in_one_transaction() {
 #[test]
 fn layered_down_puts_sources_above_targets_without_overlap() {
     let mut store = MemoryStore::new();
-    let r = create(&mut store, &small(), &CreateOpts { origin: kurbo::Point::new(100.0, 200.0), frame: None }).unwrap();
+    let r = create(
+        &mut store,
+        &small(),
+        &CreateOpts { origin: drafftink_geom::kurbo::Point::new(100.0, 200.0), frame: None },
+    )
+    .unwrap();
     let y = |n: &str| store.get(&r.nodes[n]).unwrap().transform.y;
     assert!(y("start") < y("check"));
     assert!(y("check") < y("ok"));
@@ -223,7 +228,9 @@ fn none_layout_keeps_given_positions_and_asks_for_missing_ones() {
         r#"{"nodes":[{"id":"a","x":10,"y":20,"width":50,"height":40},{"id":"b","x":300,"y":20}],"layout":{"algorithm":"none"}}"#,
     );
     let mut store = MemoryStore::new();
-    let r = create(&mut store, &s, &CreateOpts { origin: kurbo::Point::new(999.0, 999.0), frame: None }).unwrap();
+    let r =
+        create(&mut store, &s, &CreateOpts { origin: drafftink_geom::kurbo::Point::new(999.0, 999.0), frame: None })
+            .unwrap();
     let a = store.get(&r.nodes["a"]).unwrap().transform;
     assert_eq!((a.x, a.y, a.w, a.h), (10.0, 20.0, 50.0, 40.0));
     let missing = spec(r#"{"nodes":[{"id":"a","x":1,"y":1},{"id":"b"}],"layout":{"algorithm":"none"}}"#);
@@ -349,8 +356,12 @@ fn bad_groups_are_refused() {
 #[test]
 fn frame_wraps_everything_and_children_sit_below_it() {
     let mut store = MemoryStore::new();
-    let r =
-        create(&mut store, &small(), &CreateOpts { origin: kurbo::Point::ZERO, frame: Some("Flow".into()) }).unwrap();
+    let r = create(
+        &mut store,
+        &small(),
+        &CreateOpts { origin: drafftink_geom::kurbo::Point::ZERO, frame: Some("Flow".into()) },
+    )
+    .unwrap();
     let fid = r.frame.clone().unwrap();
     let f = store.get(&fid).unwrap();
     let ElementKind::Frame(d) = &f.kind else { panic!() };
@@ -392,7 +403,7 @@ fn long_edges_avoid_the_nodes_in_between() {
     let mut store = MemoryStore::new();
     let r = create(&mut store, &s, &CreateOpts::default()).unwrap();
     let long = store.get(&r.edges[3]).unwrap();
-    let world: Vec<kurbo::Point> =
+    let world: Vec<drafftink_geom::kurbo::Point> =
         long.linear_data().unwrap().points.iter().map(|p| long.transform.local_to_world(*p)).collect();
     for id in [&r.nodes["b"], &r.nodes["c"]] {
         let rect = store.get(id).unwrap().rect();
@@ -530,7 +541,7 @@ mod hostile {
             let mut store = MemoryStore::new();
             let mut ids = SeqIds::new();
             let mut tx = store.begin();
-            let opts = CreateOpts { origin: kurbo::Point::new(ox, 0.0), frame: frame.then(|| "F".to_string()) };
+            let opts = CreateOpts { origin: drafftink_geom::kurbo::Point::new(ox, 0.0), frame: frame.then(|| "F".to_string()) };
             let result = diagram_create(&mut tx, &MonospaceMeasure::default(), &mut ids, &spec, &opts);
             if result.is_ok() {
                 tx.commit().unwrap();

@@ -457,11 +457,11 @@ pub(crate) fn lift_above_enclosures<R: SceneRead>(
         }
         if lifted.is_none() {
             for g in rel.stack(&anchor) {
-                if joins_group(&g) {
+                if joins_group(g) {
                     break;
                 }
                 let topmost = rel
-                    .members(&g)
+                    .members(g)
                     .iter()
                     .filter_map(|m| scene.get(m))
                     .max_by(|a, b| a.index.cmp(&b.index).then_with(|| a.id.cmp(&b.id)));
