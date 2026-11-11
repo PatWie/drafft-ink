@@ -516,6 +516,13 @@ impl Session {
         self.ports.clock.now_ms()
     }
 
+    /// How many times the shape library was written (0 until the first write of this session). A reader that
+    /// keeps a copy of `library.list` compares it to know that the copy is stale: the library is outside the
+    /// document, so no document revision changes when an item is added, removed or imported.
+    pub fn library_revision(&self) -> u64 {
+        crate::cmd::library::revision(self)
+    }
+
     /// The origin to use when a shell does not say (scripts).
     pub fn default_origin() -> Origin {
         Origin::Script

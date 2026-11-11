@@ -1,6 +1,6 @@
-//! The naming dialogs: rename (document, tab, library item, frame) and Save As.
+//! The naming dialogs: rename (document, tab, library item, library section, frame) and Save As.
 //!
-//! Rename ends in `doc.rename`, `tab.rename`, `library.rename` or `frame.rename`. Save As asks for the
+//! Rename ends in `doc.rename`, `tab.rename`, `library.rename`, `library.rename_section` or `frame.rename`. Save As asks for the
 //! document name first: Save runs `doc.rename` when the name changed and then hands the app a
 //! [`HostRequest::PickSaveTarget`] (the app calls `doc.save` with `to` afterwards). A refusal (an empty
 //! name) keeps the dialog open next to its toast.
@@ -24,6 +24,9 @@ pub(crate) fn rename_call(target: &RenameTarget, text: &str) -> (&'static str, V
         RenameTarget::Document => ("doc.rename", json!({ "name": name })),
         RenameTarget::Tab(tab) => ("tab.rename", json!({ "tab": tab, "name": name })),
         RenameTarget::LibraryItem(item) => ("library.rename", json!({ "item": item, "name": name })),
+        RenameTarget::LibrarySection(section) => {
+            ("library.rename_section", json!({ "section": section, "name": name }))
+        }
         RenameTarget::Frame(frame) => ("frame.rename", json!({ "frame": frame, "name": name })),
     }
 }
@@ -34,6 +37,7 @@ fn title_of(target: &RenameTarget) -> &'static str {
         RenameTarget::Document => "Rename the document",
         RenameTarget::Tab(_) => "Rename the tab",
         RenameTarget::LibraryItem(_) => "Rename the library item",
+        RenameTarget::LibrarySection(_) => "Rename the library section",
         RenameTarget::Frame(_) => "Rename the frame",
     }
 }
@@ -45,6 +49,9 @@ fn current_name(cx: &Cx<'_>, target: &RenameTarget) -> String {
         RenameTarget::Tab(id) => cx.model.tabs.iter().find(|t| &t.id == id).map(|t| t.name.clone()).unwrap_or_default(),
         RenameTarget::LibraryItem(id) => {
             cx.model.library.iter().find(|i| &i.id == id).map(|i| i.name.clone()).unwrap_or_default()
+        }
+        RenameTarget::LibrarySection(id) => {
+            cx.model.library_sections.iter().find(|s| &s.id == id).map(|s| s.name.clone()).unwrap_or_default()
         }
         RenameTarget::Frame(_) => String::new(),
     }

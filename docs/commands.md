@@ -882,13 +882,15 @@ The settings are one JSON record in the `Settings` namespace of `Storage`, key `
 
 ### 2.18 `library`: the shape library
 
-Items are saved groups of elements for reuse. Every library command needs the storage port (`port_unavailable` otherwise, also as availability, because the library is kept there). The library is persisted in the `Storage` library namespace, is not part of any document, and has no undo. It reads and writes `.excalidrawlib` (v1 and v2) and replaces the old import-into-a-new-tab flow (A:1689, 2294).
+Items are saved groups of elements for reuse. They are kept in sections: one per imported library, named after the file, and one for the person's own items (`mine`, shown as "My items"; items saved before sections existed are in it). Every library command needs the storage port (`port_unavailable` otherwise, also as availability, because the library is kept there). The library is persisted in the `Storage` library namespace, is not part of any document, and has no undo. It reads and writes `.excalidrawlib` (v1 and v2) and replaces the old import-into-a-new-tab flow (A:1689, 2294).
 
 | id | title | undo | keys | source |
 |---|---|---|---|---|
 | `library.add` | Add to library | NoUndo | none | X:actionAddToLibrary; NEW |
 | `library.insert` | Insert from library | Undoable | none | X:LibraryUnit; NEW |
 | `library.remove` | Remove from library | NoUndo | none | NEW |
+| `library.remove_section` | Remove library section | NoUndo | none | NEW |
+| `library.rename_section` | Rename library section | NoUndo | none | NEW |
 | `library.rename` | Rename library item | NoUndo | none | NEW |
 | `library.list` | List library | NoUndo, read-only | none | NEW |
 | `library.thumbnail` | Draw a library item | NoUndo, read-only | none | NEW |
@@ -901,9 +903,11 @@ Items are saved groups of elements for reuse. Every library command needs the st
 | `library.insert` | `item: string` (id or name), `at: Point = viewport_center`, `select: bool = true` | Execute: `no_such_item`: "There is no library item `{item}`. List items with `library.list`." Two items with the same name: `bad_args` (pass the id). | Inserts the item like a paste (the `edit::library` insert rule, as `doc.open` mode=merge): new element and group ids, centred on `at`, on top of the z-order, selected. Output `{item, ids}`. |
 | `library.remove` | exactly one of `items: string[]`, `all: bool` (all=true is the only way to remove everything) | Execute: `bad_args`: "Give either `items` or all=true."; `no_such_item`; `library_newer`. | Removes items. Not undoable, so removal is always explicit. |
 | `library.rename` | `item: string`, `name: string` | `no_such_item`; `empty_name`; `library_newer`. | Renames an item. The same name is Ok with changed=false. |
-| `library.list` | `search?: string` | Needs storage. | `{items: [{id, name, element_count, bounds, created, content}]}`. `search` matches id or name, case does not matter. `content` is a fingerprint of what the item draws (16 hex digits): it changes with the drawing and not with the name, so a picture of the item is good for as long as it stays the same. |
+| `library.remove_section` | `section: string` (id or name; `mine` is the person's own items) | Execute: `no_such_section`: "There is no library section `{section}`. List sections with `library.list`."; `bad_args` for two sections with the same name; `library_newer`. | Removes the section with all its items, and their records in storage. Not undoable. The UI asks first. A section with no items is `changed=false`. Output `{changed, section, removed: [item ids]}`. |
+| `library.rename_section` | `section: string` (id or name), `name: string` | `no_such_section`; `empty_name`; `bad_args` for `mine` (it keeps the name My items); `library_newer`. | Renames an imported library's section. The same name is Ok with changed=false. Output `{changed, section: {id, name, kind, items}}`. |
+| `library.list` | `search?: string`, `section?: string` (id or name) | Needs storage. Execute: `no_such_section` for a `section` that does not exist. | `{items: [{id, name, element_count, bounds, created, section, content}], sections: [{id, name, kind: "mine" \| "imported", items}]}`. `search` matches id or name, case does not matter; `section` keeps the items of one section. `sections` lists every section that has items (whatever `search` says), the person's own first, then the imported ones in the order they were imported; `items` of a section is its full count. `content` is a fingerprint of what the item draws (16 hex digits): it changes with the drawing and not with the name, so a picture of the item is good for as long as it stays the same. |
 | `library.thumbnail` | `item: string` (id or name), `max_side: number = 256` (16 to 1024), `dark: bool = false` | Needs storage and the renderer. Execute: `no_such_item`; `bad_args` for a `max_side` out of range; `nothing_to_do` for an item with nothing visible; `render_pending` while the browser's renderer is still drawing (the UI asks again). | Draws the item with the `Renderer` port through the one PNG implementation that `doc.export` uses: a transparent background, 5 % air around the drawing, the longer side `max_side` pixels (a small item is enlarged at most 8 times). `dark` recolours the way the canvas does in the dark theme. Output `{item, width, height, bytes: {base64, mime}}`. The library panel asks for one picture per item and keeps it for as long as `content` stays the same. |
-| `library.import` | `source: FileRef \| Bytes`, `mode: "merge" \| "replace" \| "open_as_tab" = merge` | Execute: `parse_failed`: "The file is not an Excalidraw library: {msg}. Libraries are .excalidrawlib files."; `io_failed`; `library_newer`; `too_many_tabs` (open_as_tab, as `tab.new`); `limit_exceeded` (10 000 items). | merge adds items and skips duplicates by content hash (the same shapes, whatever their ids, seeds, names and position). replace replaces the whole library (use with care: not undoable). open_as_tab is the old behaviour: lays the items out on a grid in a new tab. Output `{added, skipped, total, tab?}`. |
+| `library.import` | `source: FileRef \| Bytes`, `mode: "merge" \| "replace" \| "open_as_tab" = merge` | Execute: `parse_failed`: "The file is not an Excalidraw library: {msg}. Libraries are .excalidrawlib files."; `io_failed`; `library_newer`; `too_many_tabs` (open_as_tab, as `tab.new`); `limit_exceeded` (10 000 items). | merge adds items and skips duplicates by content hash (the same shapes, whatever their ids, seeds, names and position). The new items go to a section named after the file (its name without `.excalidrawlib`; `Library` when it has none); importing a file with the same name again adds to that section, and a file whose items are all duplicates makes no section. replace replaces the whole library (use with care: not undoable). open_as_tab is the old behaviour: lays the items out on a grid in a new tab. Output `{added, skipped, section?, total, tab?}`. |
 | `library.export` | `items?: string[]` (default all), `to: "inline" \| FileRef = inline` | Execute: `nothing_to_do`: "The library is empty, so there is nothing to export."; `no_such_item`; `io_failed`. | Writes `.excalidrawlib` v2. Output `{items, size, bytes?, saved_to?}`. |
 
 ### 2.19 `diagram` and `layout`: build diagrams from structure
@@ -1724,6 +1728,8 @@ Legend:
 | `library.add` | P | req | Storage | ok | ok | no | commit | - | always | y | y |
 | `library.insert` | D,O | - | Storage | ok | no | no | commit | scene | always | y | y |
 | `library.remove` | P | - | Storage | ok | ok | no | commit | - | always | y | y |
+| `library.remove_section` | P | - | Storage | ok | ok | no | commit | - | always | y | y |
+| `library.rename_section` | P | - | Storage | ok | ok | no | commit | - | always | y | y |
 | `library.rename` | P | - | Storage | ok | ok | no | commit | - | always | y | y |
 | `library.list` | - | - | Storage | ok | ok | ok | ok | - | always | y | y |
 | `library.thumbnail` | - | - | Storage,Renderer | ok | ok | ok | ok | - | always | n | y |
@@ -1787,6 +1793,7 @@ Four more facts of a registration, kept apart from the table above because most 
 | `history.redo` | managed | - | show | repeats | n | n |
 | `library.add` | not_document | completes_library_add | show | repeats | n | n |
 | `library.rename` | not_document | completes_rename | show | repeats | n | n |
+| `library.rename_section` | not_document | completes_rename | show | repeats | n | n |
 | `style.set` | edit | - | show | repeats | y | n |
 | `text.format` | edit | - | show | repeats | y | n |
 | `tab.rename` | edit | completes_rename | show | repeats | n | n |

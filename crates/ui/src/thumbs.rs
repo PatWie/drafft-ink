@@ -283,6 +283,7 @@ mod tests {
             width: 10.0,
             height: 10.0,
             content: content.to_owned(),
+            section: "mine".to_owned(),
         }
     }
 

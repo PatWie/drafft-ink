@@ -1,0 +1,30 @@
+{
+  "about": "The library is kept in sections: the person's own items, and one section per imported library, named after its file. A section can be renamed (an imported one) and removed with all its items; refusals say what to do.",
+  "steps": [
+    { "harness": "stage_fixture", "args": { "path": "excalidraw/fixture_library.excalidrawlib" } },
+    { "execute": "element.create", "args": { "kind": "rectangle", "bounds": { "x": 100, "y": 100, "w": 100, "h": 60 } } },
+    { "execute": "library.add", "args": { "ids": ["e1"], "name": "Mine" }, "expect": [ { "path": "$.item.section", "eq": "mine" } ] },
+    { "execute": "library.import", "args": { "source": { "path": "fixtures/excalidraw/fixture_library.excalidrawlib" } }, "expect": [ { "path": "$.added", "eq": 1 }, { "path": "$.section", "is": "string" } ], "save": { "imported": "$.section" } },
+    { "assert": "library.list", "expect": [
+        { "path": "$.items", "len": 2 },
+        { "path": "$.sections", "len": 2, "note": "My items first, then the imported library." },
+        { "path": "$.sections[0].id", "eq": "mine" }, { "path": "$.sections[0].name", "eq": "My items" }, { "path": "$.sections[0].kind", "eq": "mine" },
+        { "path": "$.sections[1].id", "eq": "{{imported}}" }, { "path": "$.sections[1].name", "eq": "fixture_library", "note": "Named after the file." }, { "path": "$.sections[1].kind", "eq": "imported" }, { "path": "$.sections[1].items", "eq": 1 } ] },
+    { "assert": "library.list", "args": { "section": "fixture_library" }, "expect": [ { "path": "$.items", "len": 1 }, { "path": "$.items[0].section", "eq": "{{imported}}" }, { "path": "$.sections", "len": 2 } ] },
+    { "assert": "library.list", "args": { "section": "nope" }, "refused": "no_such_section", "text": "There is no library section `nope`. List sections with `library.list`." },
+
+    { "execute": "library.rename_section", "args": { "section": "{{imported}}", "name": "Flowchart" }, "expect": [ { "path": "$.section.name", "eq": "Flowchart" } ] },
+    { "execute": "library.rename_section", "args": { "section": "Flowchart", "name": "Flowchart" }, "expect": [ { "path": "$.changed", "eq": false } ] },
+    { "execute": "library.rename_section", "args": { "section": "Flowchart", "name": " " }, "refused": "empty_name", "text": "The name is empty." },
+    { "execute": "library.rename_section", "args": { "section": "mine", "name": "Mine" }, "refused": "bad_args", "text": "keeps its name" },
+    { "execute": "library.rename_section", "args": { "section": "nope", "name": "x" }, "refused": "no_such_section" },
+
+    { "execute": "library.remove_section", "args": { "section": "nope" }, "refused": "no_such_section", "text": "There is no library section `nope`." },
+    { "execute": "library.remove_section", "args": { "section": "Flowchart" }, "expect": [ { "path": "$.removed", "len": 1 }, { "path": "$.section", "eq": "{{imported}}" } ] },
+    { "assert": "library.list", "expect": [ { "path": "$.items", "len": 1 }, { "path": "$.sections", "len": 1 }, { "path": "$.items[0].name", "eq": "Mine", "note": "Only the section's items went." } ] },
+    { "execute": "library.remove_section", "args": { "section": "mine" }, "expect": [ { "path": "$.removed", "len": 1 } ] },
+    { "execute": "library.remove_section", "args": { "section": "mine" }, "expect": [ { "path": "$.changed", "eq": false } ] },
+    { "assert": "library.list", "expect": [ { "path": "$.items", "len": 0 }, { "path": "$.sections", "len": 0 } ] },
+    { "assert": "history.state", "expect": [ { "path": "$.undo_depth", "eq": 1, "note": "Only the rectangle: no library command is a document step." } ] }
+  ]
+}

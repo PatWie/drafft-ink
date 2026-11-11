@@ -89,6 +89,7 @@ pub enum Icon {
     Stats,
     Check,
     ChevronRight,
+    ChevronDown,
 }
 
 struct Pen<'a> {
@@ -552,6 +553,7 @@ pub fn paint(painter: &Painter, rect: Rect, icon: Icon, color: Color32) {
         }
         Icon::Check => pen.poly(&[(5.0, 12.5), (10.0, 17.5), (19.0, 7.0)], false),
         Icon::ChevronRight => pen.poly(&[(9.0, 5.5), (15.5, 12.0), (9.0, 18.5)], false),
+        Icon::ChevronDown => pen.poly(&[(5.5, 9.0), (12.0, 15.5), (18.5, 9.0)], false),
     }
 }
 

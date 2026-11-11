@@ -1,11 +1,14 @@
 //! `library`: the shape library (docs/commands.md §2.18).
 //!
-//! Items are saved groups of elements for reuse. The library lives in the `Storage` library namespace,
+//! Items are saved groups of elements for reuse. They are kept in sections: one per imported library, named
+//! after the file, and one for the person's own items. The library lives in the `Storage` library namespace,
 //! is not part of any document, and has no undo. It reads and writes `.excalidrawlib` (v1 and v2). The
 //! file format is `drafftink-io`, taking an item out of a scene and putting it in is
 //! `drafftink_edit::library`; this module keeps the list and the storage layout ([`store`]).
 
 mod store;
+
+pub(crate) use self::store::revision;
 
 use std::collections::HashSet;
 use std::sync::Arc;
@@ -18,7 +21,7 @@ use drafftink_scene::ElementId;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-use self::store::Item;
+use self::store::{Home, Item, Library, MINE_ID, MINE_NAME, Section};
 use super::doc::export::{Dest, ExportBytes, PngOpts, render_png};
 use super::doc::files::{self, Loaded, Provenance, Source, base64_of};
 use super::doc::open::{merge_into_active, open_in_new_tab};
@@ -46,6 +49,8 @@ pub struct ItemInfo {
     pub bounds: Option<[f64; 4]>,
     /// When it was added, milliseconds since the Unix epoch.
     pub created: u64,
+    /// The section the item belongs to: `mine` for the person's own items, else the id of an imported library.
+    pub section: String,
     /// A fingerprint of what the item draws (16 hex digits). It changes when the drawing does, and not when the
     /// item is renamed, so a picture of the item stays good for as long as this stays the same.
     pub content: String,
@@ -58,8 +63,45 @@ fn info(i: &Item) -> ItemInfo {
         element_count: i.document.elements.iter().filter(|e| !e.deleted).count(),
         bounds: frag::bounds(&i.document).map(|r| [round2(r.x0), round2(r.y0), round2(r.width()), round2(r.height())]),
         created: i.created_ms,
+        section: i.home.id().to_owned(),
         content: format!("{:016x}", i.hash),
     }
+}
+
+/// Whose items a section holds.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum SectionKind {
+    /// The person's own items. It has the fixed id `mine`, cannot be renamed, and is listed when it has items.
+    Mine,
+    /// A library that was imported.
+    Imported,
+}
+
+/// What `library.list` and `library.rename_section` say about a section.
+#[derive(Debug, Clone, PartialEq, Serialize, JsonSchema)]
+pub struct SectionInfo {
+    /// The id to pass as `section`, and the `section` of its items.
+    pub id: String,
+    /// The name: the file an imported library came from, or `My items`.
+    pub name: String,
+    /// Whose items it holds.
+    pub kind: SectionKind,
+    /// Items in it (all of them, whatever `search` says).
+    pub items: usize,
+}
+
+/// The sections that have items, the person's own first, then the imported ones in the order of their import.
+fn section_infos(lib: &Library) -> Vec<SectionInfo> {
+    let count = |home: &Home| lib.items.iter().filter(|i| &i.home == home).count();
+    let mine = count(&Home::Mine);
+    let own = (mine > 0).then(|| SectionInfo { id: MINE_ID.to_owned(), name: MINE_NAME.to_owned(), kind: SectionKind::Mine, items: mine });
+    let imported = lib.sections.iter().map(|s| section_info(s, count(&Home::Section(s.id.clone()))));
+    own.into_iter().chain(imported).collect()
+}
+
+fn section_info(s: &Section, items: usize) -> SectionInfo {
+    SectionInfo { id: s.id.clone(), name: s.name.clone(), kind: SectionKind::Imported, items }
 }
 
 fn round2(v: f64) -> f64 {
@@ -73,6 +115,36 @@ fn no_such_item(id: &str, item: &str) -> Refusal {
         format!("There is no library item `{}`. List items with `library.list`.", echo(item)),
     )
     .suggesting("library.list", None)
+}
+
+fn no_such_section(id: &str, section: &str) -> Refusal {
+    Refusal::custom(
+        "no_such_section",
+        id,
+        format!("There is no library section `{}`. List sections with `library.list`.", echo(section)),
+    )
+    .suggesting("library.list", None)
+}
+
+/// Finds a section by id, else by name. `mine` and `My items` are the person's own items. Two sections with the
+/// same name are ambiguous.
+fn find_section(id: &str, sections: &[Section], wanted: &str) -> Result<Home, Refusal> {
+    if wanted == MINE_ID || wanted == MINE_NAME {
+        return Ok(Home::Mine);
+    }
+    if let Some(s) = sections.iter().find(|s| s.id == wanted) {
+        return Ok(Home::Section(s.id.clone()));
+    }
+    let mut named = sections.iter().filter(|s| s.name == wanted);
+    match (named.next(), named.next()) {
+        (None, _) => Err(no_such_section(id, wanted)),
+        (Some(one), None) => Ok(Home::Section(one.id.clone())),
+        (Some(_), Some(_)) => Err(Refusal::bad_arg(
+            id,
+            "section",
+            format!("several sections are named `{}`. Pass the section id from `library.list`", echo(wanted)),
+        )),
+    }
 }
 
 /// Finds an item by id, else by name. Two items with the same name are ambiguous.
@@ -136,22 +208,23 @@ fn add(s: &mut Session, a: AddArgs) -> Result<AddOut, Refusal> {
     if !frag::normalize(&mut doc) {
         return Err(Refusal::nothing_to_do(id, "add", "the elements have no size or are deleted"));
     }
-    let mut items = store::items(s);
-    if items.len() >= MAX_LIBRARY_ITEMS {
-        return Err(Refusal::limit_exceeded(id, items.len() + 1, "library items", MAX_LIBRARY_ITEMS));
+    let mut lib = store::library(s);
+    if lib.items.len() >= MAX_LIBRARY_ITEMS {
+        return Err(Refusal::limit_exceeded(id, lib.items.len() + 1, "library items", MAX_LIBRARY_ITEMS));
     }
     let item = Arc::new(Item {
-        id: store::fresh_id(s, &items),
+        id: store::fresh_id(s, &lib.items),
         name,
         created_ms: s.now_ms(),
         hash: frag::content_hash(&doc),
         document: doc,
+        home: Home::Mine,
     });
     let out = AddOut { changed: true, item: info(&item) };
     let touched = vec![item.id.clone()];
-    items.push(item);
+    lib.items.push(item);
     store::flush_notes(s);
-    store::commit(s, items, &touched, &[])?;
+    store::commit(s, lib, &touched, &[])?;
     Ok(out)
 }
 
@@ -226,7 +299,7 @@ fn remove(s: &mut Session, a: RemoveArgs) -> Result<RemoveOut, Refusal> {
         return Err(Refusal::bad_args(id, "Give either `items` or all=true."));
     }
     store::writable(s, id)?;
-    let items = store::items(s);
+    let Library { items, sections } = store::library(s);
     let gone: Vec<String> = if a.all {
         items.iter().map(|i| i.id.clone()).collect()
     } else {
@@ -246,8 +319,44 @@ fn remove(s: &mut Session, a: RemoveArgs) -> Result<RemoveOut, Refusal> {
     }
     let kept: Vec<Arc<Item>> = items.into_iter().filter(|i| !gone.contains(&i.id)).collect();
     store::flush_notes(s);
-    store::commit(s, kept, &[], &gone)?;
+    store::commit(s, Library { items: kept, sections }, &[], &gone)?;
     Ok(RemoveOut { changed: true, removed: gone })
+}
+
+// ---- library.remove_section ----
+
+/// Arguments of `library.remove_section`.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct RemoveSectionArgs {
+    /// The section id or name (`mine` for the person's own items).
+    pub section: String,
+}
+
+/// Output of `library.remove_section`.
+#[derive(Debug, Clone, PartialEq, Serialize, JsonSchema)]
+pub struct RemoveSectionOut {
+    /// False when the section had no items.
+    pub changed: bool,
+    /// The id of the section.
+    pub section: String,
+    /// The ids of the items that were removed with it.
+    pub removed: Vec<String>,
+}
+
+fn remove_section(s: &mut Session, a: RemoveSectionArgs) -> Result<RemoveSectionOut, Refusal> {
+    let id = s.cmd();
+    store::writable(s, id)?;
+    let Library { items, sections } = store::library(s);
+    let home = find_section(id, &sections, &a.section)?;
+    let (gone, kept): (Vec<Arc<Item>>, Vec<Arc<Item>>) = items.into_iter().partition(|i| i.home == home);
+    let removed: Vec<String> = gone.iter().map(|i| i.id.clone()).collect();
+    if removed.is_empty() {
+        return Ok(RemoveSectionOut { changed: false, section: home.id().to_owned(), removed });
+    }
+    store::flush_notes(s);
+    store::commit(s, Library { items: kept, sections }, &[], &removed)?;
+    Ok(RemoveSectionOut { changed: true, section: home.id().to_owned(), removed })
 }
 
 // ---- library.rename ----
@@ -275,9 +384,9 @@ fn rename(s: &mut Session, a: RenameArgs) -> Result<RenameOut, Refusal> {
     let id = s.cmd();
     let name = normalize_name(id, &a.name)?;
     store::writable(s, id)?;
-    let mut items = store::items(s);
-    let n = find(id, &items, &a.item)?;
-    let Some(slot) = items.get_mut(n) else { return Err(no_such_item(id, &a.item)) };
+    let mut lib = store::library(s);
+    let n = find(id, &lib.items, &a.item)?;
+    let Some(slot) = lib.items.get_mut(n) else { return Err(no_such_item(id, &a.item)) };
     if slot.name.as_deref() == Some(name.as_str()) {
         return Ok(RenameOut { changed: false, item: info(slot) });
     }
@@ -285,8 +394,55 @@ fn rename(s: &mut Session, a: RenameArgs) -> Result<RenameOut, Refusal> {
     it.name = Some(name);
     let (touched, item) = (vec![it.id.clone()], info(it));
     store::flush_notes(s);
-    store::commit(s, items, &touched, &[])?;
+    store::commit(s, lib, &touched, &[])?;
     Ok(RenameOut { changed: true, item })
+}
+
+// ---- library.rename_section ----
+
+/// Arguments of `library.rename_section`.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct RenameSectionArgs {
+    /// The section id or name.
+    pub section: String,
+    /// The new name (1 to 256 characters).
+    pub name: String,
+}
+
+/// Output of `library.rename_section`.
+#[derive(Debug, Clone, PartialEq, Serialize, JsonSchema)]
+pub struct RenameSectionOut {
+    /// False when the section already had this name.
+    pub changed: bool,
+    /// The section after the command.
+    pub section: SectionInfo,
+}
+
+fn rename_section(s: &mut Session, a: RenameSectionArgs) -> Result<RenameSectionOut, Refusal> {
+    let id = s.cmd();
+    let name = normalize_name(id, &a.name)?;
+    store::writable(s, id)?;
+    let mut lib = store::library(s);
+    let Home::Section(target) = find_section(id, &lib.sections, &a.section)? else {
+        return Err(Refusal::bad_arg(
+            id,
+            "section",
+            format!("`{MINE_NAME}` holds your own items and keeps its name. Rename an imported library instead"),
+        ));
+    };
+    let items = lib.items.iter().filter(|i| i.home.id() == target).count();
+    let Some(section) = lib.sections.iter_mut().find(|sec| sec.id == target) else {
+        return Err(no_such_section(id, &a.section));
+    };
+    if section.name == name {
+        return Ok(RenameSectionOut { changed: false, section: section_info(section, items) });
+    }
+    section.name = name;
+    let out = RenameSectionOut { changed: true, section: section_info(section, items) };
+    store::flush_notes(s);
+    store::commit(s, lib, &[], &[])?;
+    Ok(out)
 }
 
 // ---- library.list ----
@@ -297,6 +453,8 @@ fn rename(s: &mut Session, a: RenameArgs) -> Result<RenameOut, Refusal> {
 pub struct ListArgs {
     /// Only items whose name or id contains this text (case does not matter).
     pub search: Option<String>,
+    /// Only the items of this section (id or name).
+    pub section: Option<String>,
 }
 
 /// Output of `library.list`.
@@ -306,21 +464,26 @@ pub struct ListOut {
     pub changed: bool,
     /// The items, in library order.
     pub items: Vec<ItemInfo>,
+    /// The sections that have items, the person's own first. Every item's `section` is the id of one of them.
+    pub sections: Vec<SectionInfo>,
 }
 
 fn list(s: &mut Session, a: ListArgs) -> Result<ListOut, Refusal> {
-    let items = store::items(s);
+    let lib = store::library(s);
     store::flush_notes(s);
     let q = a.search.as_deref().map(str::to_lowercase);
-    let items = items
+    let only = a.section.as_deref().map(|w| find_section(s.cmd(), &lib.sections, w)).transpose()?;
+    let items = lib
+        .items
         .iter()
+        .filter(|i| only.as_ref().is_none_or(|home| &i.home == home))
         .filter(|i| match &q {
             Some(q) => i.id.to_lowercase().contains(q) || i.name.as_deref().is_some_and(|n| n.to_lowercase().contains(q)),
             None => true,
         })
         .map(|i| info(i))
         .collect();
-    Ok(ListOut { changed: false, items })
+    Ok(ListOut { changed: false, items, sections: section_infos(&lib) })
 }
 
 // ---- library.thumbnail ----
@@ -436,6 +599,9 @@ pub struct ImportOut {
     pub added: usize,
     /// Items skipped because the library already has them (or the file has them twice).
     pub skipped: usize,
+    /// The section the new items went to (named after the file), when there are any.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub section: Option<String>,
     /// Items in the library now.
     pub total: usize,
     /// The new tab, for `open_as_tab`.
@@ -468,47 +634,71 @@ fn parse_library(s: &mut Session, id: &str, loaded: &Loaded) -> Result<excalidra
     Ok(lib)
 }
 
-/// Adds the items of a library file to the library; items that exist (same content) are skipped. Returns
-/// `(added, skipped)`.
-fn merge_items(s: &mut Session, id: &str, lib: excalidraw::Library, replace: bool) -> Result<(usize, usize, usize), Refusal> {
+/// What [`merge_items`] did.
+struct Merged {
+    added: usize,
+    skipped: usize,
+    total: usize,
+    /// The section the new items went to.
+    section: Option<String>,
+}
+
+/// The section for a library imported from the file `file`: the one an earlier import of a file with that name
+/// made, else a new one. The name is that of the file without its extension, `Library` when that is empty.
+fn section_for(s: &mut Session, sections: &mut Vec<Section>, file: &str) -> Section {
+    let name = normalize_name("library.import", &stem(file)).unwrap_or_else(|_| "Library".to_owned());
+    if let Some(known) = sections.iter().find(|sec| sec.name == name) {
+        return known.clone();
+    }
+    let id = store::fresh_section_id(s, sections);
+    let section = Section { id, name, created_ms: s.now_ms() };
+    sections.push(section.clone());
+    section
+}
+
+/// Adds the items of a library file to the library, in the section of that file; items that exist (same content)
+/// are skipped.
+fn merge_items(s: &mut Session, id: &str, lib: excalidraw::Library, file: &str, replace: bool) -> Result<Merged, Refusal> {
     store::writable(s, id)?;
-    let old = store::items(s);
-    let mut items: Vec<Arc<Item>> = if replace { Vec::new() } else { old.clone() };
+    let old = store::library(s);
+    let mut now = if replace { Library { items: Vec::new(), sections: Vec::new() } } else { Library { items: old.items.clone(), sections: old.sections.clone() } };
     let mut touched: Vec<String> = Vec::new();
     let (mut added, mut skipped) = (0usize, 0usize);
-    let now = s.now_ms();
+    let created = s.now_ms();
+    let mut section: Option<Section> = None;
     for LibraryItem { name, mut document } in lib.items {
         if !frag::normalize(&mut document) {
             skipped += 1;
             continue;
         }
         let hash = frag::content_hash(&document);
-        if items.iter().any(|i| i.hash == hash) {
+        if now.items.iter().any(|i| i.hash == hash) {
             skipped += 1;
             continue;
         }
-        if items.len() >= MAX_LIBRARY_ITEMS {
-            return Err(Refusal::limit_exceeded(id, items.len() + 1, "library items", MAX_LIBRARY_ITEMS));
+        if now.items.len() >= MAX_LIBRARY_ITEMS {
+            return Err(Refusal::limit_exceeded(id, now.items.len() + 1, "library items", MAX_LIBRARY_ITEMS));
         }
+        let home = Home::Section(section.get_or_insert_with(|| section_for(s, &mut now.sections, file)).id.clone());
         let name = name.and_then(|n| normalize_name(id, &n).ok());
-        let item = Arc::new(Item { id: store::fresh_id(s, &items), name, created_ms: now, hash, document });
+        let item = Arc::new(Item { id: store::fresh_id(s, &now.items), name, created_ms: created, hash, document, home });
         touched.push(item.id.clone());
-        items.push(item);
+        now.items.push(item);
         added += 1;
     }
-    let removed: Vec<String> = if replace { old.iter().map(|i| i.id.clone()).collect() } else { Vec::new() };
-    let total = items.len();
+    let removed: Vec<String> = if replace { old.items.iter().map(|i| i.id.clone()).collect() } else { Vec::new() };
+    let total = now.items.len();
     if added > 0 || !removed.is_empty() {
-        store::commit(s, items, &touched, &removed)?;
+        store::commit(s, now, &touched, &removed)?;
     }
-    Ok((added, skipped, total))
+    Ok(Merged { added, skipped, total, section: section.map(|sec| sec.id) })
 }
 
 /// `doc.drop` hands a library file here: merge mode. Returns the number of items added.
 pub(crate) fn import_loaded(s: &mut Session, id: &str, loaded: &Loaded) -> Result<usize, Refusal> {
     needs_storage(s, id)?;
     let lib = parse_library(s, id, loaded)?;
-    merge_items(s, id, lib, false).map(|(added, _, _)| added)
+    merge_items(s, id, lib, &loaded.name, false).map(|m| m.added)
 }
 
 fn stem(name: &str) -> String {
@@ -530,11 +720,12 @@ fn import(s: &mut Session, a: ImportArgs) -> Result<ImportOut, Refusal> {
             doc.name = stem(&loaded.name).chars().take(drafftink_scene::limits::MAX_NAME_CHARS).collect();
             open_in_new_tab(s, id, &doc, None, Provenance::Clean)?;
             let total = store::items(s).len();
-            Ok(ImportOut { changed: true, added: 0, skipped: 0, total, tab: Some(s.tab().id.to_string()) })
+            Ok(ImportOut { changed: true, added: 0, skipped: 0, section: None, total, tab: Some(s.tab().id.to_string()) })
         }
         ImportMode::Merge | ImportMode::Replace => {
-            let (added, skipped, total) = merge_items(s, id, lib, a.mode == ImportMode::Replace)?;
-            Ok(ImportOut { changed: added > 0 || a.mode == ImportMode::Replace, added, skipped, total, tab: None })
+            let replace = a.mode == ImportMode::Replace;
+            let Merged { added, skipped, total, section } = merge_items(s, id, lib, &loaded.name, replace)?;
+            Ok(ImportOut { changed: added > 0 || replace, added, skipped, section, total, tab: None })
         }
     }
 }
@@ -681,6 +872,29 @@ pub const COMMANDS: &[CommandSpec] = &[
     .refusals(&["no_such_item", "library_newer"])
     .example(r#"{"items":["Login box"]}"#),
     CommandSpec::new(
+        "library.remove_section",
+        "library",
+        "Remove library section",
+        "Removes a section of the library (an imported library, or your own items) with all its items. Not undoable.",
+        &Typed::new(remove_section),
+        LIB,
+    )
+    .available(|s| needs_storage(s, "library.remove_section"))
+    .refusals(&["no_such_section", "library_newer"])
+    .example(r#"{"section":"shapes"}"#),
+    CommandSpec::new(
+        "library.rename_section",
+        "library",
+        "Rename library section",
+        "Gives an imported library's section a new name. Your own items keep the name My items.",
+        &Typed::new(rename_section),
+        LIB,
+    )
+    .host(Host::effect(HostEffect::CompletesRename))
+    .available(|s| needs_storage(s, "library.rename_section"))
+    .refusals(&["no_such_section", "empty_name", "library_newer"])
+    .example(r#"{"section":"shapes","name":"Flowchart shapes"}"#),
+    CommandSpec::new(
         "library.rename",
         "library",
         "Rename library item",
@@ -696,11 +910,12 @@ pub const COMMANDS: &[CommandSpec] = &[
         "library.list",
         "library",
         "List library",
-        "Lists the library items with id, name, element count, bounds and creation time.",
+        "Lists the library items with id, section, name, element count, bounds and creation time, and the sections.",
         &Typed::new(list),
         Facts { reads_only: true, mutates: Mutates::NONE, view_only: Gate::Allowed, while_gesture: Gate::Allowed, while_text_edit: TextGate::Allowed, ..LIB },
     )
-    .available(|s| needs_storage(s, "library.list")),
+    .available(|s| needs_storage(s, "library.list"))
+    .refusals(&["no_such_section"]),
     CommandSpec::new(
         "library.thumbnail",
         "library",

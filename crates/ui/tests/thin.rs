@@ -189,6 +189,7 @@ const READS: &[&str] = &[
     "view_only",
     "text_edit",
     "gesture_running",
+    "library_revision",
     "query",
 ];
 

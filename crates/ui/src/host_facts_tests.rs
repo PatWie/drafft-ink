@@ -25,6 +25,7 @@ fn the_rename_commands_of_the_dialogs_close_them_and_a_refusal_keeps_them_open()
         (RenameTarget::Document, "doc.rename"),
         (RenameTarget::Tab("t1".into()), "tab.rename"),
         (RenameTarget::LibraryItem("i1".into()), "library.rename"),
+        (RenameTarget::LibrarySection("s1".into()), "library.rename_section"),
         (RenameTarget::Frame("f1".into()), "frame.rename"),
     ] {
         let mut st = UiState::new();

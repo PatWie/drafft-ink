@@ -4693,6 +4693,8 @@ export namespace LibraryAdd {
     id: string;
     /** The name, if it has one. */
     name?: string | null;
+    /** The section the item belongs to: `mine` for the person's own items, else the id of an imported library. */
+    section: string;
     [key: string]: unknown;
   };
   /** Output of `library.add`. */
@@ -4836,6 +4838,8 @@ export namespace LibraryImport {
     created?: string[];
     /** Ids of elements the command removed. */
     deleted?: string[];
+    /** The section the new items went to (named after the file), when there are any. */
+    section?: string | null;
     /** Items skipped because the library already has them (or the file has them twice). */
     skipped: number;
     /** The new tab, for `open_as_tab`. */
@@ -4881,12 +4885,14 @@ export namespace LibraryInsert {
   };
 }
 
-/** Lists the library items with id, name, element count, bounds and creation time. */
+/** Lists the library items with id, section, name, element count, bounds and creation time, and the sections. */
 export namespace LibraryList {
   /** Arguments of `library.list`. */
   export type Args = {
     /** Only items whose name or id contains this text (case does not matter). */
     search?: string | null;
+    /** Only the items of this section (id or name). */
+    section?: string | null;
   };
   /** What `library.list` and `library.add` say about an item. */
   type O_ItemInfo = {
@@ -4905,8 +4911,24 @@ export namespace LibraryList {
     id: string;
     /** The name, if it has one. */
     name?: string | null;
+    /** The section the item belongs to: `mine` for the person's own items, else the id of an imported library. */
+    section: string;
     [key: string]: unknown;
   };
+  /** What `library.list` and `library.rename_section` say about a section. */
+  type O_SectionInfo = {
+    /** The id to pass as `section`, and the `section` of its items. */
+    id: string;
+    /** Items in it (all of them, whatever `search` says). */
+    items: number;
+    /** Whose items it holds. */
+    kind: O_SectionKind;
+    /** The name: the file an imported library came from, or `My items`. */
+    name: string;
+    [key: string]: unknown;
+  };
+  /** Whose items a section holds. */
+  type O_SectionKind = "mine" | "imported";
   /** Output of `library.list`. */
   export type Output = {
     /** Always false. */
@@ -4917,6 +4939,8 @@ export namespace LibraryList {
     deleted?: string[];
     /** The items, in library order. */
     items: O_ItemInfo[];
+    /** The sections that have items, the person's own first. Every item's `section` is the id of one of them. */
+    sections: O_SectionInfo[];
     /** The label of the undo step the command pushed. */
     undo_label?: string;
     /** Non-fatal notes. */
@@ -4952,6 +4976,33 @@ export namespace LibraryRemove {
   };
 }
 
+/** Removes a section of the library (an imported library, or your own items) with all its items. Not undoable. */
+export namespace LibraryRemoveSection {
+  /** Arguments of `library.remove_section`. */
+  export type Args = {
+    /** The section id or name (`mine` for the person's own items). */
+    section: string;
+  };
+  /** Output of `library.remove_section`. */
+  export type Output = {
+    /** False when the section had no items. */
+    changed: boolean;
+    /** Ids of elements the command made. */
+    created?: string[];
+    /** Ids of elements the command removed. */
+    deleted?: string[];
+    /** The ids of the items that were removed with it. */
+    removed: string[];
+    /** The id of the section. */
+    section: string;
+    /** The label of the undo step the command pushed. */
+    undo_label?: string;
+    /** Non-fatal notes. */
+    warnings?: string[];
+    [key: string]: unknown;
+  };
+}
+
 /** Gives a library item a new name. */
 export namespace LibraryRename {
   /** Arguments of `library.rename`. */
@@ -4978,6 +5029,8 @@ export namespace LibraryRename {
     id: string;
     /** The name, if it has one. */
     name?: string | null;
+    /** The section the item belongs to: `mine` for the person's own items, else the id of an imported library. */
+    section: string;
     [key: string]: unknown;
   };
   /** Output of `library.rename`. */
@@ -4990,6 +5043,47 @@ export namespace LibraryRename {
     deleted?: string[];
     /** The item after the command. */
     item: O_ItemInfo;
+    /** The label of the undo step the command pushed. */
+    undo_label?: string;
+    /** Non-fatal notes. */
+    warnings?: string[];
+    [key: string]: unknown;
+  };
+}
+
+/** Gives an imported library's section a new name. Your own items keep the name My items. */
+export namespace LibraryRenameSection {
+  /** Arguments of `library.rename_section`. */
+  export type Args = {
+    /** The new name (1 to 256 characters). */
+    name: string;
+    /** The section id or name. */
+    section: string;
+  };
+  /** What `library.list` and `library.rename_section` say about a section. */
+  type O_SectionInfo = {
+    /** The id to pass as `section`, and the `section` of its items. */
+    id: string;
+    /** Items in it (all of them, whatever `search` says). */
+    items: number;
+    /** Whose items it holds. */
+    kind: O_SectionKind;
+    /** The name: the file an imported library came from, or `My items`. */
+    name: string;
+    [key: string]: unknown;
+  };
+  /** Whose items a section holds. */
+  type O_SectionKind = "mine" | "imported";
+  /** Output of `library.rename_section`. */
+  export type Output = {
+    /** False when the section already had this name. */
+    changed: boolean;
+    /** Ids of elements the command made. */
+    created?: string[];
+    /** Ids of elements the command removed. */
+    deleted?: string[];
+    /** The section after the command. */
+    section: O_SectionInfo;
     /** The label of the undo step the command pushed. */
     undo_label?: string;
     /** Non-fatal notes. */
@@ -7592,7 +7686,9 @@ export interface CommandTable {
   "library.insert": { args: LibraryInsert.Args; output: LibraryInsert.Output };
   "library.list": { args: LibraryList.Args; output: LibraryList.Output };
   "library.remove": { args: LibraryRemove.Args; output: LibraryRemove.Output };
+  "library.remove_section": { args: LibraryRemoveSection.Args; output: LibraryRemoveSection.Output };
   "library.rename": { args: LibraryRename.Args; output: LibraryRename.Output };
+  "library.rename_section": { args: LibraryRenameSection.Args; output: LibraryRenameSection.Output };
   "library.thumbnail": { args: LibraryThumbnail.Args; output: LibraryThumbnail.Output };
   "perf.stats": { args: PerfStats.Args; output: PerfStats.Output };
   "selection.all": { args: SelectionAll.Args; output: SelectionAll.Output };
@@ -7657,4 +7753,4 @@ export type CommandId = keyof CommandTable;
 export type OptionalArgsId = "arrow.delete_point" | "arrow.edit_points" | "arrow.reroute" | "arrow.swap_heads" | "clipboard.copy" | "clipboard.copy_as" | "clipboard.copy_style" | "clipboard.cut" | "clipboard.paste" | "clipboard.paste_style" | "collab.connect" | "collab.disconnect" | "collab.follow" | "collab.join_room" | "collab.leave_room" | "collab.set_pointer" | "collab.set_user" | "collab.status" | "doc.autosave" | "doc.clear" | "doc.export" | "doc.inspect" | "doc.list" | "doc.new" | "doc.outline" | "doc.save" | "doc.show_intro" | "element.convert" | "element.create_sticky" | "element.delete" | "element.duplicate" | "element.lock" | "element.move" | "element.open_link" | "element.query" | "element.set_bounds" | "element.set_link" | "element.unlock_all" | "engine.commands" | "engine.recent" | "engine.state" | "frame.remove" | "frame.select_children" | "frame.unwrap" | "frame.wrap" | "gesture.cancel" | "gesture.end" | "group.create" | "group.enter" | "group.exit" | "group.set_name" | "group.ungroup" | "history.clear" | "history.redo" | "history.state" | "history.undo" | "layout.apply" | "library.add" | "library.export" | "library.list" | "library.remove" | "perf.stats" | "selection.all" | "selection.clear" | "selection.get" | "selection.select" | "settings.get" | "settings.reset" | "style.get" | "style.list_themes" | "tab.close" | "tab.duplicate" | "tab.list" | "tab.new" | "text.edit_begin" | "text.edit_end" | "text.format" | "text.wrap_in_container" | "tool.cancel" | "tool.hold" | "tool.lock" | "tool.release" | "tool.set_arrow" | "view.center" | "view.get" | "view.screenshot" | "view.set" | "view.set_view_only" | "view.zoom_at" | "view.zoom_in" | "view.zoom_out" | "view.zoom_reset" | "view.zoom_to_fit";
 
 /** The registry size when the types were made; a spec can compare it with `commands()`. */
-export declare const COMMAND_COUNT: 155;
+export declare const COMMAND_COUNT: 157;
