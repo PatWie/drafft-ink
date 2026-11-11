@@ -1,12 +1,43 @@
 [package]
 name = "drafftink-web"
+description = "The web app: wasm entry point, window.drafftink (JS API) and the agent relay client. Native builds are empty."
 version.workspace = true
 edition.workspace = true
 license.workspace = true
 rust-version.workspace = true
 publish = false
 
+[lib]
+name = "drafftink_web"
+path = "src/lib.rs"
+# cdylib for wasm-bindgen; rlib so that `cargo check --workspace` and the unit tests work natively.
+crate-type = ["cdylib", "rlib"]
+
+[[bin]]
+name = "drafftink-web"
+path = "src/main.rs"
+
 [dependencies]
+# Pure parts, built and tested on every target.
+drafftink-bridge = { path = "../../crates/bridge" }
+drafftink-engine = { path = "../../crates/engine" }
+serde_json.workspace = true
+thiserror.workspace = true
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+drafftink-app = { path = "../../crates/app" }
+drafftink-gpu = { path = "../../crates/gpu" }
+drafftink-profile = { path = "../../crates/profile" }
+log.workspace = true
+wasm-bindgen.workspace = true
+wasm-bindgen-futures.workspace = true
+js-sys.workspace = true
+console_error_panic_hook.workspace = true
+console_log.workspace = true
+web-sys = { workspace = true, features = [
+    "Window", "Document", "Location", "History", "Storage", "Event", "EventTarget",
+    "WebSocket", "MessageEvent", "CloseEvent", "BinaryType",
+] }
 
 [lints]
 workspace = true
