@@ -8,7 +8,7 @@
 //! The design (`docs/model.md`, research 02f): the binding is stored **on the arrow only**
 //! (`start_binding` / `end_binding`: target, inside or orbit, fixed point). The reverse index is derived
 //! (`DerivedIndex::bound_arrows`) and never stored. An end's position is derived from its binding by the
-//! solver in [`solve`]; the stored point is a cache of it.
+//! solver in `solve`; the stored point is a cache of it.
 //!
 //! * [`update_bound_arrows`]: re-solve after shapes changed (one pass per transaction, sorted by id).
 //! * [`find_hovered`], [`hover_candidate`], [`plan_end_drag`], [`drag_end`]: acquisition while an end is dragged,

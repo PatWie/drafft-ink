@@ -6,7 +6,7 @@
 //!
 //! | Module | Format |
 //! |---|---|
-//! | [`open`] | one entry point: sniff the bytes and route them to the readers below |
+//! | [`open()`] | one entry point: sniff the bytes and route them to the readers below |
 //! | [`native`] | the versioned native JSON, plus format sniffing ([`native::sniff`]) |
 //! | [`legacy`] | old drafft-ink JSON documents and old Loro snapshots, migrated to the native model |
 //! | [`excalidraw`] | `.excalidraw`, `.excalidrawlib` (v1, v2) and the Excalidraw clipboard, import and export |

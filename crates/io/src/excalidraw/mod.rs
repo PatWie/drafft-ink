@@ -1,5 +1,5 @@
 //! Excalidraw files: `.excalidraw` scenes, the Excalidraw clipboard, and `.excalidrawlib` libraries, in both
-//! directions. Pure: text in, [`Document`](drafftink_scene::Document) out, no file access.
+//! directions. Pure: text in, [`Document`] out, no file access.
 //!
 //! Every input is hostile. Wrong types fall back to a default and add a warning to the [`ImportReport`]; numbers are
 //! clamped to the scene limits; a document this module returns always passes [`Document::validate`] without errors.

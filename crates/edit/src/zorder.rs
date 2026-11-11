@@ -11,7 +11,7 @@
 //! * Only the elements that move get new keys ([`ZIndex::n_between`]). Tombstones keep their place. When a key
 //!   cannot be made (or would grow past [`REBALANCE_LEN`]) all keys are rewritten once and the report says so.
 //!
-//! The same machinery places a block of elements at a spot ([`move_block`]); `group`, `frame` and `lifecycle` use it.
+//! The same machinery places a block of elements at a spot (`move_block`); `group`, `frame` and `lifecycle` use it.
 
 use std::collections::BTreeSet;
 
