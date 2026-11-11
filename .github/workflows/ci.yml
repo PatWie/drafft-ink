@@ -86,8 +86,12 @@ jobs:
           toolchain: ${{ env.RUST_TOOLCHAIN }}
       - uses: Swatinem/rust-cache@v2
       - uses: taiki-e/install-action@nextest
-      # No GPU on this runner: the GPU tests and the native e2e tests print `SKIPPED:` and pass, and `cargo xtask test`
-      # prints how many (the e2e workflow runs them with DRAFFTINK_REQUIRE_GPU=1).
+      # No GPU on this runner: Mesa lavapipe (a Vulkan driver on the CPU) runs the GPU tests, some of which never skip
+      # (crates/gpu/tests/compositor.rs). The native e2e tests still print `SKIPPED:` (the e2e workflow runs them).
+      - name: Install lavapipe
+        run: |
+          sudo apt-get update && sudo apt-get install -y mesa-vulkan-drivers
+          echo "VK_ICD_FILENAMES=$(ls /usr/share/vulkan/icd.d/lvp_icd*.json | head -1)" >> "$GITHUB_ENV"
       - run: cargo xtask test
 
   # The fixture facts against what the old app's code writes now (docs/testing.md). The old app is checked out at the
