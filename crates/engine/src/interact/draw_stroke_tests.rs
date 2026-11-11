@@ -4,7 +4,7 @@ use drafftink_canvas::PointerPhase;
 use drafftink_scene::{Element, ElementId, ElementKind, Kind, SceneStore};
 use serde_json::json;
 
-use crate::interact::testutil::{LaserLog, Rig};
+use crate::interact::testutil::Rig;
 use crate::interact::{Key, UiRequest};
 use crate::state::Tool;
 
@@ -641,10 +641,6 @@ fn a_stroke_over_nothing_changes_nothing() {
 
 // ---- laser ------------------------------------------------------------------------------------------------------
 
-fn laser_sends(rig: &Rig) -> Vec<Vec<[f64; 2]>> {
-    rig.s.ext.get::<LaserLog>().map(|l| l.0.clone()).unwrap_or_default()
-}
-
 #[test]
 #[allow(non_snake_case)]
 fn exception_E12_laser_leaves_document_unchanged() {
@@ -727,23 +723,25 @@ fn only_points_older_than_the_fade_time_go() {
 #[test]
 fn laser_points_are_sent_at_most_every_33_ms_and_all_arrive() {
     let mut rig = Rig::new();
-    if !rig.stubbed("collab.laser") {
-        return;
-    }
     rig.tool(Tool::Laser);
+    let work = drafftink_profile::WorkScope::begin();
     rig.down(100.0, 100.0);
-    let moves = 20_u32;
+    let moves = 8_u32;
     for k in 1..=moves {
         rig.drag_to(100.0 + 10.0 * f64::from(k), 100.0);
     }
-    rig.up(300.0, 100.0);
-    let sends = laser_sends(&rig);
-    assert!(sends.len() >= 2, "sent in batches: {sends:?}");
-    assert!(sends.len() <= 20 * 16 / 33 + 3, "throttled to one send per 33 ms: {} sends", sends.len());
-    let all: Vec<[f64; 2]> = sends.into_iter().flatten().collect();
-    assert_eq!(all.first(), Some(&[100.0, 100.0]));
-    assert_eq!(all.last(), Some(&[300.0, 100.0]), "the end is sent at the release");
-    assert_eq!(all.len(), moves as usize + 1, "no point is lost");
+    rig.up(180.0, 100.0);
+    // `collab.laser` is quiet (not in the ring) and nothing else runs during a laser stroke, so the commands
+    // counted are the sends. Events are 16 ms apart: 10 events span 160 ms.
+    let sends = work.count(drafftink_profile::Counter::Commands);
+    assert!(sends >= 2, "sent in batches: {sends}");
+    assert!(sends <= 160 / 33 + 3, "throttled to one send per 33 ms: {sends} sends");
+    // Every point arrived in the local trail of the collab state, which the UI reads.
+    let view = rig.s.collab_view();
+    assert_eq!(view.laser.len(), moves as usize + 1, "no point is lost: {:?}", view.laser);
+    let xs: Vec<f64> = view.laser.iter().map(|d| d.x).collect();
+    assert_eq!(xs.first(), Some(&100.0));
+    assert_eq!(xs.last(), Some(&180.0), "the end is sent at the release");
 }
 
 #[test]
