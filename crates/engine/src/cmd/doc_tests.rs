@@ -1156,6 +1156,25 @@ fn export_svg_inline_embeds_the_scene_and_changes_nothing() {
 }
 
 #[test]
+fn export_draws_inline_math_in_svg_and_keeps_the_source_in_excalidraw_and_json() {
+    let (mut s, _f) = testing::session_typeset();
+    run(&mut s, "element.create", json!({"kind": "text", "text": "Energy $E = mc^2$ here", "at": [10, 10]}));
+    let svg = run(&mut s, "doc.export", json!({"format": "svg", "scope": "all"}));
+    let svg = String::from_utf8(unb64(&svg["bytes"]["base64"])).unwrap();
+    assert!(svg.contains("data-text=\"Energy $E = mc^2$ here\""), "the source is on the group");
+    assert!(!svg.contains("<text "), "the glyphs are outlines, formula included");
+    for fmt in ["excalidraw", "json"] {
+        let out = run(&mut s, "doc.export", json!({"format": fmt, "scope": "all"}));
+        let bytes = String::from_utf8(unb64(&out["bytes"]["base64"])).unwrap();
+        assert!(bytes.contains("Energy $E = mc^2$ here"), "{fmt}: the source text with its delimiters");
+        let (mut t, _) = testing::session();
+        open_inline(&mut t, bytes.as_bytes(), json!({})).unwrap();
+        let e = t.store().iter().next().unwrap();
+        assert_eq!(e.text_data().unwrap().content, "Energy $E = mc^2$ here", "{fmt}");
+    }
+}
+
+#[test]
 fn export_json_and_excalidraw_round_trip_through_open() {
     let (mut s, _f) = drawn(3);
     for fmt in ["json", "excalidraw"] {

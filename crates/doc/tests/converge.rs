@@ -193,6 +193,40 @@ fn typing_in_the_same_text_from_two_peers_keeps_both() {
     assert_view_matches_loro(&a);
 }
 
+/// Inline math is plain text in the `LoroText` with `$` signs, and a setting beside it: typing a formula merges
+/// character by character, and turning the setting off is its own key.
+#[test]
+fn typing_a_formula_and_switching_inline_math_off_merge() {
+    let mut a = peer(1);
+    let mut b = peer(2);
+    add(&mut a, vec![text("t", &zs(1)[0], "Energy  here")]);
+    sync(&mut a, &mut b);
+    edit(&mut a, "t", |e| {
+        if let ElementKind::Text(t) = &mut e.kind {
+            t.content = "Energy $E=mc^2$ here".to_owned();
+        }
+    });
+    edit(&mut b, "t", |e| {
+        if let ElementKind::Text(t) = &mut e.kind {
+            t.font.inline_math = InlineMath::Off;
+        }
+    });
+    sync(&mut a, &mut b);
+    assert_same(&a, &b);
+    let t = a.get(&eid("t")).unwrap();
+    let t = t.text_data().unwrap();
+    assert_eq!((t.content.as_str(), t.font.inline_math), ("Energy $E=mc^2$ here", InlineMath::Off));
+    assert_eq!(a.debug_json()["elements"]["t"]["kind.font.inline_math"], "off");
+    // Back to the default deletes the key.
+    edit(&mut a, "t", |e| {
+        if let ElementKind::Text(t) = &mut e.kind {
+            t.font.inline_math = InlineMath::Auto;
+        }
+    });
+    assert!(a.debug_json()["elements"]["t"].get("kind.font.inline_math").is_none());
+    assert_view_matches_loro(&a);
+}
+
 #[test]
 fn colour_runs_follow_their_characters_when_somebody_types_in_front() {
     let mut a = peer(1);

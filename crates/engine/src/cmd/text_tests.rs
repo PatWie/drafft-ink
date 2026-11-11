@@ -657,3 +657,105 @@ fn a_draft_inside_a_frame_joins_it() {
     let id = ElementId::new(out["id"].as_str().unwrap()).unwrap();
     assert_eq!(s.element(&id).unwrap().frame_id, Some(f));
 }
+
+// ---- inline math ----
+
+fn size_of(s: &Session, id: &ElementId) -> (f64, f64) {
+    let t = s.element(id).unwrap().transform;
+    (t.w, t.h)
+}
+
+fn inline_math_of(s: &Session, id: &ElementId) -> drafftink_scene::InlineMath {
+    s.element(id).unwrap().text_data().unwrap().font.inline_math
+}
+
+#[test]
+fn set_measures_a_formula_as_the_typesetter_draws_it() {
+    let (mut s, _f) = testing::session_typeset();
+    let t = text_at(&mut s, "x", 0.0, 0.0);
+    run(&mut s, "text.set", json!({"id": t.as_str(), "text": "a b"}));
+    let flat = size_of(&s, &t);
+    run(&mut s, "text.set", json!({"id": t.as_str(), "text": "a $\\frac{x}{y}$ b"}));
+    let with = size_of(&s, &t);
+    assert!(with.1 > flat.1 + 10.0, "the fraction makes the line taller: {with:?} {flat:?}");
+    assert_eq!(content(&s, &t), "a $\\frac{x}{y}$ b", "the content keeps its dollar signs");
+    // The source is longer than the typeset formula.
+    run(&mut s, "text.set", json!({"id": t.as_str(), "text": "a $\\frac{x}{y}$ b", "inline_math": "off"}));
+    let raw = size_of(&s, &t);
+    assert!(raw.0 > with.0 + 30.0, "{raw:?} {with:?}");
+    assert_eq!(inline_math_of(&s, &t), drafftink_scene::InlineMath::Off);
+    // The setting is one undo step together with the content.
+    s.undo_steps(1).unwrap();
+    assert_eq!(size_of(&s, &t), with);
+    assert_eq!(inline_math_of(&s, &t), drafftink_scene::InlineMath::Auto);
+}
+
+#[test]
+fn prices_stay_prices_without_any_setting() {
+    let (mut s, _f) = testing::session_typeset();
+    let t = text_at(&mut s, "x", 0.0, 0.0);
+    run(&mut s, "text.set", json!({"id": t.as_str(), "text": "costs $5 and $10 today"}));
+    let auto = size_of(&s, &t);
+    run(&mut s, "text.set", json!({"id": t.as_str(), "text": "costs $5 and $10 today", "inline_math": "off"}));
+    assert_eq!(size_of(&s, &t), auto);
+}
+
+#[test]
+fn an_escaped_dollar_is_measured_as_a_dollar() {
+    let (mut s, _f) = testing::session_typeset();
+    let t = text_at(&mut s, "x", 0.0, 0.0);
+    run(&mut s, "text.set", json!({"id": t.as_str(), "text": "a \\$5 b"}));
+    let escaped = size_of(&s, &t);
+    run(&mut s, "text.set", json!({"id": t.as_str(), "text": "a $5 b", "inline_math": "off"}));
+    assert_eq!(size_of(&s, &t), escaped);
+}
+
+#[test]
+fn a_label_with_a_formula_grows_its_container_and_wraps_without_splitting_it() {
+    let (mut s, _f) = testing::session_typeset();
+    let r = testing::add_rect(&mut s, 0.0, 0.0, 120.0, 40.0).unwrap();
+    run(&mut s, "text.set", json!({"id": r.as_str(), "text": "see $\\frac{a+b}{c+d}$ and then some more words"}));
+    let label = label_of(&s, &r).unwrap();
+    let (rw, rh) = size_of(&s, &r);
+    let (lw, lh) = size_of(&s, &label);
+    assert!(rh > 40.0, "the container grew for the tall label: {rh}");
+    assert!(lw <= rw - 10.0 + 0.5 && lh <= rh - 10.0 + 0.5, "the label fits: {lw}x{lh} in {rw}x{rh}");
+    let lines = drafftink_edit::text_bind::TextMeasure::wrap(
+        &crate::services::TypesetMeasure::new(),
+        &content(&s, &label),
+        &s.element(&label).unwrap().text_data().unwrap().font,
+        rw - 10.0,
+    );
+    assert!(lines.iter().any(|l| l.contains("$\\frac{a+b}{c+d}$")), "the formula is on one line: {lines:?}");
+}
+
+#[test]
+fn edit_end_takes_the_setting_for_a_new_text_and_an_existing_one() {
+    let (mut s, _f) = testing::session_typeset();
+    run(&mut s, "text.edit_begin", json!({"at": [10, 10]}));
+    let out = run(&mut s, "text.edit_end", json!({"text": "a $x^2$ b", "inline_math": "off"}));
+    let id = ElementId::new(out["id"].as_str().unwrap()).unwrap();
+    assert_eq!(inline_math_of(&s, &id), drafftink_scene::InlineMath::Off);
+    let raw = size_of(&s, &id);
+    run(&mut s, "text.edit_begin", json!({"id": id.as_str()}));
+    run(&mut s, "text.edit_end", json!({"inline_math": "auto"}));
+    assert_eq!(inline_math_of(&s, &id), drafftink_scene::InlineMath::Auto);
+    assert!(size_of(&s, &id).0 < raw.0, "the formula is narrower than its source");
+    // Absent keeps the setting.
+    run(&mut s, "text.edit_begin", json!({"id": id.as_str()}));
+    run(&mut s, "text.edit_end", json!({"text": "plain"}));
+    assert_eq!(inline_math_of(&s, &id), drafftink_scene::InlineMath::Auto);
+    // Bad values are refused with the way forward.
+    let e = refuse(&mut s, "text.set", json!({"id": id.as_str(), "text": "x", "inline_math": "sometimes"}));
+    assert_eq!(e.code, "bad_args");
+}
+
+#[test]
+fn a_broken_formula_is_text_and_text_set_accepts_it() {
+    let (mut s, _f) = testing::session_typeset();
+    let t = text_at(&mut s, "x", 0.0, 0.0);
+    let out = run(&mut s, "text.set", json!({"id": t.as_str(), "text": "bad $\\nope{$ end"}));
+    assert_eq!(out["removed"], false);
+    assert_eq!(content(&s, &t), "bad $\\nope{$ end");
+    assert!(size_of(&s, &t).0 > 50.0);
+}

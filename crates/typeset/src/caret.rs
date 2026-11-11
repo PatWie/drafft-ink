@@ -8,13 +8,19 @@
 //!
 //! Selections wrap Parley's, which remember the horizontal position for Up/Down and the word or
 //! line a double or triple click started on.
+//!
+//! Inline math: indexes are bytes of the text as written. A formula (`$E=mc^2$`) is one unit: the caret is at its
+//! left or right edge, never inside, one step crosses it, and a click on it picks the nearer edge. To edit the source
+//! of a formula, lay the text out again with [`crate::TextSpec::reveal`] set to [`TextLayout::reveal_index`].
 
 use std::ops::Range;
+use std::sync::Arc;
 
 use kurbo::{Point, Rect};
 use parley::editing::{Cursor, Selection};
 
-use crate::layout::TextLayout;
+use crate::inline::{PLACEHOLDER, TextMap};
+use crate::layout::{InlineFormula, TextLayout};
 
 pub use parley::Affinity;
 
@@ -29,7 +35,11 @@ pub struct Caret {
 
 /// A selection: an anchor and a focus caret. The focus is the end that moves.
 #[derive(Clone, Debug)]
-pub struct TextSelection(Selection);
+pub struct TextSelection {
+    sel: Selection,
+    /// Converts the selection's laid-out indexes to indexes of the text as written.
+    map: Arc<TextMap>,
+}
 
 /// How a caret moves.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -78,48 +88,83 @@ fn word_step(layout: &crate::layout::PLayout, sel: &Selection, right: bool, exte
     if extend { sel.extend(to) } else { Selection::from(to) }
 }
 
-fn caret_of(c: Cursor) -> Caret {
-    Caret { index: c.index(), affinity: c.affinity() }
+fn caret_of(map: &TextMap, c: Cursor) -> Caret {
+    Caret { index: map.to_src(c.index()), affinity: c.affinity() }
 }
 
 impl TextSelection {
     /// The fixed end.
     pub fn anchor(&self) -> Caret {
-        caret_of(self.0.anchor())
+        caret_of(&self.map, self.sel.anchor())
     }
 
     /// The moving end.
     pub fn focus(&self) -> Caret {
-        caret_of(self.0.focus())
+        caret_of(&self.map, self.sel.focus())
     }
 
     /// Whether anchor and focus are at the same index.
     pub fn is_collapsed(&self) -> bool {
-        self.0.is_collapsed()
+        self.sel.is_collapsed()
     }
 
     /// The selected byte range, start before end.
     pub fn range(&self) -> Range<usize> {
-        self.0.text_range()
+        self.map.range_to_src(self.sel.text_range())
     }
 
     /// A collapsed selection at the focus.
     pub fn collapse(&self) -> Self {
-        Self(self.0.collapse())
+        Self { sel: self.sel.collapse(), map: self.map.clone() }
     }
 }
 
+/// Bytes of the placeholder a formula leaves in the laid-out text.
+const PLACEHOLDER_LEN: usize = PLACEHOLDER.len_utf8();
+
 impl TextLayout {
+    fn wrap(&self, sel: Selection) -> TextSelection {
+        TextSelection { sel, map: self.map.clone() }
+    }
+
+    /// A cursor at the source index `index` (clamped).
+    fn cursor_at(&self, index: usize, affinity: Affinity) -> Cursor {
+        Cursor::from_byte_index(&self.layout, self.map.to_lay(index), affinity)
+    }
+
+    /// The formula whose box is under `p` (on its line, between the box's left and right edge).
+    fn formula_under(&self, p: Point) -> Option<&InlineFormula> {
+        self.formulas.iter().find(|f| {
+            let line = self.lines.get(f.line as usize);
+            let (top, bottom) = line.map_or((f.rect.y0, f.rect.y1), |l| (f64::from(l.top), f64::from(l.bottom)));
+            p.x >= f.rect.x0 && p.x <= f.rect.x1 && p.y >= top && p.y <= bottom
+        })
+    }
+
+    /// The cursor at the nearer edge of the formula under `p`, if there is one.
+    fn formula_cursor(&self, p: Point) -> Option<(Cursor, &InlineFormula)> {
+        let f = self.formula_under(p)?;
+        let at = if p.x <= (f.rect.x0 + f.rect.x1) / 2.0 { f.lay_index } else { f.lay_index + PLACEHOLDER_LEN };
+        Some((Cursor::from_byte_index(&self.layout, at, Affinity::Downstream), f))
+    }
+
+    /// The cursor under a point: Parley's, except that a formula answers with its nearer edge.
+    fn cursor_at_point(&self, p: Point) -> Cursor {
+        match self.formula_cursor(p) {
+            Some((c, _)) => c,
+            None => Cursor::from_point(&self.layout, finite(p.x), finite(p.y)),
+        }
+    }
+
     /// A collapsed selection at byte `index` (clamped to the text).
     pub fn selection_at_index(&self, index: usize, affinity: Affinity) -> TextSelection {
-        TextSelection(Selection::from_byte_index(&self.layout, index, affinity))
+        self.wrap(Selection::from(self.cursor_at(index, affinity)))
     }
 
     /// A selection from `anchor` to `focus`, both clamped.
     pub fn selection_from_range(&self, anchor: usize, focus: usize) -> TextSelection {
-        let a = Cursor::from_byte_index(&self.layout, anchor, Affinity::Downstream);
-        let f = Cursor::from_byte_index(&self.layout, focus, Affinity::Downstream);
-        TextSelection(Selection::new(a, f))
+        let (a, f) = (self.cursor_at(anchor, Affinity::Downstream), self.cursor_at(focus, Affinity::Downstream));
+        self.wrap(Selection::new(a, f))
     }
 
     /// Select everything.
@@ -128,29 +173,32 @@ impl TextLayout {
     }
 
     /// The caret under a point (click). Points past the end of a line give the line end; points
-    /// below the last line give the text end.
+    /// below the last line give the text end. A point on a formula gives the nearer edge of the formula.
     pub fn caret_at_point(&self, p: Point) -> Caret {
-        caret_of(Cursor::from_point(&self.layout, finite(p.x), finite(p.y)))
+        caret_of(&self.map, self.cursor_at_point(p))
     }
 
     /// A collapsed selection under a point.
     pub fn selection_at_point(&self, p: Point) -> TextSelection {
-        TextSelection(Selection::from_point(&self.layout, finite(p.x), finite(p.y)))
+        self.wrap(Selection::from(self.cursor_at_point(p)))
     }
 
-    /// The word under a point (double click).
+    /// The word under a point (double click). A formula is a word of its own.
     pub fn word_at_point(&self, p: Point) -> TextSelection {
-        TextSelection(Selection::word_from_point(&self.layout, finite(p.x), finite(p.y)))
+        match self.formula_under(p) {
+            Some(f) => self.selection_from_range(f.src.start, f.src.end),
+            None => self.wrap(Selection::word_from_point(&self.layout, finite(p.x), finite(p.y))),
+        }
     }
 
     /// The visual line under a point.
     pub fn line_at_point(&self, p: Point) -> TextSelection {
-        TextSelection(Selection::line_from_point(&self.layout, finite(p.x), finite(p.y)))
+        self.wrap(Selection::line_from_point(&self.layout, finite(p.x), finite(p.y)))
     }
 
     /// The paragraph (text between `\n`) under a point (triple click).
     pub fn paragraph_at_point(&self, p: Point) -> TextSelection {
-        TextSelection(Selection::hard_line_from_point(&self.layout, finite(p.x), finite(p.y)))
+        self.wrap(Selection::hard_line_from_point(&self.layout, finite(p.x), finite(p.y)))
     }
 
     /// The word containing byte `index`, as a byte range. Whitespace runs count as words.
@@ -162,19 +210,25 @@ impl TextLayout {
 
     /// Drag: extend `sel` so its focus is under `p`.
     pub fn extend_to_point(&self, sel: &TextSelection, p: Point) -> TextSelection {
-        TextSelection(sel.0.extend_to_point(&self.layout, finite(p.x), finite(p.y)))
+        match self.formula_cursor(p) {
+            Some((c, _)) => self.wrap(sel.sel.extend(c)),
+            None => self.wrap(sel.sel.extend_to_point(&self.layout, finite(p.x), finite(p.y))),
+        }
     }
 
     /// Shift-click: move the focus under `p`, keeping the anchor.
     pub fn shift_click(&self, sel: &TextSelection, p: Point) -> TextSelection {
-        TextSelection(sel.0.shift_click_extension(&self.layout, finite(p.x), finite(p.y)))
+        match self.formula_cursor(p) {
+            Some((c, _)) => self.wrap(sel.sel.extend(c)),
+            None => self.wrap(sel.sel.shift_click_extension(&self.layout, finite(p.x), finite(p.y))),
+        }
     }
 
     /// Move the focus (and the anchor too unless `extend`).
     pub fn move_selection(&self, sel: &TextSelection, motion: Motion, extend: bool) -> TextSelection {
         let l = &self.layout;
-        let s = &sel.0;
-        TextSelection(match motion {
+        let s = &sel.sel;
+        self.wrap(match motion {
             Motion::Left => s.previous_visual(l, extend),
             Motion::Right => s.next_visual(l, extend),
             Motion::WordLeft => word_step(l, s, false, extend),
@@ -204,8 +258,14 @@ impl TextLayout {
             let (top, bottom) = l.map_or((0.0, 0.0), |l| (f64::from(l.top), f64::from(l.bottom)));
             return Rect::new(0.0, top, width, bottom);
         }
-        let c = Cursor::from_byte_index(&self.layout, caret.index, caret.affinity);
-        let b = c.geometry(&self.layout, width as f32);
+        let lay = self.map.to_lay(caret.index);
+        // The left edge of a formula: Parley puts a caret in front of its placeholder behind the formula's box.
+        if let Some(f) = self.formulas.iter().find(|f| f.lay_index == lay)
+            && let Some(l) = self.lines.get(f.line as usize)
+        {
+            return Rect::new(f.rect.x0, f64::from(l.top), f.rect.x0 + width, f64::from(l.bottom));
+        }
+        let b = Cursor::from_byte_index(&self.layout, lay, caret.affinity).geometry(&self.layout, width as f32);
         Rect::new(b.x0, b.y0, b.x1, b.y1)
     }
 
@@ -215,15 +275,21 @@ impl TextLayout {
         Point::new(r.x0, r.y0)
     }
 
+    /// Width of the box of the formula whose placeholder starts at `lay`, or 0.
+    fn box_width_at(&self, lay: usize) -> f64 {
+        self.formulas.iter().find(|f| f.lay_index == lay).map_or(0.0, |f| f.rect.width())
+    }
+
     /// Rectangles that cover the selected text, one or more per line, in layout space. A newline
-    /// inside the selection adds a little width at the end of its line, as in most editors.
+    /// inside the selection adds a little width at the end of its line, as in most editors. A selected
+    /// formula is covered by its box.
     ///
     /// This is our own version of Parley's `Selection::geometry`, which has a `debug_assert!` that
     /// fails when a combining mark follows a newline (the newline then shares a cluster with the
     /// mark). The result is the same as Parley's for text without inline boxes.
     pub fn selection_rects(&self, sel: &TextSelection) -> Vec<Rect> {
         const NEWLINE_WIDTH_RATIO: f64 = 0.25;
-        let range = sel.range();
+        let range = sel.sel.text_range();
         let mut out = Vec::new();
         if range.is_empty() {
             return out;
@@ -255,15 +321,16 @@ impl TextLayout {
                 continue;
             }
             // Partly selected line: walk the clusters in visual order and emit one rectangle per
-            // contiguous selected stretch.
+            // contiguous selected stretch. A formula's box counts as part of its placeholder's cluster.
             let mut cur_x = x0;
             // Where the current selected stretch began, if one is open.
             let mut stretch_start: Option<f64> = None;
             let mut selected = 0usize;
             for run in line.runs() {
                 for cluster in run.visual_clusters() {
-                    let advance = f64::from(cluster.advance());
-                    if range.contains(&cluster.text_range().start) {
+                    let start = cluster.text_range().start;
+                    let advance = f64::from(cluster.advance()) + self.box_width_at(start);
+                    if range.contains(&start) {
                         selected += 1;
                         stretch_start.get_or_insert(cur_x);
                     } else if let Some(start_x) = stretch_start.take()
@@ -281,6 +348,23 @@ impl TextLayout {
             }
         }
         out
+    }
+
+    /// The formula whose source touches byte `index` (the index is at its left or right edge or inside it).
+    pub fn formula_at_index(&self, index: usize) -> Option<&InlineFormula> {
+        self.formulas.iter().find(|f| f.src.start <= index && index <= f.src.end)
+    }
+
+    /// The formula under a point.
+    pub fn formula_at_point(&self, p: Point) -> Option<&InlineFormula> {
+        self.formula_under(p)
+    }
+
+    /// The value of [`crate::TextSpec::reveal`] that shows the source of `formula` instead of its typeset form,
+    /// with the caret just after the opening dollar sign. Lay the text out again with it and put the caret there;
+    /// clear `reveal` when the caret leaves the formula's source.
+    pub fn reveal_index(&self, formula: &InlineFormula) -> usize {
+        formula.src.start + 1
     }
 
     /// Index of the line that contains byte `index`.
@@ -328,8 +412,12 @@ mod tests {
                 for &b in &idx {
                     let sel = l.selection_from_range(a, b);
                     let ours = l.selection_rects(&sel);
-                    let theirs: Vec<Rect> =
-                        sel.0.geometry(&l.layout).into_iter().map(|(r, _)| Rect::new(r.x0, r.y0, r.x1, r.y1)).collect();
+                    let theirs: Vec<Rect> = sel
+                        .sel
+                        .geometry(&l.layout)
+                        .into_iter()
+                        .map(|(r, _)| Rect::new(r.x0, r.y0, r.x1, r.y1))
+                        .collect();
                     assert!(same(&ours, &theirs), "{:?} {a}..{b}\n ours   {ours:?}\n parley {theirs:?}", spec.text);
                 }
             }

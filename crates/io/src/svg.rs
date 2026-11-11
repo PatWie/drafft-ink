@@ -41,7 +41,7 @@ use std::sync::Arc;
 use base64::Engine as _;
 use base64::engine::general_purpose::STANDARD;
 use drafftink_scene::{
-    Color, Document, Element, ElementId, ElementKind, FillPattern, FontFamily, FontWeight, Head, ImageData,
+    Color, Document, Element, ElementId, ElementKind, FillPattern, FontFamily, FontWeight, Head, ImageData, InlineMath,
     PressureMode, StrokeStyle, Style, TextAlign, TextData,
 };
 use drafftink_sketch::{
@@ -83,6 +83,13 @@ pub trait MathSvg {
     /// SVG elements for `latex` at `size`, with the baseline origin at (0, 0) and y pointing down. Colours must be
     /// `currentColor`; the exporter sets `color` on the wrapper. `None` when the formula does not parse.
     fn math_svg(&self, latex: &str, size: f64) -> Option<String>;
+
+    /// SVG elements for a whole text whose content has inline math (`$...$`): glyph outlines of the text and the
+    /// formulas, laid out as the canvas draws them, with the top-left of the box at (0, 0). The shape colour is
+    /// `currentColor`, colours of the text's own runs stay. `None` makes the exporter write the source as `<text>`.
+    fn text_svg(&self, _text: &TextData, _box_width: f64) -> Option<String> {
+        None
+    }
 }
 
 /// Options of [`export_svg`].
@@ -518,6 +525,20 @@ impl Ctx<'_> {
 
     fn text(&mut self, e: &Element, d: &TextData) {
         if d.content.is_empty() {
+            return;
+        }
+        if d.font.inline_math == InlineMath::Auto
+            && drafftink_typeset::has_inline_math(&d.content)
+            && let Some(svg) = self.math.and_then(|m| m.text_svg(d, e.transform.w))
+        {
+            let fill_opacity =
+                alpha(e.style.stroke_color).map(|a| format!(" fill-opacity=\"{a}\"")).unwrap_or_default();
+            put!(
+                self.out,
+                "<g color=\"{}\"{fill_opacity} data-text=\"{}\">{svg}</g>",
+                paint(e.style.stroke_color),
+                esc(&d.content)
+            );
             return;
         }
         if !self.used_families.contains(&d.font.family) {

@@ -304,7 +304,7 @@ impl Builder<'_> {
     }
 
     fn text_box(&self, t: &TextData) -> (f64, f64) {
-        let (w, h) = self.measure.text_size(&t.content, t.font.family, t.font.weight, t.font.size, t.font.line_height);
+        let (w, h) = self.measure.text_size_font(&t.content, &t.font);
         (finite(w).max(0.0), finite(h).max(0.0))
     }
 

@@ -26,7 +26,6 @@ use crate::binding::update_bound_arrows;
 use crate::ids::unused_element_id;
 use crate::text_bind::{
     TextBindError, TextMeasure, container_dim_for_text, create_label, inner_size, measure_lines, measure_text,
-    wrap_text,
 };
 
 /// Most nodes in one diagram.
@@ -499,14 +498,14 @@ fn node_size<M: TextMeasure + ?Sized>(
     }
     // Width: given, or what the label needs when wrapped at the automatic width.
     let natural = {
-        let lines = wrap_text(m, label, font, AUTO_LABEL_WIDTH);
+        let lines = m.wrap(label, font, AUTO_LABEL_WIDTH);
         measure_lines(m, &lines, font)
     };
     let mut w = width.unwrap_or_else(|| container_dim_for_text(natural.width, kind).max(MIN_NODE.width));
     // Height: whatever the text needs at that width, and at least the given or the minimum height.
     for _ in 0..2 {
         let inner = inner_size(kind, Size::new(w, 0.0)).map_or(0.0, |s| s.width);
-        let lines = wrap_text(m, label, font, inner);
+        let lines = m.wrap(label, font, inner);
         let text = measure_lines(m, &lines, font);
         if text.width > inner {
             w = container_dim_for_text(text.width, kind).max(w);
@@ -516,7 +515,7 @@ fn node_size<M: TextMeasure + ?Sized>(
         }
     }
     let inner = inner_size(kind, Size::new(w, 0.0)).map_or(0.0, |s| s.width);
-    let text = measure_lines(m, &wrap_text(m, label, font, inner), font);
+    let text = measure_lines(m, &m.wrap(label, font, inner), font);
     Size::new(w, height.unwrap_or(MIN_NODE.height).max(container_dim_for_text(text.height, kind)))
 }
 

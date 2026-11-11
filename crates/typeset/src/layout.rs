@@ -8,12 +8,16 @@ use std::sync::Arc;
 use kurbo::{Point, Rect, Size};
 use parley::{
     Alignment, AlignmentOptions, FontContext, FontFamily as PFamily, FontFamilyName, FontStyle, FontWeight as PWeight,
-    LayoutContext, OverflowWrap, PositionedLayoutItem, StyleProperty,
+    InlineBox, InlineBoxKind, LayoutContext, OverflowWrap, PositionedLayoutItem, StyleProperty, VerticalAlign,
 };
 
 use crate::fonts::{self, FALLBACK_FAMILY};
+use crate::inline::{Assembly, Piece, TextMap};
+use crate::math::{MathError, MathLayout, MathSpec};
 use crate::outline::ColouredPath;
-use crate::style::{Align, FontFamily, FontWeight, LineHeight, Rgba8, Span, SpanStyle, TextSpec, TextStyle, Wrap};
+use crate::style::{
+    Align, FontFamily, FontWeight, InlineMath, LineHeight, Rgba8, Span, SpanStyle, TextSpec, TextStyle, Wrap,
+};
 
 /// Longest text laid out, in bytes. Longer text is cut at a `char` boundary and the layout is
 /// marked [`TextLayout::truncated`].
@@ -139,6 +143,37 @@ impl LineInfo {
     }
 }
 
+/// A formula typeset inside the text.
+#[derive(Clone, Debug)]
+pub struct InlineFormula {
+    /// The formula in the source text, dollar signs included.
+    pub src: Range<usize>,
+    /// The laid-out formula, relative to its baseline origin.
+    pub math: Arc<MathLayout>,
+    /// The colour of the text the formula sits in. Glyphs that set `\color{..}` keep their own.
+    pub color: Rgba8,
+    /// The baseline origin of the formula in layout space: draw `math` translated by it.
+    pub origin: Point,
+    /// The box the formula occupies in the line, in layout space. It is as tall as the formula, not the line.
+    pub rect: Rect,
+    /// Index into [`TextLayout::lines`].
+    pub line: u32,
+    /// Index of the formula's zero-width placeholder in the laid-out text.
+    pub(crate) lay_index: usize,
+}
+
+/// A formula that does not typeset. It is drawn as its source in a warning colour.
+#[derive(Clone, Debug, PartialEq)]
+pub struct FormulaError {
+    /// The formula in the source text, dollar signs included.
+    pub src: Range<usize>,
+    /// What is wrong. Its span is relative to the LaTeX, which starts one byte after `src.start`.
+    pub error: MathError,
+}
+
+/// The colour of a formula that does not typeset (red, readable on the light and the dark theme).
+pub const FORMULA_ERROR_COLOR: Rgba8 = Rgba8::rgb(0xe0, 0x31, 0x31);
+
 /// The result of laying out a [`TextSpec`]. Immutable; the cache hands out `Arc<TextLayout>`.
 ///
 /// All coordinates are relative to the top-left of the layout box. Callers place the box in the
@@ -160,8 +195,14 @@ pub struct TextLayout {
     pub decorations: Vec<Decoration>,
     /// Distinct resolved styles. `GlyphRun::style` indexes this; index 0 is the base style.
     pub styles: Vec<RunStyle>,
-    /// Length of the laid-out text in bytes (all caret indices are `<=` this).
+    /// Length of the text in bytes (all caret indices are `<=` this). This is the length of the source, with the
+    /// formulas and escapes as written.
     pub text_len: usize,
+    /// The formulas that were typeset, in text order.
+    pub formulas: Vec<InlineFormula>,
+    /// The formulas that did not typeset, in text order.
+    pub formula_errors: Vec<FormulaError>,
+    pub(crate) map: Arc<TextMap>,
     /// The input was longer than [`MAX_TEXT_BYTES`] or had more than [`MAX_SPANS`] spans.
     pub truncated: bool,
     pub(crate) layout: PLayout,
@@ -265,10 +306,8 @@ pub(crate) fn sanitize_wrap(w: Wrap) -> Option<f32> {
     }
 }
 
-fn clean(spec: &TextSpec) -> Clean<'_> {
-    let text = cut_at_boundary(&spec.text, MAX_TEXT_BYTES);
-    let mut truncated = text.len() != spec.text.len();
-    let base = RunStyle {
+fn base_style(spec: &TextSpec) -> RunStyle {
+    RunStyle {
         family: spec.style.family.clone(),
         weight: spec.style.weight,
         italic: spec.style.italic,
@@ -276,10 +315,7 @@ fn clean(spec: &TextSpec) -> Clean<'_> {
         color: spec.style.color,
         underline: spec.style.underline,
         strike: spec.style.strike,
-    };
-    let spans = usable_spans(spec, text, &mut truncated);
-    let (styles, segments) = flatten_spans(&base, &spans, text.len());
-    Clean { text, styles, segments, wrap: sanitize_wrap(spec.wrap), truncated }
+    }
 }
 
 /// The spans that can be applied to `text`: not empty, inside it and on `char` boundaries, at most [`MAX_SPANS`]
@@ -396,18 +432,109 @@ fn properties(style: &RunStyle, id: u32) -> [StyleProperty<'static, StyleId>; 5]
     ]
 }
 
-pub(crate) fn build(engine: &mut Engine, spec: &TextSpec, id: u64) -> TextLayout {
-    let c = clean(spec);
+/// The layout of a formula, or why there is none. Supplied by the typesetter, which caches it.
+pub(crate) type MathFn<'a> = &'a mut dyn FnMut(&MathSpec) -> Result<Arc<MathLayout>, MathError>;
+
+/// A formula that typeset, before it has a position.
+struct Typeset {
+    /// Where its placeholder is in the laid-out text.
+    lay_index: usize,
+    src: Range<usize>,
+    math: Arc<MathLayout>,
+    color: Rgba8,
+}
+
+impl Typeset {
+    /// Heights above and below the baseline; the box is their sum.
+    fn extent(&self) -> (f32, f32) {
+        let finite = |v: f64| if v.is_finite() { v.clamp(0.0, crate::math::MAX_EXTENT) as f32 } else { 0.0 };
+        (finite(self.math.height), finite(-self.math.depth))
+    }
+
+    fn width(&self) -> f32 {
+        if self.math.width.is_finite() { self.math.width.clamp(0.0, crate::math::MAX_EXTENT) as f32 } else { 0.0 }
+    }
+}
+
+/// The text as handed to the shaper, with everything needed to map it back.
+struct Prepared {
+    text: String,
+    map: TextMap,
+    /// The spans in laid-out coordinates, the warning colour of broken formulas last.
+    spans: Vec<Span>,
+    formulas: Vec<Typeset>,
+    errors: Vec<FormulaError>,
+}
+
+/// The style at byte `at` of the source: `base` with the spans that cover it, later ones winning.
+fn style_at(base: &RunStyle, spans: &[&Span], at: usize) -> RunStyle {
+    spans.iter().filter(|s| s.range.contains(&at)).fold(base.clone(), |st, s| overridden(&st, &s.style))
+}
+
+/// Finds the formulas of `src`, typesets them and builds the laid-out text. Without inline math the text is
+/// laid out as written.
+fn prepare(spec: &TextSpec, src: &str, base: &RunStyle, spans: &[&Span], math: MathFn<'_>) -> Prepared {
+    if spec.math == InlineMath::Off || !src.contains('$') {
+        return Prepared {
+            text: src.to_owned(),
+            map: TextMap::identity(src.len()),
+            spans: spans.iter().map(|&s| s.clone()).collect(),
+            formulas: Vec::new(),
+            errors: Vec::new(),
+        };
+    }
+    let mut asm = Assembly::default();
+    let mut formulas = Vec::new();
+    let mut errors = Vec::new();
+    // Broken formulas, as laid-out ranges to colour.
+    let mut broken: Vec<Range<usize>> = Vec::new();
+    for piece in crate::inline::scan(src) {
+        match piece {
+            Piece::Plain(r) => asm.plain(src, r),
+            Piece::Escape(r) => asm.escape(r),
+            Piece::Formula { src: range, latex } => {
+                let revealed = spec.reveal.is_some_and(|at| range.start < at && at < range.end);
+                if revealed {
+                    asm.plain(src, range);
+                    continue;
+                }
+                let style = style_at(base, spans, range.start);
+                let source = src.get(latex).unwrap_or_default();
+                match math(&MathSpec::new(source).with_size(f64::from(style.size))) {
+                    Ok(layout) => {
+                        let lay_index = asm.formula(range.clone());
+                        formulas.push(Typeset { lay_index, src: range, math: layout, color: style.color });
+                    }
+                    Err(error) => {
+                        let from = asm.len();
+                        asm.plain(src, range.clone());
+                        broken.push(from..asm.len());
+                        errors.push(FormulaError { src: range, error });
+                    }
+                }
+            }
+        }
+    }
+    let (text, map) = asm.finish(src.len());
+    let mut lay_spans: Vec<Span> = spans
+        .iter()
+        .map(|s| Span { range: map.to_lay(s.range.start)..map.to_lay(s.range.end), style: s.style.clone() })
+        .collect();
+    lay_spans.extend(broken.into_iter().map(|range| Span { range, style: SpanStyle::color(FORMULA_ERROR_COLOR) }));
+    Prepared { text, map, spans: lay_spans, formulas, errors }
+}
+
+pub(crate) fn build(engine: &mut Engine, spec: &TextSpec, id: u64, math: MathFn<'_>) -> TextLayout {
+    let src = cut_at_boundary(&spec.text, MAX_TEXT_BYTES);
+    let mut truncated = src.len() != spec.text.len();
+    let base = base_style(spec);
+    let usable = usable_spans(spec, src, &mut truncated);
+    let Prepared { text, map, spans, formulas, errors } = prepare(spec, src, &base, &usable, math);
+    let lay_spans: Vec<&Span> = spans.iter().collect();
+    let (styles, segments) = flatten_spans(&base, &lay_spans, text.len());
+    let c = Clean { text: &text, styles, segments, wrap: sanitize_wrap(spec.wrap), truncated };
+
     let mut builder = engine.layout_cx.ranged_builder(&mut engine.font_cx, c.text, 1.0, false);
-    let base = c.styles.first().cloned().unwrap_or(RunStyle {
-        family: FontFamily::GelPen,
-        weight: FontWeight::Regular,
-        italic: false,
-        size: 20.0,
-        color: Rgba8::BLACK,
-        underline: false,
-        strike: false,
-    });
     for p in properties(&base, 0) {
         builder.push_default(p);
     }
@@ -420,6 +547,18 @@ pub(crate) fn build(engine: &mut Engine, spec: &TextSpec, id: u64) -> TextLayout
             }
         }
     }
+    for (k, f) in formulas.iter().enumerate() {
+        let (above, below) = f.extent();
+        builder.push_inline_box(InlineBox {
+            id: k as u64,
+            kind: InlineBoxKind::InFlow,
+            index: f.lay_index,
+            width: f.width(),
+            height: above + below,
+            baseline: Some(above),
+            vertical_align: VerticalAlign::default(),
+        });
+    }
     let mut layout: PLayout = builder.build(c.text);
     layout.break_all_lines(c.wrap);
     let alignment = match spec.align {
@@ -428,7 +567,7 @@ pub(crate) fn build(engine: &mut Engine, spec: &TextSpec, id: u64) -> TextLayout
         Align::Right => Alignment::Right,
     };
     layout.align(alignment, AlignmentOptions::default());
-    finish(layout, &c, id, base.size)
+    finish(layout, &c, id, base.size, Placed { map, formulas, errors, src_len: src.len() })
 }
 
 fn line_info(line: &parley::Line<'_, StyleId>) -> LineInfo {
@@ -492,14 +631,55 @@ fn glyph_run(
     }
 }
 
-fn finish(layout: PLayout, c: &Clean<'_>, id: u64, base_size: f32) -> TextLayout {
+/// What `finish` needs besides the shaped layout.
+struct Placed {
+    map: TextMap,
+    formulas: Vec<Typeset>,
+    errors: Vec<FormulaError>,
+    src_len: usize,
+}
+
+/// The line's range in the source. A line that holds only a formula that is wider than the box has the range
+/// `usize::MAX..0` in Parley; it gets the empty range at the formula.
+fn source_range(lay: Range<usize>, map: &TextMap, box_src: Option<usize>) -> Range<usize> {
+    if lay.start <= lay.end {
+        map.range_to_src(lay)
+    } else {
+        let at = box_src.unwrap_or(map.src_len());
+        at..at
+    }
+}
+
+fn finish(layout: PLayout, c: &Clean<'_>, id: u64, base_size: f32, placed: Placed) -> TextLayout {
+    let Placed { map, formulas, errors, src_len } = placed;
     let mut lines = Vec::new();
     let mut runs: Vec<GlyphRun> = Vec::new();
     let mut decorations = Vec::new();
+    let mut inline: Vec<InlineFormula> = Vec::new();
     for (li, line) in layout.lines().enumerate() {
-        lines.push(line_info(&line));
+        let mut info = line_info(&line);
+        let mut first_box = None;
         for item in line.items() {
-            let PositionedLayoutItem::GlyphRun(gr) = item else { continue };
+            let gr = match item {
+                PositionedLayoutItem::GlyphRun(gr) => gr,
+                PositionedLayoutItem::InlineBox(b) => {
+                    if let Some(f) = usize::try_from(b.id).ok().and_then(|k| formulas.get(k)) {
+                        first_box.get_or_insert(f.src.start);
+                        let (above, below) = f.extent();
+                        let (x, y) = (f64::from(b.x), f64::from(b.y));
+                        inline.push(InlineFormula {
+                            src: f.src.clone(),
+                            math: f.math.clone(),
+                            color: f.color,
+                            origin: Point::new(x, y + f64::from(b.baseline.unwrap_or(above))),
+                            rect: Rect::new(x, y, x + f64::from(b.width), y + f64::from(above + below)),
+                            line: u32::try_from(li).unwrap_or(u32::MAX),
+                            lay_index: f.lay_index,
+                        });
+                    }
+                    continue;
+                }
+            };
             let style_idx = gr.style().brush.0;
             let style = c.styles.get(style_idx as usize);
             let color = style.map_or(Rgba8::BLACK, |s| s.color);
@@ -511,6 +691,8 @@ fn finish(layout: PLayout, c: &Clean<'_>, id: u64, base_size: f32) -> TextLayout
                 runs.push(glyph_run(&gr, glyphs, style_idx, color, li));
             }
         }
+        info.text_range = source_range(line.text_range(), &map, first_box);
+        lines.push(info);
     }
     if c.text.is_empty() {
         // Parley lays out a lone space for empty text so that line metrics exist. Keep its
@@ -554,7 +736,10 @@ fn finish(layout: PLayout, c: &Clean<'_>, id: u64, base_size: f32) -> TextLayout
         runs,
         decorations,
         styles: c.styles.clone(),
-        text_len: c.text.len(),
+        text_len: src_len,
+        formulas: inline,
+        formula_errors: errors,
+        map: Arc::new(map),
         truncated: c.truncated,
         layout,
     }

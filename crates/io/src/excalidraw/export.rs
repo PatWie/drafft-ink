@@ -5,8 +5,8 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 use base64::Engine as _;
 use base64::engine::general_purpose::STANDARD;
 use drafftink_scene::{
-    BindMode, Binding, Element, ElementId, ElementKind, FileEntry, FileId, FontFamily, FontWeight, LinearData,
-    PathType, PressureMode,
+    BindMode, Binding, Element, ElementId, ElementKind, FileEntry, FileId, FontFamily, FontWeight, InlineMath,
+    LinearData, PathType, PressureMode,
 };
 use serde_json::{Map, Value, json};
 
@@ -276,6 +276,10 @@ fn element_json(e: &Element, bound: Option<&[Value]>, cx: &mut Cx) -> Value {
                 put("labelPosition", json!(lp));
             }
             note.runs = d.runs.clone();
+            // Excalidraw has no inline math: `text` is the source with its dollar signs. Only "off" needs a note.
+            if d.font.inline_math != InlineMath::Auto {
+                note.inline_math = Some(d.font.inline_math);
+            }
         }
         ElementKind::Math(d) => {
             // Excalidraw has no formula element: the source goes out as text and the note marks it.

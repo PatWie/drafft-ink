@@ -2,7 +2,7 @@
 
 Features decided but not yet assigned to a phase agent.
 
-- **Inline LaTeX inside text** (NEW). The old app has LaTeX as a separate Math shape with an equation editor (old commits 63575f8 "Add LaTeX math rendering support with ReX" and bfba568 "Add math equation editor UI"); both are ported: `typeset` lays out math with ReX, and the catalog has `element.create kind=math`, `text.set_latex`, `text.edit_begin/end` with `latex` and `ui.open_equation_editor`. The README's "inline LaTeX math" (`$...$` inside a text element) did not exist in the old code. We add it: Parley inline boxes holding a MathLayout (design sketch in docs/typeset.md), text runs with a math span kind in `scene`, and editing through `text.set`.
+- **Inline LaTeX: the editor surface.** Everything below the UI is done (branch `inline-latex`; `docs/typeset.md`, `docs/model.md`). The app's egui text field shows the source while typing. To finish: draw the edited text with `TextLayout` (formulas typeset), set `TextSpec::reveal` to the caret while it is strictly inside a formula (`TextLayout::reveal_index`), use `caret_rect` / `selection_rects` / `move_selection` as they are (source indexes), and send `inline_math` with `text.edit_end` if the user turns it off.
 - Bundled font size on the web: `noto-sans` adds 1.9 MB raw wasm; load fonts lazily or as separate assets (size gate).
 - Perf: `Relations::build` still serves the one-shot commands (group, frame, z-order, clipboard, library); gesture frames use the derived index (`Reverse::of`). Convert them if one shows up in a profile.
 - Web: hovering over empty canvas costs ~9% CPU in Chromium with 0 frames drawn (event handling); investigate when the web scenario driver exists (the engine side counts 0 redraws and 0 scans per hover, perf_work).
@@ -52,3 +52,4 @@ Features decided but not yet assigned to a phase agent.
 - Server refuses and rolls back updates that raise `meta.schema` beyond the served schema (69f08a1).
 - Accepted (F1): `element.relabel`/`text.set` with empty text on a bound label removes the label; only free text refuses `empty_text`.
 - Flaky under heavy load (load avg 170): collab::server leaving_flushes_the_last_edit_and_the_others_see_the_peer_go (timing); make its waits event-driven.
+- App/UI: the on-canvas text editor must draw edited text through TextLayout (inline formulas typeset), set TextSpec::reveal while the caret is inside a formula, use typeset caret APIs (caret_rect, selection_rects, move_selection, formula_at_point/index), and pass inline_math to text.edit_end. Per-character colour editing UI (parity gap 3) belongs to the same editor.

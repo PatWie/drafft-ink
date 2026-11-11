@@ -23,7 +23,7 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 use crate::create::{self, CreateError, FrameChoice, Joined};
-use crate::text_bind::{self, TextMeasure, inner_size, measure_lines, wrap_text};
+use crate::text_bind::{self, TextMeasure, inner_size, measure_lines};
 
 /// Side of a new note, in world units.
 pub const DEFAULT_SIZE: f64 = 250.0;
@@ -155,7 +155,7 @@ pub fn fit_font_size<M: TextMeasure + ?Sized>(m: &M, text: &str, font: &TextStyl
         .into_iter()
         .find(|size| {
             probe.size = *size;
-            let lines = wrap_text(m, text, &probe, inner.width);
+            let lines = m.wrap(text, &probe, inner.width);
             let used = measure_lines(m, &lines, &probe);
             used.width <= inner.width && used.height <= inner.height
         })

@@ -186,6 +186,28 @@ pub enum VerticalAlign {
     Bottom,
 }
 
+/// Whether `$...$` in a text is typeset as inline math.
+///
+/// The text stays plain: the dollar signs are part of `content`, and so is the escape `\$`. This setting only says how
+/// the text is drawn and measured (`docs/model.md` section 4, "Inline math").
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum InlineMath {
+    /// A matched `$...$` pair is a formula when the first `$` is followed by a non-space and the second is preceded
+    /// by one and not followed by a digit (prices stay prices). `\$` is a literal dollar sign.
+    #[default]
+    Auto,
+    /// Every character is drawn as written.
+    Off,
+}
+
+impl InlineMath {
+    /// Whether this is the default (`Auto`); a default is not written to files.
+    pub fn is_auto(&self) -> bool {
+        *self == Self::Auto
+    }
+}
+
 /// Font settings of a text element.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields, default)]
@@ -202,6 +224,9 @@ pub struct TextStyle {
     pub vertical_align: VerticalAlign,
     /// Line height as a multiple of the font size.
     pub line_height: f64,
+    /// Whether `$...$` in the text is typeset as math. Default `auto`.
+    #[serde(skip_serializing_if = "InlineMath::is_auto")]
+    pub inline_math: InlineMath,
 }
 
 impl Default for TextStyle {
@@ -213,6 +238,7 @@ impl Default for TextStyle {
             align: TextAlign::Left,
             vertical_align: VerticalAlign::Top,
             line_height: 1.25,
+            inline_math: InlineMath::Auto,
         }
     }
 }

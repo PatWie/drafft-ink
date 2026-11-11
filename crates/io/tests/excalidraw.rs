@@ -568,6 +568,38 @@ fn every_fixture_survives_import_export_import() {
 }
 
 #[test]
+fn inline_math_goes_out_as_its_source_and_the_off_setting_comes_back() {
+    let mut d = Document::new();
+    let z = drafftink_scene::ZIndex::rebalance(2).unwrap();
+    let make = |name: &str, z: &drafftink_scene::ZIndex, off: bool| {
+        let mut t = drafftink_scene::TextData::new("Energy $E = mc^2$ costs \\$5");
+        if off {
+            t.font.inline_math = drafftink_scene::InlineMath::Off;
+        }
+        let mut e = Element::new(drafftink_scene::ElementId::new(name).unwrap(), ElementKind::Text(t), z.clone());
+        e.transform = drafftink_scene::Transform::new(0.0, 0.0, 200.0, 25.0);
+        e
+    };
+    d.elements = vec![make("on", &z[0], false), make("off", &z[1], true)];
+    let text = export_scene(&d).unwrap();
+    let v: Value = serde_json::from_str(&text).unwrap();
+    for e in v["elements"].as_array().unwrap() {
+        // Excalidraw has no inline math: the text is the source, delimiters and escape included.
+        assert_eq!(e["text"], "Energy $E = mc^2$ costs \\$5");
+        assert_eq!(e["originalText"], e["text"]);
+    }
+    let note =
+        |id: &str| v["elements"].as_array().unwrap().iter().find(|e| e["id"] == id).unwrap()["customData"].clone();
+    assert!(note("on").is_null(), "the default needs no note: {}", note("on"));
+    assert_eq!(note("off")["drafftink"]["inline_math"], "off");
+    let back = import_str(&text).unwrap().document;
+    for (id, mode) in [("on", drafftink_scene::InlineMath::Auto), ("off", drafftink_scene::InlineMath::Off)] {
+        let t = get(&back, id).text_data().unwrap();
+        assert_eq!((t.content.as_str(), t.font.inline_math), ("Energy $E = mc^2$ costs \\$5", mode), "{id}");
+    }
+}
+
+#[test]
 fn export_derives_bound_elements_on_both_sides() {
     let d = scene("bindings").document;
     let v: Value = serde_json::from_str(&export_scene(&d).unwrap()).unwrap();

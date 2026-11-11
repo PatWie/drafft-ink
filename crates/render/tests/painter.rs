@@ -289,6 +289,104 @@ fn math_with_its_own_colour_keeps_it() {
     assert!(c.iter().any(|w| *w != base), "x keeps its own colour: {c:?}");
 }
 
+// ---------------------------------------------------------------- inline math
+
+fn text_with_formula(ts: &mut Typesetter, content: &str) -> Element {
+    text_el(ts, "t", &ZIndex::first(), 0.0, 0.0, content)
+}
+
+fn base_ink() -> u32 {
+    // The default stroke colour, indigo.
+    packed(PColor::from_rgba8(0x63, 0x66, 0xf1, 255))
+}
+
+#[test]
+fn a_formula_inside_text_is_drawn_with_the_math_font_in_the_text_colour() {
+    let mut ts = Typesetter::new();
+    let plain = text_with_formula(&mut ts, "Energy  here");
+    let e = text_with_formula(&mut ts, "Energy $\\frac{a}{b}$ here");
+    let (p, f) = (paint(&plain), paint(&e));
+    // Text on both sides, the formula's glyphs, and its fraction bar.
+    assert!(f.scene.encoding().resources.glyph_runs.len() > p.scene.encoding().resources.glyph_runs.len());
+    assert!(n_draws(&f, DrawTag::COLOR) >= 3, "{}", n_draws(&f, DrawTag::COLOR));
+    // Everything follows the text colour.
+    assert!(colors(&f).iter().all(|c| *c == base_ink()), "{:?}", colors(&f));
+    // The fragment covers the formula, and the element box, measured the same way, is as large.
+    assert!(f.bounds.height() > p.bounds.height() + 5.0, "{:?} {:?}", f.bounds, p.bounds);
+    assert!(f.bounds.x1 >= e.transform.w - 1.0, "{:?} {}", f.bounds, e.transform.w);
+    assert!(f.bounds.y1 <= e.transform.h + 1.0);
+}
+
+#[test]
+fn inline_math_off_draws_the_dollar_signs() {
+    let mut ts = Typesetter::new();
+    let mut e = text_with_formula(&mut ts, "Energy $\\frac{a}{b}$ here");
+    let with_math = paint(&e);
+    if let ElementKind::Text(t) = &mut e.kind {
+        t.font.inline_math = InlineMath::Off;
+    }
+    measure_text(&mut ts, &mut e);
+    let raw = paint(&e);
+    // One run of plain text, no fraction bar (a bar is a rectangle fill, plain text has none).
+    assert_eq!(raw.scene.encoding().resources.glyph_runs.len(), 1);
+    assert!(raw.bounds.width() > with_math.bounds.width());
+    assert!(n_draws(&raw, DrawTag::COLOR) < n_draws(&with_math, DrawTag::COLOR));
+}
+
+#[test]
+fn a_formula_keeps_a_colour_it_sets_and_follows_a_colour_run() {
+    let mut ts = Typesetter::new();
+    let mut e = text_with_formula(&mut ts, "a {$\\color{red} x$} b $y$");
+    // "{$..$}" is text around a formula; colour the second formula green with a run.
+    let n = if let ElementKind::Text(t) = &e.kind { t.content.chars().count() } else { 0 };
+    if let ElementKind::Text(t) = &mut e.kind {
+        t.runs = vec![TextRun { start: (n - 3) as u32, end: n as u32, color: Some(Color::rgb(0, 160, 0)) }];
+    }
+    let c = colors(&paint(&e));
+    assert!(c.contains(&packed(PColor::from_rgba8(0, 160, 0, 255))), "the run colours the formula: {c:?}");
+    assert!(c.contains(&base_ink()), "text outside the run keeps the text colour: {c:?}");
+    assert!(c.iter().any(|w| *w != base_ink() && *w != packed(PColor::from_rgba8(0, 160, 0, 255))), "\\color: {c:?}");
+}
+
+#[test]
+fn a_broken_formula_is_its_source_in_red_and_does_not_fail() {
+    let mut ts = Typesetter::new();
+    let e = text_with_formula(&mut ts, "ok $\\notacommand{$ ok");
+    let f = paint(&e);
+    let red = packed(PColor::from_rgba8(0xe0, 0x31, 0x31, 255));
+    assert!(colors(&f).contains(&red), "{:?}", colors(&f));
+    assert!(colors(&f).contains(&base_ink()));
+    assert!(!f.is_empty());
+}
+
+#[test]
+fn inline_math_follows_the_theme_and_the_opacity() {
+    let mut ts = Typesetter::new();
+    let mut e = text_with_formula(&mut ts, "a $\\frac{x}{y}$ b");
+    e.style.stroke_color = Color::BLACK;
+    let dark = paint_with(&e, RenderOptions { theme: drafftink_render::Theme::Dark, ..RenderOptions::default() });
+    let c = colors(&dark);
+    assert!(!c.is_empty() && c.iter().all(|w| *w == c[0]), "text, glyphs and bar share one colour: {c:?}");
+    assert_ne!(c[0], packed(PColor::from_rgba8(0, 0, 0, 255)), "black became light ink");
+    e.style.opacity = 0.5;
+    let faded = colors(&paint(&e));
+    assert!(faded.iter().all(|w| *w == faded[0]) && faded[0] != packed(PColor::from_rgba8(0, 0, 0, 255)));
+    let alpha = |w: u32| w >> 24;
+    assert!((100..=140).contains(&alpha(faded[0])), "{:#x}", faded[0]);
+}
+
+#[test]
+fn rotation_and_position_do_not_change_the_fragment() {
+    let mut ts = Typesetter::new();
+    let mut e = text_with_formula(&mut ts, "a $x^2$ b");
+    let first = paint(&e);
+    e.transform.x = 300.0;
+    e.transform.angle = 0.7;
+    let moved = paint(&e);
+    assert_eq!(first.bounds, moved.bounds);
+    assert_eq!(first.bytes, moved.bytes);
+}
+
 #[test]
 fn a_frame_fragment_is_the_box_only_and_its_name_is_left_to_the_composer() {
     let mut f = frame_el("f", &ZIndex::first(), 0.0, 0.0, 300.0, 200.0);

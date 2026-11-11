@@ -162,7 +162,7 @@ pub fn layout_label<M: TextMeasure + ?Sized>(
     let mut rect = container.rect();
     if kind == Kind::Arrow {
         let max_w = (ARROW_LABEL_WIDTH_FRACTION * rect.width()).max(font.size * ARROW_LABEL_MIN_WIDTH_PER_SIZE);
-        let lines = wrap_text(m, content, font, max_w);
+        let lines = m.wrap(content, font, max_w);
         let size = measure_lines(m, &lines, font);
         let at = arrow_point_at(container, label_position.unwrap_or(DEFAULT_LABEL_POSITION)).unwrap_or(rect.center());
         let text = Transform::new(at.x - size.width / 2.0, at.y - size.height / 2.0, size.width, size.height);
@@ -178,7 +178,7 @@ pub fn layout_label<M: TextMeasure + ?Sized>(
     // At most two rounds: growing the width changes the wrapping once.
     for _ in 0..2 {
         let inner = inner_size(kind, rect.size()).unwrap_or(Size::ZERO);
-        lines = wrap_text(m, content, font, inner.width);
+        lines = m.wrap(content, font, inner.width);
         size = measure_lines(m, &lines, font);
         let mut next = rect;
         if size.width > inner.width {

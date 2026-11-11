@@ -77,6 +77,18 @@ uses the logical word steps, which are finite, and maps right/left by the text d
 Backspace and Delete: move the selection one step with `Motion::Left` / `Right` and delete between
 the two indices; that respects grapheme clusters. Only the editor changes text.
 
+### Inline math (`inline.rs`, `layout.rs`)
+
+`TextSpec::math: InlineMath` (`Off` by default in this crate, `Auto` for text elements, see `model.md` for the scanning rules) and `TextSpec::reveal: Option<usize>`. With `Auto` the text is scanned (`formula_ranges`, `has_inline_math`); each `$latex$` is laid out as a `MathLayout` at the size of the text there (cached with the math cache), and the text goes to Parley with the formula replaced by one zero-width space (U+200B) and `\$` by `$`. The formula is a Parley *inline box* in front of its space: width the formula's width, height `height - depth`, baseline `height`, so it sits on the baseline of its line and a tall formula grows the line. U+200B keeps the box and its placeholder on one line (U+2060 did not: Parley breaks between them) and allows a break after the formula. A formula wider than the wrap width stands alone on a line and overflows; `size.width` includes it, so bound text grows its container.
+
+What `TextLayout` adds: `formulas: Vec<InlineFormula>` (`src` byte range with dollars, `math`, `color`, `origin` = baseline origin in layout space, `rect` = the box, `line`) in text order, `formula_errors: Vec<FormulaError>` (source range and `MathError`), `text_len` stays the length of the **source**. `LineInfo::text_range`, `Caret::index`, `TextSelection::range` and every method of `caret.rs` use source indexes; `TextMap` converts (a formula is one cluster of 3 laid-out bytes; an index inside a formula or an escape maps to the nearer edge). `outline()` includes the formulas, `weight()` is unchanged (the formulas are shared `Arc`s owned by the math cache).
+
+Decision: **a formula is one unit** for the caret. The caret is at the left or right edge of its box (`caret_rect` computes the left edge itself, because Parley puts a caret in front of the placeholder behind the box), one `Motion::Left/Right` crosses it, `extend` selects `$...$` whole so Backspace deletes the formula, a click picks the nearer edge, a double click (`word_at_point`) selects it, `selection_rects` covers its box. To edit the source the editor lays the text out again with `reveal = Some(layout.reveal_index(&formula))` (just after the opening `$`); while `reveal` is strictly inside a formula that formula is plain text and the caret moves inside it freely. The editor clears `reveal` when the caret leaves the source. `formula_at_index` and `formula_at_point` find the formula for Enter/F2 and double click.
+
+A broken formula (`MathError`, including too long or too complex) is laid out as its source, dollar signs included, in `FORMULA_ERROR_COLOR` and listed in `formula_errors`; an unmatched `$` is not an error. The cache key of a text covers the text (so the LaTeX), the mode, `reveal`, and every style field; the math cache key is `(latex, size, fallback)`. The hostile limits are the math limits (`MAX_LATEX_BYTES`, `MAX_TOKENS`, `MAX_NESTING`, a precheck) plus `MAX_FORMULAS` per text.
+
+Known limits: a formula is not underlined or struck through with its text, a text colour with transparency is applied by the renderer to the formula as a whole, and right-to-left text around a formula is untested.
+
 ### `MathLayout` (`math.rs`)
 
 Coordinates are relative to the baseline origin, y down (glyphs above the baseline have negative y).
@@ -189,10 +201,6 @@ Consequences, and options if they start to hurt:
 
 ## Not done
 
-- **Inline LaTeX in text.** The README promised it; the old code never had it (`Shape::Math` is a
-  separate shape). `TextSpec` has no math spans yet. A design that fits: a span kind
-  `Math(latex)` that reserves an inline box (Parley supports inline boxes) and a `MathLayout` placed at
-  the box, with the baseline aligned. Not started.
 - **IME composition.** The old app had none. The layout supports caret geometry for a composing
   range if the editor needs it; Parley's `PlainEditor` compose API was not adopted because the
   editor model is in `edit`.
@@ -229,6 +237,7 @@ colour span, a quarter wrapped):
 
 | File | Covers |
 |---|---|
+| `tests/inline.rs` | inline math: baselines, bounds, wrapping, alignment, errors, source-index carets, selections, reveal, cache keys, outline |
 | `tests/text.rs` | determinism, fonts, spans, line height, wrapping, alignment, outlines, hit test |
 | `tests/legacy.rs` | the old fixtures: ink extent of the 12 family/weight rows and 7 equations against the old renderer's PNGs (within 1.5 px), the old estimates (0.6 to 1.25 of real), char colours, multi-line |
 | `tests/math.rs` | layout, colours, fallback, typed errors with spans, limits, error caching |
