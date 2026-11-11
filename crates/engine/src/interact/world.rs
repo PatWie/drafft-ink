@@ -185,6 +185,20 @@ impl Picker for Pick<'_> {
         let tol = if touch { w.config.hit_tolerance_touch_px } else { w.config.hit_tolerance_px };
         let world = w.viewport.screen_to_world(screen);
         let store = self.session.store();
+        // The icon of a link (select tool only: the other tools have no use for a click on it) lies outside its
+        // element and wins over what is under it. A selected element shows its handles there instead.
+        if matches!(w.tool, Tool::Select | Tool::Lasso) {
+            let selection = self.session.selection();
+            let icon = self
+                .session
+                .tab()
+                .doc
+                .scene_index()
+                .link_icon_at(store, world, w.viewport.zoom(), |e| selection.contains(&e.id));
+            if let Some(id) = icon {
+                return Target::LinkIcon { id };
+            }
+        }
         match self.session.tab().doc.scene_index().hit(
             store,
             world,
@@ -208,7 +222,7 @@ impl Picker for Pick<'_> {
                 Target::Handle(h) => w.frame.cursor_for(h),
                 Target::Element { .. } => Cursor::Move,
                 Target::Empty | Target::None if w.tool == Tool::Lasso => Cursor::Crosshair,
-                Target::Empty | Target::None => Cursor::Default,
+                Target::Empty | Target::None | Target::LinkIcon { .. } => Cursor::Default,
             },
             _ => Cursor::Crosshair,
         }

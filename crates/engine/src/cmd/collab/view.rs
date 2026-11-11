@@ -2,8 +2,11 @@
 //!
 //! Plain data built from the client by [`crate::Session::collab_view`]. Nothing here can change the session.
 
+use drafftink_canvas::{RemoteUser, TrailPoint};
 use drafftink_collab::{ConnState, Peer};
+use drafftink_geom::kurbo::Point;
 use drafftink_protocol::UserInfo;
+use drafftink_scene::{Color, ElementId};
 use schemars::JsonSchema;
 use serde::Serialize;
 
@@ -122,6 +125,28 @@ impl PeerView {
             trail: peer.trail().points(now_ms).into_iter().map(|(age_ms, p)| TrailDot { x: p.x, y: p.y, age_ms }).collect(),
             followed,
             id,
+        }
+    }
+}
+
+/// The colour of a peer whose `color` is not a hex colour (it always is; this keeps the conversion total).
+const FALLBACK_COLOR: Color = Color::rgb(0x63, 0x66, 0xf1);
+
+impl PeerView {
+    /// The peer as the canvas overlay describes a collaborator, for [`drafftink_canvas::remote_parts`]: the pointer
+    /// with the name, the selection (ids that are not element ids are dropped) and the trail. See `docs/render.md`.
+    pub fn to_remote_user(&self) -> RemoteUser {
+        RemoteUser {
+            id: self.id.clone(),
+            name: Some(self.name.clone()),
+            color: Color::parse(&self.color).unwrap_or(FALLBACK_COLOR),
+            cursor: self.pointer.map(|[x, y]| Point::new(x, y)),
+            selection: self.selection.iter().filter_map(|s| ElementId::new(s).ok()).collect(),
+            trail: self
+                .trail
+                .iter()
+                .map(|d| TrailPoint { pos: Point::new(d.x, d.y), age_ms: d.age_ms as f64 })
+                .collect(),
         }
     }
 }

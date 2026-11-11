@@ -44,7 +44,7 @@ pub trait Picker {
         match target {
             Target::Element { .. } => Cursor::Move,
             Target::Handle(_) => Cursor::Crosshair,
-            Target::Empty | Target::None => Cursor::Default,
+            Target::Empty | Target::None | Target::LinkIcon { .. } => Cursor::Default,
         }
     }
 }

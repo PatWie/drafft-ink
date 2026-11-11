@@ -15,7 +15,7 @@
 //! ([`hits_icon`]), so the renderer and the pointer path use one rule (Excalidraw `getLinkHandleFromCoords`).
 
 use crate::target::TargetError;
-use drafftink_geom::kurbo::{Point, Rect, Vec2};
+use drafftink_geom::kurbo::{Point, Rect};
 use drafftink_scene::{Element, ElementId, SceneRead, SceneTx, StoreError, limits::MAX_LINK_BYTES};
 
 /// The character that starts an element link.
@@ -247,39 +247,26 @@ fn check_authority(after_scheme: &str, need_dot: bool) -> Result<(), Option<Link
     if name_ok || is_ipv6(host) { Ok(()) } else { Err(None) }
 }
 
-/// Side of the link icon in screen pixels (Excalidraw `DEFAULT_LINK_SIZE`).
-pub const ICON_SIZE_PX: f64 = 12.0;
-/// How far outside the icon a click still hits it, in screen pixels.
-pub const ICON_REACH_PX: f64 = 4.0;
+pub use drafftink_geom::link_icon::{ICON_REACH_PX, ICON_SIZE_PX};
+
+/// The unrotated box of an element, for the icon rule in `drafftink_geom::link_icon`.
+fn frame_of(e: &Element) -> Rect {
+    let t = &e.transform;
+    Rect::new(t.x, t.y, t.x + t.w, t.y + t.h)
+}
 
 /// The link icon of an element in world units: a square beside the top-right corner of its box, where the north-east
 /// resize handle sits when the element is selected, rotated with the element about its centre. The icon keeps
-/// its size on screen when zoomed out and shrinks with the zoom when zoomed in (the zoom counts as 1 below 1,
-/// as in Excalidraw).
+/// its size on screen when zoomed in and keeps its size in world units when zoomed out (the zoom counts as 1 below
+/// 1, as in Excalidraw). The rule lives in `drafftink_geom::link_icon`, shared with the renderer and the canvas.
 pub fn icon_rect(e: &Element, zoom: f64) -> Rect {
-    let z = if zoom.is_finite() && zoom > 1.0 { zoom } else { 1.0 };
-    let t = &e.transform;
-    let size = ICON_SIZE_PX / z;
-    let centering = (ICON_SIZE_PX - 8.0) / (2.0 * z);
-    let margin = 4.0 / z;
-    let x = t.x + t.w + margin - centering;
-    let y = t.y - margin - size + centering;
-    let centre = Point::new(t.x + t.w / 2.0, t.y + t.h / 2.0);
-    let icon_centre = Point::new(x + size / 2.0, y + size / 2.0);
-    let d = icon_centre - centre;
-    let (sin, cos) = t.angle.sin_cos();
-    let rotated = centre + Vec2::new(d.x * cos - d.y * sin, d.x * sin + d.y * cos);
-    Rect::new(rotated.x - size / 2.0, rotated.y - size / 2.0, rotated.x + size / 2.0, rotated.y + size / 2.0)
+    drafftink_geom::link_icon::icon_rect(frame_of(e), e.transform.angle, zoom)
 }
 
 /// Whether a world point is on the link icon of `e` (with a small reach around it). False for an element without a
 /// link or a deleted one.
 pub fn hits_icon(e: &Element, p: Point, zoom: f64) -> bool {
-    if e.deleted || e.link.is_none() || !p.x.is_finite() || !p.y.is_finite() {
-        return false;
-    }
-    let reach = if zoom.is_finite() && zoom > 0.0 { ICON_REACH_PX / zoom } else { ICON_REACH_PX };
-    icon_rect(e, zoom).inflate(reach, reach).contains(p)
+    !e.deleted && e.link.is_some() && drafftink_geom::link_icon::hits_icon(frame_of(e), e.transform.angle, p, zoom)
 }
 
 /// Sets or clears the `link` of a live, unlocked element. Returns whether it changed. `link` must come from

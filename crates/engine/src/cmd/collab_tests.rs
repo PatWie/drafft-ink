@@ -436,6 +436,27 @@ fn pointers_names_and_selections_reach_the_other_peer() {
 }
 
 #[test]
+fn a_peer_becomes_a_remote_user_with_pointer_name_selection_and_trail() {
+    let mut w = World::new(2);
+    w.join_all("room-r");
+    run(w.s(0), "collab.set_user", json!({"name": "Ana", "color": "#22c55e"}));
+    let a = rect(w.s(0), 0.0);
+    w.s(0).tab_mut().observed.selection.insert(a.clone());
+    run(w.s(0), "collab.laser", json!({"points": [[1.0, 2.0], [4.0, 6.0]]}));
+    run(w.s(0), "collab.set_pointer", json!({"point": [12.5, -3]}));
+    w.settle();
+    let user = w.s(1).collab_view().peers[0].to_remote_user();
+    assert_eq!(user.name.as_deref(), Some("Ana"));
+    assert_eq!(user.color, drafftink_scene::Color::rgb(0x22, 0xc5, 0x5e));
+    assert_eq!(user.cursor, Some(drafftink_geom::kurbo::Point::new(12.5, -3.0)));
+    assert_eq!(user.selection, [a]);
+    assert!(!user.trail.is_empty(), "the laser trail comes along");
+    // The canvas library turns it into what is drawn: a cursor, a box for the selection and the trail.
+    let parts = drafftink_canvas::remote_parts(w.s(1).store(), &[user], 8);
+    assert_eq!((parts.cursors.len(), parts.selections[0].boxes.len(), parts.trails.len()), (1, 1, 1));
+}
+
+#[test]
 fn the_pointer_is_quiet_in_the_ring_and_works_outside_a_room() {
     let (mut s, _) = testing::session();
     let out = run(&mut s, "collab.set_pointer", json!({"point": [1, 2], "tool": "laser"}));

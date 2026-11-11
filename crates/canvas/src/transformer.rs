@@ -27,6 +27,9 @@ use crate::intent::{Cursor, Handle};
 use crate::shape::{element_box, shape_of};
 use crate::viewport::Viewport;
 
+/// How far from the bounds of a tiny line a press still counts as being on its body, in logical pixels.
+const LINE_BODY_REACH_PX: f64 = 4.0;
+
 /// Sizes and switches of the transformer.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct TransformerConfig {
@@ -42,6 +45,10 @@ pub struct TransformerConfig {
     pub min_edge_side_px: f64,
     /// A segment shorter than this on screen gets no midpoint handle.
     pub min_midpoint_segment_px: f64,
+    /// A selection whose longer side is shorter than this on screen is "tiny": a press inside it grabs the shape
+    /// itself instead of a handle, because the handle hit areas would cover the whole body and the shape could not
+    /// be moved. Handles are still hit outside the shape. The default is two handle sizes.
+    pub tiny_frame_px: f64,
     /// Offer the rotation handle.
     pub rotate: bool,
     /// Offer the four edge handles.
@@ -59,6 +66,7 @@ impl Default for TransformerConfig {
             rotate_offset_px: 25.0,
             min_edge_side_px: 40.0,
             min_midpoint_segment_px: 40.0,
+            tiny_frame_px: 32.0,
             rotate: true,
             edges: true,
             midpoints: true,
@@ -204,6 +212,9 @@ impl SelectionFrame {
         if !(radius_px.is_finite() && radius_px >= 0.0 && screen.x.is_finite() && screen.y.is_finite()) {
             return None;
         }
+        if self.body_wins(vp, screen, cfg) {
+            return None;
+        }
         let r2 = radius_px * radius_px;
         let dist2 = |world: Point| (vp.world_to_screen(world) - screen).hypot2();
         match self {
@@ -252,6 +263,25 @@ impl SelectionFrame {
                 }
                 mid.map(|(_, segment)| Handle::Midpoint { element: element.clone(), segment })
             }
+        }
+    }
+
+    /// True when `screen` is on the body of a frame that is tiny on screen ([`TransformerConfig::tiny_frame_px`]):
+    /// the shape is then grabbed instead of a handle. The rotation handle lies outside the body, so it is never
+    /// lost this way.
+    fn body_wins(&self, vp: &Viewport, screen: Point, cfg: &TransformerConfig) -> bool {
+        let world = vp.screen_to_world(screen);
+        match self {
+            SelectionFrame::None => false,
+            SelectionFrame::Box { obox, .. } => {
+                let longer = obox.size.width.max(obox.size.height);
+                vp.world_to_px(longer) < cfg.tiny_frame_px && obox.contains(world)
+            }
+            // A line has no area: its body is the stretch of its bounds, with a few pixels of reach.
+            SelectionFrame::Linear { .. } => self.bounds().is_some_and(|b| {
+                let reach = vp.px_to_world(LINE_BODY_REACH_PX);
+                vp.world_to_px(b.width().max(b.height())) < cfg.tiny_frame_px && b.inflate(reach, reach).contains(world)
+            }),
         }
     }
 
@@ -491,5 +521,63 @@ mod tests {
         assert_eq!(r.obox.aabb(), drafftink_geom::kurbo::Rect::new(0.0, 0.0, 200.0, 100.0));
         assert!(f.resize(&Handle::Rotate, Point::ZERO, ResizeOpts::default()).is_none());
         assert!(f.rotate(Point::new(50.0, -100.0), None).unwrap().abs() < 1e-9);
+    }
+
+    #[test]
+    fn a_tiny_selection_is_grabbed_by_its_body_and_still_resized_from_outside() {
+        let z = ZIndex::first();
+        let e = rect("a", 100.0, 100.0, 10.0, 10.0, &z);
+        let s = store_with(vec![e.clone()]);
+        let f = SelectionFrame::of(&s, [&e.id]);
+        let cfg = TransformerConfig::default();
+        let v = vp(1.0);
+        let inside = v.world_to_screen(Point::new(103.0, 103.0));
+        assert_eq!(f.hit(&v, inside, 12.0, &cfg), None, "10 px square: the body wins");
+        let corner_outside = v.world_to_screen(Point::new(113.0, 113.0));
+        assert_eq!(f.hit(&v, corner_outside, 12.0, &cfg), Some(Handle::BottomRight), "outside, the handle is there");
+        let above = v.world_to_screen(Point::new(105.0, 100.0 - 25.0));
+        assert_eq!(f.hit(&v, above, 12.0, &cfg), Some(Handle::Rotate), "the rotation handle is outside the body");
+        // The same shape zoomed in until it is large on screen: the corner handle wins inside again.
+        let big = vp(8.0);
+        let near_corner = big.world_to_screen(Point::new(109.0, 109.0));
+        assert_eq!(f.hit(&big, near_corner, 12.0, &cfg), Some(Handle::BottomRight));
+    }
+
+    #[test]
+    fn the_tiny_rule_depends_on_the_size_on_screen_and_applies_to_several_elements_and_to_lines() {
+        let z = ZIndex::first();
+        let a = rect("a", 100.0, 100.0, 5.0, 5.0, &z);
+        let b = rect("b", 110.0, 100.0, 5.0, 5.0, &ZIndex::between(Some(&z), None).unwrap());
+        let s = store_with(vec![a.clone(), b.clone()]);
+        let f = SelectionFrame::of(&s, [&a.id, &b.id]);
+        let cfg = TransformerConfig::default();
+        let v = vp(1.0);
+        assert_eq!(f.hit(&v, v.world_to_screen(Point::new(112.0, 102.0)), 12.0, &cfg), None);
+        // A 31 px box is tiny, a 33 px box is not (default threshold 32).
+        for (size, tiny) in [(31.0, true), (33.0, false)] {
+            let e = rect("c", 0.0, 0.0, size, size, &z);
+            let s = store_with(vec![e.clone()]);
+            let f = SelectionFrame::of(&s, [&e.id]);
+            let near_corner = v.world_to_screen(Point::new(size - 3.0, size - 3.0));
+            assert_eq!(f.hit(&v, near_corner, 12.0, &cfg).is_none(), tiny, "size {size}");
+        }
+        let line = Element::linear(
+            ElementId::new("l").unwrap(),
+            LinearKind::Line,
+            ZIndex::first(),
+            &[Point::new(0.0, 0.0), Point::new(10.0, 0.0)],
+        )
+        .unwrap();
+        let s = store_with(vec![line.clone()]);
+        let f = SelectionFrame::of(&s, [&line.id]);
+        assert_eq!(
+            f.hit(&v, v.world_to_screen(Point::new(5.0, 1.0)), 12.0, &cfg),
+            None,
+            "a tiny line is moved, not edited"
+        );
+        assert!(matches!(
+            f.hit(&v, v.world_to_screen(Point::new(20.0, 0.0)), 12.0, &cfg),
+            Some(Handle::Point { index: 1, .. })
+        ));
     }
 }

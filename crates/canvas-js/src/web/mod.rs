@@ -22,7 +22,9 @@ use crate::core::Core;
 use crate::dto::{EventDto, parse_event_kind};
 use crate::error::ApiError;
 use crate::export::{PngOptions, SvgExport};
+use crate::image::ImageSpec;
 use crate::options::{GridOptions, StageOptions, ThemeOption};
+use crate::remote::RemoteUserSpec;
 use crate::target::Renderer;
 
 /// A stage: a canvas element showing a scene that the page can read and change.
@@ -129,6 +131,16 @@ impl Stage {
         let id = name_shape(&self.shared, &mut value).ok_or_else(|| fail("a shape must be an object"))?;
         self.shared.mutate(move |st| st.core.add(value).map(|_| ()))?;
         Ok(id)
+    }
+
+    /// Adds a picture from the bytes of a PNG, JPEG or WebP file. `options` may hold `id`, `x`, `y`, `width`,
+    /// `height`, `maxSide` and `name`; without them the picture is at the origin in its natural size. Returns
+    /// the id of the new shape.
+    #[wasm_bindgen(js_name = addImage)]
+    pub fn add_image(&self, bytes: Vec<u8>, options: JsValue) -> Result<String, JsError> {
+        let spec: ImageSpec = options_from_js(options)?;
+        let id = self.shared.write(|st| st.core.add_image(&bytes, &spec))?;
+        Ok(id.as_str().to_owned())
     }
 
     /// Merge-patches a shape.
@@ -388,6 +400,14 @@ impl Stage {
     #[wasm_bindgen(js_name = setHighlights)]
     pub fn set_highlights(&self, ids: Vec<String>) -> Result<(), JsError> {
         self.shared.mutate(move |st| st.core.set_highlights(&ids))
+    }
+
+    /// The people in the room: `[{ id, name?, color, cursor?, selection?, trail? }]`. The stage draws each one's
+    /// pointer with a name label, an outline round their selection and their laser trail. Replaces the list.
+    #[wasm_bindgen(js_name = setRemoteUsers)]
+    pub fn set_remote_users(&self, users: JsValue) -> Result<(), JsError> {
+        let users: Vec<RemoteUserSpec> = from_js(users)?;
+        self.shared.mutate(move |st| st.core.set_remote_users(users))
     }
 
     /// What is drawn above the scene, for hosts that draw it themselves.

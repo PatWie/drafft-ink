@@ -236,3 +236,77 @@ fn a_frame_draws_what_is_visible() {
     s.frame_done();
     assert!(s.frame_report().in_view >= 290);
 }
+
+#[test]
+fn a_drag_on_a_tiny_selected_shape_moves_it_instead_of_resizing() {
+    let mut s = stage();
+    s.add(rect("dot", 0.0, 0.0, 10.0, 10.0)).unwrap();
+    s.add(rect("big", 200.0, 0.0, 100.0, 100.0)).unwrap();
+    s.set_selection(&["dot".to_owned()]).unwrap();
+    // World (3, 3) is screen (403, 303): 4 px from the bottom-right corner handle, which would normally win.
+    drag(&mut s, (403.0, 303.0), (443.0, 333.0));
+    assert_box(xywh(&s, "dot"), [40.0, 30.0, 10.0, 10.0]);
+    // Grabbing a handle from outside still resizes it: the corner is now at screen (450, 340).
+    drag(&mut s, (455.0, 345.0), (475.0, 365.0));
+    assert_box(xywh(&s, "dot"), [40.0, 30.0, 35.0, 35.0]);
+    // A big shape keeps its handle inside the corner.
+    s.set_selection(&["big".to_owned()]).unwrap();
+    drag(&mut s, (698.0, 398.0), (738.0, 418.0));
+    assert_box(xywh(&s, "big"), [200.0, 0.0, 138.0, 118.0]);
+}
+
+#[test]
+fn remote_users_get_a_pointer_a_selection_outline_and_a_trail_in_the_frame() {
+    use drafftink_canvas_js::{RemoteUserSpec, TrailSpec};
+    let mut s = stage();
+    s.add(rect("a", 0.0, 0.0, 100.0, 100.0)).unwrap();
+    s.build_frame().unwrap();
+    s.frame_done();
+    let paths_of = |s: &mut drafftink_canvas_js::Core| {
+        s.request_frame();
+        let n = s.build_frame().unwrap().0.encoding().n_paths;
+        s.frame_done();
+        n
+    };
+    let alone = paths_of(&mut s);
+    let ada = RemoteUserSpec {
+        id: "u1".into(),
+        name: Some("Ada".into()),
+        color: "#e03131".into(),
+        cursor: Some([150.0, 40.0]),
+        selection: vec!["a".into(), "missing".into(), "not an id!".into()],
+        trail: vec![TrailSpec { x: 10.0, y: 150.0, age_ms: 300.0 }, TrailSpec { x: 60.0, y: 150.0, age_ms: 0.0 }],
+    };
+    s.set_remote_users(vec![ada]).unwrap();
+    assert!(s.needs_frame(), "a new collaborator asks for a frame");
+    let o = s.overlay();
+    assert_eq!(o.cursors.len(), 1);
+    assert_eq!((o.remote_selections.len(), o.remote_selections[0].boxes.len()), (1, 1));
+    assert_eq!(o.remote_selections[0].color.to_lowercase(), "#e03131");
+    let with = paths_of(&mut s);
+    // Pointer arrow (2) and label chip (1), the outline (1), one trail segment and its head (2).
+    assert!(with >= alone + 6, "{alone} -> {with}");
+    // An empty list shows nobody.
+    s.set_remote_users(Vec::new()).unwrap();
+    assert!(s.overlay().cursors.is_empty() && s.overlay().remote_selections.is_empty());
+    assert_eq!(paths_of(&mut s), alone);
+    // Bad input is refused in words.
+    let bad = RemoteUserSpec {
+        id: "u".into(),
+        name: None,
+        color: "red".into(),
+        cursor: None,
+        selection: vec![],
+        trail: vec![],
+    };
+    assert!(s.set_remote_users(vec![bad]).unwrap_err().to_string().contains("colour"));
+    let nan = RemoteUserSpec {
+        id: "u".into(),
+        name: None,
+        color: "#000000".into(),
+        cursor: Some([f64::NAN, 0.0]),
+        selection: vec![],
+        trail: vec![],
+    };
+    assert!(s.set_remote_users(vec![nan]).is_err());
+}

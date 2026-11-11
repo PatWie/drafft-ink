@@ -10,7 +10,7 @@ use std::sync::Arc;
 
 use drafftink_profile::{Counter, count};
 use drafftink_scene::{
-    Color, Element, ElementKind, FileId, FillPattern, FrameData, FreehandData, Head, ImageData as ImageElem, MathData,
+    Color, Element, ElementKind, FileId, FillPattern, FreehandData, Head, ImageData as ImageElem, MathData,
     StrokeStyle, TextData,
 };
 use drafftink_sketch::{FillKind, SketchCache, SketchGeometry};
@@ -22,10 +22,7 @@ use vello::{Glyph, Scene};
 use crate::fragment::Fragment;
 use crate::images::{ImageCache, Lookup};
 use crate::options::RenderOptions;
-use crate::spec::{
-    FRAME_LABEL_GAP, FRAME_LABEL_MIN_WIDTH, FRAME_LABEL_ROOM, frame_label_spec, head_size, math_spec, sketch_input,
-    text_spec,
-};
+use crate::spec::{head_size, math_spec, sketch_input, text_spec};
 use crate::theme::{Theme, scale_alpha};
 
 /// A dashed stroke that would have more dashes than this is drawn solid.
@@ -93,7 +90,7 @@ impl ElementPainter {
             ElementKind::Text(t) => paint_text(&mut ink, e, t, typesetter),
             ElementKind::Math(m) => paint_math(&mut ink, e, m, typesetter),
             ElementKind::Image(i) => awaiting = self.paint_image(&mut ink, e, i, files),
-            ElementKind::Frame(f) => paint_frame(&mut ink, e, f, typesetter),
+            ElementKind::Frame(_) => paint_frame(&mut ink, e),
         }
         let misses = self.sketch.stats().misses;
         count(Counter::SketchRegens, misses.saturating_sub(self.sketch_misses_seen));
@@ -417,7 +414,9 @@ impl Ink {
     }
 }
 
-fn paint_frame(ink: &mut Ink, e: &Element, f: &FrameData, ts: &mut Typesetter) {
+/// A frame's box. Its name is not part of the fragment: the composer draws it at a constant size on screen
+/// (`frame_label`).
+fn paint_frame(ink: &mut Ink, e: &Element) {
     let t = &e.transform;
     let (w, h) = (t.w.max(0.0), t.h.max(0.0));
     let style = &e.style;
@@ -435,31 +434,6 @@ fn paint_frame(ink: &mut Ink, e: &Element, f: &FrameData, ts: &mut Typesetter) {
     }
     let sc = ink.color(style.stroke_color);
     ink.stroke(&path, style.stroke_width, stroke_dash(style.stroke_style, style.stroke_width), sc);
-
-    let name = f.name.as_deref().unwrap_or("Frame");
-    if name.is_empty() {
-        return;
-    }
-    let layout = ts.text(&frame_label_spec(name));
-    let clip = Rect::new(0.0, -FRAME_LABEL_ROOM, w.max(FRAME_LABEL_MIN_WIDTH), 0.0);
-    // The label is a caption in the stroke colour.
-    let c = style.stroke_color;
-    let origin = Vec2::new(0.0, -(FRAME_LABEL_GAP + layout.size.height));
-    ink.scene.push_clip_layer(Fill::NonZero, Affine::IDENTITY, &clip);
-    draw_label(ink, &layout, origin, c);
-    ink.scene.pop_layer();
-    ink.grow(Rect::new(
-        0.0,
-        origin.y.max(-FRAME_LABEL_ROOM),
-        layout.size.width.min(clip.x1),
-        origin.y + layout.size.height,
-    ));
-}
-
-/// Draws a layout in a single colour, whatever colours its runs carry.
-fn draw_label(ink: &mut Ink, layout: &drafftink_typeset::TextLayout, origin: Vec2, c: Color) {
-    let color = ink.color(c);
-    draw_runs(ink, layout, Affine::translate(origin), |_, _| color);
 }
 
 /// Draws the glyph runs of `layout` under `to`, each in the colour `color_of` gives for it.

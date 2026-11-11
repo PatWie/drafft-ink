@@ -128,7 +128,7 @@ impl Frame {
         }
         if dirty.any() || self.more_work {
             let described = overlay::to_render(&canvas.overlay());
-            paint_overlay(&mut self.overlay, &described, &view, &self.style);
+            paint_overlay(&mut self.overlay, &described, &view, &self.style, fonts.typesetter());
         }
         combine(&self.world, &self.overlay, &mut self.out);
         (&self.out, self.composer.background(store))

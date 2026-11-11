@@ -17,6 +17,9 @@ use serde_json::json;
 
 type Log = Rc<RefCell<Vec<String>>>;
 
+/// The target of a click and whether it was on the link icon.
+type Clicked = (Option<String>, bool);
+
 fn listen(core: &mut Core, kind: EventKind, selector: &str, log: &Log, stop: bool) -> u32 {
     let log = Rc::clone(log);
     let tag = selector.to_owned();
@@ -175,4 +178,34 @@ fn the_hand_mode_pans_the_wheel_pans_and_ctrl_wheel_zooms() {
     }
     s.handle_input(&m(PointerPhase::Up, 140.0, 0));
     assert!(s.camera().scroll[0] < before.scroll[0], "{:?} -> {:?}", before.scroll, s.camera().scroll);
+}
+
+#[test]
+fn a_click_on_the_link_icon_of_a_shape_is_an_event_with_the_flag_set_and_does_not_select_it() {
+    let mut s = stage();
+    s.add(rect("a", 0.0, 0.0, 100.0, 100.0)).unwrap();
+    s.update("a", json!({"link": "https://example.com"})).unwrap();
+    let seen: Rc<RefCell<Vec<Clicked>>> = Rc::default();
+    let sink = Rc::clone(&seen);
+    s.on(
+        EventKind::Click,
+        "#a".parse::<Selector>().unwrap(),
+        Box::new(move |e: &mut ElementEvent| {
+            let dto = EventDto::from(&*e);
+            sink.borrow_mut().push((dto.target, dto.link_icon));
+        }),
+    );
+    // The icon is at world (108, -8): screen (508, 292). The body is at (450, 350).
+    for (x, y) in [(508.0, 292.0), (450.0, 350.0)] {
+        press(&mut s, x, y, 0.0);
+        release(&mut s, x, y, 20.0);
+    }
+    assert_eq!(*seen.borrow(), [(Some("a".to_owned()), true), (Some("a".to_owned()), false)]);
+    assert_eq!(s.selection(), ["a"], "only the body click selected it");
+    // A selected shape shows its handles there, not an icon.
+    s.set_selection(&["a".to_owned()]).unwrap();
+    assert!(s.overlay().link_icons.is_empty());
+    s.set_selection(&[]).unwrap();
+    let icons = s.overlay().link_icons;
+    assert_eq!((icons.len(), icons[0].shape.as_str(), icons[0].to_shape), (1, "a", false));
 }

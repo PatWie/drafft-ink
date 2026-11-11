@@ -17,6 +17,7 @@ use peniko::Fill;
 use vello::Scene;
 
 use crate::cache::{FragmentCache, Outcome};
+use crate::frame_label::paint_frame_label;
 use crate::grid::{GridSpec, GridStats, paint_grid};
 use crate::options::{LodConfig, RenderOptions};
 use crate::painter::ElementPainter;
@@ -277,9 +278,11 @@ impl SceneComposer {
                     if fragment.awaiting_image.is_some() {
                         rep.images_pending += 1;
                     }
+                    let placed = to_dev * element_to_world(el);
                     if !fragment.is_empty() {
-                        scene.append(&fragment.scene, Some(to_dev * element_to_world(el)));
+                        scene.append(&fragment.scene, Some(placed));
                     }
+                    paint_frame_label(scene, el, placed, view, theme, typesetter);
                     rep.drawn += 1;
                     if let Some(t) = trace {
                         t.push(el.id.clone());
@@ -310,9 +313,11 @@ impl SceneComposer {
         let to_dev = view.world_to_device();
         for el in elements {
             let fragment = self.painter.paint(el, &self.options, typesetter, &files);
+            let placed = to_dev * element_to_world(el);
             if !fragment.is_empty() {
-                scene.append(&fragment.scene, Some(to_dev * element_to_world(el)));
+                scene.append(&fragment.scene, Some(placed));
             }
+            paint_frame_label(scene, el, placed, view, self.options.theme, typesetter);
         }
     }
 }
