@@ -15,7 +15,7 @@ use drafftink_scene::{ElementId, GroupId, SceneRead, SceneTx};
 
 pub use drafftink_geom::align::{AlignMode, Axis};
 
-use crate::group::units::{Relations, Unit, ensure_unlocked, live, primary_id, units, with_companions};
+use crate::group::units::{Reverse, ReverseLookup, Unit, ensure_unlocked, live, primary_id, units, with_companions};
 use crate::target::TargetError;
 use crate::transform::{TransformError, TransformReport, affine_all, geometry, translate_each};
 
@@ -71,7 +71,7 @@ fn unit_rect<R: SceneRead>(scene: &R, u: &Unit) -> Option<Rect> {
 }
 
 /// Everything that moves with a unit: its members, their bound text, and the children of its frames.
-fn unit_closure<R: SceneRead>(scene: &R, rel: &Relations, u: &Unit) -> Vec<ElementId> {
+fn unit_closure<R: SceneRead, L: ReverseLookup + ?Sized>(scene: &R, rel: &L, u: &Unit) -> Vec<ElementId> {
     with_companions(scene, rel, &u.elements, true)
 }
 
@@ -83,7 +83,7 @@ pub fn align<T: SceneTx>(
     to: Option<&ElementId>,
     editing: Option<&GroupId>,
 ) -> Result<TransformReport, ArrangeError> {
-    let rel = Relations::build(&*tx);
+    let rel = Reverse::of(&*tx);
     let mut us = units(&*tx, &rel, ids, editing)?;
     let reference = match to {
         Some(t) => {
@@ -105,7 +105,8 @@ pub fn align<T: SceneTx>(
         return Err(TransformError::NotFinite.into());
     };
     let deltas = align_to(&rects, mode, reference);
-    run(tx, &rel, &us, &deltas)
+    let moves = closures(&*tx, &rel, &us, &deltas);
+    run(tx, &moves)
 }
 
 /// How units are spaced by [`distribute`].
@@ -127,7 +128,7 @@ pub fn distribute<T: SceneTx>(
     if opts.gap.is_some_and(|g| !g.is_finite()) {
         return Err(ArrangeError::BadGap);
     }
-    let rel = Relations::build(&*tx);
+    let rel = Reverse::of(&*tx);
     let us = units(&*tx, &rel, ids, editing)?;
     if us.len() < crate::preflight::MIN_DISTRIBUTE_UNITS {
         return Err(ArrangeError::TooFew {
@@ -141,7 +142,8 @@ pub fn distribute<T: SceneTx>(
         None => geom_distribute(&rects, axis),
         Some(gap) => exact_gap(&rects, axis, gap),
     };
-    run(tx, &rel, &us, &deltas)
+    let moves = closures(&*tx, &rel, &us, &deltas);
+    run(tx, &moves)
 }
 
 fn exact_gap(rects: &[Rect], axis: Axis, gap: f64) -> Vec<Vec2> {
@@ -168,12 +170,20 @@ fn exact_gap(rects: &[Rect], axis: Axis, gap: f64) -> Vec<Vec2> {
     out
 }
 
-fn run<T: SceneTx>(tx: &mut T, rel: &Relations, us: &[Unit], deltas: &[Vec2]) -> Result<TransformReport, ArrangeError> {
-    let moves: Vec<(Vec<ElementId>, Vec2)> =
-        us.iter().zip(deltas).map(|(u, d)| (unit_closure(&*tx, rel, u), *d)).collect();
+/// What moves with each unit and by how much. Read before the first write: the index answering is the committed state.
+fn closures<R: SceneRead, L: ReverseLookup + ?Sized>(
+    scene: &R,
+    rel: &L,
+    us: &[Unit],
+    deltas: &[Vec2],
+) -> Vec<(Vec<ElementId>, Vec2)> {
+    us.iter().zip(deltas).map(|(u, d)| (unit_closure(scene, rel, u), *d)).collect()
+}
+
+fn run<T: SceneTx>(tx: &mut T, moves: &[(Vec<ElementId>, Vec2)]) -> Result<TransformReport, ArrangeError> {
     let all: Vec<ElementId> = moves.iter().flat_map(|(ids, _)| ids.iter().cloned()).collect();
     ensure_unlocked(&*tx, &all)?;
-    Ok(translate_each(tx, &moves)?)
+    Ok(translate_each(tx, moves)?)
 }
 
 /// The mirror axis of [`flip`].

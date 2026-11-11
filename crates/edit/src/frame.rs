@@ -24,12 +24,12 @@ use drafftink_profile::{Counter, count};
 
 use crate::binding::BindingError;
 use crate::group::units::{
-    Relations, Reverse, Unit, UnitKey, ensure_unlocked, live, primaries, units, with_companions,
+    Reverse, ReverseLookup, Unit, UnitKey, ensure_unlocked, live, primaries, units, with_companions,
 };
 use crate::lifecycle::{self, ChildPolicy, LifecycleError};
 use crate::target::TargetError;
 use crate::transform::geometry;
-use crate::zorder::{self, Place, ZOrderError, ZReport, move_block, settle_leavers};
+use crate::zorder::{self, Place, ZOrderError, ZReport, move_block};
 
 /// Why a frame operation was refused.
 #[derive(Debug, Clone, PartialEq, thiserror::Error)]
@@ -87,11 +87,15 @@ pub struct FrameClip {
 
 /// Every live frame with `clip` set, back to front, with its live children.
 pub fn clips<R: SceneRead>(scene: &R) -> Vec<FrameClip> {
-    let rel = Relations::build(scene);
+    let rel = Reverse::of(scene);
     scene
         .iter()
         .filter(|e| matches!(&e.kind, ElementKind::Frame(d) if d.clip))
-        .map(|f| FrameClip { frame: f.id.clone(), rect: f.rect(), children: rel.children(&f.id).to_vec() })
+        .map(|f| {
+            let mut children = rel.children_of(&f.id);
+            crate::group::units::sort_z(scene, &mut children);
+            FrameClip { frame: f.id.clone(), rect: f.rect(), children }
+        })
         .collect()
 }
 
@@ -103,7 +107,9 @@ fn frame_of<'a, R: SceneRead>(scene: &'a R, id: &ElementId) -> Result<&'a Elemen
 /// The live children of a frame, back to front.
 pub fn children_of<R: SceneRead>(scene: &R, frame: &ElementId) -> Result<Vec<ElementId>, FrameError> {
     frame_of(scene, frame)?;
-    Ok(Relations::build(scene).children(frame).to_vec())
+    let mut children = Reverse::of(scene).children_of(frame);
+    crate::group::units::sort_z(scene, &mut children);
+    Ok(children)
 }
 
 /// The topmost live, unlocked frame under `point`, ignoring `exclude`.
@@ -172,12 +178,14 @@ fn attach<T: SceneTx>(tx: &mut T, frame: &ElementId, all: &[ElementId]) -> Resul
 fn detach<T: SceneTx>(tx: &mut T, all: &[ElementId]) -> Result<(), FrameError> {
     let leaving: Vec<(ElementId, ElementId)> =
         all.iter().filter_map(|id| tx.get(id).and_then(|e| e.frame_id.clone()).map(|f| (id.clone(), f))).collect();
+    // Read before the first write, while the index can answer.
+    let plan = zorder::plan_leavers(&*tx, &leaving);
     for id in all {
         if tx.get(id).is_some_and(|e| e.frame_id.is_some()) {
             tx.update(id, |e| e.frame_id = None)?;
         }
     }
-    Ok(settle_leavers(tx, &leaving)?)
+    Ok(plan.apply(tx)?)
 }
 
 fn unit_ids(u: &Unit) -> impl Iterator<Item = &ElementId> {
@@ -192,20 +200,35 @@ pub fn add_to_frame<T: SceneTx>(tx: &mut T, frame: &ElementId, ids: &[ElementId]
     if f.locked {
         return Err(FrameError::Target(TargetError::Locked(vec![frame.clone()])));
     }
-    let rel = Relations::build(&*tx);
-    let prim = primaries(&*tx, ids)?;
-    let us = units(&*tx, &rel, &prim, None)?;
+    let plan = plan_add(&*tx, frame, ids)?;
+    apply_add(tx, frame, plan)
+}
+
+/// What [`add_to_frame`] will do, worked out before the first write.
+struct AddPlan {
+    added: Vec<ElementId>,
+    skipped: Vec<Skipped>,
+    /// The members with their bound text.
+    all: Vec<ElementId>,
+}
+
+/// The rules of [`add_to_frame`]. `frame` need not be in `scene` yet (a frame that [`wrap`] is about to insert has no
+/// children). Reads only: the index answers while the transaction has not written.
+fn plan_add<R: SceneRead>(scene: &R, frame: &ElementId, ids: &[ElementId]) -> Result<AddPlan, FrameError> {
+    let rel = Reverse::of(scene);
+    let prim = primaries(scene, ids)?;
+    let us = units(scene, &rel, &prim, None)?;
     let mut skipped = Vec::new();
     let mut plain: Vec<&Unit> = Vec::new();
     let mut arrows: Vec<&Unit> = Vec::new();
     for u in &us {
         let given = |u: &Unit| -> Vec<ElementId> { prim.iter().filter(|p| u.elements.contains(p)).cloned().collect() };
-        let has_frame = u.elements.iter().any(|i| tx.get(i).is_some_and(|e| e.tag() == Kind::Frame));
+        let has_frame = u.elements.iter().any(|i| scene.get(i).is_some_and(|e| e.tag() == Kind::Frame));
         if has_frame || unit_ids(u).any(|i| i == frame) {
             let reason =
                 if matches!(u.key, UnitKey::Element(_)) { SkipReason::IsFrame } else { SkipReason::GroupContainsFrame };
             skipped.extend(given(u).into_iter().map(|id| Skipped { id, reason }));
-        } else if matches!(&u.key, UnitKey::Element(x) if tx.get(x).is_some_and(|e| e.tag().is_linear())) {
+        } else if matches!(&u.key, UnitKey::Element(x) if scene.get(x).is_some_and(|e| e.tag().is_linear())) {
             arrows.push(u);
         } else {
             plain.push(u);
@@ -213,9 +236,9 @@ pub fn add_to_frame<T: SceneTx>(tx: &mut T, frame: &ElementId, ids: &[ElementId]
     }
     let mut members: BTreeSet<ElementId> = plain.iter().flat_map(|u| u.elements.iter().cloned()).collect();
     let mut anchors: BTreeSet<ElementId> = members.clone();
-    anchors.extend(rel.children(frame).iter().cloned());
-    let attached = |tx: &T, arrow: &ElementId| -> bool {
-        let Some(a) = tx.get(arrow) else { return false };
+    anchors.extend(rel.children_of(frame));
+    let attached = |arrow: &ElementId| -> bool {
+        let Some(a) = scene.get(arrow) else { return false };
         let ends = geometry::world_points(a).map(|p| [p.first().copied(), p.last().copied()]).unwrap_or([None, None]);
         let bound = a.binding_targets();
         (0..2).any(|i| {
@@ -223,14 +246,14 @@ pub fn add_to_frame<T: SceneTx>(tx: &mut T, frame: &ElementId, ids: &[ElementId]
                 || ends.get(i).copied().flatten().is_some_and(|p| {
                     anchors
                         .iter()
-                        .filter_map(|m| tx.get(m))
+                        .filter_map(|m| scene.get(m))
                         .any(|m| aabb::contains_point(&geometry::world_bounds(m), p))
                 })
         })
     };
     for u in arrows {
         match u.elements.first() {
-            Some(a) if attached(&*tx, a) => {
+            Some(a) if attached(a) => {
                 members.insert(a.clone());
             }
             _ => skipped.extend(
@@ -242,18 +265,22 @@ pub fn add_to_frame<T: SceneTx>(tx: &mut T, frame: &ElementId, ids: &[ElementId]
         }
     }
     let mut added: Vec<ElementId> = members.into_iter().collect();
-    crate::group::units::sort_z(&*tx, &mut added);
-    let all = with_companions(&*tx, &rel, &added, false);
-    ensure_unlocked(&*tx, &all)?;
-    let z = attach(tx, frame, &all)?;
-    Ok(AddReport { added, skipped, z })
+    crate::group::units::sort_z(scene, &mut added);
+    let all = with_companions(scene, &rel, &added, false);
+    ensure_unlocked(scene, &all)?;
+    Ok(AddPlan { added, skipped, all })
+}
+
+fn apply_add<T: SceneTx>(tx: &mut T, frame: &ElementId, plan: AddPlan) -> Result<AddReport, FrameError> {
+    let z = attach(tx, frame, &plan.all)?;
+    Ok(AddReport { added: plan.added, skipped: plan.skipped, z })
 }
 
 /// Takes the units of `ids` out of their frames and returns them. Their place in the z-order stays below the frame:
 /// they move just below the lowest remaining child, so the children of the frame stay one contiguous block (the
 /// command catalog says "z-order unchanged"; this is the only change, and only among the frame's own block).
 pub fn remove_from_frame<T: SceneTx>(tx: &mut T, ids: &[ElementId]) -> Result<Vec<ElementId>, FrameError> {
-    let rel = Relations::build(&*tx);
+    let rel = Reverse::of(&*tx);
     let prim = primaries(&*tx, ids)?;
     let us = units(&*tx, &rel, &prim, None)?;
     let members: Vec<ElementId> = us
@@ -270,8 +297,8 @@ pub fn remove_from_frame<T: SceneTx>(tx: &mut T, ids: &[ElementId]) -> Result<Ve
 /// Takes all children out of `frame`. Returns them.
 pub fn remove_all_children<T: SceneTx>(tx: &mut T, frame: &ElementId) -> Result<Vec<ElementId>, FrameError> {
     frame_of(&*tx, frame)?;
-    let rel = Relations::build(&*tx);
-    let all = rel.children(frame).to_vec();
+    let mut all = Reverse::of(&*tx).children_of(frame);
+    crate::group::units::sort_z(&*tx, &mut all);
     ensure_unlocked(&*tx, &all)?;
     detach(tx, &all)?;
     let mut members: Vec<ElementId> =
@@ -280,7 +307,12 @@ pub fn remove_all_children<T: SceneTx>(tx: &mut T, frame: &ElementId) -> Result<
     Ok(members)
 }
 
-fn inside_units<R: SceneRead>(scene: &R, rel: &Relations, rect: &Rect, candidates: &[ElementId]) -> Vec<ElementId> {
+fn inside_units<R: SceneRead, L: ReverseLookup + ?Sized>(
+    scene: &R,
+    rel: &L,
+    rect: &Rect,
+    candidates: &[ElementId],
+) -> Vec<ElementId> {
     let Ok(us) = units(scene, rel, candidates, None) else { return Vec::new() };
     let mut out = Vec::new();
     for u in us {
@@ -318,7 +350,7 @@ pub fn capture_contained<T: SceneTx>(tx: &mut T, frame: &ElementId) -> Result<Ad
         return Err(FrameError::Target(TargetError::Locked(vec![frame.clone()])));
     }
     let rect = f.rect();
-    let rel = Relations::build(&*tx);
+    let rel = Reverse::of(&*tx);
     let candidates = free_candidates(&*tx, frame);
     let mut added = inside_units(&*tx, &rel, &rect, &candidates);
     crate::group::units::sort_z(&*tx, &mut added);
@@ -365,7 +397,7 @@ pub fn wrap<T: SceneTx, I: IdSource>(
     if !opts.padding.is_finite() || opts.padding < 0.0 {
         return Err(FrameError::BadPadding);
     }
-    let rel = Relations::build(&*tx);
+    let rel = Reverse::of(&*tx);
     let prim = primaries(&*tx, ids)?;
     let us = units(&*tx, &rel, &prim, None)?;
     let members: Vec<ElementId> = us.iter().flat_map(|u| u.elements.iter().cloned()).collect();
@@ -399,8 +431,10 @@ pub fn wrap<T: SceneTx, I: IdSource>(
         Element::new(id.clone(), ElementKind::Frame(FrameData { name: opts.name.clone(), clip: true }), index)
             .with_bounds(bounds.x0 - pad, bounds.y0 - pad, bounds.width() + 2.0 * pad, bounds.height() + 2.0 * pad);
     frame.style = Style { seed: id_source.seed(), ..Style::default() };
+    // The members are worked out before the frame is written: after a write the index cannot answer.
+    let plan = plan_add(&*tx, &id, ids)?;
     tx.insert(frame)?;
-    let add = add_to_frame(tx, &id, ids)?;
+    let add = apply_add(tx, &id, plan)?;
     Ok(WrapReport { frame: id, add })
 }
 
@@ -410,8 +444,11 @@ pub fn unwrap<T: SceneTx>(tx: &mut T, frame: &ElementId) -> Result<Vec<ElementId
     if f.locked {
         return Err(FrameError::Target(TargetError::Locked(vec![frame.clone()])));
     }
+    // The delete is read first: it needs the index, and the children leaving the frame is the first write. It does not
+    // matter that its list of children to release is read before they left.
+    let delete = lifecycle::plan_delete(&*tx, std::slice::from_ref(frame), ChildPolicy::Release)?;
     let children = remove_all_children(tx, frame)?;
-    lifecycle::delete(tx, std::slice::from_ref(frame), ChildPolicy::Release)?;
+    lifecycle::apply_delete(tx, delete)?;
     Ok(children)
 }
 
@@ -518,11 +555,15 @@ pub fn update_membership_after_move<T: SceneTx>(
 pub fn recompute_after_resize<T: SceneTx>(tx: &mut T, frame: &ElementId) -> Result<MembershipReport, FrameError> {
     let f = frame_of(&*tx, frame)?;
     let rect = f.rect();
-    let rel = Relations::build(&*tx);
+    // Read first, write after (the index is the committed state, and a transaction that has written offers none).
+    // Detaching the children that left changes nothing the second question asks: groups and bound text stay as they
+    // are, and the children that left do not lie inside the frame, so they cannot join it again.
+    let rel = Reverse::of(&*tx);
     let mut report = MembershipReport::default();
-    let gone: Vec<ElementId> = rel
-        .children(frame)
-        .iter()
+    let mut children = rel.children_of(frame);
+    crate::group::units::sort_z(&*tx, &mut children);
+    let gone: Vec<ElementId> = children
+        .into_iter()
         .filter(|i| {
             tx.get(i).is_some_and(|e| {
                 !e.locked
@@ -530,18 +571,16 @@ pub fn recompute_after_resize<T: SceneTx>(tx: &mut T, frame: &ElementId) -> Resu
                     && !aabb::intersects(&geometry::world_bounds(e), &rect)
             })
         })
-        .cloned()
         .collect();
     let gone_all = with_companions(&*tx, &rel, &gone, false);
-    detach(tx, &gone_all)?;
-    report.left = gone;
-    let rel = Relations::build(&*tx);
     let candidates = free_candidates(&*tx, frame);
     let mut joined = inside_units(&*tx, &rel, &rect, &candidates);
     crate::group::units::sort_z(&*tx, &mut joined);
+    let joined_all = with_companions(&*tx, &rel, &joined, false);
+    detach(tx, &gone_all)?;
+    report.left = gone;
     if !joined.is_empty() {
-        let all = with_companions(&*tx, &rel, &joined, false);
-        attach(tx, frame, &all)?;
+        attach(tx, frame, &joined_all)?;
         report.joined = joined.into_iter().map(|j| (j, frame.clone())).collect();
     }
     Ok(report)

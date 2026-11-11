@@ -16,7 +16,7 @@ use super::{
     AtHit, ConnectedTo, Field, LinkDirection, MAX_LIMIT, OneOrMany, Order, Query, QueryCtx, QueryError, QueryOpts,
     RegionFilter, StyleFilter, TextFilter, resolve_ref, run_query,
 };
-use crate::group::units::{Relations, is_label, primary_id, sort_z};
+use crate::group::units::{Reverse, ReverseLookup, is_label, primary_id, sort_z};
 
 /// Every field of `describe`, in the order of the catalog.
 pub const ALL_FIELDS: [Field; 15] = [
@@ -139,9 +139,9 @@ pub fn all_matches<R: SceneRead>(scene: &R, q: &Query, ctx: &QueryCtx<'_>) -> Re
 /// hit counts as a whole group, else the element alone.
 pub fn hit_members<R: SceneRead>(scene: &R, hit: &AtHit) -> Vec<ElementId> {
     let Some(g) = &hit.group else { return vec![hit.id.clone()] };
-    let rel = Relations::build(scene);
+    let rel = Reverse::of(scene);
     let mut v: Vec<ElementId> = rel
-        .members(g)
+        .members_of(g)
         .iter()
         .filter(|m| scene.get(m).is_some_and(|e| !is_label(scene, e)))
         .map(|m| primary_id(scene, m))

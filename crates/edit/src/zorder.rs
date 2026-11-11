@@ -17,7 +17,7 @@ use std::collections::BTreeSet;
 
 use drafftink_scene::{Element, ElementId, GroupId, IndexError, Kind, SceneRead, SceneTx, StoreError, ZIndex};
 
-use crate::group::units::{Relations, UnitKey, ensure_unlocked, unit_key, units, with_companions};
+use crate::group::units::{Reverse, ReverseLookup, UnitKey, ensure_unlocked, unit_key, units, with_companions};
 use crate::target::TargetError;
 
 /// Keys longer than this make the whole order get rewritten with short keys.
@@ -258,7 +258,12 @@ fn live_frame<'a, R: SceneRead>(scene: &'a R, id: &ElementId) -> Option<&'a Elem
     scene.get(id).filter(|f| !f.deleted && f.tag() == Kind::Frame)
 }
 
-fn scope_of<R: SceneRead>(scene: &R, rel: &Relations, e: &Element, editing: Option<&GroupId>) -> Scope {
+fn scope_of<R: SceneRead, L: ReverseLookup + ?Sized>(
+    scene: &R,
+    rel: &L,
+    e: &Element,
+    editing: Option<&GroupId>,
+) -> Scope {
     if let Some(g) = editing
         && rel.is_group(g)
         && e.group_ids.contains(g)
@@ -274,7 +279,12 @@ fn scope_of<R: SceneRead>(scene: &R, rel: &Relations, e: &Element, editing: Opti
 }
 
 /// The block key of `e` in `scope`, or `None` when `e` is outside the scope.
-fn block_key<R: SceneRead>(scene: &R, rel: &Relations, e: &Element, scope: &Scope) -> Option<UnitKey> {
+fn block_key<R: SceneRead, L: ReverseLookup + ?Sized>(
+    scene: &R,
+    rel: &L,
+    e: &Element,
+    scope: &Scope,
+) -> Option<UnitKey> {
     let eff = effective(scene, e);
     match scope {
         Scope::Group(g) => {
@@ -342,7 +352,7 @@ pub fn z_order<T: SceneTx>(
     op: ZOp,
     editing: Option<&GroupId>,
 ) -> Result<ZReport, ZOrderError> {
-    let rel = Relations::build(&*tx);
+    let rel = Reverse::of(&*tx);
     let us = units(&*tx, &rel, ids, editing)?;
     let all_ids: Vec<ElementId> = us.iter().flat_map(|u| u.elements.iter().cloned()).collect();
     let touched = with_companions(&*tx, &rel, &all_ids, true);
@@ -405,44 +415,87 @@ pub fn z_order<T: SceneTx>(
 /// Puts elements that just left a frame (`(element, frame)` pairs) where they do not disturb the frame's block of
 /// children: just below the lowest remaining child (or the frame), or, when the frame is inside a group, just
 /// above that group. The relative order to everything outside the frame's block is kept.
+///
+/// Call it after the leavers were written. The relations are read after that write, which a transaction answers
+/// with a pass over the scene; a caller that can do the reading first uses [`plan_leavers`].
 pub(crate) fn settle_leavers<T: SceneTx>(tx: &mut T, left: &[(ElementId, ElementId)]) -> Result<(), ZOrderError> {
+    plan_leavers(&*tx, left).apply(tx)
+}
+
+/// Where the leavers of each frame go, read from the scene as it is when the plan is made. Made before the leavers
+/// are written, it uses the committed index; the children that are about to leave are left out of the children
+/// that remain.
+pub(crate) fn plan_leavers<R: SceneRead>(scene: &R, left: &[(ElementId, ElementId)]) -> LeaverPlan {
+    if left.is_empty() {
+        return LeaverPlan { frames: Vec::new() };
+    }
     let mut frames: Vec<&ElementId> = left.iter().map(|(_, f)| f).collect();
     frames.sort();
     frames.dedup();
+    let leaving: BTreeSet<&ElementId> = left.iter().map(|(i, _)| i).collect();
+    let rel = Reverse::of(scene);
+    let mut plans = Vec::new();
     for f in frames {
-        let rel = Relations::build(&*tx);
-        let Some(frame_el) = tx.get(f).filter(|e| !e.deleted) else { continue };
+        let Some(frame_el) = scene.get(f).filter(|e| !e.deleted) else { continue };
         let moving: Vec<ElementId> = left.iter().filter(|(_, g)| g == f).map(|(i, _)| i.clone()).collect();
-        let moving = with_companions(&*tx, &rel, &moving, false);
-        let place = match rel.stack(frame_el).last() {
-            Some(outer) => rel
-                .members(outer)
-                .iter()
-                .filter_map(|m| tx.get(m))
-                .max_by(|a, b| a.index.cmp(&b.index).then_with(|| a.id.cmp(&b.id)))
-                .map(|e| Place::Above(e.id.clone())),
-            None => Some(Place::Below(rel.children(f).first().cloned().unwrap_or_else(|| f.clone()))),
-        };
-        if let Some(place) = place {
-            let anchor = match &place {
-                Place::Below(a) | Place::Above(a) => a,
-                Place::AtTopmost => continue,
+        let moving = with_companions(scene, &rel, &moving, false);
+        let outer_members = rel.stack(frame_el).last().map(|outer| rel.members_of(outer));
+        let children: Vec<ElementId> = rel.children_of(f).into_iter().filter(|c| !leaving.contains(c)).collect();
+        plans.push(FramePlan { frame: f.clone(), moving, outer_members, children });
+    }
+    LeaverPlan { frames: plans }
+}
+
+/// The leavers of one frame and what decides where they go.
+struct FramePlan {
+    frame: ElementId,
+    moving: Vec<ElementId>,
+    /// The members of the outermost group around the frame, if there is one.
+    outer_members: Option<Vec<ElementId>>,
+    /// The children that stay.
+    children: Vec<ElementId>,
+}
+
+/// See [`plan_leavers`].
+pub(crate) struct LeaverPlan {
+    frames: Vec<FramePlan>,
+}
+
+impl LeaverPlan {
+    /// Moves the leavers. The anchors are chosen now, from the z keys the elements have now.
+    pub(crate) fn apply<T: SceneTx>(self, tx: &mut T) -> Result<(), ZOrderError> {
+        for FramePlan { frame, moving, outer_members, children } in self.frames {
+            let live = |ids: &[ElementId]| -> Vec<(ZIndex, ElementId)> {
+                ids.iter().filter_map(|m| tx.get(m)).map(|e| (e.index.clone(), e.id.clone())).collect()
             };
-            if !moving.contains(anchor) {
-                move_block(tx, &moving, &place)?;
+            let place = match outer_members {
+                Some(members) => live(&members).into_iter().max().map(|(_, id)| Place::Above(id)),
+                None => {
+                    let lowest = live(&children).into_iter().min().map(|(_, id)| id);
+                    Some(Place::Below(lowest.unwrap_or(frame)))
+                }
+            };
+            if let Some(place) = place {
+                let anchor = match &place {
+                    Place::Below(a) | Place::Above(a) => a,
+                    Place::AtTopmost => continue,
+                };
+                if !moving.contains(anchor) {
+                    move_block(tx, &moving, &place)?;
+                }
             }
         }
+        Ok(())
     }
-    Ok(())
 }
 
 /// The element above which a new block can be inserted next to `start` without splitting a group or the block of
 /// children of a frame: `start` itself, or the frame it is a child of, or the topmost member of one of its
 /// groups, repeated until nothing encloses it. `joins_frame` and `joins_group` say which frames and groups the new
 /// block will belong to (it may then sit inside them).
-pub(crate) fn lift_above_enclosures<R: SceneRead>(
+pub(crate) fn lift_above_enclosures<R: SceneRead, L: ReverseLookup + ?Sized>(
     scene: &R,
-    rel: &Relations,
+    rel: &L,
     start: &Element,
     joins_frame: &dyn Fn(&ElementId) -> bool,
     joins_group: &dyn Fn(&GroupId) -> bool,
@@ -461,7 +514,7 @@ pub(crate) fn lift_above_enclosures<R: SceneRead>(
                     break;
                 }
                 let topmost = rel
-                    .members(g)
+                    .members_of(g)
                     .iter()
                     .filter_map(|m| scene.get(m))
                     .max_by(|a, b| a.index.cmp(&b.index).then_with(|| a.id.cmp(&b.id)));

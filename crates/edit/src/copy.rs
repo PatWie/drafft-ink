@@ -228,7 +228,8 @@ pub(crate) fn insert<T: SceneTx>(tx: &mut T, copies: &mut Copies, at: Placement<
     }
     // A binding to an element that was not copied is dropped.
     binding::remap_bindings(tx, &new_ids, &copies.ids)?;
-    let arrows = binding::update_bound_arrows(tx, &new_ids)?;
+    // Only the copies bind to the copies, so there is nobody else to look for.
+    let arrows = binding::update_bound_arrows_from(tx, &new_ids, BTreeSet::new())?;
     Ok(Inserted { arrows })
 }
 

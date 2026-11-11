@@ -24,7 +24,7 @@ use serde_json::Value;
 
 use crate::binding::{self, BindingError};
 use crate::group::name_key;
-use crate::group::units::{Relations, primaries, with_companions};
+use crate::group::units::{Reverse, primaries, with_companions};
 use crate::query::element_bounds;
 use crate::target::TargetError;
 
@@ -70,7 +70,7 @@ pub fn members<R: SceneRead>(scene: &R, ids: &[ElementId]) -> Result<Vec<Element
         return Err(LibraryError::NoTarget);
     }
     let given = primaries(scene, ids)?;
-    let rel = Relations::build(scene);
+    let rel = Reverse::of(scene);
     Ok(with_companions(scene, &rel, &given, true))
 }
 

@@ -97,6 +97,23 @@ pub fn free_ends_bound_to<T: SceneTx>(tx: &mut T, deleted: &[ElementId]) -> Resu
     free_ends_bound_to_with(tx, deleted, None)
 }
 
+/// [`free_ends_bound_to`] for a caller that took the arrows bound to `deleted` before it wrote
+/// ([`arrows_bound_to`](super::arrows_bound_to)): no lookup is made here, so the cost follows `candidates`.
+pub fn free_ends_bound_to_from<T: SceneTx>(
+    tx: &mut T,
+    deleted: &[ElementId],
+    candidates: &BTreeSet<ElementId>,
+) -> Result<Vec<ElementId>, BindingError> {
+    let set: HashSet<&ElementId> = deleted.iter().collect();
+    let mut changed = Vec::new();
+    for id in candidates {
+        if rewrite_bindings(tx, id, |_, b| (!set.contains(&b.target)).then(|| b.clone()))? {
+            changed.push(id.clone());
+        }
+    }
+    Ok(changed)
+}
+
 /// [`free_ends_bound_to`] using the committed reverse index. Arrows bound earlier in the same transaction are
 /// not found.
 pub fn free_ends_bound_to_with<T: SceneTx>(

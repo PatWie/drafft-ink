@@ -12,7 +12,7 @@ use drafftink_geom::kurbo::{Point, Rect};
 use drafftink_scene::{ElementId, GroupId, SceneRead};
 
 use super::{ClickMode, ClickOpts, ClickTarget, Selection, SelectionError, select_ids};
-use crate::group::units::{Relations, UnitKey, primaries, unit_key, units};
+use crate::group::units::{Reverse, ReverseLookup, UnitKey, primaries, unit_key, units};
 use crate::query::AtHit;
 use crate::transform::common_bounds;
 
@@ -38,7 +38,7 @@ pub fn pick<R: SceneRead>(
     targets: &[ElementId],
     opts: ClickOpts,
 ) -> Result<Pick, SelectionError> {
-    let rel = Relations::build(scene);
+    let rel = Reverse::of(scene);
     pick_with(scene, &rel, sel, targets, opts)
 }
 
@@ -49,17 +49,17 @@ pub fn pick_group<R: SceneRead>(
     group: &GroupId,
     opts: ClickOpts,
 ) -> Result<Pick, SelectionError> {
-    let rel = Relations::build(scene);
+    let rel = Reverse::of(scene);
     if !rel.is_group(group) {
         return Err(SelectionError::NoGroup);
     }
-    let members = rel.members(group).to_vec();
+    let members = rel.members_of(group);
     pick_with(scene, &rel, sel, &members, opts)
 }
 
 fn pick_with<R: SceneRead>(
     scene: &R,
-    rel: &Relations,
+    rel: &impl ReverseLookup,
     sel: &Selection,
     targets: &[ElementId],
     opts: ClickOpts,
@@ -131,10 +131,10 @@ fn sorted(mut v: Vec<ElementId>) -> Vec<ElementId> {
 }
 
 /// The innermost group that all `ids` share as their first group (the group a deep selection enters).
-fn innermost_shared<R: SceneRead>(scene: &R, rel: &Relations, ids: &BTreeSet<ElementId>) -> Option<GroupId> {
+fn innermost_shared<R: SceneRead>(scene: &R, rel: &impl ReverseLookup, ids: &BTreeSet<ElementId>) -> Option<GroupId> {
     let mut common: Option<GroupId> = None;
     for id in ids {
-        let g = scene.get(id).and_then(|e| rel.stack(e).next().cloned())?;
+        let g = scene.get(id).and_then(|e| rel.stack(e).first().map(|g| (*g).clone()))?;
         match &common {
             None => common = Some(g),
             Some(c) if *c == g => {}
@@ -149,9 +149,9 @@ fn contains_point(r: &Rect, p: Point) -> bool {
 }
 
 /// Whether `point` lies inside the bounds of the editing group (false without one).
-pub fn inside_editing_group<R: SceneRead>(scene: &R, rel: &Relations, sel: &Selection, point: Point) -> bool {
+pub fn inside_editing_group<R: SceneRead>(scene: &R, rel: &impl ReverseLookup, sel: &Selection, point: Point) -> bool {
     let Some(g) = sel.editing_group.as_ref().filter(|g| rel.is_group(g)) else { return false };
-    common_bounds(scene, rel.members(g)).is_some_and(|b| contains_point(&b, point))
+    common_bounds(scene, &rel.members_of(g)).is_some_and(|b| contains_point(&b, point))
 }
 
 /// What a click at `point` hits. `hits` are the elements under the point, top first
@@ -167,7 +167,7 @@ pub fn click_target<R: SceneRead>(
     deep: bool,
     cycle: bool,
 ) -> ClickTarget {
-    let rel = Relations::build(scene);
+    let rel = Reverse::of(scene);
     let chosen = if cycle { cycle_pick(scene, &rel, sel, hits, deep) } else { hits.first() };
     match chosen {
         Some(h) => ClickTarget::Element(h.id.clone()),
@@ -177,7 +177,7 @@ pub fn click_target<R: SceneRead>(
 
 fn cycle_pick<'a, R: SceneRead>(
     scene: &R,
-    rel: &Relations,
+    rel: &impl ReverseLookup,
     sel: &Selection,
     hits: &'a [AtHit],
     deep: bool,

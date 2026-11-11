@@ -15,11 +15,13 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use drafftink_geom::kurbo::Vec2;
-use drafftink_scene::{Element, ElementId, GroupId, IdSource, Kind, SceneTx, StoreError};
+use drafftink_scene::{Element, ElementId, GroupId, IdSource, Kind, SceneRead, SceneTx, StoreError};
 
 use crate::binding::{self, BindingError};
 use crate::copy::{self, CopyError, Placement};
-use crate::group::units::{Relations, ensure_unlocked, primaries, sort_z, units, with_companions};
+use crate::group::units::{
+    Relations, Reverse, ReverseLookup, ensure_unlocked, primaries, sort_z, units, with_companions,
+};
 use crate::target::TargetError;
 use crate::zorder::{self, ZOrderError};
 
@@ -79,31 +81,59 @@ pub fn delete<T: SceneTx>(
     ids: &[ElementId],
     children: ChildPolicy,
 ) -> Result<DeleteReport, LifecycleError> {
+    let plan = plan_delete(&*tx, ids, children)?;
+    apply_delete(tx, plan)
+}
+
+/// What [`delete`] will do, read from the scene before the first write (a transaction that has not written answers
+/// from the committed index; one that has, with a pass over the scene).
+pub(crate) struct DeletePlan {
+    all: Vec<ElementId>,
+    released: Vec<ElementId>,
+    /// Live arrows bound to something that goes, and not going themselves.
+    bound: BTreeSet<ElementId>,
+}
+
+pub(crate) fn plan_delete<R: SceneRead>(
+    scene: &R,
+    ids: &[ElementId],
+    children: ChildPolicy,
+) -> Result<DeletePlan, LifecycleError> {
     if ids.is_empty() {
         return Err(LifecycleError::NoTarget);
     }
-    let rel = Relations::build(&*tx);
+    let rel = Reverse::of(scene);
     let mut given: Vec<ElementId> = Vec::new();
     for id in ids {
-        match tx.get(id) {
+        match scene.get(id) {
             None => return Err(LifecycleError::Target(TargetError::NotFound(id.clone()))),
             Some(e) if !e.deleted => given.push(id.clone()),
             Some(_) => {}
         }
     }
     let with_children = children == ChildPolicy::Delete;
-    let all = with_companions(&*tx, &rel, &given, with_children);
-    ensure_unlocked(&*tx, &all)?;
+    let all = with_companions(scene, &rel, &given, with_children);
+    ensure_unlocked(scene, &all)?;
+    // The arrows bound to what goes. (Arrows that are deleted too are not live afterwards and keep their bindings, as
+    // a pass over the live ones left them.)
+    let mut bound = binding::arrows_bound_to(scene, &all);
+    bound.retain(|id| !all.contains(id));
     let mut released: Vec<ElementId> = Vec::new();
     if !with_children {
         for g in &given {
-            if tx.get(g).is_some_and(|e| e.tag() == Kind::Frame) {
-                let kids = with_companions(&*tx, &rel, rel.children(g), false);
-                ensure_unlocked(&*tx, &kids)?;
+            if scene.get(g).is_some_and(|e| e.tag() == Kind::Frame) {
+                let kids = with_companions(scene, &rel, &rel.children_of(g), false);
+                ensure_unlocked(scene, &kids)?;
                 released.extend(kids);
             }
         }
     }
+    sort_z(scene, &mut released);
+    Ok(DeletePlan { all, released, bound })
+}
+
+pub(crate) fn apply_delete<T: SceneTx>(tx: &mut T, plan: DeletePlan) -> Result<DeleteReport, LifecycleError> {
+    let DeletePlan { all, released, bound } = plan;
     for id in &all {
         tx.update(id, |e| e.deleted = true)?;
     }
@@ -112,10 +142,9 @@ pub fn delete<T: SceneTx>(
             tx.update(id, |e| e.frame_id = None)?;
         }
     }
-    sort_z(&*tx, &mut released);
     // Arrows bound to a deleted element keep their position and become free at that end.
-    let freed = binding::free_ends_bound_to(tx, &all)?;
-    let arrows = if all.is_empty() { Vec::new() } else { binding::update_bound_arrows(tx, &all)? };
+    let freed = binding::free_ends_bound_to_from(tx, &all, &bound)?;
+    let arrows = if all.is_empty() { Vec::new() } else { binding::update_bound_arrows_from(tx, &all, bound)? };
     Ok(DeleteReport { deleted: all, released, freed, arrows })
 }
 
@@ -293,7 +322,7 @@ pub fn lock<T: SceneTx>(tx: &mut T, ids: &[ElementId], locked: Option<bool>) -> 
     if ids.is_empty() {
         return Err(LifecycleError::NoTarget);
     }
-    let rel = Relations::build(&*tx);
+    let rel = Reverse::of(&*tx);
     let us = units(&*tx, &rel, ids, None)?;
     let members: Vec<ElementId> = us.iter().flat_map(|u| u.elements.iter().cloned()).collect();
     let all = with_companions(&*tx, &rel, &members, false);
@@ -344,7 +373,7 @@ pub fn duplicate<T: SceneTx, I: IdSource>(
     if !opts.offset.x.is_finite() || !opts.offset.y.is_finite() {
         return Err(LifecycleError::NotFinite);
     }
-    let rel = Relations::build(&*tx);
+    let rel = Reverse::of(&*tx);
     let given = primaries(&*tx, ids)?;
     let all = with_companions(&*tx, &rel, &given, true);
     ensure_unlocked(&*tx, &all)?;

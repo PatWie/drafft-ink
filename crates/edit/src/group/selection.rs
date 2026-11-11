@@ -27,7 +27,7 @@ mod pick;
 
 pub use pick::{Pick, click_target, inside_editing_group, keeps_multi_selection, pick, pick_group};
 
-use super::units::{Relations, UnitKey, is_label, live, primary_id, sort_z, unit_key, units};
+use super::units::{Reverse, ReverseLookup, UnitKey, is_label, live, primary_id, sort_z, unit_key, units};
 use crate::target::TargetError;
 use crate::transform::geometry;
 
@@ -109,13 +109,13 @@ pub enum SelectionError {
 /// Builds a normalized selection from leaf ids: bound text becomes its container, deleted ids are dropped, the
 /// children of a selected frame are dropped, and `groups` is derived. Locked elements are kept.
 pub fn select_ids<R: SceneRead>(scene: &R, ids: &[ElementId], editing: Option<&GroupId>) -> Selection {
-    let rel = Relations::build(scene);
+    let rel = Reverse::of(scene);
     normalize(scene, &rel, ids.iter().cloned().collect(), editing.cloned())
 }
 
 fn normalize<R: SceneRead>(
     scene: &R,
-    rel: &Relations,
+    rel: &impl ReverseLookup,
     raw: BTreeSet<ElementId>,
     editing: Option<GroupId>,
 ) -> Selection {
@@ -146,7 +146,7 @@ fn normalize<R: SceneRead>(
 /// The groups selected as a unit by `ids` at the level of `editing`.
 fn derive_groups<R: SceneRead>(
     scene: &R,
-    rel: &Relations,
+    rel: &impl ReverseLookup,
     ids: &BTreeSet<ElementId>,
     editing: Option<&GroupId>,
 ) -> BTreeSet<GroupId> {
@@ -155,7 +155,7 @@ fn derive_groups<R: SceneRead>(
         let Some(e) = scene.get(id) else { continue };
         if let UnitKey::Group(g) = unit_key(rel, e, editing)
             && !out.contains(&g)
-            && rel.members(&g).iter().all(|m| ids.contains(&primary_id(scene, m)))
+            && rel.members_of(&g).iter().all(|m| ids.contains(&primary_id(scene, m)))
         {
             out.insert(g);
         }
@@ -166,7 +166,7 @@ fn derive_groups<R: SceneRead>(
 /// Drops deleted and missing ids, locked elements, and an editing group that is no longer a group. Use it after
 /// a delete or a lock (inside an editing group the selection falls back to the remaining members).
 pub fn prune<R: SceneRead>(scene: &R, sel: &Selection) -> Selection {
-    let rel = Relations::build(scene);
+    let rel = Reverse::of(scene);
     let ids: BTreeSet<ElementId> =
         sel.ids.iter().filter(|i| scene.get(i).is_some_and(|e| !e.locked)).cloned().collect();
     normalize(scene, &rel, ids, sel.editing_group.clone())
@@ -179,10 +179,10 @@ pub fn in_z_order<R: SceneRead>(scene: &R, sel: &Selection) -> Vec<ElementId> {
     v
 }
 
-fn innermost_shared(scene: &impl SceneRead, rel: &Relations, ids: &BTreeSet<ElementId>) -> Option<GroupId> {
+fn innermost_shared(scene: &impl SceneRead, rel: &impl ReverseLookup, ids: &BTreeSet<ElementId>) -> Option<GroupId> {
     let mut common: Option<GroupId> = None;
     for id in ids {
-        let g = scene.get(id).and_then(|e| rel.stack(e).next().cloned())?;
+        let g = scene.get(id).and_then(|e| rel.stack(e).first().map(|g| (*g).clone()))?;
         match &common {
             None => common = Some(g),
             Some(c) if *c == g => {}
@@ -199,7 +199,7 @@ pub fn click<R: SceneRead>(
     target: &ClickTarget,
     opts: ClickOpts,
 ) -> Result<Selection, SelectionError> {
-    let rel = Relations::build(scene);
+    let rel = Reverse::of(scene);
     let hit = match target {
         ClickTarget::Empty { inside_editing_group } => {
             return Ok(match opts.mode {
@@ -267,7 +267,7 @@ pub fn enter_group<R: SceneRead>(
     group: Option<&GroupId>,
     select: Option<&ElementId>,
 ) -> Result<Selection, SelectionError> {
-    let rel = Relations::build(scene);
+    let rel = Reverse::of(scene);
     let g = match group {
         Some(g) => g.clone(),
         None if sel.groups.len() == 1 => sel.groups.iter().next().cloned().ok_or(SelectionError::NoGroup)?,
@@ -292,14 +292,14 @@ pub fn enter_group<R: SceneRead>(
 
 /// Leaves the editing group and selects that group again. The editing group becomes the group around it, if any.
 pub fn exit_group<R: SceneRead>(scene: &R, sel: &Selection) -> Result<Selection, SelectionError> {
-    let rel = Relations::build(scene);
+    let rel = Reverse::of(scene);
     let Some(g) = sel.editing_group.clone().filter(|g| rel.is_group(g)) else {
         return Err(SelectionError::NotEditing);
     };
-    let members: BTreeSet<ElementId> = rel.members(&g).iter().map(|m| primary_id(scene, m)).collect();
+    let members: BTreeSet<ElementId> = rel.members_of(&g).iter().map(|m| primary_id(scene, m)).collect();
     let parent = members.iter().next().and_then(|m| scene.get(m)).and_then(|e| {
         // The group around `g`: the one after it in the stack, innermost first.
-        let mut stack = rel.stack(e).skip_while(|s| **s != g);
+        let mut stack = rel.stack(e).into_iter().skip_while(|s| **s != g);
         stack.next()?;
         stack.next().cloned()
     });
@@ -323,23 +323,23 @@ pub fn select_all<R: SceneRead>(
     within: Option<&Within>,
     include_locked: bool,
 ) -> Result<Selection, SelectionError> {
-    let rel = Relations::build(scene);
+    let rel = Reverse::of(scene);
     let (candidates, editing): (Vec<ElementId>, Option<GroupId>) = match within {
         Some(Within::Frame(f)) => {
             let fr = live(scene, f)?;
             if fr.tag() != Kind::Frame {
                 return Err(SelectionError::NotInGroup(f.clone()));
             }
-            (rel.children(f).to_vec(), None)
+            (rel.children_of(f), None)
         }
         Some(Within::Group(g)) => {
             if !rel.is_group(g) {
                 return Err(SelectionError::NoGroup);
             }
-            (rel.members(g).to_vec(), None)
+            (rel.members_of(g), None)
         }
         None => match sel.editing_group.as_ref().filter(|g| rel.is_group(g)) {
-            Some(g) => (rel.members(g).to_vec(), Some(g.clone())),
+            Some(g) => (rel.members_of(g), Some(g.clone())),
             None => (scene.iter().map(|e| e.id.clone()).collect(), None),
         },
     };
@@ -399,7 +399,7 @@ fn select_where<R: SceneRead>(
     opts: RegionOpts,
     hit: impl Fn(&Element) -> bool,
 ) -> Selection {
-    let rel = Relations::build(scene);
+    let rel = Reverse::of(scene);
     let editing = match opts.mode {
         RegionMode::Replace => None,
         RegionMode::Add => sel.editing_group.clone(),

@@ -34,8 +34,8 @@ pub use acquire::{
     find_hovered_among, hover_candidate, hover_candidate_for, plan_end_drag, plan_end_drag_among, within_binding_reach,
 };
 pub use lifecycle::{
-    can_move_with, free_ends_bound_to, free_ends_bound_to_with, heal_bindings, mirror_fixed_points,
-    reanchor_to_outline, remap_bindings, unbind_detached, unbind_end,
+    can_move_with, free_ends_bound_to, free_ends_bound_to_from, free_ends_bound_to_with, heal_bindings,
+    mirror_fixed_points, reanchor_to_outline, remap_bindings, unbind_detached, unbind_end,
 };
 pub use solve::bound_end_position;
 pub use target::{Resolved, bind_target, is_bindable, resolve};

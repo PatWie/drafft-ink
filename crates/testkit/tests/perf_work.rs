@@ -464,3 +464,64 @@ fn dragging_in_a_view_of_the_whole_scene_orders_it_once() {
         assert_eq!(work.count(Counter::ElementsScanned), 0, "the frame after the drop at {n}: {}", work.summary());
     }
 }
+
+// ---- one-shot commands on the structure ----------------------------------------------------------------------------
+
+/// A scene whose ids the session's id source cannot meet: it hands out `e1`, `e2`, ... and `g1`, `g2`, ..., which the
+/// generated scene already uses.
+fn loaded_with_free_ids(n: usize) -> Harness {
+    let mut h = loaded(n);
+    for _ in 0..n + 1_000 {
+        h.session.ports.ids.element_id();
+        h.session.ports.ids.group_id();
+    }
+    h
+}
+
+/// Commands that group, frame, order, copy and delete a few elements read the few elements and the index; none of
+/// them walks the scene (`Relations::build` did, once or several times per command).
+#[test]
+fn structure_commands_on_a_few_elements_scan_nothing() {
+    for &n in sizes() {
+        let mut h = loaded_with_free_ids(n);
+        let mut offenders = Vec::new();
+        let mut step = |h: &mut Harness, select: &[&str], command: &str, args: Value| -> Value {
+            if select.is_empty() {
+                h.session.execute("selection.clear", json!({})).expect("clear");
+            } else {
+                h.session.execute("selection.select", json!({ "ids": select })).expect("select");
+            }
+            let work = WorkScope::begin();
+            let out = h.session.execute(command, args);
+            let scans = work.count(Counter::ElementsScanned);
+            if scans != 0 {
+                offenders.push(format!("{command}: {scans}"));
+            }
+            out.unwrap_or_else(|e| panic!("{command} at {n}: {e}"))
+        };
+        // e0 to e9 are a rectangle, an ellipse, a diamond, a line, an arrow, a freehand path, a text, a formula and
+        // a group of two rectangles (e8, e9); the cycle repeats every ten.
+        step(&mut h, &["e0", "e1"], "group.create", json!({}));
+        step(&mut h, &["e8"], "group.ungroup", json!({}));
+        step(&mut h, &["e10", "e11", "e12"], "arrange.align", json!({ "edge": "left" }));
+        step(&mut h, &["e20", "e21", "e22"], "arrange.distribute", json!({ "axis": "horizontal" }));
+        for op in ["front", "back", "forward", "backward"] {
+            step(&mut h, &["e30", "e31"], "arrange.z_order", json!({ "op": op }));
+        }
+        let framed = step(&mut h, &["e40", "e41"], "frame.wrap", json!({}));
+        let frame = framed["frame"].as_str().expect("the new frame").to_owned();
+        step(&mut h, &["e42"], "frame.add", json!({ "frame": frame }));
+        step(&mut h, &["e42"], "frame.remove", json!({}));
+        step(&mut h, &[], "frame.select_children", json!({ "frame": frame }));
+        step(&mut h, &[&frame], "frame.unwrap", json!({}));
+        step(&mut h, &["e50", "e51"], "clipboard.copy", json!({}));
+        step(&mut h, &[], "clipboard.paste", json!({}));
+        step(&mut h, &["e52", "e53"], "clipboard.cut", json!({}));
+        step(&mut h, &["e60", "e61"], "element.duplicate", json!({}));
+        step(&mut h, &["e70"], "element.lock", json!({}));
+        step(&mut h, &["e80", "e81"], "element.delete", json!({}));
+        step(&mut h, &["e90", "e91"], "library.add", json!({ "name": "pair" }));
+        step(&mut h, &["e100"], "selection.navigate", json!({ "direction": "right" }));
+        assert!(offenders.is_empty(), "passes over the scene at {n}: {offenders:?}");
+    }
+}
