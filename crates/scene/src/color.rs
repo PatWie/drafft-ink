@@ -18,6 +18,36 @@ pub struct Color {
     pub a: u8,
 }
 
+/// Share of the inversion in the dark filter.
+const DARK_INVERT: f64 = 0.93;
+/// The `hue-rotate(180deg)` matrix of the CSS Filter Effects specification (cos = -1, sin = 0).
+const DARK_HUE: [[f64; 3]; 3] = [[-0.574, 1.430, 0.144], [0.426, 0.430, 0.144], [0.426, 1.430, -0.856]];
+
+/// The dark filter on channels in 0..=1, without clamping: an affine map, `hue * (invert * 1 + (1 - 2 invert) * c)`.
+fn dark_filter(c: [f64; 3]) -> [f64; 3] {
+    let inv = c.map(|v| v * (1.0 - DARK_INVERT) + (1.0 - v) * DARK_INVERT);
+    DARK_HUE.map(|row| row.iter().zip(inv).map(|(m, v)| m * v).sum())
+}
+
+/// The channels (not clamped) the dark filter maps to `shown`, or `None` when the matrix cannot be inverted.
+fn solve_dark_filter(shown: [f64; 3]) -> Option<[f64; 3]> {
+    let m = &DARK_HUE;
+    let cof = |r: usize, c: usize| {
+        let (r1, r2) = ((r + 1) % 3, (r + 2) % 3);
+        let (c1, c2) = ((c + 1) % 3, (c + 2) % 3);
+        m[r1][c1] * m[r2][c2] - m[r1][c2] * m[r2][c1]
+    };
+    let det: f64 = (0..3).map(|c| m[0][c] * cof(0, c)).sum();
+    if det.abs() < 1e-9 {
+        return None;
+    }
+    // inverse = adjugate / det, with adjugate[i][j] = cofactor[j][i].
+    let inv = |row: usize| -> f64 { (0..3).map(|c| cof(c, row) * shown[c]).sum::<f64>() / det };
+    let inverted = [inv(0), inv(1), inv(2)];
+    // inverted = invert + (1 - 2 invert) * c  =>  c = (inverted - invert) / (1 - 2 invert)
+    Some(inverted.map(|v| (v - DARK_INVERT) / (1.0 - 2.0 * DARK_INVERT)))
+}
+
 /// Why a colour string was rejected.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 #[error("{0:?} is not a colour; use #rgb, #rrggbb, #rrggbbaa or \"transparent\"")]
@@ -50,22 +80,55 @@ impl Color {
 
     /// The colour as the dark theme shows it. This reproduces the CSS filter `invert(93%) hue-rotate(180deg)` that
     /// Excalidraw uses for its dark theme, so white becomes `#121212`, black ink becomes a light grey and hues keep
-    /// their meaning. Alpha is untouched. The canvas (`render::Theme::Dark`) and the SVG export share this one
-    /// function; the matrices come from the CSS Filter Effects specification.
+    /// their meaning. Alpha is untouched. The canvas (`render::Theme::Dark`), the SVG export and every colour the UI
+    /// shows for an element share this one function (and [`Color::from_dark_theme`], its inverse); the matrices come
+    /// from the CSS Filter Effects specification.
     pub fn for_dark_theme(self) -> Self {
-        /// Share of the inversion.
-        const INVERT: f64 = 0.93;
-        let inv = |v: u8| {
-            let v = f64::from(v) / 255.0;
-            v * (1.0 - INVERT) + (1.0 - v) * INVERT
-        };
-        let (r, g, b) = (inv(self.r), inv(self.g), inv(self.b));
-        // hue-rotate(180deg): cos = -1, sin = 0 in the CSS matrix.
-        let r2 = -0.574 * r + 1.430 * g + 0.144 * b;
-        let g2 = 0.426 * r + 0.430 * g + 0.144 * b;
-        let b2 = 0.426 * r + 1.430 * g - 0.856 * b;
+        let [r, g, b] = dark_filter([self.r, self.g, self.b].map(|v| f64::from(v) / 255.0));
         let out = |v: f64| (v.clamp(0.0, 1.0) * 255.0).round() as u8;
-        Self::rgba(out(r2), out(g2), out(b2), self.a)
+        Self::rgba(out(r), out(g), out(b), self.a)
+    }
+
+    /// The stored colour whose dark-theme display is `self`: what to store when the person picks a colour they see
+    /// on the dark canvas, so that the canvas draws exactly that colour. The result is theme independent, and a
+    /// light theme shows it as it is.
+    ///
+    /// The filter is an affine map of the RGB cube that clamps what leaves it, so it is invertible except at the
+    /// edge of what it can show: the dark theme cannot draw pure white or the most saturated hues (white shows at
+    /// most as `#ededed`, the display of black). For such a colour the result is the stored colour whose display is
+    /// the nearest one (least squared RGB distance), found by solving the affine map and then searching two steps
+    /// around the clamped solution. For any colour the dark theme can show,
+    /// `c.for_dark_theme().from_dark_theme().for_dark_theme() == c.for_dark_theme()`. Alpha is untouched.
+    pub fn from_dark_theme(self) -> Self {
+        let target = [self.r, self.g, self.b].map(|v| f64::from(v) / 255.0);
+        let Some(solution) = solve_dark_filter(target) else { return self };
+        let centre = solution.map(|v| (v.clamp(0.0, 1.0) * 255.0).round() as i32);
+        let distance = |c: [i32; 3]| -> f64 {
+            let shown = Self::rgb(c[0] as u8, c[1] as u8, c[2] as u8).for_dark_theme();
+            [shown.r, shown.g, shown.b]
+                .iter()
+                .zip([self.r, self.g, self.b])
+                .map(|(s, t)| (f64::from(*s) - f64::from(t)).powi(2))
+                .sum()
+        };
+        let mut best = (f64::MAX, centre);
+        for dr in -2..=2 {
+            for dg in -2..=2 {
+                for db in -2..=2 {
+                    let c = [centre[0] + dr, centre[1] + dg, centre[2] + db];
+                    if c.iter().any(|v| !(0..=255).contains(v)) {
+                        continue;
+                    }
+                    // Nearer display first; between equal ones the candidate closest to the solved colour.
+                    let d = distance(c) + 1e-3 * f64::from(dr * dr + dg * dg + db * db);
+                    if d < best.0 {
+                        best = (d, c);
+                    }
+                }
+            }
+        }
+        let c = best.1;
+        Self::rgba(c[0] as u8, c[1] as u8, c[2] as u8, self.a)
     }
 
     /// Parses `#rgb`, `#rrggbb`, `#rrggbbaa` (case-insensitive) or `transparent`. Works on bytes, so non-ASCII input
@@ -186,6 +249,59 @@ mod tests {
         assert_eq!(Color::WHITE.for_dark_theme(), Color::rgb(18, 18, 18));
         assert_eq!(Color::BLACK.for_dark_theme(), Color::rgb(237, 237, 237));
         assert_eq!(Color::rgba(10, 200, 30, 77).for_dark_theme().a, 77);
+    }
+
+    #[test]
+    fn the_dark_display_is_inverted_exactly_where_the_filter_does_not_clamp() {
+        for r in (0..=255u16).step_by(15) {
+            for g in (0..=255u16).step_by(15) {
+                for b in (0..=255u16).step_by(15) {
+                    let stored = Color::rgba(r as u8, g as u8, b as u8, 9);
+                    let shown = stored.for_dark_theme();
+                    let back = shown.from_dark_theme();
+                    assert_eq!(back.a, 9, "alpha is untouched");
+                    let again = back.for_dark_theme();
+                    let edge = [shown.r, shown.g, shown.b].iter().any(|v| *v == 0 || *v == 255);
+                    let off = [(shown.r, again.r), (shown.g, again.g), (shown.b, again.b)]
+                        .iter()
+                        .map(|(a, b)| a.abs_diff(*b))
+                        .max()
+                        .unwrap_or(0);
+                    // At the edge of what the filter can show (a channel clamped to 0 or 255) the stored colour is
+                    // one of several that look alike; it is never more than one step off.
+                    assert!(
+                        if edge { off <= 1 } else { off == 0 },
+                        "{stored:?} shows as {shown:?}, stored again as {back:?}"
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn a_colour_the_dark_theme_cannot_show_is_stored_as_the_nearest_one_it_can() {
+        let miss = |stored: Color, asked: Color| {
+            let s = stored.for_dark_theme();
+            (i32::from(s.r) - i32::from(asked.r)).pow(2)
+                + (i32::from(s.g) - i32::from(asked.g)).pow(2)
+                + (i32::from(s.b) - i32::from(asked.b)).pow(2)
+        };
+        // White shows at best as the display of black, `#ededed`.
+        let white = Color::WHITE.from_dark_theme();
+        assert!(miss(white, Color::WHITE) <= miss(Color::BLACK, Color::WHITE), "{white:?}");
+        assert!(white.for_dark_theme().r >= 236, "{white:?}");
+        // The e2e spec `pixels.spec.ts` stores this colour for the White swatch of the dark theme.
+        assert_eq!(Color::WHITE.from_dark_theme(), Color::rgb(1, 0, 1));
+        // The dark canvas colour is the display of white.
+        assert_eq!(Color::rgb(18, 18, 18).from_dark_theme(), Color::WHITE);
+        // Pure red is out of reach too; the stored colour is the nearest one anywhere near it.
+        let red = Color::rgb(255, 0, 0);
+        let stored = red.from_dark_theme();
+        for other in
+            [Color::BLACK, Color::WHITE, Color::rgb(255, 0, 0), Color::rgb(0, 255, 255), Color::rgb(128, 128, 128)]
+        {
+            assert!(miss(stored, red) <= miss(other, red), "{stored:?} against {other:?}");
+        }
     }
 
     #[test]

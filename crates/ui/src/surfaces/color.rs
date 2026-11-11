@@ -11,6 +11,7 @@ use egui::{Align2, Area, Color32, Context, FontFamily, FontId, Id, Order, Pos2, 
 use serde_json::{Value, json};
 
 use crate::action::Verb;
+use crate::colors;
 use crate::model::Model;
 use crate::state::{ColorTarget, UiState};
 use crate::surfaces::dialogs::{enter_pressed, text_field};
@@ -172,26 +173,39 @@ struct Choice {
     shown: Option<Color32>,
 }
 
-fn to_color32(c: Color) -> Color32 {
-    Color32::from_rgba_unmultiplied(c.r, c.g, c.b, c.a)
-}
-
 fn capitalised(name: &str) -> String {
     let mut chars = name.chars();
     chars.next().map(|f| f.to_uppercase().chain(chars).collect()).unwrap_or_default()
 }
 
-/// The quick column: None, Black, White and seven colours at shade 500.
-fn quick_column() -> Vec<Choice> {
+/// A cell for the stored colour `text` (a palette name): the swatch shows what the canvas draws for it on this
+/// theme, and a pick stores `text` (`colors::offer`).
+fn choice(label: String, text: &str, dark: bool) -> Choice {
+    from_offer(label, text, colors::offer(text, dark))
+}
+
+/// A cell named by how it looks, Black or White: a pick stores what the canvas draws as that colour on this theme
+/// (`colors::offer_as_seen`).
+fn choice_as_seen(label: String, text: &str, dark: bool) -> Choice {
+    from_offer(label, text, colors::offer_as_seen(text, dark))
+}
+
+fn from_offer(label: String, text: &str, offer: Option<colors::Offer>) -> Choice {
+    match offer {
+        Some(o) => Choice { label, pick: Pick::Color(o.stored), shown: Some(o.shown) },
+        None => Choice { label, pick: Pick::Color(text.to_owned()), shown: None },
+    }
+}
+
+/// The quick column: None, Black, White and six colours at shade 500.
+fn quick_column(dark: bool) -> Vec<Choice> {
     let mut out = vec![
         Choice { label: "None".to_owned(), pick: Pick::Clear, shown: None },
-        Choice { label: "Black".to_owned(), pick: Pick::Color("#000000".to_owned()), shown: Some(Color32::BLACK) },
-        Choice { label: "White".to_owned(), pick: Pick::Color("#ffffff".to_owned()), shown: Some(Color32::WHITE) },
+        choice_as_seen("Black".to_owned(), "#000000", dark),
+        choice_as_seen("White".to_owned(), "#ffffff", dark),
     ];
     for name in ["blue", "red", "emerald", "amber", "purple", "slate"] {
-        let full = format!("{name}-500");
-        let shown = drafftink_scene::palette::lookup(&full).map(to_color32);
-        out.push(Choice { label: capitalised(name), pick: Pick::Color(full), shown });
+        out.push(choice(capitalised(name), &format!("{name}-500"), dark));
     }
     out
 }
@@ -209,7 +223,8 @@ fn color_popover(ctx: &Context, cx: &mut Cx<'_>, target: ColorTarget) -> Option<
     let pal = cx.pal;
     let key = PopoverKey::of(target);
     let now = current(cx.model, target);
-    let quick = quick_column();
+    let dark = pal.dark;
+    let quick = quick_column(dark);
     let screen = ctx.content_rect();
     let max_w = (screen.width() - 2.0 * MARGIN - 24.0).max(120.0);
     let max_h = (screen.height() - 2.0 * MARGIN - GRID_CHROME).max(80.0);
@@ -230,18 +245,17 @@ fn color_popover(ctx: &Context, cx: &mut Cx<'_>, target: ColorTarget) -> Option<
                 ui.spacing_mut().item_spacing = vec2(0.0, 0.0);
                 // Shade 25 is too close to white to tell apart in a 16 px cell: the grid starts at 50.
                 let shades = SHADES.iter().enumerate().skip(1);
-                for (row, (col, shade)) in shades.enumerate() {
+                for (row, (_, shade)) in shades.enumerate() {
                     if row == 1 || row == 5 || row == 6 {
                         ui.add_space(4.0);
                     }
                     ui.horizontal(|ui| {
                         for fam in FAMILIES {
-                            let (r, g, b) = fam.shades.get(col).copied().unwrap_or((0, 0, 0));
-                            let c = Choice {
-                                label: format!("{} {shade}", capitalised(fam.name)),
-                                pick: Pick::Color(format!("{}-{shade}", fam.name)),
-                                shown: Some(Color32::from_rgb(r, g, b)),
-                            };
+                            let c = choice(
+                                format!("{} {shade}", capitalised(fam.name)),
+                                &format!("{}-{shade}", fam.name),
+                                dark,
+                            );
                             picked = cell(ui, cx, target, now, &c).or(picked.take());
                         }
                         if let Some(q) = quick.get(row) {
@@ -283,7 +297,8 @@ fn hex_row(ui: &mut Ui, cx: &mut Cx<'_>, target: ColorTarget, draft: &mut HexDra
     if reason.is_none() && resp.lost_focus() && enter_pressed(ui) {
         match parse_hex(&draft.text) {
             Ok(color) => {
-                let pick = Pick::Color(color.to_hex());
+                // The typed colour is the one to see on the canvas; the document holds the colour that draws it.
+                let pick = Pick::Color(colors::stored(color, pal.dark).to_hex());
                 let (id, args) = pick_command(target, &pick);
                 cx.run(id, args);
                 applied = Some(pick);
@@ -429,7 +444,7 @@ mod tests {
 
     #[test]
     fn quick_column_has_nine_cells() {
-        let q = quick_column();
+        let q = quick_column(false);
         let labels: Vec<_> = q.iter().map(|c| c.label.as_str()).collect();
         assert_eq!(labels, ["None", "Black", "White", "Blue", "Red", "Emerald", "Amber", "Purple", "Slate"]);
         assert!(q.iter().skip(3).all(|c| c.shown.is_some()));

@@ -1,4 +1,5 @@
 //! The colour popover and the font family popover.
+#![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
 mod common;
 mod dialog;
@@ -380,4 +381,125 @@ fn none_and_the_background_are_not_remembered() {
     h.get_by_label("Blue 500").click();
     h.run();
     assert_eq!(h.state().state.last_picked, drafftink_ui::LastPicked::default());
+}
+
+// ---- colours in the dark theme: the swatch is the colour the canvas draws ----
+
+/// The fill of the circle painted at the centre of the control labelled `label`.
+fn swatch_fill(h: &egui_kittest::Harness<'static, Fixture>, label: &str) -> egui::Color32 {
+    fn circles(shape: &egui::Shape, out: &mut Vec<(egui::Pos2, egui::Color32)>) {
+        match shape {
+            egui::Shape::Circle(c) if c.fill != egui::Color32::TRANSPARENT => out.push((c.center, c.fill)),
+            egui::Shape::Vec(v) => v.iter().for_each(|s| circles(s, out)),
+            _ => {}
+        }
+    }
+    let centre = h.get_by_label(label).rect().center();
+    let mut all = Vec::new();
+    h.output().shapes.iter().for_each(|s| circles(&s.shape, &mut all));
+    all.into_iter()
+        .rev()
+        .find(|(c, _)| (c.x - centre.x).abs() < 0.5 && (c.y - centre.y).abs() < 0.5)
+        .unwrap_or_else(|| panic!("no swatch is painted for {label:?}"))
+        .1
+}
+
+fn open_dark(target: ColorTarget) -> egui_kittest::Harness<'static, Fixture> {
+    let mut h = dialog::sized(dialog::fixture(), egui::vec2(1280.0, 800.0), egui::Theme::Dark);
+    h.state_mut().state.color_popover = Some(target);
+    h.run();
+    h
+}
+
+#[test]
+fn in_the_dark_theme_a_swatch_shows_what_the_canvas_draws_for_its_colour() {
+    use drafftink_scene::Color;
+    let h = open_dark(ColorTarget::Stroke);
+    // Blue 500 is stored as blue-500; the dark canvas draws it through the filter, and so does the swatch.
+    let want = Color::parse("#3b82f6").unwrap().for_dark_theme();
+    assert_eq!(swatch_fill(&h, "Blue 500"), egui::Color32::from_rgb(want.r, want.g, want.b));
+    assert_ne!(swatch_fill(&h, "Blue 500"), egui::Color32::from_rgb(0x3b, 0x82, 0xf6), "not the stored colour");
+    // Every cell of the grid agrees with the shared mapping, white and black included.
+    for fam in drafftink_scene::palette::FAMILIES {
+        for shade in drafftink_scene::palette::SHADES.iter().skip(1) {
+            let name = format!("{}-{shade}", fam.name);
+            let stored = drafftink_scene::palette::lookup(&name).unwrap().for_dark_theme();
+            let label = format!("{}{} {shade}", fam.name[..1].to_uppercase(), &fam.name[1..]);
+            assert_eq!(swatch_fill(&h, &label), egui::Color32::from_rgb(stored.r, stored.g, stored.b), "{label}");
+        }
+    }
+    // Black and White are named by how they look: the dark canvas draws white as its lightest grey, and black as
+    // its own background.
+    let white = swatch_fill(&h, "White");
+    let black = swatch_fill(&h, "Black");
+    assert!(white.r() >= 236 && black.r() <= 19, "{white:?} {black:?}");
+}
+
+#[test]
+fn in_the_dark_theme_a_palette_pick_stores_the_palette_colour_and_a_look_pick_stores_the_inverse() {
+    use drafftink_scene::Color;
+    let mut h = open_dark(ColorTarget::Stroke);
+    h.get_by_label("Blue 500").click();
+    h.run();
+    assert_eq!(
+        calls(&h)[0].1,
+        json!({"props": {"stroke_color": "blue-500"}}),
+        "the document holds the same colour in both themes"
+    );
+    h.state_mut().clear();
+    let mut h = open_dark(ColorTarget::Stroke);
+    let shown = swatch_fill(&h, "White");
+    h.get_by_label("White").click();
+    h.run();
+    let stored = calls(&h)[0].1["props"]["stroke_color"].as_str().unwrap().to_owned();
+    let stored = Color::parse(&stored).unwrap();
+    assert_eq!(stored, Color::WHITE.from_dark_theme(), "the inverse of the display");
+    let drawn = stored.for_dark_theme();
+    assert_eq!(egui::Color32::from_rgb(drawn.r, drawn.g, drawn.b), shown, "and the canvas draws the swatch");
+    // The custom hex is read as the colour to see.
+    let mut h = open_dark(ColorTarget::Stroke);
+    h.get_by_label("Hex colour").focus();
+    h.run();
+    h.get_by_label("Hex colour").type_text("#808080");
+    h.run();
+    h.key_press(Key::Enter);
+    h.run();
+    let typed = calls(&h)[0].1["props"]["stroke_color"].as_str().unwrap().to_owned();
+    assert_eq!(Color::parse(&typed).unwrap().for_dark_theme(), Color::rgb(128, 128, 128));
+    // And on the light theme nothing changes: the typed colour is stored as it is.
+    let mut h = open(dialog::fixture(), ColorTarget::Stroke);
+    h.get_by_label("Hex colour").focus();
+    h.run();
+    h.get_by_label("Hex colour").type_text("#808080");
+    h.run();
+    h.key_press(Key::Enter);
+    h.run();
+    assert_eq!(calls(&h)[0].1, json!({"props": {"stroke_color": "#808080"}}));
+}
+
+#[test]
+fn in_the_light_theme_a_swatch_is_the_stored_colour() {
+    use drafftink_scene::Color;
+    let h = open(dialog::fixture(), ColorTarget::Stroke);
+    let stored = Color::parse("#3b82f6").unwrap();
+    assert_eq!(swatch_fill(&h, "Blue 500"), egui::Color32::from_rgb(stored.r, stored.g, stored.b));
+    assert_eq!(swatch_fill(&h, "White"), egui::Color32::WHITE);
+}
+
+#[test]
+fn the_top_bar_the_last_picked_swatch_and_the_page_button_show_the_dark_display_too() {
+    use drafftink_scene::Color;
+    let shown = |name: &str| {
+        let c = drafftink_scene::palette::lookup(name).unwrap().for_dark_theme();
+        egui::Color32::from_rgb(c.r, c.g, c.b)
+    };
+    let mut h = dialog::sized(dialog::fixture(), egui::vec2(1280.0, 800.0), egui::Theme::Dark);
+    h.state_mut().state.last_picked.remember(ColorTarget::Stroke, "rose-600".to_owned());
+    h.run();
+    assert_eq!(swatch_fill(&h, "Stroke blue"), shown("blue-500"));
+    assert_eq!(swatch_fill(&h, "Fill red"), shown("red-100"));
+    assert_eq!(swatch_fill(&h, "Last picked stroke"), shown("rose-600"));
+    // The page is stored white; the canvas draws it as the dark page colour, and so does its button.
+    let page = Color::WHITE.for_dark_theme();
+    assert_eq!(swatch_fill(&h, "Background colour"), egui::Color32::from_rgb(page.r, page.g, page.b));
 }

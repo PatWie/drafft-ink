@@ -1,4 +1,5 @@
 //! The app without a window: start-up, restore, the file argument and the room link, over the fake ports.
+#![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
 use drafftink_app::{App, AppConfig, NoHost, Platform, SharedClipboard, StartupLink, StartupToken, WakeCell};
 use drafftink_engine::cmd::collab::fake_server::FakeServer;
@@ -232,4 +233,76 @@ fn the_about_dialog_names_the_build_and_the_project_repository_unless_the_host_n
     let mut hostile = platform(&fakes);
     hostile.host = Box::new(OperatorHost("javascript:alert(1)"));
     assert_eq!(App::new(hostile, AppConfig::default()).about().source_url, about.source_url);
+}
+
+// ---- the colours the UI shows are the colours the canvas draws ----
+
+/// The solid colours the painter encodes for a rectangle stroked with `stored` on `theme`, as packed words.
+fn drawn_stroke(stored: drafftink_scene::Color, theme: drafftink_render::Theme) -> Vec<u32> {
+    use drafftink_render::{ElementPainter, RenderOptions};
+    use drafftink_scene::{Element, ElementId, ElementKind, Sloppiness, ZIndex};
+    use vello::low_level::vello_encoding::DrawTag;
+    let mut e = Element::new(ElementId::new("r").unwrap(), ElementKind::Rectangle, ZIndex::first())
+        .with_bounds(0.0, 0.0, 80.0, 50.0);
+    e.style.stroke_color = stored;
+    e.style.fill_color = None;
+    e.style.sloppiness = Sloppiness::Architect;
+    let mut ts = drafftink_typeset::Typesetter::new();
+    let frag =
+        ElementPainter::new().paint(&e, &RenderOptions { theme, ..RenderOptions::default() }, &mut ts, &|_| None);
+    let enc = frag.scene.encoding();
+    let (mut at, mut out) = (0usize, Vec::new());
+    for tag in &enc.draw_tags {
+        let words = ((tag.0 >> 2) & 7) as usize;
+        if *tag == DrawTag::COLOR {
+            out.push(enc.draw_data[at]);
+        }
+        at += words;
+    }
+    out
+}
+
+fn packed(c: egui::Color32) -> u32 {
+    vello::low_level::vello_encoding::DrawColor::from(vello::peniko::Color::from_rgba8(c.r(), c.g(), c.b(), c.a())).rgba
+}
+
+#[test]
+fn a_swatch_is_the_colour_the_canvas_draws_for_what_its_pick_stores() {
+    use drafftink_render::Theme;
+    use drafftink_scene::palette::{FAMILIES, SHADES};
+    use drafftink_ui::colors::{offer, offer_as_seen, resolve};
+
+    let names: Vec<String> =
+        FAMILIES.iter().flat_map(|f| SHADES.iter().map(move |s| format!("{}-{s}", f.name))).collect();
+    for (dark, theme) in [(false, Theme::Light), (true, Theme::Dark)] {
+        // A palette entry is a stored colour: the pick stores it as it is, the swatch is what is drawn for it.
+        for name in &names {
+            let o = offer(name, dark).unwrap_or_else(|| panic!("{name} is a colour"));
+            assert_eq!(resolve(&o.stored), resolve(name), "{name}: the pick stores the palette colour");
+            let stored = resolve(&o.stored).unwrap();
+            assert_eq!(
+                drawn_stroke(stored, theme),
+                [packed(o.shown)],
+                "{name}, dark = {dark}: swatch and canvas differ"
+            );
+        }
+        // A colour named by its look (Black, White) or typed: the pick stores the inverse of the display, and the
+        // canvas draws the swatch.
+        for text in ["#000000", "#ffffff", "#808080", "#3b82f6", "#ef4444"] {
+            let o = offer_as_seen(text, dark).unwrap();
+            let stored = resolve(&o.stored).unwrap();
+            assert_eq!(drawn_stroke(stored, theme), [packed(o.shown)], "{text}, dark = {dark}");
+            let wanted = resolve(text).unwrap();
+            if dark {
+                assert_eq!(stored, wanted.from_dark_theme(), "{text}");
+            } else {
+                assert_eq!(stored, wanted, "{text}: the light theme stores what is picked");
+            }
+        }
+    }
+    // A grey the dark theme can show is drawn exactly as picked; white is drawn as the lightest near-grey it has.
+    let grey = offer_as_seen("#808080", true).unwrap();
+    assert_eq!((grey.shown.r(), grey.shown.g(), grey.shown.b()), (128, 128, 128));
+    let white = offer_as_seen("#ffffff", true).unwrap();
+    assert!(white.shown.r().min(white.shown.g()).min(white.shown.b()) >= 236, "{white:?}");
 }
