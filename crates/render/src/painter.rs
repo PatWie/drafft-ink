@@ -117,7 +117,7 @@ impl ElementPainter {
         let lookup = self.images.lookup(file, || files(file));
         match lookup {
             Lookup::Ready(data) => {
-                paint_picture(ink, e, img, local, data);
+                paint_picture(ink, img, local, data);
                 paint_border(ink, e, local);
                 None
             }
@@ -236,12 +236,13 @@ fn paint_geometry(ink: &mut Ink, e: &Element, g: &SketchGeometry) {
 /// The entity-relationship markers, which the sketch generator does not draw.
 fn paint_cardinality(ink: &mut Ink, e: &Element, d: &drafftink_scene::LinearData) {
     let pts = &d.points;
-    if pts.len() < 2 {
+    let (Some(&first), Some(&second), Some(&last), Some(&penultimate)) =
+        (pts.first(), pts.get(1), pts.last(), pts.iter().rev().nth(1))
+    else {
         return;
-    }
+    };
     let size = head_size(d, e.style.stroke_width);
-    let n = pts.len();
-    let ends = [(d.end_head, pts[n - 1], pts[n - 2]), (d.start_head, pts[0], pts[1])];
+    let ends = [(d.end_head, last, penultimate), (d.start_head, first, second)];
     let color = ink.color(e.style.stroke_color);
     for (head, tip, toward) in ends {
         if !matches!(
@@ -315,14 +316,14 @@ pub(crate) fn cardinality_path(head: Head, tip: Point, dir: Vec2, size: f64) -> 
 fn paint_highlighter(ink: &mut Ink, e: &Element, f: &FreehandData) {
     let width = e.style.stroke_width.max(0.0);
     let pts: Vec<Point> = f.points.iter().copied().filter(|p| p.x.is_finite() && p.y.is_finite()).collect();
-    let Some(first) = pts.first().copied() else { return };
+    let Some((&first, rest)) = pts.split_first() else { return };
     let paint = ink.color(e.style.stroke_color);
     let rgba = paint.to_rgba8();
     let opaque = peniko::Color::from_rgba8(rgba.r, rgba.g, rgba.b, 255);
     let alpha = f32::from(rgba.a) / 255.0;
     let mut path = BezPath::new();
     path.move_to(first);
-    for p in &pts[1..] {
+    for p in rest {
         path.line_to(*p);
     }
     let area = path.control_box().inflate(width / 2.0 + 1.0, width / 2.0 + 1.0);
@@ -350,23 +351,10 @@ fn paint_text(ink: &mut Ink, e: &Element, t: &TextData, ts: &mut Typesetter) {
 /// Draws a text layout with its top-left at `origin`.
 pub(crate) fn draw_layout(ink: &mut Ink, layout: &drafftink_typeset::TextLayout, origin: Vec2) {
     let to = Affine::translate(origin);
-    for run in &layout.runs {
-        if run.glyphs.is_empty() {
-            continue;
-        }
+    draw_runs(ink, layout, to, |ink, run| {
         let c = run.color;
-        let color = ink.color(Color::rgba(c.r, c.g, c.b, c.a));
-        let skew = run.skew.map(|s| Affine::skew(f64::from(s), 0.0));
-        ink.scene
-            .draw_glyphs(&run.font)
-            .brush(color)
-            .hint(true)
-            .transform(to)
-            .glyph_transform(skew)
-            .font_size(run.font_size)
-            .normalized_coords(&run.normalized_coords)
-            .draw(Fill::NonZero, run.glyphs.iter().map(|g| Glyph { id: g.id, x: g.x, y: g.y }));
-    }
+        ink.color(Color::rgba(c.r, c.g, c.b, c.a))
+    });
     for d in &layout.decorations {
         let c = d.color;
         let color = ink.color(Color::rgba(c.r, c.g, c.b, c.a));
@@ -394,23 +382,20 @@ fn paint_math(ink: &mut Ink, e: &Element, m: &MathData, ts: &mut Typesetter) {
     // Layout coordinates are relative to the baseline origin; the element box starts `height` above it.
     let to = Affine::translate((0.0, layout.height));
     let base = ink.color(e.style.stroke_color);
-    let mut i = 0;
-    while i < layout.glyphs.len() {
-        let g0 = layout.glyphs[i];
-        let mut j = i;
-        while j < layout.glyphs.len() && same_run(&layout.glyphs[j], &g0) {
-            j += 1;
-        }
-        let color = match g0.color {
+    for run in layout.glyphs.chunk_by(same_run) {
+        let Some(first) = run.first() else { continue };
+        let color = match first.color {
             Some(c) => ink.color(Color::rgba(c.r, c.g, c.b, c.a)),
             None => base,
         };
-        let slot: MathFontSlot = g0.font;
-        ink.scene.draw_glyphs(layout.font(slot)).brush(color).hint(false).transform(to).font_size(g0.size as f32).draw(
-            Fill::NonZero,
-            layout.glyphs[i..j].iter().map(|g| Glyph { id: u32::from(g.id), x: g.x as f32, y: g.y as f32 }),
-        );
-        i = j;
+        let slot: MathFontSlot = first.font;
+        ink.scene
+            .draw_glyphs(layout.font(slot))
+            .brush(color)
+            .hint(false)
+            .transform(to)
+            .font_size(first.size as f32)
+            .draw(Fill::NonZero, run.iter().map(|g| Glyph { id: u32::from(g.id), x: g.x as f32, y: g.y as f32 }));
     }
     for r in &layout.rules {
         let color = match r.color {
@@ -476,11 +461,18 @@ fn paint_frame(ink: &mut Ink, e: &Element, f: &FrameData, ts: &mut Typesetter) {
 /// Draws a layout in a single colour, whatever colours its runs carry.
 fn draw_label(ink: &mut Ink, layout: &drafftink_typeset::TextLayout, origin: Vec2, c: Color) {
     let color = ink.color(c);
-    let to = Affine::translate(origin);
-    for run in &layout.runs {
-        if run.glyphs.is_empty() {
-            continue;
-        }
+    draw_runs(ink, layout, Affine::translate(origin), |_, _| color);
+}
+
+/// Draws the glyph runs of `layout` under `to`, each in the colour `color_of` gives for it.
+fn draw_runs(
+    ink: &mut Ink,
+    layout: &drafftink_typeset::TextLayout,
+    to: Affine,
+    color_of: impl Fn(&Ink, &drafftink_typeset::GlyphRun) -> peniko::Color,
+) {
+    for run in layout.runs.iter().filter(|run| !run.glyphs.is_empty()) {
+        let color = color_of(ink, run);
         ink.scene
             .draw_glyphs(&run.font)
             .brush(color)
@@ -493,7 +485,7 @@ fn draw_label(ink: &mut Ink, layout: &drafftink_typeset::TextLayout, origin: Vec
     }
 }
 
-fn paint_picture(ink: &mut Ink, e: &Element, img: &ImageElem, local: Rect, data: peniko::ImageData) {
+fn paint_picture(ink: &mut Ink, img: &ImageElem, local: Rect, data: peniko::ImageData) {
     let (iw, ih) = (f64::from(data.width), f64::from(data.height));
     if iw <= 0.0 || ih <= 0.0 || local.width() <= 0.0 || local.height() <= 0.0 {
         return;
@@ -517,7 +509,6 @@ fn paint_picture(ink: &mut Ink, e: &Element, img: &ImageElem, local: Rect, data:
     let brush = ImageBrush::new(data).with_alpha(ink.opacity as f32);
     ink.scene.fill(Fill::NonZero, Affine::IDENTITY, &brush, Some(to_box), &local);
     ink.grow(local);
-    let _ = e;
 }
 
 fn paint_border(ink: &mut Ink, e: &Element, local: Rect) {
