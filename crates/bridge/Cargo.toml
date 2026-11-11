@@ -7,7 +7,9 @@ rust-version.workspace = true
 description = "Agent bridge (L6): JSON-RPC 2.0 over WebSocket, a transport-neutral core, a loopback-only native server, the relay for the web page, and the agent tools (generated from the registry) with MCP over HTTP."
 
 [dependencies]
-drafftink-engine = { path = "../engine" }
+# No schemas in the build: the web app fetches them as a file (docs/performance.md, "Wasm size"). The desktop apps and the
+# tests turn them on again.
+drafftink-engine = { path = "../engine", default-features = false }
 serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true
@@ -28,6 +30,7 @@ rmcp = { version = "3.9", default-features = false, features = ["server", "trans
 tokio-util = "0.7"
 
 [dev-dependencies]
+drafftink-engine = { path = "../engine", features = ["schemas"] }
 tempfile.workspace = true
 # An MCP client over streamable HTTP, to test the server of the desktop app with what a real client does.
 rmcp = { version = "3.9", default-features = false, features = ["client", "transport-streamable-http-client-reqwest"] }

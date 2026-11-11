@@ -207,15 +207,24 @@ pub fn fields(schema: &Value) -> Vec<Field> {
 
 /// True when the command has required properties, so it cannot run with `{}`. Computed once for the
 /// whole registry.
+///
+/// Until the schemas are there (the web build fetches them after the first frame) no command is known to need
+/// arguments, and the answer is not kept: the next call asks again.
 pub fn requires_args(id: &str) -> bool {
     static REQUIRING: OnceLock<HashSet<&'static str>> = OnceLock::new();
+    if let Some(known) = REQUIRING.get() {
+        return known.contains(id);
+    }
+    if !drafftink_engine::schemas::available() {
+        return false;
+    }
     REQUIRING
         .get_or_init(|| {
             drafftink_engine::Registry::global()
                 .all()
                 .iter()
                 .filter(|spec| {
-                    serde_json::to_value((spec.args)()).is_ok_and(|schema| fields(&schema).iter().any(|f| f.required))
+                    serde_json::to_value(spec.args_schema()).is_ok_and(|schema| fields(&schema).iter().any(|f| f.required))
                 })
                 .map(|spec| spec.id)
                 .collect()

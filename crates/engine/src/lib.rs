@@ -33,6 +33,7 @@ mod remote_repair;
 mod renders;
 pub mod ring;
 mod saves;
+pub mod schemas;
 pub mod services;
 pub mod session;
 pub mod snap;

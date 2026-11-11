@@ -89,8 +89,10 @@ export interface DrafftinkApi {
   frames(): { frames: number; vello_runs: number };
   version: string;
   webmcp: {
+    /** True once the tools are built (they need the command schemas, which the page fetches as a file) and, where the browser and the address allow, registered. */
+    ready: Promise<boolean>;
     status(): WebMcpStatus;
-    register(): boolean;
+    register(): Promise<boolean>;
     unregister(): void;
   };
   agent: {

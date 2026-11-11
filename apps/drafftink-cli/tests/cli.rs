@@ -208,6 +208,19 @@ fn outline_prints_text_or_json() {
 }
 
 #[test]
+fn schemas_prints_one_table_for_every_command_that_the_web_app_fetches() {
+    let o = cli(&["schemas"]);
+    assert_eq!(o.status.code(), Some(0));
+    let table: Value = serde_json::from_str(&text(&o.stdout)).unwrap();
+    let commands = table["commands"].as_object().unwrap();
+    let listed = text(&cli(&["commands"]).stdout).lines().filter(|l| l.contains('.')).count();
+    assert_eq!(commands.len(), listed, "one entry per command");
+    let create = &commands["element.create"];
+    assert!(create["args"]["properties"].is_object() && create["output"].is_object());
+    assert_eq!(text(&o.stdout).trim_end().lines().count(), 1, "one line, so a build script can hash and compress it");
+}
+
+#[test]
 fn commands_lists_the_registry_and_describes_one() {
     let all = text(&cli(&["commands"]).stdout);
     assert!(all.lines().count() > 100, "the whole registry is listed");

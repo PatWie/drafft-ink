@@ -1,4 +1,5 @@
-//! Static files the page serves next to the wasm module: the big fonts (docs/web-app.md, "Size").
+//! Static files the page serves next to the wasm module: the big fonts (docs/web-app.md, "Size") and the table of
+//! command schemas that the module leaves out (`drafftink_engine::schemas`).
 //!
 //! `scripts/build-web.sh` copies each font to `fonts/<name>.<hash>.<ext>` and writes the map from the plain
 //! file name to that address into `window.__assets` (in `index.html`), with a `<link rel="preload">` for the
@@ -41,9 +42,21 @@ fn address(file_name: &'static str) -> Result<String, AssetError> {
         .ok_or(AssetError::Unlisted(file_name))
 }
 
+/// The plain name of the schema table in the page's asset map.
+const SCHEMA_TABLE: &str = "commands.schema.json";
+
 /// Fetches the bytes of a font.
 pub(crate) async fn fetch_font(file: FontFile) -> Result<Vec<u8>, AssetError> {
-    let url = address(file.file_name())?;
+    fetch_asset(file.file_name()).await
+}
+
+/// Fetches the table of command schemas (`drafftink-cli schemas`, written next to the page by `scripts/build-web.sh`).
+pub(crate) async fn fetch_schemas() -> Result<String, AssetError> {
+    String::from_utf8(fetch_asset(SCHEMA_TABLE).await?).map_err(|_| AssetError::Browser("the table is not text".to_owned()))
+}
+
+async fn fetch_asset(file_name: &'static str) -> Result<Vec<u8>, AssetError> {
+    let url = address(file_name)?;
     let window = window().map_err(|e| AssetError::Browser(e.to_string()))?;
     let response = JsFuture::from(window.fetch_with_str(&url)).await.map_err(|e| browser(&e))?;
     let response: Response = response.dyn_into().map_err(|e| browser(&e))?;

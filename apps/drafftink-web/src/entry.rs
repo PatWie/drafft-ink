@@ -33,6 +33,10 @@ pub async fn start(canvas_id: String) -> Result<(), JsValue> {
     // A second call (hot reload in development) finds the logger set; that is fine.
     let _ = console_log::init_with_level(log::Level::Info);
 
+    // The module has no schema code; the table of command schemas comes as a file. Start fetching it now, in parallel
+    // with the rest of the start-up (the page preloaded it too).
+    let _ = drafftink_app::web::schemas_ready();
+
     let window = web_sys::window().ok_or_else(|| JsValue::from_str("this code must run in a browser page"))?;
     let search = window.location().search().unwrap_or_default();
     let (perf, overlay) = perf_requested(&search);
@@ -45,6 +49,7 @@ pub async fn start(canvas_id: String) -> Result<(), JsValue> {
     mark("drafftink:platform");
     api::install(&web.jobs)?;
     agent::start_from_page();
+    wake_when_schemas_arrive(&web.jobs);
 
     let config = AppConfig {
         join,
@@ -64,4 +69,15 @@ pub async fn start(canvas_id: String) -> Result<(), JsValue> {
     crate::scenario::install_unavailable()?;
     drafftink_gpu::run(app, drafftink_gpu::Options { canvas_id, ..Default::default() })
         .map_err(|e| JsValue::from_str(&e.to_string()))
+}
+
+/// The arguments forms of the palette read the schemas; when the table lands, the app draws once more so that an open
+/// palette shows the right form. (A `ping` is the cheapest request that wakes the app.)
+fn wake_when_schemas_arrive(jobs: &drafftink_bridge::host::JobSender) {
+    let jobs = jobs.clone();
+    wasm_bindgen_futures::spawn_local(async move {
+        if wasm_bindgen_futures::JsFuture::from(drafftink_app::web::schemas_ready()).await.is_ok() {
+            let _ = wasm_bindgen_futures::JsFuture::from(crate::js::call(&jobs, "ping", serde_json::json!({}))).await;
+        }
+    });
 }

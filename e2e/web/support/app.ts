@@ -274,6 +274,8 @@ export async function waitStarted(page: Page, timeoutMs = 90_000): Promise<void>
   await page.waitForFunction(() => window.__started === true || typeof window.__error === "string", undefined, { timeout: timeoutMs });
   const error = await page.evaluate(() => window.__error ?? null);
   if (error !== null) throw new Error(`the app failed to start: ${error}`);
+  // The WebMCP tools are built from the command schemas, which arrive as a file after the first frame.
+  await page.evaluate(() => window.drafftink.webmcp.ready);
 }
 
 /** Opens the app on a new page of `context`. `path` may carry a query such as `?room=x`. */

@@ -12,7 +12,7 @@ publish = false
 scenarios = ["drafftink-scene/scenegen"]
 
 [dependencies]
-drafftink-engine = { path = "../engine" }
+drafftink-engine = { path = "../engine", default-features = false }
 drafftink-canvas = { path = "../canvas" }
 drafftink-geom = { path = "../geom" }
 drafftink-scene = { path = "../scene" }
@@ -56,6 +56,7 @@ web-sys = { workspace = true, features = [
 ] }
 
 [dev-dependencies]
+drafftink-engine = { path = "../engine", features = ["schemas"] }
 drafftink-testkit = { path = "../testkit" }
 # tests/fences reads the source of this crate and of drafftink-ui.
 syn = { version = "2", features = ["full", "visit"] }

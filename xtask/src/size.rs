@@ -23,7 +23,9 @@
 //!
 //! The wasm metrics are `wasm.opt_bytes` (the file the server sends), `wasm.gzip_bytes` and `wasm.brotli_bytes` (what goes
 //! over the wire; brotli is what browsers ask for), `fonts.brotli_bytes` (the font files, brotli each; the page loads
-//! them when it needs them) and, when the build ran, `wasm.raw_bytes` (wasm-bindgen's output before wasm-opt).
+//! them when it needs them), `schemas.brotli_bytes` (the table of command schemas that the page fetches instead of the
+//! module carrying the code that makes them) and, when the build ran, `wasm.raw_bytes` (wasm-bindgen's output before
+//! wasm-opt).
 
 use std::collections::BTreeMap;
 use std::fs;
@@ -247,6 +249,7 @@ fn parse_sizes(text: &str) -> Result<Metrics, String> {
         ("gzip", "wasm.gzip_bytes"),
         ("brotli", "wasm.brotli_bytes"),
         ("fonts_brotli", "fonts.brotli_bytes"),
+        ("schemas_brotli", "schemas.brotli_bytes"),
     ] {
         let value = json.get(key).and_then(Value::as_u64).ok_or(format!("`{key}` is missing or not a whole number"))?;
         metrics.insert(name, value);
@@ -365,10 +368,11 @@ mod tests {
 
     #[test]
     fn the_numbers_of_the_build_script_are_read() {
-        let m = parse_sizes(r#"{"raw": 5, "opt": 4, "gzip": 3, "brotli": 2, "fonts_brotli": 1}"#).unwrap();
+        let m = parse_sizes(r#"{"raw": 5, "opt": 4, "gzip": 3, "brotli": 2, "fonts_brotli": 1, "schemas_brotli": 7}"#).unwrap();
         assert_eq!(m["wasm.brotli_bytes"], 2);
         assert_eq!(m["fonts.brotli_bytes"], 1);
-        assert_eq!(m.len(), 5);
+        assert_eq!(m["schemas.brotli_bytes"], 7);
+        assert_eq!(m.len(), 6);
         assert!(parse_sizes(r#"{"raw": 5}"#).unwrap_err().contains("`opt`"));
         assert!(parse_sizes("nonsense").is_err());
     }
@@ -377,7 +381,7 @@ mod tests {
     fn the_checked_in_budgets_parse() {
         let text = fs::read_to_string(crate::root().join(BUDGETS)).unwrap();
         let b = parse_budgets(&text).unwrap();
-        for name in ["wasm.opt_bytes", "wasm.gzip_bytes", "wasm.brotli_bytes", "fonts.brotli_bytes"]
+        for name in ["wasm.opt_bytes", "wasm.gzip_bytes", "wasm.brotli_bytes", "fonts.brotli_bytes", "schemas.brotli_bytes"]
             .into_iter()
             .chain(NATIVE_BINARIES.iter().map(|(_, metric)| *metric))
         {

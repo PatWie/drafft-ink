@@ -130,7 +130,7 @@ fn takes_files_or_network(spec: &CommandSpec) -> bool {
 }
 
 fn command_line(spec: &CommandSpec) -> String {
-    let schema = (spec.args)().to_value();
+    let schema = spec.args_schema().to_value();
     let mut line = format!(
         "- {} - {} Args: {}.",
         spec.id,

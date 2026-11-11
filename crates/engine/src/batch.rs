@@ -346,7 +346,7 @@ impl Session {
             if refs.is_empty() {
                 spec.handler.parse(spec.id, &step.args).map_err(fail)?;
             } else {
-                crate::args::check_top_keys(spec.id, &step.args, &spec.handler.arg_keys()).map_err(fail)?;
+                crate::args::check_top_keys(spec.id, &step.args, &spec.arg_keys()).map_err(fail)?;
             }
             if let Some(name) = &step.as_name {
                 if !valid_name(name) {

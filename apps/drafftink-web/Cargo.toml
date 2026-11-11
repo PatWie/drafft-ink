@@ -24,7 +24,7 @@ scenarios = ["drafftink-app/scenarios"]
 [dependencies]
 # Pure parts, built and tested on every target.
 drafftink-bridge = { path = "../../crates/bridge" }
-drafftink-engine = { path = "../../crates/engine" }
+drafftink-engine = { path = "../../crates/engine", default-features = false }
 serde_json.workspace = true
 thiserror.workspace = true
 
@@ -42,6 +42,10 @@ web-sys = { workspace = true, features = [
     "Window", "Document", "Location", "History", "Storage", "Event", "EventTarget", "Navigator",
     "WebSocket", "MessageEvent", "CloseEvent", "BinaryType", "Performance",
 ] }
+
+[dev-dependencies]
+# The native unit tests build the WebMCP tool list, which describes the arguments of every command.
+drafftink-engine = { path = "../../crates/engine", features = ["schemas"] }
 
 [lints]
 workspace = true

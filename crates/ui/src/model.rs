@@ -779,9 +779,15 @@ fn read_style(s: &mut Session) -> StyleView {
 }
 
 /// The JSON Schema of a command's arguments (a JSON object with `properties`, `required`, `$defs`).
+///
+/// `None` for an unknown command, and while the schemas are not there yet (the web build fetches them as a file
+/// when the page starts; see `drafftink_engine::schemas`).
 pub fn args_schema(id: &str) -> Option<Value> {
+    if !drafftink_engine::schemas::available() {
+        return None;
+    }
     let spec = drafftink_engine::Registry::global().find(id)?;
-    serde_json::to_value((spec.args)()).ok()
+    serde_json::to_value(spec.args_schema()).ok()
 }
 
 /// What the engine says about one argument of a command (the doc comment of the field), when it says anything.
