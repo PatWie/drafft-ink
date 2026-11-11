@@ -29,7 +29,7 @@ use drafftink_geom::snap::snap_rotation;
 use drafftink_geom::transform::{ElementFrame, map_box, normalize_angle, normalize_angle_signed, rotate_point};
 use drafftink_geom::{OrientedBox, aabb};
 use drafftink_scene::{
-    Element, ElementError, ElementId, ElementKind, Kind, PathType, SceneRead, SceneTx, StoreError, limits,
+    Binding, Element, ElementError, ElementId, ElementKind, Kind, PathType, SceneRead, SceneTx, StoreError, limits,
     validate_element,
 };
 
@@ -306,6 +306,43 @@ fn ratio_in_box(b: &OrientedBox, p: Point) -> [f64; 2] {
     [ratio(l.x + b.size.width / 2.0, b.size.width), ratio(l.y + b.size.height / 2.0, b.size.height)]
 }
 
+/// Bindings whose target is transformed too are kept. After a mirror or a non-uniform scale their fixed point is
+/// carried over to the new target box; the ends whose target stays are freed afterwards by the binding module.
+fn carry_fixed_points(
+    news: &mut BTreeMap<ElementId, Element>,
+    olds: &BTreeMap<ElementId, Element>,
+    motions: &BTreeMap<&ElementId, Motion>,
+) {
+    let carried = |b: &Binding, news: &BTreeMap<ElementId, Element>| -> Option<[f64; 2]> {
+        let motion = motions.get(&b.target).filter(|m| !m.keeps_ratios())?;
+        let (old_t, new_t) = (olds.get(&b.target)?, news.get(&b.target)?);
+        let old_box = geometry::obox(old_t);
+        let g = old_box.to_world(Point::new(
+            (b.fixed_point[0] - 0.5) * old_box.size.width,
+            (b.fixed_point[1] - 0.5) * old_box.size.height,
+        ));
+        Some(ratio_in_box(&geometry::obox(new_t), motion.affine() * g))
+    };
+    let fixes: Vec<(ElementId, [Option<[f64; 2]>; 2])> = news
+        .iter()
+        .filter_map(|(id, n)| {
+            let d = n.linear_data()?;
+            let fixes = [d.start_binding.as_ref(), d.end_binding.as_ref()].map(|b| carried(b?, news));
+            fixes.iter().any(Option::is_some).then(|| (id.clone(), fixes))
+        })
+        .collect();
+    for (id, [start, end]) in fixes {
+        let Some(ElementKind::Line(d) | ElementKind::Arrow(d)) = news.get_mut(&id).map(|n| &mut n.kind) else {
+            continue;
+        };
+        for (fixed, binding) in [(start, d.start_binding.as_mut()), (end, d.end_binding.as_mut())] {
+            if let (Some(fp), Some(b)) = (fixed, binding) {
+                b.fixed_point = fp;
+            }
+        }
+    }
+}
+
 /// Applies the motions to the scene: companion text follows, bindings are kept or dropped, bound arrows are
 /// re-solved. All new values are checked before the first write.
 pub(crate) fn apply<T: SceneTx>(tx: &mut T, items: Vec<Item>) -> Result<TransformReport, TransformError> {
@@ -323,43 +360,7 @@ pub(crate) fn apply<T: SceneTx>(tx: &mut T, items: Vec<Item>) -> Result<Transfor
         news.insert(i.id.clone(), moved(old, i.motion, follower)?);
     }
 
-    // Bindings whose target moves too are kept, with their fixed point carried over a mirror or a non-uniform
-    // scale. The ends whose target stays are freed below by the binding module.
-    let ids: Vec<ElementId> = news.keys().cloned().collect();
-    for id in &ids {
-        let Some(n) = news.get(id) else { continue };
-        let Some(d) = n.linear_data() else { continue };
-        let mut fix: [Option<Option<[f64; 2]>>; 2] = [None, None];
-        for (slot, b) in [d.start_binding.as_ref(), d.end_binding.as_ref()].into_iter().enumerate() {
-            let Some(b) = b else { continue };
-            fix[slot] = Some(
-                match (set.contains(&b.target), motions.get(&b.target), olds.get(&b.target), news.get(&b.target)) {
-                    (true, Some(m), Some(old_t), Some(new_t)) if !m.keeps_ratios() => {
-                        let old_box = geometry::obox(old_t);
-                        let g = old_box.to_world(Point::new(
-                            (b.fixed_point[0] - 0.5) * old_box.size.width,
-                            (b.fixed_point[1] - 0.5) * old_box.size.height,
-                        ));
-                        Some(ratio_in_box(&geometry::obox(new_t), m.affine() * g))
-                    }
-                    (true, _, _, _) => Some(b.fixed_point),
-                    _ => None,
-                },
-            );
-        }
-        if fix.iter().all(Option::is_none) {
-            continue;
-        }
-        if let Some(n) = news.get_mut(id)
-            && let ElementKind::Line(d) | ElementKind::Arrow(d) = &mut n.kind
-        {
-            for (slot, b) in [&mut d.start_binding, &mut d.end_binding].into_iter().enumerate() {
-                if let (Some(Some(fp)), Some(b)) = (fix[slot], b) {
-                    b.fixed_point = fp;
-                }
-            }
-        }
-    }
+    carry_fixed_points(&mut news, &olds, &motions);
 
     for (id, n) in &news {
         validate_element(n).map_err(|error| TransformError::Invalid { id: id.clone(), error })?;
