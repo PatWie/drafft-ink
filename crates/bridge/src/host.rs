@@ -136,7 +136,12 @@ impl WaitingBatch {
                 }
             }
         }
-        self.pending.is_empty()
+        let done = self.pending.is_empty();
+        if done && let Value::Object(map) = &mut self.result {
+            // Every picture is in: the answer is the batch result a synchronous renderer would have given.
+            map.remove("pending");
+        }
+        done
     }
 
     fn put(&mut self, index: usize, output: Value) {
@@ -344,6 +349,7 @@ mod tests {
         assert_eq!(value["completed"], 2);
         assert_eq!(value["results"].as_array().map(Vec::len), Some(2));
         assert!(value["results"][1].get("bytes").is_some(), "the placeholder was replaced by the output: {value}");
+        assert!(value.get("pending").is_none(), "no step is waiting any more: {value}");
         assert_eq!(s.tab().doc.undo_depth(), 1, "the batch was not run twice");
     }
 
