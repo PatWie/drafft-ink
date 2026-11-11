@@ -49,6 +49,7 @@ pub fn show(ctx: &Context, cx: &mut Cx<'_>, _st: &mut UiState) {
 
 fn colour_row(ui: &mut egui::Ui, cx: &mut Cx<'_>, title: &str, prop: &str, shade: u16, allow_none: bool) {
     section_label(ui, &cx.pal, title);
+    ui.add_space(4.0);
     let current = cx.model.style.prop(prop).and_then(|p| p.value.clone());
     let blocked = not_applicable(cx, prop);
     let is_none = allow_none && matches!(current, Some(Value::Null));

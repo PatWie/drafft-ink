@@ -142,6 +142,7 @@ fn menu_rows(ui: &mut egui::Ui, cx: &mut Cx<'_>) {
 fn export_scale_row(ui: &mut egui::Ui, cx: &mut Cx<'_>) {
     let current = cx.model.setting_f64("export.scale").unwrap_or(2.0);
     ui.horizontal(|ui| {
+        ui.add_space(10.0);
         ui.label(egui::RichText::new("Export scale").size(11.0).color(cx.pal.muted));
         for scale in [1.0, 2.0, 3.0] {
             let ctl = Ctl::new("settings.set")
@@ -156,6 +157,7 @@ fn export_scale_row(ui: &mut egui::Ui, cx: &mut Cx<'_>) {
 fn theme_row(ui: &mut egui::Ui, cx: &mut Cx<'_>) {
     let current = cx.model.setting_str("theme").unwrap_or("system").to_owned();
     ui.horizontal(|ui| {
+        ui.add_space(10.0);
         ui.label(egui::RichText::new("Theme").size(11.0).color(cx.pal.muted));
         for (label, value) in [("Light", "light"), ("Dark", "dark"), ("System", "system")] {
             let ctl = Ctl::new("settings.set")
