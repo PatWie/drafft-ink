@@ -24,29 +24,29 @@
 {"id":"element.create","as":"follower","args":{"name":"follower","kind":"rectangle","bounds":{"x":200,"y":260,"w":100,"h":60},"style":{"fill_color":"amber-100","stroke_color":"amber-600","fill_pattern":"solid"}}}
 {"id":"element.create","args":{"kind":"text","container":"$follower","text":"I follow"}}
 {"id":"element.create","args":{"name":"link","kind":"arrow","points":[[140,290],[200,290]],"start":{"target":"$box"},"end":{"target":"$follower"},"style":{"stroke_color":"slate-700","stroke_width":2}}}
-{"id":"element.create","args":{"kind":"text","at":[40,384],"text":"Move the box, the arrow follows. Finally, something in your org that stays connected.","style":{"font_size":18,"stroke_color":"slate-600"},"width":260}}
+{"id":"element.create","args":{"kind":"text","at":[40,384],"text":"Move the box, the arrow follows. Finally, something in your org that stays connected.","style":{"font_size":20,"stroke_color":"slate-600"},"width":260}}
 
 // ---- boxes around boxes ----
 {"id":"element.create","as":"outer","args":{"name":"outer_box","kind":"rectangle","bounds":{"x":340,"y":220,"w":240,"h":140},"style":{"stroke_color":"violet-500","stroke_style":"dashed","stroke_width":2,"fill_color":"transparent"}}}
 {"id":"element.create","args":{"name":"inner_box","kind":"rectangle","bounds":{"x":390,"y":260,"w":140,"h":60},"style":{"stroke_color":"slate-700","stroke_width":2,"fill_color":"transparent"}}}
 {"id":"element.create","args":{"kind":"text","at":[390,275],"text":"lunch","style":{"font_size":24,"stroke_color":"slate-800","text_align":"center"},"width":140}}
-{"id":"element.create","args":{"kind":"text","at":[340,384],"text":"Watch your colleagues draw boxes around things that don't need boxes, in real time.","style":{"font_size":18,"stroke_color":"slate-600"},"width":260}}
-{"id":"element.create","args":{"kind":"text","at":[640,270],"text":"Eraser: for the box someone drew around your box.","style":{"font_size":18,"stroke_color":"violet-600"},"width":240}}
+{"id":"element.create","args":{"kind":"text","at":[340,384],"text":"Watch your colleagues draw boxes around things that don't need boxes, in real time.","style":{"font_size":20,"stroke_color":"slate-600"},"width":260}}
+{"id":"element.create","args":{"kind":"text","at":[640,264],"text":"Eraser: for the box someone drew around your box.","style":{"font_size":20,"stroke_color":"violet-600"},"width":250}}
 {"id":"element.create","args":{"kind":"arrow","points":[[630,290],[580,290]],"end":{"target":"$outer"},"style":{"stroke_color":"violet-500","stroke_width":2}}}
 
 // ---- a cycle from one command ----
 {"id":"diagram.create","as":"agile","args":{"layout":{"algorithm":"none"},"select":false,"nodes":[{"id":"group","label":"Group","x":940,"y":220,"width":100,"height":48,"style":{"fill_color":"#dbeafe","stroke_color":"#2563eb"}},{"id":"ungroup","label":"Ungroup","x":1100,"y":220,"width":100,"height":48,"style":{"fill_color":"#fef3c7","stroke_color":"#d97706"}},{"id":"regroup","label":"Regroup","x":1020,"y":312,"width":100,"height":48,"style":{"fill_color":"#dcfce7","stroke_color":"#16a34a"}}],"edges":[{"from":"group","to":"ungroup"},{"from":"ungroup","to":"regroup"},{"from":"regroup","to":"group"}]}}
-{"id":"element.create","args":{"kind":"text","at":[940,384],"text":"Group, ungroup, regroup. Basically agile.","style":{"font_size":18,"stroke_color":"slate-600"},"width":260}}
-{"id":"element.create","args":{"kind":"text","at":[940,448],"text":"Drawn by one command. Your AI can do that too. It can also draw too many boxes.","style":{"font_size":14,"stroke_color":"slate-500"},"width":260}}
+{"id":"element.create","args":{"kind":"text","at":[940,384],"text":"Group, ungroup, regroup. Basically agile.","style":{"font_size":20,"stroke_color":"slate-600"},"width":260}}
+{"id":"element.create","args":{"kind":"text","at":[940,452],"text":"Drawn by one command. Your AI can do that too. It can also draw too many boxes.","style":{"font_size":16,"stroke_color":"slate-500"},"width":260}}
 
 // ---- sketch style: the same box with sloppiness architect, artist, cartoonist ----
 {"id":"element.create","args":{"name":"sketch_0","kind":"rectangle","bounds":{"x":40,"y":520,"w":60,"h":60},"style":{"fill_color":"blue-100","stroke_color":"blue-600","fill_pattern":"solid","sloppiness":"architect","stroke_width":2}}}
-{"id":"element.create","args":{"kind":"text","at":[20,588],"text":"architect","style":{"font_size":16,"stroke_color":"slate-500","text_align":"center"},"width":100}}
+{"id":"element.create","args":{"kind":"text","at":[20,588],"text":"architect","style":{"font_size":18,"stroke_color":"slate-500","text_align":"center"},"width":100}}
 {"id":"element.create","args":{"name":"sketch_1","kind":"rectangle","bounds":{"x":140,"y":520,"w":60,"h":60},"style":{"fill_color":"amber-100","stroke_color":"amber-600","fill_pattern":"hachure","sloppiness":"artist","stroke_width":2}}}
-{"id":"element.create","args":{"kind":"text","at":[120,588],"text":"artist","style":{"font_size":16,"stroke_color":"slate-500","text_align":"center"},"width":100}}
+{"id":"element.create","args":{"kind":"text","at":[120,588],"text":"artist","style":{"font_size":18,"stroke_color":"slate-500","text_align":"center"},"width":100}}
 {"id":"element.create","args":{"name":"sketch_2","kind":"rectangle","bounds":{"x":240,"y":520,"w":60,"h":60},"style":{"fill_color":"green-100","stroke_color":"green-600","fill_pattern":"cross_hatch","sloppiness":"cartoonist","stroke_width":2}}}
-{"id":"element.create","args":{"kind":"text","at":[220,588],"text":"cartoonist","style":{"font_size":16,"stroke_color":"slate-500","text_align":"center"},"width":100}}
-{"id":"element.create","args":{"kind":"text","at":[40,628],"text":"It looks hand-drawn, so nobody can tell if it's the draft or the final. Neither can you.","style":{"font_size":18,"stroke_color":"slate-600"},"width":260}}
+{"id":"element.create","args":{"kind":"text","at":[220,588],"text":"cartoonist","style":{"font_size":18,"stroke_color":"slate-500","text_align":"center"},"width":100}}
+{"id":"element.create","args":{"kind":"text","at":[40,628],"text":"It looks hand-drawn, so nobody can tell if it's the draft or the final. Neither can you.","style":{"font_size":20,"stroke_color":"slate-600"},"width":260}}
 
 // ---- shortcut card ----
 {"id":"element.create","args":{"name":"card","kind":"rectangle","bounds":{"x":340,"y":520,"w":260,"h":220},"style":{"fill_color":"slate-50","stroke_color":"slate-400","stroke_width":2,"corner_radius":8}}}
@@ -55,11 +55,11 @@
 {"id":"element.create","args":{"kind":"text","at":[480,568],"text":"Box\nEllipse\nArrow\nText\nPen\nPan\nZoom\nEvery command","style":{"font_size":16,"stroke_color":"slate-700","line_height":1.2}}}
 
 // ---- sticky note ----
-{"id":"element.create_sticky","args":{"name":"note_done","bounds":{"x":640,"y":520,"w":260,"h":220},"color":"yellow","text":"Done reading? Menu, then Clear the canvas. We won't be offended."}}
+{"id":"element.create_sticky","args":{"name":"note_done","bounds":{"x":640,"y":520,"w":260,"h":220},"color":"yellow","font_size":24,"text":"Done reading? Menu, then Clear the canvas. We won't be offended."}}
 
 // ---- infinite canvas: the arrow points right, the box is 3000 units past the frame ----
-{"id":"element.create","args":{"name":"to_the_right","kind":"arrow","points":[[940,550],[1200,550]],"style":{"stroke_color":"slate-700","stroke_width":3}}}
-{"id":"element.create","args":{"kind":"text","at":[940,590],"text":"The hard problem is over there. Far to the right.","style":{"font_size":18,"stroke_color":"slate-600"},"width":260}}
+{"id":"element.create","args":{"name":"to_the_right","kind":"arrow","points":[[940,550],[1340,550]],"frame":null,"style":{"stroke_color":"slate-700","stroke_width":3}}}
+{"id":"element.create","args":{"kind":"text","at":[940,584],"text":"The hard problem is over there. Far to the right.","style":{"font_size":20,"stroke_color":"slate-600"},"width":260}}
 {"id":"element.create","as":"far","args":{"name":"far_box","kind":"rectangle","bounds":{"x":4260,"y":520,"w":240,"h":100},"frame":null,"style":{"fill_color":"rose-100","stroke_color":"rose-600","fill_pattern":"hachure","stroke_width":2}}}
 {"id":"element.create","args":{"kind":"text","container":"$far","text":"The hard problem"}}
 

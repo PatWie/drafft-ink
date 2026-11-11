@@ -38,7 +38,7 @@
       "width": 1600,
       "padding": 40,
       "theme": "light",
-      "frame": "@home"
+      "ids": ["@home", "@to_the_right"]
     }
   ]
 }

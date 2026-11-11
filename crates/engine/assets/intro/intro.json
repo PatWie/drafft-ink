@@ -5,6 +5,43 @@
   "background": "#ffffff",
   "elements": [
     {
+      "id": "SZ7B6c_xW0U6b3y5",
+      "kind": {
+        "type": "arrow",
+        "points": [
+          [
+            0.0,
+            0.0
+          ],
+          [
+            400.0,
+            0.0
+          ]
+        ],
+        "path": "sharp",
+        "end_head": "arrow"
+      },
+      "transform": {
+        "x": 940.0,
+        "y": 550.0,
+        "w": 400.0,
+        "h": 0.0
+      },
+      "style": {
+        "stroke_color": "#334155",
+        "stroke_width": 3.0,
+        "stroke_style": "solid",
+        "fill_pattern": "solid",
+        "sloppiness": "artist",
+        "opacity": 1.0,
+        "corner_radius": 0.0,
+        "seed": 1072290691
+      },
+      "index": "aj",
+      "name": "to_the_right",
+      "version": 1
+    },
+    {
       "id": "QuQWecIbx67pLN8V",
       "kind": {
         "type": "rectangle"
@@ -569,7 +606,7 @@
         "content": "Move the box, the arrow follows. Finally, something in your org that stays connected.",
         "font": {
           "family": "gelpen",
-          "size": 18.0,
+          "size": 20.0,
           "weight": "regular",
           "align": "left",
           "vertical_align": "top",
@@ -581,7 +618,7 @@
         "x": 40.0,
         "y": 384.0,
         "w": 260.0,
-        "h": 67.5
+        "h": 75.0
       },
       "style": {
         "stroke_color": "#475569",
@@ -693,7 +730,7 @@
         "content": "Watch your colleagues draw boxes around things that don't need boxes, in real time.",
         "font": {
           "family": "gelpen",
-          "size": 18.0,
+          "size": 20.0,
           "weight": "regular",
           "align": "left",
           "vertical_align": "top",
@@ -705,7 +742,7 @@
         "x": 340.0,
         "y": 384.0,
         "w": 260.0,
-        "h": 67.5
+        "h": 75.0
       },
       "style": {
         "stroke_color": "#475569",
@@ -728,7 +765,7 @@
         "content": "Eraser: for the box someone drew around your box.",
         "font": {
           "family": "gelpen",
-          "size": 18.0,
+          "size": 20.0,
           "weight": "regular",
           "align": "left",
           "vertical_align": "top",
@@ -738,9 +775,9 @@
       },
       "transform": {
         "x": 640.0,
-        "y": 270.0,
-        "w": 240.0,
-        "h": 45.0
+        "y": 264.0,
+        "w": 250.0,
+        "h": 50.0
       },
       "style": {
         "stroke_color": "#7c3aed",
@@ -775,8 +812,8 @@
           "target": "CVvmy_7QE3m3PABH",
           "mode": "orbit",
           "fixed_point": [
-            0.4437196009514674,
-            0.44371960095146756
+            0.4807290206288808,
+            0.5192709793711185
           ]
         },
         "end_binding": {
@@ -1158,7 +1195,7 @@
         "content": "Group, ungroup, regroup. Basically agile.",
         "font": {
           "family": "gelpen",
-          "size": 18.0,
+          "size": 20.0,
           "weight": "regular",
           "align": "left",
           "vertical_align": "top",
@@ -1170,7 +1207,7 @@
         "x": 940.0,
         "y": 384.0,
         "w": 260.0,
-        "h": 45.0
+        "h": 50.0
       },
       "style": {
         "stroke_color": "#475569",
@@ -1193,7 +1230,7 @@
         "content": "Drawn by one command. Your AI can do that too. It can also draw too many boxes.",
         "font": {
           "family": "gelpen",
-          "size": 14.0,
+          "size": 16.0,
           "weight": "regular",
           "align": "left",
           "vertical_align": "top",
@@ -1203,9 +1240,9 @@
       },
       "transform": {
         "x": 940.0,
-        "y": 448.0,
+        "y": 452.0,
         "w": 260.0,
-        "h": 35.0
+        "h": 60.0
       },
       "style": {
         "stroke_color": "#64748b",
@@ -1255,7 +1292,7 @@
         "content": "architect",
         "font": {
           "family": "gelpen",
-          "size": 16.0,
+          "size": 18.0,
           "weight": "regular",
           "align": "center",
           "vertical_align": "top",
@@ -1267,7 +1304,7 @@
         "x": 20.0,
         "y": 588.0,
         "w": 100.0,
-        "h": 20.0
+        "h": 22.5
       },
       "style": {
         "stroke_color": "#64748b",
@@ -1317,7 +1354,7 @@
         "content": "artist",
         "font": {
           "family": "gelpen",
-          "size": 16.0,
+          "size": 18.0,
           "weight": "regular",
           "align": "center",
           "vertical_align": "top",
@@ -1329,7 +1366,7 @@
         "x": 120.0,
         "y": 588.0,
         "w": 100.0,
-        "h": 20.0
+        "h": 22.5
       },
       "style": {
         "stroke_color": "#64748b",
@@ -1379,7 +1416,7 @@
         "content": "cartoonist",
         "font": {
           "family": "gelpen",
-          "size": 16.0,
+          "size": 18.0,
           "weight": "regular",
           "align": "center",
           "vertical_align": "top",
@@ -1391,7 +1428,7 @@
         "x": 220.0,
         "y": 588.0,
         "w": 100.0,
-        "h": 20.0
+        "h": 22.5
       },
       "style": {
         "stroke_color": "#64748b",
@@ -1414,7 +1451,7 @@
         "content": "It looks hand-drawn, so nobody can tell if it's the draft or the final. Neither can you.",
         "font": {
           "family": "gelpen",
-          "size": 18.0,
+          "size": 20.0,
           "weight": "regular",
           "align": "left",
           "vertical_align": "top",
@@ -1426,7 +1463,7 @@
         "x": 40.0,
         "y": 628.0,
         "w": 260.0,
-        "h": 67.5
+        "h": 75.0
       },
       "style": {
         "stroke_color": "#475569",
@@ -1605,7 +1642,7 @@
         "content": "Done reading? Menu, then Clear the canvas. We won't be offended.",
         "font": {
           "family": "gelpen",
-          "size": 28.0,
+          "size": 24.0,
           "weight": "regular",
           "align": "center",
           "vertical_align": "middle",
@@ -1614,10 +1651,10 @@
         "container_id": "YMhZNpN6tQQSzL7Q"
       },
       "transform": {
-        "x": 651.3640060424805,
-        "y": 560.0,
-        "w": 237.27198791503906,
-        "h": 140.0
+        "x": 658.2320098876953,
+        "y": 585.0,
+        "w": 223.53598022460938,
+        "h": 90.0
       },
       "style": {
         "stroke_color": "#1e1e1e",
@@ -1634,51 +1671,13 @@
       "version": 2
     },
     {
-      "id": "SZ7B6c_xW0U6b3y5",
-      "kind": {
-        "type": "arrow",
-        "points": [
-          [
-            0.0,
-            0.0
-          ],
-          [
-            260.0,
-            0.0
-          ]
-        ],
-        "path": "sharp",
-        "end_head": "arrow"
-      },
-      "transform": {
-        "x": 940.0,
-        "y": 550.0,
-        "w": 260.0,
-        "h": 0.0
-      },
-      "style": {
-        "stroke_color": "#334155",
-        "stroke_width": 3.0,
-        "stroke_style": "solid",
-        "fill_pattern": "solid",
-        "sloppiness": "artist",
-        "opacity": 1.0,
-        "corner_radius": 0.0,
-        "seed": 1072290691
-      },
-      "index": "amy",
-      "frame_id": "b7ySuId2TWyyp8Yw",
-      "name": "to_the_right",
-      "version": 2
-    },
-    {
       "id": "qPfO1oKx1W-L_v9y",
       "kind": {
         "type": "text",
         "content": "The hard problem is over there. Far to the right.",
         "font": {
           "family": "gelpen",
-          "size": 18.0,
+          "size": 20.0,
           "weight": "regular",
           "align": "left",
           "vertical_align": "top",
@@ -1688,9 +1687,9 @@
       },
       "transform": {
         "x": 940.0,
-        "y": 590.0,
+        "y": 584.0,
         "w": 260.0,
-        "h": 45.0
+        "h": 50.0
       },
       "style": {
         "stroke_color": "#475569",

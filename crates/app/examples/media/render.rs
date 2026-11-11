@@ -70,8 +70,8 @@ pub fn render(shot: &Shot) -> Result<Vec<u8>, RenderError> {
     let data = tempfile::tempdir()?;
     match shot.output {
         Output::Window { size, scale, theme, touch } => window(shot, data.path(), size, scale, theme, touch),
-        Output::Export { width, padding, theme, ref frame } => {
-            export(shot, data.path(), &ExportSpec { width, padding, theme, frame: frame.as_deref() })
+        Output::Export { width, padding, theme, ref ids } => {
+            export(shot, data.path(), &ExportSpec { width, padding, theme, ids: ids.as_deref() })
         }
     }
 }
@@ -104,27 +104,32 @@ struct ExportSpec<'a> {
     width: u32,
     padding: f64,
     theme: Theme,
-    /// Export only this frame.
-    frame: Option<&'a str>,
+    /// Export only these elements.
+    ids: Option<&'a [String]>,
 }
 
-/// The width in world units of what the export draws: the frame, or all content.
-fn export_content_width(app: &mut App, shot: &str, frame: Option<&str>) -> Result<f64, RenderError> {
-    let width = match frame {
-        Some(f) => execute(app, shot, "doc.inspect", json!({ "detail": "full", "ids": [f] }))?
-            .pointer("/items/0/bounds/w")
-            .and_then(Value::as_f64),
-        None => execute(app, shot, "doc.inspect", json!({}))?.pointer("/bounds/w").and_then(Value::as_f64),
+/// The width in world units of what the export draws: the given elements together, or all content.
+fn export_content_width(app: &mut App, shot: &str, ids: Option<&[String]>) -> Result<f64, RenderError> {
+    let Some(ids) = ids else {
+        let out = execute(app, shot, "doc.inspect", json!({}))?;
+        return Ok(out.pointer("/bounds/w").and_then(Value::as_f64).unwrap_or_default());
     };
-    Ok(width.unwrap_or_default())
+    let out = execute(app, shot, "doc.inspect", json!({ "detail": "full", "ids": ids }))?;
+    let edges = out.pointer("/items").and_then(Value::as_array).into_iter().flatten().filter_map(|item| {
+        let x = item.pointer("/bounds/x").and_then(Value::as_f64)?;
+        let w = item.pointer("/bounds/w").and_then(Value::as_f64)?;
+        Some((x, x + w))
+    });
+    let (left, right) = edges.fold((f64::INFINITY, f64::NEG_INFINITY), |(l, r), (x0, x1)| (l.min(x0), r.max(x1)));
+    Ok((right - left).max(0.0))
 }
 
 fn export(shot: &Shot, data: &Path, spec: &ExportSpec<'_>) -> Result<Vec<u8>, RenderError> {
     let mut app = app(data);
     run_steps(&mut app, shot)?;
-    let content = export_content_width(&mut app, &shot.name, spec.frame)?;
-    let (scope, frame) = match spec.frame {
-        Some(f) => ("frame", json!(f)),
+    let content = export_content_width(&mut app, &shot.name, spec.ids)?;
+    let (scope, ids) = match spec.ids {
+        Some(ids) => ("ids", json!(ids)),
         None => ("all", Value::Null),
     };
     let out = execute(
@@ -134,7 +139,7 @@ fn export(shot: &Shot, data: &Path, spec: &ExportSpec<'_>) -> Result<Vec<u8>, Re
         json!({
             "format": "png",
             "scope": scope,
-            "frame": frame,
+            "ids": ids,
             "scale": export_scale(spec.width, content, spec.padding),
             "padding": spec.padding,
             "background": true,

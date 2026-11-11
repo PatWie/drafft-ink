@@ -52,7 +52,7 @@ It runs the example `media` of `drafftink-app` (`crates/app/examples/media`), wh
 `docs/media/shots.json` lists the pictures. Each shot has a `name` (the file is `docs/img/<name>.png`), optional `steps` (commands run after the intro is shown, `{"id": "...", "args": {...}}`), and a `kind`:
 
 - `window`: the whole app. `size` in logical pixels, `scale` (physical pixels per logical pixel; the PNG is `size * scale`), `theme` (`light` or `dark`), optional `touch: true` for the phone layout. Use `selection.select` to choose what the ribbon shows and `view.zoom_to_fit` or `view.set` for the camera (the intro already frames `@home`).
-- `export`: the document alone through the PNG export (`doc.export`), `width` in pixels, `padding`, `theme`, and optionally `frame` (an id or `@name`) to export only that frame.
+- `export`: the document alone through the PNG export (`doc.export`), `width` in pixels, `padding`, `theme`, and optionally `ids` (ids or `@name`s) to export only those elements, with the frames' children (the welcome picture uses `@home` and the arrow that leaves it).
 
 | File | What |
 |---|---|
