@@ -213,7 +213,11 @@ fn zoomed_out_frames_reuse_the_z_order_until_the_scene_changes() {
         w.composer.set_options(RenderOptions::default());
         let work = WorkScope::begin();
         w.compose(&fit(&w, 1.0));
-        assert_eq!(work.count(Counter::ElementsScanned), n as u64, "the first all-visible frame orders the scene once at {n}");
+        assert_eq!(
+            work.count(Counter::ElementsScanned),
+            n as u64,
+            "the first all-visible frame orders the scene once at {n}"
+        );
         // A zoom or a pan of a scene that shows most elements: no pass over the scene.
         let work = WorkScope::begin();
         for k in 0..10 {
