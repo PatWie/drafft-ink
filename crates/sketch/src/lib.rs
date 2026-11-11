@@ -59,6 +59,8 @@
 //! are dropped, coordinates are clamped to ±[`MAX_COORD`], point lists are decimated above
 //! [`MAX_POINTS`], and pattern fills draw at most [`MAX_HACHURE_LINES`] lines per direction.
 
+#![warn(missing_docs)]
+
 mod arrowhead;
 mod cache;
 mod effect;
