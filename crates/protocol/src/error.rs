@@ -2,18 +2,50 @@
 
 use thiserror::Error;
 
+/// Which rule a field broke.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Error)]
+pub enum Rule {
+    /// The value is empty.
+    #[error("must not be empty")]
+    Empty,
+    /// The value is longer than its limit.
+    #[error("is too long")]
+    TooLong,
+    /// A character outside the allowed set (room ids: letters, digits, `-`, `_`, `.`).
+    #[error("may only contain letters, digits, '-', '_' and '.'")]
+    BadCharacter,
+    /// Not exactly 32 hexadecimal digits.
+    #[error("must be 32 hex characters")]
+    NotHex128,
+    /// A number is NaN or infinite.
+    #[error("must be a finite number")]
+    NotFinite,
+    /// A colour has bits above `0xRRGGBB`.
+    #[error("must fit in 0xRRGGBB")]
+    ColorRange,
+    /// A size is negative.
+    #[error("size must not be negative")]
+    NegativeSize,
+    /// A limit is above the hard limit of the protocol.
+    #[error("above the hard limit")]
+    AboveHardLimit,
+    /// A range has its minimum above its maximum.
+    #[error("min is above max")]
+    InvertedRange,
+}
+
 /// A field or value broke a protocol rule.
 #[derive(Debug, Clone, PartialEq, Eq, Error)]
 #[error("invalid {field}: {reason}")]
 pub struct ValidationError {
     /// The field that broke the rule.
     pub field: &'static str,
-    /// What is wrong, in plain words.
-    pub reason: &'static str,
+    /// The rule it broke. Match on it; the `Display` text is for people.
+    pub reason: Rule,
 }
 
 impl ValidationError {
-    pub(crate) fn new(field: &'static str, reason: &'static str) -> Self {
+    pub(crate) fn new(field: &'static str, reason: Rule) -> Self {
         Self { field, reason }
     }
 }
@@ -32,7 +64,7 @@ pub enum EncodeError {
         /// The limit.
         max: usize,
     },
-    /// JSON serialization failed.
+    /// JSON serialization failed. Holds the message of the `serde_json` error (see [`DecodeError::Json`]).
     #[error("json: {0}")]
     Json(String),
 }
@@ -102,7 +134,8 @@ pub enum DecodeError {
         /// Highest version this side speaks.
         ours_max: u16,
     },
-    /// The JSON text is not a valid message.
+    /// The JSON text is not a valid message. This holds the message of the `serde_json` error and not the error:
+    /// `DecodeError` is `Clone + PartialEq + Eq`, which the tests and the server's error replies rely on.
     #[error("json: {0}")]
     Json(String),
 }

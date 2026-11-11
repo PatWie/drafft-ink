@@ -82,7 +82,7 @@ pub enum FontError {
     TooLarge,
     /// Not a TrueType or OpenType font.
     #[error("The file is not a usable font: {0}.")]
-    Invalid(String),
+    Invalid(#[source] ttf_parser::FaceParsingError),
 }
 
 /// Cache key: a 128-bit digest of everything that affects the layout, plus the font set version.
@@ -284,7 +284,7 @@ impl Typesetter {
         if bytes.len() > MAX_FONT_BYTES {
             return Err(FontError::TooLarge);
         }
-        ttf_parser::Face::parse(&bytes, 0).map_err(|e| FontError::Invalid(e.to_string()))?;
+        ttf_parser::Face::parse(&bytes, 0).map_err(FontError::Invalid)?;
         let registered = self.engine.font_cx.collection.register_fonts(peniko::Blob::new(Arc::new(bytes)), None);
         let names: Vec<String> = registered
             .iter()

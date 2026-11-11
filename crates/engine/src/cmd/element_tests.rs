@@ -74,7 +74,7 @@ fn bound_arrow(s: &mut Session, from: &str, to: &str) -> ElementId {
     let id = s.ports.ids.element_id();
     let ret = id.clone();
     setup(s, |tx| {
-        let z = tx.next_top_index().map_err(|e| StoreError::Backend(e.to_string()))?;
+        let z = tx.next_top_index().map_err(|e| StoreError::backend(e))?;
         let mut d = LinearData::new(vec![Point::new(0.0, 0.0), Point::new(100.0, 0.0)]);
         d.start_binding = Some(Binding { target: a, mode: BindMode::Orbit, fixed_point: [1.0, 0.5] });
         d.end_binding = Some(Binding { target: b, mode: BindMode::Orbit, fixed_point: [0.0, 0.5] });
@@ -83,7 +83,7 @@ fn bound_arrow(s: &mut Session, from: &str, to: &str) -> ElementId {
         e.transform = drafftink_scene::Transform::new(100.0, 30.0, 100.0, 0.0);
         tx.insert(e)?;
         drafftink_edit::binding::update_bound_arrows(tx, &[eid("e1"), eid("e2")])
-            .map_err(|e| StoreError::Backend(e.to_string()))?;
+            .map_err(|e| StoreError::backend(e))?;
         Ok(())
     });
     ret
@@ -93,7 +93,7 @@ fn group_of(s: &mut Session, ids: &[&str], g: &str) {
     let ids: Vec<ElementId> = ids.iter().map(|i| eid(i)).collect();
     let g = GroupId::new(g).unwrap();
     setup(s, |tx| {
-        drafftink_edit::group::group(tx, &ids, None, g).map_err(|e| StoreError::Backend(e.to_string()))?;
+        drafftink_edit::group::group(tx, &ids, None, g).map_err(|e| StoreError::backend(e))?;
         Ok(())
     });
 }

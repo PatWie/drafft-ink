@@ -152,11 +152,16 @@ impl Default for Document {
 }
 
 /// Why a document could not be read or written.
-#[derive(Debug, Clone, PartialEq, thiserror::Error)]
+///
+/// `PartialEq` compares the JSON errors by their message, because `serde_json::Error` has no equality.
+#[derive(Debug, Clone, thiserror::Error)]
 pub enum DocumentError {
-    /// The text is not JSON of the expected shape.
+    /// The text is not JSON of the expected shape. The source has the line and column.
     #[error("the file is not a drafft.ink document: {0}")]
-    Parse(String),
+    Parse(#[source] Arc<serde_json::Error>),
+    /// The text is JSON, but not an object.
+    #[error("the file is not a drafft.ink document: a document is a JSON object")]
+    NotAnObject,
     /// The file was saved by a newer version of the format.
     #[error("this file uses format version {found}, and this build reads up to {max}. Update the app to open it")]
     NewerVersion {
@@ -170,7 +175,20 @@ pub enum DocumentError {
     Invalid(Report),
     /// The JSON writer failed.
     #[error("could not write the document: {0}")]
-    Write(String),
+    Write(#[source] Arc<serde_json::Error>),
+}
+
+impl PartialEq for DocumentError {
+    fn eq(&self, other: &Self) -> bool {
+        use DocumentError::{Invalid, NewerVersion, NotAnObject, Parse, Write};
+        match (self, other) {
+            (Parse(a), Parse(b)) | (Write(a), Write(b)) => a.to_string() == b.to_string(),
+            (NotAnObject, NotAnObject) => true,
+            (NewerVersion { found: f1, max: m1 }, NewerVersion { found: f2, max: m2 }) => (f1, m1) == (f2, m2),
+            (Invalid(a), Invalid(b)) => a == b,
+            _ => false,
+        }
+    }
 }
 
 fn first_error(r: &Report) -> String {
@@ -208,9 +226,9 @@ impl Document {
         }
         // serde accepts a bare array for a struct; a document is always an object.
         if !text.trim_start().starts_with('{') {
-            return Err(DocumentError::Parse("a document is a JSON object".to_owned()));
+            return Err(DocumentError::NotAnObject);
         }
-        let doc: Document = serde_json::from_str(text).map_err(|e| DocumentError::Parse(e.to_string()))?;
+        let doc: Document = serde_json::from_str(text).map_err(|e| DocumentError::Parse(Arc::new(e)))?;
         let report = doc.validate();
         if report.has_errors() {
             return Err(DocumentError::Invalid(report));
@@ -222,13 +240,13 @@ impl Document {
     /// (the old app wrote `NaN` as `null` and could not reload its own file).
     pub fn to_json(&self) -> Result<String, DocumentError> {
         self.check_writable()?;
-        serde_json::to_string(self).map_err(|e| DocumentError::Write(e.to_string()))
+        serde_json::to_string(self).map_err(|e| DocumentError::Write(Arc::new(e)))
     }
 
     /// Like [`Document::to_json`], indented for humans.
     pub fn to_json_pretty(&self) -> Result<String, DocumentError> {
         self.check_writable()?;
-        serde_json::to_string_pretty(self).map_err(|e| DocumentError::Write(e.to_string()))
+        serde_json::to_string_pretty(self).map_err(|e| DocumentError::Write(Arc::new(e)))
     }
 
     fn check_writable(&self) -> Result<(), DocumentError> {

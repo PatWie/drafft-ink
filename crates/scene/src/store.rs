@@ -17,8 +17,10 @@
 //! * Subscribers are called once per commit, after the store is consistent, in subscription order.
 
 use std::collections::BTreeSet;
+use std::error::Error;
 use std::fmt;
 use std::ops::{BitOr, BitOrAssign};
+use std::sync::Arc;
 
 use crate::color::Color;
 use crate::derived::DerivedIndex;
@@ -268,7 +270,9 @@ impl ChangeSet {
 
 /// Why a store operation was refused. The store is unchanged after an error from `insert`, `update`, `remove`,
 /// `put_file` or `set_name`.
-#[derive(Debug, Clone, PartialEq, thiserror::Error)]
+///
+/// `PartialEq` compares a [`StoreError::Backend`] by its message, because `dyn Error` has no equality.
+#[derive(Debug, Clone, thiserror::Error)]
 pub enum StoreError {
     /// No element has this id.
     #[error("no element has the id {0}")]
@@ -292,7 +296,7 @@ pub enum StoreError {
     TooManyElements(usize),
     /// A blob or the table is over its limit.
     #[error("the file is rejected: {0}")]
-    BadFile(String),
+    BadFile(#[from] FileRejection),
     /// The name is empty, too long or has control characters.
     #[error("the document name must be 1 to {} characters without control characters", crate::limits::MAX_NAME_CHARS)]
     BadName,
@@ -301,7 +305,54 @@ pub enum StoreError {
     InvalidDocument(Report),
     /// The store's backend failed (for the Loro store: the CRDT layer).
     #[error("store backend failed: {0}")]
-    Backend(String),
+    Backend(#[source] Arc<dyn Error + Send + Sync>),
+}
+
+impl PartialEq for StoreError {
+    fn eq(&self, other: &Self) -> bool {
+        use StoreError::{
+            AlreadyExists, Backend, BadFile, BadName, IdChanged, Invalid, InvalidDocument, NotFound, TooManyElements,
+        };
+        match (self, other) {
+            (NotFound(a), NotFound(b)) | (AlreadyExists(a), AlreadyExists(b)) | (IdChanged(a), IdChanged(b)) => a == b,
+            (Invalid { id: i1, error: e1 }, Invalid { id: i2, error: e2 }) => (i1, e1) == (i2, e2),
+            (TooManyElements(a), TooManyElements(b)) => a == b,
+            (BadFile(a), BadFile(b)) => a == b,
+            (BadName, BadName) => true,
+            (InvalidDocument(a), InvalidDocument(b)) => a == b,
+            (Backend(a), Backend(b)) => a.to_string() == b.to_string(),
+            _ => false,
+        }
+    }
+}
+
+impl StoreError {
+    /// A backend failure. Takes any error (or a plain message) and keeps it as the source.
+    pub fn backend(error: impl Into<Box<dyn Error + Send + Sync>>) -> Self {
+        StoreError::Backend(Arc::from(error.into()))
+    }
+}
+
+/// Why a blob was refused by [`SceneTx::put_file`].
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+pub enum FileRejection {
+    /// The media type is not `image/<subtype>`.
+    #[error("{0:?} is not an image media type like image/png")]
+    MediaType(String),
+    /// The blob is over [`MAX_FILE_BYTES`](crate::limits::MAX_FILE_BYTES).
+    #[error("{len} bytes is over the {max} byte limit")]
+    TooLarge {
+        /// Size of the blob.
+        len: usize,
+        /// The limit.
+        max: usize,
+    },
+    /// The table already holds [`MAX_FILES`](crate::limits::MAX_FILES) files.
+    #[error("the document already holds {max} files")]
+    TooMany {
+        /// The limit.
+        max: usize,
+    },
 }
 
 /// Handle returned by [`SceneStore::subscribe`].

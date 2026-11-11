@@ -73,7 +73,7 @@ fn end_text(s: &mut Session, a: EndArgs) -> Result<Value, Refusal> {
         s.tab_mut()
             .doc
             .edit::<(), StoreError>(|tx| {
-                let z = tx.next_top_index().map_err(|e| StoreError::Backend(e.to_string()))?;
+                let z = tx.next_top_index().map_err(|e| StoreError::backend(e))?;
                 let mut e = Element::new(id, ElementKind::Rectangle, z);
                 e.transform = Transform::new(500.0, 500.0, 10.0, 10.0);
                 tx.insert(e)

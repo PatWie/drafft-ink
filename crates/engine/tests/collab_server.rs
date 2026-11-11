@@ -147,7 +147,7 @@ fn add_rect(s: &mut Session, x: f64) -> ElementId {
     s.tab_mut()
         .doc
         .edit::<(), StoreError>(|tx| {
-            let z = tx.next_top_index().map_err(|e| StoreError::Backend(e.to_string()))?;
+            let z = tx.next_top_index().map_err(|e| StoreError::backend(e))?;
             let mut e = Element::new(id, ElementKind::Rectangle, z);
             e.transform = Transform::new(x, 0.0, 10.0, 10.0);
             tx.insert(e)

@@ -114,7 +114,7 @@ impl Core {
             let mut cx = OpCx { ids, fonts, default_style };
             f(tx, &mut cx).map_err(|e| {
                 failure = Some(e);
-                StoreError::Backend("the transaction was aborted".to_owned())
+                StoreError::backend("the transaction was aborted")
             })
         });
         match (result, failure) {

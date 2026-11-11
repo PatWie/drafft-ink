@@ -12,6 +12,7 @@
 //! pixels are bounded by bytes with least-recently-used eviction.
 
 use std::collections::HashMap;
+use std::error::Error;
 use std::io::Cursor;
 use std::sync::Arc;
 
@@ -25,11 +26,13 @@ pub const MAX_IMAGE_SIDE: u32 = 16_384;
 pub const MAX_DECODE_BYTES: u64 = 256 << 20;
 
 /// Why a picture could not be decoded.
-#[derive(Clone, Debug, PartialEq, Eq, thiserror::Error)]
+///
+/// Two errors are equal when their messages are, because the decoder's errors have no equality.
+#[derive(Clone, Debug, thiserror::Error)]
 pub enum ImageError {
-    /// The bytes are not a PNG, JPEG or WebP picture.
+    /// The bytes are not a PNG, JPEG or WebP picture. The source is the decoder's error.
     #[error("The picture could not be decoded: {0}.")]
-    Decode(String),
+    Decode(#[source] Arc<dyn Error + Send + Sync>),
     /// The picture is larger than the decoder accepts.
     #[error(
         "The picture is larger than {MAX_IMAGE_SIDE} pixels on a side or needs more than {MAX_DECODE_BYTES} bytes."
@@ -37,10 +40,27 @@ pub enum ImageError {
     TooLarge,
 }
 
+impl PartialEq for ImageError {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (ImageError::Decode(a), ImageError::Decode(b)) => a.to_string() == b.to_string(),
+            (ImageError::TooLarge, ImageError::TooLarge) => true,
+            _ => false,
+        }
+    }
+}
+
+impl Eq for ImageError {}
+
+impl ImageError {
+    fn decode(source: impl Error + Send + Sync + 'static) -> Self {
+        ImageError::Decode(Arc::new(source))
+    }
+}
+
 /// Decodes encoded picture bytes (PNG, JPEG, WebP) into straight-alpha RGBA. Pure: run it on any thread.
 pub fn decode_image(bytes: &[u8]) -> Result<ImageData, ImageError> {
-    let mut reader =
-        ImageReader::new(Cursor::new(bytes)).with_guessed_format().map_err(|e| ImageError::Decode(e.to_string()))?;
+    let mut reader = ImageReader::new(Cursor::new(bytes)).with_guessed_format().map_err(ImageError::decode)?;
     let mut limits = image::Limits::default();
     limits.max_image_width = Some(MAX_IMAGE_SIDE);
     limits.max_image_height = Some(MAX_IMAGE_SIDE);
@@ -48,7 +68,7 @@ pub fn decode_image(bytes: &[u8]) -> Result<ImageData, ImageError> {
     reader.limits(limits);
     let decoded = reader.decode().map_err(|e| match e {
         image::ImageError::Limits(_) => ImageError::TooLarge,
-        other => ImageError::Decode(other.to_string()),
+        other => ImageError::decode(other),
     })?;
     let rgba = decoded.to_rgba8();
     let (width, height) = rgba.dimensions();

@@ -38,7 +38,7 @@ pub fn add(s: &mut Session, kind: ElementKind, x: f64, y: f64, w: f64, h: f64) -
     let seed = s.ports.ids.seed();
     let ret = id.clone();
     s.tab_mut().doc.edit::<(), StoreError>(|tx| {
-        let z = tx.next_top_index().map_err(|e| StoreError::Backend(e.to_string()))?;
+        let z = tx.next_top_index().map_err(|e| StoreError::backend(e))?;
         let mut e = Element::new(id, kind, z);
         e.transform = Transform::new(x, y, w, h);
         e.style.seed = seed;
@@ -96,7 +96,7 @@ pub fn create_arrow_between(s: &mut Session, from: &ElementId, to: &ElementId) -
     use drafftink_edit::create::{ConnectSpec, connect};
     let spec = ConnectSpec::arrow(s.tool.style_defaults.clone());
     let id = crate::cmd::element_common::edit_with_ids::<ElementId, StoreError>(s, |tx, ids| {
-        connect(tx, ids, from, to, &spec).map_err(|e| StoreError::Backend(e.to_string()))
+        connect(tx, ids, from, to, &spec).map_err(|e| StoreError::backend(e))
     })?;
     s.tab_mut().doc.commit_untracked()?;
     Ok(id)
@@ -107,9 +107,7 @@ pub fn create_arrow_between(s: &mut Session, from: &ElementId, to: &ElementId) -
 pub fn add_text_label(s: &mut Session, container: &ElementId, text: &str) -> Result<ElementId, StoreError> {
     use drafftink_edit::text_bind::create_label;
     let id = crate::cmd::element_common::edit_with_measure::<ElementId, StoreError>(s, |tx, measure, ids| {
-        create_label(tx, measure, ids, container, text, None)
-            .map(|o| o.label)
-            .map_err(|e| StoreError::Backend(e.to_string()))
+        create_label(tx, measure, ids, container, text, None).map(|o| o.label).map_err(|e| StoreError::backend(e))
     })?;
     s.tab_mut().doc.commit_untracked()?;
     Ok(id)

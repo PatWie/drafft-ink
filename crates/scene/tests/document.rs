@@ -164,7 +164,7 @@ fn foreign_and_broken_input_is_refused() {
         assert!(Document::from_json(bad).is_err(), "{bad}");
     }
     let err = Document::from_json("{").unwrap_err();
-    assert!(matches!(err, DocumentError::Parse(_)));
+    assert!(matches!(err, DocumentError::Parse(_)), "{err}");
 }
 
 #[test]
