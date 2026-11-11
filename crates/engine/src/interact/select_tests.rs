@@ -1054,7 +1054,7 @@ fn double_click_on_a_shape_starts_a_text_edit_and_asks_for_the_editor() {
         assert_eq!(text_edit_target(&rig), Some(shape.clone()), "{name}");
         assert_eq!(
             rig.last.ui_request,
-            Some(UiRequest::OpenTextEditor { element: Some(shape), at: Point::new(180.0, 150.0) }),
+            Some(UiRequest::OpenTextEditor { element: Some(shape), at: Point::new(180.0, 150.0), width: None }),
             "{name}"
         );
     }
@@ -1070,7 +1070,11 @@ fn double_click_on_text_starts_a_text_edit() {
     assert_eq!(text_edit_target(&rig), Some(text.id.clone()));
     assert_eq!(
         rig.last.ui_request,
-        Some(UiRequest::OpenTextEditor { element: Some(text.id), at: Point::new(x + w / 2.0, y + h / 2.0) })
+        Some(UiRequest::OpenTextEditor {
+            element: Some(text.id),
+            at: Point::new(x + w / 2.0, y + h / 2.0),
+            width: None
+        })
     );
 }
 
@@ -1099,7 +1103,10 @@ fn double_click_on_empty_canvas_starts_a_draft_at_the_point() {
     rig.double_click(700.0, 100.0);
     let edit = rig.s.text_edit.as_ref().expect("a text edit");
     assert!(edit.draft && edit.element.is_none());
-    assert_eq!(rig.last.ui_request, Some(UiRequest::OpenTextEditor { element: None, at: Point::new(700.0, 100.0) }));
+    assert_eq!(
+        rig.last.ui_request,
+        Some(UiRequest::OpenTextEditor { element: None, at: Point::new(700.0, 100.0), width: None })
+    );
 }
 
 #[test]

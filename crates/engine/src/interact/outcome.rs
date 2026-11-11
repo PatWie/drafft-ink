@@ -50,6 +50,8 @@ pub enum UiRequest {
         element: Option<ElementId>,
         /// World position of the click (the top-left of a draft).
         at: Point,
+        /// For a draft: the fixed width of the text box the pointer dragged out. `None`: the box follows the text.
+        width: Option<f64>,
     },
     /// The equation dialog for a math element (`text.edit_begin` ran first).
     OpenEquationEditor {

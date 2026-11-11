@@ -85,7 +85,7 @@ pub(super) fn double_click(cx: &mut Ctx<'_>, ev: &Ev<'_>) {
         Target::Empty => {
             let at = ev.at.world;
             if cx.exec("text.edit_begin", json!({ "at": [at.x, at.y] })).is_some() {
-                cx.out.ui_request = Some(UiRequest::OpenTextEditor { element: None, at });
+                cx.out.ui_request = Some(UiRequest::OpenTextEditor { element: None, at, width: None });
             }
         }
         Target::None => {}
@@ -117,7 +117,7 @@ fn on_element(cx: &mut Ctx<'_>, ev: &Ev<'_>, id: &ElementId, unit_group: Option<
                 cx.out.ui_request = Some(if kind == Kind::Math {
                     UiRequest::OpenEquationEditor { element: id.clone() }
                 } else {
-                    UiRequest::OpenTextEditor { element: Some(id.clone()), at: ev.at.world }
+                    UiRequest::OpenTextEditor { element: Some(id.clone()), at: ev.at.world, width: None }
                 });
             }
         }
