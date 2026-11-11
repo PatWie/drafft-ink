@@ -147,15 +147,38 @@ pan" with `WorkScope`. Misses run inside a `typeset_text` / `typeset_math` span.
 | `PlexSans` | Light (300), Regular (400), Heavy (700), real weights of one variable file (`IBMPlexSans-Variable.ttf`, an `ExtraFont`: built in with the Cargo feature `plex-sans`, or provided by the host). Parley picks the weight on the `wght` axis; `TextLayout::outline` draws the run's variation settings |
 | `Custom(name)` | any family added with `Typesetter::register_font(bytes)` |
 
-The family-to-face table exists once (`fonts::face_for`); the old app had it twice. Every stack ends
-with Noto Sans as the fallback for glyphs a hand-drawn font lacks (accents, Greek, Cyrillic). There
-are no system fonts (`parley` without `fontique/system`), so output is the same on web and native.
-There is no CJK or emoji font: such characters lay out with the missing-glyph box, as in the old
-app. Line breaking of CJK uses per-character fallback (ICU data has no dictionary model; `icu_segmenter`
-prints a notice to stderr).
+The family-to-face table exists once (`fonts::face_for`); the old app had it twice. There are no system
+fonts (`parley` without `fontique/system`), so output is the same on web and native. Line breaking of
+CJK uses per-character fallback (ICU data has no dictionary model; `icu_segmenter` prints a notice to stderr).
 
-The big fonts are `ExtraFont`s: Noto Sans (three files), IBM Plex Sans (one variable file) and STIX Two Math. The Cargo feature `embedded` (= `noto-sans` + `plex-sans` + `stix-math`) builds them into the binary; `drafftink-engine` turns it on for every target except wasm32, and `canvas-js` always. A build without them (the web app) starts with the seven GelPen and Vanilla Extract files only.
-A layout that needs one of the others records that: `Typesetter::wanted_fonts()` lists the files still missing (all three Noto files when the family `noto_sans` is used or a character has no glyph in the loaded fonts; the Plex file when the family `plex_sans` is used; STIX when a formula is laid out), and the host gives
+### Glyph fallback (`fallback.rs`)
+
+Every style's font stack is the chosen family, then Noto Sans, then the five fallback fonts. Parley picks, per
+character cluster, the first font of the stack that has all its glyphs, so the chosen family draws what it can
+(the `_` of `ಠ_ಠ` is GelPen's) and a fallback draws the rest. A family that is not loaded is skipped.
+
+| `ExtraFont` | Cut from | Code points | Brotli | Why |
+|---|---|---|---|---|
+| `FallbackSymbols` | Noto Sans Symbols 2 + Symbols | U+25A0-27BF, U+2B00-2BFF | 66 KB | geometric shapes (the eyes of ◕‿◕), miscellaneous symbols, dingbats: ★ ♥ ☺ ✓ ✿ |
+| `FallbackMath` | Noto Sans Math | U+2190-23FF | 30 KB | arrows, operators, technical: ← → ∀ ≦ ⊙ ⌘ |
+| `FallbackKannada` | Noto Sans Kannada | U+0C80-0CFF | 29 KB | ಠ ಥ ಡ, the letters of the common looks of disapproval |
+| `FallbackArabic` | Noto Sans Arabic | the Arabic blocks | 43 KB | ٩ ۶ (the arms of ٩(◕‿◕｡)۶) and Arabic text |
+| `FallbackCjk` | Noto Sans CJK JP | Hangul jamo, box drawing, U+3000-30FF, Hangul compatibility jamo, vertical forms, half/fullwidth forms | 57 KB | ｡ 、 「」 ツ つ ノ ー ㅇ ─ ┻ ︵ ） |
+
+The ranges do not overlap, so a code point has at most one font: `ExtraFont::fallback_for(char)`. The same ranges are in
+`scripts/build-fallback-fonts.py`, which cuts the fonts (they are committed; Noto Sans Symbols 2 and Noto Sans Symbols are
+merged because ☺ ☹ are only in the older font), and a test checks that no font has a character outside its ranges.
+Not covered: Han ideographs, Hangul syllables, Tibetan (༼ ༽), Sinhala, Canadian syllabics (ᗒ), emoji, and Hebrew, Thai and other
+scripts. Those lay out with the missing-glyph box. Native system fonts as a last resort are not used (they would make the
+output depend on the machine); `parley`'s `system` feature would add them.
+
+A layout records the characters that have no glyph (glyph id 0). `Typesetter::wanted_fonts()` then
+lists, for each, the fallback font that is responsible, or the three Noto Sans files for a character that none is
+(Cyrillic, Greek, accents, the undertie ‿). So `ಠ_ಠ` asks for the Kannada file only, and `｡◕‿◕｡` for the symbols, the CJK file
+and Noto Sans. `needs_glyph_fallback(text)` tells SVG export that a text has such characters (see `formats.md`).
+
+The big fonts are `ExtraFont`s: Noto Sans (three files), IBM Plex Sans (one variable file) and STIX Two Math. The Cargo feature `embedded` (= `noto-sans` + `plex-sans` + `stix-math` + `fallback-fonts`) builds them into the binary; `drafftink-engine` turns it on for every target except wasm32, and `canvas-js` always. A build without them (the web app) starts with the seven GelPen and Vanilla Extract files only.
+A layout that needs one of the others records that: `Typesetter::wanted_fonts()` lists the files still missing (all three Noto files when the family `noto_sans` is used or a character that no fallback font is responsible for has no glyph in the loaded fonts; the fallback font of a missing character; the Plex file when the family `plex_sans` is used; STIX when a formula is laid out), and the host gives
 them to `Typesetter::provide_font(font, bytes)`. A formula asked for before STIX is there is the error `MathErrorKind::FontLoading`, which is not cached. Providing a font changes
 `font_set_version`, drops the text and math caches and nothing else; the render crate's fragment caches are the caller's to drop (the app does, `CanvasView::sync_fonts`).
 `Typesetter::without_extra_fonts()` makes this path testable on the desktop. How the web app fetches the files is in `web-app.md`.

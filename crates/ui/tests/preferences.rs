@@ -115,6 +115,24 @@ fn plex_sans_is_an_interface_font_with_real_semibold_headings() {
 }
 
 #[test]
+fn every_ui_font_family_draws_kaomoji_through_the_glyph_fallback() {
+    let h = open();
+    let text = "ಠ_ಠ ｡◕‿◕｡ ٩(◕‿◕｡)۶ (╯°□°）╯︵ ┻━┻ ツ";
+    let families = [
+        egui::FontFamily::Proportional,
+        egui::FontFamily::Monospace,
+        egui::FontFamily::Name(drafftink_ui::theme::HAND_FONT.into()),
+        egui::FontFamily::Name(drafftink_ui::theme::PREVIEW_SERIF.into()),
+        egui::FontFamily::Name(drafftink_ui::theme::PREVIEW_PLEX.into()),
+    ];
+    for family in families {
+        let font = egui::FontId::new(drafftink_ui::theme::TextSize::Body.points(), family.clone());
+        let missing: String = h.ctx.fonts_mut(|f| text.chars().filter(|c| !f.has_glyph(&font, *c)).collect());
+        assert_eq!(missing, "", "{family:?} cannot draw these characters, so they would be boxes");
+    }
+}
+
+#[test]
 fn noto_sans_is_offered_only_where_the_build_has_the_file() {
     let h = open();
     let offered = h.query_by_label("Interface font: Noto Sans").is_some();

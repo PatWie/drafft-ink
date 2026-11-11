@@ -74,7 +74,7 @@ The rules (Pandoc's `tex_math_dollars`, so prices stay prices):
 
 The formula is one unit for the caret, selection, Backspace and double-click. To edit its source, the editor lays the text out with `reveal` set to an index inside it (`typeset.md`). Formulas take the size and the colour of the text at the opening `$` (a colour run over it colours the formula, `\color{..}` inside it wins). The element box is measured with the formulas in it: a tall formula makes its line taller.
 
-Export: Excalidraw has no inline math, so `text` and `originalText` are the source with its delimiters and `customData.drafftink.inline_math` is written only when the setting is `off`. SVG draws a text that has a formula as glyph outlines (no `<text>`, no font needed), with the source in `data-text`; plain text stays `<text>`. `doc.outline` and `element.query` show the source.
+Export: Excalidraw has no inline math, so `text` and `originalText` are the source with its delimiters and `customData.drafftink.inline_math` is written only when the setting is `off`. SVG draws a text that has a formula, or a character that only a glyph-fallback font draws (Kannada, symbols, CJK punctuation: `typeset.md`, "Glyph fallback"), as glyph outlines (no `<text>`, no font needed), with the source in `data-text`; other text stays `<text>`. `doc.outline` and `element.query` show the source.
 
 `ImageData`: `file_id` (None while the blob is not there), `natural_width`, `natural_height` (pixels), `crop` `{x, y, width, height}` in source pixels (None = whole picture).
 

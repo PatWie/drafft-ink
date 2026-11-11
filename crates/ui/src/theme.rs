@@ -8,6 +8,7 @@ use egui::{
     Color32, Context, CornerRadius, FontData, FontDefinitions, FontFamily, FontId, Stroke, Theme, ThemePreference,
 };
 
+pub mod fallback;
 pub mod tokens;
 
 pub use tokens::{Control, TextSize, radius, space};
@@ -399,6 +400,12 @@ fn fonts_present(ctx: &Context) -> bool {
 /// The fonts the context was last given: the version of the provided files and the UI font.
 type Installed = (u32, UiFontChoice);
 
+/// Counts the changes of the font files, so that an egui context installs the set again after one.
+fn installed_version() -> u32 {
+    let fallback = u32::try_from(fallback::version()).unwrap_or(u32::MAX);
+    PROVIDED.with_borrow(|p| p.version).saturating_add(fallback)
+}
+
 fn installed_key() -> egui::Id {
     egui::Id::unique("drafftink-fonts-version")
 }
@@ -406,7 +413,7 @@ fn installed_key() -> egui::Id {
 /// Installs the fonts when they are missing, when a [`UiFont`] arrived since they were installed, or when the UI
 /// font changed, and records whether they can be used in this pass. Called at the start of every `draw`.
 pub fn ensure_fonts(ctx: &Context, choice: UiFontChoice) -> bool {
-    let version = PROVIDED.with_borrow(|p| p.version);
+    let version = installed_version();
     let installed = ctx.data(|d| d.get_temp::<Installed>(installed_key()));
     if !fonts_present(ctx) || installed != Some((version, choice)) {
         install_fonts_with(ctx, choice);
@@ -431,7 +438,8 @@ pub fn install_fonts(ctx: &Context) {
 /// Like [`install_fonts`] with the UI font of the `ui.font` setting.
 pub fn install_fonts_with(ctx: &Context, choice: UiFontChoice) {
     let mut fonts = FontDefinitions::default();
-    let version = PROVIDED.with_borrow(|p| {
+    let version = installed_version();
+    PROVIDED.with_borrow(|p| {
         // Where egui has no fonts of its own (the web), the loaded files make up its two lists.
         let mut chain = |family: FontFamily, order: &[UiFont]| {
             for font in order.iter().filter(|f| p.files.contains_key(f)) {
@@ -444,10 +452,18 @@ pub fn install_fonts_with(ctx: &Context, choice: UiFontChoice) {
         };
         chain(FontFamily::Proportional, &[UiFont::UbuntuLight, UiFont::EmojiIcons]);
         chain(FontFamily::Monospace, &[UiFont::Hack, UiFont::UbuntuLight, UiFont::EmojiIcons]);
-        p.version
     });
     ctx.data_mut(|d| d.insert_temp::<Installed>(installed_key(), (version, choice)));
-    let fallback = fonts.families.get(&FontFamily::Proportional).cloned().unwrap_or_default();
+    // The glyph fallback comes last in every list: characters that no UI font has (see `fallback`).
+    let glyph_fallback: Vec<String> = fallback::fonts()
+        .into_iter()
+        .map(|(name, bytes)| {
+            fonts.font_data.insert(name.to_owned(), std::sync::Arc::new(FontData::from_static(bytes)));
+            name.to_owned()
+        })
+        .collect();
+    let mut fallback = fonts.families.get(&FontFamily::Proportional).cloned().unwrap_or_default();
+    fallback.extend(glyph_fallback.iter().cloned());
     let optional = [UiFontChoice::NotoSans, UiFontChoice::PlexSans]
         .into_iter()
         .filter_map(|c| c.file().filter(|bytes| !bytes.is_empty()).map(|bytes| (c.family(), bytes)));
@@ -481,6 +497,7 @@ pub fn install_fonts_with(ctx: &Context, choice: UiFontChoice) {
         if list.is_empty() {
             list.push(HAND_FONT.to_owned());
         }
+        list.extend(glyph_fallback.iter().cloned());
     }
     ctx.set_fonts(fonts);
 }

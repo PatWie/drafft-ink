@@ -11,6 +11,7 @@ use parley::{
     InlineBox, InlineBoxKind, LayoutContext, OverflowWrap, PositionedLayoutItem, StyleProperty, VerticalAlign,
 };
 
+use crate::fallback;
 use crate::fonts::{self, ExtraFont, FALLBACK_FAMILY};
 use crate::inline::{Assembly, Piece, TextMap};
 use crate::math::{MathError, MathLayout, MathSpec};
@@ -208,6 +209,8 @@ pub struct TextLayout {
     pub(crate) map: Arc<TextMap>,
     /// The input was longer than [`MAX_TEXT_BYTES`] or had more than [`MAX_SPANS`] spans.
     pub truncated: bool,
+    /// The characters that no loaded font draws (glyph id 0), sorted and without repeats.
+    pub(crate) missing: Vec<char>,
     pub(crate) layout: PLayout,
 }
 
@@ -231,12 +234,6 @@ impl TextLayout {
     /// Baseline of the first line, from the top of the box.
     pub fn first_baseline(&self) -> f32 {
         self.lines.first().map_or(0.0, |l| l.baseline)
-    }
-
-    /// True when a glyph run holds the font's "missing glyph" (id 0): some character is in none of the loaded
-    /// fonts. The typesetter uses it to ask for Noto Sans.
-    pub(crate) fn has_missing_glyphs(&self) -> bool {
-        self.runs.iter().any(|r| r.glyphs.iter().any(|g| g.id == 0))
     }
 
     /// Total number of glyphs.
@@ -283,7 +280,8 @@ impl Engine {
             font_cx.collection.register_fonts(peniko::Blob::new(Arc::new(bytes)), None);
         }
         let mut engine = Self { font_cx, layout_cx: LayoutContext::new() };
-        for font in ExtraFont::NOTO_SANS.into_iter().chain([ExtraFont::PlexSans]).filter(|_| extras) {
+        let loaded = ExtraFont::NOTO_SANS.into_iter().chain([ExtraFont::PlexSans]).chain(ExtraFont::FALLBACKS);
+        for font in loaded.filter(|_| extras) {
             if let Some(bytes) = font.embedded() {
                 engine.register(Arc::new(bytes));
             }
@@ -433,10 +431,10 @@ fn line_height(lh: LineHeight) -> parley::LineHeight {
 fn properties(style: &RunStyle, id: u32) -> [StyleProperty<'static, StyleId>; 5] {
     let face = fonts::face_for(&style.family, style.weight, style.italic);
     let mut names: Vec<FontFamilyName<'static>> = vec![FontFamilyName::Named(Cow::Owned(face.name.clone()))];
-    // Parley skips a family it does not have, so this costs nothing while Noto Sans is not loaded.
-    if face.name != FALLBACK_FAMILY {
-        names.push(FontFamilyName::Named(Cow::Borrowed(FALLBACK_FAMILY)));
-    }
+    // The glyph fallback (see `fallback`). Parley skips a family it does not have, so a font that is not loaded
+    // costs nothing.
+    let chain = std::iter::once(FALLBACK_FAMILY).chain(fallback::families());
+    names.extend(chain.filter(|name| *name != face.name).map(|name| FontFamilyName::Named(Cow::Borrowed(name))));
     [
         StyleProperty::FontFamily(PFamily::List(Cow::Owned(names))),
         StyleProperty::FontSize(style.size),
@@ -671,10 +669,12 @@ fn finish(layout: PLayout, c: &Clean<'_>, id: u64, base_size: f32, placed: Place
     let mut runs: Vec<GlyphRun> = Vec::new();
     let mut decorations = Vec::new();
     let mut inline: Vec<InlineFormula> = Vec::new();
+    let mut missing = std::collections::BTreeSet::new();
     for (li, line) in layout.lines().enumerate() {
         let mut info = line_info(&line);
         let mut first_box = None;
         for item in line.items() {
+            fallback::collect_missing(&item, c.text, &mut missing);
             let gr = match item {
                 PositionedLayoutItem::GlyphRun(gr) => gr,
                 PositionedLayoutItem::InlineBox(b) => {
@@ -756,6 +756,7 @@ fn finish(layout: PLayout, c: &Clean<'_>, id: u64, base_size: f32, placed: Place
         formula_errors: errors,
         map: Arc::new(map),
         truncated: c.truncated,
+        missing: missing.into_iter().collect(),
         layout,
     }
 }

@@ -844,6 +844,35 @@ fn a_frame_label_is_as_big_on_screen_at_every_zoom() {
 }
 
 // ----------------------------------------------------------------------------------------------
+// Glyph fallback
+
+/// How many pixels of `p` are ink (they differ from white by more than the tolerance).
+fn ink_pixels(p: &Pixels) -> usize {
+    p.rgba.chunks_exact(4).filter(|px| (0..3).any(|c| px[c] < 255 - 60)).count()
+}
+
+#[test]
+fn characters_of_the_fallback_fonts_are_drawn_and_are_not_the_box_of_a_missing_glyph() {
+    need_gpu!();
+    let mut ts = Typesetter::new();
+    let (w, h) = (120, 90);
+    let mut draw = |text: &str| {
+        let e = inline_math_element(&mut ts, text);
+        render_text_element(e, Theme::Light, w, h)
+    };
+    // U+E000 is in no font: the first font of the stack draws its box of a missing glyph.
+    let tofu = draw("\u{E000}");
+    assert!(ink_pixels(&tofu) > 20, "the box of a missing glyph is ink");
+    for text in ["ಠ", "◕", "｡", "ツ", "→", "٩"] {
+        let px = draw(text);
+        let ink = ink_pixels(&px);
+        assert!(ink > 20, "{text:?} is drawn: {ink} ink pixels");
+        let d = diff(&px, &tofu);
+        assert!(d.any * f64::from(w * h) > ink as f64 * 0.3, "{text:?} is not the box of a missing glyph: {d:?}");
+    }
+}
+
+// ----------------------------------------------------------------------------------------------
 // Inline math
 
 /// Renders one text element at zoom 1 on white (or the dark background) and returns the pixels.

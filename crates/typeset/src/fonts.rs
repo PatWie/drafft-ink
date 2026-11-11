@@ -48,7 +48,7 @@ pub(crate) fn bundled() -> [&'static [u8]; 7] {
 }
 
 /// A large font that a build may leave out of the binary and load later (the web app does: they are 2.6 MB
-/// of the 3.5 MB of font data). A build with the Cargo feature `noto-sans` or `stix-math` has the matching
+/// of the 3.5 MB of font data). A build with the Cargo feature `noto-sans`, `plex-sans`, `stix-math` or `fallback-fonts` has the matching
 /// fonts built in; otherwise the host gives them to [`crate::Typesetter::provide_font`] when
 /// [`crate::Typesetter::wanted_fonts`] asks for them.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
@@ -63,16 +63,31 @@ pub enum ExtraFont {
     PlexSans,
     /// STIX Two Math, the font of formulas.
     StixTwoMath,
+    /// Noto Sans Symbols 2 (and Symbols) cut to geometric shapes, miscellaneous symbols, dingbats and arrows: ◕ ☺ ★ ♥ ✓.
+    FallbackSymbols,
+    /// Noto Sans Math cut to arrows, mathematical operators and miscellaneous technical: → ∀ ≦ ⌘.
+    FallbackMath,
+    /// Noto Sans Kannada: ಠ.
+    FallbackKannada,
+    /// Noto Sans Arabic cut to the Arabic blocks: ٩ ۶.
+    FallbackArabic,
+    /// Noto Sans CJK JP cut to punctuation, kana, Hangul jamo, box drawing and the half- and fullwidth forms: ｡ 、 ツ ─.
+    FallbackCjk,
 }
 
 impl ExtraFont {
     /// Every extra font.
-    pub const ALL: [ExtraFont; 5] = [
+    pub const ALL: [ExtraFont; 10] = [
         ExtraFont::NotoSansRegular,
         ExtraFont::NotoSansBold,
         ExtraFont::NotoSansItalic,
         ExtraFont::PlexSans,
         ExtraFont::StixTwoMath,
+        ExtraFont::FallbackSymbols,
+        ExtraFont::FallbackMath,
+        ExtraFont::FallbackKannada,
+        ExtraFont::FallbackArabic,
+        ExtraFont::FallbackCjk,
     ];
 
     /// The three Noto Sans files, which are always wanted together.
@@ -87,11 +102,16 @@ impl ExtraFont {
             ExtraFont::NotoSansItalic => "NotoSans-Italic.ttf",
             ExtraFont::PlexSans => "IBMPlexSans-Variable.ttf",
             ExtraFont::StixTwoMath => "STIXTwoMath-Regular.otf",
+            ExtraFont::FallbackSymbols => "NotoSansSymbols2-Fallback.ttf",
+            ExtraFont::FallbackMath => "NotoSansMath-Fallback.ttf",
+            ExtraFont::FallbackKannada => "NotoSansKannada-Fallback.ttf",
+            ExtraFont::FallbackArabic => "NotoSansArabic-Fallback.ttf",
+            ExtraFont::FallbackCjk => "NotoSansCJK-Fallback.otf",
         }
     }
 
-    /// The bytes when this build has the font built in.
-    pub(crate) fn embedded(self) -> Option<&'static [u8]> {
+    /// The bytes when this build has the font built in. The UI shares them for its own glyph fallback.
+    pub fn embedded(self) -> Option<&'static [u8]> {
         match self {
             #[cfg(feature = "noto-sans")]
             ExtraFont::NotoSansRegular => Some(include_bytes!("../assets/fonts/NotoSans-Regular.ttf")),
@@ -103,6 +123,22 @@ impl ExtraFont {
             ExtraFont::PlexSans => Some(include_bytes!("../assets/fonts/IBMPlexSans-Variable.ttf")),
             #[cfg(feature = "stix-math")]
             ExtraFont::StixTwoMath => Some(include_bytes!("../assets/fonts/STIXTwoMath-Regular.otf")),
+            #[cfg(feature = "fallback-fonts")]
+            ExtraFont::FallbackSymbols => Some(include_bytes!("../assets/fonts/NotoSansSymbols2-Fallback.ttf")),
+            #[cfg(feature = "fallback-fonts")]
+            ExtraFont::FallbackMath => Some(include_bytes!("../assets/fonts/NotoSansMath-Fallback.ttf")),
+            #[cfg(feature = "fallback-fonts")]
+            ExtraFont::FallbackKannada => Some(include_bytes!("../assets/fonts/NotoSansKannada-Fallback.ttf")),
+            #[cfg(feature = "fallback-fonts")]
+            ExtraFont::FallbackArabic => Some(include_bytes!("../assets/fonts/NotoSansArabic-Fallback.ttf")),
+            #[cfg(feature = "fallback-fonts")]
+            ExtraFont::FallbackCjk => Some(include_bytes!("../assets/fonts/NotoSansCJK-Fallback.otf")),
+            #[cfg(not(feature = "fallback-fonts"))]
+            ExtraFont::FallbackSymbols
+            | ExtraFont::FallbackMath
+            | ExtraFont::FallbackKannada
+            | ExtraFont::FallbackArabic
+            | ExtraFont::FallbackCjk => None,
             #[cfg(not(feature = "noto-sans"))]
             ExtraFont::NotoSansRegular | ExtraFont::NotoSansBold | ExtraFont::NotoSansItalic => None,
             #[cfg(not(feature = "plex-sans"))]

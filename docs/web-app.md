@@ -37,7 +37,7 @@ WebAssembly): every browser with WebGPU has SIMD, and it makes the CPU glyph ras
 
 ### Fonts are separate files
 
-The big fonts are not in the wasm. `scripts/build-web.sh` copies eight files to `dist/fonts/<name>.<hash>.<ext>` (the hash is of the
+The big fonts are not in the wasm. `scripts/build-web.sh` copies thirteen files to `dist/fonts/<name>.<hash>.<ext>` (the hash is of the
 content, so a cached copy never goes stale; the server sends them with `Cache-Control: immutable`) and writes the map from plain name to
 address into `window.__assets` in `index.html`:
 
@@ -47,6 +47,7 @@ address into `window.__assets` in `index.html`:
 | `STIXTwoMath-Regular.otf` (formulas) | 381 KB | preloaded with the module; used right after the first frame because the welcome document has a formula. A formula shows as an error box until the font is in, then draws |
 | `Hack-Regular.ttf`, `emoji-icon-font.ttf` (egui's monospace font; arrows, shift and command signs) | 123 KB, 145 KB | after the first frame, in the background |
 | `NotoSans-Regular/Bold/Italic.ttf` | 223 KB, 232 KB, 228 KB | when a text needs them: the family `noto_sans`, or a character that no other font has |
+| `NotoSansSymbols2-Fallback.ttf`, `NotoSansMath-Fallback.ttf`, `NotoSansKannada-Fallback.ttf`, `NotoSansArabic-Fallback.ttf`, `NotoSansCJK-Fallback.otf` | 66, 30, 29, 43, 57 KB | when a text has a character that only that font draws (`ಠ`, `◕`, `｡`, `→`, `٩`; `typeset.md`, "Glyph fallback"): `wanted_fonts` names the one file, the layout is drawn again when it arrives. The UI shows the same fonts for the names of tabs and library items: `drafftink_ui::theme::fallback` asks egui which characters it cannot draw, and `app` gives the UI each of these fonts that the canvas fetched, or the UI asked for |
 | `IBMPlexSans-Variable.ttf` (all weights in one file) | 238 KB | when a text uses the family `plex_sans`, or when the setting `ui.font` is `plex_sans`: one fetch, and `app` gives the bytes to both the typesetter and the UI (`theme::provide_plex_sans`, which also draws the semibold headings) |
 
 The mechanism is `Typesetter::wanted_fonts` / `provide_font` (`drafftink-typeset`: a layout that needs a font says so and the host

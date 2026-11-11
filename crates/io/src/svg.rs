@@ -5,11 +5,13 @@
 //! * **Geometry** comes from `drafftink-sketch`, the same generator the renderer uses, so the SVG looks like the
 //!   canvas. [`SvgStyle::Sketch`] honours each element's `sloppiness` and `seed`; [`SvgStyle::Clean`] draws every
 //!   element with roughness 0.
-//! * **Text is `<text>`, not outlines.** Glyph outlines need the font files and the layout engine, which belong to
-//!   `typeset`, not to this pure crate. Text keeps its family, size, weight, alignment and per-character colours
-//!   and stays selectable. To make the file look the same on a machine without the fonts, pass the font files in
+//! * **Text is `<text>`.** It keeps its family, size, weight, alignment and per-character colours and stays
+//!   selectable. To make the file look the same on a machine without the fonts, pass the font files in
 //!   [`SvgOptions::fonts`]: each used family is then embedded as a base64 `@font-face`. Without them the SVG names
-//!   the family and a generic fallback.
+//!   the family and a generic fallback. Two kinds of text are glyph outlines instead, written by
+//!   [`MathSvg::text_svg`] because outlines need the font files and the layout engine, which belong to `typeset`,
+//!   not to this pure crate: text with a formula, and text with a character that only a glyph-fallback font draws
+//!   (Kannada, symbols, CJK punctuation: `drafftink_typeset::needs_glyph_fallback`).
 //! * **Formulas** are drawn by a [`MathSvg`] the engine supplies (it owns the formula engine). Without one the
 //!   LaTeX source is written as italic text.
 //! * **Images** are embedded as data URIs (cropping and mirroring included). An image whose blob is missing
@@ -540,10 +542,11 @@ impl Ctx<'_> {
         if d.content.is_empty() {
             return;
         }
-        if d.font.inline_math == InlineMath::Auto
-            && drafftink_typeset::has_inline_math(&d.content)
-            && let Some(svg) = self.math.and_then(|m| m.text_svg(d, e.transform.w))
-        {
+        // Formulas, and characters that only a fallback font draws, are written as glyph outlines: the file looks like the
+        // canvas on a machine that has none of the fonts.
+        let outlined = (d.font.inline_math == InlineMath::Auto && drafftink_typeset::has_inline_math(&d.content))
+            || drafftink_typeset::needs_glyph_fallback(&d.content);
+        if outlined && let Some(svg) = self.math.and_then(|m| m.text_svg(d, e.transform.w)) {
             let fill_opacity =
                 alpha(e.style.stroke_color).map(|a| format!(" fill-opacity=\"{a}\"")).unwrap_or_default();
             put!(

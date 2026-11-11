@@ -8,13 +8,16 @@ rust-version.workspace = true
 
 [features]
 default = []
-# Build the big fonts into the binary: Noto Sans (1.9 MB), IBM Plex Sans (0.5 MB) and STIX Two Math (0.7 MB). Without them the host
+# Build the big fonts into the binary: Noto Sans (1.9 MB), IBM Plex Sans (0.5 MB), STIX Two Math (0.7 MB) and the five
+# glyph-fallback fonts (0.5 MB). Without them the host
 # loads them on demand (`Typesetter::wanted_fonts` and `provide_font`); the web app does that. The desktop
 # app, the CLI and the tests build them in (`embedded`).
-embedded = ["noto-sans", "plex-sans", "stix-math"]
+embedded = ["noto-sans", "plex-sans", "stix-math", "fallback-fonts"]
 noto-sans = []
 plex-sans = []
 stix-math = []
+# The glyph-fallback fonts (`ExtraFont::FALLBACKS`): symbols, math, Kannada, Arabic, CJK punctuation and kana.
+fallback-fonts = []
 # `bench_support`, for the benchmark only. The benchmark enables it through the dev-dependency on this crate.
 bench = []
 

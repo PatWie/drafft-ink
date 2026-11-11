@@ -1,0 +1,19 @@
+NotoSansSymbols2-Fallback.ttf, NotoSansMath-Fallback.ttf, NotoSansKannada-Fallback.ttf, NotoSansArabic-Fallback.ttf,
+NotoSansCJK-Fallback.otf (the glyph-fallback fonts of drafftink-typeset):
+
+These are subsets of Noto fonts, cut to the code point ranges listed in scripts/build-fallback-fonts.py (hinting dropped,
+no other change to the outlines). Each file keeps the name table, and so the copyright, of the font it was cut from:
+
+  NotoSansSymbols2-Fallback.ttf   Noto Sans Symbols 2 2.008 and, for the code points that Symbols 2 lacks, Noto Sans
+                                  Symbols (the smileys): Copyright 2022 The Noto Project Authors
+                                  (https://github.com/notofonts/symbols). Licence: NotoSansSymbols-OFL.txt.
+  NotoSansMath-Fallback.ttf       Noto Sans Math 3.000: Copyright 2022 Google LLC. Licence: NotoSansMath-OFL.txt.
+  NotoSansKannada-Fallback.ttf    Noto Sans Kannada 2.006: Copyright 2022 The Noto Project Authors
+                                  (https://github.com/notofonts/kannada). Licence: NotoSansKannada-OFL.txt.
+  NotoSansArabic-Fallback.ttf     Noto Sans Arabic 2.013: Copyright 2022 The Noto Project Authors
+                                  (https://github.com/notofonts/arabic). Licence: NotoSansArabic-OFL.txt.
+  NotoSansCJK-Fallback.otf        Noto Sans CJK JP 2.004: Copyright 2014-2021 Adobe (http://www.adobe.com/).
+                                  Licence: NotoSansCJK-OFL.txt.
+
+Noto is a trademark of Google LLC. All five are licensed under the SIL Open Font License, Version 1.1 (OFL-1.1.txt in
+this directory is the text). None has a Reserved Font Name, so a modified font may keep the name.
