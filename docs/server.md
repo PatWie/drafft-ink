@@ -26,6 +26,7 @@ Every flag has an environment variable (`DRAFFTINK_` + the flag name in capitals
 | `--bind` | `127.0.0.1:3030` | Listen address. Anything other than loopback must be passed explicitly. |
 | `--web-dir` | `web-dist` | Built web client. |
 | `--storage` | `filesystem` | `filesystem`, `memory`, `sqlite`, `s3`. |
+| `--source-url` (`DRAFFTINK_SOURCE_URL`) | the project repository | Where users of this server get its source code. The server answers `/source` with a redirect to it and `/source.json` with `{source_url, version, license}`, adds `Link: <url>; rel="source"` to every response, and the web app's About dialog links to it. This is the AGPL-3.0 section 13 offer: **if you run a modified version, point it at your own source**. Must be an `http://` or `https://` address. |
 | `--allowed-origin` | none | Extra origins allowed to open `/ws` (repeat, or comma-separated). `*` allows all. |
 | `--auth-token`, `--auth-token-file` | none | Turn auth on; accepted bearer tokens. |
 | `--debug-json` | off | Accept JSON text frames on `/ws`. |

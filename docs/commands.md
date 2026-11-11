@@ -1202,6 +1202,7 @@ Not commands, never in `engine.commands`. Each ends, when it produces a result, 
 | `ui.open_preferences` | preferences dialog | `settings.set`, `settings.toggle`, `collab.set_user` | X:DefaultItems |
 | `ui.toggle_library` | library panel | `library.*` | X:LibraryMenu |
 | `ui.rename_document` | rename field for the document | `doc.rename` | X:ProjectName |
+| `ui.open_about` | About dialog: version, commit, licence, the link to the source code (AGPL-3.0 section 13) and a note that the fonts have their own licences (`ATTRIBUTION.md`). The address is the project repository unless the operator sets another (`drafftink-server --source-url`, `DRAFFTINK_SOURCE_URL` for a native build) | none (a `HostRequest::OpenUrl` for the link) | NEW |
 | `ui.open_equation_editor` | LaTeX dialog (opened after `text.edit_begin` on a math element) | `text.edit_end` | U:2911 |
 
 ### 6.4 Conflicts and how they were resolved

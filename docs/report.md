@@ -308,13 +308,13 @@ Checked item by item on branch `last-pass` (`main` at `52f6d8e`) against the cod
 5. **A 100k-element `TabDoc` load** takes 2.6 s in release, spent in Loro.
 6. **Under Xvfb, `present` is 70 to 85% of the native process CPU.** Not our code, and not measured on real hardware. Mailbox present mode could not be measured (the NVIDIA driver offers Fifo and Immediate).
 7. **Text editor:** arrows bound to a container that grows during an edit jump when the edit ends; no I-beam cursor over text (there is no text variant in `canvas::Cursor`); RTL is weakly tested; no per-run bold or italic; no real OS input method tried; `Esc` commits and cancel is only `text.edit_end commit=false`.
-8. **Tab bar dirty state** compares content through undo and redo only.
-9. **Web PNG export inside a batch:** the renderer is asynchronous, so a batch with a pending render step is taken back and rerun by the bridge host, and the pending step is refused with `render_pending` inside a batch.
+8. **Tab bar dirty state:** fixed. `Tab::dirty` compares a content fingerprint with the one saved (`engine/src/fingerprint.rs`), so a remote revert or a manual re-edit reads clean.
+9. **Web PNG export inside a batch:** a picture step with no picture-changing step after it completes with its batch and the picture follows (`engine/src/renders.rs`). A batch with a later step that changes the picture is still taken back and rerun.
 10. **Smaller overlay leftovers:** distance badges for alignment snaps, IME composition in `TextEdit`. Parity P0 gaps not yet built: angle-snap rays, snap crosshair, eraser radius ring (A-086, A-088, A-046), loading percentage (A-222), last-picked swatch and rotation guides (A-042, A-087), phone and tablet layout on a real device (`parity.md` §4).
 11. **Mermaid node shapes** hexagon, cylinder, parallelogram, trapezoid, flag, subroutine and double circle are drawn as the closest shape an arrow can bind to, and the warning names each one; a real outline needs a bindable polygon element kind. Other Mermaid diagram types are refused with the list of supported ones.
 12. **No CPU fallback** for browsers without WebGPU (D13).
 13. **Windows and macOS** never ran. CI builds them, and `scripts/cross-check.sh` type-checks them from Linux (`packaging.md`); nothing was linked or run.
-14. **AGPL gaps:** no in-app source offer for modified hosted copies; two font redistribution permissions (GelPen, Vanilla Extract) are unconfirmed (`ATTRIBUTION.md`).
+14. **AGPL gaps:** two font redistribution permissions (GelPen, Vanilla Extract) are unconfirmed (`ATTRIBUTION.md`). The source offer exists: About dialog in the web and native apps, `drafftink-server --source-url` with `/source`, `/source.json` and a `Link` header.
 
 ### Closed since the audit
 
