@@ -23,6 +23,7 @@ use serde_json::{Value, json};
 
 use drafftink_scene::limits::{MAX_CORNER_RADIUS, MAX_FONT_SIZE, MAX_STROKE_WIDTH};
 use drafftink_scene::palette;
+use drafftink_scene::words::Article;
 use drafftink_scene::{
     Brush, Color, Element, ElementId, ElementKind, FillPattern, FontFamily, FontWeight, Kind, PressureMode, SceneRead,
     SceneTx, Sloppiness, StoreError, StrokeStyle, Style, TextAlign, TextStyle, VerticalAlign,
@@ -167,6 +168,77 @@ pub fn applies(e: &Element, prop: Prop) -> bool {
     }
 }
 
+/// True when a fill can paint something for an element of `kind`: shapes, and closed lines and pencil strokes.
+fn fill_paints(kind: Kind, closed: bool) -> bool {
+    match kind {
+        Kind::Rectangle | Kind::Diamond | Kind::Ellipse => true,
+        Kind::Line | Kind::Freehand => closed,
+        _ => false,
+    }
+}
+
+/// Whether an element of `kind` shows anything with `style`. A stroke colour with alpha 0 is "no stroke" (what
+/// Excalidraw calls `transparent`), and no fill is a missing or fully clear fill colour.
+///
+/// Rectangles, diamonds, ellipses, closed lines and closed pencil strokes show with a fill alone. Everything else
+/// is drawn in its stroke colour: text, formulas, open lines, arrows, open pencil strokes, and frames (outline and
+/// name). Images always show.
+pub fn style_shows(kind: Kind, closed: bool, style: &Style) -> bool {
+    if kind == Kind::Image {
+        return true;
+    }
+    let fills = fill_paints(kind, closed) && style.fill_color.is_some_and(|c| c.a > 0);
+    style.stroke_color.a > 0 || fills
+}
+
+fn is_closed(e: &Element) -> bool {
+    match &e.kind {
+        ElementKind::Line(d) | ElementKind::Arrow(d) => d.closed,
+        ElementKind::Freehand(f) => f.closed && !f.highlighter,
+        _ => false,
+    }
+}
+
+/// True when `e` shows anything (see [`style_shows`]).
+pub fn is_visible(e: &Element) -> bool {
+    style_shows(e.tag(), is_closed(e), &e.style)
+}
+
+/// Refuses a style that would leave an element of `kind` showing nothing (see [`style_shows`]).
+pub fn check_shows(kind: Kind, closed: bool, style: &Style) -> Result<(), StyleError> {
+    if style_shows(kind, closed, style) {
+        Ok(())
+    } else {
+        Err(StyleError::Invisible { kind, fill_helps: fill_paints(kind, closed) })
+    }
+}
+
+/// Refuses the write of `part` to `old` when it touches a colour and `old` would then show nothing.
+fn check_visible(old: &Element, part: &StyleProps) -> Result<(), StyleError> {
+    if part.stroke_color.is_none() && part.fill_color.is_none() {
+        return Ok(());
+    }
+    let mut new = old.clone();
+    part.write(&mut new);
+    check_shows(new.tag(), is_closed(&new), &new.style)
+}
+
+/// Why `prop` (the stroke or the fill) cannot be set to none on `targets` now: the refusal `style.set` would give.
+/// `None` when it can, and for every other property. A target that is missing, deleted or locked is left to the
+/// refusal of the write itself.
+pub fn none_refusal<R: SceneRead>(r: &R, targets: &[ElementId], prop: Prop) -> Option<StyleError> {
+    let none = match prop {
+        Prop::StrokeColor => StyleProps { stroke_color: Some(ColorArg(Color::TRANSPARENT)), ..StyleProps::default() },
+        Prop::FillColor => StyleProps { fill_color: Some(None), ..StyleProps::default() },
+        _ => return None,
+    };
+    targets
+        .iter()
+        .filter_map(|id| r.get(id))
+        .filter(|e| !e.deleted && !e.locked && applies(e, prop))
+        .find_map(|e| check_visible(e, &none).err())
+}
+
 // ---------------------------------------------------------------------------------------------
 // Colour argument
 // ---------------------------------------------------------------------------------------------
@@ -195,7 +267,7 @@ impl ColorArg {
 
 impl Serialize for ColorArg {
     fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
-        s.serialize_str(&self.0.to_hex())
+        if self.0.a == 0 { s.serialize_str("transparent") } else { s.serialize_str(&self.0.to_hex()) }
     }
 }
 
@@ -308,9 +380,32 @@ pub enum StyleError {
         /// The properties that were asked for.
         props: Vec<Prop>,
     },
+    /// The write would leave an element with nothing to see (see [`is_visible`]).
+    #[error("{}", invisible_text(*kind, *fill_helps))]
+    Invisible {
+        /// The kind of the element that would vanish.
+        kind: Kind,
+        /// A fill could keep this kind visible (a shape or a closed line), so the advice is about the fill.
+        fill_helps: bool,
+    },
+    /// The defaults for new elements cannot have no stroke.
+    #[error(
+        "New elements always get a stroke, because arrows, lines and text are drawn with it. To draw shapes without an outline, select one that has a fill and set its stroke to none."
+    )]
+    DefaultStroke,
     /// The store refused the write.
     #[error(transparent)]
     Store(#[from] StoreError),
+}
+
+/// The words of [`StyleError::Invisible`].
+fn invisible_text(kind: Kind, fill_helps: bool) -> String {
+    let this = Article::new(kind.name()).capitalized();
+    if fill_helps {
+        format!("{this} with neither a stroke nor a fill shows nothing. Keep the stroke, or give it a fill first.")
+    } else {
+        format!("{this} is drawn in its stroke colour, so the stroke cannot be none. Pick a colour for it instead.")
+    }
 }
 
 fn names(props: &[Prop]) -> String {
@@ -344,8 +439,10 @@ impl StyleProps {
     /// The value of a property as JSON, `None` when it is not set. A removed fill is `Some(null)`.
     pub fn value(&self, p: Prop) -> Option<Value> {
         match p {
-            Prop::StrokeColor => self.stroke_color.map(|c| json!(c.0.to_hex())),
-            Prop::FillColor => self.fill_color.map(|c| c.map_or(Value::Null, |c| json!(c.0.to_hex()))),
+            Prop::StrokeColor => self.stroke_color.and_then(|c| serde_json::to_value(c).ok()),
+            Prop::FillColor => {
+                self.fill_color.and_then(|c| c.map_or(Some(Value::Null), |c| serde_json::to_value(c).ok()))
+            }
             Prop::FillPattern => self.fill_pattern.and_then(|v| serde_json::to_value(v).ok()),
             Prop::StrokeWidth => self.stroke_width.map(|v| json!(v)),
             Prop::StrokeStyle => self.stroke_style.and_then(|v| serde_json::to_value(v).ok()),
@@ -361,6 +458,11 @@ impl StyleProps {
             Prop::VerticalAlign => self.vertical_align.and_then(|v| serde_json::to_value(v).ok()),
             Prop::LineHeight => self.line_height.map(|v| json!(v)),
         }
+    }
+
+    /// True when the stroke is set to a fully clear colour: "no stroke".
+    pub fn clears_stroke(&self) -> bool {
+        self.stroke_color.is_some_and(|c| c.0.a == 0)
     }
 
     /// Checks that at least one property is set and that every number is in range.
@@ -616,8 +718,15 @@ pub fn apply<T: SceneTx>(
     if report.applied.is_empty() {
         return Err(StyleError::NotApplicable { props: wanted });
     }
-    for (id, only) in &report.applied {
-        let part = props.restricted(only);
+    let parts: Vec<(&ElementId, StyleProps)> =
+        report.applied.iter().map(|(id, only)| (id, props.restricted(only))).collect();
+    // Every element is checked before the first write.
+    for (id, part) in &parts {
+        if let Some(old) = tx.get(id) {
+            check_visible(old, part)?;
+        }
+    }
+    for (id, part) in parts {
         let Some(old) = tx.get(id) else { continue };
         let mut new = old.clone();
         part.write(&mut new);
@@ -744,6 +853,8 @@ impl StyleDefaults {
                 ..p
             };
         }
+        // New elements always have a stroke (see [`StyleError::DefaultStroke`]).
+        p.stroke_color = p.stroke_color.filter(|c| c.0.a > 0);
         d.apply(&p);
         d
     }
@@ -915,6 +1026,29 @@ mod tests {
         assert!(g(&txt, Prop::FontFamily) && !g(&math, Prop::FontFamily) && g(&math, Prop::FontSize));
         assert!(!g(&txt, Prop::VerticalAlign), "free text has no container to align in");
         assert!(g(&free, Prop::FreehandStyle) && !g(&rect, Prop::PressureMode));
+    }
+
+    #[test]
+    fn what_shows_follows_the_kind() {
+        let style =
+            |stroke: Color, fill: Option<Color>| Style { stroke_color: stroke, fill_color: fill, ..Style::default() };
+        let blue = Some(Color::rgb(0, 0, 255));
+        for kind in Kind::ALL {
+            assert!(style_shows(kind, false, &style(Color::BLACK, None)), "{kind:?} with a stroke");
+        }
+        for kind in [Kind::Rectangle, Kind::Diamond, Kind::Ellipse] {
+            assert!(style_shows(kind, false, &style(Color::TRANSPARENT, blue)), "{kind:?}: a fill is enough");
+            assert!(!style_shows(kind, false, &style(Color::TRANSPARENT, None)));
+            assert!(
+                !style_shows(kind, false, &style(Color::TRANSPARENT, Some(Color::TRANSPARENT))),
+                "a clear fill is none"
+            );
+        }
+        assert!(style_shows(Kind::Line, true, &style(Color::TRANSPARENT, blue)), "closed lines are shapes");
+        for kind in [Kind::Line, Kind::Arrow, Kind::Freehand, Kind::Text, Kind::Math, Kind::Frame] {
+            assert!(!style_shows(kind, false, &style(Color::TRANSPARENT, blue)), "{kind:?} is drawn in its stroke");
+        }
+        assert!(style_shows(Kind::Image, false, &style(Color::TRANSPARENT, None)));
     }
 
     #[test]

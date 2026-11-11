@@ -317,3 +317,21 @@ fn every_font_family_and_weight_survives_the_crdt_a_second_replica_and_a_snapsho
     let bytes = s.export_snapshot().unwrap();
     assert_eq!(fonts(&LoroStore::from_snapshot(&bytes).unwrap()), want);
 }
+
+#[test]
+fn a_clear_stroke_survives_the_crdt_and_a_second_replica() {
+    let mut doc = Document::new();
+    let mut e = Element::new(ElementId::new("r").unwrap(), ElementKind::Rectangle, ZIndex::first())
+        .with_bounds(0.0, 0.0, 10.0, 10.0);
+    e.style.stroke_color = Color::TRANSPARENT;
+    e.style.fill_color = Some(Color::rgb(1, 2, 3));
+    doc.elements.push(e);
+    let mut s = peer(1);
+    load_document(&mut s, &doc).unwrap();
+    assert_view_matches_loro(&s);
+    assert_eq!(content(&s).elements[0].style.stroke_color, Color::TRANSPARENT);
+    let mut other = peer(2);
+    push(&s, &mut other);
+    assert_same(&s, &other);
+    assert_eq!(content(&other).elements[0].style.stroke_color, Color::TRANSPARENT);
+}

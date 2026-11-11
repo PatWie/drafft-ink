@@ -10,9 +10,10 @@ mod dialog;
 use common::Fixture;
 use drafftink_engine::testing::{add_rect, add_text_label, select};
 use drafftink_scene::ElementId;
-use drafftink_ui::Verb;
 use drafftink_ui::chrome::ChromeRects;
+use drafftink_ui::colors::QUICK_FAMILIES;
 use drafftink_ui::state::LayoutPreference;
+use drafftink_ui::{ColorTarget, Verb};
 use egui::{Rect, Vec2, vec2};
 use egui_kittest::Harness;
 use egui_kittest::kittest::{NodeT, Queryable};
@@ -383,13 +384,69 @@ fn the_colour_rows_are_stacked_and_their_swatches_start_at_the_same_x() {
     let (stroke, fill) = (rect(&h, "Stroke"), rect(&h, "Fill"));
     assert_eq!(stroke.min.x, fill.min.x, "the labels start together: {stroke:?} {fill:?}");
     assert!(fill.min.y >= stroke.max.y, "fill is the row under stroke: {stroke:?} over {fill:?}");
-    // The first swatch of both rows: "no fill" under the first stroke colour.
-    let first_stroke = rect(&h, "Stroke blue");
+    // The first cell of both rows is the "none" cell: "no fill" under "no stroke".
+    let no_stroke = rect(&h, "No stroke");
     let no_fill = rect(&h, "No fill");
-    assert_eq!(first_stroke.min.x, no_fill.min.x, "swatch columns line up");
-    assert!(no_fill.center().y > first_stroke.center().y + 20.0);
+    assert_eq!(no_stroke.min.x, no_fill.min.x, "swatch columns line up");
+    assert!(no_fill.center().y > no_stroke.center().y + 20.0);
+    assert!(rect(&h, "Stroke blue").min.x > no_stroke.max.x, "the colours follow the none cell");
     let (stroke_wheel, fill_wheel) = (rect(&h, "Pick the stroke colour"), rect(&h, "Pick the fill colour"));
     assert!(fill_wheel.center().y > stroke_wheel.center().y + 20.0, "{stroke_wheel:?} over {fill_wheel:?}");
+}
+
+/// The cells of a colour row in order: "none", the quick colours, the colour last picked when there is one.
+fn colour_cells(h: &H, row: &str) -> Vec<Rect> {
+    let (none, label) =
+        if row == "Stroke" { ("No stroke", "Last picked stroke") } else { ("No fill", "Last picked fill") };
+    let mut cells = vec![rect(h, none)];
+    cells.extend(QUICK_FAMILIES.iter().map(|family| rect(h, &format!("{row} {family}"))));
+    cells.extend(h.query_by_label(label).map(|n| n.rect()));
+    cells
+}
+
+#[test]
+fn the_stroke_and_fill_rows_have_the_same_cells_at_the_same_x_column_by_column() {
+    for (name, f) in [("rectangle", one_rect()), ("nothing selected", dialog::fixture())] {
+        let h = desk(f);
+        let (stroke, fill) = (colour_cells(&h, "Stroke"), colour_cells(&h, "Fill"));
+        assert_eq!(stroke.len(), QUICK_FAMILIES.len() + 1, "{name}: none and the quick colours");
+        assert_eq!(stroke.len(), fill.len(), "{name}: both rows have every cell");
+        for (column, (s, f)) in stroke.iter().zip(&fill).enumerate() {
+            assert_eq!(s.center().x, f.center().x, "{name}: column {column}: {s:?} over {f:?}");
+            assert_eq!(s.size(), f.size(), "{name}: column {column} is as wide in both rows");
+            assert!(f.center().y > s.center().y + 20.0, "{name}: column {column}: fill is under stroke");
+        }
+        let (stroke_wheel, fill_wheel) = (rect(&h, "Pick the stroke colour"), rect(&h, "Pick the fill colour"));
+        assert_eq!(stroke_wheel.center().x, fill_wheel.center().x, "{name}: the wheels share x");
+        let last = stroke.last().unwrap();
+        assert!(stroke_wheel.min.x > last.max.x, "{name}: the wheel follows the last cell");
+    }
+}
+
+#[test]
+fn the_wheels_do_not_move_when_a_custom_colour_is_picked() {
+    let mut h = desk(one_rect());
+    assert!(!has(&h, "Last picked stroke") && !has(&h, "Last picked fill"), "nothing was picked yet");
+    let before = [rect(&h, "Pick the stroke colour"), rect(&h, "Pick the fill colour")];
+    assert_eq!(before[0].center().x, before[1].center().x);
+    let last = h.state().state.last_picked.clone();
+    assert_eq!(last.of(ColorTarget::Stroke), None);
+    h.state_mut().state.last_picked.remember(ColorTarget::Stroke, "pink-500".to_owned());
+    h.run();
+    assert!(has(&h, "Last picked stroke") && !has(&h, "Last picked fill"));
+    h.state_mut().state.last_picked.remember(ColorTarget::Fill, "#12ab34".to_owned());
+    h.run();
+    assert!(has(&h, "Last picked stroke") && has(&h, "Last picked fill"));
+    let after = [rect(&h, "Pick the stroke colour"), rect(&h, "Pick the fill colour")];
+    assert_eq!(before, after, "the wheels stay where they were");
+    // The picked colour sits in the place that was kept free for it, one column per row.
+    let quick_end = rect(&h, &format!("Stroke {}", QUICK_FAMILIES[QUICK_FAMILIES.len() - 1])).max.x;
+    let picked = rect(&h, "Last picked stroke");
+    assert!(
+        picked.min.x >= quick_end && picked.max.x <= after[0].min.x,
+        "{picked:?} between {quick_end} and {after:?}"
+    );
+    assert_eq!(picked.center().x, rect(&h, "Last picked fill").center().x);
 }
 
 #[test]
@@ -411,7 +468,7 @@ fn the_groups_lie_right_of_the_colour_group_on_one_band_in_two_rows() {
     assert!(bottom.iter().all(|y| (y - bottom[0]).abs() < 1.0), "one bottom row: {bottom:?}");
     assert!(bottom[0] - top[0] > 28.0, "the second row is under the first: {top:?} {bottom:?}");
     // The colour rows are the same two rows.
-    assert!((rect(&h, "Stroke blue").center().y - top[0]).abs() < 1.0);
+    assert!((rect(&h, "No stroke").center().y - top[0]).abs() < 1.0);
     assert!((rect(&h, "No fill").center().y - bottom[0]).abs() < 1.0);
 }
 

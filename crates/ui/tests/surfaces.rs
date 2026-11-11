@@ -86,6 +86,19 @@ fn top_bar_swatches_and_widths_run_style_set() {
 }
 
 #[test]
+fn top_bar_no_stroke_sets_a_clear_stroke_and_no_fill_stays_null() {
+    let mut f = Fixture::new();
+    let id = add_rect(&mut f.session, 0.0, 0.0, 50.0, 50.0).unwrap();
+    select(&mut f.session, std::slice::from_ref(&id));
+    f.session.execute_from(Origin::Ui, "style.set", json!({"props": {"fill_color": "blue-100"}})).unwrap();
+    f.refresh();
+    let mut h = harness(f);
+    h.run();
+    let c = click(&mut h, "No stroke");
+    assert_eq!((c[0].id.as_str(), &c[0].args), ("style.set", &json!({"props": {"stroke_color": "transparent"}})));
+}
+
+#[test]
 fn top_bar_wheel_opens_the_colour_popover_by_verb_and_runs_no_command() {
     let mut h = harness(Fixture::new());
     h.run();

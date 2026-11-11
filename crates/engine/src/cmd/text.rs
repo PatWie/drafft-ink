@@ -540,7 +540,7 @@ pub const COMMANDS: &[CommandSpec] = &[
     )
     .host(Host::effect(HostEffect::EndsEquationEdit))
     .available(editing_now)
-    .refusals(&["not_editing", "invalid_latex"])
+    .refusals(&["not_editing", "invalid_latex", "invisible"])
     // A blocked document cannot take the result (`edit_end` says so), but the edit can still be discarded.
     .allowed_when_blocked()
     .shortcuts(EDIT_END_KEYS),

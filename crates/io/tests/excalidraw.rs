@@ -1687,3 +1687,24 @@ fn a_link_with_control_characters_is_dropped_with_a_warning_and_an_unsafe_scheme
     // The text is not rewritten on import; `element.open_link` refuses it when someone tries to open it.
     assert_eq!(get(&i.document, "js").link.as_deref(), Some("javascript:alert(1)"));
 }
+
+#[test]
+fn a_transparent_stroke_is_no_stroke_both_ways() {
+    let rect = json!({"id": "r", "type": "rectangle", "x": 0, "y": 0, "width": 100, "height": 50, "strokeColor": "transparent", "backgroundColor": "#a5d8ff"});
+    let imported = import_elements(json!([rect]));
+    assert!(imported.report.is_clean(), "{:?}", imported.report.warnings);
+    let r = get(&imported.document, "r");
+    assert_eq!(r.style.stroke_color, Color::TRANSPARENT);
+    assert_eq!(r.style.fill_color, Some(Color::rgb(0xa5, 0xd8, 0xff)));
+    let out = export_scene(&imported.document).unwrap();
+    let json: Value = serde_json::from_str(&out).unwrap();
+    assert_eq!(json["elements"][0]["strokeColor"], "transparent");
+    assert_eq!(get(&import_str(&out).unwrap().document, "r").style.stroke_color, Color::TRANSPARENT);
+    // A stroke that is only partly clear is still a colour.
+    let faint =
+        json!({"id": "f", "type": "rectangle", "x": 0, "y": 0, "width": 10, "height": 10, "strokeColor": "#11223380"});
+    let doc = import_elements(json!([faint])).document;
+    assert_eq!(get(&doc, "f").style.stroke_color, Color::rgba(0x11, 0x22, 0x33, 0x80));
+    let json: Value = serde_json::from_str(&export_scene(&doc).unwrap()).unwrap();
+    assert_eq!(json["elements"][0]["strokeColor"], "#11223380");
+}

@@ -211,6 +211,7 @@ fn stroke_dash(style: StrokeStyle, w: f64) -> Option<[f64; 2]> {
 fn paint_geometry(ink: &mut Ink, e: &Element, g: &SketchGeometry) {
     let style = &e.style;
     let stroke_color = ink.color(style.stroke_color);
+    let has_stroke = style.stroke_color.a > 0;
     let fill = style.fill_color.map(|c| ink.color(c));
     for (path, kind) in &g.fills {
         match kind {
@@ -225,7 +226,8 @@ fn paint_geometry(ink: &mut Ink, e: &Element, g: &SketchGeometry) {
                     ink.fill(path, peniko::Color::from_rgba8(rgba.r, rgba.g, rgba.b, scale_alpha(rgba.a, *alpha)));
                 }
             }
-            FillKind::Ink => ink.fill(path, stroke_color),
+            FillKind::Ink if has_stroke => ink.fill(path, stroke_color),
+            FillKind::Ink => {}
             FillKind::Hatch { line_width, clip } => {
                 if let Some(c) = fill {
                     ink.scene.push_clip_layer(Fill::NonZero, Affine::IDENTITY, clip);
@@ -239,8 +241,10 @@ fn paint_geometry(ink: &mut Ink, e: &Element, g: &SketchGeometry) {
             }
         }
     }
-    for (path, s) in &g.strokes {
-        ink.stroke(path, s.width, s.dash, stroke_color);
+    if has_stroke {
+        for (path, s) in &g.strokes {
+            ink.stroke(path, s.width, s.dash, stroke_color);
+        }
     }
 }
 
@@ -252,6 +256,9 @@ fn paint_cardinality(ink: &mut Ink, e: &Element, d: &drafftink_scene::LinearData
     else {
         return;
     };
+    if e.style.stroke_color.a == 0 {
+        return;
+    }
     let size = head_size(d, e.style.stroke_width);
     let ends = [(d.end_head, last, penultimate), (d.start_head, first, second)];
     let color = ink.color(e.style.stroke_color);
@@ -457,8 +464,10 @@ fn paint_frame(ink: &mut Ink, e: &Element) {
         let c = ink.color(fill);
         ink.fill(&path, c);
     }
-    let sc = ink.color(style.stroke_color);
-    ink.stroke(&path, style.stroke_width, stroke_dash(style.stroke_style, style.stroke_width), sc);
+    if style.stroke_color.a > 0 {
+        let sc = ink.color(style.stroke_color);
+        ink.stroke(&path, style.stroke_width, stroke_dash(style.stroke_style, style.stroke_width), sc);
+    }
 }
 
 /// Draws the glyph runs of `layout` under `to`, each in the colour `color_of` gives for it.

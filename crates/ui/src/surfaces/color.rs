@@ -18,6 +18,7 @@ use crate::colors;
 use crate::model::Model;
 use crate::state::{ColorTarget, UiState};
 use crate::surfaces::dialogs::{enter_pressed, text_field};
+use crate::surfaces::topbar::clear_blocked;
 use crate::theme::{MARGIN, TextSize, UiFontChoice};
 use crate::widgets::{Ctl, Cx, Look, paint_button_bg, panel_frame, section_label};
 
@@ -234,7 +235,9 @@ fn quick_column(dark: bool) -> Vec<Choice> {
 fn cell(ui: &mut Ui, cx: &mut Cx<'_>, target: ColorTarget, now: Option<Option<Color>>, c: &Choice) -> Option<Pick> {
     let (id, args) = pick_command(target, &c.pick);
     let selected = now.is_some() && now == Some(pick_value(target, &c.pick));
-    let ctl = Ctl::new(id).args(args).label(&c.label).selected(selected);
+    // "None" greys with the engine's words when the element would show nothing.
+    let blocked = if c.pick == Pick::Clear { clear_blocked(cx, target) } else { None };
+    let ctl = Ctl::new(id).args(args).label(&c.label).selected(selected).blocked(blocked);
     cx.swatch(ui, &ctl, c.shown, CELL).clicked().then(|| c.pick.clone())
 }
 
@@ -485,12 +488,17 @@ mod tests {
         assert_eq!(current(&m, ColorTarget::Stroke), None, "unknown without a style");
         m.style.props.insert(
             "fill_color".to_owned(),
-            crate::model::StyleProp { applicable: true, value: Some(Value::Null), reason: None },
+            crate::model::StyleProp { applicable: true, value: Some(Value::Null), reason: None, clear_reason: None },
         );
         assert_eq!(current(&m, ColorTarget::Fill), Some(None));
         m.style.props.insert(
             "stroke_color".to_owned(),
-            crate::model::StyleProp { applicable: true, value: Some(json!("#00000000")), reason: None },
+            crate::model::StyleProp {
+                applicable: true,
+                value: Some(json!("transparent")),
+                reason: None,
+                clear_reason: None,
+            },
         );
         assert_eq!(current(&m, ColorTarget::Stroke), Some(Some(Color::TRANSPARENT)));
     }

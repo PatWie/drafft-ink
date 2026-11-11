@@ -13,7 +13,7 @@ use drafftink_edit::create::{
     LinearSpec, PresetId, StrokeSpec, TextPlace, TextSpec,
 };
 use drafftink_edit::frame;
-use drafftink_edit::style::{Prop, StyleDefaults, StyleError, StyleProps, applies};
+use drafftink_edit::style::{self, Prop, StyleDefaults, StyleError, StyleProps, applies};
 use drafftink_edit::text_bind::{self, Relabeled};
 use drafftink_geom::kurbo::{Point, Size};
 use drafftink_scene::words::Article;
@@ -702,6 +702,9 @@ fn plan_create(s: &Session, a: &CreateArgs) -> Result<Plan, Refusal> {
         }
         Kind::Image => return Err(Refusal::custom("wrong_kind", cmd, "`element.create` cannot create images. Use `image.insert`.")),
     };
+    // A clear stroke on a kind that is drawn in it, or on a shape without a fill, would create nothing to see.
+    let closed = a.kind == Kind::Line && a.closed == Some(true);
+    style::check_shows(a.kind, closed, &style).map_err(|e| super::style::invisible(cmd, &e))?;
     Ok(Plan { kind: a.kind, body, id, name, style, defaults, props, frame, after })
 }
 
@@ -1053,6 +1056,7 @@ pub const COMMANDS: &[CommandSpec] = &[
         CREATE,
     )
     .refusals(&[
+        "invisible",
         "too_small",
         "empty_text",
         "id_in_use",

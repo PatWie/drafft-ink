@@ -149,6 +149,15 @@ mod tests {
     }
 
     #[test]
+    fn a_shape_without_a_stroke_is_still_hit_on_its_fill() {
+        let mut e = Element::new(id("a"), ElementKind::Rectangle, ZIndex::first()).with_bounds(0.0, 0.0, 10.0, 10.0);
+        e.style.fill_color = Some(Color::rgb(1, 2, 3));
+        e.style.stroke_color = Color::TRANSPARENT;
+        assert!(hits_inside(&e));
+        assert!(outline_bounds(&e).is_some() && index_bounds(&e).is_some(), "it is indexed, so it can be selected");
+    }
+
+    #[test]
     fn fill_rules_per_kind() {
         let filled = |kind| {
             let mut e = Element::new(id("a"), kind, ZIndex::first()).with_bounds(0.0, 0.0, 10.0, 10.0);

@@ -719,3 +719,18 @@ fn a_document_with_kaomoji_round_trips_the_native_file_and_the_svg_scene() {
     let svg = export_svg(&d, &SvgOptions::default(), &m, Some(&m)).unwrap();
     assert_eq!(drafftink_io::svg::extract_scene(&svg).unwrap().map(|s| native::load(&s).unwrap()), Some(d));
 }
+
+#[test]
+fn svg_export_skips_a_clear_stroke() {
+    let mut d = Document::new();
+    let mut rect = Element::new(eid("r"), ElementKind::Rectangle, ZIndex::first()).with_bounds(0.0, 0.0, 100.0, 60.0);
+    rect.style.fill_color = Some(Color::rgb(0, 0, 255));
+    rect.style.sloppiness = drafftink_scene::Sloppiness::Architect;
+    d.elements.push(rect);
+    let with_stroke = export_svg(&d, &SvgOptions::default(), &EstimateMeasure, None).unwrap();
+    assert!(with_stroke.contains("stroke-width"));
+    d.elements[0].style.stroke_color = Color::TRANSPARENT;
+    let svg = export_svg(&d, &SvgOptions::default(), &EstimateMeasure, None).unwrap();
+    assert!(!svg.contains("stroke-width") && !svg.contains("stroke=\""), "{svg}");
+    assert!(svg.contains("fill=\"#0000ff\""), "the fill stays: {svg}");
+}
