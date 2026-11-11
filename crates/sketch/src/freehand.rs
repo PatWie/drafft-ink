@@ -21,20 +21,16 @@ pub(crate) fn pressure_outline(
         return None;
     }
     let base = stroke_width * profile.size_scale;
-    let n = points.len();
-    let mut left: Vec<Point> = Vec::with_capacity(n);
-    let mut right: Vec<Point> = Vec::with_capacity(n);
-    for i in 0..n {
-        let p = points[i];
+    let mut left: Vec<Point> = Vec::with_capacity(points.len());
+    let mut right: Vec<Point> = Vec::with_capacity(points.len());
+    for (i, &p) in points.iter().enumerate() {
         let eased = (pressure(i).clamp(0.0, 1.0) * std::f64::consts::FRAC_PI_2).sin();
         let width = base * (1.0 - profile.thinning * (1.0 - eased));
-        let dir = if i == 0 {
-            points[1] - p
-        } else if i == n - 1 {
-            p - points[n - 2]
-        } else {
-            points[i + 1] - points[i - 1]
-        };
+        // The direction runs from the previous to the next point; an end point uses itself for the
+        // missing neighbour.
+        let prev = i.checked_sub(1).and_then(|j| points.get(j)).copied().unwrap_or(p);
+        let next = points.get(i + 1).copied().unwrap_or(p);
+        let dir = next - prev;
         let len = dir.hypot();
         if len < f64::EPSILON {
             continue;
