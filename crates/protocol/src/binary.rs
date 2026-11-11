@@ -69,16 +69,6 @@ fn split_tag(frame: &[u8]) -> Result<(u8, Reader<'_>), DecodeError> {
 
 // ---- shared field codecs --------------------------------------------------------------------
 
-fn put_opt_user(w: &mut Writer, user: &Option<UserInfo>) {
-    match user {
-        Some(u) => {
-            w.u8(1);
-            put_user(w, u);
-        }
-        None => w.u8(0),
-    }
-}
-
 fn put_user(w: &mut Writer, u: &UserInfo) {
     w.str(&u.name);
     w.u32(u.color);
@@ -89,12 +79,12 @@ fn get_user(r: &mut Reader<'_>) -> Result<UserInfo, DecodeError> {
 }
 
 fn get_opt_user(r: &mut Reader<'_>) -> Result<Option<UserInfo>, DecodeError> {
-    if r.bool("user flag")? { Ok(Some(get_user(r)?)) } else { Ok(None) }
+    r.option("user flag", get_user)
 }
 
 fn put_peer(w: &mut Writer, p: &PeerInfo) {
     w.raw(p.client_id.as_bytes());
-    put_opt_user(w, &p.user);
+    w.option(p.user.as_ref(), put_user);
 }
 
 fn get_peer(r: &mut Reader<'_>) -> Result<PeerInfo, DecodeError> {
@@ -186,15 +176,9 @@ impl ClientMessage {
                 w.u16(*max_version);
                 w.str(room.as_str());
                 w.raw(client_id.as_bytes());
-                match auth_token {
-                    Some(t) => {
-                        w.u8(1);
-                        w.str(t);
-                    }
-                    None => w.u8(0),
-                }
+                w.option(auth_token.as_deref(), Writer::str);
                 w.bytes(version);
-                put_opt_user(&mut w, user);
+                w.option(user.as_ref(), put_user);
                 finish(w)
             }
             ClientMessage::Update { seq, update } => {
@@ -241,8 +225,7 @@ impl ClientMessage {
                 check_version_range(min_version, max_version)?;
                 let room = get_room(&mut r)?;
                 let client_id = ClientId::from_bytes(r.id16("client_id")?);
-                let auth_token =
-                    if r.bool("auth flag")? { Some(r.string("auth_token", MAX_AUTH_TOKEN_BYTES)?) } else { None };
+                let auth_token = r.option("auth flag", |r| r.string("auth_token", MAX_AUTH_TOKEN_BYTES))?;
                 let version = r.bytes("version", MAX_VERSION_BYTES)?;
                 let user = get_opt_user(&mut r)?;
                 ClientMessage::Join { min_version, max_version, room, client_id, auth_token, version, user }
@@ -287,10 +270,7 @@ impl ServerMessage {
             }
             ServerMessage::SyncResponse { kind, data, server_version } => {
                 let mut w = Writer::new(S_SYNC_RESPONSE);
-                w.u8(match kind {
-                    SyncKind::Updates => 0,
-                    SyncKind::Snapshot => 1,
-                });
+                w.u8(kind.as_u8());
                 w.bytes(data);
                 w.bytes(server_version);
                 finish(w)
@@ -326,13 +306,7 @@ impl ServerMessage {
                 let mut w = Writer::new(S_ERROR);
                 w.u8(code.as_u8());
                 w.str(message);
-                match retry_after_ms {
-                    Some(ms) => {
-                        w.u8(1);
-                        w.u32(*ms);
-                    }
-                    None => w.u8(0),
-                }
+                w.option(*retry_after_ms, Writer::u32);
                 finish(w)
             }
             ServerMessage::Ping { nonce } => {
@@ -373,13 +347,9 @@ impl ServerMessage {
                 ServerMessage::Joined { protocol_version, server, room, client_id, peers, server_version, limits }
             }
             S_SYNC_RESPONSE => {
-                let kind = match r.u8("sync kind")? {
-                    0 => SyncKind::Updates,
-                    1 => SyncKind::Snapshot,
-                    v => {
-                        return Err(DecodeError::UnknownValue { field: "sync kind", value: u32::from(v) });
-                    }
-                };
+                let raw = r.u8("sync kind")?;
+                let kind = SyncKind::from_u8(raw)
+                    .ok_or(DecodeError::UnknownValue { field: "sync kind", value: u32::from(raw) })?;
                 ServerMessage::SyncResponse {
                     kind,
                     data: r.bytes("data", MAX_SYNC_BYTES)?,
@@ -402,7 +372,7 @@ impl ServerMessage {
                 let code = ErrorCode::from_u8(raw)
                     .ok_or(DecodeError::UnknownValue { field: "error code", value: u32::from(raw) })?;
                 let message = r.string("message", MAX_ERROR_MESSAGE_BYTES)?;
-                let retry_after_ms = if r.bool("retry flag")? { Some(r.u32("retry_after_ms")?) } else { None };
+                let retry_after_ms = r.option("retry flag", |r| r.u32("retry_after_ms"))?;
                 ServerMessage::Error { code, message, retry_after_ms }
             }
             S_PING => ServerMessage::Ping { nonce: r.u64("nonce")? },

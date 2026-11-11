@@ -2,7 +2,7 @@
 
 use kurbo::{Point, Vec2};
 
-use crate::outline::{Hit, unit};
+use crate::outline::{Hit, clamp_to_range, quadratic_roots, unit};
 
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct LocalEllipse {
@@ -44,20 +44,8 @@ impl LocalEllipse {
         let a2 = dx * dx + dy * dy;
         let b2 = 2.0 * (ox * dx + oy * dy);
         let c2 = ox * ox + oy * oy - 1.0;
-        let disc = b2 * b2 - 4.0 * a2 * c2;
-        if a2 <= 0.0 || disc < 0.0 {
-            return;
-        }
-        let sq = disc.sqrt();
-        let tol = 1e-12;
-        let roots = if sq == 0.0 {
-            [Some(-b2 / (2.0 * a2)), None]
-        } else {
-            [Some((-b2 - sq) / (2.0 * a2)), Some((-b2 + sq) / (2.0 * a2))]
-        };
-        for t in roots.into_iter().flatten() {
-            if t >= t0 - tol && t <= t1 + tol {
-                let t = t.clamp(t0, t1);
+        for t in quadratic_roots(a2, b2, c2).into_iter().flatten() {
+            if let Some(t) = clamp_to_range(t, t0, t1) {
                 let q = o + d * t;
                 out.push(Hit { point: q, t, normal: self.normal_at(q) });
             }

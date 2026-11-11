@@ -147,10 +147,9 @@ pub fn combine(world: &Scene, overlay: &Scene, out: &mut Scene) {
 
 fn polygon(points: &[Point]) -> BezPath {
     let mut p = BezPath::new();
-    for (i, q) in points.iter().enumerate() {
-        if i == 0 {
-            p.move_to(*q);
-        } else {
+    if let Some((first, rest)) = points.split_first() {
+        p.move_to(*first);
+        for q in rest {
             p.line_to(*q);
         }
     }
@@ -191,7 +190,7 @@ pub fn paint_overlay(scene: &mut Scene, overlay: &Overlay, view: &View, style: &
     }
 
     for h in &overlay.binding {
-        let path = to_dev * h.outline.clone();
+        let path = to_dev * &h.outline;
         scene.stroke(&Stroke::new(5.0 * px), id, style.accent.with_alpha(0.35), None, &path);
         if let Some(p) = h.at {
             let c = Circle::new(dev(p), 4.0 * px);

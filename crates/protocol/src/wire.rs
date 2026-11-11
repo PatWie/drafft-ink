@@ -51,23 +51,34 @@ impl Writer {
     pub fn str(&mut self, v: &str) {
         self.bytes(v.as_bytes());
     }
+
+    /// An optional field: a flag byte (0 or 1), then the value when present.
+    pub fn option<T>(&mut self, v: Option<T>, put: impl FnOnce(&mut Self, T)) {
+        match v {
+            Some(v) => {
+                self.u8(1);
+                put(self, v);
+            }
+            None => self.u8(0),
+        }
+    }
     pub fn count(&mut self, n: usize) {
         self.varint(u32::try_from(n).unwrap_or(u32::MAX));
     }
 }
 
 pub(crate) struct Reader<'a> {
+    /// The bytes not read yet.
     buf: &'a [u8],
-    pos: usize,
 }
 
 impl<'a> Reader<'a> {
     pub fn new(buf: &'a [u8]) -> Self {
-        Reader { buf, pos: 0 }
+        Reader { buf }
     }
 
     pub fn remaining(&self) -> usize {
-        self.buf.len().saturating_sub(self.pos)
+        self.buf.len()
     }
 
     pub fn finish(&self) -> Result<(), DecodeError> {
@@ -78,22 +89,18 @@ impl<'a> Reader<'a> {
     }
 
     fn take(&mut self, n: usize, what: &'static str) -> Result<&'a [u8], DecodeError> {
-        if n > self.remaining() {
-            return Err(DecodeError::Truncated(what));
-        }
-        let start = self.pos;
-        self.pos += n;
-        self.buf.get(start..start + n).ok_or(DecodeError::Truncated(what))
+        let (head, tail) = self.buf.split_at_checked(n).ok_or(DecodeError::Truncated(what))?;
+        self.buf = tail;
+        Ok(head)
     }
 
     fn array<const N: usize>(&mut self, what: &'static str) -> Result<[u8; N], DecodeError> {
-        let mut out = [0u8; N];
-        out.copy_from_slice(self.take(N, what)?);
-        Ok(out)
+        <[u8; N]>::try_from(self.take(N, what)?).map_err(|_| DecodeError::Truncated(what))
     }
 
     pub fn u8(&mut self, what: &'static str) -> Result<u8, DecodeError> {
-        Ok(self.array::<1>(what)?[0])
+        let [byte] = self.array(what)?;
+        Ok(byte)
     }
     pub fn u16(&mut self, what: &'static str) -> Result<u16, DecodeError> {
         Ok(u16::from_le_bytes(self.array(what)?))
@@ -119,6 +126,15 @@ impl<'a> Reader<'a> {
         }
     }
 
+    /// An optional field: reads the flag byte called `flag`, then the value when it is 1.
+    pub fn option<T>(
+        &mut self,
+        flag: &'static str,
+        get: impl FnOnce(&mut Self) -> Result<T, DecodeError>,
+    ) -> Result<Option<T>, DecodeError> {
+        if self.bool(flag)? { get(self).map(Some) } else { Ok(None) }
+    }
+
     pub fn varint(&mut self, what: &'static str) -> Result<u32, DecodeError> {
         let mut value: u32 = 0;
         for i in 0..5u32 {
@@ -137,7 +153,7 @@ impl<'a> Reader<'a> {
 
     /// Reads a length and checks it against `max` and the remaining input.
     pub fn len(&mut self, what: &'static str, max: usize) -> Result<usize, DecodeError> {
-        let len = self.varint(what)? as usize;
+        let len = usize::try_from(self.varint(what)?).unwrap_or(usize::MAX);
         if len > max {
             return Err(DecodeError::FieldTooLong { field: what, len, max });
         }

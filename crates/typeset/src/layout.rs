@@ -12,7 +12,7 @@ use parley::{
 };
 
 use crate::fonts::{self, FALLBACK_FAMILY};
-use crate::style::{Align, FontFamily, FontWeight, LineHeight, Rgba8, TextSpec, Wrap};
+use crate::style::{Align, FontFamily, FontWeight, LineHeight, Rgba8, TextSpec, TextStyle, Wrap};
 
 /// Longest text laid out, in bytes. Longer text is cut at a `char` boundary and the layout is
 /// marked [`TextLayout::truncated`].
@@ -246,18 +246,14 @@ struct Clean<'a> {
 }
 
 fn clamp_size(s: f32) -> f32 {
-    if s.is_finite() { s.clamp(FONT_SIZE_RANGE.0, FONT_SIZE_RANGE.1) } else { 20.0 }
+    if s.is_finite() { s.clamp(FONT_SIZE_RANGE.0, FONT_SIZE_RANGE.1) } else { TextStyle::DEFAULT_SIZE }
 }
 
 fn cut_at_boundary(text: &str, max: usize) -> &str {
     if text.len() <= max {
         return text;
     }
-    let mut end = max;
-    while end > 0 && !text.is_char_boundary(end) {
-        end -= 1;
-    }
-    text.get(..end).unwrap_or_default()
+    text.get(..text.floor_char_boundary(max)).unwrap_or_default()
 }
 
 pub(crate) fn sanitize_wrap(w: Wrap) -> Option<f32> {
@@ -271,7 +267,7 @@ pub(crate) fn sanitize_wrap(w: Wrap) -> Option<f32> {
 fn clean(spec: &TextSpec) -> Clean<'_> {
     let text = cut_at_boundary(&spec.text, MAX_TEXT_BYTES);
     let mut truncated = text.len() != spec.text.len();
-    let mut base = RunStyle {
+    let base = RunStyle {
         family: spec.style.family.clone(),
         weight: spec.style.weight,
         italic: spec.style.italic,
@@ -280,7 +276,6 @@ fn clean(spec: &TextSpec) -> Clean<'_> {
         underline: spec.style.underline,
         strike: spec.style.strike,
     };
-    base.size = clamp_size(base.size);
     let mut styles = vec![base.clone()];
 
     let n = text.len();
@@ -343,7 +338,7 @@ fn clean(spec: &TextSpec) -> Clean<'_> {
                 }
             };
             if idx != 0 {
-                let idx = idx as u32;
+                let idx = u32::try_from(idx).unwrap_or(u32::MAX);
                 match segments.last_mut() {
                     Some((r, i)) if *i == idx && r.end == a => r.end = b,
                     _ => segments.push((a..b, idx)),
@@ -490,7 +485,7 @@ fn finish(layout: PLayout, c: &Clean<'_>, id: u64, base_size: f32) -> TextLayout
                 glyphs,
                 style: style_idx,
                 color,
-                line: li as u32,
+                line: u32::try_from(li).unwrap_or(u32::MAX),
                 baseline: gr.baseline(),
                 x: gr.offset(),
                 advance: gr.advance(),

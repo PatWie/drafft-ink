@@ -76,59 +76,64 @@ pub enum SyncKind {
     Snapshot,
 }
 
+impl SyncKind {
+    /// The value used in binary frames.
+    pub(crate) const fn as_u8(self) -> u8 {
+        match self {
+            SyncKind::Updates => 0,
+            SyncKind::Snapshot => 1,
+        }
+    }
+
+    /// Parses the value used in binary frames.
+    pub(crate) const fn from_u8(value: u8) -> Option<Self> {
+        match value {
+            0 => Some(SyncKind::Updates),
+            1 => Some(SyncKind::Snapshot),
+            _ => None,
+        }
+    }
+}
+
 /// Why the server sends an `Error`. The numeric values are stable.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
+#[repr(u8)]
 pub enum ErrorCode {
     /// The message could not be decoded or broke a rule.
-    Malformed,
+    Malformed = 1,
     /// No protocol version in common. The `message` names the versions the server speaks.
-    UnsupportedVersion,
+    UnsupportedVersion = 2,
     /// Auth is on and the token is missing or invalid.
-    Unauthorized,
+    Unauthorized = 3,
     /// The request is understood but not allowed (for example, a disallowed Origin).
-    Forbidden,
+    Forbidden = 4,
     /// The room has reached its peer limit.
-    RoomFull,
+    RoomFull = 5,
     /// A frame or field is larger than the limit.
-    TooLarge,
+    TooLarge = 6,
     /// The client sends too fast. `retry_after_ms` says when to try again.
-    RateLimited,
+    RateLimited = 7,
     /// The server dropped messages for this client. Send `RequestSync` with your version.
-    ResyncRequired,
+    ResyncRequired = 8,
     /// Another connection with the same client id joined, so this one is closed.
-    Replaced,
+    Replaced = 9,
     /// The first message was not `Join`.
-    NotJoined,
+    NotJoined = 10,
     /// A `Join` arrived on a connection that already joined.
-    AlreadyJoined,
+    AlreadyJoined = 11,
     /// The server could not import the update bytes.
-    InvalidUpdate,
+    InvalidUpdate = 12,
     /// The server cannot serve the room now (storage failure, shutdown). Retry later.
-    Unavailable,
+    Unavailable = 13,
     /// A bug in the server.
-    Internal,
+    Internal = 14,
 }
 
 impl ErrorCode {
     /// The stable numeric value used in binary frames.
     pub const fn as_u8(self) -> u8 {
-        match self {
-            ErrorCode::Malformed => 1,
-            ErrorCode::UnsupportedVersion => 2,
-            ErrorCode::Unauthorized => 3,
-            ErrorCode::Forbidden => 4,
-            ErrorCode::RoomFull => 5,
-            ErrorCode::TooLarge => 6,
-            ErrorCode::RateLimited => 7,
-            ErrorCode::ResyncRequired => 8,
-            ErrorCode::Replaced => 9,
-            ErrorCode::NotJoined => 10,
-            ErrorCode::AlreadyJoined => 11,
-            ErrorCode::InvalidUpdate => 12,
-            ErrorCode::Unavailable => 13,
-            ErrorCode::Internal => 14,
-        }
+        self as u8
     }
 
     /// Parses the numeric value.
@@ -322,13 +327,7 @@ impl ServerMessage {
     /// Builds an `Error`, cutting the message to the size limit on a character boundary.
     pub fn error(code: ErrorCode, message: impl Into<String>) -> Self {
         let mut message = message.into();
-        if message.len() > MAX_ERROR_MESSAGE_BYTES {
-            let mut cut = MAX_ERROR_MESSAGE_BYTES;
-            while !message.is_char_boundary(cut) {
-                cut -= 1;
-            }
-            message.truncate(cut);
-        }
+        message.truncate(message.floor_char_boundary(MAX_ERROR_MESSAGE_BYTES));
         ServerMessage::Error { code, message, retry_after_ms: None }
     }
 
@@ -346,6 +345,14 @@ fn check_len(field: &'static str, len: usize, max: usize) -> Result<(), Validati
 
 fn check_finite(field: &'static str, v: f64) -> Result<(), ValidationError> {
     if v.is_finite() { Ok(()) } else { Err(ValidationError::new(field, "must be a finite number")) }
+}
+
+/// A live update payload: not empty, at most [`MAX_UPDATE_BYTES`].
+fn check_update(update: &[u8]) -> Result<(), ValidationError> {
+    if update.is_empty() {
+        return Err(ValidationError::new("update", "must not be empty"));
+    }
+    check_len("update", update.len(), MAX_UPDATE_BYTES)
 }
 
 impl UserInfo {
@@ -427,12 +434,7 @@ impl ClientMessage {
                 }
                 Ok(())
             }
-            ClientMessage::Update { update, .. } => {
-                if update.is_empty() {
-                    return Err(ValidationError::new("update", "must not be empty"));
-                }
-                check_len("update", update.len(), MAX_UPDATE_BYTES)
-            }
+            ClientMessage::Update { update, .. } => check_update(update),
             ClientMessage::RequestSync { version } => check_len("version", version.len(), MAX_VERSION_BYTES),
             ClientMessage::Awareness(state) => state.validate(),
             ClientMessage::Ping { .. } | ClientMessage::Pong { .. } | ClientMessage::Leave => Ok(()),
@@ -457,12 +459,7 @@ impl ServerMessage {
                 check_len("data", data.len(), MAX_SYNC_BYTES)?;
                 check_len("server_version", server_version.len(), MAX_VERSION_BYTES)
             }
-            ServerMessage::Update { update, .. } => {
-                if update.is_empty() {
-                    return Err(ValidationError::new("update", "must not be empty"));
-                }
-                check_len("update", update.len(), MAX_UPDATE_BYTES)
-            }
+            ServerMessage::Update { update, .. } => check_update(update),
             ServerMessage::PeerJoined { peer } => peer.validate(),
             ServerMessage::PeerAwareness { state, .. } => state.validate(),
             ServerMessage::Error { message, .. } => check_len("message", message.len(), MAX_ERROR_MESSAGE_BYTES),

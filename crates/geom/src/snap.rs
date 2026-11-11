@@ -41,8 +41,11 @@ pub const MAX_SNAP_CANDIDATES: usize = 200;
 /// Result of a point snap.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct SnapResult {
+    /// The point after snapping.
     pub point: Point,
+    /// True when the x coordinate moved to a snap position.
     pub snapped_x: bool,
+    /// True when the y coordinate moved to a snap position.
     pub snapped_y: bool,
 }
 
@@ -80,7 +83,17 @@ impl AngleSnapResult {
         let a = angle_degrees(dx, dy);
         Self { point, angle_degrees: a, original_angle_degrees: a, snapped: false, distance: dx.hypot(dy) }
     }
+
+    /// The result for a line too short (or too long to measure) to have a direction: the end point
+    /// stays, the angle is 0, and `distance` is 0 unless it is not finite.
+    fn degenerate(point: Point, distance: f64) -> Self {
+        let distance = if distance.is_finite() { 0.0 } else { distance };
+        Self { point, angle_degrees: 0.0, original_angle_degrees: 0.0, snapped: false, distance }
+    }
 }
+
+/// A line shorter than this has no direction to snap.
+const MIN_SNAP_LENGTH: f64 = 0.001;
 
 fn valid_step(s: f64) -> bool {
     s.is_finite() && s > 0.0
@@ -144,14 +157,8 @@ pub fn snap_rotation(angle: f64, step: f64) -> f64 {
 pub fn snap_line_endpoint(start: Point, end: Point, angle_snap_enabled: bool) -> AngleSnapResult {
     let (dx, dy) = (end.x - start.x, end.y - start.y);
     let distance = dx.hypot(dy);
-    if !distance.is_finite() || distance < 0.001 {
-        return AngleSnapResult {
-            point: end,
-            angle_degrees: 0.0,
-            original_angle_degrees: 0.0,
-            snapped: false,
-            distance: if distance.is_finite() { 0.0 } else { distance },
-        };
+    if !distance.is_finite() || distance < MIN_SNAP_LENGTH {
+        return AngleSnapResult::degenerate(end, distance);
     }
     let original = angle_degrees(dx, dy);
     if !angle_snap_enabled {
@@ -256,14 +263,8 @@ pub fn snap_ray_to_grid_lines(origin: Point, angle_degrees: f64, target: Point, 
 pub fn snap_endpoint(start: Point, end: Point, angle_snap: bool, grid_snap: bool, grid_size: f64) -> AngleSnapResult {
     let (dx, dy) = (end.x - start.x, end.y - start.y);
     let distance = dx.hypot(dy);
-    if !distance.is_finite() || distance < 0.001 {
-        return AngleSnapResult {
-            point: end,
-            angle_degrees: 0.0,
-            original_angle_degrees: 0.0,
-            snapped: false,
-            distance: if distance.is_finite() { 0.0 } else { distance },
-        };
+    if !distance.is_finite() || distance < MIN_SNAP_LENGTH {
+        return AngleSnapResult::degenerate(end, distance);
     }
     let original = angle_degrees(dx, dy);
 

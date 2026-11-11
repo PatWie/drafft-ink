@@ -192,21 +192,23 @@ fn join(paths: &[BezPath]) -> BezPath {
 }
 
 fn arrow(pts: &[Point], curve: Curve, start: Arrowhead, end: Arrowhead, size: f64, p: &Params) -> SketchGeometry {
-    let (Some(&first), Some(&last)) = (pts.first(), pts.last()) else {
+    // The first two and the last two points; fewer than two points is nothing to draw.
+    let (Some(&first), Some(&second), Some(&last), Some(&penultimate)) =
+        (pts.first(), pts.get(1), pts.last(), pts.iter().rev().nth(1))
+    else {
         return SketchGeometry::default();
     };
-    if pts.len() < 2 || outline::all_equal(pts) {
+    if outline::all_equal(pts) {
         return SketchGeometry::default();
     }
     let mut path = outline::through_points(pts, curve, false);
 
     // Heads are extra subpaths after the shaft (subpath 0), end head first, as in the old app.
     let overall = direction(first, last, Vec2::new(1.0, 0.0));
-    let n = pts.len();
     let mut spans: Vec<HeadSpan> = Vec::new();
     let mut subpaths = 1;
     let heads =
-        [(end, last, direction(pts[n - 2], pts[n - 1], overall)), (start, first, direction(pts[1], pts[0], -overall))];
+        [(end, last, direction(penultimate, last, overall)), (start, first, direction(second, first, -overall))];
     for (head, tip, dir) in heads {
         if let Some(span) = arrowhead::append(&mut path, subpaths, head, tip, dir, size) {
             subpaths += span.count;
@@ -224,16 +226,18 @@ fn arrow(pts: &[Point], curve: Curve, start: Arrowhead, end: Arrowhead, size: f6
             g.strokes.push((sketched, shaft_style));
             continue;
         }
-        if p.line == LineDash::Solid {
-            g.strokes.push((sketched, shaft_style));
-        } else {
-            g.strokes.push((subs[0].clone(), shaft_style));
-            g.strokes.push((join(&subs[1..]), head_style));
+        match (p.line, subs.split_first()) {
+            (LineDash::Solid, _) | (_, None) => g.strokes.push((sketched, shaft_style)),
+            (_, Some((shaft, heads))) => {
+                g.strokes.push((shaft.clone(), shaft_style));
+                g.strokes.push((join(heads), head_style));
+            }
         }
         if pass == 0 {
             for s in spans.iter().filter(|s| s.filled) {
-                let region = join(&subs[s.first..s.first + s.count]);
-                g.fills.push((region, FillKind::Ink));
+                if let Some(head) = subs.get(s.first..s.first + s.count) {
+                    g.fills.push((join(head), FillKind::Ink));
+                }
             }
         }
     }

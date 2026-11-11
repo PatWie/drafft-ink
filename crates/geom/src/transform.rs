@@ -14,7 +14,9 @@ use crate::obox::OrientedBox;
 /// Mirror flags of an element.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct Flip {
+    /// Mirrored left to right about the box centre.
     pub x: bool,
+    /// Mirrored top to bottom about the box centre.
     pub y: bool,
 }
 
@@ -27,17 +29,21 @@ pub struct Flip {
 pub struct ElementFrame {
     /// Top-left of the unrotated box in world space.
     pub origin: Point,
+    /// Unrotated width and height.
     pub size: Size,
     /// Radians, clockwise, about the centre of the box.
     pub angle: f64,
+    /// Mirror flags.
     pub flip: Flip,
 }
 
 impl ElementFrame {
+    /// A frame with no mirroring.
     pub fn new(origin: Point, size: Size, angle: f64) -> Self {
         Self { origin, size, angle, flip: Flip::default() }
     }
 
+    /// The same frame with the given mirror flags.
     pub fn with_flip(mut self, x: bool, y: bool) -> Self {
         self.flip = Flip { x, y };
         self
@@ -123,8 +129,11 @@ pub fn flip_y_about(cy: f64) -> Affine {
 /// mirrors (the determinant is negative); the mirror is attributed to the x axis.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Trs {
+    /// Translation part.
     pub translation: Vec2,
+    /// Rotation in radians.
     pub rotation: f64,
+    /// Scale along the rotated axes; `x` is negative for a mirror.
     pub scale: Vec2,
 }
 

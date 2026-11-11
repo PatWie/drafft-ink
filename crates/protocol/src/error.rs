@@ -113,7 +113,15 @@ impl DecodeError {
         match self {
             DecodeError::FrameTooLarge { .. } | DecodeError::FieldTooLong { .. } => crate::ErrorCode::TooLarge,
             DecodeError::UnsupportedVersion { .. } => crate::ErrorCode::UnsupportedVersion,
-            _ => crate::ErrorCode::Malformed,
+            DecodeError::Empty
+            | DecodeError::Truncated(_)
+            | DecodeError::TrailingBytes(_)
+            | DecodeError::UnknownTag(_)
+            | DecodeError::UnknownValue { .. }
+            | DecodeError::InvalidUtf8(_)
+            | DecodeError::BadVarint(_)
+            | DecodeError::Invalid(_)
+            | DecodeError::Json(_) => crate::ErrorCode::Malformed,
         }
     }
 }

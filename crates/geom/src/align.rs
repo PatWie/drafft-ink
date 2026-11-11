@@ -32,7 +32,9 @@ pub enum AlignMode {
 /// The axis along which boxes are distributed.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Axis {
+    /// The horizontal axis: boxes are spread left to right.
     X,
+    /// The vertical axis: boxes are spread top to bottom.
     Y,
 }
 
@@ -87,9 +89,10 @@ pub fn distribute(rects: &[Rect], axis: Axis) -> Vec<Vec2> {
         .filter(|(_, r)| aabb::is_finite(r))
         .map(|(i, r)| {
             let r = aabb::normalize(*r);
+            let mid = aabb::center(&r);
             match axis {
-                Axis::X => (i, r.x0, r.x1, (r.x0 + r.x1) / 2.0),
-                Axis::Y => (i, r.y0, r.y1, (r.y0 + r.y1) / 2.0),
+                Axis::X => (i, r.x0, r.x1, mid.x),
+                Axis::Y => (i, r.y0, r.y1, mid.y),
             }
         })
         .collect();

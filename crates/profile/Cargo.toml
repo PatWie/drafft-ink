@@ -16,6 +16,7 @@ enabled = []
 [dependencies]
 serde = { workspace = true }
 serde_json = { workspace = true }
+thiserror = { workspace = true }
 # `Instant` that also works in the browser (std's panics on wasm32-unknown-unknown).
 web-time = "1"
 

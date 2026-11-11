@@ -371,12 +371,12 @@ fn collect<'a, S: SceneRead>(
     let visible = |e: &Element| !e.deleted && !hidden.contains(&e.id);
     let everything = index.total_bounds().is_some_and(|b| aabb::contains_rect(world, &b));
     if everything {
-        return ordered(store, index, world, |e| visible(e));
+        return ordered(store, index, world, visible);
     }
     inc(Counter::SpatialQueries);
     let hits: Vec<(&ElementId, Rect)> = index.query_rect(world).collect();
     if total > 256 && hits.len() * SORT_FRACTION > total {
-        return ordered(store, index, world, |e| visible(e));
+        return ordered(store, index, world, visible);
     }
     let mut out: Vec<Candidate<'a>> = Vec::with_capacity(hits.len());
     for (id, bounds) in hits {

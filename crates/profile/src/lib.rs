@@ -15,6 +15,7 @@
 //! `enabled` cargo feature (on by default) is compiled in. Counters and redraw reasons are
 //! always on. `docs/performance.md` is the full guide.
 #![cfg_attr(test, allow(clippy::unwrap_used, clippy::expect_used, clippy::panic))]
+#![warn(missing_docs)]
 
 mod clock;
 mod frame;
@@ -39,7 +40,9 @@ pub use report::{
 pub use spans::{
     COMPILED, MAX_DEPTH, MAX_NAMES, OTHER, Span, TRACE_CAPACITY, enabled, flush_thread, scope, set_enabled, span,
 };
-pub use stats::{MAX_SPAN_ROWS, PerfStats, RedrawEvent, RedrawStats, SCHEMA_VERSION, STATS_SCHEMA, SpanStat};
+pub use stats::{
+    DocumentError, MAX_SPAN_ROWS, PerfStats, RedrawEvent, RedrawStats, SCHEMA_VERSION, STATS_SCHEMA, SpanStat,
+};
 pub use trace::{chrome_trace, chrome_trace_json, write_chrome_trace};
 pub use work::{MAX_NAMED, RECENT_REDRAWS, WorkScope, count, count_named, inc, redraw, set_gauge};
 

@@ -88,11 +88,10 @@ impl ClientId {
 
     /// Parses 32 hex characters.
     pub fn from_hex(text: &str) -> Result<Self, ValidationError> {
-        let bytes =
-            hex_decode(text, 16).ok_or_else(|| ValidationError::new("client_id", "must be 32 hex characters"))?;
-        let mut out = [0u8; 16];
-        out.copy_from_slice(&bytes);
-        Ok(ClientId(out))
+        hex_decode(text, Some(16))
+            .and_then(|bytes| <[u8; 16]>::try_from(bytes).ok())
+            .map(ClientId)
+            .ok_or_else(|| ValidationError::new("client_id", "must be 32 hex characters"))
     }
 }
 
@@ -135,11 +134,16 @@ fn nibble(c: u8) -> Option<u8> {
     }
 }
 
-/// Decodes hex. When `exact` is not 0 the result must have exactly that many bytes.
-pub(crate) fn hex_decode(text: &str, exact: usize) -> Option<Vec<u8>> {
+/// Decodes hex. With `Some(n)` the result must have exactly `n` bytes.
+pub(crate) fn hex_decode(text: &str, exact: Option<usize>) -> Option<Vec<u8>> {
     let raw = text.as_bytes();
-    if !raw.len().is_multiple_of(2) || (exact != 0 && raw.len() != exact * 2) {
+    if !raw.len().is_multiple_of(2) || exact.is_some_and(|n| raw.len() != n * 2) {
         return None;
     }
-    raw.chunks_exact(2).map(|pair| Some(nibble(pair[0])? << 4 | nibble(pair[1])?)).collect()
+    raw.chunks_exact(2)
+        .map(|pair| match *pair {
+            [hi, lo] => Some(nibble(hi)? << 4 | nibble(lo)?),
+            _ => None,
+        })
+        .collect()
 }

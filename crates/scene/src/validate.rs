@@ -156,12 +156,23 @@ fn ranged(field: &'static str, v: f64, min: f64, max: f64) -> Result<(), Element
     if v < min || v > max { Err(ElementError::OutOfRange { field, value: v, min, max }) } else { Ok(()) }
 }
 
+/// Is `name` a valid element or document name? It has 1 to [`MAX_NAME_CHARS`] characters and no control
+/// characters. Stores and importers use this one rule.
+pub fn is_valid_name(name: &str) -> bool {
+    !name.is_empty() && name.chars().count() <= MAX_NAME_CHARS && !name.chars().any(char::is_control)
+}
+
+/// Is `mime` an image media type like `image/png`? At most 64 bytes of letters, digits and `/ + . -`, starting
+/// with `image/` and naming a subtype. Stores and importers use this one rule.
+pub fn is_image_media_type(mime: &str) -> bool {
+    mime.len() <= 64
+        && mime.len() > "image/".len()
+        && mime.starts_with("image/")
+        && mime.bytes().all(|b| b.is_ascii_alphanumeric() || matches!(b, b'/' | b'+' | b'.' | b'-'))
+}
+
 fn text_ok(field: &'static str, s: &str) -> Result<(), ElementError> {
-    if s.is_empty() || s.chars().count() > MAX_NAME_CHARS || s.chars().any(char::is_control) {
-        Err(ElementError::BadText { field, max: MAX_NAME_CHARS })
-    } else {
-        Ok(())
-    }
+    if is_valid_name(s) { Ok(()) } else { Err(ElementError::BadText { field, max: MAX_NAME_CHARS }) }
 }
 
 /// Checks one element on its own and returns the first rule it breaks.
@@ -632,7 +643,7 @@ pub fn validate_scene<R: SceneRead>(r: &R) -> Report {
 }
 
 fn check_name(name: &str, report: &mut Report) {
-    if name.is_empty() || name.chars().count() > MAX_NAME_CHARS || name.chars().any(char::is_control) {
+    if !is_valid_name(name) {
         report.add(None, DocError::BadDocName);
     }
 }
@@ -791,11 +802,7 @@ fn check_files(elements: &[&Element], files: &[(&FileId, &crate::document::FileE
         }
     }
     for (id, entry) in files {
-        let mime_ok = entry.mime.len() <= 64
-            && entry.mime.starts_with("image/")
-            && entry.mime.len() > 6
-            && entry.mime.bytes().all(|b| b.is_ascii_alphanumeric() || matches!(b, b'/' | b'+' | b'.' | b'-'));
-        if !mime_ok {
+        if !is_image_media_type(&entry.mime) {
             report.add(None, DocError::BadMime { id: (*id).clone(), mime: entry.mime.chars().take(80).collect() });
         }
         if entry.bytes.len() > MAX_FILE_BYTES {

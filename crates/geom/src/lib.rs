@@ -20,6 +20,8 @@
 //! - [`align`]: align and distribute as pure functions.
 //! - [`select`]: handle positions, box resize and rotate math, marquee tests.
 
+#![warn(missing_docs)]
+
 pub use kurbo;
 
 pub mod aabb;
