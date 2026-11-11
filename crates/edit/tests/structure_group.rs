@@ -30,6 +30,24 @@ fn group_adds_one_new_outermost_id_and_keeps_element_ids() {
 }
 
 #[test]
+fn group_with_ids_takes_an_id_only_when_the_grouping_succeeds() {
+    let mut s = four();
+    let mut source = SeqIds::new();
+    assert!(matches!(
+        run(&mut s, |tx| group::group_with_ids(tx, &ids(&["a"]), None, &mut source)),
+        Err(GroupError::TooFew { .. })
+    ));
+    assert!(matches!(
+        run(&mut s, |tx| group::group_with_ids(tx, &ids(&["a", "zz"]), None, &mut source)),
+        Err(GroupError::NotFound(_))
+    ));
+    let first = run(&mut s, |tx| group::group_with_ids(tx, &ids(&["a", "b"]), None, &mut source)).unwrap();
+    assert_eq!(first.group, SeqIds::new().group_id(), "the refused calls drew no id");
+    let second = run(&mut s, |tx| group::group_with_ids(tx, &ids(&["c", "d"]), None, &mut source)).unwrap();
+    assert_ne!(second.group, first.group);
+}
+
+#[test]
 fn old_non_contiguous_selection_keeps_everything_else_in_order() {
     // The old app put the group at the front slot and mis-counted removed shapes.
     let mut s = four();
