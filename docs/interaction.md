@@ -126,5 +126,4 @@ Test files: `interact/interaction_tests.rs` (hover, pan, zoom, context menu, scr
 * **Elbow preview.** The preview of an elbow arrow while drawing is the straight segment between its ends; the route appears when the element exists.
 * **Binding candidate cost.** `edit::binding::find_hovered` scans all elements per pointer move while an arrow end is placed. It should use the spatial index for large documents.
 * **Closed line.** Dragging the midpoint of the closing segment of a closed line is refused by `arrow.move_point` (its segment numbering stops at the last point).
-* **Point handle click.** A click on a vertex handle does not yet call `arrow.edit_points select_point`.
 * **Index sync** compares `version` and transform per element when the store revision moved (an O(n) scan, outside gestures). A change feed from the store would remove the scan.

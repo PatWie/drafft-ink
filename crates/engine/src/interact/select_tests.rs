@@ -897,12 +897,54 @@ fn escape_during_a_point_drag_restores_the_arrow_and_clears_the_highlight() {
 }
 
 #[test]
+fn a_click_on_a_vertex_handle_selects_that_point_in_the_point_editor() {
+    let mut rig = Rig::new();
+    rig.run("element.create", json!({ "kind": "line", "points": [[100, 100], [200, 200], [300, 100]] }));
+    let line = rig.elements().into_iter().next().expect("line").id;
+    rig.pick(&[&line]);
+    let setup = rig.ring_ids().len();
+    let undo = rig.undo_depth();
+    let doc = rig.normalized_doc();
+    let v = rig.handle_pos(&Handle::Point { element: line.clone(), index: 1 });
+    rig.click(v.x, v.y);
+    assert_eq!(rig.ring_after(setup), vec!["arrow.edit_points"]);
+    let ed = rig.s.tab().observed.linear_editor.clone().expect("the point editor is on");
+    assert_eq!((ed.element, ed.selected_points.into_iter().collect::<Vec<_>>()), (line.clone(), vec![1]));
+    assert_eq!(rig.normalized_doc(), doc, "a click moves nothing");
+    assert_eq!(rig.undo_depth(), undo);
+    // Another vertex replaces the selected point.
+    let w = rig.handle_pos(&Handle::Point { element: line.clone(), index: 2 });
+    rig.click(w.x, w.y);
+    let ed = rig.s.tab().observed.linear_editor.clone().expect("still on");
+    assert_eq!(ed.selected_points.into_iter().collect::<Vec<_>>(), vec![2]);
+}
+
+#[test]
+fn a_drag_of_a_vertex_handle_still_moves_the_point_and_a_click_on_a_midpoint_selects_nothing() {
+    let mut rig = Rig::new();
+    rig.run("element.create", json!({ "kind": "line", "points": [[100, 100], [200, 200], [300, 100]] }));
+    let line = rig.elements().into_iter().next().expect("line").id;
+    rig.pick(&[&line]);
+    let setup = rig.ring_ids().len();
+    let m = rig.handle_pos(&Handle::Midpoint { element: line.clone(), segment: 0 });
+    rig.click(m.x, m.y);
+    assert!(rig.ring_after(setup).is_empty(), "{:?}", rig.ring_after(setup));
+    let v = rig.handle_pos(&Handle::Point { element: line.clone(), index: 1 });
+    rig.drag((v.x, v.y), (v.x, v.y + 60.0));
+    assert_eq!(rig.ring_after(setup), vec!["arrow.move_point"]);
+}
+
+#[test]
 fn double_click_on_a_point_handle_does_nothing_and_on_a_line_edits_its_points() {
     let (mut rig, arrow, _) = free_arrow();
     let setup = rig.ring_ids().len();
+    let doc = rig.normalized_doc();
     let end = rig.handle_pos(&Handle::Point { element: arrow.clone(), index: 1 });
     rig.double_click(end.x, end.y);
-    assert!(rig.ring_after(setup).is_empty(), "{:?}", rig.ring_after(setup));
+    // Its clicks select the point (see a_click_on_a_vertex_handle_...); the double click itself adds nothing.
+    assert!(rig.ring_after(setup).iter().all(|c| c == "arrow.edit_points"), "{:?}", rig.ring_after(setup));
+    assert_eq!(rig.normalized_doc(), doc);
+    assert!(rig.s.tab().observed.linear_editor.as_ref().is_some_and(|e| e.selected_points.iter().eq([1].iter())));
 
     let mut rig = Rig::new();
     rig.run("element.create", json!({ "kind": "line", "points": [[100, 100], [300, 100], [300, 300]] }));

@@ -73,6 +73,10 @@ pub(super) fn click(cx: &mut Ctx<'_>, ev: &Ev<'_>, toggle_now: bool) {
         Target::Empty if !mods.shift => select_at(cx, ev, Pick::REPLACE),
         Target::Element { .. } if toggle_now => select_at(cx, ev, Pick::TOGGLE),
         Target::Element { .. } if mods.alt => select_at(cx, ev, Pick::CYCLE),
+        // A vertex of the selected line or arrow: select that point (the point editor opens if it was off).
+        Target::Handle(Handle::Point { element, index }) => {
+            cx.exec("arrow.edit_points", json!({ "arrow": element.as_str(), "select_point": index }));
+        }
         _ => {}
     }
 }
