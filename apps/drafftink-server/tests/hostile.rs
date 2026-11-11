@@ -197,7 +197,7 @@ async fn update_flood_is_rate_limited_then_the_connection_is_closed() {
     config.limits.max_breaches = 8;
     let server = start(config).await.expect("start");
     // The server's bucket starts when the connection opens: 10 tokens (twice the rate), refilled at 5 per second.
-    let opened = std::time::Instant::now();
+    let opened = tokio::time::Instant::now();
     let mut c = Client::connect(server.local_addr(), 1, "flood").await;
     c.join().await;
     // One update at a time, each answered (by an `Ack` or by `RateLimited`) before the next goes out. A client that
