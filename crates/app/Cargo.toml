@@ -20,7 +20,6 @@ drafftink-collab = { path = "../collab" }
 drafftink-bridge = { path = "../bridge" }
 drafftink-gpu = { path = "../gpu" }
 drafftink-ui = { path = "../ui" }
-drafftink-typeset = { path = "../typeset" }
 egui = { workspace = true }
 vello = { workspace = true }
 base64 = { workspace = true }
