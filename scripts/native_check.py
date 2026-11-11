@@ -199,6 +199,18 @@ try:
     bg = img.getpixel((640, 600)); ink = sum(1 for p in img.get_flattened_data() if p != bg)
     check(ink > 20000, f"the intro document is on screen ({ink} non-background pixels)")
 
+    # One real click on a toolbar button after the pointer hovered the canvas must register (the held-back hover
+    # used to be delivered after the move to the button, so egui pressed at the old place).
+    ui_tool_sets = lambda: [json.loads(e["args"]).get("tool") for e in ws.ok("recent", {"limit": 50})["entries"] if e["id"] == "tool.set" and e["source"] == "ui"]
+    for name, (bx, by) in (("rectangle", (40, 195)), ("ellipse", (40, 269)), ("arrow", (40, 306))):
+        ex_ = lambda i, a: ws.ok("execute", {"id": i, "args": a})
+        ex_("tool.set", {"tool": "select"})
+        before_sets = ui_tool_sets()
+        move(900, 500); time.sleep(0.3); move(920, 520); time.sleep(0.3)
+        move(bx, by); time.sleep(0.2); button(1, True); button(1, False); time.sleep(0.5)
+        check(ui_tool_sets()[len(before_sets):] == [name], f"one click on the {name} toolbar button after hovering the canvas ran tool.set once ({ui_tool_sets()[len(before_sets):]})")
+    ws.ok("execute", {"id": "tool.set", "args": {"tool": "select"}})
+
     # Draw through the bridge: two rectangles, an arrow bound to both, then move one and see the arrow follow.
     f0 = len(frames())
     ex = lambda i, a: ws.ok("execute", {"id": i, "args": a})

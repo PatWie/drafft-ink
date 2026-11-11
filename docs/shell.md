@@ -72,7 +72,9 @@ The loop sleeps in `ControlFlow::Wait`, or `WaitUntil(deadline)` when something 
    next pass sees the next move, so delivering hover moves to egui keeps the loop running as long as the
    pointer moves. Measured before the fix: a single hover change started a run of 10 to 80 frames.
    The held `CursorMoved` is delivered to egui before the next click, wheel, touch or file event that needs a
-   position. Consecutive `PointerMoved` events in egui's queue are collapsed, so nothing piles up while idle.
+   position. A move that does reach egui (over a toolbar, a menu) drops the held one (`HeldHover`): delivering the
+   old position after it would put egui's pointer, and the click that follows, back on the canvas (the "first click
+   does not register" bug; tests in `repaint.rs`, `e2e/web/specs/input/pointer.spec.ts`, `scripts/native_check.py`). Consecutive `PointerMoved` events in egui's queue are collapsed, so nothing piles up while idle.
 3. A click or touch always gets a frame (popups close, text fields lose focus). A move over an egui area or
    during an egui drag gets a frame (reason `gesture`). Wheel, trackpad scroll and pinch over the canvas go to
    the app first (`ShellEvent::Wheel`); when the app answers `Handled::Yes` egui never sees them, so the
