@@ -304,20 +304,39 @@ export namespace ArrowMovePoint {
     /** Where the point goes, in world units. */
     to: [number, number];
   };
+  /** The angle lock of a dragged point: the neighbouring point it turns about and the locked direction. */
+  type O_AngleSnapOut = {
+    /** The locked direction in degrees, from 0 (right) clockwise on the screen. */
+    degrees: number;
+    /** The neighbouring point, in world units. */
+    origin: [number, number];
+    /** The step of the lock in degrees (`snap.angle_step`): the rays are drawn at multiples of it. */
+    step: number;
+    [key: string]: unknown;
+  };
   /** A guide line for the overlay. */
   type O_GuideOut = {
     /** End along the guide. */
     end: number;
+    /**
+     * The empty stretch along the guide between the dragged thing and the box it lines up with, as `[from, to]`.
+     * The overlay shows its length. Absent when they overlap along the guide.
+     */
+    gap?: [number, number] | null;
     /** `vertical`, `horizontal`, `equal_spacing_h` or `equal_spacing_v`. */
     kind: string;
     /** x of a vertical guide, y of a horizontal one. */
     position: number;
+    /** Marker coordinates along the guide. */
+    snap_points: number[];
     /** Start along the guide. */
     start: number;
     [key: string]: unknown;
   };
   /** Output of `arrow.move_point`, also the frame output of its gesture. */
   export type Output = {
+    /** The angle lock that applied, for the overlay's rays. */
+    angle_snap?: O_AngleSnapOut | null;
     /** The target the end is bound to now, for the overlay to highlight. */
     bind_highlight?: string | null;
     /** True when the command changed any state. */
@@ -332,6 +351,11 @@ export namespace ArrowMovePoint {
     index: number;
     /** Where the point is now, in world units. */
     point: [number, number];
+    /**
+     * Where grid, guides or the angle lock put the point, when that is not where the pointer is. The overlay
+     * marks it with a crosshair.
+     */
+    snapped_to?: [number, number] | null;
     /** The label of the undo step the command pushed. */
     undo_label?: string;
     /** Non-fatal notes. */
@@ -3015,6 +3039,11 @@ export namespace ElementMove {
   type O_GuideOut = {
     /** End along the guide. */
     end: number;
+    /**
+     * The empty stretch along the guide between the dragged thing and the box it lines up with, as `[from, to]`.
+     * The overlay shows its length. Absent when they overlap along the guide.
+     */
+    gap?: [number, number] | null;
     /** `vertical`, `horizontal`, `equal_spacing_h` or `equal_spacing_v`. */
     kind: string;
     /** x of a vertical guide, y of a horizontal one. */
@@ -3350,6 +3379,11 @@ export namespace ElementResize {
   type O_GuideOut = {
     /** End along the guide. */
     end: number;
+    /**
+     * The empty stretch along the guide between the dragged thing and the box it lines up with, as `[from, to]`.
+     * The overlay shows its length. Absent when they overlap along the guide.
+     */
+    gap?: [number, number] | null;
     /** `vertical`, `horizontal`, `equal_spacing_h` or `equal_spacing_v`. */
     kind: string;
     /** x of a vertical guide, y of a horizontal one. */
@@ -3424,6 +3458,8 @@ export namespace ElementRotate {
     center: [number, number];
     /** The angle shown, in degrees. */
     degrees: number;
+    /** The angle was rounded to `snap_degrees`. */
+    snapped: boolean;
     [key: string]: unknown;
   };
   /** Result of `element.rotate`. */
@@ -3473,6 +3509,11 @@ export namespace ElementSetBounds {
   type O_GuideOut = {
     /** End along the guide. */
     end: number;
+    /**
+     * The empty stretch along the guide between the dragged thing and the box it lines up with, as `[from, to]`.
+     * The overlay shows its length. Absent when they overlap along the guide.
+     */
+    gap?: [number, number] | null;
     /** `vertical`, `horizontal`, `equal_spacing_h` or `equal_spacing_v`. */
     kind: string;
     /** x of a vertical guide, y of a horizontal one. */

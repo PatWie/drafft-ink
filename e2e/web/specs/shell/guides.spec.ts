@@ -1,6 +1,7 @@
 import { test, expect, type App } from "../../support/app.ts";
 import { box, camera } from "../../support/build.ts";
-import { shot, type Region, type Rgb } from "../../support/pixels.ts";
+import { PNG } from "pngjs";
+import { shot, Shot, type Region, type Rgb } from "../../support/pixels.ts";
 
 // With the camera at (640, 400) and zoom 1, a page point is the world point.
 
@@ -16,6 +17,16 @@ const GREEN: Rgb = [34, 197, 94];
 async function prepare(app: App): Promise<void> {
   await camera(app, { x: 640, y: 400 }, 1);
   await app.exec("selection.clear");
+}
+
+/**
+ * A screenshot while a move or rotation is held. `shot` waits for a quiet page, and a gesture that has changed the
+ * document keeps the autosave looking again every 500 ms (`GESTURE_RECHECK_MS`), so the page is never quiet then.
+ */
+async function heldShot(app: App): Promise<Shot> {
+  await app.page.waitForTimeout(250);
+  const png = PNG.sync.read(await app.page.screenshot({ animations: "disabled" }));
+  return new Shot(png, { x: 0, y: 0, w: png.width, h: png.height });
 }
 
 async function press(app: App, at: { x: number; y: number }): Promise<void> {
@@ -72,25 +83,25 @@ test("guides: Shift while drawing an arrow shows the polar rays: the locked ray 
   await press(app, { x: 500, y: 400 });
   await moveTo(app, { x: 500, y: 400 }, { x: 700, y: 410 });
   const s = await shot(app);
-  expect(s.count({ x: 800, y: 398, w: 300, h: 5 }, GUIDE_ON_WHITE, 100), "the locked ray goes on past the arrow").toBeGreaterThan(200);
+  expect(s.count({ x: 760, y: 398, w: 170, h: 5 }, GUIDE_ON_WHITE, 100), "the locked ray goes on past the arrow").toBeGreaterThan(200);
   expect(s.count({ x: 520, y: 380, w: 90, h: 60 }, CHIP, 25), "the angle sits in an opaque chip beside the arc").toBeGreaterThan(80);
   await app.page.mouse.up();
   await app.page.keyboard.up("Shift");
   const after = await shot(app);
-  expect(after.count({ x: 800, y: 398, w: 300, h: 5 }, GUIDE_ON_WHITE, 100), "the rays go with the drag").toBe(0);
+  expect(after.count({ x: 760, y: 398, w: 170, h: 5 }, GUIDE_ON_WHITE, 100), "the rays go with the drag").toBe(0);
 });
 
 test("guides: an alignment snap shows the distance to the box it lines up with", async ({ app }) => {
   await prepare(app);
   await app.exec("settings.set", { key: "snap.smart_guides", value: true });
   await box(app, 300, 300, 100, 60, { fill: "#ffffff" });
-  await box(app, 700, 303, 100, 60, { fill: "#ffffff" });
+  await box(app, 700, 400, 100, 60, { fill: "#ffffff" });
   await app.exec("selection.clear");
-  // Drag the right box up until its top is 1 unit from the other's: it snaps, and the gap between them is 300.
-  await press(app, { x: 750, y: 333 });
-  await moveTo(app, { x: 750, y: 333 }, { x: 790, y: 380 });
-  await moveTo(app, { x: 790, y: 380 }, { x: 750, y: 331 });
-  const s = await shot(app);
+  // Drag the right box up until its top is 5 units below the other's: it snaps to it, and the gap between them is 300.
+  await press(app, { x: 750, y: 430 });
+  await moveTo(app, { x: 750, y: 430 }, { x: 790, y: 380 });
+  await moveTo(app, { x: 790, y: 380 }, { x: 750, y: 335 });
+  const s = await heldShot(app);
   // The chip sits above the guide, in the middle of the gap (x 400 to 700, y 300).
   expect(s.count({ x: 500, y: 262, w: 100, h: 34 }, CHIP, 25), "an opaque chip with the 300 above the guide").toBeGreaterThan(60);
   await app.page.mouse.up();
@@ -108,7 +119,7 @@ test("guides: rotating with Shift shows green guides at the centre, and they go 
   // The rotate handle is 25 px above the top edge.
   await press(app, { x: 640, y: 315 });
   await moveTo(app, { x: 640, y: 315 }, { x: 760, y: 400 });
-  const s = await shot(app);
+  const s = await heldShot(app);
   expect(s.count({ x: 580, y: 340, w: 120, h: 120 }, GREEN, 40), "the cross, the indicator line and the arc are green").toBeGreaterThan(60);
   await app.page.mouse.up();
   await app.page.keyboard.up("Shift");
