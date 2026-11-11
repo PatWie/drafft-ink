@@ -2,21 +2,27 @@
 
 An agent uses drafft.ink through the same `Session::execute` that a button uses. Nothing is special-cased for it: the commands, the refusals and the undo steps are the user's own. This page covers setup, the security model, the tools, the wire protocols, and worked examples. The design is in `docs/plan.md` section 11, the command contract in `docs/commands.md`, the engine API in `docs/engine.md`.
 
-Code: `crates/bridge` (the protocol, the loopback server, the relay) and `apps/drafftink-mcp` (the MCP server).
+Code: `crates/bridge` (the protocol, the loopback server, the relay, the generated tools, MCP over HTTP), `apps/drafftink-mcp` (the MCP server over stdio) and `apps/drafftink-web` (WebMCP in the page).
 
-## 1. The three modes
+## 1. The ways in
 
-| Mode | Command | The agent drives | The user |
+| Way in | Start it | The agent drives | The user |
 |---|---|---|---|
 | headless | `drafftink-mcp` | its own editor session, no window | nothing to watch; files on disk |
-| attached | `drafftink-mcp --attach` | the running desktop app | watches the canvas change live |
-| relay | `drafftink-mcp --relay` | the open drafft.ink browser tab | watches the tab |
+| attached | `drafftink-mcp --attach` | the running desktop app, through a stdio helper | watches the canvas change live |
+| relay | `drafftink-mcp --relay` | the open drafft.ink browser tab, through a stdio helper | watches the tab |
+| desktop HTTP | `drafftink --mcp-http` (or the switch in Preferences) | the running desktop app, which serves MCP itself over streamable HTTP | watches the canvas change live |
+| WebMCP | nothing: the page registers its tools when the browser has WebMCP | the open tab, for the browser's own agent | watches the tab |
 
-All three expose the same tools. A tool does not know which mode it runs in: every call becomes a bridge method (`execute`, `batch`, `commands`, `describe`, `recent`, `state`) and goes to a session in this process, in the desktop app, or in the page.
+All of them expose the same tools. A tool does not know which mode it runs in: every call becomes a bridge method (`execute`, `batch`, `commands`, `describe`, `recent`, `state`) and goes to a session in this process, in the desktop app, or in the page.
 
 **Headless** owns a session with the real text engine and no renderer. Files are read and written by explicit path, only inside the folders you allow (default: the folder the server starts in; `--allow-dir DIR`, repeatable; `--allow-any-path` lifts the limit). PNG export and screenshots need a GPU renderer, which a headless process does not have: `export` with `format: png` refuses and says to use `svg`, or to attach to the desktop app.
 
 **Attached** connects to the desktop app's bridge. It finds the app through the token file (`current.port` and `<port>.token` in the app's runtime folder, section 3) and reads the token again on every reconnect, so restarting the app needs no restart of the agent. A PNG export or screenshot uses the app's renderer.
+
+**Desktop HTTP** needs no helper process. The desktop app listens on `127.0.0.1` and speaks MCP over streamable HTTP, for clients that connect to a URL. Section 5.4 specifies it, section 2 has the client setups.
+
+**WebMCP** needs no process at all: the page hands its tools to the browser (section 5.5).
 
 **Relay** is for the web version. A web page cannot listen on a socket, so the page connects out to `drafftink-mcp --relay` on `127.0.0.1`. The relay prints a pairing link; the user opens it in the browser tab; from then on the agent drives that tab. Section 5 specifies the page's side.
 
@@ -71,7 +77,68 @@ Or commit a `.mcp.json` next to your project:
 
 Any client that starts a stdio server works. Give it the command and the arguments of the mode you want. Clients that list tools with a hard cap (some stop at 40 across all servers) are the reason for the grouped tool design in section 4: this server offers about 20 tools.
 
+### Streamable HTTP (the desktop app)
+
+For MCP clients that take a URL. The app serves MCP itself; no helper binary is needed. It is off until you ask:
+
+```sh
+drafftink --mcp-http            # port 3737
+drafftink --mcp-http 4000       # another port; 0 picks a free one
+```
+
+or switch on "Serve MCP over HTTP" under Agents in Preferences (the setting `agent.mcp_http`, which a person can change and an agent cannot; the switch is on the desktop app only). The app prints the address, the token file and a reminder on stderr. The endpoint is `http://127.0.0.1:3737/mcp`. Every request must carry `Authorization: Bearer <token>`. The token is new at every start and is kept in a private file (mode 0600) in the `mcp-http` folder of the app's runtime folder (section 5.3), as `<port>.token`, next to `current.port`:
+
+```sh
+run="${DRAFFTINK_BRIDGE_DIR:-${XDG_RUNTIME_DIR:+$XDG_RUNTIME_DIR/drafftink}}"   # Linux; section 5.3 has the other places
+dir="${run:-$HOME/.local/state/drafftink/run}/mcp-http"
+export DRAFFTINK_MCP_TOKEN="$(cat "$dir/$(cat "$dir/current.port").token")"
+```
+
+A client keeps the token in an environment variable, so it never lands in a file you commit. Restarting the app makes a new token: export it again and restart the client.
+
+Claude Code:
+
+```sh
+claude mcp add --transport http drafftink http://127.0.0.1:3737/mcp --header "Authorization: Bearer $DRAFFTINK_MCP_TOKEN"
+```
+
+Or in a `.mcp.json` next to your project (Claude Code expands `${VAR}`):
+
+```json
+{ "mcpServers": { "drafftink": { "type": "http", "url": "http://127.0.0.1:3737/mcp",
+    "headers": { "Authorization": "Bearer ${DRAFFTINK_MCP_TOKEN}" } } } }
+```
+
+Cursor (`~/.cursor/mcp.json` or `.cursor/mcp.json`):
+
+```json
+{ "mcpServers": { "drafftink": { "url": "http://127.0.0.1:3737/mcp",
+    "headers": { "Authorization": "Bearer ${env:DRAFFTINK_MCP_TOKEN}" } } } }
+```
+
+VS Code (`.vscode/mcp.json`):
+
+```json
+{ "servers": { "drafftink": { "type": "http", "url": "http://127.0.0.1:3737/mcp",
+    "headers": { "Authorization": "Bearer ${env:DRAFFTINK_MCP_TOKEN}" } } } }
+```
+
+Any other client: give it the URL and the header. A client that cannot send a header (Claude Desktop) uses `drafftink-mcp --attach` above. Check the door by hand:
+
+```sh
+curl -s -o /dev/null -w '%{http_code}\n' http://127.0.0.1:3737/mcp                                   # 401: no token
+curl -s -H "Authorization: Bearer $DRAFFTINK_MCP_TOKEN" -H 'Content-Type: application/json' \
+     -H 'Accept: application/json, text/event-stream' \
+     -d '{"jsonrpc":"2.0","id":1,"method":"tools/list"}' http://127.0.0.1:3737/mcp | head -c 300      # 400 until a client has sent initialize; use a real client
+```
+
+### WebMCP (the browser tab)
+
+Nothing to install. When the browser has WebMCP, drafft.ink registers its tools with it at start, and the browser's own agent (or an extension that reads the page's tools) can call them. Check it in the page console: `drafftink.webmcp.status()` answers `{supported, api, registered, tools}`. `?webmcp=off` in the address keeps the page from registering. Chrome offers WebMCP as an origin trial (as of November 2026); see section 5.5 for the API the page uses.
+
 ### Options
+
+Options of `drafftink-mcp` (the options of `drafftink --mcp-http` are above).
 
 | Option | Mode | Meaning |
 |---|---|---|
@@ -106,12 +173,18 @@ The threat: a program, a web page or another user on the same machine tries to d
 | Commands with `agent: false` (gestures, tool hold, viewport size) are refused with `not_for_agents`, also inside a batch. UI-level methods such as clicks, key presses and quitting do not exist on the bridge. | `core::dispatch` | the agent acting as a pointer |
 | Files in headless mode are limited to the allowed folders; paths are made canonical first (symlinks and `..` do not escape). | `ports::FileScope` | reading the home folder |
 | Every call is recorded in the engine's ring with origin `agent`. | `core::dispatch` | silent edits: `recent` shows them |
+| **MCP over HTTP** is off unless a person asks (`--mcp-http`, or the Preferences switch). The setting `agent.mcp_http` can be written by a person only: an agent's `settings.set`, `toggle` and `reset` refuse it, so the agent that the door would serve cannot open it. | `KeyDef::user_only`, `app::agent_server` | an agent widening its own access |
+| The HTTP server listens on `127.0.0.1` only (`BridgeError::NotLoopback`), with the same token rules as the bridge: 32 random bytes per launch, a private 0600 file in a 0700 folder, removed on exit, compared in constant time. | `McpHttpServer::start` | other machines, other users |
+| Every HTTP request needs `Authorization: Bearer <token>` (401 and `WWW-Authenticate: Bearer` without it). The token is never read from the address or a cookie. | `guard::check_bearer` | a page that makes the browser send a request |
+| HTTP `Host` must be `127.0.0.1:<port>` or `localhost:<port>`; `Origin` must be absent or a loopback page; only `/mcp` exists (404). The checks run before any MCP code, `Host` and `Origin` first (403). No CORS header is ever sent and a preflight is not approved, so no page can read an answer. | `mcp::http::check` | DNS rebinding, a web page calling the server |
+| HTTP bodies are limited to 4 MiB, 32 requests are handled at once (503 beyond), and every call goes through the same queue as the bridge (64 per frame, 30 s, not cancelled on timeout). | `mcp::http`, `host::BridgeHost` | memory use, starving the UI |
+| **WebMCP** registers nothing unless the browser has the API, and the browser decides who may call the tools (same origin by default; the page never sets `exposedTo`). Read tools carry `readOnlyHint`, tools that return document text carry `untrustedContentHint`. A call runs as origin `agent` and is one undo step. | `webmcp_page` | the page exposing itself to other origins |
 
 What this does not stop: a program running as the same user can read the token file and do what the user can. That is the same trust as the user's shell. In attached mode an agent that holds the token can also run `doc.save` and `doc.export` to any path the app can write; the folder limit is a headless-mode guard against accidents, not a boundary. Approve tool calls in your MCP client the way you would approve shell commands; the tools carry honest hints (`readOnlyHint` is true only for tools that cannot change anything).
 
 The command registry marks some commands `agent: true` that change user preferences (`settings.set`, `settings.reset`). They are there because the registry says so; the registry is the place to change that.
 
-Not built yet: serving MCP over streamable HTTP from the desktop app itself (plan section 11); WebMCP in the page.
+The bearer token of the HTTP door is as sensitive as the bridge token. A program that runs as you can read the token file and do what you can; a web page and another user cannot. WebMCP has no token: the browser is the trust boundary, as for any WebMCP page. Whoever the browser lets call the tools can edit and read the open document, so turn WebMCP off with `?webmcp=off` on a machine where you do not trust the browser's agent.
 
 ## 4. The tools
 
@@ -126,7 +199,7 @@ The tool list is generated from the command registry. Nothing is written by hand
 
 Results: a successful call returns the command's output as compact JSON. A picture (`view.screenshot`, PNG export without a path) becomes an MCP image block. A refusal is a tool result with `isError: true` whose text is the refusal's plain words (and `Try: ...` lines for its suggestions); the model reads how to proceed. A failed batch starts with `Step N (`id`) refused: ...` and says whether it was rolled back. An unknown tool name is a JSON-RPC error `-32602` that lists the real tools.
 
-The MCP prompt `drafftink_guide` teaches the model the one-page workflow (look with `doc.outline`; build with `diagram.create`; find by meaning with `element.query`; group edits in `batch`; undo; read refusals). The `initialize` result carries the short form. `apps/drafftink-mcp/src/guide.rs` holds the text; a test checks that every command it names exists or is in the catalog, and the guide lists the ones this build does not have yet.
+The MCP prompt `drafftink_guide` teaches the model the one-page workflow (look with `doc.outline`; build with `diagram.create`; find by meaning with `element.query`; group edits in `batch`; undo; read refusals). The `initialize` result carries the short form. `crates/bridge/src/tools/guide.rs` holds the text; a test checks that every command it names exists or is in the catalog, and the guide lists the ones this build does not have yet.
 
 ## 5. The protocols
 
@@ -189,13 +262,38 @@ The fake page `drafftink_bridge::page_sim::FakePage` plays these steps against a
 
 The app's runtime folder is `$DRAFFTINK_BRIDGE_DIR`, else `$XDG_RUNTIME_DIR/drafftink`, else `~/.local/state/drafftink/run` (Linux), `~/Library/Application Support/drafftink/run` (macOS), `%LOCALAPPDATA%\drafftink\run` (Windows). It holds `current.port` (the newest launch) and `<port>.token`. The MCP server refuses a token file that other users can read.
 
+### 5.4 MCP over streamable HTTP (desktop app)
+
+The app serves the same tools as `drafftink-mcp` (section 4) on `http://127.0.0.1:<port>/mcp`, using the official `rmcp` SDK's streamable HTTP transport (the `initialize` handshake, `tools/list`, `tools/call`, `prompts`, event streams for clients that open them). The code is `crates/bridge/src/mcp/`. The tool list, the arguments, the results and the refusal text are those of section 4, because one generator builds them (`crates/bridge/src/tools/`); `status` answers `{"mode":"desktop","connected":true,"listening":...}`.
+
+- **Start.** `drafftink --mcp-http [PORT]` (default 3737; 0 is a free port), or the setting `agent.mcp_http`. The flag is for one launch and does not change the setting; the switch starts the server when it turns on and stops it when it turns off. If the port is taken, Preferences says so in words and the flag exits with the error.
+- **Door.** Section 3 lists the checks. In short: loopback bind, bearer token, `Host`, `Origin`, path `/mcp`, 4 MiB bodies.
+- **Where the token is.** `<runtime folder>/mcp-http/<port>.token` and `current.port` beside it (section 5.3 names the runtime folder; `DRAFFTINK_BRIDGE_DIR` moves it). The bridge keeps its own files in the folder above, so the two never share a token.
+- **Which session.** The app's open document, through the app's job queue: the request runs on the app's thread between frames, with origin `agent`, like a bridge request. The bridge and the HTTP server can run together; they share the queue.
+- **Renderer.** `view.screenshot` and PNG export use the app's renderer; the picture is an MCP image block.
+
+`crates/bridge/tests/mcp_http.rs` runs a real MCP client (the `rmcp` client over HTTP) against the server with a simulated shell, and every refusal of the door. `e2e/native/tests/mcp_http.rs` starts `drafftink --mcp-http 0` on a display and builds the flowchart of section 7 through a real client.
+
+### 5.5 WebMCP (the page)
+
+WebMCP is the browser API with which a page hands tools to the browser's agents. It is a draft of the Web Machine Learning Community Group (November 2026), in Chrome as an origin trial. The page feature-detects it and does nothing when it is absent. What the page uses:
+
+- `document.modelContext` (the current draft) or, in the first previews, `navigator.modelContext`. The page prefers the document, falls back to the navigator, and needs only `registerTool`.
+- `registerTool({name, title, description, inputSchema, annotations, execute}, {signal})`, once per tool. The signal belongs to one `AbortController`; aborting it removes the tools (`drafftink.webmcp.unregister()`). Where the preview API has `unregisterTool(name)`, that is called too. A registration that fails is logged as a warning and does not stop the others. The page never passes `exposedTo`, so the tools are same-origin.
+- `execute(input, {signal})` runs `Service::call` (section 4) on a `PageCaller`, which queues the bridge method on the page's job queue, as `window.drafftink.execute` does. It resolves with `{content: [{type: "text", text} | {type: "image", data, mimeType}], isError}`, the MCP result shape; the browser serialises it to JSON for the agent. A refusal is a result with `isError: true` and the words, not a rejection. Arguments that are not an object are an error result as well.
+- The tools are the ones of section 4, generated from the registry: `inspect` (read-only), one tool per family, `batch`, `commands`, `describe`, `recent`, `status`, and `open`/`save`/`export` when registered. Names use letters, digits and `_` only, within the draft's 1 to 128 characters. Annotations: `readOnlyHint` for reads; `untrustedContentHint` for `inspect` and `recent`, whose results carry text from the document; `consequentialHint` false for all (an edit is one undo step).
+
+`window.drafftink.webmcp` has `status()` (`{supported, api, registered, tools}`), `register()` (true when the tools are registered) and `unregister()`. `?webmcp=off` in the address (also `0`, `false`, `no`) stops the registration at start; `register()` still works. The pure rules are in `apps/drafftink-web/src/webmcp.rs` (unit-tested natively), the browser glue is in `webmcp_page.rs`. `e2e/web/specs/shell/webmcp.spec.ts` installs a stand-in for either API before the page starts, checks that the tools are registered, calls them as a browser agent does and reads the document back; it also checks that a browser without WebMCP is unaffected.
+
 ## 6. Limits
 
 | What | Limit |
 |---|---|
 | Frame to the app | 4 MiB (`max_frame_bytes`) |
 | Frame to the relay or from the app | 16 MiB / 64 MiB |
-| Connections to the app | 8 |
+| Connections to the app (bridge) | 8 |
+| Requests handled at once, MCP over HTTP | 32 (then `503`) |
+| Request body, MCP over HTTP | 4 MiB |
 | Requests queued for the shell | 256; 64 run per frame |
 | Wait for the shell | 30 s, then `-32002` (not cancelled) |
 | Wait for the page (relay) | 60 s, then `-32002` (not cancelled) |
@@ -279,5 +377,7 @@ returns `{"mode":"relay","connected":false,"paired":false,"pairing_link":"https:
 ## 8. Testing and extending
 
 - `cargo test -p drafftink-bridge`: JSON-RPC round trips against a real `Session`; security tests (wrong token, no `hello` within the deadline, bad `Origin`, bad `Host`, non-loopback bind, oversized frame, binary frame, connection cap, token file permissions); the relay with the fake page (pairing, one-time token, resume, replacement, timeouts).
+- `cargo test -p drafftink-bridge --test mcp_http`: a real MCP client over HTTP against the desktop server with a simulated shell; token, `Host`, `Origin`, preflight, path, loopback and token-file tests.
+- `cargo xtask e2e`: the native suite runs `e2e/native/tests/mcp_http.rs` (a client over HTTP builds a flowchart in the running app and sees its picture), and the browser suite runs `webmcp.spec.ts`.
 - `cargo test -p drafftink-mcp`: MCP protocol tests over an in-memory pipe and over the real binary's stdio (initialize, `tools/list` against the registry, refusal text as a tool error, batch rollback, prompts); attached mode against a simulated shell; relay mode against the fake page; the flowchart.
-- A new command needs nothing here. A new tool kind needs a variant in `apps/drafftink-mcp/src/catalog.rs` and a branch in `service.rs`.
+- A new command needs nothing here. A new tool kind needs a variant in `crates/bridge/src/tools/catalog.rs` and a branch in `service.rs`: the stdio server, the HTTP server and the page all pick it up.

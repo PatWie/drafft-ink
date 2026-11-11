@@ -75,10 +75,8 @@ fn an_mcp_client_over_http_builds_a_flowchart_in_the_running_app() -> Test {
         }
 
         let flow: Value = serde_json::from_str(FLOWCHART).map_err(shape)?;
-        let made = client
-            .call_tool(CallToolRequestParams::new("diagram").with_arguments(args(flow)))
-            .await
-            .map_err(shape)?;
+        let made =
+            client.call_tool(CallToolRequestParams::new("diagram").with_arguments(args(flow))).await.map_err(shape)?;
         assert_ne!(made.is_error, Some(true), "diagram.create: {}", text_of(&made)?);
 
         let outline = client
@@ -141,8 +139,7 @@ fn an_mcp_client_over_http_builds_a_flowchart_in_the_running_app() -> Test {
 
 #[test]
 fn the_door_of_the_running_app_wants_the_token_and_a_loopback_origin() -> Test {
-    let Some(app) = start_mcp_http_or_skip("the_door_of_the_running_app_wants_the_token_and_a_loopback_origin")?
-    else {
+    let Some(app) = start_mcp_http_or_skip("the_door_of_the_running_app_wants_the_token_and_a_loopback_origin")? else {
         return Ok(());
     };
     runtime()?.block_on(async {

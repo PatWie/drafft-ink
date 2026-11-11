@@ -19,8 +19,8 @@ use serde_json::{Value, json};
 use wasm_bindgen::prelude::*;
 use wasm_bindgen_futures::{JsFuture, future_to_promise};
 
-use crate::webmcp::{arguments, descriptor, result, wanted};
 use crate::js;
+use crate::webmcp::{arguments, descriptor, result, wanted};
 
 /// Where the browser offers the API.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -112,10 +112,8 @@ fn warn_on_failure(registered: Result<JsValue, JsValue>, name: &str) {
 
 /// The tools of this page, built once, and what registering them has left to undo.
 struct WebMcp {
-    service: Rc<Service>,
     tools: Vec<(String, JsValue)>,
     controller: Option<JsValue>,
-    surface: Option<Surface>,
 }
 
 thread_local! {
@@ -143,7 +141,9 @@ fn tool_object(service: &Rc<Service>, name: &str, spec: &Value) -> JsValue {
         let (service, tool) = (service.clone(), tool.clone());
         future_to_promise(async move {
             let outcome = match js::to_json(&input).map_err(|e| e.message).and_then(arguments) {
-                Ok(args) => service.call(&tool, args).await.unwrap_or_else(|unknown| Outcome::error(unknown.to_string())),
+                Ok(args) => {
+                    service.call(&tool, args).await.unwrap_or_else(|unknown| Outcome::error(unknown.to_string()))
+                }
                 Err(problem) => Outcome::error(problem),
             };
             Ok(js::from_json(&result(&outcome)))
@@ -163,7 +163,7 @@ fn abort_controller() -> Option<JsValue> {
 
 /// Registers every tool. Does nothing when the browser has no WebMCP or the tools are registered already.
 fn register() -> bool {
-    let Some((surface, context)) = find() else { return false };
+    let Some((_, context)) = find() else { return false };
     with(|state| {
         if state.controller.is_some() {
             return true;
@@ -177,7 +177,6 @@ fn register() -> bool {
             warn_on_failure(call_method(&context, "registerTool", &[tool.clone(), options.clone().into()]), name);
         }
         state.controller = Some(controller.unwrap_or(JsValue::TRUE));
-        state.surface = Some(surface);
         true
     })
     .unwrap_or(false)
@@ -199,7 +198,6 @@ fn unregister() {
                 }
             }
         }
-        state.surface = None;
     });
 }
 
@@ -225,7 +223,7 @@ pub(crate) fn api(jobs: &JobSender) -> JsValue {
         .iter()
         .map(|tool| (tool.name.clone(), tool_object(&service, &tool.name, &descriptor(tool))))
         .collect();
-    WEBMCP.with(|w| *w.borrow_mut() = Some(WebMcp { service, tools, controller: None, surface: None }));
+    WEBMCP.with(|w| *w.borrow_mut() = Some(WebMcp { tools, controller: None }));
 
     let object = Object::new();
     let report = Closure::<dyn Fn() -> JsValue>::new(status);

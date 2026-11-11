@@ -19,7 +19,12 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
 
 fn config() -> McpHttpConfig {
-    McpHttpConfig { addr: "127.0.0.1:0".parse().unwrap(), token: Some(TOKEN.to_owned()), dir: None, write_token_file: false }
+    McpHttpConfig {
+        addr: "127.0.0.1:0".parse().unwrap(),
+        token: Some(TOKEN.to_owned()),
+        dir: None,
+        write_token_file: false,
+    }
 }
 
 fn start() -> McpShellSim {
@@ -55,7 +60,8 @@ fn a_request_without_the_token_is_unauthorized_and_says_how_to_authenticate() {
     let shell = start();
     let port = shell.server().port();
     runtime().block_on(async {
-        for extra in [String::new(), "Authorization: Bearer nope\r\n".to_owned(), format!("Authorization: {TOKEN}\r\n")] {
+        for extra in [String::new(), "Authorization: Bearer nope\r\n".to_owned(), format!("Authorization: {TOKEN}\r\n")]
+        {
             let (status, all) = raw(port, &post(&format!("127.0.0.1:{port}"), &extra)).await;
             assert!(status.contains("401"), "{extra:?}: {status}");
             assert!(all.to_ascii_lowercase().contains("www-authenticate: bearer"), "{all}");
@@ -144,12 +150,7 @@ fn it_listens_on_loopback_only_and_refuses_a_weak_token() {
 fn a_random_token_is_64_hex_characters_and_the_file_is_private() {
     let dir = tempfile::tempdir().unwrap();
     let (jobs, _host) = drafftink_bridge::host::channel(std::sync::Arc::new(|| {}), None);
-    let cfg = McpHttpConfig {
-        token: None,
-        dir: Some(dir.path().join("mcp-http")),
-        write_token_file: true,
-        ..config()
-    };
+    let cfg = McpHttpConfig { token: None, dir: Some(dir.path().join("mcp-http")), write_token_file: true, ..config() };
     let server = McpHttpServer::start(cfg, jobs).unwrap();
     assert_eq!(server.token().len(), 64);
     assert!(server.token().bytes().all(|b| b.is_ascii_hexdigit()));
@@ -205,7 +206,9 @@ fn a_real_mcp_client_lists_the_tools_builds_a_diagram_and_reads_a_refusal() {
         assert_ne!(made.is_error, Some(true), "{}", text_of(&made));
 
         let outline = client
-            .call_tool(CallToolRequestParams::new("inspect").with_arguments(tool_args(json!({"command": "doc.outline"}))))
+            .call_tool(
+                CallToolRequestParams::new("inspect").with_arguments(tool_args(json!({"command": "doc.outline"}))),
+            )
             .await
             .expect("doc.outline");
         let text = text_of(&outline);

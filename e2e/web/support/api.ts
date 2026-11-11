@@ -63,7 +63,7 @@ export interface AgentStatus {
   attempts: number;
 }
 
-/** What `webmcp.status()` says (docs/agents.md, section 6). */
+/** What `webmcp.status()` says (docs/agents.md, section 5.5). */
 export interface WebMcpStatus {
   /** The browser has WebMCP (`document.modelContext`, or the preview `navigator.modelContext`). */
   supported: boolean;

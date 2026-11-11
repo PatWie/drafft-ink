@@ -268,7 +268,7 @@ pub struct McpHttpInfo {
 }
 
 /// The MCP server over HTTP that a desktop launcher offers. The app starts and stops it when the setting
-/// `agent.mcp_http` changes; the launcher decides how it listens (docs/agents.md, section 3). The web has none.
+/// `agent.mcp_http` changes; the launcher decides how it listens (docs/agents.md, sections 3 and 5.4). The web has none.
 pub trait McpHttpControl {
     /// Starts the server. Starting a running server only reports where it listens.
     fn start(&mut self) -> Result<McpHttpInfo, String>;

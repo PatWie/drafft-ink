@@ -1,4 +1,4 @@
-//! The pure rules of WebMCP (docs/agents.md, section 6): which tools the page registers with the browser, in
+//! The pure rules of WebMCP (docs/agents.md, section 5.5): which tools the page registers with the browser, in
 //! the shape the API takes, and how a tool result is returned. Nothing here touches the browser, so all of it
 //! is unit-tested natively. The browser glue is in `webmcp_page`.
 //!
@@ -70,7 +70,9 @@ pub fn arguments(input: Value) -> Result<serde_json::Map<String, Value>, String>
     match input {
         Value::Null => Ok(serde_json::Map::new()),
         Value::Object(map) => Ok(map),
-        other => Err(format!("The arguments must be an object like {{\"command\": \"doc.outline\"}}, and got {other}.")),
+        other => {
+            Err(format!("The arguments must be an object like {{\"command\": \"doc.outline\"}}, and got {other}."))
+        }
     }
 }
 

@@ -134,6 +134,7 @@ try { await drafftink.execute('nope.nothing'); } catch (e) { console.log(e.code,
 | `frames()` | `{frames, vello_runs}`: frames drawn and frames in which Vello ran since start. Two reads 10 s apart that are equal prove an idle page |
 | `version` | the crate version |
 | `agent.pair(url, token)` (alias `connect`), `agent.disconnect()`, `agent.status()` | next section |
+| `webmcp.status()`, `webmcp.register()`, `webmcp.unregister()` | WebMCP, the section after next |
 
 ## Pairing with an AI agent (docs/agents.md, section 5.2)
 
@@ -206,3 +207,10 @@ target, because the repository has no wasm test runner).
 - **Safari and Firefox** were not tried. The service worker, IndexedDB and pickers use standard APIs; WebGPU support decides.
 - **Clipboard read** for the equation editor needs the browser's permission and a user gesture.
 - **Screenshots** of the canvas by script (`drafftink.screenshot()`) are not offered: the shell exposes no read-back to the page.
+
+## WebMCP (docs/agents.md, section 5.5)
+
+When the browser has WebMCP (`document.modelContext`, or the preview `navigator.modelContext`), the page registers the generated agent tools
+with it at start: `apps/drafftink-web/src/webmcp_page.rs` builds them once from the registry (`drafftink_bridge::tools`) and each tool's
+`execute` queues its bridge method on the same job queue as `window.drafftink.execute`. A browser without the API is not affected. The
+address `?webmcp=off` skips the registration. `webmcp.status()` says what the page found.

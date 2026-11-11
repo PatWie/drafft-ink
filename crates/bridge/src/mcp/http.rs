@@ -5,9 +5,9 @@
 //! user asks for it.
 //!
 //! Every request passes the same checks as the bridge, in this order, before any MCP code sees it:
-//! the path is `/mcp`; `Host` is `127.0.0.1:<port>` or `localhost:<port>` ([`guard::check_host`]); `Origin` is
-//! absent or a loopback page ([`guard::check_origin`]); `Authorization` is `Bearer <token>` with this launch's
-//! token ([`guard::check_bearer`]). No CORS header is ever sent, so a page cannot read an answer.
+//! `Host` is `127.0.0.1:<port>` or `localhost:<port>` ([`guard::check_host`]); `Origin` is absent or a loopback
+//! page ([`guard::check_origin`]); `Authorization` is `Bearer <token>` with this launch's token
+//! ([`guard::check_bearer`]); the path is `/mcp`. No CORS header is ever sent, so a page cannot read an answer.
 
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::path::PathBuf;
@@ -62,7 +62,12 @@ pub struct McpHttpConfig {
 impl McpHttpConfig {
     /// The safe setup on `port`.
     pub fn on_port(port: u16) -> Self {
-        Self { addr: SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), port), token: None, dir: None, write_token_file: true }
+        Self {
+            addr: SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), port),
+            token: None,
+            dir: None,
+            write_token_file: true,
+        }
     }
 }
 
@@ -204,7 +209,9 @@ impl McpHttpServer {
         if let Some(p) = self.token_file() {
             eprintln!("drafftink mcp http: token file {} (mode 0600)", p.display());
         }
-        eprintln!("drafftink mcp http: send the header `Authorization: Bearer <token>`; docs/agents.md has client setups");
+        eprintln!(
+            "drafftink mcp http: send the header `Authorization: Bearer <token>`; docs/agents.md has client setups"
+        );
     }
 
     /// Stops the server and waits for its thread.

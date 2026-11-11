@@ -13,11 +13,11 @@
 // `Instant` and `SystemTime` here come from `web_time` (the clock port); clippy cannot tell them apart.
 #![allow(clippy::disallowed_methods)]
 
+mod agent_server;
 mod app;
 mod clip;
 mod clock;
 mod config;
-mod agent_server;
 mod editor;
 mod input;
 mod offscreen;

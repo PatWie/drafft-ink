@@ -1075,6 +1075,7 @@ Persisted through the `Storage` settings namespace; read with `settings.get`, wr
 | `collab.server_url` | string (`ws://`, `wss://`, or `/ws` on the web) | web: this page's `/ws`; native: `ws://localhost:3030/ws` | `"/ws"` |
 | `collab.user_name` | string 0..40 | empty | not persisted |
 | `collab.user_color` | `Color` | `#6366f1` | not persisted |
+| `agent.mcp_http` | bool; a person can write it, an agent cannot (`settings.set`, `toggle` and `reset` refuse it when the origin is `agent`) | false | none (new): serves MCP over HTTP on `127.0.0.1`, desktop only (`agents.md` section 5.4) |
 | `doc.recent` | list of `FileRef`, at most 10; read only | empty | `recent_documents` |
 | `theme` | `light \| dark \| system` | `system` | none (decision §9 item 13) |
 

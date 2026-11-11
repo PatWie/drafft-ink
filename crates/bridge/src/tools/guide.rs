@@ -69,7 +69,9 @@ pub fn instructions(reg: &Registry, mode: Mode) -> String {
             "You drive the user's browser tab. If `status` says it is not connected, ask the user to open the pairing link."
         }
         Mode::Desktop => "The user is watching the desktop app: your edits appear on their canvas as you make them.",
-        Mode::Page => "You drive the browser tab that registered these tools: your edits appear on the user's canvas as you make them.",
+        Mode::Page => {
+            "You drive the browser tab that registered these tools: your edits appear on the user's canvas as you make them."
+        }
     };
     let _ = reg;
     format!(

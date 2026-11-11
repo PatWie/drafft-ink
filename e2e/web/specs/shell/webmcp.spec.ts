@@ -2,7 +2,7 @@ import type { BrowserContext } from "@playwright/test";
 import { openApp, serverInfo, test, expect, type App } from "../../support/app.ts";
 
 /**
- * WebMCP (docs/agents.md, section 6): the page registers the generated tools with the browser's model context
+ * WebMCP (docs/agents.md, section 5.5): the page registers the generated tools with the browser's model context
  * when the browser has one. Chromium here has none, so the specs install a stand-in with the shape of the
  * November 2026 draft (`document.modelContext`) or of the first previews (`navigator.modelContext`) before the
  * page starts, call the tools the way a browser agent does, and read the document back through the commands.

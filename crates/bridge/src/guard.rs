@@ -60,7 +60,11 @@ pub fn check_host(host: Option<&str>, port: u16) -> Result<(), Refused> {
 pub fn check_bearer(authorization: Option<&str>, token: &str) -> Result<(), Refused> {
     let value = authorization.ok_or(Refused::Bearer)?.trim();
     let (scheme, given) = value.split_once(' ').ok_or(Refused::Bearer)?;
-    if scheme.eq_ignore_ascii_case("bearer") && tokens_match(given.trim(), token) { Ok(()) } else { Err(Refused::Bearer) }
+    if scheme.eq_ignore_ascii_case("bearer") && tokens_match(given.trim(), token) {
+        Ok(())
+    } else {
+        Err(Refused::Bearer)
+    }
 }
 
 fn is_loopback_origin(origin: &str) -> bool {

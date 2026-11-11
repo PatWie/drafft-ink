@@ -3,9 +3,9 @@
 //! A refusal is a tool error (`isError: true`) whose text is the refusal's plain words, so the model reads
 //! how to proceed. A malformed call (an unknown tool) is a protocol error and is handled in `server`.
 
+use crate::rpc::{REFUSED, RpcError};
 use base64::Engine as _;
 use base64::engine::general_purpose::STANDARD;
-use crate::rpc::{REFUSED, RpcError};
 use serde_json::Value;
 
 /// One piece of a result.
