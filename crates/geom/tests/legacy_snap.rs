@@ -50,6 +50,28 @@ fn same_guides(a: &[old::SmartGuide], b: &[new_guides::SmartGuide]) -> Result<()
     Ok(())
 }
 
+/// The user story: three equal boxes in a row (or column), the outer ones dragged a little off their place.
+/// The old app snapped all three to the equal gap.
+#[test]
+fn three_boxes_in_a_row_snap_like_the_old_app() {
+    let square = |x: f64, y: f64| Rect::new(x, y, x + 200.0, y + 200.0);
+    for transposed in [false, true] {
+        let at = |along: f64| if transposed { square(0.0, along) } else { square(along, 0.0) };
+        for (dragged, others, want) in [
+            (at(705.0), [at(0.0), at(350.0)], 700.0),
+            (at(-5.0), [at(350.0), at(700.0)], 0.0),
+            (at(355.0), [at(0.0), at(700.0)], 350.0),
+        ] {
+            let o = old::detect_smart_guides(dragged, &others, 8.0);
+            let n = new_guides::detect_smart_guides(dragged, &others, 8.0);
+            assert_eq!(o.point, n.point);
+            assert_eq!((o.snapped_x, o.snapped_y), (n.snapped_x, n.snapped_y));
+            let (got, snapped) = if transposed { (n.point.y, n.snapped_y) } else { (n.point.x, n.snapped_x) };
+            assert!(snapped && got == want, "transposed {transposed}: {got} instead of {want}");
+        }
+    }
+}
+
 proptest! {
     #![proptest_config(config())]
 

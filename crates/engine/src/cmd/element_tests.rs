@@ -428,6 +428,85 @@ fn move_smart_guides_align_to_a_neighbour_and_return_the_guides() {
     assert_eq!(out["guides"][0]["kind"], "vertical");
 }
 
+/// Three equal rectangles in a row: `size` wide along the row, `gap` between them. The row runs along x when
+/// `horizontal`, along y otherwise. Returns the session and the ids of the first, middle and last.
+fn row_of_three(horizontal: bool, size: f64, gap: f64) -> (Session, [ElementId; 3]) {
+    let mut s = testing::headless_session();
+    // Candidates are culled to the viewport; this one shows the whole row.
+    run(&mut s, "view.set_viewport", json!({"width": 20000, "height": 20000}));
+    let at = |k: f64| k * (size + gap);
+    let ids = [0.0, 1.0, 2.0].map(|k| {
+        let (x, y) = if horizontal { (at(k), 0.0) } else { (0.0, at(k)) };
+        testing::add_rect(&mut s, x, y, size, size).unwrap()
+    });
+    (s, ids)
+}
+
+/// Drags `id` by `(dx, dy)` with smart guides on and returns where it ends up.
+fn smart_drag(s: &mut Session, id: &ElementId, dx: f64, dy: f64) -> (f64, f64) {
+    run(s, "element.move", json!({"ids": [id.as_str()], "dx": dx, "dy": dy, "snap": {"smart": true}}));
+    pos(s, id.as_str())
+}
+
+#[test]
+fn move_snaps_the_middle_rectangle_to_equal_gaps() {
+    // Reference behaviour that already worked: A 0..200, C 700..900, the middle one belongs at x 350.
+    let (mut s, [_, b, _]) = row_of_three(true, 200.0, 150.0);
+    assert_eq!(smart_drag(&mut s, &b, 4.0, 0.0), (350.0, 0.0));
+}
+
+#[test]
+fn move_snaps_the_outer_rectangles_to_the_gap_of_the_pair_in_both_directions() {
+    // Sizes and gaps from small to wide: the far rectangle of the pair is further than the snap zone around
+    // the dragged box once the row is wide, and it must still count.
+    for (size, gap) in [(100.0, 50.0), (200.0, 150.0), (300.0, 300.0), (150.0, 700.0)] {
+        for horizontal in [true, false] {
+            let step = size + gap;
+            // The last rectangle, dragged a few units off its place in the row.
+            let (mut s, [_, _, c]) = row_of_three(horizontal, size, gap);
+            let (dx, dy) = if horizontal { (5.0, 0.0) } else { (0.0, 5.0) };
+            let got = smart_drag(&mut s, &c, dx, dy);
+            let want = if horizontal { (2.0 * step, 0.0) } else { (0.0, 2.0 * step) };
+            assert_eq!(got, want, "right/bottom rectangle, size {size}, gap {gap}, horizontal {horizontal}");
+            // The first rectangle, dragged a few units off its place.
+            let (mut s, [a, _, _]) = row_of_three(horizontal, size, gap);
+            let (dx, dy) = if horizontal { (-5.0, 0.0) } else { (0.0, -5.0) };
+            let got = smart_drag(&mut s, &a, dx, dy);
+            assert_eq!(got, (0.0, 0.0), "left/top rectangle, size {size}, gap {gap}, horizontal {horizontal}");
+        }
+    }
+}
+
+#[test]
+fn move_snaps_edges_and_centres_of_an_outer_rectangle_and_walks_a_longer_chain() {
+    // Alignment: an anchor 300x200 at (1000, 500). Each line of the dragged 100x100 box lands on the anchor's.
+    let (x0, y0) = (1000.0, 500.0);
+    for (from, want) in [
+        ((x0 + 3.0, y0 + 600.0), (x0, y0 + 600.0)),               // left edge on left edge
+        ((x0 + 297.0 - 100.0, y0 + 600.0), (x0 + 200.0, y0 + 600.0)), // right edge on right edge
+        ((x0 + 153.0 - 50.0, y0 + 600.0), (x0 + 100.0, y0 + 600.0)),  // centre on centre
+        ((x0 + 40.0, y0 - 47.0), (x0 + 40.0, y0 - 50.0)),   // centre line on the anchor's top edge
+    ] {
+        let mut s = testing::headless_session();
+        run(&mut s, "view.set_viewport", json!({"width": 20000, "height": 20000}));
+        testing::add_rect(&mut s, x0, y0, 300.0, 200.0).unwrap();
+        let d = testing::add_rect(&mut s, from.0 - 400.0, from.1 - 400.0, 100.0, 100.0).unwrap();
+        let got = smart_drag(&mut s, &d, 400.0, 400.0);
+        assert_eq!(got, want, "dragged to {from:?}");
+    }
+    // Chain: five boxes with equal gaps, the last one dragged 5 units off. All guides of the row are returned.
+    let (mut s, ids) = row_of_three(true, 120.0, 200.0);
+    testing::add_rect(&mut s, -320.0, 0.0, 120.0, 120.0).unwrap();
+    let out = run(
+        &mut s,
+        "element.move",
+        json!({"ids": [ids[2].as_str()], "dx": 5.0, "dy": 0.0, "snap": {"smart": true}}),
+    );
+    assert_eq!(pos(&s, ids[2].as_str()).0, 640.0);
+    let spacing = out["guides"].as_array().unwrap().iter().filter(|g| g["kind"] == "equal_spacing_h").count();
+    assert!(spacing >= 3, "the guides walk the chain: {out}");
+}
+
 #[test]
 fn move_duplicate_leaves_the_originals_and_selects_the_copies() {
     let mut s = shapes();
