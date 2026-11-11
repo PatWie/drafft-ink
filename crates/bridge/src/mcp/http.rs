@@ -62,13 +62,26 @@ pub struct McpHttpConfig {
 impl McpHttpConfig {
     /// The safe setup on `port`.
     pub fn on_port(port: u16) -> Self {
-        Self { addr: SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), port), ..Self::default() }
+        Self { addr: SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), port), token: None, dir: None, write_token_file: true }
     }
 }
 
 impl Default for McpHttpConfig {
     fn default() -> Self {
         Self::on_port(DEFAULT_PORT)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_default_setup_is_loopback_on_the_default_port_with_a_token_file() {
+        let cfg = McpHttpConfig::default();
+        assert_eq!(cfg.addr, SocketAddr::from(([127, 0, 0, 1], DEFAULT_PORT)));
+        assert!(cfg.write_token_file && cfg.token.is_none() && cfg.dir.is_none());
+        assert_eq!(McpHttpConfig::on_port(0).addr.port(), 0);
     }
 }
 

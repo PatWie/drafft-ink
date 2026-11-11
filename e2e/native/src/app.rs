@@ -46,6 +46,83 @@ pub struct Refusal {
     pub data: Value,
 }
 
+/// A running `drafftink --mcp-http`: the app with MCP over streamable HTTP as its only door.
+///
+/// A test connects an MCP client to [`McpHttpApp::url`] with [`McpHttpApp::token`] as the bearer token.
+pub struct McpHttpApp {
+    child: Child,
+    url: String,
+    token: String,
+    bridge_dir: TempDir,
+    _data_dir: TempDir,
+    log: PathBuf,
+}
+
+impl std::fmt::Debug for McpHttpApp {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("McpHttpApp").field("pid", &self.child.id()).field("url", &self.url).finish_non_exhaustive()
+    }
+}
+
+impl McpHttpApp {
+    /// Starts the app with `--mcp-http 0` (a free port) and no bridge, or says why not (see [`start_or_skip`]).
+    pub fn launch() -> Result<Result<Self, String>, E2eError> {
+        Ok(spawn(&["--mcp-http", "0"], Some("mcp-http"))?.map(|s| Self {
+            child: s.child,
+            url: format!("http://127.0.0.1:{}/mcp", s.found.port),
+            token: s.found.token,
+            bridge_dir: s.bridge_dir,
+            _data_dir: s.data_dir,
+            log: s.log,
+        }))
+    }
+
+    /// `http://127.0.0.1:<port>/mcp`.
+    pub fn url(&self) -> &str {
+        &self.url
+    }
+
+    /// The bearer token, read from the private token file as a user would.
+    pub fn token(&self) -> &str {
+        &self.token
+    }
+
+    /// The runtime folder of this app. The bridge's token files would be in it; there are none.
+    pub fn bridge_dir(&self) -> &Path {
+        self.bridge_dir.path()
+    }
+
+    /// The app's stderr so far (the tail), for failure messages.
+    pub fn log(&self) -> String {
+        tail(&self.log)
+    }
+}
+
+impl Drop for McpHttpApp {
+    fn drop(&mut self) {
+        let _ = self.child.kill();
+        let _ = self.child.wait();
+    }
+}
+
+/// Starts the app for the test `test` with MCP over HTTP, or skips like [`start_or_skip`].
+pub fn start_mcp_http_or_skip(test: &str) -> Result<Option<McpHttpApp>, E2eError> {
+    if std::env::var_os("DRAFFTINK_E2E").is_none_or(|v| v.is_empty()) {
+        println!(
+            "E2E-SKIP {test}: not run here; `cargo xtask e2e` runs the native suite (it needs a display and a GPU)"
+        );
+        return Ok(None);
+    }
+    match McpHttpApp::launch()? {
+        Ok(app) => Ok(Some(app)),
+        Err(reason) if require_gpu() => Err(E2eError::Required(reason)),
+        Err(reason) => {
+            println!("E2E-SKIP {test}: {reason}");
+            Ok(None)
+        }
+    }
+}
+
 /// A running `drafftink --bridge` and a connected client.
 pub struct NativeApp {
     child: Child,
@@ -113,64 +190,88 @@ pub fn start_or_skip(test: &str) -> Result<Option<NativeApp>, E2eError> {
     }
 }
 
+/// A started app process, its private directories and where it listens.
+struct Spawned {
+    child: Child,
+    bridge_dir: TempDir,
+    data_dir: TempDir,
+    log: PathBuf,
+    found: files::Found,
+}
+
+/// True when a display is named in the environment.
+fn has_display() -> bool {
+    std::env::var_os("DISPLAY").is_some_and(|v| !v.is_empty())
+        || std::env::var_os("WAYLAND_DISPLAY").is_some_and(|v| !v.is_empty())
+}
+
+const NO_DISPLAY: &str = "no display: DISPLAY and WAYLAND_DISPLAY are unset. Run under Xvfb, or use `cargo xtask e2e`";
+
+/// Starts the app with `flags` and waits for the token file of the server they switch on, which is in
+/// `token_subdir` of the runtime folder (`None`: the folder itself, the bridge's). `Err(reason)` is a skip.
+fn spawn(flags: &[&str], token_subdir: Option<&str>) -> Result<Result<Spawned, String>, E2eError> {
+    if !has_display() {
+        return Ok(Err(NO_DISPLAY.into()));
+    }
+    let bin = binary()?;
+    if !bin.exists() {
+        return Err(E2eError::NoBinary(bin));
+    }
+    let bridge_dir = tempfile::tempdir()?;
+    let data_dir = tempfile::tempdir()?;
+    let log = data_dir.path().join("app.log");
+    let stderr = File::create(&log)?;
+    let mut child = Command::new(&bin)
+        .args(flags)
+        .arg("--data-dir")
+        .arg(data_dir.path())
+        .env("DRAFFTINK_BRIDGE_DIR", bridge_dir.path())
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(stderr)
+        .spawn()
+        .map_err(|source| E2eError::Spawn { path: bin.clone(), source })?;
+
+    let token_dir = token_subdir.map_or_else(|| bridge_dir.path().to_owned(), |d| bridge_dir.path().join(d));
+    let started = Instant::now();
+    let found = loop {
+        if let Some(status) = child.try_wait()? {
+            let text = tail(&log);
+            if looks_like_no_gpu(&text) {
+                return Ok(Err(format!(
+                    "the app could not open a window or a GPU adapter on this machine: {}",
+                    text.lines().last().unwrap_or("")
+                )));
+            }
+            return Err(E2eError::Exited { status: status.to_string(), log: text });
+        }
+        match files::find(&token_dir, None) {
+            Ok(found) => break found,
+            Err(files::FindError::Missing(_)) if started.elapsed() < START_LIMIT => {
+                std::thread::sleep(Duration::from_millis(100))
+            }
+            Err(files::FindError::Missing(_)) => {
+                let _ = child.kill();
+                return Err(E2eError::NoBridge { seconds: START_LIMIT.as_secs(), log: tail(&log) });
+            }
+            Err(other) => {
+                let _ = child.kill();
+                return Err(other.into());
+            }
+        }
+    };
+    Ok(Ok(Spawned { child, bridge_dir, data_dir, log, found }))
+}
+
 impl NativeApp {
     /// Starts the app on the current display. A machine without a display or without a GPU gives
     /// [`Launch::Skipped`] with the reason.
     pub fn launch() -> Result<Launch, E2eError> {
-        let has_display = std::env::var_os("DISPLAY").is_some_and(|v| !v.is_empty())
-            || std::env::var_os("WAYLAND_DISPLAY").is_some_and(|v| !v.is_empty());
-        if !has_display {
-            return Ok(Launch::Skipped(
-                "no display: DISPLAY and WAYLAND_DISPLAY are unset. Run under Xvfb, or use `cargo xtask e2e`".into(),
-            ));
-        }
-        let bin = binary()?;
-        if !bin.exists() {
-            return Err(E2eError::NoBinary(bin));
-        }
-        let bridge_dir = tempfile::tempdir()?;
-        let data_dir = tempfile::tempdir()?;
-        let log = data_dir.path().join("app.log");
-        let stderr = File::create(&log)?;
-        let mut child = Command::new(&bin)
-            .arg("--bridge")
-            .arg("--data-dir")
-            .arg(data_dir.path())
-            .env("DRAFFTINK_BRIDGE_DIR", bridge_dir.path())
-            .stdin(Stdio::null())
-            .stdout(Stdio::null())
-            .stderr(stderr)
-            .spawn()
-            .map_err(|source| E2eError::Spawn { path: bin.clone(), source })?;
-
-        let started = Instant::now();
-        let found = loop {
-            if let Some(status) = child.try_wait()? {
-                let text = tail(&log);
-                if looks_like_no_gpu(&text) {
-                    return Ok(Launch::Skipped(format!(
-                        "the app could not open a window or a GPU adapter on this machine: {}",
-                        text.lines().last().unwrap_or("")
-                    )));
-                }
-                return Err(E2eError::Exited { status: status.to_string(), log: text });
-            }
-            match files::find(bridge_dir.path(), None) {
-                Ok(found) => break found,
-                Err(files::FindError::Missing(_)) if started.elapsed() < START_LIMIT => {
-                    std::thread::sleep(Duration::from_millis(100))
-                }
-                Err(files::FindError::Missing(_)) => {
-                    let _ = child.kill();
-                    return Err(E2eError::NoBridge { seconds: START_LIMIT.as_secs(), log: tail(&log) });
-                }
-                Err(other) => {
-                    let _ = child.kill();
-                    return Err(other.into());
-                }
-            }
+        let spawned = match spawn(&["--bridge"], None)? {
+            Ok(spawned) => spawned,
+            Err(reason) => return Ok(Launch::Skipped(reason)),
         };
-
+        let Spawned { child, bridge_dir, data_dir, log, found } = spawned;
         let runtime = tokio::runtime::Builder::new_current_thread().enable_all().build().map_err(E2eError::Runtime)?;
         let url = format!("ws://127.0.0.1:{}/", found.port);
         let client = runtime.block_on(BridgeClient::connect(&url, &found.token))?;
