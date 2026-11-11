@@ -505,6 +505,26 @@ fn on_unsaved_save_runs_doc_save_and_names_a_missing_target() {
 }
 
 #[test]
+fn on_unsaved_save_keeps_the_tab_when_the_write_fails() {
+    let fakes = Fakes::new();
+    let mut s = Session::with_services(fakes.ports(), crate::services::Services::fake());
+    run(&mut s, "tab.new", json!({}));
+    testing::add_rect(&mut s, 0.0, 0.0, 10.0, 10.0).unwrap();
+    run(&mut s, "doc.save", json!({"to": {"path": "/a.json"}}));
+    testing::add_rect(&mut s, 20.0, 0.0, 10.0, 10.0).unwrap();
+    assert!(s.tab().dirty());
+    fakes.files.fail_writes(true);
+    let r = refuse(&mut s, "tab.close", json!({"on_unsaved": "save"}));
+    assert_eq!(r.code, "io_failed");
+    assert!(r.message.contains("NOT saved"), "{}", r.message);
+    assert_eq!(s.tabs.len(), 2, "the tab with the unsaved work must stay");
+    assert!(s.tab().dirty());
+    fakes.files.fail_writes(false);
+    run(&mut s, "tab.close", json!({"on_unsaved": "save"}));
+    assert_eq!(s.tabs.len(), 1);
+}
+
+#[test]
 fn a_tab_in_a_room_is_closed_only_with_leave_room() {
     let (mut s, _f) = three();
     s.tabs[1].ext.set(RoomBinding(Some("r-123".to_owned())));

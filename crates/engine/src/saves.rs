@@ -108,6 +108,21 @@ impl Session {
         }
     }
 
+    /// Writes the documents that the running command queued so far, now. For a command that runs `doc.save`
+    /// and then discards the saved document (`tab.close` with `on_unsaved=save`): it must know that the file
+    /// is safe first. Other queued writes stay queued.
+    pub(crate) fn settle_saves(&mut self, id: &str) -> Result<(), Refusal> {
+        let (saves, rest): (Vec<_>, Vec<_>) =
+            std::mem::take(&mut self.run.writes).into_iter().partition(|w| matches!(w, PortWrite::Save(_)));
+        self.run.writes = rest;
+        for w in saves {
+            if let PortWrite::Save(save) = w {
+                self.save_now(id, save)?;
+            }
+        }
+        Ok(())
+    }
+
     /// The shell calls this when a write that answered `Pending` has ended. On success the tab counts as
     /// saved as of the revision that was written (edits since then keep it dirty); on failure it stays
     /// dirty and the refusal says that the document was NOT saved.

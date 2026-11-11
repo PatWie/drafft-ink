@@ -472,7 +472,7 @@ impl Ports {
 /// keeps another to inspect what the session did.
 pub mod fake {
     use std::collections::BTreeMap;
-    use std::sync::atomic::{AtomicU64, Ordering};
+    use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
     use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
     use super::{
@@ -611,6 +611,7 @@ pub mod fake {
     #[derive(Debug, Clone, Default)]
     pub struct FakeFiles {
         data: Arc<Mutex<FileMap>>,
+        fail_writes: Arc<AtomicBool>,
     }
 
     fn file_key(f: &FileRef) -> String {
@@ -631,6 +632,11 @@ pub mod fake {
         /// Puts a file there as if it already existed.
         pub fn insert(&self, file: &FileRef, bytes: &[u8], mime: &str) {
             lock(&self.data).insert(file_key(file), (bytes.to_vec(), mime.to_owned()));
+        }
+
+        /// Makes every later write fail (`true`) or work again (`false`), for tests of a full disk.
+        pub fn fail_writes(&self, on: bool) {
+            self.fail_writes.store(on, Ordering::SeqCst);
         }
 
         /// The bytes of a file, for assertions.
@@ -657,6 +663,9 @@ pub mod fake {
             lock(&self.data).contains_key(&file_key(file))
         }
         fn write(&mut self, file: &FileRef, bytes: &[u8], mime: &str) -> Result<WriteOutcome, PortError> {
+            if self.fail_writes.load(Ordering::SeqCst) {
+                return Err(PortError::Failed("the disk is full".to_owned()));
+            }
             self.insert(file, bytes, mime);
             Ok(WriteOutcome::Done(file.clone()))
         }

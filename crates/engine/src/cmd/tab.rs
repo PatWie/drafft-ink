@@ -343,6 +343,8 @@ fn close(s: &mut Session, a: CloseArgs) -> Result<TabOut, Refusal> {
             return Err(Refusal::not_supported(id, "on_unsaved=\"save\" needs `doc.save`, which is not registered in this session"));
         }
         s.run_nested("doc.save", json!({}))?;
+        // The write is queued: make it now, so that the tab is not closed over a failed save.
+        s.settle_saves(id)?;
     }
     if room.is_some() && i == active && s.registry().find("collab.leave_room").is_some() {
         s.run_nested("collab.leave_room", json!({}))?;
