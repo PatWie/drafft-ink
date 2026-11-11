@@ -18,6 +18,9 @@ wasm-bindgen --target web --no-typescript --out-dir "$OUT" --out-name demo "$WAS
 WASM_OPT="$(command -v wasm-opt || true)"
 [ -z "$WASM_OPT" ] && WASM_OPT="$(ls ~/.cargo/tools/binaryen-version_*/bin/wasm-opt 2>/dev/null | sort -V | tail -1 || true)"
 if [ -n "$WASM_OPT" ] && [ "$PROFILE" = "release-wasm" ]; then
-  "$WASM_OPT" --all-features --strip-debug --strip-producers -Os "$OUT/demo_bg.wasm" -o "$OUT/demo_bg.wasm"
+  # Not --all-features: with binaryen 133 it turns on experimental encodings and Chromium then rejects the
+  # module ("unknown import kind 0x7e"). These are the features rustc's wasm32 target emits.
+  OPT_FEATURES="--enable-bulk-memory --enable-sign-ext --enable-mutable-globals --enable-nontrapping-float-to-int --enable-reference-types --enable-multivalue --enable-simd"
+  "$WASM_OPT" $OPT_FEATURES --strip-debug --strip-producers -Os "$OUT/demo_bg.wasm" -o "$OUT/demo_bg.wasm"
 fi
 ls -l "$OUT"

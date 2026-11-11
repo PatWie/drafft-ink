@@ -114,7 +114,7 @@ Scene: 4000 shapes + 400 labels, culled, 1280x800 native / 1400x860 web. Input i
 Web pan is GPU-process bound under Xvfb (the research in `web-perf.md` found the same ~30-50 fps ceiling there); the app side is a
 small part. Do not read absolute web fps from Xvfb.
 
-Wasm size of the spike (eframe + vello + parley + egui + one font), `wasm-bindgen --target web`, binaryen 133 `wasm-opt --all-features --strip-debug --strip-producers`:
+Wasm size of the spike (eframe + vello + parley + egui + one font), `wasm-bindgen --target web`, binaryen 133 `wasm-opt --strip-debug --strip-producers` (sizes were measured with `--all-features`; do not use it for a shipped build: it turns on experimental encodings and Chromium rejects the module, so list the features rustc emits: `--enable-bulk-memory --enable-sign-ext --enable-mutable-globals --enable-nontrapping-float-to-int --enable-reference-types --enable-multivalue --enable-simd`):
 
 | profile | raw | wasm-opt -Os | wasm-opt -Oz | gzip -9 (of -Os) | brotli -11 (of -Os) |
 |---|---|---|---|---|---|
