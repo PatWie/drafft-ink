@@ -405,7 +405,11 @@ pub(super) fn open_document(s: &mut Session, id: &str, spec: &OpenSpec<'_>) -> R
     }
     let doc = imported.document;
     let count = doc.elements.iter().filter(|e| !e.deleted).count();
-    let target = spec.loaded.file.clone();
+    // Only a file in the drafft.ink format becomes the save target. Saving over an Excalidraw, legacy, PNG or
+    // SVG file would replace it with drafft.ink JSON, so `doc.save` then asks where to write (save-as).
+    let target = spec.loaded.file.clone().filter(|_| source == Format::Native);
+    // The recent list still remembers the file that was opened.
+    let opened_file = spec.loaded.file.clone();
     match spec.mode {
         Mode::Replace => {
             if let Some(on_unsaved) = spec.on_unsaved {
@@ -427,7 +431,7 @@ pub(super) fn open_document(s: &mut Session, id: &str, spec: &OpenSpec<'_>) -> R
             });
         }
     }
-    if let Some(f) = &target {
+    if let Some(f) = &opened_file {
         files::remember(s, f)?;
     }
     Ok(OpenOut {

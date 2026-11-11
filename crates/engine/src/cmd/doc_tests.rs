@@ -237,6 +237,34 @@ fn open_reads_a_native_document_from_a_path_and_makes_it_the_save_target() {
 }
 
 #[test]
+fn opening_a_foreign_file_sets_no_save_target_so_save_never_overwrites_it() {
+    let (mut a, _) = drawn(2);
+    with_png(&mut a);
+    let png = unb64(&run(&mut a, "doc.export", json!({"format": "png"}))["bytes"]["base64"]);
+    let svg = unb64(&run(&mut a, "doc.export", json!({"format": "svg"}))["bytes"]["base64"]);
+    let foreign: [(&str, &[u8]); 4] = [
+        ("/w/basic.excalidraw", include_bytes!("../../../../tests/fixtures/excalidraw/basic_shapes.excalidraw")),
+        ("/w/old.json", include_bytes!("../../../../tests/fixtures/legacy/all_shapes.json")),
+        ("/w/scene.png", &png),
+        ("/w/scene.svg", &svg),
+    ];
+    for mode in ["replace", "new_tab"] {
+        for (p, bytes) in foreign {
+            let (mut s, f) = testing::session();
+            f.files.insert(&path(p), bytes, "application/octet-stream");
+            run(&mut s, "doc.open", json!({"source": {"path": p}, "mode": mode}));
+            assert_eq!(super::save_target(&s), None, "{p} ({mode}) must not become the save target");
+            assert_eq!(super::files::recent(&s), vec![path(p)], "{p} is still a recent file");
+            let r = refuse(&mut s, "doc.save", json!({}));
+            assert_eq!(r.code, "no_save_target", "{p} ({mode})");
+            assert_eq!(f.files.bytes(&path(p)).as_deref(), Some(bytes), "{p} ({mode}) was overwritten");
+            run(&mut s, "doc.save", json!({"to": {"path": "/w/mine.json"}}));
+            assert_eq!(super::save_target(&s), Some(path("/w/mine.json")));
+        }
+    }
+}
+
+#[test]
 fn open_fits_the_camera_to_the_content() {
     let (mut a, _) = drawn(3);
     let bytes = native(&mut a);
