@@ -66,7 +66,7 @@ console_error_panic_hook = "0.1"
 console_log = "1"
 env_logger = "0.11"
 pollster = "0.4"
-rfd = "0.18"
+rfd = "0.17"
 arboard = "3"
 # Windows resource (icon, version) for the desktop exe: apps/drafftink/build.rs
 embed-resource = "3"

@@ -10,3 +10,9 @@
 # Prefer pinning an older compatible version over adding an exemption. When an
 # exemption is unavoidable (e.g. a security fix you must adopt immediately),
 # record why in a comment and remove it once the version clears the window.
+
+# rmcp 3.9.0 (published 2026-11-05) fixes RUSTSEC-2026-0462: before it, the Streamable HTTP clients (used by the bridge's
+# client and the native e2e suite) read response bodies into memory without a limit, and `cargo deny` fails on 3.8.0.
+# Reviewed: a patch release of the 3.x line we already use, no API change. Remove this line once 3.9.0 is 7 days old
+# (2026-11-12).
+rmcp==3.9.0
