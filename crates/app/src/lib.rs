@@ -19,6 +19,7 @@ mod clock;
 mod config;
 mod editor;
 mod input;
+mod offscreen;
 mod overlay;
 mod platform;
 mod startup;
@@ -32,4 +33,6 @@ pub mod web;
 pub use app::App;
 pub use clock::AppClock;
 pub use config::{AppConfig, StartupLink};
-pub use platform::{Host, HostJob, Inbound, Inbox, NoHost, PickKind, PickedFile, Platform, SharedClipboard, WakeCell};
+pub use platform::{
+    FontFile, Host, HostJob, Inbound, Inbox, NoHost, PickKind, PickedFile, Platform, SharedClipboard, WakeCell,
+};

@@ -69,6 +69,12 @@ impl Host for NativeHost {
                     reply.post(Inbound::SaveTarget(FileRef::Path { path: h.path().display().to_string() }));
                 }
             }
+            HostJob::LoadFont(file) => {
+                reply.post(Inbound::Notice(format!(
+                    "The font {} is built into the desktop app; nothing to load.",
+                    file.file_name()
+                )));
+            }
             HostJob::ReadClipboardText => match arboard::Clipboard::new().and_then(|mut c| c.get_text()) {
                 Ok(text) => reply.post(Inbound::ClipboardText(text)),
                 Err(e) => reply.post(Inbound::Notice(format!("The clipboard has no text to paste ({e})."))),

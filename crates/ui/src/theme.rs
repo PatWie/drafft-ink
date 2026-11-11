@@ -30,6 +30,73 @@ pub const PREVIEW_SERIF: &str = "gelpen_serif";
 /// Preview of Vanilla Extract.
 pub const PREVIEW_VANILLA: &str = "vanilla_extract";
 
+/// A font file the egui fonts need that the web build does not carry (it has no `default_fonts`: they are
+/// 1 MB of the binary). The host loads each file and gives it to [`provide_font`]. On the desktop egui has them.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub enum UiFont {
+    /// Ubuntu Light, the proportional font. Needed for the first frame, so the web start awaits it.
+    UbuntuLight,
+    /// Hack, the monospace font; also the arrows and the shift sign of the keyboard shortcuts.
+    Hack,
+    /// The emoji-icon-font: the command key sign and a few symbols.
+    EmojiIcons,
+}
+
+impl UiFont {
+    /// Every UI font.
+    pub const ALL: [UiFont; 3] = [UiFont::UbuntuLight, UiFont::Hack, UiFont::EmojiIcons];
+
+    /// The name of the file the web build serves.
+    pub fn file_name(self) -> &'static str {
+        match self {
+            UiFont::UbuntuLight => "Ubuntu-Light.ttf",
+            UiFont::Hack => "Hack-Regular.ttf",
+            UiFont::EmojiIcons => "emoji-icon-font.ttf",
+        }
+    }
+
+    fn key(self) -> &'static str {
+        match self {
+            UiFont::UbuntuLight => "Ubuntu-Light",
+            UiFont::Hack => "Hack",
+            UiFont::EmojiIcons => "emoji-icon-font",
+        }
+    }
+}
+
+/// True when egui carries its own fonts in this build (the desktop), so no [`UiFont`] is ever needed.
+const EGUI_HAS_DEFAULT_FONTS: bool = cfg!(not(target_arch = "wasm32"));
+
+#[derive(Default)]
+struct Provided {
+    files: std::collections::BTreeMap<UiFont, &'static [u8]>,
+    /// Counts the changes, so each egui context installs the set again once.
+    version: u32,
+}
+
+thread_local! {
+    static PROVIDED: std::cell::RefCell<Provided> = std::cell::RefCell::new(Provided::default());
+}
+
+/// Gives the UI the file of a [`UiFont`]. The next frame installs it. The bytes stay for the life of the
+/// page (the font is installed again after a GPU loss).
+pub fn provide_font(font: UiFont, bytes: Vec<u8>) {
+    PROVIDED.with_borrow_mut(|p| {
+        if let std::collections::btree_map::Entry::Vacant(slot) = p.files.entry(font) {
+            slot.insert(Box::leak(bytes.into_boxed_slice()));
+            p.version += 1;
+        }
+    });
+}
+
+/// The UI fonts this build needs and does not have yet.
+pub fn wanted_fonts() -> Vec<UiFont> {
+    if EGUI_HAS_DEFAULT_FONTS {
+        return Vec::new();
+    }
+    PROVIDED.with_borrow(|p| UiFont::ALL.into_iter().filter(|f| !p.files.contains_key(f)).collect())
+}
+
 static GELPEN: &[u8] = include_bytes!("../../typeset/assets/fonts/GelPen.ttf");
 static GELPEN_SERIF: &[u8] = include_bytes!("../../typeset/assets/fonts/GelPenSerifMedium.ttf");
 static VANILLA: &[u8] = include_bytes!("../../typeset/assets/fonts/VanillaExtract.ttf");
@@ -165,10 +232,12 @@ fn fonts_present(ctx: &Context) -> bool {
     ctx.fonts(|f| f.definitions().families.contains_key(&FontFamily::Name(HAND_FONT.into())))
 }
 
-/// Installs the fonts when they are missing and records whether they can be used in this pass. Called at the
-/// start of every `draw`.
+/// Installs the fonts when they are missing, or when a [`UiFont`] arrived since they were installed, and
+/// records whether they can be used in this pass. Called at the start of every `draw`.
 pub fn ensure_fonts(ctx: &Context) -> bool {
-    if !fonts_present(ctx) {
+    let current = PROVIDED.with_borrow(|p| p.version);
+    let installed = ctx.data(|d| d.get_temp::<u32>(egui::Id::unique("drafftink-fonts-version")));
+    if !fonts_present(ctx) || installed != Some(current) {
         install_fonts(ctx);
     }
     let ready = fonts_present(ctx);
@@ -180,12 +249,36 @@ pub fn ensure_fonts(ctx: &Context) -> bool {
 /// loss) needs it again.
 pub fn install_fonts(ctx: &Context) {
     let mut fonts = FontDefinitions::default();
+    let version = PROVIDED.with_borrow(|p| {
+        // Where egui has no fonts of its own (the web), the loaded files make up its two lists.
+        let mut chain = |family: FontFamily, order: &[UiFont]| {
+            for font in order.iter().filter(|f| p.files.contains_key(f)) {
+                let name = font.key().to_owned();
+                if let Some(bytes) = p.files.get(font) {
+                    fonts.font_data.insert(name.clone(), std::sync::Arc::new(FontData::from_static(bytes)));
+                }
+                fonts.families.entry(family.clone()).or_default().push(name);
+            }
+        };
+        chain(FontFamily::Proportional, &[UiFont::UbuntuLight, UiFont::EmojiIcons]);
+        chain(FontFamily::Monospace, &[UiFont::Hack, UiFont::UbuntuLight, UiFont::EmojiIcons]);
+        p.version
+    });
+    ctx.data_mut(|d| d.insert_temp(egui::Id::unique("drafftink-fonts-version"), version));
     for (name, bytes) in [(HAND_FONT, GELPEN), (PREVIEW_SERIF, GELPEN_SERIF), (PREVIEW_VANILLA, VANILLA)] {
         fonts.font_data.insert(name.to_owned(), std::sync::Arc::new(FontData::from_static(bytes)));
         // The default proportional fonts follow as the fallback for glyphs GelPen lacks.
         let mut chain = vec![name.to_owned()];
         chain.extend(fonts.families.get(&FontFamily::Proportional).cloned().unwrap_or_default());
         fonts.families.insert(FontFamily::Name(name.into()), chain);
+    }
+    // Where no UI font is there (the web before a file arrived, or after a failed download) GelPen draws the
+    // text, so that a label never turns into boxes.
+    for family in [FontFamily::Proportional, FontFamily::Monospace] {
+        let list = fonts.families.entry(family).or_default();
+        if list.is_empty() {
+            list.push(HAND_FONT.to_owned());
+        }
     }
     ctx.set_fonts(fonts);
 }

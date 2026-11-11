@@ -164,8 +164,13 @@ jobs:
           python3 -c "import plistlib; plistlib.load(open('packaging/macos/entitlements.plist','rb'))"
       - run: scripts/package-linux.sh --formats "tar deb appimage"
 
-  build-wasm:
-    name: Build (wasm)
+  # The web app as it is released (release-wasm, wasm-bindgen, wasm-opt), and its size against perf/budgets.json.
+  # A separate job: the build takes several minutes on a runner, which is too long for the local `cargo xtask ci`
+  # loop to wait for on every push of a branch, but the job reproduces locally with the same command.
+  # Needs brotli (the build script measures with it), wasm-bindgen-cli at the version of Cargo.toml and
+  # binaryen 133 (the build script's wasm-opt feature list was checked with it).
+  size:
+    name: Size (wasm)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -174,7 +179,25 @@ jobs:
           toolchain: ${{ env.RUST_TOOLCHAIN }}
           targets: wasm32-unknown-unknown
       - uses: Swatinem/rust-cache@v2
-      - run: cargo build -p drafftink-web --target wasm32-unknown-unknown --profile release-wasm
+      - name: Install wasm-bindgen, brotli and binaryen
+        run: |
+          # rust-cache keeps ~/.cargo/bin, so the install happens once per cache.
+          command -v wasm-bindgen >/dev/null || cargo install wasm-bindgen-cli --version 0.2.130 --locked
+          sudo apt-get update && sudo apt-get install -y brotli
+          curl -fsSL https://github.com/WebAssembly/binaryen/releases/download/version_133/binaryen-version_133-x86_64-linux.tar.gz | tar xz -C "$RUNNER_TEMP"
+          echo "$RUNNER_TEMP/binaryen-version_133/bin" >> "$GITHUB_PATH"
+      - run: cargo xtask size
+      - name: Keep the build
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: web-dist
+          # dist/ is what a server serves. The other file still has its function names: `twiggy top -n 40 <file>`
+          # lists the biggest items when the size budget fails.
+          path: |
+            dist
+            target/wasm32-unknown-unknown/release-wasm/drafftink_web.wasm
+          retention-days: 7
 
   # The single required check. Branch protection requires only this job.
   # `if: always()` makes it report even when an earlier job failed or was cancelled;
@@ -182,7 +205,7 @@ jobs:
   ci:
     name: ci
     if: always()
-    needs: [fmt, clippy, layers, wasm, test, deny, quarantine, build-native, packaging, build-wasm]
+    needs: [fmt, clippy, layers, wasm, test, deny, quarantine, build-native, packaging, size]
     runs-on: ubuntu-latest
     steps:
       - name: Require every job to succeed

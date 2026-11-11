@@ -254,7 +254,7 @@ let fakes = Fakes::new();                     // tests; a real shell builds Port
 let mut s = Session::new(fakes.ports());
 ```
 
-`Ports::new(clock, ids)` takes the two mandatory ports. Add the optional ones with `with_clipboard`, `with_storage`, `with_files`, `with_renderer`, `with_net`. A command that needs a missing port refuses with `port_unavailable`. A shell implements the traits in `crates/engine/src/ports.rs` (`Clipboard`, `Storage`, `Files`, `Clock`, `Renderer`, `Net`). Ids come from the `IdSource` trait of the `scene` crate. Nothing in a port may await: the shell resolves anything asynchronous first and passes the result as arguments.
+`Ports::new(clock, ids)` takes the two mandatory ports. Add the optional ones with `with_clipboard`, `with_storage`, `with_files`, `with_renderer`, `with_net`. A command that needs a missing port refuses with `port_unavailable`. A shell implements the traits in `crates/engine/src/ports.rs` (`Clipboard`, `Storage`, `Files`, `Clock`, `Renderer`, `Net`). Ids come from the `IdSource` trait of the `scene` crate. Nothing in a port may await: the shell resolves anything asynchronous first and passes the result as arguments. A port whose answer takes time (the browser's `Renderer`, which reads a texture back from the GPU) starts the work, answers `PortError::NotReady` and keeps the result for the same request; the command refuses with `render_pending`, and the shell runs the command again when the port wakes it (`docs/web-app.md`, "PNG export").
 
 ### Running commands
 

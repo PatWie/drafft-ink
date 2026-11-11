@@ -39,6 +39,14 @@ impl LazyTypesetter {
         let mut g: MutexGuard<'_, Typesetter> = m.lock().unwrap_or_else(PoisonError::into_inner);
         f(&mut g)
     }
+
+    /// Runs `f` on the typesetter if it was built already; `None` if no text was laid out yet. For the checks a
+    /// frame makes whether or not there is text (it must not pay for building the fonts).
+    pub fn peek<R>(&self, f: impl FnOnce(&mut Typesetter) -> R) -> Option<R> {
+        let m = self.cell.get()?;
+        let mut g: MutexGuard<'_, Typesetter> = m.lock().unwrap_or_else(PoisonError::into_inner);
+        Some(f(&mut g))
+    }
 }
 
 /// `drafftink-typeset` as an [`EditMeasure`], an [`IoMeasure`] and a [`MathSvg`].

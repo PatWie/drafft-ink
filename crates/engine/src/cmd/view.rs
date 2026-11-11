@@ -722,7 +722,7 @@ fn screenshot(s: &mut Session, a: ScreenshotArgs) -> Result<ScreenshotOut, Refus
     };
     let scene = s.tab().doc.snapshot();
     let png = match s.ports.renderer.as_ref() {
-        Some(r) => r.render_png(&scene, &req).map_err(|e| Refusal::io_failed(id, "render", "the screenshot", &e.to_string()))?,
+        Some(r) => r.render_png(&scene, &req).map_err(|e| Refusal::render_failed(id, "screenshot", &e))?,
         None => return Err(Refusal::internal(id, "the renderer disappeared")),
     };
     Ok(ScreenshotOut { changed: false, bytes: PngBytes { base64: base64::engine::general_purpose::STANDARD.encode(&png), mime: "image/png" }, width, height })

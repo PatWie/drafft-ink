@@ -8,6 +8,9 @@ publish = false
 
 [dependencies]
 serde_json = { workspace = true }
+# The size gate compresses the wasm module the way a browser is served it.
+flate2 = "1"
+brotli = { version = "8", default-features = false, features = ["std"] }
 
 [lints]
 workspace = true

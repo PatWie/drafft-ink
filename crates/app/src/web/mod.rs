@@ -8,9 +8,10 @@
 //! | `Storage` | IndexedDB behind an in-memory cache ([`WebStorage`]); read before the app starts |
 //! | `Files` | a download for `FileRef::Download`, the `Documents` namespace for `FileRef::Stored`; no paths |
 //! | `Net` | `WebTransport`; the server is the one that delivered the page (`/ws`) |
-//! | `Renderer` | none: PNG export needs an asynchronous read-back (see `docs/web-app.md`) |
+//! | `Renderer` | `WebRenderer`: draws on a device of its own and answers `NotReady` until the read-back is done (see `render.rs`) |
 //! | `Clipboard` | the shared slot the shell fills from `paste` events |
 
+mod assets;
 mod cache;
 mod dom;
 mod files;
@@ -18,6 +19,7 @@ mod host;
 mod idb;
 mod net;
 mod pure;
+mod render;
 mod rng;
 mod storage;
 
@@ -28,13 +30,16 @@ use drafftink_scene::RandomIds;
 
 use crate::clock::AppClock;
 use crate::config::StartupLink;
-use crate::platform::{Platform, SharedClipboard, WakeCell};
+use drafftink_ui::theme::UiFont;
+
+use crate::platform::{FontFile, Platform, SharedClipboard, WakeCell};
 
 pub use storage::WebStorage;
 
 use files::WebFiles;
 use host::WebHost;
 use net::WebNet;
+use render::WebRenderer;
 use rng::CryptoRng;
 
 /// The web platform could not be set up.
@@ -97,16 +102,25 @@ pub async fn platform(opts: WebOptions) -> Result<WebPlatform, WebError> {
         dom::show_notice(&notice, 20);
     }
     storage.flush_on_page_hide();
+    // The first frame needs the UI font. The page preloaded it, so this mostly waits for the module to compile.
+    // Without it GelPen draws the text (`drafftink_ui::theme::install_fonts`).
+    let ubuntu = FontFile::Ui(UiFont::UbuntuLight);
+    match assets::fetch_font(ubuntu).await {
+        Ok(bytes) => drafftink_ui::theme::provide_font(UiFont::UbuntuLight, bytes),
+        Err(e) => log::warn!("could not load {}: {e}", ubuntu.file_name()),
+    }
 
     let wake = WakeCell::new();
     let clipboard = SharedClipboard::new();
     let location = dom::window()?.location();
     let net = WebNet::new(wake.hook(RedrawReason::Collab), &location);
+    let typesetter = drafftink_engine::services::LazyTypesetter::shared();
     let ports = Ports::new(Box::new(AppClock::new()), Box::new(RandomIds(CryptoRng)))
         .with_clipboard(Box::new(clipboard.clone()))
         .with_storage(Box::new(storage.clone()))
         .with_files(Box::new(WebFiles::new(storage.clone())))
-        .with_net(Box::new(net));
+        .with_net(Box::new(net))
+        .with_renderer(Box::new(WebRenderer::new(typesetter.clone(), wake.hook(RedrawReason::Load))));
 
     let (jobs, bridge) = channel(wake.hook(RedrawReason::Load), None);
     let platform = Platform {
@@ -114,7 +128,7 @@ pub async fn platform(opts: WebOptions) -> Result<WebPlatform, WebError> {
         host: Box::new(WebHost),
         wake,
         clipboard,
-        typesetter: drafftink_engine::services::LazyTypesetter::shared(),
+        typesetter,
         bridge: Some(bridge),
         is_mac: opts.is_mac,
     };

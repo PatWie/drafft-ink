@@ -3,6 +3,7 @@
 Features decided but not yet assigned to a phase agent.
 
 - Bundled font size on the web: `noto-sans` adds 1.9 MB raw wasm; load fonts lazily or as separate assets (size gate).
+- **Inline LaTeX: the editor surface.** Everything below the UI is done (branch `inline-latex`; `docs/typeset.md`, `docs/model.md`). The app's egui text field shows the source while typing. To finish: draw the edited text with `TextLayout` (formulas typeset), set `TextSpec::reveal` to the caret while it is strictly inside a formula (`TextLayout::reveal_index`), use `caret_rect` / `selection_rects` / `move_selection` as they are (source indexes), and send `inline_math` with `text.edit_end` if the user turns it off.
 - Perf: `Relations::build` still serves the one-shot commands (group, frame, z-order, clipboard, library); gesture frames use the derived index (`Reverse::of`). Convert them if one shows up in a profile.
 - Web: hovering over empty canvas costs ~9% CPU in Chromium with 0 frames drawn (event handling); investigate when the web scenario driver exists (the engine side counts 0 redraws and 0 scans per hover, perf_work).
 - Perf: the native and web scenario drivers (`--perf-scenario`, `runScenario`) are not written; `cargo xtask perf` has the work-counter and bench tiers (perf/README.md).
@@ -13,7 +14,8 @@ Features decided but not yet assigned to a phase agent.
 - UI reads selection style via `edit::style::read` directly (to avoid a ring entry per frame). `Session::query` now exists (backlog-b): have the UI use `style.get` through it; then drop ui's edit/scene deps if possible.
 - UI embeds GelPen fonts a second time (include_bytes); expose font bytes from typeset.
 - UI: search dialog has no result list; stats panel lacks bounds editing (now possible: selection.get, element.set_bounds); touch-sized mode; context-menu paste should land at the click point.
-- Size: bundled Noto Sans is ~1 MB brotli of the wasm; load fonts lazily (fetch) or behind a feature.
+- Size: the command schemas (`schemars`) are about 4% of the web module (`performance.md`, "Wasm size"); generate them at build time into a file and fetch it for `describe`/`commands` when the registry is next reworked. Dropping `vello_cpu` (pulled by epaint's glyph rasteriser) needs a patched epaint.
+- Web: a `batch` that exports a PNG is refused with `render_pending` (the picture is drawn meanwhile; run it again). Make the batch wait like a single `execute` does.
 - Tab bar: dirty state compares content through undo/redo only; a remote update between an edit and its undo keeps the tab dirty on purpose.
 
 ## Done (branch render-overlays)

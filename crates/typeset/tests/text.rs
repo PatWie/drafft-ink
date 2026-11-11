@@ -295,3 +295,56 @@ fn custom_font_registration_changes_the_font_set_version() {
     assert_eq!(ts.font_set_version(), v0 + 1);
     assert_eq!(ts.stats().text_entries, 0, "the text cache is cleared");
 }
+
+fn font_bytes(file: &str) -> Vec<u8> {
+    std::fs::read(std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("assets/fonts").join(file)).expect("font file")
+}
+
+#[test]
+fn a_typesetter_without_the_extra_fonts_asks_for_noto_sans_when_a_glyph_is_missing() {
+    let mut ts = Typesetter::without_extra_fonts();
+    assert!(ts.wanted_fonts().is_empty(), "nothing is wanted before a layout needs it");
+    // GelPen has no Cyrillic letters.
+    let spec = plain("Привет", 24.0);
+    let before = ts.text(&spec);
+    assert_eq!(ts.wanted_fonts(), ExtraFont::NOTO_SANS);
+
+    let version = ts.font_set_version();
+    for font in ExtraFont::NOTO_SANS {
+        ts.provide_font(font, font_bytes(font.file_name())).expect("a valid font");
+    }
+    assert!(ts.wanted_fonts().is_empty(), "provided fonts are no longer wanted");
+    assert!(ts.font_set_version() > version, "layouts made without the font are not served again");
+    let after = ts.text(&spec);
+    assert_ne!(before.id, after.id);
+    assert!(after.runs.iter().flat_map(|r| &r.glyphs).all(|g| g.id != 0), "every letter has a glyph now");
+}
+
+#[test]
+fn text_in_the_noto_sans_family_wants_the_font_even_when_no_glyph_is_missing() {
+    let mut ts = Typesetter::without_extra_fonts();
+    let mut spec = plain("hello", 20.0);
+    spec.style.family = FontFamily::NotoSans;
+    let _ = ts.text(&spec);
+    assert_eq!(ts.wanted_fonts(), ExtraFont::NOTO_SANS);
+}
+
+#[test]
+fn plain_gelpen_text_wants_nothing() {
+    let mut ts = Typesetter::without_extra_fonts();
+    let _ = ts.text(&plain("hello world", 20.0));
+    assert!(ts.wanted_fonts().is_empty());
+}
+
+#[test]
+fn providing_a_font_twice_or_a_broken_one_changes_nothing_more() {
+    let mut ts = Typesetter::without_extra_fonts();
+    let font = ExtraFont::NotoSansBold;
+    let v0 = ts.font_set_version();
+    assert!(matches!(ts.provide_font(font, vec![1, 2, 3]), Err(FontError::Invalid(_))));
+    assert_eq!(ts.font_set_version(), v0);
+    ts.provide_font(font, font_bytes(font.file_name())).expect("valid");
+    let v1 = ts.font_set_version();
+    ts.provide_font(font, font_bytes(font.file_name())).expect("a second time is fine");
+    assert_eq!(ts.font_set_version(), v1);
+}

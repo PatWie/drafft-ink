@@ -29,6 +29,18 @@ impl Host for WebHost {
                 reply.post(Inbound::SaveTarget(FileRef::Download { download: download_name(&suggested) }));
             }
             HostJob::ReadClipboardText => read_clipboard_text(reply),
+            HostJob::LoadFont(file) => spawn_local(async move {
+                match super::assets::fetch_font(file).await {
+                    Ok(bytes) => reply.post(Inbound::FontLoaded { file, bytes }),
+                    Err(e) => notice(
+                        &reply,
+                        format!(
+                            "The font {} could not be loaded ({e}). Some letters may show as boxes.",
+                            file.file_name()
+                        ),
+                    ),
+                }
+            }),
         }
     }
 }

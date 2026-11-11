@@ -110,9 +110,17 @@ pub(crate) fn router(state: Arc<AppState>) -> Router {
         .with_state(state)
 }
 
+/// Files under this path have the hash of their content in the name (`scripts/build-web.sh`), so a copy never goes stale.
+const IMMUTABLE_DIR: &str = "/fonts/";
+
 async fn security_headers(req: Request<axum::body::Body>, next: Next) -> Response {
+    let immutable = req.uri().path().starts_with(IMMUTABLE_DIR);
     let mut res = next.run(req).await;
+    let ok = res.status().is_success();
     let h = res.headers_mut();
+    if immutable && ok {
+        h.insert(header::CACHE_CONTROL, HeaderValue::from_static("public, max-age=31536000, immutable"));
+    }
     h.insert(HeaderName::from_static("x-content-type-options"), HeaderValue::from_static("nosniff"));
     h.insert(header::REFERRER_POLICY, HeaderValue::from_static("no-referrer"));
     res

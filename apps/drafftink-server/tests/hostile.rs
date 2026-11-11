@@ -556,6 +556,8 @@ async fn static_files_are_served_from_the_web_dir_without_escaping_it() {
     std::fs::create_dir_all(web.join("assets")).expect("dirs");
     std::fs::write(web.join("index.html"), "<!doctype html><title>drafft</title>").expect("write");
     std::fs::write(web.join("assets").join("app.wasm"), [0, 0x61, 0x73, 0x6d]).expect("write");
+    std::fs::create_dir_all(web.join("fonts")).expect("dirs");
+    std::fs::write(web.join("fonts").join("Face.0123456789.ttf"), [0, 1, 0, 0]).expect("write");
     std::fs::write(dir.path().join("secret.txt"), "top secret").expect("write");
     let mut config = test_config();
     config.web_dir = web;
@@ -571,6 +573,18 @@ async fn static_files_are_served_from_the_web_dir_without_escaping_it() {
     let (status, headers, body) = http_get(addr, "/assets/app.wasm").await;
     assert_eq!((status, body), (200, vec![0, 0x61, 0x73, 0x6d]));
     assert_eq!(header(&headers, "content-type"), Some("application/wasm"));
+    assert_eq!(header(&headers, "cache-control"), None, "only files with a hash in the name are cached for good");
+
+    // The fonts carry a hash of their content in the name, so a browser may keep them for good.
+    let (status, headers, body) = http_get(addr, "/fonts/Face.0123456789.ttf").await;
+    assert_eq!((status, body), (200, vec![0, 1, 0, 0]));
+    assert_eq!(header(&headers, "cache-control"), Some("public, max-age=31536000, immutable"));
+    let (status, headers, _) = http_get(addr, "/fonts/missing.ttf").await;
+    assert_ne!(
+        header(&headers, "cache-control"),
+        Some("public, max-age=31536000, immutable"),
+        "{status}: a miss is not cached"
+    );
 
     for path in
         ["/../secret.txt", "/%2e%2e/secret.txt", "/assets/../../secret.txt", "/..%2fsecret.txt", "/%2e%2e%2fsecret.txt"]

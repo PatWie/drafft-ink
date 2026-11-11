@@ -12,6 +12,10 @@ drafftink-scene = { path = "../scene" }
 egui = { workspace = true }
 serde_json = { workspace = true }
 
+# egui's own fonts on the desktop; the web build loads them (theme::UiFont).
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+egui = { workspace = true, features = ["default_fonts"] }
+
 [dev-dependencies]
 egui_kittest = { workspace = true }
 

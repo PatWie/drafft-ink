@@ -1,5 +1,6 @@
 //! The typesetting service: layout plus bounded caches.
 
+use std::collections::BTreeSet;
 use std::hash::Hash;
 
 use drafftink_geom::hash::{Bits, Hash128};
@@ -11,9 +12,10 @@ use kurbo::{Point, Rect, Size};
 
 use crate::bound::{BoundText, Container, ContainerKind, VerticalAlign};
 use crate::cache::Lru;
+use crate::fonts::ExtraFont;
 use crate::layout::{self, Engine, TextLayout};
 use crate::math::{MathEngine, MathError, MathLayout, MathSpec};
-use crate::style::{LineHeight, Span, SpanStyle, TextSpec, TextStyle, Wrap};
+use crate::style::{FontFamily, LineHeight, Span, SpanStyle, TextSpec, TextStyle, Wrap};
 
 static NEXT_ID: AtomicU64 = AtomicU64::new(1);
 
@@ -130,6 +132,11 @@ fn feed_text(spec: &TextSpec) -> u128 {
     h.finish128()
 }
 
+/// True when the text asks for the Noto Sans family itself, not only as the glyph fallback.
+fn uses_noto_sans(spec: &TextSpec) -> bool {
+    spec.style.family == FontFamily::NotoSans || spec.spans.iter().any(|s| s.style.family == Some(FontFamily::NotoSans))
+}
+
 fn feed_math(spec: &MathSpec) -> u128 {
     let MathSpec { latex, size, text_font_fallback } = spec;
     let mut h = Hash128::new();
@@ -141,6 +148,10 @@ type MathResult = Result<Arc<MathLayout>, MathError>;
 
 /// Math layout with its cache: the ReX engine (built on first use), the cache and the counters.
 struct MathService {
+    /// The bytes of STIX Two Math, once this build has them (built in, or given to `provide_font`).
+    font: Option<&'static [u8]>,
+    /// A formula was asked for while `font` was missing.
+    wants_font: bool,
     engine: Option<Result<MathEngine, MathError>>,
     cache: Lru<Key, MathResult>,
     hits: u64,
@@ -148,12 +159,24 @@ struct MathService {
 }
 
 impl MathService {
-    fn new(cfg: CacheConfig) -> Self {
-        Self { engine: None, cache: Lru::new(cfg.math_entries, cfg.math_bytes), hits: 0, misses: 0 }
+    fn new(cfg: CacheConfig, extras: bool) -> Self {
+        Self {
+            font: ExtraFont::StixTwoMath.embedded().filter(|_| extras),
+            wants_font: false,
+            engine: None,
+            cache: Lru::new(cfg.math_entries, cfg.math_bytes),
+            hits: 0,
+            misses: 0,
+        }
     }
 
     /// The layout of `spec`, from the cache when possible. Errors are cached too.
     fn layout(&mut self, spec: &MathSpec, fonts: u64) -> MathResult {
+        let Some(font) = self.font else {
+            // Not cached: the answer changes when the font arrives.
+            self.wants_font = true;
+            return Err(MathError::font_loading());
+        };
         let key = Key { digest: feed_math(spec), fonts };
         if let Some(hit) = self.cache.get(&key) {
             self.hits += 1;
@@ -164,7 +187,7 @@ impl MathService {
         inc(Counter::CacheMiss);
         inc(Counter::Relayouts);
         let _span = drafftink_profile::span("typeset_math");
-        let engine = self.engine.get_or_insert_with(MathEngine::new);
+        let engine = self.engine.get_or_insert_with(|| MathEngine::new(font));
         let result: MathResult = match engine {
             Ok(e) => e.layout(spec, next_id()).map(Arc::new),
             Err(e) => Err(e.clone()),
@@ -183,6 +206,10 @@ impl MathService {
 pub struct Typesetter {
     engine: Engine,
     math: MathService,
+    /// The extra fonts that are loaded, built in or provided.
+    loaded: BTreeSet<ExtraFont>,
+    /// Extra fonts that a layout needed and that are not loaded.
+    wanted: BTreeSet<ExtraFont>,
     text_cache: Lru<Key, Arc<TextLayout>>,
     font_version: u64,
     text_hits: u64,
@@ -203,9 +230,21 @@ impl Typesetter {
 
     /// A typesetter with explicit cache limits.
     pub fn with_config(cfg: CacheConfig) -> Self {
+        Self::build(cfg, true)
+    }
+
+    /// A typesetter that starts without the [`ExtraFont`]s even where the build has them, as a build without
+    /// them does. For tests of the loading path.
+    pub fn without_extra_fonts() -> Self {
+        Self::build(CacheConfig::default(), false)
+    }
+
+    fn build(cfg: CacheConfig, extras: bool) -> Self {
         Self {
-            engine: Engine::new(),
-            math: MathService::new(cfg),
+            engine: Engine::new(extras),
+            math: MathService::new(cfg, extras),
+            loaded: ExtraFont::ALL.into_iter().filter(|f| extras && f.embedded().is_some()).collect(),
+            wanted: BTreeSet::new(),
             text_cache: Lru::new(cfg.text_entries, cfg.text_bytes),
             font_version: 1,
             text_hits: 0,
@@ -228,6 +267,9 @@ impl Typesetter {
         let fonts = self.font_version;
         let math = &mut self.math;
         let built = Arc::new(layout::build(&mut self.engine, spec, next_id(), &mut |m| math.layout(m, fonts)));
+        if built.has_missing_glyphs() || uses_noto_sans(spec) {
+            self.want(&ExtraFont::NOTO_SANS);
+        }
         self.text_cache.insert(key, built.clone(), built.weight());
         built
     }
@@ -302,14 +344,50 @@ impl Typesetter {
             return Err(FontError::TooLarge);
         }
         ttf_parser::Face::parse(&bytes, 0).map_err(FontError::Invalid)?;
-        let registered = self.engine.font_cx.collection.register_fonts(peniko::Blob::new(Arc::new(bytes)), None);
-        let names: Vec<String> = registered
-            .iter()
-            .filter_map(|(id, _)| self.engine.font_cx.collection.family_name(*id).map(str::to_owned))
-            .collect();
+        let names = self.engine.register(Arc::new(bytes));
         self.font_version += 1;
         self.text_cache.clear();
         Ok(names)
+    }
+
+    fn want(&mut self, fonts: &[ExtraFont]) {
+        self.wanted.extend(fonts.iter().copied().filter(|f| !self.loaded.contains(f)));
+    }
+
+    /// The extra fonts that a layout needed and that are not loaded yet, each listed until it is provided.
+    /// Empty on a build that has the fonts built in. The host fetches them and calls [`Self::provide_font`].
+    pub fn wanted_fonts(&mut self) -> Vec<ExtraFont> {
+        if std::mem::take(&mut self.math.wants_font) {
+            self.want(&[ExtraFont::StixTwoMath]);
+        }
+        self.wanted.iter().copied().collect()
+    }
+
+    /// Gives the typesetter the file of an [`ExtraFont`]. Layouts made without it are dropped from the cache and
+    /// the font set version changes, so the next layout uses the font. Providing a font twice, or a font
+    /// that is built in, changes nothing.
+    pub fn provide_font(&mut self, font: ExtraFont, bytes: Vec<u8>) -> Result<(), FontError> {
+        if self.loaded.contains(&font) {
+            return Ok(());
+        }
+        if bytes.len() > MAX_FONT_BYTES {
+            return Err(FontError::TooLarge);
+        }
+        ttf_parser::Face::parse(&bytes, 0).map_err(FontError::Invalid)?;
+        if font == ExtraFont::StixTwoMath {
+            // ReX borrows the file for as long as the engine lives, which is the rest of the process.
+            self.math.font = Some(Box::leak(bytes.into_boxed_slice()));
+            self.math.engine = None;
+            self.math.wants_font = false;
+        } else {
+            self.engine.register(Arc::new(bytes));
+        }
+        self.loaded.insert(font);
+        self.wanted.remove(&font);
+        self.font_version += 1;
+        self.text_cache.clear();
+        self.math.cache.clear();
+        Ok(())
     }
 
     /// The font set version (changes in [`Self::register_font`]).
@@ -348,6 +426,7 @@ pub mod bench_support {
     /// Lay out a formula the way the old app did on every frame: build the math font, its cmap
     /// map and the layout from scratch, with no cache.
     pub fn math_with_fresh_engine(spec: &MathSpec) -> Result<MathLayout, MathError> {
-        MathEngine::new()?.layout(spec, 0)
+        let font = crate::fonts::ExtraFont::StixTwoMath.embedded().ok_or_else(MathError::font_loading)?;
+        MathEngine::new(font)?.layout(spec, 0)
     }
 }

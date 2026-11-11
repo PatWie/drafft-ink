@@ -91,12 +91,31 @@ def frames(pg): return pg.evaluate("()=>window.drafftink.frames()")
 def reasons(pg):
     return pg.evaluate("()=>window.drafftink.perf().redraws.by_reason")
 
+def settle(pg, quiet=1.5, limit=20):
+    """Waits until no frame was drawn for `quiet` seconds. A page that starts is busy for a moment: fonts and the
+    first documents arrive after the first frame (the big fonts are separate files, docs/web-app.md). An app that
+    never settles still fails the idle window that follows, because that window counts frames."""
+    try: pg.wait_for_load_state("networkidle", timeout=limit * 1000)
+    except Exception: pass
+    t0 = time.time(); last = frames(pg)["frames"]; since = time.time()
+    while time.time() - t0 < limit and time.time() - since < quiet:
+        time.sleep(0.1)
+        now = frames(pg)["frames"]
+        if now != last: last, since = now, time.time()
+
 def window(pg, label, secs):
-    f0 = frames(pg); r0 = reasons(pg); c0 = cpu_ticks(); t = time.time(); time.sleep(secs); el = time.time() - t
+    settle(pg)
+    f0 = frames(pg); r0 = reasons(pg); c0 = cpu_ticks(); t = time.time(); seen = []
+    while time.time() - t < secs:
+        time.sleep(min(0.5, secs - (time.time() - t)))
+        n = frames(pg)["frames"] - f0["frames"]
+        if not seen or n != seen[-1][1]: seen.append((round(time.time() - t, 1), n))
+    el = time.time() - t
     f1 = frames(pg); r1 = reasons(pg)
     r = dict(window=label, secs=round(el, 2), frames=f1["frames"] - f0["frames"], vello_runs=f1["vello_runs"] - f0["vello_runs"],
              redraw_requests={k: v - r0.get(k, 0) for k, v in r1.items() if v - r0.get(k, 0)},
-             cpu_pct_of_one_core_all_chromium=round((cpu_ticks() - c0) / HZ / el * 100, 1))
+             cpu_pct_of_one_core_all_chromium=round((cpu_ticks() - c0) / HZ / el * 100, 1),
+             frame_times=[x for x in seen if x[1]])
     print(json.dumps(r), flush=True); results.append(r); return r
 
 xvfb = subprocess.Popen(["Xvfb", args.display, "-screen", "0", "1600x1100x24"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
@@ -169,6 +188,22 @@ try:
             time.sleep(1.5)
             q = call(pg, "window.drafftink.execute('element.query', {})")
             check(q["ok"] and q["value"].get("total", 0) >= 4, "element.query sees 4 elements", str(q)[:160])
+            # PNG export: the renderer port answers "not ready" while the GPU reads the picture back, and the bridge
+            # runs the command again, so the caller just sees the picture.
+            import base64, io
+            from PIL import Image
+            ex = call(pg, "window.drafftink.execute('doc.export', {format: 'png', scope: 'all', scale: 1})")
+            png = base64.b64decode(ex["value"]["bytes"]["base64"]) if ex["ok"] else b""
+            check(ex["ok"] and png[:8] == b"\x89PNG\r\n\x1a\n", "doc.export png returns a PNG on the web", str(ex)[:200])
+            if png:
+                im = Image.open(io.BytesIO(png)).convert("RGB")
+                check(im.size == (ex["value"]["width"], ex["value"]["height"]) and len(set(im.resize((64, 64)).getdata())) > 3,
+                      "the exported picture has the reported size and is not blank", f"{im.size}")
+                check(ex["value"].get("scene_embedded") is True, "the exported PNG embeds the scene", str(ex["value"].get("scene_embedded")))
+            sh = call(pg, "window.drafftink.execute('view.screenshot', {region: 'all', scale: 0.5})")
+            check(sh["ok"] and base64.b64decode(sh["value"]["bytes"]["base64"])[:4] == b"\x89PNG", "view.screenshot returns a PNG on the web", str(sh)[:160])
+            ex2 = call(pg, "window.drafftink.execute('doc.export', {format: 'png', scope: 'all', scale: 2})")
+            check(ex2["ok"] and ex2["value"]["width"] == 2 * ex["value"]["width"], "a second export at another scale is drawn too", str(ex2)[:160])
             # real browser input: the rectangle tool from the toolbar, then a drag on the canvas
             n0 = call(pg, "window.drafftink.execute('element.query', {})")["value"]["total"]
             call(pg, "window.drafftink.execute('selection.clear', {})")

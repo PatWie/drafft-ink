@@ -20,7 +20,7 @@ mod typesetter;
 
 pub use bound::{BOUND_TEXT_PADDING, BoundText, Container, ContainerKind, VerticalAlign};
 pub use caret::{Affinity, Caret, Motion, TextSelection};
-pub use fonts::HAS_NOTO_SANS;
+pub use fonts::ExtraFont;
 pub use inline::{MAX_FORMULAS, formula_ranges, has_inline_math};
 pub use layout::{
     Decoration, DecorationKind, FONT_SIZE_RANGE, FORMULA_ERROR_COLOR, FormulaError, Glyph, GlyphRun, InlineFormula,

@@ -356,5 +356,23 @@
         "note": "median 0.0019 us measured on 2026-11-08 (64-core x86_64, load 19); the limit leaves about 10x for a loaded machine"
       }
     }
+  },
+  "size": {
+    "wasm.opt_bytes": {
+      "max": 12750000,
+      "note": "the file the server sends. 12,363,143 measured on 2026-11-08 (full app, release-wasm, wasm-opt -Oz); the limit is 3% above"
+    },
+    "wasm.gzip_bytes": {
+      "max": 4720000,
+      "note": "4,576,123 measured on 2026-11-08; the limit is 3% above"
+    },
+    "wasm.brotli_bytes": {
+      "max": 3310000,
+      "note": "the first-load cost of the code, what browsers are sent. 3,213,885 measured on 2026-11-08 (the old app: 3.46 MB; the target of docs/performance.md 7.5 is 3.5 MB); the limit is 3% above"
+    },
+    "fonts.brotli_bytes": {
+      "max": 1550000,
+      "note": "the seven font files that the page loads when it needs them (Noto Sans, STIX Two Math, three egui fonts). 1,505,581 measured on 2026-11-08; the limit is 3% above"
+    }
   }
 }

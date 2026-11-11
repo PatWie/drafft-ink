@@ -60,7 +60,10 @@ cargo install wasm-bindgen-cli --version 0.2.130 --locked       # must equal the
 # wasm-opt (binaryen 117 or newer; 133 is what we measured) on PATH or in ~/.cargo/tools
 scripts/build-web.sh                                            # produces dist/ and prints the sizes
 scripts/serve-web.sh                                            # builds the server and serves dist/
+cargo xtask size                                                # builds the same way and checks the sizes against perf/budgets.json
 ```
+
+The script needs `brotli` (or the Python `brotli` module, `PERF_PY`) only to print the compressed sizes. `cargo xtask size` takes about a minute with a warm cache; a cold build is several minutes on a small machine, which is why CI runs it as its own job (`size`) next to the others.
 
 The browser needs WebGPU: Chromium-based browsers 113 and newer. Firefox and Safari depend on the version and flags and were not tested. Without it the page shows an error page that says so.
 

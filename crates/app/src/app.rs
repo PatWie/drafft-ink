@@ -5,6 +5,7 @@
 //! the canvas scene when something about it changed, and last the next wake-up. Nothing here asks for a
 //! frame by itself; a frame exists because the shell had a reason to draw one.
 
+use std::collections::HashSet;
 use std::time::Duration;
 
 use drafftink_bridge::BridgeHost;
@@ -30,7 +31,7 @@ use crate::editor::{KeyRoute, TextEditor, route};
 use crate::input::{self, Held};
 use crate::overlay;
 use crate::platform::{
-    Host, HostJob, Inbound, Inbox, InboxRx, PickKind, PickedFile, Platform, SharedClipboard, WakeCell, inbox,
+    FontFile, Host, HostJob, Inbound, Inbox, InboxRx, PickKind, PickedFile, Platform, SharedClipboard, WakeCell, inbox,
 };
 use crate::view::{CanvasView, LASER_FADE_MS, TrailPoint};
 
@@ -73,6 +74,10 @@ pub struct App {
     wake: WakeCell,
     clipboard: SharedClipboard,
     bridge: Option<BridgeHost>,
+    /// The text engine, shared with the session and the render caches.
+    typesetter: SharedTypesetter,
+    /// Fonts the host was asked for, so that each is asked for once.
+    fonts_requested: HashSet<FontFile>,
     notices: Vec<String>,
     /// Web addresses a link click asked for; the next event or frame hands them to the shell.
     open_urls: Vec<String>,
@@ -115,6 +120,8 @@ impl App {
             wake,
             clipboard,
             bridge,
+            typesetter,
+            fonts_requested: HashSet::new(),
             notices,
             open_urls: Vec::new(),
             held: Held::default(),
@@ -456,6 +463,32 @@ impl App {
             }
             Inbound::ClipboardText(text) => self.ui.state.set_pasted_text(text),
             Inbound::Notice(text) => self.toast(text),
+            Inbound::FontLoaded { file, bytes } => self.font_loaded(file, bytes),
+        }
+    }
+
+    /// Asks the host for the fonts the typesetter and the UI need and do not have, once each. Nothing happens
+    /// on a build that carries its fonts.
+    fn request_fonts(&mut self) {
+        let text = self.typesetter.peek(|ts| ts.wanted_fonts()).unwrap_or_default().into_iter().map(FontFile::Text);
+        let ui = drafftink_ui::theme::wanted_fonts().into_iter().map(FontFile::Ui);
+        for file in text.chain(ui) {
+            if self.fonts_requested.insert(file) {
+                self.host.start(HostJob::LoadFont(file), self.inbox.clone());
+            }
+        }
+    }
+
+    /// A font file arrived. The typesetter drops the layouts made without it, and the next frame draws again
+    /// (`CanvasView::sync_fonts`); the UI installs it in its next pass.
+    fn font_loaded(&mut self, file: FontFile, bytes: Vec<u8>) {
+        match file {
+            FontFile::Text(font) => {
+                if let Err(e) = self.typesetter.with(|ts| ts.provide_font(font, bytes)) {
+                    self.toast(format!("The font {} could not be used: {e}", file.file_name()));
+                }
+            }
+            FontFile::Ui(font) => drafftink_ui::theme::provide_font(font, bytes),
         }
     }
 
@@ -612,7 +645,7 @@ impl App {
         let tab = self.session.tab().id;
         let revision = self.session.store().revision();
         self.canvas.sync_index(tab, revision, self.session.store());
-        let look = self.canvas.set_look(theme, grid);
+        let look = self.canvas.set_look(theme, grid) | self.canvas.sync_fonts();
         let hidden_changed = self.canvas.set_hidden(hide);
         let key = WorldKey {
             tab,
@@ -938,6 +971,7 @@ impl ShellApp for App {
         let out = self.interaction.tick(&mut self.session, now);
         self.apply_outcome(out);
         self.paint_canvas(&ctx, cx, now);
+        self.request_fonts();
 
         let over_canvas =
             ctx.input(|i| i.pointer.hover_pos()).is_some_and(|p| !input::egui_owns(&ctx, self.canvas_rect, p));

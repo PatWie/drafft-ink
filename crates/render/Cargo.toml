@@ -26,6 +26,7 @@ thiserror.workspace = true
 pollster = { workspace = true, optional = true }
 
 [dev-dependencies]
+drafftink-typeset = { path = "../typeset", features = ["embedded"] }
 criterion.workspace = true
 proptest.workspace = true
 png.workspace = true

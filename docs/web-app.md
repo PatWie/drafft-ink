@@ -15,7 +15,7 @@ scripts/                  build-web.sh  serve-web.sh  web_check.py
 ## Build and serve
 
 ```
-scripts/build-web.sh            # release-wasm build -> wasm-bindgen --target web -> wasm-opt -Os -> dist/
+scripts/build-web.sh            # release-wasm build -> wasm-bindgen --target web -> wasm-opt -Oz -> fonts -> dist/
 scripts/serve-web.sh 3030       # cargo run --release -p drafftink-server -- --web-dir dist --bind 127.0.0.1:3030
 ```
 
@@ -27,18 +27,38 @@ them (`--no-precompress` skips this, `--profile release` builds faster and bigge
 `wasm-opt` runs with an explicit feature list, not `--all-features`: with binaryen 133 `--all-features` turns on experimental
 encodings and Chromium refuses the module (`unknown import kind 0x7e`).
 
-`dist/` holds `index.html`, `manifest.webmanifest`, `sw.js`, the icons, `BUILD` (the build hash) and `pkg/drafftink_web.js` plus
-`pkg/drafftink_web_bg.wasm`. The build hash (12 hex digits of the wasm and the glue) replaces `__BUILD__` in `index.html` and `sw.js`.
+`dist/` holds `index.html`, `manifest.webmanifest`, `sw.js`, the icons, `BUILD` (the build hash), `sizes.json` (the numbers `cargo xtask size`
+checks), `pkg/drafftink_web.js` plus `pkg/drafftink_web_bg.wasm`, and `fonts/` (next section). The build hash (12 hex digits of the wasm
+and the glue) replaces `__BUILD__` in `index.html` and `sw.js`.
 
-Sizes of the full app build (2026-11-08, `release-wasm`, wasm-bindgen 0.2.130, binaryen 133 `-Os` with the explicit feature list;
-MB here are MiB, as in `performance.md`): raw 28.43 MB (with the name section), **wasm-opt 17.62 MB**, gzip -9 6.51 MB,
-**brotli -11 4.48 MB**. The old app was 10.33 MB raw and 3.46 MB brotli, so the budget "brotli not above 3.5 MB" (`performance.md`)
-is missed by about 1 MB; the `size` gate of `cargo xtask ci` is still pending. The graphics spike was 1.36 MB (`stack.md`).
-`twiggy` on the unstripped module (code and data before `wasm-opt`) puts the biggest parts at: the name section 7.8 MB (stripped
-by the build), `.rodata` 5.3 MB, `fearless_simd` and `vello_cpu` about 2.1 MB (the CPU renderer for exports and `view.screenshot`),
-`drafftink_engine` about 1.8 MB, Loro about 1.4 MB, `read_fonts` and `skrifa` 0.9 MB, `serde_path_to_error` 0.5 MB, `schemars` 0.3 MB.
-Candidates for size work: the CPU renderer behind a second module, the command schemas (`schemars`) generated on demand,
-`serde_path_to_error` only in debug builds.
+The build uses `-C target-feature=+simd128` (set in the script, not in `.cargo/config.toml`, so the npm package keeps building for plain
+WebAssembly): every browser with WebGPU has SIMD, and it makes the CPU glyph rasteriser that egui pulls in 1.7 MiB smaller.
+
+### Fonts are separate files
+
+The big fonts are not in the wasm. `scripts/build-web.sh` copies seven files to `dist/fonts/<name>.<hash>.<ext>` (the hash is of the
+content, so a cached copy never goes stale; the server sends them with `Cache-Control: immutable`) and writes the map from plain name to
+address into `window.__assets` in `index.html`:
+
+| File | Brotli | Loaded |
+|---|---|---|
+| `Ubuntu-Light.ttf` (egui's text font) | 137 KB | before the first frame: `index.html` preloads it and `platform()` awaits it. If it fails, GelPen draws the UI text |
+| `STIXTwoMath-Regular.otf` (formulas) | 381 KB | preloaded with the module; used right after the first frame because the welcome document has a formula. A formula shows as an error box until the font is in, then draws |
+| `Hack-Regular.ttf`, `emoji-icon-font.ttf` (egui's monospace font; arrows, shift and command signs) | 123 KB, 145 KB | after the first frame, in the background |
+| `NotoSans-Regular/Bold/Italic.ttf` | 223 KB, 232 KB, 228 KB | when a text needs them: the family `noto_sans`, or a character that no other font has |
+
+The mechanism is `Typesetter::wanted_fonts` / `provide_font` (`drafftink-typeset`: a layout that needs a font says so and the host
+supplies it; the desktop build has them built in through the Cargo feature `embedded`, so `wanted_fonts` stays empty), `drafftink_ui::theme::UiFont`
+(egui has no `default_fonts` feature on the web) and `HostJob::LoadFont` / `Inbound::FontLoaded` in `crates/app` (`web/assets.rs` fetches).
+When a font arrives, the typesetter drops the layouts it made without it, `CanvasView::sync_fonts` drops the render fragments, and the next frame
+draws again. `sw.js` precaches the Ubuntu font with the shell and stores the others with the first answer.
+
+Sizes of the full app build (2026-11-08, `release-wasm`, wasm-bindgen 0.2.130, binaryen 133 `-Oz` with the explicit feature list;
+MB here are MiB, as in `performance.md`): raw 24.62 MB (wasm-bindgen output), **wasm-opt 11.79 MB**, gzip -9 4.36 MB,
+**brotli -11 3.06 MB**, plus 1.44 MB of font files that the page loads when it needs them. Before the size work it was 28.43 / 17.62 / 6.51 / 4.48 MB
+with the fonts inside. The old app was 10.33 MB raw and 3.46 MB brotli. What was done, what each step gave and what was left out is
+the table in `performance.md`, "Wasm size". `cargo xtask size` checks the numbers against `perf/budgets.json` (it builds the app, so it runs in
+`cargo xtask ci` and as its own CI job).
 
 ## What the page does
 
@@ -65,8 +85,24 @@ shell shows its own error page.
 | Net | `WebTransport`. `same_origin_url("/ws")` is `ws(s)://<location.host>/ws` by the page protocol; plain `ws://` to other machines is allowed only when the page itself is on a loopback host. |
 | Clock, ids | `AppClock`; `RandomIds` over `crypto.getRandomValues`. |
 | Clipboard | the shared slot the shell fills from `paste` events. |
-| Renderer | none (see gaps). |
+| Renderer | `WebRenderer` (`crates/app/src/web/render.rs`): PNG export, `clipboard.copy_as` png and `view.screenshot`. See "PNG export" below. |
 | Pickers | a hidden `<input type=file>` with accept lists (documents; images, multiple; libraries). The files are read in full and posted as `Inbound::Picked`. Cancel (the input's `cancel` event) sends nothing and removes the input. `PickSaveTarget` answers at once with the download name. `ReadClipboardText` uses `navigator.clipboard.readText()`. |
+
+## PNG export
+
+The engine's `Renderer` port is synchronous, and a browser reads a texture back from the GPU asynchronously. So the port works in two
+steps (`web/render.rs`). The first `render_png` for a request composes the scene (the same code as the desktop, `crates/app/src/offscreen.rs`),
+starts drawing it on a GPU device of its own and answers `PortError::NotReady`; the command refuses with `render_pending`. When the pixels are
+back the port wakes the app. The caller then runs the command again, and the second call (same document, same request) gets the finished PNG.
+Nobody sees the refusal in normal use:
+
+- the bridge (`window.drafftink.execute`, the agent relay) parks a request that came back `render_pending` and runs it again on the next
+  polls (`BridgeHost`), so the promise resolves with the picture;
+- the UI keeps the call in `UiState::waiting`, shows "Drawing the picture..." and runs it again each frame until it works (the export dialog
+  stays open until then).
+
+Only one picture is drawn at a time; a second request waits. `scripts/web_check.py --app` exports a PNG, takes a screenshot and exports a second
+size, and checks the files.
 
 ## `window.drafftink`
 
@@ -137,12 +173,16 @@ that asked for it. The worker is registered only on `https:` and on `localhost` 
 
 ## Checks
 
+`scripts/web_startup.py` measures the start (navigation to the first frame, cold and with the service worker warm) and the frame time of a
+pan over 1000 rectangles (results: `performance.md`, "Wasm size"). Each idle window of `web_check.py` starts after the page has settled
+(no network activity and no frame for 1.5 s), because the fonts that load after the first frame are work, not idling.
+
 `scripts/web_check.py [--app] [--shot docs/img/web-app.png]` (python from `~/.venvs/perf`; needs `dist/` and
 `target/release/drafftink-server`). It starts the server on an ephemeral port with `--web-dir dist --storage memory`, a private
 Xvfb and headed Chromium with the WebGPU flags of docs/shell.md, and checks: the page starts and draws; the API surface; the
 pairing refusals; the pairing keys are scrubbed from the address; 0 frames and the CPU of all Chromium processes in a 10 s idle
 window. With `--app`: `state`, `commands`, `describe`, a refusal as a rejected promise, two rectangles with an arrow bound to both and `element.move` dragging it along, `commands()` with availability, a batch, the
-ring shows origin `agent`, a real mouse drag with the rectangle tool (key `r`) that draws a rectangle (origin `ui`), a screenshot, 0 frames after commands, the workspace in IndexedDB and back after a reload, two pages
+ring shows origin `agent`, a real mouse drag with the rectangle tool (key `r`) that draws a rectangle (origin `ui`), a screenshot, 0 frames after commands, a PNG export, a screenshot and a second export at another scale (the files are decoded and must not be blank), the workspace in IndexedDB and back after a reload, two pages
 (`127.0.0.1` and `localhost`, so separate IndexedDB) in one `?room=` seeing each other's elements, 0 frames in a room alone and
 with a peer (22 s windows, which cover the server ping and the presence heartbeat), the service worker active, and a reload with the server stopped still starting the app.
 
@@ -154,10 +194,10 @@ target, because the repository has no wasm test runner).
 
 ## Known gaps
 
-- **PNG export on the web.** The renderer port is missing: reading the GPU texture back is asynchronous and the port is
-  synchronous. Commands that need the renderer port (PNG export) refuse with `port_unavailable`. A fix needs an async export path in the app (the shell's
-  `Compositor::render_to_image` already works on the web).
-- **Wire size.** 4.48 MB brotli for the first load (see above). After the first visit the service worker serves it from cache.
+- **Wire size.** 3.06 MB brotli for the module and about 0.5 MB of fonts for the first load of the welcome page (see above). After the first
+  visit the service worker serves everything from cache. Not done: the command schemas (`schemars`) are in the module.
+- **PNG in a batch.** A `batch` step that exports a PNG on the web is refused with `render_pending`; the picture is drawn meanwhile, so
+  running the batch again succeeds. A single `execute` of `doc.export` / `view.screenshot` waits for the picture.
 - **Idle while in a room.** Fixed on 2026-11-08: a wake from the collaboration socket, and a collaboration deadline, go to the
   app first (`ShellEvent::Wake(Collab)`, `docs/shell.md`); it pumps the session and asks for a frame only when the poll left a
   visible change or a notice. Measured: 0 frames in 22 s alone in a room and in 22 s with a peer, after the join has settled.
