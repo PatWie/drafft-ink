@@ -145,6 +145,8 @@ pub enum Cursor {
     Move,
     /// An open hand (hand tool).
     Grab,
+    /// A pointing hand: over a link icon, which a click opens.
+    Pointer,
     /// A closed hand (panning).
     Grabbing,
     /// A crosshair (drawing tools, line point handles).

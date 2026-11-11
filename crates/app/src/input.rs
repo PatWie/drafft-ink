@@ -187,6 +187,7 @@ pub(crate) fn cursor_icon(c: Cursor) -> egui::CursorIcon {
     match c {
         Cursor::Default => egui::CursorIcon::Default,
         Cursor::Move => egui::CursorIcon::Move,
+        Cursor::Pointer => egui::CursorIcon::PointingHand,
         Cursor::Grab => egui::CursorIcon::Grab,
         Cursor::Grabbing => egui::CursorIcon::Grabbing,
         Cursor::Crosshair => egui::CursorIcon::Crosshair,

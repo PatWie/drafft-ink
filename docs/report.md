@@ -194,13 +194,13 @@ Where the rewrite is not better: the binary is larger, the first-visit download 
 
 ## 5. Features: kept, added, missing
 
-Counts from `docs/parity.md`, counted from its rows by `cargo test -p xtask parity` (`counts_table_equals_the_rows_per_status`, passes in `cargo xtask ci`). The file was audited at `audit-e` `25fa072` and refreshed after it; on branch `last-pass` every `path::name` citation was checked again by script against the tree (two renamed tests were corrected: `ui/tests/naming::the_tab_menu_moves_a_tab_left_and_right_and_at_an_end_asks_for_the_place_the_tab_has` and `ui/tests/context_menu_rows::a_rectangle_has_wrap_text_greyed_by_the_engine_and_no_label_block`), and the rows that the later branches touched were read again against the code (A-109, A-160, A-170, A-219, B-002, B-055, B-059, B-132, B-186, B-187, B-197, B-199; the three overlay rows stay `partial`: `crates/app/src/overlay.rs::to_render` still copies no lasso path, link icon or remote selection). No status changed, so the counts below are the same as before. The browser specs behind browser rows ran at this tree: 74 of 74 passed, and 15 of 15 native.
+Counts from `docs/parity.md`, counted from its rows by `cargo test -p xtask parity` (`counts_table_equals_the_rows_per_status`, passes in `cargo xtask ci`). The file was audited at `audit-e` `25fa072` and refreshed after it; on branch `last-pass` every `path::name` citation was checked again by script against the tree (two renamed tests were corrected: `ui/tests/naming::the_tab_menu_moves_a_tab_left_and_right_and_at_an_end_asks_for_the_place_the_tab_has` and `ui/tests/context_menu_rows::a_rectangle_has_wrap_text_greyed_by_the_engine_and_no_label_block`), and the rows that the later branches touched were read again against the code (A-109, A-160, A-170, A-219, B-002, B-055, B-059, B-132, B-186, B-187, B-197, B-199). One status changed afterwards, on branch `overlay-wiring`: B-199 (remote selection outlines) is `done` now that the app draws the peers' parts of the overlay; B-002 and B-055 stay `partial` for the gaps their rows name. The browser specs behind browser rows ran at this tree: 74 of 74 passed, and 15 of 15 native.
 
 | Part | done | partial | missing | out of scope | rows |
 |---|---|---|---|---|---|
 | A: old drafft-ink features | 178 | 14 | 4 | 0 | 196 |
-| B: Excalidraw features | 152 | 32 | 21 | 7 | 212 |
-| Total | 330 | 46 | 25 | 7 | 408 |
+| B: Excalidraw features | 153 | 31 | 21 | 7 | 212 |
+| Total | 331 | 45 | 25 | 7 | 408 |
 
 Rows of B that restate an A row count twice.
 
@@ -310,17 +310,17 @@ Checked item by item on branch `last-pass` (`main` at `52f6d8e`) against the cod
 7. **Text editor:** arrows bound to a container that grows during an edit jump when the edit ends; no I-beam cursor over text (there is no text variant in `canvas::Cursor`); RTL is weakly tested; no per-run bold or italic; no real OS input method tried; `Esc` commits and cancel is only `text.edit_end commit=false`.
 8. **Tab bar dirty state** compares content through undo and redo only.
 9. **Web PNG export inside a batch:** the renderer is asynchronous, so a batch with a pending render step is taken back and rerun by the bridge host, and the pending step is refused with `render_pending` inside a batch.
-10. **The app does not draw the lasso path, link icons or remote selection outlines.** `render::Overlay`, the canvas overlay and `canvas-js` have them; `crates/app/src/overlay.rs::to_render` copies none (`parity.md` B-002, B-055, B-199). Size S.
-11. **Smaller overlay leftovers:** a `Cursor::Pointer` variant for the link icon, distance badges for alignment snaps, IME composition in `TextEdit`. Parity P0 gaps not yet built: angle-snap rays, snap crosshair, eraser radius ring (A-086, A-088, A-046), loading percentage (A-222), last-picked swatch and rotation guides (A-042, A-087), phone and tablet layout on a real device (`parity.md` §4).
-12. **Mermaid node shapes** hexagon, cylinder, parallelogram, trapezoid, flag, subroutine and double circle are drawn as the closest shape an arrow can bind to, and the warning names each one; a real outline needs a bindable polygon element kind. Other Mermaid diagram types are refused with the list of supported ones.
-13. **No CPU fallback** for browsers without WebGPU (D13).
-14. **Windows and macOS** never ran. CI builds them, and `scripts/cross-check.sh` type-checks them from Linux (`packaging.md`); nothing was linked or run.
-15. **AGPL gaps:** no in-app source offer for modified hosted copies; two font redistribution permissions (GelPen, Vanilla Extract) are unconfirmed (`ATTRIBUTION.md`).
+10. **Smaller overlay leftovers:** distance badges for alignment snaps, IME composition in `TextEdit`. Parity P0 gaps not yet built: angle-snap rays, snap crosshair, eraser radius ring (A-086, A-088, A-046), loading percentage (A-222), last-picked swatch and rotation guides (A-042, A-087), phone and tablet layout on a real device (`parity.md` §4).
+11. **Mermaid node shapes** hexagon, cylinder, parallelogram, trapezoid, flag, subroutine and double circle are drawn as the closest shape an arrow can bind to, and the warning names each one; a real outline needs a bindable polygon element kind. Other Mermaid diagram types are refused with the list of supported ones.
+12. **No CPU fallback** for browsers without WebGPU (D13).
+13. **Windows and macOS** never ran. CI builds them, and `scripts/cross-check.sh` type-checks them from Linux (`packaging.md`); nothing was linked or run.
+14. **AGPL gaps:** no in-app source offer for modified hosted copies; two font redistribution permissions (GelPen, Vanilla Extract) are unconfirmed (`ATTRIBUTION.md`).
 
 ### Closed since the audit
 
 | Was | Evidence at `last-pass` |
 |---|---|
+| The app drew no lasso path, link icons or remote selection outlines (was open item 10; parity B-002, B-055, B-199) | `crates/app/src/overlay.rs::to_render` now copies the lasso path, the link icons and, from `collab_view()` through `canvas::remote_parts`, the peers' cursors with names, selection outlines and laser trails (the app's own peer-trail painter is gone). `Cursor::Pointer` is the new cursor over a link icon (`PointingHand` in egui). Tests: `app/overlay::tests::*` (5), `eng/int/interaction_tests::hovering_a_link_icon_shows_the_pointing_hand_and_leaving_it_the_arrow`, and `e2e/web/specs/shell/overlay.spec.ts` (two pages in one room: the peer's outline and name chip by pixels; the lasso outline while dragging; the link icon and the page it opens). Branch `overlay-wiring`. |
 | Flaky browser e2e `typing text` (first key lost) | Fixed in this branch (section 3.3). 20 of 20 runs of the spec pass; full browser suite 74 of 74. |
 | Remote merges run no relation repair; the property test never emitted group, binding, frame, point or undo operations; `protocol.md` claimed a gesture abort the code did not do (audit item 14) | `engine/src/remote_repair.rs` repairs after a remote merge, outside undo, once. Tests: `remote_repair_tests::two_peers_moving_different_targets_of_one_arrow_leave_it_on_both`, `a_delete_racing_a_bind_frees_the_arrow_end_on_every_peer`, `a_repair_is_on_no_undo_stack_and_is_recorded_in_the_ring_as_remote` and the random three-peer test, whose actions include `arrow.bind`, `group.create`, `frame.wrap`, `text.bind`, `history.undo` and point handles. A running gesture on an element a peer deleted is cancelled (`a_gesture_on_an_element_a_peer_deleted_is_cancelled_and_the_delete_stands`; `protocol.md` §9 item 4). Branches `audit-a`, `audit-b`. |
 | A batch that changes tab is not atomic (item 15) | `tab.new`, `tab.switch` and `tab.duplicate` are `batch=last`, and the executor stops and rolls back a batch whose step changed the active tab (`tab_tests::new_switch_and_duplicate_are_only_the_last_step_of_a_batch`, `a_command_that_turns_out_to_change_the_tab_stops_the_batch_and_rolls_back`). `4894b7b`. |

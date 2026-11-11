@@ -171,7 +171,8 @@ impl<S: SceneStore> Picker for PickCtx<'_, S> {
         match target {
             Target::Handle(h) => self.frame.cursor_for(h),
             Target::Element { .. } => Cursor::Move,
-            Target::Empty | Target::None | Target::LinkIcon { .. } => Cursor::Default,
+            Target::LinkIcon { .. } => Cursor::Pointer,
+            Target::Empty | Target::None => Cursor::Default,
         }
     }
 }
