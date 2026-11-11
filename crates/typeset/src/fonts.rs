@@ -16,7 +16,15 @@ pub(crate) static VANILLA_EXTRACT: &[u8] = include_bytes!("../assets/fonts/Vanil
 /// Every font that is always compiled in, registered with Parley at start-up. The big fonts are
 /// [`ExtraFont`]s; the STIX math font is read by ReX directly.
 pub(crate) fn bundled() -> [&'static [u8]; 7] {
-    [GELPEN_LIGHT, GELPEN_REGULAR, GELPEN_HEAVY, GELPEN_SERIF_LIGHT, GELPEN_SERIF_MEDIUM, GELPEN_SERIF_HEAVY, VANILLA_EXTRACT]
+    [
+        GELPEN_LIGHT,
+        GELPEN_REGULAR,
+        GELPEN_HEAVY,
+        GELPEN_SERIF_LIGHT,
+        GELPEN_SERIF_MEDIUM,
+        GELPEN_SERIF_HEAVY,
+        VANILLA_EXTRACT,
+    ]
 }
 
 /// A large font that a build may leave out of the binary and load later (the web app does: they are 2.6 MB
@@ -41,7 +49,8 @@ impl ExtraFont {
         [ExtraFont::NotoSansRegular, ExtraFont::NotoSansBold, ExtraFont::NotoSansItalic, ExtraFont::StixTwoMath];
 
     /// The three Noto Sans files, which are always wanted together.
-    pub const NOTO_SANS: [ExtraFont; 3] = [ExtraFont::NotoSansRegular, ExtraFont::NotoSansBold, ExtraFont::NotoSansItalic];
+    pub const NOTO_SANS: [ExtraFont; 3] =
+        [ExtraFont::NotoSansRegular, ExtraFont::NotoSansBold, ExtraFont::NotoSansItalic];
 
     /// The file name in `crates/typeset/assets/fonts`, which is also the name of the asset the web build serves.
     pub fn file_name(self) -> &'static str {

@@ -173,12 +173,16 @@ that asked for it. The worker is registered only on `https:` and on `localhost` 
 
 ## Checks
 
+`scripts/web_startup.py` measures the start (navigation to the first frame, cold and with the service worker warm) and the frame time of a
+pan over 1000 rectangles (results: `performance.md`, "Wasm size"). Each idle window of `web_check.py` starts after the page has settled
+(no network activity and no frame for 1.5 s), because the fonts that load after the first frame are work, not idling.
+
 `scripts/web_check.py [--app] [--shot docs/img/web-app.png]` (python from `~/.venvs/perf`; needs `dist/` and
 `target/release/drafftink-server`). It starts the server on an ephemeral port with `--web-dir dist --storage memory`, a private
 Xvfb and headed Chromium with the WebGPU flags of docs/shell.md, and checks: the page starts and draws; the API surface; the
 pairing refusals; the pairing keys are scrubbed from the address; 0 frames and the CPU of all Chromium processes in a 10 s idle
 window. With `--app`: `state`, `commands`, `describe`, a refusal as a rejected promise, two rectangles with an arrow bound to both and `element.move` dragging it along, `commands()` with availability, a batch, the
-ring shows origin `agent`, a real mouse drag with the rectangle tool (key `r`) that draws a rectangle (origin `ui`), a screenshot, 0 frames after commands, the workspace in IndexedDB and back after a reload, two pages
+ring shows origin `agent`, a real mouse drag with the rectangle tool (key `r`) that draws a rectangle (origin `ui`), a screenshot, 0 frames after commands, a PNG export, a screenshot and a second export at another scale (the files are decoded and must not be blank), the workspace in IndexedDB and back after a reload, two pages
 (`127.0.0.1` and `localhost`, so separate IndexedDB) in one `?room=` seeing each other's elements, 0 frames in a room alone and
 with a peer (22 s windows, which cover the server ping and the presence heartbeat), the service worker active, and a reload with the server stopped still starting the app.
 

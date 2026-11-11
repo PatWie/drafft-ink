@@ -32,7 +32,13 @@ impl Host for WebHost {
             HostJob::LoadFont(file) => spawn_local(async move {
                 match super::assets::fetch_font(file).await {
                     Ok(bytes) => reply.post(Inbound::FontLoaded { file, bytes }),
-                    Err(e) => notice(&reply, format!("The font {} could not be loaded ({e}). Some letters may show as boxes.", file.file_name())),
+                    Err(e) => notice(
+                        &reply,
+                        format!(
+                            "The font {} could not be loaded ({e}). Some letters may show as boxes.",
+                            file.file_name()
+                        ),
+                    ),
                 }
             }),
         }

@@ -552,7 +552,11 @@ async fn static_files_are_served_from_the_web_dir_without_escaping_it() {
     assert_eq!((status, body), (200, vec![0, 1, 0, 0]));
     assert_eq!(header(&headers, "cache-control"), Some("public, max-age=31536000, immutable"));
     let (status, headers, _) = http_get(addr, "/fonts/missing.ttf").await;
-    assert_ne!(header(&headers, "cache-control"), Some("public, max-age=31536000, immutable"), "{status}: a miss is not cached");
+    assert_ne!(
+        header(&headers, "cache-control"),
+        Some("public, max-age=31536000, immutable"),
+        "{status}: a miss is not cached"
+    );
 
     for path in
         ["/../secret.txt", "/%2e%2e/secret.txt", "/assets/../../secret.txt", "/..%2fsecret.txt", "/%2e%2e%2fsecret.txt"]

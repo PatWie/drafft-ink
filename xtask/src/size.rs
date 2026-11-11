@@ -169,7 +169,9 @@ fn measure(root: &Path, wasm: &Path) -> Result<Metrics, String> {
         let gzip = scope.spawn(|| gzip_len(&bytes));
         let brotli = scope.spawn(|| brotli_len(wasm));
         let font_jobs: Vec<_> = fonts.iter().map(|f| scope.spawn(|| brotli_len(f))).collect();
-        let join = |r: std::thread::Result<Result<u64, String>>| r.unwrap_or_else(|_| Err("a compression thread panicked".into()));
+        let join = |r: std::thread::Result<Result<u64, String>>| {
+            r.unwrap_or_else(|_| Err("a compression thread panicked".into()))
+        };
         (join(gzip.join()), join(brotli.join()), font_jobs.into_iter().map(|j| join(j.join())).collect::<Vec<_>>())
     });
     let mut metrics = Metrics::new();
@@ -185,7 +187,8 @@ fn measure(root: &Path, wasm: &Path) -> Result<Metrics, String> {
 /// The numbers the build script measured with the C compressors (`dist/sizes.json`).
 fn from_build_script(root: &Path) -> Result<Metrics, String> {
     let path = root.join(SIZES_FILE);
-    let text = fs::read_to_string(&path).map_err(|e| format!("{}: {e}. Run scripts/build-web.sh first.", path.display()))?;
+    let text =
+        fs::read_to_string(&path).map_err(|e| format!("{}: {e}. Run scripts/build-web.sh first.", path.display()))?;
     parse_sizes(&text).map_err(|e| format!("{}: {e}", path.display()))
 }
 
@@ -229,7 +232,8 @@ fn top_list(root: &Path, wasm: &Path) -> String {
 
 pub fn run_gate(root: &Path, args: &[String]) -> Result<(), String> {
     let options = parse_args(args)?;
-    let budgets = parse_budgets(&read(&root.join(BUDGETS)).and_then(|b| String::from_utf8(b).map_err(|e| e.to_string()))?)?;
+    let budgets =
+        parse_budgets(&read(&root.join(BUDGETS)).and_then(|b| String::from_utf8(b).map_err(|e| e.to_string()))?)?;
 
     let (wasm, unstripped) = match &options.wasm {
         Some(path) => (path.clone(), path.clone()),
@@ -249,7 +253,10 @@ pub fn run_gate(root: &Path, args: &[String]) -> Result<(), String> {
     let mut skipped = Vec::new();
     let broken = check(&metrics, &budgets, &mut skipped);
     if !skipped.is_empty() {
-        println!("not measured, so not checked: {} (fonts come from {FONT_DIR}/, which scripts/build-web.sh writes)", skipped.join(", "));
+        println!(
+            "not measured, so not checked: {} (fonts come from {FONT_DIR}/, which scripts/build-web.sh writes)",
+            skipped.join(", ")
+        );
     }
     if broken.is_empty() {
         println!("size: within the budgets of {BUDGETS}");

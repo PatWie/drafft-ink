@@ -31,7 +31,11 @@ pub(crate) struct Composed {
 }
 
 /// Builds the scene of `req` for `scene`. Fails for a size the renderers refuse.
-pub(crate) fn compose(typesetter: &SharedTypesetter, scene: &SceneView, req: &RenderRequest) -> Result<Composed, PortError> {
+pub(crate) fn compose(
+    typesetter: &SharedTypesetter,
+    scene: &SceneView,
+    req: &RenderRequest,
+) -> Result<Composed, PortError> {
     let (w, h) = req.size_px;
     if w == 0 || h == 0 || w > MAX_SIDE || h > MAX_SIDE {
         return Err(PortError::Failed(format!("the picture would be {w} by {h} pixels; the limit is {MAX_SIDE}")));

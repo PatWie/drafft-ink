@@ -232,8 +232,10 @@ fn a_formula_before_the_math_font_arrives_is_a_loading_error_that_is_not_cached(
     assert_eq!(ts.wanted_fonts(), [ExtraFont::StixTwoMath]);
     assert_eq!(ts.stats().math_entries, 0, "a loading error is not cached");
 
-    let bytes = std::fs::read(std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("assets/fonts").join(ExtraFont::StixTwoMath.file_name()))
-        .expect("font file");
+    let bytes = std::fs::read(
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("assets/fonts").join(ExtraFont::StixTwoMath.file_name()),
+    )
+    .expect("font file");
     ts.provide_font(ExtraFont::StixTwoMath, bytes).expect("a valid font");
     assert!(ts.wanted_fonts().is_empty());
     let m = ts.math(&spec).expect("the formula typesets once the font is there");
@@ -247,8 +249,10 @@ fn inline_formulas_are_laid_out_again_when_the_math_font_arrives() {
     spec.math = InlineMath::Auto;
     let before = ts.text(&spec);
     assert_eq!(before.formula_errors.len(), 1, "{:?}", before.formula_errors);
-    let bytes = std::fs::read(std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("assets/fonts").join(ExtraFont::StixTwoMath.file_name()))
-        .expect("font file");
+    let bytes = std::fs::read(
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("assets/fonts").join(ExtraFont::StixTwoMath.file_name()),
+    )
+    .expect("font file");
     ts.provide_font(ExtraFont::StixTwoMath, bytes).expect("a valid font");
     let after = ts.text(&spec);
     assert!(after.formula_errors.is_empty() && after.formulas.len() == 1, "{:?}", after.formula_errors);

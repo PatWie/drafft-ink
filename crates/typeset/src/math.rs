@@ -118,7 +118,11 @@ impl MathError {
 
     /// The error of a formula asked for before the math font arrived.
     pub(crate) fn font_loading() -> Self {
-        Self::new(MathErrorKind::FontLoading, 0..0, "The math font is still loading. The formula appears when it has arrived.")
+        Self::new(
+            MathErrorKind::FontLoading,
+            0..0,
+            "The math font is still loading. The formula appears when it has arrived.",
+        )
     }
 
     /// The error's line (0-based) and column (0-based, in `char`s) in `latex`.
@@ -270,13 +274,7 @@ impl MathEngine {
             }
         }
         let data = |bytes: &'static [u8]| peniko::FontData::new(peniko::Blob::new(Arc::new(bytes)), 0);
-        Ok(Self {
-            font,
-            text_face,
-            glyph_to_char,
-            math_data: data(math_font),
-            text_data: data(fonts::GELPEN_REGULAR),
-        })
+        Ok(Self { font, text_face, glyph_to_char, math_data: data(math_font), text_data: data(fonts::GELPEN_REGULAR) })
     }
 
     pub fn layout(&self, spec: &MathSpec, id: u64) -> Result<MathLayout, MathError> {
