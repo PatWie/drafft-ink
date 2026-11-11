@@ -160,6 +160,23 @@ fn polygon(points: &[Point]) -> BezPath {
     p
 }
 
+/// What every overlay item needs to be drawn: the world to device map, one logical pixel in device pixels, the
+/// colours and the zoom.
+struct Pen<'a> {
+    to_dev: Affine,
+    /// One logical pixel in device pixels.
+    px: f64,
+    style: &'a OverlayStyle,
+    zoom: f64,
+    scale: f64,
+}
+
+impl Pen<'_> {
+    fn dev(&self, p: Point) -> Point {
+        self.to_dev * p
+    }
+}
+
 /// Draws the overlay into `scene` (reset first).
 pub fn paint_overlay(scene: &mut Scene, overlay: &Overlay, view: &View, style: &OverlayStyle) -> OverlayReport {
     scene.reset();
@@ -167,119 +184,146 @@ pub fn paint_overlay(scene: &mut Scene, overlay: &Overlay, view: &View, style: &
     if overlay.is_empty() || !view.is_valid() {
         return report;
     }
-    let to_dev = view.world_to_device();
-    let px = view.logical_to_device().as_coeffs()[0];
-    let id = Affine::IDENTITY;
-    let dev = |p: Point| to_dev * p;
-
-    if let Some(r) = overlay.marquee {
-        let path = polygon(&[
-            dev(Point::new(r.x0, r.y0)),
-            dev(Point::new(r.x1, r.y0)),
-            dev(Point::new(r.x1, r.y1)),
-            dev(Point::new(r.x0, r.y1)),
-        ]);
-        scene.fill(Fill::NonZero, id, style.accent.with_alpha(0.1), None, &path);
-        scene.stroke(&Stroke::new(px), id, style.accent, None, &path);
+    let pen = Pen {
+        to_dev: view.world_to_device(),
+        px: view.logical_to_device().as_coeffs()[0],
+        style,
+        zoom: view.zoom,
+        scale: view.scale(),
+    };
+    report.items += paint_marquee(scene, &pen, overlay.marquee);
+    report.items += paint_lasso(scene, &pen, &overlay.lasso);
+    report.items += paint_hover(scene, &pen, &overlay.hover);
+    report.items += paint_binding(scene, &pen, &overlay.binding);
+    report.items += paint_selection(scene, &pen, &overlay.selection);
+    report.items += paint_point_handles(scene, &pen, &overlay.point_handles);
+    for g in &overlay.guides {
+        paint_guide(scene, g, &pen.to_dev, style, pen.px);
         report.items += 1;
     }
+    report.items += paint_snap_point(scene, &pen, overlay.snap_point);
+    report.items += paint_cursors(scene, &pen, &overlay.cursors);
+    report
+}
 
-    if overlay.lasso.len() >= 2 {
-        let path = polygon(&overlay.lasso.iter().copied().map(dev).collect::<Vec<_>>());
-        scene.fill(Fill::NonZero, id, style.accent.with_alpha(0.05), None, &path);
-        scene.stroke(&Stroke::new(px), id, style.accent, None, &path);
-        report.items += 1;
+fn paint_marquee(scene: &mut Scene, pen: &Pen, marquee: Option<Rect>) -> usize {
+    let Some(r) = marquee else { return 0 };
+    let path = polygon(&[
+        pen.dev(Point::new(r.x0, r.y0)),
+        pen.dev(Point::new(r.x1, r.y0)),
+        pen.dev(Point::new(r.x1, r.y1)),
+        pen.dev(Point::new(r.x0, r.y1)),
+    ]);
+    scene.fill(Fill::NonZero, Affine::IDENTITY, pen.style.accent.with_alpha(0.1), None, &path);
+    scene.stroke(&Stroke::new(pen.px), Affine::IDENTITY, pen.style.accent, None, &path);
+    1
+}
+
+fn paint_lasso(scene: &mut Scene, pen: &Pen, lasso: &[Point]) -> usize {
+    if lasso.len() < 2 {
+        return 0;
     }
+    let path = polygon(&lasso.iter().copied().map(|p| pen.dev(p)).collect::<Vec<_>>());
+    scene.fill(Fill::NonZero, Affine::IDENTITY, pen.style.accent.with_alpha(0.05), None, &path);
+    scene.stroke(&Stroke::new(pen.px), Affine::IDENTITY, pen.style.accent, None, &path);
+    1
+}
 
-    for b in &overlay.hover {
-        if b.is_valid() {
-            let path = polygon(&b.corners().map(dev));
-            scene.stroke(&Stroke::new(1.5 * px), id, style.accent.with_alpha(0.6), None, &path);
-            report.items += 1;
-        }
+fn paint_hover(scene: &mut Scene, pen: &Pen, hover: &[OrientedBox]) -> usize {
+    let mut items = 0;
+    for b in hover.iter().filter(|b| b.is_valid()) {
+        let path = polygon(&b.corners().map(|p| pen.dev(p)));
+        scene.stroke(&Stroke::new(1.5 * pen.px), Affine::IDENTITY, pen.style.accent.with_alpha(0.6), None, &path);
+        items += 1;
     }
+    items
+}
 
-    for h in &overlay.binding {
-        let path = to_dev * &h.outline;
-        scene.stroke(&Stroke::new(5.0 * px), id, style.accent.with_alpha(0.35), None, &path);
+fn paint_binding(scene: &mut Scene, pen: &Pen, binding: &[BindingHighlight]) -> usize {
+    for h in binding {
+        let path = pen.to_dev * &h.outline;
+        scene.stroke(&Stroke::new(5.0 * pen.px), Affine::IDENTITY, pen.style.accent.with_alpha(0.35), None, &path);
         if let Some(p) = h.at {
-            let c = Circle::new(dev(p), 4.0 * px);
-            scene.fill(Fill::NonZero, id, style.accent, None, &c);
+            let c = Circle::new(pen.dev(p), 4.0 * pen.px);
+            scene.fill(Fill::NonZero, Affine::IDENTITY, pen.style.accent, None, &c);
         }
-        report.items += 1;
     }
+    binding.len()
+}
 
-    for s in &overlay.selection {
-        if !s.obox.is_valid() {
-            continue;
-        }
-        let path = polygon(&s.obox.corners().map(dev));
+fn paint_selection(scene: &mut Scene, pen: &Pen, selection: &[SelectionBox]) -> usize {
+    let (px, style) = (pen.px, pen.style);
+    let mut items = 0;
+    for s in selection.iter().filter(|s| s.obox.is_valid()) {
+        let path = polygon(&s.obox.corners().map(|p| pen.dev(p)));
         let mut stroke = Stroke::new(px);
         // Dashes are expanded into path segments, so a box far larger than the screen would cost a lot: draw it
         // solid once it would need more than MAX_DASHES.
-        let perimeter = 2.0 * (s.obox.size.width + s.obox.size.height) * view.scale();
+        let perimeter = 2.0 * (s.obox.size.width + s.obox.size.height) * pen.scale;
         if s.dashed && perimeter / (2.0 * style.dash * px) <= MAX_DASHES {
             stroke = stroke.with_dashes(0.0, [style.dash * px, style.dash * px]);
         }
-        scene.stroke(&stroke, id, style.accent, None, &path);
+        scene.stroke(&stroke, Affine::IDENTITY, style.accent, None, &path);
         // The rotate offset is in logical pixels, so convert it to world units for the geometry.
-        let offset = style.rotate_offset / view.zoom.max(1e-9);
+        let offset = style.rotate_offset / pen.zoom.max(1e-9);
         for (kind, at) in box_handles(&s.obox, s.handles, offset) {
-            let c = dev(at);
+            let c = pen.dev(at);
             match kind {
                 BoxHandle::Rotate => paint_rotate_handle(scene, c, style, px),
                 BoxHandle::Corner(_) | BoxHandle::Edge(_) => {
                     let half = style.handle * px / 2.0;
                     let r = Rect::new(c.x - half, c.y - half, c.x + half, c.y + half);
-                    scene.fill(Fill::NonZero, id, Color::WHITE, None, &r);
-                    scene.stroke(&Stroke::new(1.5 * px), id, style.accent, None, &r);
+                    scene.fill(Fill::NonZero, Affine::IDENTITY, Color::WHITE, None, &r);
+                    scene.stroke(&Stroke::new(1.5 * px), Affine::IDENTITY, style.accent, None, &r);
                 }
             }
         }
-        report.items += 1;
+        items += 1;
     }
+    items
+}
 
-    for h in &overlay.point_handles {
-        let c = dev(h.at);
+fn paint_point_handles(scene: &mut Scene, pen: &Pen, handles: &[PointHandle]) -> usize {
+    let (px, style) = (pen.px, pen.style);
+    for h in handles {
+        let c = pen.dev(h.at);
         let (radius, fill, width) = match h.kind {
             PointKind::End | PointKind::Vertex => (style.handle * px / 2.0, Color::WHITE, 2.0 * px),
             PointKind::Midpoint => (style.handle * px / 3.0, Color::from_rgba8(200, 220, 255, 200), 1.5 * px),
         };
         let circle = Circle::new(c, radius);
-        scene.fill(Fill::NonZero, id, fill, None, &circle);
-        scene.stroke(&Stroke::new(width), id, style.accent, None, &circle);
-        report.items += 1;
+        scene.fill(Fill::NonZero, Affine::IDENTITY, fill, None, &circle);
+        scene.stroke(&Stroke::new(width), Affine::IDENTITY, style.accent, None, &circle);
     }
+    handles.len()
+}
 
-    for g in &overlay.guides {
-        paint_guide(scene, g, &to_dev, style, px);
-        report.items += 1;
-    }
+fn paint_snap_point(scene: &mut Scene, pen: &Pen, snap_point: Option<Point>) -> usize {
+    let Some(p) = snap_point else { return 0 };
+    let c = pen.dev(p);
+    let a = 6.0 * pen.px;
+    let mut path = BezPath::new();
+    path.move_to(Point::new(c.x - a, c.y));
+    path.line_to(Point::new(c.x + a, c.y));
+    path.move_to(Point::new(c.x, c.y - a));
+    path.line_to(Point::new(c.x, c.y + a));
+    scene.stroke(&Stroke::new(pen.px), Affine::IDENTITY, pen.style.guide, None, &path);
+    1
+}
 
-    if let Some(p) = overlay.snap_point {
-        let c = dev(p);
-        let a = 6.0 * px;
-        let mut path = BezPath::new();
-        path.move_to(Point::new(c.x - a, c.y));
-        path.line_to(Point::new(c.x + a, c.y));
-        path.move_to(Point::new(c.x, c.y - a));
-        path.line_to(Point::new(c.x, c.y + a));
-        scene.stroke(&Stroke::new(px), id, style.guide, None, &path);
-        report.items += 1;
-    }
-
-    for cur in &overlay.cursors {
-        let c = dev(cur.at);
+fn paint_cursors(scene: &mut Scene, pen: &Pen, cursors: &[RemoteCursor]) -> usize {
+    let px = pen.px;
+    for cur in cursors {
+        let c = pen.dev(cur.at);
         let mut path = BezPath::new();
         path.move_to(c);
         path.line_to(c + Vec2::new(0.0, 18.0 * px));
         path.line_to(c + Vec2::new(12.0 * px, 13.0 * px));
         path.close_path();
-        scene.fill(Fill::NonZero, id, cur.color, None, &path);
-        scene.stroke(&Stroke::new(1.5 * px), id, Color::WHITE, None, &path);
-        report.items += 1;
+        scene.fill(Fill::NonZero, Affine::IDENTITY, cur.color, None, &path);
+        scene.stroke(&Stroke::new(1.5 * px), Affine::IDENTITY, Color::WHITE, None, &path);
     }
-    report
+    cursors.len()
 }
 
 fn paint_rotate_handle(scene: &mut Scene, c: Point, style: &OverlayStyle, px: f64) {
