@@ -512,6 +512,7 @@ fn nudge_moves_by_the_setting_one_unit_when_fine_or_a_given_step() {
 /// docs/exceptions.md E15: holding an arrow key repeats `element.nudge`; the burst is one undo step and
 /// undoing it restores the start.
 #[test]
+#[allow(non_snake_case)]
 fn exception_E15_nudge_burst_is_one_undo_step() {
     let mut s = shapes();
     let start = pos(&s, "e1");

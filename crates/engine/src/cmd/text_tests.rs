@@ -763,6 +763,7 @@ fn a_broken_formula_is_text_and_text_set_accepts_it() {
 // ---- the editor stages its result (docs/exceptions.md E16) ----
 
 #[test]
+#[allow(non_snake_case)]
 fn exception_N3_a_staged_text_edit_is_what_the_commit_ends_with() {
     let (mut s, _f) = testing::session();
     let t = text_at(&mut s, "abc", 0.0, 0.0);

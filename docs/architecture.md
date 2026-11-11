@@ -40,6 +40,8 @@ Package names are `drafftink-<crate>`; the desktop app is `drafftink`.
 5. **xtask** uses no workspace crate, and no workspace crate uses it.
 6. **UI and OS crates only at L6 and above.** `egui*`, `eframe`, `winit`, `rfd`, `arboard`, `accesskit*` and `bevy*` may not appear below L6, in any dependency kind. Lower layers reach the OS through port traits in `engine`.
 7. **GPU crates.** `vello*` may appear from L2 (`render`). `wgpu*` may appear in `render`, which names wgpu types that Vello exposes, and from L6. `render` must not create a device or a surface. `gpu` owns the device, the surface and the compositing. Crates at L3 to L5 reach the GPU only through `render`'s encoded scenes.
+6b. **Allowlist below L6.** The denylist in rule 6 only knows the names someone thought of. Every library below L6 also has a row in `ALLOWED_EXTERNAL` (`xtask/src/layers.rs`) naming the external crates it may use (serde, serde_json and thiserror are allowed everywhere; criterion, proptest, insta and tempfile as dev-dependencies). Any other external dependency fails `cargo xtask layers`, so a UI, windowing, GPU, file system or HTTP crate cannot arrive unnoticed. A row entry that the crate no longer uses fails too. A path dependency outside the workspace counts as external. `drafftink-collab` (L4) is the only library below L6 with network crates (tokio, tungstenite, rustls) and browser crates (`web-sys`, `js-sys`): it owns the connection to a room.
+6c. **No I/O of their own below L6.** `cargo xtask clippy` runs a second pass over the library code of every crate below L6, natively and for wasm32, with `xtask/clippy-below-l6/clippy.toml`. It disallows `std::fs`, `std::net`, `std::process`, `std::thread::spawn` and `sleep`, `Instant`, `SystemTime` and the UI types `egui::Context`, `rfd::FileDialog` and `web_sys::Window`. Tests are not in this pass (they read fixtures). An exception is an `#[allow(clippy::disallowed_methods)]` on the item with a comment that says why (today: the profile report written for `cargo xtask perf`, the fixture checker `io::facts`, the native collab transport's network thread). The apps (L8, for example the server) and L6 are outside the pass.
 8. **Every workspace crate has a layer.** A crate missing from the table fails. A table row without a crate fails too, so the table cannot drift.
 9. **Wasm.** Everything at L0 to L5, `drafftink-app`, `drafftink-web` and `drafftink-canvas-js` build for `wasm32-unknown-unknown` (`cargo xtask wasm`). Code below L6 takes time from the `Clock` port: `Instant::now` and `SystemTime::now` are disallowed by `clippy.toml` because they panic in the browser.
 10. **No crashes.** `unwrap`, `expect`, `panic!` and `unsafe` are denied through `[workspace.lints]`. `clippy.toml` allows them in tests.
@@ -49,7 +51,9 @@ Package names are `drafftink-<crate>`; the desktop app is `drafftink`.
 | Rule | Gate |
 |---|---|
 | 1 to 8 | `cargo xtask layers`. It reads `cargo metadata`. The rule engine has unit tests on synthetic graphs. `cargo xtask layers --list` prints each crate's layer |
+| 6b, 6c | `cargo xtask layers` (allowlist) and `cargo xtask clippy` (second pass with `xtask/clippy-below-l6`) |
 | 9 | `cargo xtask wasm` and clippy's `disallowed-methods` |
+| Gesture exceptions | `cargo xtask exceptions --check`: `docs/exceptions.md` against the source and the registry |
 | 10 | `cargo xtask clippy` (`-D warnings`, all targets and features) |
 | Formatting | `cargo xtask fmt` (`rustfmt.toml`) |
 | Licences, advisories, duplicate versions, sources | `cargo xtask deny` (`deny.toml`). Licences must be compatible with AGPL-3.0-only. Duplicate versions are warnings |
@@ -62,4 +66,4 @@ Package names are `drafftink-<crate>`; the desktop app is `drafftink`.
 
 ## Changing the layering
 
-Edit `TABLE`, `SAME_LAYER_EDGES` or `EXTERNAL_RULES` in `xtask/src/layers.rs`, update this page and `plan.md`, and add a unit test for the new rule.
+Edit `TABLE`, `SAME_LAYER_EDGES`, `EXTERNAL_RULES` or `ALLOWED_EXTERNAL` in `xtask/src/layers.rs`, update this page and `plan.md`, and add a unit test for the new rule.

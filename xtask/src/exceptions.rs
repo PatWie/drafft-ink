@@ -81,10 +81,7 @@ pub fn parse(doc: &str) -> Vec<Row> {
             rows.push(Row {
                 id: (*id).to_owned(),
                 tests: spans(test).map(str::to_owned).collect(),
-                functions: spans(function)
-                    .filter_map(|s| s.rsplit("::").next())
-                    .map(str::to_owned)
-                    .collect(),
+                functions: spans(function).filter_map(|s| s.rsplit("::").next()).map(str::to_owned).collect(),
             });
         }
     }
@@ -171,7 +168,10 @@ pub fn check(rows: &[Row], source: &Source) -> Vec<String> {
             }
             for function in &row.functions {
                 if !source.functions.contains(function) {
-                    problems.push(format!("{DOC}: row {} names the function `{function}`, which no source file defines", row.id));
+                    problems.push(format!(
+                        "{DOC}: row {} names the function `{function}`, which no source file defines",
+                        row.id
+                    ));
                 }
             }
             if !source.markers.contains(&row.id) {
@@ -193,7 +193,10 @@ pub fn check(rows: &[Row], source: &Source) -> Vec<String> {
     }
     for marker in &source.markers {
         if !ids.contains(marker.as_str()) {
-            problems.push(format!("a source file marks a `{MARKER}{}` with no row {marker} in section 5 of {DOC}", &marker[1..]));
+            problems.push(format!(
+                "a source file marks a `{MARKER}{}` with no row {marker} in section 5 of {DOC}",
+                &marker[1..]
+            ));
         }
     }
     problems
@@ -287,7 +290,8 @@ mod tests {
 
     #[test]
     fn a_row_without_a_test_fails() {
-        let doc = DOC_TEXT.replace("| Test | `exception_E2_move_equals_plain_command`, `edit/tests/other` |", "| Test | none |");
+        let doc = DOC_TEXT
+            .replace("| Test | `exception_E2_move_equals_plain_command`, `edit/tests/other` |", "| Test | none |");
         let problems = check(&parse(&doc), &source());
         assert!(problems.iter().any(|p| p.contains("E2") && p.contains("names no test")), "{problems:?}");
     }

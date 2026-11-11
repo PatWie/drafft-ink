@@ -95,7 +95,10 @@ fn exceptions_doc_matches_the_registry() {
         .filter(|s| s.undo == Undo::Gesture && !class_a.contains(s.id))
         .map(|s| s.id)
         .collect();
-    assert!(unlisted.is_empty(), "commands with `undo = Gesture` that no class A row of docs/exceptions.md names: {unlisted:?}");
+    assert!(
+        unlisted.is_empty(),
+        "commands with `undo = Gesture` that no class A row of docs/exceptions.md names: {unlisted:?}"
+    );
 
     // Every class A row names at least one gesture command (a class A row for something else is a stale row).
     for r in rows.iter().filter(|r| r.class == "A") {
@@ -116,6 +119,7 @@ fn rows_have_unique_ids() {
 /// N2: a collaborator's update changes the document and the redraw state without a command, a ring entry of a
 /// user action, or an undo step.
 #[test]
+#[allow(non_snake_case)]
 fn exception_N2_a_remote_update_changes_the_document_without_a_command() {
     let mut a = testing::headless_session();
     let mut b = testing::headless_session();

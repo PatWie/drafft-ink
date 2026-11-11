@@ -63,7 +63,9 @@ fn gpu() -> &'static Mutex<Gpu> {
 macro_rules! need_gpu {
     () => {
         if gpu_opt().is_none() {
-            drafftink_profile::report_skip("no GPU adapter on this machine; set DRAFFTINK_REQUIRE_GPU=1 to fail instead");
+            drafftink_profile::report_skip(
+                "no GPU adapter on this machine; set DRAFFTINK_REQUIRE_GPU=1 to fail instead",
+            );
             return;
         }
     };

@@ -14,6 +14,7 @@ use serde_json::json;
 use super::element_common::target_refusal;
 use crate::refusal::Refusal;
 use crate::session::{Ref, Session};
+use crate::spec::{Host, HostEffect};
 use crate::spec::{Batch, CommandSpec, Facts, Gate, Mutates, PortSet, Redraw, RingMode, Selection, TextGate, Typed, Undo};
 
 /// The refusal code for text that is not a usable link.
@@ -200,6 +201,7 @@ const SET: Facts = Facts {
     ring: RingMode::Always,
     palette: true,
     agent: true,
+    doc_write: crate::spec::DocWrite::Edit,
 };
 
 const OPEN: Facts = Facts {
@@ -209,6 +211,7 @@ const OPEN: Facts = Facts {
     view_only: Gate::Allowed,
     redraw: Redraw::Camera,
     agent: false,
+    doc_write: crate::spec::DocWrite::NotDocument,
     ..SET
 };
 
@@ -222,6 +225,7 @@ pub const COMMANDS: &[CommandSpec] = &[
         &Typed::new(set_link),
         SET,
     )
+    .host(Host::effect(HostEffect::CompletesLinkEdit))
     .refusals(&[INVALID_LINK])
     .example(r##"{"id":"e1","link":"https://example.com"}"##),
     CommandSpec::new(
@@ -232,6 +236,7 @@ pub const COMMANDS: &[CommandSpec] = &[
         &Typed::new(open_link),
         OPEN,
     )
+    .host(Host::effect(HostEffect::ReturnsUrlToOpen))
     .available(any_link)
     .refusals(&[NO_LINK])
     .example(r#"{"id":"e1"}"#),

@@ -1037,6 +1037,7 @@ const DOC_OBSERVED: Facts = Facts {
     ring: RingMode::Always,
     palette: false,
     agent: true,
+    doc_write: crate::spec::DocWrite::Edit,
 };
 
 const CREATE: Facts = Facts { mutates: Mutates::DOC.with(Mutates::OBSERVED).with(Mutates::TOOL), ..DOC_OBSERVED };

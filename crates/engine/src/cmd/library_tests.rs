@@ -203,6 +203,7 @@ fn insert_puts_a_copy_centred_on_the_point_selects_it_and_undoes_in_one_step() {
 /// docs/exceptions.md E14: releasing a dragged library item is one plain `library.insert` at the release point.
 /// No gesture runs, so nothing is half-done before the release, and one release is one ring entry.
 #[test]
+#[allow(non_snake_case)]
 fn exception_E14_a_library_drop_is_one_plain_command() {
     let (mut s, _f) = drawn();
     run(&mut s, "library.add", json!({"name": "Pair"}));

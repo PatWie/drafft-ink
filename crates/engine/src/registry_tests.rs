@@ -11,7 +11,7 @@ use serde_json::{Value, json};
 use crate::refusal::is_shared_code;
 use crate::registry::Registry;
 use crate::session::Session;
-use crate::spec::{Batch, CommandSpec, Gate, Mutates, Scope, Selection, Status, TextGate, Undo};
+use crate::spec::{Batch, CommandSpec, DocWrite, Gate, Mutates, Scope, Selection, Status, TextGate, Undo};
 use crate::testing;
 
 fn specs() -> Vec<&'static CommandSpec> {
@@ -66,37 +66,6 @@ fn words_are_plain() {
     }
 }
 
-/// Commands that replace or stream the document, or that cancel a gesture or commit a text edit, so they
-/// are `NoUndo` although they touch the document (docs/commands.md §1.2 test 2). A new entry needs a
-/// reviewer.
-const DOC_EXEMPT_UNDO: &[&str] = &[
-    "doc.new",
-    "doc.open",
-    "doc.show_intro",
-    "collab.join_room",
-    "history.undo",
-    "history.redo",
-    "gesture.begin",
-    "gesture.update",
-    "gesture.cancel",
-    "tool.cancel",
-];
-/// The same list for the view-only rule, plus `gesture.end`: a gesture never runs in view-only mode on its
-/// own (it cannot start there, and entering the mode cancels a running one).
-const DOC_EXEMPT_VIEW_ONLY: &[&str] = &[
-    "doc.new",
-    "doc.open",
-    "doc.show_intro",
-    "collab.join_room",
-    "history.undo",
-    "history.redo",
-    "gesture.begin",
-    "gesture.update",
-    "gesture.end",
-    "gesture.cancel",
-    "tool.cancel",
-];
-
 #[test]
 fn facts_are_consistent() {
     for s in specs() {
@@ -110,20 +79,32 @@ fn facts_are_consistent() {
         } else {
             assert!(!s.mutates.is_empty(), "`{id}` is not reads_only but declares no state class it changes");
         }
-        if s.mutates.contains(Mutates::DOC) {
-            if !DOC_EXEMPT_VIEW_ONLY.contains(&id) {
+        // The document rules come from the declared `doc_write`, not from a list of ids.
+        assert_eq!(
+            s.mutates.contains(Mutates::DOC),
+            s.doc_write != DocWrite::NotDocument,
+            "`{id}` declares doc_write `{}` but mutates {:?}",
+            s.doc_write.name(),
+            s.mutates
+        );
+        match s.doc_write {
+            DocWrite::NotDocument => {}
+            DocWrite::Edit => {
                 assert_eq!(
                     s.view_only,
                     Gate::Refused,
-                    "`{id}` changes the document, so it must refuse in view-only mode"
+                    "`{id}` edits the document, so it must refuse in view-only mode"
                 );
+                assert_ne!(s.undo, Undo::NoUndo, "`{id}` edits the document, so it needs an undo class");
             }
-            if !DOC_EXEMPT_UNDO.contains(&id) {
-                assert_ne!(s.undo, Undo::NoUndo, "`{id}` changes the document, so it needs an undo class");
+            DocWrite::Replaces => {
+                assert_eq!(s.view_only, Gate::Refused, "`{id}` replaces the document, so it refuses in view-only mode");
+                assert_ne!(s.undo, Undo::Gesture, "`{id}` replaces the document, so it is not a gesture");
             }
+            DocWrite::Managed => {}
         }
         if s.undo == Undo::Gesture {
-            assert!(s.mutates.contains(Mutates::DOC), "`{id}` is a gesture command, so it changes the document");
+            assert_eq!(s.doc_write, DocWrite::Edit, "`{id}` is a gesture command, so it is an ordinary edit");
         }
         if s.coalesce.is_some() {
             assert_ne!(s.undo, Undo::NoUndo, "`{id}` coalesces undo steps but has no undo");
@@ -133,14 +114,32 @@ fn facts_are_consistent() {
         }
         if s.is_own_transaction() {
             assert!(
-                matches!(s.family, "gesture" | "history"),
-                "only the gesture and history families manage their own transaction (`{id}`)"
+                matches!(s.doc_write, DocWrite::Managed | DocWrite::NotDocument),
+                "`{id}` manages its own transaction, so it is not an ordinary edit or a replacement (doc_write `{}`)",
+                s.doc_write.name()
+            );
+        }
+        if s.own_agent_tool {
+            assert!(s.agent && s.reads_only, "`{id}` has an agent tool of its own, so it is a read-only agent command");
+        }
+        if s.host.text_editor_takes_style {
+            assert_eq!(
+                s.while_text_edit,
+                TextGate::Refused,
+                "`{id}`: the editor takes the style only where the command refuses"
             );
         }
         if let Status::Planned(reason) = s.status {
             assert!(reason.len() > 8, "the reason for planned `{id}` must say something");
         }
     }
+}
+
+/// `Executor::commit_text_edit` runs `text.edit_end`; the command must therefore not commit a text edit itself.
+#[test]
+fn the_command_that_commits_a_text_edit_runs_during_one() {
+    let spec = Registry::global().find(crate::executor::TEXT_EDIT_END).unwrap();
+    assert_eq!(spec.while_text_edit, TextGate::Allowed);
 }
 
 #[test]

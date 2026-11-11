@@ -296,6 +296,7 @@ const DOC: Facts = Facts {
     ring: RingMode::Always,
     palette: true,
     agent: true,
+    doc_write: crate::spec::DocWrite::Edit,
 };
 
 /// Changes the editing group and the selection only.
@@ -304,6 +305,7 @@ const OBSERVED: Facts = Facts {
     mutates: Mutates::OBSERVED,
     needs_selection: Selection::No,
     view_only: Gate::Allowed,
+    doc_write: crate::spec::DocWrite::NotDocument,
     ..DOC
 };
 

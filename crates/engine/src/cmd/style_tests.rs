@@ -539,6 +539,7 @@ fn scrubbing_opacity_is_one_gesture_and_one_undo_step() {
 /// docs/exceptions.md E13: a scrub (`gesture.begin`, `update`, `end`) ends in the same document, the same
 /// defaults and the same persisted setting as one plain `style.set` with the final props.
 #[test]
+#[allow(non_snake_case)]
 fn exception_E13_scrub_equals_plain_command() {
     for (first, last) in [
         (json!({"opacity": 0.9}), json!({"opacity": 0.2})),

@@ -118,11 +118,10 @@ pub struct Catalog {
     tools: Vec<Tool>,
 }
 
-/// Commands that have a tool of their own, so no family tool lists them.
-const HAS_OWN_TOOL: &[&str] = &["engine.commands", "engine.describe", "engine.recent"];
-
+/// A command has a tool of its own when its registration says so (`CommandSpec::own_agent_tool`), so no family
+/// tool lists it.
 fn is_listed(spec: &CommandSpec) -> bool {
-    spec.agent && matches!(spec.status, Status::Stable) && !HAS_OWN_TOOL.contains(&spec.id)
+    spec.agent && matches!(spec.status, Status::Stable) && !spec.own_agent_tool
 }
 
 fn takes_files_or_network(spec: &CommandSpec) -> bool {

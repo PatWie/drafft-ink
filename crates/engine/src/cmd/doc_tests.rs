@@ -707,6 +707,7 @@ const STAND_IN: &[CommandSpec] = &[CommandSpec::new(
         ring: RingMode::Always,
         palette: false,
         agent: false,
+    doc_write: crate::spec::DocWrite::Edit,
     },
 )];
 
@@ -866,6 +867,7 @@ fn a_write_that_finishes_later_keeps_the_document_dirty_until_it_is_confirmed() 
 }
 
 #[test]
+#[allow(non_snake_case)]
 fn exception_N1_a_finished_write_marks_the_tab_saved() {
     let (mut s, _f) = drawn(1);
     s.ports.files = Some(Box::new(LaterFiles(0)));

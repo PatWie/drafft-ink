@@ -273,7 +273,9 @@ What the suites cannot cover is listed in `docs/review/e2e-findings.md` with the
 | `DRAFFTINK_SCENARIO_TRACE=1` | print every step's output (use with `--nocapture`) |
 | `DRAFFTINK_SCENARIO_KEEP_GOING=1` | report all failing steps, not only the first |
 | `DRAFFTINK_UPDATE_SNAPSHOTS=1` | write snapshot files instead of comparing |
-| `DRAFFTINK_REQUIRE_GPU=1` | a missing GPU adapter (scenarios, browser and native e2e) fails instead of skipping |
+| `DRAFFTINK_REQUIRE_GPU=1` | a missing GPU adapter (GPU tests, scenarios, browser and native e2e) fails instead of skipping. One rule in every crate and tool: set, not empty and not `0` |
+| `DRAFFTINK_OLD_REPO=<dir>` | where the old app is checked out, for `cargo xtask fixtures` and `regen.sh`. Without it xtask looks next to the checkout and next to the main worktree |
+| `DRAFFTINK_REQUIRE_OLD=1` | `cargo xtask fixtures` fails when it cannot find the old app, instead of printing `SKIPPED:` and skipping the regeneration check |
 | `DRAFFTINK_E2E=1` | set by `cargo xtask e2e`; the native e2e tests skip without it |
 | `DRAFFTINK_E2E_ADAPTER=swiftshader` | the browser suite uses Chromium's CPU adapter |
 | `DRAFFTINK_E2E_FILTER=<title>` | run only the browser tests whose title matches |
@@ -283,7 +285,8 @@ What the suites cannot cover is listed in `docs/review/e2e-findings.md` with the
 
 | Gate | Runs |
 |---|---|
-| `cargo xtask test` | the whole suite, scenarios included |
+| `cargo xtask test` | the whole suite, scenarios included. Prints `skipped N (gpu .., e2e ..)`: a test that cannot run here prints a `SKIPPED:` line (nextest keeps it in `target/nextest/ci/junit.xml`) and the gate counts them. `cargo xtask ci` shows the count in its table |
+| `cargo xtask exceptions --check` | `docs/exceptions.md` against the source: every row has a test that exists, every `Undo::Gesture` command has a class A row, every non-command write has a row |
 | `cargo xtask harness` | a quick shape check of `tests/scenarios`, then the accounting test, the scenario guard and every scenario |
 | `cargo xtask fixtures` | the fixture facts |
 | `cargo xtask ci` | all gates in order |

@@ -5,7 +5,7 @@
 //!   `xtask/planned-paths.txt` (a shrink-only list of docs that are promised but not written).
 //! - Every `cargo xtask <name>` AGENTS.md mentions is a command xtask has.
 //! - The toolchain in `.github/workflows/ci.yml` equals the one in `rust-toolchain.toml`.
-//! - `xtask/pending-gates.txt` and `xtask/planned-paths.txt` only shrink compared with
+//! - `xtask/pending-gates.txt`, `xtask/planned-paths.txt` and `crates/engine/unregistered.txt` only shrink compared with
 //!   `$XTASK_BASE_REF` (default `origin/main`). Skipped when git cannot read that ref.
 
 use std::collections::BTreeSet;
@@ -17,6 +17,7 @@ use crate::tools::git;
 pub const AGENTS_MAX_CHARS: usize = 5000;
 const PLANNED_PATHS: &str = "xtask/planned-paths.txt";
 const PENDING_GATES: &str = "xtask/pending-gates.txt";
+const UNREGISTERED: &str = "crates/engine/unregistered.txt";
 const PATH_EXTENSIONS: &[&str] = &[".md", ".toml", ".rs", ".yml", ".yaml", ".json", ".txt", ".py", ".sh"];
 
 /// The entries of a list file: one per line, `#` starts a comment.
@@ -139,14 +140,14 @@ pub fn run(root: &Path) -> Result<(), String> {
     }
 
     let base_ref = std::env::var("XTASK_BASE_REF").unwrap_or_else(|_| "origin/main".into());
-    for rel in [PENDING_GATES, PLANNED_PATHS] {
+    for rel in [PENDING_GATES, PLANNED_PATHS, UNREGISTERED] {
         match git(root, &["show", &format!("{base_ref}:{rel}")]) {
             Some(base_text) => {
                 for entry in added(&entries(&base_text), &entries(&read(rel)?)) {
                     problems.push(format!("{rel}: `{entry}` is new compared with {base_ref}; the list only shrinks"));
                 }
             }
-            None => println!("standards: {base_ref}:{rel} not readable; skipping the shrink-only check"),
+            None => println!("{} standards: {base_ref}:{rel} not readable; the shrink-only check did not run", crate::skips::MARKER),
         }
     }
 

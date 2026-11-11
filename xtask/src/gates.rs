@@ -170,16 +170,9 @@ fn test(root: &Path, args: &[String]) -> Result<Vec<String>, String> {
             let junit = root.join("target/nextest/ci/junit.xml");
             // A stale file from an earlier run would be counted again.
             let _ = std::fs::remove_file(&junit);
-            let outcome = run(cargo(root).args([
-                "nextest",
-                "run",
-                "--profile",
-                "ci",
-                "--workspace",
-                "--all-features",
-                "--no-tests=pass",
-            ])
-            .args(args));
+            let outcome = run(cargo(root)
+                .args(["nextest", "run", "--profile", "ci", "--workspace", "--all-features", "--no-tests=pass"])
+                .args(args));
             let groups = std::fs::read_to_string(&junit).map(|text| skips::count(&text)).unwrap_or_default();
             let note = skips::describe(&groups);
             println!("test: {note}");
@@ -314,7 +307,12 @@ pub fn summary(results: &[Row]) -> String {
     out.push_str("----------  -------  --------\n");
     for r in results {
         let notes = if r.notes.is_empty() { String::new() } else { format!("  {}", r.notes.join("; ")) };
-        out.push_str(&format!("{:<10}  {:<7}  {:>7.1}s{notes}\n", r.gate.name(), r.outcome.label(), r.took.as_secs_f64()));
+        out.push_str(&format!(
+            "{:<10}  {:<7}  {:>7.1}s{notes}\n",
+            r.gate.name(),
+            r.outcome.label(),
+            r.took.as_secs_f64()
+        ));
     }
     let total: Duration = results.iter().map(|r| r.took).sum();
     out.push_str(&format!("{:<10}  {:<7}  {:>7.1}s\n", "total", "", total.as_secs_f64()));

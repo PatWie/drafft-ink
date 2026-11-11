@@ -93,7 +93,7 @@ Facts that matter beyond the obvious:
 Registry tests (in `crates/engine/src/registry_tests.rs`, all run in `cargo xtask ci`):
 
 1. ids are unique, match `^[a-z]+\.[a-z_]+$`, and the prefix equals `family`.
-2. Every fact above is declared. `reads_only` implies `mutates` is empty and `undo = NoUndo`. `mutates` containing `Doc` implies `view_only = Refused`, and implies `undo != NoUndo` except for the commands that replace or stream the document: `doc.new`, `doc.open`, `doc.show_intro`, `collab.join_room`, `history.undo`, `history.redo`, `gesture.begin`, `gesture.update`, `gesture.cancel`. `tool.cancel` is on the list for the view-only rule because it must keep working in view-only mode (one of its rungs commits a text edit, as `text.edit_end` does, and another cancels a gesture); it is `Undoable` (a text edit it commits is one undo step), so the undo exception in the test is not needed for it. For the view-only rule alone, `gesture.update`, `gesture.end` and `gesture.cancel` are also exempt: a gesture cannot start in view-only mode, and entering it cancels a running gesture, so a gesture command never runs in view-only mode on its own. The exception list is a constant in the test, so a new entry needs a reviewer.
+2. Every fact above is declared. `reads_only` implies `mutates` is empty and `undo = NoUndo`. A command whose `mutates` contains `D` declares how it relates to the document (`doc_write`, Appendix A2): an `edit` refuses in view-only mode and has an undo class other than `NoUndo`; a command that `replaces` the document (`doc.new`, `doc.open`, `doc.show_intro`, `collab.join_room`) refuses in view-only mode and is not a gesture; the commands that are `managed` (`history.undo`, `history.redo`, the `gesture` commands, `tool.cancel`) carry no further rule. The rule is derived from the declared fact, not from a list of ids in the test, and a command that manages its own transaction is never an `edit` or a `replaces`.
 3. Titles are unique. Default shortcuts do not collide within the same `when` scope.
 4. Every `Refusal` code a command can return is in the catalog of §1.5 (checked by `refusal_codes_are_catalogued`, which scans the specs' declared `refusals: &[&str]` lists).
 5. `hostile_params_never_panic`: every command, with every hostile JSON value for every argument key, never panics and never changes the document when it refuses.
@@ -1733,3 +1733,46 @@ Notes on the table:
 - Commands with `agent` = `n` are UI plumbing (`doc.drop`, `doc.autosave`, `tool.hold`, `tool.release`, `text.edit_begin`, `text.edit_end`, `view.set_viewport`, `collab.set_pointer`, `gesture.*`). For `gesture.*` an agent uses the plain command; the others have no meaning outside a running UI.
 - `settings.*` use `redraw = scene` because grid style, frame rendering and snap overlays change what is drawn. A setting that changes nothing visible still sets the reason, and the idle gate counts a redraw only if one was requested.
 - `view.*` camera commands use `redraw = camera`: the renderer re-composites cached element fragments with the new transform and does not re-encode them.
+
+### Appendix A2: document, host and agent-tool facts
+
+Four more facts of a registration, kept apart from the table above because most commands have the default value. A command that is not listed has the default for all of them, and `registry_tests` / `catalog_tests` (`facts_match_appendix_a2`) fail when a registration differs from its row, when a row lists nothing but defaults, and when a row names an unregistered id.
+
+| Column | Values |
+|---|---|
+| doc write | `not_document`: the command does not change the document (`mutates` has no `D`). `edit`: an ordinary edit of the open document: an undo class other than `NoUndo`, refuses in view-only mode. `replaces`: replaces the document wholesale (`doc.new`, `doc.open`, `doc.show_intro`, `collab.join_room`): refuses in view-only mode and is not a gesture. `managed`: manages the document state itself (`history.undo`, `history.redo`, the `gesture` commands, `tool.cancel`). Default: `edit` when `mutates` has `D`, else `not_document`. |
+| host effect | What a host (the UI) does after the command ran, read from the registration instead of matched by id. `-` is the default. `completes_rename`, `completes_rename_then_save_as`, `completes_export`, `completes_library_add`, `completes_link_edit`: success closes the dialog or clears the field that asked for it. `shows_convert_popup`: success after a keyboard conversion shows the popup. `returns_url_to_open`: success returns a `url` for the host to open. `shows_search_results`: success fills the open search panel. `begins_gesture`, `ends_gesture`, `ends_gesture_on_refusal`: the host's scrub follows the gesture commands. `ends_equation_edit`: any answer closes the equation editor. |
+| refusal toast | `show` (default), or `silent`: the host does not toast a refusal (a scrub that lost its gesture just stops). |
+| key repeat | `repeats` (default), or `first_press_only`: auto-repeat of a held key does not run the command again (`tool.hold`). |
+| editor takes style | `y`: during a text edit the host sends a style choice to the text editor instead of running this command, which refuses with `text_editing` (`style.set`). Default `n`. |
+| own agent tool | `y`: the agent bridge gives the command a tool of its own, so no family tool lists it. Default `n`. |
+
+| id | doc write | host effect | refusal toast | key repeat | editor takes style | own agent tool |
+|---|---|---|---|---|---|---|
+| `collab.join_room` | replaces | - | show | repeats | n | n |
+| `doc.new` | replaces | - | show | repeats | n | n |
+| `doc.open` | replaces | - | show | repeats | n | n |
+| `doc.rename` | edit | completes_rename_then_save_as | show | repeats | n | n |
+| `doc.export` | not_document | completes_export | show | repeats | n | n |
+| `doc.show_intro` | replaces | - | show | repeats | n | n |
+| `element.convert` | edit | shows_convert_popup | show | repeats | n | n |
+| `element.set_link` | edit | completes_link_edit | show | repeats | n | n |
+| `element.open_link` | not_document | returns_url_to_open | show | repeats | n | n |
+| `element.query` | not_document | shows_search_results | show | repeats | n | n |
+| `engine.commands` | not_document | - | show | repeats | n | y |
+| `engine.describe` | not_document | - | show | repeats | n | y |
+| `engine.recent` | not_document | - | show | repeats | n | y |
+| `frame.rename` | edit | completes_rename | show | repeats | n | n |
+| `gesture.begin` | managed | begins_gesture | show | repeats | n | n |
+| `gesture.update` | managed | ends_gesture_on_refusal | silent | repeats | n | n |
+| `gesture.end` | managed | ends_gesture | silent | repeats | n | n |
+| `gesture.cancel` | managed | ends_gesture | silent | repeats | n | n |
+| `history.undo` | managed | - | show | repeats | n | n |
+| `history.redo` | managed | - | show | repeats | n | n |
+| `library.add` | not_document | completes_library_add | show | repeats | n | n |
+| `library.rename` | not_document | completes_rename | show | repeats | n | n |
+| `style.set` | edit | - | show | repeats | y | n |
+| `tab.rename` | edit | completes_rename | show | repeats | n | n |
+| `text.edit_end` | edit | ends_equation_edit | show | repeats | n | n |
+| `tool.hold` | not_document | - | show | first_press_only | n | n |
+| `tool.cancel` | managed | - | show | repeats | n | n |
