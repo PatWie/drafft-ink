@@ -149,6 +149,36 @@ fn bench_snapshots(c: &mut Criterion) {
     g.finish();
 }
 
+/// A big snapshot into an empty replica, staged: the call that takes the bytes (what blocks the caller before the
+/// first slice) and the slices that fill the view.
+fn bench_staged_import(c: &mut Criterion) {
+    let mut g = c.benchmark_group("staged_import");
+    g.sample_size(10);
+    let config = LoroConfig { peer_id: Some(2), stage_import_bytes: 1, ..LoroConfig::default() };
+    for n in sizes() {
+        let full = loaded(n, 1).export_snapshot().unwrap_or_default();
+        g.bench_function(BenchmarkId::new("call", n), |b| {
+            b.iter_batched(
+                || LoroStore::with_config(config.clone()).expect("the bench peer id is valid"),
+                |mut s| black_box(s.apply_remote(&full)),
+                BatchSize::LargeInput,
+            );
+        });
+        g.bench_function(BenchmarkId::new("one_slice_of_256", n), |b| {
+            b.iter_batched(
+                || {
+                    let mut s = LoroStore::with_config(config.clone()).expect("the bench peer id is valid");
+                    let _ = s.apply_remote(&full);
+                    s
+                },
+                |mut s| black_box(s.import_step(256)),
+                BatchSize::LargeInput,
+            );
+        });
+    }
+    g.finish();
+}
+
 fn bench_bulk_and_undo(c: &mut Criterion) {
     let mut g = c.benchmark_group("other");
     g.sample_size(10);
@@ -186,5 +216,12 @@ fn bench_bulk_and_undo(c: &mut Criterion) {
     g.finish();
 }
 
-criterion_group!(benches, bench_local_edit, bench_apply_remote, bench_snapshots, bench_bulk_and_undo);
+criterion_group!(
+    benches,
+    bench_local_edit,
+    bench_apply_remote,
+    bench_snapshots,
+    bench_staged_import,
+    bench_bulk_and_undo
+);
 criterion_main!(benches);

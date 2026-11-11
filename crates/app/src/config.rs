@@ -21,6 +21,30 @@ impl StartupLink {
     }
 }
 
+/// The access token for the collaboration server, as the launcher got it (a file or the environment, never the
+/// command line). `Debug` prints a placeholder, so a logged [`AppConfig`] cannot leak it.
+#[derive(Clone, PartialEq, Eq)]
+pub struct StartupToken(String);
+
+impl std::fmt::Debug for StartupToken {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("StartupToken(<hidden>)")
+    }
+}
+
+impl StartupToken {
+    /// The token with surrounding white space removed; `None` when nothing is left.
+    pub fn new(text: &str) -> Option<Self> {
+        let text = text.trim();
+        (!text.is_empty()).then(|| Self(text.to_owned()))
+    }
+
+    /// The token, to pass to `collab.connect`. Do not log it.
+    fn expose(&self) -> &str {
+        &self.0
+    }
+}
+
 /// Start-up choices of the app.
 #[derive(Debug, Clone, Default)]
 pub struct AppConfig {
@@ -28,10 +52,19 @@ pub struct AppConfig {
     pub join: StartupLink,
     /// Server to use when the link names none (`/ws` on the web means "the server that served the page").
     pub default_server: Option<String>,
+    /// The access token for the server when the room is joined at start. Omitted when the server asks for none.
+    pub collab_token: Option<StartupToken>,
     /// A document to open at start (native: the file argument). Replaces the restored workspace's active tab.
     pub open: Option<drafftink_engine::ports::FileRef>,
     /// Show the performance overlay (frame times and redraw reasons) over the canvas.
     pub perf_overlay: bool,
     /// Make `doc.save` write to a stored name when there is no save target (the web has no save dialog).
     pub stored_default_target: bool,
+}
+
+impl AppConfig {
+    /// The token as the argument of `collab.connect`.
+    pub(crate) fn token_arg(&self) -> Option<&str> {
+        self.collab_token.as_ref().map(StartupToken::expose)
+    }
 }

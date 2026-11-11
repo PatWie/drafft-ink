@@ -219,3 +219,141 @@ fn remote_operations_are_not_handed_back_as_unsent() {
     assert_same(&b, &c);
     assert_eq!(c.take_unsent_update().unwrap().map(|_| ()), Some(()), "c's own schema operations were never sent");
 }
+
+// ---- a big import in slices ----
+
+/// A config that stages every import of 1 byte or more.
+fn staging(peer_id: u64) -> drafftink_doc::LoroConfig {
+    drafftink_doc::LoroConfig { peer_id: Some(peer_id), stage_import_bytes: 1, ..Default::default() }
+}
+
+fn empty_staging(peer_id: u64) -> LoroStore {
+    LoroStore::with_config(staging(peer_id)).unwrap()
+}
+
+#[test]
+fn a_big_import_into_an_empty_replica_fills_the_view_in_slices_and_ends_equal_to_a_plain_import() {
+    let (a, mut plain) = big_pair();
+    let bytes = a.export_snapshot().unwrap();
+    let mut b = empty_staging(7);
+
+    let first = b.apply_remote(&bytes).unwrap();
+
+    // The CRDT has everything at once, but the view fills slice by slice.
+    assert!(first.is_empty(), "nothing is decoded by the call itself");
+    assert_eq!(b.len(), 0);
+    let progress = b.import_progress().expect("the import is staged");
+    assert_eq!(progress.done, 0);
+    assert!(progress.total >= N, "{progress:?}");
+    // The CRDT is complete: a peer that asks for what `b` lacks of `a`'s history gets nothing new to apply.
+    assert!(a.export_updates_since(&b.version_vector().unwrap()).is_ok());
+    assert_eq!(
+        b.debug_json()["elements"].as_object().map(serde_json::Map::len),
+        Some(N),
+        "the CRDT holds every element"
+    );
+    b.reset_stats();
+
+    let mut slices = 0;
+    let mut seen = 0;
+    while b.import_progress().is_some() {
+        let cs = b.import_step(500).unwrap();
+        slices += 1;
+        assert!(cs.elements.len() <= 500, "a slice decodes at most what it was given");
+        assert_eq!(b.len(), seen + cs.elements.len());
+        seen += cs.elements.len();
+        assert!(slices < 100, "the import never ends");
+    }
+    assert!(slices >= N / 500, "{slices} slices");
+    assert_eq!(b.stats().elements_decoded as usize, N, "every element is decoded once");
+    assert_eq!(b.len(), N);
+    assert_same(&b, &a);
+    assert_view_matches_loro(&b);
+
+    // The plain path gives the same document.
+    plain.reset_stats();
+    assert_same(&b, &plain);
+    // Nothing the import brought is handed back as an unsent update (a blank replica's own first write is).
+    if let Some(unsent) = b.take_unsent_update().unwrap() {
+        let mut c = LoroStore::from_snapshot(&a.export_snapshot().unwrap()).unwrap();
+        assert!(c.apply_remote(&unsent).unwrap().elements.is_empty(), "no element travels back");
+    }
+}
+
+#[test]
+fn an_import_into_a_replica_that_has_content_is_not_staged() {
+    let (a, _) = big_pair();
+    let mut b = empty_staging(7);
+    let z = zs(1);
+    add(&mut b, vec![rect("mine", &z[0])]);
+    let cs = b.apply_remote(&a.export_snapshot().unwrap()).unwrap();
+    assert!(b.import_progress().is_none());
+    assert_eq!(cs.elements.len(), N, "the whole import was applied by the call");
+    assert_eq!(b.len(), N + 1);
+}
+
+#[test]
+fn a_big_import_is_applied_at_once_unless_staging_was_asked_for() {
+    let (a, _) = big_pair();
+    let mut b = LoroStore::with_config(drafftink_doc::LoroConfig { peer_id: Some(7), ..Default::default() }).unwrap();
+    let bytes = a.export_snapshot().unwrap();
+    assert!(!b.would_stage(bytes.len()), "off by default");
+    b.set_stage_import_bytes(1);
+    assert!(b.would_stage(bytes.len()));
+    b.set_stage_import_bytes(bytes.len() + 1);
+    assert!(!b.would_stage(bytes.len()), "below the threshold");
+    b.set_stage_import_bytes(usize::MAX);
+    assert_eq!(b.apply_remote(&bytes).unwrap().elements.len(), N);
+    assert!(b.import_progress().is_none());
+}
+
+#[test]
+fn a_small_import_is_not_staged() {
+    let mut a = peer(1);
+    let z = zs(10);
+    add(&mut a, (0..10).map(|i| rect(&format!("e{i:05}"), &z[i])).collect());
+    let config = drafftink_doc::LoroConfig { peer_id: Some(7), stage_import_bytes: 256 * 1024, ..Default::default() };
+    let mut b = LoroStore::with_config(config).unwrap();
+    let cs = b.apply_remote(&a.export_snapshot().unwrap()).unwrap();
+    assert!(b.import_progress().is_none(), "below the threshold");
+    assert_eq!(cs.elements.len(), 10);
+}
+
+#[test]
+fn edits_and_updates_between_slices_are_kept() {
+    let (mut a, _) = big_pair();
+    let mut b = empty_staging(7);
+    b.apply_remote(&a.export_snapshot().unwrap()).unwrap();
+    b.import_step(1000).unwrap();
+
+    // A local edit between two slices.
+    let z = zs(1);
+    add(&mut b, vec![rect("mine", &z[0])]);
+    // A live update from a peer, for an element that is loaded and for one that is not yet.
+    edit(&mut a, &id_of(0), |e| e.transform.x = 123.0);
+    edit(&mut a, &id_of(N - 1), |e| e.transform.x = 456.0);
+    let update = a.export_updates_since(&b.version_vector().unwrap()).unwrap();
+    b.apply_remote(&update).unwrap();
+    while b.import_progress().is_some() {
+        b.import_step(1000).unwrap();
+    }
+
+    assert_eq!(b.get(&eid(&id_of(0))).unwrap().transform.x, 123.0);
+    assert_eq!(b.get(&eid(&id_of(N - 1))).unwrap().transform.x, 456.0);
+    assert!(b.get(&eid("mine")).is_some());
+    assert_eq!(b.len(), N + 1);
+    assert_view_matches_loro(&b);
+    // The local element is sent; the imported ones are not.
+    let unsent = b.take_unsent_update().unwrap().expect("the local edit is unsent");
+    let mut c = LoroStore::with_config(drafftink_doc::LoroConfig { peer_id: Some(9), ..Default::default() }).unwrap();
+    c.apply_remote(&a.export_snapshot().unwrap()).unwrap();
+    c.apply_remote(&unsent).unwrap();
+    assert!(c.get(&eid("mine")).is_some());
+}
+
+#[test]
+fn a_step_without_a_staged_import_does_nothing() {
+    let mut b = empty_staging(7);
+    assert!(b.import_progress().is_none());
+    assert!(b.import_step(100).unwrap().is_empty());
+}

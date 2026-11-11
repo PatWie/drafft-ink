@@ -896,12 +896,22 @@ export namespace ClipboardPasteStyle {
 export namespace CollabConnect {
   /** What to do with the content a tab already has when it joins a room. */
   type A_OnLocal = "refuse" | "merge" | "discard";
+  /**
+   * An access token as it arrives in the arguments of `collab.connect` and `collab.join_room`. `Debug` prints a
+   * placeholder, so a logged argument struct cannot leak it.
+   */
+  type A_TokenArg = string;
   /** Arguments of `collab.connect`. */
   export type Args = {
     /** What to do with content this tab already has when `room` is given. */
     on_local?: A_OnLocal;
     /** The room to join at once. Omit it to only choose the server. */
     room?: string | null;
+    /**
+     * The access token, when the server asks for one. Kept with the server for the next `collab.join_room`.
+     * It is never recorded, shown or stored.
+     */
+    token?: A_TokenArg | null;
     /**
      * `ws://` or `wss://` address of the server, or a path such as `/ws` in the web app (this page's server).
      * Omit it to use the setting `collab.server_url`.
@@ -985,12 +995,22 @@ export namespace CollabFollow {
 export namespace CollabJoinRoom {
   /** What to do with the content a tab already has when it joins a room. */
   type A_OnLocal = "refuse" | "merge" | "discard";
+  /**
+   * An access token as it arrives in the arguments of `collab.connect` and `collab.join_room`. `Debug` prints a
+   * placeholder, so a logged argument struct cannot leak it.
+   */
+  type A_TokenArg = string;
   /** Arguments of `collab.join_room`. */
   export type Args = {
     /** What to do with content this tab already has. */
     on_local?: A_OnLocal;
     /** The room: 1 to 64 characters, letters, digits, `-` and `_`. Omit it to create a random one. */
     room?: string | null;
+    /**
+     * The access token for this room. Omit it to use the one given to `collab.connect`. It is never recorded,
+     * shown or stored.
+     */
+    token?: A_TokenArg | null;
   };
   /** Output of `collab.join_room`. */
   export type Output = {
@@ -1152,6 +1172,13 @@ export namespace CollabStatus {
     /** Size of the update in bytes. */
     bytes: number;
     phase: "receiving";
+    [key: string]: unknown;
+  } | {
+    /** Items (elements, files) shown so far. */
+    done: number;
+    phase: "importing";
+    /** All items of the room. */
+    total: number;
     [key: string]: unknown;
   };
   /** One other person in the room. */

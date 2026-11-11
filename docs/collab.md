@@ -56,6 +56,20 @@ leave:       client_mut().leave(now, &mut store); pump
 
 Remote operations are never sent back. This needed a fix in `drafftink-doc`: `take_unsent_update` used to return operations that arrived by `apply_remote` (regression test `remote_operations_are_not_handed_back_as_unsent`).
 
+## The access token
+
+A server started with `auth_tokens` (`docs/server.md`) accepts a join only when the first frame carries one of them. The engine passes the token to `CollabConfig::auth_token`; the client holds it as `AuthToken` and sends it in the `Join` frame. A missing or wrong token ends the client with `Unauthorized`, whose text asks for a new token.
+
+Where the token comes from:
+
+| Place | How |
+|---|---|
+| Command | `collab.connect {url, room, token}`, or `collab.connect {url, token}` and later `collab.join_room {room}`. `collab.join_room {room, token}` overrides the token of `connect`. The engine keeps it in memory with the chosen server: `collab.leave_room` keeps it, `collab.disconnect` forgets it. |
+| Desktop launcher | `drafftink --room R --server URL --token-file FILE`, or the environment variable `DRAFFTINK_COLLAB_TOKEN`. The app then calls `collab.connect` with it. There is no flag that takes the token itself, because arguments are visible to every user of the machine (the same rule as the bridge token in `docs/agents.md`). |
+| Web | Only through the command (for example `window.drafftink.execute("collab.connect", {url, room, token})`). The Collaborate dialog has no token field yet, and the token is never read from the page address. |
+
+It is not a setting on purpose: `settings.get` would hand it to every agent, `settings.set` would echo it, and the settings record is written to disk. The token is not recorded in the ring (`CommandSpec::secret_args` makes `engine.recent` show `"<hidden>"`), not in any command output or status, not in `Debug` output (`TokenArg`, `StartupToken` and `AuthToken` print a placeholder), and not in a refusal (a token that is empty or longer than 4096 bytes is `bad_args` without repeating it). Tests: `the_token_is_never_recorded_or_shown` (engine), `the_token_of_the_launcher_reaches_a_server_that_asks_for_one_and_stays_out_of_the_ring` (app), `tests/logging.rs` (client).
+
 ## Presence
 
 Awareness is sent at most every 50 ms (or the server's slower rate), only when it changed, plus a full resend every 10 s while someone else is in the room. A client alone in a room sends nothing; a `PeerJoined` makes it send at once. A peer's presence is cleared after 30 s of silence while the peer stays listed. The laser pointer is local: protocol version 1 has no laser flag, so a receiver draws the recent cursor path (`Peer::trail`, 1.5 s, 64 points) of any peer. A real "this peer uses the laser" flag needs protocol version 2.
@@ -81,8 +95,15 @@ Awareness is sent at most every 50 ms (or the server's slower rate), only when i
 | `tests/tls.rs` | `wss://` through a TLS-terminating proxy with a test certificate (`tests/fixtures`). |
 | `tests/logging.rs` | The token is absent from every log line. |
 
+## Big rooms
+
+A tab with no content that joins a room of 256 KiB or more (about 1,700 elements) does not decode it in one piece. `LoroStore::apply_remote` imports the bytes into a fresh CRDT document, which is lazy and takes about 10 ms for 100,000 elements, and leaves the view empty. `Session::collab_poll` then calls `LoroStore::import_step` for at most 8 ms per poll and mirrors each slice into the working store, so the app draws a frame and answers commands between two slices. The room appears in slices; `collab.status` shows `loading: {phase: "importing", done, total}`. Numbers (release, `cargo bench -p drafftink-doc --bench store -- staged_import`): 100,000 elements take about 1.1 s in about 400 slices of 256 items, the slowest 17 ms, after a first call of about 100 ms; the old single call took 4.1 s. The same code runs natively and in the browser. A worker thread on desktop was considered and not built: the replicated store holds `Rc` state and cannot move to another thread, and slicing needs no second code path and works in the browser, which has no threads. The cost is that the desktop spends the same CPU on the UI thread, spread over frames.
+
+Rules while a room loads: local edits are allowed and are sent; `doc.save` and `doc.export` refuse with `room_loading`; `collab.leave_room` finishes the import first; a second update from a peer is applied at once for the elements it touches. Tests: `crates/doc/tests/remote.rs` (slices, equal result, edits between slices, no staging with content), `crates/engine/src/cmd/collab_tests.rs` (`a_big_room_is_taken_in_slices_and_the_session_answers_between_them` and its neighbours).
+
 ## Known limits
 
-- Importing a very large snapshot happens inside `pump` on the caller's thread (about 14 us per element, 1.5 s at 100k elements: docs/crdt.md section 15). `docs/performance.md` asks for no stall over 50 ms; for huge rooms the engine should run the first join on a worker or show a loading state.
+- A very large room joined into an empty tab is taken in slices (next section). Importing a big update into a tab that already has content still happens inside `pump` on the caller's thread (about 25 us per element, 2.5 s at 100k elements): the engine holds it back for one poll so the app can draw "loading" first, but it cannot be cut, because merging into existing content needs the CRDT's own diff. The same holds for a trimmed snapshot that replaces a copy with its own work (`NeedsDecision`).
+- The one part of a staged import that cannot be sliced is the first call: about 10 ms plus 0.8 us per element to list the ids (80 ms at 100k elements), so it stays inside one 16 ms frame up to about 8,000 elements. Past that a web page has one long frame, once, until the import runs in a Web Worker.
 - An update bigger than the server's `max_update_bytes` (a very large image) cannot be split. It is kept, reported as `ReduceSize`, and later edits wait behind it.
 - The browser transport has no backpressure (a `WebSocket` has none) and is covered by compilation only; there is no browser test in the gates yet.

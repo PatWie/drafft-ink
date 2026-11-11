@@ -39,11 +39,16 @@ pub struct LoroConfig {
     pub peer_id: Option<u64>,
     /// Largest update or snapshot `apply_remote` / `from_snapshot` look at, in bytes.
     pub max_import_bytes: usize,
+    /// An update or snapshot of at least this many bytes that lands in an empty replica is imported into the CRDT at
+    /// once but decoded into the view in slices (see [`LoroStore::import_step`]), so the caller never stalls on it.
+    /// Default `usize::MAX`: off, because the caller must then call `import_step` until the import is done, or the
+    /// view stays incomplete. The collab client of the engine turns it on for the store it drives.
+    pub stage_import_bytes: usize,
 }
 
 impl Default for LoroConfig {
     fn default() -> Self {
-        Self { undo_depth: 200, peer_id: None, max_import_bytes: 256 * 1024 * 1024 }
+        Self { undo_depth: 200, peer_id: None, max_import_bytes: 256 * 1024 * 1024, stage_import_bytes: usize::MAX }
     }
 }
 
@@ -63,6 +68,15 @@ pub struct WorkStats {
     pub remote_updates: u64,
     /// Times the whole scene was decoded (opening a snapshot, replacing from a snapshot).
     pub full_rebuilds: u64,
+}
+
+/// How far a staged import has come.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ImportProgress {
+    /// Items decoded into the view so far.
+    pub done: usize,
+    /// All items of the import (elements, files and the meta).
+    pub total: usize,
 }
 
 pub(crate) struct Core {
@@ -95,6 +109,8 @@ pub(crate) struct Core {
     pub migrations: Vec<Migration>,
     /// Set when the CRDT library panicked; see [`DocError::Poisoned`].
     pub poisoned: Rc<Cell<bool>>,
+    /// A big import whose elements are still being decoded into the view.
+    pub staged: Option<crate::staged::Staged>,
 }
 
 /// Runs a Loro call that parses bytes from outside. Loro 1.17 asserts on some corrupted inputs (found by the
@@ -179,6 +195,7 @@ impl Core {
             sent,
             migrations,
             poisoned: Rc::new(Cell::new(false)),
+            staged: None,
         }
     }
 
@@ -210,6 +227,11 @@ impl Core {
     pub fn open(bytes: &[u8], config: LoroConfig, migrations: Vec<Migration>) -> Result<Core, DocError> {
         check_size(bytes.len(), config.max_import_bytes)?;
         let doc = import_fresh(Self::make_doc(&config)?, bytes)?;
+        Self::adopt(doc, config, migrations)
+    }
+
+    /// Checks the schema version of a document that holds imported data, migrates it when it is older and wraps it.
+    pub(crate) fn adopt(doc: LoroDoc, config: LoroConfig, migrations: Vec<Migration>) -> Result<Core, DocError> {
         match schema::read_version(&doc) {
             None => {
                 if !schema::is_blank(&doc) {
@@ -263,6 +285,7 @@ impl Core {
         self.pending = false;
         self.blocked = None;
         self.needs_resync = false;
+        self.staged = None;
         self.poisoned.set(false);
     }
 
@@ -295,6 +318,18 @@ pub(crate) fn check_size(size: usize, limit: usize) -> Result<(), DocError> {
 pub(crate) fn import_fresh(doc: LoroDoc, bytes: &[u8]) -> Result<LoroDoc, DocError> {
     match catch_unwind(AssertUnwindSafe(|| doc.import_with(bytes, "remote"))) {
         Ok(Ok(_)) => Ok(doc),
+        Ok(Err(e)) => Err(DocError::import(e)),
+        Err(_) => {
+            std::mem::forget(doc);
+            Err(DocError::import("the data is corrupt (the CRDT library rejected it)"))
+        }
+    }
+}
+
+/// Like [`import_fresh`], and also says whether some imported operations wait for causal predecessors.
+pub(crate) fn import_fresh_pending(doc: LoroDoc, bytes: &[u8]) -> Result<(LoroDoc, bool), DocError> {
+    match catch_unwind(AssertUnwindSafe(|| doc.import_with(bytes, "remote"))) {
+        Ok(Ok(status)) => Ok((doc, status.pending.is_some())),
         Ok(Err(e)) => Err(DocError::import(e)),
         Err(_) => {
             std::mem::forget(doc);
@@ -391,6 +426,31 @@ impl LoroStore {
         let cs = sync::rebuild_all(&mut self.view, &mut self.core)?;
         self.core.notify(&cs);
         Ok(cs)
+    }
+
+    /// Turns the staging of big imports on (`bytes` is the smallest message that is staged) or off (`usize::MAX`).
+    /// While it is on, the owner must call [`LoroStore::import_step`] until [`LoroStore::import_progress`] is `None`.
+    pub fn set_stage_import_bytes(&mut self, bytes: usize) {
+        self.core.config.stage_import_bytes = bytes;
+    }
+
+    /// True when a message of `len` bytes would be staged now: staging is on, `len` reaches the threshold and the
+    /// replica is empty. A shell uses it to decide whether a big message needs a "loading" frame first.
+    pub fn would_stage(&self, len: usize) -> bool {
+        sync::wants_staging(self, len)
+    }
+
+    /// How far a staged import has come, or `None` when no import is waiting. The CRDT already holds everything; the
+    /// view and everything built on it catch up with [`LoroStore::import_step`].
+    pub fn import_progress(&self) -> Option<ImportProgress> {
+        self.core.staged.as_ref().map(crate::staged::Staged::progress)
+    }
+
+    /// Decodes up to `max_items` more elements (or files, or the document meta) of a staged import into the view and
+    /// returns what changed. Does nothing when no import is staged. Call it until [`LoroStore::import_progress`]
+    /// returns `None`; a slice of a few hundred elements takes a few milliseconds.
+    pub fn import_step(&mut self, max_items: usize) -> Result<ChangeSet, DocError> {
+        sync::import_step(self, max_items)
     }
 
     /// Applies an update or snapshot from a peer. Only the elements the update touched are decoded and patched

@@ -141,7 +141,7 @@ JSON-RPC 2.0 over WebSocket at `ws://127.0.0.1:<port>/`, one JSON object per tex
 | Method | Params | Result |
 |---|---|---|
 | `execute` | `{id, args?}` | the command's output (`changed`, `created`, `deleted`, `undo_label`, `warnings`, and its own keys) |
-| `batch` | `{steps: [{id, args?, as?}], opts?: {label?, atomic?, dry_run?}}` | `{completed, results, failed?, rolled_back, undo_label?, changed}`; a batch that ran and failed is a normal result with `failed` |
+| `batch` | `{steps: [{id, args?, as?}], opts?: {label?, atomic?, dry_run?}}` | `{completed, results, failed?, rolled_back, undo_label?, changed, pending_render?}`; a batch that ran and failed is a normal result with `failed`. A batch that exports a PNG on the web waits for the picture (the host runs it again, `pending_render`) and is answered when it completes |
 | `commands` | `{family?, search?, available_only?, include_schemas?}` | every command with live availability |
 | `describe` | `{id}` | schemas, facts, example, refusals |
 | `recent` | `{limit?, mutating_only?, since_seq?}` | `{entries, next_seq, capacity}` |

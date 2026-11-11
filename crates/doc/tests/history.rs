@@ -173,6 +173,24 @@ fn a_trimmed_snapshot_given_to_an_empty_replica_is_simply_taken() {
 }
 
 #[test]
+fn a_trimmed_snapshot_given_to_an_empty_replica_can_be_decoded_in_slices() {
+    let server = busy();
+    let shallow = server.export_shallow_snapshot(0).unwrap();
+    let config = drafftink_doc::LoroConfig { peer_id: Some(4), stage_import_bytes: 1, ..Default::default() };
+    let mut fresh = LoroStore::with_config(config).unwrap();
+    assert!(fresh.apply_remote(&shallow).unwrap().elements.is_empty());
+    assert_eq!(fresh.len(), 0);
+    let mut slices = 0;
+    while fresh.import_progress().is_some() {
+        fresh.import_step(40).unwrap();
+        slices += 1;
+    }
+    assert!(slices >= 3, "{slices} slices");
+    assert_same(&server, &fresh);
+    assert_view_matches_loro(&fresh);
+}
+
+#[test]
 fn a_trimmed_snapshot_is_never_silently_dropped_by_a_replica_with_its_own_work() {
     let server = busy();
     let shallow = server.export_shallow_snapshot(0).unwrap();

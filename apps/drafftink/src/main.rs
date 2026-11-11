@@ -1,9 +1,13 @@
 //! Drafft.ink for the desktop.
 //!
 //! ```text
-//! drafftink [FILE] [--room ROOM] [--server URL] [--bridge [PORT]] [--perf-overlay] [--perf-dump FILE]
+//! drafftink [FILE] [--room ROOM] [--server URL] [--token-file FILE] [--bridge [PORT]] [--perf-overlay] [--perf-dump FILE]
 //!           [--perf-scenario KEY --perf-out FILE [--perf-secs N]]
 //! ```
+//!
+//! A collaboration server that asks for an access token gets it from `--token-file` or, without that flag, from the
+//! environment variable `DRAFFTINK_COLLAB_TOKEN`. There is no flag that takes the token itself: arguments are
+//! visible to every user of the machine. The token is never printed or logged.
 //!
 //! The bridge (an agent's door into the running app, `docs/agents.md`) is off unless `--bridge` is given.
 //! It listens on 127.0.0.1 only and writes a token file that only this user can read.
@@ -13,12 +17,12 @@
 //! writes the report to `--perf-out` and exits.
 
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
 use clap::Parser;
 use drafftink_app::native::{self, NativeOptions, ScenarioRun};
-use drafftink_app::{App, AppConfig, StartupLink};
+use drafftink_app::{App, AppConfig, StartupLink, StartupToken};
 use drafftink_bridge::{BridgeConfig, BridgeError, BridgeServer};
 use drafftink_engine::cmd::collab::RoomLink;
 use drafftink_engine::ports::FileRef;
@@ -37,6 +41,10 @@ struct Args {
     /// The collaboration server, such as `ws://localhost:3030/ws`. Default: the `collab.server_url` setting.
     #[arg(long, requires = "room")]
     server: Option<String>,
+    /// A file that holds the access token of the collaboration server. Without it the environment variable
+    /// `DRAFFTINK_COLLAB_TOKEN` is used, if set. Only needed when the server asks for a token.
+    #[arg(long, value_name = "FILE", requires = "room")]
+    token_file: Option<PathBuf>,
     /// Let an AI agent drive this window. Listens on 127.0.0.1 (a free port, or PORT) and writes a token file.
     /// Off by default.
     #[arg(long, value_name = "PORT", num_args = 0..=1, default_missing_value = "0")]
@@ -61,6 +69,22 @@ struct Args {
     data_dir: Option<PathBuf>,
 }
 
+/// The environment variable that holds the access token when no `--token-file` is given.
+const TOKEN_ENV: &str = "DRAFFTINK_COLLAB_TOKEN";
+
+/// The access token: the file if one is named, else the environment value. White space around it is ignored and
+/// an empty token counts as none.
+fn collab_token(file: Option<&Path>, env: Option<String>) -> Result<Option<StartupToken>, Failure> {
+    match file {
+        Some(path) => {
+            let text =
+                std::fs::read_to_string(path).map_err(|source| Failure::TokenFile { path: path.to_owned(), source })?;
+            Ok(StartupToken::new(&text))
+        }
+        None => Ok(env.as_deref().and_then(StartupToken::new)),
+    }
+}
+
 fn parse_key(text: &str) -> Result<ScenarioKey, String> {
     text.parse::<ScenarioKey>().map_err(|e| e.to_string())
 }
@@ -72,6 +96,8 @@ enum Failure {
     Shell(#[from] ShellError),
     #[error("the agent bridge could not start: {0}")]
     Bridge(#[from] BridgeError),
+    #[error("could not read the access token from {path}: {source}")]
+    TokenFile { path: PathBuf, source: std::io::Error },
     #[error("could not write the performance counters to {path}: {source}")]
     PerfDump { path: PathBuf, source: std::io::Error },
 }
@@ -118,6 +144,7 @@ fn run(args: Args) -> Result<(), Failure> {
     let config = AppConfig {
         join: StartupLink { link: RoomLink { room: args.room, server: args.server } },
         default_server: None,
+        collab_token: collab_token(args.token_file.as_deref(), std::env::var(TOKEN_ENV).ok())?,
         open: args.file.map(|p| FileRef::Path { path: p.display().to_string() }),
         perf_overlay: args.perf_overlay,
         stored_default_target: false,
@@ -137,4 +164,33 @@ fn run(args: Args) -> Result<(), Failure> {
         std::fs::write(&path, json).map_err(|source| Failure::PerfDump { path, source })?;
     }
     Ok(result?)
+}
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_token_comes_from_the_file_first_then_the_environment() {
+        let dir = std::env::temp_dir().join(format!("drafftink-token-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let file = dir.join("token");
+        std::fs::write(&file, "from-file\n").unwrap();
+        let expected = StartupToken::new("from-file");
+        assert_eq!(collab_token(Some(&file), Some("from-env".into())).unwrap(), expected);
+        assert_eq!(collab_token(None, Some(" from-env ".into())).unwrap(), StartupToken::new("from-env"));
+        assert_eq!(collab_token(None, None).unwrap(), None);
+        assert_eq!(collab_token(None, Some("  ".into())).unwrap(), None, "an empty value is no token");
+        std::fs::write(&file, "\n").unwrap();
+        assert_eq!(collab_token(Some(&file), None).unwrap(), None);
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn a_missing_token_file_is_an_error_that_names_the_file_but_not_a_token() {
+        let err = collab_token(Some(Path::new("/nonexistent/drafftink-token")), Some("env".into())).unwrap_err();
+        let text = err.to_string();
+        assert!(text.contains("/nonexistent/drafftink-token") && !text.contains("env"), "{text}");
+    }
 }
