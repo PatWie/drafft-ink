@@ -1,0 +1,35 @@
+{
+  "about": "Points of a free arrow are added, moved and deleted (through the point editor too); a line keeps at least two points; an elbow arrow only accepts its two ends, and its middle segment is pinned and released; each change is one undo step.",
+  "steps": [
+    { "execute": "element.create", "args": { "kind": "arrow", "points": [[0, 0], [200, 0]], "bind": "off" } },
+    { "execute": "arrow.add_point", "args": { "arrow": "e1", "segment": 1 }, "expect": [ { "path": "$.index", "eq": 1 } ] },
+    { "execute": "arrow.add_point", "args": { "arrow": "e1", "segment": 9 }, "refused": "bad_args", "text": "segments 1 to 2" },
+    { "execute": "arrow.move_point", "args": { "arrow": "e1", "index": 1, "to": [100, 80] }, "expect": [ { "path": "$.point", "eq": [100, 80] } ] },
+    { "assert": "element.query", "args": { "fields": ["bounds"] }, "expect": [ { "path": "$.items[0].bounds.h", "eq": 80 } ] },
+    { "undo": 1 },
+    { "assert": "element.query", "args": { "fields": ["bounds"] }, "expect": [ { "path": "$.items[0].bounds.h", "eq": 0, "note": "Undo of the move leaves the inserted middle point on the line." } ] },
+    { "redo": 1 },
+
+    { "execute": "arrow.edit_points", "args": { "arrow": "e1", "on": true }, "expect": [ { "path": "$.arrow", "eq": "e1" }, { "path": "$.selected_points", "len": 0 } ] },
+    { "execute": "arrow.edit_points", "args": { "arrow": "e1", "select_point": 1 }, "expect": [ { "path": "$.selected_points", "eq": [1] } ] },
+    { "execute": "arrow.delete_point", "expect": [ { "path": "$.removed", "eq": 1 } ], "note": "Without arguments it removes the point selected in the editor." },
+    { "assert": "element.query", "args": { "fields": ["bounds"] }, "expect": [ { "path": "$.items[0].bounds.h", "eq": 0 } ] },
+    { "execute": "arrow.delete_point", "args": { "arrow": "e1", "index": 0 }, "refused": "too_few", "text": "needs at least 2 points" },
+    { "execute": "arrow.delete_point", "args": { "arrow": "e1", "index": 7 }, "refused": "bad_args", "text": "point 7 does not exist" },
+    { "execute": "arrow.edit_points", "args": { "arrow": "e1", "on": false } },
+    { "undo": 1 },
+    { "assert": "element.query", "args": { "fields": ["bounds"] }, "expect": [ { "path": "$.items[0].bounds.h", "eq": 80, "note": "Undo of the delete brings the bent point back." } ] },
+
+    { "execute": "element.create", "args": { "kind": "rectangle", "bounds": { "x": 0, "y": 200, "w": 100, "h": 60 } } },
+    { "execute": "element.create", "args": { "kind": "rectangle", "bounds": { "x": 300, "y": 400, "w": 100, "h": 60 } } },
+    { "execute": "element.connect", "args": { "from": "e2", "to": "e3", "arrow_type": "elbow" }, "expect": [ { "path": "$.id", "eq": "e4" } ] },
+    { "execute": "arrow.add_point", "args": { "arrow": "e4", "segment": 1 }, "refused": "not_movable", "text": "Elbow arrows only allow moving their two ends" },
+    { "execute": "arrow.move_point", "args": { "arrow": "e4", "index": 1, "to": [150, 150] }, "refused": "not_movable" },
+    { "execute": "arrow.release_segment", "args": { "arrow": "e4", "segment": 2 }, "refused": "nothing_to_do", "text": "segment 2 of `e4` is not pinned" },
+    { "execute": "arrow.move_segment", "args": { "arrow": "e4", "segment": 9, "to": [150, 150] }, "refused": "bad_args", "text": "segments 1 to 3" },
+    { "execute": "arrow.move_segment", "args": { "arrow": "e4", "segment": 2, "to": [150, 350] }, "expect": [ { "path": "$.ids", "eq": ["e4"] } ] },
+    { "execute": "arrow.release_segment", "args": { "arrow": "e4", "segment": 2 }, "expect": [ { "path": "$.changed", "eq": true } ] },
+    { "execute": "arrow.release_segment", "args": { "arrow": "e4", "segment": 2 }, "refused": "nothing_to_do", "note": "Released once; a second release has nothing to do." },
+    { "execute": "arrow.move_segment", "args": { "arrow": "e1", "segment": 1, "to": [1, 1] }, "refused": "wrong_kind" }
+  ]
+}

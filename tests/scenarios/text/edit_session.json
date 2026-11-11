@@ -1,0 +1,32 @@
+{
+  "about": "A text edit is a session: begin, then end with the editor's final content. A draft creates the element only on commit, a container gets its label on commit, commit=false discards, everything is one undo step, and text commands refuse while an edit runs.",
+  "steps": [
+    { "execute": "element.create", "args": { "kind": "rectangle", "bounds": { "x": 200, "y": 0, "w": 100, "h": 60 } } },
+    { "execute": "text.edit_end", "refused": "not_editing", "text": "Start with `text.edit_begin`" },
+
+    { "execute": "text.edit_begin", "args": { "at": [0, 300] }, "expect": [ { "path": "$.draft", "eq": true }, { "path": "$.id", "eq": null } ] },
+    { "assert": "element.query", "expect": [ { "path": "$.total", "eq": 1, "note": "A draft is not in the document." } ] },
+    { "assert": "engine.state", "expect": [ { "path": "$.text_edit", "exists": true } ] },
+    { "execute": "text.set", "args": { "id": "e1", "text": "x" }, "refused": "text_editing", "text": "Finish with `text.edit_end`" },
+    { "undo": 1, "refused": "text_editing" },
+    { "execute": "text.edit_end", "args": { "text": "new draft" }, "expect": [ { "path": "$.committed", "eq": true }, { "path": "$.created", "len": 1 } ], "save": { "t": "$.id" } },
+    { "assert": "element.query", "args": { "filter": { "ids": ["{{t}}"] }, "fields": ["kind", "text"] }, "expect": [ { "path": "$.items[0].text", "eq": "new draft" } ] },
+
+    { "execute": "text.edit_begin", "args": { "at": [0, 400] } },
+    { "execute": "text.edit_end", "args": { "commit": false }, "expect": [ { "path": "$.discarded", "eq": true } ] },
+    { "assert": "element.query", "expect": [ { "path": "$.total", "eq": 2 } ], "note": "Discarding a draft creates nothing." },
+
+    { "execute": "text.edit_begin", "args": { "id": "e1" }, "expect": [ { "path": "$.kind", "eq": "rectangle" }, { "path": "$.draft", "eq": false } ] },
+    { "execute": "text.edit_end", "args": { "text": "Label" }, "expect": [ { "path": "$.committed", "eq": true } ] },
+    { "assert": "element.query", "args": { "filter": { "ids": ["e1"] }, "fields": ["text", "bound_text"] }, "expect": [ { "path": "$.items[0].text", "eq": "Label" } ] },
+    { "undo": 1 },
+    { "assert": "element.query", "args": { "filter": { "ids": ["e1"] }, "fields": ["text"] }, "expect": [ { "path": "$.items[0].text", "eq": null } ], "note": "The whole edit, label creation included, is one step." },
+
+    { "execute": "text.edit_begin", "args": { "id": "e1" } },
+    { "execute": "text.edit_end", "args": { "commit": false }, "expect": [ { "path": "$.discarded", "eq": true } ] },
+    { "execute": "text.edit_begin", "args": { "id": "nope" }, "refused": "not_found" },
+    { "execute": "selection.clear" },
+    { "execute": "text.edit_begin", "refused": "needs_single", "text": "exactly one" },
+    { "execute": "text.edit_begin", "args": { "at": [0, 0], "id": "e1" }, "refused": "bad_args", "text": "Give `id`, or `at`, or neither" }
+  ]
+}

@@ -1,0 +1,49 @@
+{
+  "about": "A frame wraps shapes, moves them with it, takes members in and out, is renamed, deleted with or without its children, and unwrapped; each command is one undo step and the refusals say what a frame cannot do.",
+  "steps": [
+    { "execute": "element.create", "args": { "kind": "rectangle", "bounds": { "x": 0, "y": 0, "w": 100, "h": 60 } } },
+    { "execute": "element.create", "args": { "kind": "ellipse", "bounds": { "x": 200, "y": 0, "w": 100, "h": 60 } } },
+    { "execute": "element.create", "args": { "kind": "rectangle", "bounds": { "x": 600, "y": 0, "w": 100, "h": 60 } } },
+
+    { "execute": "frame.wrap", "args": { "ids": ["e1", "e2"], "name": "Box" }, "expect": [ { "path": "$.frame", "eq": "e4" }, { "path": "$.added", "eq": ["e1", "e2"] } ] },
+    { "assert": "doc.outline", "args": { "format": "json" }, "expect": [
+        { "path": "$.outline.frames[0].id", "eq": "e4" }, { "path": "$.outline.frames[0].name", "eq": "Box" }, { "path": "$.outline.frames[0].children", "eq": ["e1", "e2"] },
+        { "path": "$.outline.frames[0].bounds", "eq": [-16, -16, 332, 92], "note": "The common bounds plus the default padding of 16." } ] },
+    { "execute": "frame.wrap", "args": { "ids": ["e4"] }, "refused": "nested_frame", "text": "Frames cannot be nested" },
+
+    { "execute": "element.move", "args": { "ids": ["e4"], "dx": 0, "dy": 100, "snap": "none" } },
+    { "assert": "element.query", "args": { "filter": { "ids": ["e1", "e2"] }, "fields": ["id", "bounds"] }, "expect": [ { "path": "$.items[0].bounds.y", "eq": 100 }, { "path": "$.items[1].bounds.y", "eq": 100 } ], "note": "The children moved with the frame." },
+    { "undo": 1 },
+
+    { "execute": "frame.rename", "args": { "frame": "e4", "name": "Renamed" }, "expect": [ { "path": "$.name", "eq": "Renamed" } ] },
+    { "execute": "frame.rename", "args": { "frame": "e1", "name": "x" }, "refused": "wrong_kind", "text": "`frame.rename` works on frames, and `e1` is a rectangle" },
+    { "execute": "frame.rename", "args": { "frame": "e4", "name": null } },
+    { "assert": "doc.outline", "args": { "format": "text" }, "expect": [ { "path": "$.text", "contains": "e4 (-16,-16,332x92): e1, e2", "note": "A null name drops the label." } ] },
+
+    { "execute": "frame.add", "args": { "frame": "e4", "ids": ["e3"] }, "expect": [ { "path": "$.added", "eq": ["e3"] } ] },
+    { "execute": "frame.add", "args": { "frame": "e4", "ids": ["e4"] }, "expect": [ { "path": "$.added", "len": 0 }, { "path": "$.skipped[0].reason", "eq": "is_frame" }, { "path": "$.warnings", "len": 1 } ], "note": "A frame is skipped with a warning, not refused." },
+    { "execute": "frame.select_children", "args": { "frame": "e4" }, "expect": [ { "path": "$.selected", "eq": ["e1", "e2", "e3"] } ] },
+    { "execute": "frame.select_children", "args": { "frame": "e3" }, "refused": "wrong_kind" },
+    { "execute": "frame.remove", "args": { "ids": ["e3"] }, "expect": [ { "path": "$.removed", "eq": ["e3"] } ] },
+    { "execute": "frame.remove", "args": { "ids": ["e3"] }, "refused": "nothing_to_do", "text": "none of the given elements is in a frame" },
+    { "undo": 1 },
+    { "assert": "element.query", "args": { "filter": { "ids": ["e3"] }, "fields": ["frame"] }, "expect": [ { "path": "$.items[0].frame", "eq": "e4" } ], "note": "Undo of remove puts e3 back in the frame." },
+
+    { "note": "Dragging a member far out of the frame releases it (frame=auto, committed run).",
+      "execute": "element.move", "args": { "ids": ["e1"], "dx": 0, "dy": 500, "snap": "none" } },
+    { "assert": "element.query", "args": { "filter": { "ids": ["e1"] }, "fields": ["frame"] }, "expect": [ { "path": "$.items[0].frame", "eq": null } ] },
+    { "undo": 1 },
+
+    { "execute": "frame.unwrap", "args": { "frame": "e1" }, "refused": "wrong_kind", "text": "`frame.unwrap` works on frames" },
+    { "execute": "frame.unwrap", "args": { "frame": "e4" }, "expect": [ { "path": "$.deleted", "eq": ["e4"] }, { "path": "$.children", "eq": ["e1", "e2", "e3"] } ] },
+    { "assert": "element.query", "args": { "fields": ["id", "frame"] }, "expect": [ { "path": "$.total", "eq": 3 }, { "path": "$.items[0].frame", "eq": null } ] },
+    { "undo": 1 },
+    { "execute": "element.delete", "args": { "ids": ["e4"], "frame_children": "release" }, "expect": [ { "path": "$.released", "len": 3 } ] },
+    { "assert": "element.query", "expect": [ { "path": "$.total", "eq": 3 } ], "note": "Release keeps the children." },
+    { "undo": 1 },
+    { "execute": "element.delete", "args": { "ids": ["e4"] } },
+    { "assert": "element.query", "expect": [ { "path": "$.total", "eq": 0 } ], "note": "The default deletes the children with the frame." },
+    { "undo": 1 },
+    { "assert": "element.query", "expect": [ { "path": "$.total", "eq": 4 } ] }
+  ]
+}

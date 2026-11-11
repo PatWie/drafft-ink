@@ -1,0 +1,25 @@
+{
+  "about": "Mermaid text becomes shapes with bound, labelled arrows grouped as one diagram, also through clipboard.paste; unsupported or broken text is refused with the way forward; the import is one undo step.",
+  "steps": [
+    { "execute": "diagram.import_mermaid", "args": { "source": { "text": "graph TD\n A[Start] --> B{Choice}\n B -->|yes| C[Go]\n B -->|no| D[Stop]" }, "at": [0, 0] },
+      "expect": [ { "path": "$.nodes.A", "is": "string" }, { "path": "$.nodes", "len": 4 }, { "path": "$.edges", "len": 3 }, { "path": "$.groups", "len": 1, "note": "group defaults to true for an import" } ] },
+    { "assert": "doc.outline", "args": { "format": "json" }, "expect": [
+        { "path": "$.outline.nodes", "len": 4 }, { "path": "$.outline.edges", "len": 3 },
+        { "path": "$.outline.nodes[id=e3].kind", "eq": "diamond" }, { "path": "$.outline.nodes[id=e3].label", "eq": "Choice" },
+        { "path": "$.outline.edges[1].label", "eq": "yes" }, { "path": "$.outline.edges[2].label", "eq": "no" },
+        { "path": "$.outline.groups", "len": 1 } ] },
+    { "assert": "element.query", "args": { "filter": { "kind": "arrow" }, "fields": ["id", "bindings"] }, "expect": [
+        { "path": "$.total", "eq": 3 }, { "path": "$.items[0].bindings.start", "is": "string", "note": "Both ends are bound to the shapes (the old import drew loose arrows)." }, { "path": "$.items[0].bindings.end", "is": "string" } ] },
+    { "undo": 1 },
+    { "assert": "element.query", "expect": [ { "path": "$.total", "eq": 0 } ], "note": "One undo takes back shapes, arrows and labels." },
+    { "redo": 1 },
+
+    { "execute": "diagram.import_mermaid", "args": { "source": { "text": "pie\n \"a\": 1" } }, "refused": "mermaid_unsupported", "text": ["`pie`", "flowchart/graph and sequenceDiagram"] },
+    { "execute": "diagram.import_mermaid", "args": { "source": { "text": "graph TD\n A[Start --> " } }, "refused": "parse_failed", "text": "could not be read" },
+    { "execute": "diagram.import_mermaid", "args": { "source": "clipboard" }, "refused": "clipboard_empty", "text": "Copy the Mermaid text first" },
+    { "execute": "clipboard.paste", "args": { "source": { "text": "graph LR\n X --> Y" } }, "expect": [ { "path": "$.kind", "eq": "mermaid" } ], "note": "Pasting Mermaid text routes to the same import." },
+    { "assert": "doc.outline", "args": { "format": "json" }, "expect": [ { "path": "$.outline.nodes", "len": 6 }, { "path": "$.outline.groups", "len": 2 } ] },
+    { "undo": 1 },
+    { "assert": "doc.outline", "args": { "format": "json" }, "expect": [ { "path": "$.outline.nodes", "len": 4 } ] }
+  ]
+}

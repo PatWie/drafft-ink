@@ -1,0 +1,34 @@
+{
+  "about": "An agent reads a document without changing it: doc.inspect gives the summary and the full element fields, doc.outline gives the structure in text and JSON, truncates at max_nodes and says so, and reads only the selection on request; bad scopes and ids are refused with the way forward.",
+  "steps": [
+    { "harness": "load_generated", "args": { "count": 12 } },
+    { "assert": "history.state", "expect": [ { "path": "$.undo_depth", "eq": 0 } ] },
+
+    { "assert": "doc.inspect", "expect": [
+        { "path": "$.elements", "eq": 12 }, { "path": "$.groups", "eq": 1 }, { "path": "$.frames", "eq": 0 }, { "path": "$.locked", "eq": 0 },
+        { "path": "$.kinds.rectangle", "eq": 3 }, { "path": "$.kinds.ellipse", "eq": 3 }, { "path": "$.kinds.arrow", "eq": 1 },
+        { "path": "$.dirty", "eq": false }, { "path": "$.name", "eq": "generated-12-1" }, { "path": "$.save_target", "eq": null }, { "path": "$.tab", "eq": "t1" } ] },
+    { "assert": "doc.inspect", "args": { "detail": "full", "limit": 2 }, "expect": [
+        { "path": "$.total", "eq": 12 }, { "path": "$.items", "len": 2 }, { "path": "$.truncated", "eq": true }, { "path": "$.items[0].id", "eq": "e0" }, { "path": "$.items[0].kind", "eq": "rectangle" } ] },
+    { "assert": "doc.inspect", "args": { "detail": "full", "ids": ["e4"] }, "expect": [
+        { "path": "$.items[0].kind", "eq": "arrow" }, { "path": "$.items[0].bindings.start", "eq": "e0" }, { "path": "$.items[0].bindings.end", "eq": "e1" } ] },
+    { "assert": "doc.inspect", "args": { "detail": "full", "ids": ["nope"] }, "refused": "not_found", "text": "nope" },
+    { "assert": "doc.inspect", "args": { "ids": ["e4"] }, "refused": "bad_args", "text": "only work with detail \"full\"" },
+    { "assert": "doc.inspect", "args": { "limit": 0 }, "refused": "bad_args", "text": "from 1 to 1000" },
+
+    { "assert": "doc.outline", "args": { "format": "json" }, "expect": [
+        { "path": "$.outline.edges", "len": 1 }, { "path": "$.outline.edges[0].from", "eq": "e0" }, { "path": "$.outline.edges[0].to", "eq": "e1" },
+        { "path": "$.outline.groups[0].members", "eq": ["e9", "e8"] }, { "path": "$.outline.texts[0].label", "eq": "alpha" }, { "path": "$.text", "eq": null } ] },
+    { "assert": "doc.outline", "args": { "format": "text" }, "expect": [
+        { "path": "$.text", "contains": "e0 -> e1 [e4]" }, { "path": "$.text", "contains": "e6 \"alpha\" text" }, { "path": "$.text", "contains": "g0: e9, e8" }, { "path": "$.outline", "eq": null } ] },
+    { "assert": "doc.outline", "args": { "format": "text", "max_nodes": 3 }, "expect": [
+        { "path": "$.text", "contains": "nodes (3):" }, { "path": "$.text", "contains": "The outline is cut at max_nodes=3" }, { "path": "$.text", "contains": "Narrow it with scope" } ] },
+    { "assert": "doc.outline", "args": { "scope": "selection" }, "refused": "nothing_to_do", "text": "nothing is selected" },
+    { "execute": "selection.select", "args": { "ids": ["e0", "e1"] } },
+    { "assert": "doc.outline", "args": { "scope": "selection", "format": "json" }, "expect": [ { "path": "$.outline.nodes", "len": 2 } ] },
+    { "assert": "doc.outline", "args": { "scope": "frame" }, "refused": "bad_args", "text": "is needed when scope is \"frame\"" },
+
+    { "assert": "history.state", "expect": [ { "path": "$.undo_depth", "eq": 0, "note": "Reading never adds a step." } ] },
+    { "assert": "engine.state", "expect": [ { "path": "$.dirty", "eq": false } ] }
+  ]
+}

@@ -1,0 +1,12 @@
+{
+  "about": "A session without the clipboard port still copies and pastes internally, and says in words what it cannot do: pasting from the system and copying as an image refuse with port_unavailable.",
+  "ports": "headless",
+  "steps": [
+    { "execute": "element.create", "args": { "kind": "rectangle", "bounds": { "x": 0, "y": 0, "w": 100, "h": 60 } } },
+    { "execute": "clipboard.copy", "expect": [ { "path": "$.warnings", "len": 1 } ], "note": "The internal copy works; the warning says the system clipboard was not written." },
+    { "execute": "clipboard.paste", "args": { "source": "internal", "at": [300, 0] }, "expect": [ { "path": "$.kind", "eq": "elements" } ] },
+    { "undo": 1 },
+    { "execute": "clipboard.paste", "refused": "port_unavailable", "text": ["needs the system clipboard", "Pass `source`"] },
+    { "execute": "clipboard.copy_as", "args": { "format": "text", "scope": "all" }, "refused": "port_unavailable" }
+  ]
+}

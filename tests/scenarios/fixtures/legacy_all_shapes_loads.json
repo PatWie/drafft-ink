@@ -1,0 +1,93 @@
+{
+  "about": "The old app's document all_shapes.json opens as a clean, history-free document whose element counts per kind and group count equal the facts the old code wrote.",
+  "steps": [
+    {
+      "note": "Numbers are tests/fixtures/legacy/all_shapes.json's facts file (all_shapes.facts.json), doc.counts_total. The old code counted its 1 group(s) as shapes (12 in all); the new model has 11 elements and keeps groups as ids.",
+      "harness": "load_fixture",
+      "args": {
+        "path": "legacy/all_shapes.json"
+      },
+      "expect": [
+        {
+          "path": "$.elements",
+          "eq": 11
+        },
+        {
+          "path": "$.format",
+          "eq": "LegacyJson"
+        },
+        {
+          "path": "$.warnings",
+          "len": 0
+        }
+      ]
+    },
+    {
+      "expect": [
+        {
+          "path": "$.elements",
+          "eq": 11
+        },
+        {
+          "path": "$.kinds",
+          "eq": {
+            "arrow": 1,
+            "ellipse": 2,
+            "freehand": 1,
+            "image": 1,
+            "line": 1,
+            "math": 1,
+            "rectangle": 2,
+            "text": 2
+          }
+        },
+        {
+          "path": "$.groups",
+          "eq": 1
+        }
+      ],
+      "assert": "doc.inspect",
+      "note": "doc.inspect summary: element count, count per kind and group count."
+    },
+    {
+      "assert": "engine.state",
+      "expect": [
+        {
+          "path": "$.dirty",
+          "eq": false
+        },
+        {
+          "path": "$.selection.count",
+          "eq": 0
+        }
+      ]
+    },
+    {
+      "assert": "history.state",
+      "expect": [
+        {
+          "path": "$.can_undo",
+          "eq": false
+        }
+      ]
+    },
+    {
+      "execute": "view.zoom_to_fit",
+      "expect": [
+        {
+          "path": "$.changed",
+          "eq": true
+        }
+      ]
+    },
+    {
+      "assert": "view.get",
+      "expect": [
+        {
+          "path": "$.visible.w",
+          "gt": 0
+        }
+      ]
+    }
+  ]
+}

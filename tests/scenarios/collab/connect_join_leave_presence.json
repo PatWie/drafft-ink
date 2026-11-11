@@ -1,0 +1,46 @@
+{
+  "about": "Joining a room goes through the steps connect, join, leave, disconnect, each refusing in words when it is out of order; a tab with content must say what to do with it; presence commands (name, colour, pointer, laser, follow) validate input; a room does not add undo steps and cannot be closed from under a tab.",
+  "steps": [
+    { "assert": "collab.status", "expect": [ { "path": "$.state", "eq": "disconnected" }, { "path": "$.peers", "len": 0 }, { "path": "$.text", "contains": "Working on this device only" } ] },
+    { "execute": "collab.disconnect", "refused": "not_connected", "text": "nothing to disconnect" },
+    { "execute": "collab.join_room", "args": { "room": "abc" }, "refused": "not_connected", "text": "Connect first with `collab.connect`" },
+    { "execute": "collab.leave_room", "refused": "not_in_room", "text": "nothing to leave" },
+    { "execute": "collab.follow", "args": { "peer": "nobody" }, "refused": "not_in_room" },
+
+    { "execute": "collab.connect", "args": { "url": "http://example.com/ws" }, "refused": "invalid_url", "text": ["is not a valid server address", "ws:// or wss://"] },
+    { "execute": "collab.connect", "args": { "url": "ws://example.com:3030/ws" }, "refused": "invalid_url", "text": "ws:// sends the drawing unencrypted" },
+    { "execute": "collab.connect", "args": { "url": "ws://localhost:3030/ws" }, "expect": [ { "path": "$.state", "eq": "ready" } ], "note": "Without a room only the server is chosen." },
+    { "assert": "collab.status", "expect": [ { "path": "$.state", "eq": "ready" }, { "path": "$.url", "eq": "ws://localhost:3030/ws" } ] },
+
+    { "execute": "element.create", "args": { "kind": "rectangle", "bounds": { "x": 0, "y": 0, "w": 100, "h": 60 } } },
+    { "execute": "collab.join_room", "args": { "room": "bad room!" }, "refused": "bad_args", "text": "letters, digits, `-` and `_`" },
+    { "execute": "collab.join_room", "args": { "room": "abc-123" }, "refused": "local_content", "text": ["already has content", "on_local=\"merge\"", "tab.new"] },
+    { "execute": "collab.join_room", "args": { "room": "abc-123", "on_local": "merge" }, "expect": [ { "path": "$.room", "eq": "abc-123" }, { "path": "$.link", "eq": "#room=abc-123&server=ws://localhost:3030/ws" } ] },
+    { "assert": "collab.status", "expect": [ { "path": "$.room", "eq": "abc-123" }, { "path": "$.state", "eq": "connecting" }, { "path": "$.tab", "eq": "t1" } ] },
+    { "assert": "engine.state", "expect": [ { "path": "$.collab.room", "eq": "abc-123" } ] },
+    { "execute": "collab.join_room", "args": { "room": "other" }, "refused": "already_in_room", "text": "Leave it first with `collab.leave_room`" },
+    { "execute": "tab.new" },
+    { "execute": "tab.close", "args": { "tab": 0 }, "refused": "unsaved_changes", "note": "The dirty tab is refused first." },
+    { "execute": "tab.close", "args": { "tab": 0, "on_unsaved": "discard" }, "refused": "in_room", "text": ["connected to room abc-123", "leave_room=true"] },
+    { "assert": "history.state", "expect": [ { "path": "$.undo_depth", "eq": 0, "note": "The new tab has its own history; room and presence commands add no undo step." } ] },
+    { "execute": "tab.switch", "args": { "tab": 0 } },
+
+    { "execute": "collab.set_user", "args": { "name": "Pat", "color": "#ef4444" }, "expect": [ { "path": "$.name", "eq": "Pat" }, { "path": "$.color", "eq": "#ef4444" } ] },
+    { "assert": "settings.get", "args": { "key": "collab.user_name" }, "expect": [ { "path": "$.settings['collab.user_name']", "eq": "Pat", "note": "The name is stored as a setting." } ] },
+    { "execute": "collab.set_user", "args": { "color": "red" }, "refused": "bad_args", "text": "is not a colour" },
+    { "execute": "collab.set_pointer", "args": { "point": [10, 20] }, "expect": [ { "path": "$.published", "eq": true } ] },
+    { "execute": "collab.set_pointer", "args": { "point": null } },
+    { "execute": "collab.laser", "args": { "points": [[0, 0], [10, 10]] }, "expect": [ { "path": "$.points", "eq": 2 } ] },
+    { "assert": "collab.status", "expect": [ { "path": "$.laser", "len": 2 } ] },
+    { "execute": "collab.laser", "args": { "points": [[0, 0]], "fade_ms": 0 }, "refused": "bad_args" },
+    { "execute": "collab.follow", "args": { "peer": "nobody" }, "refused": "no_such_peer", "text": "List the people with `collab.status`" },
+    { "execute": "collab.follow", "expect": [ { "path": "$.changed", "eq": false } ], "note": "Stopping a follow that does not run is Ok." },
+    { "assert": "history.state", "expect": [ { "path": "$.undo_depth", "eq": 1, "note": "Only the rectangle: room and presence commands added no step." } ] },
+    { "undo": 1 },
+    { "assert": "doc.inspect", "expect": [ { "path": "$.elements", "eq": 0 } ], "note": "Undo still works for the local edit made before the join." },
+    { "execute": "collab.leave_room", "expect": [ { "path": "$.room", "eq": "abc-123" } ] },
+    { "assert": "collab.status", "expect": [ { "path": "$.state", "eq": "ready" }, { "path": "$.room", "exists": false } ] },
+    { "execute": "collab.disconnect" },
+    { "assert": "collab.status", "expect": [ { "path": "$.state", "eq": "disconnected" } ] }
+  ]
+}

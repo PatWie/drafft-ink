@@ -1,6 +1,5 @@
 {
   "about": "Deleting the shape an arrow end is bound to leaves the arrow where it was and frees that end; undo restores shape and binding.",
-  "requires": { "commands": ["element.delete"] },
   "steps": [
     { "harness": "load_generated", "args": { "count": 5 } },
     { "execute": "arrow.reroute", "args": { "ids": ["e4"] } },

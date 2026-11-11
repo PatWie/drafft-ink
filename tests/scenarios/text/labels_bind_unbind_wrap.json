@@ -1,0 +1,31 @@
+{
+  "about": "A free text becomes a shape's label (bind), is detached again (unbind), or gets a new shape made around it (wrap_in_container); a shape holds one label; auto-resize only applies to text; every step undoes.",
+  "steps": [
+    { "execute": "element.create", "args": { "kind": "text", "text": "Start", "at": [0, 0] } },
+    { "execute": "element.create", "args": { "kind": "rectangle", "bounds": { "x": 200, "y": 0, "w": 160, "h": 80 } } },
+    { "execute": "element.create", "args": { "kind": "text", "text": "Other", "at": [0, 200] } },
+
+    { "execute": "text.bind", "args": { "text": "e1", "container": "e2" } },
+    { "assert": "element.query", "args": { "filter": { "ids": ["e2"] }, "fields": ["bound_text", "text"] }, "expect": [ { "path": "$.items[0].bound_text", "eq": "e1" }, { "path": "$.items[0].text", "eq": "Start" } ] },
+    { "assert": "element.query", "args": { "filter": { "ids": ["e1"] }, "fields": ["bounds"] }, "expect": [
+        { "path": "$.items[0].bounds.x", "gt": 200, "note": "The label sits inside the rectangle." }, { "path": "$.items[0].bounds.x", "lt": 360 } ] },
+    { "execute": "text.bind", "args": { "text": "e3", "container": "e2" }, "refused": "already_bound", "text": "Remove it first with `text.unbind`" },
+    { "execute": "text.bind", "args": { "text": "e2", "container": "e2" }, "refused": "wrong_kind" },
+
+    { "execute": "text.unbind", "args": { "text": "e1" } },
+    { "assert": "element.query", "args": { "filter": { "ids": ["e2"] }, "fields": ["bound_text"] }, "expect": [ { "path": "$.items[0].bound_text", "eq": null } ] },
+    { "execute": "text.unbind", "args": { "text": "e1" }, "refused": "nothing_to_do", "text": "is not a label of any element" },
+    { "undo": 1 },
+    { "assert": "element.query", "args": { "filter": { "ids": ["e2"] }, "fields": ["bound_text"] }, "expect": [ { "path": "$.items[0].bound_text", "eq": "e1" } ], "note": "Undo of unbind makes e1 the label again." },
+
+    { "execute": "text.wrap_in_container", "args": { "ids": ["e3"], "shape": "ellipse", "padding": 20 }, "expect": [ { "path": "$.containers", "len": 1 }, { "path": "$.texts", "eq": ["e3"] } ], "save": { "c": "$.containers[0]" } },
+    { "assert": "element.query", "args": { "filter": { "ids": ["{{c}}"] }, "fields": ["kind", "bound_text"] }, "expect": [ { "path": "$.items[0].kind", "eq": "ellipse" }, { "path": "$.items[0].bound_text", "eq": "e3" } ] },
+    { "execute": "text.wrap_in_container", "args": { "ids": ["e2"] }, "refused": "not_applicable", "text": "free text" },
+    { "undo": 1 },
+    { "assert": "element.query", "args": { "fields": ["id"] }, "expect": [ { "path": "$.total", "eq": 2 }, { "path": "$.items[id=e3]", "exists": true, "note": "e3 is a free text again, so it is listed; the label e1 is not, it belongs to e2." }, { "path": "$.items[id=e1]", "exists": false } ] },
+
+    { "execute": "text.set_autoresize", "args": { "ids": ["e3"], "on": false } },
+    { "execute": "text.set_autoresize", "args": { "ids": ["e3"], "on": false }, "expect": [ { "path": "$.changed", "eq": false }] },
+    { "execute": "text.set_autoresize", "args": { "ids": ["e2"], "on": true }, "refused": "not_applicable", "text": "apply to text elements" }
+  ]
+}
