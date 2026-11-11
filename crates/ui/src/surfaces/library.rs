@@ -40,7 +40,7 @@ const MAX_SHARE: f32 = 0.7;
 /// The least height of the drawer: the header and one row of tiles.
 const MIN_HEIGHT: f32 = 170.0;
 /// The same on a touch layout, where the header takes two rows and the targets are larger.
-const MIN_HEIGHT_COMPACT: f32 = 250.0;
+const MIN_HEIGHT_COMPACT: f32 = 320.0;
 /// Room left above the drawer for the top bars.
 const TOP_ROOM: f32 = 72.0;
 /// Space between the drawer and the bars below it.

@@ -448,7 +448,7 @@ fn the_drawer_works_at_400_points_wide_with_larger_targets() {
     h.run();
     let screen = egui::Rect::from_min_size(Pos2::ZERO, egui::vec2(400.0, 800.0));
     let drawer = drawer_rect(&h.ctx);
-    assert!(drawer.height() >= 250.0, "room for two rows of header and a row of tiles: {drawer:?}");
+    assert!(drawer.height() >= 320.0, "room for two rows of header and a row of tiles: {drawer:?}");
     for label in ["Add selection to library", "Export library", "Show or hide the library", "Import…", "Insert Box"] {
         let r = in_drawer(&h, label);
         assert!(screen.contains_rect(r), "{label} at {r:?}");
