@@ -258,16 +258,24 @@ pub fn add_point<T: SceneTx>(tx: &mut T, id: &ElementId, index: usize, at: Point
     finish(tx, id)
 }
 
-/// Inserts a point in segment `segment` (1 to len-1, the index of the segment's end point) at `at` and
-/// returns the new point's index. This is what dragging a midpoint handle does.
+/// The segments of a line or arrow with `len` points, numbered by the index of their end point: 1 to len-1, and
+/// for a closed line also `len`, the one that joins the last point back to the first.
+pub fn segment_count(e: &drafftink_scene::Element, len: usize) -> usize {
+    let closed = e.linear_data().is_some_and(|d| d.closed);
+    if closed { len } else { len.saturating_sub(1) }
+}
+
+/// Inserts a point in segment `segment` (the index of the segment's end point, see [`segment_count`]) at `at`
+/// and returns the new point's index. The segment that closes a closed line gets its point last. This is what
+/// dragging a midpoint handle does.
 pub fn insert_midpoint<T: SceneTx>(
     tx: &mut T,
     id: &ElementId,
     segment: usize,
     at: Point,
 ) -> Result<usize, LinearError> {
-    let (_, world) = linear_of(tx, id)?;
-    if segment < 1 || segment >= world.len() {
+    let (e, world) = linear_of(tx, id)?;
+    if segment < 1 || segment > segment_count(&e, world.len()) {
         return Err(LinearError::NoSuchPoint { index: segment, len: world.len() });
     }
     add_point(tx, id, segment, at)?;

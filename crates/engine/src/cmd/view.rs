@@ -20,8 +20,7 @@ use crate::session::{Ref, Session};
 use crate::spec::{Binding, CommandSpec, Facts, NoArgs, Scope, Typed};
 use crate::state::{BASE_ZOOM, View, ZOOM_MAX, ZOOM_MIN, clamp_zoom};
 
-/// A point in world units or screen pixels: `[x, y]`.
-pub type Pt = [f64; 2];
+pub use crate::args::Pt;
 
 /// A world rectangle.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, JsonSchema)]

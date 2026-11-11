@@ -31,6 +31,8 @@ use crate::state::TextEdit;
 struct Draft {
     at: Point,
     container: Option<ElementId>,
+    /// A fixed width for the new text (it wraps); `None` lets the box follow the content.
+    width: Option<f64>,
 }
 
 /// Where the caret starts.
@@ -71,6 +73,9 @@ pub struct BeginArgs {
     pub at: Option<[f64; 2]>,
     /// With `at`: the shape or arrow that the new text becomes the label of.
     pub container: Option<Ref>,
+    /// With `at`: a fixed width for the new text, in world units. The text wraps at it and the box does not follow
+    /// the content (a drag with the text tool). Absent: the box follows the content.
+    pub width: Option<f64>,
     /// Where the caret starts: `end`, `start`, `all`, or a character index.
     pub caret: Caret,
 }
@@ -158,6 +163,13 @@ fn resolve_caret(cmd: &str, caret: Caret, len: usize) -> Result<[u32; 2], Refusa
 
 pub(super) fn edit_begin(s: &mut Session, a: BeginArgs) -> Result<BeginOut, Refusal> {
     let cmd = s.cmd();
+    if a.width.is_some() && a.at.is_none() {
+        return Err(Refusal::custom(
+            "bad_args",
+            cmd,
+            "`width` only works together with `at`. To change the width of an existing text, use `element.set_bounds`.",
+        ));
+    }
     match (a.id.as_ref(), a.at, a.container.as_ref()) {
         (Some(_), Some(_), _) => Err(Refusal::custom(
             "bad_args",
@@ -169,7 +181,7 @@ pub(super) fn edit_begin(s: &mut Session, a: BeginArgs) -> Result<BeginOut, Refu
             cmd,
             "`container` only works together with `at`. To edit the label of a shape, pass the shape as `id`.",
         )),
-        (_, Some(at), container) => begin_draft(s, cmd, at, container, a.caret),
+        (_, Some(at), container) => begin_draft(s, cmd, at, container, a.width, a.caret),
         (id, None, None) => begin_existing(s, cmd, id, a.caret),
     }
 }
@@ -180,13 +192,18 @@ fn begin_draft(
     cmd: &str,
     at: [f64; 2],
     container: Option<&Ref>,
+    width: Option<f64>,
     caret: Caret,
 ) -> Result<BeginOut, Refusal> {
     let (x, y) = (args::world(cmd, "at[0]", at[0])?, args::world(cmd, "at[1]", at[1])?);
+    let width = width.map(|w| args::positive(cmd, "width", w, args::MAX_WORLD)).transpose()?;
+    if width.is_some() && container.is_some() {
+        return Err(Refusal::bad_arg(cmd, "width", "does not apply to a label: a label takes the width of its shape"));
+    }
     let caret = resolve_caret(cmd, caret, 0)?;
     let container = container.map(|c| draft_container(s, cmd, c)).transpose()?;
     s.text_edit = Some(TextEdit { element: None, draft: true });
-    let draft = Draft { at: Point::new(x, y), container: container.clone() };
+    let draft = Draft { at: Point::new(x, y), container: container.clone(), width };
     s.ext.with::<Draft, _>(|d| *d = draft);
     select_only(s, &[]);
     Ok(BeginOut {
@@ -195,7 +212,7 @@ fn begin_draft(
         draft: true,
         text: String::new(),
         latex: None,
-        bounds: RectOut { x: round2(x), y: round2(y), w: 0.0, h: 0.0 },
+        bounds: RectOut { x: round2(x), y: round2(y), w: width.map_or(0.0, round2), h: 0.0 },
         caret,
     })
 }
@@ -395,7 +412,7 @@ fn end_draft(s: &mut Session, cmd: &str, fin: &Final<'_>) -> Result<EndOut, Refu
     if fin.latex.is_some() {
         return Err(Refusal::bad_arg(cmd, "latex", "is for a math element. A new text is created with `text`"));
     }
-    let Draft { at, container } = s.ext.with::<Draft, _>(|d| d.clone());
+    let Draft { at, container, width } = s.ext.with::<Draft, _>(|d| d.clone());
     let Some(content) = fin.text.filter(|t| !t.trim().is_empty()) else {
         return Ok(gone(false));
     };
@@ -416,7 +433,7 @@ fn end_draft(s: &mut Session, cmd: &str, fin: &Final<'_>) -> Result<EndOut, Refu
             return Ok(label);
         }
         let frame = frame::frame_at(&*tx, at, &Default::default());
-        let id = text_bind::create_text(tx, m, ids, &NewText { at, content, font, style, width: None, frame })?;
+        let id = text_bind::create_text(tx, m, ids, &NewText { at, content, font, style, width, frame })?;
         fin.restyle(tx, m, &id)?;
         Ok(id)
     })

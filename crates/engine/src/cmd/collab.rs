@@ -46,7 +46,7 @@ const MAX_LASER_POINTS: usize = 1024;
 /// The range of a laser fade, in milliseconds.
 const FADE_MS: std::ops::RangeInclusive<u64> = 1..=10_000;
 
-type Pt = [f64; 2];
+use crate::args::Pt;
 
 // ---- reading the state ----
 

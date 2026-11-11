@@ -110,6 +110,12 @@ pub trait Storage {
     fn get(&self, ns: Ns, key: &str) -> Result<Option<Vec<u8>>, PortError>;
     /// Stores bytes under `key`.
     fn put(&mut self, ns: Ns, key: &str, bytes: &[u8]) -> Result<(), PortError>;
+    /// Stores a document under `name` in [`Ns::Documents`] for `doc.save`. A synchronous port needs nothing
+    /// beyond [`Storage::put`]. A browser port, whose write completes after this call, returns
+    /// [`PutOutcome::Pending`] and reports the end with `Session::on_write_done`, like [`Files::write`].
+    fn put_document(&mut self, name: &str, bytes: &[u8]) -> Result<PutOutcome, PortError> {
+        self.put(Ns::Documents, name, bytes).map(|()| PutOutcome::Done)
+    }
     /// Removes `key`. Removing a missing key is not an error.
     fn delete(&mut self, ns: Ns, key: &str) -> Result<(), PortError>;
     /// Every entry of the namespace, sorted by name.
@@ -377,6 +383,16 @@ pub enum PortWrite {
     Save(SaveWrite),
 }
 
+/// How a [`Storage::put_document`] ended, as far as the port knows when it returns.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PutOutcome {
+    /// The bytes are stored.
+    Done,
+    /// The port started the write and will finish it later. Until the shell calls `Session::on_write_done`
+    /// with this token, the document stays unsaved.
+    Pending(WriteToken),
+}
+
 /// What must happen to a tab when its document write is confirmed.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct SaveDone {
@@ -445,9 +461,13 @@ impl Ports {
             }
             PortWrite::Save(save) => match &save.done.target {
                 FileRef::Stored { stored } => match self.storage.as_mut() {
-                    Some(s) => {
-                        s.put(Ns::Documents, stored, &save.bytes).map(|()| Performed::Done).map_err(|e| e.to_string())
-                    }
+                    Some(s) => s
+                        .put_document(stored, &save.bytes)
+                        .map(|o| match o {
+                            PutOutcome::Done => Performed::Done,
+                            PutOutcome::Pending(t) => Performed::Pending(t),
+                        })
+                        .map_err(|e| e.to_string()),
                     None => Err("there is no storage port".to_owned()),
                 },
                 file => self.write_file(file, &save.bytes, &save.mime).map_err(|e| e.to_string()),

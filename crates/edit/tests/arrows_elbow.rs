@@ -7,7 +7,7 @@ use arrows_common::*;
 use drafftink_edit::binding::{End, stale_arrows};
 use drafftink_edit::elbow::{self, RouteOpts};
 use drafftink_edit::linear;
-use drafftink_scene::{PathType, SceneStore, SceneTx};
+use drafftink_scene::{PathType, SceneRead, SceneStore, SceneTx};
 
 fn opts() -> RouteOpts {
     RouteOpts::default()
@@ -24,6 +24,41 @@ fn a_free_elbow_arrow_is_a_z_through_the_middle() {
     let e = s.get(&a);
     assert_eq!(e.transform.angle, 0.0);
     assert!((e.transform.w - 90.0).abs() < 1e-9 && (e.transform.h - 200.0).abs() < 1e-9);
+}
+
+#[test]
+fn a_routed_copy_shows_the_route_of_an_element_that_is_not_in_the_document() {
+    let mut s = Scene::new();
+    s.rect("r1", -150.0, -150.0, 100.0, 100.0);
+    s.rect("r2", 50.0, 50.0, 100.0, 100.0);
+    let stored = s.elbow_between("a", p(-45.0, -100.0), p(45.0, 100.0));
+    // The preview of an arrow being drawn: two straight points, the elbow path and the two bindings.
+    let d = s.get(&stored).linear_data().unwrap().clone();
+    let mut draft = drafftink_scene::Element::linear(
+        id("draft"),
+        drafftink_scene::Kind::Arrow,
+        drafftink_scene::ZIndex::first(),
+        &[p(-45.0, -100.0), p(45.0, 100.0)],
+    )
+    .unwrap();
+    if let drafftink_scene::ElementKind::Arrow(l) = &mut draft.kind {
+        l.path = PathType::Elbow;
+        l.start_binding = d.start_binding.clone();
+        l.end_binding = d.end_binding.clone();
+    }
+    assert_eq!(linear::world_points(&draft).unwrap().len(), 2);
+    let routed = elbow::routed_copy(&s.store, &draft, opts()).unwrap();
+    let got: Vec<_> = linear::world_points(&routed).unwrap();
+    let want = s.world(&stored);
+    assert_eq!(got.len(), want.len(), "{got:?} vs {want:?}");
+    for (g, w) in got.iter().zip(&want) {
+        assert!((*g - *w).hypot() < 0.02, "{got:?} vs {want:?}");
+    }
+    assert!(s.store.get(&id("draft")).is_none(), "nothing was written");
+    // An element that is not an elbow comes back as it is.
+    let plain = s.arrow("plain", &[(0.0, 0.0), (10.0, 10.0)]);
+    let e = s.get(&plain);
+    assert_eq!(elbow::routed_copy(&s.store, &e, opts()).unwrap(), e);
 }
 
 #[test]

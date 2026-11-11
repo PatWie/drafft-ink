@@ -12,6 +12,9 @@ use serde_json::Value;
 use crate::refusal::{Refusal, closest, echo};
 use crate::spec::Schema;
 
+/// A point `[x, y]`: world units, or screen pixels where the command says so.
+pub type Pt = [f64; 2];
+
 /// Largest coordinate or length a command accepts in world units. The geometry code tolerates far more
 /// (1e150); this keeps the numbers in a range where later arithmetic stays finite.
 pub const MAX_WORLD: f64 = 1.0e9;
