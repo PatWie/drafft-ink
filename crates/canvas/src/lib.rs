@@ -39,7 +39,7 @@ pub use drafftink_scene as scene;
 pub use canvas::{Canvas, Dirty, StoreMut};
 pub use config::{CanvasConfig, InputConfig, PointerMode};
 pub use dispatch::{Dispatcher, ElementEvent, EventKind, Listener, ListenerId, Node, Selector, SelectorError};
-pub use index::{ApplyStats, Hit, HitOptions, HitPart, MarqueeMode, SceneIndex, hit_element, unit_group, z_cmp};
+pub use index::{ApplyStats, Hit, HitOptions, HitPart, IndexMismatch, MarqueeMode, SceneIndex, hit_element, unit_group, z_cmp};
 pub use input::{
     Button, Buttons, InputEvent, Modifiers, PointerEvent, PointerId, PointerKind, PointerPhase, Tilt, WheelEvent,
     WheelUnit,
