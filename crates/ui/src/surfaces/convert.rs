@@ -16,17 +16,16 @@ fn short(text: &str) -> &str {
     text.strip_prefix("Convert to ").unwrap_or(text)
 }
 
-/// True when the row converts to the type `current` (the `to` the last conversion reported).
+/// True when the row converts to the type `current` (the `to` the last conversion reported: a shape name,
+/// `line`, or `sharp arrow`, `round arrow`, `elbow arrow`).
 fn is_current(args: &Value, current: Option<&str>) -> bool {
     let Some(current) = current else {
         return false;
     };
-    let to = args.get("to").and_then(Value::as_str);
-    match args.get("arrow_type").and_then(Value::as_str) {
-        // Arrows are told apart by their path type, which the command reports as `arrow_type`-prefixed names
-        // (`sharp_arrow`) or as plain `arrow`; a bare `arrow` is the sharp one.
-        Some(kind) => current == format!("{kind}_arrow") || (kind == "sharp" && current == "arrow"),
-        None => to == Some(current),
+    match (args.get("to").and_then(Value::as_str), args.get("arrow_type").and_then(Value::as_str)) {
+        (Some("arrow"), Some(kind)) => current == format!("{kind} arrow"),
+        (Some(to), _) => to == current,
+        (None, _) => false,
     }
 }
 
@@ -60,4 +59,21 @@ pub fn show(ctx: &Context, cx: &mut Cx<'_>, st: &mut UiState) {
             });
         },
     );
+}
+
+#[cfg(test)]
+mod tests {
+    use serde_json::json;
+
+    use super::*;
+
+    #[test]
+    fn the_current_row_is_found_by_the_words_the_command_reports() {
+        assert!(is_current(&json!({ "to": "diamond" }), Some("diamond")));
+        assert!(!is_current(&json!({ "to": "diamond" }), Some("ellipse")));
+        assert!(is_current(&json!({ "to": "line" }), Some("line")));
+        assert!(is_current(&json!({ "to": "arrow", "arrow_type": "elbow" }), Some("elbow arrow")));
+        assert!(!is_current(&json!({ "to": "arrow", "arrow_type": "sharp" }), Some("elbow arrow")));
+        assert!(!is_current(&json!({ "to": "line" }), None));
+    }
 }

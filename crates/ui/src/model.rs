@@ -129,8 +129,6 @@ pub struct SelectedElement {
     pub kind: String,
     /// Its link, if it has one.
     pub link: Option<String>,
-    /// It is locked.
-    pub locked: bool,
     /// The frame it belongs to.
     pub frame: Option<String>,
     /// The id of the text bound to it as its label, when it has one.
@@ -626,7 +624,7 @@ fn read_selection(s: &mut Session) -> SelectionRead {
 fn read_selected_elements(s: &mut Session) -> Vec<SelectedElement> {
     let args = json!({
         "filter": { "selected": true },
-        "fields": ["id", "kind", "link", "locked", "frame", "bound_text"],
+        "fields": ["id", "kind", "link", "frame", "bound_text"],
         "limit": SELECTION_DETAIL_LIMIT,
     });
     let Ok(out) = s.query("element.query", args) else {
@@ -640,7 +638,6 @@ fn read_selected_elements(s: &mut Session) -> Vec<SelectedElement> {
                 id: text_of(item, "id")?.to_owned(),
                 kind: text_of(item, "kind")?.to_owned(),
                 link: text_of(item, "link").map(str::to_owned),
-                locked: item.get("locked").and_then(Value::as_bool).unwrap_or(false),
                 frame: text_of(item, "frame").map(str::to_owned),
                 label: text_of(item, "bound_text").map(str::to_owned),
             })

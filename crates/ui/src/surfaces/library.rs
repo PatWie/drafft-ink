@@ -66,7 +66,7 @@ pub fn show(ctx: &Context, cx: &mut Cx<'_>, st: &mut UiState) {
             panel = out.response.rect;
         },
     );
-    drop_target(ctx, cx, panel);
+    remember_panel(ctx, panel);
 }
 
 fn header(ui: &mut Ui, cx: &mut Cx<'_>) {
@@ -192,7 +192,7 @@ fn panel_rect(ui: &Ui) -> Rect {
     ui.ctx().data(|d| d.get_temp::<Rect>(Id::unique("library_panel_rect"))).unwrap_or(Rect::NOTHING)
 }
 
-fn drop_target(ctx: &Context, _cx: &mut Cx<'_>, panel: Rect) {
+fn remember_panel(ctx: &Context, panel: Rect) {
     ctx.data_mut(|d| d.insert_temp(Id::unique("library_panel_rect"), panel));
 }
 

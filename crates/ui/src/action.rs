@@ -383,12 +383,9 @@ impl UiState {
             }
             ("doc.export", Ok(_)) => self.export = None,
             ("library.add", Ok(_)) => self.library_name.clear(),
-            // Tab or Shift+Tab converted the selection: show the popup with the type it became.
-            ("element.convert", Ok(out)) if call.origin == Origin::Shortcut => {
-                let to = out.get("to").and_then(Value::as_str).map(str::to_owned);
-                self.convert_popup = Some(ConvertPopup { current: to });
-            }
-            ("element.convert", Ok(out)) if self.convert_popup.is_some() => {
+            // Tab or Shift+Tab converted the selection: show the popup with the type it became. Once the popup is
+            // open, a click on one of its types updates it too.
+            ("element.convert", Ok(out)) if call.origin == Origin::Shortcut || self.convert_popup.is_some() => {
                 let to = out.get("to").and_then(Value::as_str).map(str::to_owned);
                 self.convert_popup = Some(ConvertPopup { current: to });
             }
