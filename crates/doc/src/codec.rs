@@ -424,14 +424,13 @@ fn field_json(key: &str, voc: ValueOrContainer) -> Result<Value, DocError> {
     match (&v, last_segment(key)) {
         (LoroValue::Binary(b), PACKED_PAIRS) => {
             let nums = unpack(b, MAX_POINTS.saturating_mul(2))?;
-            let mut pts = Vec::with_capacity(nums.len() / 2);
-            for p in nums.chunks_exact(2) {
-                let (x, y) = (p.first().copied().unwrap_or(0.0), p.get(1).copied().unwrap_or(0.0));
-                pts.push(Value::Array(vec![num(x)?, num(y)?]));
-            }
             if nums.len() % 2 != 0 {
                 return Err(bad("odd number of coordinates"));
             }
+            let pts = nums
+                .chunks_exact(2)
+                .map(|p| p.iter().copied().map(num).collect::<Result<Vec<_>, _>>().map(Value::Array))
+                .collect::<Result<Vec<_>, _>>()?;
             Ok(Value::Array(pts))
         }
         (LoroValue::Binary(b), PACKED_SINGLES) => {
