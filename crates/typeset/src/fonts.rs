@@ -13,6 +13,25 @@ pub(crate) static GELPEN_SERIF_MEDIUM: &[u8] = include_bytes!("../assets/fonts/G
 pub(crate) static GELPEN_SERIF_HEAVY: &[u8] = include_bytes!("../assets/fonts/GelPenSerifHeavy.ttf");
 pub(crate) static VANILLA_EXTRACT: &[u8] = include_bytes!("../assets/fonts/VanillaExtract.ttf");
 
+/// The font file that draws `family` at `weight`, when this build has it: the bundled GelPen and Vanilla Extract
+/// files always, Noto Sans when it is built in (the Cargo feature `noto-sans`). A custom family has none. The bytes
+/// are the statics the typesetter registers, so a host that needs the file (the UI fonts, an SVG export) shares
+/// them instead of embedding a second copy.
+pub fn font_file(family: &FontFamily, weight: FontWeight) -> Option<&'static [u8]> {
+    match (family, weight) {
+        (FontFamily::GelPen, FontWeight::Light) => Some(GELPEN_LIGHT),
+        (FontFamily::GelPen, FontWeight::Regular) => Some(GELPEN_REGULAR),
+        (FontFamily::GelPen, FontWeight::Heavy) => Some(GELPEN_HEAVY),
+        (FontFamily::GelPenSerif, FontWeight::Light) => Some(GELPEN_SERIF_LIGHT),
+        (FontFamily::GelPenSerif, FontWeight::Regular) => Some(GELPEN_SERIF_MEDIUM),
+        (FontFamily::GelPenSerif, FontWeight::Heavy) => Some(GELPEN_SERIF_HEAVY),
+        (FontFamily::VanillaExtract, _) => Some(VANILLA_EXTRACT),
+        (FontFamily::NotoSans, FontWeight::Heavy) => ExtraFont::NotoSansBold.embedded(),
+        (FontFamily::NotoSans, _) => ExtraFont::NotoSansRegular.embedded(),
+        (FontFamily::Custom(_), _) => None,
+    }
+}
+
 /// Every font that is always compiled in, registered with Parley at start-up. The big fonts are
 /// [`ExtraFont`]s; the STIX math font is read by ReX directly.
 pub(crate) fn bundled() -> [&'static [u8]; 7] {

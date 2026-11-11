@@ -9,6 +9,7 @@ description = "The egui user interface (L6): reads the command registry and the 
 [dependencies]
 drafftink-engine = { path = "../engine" }
 drafftink-scene = { path = "../scene" }
+drafftink-typeset = { path = "../typeset", default-features = false }
 egui = { workspace = true }
 serde_json = { workspace = true }
 

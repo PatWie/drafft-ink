@@ -97,9 +97,17 @@ pub fn wanted_fonts() -> Vec<UiFont> {
     PROVIDED.with_borrow(|p| UiFont::ALL.into_iter().filter(|f| !p.files.contains_key(f)).collect())
 }
 
-static GELPEN: &[u8] = include_bytes!("../../typeset/assets/fonts/GelPen.ttf");
-static GELPEN_SERIF: &[u8] = include_bytes!("../../typeset/assets/fonts/GelPenSerifMedium.ttf");
-static VANILLA: &[u8] = include_bytes!("../../typeset/assets/fonts/VanillaExtract.ttf");
+/// The font files of the hand-written headings and the font picker: the same statics the typesetter registers, so
+/// the binary holds each of them once.
+fn hand_fonts() -> [(&'static str, &'static [u8]); 3] {
+    use drafftink_typeset::{FontFamily as Face, FontWeight, font_file};
+    let file = |face: Face| font_file(&face, FontWeight::Regular).unwrap_or_default();
+    [
+        (HAND_FONT, file(Face::GelPen)),
+        (PREVIEW_SERIF, file(Face::GelPenSerif)),
+        (PREVIEW_VANILLA, file(Face::VanillaExtract)),
+    ]
+}
 
 /// Every colour the surfaces use.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -265,7 +273,7 @@ pub fn install_fonts(ctx: &Context) {
         p.version
     });
     ctx.data_mut(|d| d.insert_temp(egui::Id::unique("drafftink-fonts-version"), version));
-    for (name, bytes) in [(HAND_FONT, GELPEN), (PREVIEW_SERIF, GELPEN_SERIF), (PREVIEW_VANILLA, VANILLA)] {
+    for (name, bytes) in hand_fonts() {
         fonts.font_data.insert(name.to_owned(), std::sync::Arc::new(FontData::from_static(bytes)));
         // The default proportional fonts follow as the fallback for glyphs GelPen lacks.
         let mut chain = vec![name.to_owned()];
@@ -320,4 +328,19 @@ pub fn apply(ctx: &Context, setting: Option<&str>) {
         ctx.set_visuals_of(theme, v);
     }
     ctx.set_theme(theme_preference(setting));
+}
+
+#[cfg(test)]
+mod tests {
+    use drafftink_typeset::{FontFamily, FontWeight, font_file};
+
+    #[test]
+    fn the_hand_fonts_are_the_typesetters_statics() {
+        let want = [FontFamily::GelPen, FontFamily::GelPenSerif, FontFamily::VanillaExtract];
+        for ((_, bytes), family) in super::hand_fonts().into_iter().zip(want) {
+            let theirs = font_file(&family, FontWeight::Regular).unwrap_or_default();
+            assert!(!bytes.is_empty());
+            assert!(std::ptr::eq(bytes, theirs), "{family:?}: the UI must use the typesetter's bytes, not a copy");
+        }
+    }
 }
