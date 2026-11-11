@@ -288,6 +288,22 @@ impl Rig {
         self.s.store().iter().cloned().collect()
     }
 
+    /// The live elements as JSON in z order, with the parts that legitimately differ between two runs of the
+    /// same edit removed (ids, versions, z keys, sketch seeds), and ids inside bindings and group lists
+    /// replaced by their position in z order. Two documents that are equal after this are "the same document
+    /// (ids and timestamps aside)" in the sense of docs/exceptions.md.
+    pub(super) fn normalized_doc(&self) -> Value {
+        let elements = self.elements();
+        let position = |id: &str| elements.iter().position(|e| e.id.as_str() == id);
+        let mut out = Vec::new();
+        for e in &elements {
+            let mut v = serde_json::to_value(e).expect("element serialises");
+            strip_volatile(&mut v, &position);
+            out.push(v);
+        }
+        Value::Array(out)
+    }
+
     /// The number of undo steps the active tab holds.
     pub(super) fn undo_depth(&self) -> usize {
         self.s.tab().doc.undo_depth()
@@ -297,5 +313,27 @@ impl Rig {
     pub(super) fn stubbed(&self, id: &str) -> bool {
         STUBS.iter().any(|spec| spec.id == id)
             && crate::cmd::FAMILIES.iter().all(|fam| fam.iter().all(|spec| spec.id != id))
+    }
+}
+
+/// Removes ids, versions, z keys and seeds from an element's JSON, and renames id references to positions.
+fn strip_volatile(v: &mut Value, position: &dyn Fn(&str) -> Option<usize>) {
+    match v {
+        Value::Object(map) => {
+            for key in ["id", "version", "index", "seed", "group_ids"] {
+                map.remove(key);
+            }
+            for (key, val) in map.iter_mut() {
+                if matches!(key.as_str(), "target" | "frame_id" | "container")
+                    && let Value::String(s) = val
+                {
+                    *val = position(s).map_or(Value::Null, |p| json!(format!("#{p}")));
+                } else {
+                    strip_volatile(val, position);
+                }
+            }
+        }
+        Value::Array(items) => items.iter_mut().for_each(|i| strip_volatile(i, position)),
+        _ => {}
     }
 }
