@@ -87,6 +87,8 @@ pub struct KeyDef {
 pub const GRID_STYLES: &[&str] = &["none", "lines", "horizontal_lines", "crosses", "dots"];
 /// The theme choices (docs/commands.md §9 item 13).
 pub const THEMES: &[&str] = &["light", "dark", "system"];
+/// The fonts the UI text can use: the canvas families that are bundled (the words of the `font_family` property).
+pub const UI_FONTS: &[&str] = &["gelpen", "gelpen_serif", "vanilla_extract", "noto_sans"];
 /// The path types of `arrow.type` (the words of `drafftink_edit::arrow_defaults::path_name`).
 pub const ARROW_TYPES: &[&str] = &["sharp", "round", "elbow"];
 /// The heads of `arrow.start_head` and `arrow.end_head` (the words of `drafftink_edit::arrow_defaults::name_of`).
@@ -184,6 +186,12 @@ pub const KEYS: &[KeyDef] = &[
         summary: "Recently saved or opened documents. Maintained by `doc.open` and `doc.save`.",
     },
     key("theme", Kind::Choice(THEMES), Def::Str("system"), "Light or dark colours; system follows the device."),
+    key(
+        "ui.font",
+        Kind::Choice(UI_FONTS),
+        Def::Str("gelpen"),
+        "The font of menus, bars and dialogs: one of the bundled canvas fonts. Does not change the canvas.",
+    ),
 ];
 
 /// The definition of a key.

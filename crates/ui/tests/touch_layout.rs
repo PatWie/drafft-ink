@@ -150,11 +150,19 @@ fn a_narrow_window_keeps_its_bars_inside_the_window() {
 
 #[test]
 fn the_panels_do_not_cover_each_other_on_a_phone() {
-    // Menu buttons at the top left, the properties bar under them, the tab bar above the bottom bar.
-    let h = at(vec2(390.0, 800.0), dialog::fixture());
+    // One strip across the top (menu, rooms, title, and one style button), the properties as a popover under it, the
+    // tab bar above the bottom bar.
+    let mut h = at(vec2(390.0, 800.0), dialog::fixture());
+    let strip = h.state().state.chrome.strip.unwrap();
     let menu = h.get_by_label("Open or close the main menu").rect();
+    let style = h.get_by_label("Stroke, fill and width").rect();
+    assert!(strip.contains_rect(menu) && strip.contains_rect(style), "{menu:?} and {style:?} in {strip:?}");
+    assert!(menu.max.x < style.min.x, "the style button is at the right end: {style:?} vs {menu:?}");
+    assert!(h.query_by_label("Stroke blue").is_none(), "the swatches wait in the popover");
+    h.get_by_label("Stroke, fill and width").click();
+    h.run();
     let stroke = h.get_all_by_label("Stroke blue").next().unwrap().rect();
-    assert!(stroke.min.y >= menu.max.y, "the colour bar sits under the menu: {stroke:?} vs {menu:?}");
+    assert!(stroke.min.y >= strip.max.y, "the swatches sit under the strip: {stroke:?} vs {strip:?}");
     let tab = h.get_all_by_label("Untitled").last().unwrap().rect();
     let undo = h.get_by_label("Undo").rect();
     assert!(tab.max.y <= undo.min.y, "the tab bar sits above the bottom bar: {tab:?} vs {undo:?}");

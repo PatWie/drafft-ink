@@ -23,7 +23,7 @@ use std::sync::OnceLock;
 use egui::{ComboBox, DragValue, Id, Key, RichText, TextEdit, Ui};
 use serde_json::{Map, Number, Value};
 
-use crate::theme::{self, Palette};
+use crate::theme::{Palette, TextSize};
 
 /// How deep `$ref` and `anyOf` are followed before the form gives up and shows raw JSON.
 const MAX_DEPTH: u8 = 8;
@@ -356,7 +356,7 @@ pub fn show_fields(
         submit |= show_field(ui, pal, field, values, example);
     }
     if fields.iter().any(|f| !f.required) {
-        egui::CollapsingHeader::new(RichText::new("More").font(theme::hand(14.0)).color(pal.muted))
+        egui::CollapsingHeader::new(RichText::new("More").font(TextSize::Label.hand()).color(pal.muted))
             .id_salt("args_form.more")
             .default_open(false)
             .show(ui, |ui| {
@@ -372,9 +372,9 @@ fn show_field(ui: &mut Ui, pal: &Palette, field: &Field, values: &mut FormValues
     let mut submit = false;
     ui.add_space(4.0);
     ui.vertical(|ui| {
-        let name = ui.label(RichText::new(&field.name).font(theme::hand(15.0)));
+        let name = ui.label(RichText::new(&field.name).font(TextSize::Label.hand()));
         if !field.doc.is_empty() {
-            ui.label(RichText::new(&field.doc).size(11.0).color(pal.muted));
+            ui.label(RichText::new(&field.doc).size(TextSize::Caption.points()).color(pal.muted));
         }
         // An optional control that has no empty state (a check box, a number, a combo box) is set
         // explicitly: the box in front of it adds or removes the property.
@@ -466,7 +466,9 @@ fn edit_field(
             if !s.trim().is_empty()
                 && let Err(e) = serde_json::from_str::<Value>(s)
             {
-                ui.label(RichText::new(format!("Not valid JSON: {e}")).size(11.0).color(pal.danger));
+                ui.label(
+                    RichText::new(format!("Not valid JSON: {e}")).size(TextSize::Caption.points()).color(pal.danger),
+                );
             }
         }
         _ => {

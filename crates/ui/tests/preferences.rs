@@ -58,6 +58,43 @@ fn the_theme_buttons_set_the_theme() {
     }
 }
 
+/// The first font of the UI text family: the one the menus and bars are set in.
+fn ui_font(h: &H) -> String {
+    h.ctx.fonts(|f| f.definitions().families[&egui::FontFamily::Proportional][0].clone())
+}
+
+#[test]
+fn gelpen_is_the_interface_font_until_another_is_chosen() {
+    let h = open();
+    assert_eq!(setting(&h, "ui.font"), json!("gelpen"));
+    assert_eq!(ui_font(&h), drafftink_ui::theme::HAND_FONT);
+    h.get_by_label("Interface font: GelPen");
+}
+
+#[test]
+fn the_interface_font_buttons_set_ui_font_and_the_text_follows() {
+    let mut h = open();
+    for (label, value, family) in [
+        ("Interface font: Vanilla Extract", "vanilla_extract", drafftink_ui::theme::PREVIEW_VANILLA),
+        ("Interface font: GelPen Serif", "gelpen_serif", drafftink_ui::theme::PREVIEW_SERIF),
+        ("Interface font: GelPen", "gelpen", drafftink_ui::theme::HAND_FONT),
+    ] {
+        press(&mut h, label, "settings.set", json!({ "key": "ui.font", "value": value }));
+        assert_eq!(setting(&h, "ui.font"), json!(value));
+        assert_eq!(ui_font(&h), family, "the text of the next frame is set in {value}");
+    }
+}
+
+#[test]
+fn noto_sans_is_offered_only_where_the_build_has_the_file() {
+    let h = open();
+    let offered = h.query_by_label("Interface font: Noto Sans").is_some();
+    assert_eq!(offered, drafftink_ui::theme::UiFontChoice::NotoSans.available());
+    // The four words are the ones the canvas takes for `font_family`; a fifth is refused by the engine.
+    let words: Vec<&str> = drafftink_ui::theme::UiFontChoice::ALL.iter().map(|c| c.setting()).collect();
+    assert_eq!(words, ["gelpen", "gelpen_serif", "vanilla_extract", "noto_sans"]);
+}
+
 #[test]
 fn grid_style_buttons_set_the_grid_style() {
     let mut h = open();

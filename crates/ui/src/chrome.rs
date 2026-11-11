@@ -1,0 +1,110 @@
+//! Where the chrome is. Each surface that takes room records its rectangle in the frame it is drawn, and the
+//! surfaces drawn after it (and the popovers that open next to it) read it, instead of repeating the height of
+//! a bar as a number.
+//!
+//! The rectangles belong to one frame: [`ChromeRects::default`] starts every `draw`, and the order of
+//! `surfaces::show_all` is the order of dependencies (the strip first, then the bottom bar, then the tabs, then
+//! everything that sits above or below them).
+
+use egui::Rect;
+
+use crate::theme::space;
+
+/// The gap between a bar and what is placed next to it.
+pub const GAP: f32 = space::LG;
+
+/// The rectangles of the chrome surfaces drawn so far in this frame. `None`: not drawn (zen mode, or not yet).
+#[derive(Debug, Clone, Copy, Default, PartialEq)]
+pub struct ChromeRects {
+    /// The top strip, across the window.
+    pub strip: Option<Rect>,
+    /// The hamburger button in the strip: the menu opens under it.
+    pub menu_button: Option<Rect>,
+    /// The style button of a strip too narrow for the style controls.
+    pub style_button: Option<Rect>,
+    /// The bottom-left bar (undo, grid, zoom, snapping).
+    pub bottom_bar: Option<Rect>,
+    /// The tab bar.
+    pub tabs: Option<Rect>,
+    /// The tool column.
+    pub tools: Option<Rect>,
+    /// The properties panel on the right.
+    pub props: Option<Rect>,
+}
+
+impl ChromeRects {
+    /// The y of the lower edge of the strip, or of the window top when there is none.
+    pub fn below_strip(&self, screen: Rect) -> f32 {
+        self.strip.map_or(screen.top(), |r| r.bottom())
+    }
+
+    /// The y of the upper edge of the bottom-left bar, or of the window bottom when there is none.
+    pub fn above_bottom_bar(&self, screen: Rect) -> f32 {
+        self.bottom_bar.map_or(screen.bottom(), |r| r.top())
+    }
+
+    /// The y of the highest bottom surface (the bottom bar or the tabs): things that float above the bottom
+    /// chrome (toasts, the convert popup) sit over it.
+    pub fn bottom_floor(&self, screen: Rect) -> f32 {
+        [self.bottom_bar, self.tabs].into_iter().flatten().map(|r| r.top()).fold(screen.bottom(), f32::min)
+    }
+
+    /// The tallest a panel can be that is centred on the window's middle and stays clear of the strip (with a
+    /// gap). The side panels are centred, so the limit is twice the distance from the middle to the strip.
+    pub fn centred_panel_height(&self, screen: Rect) -> f32 {
+        2.0 * (screen.center().y - self.below_strip(screen) - GAP).max(0.0)
+    }
+}
+
+/// How far a surface anchored to the bottom edge must lift to sit `gap` above the line `y`.
+pub fn lift_to(screen: Rect, y: f32, gap: f32) -> f32 {
+    (screen.bottom() - y + gap).max(0.0)
+}
+
+#[cfg(test)]
+mod tests {
+    use egui::{pos2, vec2};
+
+    use super::*;
+
+    fn screen() -> Rect {
+        Rect::from_min_size(pos2(0.0, 0.0), vec2(1000.0, 800.0))
+    }
+
+    #[test]
+    fn without_chrome_the_edges_are_the_window() {
+        let r = ChromeRects::default();
+        assert_eq!(r.below_strip(screen()), 0.0);
+        assert_eq!(r.above_bottom_bar(screen()), 800.0);
+        assert_eq!(r.bottom_floor(screen()), 800.0);
+    }
+
+    #[test]
+    fn the_bottom_floor_is_the_highest_bottom_surface() {
+        let r = ChromeRects {
+            bottom_bar: Some(Rect::from_min_size(pos2(10.0, 740.0), vec2(300.0, 48.0))),
+            tabs: Some(Rect::from_min_size(pos2(400.0, 700.0), vec2(200.0, 48.0))),
+            ..ChromeRects::default()
+        };
+        assert_eq!(r.bottom_floor(screen()), 700.0);
+        assert_eq!(r.above_bottom_bar(screen()), 740.0);
+    }
+
+    #[test]
+    fn a_centred_panel_stays_under_the_strip() {
+        let r = ChromeRects {
+            strip: Some(Rect::from_min_size(pos2(0.0, 0.0), vec2(1000.0, 40.0))),
+            ..ChromeRects::default()
+        };
+        // The panel is centred at 400 and may reach up to 48: 352 above the middle, so 704 in all.
+        assert_eq!(r.centred_panel_height(screen()), 2.0 * (400.0 - 40.0 - GAP));
+        let short = Rect::from_min_size(pos2(0.0, 0.0), vec2(1000.0, 60.0));
+        assert_eq!(r.centred_panel_height(short), 0.0, "never negative");
+    }
+
+    #[test]
+    fn lifting_never_goes_below_the_window_edge() {
+        assert_eq!(lift_to(screen(), 740.0, 8.0), 68.0);
+        assert_eq!(lift_to(screen(), 900.0, 8.0), 0.0);
+    }
+}

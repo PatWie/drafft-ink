@@ -12,7 +12,7 @@ use crate::action::Verb;
 use crate::keymap::{HelpRow, help_rows};
 use crate::state::UiState;
 use crate::surfaces::palette::{family_title, fuzzy_score};
-use crate::theme::{self, Palette};
+use crate::theme::{Palette, TextSize};
 use crate::widgets::{Cx, dialog_frame};
 
 /// Width of the dialog.
@@ -45,7 +45,7 @@ pub fn show(ctx: &Context, cx: &mut Cx<'_>, st: &mut UiState) {
     let area = Modal::default_area(id).anchor(Align2::CENTER_CENTER, vec2(0.0, 0.0));
     let response = Modal::new(id).area(area).frame(dialog_frame(&pal)).backdrop_color(pal.backdrop).show(ctx, |ui| {
         ui.set_width(WIDTH);
-        ui.label(RichText::new("Keyboard shortcuts").font(theme::hand(22.0)));
+        ui.label(RichText::new("Keyboard shortcuts").font(TextSize::Display.hand()));
         ui.add_space(6.0);
         let query_id = Id::unique("shortcuts.query");
         let edit = TextEdit::singleline(&mut mem.query)
@@ -144,10 +144,13 @@ fn show_rows(ui: &mut Ui, pal: &Palette, rows: &[HelpRow], query: &str) {
         ui.spacing_mut().item_spacing.y = 4.0;
         for (heading, list) in groups {
             ui.add_space(8.0);
-            ui.label(RichText::new(heading).font(theme::hand(15.0)).color(pal.muted));
+            ui.label(RichText::new(heading).font(TextSize::Label.hand()).color(pal.muted));
             for row in list {
                 ui.horizontal(|ui| {
-                    ui.add(egui::Label::new(RichText::new(&row.title).size(13.5).color(pal.text)).selectable(false));
+                    ui.add(
+                        egui::Label::new(RichText::new(&row.title).size(TextSize::Body.points()).color(pal.text))
+                            .selectable(false),
+                    );
                     ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                         key_caps(ui, pal, &row.keys.join(" / "));
                     });
@@ -205,7 +208,7 @@ pub(crate) fn key_caps(ui: &mut Ui, pal: &Palette, labels: &str) {
     let chords: Vec<&str> = labels.split(" / ").collect();
     for (n, chord) in chords.iter().enumerate().rev() {
         if n + 1 < chords.len() {
-            ui.label(RichText::new("/").size(11.0).color(pal.muted));
+            ui.label(RichText::new("/").size(TextSize::Caption.points()).color(pal.muted));
         }
         chord_caps(ui, pal, chord);
     }
@@ -218,7 +221,7 @@ fn chord_caps(ui: &mut Ui, pal: &Palette, chord: &str) -> Response {
         .iter()
         .map(|cap| {
             let (text, family) = cap_face(cap);
-            ui.painter().layout_no_wrap(text.to_owned(), FontId::new(11.0, family), pal.text)
+            ui.painter().layout_no_wrap(text.to_owned(), FontId::new(TextSize::Caption.points(), family), pal.text)
         })
         .collect();
     let height = galleys.iter().map(|g| g.size().y).fold(0.0, f32::max) + 2.0 * pad.y;

@@ -14,6 +14,7 @@
 
 pub mod action;
 pub mod args_form;
+pub mod chrome;
 pub mod colors;
 pub mod icons;
 pub mod keymap;

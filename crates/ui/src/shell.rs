@@ -157,7 +157,8 @@ impl UiShell {
 pub fn draw(ui: &mut egui::Ui, model: &Model, state: &mut UiState) -> Vec<UiAction> {
     let mut out = Vec::new();
     let ctx = ui.ctx().clone();
-    theme::ensure_fonts(&ctx);
+    theme::ensure_fonts(&ctx, theme::UiFontChoice::of_model(model));
+    state.chrome = crate::chrome::ChromeRects::default();
     let pal = Palette::of(&ctx);
     state.observe_input(&ctx);
     let screen = ctx.content_rect().size();

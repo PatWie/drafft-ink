@@ -127,10 +127,11 @@ test("collab: the dialog offers the access token field, and the token reaches co
     await app.exec("collab.leave_room");
     expect((await app.exec("collab.status")).state).toBe("ready");
 
-    // The dialog: the top bar's collaboration button. With the server chosen it offers a room field and, below it,
+    // The dialog: the collaboration button, second in the top strip (the strip is 40 px high, the button is the
+    // 28 px square at x 44..72, y 6..34; `ui/tests/top_strip.rs` pins those numbers). With the server chosen it offers a room field and, below it,
     // the access token field, then the button. These are the pixels of the fields (what they do with text is in
     // the egui tests: `ui/tests/collab_dialog.rs`).
-    await app.page.mouse.click(74, 37, { delay: 120 });
+    await app.page.mouse.click(58, 20, { delay: 120 });
     await app.page.waitForTimeout(600);
     const dialog = await shot(app);
     const field = (y: number) => dialog.at(780, y);

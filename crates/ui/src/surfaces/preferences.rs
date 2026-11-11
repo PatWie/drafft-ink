@@ -7,6 +7,7 @@ use serde_json::{Value, json};
 
 use crate::state::{LayoutPreference, UiState};
 use crate::surfaces::dialogs::{Close, show_modal};
+use crate::theme::{TextSize, UiFontChoice};
 use crate::widgets::{Ctl, Cx, section_label, separator};
 
 const GRID_STYLES: [(&str, &str); 5] = [
@@ -50,6 +51,21 @@ fn row_of_values(ui: &mut Ui, cx: &mut Cx<'_>, title: &str, key: &str, options: 
                 .label(format!("{title}: {label}"))
                 .selected(selected);
             cx.toggle_button(ui, &ctl, label);
+        }
+    });
+}
+
+/// The font of menus, bars and dialogs: one button per bundled font, each in its own face.
+fn font_row(ui: &mut Ui, cx: &mut Cx<'_>) {
+    section_label(ui, &cx.pal, "Interface font");
+    let current = UiFontChoice::of_model(cx.model);
+    ui.horizontal_wrapped(|ui| {
+        for choice in UiFontChoice::ALL.into_iter().filter(|c| c.available()) {
+            let ctl = Ctl::new("settings.set")
+                .args(set_args("ui.font", choice.setting()))
+                .label(format!("Interface font: {}", choice.title()))
+                .selected(current == choice);
+            cx.toggle_button_font(ui, &ctl, choice.title(), choice.preview(TextSize::Body.points()));
         }
     });
 }
@@ -116,6 +132,7 @@ pub fn show(ctx: &Context, cx: &mut Cx<'_>, st: &mut UiState) {
 fn body(ui: &mut Ui, cx: &mut Cx<'_>, layout: &mut LayoutPreference, draft: &mut ProfileDraft) {
     let pal = cx.pal;
     row_of_values(ui, cx, "Theme", "theme", &strings(&THEMES));
+    font_row(ui, cx);
     section_label(ui, &pal, "Layout");
     ui.horizontal(|ui| {
         for choice in LayoutPreference::ALL {

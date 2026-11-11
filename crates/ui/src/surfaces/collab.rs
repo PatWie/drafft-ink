@@ -14,7 +14,7 @@ use crate::action::Call;
 use crate::model::{CollabStatus, CollabView};
 use crate::state::UiState;
 use crate::surfaces::dialogs::{Close, enter_pressed, secret_field, show_modal, text_field};
-use crate::theme::{self, MARGIN};
+use crate::theme::{self, MARGIN, TextSize};
 use crate::widgets::{Ctl, Cx, panel_frame, section_label, separator};
 
 /// The server the settings default to, shown when the setting is missing.
@@ -194,10 +194,10 @@ fn body(ui: &mut Ui, cx: &mut Cx<'_>, draft: &mut Draft) {
     let (tone, text) = status_line(&collab);
     ui.horizontal(|ui| {
         dot(ui, tone_color(&pal, tone), 10.0);
-        ui.label(RichText::new(text).size(13.0).color(pal.text));
+        ui.label(RichText::new(text).size(TextSize::Body.points()).color(pal.text));
     });
     if let Some(people) = people_line(&collab) {
-        ui.label(RichText::new(people).size(12.0).color(pal.muted));
+        ui.label(RichText::new(people).size(TextSize::Small.points()).color(pal.muted));
     }
     ui.add_space(10.0);
 
@@ -293,7 +293,7 @@ fn peer_row(ui: &mut Ui, cx: &mut Cx<'_>, p: &crate::model::Peer) {
         let color = Color::parse(&p.color).ok().map_or(pal.muted, to32);
         dot(ui, color, 8.0);
         let name = if p.name.trim().is_empty() { "Anonymous" } else { p.name.trim() };
-        ui.label(RichText::new(name).size(11.0).color(pal.text));
+        ui.label(RichText::new(name).size(TextSize::Caption.points()).color(pal.text));
         let c = follow_call(p);
         let label = if p.followed { format!("Stop following {name}") } else { format!("Follow {name}") };
         let ctl = Ctl::new(&c.id).args(c.args.clone()).label(label).selected(p.followed);
@@ -317,7 +317,7 @@ pub fn show_presence(ctx: &Context, cx: &mut Cx<'_>, _st: &mut UiState) {
                     peer_row(ui, cx, p);
                 }
                 if more > 0 {
-                    ui.label(RichText::new(format!("+{more} more")).size(11.0).color(pal.muted));
+                    ui.label(RichText::new(format!("+{more} more")).size(TextSize::Caption.points()).color(pal.muted));
                 }
             });
         });

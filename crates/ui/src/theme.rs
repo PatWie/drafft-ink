@@ -8,18 +8,22 @@ use egui::{
     Color32, Context, CornerRadius, FontData, FontDefinitions, FontFamily, FontId, Stroke, Theme, ThemePreference,
 };
 
+pub mod tokens;
+
+pub use tokens::{Control, TextSize, radius, space};
+
 /// Distance of floating panels from the window edge.
-pub const MARGIN: f32 = 12.0;
+pub const MARGIN: f32 = space::XL;
 /// Corner radius of panels.
-pub const PANEL_RADIUS: u8 = 8;
+pub const PANEL_RADIUS: u8 = radius::LG;
 /// Corner radius of buttons.
-pub const BUTTON_RADIUS: u8 = 6;
+pub const BUTTON_RADIUS: u8 = radius::MD;
 /// Corner radius of dialogs.
-pub const DIALOG_RADIUS: u8 = 12;
+pub const DIALOG_RADIUS: u8 = radius::XL;
 /// Side of a tool button.
-pub const TOOL_BUTTON: f32 = 34.0;
+pub const TOOL_BUTTON: f32 = Control::Tool.points(false);
 /// Side of a small icon button.
-pub const SMALL_BUTTON: f32 = 28.0;
+pub const SMALL_BUTTON: f32 = Control::Small.points(false);
 /// Width of the right panel.
 pub const RIGHT_PANEL_WIDTH: f32 = 200.0;
 
@@ -107,6 +111,91 @@ fn hand_fonts() -> [(&'static str, &'static [u8]); 3] {
         (PREVIEW_SERIF, file(Face::GelPenSerif)),
         (PREVIEW_VANILLA, file(Face::VanillaExtract)),
     ]
+}
+
+/// Preview of Noto Sans, where the build carries the file.
+pub const PREVIEW_NOTO: &str = "noto_sans";
+
+/// The font of the UI text (menus, bars, dialogs): one of the fonts bundled for the canvas. The `ui.font`
+/// setting holds it by the words of the canvas `font_family` property. GelPen is the default.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
+pub enum UiFontChoice {
+    /// GelPen, the hand-drawn default.
+    #[default]
+    GelPen,
+    /// GelPen Serif.
+    GelPenSerif,
+    /// Vanilla Extract.
+    VanillaExtract,
+    /// Noto Sans, where the build carries it.
+    NotoSans,
+}
+
+impl UiFontChoice {
+    /// Every choice, in the order of the preferences.
+    pub const ALL: [UiFontChoice; 4] = [Self::GelPen, Self::GelPenSerif, Self::VanillaExtract, Self::NotoSans];
+
+    /// The value of the `ui.font` setting.
+    pub fn setting(self) -> &'static str {
+        match self {
+            Self::GelPen => "gelpen",
+            Self::GelPenSerif => "gelpen_serif",
+            Self::VanillaExtract => "vanilla_extract",
+            Self::NotoSans => "noto_sans",
+        }
+    }
+
+    /// The choice a `ui.font` value names. `None` for a word the UI does not know.
+    pub fn from_setting(word: &str) -> Option<Self> {
+        Self::ALL.into_iter().find(|c| c.setting() == word)
+    }
+
+    /// The choice the model's settings hold (the default when the key is missing or unknown).
+    pub fn of_model(model: &crate::model::Model) -> Self {
+        model.setting_str("ui.font").and_then(Self::from_setting).unwrap_or_default()
+    }
+
+    /// The label on the button in the preferences.
+    pub fn title(self) -> &'static str {
+        match self {
+            Self::GelPen => "GelPen",
+            Self::GelPenSerif => "GelPen Serif",
+            Self::VanillaExtract => "Vanilla Extract",
+            Self::NotoSans => "Noto Sans",
+        }
+    }
+
+    /// True when this build has the font file (Noto Sans is optional in the typesetter).
+    pub fn available(self) -> bool {
+        self.file().is_some_and(|bytes| !bytes.is_empty())
+    }
+
+    fn file(self) -> Option<&'static [u8]> {
+        use drafftink_typeset::{FontFamily as Face, FontWeight, font_file};
+        let face = match self {
+            Self::GelPen => Face::GelPen,
+            Self::GelPenSerif => Face::GelPenSerif,
+            Self::VanillaExtract => Face::VanillaExtract,
+            Self::NotoSans => Face::NotoSans,
+        };
+        font_file(&face, FontWeight::Regular)
+    }
+
+    /// The font at a size, in its own face (for the buttons that choose it). The default font where the build lacks
+    /// the file.
+    pub fn preview(self, size: f32) -> FontId {
+        named(self.family(), size)
+    }
+
+    /// The egui family name of the font.
+    fn family(self) -> &'static str {
+        match self {
+            Self::GelPen => HAND_FONT,
+            Self::GelPenSerif => PREVIEW_SERIF,
+            Self::VanillaExtract => PREVIEW_VANILLA,
+            Self::NotoSans => PREVIEW_NOTO,
+        }
+    }
 }
 
 /// Every colour the surfaces use.
@@ -228,7 +317,8 @@ pub fn hand(size: f32) -> FontId {
 /// A font id for a named family of this module (`PREVIEW_SERIF`, `PREVIEW_VANILLA`), with the same
 /// fallback as [`hand`].
 pub fn named(family: &str, size: f32) -> FontId {
-    if HAND_READY.with(std::cell::Cell::get) {
+    let missing = family == PREVIEW_NOTO && !UiFontChoice::NotoSans.available();
+    if HAND_READY.with(std::cell::Cell::get) && !missing {
         FontId::new(size, FontFamily::Name(family.into()))
     } else {
         FontId::proportional(size)
@@ -240,22 +330,34 @@ fn fonts_present(ctx: &Context) -> bool {
     ctx.fonts(|f| f.definitions().families.contains_key(&FontFamily::Name(HAND_FONT.into())))
 }
 
-/// Installs the fonts when they are missing, or when a [`UiFont`] arrived since they were installed, and
-/// records whether they can be used in this pass. Called at the start of every `draw`.
-pub fn ensure_fonts(ctx: &Context) -> bool {
-    let current = PROVIDED.with_borrow(|p| p.version);
-    let installed = ctx.data(|d| d.get_temp::<u32>(egui::Id::unique("drafftink-fonts-version")));
-    if !fonts_present(ctx) || installed != Some(current) {
-        install_fonts(ctx);
+/// The fonts the context was last given: the version of the provided files and the UI font.
+type Installed = (u32, UiFontChoice);
+
+fn installed_key() -> egui::Id {
+    egui::Id::unique("drafftink-fonts-version")
+}
+
+/// Installs the fonts when they are missing, when a [`UiFont`] arrived since they were installed, or when the UI
+/// font changed, and records whether they can be used in this pass. Called at the start of every `draw`.
+pub fn ensure_fonts(ctx: &Context, choice: UiFontChoice) -> bool {
+    let version = PROVIDED.with_borrow(|p| p.version);
+    let installed = ctx.data(|d| d.get_temp::<Installed>(installed_key()));
+    if !fonts_present(ctx) || installed != Some((version, choice)) {
+        install_fonts_with(ctx, choice);
     }
     let ready = fonts_present(ctx);
     HAND_READY.with(|r| r.set(ready));
     ready
 }
 
-/// Installs the GelPen fonts as named families. Call once per egui context; a new context (after a GPU
-/// loss) needs it again.
+/// Installs the GelPen fonts as named families, with GelPen as the UI font. Call once per egui context; a new
+/// context (after a GPU loss) needs it again.
 pub fn install_fonts(ctx: &Context) {
+    install_fonts_with(ctx, UiFontChoice::default());
+}
+
+/// Like [`install_fonts`] with the UI font of the `ui.font` setting.
+pub fn install_fonts_with(ctx: &Context, choice: UiFontChoice) {
     let mut fonts = FontDefinitions::default();
     let version = PROVIDED.with_borrow(|p| {
         // Where egui has no fonts of its own (the web), the loaded files make up its two lists.
@@ -272,13 +374,22 @@ pub fn install_fonts(ctx: &Context) {
         chain(FontFamily::Monospace, &[UiFont::Hack, UiFont::UbuntuLight, UiFont::EmojiIcons]);
         p.version
     });
-    ctx.data_mut(|d| d.insert_temp(egui::Id::unique("drafftink-fonts-version"), version));
-    for (name, bytes) in hand_fonts() {
+    ctx.data_mut(|d| d.insert_temp::<Installed>(installed_key(), (version, choice)));
+    let fallback = fonts.families.get(&FontFamily::Proportional).cloned().unwrap_or_default();
+    let noto = UiFontChoice::NotoSans.file().filter(|bytes| !bytes.is_empty()).map(|bytes| (PREVIEW_NOTO, bytes));
+    for (name, bytes) in hand_fonts().into_iter().chain(noto) {
         fonts.font_data.insert(name.to_owned(), std::sync::Arc::new(FontData::from_static(bytes)));
-        // The default proportional fonts follow as the fallback for glyphs GelPen lacks.
+        // The default proportional fonts follow as the fallback for glyphs the font lacks.
         let mut chain = vec![name.to_owned()];
-        chain.extend(fonts.families.get(&FontFamily::Proportional).cloned().unwrap_or_default());
+        chain.extend(fallback.iter().cloned());
         fonts.families.insert(FontFamily::Name(name.into()), chain);
+    }
+    // The UI text is the chosen font, then the fallback. A choice this build lacks (Noto Sans on the web) keeps the
+    // default font.
+    let chosen = choice.family();
+    if fonts.font_data.contains_key(chosen) {
+        let list = fonts.families.entry(FontFamily::Proportional).or_default();
+        list.insert(0, chosen.to_owned());
     }
     // Where no UI font is there (the web before a file arrived, or after a failed download) GelPen draws the
     // text, so that a label never turns into boxes.

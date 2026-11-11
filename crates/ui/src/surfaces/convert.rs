@@ -6,9 +6,10 @@
 use egui::{Align2, Area, Context, Id, Order, vec2};
 use serde_json::Value;
 
+use crate::chrome::{GAP, lift_to};
 use crate::state::UiState;
 use crate::surfaces::context_menu::convert_targets;
-use crate::theme::{self, MARGIN};
+use crate::theme::{TextSize, space};
 use crate::widgets::{Ctl, Cx, panel_frame};
 
 /// The short name on the button of a row such as "Convert to sharp arrow".
@@ -29,6 +30,9 @@ fn is_current(args: &Value, current: Option<&str>) -> bool {
     }
 }
 
+/// How far the popup sits above the toasts' line, so that a toast does not hide it.
+const TOAST_CLEARANCE: f32 = 28.0;
+
 /// Draws the popup.
 pub fn show(ctx: &Context, cx: &mut Cx<'_>, st: &mut UiState) {
     let Some(popup) = st.convert_popup.clone() else {
@@ -39,13 +43,15 @@ pub fn show(ctx: &Context, cx: &mut Cx<'_>, st: &mut UiState) {
         st.convert_popup = None;
         return;
     }
-    let lift = MARGIN + cx.layout.small_side() + 56.0;
+    // Above the bottom chrome, and above the toasts that appear there.
+    let screen = ctx.content_rect();
+    let lift = lift_to(screen, st.chrome.bottom_floor(screen), GAP) + TOAST_CLEARANCE;
     Area::new(Id::unique("convert_popup")).anchor(Align2::CENTER_BOTTOM, vec2(0.0, -lift)).order(Order::Middle).show(
         ctx,
         |ui| {
             panel_frame(&cx.pal).show(ui, |ui| {
-                ui.spacing_mut().item_spacing = vec2(4.0, 4.0);
-                ui.label(egui::RichText::new("Convert to").font(theme::hand(14.0)).color(cx.pal.text));
+                ui.spacing_mut().item_spacing = vec2(space::SM, space::SM);
+                ui.label(egui::RichText::new("Convert to").font(TextSize::Label.hand()).color(cx.pal.text));
                 ui.horizontal_wrapped(|ui| {
                     for (text, args) in &targets {
                         let ctl = Ctl::new("element.convert")
@@ -55,7 +61,9 @@ pub fn show(ctx: &Context, cx: &mut Cx<'_>, st: &mut UiState) {
                         cx.toggle_button(ui, &ctl, short(text));
                     }
                 });
-                ui.label(egui::RichText::new("Tab picks the next type").size(11.0).color(cx.pal.muted));
+                ui.label(
+                    egui::RichText::new("Tab picks the next type").size(TextSize::Caption.points()).color(cx.pal.muted),
+                );
             });
         },
     );

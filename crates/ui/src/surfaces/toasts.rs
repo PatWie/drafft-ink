@@ -4,22 +4,24 @@
 use egui::{Align2, Area, Context, Id, Order, vec2};
 
 use crate::action::UiAction;
+use crate::chrome::{GAP, lift_to};
 use crate::state::UiState;
-use crate::theme::MARGIN;
+use crate::theme::{TextSize, space};
 use crate::widgets::{Cx, panel_frame};
 
-/// Draws the toasts above the bottom bar.
+/// Draws the toasts above the bottom chrome (the bottom bar and the tabs).
 pub fn show(ctx: &Context, cx: &mut Cx<'_>, st: &mut UiState) {
     if st.toasts.is_empty() {
         return;
     }
     let now = ctx.input(|i| i.time);
     let toasts = st.toasts.clone();
-    Area::new(Id::unique("toasts"))
-        .anchor(Align2::CENTER_BOTTOM, vec2(0.0, -(MARGIN + 56.0)))
-        .order(Order::Tooltip)
-        .show(ctx, |ui| {
-            ui.spacing_mut().item_spacing = vec2(0.0, 6.0);
+    let screen = ctx.content_rect();
+    let lift = lift_to(screen, st.chrome.bottom_floor(screen), GAP);
+    Area::new(Id::unique("toasts")).anchor(Align2::CENTER_BOTTOM, vec2(0.0, -lift)).order(Order::Tooltip).show(
+        ctx,
+        |ui| {
+            ui.spacing_mut().item_spacing = vec2(0.0, space::MD);
             for t in toasts.iter().rev() {
                 let Some(alpha) = t.alpha(now) else {
                     continue;
@@ -30,7 +32,7 @@ pub fn show(ctx: &Context, cx: &mut Cx<'_>, st: &mut UiState) {
                     frame.show(ui, |ui| {
                         ui.set_max_width(420.0);
                         ui.horizontal_wrapped(|ui| {
-                            ui.label(egui::RichText::new(&t.text).size(13.0).color(cx.pal.text));
+                            ui.label(egui::RichText::new(&t.text).size(TextSize::Body.points()).color(cx.pal.text));
                             if let Some(call) = &t.suggestion {
                                 let title = cx.model.title(&call.id).to_owned();
                                 if ui.button(title).clicked() {
@@ -41,5 +43,6 @@ pub fn show(ctx: &Context, cx: &mut Cx<'_>, st: &mut UiState) {
                     });
                 });
             }
-        });
+        },
+    );
 }

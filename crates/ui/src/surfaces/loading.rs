@@ -5,6 +5,7 @@
 use egui::{Align2, Area, Context, Id, Order, ProgressBar, RichText, vec2};
 
 use crate::state::UiState;
+use crate::theme::TextSize;
 use crate::widgets::{Cx, panel_frame};
 
 /// Width of the progress bar.
@@ -19,7 +20,7 @@ pub fn show(ctx: &Context, cx: &mut Cx<'_>, _st: &mut UiState) {
         |ui| {
             panel_frame(&pal).show(ui, |ui| {
                 ui.set_width(BAR_WIDTH);
-                ui.label(RichText::new(loading.text()).size(14.0).color(pal.text));
+                ui.label(RichText::new(loading.text()).size(TextSize::Label.points()).color(pal.text));
                 if let Some(fraction) = loading.fraction() {
                     ui.add_space(6.0);
                     ui.add(ProgressBar::new(fraction).desired_width(BAR_WIDTH));

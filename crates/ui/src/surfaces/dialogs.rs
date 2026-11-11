@@ -8,14 +8,13 @@ use egui::{
 use serde_json::{Value, json};
 
 use crate::action::{Call, Verb};
+use crate::chrome::{GAP, lift_to};
 use crate::icons::Icon;
 use crate::model::{BoundsView, Model};
 use crate::state::{SearchHit, SearchResults, UiState};
-use crate::theme::{self, MARGIN, Palette, SMALL_BUTTON};
+use crate::theme::{self, MARGIN, Palette, SMALL_BUTTON, TextSize};
 use crate::widgets::{Ctl, Cx, panel_frame};
 
-/// Space to leave above the bottom bar for panels anchored at the bottom left.
-const ABOVE_BOTTOM_BAR: f32 = 64.0;
 /// Width of the stats card.
 const STATS_WIDTH: f32 = 190.0;
 /// Tallest the list of search results grows before it scrolls.
@@ -79,7 +78,7 @@ pub(crate) fn show_modal(
     let out = modal.frame(crate::widgets::dialog_frame(&pal)).backdrop_color(pal.backdrop).show(ctx, |ui| {
         ui.set_width(width);
         ui.horizontal(|ui| {
-            ui.label(RichText::new(title).font(theme::hand(18.0)).color(pal.text));
+            ui.label(RichText::new(title).font(TextSize::Title.hand()).color(pal.text));
             ui.with_layout(Layout::right_to_left(Align::Center), |ui| close_button(ui, cx, close));
         });
         ui.add_space(8.0);
@@ -94,7 +93,7 @@ pub(crate) fn show_modal(
 pub(crate) fn plain_button(ui: &mut Ui, pal: &Palette, text: &str, primary: bool) -> Response {
     let (fill, fg) = if primary { (pal.accent, pal.on_accent) } else { (pal.button, pal.text) };
     ui.add(
-        Button::new(RichText::new(text).size(13.0).color(fg))
+        Button::new(RichText::new(text).size(TextSize::Body.points()).color(fg))
             .fill(fill)
             .corner_radius(theme::BUTTON_RADIUS)
             .min_size(vec2(80.0, 32.0)),
@@ -152,7 +151,7 @@ pub(crate) fn enter_pressed(ui: &Ui) -> bool {
 }
 
 fn muted(pal: &Palette, text: impl Into<String>) -> RichText {
-    RichText::new(text.into()).size(12.0).color(pal.muted)
+    RichText::new(text.into()).size(TextSize::Small.points()).color(pal.muted)
 }
 
 /// Draws the dialogs of this file.
@@ -183,7 +182,7 @@ fn confirm(ctx: &Context, cx: &mut Cx<'_>, st: &UiState) {
     let (call, message) = (&c.call, &c.message);
     let id = Id::unique("confirm_dialog");
     show_modal(ctx, cx, Modal::new(id), "Unsaved changes", 380.0, &Close::Overlays, |ui, cx| {
-        ui.label(RichText::new(message).size(13.0).color(pal.text));
+        ui.label(RichText::new(message).size(TextSize::Body.points()).color(pal.text));
         ui.add_space(14.0);
         ui.horizontal(|ui| {
             let discard = unsaved_call(call, "discard");
@@ -358,7 +357,7 @@ fn search(ctx: &Context, cx: &mut Cx<'_>, st: &UiState) {
         ui.add_space(6.0);
         match &reason {
             Some(r) => {
-                ui.label(RichText::new(r).size(12.0).color(pal.danger));
+                ui.label(RichText::new(r).size(TextSize::Small.points()).color(pal.danger));
             }
             None => {
                 ui.label(muted(&pal, "Press Enter to search."));
@@ -483,17 +482,18 @@ fn stats(ctx: &Context, cx: &mut Cx<'_>, st: &UiState) {
     }
     let pal = cx.pal;
     let rows = stats_rows(cx.model);
-    Area::new(Id::unique("stats_panel"))
-        .anchor(Align2::LEFT_BOTTOM, vec2(MARGIN, -ABOVE_BOTTOM_BAR))
-        .order(Order::Middle)
-        .show(ctx, |ui| {
+    let screen = ctx.content_rect();
+    let lift = lift_to(screen, st.chrome.above_bottom_bar(screen), GAP);
+    Area::new(Id::unique("stats_panel")).anchor(Align2::LEFT_BOTTOM, vec2(MARGIN, -lift)).order(Order::Middle).show(
+        ctx,
+        |ui| {
             panel_frame(&pal).show(ui, |ui| {
                 ui.set_width(STATS_WIDTH);
-                ui.label(RichText::new("Stats").font(theme::hand(14.0)).color(pal.muted));
+                ui.label(RichText::new("Stats").font(TextSize::Label.hand()).color(pal.muted));
                 egui::Grid::new(Id::unique("stats_grid")).num_columns(2).spacing(vec2(12.0, 3.0)).show(ui, |ui| {
                     for (name, value) in &rows {
                         ui.label(muted(&pal, *name));
-                        ui.label(RichText::new(value).size(12.0).color(pal.text));
+                        ui.label(RichText::new(value).size(TextSize::Small.points()).color(pal.text));
                         ui.end_row();
                     }
                 });
@@ -501,7 +501,8 @@ fn stats(ctx: &Context, cx: &mut Cx<'_>, st: &UiState) {
                     bounds_editor(ui, cx, bounds);
                 }
             });
-        });
+        },
+    );
 }
 
 #[cfg(test)]

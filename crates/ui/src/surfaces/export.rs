@@ -10,6 +10,7 @@ use serde_json::{Value, json};
 use crate::model::{Model, arg_doc};
 use crate::state::{ExportFormat, ExportState, UiState};
 use crate::surfaces::dialogs::{Close, plain_button, show_modal};
+use crate::theme::TextSize;
 use crate::widgets::{Ctl, Cx, section_label};
 
 /// Scales the dialog offers (the command takes 0.25 to 4).
@@ -155,7 +156,11 @@ pub fn show(ctx: &Context, cx: &mut Cx<'_>, st: &mut UiState) {
             }
         });
         ui.add_space(6.0);
-        ui.label(RichText::new(format!("File: {}", file_name(&document, o.format))).size(12.0).color(pal.muted));
+        ui.label(
+            RichText::new(format!("File: {}", file_name(&document, o.format)))
+                .size(TextSize::Small.points())
+                .color(pal.muted),
+        );
         ui.add_space(8.0);
         ui.horizontal(|ui| {
             if plain_button(ui, &pal, "Cancel", false).clicked() {

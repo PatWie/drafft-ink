@@ -18,7 +18,7 @@ use crate::args_form::{self, Field, FormValues};
 use crate::keymap::{Pointer, VERB_BINDINGS, parse_chord, substitute};
 use crate::model::{self, Model};
 use crate::state::UiState;
-use crate::theme::{self, BUTTON_RADIUS, Palette};
+use crate::theme::{BUTTON_RADIUS, Palette, TextSize};
 use crate::widgets::{Ctl, Cx, dialog_frame, separator};
 
 /// Width of the dialog.
@@ -374,12 +374,12 @@ fn show_list(
     chosen: Option<usize>,
 ) -> Option<usize> {
     let query_id = Id::unique("palette.query");
-    ui.label(RichText::new("Command palette").font(theme::hand(22.0)));
+    ui.label(RichText::new("Command palette").font(TextSize::Display.hand()));
     ui.add_space(6.0);
     let edit = TextEdit::singleline(&mut state.query)
         .id(query_id)
         .hint_text("Type a command, a family or a shortcut name")
-        .font(egui::FontId::proportional(15.0))
+        .font(TextSize::Label.font())
         .desired_width(f32::INFINITY)
         .margin(Margin::symmetric(8, 6));
     // A new area lays out once before it can take focus, so ask until the field has it.
@@ -413,7 +413,7 @@ fn show_list(
             if grouped && heading != Some(row.family.as_str()) {
                 heading = Some(&row.family);
                 ui.add_space(6.0);
-                ui.label(RichText::new(family_title(&row.family)).font(theme::hand(14.0)).color(pal.muted));
+                ui.label(RichText::new(family_title(&row.family)).font(TextSize::Label.hand()).color(pal.muted));
             }
             let is_selected = position == state.selected;
             let resp = show_row(ui, pal, row, is_selected, !grouped);
@@ -429,7 +429,11 @@ fn show_list(
     ui.add_space(6.0);
     separator(ui, pal);
     ui.add_space(4.0);
-    ui.label(RichText::new("Up and Down to move, Enter to run, Esc to close").size(11.0).color(pal.muted));
+    ui.label(
+        RichText::new("Up and Down to move, Enter to run, Esc to close")
+            .size(TextSize::Caption.points())
+            .color(pal.muted),
+    );
     picked
 }
 
@@ -445,20 +449,29 @@ fn show_row(ui: &mut Ui, pal: &Palette, row: &Row, selected: bool, show_family: 
             Frame::new().inner_margin(Margin::symmetric(10, 6)).show(ui, |ui| {
                 ui.set_width(width - 20.0);
                 ui.horizontal(|ui| {
-                    ui.add(egui::Label::new(RichText::new(&row.title).size(14.0).color(text_color)).selectable(false));
+                    ui.add(
+                        egui::Label::new(RichText::new(&row.title).size(TextSize::Label.points()).color(text_color))
+                            .selectable(false),
+                    );
                     ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                         if let Some(keys) = &row.keys {
                             super::shortcuts::key_caps(ui, pal, keys);
                         } else if show_family {
                             let family = family_title(&row.family);
                             ui.add(
-                                egui::Label::new(RichText::new(family).size(11.0).color(pal.muted)).selectable(false),
+                                egui::Label::new(
+                                    RichText::new(family).size(TextSize::Caption.points()).color(pal.muted),
+                                )
+                                .selectable(false),
                             );
                         }
                     });
                 });
                 if let Some(reason) = &row.refusal {
-                    ui.add(egui::Label::new(RichText::new(reason).size(11.5).color(pal.muted)).selectable(false));
+                    ui.add(
+                        egui::Label::new(RichText::new(reason).size(TextSize::Caption.points()).color(pal.muted))
+                            .selectable(false),
+                    );
                 }
             });
         })
@@ -489,13 +502,13 @@ fn show_form(ui: &mut Ui, cx: &mut Cx<'_>, form: &mut FormSession) -> FormEvent 
     if ui.add(egui::Button::new("Back").frame(false)).clicked() {
         event = FormEvent::Back;
     }
-    ui.label(RichText::new(&form.title).font(theme::hand(22.0)));
+    ui.label(RichText::new(&form.title).font(TextSize::Display.hand()));
     if !form.summary.is_empty() {
-        ui.label(RichText::new(&form.summary).size(12.0).color(pal.muted));
+        ui.label(RichText::new(&form.summary).size(TextSize::Small.points()).color(pal.muted));
     }
     let refusal = cx.refusal(&form.id);
     if let Some(reason) = &refusal {
-        ui.label(RichText::new(reason).size(12.0).color(pal.danger));
+        ui.label(RichText::new(reason).size(TextSize::Small.points()).color(pal.danger));
     }
     ui.add_space(4.0);
     let mut entered = false;
@@ -505,7 +518,7 @@ fn show_form(ui: &mut Ui, cx: &mut Cx<'_>, form: &mut FormSession) -> FormEvent 
     let built = args_form::build_args(&form.schema, &form.values);
     ui.add_space(8.0);
     if let Err(message) = &built {
-        ui.label(RichText::new(message).size(12.0).color(pal.danger));
+        ui.label(RichText::new(message).size(TextSize::Small.points()).color(pal.danger));
         ui.add_space(4.0);
     }
     ui.horizontal(|ui| match &built {

@@ -78,7 +78,7 @@ fn every_key_default_passes_its_own_check_and_the_table_matches_the_catalog() {
     sorted.sort_unstable();
     sorted.dedup();
     assert_eq!(sorted.len(), names.len(), "a key is listed twice");
-    // The keys of docs/commands.md §5, plus `theme`.
+    // The keys of docs/commands.md §5, plus `theme` and `ui.font`.
     for k in [
         "view.grid_style", "snap.grid", "snap.smart_guides", "snap.angle", "snap.angle_step", "export.scale",
         "export.padding", "export.background", "export.dark", "export.embed_scene", "doc.default_background",
@@ -86,11 +86,11 @@ fn every_key_default_passes_its_own_check_and_the_table_matches_the_catalog() {
         "arrow.type", "arrow.start_head", "arrow.end_head",
         "frame.clip", "frame.show_names", "frame.outline", "history.depth", "autosave.enabled",
         "autosave.interval_s", "clipboard.excalidraw_compat", "collab.server_url", "collab.user_name",
-        "collab.user_color", "doc.recent", "theme", "agent.mcp_http",
+        "collab.user_color", "doc.recent", "theme", "agent.mcp_http", "ui.font",
     ] {
         assert!(names.contains(&k), "`{k}` is missing from the table");
     }
-    assert_eq!(names.len(), 32);
+    assert_eq!(names.len(), 33);
 }
 
 #[test]
@@ -201,6 +201,22 @@ fn set_refuses_a_value_of_the_wrong_type_or_range_with_the_exact_text() {
         assert_eq!(r.message, text, "{key}");
         assert_eq!(s.fingerprint(), before, "a refusal changes nothing ({key})");
     }
+}
+
+#[test]
+fn the_ui_font_takes_the_bundled_canvas_fonts_and_defaults_to_gelpen() {
+    let mut s = testing::headless_session();
+    assert_eq!(value(&s, "ui.font"), json!("gelpen"));
+    for font in ["gelpen_serif", "vanilla_extract", "noto_sans", "gelpen"] {
+        run(&mut s, "settings.set", json!({"key": "ui.font", "value": font}));
+        assert_eq!(value(&s, "ui.font"), json!(font));
+    }
+    let r = refuse(&mut s, "settings.set", json!({"key": "ui.font", "value": "comic_sans"}));
+    assert_eq!(r.code, "bad_args");
+    assert_eq!(
+        r.message,
+        "Setting `ui.font` must be one of `gelpen`, `gelpen_serif`, `vanilla_extract` or `noto_sans`, and got the text \"comic_sans\"."
+    );
 }
 
 #[test]

@@ -277,12 +277,13 @@ test.describe("real pointer input", () => {
     await app.until("the rectangle tool after one click", async () => (await app.state()).tool === "rectangle");
     expect(await uiRuns("tool.set"), "the click ran tool.set once").toBe(toolSets + 1);
 
-    // The menu button opens the menu, and its first row ("New tab") runs on the next single click.
+    // The menu button (x 12..40, y 6..34 in the top strip) opens the menu, and its first row ("New tab", under the
+    // strip: x 23..243, y 57..85) runs on the next single click. `ui/tests/top_strip.rs` pins those numbers.
     const tabs = await uiRuns("tab.new", "menu");
     await hoverCanvas();
-    await app.page.mouse.click(39, 37);
+    await app.page.mouse.click(26, 20);
     await app.page.waitForTimeout(400);
-    await app.page.mouse.click(50, 88);
+    await app.page.mouse.click(50, 71);
     await app.until("tab.new from the menu row", async () => (await uiRuns("tab.new", "menu")) === tabs + 1);
     await app.settle();
     expect(await uiRuns("tab.new", "menu"), "the menu row ran once").toBe(tabs + 1);
