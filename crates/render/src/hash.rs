@@ -73,10 +73,11 @@ fn text(h: &mut Hash128, d: &TextData) {
         runs,
         font,
         auto_resize,
-        container_id: _,   // relation
+        container_id,      // a label wraps at its box
         label_position: _, // placement, not paint
     } = d;
     content.hash(h);
+    container_id.is_some().hash(h);
     runs.len().hash(h);
     for TextRun { start, end, color } in runs {
         (start, end, color).hash(h);

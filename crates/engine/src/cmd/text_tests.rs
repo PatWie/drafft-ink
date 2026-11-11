@@ -759,3 +759,60 @@ fn a_broken_formula_is_text_and_text_set_accepts_it() {
     assert_eq!(content(&s, &t), "bad $\\nope{$ end");
     assert!(size_of(&s, &t).0 > 50.0);
 }
+
+// ---- the editor stages its result (docs/exceptions.md E16) ----
+
+#[test]
+fn a_staged_result_is_what_a_gate_commit_ends_the_edit_with() {
+    let (mut s, _f) = testing::session();
+    let t = text_at(&mut s, "abc", 0.0, 0.0);
+    let other = text_at(&mut s, "xyz", 0.0, 100.0);
+    run(&mut s, "text.edit_begin", json!({"id": t.as_str()}));
+    s.stage_text_edit(json!({"commit": true, "text": "typed in the editor"}));
+    // Starting another edit commits this one (gate), with what the editor staged and not with an empty commit.
+    run(&mut s, "text.edit_begin", json!({"id": other.as_str()}));
+    assert_eq!(content(&s, &t), "typed in the editor");
+    // The new edit starts with nothing staged: ending it keeps the content.
+    run(&mut s, "text.edit_end", json!({}));
+    assert_eq!(content(&s, &other), "xyz");
+}
+
+#[test]
+fn a_staged_draft_is_created_by_a_gate_commit_instead_of_being_lost() {
+    let (mut s, _f) = testing::session();
+    let t = text_at(&mut s, "abc", 0.0, 0.0);
+    run(&mut s, "text.edit_begin", json!({"at": [200, 200]}));
+    s.stage_text_edit(json!({"commit": true, "text": "draft text"}));
+    run(&mut s, "text.edit_begin", json!({"id": t.as_str()}));
+    let texts: Vec<String> =
+        s.store().iter().filter_map(|e| e.text_data().map(|d| d.content.clone())).collect();
+    assert!(texts.contains(&"draft text".to_owned()), "{texts:?}");
+}
+
+#[test]
+fn staging_without_an_edit_does_nothing_and_cancel_ignores_it() {
+    let (mut s, _f) = testing::session();
+    let t = text_at(&mut s, "abc", 0.0, 0.0);
+    s.stage_text_edit(json!({"commit": true, "text": "stale"}));
+    run(&mut s, "text.edit_begin", json!({"id": t.as_str()}));
+    run(&mut s, "text.edit_end", json!({}));
+    assert_eq!(content(&s, &t), "abc", "a stage from before the edit is not used");
+    run(&mut s, "text.edit_begin", json!({"id": t.as_str()}));
+    s.stage_text_edit(json!({"commit": true, "text": "typed"}));
+    run(&mut s, "text.edit_end", json!({"commit": false}));
+    assert_eq!(content(&s, &t), "abc", "cancel keeps the original, whatever was staged");
+}
+
+#[test]
+fn the_escape_ladder_ends_the_edit_with_the_staged_result_as_one_undo_step() {
+    let (mut s, _f) = testing::session();
+    let t = text_at(&mut s, "abc", 0.0, 0.0);
+    run(&mut s, "text.edit_begin", json!({"id": t.as_str()}));
+    s.stage_text_edit(json!({"commit": true, "text": "abc def", "runs": [{"start": 4, "end": 7, "color": "#ff0000"}]}));
+    run(&mut s, "tool.cancel", json!({}));
+    assert_eq!(content(&s, &t), "abc def");
+    assert_eq!(s.element(&t).unwrap().text_data().unwrap().runs.len(), 1);
+    s.undo_steps(1).unwrap();
+    assert_eq!(content(&s, &t), "abc");
+    assert!(s.element(&t).unwrap().text_data().unwrap().runs.is_empty());
+}

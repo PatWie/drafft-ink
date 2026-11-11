@@ -18,6 +18,8 @@
 //! - `text_bind`, `flowchart`, `layout`, `query`: text measuring and wrapping, bound text, font steps, formulas and
 //!   colour runs; flowchart helpers, auto-layout for `diagram.create`, element queries (also by `@name`), hits
 //!   along a path and the document outline.
+//! - `text_edit`: the model of the on-canvas text editor (text, colour runs, selection, motions, the editor's own
+//!   undo, input-method composition). It owns no document data; the result goes back through `text.edit_end`.
 //! - `link`: hyperlinks and element links (`element.set_link`, `element.open_link`).
 //! - `library`: fragments (library items, merged files): take out, insert with new ids, tell apart.
 //! - `paste`, `preflight`: pasting copies into a scene, and the checks that run before a structural change. The
@@ -58,6 +60,7 @@ pub mod sticky;
 pub mod style;
 mod target;
 pub mod text_bind;
+pub mod text_edit;
 pub mod transform;
 pub mod zorder;
 

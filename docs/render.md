@@ -150,7 +150,13 @@ followed }], laser }`. The pieces go to the overlay in two steps, the first of w
 
    `PeerView::viewport` is for "follow", not for drawing. The local laser trail (`InteractionOverlay::laser`) can use the
    same `LaserTrail` with `age_ms = now - t_ms`. The text editor builds `TextEdit` from its own selection and the layout
-   of the text it edits (`text_spec`), and keeps the edited element out of the world scene with `set_hidden`.
+   of the text it edits (`text_spec`), and keeps the edited element out of the world scene with `set_hidden`. It draws
+   the text itself with `SceneComposer::compose_edited_text(element, reveal, ...)`: the element is the one the commit
+   would leave behind, painted by the same code as a document element, so the editor and the committed text are the
+   same pixels (`app/editor/pixels`). `reveal` is `TextSpec::reveal`: the formula the caret is in shows its source.
+   `TextEdit::with_composition(layout, range)` underlines the text an input method is composing. A text with a
+   container (a label) wraps at its own box (`text_spec`: `container_id` set and a box wider than 0), because the box is
+   the width of its longest wrapped line; before, a label was measured wrapped and drawn on one line.
 
 The link icon is also a pick target: `canvas::Target::LinkIcon { id }` (only for an element that has a link and is not
 selected; it wins over what lies under it). The editor's pointer path turns a click on it into `element.open_link`.

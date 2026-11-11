@@ -181,7 +181,8 @@ fn cancel(s: &mut Session, a: CancelArgs) -> Result<CancelOut, Refusal> {
     }
     // 2. A text edit ends and is kept (one undo step, as `text.edit_end`).
     if s.text_edit.is_some() {
-        via(s, "text.edit_end", json!({ "commit": true }), |_| {})?;
+        let args = s.staged_text_edit().unwrap_or_else(|| json!({ "commit": true }));
+        via(s, "text.edit_end", args, |_| {})?;
         s.text_edit = None;
         rungs.push("text_edit");
         if !a.all {

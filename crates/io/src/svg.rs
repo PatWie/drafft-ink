@@ -615,7 +615,7 @@ impl Ctx<'_> {
     fn wrap(&self, d: &TextData, width: f64) -> Vec<String> {
         let mut out = Vec::new();
         for line in d.content.split('\n') {
-            if d.auto_resize || width <= 0.0 {
+            if (d.auto_resize && d.container_id.is_none()) || width <= 0.0 {
                 out.push(line.to_owned());
                 continue;
             }

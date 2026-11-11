@@ -322,6 +322,25 @@ impl SceneComposer {
     }
 }
 
+impl SceneComposer {
+    /// Appends a text element that is being edited, encoded without the cache, on top of what is in `scene`. It is
+    /// drawn exactly as the committed text is, except that the formula the caret is in (`reveal`, as in
+    /// `TextSpec::reveal`) shows its source.
+    pub fn compose_edited_text(
+        &mut self,
+        text: &Element,
+        reveal: Option<usize>,
+        view: &View,
+        typesetter: &mut Typesetter,
+        scene: &mut Scene,
+    ) {
+        let fragment = self.painter.paint_edited_text(text, &self.options, typesetter, reveal);
+        if !fragment.is_empty() {
+            scene.append(&fragment.scene, Some(view.world_to_device() * element_to_world(text)));
+        }
+    }
+}
+
 /// A cheap stand-in for an element too small to draw properly.
 #[derive(Clone, Copy)]
 enum Cheap {

@@ -1,6 +1,7 @@
 //! Overlay parts made of text: the distance badges on spacing guides, and the caret and selection of the text
 //! being edited on the canvas. Also the label chip that the names of collaborators use.
 
+use std::ops::Range;
 use std::sync::Arc;
 
 use drafftink_geom::guides::{SmartGuide, SmartGuideKind};
@@ -22,6 +23,8 @@ const CHIP_RADIUS: f64 = 4.0;
 const BADGE_GAP: f64 = 10.0;
 /// Width of the caret, in logical pixels.
 const CARET_WIDTH: f64 = 1.5;
+/// Width of the underline of composed text, in logical pixels.
+const UNDERLINE_WIDTH: f64 = 1.0;
 /// The pale tint of the selection behind the text.
 const SELECTION_ALPHA: f32 = 0.3;
 
@@ -146,6 +149,8 @@ pub struct TextEdit {
     pub caret: Option<Rect>,
     /// The selected stretches of text, one rectangle per line.
     pub selection: Vec<Rect>,
+    /// The text an input method is composing, one rectangle per line; drawn underlined.
+    pub composition: Vec<Rect>,
     /// Colour of the caret (the text colour).
     pub caret_color: Color,
 }
@@ -161,7 +166,14 @@ impl TextEdit {
         caret_color: Color,
     ) -> Self {
         let caret = (selection.is_collapsed() && caret_on).then(|| layout.caret_rect(selection.focus(), 0.0));
-        Self { to_world, caret, selection: layout.selection_rects(selection), caret_color }
+        Self { to_world, caret, selection: layout.selection_rects(selection), composition: Vec::new(), caret_color }
+    }
+
+    /// Marks the bytes `range` of the text as being composed by an input method.
+    #[must_use]
+    pub fn with_composition(mut self, layout: &TextLayout, range: Range<usize>) -> Self {
+        self.composition = layout.selection_rects(&layout.selection_from_range(range.start, range.end));
+        self
     }
 }
 
@@ -176,6 +188,13 @@ pub(crate) fn paint_text_edit(scene: &mut Scene, pen: &Pen, edit: Option<&TextEd
     }
     if !path.elements().is_empty() {
         scene.fill(Fill::NonZero, to_dev, pen.style.accent.with_alpha(SELECTION_ALPHA), None, &path);
+        drawn = 1;
+    }
+    for r in edit.composition.iter().filter(|r| r.is_finite()) {
+        let mut line = BezPath::new();
+        line.move_to(to_dev * Point::new(r.x0, r.y1));
+        line.line_to(to_dev * Point::new(r.x1, r.y1));
+        scene.stroke(&Stroke::new(UNDERLINE_WIDTH * pen.px), Affine::IDENTITY, edit.caret_color, None, &line);
         drawn = 1;
     }
     if let Some(c) = edit.caret.filter(|c| c.is_finite() && c.height() > 0.0) {

@@ -15,6 +15,8 @@ use drafftink_render::{
     View, build_paint_index, paint_bounds, paint_overlay,
 };
 use drafftink_scene::{ElementId, SceneRead};
+
+use crate::editor::Arranged;
 use vello::peniko::{BlendMode, Color, Compose, Fill, Mix};
 
 /// The document store this state follows: which tab, and how far the scan got.
@@ -147,10 +149,19 @@ impl CanvasView {
         store: &S,
         interaction: &InteractionOverlay,
         render_overlay: &Overlay,
+        edited: Option<&Arranged>,
         view: &View,
     ) {
         let Self { composer, preview, overlay, typesetter, .. } = self;
         preview.reset();
+        if let Some(edit) = edited {
+            typesetter.with(|ts| {
+                if let Some(container) = &edit.grown_container {
+                    composer.compose_transient(store, std::slice::from_ref(container), view, ts, preview);
+                }
+                composer.compose_edited_text(&edit.text, edit.reveal, view, ts, preview);
+            });
+        }
         if let Some(el) = &interaction.preview {
             typesetter.with(|ts| composer.compose_transient(store, std::slice::from_ref(el), view, ts, preview));
         }

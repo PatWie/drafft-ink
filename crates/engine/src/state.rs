@@ -324,6 +324,12 @@ pub struct TextEdit {
     pub draft: bool,
 }
 
+/// The text editor's latest result as `text.edit_end` arguments. The editor stages it while the person types, so
+/// that a command with the `Commit` gate (a toolbar click, `Mod+S`) ends the edit with what was typed instead of
+/// losing it. It is not part of the document or of any undo step.
+#[derive(Debug, Default, Clone)]
+pub(crate) struct StagedEdit(pub(crate) Option<serde_json::Value>);
+
 /// State that a family keeps without touching `Session`: one value per Rust type, created on first use.
 /// It is outside the rollback transaction (class P: buffers and library), so a command that must stay
 /// atomic writes it last.

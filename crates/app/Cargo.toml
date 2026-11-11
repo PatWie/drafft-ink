@@ -12,6 +12,7 @@ drafftink-engine = { path = "../engine" }
 drafftink-canvas = { path = "../canvas" }
 drafftink-geom = { path = "../geom" }
 drafftink-scene = { path = "../scene" }
+drafftink-typeset = { path = "../typeset" }
 drafftink-render = { path = "../render" }
 drafftink-edit = { path = "../edit" }
 drafftink-profile = { path = "../profile" }

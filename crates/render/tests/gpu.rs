@@ -777,6 +777,7 @@ fn link_icons_and_the_text_selection_show() {
             to_world: kurbo::Affine::translate((200.0, 100.0)),
             caret: Some(kurbo::Rect::new(60.0, 0.0, 60.0, 20.0)),
             selection: vec![kurbo::Rect::new(0.0, 0.0, 40.0, 20.0)],
+            composition: Vec::new(),
             caret_color: peniko::Color::BLACK,
         }),
         ..Overlay::default()

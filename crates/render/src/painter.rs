@@ -87,7 +87,7 @@ impl ElementPainter {
             }
             ElementKind::Freehand(f) if f.highlighter => paint_highlighter(&mut ink, e, f),
             ElementKind::Freehand(_) => self.paint_sketch(&mut ink, e),
-            ElementKind::Text(t) => paint_text(&mut ink, e, t, typesetter),
+            ElementKind::Text(t) => paint_text(&mut ink, e, t, typesetter, None),
             ElementKind::Math(m) => paint_math(&mut ink, e, m, typesetter),
             ElementKind::Image(i) => awaiting = self.paint_image(&mut ink, e, i, files),
             ElementKind::Frame(_) => paint_frame(&mut ink, e),
@@ -96,6 +96,22 @@ impl ElementPainter {
         count(Counter::SketchRegens, misses.saturating_sub(self.sketch_misses_seen));
         self.sketch_misses_seen = misses;
         Fragment::new(ink.scene, ink.bounds, awaiting)
+    }
+
+    /// Encodes a text element that is being edited: the same encoding as [`Self::paint`], except that the formula
+    /// whose source the caret is in (`reveal`, see `TextSpec::reveal`) is shown as plain text.
+    pub fn paint_edited_text(
+        &mut self,
+        e: &Element,
+        options: &RenderOptions,
+        typesetter: &mut Typesetter,
+        reveal: Option<usize>,
+    ) -> Fragment {
+        let mut ink = Ink::new(options.theme, e.style.opacity);
+        if let ElementKind::Text(t) = &e.kind {
+            paint_text(&mut ink, e, t, typesetter, reveal);
+        }
+        Fragment::new(ink.scene, ink.bounds, None)
     }
 
     fn paint_sketch(&mut self, ink: &mut Ink, e: &Element) {
@@ -334,11 +350,12 @@ fn paint_highlighter(ink: &mut Ink, e: &Element, f: &FreehandData) {
     ink.grow(area);
 }
 
-fn paint_text(ink: &mut Ink, e: &Element, t: &TextData, ts: &mut Typesetter) {
+fn paint_text(ink: &mut Ink, e: &Element, t: &TextData, ts: &mut Typesetter, reveal: Option<usize>) {
     if t.content.is_empty() {
         return;
     }
-    let spec = text_spec(t, e.style.stroke_color, e.transform.w);
+    let mut spec = text_spec(t, e.style.stroke_color, e.transform.w);
+    spec.reveal = reveal;
     let layout = ts.text(&spec);
     draw_layout(ink, &layout, Vec2::ZERO);
 }

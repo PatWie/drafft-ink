@@ -54,7 +54,8 @@ fn weight(w: FontWeight) -> typeset::FontWeight {
 ///
 /// `stroke` is the element's text colour as stored (no opacity, no theme mapping: both are applied when the layout
 /// is drawn, so changing opacity or theme never re-lays-out). `box_width` is `transform.w`; it is the wrap width
-/// unless the text sizes itself.
+/// unless the text sizes itself. A label always wraps at its box: the box is the width of its longest wrapped line,
+/// set by the container's text area (`auto_resize` is the flag of free text).
 pub fn text_spec(t: &TextData, stroke: Color, box_width: f64) -> typeset::TextSpec {
     let mut style = typeset::TextStyle::with_size(t.font.size as f32);
     style.family = family(t.font.family);
@@ -69,7 +70,9 @@ pub fn text_spec(t: &TextData, stroke: Color, box_width: f64) -> typeset::TextSp
         TextAlign::Center => typeset::Align::Center,
         TextAlign::Right => typeset::Align::Right,
     };
-    spec.wrap = if t.auto_resize { typeset::Wrap::None } else { typeset::Wrap::Width(box_width as f32) };
+    // A label whose box has no width yet (a file that never measured it) stays on its lines.
+    let boxed = !t.auto_resize || (t.container_id.is_some() && box_width > 0.0);
+    spec.wrap = if boxed { typeset::Wrap::Width(box_width as f32) } else { typeset::Wrap::None };
     spec.line_height = typeset::LineHeight::FontSize(t.font.line_height as f32);
     spec.math = inline_math(t.font.inline_math);
     spec

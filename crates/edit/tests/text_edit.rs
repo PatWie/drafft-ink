@@ -179,3 +179,63 @@ fn rotated_text_keeps_its_top_left_corner() {
     let after = n.local_to_world(Point::ZERO);
     assert!((before - after).hypot() < 1e-9);
 }
+
+// ---- the placement rules of a label, for any way of measuring ----
+
+mod fit {
+    use drafftink_edit::text_bind::{
+        GrowAnchor, MonospaceMeasure, TextMeasure, fit_label, layout_label, measure_lines,
+    };
+    use drafftink_geom::kurbo::Size;
+    use drafftink_scene::{Element, ElementKind, TextStyle, ZIndex};
+
+    use super::id;
+
+    fn shape(w: f64, h: f64) -> Element {
+        Element::new(id("r"), ElementKind::Rectangle, ZIndex::first()).with_bounds(100.0, 50.0, w, h)
+    }
+
+    #[test]
+    fn fit_label_and_layout_label_agree_when_the_measure_is_the_same() {
+        let m = MonospaceMeasure::default();
+        let font = TextStyle::default();
+        for (w, h, text) in
+            [(200.0, 100.0, "short"), (80.0, 40.0, "a label that has to wrap and grow its shape"), (60.0, 30.0, "x")]
+        {
+            let e = shape(w, h);
+            let laid = layout_label(&m, &e, &font, text, None, GrowAnchor::Top).unwrap();
+            let fit = fit_label(&e, &font, None, GrowAnchor::Top, &mut |width| {
+                measure_lines(&m, &m.wrap(text, &font, width), &font)
+            })
+            .unwrap();
+            assert_eq!(fit.text, laid.text, "{text}");
+            assert_eq!((fit.container, fit.grew), (laid.container, laid.grew), "{text}");
+        }
+    }
+
+    #[test]
+    fn the_size_comes_from_the_caller_and_the_wrap_width_is_the_text_area_of_the_container() {
+        let e = shape(200.0, 100.0);
+        let font = drafftink_edit::text_bind::new_label_font(None);
+        let mut asked = Vec::new();
+        let fit = fit_label(&e, &font, None, GrowAnchor::Top, &mut |width| {
+            asked.push(width);
+            Size::new(50.0, 30.0)
+        })
+        .unwrap();
+        assert_eq!(asked, vec![190.0], "padding is 5 on each side");
+        assert_eq!(fit.wrap_width, 190.0);
+        assert!(!fit.grew);
+        // Centred in the middle of the container.
+        assert_eq!((fit.text.x, fit.text.y), (100.0 + 75.0, 50.0 + 35.0));
+        // A text that is too tall makes the shape taller and keeps the top edge.
+        let fit = fit_label(&e, &font, None, GrowAnchor::Top, &mut |_| Size::new(50.0, 300.0)).unwrap();
+        assert!(fit.grew && fit.container.y0 == 50.0 && fit.container.height() > 300.0);
+    }
+
+    #[test]
+    fn something_that_cannot_hold_a_label_is_refused() {
+        let e = Element::new(id("t"), ElementKind::Text(drafftink_scene::TextData::new("x")), ZIndex::first());
+        assert!(fit_label(&e, &TextStyle::default(), None, GrowAnchor::Top, &mut |_| Size::ZERO).is_err());
+    }
+}

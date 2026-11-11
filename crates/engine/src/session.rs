@@ -403,6 +403,23 @@ impl Session {
         self.dirty.level
     }
 
+    /// The text editor's latest result, as `text.edit_end` arguments (docs/exceptions.md E16). A command with the
+    /// `Commit` gate ends the running text edit with these arguments instead of an empty commit. It does nothing
+    /// when no text is being edited. It is not a command: it changes no document and no undo step.
+    pub fn stage_text_edit(&mut self, args: serde_json::Value) {
+        if self.text_edit.is_some() {
+            self.ext.with::<crate::state::StagedEdit, _>(|st| st.0 = Some(args));
+        }
+    }
+
+    pub(crate) fn staged_text_edit(&self) -> Option<serde_json::Value> {
+        self.ext.get::<crate::state::StagedEdit>().and_then(|st| st.0.clone())
+    }
+
+    pub(crate) fn clear_staged_text_edit(&mut self) {
+        self.ext.with::<crate::state::StagedEdit, _>(|st| st.0 = None);
+    }
+
     /// The pending dirty reason; clears it. A shell redraws only when this returns `Some`.
     pub fn take_dirty(&mut self) -> Option<Redraw> {
         self.dirty.level.take()

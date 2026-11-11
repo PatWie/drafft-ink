@@ -284,7 +284,8 @@ impl Session {
         let mut gate = GateCommit::default();
         if let Some(end) = self.registry().find("text.edit_end") {
             let before = self.soft_state();
-            let args = json!({ "commit": true });
+            // The editor's own result when it staged one, else an empty commit (an absent `text` keeps the content).
+            let args = self.staged_text_edit().unwrap_or_else(|| json!({ "commit": true }));
             // A failed commit has rolled itself back: the edit is still running.
             let done = self.run_pipeline(end, Input::Json(&args), origin, mode)?;
             gate.restore = (!done.changed).then_some(before);
