@@ -72,6 +72,8 @@ pub enum SvgStyle {
 pub struct FontFace {
     /// Family the file belongs to.
     pub family: FontFamily,
+    /// The weight this file is. Text of a weight with no face of its own uses the family's regular face.
+    pub weight: FontWeight,
     /// Media type, for example `font/ttf` or `font/woff2`.
     pub mime: String,
     /// The font file.
@@ -107,8 +109,11 @@ pub struct SvgOptions {
     pub selection: Option<Vec<ElementId>>,
     /// Embed the exported scene as native JSON.
     pub embed_scene: bool,
-    /// Fonts to embed.
+    /// Fonts to embed: a face is written (once) when a text uses its family and weight.
     pub fonts: Vec<FontFace>,
+    /// Draw with the dark palette: every colour goes through [`Color::for_dark_theme`], as on the canvas. The
+    /// embedded scene keeps the document's own colours.
+    pub dark: bool,
 }
 
 impl Default for SvgOptions {
@@ -121,6 +126,7 @@ impl Default for SvgOptions {
             selection: None,
             embed_scene: true,
             fonts: Vec::new(),
+            dark: false,
         }
     }
 }
@@ -221,7 +227,7 @@ struct Ctx<'a> {
     out: String,
     defs: String,
     next_id: u32,
-    used_families: Vec<FontFamily>,
+    used_faces: Vec<(FontFamily, FontWeight)>,
     frame_clips: HashMap<ElementId, String>,
 }
 
@@ -235,8 +241,15 @@ pub fn export_svg(
     measure: &dyn TextMeasure,
     math: Option<&dyn MathSvg>,
 ) -> Result<String, IoError> {
+    // A dark export draws a recoloured copy; the scene embedded below is the original.
+    let themed = opts.dark.then(|| {
+        let mut copy = doc.clone();
+        copy.map_colors(Color::for_dark_theme);
+        copy
+    });
+    let drawn = themed.as_ref().unwrap_or(doc);
     let selected: Option<HashSet<ElementId>> = opts.selection.as_ref().map(|s| s.iter().cloned().collect());
-    let live: Vec<&Element> = doc.elements.iter().filter(|e| !e.deleted).collect();
+    let live: Vec<&Element> = drawn.elements.iter().filter(|e| !e.deleted).collect();
     let chosen: Vec<&Element> = match &selected {
         None => live,
         Some(sel) => live
@@ -252,14 +265,14 @@ pub fn export_svg(
     let view = Rect::new(bounds.x0 - pad, bounds.y0 - pad, bounds.x1 + pad, bounds.y1 + pad);
 
     let mut cx = Ctx {
-        doc,
+        doc: drawn,
         opts,
         measure,
         math,
         out: String::new(),
         defs: String::new(),
         next_id: 0,
-        used_families: Vec::new(),
+        used_faces: Vec::new(),
         frame_clips: HashMap::new(),
     };
     if opts.background {
@@ -270,8 +283,8 @@ pub fn export_svg(
             num(view.y0),
             num(view.width()),
             num(view.height()),
-            paint(doc.background),
-            alpha(doc.background).map(|a| format!(" fill-opacity=\"{a}\"")).unwrap_or_default()
+            paint(drawn.background),
+            alpha(drawn.background).map(|a| format!(" fill-opacity=\"{a}\"")).unwrap_or_default()
         );
     }
     let chosen_ids: HashSet<&ElementId> = chosen.iter().map(|e| &e.id).collect();
@@ -363,22 +376,21 @@ impl Ctx<'_> {
         }
     }
 
+    /// The `@font-face` rules of the faces the texts use.
     fn font_css(&self) -> String {
         let mut css = String::new();
-        for fam in &self.used_families {
-            if let Some(f) = self.opts.fonts.iter().find(|f| f.family == *fam) {
-                let mime: String = f
-                    .mime
-                    .chars()
-                    .filter(|c| c.is_ascii_alphanumeric() || matches!(c, '/' | '+' | '.' | '-'))
-                    .collect();
-                put!(
-                    css,
-                    "@font-face{{font-family:'{}';src:url(data:{mime};base64,{}) ;}}",
-                    fam.display_name(),
-                    STANDARD.encode(&f.data)
-                );
-            }
+        for &(family, wt) in &self.used_faces {
+            let find = |w: FontWeight| self.opts.fonts.iter().find(|f| f.family == family && f.weight == w);
+            let Some(face) = find(wt).or_else(|| find(FontWeight::Regular)) else { continue };
+            let mime: String =
+                face.mime.chars().filter(|c| c.is_ascii_alphanumeric() || matches!(c, '/' | '+' | '.' | '-')).collect();
+            put!(
+                css,
+                "@font-face{{font-family:'{}';font-weight:{};src:url(data:{mime};base64,{});}}",
+                family.display_name(),
+                weight(wt),
+                STANDARD.encode(&face.data)
+            );
         }
         css
     }
@@ -541,8 +553,9 @@ impl Ctx<'_> {
             );
             return;
         }
-        if !self.used_families.contains(&d.font.family) {
-            self.used_families.push(d.font.family);
+        let face = (d.font.family, d.font.weight);
+        if !self.used_faces.contains(&face) {
+            self.used_faces.push(face);
         }
         let t = e.transform;
         let size = d.font.size;
