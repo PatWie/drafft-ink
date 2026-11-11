@@ -362,7 +362,8 @@ fn assert_usable_or_cleanly_poisoned(s: &mut LoroStore, good_snapshot: &[u8]) {
         assert_eq!(s.apply_remote(&[1, 2, 3]).unwrap_err(), DocError::Poisoned);
         assert_eq!(s.undo().unwrap_err(), DocError::Poisoned);
         assert!(s.export_snapshot().is_err());
-        assert!(s.version_vector().unwrap().is_empty());
+        // An empty vector would make a peer send the whole room to a store that cannot take it.
+        assert_eq!(s.version_vector().unwrap_err(), DocError::Poisoned);
         s.replace_from_snapshot(good_snapshot).unwrap();
         assert!(!s.is_poisoned());
     }
