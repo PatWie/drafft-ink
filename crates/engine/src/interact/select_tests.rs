@@ -1221,3 +1221,16 @@ fn zoomed_and_scrolled_views_map_the_pointer_to_world_units() {
     let after = rig.bounds(&a);
     assert!(near(after.0 - before.0, 20.0) && near(after.1 - before.1, 10.0), "moved by screen / zoom: {after:?}");
 }
+
+#[test]
+fn dropping_over_a_frame_highlights_it_during_the_drag_and_joins_it_on_release() {
+    let mut rig = Rig::new();
+    rig.run("element.create", json!({ "kind": "frame", "bounds": { "x": 400, "y": 300, "w": 300, "h": 250 } }));
+    let frame = rig.elements().into_iter().next().expect("frame").id;
+    let a = rig.rect(100.0, 100.0, 100.0, 100.0);
+    rig.hold_drag((150.0, 150.0), (500.0, 400.0));
+    assert_eq!(rig.i.parts().highlight, vec![frame.clone()], "the frame that would take the element");
+    rig.up(500.0, 400.0);
+    assert!(rig.i.parts().highlight.is_empty());
+    assert_eq!(rig.element(&a).frame_id, Some(frame), "membership is set once, by the committed run");
+}
