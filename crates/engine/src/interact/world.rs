@@ -142,14 +142,20 @@ impl World {
     }
 
     fn sync_frame(&mut self, s: &Session) {
-        let key_ids: Vec<ElementId> = s.selection().iter().cloned().collect();
+        // A running gesture rewrites the selected elements every frame; the overlay builds its own frame, and
+        // nothing picks handles during a drag.
+        if s.gesture_running() {
+            return;
+        }
         let revision = s.store().revision();
-        let fresh = self.frame_key.as_ref().is_some_and(|(r, ids)| *r == revision && *ids == key_ids);
+        let selection = s.selection();
+        let fresh = self.frame_key.as_ref().is_some_and(|(r, ids)| *r == revision && ids.iter().eq(selection.iter()));
         if fresh {
             return;
         }
-        self.frame = SelectionFrame::of(s.store(), key_ids.iter());
-        self.frame_key = Some((revision, key_ids));
+        let ids: Vec<ElementId> = selection.iter().cloned().collect();
+        self.frame = SelectionFrame::of(s.store(), ids.iter());
+        self.frame_key = Some((revision, ids));
     }
 
     /// The frame of the selection (box or points), with its handles.
