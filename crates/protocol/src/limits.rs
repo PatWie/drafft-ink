@@ -69,6 +69,9 @@ pub struct Limits {
     pub max_awareness_per_sec: u16,
 }
 
+// `Limits` stores sizes as u32; the hard ceilings must fit.
+const _: () = assert!(MAX_FRAME_BYTES <= u32::MAX as usize && MAX_UPDATE_BYTES <= u32::MAX as usize);
+
 impl Limits {
     /// The hard-ceiling defaults.
     pub const DEFAULT: Limits = Limits {
@@ -104,6 +107,6 @@ pub fn reconnect_delay_ms(attempt: u32, jitter: u32) -> u32 {
     let exp = attempt.min(16);
     let full = RECONNECT_BASE_MS.saturating_mul(1u32 << exp).min(RECONNECT_MAX_MS);
     let half = full / 2;
-    let spread = u64::from(full - half) + 1;
-    half + (u64::from(jitter) % spread) as u32
+    // `full` is at most RECONNECT_MAX_MS, so `full - half + 1` cannot overflow.
+    half + jitter % (full - half + 1)
 }
