@@ -50,6 +50,7 @@ pub async fn start(canvas_id: String) -> Result<(), JsValue> {
         join,
         // "/ws" means the server that delivered this page.
         default_server: Some("/ws".to_owned()),
+        collab_token: None,
         open: None,
         perf_overlay: overlay,
         stored_default_target: true,

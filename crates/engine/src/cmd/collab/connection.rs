@@ -3,7 +3,7 @@
 use std::cell::Cell;
 use std::rc::Rc;
 
-use drafftink_collab::{CollabClient, CollabConfig, CollabSession, ConfigError, ServerUrl};
+use drafftink_collab::{AuthToken, CollabClient, CollabConfig, CollabSession, ConfigError, ServerUrl};
 use drafftink_protocol::{ClientId, UserInfo};
 use drafftink_scene::{Color, SceneRead};
 use serde_json::Value;
@@ -67,10 +67,16 @@ pub(super) fn has_content(s: &Session) -> bool {
 
 /// Creates the client for `room` on the active tab and starts it. Everything that can fail comes before the
 /// first change, so a refusal leaves the session as it was.
-pub(super) fn start(s: &mut Session, server: ServerUrl, room: &RoomName, on_local: OnLocal) -> Result<(), Refusal> {
+pub(super) fn start(
+    s: &mut Session,
+    server: ServerUrl,
+    token: Option<AuthToken>,
+    room: &RoomName,
+    on_local: OnLocal,
+) -> Result<(), Refusal> {
     let id = s.cmd();
     let user = user_from_settings(s);
-    let (transport, client) = prepare(s, server, room, on_local, user).map_err(|e| match e {
+    let (transport, client) = prepare(s, server, token.clone(), room, on_local, user).map_err(|e| match e {
         StartError::Port(p) => Refusal::io_failed(id, "open a connection", "the server", &p.to_string()),
         StartError::Config(c) => Refusal::internal(id, c.to_string()),
     })?;
@@ -96,6 +102,7 @@ pub(super) fn start(s: &mut Session, server: ServerUrl, room: &RoomName, on_loca
     s.tab_mut().ext.set(RoomBinding(Some(room.to_string())));
     s.ext.with::<CollabState, _>(|c| {
         c.server = None;
+        c.token = token;
         c.live = Some(live);
     });
     s.collab_poll();
@@ -105,6 +112,7 @@ pub(super) fn start(s: &mut Session, server: ServerUrl, room: &RoomName, on_loca
 fn prepare(
     s: &mut Session,
     server: ServerUrl,
+    auth_token: Option<AuthToken>,
     room: &RoomName,
     on_local: OnLocal,
     user: UserInfo,
@@ -120,7 +128,7 @@ fn prepare(
         room: room.id().clone(),
         client_id: ClientId::from_bytes(client_bits.to_be_bytes()),
         user: Some(user),
-        auth_token: None,
+        auth_token,
         jitter_seed: u64::try_from(jitter_bits & u128::from(u64::MAX)).unwrap_or(0),
         replace_when_trimmed: on_local == OnLocal::Discard,
     };
@@ -142,6 +150,7 @@ pub(super) fn leave(s: &mut Session, forget_server: bool) -> Option<(String, Tab
     let live = s.ext.with::<CollabState, _>(|c| {
         if forget_server {
             c.server = None;
+            c.token = None;
         }
         c.live.take()
     });
@@ -157,7 +166,11 @@ pub(super) fn leave(s: &mut Session, forget_server: bool) -> Option<(String, Tab
     if !forget_server {
         // The server stays chosen, so the next `collab.join_room` needs no `collab.connect`.
         let url = live.session.client().config().url.clone();
-        s.ext.with::<CollabState, _>(|c| c.server = Some(url));
+        let token = live.session.client().config().auth_token.clone();
+        s.ext.with::<CollabState, _>(|c| {
+            c.server = Some(url);
+            c.token = token;
+        });
     }
     Some((room, tab))
 }

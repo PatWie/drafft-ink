@@ -56,6 +56,20 @@ leave:       client_mut().leave(now, &mut store); pump
 
 Remote operations are never sent back. This needed a fix in `drafftink-doc`: `take_unsent_update` used to return operations that arrived by `apply_remote` (regression test `remote_operations_are_not_handed_back_as_unsent`).
 
+## The access token
+
+A server started with `auth_tokens` (`docs/server.md`) accepts a join only when the first frame carries one of them. The engine passes the token to `CollabConfig::auth_token`; the client holds it as `AuthToken` and sends it in the `Join` frame. A missing or wrong token ends the client with `Unauthorized`, whose text asks for a new token.
+
+Where the token comes from:
+
+| Place | How |
+|---|---|
+| Command | `collab.connect {url, room, token}`, or `collab.connect {url, token}` and later `collab.join_room {room}`. `collab.join_room {room, token}` overrides the token of `connect`. The engine keeps it in memory with the chosen server: `collab.leave_room` keeps it, `collab.disconnect` forgets it. |
+| Desktop launcher | `drafftink --room R --server URL --token-file FILE`, or the environment variable `DRAFFTINK_COLLAB_TOKEN`. The app then calls `collab.connect` with it. There is no flag that takes the token itself, because arguments are visible to every user of the machine (the same rule as the bridge token in `docs/agents.md`). |
+| Web | Only through the command (for example `window.drafftink.execute("collab.connect", {url, room, token})`). The Collaborate dialog has no token field yet, and the token is never read from the page address. |
+
+It is not a setting on purpose: `settings.get` would hand it to every agent, `settings.set` would echo it, and the settings record is written to disk. The token is not recorded in the ring (`CommandSpec::secret_args` makes `engine.recent` show `"<hidden>"`), not in any command output or status, not in `Debug` output (`TokenArg`, `StartupToken` and `AuthToken` print a placeholder), and not in a refusal (a token that is empty or longer than 4096 bytes is `bad_args` without repeating it). Tests: `the_token_is_never_recorded_or_shown` (engine), `the_token_of_the_launcher_reaches_a_server_that_asks_for_one_and_stays_out_of_the_ring` (app), `tests/logging.rs` (client).
+
 ## Presence
 
 Awareness is sent at most every 50 ms (or the server's slower rate), only when it changed, plus a full resend every 10 s while someone else is in the room. A client alone in a room sends nothing; a `PeerJoined` makes it send at once. A peer's presence is cleared after 30 s of silence while the peer stays listed. The laser pointer is local: protocol version 1 has no laser flag, so a receiver draws the recent cursor path (`Peer::trail`, 1.5 s, 64 points) of any peer. A real "this peer uses the laser" flag needs protocol version 2.

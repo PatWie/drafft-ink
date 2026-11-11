@@ -193,6 +193,109 @@ fn connect_with_a_bad_room_name_is_bad_args() {
     }
 }
 
+// ---- the access token ----
+
+const TOKEN: &str = "s3cret-token-value";
+
+fn locked(n: usize) -> World {
+    let mut w = World::new(n);
+    w.hub.require_token(TOKEN);
+    w
+}
+
+fn state_of(s: &mut Session) -> String {
+    run(s, "collab.status", json!({}))["state"].as_str().unwrap_or_default().to_owned()
+}
+
+#[test]
+fn a_token_given_with_the_room_opens_a_server_that_asks_for_one() {
+    let mut w = locked(1);
+    run(w.s(0), "collab.connect", json!({"url": URL, "room": "r1", "token": TOKEN}));
+    w.settle();
+    assert_eq!(state_of(w.s(0)), "connected");
+    assert_eq!(w.hub.clients(), 1);
+}
+
+#[test]
+fn without_the_token_the_server_says_no_and_the_status_says_what_to_do() {
+    let mut w = locked(1);
+    run(w.s(0), "collab.connect", json!({"url": URL, "room": "r1"}));
+    w.settle();
+    let v = run(w.s(0), "collab.status", json!({}));
+    assert_eq!(v["state"], "error", "{v}");
+    assert!(v["error"].as_str().unwrap_or_default().contains("access token"), "{v}");
+    assert_eq!(w.hub.clients(), 0);
+    // A wrong token is the same.
+    run(w.s(0), "collab.disconnect", json!({}));
+    run(w.s(0), "collab.connect", json!({"url": URL, "room": "r1", "token": "wrong"}));
+    w.settle();
+    assert_eq!(state_of(w.s(0)), "error");
+}
+
+#[test]
+fn the_token_of_connect_is_used_by_the_join_that_follows_and_the_token_of_join_wins() {
+    let mut w = locked(1);
+    run(w.s(0), "collab.connect", json!({"url": URL, "token": TOKEN}));
+    run(w.s(0), "collab.join_room", json!({"room": "r1"}));
+    w.settle();
+    assert_eq!(state_of(w.s(0)), "connected");
+
+    // Leaving keeps the server and its token, so the next room needs neither again.
+    run(w.s(0), "collab.leave_room", json!({}));
+    run(w.s(0), "collab.join_room", json!({"room": "r2"}));
+    w.settle();
+    assert_eq!(state_of(w.s(0)), "connected");
+
+    // The token of the join replaces the one remembered from connect.
+    run(w.s(0), "collab.leave_room", json!({}));
+    run(w.s(0), "collab.join_room", json!({"room": "r3", "token": "wrong"}));
+    w.settle();
+    assert_eq!(state_of(w.s(0)), "error");
+
+    // Disconnecting forgets the token.
+    run(w.s(0), "collab.disconnect", json!({}));
+    run(w.s(0), "collab.connect", json!({"url": URL}));
+    run(w.s(0), "collab.join_room", json!({"room": "r4"}));
+    w.settle();
+    assert_eq!(state_of(w.s(0)), "error");
+}
+
+#[test]
+fn a_token_that_cannot_be_used_is_bad_args_and_the_message_does_not_repeat_it() {
+    let (mut s, _) = testing::session();
+    let long = "t".repeat(5000);
+    for token in ["", long.as_str()] {
+        let r = refuse(&mut s, "collab.connect", json!({"url": URL, "room": "r1", "token": token}));
+        assert_eq!(r.code, "bad_args", "{token:.10}");
+        assert!(r.message.contains("token"), "{}", r.message);
+        assert!(!r.message.contains(&long), "{}", r.message);
+    }
+    let r = refuse(&mut s, "collab.connect", json!({"url": URL, "token": ""}));
+    assert_eq!(r.code, "bad_args");
+}
+
+#[test]
+fn the_token_is_never_recorded_or_shown() {
+    let mut w = locked(1);
+    let mut seen = vec![run(w.s(0), "collab.connect", json!({"url": URL, "token": TOKEN}))];
+    seen.push(run(w.s(0), "collab.join_room", json!({"room": "r1", "token": TOKEN})));
+    w.settle();
+    seen.push(run(w.s(0), "collab.status", json!({})));
+    seen.push(run(w.s(0), "engine.recent", json!({"limit": 100})));
+    seen.push(run(w.s(0), "settings.get", json!({})));
+    // In a batch, the step is recorded too.
+    run(w.s(0), "collab.leave_room", json!({}));
+    let steps = [crate::batch::BatchStep::new("collab.join_room", json!({"room": "r2", "token": TOKEN}))];
+    let batch = w.s(0).execute_batch(Origin::Test, &steps, &crate::batch::BatchOpts::default());
+    seen.push(batch.to_json());
+    let ring = serde_json::to_string(&w.s(0).ring().recent(1000, false, None)).unwrap();
+    let outputs = serde_json::to_string(&seen).unwrap();
+    assert!(!ring.contains(TOKEN), "the ring must not hold the token: {ring}");
+    assert!(!outputs.contains(TOKEN), "no output may show the token: {outputs}");
+    assert!(ring.contains("collab.join_room") && ring.contains("<hidden>"), "the call is recorded without the token: {ring}");
+    assert!(!format!("{:?}", w.s(0).collab_view()).contains(TOKEN));
+}
+
 // ---- collab.join_room and collab.leave_room ----
 
 #[test]

@@ -6,7 +6,7 @@ use std::cell::Cell;
 use std::collections::VecDeque;
 use std::rc::Rc;
 
-use drafftink_collab::{CollabSession, Problem, ServerUrl, Transport, TransportError, TransportEvent};
+use drafftink_collab::{AuthToken, CollabSession, Problem, ServerUrl, Transport, TransportError, TransportEvent};
 use drafftink_protocol::RoomId;
 
 use crate::state::{TabId, View};
@@ -158,6 +158,8 @@ impl LaserTrail {
 pub(super) struct CollabState {
     /// The server chosen with `collab.connect`; kept while rooms come and go.
     pub server: Option<ServerUrl>,
+    /// The access token given with the server, used by the next join. Forgotten with the server.
+    pub token: Option<AuthToken>,
     /// The running client.
     pub live: Option<Live>,
     /// This user's laser trail.
