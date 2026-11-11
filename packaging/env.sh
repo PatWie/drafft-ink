@@ -43,7 +43,7 @@ APP_ID=ink.drafft.drafftink
 export APP_ID
 
 # The binaries every desktop package carries, and the server package's.
-DESKTOP_BINS="drafftink drafftink-mcp"
+DESKTOP_BINS="drafftink drafftink-mcp drafftink-cli"
 SERVER_BIN="drafftink-server"
 export DESKTOP_BINS SERVER_BIN
 
