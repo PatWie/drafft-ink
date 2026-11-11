@@ -386,7 +386,9 @@ impl UiState {
             (HostEffect::CompletesLibraryAdd, Ok(_)) => self.library_name.clear(),
             // Tab or Shift+Tab converted the selection: show the popup with the type it became. Once the popup is
             // open, a click on one of its types updates it too.
-            (HostEffect::ShowsConvertPopup, Ok(out)) if call.origin == Origin::Shortcut || self.convert_popup.is_some() => {
+            (HostEffect::ShowsConvertPopup, Ok(out))
+                if call.origin == Origin::Shortcut || self.convert_popup.is_some() =>
+            {
                 let to = out.get("to").and_then(Value::as_str).map(str::to_owned);
                 self.convert_popup = Some(ConvertPopup { current: to });
             }
@@ -443,3 +445,7 @@ impl UiState {
         self.push_toast(Toast::from_refusal(refusal, now));
     }
 }
+
+#[cfg(test)]
+#[path = "host_facts_tests.rs"]
+mod host_facts_tests;

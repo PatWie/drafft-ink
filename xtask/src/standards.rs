@@ -147,7 +147,10 @@ pub fn run(root: &Path) -> Result<(), String> {
                     problems.push(format!("{rel}: `{entry}` is new compared with {base_ref}; the list only shrinks"));
                 }
             }
-            None => println!("{} standards: {base_ref}:{rel} not readable; the shrink-only check did not run", crate::skips::MARKER),
+            None => println!(
+                "{} standards: {base_ref}:{rel} not readable; the shrink-only check did not run",
+                crate::skips::MARKER
+            ),
         }
     }
 
