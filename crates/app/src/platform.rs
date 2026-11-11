@@ -91,6 +91,28 @@ pub enum HostJob {
     },
     /// Read the text on the system clipboard. Answered by [`Inbound::ClipboardText`].
     ReadClipboardText,
+    /// Fetch a font file. Answered by [`Inbound::FontLoaded`], or by [`Inbound::Notice`] when it fails. Only a
+    /// build that leaves fonts out of the binary (the web) asks for this.
+    LoadFont(FontFile),
+}
+
+/// A font file the platform loads for the app: a text font for the canvas or one for the egui UI.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum FontFile {
+    /// Noto Sans or the math font, for the typesetter.
+    Text(drafftink_typeset::ExtraFont),
+    /// A font of the egui UI.
+    Ui(drafftink_ui::theme::UiFont),
+}
+
+impl FontFile {
+    /// The file name (the asset the web build serves).
+    pub fn file_name(self) -> &'static str {
+        match self {
+            FontFile::Text(f) => f.file_name(),
+            FontFile::Ui(f) => f.file_name(),
+        }
+    }
 }
 
 /// What a [`HostJob::PickDocument`] and its siblings were for.
@@ -122,6 +144,13 @@ pub enum Inbound {
     ClipboardText(String),
     /// A plain note for a toast (a picker failed, a file could not be read).
     Notice(String),
+    /// A font file arrived ([`HostJob::LoadFont`]).
+    FontLoaded {
+        /// Which font.
+        file: FontFile,
+        /// The bytes of the font file.
+        bytes: Vec<u8>,
+    },
 }
 
 /// The sending end of the app's inbox. Cheap to clone and `Send`.

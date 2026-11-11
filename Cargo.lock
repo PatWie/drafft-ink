@@ -1284,6 +1284,7 @@ dependencies = [
  "drafftink-render",
  "drafftink-scene",
  "drafftink-testkit",
+ "drafftink-typeset",
  "drafftink-ui",
  "egui",
  "getrandom 0.3.4",

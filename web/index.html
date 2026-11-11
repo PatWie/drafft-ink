@@ -9,6 +9,7 @@
 <link rel="icon" type="image/svg+xml" href="favicon.svg">
 <link rel="apple-touch-icon" href="icon-192.png">
 <link rel="manifest" href="manifest.webmanifest">
+__PRELOAD__
 <style>
   html, body { margin: 0; height: 100%; overflow: hidden; background: #f6f6f8; overscroll-behavior: none; }
   canvas { display: block; width: 100vw; height: 100vh; outline: none; touch-action: none; }
@@ -27,6 +28,7 @@
 <div id="loading" role="status"><div>Loading Drafft.ink</div><div class="bar"></div></div>
 <div id="failure" role="alert"><div><h1>Drafft.ink could not start</h1>
   <p>Drafft.ink draws with WebGPU. Use a current Chrome, Edge or another browser that offers it.</p><pre id="failure-detail"></pre></div></div>
+<script>window.__assets = __ASSETS__;</script>
 <script type="module">
   // The build script puts a hash in place of __BUILD__, so a new build never mixes with a cached old one.
   const BUILD = "__BUILD__";

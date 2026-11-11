@@ -24,7 +24,7 @@ drafftink-gpu = { path = "../gpu" }
 drafftink-io = { path = "../io" }
 drafftink-render = { path = "../render" }
 drafftink-scene = { path = "../scene" }
-drafftink-typeset = { path = "../typeset" }
+drafftink-typeset = { path = "../typeset", features = ["embedded"] }
 kurbo.workspace = true
 peniko.workspace = true
 png.workspace = true

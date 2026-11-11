@@ -90,12 +90,31 @@ def frames(pg): return pg.evaluate("()=>window.drafftink.frames()")
 def reasons(pg):
     return pg.evaluate("()=>window.drafftink.perf().redraws.by_reason")
 
+def settle(pg, quiet=1.5, limit=20):
+    """Waits until no frame was drawn for `quiet` seconds. A page that starts is busy for a moment: fonts and the
+    first documents arrive after the first frame (the big fonts are separate files, docs/web-app.md). An app that
+    never settles still fails the idle window that follows, because that window counts frames."""
+    try: pg.wait_for_load_state("networkidle", timeout=limit * 1000)
+    except Exception: pass
+    t0 = time.time(); last = frames(pg)["frames"]; since = time.time()
+    while time.time() - t0 < limit and time.time() - since < quiet:
+        time.sleep(0.1)
+        now = frames(pg)["frames"]
+        if now != last: last, since = now, time.time()
+
 def window(pg, label, secs):
-    f0 = frames(pg); r0 = reasons(pg); c0 = cpu_ticks(); t = time.time(); time.sleep(secs); el = time.time() - t
+    settle(pg)
+    f0 = frames(pg); r0 = reasons(pg); c0 = cpu_ticks(); t = time.time(); seen = []
+    while time.time() - t < secs:
+        time.sleep(min(0.5, secs - (time.time() - t)))
+        n = frames(pg)["frames"] - f0["frames"]
+        if not seen or n != seen[-1][1]: seen.append((round(time.time() - t, 1), n))
+    el = time.time() - t
     f1 = frames(pg); r1 = reasons(pg)
     r = dict(window=label, secs=round(el, 2), frames=f1["frames"] - f0["frames"], vello_runs=f1["vello_runs"] - f0["vello_runs"],
              redraw_requests={k: v - r0.get(k, 0) for k, v in r1.items() if v - r0.get(k, 0)},
-             cpu_pct_of_one_core_all_chromium=round((cpu_ticks() - c0) / HZ / el * 100, 1))
+             cpu_pct_of_one_core_all_chromium=round((cpu_ticks() - c0) / HZ / el * 100, 1),
+             frame_times=[x for x in seen if x[1]])
     print(json.dumps(r), flush=True); results.append(r); return r
 
 xvfb = subprocess.Popen(["Xvfb", args.display, "-screen", "0", "1600x1100x24"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)

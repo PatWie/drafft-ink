@@ -40,6 +40,11 @@ if [ -n "$WANT" ] && [ "$HAVE" != "$WANT" ]; then
 fi
 
 # --- build
+# WebAssembly SIMD (every browser with WebGPU has it): the CPU glyph rasteriser that epaint pulls in (vello_cpu with
+# fearless_simd) then uses SIMD instructions instead of a scalar fallback that is copied for every pipeline, which
+# is 1.7 MiB less code (docs/performance.md, "Wasm size"). Set here and not in .cargo/config.toml so that the
+# npm package (crates/canvas-js) keeps building for plain WebAssembly.
+export RUSTFLAGS="${RUSTFLAGS:-} -C target-feature=+simd128"
 CARGO_TARGET_DIR="$TARGET_DIR" cargo build --profile "$PROFILE" --target wasm32-unknown-unknown -p drafftink-web --lib
 WASM="$TARGET_DIR/wasm32-unknown-unknown/$PROFILE/$NAME.wasm"
 
@@ -59,7 +64,8 @@ if [ "$OPT" = 1 ] && [ "$PROFILE" = "release-wasm" ]; then
   if [ -n "$WASM_OPT" ]; then
     # Not --all-features: with binaryen 133 it turns on experimental encodings and Chromium then rejects the
     # module ("unknown import kind 0x7e"). These are the features rustc's wasm32 target emits.
-    timeout 1200 "$WASM_OPT" $OPT_FEATURES --strip-debug --strip-producers -Os "$OUT" -o "$OUT.opt"
+    # -Oz: 4.0 MiB brotli against 4.2 for -Os on the 2026-11-08 build (docs/performance.md, "Wasm size").
+    timeout 1200 "$WASM_OPT" $OPT_FEATURES --strip-debug --strip-producers -Oz "$OUT" -o "$OUT.opt"
     mv "$OUT.opt" "$OUT"
     OPTSIZE=$(stat -c %s "$OUT")
   else
@@ -67,11 +73,38 @@ if [ "$OPT" = 1 ] && [ "$PROFILE" = "release-wasm" ]; then
   fi
 fi
 
+# --- fonts: separate files, not part of the wasm. The name carries a hash of the content, so a cached copy is
+# valid forever. `window.__assets` maps the plain file name to the address; the first frame's font is preloaded
+# and precached by the service worker, the others are fetched when the app asks (crates/app/src/web/assets.rs).
+mkdir -p "$DIST/fonts"
+EGUI_FONTS="$(ls -d "${CARGO_HOME:-$HOME/.cargo}"/registry/src/*/epaint_default_fonts-*/fonts 2>/dev/null | sort -V | tail -1 || true)"
+if [ -z "$EGUI_FONTS" ]; then
+  echo "epaint_default_fonts not found in the cargo registry: run 'cargo fetch' first" >&2; exit 1
+fi
+ASSETS=""
+add_font() { # add_font <source file>
+  local src="$1" name stem ext hash
+  name="$(basename "$src")"; stem="${name%.*}"; ext="${name##*.}"
+  hash="$(sha256sum "$src" | cut -c1-10)"
+  cp "$src" "$DIST/fonts/$stem.$hash.$ext"
+  ASSETS="$ASSETS\"$name\":\"fonts/$stem.$hash.$ext\","
+}
+for f in NotoSans-Regular.ttf NotoSans-Bold.ttf NotoSans-Italic.ttf STIXTwoMath-Regular.otf; do add_font "crates/typeset/assets/fonts/$f"; done
+for f in Ubuntu-Light.ttf Hack-Regular.ttf emoji-icon-font.ttf; do add_font "$EGUI_FONTS/$f"; done
+ASSETS_JSON="{${ASSETS%,}}"
+FIRST_FONT="$(sed -n 's/.*"Ubuntu-Light.ttf":"\([^"]*\)".*/\1/p' <<<"$ASSETS_JSON")"
+# The welcome document has a formula, so the math font is wanted right after the first frame: fetch it with the module.
+MATH_FONT="$(sed -n 's/.*"STIXTwoMath-Regular.otf":"\([^"]*\)".*/\1/p' <<<"$ASSETS_JSON")"
+mkdir -p "$DIST/fonts/licenses"
+cp crates/typeset/assets/licenses/* "$DIST/fonts/licenses/"
+cp "$EGUI_FONTS"/*.txt "$DIST/fonts/licenses/"
+
 # --- static files, with the build hash in the page and the service worker
 BUILD="$(cat "$OUT" "$DIST/pkg/$NAME.js" | sha256sum | cut -c1-12)"
 cp web/manifest.webmanifest web/favicon.svg web/icon-192.png web/icon-512.png web/icon-maskable-512.png "$DIST/"
-sed "s/__BUILD__/$BUILD/g" web/index.html > "$DIST/index.html"
-sed "s/__BUILD__/$BUILD/g" web/sw.js > "$DIST/sw.js"
+sed -e "s/__BUILD__/$BUILD/g" -e "s|__ASSETS__|$ASSETS_JSON|" \
+    -e "s|__PRELOAD__|<link rel=\"preload\" as=\"fetch\" crossorigin href=\"$FIRST_FONT\"><link rel=\"preload\" as=\"fetch\" crossorigin href=\"$MATH_FONT\">|" web/index.html > "$DIST/index.html"
+sed -e "s/__BUILD__/$BUILD/g" -e "s|__SHELL_FONTS__|[\"$FIRST_FONT\"]|" web/sw.js > "$DIST/sw.js"
 echo "$BUILD" > "$DIST/BUILD"
 
 # --- sizes of the wasm
@@ -84,10 +117,13 @@ BR=$(brotli_size "$OUT" 2>/dev/null || echo "?")
 mb() { awk -v n="$1" 'BEGIN { if (n == "?") print "n/a"; else printf "%.2f MB", n/1048576 }'; }
 echo "build $BUILD ($PROFILE)"
 printf 'wasm: raw %s | wasm-opt %s | gzip -9 %s | brotli -11 %s\n' "$(mb "$RAW")" "$(mb "$OPTSIZE")" "$(mb "$GZ")" "$(mb "$BR")"
+FONT_BR=0
+for f in "$DIST"/fonts/*.ttf "$DIST"/fonts/*.otf; do FONT_BR=$((FONT_BR + $(brotli_size "$f"))); done
+printf 'fonts (loaded on demand, brotli -11): %s in %s files\n' "$(mb "$FONT_BR")" "$(ls "$DIST"/fonts/*.ttf "$DIST"/fonts/*.otf | wc -l)"
 
 # --- precompressed copies: drafftink-server serves .br / .gz when the browser accepts them
 if [ "$PRECOMPRESS" = 1 ]; then
-  find "$DIST" -type f \( -name '*.wasm' -o -name '*.js' -o -name '*.html' -o -name '*.webmanifest' -o -name '*.svg' \) -size +1k | while read -r f; do
+  find "$DIST" -type f \( -name '*.wasm' -o -name '*.js' -o -name '*.html' -o -name '*.webmanifest' -o -name '*.svg' -o -name '*.ttf' -o -name '*.otf' \) -size +1k | while read -r f; do
     gzip -9 -c "$f" > "$f.gz"
     if command -v brotli >/dev/null; then brotli -q 11 -c "$f" > "$f.br"
     else "${PERF_PY:-$HOME/.venvs/perf/bin/python}" -c 'import brotli,sys; open(sys.argv[2],"wb").write(brotli.compress(open(sys.argv[1],"rb").read(), quality=11))' "$f" "$f.br"; fi

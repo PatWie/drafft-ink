@@ -11,7 +11,7 @@ use parley::{
     InlineBox, InlineBoxKind, LayoutContext, OverflowWrap, PositionedLayoutItem, StyleProperty, VerticalAlign,
 };
 
-use crate::fonts::{self, FALLBACK_FAMILY};
+use crate::fonts::{self, ExtraFont, FALLBACK_FAMILY};
 use crate::inline::{Assembly, Piece, TextMap};
 use crate::math::{MathError, MathLayout, MathSpec};
 use crate::outline::ColouredPath;
@@ -230,6 +230,12 @@ impl TextLayout {
         self.lines.first().map_or(0.0, |l| l.baseline)
     }
 
+    /// True when a glyph run holds the font's "missing glyph" (id 0): some character is in none of the loaded
+    /// fonts. The typesetter uses it to ask for Noto Sans.
+    pub(crate) fn has_missing_glyphs(&self) -> bool {
+        self.runs.iter().any(|r| r.glyphs.iter().any(|g| g.id == 0))
+    }
+
     /// Total number of glyphs.
     pub fn glyph_count(&self) -> usize {
         self.runs.iter().map(|r| r.glyphs.len()).sum()
@@ -268,12 +274,24 @@ pub(crate) struct Engine {
 }
 
 impl Engine {
-    pub fn new() -> Self {
+    pub fn new(extras: bool) -> Self {
         let mut font_cx = FontContext::new();
         for bytes in fonts::bundled() {
             font_cx.collection.register_fonts(peniko::Blob::new(Arc::new(bytes)), None);
         }
-        Self { font_cx, layout_cx: LayoutContext::new() }
+        let mut engine = Self { font_cx, layout_cx: LayoutContext::new() };
+        for font in ExtraFont::NOTO_SANS.into_iter().filter(|_| extras) {
+            if let Some(bytes) = font.embedded() {
+                engine.register(Arc::new(bytes));
+            }
+        }
+        engine
+    }
+
+    /// Hands a font file to Parley. Returns the families it holds.
+    pub fn register(&mut self, bytes: Arc<dyn AsRef<[u8]> + Send + Sync>) -> Vec<String> {
+        let registered = self.font_cx.collection.register_fonts(peniko::Blob::new(bytes), None);
+        registered.iter().filter_map(|(id, _)| self.font_cx.collection.family_name(*id).map(str::to_owned)).collect()
     }
 }
 
@@ -420,7 +438,8 @@ fn pweight(style: &RunStyle) -> f32 {
 fn properties(style: &RunStyle, id: u32) -> [StyleProperty<'static, StyleId>; 5] {
     let face = fonts::face_for(&style.family, style.weight, style.italic);
     let mut names: Vec<FontFamilyName<'static>> = vec![FontFamilyName::Named(Cow::Owned(face.name.clone()))];
-    if fonts::HAS_NOTO_SANS && face.name != FALLBACK_FAMILY {
+    // Parley skips a family it does not have, so this costs nothing while Noto Sans is not loaded.
+    if face.name != FALLBACK_FAMILY {
         names.push(FontFamilyName::Named(Cow::Borrowed(FALLBACK_FAMILY)));
     }
     [

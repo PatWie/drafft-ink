@@ -16,6 +16,7 @@ serde_json.workspace = true
 schemars.workspace = true
 
 [dev-dependencies]
+drafftink-typeset = { path = "../typeset", features = ["embedded"] }
 drafftink-scene = { path = "../scene", features = ["conformance"] }
 proptest.workspace = true
 insta.workspace = true

@@ -38,6 +38,8 @@ pub(crate) struct CanvasView {
     grid: GridStyle,
     hidden: Vec<ElementId>,
     last_report: FrameReport,
+    /// The font set the cached fragments were encoded with (`Typesetter::font_set_version`).
+    fonts: Option<u64>,
 }
 
 impl CanvasView {
@@ -55,6 +57,7 @@ impl CanvasView {
             grid: GridStyle::None,
             hidden: Vec::new(),
             last_report: FrameReport::default(),
+            fonts: None,
         }
     }
 
@@ -71,6 +74,18 @@ impl CanvasView {
             self.grid = grid;
             self.composer.set_options(RenderOptions { theme, ..RenderOptions::default() });
             self.composer.set_grid(GridSpec::new(grid));
+        }
+        changed
+    }
+
+    /// Drops the cached fragments when the typesetter's font set changed (a font arrived), because glyphs that
+    /// were boxes before may be letters now. Returns true then. Does not build the typesetter.
+    pub(crate) fn sync_fonts(&mut self) -> bool {
+        let Some(now) = self.typesetter.peek(|ts| ts.font_set_version()) else { return false };
+        let previous = self.fonts.replace(now);
+        let changed = previous.is_some_and(|p| p != now);
+        if changed {
+            self.composer.cache_mut().clear();
         }
         changed
     }

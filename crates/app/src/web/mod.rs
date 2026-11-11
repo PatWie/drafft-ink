@@ -11,6 +11,7 @@
 //! | `Renderer` | none: PNG export needs an asynchronous read-back (see `docs/web-app.md`) |
 //! | `Clipboard` | the shared slot the shell fills from `paste` events |
 
+mod assets;
 mod cache;
 mod dom;
 mod files;
@@ -28,7 +29,9 @@ use drafftink_scene::RandomIds;
 
 use crate::clock::AppClock;
 use crate::config::StartupLink;
-use crate::platform::{Platform, SharedClipboard, WakeCell};
+use drafftink_ui::theme::UiFont;
+
+use crate::platform::{FontFile, Platform, SharedClipboard, WakeCell};
 
 pub use storage::WebStorage;
 
@@ -97,6 +100,13 @@ pub async fn platform(opts: WebOptions) -> Result<WebPlatform, WebError> {
         dom::show_notice(&notice, 20);
     }
     storage.flush_on_page_hide();
+    // The first frame needs the UI font. The page preloaded it, so this mostly waits for the module to compile.
+    // Without it GelPen draws the text (`drafftink_ui::theme::install_fonts`).
+    let ubuntu = FontFile::Ui(UiFont::UbuntuLight);
+    match assets::fetch_font(ubuntu).await {
+        Ok(bytes) => drafftink_ui::theme::provide_font(UiFont::UbuntuLight, bytes),
+        Err(e) => log::warn!("could not load {}: {e}", ubuntu.file_name()),
+    }
 
     let wake = WakeCell::new();
     let clipboard = SharedClipboard::new();

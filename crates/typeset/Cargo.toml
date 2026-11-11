@@ -7,9 +7,13 @@ license.workspace = true
 rust-version.workspace = true
 
 [features]
-default = ["noto-sans"]
-# Bundle Noto Sans (1.9 MB raw). Old documents can use it, but the old UI hid it.
+default = []
+# Build the big fonts into the binary: Noto Sans (1.9 MB) and STIX Two Math (0.7 MB). Without them the host
+# loads them on demand (`Typesetter::wanted_fonts` and `provide_font`); the web app does that. The desktop
+# app, the CLI and the tests build them in (`embedded`).
+embedded = ["noto-sans", "stix-math"]
 noto-sans = []
+stix-math = []
 # `bench_support`, for the benchmark only. The benchmark enables it through the dev-dependency on this crate.
 bench = []
 
@@ -28,7 +32,7 @@ ttf-parser = "0.25"
 [dev-dependencies]
 criterion = { workspace = true }
 # The benchmark needs `bench_support`; naming the crate here turns the feature on for tests and benches only.
-drafftink-typeset = { path = ".", features = ["bench"] }
+drafftink-typeset = { path = ".", features = ["bench", "embedded"] }
 proptest = { workspace = true }
 png = { workspace = true }
 serde_json = { workspace = true }

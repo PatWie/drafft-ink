@@ -20,6 +20,8 @@ const SHELL = [
   "icon-maskable-512.png",
   `pkg/drafftink_web.js?v=${BUILD}`,
   `pkg/drafftink_web_bg.wasm?v=${BUILD}`,
+  // The font of the first frame. The other fonts are stored when the app first asks for them.
+  ...__SHELL_FONTS__,
 ];
 const NEVER = new Set(["/ws", "/health"]);
 

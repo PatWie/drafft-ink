@@ -28,6 +28,7 @@ loro.workspace = true
 flate2 = { version = "1", default-features = false, features = ["rust_backend"] }
 
 [dev-dependencies]
+drafftink-typeset = { path = "../typeset", features = ["embedded"] }
 # The tests use the fact checks.
 drafftink-io = { path = ".", features = ["facts"] }
 proptest.workspace = true

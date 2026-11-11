@@ -222,3 +222,34 @@ fn math_errors_are_cached_and_do_not_reparse() {
     assert_eq!(after.math_hits, before.math_hits + 1);
     assert_eq!(after.math_misses, before.math_misses);
 }
+
+#[test]
+fn a_formula_before_the_math_font_arrives_is_a_loading_error_that_is_not_cached() {
+    let mut ts = Typesetter::without_extra_fonts();
+    let spec = MathSpec::new("E = mc^2");
+    let e = ts.math(&spec).unwrap_err();
+    assert_eq!(e.kind, MathErrorKind::FontLoading);
+    assert_eq!(ts.wanted_fonts(), [ExtraFont::StixTwoMath]);
+    assert_eq!(ts.stats().math_entries, 0, "a loading error is not cached");
+
+    let bytes = std::fs::read(std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("assets/fonts").join(ExtraFont::StixTwoMath.file_name()))
+        .expect("font file");
+    ts.provide_font(ExtraFont::StixTwoMath, bytes).expect("a valid font");
+    assert!(ts.wanted_fonts().is_empty());
+    let m = ts.math(&spec).expect("the formula typesets once the font is there");
+    assert_eq!(m.glyphs.len(), 5);
+}
+
+#[test]
+fn inline_formulas_are_laid_out_again_when_the_math_font_arrives() {
+    let mut ts = Typesetter::without_extra_fonts();
+    let mut spec = plain("energy $E = mc^2$ here", 20.0);
+    spec.math = InlineMath::Auto;
+    let before = ts.text(&spec);
+    assert_eq!(before.formula_errors.len(), 1, "{:?}", before.formula_errors);
+    let bytes = std::fs::read(std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("assets/fonts").join(ExtraFont::StixTwoMath.file_name()))
+        .expect("font file");
+    ts.provide_font(ExtraFont::StixTwoMath, bytes).expect("a valid font");
+    let after = ts.text(&spec);
+    assert!(after.formula_errors.is_empty() && after.formulas.len() == 1, "{:?}", after.formula_errors);
+}

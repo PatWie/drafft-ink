@@ -19,6 +19,7 @@ thiserror = { workspace = true }
 png = { workspace = true }
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+egui = { workspace = true, features = ["default_fonts"] }
 egui-winit = { version = "=0.37.0", default-features = false, features = ["x11", "wayland", "clipboard", "links"] }
 wgpu = { workspace = true, features = ["parking_lot", "vulkan", "metal", "dx12"] }
 winit = { workspace = true, features = ["x11", "wayland", "wayland-dlopen", "wayland-csd-adwaita", "rwh_06"] }

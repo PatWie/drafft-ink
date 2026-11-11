@@ -94,6 +94,9 @@ pub enum MathErrorKind {
     TooLarge,
     /// A bug in the math engine (a panic was caught). The message is the panic text.
     Internal(String),
+    /// The math font (STIX Two Math) is not loaded yet. The host was asked for it; the formula is laid out
+    /// again when it arrives. This error is not cached.
+    FontLoading,
 }
 
 /// A math error with the byte range of the source it points at.
@@ -111,6 +114,11 @@ pub struct MathError {
 impl MathError {
     fn new(kind: MathErrorKind, span: Range<usize>, message: impl Into<String>) -> Self {
         Self { kind, span, message: message.into() }
+    }
+
+    /// The error of a formula asked for before the math font arrived.
+    pub(crate) fn font_loading() -> Self {
+        Self::new(MathErrorKind::FontLoading, 0..0, "The math font is still loading. The formula appears when it has arrived.")
     }
 
     /// The error's line (0-based) and column (0-based, in `char`s) in `latex`.
@@ -242,11 +250,13 @@ pub(crate) struct MathEngine {
 }
 
 impl MathEngine {
-    pub fn new() -> Result<Self, MathError> {
+    /// An engine over the bytes of STIX Two Math. They live for the rest of the process: the font is parsed
+    /// once and ReX borrows it.
+    pub fn new(math_font: &'static [u8]) -> Result<Self, MathError> {
         let bad = |what: &str| {
             MathError::new(MathErrorKind::Layout(what.to_owned()), 0..0, format!("The math font is unusable: {what}."))
         };
-        let face = ttf_parser::Face::parse(fonts::STIX_TWO_MATH, 0).map_err(|e| bad(&e.to_string()))?;
+        let face = ttf_parser::Face::parse(math_font, 0).map_err(|e| bad(&e.to_string()))?;
         let font = TtfMathFont::new(face).map_err(|e| bad(&e.to_string()))?;
         let text_face = ttf_parser::Face::parse(fonts::GELPEN_REGULAR, 0).ok();
         let mut glyph_to_char = HashMap::new();
@@ -264,7 +274,7 @@ impl MathEngine {
             font,
             text_face,
             glyph_to_char,
-            math_data: data(fonts::STIX_TWO_MATH),
+            math_data: data(math_font),
             text_data: data(fonts::GELPEN_REGULAR),
         })
     }

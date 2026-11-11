@@ -19,6 +19,7 @@ drafftink-collab = { path = "../collab" }
 drafftink-bridge = { path = "../bridge" }
 drafftink-gpu = { path = "../gpu" }
 drafftink-ui = { path = "../ui" }
+drafftink-typeset = { path = "../typeset" }
 egui = { workspace = true }
 vello = { workspace = true }
 base64 = { workspace = true }
@@ -29,6 +30,7 @@ log = { workspace = true }
 web-time = { workspace = true }
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+egui = { workspace = true, features = ["default_fonts"] }
 arboard = { workspace = true, features = ["wayland-data-control"] }
 png = { workspace = true }
 getrandom = "0.3"
@@ -46,7 +48,7 @@ web-sys = { workspace = true, features = [
     "HtmlInputElement", "CssStyleDeclaration", "Event", "EventTarget", "File", "FileList", "Blob",
     "BlobPropertyBag", "Url", "Clipboard", "Crypto", "StorageManager", "DomException",
     "IdbFactory", "IdbDatabase", "IdbObjectStore", "IdbObjectStoreParameters", "IdbOpenDbRequest", "IdbRequest",
-    "IdbTransaction", "IdbTransactionMode", "IdbVersionChangeEvent", "VisibilityState",
+    "IdbTransaction", "IdbTransactionMode", "IdbVersionChangeEvent", "VisibilityState", "Response",
 ] }
 
 [dev-dependencies]
