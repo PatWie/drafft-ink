@@ -17,52 +17,39 @@ Fixed in this branch: `crate::clip::paste_args` builds `{"at": [x, y]}`, with a 
 The browser specs for pasting text and Mermaid text pass with the fix and would have failed without it only when the pointer had been
 over the canvas first; the Ctrl+C / Ctrl+V spec covers the keyboard path.
 
-### F2. While hovering, the cursor position the app keeps is missing or one pointer sample behind (open)
+### F2. While hovering, the cursor position Ctrl+V uses was missing or one sample behind (not an app bug; the spec was wrong)
 
-The position behind `$cursor` (Ctrl+V pastes "at the cursor", `docs/commands.md` section 6.1) comes from the last pointer sample the app has
-processed. Observed with real mouse moves on a freshly loaded page, then Ctrl+V with a copied shape:
+The first diagnosis was a lagging cursor in `crates/gpu/src/shell.rs` (`held_cursor`). It was wrong. The spec hovered
+(900, 600) with a shape selected, and at the 1280 by 800 test viewport that point lies under the properties panel, which opens
+at the right edge (x from 887) as soon as something is selected. A pointer over an egui panel is not on the canvas, so `$cursor`
+is omitted (`docs/commands.md` section 6.1) and the paste lands at the viewport centre. The "lag" came from the panel appearing one
+frame after the selection: moves made before it were recorded, later ones were not. With the pointer on free canvas every
+sample is recorded exactly (checked with one, two and three slow and quick moves, the last position wins).
 
-| pointer moves before Ctrl+V | `at` the paste received |
-|---|---|
-| one move | none (`{}`): the paste lands at the viewport centre |
-| two moves, 250 ms apart | the first position |
-| three moves, 250 ms apart | the second position |
-| three quick moves | the first position |
+Fixed in the spec: `keys: Ctrl+V pastes the copy centred on the pointer` hovers (700, 520), and a new spec
+`keys: Ctrl+V with the pointer over a panel pastes at the middle of the view` pins the panel behaviour.
 
-After a frame has been drawn in between (for example by an earlier paste) the next move is recorded correctly. So the app lags one
-sample behind while the page is idle, and a person who moves the mouse onto the canvas and presses Ctrl+V pastes at the viewport
-centre. `crates/gpu/src/shell.rs` holds the hover event (`held_cursor`: "remember the event, tell egui nothing, draw nothing"),
-which is the first place to look. Not fixed: the idle rules (no frame for hover) make this a design question for the shell owner.
+### F3. One Ctrl+V on the web pasted twice (fixed)
 
-The spec `keys: Ctrl+V pastes the copy centred on the pointer` holds the full assertion and is marked `test.fixme` with this finding as
-the reason; it is reported as skipped. It must be switched on when F2 is fixed.
+Two paths ran `clipboard.paste` for one key press: the key binding (`Mod+V`, from the keymap) and the browser's `paste` event
+(`ShellEvent::Paste`). Copy and cut had the same pair. Both ran from origin `shortcut`, and the copies stacked on one spot.
+The event is the one that carries the system clipboard (images, text from other programs, the private payload), so it owns the
+chord now. `Binding::host_clipboard` marks `Mod+C`, `Mod+X`, `Mod+V` and `Mod+Shift+V`; a host that delivers clipboard events passes
+`FrameInput::host_clipboard` and the keymap skips those bindings (`ui/tests/keymap.rs`). Ctrl+Shift+V keeps `plain_text` through the
+event: the paste handler reads the held modifiers (`EventCx::modifiers`, `clip::is_plain_text_paste`). Native is the same: its
+shell turns the shortcut into the event, so the key no longer pastes a second time there either.
+A paste event with an empty system clipboard sends nothing (the web host drops it), so Ctrl+V right after Ctrl+C in under a
+millisecond can paste an older clipboard. A person takes longer.
 
-### F3. One Ctrl+V on the web pastes twice (open)
+Specs: `keys: one Ctrl+V pastes once`, `keys: one Ctrl+C copies once`, and the copy and paste spec now expects exactly one copy.
 
-Ctrl+C then, a moment later, Ctrl+V with a shape selected gives **three** elements, not two. The recent ring shows two
-`clipboard.paste` entries from origin `shortcut` for the one key press: the key binding (`Mod+V`, `docs/commands.md` section 6.1, arguments
-`{}`) and the browser's `paste` event (`ShellEvent::Paste` in `crates/app/src/app.rs`, which runs `clipboard.paste` with the system
-clipboard). The first Ctrl+C has written the system clipboard by then, so the paste event carries data. When Ctrl+V follows Ctrl+C within
-a millisecond (a script), the system clipboard is still empty and only the binding pastes, which hides the bug from a fast test. Both
-pastes land on the same spot, so the copies are stacked and the user sees one.
+### F4. A middle-button pan could paste on Linux (fixed)
 
-Copy has the same shape: the ring shows two `clipboard.copy` entries for one Ctrl+C. Not fixed: which path owns copy and paste on the web
-(the binding or the browser events) is a decision for the shell owner. Native uses egui's paste event; the native suite does not press keys.
-
-The spec `keys: one Ctrl+V pastes once` holds the assertion and is `test.fixme` with this finding as the reason. The plain copy and
-paste spec accepts one or two copies so that it does not depend on the race.
-
-### F4. A middle-button pan can paste on Linux (open)
-
-After earlier tests in the same Chromium process, a middle-button drag (pan) ran `clipboard.paste` once (origin `shortcut`) and made an
-undo step, so the pan pasted what the Linux primary selection held. Linux browsers paste the primary selection on a middle click into the
-focused field, and the field here is the hidden text agent that `pointerdown` focuses (`crates/gpu/src/web/pointer.rs`,
-`focus_for_pointer_down`). The run on a fresh Chromium (empty primary selection) does not show it, which is why it comes and goes.
-A try with `preventDefault` on `mouseup` and `auxclick` for button 1 did not stop it (reverted); the paste event is probably raised
-on `mousedown`, or the focus change has to go. Not fixed.
-
-The spec `a middle-button drag pans the content and pastes nothing` is `test.fixme` with this finding; the wheel and ctrl+wheel spec
-runs without the middle-button part.
+Linux browsers paste the primary selection when the middle button is released. A cancelled `pointerdown` makes the browser skip
+the compatibility `mousedown` and `mouseup` events, so the earlier try (`preventDefault` on `mouseup` and `auxclick`) never got
+to run. Now `pointerdown` stays uncancelled for the middle button and `mousedown` and `mouseup` are cancelled for it
+(`crates/gpu/src/web/pointer.rs`). The spec seeds the primary selection with `xclip` (`support/x11.ts`), so it fails on the old
+behaviour every time and not only after other tests have selected text; without `xclip` it still runs, unseeded.
 
 ## Observations that are not bugs
 

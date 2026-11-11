@@ -61,7 +61,9 @@ pub(super) fn install(
     out.push(Listener::new(target, "pointerdown", opts, move |e: PointerEvent| {
         // Keeps text selection and the default focus change away, like winit does when its
         // `preventDefault` is on (the shell turns that off for the keyboard). Other listeners still run.
-        e.prevent_default();
+        if !is_middle_button(e.button()) {
+            e.prevent_default();
+        }
         t.focus_for_pointer_down();
         // Keep receiving the drag when it leaves the canvas.
         if let Err(err) = p.canvas.set_pointer_capture(e.pointer_id()) {
@@ -94,9 +96,26 @@ pub(super) fn install(
     let p = Rc::clone(&pointers);
     out.push(Listener::new(target, "pointerleave", opts, move |e: PointerEvent| p.send(&e, PointerPhase::Leave))?);
 
+    // A middle click is a pan here, never a paste. Linux browsers paste the primary selection when the middle
+    // button is released, unless the page cancels `mouseup`. A cancelled `pointerdown` suppresses the compatibility
+    // mouse events, so `mouseup` would never fire and could not be cancelled: `pointerdown` stays uncancelled for
+    // this button, and `mousedown` and `mouseup` are cancelled instead (docs/review/e2e-findings.md, F4).
+    for name in ["mousedown", "mouseup"] {
+        out.push(Listener::new(target, name, opts, |e: web_sys::MouseEvent| {
+            if is_middle_button(e.button()) {
+                e.prevent_default();
+            }
+        })?);
+    }
+
     // The rest of what winit's `preventDefault` would have done.
     out.push(Listener::new(target, "contextmenu", opts, |e: web_sys::Event| e.prevent_default())?);
     Ok(out)
+}
+
+/// `MouseEvent.button` of the middle button.
+fn is_middle_button(button: i16) -> bool {
+    button == 1
 }
 
 impl Pointers {
