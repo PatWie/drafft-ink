@@ -849,6 +849,79 @@ fn save_uses_the_stored_default_target_when_the_shell_turns_it_on() {
     assert_eq!(super::save_target(&s), Some(FileRef::Stored { stored: "Notes".to_owned() }));
 }
 
+/// A storage whose document writes finish later, as IndexedDB does in the browser.
+struct LaterStorage {
+    inner: crate::ports::fake::FakeStorage,
+    next: u64,
+}
+
+impl crate::ports::Storage for LaterStorage {
+    fn get(&self, ns: Ns, key: &str) -> Result<Option<Vec<u8>>, PortError> {
+        self.inner.get(ns, key)
+    }
+    fn put(&mut self, ns: Ns, key: &str, bytes: &[u8]) -> Result<(), PortError> {
+        self.inner.put(ns, key, bytes)
+    }
+    fn put_document(&mut self, _: &str, _: &[u8]) -> Result<crate::ports::PutOutcome, PortError> {
+        self.next += 1;
+        Ok(crate::ports::PutOutcome::Pending(WriteToken(self.next)))
+    }
+    fn delete(&mut self, ns: Ns, key: &str) -> Result<(), PortError> {
+        self.inner.delete(ns, key)
+    }
+    fn list(&self, ns: Ns) -> Result<Vec<crate::ports::StoredInfo>, PortError> {
+        self.inner.list(ns)
+    }
+}
+
+fn with_later_storage(s: &mut Session, f: &Fakes) {
+    s.ports.storage = Some(Box::new(LaterStorage { inner: f.storage.clone(), next: 0 }));
+    use_stored_default_target(s, true);
+}
+
+#[test]
+fn a_stored_save_that_finishes_later_keeps_the_document_dirty_until_it_is_confirmed() {
+    let (mut s, f) = drawn(1);
+    run(&mut s, "doc.rename", json!({"name": "Notes"}));
+    with_later_storage(&mut s, &f);
+    let out = run(&mut s, "doc.save", json!({}));
+    assert_eq!(out["pending_write"], json!([1]));
+    assert_eq!(out["changed"], json!(false));
+    assert!(s.tab().dirty(), "not saved before the storage confirms");
+    assert_eq!(super::save_target(&s), None);
+    assert!(super::files::recent(&s).is_empty());
+    s.on_write_done(WriteToken(1), Ok(())).unwrap();
+    assert!(!s.tab().dirty());
+    assert_eq!(super::save_target(&s), Some(FileRef::Stored { stored: "Notes".to_owned() }));
+    assert_eq!(super::files::recent(&s), vec![FileRef::Stored { stored: "Notes".to_owned() }]);
+}
+
+#[test]
+fn a_stored_save_that_fails_later_leaves_the_document_dirty_and_says_so() {
+    let (mut s, f) = drawn(1);
+    with_later_storage(&mut s, &f);
+    run(&mut s, "doc.save", json!({}));
+    let r = s.on_write_done(WriteToken(1), Err(PortError::Failed("quota exceeded".to_owned()))).unwrap_err();
+    assert_eq!(r.code, "io_failed");
+    assert!(r.message.contains("NOT saved") && r.message.contains("quota exceeded"), "{}", r.message);
+    assert!(s.tab().dirty());
+    assert_eq!(super::save_target(&s), None);
+}
+
+#[test]
+fn closing_a_tab_with_a_pending_stored_save_refuses_until_it_is_confirmed() {
+    let (mut s, f) = drawn(1);
+    run(&mut s, "tab.new", json!({}));
+    run(&mut s, "tab.switch", json!({"tab": 0}));
+    with_later_storage(&mut s, &f);
+    let r = refuse(&mut s, "tab.close", json!({"on_unsaved": "save"}));
+    assert_eq!(r.code, "io_failed");
+    assert!(r.message.contains("not confirmed yet"), "{}", r.message);
+    assert_eq!(s.tabs.len(), 2, "the tab with the unsaved work must stay");
+    s.on_write_done(WriteToken(1), Ok(())).unwrap();
+    run(&mut s, "tab.close", json!({"on_unsaved": "save"}));
+}
+
 #[test]
 fn save_after_a_rename_in_one_batch_writes_the_new_name() {
     let (mut s, f) = drawn(1);
