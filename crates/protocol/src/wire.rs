@@ -57,17 +57,17 @@ impl Writer {
 }
 
 pub(crate) struct Reader<'a> {
+    /// The bytes not read yet.
     buf: &'a [u8],
-    pos: usize,
 }
 
 impl<'a> Reader<'a> {
     pub fn new(buf: &'a [u8]) -> Self {
-        Reader { buf, pos: 0 }
+        Reader { buf }
     }
 
     pub fn remaining(&self) -> usize {
-        self.buf.len().saturating_sub(self.pos)
+        self.buf.len()
     }
 
     pub fn finish(&self) -> Result<(), DecodeError> {
@@ -78,22 +78,18 @@ impl<'a> Reader<'a> {
     }
 
     fn take(&mut self, n: usize, what: &'static str) -> Result<&'a [u8], DecodeError> {
-        if n > self.remaining() {
-            return Err(DecodeError::Truncated(what));
-        }
-        let start = self.pos;
-        self.pos += n;
-        self.buf.get(start..start + n).ok_or(DecodeError::Truncated(what))
+        let (head, tail) = self.buf.split_at_checked(n).ok_or(DecodeError::Truncated(what))?;
+        self.buf = tail;
+        Ok(head)
     }
 
     fn array<const N: usize>(&mut self, what: &'static str) -> Result<[u8; N], DecodeError> {
-        let mut out = [0u8; N];
-        out.copy_from_slice(self.take(N, what)?);
-        Ok(out)
+        <[u8; N]>::try_from(self.take(N, what)?).map_err(|_| DecodeError::Truncated(what))
     }
 
     pub fn u8(&mut self, what: &'static str) -> Result<u8, DecodeError> {
-        Ok(self.array::<1>(what)?[0])
+        let [byte] = self.array(what)?;
+        Ok(byte)
     }
     pub fn u16(&mut self, what: &'static str) -> Result<u16, DecodeError> {
         Ok(u16::from_le_bytes(self.array(what)?))
@@ -137,7 +133,7 @@ impl<'a> Reader<'a> {
 
     /// Reads a length and checks it against `max` and the remaining input.
     pub fn len(&mut self, what: &'static str, max: usize) -> Result<usize, DecodeError> {
-        let len = self.varint(what)? as usize;
+        let len = usize::try_from(self.varint(what)?).unwrap_or(usize::MAX);
         if len > max {
             return Err(DecodeError::FieldTooLong { field: what, len, max });
         }
