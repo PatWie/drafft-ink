@@ -265,3 +265,12 @@ fn the_model_takes_a_mutable_session_only_to_query_it() {
     assert!(!src.contains("execute"), "model.rs must not run commands");
     assert!(src.contains(".query("), "model.rs reads through Session::query");
 }
+
+#[test]
+fn no_font_file_is_embedded_a_second_time() {
+    // The typesetter owns the font files and exposes them (`drafftink_typeset::font_file`); `include_bytes!`
+    // in this crate would put a second copy of each into the binary.
+    for (p, src) in sources() {
+        assert!(!src.contains("include_bytes!"), "{}: use drafftink_typeset::font_file", name(&p));
+    }
+}

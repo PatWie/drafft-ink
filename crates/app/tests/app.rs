@@ -1,7 +1,8 @@
 //! The app without a window: start-up, restore, the file argument and the room link, over the fake ports.
 
-use drafftink_app::{App, AppConfig, NoHost, Platform, SharedClipboard, StartupLink, WakeCell};
-use drafftink_engine::cmd::collab::RoomLink;
+use drafftink_app::{App, AppConfig, NoHost, Platform, SharedClipboard, StartupLink, StartupToken, WakeCell};
+use drafftink_engine::cmd::collab::fake_server::FakeServer;
+use drafftink_engine::cmd::collab::{ConnectionState, RoomLink};
 use drafftink_engine::ports::fake::Fakes;
 use drafftink_engine::ports::{FileRef, Files};
 use drafftink_engine::services::LazyTypesetter;
@@ -102,4 +103,35 @@ fn a_room_link_keeps_the_work_the_person_already_has_in_its_own_tab() {
     let mut app = App::new(platform(&fakes), config);
     assert_eq!(app.session_mut().tabs.len(), 2, "the restored intro stays in its tab");
     assert_eq!(app.session_mut().collab_view().room.as_deref(), Some("team-2"));
+}
+
+#[test]
+fn the_token_of_the_launcher_reaches_a_server_that_asks_for_one_and_stays_out_of_the_ring() {
+    let fakes = Fakes::new();
+    let mut hub = FakeServer::new();
+    hub.require_token("launch-token-1");
+    let config = AppConfig {
+        join: StartupLink {
+            link: RoomLink { room: Some("team-3".into()), server: Some("ws://localhost:3030/ws".into()) },
+        },
+        collab_token: StartupToken::new("launch-token-1"),
+        ..AppConfig::default()
+    };
+    assert!(!format!("{config:?}").contains("launch-token-1"), "the config must not print the token");
+    let mut app = App::new(platform(&fakes), config);
+    for _ in 0..40 {
+        fakes.clock.advance_ms(40);
+        app.session_mut().collab_poll();
+        hub.attach(&fakes.net);
+        hub.step();
+    }
+    assert_eq!(app.session_mut().collab_view().state, ConnectionState::Connected);
+    let ring = serde_json::to_string(&app.session_mut().ring().recent(1000, false, None)).unwrap();
+    assert!(ring.contains("collab.connect") && !ring.contains("launch-token-1"), "{ring}");
+}
+
+#[test]
+fn a_token_that_is_empty_is_no_token() {
+    assert!(StartupToken::new("").is_none());
+    assert!(StartupToken::new("  \n").is_none());
 }

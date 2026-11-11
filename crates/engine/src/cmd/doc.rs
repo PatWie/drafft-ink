@@ -65,6 +65,14 @@ const EXPORT_KEYS: &[Binding] =
     &[Binding::new(&["Mod+E"], Scope::Canvas).with_args(r#"{"format":"png"}"#).titled("Export as PNG")];
 const CLEAR_KEYS: &[Binding] = &[Binding::new(&["Mod+Delete"], Scope::Canvas)];
 
+fn save_loaded(s: &crate::Session) -> Result<(), crate::Refusal> {
+    super::collab::require_loaded(s, "doc.save")
+}
+
+fn export_loaded(s: &crate::Session) -> Result<(), crate::Refusal> {
+    super::collab::require_loaded(s, "doc.export")
+}
+
 /// The doc family.
 pub const COMMANDS: &[CommandSpec] = &[
     CommandSpec::new(
@@ -106,8 +114,9 @@ pub const COMMANDS: &[CommandSpec] = &[
         &Typed::new(save::save),
         Facts { mutates: Mutates::PORTS.with(Mutates::TABS), ..PORTS },
     )
+    .available(save_loaded)
     .shortcuts(SAVE_KEYS)
-    .refusals(&["no_save_target", "would_overwrite"])
+    .refusals(&["no_save_target", "would_overwrite", "room_loading"])
     .example(r#"{"to":{"path":"/home/me/plan.json"}}"#),
     CommandSpec::new(
         "doc.rename",
@@ -140,7 +149,9 @@ pub const COMMANDS: &[CommandSpec] = &[
             ..PORTS
         },
     )
+    .available(export_loaded)
     .shortcuts(EXPORT_KEYS)
+    .refusals(&["room_loading"])
     .example(r#"{"format":"svg","scope":"all"}"#),
     CommandSpec::new(
         "doc.clear",

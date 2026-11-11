@@ -135,6 +135,53 @@ fn export_png_with_a_renderer_that_is_not_ready_refuses_with_render_pending_and_
     assert_eq!(v["mime"], "image/png");
 }
 
+/// A batch that moves the first rectangle and then exports a PNG, for a renderer that needs `late` calls.
+fn move_then_export(s: &mut Session, late: u32, opts: &crate::batch::BatchOpts) -> crate::batch::BatchOutput {
+    s.ports.renderer = Some(Box::new(LateRenderer(std::cell::Cell::new(late))));
+    let first = s.store().iter().next().unwrap().id.to_string();
+    let steps = [
+        crate::batch::BatchStep::new("element.move", json!({"ids": [first], "dx": 25, "dy": 0})),
+        crate::batch::BatchStep::new("doc.export", json!({"format": "png", "scope": "all"})),
+    ];
+    s.execute_batch(Origin::Test, &steps, opts)
+}
+
+#[test]
+fn a_batch_that_exports_a_png_waits_for_the_picture_and_then_completes_with_every_result() {
+    for atomic in [true, false] {
+        let (mut s, _f) = drawn(2);
+        let before = s.fingerprint();
+        let opts = crate::batch::BatchOpts { atomic, ..Default::default() };
+        let waiting = move_then_export(&mut s, 1, &opts);
+        assert!(waiting.pending_render(), "atomic={atomic}: {waiting:?}");
+        assert!(waiting.rolled_back && !waiting.changed, "atomic={atomic}: nothing stays while it waits");
+        assert_eq!(s.fingerprint(), before, "atomic={atomic}: a waiting batch changes nothing");
+        assert_eq!(waiting.to_json()["pending_render"], json!(true));
+
+        // The picture is ready: the same batch, run again, completes with the results of all steps.
+        let done = move_then_export(&mut s, 0, &opts);
+        assert!(done.ok() && !done.pending_render(), "atomic={atomic}: {done:?}");
+        assert_eq!(done.completed, 2);
+        assert_eq!(done.results.len(), 2);
+        assert_eq!(done.results[1]["mime"], "image/png");
+        assert!(done.changed, "the move stays");
+        assert_eq!(done.to_json().get("pending_render"), None);
+    }
+}
+
+#[test]
+fn a_batch_with_steps_that_cannot_be_rolled_back_does_not_wait_for_the_picture() {
+    let (mut s, _f) = drawn(1);
+    s.ports.renderer = Some(Box::new(LateRenderer(std::cell::Cell::new(1))));
+    let steps = [
+        crate::batch::BatchStep::new("settings.set", json!({"key": "snap.grid", "value": true})),
+        crate::batch::BatchStep::new("doc.export", json!({"format": "png", "scope": "all"})),
+    ];
+    let out = s.execute_batch(Origin::Test, &steps, &crate::batch::BatchOpts { atomic: false, ..Default::default() });
+    assert!(!out.pending_render(), "a setting that was changed stays changed");
+    assert_eq!(out.failed.as_ref().map(|f| f.refusal.code), Some("render_pending"));
+}
+
 // ---- doc.new ----
 
 #[test]
@@ -1178,6 +1225,51 @@ fn export_svg_inline_embeds_the_scene_and_changes_nothing() {
     assert_eq!(s.fingerprint(), before);
     let off = run(&mut s, "doc.export", json!({"format": "svg", "embed_scene": false}));
     assert!(!String::from_utf8(unb64(&off["bytes"]["base64"])).unwrap().contains("drafftink-scene"));
+}
+
+/// An svg export of `args` over two texts (GelPen Serif and Vanilla Extract, heavy) in a session with the real typesetter.
+fn svg_of(args: Value, texts: &[(&str, &str)]) -> (String, Value) {
+    let (mut s, _f) = testing::session_typeset();
+    for (i, (family, weight)) in texts.iter().enumerate() {
+        let at = [10.0, 10.0 + 40.0 * i as f64];
+        run(&mut s, "element.create", json!({"kind": "text", "text": "hello", "at": at,
+            "style": {"font_family": family, "font_weight": weight, "stroke_color": "#102030"}}));
+    }
+    let mut a = args;
+    a["format"] = json!("svg");
+    a["scope"] = json!("all");
+    let out = run(&mut s, "doc.export", a);
+    (String::from_utf8(unb64(&out["bytes"]["base64"])).unwrap(), out)
+}
+
+#[test]
+fn export_svg_embeds_the_font_files_of_the_texts_it_draws_and_no_others() {
+    let (svg, _) = svg_of(json!({}), &[("gelpen_serif", "regular"), ("gelpen_serif", "heavy")]);
+    assert_eq!(svg.matches("@font-face{font-family:'GelPen Serif';font-weight:").count(), 2, "regular and heavy");
+    assert!(svg.contains("font-weight:400;src:url(data:font/ttf;base64,"));
+    assert!(svg.contains("font-weight:700;src:url(data:font/ttf;base64,"));
+    assert!(!svg.contains("font-family:'GelPen';"), "a family no text uses is not embedded");
+    assert!(!svg.contains("Vanilla Extract'"));
+    let (plain, _) = svg_of(json!({}), &[("vanilla_extract", "regular")]);
+    assert_eq!(plain.matches("@font-face").count(), 1);
+    assert!(plain.contains("font-family:'Vanilla Extract';font-weight:400;"));
+}
+
+#[test]
+fn export_svg_dark_uses_the_canvas_palette_and_no_longer_warns() {
+    let (light, lo) = svg_of(json!({}), &[("gelpen", "regular")]);
+    let (dark, dout) = svg_of(json!({"dark": true}), &[("gelpen", "regular")]);
+    assert_eq!(dout["warnings"], json!([]), "dark is supported for svg now");
+    assert_eq!(lo["warnings"], json!([]));
+    // The same mapping as the dark PNG: white paper becomes #121212, the ink #102030 is mapped too.
+    assert!(light.contains("fill=\"#ffffff\""), "{light}");
+    assert!(dark.contains("fill=\"#121212\""), "{dark}");
+    let ink = drafftink_scene::Color::rgb(0x10, 0x20, 0x30);
+    assert!(light.contains("fill=\"#102030\"") && !dark.contains("fill=\"#102030\""));
+    assert!(dark.contains(&format!("fill=\"{}\"", &ink.for_dark_theme().to_hex()[..7])), "{dark}");
+    // The scene inside stays as drawn, so the picture opens as the same document.
+    let scene = drafftink_io::svg::extract_scene(&dark).unwrap().unwrap();
+    assert!(scene.contains("#102030") && !scene.contains(&ink.for_dark_theme().to_hex()[..7]), "{scene}");
 }
 
 #[test]

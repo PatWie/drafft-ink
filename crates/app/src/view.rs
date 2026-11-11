@@ -10,9 +10,9 @@ use drafftink_engine::state::TabId;
 use drafftink_geom::kurbo::{Affine, Rect, Size, Vec2};
 use drafftink_render::{
     FrameReport, GridSpec, GridStyle, Overlay, OverlayStyle, PaintIndex, RenderOptions, Scene, SceneComposer, Theme,
-    View, build_paint_index, paint_overlay, update_paint_index,
+    View, build_paint_index, paint_overlay,
 };
-use drafftink_scene::{Change, ChangeKind, ChangeSet, ElementId, Fields, SceneRead};
+use drafftink_scene::{ElementId, SceneRead};
 
 use crate::editor::Arranged;
 use vello::peniko::{BlendMode, Color, Compose, Fill, Mix};
@@ -120,16 +120,9 @@ impl CanvasView {
         let _g = drafftink_profile::span("sync_index");
         if self.synced.is_none_or(|s| s.tab != tab) {
             self.index = build_paint_index(store);
+            self.composer.forget_order();
         } else {
-            let elements = touched
-                .iter()
-                .map(|id| Change { id: id.clone(), kind: ChangeKind::Updated, fields: Fields::all(), version: 0 })
-                .collect();
-            update_paint_index(
-                &mut self.index,
-                store,
-                &ChangeSet { revision, elements, meta: false, files: Vec::new() },
-            );
+            self.composer.follow_touched(&mut self.index, store, touched);
         }
         self.synced = Some(now);
     }

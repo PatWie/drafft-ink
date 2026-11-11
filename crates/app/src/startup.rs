@@ -57,7 +57,7 @@ pub(crate) fn start(session: &mut Session, config: &AppConfig) -> Vec<String> {
             run(session, &mut notes, "tab.new", json!({}));
         }
         let server = config.join.link.server.clone().or_else(|| config.default_server.clone());
-        run(session, &mut notes, "collab.connect", json!({ "url": server, "room": room }));
+        run(session, &mut notes, "collab.connect", json!({ "url": server, "room": room, "token": config.token_arg() }));
     }
     notes
 }

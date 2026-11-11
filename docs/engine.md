@@ -319,7 +319,7 @@ let mut s = Session::new(ports);
 let settings = s.load_settings()?;       // SettingsLoad: applied, ignored (with reasons), unreadable, newer_schema
 let workspace = s.restore_workspace()?;  // WorkspaceRestore: restored, skipped tabs with reasons
 // ... later, whenever take_dirty() says something changed, and when the timer below fires:
-s.workspace_tick();                      // writes when a write is due; true when it wrote
+s.workspace_tick();                      // writes when a write is due, a piece (about 5 ms) per call; true when a write ended
 if let Some(ms) = s.workspace_next_due_ms() { set_one_timer(ms) }   // None: no timer at all
 s.flush_workspace();                     // window close
 ```
@@ -392,7 +392,7 @@ if let Some(ms) = p.wake_in_ms { set_one_timer(ms) }
 
 Commands change the client's inputs only (`collab.connect`, `join_room`, `leave_room`, `set_user`, `set_pointer`, `laser`, `follow`) and never wait for the network. `collab_poll` compares `TabDoc::local_writes` with the value it saw, so every local commit reaches the client whatever wrote it: a command, a gesture end, undo or redo from a key. Remote changes come back as a change set that is already in the replicated store; `Session::mirror_remote` copies it into the working store and does what `apply_remote` does (selection, dirty reason, one `remote.apply` ring entry per batch). The tab that joined a room carries `cmd::tab::RoomBinding`, which `tab.close` and `tab.list` read.
 
-A big catch-up (a snapshot of 100k elements takes about 1.5 s to import) is held back for one poll: the poll that meets it returns `redraw` with `wake_in_ms = 16` and `collab_view().loading = Receiving { bytes }`, the shell draws a progress hint, and the next poll imports it. The `FakeNet` and `cmd::collab::fake_server::FakeServer` make two sessions in one test talk through in-memory loopbacks.
+A big catch-up (a snapshot of 100k elements is about 4 s of work in one piece) does not stall the thread. A tab with no content takes it in slices: `LoroStore::apply_remote` puts the bytes into a fresh CRDT document (about 10 ms for 100k elements, then about 80 ms to list the element ids) and leaves the view empty; every `collab_poll` then calls `import_step` for at most 8 ms (32 items per call, 1024 per poll), mirrors the slice into the working store (`Session::mirror_import_slice`, no ring entry; one `remote.apply` entry when the import is done) and asks for the next poll 16 ms later (`CollabPoll::wake_in_ms`). While it runs `collab_view().loading` is `Importing { done, total }`, `doc.save` and `doc.export` refuse with `room_loading` (they would leave elements out), and `collab.leave_room` finishes the import first so the local copy is whole. Edits made meanwhile are kept and shared. The engine turns the staging on for the tab it joins with (`set_stage_import_bytes`, 256 KiB); by default `LoroStore` imports at once. A tab that already has content cannot be staged (the merge needs the CRDT's own diff, which is the expensive part): its big message is held back for one poll as before. The poll that meets it returns `redraw` with `wake_in_ms = 16` and `loading = Receiving { bytes }`, the shell draws a progress hint, and the next poll imports it. The `FakeNet` and `cmd::collab::fake_server::FakeServer` make two sessions in one test talk through in-memory loopbacks.
 
 ## 5. The undo model and the one swap point
 

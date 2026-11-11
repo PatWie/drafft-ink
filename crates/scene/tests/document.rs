@@ -227,3 +227,108 @@ fn store_snapshot_and_json_round_trip() {
     tx.commit().unwrap();
     assert!(snapshot(&store).to_json().unwrap().contains("Edited"));
 }
+
+// ---- writing a shared document a slice at a time -------------------------------------------------------------------
+
+fn written(doc: &Document, budget: usize) -> Vec<u8> {
+    let mut store = MemoryStore::from_document(doc).unwrap();
+    // A tombstone is written, too.
+    let first = doc.elements.first().map(|e| e.id.clone());
+    if let Some(first) = first {
+        let mut tx = store.begin();
+        tx.update(&first, |e| e.deleted = true).unwrap();
+        tx.commit().unwrap();
+    }
+    let mut job = JsonJob::new(store.share_document()).unwrap();
+    while !job.is_done() {
+        assert!(job.step(budget).unwrap() > 0, "every slice writes an element");
+    }
+    job.finish().unwrap()
+}
+
+#[test]
+fn a_job_writes_the_text_of_to_json_whatever_the_slice_size() {
+    let mut doc = sample();
+    doc.name = "A \"name\" with ünïcode and a \\".into();
+    for budget in [1, 100, 1_000, usize::MAX] {
+        let bytes = written(&doc, budget);
+        let mut store = MemoryStore::from_document(&doc).unwrap();
+        let first = doc.elements.first().unwrap().id.clone();
+        let mut tx = store.begin();
+        tx.update(&first, |e| e.deleted = true).unwrap();
+        tx.commit().unwrap();
+        let expect = snapshot(&store).to_json().unwrap();
+        assert_eq!(String::from_utf8(bytes).unwrap(), expect, "slice budget {budget}");
+    }
+    // Without files and without elements.
+    let empty = Document::new();
+    let mut job = JsonJob::new(MemoryStore::new().share_document()).unwrap();
+    assert!(job.is_done());
+    assert_eq!(job.step(10).unwrap(), 0);
+    assert_eq!(String::from_utf8(job.finish().unwrap()).unwrap(), empty.to_json().unwrap());
+    // The text reads back as the document.
+    let back = Document::from_json(&String::from_utf8(written(&sample(), 500)).unwrap()).unwrap();
+    assert_eq!(back.elements.len(), sample().elements.len());
+}
+
+#[test]
+fn a_job_sees_the_moment_it_started() {
+    let doc = sample();
+    let mut store = MemoryStore::from_document(&doc).unwrap();
+    let expect = snapshot(&store).to_json().unwrap();
+    let mut job = JsonJob::new(store.share_document()).unwrap();
+    assert!(job.step(1).unwrap() > 0, "a first slice");
+    // The store changes while the job is half way: an edit, a removal, a new element, a new name.
+    let ids: Vec<ElementId> = store.iter_all().map(|e| e.id.clone()).collect();
+    let mut tx = store.begin();
+    tx.update(&ids[1], |e| e.transform.x += 77.0).unwrap();
+    tx.remove(&ids[2]).unwrap();
+    tx.set_name("Renamed").unwrap();
+    tx.insert(rect("late", &ZIndex::between(store_top(&tx).as_ref(), None).unwrap())).unwrap();
+    tx.commit().unwrap();
+    while !job.is_done() {
+        job.step(1).unwrap();
+    }
+    assert!(String::from_utf8(job.finish().unwrap()).unwrap() == expect, "the text is the document as it was");
+}
+
+fn store_top(tx: &impl SceneRead) -> Option<ZIndex> {
+    tx.top_z()
+}
+
+#[test]
+fn a_job_refuses_what_to_json_refuses() {
+    // Two elements with one z key: valid in a live store, not in a file.
+    let z = zs(2);
+    let mut store = MemoryStore::new();
+    let mut tx = store.begin();
+    tx.insert(rect("a", &z[0])).unwrap();
+    tx.insert(rect("b", &z[0])).unwrap();
+    tx.commit().unwrap();
+    let shared = store.share_document();
+    assert!(shared.check().is_err());
+    assert!(snapshot(&store).to_json().is_err());
+    // And a job that is not finished has no text.
+    let job = JsonJob::new(MemoryStore::from_document(&sample()).unwrap().share_document()).unwrap();
+    assert!(job.finish().is_err());
+}
+
+#[test]
+fn map_colors_reaches_the_background_strokes_fills_and_text_runs() {
+    use drafftink_scene::{Color, ElementKind, TextData, TextRun};
+    let mut doc = Document::new();
+    doc.background = Color::rgb(5, 6, 7);
+    let mut text = TextData::new("ab");
+    text.runs = vec![TextRun { start: 0, end: 1, color: Some(Color::rgb(1, 2, 3)) }];
+    let mut rect = Element::new(ElementId::new("r").unwrap(), ElementKind::Rectangle, ZIndex::first());
+    rect.style.stroke_color = Color::rgb(10, 0, 0);
+    rect.style.fill_color = Some(Color::rgb(0, 20, 0));
+    let t = Element::new(ElementId::new("t").unwrap(), ElementKind::Text(text), ZIndex::first());
+    doc.elements = vec![rect, t];
+    doc.map_colors(|c| Color::rgba(c.r.saturating_add(1), c.g, c.b, c.a));
+    assert_eq!(doc.background, Color::rgb(6, 6, 7));
+    assert_eq!(doc.elements[0].style.stroke_color, Color::rgb(11, 0, 0));
+    assert_eq!(doc.elements[0].style.fill_color, Some(Color::rgb(1, 20, 0)));
+    let ElementKind::Text(t) = &doc.elements[1].kind else { panic!("text") };
+    assert_eq!(t.runs[0].color, Some(Color::rgb(2, 2, 3)));
+}

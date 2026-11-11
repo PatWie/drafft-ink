@@ -443,6 +443,9 @@ pub struct CommandSpec {
     /// Runs although the document is blocked by a newer schema, although it mutates the document: it
     /// replaces the document or ends an edit in progress. See [`CommandSpec::allowed_when_blocked`].
     pub works_when_blocked: bool,
+    /// Top-level arguments that hold a secret (an access token). The ring records `"<hidden>"` for them, so
+    /// `engine.recent` and the agent bridge never show them.
+    pub secret_args: &'static [&'static str],
 }
 
 impl std::fmt::Debug for CommandSpec {
@@ -507,6 +510,7 @@ impl CommandSpec {
             status: Status::Stable,
             txn: Txn::Standard,
             works_when_blocked: false,
+            secret_args: &[],
         }
     }
 
@@ -528,6 +532,13 @@ impl CommandSpec {
     #[must_use]
     pub const fn refusals(mut self, codes: &'static [&'static str]) -> Self {
         self.refusals = codes;
+        self
+    }
+
+    /// Names the arguments that hold a secret: the ring records `"<hidden>"` instead of their value.
+    #[must_use]
+    pub const fn secret_args(mut self, names: &'static [&'static str]) -> Self {
+        self.secret_args = names;
         self
     }
 

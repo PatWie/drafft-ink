@@ -16,8 +16,10 @@ mod connection;
 pub mod fake_server;
 mod poll;
 mod state;
+mod token;
 mod view;
 
+use drafftink_collab::AuthToken;
 use drafftink_protocol::Point as WirePoint;
 use drafftink_scene::Color;
 use schemars::JsonSchema;
@@ -27,6 +29,7 @@ use serde_json::json;
 use self::address::{AddressError, RoomName, resolve_server, room_link};
 use self::connection::{has_content, leave, user_from_settings};
 use self::state::CollabState;
+use self::token::TokenArg;
 use crate::args;
 use crate::cmd::settings;
 use crate::cmd::tab::RoomBinding;
@@ -68,6 +71,20 @@ fn live_room(s: &Session) -> Option<String> {
 fn not_connected(id: &str) -> Refusal {
     Refusal::custom("not_connected", id, "Not connected to a server. Connect first with `collab.connect`.")
         .suggesting("collab.connect", None)
+}
+
+/// The state check of the commands that write the whole document out: a room that is still being filled in slices
+/// would give a document with missing elements.
+pub(crate) fn require_loaded(s: &Session, id: &str) -> Result<(), Refusal> {
+    let Some(p) = s.tab().doc.replicated().import_progress() else { return Ok(()) };
+    Err(Refusal::custom(
+        "room_loading",
+        id,
+        format!(
+            "The room is still loading ({} of {} items), so `{id}` would leave elements out. Wait until it has loaded, then run `{id}` again.",
+            p.done, p.total
+        ),
+    ))
 }
 
 fn not_in_room(id: &str) -> Refusal {
@@ -112,6 +129,13 @@ fn pt(id: &str, key: &str, p: Pt) -> Result<WirePoint, Refusal> {
     Ok(WirePoint { x: args::world(id, &format!("{key}[0]"), p[0])?, y: args::world(id, &format!("{key}[1]"), p[1])? })
 }
 
+/// The token argument checked against the protocol's limits. The refusal never repeats the token.
+fn checked_token(id: &str, token: Option<&TokenArg>) -> Result<Option<AuthToken>, Refusal> {
+    token
+        .map(|t| t.checked().map_err(|e| Refusal::bad_arg(id, "token", e.to_string())))
+        .transpose()
+}
+
 // ---- collab.connect ----
 
 /// Arguments of `collab.connect`.
@@ -125,6 +149,9 @@ pub struct ConnectArgs {
     pub room: Option<String>,
     /// What to do with content this tab already has when `room` is given.
     pub on_local: OnLocal,
+    /// The access token, when the server asks for one. Kept with the server for the next `collab.join_room`.
+    /// It is never recorded, shown or stored.
+    pub token: Option<TokenArg>,
 }
 
 /// Output of `collab.connect`.
@@ -156,6 +183,7 @@ fn connect(s: &mut Session, a: ConnectArgs) -> Result<ConnectOut, Refusal> {
         .as_deref()
         .map(|r| RoomName::parse(r).map_err(|e| Refusal::bad_arg(id, "room", e.to_string())))
         .transpose()?;
+    let token = checked_token(id, a.token.as_ref())?;
     if let Some(url) = target_url(s) {
         return Err(Refusal::custom(
             "already_connected",
@@ -167,11 +195,14 @@ fn connect(s: &mut Session, a: ConnectArgs) -> Result<ConnectOut, Refusal> {
     let url = server.to_string();
     match room {
         None => {
-            s.ext.with::<CollabState, _>(|c| c.server = Some(server));
+            s.ext.with::<CollabState, _>(|c| {
+                c.server = Some(server);
+                c.token = token;
+            });
             Ok(ConnectOut { changed: true, state: ConnectionState::Ready, url, room: None, link: None })
         }
         Some(room) => {
-            let link = join(s, server, room.clone(), a.on_local)?;
+            let link = join(s, server, token, room.clone(), a.on_local)?;
             Ok(ConnectOut {
                 changed: true,
                 state: ConnectionState::Connecting,
@@ -211,6 +242,9 @@ pub struct JoinArgs {
     pub room: Option<String>,
     /// What to do with content this tab already has.
     pub on_local: OnLocal,
+    /// The access token for this room. Omit it to use the one given to `collab.connect`. It is never recorded,
+    /// shown or stored.
+    pub token: Option<TokenArg>,
 }
 
 /// Output of `collab.join_room`.
@@ -249,12 +283,22 @@ fn join_room(s: &mut Session, a: JoinArgs) -> Result<JoinOut, Refusal> {
         .get::<CollabState>()
         .and_then(|st| st.server.clone())
         .ok_or_else(|| not_connected(id))?;
-    let link = join(s, server, room.clone(), a.on_local)?;
+    let token = match checked_token(id, a.token.as_ref())? {
+        Some(t) => Some(t),
+        None => s.ext.get::<CollabState>().and_then(|st| st.token.clone()),
+    };
+    let link = join(s, server, token, room.clone(), a.on_local)?;
     Ok(JoinOut { changed: true, room: room.to_string(), link, tab: s.tab().id.to_string() })
 }
 
 /// The refusals and the start shared by `collab.join_room` and `collab.connect` with a room. Returns the link.
-fn join(s: &mut Session, server: drafftink_collab::ServerUrl, room: RoomName, on_local: OnLocal) -> Result<String, Refusal> {
+fn join(
+    s: &mut Session,
+    server: drafftink_collab::ServerUrl,
+    token: Option<AuthToken>,
+    room: RoomName,
+    on_local: OnLocal,
+) -> Result<String, Refusal> {
     if on_local == OnLocal::Refuse && has_content(s) {
         return Err(Refusal::custom(
             "local_content",
@@ -266,7 +310,7 @@ fn join(s: &mut Session, server: drafftink_collab::ServerUrl, room: RoomName, on
         .suggesting("tab.new", None));
     }
     let link = room_link(&room, &server);
-    connection::start(s, server, &room, on_local)?;
+    connection::start(s, server, token, &room, on_local)?;
     Ok(link)
 }
 
@@ -519,6 +563,7 @@ pub const COMMANDS: &[CommandSpec] = &[
         NET,
     )
     .refusals(&["invalid_url", "already_connected", "local_content"])
+    .secret_args(&["token"])
     .example(r#"{"url":"wss://draw.example.com/ws","room":"team-sync"}"#),
     CommandSpec::new(
         "collab.disconnect",
@@ -546,6 +591,7 @@ pub const COMMANDS: &[CommandSpec] = &[
     )
     .available(require_connected)
     .refusals(&["not_connected", "already_in_room", "local_content"])
+    .secret_args(&["token"])
     .example(r#"{"room":"team-sync","on_local":"merge"}"#),
     CommandSpec::new(
         "collab.leave_room",

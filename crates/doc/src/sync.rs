@@ -17,7 +17,8 @@ use loro::{Container, Index, LoroValue, ValueOrContainer};
 use crate::codec::read_element;
 use crate::error::DocError;
 use crate::schema::{META_BACKGROUND, META_NAME, ROOT_ELEMENTS, ROOT_FILES, ROOT_META, SCHEMA_VERSION};
-use crate::store::{Core, LoroStore, check_size, guard, guarded};
+use crate::staged::{Item, Staged};
+use crate::store::{Core, LoroStore, check_size, guard, guarded, import_fresh_pending};
 use crate::undo::{UndoInfo, UndoStep, lock};
 
 /// What a batch of Loro changes touched.
@@ -196,6 +197,55 @@ pub(crate) fn rebuild_all(view: &mut MemoryStore, core: &mut Core) -> Result<Cha
     sync_view(view, core, t)
 }
 
+/// True when `bytes` should be imported in slices: it is big and nothing of the user's is in this replica.
+pub(crate) fn wants_staging(store: &LoroStore, len: usize) -> bool {
+    len >= store.core.config.stage_import_bytes && store.core.staged.is_none() && is_pristine(store)
+}
+
+/// The first part of a staged import. The bytes go into a fresh CRDT document (about 8 ms for 100,000 elements),
+/// and the store switches to it. Importing into the document in use would be about 400 times slower, because its undo
+/// manager asks Loro for the diff of everything the import touches. The old document held nothing of the user's.
+/// The view is left empty for [`import_step`] to fill.
+fn begin_staged(store: &mut LoroStore, bytes: &[u8]) -> Result<ChangeSet, DocError> {
+    let config = store.core.config.clone();
+    let (doc, pending) = import_fresh_pending(Core::make_doc(&config)?, bytes)?;
+    let migrations = std::mem::take(&mut store.core.migrations);
+    let opened = Core::adopt(doc, config, migrations.clone());
+    store.core.migrations = migrations;
+    let fresh = opened?;
+    store.core.reset_doc(fresh.doc.clone());
+    store.core.invalid.clear();
+    store.core.pending = pending;
+    store.core.stats.remote_updates += 1;
+    store.core.staged = Some(Staged::scan(&store.view, &store.core)?);
+    Ok(ChangeSet::default())
+}
+
+/// `LoroStore::import_step`.
+pub(crate) fn import_step(store: &mut LoroStore, max_items: usize) -> Result<ChangeSet, DocError> {
+    let LoroStore { view, core } = store;
+    let Some(mut staged) = core.staged.take() else { return Ok(ChangeSet::default()) };
+    let mut touched = Touched::default();
+    for item in staged.take(max_items) {
+        match item {
+            Item::Meta => touched.meta = true,
+            Item::Element(id) => {
+                touched.elements.insert(id.clone());
+            }
+            Item::File(id) => {
+                touched.files.insert(id.clone());
+            }
+        }
+    }
+    // An error leaves nothing staged: the caller reports it and the view keeps what it has.
+    let cs = sync_view(view, core, touched)?;
+    if !staged.is_done() {
+        core.staged = Some(staged);
+    }
+    core.notify(&cs);
+    Ok(cs)
+}
+
 /// `LoroStore::apply_remote`.
 pub(crate) fn apply_remote(store: &mut LoroStore, bytes: &[u8]) -> Result<ChangeSet, DocError> {
     check_size(bytes.len(), store.core.config.max_import_bytes)?;
@@ -210,9 +260,15 @@ pub(crate) fn apply_remote(store: &mut LoroStore, bytes: &[u8]) -> Result<Change
         // holds nothing of its own simply takes it; otherwise the caller must decide, because replacing loses
         // edits that were never sent.
         if is_pristine(store) {
+            if wants_staging(store, bytes.len()) {
+                return begin_staged(store, bytes);
+            }
             return store.replace_from_snapshot(bytes);
         }
         return Err(DocError::SnapshotStartsLater);
+    }
+    if wants_staging(store, bytes.len()) {
+        return begin_staged(store, bytes);
     }
     let LoroStore { view, core } = store;
     let (imported, touched) =

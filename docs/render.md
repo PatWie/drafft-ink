@@ -257,9 +257,13 @@ sketch generation for every element. At 10k all visible, the warm cost is the co
 of detail does not help much there because most elements are still above the 3 px box threshold at that zoom. At
 100k, 20,000 boxes are drawn and the rest dropped. The walk over the store and the index (two hash lookups per
 element, 23 of the 33 ms in a profile) is gone: the composer keeps the z order of the whole scene between frames,
-keyed to the store's `version_stamp` and the index's `generation`, and rebuilds it when either changes. A pan or a
+keyed to the store's `version_stamp` and the index's `generation` (`zorder.rs`). An edit that keeps every element at its
+place in the order (a move, a resize, a colour) patches the order from the ids the commit touched
+(`SceneComposer::follow_touched`, or `apply_changes` with a store's change set): the touched slots get their bounds
+read again and nothing else is visited. A new, removed or reordered element, a change that was not reported, or a
+commit of more than an eighth of the scene builds the order again. A pan or a
 zoom of a large scene therefore costs the candidate loop only (22.6 ms at 100k, the warm rows above). The first frame
-and the first frame after an edit still order the scene once (`Counter::ElementsScanned` counts it); a one-shot
+and the first frame after a structural edit still order the scene once (`Counter::ElementsScanned` counts it); a one-shot
 frame, as in an export, pays for the order and is about 12 ms slower at 100k (cold row: 57 ms, was 45 ms).
 
 Grid (`cargo bench`, 1920x1080): lines 7 to 18 µs, dots 0.15 to 0.4 ms at any zoom. Overlay with a selection and a

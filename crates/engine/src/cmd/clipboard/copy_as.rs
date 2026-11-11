@@ -6,15 +6,14 @@
 
 use std::collections::HashSet;
 
-use drafftink_edit::group::units::{Relations, with_companions};
+use drafftink_edit::group::units::{Reverse, with_companions};
 use drafftink_io::native;
-use drafftink_io::svg::{SvgOptions, SvgStyle, export_svg};
 use drafftink_scene::{Element, ElementId, ElementKind, SceneRead};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 use crate::args;
-use crate::cmd::doc::export::{PngOpts, render_png};
+use crate::cmd::doc::export::{PngOpts, SvgLook, render_png, render_svg};
 use crate::ports::{ClipPayload, PortWrite};
 use crate::refusal::Refusal;
 use crate::session::{Ref, Session};
@@ -136,7 +135,7 @@ pub(super) fn copy_as(s: &mut Session, a: CopyAsArgs) -> Result<CopyAsOut, Refus
     }
     let given = scope_elements(s, &a)?;
     let store = s.store();
-    let rel = Relations::build(store);
+    let rel = Reverse::of(store);
     let all = with_companions(store, &rel, &given, true);
     let keep: HashSet<ElementId> = all.iter().cloned().collect();
     let doc = native::subset(&s.tab().doc.snapshot(), &keep);
@@ -152,19 +151,8 @@ pub(super) fn copy_as(s: &mut Session, a: CopyAsArgs) -> Result<CopyAsOut, Refus
             (ClipPayload::Text(text), n, None)
         }
         Format::Svg => {
-            if dark {
-                s.warn("`dark` is ignored for svg: the picture uses the document's own colours");
-            }
-            let opts = SvgOptions {
-                style: SvgStyle::Sketch,
-                background,
-                padding,
-                scale,
-                selection: None,
-                embed_scene: false,
-                fonts: Vec::new(),
-            };
-            let svg = export_svg(&doc, &opts, s.services.io(), Some(s.services.math_svg()))
+            let look = SvgLook { scale, padding, background, dark, embed_scene: false };
+            let svg = render_svg(s, &doc, &look)
                 .map_err(|e| Refusal::nothing_to_do(cmd, "copy", &e.to_string()))?;
             let n = svg.len();
             (ClipPayload::Svg(svg), n, None)

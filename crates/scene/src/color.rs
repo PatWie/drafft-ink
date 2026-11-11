@@ -48,6 +48,26 @@ impl Color {
         Self { r, g, b, a: 255 }
     }
 
+    /// The colour as the dark theme shows it. This reproduces the CSS filter `invert(93%) hue-rotate(180deg)` that
+    /// Excalidraw uses for its dark theme, so white becomes `#121212`, black ink becomes a light grey and hues keep
+    /// their meaning. Alpha is untouched. The canvas (`render::Theme::Dark`) and the SVG export share this one
+    /// function; the matrices come from the CSS Filter Effects specification.
+    pub fn for_dark_theme(self) -> Self {
+        /// Share of the inversion.
+        const INVERT: f64 = 0.93;
+        let inv = |v: u8| {
+            let v = f64::from(v) / 255.0;
+            v * (1.0 - INVERT) + (1.0 - v) * INVERT
+        };
+        let (r, g, b) = (inv(self.r), inv(self.g), inv(self.b));
+        // hue-rotate(180deg): cos = -1, sin = 0 in the CSS matrix.
+        let r2 = -0.574 * r + 1.430 * g + 0.144 * b;
+        let g2 = 0.426 * r + 0.430 * g + 0.144 * b;
+        let b2 = 0.426 * r + 1.430 * g - 0.856 * b;
+        let out = |v: f64| (v.clamp(0.0, 1.0) * 255.0).round() as u8;
+        Self::rgba(out(r2), out(g2), out(b2), self.a)
+    }
+
     /// Parses `#rgb`, `#rrggbb`, `#rrggbbaa` (case-insensitive) or `transparent`. Works on bytes, so non-ASCII input
     /// is an error and never a panic (the old app sliced by byte offset and crashed).
     pub fn parse(s: &str) -> Result<Self, ColorError> {
@@ -159,6 +179,13 @@ mod tests {
         assert_eq!(Color::parse("#6366F1").unwrap(), Color::rgb(0x63, 0x66, 0xf1));
         assert_eq!(Color::parse("#ff000080").unwrap(), Color::rgba(255, 0, 0, 128));
         assert_eq!(Color::parse("transparent").unwrap(), Color::TRANSPARENT);
+    }
+
+    #[test]
+    fn the_dark_theme_maps_white_to_the_dark_canvas_and_keeps_alpha() {
+        assert_eq!(Color::WHITE.for_dark_theme(), Color::rgb(18, 18, 18));
+        assert_eq!(Color::BLACK.for_dark_theme(), Color::rgb(237, 237, 237));
+        assert_eq!(Color::rgba(10, 200, 30, 77).for_dark_theme().a, 77);
     }
 
     #[test]

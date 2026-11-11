@@ -73,6 +73,21 @@ pub(crate) struct StepDone {
     pub undo_label: Option<String>,
 }
 
+/// The arguments with the values of the spec's secret arguments replaced, or `None` when there is nothing to hide.
+fn hide_secrets(spec: &CommandSpec, args: Option<&Value>) -> Option<Value> {
+    let Value::Object(map) = args? else { return None };
+    if !spec.secret_args.iter().any(|name| map.contains_key(*name)) {
+        return None;
+    }
+    let mut copy = map.clone();
+    for name in spec.secret_args {
+        if let Some(v) = copy.get_mut(*name) {
+            *v = Value::String("<hidden>".to_owned());
+        }
+    }
+    Some(Value::Object(copy))
+}
+
 /// The message of a caught panic.
 pub fn panic_message(p: &(dyn Any + Send)) -> String {
     if let Some(s) = p.downcast_ref::<&str>() {
@@ -566,10 +581,11 @@ impl Session {
         frames: Option<usize>,
     ) {
         let t_ms = self.now_ms();
+        let hidden = hide_secrets(spec, args);
         self.ring.push(Record {
             t_ms,
             id: spec.id,
-            args,
+            args: hidden.as_ref().or(args),
             source: origin,
             outcome,
             duration_us,

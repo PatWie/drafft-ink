@@ -151,12 +151,19 @@ impl WebStorage {
 
 impl Storage for WebStorage {
     fn get(&self, ns: Ns, key: &str) -> Result<Option<Vec<u8>>, PortError> {
-        Ok(self.inner.borrow().cache.get(ns, key).map(|e| e.bytes.clone()))
+        Ok(self.inner.borrow().cache.get(ns, key).map(|e| e.bytes.to_vec()))
     }
 
     fn put(&mut self, ns: Ns, key: &str, bytes: &[u8]) -> Result<(), PortError> {
         let now_ms = js_sys::Date::now() as u64;
         self.inner.borrow_mut().cache.put(ns, key, bytes, now_ms);
+        self.schedule_flush();
+        Ok(())
+    }
+
+    fn put_later(&mut self, ns: Ns, key: &str, bytes: Vec<u8>) -> Result<(), PortError> {
+        let now_ms = js_sys::Date::now() as u64;
+        self.inner.borrow_mut().cache.put_owned(ns, key, bytes, now_ms);
         self.schedule_flush();
         Ok(())
     }

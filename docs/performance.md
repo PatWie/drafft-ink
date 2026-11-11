@@ -474,7 +474,7 @@ What changed. The reverse indexes of the store (bound arrows, group members, fra
 
 A move or a turn no longer copies elements: `transform::apply` builds a new `Transform` per element and writes only that, so a translate of a 1000-point freehand copies no point vector (the copy is made only for a map of the points or a font scale, and for an arrow whose fixed point is carried).
 
-What did not change, and why. Opening a snapshot is bound by Loro (its map iteration is 0.4 s of 1.3 s) and our field decode (0.6 s, mostly `read_element` building a JSON value per element); a typed decoder would save about 0.3 s and give up the rule that the stored form follows the model's serde output. Writing the 100,000 elements into Loro is 770,000 field inserts at the cost the CRDT library has (1.5 s measured with Loro alone). A fully zoomed-out frame at 100,000 elements is now 22.6 ms: the loop over the candidates remains, and an edit or a gesture frame rebuilds the order (the order is kept only while the store does not change).
+What did not change, and why. Opening a snapshot is bound by Loro (its map iteration is 0.4 s of 1.3 s) and our field decode (0.6 s, mostly `read_element` building a JSON value per element); a typed decoder would save about 0.3 s and give up the rule that the stored form follows the model's serde output. Writing the 100,000 elements into Loro is 770,000 field inserts at the cost the CRDT library has (1.5 s measured with Loro alone). A fully zoomed-out frame at 100,000 elements is now 22.6 ms: the loop over the candidates remains. The order was at first rebuilt after every edit and gesture frame (one pass over the scene); `render::zorder` now patches it from the touched ids (`docs/render.md` section 8): a drag frame with all 100,000 elements in view composes in 23 to 25 ms where it took 60 to 68 ms, and `elements_scanned` is 0 for it.
 
 ### 7.8 The scenario drivers and the second perf pass
 
@@ -506,12 +506,111 @@ What the drivers showed, and what changed for each:
   1. The app's paint index compared every element's version after each edit (`CanvasView::sync_index`: 32 ms per drag frame at 100k). It now re-reads the ids the commits touched (`TabDoc::take_touched`, the same feed as the spatial index). A drag frame at 100k: 31.9 ms before, 4.1 ms after.
   2. `style::read` and `style::apply` built the label map of the whole scene for every selection (the properties panel asks on every selection change): 0.8 s at 100k when a drag began. They look up the labels of the selected ids through the derived index (`text_bind::labels_of`).
   3. The availability checks of `group.ungroup`, `group.create`, `arrange.align` and `arrange.distribute` built the relations of the whole scene (`Relations::build`). In the browser that was 47 ms per frame while zooming at 100k. They use `Reverse::of`, the index when there is one.
+  4. The one-shot commands (`group.create`, `group.ungroup`, `arrange.*`, `frame.*`, `element.delete`, `element.duplicate`, `element.lock`, `clipboard.*`, `library.add`, `selection.navigate`) walked the scene once to three times each (`Relations::build`, `arrows_bound_to` after a write). They read first and write after, from the index (`Reverse::of`; `plan_delete`, `plan_add`, `plan_leavers` hold what a write would take away), and `structure_commands_on_a_few_elements_scan_nothing` counts 0 passes at 1k, 10k and 100k. Still O(scene) by design, without a counter: `arrange.z_order` (it lists every element), `clipboard.copy` and `copy_as` (`snapshot()` of the document), `frame` capture after a resize (`free_candidates`), `element.restore`, `group_name`.
   The spatial index of a big document is built in the frame after the load (`App::frame`), not by the first hover (0.7 s at 100k).
-- **Autosave inside a drag.** A drag at 100k showed one frame of 0.8 s: the autosave wrote the whole document (`snapshot().to_json()`) one second after the drag began. A write now waits for the running gesture (`Session::workspace_tick`). The write itself, 0.8 s at 100k on the UI thread, remains after the gesture and is in `docs/backlog.md`.
+- **Autosave inside a drag.** A drag at 100k showed one frame of 0.8 s: the autosave wrote the whole document (`snapshot().to_json()`) one second after the drag began. A write now waits for the running gesture (`Session::workspace_tick`). The write itself was 0.8 s at 100k on the UI thread after the gesture; section 7.10 has what replaced it.
 - **Phases.** `encode` is now measured in the app, and a phase inside another counts for itself only, so `ui` no longer includes the scene composition and the phases add up to the frame.
-- **Not changed.** The `drag` scenarios lay out about one text and one formula per frame while ten of each are dragged (`relayouts`); `docs/backlog.md`.
+- **The drag driver scaled its selection.** `drag` showed 0.7 to 1 text or formula layouts per frame (`relayouts` 671 in `drag@10k`), 12 cache misses and 5 sketches per frame. The driver pressed 4 points from the top left corner of the selection, which is a resize handle, so it scaled 100 elements. It now presses the middle of `e0`: `relayouts` 0 to 1, `cache_miss` 260 to 480, `sketch_regens` 39 to 67 in 10 s (`drag@1k`, `10k`, `100k`). A move replayed its layouts all along (`the_drag_scenario_moves_its_selection_and_lays_nothing_out_again` presses where the driver does).
 
 Start-up. Native: the first frame is on screen 320 to 340 ms after the process started (`external.first_frame_ms`); 265 to 290 ms of it is the Vulkan instance, adapter and device (`startup_gpu_ms`), the session and the workspace restore are 6 ms (`startup_app_ms`, `startup_restore_ms`). The driver and the NVIDIA ICD dominate, so there is nothing to gain in our code. Web (headed Chromium on Xvfb, localhost, the precompressed `dist/` of `build-web.sh`; marks in ms since navigation, medians of 8 runs, range in brackets): the page script is loaded at 55 ms [37 to 183], the wasm is instantiated at 160 ms [134 to 289], `start()` is entered at 165 ms, the platform (IndexedDB opened and read) is ready 35 to 40 ms later, `App::new` (session, UI, workspace restore) takes 80 ms, `run()` returns at 305 ms, and the first frame is on screen at 590 ms [556 to 1241; the two slow runs were on a loaded machine]. The 285 ms from `run()` to the first frame are the WebGPU adapter and device, the pipelines and the first frame. Tried and dropped: asking for the adapter from the page script before the module loads (`navigator.gpu.requestAdapter()`), to wake the GPU process while the wasm downloads: no change (590 ms against 590 ms, 8 runs each). The page marks are `window.__marks` and `performance.mark` entries `drafftink:start`, `drafftink:platform`, `drafftink:app`; the driver copies them into the report as `external.startup_*_ms`. The old app's 507 ms to the first app frame and 1.0 s to the first visible one (§7.1) were measured with a cold profile and another harness, so the two are not a like-for-like comparison.
+
+<<<<<<< HEAD
+### 7.9 Loading a large scene into a tab document
+
+`TabDoc::from_document` of the generated scene, 100,000 elements (research box, load average 12; the pieces are
+timed inside `Core::write`, 770,000 field inserts in all):
+
+| Piece | Release | Share |
+|---|---|---|
+| `LoroStore::from_document` (the CRDT copy) | 2.7 s | 90 % |
+| of it: `LoroMap::insert` of the fields | 1.7 s | 57 % |
+| of it: `codec::flatten` (`serde_json::to_value` of the style and the key strings) | 0.49 s | 16 % |
+| of it: `ensure_mergeable_map` (one container per element) | 0.29 s | 10 % |
+| of it: Loro's own commit, the view commit | 0.13 s, 0.08 s | 7 % |
+| `MemoryStore::from_document` (the working copy) | 0.3 s | 10 % |
+| Dropping the tab afterwards | 0.3 s | |
+
+The cost is the CRDT: Loro takes about 2 microseconds per field insert, and an element has seven or eight fields. Reading
+a value before the insert (`map.get`) is not the cost: leaving it out for new elements saved 0.05 s. Not done, with their
+gains: flatten on several threads (0.4 s, native only), a typed style writer (0.3 s, and the stored form would no longer be
+what serde writes), a document opened without its CRDT copy until the first edit (3 s, a different design). A debug test
+build took 31.6 s because Loro was not optimised (29 s of it); `[profile.dev.package.loro*]` is now `opt-level = 3`, as for
+`brotli`, and a debug load of 100,000 is 9 s. Loading is still not a test to run at 100k in debug (`sizes()` in the
+work-counter tests stops at 10k there).
+
+### 7.10 Autosave in pieces
+
+The autosave of a document of 100,000 elements (generated scene, release, the research box): 63 ms to copy the document, 20 ms
+to check it, 115 ms to write 45 MB of JSON, and then the storage port: a native `put` ends with an `fsync` (a 30 MB file
+with `fsync` took 4 s on this machine's disk), and the web cache copied the bytes three times. All of it was one call of
+`workspace_tick` on the UI thread.
+
+Now the write is a job (`cmd/tab/workspace_save.rs`). `MemoryStore` keeps its elements behind `Arc` in both lists (the map
+by id and the z-ordered tree), so `share_document` is a walk of one tree that clones pointers (7 ms at 100k; the copy was
+63 ms). `Validator` checks in steps (the rules of `validate_document`, 25,000 elements a step; the last step, which needs every
+element, is 5 ms at 100k), `JsonJob` writes about 2 MB of text a step (the text of `Document::to_json`, byte for byte), and the
+finished text goes to `Storage::put_later`. The native store hands it to a writer thread; the web cache keeps the vector
+without a copy. The job pauses for a running gesture, as before.
+
+| At 100,000 elements | Before | After |
+|---|---|---|
+| Longest call of `workspace_tick` | about 800 ms (with the disk) | 8.2 ms |
+| Calls for one write | 1 | 28 (one is the 7 ms take, three are the check, 24 write text) |
+| Longest stall of the UI thread by the disk | the whole `fsync` | none: the writer thread |
+| Work counted by `autosave_elements` per call | all | at most 4,700 |
+
+The tests count the work (`the_autosave_of_a_big_document_is_written_in_pieces_and_is_the_document`: every element is written
+once, at most 8,000 per call, the text is the text of `to_json` at 1k, 10k and 100k; `an_autosave_under_way_waits_for_a_gesture_...`:
+no piece during a drag, and the text is the document at the start of the write, not the drag). Times are not asserted.
+Not done: the check of the image files (`FileId::of`, a hash of every picture) is one step, and a single huge element (a
+freehand path of a million points) is one step of its own.
+=======
+### 7.9 Present mode, and hover on the web
+
+**Present mode.** `PresentSurface::configure` used to take the first mode the driver lists (`get_default_config`). That order is the
+driver's: Mesa lists `Immediate` or `Mailbox` before `Fifo` on some setups, which means tearing and frames as fast as they are asked for,
+or extra images and GPU work for frames nobody sees. The default is now `Fifo` on every platform (`choose_present_mode`, tested);
+`DRAFFTINK_PRESENT_MODE=fifo|mailbox|immediate|auto_vsync|auto_no_vsync` still overrides it for measurements when the surface supports
+the mode, and the chosen and the supported modes are logged at `info` (`drafftink_gpu::gpu`).
+
+Measured (NVIDIA L40S, Xvfb 1400x900, release build, `pan@10k`, 8 s, three alternating runs per mode, load average 20 to 35; CPU of
+the process in % of one core, median [range]):
+
+| Mode | CPU | Frames | `present` per frame | p50 frame |
+|---|---|---|---|---|
+| driver's first (it was `Fifo`) | 34.1 [32.2 to 40.9] | 521 to 529 | 4.8 to 5.8 ms | 7.2 to 8.7 ms |
+| `fifo` | 30.1 [24.9 to 36.9] | 521 to 527 | 3.7 to 5.3 ms | 5.0 to 7.1 ms |
+| `immediate` | 31.4 [30.9 to 35.7] | 521 to 529 | 4.6 to 5.8 ms | 5.0 to 8.2 ms |
+| `mailbox` | not offered: the NVIDIA driver lists only `[Fifo, Immediate]` on this display; the override falls back to `Fifo` | | | |
+
+The modes are equal within the spread of a loaded machine, so there is no number that favours `Immediate`, and the 70 to 85% of CPU in
+`present` (section 7.8) is the X11 copy, not the mode. `Mailbox` could not be measured here. Reasons for `Fifo`: every Vulkan, Metal and
+DX12 surface has it, it does not tear, the app already paces its own frames (`RepaintState::set_min_interval`), and a frame that is
+replaced before it is shown (`Mailbox`) costs a Vello run for nothing. **Web:** the browser's WebGPU canvas offers `Fifo` only (the
+console line says `present mode: Fifo (supported: [Fifo])`); nothing to choose. Re-measure `Mailbox` on a Mesa or Wayland machine before
+changing the default.
+
+**Hover on the web.** The backlog said that hovering over empty canvas costs about 9% CPU in Chromium with 0 frames drawn. Measured on the
+same machine (headed Chromium on Xvfb, `scripts/perf_scenarios.py` for the scene, 125 CDP mouse moves per second for 8 s, per-thread CPU
+from `/proc`, CDP `Performance.getMetrics`; load average 15 to 35, so absolute numbers are inflated and only the comparison holds):
+
+| Page | CPU, all Chromium processes | Page script per move |
+|---|---|---|
+| `about:blank` | 5.6 to 10 | 0 |
+| the app, pointer over empty canvas, 0 frames | 6.7 to 10 | 150 to 370 us (two `pointermove` listeners, ours and winit's, 35 to 60 us each in `performance.now()` timing) |
+| the app, pointer over shapes (hover changes, 16 to 36 frames in 8 s) | 12 to 22 | |
+
+The cost is the browser's: a blank page with the same input costs 5.6% to 10%, mostly the browser process and the renderer's compositor
+and input threads, plus Xvfb. What is ours is 1 to 3 points: the page script. One avoidable part was in our listener: it asked the browser for
+`getCoalescedEvents()` on every hover move (a JS call and an array of event objects), although only a move with contact uses those points
+(`PointerPhase::reads_coalesced`). It is skipped now. The effect is below the noise of a loaded machine (script per move 150 to 250 us with
+the call stubbed out against 150 to 370 us), so nothing is claimed beyond "one JS call and one allocation fewer per hover move". Not
+changed: the second listener (winit's) and `getBoundingClientRect` (stubbing it to a cached value changed nothing measurable).
+
+The guard is `scripts/web_check.py --app`: 125 moves per second over empty canvas for 5 s must draw 0 frames, and the CPU of the browser
+tree is printed (7.8% in the run above, 302 moves, load average 330). `web/hover@N` in `perf/budgets.json` already bounds redraws and
+`counter.elements_scanned`; its CPU limit is generous because the number is mostly the input injection.
+>>>>>>> backlog-c-web
 
 ## 8. Wasm size
 
@@ -568,10 +667,18 @@ What the questions found:
   SIMD, `fearless_simd` compiles its fallback once per pipeline and per blend mode; with `simd128` the code that remains is 0.45 MiB.
   Removing it altogether needs a patched `epaint`; not done.
 - **`serde_path_to_error`** (0.5 MiB before wasm-opt) is kept, see the table.
-- **`schemars`** (0.3 to 0.7 MiB before wasm-opt; by the `twiggy` totals about 4% of the brotli, an estimate) is kept. The derive is on 70 types in four crates and the
-  command registry builds the schemas for `commands` and `describe`; taking it out of the wasm needs a stub crate for the derive and the
-  macros, a build step that writes the schemas to a file, and an asynchronous fetch inside the synchronous `describe`. That is days for
-  about 4% of the module; the better order is to move the generation to a build step when the registry is next reworked.
+- **`schemars`** (about 0.7 MiB before wasm-opt) is kept. The derive is on 70 types in four crates and the command registry builds the schemas
+  for `commands`, `describe`, the argument forms of the UI, `requires_args`, the registry digest of the bridge, and the error path of
+  `parse_args` (`arg_info`: the keys of a command, for "did you mean"). Measured as an upper bound (2026-11-08, same commit, `schema_of`
+  and `arg_info` stubbed so that no schema code is reachable): module after wasm-opt 11.87 MiB to 11.20 MiB (-0.67 MiB, -5.6%), brotli
+  3.09 MiB to 3.00 MiB (**-89 KB, -2.8%**). The schemas of the 153 commands (args and output) as one JSON file are 368 KB raw, **33 KB
+  brotli**, so a first visit that never opens the palette or a form would save 89 KB, and one that does would save 56 KB net. **Decision:
+  not done.** Every reader is synchronous (`Registry` consumers in `ui`, `bridge`, `drafftink-mcp`, `parse_args`, tests), so the file would
+  need an asynchronous load and a "schemas not here yet" state in each of them, a stub for the derive in the wasm build, and a build step
+  that writes and hashes the file (the registry digest must equal the one the native bridge computes). That is a cross-crate change in the
+  code others are changing, for 2.8% of the first load. Revisit when the registry is reworked or the budget is tight: the cheaper first
+  step is a `schemas` cargo feature of `drafftink-engine` that is off in the web build and makes `describe`/`commands` return the facts
+  without `args_schema`/`output_schema`.
 - **Duplicate crates** (`cargo tree -d`): `hashbrown` x2, `heapless` x3, `itertools` x3, `miniz_oxide` x2, `smol_str` x2, `thiserror` x2, `rustc-hash` x2
   and some proc-macro crates. They come from Loro, egui, Parley and ReX with different pins; none is large (`miniz_oxide` is the biggest, 50 KB).
 - **Loro features:** the default `counter` feature is the only one; dropping it is in the 1% row above.

@@ -7,6 +7,7 @@
 //! The workspace record (all tabs saved to storage and restored at start) is in [`workspace`].
 
 pub mod workspace;
+mod workspace_save;
 
 use drafftink_scene::limits::MAX_NAME_CHARS;
 use drafftink_scene::{Color, Document, SceneRead};

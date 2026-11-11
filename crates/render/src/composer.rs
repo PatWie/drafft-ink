@@ -10,7 +10,7 @@ use std::sync::Arc;
 
 use drafftink_geom::{SpatialIndex, aabb};
 use drafftink_profile::{Counter, Gauge, count, inc, set_gauge};
-use drafftink_scene::{ChangeKind, ChangeSet, Element, ElementId, ElementKind, Fields, FileId, SceneRead};
+use drafftink_scene::{Change, ChangeKind, ChangeSet, Element, ElementId, ElementKind, Fields, FileId, SceneRead};
 use drafftink_typeset::Typesetter;
 use kurbo::{Affine, Rect};
 use peniko::Fill;
@@ -19,11 +19,13 @@ use vello::Scene;
 use crate::cache::{FragmentCache, Outcome};
 use crate::frame_label::paint_frame_label;
 use crate::grid::{GridSpec, GridStats, paint_grid};
+use crate::index::{PaintIndex, update_paint_index};
 use crate::options::{LodConfig, RenderOptions};
 use crate::painter::ElementPainter;
 use crate::spec::{element_to_world, world_aabb};
 use crate::theme::{Theme, scale_alpha};
 use crate::view::View;
+use crate::zorder::{Refresh, ZOrder};
 
 /// What one call to [`SceneComposer::compose`] did.
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
@@ -70,14 +72,6 @@ struct FrameClip {
     to_world: Affine,
     local: Rect,
     world: Rect,
-}
-
-/// Every indexed element in z order with its paint bounds, built at one version of the store. A frame that shows
-/// most of a large scene walks this list instead of the store and the index (two hash lookups per element).
-struct ZOrder {
-    /// `SceneRead::version_stamp` of the store and `SpatialIndex::generation` of the index it was built from.
-    stamp: (u64, u64),
-    slots: Vec<(ElementId, Rect)>,
 }
 
 /// Turns a store, a spatial index and a view into a Vello scene.
@@ -174,8 +168,11 @@ impl SceneComposer {
         &mut self.painter
     }
 
-    /// Drops fragments of elements a commit removed or hid. Call it with each change set; skipping it only costs
-    /// memory until the cache budget evicts them.
+    /// Drops fragments of elements a commit removed or hid, and tells the kept z order which elements changed. Call
+    /// it with each change set, in order, next to [`crate::update_paint_index`]. Skipping the fragments only costs
+    /// memory until the cache budget evicts them. `changes.revision` must be the store's
+    /// [`SceneRead::version_stamp`] after the commit (a change set of the store's own commit is); another number
+    /// makes the next zoomed-out frame order the scene again.
     pub fn apply_changes(&mut self, changes: &ChangeSet) {
         for c in &changes.elements {
             let gone =
@@ -184,6 +181,35 @@ impl SceneComposer {
                 self.cache.remove(&c.id);
             }
         }
+        if let Some(order) = &mut self.order {
+            order.note(changes.revision, changes.elements.iter().map(|c| &c.id));
+        }
+    }
+
+    /// Brings `index` up to date after commits that touched `touched` (what `TabDoc::take_touched` returns) and
+    /// tells the kept z order, so an edit of a large scene that is all in view patches the order and does not
+    /// build it again. Cheap: it reads the touched elements and nothing else. Fragments are not dropped: an
+    /// element that was removed or hidden leaves them to the cache budget.
+    pub fn follow_touched<S: SceneRead>(&mut self, index: &mut PaintIndex, store: &S, touched: &[ElementId]) {
+        let revision = store.version_stamp();
+        let elements = touched
+            .iter()
+            .map(|id| Change { id: id.clone(), kind: ChangeKind::Updated, fields: Fields::all(), version: 0 })
+            .collect();
+        update_paint_index(
+            index,
+            store,
+            &ChangeSet { revision: revision.unwrap_or(0), elements, meta: false, files: Vec::new() },
+        );
+        match (&mut self.order, revision) {
+            (Some(order), Some(version)) => order.note(version, touched),
+            _ => self.order = None,
+        }
+    }
+
+    /// Forgets the kept z order. Call it when the index is replaced by a new one.
+    pub fn forget_order(&mut self) {
+        self.order = None;
     }
 
     /// The canvas background for the store's document, in the current theme.
@@ -509,24 +535,19 @@ fn ordered<'a, S: SceneRead>(
     visible: impl Fn(&Element) -> bool,
     order: &mut Option<ZOrder>,
 ) -> Vec<Candidate<'a>> {
-    let Some(stamp) = store.version_stamp() else {
+    let Some(version) = store.version_stamp() else {
         *order = None;
         return walk(store, index, world, visible);
     };
-    let stamp = (stamp, index.generation());
-    if order.as_ref().is_none_or(|o| o.stamp != stamp) {
+    if ZOrder::refresh(order, store, index, version) == Refresh::Built {
         count(Counter::ElementsScanned, u64::try_from(store.len_all()).unwrap_or(u64::MAX));
-        let slots = store.iter().filter_map(|el| Some((el.id.clone(), index.get(&el.id)?))).collect();
-        *order = Some(ZOrder { stamp, slots });
     }
     let Some(order) = order.as_ref() else { return Vec::new() };
     order
-        .slots
-        .iter()
-        .filter(|(_, bounds)| aabb::intersects(world, bounds))
+        .in_view(world)
         .filter_map(|(id, bounds)| {
             let el = store.get(id)?;
-            visible(el).then_some(Candidate { el, bounds: *bounds })
+            visible(el).then_some(Candidate { el, bounds })
         })
         .collect()
 }

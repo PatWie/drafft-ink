@@ -193,6 +193,109 @@ fn connect_with_a_bad_room_name_is_bad_args() {
     }
 }
 
+// ---- the access token ----
+
+const TOKEN: &str = "s3cret-token-value";
+
+fn locked(n: usize) -> World {
+    let mut w = World::new(n);
+    w.hub.require_token(TOKEN);
+    w
+}
+
+fn state_of(s: &mut Session) -> String {
+    run(s, "collab.status", json!({}))["state"].as_str().unwrap_or_default().to_owned()
+}
+
+#[test]
+fn a_token_given_with_the_room_opens_a_server_that_asks_for_one() {
+    let mut w = locked(1);
+    run(w.s(0), "collab.connect", json!({"url": URL, "room": "r1", "token": TOKEN}));
+    w.settle();
+    assert_eq!(state_of(w.s(0)), "connected");
+    assert_eq!(w.hub.clients(), 1);
+}
+
+#[test]
+fn without_the_token_the_server_says_no_and_the_status_says_what_to_do() {
+    let mut w = locked(1);
+    run(w.s(0), "collab.connect", json!({"url": URL, "room": "r1"}));
+    w.settle();
+    let v = run(w.s(0), "collab.status", json!({}));
+    assert_eq!(v["state"], "error", "{v}");
+    assert!(v["error"].as_str().unwrap_or_default().contains("access token"), "{v}");
+    assert_eq!(w.hub.clients(), 0);
+    // A wrong token is the same.
+    run(w.s(0), "collab.disconnect", json!({}));
+    run(w.s(0), "collab.connect", json!({"url": URL, "room": "r1", "token": "wrong"}));
+    w.settle();
+    assert_eq!(state_of(w.s(0)), "error");
+}
+
+#[test]
+fn the_token_of_connect_is_used_by_the_join_that_follows_and_the_token_of_join_wins() {
+    let mut w = locked(1);
+    run(w.s(0), "collab.connect", json!({"url": URL, "token": TOKEN}));
+    run(w.s(0), "collab.join_room", json!({"room": "r1"}));
+    w.settle();
+    assert_eq!(state_of(w.s(0)), "connected");
+
+    // Leaving keeps the server and its token, so the next room needs neither again.
+    run(w.s(0), "collab.leave_room", json!({}));
+    run(w.s(0), "collab.join_room", json!({"room": "r2"}));
+    w.settle();
+    assert_eq!(state_of(w.s(0)), "connected");
+
+    // The token of the join replaces the one remembered from connect.
+    run(w.s(0), "collab.leave_room", json!({}));
+    run(w.s(0), "collab.join_room", json!({"room": "r3", "token": "wrong"}));
+    w.settle();
+    assert_eq!(state_of(w.s(0)), "error");
+
+    // Disconnecting forgets the token.
+    run(w.s(0), "collab.disconnect", json!({}));
+    run(w.s(0), "collab.connect", json!({"url": URL}));
+    run(w.s(0), "collab.join_room", json!({"room": "r4"}));
+    w.settle();
+    assert_eq!(state_of(w.s(0)), "error");
+}
+
+#[test]
+fn a_token_that_cannot_be_used_is_bad_args_and_the_message_does_not_repeat_it() {
+    let (mut s, _) = testing::session();
+    let long = "t".repeat(5000);
+    for token in ["", long.as_str()] {
+        let r = refuse(&mut s, "collab.connect", json!({"url": URL, "room": "r1", "token": token}));
+        assert_eq!(r.code, "bad_args", "{token:.10}");
+        assert!(r.message.contains("token"), "{}", r.message);
+        assert!(!r.message.contains(&long), "{}", r.message);
+    }
+    let r = refuse(&mut s, "collab.connect", json!({"url": URL, "token": ""}));
+    assert_eq!(r.code, "bad_args");
+}
+
+#[test]
+fn the_token_is_never_recorded_or_shown() {
+    let mut w = locked(1);
+    let mut seen = vec![run(w.s(0), "collab.connect", json!({"url": URL, "token": TOKEN}))];
+    seen.push(run(w.s(0), "collab.join_room", json!({"room": "r1", "token": TOKEN})));
+    w.settle();
+    seen.push(run(w.s(0), "collab.status", json!({})));
+    seen.push(run(w.s(0), "engine.recent", json!({"limit": 100})));
+    seen.push(run(w.s(0), "settings.get", json!({})));
+    // In a batch, the step is recorded too.
+    run(w.s(0), "collab.leave_room", json!({}));
+    let steps = [crate::batch::BatchStep::new("collab.join_room", json!({"room": "r2", "token": TOKEN}))];
+    let batch = w.s(0).execute_batch(Origin::Test, &steps, &crate::batch::BatchOpts::default());
+    seen.push(batch.to_json());
+    let ring = serde_json::to_string(&w.s(0).ring().recent(1000, false, None)).unwrap();
+    let outputs = serde_json::to_string(&seen).unwrap();
+    assert!(!ring.contains(TOKEN), "the ring must not hold the token: {ring}");
+    assert!(!outputs.contains(TOKEN), "no output may show the token: {outputs}");
+    assert!(ring.contains("collab.join_room") && ring.contains("<hidden>"), "the call is recorded without the token: {ring}");
+    assert!(!format!("{:?}", w.s(0).collab_view()).contains(TOKEN));
+}
+
 // ---- collab.join_room and collab.leave_room ----
 
 #[test]
@@ -542,14 +645,11 @@ fn follow_needs_a_room() {
 
 // ---- loading ----
 
-#[test]
-fn a_big_catch_up_shows_a_loading_state_before_it_blocks() {
-    let mut w = World::new(2);
-    w.join(0, "room-big", "refuse");
+/// Puts `n` rectangles into the room of session 0 and lets the server have them.
+fn fill_room(w: &mut World, room: &str, n: usize) {
+    w.join(0, room, "refuse");
     w.settle();
-    // 4000 elements in one commit make an update far above the hold threshold.
-    let ids: Vec<ElementId> = (0..4000).map(|_| w.s(0).ports.ids.element_id()).collect();
-    let n = ids.len();
+    let ids: Vec<ElementId> = (0..n).map(|_| w.s(0).ports.ids.element_id()).collect();
     {
         use drafftink_scene::{Element, ElementKind, SceneTx, StoreError, Transform};
         let s = w.s(0);
@@ -569,18 +669,139 @@ fn a_big_catch_up_shows_a_loading_state_before_it_blocks() {
     }
     w.settle();
     assert_eq!(w.hub.document().iter().count(), n, "the server has the big document");
-    // B joins. Poll by hand to see the phases.
+}
+
+/// Moves the id counter of session 1 past the ids of the big room, so its own elements get fresh ids.
+fn skip_room_ids(w: &mut World) {
+    for _ in 0..BIG + 1000 {
+        w.s(1).ports.ids.element_id();
+    }
+}
+
+/// One poll of session 1 with the server in between.
+fn poll_b(w: &mut World) -> super::CollabPoll {
+    w.c[1].fakes.clock.advance_ms(40);
+    let p = w.s(1).collab_poll();
+    w.hub.attach(&w.c[1].fakes.net);
+    w.hub.step();
+    p
+}
+
+const BIG: usize = 4000;
+
+#[test]
+fn a_big_room_is_taken_in_slices_and_the_session_answers_between_them() {
+    let mut w = World::new(2);
+    fill_room(&mut w, "room-big", BIG);
     run(w.s(1), "collab.connect", json!({"url": URL, "room": "room-big"}));
+    assert_eq!(w.s(1).collab_view().loading, Some(Loading::Connecting));
+
+    let (mut counts, mut importing) = (vec![0usize], None);
+    for _ in 0..4000 {
+        let p = poll_b(&mut w);
+        let n = w.s(1).store().iter().count();
+        if n != *counts.last().unwrap() {
+            assert!(p.redraw, "a slice that changed the scene asks for a frame");
+            counts.push(n);
+        }
+        if let Some(l @ Loading::Importing { done, total }) = w.s(1).collab_view().loading {
+            assert!(done < total, "{l:?}");
+            assert!(p.wake_in_ms.is_some(), "the next slice is scheduled: {p:?}");
+            importing = Some(l);
+            // The session still answers commands between two slices.
+            let state = run(w.s(1), "collab.status", json!({}));
+            assert_eq!(state["loading"]["phase"], "importing");
+        }
+        if w.s(1).collab_view().loading.is_none() && n == BIG {
+            break;
+        }
+    }
+    assert!(importing.is_some(), "the loading state names the progress");
+    assert!(counts.len() > 3, "the scene grew in several slices: {counts:?}");
+    assert!(
+        counts.windows(2).all(|c| c[1] - c[0] <= super::poll::MAX_IMPORT_ITEMS_PER_POLL),
+        "no slice is bigger than the cap: {counts:?}"
+    );
+    assert_eq!(w.s(1).store().iter().count(), BIG);
+    assert_eq!(content(&w.c[0].s), content(&w.c[1].s));
+    assert_eq!(w.s(1).collab_view().state, ConnectionState::Connected);
+}
+
+#[test]
+fn work_done_while_a_room_loads_is_kept_and_shared() {
+    let mut w = World::new(2);
+    fill_room(&mut w, "room-busy", BIG);
+    skip_room_ids(&mut w);
+    run(w.s(1), "collab.connect", json!({"url": URL, "room": "room-busy"}));
+    let mut mine = None;
+    for _ in 0..4000 {
+        poll_b(&mut w);
+        if mine.is_none() && matches!(w.s(1).collab_view().loading, Some(Loading::Importing { .. })) {
+            mine = Some(rect(w.s(1), 5000.0));
+        }
+        if mine.is_some() && w.s(1).collab_view().loading.is_none() {
+            break;
+        }
+    }
+    let mine = mine.expect("the room was loading when the rectangle was drawn");
+    assert_eq!(w.s(1).store().iter().count(), BIG + 1);
+    w.settle();
+    assert!(w.s(0).element(&mine).is_some(), "the other peer got the rectangle");
+    assert_eq!(content(&w.c[0].s), content(&w.c[1].s));
+}
+
+#[test]
+fn leaving_a_room_that_is_still_loading_finishes_the_import_first() {
+    let mut w = World::new(2);
+    fill_room(&mut w, "room-leave", BIG);
+    run(w.s(1), "collab.connect", json!({"url": URL, "room": "room-leave"}));
+    for _ in 0..4000 {
+        poll_b(&mut w);
+        if matches!(w.s(1).collab_view().loading, Some(Loading::Importing { .. })) {
+            break;
+        }
+    }
+    assert!(w.s(1).store().iter().count() < BIG, "still loading");
+    run(w.s(1), "collab.leave_room", json!({}));
+    assert_eq!(w.s(1).store().iter().count(), BIG, "the local copy is whole");
+    assert!(w.s(1).tab().doc.replicated().import_progress().is_none());
+}
+
+#[test]
+fn saving_and_exporting_wait_until_the_room_is_loaded() {
+    let mut w = World::new(2);
+    fill_room(&mut w, "room-save", BIG);
+    run(w.s(1), "collab.connect", json!({"url": URL, "room": "room-save"}));
+    for _ in 0..4000 {
+        poll_b(&mut w);
+        if matches!(w.s(1).collab_view().loading, Some(Loading::Importing { .. })) {
+            break;
+        }
+    }
+    for id in ["doc.save", "doc.export"] {
+        let args = if id == "doc.save" { json!({"to": {"path": "/x.drafftink"}}) } else { json!({"format": "json"}) };
+        let r = refuse(w.s(1), id, args);
+        assert_eq!(r.code, "room_loading", "{id}");
+        assert!(r.message.contains("still loading") && r.message.contains(id), "{}", r.message);
+    }
+}
+
+#[test]
+fn a_big_catch_up_into_a_tab_with_content_shows_a_loading_state_before_it_blocks() {
+    let mut w = World::new(2);
+    fill_room(&mut w, "room-big2", BIG);
+    skip_room_ids(&mut w);
+    let mine = rect(w.s(1), -500.0);
+    let n = BIG;
+    // The tab has content, so the import cannot be taken in slices: it is applied by one poll, after a hold.
+    run(w.s(1), "collab.connect", json!({"url": URL, "room": "room-big2", "on_local": "merge"}));
     assert_eq!(w.s(1).collab_view().loading, Some(Loading::Connecting));
     let mut seen_receiving = None;
     for _ in 0..40 {
-        w.c[1].fakes.clock.advance_ms(40);
-        let p = w.s(1).collab_poll();
-        w.hub.attach(&w.c[1].fakes.net);
-        w.hub.step();
+        let p = poll_b(&mut w);
         if let Some(Loading::Receiving { bytes }) = w.s(1).collab_view().loading {
             assert!(p.redraw && p.wake_in_ms.is_some(), "{p:?}");
-            assert_eq!(w.s(1).store().iter().count(), 0, "nothing is applied yet: the UI can draw first");
+            assert_eq!(w.s(1).store().iter().count(), 1, "nothing is applied yet: the UI can draw first");
             seen_receiving = Some(bytes);
             w.c[1].fakes.clock.advance_ms(20);
             w.s(1).collab_poll();
@@ -588,10 +809,10 @@ fn a_big_catch_up_shows_a_loading_state_before_it_blocks() {
         }
     }
     assert!(seen_receiving.is_some_and(|b| b >= 256 * 1024), "{seen_receiving:?}");
-    assert_eq!(w.s(1).store().iter().count(), n, "the next poll applied it");
+    assert_eq!(w.s(1).store().iter().count(), n + 1, "the next poll applied it");
+    assert!(w.s(1).element(&mine).is_some());
     for _ in 0..10 {
-        w.c[1].fakes.clock.advance_ms(40);
-        w.s(1).collab_poll();
+        poll_b(&mut w);
     }
     assert_eq!(w.s(1).collab_view().loading, None);
     assert_eq!(w.s(1).collab_view().state, ConnectionState::Connected);

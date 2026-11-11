@@ -302,6 +302,18 @@
       "gauge.cache_entries": {
         "max": 599,
         "note": "measured 200 to 260"
+      },
+      "counter.relayouts": {
+        "max": 10,
+        "note": "a drag moves texts and formulas and replays their layouts; measured 0 to 1 (671 when the driver pressed on a resize handle and scaled the selection)"
+      },
+      "counter.cache_miss": {
+        "max": 1000,
+        "note": "only arrows bound to a moved shape are drawn again; measured 260 to 480 in 10 s (7176 when the selection was scaled)"
+      },
+      "counter.sketch_regens": {
+        "max": 200,
+        "note": "measured 39 to 67 (3167 when the selection was scaled)"
       }
     },
     "native/drag@10k": {
@@ -348,6 +360,18 @@
       "gauge.cache_entries": {
         "max": 599,
         "note": "measured 200 to 260"
+      },
+      "counter.relayouts": {
+        "max": 10,
+        "note": "a drag moves texts and formulas and replays their layouts; measured 0 to 1 (671 when the driver pressed on a resize handle and scaled the selection)"
+      },
+      "counter.cache_miss": {
+        "max": 1000,
+        "note": "only arrows bound to a moved shape are drawn again; measured 260 to 480 in 10 s (7176 when the selection was scaled)"
+      },
+      "counter.sketch_regens": {
+        "max": 200,
+        "note": "measured 39 to 67 (3167 when the selection was scaled)"
       }
     },
     "native/drag@1k": {
@@ -394,6 +418,18 @@
       "gauge.cache_entries": {
         "max": 599,
         "note": "measured 200 to 260"
+      },
+      "counter.relayouts": {
+        "max": 10,
+        "note": "a drag moves texts and formulas and replays their layouts; measured 0 to 1 (671 when the driver pressed on a resize handle and scaled the selection)"
+      },
+      "counter.cache_miss": {
+        "max": 1000,
+        "note": "only arrows bound to a moved shape are drawn again; measured 260 to 480 in 10 s (7176 when the selection was scaled)"
+      },
+      "counter.sketch_regens": {
+        "max": 200,
+        "note": "measured 39 to 67 (3167 when the selection was scaled)"
       }
     },
     "native/hover@100k": {

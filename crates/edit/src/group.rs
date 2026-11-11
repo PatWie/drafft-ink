@@ -26,7 +26,7 @@ use crate::zorder::{Place, ZOrderError, ZReport, move_block};
 pub mod selection;
 pub mod units;
 
-use units::{Relations, ensure_unlocked, primaries, with_companions};
+use units::{Reverse, ReverseLookup, ensure_unlocked, primaries, with_companions};
 
 /// Why a group operation was refused.
 #[derive(Debug, Clone, PartialEq, thiserror::Error)]
@@ -149,7 +149,7 @@ fn group_by<T: SceneTx>(
     editing: Option<&GroupId>,
     new_group: impl FnOnce(&T) -> Result<GroupId, GroupError>,
 ) -> Result<GroupReport, GroupError> {
-    let rel = Relations::build(&*tx);
+    let rel = Reverse::of(&*tx);
     let prim = primaries(&*tx, ids)?;
     if let Some(g) = editing {
         for id in &prim {
@@ -169,23 +169,27 @@ fn group_by<T: SceneTx>(
     let member_set: std::collections::HashSet<&ElementId> = members.iter().collect();
     for m in &members {
         let Some(e) = tx.get(m) else { continue };
-        if e.tag() == Kind::Frame && rel.children(m).iter().any(|c| member_set.contains(c)) {
+        if e.tag() == Kind::Frame && rel.children_of(m).iter().any(|c| member_set.contains(c)) {
             return Err(GroupError::FrameAndChildren { frame: m.clone() });
         }
-        let stack = rel.stack(e).count();
+        let stack = rel.stack(e).len();
         if stack + 1 > limits::MAX_GROUP_DEPTH {
             return Err(GroupError::TooDeep { id: m.clone(), max: limits::MAX_GROUP_DEPTH });
         }
     }
     let new_group = new_group(&*tx)?;
+    // Everything the index answers is read here: the first write below takes it away.
+    let stale_of: Vec<Vec<GroupId>> =
+        members.iter().map(|m| tx.get(m).map(|e| rel.stale_groups(e)).unwrap_or_default()).collect();
+    let labels: Vec<(ElementId, Vec<ElementId>)> = members.iter().map(|m| (m.clone(), rel.labels_of(m))).collect();
+    let moving = with_companions(&*tx, &rel, &members, true);
     // Members from different frames leave their frames first.
     let frames: Vec<Option<ElementId>> = members.iter().filter_map(|m| tx.get(m)).map(|e| e.frame_id.clone()).collect();
     let same_frame = frames.windows(2).all(|w| w[0] == w[1]);
     let mut left_frames = Vec::new();
     let mut left_pairs: Vec<(ElementId, ElementId)> = Vec::new();
 
-    for m in &members {
-        let stale = tx.get(m).map(|e| rel.stale_groups(e)).unwrap_or_default();
+    for (m, stale) in members.iter().zip(stale_of) {
         let clear_frame = !same_frame && tx.get(m).is_some_and(|e| e.frame_id.is_some());
         if clear_frame {
             left_frames.push(m.clone());
@@ -206,21 +210,20 @@ fn group_by<T: SceneTx>(
             }
         })?;
     }
-    sync_labels(tx, &rel, &members)?;
+    sync_labels(tx, &labels)?;
     crate::zorder::settle_leavers(tx, &left_pairs)?;
-    // A frame among the members keeps its children directly below it.
-    let moving = with_companions(&*tx, &rel, &members, true);
+    // A frame among the members keeps its children directly below it (`moving`).
     let z = move_block(tx, &moving, &Place::AtTopmost)?;
     Ok(GroupReport { group: new_group, members, left_frames, z })
 }
 
 /// Makes each label carry the groups and frame of its container.
-fn sync_labels<T: SceneTx>(tx: &mut T, rel: &Relations, containers: &[ElementId]) -> Result<(), StoreError> {
-    for c in containers {
+fn sync_labels<T: SceneTx>(tx: &mut T, labels: &[(ElementId, Vec<ElementId>)]) -> Result<(), StoreError> {
+    for (c, labels) in labels {
         let Some((groups, frame)) = tx.get(c).map(|e| (e.group_ids.clone(), e.frame_id.clone())) else {
             continue;
         };
-        for l in rel.labels(c) {
+        for l in labels {
             let (groups, frame) = (groups.clone(), frame.clone());
             tx.update(l, |e| {
                 e.group_ids = groups;
@@ -249,7 +252,7 @@ pub fn ungroup<T: SceneTx>(
     group: Option<&GroupId>,
     editing: Option<&GroupId>,
 ) -> Result<UngroupReport, GroupError> {
-    let rel = Relations::build(&*tx);
+    let rel = Reverse::of(&*tx);
     let targets: Vec<GroupId> = match group {
         Some(g) if rel.is_group(g) => vec![g.clone()],
         Some(_) => return Err(GroupError::NoGroup),
@@ -261,7 +264,7 @@ pub fn ungroup<T: SceneTx>(
     if targets.is_empty() {
         return Err(GroupError::NoGroup);
     }
-    let mut members: Vec<ElementId> = targets.iter().flat_map(|g| rel.members(g).iter().cloned()).collect();
+    let mut members: Vec<ElementId> = targets.iter().flat_map(|g| rel.members_of(g)).collect();
     members.sort();
     members.dedup();
     ensure_unlocked(&*tx, &members)?;
@@ -308,7 +311,7 @@ pub fn set_group_name<T: SceneTx>(
     group: &GroupId,
     name: Option<&str>,
 ) -> Result<Vec<ElementId>, GroupError> {
-    let rel = Relations::build(&*tx);
+    let rel = Reverse::of(&*tx);
     if !rel.is_group(group) {
         return Err(GroupError::NoGroup);
     }
@@ -317,7 +320,8 @@ pub fn set_group_name<T: SceneTx>(
     {
         return Err(GroupError::BadName);
     }
-    let members = rel.members(group).to_vec();
+    let mut members = rel.members_of(group);
+    units::sort_z(&*tx, &mut members);
     ensure_unlocked(&*tx, &members)?;
     let key = name_key(group);
     for m in &members {
@@ -362,10 +366,10 @@ pub fn non_contiguous_groups<R: SceneRead>(scene: &R) -> Vec<GroupId> {
 /// Repairs a group that is not contiguous (after a merge of concurrent edits): its members move together at the
 /// slot of the topmost member.
 pub fn make_contiguous<T: SceneTx>(tx: &mut T, group: &GroupId) -> Result<ZReport, GroupError> {
-    let rel = Relations::build(&*tx);
+    let rel = Reverse::of(&*tx);
     if !rel.is_group(group) {
         return Err(GroupError::NoGroup);
     }
-    let all = with_companions(&*tx, &rel, rel.members(group), true);
+    let all = with_companions(&*tx, &rel, &rel.members_of(group), true);
     Ok(move_block(tx, &all, &Place::AtTopmost)?)
 }

@@ -8,7 +8,7 @@ use std::sync::Arc;
 
 use drafftink_collab::LoopbackServer;
 use drafftink_doc::{DocError, LoroConfig, LoroStore};
-use drafftink_protocol::{ClientId, ClientMessage, Limits, PeerInfo, ServerMessage, SyncKind, UserInfo};
+use drafftink_protocol::{ClientId, ClientMessage, ErrorCode, Limits, PeerInfo, ServerMessage, SyncKind, UserInfo};
 
 use crate::ports::fake::FakeNet;
 
@@ -24,6 +24,8 @@ struct Link {
 pub struct FakeServer {
     store: LoroStore,
     links: Vec<Link>,
+    /// When set, a join must carry this access token, or the server answers `Unauthorized`.
+    required_token: Option<String>,
 }
 
 impl Default for FakeServer {
@@ -36,7 +38,7 @@ impl FakeServer {
     /// A server with an empty document.
     pub fn new() -> Self {
         Self { store: LoroStore::with_config(LoroConfig { peer_id: Some(u64::MAX - 1), ..LoroConfig::default() })
-                .unwrap_or_default(), links: Vec::new() }
+                .unwrap_or_default(), links: Vec::new(), required_token: None }
     }
 
     /// Serves the connections `net` opened since the last call.
@@ -46,6 +48,11 @@ impl FakeServer {
                 self.links.push(Link { end, id: None, user: None, joined: false });
             }
         }
+    }
+
+    /// From now on a join needs this access token (the real server's `auth_tokens`).
+    pub fn require_token(&mut self, token: &str) {
+        self.required_token = Some(token.to_owned());
     }
 
     /// The server's copy of the document.
@@ -99,7 +106,13 @@ impl FakeServer {
 
     fn handle(&mut self, i: usize, msg: ClientMessage) {
         match msg {
-            ClientMessage::Join { room, client_id, version, user, .. } => self.join(i, room, client_id, &version, user),
+            ClientMessage::Join { room, client_id, version, user, auth_token, .. } => {
+                if self.required_token.as_deref().is_some_and(|t| auth_token.as_deref() != Some(t)) {
+                    self.send(i, &ServerMessage::error(ErrorCode::Unauthorized, "bad token"));
+                    return;
+                }
+                self.join(i, room, client_id, &version, user);
+            }
             ClientMessage::Update { seq, update } => {
                 if self.store.apply_remote(&update).is_err() {
                     return;

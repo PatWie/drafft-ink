@@ -9,7 +9,8 @@
 //!    runs the same command again, and this time the call finds the finished picture and returns it.
 //!
 //! The same request means the same document snapshot and the same [`RenderRequest`]; only one picture is drawn at
-//! a time, and a second request waits (it is answered `NotReady` until the first was fetched).
+//! a time, and a second request waits (it is answered `NotReady` until the first is finished). Finished pictures
+//! stay on a small shelf, so a `batch` with several exports completes: each rerun finds the pictures drawn so far.
 
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -22,6 +23,7 @@ use drafftink_gpu::{Compositor, Gpu, GpuOptions, create_instance};
 use drafftink_scene::Document;
 use wasm_bindgen_futures::spawn_local;
 
+use super::pure::Shelf;
 use crate::offscreen::{Composed, compose, encode_png};
 
 /// The device the pictures are drawn with: its own, made on first use, so the window's device is never blocked.
@@ -37,13 +39,15 @@ struct Request {
     req: RenderRequest,
 }
 
-enum Slot {
-    /// Nothing is being drawn and nothing is waiting to be fetched.
-    Idle,
-    /// The picture of this request is being drawn.
-    Drawing(Request),
-    /// The picture of this request is ready (or failed) and waits for the call that asked.
-    Done(Request, Result<Vec<u8>, String>),
+/// How many finished pictures wait for a caller that asks again (a `batch` may export several).
+const SHELF_SIZE: usize = 4;
+
+/// What is being drawn and what is finished.
+struct Slot {
+    /// The request that is being drawn. Only one is drawn at a time.
+    drawing: Option<Request>,
+    /// Finished pictures (or failures) that wait for the call that asked.
+    done: Shelf<Request, Vec<u8>>,
 }
 
 /// The browser's [`Renderer`].
@@ -57,7 +61,8 @@ pub(crate) struct WebRenderer {
 impl WebRenderer {
     /// A renderer. `wake` wakes the app when a picture is ready, so that the command is run again.
     pub(crate) fn new(typesetter: SharedTypesetter, wake: Arc<dyn Fn() + Send + Sync>) -> Self {
-        Self { typesetter, wake, slot: Rc::new(RefCell::new(Slot::Idle)), device: Rc::new(RefCell::new(None)) }
+        let slot = Slot { drawing: None, done: Shelf::new(SHELF_SIZE) };
+        Self { typesetter, wake, slot: Rc::new(RefCell::new(slot)), device: Rc::new(RefCell::new(None)) }
     }
 }
 
@@ -65,23 +70,21 @@ impl Renderer for WebRenderer {
     fn render_png(&self, scene: &SceneView, req: &RenderRequest) -> Result<Vec<u8>, PortError> {
         let asked = Request { scene: scene.clone(), req: req.clone() };
         let mut slot = self.slot.borrow_mut();
-        match std::mem::replace(&mut *slot, Slot::Idle) {
-            Slot::Done(done, result) if done == asked => {
-                return result.map_err(PortError::Failed);
-            }
-            // A picture nobody came back for is dropped when another request arrives.
-            Slot::Done(..) | Slot::Idle => {}
-            Slot::Drawing(current) => {
-                *slot = Slot::Drawing(current);
-                return Err(PortError::NotReady);
-            }
+        if let Some(result) = slot.done.get(&asked) {
+            return result.map_err(PortError::Failed);
+        }
+        if slot.drawing.is_some() {
+            return Err(PortError::NotReady);
         }
         let composed = compose(&self.typesetter, scene, req)?;
-        *slot = Slot::Drawing(asked.clone());
+        slot.drawing = Some(asked.clone());
         let (slot_cell, device, wake) = (Rc::clone(&self.slot), Rc::clone(&self.device), Arc::clone(&self.wake));
         spawn_local(async move {
             let result = draw(&device, composed).await;
-            *slot_cell.borrow_mut() = Slot::Done(asked, result);
+            let mut slot = slot_cell.borrow_mut();
+            slot.drawing = None;
+            slot.done.put(asked, result);
+            drop(slot);
             wake();
         });
         Err(PortError::NotReady)

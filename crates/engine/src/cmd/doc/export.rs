@@ -6,6 +6,7 @@ use std::collections::HashSet;
 use drafftink_edit::library;
 use drafftink_geom::kurbo::Rect;
 use drafftink_io::svg::{SvgOptions, SvgStyle, export_svg};
+use drafftink_io::typeset_measure::bundled_svg_fonts;
 use drafftink_io::{excalidraw, native, png_meta};
 use drafftink_scene::{Document, ElementId, Kind, SceneRead};
 use schemars::JsonSchema;
@@ -108,7 +109,7 @@ pub struct ExportArgs {
     pub padding: Option<f64>,
     /// Paint the document background. Default: the setting `export.background`.
     pub background: Option<bool>,
-    /// Draw with the dark palette (PNG only). Default: the setting `export.dark`.
+    /// Draw with the dark palette (PNG and SVG). Default: the setting `export.dark`.
     pub dark: Option<bool>,
     /// Embed the scene so that the picture can be opened again with `doc.open`. Default: the setting `export.embed_scene`.
     pub embed_scene: Option<bool>,
@@ -264,6 +265,36 @@ pub(crate) fn render_png(s: &Session, id: &str, doc: &Document, opts: &PngOpts) 
     Ok(RenderedPng { bytes, width: wp, height: hp })
 }
 
+/// How [`render_svg`] draws.
+pub(crate) struct SvgLook {
+    /// Size factor of the `width` and `height` attributes.
+    pub scale: f64,
+    /// World units around the content.
+    pub padding: f64,
+    /// Paint the document background.
+    pub background: bool,
+    /// Draw with the dark palette, as the dark PNG does.
+    pub dark: bool,
+    /// Embed the scene.
+    pub embed_scene: bool,
+}
+
+/// The one SVG implementation: `doc.export` and `clipboard.copy_as` both end here. The fonts of the texts drawn
+/// are embedded (the files the typesetter bundles), and `dark` recolours with the same mapping as the canvas.
+pub(crate) fn render_svg(s: &Session, doc: &Document, look: &SvgLook) -> Result<String, drafftink_io::error::IoError> {
+    let opts = SvgOptions {
+        style: SvgStyle::Sketch,
+        background: look.background,
+        padding: look.padding,
+        scale: look.scale,
+        selection: None,
+        embed_scene: look.embed_scene,
+        fonts: bundled_svg_fonts(),
+        dark: look.dark,
+    };
+    export_svg(doc, &opts, s.services.io(), Some(s.services.math_svg()))
+}
+
 pub(super) fn export(s: &mut Session, a: ExportArgs) -> Result<ExportOut, Refusal> {
     let id = s.cmd();
     let scale = args::in_range(id, "scale", a.scale.unwrap_or_else(|| s.settings.f64_or("export.scale", 2.0)), 0.25, 4.0)?;
@@ -303,23 +334,9 @@ pub(super) fn export(s: &mut Session, a: ExportArgs) -> Result<ExportOut, Refusa
             text.into_bytes()
         }
         ExportFormat::Svg => {
-            if dark {
-                s.warn("`dark` is ignored for svg: the picture uses the document's own colours");
-            }
-            let opts = SvgOptions {
-                style: SvgStyle::Sketch,
-                background,
-                padding,
-                scale,
-                selection: None,
-                embed_scene: embed,
-                // SERVICES: embedded fonts come with the renderer's font registry; none are embedded yet.
-                fonts: Vec::new(),
-            };
             scene_embedded = embed;
-            export_svg(&sub, &opts, s.services.io(), Some(s.services.math_svg()))
-                .map_err(|e| io_failed_export(id, "the picture", &e))?
-                .into_bytes()
+            let look = SvgLook { scale, padding, background, dark, embed_scene: embed };
+            render_svg(s, &sub, &look).map_err(|e| io_failed_export(id, "the picture", &e))?.into_bytes()
         }
         ExportFormat::Png => {
             let opts = PngOpts {

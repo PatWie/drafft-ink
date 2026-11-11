@@ -61,8 +61,9 @@ mod scenarios {
     /// The generated scene a scenario runs on, with its camera. `None` for a key without a scene (`idle`).
     ///
     /// Most scenarios look at the middle of the grid at zoom 1. `drag` zooms out to a half and puts the first
-    /// cell 150 points from the top left corner, clear of the toolbars. World point (20, 20) lies inside the filled
-    /// rectangle `e0` and so on screen at (190, 190): the driver grabs it there.
+    /// cell 150 points from the top left corner, clear of the toolbars. The middle of the filled
+    /// rectangle `e0`, world point (60, 40), is on screen at (210, 200): the driver grabs it there. Closer to the corner of
+    /// the selection a press would hit a resize handle.
     pub fn scene_for(key: &ScenarioKey) -> Result<Option<SceneInstall>, GenError> {
         let Some(size) = key.size else { return Ok(None) };
         let count = usize::try_from(size).map_err(|_| GenError(format!("{size} elements do not fit in memory")))?;

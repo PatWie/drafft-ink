@@ -34,7 +34,7 @@ use crate::arrow::{ArrowError, BindRequest, bind_end};
 use crate::binding::{self, BindOpts, BindingError, End};
 use crate::elbow::ElbowEditError;
 use crate::frame::{self, FrameError};
-use crate::group::units::Relations;
+use crate::group::units::{Reverse, ReverseLookup};
 use crate::linear::{self, LinearError, world_points};
 use crate::target::TargetError;
 use crate::text_bind::{self, TextBindError, TextMeasure};
@@ -842,11 +842,11 @@ pub fn place_above<T: SceneTx>(tx: &mut T, id: &ElementId, after: &ElementId) ->
         .ok_or_else(|| CreateError::Target(TargetError::NotFound(after.clone())))?
         .clone();
     let joined_frame = tx.get(id).and_then(|e| e.frame_id.clone());
-    let rel = Relations::build(&*tx);
+    let rel = Reverse::of(&*tx);
     let anchor = zorder::lift_above_enclosures(&*tx, &rel, &start, &|f| joined_frame.as_ref() == Some(f), &|_| false);
     // A container's label sits directly above it; the new element goes above the pair.
     let top = rel
-        .labels(&anchor.id)
+        .labels_of(&anchor.id)
         .iter()
         .filter_map(|l| tx.get(l))
         .max_by(|a, b| a.index.cmp(&b.index))

@@ -266,6 +266,19 @@ fn present_mode_from_env() -> Option<wgpu::PresentMode> {
     None
 }
 
+/// The present mode for a surface that supports `supported`. `requested` (the measurement override) wins when the
+/// surface supports it. Otherwise `Fifo`, never the first mode the driver lists: that order is the driver's own,
+/// so it could be `Immediate` (tearing, frames as fast as we ask) or `Mailbox` (an extra image and GPU work for
+/// frames nobody sees). The app paces its own frames (`RepaintState::set_min_interval`), and `Fifo` is the mode
+/// every Vulkan, Metal and DX12 surface has (the browser's canvas supports no other, `docs/performance.md` 7.9).
+fn choose_present_mode(supported: &[wgpu::PresentMode], requested: Option<wgpu::PresentMode>) -> wgpu::PresentMode {
+    use wgpu::PresentMode::Fifo;
+    requested.filter(|m| supported.contains(m)).unwrap_or_else(|| match supported {
+        [first, ..] if !supported.contains(&Fifo) => *first,
+        _ => Fifo,
+    })
+}
+
 /// A window surface and its configuration.
 pub struct PresentSurface {
     pub surface: wgpu::Surface<'static>,
@@ -291,9 +304,8 @@ impl PresentSurface {
             .ok_or_else(|| GpuError::Surface("the adapter cannot present to this surface".into()))?;
         config.format = format;
         config.view_formats = vec![format];
-        if let Some(mode) = present_mode_from_env().filter(|m| caps.present_modes.contains(m)) {
-            config.present_mode = mode;
-        }
+        config.present_mode = choose_present_mode(&caps.present_modes, present_mode_from_env());
+        log::info!("present mode: {:?} (supported: {:?})", config.present_mode, caps.present_modes);
         surface.configure(&gpu.device, &config);
         Ok(Self { surface, config })
     }
@@ -348,6 +360,23 @@ mod tests {
         assert!(info("Microsoft Basic Render Driver", 0x1414, AdapterKind::Other).is_software());
         assert!(!info("NVIDIA L40S", 0x10de, AdapterKind::Discrete).is_software());
         assert!(!info("Apple M2", 0x106b, AdapterKind::Integrated).is_software());
+    }
+
+    #[test]
+    fn present_mode_is_fifo_whatever_the_driver_lists_first() {
+        use wgpu::PresentMode::{Fifo, Immediate, Mailbox};
+        assert_eq!(choose_present_mode(&[Immediate, Mailbox, Fifo], None), Fifo);
+        assert_eq!(choose_present_mode(&[Mailbox, Fifo], None), Fifo);
+        assert_eq!(choose_present_mode(&[Fifo, Immediate], None), Fifo);
+    }
+
+    #[test]
+    fn present_mode_override_applies_only_when_supported() {
+        use wgpu::PresentMode::{Fifo, Immediate, Mailbox};
+        assert_eq!(choose_present_mode(&[Fifo, Immediate], Some(Immediate)), Immediate);
+        assert_eq!(choose_present_mode(&[Fifo, Immediate], Some(Mailbox)), Fifo);
+        // A surface that lists no Fifo (the spec says none does) is configured with what it has.
+        assert_eq!(choose_present_mode(&[Immediate], None), Immediate);
     }
 
     #[test]

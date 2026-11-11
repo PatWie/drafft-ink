@@ -4,8 +4,9 @@
 //! editing group the unit is the next level down: the outermost group strictly inside the editing group, or the
 //! element itself. Bound text (a label) is never a unit of its own: it travels with its container.
 //!
-//! A transaction offers no derived index (the store's `DerivedIndex` only reflects committed state), so
-//! [`Relations`] is built with one pass over the live elements. Build it once per command and pass it around.
+//! Reverse lookups come from [`Reverse::of`]: the store's `DerivedIndex` when the reader offers one (a store, or
+//! a transaction that has not written yet), else [`Relations`], built with one pass over the live elements. Ask
+//! before the first write: the index is the committed state, and a transaction that has written offers none.
 //!
 //! A group with fewer than two live members counts as no group (`docs/model.md` section 8). Every function here
 //! uses the *effective* group stack that skips such stale ids.
@@ -86,6 +87,16 @@ pub trait ReverseLookup {
     fn members_of(&self, group: &GroupId) -> Vec<ElementId>;
     /// Does the group have two live members?
     fn is_group(&self, group: &GroupId) -> bool;
+
+    /// The groups of `e` that count (at least two live members), innermost first.
+    fn stack<'a>(&self, e: &'a Element) -> Vec<&'a GroupId> {
+        e.group_ids.iter().filter(|g| self.is_group(g)).collect()
+    }
+
+    /// Group ids on `e` that no longer have two live members.
+    fn stale_groups(&self, e: &Element) -> Vec<GroupId> {
+        e.group_ids.iter().filter(|g| !self.is_group(g)).cloned().collect()
+    }
 }
 
 impl ReverseLookup for Relations {

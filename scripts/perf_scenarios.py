@@ -21,8 +21,10 @@ HZ = os.sysconf("SC_CLK_TCK")
 SECS = {"idle": 10, "pan": 10, "wheel": 10, "zoom": 10, "drag": 10, "hover": 8}
 # Where the canvas is free of toolbars, in window points: x 100..1250, y 80..720 in a 1280x800 window.
 CENTRE = (640, 400)
-# `drag` scene: world point (20, 20) of the filled rectangle e0 is at (190, 190) (SceneLook::Corner margin 150, zoom 0.5).
-DRAG_GRAB = (190, 190)
+# `drag` scene (Look::Corner margin 150, zoom 0.5): the middle of the filled rectangle e0, world (60, 40), is at (210, 200).
+# Not nearer to a corner of the selection: 4 points from it is a resize handle, and the scenario then resizes 100 elements
+# (every frame lays texts out again) instead of moving them. `crates/testkit/tests/perf_work.rs` reads this line.
+DRAG_GRAB = (210, 200)
 
 
 def git_commit():

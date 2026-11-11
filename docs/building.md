@@ -17,6 +17,7 @@ Command line (`drafftink --help`):
 |---|---|
 | `FILE` | Open a `.drafftink`, `.json`, `.excalidraw` file or a PNG with an embedded scene. It replaces the intro document on a first run and opens in a new tab otherwise. |
 | `--room ROOM` `--server URL` | Join a room at start (`--server` needs `--room`; default server: the `collab.server_url` setting, `ws://localhost:3030/ws`). With work already open, the room gets a new tab. |
+| `--token-file FILE` | The access token of the collaboration server (needs `--room`). Without it the environment variable `DRAFFTINK_COLLAB_TOKEN` is used. No flag takes the token itself: arguments are visible to other users. |
 | `--bridge [PORT]` | Let an AI agent drive this window (`agents.md`). Off by default. Listens on `127.0.0.1` only, on a free port or `PORT`, and prints the token file path. |
 | `--mcp-http [PORT]` | Serve MCP over streamable HTTP on `127.0.0.1:PORT` (default 3737; 0 is a free port) for MCP clients that take a URL (`agents.md` section 5.4). Off by default. Every request needs the bearer token from a private file, and the Preferences have a switch for it. |
 | `--perf-overlay` | Frame counts and cache numbers over the canvas. |

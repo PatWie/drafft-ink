@@ -5,8 +5,9 @@
 //! reads inside the transaction see its own writes, rollback restores the journal, and commit diffs the journal
 //! against the final values to build the change set.
 
-use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::collections::{BTreeMap, HashMap};
 use std::ops::Bound;
+use std::sync::Arc;
 
 use crate::color::Color;
 use crate::derived::DerivedIndex;
@@ -14,6 +15,7 @@ use crate::document::{DocMeta, Document, FileEntry};
 use crate::element::Element;
 use crate::id::{ElementId, FileId};
 use crate::limits::{MAX_ELEMENTS, MAX_FILE_BYTES, MAX_FILES};
+use crate::shared::SharedDocument;
 use crate::store::{
     Change, ChangeKind, ChangeSet, Fields, FileRejection, SceneRead, SceneStore, SceneTx, StoreError, SubscriptionId,
     load_document,
@@ -26,8 +28,11 @@ type Callback = Box<dyn FnMut(&ChangeSet)>;
 /// A scene held in memory.
 #[derive(Default)]
 pub struct MemoryStore {
-    elements: HashMap<ElementId, Element>,
-    order: BTreeSet<(ZIndex, ElementId)>,
+    /// Shared, so that a snapshot ([`MemoryStore::share_all`]) is a list of pointers. An edit replaces the element
+    /// (the snapshot keeps the old one).
+    elements: HashMap<ElementId, Arc<Element>>,
+    /// The same elements in z order, so that walking the scene is a walk of one tree and no lookup per element.
+    order: BTreeMap<(ZIndex, ElementId), Arc<Element>>,
     live: usize,
     meta: DocMeta,
     files: BTreeMap<FileId, FileEntry>,
@@ -50,15 +55,45 @@ impl MemoryStore {
         Ok(store)
     }
 
-    fn put(&mut self, e: Element) {
-        self.order.insert((e.index.clone(), e.id.clone()));
+    fn put(&mut self, e: Arc<Element>) {
+        self.order.insert((e.index.clone(), e.id.clone()), Arc::clone(&e));
         if !e.deleted {
             self.live += 1;
         }
         self.elements.insert(e.id.clone(), e);
     }
 
-    fn take(&mut self, id: &ElementId) -> Option<Element> {
+    /// Every element, tombstones included, back to front, shared with the store: no element is copied. Later edits
+    /// to the store do not show in the list. This is what a long job (a write to disk) takes before it starts.
+    pub fn share_all(&self) -> Vec<Arc<Element>> {
+        self.order.values().map(Arc::clone).collect()
+    }
+
+    /// Sets the version of an element. The element is copied when a snapshot holds it, and then both lists of the
+    /// store get the copy.
+    fn set_version(&mut self, id: &ElementId, version: u64) {
+        let Some(e) = self.elements.get_mut(id) else { return };
+        if e.version == version {
+            return;
+        }
+        let key = (e.index.clone(), id.clone());
+        // The z list holds the element too: let go of it, so that a sole owner is changed in place.
+        self.order.remove(&key);
+        Arc::make_mut(e).version = version;
+        self.order.insert(key, Arc::clone(e));
+    }
+
+    /// The whole content as it is now, elements shared and not copied ([`Self::share_all`]).
+    pub fn share_document(&self) -> SharedDocument {
+        SharedDocument {
+            name: self.meta.name.clone(),
+            background: self.meta.background,
+            elements: self.share_all(),
+            files: self.files.clone(),
+        }
+    }
+
+    fn take(&mut self, id: &ElementId) -> Option<Arc<Element>> {
         let e = self.elements.remove(id)?;
         self.order.remove(&(e.index.clone(), e.id.clone()));
         if !e.deleted {
@@ -80,11 +115,11 @@ impl std::fmt::Debug for MemoryStore {
 
 impl SceneRead for MemoryStore {
     fn get(&self, id: &ElementId) -> Option<&Element> {
-        self.elements.get(id)
+        self.elements.get(id).map(|e| &**e)
     }
 
     fn iter_all(&self) -> impl Iterator<Item = &Element> {
-        self.order.iter().filter_map(|(_, id)| self.elements.get(id))
+        self.order.values().map(|e| &**e)
     }
 
     fn len(&self) -> usize {
@@ -108,11 +143,11 @@ impl SceneRead for MemoryStore {
     }
 
     fn top_z(&self) -> Option<ZIndex> {
-        self.order.last().map(|(z, _)| z.clone())
+        self.order.last_key_value().map(|((z, _), _)| z.clone())
     }
 
     fn bottom_z(&self) -> Option<ZIndex> {
-        self.order.first().map(|(z, _)| z.clone())
+        self.order.first_key_value().map(|((z, _), _)| z.clone())
     }
 
     fn derived_index(&self) -> Option<&DerivedIndex> {
@@ -124,10 +159,11 @@ impl SceneRead for MemoryStore {
     }
 
     fn z_neighbors(&self, id: &ElementId) -> (Option<ZIndex>, Option<ZIndex>) {
-        let Some(e) = self.elements.get(id) else { return (None, None) };
+        let Some(e) = self.elements.get(id).map(|e| &**e) else { return (None, None) };
         let key = (e.index.clone(), e.id.clone());
-        let below = self.order.range((Bound::Unbounded, Bound::Excluded(&key))).next_back().map(|(z, _)| z.clone());
-        let above = self.order.range((Bound::Excluded(&key), Bound::Unbounded)).next().map(|(z, _)| z.clone());
+        let below =
+            self.order.range((Bound::Unbounded, Bound::Excluded(&key))).next_back().map(|((z, _), _)| z.clone());
+        let above = self.order.range((Bound::Excluded(&key), Bound::Unbounded)).next().map(|((z, _), _)| z.clone());
         (below, above)
     }
 }
@@ -165,7 +201,7 @@ impl SceneStore for MemoryStore {
 pub struct MemoryTx<'a> {
     store: &'a mut MemoryStore,
     /// First value of every touched element (`None`: it did not exist).
-    touched: HashMap<ElementId, Option<Element>>,
+    touched: HashMap<ElementId, Option<Arc<Element>>>,
     meta: Option<DocMeta>,
     files: HashMap<FileId, Option<FileEntry>>,
     done: bool,
@@ -256,13 +292,13 @@ impl SceneTx for MemoryTx<'_> {
             element.version = 1;
         }
         self.touched.entry(element.id.clone()).or_insert(None);
-        self.store.put(element);
+        self.store.put(Arc::new(element));
         Ok(())
     }
 
     fn update<F: FnOnce(&mut Element)>(&mut self, id: &ElementId, f: F) -> Result<(), StoreError> {
         // Work on a copy so that a panicking or rejected closure leaves the store untouched.
-        let mut work = self.store.elements.get(id).ok_or_else(|| StoreError::NotFound(id.clone()))?.clone();
+        let mut work = self.store.elements.get(id).ok_or_else(|| StoreError::NotFound(id.clone()))?.as_ref().clone();
         f(&mut work);
         if work.id != *id {
             return Err(StoreError::IdChanged(id.clone()));
@@ -270,7 +306,7 @@ impl SceneTx for MemoryTx<'_> {
         validate_element(&work).map_err(|error| StoreError::Invalid { id: id.clone(), error })?;
         let old = self.store.take(id).ok_or_else(|| StoreError::NotFound(id.clone()))?;
         self.touched.entry(id.clone()).or_insert(Some(old));
-        self.store.put(work);
+        self.store.put(Arc::new(work));
         Ok(())
     }
 
@@ -331,7 +367,7 @@ impl SceneTx for MemoryTx<'_> {
         self.done = true;
         let mut elements = Vec::new();
         for (id, orig) in std::mem::take(&mut self.touched) {
-            let fin = self.store.elements.get_mut(&id);
+            let fin = self.store.elements.get(&id);
             match (orig, fin) {
                 (None, None) => {}
                 (None, Some(f)) => {
@@ -342,11 +378,10 @@ impl SceneTx for MemoryTx<'_> {
                 }
                 (Some(o), Some(f)) => {
                     let fields = Fields::diff(&o, f);
-                    if fields.is_empty() {
-                        f.version = o.version;
-                    } else {
-                        f.version = o.version.saturating_add(1);
-                        elements.push(Change { id, kind: ChangeKind::Updated, fields, version: f.version });
+                    let version = if fields.is_empty() { o.version } else { o.version.saturating_add(1) };
+                    self.store.set_version(&id, version);
+                    if !fields.is_empty() {
+                        elements.push(Change { id, kind: ChangeKind::Updated, fields, version });
                     }
                 }
             }

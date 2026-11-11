@@ -339,3 +339,276 @@ fn the_generated_scene_is_what_the_tests_assume() {
     assert_eq!(kinds.get("arrow"), Some(&5));
     assert!(doc.elements.iter().any(|e| e.id.as_str() == "e44"));
 }
+
+// ---- layouts during a drag ---------------------------------------------------------------------------------------
+
+/// The picture side of a drag frame, as the app does it: follow the commits' touched ids, then compose.
+struct Drawing {
+    composer: drafftink_render::SceneComposer,
+    index: drafftink_render::PaintIndex,
+    scene: drafftink_render::Scene,
+    typesetter: drafftink_engine::services::SharedTypesetter,
+    view: drafftink_render::View,
+}
+
+impl Drawing {
+    /// The view of the `drag` scenario: zoom 0.5, the corner of the grid at (150, 150) on a 1280 x 800 canvas.
+    fn new(h: &mut Harness) -> Self {
+        let store = h.session.tab().doc.store();
+        let view = drafftink_render::View::new(
+            0.5,
+            drafftink_geom::kurbo::Vec2::new(170.0, 170.0),
+            drafftink_geom::kurbo::Size::new(1280.0, 800.0),
+        );
+        let mut me = Self {
+            composer: drafftink_render::SceneComposer::new(),
+            index: drafftink_render::build_paint_index(store),
+            scene: drafftink_render::Scene::new(),
+            typesetter: drafftink_engine::services::LazyTypesetter::shared(),
+            view,
+        };
+        h.session.tab().doc.take_touched();
+        me.compose(h);
+        me
+    }
+
+    fn compose(&mut self, h: &mut Harness) -> drafftink_render::FrameReport {
+        let doc = &h.session.tab().doc;
+        let touched = doc.take_touched();
+        let store = doc.store();
+        self.composer.follow_touched(&mut self.index, store, &touched);
+        let Self { composer, index, scene, typesetter, view } = self;
+        typesetter.with(|ts| composer.compose(store, index, view, ts, scene))
+    }
+}
+
+/// The point the `drag` driver presses, from `scripts/perf_scenarios.py` (`DRAG_GRAB`), so the two cannot drift.
+fn drag_grab() -> (f64, f64) {
+    let script =
+        std::fs::read_to_string(drafftink_testkit::harness::fixtures_dir().join("../../scripts/perf_scenarios.py"))
+            .expect("the driver script");
+    let line = script.lines().find(|l| l.starts_with("DRAG_GRAB")).expect("DRAG_GRAB is defined");
+    let nums: Vec<f64> = line
+        .split(|c: char| !(c.is_ascii_digit() || c == '.'))
+        .filter(|t| !t.is_empty())
+        .filter_map(|t| t.parse().ok())
+        .collect();
+    (nums[0], nums[1])
+}
+
+/// The `drag` scenario without a window (`apps/drafftink`'s `scene_for`): the first hundred elements selected, zoom
+/// 0.5, the grid corner 150 points from the top left of a 1280 x 800 canvas, the driver's press on `DRAG_GRAB`.
+#[test]
+fn the_drag_scenario_moves_its_selection_and_lays_nothing_out_again() {
+    for &n in sizes() {
+        let mut h = loaded(n);
+        h.session.execute("view.set_viewport", json!({ "width": 1280, "height": 800 })).expect("viewport");
+        h.session.execute("view.set", json!({ "scroll": [920, 440], "zoom": 0.5 })).expect("view");
+        let ids: Vec<String> = (0..100).map(|k| format!("e{k}")).collect();
+        h.session.execute("selection.select", json!({ "ids": ids })).expect("select");
+        let before: Vec<_> =
+            ids.iter().map(|id| h.session.store().get(&scene_id(id)).expect("exists").transform).collect();
+        let mut d = Drawing::new(&mut h);
+        let mut p = Pointer { h, i: Interaction::new(), now: 1000.0 };
+        let (gx, gy) = drag_grab();
+        p.hover(gx, gy);
+        p.event(PointerPhase::Down, gx, gy, Button::Primary, Buttons::PRIMARY);
+        let work = WorkScope::begin();
+        for k in 1..=20 {
+            let (dx, dy) = (f64::from(k) * 4.0, f64::from(k) * 3.0);
+            p.event(PointerPhase::Move, gx + dx, gy + dy, Button::None, Buttons::PRIMARY);
+            d.compose(&mut p.h);
+        }
+        assert_eq!(work.count(Counter::Relayouts), 0, "20 drag frames at {n}: {}", work.summary());
+        p.event(PointerPhase::Up, gx + 80.0, gy + 60.0, Button::Primary, Buttons::NONE);
+        // Arrows bound to something that stays put change their size; every other kind keeps its size and moves.
+        for (k, (id, was)) in ids.iter().zip(&before).enumerate().filter(|(k, _)| ![3, 4, 5].contains(&(k % 10))) {
+            let now = p.h.session.store().get(&scene_id(id)).expect("exists").transform;
+            assert_eq!((now.w, now.h), (was.w, was.h), "{id} was moved and not resized at {n}");
+            assert!(now.x > was.x && now.y > was.y, "{id} (element {k}) moved at {n}: {was:?} to {now:?}");
+        }
+    }
+}
+
+#[test]
+fn dragging_in_a_view_of_the_whole_scene_orders_it_once() {
+    for &n in sizes() {
+        let mut h = loaded(n);
+        let mut d = Drawing::new(&mut h);
+        // Zoomed out so far that every element is in view: the frame needs the z order of the whole scene.
+        let side = scenegen::columns(n) as f64 * scenegen::CELL;
+        d.view = drafftink_render::View::fit(
+            drafftink_geom::kurbo::Rect::new(0.0, 0.0, side, side),
+            drafftink_geom::kurbo::Size::new(1600.0, 900.0),
+            10.0,
+        );
+        let first = WorkScope::begin();
+        d.compose(&mut h);
+        assert_eq!(first.count(Counter::ElementsScanned), n as u64, "the first frame orders the scene at {n}");
+        let ids: Vec<String> = (0..100).map(|k| format!("e{k}")).collect();
+        let frame = |k: f64| json!({ "ids": ids, "dx": 4.0 * k, "dy": 3.0 * k });
+        h.session.execute("gesture.begin", json!({ "command": "element.move", "args": frame(1.0) })).expect("begin");
+        let key = h.session.running_gesture().expect("a gesture runs").to_string();
+        let work = WorkScope::begin();
+        for k in 2..=11 {
+            h.session
+                .execute("gesture.update", json!({ "gesture": key, "args": frame(f64::from(k)) }))
+                .expect("update");
+            let rep = d.compose(&mut h);
+            assert_eq!(rep.in_view, n, "the whole scene is in view at {n}");
+        }
+        assert_eq!(work.count(Counter::ElementsScanned), 0, "ten drag frames at {n}: {}", work.summary());
+        h.session.execute("gesture.end", json!({})).expect("end");
+        let work = WorkScope::begin();
+        d.compose(&mut h);
+        assert_eq!(work.count(Counter::ElementsScanned), 0, "the frame after the drop at {n}: {}", work.summary());
+    }
+}
+
+// ---- one-shot commands on the structure ----------------------------------------------------------------------------
+
+/// A scene whose ids the session's id source cannot meet: it hands out `e1`, `e2`, ... and `g1`, `g2`, ..., which the
+/// generated scene already uses.
+fn loaded_with_free_ids(n: usize) -> Harness {
+    let mut h = loaded(n);
+    for _ in 0..n + 1_000 {
+        h.session.ports.ids.element_id();
+        h.session.ports.ids.group_id();
+    }
+    h
+}
+
+/// Commands that group, frame, order, copy and delete a few elements read the few elements and the index; none of
+/// them walks the scene (`Relations::build` did, once or several times per command).
+#[test]
+fn structure_commands_on_a_few_elements_scan_nothing() {
+    for &n in sizes() {
+        let mut h = loaded_with_free_ids(n);
+        let mut offenders = Vec::new();
+        let mut step = |h: &mut Harness, select: &[&str], command: &str, args: Value| -> Value {
+            if select.is_empty() {
+                h.session.execute("selection.clear", json!({})).expect("clear");
+            } else {
+                h.session.execute("selection.select", json!({ "ids": select })).expect("select");
+            }
+            let work = WorkScope::begin();
+            let out = h.session.execute(command, args);
+            let scans = work.count(Counter::ElementsScanned);
+            if scans != 0 {
+                offenders.push(format!("{command}: {scans}"));
+            }
+            out.unwrap_or_else(|e| panic!("{command} at {n}: {e}"))
+        };
+        // e0 to e9 are a rectangle, an ellipse, a diamond, a line, an arrow, a freehand path, a text, a formula and
+        // a group of two rectangles (e8, e9); the cycle repeats every ten.
+        step(&mut h, &["e0", "e1"], "group.create", json!({}));
+        step(&mut h, &["e8"], "group.ungroup", json!({}));
+        step(&mut h, &["e10", "e11", "e12"], "arrange.align", json!({ "edge": "left" }));
+        step(&mut h, &["e20", "e21", "e22"], "arrange.distribute", json!({ "axis": "horizontal" }));
+        for op in ["front", "back", "forward", "backward"] {
+            step(&mut h, &["e30", "e31"], "arrange.z_order", json!({ "op": op }));
+        }
+        let framed = step(&mut h, &["e40", "e41"], "frame.wrap", json!({}));
+        let frame = framed["frame"].as_str().expect("the new frame").to_owned();
+        step(&mut h, &["e42"], "frame.add", json!({ "frame": frame }));
+        step(&mut h, &["e42"], "frame.remove", json!({}));
+        step(&mut h, &[], "frame.select_children", json!({ "frame": frame }));
+        step(&mut h, &[&frame], "frame.unwrap", json!({}));
+        step(&mut h, &["e50", "e51"], "clipboard.copy", json!({}));
+        step(&mut h, &[], "clipboard.paste", json!({}));
+        step(&mut h, &["e52", "e53"], "clipboard.cut", json!({}));
+        step(&mut h, &["e60", "e61"], "element.duplicate", json!({}));
+        step(&mut h, &["e70"], "element.lock", json!({}));
+        step(&mut h, &["e80", "e81"], "element.delete", json!({}));
+        step(&mut h, &["e90", "e91"], "library.add", json!({ "name": "pair" }));
+        step(&mut h, &["e100"], "selection.navigate", json!({ "direction": "right" }));
+        assert!(offenders.is_empty(), "passes over the scene at {n}: {offenders:?}");
+    }
+}
+
+// ---- autosave -------------------------------------------------------------------------------------------------------
+
+/// Elements one call of `workspace_tick` may write: a call is about 5 ms of work (`TICK_BYTES`), the generated elements
+/// are 450 bytes of JSON on average.
+const MAX_ELEMENTS_PER_TICK: u64 = 8_000;
+
+/// Runs `workspace_tick` until a write ends. Returns the calls and the elements each one wrote.
+fn tick_until_written(h: &mut Harness) -> Vec<u64> {
+    let mut per_tick = Vec::new();
+    for _ in 0..10_000 {
+        let work = WorkScope::begin();
+        let ended = h.session.workspace_tick();
+        per_tick.push(work.named("autosave_elements"));
+        if ended {
+            return per_tick;
+        }
+    }
+    panic!("the write did not end in 10,000 calls");
+}
+
+fn stored_document(h: &Harness) -> String {
+    use drafftink_engine::ports::Ns;
+    String::from_utf8(h.fakes.storage.bytes(Ns::Autosave, "workspace.t1").expect("the document of tab 1"))
+        .expect("text")
+}
+
+#[test]
+fn the_autosave_of_a_big_document_is_written_in_pieces_and_is_the_document() {
+    for &n in sizes() {
+        let mut h = loaded(n);
+        h.session.execute("element.move", json!({ "ids": ["e40"], "dx": 5.0, "dy": 5.0 })).expect("an edit");
+        assert!(h.session.workspace_next_due_ms().is_some(), "the edit is seen");
+        h.advance_clock(1_000).expect("clock");
+        let expect = h.session.tab().doc.snapshot().to_json().expect("writable");
+        let calls = tick_until_written(&mut h);
+        assert_eq!(calls.iter().sum::<u64>(), n as u64, "every element is written once at {n}");
+        assert!(calls.iter().all(|&c| c <= MAX_ELEMENTS_PER_TICK), "pieces of bounded work at {n}: {calls:?}");
+        if n >= 10_000 {
+            assert!(calls.len() > n / 8_000, "a big document takes several calls at {n}: {}", calls.len());
+        }
+        assert!(stored_document(&h) == expect, "the text is the text of to_json at {n}");
+        assert_eq!(h.session.workspace_next_due_ms(), None, "nothing is left to write at {n}");
+    }
+}
+
+#[test]
+fn an_autosave_under_way_waits_for_a_gesture_and_writes_the_moment_it_began() {
+    let n = 10_000;
+    let mut h = loaded(n);
+    h.session.execute("element.move", json!({ "ids": ["e40"], "dx": 5.0, "dy": 5.0 })).expect("an edit");
+    assert!(h.session.workspace_next_due_ms().is_some(), "the edit is seen");
+    h.advance_clock(1_000).expect("clock");
+    let expect = h.session.tab().doc.snapshot().to_json().expect("writable");
+    let work = WorkScope::begin();
+    // The first calls take the document and check it; then elements are written.
+    let mut first = 0;
+    for _ in 0..20 {
+        assert!(!h.session.workspace_tick(), "a piece, not the end");
+        first = work.named("autosave_elements");
+        if first > 0 {
+            break;
+        }
+    }
+    assert!(first > 0 && first < n as u64, "some of the elements: {first}");
+    assert_eq!(h.session.workspace_next_due_ms(), Some(0), "the next piece is due at once");
+
+    // A drag starts: the pieces wait, the wake-up comes back slowly.
+    h.session
+        .execute(
+            "gesture.begin",
+            json!({ "command": "element.move", "args": { "ids": ["e41"], "dx": 1.0, "dy": 1.0 } }),
+        )
+        .expect("begin");
+    for _ in 0..5 {
+        assert!(!h.session.workspace_tick());
+    }
+    assert_eq!(work.named("autosave_elements"), first, "no piece during the drag");
+    assert_eq!(h.session.workspace_next_due_ms(), Some(500));
+    h.session.execute("gesture.end", json!({})).expect("end");
+
+    // The edit of the drag came after the job began: it is not in the text, and another write is due.
+    let calls = tick_until_written(&mut h);
+    assert_eq!(calls.iter().sum::<u64>() + first, n as u64);
+    assert!(stored_document(&h) == expect, "the text is the document at the start of the write");
+    assert!(h.session.workspace_next_due_ms().is_some(), "the change of the drag is still to be written");
+}

@@ -101,7 +101,10 @@ Nobody sees the refusal in normal use:
 - the UI keeps the call in `UiState::waiting`, shows "Drawing the picture..." and runs it again each frame until it works (the export dialog
   stays open until then).
 
-Only one picture is drawn at a time; a second request waits. `scripts/web_check.py --app` exports a PNG, takes a screenshot and exports a second
+A `batch` with an export step waits the same way: the engine takes the whole batch back and answers it with `pending_render`
+(`commands.md` §1.7), the bridge parks it and runs it again, and the second run finds the picture. Finished pictures stay on a
+small shelf (4), so a batch with several exports completes after one rerun per picture. Only one picture is drawn at a time; a
+second request waits. `scripts/web_check.py --app` exports a PNG, takes a screenshot and exports a second
 size, and checks the files.
 
 ## `window.drafftink`
@@ -196,9 +199,8 @@ target, because the repository has no wasm test runner).
 ## Known gaps
 
 - **Wire size.** 3.06 MB brotli for the module and about 0.5 MB of fonts for the first load of the welcome page (see above). After the first
-  visit the service worker serves everything from cache. Not done: the command schemas (`schemars`) are in the module.
-- **PNG in a batch.** A `batch` step that exports a PNG on the web is refused with `render_pending`; the picture is drawn meanwhile, so
-  running the batch again succeeds. A single `execute` of `doc.export` / `view.screenshot` waits for the picture.
+  visit the service worker serves everything from cache. Not done, on purpose: the command schemas (`schemars`) are in the module; moving them to a fetched file would save 89 KB brotli (2.8%), measured, and needs every schema reader to become asynchronous (`performance.md` section 8.2).
+- **PNG in a batch.** A `batch` step that exports a PNG on the web is taken back with `pending_render: true` and the bridge host runs the batch again once the picture is drawn; see `docs/agents.md` and `docs/commands.md`.
 - **Idle while in a room.** Fixed on 2026-11-08: a wake from the collaboration socket, and a collaboration deadline, go to the
   app first (`ShellEvent::Wake(Collab)`, `docs/shell.md`); it pumps the session and asks for a frame only when the poll left a
   visible change or a notice. Measured: 0 frames in 22 s alone in a room and in 22 s with a peer, after the join has settled.

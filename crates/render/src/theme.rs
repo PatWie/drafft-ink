@@ -3,7 +3,7 @@
 //! Dark mode is a colour mapping applied while a fragment is encoded, not a filter over the finished frame. It
 //! reproduces the CSS filter `invert(93%) hue-rotate(180deg)` that Excalidraw uses for its dark theme, so a white
 //! canvas becomes `#121212`, black ink becomes a light grey, and hues keep their meaning. Alpha is untouched.
-//! The matrices come from the CSS Filter Effects specification.
+//! The mapping itself is `Color::for_dark_theme` (drafftink-scene), which the SVG export shares.
 
 use drafftink_scene::Color;
 
@@ -17,15 +17,12 @@ pub enum Theme {
     Dark,
 }
 
-/// Share of the inversion in the dark filter.
-const INVERT: f64 = 0.93;
-
 impl Theme {
     /// The colour as it is drawn in this theme.
     pub fn map(self, c: Color) -> Color {
         match self {
             Theme::Light => c,
-            Theme::Dark => dark(c),
+            Theme::Dark => c.for_dark_theme(),
         }
     }
 
@@ -36,20 +33,6 @@ impl Theme {
             Theme::Dark => 1,
         }
     }
-}
-
-fn dark(c: Color) -> Color {
-    let inv = |v: u8| {
-        let v = f64::from(v) / 255.0;
-        v * (1.0 - INVERT) + (1.0 - v) * INVERT
-    };
-    let (r, g, b) = (inv(c.r), inv(c.g), inv(c.b));
-    // hue-rotate(180deg): cos = -1, sin = 0 in the CSS matrix.
-    let r2 = -0.574 * r + 1.430 * g + 0.144 * b;
-    let g2 = 0.426 * r + 0.430 * g + 0.144 * b;
-    let b2 = 0.426 * r + 1.430 * g - 0.856 * b;
-    let out = |v: f64| (v.clamp(0.0, 1.0) * 255.0).round() as u8;
-    Color::rgba(out(r2), out(g2), out(b2), c.a)
 }
 
 /// `alpha` scaled by `factor`, truncated like the old app's `stroke_with_opacity` so that drawings keep their look.

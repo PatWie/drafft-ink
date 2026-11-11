@@ -6,7 +6,7 @@ use drafftink_geom::kurbo::Point;
 use drafftink_scene::{ElementId, SceneRead};
 
 use super::{AtOpts, elements_at};
-use crate::group::units::{Relations, ensure_unlocked, sort_z, with_companions};
+use crate::group::units::{Reverse, ensure_unlocked, sort_z, with_companions};
 
 /// The smallest number of samples per radius along an eraser stroke. Two samples per radius keep a stroke from
 /// skipping a thin element.
@@ -47,7 +47,7 @@ pub fn hit_by_path<R: SceneRead>(scene: &R, path: &[Point], radius: f64) -> Vec<
         }
     }
     // A hit whose whole closure (bound text, frame children) is not unlocked is skipped, never half-deleted.
-    let rel = Relations::build(scene);
+    let rel = Reverse::of(scene);
     let mut out: Vec<ElementId> = hit
         .into_iter()
         .filter(|id| ensure_unlocked(scene, &with_companions(scene, &rel, std::slice::from_ref(id), true)).is_ok())

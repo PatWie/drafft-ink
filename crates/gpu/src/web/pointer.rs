@@ -147,10 +147,11 @@ impl Pointers {
         };
         let point = self.point(event, left, top, pressure);
 
-        let mut coalesced = Vec::new();
-        if phase == PointerPhase::Move || phase == PointerPhase::Hover {
-            coalesced = self.coalesced(event, &point, left, top, kind, in_contact);
-        }
+        let coalesced = if phase.reads_coalesced() {
+            self.coalesced(event, &point, left, top, kind, in_contact)
+        } else {
+            Vec::new()
+        };
 
         let button = match phase {
             PointerPhase::Down | PointerPhase::Up => u8::try_from(event.button()).ok(),

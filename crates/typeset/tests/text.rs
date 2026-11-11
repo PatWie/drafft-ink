@@ -348,3 +348,35 @@ fn providing_a_font_twice_or_a_broken_one_changes_nothing_more() {
     ts.provide_font(font, font_bytes(font.file_name())).expect("a second time is fine");
     assert_eq!(ts.font_set_version(), v1);
 }
+
+#[test]
+fn the_bundled_font_files_are_exposed_once_for_every_host() {
+    use FontFamily::{GelPen, GelPenSerif, NotoSans, VanillaExtract};
+    use FontWeight::{Heavy, Light, Regular};
+    let mut seen = Vec::new();
+    for (family, weight) in [
+        (GelPen, Light),
+        (GelPen, Regular),
+        (GelPen, Heavy),
+        (GelPenSerif, Light),
+        (GelPenSerif, Regular),
+        (GelPenSerif, Heavy),
+    ] {
+        let bytes = font_file(&family, weight).unwrap_or_default();
+        assert!(bytes.len() > 1000, "{family:?} {weight:?} has a font file");
+        assert!(!seen.contains(&bytes.as_ptr()), "{family:?} {weight:?} is its own file");
+        seen.push(bytes.as_ptr());
+    }
+    let vanilla = font_file(&VanillaExtract, Regular).unwrap_or_default();
+    assert!(vanilla.len() > 1000);
+    assert_eq!(
+        font_file(&VanillaExtract, Heavy).map(<[u8]>::as_ptr),
+        Some(vanilla.as_ptr()),
+        "one face for every weight"
+    );
+    assert!(font_file(&FontFamily::Custom("Mine".into()), Regular).is_none(), "a custom family has no bundled file");
+    // Noto Sans is a built-in extra font on this (embedded) test build; its bold face is a different file.
+    let regular = font_file(&NotoSans, Regular).unwrap_or_default();
+    let bold = font_file(&NotoSans, Heavy).unwrap_or_default();
+    assert!(!regular.is_empty() && !bold.is_empty() && regular.as_ptr() != bold.as_ptr());
+}

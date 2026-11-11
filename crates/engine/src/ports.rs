@@ -120,6 +120,17 @@ pub trait Storage {
     fn put_document(&mut self, name: &str, bytes: &[u8]) -> Result<PutOutcome, PortError> {
         self.put(Ns::Documents, name, bytes).map(|()| PutOutcome::Done)
     }
+    /// Stores `bytes` under `key` without making the caller wait for the disk: for the autosave of a big document
+    /// (45 MB at 100,000 elements, and a native `put` ends with an `fsync`). The default is [`Storage::put`]. A port
+    /// with a worker queues the write there. It then keeps the order of the writes, shows every write it accepted to
+    /// the reads and listings that come after, and reports a failure with [`Storage::take_write_error`].
+    fn put_later(&mut self, ns: Ns, key: &str, bytes: Vec<u8>) -> Result<(), PortError> {
+        self.put(ns, key, &bytes)
+    }
+    /// The first failure of a [`Storage::put_later`] that returned `Ok`, once. `None` when there is none.
+    fn take_write_error(&mut self) -> Option<PortError> {
+        None
+    }
     /// Removes `key`. Removing a missing key is not an error.
     fn delete(&mut self, ns: Ns, key: &str) -> Result<(), PortError>;
     /// Every entry of the namespace, sorted by name.
@@ -616,6 +627,10 @@ pub mod fake {
         }
         fn put(&mut self, ns: Ns, key: &str, bytes: &[u8]) -> Result<(), PortError> {
             lock(&self.data).insert((ns, key.to_owned()), (bytes.to_vec(), self.clock.now_ms()));
+            Ok(())
+        }
+        fn put_later(&mut self, ns: Ns, key: &str, bytes: Vec<u8>) -> Result<(), PortError> {
+            lock(&self.data).insert((ns, key.to_owned()), (bytes, self.clock.now_ms()));
             Ok(())
         }
         fn delete(&mut self, ns: Ns, key: &str) -> Result<(), PortError> {

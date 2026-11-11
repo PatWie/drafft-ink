@@ -1734,6 +1734,7 @@ version = "0.2.0"
 dependencies = [
  "drafftink-engine",
  "drafftink-scene",
+ "drafftink-typeset",
  "egui",
  "egui_kittest",
  "serde_json",

@@ -26,8 +26,9 @@ use std::hash::{Hash, Hasher};
 use drafftink_geom::kurbo::Point;
 use drafftink_scene::{Document, ElementId, SceneRead};
 use serde::Serialize;
-use serde_json::{Value, json};
+use serde_json::Value;
 
+use super::workspace_save::{Finished, SaveJob, TICK_BYTES};
 use super::{NEVER_SAVED, name_of};
 use crate::ports::{Ns, PortKind};
 use crate::refusal::Refusal;
@@ -103,6 +104,8 @@ struct AutosaveState {
     last_error: Option<String>,
     /// Never write: the stored record is from a newer build.
     protect: Option<u32>,
+    /// A write that is done in pieces, one per `workspace_tick`.
+    job: Option<SaveJob>,
 }
 
 /// A number that changes whenever something the record holds changes: the tab order, the active tab, and
@@ -130,15 +133,22 @@ const GESTURE_RECHECK_MS: u64 = 500;
 
 impl Session {
     /// Writes the workspace now: the tabs that changed since the last write, then the index, then removes
-    /// the documents of closed tabs. Call it on window close, or let `workspace_tick` do it.
+    /// the documents of closed tabs. Call it on window close, or let `workspace_tick` do it. It does the whole
+    /// work in this call (a big document takes a while); `workspace_tick` does it in pieces of about 5 ms.
     pub fn save_workspace(&mut self) -> Result<WorkspaceSaved, Refusal> {
-        let r = self.write_workspace();
+        self.ext.with::<AutosaveState, _>(|st| st.job = None);
+        let r = self.begin_workspace_write().and_then(|(mut job, _)| {
+            job.work(usize::MAX)?;
+            self.finish_workspace_write(job, true)
+        });
         let msg = r.as_ref().err().map(|e| e.message.clone());
         self.ext.with::<AutosaveState, _>(|st| st.last_error = msg);
         r
     }
 
-    fn write_workspace(&mut self) -> Result<WorkspaceSaved, Refusal> {
+    /// Checks that a write is possible and takes the document of every tab that changed. The cost is in the
+    /// unit of [`TICK_BYTES`].
+    fn begin_workspace_write(&mut self) -> Result<(SaveJob, usize), Refusal> {
         const ID: &str = "autosave";
         if !self.has_port(PortKind::Storage) {
             return Err(Refusal::port_unavailable(
@@ -155,71 +165,28 @@ impl Session {
                 format!("The stored workspace was written by a newer drafft.ink (format {n}), so it is left alone. Update the app to use it."),
             ));
         }
-        let now_ms = self.now_ms();
         let written = self.ext.with::<AutosaveState, _>(|st| st.written.clone());
-        let mut entries = Vec::with_capacity(self.tabs.len());
-        let mut to_write: Vec<(TabId, String, u64, String, String)> = Vec::new();
-        for t in &self.tabs {
-            let key = tab_key(t.id);
-            let (rev, name) = (t.doc.revision(), name_of(t));
-            if written.get(&t.id) != Some(&(rev, name.clone())) {
-                let text = t
-                    .doc
-                    .snapshot()
-                    .to_json()
-                    .map_err(|e| Refusal::internal(ID, format!("the document of tab {} cannot be written: {e}", t.id)))?;
-                to_write.push((t.id, key.clone(), rev, name.clone(), text));
-            }
-            entries.push(json!({
-                "id": t.id.0,
-                "key": key,
-                "name": name,
-                "dirty": t.dirty(),
-                "revision": rev,
-                "view": { "scroll": [t.view.scroll.x, t.view.scroll.y], "zoom": t.view.zoom },
-                "selection": t.observed.selection.iter().map(ElementId::as_str).collect::<Vec<_>>(),
-            }));
-        }
-        let index = json!({
-            "format": "drafftink-workspace",
-            "schema": SCHEMA,
-            "saved_ms": now_ms,
-            "active": self.tab().id.0,
-            "tabs": entries,
-        });
-        let index_bytes = serde_json::to_vec(&index).map_err(|e| Refusal::internal(ID, format!("the index is not JSON: {e}")))?;
-        let current: Vec<String> = self.tabs.iter().map(|t| tab_key(t.id)).collect();
         let sig = signature(self);
-        let Some(storage) = self.ports.storage.as_mut() else {
-            return Err(Refusal::internal(ID, "the storage port disappeared"));
-        };
-        let mut new_written = written;
-        for (id, key, rev, name, text) in &to_write {
-            storage
-                .put(Ns::Autosave, key, text.as_bytes())
-                .map_err(|e| Refusal::io_failed(ID, "write", &format!("the workspace document `{key}`"), &e.to_string()))?;
-            new_written.insert(*id, (*rev, name.clone()));
-        }
-        storage
-            .put(Ns::Autosave, INDEX_KEY, &index_bytes)
-            .map_err(|e| Refusal::io_failed(ID, "write", "the workspace index", &e.to_string()))?;
-        // Documents of closed tabs. A failure here only leaves garbage, which the next save removes.
-        if let Ok(listed) = storage.list(Ns::Autosave) {
-            for info in listed {
-                if info.name.starts_with(TAB_KEY_PREFIX) && !current.contains(&info.name) {
-                    let _ = storage.delete(Ns::Autosave, &info.name);
-                }
-            }
-        }
-        new_written.retain(|id, _| self.tabs.iter().any(|t| t.id == *id));
+        Ok(SaveJob::begin(self, &written, sig))
+    }
+
+    /// The last step of a write: the finished documents and the index go to the storage port, and the
+    /// bookkeeping says what was written.
+    fn finish_workspace_write(&mut self, job: SaveJob, cleanup: bool) -> Result<WorkspaceSaved, Refusal> {
+        let sig = job.sig;
+        let tabs: Vec<TabId> = job.tabs().to_vec();
+        let Finished { saved, written } = job.finish(self, cleanup)?;
         self.ext.with::<AutosaveState, _>(|st| {
-            st.written = new_written;
+            for (id, revision, name) in written {
+                st.written.insert(id, (revision, name));
+            }
+            st.written.retain(|id, _| tabs.contains(id));
+            // The session may have changed while the job ran: then the signature differs and a write is still due.
             st.written_sig = Some(sig);
-            st.seen_sig = Some(sig);
-            st.first_change = None;
-            st.last_change = None;
+            st.last_error = None;
         });
-        Ok(WorkspaceSaved { tabs: self.tabs.len(), documents_written: to_write.len(), index_bytes: index_bytes.len() })
+        self.observe_workspace();
+        Ok(saved)
     }
 
     /// Opens the tabs of the stored workspace in place of the current ones. Call it once at start, before
@@ -340,43 +307,87 @@ impl Session {
         Ok(t)
     }
 
-    /// Notices changes and decides whether a write is due now. Writes when it is. Returns true when it
-    /// wrote. Does nothing when `autosave.enabled` is off or the session has no storage.
+    /// Notices changes and decides whether a write is due now. Starts one when it is, and does a piece of the
+    /// work of one that is under way (about 5 ms, [`TICK_BYTES`]; a small document is written in one call).
+    /// Returns true when a write ended in this call. Does nothing when `autosave.enabled` is off or the session has
+    /// no storage.
     pub fn workspace_tick(&mut self) -> bool {
         self.observe_workspace();
         if !self.autosave_active() {
             return false;
         }
+        self.note_late_write_failure();
+        // Writing happens in pieces, but not in the middle of a drag: the pieces wait for the gesture to end
+        // (`workspace_next_due_ms` keeps the wake-up coming).
+        if self.running_gesture().is_some() {
+            return false;
+        }
         let now = self.ports.clock.mono_ms();
-        match self.workspace_due_at() {
-            // Writing serializes the whole document on this thread (0.8 s at 100,000 elements). Not in the middle of
-            // a drag: the write waits for the gesture to end (`workspace_next_due_ms` keeps the wake-up coming).
-            Some(due) if now >= due && self.running_gesture().is_none() => {
-                if self.save_workspace().is_err() {
-                    // Try again after a full interval, not on every call.
-                    self.ext.with::<AutosaveState, _>(|st| {
-                        st.first_change = Some(now);
-                        st.last_change = Some(now);
-                    });
-                    false
-                } else {
-                    true
-                }
+        let mut budget = TICK_BYTES;
+        let mut job = match self.ext.with::<AutosaveState, _>(|st| st.job.take()) {
+            Some(job) => job,
+            None => match self.workspace_due_at() {
+                Some(due) if now >= due => match self.begin_workspace_write() {
+                    Ok((job, cost)) => {
+                        budget = budget.saturating_sub(cost);
+                        job
+                    }
+                    Err(e) => return self.write_failed(&e, now),
+                },
+                _ => return false,
+            },
+        };
+        match job.work(budget) {
+            Ok(false) => {
+                self.ext.with::<AutosaveState, _>(|st| st.job = Some(job));
+                false
             }
-            _ => false,
+            Ok(true) => match self.finish_workspace_write(job, false) {
+                Ok(_) => true,
+                Err(e) => self.write_failed(&e, now),
+            },
+            Err(e) => self.write_failed(&e, now),
         }
     }
 
+    /// A write failed: say why, and try again after a full interval, not on every call.
+    fn write_failed(&mut self, e: &Refusal, now: u64) -> bool {
+        let msg = e.message.clone();
+        self.ext.with::<AutosaveState, _>(|st| {
+            st.last_error = Some(msg);
+            st.job = None;
+            st.first_change = Some(now);
+            st.last_change = Some(now);
+        });
+        false
+    }
+
+    /// A queued write (`Storage::put_later`) that failed after the call that started it returned: the record on disk
+    /// is not what `written` says, so everything is written again.
+    fn note_late_write_failure(&mut self) {
+        let Some(e) = self.ports.storage.as_mut().and_then(|s| s.take_write_error()) else { return };
+        let now = self.ports.clock.mono_ms();
+        let msg = format!("The workspace could not be written: {e}");
+        self.ext.with::<AutosaveState, _>(|st| {
+            st.last_error = Some(msg);
+            st.written.clear();
+            st.written_sig = None;
+            st.first_change = Some(now);
+            st.last_change = Some(now);
+        });
+    }
+
     /// Milliseconds until the next write is due, or `None` when nothing is waiting to be written (or
-    /// autosave is off). `Some(0)` means due now. The shell sets one timer from this and calls
-    /// `workspace_tick` when it fires; with `None` it sets no timer at all.
+    /// autosave is off). `Some(0)` means due now, or a write is under way and wants its next piece. The shell sets
+    /// one timer from this and calls `workspace_tick` when it fires; with `None` it sets no timer at all.
     pub fn workspace_next_due_ms(&mut self) -> Option<u64> {
         self.observe_workspace();
         if !self.autosave_active() {
             return None;
         }
+        let under_way = self.ext.get::<AutosaveState>().is_some_and(|st| st.job.is_some());
         let now = self.ports.clock.mono_ms();
-        let wait = self.workspace_due_at().map(|d| d.saturating_sub(now))?;
+        let wait = if under_way { 0 } else { self.workspace_due_at().map(|d| d.saturating_sub(now))? };
         // A write held back by a running gesture is looked at again soon, not on every frame.
         Some(if self.running_gesture().is_some() { wait.max(GESTURE_RECHECK_MS) } else { wait })
     }

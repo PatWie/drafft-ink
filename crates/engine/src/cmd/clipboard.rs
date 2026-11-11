@@ -22,7 +22,7 @@ mod paste;
 
 use std::collections::HashSet;
 
-use drafftink_edit::group::units::{Relations, with_companions};
+use drafftink_edit::group::units::{Reverse, with_companions};
 use drafftink_edit::lifecycle::{self, ChildPolicy, LifecycleError};
 use drafftink_edit::style::{self, StyleError, StyleProps};
 use drafftink_io::{clipboard as wire, native};
@@ -81,7 +81,7 @@ struct Packed {
 fn pack(s: &mut Session, ids: &[ElementId]) -> Result<Packed, Refusal> {
     let cmd = s.cmd();
     let store = s.store();
-    let rel = Relations::build(store);
+    let rel = Reverse::of(store);
     let all = with_companions(store, &rel, ids, true);
     if all.is_empty() {
         return Err(Refusal::no_target(cmd));

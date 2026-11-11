@@ -9,7 +9,8 @@ use drafftink_engine::ports::{Ns, StoredInfo};
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct Entry {
     /// The content.
-    pub bytes: Vec<u8>,
+    /// Shared between the cache and the write that is waiting for the database (a document is up to 45 MB).
+    pub bytes: std::sync::Arc<Vec<u8>>,
     /// Last write, milliseconds since the Unix epoch.
     pub modified_ms: u64,
 }
@@ -39,7 +40,12 @@ impl Cache {
     }
 
     pub(crate) fn put(&mut self, ns: Ns, key: &str, bytes: &[u8], now_ms: u64) {
-        let entry = Entry { bytes: bytes.to_vec(), modified_ms: now_ms };
+        self.put_owned(ns, key, bytes.to_vec(), now_ms);
+    }
+
+    /// Like [`Self::put`] for bytes the caller gives up: they are not copied.
+    pub(crate) fn put_owned(&mut self, ns: Ns, key: &str, bytes: Vec<u8>, now_ms: u64) {
+        let entry = Entry { bytes: std::sync::Arc::new(bytes), modified_ms: now_ms };
         self.entries.insert((ns, key.to_owned()), entry.clone());
         self.pending.insert((ns, key.to_owned()), Some(entry));
     }
@@ -97,7 +103,7 @@ mod tests {
         c.put(Ns::Documents, "a", b"1", 6);
         c.put(Ns::Autosave, "x", b"", 7);
         assert_eq!(names(&c, Ns::Documents), ["a", "b"]);
-        assert_eq!(c.get(Ns::Documents, "b").map(|e| e.bytes.clone()), Some(b"22".to_vec()));
+        assert_eq!(c.get(Ns::Documents, "b").map(|e| e.bytes.to_vec()), Some(b"22".to_vec()));
         assert_eq!(c.list(Ns::Documents)[1].size, 2);
         assert_eq!(c.list(Ns::Documents)[0].modified_ms, 6);
         c.delete(Ns::Documents, "a");
@@ -109,7 +115,7 @@ mod tests {
     #[test]
     fn loaded_entries_are_not_pending() {
         let mut c = Cache::default();
-        c.load(Ns::Settings, "s".into(), Entry { bytes: vec![1], modified_ms: 9 });
+        c.load(Ns::Settings, "s".into(), Entry { bytes: std::sync::Arc::new(vec![1]), modified_ms: 9 });
         assert!(!c.has_pending());
         assert_eq!(c.get(Ns::Settings, "s").map(|e| e.modified_ms), Some(9));
     }
@@ -122,7 +128,7 @@ mod tests {
         }
         let batch = c.take_pending();
         assert_eq!(batch.len(), 1);
-        assert_eq!(batch.values().next().and_then(|w| w.as_ref().map(|e| e.bytes.clone())), Some(vec![9]));
+        assert_eq!(batch.values().next().and_then(|w| w.as_ref().map(|e| e.bytes.to_vec())), Some(vec![9]));
         assert!(!c.has_pending());
     }
 
@@ -152,7 +158,7 @@ mod tests {
         c.requeue(failed);
         let batch = c.take_pending();
         let bytes =
-            |k: &str| batch.get(&(Ns::Documents, k.to_owned())).and_then(|w| w.as_ref().map(|e| e.bytes.clone()));
+            |k: &str| batch.get(&(Ns::Documents, k.to_owned())).and_then(|w| w.as_ref().map(|e| e.bytes.to_vec()));
         assert_eq!(bytes("a"), Some(b"new".to_vec()));
         assert_eq!(bytes("b"), Some(b"keep".to_vec()));
     }

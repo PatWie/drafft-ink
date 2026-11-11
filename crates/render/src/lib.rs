@@ -35,6 +35,7 @@ mod painter;
 mod spec;
 mod theme;
 mod view;
+mod zorder;
 
 pub use cache::{CacheStats, DEFAULT_CACHE_BYTES, FragmentCache, Outcome};
 pub use composer::{FrameReport, SceneComposer};
