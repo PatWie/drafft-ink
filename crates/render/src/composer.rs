@@ -70,6 +70,14 @@ struct FrameClip {
     world: Rect,
 }
 
+/// Every indexed element in z order with its paint bounds, built at one version of the store. A frame that shows
+/// most of a large scene walks this list instead of the store and the index (two hash lookups per element).
+struct ZOrder {
+    /// `SceneRead::version_stamp` of the store and `SpatialIndex::generation` of the index it was built from.
+    stamp: (u64, u64),
+    slots: Vec<(ElementId, Rect)>,
+}
+
 /// Turns a store, a spatial index and a view into a Vello scene.
 pub struct SceneComposer {
     painter: ElementPainter,
@@ -78,6 +86,8 @@ pub struct SceneComposer {
     grid: GridSpec,
     hidden: Vec<ElementId>,
     trace: Option<Vec<ElementId>>,
+    /// The z order of the whole scene, kept between frames while the store does not change (a pan or a zoom).
+    order: Option<ZOrder>,
 }
 
 impl Default for SceneComposer {
@@ -100,6 +110,7 @@ impl SceneComposer {
             grid: GridSpec::default(),
             hidden: Vec::new(),
             trace: None,
+            order: None,
         }
     }
 
@@ -182,6 +193,11 @@ impl SceneComposer {
     /// z order.
     ///
     /// `index` must hold [`crate::paint_bounds`] of the live elements of `store` (see [`crate::build_paint_index`]).
+    ///
+    /// A frame that shows most of the scene needs the z order of all of it. The composer keeps that order between
+    /// frames, tied to the store's [`SceneRead::version_stamp`] and the index's generation, so a pan or a zoom of
+    /// a large scene does not rebuild it. Use one composer with one store; for another store, make another
+    /// composer.
     pub fn compose<S: SceneRead>(
         &mut self,
         store: &S,
@@ -212,7 +228,7 @@ impl SceneComposer {
         let world = view.world_rect();
 
         // 1. Who is in view, in z order.
-        let candidates = collect(store, index, &world, total, &self.hidden);
+        let candidates = collect(store, index, &world, total, &self.hidden, &mut self.order);
         rep.in_view = candidates.len();
         rep.culled = total.saturating_sub(candidates.len());
 
@@ -367,16 +383,17 @@ fn collect<'a, S: SceneRead>(
     world: &Rect,
     total: usize,
     hidden: &[ElementId],
+    order: &mut Option<ZOrder>,
 ) -> Vec<Candidate<'a>> {
     let visible = |e: &Element| !e.deleted && !hidden.contains(&e.id);
     let everything = index.total_bounds().is_some_and(|b| aabb::contains_rect(world, &b));
     if everything {
-        return ordered(store, index, world, visible);
+        return ordered(store, index, world, visible, order);
     }
     inc(Counter::SpatialQueries);
     let hits: Vec<(&ElementId, Rect)> = index.query_rect(world).collect();
     if total > 256 && hits.len() * SORT_FRACTION > total {
-        return ordered(store, index, world, visible);
+        return ordered(store, index, world, visible, order);
     }
     let mut out: Vec<Candidate<'a>> = Vec::with_capacity(hits.len());
     for (id, bounds) in hits {
@@ -390,13 +407,46 @@ fn collect<'a, S: SceneRead>(
     out
 }
 
-/// Walks the whole store in z order and keeps what the index says is in view.
+/// The elements in view, back to front, from the z order of the whole scene. When the store can say which version
+/// it is at ([`SceneRead::version_stamp`]) the order is kept between frames and rebuilt only when the version
+/// changes; otherwise every frame walks the store.
 fn ordered<'a, S: SceneRead>(
     store: &'a S,
     index: &SpatialIndex<ElementId>,
     world: &Rect,
     visible: impl Fn(&Element) -> bool,
+    order: &mut Option<ZOrder>,
 ) -> Vec<Candidate<'a>> {
+    let Some(stamp) = store.version_stamp() else {
+        *order = None;
+        return walk(store, index, world, visible);
+    };
+    let stamp = (stamp, index.generation());
+    if order.as_ref().is_none_or(|o| o.stamp != stamp) {
+        count(Counter::ElementsScanned, u64::try_from(store.len_all()).unwrap_or(u64::MAX));
+        let slots = store.iter().filter_map(|el| Some((el.id.clone(), index.get(&el.id)?))).collect();
+        *order = Some(ZOrder { stamp, slots });
+    }
+    let Some(order) = order.as_ref() else { return Vec::new() };
+    order
+        .slots
+        .iter()
+        .filter(|(_, bounds)| aabb::intersects(world, bounds))
+        .filter_map(|(id, bounds)| {
+            let el = store.get(id)?;
+            visible(el).then_some(Candidate { el, bounds: *bounds })
+        })
+        .collect()
+}
+
+/// Walks the whole store in z order and keeps what the index says is in view.
+fn walk<'a, S: SceneRead>(
+    store: &'a S,
+    index: &SpatialIndex<ElementId>,
+    world: &Rect,
+    visible: impl Fn(&Element) -> bool,
+) -> Vec<Candidate<'a>> {
+    count(Counter::ElementsScanned, u64::try_from(store.len_all()).unwrap_or(u64::MAX));
     store
         .iter()
         .filter_map(|el| {

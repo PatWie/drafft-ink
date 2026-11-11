@@ -109,6 +109,9 @@ impl SceneRead for LoroTx<'_> {
     fn derived_index(&self) -> Option<&DerivedIndex> {
         self.inner.derived_index()
     }
+    fn version_stamp(&self) -> Option<u64> {
+        self.inner.version_stamp()
+    }
 }
 
 fn normalize(e: &mut Element) {

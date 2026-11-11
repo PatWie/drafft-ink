@@ -200,3 +200,49 @@ fn a_zoom_sweep_keeps_the_cache_bounded() {
         ScenarioReport::from_work("zoom", Some(n as u64), &work).save_if_requested().expect("the report is written");
     }
 }
+
+/// A view that shows the whole scene.
+fn fit(w: &World, scale: f64) -> View {
+    View::fit(kurbo::Rect::new(0.0, 0.0, w.side, w.side), Size::new(1600.0 * scale, 900.0 * scale), 10.0)
+}
+
+#[test]
+fn zoomed_out_frames_reuse_the_z_order_until_the_scene_changes() {
+    for &n in sizes() {
+        let mut w = World::new(n);
+        w.composer.set_options(RenderOptions::default());
+        let work = WorkScope::begin();
+        w.compose(&fit(&w, 1.0));
+        assert_eq!(work.count(Counter::ElementsScanned), n as u64, "the first all-visible frame orders the scene once at {n}");
+        // A zoom or a pan of a scene that shows most elements: no pass over the scene.
+        let work = WorkScope::begin();
+        for k in 0..10 {
+            w.compose(&fit(&w, 1.0 + f64::from(k) * 0.05));
+        }
+        assert_eq!(work.count(Counter::ElementsScanned), 0, "ten more frames at {n}: {}", work.summary());
+        // An edit changes the store: the next frame orders the scene again, and shows the change.
+        w.edit("e1", |e| e.style.stroke_color = Color::rgb(1, 2, 3));
+        let work = WorkScope::begin();
+        w.compose(&fit(&w, 1.0));
+        assert_eq!(work.count(Counter::ElementsScanned), n as u64, "after an edit at {n}");
+    }
+}
+
+#[test]
+fn a_reorder_shows_in_the_next_zoomed_out_frame() {
+    let mut w = World::new(1000);
+    w.composer.set_trace(true);
+    w.composer.set_options(RenderOptions { lod: LodConfig::OFF, ..RenderOptions::default() });
+    let v = fit(&w, 1.0);
+    w.compose(&v);
+    let before: Vec<ElementId> = w.composer.drawn_order().to_vec();
+    let top = w.store.top_z().unwrap();
+    // Send e0 to the top: only its z key changes, no bounds.
+    let z = ZIndex::between(Some(&top), None).unwrap();
+    w.edit("e0", |e| e.index = z);
+    w.compose(&v);
+    let after = w.composer.drawn_order();
+    assert_eq!(after.last().map(ElementId::as_str), Some("e0"), "e0 is drawn last");
+    assert_eq!(before.first().map(ElementId::as_str), Some("e0"), "it was drawn first");
+    assert_eq!(after.len(), before.len());
+}

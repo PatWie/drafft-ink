@@ -118,6 +118,10 @@ impl SceneRead for MemoryStore {
         Some(&self.derived)
     }
 
+    fn version_stamp(&self) -> Option<u64> {
+        Some(self.revision)
+    }
+
     fn z_neighbors(&self, id: &ElementId) -> (Option<ZIndex>, Option<ZIndex>) {
         let Some(e) = self.elements.get(id) else { return (None, None) };
         let key = (e.index.clone(), e.id.clone());
@@ -200,6 +204,9 @@ impl SceneRead for MemoryTx<'_> {
     fn derived_index(&self) -> Option<&DerivedIndex> {
         // The index follows commits, so it is exact only while this transaction has written no element.
         self.touched.is_empty().then_some(&self.store.derived)
+    }
+    fn version_stamp(&self) -> Option<u64> {
+        self.touched.is_empty().then_some(self.store.revision)
     }
 }
 

@@ -170,6 +170,9 @@ impl SceneRead for DocTx<'_, '_> {
     fn derived_index(&self) -> Option<&DerivedIndex> {
         self.inner.derived_index()
     }
+    fn version_stamp(&self) -> Option<u64> {
+        self.inner.version_stamp()
+    }
 }
 
 impl SceneTx for DocTx<'_, '_> {

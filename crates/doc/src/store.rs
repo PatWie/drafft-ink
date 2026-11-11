@@ -637,6 +637,9 @@ impl SceneRead for LoroStore {
     fn derived_index(&self) -> Option<&DerivedIndex> {
         self.view.derived_index()
     }
+    fn version_stamp(&self) -> Option<u64> {
+        self.view.version_stamp()
+    }
 }
 
 impl SceneStore for LoroStore {

@@ -348,6 +348,14 @@ pub trait SceneRead {
         None
     }
 
+    /// A number that differs after every change to the elements: an edit, a move, a reorder, an undo, a remote
+    /// update. A store returns its revision, and an open transaction its store's revision until its first
+    /// element write. `None` means "no such number; assume it changed". A cache of something derived from the
+    /// whole scene (the render order) keeps the stamp it was built at and rebuilds when it differs.
+    fn version_stamp(&self) -> Option<u64> {
+        None
+    }
+
     /// Live elements, back to front.
     fn iter(&self) -> impl Iterator<Item = &Element> {
         self.iter_all().filter(|e| !e.deleted)
