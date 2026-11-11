@@ -1,0 +1,27 @@
+{
+  "about": "layout.apply moves the nodes of a diagram into a layered or grid arrangement and re-routes the bound arrows (bindings stay), keeps the top-left of the set, undoes in one step, and refuses a single element and a tree layout of a graph with a cycle.",
+  "steps": [
+    { "note": "Four nodes dropped in a jumble with layout none (given positions), connected in a chain a -> b -> c -> d.",
+      "execute": "diagram.create", "args": {
+        "nodes": [ { "id": "a", "label": "A", "x": 0, "y": 0 }, { "id": "b", "label": "B", "x": 0, "y": 40 }, { "id": "c", "label": "C", "x": 0, "y": 80 }, { "id": "d", "label": "D", "x": 0, "y": 120 } ],
+        "edges": [ { "from": "a", "to": "b" }, { "from": "b", "to": "c" }, { "from": "c", "to": "d" } ],
+        "layout": { "algorithm": "none" }, "at": [0, 0] },
+      "expect": [ { "path": "$.nodes", "len": 4 } ] },
+    { "assert": "element.query", "args": { "filter": { "kind": "rectangle" }, "fields": ["id", "bounds"] }, "save": { "ax": "$.items[0].bounds.x", "ay": "$.items[0].bounds.y" } },
+    { "execute": "selection.all" },
+    { "execute": "layout.apply", "args": { "algorithm": "layered", "direction": "right", "node_gap": 40, "layer_gap": 80 }, "expect": [ { "path": "$.moved", "len": 3, "note": "The first node stays; the others move." }, { "path": "$.rerouted", "len": 3 } ] },
+    { "assert": "element.query", "args": { "filter": { "kind": "rectangle" }, "fields": ["id", "bounds"] }, "expect": [
+        { "path": "$.items[0].bounds.x", "near": "{{ax}}", "tol": 0.5, "note": "anchor=keep: the top-left of the set stays." },
+        { "path": "$.items[1].bounds.x", "gt": 100 }, { "path": "$.items[2].bounds.x", "gt": 250 }, { "path": "$.items[3].bounds.x", "gt": 400, "note": "A chain laid out to the right climbs in x, one layer per node." } ] },
+    { "assert": "element.query", "args": { "filter": { "kind": "arrow" }, "fields": ["bindings"] }, "expect": [ { "path": "$.total", "eq": 3 }, { "path": "$.items[0].bindings.start", "is": "string" }, { "path": "$.items[2].bindings.end", "is": "string" } ] },
+    { "undo": 1 },
+    { "assert": "element.query", "args": { "filter": { "kind": "rectangle" }, "fields": ["id", "bounds"] }, "expect": [ { "path": "$.items[3].bounds.x", "near": "{{ax}}", "tol": 0.5 }, { "path": "$.items[3].bounds.y", "gt": 100 } ], "note": "One undo restores the jumble." },
+
+    { "execute": "layout.apply", "args": { "algorithm": "grid", "columns": 2 }, "expect": [ { "path": "$.changed", "eq": true } ] },
+    { "assert": "element.query", "args": { "filter": { "kind": "rectangle" }, "fields": ["id", "bounds"] }, "expect": [ { "path": "$.items[1].bounds.x", "gt": 50, "note": "In a grid of two columns the second node sits right of the first." }, { "path": "$.items[2].bounds.y", "gt": 50, "note": "and the third starts the second row." } ] },
+
+    { "execute": "layout.apply", "args": { "ids": ["e1"] }, "refused": "too_few", "text": "needs at least 2 elements" },
+    { "execute": "diagram.create", "args": { "nodes": [ { "id": "p" }, { "id": "q" }, { "id": "r" } ], "edges": [ { "from": "p", "to": "r" }, { "from": "q", "to": "r" }, { "from": "r", "to": "p" } ], "layout": { "algorithm": "tree" } },
+      "refused": "tree_not_forest", "text": "Use algorithm \"layered\"" }
+  ]
+}

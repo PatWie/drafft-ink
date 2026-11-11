@@ -1,0 +1,43 @@
+{
+  "about": "Headline: copy a rectangle, an ellipse and the labelled arrow between them, paste: the copies have new ids, the new arrow is bound to the new shapes and not to the originals, moving a copy drags only the copied arrow end, and one undo removes the whole paste. A copy without its target frees that end.",
+  "steps": [
+    { "execute": "element.create", "args": { "kind": "rectangle", "bounds": { "x": 0, "y": 0, "w": 100, "h": 60 } } },
+    { "execute": "element.create", "args": { "kind": "ellipse", "bounds": { "x": 300, "y": 0, "w": 100, "h": 60 } } },
+    { "execute": "element.connect", "args": { "from": "e1", "to": "e2", "label": "go" }, "expect": [ { "path": "$.id", "eq": "e3" }, { "path": "$.label", "eq": "e4" } ] },
+    { "assert": "element.query", "args": { "filter": { "ids": ["e3"] }, "fields": ["bindings", "bounds"] }, "save": { "ax": "$.items[0].bounds.x", "aw": "$.items[0].bounds.w" } },
+
+    { "execute": "selection.select", "args": { "ids": ["e1", "e2", "e3"] } },
+    { "execute": "clipboard.copy", "expect": [ { "path": "$.count", "eq": 4, "note": "Three elements and the arrow's label." } ] },
+    { "execute": "clipboard.paste", "args": { "at": [0, 500] }, "expect": [ { "path": "$.kind", "eq": "elements" }, { "path": "$.created", "len": 4 } ], "save": { "created": "$.created" } },
+    { "assert": "selection.get", "expect": [ { "path": "$.count", "eq": 3 } ], "note": "The pasted elements are selected, the label with its arrow." },
+    { "assert": "element.query", "args": { "fields": ["id", "kind", "bindings", "bound_text", "bounds"] }, "expect": [
+        { "path": "$.total", "eq": 6, "note": "Bound labels are not listed on their own." },
+        { "path": "$.items[id=e5].kind", "eq": "rectangle" }, { "path": "$.items[id=e6].kind", "eq": "ellipse" }, { "path": "$.items[id=e7].kind", "eq": "arrow" },
+        { "path": "$.items[id=e7].bindings.start", "eq": "e5", "note": "The copy is bound to the copy, not to e1." },
+        { "path": "$.items[id=e7].bindings.end", "eq": "e6" },
+        { "path": "$.items[id=e7].bound_text", "eq": "e8" },
+        { "path": "$.items[id=e3].bindings.start", "eq": "e1", "note": "The original arrow is untouched." },
+        { "path": "$.items[id=e3].bindings.end", "eq": "e2" },
+        { "path": "$.items[id=e5].bounds.y", "gt": 400 } ] },
+
+    { "execute": "element.move", "args": { "ids": ["e6"], "dx": 0, "dy": 150, "snap": "none" } },
+    { "assert": "element.query", "args": { "filter": { "ids": ["e3", "e7"] }, "fields": ["id", "bounds"] }, "expect": [
+        { "path": "$.items[id=e3].bounds", "eq": { "x": "{{ax}}", "y": 30.01, "w": "{{aw}}", "h": 0 }, "note": "The original arrow did not move." },
+        { "path": "$.items[id=e7].bounds.h", "gt": 50, "note": "The copied arrow bends down to the moved copy." } ] },
+    { "undo": 1 },
+
+    { "undo": 1 },
+    { "assert": "element.query", "expect": [ { "path": "$.total", "eq": 3 } ], "note": "One undo takes back the whole paste: the three originals remain." },
+    { "redo": 1 },
+    { "assert": "element.query", "expect": [ { "path": "$.total", "eq": 6 } ] },
+
+    { "note": "A copy of the arrow alone has no targets to remap to.",
+      "execute": "selection.select", "args": { "ids": ["e3"] } },
+    { "execute": "clipboard.copy" },
+    { "execute": "clipboard.paste", "args": { "at": [0, 900] }, "save": { "lone": "$.ids[0]" } },
+    { "assert": "element.query", "args": { "filter": { "ids": ["{{lone}}"] }, "fields": ["kind", "bindings"] }, "expect": [
+        { "path": "$.items[0].kind", "eq": "arrow" }, { "path": "$.items[0].bindings.start", "eq": null }, { "path": "$.items[0].bindings.end", "eq": null } ] },
+
+    { "execute": "clipboard.paste", "args": { "source": { "text": "" } }, "refused": "clipboard_empty", "text": "nothing drafft.ink can paste" }
+  ]
+}

@@ -1,0 +1,37 @@
+{
+  "about": "Duplicate copies with new ids and an offset, connect makes a bound labelled arrow between two shapes, erase deletes what a path touches in one undo step, flip mirrors about the common centre; each undoes in one step.",
+  "steps": [
+    { "execute": "element.create", "args": { "kind": "rectangle", "bounds": { "x": 0, "y": 0, "w": 100, "h": 60 }, "style": { "fill_color": "#ffcc00" } } },
+    { "execute": "element.create", "args": { "kind": "ellipse", "bounds": { "x": 300, "y": 100, "w": 100, "h": 60 }, "style": { "fill_color": "#00ccff" } } },
+
+    { "execute": "element.duplicate", "args": { "ids": ["e1"], "dx": 5, "dy": 6 }, "expect": [ { "path": "$.created", "eq": ["e3"] } ] },
+    { "assert": "element.query", "args": { "filter": { "ids": ["e3"] }, "fields": ["bounds"] }, "expect": [ { "path": "$.items[0].bounds", "eq": { "x": 5, "y": 6, "w": 100, "h": 60 } } ] },
+    { "assert": "selection.get", "expect": [ { "path": "$.ids", "eq": ["e3"], "note": "The copies are selected." } ] },
+    { "undo": 1 },
+    { "assert": "element.query", "expect": [ { "path": "$.total", "eq": 2 } ] },
+    { "execute": "selection.clear" },
+    { "execute": "element.duplicate", "refused": "no_target", "text": "no elements are selected" },
+
+    { "execute": "element.connect", "args": { "from": "e1", "to": "e2", "label": "go" }, "expect": [ { "path": "$.created", "len": 2, "note": "The arrow and its label." } ] },
+    { "assert": "doc.outline", "args": { "format": "json" }, "expect": [ { "path": "$.outline.edges[0].from", "eq": "e1" }, { "path": "$.outline.edges[0].to", "eq": "e2" }, { "path": "$.outline.edges[0].label", "eq": "go" } ] },
+    { "execute": "element.connect", "args": { "from": "e1", "to": "e1" }, "refused": "same_element", "text": "Pass two different elements" },
+    { "execute": "element.connect", "args": { "from": "e1", "to": "nope" }, "refused": "not_found" },
+    { "execute": "element.connect", "args": { "from": "e1", "to": "e2", "kind": "line" }, "note": "A line is a second connection." },
+    { "undo": 2 },
+    { "assert": "element.query", "expect": [ { "path": "$.total", "eq": 2 } ], "note": "Both connects are gone, with the arrow label." },
+    { "redo": 1 },
+
+    { "execute": "element.flip", "args": { "ids": ["e1", "e2"], "axis": "horizontal" } },
+    { "assert": "element.query", "args": { "filter": { "ids": ["e1", "e2"] }, "fields": ["id", "bounds"] }, "expect": [ { "path": "$.items[0].bounds.x", "eq": 300 }, { "path": "$.items[1].bounds.x", "eq": 0 } ], "note": "The two shapes traded places about their common centre." },
+    { "undo": 1 },
+    { "assert": "element.query", "args": { "filter": { "ids": ["e1"] }, "fields": ["bounds"] }, "expect": [ { "path": "$.items[0].bounds.x", "eq": 0 } ] },
+
+    { "execute": "element.erase", "args": { "path": [[350, 130]], "units": "world" }, "expect": [ { "path": "$.deleted", "contains": "e2" } ] },
+    { "assert": "element.query", "args": { "filter": { "kind": "ellipse" } }, "expect": [ { "path": "$.total", "eq": 0 } ] },
+    { "assert": "element.query", "args": { "filter": { "ids": ["e4"] }, "fields": ["bindings"] }, "expect": [ { "path": "$.items[0].bindings.end", "eq": null, "note": "The arrow stays, freed at the end that lost its target." }, { "path": "$.items[0].bindings.start", "eq": "e1" } ] },
+    { "undo": 1 },
+    { "assert": "element.query", "args": { "filter": { "kind": "ellipse" } }, "expect": [ { "path": "$.total", "eq": 1 } ], "note": "One undo step brings the shape back." },
+    { "assert": "element.query", "args": { "filter": { "ids": ["e4"] }, "fields": ["bindings"] }, "expect": [ { "path": "$.items[0].bindings.end", "eq": "e2" } ], "note": "And the binding with it." },
+    { "execute": "element.erase", "args": { "path": [[-500, -500]], "units": "world" }, "expect": [ { "path": "$.changed", "eq": false } ], "note": "Erasing nothing is Ok and changes nothing." }
+  ]
+}

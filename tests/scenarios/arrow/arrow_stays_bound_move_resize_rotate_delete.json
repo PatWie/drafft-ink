@@ -1,0 +1,954 @@
+{
+  "about": "Headline: an arrow bound to a rectangle and an ellipse stays attached when either shape is moved, resized or rotated, and when both are moved or rotated together; it comes off both ends when moved alone, frees the end of a deleted target, and every one of these undoes to the exact old geometry with the bindings back.",
+  "steps": [
+    {
+      "note": "A rectangle on the left, an ellipse 300 units to its right, an arrow e3 bound from the first to the second. The arrow's start is the left edge of its bounds and its end is x + w; the arrow is flat, so y does not change.",
+      "execute": "element.create",
+      "args": {
+        "kind": "rectangle",
+        "bounds": {
+          "x": 0,
+          "y": 0,
+          "w": 100,
+          "h": 60
+        }
+      }
+    },
+    {
+      "execute": "element.create",
+      "args": {
+        "kind": "ellipse",
+        "bounds": {
+          "x": 400,
+          "y": 0,
+          "w": 100,
+          "h": 60
+        }
+      }
+    },
+    {
+      "execute": "element.connect",
+      "args": {
+        "from": "e1",
+        "to": "e2"
+      },
+      "expect": [
+        {
+          "path": "$.id",
+          "eq": "e3"
+        }
+      ]
+    },
+    {
+      "assert": "element.query",
+      "args": {
+        "filter": {
+          "ids": [
+            "e3"
+          ]
+        },
+        "fields": [
+          "bounds",
+          "bindings"
+        ]
+      },
+      "save": {
+        "ax": "$.items[0].bounds.x",
+        "aw": "$.items[0].bounds.w",
+        "ay": "$.items[0].bounds.y"
+      },
+      "expect": [
+        {
+          "path": "$.items[0].bindings.start",
+          "eq": "e1"
+        },
+        {
+          "path": "$.items[0].bindings.end",
+          "eq": "e2"
+        },
+        {
+          "path": "$.items[0].bounds.w",
+          "gt": 250
+        }
+      ]
+    },
+    {
+      "execute": "element.move",
+      "args": {
+        "ids": [
+          "e1"
+        ],
+        "dx": -50,
+        "dy": 0,
+        "snap": "none"
+      }
+    },
+    {
+      "assert": "element.query",
+      "args": {
+        "filter": {
+          "ids": [
+            "e3"
+          ]
+        },
+        "fields": [
+          "bounds",
+          "bindings"
+        ]
+      },
+      "expect": [
+        {
+          "path": "$.items[0].bindings.start",
+          "eq": "e1",
+          "note": "still bound at the start"
+        },
+        {
+          "path": "$.items[0].bindings.end",
+          "eq": "e2",
+          "note": "still bound at the end"
+        },
+        {
+          "path": "$.items[0].bounds.x",
+          "near": "{{ax}}",
+          "plus": -50,
+          "tol": 0.5,
+          "note": "The start followed the rectangle 50 to the left; the end stayed on the ellipse."
+        },
+        {
+          "path": "$.items[0].bounds.w",
+          "near": "{{aw}}",
+          "plus": 50,
+          "tol": 0.5
+        }
+      ]
+    },
+    {
+      "undo": 1
+    },
+    {
+      "assert": "element.query",
+      "args": {
+        "filter": {
+          "ids": [
+            "e3"
+          ]
+        },
+        "fields": [
+          "bounds",
+          "bindings"
+        ]
+      },
+      "expect": [
+        {
+          "path": "$.items[0].bounds.x",
+          "near": "{{ax}}",
+          "tol": 0.01
+        },
+        {
+          "path": "$.items[0].bounds.w",
+          "near": "{{aw}}",
+          "tol": 0.01
+        },
+        {
+          "path": "$.items[0].bindings.end",
+          "eq": "e2"
+        }
+      ],
+      "note": "Undo puts the arrow back exactly where it was, with its binding."
+    },
+    {
+      "execute": "element.move",
+      "args": {
+        "ids": [
+          "e2"
+        ],
+        "dx": 80,
+        "dy": 0,
+        "snap": "none"
+      }
+    },
+    {
+      "assert": "element.query",
+      "args": {
+        "filter": {
+          "ids": [
+            "e3"
+          ]
+        },
+        "fields": [
+          "bounds",
+          "bindings"
+        ]
+      },
+      "expect": [
+        {
+          "path": "$.items[0].bindings.start",
+          "eq": "e1",
+          "note": "still bound at the start"
+        },
+        {
+          "path": "$.items[0].bindings.end",
+          "eq": "e2",
+          "note": "still bound at the end"
+        },
+        {
+          "path": "$.items[0].bounds.x",
+          "near": "{{ax}}",
+          "plus": 0,
+          "tol": 0.5,
+          "note": "The start stayed; the end followed the ellipse 80 to the right."
+        },
+        {
+          "path": "$.items[0].bounds.w",
+          "near": "{{aw}}",
+          "plus": 80,
+          "tol": 0.5
+        }
+      ]
+    },
+    {
+      "undo": 1
+    },
+    {
+      "assert": "element.query",
+      "args": {
+        "filter": {
+          "ids": [
+            "e3"
+          ]
+        },
+        "fields": [
+          "bounds",
+          "bindings"
+        ]
+      },
+      "expect": [
+        {
+          "path": "$.items[0].bounds.x",
+          "near": "{{ax}}",
+          "tol": 0.01
+        },
+        {
+          "path": "$.items[0].bounds.w",
+          "near": "{{aw}}",
+          "tol": 0.01
+        },
+        {
+          "path": "$.items[0].bindings.end",
+          "eq": "e2"
+        }
+      ],
+      "note": "Undo puts the arrow back exactly where it was, with its binding."
+    },
+    {
+      "note": "Resizing the rectangle wider by 60 moves its right edge, and the start with it.",
+      "execute": "element.resize",
+      "args": {
+        "ids": [
+          "e1"
+        ],
+        "handle": "e",
+        "dx": 60,
+        "dy": 0,
+        "snap": "none"
+      }
+    },
+    {
+      "assert": "element.query",
+      "args": {
+        "filter": {
+          "ids": [
+            "e3"
+          ]
+        },
+        "fields": [
+          "bounds",
+          "bindings"
+        ]
+      },
+      "expect": [
+        {
+          "path": "$.items[0].bindings.start",
+          "eq": "e1",
+          "note": "still bound at the start"
+        },
+        {
+          "path": "$.items[0].bindings.end",
+          "eq": "e2",
+          "note": "still bound at the end"
+        },
+        {
+          "path": "$.items[0].bounds.x",
+          "near": "{{ax}}",
+          "plus": 60,
+          "tol": 0.5,
+          "note": "The start moved with the right edge of the resized rectangle."
+        },
+        {
+          "path": "$.items[0].bounds.w",
+          "near": "{{aw}}",
+          "plus": -60,
+          "tol": 0.5
+        }
+      ]
+    },
+    {
+      "undo": 1
+    },
+    {
+      "assert": "element.query",
+      "args": {
+        "filter": {
+          "ids": [
+            "e3"
+          ]
+        },
+        "fields": [
+          "bounds",
+          "bindings"
+        ]
+      },
+      "expect": [
+        {
+          "path": "$.items[0].bounds.x",
+          "near": "{{ax}}",
+          "tol": 0.01
+        },
+        {
+          "path": "$.items[0].bounds.w",
+          "near": "{{aw}}",
+          "tol": 0.01
+        },
+        {
+          "path": "$.items[0].bindings.end",
+          "eq": "e2"
+        }
+      ],
+      "note": "Undo puts the arrow back exactly where it was, with its binding."
+    },
+    {
+      "execute": "element.resize",
+      "args": {
+        "ids": [
+          "e2"
+        ],
+        "handle": "w",
+        "dx": -60,
+        "dy": 0,
+        "snap": "none"
+      }
+    },
+    {
+      "assert": "element.query",
+      "args": {
+        "filter": {
+          "ids": [
+            "e3"
+          ]
+        },
+        "fields": [
+          "bounds",
+          "bindings"
+        ]
+      },
+      "expect": [
+        {
+          "path": "$.items[0].bindings.start",
+          "eq": "e1",
+          "note": "still bound at the start"
+        },
+        {
+          "path": "$.items[0].bindings.end",
+          "eq": "e2",
+          "note": "still bound at the end"
+        },
+        {
+          "path": "$.items[0].bounds.x",
+          "near": "{{ax}}",
+          "plus": 0,
+          "tol": 0.5,
+          "note": "The end moved with the left edge of the resized ellipse."
+        },
+        {
+          "path": "$.items[0].bounds.w",
+          "near": "{{aw}}",
+          "plus": -60,
+          "tol": 0.5
+        }
+      ]
+    },
+    {
+      "undo": 1
+    },
+    {
+      "assert": "element.query",
+      "args": {
+        "filter": {
+          "ids": [
+            "e3"
+          ]
+        },
+        "fields": [
+          "bounds",
+          "bindings"
+        ]
+      },
+      "expect": [
+        {
+          "path": "$.items[0].bounds.x",
+          "near": "{{ax}}",
+          "tol": 0.01
+        },
+        {
+          "path": "$.items[0].bounds.w",
+          "near": "{{aw}}",
+          "tol": 0.01
+        },
+        {
+          "path": "$.items[0].bindings.end",
+          "eq": "e2"
+        }
+      ],
+      "note": "Undo puts the arrow back exactly where it was, with its binding."
+    },
+    {
+      "note": "Rotating a shape by 90 degrees turns the attachment point with it: the end that sat at the left of the ellipse is now at its top, so the arrow bends upwards. The binding stays.",
+      "execute": "element.rotate",
+      "args": {
+        "ids": [
+          "e2"
+        ],
+        "angle": 90
+      }
+    },
+    {
+      "assert": "element.query",
+      "args": {
+        "filter": {
+          "ids": [
+            "e3"
+          ]
+        },
+        "fields": [
+          "bounds",
+          "bindings"
+        ]
+      },
+      "expect": [
+        {
+          "path": "$.items[0].bindings.start",
+          "eq": "e1"
+        },
+        {
+          "path": "$.items[0].bindings.end",
+          "eq": "e2"
+        },
+        {
+          "path": "$.items[0].bounds.x",
+          "near": "{{ax}}",
+          "tol": 0.5,
+          "note": "the start did not move"
+        },
+        {
+          "path": "$.items[0].bounds.h",
+          "gt": 20,
+          "note": "the end left the flat line"
+        },
+        {
+          "path": "$.items[0].bounds.y",
+          "lt": 0,
+          "note": "and went up, to the top of the turned ellipse"
+        }
+      ]
+    },
+    {
+      "undo": 1
+    },
+    {
+      "assert": "element.query",
+      "args": {
+        "filter": {
+          "ids": [
+            "e3"
+          ]
+        },
+        "fields": [
+          "bounds",
+          "bindings"
+        ]
+      },
+      "expect": [
+        {
+          "path": "$.items[0].bounds.x",
+          "near": "{{ax}}",
+          "tol": 0.01
+        },
+        {
+          "path": "$.items[0].bounds.w",
+          "near": "{{aw}}",
+          "tol": 0.01
+        },
+        {
+          "path": "$.items[0].bindings.end",
+          "eq": "e2"
+        }
+      ],
+      "note": "Undo puts the arrow back exactly where it was, with its binding."
+    },
+    {
+      "execute": "element.rotate",
+      "args": {
+        "ids": [
+          "e1"
+        ],
+        "angle": 90
+      }
+    },
+    {
+      "assert": "element.query",
+      "args": {
+        "filter": {
+          "ids": [
+            "e3"
+          ]
+        },
+        "fields": [
+          "bounds",
+          "bindings"
+        ]
+      },
+      "expect": [
+        {
+          "path": "$.items[0].bindings.start",
+          "eq": "e1"
+        },
+        {
+          "path": "$.items[0].bindings.end",
+          "eq": "e2"
+        },
+        {
+          "path": "$.items[0].bounds.h",
+          "gt": 20,
+          "note": "the start left the flat line: it turned with the rectangle"
+        },
+        {
+          "path": "$.items[0].bounds.x",
+          "lt": "{{ax}}",
+          "note": "and the start moved left, as the rectangle's right-hand attachment turned to its bottom"
+        }
+      ]
+    },
+    {
+      "undo": 1
+    },
+    {
+      "assert": "element.query",
+      "args": {
+        "filter": {
+          "ids": [
+            "e3"
+          ]
+        },
+        "fields": [
+          "bounds",
+          "bindings"
+        ]
+      },
+      "expect": [
+        {
+          "path": "$.items[0].bounds.x",
+          "near": "{{ax}}",
+          "tol": 0.01
+        },
+        {
+          "path": "$.items[0].bounds.w",
+          "near": "{{aw}}",
+          "tol": 0.01
+        },
+        {
+          "path": "$.items[0].bindings.end",
+          "eq": "e2"
+        }
+      ],
+      "note": "Undo puts the arrow back exactly where it was, with its binding."
+    },
+    {
+      "note": "Rotating both shapes about their common centre turns the arrow rigidly: it was flat and 288 long, it is vertical and as long.",
+      "execute": "element.rotate",
+      "args": {
+        "ids": [
+          "e1",
+          "e2"
+        ],
+        "angle": 90
+      }
+    },
+    {
+      "assert": "element.query",
+      "args": {
+        "filter": {
+          "ids": [
+            "e3"
+          ]
+        },
+        "fields": [
+          "bounds",
+          "bindings"
+        ]
+      },
+      "expect": [
+        {
+          "path": "$.items[0].bindings.start",
+          "eq": "e1"
+        },
+        {
+          "path": "$.items[0].bindings.end",
+          "eq": "e2"
+        },
+        {
+          "path": "$.items[0].bounds.w",
+          "near": 0,
+          "tol": 0.5
+        },
+        {
+          "path": "$.items[0].bounds.h",
+          "near": "{{aw}}",
+          "tol": 0.5
+        }
+      ]
+    },
+    {
+      "undo": 1
+    },
+    {
+      "assert": "element.query",
+      "args": {
+        "filter": {
+          "ids": [
+            "e3"
+          ]
+        },
+        "fields": [
+          "bounds",
+          "bindings"
+        ]
+      },
+      "expect": [
+        {
+          "path": "$.items[0].bounds.x",
+          "near": "{{ax}}",
+          "tol": 0.01
+        },
+        {
+          "path": "$.items[0].bounds.w",
+          "near": "{{aw}}",
+          "tol": 0.01
+        },
+        {
+          "path": "$.items[0].bindings.end",
+          "eq": "e2"
+        }
+      ],
+      "note": "Undo puts the arrow back exactly where it was, with its binding."
+    },
+    {
+      "execute": "element.move",
+      "args": {
+        "ids": [
+          "e1",
+          "e2"
+        ],
+        "dx": 100,
+        "dy": 100,
+        "snap": "none"
+      }
+    },
+    {
+      "assert": "element.query",
+      "args": {
+        "filter": {
+          "ids": [
+            "e3"
+          ]
+        },
+        "fields": [
+          "bounds",
+          "bindings"
+        ]
+      },
+      "expect": [
+        {
+          "path": "$.items[0].bindings.start",
+          "eq": "e1"
+        },
+        {
+          "path": "$.items[0].bindings.end",
+          "eq": "e2"
+        },
+        {
+          "path": "$.items[0].bounds.x",
+          "near": "{{ax}}",
+          "plus": 100,
+          "tol": 0.5
+        },
+        {
+          "path": "$.items[0].bounds.y",
+          "near": "{{ay}}",
+          "plus": 100,
+          "tol": 0.5
+        },
+        {
+          "path": "$.items[0].bounds.w",
+          "near": "{{aw}}",
+          "tol": 0.5
+        }
+      ],
+      "note": "Both targets moved: the arrow moved rigidly with them and kept both bindings."
+    },
+    {
+      "undo": 1
+    },
+    {
+      "assert": "element.query",
+      "args": {
+        "filter": {
+          "ids": [
+            "e3"
+          ]
+        },
+        "fields": [
+          "bounds",
+          "bindings"
+        ]
+      },
+      "expect": [
+        {
+          "path": "$.items[0].bounds.x",
+          "near": "{{ax}}",
+          "tol": 0.01
+        },
+        {
+          "path": "$.items[0].bounds.w",
+          "near": "{{aw}}",
+          "tol": 0.01
+        },
+        {
+          "path": "$.items[0].bindings.end",
+          "eq": "e2"
+        }
+      ],
+      "note": "Undo puts the arrow back exactly where it was, with its binding."
+    },
+    {
+      "note": "Moving only the arrow takes it off both shapes.",
+      "execute": "element.move",
+      "args": {
+        "ids": [
+          "e3"
+        ],
+        "dx": 0,
+        "dy": 100,
+        "snap": "none"
+      }
+    },
+    {
+      "assert": "element.query",
+      "args": {
+        "filter": {
+          "ids": [
+            "e3"
+          ]
+        },
+        "fields": [
+          "bounds",
+          "bindings"
+        ]
+      },
+      "expect": [
+        {
+          "path": "$.items[0].bindings.start",
+          "eq": null
+        },
+        {
+          "path": "$.items[0].bindings.end",
+          "eq": null
+        },
+        {
+          "path": "$.items[0].bounds.y",
+          "near": "{{ay}}",
+          "plus": 100,
+          "tol": 0.5
+        }
+      ]
+    },
+    {
+      "undo": 1
+    },
+    {
+      "assert": "element.query",
+      "args": {
+        "filter": {
+          "ids": [
+            "e3"
+          ]
+        },
+        "fields": [
+          "bounds",
+          "bindings"
+        ]
+      },
+      "expect": [
+        {
+          "path": "$.items[0].bounds.x",
+          "near": "{{ax}}",
+          "tol": 0.01
+        },
+        {
+          "path": "$.items[0].bounds.w",
+          "near": "{{aw}}",
+          "tol": 0.01
+        },
+        {
+          "path": "$.items[0].bindings.end",
+          "eq": "e2"
+        }
+      ],
+      "note": "Undo puts the arrow back exactly where it was, with its binding."
+    },
+    {
+      "note": "Deleting the ellipse frees the end of the arrow and leaves the arrow where it was.",
+      "execute": "element.delete",
+      "args": {
+        "ids": [
+          "e2"
+        ]
+      }
+    },
+    {
+      "assert": "element.query",
+      "args": {
+        "filter": {
+          "ids": [
+            "e3"
+          ]
+        },
+        "fields": [
+          "bounds",
+          "bindings"
+        ]
+      },
+      "expect": [
+        {
+          "path": "$.items[0].bindings.start",
+          "eq": "e1"
+        },
+        {
+          "path": "$.items[0].bindings.end",
+          "eq": null
+        },
+        {
+          "path": "$.items[0].bounds.x",
+          "near": "{{ax}}",
+          "tol": 0.01
+        },
+        {
+          "path": "$.items[0].bounds.w",
+          "near": "{{aw}}",
+          "tol": 0.01
+        }
+      ]
+    },
+    {
+      "note": "With the end free, moving the rectangle drags only the start.",
+      "execute": "element.move",
+      "args": {
+        "ids": [
+          "e1"
+        ],
+        "dx": 0,
+        "dy": -40,
+        "snap": "none"
+      }
+    },
+    {
+      "assert": "element.query",
+      "args": {
+        "filter": {
+          "ids": [
+            "e3"
+          ]
+        },
+        "fields": [
+          "bounds",
+          "bindings"
+        ]
+      },
+      "expect": [
+        {
+          "path": "$.items[0].bindings.start",
+          "eq": "e1"
+        },
+        {
+          "path": "$.items[0].bounds.h",
+          "gt": 20,
+          "note": "the start went up, the free end stayed"
+        }
+      ]
+    },
+    {
+      "undo": 2
+    },
+    {
+      "assert": "element.query",
+      "args": {
+        "filter": {
+          "ids": [
+            "e3"
+          ]
+        },
+        "fields": [
+          "bounds",
+          "bindings"
+        ]
+      },
+      "expect": [
+        {
+          "path": "$.items[0].bindings.start",
+          "eq": "e1"
+        },
+        {
+          "path": "$.items[0].bindings.end",
+          "eq": "e2",
+          "note": "Undo of the delete restores the binding."
+        },
+        {
+          "path": "$.items[0].bounds.w",
+          "near": "{{aw}}",
+          "tol": 0.01
+        }
+      ]
+    },
+    {
+      "assert": "element.query",
+      "args": {
+        "filter": {
+          "kind": "ellipse"
+        },
+        "fields": [
+          "id"
+        ]
+      },
+      "expect": [
+        {
+          "path": "$.total",
+          "eq": 1
+        },
+        {
+          "path": "$.items[0].id",
+          "eq": "e2",
+          "note": "and the ellipse is back under its own id"
+        }
+      ]
+    }
+  ]
+}

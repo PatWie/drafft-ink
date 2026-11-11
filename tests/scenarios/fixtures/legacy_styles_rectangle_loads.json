@@ -1,0 +1,86 @@
+{
+  "about": "The old app's document styles_rectangle.json opens as a clean, history-free document whose element counts per kind and group count equal the facts the old code wrote.",
+  "steps": [
+    {
+      "note": "Numbers are tests/fixtures/legacy/styles_rectangle.json's facts file (styles_rectangle.facts.json), doc.counts_total. The old code counted its 0 group(s) as shapes (37 in all); the new model has 37 elements and keeps groups as ids.",
+      "harness": "load_fixture",
+      "args": {
+        "path": "legacy/styles_rectangle.json"
+      },
+      "expect": [
+        {
+          "path": "$.elements",
+          "eq": 37
+        },
+        {
+          "path": "$.format",
+          "eq": "LegacyJson"
+        },
+        {
+          "path": "$.warnings",
+          "len": 0
+        }
+      ]
+    },
+    {
+      "expect": [
+        {
+          "path": "$.elements",
+          "eq": 37
+        },
+        {
+          "path": "$.kinds",
+          "eq": {
+            "rectangle": 37
+          }
+        },
+        {
+          "path": "$.groups",
+          "eq": 0
+        }
+      ],
+      "assert": "doc.inspect",
+      "note": "doc.inspect summary: element count, count per kind and group count."
+    },
+    {
+      "assert": "engine.state",
+      "expect": [
+        {
+          "path": "$.dirty",
+          "eq": false
+        },
+        {
+          "path": "$.selection.count",
+          "eq": 0
+        }
+      ]
+    },
+    {
+      "assert": "history.state",
+      "expect": [
+        {
+          "path": "$.can_undo",
+          "eq": false
+        }
+      ]
+    },
+    {
+      "execute": "view.zoom_to_fit",
+      "expect": [
+        {
+          "path": "$.changed",
+          "eq": true
+        }
+      ]
+    },
+    {
+      "assert": "view.get",
+      "expect": [
+        {
+          "path": "$.visible.w",
+          "gt": 0
+        }
+      ]
+    }
+  ]
+}

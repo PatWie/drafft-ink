@@ -1,0 +1,30 @@
+{
+  "about": "An agent finds elements by kind, text and @name with element.query, and hit-tests a point with element.at; locked elements are found by query but not hit, and unknown names are refused with a way forward.",
+  "steps": [
+    { "execute": "element.create", "args": { "kind": "rectangle", "bounds": { "x": 0, "y": 0, "w": 100, "h": 60 }, "name": "start", "style": { "fill_color": "#ffcc00" } } },
+    { "execute": "element.create", "args": { "kind": "ellipse", "bounds": { "x": 300, "y": 100, "w": 100, "h": 60 } } },
+    { "execute": "element.create", "args": { "kind": "text", "text": "hello", "at": [0, 200] } },
+
+    { "assert": "element.query", "args": { "filter": { "kind": ["rectangle", "text"] }, "fields": ["id", "kind", "text"] },
+      "expect": [ { "path": "$.total", "eq": 2 }, { "path": "$.items[0].id", "eq": "e1" }, { "path": "$.items[1].text", "eq": "hello" }, { "path": "$.truncated", "eq": false } ] },
+    { "assert": "element.query", "args": { "filter": { "text": "HEL" }, "fields": ["id"] },
+      "expect": [ { "path": "$.total", "eq": 1 }, { "path": "$.items[0].id", "eq": "e3" } ], "note": "Text matching ignores case." },
+    { "assert": "element.query", "args": { "filter": { "ids": ["@start"] }, "fields": ["id", "name"] },
+      "expect": [ { "path": "$.items[0].id", "eq": "e1" }, { "path": "$.items[0].name", "eq": "start" } ] },
+    { "assert": "element.query", "args": { "filter": { "ids": ["@nope"] } }, "refused": "not_found", "text": ["No element matches `@nope`", "element.query"] },
+    { "assert": "element.query", "args": { "limit": 0 }, "refused": "bad_args", "text": "from 1 to 1000" },
+    { "assert": "element.query", "args": { "limit": 2, "offset": 2, "fields": ["id"] },
+      "expect": [ { "path": "$.total", "eq": 3 }, { "path": "$.items", "len": 1 }, { "path": "$.items[0].id", "eq": "e3" } ] },
+
+    { "assert": "element.at", "args": { "point": [50, 30] }, "expect": [ { "path": "$.count", "eq": 1 }, { "path": "$.hits[0].id", "eq": "e1" } ], "note": "The rectangle has a fill, so its inside is hit." },
+    { "assert": "element.at", "args": { "point": [350, 600] }, "expect": [ { "path": "$.count", "eq": 0 } ] },
+    { "assert": "element.at", "args": { "point": [0, 30] , "all": true }, "expect": [ { "path": "$.count", "eq": 1 } ] },
+
+    { "execute": "element.lock", "args": { "ids": ["e1"] }, "expect": [ { "path": "$.locked", "eq": true } ] },
+    { "assert": "element.at", "args": { "point": [50, 30] }, "expect": [ { "path": "$.count", "eq": 0 } ], "note": "A locked element is not hit." },
+    { "assert": "element.at", "args": { "point": [50, 30], "include_locked": true }, "expect": [ { "path": "$.hits[0].id", "eq": "e1" } ] },
+    { "assert": "element.query", "args": { "filter": { "locked": true }, "fields": ["id", "locked"] }, "expect": [ { "path": "$.items[0].id", "eq": "e1" } ], "note": "But a query still finds it." },
+    { "undo": 1 },
+    { "assert": "element.at", "args": { "point": [50, 30] }, "expect": [ { "path": "$.count", "eq": 1 } ] }
+  ]
+}

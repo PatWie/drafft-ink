@@ -1,6 +1,5 @@
 {
   "about": "Headline feature: an arrow bound to a shape follows it when the shape moves and goes back when the move is undone.",
-  "requires": { "commands": ["element.move"] },
   "steps": [
     { "note": "e0 rectangle, e1 ellipse, e4 arrow from e0 to e1. Re-route first so the arrow sits at its resting gap from both shapes.",
       "harness": "load_generated", "args": { "count": 5 } },
@@ -8,16 +7,16 @@
     { "harness": "scene_probe", "args": { "id": "e4" }, "save": { "x0": "$.element.points[0][0]", "y0": "$.element.points[0][1]", "x1": "$.element.points[1][0]", "y1": "$.element.points[1][1]" } },
     { "harness": "scene_probe", "args": { "id": "e0" }, "save": { "rx": "$.element.bounds.x" } },
 
-    { "note": "Move the rectangle (the arrow's start) 120 right and 40 down.",
-      "execute": "element.move", "args": { "ids": ["e0"], "dx": 120, "dy": 40, "snap": "off" } },
-    { "harness": "scene_probe", "args": { "id": "e0" }, "expect": [ { "path": "$.element.bounds.x", "near": "{{rx}}", "plus": 120, "tol": 0.01 } ] },
+    { "note": "Move the rectangle (the arrow's start) 60 left and 40 down, away from the ellipse (a move to the right would push it over the ellipse, and the arrow has only 27 units of room).",
+      "execute": "element.move", "args": { "ids": ["e0"], "dx": -60, "dy": 40, "snap": "none" } },
+    { "harness": "scene_probe", "args": { "id": "e0" }, "expect": [ { "path": "$.element.bounds.x", "near": "{{rx}}", "plus": -60, "tol": 0.01 } ] },
     { "harness": "scene_probe", "args": { "id": "e4" }, "expect": [
         { "path": "$.element.binding.start.target", "eq": "e0", "note": "still bound" },
         { "path": "$.element.binding.end.target", "eq": "e1" },
-        { "path": "$.element.points[0][0]", "near": "{{x0}}", "plus": 120, "tol": 1.0, "note": "the start followed the rectangle" },
-        { "path": "$.element.points[0][1]", "near": "{{y0}}", "plus": 40, "tol": 1.0 },
+        { "path": "$.element.points[0][0]", "near": "{{x0}}", "plus": -60, "tol": 1.0, "note": "the start followed the rectangle" },
+        { "path": "$.element.points[0][1]", "near": "{{y0}}", "plus": 40, "tol": 4.0, "note": "the start follows 40 down. The orbit point also turns a little as the line to the fixed end tilts (2.6 here), so the tolerance is 4, not the 1 of x" },
         { "path": "$.element.points[1][0]", "near": "{{x1}}", "tol": 1.0, "note": "the end stayed on the ellipse" },
-        { "path": "$.element.points[1][1]", "near": "{{y1}}", "tol": 1.0 } ] },
+        { "path": "$.element.points[1][1]", "near": "{{y1}}", "tol": 4.0, "note": "y may slide along the ellipse outline by about 2.6 as the line tilts; x does not" } ] },
 
     { "undo": 1 },
     { "harness": "scene_probe", "args": { "id": "e4" }, "expect": [
@@ -25,7 +24,7 @@
         { "path": "$.element.points[1][0]", "near": "{{x1}}", "tol": 0.01 }, { "path": "$.element.points[1][1]", "near": "{{y1}}", "tol": 0.01 } ] },
 
     { "note": "Moving the ellipse (the end) drags the other end of the arrow.",
-      "execute": "element.move", "args": { "ids": ["e1"], "dx": 0, "dy": 80, "snap": "off" } },
+      "execute": "element.move", "args": { "ids": ["e1"], "dx": 0, "dy": 80, "snap": "none" } },
     { "harness": "scene_probe", "args": { "id": "e4" }, "expect": [
         { "path": "$.element.points[0][0]", "near": "{{x0}}", "tol": 1.0, "note": "the start stayed" },
         { "path": "$.element.points[1][1]", "gt": "{{y1}}", "note": "the end moved down with the ellipse" } ] }
