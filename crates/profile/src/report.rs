@@ -7,12 +7,17 @@
 use std::collections::BTreeMap;
 use std::fmt;
 
+use thiserror::Error;
+
 use serde::{Deserialize, Serialize};
 
-use crate::stats::{PerfStats, SCHEMA_VERSION};
+use crate::stats::{DocumentError, PerfStats, SCHEMA_VERSION, check_header};
 
 /// Value of the `schema` field of a [`ScenarioReport`].
 pub const REPORT_SCHEMA: &str = "drafftink.perf.scenario";
+
+/// The format version of the budgets file that [`Budgets::from_json`] reads.
+const BUDGETS_VERSION: u32 = 1;
 
 /// One scenario run: the in-app stats plus what the driver measured outside the app.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -61,14 +66,10 @@ impl ScenarioReport {
     }
 
     /// Parse JSON written by [`serde_json::to_string`] of a report.
-    pub fn from_json(json: &str) -> Result<Self, String> {
-        let r: Self = serde_json::from_str(json).map_err(|e| format!("not a ScenarioReport: {e}"))?;
-        if r.schema != REPORT_SCHEMA {
-            return Err(format!("schema is \"{}\", expected \"{REPORT_SCHEMA}\"", r.schema));
-        }
-        if r.version > SCHEMA_VERSION {
-            return Err(format!("report version {} is newer than this reader ({SCHEMA_VERSION})", r.version));
-        }
+    pub fn from_json(json: &str) -> Result<Self, DocumentError> {
+        const WHAT: &str = "ScenarioReport";
+        let r: Self = serde_json::from_str(json).map_err(|source| DocumentError::Json { what: WHAT, source })?;
+        check_header(WHAT, &r.schema, REPORT_SCHEMA, r.version)?;
         Ok(r)
     }
 
@@ -118,23 +119,53 @@ pub struct Limit {
 /// The contents of `perf/budgets.json`: scenario key, then metric path, then limit.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Budgets {
-    /// Format version; currently 1.
+    /// Format version; currently 1 (`BUDGETS_VERSION`).
     pub version: u32,
     /// `scenarios["pan@10k"]["frame.p99_ms"] = {"max": 16.7}`.
     pub scenarios: BTreeMap<String, BTreeMap<String, Limit>>,
 }
 
 /// A budget file that cannot be used.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct BudgetError(pub String);
-
-impl fmt::Display for BudgetError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "budgets: {}", self.0)
-    }
+#[derive(Debug, Error)]
+pub enum BudgetError {
+    /// The text is not JSON, or does not have the fields of a budgets file.
+    #[error("budgets: invalid JSON: {0}")]
+    Json(#[from] serde_json::Error),
+    /// The file has a format version this reader does not know.
+    #[error("budgets: version {found} is not supported (expected {BUDGETS_VERSION})")]
+    Version {
+        /// The `version` in the file.
+        found: u32,
+    },
+    /// A limit sets neither `max` nor `min`.
+    #[error("budgets: {scenario} {metric}: set \"max\" or \"min\"")]
+    NoBound {
+        /// The scenario key.
+        scenario: String,
+        /// The metric path.
+        metric: String,
+    },
+    /// A limit is NaN or infinite.
+    #[error("budgets: {scenario} {metric}: limits must be finite numbers")]
+    NotFinite {
+        /// The scenario key.
+        scenario: String,
+        /// The metric path.
+        metric: String,
+    },
+    /// A limit has a `min` above its `max`, so no value can pass.
+    #[error("budgets: {scenario} {metric}: min {min} is above max {max}")]
+    EmptyRange {
+        /// The scenario key.
+        scenario: String,
+        /// The metric path.
+        metric: String,
+        /// The `min` of the limit.
+        min: f64,
+        /// The `max` of the limit.
+        max: f64,
+    },
 }
-
-impl std::error::Error for BudgetError {}
 
 /// A metric that broke its limit, or that the report does not contain.
 #[derive(Clone, Debug, PartialEq)]
@@ -167,24 +198,26 @@ impl fmt::Display for Violation {
 impl Budgets {
     /// Parse and validate a budgets file.
     pub fn from_json(json: &str) -> Result<Self, BudgetError> {
-        let b: Self = serde_json::from_str(json).map_err(|e| BudgetError(format!("invalid JSON: {e}")))?;
-        if b.version != 1 {
-            return Err(BudgetError(format!("version {} is not supported (expected 1)", b.version)));
+        let b: Self = serde_json::from_str(json)?;
+        if b.version != BUDGETS_VERSION {
+            return Err(BudgetError::Version { found: b.version });
         }
         for (scenario, metrics) in &b.scenarios {
             for (metric, limit) in metrics {
+                let key = || (scenario.clone(), metric.clone());
                 if limit.max.is_none() && limit.min.is_none() {
-                    return Err(BudgetError(format!("{scenario} {metric}: set \"max\" or \"min\"")));
+                    let (scenario, metric) = key();
+                    return Err(BudgetError::NoBound { scenario, metric });
                 }
-                for v in [limit.max, limit.min].into_iter().flatten() {
-                    if !v.is_finite() {
-                        return Err(BudgetError(format!("{scenario} {metric}: limits must be finite numbers")));
-                    }
+                if [limit.max, limit.min].into_iter().flatten().any(|v| !v.is_finite()) {
+                    let (scenario, metric) = key();
+                    return Err(BudgetError::NotFinite { scenario, metric });
                 }
-                if let (Some(lo), Some(hi)) = (limit.min, limit.max)
-                    && lo > hi
+                if let (Some(min), Some(max)) = (limit.min, limit.max)
+                    && min > max
                 {
-                    return Err(BudgetError(format!("{scenario} {metric}: min {lo} is above max {hi}")));
+                    let (scenario, metric) = key();
+                    return Err(BudgetError::EmptyRange { scenario, metric, min, max });
                 }
             }
         }

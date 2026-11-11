@@ -62,7 +62,7 @@ pub fn chrome_trace_json() -> String {
 }
 
 /// Write the trace to `w`.
-pub fn write_chrome_trace(w: &mut dyn std::io::Write) -> std::io::Result<()> {
+pub fn write_chrome_trace(mut w: impl std::io::Write) -> std::io::Result<()> {
     w.write_all(chrome_trace_json().as_bytes())
 }
 
