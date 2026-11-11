@@ -29,6 +29,7 @@ pub mod refusal;
 pub mod registry;
 mod remote;
 pub mod ring;
+mod saves;
 pub mod services;
 pub mod session;
 pub mod spec;

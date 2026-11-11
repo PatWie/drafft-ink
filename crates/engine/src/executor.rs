@@ -375,6 +375,7 @@ impl Session {
     ) -> Result<StepDone, Refusal> {
         let mut undo_label = None;
         let summary: Summary;
+        let mut pending = crate::saves::Flushed::default();
         if mode == Mode::Top {
             let depth = self.settings.history_depth();
             let reset = self.run.history_reset;
@@ -418,8 +419,14 @@ impl Session {
                 None => summary = Summary::default(),
             }
             let writes = std::mem::take(&mut self.run.writes);
-            let flush_warnings = self.ports.flush(writes);
-            self.run.warnings.extend(flush_warnings);
+            let flushed = self.flush_writes(writes);
+            if let Some(r) = flushed.failed_save {
+                // Only `doc.save` queues a document write, and it changes nothing else: refuse.
+                self.run.warnings.clear();
+                return Err(r);
+            }
+            self.run.warnings.extend(flushed.warnings.iter().cloned());
+            pending = flushed;
         } else {
             summary = self.tab_by_id(tab_id).map(|t| t.doc.summary_since(mark)).unwrap_or_default();
         }
@@ -428,6 +435,7 @@ impl Session {
         } else {
             self.run.warnings.split_off(warn_len.min(self.run.warnings.len()))
         };
+        let out = pending.annotate(out);
         let (out, changed) = merge_common(out, summary.changed, undo_label.as_deref(), &summary, warnings);
         if changed {
             self.mark_dirty(spec.redraw);
@@ -443,8 +451,13 @@ impl Session {
         match self.invoke(spec, parsed.any()) {
             Ok(out) => {
                 let writes = std::mem::take(&mut self.run.writes);
-                let flush_warnings = self.ports.flush(writes);
-                self.run.warnings.extend(flush_warnings);
+                let flushed = self.flush_writes(writes);
+                if let Some(r) = flushed.failed_save {
+                    self.run.warnings.clear();
+                    return Err(r);
+                }
+                self.run.warnings.extend(flushed.warnings.iter().cloned());
+                let out = flushed.annotate(out);
                 let warnings = std::mem::take(&mut self.run.warnings);
                 let (out, changed) = merge_common(out, false, None, &Summary::default(), warnings);
                 if changed {

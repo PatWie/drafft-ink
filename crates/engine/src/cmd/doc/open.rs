@@ -265,7 +265,7 @@ pub(super) fn guard_replace(s: &mut Session, id: &str, on_unsaved: OnUnsaved, in
     match on_unsaved {
         OnUnsaved::Refuse => Err(Refusal::unsaved_changes(id)),
         OnUnsaved::Discard => Ok(()),
-        OnUnsaved::Save => save::save_active(s, id, &save::SaveReq::default()).map(|_| ()),
+        OnUnsaved::Save => save::save_active_now(s, id, &save::SaveReq::default()).map(|_| ()),
     }
 }
 

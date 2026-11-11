@@ -362,6 +362,19 @@ impl Refusal {
         )
     }
 
+    /// `io_failed` for a document write that did not succeed. `target` is a phrase such as `` `plan.json` ``.
+    /// The text says that the document was NOT saved and how to go on.
+    pub fn not_saved(id: &str, target: &str, msg: &str) -> Self {
+        Self::shared(
+            "io_failed",
+            id,
+            format!(
+                "The document was NOT saved to {target}: {}. It is still unsaved. Check the location and permissions and run `doc.save` again, or pass another place with `to`.",
+                echo_long(msg)
+            ),
+        )
+    }
+
     /// `parse_failed`: input could not be read.
     pub fn parse_failed(id: &str, what: &str, msg: &str, hint: &str) -> Self {
         Self::shared("parse_failed", id, format!("{what} could not be read: {}. {hint}", echo_long(msg)))

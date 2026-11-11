@@ -6,7 +6,7 @@ use std::path::{Path, PathBuf};
 use std::time::{Instant, SystemTime, UNIX_EPOCH};
 
 use drafftink_engine::Session;
-use drafftink_engine::ports::{Clock, FileRef, Files, PortError, Ports};
+use drafftink_engine::ports::{Clock, FileRef, Files, PortError, Ports, WriteOutcome};
 use drafftink_scene::{RandomIds, Rng64};
 
 /// Largest file the server reads or writes.
@@ -137,10 +137,10 @@ impl Files for DiskFiles {
         self.path_of(file).is_ok_and(|p| p.exists())
     }
 
-    fn write(&mut self, file: &FileRef, bytes: &[u8], _mime: &str) -> Result<FileRef, PortError> {
+    fn write(&mut self, file: &FileRef, bytes: &[u8], _mime: &str) -> Result<WriteOutcome, PortError> {
         let path = self.path_of(file)?;
         std::fs::write(&path, bytes).map_err(|e| PortError::Failed(format!("{}: {e}", path.display())))?;
-        Ok(FileRef::Path { path: path.display().to_string() })
+        Ok(WriteOutcome::Done(FileRef::Path { path: path.display().to_string() }))
     }
 }
 

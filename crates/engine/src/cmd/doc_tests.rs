@@ -13,7 +13,7 @@ use serde_json::{Value, json};
 use super::files::{AUTOSAVE_NAME, use_stored_default_target};
 use crate::cmd::tab::{MAX_TABS, NEVER_SAVED, RoomBinding};
 use crate::ports::fake::Fakes;
-use crate::ports::{FileRef, Ns, PortError, RenderRequest, Renderer, SceneView};
+use crate::ports::{FileRef, Ns, PortError, RenderRequest, Renderer, SceneView, WriteOutcome, WriteToken};
 use crate::refusal::Refusal;
 use crate::registry::Registry;
 use crate::ring::Origin;
@@ -655,6 +655,125 @@ fn save_writes_the_document_marks_it_saved_and_remembers_the_target() {
     fb.files.insert(&path("/x.json"), &f.files.bytes(&path("/work/plan.json")).unwrap(), "application/json");
     run(&mut b, "doc.open", json!({"source": {"path": "/x.json"}}));
     assert_eq!(live(&b), 3);
+}
+
+/// A files port whose writes fail.
+struct BrokenFiles;
+
+impl crate::ports::Files for BrokenFiles {
+    fn read(&self, f: &FileRef) -> Result<Vec<u8>, PortError> {
+        Err(PortError::NotFound(format!("{f:?}")))
+    }
+    fn exists(&self, _: &FileRef) -> bool {
+        false
+    }
+    fn write(&mut self, _: &FileRef, _: &[u8], _: &str) -> Result<WriteOutcome, PortError> {
+        Err(PortError::Failed("disk full".to_owned()))
+    }
+}
+
+/// A files port that accepts every write and finishes it later, as the browser does.
+struct LaterFiles(u64);
+
+impl crate::ports::Files for LaterFiles {
+    fn read(&self, f: &FileRef) -> Result<Vec<u8>, PortError> {
+        Err(PortError::NotFound(format!("{f:?}")))
+    }
+    fn exists(&self, _: &FileRef) -> bool {
+        false
+    }
+    fn write(&mut self, _: &FileRef, _: &[u8], _: &str) -> Result<WriteOutcome, PortError> {
+        self.0 += 1;
+        Ok(WriteOutcome::Pending(WriteToken(self.0)))
+    }
+}
+
+#[test]
+fn a_failed_write_is_a_refusal_and_the_document_stays_unsaved() {
+    let (mut s, _f) = drawn(1);
+    s.ports.files = Some(Box::new(BrokenFiles));
+    let r = refuse(&mut s, "doc.save", json!({"to": {"path": "/work/plan.json"}}));
+    assert_eq!(r.code, "io_failed");
+    assert!(r.message.contains("NOT saved"), "{}", r.message);
+    assert!(r.message.contains("disk full"), "{}", r.message);
+    assert!(s.tab().dirty(), "a failed write must leave the document dirty");
+    assert_eq!(super::save_target(&s), None);
+    assert!(super::files::recent(&s).is_empty());
+}
+
+#[test]
+fn a_failed_write_inside_a_batch_is_named_in_the_note_and_leaves_the_document_dirty() {
+    let (mut s, _f) = drawn(1);
+    s.ports.files = Some(Box::new(BrokenFiles));
+    let steps = [crate::batch::BatchStep::new("doc.save", json!({"to": {"path": "/b.json"}}))];
+    let out = s.execute_batch(Origin::Test, &steps, &crate::batch::BatchOpts::default());
+    assert!(out.note.as_deref().is_some_and(|n| n.contains("NOT saved")), "{:?}", out.note);
+    assert!(s.tab().dirty());
+}
+
+#[test]
+fn a_write_that_finishes_later_keeps_the_document_dirty_until_it_is_confirmed() {
+    let (mut s, _f) = drawn(1);
+    s.ports.files = Some(Box::new(LaterFiles(0)));
+    let out = run(&mut s, "doc.save", json!({"to": {"path": "/work/plan.json"}}));
+    assert_eq!(out["pending_write"], json!([1]));
+    assert_eq!(out["changed"], json!(false));
+    assert!(s.tab().dirty(), "not saved before the port confirms");
+    assert_eq!(super::save_target(&s), None);
+    // Edited while the write was open: the confirmation does not make the new edit saved.
+    rects(&mut s, 1);
+    s.on_write_done(WriteToken(1), Ok(())).unwrap();
+    assert!(s.tab().dirty(), "the edit after the snapshot is unsaved");
+    assert_eq!(super::save_target(&s), Some(path("/work/plan.json")));
+    assert_eq!(super::files::recent(&s), vec![path("/work/plan.json")]);
+    // The token is used up.
+    assert!(s.on_write_done(WriteToken(1), Ok(())).is_err());
+}
+
+#[test]
+fn a_confirmed_pending_write_marks_the_document_saved() {
+    let (mut s, _f) = drawn(1);
+    s.ports.files = Some(Box::new(LaterFiles(0)));
+    run(&mut s, "doc.save", json!({"to": {"path": "/work/plan.json"}}));
+    s.on_write_done(WriteToken(1), Ok(())).unwrap();
+    assert!(!s.tab().dirty());
+}
+
+#[test]
+fn a_pending_write_that_fails_leaves_the_document_dirty_and_says_so() {
+    let (mut s, _f) = drawn(1);
+    s.ports.files = Some(Box::new(LaterFiles(0)));
+    run(&mut s, "doc.save", json!({"to": {"path": "/work/plan.json"}}));
+    let r = s.on_write_done(WriteToken(1), Err(PortError::Failed("permission denied".to_owned()))).unwrap_err();
+    assert_eq!(r.code, "io_failed");
+    assert!(r.message.contains("NOT saved") && r.message.contains("permission denied"), "{}", r.message);
+    assert!(s.tab().dirty());
+    assert_eq!(super::save_target(&s), None);
+}
+
+#[test]
+fn replacing_after_on_unsaved_save_does_not_replace_when_the_write_failed() {
+    let (mut s, _f) = drawn(2);
+    set_target(&mut s, path("/work/plan.json"));
+    s.ports.files = Some(Box::new(BrokenFiles));
+    let r = refuse(&mut s, "doc.new", json!({"on_unsaved": "save"}));
+    assert_eq!(r.code, "io_failed");
+    assert!(r.message.contains("NOT saved"), "{}", r.message);
+    assert_eq!(live(&s), 2, "the document must still be there");
+    assert!(s.tab().dirty());
+}
+
+#[test]
+fn replacing_after_on_unsaved_save_does_not_replace_while_the_write_is_open() {
+    let (mut s, _f) = drawn(2);
+    set_target(&mut s, path("/work/plan.json"));
+    s.ports.files = Some(Box::new(LaterFiles(0)));
+    let r = refuse(&mut s, "doc.new", json!({"on_unsaved": "save"}));
+    assert_eq!(r.code, "io_failed");
+    assert_eq!(live(&s), 2);
+    s.on_write_done(WriteToken(1), Ok(())).unwrap();
+    run(&mut s, "doc.new", json!({}));
+    assert_eq!(live(&s), 0, "saved, so the new document may replace it");
 }
 
 #[test]
