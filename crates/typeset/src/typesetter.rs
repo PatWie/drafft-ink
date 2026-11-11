@@ -322,7 +322,8 @@ impl Typesetter {
     }
 }
 
-/// Support for the benchmark only. Not part of the API.
+/// Support for the benchmark only (feature `bench`). Not part of the API.
+#[cfg(feature = "bench")]
 #[doc(hidden)]
 pub mod bench_support {
     use crate::math::{MathEngine, MathError, MathLayout, MathSpec};

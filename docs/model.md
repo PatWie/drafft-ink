@@ -86,7 +86,7 @@ Colours are strings: `#rrggbb`, or `#rrggbbaa` when not opaque; `#rgb` and `tran
 
 ## 6. Z-order
 
-`ZIndex` is a base-62 fractional index (the Rocicorp / Excalidraw scheme). It sorts as plain text, a key can always be made between two keys, and a reorder rewrites only the moved elements. `ZIndex::between(lower, upper)`, `n_between`, `rebalance(n)`; `zindex::repair(&mut keys)` fixes ties and inversions after a merge, keeping well-ordered keys. Keys longer than 128 characters are refused (rebalance). Order of elements is `(index, id)`: ties between concurrent inserts break by id. Tombstones keep their keys and take part in the order.
+`ZIndex` is a base-62 fractional index (the Rocicorp / Excalidraw scheme). It sorts as plain text, a key can always be made between two keys, and a reorder rewrites only the moved elements. `ZIndex::between(lower, upper)`, `n_between`, `rebalance(n)`; `ZIndex::repair(&mut keys)` fixes ties and inversions after a merge, keeping well-ordered keys. Keys longer than 128 characters are refused (rebalance). Order of elements is `(index, id)`: ties between concurrent inserts break by id. Tombstones keep their keys and take part in the order.
 
 ## 7. Document and native JSON
 

@@ -29,4 +29,6 @@ pub use math::{
     MathGlyph, MathLayout, MathRule, MathSpec,
 };
 pub use style::{Align, FontFamily, FontWeight, LineHeight, Rgba8, Span, SpanStyle, TextSpec, TextStyle, Wrap};
-pub use typesetter::{CacheConfig, FontError, MAX_FONT_BYTES, TypesetStats, Typesetter, bench_support};
+#[cfg(feature = "bench")]
+pub use typesetter::bench_support;
+pub use typesetter::{CacheConfig, FontError, MAX_FONT_BYTES, TypesetStats, Typesetter};

@@ -1,8 +1,9 @@
 //! Element geometry in world space: frames, bounds and outlines for the structural rules.
 
 use drafftink_geom::kurbo::{Point, Rect};
-use drafftink_geom::shapes::{DiamondShape, EllipseShape, Polyline, RectShape};
-use drafftink_geom::{ElementFrame, OrientedBox, Primitive, aabb};
+use drafftink_geom::transform::ElementFrame;
+use drafftink_geom::{DiamondShape, EllipseShape, Polyline, RectShape};
+use drafftink_geom::{OrientedBox, Primitive, aabb};
 use drafftink_scene::{Element, ElementKind};
 
 /// The oriented box of an element (centre, size, angle).

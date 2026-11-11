@@ -83,7 +83,7 @@ pub fn inc(counter: Counter) {
 }
 
 /// Add `n` to an ad hoc counter that has no [`Counter`] variant, for a quick local check.
-/// It takes a lock, so keep it out of hot loops. At most [`MAX_NAMED`] distinct names are kept.
+/// It takes a lock, so keep it out of hot loops. At most `MAX_NAMED` (64) distinct names are kept.
 pub fn count_named(name: &'static str, n: u64) {
     bump_named(&mut lock(&NAMED), name, n);
     let _ = LOCAL.try_with(|l| bump_named(&mut l.named.borrow_mut(), name, n));

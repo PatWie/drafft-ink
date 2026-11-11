@@ -206,7 +206,7 @@ impl Document {
         DocMeta { name: self.name.clone(), background: self.background }
     }
 
-    /// Checks every rule. See [`crate::validate`].
+    /// Checks every rule. See [`validate_document`](crate::validate_document).
     pub fn validate(&self) -> Report {
         validate_document(self)
     }

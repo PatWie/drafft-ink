@@ -13,9 +13,8 @@
 
 use drafftink_geom::kurbo::Rect;
 use drafftink_geom::spline::catmull_rom_path;
-use drafftink_geom::{
-    DiamondShape, ElementFrame, EllipseShape, OrientedBox, Outline, PathShape, Polyline, Primitive, RectShape,
-};
+use drafftink_geom::transform::ElementFrame;
+use drafftink_geom::{DiamondShape, EllipseShape, OrientedBox, Outline, PathShape, Polyline, Primitive, RectShape};
 use drafftink_scene::{Element, ElementKind, PathType};
 
 /// Default size of an arrowhead in world units when the element does not set one.

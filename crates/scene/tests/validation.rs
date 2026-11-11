@@ -241,7 +241,7 @@ fn z_keys_must_be_strictly_increasing_in_a_document() {
     // The repair makes it valid.
     let mut doc = tie;
     let mut keys: Vec<ZIndex> = doc.elements.iter().map(|e| e.index.clone()).collect();
-    zindex::repair(&mut keys).unwrap();
+    ZIndex::repair(&mut keys).unwrap();
     for (e, k) in doc.elements.iter_mut().zip(keys) {
         e.index = k;
     }

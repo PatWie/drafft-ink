@@ -85,7 +85,7 @@ pub fn sniff(bytes: &[u8]) -> Format {
 
 fn sniff_json_object(t: &str) -> Format {
     let Ok(p) = serde_json::from_str::<Probe>(t) else { return Format::Unknown };
-    if p.format.as_deref() == Some(drafftink_scene::document::FORMAT_NAME) {
+    if p.format.as_deref() == Some(drafftink_scene::FORMAT_NAME) {
         return Format::Native;
     }
     match p.kind.as_deref() {

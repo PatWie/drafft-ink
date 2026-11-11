@@ -33,7 +33,7 @@ pub(crate) const TRACE_CAPACITY: usize = 32_768;
 pub(crate) const MAX_DEPTH: usize = 256;
 /// Distinct span names aggregated; further new names are folded into `other`.
 pub(crate) const MAX_NAMES: usize = 1024;
-/// The name that spans past [`MAX_NAMES`] are aggregated under.
+/// The name that spans past `MAX_NAMES` (1024) are aggregated under.
 pub const OTHER: &str = "other";
 /// Finished spans a thread buffers before it flushes without waiting for its root span.
 #[cfg(feature = "enabled")]

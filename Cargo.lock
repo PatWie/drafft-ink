@@ -1609,6 +1609,7 @@ dependencies = [
  "criterion 0.8.2",
  "drafftink-geom",
  "drafftink-profile",
+ "drafftink-typeset",
  "kurbo",
  "parley",
  "peniko",
