@@ -9,7 +9,8 @@
 use std::collections::BTreeSet;
 
 use drafftink_edit::binding::{
-    BindOpts, End, arrows_bound_to, binding_reach, drag_end, find_hovered, find_hovered_among, update_bound_arrows,
+    BindOpts, End, arrows_bound_to, binding_reach, drag_end, drag_end_among, find_hovered, find_hovered_among,
+    update_bound_arrows,
 };
 use drafftink_edit::frame::{frame_at, update_membership_after_move};
 use drafftink_edit::text_bind::{GrowAnchor, MonospaceMeasure, label_of, refresh_labels};
@@ -246,20 +247,26 @@ fn the_shape_under_a_dragged_arrow_end_comes_from_the_index_and_equals_the_scan(
 }
 
 #[test]
-fn dragging_an_arrow_end_to_a_shape_writes_one_element() {
+fn dragging_an_arrow_end_with_candidates_scans_nothing_and_matches_the_scan() {
     for &n in sizes() {
-        let mut store = scene(n);
-        let mut tx = store.begin();
         let opts = BindOpts { zoom: 1.0, ..BindOpts::default() };
-        let work = WorkScope::begin();
-        drag_end(&mut tx, &id("a0"), End::End, Point::new(CELL + 40.0, 30.0), &opts).unwrap();
-        // `drag_end` looks the target up by scan: the engine's gesture frame passes candidates instead (see
-        // `find_hovered_among`). Its own cost is O(scene) once per call, which this test records.
-        assert!(scanned(&work) <= store_len(&tx) as u64, "at {n}: {}", work.summary());
-        assert_eq!(tx.commit().unwrap().elements.len(), 1, "at {n}");
-    }
-}
+        let to = Point::new(CELL + 40.0, 30.0);
+        let reach = binding_reach(opts.zoom);
 
-fn store_len<R: SceneRead>(r: &R) -> usize {
-    r.len_all()
+        let mut scanned_store = scene(n);
+        let mut tx = scanned_store.begin();
+        drag_end(&mut tx, &id("a0"), End::End, to, &opts).unwrap();
+        tx.commit().unwrap();
+
+        let mut store = scene(n);
+        let index = spatial(&store);
+        let near: Vec<ElementId> = index.query_point(to, reach).map(|(i, _)| i.clone()).collect();
+        let mut tx = store.begin();
+        let work = WorkScope::begin();
+        drag_end_among(&mut tx, &near, &id("a0"), End::End, to, &opts).unwrap();
+        assert_eq!(scanned(&work), 0, "at {n}: {}", work.summary());
+        let changes = tx.commit().unwrap();
+        assert_eq!(changes.elements.len(), 1, "only the arrow is written at {n}");
+        assert_eq!(store.get(&id("a0")), scanned_store.get(&id("a0")), "the same arrow as the scan makes at {n}");
+    }
 }

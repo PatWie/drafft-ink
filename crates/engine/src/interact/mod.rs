@@ -158,6 +158,16 @@ impl Interaction {
             self.cancel_machines(s, now, &mut out);
         }
         self.finish(s, now, &mut out);
+        // A pointer move with no button that leaves nothing to draw: the idle gate drops it (docs/performance.md,
+        // rule 2). Counting it here lets a test see that the move reached the gate and was refused there.
+        if let InputEvent::Pointer(p) = ev
+            && p.phase == PointerPhase::Move
+            && p.buttons.is_empty()
+            && out.redraw.is_none()
+            && s.dirty().is_none()
+        {
+            drafftink_profile::inc(drafftink_profile::Counter::RedrawsSkipped);
+        }
         out
     }
 

@@ -6,7 +6,7 @@
 mod common;
 
 use common::*;
-use drafftink_profile::{Counter, WorkScope};
+use drafftink_profile::{Counter, ScenarioReport, WorkScope};
 use drafftink_render::*;
 use drafftink_scene::*;
 use drafftink_typeset::Typesetter;
@@ -150,5 +150,53 @@ fn editing_an_element_out_of_view_costs_the_next_frame_nothing() {
         w.edit("e0", |e| e.style.stroke_width += 2.0);
         let rep = w.compose(&v);
         assert_eq!(rep.cache_misses, 0, "at {n}: {rep:?}");
+    }
+}
+
+/// The scenario `pan` of `docs/performance.md` section 4.1 without the GPU: a sinusoidal pan over a warm cache.
+/// A first pass over the path fills the cache; the second pass must not encode, generate sketches or lay text out.
+#[test]
+fn a_pan_encodes_what_is_visible_and_regenerates_nothing() {
+    for &n in sizes() {
+        let mut w = World::new(n);
+        let path: Vec<f64> = (0..60).map(|k| 30.0 * (f64::from(k) * 0.2).sin()).collect();
+        for &step in &path {
+            w.compose(&w.view(step));
+        }
+        let work = WorkScope::begin();
+        for (k, &step) in path.iter().enumerate() {
+            let rep = w.compose(&w.view(step));
+            assert!(rep.in_view < 200, "frame {k} at {n}: {} in view", rep.in_view);
+            assert_eq!(rep.cache_misses, 0, "frame {k} at {n}: {rep:?}");
+        }
+        // Each frame draws what it shows, so the encoded count follows the visible elements and not the scene.
+        assert!(work.count(Counter::ElementsEncoded) < 60 * 200, "at {n}: {}", work.summary());
+        for c in [Counter::ElementsScanned, Counter::SketchRegens, Counter::Relayouts, Counter::CacheMiss] {
+            assert_eq!(work.count(c), 0, "{c:?} at {n}: {}", work.summary());
+        }
+        ScenarioReport::from_work("pan", Some(n as u64), &work).save_if_requested().expect("the report is written");
+    }
+}
+
+/// The scenario `zoom`: a sweep of the zoom with the cache warm, and the cache stays bounded.
+#[test]
+fn a_zoom_sweep_keeps_the_cache_bounded() {
+    for &n in sizes() {
+        let mut w = World::new(n);
+        let c = w.side / 2.0;
+        let at = |zoom: f64| View::new(zoom, Vec2::new(-c * zoom, -c * zoom), Size::new(800.0, 600.0));
+        w.compose(&at(1.0));
+        let work = WorkScope::begin();
+        for k in 0..60 {
+            let zoom = 1.0 + 0.5 * (f64::from(k) * 0.2).sin();
+            let rep = w.compose(&at(zoom));
+            assert!(rep.in_view < 400, "frame {k} at {n}: {} in view", rep.in_view);
+        }
+        assert_eq!(work.count(Counter::ElementsScanned), 0, "at {n}: {}", work.summary());
+        assert!(
+            work.gauge(drafftink_profile::Gauge::CacheEntries) < 1_000,
+            "at {n}: the cache holds the visible elements"
+        );
+        ScenarioReport::from_work("zoom", Some(n as u64), &work).save_if_requested().expect("the report is written");
     }
 }

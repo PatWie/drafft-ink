@@ -17,7 +17,9 @@ use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
 use std::sync::{Mutex, MutexGuard, PoisonError};
 
 use crate::clock::now_ns;
+use crate::frame::FrameStats;
 use crate::names::{Counter, Gauge, RedrawReason};
+use crate::stats::PerfStats;
 
 /// Named (ad hoc) counters kept per process and per thread; further new names are ignored.
 pub const MAX_NAMED: usize = 64;
@@ -259,6 +261,31 @@ impl WorkScope {
                 l.log.borrow().iter().skip(skip).copied().collect()
             })
             .unwrap_or_default()
+    }
+
+    /// What this scope saw as a [`PerfStats`]: the counter deltas, the gauges as they are now and the redraws
+    /// requested since `begin`. There are no frames or spans. A work-counter test wraps it in a
+    /// [`crate::ScenarioReport`] to check its numbers against `perf/budgets.json`.
+    pub fn stats(&self) -> PerfStats {
+        let mut counters = [0; Counter::COUNT];
+        for c in Counter::ALL {
+            if let Some(slot) = counters.get_mut(c.index()) {
+                *slot = self.count(*c);
+            }
+        }
+        let mut gauges = [0; Gauge::COUNT];
+        for g in Gauge::ALL {
+            if let Some(slot) = gauges.get_mut(g.index()) {
+                *slot = self.gauge(*g);
+            }
+        }
+        let mut redraws = [0; RedrawReason::COUNT];
+        for r in RedrawReason::ALL {
+            if let Some(slot) = redraws.get_mut(r.index()) {
+                *slot = self.redraws_for(*r);
+            }
+        }
+        PerfStats::assemble(FrameStats::default(), counters, gauges, redraws, Vec::new(), Vec::new(), Vec::new(), 0)
     }
 
     /// Every counter that grew since `begin`, as `name=delta` text, for assertion messages.

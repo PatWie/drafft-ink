@@ -1,3 +1,4 @@
+#![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 //! Work-counter tests of the whole engine at 1k, 10k and (in release builds) 100k elements: what a pointer
 //! event, a gesture frame or a quiet moment makes the app do, counted and never timed
 //! (`docs/performance.md` section 2.5).
@@ -9,7 +10,7 @@
 use drafftink_canvas::{Button, Buttons, InputEvent, Modifiers, PointerEvent, PointerId, PointerKind, PointerPhase};
 use drafftink_engine::interact::Interaction;
 use drafftink_geom::kurbo::Point;
-use drafftink_profile::{Counter, WorkScope};
+use drafftink_profile::{Counter, RedrawReason, ScenarioReport, WorkScope, redraw};
 use drafftink_scene::{SceneRead, SceneStore};
 use drafftink_testkit::{Harness, scenegen};
 use serde_json::{Value, json};
@@ -69,6 +70,20 @@ fn moving_with_smart_guides_scans_nothing_once_the_index_exists() {
         gesture(&mut h, "element.move", |k| json!({ "ids": ["e40"], "dx": 3.0 * k, "dy": 2.0 * k }));
         let phases = gesture(&mut h, "element.move", |k| json!({ "ids": ["e40"], "dx": 3.0 * k, "dy": 2.0 * k }));
         assert_no_scan("smart-guide move", n, &phases);
+    }
+}
+
+#[test]
+fn dragging_a_hundred_elements_scans_nothing_and_commits_once() {
+    for &n in sizes() {
+        let mut h = loaded(n);
+        // 100 rectangles (every tenth element of the generated cycle starts one).
+        let ids: Vec<String> = (0..100).map(|k| format!("e{}", k * 10)).collect();
+        let work = WorkScope::begin();
+        let phases = gesture(&mut h, "element.move", |k| json!({ "ids": ids, "dx": 4.0 * k, "dy": 3.0 * k }));
+        assert_no_scan("drag of 100", n, &phases);
+        assert_eq!(h.session.tab().doc.undo_depth(), 1, "the whole drag is one undo step at {n}");
+        report("drag", n, &work);
     }
 }
 
@@ -158,6 +173,17 @@ impl Pointer {
     }
 }
 
+/// What a shell does with an outcome: a hover that changes the outline asks for one frame.
+fn shell_frame(out: &drafftink_engine::interact::Outcome) {
+    if out.redraw.is_some() {
+        redraw(RedrawReason::HoverChange);
+    }
+}
+
+fn report(scenario: &str, n: usize, work: &WorkScope) {
+    ScenarioReport::from_work(scenario, Some(n as u64), work).save_if_requested().expect("the report is written");
+}
+
 #[test]
 fn hovering_over_empty_canvas_redraws_nothing() {
     for &n in sizes() {
@@ -167,12 +193,14 @@ fn hovering_over_empty_canvas_redraws_nothing() {
         // Far outside the generated grid: nothing is under the pointer, nothing changes between moves.
         for k in 0..1000 {
             let out = p.hover(-4000.0 - f64::from(k), -4000.0);
+            shell_frame(&out);
             redraws += usize::from(out.redraw.is_some());
         }
         assert_eq!(redraws, 0, "hover redraws at {n}");
         assert_eq!(p.h.session.take_dirty(), None, "the session is dirty after hovering at {n}");
         assert_eq!(work.count(Counter::ElementsScanned), 0, "hover at {n}: {}", work.summary());
         assert_eq!(work.redraws(), 0, "at {n}");
+        assert_eq!(work.count(Counter::RedrawsSkipped), 1000, "every move reached the gate and was dropped at {n}");
     }
 }
 
@@ -181,17 +209,20 @@ fn hovering_redraws_exactly_when_the_shape_under_the_pointer_changes() {
     for &n in sizes() {
         let mut p = Pointer::new(n);
         let work = WorkScope::begin();
-        // Along the middle of the first row of cells: the pointer enters and leaves shapes at fixed places.
-        let mut changes = Vec::new();
-        for k in 0..400 {
-            let x = f64::from(k) * 3.0;
-            let out = p.hover(x, 12.0);
-            changes.push(out.redraw.is_some());
+        // Along the first row of cells, 1000 moves: the pointer enters and leaves shapes at fixed places.
+        let mut changes = 0;
+        for k in 0..1000 {
+            let out = p.hover(f64::from(k) * 0.8, 12.0);
+            shell_frame(&out);
+            changes += u64::from(out.redraw.is_some());
         }
-        let total = changes.iter().filter(|c| **c).count();
-        assert!(total > 0, "the sweep crosses shapes at {n}");
-        assert!(total < 40, "hover redraws only on a change, not on every move: {total} of 400 at {n}");
+        assert!(changes > 0, "the sweep crosses shapes at {n}");
+        assert!(changes <= 50, "hover redraws only on a change, not on every move: {changes} of 1000 at {n}");
+        assert_eq!(work.redraws(), changes, "one frame request per change at {n}: {}", work.summary());
+        assert_eq!(work.redraws_for(RedrawReason::Other), 0, "every redraw has a reason at {n}");
+        assert_eq!(work.count(Counter::RedrawsSkipped), 1000 - changes, "the rest is dropped at the gate at {n}");
         assert_eq!(work.count(Counter::ElementsScanned), 0, "hover sweep at {n}: {}", work.summary());
+        report("hover", n, &work);
     }
 }
 
@@ -223,6 +254,8 @@ fn an_idle_interaction_has_no_deadline_and_no_dirty_reason() {
         assert_eq!(p.h.session.take_dirty(), None, "at {n}");
         assert_eq!(work.redraws(), 0, "at {n}: {}", work.summary());
         assert_eq!(work.count(Counter::ElementsScanned), 0, "at {n}: {}", work.summary());
+        // `idle` has no scene size in the budgets file.
+        ScenarioReport::from_work("idle", None, &work).save_if_requested().expect("the report is written");
     }
 }
 

@@ -35,7 +35,7 @@ pub use frame::{
 pub use live::{PhaseGuard, begin_frame, end_frame, in_phase, phase, reset, set_frame_window, snapshot};
 pub use names::{Counter, Gauge, Phase, RedrawReason};
 pub use report::{
-    BudgetError, Budgets, Limit, REPORT_SCHEMA, ScenarioReport, Violation, is_deterministic, scenario_key,
+    BudgetError, Budgets, Limit, PERF_OUT_ENV, REPORT_SCHEMA, ScenarioReport, Violation, is_deterministic, scenario_key,
 };
 pub use spans::{
     COMPILED, MAX_DEPTH, MAX_NAMES, OTHER, Span, TRACE_CAPACITY, enabled, flush_thread, scope, set_enabled, span,

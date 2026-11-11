@@ -1,5 +1,4 @@
 # Gates that are named but not written yet. A listed gate passes as "pending";
 # an unlisted stub fails. The list only shrinks: write the gate, then delete the line.
 # `cargo xtask standards` fails if a line is added compared with origin/main.
-perf      # frame time, idle redraw, scene-size scaling (docs/plan.md §7)
 size      # wasm size budget

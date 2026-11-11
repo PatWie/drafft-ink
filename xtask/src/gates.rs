@@ -8,7 +8,7 @@ use std::collections::BTreeSet;
 use std::path::Path;
 use std::time::{Duration, Instant};
 
-use crate::{cargo, harness, layers, run, standards, tools, wasm};
+use crate::{cargo, harness, layers, perf, run, standards, tools, wasm};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Gate {
@@ -19,8 +19,8 @@ pub enum Gate {
     Standards,
     Deny,
     Test,
-    // Pending: reserved names with no implementation yet.
     Perf,
+    // Pending: reserved names with no implementation yet.
     Size,
     Fixtures,
     Harness,
@@ -64,7 +64,7 @@ impl Gate {
 
     /// True while the gate has no implementation. When you write one, drop it from this match.
     pub fn is_stub(self) -> bool {
-        matches!(self, Gate::Perf | Gate::Size)
+        matches!(self, Gate::Size)
     }
 
     fn run(self, root: &Path, args: &[String]) -> Result<(), String> {
@@ -86,7 +86,8 @@ impl Gate {
             Gate::Test => test(root, args),
             Gate::Fixtures => fixtures(root),
             Gate::Harness => harness::run_gate(root),
-            Gate::Perf | Gate::Size => Err(format!("{}: no implementation", self.name())),
+            Gate::Perf => perf::run_gate(root, args),
+            Gate::Size => Err(format!("{}: no implementation", self.name())),
         }
     }
 }
@@ -255,21 +256,22 @@ mod tests {
 
     #[test]
     fn pending_file_parses_comments_and_blank_lines() {
-        let pending = parse_pending("# header\n\nperf # later\nsize\n").unwrap();
-        assert_eq!(pending, BTreeSet::from([Gate::Perf, Gate::Size]));
+        let pending = parse_pending("# header\n\nsize # later\n").unwrap();
+        assert_eq!(pending, BTreeSet::from([Gate::Size]));
     }
 
     #[test]
     fn pending_file_rejects_unknown_and_implemented_gates() {
         assert!(parse_pending("bogus\n").unwrap_err().contains("not a gate"));
         assert!(parse_pending("layers\n").unwrap_err().contains("only shrinks"));
+        assert!(parse_pending("perf\n").unwrap_err().contains("only shrinks"), "perf is written");
     }
 
     #[test]
     fn stub_passes_only_when_listed() {
-        let pending = BTreeSet::from([Gate::Perf]);
-        assert_eq!(stub_outcome(Gate::Perf, &pending), Outcome::Pending);
-        assert!(matches!(stub_outcome(Gate::Size, &pending), Outcome::Fail(m) if m.contains("pending-gates.txt")));
+        let pending = BTreeSet::from([Gate::Size]);
+        assert_eq!(stub_outcome(Gate::Size, &pending), Outcome::Pending);
+        assert!(matches!(stub_outcome(Gate::Perf, &pending), Outcome::Fail(m) if m.contains("pending-gates.txt")));
     }
 
     #[test]
@@ -277,7 +279,7 @@ mod tests {
         let rows = vec![
             (Gate::Fmt, Outcome::Pass, Duration::from_millis(1200)),
             (Gate::Layers, Outcome::Fail("bad edge".into()), Duration::from_secs(2)),
-            (Gate::Perf, Outcome::Pending, Duration::ZERO),
+            (Gate::Size, Outcome::Pending, Duration::ZERO),
         ];
         let text = summary(&rows);
         assert!(text.contains("fmt") && text.contains("pass") && text.contains("1.2s"));
@@ -288,6 +290,6 @@ mod tests {
     #[test]
     fn stubs_are_the_pending_gate_names() {
         let stubs: Vec<_> = Gate::ALL.iter().filter(|g| g.is_stub()).map(|g| g.name()).collect();
-        assert_eq!(stubs, ["perf", "size"]);
+        assert_eq!(stubs, ["size"]);
     }
 }
