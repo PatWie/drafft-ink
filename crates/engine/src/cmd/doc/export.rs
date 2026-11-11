@@ -258,7 +258,7 @@ pub(crate) fn render_png(s: &Session, id: &str, doc: &Document, opts: &PngOpts) 
         dark: opts.dark,
     };
     let bytes = match s.ports.renderer.as_ref() {
-        Some(r) => r.render_png(doc, &req).map_err(|e| Refusal::io_failed(id, "render", "the picture", &e.to_string()))?,
+        Some(r) => r.render_png(doc, &req).map_err(|e| Refusal::render_failed(id, "picture", &e))?,
         None => return Err(Refusal::internal(id, "the renderer disappeared")),
     };
     Ok(RenderedPng { bytes, width: wp, height: hp })

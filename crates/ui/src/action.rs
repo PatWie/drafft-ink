@@ -407,9 +407,23 @@ impl UiState {
             ("gesture.end" | "gesture.cancel", _) | ("gesture.update", Err(_)) => self.set_scrub_gesture(None),
             _ => {}
         }
+        let waited = self.waiting.iter().position(|c| c == call);
         let Err(refusal) = result else {
+            self.waiting.retain(|c| c != call);
             return;
         };
+        if refusal.code == "render_pending" {
+            // Not an error: the picture is being drawn. The same call runs again in the next frame (the port wakes
+            // the app when it is done), and the dialog that asked stays as it is meanwhile.
+            if waited.is_none() {
+                self.waiting.push(call.clone());
+                self.push_toast(Toast::note("Drawing the picture\u{2026}", now));
+            }
+            return;
+        }
+        if let Some(i) = waited {
+            self.waiting.remove(i);
+        }
         if refusal.code == "no_save_target" {
             host.push(HostRequest::PickSaveTarget);
             return;

@@ -127,6 +127,10 @@ pub const SHARED_CODES: &[CodeInfo] = &[
     },
     CodeInfo { code: "nothing_to_do", template: "Nothing to {verb}: {reason}." },
     CodeInfo { code: "not_supported", template: "`{id}` is registered but not available yet: {reason}." },
+    CodeInfo {
+        code: "render_pending",
+        template: "The {what} is being drawn and is not ready yet. The app runs `{id}` again when it is; a script that talks to the engine directly runs it again too.",
+    },
 ];
 
 /// Codes that a shell shows without a toast when they come from a keyboard shortcut (§1.5).
@@ -379,6 +383,27 @@ impl Refusal {
         )
     }
 
+    /// `render_pending`: the `Renderer` port started drawing and has no picture yet (the browser reads a
+    /// picture back from the GPU asynchronously). Running the command again after the port is done gets it.
+    /// The app and the bridge do that themselves, so a person or an agent normally never sees this.
+    pub fn render_pending(id: &str, what: &str) -> Self {
+        Self::shared(
+            "render_pending",
+            id,
+            format!(
+                "The {what} is being drawn and is not ready yet. The app runs `{id}` again when it is; a script that talks to the engine directly runs it again too."
+            ),
+        )
+    }
+
+    /// The refusal for a failed `Renderer` call: `render_pending` while the port is still drawing, else `io_failed`.
+    pub fn render_failed(id: &str, what: &str, e: &crate::ports::PortError) -> Self {
+        match e {
+            crate::ports::PortError::NotReady => Self::render_pending(id, what),
+            other => Self::io_failed(id, "render", &format!("the {what}"), &other.to_string()),
+        }
+    }
+
     /// `io_failed`: a port read or write failed.
     pub fn io_failed(id: &str, verb: &str, target: &str, msg: &str) -> Self {
         Self::shared(
@@ -569,6 +594,7 @@ mod tests {
             Refusal::needs_single("x.y", "t", 2),
             Refusal::nothing_to_do("x.y", "v", "r"),
             Refusal::not_supported("x.y", "r"),
+            Refusal::render_pending("x.y", "picture"),
         ];
         for r in &all {
             assert!(is_shared_code(r.code), "{}", r.code);

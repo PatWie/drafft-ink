@@ -110,6 +110,31 @@ fn with_png(s: &mut Session) -> PngRenderer {
     r
 }
 
+/// A renderer that is not ready for the first calls and then returns a picture, as the browser's is.
+struct LateRenderer(std::cell::Cell<u32>);
+
+impl Renderer for LateRenderer {
+    fn render_png(&self, _: &SceneView, _: &RenderRequest) -> Result<Vec<u8>, PortError> {
+        let left = self.0.get();
+        if left == 0 {
+            return Ok(base64::engine::general_purpose::STANDARD.decode(PNG_1X1).unwrap());
+        }
+        self.0.set(left - 1);
+        Err(PortError::NotReady)
+    }
+}
+
+#[test]
+fn export_png_with_a_renderer_that_is_not_ready_refuses_with_render_pending_and_succeeds_when_run_again() {
+    let (mut s, _f) = drawn(2);
+    s.ports.renderer = Some(Box::new(LateRenderer(std::cell::Cell::new(1))));
+    let r = refuse(&mut s, "doc.export", json!({"format": "png", "scope": "all"}));
+    assert_eq!(r.code, "render_pending");
+    assert!(r.message.contains("run"), "the words say how to go on: {}", r.message);
+    let v = run(&mut s, "doc.export", json!({"format": "png", "scope": "all"}));
+    assert_eq!(v["mime"], "image/png");
+}
+
 // ---- doc.new ----
 
 #[test]

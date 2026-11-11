@@ -25,6 +25,10 @@ pub enum PortError {
     /// The operation failed.
     #[error("{0}")]
     Failed(String),
+    /// The port started the work and has no answer yet; asking again with the same request gets it once it is
+    /// done. Only an asynchronous port (the browser's `Renderer`) answers this.
+    #[error("not ready yet")]
+    NotReady,
 }
 
 /// What a clipboard read may return.

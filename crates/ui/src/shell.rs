@@ -74,6 +74,8 @@ impl UiShell {
             },
         );
         actions.extend(draw(ui, &self.model, &mut self.state));
+        // Commands that wait for a picture run again before anything new.
+        actions.splice(0..0, self.state.retries().into_iter().map(UiAction::Command));
 
         let now = ctx.input(|i| i.time);
         let report = dispatch(session, &mut self.state, actions, now);

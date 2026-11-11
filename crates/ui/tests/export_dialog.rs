@@ -195,3 +195,50 @@ fn the_menu_has_an_export_row_that_opens_the_dialog() {
     click(&mut h, "Export…");
     assert_eq!(dialog::verbs(h.state()), vec![Verb::OpenExport]);
 }
+
+/// A command sink whose picture is not ready for the first calls, as in the browser.
+struct SlowPicture {
+    not_ready: u32,
+    runs: u32,
+}
+
+impl drafftink_ui::CommandSink for SlowPicture {
+    fn run(
+        &mut self,
+        _origin: Origin,
+        id: &str,
+        _args: serde_json::Value,
+    ) -> Result<serde_json::Value, drafftink_engine::Refusal> {
+        self.runs += 1;
+        if self.not_ready > 0 {
+            self.not_ready -= 1;
+            return Err(drafftink_engine::Refusal::render_pending(id, "picture"));
+        }
+        Ok(json!({ "changed": false }))
+    }
+}
+
+#[test]
+fn an_export_whose_picture_is_not_ready_runs_again_and_closes_the_dialog_when_it_is() {
+    let mut state = drafftink_ui::UiState::new();
+    state.apply_verb(Verb::OpenExport, &mut Vec::new());
+    let mut sink = SlowPicture { not_ready: 2, runs: 0 };
+    let export = drafftink_ui::UiAction::run("doc.export", json!({ "format": "png" }));
+
+    let report = drafftink_ui::dispatch(&mut sink, &mut state, vec![export], 0.0);
+    assert!(report.ran[0].result.is_err());
+    assert!(state.waiting_for_picture(), "the call waits for its picture");
+    assert!(state.export.is_some(), "the dialog stays open meanwhile");
+    assert_eq!(state.toasts.len(), 1);
+    assert!(state.toasts[0].text.contains("Drawing the picture"), "{:?}", state.toasts);
+
+    // The next frames run the waiting call again; the toast is not repeated.
+    for _ in 0..2 {
+        let again = state.retries().into_iter().map(drafftink_ui::UiAction::Command).collect();
+        drafftink_ui::dispatch(&mut sink, &mut state, again, 0.1);
+    }
+    assert_eq!(sink.runs, 3);
+    assert!(!state.waiting_for_picture(), "the third run got the picture");
+    assert!(state.export.is_none(), "the export succeeded, so the dialog closed");
+    assert_eq!(state.toasts.len(), 1, "no error toast for a picture that was only late");
+}

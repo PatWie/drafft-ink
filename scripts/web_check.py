@@ -187,6 +187,22 @@ try:
             time.sleep(1.5)
             q = call(pg, "window.drafftink.execute('element.query', {})")
             check(q["ok"] and q["value"].get("total", 0) >= 4, "element.query sees 4 elements", str(q)[:160])
+            # PNG export: the renderer port answers "not ready" while the GPU reads the picture back, and the bridge
+            # runs the command again, so the caller just sees the picture.
+            import base64, io
+            from PIL import Image
+            ex = call(pg, "window.drafftink.execute('doc.export', {format: 'png', scope: 'all', scale: 1})")
+            png = base64.b64decode(ex["value"]["bytes"]["base64"]) if ex["ok"] else b""
+            check(ex["ok"] and png[:8] == b"\x89PNG\r\n\x1a\n", "doc.export png returns a PNG on the web", str(ex)[:200])
+            if png:
+                im = Image.open(io.BytesIO(png)).convert("RGB")
+                check(im.size == (ex["value"]["width"], ex["value"]["height"]) and len(set(im.resize((64, 64)).getdata())) > 3,
+                      "the exported picture has the reported size and is not blank", f"{im.size}")
+                check(ex["value"].get("scene_embedded") is True, "the exported PNG embeds the scene", str(ex["value"].get("scene_embedded")))
+            sh = call(pg, "window.drafftink.execute('view.screenshot', {region: 'all', scale: 0.5})")
+            check(sh["ok"] and base64.b64decode(sh["value"]["bytes"]["base64"])[:4] == b"\x89PNG", "view.screenshot returns a PNG on the web", str(sh)[:160])
+            ex2 = call(pg, "window.drafftink.execute('doc.export', {format: 'png', scope: 'all', scale: 2})")
+            check(ex2["ok"] and ex2["value"]["width"] == 2 * ex["value"]["width"], "a second export at another scale is drawn too", str(ex2)[:160])
             # real browser input: the rectangle tool from the toolbar, then a drag on the canvas
             n0 = call(pg, "window.drafftink.execute('element.query', {})")["value"]["total"]
             call(pg, "window.drafftink.execute('selection.clear', {})")

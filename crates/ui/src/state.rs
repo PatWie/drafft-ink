@@ -417,12 +417,25 @@ pub struct UiState {
     scrub: Option<String>,
     /// The theme setting the visuals were last built for.
     pub(crate) applied_theme: Option<String>,
+    /// Commands that were refused with `render_pending`: the picture is being drawn (the browser reads it back
+    /// from the GPU asynchronously). Each frame runs them again until the port has the picture.
+    pub(crate) waiting: Vec<Call>,
 }
 
 impl UiState {
     /// A fresh state: nothing open.
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// The commands to run again this frame because their picture was not ready (`UiShell::frame` does this).
+    pub fn retries(&self) -> Vec<Call> {
+        self.waiting.clone()
+    }
+
+    /// True while a command waits for its picture.
+    pub fn waiting_for_picture(&self) -> bool {
+        !self.waiting.is_empty()
     }
 
     /// True when something that Esc should close is open.

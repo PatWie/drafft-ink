@@ -19,7 +19,7 @@ use drafftink_engine::Session;
 use serde_json::{Value, json};
 
 use crate::core::dispatch;
-use crate::rpc::{BUSY, INTERNAL_ERROR, RpcError};
+use crate::rpc::{BUSY, INTERNAL_ERROR, REFUSED, RpcError};
 
 /// Requests run per poll. The rest stay queued for the next frame, so a flood cannot starve drawing.
 pub const PER_POLL: usize = 64;
@@ -87,9 +87,21 @@ pub struct Polled {
     pub more: bool,
 }
 
+/// The code of the refusal that parks a request: the command needs a picture that the port is still drawing.
+const RENDER_PENDING: &str = "render_pending";
+
+/// True when the answer says "run me again when the port is done".
+fn is_render_pending(out: &Result<Value, RpcError>) -> bool {
+    matches!(out, Err(e) if e.code == REFUSED
+        && e.data.as_ref().and_then(|d| d.get("code")).and_then(Value::as_str) == Some(RENDER_PENDING))
+}
+
 /// The shell's end of the queue.
 pub struct BridgeHost {
     rx: Receiver<Job>,
+    /// Requests that were refused with `render_pending`. Each poll runs them again before the new ones, and the
+    /// transport gets the answer of the run that was not pending (the picture, or the real failure).
+    parked: Vec<Job>,
     waker: Waker,
     sink: Option<Arc<dyn EventSink>>,
     announced: (u64, u64),
@@ -98,7 +110,7 @@ pub struct BridgeHost {
 /// Makes the two ends of the queue.
 pub fn channel(waker: Waker, sink: Option<Arc<dyn EventSink>>) -> (JobSender, BridgeHost) {
     let (tx, rx) = sync_channel(QUEUE);
-    (JobSender { tx, waker: waker.clone() }, BridgeHost { rx, waker, sink, announced: (0, 0) })
+    (JobSender { tx, waker: waker.clone() }, BridgeHost { rx, parked: Vec::new(), waker, sink, announced: (0, 0) })
 }
 
 impl BridgeHost {
@@ -107,11 +119,13 @@ impl BridgeHost {
     pub fn poll(&mut self, session: &mut Session) -> Polled {
         let mut ran = 0;
         let mut more = false;
+        for job in std::mem::take(&mut self.parked) {
+            self.run(session, job);
+        }
         while ran < PER_POLL {
             match self.rx.try_recv() {
                 Ok(job) => {
-                    let out = dispatch(session, &job.method, &job.params);
-                    (job.reply)(out);
+                    self.run(session, job);
                     ran += 1;
                 }
                 Err(TryRecvError::Empty | TryRecvError::Disconnected) => break,
@@ -126,6 +140,17 @@ impl BridgeHost {
         Polled { ran, more }
     }
 
+    /// Runs one request and answers it, or parks it when the answer is "not drawn yet". A request that cannot be
+    /// parked (the shelf is full) gets the refusal, whose text says to run it again.
+    fn run(&mut self, session: &mut Session, job: Job) {
+        let out = dispatch(session, &job.method, &job.params);
+        if is_render_pending(&out) && self.parked.len() < QUEUE {
+            self.parked.push(job);
+        } else {
+            (job.reply)(out);
+        }
+    }
+
     fn announce(&mut self, session: &Session) {
         let Some(sink) = &self.sink else { return };
         let now = (session.ring().next_seq(), session.tab().doc.revision());
@@ -136,5 +161,87 @@ impl BridgeHost {
         if sink.has_subscribers() {
             sink.publish("changed", json!({ "seq": now.0, "revision": now.1 }));
         }
+    }
+}
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+mod tests {
+    use std::cell::Cell;
+    use std::rc::Rc;
+    use std::sync::Mutex;
+
+    use drafftink_engine::PortError;
+    use drafftink_engine::ports::{RenderRequest, Renderer, SceneView};
+    use drafftink_engine::testing::{add_rect, session};
+    use serde_json::json;
+
+    use super::*;
+
+    /// A renderer that is not ready for the first `not_ready` calls, as the browser's is while the GPU reads back.
+    struct SlowRenderer {
+        not_ready: Rc<Cell<u32>>,
+    }
+
+    impl Renderer for SlowRenderer {
+        fn render_png(&self, _: &SceneView, _: &RenderRequest) -> Result<Vec<u8>, PortError> {
+            match self.not_ready.get() {
+                0 => Ok(b"png".to_vec()),
+                n => {
+                    self.not_ready.set(n - 1);
+                    Err(PortError::NotReady)
+                }
+            }
+        }
+    }
+
+    type Answers = Arc<Mutex<Vec<Result<Value, RpcError>>>>;
+
+    fn submit(tx: &JobSender, method: &str, params: Value) -> Answers {
+        let answers: Answers = Arc::default();
+        let sink = answers.clone();
+        let job = Job {
+            method: method.to_owned(),
+            params,
+            reply: Box::new(move |r| sink.lock().unwrap_or_else(std::sync::PoisonError::into_inner).push(r)),
+        };
+        assert!(tx.submit(job).is_ok());
+        answers
+    }
+
+    fn count(a: &Answers) -> usize {
+        a.lock().unwrap_or_else(std::sync::PoisonError::into_inner).len()
+    }
+
+    #[test]
+    fn a_request_the_renderer_is_not_ready_for_waits_and_is_answered_when_it_is() {
+        let (mut s, _fakes) = session();
+        add_rect(&mut s, 0.0, 0.0, 50.0, 40.0).unwrap();
+        let not_ready = Rc::new(Cell::new(2));
+        s.ports.renderer = Some(Box::new(SlowRenderer { not_ready: not_ready.clone() }));
+        let (tx, mut host) = channel(Arc::new(|| {}), None);
+
+        let export = submit(&tx, "execute", json!({ "id": "doc.export", "args": { "format": "png" } }));
+        let other = submit(&tx, "state", json!({}));
+        host.poll(&mut s);
+        assert_eq!(count(&other), 1, "other requests are not held up");
+        assert_eq!(count(&export), 0, "the export waits: the picture is not there");
+        host.poll(&mut s);
+        assert_eq!(count(&export), 0, "still not ready after the second try");
+        host.poll(&mut s);
+        let answers = export.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+        let value = answers.first().and_then(|r| r.as_ref().ok()).expect("the third try gets the picture");
+        assert!(value.get("bytes").is_some(), "{value}");
+    }
+
+    #[test]
+    fn a_real_failure_is_not_parked() {
+        let (mut s, _fakes) = session();
+        let (tx, mut host) = channel(Arc::new(|| {}), None);
+        // The empty document refuses with nothing_to_do, not render_pending.
+        let export = submit(&tx, "execute", json!({ "id": "doc.export", "args": { "format": "png" } }));
+        host.poll(&mut s);
+        assert_eq!(count(&export), 1);
+        assert!(host.parked.is_empty());
     }
 }

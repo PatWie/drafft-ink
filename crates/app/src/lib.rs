@@ -19,6 +19,7 @@ mod clock;
 mod config;
 mod editor;
 mod input;
+mod offscreen;
 mod overlay;
 mod platform;
 mod startup;

@@ -187,6 +187,7 @@ Shared catalog. Placeholders in braces are filled in; the wording is exact.
 | `needs_single` | `{id}` needs exactly one {thing} selected, and {have} are selected. Select one {thing} first, or pass it by id. |
 | `nothing_to_do` | Nothing to {verb}: {reason}. |
 | `not_supported` | `{id}` is registered but not available yet: {reason}. |
+| `render_pending` | The {what} is being drawn and is not ready yet. The app runs `{id}` again when it is; a script that talks to the engine directly runs it again too. |
 
 Command-specific codes appear inline in the §2 tables as `code: "message"`. They follow the same rules and are added to the catalog check (test 4).
 
