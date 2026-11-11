@@ -322,6 +322,17 @@ pub struct WrapOut {
     pub skipped: Vec<String>,
 }
 
+/// `Session::availability` of `text.wrap_in_container`: the selection holds a free text, the refusal `execute`
+/// gives when nothing was wrapped.
+fn wrap_available(s: &Session) -> Result<(), Refusal> {
+    let free_text = s.selection().iter().filter_map(|i| s.element(i)).any(|e| e.tag() == Kind::Text && e.container_id().is_none());
+    if free_text {
+        Ok(())
+    } else {
+        Err(Refusal::not_applicable("text.wrap_in_container", "a container", "free text elements (a text that is already a label is skipped)"))
+    }
+}
+
 fn wrap_in_container(s: &mut Session, a: WrapArgs) -> Result<WrapOut, Refusal> {
     let cmd = s.cmd();
     let padding = args::in_range(cmd, "padding", a.padding, 0.0, 1000.0)?;
@@ -529,6 +540,7 @@ pub const COMMANDS: &[CommandSpec] = &[
         &Typed::new(wrap_in_container),
         Facts { needs_selection: Selection::Required, palette: true, ..DOC },
     )
+    .default_targets(wrap_available)
     .example(r#"{"shape":"ellipse","padding":24}"#),
     CommandSpec::new(
         "text.set_autoresize",

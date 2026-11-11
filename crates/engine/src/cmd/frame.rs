@@ -162,8 +162,7 @@ pub struct UnwrapOut {
 }
 
 /// The frame a command works on: the given one, else the single frame among the selection.
-fn frame_target(s: &Session, given: Option<&Ref>) -> Result<ElementId, Refusal> {
-    let cmd = s.cmd();
+fn frame_target(s: &Session, cmd: &str, given: Option<&Ref>) -> Result<ElementId, Refusal> {
     if let Some(r) = given {
         return s.resolve_ref(r);
     }
@@ -180,9 +179,19 @@ fn frame_target(s: &Session, given: Option<&Ref>) -> Result<ElementId, Refusal> 
     }
 }
 
+/// `Session::availability` of `frame.unwrap`: the refusal `execute` gives when no frame is selected.
+fn unwrap_available(s: &Session) -> Result<(), Refusal> {
+    frame_target(s, "frame.unwrap", None).map(drop)
+}
+
+/// `Session::availability` of `frame.select_children`.
+fn select_children_available(s: &Session) -> Result<(), Refusal> {
+    frame_target(s, "frame.select_children", None).map(drop)
+}
+
 fn unwrap(s: &mut Session, a: UnwrapArgs) -> Result<UnwrapOut, Refusal> {
     let cmd = s.cmd();
-    let target = frame_target(s, a.frame.as_ref())?;
+    let target = frame_target(s, cmd, a.frame.as_ref())?;
     let children =
         edit(s, |tx, _| frame::unwrap(tx, &target)).map_err(|e| e.refusal(cmd, |e| frame_refusal(cmd, e)))?;
     let editing = editing_group(s);
@@ -263,6 +272,16 @@ pub struct RemoveOut {
     pub removed: Vec<ElementId>,
 }
 
+/// `Session::availability` of `frame.remove`: at least one selected element sits in a frame.
+fn remove_available(s: &Session) -> Result<(), Refusal> {
+    let in_frame = selected_ids(s).iter().any(|i| s.element(i).is_some_and(|e| e.frame_id.is_some()));
+    if in_frame {
+        Ok(())
+    } else {
+        Err(Refusal::nothing_to_do("frame.remove", "remove", "none of the selected elements is in a frame"))
+    }
+}
+
 fn remove(s: &mut Session, a: RemoveArgs) -> Result<RemoveOut, Refusal> {
     let cmd = s.cmd();
     let nothing = || Refusal::nothing_to_do(cmd, "remove", "none of the given elements is in a frame");
@@ -302,8 +321,8 @@ fn remove(s: &mut Session, a: RemoveArgs) -> Result<RemoveOut, Refusal> {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct SelectChildrenArgs {
-    /// The frame.
-    pub frame: Ref,
+    /// The frame. Default: the selected frame.
+    pub frame: Option<Ref>,
 }
 
 /// Result of `frame.select_children`.
@@ -317,7 +336,7 @@ pub struct SelectChildrenOut {
 
 fn select_children(s: &mut Session, a: SelectChildrenArgs) -> Result<SelectChildrenOut, Refusal> {
     let cmd = s.cmd();
-    let target = s.resolve_ref(&a.frame)?;
+    let target = frame_target(s, cmd, a.frame.as_ref())?;
     let children = frame::children_of(s.store(), &target).map_err(|e| frame_refusal(cmd, e))?;
     let free: Vec<ElementId> = children.into_iter().filter(|i| s.element(i).is_some_and(|e| !e.locked)).collect();
     let sel = select_ids(s.store(), &free, None);
@@ -369,7 +388,8 @@ pub const COMMANDS: &[CommandSpec] = &[
         "Releases the children of a frame, deletes the frame and selects the children.",
         &Typed::new(unwrap),
         Facts { needs_selection: Selection::Soft, ..DOC },
-    ),
+    )
+    .default_targets(unwrap_available),
     CommandSpec::new(
         "frame.rename",
         "frame",
@@ -396,7 +416,8 @@ pub const COMMANDS: &[CommandSpec] = &[
         "Takes the elements out of their frames, or all children of the given frame; the z-order stays.",
         &Typed::new(remove),
         Facts { needs_selection: Selection::Soft, ..DOC },
-    ),
+    )
+    .default_targets(remove_available),
     CommandSpec::new(
         "frame.select_children",
         "frame",
@@ -412,6 +433,7 @@ pub const COMMANDS: &[CommandSpec] = &[
             ..DOC
         },
     )
+    .default_targets(select_children_available)
     .refusals(&["nothing_to_do"])
     .example(r#"{"frame":"f1"}"#),
 ];

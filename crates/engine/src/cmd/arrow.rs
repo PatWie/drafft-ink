@@ -952,8 +952,17 @@ fn edit_points_available(s: &Session) -> Result<(), Refusal> {
     if s.tab().observed.linear_editor.is_some() {
         return Ok(());
     }
-    let have = s.selection().len();
-    if have == 1 { Ok(()) } else { Err(Refusal::needs_single("arrow.edit_points", "line or arrow", have)) }
+    let selected = s.selection();
+    let mut ids = selected.iter();
+    match (ids.next(), ids.next()) {
+        (Some(one), None) => match s.element(one) {
+            Some(e) if !e.tag().is_linear() => {
+                Err(Refusal::wrong_kind("arrow.edit_points", e.tag().name(), "arrows and lines"))
+            }
+            _ => Ok(()),
+        },
+        _ => Err(Refusal::needs_single("arrow.edit_points", "line or arrow", selected.len())),
+    }
 }
 
 fn edit_points(s: &mut Session, a: EditPointsArgs) -> Result<EditPointsOut, Refusal> {

@@ -379,6 +379,7 @@ fn select_children_selects_them_without_bound_text_and_makes_no_undo_step() {
     assert_eq!(s.selection().len(), 2);
     assert_eq!(s.tab().doc.undo_depth(), depth);
     // allowed in view-only mode: it changes the selection only
+    select(&mut s, &[&drafftink_scene::ElementId::new("f").unwrap()]);
     s.view_only = true;
     assert!(s.availability("frame.select_children").is_ok());
 }
@@ -394,6 +395,47 @@ fn select_children_refusals() {
     assert_eq!((r.code, r.message.as_str()), ("wrong_kind", "`frame.select_children` works on frames, and `r0` is a rectangle."));
     assert_eq!(refuse(&mut s, "frame.select_children", json!({"frame": "nope"})).code, "not_found");
     assert_eq!(s.fingerprint(), before);
+}
+
+// ---- availability follows the selection ----
+
+#[test]
+fn the_frame_commands_say_why_they_are_unavailable_with_the_text_execute_gives() {
+    let (mut s, ids) = rects(2);
+    let f = frame(&mut s, "f", -10.0, -10.0, 60.0, 60.0);
+    run(&mut s, "frame.add", json!({"frame": "f", "ids": ["r0"]}));
+    for id in ["frame.unwrap", "frame.select_children"] {
+        assert_eq!(s.availability(id).unwrap_err().code, "no_target", "{id}: nothing selected");
+    }
+    assert_eq!(s.availability("frame.remove").unwrap_err().code, "nothing_to_do");
+
+    select(&mut s, &[&ids[1]]);
+    for id in ["frame.unwrap", "frame.select_children"] {
+        assert_eq!(s.availability(id).unwrap_err().code, "wrong_kind", "{id}: a rectangle is selected");
+    }
+    for id in ["frame.unwrap", "frame.select_children"] {
+        let shown = s.availability(id).unwrap_err();
+        let ran = refuse(&mut s, id, json!({}));
+        assert_eq!(shown.message, ran.message, "{id}: the disabled control shows what a click would answer");
+    }
+    assert_eq!(s.availability("frame.remove").unwrap_err().code, "nothing_to_do", "r1 is in no frame");
+
+    select(&mut s, &[&ids[0]]);
+    assert!(s.availability("frame.remove").is_ok(), "r0 is in a frame");
+    select(&mut s, &[&f]);
+    assert!(s.availability("frame.unwrap").is_ok() && s.availability("frame.select_children").is_ok());
+}
+
+#[test]
+fn select_children_takes_the_selected_frame_when_none_is_given() {
+    let (mut s, _) = rects(2);
+    let f = frame(&mut s, "f", -10.0, -10.0, 60.0, 60.0);
+    run(&mut s, "frame.add", json!({"frame": "f", "ids": ["r0"]}));
+    select(&mut s, &[&f]);
+    let out = run(&mut s, "frame.select_children", json!({}));
+    assert_eq!(json_ids(&out, "selected"), ["r0"]);
+    let r = refuse(&mut s, "frame.select_children", json!({}));
+    assert_eq!(r.code, "wrong_kind", "r0 is selected now, and it is no frame");
 }
 
 // ---- interplay ----
