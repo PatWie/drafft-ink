@@ -8,8 +8,8 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use drafftink_edit::layout::{
-    Algorithm, Arrowheads, DiagramSpec, Direction, EdgeSpec, GroupSpec, LayoutOpts, NodeShape as SpecShape, NodeSpec,
-    StyleSpec,
+    Algorithm, Arrowheads, ClusterSpec, DiagramSpec, Direction, EdgeSpec, GroupSpec, LayoutOpts, NodeShape as SpecShape,
+    NodeSpec, StyleSpec,
 };
 use drafftink_edit::text_bind::{TextMeasure, create_label, measure_text};
 use drafftink_edit::unused_element_id;
@@ -225,14 +225,31 @@ fn flowchart(g: &mm::MermaidGraph, group: bool) -> (Built, Vec<String>) {
             "{approximated} node(s) have a Mermaid shape that drafft.ink does not draw (hexagon, cylinder, parallelogram, trapezoid, flag); they were drawn as rectangles."
         ));
     }
-    let (mut to_subgraph, mut invisible) = (0usize, 0usize);
+    // Subgraphs become boxes with a title. The symbolic id of a box is the Mermaid id, or a stand-in that no node has.
+    let mut taken: BTreeSet<&str> = sym.iter().map(String::as_str).collect();
+    let cluster_syms: Vec<String> = g
+        .subgraphs
+        .iter()
+        .enumerate()
+        .map(|(i, sg)| {
+            let len = sg.id.chars().count();
+            let fits = (1..=64).contains(&len) && !sg.id.chars().any(char::is_control);
+            let mut id = if fits { sg.id.clone() } else { format!("subgraph{i}") };
+            while taken.contains(id.as_str()) {
+                id.push('_');
+            }
+            id
+        })
+        .collect();
+    taken.clear();
+    let mut invisible = 0usize;
     let mut edges = Vec::new();
     for e in &g.edges {
-        if e.from_subgraph.is_some() || e.to_subgraph.is_some() {
-            to_subgraph += 1;
-            continue;
-        }
-        let (Some(f), Some(t)) = (by_mermaid.get(e.from.as_str()), by_mermaid.get(e.to.as_str())) else { continue };
+        let end = |name: &str, subgraph: Option<usize>| match subgraph {
+            Some(si) => cluster_syms.get(si).map(String::as_str),
+            None => by_mermaid.get(name).copied(),
+        };
+        let (Some(f), Some(t)) = (end(&e.from, e.from_subgraph), end(&e.to, e.to_subgraph)) else { continue };
         if e.line == mm::Line::Invisible {
             invisible += 1;
             continue;
@@ -244,8 +261,8 @@ fn flowchart(g: &mm::MermaidGraph, group: bool) -> (Built, Vec<String>) {
             _ => {}
         }
         edges.push(EdgeSpec {
-            from: (*f).to_owned(),
-            to: (*t).to_owned(),
+            from: f.to_owned(),
+            to: t.to_owned(),
             label: e.label.clone().filter(|l| !l.trim().is_empty()),
             arrow_type: Some(PathType::Sharp),
             arrowheads: Some(Arrowheads::None),
@@ -255,49 +272,39 @@ fn flowchart(g: &mm::MermaidGraph, group: bool) -> (Built, Vec<String>) {
             name: None,
         });
     }
-    if to_subgraph > 0 {
-        warnings.push(format!("{to_subgraph} edge(s) that start or end at a whole subgraph were skipped; connect to a node inside it."));
-    }
     if invisible > 0 {
         warnings.push(format!("{invisible} invisible link(s) (~~~) were skipped; they only influence Mermaid's own layout."));
     }
-    // Subgraphs become groups (nested). Their titles are not drawn.
+    let clusters: Vec<ClusterSpec> = g
+        .subgraphs
+        .iter()
+        .zip(&cluster_syms)
+        .enumerate()
+        .map(|(si, (sg, id))| ClusterSpec {
+            id: id.clone(),
+            title: sg.title.clone(),
+            parent: sg.parent.and_then(|p| cluster_syms.get(p)).cloned(),
+            members: g
+                .nodes
+                .iter()
+                .zip(&sym)
+                .filter(|(n, _)| n.subgraph == Some(si))
+                .map(|(_, s)| s.clone())
+                .collect(),
+            direction: sg.direction.map(direction),
+            group,
+        })
+        .collect();
+    // One group around everything, unless a subgraph box already holds every node.
+    let one_box_holds_all = group && g.subgraphs.iter().enumerate().any(|(si, _)| {
+        g.nodes.iter().all(|n| std::iter::successors(n.subgraph, |&s| g.subgraphs.get(s).and_then(|s| s.parent)).any(|s| s == si))
+    });
     let mut groups: Vec<GroupSpec> = Vec::new();
-    if group && !g.subgraphs.is_empty() {
-        let mut members: Vec<BTreeSet<usize>> = vec![BTreeSet::new(); g.subgraphs.len()];
-        for (ni, n) in g.nodes.iter().enumerate() {
-            let mut cur = n.subgraph;
-            let mut guard = 0;
-            while let Some(si) = cur {
-                if guard > 64 || si >= members.len() {
-                    break;
-                }
-                members[si].insert(ni);
-                cur = g.subgraphs[si].parent;
-                guard += 1;
-            }
-        }
-        let mut seen: Vec<BTreeSet<usize>> = Vec::new();
-        for (si, set) in members.iter().enumerate() {
-            if set.len() < 2 || set.len() == g.nodes.len() || seen.contains(set) {
-                continue;
-            }
-            seen.push(set.clone());
-            groups.push(GroupSpec {
-                id: Some(g.subgraphs[si].id.clone()),
-                members: set.iter().map(|i| sym[*i].clone()).collect(),
-            });
-        }
-        warnings.push(format!(
-            "{} subgraph title(s) are not drawn; the subgraph members are grouped.",
-            g.subgraphs.len()
-        ));
-    }
-    if group && nodes.len() >= 2 {
+    if group && nodes.len() >= 2 && !one_box_holds_all {
         groups.push(GroupSpec { id: None, members: sym.clone() });
     }
     let layout = LayoutOpts { algorithm: Algorithm::Layered, direction: direction(g.direction), ..LayoutOpts::default() };
-    let built = Built { spec: DiagramSpec { nodes, edges, groups, layout }, seq: None, group_all: false };
+    let built = Built { spec: DiagramSpec { nodes, edges, groups, clusters, layout }, seq: None, group_all: false };
     (built, warnings)
 }
 
@@ -406,7 +413,7 @@ fn sequence(q: &mm::SequenceDiagram, group: bool, m: &dyn TextMeasure) -> (Built
     let layout = LayoutOpts { algorithm: Algorithm::None, ..LayoutOpts::default() };
     let n = nodes.len();
     let built = Built {
-        spec: DiagramSpec { nodes, edges: Vec::new(), groups: Vec::new(), layout },
+        spec: DiagramSpec { nodes, edges: Vec::new(), groups: Vec::new(), clusters: Vec::new(), layout },
         seq: Some(Sequence { lifelines, messages, bounds }),
         group_all: group && n >= 2,
     };
@@ -489,14 +496,27 @@ mod tests {
     }
 
     #[test]
-    fn subgraphs_become_nested_groups_and_unsupported_shapes_are_reported() {
+    fn subgraphs_become_nested_clusters_and_unsupported_shapes_are_reported() {
         let (b, w) = flow("graph TD\n subgraph outer\n A --> B\n subgraph inner\n C --> D\n end\n end\n E[(db)] --> A");
-        let sets: Vec<Vec<&str>> =
-            b.spec.groups.iter().map(|g| g.members.iter().map(String::as_str).collect()).collect();
-        assert!(sets.contains(&vec!["A", "B", "C", "D"]), "{sets:?}");
-        assert!(sets.contains(&vec!["C", "D"]), "{sets:?}");
+        let c: Vec<(&str, Option<&str>, Vec<&str>)> = b
+            .spec
+            .clusters
+            .iter()
+            .map(|c| (c.id.as_str(), c.parent.as_deref(), c.members.iter().map(String::as_str).collect()))
+            .collect();
+        assert_eq!(c, [("outer", None, vec!["A", "B"]), ("inner", Some("outer"), vec!["C", "D"])]);
+        assert!(b.spec.clusters.iter().all(|c| c.group), "group=true groups every box with what is inside");
+        assert_eq!(b.spec.groups.len(), 1, "and the whole diagram");
         assert!(w.iter().any(|x| x.contains("drawn as rectangles")), "{w:?}");
-        assert!(w.iter().any(|x| x.contains("subgraph title")), "{w:?}");
+        assert!(!w.iter().any(|x| x.contains("subgraph")), "{w:?}");
+    }
+
+    #[test]
+    fn an_edge_to_a_subgraph_ends_at_its_box_and_one_box_around_everything_needs_no_outer_group() {
+        let (b, _) = flow("graph TD\n subgraph s[Title]\n A --> B\n end\n s --> A");
+        assert_eq!(b.spec.edges.len(), 2);
+        assert_eq!((b.spec.edges[1].from.as_str(), b.spec.edges[1].to.as_str()), ("s", "A"));
+        assert!(b.spec.groups.is_empty(), "the box already holds every node: {:?}", b.spec.groups);
     }
 
     #[test]

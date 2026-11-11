@@ -116,8 +116,21 @@ jobs:
           tar -tzf drafftink-*-linux-${{ matrix.arch }}.tar.gz | grep -q '/bin/drafftink$'
           dpkg-deb --info drafftink-*-linux-${{ matrix.arch }}.deb
           dpkg-deb --contents drafftink-*-linux-${{ matrix.arch }}.deb | grep -q './usr/bin/drafftink$'
-          ldd ../../target/release/drafftink | grep -i 'not found' && exit 1 || true
+          ldd ../../target/dist/drafftink | grep -i 'not found' && exit 1 || true
           APPIMAGE_EXTRACT_AND_RUN=1 ./drafftink-*-linux-${{ matrix.arch }}.AppImage --version
+      - name: Native size budget
+        if: matrix.arch == 'x86_64'
+        run: cargo xtask size --native --no-build
+      # The server is built with `--features sqlite,s3` (scripts/package-linux.sh). A build without them starts and
+      # then refuses `--storage sqlite` with "this build has no SQLite support".
+      - name: Smoke-test the room stores of the packaged server
+        run: |
+          mkdir "$RUNNER_TEMP/srv" && tar -xzf dist-release/drafftink-server-*-linux-${{ matrix.arch }}.tar.gz -C "$RUNNER_TEMP/srv"
+          srv="$(find "$RUNNER_TEMP/srv" -name drafftink-server -type f | head -1)"
+          code=0; timeout 3 "$srv" --storage sqlite --data-dir "$RUNNER_TEMP/rooms" --bind 127.0.0.1:0 || code=$?
+          if [ "$code" != 124 ]; then echo "::error::the packaged server did not start with --storage sqlite (exit $code)"; exit 1; fi
+          out="$("$srv" --storage s3 2>&1 || true)"
+          if echo "$out" | grep -qi 'no S3 support'; then echo "::error::the packaged server has no S3 support"; exit 1; fi
       - uses: actions/upload-artifact@v4
         with:
           name: release-linux-${{ matrix.arch }}

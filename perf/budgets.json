@@ -582,8 +582,8 @@
         "note": "measured 29 to 44% of a core, almost all of it the X11 present of Xvfb (the old app: 52 to 65%)"
       },
       "frame.p99_ms": {
-        "max": 25.0,
-        "note": "measured 5 to 20 ms; 60 fps frames are 16.7 ms"
+        "max": 16.7,
+        "note": "one 60 fps frame. Measured 7 to 13 ms on 2026-11-08 (pan@100k 8.4 and 13.0 ms in two runs). This was loosened to 25 in efe3681 without a note and is back at the plan's number"
       },
       "frame.max_ms": {
         "max": 250.0,
@@ -644,8 +644,8 @@
         "note": "measured 29 to 44% of a core, almost all of it the X11 present of Xvfb (the old app: 52 to 65%)"
       },
       "frame.p99_ms": {
-        "max": 25.0,
-        "note": "measured 5 to 20 ms; 60 fps frames are 16.7 ms"
+        "max": 16.7,
+        "note": "one 60 fps frame. Measured 7 to 13 ms on 2026-11-08 (pan@100k 8.4 and 13.0 ms in two runs). This was loosened to 25 in efe3681 without a note and is back at the plan's number"
       },
       "frame.max_ms": {
         "max": 250.0,
@@ -706,8 +706,8 @@
         "note": "measured 29 to 44% of a core, almost all of it the X11 present of Xvfb (the old app: 52 to 65%)"
       },
       "frame.p99_ms": {
-        "max": 25.0,
-        "note": "measured 5 to 20 ms; 60 fps frames are 16.7 ms"
+        "max": 16.7,
+        "note": "one 60 fps frame. Measured 7 to 13 ms on 2026-11-08 (pan@100k 8.4 and 13.0 ms in two runs). This was loosened to 25 in efe3681 without a note and is back at the plan's number"
       },
       "frame.max_ms": {
         "max": 250.0,
@@ -1649,6 +1649,18 @@
     "fonts.brotli_bytes": {
       "max": 1550000,
       "note": "the seven font files that the page loads when it needs them (Noto Sans, STIX Two Math, three egui fonts). 1,505,581 measured on 2026-11-08; the limit is 3% above"
+    },
+    "native.drafftink_bytes": {
+      "max": 43500000,
+      "note": "the desktop app, profile dist (fat LTO, stripped, cold crates at opt-level s). 42,220,752 measured on 2026-11-08; the limit is 3% above. The old app was 24.4 MB (opt-level z, no strip). The bundled typeset fonts are 2.7 MB of it. Profile `release` (thin LTO, stripped) is 46.9 MB, 55.2 MB before `strip`"
+    },
+    "native.mcp_bytes": {
+      "max": 24650000,
+      "note": "drafftink-mcp, profile dist. 23,914,032 measured on 2026-11-08; the limit is 3% above. It holds the whole engine and the 2.7 MB of typeset fonts for the headless session"
+    },
+    "native.server_bytes": {
+      "max": 15030000,
+      "note": "drafftink-server with the sqlite and s3 stores, profile dist. 14,588,920 measured on 2026-11-08; the limit is 3% above"
     }
   }
 }

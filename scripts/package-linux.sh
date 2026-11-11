@@ -7,7 +7,7 @@
 #   $DIST/drafftink-server-<version>-linux-<arch>.tar.gz   drafftink-server + web-dist/ (the web build), run it from that folder
 #
 # Usage: scripts/package-linux.sh [--skip-build] [--formats "tar appimage deb server"] [--web-dist DIR]
-#   --skip-build   package the binaries already in target/release (or $BIN_DIR)
+#   --skip-build   package the binaries already in target/dist (or $BIN_DIR)
 #   --formats      default: "tar appimage deb server". "server" needs the web build (--web-dist, default dist/,
 #                  made by scripts/build-web.sh); without it the server archive is skipped with a warning.
 # Environment: DIST (output dir), BIN_DIR (binaries), CROSS_TARGET + CROSS_ARCH (cross build), APPIMAGETOOL.
@@ -44,7 +44,8 @@ SERVER_BASENAME="drafftink-server-$VERSION-linux-$ARCH"
 echo "==> Drafft.ink $VERSION for Linux $ARCH ($FORMATS)"
 
 if [ "$SKIP_BUILD" = 0 ]; then
-  cargo_args=(build --release --locked -p drafftink -p drafftink-mcp -p drafftink-server)
+  # The server ships with every room store: sqlite and s3 are cargo features that are off by default.
+  cargo_args=(build --profile dist --locked -p drafftink -p drafftink-mcp -p drafftink-server --features drafftink-server/sqlite,drafftink-server/s3)
   if [ -n "${CROSS_TARGET:-}" ]; then cargo_args+=(--target "$CROSS_TARGET"); fi
   (cd "$ROOT" && cargo "${cargo_args[@]}")
 fi

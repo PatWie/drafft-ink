@@ -1,7 +1,8 @@
 //! External cargo tools that gates need (cargo-nextest, cargo-deny), installed into `~/.cargo` on
 //! first use.
 
-use std::path::Path;
+use std::ffi::OsString;
+use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
 use crate::{cargo, run};
@@ -40,4 +41,31 @@ pub fn ensure(root: &Path, subcommand: &str, krate: &str, version: Option<&str>)
 pub fn git(root: &Path, args: &[&str]) -> Option<String> {
     let output = Command::new("git").current_dir(root).args(args).output().ok()?;
     output.status.success().then(|| String::from_utf8_lossy(&output.stdout).into_owned())
+}
+
+/// The folder cargo builds into: `$CARGO_TARGET_DIR` when it is set (a relative one is relative to the workspace
+/// root, where xtask runs cargo), else `target/` of the workspace.
+pub fn target_dir(root: &Path) -> PathBuf {
+    target_dir_from(root, std::env::var_os("CARGO_TARGET_DIR"))
+}
+
+fn target_dir_from(root: &Path, env: Option<OsString>) -> PathBuf {
+    match env.filter(|v| !v.is_empty()) {
+        Some(dir) => root.join(dir), // `join` keeps an absolute path as it is
+        None => root.join("target"),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_target_dir_follows_the_environment() {
+        let root = Path::new("/work/repo");
+        assert_eq!(target_dir_from(root, None), Path::new("/work/repo/target"));
+        assert_eq!(target_dir_from(root, Some("".into())), Path::new("/work/repo/target"));
+        assert_eq!(target_dir_from(root, Some("/tmp/t".into())), Path::new("/tmp/t"));
+        assert_eq!(target_dir_from(root, Some("out".into())), Path::new("/work/repo/out"));
+    }
 }

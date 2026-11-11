@@ -5,7 +5,7 @@
 #   $DIST/drafftink-server-<version>-macos-universal.tar.gz  drafftink-server + web-dist/ (needs the web build)
 #
 # Usage: scripts/package-macos.sh [--skip-build] [--sign] [--notarize] [--web-dist DIR]
-#   --skip-build   use the binaries already in target/<triple>/release for both triples
+#   --skip-build   use the binaries already in target/<triple>/dist for both triples
 #   --sign         codesign the .app and the .dmg with $MACOS_SIGN_IDENTITY ("Developer ID Application: ..."),
 #                  hardened runtime, entitlements from packaging/macos/entitlements.plist
 #   --notarize     submit the .dmg with `xcrun notarytool` and staple it. Needs --sign and
@@ -39,7 +39,7 @@ echo "==> Drafft.ink $VERSION for macOS (universal)"
 if [ "$SKIP_BUILD" = 0 ]; then
   for t in $TRIPLES; do
     rustup target add "$t"
-    (cd "$ROOT" && cargo build --release --locked -p drafftink -p drafftink-mcp -p drafftink-server --target "$t")
+    (cd "$ROOT" && cargo build --profile dist --locked -p drafftink -p drafftink-mcp -p drafftink-server --features drafftink-server/sqlite,drafftink-server/s3 --target "$t")
   done
 fi
 
@@ -47,7 +47,7 @@ WORK="$CARGO_TARGET_DIR/macos-package"
 rm -rf "$WORK"
 mkdir -p "$WORK/universal"
 for b in $DESKTOP_BINS $SERVER_BIN; do
-  slices=(); for t in $TRIPLES; do slices+=("$CARGO_TARGET_DIR/$t/release/$b"); done
+  slices=(); for t in $TRIPLES; do slices+=("$CARGO_TARGET_DIR/$t/dist/$b"); done
   lipo -create -output "$WORK/universal/$b" "${slices[@]}"
   strip "$WORK/universal/$b" 2>/dev/null || true
 done

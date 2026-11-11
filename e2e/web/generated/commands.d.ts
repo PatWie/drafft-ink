@@ -1485,7 +1485,7 @@ export namespace DiagramImportMermaid {
   export type Args = {
     /** Where the diagram goes: a top-left point, or `"viewport_center"` (default). */
     at?: A_DiagramAt;
-    /** Group the whole diagram, and every Mermaid subgraph. */
+    /** Group the whole diagram, and every Mermaid subgraph with its box and title. */
     group?: boolean;
     /** Select the result. */
     select?: boolean;

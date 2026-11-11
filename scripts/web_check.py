@@ -18,11 +18,13 @@ import argparse, json, math, os, random, shutil, signal, socket, subprocess, sys
 from playwright.sync_api import sync_playwright
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+# cargo's target folder, which CARGO_TARGET_DIR moves (relative to the repository root, where xtask runs cargo)
+TARGET = os.path.join(ROOT, os.environ.get("CARGO_TARGET_DIR") or "target")
 ap = argparse.ArgumentParser()
 ap.add_argument("--app", action="store_true", help="also run the checks that need the real App core")
 ap.add_argument("--display", default=":97")
 ap.add_argument("--dist", default=os.path.join(ROOT, "dist"))
-ap.add_argument("--server", default=os.path.join(ROOT, "target/release/drafftink-server"))
+ap.add_argument("--server", default=os.path.join(TARGET, "release/drafftink-server"))
 ap.add_argument("--shot", default=None, help="screenshot path (1400x860), only with --app")
 ap.add_argument("--json", default=None)
 ap.add_argument("--adapter", default="nvidia", choices=["nvidia", "swiftshader"])

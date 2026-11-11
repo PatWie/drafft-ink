@@ -61,11 +61,11 @@ copy_docs() {
   done
 }
 
-# Directory with the release binaries: $BIN_DIR if set, else target/<CROSS_TARGET>/release or target/release.
+# Directory with the release binaries: $BIN_DIR if set, else target/<CROSS_TARGET>/dist or target/dist.
 bin_dir() {
   if [ -n "${BIN_DIR:-}" ]; then echo "$BIN_DIR"
-  elif [ -n "${CROSS_TARGET:-}" ]; then echo "$CARGO_TARGET_DIR/$CROSS_TARGET/release"
-  else echo "$CARGO_TARGET_DIR/release"; fi
+  elif [ -n "${CROSS_TARGET:-}" ]; then echo "$CARGO_TARGET_DIR/$CROSS_TARGET/dist"
+  else echo "$CARGO_TARGET_DIR/dist"; fi
 }
 
 # Run `<bin> --version` and require the output to contain $VERSION. A stub main() fails here.

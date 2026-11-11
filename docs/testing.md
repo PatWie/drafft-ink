@@ -172,7 +172,7 @@ The summary (passed, failed, skipped per suite) is printed and written to `targe
 
 **Rule: the specs drive the app through commands**, the path a user and an agent share (`docs/commands.md`). A browser spec
 calls `window.drafftink.execute`, `batch`, `commands`, `recent`, `perf`, `frames`, or it sends real pointer and key events
-through Playwright. A native test calls `execute` and `batch` on the bridge. Neither suite reaches into the app any other way.
+through Playwright. A native test calls `execute` and `batch` on the bridge. Beyond those, a spec may call the read-only members of `window.drafftink` (`state`, `describe`, `perf`, `frames`, `runScenario`, `scenarioReport`), the WebMCP and agent entry points that it tests (`webmcp.*`, `agent.*`), read the start-up flags `window.__started` and `window.__error`, and look at the service worker, which is part of the page and has no command. Nothing else may change the app's state. `e2e/web/specs/shell/webmcp.spec.ts` carries a stand-in `modelContext` of its own, which the accounting of `e2e/web/scripts/accounting.ts` does not see.
 
 ### Browser suite (`e2e/web`)
 

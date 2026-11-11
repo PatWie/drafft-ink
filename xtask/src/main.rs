@@ -12,6 +12,8 @@ mod exceptions;
 mod gates;
 mod harness;
 mod layers;
+#[cfg(test)]
+mod parity;
 mod perf;
 mod size;
 mod skips;
@@ -47,10 +49,12 @@ gates:
                   --bench: curated criterion benches against the timing limits (not part of ci);
                   --idle: only the idle and hover tests (perf/README.md);
                   --app: the real app under Xvfb with real input, checked with timing against the
-                  native/... or web/... budgets (needs a GPU; not part of ci)
-  size [--no-build|--wasm FILE]
+                  native/... or web/... budgets (needs a GPU; not part of ci); the web run builds the app with
+                  --features scenarios itself; --no-build reuses the last build
+  size [--no-build|--wasm FILE|--native]
                   builds the web app (scripts/build-web.sh), measures the wasm module and the fonts the page loads,
-                  checks them against the `size` section of perf/budgets.json (xtask/src/size.rs)
+                  checks them against the `size` section of perf/budgets.json (xtask/src/size.rs);
+                  --native: builds the shipped binaries (profile dist) and checks their sizes instead (not part of ci)
   ci              all of the above in order, with a summary table
 
 e2e [--types|--web|--native|--no-build]

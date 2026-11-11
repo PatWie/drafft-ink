@@ -39,12 +39,12 @@ if (-not $WebDist) { $WebDist = Join-Path $Root "dist" }
 New-Item -ItemType Directory -Force $Dist | Out-Null
 $Dist = (Resolve-Path $Dist).Path
 $TargetDir = if ($env:CARGO_TARGET_DIR) { $env:CARGO_TARGET_DIR } else { Join-Path $Root "target" }
-$Bin = Join-Path $TargetDir "release"
+$Bin = Join-Path $TargetDir "dist"
 if ($env:BIN_DIR) { $Bin = $env:BIN_DIR }
 
 Write-Host "==> Drafft.ink $Version for Windows x64"
 if (-not $SkipBuild) {
-  cargo build --release --locked -p drafftink -p drafftink-mcp -p drafftink-server
+  cargo build --profile dist --locked -p drafftink -p drafftink-mcp -p drafftink-server --features drafftink-server/sqlite,drafftink-server/s3
   if ($LASTEXITCODE -ne 0) { throw "cargo build failed" }
 }
 foreach ($exe in "drafftink", "drafftink-mcp", "drafftink-server") {
