@@ -18,19 +18,7 @@ pub const AUTOSAVE_NAME: &str = "autosave";
 /// Most files in the recent list.
 pub const RECENT_MAX: usize = 10;
 
-/// Bytes given in the arguments.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
-#[serde(deny_unknown_fields)]
-pub struct InlineBytes {
-    /// The content, base64 (standard alphabet).
-    pub base64: String,
-    /// The file name, for messages and to name the document.
-    #[serde(default)]
-    pub name: Option<String>,
-    /// The media type, if known.
-    #[serde(default)]
-    pub mime: Option<String>,
-}
+pub use crate::cmd::bytes::InlineBytes;
 
 /// Where the data of a command comes from: inline bytes, or a file or stored name that the session reads.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
@@ -83,13 +71,9 @@ pub fn display_name(f: &FileRef) -> String {
     }
 }
 
-/// Decodes inline base64, with or without padding.
-pub fn decode_base64(id: &str, key: &str, text: &str) -> Result<Vec<u8>, Refusal> {
-    let t: String = text.chars().filter(|c| !c.is_whitespace()).collect();
-    base64::engine::general_purpose::STANDARD
-        .decode(t.as_bytes())
-        .or_else(|_| base64::engine::general_purpose::STANDARD_NO_PAD.decode(t.as_bytes()))
-        .map_err(|_| Refusal::bad_arg(id, key, "is not valid base64"))
+/// Decodes inline bytes (padding optional, a `data:` prefix accepted).
+pub fn decode_inline(id: &str, key: &str, b: &InlineBytes) -> Result<Vec<u8>, Refusal> {
+    b.decode().map_err(|_| Refusal::bad_arg(id, key, "is not valid base64"))
 }
 
 /// Standard base64 of some bytes.
@@ -118,7 +102,7 @@ fn no_storage(id: &str) -> Refusal {
 pub fn read_source(s: &Session, id: &str, src: &Source, key: &str) -> Result<Loaded, Refusal> {
     match src {
         Source::Inline(b) => Ok(Loaded {
-            bytes: decode_base64(id, &format!("{key}.base64"), &b.base64)?,
+            bytes: decode_inline(id, &format!("{key}.base64"), b)?,
             name: b.name.clone().filter(|n| !n.trim().is_empty()).unwrap_or_else(|| "the data".to_owned()),
             file: None,
             provenance: Provenance::Clean,

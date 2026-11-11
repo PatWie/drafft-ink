@@ -21,7 +21,8 @@ use serde_json::{Value, json};
 
 use super::common::{At, edit_with, resolve_at, select_only};
 use super::CopyBuffer;
-use crate::cmd::image::{Bytes, DEFAULT_FIT, DEFAULT_OFFSET, Loaded, Placement, insert_pictures};
+use crate::cmd::bytes::{Bytes, Loaded};
+use crate::cmd::image::{DEFAULT_FIT, DEFAULT_OFFSET, Placement, insert_pictures, load_picture};
 use crate::ports::{ClipKind, ClipPayload};
 use crate::refusal::{Refusal, echo};
 use crate::session::Session;
@@ -287,7 +288,7 @@ fn find(s: &mut Session, a: &PasteArgs) -> Result<Found, Refusal> {
         Source::Text(t) if t.text.trim().is_empty() => Err(empty(cmd)),
         Source::Text(t) if a.plain_text => Ok(Found::Text(t.text.clone())),
         Source::Text(t) => from_text(s, &t.text),
-        Source::Image(i) => Ok(Found::Image(i.image.load(s, "the pasted image")?)),
+        Source::Image(i) => Ok(Found::Image(load_picture(s, &i.image, "the pasted image")?)),
         Source::Elements(e) => from_elements(s, &e.elements),
     }
 }

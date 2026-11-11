@@ -565,6 +565,41 @@ fn drop_merge_adds_the_elements_to_the_active_document() {
     assert_eq!((live(&s), s.tabs.len()), (3, 1));
 }
 
+#[test]
+fn drop_merge_without_at_centres_the_block_on_the_viewport() {
+    let (mut a, _) = drawn(1);
+    let doc = native(&mut a);
+    let (mut s, _f) = testing::session();
+    s.tab_mut().view.scroll = drafftink_geom::kurbo::Point::new(4000.0, 3000.0);
+    let items = json!([{"name": "p.json", "bytes": {"base64": b64(&doc)}}]);
+    run(&mut s, "doc.drop", json!({"items": items, "documents": "merge"}));
+    let r = s.store().iter().next().map(|e| (e.transform.x + e.transform.w / 2.0, e.transform.y + e.transform.h / 2.0)).unwrap();
+    assert_eq!(r, (4000.0, 3000.0));
+    // The word `$cursor` is accepted like in a paste; without a pointer it means the viewport centre.
+    run(&mut s, "doc.drop", json!({"items": items, "documents": "merge", "at": "$cursor"}));
+    assert_eq!(live(&s), 2);
+}
+
+#[test]
+fn drop_reads_a_path_item_and_a_native_file_becomes_its_save_target() {
+    let (mut a, _) = drawn(2);
+    let doc = native(&mut a);
+    let (mut s, f) = testing::session();
+    f.files.insert(&path("/home/me/dropped.json"), &doc, "application/json");
+    run(&mut s, "doc.drop", json!({"items": [{"name": "dropped.json", "bytes": {"path": "/home/me/dropped.json"}}]}));
+    assert_eq!(s.tabs.len(), 2);
+    assert_eq!(super::save_target(&s), Some(path("/home/me/dropped.json")));
+    // A path that cannot be read is skipped with a reason; damaged base64 is a bad argument.
+    let r = refuse(&mut s, "doc.drop", json!({"items": [{"name": "gone.json", "bytes": {"path": "/nope.json"}}]}));
+    assert_eq!(r.code, "nothing_to_do");
+    let r = refuse(&mut s, "doc.drop", json!({"items": [{"name": "x.json", "bytes": {"base64": "***"}}]}));
+    assert_eq!(r.code, "bad_args");
+    assert!(r.message.contains("items[0].bytes.base64"), "{}", r.message);
+    // Only `{base64}` and `{path}` are bytes; a stored name is not.
+    let r = refuse(&mut s, "doc.drop", json!({"items": [{"name": "x.json", "bytes": {"stored": "Notes"}}]}));
+    assert_eq!(r.code, "bad_args");
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 struct ImagesArgs {

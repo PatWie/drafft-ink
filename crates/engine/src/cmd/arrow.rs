@@ -36,8 +36,7 @@ use crate::spec::{
 use crate::state::{BASE_ZOOM, LinearEditor};
 use crate::store::DocTx;
 
-/// A point in world units: `[x, y]`.
-pub type Pt = [f64; 2];
+pub use crate::args::Pt;
 
 // ---------------------------------------------------------------------------------------------
 // Argument types

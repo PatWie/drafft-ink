@@ -14,8 +14,7 @@ use crate::services::Services;
 use crate::session::Session;
 use crate::store::DocTx;
 
-/// A point in world units: `[x, y]`.
-pub type Pt = [f64; 2];
+pub use crate::args::Pt;
 
 /// The words `at` accepts besides a point.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]

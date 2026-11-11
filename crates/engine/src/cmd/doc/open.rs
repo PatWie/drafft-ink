@@ -14,6 +14,8 @@ use serde::{Deserialize, Serialize};
 use serde_json::json;
 
 use super::files::{self, InlineBytes, Loaded, Provenance, Source, base64_of};
+use crate::cmd::bytes::{Bytes, BytesError};
+use crate::cmd::clipboard::common::{At, resolve_at};
 use super::save;
 use crate::args;
 use crate::cmd::view::Pt;
@@ -610,7 +612,7 @@ pub struct DropItem {
     /// The file name.
     pub name: String,
     /// The content: `{base64}` or `{path}`.
-    pub bytes: Source,
+    pub bytes: Bytes,
     /// The media type, if known.
     #[serde(default)]
     pub mime: Option<String>,
@@ -646,9 +648,9 @@ pub enum DropDocs {
 pub struct DropArgs {
     /// The dropped files (1 to 50).
     pub items: Vec<DropItem>,
-    /// World point to put images and merged elements at. Default: the centre of the viewport.
+    /// World point to put images and merged elements at: a point, `viewport_center` (default) or `$cursor`.
     #[serde(default)]
-    pub at: Option<Pt>,
+    pub at: At,
     /// A PNG with an embedded scene: `insert` it as an image (default) or `open` the scene.
     #[serde(default)]
     pub scene_png: ScenePng,
@@ -710,28 +712,49 @@ fn classify(bytes: &[u8], scene_png: ScenePng) -> Class {
     }
 }
 
+/// Why a dropped file that could not be read is skipped.
+fn skip_reason(e: &BytesError) -> String {
+    match e {
+        BytesError::Base64 { source, .. } => format!("its base64 text is damaged ({source})"),
+        BytesError::TooLarge { size } => format!("it has {size} bytes, which is too many"),
+        BytesError::NoFiles => "this session cannot read files. Pass the data inline as `{base64, name}` instead".to_owned(),
+        BytesError::Read { path, message } => format!("`{}` could not be read: {}", echo(path), files::cut(message)),
+    }
+}
+
 pub(super) fn drop_files(s: &mut Session, a: DropArgs) -> Result<DropOut, Refusal> {
     let id = s.cmd();
     if a.items.len() > DROP_MAX {
         return Err(Refusal::limit_exceeded(id, a.items.len(), "files", DROP_MAX));
     }
     let n = a.items.len();
+    let at = resolve_at(s, &a.at)?;
+    let at = [at.x, at.y];
     // Read and sort everything first; nothing has changed yet.
     let mut docs: Vec<Loaded> = Vec::new();
     let mut libs: Vec<Loaded> = Vec::new();
     let mut images: Vec<(Loaded, Option<String>)> = Vec::new();
     let mut skipped = 0usize;
     for (i, item) in a.items.iter().enumerate() {
-        let mut loaded = match files::read_source(s, id, &item.bytes, &format!("items[{i}].bytes")) {
-            Ok(l) => l,
-            Err(r) if r.code == "bad_args" => return Err(r),
-            Err(r) => {
-                s.warn(format!("`{}` was skipped: {}", echo(&item.name), r.message));
+        let loaded = match item.bytes.load(s, &item.name, usize::MAX) {
+            Ok(l) => Loaded {
+                bytes: l.bytes,
+                name: item.name.clone(),
+                file: match &item.bytes {
+                    Bytes::Path(p) => Some(FileRef::Path { path: p.path.clone() }),
+                    Bytes::Inline(_) => None,
+                },
+                provenance: Provenance::Clean,
+            },
+            Err(BytesError::Base64 { .. }) => {
+                return Err(Refusal::bad_arg(id, &format!("items[{i}].bytes.base64"), "is not valid base64"));
+            }
+            Err(e) => {
+                s.warn(format!("`{}` was skipped: {}", echo(&item.name), skip_reason(&e)));
                 skipped += 1;
                 continue;
             }
         };
-        loaded.name = item.name.clone();
         match classify(&loaded.bytes, a.scene_png) {
             Class::Image => images.push((loaded, item.mime.clone())),
             Class::Document => docs.push(loaded),
@@ -777,7 +800,7 @@ pub(super) fn drop_files(s: &mut Session, a: DropArgs) -> Result<DropOut, Refusa
             mode,
             format: FormatWord::Auto,
             on_unsaved: None,
-            at: a.at,
+            at: Some(at),
             select: true,
             loaded,
         };
@@ -812,10 +835,6 @@ pub(super) fn drop_files(s: &mut Session, a: DropArgs) -> Result<DropOut, Refusa
                 json!({ "base64": b.base64, "name": b.name, "mime": b.mime })
             })
             .collect();
-        let at = a.at.unwrap_or_else(|| {
-            let v = s.view();
-            [v.scroll.x, v.scroll.y]
-        });
         match s.run_nested("image.insert", json!({ "images": list, "at": at, "offset": 20 })) {
             Ok(_) => {
                 out.images = images.len();
