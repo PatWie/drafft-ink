@@ -70,7 +70,8 @@ fn tool_lock_button_runs_tool_lock() {
 
 #[test]
 fn top_bar_swatches_and_widths_run_style_set() {
-    let mut h = harness(Fixture::new());
+    // The width is in the strip while there is a stroke to set: a rectangle is selected.
+    let mut h = harness(with_two_rects());
     h.run();
     let c = click(&mut h, "Stroke blue");
     assert_eq!(c[0].id, "style.set");
@@ -155,14 +156,16 @@ fn the_ribbon_has_no_text_group_for_rectangles_and_no_align_group_for_one_elemen
 }
 
 #[test]
-fn the_ribbon_is_hidden_without_selection_for_the_select_tool_and_shows_for_a_drawing_tool() {
+fn the_properties_are_hidden_without_selection_for_the_select_tool_and_show_for_a_drawing_tool() {
     let mut h = harness(Fixture::new());
     h.run();
     assert!(h.query_by_label("More options").is_none());
-    assert!(h.state().state.chrome.ribbon.is_none(), "nothing to show: the strip is all there is");
+    let strip = h.state().state.chrome.strip.unwrap();
+    assert!(h.query_by_label("Dashed").is_none(), "nothing to show: the colour group is all there is");
     h.state_mut().session.execute("tool.set", json!({"tool": "rectangle"})).unwrap();
     h.state_mut().refresh();
     h.run();
+    assert_eq!(h.state().state.chrome.strip.unwrap(), strip, "and the strip does not change");
     h.get_by_label("More options").click();
     h.run();
     assert!(h.query_by_label("Cartoonist").is_some(), "drawing with the rectangle tool edits the defaults");

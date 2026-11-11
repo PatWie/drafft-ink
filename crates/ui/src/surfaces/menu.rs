@@ -12,17 +12,33 @@ use crate::menu_kit::{MENU_WIDTH, Menu, Row};
 use crate::model::CollabStatus;
 use crate::state::UiState;
 use crate::theme::{MARGIN, TextSize, space};
-use crate::widgets::{Ctl, Cx, panel_frame};
+use crate::widgets::{Ctl, Cx, panel_frame, strip_row};
 
-/// The left group of the top strip: the menu button, the collaboration button and the document title. The strip
-/// places it; the menu opens under the menu button (`ChromeRects::menu_button`).
+/// The left group of the top strip: the menu button and the collaboration button, with the document title under
+/// them (one row on a narrow window, where the strip has one row). The strip places it; the menu opens under the
+/// menu button (`ChromeRects::menu_button`).
 pub(super) fn buttons(ui: &mut egui::Ui, cx: &mut Cx<'_>, st: &mut UiState) {
-    ui.spacing_mut().item_spacing = vec2(space::SM, 0.0);
+    ui.spacing_mut().item_spacing = vec2(space::SM, space::SM);
+    let side = cx.layout.small_side();
+    if cx.layout.strip_rows() == 1 {
+        strip_row(ui, side, |ui| {
+            menu_and_rooms(ui, cx, st);
+            title_button(ui, cx);
+        });
+    } else {
+        ui.vertical(|ui| {
+            ui.spacing_mut().item_spacing.y = space::SM;
+            strip_row(ui, side, |ui| menu_and_rooms(ui, cx, st));
+            strip_row(ui, side, |ui| title_button(ui, cx));
+        });
+    }
+}
+
+fn menu_and_rooms(ui: &mut egui::Ui, cx: &mut Cx<'_>, st: &mut UiState) {
     let side = cx.layout.small_side();
     let r = cx.verb_button(ui, Verb::ToggleMenu, Icon::Menu, side, "Menu", st.menu_open);
     st.chrome.menu_button = Some(r.rect);
     collab_button(ui, cx, st);
-    title_button(ui, cx);
 }
 
 /// Draws the menu, when open.

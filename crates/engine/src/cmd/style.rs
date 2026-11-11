@@ -19,7 +19,7 @@ use std::collections::BTreeMap;
 use drafftink_edit::style::{
     Prop, StyleError, StyleProps, StyleReport, Theme, apply, read, theme, theme_names, themes,
 };
-use drafftink_scene::{Color, ElementId, Kind, SceneRead, SceneTx};
+use drafftink_scene::{Color, Element, ElementId, Head, Kind, SceneRead, SceneTx};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
@@ -276,6 +276,50 @@ pub struct PropInfo {
     pub reason: Option<String>,
 }
 
+/// The heads at the two ends of the lines and arrows among the targets. Heads are not style properties
+/// (`arrow.set_head` writes them), so they are reported beside `props`.
+#[derive(Debug, Clone, PartialEq, Serialize, JsonSchema)]
+pub struct HeadsInfo {
+    /// The start head, as the name `arrow.set_head` takes (`none`, `arrow`, `bar`, ...), or `"mixed"` when the
+    /// lines and arrows differ.
+    pub start: String,
+    /// The end head, in the same words.
+    pub end: String,
+}
+
+/// The common head of one end, or `"mixed"`.
+fn common_head(heads: impl Iterator<Item = Head>) -> String {
+    let mut heads = heads;
+    let Some(first) = heads.next() else { return "mixed".to_owned() };
+    if heads.all(|h| h == first) { head_name(first) } else { "mixed".to_owned() }
+}
+
+/// The snake_case name of a head, as it is serialised.
+fn head_name(head: Head) -> String {
+    match serde_json::to_value(head) {
+        Ok(Value::String(name)) => name,
+        _ => "none".to_owned(),
+    }
+}
+
+/// The heads over the lines and arrows among `targets`; `None` when there are none.
+fn heads_of(s: &Session, targets: &[ElementId]) -> Option<HeadsInfo> {
+    let store = s.store();
+    let linear: Vec<(Head, Head)> = targets
+        .iter()
+        .filter_map(|id| store.get(id))
+        .filter_map(Element::linear_data)
+        .map(|d| (d.start_head, d.end_head))
+        .collect();
+    if linear.is_empty() {
+        return None;
+    }
+    Some(HeadsInfo {
+        start: common_head(linear.iter().map(|h| h.0)),
+        end: common_head(linear.iter().map(|h| h.1)),
+    })
+}
+
 /// Output of `style.get`.
 #[derive(Debug, Clone, PartialEq, Serialize, JsonSchema)]
 pub struct GetOut {
@@ -289,6 +333,10 @@ pub struct GetOut {
     pub kinds: Vec<Kind>,
     /// The requested properties.
     pub props: BTreeMap<String, PropInfo>,
+    /// The start and end heads of the lines and arrows among the targets. Absent when there are none (and for
+    /// the defaults, whose arrow heads are `tool.set_arrow`'s settings).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub heads: Option<HeadsInfo>,
 }
 
 fn get(s: &mut Session, a: GetArgs) -> Result<GetOut, Refusal> {
@@ -349,7 +397,8 @@ fn get(s: &mut Session, a: GetArgs) -> Result<GetOut, Refusal> {
             (prop.name().to_owned(), PropInfo { applicable, value, reason })
         })
         .collect();
-    Ok(GetOut { changed: false, source: source.to_owned(), ids, kinds, props })
+    let heads = heads_of(s, &p.targets);
+    Ok(GetOut { changed: false, source: source.to_owned(), ids, kinds, props, heads })
 }
 
 // ---- style.apply_theme ----

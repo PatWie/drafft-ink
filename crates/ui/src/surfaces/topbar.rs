@@ -1,4 +1,4 @@
-//! The style controls in the middle of the top strip: stroke colour, fill colour, stroke width. Every control is
+//! The colour group of the top strip: stroke colour over fill colour. Every control is
 //! `style.set`; with nothing selected the engine writes the defaults for new elements, so they are always useful.
 //! `surfaces::strip` places them.
 
@@ -10,11 +10,8 @@ use crate::colors::{self, QUICK_FAMILIES, QUICK_FILL_SHADE, QUICK_STROKE_SHADE};
 use crate::icons::Icon;
 use crate::state::{ColorTarget, UiState};
 use crate::surfaces::color::{PopoverKey, remember_anchor_in};
-use crate::theme::{Control, space};
-use crate::widgets::{Ctl, Cx, section_label, vertical_separator};
-
-/// The stroke widths of the old app: name and value.
-pub const STROKE_WIDTHS: [(&str, f64); 4] = [("Thin", 1.0), ("Normal", 2.0), ("Bold", 4.0), ("Extra bold", 8.0)];
+use crate::theme::{Control, TextSize, space};
+use crate::widgets::{Ctl, Cx, strip_row};
 
 /// Why a property control is greyed, when the selection has no element it applies to: the engine's text, as
 /// `style.get` reports it (the refusal that `style.set` would give).
@@ -26,22 +23,30 @@ pub fn not_applicable(cx: &Cx<'_>, prop: &str) -> Option<String> {
     }
 }
 
-/// The stroke, fill and width controls in one row: the centre of the top strip.
-pub(super) fn style_row(ui: &mut egui::Ui, cx: &mut Cx<'_>, st: &UiState) {
-    ui.spacing_mut().item_spacing = vec2(space::SM, 0.0);
-    let height = cx.layout.control(Control::Small) - 2.0 * space::SM;
-    colour_row(ui, cx, "Stroke", "stroke_color", QUICK_STROKE_SHADE, false, st.last_picked.of(ColorTarget::Stroke));
-    ui.add_space(space::MD);
-    vertical_separator(ui, &cx.pal, height);
-    ui.add_space(space::MD);
-    colour_row(ui, cx, "Fill", "fill_color", QUICK_FILL_SHADE, true, st.last_picked.of(ColorTarget::Fill));
-    ui.add_space(space::MD);
-    vertical_separator(ui, &cx.pal, height);
-    ui.add_space(space::MD);
-    width_row(ui, cx);
+/// The colour group of the top strip: stroke over fill, two rows that start at the same x. Every control is
+/// `style.set`; with nothing selected the engine writes the defaults for new elements, so they are always useful.
+pub(super) fn style_rows(ui: &mut egui::Ui, cx: &mut Cx<'_>, st: &UiState) {
+    let height = cx.layout.small_side();
+    ui.vertical(|ui| {
+        ui.spacing_mut().item_spacing = vec2(space::SM, space::SM);
+        strip_row(ui, height, |ui| {
+            colour_row(
+                ui,
+                cx,
+                "Stroke",
+                "stroke_color",
+                QUICK_STROKE_SHADE,
+                false,
+                st.last_picked.of(ColorTarget::Stroke),
+            );
+        });
+        strip_row(ui, height, |ui| {
+            colour_row(ui, cx, "Fill", "fill_color", QUICK_FILL_SHADE, true, st.last_picked.of(ColorTarget::Fill));
+        });
+    });
 }
 
-/// The same controls as rows one under the other, for the popover of a strip with no room for [`style_row`].
+/// The same controls as rows one under the other, for the popover of a strip with no room for [`style_rows`].
 pub(super) fn style_column(ui: &mut egui::Ui, cx: &mut Cx<'_>, st: &UiState) {
     ui.spacing_mut().item_spacing = vec2(space::SM, space::MD);
     ui.horizontal_wrapped(|ui| {
@@ -50,7 +55,14 @@ pub(super) fn style_column(ui: &mut egui::Ui, cx: &mut Cx<'_>, st: &UiState) {
     ui.horizontal_wrapped(|ui| {
         colour_row(ui, cx, "Fill", "fill_color", QUICK_FILL_SHADE, true, st.last_picked.of(ColorTarget::Fill));
     });
-    ui.horizontal_wrapped(|ui| width_row(ui, cx));
+}
+
+/// The width the row labels share, so that the swatches of both rows start at the same x.
+fn label_width(ui: &egui::Ui, cx: &Cx<'_>) -> f32 {
+    ["Stroke", "Fill"]
+        .into_iter()
+        .map(|title| ui.painter().layout_no_wrap(title.to_owned(), TextSize::Body.hand(), cx.pal.muted).size().x)
+        .fold(0.0, f32::max)
 }
 
 fn colour_row(
@@ -62,8 +74,12 @@ fn colour_row(
     allow_none: bool,
     last_picked: Option<&str>,
 ) {
-    section_label(ui, &cx.pal, title);
-    ui.add_space(space::SM);
+    let size = vec2(label_width(ui, cx), cx.layout.small_side());
+    let label = egui::RichText::new(title).font(TextSize::Body.hand()).color(cx.pal.muted);
+    ui.allocate_ui_with_layout(size, egui::Layout::left_to_right(egui::Align::Center), |ui| {
+        ui.set_min_size(size);
+        ui.add(egui::Label::new(label).wrap_mode(egui::TextWrapMode::Extend));
+    });
     // The swatch cell is a toggle-high square, the same in every row of the strip.
     let swatch = cx.layout.control(Control::Toggle) - 4.0;
     let dark = cx.pal.dark;
@@ -103,31 +119,4 @@ fn colour_row(
     let key = if prop == "stroke_color" { PopoverKey::Stroke } else { PopoverKey::Fill };
     let wheel = cx.verb_button(ui, verb, Icon::Wheel, cx.layout.control(Control::Small), &wheel_tip, false);
     remember_anchor_in(ui, key, wheel.rect);
-}
-
-fn width_row(ui: &mut egui::Ui, cx: &mut Cx<'_>) {
-    section_label(ui, &cx.pal, "Width");
-    let current = cx.model.style.num_value("stroke_width");
-    let blocked = not_applicable(cx, "stroke_width");
-    for (i, (name, w)) in STROKE_WIDTHS.iter().enumerate() {
-        let selected = current.is_some_and(|c| (c - w).abs() < 0.01);
-        let ctl = Ctl::new("style.set")
-            .args(json!({ "props": { "stroke_width": w } }))
-            .label(*name)
-            .selected(selected)
-            .blocked(blocked.clone());
-        let thickness = [1.0_f32, 2.5, 4.5, 7.0][i];
-        let pal = cx.pal;
-        let side = cx.layout.control(Control::Small);
-        cx.command_widget(ui, &ctl, vec2(side, side), move |p, rect, look| {
-            crate::widgets::paint_button_bg(p, rect, look, &pal, true);
-            let c = crate::widgets::icon_color(look, &pal);
-            let y = rect.center().y;
-            let inset = side * 0.25;
-            p.line_segment(
-                [egui::pos2(rect.left() + inset, y), egui::pos2(rect.right() - inset, y)],
-                egui::Stroke::new(thickness, c),
-            );
-        });
-    }
 }

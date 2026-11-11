@@ -4,8 +4,8 @@
 
 use drafftink_engine::Origin;
 use egui::{
-    Color32, CornerRadius, Frame, Margin, Painter, Rect, Response, Role, Sense, Shadow, Stroke, StrokeKind, Ui, Vec2,
-    WidgetInfo, pos2, vec2,
+    Align, Color32, CornerRadius, Frame, Layout as UiLayout, Margin, Painter, Rect, Response, Role, Sense, Shadow,
+    Stroke, StrokeKind, Ui, UiBuilder, Vec2, WidgetInfo, pos2, vec2,
 };
 use serde_json::{Value, json};
 
@@ -126,9 +126,16 @@ impl Layout {
         self.control(Control::Button)
     }
 
-    /// Height of the top strip: one row of small controls with padding above and below.
+    /// How many rows of controls the top strip has: two, or one on a narrow window, where the properties wait in
+    /// popovers. It depends on the layout only, never on what is selected, so the canvas never jumps.
+    pub fn strip_rows(&self) -> u8 {
+        if self.narrow { 1 } else { 2 }
+    }
+
+    /// Height of the top strip: its rows of small controls with padding above and below.
     pub fn strip_height(&self) -> f32 {
-        self.control(Control::Small) + 2.0 * space::MD
+        let rows = f32::from(self.strip_rows());
+        rows * self.control(Control::Small) + (rows - 1.0) * space::SM + 2.0 * space::MD
     }
 }
 
@@ -557,6 +564,16 @@ pub fn dialog_frame(pal: &Palette) -> Frame {
 /// A small caption above a group of controls, in the hand-written font.
 pub fn section_label(ui: &mut Ui, pal: &Palette, text: &str) -> Response {
     ui.label(egui::RichText::new(text).font(TextSize::Body.hand()).color(pal.muted))
+}
+
+/// One row of the top strip: exactly `height` tall, its controls centred on it and laid out left to right. It is as
+/// wide as its controls, so rows of different groups line up at the top and the groups measure true.
+pub fn strip_row<R>(ui: &mut Ui, height: f32, add: impl FnOnce(&mut Ui) -> R) -> R {
+    let rect = Rect::from_min_size(ui.cursor().min, vec2(ui.available_width(), height));
+    let mut child = ui.new_child(UiBuilder::new().max_rect(rect).layout(UiLayout::left_to_right(Align::Center)));
+    let out = add(&mut child);
+    ui.allocate_rect(Rect::from_min_size(rect.min, vec2(child.min_rect().width(), height)), Sense::hover());
+    out
 }
 
 /// A thin vertical line between groups in a row.

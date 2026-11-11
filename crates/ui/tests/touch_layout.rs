@@ -92,29 +92,43 @@ fn the_app_can_say_the_device_is_touch_first() {
 }
 
 #[test]
-fn the_tools_start_collapsed_on_a_narrow_window_and_the_ribbon_scrolls_in_one_row() {
+fn the_tools_start_collapsed_on_a_narrow_window_and_the_properties_wait_behind_more_in_one_row() {
+    // Changed with the strip: the ribbon card scrolled sideways under the strip; now the strip is one row of
+    // 40 point targets and the groups of the selection are in the "More" popover.
     let mut h = at(vec2(600.0, 900.0), with_selection());
     assert!(h.query_by_label("Rectangle tool").is_none(), "tools are collapsed");
     let screen = egui::Rect::from_min_size(egui::Pos2::ZERO, vec2(600.0, 900.0));
-    let ribbon = h.state().state.chrome.ribbon.expect("a ribbon for the selection");
-    assert!(screen.contains_rect(ribbon), "the ribbon {ribbon:?} lies inside the window");
-    assert!(ribbon.height() < 40.0 + 2.0 * 12.0, "one row of 40 point targets: {ribbon:?}");
-    assert!(ribbon.contains_rect(h.get_by_label("Dashed").rect()), "the first group is in view");
-    let delete = h.get_by_label("Delete").rect();
-    assert!(!ribbon.contains_rect(delete), "the last group is scrolled out: {delete:?} vs {ribbon:?}");
-    h.event(Event::PointerMoved(ribbon.center()));
-    h.event(Event::MouseWheel {
-        unit: egui::MouseWheelUnit::Point,
-        delta: vec2(-3000.0, 0.0),
-        modifiers: egui::Modifiers::NONE,
-        phase: egui::TouchPhase::Move,
-        source: egui::MouseWheelSource::Wheel,
-    });
-    for _ in 0..10 {
-        h.step();
+    let strip = h.state().state.chrome.strip.unwrap();
+    assert!(screen.contains_rect(strip));
+    assert_eq!(strip.height(), 40.0 + 2.0 * 6.0, "one row of 40 point targets: {strip:?}");
+    assert!(h.query_by_label("Dashed").is_none() && h.query_by_label("Delete").is_none(), "not in the strip");
+    let more = h.get_by_label("More options").rect();
+    assert!(strip.contains_rect(more) && more.height() >= 36.0, "{more:?}");
+    h.get_by_label("More options").click();
+    h.run();
+    for label in ["Dashed", "Thin", "Delete"] {
+        let r = h.get_by_label(label).rect();
+        assert!(r.min.y >= strip.max.y && screen.contains_rect(r), "{label} {r:?} under the strip");
+        assert!(r.height() >= 36.0, "{label}");
     }
-    let delete = h.get_by_label("Delete").rect();
-    assert!(ribbon.contains_rect(delete), "the sideways scroll brings it into view: {delete:?} vs {ribbon:?}");
+}
+
+#[test]
+fn a_tablet_has_a_two_row_strip_of_finger_sized_rows() {
+    for size in [vec2(820.0, 1180.0), vec2(1180.0, 820.0)] {
+        let mut f = with_selection();
+        f.state.set_touch_first(true);
+        let h = at(size, f);
+        let strip = h.state().state.chrome.strip.unwrap();
+        assert_eq!(strip.height(), 2.0 * 40.0 + 4.0 + 2.0 * 6.0, "two rows of 40 at {size:?}");
+        let screen = egui::Rect::from_min_size(egui::Pos2::ZERO, size);
+        for label in ["Open or close the main menu", "Stroke blue", "Fill blue", "More options"] {
+            let r = h.get_by_label(label).rect();
+            assert!(screen.contains_rect(r) && strip.contains_rect(r), "{label} {r:?} at {size:?}");
+        }
+        let tools = h.state().state.chrome.tools.unwrap();
+        assert!(tools.min.y >= strip.max.y, "the tool column starts under the strip: {tools:?} vs {strip:?}");
+    }
 }
 
 #[test]
@@ -173,16 +187,16 @@ fn a_narrow_window_keeps_its_bars_inside_the_window() {
 
 #[test]
 fn the_panels_do_not_cover_each_other_on_a_phone() {
-    // One strip across the top (menu, rooms, title, and one style button), the properties as a popover under it, the
-    // tab bar above the bottom bar.
+    // One strip across the top, one row (menu, rooms, title, one style button and "More"), the colours as a
+    // popover under it, the tab bar above the bottom bar.
     let mut h = at(vec2(390.0, 800.0), dialog::fixture());
     let strip = h.state().state.chrome.strip.unwrap();
     let menu = h.get_by_label("Open or close the main menu").rect();
-    let style = h.get_by_label("Stroke, fill and width").rect();
+    let style = h.get_by_label("Stroke and fill").rect();
     assert!(strip.contains_rect(menu) && strip.contains_rect(style), "{menu:?} and {style:?} in {strip:?}");
     assert!(menu.max.x < style.min.x, "the style button is at the right end: {style:?} vs {menu:?}");
     assert!(h.query_by_label("Stroke blue").is_none(), "the swatches wait in the popover");
-    h.get_by_label("Stroke, fill and width").click();
+    h.get_by_label("Stroke and fill").click();
     h.run();
     let stroke = h.get_all_by_label("Stroke blue").next().unwrap().rect();
     assert!(stroke.min.y >= strip.max.y, "the swatches sit under the strip: {stroke:?} vs {strip:?}");

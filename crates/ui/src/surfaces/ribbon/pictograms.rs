@@ -166,3 +166,47 @@ pub(super) fn text_lines(p: &Painter, rect: Rect, align: Align, ink: Color32) {
         p.line_segment([pos2(left, y), pos2(left + width, y)], stroke);
     }
 }
+
+/// A corner of a shape, sharp or rounded: two sides meeting in the upper left of `rect`.
+pub(super) fn corner(p: &Painter, rect: Rect, rounded: bool, ink: Color32) {
+    let radius = if rounded { rect.width() * 0.55 } else { 0.0 };
+    let (left, top) = (rect.left(), rect.top());
+    let mut points = vec![pos2(left, rect.bottom())];
+    if rounded {
+        let centre = pos2(left + radius, top + radius);
+        let steps = 8;
+        points.extend((0..=steps).map(|i| {
+            let angle = std::f32::consts::PI * (1.0 + i as f32 / steps as f32 * 0.5);
+            centre + vec2(angle.cos(), angle.sin()) * radius
+        }));
+    } else {
+        points.push(pos2(left, top));
+    }
+    points.push(pos2(rect.right(), top));
+    p.add(Shape::line(points, Stroke::new(2.0, ink)));
+}
+
+/// Where text sits in its box.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum VAlign {
+    Top,
+    Middle,
+    Bottom,
+}
+
+/// A box with two lines of text at the top, in the middle or at the bottom.
+pub(super) fn box_lines(p: &Painter, rect: Rect, align: VAlign, ink: Color32) {
+    p.rect_stroke(rect, 2.0, Stroke::new(1.0, ink), egui::StrokeKind::Inside);
+    let inner = rect.shrink(rect.width() * 0.2);
+    let gap = inner.height() * 0.28;
+    let top = match align {
+        VAlign::Top => inner.top(),
+        VAlign::Middle => inner.center().y - gap / 2.0,
+        VAlign::Bottom => inner.bottom() - gap,
+    };
+    let stroke = Stroke::new(1.5, ink);
+    for (i, share) in [1.0_f32, 0.6].into_iter().enumerate() {
+        let y = top + gap * i as f32;
+        p.line_segment([pos2(inner.left(), y), pos2(inner.left() + inner.width() * share, y)], stroke);
+    }
+}

@@ -2,11 +2,11 @@
 //! UI verb; the choices that only the UI knows (which menu is open) live in `UiState`.
 
 use drafftink_engine::state::Tool;
-use egui::{Color32, FontId, Painter, Rect, Response, Role, Sense, Ui, WidgetInfo, pos2, vec2};
+use egui::{Color32, FontId, Painter, Rect, Response, Role, Sense, Stroke, Ui, WidgetInfo, pos2, vec2};
 use serde_json::{Value, json};
 
 use super::pictograms::{self, Align, LineStyle, Pattern};
-use super::{Group, shows};
+use super::{Group, Row};
 use crate::action::{Scrub, ScrubPhase, UiAction, Verb};
 use crate::icons::{self, Icon};
 use crate::model::StyleProp;
@@ -14,7 +14,7 @@ use crate::state::{OpenRibbonMenu, RibbonMenu, UiState};
 use crate::surfaces::color::{PopoverKey, remember_anchor_in};
 use crate::surfaces::topbar::not_applicable;
 use crate::theme::{TextSize, UiFontChoice, space};
-use crate::widgets::{Ctl, Cx, Look, icon_color, paint_button_bg};
+use crate::widgets::{Ctl, Cx, Look, icon_color, paint_button_bg, strip_row};
 
 /// Sizes of the text presets.
 pub(super) const FONT_SIZES: [(&str, f64); 4] = [("S", 16.0), ("M", 20.0), ("L", 28.0), ("XL", 36.0)];
@@ -24,8 +24,14 @@ pub(super) const ROUND_CORNER: f64 = 32.0;
 pub(super) const LINE_HEIGHTS: [f64; 4] = [1.0, 1.25, 1.5, 2.0];
 /// Width of the font button, wide enough for the longest family name.
 const FONT_BUTTON_WIDTH: f32 = 124.0;
-/// Width of the buttons of the head and "More" menus.
-const MENU_BUTTON_WIDTH: f32 = 64.0;
+/// Width of the "More" button.
+pub(crate) const MORE_BUTTON_WIDTH: f32 = 64.0;
+/// Width of a head button, wide enough for "Start: Triangle".
+const HEAD_BUTTON_WIDTH: f32 = 116.0;
+/// The stroke widths: name and value.
+const STROKE_WIDTHS: [(&str, f64); 4] = [("Thin", 1.0), ("Normal", 2.0), ("Bold", 4.0), ("Extra bold", 8.0)];
+/// The thickness each stroke width is drawn with on its button.
+const STROKE_WIDTH_SAMPLES: [f32; 4] = [1.0, 2.5, 4.5, 7.0];
 /// The width the opacity slider has.
 const SLIDER_WIDTH: f32 = 84.0;
 /// The width reserved for the percentage next to the slider ("100%").
@@ -54,24 +60,44 @@ const STROKE_STYLES: [(LineStyle, &str, &str); 3] = [
 ];
 
 impl Group {
-    /// Draws the group in `ui`, a row of controls.
-    pub(super) fn draw(self, ui: &mut Ui, cx: &mut Cx<'_>, st: &mut UiState) {
-        ui.spacing_mut().item_spacing = vec2(SEGMENT_GAP, 0.0);
+    /// Draws the group in `ui`: its rows one under the other, each as tall as a small button.
+    pub(crate) fn draw(self, ui: &mut Ui, cx: &mut Cx<'_>, st: &mut UiState) {
+        let rows = self.rows(cx);
+        let height = cx.layout.small_side();
+        ui.vertical(|ui| {
+            ui.spacing_mut().item_spacing.y = space::SM;
+            for row in rows {
+                strip_row(ui, height, |ui| {
+                    ui.spacing_mut().item_spacing = vec2(SEGMENT_GAP, 0.0);
+                    row.draw(ui, cx, st);
+                });
+            }
+        });
+    }
+}
+
+impl Row {
+    fn draw(self, ui: &mut Ui, cx: &mut Cx<'_>, st: &mut UiState) {
         match self {
-            Group::StrokeStyle => stroke_style(ui, cx),
-            Group::FillPattern => fill_pattern(ui, cx),
-            Group::Corners => corners(ui, cx),
-            Group::ArrowPath => arrow_path(ui, cx),
-            Group::ArrowHeads => arrow_heads(ui, cx, st),
-            Group::Brush => brush(ui, cx),
-            Group::FontFace => font_face(ui, cx, st),
-            Group::TextSize => text_size(ui, cx),
-            Group::TextAlign => text_align(ui, cx),
-            Group::More => more(ui, cx, st),
-            Group::Opacity => opacity(ui, cx),
-            Group::Align => align(ui, cx),
-            Group::Layer => layer(ui, cx),
-            Group::Actions => actions(ui, cx),
+            Row::Width => width(ui, cx),
+            Row::StrokeStyle => stroke_style(ui, cx),
+            Row::FillPattern => fill_pattern(ui, cx),
+            Row::Corners => corners(ui, cx),
+            Row::ArrowPath => arrow_path(ui, cx),
+            Row::ArrowHeads => arrow_heads(ui, cx, st),
+            Row::Brush => brush(ui, cx),
+            Row::FontFamily => font_family(ui, cx, st),
+            Row::FontWeight => font_weight(ui, cx),
+            Row::TextSize => text_size(ui, cx),
+            Row::Emphasis => emphasis(ui, cx),
+            Row::TextAlign => text_align(ui, cx),
+            Row::VerticalAlign => vertical_align(ui, cx),
+            Row::Opacity => opacity(ui, cx),
+            Row::Align => align(ui, cx),
+            Row::Layer => layer(ui, cx),
+            Row::Flip => flip(ui, cx),
+            Row::Compose => compose(ui, cx),
+            Row::LinkDelete => link_and_delete(ui, cx),
         }
     }
 }
@@ -82,7 +108,7 @@ impl Group {
 fn chip(cx: &mut Cx<'_>, ui: &mut Ui, ctl: &Ctl<'_>, text: &str) -> Response {
     let pal = cx.pal;
     let galley = ui.painter().layout_no_wrap(text.to_owned(), TextSize::Small.font(), pal.text);
-    let height = cx.layout.toggle_height();
+    let height = cx.layout.small_side();
     let size = vec2((galley.size().x + 2.0 * space::LG).max(height), height);
     let ctl = Ctl { label: if ctl.label.is_empty() { text.to_owned() } else { ctl.label.clone() }, ..ctl.clone() };
     cx.command_widget(ui, &ctl, size, move |p, rect, look| {
@@ -122,7 +148,7 @@ fn dropdown(cx: &Cx<'_>, ui: &mut Ui, spec: Dropdown<'_>) -> Response {
     let Dropdown { label, text, font, width, open, reason } = spec;
     let pal = cx.pal;
     let enabled = reason.is_none();
-    let height = cx.layout.toggle_height();
+    let height = cx.layout.small_side();
     let resp = ui
         .add_enabled_ui(enabled, |ui| {
             let (rect, resp) = ui.allocate_exact_size(vec2(width, height), Sense::click());
@@ -158,9 +184,17 @@ fn dropdown(cx: &Cx<'_>, ui: &mut Ui, spec: Dropdown<'_>) -> Response {
 }
 
 /// A [`dropdown`] that opens a ribbon menu (`menus.rs`) under itself.
-fn menu_button(cx: &Cx<'_>, ui: &mut Ui, st: &mut UiState, kind: RibbonMenu, label: &str, text: &str) -> Response {
+fn menu_button(
+    cx: &Cx<'_>,
+    ui: &mut Ui,
+    st: &mut UiState,
+    kind: RibbonMenu,
+    label: &str,
+    text: &str,
+    width: f32,
+) -> Response {
     let open = st.ribbon_menu.is_some_and(|m| m.kind == kind);
-    let spec = Dropdown { label, text, font: TextSize::Small.font(), width: MENU_BUTTON_WIDTH, open, reason: None };
+    let spec = Dropdown { label, text, font: TextSize::Small.font(), width, open, reason: None };
     let resp = dropdown(cx, ui, spec);
     if !ui.is_sizing_pass() {
         if resp.clicked() {
@@ -179,6 +213,19 @@ fn style_ctl(prop: &str, value: impl Into<Value>) -> Ctl<'static> {
 }
 
 // ---- stroke and fill ----
+
+fn width(ui: &mut Ui, cx: &mut Cx<'_>) {
+    let current = cx.model.style.num_value("stroke_width");
+    let blocked = not_applicable(cx, "stroke_width");
+    for (&(name, w), thickness) in STROKE_WIDTHS.iter().zip(STROKE_WIDTH_SAMPLES) {
+        let selected = current.is_some_and(|c| (c - w).abs() < 0.01);
+        let ctl = style_ctl("stroke_width", w).label(name).selected(selected).blocked(blocked.clone());
+        picture(cx, ui, &ctl, move |p, rect, ink| {
+            let y = rect.center().y;
+            p.line_segment([pos2(rect.left(), y), pos2(rect.right(), y)], Stroke::new(thickness, ink));
+        });
+    }
+}
 
 fn stroke_style(ui: &mut Ui, cx: &mut Cx<'_>) {
     let current = cx.model.style.str_value("stroke_style").map(str::to_owned);
@@ -201,7 +248,8 @@ fn fill_pattern(ui: &mut Ui, cx: &mut Cx<'_>) {
 fn corners(ui: &mut Ui, cx: &mut Cx<'_>) {
     for (name, value) in CORNERS {
         let ctl = corner_ctl(cx, name, value);
-        chip(cx, ui, &ctl, name);
+        let rounded = value > 0.0;
+        picture(cx, ui, &ctl, move |p, rect, ink| pictograms::corner(p, rect, rounded, ink));
     }
 }
 
@@ -252,10 +300,14 @@ fn arrow_path(ui: &mut Ui, cx: &mut Cx<'_>) {
     }
 }
 
-/// The word shown on a head button: the head when the model knows it (new arrows), else the side.
+/// The word shown on a head button: the head when it is known (new arrows, a selected arrow), else the side.
 fn head_text(side: &str, known: Option<&str>) -> String {
-    match known.and_then(|v| HEADS.iter().find(|(_, value)| *value == v)) {
-        Some((name, _)) => format!("{side}: {name}"),
+    match known {
+        Some("mixed") => format!("{side}: Mixed"),
+        Some(v) => match HEADS.iter().find(|(_, value)| *value == v) {
+            Some((name, _)) => format!("{side}: {name}"),
+            None => format!("{side}: {}", v.replace('_', " ")),
+        },
         None => side.to_owned(),
     }
 }
@@ -266,9 +318,17 @@ fn arrow_heads(ui: &mut Ui, cx: &mut Cx<'_>, st: &mut UiState) {
         (RibbonMenu::StartHead, "Start", "arrow.start_head", "none"),
         (RibbonMenu::EndHead, "End", "arrow.end_head", "arrow"),
     ] {
-        let known = new.then(|| arrow_setting(cx, key, default));
+        let known = if new {
+            Some(arrow_setting(cx, key, default))
+        } else {
+            cx.model
+                .style
+                .heads
+                .as_ref()
+                .map(|h| if kind == RibbonMenu::StartHead { h.start.clone() } else { h.end.clone() })
+        };
         let text = head_text(side, known.as_deref());
-        menu_button(cx, ui, st, kind, &format!("{side} head"), &text);
+        menu_button(cx, ui, st, kind, &format!("{side} head"), &text, HEAD_BUTTON_WIDTH);
     }
 }
 
@@ -286,61 +346,50 @@ fn brush(ui: &mut Ui, cx: &mut Cx<'_>) {
 
 // ---- text ----
 
-fn font_face(ui: &mut Ui, cx: &mut Cx<'_>, st: &mut UiState) {
-    if shows(cx, "font_family") {
-        let family = cx.model.style.prop("font_family");
-        let choice = cx.model.style.str_value("font_family").and_then(UiFontChoice::from_setting);
-        let mixed = family.is_some_and(StyleProp::is_mixed);
-        let (text, font) = match choice {
-            Some(c) => (c.title(), c.preview(TextSize::Body.points())),
-            None => (if mixed { "Mixed" } else { "Font" }, TextSize::Body.font()),
-        };
-        let reason = not_applicable(cx, "font_family");
-        let spec = Dropdown {
-            label: "Pick the font",
-            text,
-            font,
-            width: FONT_BUTTON_WIDTH,
-            open: st.font_picker_open,
-            reason,
-        };
-        let resp = dropdown(cx, ui, spec);
-        remember_anchor_in(ui, PopoverKey::Font, resp.rect);
-        if resp.clicked() {
-            cx.verb(Verb::OpenFontPicker);
-        }
+fn font_family(ui: &mut Ui, cx: &mut Cx<'_>, st: &mut UiState) {
+    let family = cx.model.style.prop("font_family");
+    let choice = cx.model.style.str_value("font_family").and_then(UiFontChoice::from_setting);
+    let mixed = family.is_some_and(StyleProp::is_mixed);
+    let (text, font) = match choice {
+        Some(c) => (c.title(), c.preview(TextSize::Body.points())),
+        None => (if mixed { "Mixed" } else { "Font" }, TextSize::Body.font()),
+    };
+    let reason = not_applicable(cx, "font_family");
+    let spec =
+        Dropdown { label: "Pick the font", text, font, width: FONT_BUTTON_WIDTH, open: st.font_picker_open, reason };
+    let resp = dropdown(cx, ui, spec);
+    remember_anchor_in(ui, PopoverKey::Font, resp.rect);
+    if resp.clicked() {
+        cx.verb(Verb::OpenFontPicker);
     }
+}
+
+fn font_weight(ui: &mut Ui, cx: &mut Cx<'_>) {
     let current = cx.model.style.str_value("font_weight").map(str::to_owned);
-    if shows(cx, "font_weight") {
-        ui.add_space(space::XS);
-        for (name, shown, value) in FONT_WEIGHTS {
-            let ctl = style_ctl("font_weight", value).label(name).selected(current.as_deref() == Some(value));
-            chip(cx, ui, &ctl, shown);
-        }
+    for (name, shown, value) in FONT_WEIGHTS {
+        let ctl = style_ctl("font_weight", value).label(name).selected(current.as_deref() == Some(value));
+        chip(cx, ui, &ctl, shown);
     }
 }
 
 fn text_size(ui: &mut Ui, cx: &mut Cx<'_>) {
-    if shows(cx, "font_size") {
-        let current = cx.model.style.num_value("font_size");
-        for (name, size) in FONT_SIZES {
-            let ctl = style_ctl("font_size", size)
-                .label(format!("Text size {name} ({size} px)"))
-                .selected(current.is_some_and(|c| (c - size).abs() < 1.0));
-            chip(cx, ui, &ctl, name);
-        }
+    let current = cx.model.style.num_value("font_size");
+    for (name, size) in FONT_SIZES {
+        let ctl = style_ctl("font_size", size)
+            .label(format!("Text size {name} ({size} px)"))
+            .selected(current.is_some_and(|c| (c - size).abs() < 1.0));
+        chip(cx, ui, &ctl, name);
     }
-    // Bold and italic for the selected text, or for the part of it the editor has selected: `text.format`. A button
-    // that is on turns the face off.
-    if let Some(faces) = cx.model.faces() {
-        ui.add_space(space::XS);
-        for (name, shown, on, arg) in
-            [("Bold text", "B", faces.bold, "bold"), ("Italic text", "I", faces.italic, "italic")]
-        {
-            let ctl =
-                Ctl::new("text.format").args(json!({ arg: on != Some(true) })).label(name).selected(on == Some(true));
-            chip(cx, ui, &ctl, shown);
-        }
+}
+
+/// Bold and italic for the selected text, or for the part of it the editor has selected: `text.format`. A button
+/// that is on turns the face off.
+fn emphasis(ui: &mut Ui, cx: &mut Cx<'_>) {
+    let Some(faces) = cx.model.faces() else { return };
+    for (name, shown, on, arg) in [("Bold text", "B", faces.bold, "bold"), ("Italic text", "I", faces.italic, "italic")]
+    {
+        let ctl = Ctl::new("text.format").args(json!({ arg: on != Some(true) })).label(name).selected(on == Some(true));
+        chip(cx, ui, &ctl, shown);
     }
 }
 
@@ -354,10 +403,28 @@ fn text_align(ui: &mut Ui, cx: &mut Cx<'_>) {
     }
 }
 
+const VERTICAL_ALIGNS: [(&str, &str, pictograms::VAlign); 3] = [
+    ("Top", "top", pictograms::VAlign::Top),
+    ("Middle", "middle", pictograms::VAlign::Middle),
+    ("Bottom", "bottom", pictograms::VAlign::Bottom),
+];
+
+/// Where text sits in its box (a label of a shape, a fixed-width text).
+fn vertical_align(ui: &mut Ui, cx: &mut Cx<'_>) {
+    let current = cx.model.style.str_value("vertical_align").map(str::to_owned);
+    for (name, value, align) in VERTICAL_ALIGNS {
+        let ctl = style_ctl("vertical_align", value)
+            .label(format!("Vertical align: {name}"))
+            .selected(current.as_deref() == Some(value));
+        picture(cx, ui, &ctl, move |p, rect, ink| pictograms::box_lines(p, rect, align, ink));
+    }
+}
+
 // ---- more ----
 
-fn more(ui: &mut Ui, cx: &mut Cx<'_>, st: &mut UiState) {
-    menu_button(cx, ui, st, RibbonMenu::More, "More options", "More");
+/// The "More" button at the right end of the strip: it opens the popup of `menus.rs`.
+pub(crate) fn more_button(ui: &mut Ui, cx: &mut Cx<'_>, st: &mut UiState) {
+    menu_button(cx, ui, st, RibbonMenu::More, "More options", "More", MORE_BUTTON_WIDTH);
 }
 
 // ---- opacity ----
@@ -430,15 +497,17 @@ fn layer(ui: &mut Ui, cx: &mut Cx<'_>) {
     ] {
         cx.icon_button(ui, &Ctl::new("arrange.z_order").args(json!({ "op": op })), icon, side);
     }
-    ui.add_space(space::XS);
+}
+
+fn flip(ui: &mut Ui, cx: &mut Cx<'_>) {
+    let side = cx.layout.small_side();
     for (icon, axis) in [(Icon::FlipH, "horizontal"), (Icon::FlipV, "vertical")] {
         cx.icon_button(ui, &Ctl::new("element.flip").args(json!({ "axis": axis })), icon, side);
     }
 }
 
-/// Duplicate, group, ungroup, lock, the link (`Edit the link` opens the dialog, `Open the link` follows it; both
-/// grey out with the engine's text while their command is refused) and delete.
-fn actions(ui: &mut Ui, cx: &mut Cx<'_>) {
+/// Duplicate, group, ungroup and lock.
+fn compose(ui: &mut Ui, cx: &mut Cx<'_>) {
     let side = cx.layout.small_side();
     for (icon, id) in [
         (Icon::Duplicate, "element.duplicate"),
@@ -448,6 +517,12 @@ fn actions(ui: &mut Ui, cx: &mut Cx<'_>) {
     ] {
         cx.icon_button(ui, &Ctl::new(id), icon, side);
     }
+}
+
+/// The link (`Edit the link` opens the dialog, `Open the link` follows it; both grey out with the engine's text
+/// while their command is refused) and delete.
+fn link_and_delete(ui: &mut Ui, cx: &mut Cx<'_>) {
+    let side = cx.layout.small_side();
     let reason = cx.refusal("element.set_link");
     let link = cx.model.selection_link.clone();
     let tip = match &link {

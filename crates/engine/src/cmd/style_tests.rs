@@ -679,6 +679,34 @@ fn get_corner_radius_ignores_elements_that_cannot_have_one() {
 }
 
 #[test]
+fn get_reports_the_heads_of_the_selected_lines_and_arrows() {
+    let mut f = fixture();
+    // No line or arrow selected: no `heads` at all.
+    assert!(run(&mut f.s, "style.get", json!({})).get("heads").is_none());
+    let mut a = LinearData::new(vec![Point::new(0.0, 0.0), Point::new(40.0, 0.0)]);
+    a.start_head = drafftink_scene::Head::Circle;
+    a.end_head = drafftink_scene::Head::Triangle;
+    let arrow = put(&mut f.s, ElementKind::Arrow(a), 0.0, 500.0, 40.0, 0.0);
+    testing::select(&mut f.s, std::slice::from_ref(&arrow));
+    let out = run(&mut f.s, "style.get", json!({}));
+    assert_eq!(out["heads"], json!({"start": "circle", "end": "triangle"}));
+    // A line with no heads next to it: the ends disagree.
+    testing::select(&mut f.s, &[arrow.clone(), f.line.clone()]);
+    let out = run(&mut f.s, "style.get", json!({"props": ["stroke_color"]}));
+    assert_eq!(out["heads"], json!({"start": "mixed", "end": "mixed"}));
+    // Two arrows that agree on one end.
+    let mut b = LinearData::new(vec![Point::new(0.0, 0.0), Point::new(40.0, 0.0)]);
+    b.start_head = drafftink_scene::Head::Circle;
+    let second = put(&mut f.s, ElementKind::Arrow(b), 0.0, 600.0, 40.0, 0.0);
+    testing::select(&mut f.s, &[arrow.clone(), second]);
+    let out = run(&mut f.s, "style.get", json!({}));
+    assert_eq!(out["heads"], json!({"start": "circle", "end": "mixed"}));
+    // The defaults have none.
+    testing::select(&mut f.s, &[]);
+    assert!(run(&mut f.s, "style.get", json!({})).get("heads").is_none());
+}
+
+#[test]
 fn get_reads_a_label_through_its_container_and_the_defaults_when_nothing_is_selected() {
     let mut f = fixture();
     run(&mut f.s, "style.set", json!({"props": {"font_size": 33}, "ids": [f.label.as_str()], "scope": "selection"}));

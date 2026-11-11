@@ -1,23 +1,30 @@
-//! The top strip: one bar across the whole window, flush with its top edge, in the panel colour.
+//! The top strip: one bar across the whole window, flush with its top edge, in the panel colour, two control
+//! rows tall (one on a phone). The height depends on the layout only, never on what is selected.
 //!
 //! ```text
-//! | menu  rooms  title |         | stroke | fill | width |         | right slot |
-//!   left group             centre group (centred on the window)      right slot
+//! | menu rooms | stroke  ... ... | width ...  | font ...   |        | More v |
+//! | title      | fill    ... ... | style ...  | weight ... |        |        |
+//!   left        colour group       contextual groups, each in two rows   overflow
 //! ```
 //!
-//! * The left group is `menu::buttons`, the centre group is `topbar::style_row`, and the right slot is empty
-//!   for now ([`right_slot`]).
+//! * The left cluster is `menu::buttons`, the colour group is `topbar::style_rows`, and the contextual groups
+//!   are `ribbon::Group`s. Thin dividers stand between them. A group is two rows of controls; its rows line up
+//!   with the rows of every other group.
+//! * What does not fit goes behind the "More" button at the right end (`ribbon::fit` plans it from widths measured
+//!   in a hidden pass, so the plan is right in the same frame). When even the colour group does not fit, it
+//!   collapses into one style button that opens a popover with the same controls; a phone (one row, narrow) puts
+//!   every contextual group behind "More" as well. As a last resort the strip scrolls sideways.
+//! * With nothing selected and a tool that draws nothing there are no contextual groups: the strip holds the
+//!   colour group, which sets the defaults for new elements. Hiding it would make the strip change with the tool,
+//!   and the colours are the control people reach for first.
 //! * The strip is flush with the window edge, with a hairline and a soft shadow under it, because it is a
 //!   toolbar edge: a floating card with a gap would leave a strip of canvas above it that you can click and
-//!   draw on, and the full-width fill is what makes the chrome read as one frame around the canvas.
-//! * Each group is measured in a hidden sizing pass first, so that the centre group is centred on the window
-//!   in the same frame (no frame of lag). When the three groups do not fit side by side (a phone, a narrow
-//!   window), the centre group collapses into one style button that opens a popover with the same controls.
+//!   draw on.
 //! * The rectangle of the strip, and of the menu button, go to `UiState::chrome` for the surfaces below.
 
 use egui::{
-    Align, Align2, Area, Context, CornerRadius, Id, Layout, Order, Rect, Role, Sense, Shadow, Stroke, Ui, UiBuilder,
-    WidgetInfo, pos2, vec2,
+    Align, Align2, Area, Context, CornerRadius, Id, Layout, Order, Rect, Role, ScrollArea, Sense, Shadow, Stroke, Ui,
+    UiBuilder, WidgetInfo, pos2, vec2,
 };
 use serde_json::Value;
 
@@ -25,77 +32,120 @@ use crate::chrome::GAP;
 use crate::colors;
 use crate::state::UiState;
 use crate::surfaces::color::{PopoverKey, forget_anchor};
+use crate::surfaces::ribbon::{self, DIVIDER_WIDTH, Group, MORE_BUTTON_WIDTH, Widths};
 use crate::surfaces::{menu, topbar};
 use crate::theme::{MARGIN, Palette, space};
-use crate::widgets::{Cx, Look, icon_color, paint_button_bg, paint_swatch, panel_frame};
+use crate::widgets::{Cx, Look, icon_color, paint_button_bg, paint_swatch, panel_frame, vertical_separator};
 
-/// Draws the strip, and the style popover when the strip is too narrow for the style controls.
+/// Draws the strip, the style popover when the strip is too narrow for the colour group, and the menus of the
+/// groups.
 pub fn show(ctx: &Context, cx: &mut Cx<'_>, st: &mut UiState) {
     let screen = ctx.content_rect();
     let rect = Rect::from_min_size(screen.min, vec2(screen.width(), cx.layout.strip_height()));
     st.chrome.strip = Some(rect);
-    let collapsed = Area::new(Id::unique("top_strip"))
+    let drawn = Area::new(Id::unique("top_strip"))
         .fixed_pos(rect.min)
         .order(Order::Middle)
         .show(ctx, |ui| {
             ui.allocate_rect(rect, Sense::hover());
             paint_background(ui, rect, &cx.pal);
-            groups(ui, rect, cx, st)
+            bands(ui, rect, cx, st)
         })
         .inner;
-    if collapsed {
+    if drawn.colour_inline {
+        st.style_open = false;
+    } else {
         // The wheels are not in the strip now; a colour popover must not open at the place they were.
         forget_anchor(ctx, PopoverKey::Stroke);
         forget_anchor(ctx, PopoverKey::Fill);
         style_popover(ctx, cx, st);
-    } else {
-        st.style_open = false;
     }
+    ribbon::show_menus(ctx, cx, st, &drawn.overflow);
 }
 
-/// Lays out the three groups inside the strip. Returns true when the style controls collapsed into a button.
-fn groups(ui: &mut Ui, rect: Rect, cx: &mut Cx<'_>, st: &mut UiState) -> bool {
+/// What `bands` decided, for the surfaces that depend on it.
+struct Drawn {
+    /// The colour group is in the strip (else the style button is).
+    colour_inline: bool,
+    /// The groups that went behind the "More" button.
+    overflow: Vec<Group>,
+}
+
+/// Lays out the left cluster, the colour group, the contextual groups and the "More" button.
+fn bands(ui: &mut Ui, rect: Rect, cx: &mut Cx<'_>, st: &mut UiState) -> Drawn {
     let inner = rect.shrink2(vec2(MARGIN, space::MD));
     let button = cx.layout.small_side();
+    let groups = ribbon::visible_groups(cx);
+
     let left_w = measure(ui, inner, |ui| menu::buttons(ui, cx, st));
-    let right_w = measure(ui, inner, |ui| right_slot(ui, cx, st));
-    let centre_w = measure(ui, inner, |ui| topbar::style_row(ui, cx, st));
+    let colour_w = measure(ui, inner, |ui| topbar::style_rows(ui, cx, st));
+    let widths: Vec<f32> = groups.iter().map(|g| measure(ui, inner, |ui| g.draw(ui, cx, st))).collect();
+    let plan = ribbon::fit(
+        Widths {
+            colour: colour_w,
+            colour_button: button,
+            groups: &widths,
+            more_button: MORE_BUTTON_WIDTH,
+            extras: ribbon::has_extras(cx),
+        },
+        DIVIDER_WIDTH,
+        inner.width() - left_w,
+        cx.layout.narrow,
+    );
 
-    // What the right end holds, and the x where the room for the middle ends.
-    let right_gap = if right_w > 0.0 { space::XL } else { 0.0 };
-    let room_end = inner.right() - right_w - right_gap;
-    let fits = left_w + space::XL + centre_w <= room_end - inner.left();
-    let cluster_w = if fits { right_w } else { right_w + button + if right_w > 0.0 { space::SM } else { 0.0 } };
+    let left = Rect::from_min_size(inner.min, vec2(left_w + 1.0, inner.height()));
+    place(ui, "strip_left", left, Layout::top_down(Align::Min), |ui| menu::buttons(ui, cx, st));
 
-    let left = Rect::from_min_max(inner.min, pos2(inner.left() + left_w + 1.0, inner.bottom()));
-    place(ui, "strip_left", left, Layout::left_to_right(Align::Center), |ui| menu::buttons(ui, cx, st));
-
-    let right = Rect::from_min_max(pos2(inner.right() - cluster_w - 1.0, inner.top()), inner.max);
-    place(ui, "strip_right", right, Layout::right_to_left(Align::Center), |ui| {
-        ui.spacing_mut().item_spacing.x = space::SM;
-        right_slot(ui, cx, st);
-        if !fits {
-            style_button(ui, cx, st);
+    let band = inner.height();
+    let content = Rect::from_min_max(pos2(inner.left() + left_w, inner.top()), inner.max);
+    let (inline, overflow) = groups.split_at(plan.shown);
+    let items = |ui: &mut Ui, cx: &mut Cx<'_>, st: &mut UiState| {
+        ui.spacing_mut().item_spacing.x = 0.0;
+        divider(ui, cx, band);
+        if plan.colour_inline {
+            topbar::style_rows(ui, cx, st);
+        } else {
+            ui.vertical(|ui| {
+                ui.spacing_mut().item_spacing.y = 0.0;
+                ui.add_space((band - button) / 2.0);
+                style_button(ui, cx, st);
+            });
         }
-    });
-
-    if fits {
-        // Centred on the window; pushed aside only as far as the neighbours need.
-        let lowest = inner.left() + left_w + space::XL;
-        let highest = room_end - centre_w;
-        let x = (rect.center().x - centre_w / 2.0).max(lowest).min(highest);
-        let centre = Rect::from_min_size(pos2(x, inner.top()), vec2(centre_w + 1.0, inner.height()));
-        place(ui, "strip_centre", centre, Layout::left_to_right(Align::Center), |ui| topbar::style_row(ui, cx, st));
+        for group in inline {
+            divider(ui, cx, band);
+            group.draw(ui, cx, st);
+        }
+    };
+    if plan.scroll {
+        place(ui, "strip_content", content, Layout::left_to_right(Align::Min), |ui| {
+            ScrollArea::horizontal().id_salt("strip_scroll").auto_shrink([false, true]).show(ui, |ui| {
+                items(ui, cx, st);
+                if plan.more {
+                    divider(ui, cx, band);
+                    ribbon::more_button(ui, cx, st);
+                }
+            });
+        });
+    } else {
+        place(ui, "strip_content", content, Layout::left_to_right(Align::Min), |ui| items(ui, cx, st));
+        if plan.more {
+            let right = Rect::from_min_max(pos2(inner.right() - MORE_BUTTON_WIDTH - 1.0, inner.top()), inner.max);
+            place(ui, "strip_more", right, Layout::right_to_left(Align::Center), |ui| ribbon::more_button(ui, cx, st));
+        }
     }
-    !fits
+    Drawn { colour_inline: plan.colour_inline, overflow: overflow.to_vec() }
 }
 
-/// The right end of the strip. Empty for now.
-///
-/// To move the bottom-left bar here: call `bottom::bar(ui, cx, st)` from this function, and take
-/// `bottom::show` out of `surfaces::show_all`. The slot is a right-to-left row, so the controls of a group
-/// are added last to first, and the strip's width accounting (`groups`) already includes whatever it draws.
-fn right_slot(_ui: &mut Ui, _cx: &mut Cx<'_>, _st: &mut UiState) {}
+/// A divider between two parts of the strip: space, a hairline as tall as the two rows less a little, space.
+fn divider(ui: &mut Ui, cx: &Cx<'_>, band: f32) {
+    ui.add_space(space::MD);
+    ui.vertical(|ui| {
+        ui.spacing_mut().item_spacing.y = 0.0;
+        ui.add_space(space::XS);
+        vertical_separator(ui, &cx.pal, band - 2.0 * space::XS);
+    });
+    ui.add_space(space::MD);
+}
 
 /// The fill of the strip, a soft shadow and the hairline along its lower edge.
 fn paint_background(ui: &Ui, rect: Rect, pal: &Palette) {
@@ -161,11 +211,11 @@ fn style_button(ui: &mut Ui, cx: &mut Cx<'_>, st: &mut UiState) {
         ui.painter().circle_stroke(rect.center() - vec2(offset, offset), radius, Stroke::new(2.5, ring));
     }
     resp.widget_info(|| {
-        let mut info = WidgetInfo::labeled(Role::Button, true, "Stroke, fill and width");
+        let mut info = WidgetInfo::labeled(Role::Button, true, "Stroke and fill");
         info.selected = Some(st.style_open);
         info
     });
-    if resp.on_hover_text("Stroke, fill and width").clicked() {
+    if resp.on_hover_text("Stroke and fill").clicked() {
         st.style_open = !st.style_open;
     }
 }

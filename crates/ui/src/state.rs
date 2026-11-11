@@ -411,7 +411,8 @@ pub enum PanelKind {
 /// A menu that opens from a control of the ribbon.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum RibbonMenu {
-    /// The properties that did not fit the ribbon: sloppiness, pressure, vertical align, line height, box.
+    /// The groups that did not fit the strip, and the properties without a control of their own: sloppiness,
+    /// pressure, line height, box.
     More,
     /// The head at the start of an arrow.
     StartHead,
