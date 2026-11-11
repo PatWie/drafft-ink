@@ -50,7 +50,8 @@ struct WorldKey {
 #[derive(Clone, Debug, PartialEq)]
 struct OverlayKey {
     interaction: InteractionOverlay,
-    peers: Vec<([f64; 2], String)>,
+    /// Pointer (world), colour and name of each peer that has a pointer.
+    peers: Vec<([f64; 2], String, String)>,
 }
 
 /// The application. Build it with [`App::new`] and give it to `drafftink_gpu::run`.
@@ -332,6 +333,11 @@ impl App {
                         );
                     }
                 }
+                PickKind::LibraryImport => {
+                    for f in &files {
+                        self.run(Origin::Ui, "library.import", json!({ "source": source_of(f), "mode": "merge" }));
+                    }
+                }
             },
             Inbound::SaveTarget(to) => {
                 self.run(Origin::Ui, "doc.save", json!({ "to": to, "overwrite": true }));
@@ -347,6 +353,7 @@ impl App {
             HostRequest::PickFileToOpen => job(&mut self.host, &self.inbox, HostJob::PickDocument),
             HostRequest::PickImage => job(&mut self.host, &self.inbox, HostJob::PickImages),
             HostRequest::PickLibrary => job(&mut self.host, &self.inbox, HostJob::PickLibrary),
+            HostRequest::PickLibraryImport => job(&mut self.host, &self.inbox, HostJob::PickLibraryImport),
             HostRequest::PickSaveTarget => {
                 let name = self.session.tab().doc.store().meta().name.clone();
                 let stem = if name.trim().is_empty() { "Untitled".to_owned() } else { name };
@@ -500,8 +507,13 @@ impl App {
         };
         let view = CanvasView::view_of(camera.scroll, camera.zoom, size, dpr);
         let world_stale = look || hidden_changed || self.world_key != Some(key) || cx.resized;
-        let peers: Vec<([f64; 2], String)> =
-            self.session.collab_view().peers.iter().filter_map(|p| p.pointer.map(|pt| (pt, p.color.clone()))).collect();
+        let peers: Vec<([f64; 2], String, String)> = self
+            .session
+            .collab_view()
+            .peers
+            .iter()
+            .filter_map(|p| p.pointer.map(|pt| (pt, p.color.clone(), p.name.clone())))
+            .collect();
         let overlay_key = OverlayKey { interaction: interaction_overlay.clone(), peers: peers.clone() };
         let laser_running = !interaction_overlay.laser.is_empty();
         let overlay_stale = world_stale || laser_running || self.overlay_key.as_ref() != Some(&overlay_key);
@@ -514,7 +526,11 @@ impl App {
         }
         let cursors: Vec<RemoteCursor> = peers
             .iter()
-            .map(|(pt, color)| RemoteCursor { at: Point::new(pt[0], pt[1]), color: parse_hex(color) })
+            .map(|(pt, color, name)| RemoteCursor {
+                at: Point::new(pt[0], pt[1]),
+                color: parse_hex(color),
+                name: Some(name.clone()).filter(|n| !n.is_empty()),
+            })
             .collect();
         let mut render_overlay = overlay::to_render(&interaction_overlay.canvas, &[]);
         render_overlay.cursors = cursors;
@@ -755,7 +771,8 @@ impl ShellApp for App {
         }
 
         // The UI.
-        self.ui.set_collab(collab_view_of(&self.session));
+        let collab = collab_view_of(&mut self.session);
+        self.ui.set_collab(collab);
         let pointer = Pointer {
             cursor: self.pointer_world().map(|p| (p.x, p.y)),
             viewport_center: Some((self.interaction.camera().scroll.x, self.interaction.camera().scroll.y)),
@@ -788,21 +805,7 @@ impl ShellApp for App {
     }
 }
 
-/// What the UI shows about collaboration, from the engine's view of it.
-fn collab_view_of(s: &Session) -> drafftink_ui::CollabView {
-    use drafftink_engine::cmd::collab::ConnectionState;
-    use drafftink_ui::{CollabStatus, Peer};
-    let v = s.collab_view();
-    let status = match v.state {
-        ConnectionState::Disconnected | ConnectionState::Ready => CollabStatus::Disconnected,
-        ConnectionState::Connecting => CollabStatus::Connecting,
-        ConnectionState::Connected => CollabStatus::Connected,
-        ConnectionState::Error => CollabStatus::Failed(v.error.clone().unwrap_or_else(|| v.text.clone())),
-    };
-    let peers = v
-        .peers
-        .iter()
-        .map(|p| Peer { name: p.name.clone(), color: p.color.clone(), has_cursor: p.pointer.is_some() })
-        .collect();
-    drafftink_ui::CollabView { status, room: v.room, peers }
+/// What the UI shows about collaboration: `collab.status`, read as a query so it leaves no ring entry.
+fn collab_view_of(s: &mut Session) -> drafftink_ui::CollabView {
+    s.query("collab.status", json!({})).map(|out| drafftink_ui::CollabView::from_status(&out)).unwrap_or_default()
 }

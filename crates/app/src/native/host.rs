@@ -26,6 +26,7 @@ async fn pick(kind: PickKind, inbox: &Inbox) {
         PickKind::Document => ("Open a document", "Documents", DOCUMENT_EXTENSIONS),
         PickKind::Images => ("Insert pictures", "Pictures", IMAGE_EXTENSIONS),
         PickKind::Library => ("Open a library", "Excalidraw libraries", LIBRARY_EXTENSIONS),
+        PickKind::LibraryImport => ("Import a library", "Excalidraw libraries", LIBRARY_EXTENSIONS),
     };
     let dialog = rfd::AsyncFileDialog::new().set_title(title).add_filter(name, exts);
     let handles = match kind {
@@ -37,7 +38,9 @@ async fn pick(kind: PickKind, inbox: &Inbox) {
     }
     let files: Vec<PickedFile> = match kind {
         // A document or library keeps its path: it becomes the save target.
-        PickKind::Document | PickKind::Library => handles.iter().map(|h| path_ref(h.path().to_owned())).collect(),
+        PickKind::Document | PickKind::Library | PickKind::LibraryImport => {
+            handles.iter().map(|h| path_ref(h.path().to_owned())).collect()
+        }
         // Pictures are read now; the document does not remember where they came from.
         PickKind::Images => {
             let mut out = Vec::new();
@@ -56,6 +59,7 @@ impl Host for NativeHost {
             HostJob::PickDocument => pollster::block_on(pick(PickKind::Document, &reply)),
             HostJob::PickImages => pollster::block_on(pick(PickKind::Images, &reply)),
             HostJob::PickLibrary => pollster::block_on(pick(PickKind::Library, &reply)),
+            HostJob::PickLibraryImport => pollster::block_on(pick(PickKind::LibraryImport, &reply)),
             HostJob::PickSaveTarget { suggested } => {
                 let dialog = rfd::AsyncFileDialog::new()
                     .set_title("Save as")

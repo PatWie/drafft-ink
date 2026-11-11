@@ -82,7 +82,7 @@ impl Renderer for OffscreenRenderer {
                 ..Overlay::default()
             };
             let mut layer = Scene::new();
-            paint_overlay(&mut layer, &overlay, &view, &OverlayStyle::default());
+            self.typesetter.with(|ts| paint_overlay(&mut layer, &overlay, &view, &OverlayStyle::default(), ts));
             drafftink_render::combine(&world, &layer, &mut full);
         } else {
             full = world;

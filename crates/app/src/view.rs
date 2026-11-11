@@ -170,7 +170,7 @@ impl CanvasView {
             preview.append(&layer, None);
             preview.pop_layer();
         }
-        paint_overlay(overlay, render_overlay, view, &OverlayStyle::default());
+        typesetter.with(|ts| paint_overlay(overlay, render_overlay, view, &OverlayStyle::default(), ts));
     }
 
     /// Writes the three scenes, back to front, into the shell's scene.

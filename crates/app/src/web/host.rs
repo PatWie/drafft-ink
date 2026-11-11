@@ -23,6 +23,7 @@ impl Host for WebHost {
             HostJob::PickDocument => pick(PickKind::Document, ACCEPT_DOCUMENT, false, reply),
             HostJob::PickImages => pick(PickKind::Images, ACCEPT_IMAGES, true, reply),
             HostJob::PickLibrary => pick(PickKind::Library, ACCEPT_LIBRARY, false, reply),
+            HostJob::PickLibraryImport => pick(PickKind::LibraryImport, ACCEPT_LIBRARY, false, reply),
             HostJob::PickSaveTarget { suggested } => {
                 // A browser asks for the place at download time; the name is all the app needs now.
                 reply.post(Inbound::SaveTarget(FileRef::Download { download: download_name(&suggested) }));

@@ -81,6 +81,9 @@ pub enum HostJob {
     PickImages,
     /// Choose an Excalidraw library. Answered by [`Inbound::Picked`] with [`PickKind::Library`].
     PickLibrary,
+    /// Choose an Excalidraw library to merge into the library panel. Answered by [`Inbound::Picked`] with
+    /// [`PickKind::LibraryImport`].
+    PickLibraryImport,
     /// Choose where to save. `suggested` is a file name. Answered by [`Inbound::SaveTarget`].
     PickSaveTarget {
         /// A file name such as `Untitled.drafftink`.
@@ -97,8 +100,10 @@ pub enum PickKind {
     Document,
     /// Pictures for `image.insert`.
     Images,
-    /// A library for `library.import`.
+    /// A library to open as a tab (`library.import` with `open_as_tab`).
     Library,
+    /// A library to merge into the library panel (`library.import` with `merge`).
+    LibraryImport,
 }
 
 /// A message from a platform callback to the app. Drained on the app's thread.
