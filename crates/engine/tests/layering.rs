@@ -33,7 +33,6 @@ const FORBIDDEN_DEPS: &[&str] = &[
     "drafftink-bridge",
     "drafftink-testkit",
     "drafftink-render",
-    "drafftink-canvas",
     "tokio",
     "web-sys",
     "js-sys",
