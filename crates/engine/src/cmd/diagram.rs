@@ -26,7 +26,7 @@ use crate::args;
 use crate::refusal::Refusal;
 use crate::session::{Ref, Session};
 use crate::spec::{
-    Batch, Binding, CommandSpec, Facts, Gate, Mutates, PortSet, Redraw, RingMode, Scope, Selection, TextGate, Typed, Undo,
+    Batch, Binding, CommandSpec, Facts, Gate, Mutates, PortSet, Redraw, RingMode, Scope, Selection, TextGate, Typed, Undo, Variant,
 };
 
 #[path = "diagram_mermaid.rs"]
@@ -532,6 +532,7 @@ pub const COMMANDS: &[CommandSpec] = &[
         &Typed::new(import_mermaid),
         Facts { ports: PortSet::CLIPBOARD, palette: true, ..DOC },
     )
+    .variants(&[Variant::new(r#"{"source":"clipboard"}"#, "Import Mermaid from clipboard")])
     .refusals(&["mermaid_unsupported", "clipboard_empty"])
     .example(r#"{"source":{"text":"graph LR; A[Start] --> B{Ok?}; B -->|yes| C[Done]"}}"#),
     CommandSpec::new(

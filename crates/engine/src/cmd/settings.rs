@@ -21,7 +21,7 @@ use crate::args;
 use crate::refusal::{Refusal, closest, echo};
 use crate::ring::Origin;
 use crate::session::Session;
-use crate::spec::{Binding, CommandSpec, Facts, Mutates, PortSet, Redraw, Scope, Typed};
+use crate::spec::{Binding, CommandSpec, Facts, Mutates, PortSet, Redraw, Scope, Typed, Variant};
 
 pub use self::store::{SettingsLoad, apply_live};
 
@@ -328,9 +328,12 @@ const WRITE: Facts = Facts {
 };
 
 const TOGGLE_KEYS: &[Binding] =
-    &[Binding::new(&["Alt+S"], Scope::Canvas).with_args(r#"{"key":"snap.smart_guides"}"#).titled("Toggle smart guides")];
+    &[Binding::new(&["Alt+S"], Scope::Canvas).with_args(r#"{"key":"snap.smart_guides"}"#).titled("Smart guides")];
 const CYCLE_KEYS: &[Binding] =
     &[Binding::new(&["Mod+'"], Scope::Canvas).with_args(r#"{"key":"view.grid_style"}"#).titled("Cycle grid style")];
+
+const TOGGLE_VARIANTS: &[Variant] =
+    &[Variant::new(r#"{"key":"snap.grid"}"#, "Snap to grid"), Variant::new(r#"{"key":"snap.angle"}"#, "Angle snap")];
 
 /// The settings family.
 pub const COMMANDS: &[CommandSpec] = &[
@@ -364,6 +367,7 @@ pub const COMMANDS: &[CommandSpec] = &[
     )
     .refusals(&["unknown_setting"])
     .shortcuts(TOGGLE_KEYS)
+    .variants(TOGGLE_VARIANTS)
     .example(r#"{"key":"snap.grid"}"#),
     CommandSpec::new(
         "settings.cycle",

@@ -53,12 +53,13 @@ pub fn show(ctx: &Context, cx: &mut Cx<'_>, st: &mut UiState) {
                 ui.spacing_mut().item_spacing = vec2(space::SM, space::SM);
                 ui.label(egui::RichText::new("Convert to").font(TextSize::Label.hand()).color(cx.pal.text));
                 ui.horizontal_wrapped(|ui| {
-                    for (text, args) in &targets {
+                    for args in &targets {
+                        let text = cx.model.label("element.convert", args);
                         let ctl = Ctl::new("element.convert")
                             .args(args.clone())
-                            .label(*text)
+                            .label(text.clone())
                             .selected(is_current(args, popup.current.as_deref()));
-                        cx.toggle_button(ui, &ctl, short(text));
+                        cx.toggle_button(ui, &ctl, short(&text));
                     }
                 });
                 ui.label(

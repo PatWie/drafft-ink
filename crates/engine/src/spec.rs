@@ -463,6 +463,24 @@ impl Binding {
     }
 }
 
+/// A named way to call a command: fixed arguments and the title that every surface (menus, panels, the palette)
+/// shows for that call. A binding with keys names its call through [`Binding::title`]; a variant names a call that
+/// has no key (`Align centres horizontally`, `Copy as SVG`).
+#[derive(Debug, Clone, Copy)]
+pub struct Variant {
+    /// The fixed arguments as JSON text.
+    pub args: &'static str,
+    /// The title, sentence case.
+    pub title: &'static str,
+}
+
+impl Variant {
+    /// A variant of a command.
+    pub const fn new(args: &'static str, title: &'static str) -> Self {
+        Self { args, title }
+    }
+}
+
 /// Registered but not built yet, or ready.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Status {
@@ -607,6 +625,8 @@ pub struct CommandSpec {
     pub own_agent_tool: bool,
     /// Default keys.
     pub shortcuts: &'static [Binding],
+    /// Named calls without keys.
+    pub variants: &'static [Variant],
     /// Stable or planned.
     pub status: Status,
     /// How the executor runs it.
@@ -727,6 +747,7 @@ impl CommandSpec {
             host: Host::NONE,
             own_agent_tool: false,
             shortcuts: &[],
+            variants: &[],
             status: Status::Stable,
             txn: Txn::Standard,
             works_when_blocked: false,
@@ -795,6 +816,13 @@ impl CommandSpec {
     #[must_use]
     pub const fn shortcuts(mut self, b: &'static [Binding]) -> Self {
         self.shortcuts = b;
+        self
+    }
+
+    /// Names calls that have no key, so that every surface shows the same title for them.
+    #[must_use]
+    pub const fn variants(mut self, v: &'static [Variant]) -> Self {
+        self.variants = v;
         self
     }
 

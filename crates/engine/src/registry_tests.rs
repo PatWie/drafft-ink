@@ -227,6 +227,37 @@ fn shortcut_arguments_are_valid_for_their_command() {
     }
 }
 
+#[test]
+fn variant_arguments_are_valid_and_every_call_has_one_title() {
+    let mut titles: Vec<(&str, &str)> = Vec::new();
+    for s in specs() {
+        let mut calls: Vec<Value> = Vec::new();
+        for b in s.shortcuts.iter().filter(|b| b.title.is_some()) {
+            let v: Value = if b.args.is_empty() { json!({}) } else { serde_json::from_str(b.args).unwrap() };
+            calls.push(v);
+        }
+        for v in s.variants {
+            let args: Value = serde_json::from_str(v.args)
+                .unwrap_or_else(|e| panic!("variant `{}` of `{}` has args that are not JSON: {e}", v.title, s.id));
+            if let Err(r) = s.handler.parse(s.id, &args) {
+                panic!("variant `{}` of `{}`: args {args} do not parse: {}", v.title, s.id, r.message);
+            }
+            assert!(!calls.contains(&args), "`{}` names the call {args} twice (variant `{}`)", s.id, v.title);
+            calls.push(args);
+            assert!(!v.title.is_empty(), "a variant of `{}` has no title", s.id);
+        }
+        titles.push((s.id, s.title));
+        titles.extend(s.shortcuts.iter().filter_map(|b| b.title.map(|t| (s.id, t))));
+        titles.extend(s.variants.iter().map(|v| (s.id, v.title)));
+    }
+    // One title means one call: two different commands never share a title.
+    for (i, (id, title)) in titles.iter().enumerate() {
+        for (other, other_title) in &titles[i + 1..] {
+            assert!(id == other || title != other_title, "`{id}` and `{other}` are both titled `{title}`");
+        }
+    }
+}
+
 // ---- schemas and examples ----
 
 #[test]

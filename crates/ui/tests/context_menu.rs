@@ -10,13 +10,11 @@ use drafftink_engine::Origin;
 use drafftink_engine::testing::{add_rect, select};
 use drafftink_ui::surfaces::context_menu::ALIGN_EDGES;
 use drafftink_ui::{Call, UiAction, Verb, args_form, model};
-use egui::accesskit::Role;
 use egui::pos2;
 use egui_kittest::kittest::{NodeT, Queryable};
 use serde_json::json;
+use support_a::menu::{H, choose, has_row, has_row_in, is_open, open_flyout, row, row_in, rows_in, top_rows};
 use support_a::themed_lenient as themed;
-
-type H = egui_kittest::Harness<'static, Fixture>;
 
 /// A fixture with `n` rectangles, all selected, and the menu open at `at`.
 fn menu_with(n: usize, at: egui::Pos2) -> H {
@@ -37,30 +35,6 @@ fn menu_over(mut f: Fixture, n: usize, at: egui::Pos2, world: Option<[f64; 2]>) 
     h
 }
 
-/// True when a node lies where the menu opened by `menu_with(_, pos2(300, 200))` is drawn. The chrome (tool column on the
-/// left, bottom bar and tab bar at the bottom, right panel) has buttons of the same names ("Undo", "Zoom to fit",
-/// "Align left"), so rows are told apart by position: between the top strip and the bottom bar, right of the tool
-/// column.
-fn in_menu(h: &H) -> impl Fn(&egui_kittest::Node<'_>) -> bool {
-    let chrome = h.state().state.chrome;
-    let below = chrome.strip.map_or(0.0, |r| r.max.y);
-    // The controls of the bottom bar start one panel padding below its top edge.
-    let above = chrome.bottom_bar.map_or(f32::MAX, |r| r.min.y + drafftink_ui::widgets::PANEL_INSET_Y);
-    move |n| {
-        let r = n.rect();
-        (290.0..640.0).contains(&r.min.x) && r.min.y >= below && r.min.y < above
-    }
-}
-
-/// The menu row with this text.
-fn row<'a>(h: &'a H, text: &'a str) -> egui_kittest::Node<'a> {
-    h.get_all_by_role_and_label(Role::Button, text).find(in_menu(h)).unwrap_or_else(|| panic!("no menu row {text}"))
-}
-
-fn has_row(h: &H, text: &str) -> bool {
-    h.query_all_by_role_and_label(Role::Button, text).any(|n| in_menu(h)(&n))
-}
-
 fn click_at(h: &mut H, pos: egui::Pos2) {
     h.hover_at(pos);
     h.run();
@@ -79,38 +53,93 @@ fn calls(h: &H) -> Vec<Call> {
     h.state().calls().into_iter().cloned().collect()
 }
 
-const ROWS: [&str; 15] = [
+/// What a menu over one selected rectangle holds.
+const ONE_RECTANGLE: [&str; 12] = [
     "Cut",
     "Copy",
     "Paste",
     "Duplicate",
     "Delete",
-    "Group",
-    "Ungroup",
-    "Bring to front",
-    "Bring forward",
-    "Send backward",
-    "Send to back",
-    "Lock or unlock",
-    "Select all",
-    "Paste style",
-    "Zoom to fit",
+    "Arrange",
+    "Flip & convert",
+    "Copy as",
+    "Lock",
+    "Link…",
+    "Add to library",
+    "Copy style",
 ];
 
 #[test]
-fn opening_shows_the_rows() {
+fn a_single_element_gets_at_most_twelve_top_level_rows() {
     let h = menu_with(1, pos2(300.0, 60.0));
-    for text in ROWS {
-        assert!(has_row(&h, text), "missing row {text}");
-    }
-    assert!(has_row(&h, "Copy style"));
+    let rows = top_rows(&h);
+    assert_eq!(rows, ONE_RECTANGLE, "the rows of the menu over one rectangle");
+    assert!(rows.len() <= 12, "{} rows: {rows:?}", rows.len());
     assert!(!has_row(&h, "Undo") && !has_row(&h, "Redo"), "undo and redo are not in this menu");
+    for hidden in ["Group", "Ungroup", "Align", "Frame", "Text", "Open link", "Paste style", "Select all"] {
+        assert!(!has_row(&h, hidden), "{hidden} does not apply to one rectangle");
+    }
+}
+
+#[test]
+fn a_text_or_an_arrow_gets_at_most_twelve_rows_too() {
+    use drafftink_engine::testing::select as pick;
+    for kind in ["text", "arrow"] {
+        let mut f = Fixture::new();
+        let args = match kind {
+            "text" => json!({ "kind": "text", "text": "hello", "at": [0, 0] }),
+            _ => json!({ "kind": "arrow", "points": [[0, 0], [80, 30]] }),
+        };
+        let out = f.session.execute("element.create", args).unwrap();
+        let id = drafftink_scene::ElementId::new(out["id"].as_str().unwrap()).unwrap();
+        pick(&mut f.session, &[id]);
+        f.refresh();
+        f.state.open_context_menu(pos2(300.0, 60.0), None);
+        let mut h = themed(f, false);
+        h.run();
+        let rows = top_rows(&h);
+        assert!(rows.len() <= 12, "{kind}: {} rows: {rows:?}", rows.len());
+    }
+}
+
+#[test]
+fn the_empty_canvas_menu_has_no_element_actions() {
+    // Something on the canvas, nothing selected.
+    let mut f = Fixture::new();
+    add_rect(&mut f.session, 0.0, 0.0, 30.0, 30.0).unwrap();
+    let h = menu_over(f, 0, pos2(300.0, 60.0), None);
+    assert_eq!(top_rows(&h), ["Paste", "Select all", "Zoom to fit everything", "View"]);
+    // On a canvas with nothing on it there is nothing to select.
+    let h = menu_with(0, pos2(300.0, 60.0));
+    assert_eq!(top_rows(&h), ["Paste", "Zoom to fit everything", "View"]);
+    for element_action in [
+        "Cut",
+        "Copy",
+        "Duplicate",
+        "Delete",
+        "Group",
+        "Ungroup",
+        "Arrange",
+        "Align",
+        "Flip & convert",
+        "Frame",
+        "Text",
+        "Copy as",
+        "Lock",
+        "Link…",
+        "Open link",
+        "Add to library",
+        "Copy style",
+        "Paste style",
+    ] {
+        assert!(!has_row(&h, element_action), "{element_action} is for elements");
+    }
 }
 
 #[test]
 fn a_click_on_a_row_makes_the_call_with_origin_context_menu_and_closes_the_menu() {
-    let mut h = menu_with(1, pos2(300.0, 60.0));
-    row(&h, "Zoom to fit").click();
+    let mut h = menu_with(0, pos2(300.0, 60.0));
+    row(&h, "Zoom to fit everything").click();
     h.run();
     assert_eq!(calls(&h), vec![Call::new(Origin::ContextMenu, "view.zoom_to_fit", json!({ "scope": "all" }))]);
     assert!(h.state().state.context_menu.is_none(), "the menu closed");
@@ -125,85 +154,115 @@ fn z_order_rows_carry_their_op() {
         ("Send to back", "back"),
     ] {
         let mut h = menu_with(2, pos2(300.0, 60.0));
-        row(&h, text).click();
-        h.run();
+        choose(&mut h, "Arrange", text);
         assert_eq!(calls(&h), vec![Call::new(Origin::ContextMenu, "arrange.z_order", json!({ "op": op }))], "{text}");
+        assert!(h.state().state.context_menu.is_none(), "{text} closes the menu");
     }
 }
 
 #[test]
-fn group_with_a_selection_makes_the_call() {
+fn group_applies_to_a_selection_of_several_and_ungroup_to_a_group() {
     let mut h = menu_with(2, pos2(300.0, 60.0));
+    assert!(has_row(&h, "Group") && !has_row(&h, "Ungroup"));
     row(&h, "Group").click();
     h.run();
     assert_eq!(calls(&h), vec![Call::new(Origin::ContextMenu, "group.create", json!({}))]);
+    // Dispatched, the two rectangles are a group: now the menu offers Ungroup and no longer Group.
+    h.state_mut().dispatch();
+    h.state_mut().refresh();
+    h.state_mut().state.open_context_menu(pos2(300.0, 60.0), None);
+    h.run();
+    assert!(has_row(&h, "Ungroup") && !has_row(&h, "Group"), "{:?}", top_rows(&h));
 }
 
 #[test]
-fn a_refused_row_is_disabled_and_a_click_does_nothing() {
-    let mut h = menu_with(0, pos2(300.0, 60.0));
-    let reason = h.state().model.refusal_text("group.create").expect("group.create is refused with nothing selected");
-    assert!(row(&h, "Group").accesskit_node().is_disabled());
+fn a_refused_clipboard_row_stays_greyed_with_the_engine_text_and_a_click_does_nothing() {
+    // View-only mode refuses `clipboard.paste`. Paste is the one row that stays when its command is refused.
+    let mut f = Fixture::new();
+    f.session.execute("view.set_view_only", json!({ "on": true })).unwrap();
+    let mut h = menu_over(f, 0, pos2(300.0, 60.0), None);
+    let reason = h.state().model.refusal_text("clipboard.paste").expect("paste is refused in view-only mode");
+    assert!(row(&h, "Paste").accesskit_node().is_disabled());
     h.state_mut().clear();
-    row(&h, "Group").click();
+    row(&h, "Paste").click();
     h.run();
     assert!(calls(&h).is_empty(), "{:?}", calls(&h));
     assert!(h.state().state.context_menu.is_some(), "a refused row keeps the menu open");
     // The refusal text is the tooltip.
-    row(&h, "Group").hover();
+    row(&h, "Paste").hover();
     h.run();
     h.get_by_label(&reason);
 }
 
 #[test]
+fn a_command_the_engine_refuses_is_left_out_of_the_menu() {
+    // Nothing is selected, so `clipboard.cut` is refused with `no_target`: the row is not there, instead of greyed.
+    let h = menu_with(0, pos2(300.0, 60.0));
+    assert!(h.state().model.refusal_text("clipboard.cut").is_some());
+    assert!(!has_row(&h, "Cut"));
+    // One element: group.create needs two, the menu has no Group row.
+    let h = menu_with(1, pos2(300.0, 60.0));
+    assert!(h.state().model.refusal_text("group.create").is_some());
+    assert!(!has_row(&h, "Group"));
+}
+
+#[test]
 fn a_command_the_registry_lacks_is_greyed_with_the_not_available_text() {
-    let omitted = ["clipboard.cut", "selection.all", "element.lock"];
-    let mut h = menu_over(Fixture::without(&omitted), 1, pos2(300.0, 60.0), None);
-    for (text, id) in [("Cut", "clipboard.cut"), ("Select all", "selection.all"), ("Lock or unlock", "element.lock")] {
+    let omitted = ["clipboard.cut", "element.lock", "selection.all"];
+    let mut f = Fixture::without(&omitted);
+    add_rect(&mut f.session, 200.0, 200.0, 30.0, 30.0).unwrap();
+    let mut h = menu_over(f, 1, pos2(300.0, 60.0), None);
+    // A command the registry lacks has no title, so its row is named by its id.
+    for id in ["clipboard.cut", "element.lock"] {
         let reason = h.state().model.refusal_text(id).expect("left out of the registry");
         assert_eq!(reason, format!("`{id}` is not available in this build."));
-        assert!(row(&h, text).accesskit_node().is_disabled(), "{text} is greyed");
-        row(&h, text).hover();
+        assert!(row(&h, id).accesskit_node().is_disabled(), "{id} is greyed");
+        row(&h, id).hover();
         h.run();
         h.get_by_label(&reason);
     }
     // The rows of the commands that are there can run.
     assert!(!row(&h, "Copy").accesskit_node().is_disabled());
+    // `selection.all` belongs to the menu over the empty canvas.
+    let mut f = Fixture::without(&omitted);
+    add_rect(&mut f.session, 0.0, 0.0, 30.0, 30.0).unwrap();
+    let mut h = menu_over(f, 0, pos2(300.0, 60.0), None);
+    let reason = h.state().model.refusal_text("selection.all").expect("left out of the registry");
+    assert!(row(&h, "selection.all").accesskit_node().is_disabled());
+    row(&h, "selection.all").hover();
+    h.run();
+    h.get_by_label(&reason);
 }
 
 #[test]
 fn rows_of_unregistered_commands_never_run() {
     let omitted = ["clipboard.cut", "clipboard.copy", "clipboard.paste"];
     let mut h = menu_over(Fixture::without(&omitted), 1, pos2(300.0, 60.0), None);
-    for text in ["Cut", "Copy", "Paste"] {
+    for id in omitted {
         h.state_mut().clear();
-        row(&h, text).click();
+        row(&h, id).click();
         h.run();
-        assert!(calls(&h).is_empty(), "{text} must not emit a call for an unregistered command");
-        assert!(h.state().state.context_menu.is_some(), "{text}: the menu stays open");
+        assert!(calls(&h).is_empty(), "{id} must not emit a call for an unregistered command");
+        assert!(h.state().state.context_menu.is_some(), "{id}: the menu stays open");
     }
 }
 
 #[test]
-fn rows_of_the_real_commands_are_enabled_or_refused_by_the_real_engine() {
-    // One rectangle selected: the clipboard, delete and lock rows can run.
+fn rows_of_the_real_commands_are_enabled_by_the_real_engine() {
+    // One rectangle selected: every row of the menu can run.
     let h = menu_with(1, pos2(300.0, 60.0));
     for (text, id) in [
         ("Cut", "clipboard.cut"),
         ("Copy", "clipboard.copy"),
+        ("Paste", "clipboard.paste"),
         ("Duplicate", "element.duplicate"),
         ("Delete", "element.delete"),
-        ("Lock or unlock", "element.lock"),
-        ("Select all", "selection.all"),
+        ("Lock", "element.lock"),
+        ("Add to library", "library.add"),
+        ("Copy style", "clipboard.copy_style"),
     ] {
         assert!(h.state().model.is_available(id), "{id} is registered and available");
         assert!(!row(&h, text).accesskit_node().is_disabled(), "{text}");
-    }
-    // Nothing selected: the rows that need a selection are refused with the engine's text.
-    let h = menu_with(0, pos2(300.0, 60.0));
-    for (text, id) in [("Cut", "clipboard.cut"), ("Delete", "element.delete")] {
-        assert!(h.state().model.refusal_text(id).is_some_and(|t| !t.contains("not available in this build")), "{id}");
-        assert!(row(&h, text).accesskit_node().is_disabled(), "{text}");
     }
 }
 
@@ -283,44 +342,27 @@ fn a_cursor_shortcut_pastes_at_the_pointer_with_the_real_command() {
 }
 
 #[test]
-fn align_rows_need_two_selected_and_distribute_three() {
-    // With one element selected the block is there and its rows are greyed with the engine's text.
-    let mut h = menu_with(1, pos2(300.0, 60.0));
-    assert!(has_row(&h, "Align and distribute…"));
-    row(&h, "Align and distribute…").click();
-    h.run();
-    let align = h.state().model.refusal_text("arrange.align").expect("align needs two");
-    let distribute = h.state().model.refusal_text("arrange.distribute").expect("distribute needs three");
-    assert_ne!(align, distribute, "each command says what it needs");
-    for (text, _) in ALIGN_EDGES {
-        assert!(row(&h, text).accesskit_node().is_disabled(), "{text} is greyed");
-    }
-    assert!(row(&h, "Distribute horizontally").accesskit_node().is_disabled());
-    row(&h, "Align left").hover();
-    h.run();
-    h.get_by_label(&align);
+fn align_needs_two_selected_and_distribute_three() {
+    // With one element the engine refuses both, and the menu leaves them out.
+    let h = menu_with(1, pos2(300.0, 60.0));
+    assert!(h.state().model.refusal_text("arrange.align").is_some());
+    assert!(!has_row(&h, "Align"));
 
     let mut h = menu_with(2, pos2(300.0, 60.0));
-    assert!(has_row(&h, "Align and distribute…"));
-    assert!(!has_row(&h, "Align left"), "the block is closed until it is opened");
-    row(&h, "Align and distribute…").click();
-    h.run();
-    for (text, _) in ALIGN_EDGES {
-        assert!(has_row(&h, text), "missing {text}");
-        assert!(!row(&h, text).accesskit_node().is_disabled(), "{text} can run with two");
+    assert!(has_row(&h, "Align"));
+    assert!(!is_open(&h, "Align"), "the flyout is closed until its row is used");
+    open_flyout(&mut h, "Align");
+    for edge in ALIGN_EDGES {
+        let text = h.state().model.label("arrange.align", &json!({ "edge": edge }));
+        assert!(!row_in(&h, "Align", &text).accesskit_node().is_disabled(), "{text} can run with two");
     }
-    assert!(row(&h, "Distribute horizontally").accesskit_node().is_disabled(), "distribute needs three");
-    h.state_mut().clear();
-    row(&h, "Align left").click();
-    h.run();
+    assert!(!has_row_in(&h, "Align", "Distribute horizontally"), "distribute needs three");
+    choose(&mut h, "Align", "Align left");
     assert_eq!(calls(&h), vec![Call::new(Origin::ContextMenu, "arrange.align", json!({ "edge": "left" }))]);
     assert!(h.state().state.context_menu.is_none());
 
     let mut h = menu_with(3, pos2(300.0, 60.0));
-    row(&h, "Align and distribute…").click();
-    h.run();
-    row(&h, "Distribute vertically").click();
-    h.run();
+    choose(&mut h, "Align", "Distribute vertically");
     assert_eq!(calls(&h), vec![Call::new(Origin::ContextMenu, "arrange.distribute", json!({ "axis": "vertical" }))]);
 }
 
@@ -333,7 +375,7 @@ fn the_align_rows_cover_every_edge_of_the_command() {
         panic!("edge is an enum");
     };
     let mut in_schema: Vec<String> = choices.iter().map(|c| c.label.clone()).collect();
-    let mut in_menu: Vec<String> = ALIGN_EDGES.iter().map(|(_, e)| (*e).to_owned()).collect();
+    let mut in_menu: Vec<String> = ALIGN_EDGES.iter().map(|e| (*e).to_owned()).collect();
     in_schema.sort();
     in_menu.sort();
     assert_eq!(in_menu, in_schema);
@@ -354,12 +396,20 @@ fn a_click_elsewhere_closes_the_menu() {
 
 #[test]
 fn the_menu_stays_inside_the_window() {
-    let h = menu_with(1, pos2(1275.0, 795.0));
+    let mut h = menu_with(1, pos2(1275.0, 795.0));
     let screen = egui::Rect::from_min_size(pos2(0.0, 0.0), egui::vec2(1280.0, 800.0));
-    // The menu opened in the bottom right corner is pushed back inside; "Cut" exists only in the menu.
-    for text in ["Cut", "Select all"] {
-        let rect = h.get_all_by_role_and_label(Role::Button, text).last().unwrap().rect();
+    // The menu opened in the bottom right corner is pushed back inside.
+    for text in ["Cut", "Add to library"] {
+        let rect = row(&h, text).rect();
         assert!(screen.contains_rect(rect), "{text} at {rect:?} is outside {screen:?}");
+    }
+    // Its flyout has no room on the right: it opens on the left of the menu, inside the window too.
+    let parent = row(&h, "Copy as").rect();
+    open_flyout(&mut h, "Copy as");
+    for text in ["Copy as PNG", "Copy as SVG", "Copy as text"] {
+        let rect = row_in(&h, "Copy as", text).rect();
+        assert!(screen.contains_rect(rect), "{text} at {rect:?} is outside {screen:?}");
+        assert!(rect.right() <= parent.left() + 8.0, "{text} at {rect:?} lies over the menu {parent:?}");
     }
 }
 
@@ -369,20 +419,20 @@ fn the_menu_is_drawn_in_the_dark_theme() {
     f.state.open_context_menu(pos2(300.0, 60.0), None);
     let mut h = themed(f, true);
     h.run();
-    assert!(has_row(&h, "Zoom to fit"));
+    assert!(has_row(&h, "Zoom to fit everything"));
 }
 
 #[test]
-fn closing_the_menu_forgets_the_open_align_block() {
+fn a_menu_opened_again_starts_with_no_flyout_open() {
     let mut h = menu_with(2, pos2(300.0, 60.0));
-    row(&h, "Align and distribute…").click();
-    h.run();
-    assert!(has_row(&h, "Align left"));
+    open_flyout(&mut h, "Align");
     h.state_mut().state.context_menu = None;
     h.run();
+    // The pointer leaves; a pointer resting on the row would open its flyout again, which is right.
+    h.hover_at(pos2(1000.0, 700.0));
     h.state_mut().state.open_context_menu(pos2(300.0, 60.0), None);
     h.run();
-    assert!(!has_row(&h, "Align left"), "a new menu starts closed");
+    assert!(!is_open(&h, "Align"), "a new menu starts closed");
 }
 
 // ---- a locked element ----
@@ -402,7 +452,8 @@ fn locked_menu() -> H {
 #[test]
 fn the_menu_of_a_locked_element_offers_unlock_and_runs_it_on_that_element() {
     let mut h = locked_menu();
-    for hidden in ["Cut", "Duplicate", "Delete", "Group", "Lock or unlock", "Link…"] {
+    assert_eq!(top_rows(&h), ["Unlock", "Paste", "Select all", "Zoom to fit everything"]);
+    for hidden in ["Cut", "Duplicate", "Delete", "Group", "Lock", "Link…"] {
         assert!(!has_row(&h, hidden), "{hidden} is not for a locked element");
     }
     row(&h, "Unlock").click();
@@ -445,4 +496,123 @@ fn an_element_with_a_link_has_an_open_link_row() {
     row(&h, "Open link").click();
     h.run();
     assert_eq!(calls(&h), vec![Call::new(Origin::ContextMenu, "element.open_link", json!({}))]);
+}
+
+// ---- flyouts ----
+
+#[test]
+fn a_flyout_opens_beside_its_row_and_its_items_run_their_commands() {
+    let mut h = menu_with(2, pos2(300.0, 60.0));
+    assert!(!is_open(&h, "Arrange"));
+    let parent = row(&h, "Arrange").rect();
+    open_flyout(&mut h, "Arrange");
+    assert_eq!(
+        rows_in(&h, "Arrange"),
+        ["Bring to front", "Bring forward", "Send backward", "Send to back", "Wrap in frame"]
+    );
+    let first = row_in(&h, "Arrange", "Bring to front").rect();
+    assert!(first.left() >= parent.right() - 8.0, "the flyout is on the right of the menu: {first:?} vs {parent:?}");
+    assert!((first.center().y - parent.center().y).abs() < 8.0, "its first row is level with the row: {first:?}");
+    h.state_mut().clear();
+    row_in(&h, "Arrange", "Wrap in frame").click();
+    h.run();
+    assert_eq!(calls(&h), vec![Call::new(Origin::ContextMenu, "frame.wrap", json!({}))]);
+    assert!(h.state().state.context_menu.is_none(), "choosing a row of a flyout closes the whole menu");
+}
+
+#[test]
+fn a_click_on_the_row_opens_the_flyout_too() {
+    let mut h = menu_with(1, pos2(300.0, 60.0));
+    row(&h, "Copy as").click();
+    h.run();
+    assert!(is_open(&h, "Copy as"));
+    assert!(h.state().state.context_menu.is_some(), "the row is no command: the menu stays");
+    assert!(calls(&h).is_empty());
+}
+
+#[test]
+fn a_flyout_closes_when_the_pointer_rests_on_another_row_but_not_at_once() {
+    let mut h = menu_with(2, pos2(300.0, 60.0));
+    open_flyout(&mut h, "Arrange");
+    // The pointer crosses a neighbouring row on its way: one frame there does not close the flyout.
+    let neighbour = row(&h, "Align").rect().center();
+    h.hover_at(neighbour);
+    h.step();
+    assert!(is_open(&h, "Arrange"), "a short visit to another row keeps the flyout");
+    // Then it reaches the flyout and stays.
+    let target = row_in(&h, "Arrange", "Bring forward").rect().center();
+    h.hover_at(target);
+    h.run_steps(8);
+    assert!(is_open(&h, "Arrange"), "the pointer in the flyout keeps it open");
+    // Resting on another row closes it after the delay, and that row's flyout opens in its place.
+    h.hover_at(neighbour);
+    h.run_steps(8);
+    assert!(!is_open(&h, "Arrange"), "resting on another row closes the flyout");
+    assert!(is_open(&h, "Align"), "and the row under the pointer opens its own");
+}
+
+#[test]
+fn leaving_the_menu_does_not_close_a_flyout_but_a_click_outside_does() {
+    let mut h = menu_with(1, pos2(300.0, 60.0));
+    open_flyout(&mut h, "Copy as");
+    h.hover_at(pos2(1000.0, 700.0));
+    h.run_steps(8);
+    assert!(is_open(&h, "Copy as"));
+    h.state_mut().clear();
+    click_at(&mut h, pos2(1000.0, 700.0));
+    assert!(h.state().actions.contains(&UiAction::Verb(Verb::CloseOverlays)));
+}
+
+#[test]
+fn the_keyboard_moves_between_rows_and_into_flyouts() {
+    let mut h = menu_with(1, pos2(300.0, 60.0));
+    h.hover_at(pos2(1000.0, 700.0));
+    h.run();
+    // Down focuses the first row, Down again the next one.
+    h.key_press(egui::Key::ArrowDown);
+    h.run();
+    assert!(row(&h, "Cut").is_focused());
+    h.key_press(egui::Key::ArrowDown);
+    h.run();
+    assert!(row(&h, "Copy").is_focused());
+    // Up wraps from the first row to the last.
+    h.key_press(egui::Key::ArrowUp);
+    h.run();
+    h.key_press(egui::Key::ArrowUp);
+    h.run();
+    assert!(row(&h, "Copy style").is_focused(), "up from the first row goes to the last");
+    // Down to "Arrange", Right opens its flyout and focuses its first row.
+    for _ in 0..6 {
+        h.key_press(egui::Key::ArrowDown);
+        h.run();
+    }
+    assert!(row(&h, "Arrange").is_focused(), "{:?}", top_rows(&h));
+    h.key_press(egui::Key::ArrowRight);
+    h.run_steps(4);
+    assert!(is_open(&h, "Arrange"));
+    assert!(row_in(&h, "Arrange", "Bring to front").is_focused());
+    // Enter runs the focused row.
+    h.key_press(egui::Key::ArrowDown);
+    h.run();
+    h.state_mut().clear();
+    h.key_press(egui::Key::Enter);
+    h.run();
+    assert_eq!(calls(&h), vec![Call::new(Origin::ContextMenu, "arrange.z_order", json!({ "op": "forward" }))]);
+    assert!(h.state().state.context_menu.is_none());
+}
+
+#[test]
+fn left_closes_a_flyout_and_returns_to_its_row() {
+    let mut h = menu_with(1, pos2(300.0, 60.0));
+    h.hover_at(pos2(1000.0, 700.0));
+    h.run();
+    row(&h, "Copy as").focus();
+    h.run();
+    h.key_press(egui::Key::ArrowRight);
+    h.run_steps(4);
+    assert!(is_open(&h, "Copy as"));
+    h.key_press(egui::Key::ArrowLeft);
+    h.run_steps(4);
+    assert!(!is_open(&h, "Copy as"), "Left closes the flyout");
+    assert!(row(&h, "Copy as").is_focused(), "and the focus is back on its row");
 }

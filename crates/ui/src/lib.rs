@@ -18,6 +18,7 @@ pub mod chrome;
 pub mod colors;
 pub mod icons;
 pub mod keymap;
+pub(crate) mod menu_kit;
 pub mod model;
 pub mod shell;
 pub mod state;

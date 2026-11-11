@@ -1052,8 +1052,8 @@ const NUDGE_KEYS: &[Binding] = &[
     Binding::new(&["Shift+Down"], Scope::Canvas).with_args(r#"{"dir":"down","fine":true}"#),
 ];
 const FLIP_KEYS: &[Binding] = &[
-    Binding::new(&["Shift+H"], Scope::Canvas).with_args(r#"{"axis":"horizontal"}"#).titled("Flip horizontal"),
-    Binding::new(&["Shift+V"], Scope::Canvas).with_args(r#"{"axis":"vertical"}"#).titled("Flip vertical"),
+    Binding::new(&["Shift+H"], Scope::Canvas).with_args(r#"{"axis":"horizontal"}"#).titled("Flip horizontally"),
+    Binding::new(&["Shift+V"], Scope::Canvas).with_args(r#"{"axis":"vertical"}"#).titled("Flip vertically"),
 ];
 const LOCK_KEYS: &[Binding] = &[Binding::new(&["Mod+Shift+L"], Scope::Canvas)];
 
@@ -1140,7 +1140,7 @@ pub const COMMANDS: &[CommandSpec] = &[
     CommandSpec::new(
         "element.lock",
         "element",
-        "Lock or unlock",
+        "Lock",
         "Locks or unlocks the elements, with their whole outermost group; omitting `locked` toggles.",
         &Typed::new(lock),
         PALETTE,

@@ -3,19 +3,17 @@
 //! tab's menu: rename, duplicate (`tab.duplicate`), move left and right (`tab.move`), close.
 
 use drafftink_engine::Origin;
-use egui::{Align2, Area, Context, Id, Order, Sense, pos2, vec2};
+use egui::{Align2, Area, Context, Id, Order, vec2};
 use serde_json::json;
 
 use crate::action::Verb;
 use crate::chrome::{GAP, lift_to};
 use crate::icons::Icon;
+use crate::menu_kit::{self, Menu, Popup, Row};
 use crate::model::TabView;
 use crate::state::{RenameTarget, TabMenu, UiState};
 use crate::theme::{MARGIN, space};
-use crate::widgets::{Ctl, Cx, panel_frame, separator};
-
-/// Width of the tab menu.
-const MENU_WIDTH: f32 = 190.0;
+use crate::widgets::{Ctl, Cx, panel_frame};
 
 /// Draws the bar and the menu of a tab.
 pub fn show(ctx: &Context, cx: &mut Cx<'_>, st: &mut UiState) {
@@ -83,49 +81,28 @@ fn menu(ctx: &Context, cx: &mut Cx<'_>, st: &mut UiState) {
         return;
     };
     let count = cx.model.tabs.len();
-    let screen = ctx.content_rect();
-    let backdrop = Area::new(Id::unique("tab_menu.backdrop"))
-        .order(Order::Foreground)
-        .fixed_pos(screen.min)
-        .show(ctx, |ui| ui.allocate_rect(screen, Sense::click()));
-    let outside = backdrop.inner.clicked() || backdrop.inner.secondary_clicked();
-    let pos = pos2(
-        open.screen.x.clamp(screen.left() + MARGIN, (screen.right() - MENU_WIDTH - MARGIN).max(screen.left())),
-        open.screen.y,
-    );
-    let mut chosen = false;
-    Area::new(Id::unique("tab_menu")).order(Order::Foreground).pivot(Align2::LEFT_BOTTOM).fixed_pos(pos).show(
-        ctx,
-        |ui| {
-            panel_frame(&cx.pal).show(ui, |ui| {
-                ui.set_width(MENU_WIDTH);
-                ui.spacing_mut().item_spacing.y = 1.0;
-                chosen = cx.with_origin(Origin::ContextMenu, |cx| rows(ui, cx, st, &tab, count));
-            });
-        },
-    );
-    if chosen {
+    let spec = Popup { key: Id::unique("tab_menu"), label: "Tab menu", pivot: Align2::LEFT_BOTTOM, at: open.screen };
+    let result =
+        cx.with_origin(Origin::ContextMenu, |cx| menu_kit::popup(ctx, cx, &spec, |m| rows(m, st, &tab, count)));
+    if result.picked.any() {
         st.tab_menu = None;
-    } else if outside {
+    } else if result.outside {
         cx.verb(Verb::CloseOverlays);
     }
 }
 
-fn rows(ui: &mut egui::Ui, cx: &mut Cx<'_>, st: &mut UiState, tab: &TabView, count: usize) -> bool {
-    let mut chosen = false;
-    if cx.plain_row(ui, "Rename…").clicked() {
+fn rows(m: &mut Menu<'_, '_, '_>, st: &mut UiState, tab: &TabView, count: usize) {
+    if m.local("Rename tab", Row::new().icon(Icon::Text).dialog()).clicked() {
         st.open_rename(RenameTarget::Tab(tab.id.clone()), tab.name.clone());
-        return false;
     }
-    chosen |= cx.menu_item(ui, &Ctl::new("tab.duplicate").args(json!({ "tab": tab.id })), "Duplicate").clicked();
-    separator(ui, &cx.pal);
+    m.command(Ctl::new("tab.duplicate").args(json!({ "tab": tab.id })), Row::new().icon(Icon::Duplicate));
+    m.separator();
     // The rows are as available as the command is, with the engine's text when it is not. At either end the target
     // position is the tab's own, which `tab.move` accepts and leaves as it is.
     let left = Ctl::new("tab.move").args(move_args(&tab.id, tab.index.saturating_sub(1)));
-    chosen |= cx.menu_item(ui, &left, "Move left").clicked();
+    m.command(left, Row::new().label("Move left"));
     let right = Ctl::new("tab.move").args(move_args(&tab.id, (tab.index + 1).min(count.saturating_sub(1))));
-    chosen |= cx.menu_item(ui, &right, "Move right").clicked();
-    separator(ui, &cx.pal);
-    chosen |= cx.menu_item(ui, &Ctl::new("tab.close").args(json!({ "tab": tab.id })), "Close").clicked();
-    chosen
+    m.command(right, Row::new().label("Move right"));
+    m.separator();
+    m.command(Ctl::new("tab.close").args(json!({ "tab": tab.id })), Row::new().icon(Icon::Close));
 }

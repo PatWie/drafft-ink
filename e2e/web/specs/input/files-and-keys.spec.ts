@@ -175,12 +175,10 @@ test("keys: Ctrl+V with the pointer over a panel pastes at the middle of the vie
 });
 
 test.describe("export as PNG without the dialog", () => {
-  // The menu button and the menu rows, in page points at zoom 1 (`crates/ui/src/surfaces/menu.rs`): the button is at
-  // (39, 37), the first row is centred at y = 88, a row is 28 high with 1 between rows, a separator takes 1 + 2 x 1.
-  const MENU_BUTTON = { x: 39, y: 37 };
-  const ROW_STEP = 29;
-  /** "Export as PNG" is the seventh row: six rows (New tab ... Rename document) and a separator above it. */
-  const EXPORT_AS_PNG = { x: 50, y: 88 + 6 * ROW_STEP + 2 };
+  // The menu button and the row, in page points at zoom 1 (`crates/ui/tests/top_strip.rs` pins the numbers): the button
+  // is at (26, 20) and "Export as PNG" is centred at y = 322, the first row under the "Export" heading.
+  const MENU_BUTTON = { x: 26, y: 20 };
+  const EXPORT_AS_PNG = { x: 50, y: 322 };
 
   const PNG_SIGNATURE = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
 

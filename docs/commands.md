@@ -508,7 +508,7 @@ An element is flat and has a stable id (`scene` crate). Groups are `groupIds` on
 | `element.set_bounds` | Set position and size | Undoable | none | NEW (stats panel, agents) |
 | `element.rotate` | Rotate | Gesture | none (drag handle); double-click handle calls mode=to, angle=0 | E:878-902, 611-632, 447-462 |
 | `element.flip` | Flip | Undoable | `Shift+H` flip horizontal, `Shift+V` flip vertical | U:1753, 1761; A:3625-3632; X:actionFlip |
-| `element.lock` | Lock or unlock | Undoable | `Mod+Shift+L` | X:actionElementLock; NEW |
+| `element.lock` | Lock | Undoable | `Mod+Shift+L` | X:actionElementLock; NEW |
 | `element.unlock_all` | Unlock all | Undoable | none (context menu) | X:actionElementLock; NEW |
 | `element.set_link` | Link | Undoable | `Mod+K` is the UI verb `ui.open_link_editor`, which calls this | X:actionLink |
 | `element.open_link` | Open link | NoUndo | none (link icon, context menu) | X:Hyperlink, App.redirectToLink |

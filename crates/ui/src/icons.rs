@@ -75,6 +75,20 @@ pub enum Icon {
     Eye,
     Panel,
     Link,
+    Cut,
+    Copy,
+    Paste,
+    SelectAll,
+    Layers,
+    Convert,
+    Brush,
+    Save,
+    Open,
+    Info,
+    Keyboard,
+    Stats,
+    Check,
+    ChevronRight,
 }
 
 struct Pen<'a> {
@@ -472,6 +486,72 @@ pub fn paint(painter: &Painter, rect: Rect, icon: Icon, color: Color32) {
             pen.rect(3.5, 4.5, 17.0, 15.0, 1.5);
             pen.line((9.5, 4.5), (9.5, 19.5));
         }
+        Icon::Cut => {
+            pen.circle(7.0, 17.5, 2.6);
+            pen.circle(17.0, 17.5, 2.6);
+            pen.line((8.6, 15.4), (16.5, 4.0));
+            pen.line((15.4, 15.4), (7.5, 4.0));
+        }
+        Icon::Copy => {
+            pen.rect(9.0, 9.0, 11.0, 11.0, 1.5);
+            pen.poly(&[(15.0, 6.0), (15.0, 5.5), (5.5, 5.5), (5.5, 15.0), (6.0, 15.0)], false);
+        }
+        Icon::Paste => {
+            pen.rect(5.0, 5.5, 14.0, 15.0, 1.5);
+            pen.rect(9.0, 3.0, 6.0, 4.5, 1.0);
+        }
+        Icon::SelectAll => {
+            pen.poly(&[(4.0, 9.0), (4.0, 4.0), (9.0, 4.0)], false);
+            pen.poly(&[(15.0, 4.0), (20.0, 4.0), (20.0, 9.0)], false);
+            pen.poly(&[(20.0, 15.0), (20.0, 20.0), (15.0, 20.0)], false);
+            pen.poly(&[(9.0, 20.0), (4.0, 20.0), (4.0, 15.0)], false);
+            pen.rect(9.0, 9.0, 6.0, 6.0, 1.0);
+        }
+        Icon::Layers => {
+            pen.poly(&[(12.0, 4.0), (21.0, 9.0), (12.0, 14.0), (3.0, 9.0)], true);
+            pen.poly(&[(3.0, 13.0), (12.0, 18.0), (21.0, 13.0)], false);
+        }
+        Icon::Convert => {
+            pen.line((4.0, 8.0), (19.5, 8.0));
+            pen.poly(&[(16.0, 4.5), (19.5, 8.0), (16.0, 11.5)], false);
+            pen.line((20.0, 16.0), (4.5, 16.0));
+            pen.poly(&[(8.0, 12.5), (4.5, 16.0), (8.0, 19.5)], false);
+        }
+        Icon::Brush => {
+            pen.line((18.5, 4.5), (11.0, 12.0));
+            pen.curve((11.0, 12.0), (8.0, 11.0), (5.5, 13.5), (5.0, 19.0));
+            pen.curve((5.0, 19.0), (10.5, 18.5), (13.5, 16.5), (12.5, 13.0));
+        }
+        Icon::Save => {
+            pen.rect(4.0, 4.0, 16.0, 16.0, 2.0);
+            pen.rect(8.0, 4.0, 7.0, 5.0, 0.5);
+            pen.rect(7.0, 13.0, 10.0, 7.0, 0.5);
+        }
+        Icon::Open => {
+            pen.poly(&[(3.5, 18.5), (3.5, 6.0), (9.0, 6.0), (11.0, 8.5), (19.5, 8.5), (19.5, 18.5)], true);
+            pen.line((3.5, 18.5), (6.0, 12.5));
+            pen.line((6.0, 12.5), (21.0, 12.5));
+        }
+        Icon::Info => {
+            pen.circle(12.0, 12.0, 8.5);
+            pen.line((12.0, 11.0), (12.0, 16.5));
+            pen.dot(12.0, 7.8, 1.1);
+        }
+        Icon::Keyboard => {
+            pen.rect(3.0, 6.5, 18.0, 11.0, 1.5);
+            pen.dot(7.0, 10.0, 0.9);
+            pen.dot(11.0, 10.0, 0.9);
+            pen.dot(15.0, 10.0, 0.9);
+            pen.dot(18.0, 10.0, 0.9);
+            pen.line((8.0, 14.5), (16.0, 14.5));
+        }
+        Icon::Stats => {
+            pen.line((6.0, 19.0), (6.0, 12.0));
+            pen.line((12.0, 19.0), (12.0, 6.0));
+            pen.line((18.0, 19.0), (18.0, 10.0));
+        }
+        Icon::Check => pen.poly(&[(5.0, 12.5), (10.0, 17.5), (19.0, 7.0)], false),
+        Icon::ChevronRight => pen.poly(&[(9.0, 5.5), (15.5, 12.0), (9.0, 18.5)], false),
     }
 }
 

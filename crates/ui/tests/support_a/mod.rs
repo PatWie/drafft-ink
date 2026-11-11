@@ -8,6 +8,8 @@ use egui_kittest::Harness;
 
 use crate::common::Fixture;
 
+pub mod menu;
+
 /// A harness like `common::harness`, with fonts and theme installed and a chosen egui theme. A missing
 /// glyph is an error, so a surface that draws a character the bundled fonts lack fails its test.
 pub fn themed(fixture: Fixture, dark: bool) -> Harness<'static, Fixture> {

@@ -75,6 +75,9 @@ fn the_main_menu_has_an_entry_that_opens_it_and_close_overlays_closes_it() {
     f.state.apply_verb(Verb::ToggleMenu, &mut Vec::new());
     let mut h = dialog::harness(f);
     h.run();
+    // The menu is taller than the window, so it scrolls: bring the last row into view first.
+    h.get_by_label("About Drafft.ink…").scroll_to_me();
+    h.run();
     h.get_by_label("About Drafft.ink…").click();
     h.run();
     assert_eq!(dialog::verbs(h.state()), vec![Verb::OpenAbout]);

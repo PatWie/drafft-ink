@@ -112,7 +112,10 @@ fn the_menu_opens_under_the_menu_button() {
     // The numbers the Playwright specs click (`e2e/web/specs/input/pointer.spec.ts`, `shell/collab.spec.ts`).
     assert_eq!((menu.center().x, menu.center().y), (26.0, 20.0));
     assert_eq!((rect(&h, "Collaboration").center().x, rect(&h, "Collaboration").center().y), (58.0, 20.0));
-    assert!((row.center().y - 71.0).abs() < 1.0 && row.min.x < 50.0 && row.max.x > 50.0, "{row:?}");
+    // The first row sits under the "File" heading. "Export as PNG" is the first row under the "Export" heading.
+    assert!((row.center().y - 92.0).abs() < 1.0 && row.min.x < 50.0 && row.max.x > 50.0, "{row:?}");
+    let png = h.get_all_by_label("Export as PNG").map(|n| n.rect()).find(|r| r.min.x < 100.0).unwrap();
+    assert!((png.center().y - 322.0).abs() < 1.0 && png.min.x < 50.0 && png.max.x > 50.0, "{png:?}");
 }
 
 #[test]

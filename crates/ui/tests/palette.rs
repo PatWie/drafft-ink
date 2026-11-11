@@ -57,6 +57,10 @@ fn rows_cover_every_palette_command_and_every_titled_binding() {
         for t in titled {
             expected.insert((spec.id.to_owned(), t.to_owned()));
         }
+        // A variant is a named call without keys; it has a row of its own.
+        for v in spec.variants {
+            expected.insert((spec.id.to_owned(), v.title.to_owned()));
+        }
     }
     assert!(expected.len() > 40, "the registry has palette commands: {}", expected.len());
     let listed: BTreeSet<(String, String)> = all

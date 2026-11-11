@@ -20,7 +20,7 @@ use crate::refusal::Refusal;
 use crate::session::{Ref, Session};
 use crate::spec::{
     Batch, Binding, CommandSpec, Facts, Gate, Mutates, PortSet, Redraw, RingMode, Scope, Selection, TextGate, Typed,
-    Undo,
+    Undo, Variant,
 };
 
 use super::group::common::{edit, editing_group, selected_ids, zorder_refusal};
@@ -283,6 +283,12 @@ const ALIGN_KEYS: &[Binding] = &[
     Binding::new(&["Mod+Shift+Down"], Scope::Canvas).with_args(r#"{"edge":"bottom"}"#).titled("Align bottom"),
 ];
 
+/// The two centre lines have no keys; their titles still match the four edges.
+const ALIGN_VARIANTS: &[Variant] = &[
+    Variant::new(r#"{"edge":"center_x"}"#, "Align centres horizontally"),
+    Variant::new(r#"{"edge":"center_y"}"#, "Align centres vertically"),
+];
+
 const DISTRIBUTE_KEYS: &[Binding] = &[
     Binding::new(&["Alt+H"], Scope::Canvas)
         .with_args(r#"{"axis":"horizontal"}"#)
@@ -311,6 +317,7 @@ pub const COMMANDS: &[CommandSpec] = &[
     )
     .default_targets(align_default_targets)
     .shortcuts(ALIGN_KEYS)
+    .variants(ALIGN_VARIANTS)
     .example(r#"{"edge":"left","ids":["a","b"]}"#),
     CommandSpec::new(
         "arrange.distribute",

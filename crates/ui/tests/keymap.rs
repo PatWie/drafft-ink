@@ -447,3 +447,23 @@ fn the_help_rows_list_every_binding_and_every_verb_key() {
         assert!(verb_key_label(vb.verb, false).is_some());
     }
 }
+
+#[test]
+fn a_popup_menu_takes_the_arrow_keys_and_enter_from_the_canvas() {
+    let m = model(false);
+    let arrow = || press(Key::ArrowDown, Some(Key::ArrowDown), Modifiers::NONE);
+    let enter = || press(Key::Enter, Some(Key::Enter), Modifiers::NONE);
+    let closed = UiState::new();
+    assert!(one(&m, &closed, arrow()).is_some(), "without a menu the arrow key nudges the selection");
+    let mut open = UiState::new();
+    open.open_context_menu(egui::pos2(10.0, 10.0), None);
+    for event in [arrow(), enter()] {
+        assert_eq!(one(&m, &open, event.clone()), None, "{event:?}");
+    }
+    // A chord with a modifier is not the menu's.
+    let shifted = press(Key::ArrowDown, Some(Key::ArrowDown), Modifiers::SHIFT);
+    assert_eq!(
+        one(&m, &open, shifted),
+        one(&m, &closed, press(Key::ArrowDown, Some(Key::ArrowDown), Modifiers::SHIFT))
+    );
+}

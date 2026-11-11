@@ -16,6 +16,7 @@ use egui::accesskit::Role;
 use egui::pos2;
 use egui_kittest::kittest::{NodeT, Queryable};
 use serde_json::{Value, json};
+use support_a::menu;
 
 type H = egui_kittest::Harness<'static, Fixture>;
 
@@ -27,22 +28,13 @@ fn engine_text(f: &mut Fixture, id: &str, args: Value) -> String {
 fn menu(mut f: Fixture) -> H {
     f.refresh();
     f.state.open_context_menu(pos2(300.0, 60.0), None);
-    let mut h = support_a::themed_lenient_sized(f, egui::vec2(1280.0, 1400.0));
+    let mut h = support_a::themed_lenient(f, false);
     h.run();
     h
 }
 
-fn in_menu(n: &egui_kittest::Node<'_>) -> bool {
-    let r = n.rect();
-    (290.0..640.0).contains(&r.min.x) && (55.0..1345.0).contains(&r.min.y) && r.width() > 100.0
-}
-
-fn row<'a>(h: &'a H, text: &'a str) -> egui_kittest::Node<'a> {
-    h.get_all_by_role_and_label(Role::Button, text).find(in_menu).unwrap_or_else(|| panic!("no menu row {text}"))
-}
-
-fn hover_shows(h: &mut H, node_label: &str, text: &str) {
-    h.get_all_by_label(node_label).find(in_menu).unwrap().hover();
+fn hover_shows(h: &mut H, node: &str, text: &str) {
+    menu::row(h, node).hover();
     for _ in 0..10 {
         h.step();
     }
@@ -53,58 +45,46 @@ fn hover_shows(h: &mut H, node_label: &str, text: &str) {
 
 #[test]
 fn the_tooltip_the_refusal_and_the_toast_of_a_refused_command_are_the_same_words() {
-    // Nothing is selected, so `group.create` is refused.
+    // View-only mode refuses `clipboard.paste`, the one row of the menu that stays when its command is refused.
     let mut f = dialog::fixture();
-    let text = engine_text(&mut f, "group.create", json!({}));
-    assert_eq!(f.model.refusal_text("group.create"), Some(text.clone()), "availability says what execute says");
+    dialog::run(&mut f, "view.set_view_only", json!({ "on": true }));
+    let text = engine_text(&mut f, "clipboard.paste", json!({}));
+    assert_eq!(f.model.refusal_text("clipboard.paste"), Some(text.clone()), "availability says what execute says");
 
     let mut h = menu(f);
-    assert!(row(&h, "Group").accesskit_node().is_disabled());
-    row(&h, "Group").hover();
-    for _ in 0..10 {
-        h.step();
-    }
-    h.get_by_label_contains(&text);
+    assert!(menu::row(&h, "Paste").accesskit_node().is_disabled());
+    hover_shows(&mut h, "Paste", &text);
 
     // The same command run anyway (a shortcut, a script) shows the same words as a toast.
-    h.state_mut().actions.push(UiAction::run("group.create", json!({})));
+    h.state_mut().actions.push(UiAction::run("clipboard.paste", json!({})));
     let report = h.state_mut().dispatch();
     assert_eq!(report.refusals().next().map(|r| r.message.clone()), Some(text.clone()));
     assert_eq!(h.state().state.toasts.iter().map(|t| t.text.clone()).collect::<Vec<_>>(), vec![text]);
 }
 
-// ---- greyed, not hidden --------------------------------------------------------------------------------------------
+// ---- the menu leaves out what does not apply; the panel greys it ----------------------------------------------------
 
 #[test]
-fn rows_that_need_a_selection_are_in_the_menu_and_greyed_with_the_engine_text_when_nothing_is_selected() {
+fn the_context_menu_leaves_out_rows_the_engine_refuses_and_keeps_the_ones_it_allows() {
     let mut f = dialog::fixture();
-    let align = engine_text(&mut f, "arrange.align", json!({ "edge": "left" }));
-    let mut h = menu(f);
-
-    for text in ["Link…", "Open link", "Align and distribute…", "Copy as…", "Flip and convert…", "Frame…"] {
-        assert!(h.query_all_by_role_and_label(Role::Button, text).any(|n| in_menu(&n)), "{text} is hidden");
+    let a = add_rect(&mut f.session, 0.0, 0.0, 50.0, 50.0).unwrap();
+    select(&mut f.session, std::slice::from_ref(&a));
+    f.refresh();
+    let h = menu(f);
+    // Each of these rows is missing because the engine refuses its command now, with its own words.
+    for (text, id) in [
+        ("Group", "group.create"),
+        ("Ungroup", "group.ungroup"),
+        ("Align", "arrange.align"),
+        ("Open link", "element.open_link"),
+        ("Paste style", "clipboard.paste_style"),
+    ] {
+        assert!(h.state().model.refusal_text(id).is_some(), "{id} is refused");
+        assert!(!menu::has_row(&h, text), "{text} is shown although {id} is refused");
     }
-    // `Link…` and `Open link` are as available as their commands. When the registry refuses one, the row is greyed
-    // and says why in the engine's words; when it does not, the engine decides on the click.
-    for (text, id) in [("Link…", "element.set_link"), ("Open link", "element.open_link")] {
-        let refused = h.state().model.refusal_text(id);
-        assert_eq!(row(&h, text).accesskit_node().is_disabled(), refused.is_some(), "{text}");
-        if let Some(why) = refused {
-            hover_shows(&mut h, text, &why);
-        }
-    }
-
-    // Open the align block: its rows are greyed with `arrange.align`'s words.
-    row(&h, "Align and distribute…").click();
-    h.run();
-    assert!(row(&h, "Align left").accesskit_node().is_disabled());
-    assert_eq!(h.state().model.refusal_text("arrange.align"), Some(align.clone()));
-    hover_shows(&mut h, "Align left", &align);
-    // A click on a greyed row does nothing.
-    h.state_mut().clear();
-    row(&h, "Align left").click();
-    h.run();
-    assert!(h.state().calls().is_empty());
+    // `Link…` is as available as `element.set_link`.
+    assert!(h.state().model.refusal_text("element.set_link").is_none());
+    assert!(!menu::row(&h, "Link…").accesskit_node().is_disabled());
 }
 
 #[test]
