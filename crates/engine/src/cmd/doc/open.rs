@@ -618,15 +618,16 @@ pub struct DropItem {
     pub mime: Option<String>,
 }
 
-/// What to do with a PNG that carries a scene.
+/// What to do with a PNG that carries a scene (a drafft.ink export, or an Excalidraw export with its scene).
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum ScenePng {
-    /// Insert it as an image (default).
+    /// Open the scene, as a dropped `.excalidraw` or `.json` file opens (default). A scene that cannot be read
+    /// falls back to inserting the picture, and the output says so.
     #[default]
-    Insert,
-    /// Restore the scene, as `doc.open` does.
     Open,
+    /// Insert the PNG as an image, whatever it carries.
+    Insert,
 }
 
 /// Where a dropped document goes.
@@ -651,7 +652,8 @@ pub struct DropArgs {
     /// World point to put images and merged elements at: a point, `viewport_center` (default) or `$cursor`.
     #[serde(default)]
     pub at: At,
-    /// A PNG with an embedded scene: `insert` it as an image (default) or `open` the scene.
+    /// A PNG with an embedded scene: `open` the scene (default, like a dropped document) or `insert` the PNG as
+    /// an image.
     #[serde(default)]
     pub scene_png: ScenePng,
     /// Documents: `new_tab` (default), `replace` or `merge`.
@@ -675,10 +677,14 @@ pub struct DropOut {
     pub library_items: usize,
     /// Files that were skipped (each is also a warning).
     pub skipped: usize,
+    /// One sentence for each PNG whose embedded scene could not be read and that was inserted as a picture
+    /// instead (each is also a warning). A shell shows these to the person.
+    pub scene_fallbacks: Vec<String>,
 }
 
 enum Class {
-    Image,
+    /// A picture. Carries why its scene could not be read, when it is a PNG that fell back to this.
+    Image(Option<String>),
     Document,
     Library,
     Skip(String),
@@ -692,24 +698,70 @@ fn is_webp(b: &[u8]) -> bool {
     b.len() >= 12 && b.starts_with(b"RIFF") && b.get(8..12) == Some(b"WEBP")
 }
 
+/// What a PNG's text chunks hold.
+enum PngScene {
+    None,
+    Readable,
+    Unreadable(String),
+}
+
+/// Whether the scene text of a PNG is a document, so `doc.open` can read it.
+fn is_document(format: Format) -> bool {
+    matches!(
+        format,
+        Format::Native
+            | Format::LegacyJson
+            | Format::LegacySnapshot
+            | Format::Gzip
+            | Format::ExcalidrawScene
+            | Format::ExcalidrawClipboard
+    )
+}
+
+fn png_scene(bytes: &[u8]) -> PngScene {
+    match png_meta::extract_scene(bytes) {
+        Ok(None) => PngScene::None,
+        Ok(Some(text)) if is_document(native::sniff(text.as_bytes())) => PngScene::Readable,
+        Ok(Some(_)) => PngScene::Unreadable("its scene is not a drafft.ink or Excalidraw document".to_owned()),
+        Err(e) => PngScene::Unreadable(e.to_string()),
+    }
+}
+
 fn classify(bytes: &[u8], scene_png: ScenePng) -> Class {
     match native::sniff(bytes) {
-        Format::Png => {
-            let has_scene = png_meta::extract_scene(bytes).ok().flatten().is_some();
-            if has_scene && scene_png == ScenePng::Open { Class::Document } else { Class::Image }
-        }
+        Format::Png if scene_png == ScenePng::Insert => Class::Image(None),
+        Format::Png => match png_scene(bytes) {
+            PngScene::None => Class::Image(None),
+            PngScene::Readable => Class::Document,
+            PngScene::Unreadable(why) => Class::Image(Some(why)),
+        },
         Format::ExcalidrawLibrary => Class::Library,
-        Format::Native
-        | Format::LegacyJson
-        | Format::LegacySnapshot
-        | Format::Gzip
-        | Format::ExcalidrawScene
-        | Format::ExcalidrawClipboard => Class::Document,
+        format if is_document(format) => Class::Document,
         Format::Svg => Class::Skip("SVG pictures are not supported; only SVG files exported from drafft.ink with a scene can be opened with `doc.open`".to_owned()),
         Format::LegacyClipboard | Format::Mermaid => Class::Skip("it is clipboard or diagram text, not a file".to_owned()),
-        Format::Unknown if is_jpeg(bytes) || is_webp(bytes) => Class::Image,
-        Format::Unknown => Class::Skip("it is not an image, document or library".to_owned()),
+        Format::Unknown if is_jpeg(bytes) || is_webp(bytes) => Class::Image(None),
+        _ => Class::Skip("it is not an image, document or library".to_owned()),
     }
+}
+
+/// The codes of a refusal that say the document itself cannot be read (not where it would go).
+const SCENE_UNREADABLE: [&str; 3] = ["parse_failed", "newer_version", "limit_exceeded"];
+
+/// A dropped picture on its way to `image.insert`.
+struct Picture {
+    loaded: Loaded,
+    mime: Option<String>,
+    /// Why the scene of this PNG could not be read, when the picture is what is left of it.
+    scene_problem: Option<String>,
+}
+
+/// The sentence for a PNG whose scene could not be read.
+fn scene_fallback(name: &str, why: &str) -> String {
+    format!(
+        "`{}` may carry a scene, but it could not be read ({}), so it was inserted as a picture only.",
+        echo(name),
+        files::cut(why).trim_end_matches('.')
+    )
 }
 
 /// Why a dropped file that could not be read is skipped.
@@ -733,7 +785,7 @@ pub(super) fn drop_files(s: &mut Session, a: DropArgs) -> Result<DropOut, Refusa
     // Read and sort everything first; nothing has changed yet.
     let mut docs: Vec<Loaded> = Vec::new();
     let mut libs: Vec<Loaded> = Vec::new();
-    let mut images: Vec<(Loaded, Option<String>)> = Vec::new();
+    let mut images: Vec<Picture> = Vec::new();
     let mut skipped = 0usize;
     for (i, item) in a.items.iter().enumerate() {
         let loaded = match item.bytes.load(s, &item.name, usize::MAX) {
@@ -756,7 +808,7 @@ pub(super) fn drop_files(s: &mut Session, a: DropArgs) -> Result<DropOut, Refusa
             }
         };
         match classify(&loaded.bytes, a.scene_png) {
-            Class::Image => images.push((loaded, item.mime.clone())),
+            Class::Image(scene_problem) => images.push(Picture { loaded, mime: item.mime.clone(), scene_problem }),
             Class::Document => docs.push(loaded),
             Class::Library => libs.push(loaded),
             Class::Skip(why) => {
@@ -789,25 +841,30 @@ pub(super) fn drop_files(s: &mut Session, a: DropArgs) -> Result<DropOut, Refusa
     if replace {
         guard_replace(s, id, a.on_unsaved, Alternative::Documents)?;
     }
-    let mut out = DropOut { changed: false, documents: 0, images: 0, library_items: 0, skipped };
+    let mut out = DropOut { changed: false, documents: 0, images: 0, library_items: 0, skipped, scene_fallbacks: Vec::new() };
     let mode = match a.documents {
         DropDocs::NewTab => Mode::NewTab,
         DropDocs::Replace => Mode::Replace,
         DropDocs::Merge => Mode::Merge,
     };
-    for loaded in &docs {
+    for loaded in docs {
         let spec = OpenSpec {
             mode,
             format: FormatWord::Auto,
             on_unsaved: None,
             at: Some(at),
             select: true,
-            loaded,
+            loaded: &loaded,
         };
         match open_document(s, id, &spec) {
             Ok(_) => {
                 out.documents += 1;
                 out.changed = true;
+            }
+            // A PNG whose scene cannot be read is still a picture. The other refusals (too many tabs, a room) are
+            // about the placement, which the picture would not escape.
+            Err(r) if SCENE_UNREADABLE.contains(&r.code) && native::sniff(&loaded.bytes) == Format::Png => {
+                images.push(Picture { loaded, mime: None, scene_problem: Some(r.message) });
             }
             Err(r) => {
                 s.warn(format!("`{}` was skipped: {}", echo(&loaded.name), r.message));
@@ -830,8 +887,8 @@ pub(super) fn drop_files(s: &mut Session, a: DropArgs) -> Result<DropOut, Refusa
     if !images.is_empty() {
         let list: Vec<_> = images
             .iter()
-            .map(|(l, mime)| {
-                let b = InlineBytes { base64: base64_of(&l.bytes), name: Some(l.name.clone()), mime: mime.clone() };
+            .map(|p| {
+                let b = InlineBytes { base64: base64_of(&p.loaded.bytes), name: Some(p.loaded.name.clone()), mime: p.mime.clone() };
                 json!({ "base64": b.base64, "name": b.name, "mime": b.mime })
             })
             .collect();
@@ -839,6 +896,13 @@ pub(super) fn drop_files(s: &mut Session, a: DropArgs) -> Result<DropOut, Refusa
             Ok(_) => {
                 out.images = images.len();
                 out.changed = true;
+                for p in &images {
+                    if let Some(why) = &p.scene_problem {
+                        let note = scene_fallback(&p.loaded.name, why);
+                        s.warn(note.clone());
+                        out.scene_fallbacks.push(note);
+                    }
+                }
             }
             Err(r) => {
                 s.warn(format!("{} image(s) were not inserted: {}", images.len(), r.message));

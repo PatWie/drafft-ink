@@ -500,6 +500,18 @@ fn open_restores_the_scene_of_a_png_and_of_an_svg() {
 }
 
 #[test]
+fn open_restores_the_scene_of_a_png_exported_by_excalidraw_and_says_when_a_png_has_none() {
+    let png = include_bytes!("../../../../tests/fixtures/excalidraw/smiley_embedded_v2.png");
+    let (mut s, _f) = testing::session();
+    let out = open_inline(&mut s, png, json!({})).unwrap();
+    assert_eq!(out["format"], "png");
+    assert_eq!(s.store().iter().map(|e| e.tag()).collect::<Vec<_>>(), [drafftink_scene::Kind::Text]);
+    let r = open_inline(&mut s, &plain_png(), json!({})).unwrap_err();
+    assert_eq!(r.code, "parse_failed");
+    assert!(r.message.contains("insert it as an image instead"), "{}", r.message);
+}
+
+#[test]
 fn open_says_what_is_wrong_with_a_file_that_is_not_a_document() {
     let (mut s, _f) = testing::session();
     let r = open_inline(&mut s, b"hello there", json!({})).unwrap_err();
@@ -789,20 +801,135 @@ fn drop_hands_images_to_image_insert_and_warns_when_it_is_missing() {
     assert_eq!(seen, vec![json!({"n": 2, "at": [10.0, 20.0], "offset": 20.0, "first": "one.png"})]);
 }
 
-#[test]
-fn drop_with_a_scene_png_inserts_it_as_an_image_unless_asked_to_open_it() {
+/// A session and the PNG export of its two rectangles, with the scene inside.
+fn scene_png() -> Vec<u8> {
     let (mut a, _) = drawn(2);
     with_png(&mut a);
-    let png = unb64(&run(&mut a, "doc.export", json!({"format": "png"}))["bytes"]["base64"]);
-    let item = json!({"name": "scene.png", "bytes": {"base64": b64(&png)}});
-    let (mut s, _f) = testing::session();
-    let out = run(&mut s, "doc.drop", json!({"items": [item.clone()]}));
+    unb64(&run(&mut a, "doc.export", json!({"format": "png"}))["bytes"]["base64"])
+}
+
+fn png_item(name: &str, png: &[u8]) -> Value {
+    json!({"name": name, "bytes": {"base64": b64(png)}, "mime": "image/png"})
+}
+
+fn plain_png() -> Vec<u8> {
+    base64::engine::general_purpose::STANDARD.decode(PNG_1X1).unwrap()
+}
+
+/// What a drop did to a session that already holds `drawn(1)`: tabs, live elements of the active tab, the kinds.
+fn after_drop(items: &[Value], extra: Value) -> (Session, Value) {
+    let (mut s, _f) = drawn(1);
+    let mut args = json!({"items": items});
+    if let (Value::Object(a), Value::Object(e)) = (&mut args, extra) {
+        a.extend(e);
+    }
+    let out = run(&mut s, "doc.drop", args);
+    (s, out)
+}
+
+#[test]
+fn drop_with_a_scene_png_opens_the_scene_the_way_a_document_opens() {
+    let png = scene_png();
+    let (mut a, _) = drawn(2);
+    let json_doc = native(&mut a);
+    // Same arguments, a document and a scene PNG: the same tabs, the same elements, nothing else.
+    let (by_doc, _) = after_drop(&[json!({"name": "plan.json", "bytes": {"base64": b64(&json_doc)}})], json!({}));
+    let (by_png, out) = after_drop(&[png_item("plan.png", &png)], json!({}));
+    assert_eq!((out["documents"].as_u64(), out["images"].as_u64()), (Some(1), Some(0)), "{out}");
+    assert_eq!(out["scene_fallbacks"], json!([]));
+    assert_eq!((by_png.tabs.len(), live(&by_png)), (by_doc.tabs.len(), live(&by_doc)));
+    assert_eq!((by_png.tabs.len(), live(&by_png)), (2, 2), "a new tab holds the two rectangles");
+    assert!(by_png.store().iter().all(|e| e.tag() == drafftink_scene::Kind::Rectangle), "no image element");
+    assert_eq!(by_png.tabs[0].doc.store().len(), 1, "the first tab is untouched");
+    // The same placement and the same refusal as a document, in every mode.
+    for mode in ["replace", "merge"] {
+        let both = |bytes: &[u8], name: &str, mime: &str| {
+            let (mut s, _f) = drawn(3);
+            let item = json!({"name": name, "bytes": {"base64": b64(bytes)}, "mime": mime});
+            let refusal = s.execute_from(Origin::Test, "doc.drop", json!({"items": [item], "documents": mode})).err();
+            (refusal.map(|r| r.code), s.tabs.len(), live(&s))
+        };
+        assert_eq!(both(&png, "p.png", "image/png"), both(&json_doc, "p.json", "application/json"), "documents {mode}");
+    }
+    let (mut s, _f) = drawn(3);
+    let args = json!({"items": [png_item("p.png", &png)], "documents": "replace"});
+    assert_eq!(refuse(&mut s, "doc.drop", args.clone()).code, "unsaved_changes");
+    run(&mut s, "doc.drop", json!({"items": args["items"], "documents": "replace", "on_unsaved": "discard"}));
+    assert_eq!(live(&s), 2, "the scene replaced the three rectangles");
+}
+
+#[test]
+fn drop_with_scene_png_insert_keeps_the_picture_and_a_plain_png_is_always_a_picture() {
+    let png = scene_png();
+    let (s, out) = after_drop(&[png_item("scene.png", &png)], json!({"scene_png": "insert"}));
     assert_eq!((out["images"].as_u64(), out["documents"].as_u64()), (Some(1), Some(0)));
-    assert_eq!(live(&s), 1, "the real `image.insert` made an image element");
-    assert_eq!(s.store().iter().next().map(|e| e.tag()), Some(drafftink_scene::Kind::Image));
-    let out = run(&mut s, "doc.drop", json!({"items": [item], "scene_png": "open", "documents": "replace", "on_unsaved": "discard"}));
-    assert_eq!(out["documents"], 1);
-    assert_eq!(live(&s), 2, "the scene replaced the image");
+    assert_eq!((s.tabs.len(), live(&s)), (1, 2), "the picture joins the rectangle");
+    assert_eq!(s.store().iter().filter(|e| e.tag() == drafftink_scene::Kind::Image).count(), 1);
+    for scene_png in ["open", "insert"] {
+        let (s, out) = after_drop(&[png_item("photo.png", &plain_png())], json!({"scene_png": scene_png}));
+        assert_eq!((out["images"].as_u64(), out["documents"].as_u64()), (Some(1), Some(0)), "{scene_png}");
+        assert_eq!(out["scene_fallbacks"], json!([]), "a PNG without a scene needs no apology");
+        assert_eq!((s.tabs.len(), live(&s)), (1, 2));
+    }
+}
+
+#[test]
+fn drop_with_a_png_exported_by_excalidraw_opens_its_scene() {
+    // Excalidraw's own test file: one text, a smiley, in a compressed `application/vnd.excalidraw+json` chunk.
+    let png = include_bytes!("../../../../tests/fixtures/excalidraw/smiley_embedded_v2.png");
+    let (s, out) = after_drop(&[png_item("smiley.png", png)], json!({}));
+    assert_eq!((out["documents"].as_u64(), out["images"].as_u64()), (Some(1), Some(0)), "{out}");
+    assert_eq!(s.tabs.len(), 2);
+    let kinds: Vec<_> = s.store().iter().map(|e| e.tag()).collect();
+    assert_eq!(kinds, [drafftink_scene::Kind::Text]);
+}
+
+/// The PNG with `scene` as the text of its drafft.ink chunk.
+fn png_carrying(scene: &str) -> Vec<u8> {
+    drafftink_io::png_meta::embed_scene(&plain_png(), scene).unwrap()
+}
+
+/// `png` with the compressed text of its drafft.ink chunk damaged (the framing stays valid).
+fn with_damaged_zlib(mut png: Vec<u8>) -> Vec<u8> {
+    let at = png.windows(4).position(|w| w == b"iTXt").unwrap();
+    let len = u32::from_be_bytes([png[at - 4], png[at - 3], png[at - 2], png[at - 1]]) as usize;
+    let end = at + 4 + len;
+    png[end - 6..end].fill(0xff);
+    png
+}
+
+#[test]
+fn drop_with_a_png_whose_scene_cannot_be_read_inserts_the_picture_and_says_so() {
+    let damaged: [(&str, Vec<u8>); 3] = [
+        ("a broken zlib stream", with_damaged_zlib(png_carrying("{\"format\":\"drafftink\"}"))),
+        ("text that is no document", png_carrying("hello, not a scene")),
+        // The chunk and the text sniff as a drafft.ink document, but the document inside does not read.
+        ("a document that does not parse", png_carrying("{\"format\":\"drafftink\",\"elements\":5}")),
+    ];
+    for (what, png) in damaged {
+        let (s, out) = after_drop(&[png_item("broken.png", &png)], json!({}));
+        assert_eq!((out["images"].as_u64(), out["documents"].as_u64()), (Some(1), Some(0)), "{what}: {out}");
+        assert_eq!((s.tabs.len(), live(&s)), (1, 2), "{what}: the picture joins the rectangle");
+        let notes = out["scene_fallbacks"].as_array().unwrap();
+        assert_eq!(notes.len(), 1, "{what}: {out}");
+        let note = notes[0].as_str().unwrap();
+        assert!(note.starts_with("`broken.png` may carry a scene, but it could not be read ("), "{what}: {note}");
+        assert!(note.ends_with("so it was inserted as a picture only."), "{what}: {note}");
+        assert!(out["warnings"].as_array().unwrap().iter().any(|w| w == note), "{what}: also a warning");
+    }
+}
+
+#[test]
+fn drop_does_not_turn_a_scene_png_into_a_picture_when_the_tab_bar_is_full() {
+    let png = scene_png();
+    let (mut s, _f) = drawn(1);
+    for _ in 1..MAX_TABS {
+        run(&mut s, "tab.new", json!({}));
+    }
+    let r = refuse(&mut s, "doc.drop", json!({"items": [png_item("p.png", &png)]}));
+    // The refusal is the same as for a document (`nothing_to_do`, as no file could be opened); no picture appears.
+    assert_eq!(r.code, "nothing_to_do", "{}", r.message);
+    assert_eq!(s.store().iter().filter(|e| e.tag() == drafftink_scene::Kind::Image).count(), 0);
 }
 
 #[test]
