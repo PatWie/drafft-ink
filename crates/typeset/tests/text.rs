@@ -5,6 +5,7 @@ mod common;
 
 use common::*;
 use drafftink_typeset::*;
+use std::collections::BTreeSet;
 
 #[test]
 fn layout_is_deterministic_across_typesetters() {
@@ -446,4 +447,137 @@ fn a_typesetter_without_the_extra_fonts_asks_for_plex_sans_only_when_the_family_
     assert!(ts.wanted_fonts().is_empty());
     let after = ts.text(&plex("hello", FontWeight::Regular));
     assert_ne!(before.size.width, after.size.width, "the real face is narrower or wider than the fallback");
+}
+
+// ---- glyph fallback ----
+
+/// Emoticons and symbols that the hand-drawn fonts and Noto Sans cannot draw. Each one used to show the box of the
+/// missing glyph.
+const FALLBACK_SAMPLES: [&str; 11] = [
+    "｡◕‿◕｡",
+    "ಠ_ಠ",
+    "(╯°□°）╯︵ ┻━┻",
+    "٩(◕‿◕｡)۶",
+    "ʕ•ᴥ•ʔ",
+    r"¯\_(ツ)_/¯",
+    "☺ ☹ ♥ ★ ✓ ✿ ❤",
+    "← ↑ → ↓ ∀ ∇ ≦ ≧ ⊙",
+    "ㅇㅅㅇ ㅠㅠ",
+    "「こんにちは」、。・",
+    "ಥ_ಥ ಡ",
+];
+
+fn missing_glyphs(layout: &TextLayout) -> usize {
+    layout.runs.iter().flat_map(|r| &r.glyphs).filter(|g| g.id == 0).count()
+}
+
+#[test]
+fn the_emoticons_of_the_bug_report_lay_out_without_a_missing_glyph() {
+    let mut ts = Typesetter::new();
+    for text in FALLBACK_SAMPLES {
+        let layout = ts.text(&plain(text, 32.0));
+        assert_eq!(missing_glyphs(&layout), 0, "{text:?} has a character that no bundled font draws");
+        assert!(layout.size.width > 0.0, "{text:?}");
+    }
+}
+
+#[test]
+fn the_chosen_family_still_draws_what_it_can() {
+    let mut ts = Typesetter::new();
+    let layout = ts.text(&plain("ಠ_ಠ", 32.0));
+    let gelpen = font_file(&FontFamily::GelPen, FontWeight::Regular).unwrap_or_default();
+    let fonts: Vec<&[u8]> = layout.runs.iter().map(|r| r.font.data.as_ref()).collect();
+    assert_eq!(fonts.len(), 3, "Kannada, the underscore, Kannada");
+    assert_eq!(fonts.get(1).copied(), Some(gelpen), "the underscore is GelPen's");
+    assert_ne!(fonts.first().copied(), Some(gelpen), "the Kannada letter is not");
+    assert_eq!(fonts.first(), fonts.get(2), "both Kannada letters have the same font");
+
+    // The ASCII part of a mixed text keeps the family; the same holds for another family.
+    let mut spec = plain("a ಠ b", 32.0);
+    spec.style.family = FontFamily::GelPenSerif;
+    let layout = ts.text(&spec);
+    let serif = font_file(&FontFamily::GelPenSerif, FontWeight::Regular).unwrap_or_default();
+    assert!(layout.runs.iter().any(|r| r.font.data.as_ref() == serif), "the Latin letters are GelPen Serif's");
+    assert!(layout.runs.iter().any(|r| r.font.data.as_ref() != serif), "the Kannada letter is not");
+    assert_eq!(missing_glyphs(&layout), 0);
+}
+
+#[test]
+fn fallback_glyphs_have_outlines_and_move_the_advance() {
+    let mut ts = Typesetter::new();
+    let eyes = ts.text(&plain("◕", 48.0));
+    assert!(eyes.size.width > 10.0, "{:?}", eyes.size);
+    assert!(ink_bbox(&eyes.outline()).is_some_and(|b| b.width() > 10.0 && b.height() > 10.0), "◕ is drawn");
+    for text in ["ಠ", "｡", "☺", "→", "٩", "ツ", "─"] {
+        let layout = ts.text(&plain(text, 48.0));
+        assert!(ink_bbox(&layout.outline()).is_some(), "{text:?} has ink or is a visible glyph");
+    }
+}
+
+#[test]
+fn a_build_without_the_fallback_fonts_asks_only_for_the_font_that_has_the_character() {
+    let font = |f: ExtraFont| font_bytes(f.file_name());
+    // Kannada is one small file; Noto Sans is not needed for it.
+    let mut ts = Typesetter::without_extra_fonts();
+    let before = ts.text(&plain("ಠ_ಠ", 32.0));
+    assert!(missing_glyphs(&before) > 0, "the hand-drawn fonts have no Kannada");
+    assert_eq!(ts.wanted_fonts(), [ExtraFont::FallbackKannada]);
+    ts.provide_font(ExtraFont::FallbackKannada, font(ExtraFont::FallbackKannada)).expect("a valid font");
+    assert!(ts.wanted_fonts().is_empty());
+    let after = ts.text(&plain("ಠ_ಠ", 32.0));
+    assert_ne!(before.id, after.id, "the layout without the font is not served again");
+    assert_eq!(missing_glyphs(&after), 0);
+
+    // The kaomoji needs the symbols and the CJK punctuation. The undertie ‿ is none's, so Noto Sans comes too.
+    let mut ts = Typesetter::without_extra_fonts();
+    let spec = plain("｡◕‿◕｡", 32.0);
+    let before = ts.text(&spec);
+    let wanted = ts.wanted_fonts();
+    let expected = [ExtraFont::FallbackSymbols, ExtraFont::FallbackCjk].into_iter().chain(ExtraFont::NOTO_SANS);
+    assert_eq!(wanted.iter().copied().collect::<BTreeSet<_>>(), expected.collect(), "{wanted:?}");
+    for wanted_font in wanted {
+        ts.provide_font(wanted_font, font(wanted_font)).expect("a valid font");
+    }
+    assert!(ts.wanted_fonts().is_empty());
+    let after = ts.text(&spec);
+    assert!(missing_glyphs(&before) > 0 && missing_glyphs(&after) == 0);
+}
+
+#[test]
+fn a_character_no_fallback_font_claims_still_asks_for_noto_sans() {
+    let mut ts = Typesetter::without_extra_fonts();
+    let _ = ts.text(&plain("Привет ಠ", 24.0));
+    let wanted = ts.wanted_fonts();
+    assert!(ExtraFont::NOTO_SANS.iter().all(|f| wanted.contains(f)), "{wanted:?}");
+    assert!(wanted.contains(&ExtraFont::FallbackKannada), "{wanted:?}");
+}
+
+#[test]
+fn every_fallback_font_has_only_characters_it_claims_and_claims_do_not_overlap() {
+    for font in ExtraFont::FALLBACKS {
+        let bytes = font_bytes(font.file_name());
+        let face = ttf_parser::Face::parse(&bytes, 0).expect("a font");
+        let mut glyphs = 0;
+        let claims = font.claimed();
+        assert!(!claims.is_empty(), "{font:?} claims code points");
+        for table in face.tables().cmap.iter().flat_map(|c| c.subtables) {
+            table.codepoints(|cp| {
+                if cp > 0x20 {
+                    assert!(claims.iter().any(|r| r.contains(&cp)), "{font:?} has U+{cp:04X}, which it does not claim");
+                    glyphs += 1;
+                }
+            });
+        }
+        assert!(glyphs > 50, "{font:?} has {glyphs} characters");
+        for other in ExtraFont::FALLBACKS.into_iter().filter(|o| *o != font) {
+            for r in claims {
+                assert!(
+                    other.claimed().iter().all(|o| o.end() < r.start() || o.start() > r.end()),
+                    "{font:?} and {other:?} claim the same code points"
+                );
+            }
+        }
+    }
+    assert_eq!(ExtraFont::fallback_for('ಠ'), Some(ExtraFont::FallbackKannada));
+    assert_eq!(ExtraFont::fallback_for('a'), None);
 }

@@ -503,6 +503,7 @@ fn section_header(ui: &mut Ui, cx: &mut Cx<'_>, st: &mut UiState, group: &Group<
         crate::icons::paint(painter, arrow, icon, pal.muted);
         let text_left = arrow.right() + space::MD;
         let room = rect.right() - tools - text_left;
+        theme::fallback::note_text(ui.ctx(), &section.name);
         let name = if section.name.is_empty() { "Untitled" } else { section.name.as_str() };
         let counts = count_text(group.items.len(), section.items);
         let count_width = TextSize::Caption.font().size * counts.chars().count() as f32 * 0.55;
@@ -655,6 +656,7 @@ fn show_tile(ui: &mut Ui, cx: &mut Cx<'_>, st: &mut UiState, item: &LibraryItem,
     let (rect, resp) = ui.allocate_exact_size(vec2(tile.width, tile.height), Sense::click_and_drag());
     let enabled = model.is_available("library.insert");
     let name = display_name(item);
+    theme::fallback::note_text(ui.ctx(), name);
     let seen = ui.is_rect_visible(rect);
     let box_rect = Rect::from_min_size(rect.min + vec2(4.0, 4.0), vec2(tile.picture, tile.picture));
     if seen {

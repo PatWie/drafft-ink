@@ -593,13 +593,15 @@ impl App {
     }
 
     /// Asks the host for the fonts the typesetter and the UI need and do not have, once each. Nothing happens
-    /// on a build that carries its fonts. IBM Plex Sans is one file for both: a text in Plex or the UI font setting
-    /// asks for it, and [`Self::font_loaded`] gives it to both.
+    /// on a build that carries its fonts. IBM Plex Sans and the glyph-fallback fonts are one file for both: a text in
+    /// Plex, the UI font setting or a name with Kannada letters asks for it, and [`Self::font_loaded`] gives it to both.
     fn request_fonts(&mut self) {
         let mut text = self.typesetter.peek(|ts| ts.wanted_fonts()).unwrap_or_default();
         if drafftink_ui::theme::wants_plex_sans() && !text.contains(&ExtraFont::PlexSans) {
             text.push(ExtraFont::PlexSans);
         }
+        // A name in the UI (a tab, a library item) that the UI fonts cannot draw.
+        text.extend(drafftink_ui::theme::fallback::wanted());
         let text = text.into_iter().map(FontFile::Text);
         let ui = drafftink_ui::theme::wanted_fonts().into_iter().map(FontFile::Ui);
         for file in text.chain(ui) {
@@ -616,6 +618,9 @@ impl App {
             FontFile::Text(font) => {
                 if font == ExtraFont::PlexSans {
                     drafftink_ui::theme::provide_plex_sans(bytes.clone());
+                } else if drafftink_ui::theme::fallback::uses(font) {
+                    // The UI draws its names with the same glyph fallback as the canvas.
+                    drafftink_ui::theme::fallback::provide(font, bytes.clone());
                 }
                 if let Err(e) = self.typesetter.with(|ts| ts.provide_font(font, bytes)) {
                     self.toast(format!("The font {} could not be used: {e}", file.file_name()));

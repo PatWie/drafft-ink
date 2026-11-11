@@ -10,6 +10,7 @@
 mod bound;
 mod cache;
 mod caret;
+mod fallback;
 mod fonts;
 mod inline;
 mod layout;
@@ -20,6 +21,7 @@ mod typesetter;
 
 pub use bound::{BOUND_TEXT_PADDING, BoundText, Container, ContainerKind, VerticalAlign};
 pub use caret::{Affinity, Caret, Motion, TextSelection};
+pub use fallback::needs_glyph_fallback;
 pub use fonts::{ExtraFont, font_file};
 pub use inline::{MAX_FORMULAS, formula_ranges, has_inline_math};
 pub use layout::{

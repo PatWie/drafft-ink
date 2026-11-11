@@ -127,7 +127,8 @@ add_font() { # add_font <source file>
   cp "$src" "$DIST/fonts/$stem.$hash.$ext"
   ASSETS="$ASSETS\"$name\":\"fonts/$stem.$hash.$ext\","
 }
-for f in NotoSans-Regular.ttf NotoSans-Bold.ttf NotoSans-Italic.ttf IBMPlexSans-Variable.ttf STIXTwoMath-Regular.otf; do add_font "crates/typeset/assets/fonts/$f"; done
+for f in NotoSans-Regular.ttf NotoSans-Bold.ttf NotoSans-Italic.ttf IBMPlexSans-Variable.ttf STIXTwoMath-Regular.otf \
+  NotoSansSymbols2-Fallback.ttf NotoSansMath-Fallback.ttf NotoSansKannada-Fallback.ttf NotoSansArabic-Fallback.ttf NotoSansCJK-Fallback.otf; do add_font "crates/typeset/assets/fonts/$f"; done
 for f in Ubuntu-Light.ttf Hack-Regular.ttf emoji-icon-font.ttf; do add_font "$EGUI_FONTS/$f"; done
 # The schema table is a file of the same kind: the hash is in the name, `window.__assets` maps the plain name, and the
 # page preloads it so that it is in flight before the module has started.

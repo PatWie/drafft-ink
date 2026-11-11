@@ -267,7 +267,8 @@ impl Typesetter {
         let fonts = self.font_version;
         let math = &mut self.math;
         let built = Arc::new(layout::build(&mut self.engine, spec, next_id(), &mut |m| math.layout(m, fonts)));
-        if built.has_missing_glyphs() || uses_family(spec, &FontFamily::NotoSans) {
+        self.want_for_missing(&built.missing);
+        if uses_family(spec, &FontFamily::NotoSans) {
             self.want(&ExtraFont::NOTO_SANS);
         }
         if uses_family(spec, &FontFamily::PlexSans) {
@@ -351,6 +352,17 @@ impl Typesetter {
         self.font_version += 1;
         self.text_cache.clear();
         Ok(names)
+    }
+
+    /// Records the fonts that could draw `missing`, the characters no loaded font has: the fallback font that is
+    /// responsible for each one, or Noto Sans for a character that none is (Cyrillic, Greek, accents).
+    fn want_for_missing(&mut self, missing: &[char]) {
+        for &c in missing {
+            match ExtraFont::fallback_for(c) {
+                Some(font) => self.want(&[font]),
+                None => self.want(&ExtraFont::NOTO_SANS),
+            }
+        }
     }
 
     fn want(&mut self, fonts: &[ExtraFont]) {

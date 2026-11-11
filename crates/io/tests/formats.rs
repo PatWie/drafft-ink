@@ -671,3 +671,51 @@ fn svg_names_plex_sans_and_embeds_its_one_variable_file_for_the_weights_used() {
     }
     parse(&svg);
 }
+
+// ---------------------------------------------------------------------------------------------------------------
+// Characters that only a glyph-fallback font draws
+// ---------------------------------------------------------------------------------------------------------------
+
+#[test]
+fn svg_draws_characters_of_the_fallback_fonts_as_outlines_and_keeps_other_text_selectable() {
+    let m = real_measure();
+    for content in ["ಠ_ಠ", "｡◕‿◕｡", "a → b"] {
+        let svg = export_svg(&inline_math_doc(content, false), &SvgOptions::default(), &m, Some(&m)).unwrap();
+        let doc = parse(&svg);
+        let el = doc.descendants().find(|n| n.attribute("id") == Some("e-t")).unwrap();
+        assert!(!el.descendants().any(|n| n.tag_name().name() == "text"), "{content:?}: the glyphs are outlines");
+        let g = el.descendants().find(|n| n.attribute("data-text").is_some()).unwrap();
+        assert_eq!(g.attribute("data-text"), Some(content), "the source stays readable");
+        // One path per colour; each glyph contributes at least one closed contour (`M`).
+        let contours: usize = g
+            .descendants()
+            .filter(|n| n.tag_name().name() == "path")
+            .map(|n| n.attribute("d").unwrap_or_default().matches('M').count())
+            .sum();
+        let glyphs = content.chars().filter(|c| !c.is_whitespace()).count();
+        assert!(contours >= glyphs.min(3), "{content:?}: {contours} contours for {glyphs} characters");
+    }
+    // Text the hand-drawn font can draw stays <text>.
+    let svg = export_svg(&inline_math_doc("plain", false), &SvgOptions::default(), &m, Some(&m)).unwrap();
+    assert!(svg.contains("<text "));
+    // Without an outliner the exporter still writes the text, as before.
+    let svg = export_svg(&inline_math_doc("ಠ_ಠ", false), &SvgOptions::default(), &EstimateMeasure, None).unwrap();
+    assert!(svg.contains("ಠ_ಠ"));
+}
+
+#[test]
+fn a_document_with_kaomoji_round_trips_the_native_file_and_the_svg_scene() {
+    let mut d = Document::new();
+    let mut keys = ZIndex::rebalance(2).unwrap().into_iter();
+    for (id, content) in [("a", "ಠ_ಠ"), ("b", "｡◕‿◕｡ ٩(◕‿◕｡)۶ (╯°□°）╯︵ ┻━┻")]
+    {
+        d.elements.push(
+            Element::new(eid(id), ElementKind::Text(TextData::new(content)), keys.next().unwrap())
+                .with_bounds(0.0, 0.0, 200.0, 40.0),
+        );
+    }
+    assert_eq!(native::load(&native::save(&d).unwrap()).unwrap(), d);
+    let m = real_measure();
+    let svg = export_svg(&d, &SvgOptions::default(), &m, Some(&m)).unwrap();
+    assert_eq!(drafftink_io::svg::extract_scene(&svg).unwrap().map(|s| native::load(&s).unwrap()), Some(d));
+}

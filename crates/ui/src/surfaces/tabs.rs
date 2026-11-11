@@ -12,7 +12,7 @@ use crate::icons::Icon;
 use crate::menu_kit::{self, Menu, Popup, Row};
 use crate::model::TabView;
 use crate::state::{RenameTarget, TabMenu, UiState};
-use crate::theme::{MARGIN, space};
+use crate::theme::{self, MARGIN, space};
 use crate::widgets::{Ctl, Cx, panel_frame};
 
 /// Draws the bar and the menu of a tab.
@@ -38,6 +38,7 @@ pub fn show(ctx: &Context, cx: &mut Cx<'_>, st: &mut UiState) {
                     let tabs = cx.model.tabs.clone();
                     let many = tabs.len() > 1;
                     for tab in &tabs {
+                        theme::fallback::note_text(ui.ctx(), &tab.name);
                         let name = if tab.dirty { format!("{} •", tab.name) } else { tab.name.clone() };
                         let ctl = Ctl::new("tab.switch")
                             .args(json!({ "tab": tab.index }))
