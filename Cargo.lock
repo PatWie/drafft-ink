@@ -1286,6 +1286,7 @@ dependencies = [
  "drafftink-ui",
  "egui",
  "getrandom 0.3.4",
+ "js-sys",
  "log",
  "png",
  "pollster 0.4.0",
@@ -1294,6 +1295,9 @@ dependencies = [
  "serde_json",
  "thiserror 2.0.21",
  "vello",
+ "wasm-bindgen",
+ "wasm-bindgen-futures",
+ "web-sys",
  "web-time",
  "wgpu",
 ]
@@ -1637,6 +1641,22 @@ dependencies = [
 [[package]]
 name = "drafftink-web"
 version = "0.2.0"
+dependencies = [
+ "console_error_panic_hook",
+ "console_log",
+ "drafftink-app",
+ "drafftink-bridge",
+ "drafftink-engine",
+ "drafftink-gpu",
+ "drafftink-profile",
+ "js-sys",
+ "log",
+ "serde_json",
+ "thiserror 2.0.21",
+ "wasm-bindgen",
+ "wasm-bindgen-futures",
+ "web-sys",
+]
 
 [[package]]
 name = "dunce"
