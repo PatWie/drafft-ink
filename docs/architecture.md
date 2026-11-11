@@ -25,6 +25,7 @@ A crate may depend on workspace crates of strictly lower layers. It may not depe
 | L6 | `ui` | egui UI. Reads the registry, calls `execute`, shows refusals. No document logic |
 | L6 | `bridge` | agent bridge: loopback JSON-RPC over WebSocket, MCP stdio server |
 | L7 | `testkit` | headless harness, scenario runner, deterministic scene generator, probes |
+| L7 | `app` | the application glue shared by the desktop and web apps: `App` (the shell's `ShellApp`), platform ports, input translation, overlay and scene upkeep. Uses any library below L7 and may use `testkit` only as a dev-dependency; only the apps use it |
 | L8 | apps | `drafftink`, `drafftink-web`, `drafftink-server`, `drafftink-cli`, `drafftink-mcp` |
 | none | `xtask` | build tooling. Standalone |
 
@@ -35,12 +36,12 @@ Package names are `drafftink-<crate>`; the desktop app is `drafftink`.
 1. **Downward only.** An edge to a higher layer is an error. An edge to the same layer is an error, with the exceptions below. This holds for normal, dev and build dependencies.
 2. **Same-layer exceptions.** None today. `SAME_LAYER_EDGES` in `xtask/src/layers.rs` is empty and should stay that way. The `SceneStore` trait lives in `scene` (L1), so `canvas` and `doc` both use it without knowing each other. `collab` sits at L4 and depends on `doc` and `protocol`; `engine` (L5) owns the collab client and routes remote updates into the session.
 3. **Testkit.** `testkit` (L7) may use any library. Other crates may use it only as a dev-dependency. It may not use an app.
-4. **Apps.** An app may use any library and may use `testkit` as a dev-dependency. No crate may depend on an app, and apps do not depend on each other.
+4. **Apps and the glue.** `app` (L7, `drafftink-app`) is the one library that sits above `gpu`, `ui` and `bridge`: it wires them to the engine. It may not be used by L0 to L6, nor by `testkit`, and it may not use an app. An app may use any library, including `app`, and may use `testkit` as a dev-dependency. No crate may depend on an app, and apps do not depend on each other.
 5. **xtask** uses no workspace crate, and no workspace crate uses it.
 6. **UI and OS crates only at L6 and above.** `egui*`, `eframe`, `winit`, `rfd`, `arboard`, `accesskit*` and `bevy*` may not appear below L6, in any dependency kind. Lower layers reach the OS through port traits in `engine`.
 7. **GPU crates.** `vello*` may appear from L2 (`render`). `wgpu*` may appear in `render`, which names wgpu types that Vello exposes, and from L6. `render` must not create a device or a surface. `gpu` owns the device, the surface and the compositing. Crates at L3 to L5 reach the GPU only through `render`'s encoded scenes.
 8. **Every workspace crate has a layer.** A crate missing from the table fails. A table row without a crate fails too, so the table cannot drift.
-9. **Wasm.** Everything at L0 to L5, and `drafftink-web`, builds for `wasm32-unknown-unknown` (`cargo xtask wasm`). Code below L6 takes time from the `Clock` port: `Instant::now` and `SystemTime::now` are disallowed by `clippy.toml` because they panic in the browser.
+9. **Wasm.** Everything at L0 to L5, `drafftink-app` and `drafftink-web` build for `wasm32-unknown-unknown` (`cargo xtask wasm`). Code below L6 takes time from the `Clock` port: `Instant::now` and `SystemTime::now` are disallowed by `clippy.toml` because they panic in the browser.
 10. **No crashes.** `unwrap`, `expect`, `panic!` and `unsafe` are denied through `[workspace.lints]`. `clippy.toml` allows them in tests.
 
 ## How it is enforced

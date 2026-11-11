@@ -66,6 +66,8 @@ pub const TABLE: &[(&str, Class)] = &[
     ("drafftink-bridge", Class::Layer(6)),
     // L7
     ("drafftink-testkit", Class::Testkit),
+    // The application glue: uses any library below it, and only the apps use it.
+    ("drafftink-app", Class::Layer(7)),
     // apps
     ("drafftink", Class::App),
     ("drafftink-web", Class::App),
@@ -78,7 +80,7 @@ pub const TABLE: &[(&str, Class)] = &[
 
 /// Apps (and other non-library packages) that also build for wasm32-unknown-unknown, on top of
 /// every crate at L0 to L5.
-pub const WASM_EXTRA: &[&str] = &["drafftink-web"];
+pub const WASM_EXTRA: &[&str] = &["drafftink-app", "drafftink-web"];
 
 /// A same-layer edge that is allowed, with the reason. Earlier name may be used by the later one.
 /// Keep this list short: each entry is a hole in the layering.
@@ -415,6 +417,7 @@ mod tests {
             assert_eq!(layer(&format!("drafftink-{n}")), Some(6));
         }
         assert_eq!(layer("drafftink-testkit"), Some(7));
+        assert_eq!(layer("drafftink-app"), Some(7));
         assert_eq!(layer("drafftink"), Some(8));
         assert_eq!(layer("xtask"), None);
     }
@@ -541,6 +544,27 @@ mod tests {
         assert!(check(&[c("drafftink-doc", &[("drafftink-testkit", Dev, true)])]).is_empty());
         assert!(check(&[c("drafftink-testkit", &[("drafftink-engine", Normal, true)])]).is_empty());
         assert!(check(&[c("drafftink-cli", &[("drafftink-testkit", Dev, true)])]).is_empty());
+    }
+
+    #[test]
+    fn app_glue_sits_between_the_libraries_and_the_apps() {
+        // It may use every library below it (gpu, ui, bridge are L6) and the apps may use it.
+        let g = [
+            c("drafftink-gpu", &[]),
+            c("drafftink-app", &[("drafftink-gpu", Normal, true), ("drafftink-testkit", Dev, true), ("egui", Normal, false)]),
+            c("drafftink", &[("drafftink-app", Normal, true)]),
+        ];
+        assert!(check(&g).is_empty(), "{:?}", check(&g));
+        // No library below it may use it, and it is not an app, so apps and the glue stay apart.
+        for krate in ["drafftink-gpu", "drafftink-ui", "drafftink-engine"] {
+            let v = check(&[c(krate, &[("drafftink-app", Normal, true)])]);
+            assert!(matches!(only(&v), Violation::Edge { to: 7, .. }), "{krate}: {v:?}");
+        }
+        // The testkit is at the same level and may not use it either.
+        let v = check(&[c("drafftink-testkit", &[("drafftink-app", Normal, true)])]);
+        assert!(matches!(only(&v), Violation::Edge { from: 7, to: 7, .. }));
+        let v = check(&[c("drafftink-app", &[("drafftink", Normal, true)])]);
+        assert!(matches!(only(&v), Violation::Edge { from: 7, to: 8, .. }));
     }
 
     #[test]

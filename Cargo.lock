@@ -1205,6 +1205,8 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1e0e367e4e7da84520dedcac1901e4da967309406d1e51017ae1abfb97adbd38"
 dependencies = [
  "bitflags 2.13.2",
+ "block2 0.6.2",
+ "libc",
  "objc2 0.6.5",
 ]
 
@@ -1252,6 +1254,35 @@ checksum = "d8b14ccef22fc6f5a8f4d7d768562a182c04ce9a3b3157b91390b52ddfdf1a76"
 [[package]]
 name = "drafftink"
 version = "0.2.0"
+
+[[package]]
+name = "drafftink-app"
+version = "0.2.0"
+dependencies = [
+ "arboard",
+ "base64 0.22.1",
+ "drafftink-bridge",
+ "drafftink-canvas",
+ "drafftink-collab",
+ "drafftink-engine",
+ "drafftink-geom",
+ "drafftink-gpu",
+ "drafftink-profile",
+ "drafftink-render",
+ "drafftink-scene",
+ "drafftink-testkit",
+ "drafftink-ui",
+ "egui",
+ "getrandom 0.3.4",
+ "log",
+ "pollster 0.4.0",
+ "rfd",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.21",
+ "web-time",
+ "wgpu",
+]
 
 [[package]]
 name = "drafftink-bridge"
@@ -1398,7 +1429,7 @@ dependencies = [
  "js-sys",
  "log",
  "png",
- "pollster",
+ "pollster 0.4.0",
  "thiserror 2.0.21",
  "vello",
  "wasm-bindgen",
@@ -1484,7 +1515,7 @@ dependencies = [
  "kurbo",
  "peniko",
  "png",
- "pollster",
+ "pollster 0.4.0",
  "proptest",
  "serde_json",
  "thiserror 2.0.21",
@@ -3682,6 +3713,7 @@ dependencies = [
  "objc2 0.6.5",
  "objc2-core-graphics",
  "objc2-foundation 0.3.2",
+ "objc2-uniform-type-identifiers 0.3.2",
 ]
 
 [[package]]
@@ -3899,7 +3931,7 @@ dependencies = [
  "objc2-link-presentation",
  "objc2-quartz-core 0.2.2",
  "objc2-symbols",
- "objc2-uniform-type-identifiers",
+ "objc2-uniform-type-identifiers 0.2.2",
  "objc2-user-notifications",
 ]
 
@@ -3924,6 +3956,16 @@ dependencies = [
  "block2 0.5.1",
  "objc2 0.5.3",
  "objc2-foundation 0.2.2",
+]
+
+[[package]]
+name = "objc2-uniform-type-identifiers"
+version = "0.3.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7902ac02859fc1f7045f8b598c63f1ae0cc7efeaa06a9bc9f3d9a3c955974fa4"
+dependencies = [
+ "objc2 0.6.5",
+ "objc2-foundation 0.3.2",
 ]
 
 [[package]]
@@ -4383,6 +4425,12 @@ name = "pollster"
 version = "0.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2f3a9f18d041e6d0e102a0a46750538147e5e8992d3b4873aaafee2520b00ce3"
+
+[[package]]
+name = "pollster"
+version = "1.0.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "bc6355899e1c9462875b6757c79f3caa011a1fdae12bbb1a2e72dd1f234f8336"
 
 [[package]]
 name = "polycool"
@@ -4918,6 +4966,31 @@ dependencies = [
  "serde_derive",
  "ttf-parser",
  "unicode-math",
+]
+
+[[package]]
+name = "rfd"
+version = "0.18.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c4b9d4857b10297ffb0f64cae711e983a7aeaee561848d56d429d3858bd8ed93"
+dependencies = [
+ "block2 0.6.2",
+ "dispatch2",
+ "js-sys",
+ "libc",
+ "log",
+ "objc2 0.6.5",
+ "objc2-app-kit 0.3.2",
+ "objc2-core-foundation",
+ "objc2-foundation 0.3.2",
+ "objc2-uniform-type-identifiers 0.3.2",
+ "percent-encoding",
+ "pollster 1.0.1",
+ "raw-window-handle",
+ "wasm-bindgen",
+ "wasm-bindgen-futures",
+ "web-sys",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
