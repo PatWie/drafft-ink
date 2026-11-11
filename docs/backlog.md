@@ -38,3 +38,4 @@ Features decided but not yet assigned to a phase agent.
 - DECIDED: opening a non-native file (.excalidraw, legacy, PNG/SVG with scene) sets NO save target; `doc.save` then behaves like save-as (needs `to`), so a foreign file is never overwritten with drafft JSON. Implement + test.
 - Flaky: `cmd::perf::tests::last_call_reports_only_what_happened_since_the_previous_call` under parallel test runs (shared global profile state); make it deterministic.
 - Accepted (F1): `element.relabel`/`text.set` with empty text on a bound label removes the label; only free text refuses `empty_text`.
+- Hang: crates/gpu compositor test binary hung for 3.5 h under plain cargo test (GPU contention?). nextest now terminates after 5 min; find the cause (device wait without timeout?).
