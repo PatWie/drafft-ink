@@ -1,0 +1,45 @@
+{
+  "shots": [
+    {
+      "name": "screenshot-light",
+      "kind": "window",
+      "size": [1280, 800],
+      "scale": 1.25,
+      "theme": "light",
+      "steps": [
+        { "id": "view.zoom_to_fit", "args": { "scope": "all", "padding": 80 } },
+        { "id": "selection.select", "args": { "ids": ["@box", "@oval"] } }
+      ]
+    },
+    {
+      "name": "screenshot-dark",
+      "kind": "window",
+      "size": [1280, 800],
+      "scale": 1.25,
+      "theme": "dark",
+      "steps": [
+        { "id": "view.zoom_to_fit", "args": { "scope": "all", "padding": 80 } },
+        { "id": "selection.select", "args": { "ids": ["@title"] } }
+      ]
+    },
+    {
+      "name": "screenshot-phone",
+      "kind": "window",
+      "size": [390, 844],
+      "scale": 2.0,
+      "theme": "light",
+      "touch": true,
+      "steps": [
+        { "id": "view.zoom_to_fit", "args": { "scope": "ids", "ids": ["@title", "@gem"], "padding": 24 } },
+        { "id": "selection.select", "args": { "ids": ["@box"] } }
+      ]
+    },
+    {
+      "name": "canvas-only",
+      "kind": "export",
+      "width": 1600,
+      "padding": 40,
+      "theme": "light"
+    }
+  ]
+}

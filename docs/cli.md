@@ -13,7 +13,7 @@ Nothing is written unless you name an output file. Results go to standard output
 
 | Command | What it does |
 |---|---|
-| `run SCRIPT [--doc FILE] [--out FILE]` | Runs a command script, optionally on a document, optionally writing the result. `-` reads the script from standard input. |
+| `run SCRIPT [--doc FILE] [--out FILE] [--seed N]` | Runs a command script, optionally on a document, optionally writing the result. `-` reads the script from standard input. |
 | `convert INPUT OUTPUT` | Reads a document in one format and writes it in another. |
 | `outline FILE [--json]` | Prints the outline of a document: one line per shape and per arrow, in reading order (`doc.outline`). |
 | `inspect FILE` | Prints the summary of a document: counts, bounds, groups, frames (`doc.inspect`). |
@@ -24,7 +24,7 @@ Nothing is written unless you name an output file. Results go to standard output
 
 A script is one of:
 
-- **JSON Lines**: one step per line, `{"id": "element.create", "args": {...}}`. Blank lines are skipped.
+- **JSON Lines**: one step per line, `{"id": "element.create", "args": {...}}`. Blank lines and lines that start with `//` are skipped, so a script kept in a repository can explain itself.
 - A **JSON array** of steps, or **one step**.
 - A **batch object** `{"steps": [...], "opts": {...}}`. A step may be named with `"as"`, and later steps use `"$name"` and `"$name.field"`. It runs as one transaction: one undo step, rolled back at the first refusal.
 
@@ -35,7 +35,7 @@ A script is one of:
 {"step":2,"id":"element.delete","ok":false,"refusal":{"code":"not_found","message":"No element matches `nope`. ..."}}
 ```
 
-It stops at the first refusal (exit 1, nothing written). `--keep-going` runs the rest and still exits 1. `--batch` runs the steps of a list as one batch, with `as` and `$name`; `--dry-run` runs a batch, reports the outputs, and rolls everything back; `--label` sets the undo label.
+It stops at the first refusal (exit 1, nothing written). `--keep-going` runs the rest and still exits 1. `--batch` runs the steps of a list as one batch, with `as` and `$name`; `--dry-run` runs a batch, reports the outputs, and rolls everything back; `--label` sets the undo label. `--seed N` makes element ids and hand-drawn jitter come from a fixed seed, so the same script writes the same file every time (the welcome document is built this way, `media.md`).
 
 ```sh
 drafftink-cli run build.jsonl --out out.drafftink

@@ -289,7 +289,7 @@ fn modifiers_from(state: winit::keyboard::ModifiersState) -> egui::Modifiers {
 
 impl<A: ShellApp> Shell<A> {
     fn new(app: A, options: Options, proxy: Arc<EventLoopProxy<UserEvent>>) -> Self {
-        let waker = Waker { proxy: proxy.clone() };
+        let waker = Waker { proxy: Some(proxy.clone()) };
         Self {
             app,
             options,

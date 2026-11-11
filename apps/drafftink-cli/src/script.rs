@@ -2,7 +2,8 @@
 //!
 //! Four spellings are accepted, so a script can be written by hand or generated:
 //!
-//! * JSON Lines: one `{"id": "element.create", "args": {...}}` per line. Blank lines are skipped.
+//! * JSON Lines: one `{"id": "element.create", "args": {...}}` per line. Blank lines and comment lines (starting with
+//!   `//`) are skipped, so a script that is kept in the repository can say why.
 //! * A JSON array of such steps.
 //! * One such step.
 //! * A batch: `{"steps": [...], "opts": {...}}`, where a step may be named with `"as"` and later steps may
@@ -52,6 +53,12 @@ fn kind_of(v: &Value) -> &'static str {
     }
 }
 
+/// A line of JSON Lines that holds a step: not blank and not a `//` comment.
+fn is_step_line(line: &str) -> bool {
+    let line = line.trim_start();
+    !line.is_empty() && !line.starts_with("//")
+}
+
 fn step(value: Value, place: String) -> Result<BatchStep, ScriptError> {
     serde_json::from_value(value).map_err(|e| ScriptError::BadStep { place, message: e.to_string() })
 }
@@ -76,15 +83,15 @@ impl Script {
             Err(_) => text
                 .lines()
                 .enumerate()
-                .filter(|(_, l)| !l.trim().is_empty())
+                .filter(|(_, l)| is_step_line(l))
                 .map(|(i, l)| {
                     let place = format!("line {}", i + 1);
                     let v: Value = serde_json::from_str(l)
                         .map_err(|e| ScriptError::BadStep { place: place.clone(), message: e.to_string() })?;
                     step(v, place)
                 })
-                .collect::<Result<_, _>>()
-                .map(Self::Steps),
+                .collect::<Result<Vec<_>, _>>()
+                .and_then(|steps| if steps.is_empty() { Err(ScriptError::Empty) } else { Ok(Self::Steps(steps)) }),
         }
     }
 
@@ -119,6 +126,15 @@ mod tests {
         assert_eq!(ids(&Script::parse(lines).unwrap()), ["a.b", "c.d"]);
         assert_eq!(ids(&Script::parse("{\"id\":\"a.b\"}").unwrap()), ["a.b"]);
         assert_eq!(ids(&Script::parse("{\n  \"id\": \"a.b\",\n  \"args\": {}\n}").unwrap()), ["a.b"], "pretty printed");
+    }
+
+    #[test]
+    fn comment_lines_are_skipped_and_keep_the_line_numbers() {
+        let text = "// the title\n{\"id\":\"a.b\"}\n  // more\n{\"id\":\"c.d\"}\n";
+        assert_eq!(ids(&Script::parse(text).unwrap()), ["a.b", "c.d"]);
+        let e = Script::parse("// x\n{\"id\":\"a.b\"}\nnot json\n").unwrap_err().to_string();
+        assert!(e.starts_with("line 3:"), "{e}");
+        assert_eq!(Script::parse("// only a comment\n").unwrap_err(), ScriptError::Empty);
     }
 
     #[test]

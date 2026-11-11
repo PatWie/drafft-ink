@@ -60,7 +60,14 @@ web-sys = { workspace = true, features = [
     "IdbTransaction", "IdbTransactionMode", "IdbVersionChangeEvent", "VisibilityState", "Response",
 ] }
 
+[[example]]
+name = "media"
+path = "examples/media/main.rs"
+required-features = ["wgpu"]
+
 [dev-dependencies]
+clap = { workspace = true }
+tempfile = { workspace = true }
 drafftink-engine = { path = "../engine", features = ["schemas"] }
 drafftink-io = { path = "../io" }
 drafftink-testkit = { path = "../testkit" }

@@ -1376,6 +1376,7 @@ version = "0.2.0"
 dependencies = [
  "arboard",
  "base64 0.22.1",
+ "clap",
  "drafftink-bridge",
  "drafftink-canvas",
  "drafftink-collab",
@@ -1401,6 +1402,7 @@ dependencies = [
  "serde",
  "serde_json",
  "syn 2.0.119",
+ "tempfile",
  "thiserror 2.0.21",
  "vello",
  "wasm-bindgen",

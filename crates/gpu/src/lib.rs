@@ -21,6 +21,8 @@ pub mod frame;
 pub mod gl;
 #[cfg(feature = "wgpu")]
 pub mod gpu;
+#[cfg(all(feature = "wgpu", not(target_arch = "wasm32")))]
+pub mod headless;
 #[cfg_attr(not(target_arch = "wasm32"), allow(dead_code))]
 mod host;
 #[cfg(not(target_arch = "wasm32"))]

@@ -9,7 +9,7 @@ use std::time::{Instant, SystemTime, UNIX_EPOCH};
 
 use drafftink_engine::Session;
 use drafftink_engine::ports::{Clock, FileRef, Files, PortError, Ports, WriteOutcome};
-use drafftink_scene::{RandomIds, Rng64};
+use drafftink_scene::{IdSource, RandomIds, Rng64, SplitMix64};
 
 /// Largest file that is read or written.
 const MAX_FILE_BYTES: u64 = 256 << 20;
@@ -83,13 +83,27 @@ impl Files for DiskFiles {
     }
 }
 
+/// Where element ids and hand-drawn seeds come from.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum IdSeed {
+    /// The operating system: ids differ on every run.
+    #[default]
+    Random,
+    /// A fixed seed: the same script makes the same ids and the same jitter on every run, so a generated file can be
+    /// checked in and compared.
+    Fixed(u64),
+}
+
 /// The ports of a command line session.
-pub fn ports() -> Ports {
-    Ports::new(Box::new(SystemClock { started: Instant::now() }), Box::new(RandomIds(OsRng)))
-        .with_files(Box::new(DiskFiles))
+pub fn ports(seed: IdSeed) -> Ports {
+    let ids: Box<dyn IdSource> = match seed {
+        IdSeed::Random => Box::new(RandomIds(OsRng)),
+        IdSeed::Fixed(seed) => Box::new(RandomIds(SplitMix64::new(seed))),
+    };
+    Ports::new(Box::new(SystemClock { started: Instant::now() }), ids).with_files(Box::new(DiskFiles))
 }
 
 /// A session with the real text engine and [`ports`].
-pub fn session() -> Session {
-    Session::new(ports())
+pub fn session(seed: IdSeed) -> Session {
+    Session::new(ports(seed))
 }

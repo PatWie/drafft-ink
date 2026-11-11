@@ -34,13 +34,20 @@ impl ViewInfo {
 /// autosaves and image decodes. Do not call it for work that changes nothing visible.
 #[derive(Clone)]
 pub struct Waker {
-    pub(crate) proxy: Arc<EventLoopProxy<UserEvent>>,
+    /// The event loop to wake. `None` for a [`Waker::detached`] one.
+    pub(crate) proxy: Option<Arc<EventLoopProxy<UserEvent>>>,
 }
 
 impl Waker {
     /// Wake the loop. Returns `false` when the loop has already exited.
     pub fn wake(&self, reason: RedrawReason) -> bool {
-        self.proxy.send_event(UserEvent::Wake(reason)).is_ok()
+        self.proxy.as_ref().is_some_and(|p| p.send_event(UserEvent::Wake(reason)).is_ok())
+    }
+
+    /// A waker with no event loop behind it, for a shell that runs frames by hand (`headless`). It never wakes
+    /// anything and says so by returning `false`.
+    pub fn detached() -> Self {
+        Self { proxy: None }
     }
 }
 
@@ -48,7 +55,7 @@ impl Waker {
     /// Ask the loop to close the window and return from `run`. Returns `false` when the loop has already exited.
     /// The scenario drivers end a run with it.
     pub fn exit(&self) -> bool {
-        self.proxy.send_event(UserEvent::Exit).is_ok()
+        self.proxy.as_ref().is_some_and(|p| p.send_event(UserEvent::Exit).is_ok())
     }
 }
 

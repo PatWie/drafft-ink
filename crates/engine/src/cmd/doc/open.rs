@@ -28,7 +28,7 @@ use crate::store::TabDoc;
 use crate::state::{BASE_ZOOM, Observed};
 
 /// The built-in welcome document, in the format of the old app (migrated when shown).
-const INTRO_JSON: &str = include_str!("../../../assets/intro.json");
+const INTRO_JSON: &str = include_str!("../../../assets/intro/intro.json");
 /// Name of the shown intro document.
 const INTRO_NAME: &str = "Welcome";
 
