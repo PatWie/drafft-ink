@@ -124,7 +124,10 @@ pub fn install(text: &str) -> Result<usize, SchemaError> {
     #[cfg(feature = "schemas")]
     {
         let root: serde_json::Value = serde_json::from_str(text).map_err(|e| SchemaError::Json(e.to_string()))?;
-        root.get("commands").and_then(serde_json::Value::as_object).map(serde_json::Map::len).ok_or(SchemaError::Missing("commands"))
+        root.get("commands")
+            .and_then(serde_json::Value::as_object)
+            .map(serde_json::Map::len)
+            .ok_or(SchemaError::Missing("commands"))
     }
 }
 
@@ -182,7 +185,9 @@ pub fn dump(registry: &crate::registry::Registry) -> serde_json::Value {
     let commands: serde_json::Map<String, serde_json::Value> = registry
         .all()
         .iter()
-        .map(|spec| (spec.id.to_owned(), serde_json::json!({ "args": spec.args_schema(), "output": spec.output_schema() })))
+        .map(|spec| {
+            (spec.id.to_owned(), serde_json::json!({ "args": spec.args_schema(), "output": spec.output_schema() }))
+        })
         .collect();
     serde_json::json!({ "version": 1, "commands": commands })
 }

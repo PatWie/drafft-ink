@@ -11,14 +11,14 @@
 
 use std::collections::BTreeSet;
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use crate::fingerprint::Fingerprint;
 use crate::refusal::Refusal;
 use crate::ring::Origin;
 use crate::session::Session;
-use crate::spec::{Mutates, CommandSpec};
+use crate::spec::{CommandSpec, Mutates};
 use crate::state::TabId;
 use drafftink_scene::ElementId;
 
@@ -26,11 +26,11 @@ use drafftink_scene::ElementId;
 pub(crate) const RENDER_PENDING: &str = "render_pending";
 
 /// Names a batch step whose picture is not ready yet. The batch result lists it; [`Session::finish_render`] takes it.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct RenderToken(pub u64);
 
 /// A batch step that waits for its picture.
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PendingRender {
     /// Index of the step in the batch.
     pub index: usize,
@@ -76,13 +76,7 @@ impl Session {
     }
 
     /// Remembers a deferred step of the batch that just committed. `origin` is who ran the batch.
-    pub(crate) fn defer_render(
-        &mut self,
-        token: RenderToken,
-        origin: Origin,
-        spec: &'static CommandSpec,
-        args: Value,
-    ) {
+    pub(crate) fn defer_render(&mut self, token: RenderToken, origin: Origin, spec: &'static CommandSpec, args: Value) {
         let deferred = DeferredRender {
             tab: self.tab().id,
             origin,

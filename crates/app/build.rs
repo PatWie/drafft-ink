@@ -20,9 +20,12 @@ fn main() {
     println!("cargo:rerun-if-changed=build.rs");
     // A new commit moves the branch file, not HEAD itself, so watch both.
     let manifest_dir = env::var_os("CARGO_MANIFEST_DIR").map(PathBuf::from).unwrap_or_default();
-    for path in [git(&["rev-parse", "--git-path", "HEAD"]), git(&["symbolic-ref", "-q", "HEAD"]).and_then(|r| git(&["rev-parse", "--git-path", &r]))]
-        .into_iter()
-        .flatten()
+    for path in [
+        git(&["rev-parse", "--git-path", "HEAD"]),
+        git(&["symbolic-ref", "-q", "HEAD"]).and_then(|r| git(&["rev-parse", "--git-path", &r])),
+    ]
+    .into_iter()
+    .flatten()
     {
         println!("cargo:rerun-if-changed={}", manifest_dir.join(path).display());
     }

@@ -321,7 +321,15 @@ mod tests {
     fn only_web_addresses_are_taken_as_the_source() {
         assert_eq!(web_address(" https://git.example.org/fork \n").as_deref(), Some("https://git.example.org/fork"));
         assert_eq!(web_address("http://localhost:8080/src").as_deref(), Some("http://localhost:8080/src"));
-        for bad in ["", "https://", "javascript:alert(1)", "file:///etc/passwd", "//example.org", "https://a b", "ftp://example.org"] {
+        for bad in [
+            "",
+            "https://",
+            "javascript:alert(1)",
+            "file:///etc/passwd",
+            "//example.org",
+            "https://a b",
+            "ftp://example.org",
+        ] {
             assert_eq!(web_address(bad), None, "{bad:?}");
         }
     }

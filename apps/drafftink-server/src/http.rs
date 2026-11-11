@@ -148,7 +148,8 @@ async fn source_json(State(state): State<Arc<AppState>>) -> Response {
         "version": env!("CARGO_PKG_VERSION"),
         "license": "AGPL-3.0-only",
     });
-    ([(header::CONTENT_TYPE, "application/json"), (header::CACHE_CONTROL, "no-cache")], body.to_string()).into_response()
+    ([(header::CONTENT_TYPE, "application/json"), (header::CACHE_CONTROL, "no-cache")], body.to_string())
+        .into_response()
 }
 
 async fn health(State(state): State<Arc<AppState>>) -> Response {

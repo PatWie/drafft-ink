@@ -368,7 +368,8 @@ mod tests {
 
     #[test]
     fn the_numbers_of_the_build_script_are_read() {
-        let m = parse_sizes(r#"{"raw": 5, "opt": 4, "gzip": 3, "brotli": 2, "fonts_brotli": 1, "schemas_brotli": 7}"#).unwrap();
+        let m = parse_sizes(r#"{"raw": 5, "opt": 4, "gzip": 3, "brotli": 2, "fonts_brotli": 1, "schemas_brotli": 7}"#)
+            .unwrap();
         assert_eq!(m["wasm.brotli_bytes"], 2);
         assert_eq!(m["fonts.brotli_bytes"], 1);
         assert_eq!(m["schemas.brotli_bytes"], 7);
@@ -381,9 +382,10 @@ mod tests {
     fn the_checked_in_budgets_parse() {
         let text = fs::read_to_string(crate::root().join(BUDGETS)).unwrap();
         let b = parse_budgets(&text).unwrap();
-        for name in ["wasm.opt_bytes", "wasm.gzip_bytes", "wasm.brotli_bytes", "fonts.brotli_bytes", "schemas.brotli_bytes"]
-            .into_iter()
-            .chain(NATIVE_BINARIES.iter().map(|(_, metric)| *metric))
+        for name in
+            ["wasm.opt_bytes", "wasm.gzip_bytes", "wasm.brotli_bytes", "fonts.brotli_bytes", "schemas.brotli_bytes"]
+                .into_iter()
+                .chain(NATIVE_BINARIES.iter().map(|(_, metric)| *metric))
         {
             assert!(b.contains_key(name), "{name}");
         }

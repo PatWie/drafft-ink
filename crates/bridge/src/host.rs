@@ -15,7 +15,7 @@
 use std::sync::Arc;
 use std::sync::mpsc::{Receiver, SyncSender, TryRecvError, TrySendError, sync_channel};
 
-use drafftink_engine::{Finished, RenderToken, Session};
+use drafftink_engine::{Finished, PendingRender, Session};
 use serde_json::{Value, json};
 
 use crate::core::dispatch;
@@ -111,37 +111,28 @@ struct WaitingBatch {
     reply: Reply,
     /// The batch result, with a placeholder at the index of each step that waits.
     result: Value,
-    /// Steps that wait: index, command id and token.
-    pending: Vec<(usize, String, RenderToken)>,
+    /// Steps that wait.
+    pending: Vec<PendingRender>,
 }
 
 impl WaitingBatch {
     /// The batch whose result lists steps that wait for a picture, if `out` is one.
-    fn of(out: &Result<Value, RpcError>) -> Option<(Value, Vec<(usize, String, RenderToken)>)> {
+    fn of(out: &Result<Value, RpcError>) -> Option<(Value, Vec<PendingRender>)> {
         let result = out.as_ref().ok()?;
-        let pending: Vec<_> = result
-            .get("pending")?
-            .as_array()?
-            .iter()
-            .filter_map(|p| {
-                let index = usize::try_from(p.get("index")?.as_u64()?).ok()?;
-                let id = p.get("id")?.as_str()?.to_owned();
-                Some((index, id, RenderToken(p.get("token")?.as_u64()?)))
-            })
-            .collect();
+        let pending: Vec<PendingRender> = serde_json::from_value(result.get("pending")?.clone()).ok()?;
         (!pending.is_empty()).then(|| (result.clone(), pending))
     }
 
     /// Asks the session for each picture that is still missing and puts it into the result. True when none is.
     fn advance(&mut self, session: &mut Session) -> bool {
         let waiting = std::mem::take(&mut self.pending);
-        for (index, id, token) in waiting {
-            match session.finish_render(token) {
-                Ok(Finished::Waiting) => self.pending.push((index, id, token)),
-                Ok(Finished::Done(output)) => self.put(index, output),
+        for step in waiting {
+            match session.finish_render(step.token) {
+                Ok(Finished::Waiting) => self.pending.push(step),
+                Ok(Finished::Done(output)) => self.put(step.index, output),
                 Err(refusal) => {
-                    self.put(index, Value::Null);
-                    self.fail(index, &id, &refusal);
+                    self.put(step.index, Value::Null);
+                    self.fail(&step, &refusal);
                 }
             }
         }
@@ -155,12 +146,16 @@ impl WaitingBatch {
     }
 
     /// A picture that could not be made: the batch stays applied, and the result says which step failed.
-    fn fail(&mut self, index: usize, id: &str, refusal: &drafftink_engine::Refusal) {
+    fn fail(&mut self, step: &PendingRender, refusal: &drafftink_engine::Refusal) {
         let Value::Object(map) = &mut self.result else { return };
-        map.entry("failed").or_insert_with(|| {
-            json!({ "index": index, "id": id, "refusal": serde_json::to_value(refusal).unwrap_or(Value::Null) })
-        });
-        map.insert("note".to_owned(), json!(format!("the picture for step {index} (`{id}`) was not made: {}", refusal.message)));
+        let PendingRender { index, id, .. } = step;
+        map.entry("failed").or_insert_with(
+            || json!({ "index": index, "id": id, "refusal": serde_json::to_value(refusal).unwrap_or(Value::Null) }),
+        );
+        map.insert(
+            "note".to_owned(),
+            json!(format!("the picture for step {index} (`{id}`) was not made: {}", refusal.message)),
+        );
     }
 }
 
@@ -180,7 +175,10 @@ pub struct BridgeHost {
 /// Makes the two ends of the queue.
 pub fn channel(waker: Waker, sink: Option<Arc<dyn EventSink>>) -> (JobSender, BridgeHost) {
     let (tx, rx) = sync_channel(QUEUE);
-    (JobSender { tx, waker: waker.clone() }, BridgeHost { rx, parked: Vec::new(), waiting: Vec::new(), waker, sink, announced: (0, 0) })
+    (
+        JobSender { tx, waker: waker.clone() },
+        BridgeHost { rx, parked: Vec::new(), waiting: Vec::new(), waker, sink, announced: (0, 0) },
+    )
 }
 
 impl BridgeHost {

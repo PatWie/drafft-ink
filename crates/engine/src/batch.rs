@@ -621,7 +621,7 @@ impl Session {
                 note: Some("the batch could not be saved, so it was rolled back".to_owned()),
                 changed: false,
                 pending: Vec::new(),
-            pending_render: false,
+                pending_render: false,
             };
         }
         let writes = std::mem::take(&mut self.run.writes);

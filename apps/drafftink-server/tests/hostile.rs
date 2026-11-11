@@ -593,7 +593,14 @@ async fn an_operator_points_the_source_offer_at_their_own_copy() {
 
 #[tokio::test]
 async fn a_source_url_that_is_not_a_web_address_stops_the_server_from_starting() {
-    for bad in ["", "ftp://example.org/x", "https://", "https://example.org/a b", "https://example.org/\r\nX-Evil: 1", "javascript:alert(1)"] {
+    for bad in [
+        "",
+        "ftp://example.org/x",
+        "https://",
+        "https://example.org/a b",
+        "https://example.org/\r\nX-Evil: 1",
+        "javascript:alert(1)",
+    ] {
         let mut config = test_config();
         config.source_url = bad.to_owned();
         let err = start(config).await.err().unwrap_or_else(|| panic!("{bad:?} should be refused"));

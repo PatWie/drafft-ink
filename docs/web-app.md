@@ -210,9 +210,20 @@ target, because the repository has no wasm test runner).
 - **Clipboard read** for the equation editor needs the browser's permission and a user gesture.
 - **Screenshots** of the canvas by script (`drafftink.screenshot()`) are not offered: the shell exposes no read-back to the page.
 
+## Command schemas
+
+The module is built without the code that makes the JSON Schemas of the commands (`drafftink-engine` without its `schemas` feature; `apps/drafftink-web` and the crates it uses depend on the engine with `default-features = false`, and the desktop apps and the tests turn the feature on). `scripts/build-web.sh` writes what that code would have produced as `schemas/commands.<hash>.json` (`drafftink-cli schemas`), lists it in `window.__assets` as `commands.schema.json`, and preloads it. `drafftink_app::web::schemas_ready()` fetches it once (the entry point starts that first) and installs it in the engine (`drafftink_engine::schemas`). Who waits for it:
+
+- `window.drafftink.describe(id)` and `commands({include_schemas: true})` wait, and reject with the reason if the file could not be loaded; `commands()` without schemas does not wait.
+- The WebMCP tools are built after it (their descriptions spell out each command's arguments).
+- The arguments forms of the palette show nothing for a command until it is in (a few milliseconds after the first frame; the app is woken when it arrives).
+- A request that reaches the engine before it (the relay's `describe` in the first moments) is refused with `schemas_loading`, or `schemas_unavailable` when the load failed; both say what to do.
+
+The file is 33 KB with brotli, against 89 KB that the code cost in the module (`docs/performance.md` section 8.2).
+
 ## WebMCP (docs/agents.md, section 5.5)
 
 When the browser has WebMCP (`document.modelContext`, or the preview `navigator.modelContext`), the page registers the generated agent tools
-with it at start: `apps/drafftink-web/src/webmcp_page.rs` builds them once from the registry (`drafftink_bridge::tools`) and each tool's
+with it at start: `apps/drafftink-web/src/webmcp_page.rs` builds them once from the registry (`drafftink_bridge::tools`; it waits for the command schemas first, see "Command schemas" below; `webmcp.ready` resolves when it is done) and each tool's
 `execute` queues its bridge method on the same job queue as `window.drafftink.execute`. A browser without the API is not affected. The
 address `?webmcp=off` skips the registration. `webmcp.status()` says what the page found.

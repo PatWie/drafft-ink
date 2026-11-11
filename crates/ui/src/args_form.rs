@@ -224,7 +224,8 @@ pub fn requires_args(id: &str) -> bool {
                 .all()
                 .iter()
                 .filter(|spec| {
-                    serde_json::to_value(spec.args_schema()).is_ok_and(|schema| fields(&schema).iter().any(|f| f.required))
+                    serde_json::to_value(spec.args_schema())
+                        .is_ok_and(|schema| fields(&schema).iter().any(|f| f.required))
                 })
                 .map(|spec| spec.id)
                 .collect()
