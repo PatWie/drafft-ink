@@ -13,7 +13,7 @@
 //! Beyond the nine commands of the catalog this family has `arrow.swap_heads`, `arrow.move_segment`
 //! and `arrow.release_segment`, which expose `edit::linear::swap_heads` and the elbow pin functions.
 
-use drafftink_edit::arrow::{self as arrow_ops, ArrowError, BindRequest, SnapFlags};
+use drafftink_edit::arrow::{self as arrow_ops, ArrowError, BindRequest};
 use drafftink_edit::binding::{self, BindOpts, BindingError, EndChange};
 use drafftink_edit::elbow::{self, ElbowEditError, ElbowError, RouteOpts};
 use drafftink_edit::linear::{self, LinearError, world_points};
@@ -27,6 +27,7 @@ use serde::{Deserialize, Serialize};
 use crate::args;
 use crate::refusal::Refusal;
 use crate::session::{Ref, Session};
+use crate::snap::Snap;
 use crate::spec::{
     Batch, Binding, CommandSpec, Facts, Gate, Mutates, PortSet, Redraw, RingMode, Scope, Selection, TextGate, Typed,
     Undo,
@@ -103,44 +104,6 @@ pub enum BindChoice {
     Off,
     /// Bind inside the target under the pointer (Alt held).
     Inside,
-}
-
-/// The words `snap` accepts.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
-#[serde(rename_all = "snake_case")]
-pub enum SnapWord {
-    /// Follow the settings `snap.grid`, `snap.smart_guides` and `snap.angle`.
-    Auto,
-    /// No snapping.
-    None,
-}
-
-/// Snap switches; a missing key follows its setting.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize, JsonSchema)]
-#[serde(deny_unknown_fields, default)]
-pub struct SnapSwitches {
-    /// Snap to the grid.
-    pub grid: Option<bool>,
-    /// Snap to the edges and centres of other elements.
-    pub smart: Option<bool>,
-    /// Lock the direction to a multiple of the angle step (`snap.angle_step`, 15 degrees).
-    pub angle: Option<bool>,
-}
-
-/// `auto`, `none`, or switches.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
-#[serde(untagged)]
-pub enum Snap {
-    /// `"auto"` or `"none"`.
-    Word(SnapWord),
-    /// `{grid?, smart?, angle?}`.
-    Switches(SnapSwitches),
-}
-
-impl Default for Snap {
-    fn default() -> Self {
-        Snap::Word(SnapWord::Auto)
-    }
 }
 
 fn some_value<'de, D, T>(d: D) -> Result<Option<Option<T>>, D::Error>
@@ -776,23 +739,6 @@ fn unbind(s: &mut Session, a: UnbindArgs) -> Result<UnbindOut, Refusal> {
 // arrow.move_point
 // ---------------------------------------------------------------------------------------------
 
-fn snap_flags(s: &Session, snap: &Snap) -> SnapFlags {
-    let setting = SnapFlags {
-        grid: s.settings.bool_or("snap.grid", false),
-        smart: s.settings.bool_or("snap.smart_guides", false),
-        angle: s.settings.bool_or("snap.angle", false),
-    };
-    match snap {
-        Snap::Word(SnapWord::Auto) => setting,
-        Snap::Word(SnapWord::None) => SnapFlags::default(),
-        Snap::Switches(w) => SnapFlags {
-            grid: w.grid.unwrap_or(setting.grid),
-            smart: w.smart.unwrap_or(setting.smart),
-            angle: w.angle.unwrap_or(setting.angle),
-        },
-    }
-}
-
 fn guide_out(g: &drafftink_geom::guides::SmartGuide) -> GuideOut {
     GuideOut {
         kind: match g.kind {
@@ -852,7 +798,7 @@ fn move_point(s: &mut Session, a: MovePointArgs) -> Result<MovePointOut, Refusal
     let is_end = !a.insert && (index == 0 || index + 1 == n);
 
     // Snapping: guides and angle use the neighbouring point as the origin.
-    let flags = snap_flags(s, &a.snap);
+    let flags = a.snap.resolve(s);
     let step = {
         let v = s.settings.f64_or("snap.angle_step", 15.0);
         if v.is_finite() && v > 0.0 { v } else { 15.0 }

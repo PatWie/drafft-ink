@@ -9,7 +9,7 @@ use serde::{Deserialize, Serialize};
 
 use super::files;
 use crate::cmd::tab::normalize_name;
-use crate::ports::{FileRef, PortKind};
+use crate::ports::{FileRef, PortKind, PortWrite, SaveDone, SaveWrite};
 use crate::refusal::Refusal;
 use crate::session::Session;
 use crate::state::Observed;
@@ -65,8 +65,10 @@ fn no_save_target(id: &str) -> Refusal {
     )
 }
 
-/// Writes the active document and marks it saved. The write happens after the command succeeded.
-pub(super) fn save_active(s: &mut Session, id: &str, req: &SaveReq) -> Result<SaveOut, Refusal> {
+/// Serialises the active document for `req` and builds the write. Nothing is written yet, and nothing about
+/// the tab changes: the tab counts as saved, and `to` as its save target, only when the write succeeded
+/// (see `Session::flush_writes`).
+fn prepare(s: &mut Session, id: &str, req: &SaveReq) -> Result<(SaveWrite, SaveOut), Refusal> {
     let current = files::save_target(s);
     let target = match (&req.to, &current) {
         (Some(t), _) => t.clone(),
@@ -101,16 +103,27 @@ pub(super) fn save_active(s: &mut Session, id: &str, req: &SaveReq) -> Result<Sa
         }
     };
     let size = bytes.len();
-    files::queue_file(s, id, &target, bytes.into_bytes(), mime)?;
-    if req.remember {
-        files::remember(s, &target)?;
-        if !matches!(target, FileRef::Download { .. }) {
-            files::set_save_target(s, Some(target.clone()));
-        }
-    }
-    let t = s.tab_mut();
-    t.saved_revision = t.doc.revision();
-    Ok(SaveOut { changed: true, saved_to: target, format: req.format, bytes: size })
+    let t = s.tab();
+    let done = SaveDone { tab: t.id, revision: t.doc.revision(), target: target.clone(), remember: req.remember };
+    let out = SaveOut { changed: true, saved_to: target, format: req.format, bytes: size };
+    Ok((SaveWrite::new(done, bytes.into_bytes(), mime), out))
+}
+
+/// Queues the write of the active document. It runs after the command succeeded; the tab is marked saved
+/// when the port confirms, and a failed write refuses the command (`Session::flush_writes`).
+pub(super) fn save_active(s: &mut Session, id: &str, req: &SaveReq) -> Result<SaveOut, Refusal> {
+    let (write, out) = prepare(s, id, req)?;
+    s.queue_write(PortWrite::Save(write));
+    Ok(out)
+}
+
+/// Writes the active document now and returns only when the result is known: for the commands that replace
+/// the document next (`on_unsaved=save`). A failed write, or one that the port finishes later, is a refusal,
+/// so the document is never replaced before the file is safe.
+pub(super) fn save_active_now(s: &mut Session, id: &str, req: &SaveReq) -> Result<SaveOut, Refusal> {
+    let (write, out) = prepare(s, id, req)?;
+    s.save_now(id, write)?;
+    Ok(out)
 }
 
 // ---- doc.save ----

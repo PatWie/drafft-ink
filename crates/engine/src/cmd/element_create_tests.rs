@@ -1260,6 +1260,17 @@ fn relabel_creates_updates_and_removes_a_label() {
 }
 
 #[test]
+fn relabel_creates_the_label_with_the_text_defaults_of_the_tool() {
+    let mut s = testing::headless_session();
+    run(&mut s, "style.set", json!({"props": {"font_size": 36}, "scope": "defaults"}));
+    let (a, _b) = two_boxes(&mut s);
+    let out = run(&mut s, "element.relabel", json!({"id": a.as_str(), "text": "hello"}));
+    assert_eq!(out["action"], "created");
+    let label = el(&s, out["label"].as_str().unwrap());
+    assert_eq!(label.text_data().unwrap().font.size, 36.0);
+}
+
+#[test]
 fn relabel_on_a_text_element_replaces_its_content_and_re_measures() {
     let mut s = testing::headless_session();
     let t = new_id(&create(&mut s, json!({"kind": "text", "text": "hello", "at": [0, 0]})));

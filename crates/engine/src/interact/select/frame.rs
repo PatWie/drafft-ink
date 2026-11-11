@@ -6,9 +6,10 @@ use std::any::Any;
 use drafftink_canvas::Modifiers;
 use drafftink_geom::kurbo::Point;
 
-use crate::cmd::arrow::{BindChoice, MovePointArgs, PointIndex, SegmentArgs, Snap as ArrowSnap};
-use crate::cmd::element::{Handle, MoveArgs, ResizeArgs, RotateArgs, RotateModeArg, Snap, SnapWord};
+use crate::cmd::arrow::{BindChoice, MovePointArgs, PointIndex, SegmentArgs};
+use crate::cmd::element::{Handle, MoveArgs, ResizeArgs, RotateArgs, RotateModeArg};
 use crate::interact::events::Ev;
+use crate::snap::{Snap, SnapWord};
 
 /// The angle step of a rotation with Shift held (degrees).
 const ROTATE_STEP_DEGREES: f64 = 15.0;
@@ -137,7 +138,7 @@ impl Frame {
             to: [to.x, to.y],
             insert,
             bind: BindChoice::Auto,
-            snap: ArrowSnap::default(),
+            snap: Snap::default(),
         })
     }
 

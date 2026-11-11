@@ -190,6 +190,80 @@ fn io_failed_export(id: &str, what: &str, e: &dyn std::fmt::Display) -> Refusal 
     Refusal::io_failed(id, "write", what, &e.to_string())
 }
 
+/// How [`render_png`] draws.
+pub(crate) struct PngOpts {
+    /// Pixels per world unit.
+    pub scale: f64,
+    /// World units around the content.
+    pub padding: f64,
+    /// Paint the document background.
+    pub background: bool,
+    /// Draw with the dark palette.
+    pub dark: bool,
+    /// The region is the bounds of the frame in the document, not of everything in it.
+    pub clip_to_frame: bool,
+    /// Most pixels along one side. The area limit [`MAX_AREA_PX`] always applies.
+    pub max_side_px: f64,
+}
+
+/// A PNG made by the renderer port.
+pub(crate) struct RenderedPng {
+    /// The encoded picture.
+    pub bytes: Vec<u8>,
+    /// Width in pixels.
+    pub width: u32,
+    /// Height in pixels.
+    pub height: u32,
+}
+
+/// The one PNG implementation: the region of `doc` (its content plus padding), the size limits, the request
+/// to the `Renderer` port. `doc.export` and `clipboard.copy_as` both end here. The caller has checked that
+/// the port exists, and decides which elements are in `doc` and what happens to the bytes (scene embedding,
+/// file, clipboard).
+pub(crate) fn render_png(s: &Session, id: &str, doc: &Document, opts: &PngOpts) -> Result<RenderedPng, Refusal> {
+    let content: Rect =
+        library::bounds(doc).ok_or_else(|| Refusal::nothing_to_do(id, "export", "the chosen elements have no size"))?;
+    let region = if opts.clip_to_frame {
+        // Clipped to the frame: its own bounds, no padding of other content.
+        doc.elements
+            .iter()
+            .filter(|e| e.tag() == Kind::Frame)
+            .map(drafftink_edit::query::element_bounds)
+            .next()
+            .unwrap_or(content)
+    } else {
+        content
+    };
+    let pad = opts.padding;
+    let region = Rect::new(region.x0 - pad, region.y0 - pad, region.x1 + pad, region.y1 + pad);
+    let (w, h) = ((region.width() * opts.scale).round().max(1.0), (region.height() * opts.scale).round().max(1.0));
+    let side = opts.max_side_px;
+    if !(w.is_finite() && h.is_finite()) || w > side || h > side || w * h > MAX_AREA_PX {
+        return Err(Refusal::bad_arg(
+            id,
+            "scale",
+            format!(
+                "the picture would be {w} by {h} pixels, and the limit is {side} on a side and {MAX_AREA_PX} pixels in all. Lower `scale` or use fewer elements"
+            ),
+        ));
+    }
+    let (wp, hp) = (w as u32, h as u32);
+    let req = RenderRequest {
+        region: (region.x0, region.y0, region.width(), region.height()),
+        size_px: (wp, hp),
+        background: opts.background,
+        overlay: false,
+        selection: Vec::new(),
+        background_color: doc.background,
+        dark: opts.dark,
+    };
+    let bytes = match s.ports.renderer.as_ref() {
+        Some(r) => r.render_png(doc, &req).map_err(|e| Refusal::io_failed(id, "render", "the picture", &e.to_string()))?,
+        None => return Err(Refusal::internal(id, "the renderer disappeared")),
+    };
+    Ok(RenderedPng { bytes, width: wp, height: hp })
+}
+
 pub(super) fn export(s: &mut Session, a: ExportArgs) -> Result<ExportOut, Refusal> {
     let id = s.cmd();
     let scale = args::in_range(id, "scale", a.scale.unwrap_or_else(|| s.settings.f64_or("export.scale", 2.0)), 0.25, 4.0)?;
@@ -248,41 +322,18 @@ pub(super) fn export(s: &mut Session, a: ExportArgs) -> Result<ExportOut, Refusa
                 .into_bytes()
         }
         ExportFormat::Png => {
-            let content: Rect = library::bounds(&sub)
-                .ok_or_else(|| Refusal::nothing_to_do(id, "export", "the chosen elements have no size"))?;
-            let region = if a.scope == ExportScope::Frame {
-                // Clipped to the frame: its own bounds, no padding of other content.
-                sub.elements.iter().filter(|e| e.tag() == Kind::Frame).map(drafftink_edit::query::element_bounds).next().unwrap_or(content)
-            } else {
-                content
-            };
-            let region = Rect::new(region.x0 - padding, region.y0 - padding, region.x1 + padding, region.y1 + padding);
-            let (w, h) = ((region.width() * scale).round().max(1.0), (region.height() * scale).round().max(1.0));
-            if !(w.is_finite() && h.is_finite()) || w > MAX_SIDE_PX || h > MAX_SIDE_PX || w * h > MAX_AREA_PX {
-                return Err(Refusal::bad_arg(
-                    id,
-                    "scale",
-                    format!(
-                        "the picture would be {w} by {h} pixels, and the limit is {MAX_SIDE_PX} on a side and {MAX_AREA_PX} pixels in all. Lower `scale` or export fewer elements"
-                    ),
-                ));
-            }
-            let (wp, hp) = (w as u32, h as u32);
-            let req = RenderRequest {
-                region: (region.x0, region.y0, region.width(), region.height()),
-                size_px: (wp, hp),
+            let opts = PngOpts {
+                scale,
+                padding,
                 background,
-                overlay: false,
-                selection: Vec::new(),
-                background_color: sub.background,
                 dark,
+                clip_to_frame: a.scope == ExportScope::Frame,
+                max_side_px: MAX_SIDE_PX,
             };
-            let png = match s.ports.renderer.as_ref() {
-                Some(r) => r.render_png(&sub, &req).map_err(|e| Refusal::io_failed(id, "render", "the picture", &e.to_string()))?,
-                None => return Err(no_renderer()),
-            };
-            width = Some(wp);
-            height = Some(hp);
+            let rendered = render_png(s, id, &sub, &opts)?;
+            width = Some(rendered.width);
+            height = Some(rendered.height);
+            let png = rendered.bytes;
             if embed {
                 let json = native::save(&sub).map_err(|e| io_failed_export(id, "the scene", &e))?;
                 match png_meta::embed_scene(&png, &json) {

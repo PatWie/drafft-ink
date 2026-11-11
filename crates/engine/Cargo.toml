@@ -28,6 +28,8 @@ base64.workspace = true
 [dev-dependencies]
 drafftink-scene = { path = "../scene", features = ["conformance"] }
 png.workspace = true
+# Builds an update from a newer app for the schema-block tests.
+loro.workspace = true
 
 [lints]
 workspace = true

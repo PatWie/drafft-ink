@@ -24,9 +24,9 @@
 use std::collections::BTreeSet;
 
 use drafftink_scene::{
-    BindMode, Brush, Element, ElementId, ElementKind, FrameData, FreehandData, Head, IdSource, IndexError, Kind,
-    LinearData, MathData, PathType, PressureMode, SceneRead, SceneTx, StoreError, Style, TextData, TextStyle,
-    Transform, ZIndex,
+    BindMode, Brush, Element, ElementError, ElementId, ElementKind, FrameData, FreehandData, Head, IdSource,
+    IndexError, Kind, LinearData, MathData, PathType, PressureMode, SceneRead, SceneTx, StoreError, Style, TextData,
+    TextStyle, Transform, ZIndex, limits, validate_element,
 };
 use kurbo::{Point, Size};
 
@@ -131,6 +131,25 @@ pub enum CreateError {
     /// A text element cannot be empty.
     #[error("a text element cannot be empty")]
     EmptyText,
+    /// The text is longer than a text element can be.
+    #[error("the text has {n} characters, and a text element holds at most {max}")]
+    TextTooLong {
+        /// Characters given.
+        n: usize,
+        /// The limit.
+        max: usize,
+    },
+    /// A position or size is not a usable number.
+    #[error("the position or size is not a finite number within the document limits")]
+    NotFinite,
+    /// The new element breaks a rule of the model.
+    #[error("the new element {id} is invalid: {error}")]
+    Invalid {
+        /// The element.
+        id: ElementId,
+        /// The broken rule.
+        error: ElementError,
+    },
     /// The element named as a frame is not a frame.
     #[error("{id} is a {kind}, not a frame")]
     NotAFrame {
@@ -496,19 +515,30 @@ pub fn freehand_element(
     Ok(e)
 }
 
+/// The point a free text is placed by.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum TextPlace {
+    /// The top-left corner of the box.
+    TopLeft(Point),
+    /// The middle of the box (a pasted text).
+    Center(Point),
+}
+
 /// Where and how a free text sits.
 #[derive(Debug, Clone, PartialEq)]
 pub struct TextSpec {
     /// Font settings.
     pub font: TextStyle,
-    /// Top-left corner of the box.
-    pub at: Point,
+    /// Where the box is.
+    pub place: TextPlace,
     /// With a width the box has that width and the text wraps (auto-resize off); without, the box follows the
     /// content.
     pub width: Option<f64>,
 }
 
-/// A free text. Blank content is refused.
+/// A free text: the one builder for typed, created and pasted text. Blank text, text over the length limit,
+/// a box that is not a finite number within the document limits, and a text that breaks a model rule are
+/// refused.
 pub fn text_element<M: TextMeasure + ?Sized>(
     m: &M,
     id: ElementId,
@@ -520,34 +550,15 @@ pub fn text_element<M: TextMeasure + ?Sized>(
     if content.trim().is_empty() {
         return Err(CreateError::EmptyText);
     }
-    Ok(free_text(m, id, index, content, spec, TextAnchor::TopLeft, style))
-}
-
-/// Which point of a free text's box [`TextSpec::at`] names.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum TextAnchor {
-    /// The top-left corner.
-    TopLeft,
-    /// The middle of the box.
-    Center,
-}
-
-/// The one place a free text element is assembled: measured content, auto-resize unless a wrap width is given.
-/// Does not validate; the callers do.
-pub(crate) fn free_text<M: TextMeasure + ?Sized>(
-    m: &M,
-    id: ElementId,
-    index: ZIndex,
-    content: &str,
-    spec: TextSpec,
-    anchor: TextAnchor,
-    style: Style,
-) -> Element {
+    let n = content.chars().count();
+    if n > limits::MAX_TEXT_CHARS {
+        return Err(CreateError::TextTooLong { n, max: limits::MAX_TEXT_CHARS });
+    }
     let size = text_bind::measure_text(m, content, &spec.font, spec.width);
     let (w, h) = (spec.width.unwrap_or(size.width), size.height);
-    let (x, y) = match anchor {
-        TextAnchor::TopLeft => (spec.at.x, spec.at.y),
-        TextAnchor::Center => (spec.at.x - w / 2.0, spec.at.y - h / 2.0),
+    let (x, y) = match spec.place {
+        TextPlace::TopLeft(p) => (p.x, p.y),
+        TextPlace::Center(p) => (p.x - w / 2.0, p.y - h / 2.0),
     };
     let mut data = TextData::new(content);
     data.font = spec.font;
@@ -555,7 +566,11 @@ pub(crate) fn free_text<M: TextMeasure + ?Sized>(
     let mut e = Element::new(id, ElementKind::Text(data), index);
     e.transform = Transform::new(x, y, w, h);
     e.style = style;
-    e
+    if ![x, y, w, h].iter().all(|v| v.is_finite() && v.abs() <= limits::MAX_COORD) {
+        return Err(CreateError::NotFinite);
+    }
+    validate_element(&e).map_err(|error| CreateError::Invalid { id: e.id.clone(), error })?;
+    Ok(e)
 }
 
 /// A formula whose box (top-left `at`) has the measured `size`.

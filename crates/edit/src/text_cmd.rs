@@ -12,6 +12,7 @@ use drafftink_scene::{
     StoreError, Style, TextAlign, TextData, TextRun, TextStyle, Transform, VerticalAlign, ZIndex,
 };
 
+use crate::style::{Prop, StyleProps};
 use crate::text_bind::{
     BOUND_TEXT_PADDING, GrowAnchor, TextBindError, TextMeasure, bind_text, container_dim_for_text, fresh_element_id,
     measure_text, relayout_label,
@@ -460,6 +461,29 @@ pub struct TextProps {
 }
 
 impl TextProps {
+    /// The text properties of a style change (`text.edit_end` `style`): colour, opacity and the font
+    /// properties. Any other property is an error that lists them, because text cannot take it.
+    pub fn from_style(props: &StyleProps) -> Result<Self, Vec<Prop>> {
+        let unsupported: Vec<Prop> = props
+            .set_props()
+            .into_iter()
+            .filter(|p| !(p.is_text() || matches!(p, Prop::StrokeColor | Prop::Opacity)))
+            .collect();
+        if !unsupported.is_empty() {
+            return Err(unsupported);
+        }
+        Ok(Self {
+            stroke_color: props.stroke_color.map(|c| c.0),
+            opacity: props.opacity,
+            font_family: props.font_family,
+            font_weight: props.font_weight,
+            font_size: props.font_size,
+            text_align: props.text_align,
+            vertical_align: props.vertical_align,
+            line_height: props.line_height,
+        })
+    }
+
     /// True when nothing is set.
     pub fn is_empty(&self) -> bool {
         *self == TextProps::default()

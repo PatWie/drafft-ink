@@ -551,11 +551,16 @@ impl Session {
             };
         }
         let writes = std::mem::take(&mut self.run.writes);
-        let flush_warnings = self.ports.flush(writes);
+        let flushed = self.flush_writes(writes);
         self.run.warnings.clear();
+        let mut flush_notes = flushed.warnings;
+        if let Some(r) = flushed.failed_save {
+            // The steps ran and stay; only the file was not written.
+            flush_notes.push(r.message);
+        }
         let mut note = None;
-        if !flush_warnings.is_empty() {
-            note = Some(flush_warnings.join("; "));
+        if !flush_notes.is_empty() {
+            note = Some(flush_notes.join("; "));
         }
         if let Some(f) = &failed {
             note = Some(format!(

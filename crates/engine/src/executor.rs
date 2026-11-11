@@ -13,7 +13,7 @@ use serde_json::{Map, Value, json};
 use crate::refusal::Refusal;
 use crate::ring::{Origin, Outcome, Record};
 use crate::session::{Session, SoftState};
-use crate::spec::{CommandSpec, Gate, RingMode, Selection, Status, TextGate, Txn, Undo};
+use crate::spec::{CommandSpec, Gate, Mutates, RingMode, Selection, Status, TextGate, Txn, Undo};
 use crate::state::TabId;
 use crate::store::{CoalesceReq, DocMark, StepMeta, Summary};
 use drafftink_profile::{Counter, inc, now_ns, span};
@@ -200,6 +200,7 @@ impl Session {
         if self.view_only && spec.view_only == Gate::Refused {
             return Err(Refusal::view_only(spec.id));
         }
+        self.schema_gate(spec)?;
         if !ignore_gesture && self.gesture.is_some() && spec.while_gesture == Gate::Refused {
             return Err(Refusal::gesture_active(spec.id));
         }
@@ -211,6 +212,18 @@ impl Session {
                 TextGate::Commit => {}
                 TextGate::Allowed => {}
             }
+        }
+        Ok(())
+    }
+
+    /// A document that a newer version of the app changed is read-only here: a command that mutates the
+    /// document refuses, unless it replaces the document or ends an edit (`CommandSpec::allowed_when_blocked`).
+    fn schema_gate(&self, spec: &'static CommandSpec) -> Result<(), Refusal> {
+        if spec.mutates.contains(Mutates::DOC)
+            && !spec.works_when_blocked
+            && self.tab().doc.blocked_by_schema().is_some()
+        {
+            return Err(Refusal::newer_schema(spec.id));
         }
         Ok(())
     }
@@ -264,6 +277,12 @@ impl Session {
         }
         if self.view_only && spec.view_only == Gate::Refused {
             return Err(Refusal::view_only(spec.id));
+        }
+        if spec.mutates.contains(Mutates::DOC)
+            && !spec.works_when_blocked
+            && self.tab().doc.blocked_by_schema().is_some()
+        {
+            return Err(Refusal::newer_schema(spec.id));
         }
         if self.gesture.is_some() && spec.while_gesture == Gate::Refused {
             return Err(Refusal::gesture_active(spec.id));
@@ -375,6 +394,7 @@ impl Session {
     ) -> Result<StepDone, Refusal> {
         let mut undo_label = None;
         let summary: Summary;
+        let mut pending = crate::saves::Flushed::default();
         if mode == Mode::Top {
             let depth = self.settings.history_depth();
             let reset = self.run.history_reset;
@@ -418,8 +438,14 @@ impl Session {
                 None => summary = Summary::default(),
             }
             let writes = std::mem::take(&mut self.run.writes);
-            let flush_warnings = self.ports.flush(writes);
-            self.run.warnings.extend(flush_warnings);
+            let flushed = self.flush_writes(writes);
+            if let Some(r) = flushed.failed_save {
+                // Only `doc.save` queues a document write, and it changes nothing else: refuse.
+                self.run.warnings.clear();
+                return Err(r);
+            }
+            self.run.warnings.extend(flushed.warnings.iter().cloned());
+            pending = flushed;
         } else {
             summary = self.tab_by_id(tab_id).map(|t| t.doc.summary_since(mark)).unwrap_or_default();
         }
@@ -428,6 +454,7 @@ impl Session {
         } else {
             self.run.warnings.split_off(warn_len.min(self.run.warnings.len()))
         };
+        let out = pending.annotate(out);
         let (out, changed) = merge_common(out, summary.changed, undo_label.as_deref(), &summary, warnings);
         if changed {
             self.mark_dirty(spec.redraw);
@@ -443,8 +470,13 @@ impl Session {
         match self.invoke(spec, parsed.any()) {
             Ok(out) => {
                 let writes = std::mem::take(&mut self.run.writes);
-                let flush_warnings = self.ports.flush(writes);
-                self.run.warnings.extend(flush_warnings);
+                let flushed = self.flush_writes(writes);
+                if let Some(r) = flushed.failed_save {
+                    self.run.warnings.clear();
+                    return Err(r);
+                }
+                self.run.warnings.extend(flushed.warnings.iter().cloned());
+                let out = flushed.annotate(out);
                 let warnings = std::mem::take(&mut self.run.warnings);
                 let (out, changed) = merge_common(out, false, None, &Summary::default(), warnings);
                 if changed {

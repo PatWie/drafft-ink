@@ -264,7 +264,7 @@ fn a_family_can_write_a_read_only_key_with_the_same_checks() {
     assert_eq!(value(&s, "doc.recent"), recent);
     // Outside a command nobody flushes the queued write; a command's executor does it.
     let writes = std::mem::take(&mut s.run.writes);
-    assert!(s.ports.flush(writes).is_empty());
+    assert!(s.flush_writes(writes).warnings.is_empty());
     assert_eq!(stored(&f).unwrap()["values"]["doc.recent"], recent);
     assert!(!super::set_internal(&mut s, "doc.recent", &recent).unwrap(), "same value: unchanged");
     let too_many: Vec<Value> = (0..11).map(|i| json!({"stored": format!("d{i}")})).collect();

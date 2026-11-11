@@ -855,7 +855,8 @@ pub enum Relabeled {
 }
 
 /// `element.relabel`: sets the text of `id`. On a text element it replaces the content. On a shape or an arrow it
-/// replaces the label, creates one when `create` is set, and removes it when `content` is empty.
+/// replaces the label, creates one when `create` is set, and removes it when `content` is empty. A new label
+/// gets `font` (the tool's text defaults), or the scene default when it is `None`.
 pub fn relabel<T: SceneTx, M: TextMeasure + ?Sized>(
     tx: &mut T,
     m: &M,
@@ -863,6 +864,7 @@ pub fn relabel<T: SceneTx, M: TextMeasure + ?Sized>(
     id: &ElementId,
     content: &str,
     create: bool,
+    font: Option<&TextStyle>,
 ) -> Result<Relabeled, TextBindError> {
     let e = live(tx, id)?;
     if e.locked {
@@ -885,7 +887,7 @@ pub fn relabel<T: SceneTx, M: TextMeasure + ?Sized>(
                     o.map(Relabeled::Updated).ok_or(TextBindError::EmptyText)
                 }
                 (None, true) => Ok(Relabeled::Nothing),
-                (None, false) if create => create_label(tx, m, ids, id, content, None).map(Relabeled::Created),
+                (None, false) if create => create_label(tx, m, ids, id, content, font).map(Relabeled::Created),
                 (None, false) => Ok(Relabeled::Nothing),
             }
         }
@@ -1222,13 +1224,13 @@ mod tests {
         let c = shape(&mut s, "c", ElementKind::Rectangle, 0.0, 0.0, 80.0, 40.0);
         let mut ids = SeqIds::new();
         let mut tx = s.begin();
-        assert_eq!(relabel(&mut tx, &m(), &mut ids, &c, "x", false).unwrap(), Relabeled::Nothing);
-        let created = relabel(&mut tx, &m(), &mut ids, &c, "x", true).unwrap();
+        assert_eq!(relabel(&mut tx, &m(), &mut ids, &c, "x", false, None).unwrap(), Relabeled::Nothing);
+        let created = relabel(&mut tx, &m(), &mut ids, &c, "x", true, None).unwrap();
         let Relabeled::Created(o) = created else { panic!("{created:?}") };
-        let upd = relabel(&mut tx, &m(), &mut ids, &c, "y", true).unwrap();
+        let upd = relabel(&mut tx, &m(), &mut ids, &c, "y", true, None).unwrap();
         assert!(matches!(upd, Relabeled::Updated(_)));
         assert_eq!(tx.get(&o.label).unwrap().text_data().unwrap().content, "y");
-        let rem = relabel(&mut tx, &m(), &mut ids, &c, "", true).unwrap();
+        let rem = relabel(&mut tx, &m(), &mut ids, &c, "", true, None).unwrap();
         assert_eq!(rem, Relabeled::Removed(o.label.clone()));
         assert_eq!(label_of(&tx, &c), None);
         tx.commit().unwrap();

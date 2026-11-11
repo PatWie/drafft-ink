@@ -11,7 +11,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
 use crate::gesture::GestureState;
-use crate::ports::{PortKind, PortWrite, Ports};
+use crate::ports::{PortKind, PortWrite, Ports, SaveDone, WriteToken};
 use crate::refusal::Refusal;
 use crate::registry::Registry;
 use crate::ring::{Origin, Ring};
@@ -95,6 +95,8 @@ pub struct Session {
     pub(crate) run: RunState,
     pub(crate) dirty: Dirty,
     pub(crate) perf_mark: Option<PerfStats>,
+    /// Document writes that the files port will finish later, with what to do when each is confirmed.
+    pub(crate) saves: Vec<(WriteToken, SaveDone)>,
 }
 
 impl Session {
@@ -124,6 +126,7 @@ impl Session {
             run: RunState::default(),
             dirty: Dirty::default(),
             perf_mark: None,
+            saves: Vec::new(),
         }
     }
 
@@ -435,6 +438,7 @@ impl Session {
                 "name": t.doc.store().meta().name,
                 "active": i == self.active_index(),
                 "dirty": t.dirty(),
+                "blocked_by_schema": t.doc.blocked_by_schema(),
             })).collect::<Vec<_>>(),
             "tool": self.tool.effective().name(),
             "tool_lock": self.tool.lock,
@@ -451,6 +455,7 @@ impl Session {
             })),
             "revision": t.doc.revision(),
             "dirty": t.dirty(),
+            "blocked_by_schema": t.doc.blocked_by_schema(),
             "collab": { "state": collab.state, "room": collab.room },
             "settings_revision": self.settings.revision,
         })

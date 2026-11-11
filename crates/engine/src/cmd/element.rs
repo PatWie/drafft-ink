@@ -13,6 +13,7 @@
 use std::collections::BTreeSet;
 
 use drafftink_edit::arrange::{self, FlipAxis};
+use drafftink_edit::arrow::SnapFlags;
 use drafftink_edit::element_cmd::{self, CommonBounds};
 use drafftink_edit::frame::{self, FrameError};
 use drafftink_edit::group::units::{Relations, primaries, with_companions};
@@ -31,6 +32,7 @@ use super::view::RectArg;
 use crate::args;
 use crate::refusal::Refusal;
 use crate::session::{Ref, Session};
+use crate::snap::Snap;
 use crate::spec::{Batch, Binding, CommandSpec, Facts, Gate, Mutates, PortSet, Redraw, RingMode, Scope, Selection, TextGate, Typed, Undo};
 
 // ---- shared pieces -------------------------------------------------------------------------------------------
@@ -67,66 +69,6 @@ impl IdSource for Ids<'_> {
     }
     fn seed(&mut self) -> u32 {
         self.0.seed()
-    }
-}
-
-/// How snapping is chosen (docs/commands.md `Snap`). `"auto"` follows the settings `snap.grid`,
-/// `snap.smart_guides` and `snap.angle`; `"none"` turns everything off; an object sets each kind.
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, JsonSchema)]
-#[serde(untagged)]
-pub enum Snap {
-    /// `"auto"` or `"none"`.
-    Word(SnapWord),
-    /// Each kind on or off; an absent kind follows its setting.
-    Flags(SnapFlags),
-}
-
-/// The words `Snap` accepts.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
-#[serde(rename_all = "snake_case")]
-pub enum SnapWord {
-    /// Follow the settings.
-    Auto,
-    /// No snapping at all.
-    None,
-}
-
-/// Per-kind snapping.
-#[derive(Debug, Clone, Copy, PartialEq, Default, Serialize, Deserialize, JsonSchema)]
-#[serde(deny_unknown_fields)]
-pub struct SnapFlags {
-    /// Snap to the 20 unit grid.
-    pub grid: Option<bool>,
-    /// Smart guides: alignment and equal spacing.
-    pub smart: Option<bool>,
-    /// Angle snapping (used by commands that have an angle).
-    pub angle: Option<bool>,
-}
-
-impl Default for Snap {
-    fn default() -> Self {
-        Snap::Word(SnapWord::Auto)
-    }
-}
-
-/// The snapping that applies after the settings are read.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) struct SnapOn {
-    pub grid: bool,
-    pub smart: bool,
-}
-
-impl Snap {
-    pub(crate) fn resolve(self, s: &Session) -> SnapOn {
-        let setting = |k: &str| s.settings.bool_or(k, false);
-        match self {
-            Snap::Word(SnapWord::Auto) => SnapOn { grid: setting("snap.grid"), smart: setting("snap.smart_guides") },
-            Snap::Word(SnapWord::None) => SnapOn { grid: false, smart: false },
-            Snap::Flags(f) => SnapOn {
-                grid: f.grid.unwrap_or_else(|| setting("snap.grid")),
-                smart: f.smart.unwrap_or_else(|| setting("snap.smart_guides")),
-            },
-        }
     }
 }
 
@@ -403,7 +345,7 @@ const SNAP_MOVE_THRESHOLD: f64 = 2.0;
 
 /// Adjusts `(dx, dy)` by smart guides and then by the grid. The reference is the common bounds of what moves,
 /// so the result does not depend on any iteration order (the old code used `HashMap::values().next()`).
-fn snap_move(s: &Session, moved: &[ElementId], dx: f64, dy: f64, on: SnapOn) -> (f64, f64, Vec<SmartGuide>) {
+fn snap_move(s: &Session, moved: &[ElementId], dx: f64, dy: f64, on: SnapFlags) -> (f64, f64, Vec<SmartGuide>) {
     let mut guides = Vec::new();
     if (!on.grid && !on.smart) || dx.hypot(dy) <= SNAP_MOVE_THRESHOLD {
         return (dx, dy, guides);
@@ -655,7 +597,7 @@ pub struct ResizeOut {
 
 /// Adjusts the displacement of a handle so that the dragged edges land on guides or the grid. Only for boxes
 /// without rotation: a rotated box has no axis-aligned edge to snap.
-fn snap_resize(s: &Session, ids: &[ElementId], a: &ResizeArgs, on: SnapOn) -> (f64, f64, Vec<SmartGuide>) {
+fn snap_resize(s: &Session, ids: &[ElementId], a: &ResizeArgs, on: SnapFlags) -> (f64, f64, Vec<SmartGuide>) {
     let none = (a.dx, a.dy, Vec::new());
     if !on.grid && !on.smart {
         return none;

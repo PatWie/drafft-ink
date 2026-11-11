@@ -174,3 +174,31 @@ fn text_is_measured_centred_and_limited() {
         Err(PasteError::TextTooLong { .. })
     ));
 }
+
+#[test]
+fn pasted_and_created_free_text_are_built_by_one_function() {
+    use drafftink_edit::create::{CreateError, TextPlace, TextSpec, text_element};
+    let m = MonospaceMeasure::default();
+    let font = TextStyle::default();
+    let mut store = MemoryStore::new();
+    let mut tx = store.begin();
+    let pasted =
+        insert_text(&mut tx, &m, &mut SeqIds::new(), "abcd", font.clone(), Style::default(), Point::new(50.0, 30.0))
+            .unwrap();
+    let pasted = tx.get(&pasted).unwrap().clone();
+    // The same text, built by the creation code with the same centre, is the same element.
+    let spec = TextSpec { font: font.clone(), place: TextPlace::Center(Point::new(50.0, 30.0)), width: None };
+    let mut created =
+        text_element(&m, pasted.id.clone(), pasted.index.clone(), "abcd", spec, pasted.style.clone()).unwrap();
+    created.version = pasted.version;
+    assert_eq!(created, pasted);
+    // The rules of the single builder apply to creation as well.
+    let long = "x".repeat(1_000_001);
+    let at = TextPlace::TopLeft(Point::ORIGIN);
+    let spec = || TextSpec { font: font.clone(), place: at, width: None };
+    let make =
+        |content: &str, spec| text_element(&m, id("t1"), ZIndex::parse("a0").unwrap(), content, spec, Style::default());
+    assert!(matches!(make(&long, spec()), Err(CreateError::TextTooLong { .. })));
+    let far = TextSpec { font: font.clone(), place: TextPlace::TopLeft(Point::new(f64::NAN, 0.0)), width: None };
+    assert!(matches!(make("abcd", far), Err(CreateError::NotFinite)));
+}
