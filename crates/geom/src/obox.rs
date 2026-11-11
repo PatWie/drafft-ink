@@ -11,12 +11,16 @@ use crate::aabb;
 /// A rotated rectangle. `angle` is in radians, clockwise on screen, about `center`.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct OrientedBox {
+    /// Centre of the box in world space.
     pub center: Point,
+    /// Unrotated width and height.
     pub size: Size,
+    /// Radians, clockwise on screen, about `center`.
     pub angle: f64,
 }
 
 impl OrientedBox {
+    /// A box from its centre, size and angle.
     pub fn new(center: Point, size: Size, angle: f64) -> Self {
         Self { center, size, angle }
     }

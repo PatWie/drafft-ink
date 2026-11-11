@@ -91,25 +91,32 @@ macro_rules! framed_outline {
 /// gap" outline: an arrow end bound in orbit mode sits on the rectangle offset by the gap.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct RectShape {
+    /// The oriented box the shape is inscribed in.
     pub frame: OrientedBox,
+    /// Corner radius; clamped to half the shorter side.
     pub corner_radius: f64,
+    /// Distance the outline is pushed outward (0 for the shape itself).
     pub offset: f64,
 }
 
 impl RectShape {
+    /// A sharp-cornered rectangle filling `frame`.
     pub fn new(frame: OrientedBox) -> Self {
         Self { frame, corner_radius: 0.0, offset: 0.0 }
     }
 
+    /// An unrotated rectangle covering `r`.
     pub fn from_rect(r: Rect) -> Self {
         Self::new(OrientedBox::from_rect(r))
     }
 
+    /// The same rectangle with rounded corners.
     pub fn with_corner_radius(mut self, r: f64) -> Self {
         self.corner_radius = r;
         self
     }
 
+    /// The same rectangle with its outline pushed outward by `d`.
     pub fn with_offset(mut self, d: f64) -> Self {
         self.offset = d;
         self
@@ -129,21 +136,27 @@ framed_outline!(RectShape, |s| s.convex());
 /// A diamond (rhombus) whose vertices are the midpoints of the sides of its box.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct DiamondShape {
+    /// The oriented box the diamond is inscribed in.
     pub frame: OrientedBox,
+    /// Corner radius of the vertices.
     pub corner_radius: f64,
+    /// Distance the outline is pushed outward (0 for the shape itself).
     pub offset: f64,
 }
 
 impl DiamondShape {
+    /// A sharp-cornered diamond inscribed in `frame`.
     pub fn new(frame: OrientedBox) -> Self {
         Self { frame, corner_radius: 0.0, offset: 0.0 }
     }
 
+    /// The same diamond with rounded vertices.
     pub fn with_corner_radius(mut self, r: f64) -> Self {
         self.corner_radius = r;
         self
     }
 
+    /// The same diamond with its outline pushed outward by `d`.
     pub fn with_offset(mut self, d: f64) -> Self {
         self.offset = d;
         self
@@ -168,15 +181,19 @@ framed_outline!(DiamondShape, |s| s.convex());
 /// An ellipse inscribed in its box. `offset` enlarges both semi-axes by that distance.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct EllipseShape {
+    /// The oriented box the ellipse is inscribed in.
     pub frame: OrientedBox,
+    /// Distance both semi-axes are enlarged by (0 for the shape itself).
     pub offset: f64,
 }
 
 impl EllipseShape {
+    /// An ellipse inscribed in `frame`.
     pub fn new(frame: OrientedBox) -> Self {
         Self { frame, offset: 0.0 }
     }
 
+    /// The same ellipse with both semi-axes enlarged by `d`.
     pub fn with_offset(mut self, d: f64) -> Self {
         self.offset = d;
         self
@@ -201,11 +218,14 @@ framed_outline!(EllipseShape, |s| s.local());
 /// A polyline, or a polygon when `closed`. A closed polyline needs three points to enclose area.
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct Polyline {
+    /// The vertices.
     pub points: Vec<Point>,
+    /// True for a polygon: the last point joins the first.
     pub closed: bool,
 }
 
 impl Polyline {
+    /// A polyline, or a polygon when `closed`.
     pub fn new(points: Vec<Point>, closed: bool) -> Self {
         Self { points, closed }
     }
@@ -216,6 +236,7 @@ impl Polyline {
         Self::new(local_points.iter().map(|p| a * *p).collect(), closed)
     }
 
+    /// The polyline with every point mapped through `a`.
     pub fn transformed(&self, a: Affine) -> Self {
         Self::new(self.points.iter().map(|p| a * *p).collect(), self.closed)
     }
@@ -364,14 +385,17 @@ impl Outline for Polyline {
 /// closed implicitly for the fill, as in SVG.
 #[derive(Debug, Clone, PartialEq)]
 pub struct PathShape {
+    /// The path, in world space.
     pub path: BezPath,
 }
 
 impl PathShape {
+    /// A shape over `path`.
     pub fn new(path: BezPath) -> Self {
         Self { path }
     }
 
+    /// The path mapped through `a`.
     pub fn transformed(&self, a: Affine) -> Self {
         Self::new(a * self.path.clone())
     }

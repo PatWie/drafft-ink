@@ -78,6 +78,7 @@ impl<Id> Default for SpatialIndex<Id> {
 }
 
 impl<Id: Clone + Eq + Hash> SpatialIndex<Id> {
+    /// An empty index.
     pub fn new() -> Self {
         Self::default()
     }
@@ -100,19 +101,23 @@ impl<Id: Clone + Eq + Hash> SpatialIndex<Id> {
         *self = Self::bulk_load(entries);
     }
 
+    /// Number of ids in the index.
     pub fn len(&self) -> usize {
         self.bounds.len()
     }
 
+    /// True when the index holds no id.
     pub fn is_empty(&self) -> bool {
         self.bounds.is_empty()
     }
 
+    /// Remove every entry.
     pub fn clear(&mut self) {
         self.tree = RTree::new();
         self.bounds.clear();
     }
 
+    /// True when `id` is in the index.
     pub fn contains(&self, id: &Id) -> bool {
         self.bounds.contains_key(id)
     }

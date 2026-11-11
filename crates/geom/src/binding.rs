@@ -61,13 +61,18 @@ pub fn normalize_fixed_point(fp: Vec2) -> Vec2 {
 /// One of the four axis directions an elbow arrow can leave or enter a shape.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Heading {
+    /// Towards negative y (up on screen).
     Up,
+    /// Towards positive x.
     Right,
+    /// Towards positive y (down on screen).
     Down,
+    /// Towards negative x.
     Left,
 }
 
 impl Heading {
+    /// All four headings, clockwise from [`Heading::Up`].
     pub const ALL: [Heading; 4] = [Heading::Up, Heading::Right, Heading::Down, Heading::Left];
 
     /// The unit vector (y points down).
@@ -100,6 +105,7 @@ impl Heading {
         Heading::from_vector(p - origin)
     }
 
+    /// The opposite heading.
     pub fn flip(self) -> Heading {
         match self {
             Heading::Up => Heading::Down,
@@ -109,10 +115,12 @@ impl Heading {
         }
     }
 
+    /// True for [`Heading::Left`] and [`Heading::Right`].
     pub fn is_horizontal(self) -> bool {
         matches!(self, Heading::Left | Heading::Right)
     }
 
+    /// True for [`Heading::Up`] and [`Heading::Down`].
     pub fn is_vertical(self) -> bool {
         !self.is_horizontal()
     }
@@ -137,30 +145,38 @@ pub fn grow_rect(r: Rect, offsets: [f64; 4]) -> Rect {
 /// Which outline a bind target has.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum BindKind {
+    /// A rectangle, possibly with rounded corners.
     Rect,
+    /// An ellipse inscribed in the box.
     Ellipse,
+    /// A diamond whose vertices are the midpoints of the box sides.
     Diamond,
 }
 
 /// A shape an arrow can bind to.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct BindTarget {
+    /// Which outline the target has.
     pub kind: BindKind,
+    /// The oriented box of the target.
     pub frame: OrientedBox,
     /// Corner radius of a rectangle or diamond. Ignored for an ellipse.
     pub corner_radius: f64,
 }
 
 impl BindTarget {
+    /// A target of `kind` in `frame` with sharp corners.
     pub fn new(kind: BindKind, frame: OrientedBox) -> Self {
         Self { kind, frame, corner_radius: 0.0 }
     }
 
+    /// The same target with the given corner radius.
     pub fn with_corner_radius(mut self, r: f64) -> Self {
         self.corner_radius = r;
         self
     }
 
+    /// True when the frame and the corner radius are usable numbers.
     pub fn is_valid(&self) -> bool {
         self.frame.is_valid() && crate::num_is_sane(self.corner_radius)
     }
@@ -178,6 +194,7 @@ impl BindTarget {
         }
     }
 
+    /// The centre of the target.
     pub fn center(&self) -> Point {
         self.frame.center
     }

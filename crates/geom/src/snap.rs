@@ -41,8 +41,11 @@ pub const MAX_SNAP_CANDIDATES: usize = 200;
 /// Result of a point snap.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct SnapResult {
+    /// The point after snapping.
     pub point: Point,
+    /// True when the x coordinate moved to a snap position.
     pub snapped_x: bool,
+    /// True when the y coordinate moved to a snap position.
     pub snapped_y: bool,
 }
 

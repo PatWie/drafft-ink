@@ -32,7 +32,9 @@ pub enum AlignMode {
 /// The axis along which boxes are distributed.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Axis {
+    /// The horizontal axis: boxes are spread left to right.
     X,
+    /// The vertical axis: boxes are spread top to bottom.
     Y,
 }
 

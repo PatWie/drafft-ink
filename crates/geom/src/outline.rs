@@ -16,9 +16,13 @@ use crate::shapes::{DiamondShape, EllipseShape, PathShape, Polyline, RectShape};
 /// `dir` need not be a unit vector; the returned `t` is in units of `dir`.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Probe {
+    /// Start point.
     pub origin: Point,
+    /// Direction; not necessarily a unit vector.
     pub dir: Vec2,
+    /// Smallest parameter of the probe.
     pub t_min: f64,
+    /// Largest parameter of the probe.
     pub t_max: f64,
 }
 
@@ -88,6 +92,7 @@ impl Probe {
 /// An intersection of a [`Probe`] with an outline.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Hit {
+    /// Where the probe crosses the outline.
     pub point: Point,
     /// Parameter along the probe.
     pub t: f64,
@@ -99,6 +104,7 @@ pub struct Hit {
 /// The closest point of an outline to a query point.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Nearest {
+    /// The closest outline point.
     pub point: Point,
     /// Unsigned distance from the query point to `point`.
     pub distance: f64,
@@ -118,10 +124,12 @@ pub struct HitOpts {
 }
 
 impl HitOpts {
+    /// Options for a stroke-only shape.
     pub const fn stroke(tolerance: f64, stroke_width: f64) -> Self {
         Self { filled: false, tolerance, stroke_width }
     }
 
+    /// Options for a shape with a fill.
     pub const fn filled(tolerance: f64, stroke_width: f64) -> Self {
         Self { filled: true, tolerance, stroke_width }
     }
@@ -215,10 +223,15 @@ pub trait Outline {
 /// Any primitive shape, for dispatch without generics.
 #[derive(Debug, Clone, PartialEq)]
 pub enum Primitive {
+    /// A rectangle.
     Rect(RectShape),
+    /// An ellipse.
     Ellipse(EllipseShape),
+    /// A diamond.
     Diamond(DiamondShape),
+    /// A polyline or polygon.
     Polyline(Polyline),
+    /// A bezier path.
     Path(PathShape),
 }
 

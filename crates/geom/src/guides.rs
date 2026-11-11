@@ -20,6 +20,7 @@ pub const MAX_SPACING_CANDIDATES: usize = 50;
 /// A guide line to draw.
 #[derive(Debug, Clone, PartialEq)]
 pub struct SmartGuide {
+    /// What the guide aligns.
     pub kind: SmartGuideKind,
     /// x for a vertical guide, y for a horizontal one; the cross coordinate for spacing guides.
     pub position: f64,
@@ -31,6 +32,7 @@ pub struct SmartGuide {
     pub snap_points: Vec<f64>,
 }
 
+/// The kind of a [`SmartGuide`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SmartGuideKind {
     /// Same x.
@@ -48,8 +50,11 @@ pub enum SmartGuideKind {
 pub struct SmartGuideResult {
     /// For a box: the snapped top-left corner. For a point: the snapped point.
     pub point: Point,
+    /// The guides to draw, in drawing order.
     pub guides: Vec<SmartGuide>,
+    /// True when the x coordinate moved to a guide.
     pub snapped_x: bool,
+    /// True when the y coordinate moved to a guide.
     pub snapped_y: bool,
 }
 
