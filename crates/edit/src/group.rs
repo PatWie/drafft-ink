@@ -228,11 +228,10 @@ pub fn ungroup<T: SceneTx>(
     members.sort();
     members.dedup();
     ensure_unlocked(&*tx, &members)?;
+    let keys: Vec<String> = targets.iter().map(name_key).collect();
     for id in &members {
-        let keys: Vec<String> = targets.iter().map(name_key).collect();
-        let t = targets.clone();
-        tx.update(id, move |e| {
-            e.group_ids.retain(|g| !t.contains(g));
+        tx.update(id, |e| {
+            e.group_ids.retain(|g| !targets.contains(g));
             remove_custom(e, &keys);
         })?;
     }
@@ -285,12 +284,11 @@ pub fn set_group_name<T: SceneTx>(
     ensure_unlocked(&*tx, &members)?;
     let key = name_key(group);
     for m in &members {
-        let key = key.clone();
         tx.update(m, |e| match name {
             Some(n) => {
-                e.custom.get_or_insert_with(Default::default).insert(key, n.into());
+                e.custom.get_or_insert_with(Default::default).insert(key.clone(), n.into());
             }
-            None => remove_custom(e, &[key]),
+            None => remove_custom(e, std::slice::from_ref(&key)),
         })?;
     }
     Ok(members)
