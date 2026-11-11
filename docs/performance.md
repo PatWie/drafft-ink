@@ -513,6 +513,52 @@ What the drivers showed, and what changed for each:
 
 Start-up. Native: the first frame is on screen 320 to 340 ms after the process started (`external.first_frame_ms`); 265 to 290 ms of it is the Vulkan instance, adapter and device (`startup_gpu_ms`), the session and the workspace restore are 6 ms (`startup_app_ms`, `startup_restore_ms`). The driver and the NVIDIA ICD dominate, so there is nothing to gain in our code. Web (headed Chromium on Xvfb, localhost, the precompressed `dist/` of `build-web.sh`; marks in ms since navigation, medians of 8 runs, range in brackets): the page script is loaded at 55 ms [37 to 183], the wasm is instantiated at 160 ms [134 to 289], `start()` is entered at 165 ms, the platform (IndexedDB opened and read) is ready 35 to 40 ms later, `App::new` (session, UI, workspace restore) takes 80 ms, `run()` returns at 305 ms, and the first frame is on screen at 590 ms [556 to 1241; the two slow runs were on a loaded machine]. The 285 ms from `run()` to the first frame are the WebGPU adapter and device, the pipelines and the first frame. Tried and dropped: asking for the adapter from the page script before the module loads (`navigator.gpu.requestAdapter()`), to wake the GPU process while the wasm downloads: no change (590 ms against 590 ms, 8 runs each). The page marks are `window.__marks` and `performance.mark` entries `drafftink:start`, `drafftink:platform`, `drafftink:app`; the driver copies them into the report as `external.startup_*_ms`. The old app's 507 ms to the first app frame and 1.0 s to the first visible one (§7.1) were measured with a cold profile and another harness, so the two are not a like-for-like comparison.
 
+### 7.9 Present mode, and hover on the web
+
+**Present mode.** `PresentSurface::configure` used to take the first mode the driver lists (`get_default_config`). That order is the
+driver's: Mesa lists `Immediate` or `Mailbox` before `Fifo` on some setups, which means tearing and frames as fast as they are asked for,
+or extra images and GPU work for frames nobody sees. The default is now `Fifo` on every platform (`choose_present_mode`, tested);
+`DRAFFTINK_PRESENT_MODE=fifo|mailbox|immediate|auto_vsync|auto_no_vsync` still overrides it for measurements when the surface supports
+the mode, and the chosen and the supported modes are logged at `info` (`drafftink_gpu::gpu`).
+
+Measured (NVIDIA L40S, Xvfb 1400x900, release build, `pan@10k`, 8 s, three alternating runs per mode, load average 20 to 35; CPU of
+the process in % of one core, median [range]):
+
+| Mode | CPU | Frames | `present` per frame | p50 frame |
+|---|---|---|---|---|
+| driver's first (it was `Fifo`) | 34.1 [32.2 to 40.9] | 521 to 529 | 4.8 to 5.8 ms | 7.2 to 8.7 ms |
+| `fifo` | 30.1 [24.9 to 36.9] | 521 to 527 | 3.7 to 5.3 ms | 5.0 to 7.1 ms |
+| `immediate` | 31.4 [30.9 to 35.7] | 521 to 529 | 4.6 to 5.8 ms | 5.0 to 8.2 ms |
+| `mailbox` | not offered: the NVIDIA driver lists only `[Fifo, Immediate]` on this display; the override falls back to `Fifo` | | | |
+
+The modes are equal within the spread of a loaded machine, so there is no number that favours `Immediate`, and the 70 to 85% of CPU in
+`present` (section 7.8) is the X11 copy, not the mode. `Mailbox` could not be measured here. Reasons for `Fifo`: every Vulkan, Metal and
+DX12 surface has it, it does not tear, the app already paces its own frames (`RepaintState::set_min_interval`), and a frame that is
+replaced before it is shown (`Mailbox`) costs a Vello run for nothing. **Web:** the browser's WebGPU canvas offers `Fifo` only (the
+console line says `present mode: Fifo (supported: [Fifo])`); nothing to choose. Re-measure `Mailbox` on a Mesa or Wayland machine before
+changing the default.
+
+**Hover on the web.** The backlog said that hovering over empty canvas costs about 9% CPU in Chromium with 0 frames drawn. Measured on the
+same machine (headed Chromium on Xvfb, `scripts/perf_scenarios.py` for the scene, 125 CDP mouse moves per second for 8 s, per-thread CPU
+from `/proc`, CDP `Performance.getMetrics`; load average 15 to 35, so absolute numbers are inflated and only the comparison holds):
+
+| Page | CPU, all Chromium processes | Page script per move |
+|---|---|---|
+| `about:blank` | 5.6 to 10 | 0 |
+| the app, pointer over empty canvas, 0 frames | 6.7 to 10 | 150 to 370 us (two `pointermove` listeners, ours and winit's, 35 to 60 us each in `performance.now()` timing) |
+| the app, pointer over shapes (hover changes, 16 to 36 frames in 8 s) | 12 to 22 | |
+
+The cost is the browser's: a blank page with the same input costs 5.6% to 10%, mostly the browser process and the renderer's compositor
+and input threads, plus Xvfb. What is ours is 1 to 3 points: the page script. One avoidable part was in our listener: it asked the browser for
+`getCoalescedEvents()` on every hover move (a JS call and an array of event objects), although only a move with contact uses those points
+(`PointerPhase::reads_coalesced`). It is skipped now. The effect is below the noise of a loaded machine (script per move 150 to 250 us with
+the call stubbed out against 150 to 370 us), so nothing is claimed beyond "one JS call and one allocation fewer per hover move". Not
+changed: the second listener (winit's) and `getBoundingClientRect` (stubbing it to a cached value changed nothing measurable).
+
+The guard is `scripts/web_check.py --app`: 125 moves per second over empty canvas for 5 s must draw 0 frames, and the CPU of the browser
+tree is printed (7.8% in the run above, 302 moves, load average 330). `web/hover@N` in `perf/budgets.json` already bounds redraws and
+`counter.elements_scanned`; its CPU limit is generous because the number is mostly the input injection.
+
 ## 8. Wasm size
 
 The web app (`apps/drafftink-web`) is the whole editor in one module. `cargo xtask size` builds it as a release is built
@@ -568,10 +614,18 @@ What the questions found:
   SIMD, `fearless_simd` compiles its fallback once per pipeline and per blend mode; with `simd128` the code that remains is 0.45 MiB.
   Removing it altogether needs a patched `epaint`; not done.
 - **`serde_path_to_error`** (0.5 MiB before wasm-opt) is kept, see the table.
-- **`schemars`** (0.3 to 0.7 MiB before wasm-opt; by the `twiggy` totals about 4% of the brotli, an estimate) is kept. The derive is on 70 types in four crates and the
-  command registry builds the schemas for `commands` and `describe`; taking it out of the wasm needs a stub crate for the derive and the
-  macros, a build step that writes the schemas to a file, and an asynchronous fetch inside the synchronous `describe`. That is days for
-  about 4% of the module; the better order is to move the generation to a build step when the registry is next reworked.
+- **`schemars`** (about 0.7 MiB before wasm-opt) is kept. The derive is on 70 types in four crates and the command registry builds the schemas
+  for `commands`, `describe`, the argument forms of the UI, `requires_args`, the registry digest of the bridge, and the error path of
+  `parse_args` (`arg_info`: the keys of a command, for "did you mean"). Measured as an upper bound (2026-11-08, same commit, `schema_of`
+  and `arg_info` stubbed so that no schema code is reachable): module after wasm-opt 11.87 MiB to 11.20 MiB (-0.67 MiB, -5.6%), brotli
+  3.09 MiB to 3.00 MiB (**-89 KB, -2.8%**). The schemas of the 153 commands (args and output) as one JSON file are 368 KB raw, **33 KB
+  brotli**, so a first visit that never opens the palette or a form would save 89 KB, and one that does would save 56 KB net. **Decision:
+  not done.** Every reader is synchronous (`Registry` consumers in `ui`, `bridge`, `drafftink-mcp`, `parse_args`, tests), so the file would
+  need an asynchronous load and a "schemas not here yet" state in each of them, a stub for the derive in the wasm build, and a build step
+  that writes and hashes the file (the registry digest must equal the one the native bridge computes). That is a cross-crate change in the
+  code others are changing, for 2.8% of the first load. Revisit when the registry is reworked or the budget is tight: the cheaper first
+  step is a `schemas` cargo feature of `drafftink-engine` that is off in the web build and makes `describe`/`commands` return the facts
+  without `args_schema`/`output_schema`.
 - **Duplicate crates** (`cargo tree -d`): `hashbrown` x2, `heapless` x3, `itertools` x3, `miniz_oxide` x2, `smol_str` x2, `thiserror` x2, `rustc-hash` x2
   and some proc-macro crates. They come from Loro, egui, Parley and ReX with different pins; none is large (`miniz_oxide` is the biggest, 50 KB).
 - **Loro features:** the default `counter` feature is the only one; dropping it is in the 1% row above.
