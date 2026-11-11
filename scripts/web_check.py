@@ -8,6 +8,7 @@ Starts the server on an ephemeral port with --web-dir dist and --storage memory,
   idle       0 new frames in a 10 s idle window, CPU of all Chromium processes (1 core = 100 %)
   --app      (needs the App core) execute()/state()/commands(), a rectangle and an arrow, a screenshot,
              persistence in IndexedDB, a refusal as a rejected promise
+  --app      the on-canvas text editor: draft, typing, a coloured word, Esc, one undo step
   --app      collab: two pages in the same room (?room=...) see each other's element
   offline    server stopped, reload: the service worker serves the page and the app starts
 usage: ~/.venvs/perf/bin/python scripts/web_check.py [--app] [--display :97] [--shot docs/img/web-app.png] [--json out.json]
@@ -198,6 +199,40 @@ try:
                 time.sleep(0.1)
             q = call(pg, "window.drafftink.execute('element.query', {})")
             check(q["ok"] and q["value"].get("total", 0) >= 4, "the drawing is back after a reload", str(q)[:160])
+            # the on-canvas text editor in a real browser: a draft by double click, typing into the hidden textarea,
+            # one word selected with the keyboard and coloured through the style panel, Esc ends the edit
+            import io as _io
+            from PIL import Image as _Image
+            r = call(pg, "window.drafftink.execute('doc.new', {on_unsaved:'discard'})"); time.sleep(0.8)
+            check(r["ok"], "text editor: a blank document to type into", str(r)[:200])
+            pg.mouse.move(700, 400); time.sleep(0.2); pg.mouse.dblclick(700, 400); time.sleep(0.8)
+            te = call(pg, "window.drafftink.state()")["value"]["text_edit"]
+            check(bool(te) and te.get("draft") is True, "text editor: a double click on empty canvas starts a draft", str(te))
+            check(pg.evaluate("()=>document.activeElement&&document.activeElement.tagName") == "TEXTAREA", "text editor: the hidden textarea has the focus (IME, soft keyboard)")
+            pg.keyboard.type("say red now", delay=40); time.sleep(0.4)
+            pg.keyboard.press("Home")
+            for _ in range(4): pg.keyboard.press("ArrowRight")
+            for _ in range(3): pg.keyboard.press("Shift+ArrowRight")
+            time.sleep(0.4)
+            pg.mouse.click(456, 32); time.sleep(0.6)  # the red swatch of the stroke row
+            check(bool(call(pg, "window.drafftink.state()")["value"]["text_edit"]), "text editor: a colour from the style panel does not end the edit")
+            n_text0 = call(pg, "window.drafftink.execute('element.query', {})")["value"]["total"]
+            check(n_text0 == 0, "text editor: nothing is in the document while the person types", str(n_text0))
+            pg.keyboard.press("Escape"); time.sleep(0.8)
+            check(call(pg, "window.drafftink.state()")["value"]["text_edit"] is None, "text editor: Esc ends the edit")
+            ins = call(pg, "window.drafftink.execute('doc.inspect', {detail:'full'})")
+            texts = [i.get("text") for i in ins["value"]["items"]] if ins["ok"] else []
+            check(texts == ["say red now"], "text editor: the typed text is one text element", str(texts))
+            # red ink where the word is, the text colour (indigo) elsewhere; no selection tint, no caret left behind
+            png = _Image.open(_io.BytesIO(pg.screenshot(clip={"x": 690, "y": 395, "width": 200, "height": 50}))).convert("RGB")
+            px = list(png.get_flattened_data()) if hasattr(png, 'get_flattened_data') else list(png.getdata())
+            red = sum(1 for r, g, b in px if r > 200 and g < 110 and b < 110)
+            indigo = sum(1 for r, g, b in px if b > 200 and r < 140 and g < 140)
+            tint = sum(1 for r, g, b in px if (r, g, b) == (197, 213, 247))
+            check(red > 30 and indigo > 30, "text editor: one word is red and the rest keeps the text colour", f"red {red}, indigo {indigo}")
+            check(tint == 0, "text editor: the selection tint is gone after the edit", str(tint))
+            r = call(pg, "window.drafftink.execute('history.undo', {})")
+            check(r["ok"] and r["value"]["undone"] == ["Finish editing text"], "text editor: the whole edit is one undo step", str(r)[:200])
             # collab: page A on 127.0.0.1, page B on localhost (separate IndexedDB), same room
             room = "web-check-" + "".join(random.choice("abcdefghij") for _ in range(8))
             a, _ = open_app(ctx, f"{base}/?room={room}")

@@ -201,9 +201,7 @@ Consequences, and options if they start to hurt:
 
 ## Not done
 
-- **IME composition.** The old app had none. The layout supports caret geometry for a composing
-  range if the editor needs it; Parley's `PlainEditor` compose API was not adopted because the
-  editor model is in `edit`.
+- **IME composition.** The layout has no composition API. The editor model (`edit::text_edit`) puts the preedit text into the string it lays out, at the caret, and underlines its range with `selection_rects`; the text joins the buffer when the input method commits.
 - **Right-to-left text** is laid out by Parley (the carets use visual order) but untested here and
   no bundled font covers Arabic or Hebrew.
 
