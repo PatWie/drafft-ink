@@ -149,7 +149,7 @@ impl World {
     /// the topmost element is unlocked or nothing is there.
     pub(crate) fn locked_on_top(&self, s: &Session, world: Point, tolerance_px: f64) -> Option<ElementId> {
         let opts = HitOptions { include_locked: true, ..HitOptions::with_tolerance(tolerance_px) };
-        let top = self.index.hit(s.store(), world, self.viewport.zoom(), &opts)?;
+        let top = s.tab().doc.scene_index().hit(s.store(), world, self.viewport.zoom(), &opts)?;
         let e = s.store().get(&top.id)?;
         let owner = e.container_id().and_then(|c| s.store().get(c)).filter(|c| !c.deleted).unwrap_or(e);
         owner.locked.then(|| owner.id.clone())
