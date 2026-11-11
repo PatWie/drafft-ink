@@ -96,10 +96,78 @@ unwrap_used = "deny"
 expect_used = "deny"
 panic = "deny"
 
+# `cargo build --release` is the build for development and for the perf gates. `strip` removes the symbol tables
+# (8 MB of 55 MB). Unwinding stays on: the executor turns a panic in a command into a refusal.
 [profile.release]
 opt-level = 3
 lto = "thin"
 codegen-units = 1
+strip = "symbols"
+
+# The binaries that are shipped (`scripts/package-*`, `cargo xtask size --native`): fat LTO lets the linker drop what
+# no binary of the workspace calls, and the packages below, which run on a command, a message or a file and not
+# per frame, are optimised for size as in the wasm profile. 55.2 MB became 41.4 MB, and 46.9 MB with only `strip`
+# (`docs/performance.md` section 8.3). The build takes about twice as long, which is why it is not `release`.
+[profile.dist]
+inherits = "release"
+lto = "fat"
+
+[profile.dist.package.loro]
+opt-level = "s"
+
+[profile.dist.package.loro-internal]
+opt-level = "s"
+
+[profile.dist.package.loro-common]
+opt-level = "s"
+
+[profile.dist.package.loro-rle]
+opt-level = "s"
+
+[profile.dist.package.loro-delta]
+opt-level = "s"
+
+[profile.dist.package.generic-btree]
+opt-level = "s"
+
+[profile.dist.package.serde_columnar]
+opt-level = "s"
+
+[profile.dist.package.serde_json]
+opt-level = "s"
+
+[profile.dist.package.serde_path_to_error]
+opt-level = "s"
+
+[profile.dist.package.schemars]
+opt-level = "s"
+
+[profile.dist.package.rmcp]
+opt-level = "s"
+
+[profile.dist.package.zune-jpeg]
+opt-level = "s"
+
+[profile.dist.package.image-webp]
+opt-level = "s"
+
+[profile.dist.package.image]
+opt-level = "s"
+
+[profile.dist.package.png]
+opt-level = "s"
+
+[profile.dist.package.fdeflate]
+opt-level = "s"
+
+[profile.dist.package.miniz_oxide]
+opt-level = "s"
+
+[profile.dist.package.rustls]
+opt-level = "s"
+
+[profile.dist.package.base64]
+opt-level = "s"
 
 # `cargo xtask size` compresses a 12 MB module at brotli quality 11; unoptimised that takes minutes.
 [profile.dev.package.brotli]
@@ -133,6 +201,8 @@ opt-level = 3
 
 [profile.release-wasm]
 inherits = "release"
+# The wasm module keeps its names: it is not stripped here (wasm-opt and wasm-bindgen handle it).
+strip = "none"
 # "s" for the code that runs every frame (egui, vello, kurbo, the render, canvas and ui crates) and "z" for the code that
 # runs on a command, a message or a file (the table below). "z" everywhere is 6% smaller, but the frame is 20 to 40%
 # slower: the UI phase of the pan scenario goes from 2.8 to 3.2 to 3.9 ms (docs/performance.md, "Wasm size").

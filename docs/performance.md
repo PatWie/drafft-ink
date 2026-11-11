@@ -341,7 +341,7 @@ A driver wraps a `PerfStats` snapshot with what only it can measure:
 
 The budget arithmetic is `Budgets::check_filtered`; xtask uses no workspace crate, so it runs the `perf_check` example of this crate (`cargo run -p drafftink-profile --example perf_check`).
 
-4. `cargo xtask perf --app [native|web|all]` runs the scenario drivers of §5.3 against the real app and checks their reports, timing included, against the `native/...` or `web/...` entries of `perf/budgets.json`. It is not part of `ci`: it needs a GPU and Xvfb. Run it as a separate CI job on the reference runner (a machine with a GPU, `Xvfb`, Chromium for the web, and the Python environment of `scripts/perf_scenarios.py`: Xlib, Pillow, Playwright; `PERF_PY` names the interpreter). A software adapter (llvmpipe, SwiftShader) runs the scenarios but its timing numbers mean nothing: check those reports without `--timing`. The web run needs `scripts/build-web.sh --features scenarios` (the generated scenes are not part of the shipped wasm) and `cargo build --release -p drafftink-server`.
+4. `cargo xtask perf --app [native|web|all]` runs the scenario drivers of §5.3 against the real app and checks their reports, timing included, against the `native/...` or `web/...` entries of `perf/budgets.json`. It is not part of `ci`: it needs a GPU and Xvfb. Run it as a separate CI job on the reference runner (a machine with a GPU, `Xvfb`, Chromium for the web, and the Python environment of `scripts/perf_scenarios.py`: Xlib, Pillow, Playwright; `PERF_PY` names the interpreter). A software adapter (llvmpipe, SwiftShader) runs the scenarios but its timing numbers mean nothing: check those reports without `--timing`. The web run builds what it needs: the web app with `--features scenarios` (the generated scenes are not part of the shipped wasm) into `target/perf/web-dist`, which is not `dist/`, and `drafftink-server`. `--no-build` reuses the last build. All outputs follow `CARGO_TARGET_DIR` when it is set: the benches read `$CARGO_TARGET_DIR/criterion`, the drivers get the binaries from `$CARGO_TARGET_DIR/release`, and the reports go to `$CARGO_TARGET_DIR/perf`.
 
 ### 5.3 What the drivers do
 
@@ -514,7 +514,6 @@ What the drivers showed, and what changed for each:
 
 Start-up. Native: the first frame is on screen 320 to 340 ms after the process started (`external.first_frame_ms`); 265 to 290 ms of it is the Vulkan instance, adapter and device (`startup_gpu_ms`), the session and the workspace restore are 6 ms (`startup_app_ms`, `startup_restore_ms`). The driver and the NVIDIA ICD dominate, so there is nothing to gain in our code. Web (headed Chromium on Xvfb, localhost, the precompressed `dist/` of `build-web.sh`; marks in ms since navigation, medians of 8 runs, range in brackets): the page script is loaded at 55 ms [37 to 183], the wasm is instantiated at 160 ms [134 to 289], `start()` is entered at 165 ms, the platform (IndexedDB opened and read) is ready 35 to 40 ms later, `App::new` (session, UI, workspace restore) takes 80 ms, `run()` returns at 305 ms, and the first frame is on screen at 590 ms [556 to 1241; the two slow runs were on a loaded machine]. The 285 ms from `run()` to the first frame are the WebGPU adapter and device, the pipelines and the first frame. Tried and dropped: asking for the adapter from the page script before the module loads (`navigator.gpu.requestAdapter()`), to wake the GPU process while the wasm downloads: no change (590 ms against 590 ms, 8 runs each). The page marks are `window.__marks` and `performance.mark` entries `drafftink:start`, `drafftink:platform`, `drafftink:app`; the driver copies them into the report as `external.startup_*_ms`. The old app's 507 ms to the first app frame and 1.0 s to the first visible one (§7.1) were measured with a cold profile and another harness, so the two are not a like-for-like comparison.
 
-<<<<<<< HEAD
 ### 7.9 Loading a large scene into a tab document
 
 `TabDoc::from_document` of the generated scene, 100,000 elements (research box, load average 12; the pieces are
@@ -564,8 +563,8 @@ once, at most 8,000 per call, the text is the text of `to_json` at 1k, 10k and 1
 no piece during a drag, and the text is the document at the start of the write, not the drag). Times are not asserted.
 Not done: the check of the image files (`FileId::of`, a hash of every picture) is one step, and a single huge element (a
 freehand path of a million points) is one step of its own.
-=======
-### 7.9 Present mode, and hover on the web
+
+### 7.11 Present mode, and hover on the web
 
 **Present mode.** `PresentSurface::configure` used to take the first mode the driver lists (`get_default_config`). That order is the
 driver's: Mesa lists `Immediate` or `Mailbox` before `Fifo` on some setups, which means tearing and frames as fast as they are asked for,
@@ -610,7 +609,6 @@ changed: the second listener (winit's) and `getBoundingClientRect` (stubbing it 
 The guard is `scripts/web_check.py --app`: 125 moves per second over empty canvas for 5 s must draw 0 frames, and the CPU of the browser
 tree is printed (7.8% in the run above, 302 moves, load average 330). `web/hover@N` in `perf/budgets.json` already bounds redraws and
 `counter.elements_scanned`; its CPU limit is generous because the number is mostly the input injection.
->>>>>>> backlog-c-web
 
 ## 8. Wasm size
 
@@ -627,16 +625,16 @@ minute with a warm cache) and as its own CI job. `--no-build` checks the last bu
 | Module as wasm-bindgen writes it | 28.43 | 24.62 |
 | Module after wasm-opt (what the server sends) | 17.62 | **11.79** |
 | gzip -9 | 6.51 | 4.36 |
-| brotli -11 | 4.48 | **3.06** |
+| brotli -11 | 4.48 | **3.06** (3.12 at `17667fd`, 3,267,207 bytes, after later commits) |
 | Fonts as separate files, brotli (loaded on demand) | in the module | 1.44 |
-| Brotli sent for the first visit of the welcome page (module, Ubuntu Light, STIX) | 4.48 | 3.57 |
+| Brotli sent for the first visit of the welcome page (module, Ubuntu Light, STIX) | 4.48 | 3.57 (3.64 at `17667fd`: 3,816,214 bytes with the JS glue, 9.7% above the old app's 3,478,229) |
 | Old app, for reference (module, brotli) | 3.46 | |
 | Start: navigation to first frame, cold / service worker warm (median, ms) | 676 / 439 | 638 / 394 |
 | Frame of the pan scenario (1000 rectangles, 200 `view.pan`), mean / p95 (ms) | 3.2 to 4.2 / 4.4 to 4.9 | 3.5 to 3.9 / 4.3 to 4.5 |
 
 Start and frame times come from `scripts/web_startup.py` (headed Chromium on Xvfb, NVIDIA L40S, localhost; ten cold loads per build, the
 two builds alternated). They are equal within the noise of the machine (a run varies by 10% to 20%), and the budget "wasm brotli not above 3.5 MB"
-of section 7.5 is met.
+of section 7.5 is met for the module alone. The first visit, with the two fonts the welcome page loads and the JS glue, is above it (3.64 MiB at `17667fd`); `docs/deviations.md` D17 records this. The budget file limits the module and the fonts separately and has no limit for the sum.
 
 ### 8.2 What was tried
 
@@ -686,7 +684,21 @@ What the questions found:
   `serde_path_to_error` 0.5, `drafftink_edit` 0.4, `schemars` 0.3, `egui` 0.3, `generic_btree` 0.2, data (GelPen fonts, ICU tables, the welcome
   document) 2.0.
 
-### 8.3 Rules
+### 8.3 Native binaries
+
+`cargo xtask size --native` builds the three shipped binaries with the profile `dist` (the packaging scripts use it) and checks `native.drafftink_bytes`, `native.mcp_bytes` and `native.server_bytes` of the `size` section of `perf/budgets.json`. `--no-build` measures `target/dist`. It is not part of `ci` (a build with fat LTO takes seven minutes); `release.yml` runs it on the Linux x86_64 package.
+
+The desktop app was 24.4 MB in the first version (`opt-level = "z"`, full LTO, no strip) and 55.2 MB in the rewrite (`opt-level = 3`, thin LTO, no strip). Measured on 2026-11-08, Linux x86_64, in MB:
+
+| Build | `drafftink` | What changed |
+|---|---|---|
+| `release` before | 55.2 | `opt-level = 3`, thin LTO, symbols kept |
+| `release` now | 46.9 | `strip = "symbols"` (8.3 MB of symbol tables). Debug info was already off |
+| `dist` | 42.2 | fat LTO, and `opt-level = "s"` for Loro, serde, schemars, rmcp, rustls and the image decoders (the code that runs on a command or a file, not per frame) |
+
+`panic = "abort"` was not used: the executor turns a panic in a command into a refusal and a rollback (`deviations.md` D3), which needs unwinding. `opt-level = "s"` for the engine, `edit`, `render` and `ui` was not tried, because the frame loop runs them (the web profile keeps them at `s` for the same reason and measured 20 to 40% slower frames with `z`). The rest of the size is the code that does the work (symbol sizes of the `release` build before `dist`): `drafftink_engine` 3.4 MB, Loro 1.9 MB, naga and wgpu 2.5 MB, rmcp 0.9 MB (the MCP door of the desktop app), egui and winit 1.2 MB, and 2.7 MB of bundled fonts. `cargo tree -d` shows small duplicates (`base64` 0.22 and 0.23, two `sha2` generations, `miniz_oxide`, three `getrandom`) that come from different pins in Loro, wgpu and egui; none is above 100 KB.
+
+### 8.4 Rules
 
 - A size limit is raised only with the reason in its `note`, and lowered in the commit that makes the number better.
 - Do not enable `--all-features` in wasm-opt (`web-app.md`). Do not move a crate that runs every frame to `z`: measure with `scripts/web_startup.py`.

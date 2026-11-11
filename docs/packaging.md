@@ -20,7 +20,9 @@ How Drafft.ink is built for every system and shipped. The design follows solidcr
 
 Every versioned desktop file is also attached once more without the version (`drafftink-windows-x64.msi`, `drafftink-linux-x86_64.AppImage`, ...), so `https://github.com/<owner>/<repo>/releases/latest/download/<name>` works. Keep these names stable: links and any future update check depend on them.
 
-**One binary.** The server does not embed the web build. It serves the folder named by `--web-dir` (default `./web-dist`), and the server archive ships that folder next to the binary, so "unpack and run `./drafftink-server`" serves the app on `http://127.0.0.1:3030`. Embedding the 17 MB wasm and its precompressed copies in the binary would make every server build depend on the wasm build and bloat it; revisit if single-file deployment becomes a requirement.
+**One binary.** The server does not embed the web build. It serves the folder named by `--web-dir` (default `./web-dist`), and the server archive ships that folder next to the binary, so "unpack and run `./drafftink-server`" serves the app on `http://127.0.0.1:3030`. Embedding the 12.5 MB wasm and its precompressed copies in the binary would make every server build depend on the wasm build and bloat it; revisit if single-file deployment becomes a requirement.
+
+**How the binaries are built.** The scripts build with the cargo profile `dist` (fat LTO, stripped, size-optimised code for the parts that do not run per frame; `Cargo.toml`), and the server with `--features drafftink-server/sqlite,drafftink-server/s3`, so a released server offers every room store: `--storage fs|sqlite|s3|memory`. Without those features a build prints "this build has no SQLite support" when asked for them. `release.yml` starts the packaged Linux server with `--storage sqlite` and checks that it listens, and runs `cargo xtask size --native --no-build` against the budgets of `perf/budgets.json` (section `size`, `native.*`). `drafftink-cli` is not packaged yet.
 
 The desktop packages carry no server, and the server archives carry no desktop app. `drafftink-mcp` ships with the desktop app because an MCP client starts it (`drafftink-mcp --attach`) and the app is what it attaches to.
 
@@ -63,7 +65,7 @@ The Windows exe gets its icon and version resource from `apps/drafftink/build.rs
 
 ## CI (`.github/workflows/ci.yml`)
 
-- `build-native`: `cargo build --workspace --release --locked` on ubuntu, windows and macos with `rust-cache`, then each of `drafftink`, `drafftink-mcp`, `drafftink-server` with `--version`.
+- `build-native`: `cargo build --workspace --release --locked` on ubuntu, windows and macos with `rust-cache` (the default features: the server without sqlite and s3; the packages add them), then each of `drafftink`, `drafftink-mcp`, `drafftink-server` with `--version`.
 - `packaging`: on ubuntu-22.04, shellcheck over the scripts, then `scripts/package-linux.sh --formats "tar deb appimage"` end to end.
 - Both are in the `needs` of the aggregate `ci` job. macOS and Windows packaging are only exercised by `release.yml`.
 

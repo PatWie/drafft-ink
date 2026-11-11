@@ -351,7 +351,7 @@ pub struct ImportArgs {
     /// Where the diagram goes: a top-left point, or `"viewport_center"` (default).
     #[serde(default)]
     pub at: DiagramAt,
-    /// Group the whole diagram, and every Mermaid subgraph.
+    /// Group the whole diagram, and every Mermaid subgraph with its box and title.
     #[serde(default = "yes")]
     pub group: bool,
     /// Select the result.

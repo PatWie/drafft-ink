@@ -1012,6 +1012,12 @@ sloppiness, fresh seed). Text position = center minus half the estimated size.
 Outlines use `base_style(Some(BOX_FILL))` (white fill). Mermaid-created shapes
 never use per-node colors, classes, or `style` directives.
 
+The rewrite (`diagram.import_mermaid`, `crates/edit/src/layout/cluster.rs`, `docs/commands.md` 2.19) keeps the
+cluster box: padding 22, title band 32, corner radius 8, fill rgb(241,245,249), outer boxes first. What differs: the
+box is laid out with the layered algorithm of `edit` (crossing reduction, not declaration order), a box is at least
+120 wide, the title is a text element in the band, nodes get bound arrows, and an edge to a subgraph id is drawn and
+bound to the box.
+
 ### 7.4 Sequence diagrams (`sequence.rs`)
 
 Parse (`sequence.rs:125-152`): per line: remove `%%...` comment, trim; skip empty
