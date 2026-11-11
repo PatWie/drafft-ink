@@ -80,7 +80,10 @@ The loop sleeps in `ControlFlow::Wait`, or `WaitUntil(deadline)` when something 
 6. `After(d, reason)` becomes `WaitUntil`. The earliest deadline wins. A deadline far in the future is ignored
    rather than overflowing. The deadline carries its own reason, which is recorded when it fires.
 7. A hidden window or tab (`Occluded`, `visibilitychange`) draws nothing. Requests stay pending and draw one
-   frame when it becomes visible again. Timers keep running but add no frames.
+   frame when it becomes visible again. Timers keep running but add no frames. Work does not wait for a frame:
+   a `Wake` (a bridge or page request, a finished background job) makes the app run its queues at once
+   (`App::wake_work`: the inbox and the bridge), so `window.drafftink` and WebMCP calls are answered while the
+   tab is hidden or the window is minimized. Nothing is drawn for them; the test is `e2e/web/specs/shell/hidden.spec.ts`.
 8. A frame that cannot be presented (surface outdated or lost) reconfigures the surface and asks again with
    reason `surface`. The egui texture updates of that frame are kept and applied with the next one.
 

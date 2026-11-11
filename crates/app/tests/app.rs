@@ -135,3 +135,69 @@ fn a_token_that_is_empty_is_no_token() {
     assert!(StartupToken::new("").is_none());
     assert!(StartupToken::new("  \n").is_none());
 }
+
+/// What the shell does for a `Wake`, driven without a window or a frame.
+mod wake {
+    use std::sync::{Arc, Mutex};
+
+    use drafftink_bridge::host::{Job, channel};
+    use drafftink_bridge::rpc::RpcError;
+    use drafftink_gpu::{RedrawReason, Repaint};
+
+    use super::*;
+
+    type Answers = Arc<Mutex<Vec<Result<serde_json::Value, RpcError>>>>;
+
+    fn ask(tx: &drafftink_bridge::host::JobSender, method: &str, params: serde_json::Value) -> Answers {
+        let answers: Answers = Arc::default();
+        let sink = answers.clone();
+        let reply = Box::new(move |r| sink.lock().unwrap_or_else(std::sync::PoisonError::into_inner).push(r));
+        assert!(tx.submit(Job { method: method.to_owned(), params, reply }).is_ok());
+        answers
+    }
+
+    fn answered(a: &Answers) -> usize {
+        a.lock().unwrap_or_else(std::sync::PoisonError::into_inner).len()
+    }
+
+    #[test]
+    fn a_wake_runs_the_queued_page_calls_without_a_frame() {
+        let fakes = Fakes::new();
+        let (tx, host) = channel(Arc::new(|| {}), None);
+        let mut p = platform(&fakes);
+        p.bridge = Some(host);
+        let mut app = App::new(p, AppConfig::default());
+
+        // No `frame` is ever called here: this is what a hidden or minimized window gets.
+        let run = ask(
+            &tx,
+            "execute",
+            json!({ "id": "element.create", "args": { "kind": "rectangle", "bounds": [0, 0, 80, 60] } }),
+        );
+        let state = ask(&tx, "state", json!({}));
+        assert_eq!(answered(&run) + answered(&state), 0, "nothing runs before the shell wakes the app");
+        let before = app.session_mut().tab().doc.revision();
+
+        let repaint = app.wake_work(RedrawReason::Load);
+
+        assert_eq!(answered(&run), 1, "the command ran and was answered");
+        assert_eq!(answered(&state), 1, "reads are answered too");
+        assert!(app.session_mut().tab().doc.revision() > before, "the document changed");
+        assert!(
+            matches!(repaint, Repaint::Now(RedrawReason::Load)),
+            "the frame it asks for waits until the window can draw"
+        );
+    }
+
+    #[test]
+    fn a_wake_with_nothing_queued_changes_nothing() {
+        let fakes = Fakes::new();
+        let (_tx, host) = channel(Arc::new(|| {}), None);
+        let mut p = platform(&fakes);
+        p.bridge = Some(host);
+        let mut app = App::new(p, AppConfig::default());
+        let before = (app.session_mut().tab().doc.revision(), app.session_mut().ring().next_seq());
+        app.wake_work(RedrawReason::Load);
+        assert_eq!(before, (app.session_mut().tab().doc.revision(), app.session_mut().ring().next_seq()));
+    }
+}

@@ -10,7 +10,7 @@ use drafftink_engine::Origin;
 use drafftink_ui::{Call, HostRequest, Verb};
 use egui::{Event, Modifiers, PointerButton};
 use egui_kittest::Harness;
-use egui_kittest::kittest::Queryable;
+use egui_kittest::kittest::{NodeT, Queryable};
 use serde_json::json;
 
 type H = Harness<'static, Fixture>;
@@ -226,7 +226,7 @@ fn the_tab_menu_duplicates_the_tab_it_was_opened_on() {
 }
 
 #[test]
-fn the_tab_menu_moves_a_tab_left_and_right_and_greys_the_ends() {
+fn the_tab_menu_moves_a_tab_left_and_right_and_at_an_end_asks_for_the_place_the_tab_has() {
     let f = with_tabs(&["A", "B", "C"]);
     let b = tab_id(&f, "B");
     let mut h = dialog::harness(f);
@@ -239,11 +239,17 @@ fn the_tab_menu_moves_a_tab_left_and_right_and_greys_the_ends() {
     apply(&mut h);
     assert_eq!(names(h.state_mut()), ["A", "C", "B"]);
 
+    // B is last now. The row is as available as `tab.move` is (the UI adds no reason of its own); it asks for
+    // the place the tab already has, which the command accepts and leaves as it is.
     open_tab_menu(&mut h, "B");
+    assert!(!h.get_by_label("Move right").accesskit_node().is_disabled());
     h.state_mut().clear();
     h.get_by_label("Move right").click();
     h.run();
-    assert!(calls(&h).is_empty(), "B is last now, so Move right is greyed and does nothing");
+    assert_eq!(calls(&h), vec![Call::new(Origin::ContextMenu, "tab.move", json!({ "tab": b, "to_index": 2 }))]);
+    apply(&mut h);
+    assert_eq!(names(h.state_mut()), ["A", "C", "B"], "nothing moved");
+    assert_eq!(h.state().report.refusals().count(), 0);
     h.state_mut().state.close_overlays();
     h.run();
 

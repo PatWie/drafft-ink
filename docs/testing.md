@@ -8,6 +8,7 @@ Everything a user can do is a command, so almost everything can be tested end to
 |---|---|---|---|
 | Unit, per command family | `crates/engine/src/cmd/<family>_tests.rs` | availability, refusal text, effect, one negative case, hostile arguments | `cargo xtask test` |
 | Registry-wide | `crates/engine/src/registry_tests.rs`, `catalog_tests.rs` | every registration states every fact; `hostile_params_never_panic` sends junk to every command | `cargo xtask test` |
+| State fence | `crates/app/tests/fences` (with `crates/ui/tests/thin.rs`) | `syn` reads `crates/ui` and `crates/app` and fails on any call, assignment, `&mut` borrow or macro that can change session, tab, document or store state outside the command calls and `allowlist.txt`; a negative test feeds it the bypasses (`docs/exceptions.md` §5) | `cargo xtask test` |
 | Domain crates | `crates/{geom,scene,edit,doc,io,...}` | the rules themselves, with typed errors, properties, hostile input | `cargo xtask test` |
 | **Scenarios** | `tests/scenarios/<family>/*.json`, run by `crates/testkit` | a user story as a list of commands with checks. One generated test per file | `cargo xtask test`, `cargo xtask harness` |
 | Pixel probes | scenarios with `requires.gpu`, `Harness::pixel_probe` | the picture, by counting and sampling pixels with a tolerance, never by comparing with a golden image | the same; needs an adapter |

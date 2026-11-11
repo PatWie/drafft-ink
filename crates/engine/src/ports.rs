@@ -447,7 +447,7 @@ pub(crate) enum Performed {
 }
 
 impl Ports {
-    /// Performs one write. A save of a document returns the raw port error; the other writes return a
+    /// Performs one write. A save of a document or a file returns the raw port error; the other writes return a
     /// sentence for the warnings.
     pub(crate) fn perform(&mut self, w: &PortWrite) -> Result<Performed, String> {
         match w {
@@ -471,9 +471,7 @@ impl Ports {
                     .map_err(|e| format!("storage delete of `{key}` failed: {e}")),
                 None => Err(format!("storage delete of `{key}` skipped: no storage port")),
             },
-            PortWrite::File { file, bytes, mime } => {
-                self.write_file(file, bytes, mime).map_err(|e| format!("file write failed: {e}"))
-            }
+            PortWrite::File { file, bytes, mime } => self.write_file(file, bytes, mime).map_err(|e| e.to_string()),
             PortWrite::Save(save) => match &save.done.target {
                 FileRef::Stored { stored } => match self.storage.as_mut() {
                     Some(s) => s

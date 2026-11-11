@@ -68,6 +68,20 @@ fn live_room(s: &Session) -> Option<String> {
     s.ext.get::<CollabState>()?.live.as_ref().map(|l| l.room.to_string())
 }
 
+fn already_connected(id: &str, url: &str) -> Refusal {
+    Refusal::custom(
+        "already_connected",
+        id,
+        format!("Already connected to `{url}`. Disconnect first with `collab.disconnect`."),
+    )
+    .suggesting("collab.disconnect", None)
+}
+
+fn already_in_room(id: &str, room: &str) -> Refusal {
+    Refusal::custom("already_in_room", id, format!("Already in room `{room}`. Leave it first with `collab.leave_room`."))
+        .suggesting("collab.leave_room", None)
+}
+
 fn not_connected(id: &str) -> Refusal {
     Refusal::custom("not_connected", id, "Not connected to a server. Connect first with `collab.connect`.")
         .suggesting("collab.connect", None)
@@ -93,6 +107,23 @@ fn not_in_room(id: &str) -> Refusal {
 
 fn require_connected(s: &Session) -> Result<(), Refusal> {
     if target_url(s).is_some() { Ok(()) } else { Err(not_connected(s.cmd())) }
+}
+
+/// The state check of `collab.connect`: the refusal that running it would give while a server is chosen.
+fn require_not_connected(s: &Session) -> Result<(), Refusal> {
+    match target_url(s) {
+        Some(url) => Err(already_connected(s.cmd(), &url)),
+        None => Ok(()),
+    }
+}
+
+/// The state check of `collab.join_room`: a server must be chosen and the session must not be in a room.
+fn require_connected_and_roomless(s: &Session) -> Result<(), Refusal> {
+    require_connected(s)?;
+    match live_room(s) {
+        Some(room) => Err(already_in_room(s.cmd(), &room)),
+        None => Ok(()),
+    }
 }
 
 fn require_connected_for_disconnect(s: &Session) -> Result<(), Refusal> {
@@ -185,12 +216,7 @@ fn connect(s: &mut Session, a: ConnectArgs) -> Result<ConnectOut, Refusal> {
         .transpose()?;
     let token = checked_token(id, a.token.as_ref())?;
     if let Some(url) = target_url(s) {
-        return Err(Refusal::custom(
-            "already_connected",
-            id,
-            format!("Already connected to `{url}`. Disconnect first with `collab.disconnect`."),
-        )
-        .suggesting("collab.disconnect", None));
+        return Err(already_connected(id, &url));
     }
     let url = server.to_string();
     match room {
@@ -271,12 +297,7 @@ fn join_room(s: &mut Session, a: JoinArgs) -> Result<JoinOut, Refusal> {
         }
     };
     if let Some(current) = live_room(s) {
-        return Err(Refusal::custom(
-            "already_in_room",
-            id,
-            format!("Already in room `{current}`. Leave it first with `collab.leave_room`."),
-        )
-        .suggesting("collab.leave_room", None));
+        return Err(already_in_room(id, &current));
     }
     let server = s
         .ext
@@ -562,6 +583,7 @@ pub const COMMANDS: &[CommandSpec] = &[
         &Typed::new(connect),
         NET,
     )
+    .available(require_not_connected)
     .refusals(&["invalid_url", "already_connected", "local_content"])
     .secret_args(&["token"])
     .example(r#"{"url":"wss://draw.example.com/ws","room":"team-sync"}"#),
@@ -589,7 +611,7 @@ pub const COMMANDS: &[CommandSpec] = &[
             ..NET
         },
     )
-    .available(require_connected)
+    .available(require_connected_and_roomless)
     .refusals(&["not_connected", "already_in_room", "local_content"])
     .secret_args(&["token"])
     .example(r#"{"room":"team-sync","on_local":"merge"}"#),

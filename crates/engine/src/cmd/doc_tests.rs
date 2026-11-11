@@ -1227,6 +1227,24 @@ fn export_svg_inline_embeds_the_scene_and_changes_nothing() {
     assert!(!String::from_utf8(unb64(&off["bytes"]["base64"])).unwrap().contains("drafftink-scene"));
 }
 
+#[test]
+fn export_to_a_file_that_cannot_be_written_is_refused_with_the_reason_and_writes_nothing() {
+    let (mut s, f) = drawn(2);
+    f.files.fail_writes(true);
+    let target = path("/out/plan.json");
+    let args = json!({"format": "json", "scope": "all", "to": {"path": "/out/plan.json"}});
+    let r = refuse(&mut s, "doc.export", args.clone());
+    assert_eq!(r.code, "io_failed");
+    assert!(r.message.contains("did NOT happen") && r.message.contains("the disk is full"), "{}", r.message);
+    assert!(r.message.contains("Nothing was written"), "{}", r.message);
+    assert!(f.files.bytes(&target).is_none(), "nothing reached the port");
+    // Once the port works the same call succeeds and reports where it wrote.
+    f.files.fail_writes(false);
+    let out = run(&mut s, "doc.export", args);
+    assert_eq!(out["saved_to"], json!({"path": "/out/plan.json"}));
+    assert!(f.files.bytes(&target).is_some());
+}
+
 /// An svg export of `args` over two texts (GelPen Serif and Vanilla Extract, heavy) in a session with the real typesetter.
 fn svg_of(args: Value, texts: &[(&str, &str)]) -> (String, Value) {
     let (mut s, _f) = testing::session_typeset();

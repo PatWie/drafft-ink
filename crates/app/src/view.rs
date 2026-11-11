@@ -100,6 +100,7 @@ impl CanvasView {
     }
 
     /// Forgets which revision the paint index follows, so the next sync rebuilds it (the document was replaced).
+    #[cfg(feature = "scenarios")]
     pub(crate) fn forget_index(&mut self) {
         self.synced = None;
     }

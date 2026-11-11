@@ -22,7 +22,7 @@ fn toolbar_click_runs_tool_set_with_the_tool() {
 use drafftink_engine::Session;
 use drafftink_engine::testing::{add_rect, select};
 use drafftink_ui::{Model, UiAction, UiState, Verb};
-use egui_kittest::kittest::Queryable;
+use egui_kittest::kittest::{NodeT, Queryable};
 
 fn with_two_rects() -> Fixture {
     let mut f = Fixture::new();
@@ -131,7 +131,7 @@ fn right_panel_of_the_arrow_tool_sets_the_type_and_heads_of_new_arrows() {
 }
 
 #[test]
-fn right_panel_has_no_text_section_for_rectangles_and_no_align_for_one_element() {
+fn right_panel_has_no_text_section_for_rectangles_and_greys_align_for_one_element() {
     let mut f = Fixture::new();
     let a = add_rect(&mut f.session, 0.0, 0.0, 100.0, 60.0).unwrap();
     select(&mut f.session, &[a]);
@@ -139,7 +139,12 @@ fn right_panel_has_no_text_section_for_rectangles_and_no_align_for_one_element()
     let mut h = harness(f);
     h.run();
     assert!(h.query_by_label("Light").is_none(), "font weight is a text property");
-    assert!(h.query_by_label("Align left").is_none(), "align needs two elements");
+    // Align stays in the panel and is greyed with the engine's words: it needs two elements.
+    let reason = h.state().model.refusal_text("arrange.align").expect("align is refused for one element");
+    assert!(h.get_by_label("Align left").accesskit_node().is_disabled());
+    h.get_by_label("Align left").hover();
+    h.run();
+    h.get_by_label(&reason);
     assert!(h.query_by_label("Group").is_some());
 }
 

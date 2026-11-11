@@ -381,6 +381,11 @@ impl UiState {
                     host.push(HostRequest::PickSaveTarget);
                 }
             }
+            // A write the port finishes later is not done yet: the dialog stays, so that the person can see that
+            // nothing is confirmed and try again. A refused write never gets here; it is a refusal with the reason.
+            ("doc.export", Ok(out)) if out.get("pending_write").is_some() => {
+                self.push_toast(Toast::note("The export has started, but the file is not confirmed yet.", now));
+            }
             ("doc.export", Ok(_)) => self.export = None,
             ("library.add", Ok(_)) => self.library_name.clear(),
             // Tab or Shift+Tab converted the selection: show the popup with the type it became. Once the popup is
@@ -435,8 +440,9 @@ impl UiState {
         if call.origin == Origin::Shortcut && quiet_from_keyboard(refusal.code) {
             return;
         }
-        if call.id.starts_with("gesture.") && call.id != "gesture.begin" {
-            // A scrub that lost its gesture is not worth a toast; the control just stops scrubbing.
+        if call.id.starts_with("gesture.") && refusal.code == "no_gesture" {
+            // A scrub that lost its gesture (the engine ended it, or it was cancelled) is not worth a toast: the
+            // control just stops scrubbing. Every other refusal of a gesture command is shown.
             return;
         }
         self.push_toast(Toast::from_refusal(refusal, now));

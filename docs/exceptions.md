@@ -27,7 +27,7 @@ Rules that hold for all classes:
 5. **The gesture is not in the ring frame by frame.** The ring gets one entry at the end with the frame count (`docs/commands.md` §1.9).
 6. **Gates apply at the start.** A gesture begins only if the command it will end with would be allowed now (view-only, locked targets, text editing). Locked elements are not hit in the first place.
 7. **One at a time.** There is at most one running gesture per session (class A). Class B/C/D/E recognizers hold their own state and may overlap with a gesture only as listed per row.
-8. **Enforcement.** `cargo xtask exceptions --check` fails when (a) a command with `undo = Gesture` has no row here, (b) a row names a final command that does not exist, (c) the UI crate calls a document-changing session API outside `execute`, `execute_batch` and the `gesture_*` methods (the layering lint in `xtask layers`, which already forbids the UI from holding a `&mut Document`), (d) a row has no test whose name starts with `exception_<row id>_` (for example `exception_E2_move_equals_plain_command`).
+8. **Enforcement.** `cargo xtask exceptions --check` fails when (a) a command with `undo = Gesture` has no row here, (b) a row names a final command that does not exist, (c) the UI crate calls a document-changing session API outside `execute`, `execute_batch` and the `gesture_*` methods (the layering lint in `xtask layers`, which already forbids the UI from holding a `&mut Document`, and the syntax-tree test `crates/app/tests/fences`, see §5), (d) a row has no test whose name starts with `exception_<row id>_` (for example `exception_E2_move_equals_plain_command`).
 
 ## 2. The exceptions
 
@@ -220,6 +220,18 @@ Rules that hold for all classes:
 | Not covered | Choosing a colour or style while the text edit is open does not call `style.set` (it refuses `text_editing`). The UI sends it to the editor, which applies a colour to the selected characters (`runs`) when some are selected and everything else to the element (`style`), and `text.edit_end` receives both. A text element selected but not being edited uses `style.set` and `text.style_range` as usual. |
 | Test | `exception_E16_edit_equals_plain_command` (typing a string then `text.edit_end` equals one `element.create` kind=text with that `text`), `edit/tests/text_edit_model` (composition: preedit, commit, cancel), `a_staged_result_is_what_a_gate_commit_ends_the_edit_with`, `app/editor/tests` (the editor draws the box the commit measures) and `app/editor/pixels` (equal pixels), and `commands_that_change_text_refuse_during_an_edit_and_others_commit_it` (commands with `while_text_edit = no` refuse). |
 
+### E17 Scenario scene hook (perf scenarios only)
+
+| | |
+|---|---|
+| Input | A perf driver (`drafftink --perf-scenario KEY` on the desktop, `window.drafftink.runScenario` on the web) sends a generated scene. |
+| Class | not a user action |
+| What happens | `App::install_scene` replaces the active tab's document with the generated scene, resets what the engine observed of it, and then sets the camera and the selection with the commands `view.set` and `selection.select`. No history, no CRDT delta. |
+| Reason | The scenarios measure 1 000 to 100 000 elements. Commands cannot build a scene that size in reasonable time, so the test rig does the same (`Harness::load_generated`). The point of the scenario is the pan, drag and hover that follow, and those are real input. |
+| Final state | None. The scene is a fixture. |
+| Where it can exist | Only in a build with the cargo feature `scenarios` (`drafftink-app/scenarios`, `drafftink/scenarios`, `drafftink-web/scenarios`). `cargo xtask perf --app native` builds the desktop app with it; no shipped build does. The fence test requires the code to sit behind `#[cfg(feature = "scenarios")]`. |
+| Test | `crates/app/tests/fences` (the entry for `install_scene` has the gate `scenarios`), and the scenario gate `cargo xtask perf --app native`. |
+
 ## 3. Things that look like exceptions but are commands
 
 | Input | Why it is not an exception |
@@ -236,3 +248,9 @@ Rules that hold for all classes:
 ## 4. Adding an exception
 
 Add it to this file in the same change as the code, with a class, a reason that is about cost or about the thing not existing yet, the final command, the cancel behaviour and a test id. A reason of "it is easier" is not accepted. The reviewer checks that the final command exists in `docs/commands.md` and that the equality test is real: it must compare the documents, not only check that the call returned.
+
+## 5. The fence around the UI and the app
+
+`crates/ui` and `crates/app` may change the session, a tab, a document or a store only through `Session::execute`, `execute_from`, `execute_typed`, `execute_batch`, the gesture path above, or an entry of `crates/app/tests/fences/allowlist.txt`. The test `crates/app/tests/fences` reads the source of both crates with `syn` and fails on any call, assignment, `&mut` borrow or macro that can change such state and is not on that list. It knows which methods change state from the engine's own source (every `&mut self` method of `Session`, `Tab`, `TabDoc`, the stores and the other state types), so a new engine mutator is covered without an edit.
+
+The allowlist has one line per exception, each with a reason, and it can only shrink: the test fails when an entry matches nothing, and when the number of entries differs from `CEILING` in `main.rs`. A negative test feeds the checker code that bypasses the fence (among it the three writes that the design audit added to `ui/src/model.rs` while `crates/ui/tests/thin.rs` stayed green) and fails when the checker stops seeing them. The checker works on syntax, not types: a name counts as state when it is a parameter of a state type, a struct field of a state type, or a `let` initialised from one. `crates/ui/tests/thin.rs` stays as a second, text-level check.

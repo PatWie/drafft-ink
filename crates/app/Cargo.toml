@@ -57,6 +57,9 @@ web-sys = { workspace = true, features = [
 
 [dev-dependencies]
 drafftink-testkit = { path = "../testkit" }
+# tests/fences reads the source of this crate and of drafftink-ui.
+syn = { version = "2", features = ["full", "visit"] }
+proc-macro2 = "1"
 
 [lints]
 workspace = true

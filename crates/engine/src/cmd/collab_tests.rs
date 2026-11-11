@@ -144,6 +144,22 @@ fn connect_without_a_room_only_chooses_the_server() {
 }
 
 #[test]
+fn availability_says_what_connect_and_join_would_say() {
+    let (mut s, _) = testing::session();
+    let available = |s: &Session, id: &str| s.commands().into_iter().find(|c| c.id == id).map(|c| c.available).unwrap();
+    assert!(available(&s, "collab.connect").is_ok());
+    run(&mut s, "collab.connect", json!({"url": URL}));
+    // A server is chosen: connecting again is refused, in availability and by execute, with the same words.
+    let said = refuse(&mut s, "collab.connect", json!({"url": URL}));
+    assert_eq!(available(&s, "collab.connect").err().map(|r| r.message), Some(said.message));
+    assert!(available(&s, "collab.join_room").is_ok());
+    run(&mut s, "collab.join_room", json!({"room": "team"}));
+    let said = refuse(&mut s, "collab.join_room", json!({"room": "other"}));
+    assert_eq!(said.code, "already_in_room");
+    assert_eq!(available(&s, "collab.join_room").err().map(|r| r.message), Some(said.message));
+}
+
+#[test]
 fn a_path_means_the_server_of_the_page_in_a_web_shell() {
     let (mut s, fakes) = testing::session();
     fakes.net.set_origin("ws://127.0.0.1:8080");

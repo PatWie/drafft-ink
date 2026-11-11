@@ -142,9 +142,7 @@ fn sections(ui: &mut egui::Ui, cx: &mut Cx<'_>, side: f32) {
     if selected > 0 {
         opacity_section(ui, cx);
         layer_section(ui, cx, side);
-        if selected > 1 {
-            align_section(ui, cx, side);
-        }
+        align_section(ui, cx, side);
         link_section(ui, cx, side);
         action_section(ui, cx, side);
     } else if shows(cx, "opacity") {
@@ -416,20 +414,20 @@ fn align_section(ui: &mut egui::Ui, cx: &mut Cx<'_>, side: f32) {
     });
 }
 
-/// The link of the selected element: the address, Open (`element.open_link`) and the link dialog.
+/// The link of the selected element: the address, Open (`element.open_link`) and the link dialog. The controls
+/// are always there and grey out with the engine's text while their command is refused.
 fn link_section(ui: &mut egui::Ui, cx: &mut Cx<'_>, side: f32) {
-    if cx.model.selection_count != 1 {
-        return;
-    }
     section_label(ui, &cx.pal, "Link");
     ui.horizontal_wrapped(|ui| {
-        cx.verb_button(ui, Verb::OpenLinkEditor, Icon::Link, side, "Edit the link", cx.model.selection_link.is_some());
+        let reason = cx.refusal("element.set_link");
+        let has_link = cx.model.selection_link.is_some();
+        cx.verb_button_gated(ui, Verb::OpenLinkEditor, Icon::Link, side, "Edit the link", has_link, reason);
         if let Some(link) = cx.model.selection_link.clone() {
             let shown: String = link.chars().take(LINK_CHARS).collect();
             ui.label(egui::RichText::new(shown).size(11.0).color(cx.pal.muted));
-            let open = Ctl::new("element.open_link").label("Open the link");
-            cx.text_button(ui, &open, "Open", false);
         }
+        let open = Ctl::new("element.open_link").label("Open the link");
+        cx.text_button(ui, &open, "Open", false);
     });
 }
 

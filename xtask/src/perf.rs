@@ -246,7 +246,8 @@ fn app(root: &Path, which: Option<&str>) -> Result<(), String> {
         match platform {
             Platform::Native => {
                 let mut build = cargo(root);
-                build.args(["build", "--release", "-p", "drafftink"]);
+                // `--perf-scenario` is compiled in only for this build; the shipped binary has no way to swap the document.
+                build.args(["build", "--release", "-p", "drafftink", "--features", "scenarios"]);
                 run(&mut build)?;
             }
             Platform::Web => {

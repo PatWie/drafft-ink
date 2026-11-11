@@ -385,36 +385,55 @@ impl<'a> Cx<'a> {
 
     /// A menu row that applies a UI verb. The key is the verb's own key from the keymap, if it has one.
     pub fn verb_item(&mut self, ui: &mut Ui, verb: Verb, text: &str) -> Response {
+        self.verb_item_gated(ui, verb, text, None)
+    }
+
+    /// Like [`Cx::verb_item`], greyed with `reason` as its tooltip when `reason` is `Some`. The reason is the text
+    /// of the refusal of the command the verb leads to; a greyed row does nothing.
+    pub fn verb_item_gated(&mut self, ui: &mut Ui, verb: Verb, text: &str, reason: Option<String>) -> Response {
         let pal = self.pal;
+        let enabled = reason.is_none();
         let key = crate::keymap::verb_key_label(verb, self.model.mac);
-        let (rect, resp) =
-            ui.allocate_exact_size(vec2(ui.available_width().max(160.0), self.layout.row_height()), Sense::click());
-        if ui.is_rect_visible(rect) {
-            if resp.hovered() {
-                ui.painter().rect_filled(rect, theme::BUTTON_RADIUS, pal.hover);
-            }
-            ui.painter().text(
-                pos2(rect.left() + 10.0, rect.center().y),
-                Align2::LEFT_CENTER,
-                text,
-                egui::FontId::proportional(13.0),
-                pal.text,
-            );
-            if let Some(k) = key {
-                ui.painter().text(
-                    pos2(rect.right() - 10.0, rect.center().y),
-                    Align2::RIGHT_CENTER,
-                    k,
-                    egui::FontId::proportional(11.0),
-                    pal.muted,
-                );
+        let row_height = self.layout.row_height();
+        let resp = ui
+            .add_enabled_ui(enabled, |ui| {
+                let (rect, resp) =
+                    ui.allocate_exact_size(vec2(ui.available_width().max(160.0), row_height), Sense::click());
+                if ui.is_rect_visible(rect) {
+                    if resp.hovered() && enabled {
+                        ui.painter().rect_filled(rect, theme::BUTTON_RADIUS, pal.hover);
+                    }
+                    let color = if enabled { pal.text } else { pal.muted.gamma_multiply(0.6) };
+                    ui.painter().text(
+                        pos2(rect.left() + 10.0, rect.center().y),
+                        Align2::LEFT_CENTER,
+                        text,
+                        egui::FontId::proportional(13.0),
+                        color,
+                    );
+                    if let Some(k) = key {
+                        ui.painter().text(
+                            pos2(rect.right() - 10.0, rect.center().y),
+                            Align2::RIGHT_CENTER,
+                            k,
+                            egui::FontId::proportional(11.0),
+                            pal.muted,
+                        );
+                    }
+                }
+                resp.widget_info(|| WidgetInfo::labeled(Role::Button, enabled, text));
+                resp
+            })
+            .inner;
+        match reason {
+            Some(r) => resp.on_disabled_hover_text(r),
+            None => {
+                if resp.clicked() {
+                    self.verb(verb);
+                }
+                resp
             }
         }
-        resp.widget_info(|| WidgetInfo::labeled(Role::Button, true, text));
-        if resp.clicked() {
-            self.verb(verb);
-        }
-        resp
     }
 
     /// A menu row that only changes what the UI shows (opens a block of rows, opens a dialog). It is not a
@@ -472,28 +491,55 @@ impl<'a> Cx<'a> {
         tip: &str,
         selected: bool,
     ) -> Response {
+        self.verb_button_gated(ui, verb, icon, side, tip, selected, None)
+    }
+
+    /// Like [`Cx::verb_button`], greyed with `reason` as its tooltip when `reason` is `Some`: the text of the
+    /// refusal of the command the control leads to. A greyed control does nothing.
+    #[allow(clippy::too_many_arguments)]
+    pub fn verb_button_gated(
+        &mut self,
+        ui: &mut Ui,
+        verb: Verb,
+        icon: Icon,
+        side: f32,
+        tip: &str,
+        selected: bool,
+        reason: Option<String>,
+    ) -> Response {
         let pal = self.pal;
-        let (rect, resp) = ui.allocate_exact_size(vec2(side, side), Sense::click());
-        let look = Look {
-            hovered: resp.hovered() || resp.has_focus(),
-            pressed: resp.is_pointer_button_down_on(),
-            enabled: true,
-            selected,
-        };
-        if ui.is_rect_visible(rect) {
-            paint_button_bg(ui.painter(), rect, look, &pal, true);
-            icons::paint(ui.painter(), rect.shrink(side * 0.2), icon, icon_color(look, &pal));
+        let enabled = reason.is_none();
+        let resp = ui
+            .add_enabled_ui(enabled, |ui| {
+                let (rect, resp) = ui.allocate_exact_size(vec2(side, side), Sense::click());
+                let look = Look {
+                    hovered: resp.hovered() || resp.has_focus(),
+                    pressed: resp.is_pointer_button_down_on(),
+                    enabled,
+                    selected,
+                };
+                if ui.is_rect_visible(rect) {
+                    paint_button_bg(ui.painter(), rect, look, &pal, true);
+                    icons::paint(ui.painter(), rect.shrink(side * 0.2), icon, icon_color(look, &pal));
+                }
+                resp.widget_info(|| {
+                    let mut info = WidgetInfo::labeled(Role::Button, enabled, verb.title());
+                    info.selected = Some(selected);
+                    info
+                });
+                resp
+            })
+            .inner;
+        match reason {
+            Some(r) => resp.on_disabled_hover_text(r),
+            None => {
+                let resp = resp.on_hover_text(tip);
+                if resp.clicked() {
+                    self.verb(verb);
+                }
+                resp
+            }
         }
-        resp.widget_info(|| {
-            let mut info = WidgetInfo::labeled(Role::Button, true, verb.title());
-            info.selected = Some(selected);
-            info
-        });
-        let resp = resp.on_hover_text(tip);
-        if resp.clicked() {
-            self.verb(verb);
-        }
-        resp
     }
 }
 

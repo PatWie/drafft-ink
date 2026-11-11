@@ -603,7 +603,10 @@ fn get_reports_values_applicability_and_kinds_for_one_element() {
     assert_eq!(out["props"]["stroke_color"], json!({"applicable": true, "value": "#6366f1"}));
     assert_eq!(out["props"]["fill_color"], json!({"applicable": true, "value": null}));
     assert_eq!(out["props"]["corner_radius"], json!({"applicable": true, "value": 0.0}));
-    assert_eq!(out["props"]["font_size"], json!({"applicable": false}));
+    // A property that no target supports carries the words `style.set` refuses with for it, so that a control can
+    // grey itself with the engine's text.
+    let said = refuse(&mut f.s, "style.set", json!({"props": {"font_size": 20}, "scope": "selection"}));
+    assert_eq!(out["props"]["font_size"], json!({"applicable": false, "reason": said.message}));
     assert_eq!(out["props"]["sloppiness"]["value"], "artist");
     assert_eq!(out["props"].as_object().unwrap().len(), 16);
 }

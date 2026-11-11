@@ -2,7 +2,7 @@
 //!
 //! ```text
 //! drafftink [FILE] [--room ROOM] [--server URL] [--token-file FILE] [--bridge [PORT]] [--mcp-http [PORT]] [--perf-overlay] [--perf-dump FILE]
-//!           [--perf-scenario KEY --perf-out FILE [--perf-secs N]]
+//!           [--perf-scenario KEY --perf-out FILE [--perf-secs N]]   (only in a build with `--features scenarios`)
 //! ```
 //!
 //! A collaboration server that asks for an access token gets it from `--token-file` or, without that flag, from the
@@ -14,7 +14,8 @@
 //! streamable HTTP on 127.0.0.1 for clients that speak HTTP, with the same rules and a bearer token. The
 //! preferences have a switch for it as well. Both are off by default.
 //!
-//! `--perf-scenario` runs a performance scenario (`docs/performance.md` section 5.3): it shows a generated scene,
+//! `--perf-scenario` exists only in a build with `--features scenarios` (the perf gate builds one; releases do not).
+//! It runs a performance scenario (`docs/performance.md` section 5.3): it shows a generated scene,
 //! prints `PERF-READY` when the app is quiet, measures until a line arrives on stdin (or `--perf-secs` have passed),
 //! writes the report to `--perf-out` and exits.
 
@@ -25,13 +26,16 @@ use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
 use clap::Parser;
-use drafftink_app::native::{self, NativeOptions, ScenarioRun};
+#[cfg(feature = "scenarios")]
+use drafftink_app::native::ScenarioRun;
+use drafftink_app::native::{self, NativeOptions};
 use drafftink_app::{App, AppConfig, StartupLink, StartupToken};
 use drafftink_bridge::host::channel;
 use drafftink_bridge::{BridgeConfig, BridgeError, BridgeServer};
 use drafftink_engine::cmd::collab::RoomLink;
 use drafftink_engine::ports::FileRef;
 use drafftink_gpu::{Options, RedrawReason, ShellError};
+#[cfg(feature = "scenarios")]
 use drafftink_profile::ScenarioKey;
 
 use crate::mcp_http::McpHttp;
@@ -67,12 +71,15 @@ struct Args {
     #[arg(long, value_name = "FILE")]
     perf_dump: Option<PathBuf>,
     /// Run a performance scenario, such as `idle`, `pan@10k` or `hover@100k`, and exit (needs `--perf-out`).
+    #[cfg(feature = "scenarios")]
     #[arg(long, value_name = "KEY", requires = "perf_out", value_parser = parse_key)]
     perf_scenario: Option<ScenarioKey>,
     /// Where `--perf-scenario` writes its report (JSON).
+    #[cfg(feature = "scenarios")]
     #[arg(long, value_name = "FILE")]
     perf_out: Option<PathBuf>,
     /// Length of the measured window of `--perf-scenario` in seconds. Default: until a line arrives on stdin.
+    #[cfg(feature = "scenarios")]
     #[arg(long, value_name = "SECONDS", requires = "perf_scenario")]
     perf_secs: Option<f64>,
     /// Keep settings and documents in this folder instead of the user's data folder.
@@ -96,6 +103,7 @@ fn collab_token(file: Option<&Path>, env: Option<String>) -> Result<Option<Start
     }
 }
 
+#[cfg(feature = "scenarios")]
 fn parse_key(text: &str) -> Result<ScenarioKey, String> {
     text.parse::<ScenarioKey>().map_err(|e| e.to_string())
 }
@@ -125,10 +133,11 @@ fn main() -> ExitCode {
 }
 
 fn run(args: Args) -> Result<(), Failure> {
-    if args.perf_dump.is_some()
-        || args.perf_overlay
-        || args.perf_scenario.is_some()
-        || drafftink_profile::enable_from_env("DRAFFTINK_PERF")
+    #[cfg(feature = "scenarios")]
+    let scenario = args.perf_scenario.is_some();
+    #[cfg(not(feature = "scenarios"))]
+    let scenario = false;
+    if args.perf_dump.is_some() || args.perf_overlay || scenario || drafftink_profile::enable_from_env("DRAFFTINK_PERF")
     {
         drafftink_profile::set_enabled(true);
     }
@@ -170,8 +179,11 @@ fn run(args: Args) -> Result<(), Failure> {
         perf_overlay: args.perf_overlay,
         stored_default_target: false,
     };
+    #[cfg(feature = "scenarios")]
     let wake = platform.wake.clone();
+    #[cfg_attr(not(feature = "scenarios"), allow(unused_mut))]
     let mut app = drafftink_profile::scope("startup_app", || App::new(platform, config));
+    #[cfg(feature = "scenarios")]
     if let (Some(key), Some(out)) = (args.perf_scenario, args.perf_out) {
         // The thread ends the app itself when the window is over.
         native::spawn_scenario(ScenarioRun { key, out, secs: args.perf_secs }, app.scene_loader(), wake);

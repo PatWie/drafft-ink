@@ -1,0 +1,44 @@
+# The state changes that crates/ui and crates/app may make without running a command. One line each:
+#
+#   file (relative to crates/) | kind | name | in_fn (`*` = anywhere in the file) | gate | reason
+#
+# kind: call, path-call, assign, mut-borrow, handed-out, macro (see tests/fences/checker.rs).
+# gate: `-`, or `scenarios` when the code must sit behind #[cfg(feature = "scenarios")] (the test checks it).
+#
+# The list can only shrink: main.rs holds the number of entries (CEILING). A user action is never an entry; it is a
+# command (AGENTS.md). Entries are the non-user work that docs/exceptions.md names: ticks, start-up, the gesture
+# fast path and the test-only scene hook.
+
+# ---- reads that need `&mut Session` -------------------------------------------------------------------------------
+ui/src/model.rs | call | query | * | - | Session::query reads through the command machinery. It takes &mut self to run the registry, leaves no ring entry and changes no state
+app/src/app.rs | call | query | collab_view_of | - | Session::query reads collab.status the same way: no ring entry, no state change
+
+# ---- ticks and queues (docs/exceptions.md section 3: autosave, collaboration and redraw bookkeeping) --------------------
+app/src/app.rs | call | collab_poll | App::poll_collab | - | engine tick that lets the collaboration client work and applies remote edits (section 3: remote edits are not user actions)
+app/src/app.rs | call | take_collab_notices | App::poll_collab | - | drains the notices the collaboration tick queued so they show as toasts; no document state
+app/src/app.rs | call | flush_workspace | * | - | autosave tick: writes the workspace on blur and on drop (section 3: autosave ticks are not user actions)
+app/src/app.rs | call | workspace_tick | App::frame | - | autosave tick (section 3), run once per frame
+app/src/app.rs | call | workspace_next_due_ms | App::next_wake | - | reads when the autosave is due; takes &mut self but changes nothing, and the answer sets the next wake-up
+app/src/app.rs | call | take_dirty | * | - | clears the redraw flag that the frame has just consumed; it is draw bookkeeping, not document state
+
+# ---- the text editor (docs/exceptions.md E16) ----------------------------------------------------------------------
+app/src/app.rs | call | stage_text_edit | App::stage_editor | - | E16: hands the text editor's latest result to the session so that a gate commit can end the edit with it; not a command and no undo step
+
+# ---- the gesture fast path (docs/exceptions.md E1 to E11) --------------------------------------------------------
+app/src/app.rs | handed-out | input | * | - | E1 to E11: the interaction layer turns pointer events into gesture.begin/update/end and view updates; its final state is a plain command
+app/src/app.rs | handed-out | key | App::feed_keys | - | E2 to E9: Esc and Enter go to the interaction layer while a drag or a line draft runs (cancel, finish)
+app/src/app.rs | handed-out | tick | App::frame | - | E2 to E11: the interaction layer follows the session camera and runs its gesture timers
+
+# ---- agent and page requests ------------------------------------------------------------------------------------------
+app/src/app.rs | handed-out | poll | App::pump | - | BridgeHost::poll runs each queued agent or page request with Session::execute_from (origin agent), so it is the command path
+
+# ---- start-up (before the first frame) --------------------------------------------------------------------------------
+app/src/startup.rs | call | load_settings | start | - | start-up restore of the saved settings, once before the first frame; not a user action
+app/src/startup.rs | call | restore_workspace | start | - | start-up restore of the saved tabs, once before the first frame; not a user action
+app/src/startup.rs | handed-out | use_stored_default_target | start | - | start-up: the launcher's stored-default-target flag, applied once before the first frame
+
+# ---- the scenario hook (docs/exceptions.md E17), behind the `scenarios` feature -------------------------------------
+app/src/app.rs | call | tab_mut | App::install_scene | scenarios | E17: perf scenarios put a generated scene (1k to 100k elements) in the tab; commands cannot build one in reasonable time. Not in any shipped build
+app/src/app.rs | assign | doc | App::install_scene | scenarios | E17: replaces the tab's document with the generated scene
+app/src/app.rs | assign | observed | App::install_scene | scenarios | E17: resets what the engine observed of the replaced document
+app/src/app.rs | assign | saved_revision | App::install_scene | scenarios | E17: the installed scene counts as saved, so the perf run shows no unsaved-work prompt

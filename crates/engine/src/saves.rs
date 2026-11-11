@@ -21,7 +21,8 @@ const MAX_ROUNDS: usize = 4;
 pub(crate) struct Flushed {
     /// Notes for the output of the command.
     pub warnings: Vec<String>,
-    /// The first document write that failed: the command must refuse.
+    /// The first document or file write that failed (`doc.save`, `doc.export` to a file): the command must
+    /// refuse, so that it does not report a success that did not happen.
     pub failed_save: Option<Refusal>,
     /// Document writes that the port finishes later.
     pub pending: Vec<WriteToken>,
@@ -71,6 +72,10 @@ impl Session {
                     Err(msg) => match w {
                         PortWrite::Save(s) => {
                             let r = Refusal::not_saved(self.cmd(), &target_phrase(&s.done.target), &msg);
+                            out.failed_save.get_or_insert(r);
+                        }
+                        PortWrite::File { file, .. } => {
+                            let r = Refusal::not_exported(self.cmd(), &target_phrase(&file), &msg);
                             out.failed_save.get_or_insert(r);
                         }
                         _ => out.warnings.push(msg),

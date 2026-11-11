@@ -15,12 +15,13 @@ use crate::widgets::{Ctl, Cx, ScrollDir, panel_frame, scroll_if, section_label, 
 /// The stroke widths of the old app: name and value.
 pub const STROKE_WIDTHS: [(&str, f64); 4] = [("Thin", 1.0), ("Normal", 2.0), ("Bold", 4.0), ("Extra bold", 8.0)];
 
-/// Why a property control is greyed, when the selection has no element it applies to.
+/// Why a property control is greyed, when the selection has no element it applies to: the engine's text, as
+/// `style.get` reports it (the refusal that `style.set` would give).
 pub fn not_applicable(cx: &Cx<'_>, prop: &str) -> Option<String> {
     if cx.model.style.props.is_empty() || cx.model.style.applies(prop) {
         None
     } else {
-        Some(format!("`{prop}` does not apply to the selected elements."))
+        cx.model.style.reason(prop).map(str::to_owned)
     }
 }
 

@@ -31,6 +31,7 @@ use crate::config::AppConfig;
 use crate::editor::{KeyRoute, TextEditor, route};
 use crate::input::{self, Held};
 use crate::overlay;
+#[cfg(feature = "scenarios")]
 use crate::perf::{Look, SceneInstall, SceneLoader, SceneSlot, scene_hook};
 use crate::platform::{
     FontFile, Host, HostJob, Inbound, Inbox, InboxRx, PickKind, PickedFile, Platform, SharedClipboard, WakeCell, inbox,
@@ -96,6 +97,7 @@ pub struct App {
     collab_due_ms: Option<u64>,
     perf_overlay: bool,
     /// Where a scenario driver delivers a generated scene (`scene_loader`).
+    #[cfg(feature = "scenarios")]
     scenes: Option<SceneSlot>,
     cursor: egui::CursorIcon,
     /// The picture of the text editor the engine was last told about.
@@ -139,6 +141,7 @@ impl App {
             last_presence_ms: f64::NEG_INFINITY,
             collab_due_ms: Some(0),
             perf_overlay: config.perf_overlay,
+            #[cfg(feature = "scenarios")]
             scenes: None,
             cursor: egui::CursorIcon::Default,
             staged: None,
@@ -151,7 +154,8 @@ impl App {
     }
 
     /// The door for a scenario driver: scenes sent through it replace the active tab's document at the next frame.
-    /// Call it before the shell runs.
+    /// Call it before the shell runs. Only in builds with the `scenarios` feature (`docs/exceptions.md`, E17).
+    #[cfg(feature = "scenarios")]
     pub fn scene_loader(&mut self) -> SceneLoader {
         let (loader, slot) = scene_hook(self.wake.clone());
         self.scenes = Some(slot);
@@ -159,7 +163,10 @@ impl App {
     }
 
     /// Installs the scene a driver sent, if one is waiting: the document, the camera, the selection. Like the test
-    /// rig's `load_generated`, it is not a command and leaves no history.
+    /// rig's `load_generated`, it is not a command and leaves no history. It exists only in builds with the
+    /// `scenarios` feature, which no shipped build has: the one place the app replaces a document outside a command
+    /// (`docs/exceptions.md`, E17).
+    #[cfg(feature = "scenarios")]
     fn install_scene(&mut self, canvas: Size) {
         let Some(install) = self.scenes.as_ref().and_then(SceneSlot::take) else { return };
         let SceneInstall { doc, look, zoom, select } = install;
@@ -521,6 +528,24 @@ impl App {
             Inbound::Notice(text) => self.toast(text),
             Inbound::FontLoaded { file, bytes } => self.font_loaded(file, bytes),
         }
+    }
+
+    /// Work that arrived from another thread or task: background results and the requests of the agent bridge and
+    /// the page API. It runs here, on the wake, and not only inside a frame, because a hidden or minimized window
+    /// draws no frame and a caller must not wait for one. Nothing here draws. Idle stays idle: with nothing queued
+    /// this is two failed `try_recv` calls.
+    fn pump(&mut self) {
+        self.drain_inbox();
+        if let Some(host) = self.bridge.as_mut() {
+            host.poll(&mut self.session);
+        }
+    }
+
+    /// What the shell's `Wake` does: runs the queued work (`pump`) and answers with the repaint it needs. A wake
+    /// asks for a frame as before; a window that cannot draw keeps that request until it can.
+    pub fn wake_work(&mut self, reason: RedrawReason) -> Repaint {
+        self.pump();
+        Repaint::Now(reason)
     }
 
     /// Asks the host for the fonts the typesetter and the UI need and do not have, once each. Nothing happens
@@ -978,7 +1003,7 @@ impl ShellApp for App {
                     if self.poll_collab(now as u64) { Repaint::Now(RedrawReason::Collab) } else { self.next_wake(now) };
                 (repaint, Handled::No)
             }
-            ShellEvent::Wake(reason) => (Repaint::Now(reason), Handled::No),
+            ShellEvent::Wake(reason) => (self.wake_work(reason), Handled::No),
             ShellEvent::TextInput(input) => {
                 let now = self.now_ms();
                 let changed = self.editor.as_mut().is_some_and(|e| e.text_input(&input, now));
@@ -1001,6 +1026,7 @@ impl ShellApp for App {
         }
         let size = self.canvas_rect.size();
         self.sync_viewport(Size::new(f64::from(size.x), f64::from(size.y)), f64::from(cx.view.scale));
+        #[cfg(feature = "scenarios")]
         self.install_scene(Size::new(f64::from(size.x), f64::from(size.y)));
         // The spatial index of a big document takes a moment to build (0.7 s at 100,000 elements). Build it here,
         // in the frame that follows a load, so the first hover or drag does not pay for it. It follows the edits
@@ -1011,10 +1037,7 @@ impl ShellApp for App {
             cx.open_url(url, true);
         }
         // Work that arrived while no frame ran.
-        self.drain_inbox();
-        if let Some(host) = self.bridge.as_mut() {
-            host.poll(&mut self.session);
-        }
+        self.pump();
         self.follow_mcp_http_setting();
         self.poll_collab(now_ms);
         self.session.workspace_tick();
