@@ -148,20 +148,45 @@ try:
             check((not r["ok"]) and r["error"]["code"] == -32010, "an unknown command rejects with a refusal", str(r)[:200])
             r = call(pg, "window.drafftink.execute('element.create', {kind:'rectangle', bounds:{x:120,y:120,w:260,h:150}})")
             check(r["ok"] and r["value"].get("changed") is True, "element.create rectangle", str(r)[:200])
-            r = call(pg, "window.drafftink.execute('element.create', {kind:'arrow', points:[[400,190],[620,330]]})")
-            check(r["ok"] and r["value"].get("changed") is True, "element.create arrow", str(r)[:200])
+            id_a = r["value"].get("id")
+            r = call(pg, "window.drafftink.execute('element.create', {kind:'rectangle', bounds:{x:620,y:260,w:200,h:120}})")
+            id_b = r["value"].get("id")
+            r = call(pg, "window.drafftink.execute('element.create', {kind:'arrow', points:[[380,195],[620,320]], start:{target:'" + id_a + "'}, end:{target:'" + id_b + "'}})")
+            check(r["ok"] and r["value"].get("start_target") == id_a and r["value"].get("end_target") == id_b, "element.create arrow bound to both rectangles", str(r)[:200])
+            arrow = r["value"].get("id")
+            r = call(pg, "window.drafftink.execute('element.move', {ids:['" + id_a + "'], dx:0, dy:-60})")
+            moved = call(pg, "window.drafftink.execute('doc.inspect', {ids:['" + arrow + "'], detail:'full'})")
+            check(r["ok"] and moved["ok"] and moved["value"]["items"][0]["points"][0][1] < 195, "element.move dragged the bound arrow along", str(moved)[:200])
+            r = call(pg, "window.drafftink.commands({})")
+            cmds = r["value"] if r["ok"] else None
+            items = cmds.get("commands", cmds.get("items", [])) if isinstance(cmds, dict) else (cmds or [])
+            check(r["ok"] and len(items) > 100 and any("available" in str(c) for c in items[:3]), "commands() lists the registry with availability", f"{len(items)} commands; first: {str(items[:1])[:200]}")
             r = call(pg, "window.drafftink.batch([{id:'element.create', args:{kind:'ellipse', bounds:{x:470,y:80,w:140,h:90}}}], {label:'ellipse'})")
             check(r["ok"], "batch() resolves", str(r)[:200])
             r = call(pg, "window.drafftink.recent({limit:5})")
             check(r["ok"] and any(e.get("source") == "agent" for e in r["value"].get("entries", [])), "recent() shows origin agent", str(r)[:200])
             time.sleep(1.5)
             q = call(pg, "window.drafftink.execute('element.query', {})")
-            check(q["ok"] and q["value"].get("total", 0) >= 3, "element.query sees 3 elements", str(q)[:160])
+            check(q["ok"] and q["value"].get("total", 0) >= 4, "element.query sees 4 elements", str(q)[:160])
+            # real browser input: the rectangle tool from the toolbar, then a drag on the canvas
+            n0 = call(pg, "window.drafftink.execute('element.query', {})")["value"]["total"]
+            call(pg, "window.drafftink.execute('selection.clear', {})")
+            pg.mouse.move(700, 300); time.sleep(0.3); pg.keyboard.press("r"); time.sleep(0.3)
+            pg.mouse.move(700, 100); pg.mouse.down()
+            for i in range(1, 16): pg.mouse.move(700 + i * 10, 100 + i * 8); time.sleep(0.02)
+            pg.mouse.up(); time.sleep(0.6)
+            n1 = call(pg, "window.drafftink.execute('element.query', {})")["value"]["total"]
+            check(n1 == n0 + 1, "a mouse drag with the rectangle tool drew a rectangle", f"{n0} -> {n1}")
+            rec = call(pg, "window.drafftink.recent({limit:3})")
+            check(rec["ok"] and any(e.get("id") == "element.create" and e.get("source") == "ui" for e in rec["value"]["entries"]), "the mouse drag is a ui element.create in the ring", str(rec)[:300])
             if args.shot:
                 os.makedirs(os.path.dirname(os.path.abspath(args.shot)), exist_ok=True)
                 pg.screenshot(path=args.shot); print("screenshot", args.shot, flush=True)
+            time.sleep(2)
             r = window(pg, f"idle after commands {args.idle_secs:g}s", args.idle_secs)
             check(r["frames"] == 0, "0 frames idle after commands", str(r["frames"]))
+            perf_now = pg.evaluate("()=>window.drafftink.perf()")
+            check(isinstance(perf_now, dict) and perf_now["redraws"]["by_reason"].get("autosave", 0) >= 0 and frames(pg)["frames"] > 0, "perf() reports redraw reasons and frames() counts frames", str(perf_now["redraws"])[:200])
             # persistence: the workspace reaches IndexedDB
             time.sleep(3)
             keys = pg.evaluate("""()=>new Promise((res,rej)=>{const o=indexedDB.open('drafftink');o.onerror=()=>rej('open');o.onsuccess=()=>{const db=o.result;
@@ -172,11 +197,11 @@ try:
                 if pg.evaluate("()=>window.__started||window.__error||false"): break
                 time.sleep(0.1)
             q = call(pg, "window.drafftink.execute('element.query', {})")
-            check(q["ok"] and q["value"].get("total", 0) >= 3, "the drawing is back after a reload", str(q)[:160])
+            check(q["ok"] and q["value"].get("total", 0) >= 4, "the drawing is back after a reload", str(q)[:160])
             # collab: page A on 127.0.0.1, page B on localhost (separate IndexedDB), same room
             room = "web-check-" + "".join(random.choice("abcdefghij") for _ in range(8))
             a, _ = open_app(ctx, f"{base}/?room={room}")
-            time.sleep(3)
+            time.sleep(8)  # join, first sync and the status settling
             # The server pings every 20 s and a peer sends presence every 10 s; 22 s covers both.
             r = window(a, "alone in a room, idle 22s", 22)
             check(r["frames"] == 0, "0 frames idle, alone in a room (server ping included)", f'{r["frames"]} frames, {r["redraw_requests"]}')
@@ -198,7 +223,7 @@ try:
             check(seen, "collab: page A sees the element page B drew")
             if args.shot:
                 a.screenshot(path=args.shot.replace(".png", "-collab.png"))
-            time.sleep(1.5)
+            time.sleep(8)  # the edits are acknowledged and the peers' first presence has arrived
             r = window(a, "with a peer in the room, idle 22s", 22)
             check(r["frames"] == 0, "0 frames idle with a peer in the room (presence heartbeat included)", f'{r["frames"]} frames, {r["redraw_requests"]}')
             a.close(); b.close()

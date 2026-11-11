@@ -59,7 +59,7 @@ if [ "$OPT" = 1 ] && [ "$PROFILE" = "release-wasm" ]; then
   if [ -n "$WASM_OPT" ]; then
     # Not --all-features: with binaryen 133 it turns on experimental encodings and Chromium then rejects the
     # module ("unknown import kind 0x7e"). These are the features rustc's wasm32 target emits.
-    "$WASM_OPT" $OPT_FEATURES --strip-debug --strip-producers -Os "$OUT" -o "$OUT.opt"
+    timeout 1200 "$WASM_OPT" $OPT_FEATURES --strip-debug --strip-producers -Os "$OUT" -o "$OUT.opt"
     mv "$OUT.opt" "$OUT"
     OPTSIZE=$(stat -c %s "$OUT")
   else

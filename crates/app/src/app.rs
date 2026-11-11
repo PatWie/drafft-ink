@@ -396,20 +396,25 @@ impl App {
         }
     }
 
-    fn poll_collab(&mut self, now_ms: u64) {
+    /// Lets the collaboration client work. Returns whether it left something to show: a notice, or a change
+    /// of the screen the session recorded.
+    fn poll_collab(&mut self, now_ms: u64) -> bool {
         let due = self.collab_due_ms.is_some_and(|d| now_ms >= d);
         if !due && !self.in_room {
-            return;
+            return false;
         }
         let poll = self.session.collab_poll();
         self.collab_due_ms = poll.wake_in_ms.map(|ms| now_ms.saturating_add(ms.max(1)));
         self.in_room = self.session.collab_view().room.is_some();
+        let mut shown = self.session.dirty().is_some();
         for notice in self.session.take_collab_notices() {
+            shown = true;
             match notice {
                 drafftink_engine::cmd::collab::CollabNotice::Info(t) => self.toast(t),
                 drafftink_engine::cmd::collab::CollabNotice::Problem(p) => self.toast(p.text),
             }
         }
+        shown
     }
 
     /// Esc and Enter belong to the interaction layer while it has something running (a drag, a line draft).
@@ -693,6 +698,14 @@ impl ShellApp for App {
                 self.world_key = None;
                 self.overlay_key = None;
                 (Repaint::Now(RedrawReason::Surface), Handled::No)
+            }
+            // Socket traffic (a server ping, a peer's unchanged presence) usually changes nothing on screen:
+            // work it off here and ask for a frame only when something is to be shown.
+            ShellEvent::Wake(RedrawReason::Collab) => {
+                let now = self.now_ms();
+                let repaint =
+                    if self.poll_collab(now as u64) { Repaint::Now(RedrawReason::Collab) } else { self.next_wake(now) };
+                (repaint, Handled::No)
             }
             ShellEvent::Wake(reason) => (Repaint::Now(reason), Handled::No),
             ShellEvent::FileHover(_)
