@@ -175,6 +175,45 @@ pub(crate) fn coalesce_pointer_moves(events: &mut Vec<egui::Event>) {
     }
 }
 
+/// The newest cursor move that egui has not seen: a hover over the canvas, which is held back from egui
+/// (see the module rules in `docs/shell.md`). It is delivered before the next event that acts at the pointer
+/// position, and dropped when a newer move reaches egui, because delivering it then would put egui's pointer
+/// back at the old place and a click on a toolbar button would land on the canvas.
+#[derive(Debug)]
+pub(crate) struct HeldHover<E> {
+    held: Option<E>,
+}
+
+impl<E> Default for HeldHover<E> {
+    fn default() -> Self {
+        Self { held: None }
+    }
+}
+
+impl<E> HeldHover<E> {
+    /// A cursor move arrived. Returns it when egui must see it now (`egui_owns`), else holds it back.
+    /// Either way the older held move is gone: this one is the newest.
+    pub(crate) fn on_move(&mut self, event: E, egui_owns: bool) -> Option<E> {
+        if egui_owns {
+            self.held = None;
+            Some(event)
+        } else {
+            self.held = Some(event);
+            None
+        }
+    }
+
+    /// The held move, to deliver before an event that needs egui to know the pointer position.
+    pub(crate) fn take(&mut self) -> Option<E> {
+        self.held.take()
+    }
+
+    /// Forget the held move (the pointer left the window).
+    pub(crate) fn clear(&mut self) {
+        self.held = None;
+    }
+}
+
 /// Does egui, not the app, own the pointer at `pos`? True while egui drags something, over a floating
 /// egui area (window, popup, menu), and outside the canvas rectangle (toolbars and panels).
 pub(crate) fn egui_owns_pointer(ctx: &egui::Context, canvas: Option<egui::Rect>, pos: Option<egui::Pos2>) -> bool {
@@ -337,5 +376,119 @@ mod tests {
         ev.push(egui::Event::PointerMoved(egui::pos2(1.0, 1.0)));
         coalesce_pointer_moves(&mut ev);
         assert_eq!(ev.len(), 4, "a move after another event type is kept");
+    }
+
+    /// A screen with a floating toolbar button at the left and the canvas under everything, as the app draws it.
+    struct ToolbarRig {
+        ctx: egui::Context,
+        hold: HeldHover<egui::Event>,
+        events: Vec<egui::Event>,
+        /// Where egui last saw the pointer. egui-winit puts this position on every button event.
+        seen: egui::Pos2,
+        clicks: usize,
+    }
+
+    impl ToolbarRig {
+        const BUTTON: egui::Pos2 = egui::pos2(40.0, 120.0);
+        const CANVAS: egui::Pos2 = egui::pos2(700.0, 400.0);
+
+        fn new() -> Self {
+            let mut rig = Self {
+                ctx: egui::Context::default(),
+                hold: HeldHover::default(),
+                events: Vec::new(),
+                seen: egui::Pos2::ZERO,
+                clicks: 0,
+            };
+            rig.frame();
+            rig.frame(); // widget rects of the previous pass are what the next pass hit-tests
+            rig
+        }
+
+        fn canvas() -> egui::Rect {
+            egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(1280.0, 800.0))
+        }
+
+        /// One egui pass with the events queued so far.
+        fn frame(&mut self) {
+            let input = egui::RawInput {
+                screen_rect: Some(Self::canvas()),
+                events: std::mem::take(&mut self.events),
+                ..egui::RawInput::default()
+            };
+            let mut clicked = false;
+            let mut output = self.ctx.run_ui(input, |ui| {
+                egui::Area::new(egui::Id::unique("toolbar")).fixed_pos(egui::pos2(10.0, 100.0)).show(ui.ctx(), |ui| {
+                    clicked = ui.add_sized([60.0, 40.0], egui::Button::new("tool")).clicked();
+                });
+            });
+            output.textures_delta.clear();
+            self.clicks += usize::from(clicked);
+        }
+
+        /// What the shell does with a cursor move: hold it back over the canvas, give it to egui over the toolbar.
+        fn cursor_moved(&mut self, pos: egui::Pos2) {
+            let owns = egui_owns_pointer(&self.ctx, Some(Self::canvas()), Some(pos));
+            if let Some(event) = self.hold.on_move(egui::Event::PointerMoved(pos), owns) {
+                self.seen = pos;
+                self.events.push(event);
+                coalesce_pointer_moves(&mut self.events);
+            }
+        }
+
+        /// What the shell does with a press or a release: the held move goes first.
+        fn button(&mut self, pressed: bool) {
+            if let Some(held) = self.hold.take() {
+                if let egui::Event::PointerMoved(pos) = held {
+                    self.seen = pos;
+                }
+                self.events.push(held);
+            }
+            self.events.push(egui::Event::PointerButton {
+                pos: self.seen,
+                button: egui::PointerButton::Primary,
+                pressed,
+                modifiers: egui::Modifiers::NONE,
+            });
+        }
+    }
+
+    #[test]
+    fn one_click_on_a_toolbar_button_after_hovering_the_canvas_clicks_it() {
+        let mut rig = ToolbarRig::new();
+        // The pointer wanders over the canvas (held back from egui), then jumps to the button.
+        rig.cursor_moved(ToolbarRig::CANVAS);
+        rig.cursor_moved(ToolbarRig::CANVAS + egui::vec2(20.0, 20.0));
+        rig.cursor_moved(ToolbarRig::BUTTON);
+        rig.button(true);
+        rig.button(false);
+        rig.frame();
+        assert_eq!(rig.clicks, 1, "a single press and release on the button is one click");
+    }
+
+    #[test]
+    fn the_same_click_with_a_frame_between_move_press_and_release_clicks_once() {
+        let mut rig = ToolbarRig::new();
+        rig.cursor_moved(ToolbarRig::CANVAS);
+        rig.cursor_moved(ToolbarRig::BUTTON);
+        rig.frame();
+        rig.button(true);
+        rig.frame();
+        rig.button(false);
+        rig.frame();
+        assert_eq!(rig.clicks, 1);
+    }
+
+    #[test]
+    fn a_hover_held_before_the_move_to_the_toolbar_is_dropped() {
+        let mut hold = HeldHover::default();
+        assert_eq!(hold.on_move(1, false), None);
+        assert_eq!(hold.on_move(2, true), Some(2), "egui gets the newer move");
+        assert_eq!(hold.take(), None, "and the older held move is gone");
+        assert_eq!(hold.on_move(3, false), None);
+        assert_eq!(hold.take(), Some(3));
+        assert_eq!(hold.on_move(4, false), None);
+        hold.clear();
+        assert_eq!(hold.take(), None);
     }
 }

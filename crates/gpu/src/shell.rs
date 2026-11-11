@@ -33,7 +33,7 @@ use crate::frame::EguiFrame;
 use crate::host::HostEvent;
 #[cfg(not(target_arch = "wasm32"))]
 use crate::host::now_ms;
-use crate::repaint::{RepaintState, coalesce_pointer_moves, egui_owns_pointer};
+use crate::repaint::{HeldHover, RepaintState, coalesce_pointer_moves, egui_owns_pointer};
 use crate::settle::Settle;
 
 /// Window setup.
@@ -103,7 +103,7 @@ struct Running {
     /// The pointer was over egui at the end of the last frame (so leaving it needs a frame).
     over_egui: bool,
     /// A `CursorMoved` that egui has not seen: hover over the canvas. Delivered before the next event that needs a position.
-    held_cursor: Option<WindowEvent>,
+    held_cursor: HeldHover<WindowEvent>,
     /// The caret rectangle the app asked for, and the one currently applied to the platform.
     text_input: Option<egui::Rect>,
     applied_text_input: Option<egui::Rect>,
@@ -701,7 +701,7 @@ impl<A: ShellApp> Shell<A> {
             state,
             canvas_rect: None,
             over_egui: false,
-            held_cursor: None,
+            held_cursor: HeldHover::default(),
             text_input: None,
             applied_text_input: None,
             last_cursor: None,
@@ -883,13 +883,15 @@ impl<A: ShellApp> Shell<A> {
         let Some(run) = self.running.as_mut() else { return };
 
         // Hover over the canvas: remember the event, tell egui nothing, draw nothing.
-        if matches!(event, WindowEvent::CursorMoved { .. }) {
+        let event = if matches!(event, WindowEvent::CursorMoved { .. }) {
             let owns = egui_owns_pointer(&run.ctx, run.canvas_rect, self.last_pos) || run.over_egui;
-            if !owns {
-                run.held_cursor = Some(event);
-                return;
+            match run.held_cursor.on_move(event, owns) {
+                Some(event) => event,
+                None => return,
             }
-        }
+        } else {
+            event
+        };
         // Events that act at the pointer position need egui to know it first.
         let needs_position = matches!(
             event,
@@ -910,7 +912,7 @@ impl<A: ShellApp> Shell<A> {
             return; // raw device axes: egui ignores them and they must not wake the loop
         }
         if matches!(event, WindowEvent::CursorLeft { .. }) {
-            run.held_cursor = None;
+            run.held_cursor.clear();
         }
         if matches!(
             event,
