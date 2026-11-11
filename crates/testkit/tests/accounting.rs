@@ -557,18 +557,18 @@ fn rust_calls_follow_variables_built_by_harness_constructors_and_typed_parameter
     let src = r#"
         fn a() {
             let mut h = Harness::new();
-            h.load_fixture("x");
+            h.stage_fixture("x");
             h.session.execute("view.get", json!({}));
             let other = Something::new();
             other.not_a_harness_method();
             let r = Harness::headless().unwrap();
             r.advance_clock(3);
             let s = drafftink_testkit::Harness::new()?;
-            s.scene_probe(None, false);
+            s.load_generated(1, 1);
         }
         fn b(h: &mut Harness, g: &Harness, n: u32) {
             h.pixel_probe(&args);
-            g.scene_probe(None, false);
+            g.load_generated(1, 1);
             n.pow(2);
         }
         fn c() {
@@ -578,7 +578,7 @@ fn rust_calls_follow_variables_built_by_harness_constructors_and_typed_parameter
         }
     "#;
     let found: Vec<String> = rust_calls(src).unwrap().into_iter().collect();
-    assert_eq!(found, ["advance_clock", "load_fixture", "pixel_probe", "scene_probe"]);
+    assert_eq!(found, ["advance_clock", "load_generated", "pixel_probe", "stage_fixture"]);
 }
 
 fn scenario(text: &str) -> Scenario {

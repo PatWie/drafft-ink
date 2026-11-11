@@ -12,7 +12,7 @@
     { "note": "dx and dy are screen pixels and the content follows the pointer, so at zoom 1 the scroll centre moves the other way.",
       "execute": "view.pan", "args": { "dx": 100, "dy": 0 }, "expect": [ { "path": "$.scroll", "near": [-90, 20] } ] },
 
-    { "harness": "scene_probe", "save": { "bx": "$.bounds.x", "by": "$.bounds.y", "bw": "$.bounds.w", "bh": "$.bounds.h" } },
+    { "assert": "doc.inspect", "save": { "bx": "$.bounds.x", "by": "$.bounds.y", "bw": "$.bounds.w", "bh": "$.bounds.h" } },
     { "execute": "view.zoom_to_fit", "args": { "padding": 50 } },
     { "assert": "view.get", "expect": [
         { "path": "$.visible.x", "le": "{{bx}}" }, { "path": "$.visible.y", "le": "{{by}}" },

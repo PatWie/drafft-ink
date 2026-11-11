@@ -3,12 +3,12 @@
   "steps": [
     { "harness": "load_generated", "args": { "count": 5 } },
     { "execute": "arrow.reroute", "args": { "ids": ["e4"] }, "expect": [ { "path": "$.rerouted", "eq": ["e4"] } ] },
-    { "harness": "scene_probe", "args": { "id": "e4" }, "save": { "n0": "$.element.points" }, "expect": [ { "path": "$.element.points", "len": 2, "note": "a straight arrow has two points" } ] },
+    { "assert": "element.query", "args": { "filter": { "ids": ["e4"] }, "fields": ["points"] }, "save": { "n0": "$.items[0].points" }, "expect": [ { "path": "$.items[0].points", "len": 2, "note": "a straight arrow has two points" } ] },
 
     { "execute": "arrow.set_type", "args": { "ids": ["e4"], "type": "elbow" }, "expect": [ { "path": "$.undo_label", "eq": "Set arrow type" } ] },
-    { "harness": "scene_probe", "args": { "id": "e4" }, "expect": [
-        { "path": "$.element.points", "len": 4, "note": "an elbow arrow turns twice" },
-        { "path": "$.element.binding.start.target", "eq": "e0" }, { "path": "$.element.binding.end.target", "eq": "e1" } ] },
+    { "assert": "element.query", "args": { "filter": { "ids": ["e4"] }, "fields": ["points", "bindings"] }, "expect": [
+        { "path": "$.items[0].points", "len": 4, "note": "an elbow arrow turns twice" },
+        { "path": "$.items[0].bindings.start", "eq": "e0" }, { "path": "$.items[0].bindings.end", "eq": "e1" } ] },
 
     { "execute": "arrow.set_head", "args": { "ids": ["e4"], "end": "start", "head": "triangle" }, "expect": [ { "path": "$.changed", "eq": true } ] },
     { "execute": "arrow.swap_heads", "args": { "ids": ["e4"] }, "expect": [ { "path": "$.undo_label", "eq": "Swap arrowheads" } ] },
@@ -17,6 +17,6 @@
     { "execute": "arrow.set_type", "args": { "ids": ["e0"], "type": "elbow" }, "refused": "not_applicable", "text": "arrows and lines" },
 
     { "undo": 3, "expect": [ { "path": "$.undone", "len": 3 } ] },
-    { "harness": "scene_probe", "args": { "id": "e4" }, "expect": [ { "path": "$.element.points", "len": 2, "note": "Back to the straight arrow." } ] }
+    { "assert": "element.query", "args": { "filter": { "ids": ["e4"] }, "fields": ["points"] }, "expect": [ { "path": "$.items[0].points", "len": 2, "note": "Back to the straight arrow." } ] }
   ]
 }
