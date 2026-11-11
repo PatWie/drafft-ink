@@ -868,7 +868,7 @@ pub fn connect<T: SceneTx>(
     if (ca - cb).hypot() < 1e-6 {
         cb.x += 1.0;
     }
-    let id = text_bind::fresh_element_id(&*tx, ids);
+    let id = crate::ids::unused_element_id(&*tx, ids);
     let mut style = spec.style.clone();
     style.seed = ids.seed();
     let arrow = insert_on_top(tx, |z| linear_element(id, z, &[ca, cb], &spec.linear, style))?;

@@ -21,9 +21,10 @@ use drafftink_scene::{
 use super::route::{Heads, NodeBox, RouteParams, arrow_element, route_edge, route_self_loop};
 use super::{Algorithm, LayoutError, LayoutGraph, LayoutOpts, compute_layout, scene_bounds};
 use crate::binding::update_bound_arrows;
+use crate::ids::unused_element_id;
 use crate::text_bind::{
-    TextBindError, TextMeasure, container_dim_for_text, create_label, fresh_element_id, inner_size, measure_lines,
-    measure_text, wrap_text,
+    TextBindError, TextMeasure, container_dim_for_text, create_label, inner_size, measure_lines, measure_text,
+    wrap_text,
 };
 
 /// Most nodes in one diagram.
@@ -670,7 +671,7 @@ pub fn diagram_create<T: SceneTx, M: TextMeasure + ?Sized>(
     }
 
     // ---- frame id and the nodes' elements ----
-    let frame_id = opts.frame.as_ref().map(|_| fresh_element_id(tx, ids));
+    let frame_id = opts.frame.as_ref().map(|_| unused_element_id(tx, ids));
     let mut created: Vec<ElementId> = Vec::new();
     let mut node_ids: Vec<ElementId> = Vec::with_capacity(spec.nodes.len());
     let mut boxes: Vec<NodeBox> = Vec::with_capacity(spec.nodes.len());
@@ -678,7 +679,7 @@ pub fn diagram_create<T: SceneTx, M: TextMeasure + ?Sized>(
     for (i, n) in spec.nodes.iter().enumerate() {
         let pos = layout.positions[i] + shift;
         let size = sizes[i];
-        let id = fresh_element_id(tx, ids);
+        let id = unused_element_id(tx, ids);
         let mut style = Style::default();
         if let Some(s) = &n.style {
             s.apply(&mut style);
@@ -753,7 +754,7 @@ pub fn diagram_create<T: SceneTx, M: TextMeasure + ?Sized>(
             let p = RouteParams { path, waypoints: &waypoints, flow: layout.flow, lane, obstacles: &obstacles };
             route_edge(&boxes[a], &boxes[b], &p)
         };
-        let id = fresh_element_id(tx, ids);
+        let id = unused_element_id(tx, ids);
         let mut arrow = arrow_element(id.clone(), tx.next_top_index()?, &route, path, heads_of(e))
             .ok_or(DiagramError::NotFinite)?;
         let from_el = tx.get(&node_ids[a]).map(|n| n.style.stroke_color);

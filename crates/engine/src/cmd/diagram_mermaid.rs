@@ -11,7 +11,8 @@ use drafftink_edit::layout::{
     Algorithm, Arrowheads, DiagramSpec, Direction, EdgeSpec, GroupSpec, LayoutOpts, NodeShape as SpecShape, NodeSpec,
     StyleSpec,
 };
-use drafftink_edit::text_bind::{TextMeasure, create_label, fresh_element_id, measure_text};
+use drafftink_edit::text_bind::{TextMeasure, create_label, measure_text};
+use drafftink_edit::unused_element_id;
 use drafftink_geom::kurbo::{Point, Rect, Vec2};
 use drafftink_io::IoError;
 use drafftink_io::mermaid::{self as mm, Diagram};
@@ -425,7 +426,7 @@ pub(super) fn sequence_extras<T: SceneTx>(
     let at = |(x, y): (f64, f64)| Point::new(x + shift.x, y + shift.y);
     let mut out = Vec::new();
     for &(x, y0, y1) in &seq.lifelines {
-        let id = fresh_element_id(tx, ids);
+        let id = unused_element_id(tx, ids);
         let z = tx.next_top_index().map_err(|e| BuildError::Move(e.to_string()))?;
         let mut e = Element::linear(id.clone(), Kind::Line, z, &[at((x, y0)), at((x, y1))])
             .ok_or_else(|| BuildError::Move("a lifeline came out empty".to_owned()))?;
@@ -435,7 +436,7 @@ pub(super) fn sequence_extras<T: SceneTx>(
         out.push(id);
     }
     for msg in &seq.messages {
-        let id = fresh_element_id(tx, ids);
+        let id = unused_element_id(tx, ids);
         let z = tx.next_top_index().map_err(|e| BuildError::Move(e.to_string()))?;
         let pts: Vec<Point> = if msg.from.0 == msg.to.0 {
             vec![at(msg.from), at((msg.from.0 + 40.0, msg.from.1)), at((msg.from.0 + 40.0, msg.to.1)), at(msg.to)]

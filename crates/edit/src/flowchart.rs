@@ -16,8 +16,9 @@ use kurbo::{Point, Rect};
 use drafftink_scene::{Element, ElementId, Head, IdSource, IndexError, Kind, PathType, SceneRead, SceneTx, StoreError};
 
 use crate::binding::update_bound_arrows;
+use crate::ids::unused_element_id;
 use crate::layout::{Direction, Heads, NodeBox, RouteParams, arrow_element, route_edge};
-use crate::text_bind::{TextBindError, TextMeasure, create_label, fresh_element_id};
+use crate::text_bind::{TextBindError, TextMeasure, create_label};
 
 /// The default distance between a node and the node grown from it.
 pub const DEFAULT_GAP: f64 = 80.0;
@@ -267,7 +268,7 @@ fn create_one<T: SceneTx, M: TextMeasure + ?Sized>(
         }
     };
 
-    let node_id = fresh_element_id(tx, ids);
+    let node_id = unused_element_id(tx, ids);
     let mut node = Element::new(node_id.clone(), parent.kind.clone(), index_for(tx)?)
         .with_bounds(rect.x0, rect.y0, rect.width(), rect.height())
         .with_style(parent.style.clone());
@@ -279,7 +280,7 @@ fn create_one<T: SceneTx, M: TextMeasure + ?Sized>(
     let parent_box = NodeBox::of(parent).ok_or(FlowchartError::NotFinite)?;
     let params = RouteParams { path: opts.path, waypoints: &[], flow: Some(dir), lane: (0, 1), obstacles: &[] };
     let route = route_edge(&parent_box, &node_box, &params);
-    let arrow_id = fresh_element_id(tx, ids);
+    let arrow_id = unused_element_id(tx, ids);
     let mut arrow = arrow_element(arrow_id.clone(), index_for(tx)?, &route, opts.path, opts.heads)
         .ok_or(FlowchartError::NotFinite)?;
     arrow.style.stroke_color = parent.style.stroke_color;

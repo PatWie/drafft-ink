@@ -3,6 +3,8 @@
 
 use std::collections::BTreeMap;
 
+use drafftink_edit::CopyError;
+use drafftink_edit::create::CreateError;
 use drafftink_edit::paste::{PasteError, PasteOpts, insert_elements, insert_text};
 use drafftink_edit::text_bind::MonospaceMeasure;
 use drafftink_scene::{
@@ -146,7 +148,7 @@ fn refusals_leave_the_transaction_untouched() {
     bad.transform.w = f64::NAN;
     assert!(matches!(
         insert_elements(&mut tx, &[bad], &none, &PasteOpts::default(), ids),
-        Err(PasteError::Invalid { .. })
+        Err(PasteError::Copy(CopyError::Invalid { .. }))
     ));
     assert_eq!(tx.len_all(), 0);
 }
@@ -166,12 +168,12 @@ fn text_is_measured_centred_and_limited() {
     let ids = &mut SeqIds::new();
     assert!(matches!(
         insert_text(&mut tx, &m, ids, "  \n", font.clone(), Style::default(), Point::ORIGIN),
-        Err(PasteError::EmptyText)
+        Err(PasteError::Text(CreateError::EmptyText))
     ));
     let long = "x".repeat(1_000_001);
     assert!(matches!(
         insert_text(&mut tx, &m, ids, &long, font, Style::default(), Point::ORIGIN),
-        Err(PasteError::TextTooLong { .. })
+        Err(PasteError::Text(CreateError::TextTooLong { .. }))
     ));
 }
 

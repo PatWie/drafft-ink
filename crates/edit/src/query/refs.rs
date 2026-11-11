@@ -12,11 +12,11 @@ use serde::{Deserialize, Serialize};
 
 use drafftink_scene::{ElementId, GroupId, Kind, SceneRead};
 
-use crate::group::units::{Relations, is_label, primary_id, sort_z};
 use super::{
     AtHit, ConnectedTo, Field, LinkDirection, MAX_LIMIT, OneOrMany, Order, Query, QueryCtx, QueryError, QueryOpts,
     RegionFilter, StyleFilter, TextFilter, resolve_ref, run_query,
 };
+use crate::group::units::{Relations, is_label, primary_id, sort_z};
 
 /// Every field of `describe`, in the order of the catalog.
 pub const ALL_FIELDS: [Field; 14] = [

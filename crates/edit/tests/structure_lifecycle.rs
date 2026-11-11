@@ -5,6 +5,7 @@ mod structure_support;
 
 use std::collections::BTreeSet;
 
+use drafftink_edit::CopyError;
 use drafftink_edit::group;
 use drafftink_edit::lifecycle::{self, ChildPolicy, DuplicateOpts, LifecycleError};
 use drafftink_edit::transform;
@@ -214,7 +215,7 @@ fn duplicate_refusals_change_nothing() {
     ));
     assert!(matches!(
         run(&mut s, |tx| lifecycle::duplicate(tx, &ids(&["a", "edge"]), &o, &mut src)),
-        Err(LifecycleError::Invalid { .. })
+        Err(LifecycleError::Copy(CopyError::Invalid { .. }))
     ));
     assert_eq!(s.revision(), rev);
 }
@@ -235,7 +236,7 @@ fn a_stuck_id_source_is_an_error_not_a_loop() {
     }
     let mut s = scene(vec![rect("a", 0.0, 0.0, 10.0, 10.0)]);
     let r = run(&mut s, |tx| lifecycle::duplicate(tx, &ids(&["a"]), &DuplicateOpts::default(), &mut Stuck));
-    assert!(matches!(r, Err(LifecycleError::IdsExhausted)));
+    assert!(matches!(r, Err(LifecycleError::Copy(CopyError::IdsExhausted))));
 }
 
 #[test]

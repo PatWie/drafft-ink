@@ -4,8 +4,8 @@
 mod structure_support;
 
 use drafftink_edit::query::hit_by_path;
-use drafftink_edit::transform::{CommonBounds, set_common_bounds, tidy};
 use drafftink_edit::transform::{self, ResizeSpec};
+use drafftink_edit::transform::{CommonBounds, set_common_bounds, tidy};
 use drafftink_geom::select::{BoxHandle, Corner};
 use drafftink_scene::SceneStore;
 use kurbo::{Point, Vec2};

@@ -55,4 +55,3 @@ pub fn hit_by_path<R: SceneRead>(scene: &R, path: &[Point], radius: f64) -> Vec<
     sort_z(scene, &mut out);
     out
 }
-

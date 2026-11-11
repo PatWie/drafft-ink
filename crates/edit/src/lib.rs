@@ -26,6 +26,7 @@ pub mod arrange;
 pub mod arrow;
 pub mod binding;
 pub mod brush;
+mod copy;
 pub mod create;
 pub mod elbow;
 pub mod flowchart;
@@ -44,3 +45,6 @@ pub mod text_bind;
 pub mod text_cmd;
 pub mod transform;
 pub mod zorder;
+
+pub use copy::CopyError;
+pub use ids::unused_element_id;

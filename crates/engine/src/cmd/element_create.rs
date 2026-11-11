@@ -716,7 +716,7 @@ fn create_element(s: &mut Session, a: CreateArgs) -> Result<CreateOut, Refusal> 
         let is_label = matches!(plan.body, Body::Label { .. });
         let wanted = match &plan.id {
             Some(i) => i.clone(),
-            None => text_bind::fresh_element_id(&*tx, ids),
+            None => drafftink_edit::unused_element_id(&*tx, ids),
         };
         let mut style = plan.style.clone();
         style.seed = ids.seed();

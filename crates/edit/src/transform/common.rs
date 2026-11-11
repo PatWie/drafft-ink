@@ -1,6 +1,5 @@
 //! Setting the common bounds of several elements (`element.set_bounds`), and rounding the noise a resize leaves.
 
-
 use drafftink_geom::kurbo::{Point, Vec2};
 use drafftink_geom::select::{BoxHandle, Corner};
 use drafftink_scene::{ElementId, ElementKind, SceneTx, StoreError};

@@ -12,10 +12,11 @@ use drafftink_scene::{
     StoreError, Style, TextAlign, TextData, TextRun, TextStyle, Transform, VerticalAlign, ZIndex,
 };
 
+use crate::ids::unused_element_id;
 use crate::style::{Prop, StyleProps};
 use crate::text_bind::{
-    BOUND_TEXT_PADDING, GrowAnchor, TextBindError, TextMeasure, bind_text, container_dim_for_text, fresh_element_id,
-    measure_text, relayout_label,
+    BOUND_TEXT_PADDING, GrowAnchor, TextBindError, TextMeasure, bind_text, container_dim_for_text, measure_text,
+    relayout_label,
 };
 
 /// The font sizes the step commands move between, smallest first.
@@ -583,7 +584,7 @@ pub fn create_text<T: SceneTx, M: TextMeasure + ?Sized>(
     data.auto_resize = spec.width.is_none();
     let size = measure_text(m, spec.content, &data.font, spec.width);
     let w = spec.width.unwrap_or(size.width);
-    let id = fresh_element_id(tx, ids);
+    let id = unused_element_id(tx, ids);
     let mut style = spec.style.clone();
     style.seed = ids.seed();
     let z = tx.next_top_index()?;
@@ -653,7 +654,7 @@ pub fn wrap_in_container<T: SceneTx, M: TextMeasure + ?Sized>(
         };
         let (below, _) = tx.z_neighbors(&tid);
         let z = ZIndex::between(below.as_ref(), Some(&t.index))?;
-        let cid = fresh_element_id(tx, ids_src);
+        let cid = unused_element_id(tx, ids_src);
         let mut style = Style::default();
         style.stroke_color = t.style.stroke_color;
         style.opacity = t.style.opacity;

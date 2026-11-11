@@ -33,6 +33,7 @@ use drafftink_scene::{
 };
 
 use crate::binding::{BindingError, update_bound_arrows};
+use crate::ids::unused_element_id;
 
 /// Space between a container's outline and its label, on every side.
 pub const BOUND_TEXT_PADDING: f64 = 5.0;
@@ -628,7 +629,7 @@ pub fn create_label<T: SceneTx, M: TextMeasure + ?Sized>(
     data.font = font;
     data.container_id = Some(ce.id.clone());
     data.label_position = position;
-    let id = fresh_element_id(tx, ids);
+    let id = unused_element_id(tx, ids);
     let mut e = Element::new(id.clone(), ElementKind::Text(data), z_above_container(tx, &ce)?);
     e.style.stroke_color = ce.style.stroke_color;
     e.style.opacity = ce.style.opacity;
@@ -638,19 +639,6 @@ pub fn create_label<T: SceneTx, M: TextMeasure + ?Sized>(
     tx.insert(e)?;
     write_layout(tx, container, &id, &layout)?;
     Ok(LabelOutcome { label: id, container_grew: layout.grew })
-}
-
-/// An element id that is not used in `r` (live or deleted).
-pub fn fresh_element_id<R: SceneRead>(r: &R, ids: &mut dyn IdSource) -> ElementId {
-    // A source that keeps returning used ids would loop for ever; give up after a bound and let the insert report it.
-    let mut id = ids.element_id();
-    for _ in 0..10_000 {
-        if !r.contains(&id) {
-            break;
-        }
-        id = ids.element_id();
-    }
-    id
 }
 
 /// Detaches a label (`text.unbind`). The text keeps its place and size as a free text with a fixed width.
