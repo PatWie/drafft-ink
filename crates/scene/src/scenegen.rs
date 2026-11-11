@@ -20,7 +20,8 @@
 //! take well under a second.
 
 use drafftink_geom::kurbo::Point;
-use drafftink_scene::{
+
+use crate::{
     BindMode, Binding, Color, Document, Element, ElementId, ElementKind, FillPattern, FreehandData, GroupId, Head,
     LinearKind, MathData, Rng64, SplitMix64, TextData, Transform, ZIndex,
 };
@@ -199,9 +200,8 @@ pub fn expected_kind_counts(count: usize) -> std::collections::BTreeMap<&'static
 
 #[cfg(test)]
 mod tests {
-    use drafftink_scene::SceneRead;
-
     use super::*;
+    use crate::SceneRead;
 
     #[test]
     fn the_same_seed_gives_the_same_document_and_another_seed_a_different_one() {
@@ -259,8 +259,8 @@ mod tests {
     #[test]
     fn a_generated_scene_loads_into_a_memory_store() {
         let doc = generate(2_000, 5).unwrap();
-        let mut store = drafftink_scene::MemoryStore::new();
-        drafftink_scene::load_document(&mut store, &doc).unwrap();
+        let mut store = crate::MemoryStore::new();
+        crate::load_document(&mut store, &doc).unwrap();
         assert_eq!(store.len(), 2_000);
     }
 }

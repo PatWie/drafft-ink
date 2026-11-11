@@ -22,6 +22,10 @@ pub(crate) struct RepaintState {
     hidden: bool,
     /// `Window::request_redraw` was called and the matching `RedrawRequested` has not arrived yet.
     requested: bool,
+    /// The shortest time between the starts of two frames. Zero: no pacing.
+    min_interval: Duration,
+    /// When the last frame began.
+    last_draw: Option<Instant>,
 }
 
 impl RepaintState {
@@ -35,14 +39,39 @@ impl RepaintState {
         self.needs_redraw_call()
     }
 
+    /// Pace frames: two frames start at least `interval` apart (the refresh period of the display, less a margin).
+    /// Input that arrives faster is drawn once per interval, and a frame that is due too early waits for its
+    /// deadline (`control_flow`). A frame after a quiet time is not delayed. Zero turns pacing off.
+    pub(crate) fn set_min_interval(&mut self, interval: Duration) {
+        self.min_interval = interval;
+    }
+
     /// True once per pending frame when the caller must call `Window::request_redraw`: a frame is
-    /// pending, none has been requested yet, and the window is visible.
+    /// pending, none has been requested yet, the window is visible, and the last frame began long enough ago.
     pub(crate) fn needs_redraw_call(&mut self) -> bool {
-        if self.now.is_some() && !self.requested && !self.hidden {
+        self.needs_redraw_call_at(Instant::now())
+    }
+
+    fn needs_redraw_call_at(&mut self, now: Instant) -> bool {
+        if self.now.is_some() && !self.requested && !self.hidden && self.pace_wait(now).is_none() {
             self.requested = true;
             return true;
         }
         false
+    }
+
+    /// How long a frame that is due now must still wait for the pacing interval.
+    fn pace_wait(&self, now: Instant) -> Option<Duration> {
+        let due = self.last_draw?.checked_add(self.min_interval)?;
+        due.checked_duration_since(now).filter(|d| !d.is_zero())
+    }
+
+    /// When a pending frame may start, if pacing holds it back.
+    fn pace_deadline(&self) -> Option<Instant> {
+        if self.now.is_none() || self.requested || self.hidden {
+            return None;
+        }
+        self.last_draw?.checked_add(self.min_interval)
     }
 
     /// Ask for a frame after `delay`. Keeps the earliest deadline. A delay too large to represent means never.
@@ -83,8 +112,13 @@ impl RepaintState {
     /// The window is about to draw. Returns why, and clears the request and any older deadline.
     /// `None` means nobody asked: the OS exposed the window (X11 expose, a compositor request).
     pub(crate) fn take(&mut self) -> Option<RedrawReason> {
+        self.take_at(Instant::now())
+    }
+
+    fn take_at(&mut self, now: Instant) -> Option<RedrawReason> {
         self.later = None;
         self.requested = false;
+        self.last_draw = Some(now);
         self.now.take()
     }
 
@@ -120,9 +154,10 @@ impl RepaintState {
 
     /// The control flow for the event loop: `Wait`, or `WaitUntil` the earliest deadline.
     pub(crate) fn control_flow(&self) -> ControlFlow {
-        match self.later {
-            Some((at, _)) => ControlFlow::WaitUntil(at),
-            None => ControlFlow::Wait,
+        match (self.later.map(|(at, _)| at), self.pace_deadline()) {
+            (Some(a), Some(b)) => ControlFlow::WaitUntil(a.min(b)),
+            (Some(at), None) | (None, Some(at)) => ControlFlow::WaitUntil(at),
+            (None, None) => ControlFlow::Wait,
         }
     }
 }
@@ -248,6 +283,44 @@ mod tests {
         assert!(!s.apply(Instant::now(), Repaint::Idle));
         assert_eq!(scope.redraws(), 0);
         assert!(!s.pending_now());
+    }
+
+    #[test]
+    fn paced_frames_start_one_interval_apart_and_wait_with_a_deadline() {
+        let t0 = Instant::now();
+        let mut s = RepaintState::default();
+        s.set_min_interval(ms(16));
+        assert!(s.request_now(RedrawReason::Gesture), "the first frame is not held back");
+        assert_eq!(s.take_at(t0), Some(RedrawReason::Gesture));
+        // Input 5 ms later: the frame is pending, no redraw call yet, and the loop wakes at t0 + 16 ms.
+        s.now = Some(RedrawReason::Gesture);
+        assert!(!s.needs_redraw_call_at(t0 + ms(5)));
+        assert!(matches!(s.control_flow(), ControlFlow::WaitUntil(at) if at == t0 + ms(16)));
+        // More input while it waits joins the same frame.
+        s.now = Some(RedrawReason::Gesture);
+        assert!(!s.needs_redraw_call_at(t0 + ms(10)));
+        assert!(s.needs_redraw_call_at(t0 + ms(16)), "due at the deadline");
+        assert!(!s.needs_redraw_call_at(t0 + ms(17)), "asked once");
+        assert!(matches!(s.control_flow(), ControlFlow::Wait), "requested: nothing to wait for");
+    }
+
+    #[test]
+    fn a_frame_after_a_quiet_time_is_not_delayed() {
+        let t0 = Instant::now();
+        let mut s = RepaintState::default();
+        s.set_min_interval(ms(16));
+        s.take_at(t0);
+        s.now = Some(RedrawReason::Command);
+        assert!(s.needs_redraw_call_at(t0 + ms(500)));
+    }
+
+    #[test]
+    fn without_pacing_every_request_is_immediate() {
+        let t0 = Instant::now();
+        let mut s = RepaintState::default();
+        s.take_at(t0);
+        s.now = Some(RedrawReason::Gesture);
+        assert!(s.needs_redraw_call_at(t0));
     }
 
     #[test]

@@ -258,6 +258,8 @@ pub struct TabDoc {
     same_as: BTreeMap<u64, u64>,
     /// Elements committed to the working store since the spatial index last synced.
     touched: TouchedFeed,
+    /// The same ids for a cache outside the engine (the app's paint index), drained by [`TabDoc::take_touched`].
+    outside_touched: TouchedFeed,
     /// The spatial index, built on first use and kept current from `touched`.
     scene_index: RefCell<IndexCache>,
 }
@@ -328,8 +330,12 @@ impl TabDoc {
 
     fn assemble(mut work: WorkStore, loro: DocStore) -> Self {
         let touched = TouchedFeed::default();
-        let feed = Rc::clone(&touched);
-        work.subscribe(Box::new(move |cs| feed.borrow_mut().extend(cs.ids().cloned())));
+        let outside_touched = TouchedFeed::default();
+        let (feed, outside_feed) = (Rc::clone(&touched), Rc::clone(&outside_touched));
+        work.subscribe(Box::new(move |cs| {
+            feed.borrow_mut().extend(cs.ids().cloned());
+            outside_feed.borrow_mut().extend(cs.ids().cloned());
+        }));
         Self {
             work,
             loro,
@@ -342,6 +348,7 @@ impl TabDoc {
             redo_revs: Vec::new(),
             same_as: BTreeMap::new(),
             touched,
+            outside_touched,
             scene_index: RefCell::default(),
         }
     }
@@ -377,6 +384,15 @@ impl TabDoc {
             }
         }
         Ref::map(self.scene_index.borrow(), |cache| &cache.index)
+    }
+
+    /// The ids of the elements committed to the working store since the previous call, in id order. A cache that
+    /// lives outside the engine and mirrors the scene (the paint index) re-reads these instead of comparing the
+    /// whole scene with what it saw: the cost follows what changed, not the size of the document. Edits, gesture
+    /// frames, rollbacks, undo, redo and remote updates all count. A new cache must build from the whole scene
+    /// once and call this to start from an empty list.
+    pub fn take_touched(&self) -> Vec<ElementId> {
+        std::mem::take(&mut *self.outside_touched.borrow_mut()).into_iter().collect()
     }
 
     /// Read access to the working store (what commands and the renderer read).

@@ -25,7 +25,7 @@ use winit::window::{Window, WindowId};
 
 use crate::app::{EventCx, FrameCx, FrameOutput, Outbox, SetupCx, ShellApp, ViewInfo, Waker};
 use crate::compositor::{Compositor, EguiFrame};
-use crate::events::{ClipboardContent, Handled, Repaint, ShellEvent};
+use crate::events::{ClipboardContent, Handled, Repaint, ShellEvent, WheelInput};
 #[cfg(not(target_arch = "wasm32"))]
 use crate::events::{PointerKind, PointerPhase, PointerPoint, PointerSample, TextInput};
 use crate::gpu::{Gpu, GpuError, GpuOptions, PresentSurface, create_instance};
@@ -73,6 +73,8 @@ pub(crate) enum UserEvent {
     Wake(RedrawReason),
     /// The platform host (web glue, file reader thread) has an event.
     Host(HostEvent),
+    /// [`Waker::exit`]: close the window and leave the loop.
+    Exit,
 }
 
 static FRAMES: AtomicU64 = AtomicU64::new(0);
@@ -398,6 +400,11 @@ impl<A: ShellApp> Shell<A> {
     fn handle_host_event(&mut self, event: HostEvent) {
         match event {
             HostEvent::Egui(ev) => {
+                if matches!(ev, egui::Event::MouseWheel { .. } | egui::Event::Zoom(_))
+                    && self.offer_wheel(std::slice::from_ref(&ev))
+                {
+                    return;
+                }
                 self.push_egui_event(ev);
                 self.want_frame(RedrawReason::Ui);
             }
@@ -408,6 +415,18 @@ impl<A: ShellApp> Shell<A> {
                 self.dispatch(ev);
             }
         }
+    }
+
+    /// Offers wheel, scroll and pinch events to the app when the pointer is over the canvas. True when the app took
+    /// them; egui then never sees them (it would smooth the scroll over several frames and repaint for each).
+    fn offer_wheel(&mut self, events: &[egui::Event]) -> bool {
+        let Some(run) = self.running.as_ref() else { return false };
+        let Some(pos) = self.last_pos else { return false };
+        if egui_owns_pointer(&run.ctx, run.canvas_rect, Some(pos)) {
+            return false;
+        }
+        let wheel = WheelInput { pos, events: events.to_vec(), modifiers: self.modifiers };
+        self.dispatch(ShellEvent::Wheel(wheel)).0 == Handled::Yes
     }
 
     fn set_visible(&mut self, visible: bool) {
@@ -481,10 +500,13 @@ impl<A: ShellApp> Shell<A> {
         }
 
         // ---- egui pass ----
-        let mut raw = run.state.take_egui_input(window);
-        if let Some(info) = raw.viewports.get_mut(&raw.viewport_id) {
-            egui_winit::update_viewport_info(info, &run.ctx, window, false);
-        }
+        let raw = drafftink_profile::scope("egui_input", || {
+            let mut raw = run.state.take_egui_input(window);
+            if let Some(info) = raw.viewports.get_mut(&raw.viewport_id) {
+                egui_winit::update_viewport_info(info, &run.ctx, window, false);
+            }
+            raw
+        });
         let mut frame_out = FrameOutput::default();
         let view = ViewInfo { size_px: size, scale };
         let mut out = Outbox::default();
@@ -538,7 +560,7 @@ impl<A: ShellApp> Shell<A> {
             platform_output.cursor_icon = frame_out.cursor.unwrap_or_default();
         }
         run.last_cursor = Some(platform_output.cursor_icon);
-        run.state.handle_platform_output(window, platform_output);
+        drafftink_profile::scope("platform_output", || run.state.handle_platform_output(window, platform_output));
         run.canvas_rect = frame_out.canvas_rect;
         run.text_input = want_text_input;
         let ime_changed = run.applied_text_input != ime_rect;
@@ -559,13 +581,16 @@ impl<A: ShellApp> Shell<A> {
         }
 
         // ---- composite + present ----
-        let mut frame = EguiFrame::from_output(&run.ctx, output);
+        let mut frame = drafftink_profile::scope("tessellate", || EguiFrame::from_output(&run.ctx, output));
         if !run.stashed_textures.is_empty() {
             let mut merged = std::mem::take(&mut run.stashed_textures);
             merged.append(std::mem::take(&mut frame.textures_delta));
             frame.textures_delta = merged;
         }
-        let surface_texture = match run.surface.surface.get_current_texture() {
+        let acquire = drafftink_profile::span("acquire_surface");
+        let acquired = run.surface.surface.get_current_texture();
+        drop(acquire);
+        let surface_texture = match acquired {
             wgpu::CurrentSurfaceTexture::Success(t) => Some(t),
             wgpu::CurrentSurfaceTexture::Suboptimal(t) => {
                 run.surface.reconfigure(&run.gpu);
@@ -587,7 +612,7 @@ impl<A: ShellApp> Shell<A> {
             match result {
                 Ok(()) => {
                     window.pre_present_notify();
-                    run.gpu.queue.present(texture);
+                    drafftink_profile::scope("present", || run.gpu.queue.present(texture));
                     true
                 }
                 Err(e) => {
@@ -813,6 +838,14 @@ impl<A: ShellApp> Shell<A> {
     }
 }
 
+/// The shortest time between two frames on this display: the refresh period less 10%, so a vsync-paced
+/// present never finds the next frame a hair too early. 60 Hz when the display does not say.
+#[cfg(not(target_arch = "wasm32"))]
+fn frame_interval(window: &Window) -> Duration {
+    let millihertz = window.current_monitor().and_then(|m| m.refresh_rate_millihertz()).filter(|r| *r > 0).unwrap_or(60_000);
+    Duration::from_secs_f64(0.9 * 1000.0 / f64::from(millihertz))
+}
+
 fn set_window_cursor(window: &Window, icon: egui::CursorIcon) {
     #[cfg(not(target_arch = "wasm32"))]
     match crate::native::cursor_icon(icon) {
@@ -878,6 +911,26 @@ impl<A: ShellApp> Shell<A> {
         if matches!(event, WindowEvent::CursorLeft { .. }) {
             run.held_cursor = None;
         }
+        if matches!(
+            event,
+            WindowEvent::MouseWheel { .. } | WindowEvent::PinchGesture { .. } | WindowEvent::PanGesture { .. }
+        ) {
+            // Let egui's window layer translate the event, then offer the result to the app before egui's
+            // context smooths it. Only what the app does not take stays in egui's input.
+            let before = run.state.egui_input().events.len();
+            let response = run.state.on_window_event(window, &event);
+            let produced = run.state.egui_input_mut().events.split_off(before);
+            if !produced.is_empty() && self.offer_wheel(&produced) {
+                return;
+            }
+            if let Some(run) = self.running.as_mut() {
+                run.state.egui_input_mut().events.extend(produced);
+            }
+            if response.repaint {
+                self.want_frame(RedrawReason::Gesture);
+            }
+            return;
+        }
         let response = run.state.on_window_event(window, &event);
         coalesce_pointer_moves(&mut run.state.egui_input_mut().events);
         let over_egui = run.over_egui;
@@ -927,6 +980,8 @@ impl<A: ShellApp> ApplicationHandler<UserEvent> for Shell<A> {
             Err(e) => return self.fail(event_loop, ShellError::Window(e.to_string())),
         };
         self.window = Some(window.clone());
+        #[cfg(not(target_arch = "wasm32"))]
+        self.repaint.set_min_interval(frame_interval(&window));
         #[cfg(target_arch = "wasm32")]
         {
             let proxy = self.proxy.clone();
@@ -963,6 +1018,7 @@ impl<A: ShellApp> ApplicationHandler<UserEvent> for Shell<A> {
                 self.dispatch(ShellEvent::Wake(reason));
             }
             UserEvent::Host(ev) => self.handle_host_event(ev),
+            UserEvent::Exit => event_loop.exit(),
         }
     }
 
@@ -972,6 +1028,10 @@ impl<A: ShellApp> ApplicationHandler<UserEvent> for Shell<A> {
         // and the app answers with a repaint only when something did.
         if !matches!(cause, StartCause::ResumeTimeReached { .. }) {
             return;
+        }
+        // A frame that pacing held back is due now.
+        if self.repaint.needs_redraw_call() {
+            self.request_redraw();
         }
         match self.repaint.expired(Instant::now()) {
             Some(RedrawReason::Collab) => {

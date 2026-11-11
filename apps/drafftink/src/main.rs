@@ -2,22 +2,28 @@
 //!
 //! ```text
 //! drafftink [FILE] [--room ROOM] [--server URL] [--bridge [PORT]] [--perf-overlay] [--perf-dump FILE]
+//!           [--perf-scenario KEY --perf-out FILE [--perf-secs N]]
 //! ```
 //!
 //! The bridge (an agent's door into the running app, `docs/agents.md`) is off unless `--bridge` is given.
 //! It listens on 127.0.0.1 only and writes a token file that only this user can read.
+//!
+//! `--perf-scenario` runs a performance scenario (`docs/performance.md` section 5.3): it shows a generated scene,
+//! prints `PERF-READY` when the app is quiet, measures until a line arrives on stdin (or `--perf-secs` have passed),
+//! writes the report to `--perf-out` and exits.
 
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::path::PathBuf;
 use std::process::ExitCode;
 
 use clap::Parser;
-use drafftink_app::native::{self, NativeOptions};
+use drafftink_app::native::{self, NativeOptions, ScenarioRun};
 use drafftink_app::{App, AppConfig, StartupLink};
 use drafftink_bridge::{BridgeConfig, BridgeError, BridgeServer};
 use drafftink_engine::cmd::collab::RoomLink;
 use drafftink_engine::ports::FileRef;
 use drafftink_gpu::{Options, RedrawReason, ShellError};
+use drafftink_profile::ScenarioKey;
 
 /// Drafft.ink: an infinite canvas whiteboard.
 #[derive(Debug, Parser)]
@@ -41,9 +47,22 @@ struct Args {
     /// At exit, write the performance counters (PerfStats JSON) to this file.
     #[arg(long, value_name = "FILE")]
     perf_dump: Option<PathBuf>,
+    /// Run a performance scenario, such as `idle`, `pan@10k` or `hover@100k`, and exit (needs `--perf-out`).
+    #[arg(long, value_name = "KEY", requires = "perf_out", value_parser = parse_key)]
+    perf_scenario: Option<ScenarioKey>,
+    /// Where `--perf-scenario` writes its report (JSON).
+    #[arg(long, value_name = "FILE")]
+    perf_out: Option<PathBuf>,
+    /// Length of the measured window of `--perf-scenario` in seconds. Default: until a line arrives on stdin.
+    #[arg(long, value_name = "SECONDS", requires = "perf_scenario")]
+    perf_secs: Option<f64>,
     /// Keep settings and documents in this folder instead of the user's data folder.
     #[arg(long, value_name = "DIR")]
     data_dir: Option<PathBuf>,
+}
+
+fn parse_key(text: &str) -> Result<ScenarioKey, String> {
+    text.parse::<ScenarioKey>().map_err(|e| e.to_string())
 }
 
 /// Why the app could not run.
@@ -69,7 +88,7 @@ fn main() -> ExitCode {
 }
 
 fn run(args: Args) -> Result<(), Failure> {
-    if args.perf_dump.is_some() || args.perf_overlay || drafftink_profile::enable_from_env("DRAFFTINK_PERF") {
+    if args.perf_dump.is_some() || args.perf_overlay || args.perf_scenario.is_some() || drafftink_profile::enable_from_env("DRAFFTINK_PERF") {
         drafftink_profile::set_enabled(true);
     }
     let mut platform = native::platform(&NativeOptions { data_dir: args.data_dir.clone() });
@@ -97,7 +116,13 @@ fn run(args: Args) -> Result<(), Failure> {
         perf_overlay: args.perf_overlay,
         stored_default_target: false,
     };
-    let result = drafftink_gpu::run(App::new(platform, config), Options::default());
+    let wake = platform.wake.clone();
+    let mut app = App::new(platform, config);
+    if let (Some(key), Some(out)) = (args.perf_scenario, args.perf_out) {
+        // The thread ends the app itself when the window is over.
+        native::spawn_scenario(ScenarioRun { key, out, secs: args.perf_secs }, app.scene_loader(), wake);
+    }
+    let result = drafftink_gpu::run(app, Options::default());
     // The idle checks read this line.
     eprintln!("frames={} vello_runs={}", drafftink_gpu::frames_drawn(), drafftink_gpu::vello_runs());
     drop(bridge);

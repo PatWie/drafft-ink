@@ -10,6 +10,8 @@ mod host;
 mod net;
 mod render;
 mod rng;
+#[cfg(feature = "scenarios")]
+mod scenario;
 mod storage;
 
 use std::path::PathBuf;
@@ -23,6 +25,8 @@ use crate::clock::AppClock;
 use crate::platform::{Platform, SharedClipboard, WakeCell};
 
 pub use dirs::{bridge_dir, data_dir};
+#[cfg(feature = "scenarios")]
+pub use scenario::{ScenarioRun, spawn as spawn_scenario};
 pub use storage::NativeStore;
 
 /// How the desktop platform is set up.

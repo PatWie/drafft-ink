@@ -30,6 +30,7 @@ use crate::config::AppConfig;
 use crate::editor::{KeyRoute, TextEditor, route};
 use crate::input::{self, Held};
 use crate::overlay;
+use crate::perf::{Look, SceneInstall, SceneLoader, SceneSlot, scene_hook};
 use crate::platform::{
     FontFile, Host, HostJob, Inbound, Inbox, InboxRx, PickKind, PickedFile, Platform, SharedClipboard, WakeCell, inbox,
 };
@@ -91,6 +92,8 @@ pub struct App {
     last_presence_ms: f64,
     collab_due_ms: Option<u64>,
     perf_overlay: bool,
+    /// Where a scenario driver delivers a generated scene (`scene_loader`).
+    scenes: Option<SceneSlot>,
     cursor: egui::CursorIcon,
     /// The picture of the text editor the engine was last told about.
     staged: Option<(u64, u64)>,
@@ -132,6 +135,7 @@ impl App {
             last_presence_ms: f64::NEG_INFINITY,
             collab_due_ms: Some(0),
             perf_overlay: config.perf_overlay,
+            scenes: None,
             cursor: egui::CursorIcon::Default,
             staged: None,
         }
@@ -140,6 +144,44 @@ impl App {
     /// The session, for launchers that run a script against it (tests, the bridge's first connection).
     pub fn session_mut(&mut self) -> &mut Session {
         &mut self.session
+    }
+
+    /// The door for a scenario driver: scenes sent through it replace the active tab's document at the next frame.
+    /// Call it before the shell runs.
+    pub fn scene_loader(&mut self) -> SceneLoader {
+        let (loader, slot) = scene_hook(self.wake.clone());
+        self.scenes = Some(slot);
+        loader
+    }
+
+    /// Installs the scene a driver sent, if one is waiting: the document, the camera, the selection. Like the test
+    /// rig's `load_generated`, it is not a command and leaves no history.
+    fn install_scene(&mut self, canvas: Size) {
+        let Some(install) = self.scenes.as_ref().and_then(SceneSlot::take) else { return };
+        let SceneInstall { doc, look, zoom, select } = install;
+        match drafftink_engine::store::TabDoc::from_document(&doc) {
+            Ok(td) => {
+                let tab = self.session.tab_mut();
+                tab.saved_revision = td.revision();
+                tab.doc = td;
+                tab.observed = drafftink_engine::state::Observed::default();
+                self.canvas.forget_index();
+                let scroll = match look {
+                    Look::Centre(p) => p,
+                    Look::Corner { at, margin } => {
+                        [at[0] + (canvas.width / 2.0 - margin) / zoom, at[1] + (canvas.height / 2.0 - margin) / zoom]
+                    }
+                };
+                self.run(Origin::Script, "view.set", json!({ "scroll": scroll, "zoom": zoom }));
+                if !select.is_empty() {
+                    self.run(Origin::Script, "selection.select", json!({ "ids": select }));
+                }
+            }
+            Err(e) => self.toast(format!("The scenario scene could not be loaded: {e}")),
+        }
+        if let Some(slot) = &self.scenes {
+            slot.done();
+        }
     }
 
     fn now_ms(&self) -> f64 {
@@ -272,6 +314,19 @@ impl App {
         }
         need |= self.session.dirty().is_some();
         if need { Repaint::Now(reason) } else { Repaint::Idle }
+    }
+
+    /// Wheel, scroll and pinch over the canvas, straight from the shell. `None`: not for the canvas now (a modal is
+    /// open, or the text editor is), so egui gets the events.
+    fn handle_wheel(&mut self, wheel: &drafftink_gpu::WheelInput) -> Option<Repaint> {
+        if self.ui.state.modal_open() || self.editor.is_some() {
+            return None;
+        }
+        let origin = self.canvas_rect.min;
+        let at = Point::new(f64::from(wheel.pos.x - origin.x), f64::from(wheel.pos.y - origin.y));
+        let events = input::wheel_events(&wheel.events, at, self.now_ms(), wheel.modifiers);
+        let need = self.canvas_input(&events) | self.session.dirty().is_some();
+        Some(if need { Repaint::Now(RedrawReason::Gesture) } else { Repaint::Idle })
     }
 
     /// Tells the room where the pointer is, at most every 33 ms. It changes nothing on this screen.
@@ -641,7 +696,10 @@ impl App {
 
         let tab = self.session.tab().id;
         let revision = self.session.store().revision();
-        self.canvas.sync_index(tab, revision, self.session.store());
+        // Not drained while the index is current, so ids committed meanwhile are not lost.
+        let touched =
+            if self.canvas.index_is_current(tab, revision) { Vec::new() } else { self.session.tab().doc.take_touched() };
+        self.canvas.sync_index(tab, revision, self.session.store(), &touched);
         let look = self.canvas.set_look(theme, grid) | self.canvas.sync_fonts();
         let hidden_changed = self.canvas.set_hidden(hide);
         let key = WorldKey {
@@ -671,6 +729,7 @@ impl App {
         if !world_stale && !overlay_stale {
             return;
         }
+        let _encode = drafftink_profile::phase(drafftink_profile::Phase::Encode);
         if world_stale {
             self.canvas.compose_world(self.session.store(), &view);
             self.world_key = Some(key);
@@ -874,6 +933,10 @@ impl ShellApp for App {
                     }
                 }
             }
+            ShellEvent::Wheel(wheel) => match self.handle_wheel(&wheel) {
+                Some(repaint) => (repaint, Handled::Yes),
+                None => (Repaint::Idle, Handled::No),
+            },
             ShellEvent::FilesDropped(files) => (self.handle_files_dropped(files), Handled::No),
             ShellEvent::Visibility(false) | ShellEvent::Focus(false) => {
                 if self.held.any() {
@@ -921,6 +984,11 @@ impl ShellApp for App {
         }
         let size = self.canvas_rect.size();
         self.sync_viewport(Size::new(f64::from(size.x), f64::from(size.y)), f64::from(cx.view.scale));
+        self.install_scene(Size::new(f64::from(size.x), f64::from(size.y)));
+        // The spatial index of a big document takes a moment to build (0.7 s at 100,000 elements). Build it here,
+        // in the frame that follows a load, so the first hover or drag does not pay for it. It follows the edits
+        // of every later frame by the ids they touched, which is what the next hit test would do anyway.
+        drop(self.session.tab().doc.scene_index());
 
         for url in self.open_urls.drain(..) {
             cx.open_url(url, true);

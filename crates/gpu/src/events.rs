@@ -117,6 +117,21 @@ pub enum TextInput {
     Cancel,
 }
 
+/// Wheel, trackpad scroll or pinch input with the pointer over the canvas (not over an egui area).
+///
+/// The shell offers it to the app before egui sees it. egui smooths a scroll over several frames and asks for a
+/// repaint for each of them, so an app that moves the camera itself would draw two or three frames for one tick.
+/// If the app answers [`Handled::Yes`] egui never sees the events.
+#[derive(Clone, Debug, PartialEq)]
+pub struct WheelInput {
+    /// Pointer position in window points.
+    pub pos: egui::Pos2,
+    /// `egui::Event::MouseWheel` and `egui::Event::Zoom`, as egui's window layer made them.
+    pub events: Vec<egui::Event>,
+    /// Modifiers held when the events arrived.
+    pub modifiers: egui::Modifiers,
+}
+
 /// Why the shell talks to the app. See [`crate::ShellApp::event`].
 #[derive(Clone, Debug, PartialEq)]
 pub enum ShellEvent {
@@ -143,6 +158,8 @@ pub enum ShellEvent {
     GpuRecreated,
     /// Another thread or task called [`crate::Waker::wake`]. Drain your queues here.
     Wake(RedrawReason),
+    /// Wheel or pinch over the canvas. Answer [`Handled::Yes`] to keep it from egui.
+    Wheel(WheelInput),
 }
 
 /// The answer to [`ShellEvent::Paste`]: did the app take it?

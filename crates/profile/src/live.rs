@@ -44,13 +44,23 @@ pub struct PhaseGuard {
     phase: Phase,
     /// When timing started; `None` while recording is off.
     start_ns: Option<u64>,
+    /// What the phase that was open when this one began had already counted for its children.
+    outer_children_ns: u64,
     _span: Span,
+}
+
+thread_local! {
+    /// Time of the phases that ended inside the innermost open phase. A phase counts its own time only, so the
+    /// phases of a frame never add up to more than the frame (`encode` inside `ui` is not `ui` as well).
+    static CHILDREN_NS: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
 }
 
 /// Start timing `phase` of the current frame.
 #[inline]
 pub fn phase(phase: Phase) -> PhaseGuard {
-    PhaseGuard { phase, start_ns: spans::enabled().then(now_ns), _span: spans::span(phase.name()) }
+    let start_ns = spans::enabled().then(now_ns);
+    let outer_children_ns = if start_ns.is_some() { CHILDREN_NS.with(|c| c.replace(0)) } else { 0 };
+    PhaseGuard { phase, start_ns, outer_children_ns, _span: spans::span(phase.name()) }
 }
 
 impl Drop for PhaseGuard {
@@ -58,7 +68,8 @@ impl Drop for PhaseGuard {
     fn drop(&mut self) {
         if let Some(start_ns) = self.start_ns {
             let took = now_ns().saturating_sub(start_ns);
-            frames().add_phase(self.phase, took);
+            let inside = CHILDREN_NS.with(|c| c.replace(self.outer_children_ns.saturating_add(took)));
+            frames().add_phase(self.phase, took.saturating_sub(inside));
         }
     }
 }
@@ -139,6 +150,28 @@ mod tests {
         assert_eq!(s.counters["elements_encoded"], 7);
         assert!(s.spans.iter().any(|r| r.name == "encode" && r.count == 1));
         assert!(s.compiled);
+    }
+
+    #[test]
+    fn a_phase_inside_another_counts_for_itself_only() {
+        let _l = test_lock();
+        reset();
+        spans::set_enabled(true);
+        work::redraw(RedrawReason::Gesture);
+        begin_frame();
+        in_phase(Phase::Ui, || {
+            std::thread::sleep(std::time::Duration::from_millis(2));
+            in_phase(Phase::Encode, || std::thread::sleep(std::time::Duration::from_millis(6)));
+            // A second inner phase after the first one ended.
+            in_phase(Phase::Encode, || std::thread::sleep(std::time::Duration::from_millis(2)));
+        });
+        end_frame();
+        spans::set_enabled(false);
+        let s = snapshot();
+        let (ui, encode, other) = (s.frames.phase_ms["ui"].max_ms, s.frames.phase_ms["encode"].max_ms, s.frames.phase_ms["other"].max_ms);
+        assert!((8.0..11.0).contains(&encode), "encode {encode}");
+        assert!((2.0..5.0).contains(&ui), "ui keeps its own time only: {ui}");
+        assert!(other < 2.0, "the phases add up to the frame: other {other}");
     }
 
     #[test]
