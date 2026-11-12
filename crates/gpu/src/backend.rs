@@ -32,15 +32,7 @@ impl BackendKind {
     }
 }
 
-/// How much of the scene a frame draws. Only the WebGL2 back end honours it; Vello always draws everything.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub enum Detail {
-    /// Everything.
-    #[default]
-    Full,
-    /// While the user moves the view or a shape: text is drawn as grey bars, which costs a tenth of the glyphs.
-    Moving,
-}
+pub use drafftink_render::replay::Detail;
 
 /// What [`Backend::present`] did with a frame.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

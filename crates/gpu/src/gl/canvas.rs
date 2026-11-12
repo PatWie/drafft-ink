@@ -9,7 +9,7 @@ use vello_gpu::color::{AlphaColor, Srgb};
 use vello_gpu::peniko::ImageBrush;
 use vello_gpu::{ImageId, ImageSource, Resources, Scene};
 
-use super::replay::{Brush, Canvas, GlyphDraw, LayerKind, Rgba};
+use drafftink_render::replay::{Brush, Canvas, GlyphDraw, LayerKind, Rgba};
 
 /// The atlas image of each picture, by the id of its pixel blob. `None`: left out.
 pub(crate) type Images = HashMap<u64, Option<ImageId>>;

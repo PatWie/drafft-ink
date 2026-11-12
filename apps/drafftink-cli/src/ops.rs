@@ -60,7 +60,7 @@ pub fn save(s: &mut Session, path: &Path, to: OutFormat) -> Result<Vec<String>, 
             json!({ "to": target, "format": "excalidraw", "remember": false, "overwrite": true }),
         )?,
         OutFormat::Svg => command(s, "doc.export", json!({ "format": "svg", "scope": "all", "to": target }))?,
-        OutFormat::Png => return Err(CliError::NeedsGpu),
+        OutFormat::Png => command(s, "doc.export", json!({ "format": "png", "scope": "all", "to": target }))?,
     };
     Ok(warnings_of(&out))
 }

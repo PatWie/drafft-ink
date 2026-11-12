@@ -21,6 +21,7 @@ webgl = ["dep:vello_gpu", "dep:glifo", "dep:egui_glow", "dep:glow"]
 
 [dependencies]
 drafftink-profile = { path = "../profile", version = "0.2.0" }
+drafftink-render = { path = "../render", version = "0.2.0" }
 egui = { workspace = true }
 egui-wgpu = { workspace = true, optional = true }
 wgpu = { workspace = true, features = ["std", "wgsl"], optional = true }

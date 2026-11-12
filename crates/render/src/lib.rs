@@ -10,6 +10,8 @@
 //!   elements by cheap stand-ins.
 //! * [`paint_overlay`] draws selection, handles, guides and the like into a scene of its own.
 //! * [`paint_grid`] draws a grid whose cost is bounded at every zoom.
+//! * [`replay`] reads a finished scene back into immediate-mode calls, for renderers other than Vello's GPU one
+//!   (the WebGL2 fallback, a CPU rasteriser).
 //! * [`ImageCache`] holds decoded pictures and lets the host decode on a worker.
 //!
 //! This crate never creates a GPU device or a surface; the `gpu` crate renders the scenes. It builds for wasm32.
@@ -33,6 +35,7 @@ mod overlay_peers;
 mod overlay_snap;
 mod overlay_text;
 mod painter;
+pub mod replay;
 mod spec;
 mod theme;
 mod view;

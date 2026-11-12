@@ -23,7 +23,7 @@ pub enum Command {
     /// Convert a document from one format to another.
     ///
     /// Inputs: drafft.ink (current or first version), Excalidraw, Mermaid text, PNG with the scene embedded.
-    /// Outputs: drafft.ink, Excalidraw, SVG. A PNG output needs a GPU, which this tool does not have.
+    /// Outputs: drafft.ink, Excalidraw, SVG, and PNG when this build has the `png` feature (drawn on the CPU, no GPU).
     Convert(ConvertArgs),
     /// Print the outline of a document: one line per shape and per arrow, in reading order.
     Outline(OutlineArgs),
@@ -151,8 +151,8 @@ fn warn(err: &mut dyn Write, notes: &[String]) -> Result<(), CliError> {
 fn run(args: &RunArgs, out: &mut dyn Write, err: &mut dyn Write) -> Result<(), CliError> {
     // Everything that can be wrong with the arguments is found before anything runs.
     let target = args.out.as_deref().map(|p| OutFormat::resolve(args.to, p).map(|f| (p, f))).transpose()?;
-    if matches!(target, Some((_, OutFormat::Png))) {
-        return Err(CliError::NeedsGpu);
+    if matches!(target, Some((_, OutFormat::Png))) && !ports::RENDERS_PNG {
+        return Err(CliError::NoPng);
     }
     let script = Script::parse(&read_script(&args.script)?)?;
     let mut s = ports::session(args.seed.map_or(IdSeed::Random, IdSeed::Fixed));
@@ -173,8 +173,8 @@ fn run(args: &RunArgs, out: &mut dyn Write, err: &mut dyn Write) -> Result<(), C
 
 fn convert(args: &ConvertArgs, err: &mut dyn Write) -> Result<(), CliError> {
     let format = OutFormat::resolve(args.to, &args.output)?;
-    if format == OutFormat::Png {
-        return Err(CliError::NeedsGpu);
+    if format == OutFormat::Png && !ports::RENDERS_PNG {
+        return Err(CliError::NoPng);
     }
     let mut s = ports::session(IdSeed::Random);
     warn(err, &ops::open(&mut s, &args.input, args.from)?)?;
