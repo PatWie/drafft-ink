@@ -5,6 +5,7 @@ mod common;
 
 use common::*;
 use drafftink_typeset::*;
+#[cfg(feature = "hand-fonts")]
 use std::collections::BTreeSet;
 
 #[test]
@@ -83,6 +84,7 @@ fn trailing_newline_adds_an_empty_line() {
 }
 
 #[test]
+#[cfg(feature = "hand-fonts")]
 fn every_bundled_family_and_weight_picks_its_own_face() {
     let mut ts = Typesetter::new();
     let mut seen = std::collections::BTreeSet::new();
@@ -125,6 +127,7 @@ fn legacy_style_mapping_matches_the_old_table() {
 }
 
 #[test]
+#[cfg(feature = "hand-fonts")]
 fn italic_without_an_italic_face_is_synthesised() {
     let mut ts = Typesetter::new();
     let mut s = plain("Slanted", 24.0);
@@ -302,6 +305,7 @@ fn font_bytes(file: &str) -> Vec<u8> {
 }
 
 #[test]
+#[cfg(feature = "hand-fonts")]
 fn a_typesetter_without_the_extra_fonts_asks_for_noto_sans_when_a_glyph_is_missing() {
     let mut ts = Typesetter::without_extra_fonts();
     assert!(ts.wanted_fonts().is_empty(), "nothing is wanted before a layout needs it");
@@ -351,6 +355,7 @@ fn providing_a_font_twice_or_a_broken_one_changes_nothing_more() {
 }
 
 #[test]
+#[cfg(feature = "hand-fonts")]
 fn the_bundled_font_files_are_exposed_once_for_every_host() {
     use FontFamily::{GelPen, GelPenSerif, NotoSans, VanillaExtract};
     use FontWeight::{Heavy, Light, Regular};
@@ -515,6 +520,7 @@ fn fallback_glyphs_have_outlines_and_move_the_advance() {
 }
 
 #[test]
+#[cfg(feature = "hand-fonts")]
 fn a_build_without_the_fallback_fonts_asks_only_for_the_font_that_has_the_character() {
     let font = |f: ExtraFont| font_bytes(f.file_name());
     // Kannada is one small file; Noto Sans is not needed for it.
@@ -544,6 +550,7 @@ fn a_build_without_the_fallback_fonts_asks_only_for_the_font_that_has_the_charac
 }
 
 #[test]
+#[cfg(feature = "hand-fonts")]
 fn a_character_no_fallback_font_claims_still_asks_for_noto_sans() {
     let mut ts = Typesetter::without_extra_fonts();
     let _ = ts.text(&plain("Привет ಠ", 24.0));
@@ -580,4 +587,58 @@ fn every_fallback_font_has_only_characters_it_claims_and_claims_do_not_overlap()
     }
     assert_eq!(ExtraFont::fallback_for('ಠ'), Some(ExtraFont::FallbackKannada));
     assert_eq!(ExtraFont::fallback_for('a'), None);
+}
+
+/// A build without the feature `hand-fonts` has no GelPen or Vanilla Extract file: those families are drawn with Noto
+/// Sans, and `font_file` answers with the Noto Sans file of the same weight.
+#[test]
+#[cfg(not(feature = "hand-fonts"))]
+fn without_hand_fonts_the_hand_families_are_drawn_with_noto_sans() {
+    assert!(!HAND_FONTS);
+    let mut ts = Typesetter::new();
+    let mut noto = plain("Sphinx of black quartz", 24.0);
+    noto.style.family = FontFamily::NotoSans;
+    let expected = ts.text(&noto);
+    for family in [FontFamily::GelPen, FontFamily::GelPenSerif, FontFamily::VanillaExtract] {
+        let mut s = noto.clone();
+        s.style.family = family.clone();
+        let layout = ts.text(&s);
+        assert_eq!(layout.size, expected.size, "{family:?}");
+        assert_eq!(layout.runs[0].font.data.as_ref(), expected.runs[0].font.data.as_ref(), "{family:?} uses Noto Sans");
+        for weight in [FontWeight::Light, FontWeight::Regular, FontWeight::Heavy] {
+            let want = font_file(&FontFamily::NotoSans, weight);
+            assert!(want.is_some_and(|b| b.len() > 1000), "the embedded test build has Noto Sans");
+            assert_eq!(
+                font_file(&family, weight).map(<[u8]>::as_ptr),
+                want.map(<[u8]>::as_ptr),
+                "{family:?} {weight:?}"
+            );
+        }
+    }
+    let mut heavy = noto.clone();
+    heavy.style.weight = FontWeight::Heavy;
+    let bold = ts.text(&heavy);
+    heavy.style.family = FontFamily::GelPen;
+    assert_eq!(ts.text(&heavy).runs[0].font.data.as_ref(), bold.runs[0].font.data.as_ref(), "heavy is Noto Sans Bold");
+}
+
+/// Formulas work without the hand fonts: their letters use the Noto Sans stand-in.
+#[test]
+#[cfg(not(feature = "hand-fonts"))]
+fn without_hand_fonts_a_formula_lays_out_with_a_noto_sans_text_font() {
+    let mut ts = Typesetter::new();
+    let layout = ts.math(&MathSpec::new("x^2 + \\frac{a}{b}")).expect("a formula");
+    assert!(layout.glyphs.iter().any(|g| g.font == MathFontSlot::Text), "letters use the text font");
+    let noto = font_file(&FontFamily::NotoSans, FontWeight::Regular).unwrap_or_default();
+    assert_eq!(layout.text_font.data.as_ref(), noto, "the text font of a formula is Noto Sans Regular");
+}
+
+/// With the feature the files are the hand-drawn ones.
+#[test]
+#[cfg(feature = "hand-fonts")]
+fn with_hand_fonts_the_hand_families_have_their_own_files() {
+    assert!(HAND_FONTS);
+    let gelpen = font_file(&FontFamily::GelPen, FontWeight::Regular).unwrap_or_default();
+    let noto = font_file(&FontFamily::NotoSans, FontWeight::Regular).unwrap_or_default();
+    assert_ne!(gelpen.as_ptr(), noto.as_ptr());
 }

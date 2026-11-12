@@ -1,0 +1,37 @@
+---
+source: src/parser/mod.rs
+expression: "parse(r\"1^{\\mbox{a}}\")"
+---
+Ok(
+    [
+        Scripts(
+            Scripts {
+                base: Some(
+                    Symbol(
+                        Symbol {
+                            codepoint: '1',
+                            atom_type: Alpha,
+                        },
+                    ),
+                ),
+                superscript: Some(
+                    [
+                        Group(
+                            [
+                                Style(
+                                    Text,
+                                ),
+                                PlainText(
+                                    PlainText {
+                                        text: "a",
+                                    },
+                                ),
+                            ],
+                        ),
+                    ],
+                ),
+                subscript: None,
+            },
+        ),
+    ],
+)

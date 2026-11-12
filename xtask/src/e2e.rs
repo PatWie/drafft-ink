@@ -178,7 +178,16 @@ fn build(root: &Path) -> Result<(), String> {
         .arg(root.join("scripts/build-web.sh"))
         .args(["--profile", "release", "--no-precompress"])
         .current_dir(root))?;
-    run(cargo(root).args(["build", "--release", "-p", "drafftink-server", "-p", "drafftink"]))
+    run(cargo(root).args([
+        "build",
+        "--release",
+        "-p",
+        "drafftink-server",
+        "-p",
+        "drafftink",
+        "--features",
+        "drafftink/hand-fonts",
+    ]))
 }
 
 /// The browser suite. Reads Playwright's JSON report for the counts.

@@ -1,0 +1,37 @@
+[package]
+name = "drafftink-rex"
+version = "0.1.2"
+description = "ReX, a TeX math layout engine (vendored fork for Drafft.ink: one font backend, no renderers). Imported as `rex`."
+authors = ["Christopher Breeden <github@u.breeden.cc>", "Sebastian Köln <s3bk@protonmail.com>", "Keny C"]
+edition = "2021"
+license = "MIT"
+repository = "https://github.com/KenyC/ReX"
+homepage = "https://drafft.ink"
+readme = "README.md"
+keywords = ["tex", "latex", "math", "typesetting", "layout"]
+categories = ["text-processing", "mathematics"]
+publish = true
+exclude = ["/target"]
+
+[lib]
+# The code, and the dependants in this workspace, use the name of the upstream crate.
+name = "rex"
+# No unit tests or doctests in this copy: upstream's need its renderers, its font files and its dev-dependencies.
+test = false
+doctest = false
+
+[features]
+default = []
+# Read math fonts with `ttf-parser`. The only font backend of this copy.
+ttfparser-fontparser = ["dep:ttf-parser"]
+
+[dependencies]
+unicode-math = { package = "drafftink-unicode-math", path = "../unicode-math", version = "0.1.0" }
+serde_derive = "1.0"
+serde = "1.0"
+log = "0.4.8"
+ttf-parser = { version = "0.25", optional = true }
+
+# Upstream code, vendored as it is: no lint noise from it.
+[lints.rust]
+warnings = "allow"

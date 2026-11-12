@@ -1,0 +1,51 @@
+---
+source: src/parser/mod.rs
+expression: "parse(r\"\\alpha_\\sqrt{1+2}\")"
+---
+Ok(
+    [
+        Scripts(
+            Scripts {
+                base: Some(
+                    Symbol(
+                        Symbol {
+                            codepoint: '𝛼',
+                            atom_type: Alpha,
+                        },
+                    ),
+                ),
+                superscript: None,
+                subscript: Some(
+                    [
+                        Radical(
+                            Radical {
+                                inner: [
+                                    Symbol(
+                                        Symbol {
+                                            codepoint: '1',
+                                            atom_type: Alpha,
+                                        },
+                                    ),
+                                    Symbol(
+                                        Symbol {
+                                            codepoint: '+',
+                                            atom_type: Binary,
+                                        },
+                                    ),
+                                    Symbol(
+                                        Symbol {
+                                            codepoint: '2',
+                                            atom_type: Alpha,
+                                        },
+                                    ),
+                                ],
+                                character: '√',
+                                index: None,
+                            },
+                        ),
+                    ],
+                ),
+            },
+        ),
+    ],
+)

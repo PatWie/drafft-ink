@@ -106,6 +106,7 @@ fn spec_of(t: &Value) -> TextSpec {
 /// The twelve family x weight rows at x = 0 of `text_fonts`: every row's ink must end where the
 /// old renderer's ink ended, and its vertical extent must match.
 #[test]
+#[cfg(feature = "hand-fonts")]
 fn text_fonts_ink_matches_the_old_render() {
     let doc = doc("text_fonts");
     let png = read_png(&fixture("render/text_fonts.png"));
@@ -179,6 +180,7 @@ fn old_estimated_bounds_were_rough_but_in_the_same_range() {
 }
 
 #[test]
+#[cfg(feature = "hand-fonts")]
 fn multiline_text_height_is_lines_times_line_height() {
     let doc = doc("text_fonts");
     let mut ts = Typesetter::new();

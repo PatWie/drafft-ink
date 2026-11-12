@@ -1,0 +1,71 @@
+---
+source: src/parser/mod.rs
+expression: "parse(r\"\\log (42 + 1)\")"
+---
+Ok(
+    [
+        AtomChange(
+            AtomChange {
+                at: Operator(
+                    false,
+                ),
+                inner: [
+                    Symbol(
+                        Symbol {
+                            codepoint: 'l',
+                            atom_type: Ordinary,
+                        },
+                    ),
+                    Symbol(
+                        Symbol {
+                            codepoint: 'o',
+                            atom_type: Ordinary,
+                        },
+                    ),
+                    Symbol(
+                        Symbol {
+                            codepoint: 'g',
+                            atom_type: Ordinary,
+                        },
+                    ),
+                ],
+            },
+        ),
+        Symbol(
+            Symbol {
+                codepoint: '(',
+                atom_type: Open,
+            },
+        ),
+        Symbol(
+            Symbol {
+                codepoint: '4',
+                atom_type: Alpha,
+            },
+        ),
+        Symbol(
+            Symbol {
+                codepoint: '2',
+                atom_type: Alpha,
+            },
+        ),
+        Symbol(
+            Symbol {
+                codepoint: '+',
+                atom_type: Binary,
+            },
+        ),
+        Symbol(
+            Symbol {
+                codepoint: '1',
+                atom_type: Alpha,
+            },
+        ),
+        Symbol(
+            Symbol {
+                codepoint: ')',
+                atom_type: Close,
+            },
+        ),
+    ],
+)

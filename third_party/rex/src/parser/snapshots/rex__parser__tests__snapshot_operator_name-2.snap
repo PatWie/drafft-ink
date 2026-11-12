@@ -1,0 +1,35 @@
+---
+source: src/parser/mod.rs
+expression: "parse(r\"\\operatorname{a-m}\")"
+---
+Ok(
+    [
+        AtomChange(
+            AtomChange {
+                at: Operator(
+                    false,
+                ),
+                inner: [
+                    Symbol(
+                        Symbol {
+                            codepoint: 'a',
+                            atom_type: Ordinary,
+                        },
+                    ),
+                    Symbol(
+                        Symbol {
+                            codepoint: '-',
+                            atom_type: Ordinary,
+                        },
+                    ),
+                    Symbol(
+                        Symbol {
+                            codepoint: 'm',
+                            atom_type: Ordinary,
+                        },
+                    ),
+                ],
+            },
+        ),
+    ],
+)

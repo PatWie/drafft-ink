@@ -1,0 +1,32 @@
+---
+source: src/parser/mod.rs
+expression: "parse(r\"\\frac 12\")"
+---
+Ok(
+    [
+        GenFraction(
+            GenFraction {
+                numerator: [
+                    Symbol(
+                        Symbol {
+                            codepoint: '1',
+                            atom_type: Alpha,
+                        },
+                    ),
+                ],
+                denominator: [
+                    Symbol(
+                        Symbol {
+                            codepoint: '2',
+                            atom_type: Alpha,
+                        },
+                    ),
+                ],
+                bar_thickness: Default,
+                left_delimiter: None,
+                right_delimiter: None,
+                style: NoChange,
+            },
+        ),
+    ],
+)

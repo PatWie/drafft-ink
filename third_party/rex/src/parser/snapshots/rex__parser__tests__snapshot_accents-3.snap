@@ -1,0 +1,26 @@
+---
+source: src/parser/mod.rs
+expression: "parse(r\"\\'o\")"
+---
+Ok(
+    [
+        Accent(
+            Accent {
+                symbol: Symbol {
+                    codepoint: '\u{301}',
+                    atom_type: Accent,
+                },
+                nucleus: [
+                    Symbol(
+                        Symbol {
+                            codepoint: '𝑜',
+                            atom_type: Alpha,
+                        },
+                    ),
+                ],
+                extend: false,
+                under: false,
+            },
+        ),
+    ],
+)

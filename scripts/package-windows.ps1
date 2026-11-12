@@ -44,7 +44,7 @@ if ($env:BIN_DIR) { $Bin = $env:BIN_DIR }
 
 Write-Host "==> Drafft.ink $Version for Windows x64"
 if (-not $SkipBuild) {
-  cargo build --profile dist --locked -p drafftink -p drafftink-mcp -p drafftink-cli -p drafftink-server --features drafftink-server/sqlite,drafftink-server/s3
+  cargo build --profile dist --locked -p drafftink -p drafftink-mcp -p drafftink-cli -p drafftink-server --features drafftink-server/sqlite,drafftink-server/s3,drafftink/hand-fonts,drafftink-mcp/hand-fonts,drafftink-cli/hand-fonts
   if ($LASTEXITCODE -ne 0) { throw "cargo build failed" }
 }
 foreach ($exe in "drafftink", "drafftink-mcp", "drafftink-cli", "drafftink-server") {

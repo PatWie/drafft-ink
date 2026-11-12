@@ -1,0 +1,34 @@
+---
+source: src/parser/mod.rs
+expression: "parse(r\"1\\qquad{}33\")"
+---
+Ok(
+    [
+        Symbol(
+            Symbol {
+                codepoint: '1',
+                atom_type: Alpha,
+            },
+        ),
+        Kerning(
+            Em(
+                2.0,
+            ),
+        ),
+        Group(
+            [],
+        ),
+        Symbol(
+            Symbol {
+                codepoint: '3',
+                atom_type: Alpha,
+            },
+        ),
+        Symbol(
+            Symbol {
+                codepoint: '3',
+                atom_type: Alpha,
+            },
+        ),
+    ],
+)

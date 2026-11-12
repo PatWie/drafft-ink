@@ -21,6 +21,10 @@ pub enum Class {
     App,
     /// Build tooling (xtask). It uses no workspace crate and no workspace crate uses it.
     Tool,
+    /// A copy of an upstream crate in `third_party/`, published under our name because crates.io has no Git
+    /// dependencies. It is a leaf: it uses only other vendored crates, and its external dependencies are not held
+    /// to the allowlist (they are upstream's).
+    Vendored,
 }
 
 pub const TESTKIT_LAYER: u8 = 7;
@@ -34,7 +38,7 @@ impl Class {
             Class::Layer(l) => Some(l),
             Class::Testkit => Some(TESTKIT_LAYER),
             Class::App => Some(APP_LAYER),
-            Class::Tool => None,
+            Class::Tool | Class::Vendored => None,
         }
     }
 }
@@ -78,6 +82,9 @@ pub const TABLE: &[(&str, Class)] = &[
     ("drafftink-e2e", Class::App),
     // tooling
     ("xtask", Class::Tool),
+    // vendored upstream crates (third_party/, docs/typeset.md)
+    ("drafftink-rex", Class::Vendored),
+    ("drafftink-unicode-math", Class::Vendored),
 ];
 
 /// Apps (and other non-library packages) that also build for wasm32-unknown-unknown, on top of
@@ -153,7 +160,7 @@ pub const ALLOWED_EXTERNAL: &[(&str, &[&str])] = &[
     ("drafftink-protocol", &[]),
     // L1
     ("drafftink-scene", &["base64", "kurbo", "peniko", "schemars", "sha2", "smallvec", "smol_str"]),
-    ("drafftink-typeset", &["kurbo", "parley", "peniko", "png", "rex", "ttf-parser"]),
+    ("drafftink-typeset", &["kurbo", "parley", "peniko", "png", "ttf-parser"]),
     ("drafftink-sketch", &["getrandom", "kurbo", "roughr"]),
     // L2
     ("drafftink-render", &["base64", "image", "kurbo", "peniko", "png", "pollster", "schemars", "vello"]),
@@ -203,6 +210,11 @@ pub fn libraries_below_l6() -> Vec<&'static str> {
         .collect()
 }
 
+/// The copies of upstream crates in `third_party/`. Clippy leaves them alone: their code is upstream's.
+pub fn vendored() -> impl Iterator<Item = &'static str> {
+    TABLE.iter().filter(|(_, class)| *class == Class::Vendored).map(|(name, _)| *name)
+}
+
 pub fn classify(package: &str) -> Option<Class> {
     TABLE.iter().find(|(name, _)| *name == package).map(|(_, class)| *class)
 }
@@ -245,6 +257,11 @@ pub enum Violation {
         kind: DepKind,
     },
     ToolEdge {
+        krate: String,
+        dep: String,
+    },
+    /// A vendored crate that uses a crate of ours (or the other way: only vendored crates may use each other).
+    VendoredEdge {
         krate: String,
         dep: String,
     },
@@ -297,6 +314,12 @@ impl std::fmt::Display for Violation {
                 write!(
                     f,
                     "{krate}: xtask is standalone; it may not depend on or be depended on by workspace crate {dep}"
+                )
+            }
+            Violation::VendoredEdge { krate, dep } => {
+                write!(
+                    f,
+                    "{krate}: a vendored crate in third_party/ may only depend on other vendored crates, not on {dep}"
                 )
             }
             Violation::TestkitAsNormalDep { krate } => {
@@ -358,6 +381,10 @@ fn check_workspace_edge(out: &mut Vec<Violation>, c: &Crate, class: Class, d: &D
     }
     // An unregistered dependency is reported on its own entry.
     let Some(dep_class) = dep_class else { return };
+    if class == Class::Vendored && dep_class != Class::Vendored {
+        out.push(Violation::VendoredEdge { krate: c.name.clone(), dep: d.name.clone() });
+        return;
+    }
     let (Some(from), Some(to)) = (class.layer(), dep_class.layer()) else { return };
     if dep_class == Class::Testkit {
         if d.kind != DepKind::Dev {
@@ -461,6 +488,7 @@ pub fn describe(class: Option<Class>) -> String {
         Some(Class::Testkit) => format!("L{TESTKIT_LAYER} testkit"),
         Some(Class::App) => format!("L{APP_LAYER} app"),
         Some(Class::Tool) => "tool".into(),
+        Some(Class::Vendored) => "vendored".into(),
         None => "UNASSIGNED".into(),
     }
 }
@@ -825,6 +853,20 @@ mod tests {
         assert!(matches!(only(&v), Violation::ToolEdge { .. }));
         let v = check(&[c("drafftink-cli", &[("xtask", Dev, true)])]);
         assert!(matches!(only(&v), Violation::ToolEdge { .. }));
+    }
+
+    #[test]
+    fn vendored_crates_are_leaves_that_any_library_may_use() {
+        // Typeset (L1) uses ReX; ReX uses its table crate; neither reaches into our crates.
+        let ok = [
+            c("drafftink-typeset", &[("drafftink-rex", Normal, true)]),
+            c("drafftink-rex", &[("drafftink-unicode-math", Normal, true), ("serde", Normal, false)]),
+            c("drafftink-unicode-math", &[("regex", Dev, false)]),
+        ];
+        let v = check(&ok);
+        assert!(v.iter().all(|v| !matches!(v, Violation::VendoredEdge { .. } | Violation::Edge { .. })), "{v:?}");
+        let v = check(&[c("drafftink-rex", &[("drafftink-geom", Normal, true)])]);
+        assert!(matches!(only(&v), Violation::VendoredEdge { .. }));
     }
 
     #[test]

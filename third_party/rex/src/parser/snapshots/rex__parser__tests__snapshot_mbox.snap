@@ -1,0 +1,20 @@
+---
+source: src/parser/mod.rs
+expression: "parse(r\"\\mbox{abc}\")"
+---
+Ok(
+    [
+        Group(
+            [
+                Style(
+                    Text,
+                ),
+                PlainText(
+                    PlainText {
+                        text: "abc",
+                    },
+                ),
+            ],
+        ),
+    ],
+)

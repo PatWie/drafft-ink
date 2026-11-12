@@ -1,13 +1,20 @@
 [package]
 name = "drafftink-app"
-description = "The application glue (L7): one App for the desktop and the web. Owns the Session, the interaction layer, the UI and the render caches, and implements the shell's ShellApp."
 version.workspace = true
 edition.workspace = true
 license.workspace = true
 rust-version.workspace = true
-publish = false
+repository.workspace = true
+homepage.workspace = true
+description = "The Drafft.ink application glue (L7): one App for the desktop and the web. Owns the Session, the interaction layer, the UI and the render caches."
+readme = "README.md"
+keywords = ["whiteboard", "egui", "wgpu", "canvas", "drawing"]
+categories = ["graphics", "gui"]
 
 [features]
+# The hand-drawn fonts (GelPen, GelPen Serif, Vanilla Extract) from the Git repository, not from crates.io: see
+# `drafftink-typeset`. Without this feature those families are drawn with Noto Sans.
+hand-fonts = ["drafftink-typeset/hand-fonts"]
 default = ["wgpu"]
 # The Vello + wgpu renderer: every native build and the normal web module. The WebGL2 fallback module is built with
 # `--no-default-features --features webgl` (`scripts/build-web.sh`), so it carries no wgpu code.
@@ -17,18 +24,18 @@ webgl = ["drafftink-gpu/webgl"]
 scenarios = ["drafftink-scene/scenegen"]
 
 [dependencies]
-drafftink-engine = { path = "../engine", default-features = false }
-drafftink-canvas = { path = "../canvas" }
-drafftink-geom = { path = "../geom" }
-drafftink-scene = { path = "../scene" }
-drafftink-typeset = { path = "../typeset" }
-drafftink-render = { path = "../render" }
-drafftink-edit = { path = "../edit" }
-drafftink-profile = { path = "../profile" }
-drafftink-collab = { path = "../collab" }
-drafftink-bridge = { path = "../bridge" }
-drafftink-gpu = { path = "../gpu", default-features = false }
-drafftink-ui = { path = "../ui" }
+drafftink-engine = { path = "../engine", version = "0.2.0", default-features = false }
+drafftink-canvas = { path = "../canvas", version = "0.2.0" }
+drafftink-geom = { path = "../geom", version = "0.2.0" }
+drafftink-scene = { path = "../scene", version = "0.2.0" }
+drafftink-typeset = { path = "../typeset", version = "0.2.0" }
+drafftink-render = { path = "../render", version = "0.2.0" }
+drafftink-edit = { path = "../edit", version = "0.2.0" }
+drafftink-profile = { path = "../profile", version = "0.2.0" }
+drafftink-collab = { path = "../collab", version = "0.2.0" }
+drafftink-bridge = { path = "../bridge", version = "0.2.0" }
+drafftink-gpu = { path = "../gpu", version = "0.2.0", default-features = false }
+drafftink-ui = { path = "../ui", version = "0.2.0" }
 egui = { workspace = true }
 vello = { workspace = true }
 base64 = { workspace = true }
@@ -66,6 +73,9 @@ path = "examples/media/main.rs"
 required-features = ["wgpu"]
 
 [dev-dependencies]
+# The tests draw with the hand-drawn fonts (the Git repository has them; a package on crates.io does not, and a path-only
+# dev-dependency is not part of the package).
+drafftink-typeset = { path = "../typeset", features = ["hand-fonts"] }
 clap = { workspace = true }
 tempfile = { workspace = true }
 drafftink-engine = { path = "../engine", features = ["schemas"] }

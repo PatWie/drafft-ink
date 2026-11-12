@@ -17,14 +17,14 @@ default = []
 gpu-tests = []
 
 [dependencies]
-drafftink-canvas = { path = "../canvas" }
-drafftink-edit = { path = "../edit" }
-drafftink-geom = { path = "../geom" }
-drafftink-gpu = { path = "../gpu" }
-drafftink-io = { path = "../io" }
-drafftink-render = { path = "../render" }
-drafftink-scene = { path = "../scene" }
-drafftink-typeset = { path = "../typeset", features = ["embedded"] }
+drafftink-canvas = { path = "../canvas", version = "0.2.0" }
+drafftink-edit = { path = "../edit", version = "0.2.0" }
+drafftink-geom = { path = "../geom", version = "0.2.0" }
+drafftink-gpu = { path = "../gpu", version = "0.2.0" }
+drafftink-io = { path = "../io", version = "0.2.0" }
+drafftink-render = { path = "../render", version = "0.2.0" }
+drafftink-scene = { path = "../scene", version = "0.2.0" }
+drafftink-typeset = { path = "../typeset", version = "0.2.0", features = ["embedded", "hand-fonts"] }
 kurbo.workspace = true
 peniko.workspace = true
 png.workspace = true

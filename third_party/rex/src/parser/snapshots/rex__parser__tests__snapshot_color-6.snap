@@ -1,0 +1,26 @@
+---
+source: src/parser/mod.rs
+expression: "parse(r\"\\color{chartreuse}\\alpha\")"
+---
+Ok(
+    [
+        Color(
+            Color {
+                color: RGBA(
+                    127,
+                    255,
+                    0,
+                    255,
+                ),
+                inner: [
+                    Symbol(
+                        Symbol {
+                            codepoint: '𝛼',
+                            atom_type: Alpha,
+                        },
+                    ),
+                ],
+            },
+        ),
+    ],
+)

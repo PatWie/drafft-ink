@@ -1,13 +1,18 @@
 [package]
 name = "drafftink-sketch"
-description = "Hand-drawn (sketchy) path generation: shapes in, kurbo paths with stroke and fill instructions out"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
 rust-version.workspace = true
+repository.workspace = true
+homepage.workspace = true
+description = "Hand-drawn (sketchy) path generation (L1): shapes in, kurbo paths with stroke and fill instructions out."
+readme = "README.md"
+keywords = ["sketchy", "hand-drawn", "vector-graphics", "roughjs", "whiteboard"]
+categories = ["graphics", "rendering"]
 
 [dependencies]
-drafftink-geom = { path = "../geom" }
+drafftink-geom = { path = "../geom", version = "0.2.0" }
 kurbo.workspace = true
 roughr.workspace = true
 

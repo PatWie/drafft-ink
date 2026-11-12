@@ -1,0 +1,38 @@
+---
+source: src/parser/mod.rs
+expression: "parse(r\"\\color{cyan}{1+1}\")"
+---
+Ok(
+    [
+        Color(
+            Color {
+                color: RGBA(
+                    0,
+                    255,
+                    255,
+                    255,
+                ),
+                inner: [
+                    Symbol(
+                        Symbol {
+                            codepoint: '1',
+                            atom_type: Alpha,
+                        },
+                    ),
+                    Symbol(
+                        Symbol {
+                            codepoint: '+',
+                            atom_type: Binary,
+                        },
+                    ),
+                    Symbol(
+                        Symbol {
+                            codepoint: '1',
+                            atom_type: Alpha,
+                        },
+                    ),
+                ],
+            },
+        ),
+    ],
+)

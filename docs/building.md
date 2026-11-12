@@ -1,13 +1,13 @@
 # Building and running
 
-One workspace builds three things from the same code: the desktop app (`apps/drafftink`), the web app (`apps/drafftink-web`, served by the server) and the collaboration server (`apps/drafftink-server`). The shared application code is `crates/app` (`drafftink-app`, L7, see `architecture.md`). The desktop and web apps are thin launchers: they build a `Platform` (the ports that differ per target) and call `drafftink_gpu::run(App::new(platform, config), options)`.
+One workspace builds three things from the same code: the desktop app (the root package `drafftink`, `src/`), the web app (`apps/drafftink-web`, served by the server) and the collaboration server (`apps/drafftink-server`). The shared application code is `crates/app` (`drafftink-app`, L7, see `architecture.md`). The desktop and web apps are thin launchers: they build a `Platform` (the ports that differ per target) and call `drafftink_gpu::run(App::new(platform, config), options)`.
 
 The pinned toolchain is in `rust-toolchain.toml` (Rust 1.97.1, edition 2024). `rustup` installs it on the first `cargo` call.
 
 ## 1. Desktop
 
 ```sh
-cargo run --release -p drafftink                 # or: scripts/run-native.sh
+cargo run --release -p drafftink --features hand-fonts   # or: scripts/run-native.sh
 scripts/build-native.sh                          # release build, prints the path
 ```
 
@@ -107,7 +107,7 @@ The welcome document and the README pictures are generated: `cargo xtask intro` 
 | Path | What |
 |---|---|
 | `crates/app` | `App`, the platform seam (`Platform`, `Host`, `SharedClipboard`, `WakeCell`), input translation, the overlay glue, the text editor, start-up. `native/` has the desktop ports. `web/` has the browser ports. |
-| `apps/drafftink` | The desktop launcher (command line, bridge, perf dump). |
+| `src/`, `build.rs` (the root package `drafftink`) | The desktop launcher (command line, bridge, perf dump). `cargo install --path .` and `cargo install drafftink` build it. |
 | `apps/drafftink-web`, `web/` | The wasm entry with `window.drafftink`, and the static page, manifest and service worker. |
 | `scripts/` | `build-native.sh`, `run-native.sh`, `build-web.sh`, `serve-web.sh`, `native_check.py`, `web_check.py`. |
 

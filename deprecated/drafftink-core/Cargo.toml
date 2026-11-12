@@ -1,0 +1,20 @@
+[package]
+name = "drafftink-core"
+version = "0.2.0"
+edition = "2024"
+license = "AGPL-3.0-only"
+repository = "https://github.com/PatWie/drafft-ink"
+homepage = "https://drafft.ink"
+description = "Deprecated: replaced by drafftink-engine, drafftink-scene and the other drafftink-* crates."
+readme = "README.md"
+keywords = ["whiteboard", "deprecated", "canvas", "drawing", "crdt"]
+categories = ["graphics"]
+rust-version = "1.91"
+
+[badges]
+maintenance = { status = "deprecated" }
+
+[dependencies]
+
+# Not a member of the repository workspace: it is a placeholder for the crates.io name, never built with the app.
+[workspace]

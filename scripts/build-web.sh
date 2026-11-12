@@ -6,7 +6,8 @@
 #   --no-opt           skip wasm-opt
 #   --no-precompress   do not write .br / .gz next to the files
 #   --no-fallback      do not build the WebGL2 module for browsers without WebGPU (dist/pkg-gl)
-#   --features LIST    cargo features of drafftink-web, e.g. `scenarios` for the perf driver (not for shipping)
+#   --features LIST    more cargo features of drafftink-web, e.g. `scenarios` for the perf driver (not for shipping).
+#                      `hand-fonts` (GelPen, GelPen Serif, Vanilla Extract) is always on: the web app is built from the repo
 # env: DIST_DIR=folder   write the build there instead of dist/
 # needs: rustup target add wasm32-unknown-unknown
 #        wasm-bindgen CLI, the same version as the wasm-bindgen crate (cargo install wasm-bindgen-cli --version 0.2.130 --locked)
@@ -19,14 +20,15 @@ PROFILE=release-wasm
 OPT=1
 PRECOMPRESS=1
 FALLBACK=1
-FEATURES=""
+# The hand-drawn fonts (GelPen, GelPen Serif, Vanilla Extract) are in the web app, which is not a package on crates.io.
+FEATURES="hand-fonts"
 while [ $# -gt 0 ]; do
   case "$1" in
     --profile) PROFILE="${2:?--profile needs a name}"; shift 2 ;;
     --no-opt) OPT=0; shift ;;
     --no-precompress) PRECOMPRESS=0; shift ;;
     --no-fallback) FALLBACK=0; shift ;;
-    --features) FEATURES="${2:?--features needs a list}"; shift 2 ;;
+    --features) FEATURES="hand-fonts,${2:?--features needs a list}"; shift 2 ;;
     -h|--help) sed -n '2,12p' "$0"; exit 0 ;;
     *) echo "unknown argument: $1 (see --help)" >&2; exit 2 ;;
   esac

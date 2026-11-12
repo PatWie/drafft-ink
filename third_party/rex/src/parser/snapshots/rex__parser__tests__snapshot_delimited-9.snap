@@ -1,0 +1,12 @@
+---
+source: src/parser/mod.rs
+expression: "parse(r\"\\right(1+1\")"
+---
+Err(
+    UnexpectedEndGroup {
+        expected: [
+            EndOfInput,
+        ],
+        got: RightDelimiter,
+    },
+)

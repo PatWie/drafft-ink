@@ -4,19 +4,25 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 rust-version.workspace = true
+repository.workspace = true
+homepage.workspace = true
+description = "The editor's domain rules (L4) with typed errors: arrow bindings, elbow routing, linear point editing, brush capture, grouping and alignment."
+readme = "README.md"
+keywords = ["whiteboard", "editor", "arrows", "geometry", "drawing"]
+categories = ["graphics", "algorithms"]
 
 [dependencies]
-drafftink-geom = { path = "../geom" }
-drafftink-scene = { path = "../scene" }
-drafftink-profile = { path = "../profile" }
-drafftink-typeset = { path = "../typeset", default-features = false }
+drafftink-geom = { path = "../geom", version = "0.2.0" }
+drafftink-scene = { path = "../scene", version = "0.2.0" }
+drafftink-profile = { path = "../profile", version = "0.2.0" }
+drafftink-typeset = { path = "../typeset", version = "0.2.0", default-features = false }
 thiserror.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 schemars.workspace = true
 
 [dev-dependencies]
-drafftink-typeset = { path = "../typeset", features = ["embedded"] }
+drafftink-typeset = { path = "../typeset", features = ["hand-fonts", "embedded"] }
 drafftink-scene = { path = "../scene", features = ["conformance"] }
 proptest.workspace = true
 insta.workspace = true

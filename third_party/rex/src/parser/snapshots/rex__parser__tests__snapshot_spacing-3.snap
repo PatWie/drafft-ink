@@ -1,0 +1,25 @@
+---
+source: src/parser/mod.rs
+expression: "parse(r\"2\\quad3\")"
+---
+Ok(
+    [
+        Symbol(
+            Symbol {
+                codepoint: '2',
+                atom_type: Alpha,
+            },
+        ),
+        Kerning(
+            Em(
+                1.0,
+            ),
+        ),
+        Symbol(
+            Symbol {
+                codepoint: '3',
+                atom_type: Alpha,
+            },
+        ),
+    ],
+)

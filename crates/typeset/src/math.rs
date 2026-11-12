@@ -46,7 +46,8 @@ pub struct MathSpec {
     /// Font size in layout units.
     pub size: f64,
     /// Draw letters and digits with the GelPen text font when it has them, like the old app did,
-    /// so equations look like the surrounding handwriting. Symbols GelPen lacks use STIX Two Math.
+    /// so equations look like the surrounding handwriting. Symbols GelPen lacks use STIX Two Math. A build without the
+    /// feature `hand-fonts` uses Noto Sans for the text font.
     pub text_font_fallback: bool,
 }
 
@@ -263,7 +264,9 @@ impl MathEngine {
         };
         let face = ttf_parser::Face::parse(math_font, 0).map_err(|e| bad(&e.to_string()))?;
         let font = TtfMathFont::new(face).map_err(|e| bad(&e.to_string()))?;
-        let text_face = ttf_parser::Face::parse(fonts::GELPEN_REGULAR, 0).ok();
+        // The text font of a formula; the math font itself when this build has no other.
+        let text_font = fonts::math_text_font().unwrap_or(math_font);
+        let text_face = ttf_parser::Face::parse(text_font, 0).ok();
         let mut glyph_to_char = HashMap::new();
         for sub in font.font().tables().cmap.iter().flat_map(|c| c.subtables) {
             if sub.is_unicode() {
@@ -280,7 +283,7 @@ impl MathEngine {
             }
         }
         let data = |bytes: &'static [u8]| peniko::FontData::new(peniko::Blob::new(Arc::new(bytes)), 0);
-        Ok(Self { font, text_face, glyph_to_char, math_data: data(math_font), text_data: data(fonts::GELPEN_REGULAR) })
+        Ok(Self { font, text_face, glyph_to_char, math_data: data(math_font), text_data: data(text_font) })
     }
 
     pub fn layout(&self, spec: &MathSpec, id: u64) -> Result<MathLayout, MathError> {

@@ -657,8 +657,14 @@ mod tests {
         assert!((alpha - 0.5).abs() < 0.01);
     }
 
+    /// Noto Sans Regular, from the typesetter that owns the font files.
     fn noto() -> FontData {
-        FontData::new(Blob::from(include_bytes!("../../../typeset/assets/fonts/NotoSans-Regular.ttf").to_vec()), 0)
+        let bytes = drafftink_typeset::font_file(
+            &drafftink_typeset::FontFamily::NotoSans,
+            drafftink_typeset::FontWeight::Regular,
+        )
+        .expect("the dev-dependency on drafftink-typeset builds Noto Sans in");
+        FontData::new(Blob::from(bytes.to_vec()), 0)
     }
 
     fn glyphs(n: u32) -> impl Iterator<Item = Glyph> + Clone {

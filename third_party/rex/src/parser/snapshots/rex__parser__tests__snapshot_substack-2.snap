@@ -1,0 +1,57 @@
+---
+source: src/parser/mod.rs
+expression: "parse(r\"\\substack{ 1 \\\\ \\frac{7}8 \\\\ 4}\")"
+---
+Ok(
+    [
+        Stack(
+            Stack {
+                atom_type: Inner,
+                lines: [
+                    [
+                        Symbol(
+                            Symbol {
+                                codepoint: '1',
+                                atom_type: Alpha,
+                            },
+                        ),
+                    ],
+                    [
+                        GenFraction(
+                            GenFraction {
+                                numerator: [
+                                    Symbol(
+                                        Symbol {
+                                            codepoint: '7',
+                                            atom_type: Alpha,
+                                        },
+                                    ),
+                                ],
+                                denominator: [
+                                    Symbol(
+                                        Symbol {
+                                            codepoint: '8',
+                                            atom_type: Alpha,
+                                        },
+                                    ),
+                                ],
+                                bar_thickness: Default,
+                                left_delimiter: None,
+                                right_delimiter: None,
+                                style: NoChange,
+                            },
+                        ),
+                    ],
+                    [
+                        Symbol(
+                            Symbol {
+                                codepoint: '4',
+                                atom_type: Alpha,
+                            },
+                        ),
+                    ],
+                ],
+            },
+        ),
+    ],
+)

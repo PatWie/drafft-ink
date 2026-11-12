@@ -4,9 +4,17 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 rust-version.workspace = true
-description = "Command registry, Session, execute / execute_batch, refusals, gesture protocol and ports (L5)."
+repository.workspace = true
+homepage.workspace = true
+description = "The Drafft.ink editor engine (L5): command registry, Session, execute and execute_batch, refusals, gesture protocol and ports."
+readme = "README.md"
+keywords = ["whiteboard", "editor", "commands", "drawing", "canvas"]
+categories = ["graphics", "gui"]
 
 [features]
+# The hand-drawn fonts (GelPen, GelPen Serif, Vanilla Extract) from the Git repository, not from crates.io: see
+# `drafftink-typeset`. Without this feature those families are drawn with Noto Sans.
+hand-fonts = ["drafftink-typeset/hand-fonts"]
 default = ["schemas"]
 # Generates the JSON Schemas of the commands from the argument and output types. A build without it (the web app,
 # which depends on this crate with `default-features = false`) neither generates nor links that code:
@@ -15,16 +23,16 @@ default = ["schemas"]
 schemas = []
 
 [dependencies]
-drafftink-scene = { path = "../scene" }
-drafftink-canvas = { path = "../canvas" }
-drafftink-doc = { path = "../doc" }
-drafftink-geom = { path = "../geom" }
-drafftink-edit = { path = "../edit" }
-drafftink-io = { path = "../io" }
-drafftink-typeset = { path = "../typeset" }
-drafftink-profile = { path = "../profile" }
-drafftink-collab = { path = "../collab" }
-drafftink-protocol = { path = "../protocol" }
+drafftink-scene = { path = "../scene", version = "0.2.0" }
+drafftink-canvas = { path = "../canvas", version = "0.2.0" }
+drafftink-doc = { path = "../doc", version = "0.2.0" }
+drafftink-geom = { path = "../geom", version = "0.2.0" }
+drafftink-edit = { path = "../edit", version = "0.2.0" }
+drafftink-io = { path = "../io", version = "0.2.0" }
+drafftink-typeset = { path = "../typeset", version = "0.2.0" }
+drafftink-profile = { path = "../profile", version = "0.2.0" }
+drafftink-collab = { path = "../collab", version = "0.2.0" }
+drafftink-protocol = { path = "../protocol", version = "0.2.0" }
 schemars.workspace = true
 serde.workspace = true
 serde_json.workspace = true
@@ -35,9 +43,12 @@ base64.workspace = true
 
 # The desktop build carries Noto Sans and STIX Two Math; the web build loads them on demand (docs/web-app.md).
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
-drafftink-typeset = { path = "../typeset", features = ["embedded"] }
+drafftink-typeset = { path = "../typeset", version = "0.2.0", features = ["embedded"] }
 
 [dev-dependencies]
+# The tests draw with the hand-drawn fonts (the Git repository has them; a package on crates.io does not, and a path-only
+# dev-dependency is not part of the package).
+drafftink-typeset = { path = "../typeset", features = ["hand-fonts"] }
 drafftink-scene = { path = "../scene", features = ["conformance"] }
 png.workspace = true
 # Builds an update from a newer app for the schema-block tests.

@@ -1,0 +1,36 @@
+---
+source: src/parser/mod.rs
+expression: "parse(r\"a{a\\tt a}a\")"
+---
+Ok(
+    [
+        Symbol(
+            Symbol {
+                codepoint: '𝑎',
+                atom_type: Alpha,
+            },
+        ),
+        Group(
+            [
+                Symbol(
+                    Symbol {
+                        codepoint: '𝑎',
+                        atom_type: Alpha,
+                    },
+                ),
+                Symbol(
+                    Symbol {
+                        codepoint: '𝚊',
+                        atom_type: Alpha,
+                    },
+                ),
+            ],
+        ),
+        Symbol(
+            Symbol {
+                codepoint: '𝑎',
+                atom_type: Alpha,
+            },
+        ),
+    ],
+)

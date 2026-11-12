@@ -39,7 +39,7 @@ echo "==> Drafft.ink $VERSION for macOS (universal)"
 if [ "$SKIP_BUILD" = 0 ]; then
   for t in $TRIPLES; do
     rustup target add "$t"
-    (cd "$ROOT" && cargo build --profile dist --locked -p drafftink -p drafftink-mcp -p drafftink-cli -p drafftink-server --features drafftink-server/sqlite,drafftink-server/s3 --target "$t")
+    (cd "$ROOT" && cargo build --profile dist --locked -p drafftink -p drafftink-mcp -p drafftink-cli -p drafftink-server --features drafftink-server/sqlite,drafftink-server/s3,drafftink/hand-fonts,drafftink-mcp/hand-fonts,drafftink-cli/hand-fonts --target "$t")
   done
 fi
 

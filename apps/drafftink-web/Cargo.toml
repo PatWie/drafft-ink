@@ -18,6 +18,9 @@ name = "drafftink-web"
 path = "src/main.rs"
 
 [features]
+# The hand-drawn fonts (GelPen, GelPen Serif, Vanilla Extract) from the Git repository, not from crates.io: see
+# `drafftink-typeset`. Without this feature those families are drawn with Noto Sans.
+hand-fonts = ["drafftink-app/hand-fonts"]
 default = ["wgpu"]
 # The Vello + wgpu renderer: the normal web module (`dist/pkg`).
 wgpu = ["drafftink-app/wgpu", "drafftink-gpu/wgpu"]
@@ -29,15 +32,15 @@ scenarios = ["drafftink-app/scenarios"]
 
 [dependencies]
 # Pure parts, built and tested on every target.
-drafftink-bridge = { path = "../../crates/bridge" }
-drafftink-engine = { path = "../../crates/engine", default-features = false }
+drafftink-bridge = { path = "../../crates/bridge", version = "0.2.0" }
+drafftink-engine = { path = "../../crates/engine", version = "0.2.0", default-features = false }
 serde_json.workspace = true
 thiserror.workspace = true
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
-drafftink-app = { path = "../../crates/app", default-features = false }
-drafftink-gpu = { path = "../../crates/gpu", default-features = false }
-drafftink-profile = { path = "../../crates/profile" }
+drafftink-app = { path = "../../crates/app", version = "0.2.0", default-features = false }
+drafftink-gpu = { path = "../../crates/gpu", version = "0.2.0", default-features = false }
+drafftink-profile = { path = "../../crates/profile", version = "0.2.0" }
 log.workspace = true
 wasm-bindgen.workspace = true
 wasm-bindgen-futures.workspace = true

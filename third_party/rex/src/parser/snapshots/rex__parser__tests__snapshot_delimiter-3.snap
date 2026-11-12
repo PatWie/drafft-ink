@@ -1,0 +1,19 @@
+---
+source: src/parser/mod.rs
+expression: "parse(r\"\\Bigl\\langle\")"
+---
+Ok(
+    [
+        ExtendedDelimiter(
+            ExtendedDelimiter {
+                symbol: Symbol {
+                    codepoint: '⟨',
+                    atom_type: Open,
+                },
+                height_enclosed_content: Em(
+                    1.275,
+                ),
+            },
+        ),
+    ],
+)

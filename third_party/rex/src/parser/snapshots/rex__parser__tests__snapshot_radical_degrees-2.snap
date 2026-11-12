@@ -1,0 +1,43 @@
+---
+source: src/parser/mod.rs
+expression: "parse(r\"\\sqrt[f][g]\")"
+---
+Ok(
+    [
+        Radical(
+            Radical {
+                inner: [
+                    Symbol(
+                        Symbol {
+                            codepoint: '[',
+                            atom_type: Open,
+                        },
+                    ),
+                ],
+                character: '√',
+                index: Some(
+                    [
+                        Symbol(
+                            Symbol {
+                                codepoint: '𝑓',
+                                atom_type: Alpha,
+                            },
+                        ),
+                    ],
+                ),
+            },
+        ),
+        Symbol(
+            Symbol {
+                codepoint: '𝑔',
+                atom_type: Alpha,
+            },
+        ),
+        Symbol(
+            Symbol {
+                codepoint: ']',
+                atom_type: Close,
+            },
+        ),
+    ],
+)

@@ -1,0 +1,2 @@
+# Upstream code, vendored as it is (docs/typeset.md): `cargo fmt` leaves it alone.
+disable_all_formatting = true

@@ -4,8 +4,12 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 rust-version.workspace = true
-publish = false
-description = "MCP server for drafft.ink: headless, attached to the desktop app, or relayed to the web page."
+repository.workspace = true
+homepage.workspace = true
+description = "MCP server for Drafft.ink: headless, attached to the desktop app, or relayed to the web page."
+readme = "README.md"
+keywords = ["mcp", "whiteboard", "ai", "agents", "drawing"]
+categories = ["command-line-utilities", "graphics"]
 
 [lib]
 name = "drafftink_mcp"
@@ -15,10 +19,15 @@ path = "src/lib.rs"
 name = "drafftink-mcp"
 path = "src/main.rs"
 
+[features]
+# The hand-drawn fonts (GelPen, GelPen Serif, Vanilla Extract) from the Git repository, not from crates.io: see
+# `drafftink-typeset`. Without this feature those families are drawn with Noto Sans.
+hand-fonts = ["drafftink-engine/hand-fonts"]
+
 [dependencies]
-drafftink-bridge = { path = "../../crates/bridge" }
-drafftink-engine = { path = "../../crates/engine" }
-drafftink-scene = { path = "../../crates/scene" }
+drafftink-bridge = { path = "../../crates/bridge", version = "0.2.0" }
+drafftink-engine = { path = "../../crates/engine", version = "0.2.0" }
+drafftink-scene = { path = "../../crates/scene", version = "0.2.0" }
 # The official Rust MCP SDK. No default features: the `#[tool]` macros are not used, because the tool list is
 # generated from the command registry at run time.
 rmcp = { version = "3.9", default-features = false, features = ["server", "transport-io"] }
@@ -32,6 +41,9 @@ env_logger.workspace = true
 getrandom = "0.3"
 
 [dev-dependencies]
+# The tests draw with the hand-drawn fonts (the Git repository has them; a package on crates.io does not, and a path-only
+# dev-dependency is not part of the package).
+drafftink-typeset = { path = "../../crates/typeset", features = ["hand-fonts"] }
 tempfile.workspace = true
 drafftink-engine = { path = "../../crates/engine" }
 

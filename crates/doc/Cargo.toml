@@ -4,7 +4,12 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 rust-version.workspace = true
-description = "Loro-backed SceneStore: field-level CRDT schema, incremental sync, local undo, history trimming."
+repository.workspace = true
+homepage.workspace = true
+description = "Loro-backed SceneStore (L3): field-level CRDT schema, incremental sync, local undo and history trimming."
+readme = "README.md"
+keywords = ["crdt", "loro", "whiteboard", "collaboration", "undo"]
+categories = ["data-structures", "network-programming"]
 
 [features]
 default = []
@@ -12,8 +17,8 @@ default = []
 profile = ["dep:drafftink-profile"]
 
 [dependencies]
-drafftink-scene = { path = "../scene" }
-drafftink-profile = { path = "../profile", optional = true, default-features = false }
+drafftink-scene = { path = "../scene", version = "0.2.0" }
+drafftink-profile = { path = "../profile", version = "0.2.0", optional = true, default-features = false }
 loro.workspace = true
 serde.workspace = true
 serde_json.workspace = true

@@ -16,7 +16,7 @@ What exists, by product:
 |---|---|---|
 | Canvas library (Konva-like) | `geom`, `scene`, `typeset`, `sketch`, `render`, `canvas` (L0 to L3), `canvas-js` and `packages/drafftink-canvas` (npm package, wasm) | Stage, shapes, events with bubbling, R-tree hit testing, transformer, gesture recogniser, export. No layer nodes, tweens or cache API. The npm package carries the library only (D8, D9). |
 | Editor (Excalidraw-class) | library plus `doc` (Loro store), `edit` (domain rules), `io` (formats), `engine` (registry, `Session`) | 153 commands in 23 families. Bound arrows, elbow arrows, nested groups, frames, lasso, flowchart helpers, library, bound text. |
-| App | `collab`, `ui` (egui), `bridge`, `gpu`, `app` (glue), `apps/drafftink` (desktop), `apps/drafftink-web` (wasm, `window.drafftink`) | One winit shell for native and web (D1). Windows and macOS build in CI but never ran (D15). |
+| App | `collab`, `ui` (egui), `bridge`, `gpu`, `app` (glue), the root package `drafftink` (desktop), `apps/drafftink-web` (wasm, `window.drafftink`) | One winit shell for native and web (D1). Windows and macOS build in CI but never ran (D15). |
 | Server | `apps/drafftink-server` | Rooms with incremental sync; stores: memory, filesystem, sqlite, s3 (the last two are non-default cargo features, see section 7). Binds `127.0.0.1` by default. |
 | MCP | `apps/drafftink-mcp` | stdio headless, stdio attached to the running app, relay to a web tab, HTTP door in the desktop app, WebMCP in the page. The tool list is generated from the registry. |
 | CLI | `apps/drafftink-cli` | `run`, `convert`, `outline`, `inspect`, `commands`. No PNG output (D16). |

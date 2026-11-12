@@ -49,12 +49,12 @@ fn resource_script(icon: &Path, version: &str) -> Result<String, std::fmt::Error
 
 fn main() -> Result<(), Box<dyn Error>> {
     println!("cargo:rerun-if-changed=build.rs");
-    println!("cargo:rerun-if-changed=../../packaging/icons/drafftink.ico");
+    println!("cargo:rerun-if-changed=packaging/icons/drafftink.ico");
     if env::var("CARGO_CFG_TARGET_OS").as_deref() != Ok("windows") {
         return Ok(());
     }
     let manifest_dir = PathBuf::from(env::var("CARGO_MANIFEST_DIR")?);
-    let icon = manifest_dir.join("../../packaging/icons/drafftink.ico");
+    let icon = manifest_dir.join("packaging/icons/drafftink.ico");
     let version = env::var("CARGO_PKG_VERSION")?;
     let rc = PathBuf::from(env::var("OUT_DIR")?).join("drafftink.rc");
     fs::write(&rc, resource_script(&icon, &version)?)?;

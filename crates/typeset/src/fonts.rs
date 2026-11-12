@@ -5,46 +5,106 @@
 
 use crate::style::{FontFamily, FontWeight};
 
-pub(crate) static GELPEN_LIGHT: &[u8] = include_bytes!("../assets/fonts/GelPenLight.ttf");
-pub(crate) static GELPEN_REGULAR: &[u8] = include_bytes!("../assets/fonts/GelPen.ttf");
-pub(crate) static GELPEN_HEAVY: &[u8] = include_bytes!("../assets/fonts/GelPenHeavy.ttf");
-pub(crate) static GELPEN_SERIF_LIGHT: &[u8] = include_bytes!("../assets/fonts/GelPenSerifLight.ttf");
-pub(crate) static GELPEN_SERIF_MEDIUM: &[u8] = include_bytes!("../assets/fonts/GelPenSerifMedium.ttf");
-pub(crate) static GELPEN_SERIF_HEAVY: &[u8] = include_bytes!("../assets/fonts/GelPenSerifHeavy.ttf");
-pub(crate) static VANILLA_EXTRACT: &[u8] = include_bytes!("../assets/fonts/VanillaExtract.ttf");
+/// True when this build has the hand-drawn fonts (GelPen, GelPen Serif, Vanilla Extract) built in: the Cargo feature
+/// `hand-fonts`. Without them those three families are drawn with Noto Sans (see [`font_file`]).
+pub const HAND_FONTS: bool = cfg!(feature = "hand-fonts");
 
-/// The font file that draws `family` at `weight`, when this build has it: the bundled GelPen and Vanilla Extract
-/// files always, Noto Sans and IBM Plex Sans when they are built in (the Cargo features `noto-sans` and `plex-sans`). A custom family has none. The bytes
-/// are the statics the typesetter registers, so a host that needs the file (the UI fonts, an SVG export) shares
-/// them instead of embedding a second copy.
-pub fn font_file(family: &FontFamily, weight: FontWeight) -> Option<&'static [u8]> {
-    match (family, weight) {
-        (FontFamily::GelPen, FontWeight::Light) => Some(GELPEN_LIGHT),
-        (FontFamily::GelPen, FontWeight::Regular) => Some(GELPEN_REGULAR),
-        (FontFamily::GelPen, FontWeight::Heavy) => Some(GELPEN_HEAVY),
-        (FontFamily::GelPenSerif, FontWeight::Light) => Some(GELPEN_SERIF_LIGHT),
-        (FontFamily::GelPenSerif, FontWeight::Regular) => Some(GELPEN_SERIF_MEDIUM),
-        (FontFamily::GelPenSerif, FontWeight::Heavy) => Some(GELPEN_SERIF_HEAVY),
-        (FontFamily::VanillaExtract, _) => Some(VANILLA_EXTRACT),
-        (FontFamily::NotoSans, FontWeight::Heavy) => ExtraFont::NotoSansBold.embedded(),
-        (FontFamily::NotoSans, _) => ExtraFont::NotoSansRegular.embedded(),
-        (FontFamily::PlexSans, _) => ExtraFont::PlexSans.embedded(),
-        (FontFamily::Custom(_), _) => None,
+/// The hand-drawn font files. They are by Shara Weber, are not covered by the AGPL and are never part of a package on
+/// crates.io (`docs/publishing.md`), so every use of them sits behind the feature `hand-fonts`.
+#[cfg(feature = "hand-fonts")]
+mod hand {
+    use crate::style::{FontFamily, FontWeight};
+
+    static GELPEN_LIGHT: &[u8] = include_bytes!("../assets/fonts/GelPenLight.ttf");
+    static GELPEN_REGULAR: &[u8] = include_bytes!("../assets/fonts/GelPen.ttf");
+    static GELPEN_HEAVY: &[u8] = include_bytes!("../assets/fonts/GelPenHeavy.ttf");
+    static GELPEN_SERIF_LIGHT: &[u8] = include_bytes!("../assets/fonts/GelPenSerifLight.ttf");
+    static GELPEN_SERIF_MEDIUM: &[u8] = include_bytes!("../assets/fonts/GelPenSerifMedium.ttf");
+    static GELPEN_SERIF_HEAVY: &[u8] = include_bytes!("../assets/fonts/GelPenSerifHeavy.ttf");
+    static VANILLA_EXTRACT: &[u8] = include_bytes!("../assets/fonts/VanillaExtract.ttf");
+
+    pub(super) fn file(family: &FontFamily, weight: FontWeight) -> Option<&'static [u8]> {
+        match (family, weight) {
+            (FontFamily::GelPen, FontWeight::Light) => Some(GELPEN_LIGHT),
+            (FontFamily::GelPen, FontWeight::Regular) => Some(GELPEN_REGULAR),
+            (FontFamily::GelPen, FontWeight::Heavy) => Some(GELPEN_HEAVY),
+            (FontFamily::GelPenSerif, FontWeight::Light) => Some(GELPEN_SERIF_LIGHT),
+            (FontFamily::GelPenSerif, FontWeight::Regular) => Some(GELPEN_SERIF_MEDIUM),
+            (FontFamily::GelPenSerif, FontWeight::Heavy) => Some(GELPEN_SERIF_HEAVY),
+            (FontFamily::VanillaExtract, _) => Some(VANILLA_EXTRACT),
+            _ => None,
+        }
+    }
+
+    pub(super) fn all() -> [&'static [u8]; 7] {
+        [
+            GELPEN_LIGHT,
+            GELPEN_REGULAR,
+            GELPEN_HEAVY,
+            GELPEN_SERIF_LIGHT,
+            GELPEN_SERIF_MEDIUM,
+            GELPEN_SERIF_HEAVY,
+            VANILLA_EXTRACT,
+        ]
+    }
+
+    pub(super) fn text_for_math() -> Option<&'static [u8]> {
+        Some(GELPEN_REGULAR)
     }
 }
 
-/// Every font that is always compiled in, registered with Parley at start-up. The big fonts are
-/// [`ExtraFont`]s; the STIX math font is read by ReX directly.
-pub(crate) fn bundled() -> [&'static [u8]; 7] {
-    [
-        GELPEN_LIGHT,
-        GELPEN_REGULAR,
-        GELPEN_HEAVY,
-        GELPEN_SERIF_LIGHT,
-        GELPEN_SERIF_MEDIUM,
-        GELPEN_SERIF_HEAVY,
-        VANILLA_EXTRACT,
-    ]
+/// Without the feature `hand-fonts` there are no hand-drawn files.
+#[cfg(not(feature = "hand-fonts"))]
+mod hand {
+    use crate::style::{FontFamily, FontWeight};
+
+    pub(super) fn file(_: &FontFamily, _: FontWeight) -> Option<&'static [u8]> {
+        None
+    }
+
+    pub(super) fn all() -> [&'static [u8]; 0] {
+        []
+    }
+
+    /// The stand-in for the hand-drawn text font of a formula: Noto Sans, when it is built in.
+    pub(super) fn text_for_math() -> Option<&'static [u8]> {
+        super::ExtraFont::NotoSansRegular.embedded()
+    }
+}
+
+/// True for the three hand-drawn families.
+fn is_hand_drawn(family: &FontFamily) -> bool {
+    matches!(family, FontFamily::GelPen | FontFamily::GelPenSerif | FontFamily::VanillaExtract)
+}
+
+/// The font file that draws `family` at `weight`, when this build has it. With the Cargo feature `hand-fonts` the
+/// hand-drawn families (GelPen, GelPen Serif, Vanilla Extract) have their own files; without it they are drawn with Noto
+/// Sans, like the family `noto_sans`. Noto Sans and IBM Plex Sans are there when they are built in (the Cargo features
+/// `noto-sans` and `plex-sans`). A custom family has none. The bytes are the statics the typesetter registers, so a host
+/// that needs the file (the UI fonts, an SVG export) shares them instead of embedding a second copy.
+pub fn font_file(family: &FontFamily, weight: FontWeight) -> Option<&'static [u8]> {
+    if let Some(bytes) = hand::file(family, weight) {
+        return Some(bytes);
+    }
+    match (family, weight) {
+        (FontFamily::NotoSans, FontWeight::Heavy) => ExtraFont::NotoSansBold.embedded(),
+        (FontFamily::NotoSans, _) => ExtraFont::NotoSansRegular.embedded(),
+        (hand, FontWeight::Heavy) if is_hand_drawn(hand) => ExtraFont::NotoSansBold.embedded(),
+        (hand, _) if is_hand_drawn(hand) => ExtraFont::NotoSansRegular.embedded(),
+        (FontFamily::PlexSans, _) => ExtraFont::PlexSans.embedded(),
+        _ => None,
+    }
+}
+
+/// Every hand-drawn font file this build has, registered with Parley at start-up (none without the feature
+/// `hand-fonts`). The other fonts are [`ExtraFont`]s; the STIX math font is read by ReX directly.
+pub(crate) fn bundled() -> impl Iterator<Item = &'static [u8]> {
+    hand::all().into_iter()
+}
+
+/// The font that draws the letters and digits of a formula (the hand-drawn GelPen Regular, or Noto Sans without it).
+pub(crate) fn math_text_font() -> Option<&'static [u8]> {
+    hand::text_for_math()
 }
 
 /// A large font that a build may leave out of the binary and load later (the web app does: they are 2.6 MB
@@ -170,6 +230,7 @@ pub(crate) const FALLBACK_FAMILY: &str = "Noto Sans";
 /// back to the next entry of the font stack.
 pub(crate) fn face_for(family: &FontFamily, weight: FontWeight, italic: bool) -> Face {
     let name = match (family, weight) {
+        (hand, _) if !HAND_FONTS && is_hand_drawn(hand) => FALLBACK_FAMILY,
         (FontFamily::GelPen, FontWeight::Light) => "GelPenLight",
         (FontFamily::GelPen, FontWeight::Regular) => "GelPen",
         (FontFamily::GelPen, FontWeight::Heavy) => "GelPenHeavy",
@@ -184,6 +245,7 @@ pub(crate) fn face_for(family: &FontFamily, weight: FontWeight, italic: bool) ->
     let weight = match (family, weight) {
         (FontFamily::PlexSans | FontFamily::Custom(_), FontWeight::Light) => 300.0,
         (FontFamily::NotoSans | FontFamily::PlexSans | FontFamily::Custom(_), FontWeight::Heavy) => 700.0,
+        (hand, FontWeight::Heavy) if !HAND_FONTS && is_hand_drawn(hand) => 700.0,
         _ => 400.0,
     };
     Face { name: name.to_owned(), weight, italic }

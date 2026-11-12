@@ -4,12 +4,17 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 rust-version.workspace = true
-description = "Agent bridge (L6): JSON-RPC 2.0 over WebSocket, a transport-neutral core, a loopback-only native server, the relay for the web page, and the agent tools (generated from the registry) with MCP over HTTP."
+repository.workspace = true
+homepage.workspace = true
+description = "Drafft.ink agent bridge (L6): JSON-RPC 2.0 over WebSocket, a loopback-only native server, the relay for the web page, and the agent tools generated from the command registry with MCP over HTTP."
+readme = "README.md"
+keywords = ["mcp", "json-rpc", "websocket", "agents", "whiteboard"]
+categories = ["network-programming", "web-programming::websocket"]
 
 [dependencies]
 # No schemas in the build: the web app fetches them as a file (docs/performance.md, "Wasm size"). The desktop apps and the
 # tests turn them on again.
-drafftink-engine = { path = "../engine", default-features = false }
+drafftink-engine = { path = "../engine", version = "0.2.0", default-features = false }
 serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true
@@ -30,6 +35,9 @@ rmcp = { version = "3.9", default-features = false, features = ["server", "trans
 tokio-util = "0.7"
 
 [dev-dependencies]
+# The tests draw with the hand-drawn fonts (the Git repository has them; a package on crates.io does not, and a path-only
+# dev-dependency is not part of the package).
+drafftink-typeset = { path = "../typeset", features = ["hand-fonts"] }
 drafftink-engine = { path = "../engine", features = ["schemas"] }
 tempfile.workspace = true
 # An MCP client over streamable HTTP, to test the server of the desktop app with what a real client does.

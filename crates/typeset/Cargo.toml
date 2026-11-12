@@ -1,10 +1,24 @@
 [package]
 name = "drafftink-typeset"
-description = "Drafft.ink text and math layout: Parley text, ReX math, glyph runs, outlines, caret geometry, bounded caches"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
 rust-version.workspace = true
+repository.workspace = true
+homepage.workspace = true
+description = "Drafft.ink text and math layout (L1): Parley text, ReX math, glyph runs, outlines, caret geometry and bounded caches."
+readme = "README.md"
+keywords = ["text-layout", "latex", "math", "parley", "typography"]
+categories = ["text-processing", "graphics", "mathematics"]
+build = "build.rs"
+# The hand-drawn fonts are by Shara Weber, are not covered by the AGPL and are not part of any package on crates.io
+# (docs/publishing.md). The feature `hand-fonts` needs them, so it only builds from the Git repository.
+exclude = [
+    "assets/fonts/GelPen*.ttf",
+    "assets/fonts/VanillaExtract.ttf",
+    "assets/licenses/GelPen-README.txt",
+    "assets/licenses/VanillaExtract-license.txt",
+]
 
 [features]
 default = []
@@ -18,19 +32,23 @@ plex-sans = []
 stix-math = []
 # The glyph-fallback fonts (`ExtraFont::FALLBACKS`): symbols, math, Kannada, Arabic, CJK punctuation and kana.
 fallback-fonts = []
+# The hand-drawn families GelPen, GelPen Serif and Vanilla Extract (Shara Weber, not AGPL; the files are in the Git repository
+# only and the build fails without them). Without the feature those families are drawn with Noto Sans. The apps in this
+# repository and the web build turn it on; a package from crates.io cannot.
+hand-fonts = []
 # `bench_support`, for the benchmark only. The benchmark enables it through the dev-dependency on this crate.
 bench = []
 
 [dependencies]
-drafftink-geom = { path = "../geom" }
-drafftink-profile = { path = "../profile" }
+drafftink-geom = { path = "../geom", version = "0.2.0" }
+drafftink-profile = { path = "../profile", version = "0.2.0" }
 kurbo = { workspace = true }
 peniko = { workspace = true }
 parley = { workspace = true }
 thiserror = { workspace = true }
-# ReX (math layout), pinned to the commit the old app used. It is a git dependency; see
-# deny.toml `allow-git` and docs/typeset.md.
-rex = { git = "https://github.com/KenyC/ReX", rev = "aeccdba38f3fa54195c469319b65c423e17a77ae", features = ["ttfparser-fontparser"] }
+# ReX (math layout), pinned to the commit the old app used. A crate on crates.io cannot have a Git dependency, so the copy
+# is in third_party/rex and published as drafftink-rex (docs/typeset.md).
+rex = { package = "drafftink-rex", path = "../../third_party/rex", version = "0.1.2", features = ["ttfparser-fontparser"] }
 ttf-parser = "0.25"
 
 [dev-dependencies]

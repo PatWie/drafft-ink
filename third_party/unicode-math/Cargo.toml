@@ -1,0 +1,32 @@
+[package]
+name = "drafftink-unicode-math"
+version = "0.1.0"
+description = "Unicode math symbol tables for TeX commands (vendored fork of unicode-math for drafftink-rex). Imported as `unicode_math`."
+authors = ["Sebastian K <s3bk@protonmail.com>"]
+edition = "2018"
+# The code is MIT. The tables the build script reads are from the LaTeX `unicode-math` package and from
+# "LaTeX Unicode Character References", both under the LaTeX Project Public License 1.3c (see README.md).
+license = "MIT AND LPPL-1.3c"
+repository = "https://github.com/KenyC/ReX"
+homepage = "https://drafft.ink"
+readme = "README.md"
+keywords = ["tex", "latex", "unicode", "math", "symbols"]
+categories = ["text-processing", "mathematics"]
+build = "src/build.rs"
+publish = true
+
+[lib]
+name = "unicode_math"
+path = "src/lib.rs"
+test = false
+doctest = false
+
+[dependencies]
+
+[build-dependencies]
+regex = "1"
+nom = "7.1.3"
+
+# Upstream code, vendored as it is: no lint noise from it.
+[lints.rust]
+warnings = "allow"

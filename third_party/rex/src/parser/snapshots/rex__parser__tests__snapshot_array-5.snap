@@ -1,0 +1,87 @@
+---
+source: src/parser/mod.rs
+expression: "parse(r\"\\begin{array}{c|l}1&\\alpha\\\\2&\\frac12\\end{array}\")"
+---
+Ok(
+    [
+        Array(
+            Array {
+                col_format: ArrayColumnsFormatting {
+                    alignment: [
+                        Centered,
+                        Left,
+                    ],
+                    separators: [
+                        [],
+                        [
+                            VerticalBars(
+                                1,
+                            ),
+                        ],
+                        [],
+                    ],
+                },
+                rows: [
+                    [
+                        [
+                            Symbol(
+                                Symbol {
+                                    codepoint: '1',
+                                    atom_type: Alpha,
+                                },
+                            ),
+                        ],
+                        [
+                            Symbol(
+                                Symbol {
+                                    codepoint: '𝛼',
+                                    atom_type: Alpha,
+                                },
+                            ),
+                        ],
+                    ],
+                    [
+                        [
+                            Symbol(
+                                Symbol {
+                                    codepoint: '2',
+                                    atom_type: Alpha,
+                                },
+                            ),
+                        ],
+                        [
+                            GenFraction(
+                                GenFraction {
+                                    numerator: [
+                                        Symbol(
+                                            Symbol {
+                                                codepoint: '1',
+                                                atom_type: Alpha,
+                                            },
+                                        ),
+                                    ],
+                                    denominator: [
+                                        Symbol(
+                                            Symbol {
+                                                codepoint: '2',
+                                                atom_type: Alpha,
+                                            },
+                                        ),
+                                    ],
+                                    bar_thickness: Default,
+                                    left_delimiter: None,
+                                    right_delimiter: None,
+                                    style: NoChange,
+                                },
+                            ),
+                        ],
+                    ],
+                ],
+                left_delimiter: None,
+                right_delimiter: None,
+                extra_row_sep: false,
+                cell_layout_style: Text,
+            },
+        ),
+    ],
+)

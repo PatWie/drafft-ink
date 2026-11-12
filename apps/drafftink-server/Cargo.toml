@@ -3,10 +3,13 @@ name = "drafftink-server"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
-repository.workspace = true
 rust-version.workspace = true
-description = "Collaboration server for drafft.ink: WebSocket sync, room storage, static web client."
-publish = false
+repository.workspace = true
+homepage.workspace = true
+description = "Collaboration server for Drafft.ink: WebSocket sync, room storage and a static web client."
+readme = "README.md"
+keywords = ["collaboration", "websocket", "whiteboard", "crdt", "server"]
+categories = ["network-programming", "web-programming::http-server", "web-programming::websocket"]
 
 [lib]
 name = "drafftink_server"
@@ -24,7 +27,7 @@ sqlite = ["dep:rusqlite"]
 s3 = ["dep:object_store"]
 
 [dependencies]
-drafftink-protocol = { path = "../../crates/protocol" }
+drafftink-protocol = { path = "../../crates/protocol", version = "0.2.0" }
 axum.workspace = true
 tokio.workspace = true
 tower-http.workspace = true

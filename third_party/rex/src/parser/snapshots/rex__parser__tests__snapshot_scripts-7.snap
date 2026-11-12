@@ -1,0 +1,52 @@
+---
+source: src/parser/mod.rs
+expression: "parse(r\"{a^b}_c\")"
+---
+Ok(
+    [
+        Scripts(
+            Scripts {
+                base: Some(
+                    Group(
+                        [
+                            Scripts(
+                                Scripts {
+                                    base: Some(
+                                        Symbol(
+                                            Symbol {
+                                                codepoint: '𝑎',
+                                                atom_type: Alpha,
+                                            },
+                                        ),
+                                    ),
+                                    superscript: Some(
+                                        [
+                                            Symbol(
+                                                Symbol {
+                                                    codepoint: '𝑏',
+                                                    atom_type: Alpha,
+                                                },
+                                            ),
+                                        ],
+                                    ),
+                                    subscript: None,
+                                },
+                            ),
+                        ],
+                    ),
+                ),
+                superscript: None,
+                subscript: Some(
+                    [
+                        Symbol(
+                            Symbol {
+                                codepoint: '𝑐',
+                                atom_type: Alpha,
+                            },
+                        ),
+                    ],
+                ),
+            },
+        ),
+    ],
+)

@@ -4,7 +4,12 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 rust-version.workspace = true
-description = "Pure-data element model, fractional z-order, validation and the SceneStore trait with an in-memory store."
+repository.workspace = true
+homepage.workspace = true
+description = "Drafft.ink scene model (L1): pure-data elements, fractional z-order, validation and the SceneStore trait with an in-memory store."
+readme = "README.md"
+keywords = ["whiteboard", "scene", "data-model", "canvas", "serde"]
+categories = ["graphics", "data-structures"]
 
 [features]
 default = []
@@ -17,7 +22,7 @@ scenegen = []
 serde.workspace = true
 serde_json = { workspace = true, features = ["float_roundtrip"] }
 thiserror.workspace = true
-drafftink-geom = { path = "../geom" }
+drafftink-geom = { path = "../geom", version = "0.2.0" }
 kurbo.workspace = true
 peniko.workspace = true
 schemars.workspace = true

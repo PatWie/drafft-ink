@@ -1,0 +1,12 @@
+The hand-drawn fonts (GelPen, GelPen Serif, Vanilla Extract)
+
+These fonts are not covered by the AGPL. They are by Shara Weber and remain under her terms. They are included only so
+Drafft.ink can display them. For any other use, get them from sharasfonts.com and follow her terms.
+
+They are not part of the packages on crates.io. The files live in the Git repository of Drafft.ink
+(crates/typeset/assets/fonts/GelPen*.ttf and VanillaExtract.ttf) and in the web app on https://drafft.ink. The Cargo
+feature `hand-fonts` of drafftink-typeset embeds them and only builds from the repository. A build without the feature
+(everything installed from crates.io) draws those three families with Noto Sans (SIL Open Font License 1.1, see the
+other files in this folder).
+
+The status of the licence is tracked in ATTRIBUTION.md of the repository.

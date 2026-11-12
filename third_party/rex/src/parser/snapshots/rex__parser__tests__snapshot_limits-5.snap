@@ -1,0 +1,52 @@
+---
+source: src/parser/mod.rs
+expression: "parse(r\"\\mathop{\\overbrace{1}}\\limits^{2}\")"
+---
+Ok(
+    [
+        Scripts(
+            Scripts {
+                base: Some(
+                    AtomChange(
+                        AtomChange {
+                            at: Operator(
+                                true,
+                            ),
+                            inner: [
+                                Accent(
+                                    Accent {
+                                        symbol: Symbol {
+                                            codepoint: '⏞',
+                                            atom_type: Over,
+                                        },
+                                        nucleus: [
+                                            Symbol(
+                                                Symbol {
+                                                    codepoint: '1',
+                                                    atom_type: Alpha,
+                                                },
+                                            ),
+                                        ],
+                                        extend: true,
+                                        under: false,
+                                    },
+                                ),
+                            ],
+                        },
+                    ),
+                ),
+                superscript: Some(
+                    [
+                        Symbol(
+                            Symbol {
+                                codepoint: '2',
+                                atom_type: Alpha,
+                            },
+                        ),
+                    ],
+                ),
+                subscript: None,
+            },
+        ),
+    ],
+)

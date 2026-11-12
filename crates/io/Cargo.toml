@@ -1,20 +1,25 @@
 [package]
 name = "drafftink-io"
-description = "Every file format, pure: bytes in, scene Document out. Native JSON, legacy migration, Excalidraw, Mermaid, SVG, PNG metadata."
 version.workspace = true
 edition.workspace = true
 license.workspace = true
 rust-version.workspace = true
+repository.workspace = true
+homepage.workspace = true
+description = "Every Drafft.ink file format (L4), pure: bytes in, scene Document out. Native JSON, legacy migration, Excalidraw, Mermaid, SVG and PNG metadata."
+readme = "README.md"
+keywords = ["file-format", "excalidraw", "svg", "mermaid", "whiteboard"]
+categories = ["parser-implementations", "encoding", "rendering::data-formats"]
 
 [features]
 # The fixture fact checks (`io::facts`): test support, not part of the shipped library.
 facts = []
 
 [dependencies]
-drafftink-scene = { path = "../scene" }
-drafftink-geom = { path = "../geom" }
-drafftink-sketch = { path = "../sketch" }
-drafftink-typeset = { path = "../typeset", default-features = false }
+drafftink-scene = { path = "../scene", version = "0.2.0" }
+drafftink-geom = { path = "../geom", version = "0.2.0" }
+drafftink-sketch = { path = "../sketch", version = "0.2.0" }
+drafftink-typeset = { path = "../typeset", version = "0.2.0", default-features = false }
 kurbo.workspace = true
 serde.workspace = true
 serde_json = { workspace = true, features = ["float_roundtrip"] }
@@ -28,7 +33,7 @@ loro.workspace = true
 flate2 = { version = "1", default-features = false, features = ["rust_backend"] }
 
 [dev-dependencies]
-drafftink-typeset = { path = "../typeset", features = ["embedded"] }
+drafftink-typeset = { path = "../typeset", features = ["hand-fonts", "embedded"] }
 # The tests use the fact checks.
 drafftink-io = { path = ".", features = ["facts"] }
 proptest.workspace = true

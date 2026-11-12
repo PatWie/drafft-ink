@@ -1,0 +1,16 @@
+---
+source: src/parser/mod.rs
+expression: "parse(r\"\\begin{array}{cc}1 \\\\ 2\")"
+---
+Err(
+    UnexpectedEndGroup {
+        expected: [
+            Align,
+            NewLine,
+            Env(
+                Array,
+            ),
+        ],
+        got: EndOfInput,
+    },
+)

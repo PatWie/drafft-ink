@@ -1,0 +1,7 @@
+---
+source: src/parser/mod.rs
+expression: "parse(r\"\\Bigm=\")"
+---
+Err(
+    ExpectedDelimiter,
+)

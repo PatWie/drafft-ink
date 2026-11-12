@@ -1,0 +1,7 @@
+---
+source: src/parser/mod.rs
+expression: "parse(r\"\\left)1+1\\right)\")"
+---
+Err(
+    ExpectedOpenDelimiter,
+)

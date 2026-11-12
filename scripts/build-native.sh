@@ -3,7 +3,7 @@
 # usage: scripts/build-native.sh [extra cargo args]
 set -euo pipefail
 cd "$(dirname "$0")/.."
-cargo build --release -p drafftink "$@"
+cargo build --release -p drafftink --features hand-fonts "$@"
 bin="target/release/drafftink"
 [ -f "target/release/drafftink.exe" ] && bin="target/release/drafftink.exe"
 ls -l "$bin"

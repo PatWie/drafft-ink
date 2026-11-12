@@ -147,7 +147,7 @@ jobs:
   # Linux needs no -dev packages: winit loads X11, Wayland and xkbcommon with dlopen, rusqlite is
   # bundled, and the fonts are in the binary (docs/building.md). Only a C compiler is needed, and
   # every runner has one. Windows needs the MSVC tools (preinstalled) for the icon resource in
-  # apps/drafftink/build.rs.
+  # build.rs (repository root).
   build-native:
     name: Build (${{ matrix.os }})
     runs-on: ${{ matrix.os }}

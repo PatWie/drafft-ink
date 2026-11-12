@@ -1,0 +1,48 @@
+---
+source: src/parser/mod.rs
+expression: "parse(r\"1{\\scriptstyle2\\textstyle1}+1\")"
+---
+Ok(
+    [
+        Symbol(
+            Symbol {
+                codepoint: '1',
+                atom_type: Alpha,
+            },
+        ),
+        Group(
+            [
+                Style(
+                    Script,
+                ),
+                Symbol(
+                    Symbol {
+                        codepoint: '2',
+                        atom_type: Alpha,
+                    },
+                ),
+                Style(
+                    Text,
+                ),
+                Symbol(
+                    Symbol {
+                        codepoint: '1',
+                        atom_type: Alpha,
+                    },
+                ),
+            ],
+        ),
+        Symbol(
+            Symbol {
+                codepoint: '+',
+                atom_type: Binary,
+            },
+        ),
+        Symbol(
+            Symbol {
+                codepoint: '1',
+                atom_type: Alpha,
+            },
+        ),
+    ],
+)

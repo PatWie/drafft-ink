@@ -1,0 +1,30 @@
+---
+source: src/parser/mod.rs
+expression: "parse(\"'a\")"
+---
+Ok(
+    [
+        Scripts(
+            Scripts {
+                base: None,
+                superscript: Some(
+                    [
+                        Symbol(
+                            Symbol {
+                                codepoint: '′',
+                                atom_type: Ordinary,
+                            },
+                        ),
+                    ],
+                ),
+                subscript: None,
+            },
+        ),
+        Symbol(
+            Symbol {
+                codepoint: '𝑎',
+                atom_type: Alpha,
+            },
+        ),
+    ],
+)

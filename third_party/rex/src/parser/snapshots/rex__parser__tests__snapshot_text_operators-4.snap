@@ -1,0 +1,58 @@
+---
+source: src/parser/mod.rs
+expression: "parse(r\"\\det_{B} M\")"
+---
+Ok(
+    [
+        Scripts(
+            Scripts {
+                base: Some(
+                    AtomChange(
+                        AtomChange {
+                            at: Operator(
+                                true,
+                            ),
+                            inner: [
+                                Symbol(
+                                    Symbol {
+                                        codepoint: 'd',
+                                        atom_type: Ordinary,
+                                    },
+                                ),
+                                Symbol(
+                                    Symbol {
+                                        codepoint: 'e',
+                                        atom_type: Ordinary,
+                                    },
+                                ),
+                                Symbol(
+                                    Symbol {
+                                        codepoint: 't',
+                                        atom_type: Ordinary,
+                                    },
+                                ),
+                            ],
+                        },
+                    ),
+                ),
+                superscript: None,
+                subscript: Some(
+                    [
+                        Symbol(
+                            Symbol {
+                                codepoint: '𝐵',
+                                atom_type: Alpha,
+                            },
+                        ),
+                    ],
+                ),
+            },
+        ),
+        Symbol(
+            Symbol {
+                codepoint: '𝑀',
+                atom_type: Alpha,
+            },
+        ),
+    ],
+)

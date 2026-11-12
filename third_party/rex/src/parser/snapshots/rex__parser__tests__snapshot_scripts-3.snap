@@ -1,0 +1,40 @@
+---
+source: src/parser/mod.rs
+expression: "parse(r\"1^3_2\")"
+---
+Ok(
+    [
+        Scripts(
+            Scripts {
+                base: Some(
+                    Symbol(
+                        Symbol {
+                            codepoint: '1',
+                            atom_type: Alpha,
+                        },
+                    ),
+                ),
+                superscript: Some(
+                    [
+                        Symbol(
+                            Symbol {
+                                codepoint: '3',
+                                atom_type: Alpha,
+                            },
+                        ),
+                    ],
+                ),
+                subscript: Some(
+                    [
+                        Symbol(
+                            Symbol {
+                                codepoint: '2',
+                                atom_type: Alpha,
+                            },
+                        ),
+                    ],
+                ),
+            },
+        ),
+    ],
+)

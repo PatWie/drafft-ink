@@ -1,0 +1,148 @@
+---
+source: src/parser/mod.rs
+expression: "parse(r\"\\lim_{h \\to 0 } \\frac{f(x+h)-f(x)}{h}\")"
+---
+Ok(
+    [
+        Scripts(
+            Scripts {
+                base: Some(
+                    AtomChange(
+                        AtomChange {
+                            at: Operator(
+                                true,
+                            ),
+                            inner: [
+                                Symbol(
+                                    Symbol {
+                                        codepoint: 'l',
+                                        atom_type: Ordinary,
+                                    },
+                                ),
+                                Symbol(
+                                    Symbol {
+                                        codepoint: 'i',
+                                        atom_type: Ordinary,
+                                    },
+                                ),
+                                Symbol(
+                                    Symbol {
+                                        codepoint: 'm',
+                                        atom_type: Ordinary,
+                                    },
+                                ),
+                            ],
+                        },
+                    ),
+                ),
+                superscript: None,
+                subscript: Some(
+                    [
+                        Symbol(
+                            Symbol {
+                                codepoint: 'ℎ',
+                                atom_type: Alpha,
+                            },
+                        ),
+                        Symbol(
+                            Symbol {
+                                codepoint: '→',
+                                atom_type: Relation,
+                            },
+                        ),
+                        Symbol(
+                            Symbol {
+                                codepoint: '0',
+                                atom_type: Alpha,
+                            },
+                        ),
+                    ],
+                ),
+            },
+        ),
+        GenFraction(
+            GenFraction {
+                numerator: [
+                    Symbol(
+                        Symbol {
+                            codepoint: '𝑓',
+                            atom_type: Alpha,
+                        },
+                    ),
+                    Symbol(
+                        Symbol {
+                            codepoint: '(',
+                            atom_type: Open,
+                        },
+                    ),
+                    Symbol(
+                        Symbol {
+                            codepoint: '𝑥',
+                            atom_type: Alpha,
+                        },
+                    ),
+                    Symbol(
+                        Symbol {
+                            codepoint: '+',
+                            atom_type: Binary,
+                        },
+                    ),
+                    Symbol(
+                        Symbol {
+                            codepoint: 'ℎ',
+                            atom_type: Alpha,
+                        },
+                    ),
+                    Symbol(
+                        Symbol {
+                            codepoint: ')',
+                            atom_type: Close,
+                        },
+                    ),
+                    Symbol(
+                        Symbol {
+                            codepoint: '−',
+                            atom_type: Binary,
+                        },
+                    ),
+                    Symbol(
+                        Symbol {
+                            codepoint: '𝑓',
+                            atom_type: Alpha,
+                        },
+                    ),
+                    Symbol(
+                        Symbol {
+                            codepoint: '(',
+                            atom_type: Open,
+                        },
+                    ),
+                    Symbol(
+                        Symbol {
+                            codepoint: '𝑥',
+                            atom_type: Alpha,
+                        },
+                    ),
+                    Symbol(
+                        Symbol {
+                            codepoint: ')',
+                            atom_type: Close,
+                        },
+                    ),
+                ],
+                denominator: [
+                    Symbol(
+                        Symbol {
+                            codepoint: 'ℎ',
+                            atom_type: Alpha,
+                        },
+                    ),
+                ],
+                bar_thickness: Default,
+                left_delimiter: None,
+                right_delimiter: None,
+                style: NoChange,
+            },
+        ),
+    ],
+)

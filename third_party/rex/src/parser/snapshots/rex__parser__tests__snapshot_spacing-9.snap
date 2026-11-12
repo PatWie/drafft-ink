@@ -1,0 +1,9 @@
+---
+source: src/parser/mod.rs
+expression: "parse(r\"1\\33\")"
+---
+Err(
+    UnrecognizedControlSequence(
+        "3",
+    ),
+)

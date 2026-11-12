@@ -1,0 +1,44 @@
+---
+source: src/parser/mod.rs
+expression: "parse(r\"\\left(\\alpha+1\\right)\")"
+---
+Ok(
+    [
+        Delimited(
+            Delimited {
+                delimiters: [
+                    Symbol {
+                        codepoint: '(',
+                        atom_type: Open,
+                    },
+                    Symbol {
+                        codepoint: ')',
+                        atom_type: Close,
+                    },
+                ],
+                inners: [
+                    [
+                        Symbol(
+                            Symbol {
+                                codepoint: '𝛼',
+                                atom_type: Alpha,
+                            },
+                        ),
+                        Symbol(
+                            Symbol {
+                                codepoint: '+',
+                                atom_type: Binary,
+                            },
+                        ),
+                        Symbol(
+                            Symbol {
+                                codepoint: '1',
+                                atom_type: Alpha,
+                            },
+                        ),
+                    ],
+                ],
+            },
+        ),
+    ],
+)
