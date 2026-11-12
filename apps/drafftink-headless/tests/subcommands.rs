@@ -126,13 +126,30 @@ fn failures_have_the_same_message_and_exit_code() {
     let dir = workspace();
     for args in [
         &["outline", "missing.drafftink"][..],
-        &["convert", "boxes.drafftink", "out.png"],
         &["convert", "boxes.drafftink", "out.unknown"],
         &["commands", "no.such.command"],
         &["run", "missing.jsonl"],
     ] {
         assert_same_as_reference(dir.path(), args);
         assert_eq!(subcommand(dir.path(), args).2, 1, "{args:?}");
+    }
+}
+
+/// PNG is a feature of the build (`png`, on by default): with it `convert` draws on the CPU, without it the tool
+/// refuses in plain words. Either way the binary and the library agree.
+#[test]
+fn a_png_output_is_drawn_or_refused_as_the_build_says() {
+    let dir = workspace();
+    let args = &["convert", "boxes.drafftink", "out.png"][..];
+    assert_same_as_reference(dir.path(), args);
+    let (_, err, code) = subcommand(dir.path(), args);
+    if cfg!(feature = "png") {
+        assert_eq!(code, 0, "{}", String::from_utf8_lossy(&err));
+        let png = std::fs::read(dir.path().join("out.png")).unwrap();
+        assert_eq!(&png[..8], b"\x89PNG\r\n\x1a\n");
+    } else {
+        assert_eq!(code, 1);
+        assert!(String::from_utf8_lossy(&err).contains("cannot write PNG"), "{}", String::from_utf8_lossy(&err));
     }
 }
 

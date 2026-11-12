@@ -1529,6 +1529,7 @@ dependencies = [
  "pollster",
  "serde",
  "serde_json",
+ "tempfile",
  "thiserror 2.0.21",
  "vello",
  "vello_cpu 0.3.0",

@@ -42,5 +42,9 @@ serde_json.workspace = true
 thiserror.workspace = true
 getrandom = "0.3"
 
+[dev-dependencies]
+# The unit tests of the PNG renderer (feature `png`) write a picture to a folder and read it back.
+tempfile.workspace = true
+
 [lints]
 workspace = true
