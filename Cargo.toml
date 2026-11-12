@@ -11,8 +11,8 @@ readme = "README.md"
 documentation = "https://github.com/PatWie/drafft-ink/tree/main/docs"
 keywords = ["whiteboard", "infinite-canvas", "drawing", "wgpu", "collaboration"]
 categories = ["graphics", "gui", "multimedia::images"]
-# `cargo install drafftink` builds this package from crates.io: only the launcher, its build script and the icon.
-include = ["/src", "/build.rs", "/packaging/icons/drafftink.ico", "/README.md", "/LICENSE"]
+# `cargo install drafftink` builds this package from crates.io: only the launcher, its test of the subcommands, its build script and the icon.
+include = ["/src", "/tests/subcommands.rs", "/build.rs", "/packaging/icons/drafftink.ico", "/README.md", "/LICENSE"]
 autotests = false
 autoexamples = false
 autobenches = false
