@@ -1,6 +1,6 @@
 # Publishing to crates.io
 
-`cargo install drafftink` installs the desktop app, `cargo install drafftink-server` the collaboration server, and the
+`cargo install drafftink` installs the desktop app, `cargo install drafftink-server` the collaboration server, `cargo install drafftink-cli` and `cargo install drafftink-mcp` the small standalone tools, and the
 libraries below are there for anyone who builds on them. This page says what is published, how the hand-drawn fonts are
 kept out of it, and what the maintainer runs by hand. The tooling never publishes anything: `cargo xtask publish` is a dry
 run and refuses every other mode.
@@ -20,8 +20,9 @@ Version 0.2.0 for every crate of ours, except the two vendored ones.
 | `drafftink-engine` | L5 |
 | `drafftink-gpu`, `-ui`, `-bridge` | L6 |
 | `drafftink-app` | the glue the desktop launcher needs (L7) |
-| `drafftink` | the desktop app: the package at the repository root (`src/main.rs`) |
-| `drafftink-server`, `drafftink-mcp`, `drafftink-cli` | binaries, for `cargo install` |
+| `drafftink-cli`, `drafftink-mcp` | the headless command line and the MCP server: small binaries for `cargo install` on servers and in CI, and libraries that `drafftink` embeds as its subcommands (below) |
+| `drafftink` | the desktop app: the package at the repository root (`src/main.rs`). Its subcommands `convert`, `run`, `outline`, `inspect`, `commands`, `schemas` and `mcp` run the code of the two crates above |
+| `drafftink-server` | the collaboration server, a binary for `cargo install`. It is not a subcommand of `drafftink`: a server host installs it alone |
 | `drafftink-core` 0.2.0 | an empty placeholder in `deprecated/drafftink-core` (below) |
 
 Not published (`publish = false`): `drafftink-testkit`, `drafftink-e2e`, `xtask`, `drafftink-canvas-js` (the npm package
@@ -76,9 +77,13 @@ its symbol-table crate, published as `drafftink-unicode-math`. Details and licen
 keeps it out of the repository workspace, so no build, test or lint touches it. Publishing it as 0.2.0 gives the name a page
 that points to the new crates. After it is published, yank 0.1.0.
 
+## The subcommands of `drafftink`
+
+`drafftink` depends on `drafftink-cli` and `drafftink-mcp` (normal dependencies with a `version`), so the publish order puts both before it, and `cargo xtask publish` prints that order. They have a `lib.rs` with the clap definitions and the entry points (`drafftink_cli::cli::run_command`, `drafftink_mcp::cli::run_server`) and a `main.rs` of a few lines; `drafftink` flattens their definitions into its own (`src/tool.rs`), so there is one copy. The layer table allows exactly these two edges between apps (`docs/architecture.md`, rule 2). The `hand-fonts` feature of `drafftink` turns on the feature of both, so a repository build draws the same in the window and in the subcommands. A version bump (below) touches both new dependency lines in the root `Cargo.toml`.
+
 ## `cargo install` from a package
 
-`cargo install drafftink` builds the package of the root crate, with the crates.io versions of the libraries and without
+`cargo install drafftink` (which now includes the subcommands) builds the package of the root crate, with the crates.io versions of the libraries and without
 `hand-fonts`. The same build from the working tree is `cargo install --path .`. Both need a C compiler and nothing else
 (`building.md`). `cargo xtask publish` builds every crate from its package, which includes the binary.
 

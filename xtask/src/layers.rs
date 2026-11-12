@@ -99,7 +99,18 @@ pub struct SameLayerEdge {
     pub reason: &'static str,
 }
 
-pub const SAME_LAYER_EDGES: &[SameLayerEdge] = &[];
+pub const SAME_LAYER_EDGES: &[SameLayerEdge] = &[
+    SameLayerEdge {
+        lower: "drafftink-cli",
+        upper: "drafftink",
+        reason: "`drafftink convert|run|outline|commands` is the code of the standalone drafftink-cli, with no copy",
+    },
+    SameLayerEdge {
+        lower: "drafftink-mcp",
+        upper: "drafftink",
+        reason: "`drafftink mcp` is the code of the standalone drafftink-mcp, with no copy",
+    },
+];
 
 /// Restriction on an external crate: where it may appear.
 pub struct ExternalRule {
@@ -833,6 +844,21 @@ mod tests {
                 .is_empty()
         );
         let v = check(&[c("drafftink-mcp", &[("drafftink-cli", Normal, true)])]);
+        assert!(matches!(only(&v), Violation::Edge { from: 8, to: 8, .. }));
+    }
+
+    #[test]
+    fn the_desktop_app_may_use_the_cli_and_mcp_apps_and_nothing_else_may() {
+        let ok = [
+            c("drafftink-cli", &[]),
+            c("drafftink-mcp", &[]),
+            c("drafftink", &[("drafftink-cli", Normal, true), ("drafftink-mcp", Normal, true)]),
+        ];
+        assert!(check(&ok).is_empty(), "{:?}", check(&ok));
+        // The edge is one way, and the other apps do not get it.
+        let v = check(&[c("drafftink-cli", &[("drafftink", Normal, true)])]);
+        assert!(matches!(only(&v), Violation::Edge { from: 8, to: 8, .. }));
+        let v = check(&[c("drafftink-server", &[("drafftink-cli", Normal, true)])]);
         assert!(matches!(only(&v), Violation::Edge { from: 8, to: 8, .. }));
     }
 

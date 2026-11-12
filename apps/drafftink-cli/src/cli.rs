@@ -27,8 +27,10 @@ pub struct Cli {
 /// The subcommands.
 #[derive(Debug, Subcommand)]
 pub enum Command {
-    /// Run a command script against a document. The script is JSON Lines, a JSON array of steps, one step, or a
-    /// batch object; `-` reads it from standard input.
+    /// Run a command script against a document.
+    ///
+    /// The script is JSON Lines, a JSON array of steps, one step, or a batch object; `-` reads it from standard
+    /// input.
     Run(RunArgs),
     /// Convert a document from one format to another.
     ///
@@ -41,8 +43,10 @@ pub enum Command {
     Inspect(InspectArgs),
     /// List the commands, or describe one with its argument schema, facts and example.
     Commands(CommandsArgs),
-    /// Print the argument and output schemas of every command as one JSON table. `scripts/build-web.sh` writes it
-    /// next to the web app, which fetches it instead of carrying the schema code in its wasm module.
+    /// Print the argument and output schemas of every command as one JSON table.
+    ///
+    /// `scripts/build-web.sh` writes it next to the web app, which fetches it instead of carrying the schema code in
+    /// its wasm module.
     Schemas,
 }
 
@@ -192,8 +196,8 @@ fn convert(args: &ConvertArgs, err: &mut dyn Write) -> Result<(), CliError> {
 }
 
 /// Runs the command line `cli`, writing results to `out` and notes to `err`.
-pub fn execute(cli: &Cli, out: &mut dyn Write, err: &mut dyn Write) -> Result<(), CliError> {
-    match &cli.command {
+pub fn execute(command: &Command, out: &mut dyn Write, err: &mut dyn Write) -> Result<(), CliError> {
+    match command {
         Command::Run(a) => run(a, out, err),
         Command::Convert(a) => convert(a, err),
         Command::Outline(a) => {
@@ -225,16 +229,24 @@ pub fn execute(cli: &Cli, out: &mut dyn Write, err: &mut dyn Write) -> Result<()
     }
 }
 
-/// The entry point of the binary: results on standard output, notes and errors on standard error. The exit code
-/// is 0 when everything ran, 1 when a step or a file failed, 2 for a mistake in the arguments.
-pub fn main() -> ExitCode {
-    let cli = Cli::parse();
+/// Runs `command` as a process would: results on standard output, notes and errors on standard error, which
+/// starts with `program` (the name the user typed: `drafftink-cli`, or `drafftink` for its subcommands). The exit
+/// code is 0 when everything ran and 1 when a step or a file failed. A mistake in the arguments is found by the
+/// parser before this runs, and it exits with 2.
+///
+/// `drafftink-cli` and the subcommands of `drafftink` both call this, so they cannot differ.
+pub fn run_command(command: &Command, program: &str) -> ExitCode {
     let (mut out, mut err) = (std::io::stdout().lock(), std::io::stderr().lock());
-    match execute(&cli, &mut out, &mut err) {
+    match execute(command, &mut out, &mut err) {
         Ok(()) => ExitCode::SUCCESS,
         Err(e) => {
-            let _ = writeln!(err, "drafftink-cli: {e}");
+            let _ = writeln!(err, "{program}: {e}");
             ExitCode::FAILURE
         }
     }
+}
+
+/// The entry point of the `drafftink-cli` binary.
+pub fn main() -> ExitCode {
+    run_command(&Cli::parse().command, "drafftink-cli")
 }
