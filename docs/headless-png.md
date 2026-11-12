@@ -1,6 +1,6 @@
 # PNG export without a GPU
 
-Question: can the headless tool (`drafftink-cli`, also `drafftink convert|run`) write PNG on a machine with no GPU and no display? Yes. It was never GPU-bound: the app already turns a document into a `vello::Scene` on the CPU (`drafftink-render`), and only the last step, rasterising that scene, ran on the GPU. The tool now does that step on the CPU too (Cargo feature `png`) or, where it can, on the GPU (`png-gpu`).
+Question: can the headless tool (`drafftink-headless convert|run`, the program over `drafftink-cli`) write PNG on a machine with no GPU and no display? Yes. It was never GPU-bound: the app already turns a document into a `vello::Scene` on the CPU (`drafftink-render`), and only the last step, rasterising that scene, ran on the GPU. The tool now does that step on the CPU too (Cargo feature `png`) or, where it can, on the GPU (`png-gpu`).
 
 ## What was built
 
@@ -63,10 +63,10 @@ Vello 0.11 returns `Ok` and a black picture when a scene needs more working buff
 
 ## Recommendation
 
-Ship `png` (CPU) in the default packages of the headless tool: pure Rust, no system dependency, the same scene as the app, 0.5 s for the largest document of the intro, a 2 MB larger binary. Keep `png-gpu` as an opt-in for people who render very large pictures on a machine with a GPU; it does not make small pictures faster. Do not take resvg.
+Ship `png` (CPU) in the default features of `drafftink-headless` (done; the desktop `drafftink` has no `convert` any more): pure Rust, no system dependency, the same scene as the app, 0.5 s for the largest document of the intro, a 2 MB larger binary. Keep `png-gpu` as an opt-in for people who render very large pictures on a machine with a GPU; it does not make small pictures faster. Do not take resvg.
 
-Packaging (not done here, it belongs to the binaries work): add `drafftink-cli/png` to the feature list of `scripts/package-linux.sh` and the equivalent for the other platforms, and `png` to the `drafftink` binary's use of the cli crate, so `drafftink convert x.drafftink x.png` works in the desktop package too.
+Packaging: `drafftink-headless` enables `drafftink-cli/png` by default and `drafftink-cli/png-gpu` through its own opt-in `png-gpu`, so the release scripts need no flag for the CPU renderer. `cargo xtask layers` checks the dependency graph of `drafftink-headless` for screen crates with `png-gpu` left out.
 
 ## Reproducing
 
-`drafftink-cli convert in.drafftink out.png` in a build with `--features png`; `DRAFFTINK_PNG_RENDERER=cpu` forces the CPU in a `png-gpu` build; `VK_ICD_FILENAMES=/usr/share/vulkan/icd.d/lvp_icd.json` selects lavapipe. The comparison pictures were made by an example that exports through the app's `OffscreenRenderer` and a small program that counts differing pixels; neither is committed.
+`drafftink-headless convert in.drafftink out.png` (the default build; `drafftink-cli` alone needs `--features png`); `DRAFFTINK_PNG_RENDERER=cpu` forces the CPU in a `png-gpu` build; `VK_ICD_FILENAMES=/usr/share/vulkan/icd.d/lvp_icd.json` selects lavapipe. The comparison pictures were made by an example that exports through the app's `OffscreenRenderer` and a small program that counts differing pixels; neither is committed.

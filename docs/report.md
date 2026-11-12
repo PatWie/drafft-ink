@@ -19,7 +19,7 @@ What exists, by product:
 | App | `collab`, `ui` (egui), `bridge`, `gpu`, `app` (glue), the root package `drafftink` (desktop), `apps/drafftink-web` (wasm, `window.drafftink`) | One winit shell for native and web (D1). Windows and macOS build in CI but never ran (D15). |
 | Server | `apps/drafftink-server` | Rooms with incremental sync; stores: memory, filesystem, sqlite, s3 (the last two are non-default cargo features, see section 7). Binds `127.0.0.1` by default. |
 | MCP | `apps/drafftink-mcp` | stdio headless, stdio attached to the running app, relay to a web tab, HTTP door in the desktop app, WebMCP in the page. The tool list is generated from the registry. |
-| CLI | `apps/drafftink-cli` | `run`, `convert`, `outline`, `inspect`, `commands`. PNG output only with the `png` feature (D16). |
+| CLI | `apps/drafftink-cli` | `run`, `convert`, `outline`, `inspect`, `commands`. PNG output with the `png` feature, on by default in `drafftink-headless` (D16). |
 
 Source size (lines of `.rs`, tests included): `engine` 60,414, `edit` 32,473, `ui` 16,704, `io` 14,093, `app` 7,800, all crates and apps together about 218,000.
 

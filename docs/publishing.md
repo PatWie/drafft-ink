@@ -22,7 +22,7 @@ Version 0.2.0 for every crate of ours, except the two vendored ones.
 | `drafftink-app` | the glue the desktop launcher needs (L7) |
 | `drafftink-cli`, `drafftink-mcp`, `drafftink-server` | libraries only, with no binary: the tools for documents, the MCP server and the collaboration server. They hold the clap definitions and the work; the two programs below are thin wrappers (below) |
 | `drafftink` | the desktop app: the package at the repository root (`src/main.rs`). Its one subcommand, `mcp`, is the bridge to the open window and uses `drafftink-mcp` |
-| `drafftink-headless` | the program without a screen, a binary for `cargo install`: `serve` (`drafftink-server`), `mcp` (`drafftink-mcp`) and `convert`, `run`, `outline`, `inspect`, `commands`, `schemas` (`drafftink-cli`). Features `sqlite`, `s3` and `hand-fonts` pass through to the libraries |
+| `drafftink-headless` | the program without a screen, a binary for `cargo install`: `serve` (`drafftink-server`), `mcp` (`drafftink-mcp`) and `convert`, `run`, `outline`, `inspect`, `commands`, `schemas` (`drafftink-cli`). Features `sqlite`, `s3` and `hand-fonts` pass through to the libraries. `png` (on by default: PNG export on the CPU with `vello_cpu`) and the opt-in `png-gpu` (Vello on wgpu, which links the graphics stack) pass through to `drafftink-cli` |
 | `drafftink-core` 0.2.0 | an empty placeholder in `deprecated/drafftink-core` (below) |
 
 Not published (`publish = false`): `drafftink-testkit`, `drafftink-e2e`, `xtask`, `drafftink-canvas-js` (the npm package
