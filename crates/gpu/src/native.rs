@@ -29,7 +29,7 @@ impl Clipboard {
         let text = cb.get_text().ok().filter(|t| !t.is_empty());
         let mut images = Vec::new();
         if let Ok(img) = cb.get_image() {
-            match encode_png(img.width as u32, img.height as u32, &img.bytes) {
+            match drafftink_render::encode_png(img.width as u32, img.height as u32, &img.bytes) {
                 Ok(bytes) => images.push(ImageBytes { mime: "image/png".into(), bytes }),
                 Err(e) => log::warn!("clipboard image not usable: {e}"),
             }
@@ -59,15 +59,6 @@ impl Clipboard {
             }
         }
     }
-}
-
-pub(crate) fn encode_png(width: u32, height: u32, rgba: &[u8]) -> Result<Vec<u8>, String> {
-    let mut out = Vec::new();
-    let mut enc = png::Encoder::new(&mut out, width, height);
-    enc.set_color(png::ColorType::Rgba);
-    enc.set_depth(png::BitDepth::Eight);
-    enc.write_header().map_err(|e| e.to_string())?.write_image_data(rgba).map_err(|e| e.to_string())?;
-    Ok(out)
 }
 
 pub(crate) fn decode_png(bytes: &[u8]) -> Result<(u32, u32, Vec<u8>), String> {
@@ -122,7 +113,7 @@ mod tests {
     #[test]
     fn png_round_trip() {
         let rgba = vec![255, 0, 0, 255, 0, 255, 0, 128, 0, 0, 255, 0, 1, 2, 3, 4];
-        let png = encode_png(2, 2, &rgba).unwrap();
+        let png = drafftink_render::encode_png(2, 2, &rgba).unwrap();
         let (w, h, back) = decode_png(&png).unwrap();
         assert_eq!((w, h), (2, 2));
         assert_eq!(back, rgba);

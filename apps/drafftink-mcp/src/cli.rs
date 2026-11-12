@@ -6,7 +6,7 @@ use std::process::ExitCode;
 use std::sync::Arc;
 
 use drafftink_bridge::files;
-use drafftink_bridge::mcp::handler::DrafftHandler;
+use drafftink_bridge::mcp::handler::{DrafftHandler, Program};
 use drafftink_bridge::relay::{HOSTED_ORIGIN, RelayConfig, RelayServer};
 use drafftink_bridge::server::BridgeError;
 use drafftink_bridge::tools::service::Service;
@@ -162,34 +162,35 @@ fn attach_backend(args: &BridgeArgs) -> Result<Backend, CliError> {
     Ok(Backend::attached(target))
 }
 
-async fn serve(backend: Backend) -> Result<(), CliError> {
+async fn serve(backend: Backend, program: Program) -> Result<(), CliError> {
     let service = Arc::new(Service::new(backend));
-    let handler = DrafftHandler::new(service);
+    let handler = DrafftHandler::new(service, program);
     let running = handler.serve(rmcp::transport::stdio()).await.map_err(|e| CliError::Transport(e.to_string()))?;
     running.waiting().await.map_err(|e| CliError::Transport(e.to_string()))?;
     Ok(())
 }
 
-fn run(backend: Result<Backend, CliError>) -> Result<(), CliError> {
+fn run(backend: Result<Backend, CliError>, program: Program) -> Result<(), CliError> {
     let backend = backend?;
     let rt = tokio::runtime::Builder::new_multi_thread()
         .worker_threads(2)
         .enable_all()
         .build()
         .map_err(|e| CliError::Transport(e.to_string()))?;
-    rt.block_on(serve(backend))
+    rt.block_on(serve(backend, program))
 }
 
-/// Serves MCP on standard input and output until the client closes it, as the process `program` (the name the
-/// user typed). Diagnostics go to standard error and start with `program`; standard output carries only the
-/// protocol. The exit code is 0 after a clean end and 1 when the server could not start or the transport failed.
-fn finish(backend: Result<Backend, CliError>, program: &str) -> ExitCode {
+/// Serves MCP on standard input and output until the client closes it. `program` says which program serves (it goes
+/// into `serverInfo`) and `name` is the name the user typed. Diagnostics go to standard error and start with `name`;
+/// standard output carries only the protocol. The exit code is 0 after a clean end and 1 when the server could not
+/// start or the transport failed.
+fn finish(backend: Result<Backend, CliError>, program: Program, name: &str) -> ExitCode {
     // Another logger may be installed already (the desktop app's); then that one stays.
     let _ = env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("warn")).try_init();
-    match run(backend) {
+    match run(backend, program) {
         Ok(()) => ExitCode::SUCCESS,
         Err(e) => {
-            eprintln!("{program}: {e}");
+            eprintln!("{name}: {e}");
             ExitCode::FAILURE
         }
     }
@@ -197,11 +198,11 @@ fn finish(backend: Result<Backend, CliError>, program: &str) -> ExitCode {
 
 /// `drafftink-headless mcp`: serves MCP on standard input and output, on a session of its own or on a bridge mode.
 pub fn run_server(args: &Args, program: &str) -> ExitCode {
-    finish(backend(args), program)
+    finish(backend(args), Program::Headless, program)
 }
 
 /// `drafftink mcp`: serves MCP on standard input and output for the running desktop app, or for a browser tab with
 /// `--relay`. It owns no document.
 pub fn run_bridge(args: &BridgeArgs, program: &str) -> ExitCode {
-    finish(bridge_backend(args), program)
+    finish(bridge_backend(args), Program::Desktop, program)
 }

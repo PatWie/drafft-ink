@@ -338,7 +338,8 @@ fn content_bounds(elements: &[&Element]) -> Option<Rect> {
     for e in elements {
         let t = e.transform;
         let grow = match &e.kind {
-            ElementKind::Text(_) | ElementKind::Math(_) | ElementKind::Image(_) => 0.0,
+            ElementKind::Text(_) | ElementKind::Math(_) => 0.0,
+            ElementKind::Image(_) if e.style.stroke_color.a == 0 => 0.0,
             ElementKind::Arrow(d) => e.style.stroke_width / 2.0 + head_size(d, &e.style),
             ElementKind::Freehand(_) => e.style.stroke_width * 1.2,
             _ => e.style.stroke_width / 2.0,
@@ -730,6 +731,30 @@ impl Ctx<'_> {
             }
         }
         self.out.push_str("</g>");
+        self.image_outline(e);
+    }
+
+    /// The outline of a picture: its stroke, when it has one. A picture without a stroke (the default) writes
+    /// nothing, so the file has no `stroke` attribute for it.
+    fn image_outline(&mut self, e: &Element) {
+        let s = &e.style;
+        if s.stroke_color.a == 0 || !s.stroke_width.is_finite() || s.stroke_width <= 0.0 {
+            return;
+        }
+        let dash = s
+            .stroke_style
+            .dash(s.stroke_width)
+            .map(|[on, off]| format!(" stroke-dasharray=\"{} {}\"", num(on), num(off)))
+            .unwrap_or_default();
+        let opacity = alpha(s.stroke_color).map(|a| format!(" stroke-opacity=\"{a}\"")).unwrap_or_default();
+        put!(
+            self.out,
+            "<rect width=\"{}\" height=\"{}\" fill=\"none\" stroke=\"{}\" stroke-width=\"{}\"{dash}{opacity}/>",
+            num(e.transform.w),
+            num(e.transform.h),
+            paint(s.stroke_color),
+            num(s.stroke_width)
+        );
     }
 
     fn frame(&mut self, e: &Element, name: Option<&str>) {

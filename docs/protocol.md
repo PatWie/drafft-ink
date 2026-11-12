@@ -69,6 +69,7 @@ client                                     server
 
 - `version` in `Join` is the client's Loro version vector (Loro's `VersionVector::encode()`), opaque to the protocol. Empty means "I have nothing": the server answers with a snapshot. A version vector, not frontiers, is the contract: frontiers cannot tell the server which operations a peer lacks.
 - The server computes `SyncResponse.data` from the client's version vector. It sends `kind = Updates` when the diff is small, and `kind = Snapshot` when the client has no history, when the diff would be larger than a snapshot, or when the client's version contains operations the server cannot place. The client imports both kinds the same way (Loro import merges). The kind tells the client how to react: a snapshot on a document with many shapes should be imported as one bulk patch, not shape by shape.
+- `Joined.server` is the server's software and version for humans, `drafftink-headless/<version>` (it read `drafftink-server/<version>` before D18). It is informational: the sync client in `crates/collab` ignores it, and no client may branch on it.
 - `Joined.server_version` and `SyncResponse.server_version` tell the client what the server has. The client exports its own updates since that version and sends them as `Update`. This is the upload half of the sync, and it is what makes edits made offline arrive.
 - `Joined` is followed at once by a `SyncResponse`. `Joined` is small and carries the peer list and limits. The potentially large payload is in the second message.
 

@@ -106,7 +106,7 @@ pub(crate) fn insert<T: SceneTx>(tx: &mut T, cx: &mut OpCx<'_>, picture: Prepare
     });
     let mut element = Element::new(id.clone(), kind, z);
     element.transform = Transform::new(at.0, at.1, size.0, size.1);
-    element.style = Style { seed: cx.ids.seed(), ..Style::default() };
+    element.style = Style::for_image(cx.ids.seed());
     element.name = name;
     tx.insert(element)?;
     Ok(id)

@@ -337,7 +337,7 @@ impl RoomActor {
         out.send(
             Arc::new(ServerMessage::Joined {
                 protocol_version: setup.protocol_version,
-                server: concat!("drafftink-server/", env!("CARGO_PKG_VERSION")).to_owned(),
+                server: concat!("drafftink-headless/", env!("CARGO_PKG_VERSION")).to_owned(),
                 room: self.id.clone(),
                 client_id: setup.client_id,
                 peers: others,

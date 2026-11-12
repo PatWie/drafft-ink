@@ -97,6 +97,43 @@ fn it_is_always_available_but_not_in_view_only_mode() {
     assert_eq!((e.code, e.message.as_str()), (r.code, r.message.as_str()));
 }
 
+// ---- no outline ----
+
+use drafftink_scene::Color;
+
+#[test]
+fn an_inserted_picture_has_no_outline_but_keeps_the_default_width() {
+    let mut s = session();
+    run(&mut s, "image.insert", json!({"images": [b64(&png(100, 50)), b64(&png(20, 20))], "at": [0, 0]}));
+    let pictures = images(&s);
+    assert_eq!(pictures.len(), 2);
+    for e in &pictures {
+        // The stroke is clear, so nothing is drawn; a colour picked later outlines at the usual width.
+        assert_eq!(e.style.stroke_color, Color::TRANSPARENT, "{}", e.id);
+        assert_eq!(e.style.stroke_width, drafftink_scene::Style::default().stroke_width);
+    }
+    assert_ne!(pictures[0].style.seed, pictures[1].style.seed, "each picture has its own seed");
+}
+
+#[test]
+fn the_stroke_of_the_new_shapes_does_not_reach_a_picture() {
+    let mut s = session();
+    run(&mut s, "style.set", json!({"props": {"stroke_color": "red-500", "stroke_width": 8}, "scope": "defaults"}));
+    run(&mut s, "image.insert", json!({"images": [b64(&png(10, 10))], "at": [0, 0]}));
+    assert_eq!(images(&s)[0].style.stroke_color, Color::TRANSPARENT);
+}
+
+#[test]
+fn an_outline_can_be_given_to_an_inserted_picture_and_taken_away_with_undo() {
+    let mut s = session();
+    let out = run(&mut s, "image.insert", json!({"images": [b64(&png(10, 10))], "at": [0, 0]}));
+    let id = out["ids"][0].as_str().unwrap().to_owned();
+    run(&mut s, "style.set", json!({"ids": [id], "props": {"stroke_color": "red-500"}}));
+    assert_eq!(images(&s)[0].style.stroke_color, drafftink_scene::palette::lookup("red-500").unwrap());
+    run(&mut s, "history.undo", json!({}));
+    assert_eq!(images(&s)[0].style.stroke_color, Color::TRANSPARENT);
+}
+
 // ---- the sizing rule ----
 
 #[test]

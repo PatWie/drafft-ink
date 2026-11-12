@@ -54,7 +54,7 @@ pub fn server_samples() -> Vec<ServerMessage> {
     vec![
         ServerMessage::Joined {
             protocol_version: 1,
-            server: "drafftink-server/0.2.0".into(),
+            server: "drafftink-headless/0.2.0".into(),
             room: RoomId::new("room").unwrap(),
             client_id: cid(3),
             peers: vec![

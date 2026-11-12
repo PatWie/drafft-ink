@@ -245,7 +245,7 @@ pub enum ServerMessage {
     Joined {
         /// The negotiated protocol version.
         protocol_version: u16,
-        /// Server software and version, for humans.
+        /// Server software and version, for humans (`drafftink-headless/<version>`). Informational: a client must not parse it.
         server: String,
         /// The room joined.
         room: RoomId,

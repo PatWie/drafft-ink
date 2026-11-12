@@ -11,7 +11,7 @@ use drafftink_io::png_meta::{self, KEYWORD};
 use drafftink_io::svg::{self, FontFace, MathSvg, SvgOptions, SvgStyle, export_svg};
 use drafftink_scene::{
     BindMode, Binding, Color, Document, Element, ElementId, ElementKind, FileEntry, FontFamily, FontWeight, FrameData,
-    FreehandData, Head, ImageData, LinearData, MathData, TextData, TextRun, Transform, ZIndex,
+    FreehandData, Head, ImageData, LinearData, MathData, StrokeStyle, Style, TextData, TextRun, Transform, ZIndex,
 };
 use kurbo::Point;
 use proptest::prelude::*;
@@ -341,6 +341,34 @@ fn svg_export_is_well_formed_and_complete() {
         doc.descendants().any(|n| n.attribute("id") == Some("e-rect")
             && n.attribute("transform").is_some_and(|t| t.starts_with("rotate(")))
     );
+}
+
+/// The `stroke` attributes written inside the group of the element `id`.
+fn strokes_of(svg: &str, id: &str) -> Vec<(String, Option<String>)> {
+    let doc = parse(svg);
+    let group = doc.descendants().find(|n| n.attribute("id") == Some(&format!("e-{id}"))).unwrap();
+    group
+        .descendants()
+        .filter_map(|n| Some((n.attribute("stroke")?.to_owned(), n.attribute("stroke-dasharray").map(str::to_owned))))
+        .collect()
+}
+
+#[test]
+fn svg_writes_an_outline_for_a_picture_only_when_it_has_a_stroke() {
+    let mut d = sample();
+    let at = d.elements.iter().position(|e| e.id.as_str() == "img").unwrap();
+    d.elements[at].style = Style::for_image(1);
+    let plain = export_svg(&d, &SvgOptions::default(), &EstimateMeasure, None).unwrap();
+    assert!(
+        strokes_of(&plain, "img").is_empty(),
+        "a new picture has no stroke attribute: {:?}",
+        strokes_of(&plain, "img")
+    );
+
+    d.elements[at].style.stroke_color = Color::rgb(255, 0, 0);
+    d.elements[at].style.stroke_style = StrokeStyle::Dashed;
+    let outlined = export_svg(&d, &SvgOptions::default(), &EstimateMeasure, None).unwrap();
+    assert_eq!(strokes_of(&outlined, "img"), [("#ff0000".to_owned(), Some("8 4".to_owned()))]);
 }
 
 #[test]

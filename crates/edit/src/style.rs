@@ -128,12 +128,12 @@ impl Prop {
     /// The elements the property applies to, in words, for messages.
     pub fn applies_to(self) -> &'static str {
         match self {
-            Prop::StrokeColor => "every element except images",
+            Prop::StrokeColor => "every element",
             Prop::FillColor | Prop::FillPattern => {
                 "rectangles, diamonds, ellipses, frames, freehand strokes and closed lines"
             }
-            Prop::StrokeWidth => "every element except images, text and math",
-            Prop::StrokeStyle => "rectangles, diamonds, ellipses, frames, lines, arrows and freehand strokes",
+            Prop::StrokeWidth => "every element except text and math",
+            Prop::StrokeStyle => "rectangles, diamonds, ellipses, frames, images, lines, arrows and freehand strokes",
             Prop::Sloppiness => "rectangles, diamonds, ellipses, frames, lines and arrows",
             Prop::CornerRadius => "rectangles, diamonds, frames, lines and arrows",
             Prop::Opacity => "every element",
@@ -154,10 +154,9 @@ pub fn applies(e: &Element, prop: Prop) -> bool {
     let fillable =
         matches!(k, Kind::Rectangle | Kind::Diamond | Kind::Ellipse | Kind::Frame | Kind::Freehand) || closed_line;
     match prop {
-        Prop::StrokeColor => k != Kind::Image,
+        Prop::StrokeColor => true,
         Prop::FillColor | Prop::FillPattern => fillable,
-        Prop::StrokeWidth => !matches!(k, Kind::Image | Kind::Text | Kind::Math),
-        Prop::StrokeStyle => !matches!(k, Kind::Image | Kind::Text | Kind::Math),
+        Prop::StrokeWidth | Prop::StrokeStyle => !matches!(k, Kind::Text | Kind::Math),
         Prop::Sloppiness => !matches!(k, Kind::Image | Kind::Text | Kind::Math | Kind::Freehand),
         Prop::CornerRadius => matches!(k, Kind::Rectangle | Kind::Diamond | Kind::Line | Kind::Arrow | Kind::Frame),
         Prop::Opacity => true,
@@ -182,7 +181,7 @@ fn fill_paints(kind: Kind, closed: bool) -> bool {
 ///
 /// Rectangles, diamonds, ellipses, closed lines and closed pencil strokes show with a fill alone. Everything else
 /// is drawn in its stroke colour: text, formulas, open lines, arrows, open pencil strokes, and frames (outline and
-/// name). Images always show.
+/// name). Images always show: their stroke is an optional outline, so "no stroke" is allowed for them.
 pub fn style_shows(kind: Kind, closed: bool, style: &Style) -> bool {
     if kind == Kind::Image {
         return true;
@@ -527,6 +526,15 @@ impl StyleProps {
         }
         if let Some(v) = self.stroke_style {
             e.style.stroke_style = v;
+        }
+        // An image has no outline until it is given one: choosing a width or a dash for it means "outline it", so
+        // a clear stroke colour becomes the default one. (Text and shapes always have a colour to apply them to.)
+        if e.tag() == Kind::Image
+            && self.stroke_color.is_none()
+            && (self.stroke_width.is_some() || self.stroke_style.is_some())
+            && e.style.stroke_color.a == 0
+        {
+            e.style.stroke_color = Style::default().stroke_color;
         }
         if let Some(v) = self.sloppiness {
             e.style.sloppiness = v;
@@ -1022,7 +1030,8 @@ mod tests {
         assert!(!g(&txt, Prop::StrokeWidth) && !g(&math, Prop::StrokeWidth) && g(&free, Prop::StrokeWidth));
         assert!(!g(&txt, Prop::Sloppiness) && !g(&free, Prop::Sloppiness) && g(&line, Prop::Sloppiness));
         assert!(g(&line, Prop::StrokeStyle) && g(&rect, Prop::StrokeStyle) && !g(&txt, Prop::StrokeStyle));
-        assert!(!g(&img, Prop::StrokeColor) && g(&img, Prop::Opacity));
+        assert!(g(&img, Prop::StrokeColor) && g(&img, Prop::StrokeWidth) && g(&img, Prop::StrokeStyle));
+        assert!(g(&img, Prop::Opacity) && !g(&img, Prop::Sloppiness) && !g(&img, Prop::FillColor));
         assert!(g(&txt, Prop::FontFamily) && !g(&math, Prop::FontFamily) && g(&math, Prop::FontSize));
         assert!(!g(&txt, Prop::VerticalAlign), "free text has no container to align in");
         assert!(g(&free, Prop::FreehandStyle) && !g(&rect, Prop::PressureMode));
@@ -1122,6 +1131,60 @@ mod tests {
         assert_eq!(err, StyleError::Target(TargetError::NotFound(id("nope"))));
         let err = apply(&mut tx, &[a], &props(json!({"font_size": 30})), true).unwrap_err();
         assert_eq!(err, StyleError::NotApplicable { props: vec![Prop::FontSize] });
+    }
+
+    /// An image with the style a new one gets: no outline.
+    fn put_image(store: &mut MemoryStore, s: &str) -> ElementId {
+        let kind = ElementKind::Image(drafftink_scene::ImageData {
+            file_id: None,
+            natural_width: 1,
+            natural_height: 1,
+            crop: None,
+        });
+        let image = put(store, s, kind);
+        let mut tx = store.begin();
+        tx.update(&image, |e| e.style = Style::for_image(7)).unwrap();
+        tx.commit().unwrap();
+        image
+    }
+
+    #[test]
+    fn an_image_can_be_given_an_outline_and_lose_it_again() {
+        let mut st = MemoryStore::new();
+        let img = put_image(&mut st, "i");
+        assert_eq!(st.get(&img).unwrap().style.stroke_color, Color::TRANSPARENT, "a new image has no outline");
+        let mut tx = st.begin();
+        let red = props(json!({"stroke_color": "red-500", "stroke_width": 4, "stroke_style": "dashed"}));
+        let rep = apply(&mut tx, std::slice::from_ref(&img), &red, true).unwrap();
+        assert!(rep.skipped.is_empty(), "{rep:?}");
+        let style = &tx.get(&img).unwrap().style;
+        assert_eq!(
+            (style.stroke_color, style.stroke_width, style.stroke_style),
+            (Color::rgb(239, 68, 68), 4.0, StrokeStyle::Dashed)
+        );
+        // "No stroke" is allowed: a picture shows without an outline.
+        assert!(none_refusal(&tx, std::slice::from_ref(&img), Prop::StrokeColor).is_none());
+        apply(&mut tx, std::slice::from_ref(&img), &props(json!({"stroke_color": "transparent"})), true).unwrap();
+        assert_eq!(tx.get(&img).unwrap().style.stroke_color, Color::TRANSPARENT);
+        assert!(is_visible(tx.get(&img).unwrap()));
+    }
+
+    #[test]
+    fn a_width_or_dash_alone_outlines_an_image_that_has_none() {
+        for p in [json!({"stroke_width": 4}), json!({"stroke_style": "dotted"})] {
+            let mut st = MemoryStore::new();
+            let img = put_image(&mut st, "i");
+            let mut tx = st.begin();
+            apply(&mut tx, std::slice::from_ref(&img), &props(p.clone()), true).unwrap();
+            assert_eq!(tx.get(&img).unwrap().style.stroke_color, Style::default().stroke_color, "{p}");
+        }
+        // An image that has an outline keeps its colour when only the width changes.
+        let mut st = MemoryStore::new();
+        let img = put_image(&mut st, "i");
+        let mut tx = st.begin();
+        apply(&mut tx, std::slice::from_ref(&img), &props(json!({"stroke_color": "red-500"})), true).unwrap();
+        apply(&mut tx, std::slice::from_ref(&img), &props(json!({"stroke_width": 8})), true).unwrap();
+        assert_eq!(tx.get(&img).unwrap().style.stroke_color, Color::rgb(239, 68, 68));
     }
 
     #[test]

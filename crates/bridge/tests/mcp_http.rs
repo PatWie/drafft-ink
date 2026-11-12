@@ -187,6 +187,10 @@ fn a_real_mcp_client_lists_the_tools_builds_a_diagram_and_reads_a_refusal() {
         );
         let client = ().serve(transport).await.expect("initialize");
 
+        // One server name for both programs; the title says that the desktop app serves this one.
+        let info = client.peer_info().and_then(|init| init.server_info.clone()).expect("the server introduced itself");
+        assert_eq!((info.name.as_str(), info.title.as_deref()), ("drafftink", Some("Drafft.ink desktop")));
+
         let tools = client.list_all_tools().await.expect("tools/list");
         let names: Vec<&str> = tools.iter().map(|t| t.name.as_ref()).collect();
         for want in ["inspect", "diagram", "batch", "commands", "describe", "recent", "status"] {

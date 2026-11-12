@@ -22,16 +22,52 @@ use crate::tools::guide::PROMPT_NAME;
 use crate::tools::outcome::{Block, Outcome};
 use crate::tools::service::Service;
 
+/// The program that serves MCP. It goes into `serverInfo` as the `title` and `description`, so that a client (and
+/// the user reading its log) can tell the two programs apart; the `name` is `drafftink` for both.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Program {
+    /// `drafftink`: the desktop app, serving MCP itself (`--mcp-http`) or as `drafftink mcp`, the bridge to its window.
+    Desktop,
+    /// `drafftink-headless mcp`: a session of its own, or a bridge mode.
+    Headless,
+}
+
+impl Program {
+    /// The MCP server name, the same for both programs.
+    const NAME: &'static str = "drafftink";
+
+    fn title(self) -> &'static str {
+        match self {
+            Self::Desktop => "Drafft.ink desktop",
+            Self::Headless => "Drafft.ink headless",
+        }
+    }
+
+    fn description(self) -> &'static str {
+        match self {
+            Self::Desktop => "Served by the drafftink desktop program: the canvas is the open window.",
+            Self::Headless => "Served by the drafftink-headless program: no window, no GPU.",
+        }
+    }
+
+    fn implementation(self) -> Implementation {
+        Implementation::new(Self::NAME, env!("CARGO_PKG_VERSION"))
+            .with_title(self.title())
+            .with_description(self.description())
+    }
+}
+
 /// The handler that rmcp drives.
 #[derive(Clone)]
 pub struct DrafftHandler {
     service: Arc<Service>,
+    program: Program,
 }
 
 impl DrafftHandler {
-    /// A handler over a service.
-    pub fn new(service: Arc<Service>) -> Self {
-        Self { service }
+    /// A handler over a service, served by `program`.
+    pub fn new(service: Arc<Service>, program: Program) -> Self {
+        Self { service, program }
     }
 }
 
@@ -64,7 +100,7 @@ fn result(o: Outcome) -> CallToolResult {
 impl ServerHandler for DrafftHandler {
     fn get_info(&self) -> ServerConfig {
         ServerConfig::new(ServerCapabilities::builder().enable_tools().enable_prompts().build())
-            .with_server_info(Implementation::new("drafftink-mcp", env!("CARGO_PKG_VERSION")))
+            .with_server_info(self.program.implementation())
             .with_instructions(self.service.instructions())
     }
 

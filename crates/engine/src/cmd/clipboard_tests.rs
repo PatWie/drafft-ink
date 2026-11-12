@@ -516,9 +516,13 @@ fn an_image_on_the_clipboard_is_inserted_with_the_800_rule() {
     let e = s.element(&id_list(&out, "ids")[0]).unwrap();
     assert_eq!((e.transform.w, e.transform.h), (800.0, 200.0));
     assert_eq!(centre(e), (0.0, 0.0));
+    // A pasted picture has no outline: the stroke colour is clear.
+    assert_eq!(e.style.stroke_color, drafftink_scene::Color::TRANSPARENT);
     let b64 = base64::Engine::encode(&base64::engine::general_purpose::STANDARD, crate::cmd::image::tests::png(10, 10));
     let out = run(&mut s, "clipboard.paste", json!({"source": {"image": {"base64": b64}}, "at": [0, 0]}));
     assert_eq!(out["kind"], "image");
+    let e = s.element(&id_list(&out, "ids")[0]).unwrap();
+    assert_eq!(e.style.stroke_color, drafftink_scene::Color::TRANSPARENT, "also from a given source");
     // An image that is not PNG, JPEG or WebP, with nothing else to paste.
     fakes.clipboard.set(ClipPayload::Image { bytes: b"GIF89a....".to_vec(), mime: "image/gif".into() });
     let r = refuse_clean(&mut s, "clipboard.paste", json!({}));

@@ -15,8 +15,8 @@ use drafftink_scene::limits::{
     MAX_STROKE_WIDTH,
 };
 use drafftink_scene::{
-    Document, Element, ElementId, ElementKind, FileEntry, FileId, FreehandData, GroupId, Head, IdSource, ImageData,
-    LinearData, LinearKind, MathData, PressureMode, Style, TextData, Transform, ZIndex,
+    Color, Document, Element, ElementId, ElementKind, FileEntry, FileId, FreehandData, GroupId, Head, IdSource,
+    ImageData, LinearData, LinearKind, MathData, PressureMode, Style, TextData, Transform, ZIndex,
 };
 use kurbo::{Point, Rect, Vec2};
 
@@ -345,7 +345,9 @@ impl Builder<'_> {
         let id = self.element_id(s.id.as_deref());
         let mut e = Element::new(id, ElementKind::Image(data), ZIndex::first());
         e.transform = boxed(i.pos.x, i.pos.y, i.w, i.h, i.rotation);
-        self.push(e, &s.style);
+        // The old app stored a stroke for every picture (black, 2 wide) and never drew it. Clear the colour so that
+        // a migrated picture looks as it did, with no outline.
+        self.push(e, &OStyle { stroke: Color::TRANSPARENT, ..s.style.clone() });
     }
 
     /// The old `Shape::bounds()` of a shape, which is what the old renderer used as the pivot of a rotation.

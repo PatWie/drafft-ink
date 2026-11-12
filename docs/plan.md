@@ -1,5 +1,7 @@
 # Drafft.ink rewrite: plan and target crate layout
 
+> Note (2026-11-12): the programs `drafftink-cli`, `drafftink-mcp` and `drafftink-server` named here were merged into `drafftink-headless` (and the `drafftink mcp` subcommand) in D18 (`docs/deviations.md`). This document keeps the names of its date.
+
 Status: draft for review. Nothing in `/home/ubuntu/git/drafft-ink` has been changed yet.
 
 Research behind this plan (all under `research/`):

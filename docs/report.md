@@ -1,5 +1,7 @@
 # Final report: the command-layer rewrite of drafft-ink
 
+> Note (2026-11-12): the programs `drafftink-cli`, `drafftink-mcp` and `drafftink-server` named here were merged into `drafftink-headless` (and the `drafftink mcp` subcommand) in D18 (`docs/deviations.md`). This document keeps the names of its date.
+
 Written 2026-11-09 against `main` at `f654255` (`merge: audit-b`), branch `final-report`. Sections 3, 5 and 7 were redone on branch `last-pass` (`main` at `52f6d8e` plus the fixes of that branch): the gates were run again there and section 7 was checked item by item against the code and the tests. Numbers marked "run" were produced on 2026-11-09 (Ubuntu x86_64, 64 cores, NVIDIA L40S, Rust 1.97.1). Every other number is copied from the document named next to it, and that document's date and commit are given where they differ from HEAD.
 
 The specification asks for: per family, the commands added, the UI copies of logic removed and those left with the reason, the gates run and their results; and every deviation from the design with its reason. Sections 2 and 6 do that. Sections 1, 3, 4, 5 and 7 give the context the brief asked for.

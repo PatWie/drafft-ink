@@ -434,7 +434,9 @@ handlers (e.g. paste, cut: `app.rs:3370-3374,3417-3422`). There are no
 incremental updates on the wire in practice (`export_updates` exists but is not
 called by the app); every `sync` payload is a full snapshot.
 
-### 2.7 Wire protocol (client <-> `drafftink-server`)
+### 2.7 Wire protocol (client <-> the old `drafftink-server`)
+
+`drafftink-server` is the OLD app's server program (workspace 0.1.1, `8ce40ab`). The rewrite has no such program: its server is `drafftink-headless serve` (D18), and it speaks the binary protocol of `docs/protocol.md`, not this JSON one. This section describes what old clients and the old server did.
 
 Transport: WebSocket, endpoint `ws://host:3030/ws` (`drafftink-server/src/main.rs:199-208`;
 also `/` text index and `/health` returning `ok`; CORS permissive). **All

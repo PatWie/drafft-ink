@@ -603,11 +603,11 @@ The props (each applies only to the kinds listed; others are skipped and reporte
 
 | Prop | Type | Applies to | Old |
 |---|---|---|---|
-| `stroke_color` | `Color` | all except image | U:1043, A:2606 |
+| `stroke_color` | `Color` (`transparent` is "no stroke") | all. For an image the stroke is its optional outline, and "no stroke" is allowed because a picture shows without one | U:1043, A:2606 |
 | `fill_color` | `Color \| null` (null is no fill; the old colour grid returned transparent instead of None, FIX) | rectangle, diamond, ellipse, frame, closed line, freehand | U:1097-1182, A:2659 |
 | `fill_pattern` | `solid \| hachure \| zigzag \| cross_hatch \| dots \| dashed \| zigzag_line` (all seven; the old UI showed four) | the kinds that can have a fill (as `fill_color`), whether or not a fill colour is set yet | U:1572, A:3025 |
-| `stroke_width` | number above 0, at most 1000 (presets 1, 2, 4, 8) | all except image, text, math | U:1156, A:2679 |
-| `stroke_style` | `solid \| dashed \| dotted` | every shape: rectangle, diamond, ellipse, frame, line, arrow, freehand (the old app only had it on line and arrow) | U:1631, A:3097 |
+| `stroke_width` | number above 0, at most 1000 (presets 1, 2, 4, 8) | all except text, math. Choosing a width (or a dash) for an image that has no outline outlines it, in the default stroke colour | U:1156, A:2679 |
+| `stroke_style` | `solid \| dashed \| dotted` | every shape: rectangle, diamond, ellipse, frame, image (its outline), line, arrow, freehand (the old app only had it on line and arrow) | U:1631, A:3097 |
 | `sloppiness` | `architect \| artist \| cartoonist \| drunk` | all except text, math, image, freehand | U:1542, A:2996 |
 | `corner_radius` | number from 0 (sharp), at most 1000000. The old "on" was 32. | rectangle, diamond, line, arrow, frame | U:1515, A:2970 |
 | `opacity` | 0 to 1 | all | U:1778, A:3639 |
@@ -772,7 +772,7 @@ Images are stored once per file (content hash) in the document's files table. Pa
 
 | id | args | availability and refusals | effect |
 |---|---|---|---|
-| `image.insert` | `images: Bytes[]` (1 to 20), `at: Point = viewport_center`, `fit: number = 800`, `offset: number = 20`, `select: bool = true`, `downscale: bool = true`, `name?: string` (used in messages for pictures that carry no name) | Always available. Execute: `unsupported_format`: "`{name}` is not a supported image ({found}). Use PNG, JPEG or WebP."; `parse_failed`: "{name} could not be read as an image: {msg}. Try another file."; `limit_exceeded` (more than 20 images, or an image over 25 MiB). | Decodes the header for the size, stores the bytes (re-encoded to at most 2048 px on the long side when over 2 MiB and downscale=true), and creates image elements whose longest side is at most `fit` (smaller images keep their size, as the old 800 px rule), centred on `at`, each further image shifted by `offset`. Selects them. Replaces the old paste, drop and picker code paths, and the stale camera captured by the web drop handler (A:1917, FIX). |
+| `image.insert` | `images: Bytes[]` (1 to 20), `at: Point = viewport_center`, `fit: number = 800`, `offset: number = 20`, `select: bool = true`, `downscale: bool = true`, `name?: string` (used in messages for pictures that carry no name) | Always available. Execute: `unsupported_format`: "`{name}` is not a supported image ({found}). Use PNG, JPEG or WebP."; `parse_failed`: "{name} could not be read as an image: {msg}. Try another file."; `limit_exceeded` (more than 20 images, or an image over 25 MiB). | Decodes the header for the size, stores the bytes (re-encoded to at most 2048 px on the long side when over 2 MiB and downscale=true), and creates image elements whose longest side is at most `fit` (smaller images keep their size, as the old 800 px rule), centred on `at`, each further image shifted by `offset`. Selects them. Replaces the old paste, drop and picker code paths, and the stale camera captured by the web drop handler (A:1917, FIX). A new image has no outline: its stroke colour is clear (`Style::for_image`), whatever the defaults for new shapes say. Pasting and dropping go through this command, so they have none either; give one with `style.set` (`stroke_color`, or a width or dash). |
 
 ### 2.14 `view`: camera, modes, screenshots
 

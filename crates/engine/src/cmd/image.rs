@@ -177,7 +177,7 @@ pub(crate) fn insert_pictures(
                 r.show.0,
                 r.show.1,
             );
-            e.style = Style { seed: ids.seed(), ..Style::default() };
+            e.style = Style::for_image(ids.seed());
             tx.insert(e)?;
             created.push(id.clone());
             out.push(id);

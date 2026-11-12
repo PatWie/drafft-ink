@@ -241,7 +241,11 @@ fn parse_element(rd: Rd, ctx: &mut Ctx) -> Option<Draft> {
 
     // customData and the drafftink note come first: the note overrides plain fields below.
     let (custom, note) = parse_custom(&rd, ctx.rep);
-    let mut style = parse_style(&rd, ctx, &note);
+    // Excalidraw writes `transparent` for every picture it makes and never paints an outline for one, so a picture
+    // whose file has no readable stroke colour gets no outline here either (a colour that is there is kept: it is
+    // the outline that this app's own export wrote).
+    let default_stroke = if kind_name == "image" { Color::TRANSPARENT } else { DEFAULT_STROKE };
+    let mut style = parse_style(&rd, ctx, &note, default_stroke);
     let rounding = parse_roundness(&rd, ctx.rep);
     let mut d = Draft {
         raw_id: rd.str("id", ctx.rep).map(str::to_owned),
@@ -385,10 +389,10 @@ fn parse_roundness(rd: &Rd, rep: &mut ImportReport) -> Option<Roundness> {
     None
 }
 
-fn parse_style(rd: &Rd, ctx: &mut Ctx, note: &Note) -> Style {
+fn parse_style(rd: &Rd, ctx: &mut Ctx, note: &Note, default_stroke: Color) -> Style {
     let rep = &mut *ctx.rep;
     let mut s =
-        Style { stroke_color: parse_color(rd, "strokeColor", rep).unwrap_or(DEFAULT_STROKE), ..Style::default() };
+        Style { stroke_color: parse_color(rd, "strokeColor", rep).unwrap_or(default_stroke), ..Style::default() };
     s.fill_color = match rd.str("backgroundColor", rep) {
         None | Some("transparent") => None,
         Some(_) => parse_color(rd, "backgroundColor", rep),

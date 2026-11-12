@@ -10,8 +10,8 @@ use drafftink_io::measure::{EstimateMeasure, MathBox, TextMeasure};
 use drafftink_io::native::{self, Format};
 use drafftink_scene::SceneRead as _;
 use drafftink_scene::{
-    Document, Element, ElementKind, FontFamily, FontWeight, Head, Kind, MemoryStore, PathType, PressureMode, SeqIds,
-    Sloppiness,
+    Color, Document, Element, ElementKind, FontFamily, FontWeight, Head, Kind, MemoryStore, PathType, PressureMode,
+    SeqIds, Sloppiness,
 };
 use loro::{ExportMode, LoroDoc, LoroList, LoroMap};
 use serde_json::{Value, json};
@@ -402,6 +402,23 @@ fn images_are_deduplicated_and_typed_by_their_bytes() {
     }
     assert!(imp.report.warnings.iter().any(|w| w.contains("base64")));
     assert_valid(d);
+}
+
+#[test]
+fn a_migrated_picture_has_no_outline() {
+    // The old app kept a stroke on every picture (black, 2 wide) and never drew it. The new one draws a stroke, so
+    // the colour is cleared; the other shapes keep theirs.
+    let png = [0x89u8, b'P', b'N', b'G', 1, 2, 3];
+    let data = {
+        use base64::Engine as _;
+        base64::engine::general_purpose::STANDARD.encode(png)
+    };
+    let img = json!({"Image":{"id":"i","position":{"x":0.0,"y":0.0},"width":4.0,"height":5.0,"source_width":4,"source_height":5,"format":"Png","data_base64":data,"style":style()}});
+    let imp = migrate(&doc_of(vec![("1", img), ("2", rect("r", 0.0, 0.0, 10.0, 10.0))]));
+    let d = &imp.document;
+    assert_eq!(d.elements[0].style.stroke_color, Color::TRANSPARENT);
+    assert_eq!(d.elements[0].style.stroke_width, 2.0);
+    assert_eq!(d.elements[1].style.stroke_color, Color::rgb(1, 2, 3));
 }
 
 #[test]

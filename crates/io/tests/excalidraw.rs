@@ -473,6 +473,63 @@ fn images_come_with_their_picture_and_unsupported_embeds_are_reported() {
     assert_eq!(get(d, "after").tag(), Kind::Rectangle);
 }
 
+/// A scene with one picture, written the way Excalidraw writes it unless `extra` says otherwise.
+fn picture_scene(extra: Value) -> String {
+    use base64::Engine as _;
+    let mut png = vec![0x89, b'P', b'N', b'G', 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 13, b'I', b'H', b'D', b'R'];
+    png.extend_from_slice(&40u32.to_be_bytes());
+    png.extend_from_slice(&30u32.to_be_bytes());
+    let url = format!("data:image/png;base64,{}", base64::engine::general_purpose::STANDARD.encode(&png));
+    let mut element = json!({"id": "pic", "type": "image", "x": 0, "y": 0, "width": 40, "height": 30, "fileId": "f1"});
+    element.as_object_mut().unwrap().extend(extra.as_object().unwrap().clone());
+    json!({
+        "type": "excalidraw", "version": 2, "elements": [element],
+        "files": {"f1": {"id": "f1", "mimeType": "image/png", "dataURL": url, "created": 1}},
+    })
+    .to_string()
+}
+
+#[test]
+fn a_picture_has_no_outline_unless_the_file_gives_one() {
+    // Excalidraw writes `transparent` for its pictures and never paints an outline, whatever the width says.
+    for extra in
+        [json!({"strokeColor": "transparent", "strokeWidth": 2}), json!({}), json!({"strokeColor": "not a colour"})]
+    {
+        let i = import_str(&picture_scene(extra.clone())).unwrap();
+        assert_eq!(get(&i.document, "pic").style.stroke_color, Color::TRANSPARENT, "{extra}");
+    }
+    // A colour that is there is an outline: it is what this app's own export writes.
+    let i = import_str(&picture_scene(json!({"strokeColor": "#ff0000", "strokeWidth": 3, "strokeStyle": "dashed"})))
+        .unwrap();
+    let style = &get(&i.document, "pic").style;
+    assert_eq!(
+        (style.stroke_color, style.stroke_width, style.stroke_style),
+        (Color::rgb(255, 0, 0), 3.0, StrokeStyle::Dashed)
+    );
+}
+
+#[test]
+fn a_picture_outline_and_no_outline_survive_export_and_import() {
+    let mut d = import_str(&picture_scene(json!({}))).unwrap().document;
+    let written: Value = serde_json::from_str(&export_scene(&d).unwrap()).unwrap();
+    assert_eq!(written["elements"][0]["strokeColor"], "transparent", "no outline is written as transparent");
+    d.elements[0].style.stroke_color = Color::rgb(0, 128, 0);
+    d.elements[0].style.stroke_width = 4.0;
+    d.elements[0].style.stroke_style = StrokeStyle::Dotted;
+    let written = export_scene(&d).unwrap();
+    let v: Value = serde_json::from_str(&written).unwrap();
+    assert_eq!(
+        (&v["elements"][0]["strokeColor"], &v["elements"][0]["strokeWidth"], &v["elements"][0]["strokeStyle"]),
+        (&json!("#008000"), &json!(4.0), &json!("dotted"))
+    );
+    let back = import_str(&written).unwrap().document;
+    let style = &get(&back, "pic").style;
+    assert_eq!(
+        (style.stroke_color, style.stroke_width, style.stroke_style),
+        (Color::rgb(0, 128, 0), 4.0, StrokeStyle::Dotted)
+    );
+}
+
 #[test]
 fn image_scale_and_crop_and_bad_picture_data() {
     let png = {

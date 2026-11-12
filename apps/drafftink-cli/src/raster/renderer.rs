@@ -174,6 +174,65 @@ mod tests {
         assert!(inked_rows.len() > 40 && inked_columns.len() > 100, "the outline spans the rectangle");
     }
 
+    /// A 40 by 30 picture of one flat green, written to a file in `dir`.
+    fn green_picture(dir: &std::path::Path) -> std::path::PathBuf {
+        let path = dir.join("green.png");
+        let file = std::io::BufWriter::new(std::fs::File::create(&path).unwrap());
+        let mut encoder = png::Encoder::new(file, 40, 30);
+        encoder.set_color(png::ColorType::Rgb);
+        encoder.set_depth(png::BitDepth::Eight);
+        let mut writer = encoder.write_header().unwrap();
+        writer.write_image_data(&[0u8, 160, 0].repeat(40 * 30)).unwrap();
+        writer.finish().unwrap();
+        path
+    }
+
+    /// The pixels of the one picture in a new session, exported with no padding, after `restyle` ran.
+    fn picture_export(restyle: Option<Value>) -> (png::OutputInfo, Vec<u8>) {
+        let dir = tempfile::tempdir().unwrap();
+        let mut s = ports::session(IdSeed::Fixed(1));
+        let source = json!({ "path": green_picture(dir.path()).to_str().unwrap() });
+        let out = s.execute_from(Origin::Script, "image.insert", json!({ "images": [source], "at": [0, 0] })).unwrap();
+        if let Some(props) = restyle {
+            let id = out["ids"][0].clone();
+            s.execute_from(Origin::Script, "style.set", json!({ "ids": [id], "props": props })).unwrap();
+        }
+        let (_, info, pixels) = export(&mut s, json!({ "scale": 1, "padding": 0, "background": false }));
+        (info, pixels)
+    }
+
+    /// True for a pixel that is neither the picture's green nor clear: the colour of an outline.
+    fn is_outline(p: [u8; 4]) -> bool {
+        p[3] > 0 && p[..3] != [0, 160, 0]
+    }
+
+    #[test]
+    fn a_new_picture_has_no_outline_pixels_on_its_edges() {
+        let (info, pixels) = picture_export(None);
+        assert_eq!((info.width, info.height), (40, 30));
+        let edges = (0..info.width).flat_map(|x| [(x, 0), (x, info.height - 1)]);
+        let edges = edges.chain((0..info.height).flat_map(|y| [(0, y), (info.width - 1, y)]));
+        for (x, y) in edges {
+            let p = pixel(&info, &pixels, x, y);
+            assert_eq!(p, [0, 160, 0, 255], "the edge pixel ({x}, {y}) is the picture itself, not the default indigo");
+        }
+        assert!(!(0..info.height).any(|y| (0..info.width).any(|x| is_outline(pixel(&info, &pixels, x, y)))));
+    }
+
+    #[test]
+    fn a_picture_given_a_stroke_is_drawn_with_that_outline() {
+        let (info, pixels) = picture_export(Some(json!({ "stroke_color": "#ff0000", "stroke_width": 4 })));
+        // The outline is centred on the edge, so 2 of its 4 units are inside the export box.
+        assert_eq!((info.width, info.height), (40, 30));
+        let at = |x, y| pixel(&info, &pixels, x, y);
+        assert_eq!([at(1, 15), at(20, 1), at(38, 15), at(20, 28)], [[255, 0, 0, 255]; 4]);
+        assert_eq!(at(20, 15), [0, 160, 0, 255], "the picture is inside");
+        assert_eq!(at(3, 15), [0, 160, 0, 255], "the outline is 2 units deep here");
+        // Taking the stroke away again leaves the bare picture.
+        let (info, pixels) = picture_export(Some(json!({ "stroke_color": "transparent" })));
+        assert!(!(0..info.height).any(|y| (0..info.width).any(|x| is_outline(pixel(&info, &pixels, x, y)))));
+    }
+
     #[test]
     fn the_scene_is_embedded_so_that_the_picture_opens_again() {
         let mut s = session_with_a_rectangle();

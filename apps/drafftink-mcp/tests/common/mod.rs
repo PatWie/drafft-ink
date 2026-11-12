@@ -3,7 +3,7 @@
 
 use std::sync::Arc;
 
-use drafftink_bridge::mcp::handler::DrafftHandler;
+use drafftink_bridge::mcp::handler::{DrafftHandler, Program};
 use drafftink_bridge::tools::service::Service;
 use drafftink_engine::Session;
 use drafftink_mcp::backend::{Backend, Headless};
@@ -34,7 +34,7 @@ impl Client {
     pub async fn start(backend: Backend) -> Self {
         let service = Arc::new(Service::new(backend));
         let (client_end, server_end) = tokio::io::duplex(1 << 20);
-        let handler = DrafftHandler::new(service.clone());
+        let handler = DrafftHandler::new(service.clone(), Program::Headless);
         tokio::spawn(async move {
             if let Ok(running) = handler.serve(server_end).await {
                 let _ = running.waiting().await;
