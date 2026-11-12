@@ -26,12 +26,6 @@
         </File>
         <RemoveFolder Id="RemoveStartMenuDir" Directory="StartMenuDir" On="uninstall" />
       </Component>
-      <Component Id="McpExe" Guid="*">
-        <File Id="DrafftinkMcpExe" Source="$(BinDir)\drafftink-mcp.exe" KeyPath="yes" />
-      </Component>
-      <Component Id="CliExe" Guid="*">
-        <File Id="DrafftinkCliExe" Source="$(BinDir)\drafftink-cli.exe" KeyPath="yes" />
-      </Component>
     </ComponentGroup>
 
     <Feature Id="Main" Title="Drafft.ink" Level="1">

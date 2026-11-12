@@ -1,4 +1,4 @@
-//! The real binary over real pipes: stdout carries only the protocol.
+//! `drafftink-headless mcp` over real pipes: stdout carries only the protocol.
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
 use std::io::{BufRead, BufReader, Write};
@@ -7,7 +7,8 @@ use std::process::{Command, Stdio};
 use serde_json::{Value, json};
 
 fn spawn(args: &[&str]) -> std::process::Child {
-    Command::new(env!("CARGO_BIN_EXE_drafftink-mcp"))
+    Command::new(env!("CARGO_BIN_EXE_drafftink-headless"))
+        .arg("mcp")
         .args(args)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
@@ -54,7 +55,7 @@ fn conflicting_modes_are_refused_with_a_usage_message() {
 }
 
 #[test]
-fn attach_without_a_running_app_starts_and_explains_itself_on_the_first_call() {
+fn the_bridge_modes_work_here_too_and_attach_without_a_running_app_explains_itself_on_the_first_call() {
     let dir = tempfile::tempdir().unwrap();
     let mut child = spawn(&["--attach", "--bridge-dir", dir.path().to_str().unwrap()]);
     let mut stdin = child.stdin.take().unwrap();

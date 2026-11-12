@@ -1,13 +1,7 @@
 #!/bin/sh
 # AppImage entry point (installed by scripts/package-linux.sh).
-# Starts the desktop app. DRAFFTINK_APPIMAGE_RUN=drafftink-mcp runs the bundled MCP server instead, so an
-# MCP client can use the AppImage as its command, and DRAFFTINK_APPIMAGE_RUN=drafftink-cli runs the headless
-# command line:
-#   DRAFFTINK_APPIMAGE_RUN=drafftink-mcp ./drafftink-<version>-linux-x86_64.AppImage --attach
+# Starts the desktop app with the arguments it was given, so the AppImage is `drafftink` and an MCP client can use
+# it as its command:
+#   ./drafftink-<version>-linux-x86_64.AppImage mcp
 APPDIR="$(dirname "$(readlink -f "$0")")"
-case "${DRAFFTINK_APPIMAGE_RUN:-drafftink}" in
-  drafftink | drafftink-mcp | drafftink-cli) bin="$DRAFFTINK_APPIMAGE_RUN" ;;
-  *) echo "DRAFFTINK_APPIMAGE_RUN must be drafftink, drafftink-mcp or drafftink-cli" >&2; exit 2 ;;
-esac
-unset DRAFFTINK_APPIMAGE_RUN
-exec "$APPDIR/usr/bin/${bin:-drafftink}" "$@"
+exec "$APPDIR/usr/bin/drafftink" "$@"

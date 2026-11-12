@@ -1,5 +1,5 @@
 //! drafftink-protocol: the versioned collaboration wire protocol shared by the client
-//! (`crates/collab`) and the server (`apps/drafftink-server`). See `docs/protocol.md`.
+//! (`crates/collab`) and the server (`apps/drafftink-server`, run by `drafftink-headless serve`). See `docs/protocol.md`.
 //!
 //! This crate is plain data and codecs. CRDT payloads (Loro updates, snapshots, version
 //! vectors) are opaque bytes here, so the crate does not depend on Loro, on a runtime or on a

@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """End-to-end check of the web app in headed Chromium on a private Xvfb. Builds nothing.
 
-Needs dist/ (scripts/build-web.sh) and target/release/drafftink-server (cargo build --release -p drafftink-server).
-Starts the server on an ephemeral port with --web-dir dist and --storage memory, then checks:
+Needs dist/ (scripts/build-web.sh) and target/release/drafftink-headless (cargo build --release -p drafftink-headless).
+Starts `drafftink-headless serve` on an ephemeral port with --web-dir dist and --storage memory, then checks:
   load       the page starts, window.drafftink exists, perf()/frames() answer, WebGPU adapter works
   api        agent.pair refuses a non-loopback address with the loopback message; status() is idle
   idle       0 new frames in a 10 s idle window, CPU of all Chromium processes (1 core = 100 %)
@@ -24,7 +24,7 @@ ap = argparse.ArgumentParser()
 ap.add_argument("--app", action="store_true", help="also run the checks that need the real App core")
 ap.add_argument("--display", default=":97")
 ap.add_argument("--dist", default=os.path.join(ROOT, "dist"))
-ap.add_argument("--server", default=os.path.join(TARGET, "release/drafftink-server"))
+ap.add_argument("--headless", default=os.path.join(TARGET, "release/drafftink-headless"), help="the drafftink-headless binary; its `serve` runs the server")
 ap.add_argument("--shot", default=None, help="screenshot path (1400x860), only with --app")
 ap.add_argument("--json", default=None)
 ap.add_argument("--adapter", default="nvidia", choices=["nvidia", "swiftshader"])
@@ -63,14 +63,14 @@ class Server:
     def __init__(self, port):
         self.port = port; self.proc = None
     def start(self):
-        if not os.path.exists(self.server_bin()): raise SystemExit(f"{args.server} not found: cargo build --release -p drafftink-server")
-        self.proc = subprocess.Popen([args.server, "--web-dir", args.dist, "--bind", f"127.0.0.1:{self.port}", "--storage", "memory"],
+        if not os.path.exists(self.server_bin()): raise SystemExit(f"{args.headless} not found: cargo build --release -p drafftink-headless")
+        self.proc = subprocess.Popen([args.headless, "serve", "--web-dir", args.dist, "--bind", f"127.0.0.1:{self.port}", "--storage", "memory"],
                                      stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         for _ in range(100):
             try: urllib.request.urlopen(f"http://127.0.0.1:{self.port}/health", timeout=1); return
             except Exception: time.sleep(0.1)
         raise SystemExit("the server did not start")
-    def server_bin(self): return args.server
+    def server_bin(self): return args.headless
     def stop(self):
         if self.proc: self.proc.terminate(); self.proc.wait(10); self.proc = None
 

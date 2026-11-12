@@ -6,7 +6,7 @@ license.workspace = true
 rust-version.workspace = true
 repository.workspace = true
 homepage.workspace = true
-description = "Headless command line for Drafft.ink: run command scripts, convert documents, print outlines and list commands."
+description = "Headless command line library for Drafft.ink: run command scripts, convert documents, print outlines and list commands. The program is drafftink-headless."
 readme = "README.md"
 keywords = ["whiteboard", "cli", "drawing", "excalidraw", "batch"]
 categories = ["command-line-utilities", "graphics"]
@@ -14,10 +14,6 @@ categories = ["command-line-utilities", "graphics"]
 [lib]
 name = "drafftink_cli"
 path = "src/lib.rs"
-
-[[bin]]
-name = "drafftink-cli"
-path = "src/main.rs"
 
 [features]
 # The hand-drawn fonts (GelPen, GelPen Serif, Vanilla Extract) from the Git repository, not from crates.io: see
@@ -32,12 +28,6 @@ serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true
 getrandom = "0.3"
-
-[dev-dependencies]
-# The tests draw with the hand-drawn fonts (the Git repository has them; a package on crates.io does not, and a path-only
-# dev-dependency is not part of the package).
-drafftink-typeset = { path = "../../crates/typeset", features = ["hand-fonts"] }
-tempfile.workspace = true
 
 [lints]
 workspace = true

@@ -3,12 +3,13 @@
 //! ```text
 //! drafftink [FILE] [--room ROOM] [--server URL] [--token-file FILE] [--bridge [PORT]] [--mcp-http [PORT]] [--perf-overlay] [--perf-dump FILE]
 //!           [--perf-scenario KEY --perf-out FILE [--perf-secs N]]   (only in a build with `--features scenarios`)
-//! drafftink convert|run|outline|inspect|commands|schemas ...      (the headless tools of `drafftink-cli`)
-//! drafftink mcp [--attach | --relay | ...]                        (the MCP server of `drafftink-mcp`)
+//! drafftink mcp [--attach | --relay | ...]                          (the bridge between an AI agent and the open app)
 //! ```
 //!
-//! A subcommand never creates a window, a GPU device or a display connection (`tool.rs`, `docs/cli.md`). The first
-//! word decides: a file named like a subcommand is given as `./run` or after `--`.
+//! `drafftink` is the program with a screen. The collaboration server, the headless MCP server and the tools for
+//! documents (`convert`, `run`, `outline`, `inspect`, `commands`, `schemas`) are `drafftink-headless`, which links no
+//! GPU or window code; here they give a line that says so (`tool.rs`, `docs/cli.md`). The first word decides: a file
+//! named like a subcommand is given as `./run` or after `--`.
 //!
 //! A collaboration server that asks for an access token gets it from `--token-file` or, without that flag, from the
 //! environment variable `DRAFFTINK_COLLAB_TOKEN`. There is no flag that takes the token itself: arguments are
@@ -49,10 +50,15 @@ use crate::tool::Tool;
 
 /// Drafft.ink: an infinite canvas whiteboard.
 ///
-/// Without a subcommand it opens the window. A subcommand runs a headless tool and never opens a window; a file
-/// named like a subcommand is opened as `drafftink ./run` or `drafftink -- run`.
+/// Without a subcommand it opens the window. `drafftink mcp` serves an AI agent that drives the open window and
+/// never opens one; a file named like a subcommand is opened as `drafftink ./mcp` or `drafftink -- mcp`.
 #[derive(Debug, Parser)]
-#[command(name = "drafftink", version, args_conflicts_with_subcommands = true)]
+#[command(
+    name = "drafftink",
+    version,
+    args_conflicts_with_subcommands = true,
+    after_help = "Without a screen (a server, CI, SSH): `cargo install drafftink-headless`. It has `serve` (the\ncollaboration server), `mcp` (no app needed) and `convert`, `run`, `outline`, `inspect`, `commands`, `schemas`."
+)]
 struct Cli {
     #[command(subcommand)]
     tool: Option<Tool>,
@@ -65,7 +71,7 @@ struct Cli {
 enum Launch {
     /// Open the window.
     Window(Box<WindowArgs>),
-    /// Run a headless tool, which needs no window, no GPU and no display.
+    /// Run a subcommand, which opens no window: the MCP bridge, or the message about a tool that moved.
     Tool(Tool),
 }
 
@@ -82,7 +88,7 @@ impl From<Cli> for Launch {
 #[derive(Debug, clap::Args)]
 struct WindowArgs {
     /// A document to open (.drafftink, .json, .excalidraw, or a PNG with an embedded scene). A file named like a
-    /// subcommand (`run`, `mcp`, ...) is given as `./run` or after `--`.
+    /// subcommand (`mcp`, `run`, ...) is given as `./mcp` or after `--`.
     file: Option<PathBuf>,
     /// Join this room at start (1 to 64 letters, digits, `-` and `_`).
     #[arg(long)]
@@ -275,16 +281,21 @@ mod tests {
     }
 
     #[test]
-    fn every_tool_is_dispatched_without_a_window() {
+    fn every_subcommand_is_dispatched_without_a_window() {
         for args in [
-            &["convert", "a.drafftink", "b.excalidraw"][..],
-            &["run", "script.jsonl"],
+            &["mcp"][..],
+            &["mcp", "--attach", "--port", "5"],
+            &["mcp", "--port", "5"],
+            &["mcp", "--relay", "--relay-port", "5"],
+            &["mcp", "--allow-dir", "."],
+            &["convert", "a.drafftink", "b.excalidraw"],
+            &["convert"],
+            &["convert", "--help"],
+            &["run", "script.jsonl", "--seed", "3"],
             &["outline", "a.drafftink"],
             &["inspect", "a.drafftink"],
             &["commands"],
             &["schemas"],
-            &["mcp"],
-            &["mcp", "--attach", "--port", "5"],
         ] {
             assert!(matches!(launch(args), Ok(Launch::Tool(_))), "{args:?}");
         }
@@ -302,29 +313,36 @@ mod tests {
 
     #[test]
     fn window_flags_and_subcommands_do_not_mix() {
-        for args in [&["run", "s.jsonl", "--room", "r"][..], &["--room", "r", "run", "s.jsonl"], &["mcp", "--bridge"]] {
+        for args in [&["mcp", "--room", "r"][..], &["--room", "r", "mcp", "--attach"], &["mcp", "--bridge"]] {
+            assert!(launch(args).is_err(), "{args:?}");
+        }
+        // A tool that moved takes any arguments, so that the message is what the user sees.
+        assert!(matches!(launch(&["run", "s.jsonl", "--room", "r"]), Ok(Launch::Tool(_))));
+    }
+
+    #[test]
+    fn mcp_modes_conflict_as_they_did_in_drafftink_mcp() {
+        for args in
+            [&["mcp", "--attach", "--relay"][..], &["mcp", "--relay", "--port", "5"], &["mcp", "--relay-port", "5"]]
+        {
             assert!(launch(args).is_err(), "{args:?}");
         }
     }
 
     #[test]
-    fn a_tool_that_is_given_a_wrong_argument_is_a_usage_error_not_a_window() {
-        let err = launch(&["outline"]).unwrap_err();
-        assert_eq!(err.kind(), clap::error::ErrorKind::MissingRequiredArgument);
-    }
-
-    #[test]
-    fn help_lists_every_subcommand_on_one_line() {
+    fn help_lists_mcp_on_one_line_and_hides_the_names_that_moved() {
         let help = Cli::command().render_help().to_string();
-        for name in ["run", "convert", "outline", "inspect", "commands", "schemas", "mcp"] {
-            let line = help.lines().find(|l| l.trim_start().starts_with(&format!("{name} "))).unwrap_or("");
-            assert!(!line.is_empty() && line.len() < 120, "{name}: {line:?}");
+        let line = help.lines().find(|l| l.trim_start().starts_with("mcp ")).unwrap_or("");
+        assert!(!line.is_empty() && line.len() < 120, "{line:?}");
+        for name in ["run", "convert", "outline", "inspect", "commands", "schemas"] {
+            assert!(!help.lines().any(|l| l.trim_start().starts_with(&format!("{name} "))), "{name}\n{help}");
         }
+        assert!(help.contains("cargo install drafftink-headless"), "{help}");
     }
 
     #[test]
-    fn help_works_for_a_subcommand_of_either_crate() {
-        for args in [&["help", "mcp"][..], &["help", "outline"], &["mcp", "--help"], &["outline", "--help"]] {
+    fn help_works_for_mcp() {
+        for args in [&["help", "mcp"][..], &["mcp", "--help"]] {
             let kind = launch(args).unwrap_err().kind();
             assert_eq!(kind, clap::error::ErrorKind::DisplayHelp, "{args:?}");
         }

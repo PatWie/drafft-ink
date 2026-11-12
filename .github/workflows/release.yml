@@ -1,5 +1,5 @@
 # Release: push a tag `vX.Y.Z` (or `vX.Y.Z-rc.N`) whose version equals [workspace.package] version.
-# Builds the desktop app, the MCP server and the collaboration server for Linux (x86_64, aarch64), macOS
+# Builds the desktop app and drafftink-headless (the collaboration server, MCP server and document tools) for Linux (x86_64, aarch64), macOS
 # (universal) and Windows (x64), packages them (scripts/package-*.sh|ps1), writes SHA256SUMS.txt and creates a
 # DRAFT GitHub release with notes. Publish it by hand after checking it (docs/packaging.md).
 # A manual run (workflow_dispatch) builds everything and uploads the files as workflow artifacts, with no release.
@@ -71,7 +71,7 @@ jobs:
           echo "$RUNNER_TEMP/binaryen-version_${BINARYEN_VERSION}/bin" >> "$GITHUB_PATH"
       - run: scripts/build-web.sh
       - run: scripts/package-web.sh
-      # The packaged web build, for the server archives of the other jobs.
+      # The packaged web build, for the drafftink-headless archives of the other jobs.
       - uses: actions/upload-artifact@v6
         with:
           name: web-dist
@@ -116,23 +116,21 @@ jobs:
           tar -tzf drafftink-*-linux-${{ matrix.arch }}.tar.gz | grep -q '/bin/drafftink$'
           dpkg-deb --info drafftink-*-linux-${{ matrix.arch }}.deb
           dpkg-deb --contents drafftink-*-linux-${{ matrix.arch }}.deb | grep -q './usr/bin/drafftink$'
-          tar -tzf drafftink-*-linux-${{ matrix.arch }}.tar.gz | grep -q '/bin/drafftink-cli$'
-          dpkg-deb --contents drafftink-*-linux-${{ matrix.arch }}.deb | grep -q './usr/bin/drafftink-cli$'
           ldd ../target/dist/drafftink | grep -i 'not found' && exit 1 || true
           APPIMAGE_EXTRACT_AND_RUN=1 ./drafftink-*-linux-${{ matrix.arch }}.AppImage --version
       - name: Native size budget
         if: matrix.arch == 'x86_64'
         run: cargo xtask size --native --no-build
-      # The server is built with `--features sqlite,s3` (scripts/package-linux.sh). A build without them starts and
-      # then refuses `--storage sqlite` with "this build has no SQLite support".
-      - name: Smoke-test the room stores of the packaged server
+      # drafftink-headless is built with `--features sqlite,s3` (scripts/package-linux.sh). A build without them starts
+      # and then refuses `--storage sqlite` with "this build has no SQLite support".
+      - name: Smoke-test the room stores of the packaged drafftink-headless
         run: |
-          mkdir "$RUNNER_TEMP/srv" && tar -xzf dist-release/drafftink-server-*-linux-${{ matrix.arch }}.tar.gz -C "$RUNNER_TEMP/srv"
-          srv="$(find "$RUNNER_TEMP/srv" -name drafftink-server -type f | head -1)"
-          code=0; timeout 3 "$srv" --storage sqlite --data-dir "$RUNNER_TEMP/rooms" --bind 127.0.0.1:0 || code=$?
-          if [ "$code" != 124 ]; then echo "::error::the packaged server did not start with --storage sqlite (exit $code)"; exit 1; fi
-          out="$("$srv" --storage s3 2>&1 || true)"
-          if echo "$out" | grep -qi 'no S3 support'; then echo "::error::the packaged server has no S3 support"; exit 1; fi
+          mkdir "$RUNNER_TEMP/srv" && tar -xzf dist-release/drafftink-headless-*-linux-${{ matrix.arch }}.tar.gz -C "$RUNNER_TEMP/srv"
+          srv="$(find "$RUNNER_TEMP/srv" -name drafftink-headless -type f | head -1)"
+          code=0; timeout 3 "$srv" serve --storage sqlite --data-dir "$RUNNER_TEMP/rooms" --bind 127.0.0.1:0 || code=$?
+          if [ "$code" != 124 ]; then echo "::error::the packaged drafftink-headless did not start with serve --storage sqlite (exit $code)"; exit 1; fi
+          out="$("$srv" serve --storage s3 2>&1 || true)"
+          if echo "$out" | grep -qi 'no S3 support'; then echo "::error::the packaged drafftink-headless has no S3 support"; exit 1; fi
       - uses: actions/upload-artifact@v6
         with:
           name: release-linux-${{ matrix.arch }}
@@ -264,8 +262,8 @@ jobs:
             "drafftink-$VERSION-linux-x86_64.AppImage" "drafftink-$VERSION-linux-aarch64.AppImage" \
             "drafftink-$VERSION-linux-x86_64.deb" "drafftink-$VERSION-linux-aarch64.deb" \
             "drafftink-$VERSION-linux-x86_64.tar.gz" "drafftink-$VERSION-linux-aarch64.tar.gz" \
-            "drafftink-server-$VERSION-linux-x86_64.tar.gz" "drafftink-server-$VERSION-linux-aarch64.tar.gz" \
-            "drafftink-server-$VERSION-macos-universal.tar.gz" "drafftink-server-$VERSION-windows-x64.zip" \
+            "drafftink-headless-$VERSION-linux-x86_64.tar.gz" "drafftink-headless-$VERSION-linux-aarch64.tar.gz" \
+            "drafftink-headless-$VERSION-macos-universal.tar.gz" "drafftink-headless-$VERSION-windows-x64.zip" \
             "drafftink-web-$VERSION.tar.gz"; do
             [ -f "$want" ] || { echo "::error::missing release file $want"; exit 1; }
           done

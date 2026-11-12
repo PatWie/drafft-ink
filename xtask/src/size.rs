@@ -17,9 +17,8 @@
 //! writes `dist/sizes.json`; the gate reads that file. `--wasm` compresses in this process instead, which is
 //! slow for the brotli part (minutes) unless the `brotli` program is installed.
 //!
-//! The native metrics are `native.drafftink_bytes`, `native.mcp_bytes` and `native.server_bytes`: the files that
-//! `scripts/package-*` ship, built with the profile `dist` (fat LTO, stripped) and the server with its `sqlite` and
-//! `s3` stores. The native run does not belong to `ci`: the build takes about as long as a release.
+//! The native metrics are `native.drafftink_bytes` and `native.headless_bytes`: the files that `scripts/package-*`
+//! ship, built with the profile `dist` (fat LTO, stripped), `drafftink-headless` with its `sqlite` and `s3` stores. The native run does not belong to `ci`: the build takes about as long as a release.
 //!
 //! The WebGL2 module for browsers without WebGPU (`dist/pkg-gl`) has its own metrics, `fallback.opt_bytes`,
 //! `fallback.gzip_bytes`, `fallback.brotli_bytes` and `fallback.raw_bytes`, with their own limits: it is loaded only by
@@ -204,11 +203,8 @@ fn measure(root: &Path, wasm: &Path) -> Result<Metrics, String> {
 }
 
 /// The shipped binaries and the metric each one is measured as.
-const NATIVE_BINARIES: [(&str, &str); 3] = [
-    ("drafftink", "native.drafftink_bytes"),
-    ("drafftink-mcp", "native.mcp_bytes"),
-    ("drafftink-server", "native.server_bytes"),
-];
+const NATIVE_BINARIES: [(&str, &str); 2] =
+    [("drafftink", "native.drafftink_bytes"), ("drafftink-headless", "native.headless_bytes")];
 
 /// The cargo profile of the shipped binaries (`Cargo.toml`, `scripts/package-*`).
 const DIST_PROFILE: &str = "dist";
@@ -223,7 +219,7 @@ fn build_native(root: &Path) -> Result<(), String> {
     // The release builds carry the hand-drawn fonts from the repository (docs/publishing.md).
     build.args([
         "--features",
-        "drafftink-server/sqlite,drafftink-server/s3,drafftink/hand-fonts,drafftink-mcp/hand-fonts",
+        "drafftink-headless/sqlite,drafftink-headless/s3,drafftink-headless/hand-fonts,drafftink/hand-fonts",
     ]);
     run(&mut build)
 }
@@ -438,7 +434,7 @@ mod tests {
             fs::write(dir.join(format!("{bin}{}", std::env::consts::EXE_SUFFIX)), vec![0u8; 100 * (i + 1)]).unwrap();
         }
         let m = measure_native(&dir).unwrap();
-        assert_eq!((m["native.drafftink_bytes"], m["native.mcp_bytes"], m["native.server_bytes"]), (100, 200, 300));
+        assert_eq!((m["native.drafftink_bytes"], m["native.headless_bytes"]), (100, 200));
         fs::remove_dir_all(&dir).unwrap();
     }
 

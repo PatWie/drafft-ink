@@ -1,5 +1,5 @@
 // The built-in welcome document: a one-screen tour. One engine command per line.
-// `cargo xtask intro` runs this script (drafftink-cli run --batch --seed ...) and writes intro.json next to it;
+// `cargo xtask intro` runs this script (drafftink-headless run --batch --seed ...) and writes intro.json next to it;
 // `cargo xtask intro --check` fails when intro.json is stale. See docs/media.md.
 // Units are world units; the grid is 20. `as` names a step so later steps can say "$name". Colours are palette
 // names like "blue-100" (diagram.create takes #rrggbb only). Elements that `docs/media/shots.json` selects have a `name`.

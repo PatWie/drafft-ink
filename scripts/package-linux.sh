@@ -1,15 +1,15 @@
 #!/usr/bin/env bash
 # Build and package Drafft.ink for Linux (x86_64 or aarch64, the host's architecture unless CROSS_ARCH is set):
 #
-#   $DIST/drafftink-<version>-linux-<arch>.tar.gz          desktop app + drafftink-mcp + drafftink-cli, FHS tree (bin/, share/)
+#   $DIST/drafftink-<version>-linux-<arch>.tar.gz          desktop app (`drafftink mcp` is its MCP bridge), FHS tree (bin/, share/)
 #   $DIST/drafftink-<version>-linux-<arch>.AppImage        the same, one file (any distro with glibc >= the build host's)
 #   $DIST/drafftink-<version>-linux-<arch>.deb             Debian, Ubuntu, Mint (dpkg-deb; no nfpm needed)
-#   $DIST/drafftink-server-<version>-linux-<arch>.tar.gz   drafftink-server + web-dist/ (the web build), run it from that folder
+#   $DIST/drafftink-headless-<version>-linux-<arch>.tar.gz drafftink-headless + web-dist/ (the web build), run `./drafftink-headless serve` from that folder
 #
-# Usage: scripts/package-linux.sh [--skip-build] [--formats "tar appimage deb server"] [--web-dist DIR]
+# Usage: scripts/package-linux.sh [--skip-build] [--formats "tar appimage deb headless"] [--web-dist DIR]
 #   --skip-build   package the binaries already in target/dist (or $BIN_DIR)
-#   --formats      default: "tar appimage deb server". "server" needs the web build (--web-dist, default dist/,
-#                  made by scripts/build-web.sh); without it the server archive is skipped with a warning.
+#   --formats      default: "tar appimage deb headless". "headless" needs the web build (--web-dist, default dist/,
+#                  made by scripts/build-web.sh); without it the headless archive is skipped with a warning.
 # Environment: DIST (output dir), BIN_DIR (binaries), CROSS_TARGET + CROSS_ARCH (cross build), APPIMAGETOOL.
 # Needs: cargo, tar, dpkg-deb (for deb). The AppImage needs appimagetool (downloaded into target/ if missing).
 # Build on an old distro (CI: Ubuntu 22.04, glibc 2.35) so the binaries run on newer ones.
@@ -20,7 +20,7 @@ set -euo pipefail
 HERE="$ROOT/packaging/linux"
 
 SKIP_BUILD=0
-FORMATS="tar appimage deb server"
+FORMATS="tar appimage deb headless"
 WEB_DIST="$ROOT/dist"
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -40,17 +40,17 @@ case "$ARCH" in
 esac
 has() { case " $FORMATS " in *" $1 "*) return 0 ;; *) return 1 ;; esac; }
 BASENAME="drafftink-$VERSION-linux-$ARCH"
-SERVER_BASENAME="drafftink-server-$VERSION-linux-$ARCH"
+HEADLESS_BASENAME="drafftink-headless-$VERSION-linux-$ARCH"
 echo "==> Drafft.ink $VERSION for Linux $ARCH ($FORMATS)"
 
 if [ "$SKIP_BUILD" = 0 ]; then
-  # The server ships with every room store: sqlite and s3 are cargo features that are off by default.
-  cargo_args=(build --profile dist --locked -p drafftink -p drafftink-mcp -p drafftink-cli -p drafftink-server --features "drafftink-server/sqlite,drafftink-server/s3,drafftink/hand-fonts,drafftink-mcp/hand-fonts,drafftink-cli/hand-fonts")
+  # The headless program ships with every room store: sqlite and s3 are cargo features that are off by default.
+  cargo_args=(build --profile dist --locked -p drafftink -p drafftink-headless --features "drafftink-headless/sqlite,drafftink-headless/s3,drafftink-headless/hand-fonts,drafftink/hand-fonts")
   if [ -n "${CROSS_TARGET:-}" ]; then cargo_args+=(--target "$CROSS_TARGET"); fi
   (cd "$ROOT" && cargo "${cargo_args[@]}")
 fi
 BIN="$(bin_dir)"
-for b in $DESKTOP_BINS $SERVER_BIN; do
+for b in $DESKTOP_BINS $HEADLESS_BIN; do
   [ -x "$BIN/$b" ] || { echo "error: $BIN/$b not found (build first or drop --skip-build)" >&2; exit 1; }
 done
 
@@ -100,7 +100,7 @@ Recommends: mesa-vulkan-drivers, xdg-desktop-portal
 Homepage: https://drafft.ink
 Description: Infinite canvas whiteboard
  Drafft.ink draws on a GPU canvas (Vello on Vulkan), syncs rooms in real time
- and has an MCP server (drafftink-mcp) so an AI agent can draw in the window.
+ and has an MCP bridge (drafftink mcp) so an AI agent can draw in the window.
 CONTROL
     dpkg-deb --root-owner-group --build "$DEB" "$DIST/$BASENAME.deb" >/dev/null
     dpkg-deb --info "$DIST/$BASENAME.deb" | sed -n '1,12p'
@@ -136,29 +136,32 @@ if has appimage; then
   echo "wrote $OUT"
 fi
 
-# ---- server + web build --------------------------------------------------------------------------
-if has server; then
+# ---- headless + web build ------------------------------------------------------------------------
+if has headless; then
   if [ -f "$WEB_DIST/index.html" ]; then
-    SRV="$WORK/server/$SERVER_BASENAME"
-    mkdir -p "$SRV"
-    install -m755 "$BIN/$SERVER_BIN" "$SRV/$SERVER_BIN"
-    strip "$SRV/$SERVER_BIN" 2>/dev/null || true
-    # The server's default --web-dir is ./web-dist, so running it from this folder serves the web app.
-    cp -R "$WEB_DIST" "$SRV/web-dist"
-    cat >"$SRV/README.txt" <<README
-Drafft.ink server $VERSION
+    HL="$WORK/headless/$HEADLESS_BASENAME"
+    mkdir -p "$HL"
+    install -m755 "$BIN/$HEADLESS_BIN" "$HL/$HEADLESS_BIN"
+    strip "$HL/$HEADLESS_BIN" 2>/dev/null || true
+    # The default --web-dir of `serve` is ./web-dist, so running it from this folder serves the web app.
+    cp -R "$WEB_DIST" "$HL/web-dist"
+    cat >"$HL/README.txt" <<README
+Drafft.ink without a screen $VERSION
 
-  ./$SERVER_BIN
+  ./$HEADLESS_BIN serve
 
 serves the web app (web-dist/) and the collaboration socket on http://127.0.0.1:3030 .
 Run it from this folder, or point it elsewhere with --web-dir / DRAFFTINK_WEB_DIR.
-./$SERVER_BIN --help lists the options (bind address, storage, auth tokens, limits).
+./$HEADLESS_BIN serve --help lists the options (bind address, storage, auth tokens, limits).
+
+The same program has an MCP server for AI agents (mcp) and tools for documents
+(convert, run, outline, inspect, commands, schemas): ./$HEADLESS_BIN --help
 README
-    copy_docs "$SRV"
-    tar -C "$WORK/server" --owner=0 --group=0 -czf "$DIST/$SERVER_BASENAME.tar.gz" "$SERVER_BASENAME"
-    echo "wrote $DIST/$SERVER_BASENAME.tar.gz"
+    copy_docs "$HL"
+    tar -C "$WORK/headless" --owner=0 --group=0 -czf "$DIST/$HEADLESS_BASENAME.tar.gz" "$HEADLESS_BASENAME"
+    echo "wrote $DIST/$HEADLESS_BASENAME.tar.gz"
   else
-    warn "no web build in $WEB_DIST (run scripts/build-web.sh), so the server archive was not written"
+    warn "no web build in $WEB_DIST (run scripts/build-web.sh), so the headless archive was not written"
   fi
 fi
 
@@ -166,12 +169,12 @@ fi
 # Only when the packaged binaries can run on this machine.
 if [ -z "${CROSS_TARGET:-}" ]; then
   for b in $DESKTOP_BINS; do smoke_version "$STAGE/usr/bin/$b"; done
-  smoke_version "$BIN/$SERVER_BIN"
+  smoke_version "$BIN/$HEADLESS_BIN"
   if has tar; then
     tar -tzf "$DIST/$BASENAME.tar.gz" | grep "/bin/drafftink$" >/dev/null || { echo "error: tar.gz lacks bin/drafftink" >&2; exit 1; }
   fi
   if has appimage; then
-    DRAFFTINK_APPIMAGE_RUN=drafftink-mcp APPIMAGE_EXTRACT_AND_RUN=1 "$DIST/$BASENAME.AppImage" --version
+    APPIMAGE_EXTRACT_AND_RUN=1 "$DIST/$BASENAME.AppImage" --version
   fi
 fi
 echo "==> done"

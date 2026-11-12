@@ -1,17 +1,14 @@
 //! The subcommands of the real `drafftink` binary, run as processes without a display.
 //!
-//! `drafftink convert|run|outline|inspect|commands|schemas` must give the output, notes and exit code of
-//! `drafftink-cli`, and `drafftink mcp` must speak MCP on stdio as `drafftink-mcp` does. The reference for the
-//! first is the library that the `drafftink-cli` binary is a wrapper of: it parses the same words with its own
-//! parser and runs them in this process.
+//! `drafftink` has one subcommand that works, `mcp`, and it is only the bridge: it attaches to the running app unless
+//! `--relay` is given. The tools that need no screen moved to `drafftink-headless` (its tests check their output), so
+//! here they must give one line that says where they went, and a non-zero exit code.
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
 use std::io::{BufRead, BufReader, Write};
 use std::path::Path;
-use std::process::{Command, Output, Stdio};
+use std::process::{Command, Stdio};
 
-use clap::Parser;
-use drafftink_cli::cli::{Cli, execute};
 use serde_json::{Value, json};
 
 /// `drafftink` with the arguments, in a folder, and with no display of any kind.
@@ -27,141 +24,47 @@ fn drafftink(dir: &Path, args: &[&str]) -> Command {
     command
 }
 
-/// What `drafftink-cli` gives for the arguments: standard output, standard error and the exit code.
-fn reference(dir: &Path, args: &[&str]) -> (Vec<u8>, Vec<u8>, i32) {
-    let words = std::iter::once("drafftink-cli").chain(args.iter().copied());
-    let cli = match Cli::try_parse_from(words) {
-        Ok(cli) => cli,
-        Err(e) => return (Vec::new(), e.render().to_string().into_bytes(), e.exit_code()),
-    };
-    let (mut out, mut err) = (Vec::new(), Vec::new());
-    // The commands read relative paths from the current folder, which is the test's: run them there.
-    let previous = std::env::current_dir().unwrap();
-    std::env::set_current_dir(dir).unwrap();
-    let result = execute(&cli.command, &mut out, &mut err);
-    std::env::set_current_dir(previous).unwrap();
-    let code = match result {
-        Ok(()) => 0,
-        Err(e) => {
-            writeln!(err, "drafftink-cli: {e}").unwrap();
-            1
-        }
-    };
-    (out, err, code)
-}
+const MOVED: &str = "That is part of drafftink-headless: `cargo install drafftink-headless`, then `drafftink-headless";
 
-/// `drafftink`'s answer to the same arguments. Its error line starts with `drafftink:`, which is the one thing
-/// that differs from `drafftink-cli:`; the line is renamed so that the rest is compared byte for byte.
-fn subcommand(dir: &Path, args: &[&str]) -> (Vec<u8>, Vec<u8>, i32) {
-    let Output { stdout, stderr, status } = drafftink(dir, args).output().unwrap();
-    let stderr: String = String::from_utf8(stderr)
-        .unwrap()
-        .split_inclusive('\n')
-        .map(|line| {
-            line.strip_prefix("drafftink: ").map_or_else(|| line.to_owned(), |rest| format!("drafftink-cli: {rest}"))
-        })
-        .collect();
-    (stdout, stderr.into_bytes(), status.code().unwrap())
-}
-
-const BOXES: &str = r#"{"id":"element.create","args":{"kind":"rectangle","bounds":{"x":0,"y":0,"w":120,"h":60},"name":"first"}}
-{"id":"element.create","args":{"kind":"ellipse","bounds":{"x":240,"y":0,"w":120,"h":60},"name":"second"}}
-"#;
-
-/// A folder with a script and the document that `run --seed` makes of it.
-fn workspace() -> tempfile::TempDir {
+#[test]
+fn a_tool_that_moved_says_where_it_went_and_exits_with_2_and_opens_no_window() {
     let dir = tempfile::tempdir().unwrap();
-    std::fs::write(dir.path().join("boxes.jsonl"), BOXES).unwrap();
-    let (_, err, code) = reference(dir.path(), &["run", "boxes.jsonl", "--seed", "7", "--out", "boxes.drafftink"]);
-    assert_eq!(code, 0, "{}", String::from_utf8_lossy(&err));
-    dir
-}
-
-fn assert_same_as_cli(dir: &Path, args: &[&str]) {
-    let want = reference(dir, args);
-    let got = subcommand(dir, args);
-    assert_eq!(String::from_utf8_lossy(&got.0), String::from_utf8_lossy(&want.0), "stdout of {args:?}");
-    assert_eq!(String::from_utf8_lossy(&got.1), String::from_utf8_lossy(&want.1), "stderr of {args:?}");
-    assert_eq!(got.2, want.2, "exit code of {args:?}");
-}
-
-#[test]
-fn outline_inspect_and_commands_print_what_drafftink_cli_prints() {
-    let dir = workspace();
-    for args in [
-        &["outline", "boxes.drafftink"][..],
-        &["outline", "boxes.drafftink", "--json"],
-        &["outline", "boxes.drafftink", "--max-nodes", "1"],
-        &["inspect", "boxes.drafftink"],
-        &["commands"],
-        &["commands", "--family", "style"],
-        &["commands", "--search", "undo"],
-        &["commands", "element.create"],
-        &["schemas"],
+    for (args, name) in [
+        (&["convert", "a.drafftink", "b.excalidraw"][..], "convert"),
+        (&["convert"], "convert"),
+        (&["convert", "--help"], "convert"),
+        (&["run", "script.jsonl", "--seed", "3"], "run"),
+        (&["outline", "a.drafftink", "--json"], "outline"),
+        (&["inspect", "a.drafftink"], "inspect"),
+        (&["commands", "--family", "style"], "commands"),
+        (&["schemas"], "schemas"),
+        (&["mcp", "--allow-dir", "."], "mcp"),
+        (&["mcp", "--allow-any-path"], "mcp"),
     ] {
-        assert_same_as_cli(dir.path(), args);
-    }
-}
-
-#[test]
-fn convert_and_run_write_what_drafftink_cli_writes() {
-    let dir = workspace();
-    for target in ["copy.json", "copy.excalidraw", "copy.svg", "copy.drafftink"] {
-        let args = ["convert", "boxes.drafftink", target];
-        assert_same_as_cli(dir.path(), &args);
-    }
-    // The same input gives the same bytes through both doors.
-    let written = |name: &str| std::fs::read(dir.path().join(name)).unwrap();
-    let (_, _, code) = subcommand(dir.path(), &["convert", "boxes.drafftink", "again.excalidraw"]);
-    assert_eq!(code, 0);
-    assert_eq!(written("again.excalidraw"), written("copy.excalidraw"));
-    let (via_app, _, code) = subcommand(dir.path(), &["run", "boxes.jsonl", "--seed", "3", "--out", "a.drafftink"]);
-    assert_eq!(code, 0);
-    let (via_cli, _, _) = reference(dir.path(), &["run", "boxes.jsonl", "--seed", "3", "--out", "b.drafftink"]);
-    assert_eq!(via_app, via_cli);
-    assert_eq!(written("a.drafftink"), written("b.drafftink"));
-}
-
-#[test]
-fn failures_have_the_same_message_and_exit_code() {
-    let dir = workspace();
-    for args in [
-        &["outline", "missing.drafftink"][..],
-        &["convert", "boxes.drafftink", "out.png"],
-        &["convert", "boxes.drafftink", "out.unknown"],
-        &["commands", "no.such.command"],
-        &["run", "missing.jsonl"],
-    ] {
-        assert_same_as_cli(dir.path(), args);
-        assert_eq!(subcommand(dir.path(), args).2, 1, "{args:?}");
-    }
-}
-
-#[test]
-fn a_mistake_in_the_arguments_exits_with_2_and_opens_no_window() {
-    let dir = workspace();
-    for args in [&["outline"][..], &["convert", "only-one"], &["run", "s.jsonl", "--room", "r"]] {
         let out = drafftink(dir.path(), args).output().unwrap();
         assert_eq!(out.status.code(), Some(2), "{args:?}");
         assert!(out.stdout.is_empty(), "{args:?}");
-        let text = String::from_utf8_lossy(&out.stderr);
-        assert!(text.contains("Usage: drafftink"), "{text}");
+        let text = String::from_utf8(out.stderr).unwrap();
+        assert_eq!(text.lines().count(), 1, "one line for {args:?}: {text}");
+        assert_eq!(text.trim_end(), format!("{MOVED} {name} …`"), "{args:?}");
+        // The window path prints this line when it ends. A subcommand never gets that far.
+        assert!(!text.contains("frames="), "{args:?}");
     }
 }
 
 #[test]
-fn a_subcommand_needs_no_display() {
-    let dir = workspace();
-    let out = drafftink(dir.path(), &["outline", "boxes.drafftink"]).output().unwrap();
-    assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
-    let text = String::from_utf8(out.stdout).unwrap();
-    assert!(text.contains("@first rectangle") && text.contains("@second ellipse"), "{text}");
-    // The window path prints this line when it ends. A tool never gets that far.
-    assert!(!String::from_utf8_lossy(&out.stderr).contains("frames="));
+fn a_file_named_like_a_subcommand_still_reaches_the_window_path() {
+    // `./convert` is a file name. With no display the window cannot open, and that failure is not the message about
+    // a tool that moved.
+    let dir = tempfile::tempdir().unwrap();
+    for args in [&["./convert"][..], &["--", "run"]] {
+        let out = drafftink(dir.path(), args).output().unwrap();
+        assert!(!String::from_utf8_lossy(&out.stderr).contains(MOVED), "{args:?}");
+    }
 }
 
 #[test]
-fn help_lists_the_subcommands_and_explains_each_one() {
+fn help_lists_mcp_and_points_at_drafftink_headless() {
     let dir = tempfile::tempdir().unwrap();
     let help = |args: &[&str]| {
         let out = drafftink(dir.path(), args).output().unwrap();
@@ -169,14 +72,30 @@ fn help_lists_the_subcommands_and_explains_each_one() {
         String::from_utf8(out.stdout).unwrap()
     };
     let all = help(&["--help"]);
-    for name in ["run", "convert", "outline", "inspect", "commands", "schemas", "mcp"] {
-        assert!(all.lines().any(|l| l.trim_start().starts_with(&format!("{name} "))), "{name}\n{all}");
+    assert!(all.lines().any(|l| l.trim_start().starts_with("mcp ")), "{all}");
+    assert!(all.contains("cargo install drafftink-headless"), "{all}");
+    for name in ["convert", "run", "outline", "inspect", "commands", "schemas"] {
+        assert!(!all.lines().any(|l| l.trim_start().starts_with(&format!("{name} "))), "{name}\n{all}");
     }
-    assert!(help(&["help", "mcp"]).contains("--attach"));
-    assert_eq!(help(&["help", "outline"]), help(&["outline", "--help"]));
-    assert!(help(&["help", "convert"]).contains("Usage: drafftink convert"));
+    let mcp = help(&["mcp", "--help"]);
+    assert!(mcp.contains("--attach") && mcp.contains("--relay"), "{mcp}");
+    assert!(!mcp.contains("--allow-dir"), "the headless options are not advertised: {mcp}");
+    assert_eq!(help(&["help", "mcp"]), mcp);
 }
 
+#[test]
+fn mcp_refuses_conflicting_modes() {
+    let dir = tempfile::tempdir().unwrap();
+    for args in [&["mcp", "--attach", "--relay"][..], &["mcp", "--relay-port", "5"], &["mcp", "--relay", "--port", "5"]]
+    {
+        let out = drafftink(dir.path(), args).stdin(Stdio::null()).output().unwrap();
+        assert_eq!(out.status.code(), Some(2), "{args:?}");
+        assert!(out.stdout.is_empty(), "{args:?}");
+        assert!(String::from_utf8_lossy(&out.stderr).contains("error"), "{args:?}");
+    }
+}
+
+/// A `drafftink mcp` process and its pipes.
 struct McpServer {
     child: std::process::Child,
     stdin: Option<std::process::ChildStdin>,
@@ -213,33 +132,37 @@ impl McpServer {
         drop(self.stdin.take());
         self.child.wait().unwrap()
     }
+
+    fn initialize(&mut self) {
+        self.send(&json!({ "jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {
+            "protocolVersion": "2025-06-18", "capabilities": {}, "clientInfo": { "name": "test", "version": "1" } } }));
+        let init = self.response(1);
+        assert!(init["result"]["capabilities"]["tools"].is_object(), "{init}");
+        self.send(&json!({ "jsonrpc": "2.0", "method": "notifications/initialized" }));
+    }
 }
 
 #[test]
-fn mcp_answers_initialize_and_tools_list_on_stdio_and_ends_with_its_input() {
-    let dir = tempfile::tempdir().unwrap();
-    let mut server = McpServer::start(dir.path(), &["mcp"]);
-    server.send(&json!({ "jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {
-        "protocolVersion": "2025-06-18", "capabilities": {}, "clientInfo": { "name": "test", "version": "1" } } }));
-    let init = server.response(1);
-    assert!(init["result"]["capabilities"]["tools"].is_object(), "{init}");
-    server.send(&json!({ "jsonrpc": "2.0", "method": "notifications/initialized" }));
-    server.send(&json!({ "jsonrpc": "2.0", "id": 2, "method": "tools/list" }));
-    let list = server.response(2);
-    let names: Vec<&str> =
-        list["result"]["tools"].as_array().unwrap().iter().filter_map(|t| t["name"].as_str()).collect();
-    assert!(names.contains(&"view"), "{names:?}");
-    assert!(names.len() > 3, "{names:?}");
+fn mcp_attaches_by_default_and_explains_on_the_first_call_that_no_app_is_running() {
+    // An empty folder has no token file: no app is running there. Neither `--attach` nor any mode is given.
+    let bridge_dir = tempfile::tempdir().unwrap();
+    let mut server = McpServer::start(bridge_dir.path(), &["mcp", "--bridge-dir", bridge_dir.path().to_str().unwrap()]);
+    server.initialize();
+    server.send(
+        &json!({ "jsonrpc": "2.0", "id": 2, "method": "tools/call", "params": { "name": "status", "arguments": {} } }),
+    );
+    let status = server.response(2).to_string();
+    assert!(status.contains("Start the desktop app") || status.contains("no running"), "{status}");
+    assert!(status.contains("attached"), "the default mode is attach: {status}");
     assert!(server.finish().success());
 }
 
 #[test]
-fn mcp_refuses_conflicting_modes_like_drafftink_mcp() {
+fn mcp_with_a_bridge_option_alone_still_attaches() {
+    // `--port` needs `--attach` in `drafftink-headless mcp`; here attach is the default, so it is accepted.
     let dir = tempfile::tempdir().unwrap();
-    for args in [&["mcp", "--attach", "--relay"][..], &["mcp", "--port", "5"], &["mcp", "--relay-port", "5"]] {
-        let out = drafftink(dir.path(), args).stdin(Stdio::null()).output().unwrap();
-        assert_eq!(out.status.code(), Some(2), "{args:?}");
-        assert!(out.stdout.is_empty(), "{args:?}");
-        assert!(String::from_utf8_lossy(&out.stderr).contains("error"), "{args:?}");
-    }
+    let mut server =
+        McpServer::start(dir.path(), &["mcp", "--port", "9", "--bridge-dir", dir.path().to_str().unwrap()]);
+    server.initialize();
+    assert!(server.finish().success());
 }

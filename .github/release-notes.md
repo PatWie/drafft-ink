@@ -13,10 +13,10 @@ These builds are **not code-signed** (see "Unsigned builds" below). Verify downl
 | Linux, one file for any distro | `drafftink-{version}-linux-x86_64.AppImage` or `...-aarch64.AppImage` |
 | Debian, Ubuntu, Mint | `drafftink-{version}-linux-x86_64.deb` or `...-aarch64.deb` |
 | Linux, plain archive | `drafftink-{version}-linux-x86_64.tar.gz` or `...-aarch64.tar.gz` |
-| Host your own server and web app | `drafftink-server-{version}-<os>-<arch>` archive (the binary and the web build in one folder) |
+| Host your own server and web app, or use the MCP server and document tools without a screen | `drafftink-headless-{version}-<os>-<arch>` archive (the binary and the web build in one folder) |
 | The web build only (any static host) | `drafftink-web-{version}.tar.gz` or `.zip` |
 
-Every desktop package also contains `drafftink-mcp`, the MCP server that lets an AI agent draw in the window.
+`drafftink mcp`, in every desktop package, lets an AI agent draw in the window. `drafftink-headless mcp` needs no window.
 Each file is also attached without the version in its name (`drafftink-windows-x64.msi`, `drafftink-macos-universal.dmg`,
 ...), so `releases/latest/download/<name>` works.
 
@@ -28,8 +28,8 @@ Each file is also attached without the version in its name (`drafftink-windows-x
   (or run `xattr -dr com.apple.quarantine /Applications/Drafftink.app`).
 - **Linux AppImage:** `chmod +x drafftink-*.AppImage && ./drafftink-*.AppImage`.
 - **Linux deb:** `sudo apt install ./drafftink-{version}-linux-x86_64.deb`.
-- **Server:** unpack the `drafftink-server` archive and run `./drafftink-server` in that folder, then open http://127.0.0.1:3030.
-  `--help` lists the options (bind address, storage, auth tokens).
+- **Server:** unpack the `drafftink-headless` archive and run `./drafftink-headless serve` in that folder, then open http://127.0.0.1:3030.
+  `serve --help` lists the options (bind address, storage, auth tokens).
 
 The app needs a GPU with Vulkan (Linux), Metal (macOS) or DirectX 12 (Windows).
 

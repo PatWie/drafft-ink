@@ -1,7 +1,7 @@
 //! `cargo xtask e2e`: the two end-to-end suites that drive the real apps (`docs/testing.md`, "Browser and native e2e").
 //!
 //! * **Browser**: Playwright with TypeScript (`e2e/web`) drives `window.drafftink` in headed Chromium on Xvfb with
-//!   WebGPU, against `drafftink-server --web-dir dist`.
+//!   WebGPU, against `drafftink-headless serve --web-dir dist`.
 //! * **Native**: Rust tests (`e2e/native`) start `drafftink --bridge` on the same Xvfb and drive it through the
 //!   bridge client with the token file.
 //!
@@ -16,7 +16,7 @@
 //!    (`--types` rewrites it).
 //! 3. `tsc --noEmit` (the specs are typechecked against those types), then the accounting check of the harness,
 //!    the families and the stories, and its self-test.
-//! 4. Builds: the web app (`scripts/build-web.sh --profile release`), the server and the desktop app.
+//! 4. Builds: the web app (`scripts/build-web.sh --profile release`), `drafftink-headless` (its `serve` is the server) and the desktop app.
 //! 5. A private Xvfb, then the browser suite, then the native suite. Both always run; the summary counts them.
 //!
 //! The summary (passed, failed, skipped per suite) is printed and written to `target/e2e/summary.json`.
@@ -35,7 +35,7 @@ usage: cargo xtask e2e [--types] [--web] [--native] [--no-build] [--display :N]
 
   --types       regenerate e2e/web/generated from the command registry and stop
   --web         only the browser suite       --native      only the native suite
-  --no-build    use the web app (dist/), server and desktop app that are already built
+  --no-build    use the web app (dist/), `drafftink-headless` and the desktop app that are already built
   --display :N  use this X display instead of starting a private Xvfb
 
 environment:
@@ -182,7 +182,7 @@ fn build(root: &Path) -> Result<(), String> {
         "build",
         "--release",
         "-p",
-        "drafftink-server",
+        "drafftink-headless",
         "-p",
         "drafftink",
         "--features",

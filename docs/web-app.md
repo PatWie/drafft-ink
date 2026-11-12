@@ -1,7 +1,7 @@
 # The web app
 
 The web build is `apps/drafftink-web` (the wasm entry point and the JavaScript API) over `crates/app` (the shared `App`) with the
-browser platform in `crates/app/src/web`. `drafftink-server` serves the result and the collaboration socket from one origin, so the
+browser platform in `crates/app/src/web`. `drafftink-headless serve` serves the result and the collaboration socket from one origin, so the
 whole deployment is one binary and one folder.
 
 ```
@@ -16,12 +16,12 @@ scripts/                  build-web.sh  serve-web.sh  web_check.py
 
 ```
 scripts/build-web.sh            # release-wasm build -> wasm-bindgen --target web -> wasm-opt -Oz -> fonts -> dist/
-scripts/serve-web.sh 3030       # cargo run --release -p drafftink-server -- --web-dir dist --bind 127.0.0.1:3030
+scripts/serve-web.sh 3030       # cargo run --release -p drafftink-headless -- serve --web-dir dist --bind 127.0.0.1:3030
 ```
 
 `build-web.sh` checks that the `wasm-bindgen` CLI has the version pinned in the root `Cargo.toml` (0.2.130), runs `wasm-opt` from
 `PATH` or `~/.cargo/tools/binaryen-version_*/bin`, writes `dist/` and prints the wasm size raw, after `wasm-opt`, gzip -9 and
-brotli -11. It also writes `.gz` and `.br` next to each text and wasm file; `drafftink-server` serves them when the browser accepts
+brotli -11. It also writes `.gz` and `.br` next to each text and wasm file; `drafftink-headless serve` serves them when the browser accepts
 them (`--no-precompress` skips this, `--profile release` builds faster and bigger). `dist/` is in `.gitignore`.
 
 `wasm-opt` runs with an explicit feature list, not `--all-features`: with binaryen 133 `--all-features` turns on experimental
@@ -265,7 +265,7 @@ try { await drafftink.execute('nope.nothing'); } catch (e) { console.log(e.code,
 
 ## Pairing with an AI agent (docs/agents.md, section 5.2)
 
-`drafftink-mcp --relay` prints a link `https://<this site>/#drafftink-agent-port=<port>&drafftink-agent-token=<64 hex>`. When the page
+`drafftink mcp --relay` prints a link `https://<this site>/#drafftink-agent-port=<port>&drafftink-agent-token=<64 hex>`. When the page
 opens with it:
 
 1. at start the page reads the two keys from `location.hash` and removes both with `history.replaceState`, even if the pair is
@@ -306,7 +306,7 @@ pan over 1000 rectangles (results: `performance.md`, "Wasm size"). `e2e/web/spec
 (no network activity and no frame for 1.5 s), because the fonts that load after the first frame are work, not idling.
 
 `scripts/web_check.py [--app] [--shot docs/img/web-app.png]` (python from `~/.venvs/perf`; needs `dist/` and
-`target/release/drafftink-server`). It starts the server on an ephemeral port with `--web-dir dist --storage memory`, a private
+`target/release/drafftink-headless`). It starts `serve` on an ephemeral port with `--web-dir dist --storage memory`, a private
 Xvfb and headed Chromium with the WebGPU flags of docs/shell.md, and checks: the page starts and draws; the API surface; the
 pairing refusals; the pairing keys are scrubbed from the address; 0 frames and the CPU of all Chromium processes in a 10 s idle
 window. With `--app`: `state`, `commands`, `describe`, a refusal as a rejected promise, two rectangles with an arrow bound to both and `element.move` dragging it along, `commands()` with availability, a batch, the

@@ -8,23 +8,23 @@ How Drafft.ink is built for every system and shipped. The design follows solidcr
 
 | File | Contents | Built by |
 |---|---|---|
-| `drafftink-<v>-linux-<arch>.AppImage` | desktop app + `drafftink-mcp` + `drafftink-cli`, one file (`DRAFFTINK_APPIMAGE_RUN=drafftink-cli` runs the command line), any distro with glibc 2.35 or newer | `scripts/package-linux.sh` |
+| `drafftink-<v>-linux-<arch>.AppImage` | the desktop app, one file (`./drafftink-*.AppImage mcp` is the MCP bridge), any distro with glibc 2.35 or newer | `scripts/package-linux.sh` |
 | `drafftink-<v>-linux-<arch>.deb` | the same, as a Debian package | same |
 | `drafftink-<v>-linux-<arch>.tar.gz` | the same as an FHS tree (`bin/`, `share/`) | same |
-| `drafftink-<v>-macos-universal.dmg` | `Drafftink.app` (arm64 + x86_64 in one binary, `drafftink-mcp` and `drafftink-cli` inside it) | `scripts/package-macos.sh` |
+| `drafftink-<v>-macos-universal.dmg` | `Drafftink.app` (arm64 + x86_64 in one binary) | `scripts/package-macos.sh` |
 | `drafftink-<v>-windows-x64.msi` | per-machine installer with a Start menu entry | `scripts/package-windows.ps1` |
-| `drafftink-<v>-windows-x64.zip` | portable `drafftink.exe` + `drafftink-mcp.exe` + `drafftink-cli.exe` | same |
-| `drafftink-server-<v>-<os>-<arch>.tar.gz` (`.zip` on Windows) | `drafftink-server` + `web-dist/` (the web build) in one folder | the three scripts above |
+| `drafftink-<v>-windows-x64.zip` | portable `drafftink.exe` | same |
+| `drafftink-headless-<v>-<os>-<arch>.tar.gz` (`.zip` on Windows) | `drafftink-headless` + `web-dist/` (the web build) in one folder | the three scripts above |
 | `drafftink-web-<v>.tar.gz`, `.zip` | the web build only, for any static host | `scripts/package-web.sh` |
 | `SHA256SUMS.txt` | checksums of all of the above | `release.yml` |
 
 Every versioned desktop file is also attached once more without the version (`drafftink-windows-x64.msi`, `drafftink-linux-x86_64.AppImage`, ...), so `https://github.com/<owner>/<repo>/releases/latest/download/<name>` works. Keep these names stable: links and any future update check depend on them.
 
-**One binary.** The server does not embed the web build. It serves the folder named by `--web-dir` (default `./web-dist`), and the server archive ships that folder next to the binary, so "unpack and run `./drafftink-server`" serves the app on `http://127.0.0.1:3030`. Embedding the 12.5 MB wasm and its precompressed copies in the binary would make every server build depend on the wasm build and bloat it; revisit if single-file deployment becomes a requirement.
+**One binary.** The server does not embed the web build. `serve` serves the folder named by `--web-dir` (default `./web-dist`), and the `drafftink-headless` archive ships that folder next to the binary, so "unpack and run `./drafftink-headless serve`" serves the app on `http://127.0.0.1:3030`. Embedding the 12.5 MB wasm and its precompressed copies in the binary would make every server build depend on the wasm build and bloat it; revisit if single-file deployment becomes a requirement.
 
-**How the binaries are built.** The scripts build with the cargo profile `dist` (fat LTO, stripped, size-optimised code for the parts that do not run per frame; `Cargo.toml`), and the server with `--features drafftink-server/sqlite,drafftink-server/s3`, so a released server offers every room store: `--storage fs|sqlite|s3|memory`. Without those features a build prints "this build has no SQLite support" when asked for them. `release.yml` starts the packaged Linux server with `--storage sqlite` and checks that it listens, and runs `cargo xtask size --native --no-build` against the budgets of `perf/budgets.json` (section `size`, `native.*`).
+**How the binaries are built.** The scripts build with the cargo profile `dist` (fat LTO, stripped, size-optimised code for the parts that do not run per frame; `Cargo.toml`), and `drafftink-headless` with `--features drafftink-headless/sqlite,drafftink-headless/s3`, so a released `serve` offers every room store: `--storage fs|sqlite|s3|memory`. Without those features a build prints "this build has no SQLite support" when asked for them. `release.yml` starts the packaged Linux `drafftink-headless serve` with `--storage sqlite` and checks that it listens, and runs `cargo xtask size --native --no-build` against the budgets of `perf/budgets.json` (section `size`, `native.*`).
 
-The desktop packages carry no server, and the server archives carry no desktop app. `drafftink-mcp` ships with the desktop app because an MCP client starts it (`drafftink-mcp --attach`) and the app is what it attaches to. `drafftink-cli` (`docs/cli.md`) ships there too: it is a user tool that runs command scripts and converts documents without a window, and it is small next to the app.
+The desktop packages carry no server and no document tools, and the `drafftink-headless` archives carry no desktop app. The MCP bridge is a subcommand of the desktop app (`drafftink mcp`), because an MCP client starts it and the app is what it attaches to. `drafftink-headless` (`docs/cli.md`) is the program for a machine without a screen: the server, an MCP server that needs no app, and the tools that run command scripts and convert documents. It links no GPU or window code (`cargo xtask layers`), so it also works on a build host or in a container that has no graphics libraries.
 
 Releases on crates.io (`cargo install drafftink`) are a separate path with their own rules for the hand-drawn fonts: `publishing.md`. The release binaries here are built with the Cargo feature `hand-fonts`.
 
@@ -51,8 +51,8 @@ CI installs nothing on Linux for the workspace build (`ci.yml`, job `build-nativ
 ## Building locally
 
 ```sh
-scripts/build-web.sh                         # dist/ (needs the web tools above); skip it and the server archive is skipped
-scripts/package-linux.sh                     # dist-release/: tar.gz, deb, AppImage, server archive; then runs every binary with --version
+scripts/build-web.sh                         # dist/ (needs the web tools above); skip it and the headless archive is skipped
+scripts/package-linux.sh                     # dist-release/: tar.gz, deb, AppImage, headless archive; then runs every binary with --version
 scripts/package-linux.sh --skip-build --formats "tar deb"
 scripts/package-web.sh                       # dist-release/drafftink-web-<v>.tar.gz and .zip
 scripts/package-macos.sh [--sign [--notarize]]   # macOS only
@@ -68,7 +68,7 @@ The Windows exe gets its icon and version resource from `build.rs` at the reposi
 
 ## CI (`.github/workflows/ci.yml`)
 
-- `build-native`: `cargo build --workspace --release --locked` on ubuntu, windows and macos with `rust-cache` (the default features: the server without sqlite and s3; the packages add them), then each of `drafftink`, `drafftink-mcp`, `drafftink-cli`, `drafftink-server` with `--version`.
+- `build-native`: `cargo build --workspace --release --locked` on ubuntu, windows and macos with `rust-cache` (the default features: `serve` without sqlite and s3; the packages add them), then each of `drafftink`, `drafftink-headless` with `--version`.
 - `packaging`: on ubuntu-22.04, shellcheck over the scripts, then `scripts/package-linux.sh --formats "tar deb appimage"` end to end.
 - Both are in the `needs` of the aggregate `ci` job. macOS and Windows packaging are only exercised by `release.yml`.
 
@@ -77,7 +77,7 @@ The Windows exe gets its icon and version resource from `build.rs` at the reposi
 1. Choose the version, edit `[workspace.package] version` in `Cargo.toml`, run `cargo update --workspace --offline`, `cargo xtask ci`, merge to `main`.
 2. Tag the merge commit and push the tag: `git tag v0.2.0 && git push origin v0.2.0`. The workflow fails at once if the tag differs from the Cargo version (`v` + version).
 3. `release.yml` builds the web app, then Linux (x86_64 on ubuntu-22.04, aarch64 on ubuntu-22.04-arm), macOS (one macos-15 job, both targets, `lipo`) and Windows in parallel, then creates a **draft** release: all files, fixed-name copies, `SHA256SUMS.txt`, and notes from `.github/release-notes.md` plus GitHub's generated change list. A version with a `-` (`0.3.0-rc.1`) makes a prerelease.
-4. Check the draft: every file present (the job fails when one is missing), `sha256sum --check --ignore-missing SHA256SUMS.txt`, run the server archive and open the page. Publish: `gh release edit v0.2.0 --draft=false --latest` (a prerelease: `--draft=false --prerelease --latest=false`).
+4. Check the draft: every file present (the job fails when one is missing), `sha256sum --check --ignore-missing SHA256SUMS.txt`, run `drafftink-headless serve` from the headless archive and open the page. Publish: `gh release edit v0.2.0 --draft=false --latest` (a prerelease: `--draft=false --prerelease --latest=false`).
 5. A manual run of the workflow (Actions tab, "Run workflow") builds everything and keeps the files as workflow artifacts without creating a release. Use it to try the pipeline before tagging.
 
 Never move or re-push a published tag; release a new version instead.
@@ -97,7 +97,7 @@ macOS (needs an Apple Developer ID, 99 USD per year). Repository secrets:
 
 With the first three the app and the dmg are signed with the hardened runtime and `packaging/macos/entitlements.plist`; with all six the dmg is also notarized (`xcrun notarytool submit --wait`) and stapled. Unsigned, users right-click > Open once, or run `xattr -dr com.apple.quarantine /Applications/Drafftink.app`. The signing path is written to Apple's documented flow but has **not been run**: no Mac or Apple certificate was available.
 
-Windows: not signed, so SmartScreen warns on first run ("More info" > "Run anyway"). Options when it matters: an OV/EV code-signing certificate or Azure Trusted Signing, then a `signtool sign` step on `drafftink.exe`, `drafftink-mcp.exe` and the MSI before upload. SignPath (free for open source) is what solidcraft uses. Not wired up.
+Windows: not signed, so SmartScreen warns on first run ("More info" > "Run anyway"). Options when it matters: an OV/EV code-signing certificate or Azure Trusted Signing, then a `signtool sign` step on `drafftink.exe`, `drafftink-headless.exe` and the MSI before upload. SignPath (free for open source) is what solidcraft uses. Not wired up.
 
 Linux: AppImage and deb are unsigned. `SHA256SUMS.txt` is the integrity check; a detached signature (minisign or GPG) can be added in the `release` job.
 
@@ -105,17 +105,17 @@ Linux: AppImage and deb are unsigned. `SHA256SUMS.txt` is the integrity check; a
 
 Verified on the development machine (Ubuntu 24.04, x86_64):
 
-- `scripts/package-linux.sh` end to end: tar.gz, deb (`dpkg-deb --info/--contents`), AppImage (built, run with `--version`, and `DRAFFTINK_APPIMAGE_RUN=drafftink-mcp`), and the server archive with the real web build; the unpacked server answered `/health`, `/` and the wasm with 200.
+- `scripts/package-linux.sh` end to end: tar.gz, deb (`dpkg-deb --info/--contents`), AppImage (built, run with `--version`), and the `drafftink-headless` archive with the real web build; the unpacked `serve` answered `/health`, `/` and the wasm with 200.
 - A clean `ubuntu:22.04` container (no `-dev` packages) running the same script.
 - `scripts/package-web.sh` with the real web build (`scripts/build-web.sh`).
-- `cargo check` of `drafftink`, `drafftink-mcp`, `drafftink-server` for `aarch64-unknown-linux-gnu` (C code via `zig cc`). These are type checks, not links.
+- `cargo check` of `drafftink` and `drafftink-headless` for `aarch64-unknown-linux-gnu` (C code via `zig cc`). These are type checks, not links.
 - YAML syntax of the workflows, XML syntax of `Info.plist.in`, `drafftink.wxs`, the entitlements.
 
 Cross type checks (branch `final-residuals`, `scripts/cross-check.sh`; Rust 1.97.1, llvm-mingw 20250114 for the C compiler, no root):
 
 | Target | Command | Result |
 |---|---|---|
-| `x86_64-pc-windows-gnu` | `cargo check -p drafftink -p drafftink-mcp -p drafftink-cli -p drafftink-server`, then `cargo check --workspace --all-targets`, then `-p drafftink-server --features sqlite,s3` (bundled SQLite compiles with mingw) | no errors, no cfg fixes needed |
+| `x86_64-pc-windows-gnu` | `cargo check -p drafftink -p drafftink-headless`, then `cargo check --workspace --all-targets`, then `-p drafftink-headless --features sqlite,s3` (bundled SQLite compiles with mingw) | no errors, no cfg fixes needed |
 | `aarch64-apple-darwin` | the same two package and workspace checks | no errors |
 | `x86_64-apple-darwin` | the package check | no errors |
 | `x86_64-pc-windows-msvc` | installed, **not checked**: `ring`, `stacker` and `psm` compile C against the Windows SDK headers, which are not here. `windows-gnu` covers the `cfg(windows)` code | none |

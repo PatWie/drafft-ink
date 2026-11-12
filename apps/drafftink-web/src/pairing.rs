@@ -33,7 +33,7 @@ pub enum PairingError {
     #[error("The agent address is not valid: {0}. Use an address like ws://127.0.0.1:<port>")]
     BadUrl(&'static str),
     /// The token is not 64 hex characters.
-    #[error("The token must be 64 hexadecimal characters, as printed by `drafftink-mcp --relay`.")]
+    #[error("The token must be 64 hexadecimal characters, as printed by `drafftink mcp --relay`.")]
     BadToken,
 }
 

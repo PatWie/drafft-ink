@@ -1,4 +1,4 @@
-//! The agent tools, shared by every way of serving them: stdio MCP (`apps/drafftink-mcp`), MCP over HTTP in
+//! The agent tools, shared by every way of serving them: stdio MCP (`apps/drafftink-mcp`, run by `drafftink mcp` and `drafftink-headless mcp`), MCP over HTTP in
 //! the desktop app ([`crate::mcp`]) and WebMCP in the web page (`apps/drafftink-web`).
 //!
 //! The tool list is generated from the command registry ([`catalog::Catalog`]). A call is turned into bridge
@@ -22,11 +22,11 @@ use crate::rpc::RpcError;
 /// The mode a server runs in. The instructions of the `initialize` result and the `status` tool say it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Mode {
-    /// Own session, no window (`drafftink-mcp`).
+    /// Own session, no window (`drafftink-headless mcp`).
     Headless,
-    /// Connected to the desktop app over its bridge (`drafftink-mcp --attach`).
+    /// Connected to the desktop app over its bridge (`drafftink mcp`, `--attach`).
     Attached,
-    /// Listening for the browser tab (`drafftink-mcp --relay`).
+    /// Listening for the browser tab (`drafftink mcp --relay`).
     Relay,
     /// Served by the desktop app itself, over streamable HTTP (`drafftink --mcp-http`).
     Desktop,

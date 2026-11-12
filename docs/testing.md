@@ -182,7 +182,7 @@ through Playwright. A native test calls `execute` and `batch` on the bridge. Bey
 Node 22 and Playwright 1.58 with the Chromium that `~/.cache/ms-playwright` holds. Headless Chromium draws WebGPU canvases blank
 (`research/web-perf.md`), so the suite runs headed on an Xvfb that `cargo xtask e2e` starts. The flags for the NVIDIA GPU
 (ANGLE on Vulkan) are in `support/env.ts`; `DRAFFTINK_E2E_ADAPTER=swiftshader` selects the CPU adapter, which is slow but needs no GPU.
-The middle-button spec seeds the X11 primary selection with `xclip` (`support/x11.ts`; install `xclip`, the spec runs unseeded without it). The global setup starts `drafftink-server --web-dir dist --storage memory`, asks Chromium for an adapter and prints it. One worker
+The middle-button spec seeds the X11 primary selection with `xclip` (`support/x11.ts`; install `xclip`, the spec runs unseeded without it). The global setup starts `drafftink-headless serve --web-dir dist --storage memory`, asks Chromium for an adapter and prints it. One worker
 runs the specs in turn: the idle checks count frames and must not share the GPU.
 
 | Directory | What it holds |
@@ -282,7 +282,7 @@ What the suites cannot cover is listed in `docs/review/e2e-findings.md` with the
 | `DRAFFTINK_E2E=1` | set by `cargo xtask e2e`; the native e2e tests skip without it |
 | `DRAFFTINK_E2E_ADAPTER=swiftshader` | the browser suite uses Chromium's CPU adapter |
 | `DRAFFTINK_E2E_FILTER=<title>` | run only the browser tests whose title matches |
-| `DRAFFTINK_BIN`, `DRAFFTINK_E2E_SERVER`, `DRAFFTINK_E2E_DIST` | paths of the desktop app, the server and the web build, when they are not under `target/release` and `dist/` |
+| `DRAFFTINK_BIN`, `DRAFFTINK_E2E_HEADLESS`, `DRAFFTINK_E2E_DIST` | paths of the desktop app, `drafftink-headless` (its `serve` is the server) and the web build, when they are not under `target/release` and `dist/` |
 
 ## Gates
 

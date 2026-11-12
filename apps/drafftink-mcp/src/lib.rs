@@ -1,4 +1,8 @@
-//! drafftink-mcp: the MCP server for drafft.ink over stdio. `docs/agents.md` is the user guide.
+//! drafftink-mcp: the MCP server for drafft.ink over stdio, as a library. `docs/agents.md` is the user guide.
+//!
+//! This crate has no binary. `drafftink mcp` (the desktop app's launcher) serves the two modes that talk to a
+//! window ([`cli::BridgeArgs`], [`cli::run_bridge`]); `drafftink-headless mcp` serves those and the headless one
+//! ([`cli::Args`], [`cli::run_server`]).
 //!
 //! Three modes share one set of tools. The tools are generated from the command registry and served by the
 //! handler in `drafftink_bridge::tools` and `drafftink_bridge::mcp` (the desktop app serves the same ones over

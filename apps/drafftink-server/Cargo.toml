@@ -6,7 +6,7 @@ license.workspace = true
 rust-version.workspace = true
 repository.workspace = true
 homepage.workspace = true
-description = "Collaboration server for Drafft.ink: WebSocket sync, room storage and a static web client."
+description = "Collaboration server library for Drafft.ink: WebSocket sync, room storage and a static web client. The program is drafftink-headless serve."
 readme = "README.md"
 keywords = ["collaboration", "websocket", "whiteboard", "crdt", "server"]
 categories = ["network-programming", "web-programming::http-server", "web-programming::websocket"]
@@ -14,10 +14,6 @@ categories = ["network-programming", "web-programming::http-server", "web-progra
 [lib]
 name = "drafftink_server"
 path = "src/lib.rs"
-
-[[bin]]
-name = "drafftink-server"
-path = "src/main.rs"
 
 [features]
 default = []

@@ -16,7 +16,7 @@ fn assets() -> PathBuf {
 fn generate() -> String {
     let dir = tempfile::tempdir().unwrap();
     let out = dir.path().join("intro.json");
-    let o = Command::new(env!("CARGO_BIN_EXE_drafftink-cli"))
+    let o = Command::new(env!("CARGO_BIN_EXE_drafftink-headless"))
         .args(["run", assets().join("intro.jsonl").to_str().unwrap(), "--batch", "--seed", SEED, "--out"])
         .arg(&out)
         // Paths in the script (`image.insert {"path": ...}`) are relative to the repository root.

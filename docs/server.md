@@ -1,12 +1,13 @@
 # Collaboration server
 
-Crate: `apps/drafftink-server` (binary `drafftink-server`). It implements `docs/protocol.md` with the types from `crates/protocol`, keeps one Loro document per active room, and serves the web client, so one binary is the whole deployment.
+The server is `drafftink-headless serve`. Its code is the library crate `apps/drafftink-server` (no binary of its own; `drafftink-headless` flattens its `Args` into `serve` and calls `drafftink_server::run`). It implements `docs/protocol.md` with the types from `crates/protocol`, keeps one Loro document per active room, and serves the web client, so one binary is the whole deployment. The same binary also has the headless MCP server and the tools for documents (`cli.md`, `agents.md`); it links no GPU or window code.
 
 ## Running
 
 ```bash
-cargo run --release -p drafftink-server                      # 127.0.0.1:3030, rooms in ./data
-cargo run --release -p drafftink-server --features sqlite,s3 # with the optional storage providers
+cargo run --release -p drafftink-headless -- serve                       # 127.0.0.1:3030, rooms in ./data
+cargo run --release -p drafftink-headless --features sqlite,s3 -- serve  # with the optional storage providers
+cargo install drafftink-headless --features sqlite,s3                    # or install it; then: drafftink-headless serve
 ```
 
 | Path | What |
@@ -19,7 +20,7 @@ If the web directory is missing the server still starts, logs a warning, and ser
 
 ## Configuration
 
-Every flag has an environment variable (`DRAFFTINK_` + the flag name in capitals, `-` as `_`), so a container needs no arguments. Run `drafftink-server --help` for the full list.
+Every flag has an environment variable (`DRAFFTINK_` + the flag name in capitals, `-` as `_`), so a container needs no arguments. Run `drafftink-headless serve --help` for the full list.
 
 | Flag | Default | Meaning |
 |---|---|---|
@@ -51,7 +52,7 @@ All providers implement `RoomStore` (`src/store/mod.rs`; contract in `docs/proto
 | `sqlite` (feature `sqlite`) | `--sqlite-path` (default `<data-dir>/drafftink.sqlite3`) | WAL mode, `synchronous=FULL`; compaction is one transaction. Bundles SQLite. |
 | `s3` (feature `s3`) | `--s3-bucket`, `--s3-endpoint`, `--s3-region`, `--s3-prefix`, `--s3-allow-http`, `--s3-virtual-hosted-style`, `--s3-disable-bulk-delete`; credentials from `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` / `AWS_SESSION_TOKEN` | Objects `rooms/<room>/snapshot` and `rooms/<room>/updates/<n>`. Works with any S3-compatible service (path-style by default). Each flush is one PUT, so keep the flush interval above 0. |
 
-Example with MinIO: `AWS_ACCESS_KEY_ID=… AWS_SECRET_ACCESS_KEY=… drafftink-server --storage s3 --s3-bucket drafftink --s3-endpoint http://minio:9000 --s3-allow-http`.
+Example with MinIO: `AWS_ACCESS_KEY_ID=… AWS_SECRET_ACCESS_KEY=… drafftink-headless serve --storage s3 --s3-bucket drafftink --s3-endpoint http://minio:9000 --s3-allow-http`.
 
 Durability: with the default 2 s flush interval, `Ack` means "merged", and a crash can lose the last 2 s of edits on the server. Clients still hold them and upload them when they rejoin. With `--flush-interval-ms 0` an `Ack` means the store has the update.
 
@@ -81,4 +82,4 @@ A storage failure on load answers `Unavailable` and never overwrites stored data
 
 ## Tests
 
-`cargo test -p drafftink-server --all-features` runs unit tests and the integration suites in `apps/drafftink-server/tests/`: `sync.rs` (join, catch-up, live edits, reconnect, awareness), `hostile.rs` (limits, garbage frames, slow reader, Origin, auth, static files), `persistence.rs` (restart and crash per provider, compaction, expiry, failing stores) and `stores.rs` (the conformance suite). The S3 cases run against an in-process S3 mock (`tests/common/mock_s3.rs`) and, when `DRAFFTINK_TEST_S3_ENDPOINT` is set, also against a real service (`DRAFFTINK_TEST_S3_BUCKET`, `DRAFFTINK_TEST_S3_ACCESS_KEY`, `DRAFFTINK_TEST_S3_SECRET_KEY`). Example: `docker run -p 9000:9000 -e MINIO_ROOT_USER=minioadmin -e MINIO_ROOT_PASSWORD=minioadmin123 bitnamilegacy/minio`, create the bucket, then set the variables.
+`cargo test -p drafftink-server --all-features` runs unit tests and the integration suites (they start the library, not a process) in `apps/drafftink-server/tests/`: `sync.rs` (join, catch-up, live edits, reconnect, awareness), `hostile.rs` (limits, garbage frames, slow reader, Origin, auth, static files), `persistence.rs` (restart and crash per provider, compaction, expiry, failing stores) and `stores.rs` (the conformance suite). `cargo test -p drafftink-headless --test serve` starts the real `drafftink-headless serve` on a free port and asks `/health`, the source offer and the web directory, and stops it with SIGTERM. The S3 cases run against an in-process S3 mock (`tests/common/mock_s3.rs`) and, when `DRAFFTINK_TEST_S3_ENDPOINT` is set, also against a real service (`DRAFFTINK_TEST_S3_BUCKET`, `DRAFFTINK_TEST_S3_ACCESS_KEY`, `DRAFFTINK_TEST_S3_SECRET_KEY`). Example: `docker run -p 9000:9000 -e MINIO_ROOT_USER=minioadmin -e MINIO_ROOT_PASSWORD=minioadmin123 bitnamilegacy/minio`, create the bucket, then set the variables.

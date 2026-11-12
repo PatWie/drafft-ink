@@ -12,7 +12,7 @@
 # needs: rustup target add wasm32-unknown-unknown
 #        wasm-bindgen CLI, the same version as the wasm-bindgen crate (cargo install wasm-bindgen-cli --version 0.2.130 --locked)
 #        wasm-opt (binaryen >= 117) on PATH or in ~/.cargo/tools/binaryen-version_*/bin
-# serve it: cargo run --release -p drafftink-server -- --web-dir dist   (or scripts/serve-web.sh)
+# serve it: cargo run --release -p drafftink-headless -- serve --web-dir dist   (or scripts/serve-web.sh)
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
@@ -50,11 +50,11 @@ fi
 
 # --- command schemas: a table that the page fetches, not code in the module. The module is built without the
 # `schemas` feature of drafftink-engine (apps/drafftink-web depends on it with default-features = false), and
-# `drafftink-cli schemas` writes what that code would have produced. Made with the native toolchain before the
+# `drafftink-headless schemas` writes what that code would have produced. Made with the native toolchain before the
 # wasm flags below, so the native build is not rebuilt for them.
 SCHEMAS_JSON="$(mktemp)"
 trap 'rm -f "$SCHEMAS_JSON"' EXIT
-CARGO_TARGET_DIR="$TARGET_DIR" cargo run -q -p drafftink-cli -- schemas > "$SCHEMAS_JSON"
+CARGO_TARGET_DIR="$TARGET_DIR" cargo run -q -p drafftink-headless -- schemas > "$SCHEMAS_JSON"
 
 # --- build
 # WebAssembly SIMD (every browser with WebGPU has it): the CPU glyph rasteriser that epaint pulls in (vello_cpu with
@@ -181,7 +181,7 @@ printf 'command schemas (fetched with the page, brotli -q 11): %s\n' "$(mb "$SCH
 printf '{"raw": %s, "opt": %s, "gzip": %s, "brotli": %s, "fonts_brotli": %s, "schemas_brotli": %s, "fallback_raw": %s, "fallback_opt": %s, "fallback_gzip": %s, "fallback_brotli": %s}\n' \
   "$RAW" "$OPTSIZE" "$GZ" "$BR" "$FONT_BR" "$SCHEMAS_BR" "$FB_RAW" "$FB_OPT" "$FB_GZ" "$FB_BR" > "$DIST/sizes.json"
 
-# --- precompressed copies: drafftink-server serves .br / .gz when the browser accepts them
+# --- precompressed copies: drafftink-headless serve serves .br / .gz when the browser accepts them
 if [ "$PRECOMPRESS" = 1 ]; then
   find "$DIST" -type f \( -name '*.wasm' -o -name '*.js' -o -name '*.json' -o -name '*.html' -o -name '*.webmanifest' -o -name '*.svg' -o -name '*.ttf' -o -name '*.otf' \) -size +1k | while read -r f; do
     gzip -9 -c "$f" > "$f.gz"
@@ -189,4 +189,4 @@ if [ "$PRECOMPRESS" = 1 ]; then
     else "${PERF_PY:-$HOME/.venvs/perf/bin/python}" -c 'import brotli,sys; open(sys.argv[2],"wb").write(brotli.compress(open(sys.argv[1],"rb").read(), quality=11))' "$f" "$f.br"; fi
   done
 fi
-echo "dist/ is ready: cargo run --release -p drafftink-server -- --web-dir dist"
+echo "dist/ is ready: cargo run --release -p drafftink-headless -- serve --web-dir dist"

@@ -1,11 +1,11 @@
 //! Server configuration: the plain [`Config`] the server runs with, and the command line and
-//! environment front end ([`Cli`]) that builds it.
+//! environment front end ([`Args`]) that builds it.
 
 use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::time::Duration;
 
-use clap::{Parser, ValueEnum};
+use clap::ValueEnum;
 use drafftink_protocol as proto;
 
 use crate::store::StorageConfig;
@@ -224,9 +224,10 @@ pub enum StorageKind {
 
 /// Command line and environment. Every flag has an environment variable of the same name with
 /// the `DRAFFTINK_` prefix, so a container needs no arguments.
-#[derive(Debug, Parser)]
-#[command(name = "drafftink-server", version, about = "Collaboration server for drafft.ink")]
-pub struct Cli {
+///
+/// `drafftink-headless serve` flattens this definition into its own, so there is one copy.
+#[derive(Debug, clap::Args)]
+pub struct Args {
     /// Address to listen on. The default is loopback only; pass an explicit address such as
     /// 0.0.0.0:3030 to accept connections from other machines.
     #[arg(long, env = "DRAFFTINK_BIND", default_value = "127.0.0.1:3030")]
@@ -370,7 +371,7 @@ pub struct Cli {
     pub room_expiry_days: Option<u64>,
 }
 
-impl Cli {
+impl Args {
     /// Builds the [`Config`], reading the token file if one is given.
     pub fn into_config(self) -> Result<Config, ConfigError> {
         let mut auth_tokens: Vec<String> = self.auth_tokens.into_iter().filter(|t| !t.is_empty()).collect();
@@ -464,10 +465,17 @@ impl Cli {
 mod tests {
     use super::*;
 
+    /// The arguments alone, as a program would take them.
+    #[derive(Debug, clap::Parser)]
+    struct Program {
+        #[command(flatten)]
+        args: Args,
+    }
+
     fn parse(args: &[&str]) -> Result<Config, ConfigError> {
-        let mut full = vec!["drafftink-server"];
+        let mut full = vec!["serve"];
         full.extend_from_slice(args);
-        Cli::try_parse_from(full).map_err(|e| bad(e.to_string()))?.into_config()
+        <Program as clap::Parser>::try_parse_from(full).map_err(|e| bad(e.to_string()))?.args.into_config()
     }
 
     #[test]

@@ -18,6 +18,7 @@ mod media;
 mod parity;
 mod perf;
 mod publish;
+mod screen;
 mod size;
 mod skips;
 mod standards;
@@ -62,7 +63,7 @@ gates:
 
 intro [--check]
                   the welcome document: crates/engine/assets/intro/intro.json is generated from intro.jsonl (a command
-                  script run by drafftink-cli); without --check it rewrites the file, with it a stale file fails
+                  script run by drafftink-headless); without --check it rewrites the file, with it a stale file fails
 media [--only NAME]...
                   renders the README pictures (docs/img/*.png) from the real app, offscreen, as docs/media/shots.json
                   lists them; uses Mesa lavapipe when VK_ICD_FILENAMES is unset (docs/media.md)

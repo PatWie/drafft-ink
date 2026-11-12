@@ -6,7 +6,7 @@ license.workspace = true
 rust-version.workspace = true
 repository.workspace = true
 homepage.workspace = true
-description = "MCP server for Drafft.ink: headless, attached to the desktop app, or relayed to the web page."
+description = "MCP server library for Drafft.ink: headless, attached to the desktop app, or relayed to the web page. The programs are drafftink mcp and drafftink-headless mcp."
 readme = "README.md"
 keywords = ["mcp", "whiteboard", "ai", "agents", "drawing"]
 categories = ["command-line-utilities", "graphics"]
@@ -14,10 +14,6 @@ categories = ["command-line-utilities", "graphics"]
 [lib]
 name = "drafftink_mcp"
 path = "src/lib.rs"
-
-[[bin]]
-name = "drafftink-mcp"
-path = "src/main.rs"
 
 [features]
 # The hand-drawn fonts (GelPen, GelPen Serif, Vanilla Extract) from the Git repository, not from crates.io: see

@@ -1,6 +1,6 @@
 //! The relay: how an agent drives the browser tab (native only).
 //!
-//! A web page cannot listen on a socket. So the roles turn around: the MCP app (`drafftink-mcp --relay`)
+//! A web page cannot listen on a socket. So the roles turn around: the MCP app (`drafftink mcp --relay` or `drafftink-headless mcp --relay`)
 //! listens on 127.0.0.1, and the page connects out to it. After the page has said `hello`, the relay is the
 //! JSON-RPC client and the page is the JSON-RPC server: the relay sends `execute`, `batch`, `commands`,
 //! `describe`, `recent`, `state` and `ping`, and the page answers each with [`crate::core::dispatch`] on its own

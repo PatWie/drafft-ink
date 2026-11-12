@@ -10,9 +10,9 @@ export const ROOT = path.resolve(here, "../../..");
 /** Where `scripts/build-web.sh` writes the web build. */
 export const DIST = process.env["DRAFFTINK_E2E_DIST"] ?? path.join(ROOT, "dist");
 
-/** The collaboration and static server. */
-export const SERVER_BIN =
-  process.env["DRAFFTINK_E2E_SERVER"] ?? path.join(process.env["CARGO_TARGET_DIR"] ?? path.join(ROOT, "target"), "release/drafftink-server");
+/** `drafftink-headless`, whose `serve` is the collaboration and static server. */
+export const HEADLESS_BIN =
+  process.env["DRAFFTINK_E2E_HEADLESS"] ?? path.join(process.env["CARGO_TARGET_DIR"] ?? path.join(ROOT, "target"), "release/drafftink-headless");
 
 /** Fixture documents of the repository (`tests/fixtures`). */
 export const FIXTURES = path.join(ROOT, "tests/fixtures");

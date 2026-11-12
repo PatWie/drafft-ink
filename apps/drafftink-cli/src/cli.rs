@@ -4,7 +4,7 @@ use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
-use clap::{Args, Parser, Subcommand};
+use clap::{Args, Subcommand};
 
 use crate::error::CliError;
 use crate::format::{InFormat, OutFormat};
@@ -12,19 +12,7 @@ use crate::ops;
 use crate::ports::{self, IdSeed};
 use crate::script::Script;
 
-/// `drafftink-cli`: drafft.ink without a window.
-///
-/// Everything runs through the same command registry as the app, so a script written here does the same in the
-/// app, over MCP and in tests. Nothing is written unless you name an output file.
-#[derive(Debug, Parser)]
-#[command(name = "drafftink-cli", version)]
-pub struct Cli {
-    /// What to do.
-    #[command(subcommand)]
-    pub command: Command,
-}
-
-/// The subcommands.
+/// The subcommands that work on documents without a window. `drafftink-headless` flattens them into its own.
 #[derive(Debug, Subcommand)]
 pub enum Command {
     /// Run a command script against a document.
@@ -230,11 +218,9 @@ pub fn execute(command: &Command, out: &mut dyn Write, err: &mut dyn Write) -> R
 }
 
 /// Runs `command` as a process would: results on standard output, notes and errors on standard error, which
-/// starts with `program` (the name the user typed: `drafftink-cli`, or `drafftink` for its subcommands). The exit
-/// code is 0 when everything ran and 1 when a step or a file failed. A mistake in the arguments is found by the
-/// parser before this runs, and it exits with 2.
-///
-/// `drafftink-cli` and the subcommands of `drafftink` both call this, so they cannot differ.
+/// starts with `program` (the name the user typed: `drafftink-headless`). The exit code is 0 when everything ran
+/// and 1 when a step or a file failed. A mistake in the arguments is found by the parser before this runs, and it
+/// exits with 2.
 pub fn run_command(command: &Command, program: &str) -> ExitCode {
     let (mut out, mut err) = (std::io::stdout().lock(), std::io::stderr().lock());
     match execute(command, &mut out, &mut err) {
@@ -244,9 +230,4 @@ pub fn run_command(command: &Command, program: &str) -> ExitCode {
             ExitCode::FAILURE
         }
     }
-}
-
-/// The entry point of the `drafftink-cli` binary.
-pub fn main() -> ExitCode {
-    run_command(&Cli::parse().command, "drafftink-cli")
 }

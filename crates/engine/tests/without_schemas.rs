@@ -11,7 +11,7 @@ use drafftink_engine::schemas::{self, SchemaState};
 use drafftink_engine::{Origin, Registry, testing};
 use serde_json::{Value, json};
 
-/// A table with the one command the test looks at, in the shape `drafftink-cli schemas` writes.
+/// A table with the one command the test looks at, in the shape `drafftink-headless schemas` writes.
 fn table() -> String {
     json!({
         "version": 1,

@@ -3,7 +3,7 @@
 //! The app is AGPL-3.0, whose section 13 requires that users who reach a modified copy over a network can get its
 //! corresponding source. This dialog is that offer for the web app and the native app. The address comes from
 //! [`AboutInfo::source_url`](crate::model::AboutInfo): the project repository unless the operator of a hosted copy
-//! (`drafftink-server --source-url`) or the user of a native build (`DRAFFTINK_SOURCE_URL`) points it elsewhere.
+//! (`drafftink-headless serve --source-url`) or the user of a native build (`DRAFFTINK_SOURCE_URL`) points it elsewhere.
 
 use egui::{Context, Id, Label, Modal, RichText, Ui};
 

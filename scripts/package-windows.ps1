@@ -4,9 +4,9 @@
 
 .DESCRIPTION
   Writes into dist-release (override with -Dist):
-    drafftink-<version>-windows-x64.zip            drafftink.exe + drafftink-mcp.exe + drafftink-cli.exe (portable)
+    drafftink-<version>-windows-x64.zip            drafftink.exe (portable; `drafftink mcp` is its MCP bridge)
     drafftink-<version>-windows-x64.msi            installer (WiX 5; skipped with -NoMsi or when `wix` is missing)
-    drafftink-server-<version>-windows-x64.zip     drafftink-server.exe + web-dist\ (run it from that folder)
+    drafftink-headless-<version>-windows-x64.zip   drafftink-headless.exe + web-dist\ (run `drafftink-headless serve` from that folder)
   The script ends by running every packaged exe with --version.
 
   Needs: Rust (MSVC toolchain), PowerShell 7. For the MSI: dotnet tool install --global wix --version 5.0.2
@@ -44,10 +44,10 @@ if ($env:BIN_DIR) { $Bin = $env:BIN_DIR }
 
 Write-Host "==> Drafft.ink $Version for Windows x64"
 if (-not $SkipBuild) {
-  cargo build --profile dist --locked -p drafftink -p drafftink-mcp -p drafftink-cli -p drafftink-server --features drafftink-server/sqlite,drafftink-server/s3,drafftink/hand-fonts,drafftink-mcp/hand-fonts,drafftink-cli/hand-fonts
+  cargo build --profile dist --locked -p drafftink -p drafftink-headless --features drafftink-headless/sqlite,drafftink-headless/s3,drafftink-headless/hand-fonts,drafftink/hand-fonts
   if ($LASTEXITCODE -ne 0) { throw "cargo build failed" }
 }
-foreach ($exe in "drafftink", "drafftink-mcp", "drafftink-cli", "drafftink-server") {
+foreach ($exe in "drafftink", "drafftink-headless") {
   if (-not (Test-Path (Join-Path $Bin "$exe.exe"))) { throw "$Bin\$exe.exe not found" }
 }
 
@@ -59,28 +59,28 @@ New-Item -ItemType Directory -Force $Work | Out-Null
 $Name = "drafftink-$Version-windows-x64"
 $Portable = Join-Path $Work $Name
 New-Item -ItemType Directory -Force $Portable | Out-Null
-foreach ($exe in "drafftink", "drafftink-mcp", "drafftink-cli") { Copy-Item (Join-Path $Bin "$exe.exe") $Portable }
+Copy-Item (Join-Path $Bin "drafftink.exe") $Portable
 foreach ($f in "README.md", "LICENSE") { if (Test-Path $f) { Copy-Item $f $Portable } }
 $Zip = Join-Path $Dist "$Name.zip"
 if (Test-Path $Zip) { Remove-Item $Zip }
 Compress-Archive -Path $Portable -DestinationPath $Zip
 Write-Host "wrote $Zip"
 
-# ---- server zip (needs the web build) ------------------------------------------------------------
+# ---- headless zip (needs the web build) ----------------------------------------------------------
 if (Test-Path (Join-Path $WebDist "index.html")) {
-  $SrvName = "drafftink-server-$Version-windows-x64"
-  $Srv = Join-Path $Work $SrvName
-  New-Item -ItemType Directory -Force $Srv | Out-Null
-  Copy-Item (Join-Path $Bin "drafftink-server.exe") $Srv
-  # The server's default --web-dir is .\web-dist, so running it from this folder serves the web app.
-  Copy-Item -Recurse $WebDist (Join-Path $Srv "web-dist")
-  foreach ($f in "README.md", "LICENSE") { if (Test-Path $f) { Copy-Item $f $Srv } }
-  $SrvZip = Join-Path $Dist "$SrvName.zip"
-  if (Test-Path $SrvZip) { Remove-Item $SrvZip }
-  Compress-Archive -Path $Srv -DestinationPath $SrvZip
-  Write-Host "wrote $SrvZip"
+  $HlName = "drafftink-headless-$Version-windows-x64"
+  $Hl = Join-Path $Work $HlName
+  New-Item -ItemType Directory -Force $Hl | Out-Null
+  Copy-Item (Join-Path $Bin "drafftink-headless.exe") $Hl
+  # The default --web-dir of `serve` is .\web-dist, so running it from this folder serves the web app.
+  Copy-Item -Recurse $WebDist (Join-Path $Hl "web-dist")
+  foreach ($f in "README.md", "LICENSE") { if (Test-Path $f) { Copy-Item $f $Hl } }
+  $HlZip = Join-Path $Dist "$HlName.zip"
+  if (Test-Path $HlZip) { Remove-Item $HlZip }
+  Compress-Archive -Path $Hl -DestinationPath $HlZip
+  Write-Host "wrote $HlZip"
 } else {
-  Write-Warning "no web build in $WebDist (run scripts/build-web.sh), so the server zip was not written"
+  Write-Warning "no web build in $WebDist (run scripts/build-web.sh), so the headless zip was not written"
 }
 
 # ---- MSI -----------------------------------------------------------------------------------------
@@ -100,7 +100,7 @@ if (-not $NoMsi) {
 }
 
 # ---- smoke ---------------------------------------------------------------------------------------
-foreach ($exe in "drafftink", "drafftink-mcp", "drafftink-cli", "drafftink-server") {
+foreach ($exe in "drafftink", "drafftink-headless") {
   $out = & (Join-Path $Bin "$exe.exe") --version 2>&1 | Out-String
   if ($LASTEXITCODE -ne 0 -or -not $out.Contains($Version)) { throw "$exe.exe --version printed '$out', expected $Version" }
   Write-Host "smoke: $($out.Trim())"

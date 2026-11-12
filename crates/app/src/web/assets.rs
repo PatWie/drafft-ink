@@ -50,7 +50,7 @@ pub(crate) async fn fetch_font(file: FontFile) -> Result<Vec<u8>, AssetError> {
     fetch_asset(file.file_name()).await
 }
 
-/// Fetches the table of command schemas (`drafftink-cli schemas`, written next to the page by `scripts/build-web.sh`).
+/// Fetches the table of command schemas (`drafftink-headless schemas`, written next to the page by `scripts/build-web.sh`).
 pub(crate) async fn fetch_schemas() -> Result<String, AssetError> {
     String::from_utf8(fetch_asset(SCHEMA_TABLE).await?)
         .map_err(|_| AssetError::Browser("the table is not text".to_owned()))

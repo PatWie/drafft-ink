@@ -1,4 +1,4 @@
-//! The MCP wire: the official `rmcp` SDK serving a [`Service`] over stdio (`drafftink-mcp`) or streamable HTTP
+//! The MCP wire: the official `rmcp` SDK serving a [`Service`] over stdio (`drafftink mcp`, `drafftink-headless mcp`) or streamable HTTP
 //! ([`super::http`]).
 //!
 //! Why the SDK and not a hand-written JSON-RPC loop: the protocol keeps changing (the current schema is the

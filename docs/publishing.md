@@ -1,6 +1,6 @@
 # Publishing to crates.io
 
-`cargo install drafftink` installs the desktop app, `cargo install drafftink-server` the collaboration server, `cargo install drafftink-cli` and `cargo install drafftink-mcp` the small standalone tools, and the
+`cargo install drafftink` installs the desktop app, `cargo install drafftink-headless` the program without a screen (the collaboration server, the headless MCP server and the tools for documents), and the
 libraries below are there for anyone who builds on them. This page says what is published, how the hand-drawn fonts are
 kept out of it, and what the maintainer runs by hand. The tooling never publishes anything: `cargo xtask publish` is a dry
 run and refuses every other mode.
@@ -20,9 +20,9 @@ Version 0.2.0 for every crate of ours, except the two vendored ones.
 | `drafftink-engine` | L5 |
 | `drafftink-gpu`, `-ui`, `-bridge` | L6 |
 | `drafftink-app` | the glue the desktop launcher needs (L7) |
-| `drafftink-cli`, `drafftink-mcp` | the headless command line and the MCP server: small binaries for `cargo install` on servers and in CI, and libraries that `drafftink` embeds as its subcommands (below) |
-| `drafftink` | the desktop app: the package at the repository root (`src/main.rs`). Its subcommands `convert`, `run`, `outline`, `inspect`, `commands`, `schemas` and `mcp` run the code of the two crates above |
-| `drafftink-server` | the collaboration server, a binary for `cargo install`. It is not a subcommand of `drafftink`: a server host installs it alone |
+| `drafftink-cli`, `drafftink-mcp`, `drafftink-server` | libraries only, with no binary: the tools for documents, the MCP server and the collaboration server. They hold the clap definitions and the work; the two programs below are thin wrappers (below) |
+| `drafftink` | the desktop app: the package at the repository root (`src/main.rs`). Its one subcommand, `mcp`, is the bridge to the open window and uses `drafftink-mcp` |
+| `drafftink-headless` | the program without a screen, a binary for `cargo install`: `serve` (`drafftink-server`), `mcp` (`drafftink-mcp`) and `convert`, `run`, `outline`, `inspect`, `commands`, `schemas` (`drafftink-cli`). Features `sqlite`, `s3` and `hand-fonts` pass through to the libraries |
 | `drafftink-core` 0.2.0 | an empty placeholder in `deprecated/drafftink-core` (below) |
 
 Not published (`publish = false`): `drafftink-testkit`, `drafftink-e2e`, `xtask`, `drafftink-canvas-js` (the npm package
@@ -31,7 +31,7 @@ Dev-dependencies on workspace crates are written with `path` and no `version`; c
 package, so the tests of a crate can use the testkit and the hand-drawn fonts without the package needing them.
 
 Names on crates.io: the owner of the account already holds `drafftink` (0.1.1, the old app), `drafftink-core` (0.1.0),
-`drafftink-render` (0.1.0) and `drafftink-server` (0.1.0). The other names are new.
+`drafftink-render` (0.1.0) and `drafftink-server` (0.1.0, the old server binary). The other names are new.
 
 ## The hand-drawn fonts are not on crates.io
 
@@ -46,7 +46,7 @@ so no package on crates.io contains them. They stay in the Git repository and in
   `include_bytes!`.
 - `cargo xtask publish` lists the files of every package and fails when a name contains `gelpen` or `vanilla`.
 - Other crates pass the feature on: `drafftink-app`, `drafftink-engine` (`hand-fonts`), `drafftink` (root), `drafftink-web`,
-  `drafftink-mcp` and `drafftink-cli`. The libraries do not turn it on themselves, because a package from crates.io
+  `drafftink-headless`, `drafftink-mcp` and `drafftink-cli`. The libraries do not turn it on themselves, because a package from crates.io
   must build without it.
 - Repository builds enable it: `scripts/build-native.sh`, `scripts/run-native.sh`, `scripts/build-web.sh` (always, so the
   deploy and release jobs have it), `scripts/package-linux.sh`, `package-macos.sh`, `package-windows.ps1` (so `release.yml`
@@ -77,18 +77,23 @@ its symbol-table crate, published as `drafftink-unicode-math`. Details and licen
 keeps it out of the repository workspace, so no build, test or lint touches it. Publishing it as 0.2.0 gives the name a page
 that points to the new crates. After it is published, yank 0.1.0.
 
-## The subcommands of `drafftink`
+## The two programs and the library crates
 
-`drafftink` depends on `drafftink-cli` and `drafftink-mcp` (normal dependencies with a `version`), so the publish order puts both before it, and `cargo xtask publish` prints that order. They have a `lib.rs` with the clap definitions and the entry points (`drafftink_cli::cli::run_command`, `drafftink_mcp::cli::run_server`) and a `main.rs` of a few lines; `drafftink` flattens their definitions into its own (`src/tool.rs`), so there is one copy. The layer table allows exactly these two edges between apps (`docs/architecture.md`, rule 2). The `hand-fonts` feature of `drafftink` turns on the feature of both, so a repository build draws the same in the window and in the subcommands. A version bump (below) touches both new dependency lines in the root `Cargo.toml`.
+There are two programs, split by a screen, and three library crates that hold their code:
 
-## `cargo install` from a package
+- `drafftink-headless` (`apps/drafftink-headless`) depends on `drafftink-cli`, `drafftink-mcp` and `drafftink-server` (normal dependencies with a `version`). Its `src/main.rs` is a clap enum with `Serve(drafftink_server::Args)`, `Mcp(drafftink_mcp::cli::Args)` and the flattened `drafftink_cli::cli::Command`, and three calls. It links no GPU, window, egui or file-dialog code; `cargo xtask layers` checks the resolved graph.
+- `drafftink` (root) depends on `drafftink-mcp` only, for `drafftink mcp` (`drafftink_mcp::cli::BridgeArgs`: attach by default, or relay). `convert`, `run`, `outline`, `inspect`, `commands`, `schemas` and a headless `mcp` are hidden subcommands that print where they went (`src/tool.rs`).
+- `drafftink-cli`, `drafftink-mcp` and `drafftink-server` have a `lib.rs` and no `main.rs`. `cargo install drafftink-server` therefore fails with cargo's "there is nothing to install" message, and the README of each crate says to install `drafftink-headless`.
 
-`cargo install drafftink` (which now includes the subcommands) builds the package of the root crate, with the crates.io versions of the libraries and without
-`hand-fonts`. The same build from the working tree is `cargo install --path .`. Both need a C compiler and nothing else
-(`building.md`). `cargo xtask publish` builds every crate from its package, which includes the binary.
+The publish order puts the three libraries before `drafftink-headless` and `drafftink-mcp` before `drafftink`; `cargo xtask publish` prints it. The `hand-fonts` feature of `drafftink` turns on `drafftink-app` and `drafftink-mcp`; the one of `drafftink-headless` turns on `drafftink-cli` and `drafftink-mcp`, so a repository build draws the same in the window and in the tools. A version bump (below) touches the path dependencies in the root `Cargo.toml` and in `apps/drafftink-headless/Cargo.toml`.
 
-Test files that read fixtures from the repository (`tests/fixtures`, `docs/performance.md`) are part of some packages but do
-not run from a package: they are only compiled by `cargo test`, never by `cargo build` or `cargo install`.
+### Why the old names stay
+
+The three library crates keep the names `drafftink-cli`, `drafftink-mcp` and `drafftink-server`, and are not merged into one `drafftink-tools`:
+
+- `drafftink-server` is already on crates.io (0.1.0, owned by the project). Publishing 0.2.0 as a library keeps one history for the name and needs no pointer placeholder, because the server code stays in this crate. A placeholder like `deprecated/drafftink-core` is for a name whose code went elsewhere, and this one did not move. 0.1.0 stays installable with `cargo install drafftink-server --version 0.1.0`; yank it only if nobody should get the old server.
+- The crates have different dependencies (axum and tokio for the server, rmcp for MCP, almost nothing for the tools). One crate would give the desktop app the server's dependencies, or need cargo features to take them away again, and it would be one bigger crate to compile for every user of one part. The split also keeps each clap definition next to the code it drives.
+- The names say what the part is. They are not "the binary" any more, but "cli" for the tools that work on documents on the command line is still what the code is.
 
 ## Before a release
 

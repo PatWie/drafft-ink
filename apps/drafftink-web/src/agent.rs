@@ -1,6 +1,6 @@
 //! The agent relay client: `window.drafftink.agent` (docs/agents.md, section 5.2).
 //!
-//! The relay (`drafftink-mcp --relay`) is the WebSocket server on `127.0.0.1`. The page connects out, says
+//! The relay (`drafftink mcp --relay`) is the WebSocket server on `127.0.0.1`. The page connects out, says
 //! `hello` with a token, and from then on answers the relay's JSON-RPC requests. Each request goes through
 //! the same job queue as `window.drafftink.execute`, so it runs between frames on the session with origin
 //! `agent`. The rules that need no browser are in [`crate::pairing`].
@@ -404,7 +404,7 @@ fn failed(generation: u64, why: &str) {
     if first_try {
         let port = with(|a| a.port).flatten().unwrap_or(0);
         let text = format!(
-            "Could not reach the agent relay on 127.0.0.1:{port}. Is `drafftink-mcp --relay` running, and did the browser allow the local connection?"
+            "Could not reach the agent relay on 127.0.0.1:{port}. Is `drafftink mcp --relay` running, and did the browser allow the local connection?"
         );
         end(generation, State::Idle, &text);
         return;

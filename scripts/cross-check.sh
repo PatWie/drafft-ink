@@ -18,7 +18,7 @@ targets=("$@")
 if [ "${#targets[@]}" -eq 0 ]; then
   targets=(x86_64-pc-windows-gnu aarch64-apple-darwin x86_64-apple-darwin)
 fi
-packages=(-p drafftink -p drafftink-mcp -p drafftink-cli -p drafftink-server)
+packages=(-p drafftink -p drafftink-headless)
 
 stub="$(mktemp -d)"
 trap 'rm -rf "$stub"' EXIT
