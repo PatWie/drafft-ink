@@ -25,6 +25,14 @@ pub const TOKEN_ENV: &str = "DRAFFTINK_BRIDGE_TOKEN";
 /// With no mode flag it runs headless: it owns its own editor session, for scripts and CI.
 #[derive(Debug, Parser)]
 #[command(name = "drafftink-mcp", version)]
+pub struct Cli {
+    /// The server's arguments, which `drafftink mcp` takes as well.
+    #[command(flatten)]
+    pub args: Args,
+}
+
+/// What `drafftink-mcp` and `drafftink mcp` accept. They share this definition.
+#[derive(Debug, clap::Args)]
 pub struct Args {
     /// Attach to the running desktop app, so the user watches the agent draw.
     #[arg(long, conflicts_with = "relay")]
@@ -161,15 +169,25 @@ fn run(args: &Args) -> Result<(), CliError> {
     rt.block_on(serve(backend))
 }
 
-/// The entry point of the binary. Diagnostics go to stderr; stdout carries only the protocol.
-pub fn main() -> ExitCode {
-    env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("warn")).init();
-    let args = Args::parse();
-    match run(&args) {
+/// Serves MCP on standard input and output until the client closes it, as the process `program` (the name the
+/// user typed: `drafftink-mcp`, or `drafftink` for `drafftink mcp`). Diagnostics go to standard error and start
+/// with `program`; standard output carries only the protocol. The exit code is 0 after a clean end and 1 when
+/// the server could not start or the transport failed.
+///
+/// `drafftink-mcp` and `drafftink mcp` both call this, so they cannot differ.
+pub fn run_server(args: &Args, program: &str) -> ExitCode {
+    // Another logger may be installed already (the desktop app's); then that one stays.
+    let _ = env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("warn")).try_init();
+    match run(args) {
         Ok(()) => ExitCode::SUCCESS,
         Err(e) => {
-            eprintln!("drafftink-mcp: {e}");
+            eprintln!("{program}: {e}");
             ExitCode::FAILURE
         }
     }
+}
+
+/// The entry point of the `drafftink-mcp` binary.
+pub fn main() -> ExitCode {
+    run_server(&Cli::parse().args, "drafftink-mcp")
 }

@@ -41,10 +41,9 @@ That makes Drafft.ink easy to drive from code and from AI agents. Your AI can dr
 **Give your AI agent a whiteboard (MCP).**
 
 ```sh
-cargo build --release -p drafftink-mcp
-claude mcp add drafftink -- target/release/drafftink-mcp            # its own document, no window
-claude mcp add drafftink -- target/release/drafftink-mcp --attach   # the desktop app you have open
-claude mcp add drafftink -- target/release/drafftink-mcp --relay    # the browser tab you have open
+claude mcp add drafftink -- drafftink mcp            # its own document, no window
+claude mcp add drafftink -- drafftink mcp --attach   # the desktop app you have open
+claude mcp add drafftink -- drafftink mcp --relay    # the browser tab you have open
 ```
 
 An agent can build a whole flowchart with one `diagram.create` call, read the drawing back as an outline, and move, style or export anything. Everything listens only on your own machine and needs a fresh token each launch. See [docs/agents.md](docs/agents.md).
@@ -52,10 +51,12 @@ An agent can build a whole flowchart with one `diagram.create` call, read the dr
 **Or script it from the command line.** No window needed.
 
 ```sh
-drafftink-cli convert diagram.mmd diagram.drafftink                  # Mermaid in, drawing out
-drafftink-cli run script.jsonl --doc in.drafftink --out out.svg      # one command per line
-drafftink-cli commands --family diagram                               # what is there
+drafftink convert diagram.mmd diagram.drafftink                  # Mermaid in, drawing out
+drafftink run script.jsonl --doc in.drafftink --out out.svg      # one command per line
+drafftink commands --family diagram                               # what is there
 ```
+
+The subcommands never open a window, so they work over SSH and without a display. A file named like a subcommand is opened as `drafftink ./run` or `drafftink -- run`. For servers and CI there are small standalone installs of the same programs without the window: `cargo install drafftink-cli` gives `drafftink-cli convert ...`, and `cargo install drafftink-mcp` gives `drafftink-mcp ...`. The collaboration server stays its own install, `cargo install drafftink-server`. See [docs/cli.md](docs/cli.md).
 
 For apps of your own, the canvas is also a library: panning, zooming, hit testing and dragging, like [Konva](https://konvajs.org/), but on the GPU. The editor (arrows, groups, frames, undo, collaboration) sits on top of it.
 

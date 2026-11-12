@@ -1392,12 +1392,15 @@ dependencies = [
  "clap",
  "drafftink-app",
  "drafftink-bridge",
+ "drafftink-cli",
  "drafftink-engine",
  "drafftink-gpu",
+ "drafftink-mcp",
  "drafftink-profile",
  "embed-resource",
  "env_logger",
  "serde_json",
+ "tempfile",
  "thiserror 2.0.21",
 ]
 

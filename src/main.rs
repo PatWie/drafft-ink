@@ -3,7 +3,12 @@
 //! ```text
 //! drafftink [FILE] [--room ROOM] [--server URL] [--token-file FILE] [--bridge [PORT]] [--mcp-http [PORT]] [--perf-overlay] [--perf-dump FILE]
 //!           [--perf-scenario KEY --perf-out FILE [--perf-secs N]]   (only in a build with `--features scenarios`)
+//! drafftink convert|run|outline|inspect|commands|schemas ...      (the headless tools of `drafftink-cli`)
+//! drafftink mcp [--attach | --relay | ...]                        (the MCP server of `drafftink-mcp`)
 //! ```
+//!
+//! A subcommand never creates a window, a GPU device or a display connection (`tool.rs`, `docs/cli.md`). The first
+//! word decides: a file named like a subcommand is given as `./run` or after `--`.
 //!
 //! A collaboration server that asks for an access token gets it from `--token-file` or, without that flag, from the
 //! environment variable `DRAFFTINK_COLLAB_TOKEN`. There is no flag that takes the token itself: arguments are
@@ -20,6 +25,7 @@
 //! writes the report to `--perf-out` and exits.
 
 mod mcp_http;
+mod tool;
 
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::path::{Path, PathBuf};
@@ -39,12 +45,44 @@ use drafftink_gpu::{Options, RedrawReason, ShellError};
 use drafftink_profile::ScenarioKey;
 
 use crate::mcp_http::McpHttp;
+use crate::tool::Tool;
 
 /// Drafft.ink: an infinite canvas whiteboard.
+///
+/// Without a subcommand it opens the window. A subcommand runs a headless tool and never opens a window; a file
+/// named like a subcommand is opened as `drafftink ./run` or `drafftink -- run`.
 #[derive(Debug, Parser)]
-#[command(name = "drafftink", version)]
-struct Args {
-    /// A document to open (.drafftink, .json, .excalidraw, or a PNG with an embedded scene).
+#[command(name = "drafftink", version, args_conflicts_with_subcommands = true)]
+struct Cli {
+    #[command(subcommand)]
+    tool: Option<Tool>,
+    #[command(flatten)]
+    window: WindowArgs,
+}
+
+/// What `drafftink` does for the command line it was given.
+#[derive(Debug)]
+enum Launch {
+    /// Open the window.
+    Window(Box<WindowArgs>),
+    /// Run a headless tool, which needs no window, no GPU and no display.
+    Tool(Tool),
+}
+
+impl From<Cli> for Launch {
+    fn from(cli: Cli) -> Self {
+        match cli.tool {
+            Some(tool) => Self::Tool(tool),
+            None => Self::Window(Box::new(cli.window)),
+        }
+    }
+}
+
+/// The arguments that open the window.
+#[derive(Debug, clap::Args)]
+struct WindowArgs {
+    /// A document to open (.drafftink, .json, .excalidraw, or a PNG with an embedded scene). A file named like a
+    /// subcommand (`run`, `mcp`, ...) is given as `./run` or after `--`.
     file: Option<PathBuf>,
     /// Join this room at start (1 to 64 letters, digits, `-` and `_`).
     #[arg(long)]
@@ -122,17 +160,22 @@ enum Failure {
 }
 
 fn main() -> ExitCode {
-    env_logger::init();
-    match run(Args::parse()) {
-        Ok(()) => ExitCode::SUCCESS,
-        Err(e) => {
-            eprintln!("drafftink: {e}");
-            ExitCode::FAILURE
+    match Launch::from(Cli::parse()) {
+        Launch::Tool(tool) => tool.run(),
+        Launch::Window(args) => {
+            env_logger::init();
+            match run(*args) {
+                Ok(()) => ExitCode::SUCCESS,
+                Err(e) => {
+                    eprintln!("drafftink: {e}");
+                    ExitCode::FAILURE
+                }
+            }
         }
     }
 }
 
-fn run(args: Args) -> Result<(), Failure> {
+fn run(args: WindowArgs) -> Result<(), Failure> {
     #[cfg(feature = "scenarios")]
     let scenario = args.perf_scenario.is_some();
     #[cfg(not(feature = "scenarios"))]
@@ -202,7 +245,90 @@ fn run(args: Args) -> Result<(), Failure> {
 #[cfg(test)]
 #[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 mod tests {
+    use clap::CommandFactory;
+
     use super::*;
+
+    fn launch(args: &[&str]) -> Result<Launch, clap::Error> {
+        Cli::try_parse_from(std::iter::once("drafftink").chain(args.iter().copied())).map(Launch::from)
+    }
+
+    /// The file a window launch opens, or `None` when the launch is not a window or opens no file.
+    fn opened(args: &[&str]) -> Option<PathBuf> {
+        match launch(args) {
+            Ok(Launch::Window(window)) => window.file,
+            _ => None,
+        }
+    }
+
+    #[test]
+    fn the_command_line_definition_is_consistent() {
+        Cli::command().debug_assert();
+    }
+
+    #[test]
+    fn no_arguments_and_the_window_flags_open_the_window() {
+        for args in [&[][..], &["scene.drafftink"], &["--room", "r1"], &["scene.drafftink", "--bridge", "--mcp-http"]] {
+            assert!(matches!(launch(args), Ok(Launch::Window(_))), "{args:?}");
+        }
+        assert_eq!(opened(&["scene.drafftink"]), Some(PathBuf::from("scene.drafftink")));
+    }
+
+    #[test]
+    fn every_tool_is_dispatched_without_a_window() {
+        for args in [
+            &["convert", "a.drafftink", "b.excalidraw"][..],
+            &["run", "script.jsonl"],
+            &["outline", "a.drafftink"],
+            &["inspect", "a.drafftink"],
+            &["commands"],
+            &["schemas"],
+            &["mcp"],
+            &["mcp", "--attach", "--port", "5"],
+        ] {
+            assert!(matches!(launch(args), Ok(Launch::Tool(_))), "{args:?}");
+        }
+    }
+
+    #[test]
+    fn a_file_named_like_a_subcommand_is_opened_as_a_path_or_after_two_dashes() {
+        for name in ["run", "convert", "outline", "inspect", "commands", "schemas", "mcp", "help"] {
+            assert!(!matches!(launch(&[name]), Ok(Launch::Window(_))), "a bare `{name}` is not a file");
+            let dotted = format!("./{name}");
+            assert_eq!(opened(&[&dotted]), Some(PathBuf::from(&dotted)), "{dotted}");
+            assert_eq!(opened(&["--", name]), Some(PathBuf::from(name)), "-- {name}");
+        }
+    }
+
+    #[test]
+    fn window_flags_and_subcommands_do_not_mix() {
+        for args in [&["run", "s.jsonl", "--room", "r"][..], &["--room", "r", "run", "s.jsonl"], &["mcp", "--bridge"]] {
+            assert!(launch(args).is_err(), "{args:?}");
+        }
+    }
+
+    #[test]
+    fn a_tool_that_is_given_a_wrong_argument_is_a_usage_error_not_a_window() {
+        let err = launch(&["outline"]).unwrap_err();
+        assert_eq!(err.kind(), clap::error::ErrorKind::MissingRequiredArgument);
+    }
+
+    #[test]
+    fn help_lists_every_subcommand_on_one_line() {
+        let help = Cli::command().render_help().to_string();
+        for name in ["run", "convert", "outline", "inspect", "commands", "schemas", "mcp"] {
+            let line = help.lines().find(|l| l.trim_start().starts_with(&format!("{name} "))).unwrap_or("");
+            assert!(!line.is_empty() && line.len() < 120, "{name}: {line:?}");
+        }
+    }
+
+    #[test]
+    fn help_works_for_a_subcommand_of_either_crate() {
+        for args in [&["help", "mcp"][..], &["help", "outline"], &["mcp", "--help"], &["outline", "--help"]] {
+            let kind = launch(args).unwrap_err().kind();
+            assert_eq!(kind, clap::error::ErrorKind::DisplayHelp, "{args:?}");
+        }
+    }
 
     #[test]
     fn the_token_comes_from_the_file_first_then_the_environment() {
