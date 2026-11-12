@@ -29,7 +29,7 @@ path = "tests/subcommands.rs"
 # The hand-drawn fonts GelPen, GelPen Serif and Vanilla Extract (by Shara Weber). They are in the Git repository and in
 # no package on crates.io (docs/publishing.md), so `cargo install drafftink` draws those families with Noto Sans. The
 # release builds (scripts/build-native.sh, release.yml) turn this on.
-hand-fonts = ["drafftink-app/hand-fonts", "drafftink-cli/hand-fonts", "drafftink-mcp/hand-fonts"]
+hand-fonts = ["drafftink-app/hand-fonts", "drafftink-mcp/hand-fonts"]
 # `--perf-scenario`: shows a generated scene for the perf gate (`cargo xtask perf --app native` builds with it). Off in
 # every shipped build, because it replaces the open document outside a command (docs/exceptions.md, N4).
 scenarios = ["drafftink-app/scenarios"]
@@ -37,7 +37,6 @@ scenarios = ["drafftink-app/scenarios"]
 [dependencies]
 drafftink-app = { path = "crates/app", version = "0.2.0" }
 drafftink-bridge = { path = "crates/bridge", version = "0.2.0" }
-drafftink-cli = { path = "apps/drafftink-cli", version = "0.2.0" }
 drafftink-engine = { path = "crates/engine", version = "0.2.0" }
 drafftink-gpu = { path = "crates/gpu", version = "0.2.0" }
 drafftink-mcp = { path = "apps/drafftink-mcp", version = "0.2.0" }
@@ -49,6 +48,7 @@ thiserror = { workspace = true }
 
 [dev-dependencies]
 tempfile = { workspace = true }
+serde_json = { workspace = true }
 
 [build-dependencies]
 embed-resource = { workspace = true }

@@ -72,13 +72,16 @@ pub const TABLE: &[(&str, Class)] = &[
     ("drafftink-testkit", Class::Testkit),
     // The application glue: uses any library below it, and only the apps use it.
     ("drafftink-app", Class::Layer(7)),
+    // The libraries of `drafftink-headless` and of `drafftink mcp`: the collaboration server, the MCP server and the
+    // tools for documents. They have no binary of their own and no window, so only the apps use them.
+    ("drafftink-server", Class::Layer(7)),
+    ("drafftink-cli", Class::Layer(7)),
+    ("drafftink-mcp", Class::Layer(7)),
     // apps
     ("drafftink", Class::App),
+    ("drafftink-headless", Class::App),
     ("drafftink-web", Class::App),
     ("drafftink-canvas-js", Class::App),
-    ("drafftink-server", Class::App),
-    ("drafftink-cli", Class::App),
-    ("drafftink-mcp", Class::App),
     ("drafftink-e2e", Class::App),
     // tooling
     ("xtask", Class::Tool),
@@ -99,18 +102,7 @@ pub struct SameLayerEdge {
     pub reason: &'static str,
 }
 
-pub const SAME_LAYER_EDGES: &[SameLayerEdge] = &[
-    SameLayerEdge {
-        lower: "drafftink-cli",
-        upper: "drafftink",
-        reason: "`drafftink convert|run|outline|commands` is the code of the standalone drafftink-cli, with no copy",
-    },
-    SameLayerEdge {
-        lower: "drafftink-mcp",
-        upper: "drafftink",
-        reason: "`drafftink mcp` is the code of the standalone drafftink-mcp, with no copy",
-    },
-];
+pub const SAME_LAYER_EDGES: &[SameLayerEdge] = &[];
 
 /// Restriction on an external crate: where it may appear.
 pub struct ExternalRule {
@@ -527,12 +519,17 @@ pub fn run(root: &Path, list: bool) -> Result<(), String> {
     let mut violations = check(&crates);
     violations.extend(check_stale(&crates));
     violations.extend(check_unused_allowances(&crates));
+    // Both checks run, so that one failure does not hide the other.
+    let screen = crate::screen::run(root);
     if violations.is_empty() {
         println!("layers: {} crates, no violations", crates.len());
-        return Ok(());
+        return screen;
     }
     for v in &violations {
         eprintln!("  {v}");
+    }
+    if let Err(e) = screen {
+        eprintln!("{e}");
     }
     Err(format!("{} layering violation(s); see docs/architecture.md", violations.len()))
 }
@@ -833,32 +830,45 @@ mod tests {
 
     #[test]
     fn testkit_may_not_use_apps() {
-        let v = check(&[c("drafftink-testkit", &[("drafftink-cli", Normal, true)])]);
+        let v = check(&[c("drafftink-testkit", &[("drafftink-headless", Normal, true)])]);
         assert!(matches!(only(&v), Violation::Edge { from: 7, to: 8, .. }));
     }
 
     #[test]
-    fn apps_may_use_libraries_but_not_each_other() {
+    fn the_tool_libraries_sit_with_the_glue_and_the_programs_use_them() {
+        for name in ["drafftink-cli", "drafftink-mcp", "drafftink-server"] {
+            assert_eq!(classify(name).and_then(Class::layer), Some(7), "{name}");
+        }
+        // The libraries use the engine and the bridge, and know nothing of each other or of a program.
         assert!(
             check(&[c("drafftink-cli", &[("drafftink-engine", Normal, true), ("drafftink-io", Normal, true)])])
                 .is_empty()
         );
+        assert!(check(&[c("drafftink-mcp", &[("drafftink-bridge", Normal, true)])]).is_empty());
         let v = check(&[c("drafftink-mcp", &[("drafftink-cli", Normal, true)])]);
-        assert!(matches!(only(&v), Violation::Edge { from: 8, to: 8, .. }));
+        assert!(matches!(only(&v), Violation::Edge { from: 7, to: 7, .. }));
+        let v = check(&[c("drafftink-server", &[("drafftink-mcp", Normal, true)])]);
+        assert!(matches!(only(&v), Violation::Edge { from: 7, to: 7, .. }));
+        let v = check(&[c("drafftink-cli", &[("drafftink-headless", Normal, true)])]);
+        assert!(matches!(only(&v), Violation::Edge { from: 7, to: 8, .. }));
     }
 
     #[test]
-    fn the_desktop_app_may_use_the_cli_and_mcp_apps_and_nothing_else_may() {
+    fn the_programs_use_the_tool_libraries_without_an_exception() {
         let ok = [
             c("drafftink-cli", &[]),
             c("drafftink-mcp", &[]),
-            c("drafftink", &[("drafftink-cli", Normal, true), ("drafftink-mcp", Normal, true)]),
+            c("drafftink-server", &[]),
+            c(
+                "drafftink-headless",
+                &[("drafftink-cli", Normal, true), ("drafftink-mcp", Normal, true), ("drafftink-server", Normal, true)],
+            ),
+            c("drafftink", &[("drafftink-mcp", Normal, true), ("drafftink-app", Normal, true)]),
+            c("drafftink-app", &[]),
         ];
         assert!(check(&ok).is_empty(), "{:?}", check(&ok));
-        // The edge is one way, and the other apps do not get it.
-        let v = check(&[c("drafftink-cli", &[("drafftink", Normal, true)])]);
-        assert!(matches!(only(&v), Violation::Edge { from: 8, to: 8, .. }));
-        let v = check(&[c("drafftink-server", &[("drafftink-cli", Normal, true)])]);
+        // Programs do not use each other.
+        let v = check(&[c("drafftink", &[("drafftink-headless", Normal, true)])]);
         assert!(matches!(only(&v), Violation::Edge { from: 8, to: 8, .. }));
     }
 

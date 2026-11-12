@@ -9,7 +9,7 @@ The input scripts are the same for both. The app resets its profiler when the sc
 phases and redraw reasons, and the driver adds meta (adapter, commit) and, for the web, the CPU of the Chromium process tree.
 
 usage: ~/.venvs/perf/bin/python scripts/perf_scenarios.py {native,web} KEY... [--out DIR] [--secs N] [--display :95]
-                [--binary target/release/drafftink] [--dist dist] [--server target/release/drafftink-server]
+                [--binary target/release/drafftink] [--dist dist] [--headless target/release/drafftink-headless]
 Reports go to DIR/<key>.json (default target/perf/app-<platform>). Exit 0 when every scenario ran and produced a report;
 checking against perf/budgets.json is `cargo run -p drafftink-profile --example perf_check -- check ... --timing`."""
 import argparse, json, math, os, shutil, socket, subprocess, sys, tempfile, threading, time, urllib.request
@@ -204,9 +204,9 @@ def run_web(args, keys):
     from playwright.sync_api import sync_playwright
     out_dir = args.out or os.path.join(TARGET, "perf/app-web")
     os.makedirs(out_dir, exist_ok=True)
-    dist, server_bin = os.path.abspath(args.dist), os.path.abspath(args.server)
+    dist, server_bin = os.path.abspath(args.dist), os.path.abspath(args.headless)
     port = free_port()
-    server = subprocess.Popen([server_bin, "--web-dir", dist, "--bind", f"127.0.0.1:{port}", "--storage", "memory"],
+    server = subprocess.Popen([server_bin, "serve", "--web-dir", dist, "--bind", f"127.0.0.1:{port}", "--storage", "memory"],
                               stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     for _ in range(100):
         try: urllib.request.urlopen(f"http://127.0.0.1:{port}/health", timeout=1); break
@@ -292,7 +292,7 @@ def main():
     ap.add_argument("--out"); ap.add_argument("--secs", type=float); ap.add_argument("--display", default=":95")
     ap.add_argument("--binary", default=os.path.join(TARGET, "release/drafftink"))
     ap.add_argument("--dist", default=os.path.join(ROOT, "dist"))
-    ap.add_argument("--server", default=os.path.join(TARGET, "release/drafftink-server"))
+    ap.add_argument("--headless", default=os.path.join(TARGET, "release/drafftink-headless"), help="the drafftink-headless binary; its `serve` runs the server")
     ap.add_argument("--adapter", default="nvidia", choices=["nvidia", "swiftshader"])
     args = ap.parse_args()
     (run_native if args.platform == "native" else run_web)(args, args.keys)

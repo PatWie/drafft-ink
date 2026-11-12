@@ -1,7 +1,7 @@
 //! The web app: the wasm entry point `start`, the `window.drafftink` JS API, the agent relay client and WebMCP.
 //!
 //! On the web the whole app is `drafftink-app` over the platform in `drafftink_app::web`; this crate adds what
-//! belongs to the page: the entry point, the scripting API and pairing with `drafftink-mcp --relay` and
+//! belongs to the page: the entry point, the scripting API and pairing with `drafftink mcp --relay` and
 //! registering the tools with WebMCP. Native builds contain only the pure rules ([`pairing`], [`webmcp`]), so `cargo check --workspace` and the unit tests run
 //! everywhere. `scripts/build-web.sh` builds the wasm and `docs/web-app.md` describes the result.
 #![cfg_attr(test, allow(clippy::unwrap_used, clippy::expect_used, clippy::panic))]

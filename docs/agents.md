@@ -2,19 +2,19 @@
 
 An agent uses drafft.ink through the same `Session::execute` that a button uses. Nothing is special-cased for it: the commands, the refusals and the undo steps are the user's own. This page covers setup, the security model, the tools, the wire protocols, and worked examples. The design is in `docs/plan.md` section 11, the command contract in `docs/commands.md`, the engine API in `docs/engine.md`.
 
-Code: `crates/bridge` (the protocol, the loopback server, the relay, the generated tools, MCP over HTTP), `apps/drafftink-mcp` (the MCP server over stdio, also the `drafftink mcp` subcommand) and `apps/drafftink-web` (WebMCP in the page).
+Code: `crates/bridge` (the protocol, the loopback server, the relay, the generated tools, MCP over HTTP), `apps/drafftink-mcp` (the MCP server over stdio, a library: `drafftink mcp` and `drafftink-headless mcp` are its two programs) and `apps/drafftink-web` (WebMCP in the page).
 
 ## 1. The ways in
 
 | Way in | Start it | The agent drives | The user |
 |---|---|---|---|
-| headless | `drafftink mcp` | its own editor session, no window | nothing to watch; files on disk |
-| attached | `drafftink mcp --attach` | the running desktop app, through a stdio helper | watches the canvas change live |
+| headless | `drafftink-headless mcp` | its own editor session, no window | nothing to watch; files on disk |
+| attached | `drafftink mcp` (`--attach` is the default) | the running desktop app, through a stdio helper | watches the canvas change live |
 | relay | `drafftink mcp --relay` | the open drafft.ink browser tab, through a stdio helper | watches the tab |
 | desktop HTTP | `drafftink --mcp-http` (or the switch in Preferences) | the running desktop app, which serves MCP itself over streamable HTTP | watches the canvas change live |
 | WebMCP | nothing: the page registers its tools when the browser has WebMCP | the open tab, for the browser's own agent | watches the tab |
 
-`drafftink mcp` and the small standalone `drafftink-mcp` are the same program: the desktop app's subcommand calls the code of the `drafftink-mcp` crate, with the same arguments, output and exit codes. Install the standalone one (`cargo install drafftink-mcp`) on a server or in CI, where the window and its libraries are not wanted. Everything below says `drafftink mcp`; read `drafftink-mcp` in its place for the standalone install. Like every subcommand, `drafftink mcp` creates no window and no GPU device, so it runs over SSH and with no display (`docs/cli.md`).
+There are two programs, split by whether they have a screen. `drafftink mcp` is the desktop app's subcommand and only the bridge: it attaches to the running app (`--attach`, the default) or to a browser tab (`--relay`), and owns no document. `drafftink-headless mcp` (`cargo install drafftink-headless`) is for servers and CI, where the window and its libraries are not wanted: with no mode flag it owns a session of its own, and it takes `--attach` and `--relay` as well, since a bridge needs no GPU. Both call the code of the `drafftink-mcp` crate with the same output and exit codes. A headless request given to `drafftink mcp` (`--allow-dir`, `--allow-any-path`) prints a line that says to use `drafftink-headless` and exits with 2. Like every subcommand, `drafftink mcp` creates no window and no GPU device, so it runs over SSH and with no display (`docs/cli.md`).
 
 All of them expose the same tools. A tool does not know which mode it runs in: every call becomes a bridge method (`execute`, `batch`, `commands`, `describe`, `recent`, `state`) and goes to a session in this process, in the desktop app, or in the page.
 
@@ -30,19 +30,19 @@ All of them expose the same tools. A tool does not know which mode it runs in: e
 
 ## 2. Setup
 
-Install the desktop app (`cargo install drafftink`, or `cargo build --release -p drafftink`) and the server is its `mcp` subcommand. For a machine without the desktop app, install the standalone server: `cargo install drafftink-mcp`, or `cargo build --release -p drafftink-mcp`, which gives `target/release/drafftink-mcp`. The snippets below use `drafftink mcp`; with the standalone binary the command is `drafftink-mcp` and `"mcp"` leaves the arguments. A client that does not search `PATH` needs the absolute path of the binary as `command`.
+Install the desktop app (`cargo install drafftink`, or `cargo build --release -p drafftink`) and the bridge is its `mcp` subcommand. For an agent that needs no app, or a machine without one, install `cargo install drafftink-headless` (or `cargo build --release -p drafftink-headless`, which gives `target/release/drafftink-headless`) and use `drafftink-headless mcp`. The snippets below name the program for each mode; `"mcp"` is the first argument either way. A client that does not search `PATH` needs the absolute path of the binary as `command`.
 
 ### Claude Desktop
 
 Edit `claude_desktop_config.json` (Settings, Developer, Edit config), then restart Claude Desktop.
 
-Headless:
+Headless (no app needed):
 
 ```json
 {
   "mcpServers": {
     "drafftink": {
-      "command": "drafftink",
+      "command": "drafftink-headless",
       "args": ["mcp", "--allow-dir", "/Users/me/diagrams"]
     }
   }
@@ -52,7 +52,7 @@ Headless:
 Attached to the desktop app (start the app first, or start it later: the server connects on the first call):
 
 ```json
-{ "mcpServers": { "drafftink": { "command": "drafftink", "args": ["mcp", "--attach"] } } }
+{ "mcpServers": { "drafftink": { "command": "drafftink", "args": ["mcp"] } } }
 ```
 
 Relay for the browser tab. Claude Desktop hides the server's stderr, so ask the agent to call the `status` tool: it returns the pairing link.
@@ -64,15 +64,15 @@ Relay for the browser tab. Claude Desktop hides the server's stderr, so ask the 
 ### Claude Code
 
 ```sh
-claude mcp add drafftink -- drafftink mcp                  # headless
-claude mcp add drafftink -- drafftink mcp --attach         # desktop app
-claude mcp add drafftink -- drafftink mcp --relay          # browser tab
+claude mcp add drafftink -- drafftink mcp                  # the desktop app you have open
+claude mcp add drafftink -- drafftink-headless mcp         # no app needed: its own document
+claude mcp add drafftink -- drafftink mcp --relay          # the browser tab you have open
 ```
 
 Or commit a `.mcp.json` next to your project:
 
 ```json
-{ "mcpServers": { "drafftink": { "command": "drafftink", "args": ["mcp", "--attach"] } } }
+{ "mcpServers": { "drafftink": { "command": "drafftink", "args": ["mcp"] } } }
 ```
 
 ### Other MCP clients (Cursor, Zed, VS Code, Codex, Gemini CLI, ...)
@@ -125,7 +125,7 @@ VS Code (`.vscode/mcp.json`):
     "headers": { "Authorization": "Bearer ${env:DRAFFTINK_MCP_TOKEN}" } } } }
 ```
 
-Any other client: give it the URL and the header. A client that cannot send a header (Claude Desktop) uses `drafftink mcp --attach` above. Check the door by hand:
+Any other client: give it the URL and the header. A client that cannot send a header (Claude Desktop) uses `drafftink mcp` above. Check the door by hand:
 
 ```sh
 curl -s -o /dev/null -w '%{http_code}\n' http://127.0.0.1:3737/mcp                                   # 401: no token
@@ -140,11 +140,11 @@ Nothing to install. When the browser has WebMCP, drafft.ink registers its tools 
 
 ### Options
 
-Options of `drafftink mcp` and `drafftink-mcp` (the options of `drafftink --mcp-http` are above). `drafftink mcp --help` and `drafftink help mcp` print them.
+Options of `drafftink mcp` and `drafftink-headless mcp` (the options of `drafftink --mcp-http` are above). `drafftink mcp --help` and `drafftink help mcp` print them. `drafftink mcp` takes the attach and relay rows (attach is its default, so the attach options need no `--attach`); `drafftink-headless mcp` takes all rows, and its attach options need `--attach`, because without a mode flag it is headless.
 
 | Option | Mode | Meaning |
 |---|---|---|
-| `--attach` | attached | Connect to the desktop app. |
+| `--attach` | attached | Connect to the desktop app. The default of `drafftink mcp`. |
 | `--port N` | attached | The app's bridge port. Default: the one in `current.port`. |
 | `--bridge-dir DIR` | attached | Where the app's token files are. Default: the app's runtime folder. |
 | `--url ws://127.0.0.1:N/` | attached | Skip discovery. Needs `--token-file` or `DRAFFTINK_BRIDGE_TOKEN`. |
@@ -153,8 +153,8 @@ Options of `drafftink mcp` and `drafftink-mcp` (the options of `drafftink --mcp-
 | `--relay-port N` | relay | Listen on this port. Default: a free one. |
 | `--page-url URL` | relay | The page the pairing link opens. Default `https://drafft.ink/`. |
 | `--allow-origin ORIGIN` | relay | Another page origin that may connect, for a self-hosted drafft.ink. Repeatable. |
-| `--allow-dir DIR` | headless | A folder that files may be read from and written to. Repeatable. |
-| `--allow-any-path` | headless | No folder limit. |
+| `--allow-dir DIR` | headless (`drafftink-headless mcp` only) | A folder that files may be read from and written to. Repeatable. |
+| `--allow-any-path` | headless (`drafftink-headless mcp` only) | No folder limit. |
 
 The token is never a command-line flag (arguments are visible to other users of the machine). `DRAFFTINK_BRIDGE_TOKEN` carries it when a sandbox cannot read the token file.
 
@@ -381,6 +381,7 @@ returns `{"mode":"relay","connected":false,"paired":false,"pairing_link":"https:
 - `cargo test -p drafftink-bridge`: JSON-RPC round trips against a real `Session`; security tests (wrong token, no `hello` within the deadline, bad `Origin`, bad `Host`, non-loopback bind, oversized frame, binary frame, connection cap, token file permissions); the relay with the fake page (pairing, one-time token, resume, replacement, timeouts).
 - `cargo test -p drafftink-bridge --test mcp_http`: a real MCP client over HTTP against the desktop server with a simulated shell; token, `Host`, `Origin`, preflight, path, loopback and token-file tests.
 - `cargo xtask e2e`: the native suite runs `e2e/native/tests/mcp_http.rs` (a client over HTTP builds a flowchart in the running app and sees its picture), and the browser suite runs `webmcp.spec.ts`.
-- `cargo nextest run -p drafftink --test subcommands`: the real `drafftink` binary with no display: `drafftink mcp` answers `initialize` and `tools/list` on stdio and ends when stdin closes, and refuses conflicting modes like `drafftink-mcp`.
-- `cargo test -p drafftink-mcp`: MCP protocol tests over an in-memory pipe and over the real binary's stdio (initialize, `tools/list` against the registry, refusal text as a tool error, batch rollback, prompts); attached mode against a simulated shell; relay mode against the fake page; the flowchart.
+- `cargo nextest run -p drafftink --test subcommands`: the real `drafftink` binary with no display: `drafftink mcp` attaches by default and explains on its first call that no app is running, refuses conflicting modes, and points a headless request at `drafftink-headless`.
+- `cargo nextest run -p drafftink-headless --test mcp_stdio --test subcommands`: the real `drafftink-headless` binary: `mcp` answers `initialize` and `tools/list` on stdio, ends when stdin closes, refuses conflicting modes, and accepts `--attach` and `--relay`.
+- `cargo test -p drafftink-mcp`: MCP protocol tests over an in-memory pipe (initialize, `tools/list` against the registry, refusal text as a tool error, batch rollback, prompts); attached mode against a simulated shell; relay mode against the fake page; the flowchart.
 - A new command needs nothing here. A new tool kind needs a variant in `crates/bridge/src/tools/catalog.rs` and a branch in `service.rs`: the stdio server, the HTTP server and the page all pick it up.

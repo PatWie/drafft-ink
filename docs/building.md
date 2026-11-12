@@ -1,6 +1,6 @@
 # Building and running
 
-One workspace builds three things from the same code: the desktop app (the root package `drafftink`, `src/`), the web app (`apps/drafftink-web`, served by the server) and the collaboration server (`apps/drafftink-server`). The shared application code is `crates/app` (`drafftink-app`, L7, see `architecture.md`). The desktop and web apps are thin launchers: they build a `Platform` (the ports that differ per target) and call `drafftink_gpu::run(App::new(platform, config), options)`.
+One workspace builds three programs from the same code: the desktop app (the root package `drafftink`, `src/`), the web app (`apps/drafftink-web`, served by `drafftink-headless serve`) and `drafftink-headless` (`apps/drafftink-headless`), the program without a screen: the collaboration server, the MCP server and the tools for documents. Its code is in the library crates `drafftink-server`, `drafftink-mcp` and `drafftink-cli`. The shared application code is `crates/app` (`drafftink-app`, L7, see `architecture.md`). The desktop and web apps are thin launchers: they build a `Platform` (the ports that differ per target) and call `drafftink_gpu::run(App::new(platform, config), options)`.
 
 The pinned toolchain is in `rust-toolchain.toml` (Rust 1.97.1, edition 2024). `rustup` installs it on the first `cargo` call.
 
@@ -43,11 +43,12 @@ At run time it needs:
 
 `cargo build --release -p drafftink` needs Xcode command line tools (macOS) or the MSVC build tools (Windows). The wgpu backends are Metal and DX12. Both are compiled by CI (`.github/workflows/ci.yml`) and **have not been run by us**: no Mac or Windows machine was available. Known differences are in `shell.md` section 6 (pen pressure, IME) and 8.
 
-## 2. Collaboration server, and the web app from the same binary
+## 2. `drafftink-headless`: the collaboration server and the web app from the same binary
 
 ```sh
-cargo build --release -p drafftink-server
-./target/release/drafftink-server --web-dir dist           # 127.0.0.1:3030
+cargo build --release -p drafftink-headless --features sqlite,s3     # no GPU, window or UI code is built
+./target/release/drafftink-headless serve --web-dir dist             # 127.0.0.1:3030
+./target/release/drafftink-headless --help                           # also: mcp, convert, run, outline, inspect, commands, schemas
 ```
 
 The server serves `/ws` (the protocol, `protocol.md`), `/health`, and the static files of `--web-dir`, so one binary and one folder are the whole deployment (`server.md`). The web page opens `/ws` on its own origin, so a page served by this server collaborates with no configuration. Rooms: `http://localhost:3030/?room=my-room` joins (or creates) the room.

@@ -7,12 +7,12 @@ use std::process::{Command, Output, Stdio};
 use serde_json::Value;
 
 fn cli(args: &[&str]) -> Output {
-    Command::new(env!("CARGO_BIN_EXE_drafftink-cli")).args(args).output().unwrap()
+    Command::new(env!("CARGO_BIN_EXE_drafftink-headless")).args(args).output().unwrap()
 }
 
 fn cli_stdin(args: &[&str], input: &str) -> Output {
     use std::io::Write;
-    let mut child = Command::new(env!("CARGO_BIN_EXE_drafftink-cli"))
+    let mut child = Command::new(env!("CARGO_BIN_EXE_drafftink-headless"))
         .args(args)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())

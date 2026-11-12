@@ -1392,7 +1392,6 @@ dependencies = [
  "clap",
  "drafftink-app",
  "drafftink-bridge",
- "drafftink-cli",
  "drafftink-engine",
  "drafftink-gpu",
  "drafftink-mcp",
@@ -1521,11 +1520,9 @@ dependencies = [
  "clap",
  "drafftink-engine",
  "drafftink-scene",
- "drafftink-typeset",
  "getrandom 0.3.4",
  "serde",
  "serde_json",
- "tempfile",
  "thiserror 2.0.21",
 ]
 
@@ -1672,6 +1669,19 @@ dependencies = [
  "web-time",
  "wgpu",
  "winit",
+]
+
+[[package]]
+name = "drafftink-headless"
+version = "0.2.0"
+dependencies = [
+ "clap",
+ "drafftink-cli",
+ "drafftink-mcp",
+ "drafftink-server",
+ "drafftink-typeset",
+ "serde_json",
+ "tempfile",
 ]
 
 [[package]]

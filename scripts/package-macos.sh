@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # Build and package Drafft.ink for macOS (runs on macOS only: lipo, hdiutil, codesign are Apple tools).
 #
-#   $DIST/drafftink-<version>-macos-universal.dmg          Drafftink.app (+ drafftink-mcp and drafftink-cli inside it) and an Applications link
-#   $DIST/drafftink-server-<version>-macos-universal.tar.gz  drafftink-server + web-dist/ (needs the web build)
+#   $DIST/drafftink-<version>-macos-universal.dmg          Drafftink.app (`drafftink mcp` is its MCP bridge) and an Applications link
+#   $DIST/drafftink-headless-<version>-macos-universal.tar.gz  drafftink-headless + web-dist/ (needs the web build)
 #
 # Usage: scripts/package-macos.sh [--skip-build] [--sign] [--notarize] [--web-dist DIR]
 #   --skip-build   use the binaries already in target/<triple>/dist for both triples
@@ -39,14 +39,14 @@ echo "==> Drafft.ink $VERSION for macOS (universal)"
 if [ "$SKIP_BUILD" = 0 ]; then
   for t in $TRIPLES; do
     rustup target add "$t"
-    (cd "$ROOT" && cargo build --profile dist --locked -p drafftink -p drafftink-mcp -p drafftink-cli -p drafftink-server --features drafftink-server/sqlite,drafftink-server/s3,drafftink/hand-fonts,drafftink-mcp/hand-fonts,drafftink-cli/hand-fonts --target "$t")
+    (cd "$ROOT" && cargo build --profile dist --locked -p drafftink -p drafftink-headless --features drafftink-headless/sqlite,drafftink-headless/s3,drafftink-headless/hand-fonts,drafftink/hand-fonts --target "$t")
   done
 fi
 
 WORK="$CARGO_TARGET_DIR/macos-package"
 rm -rf "$WORK"
 mkdir -p "$WORK/universal"
-for b in $DESKTOP_BINS $SERVER_BIN; do
+for b in $DESKTOP_BINS $HEADLESS_BIN; do
   slices=(); for t in $TRIPLES; do slices+=("$CARGO_TARGET_DIR/$t/dist/$b"); done
   lipo -create -output "$WORK/universal/$b" "${slices[@]}"
   strip "$WORK/universal/$b" 2>/dev/null || true
@@ -62,9 +62,6 @@ plutil -lint "$APP/Contents/Info.plist"
 
 sign() { codesign --force --timestamp --options runtime --entitlements "$HERE/entitlements.plist" --sign "$MACOS_SIGN_IDENTITY" "$@"; }
 if [ "$SIGN" = 1 ]; then
-  # Inside out: the helper first, then the bundle.
-  sign "$APP/Contents/MacOS/drafftink-mcp"
-  sign "$APP/Contents/MacOS/drafftink-cli"
   sign "$APP"
   codesign --verify --deep --strict --verbose=2 "$APP"
 else
@@ -85,28 +82,26 @@ if [ "$NOTARIZE" = 1 ]; then
 fi
 echo "wrote $DMG"
 
-# ---- server + web build --------------------------------------------------------------------------
+# ---- headless + web build ------------------------------------------------------------------------
 if [ -f "$WEB_DIST/index.html" ]; then
-  NAME="drafftink-server-$VERSION-macos-universal"
-  SRV="$WORK/server/$NAME"
-  mkdir -p "$SRV"
-  install -m755 "$WORK/universal/$SERVER_BIN" "$SRV/$SERVER_BIN"
-  if [ "$SIGN" = 1 ]; then sign "$SRV/$SERVER_BIN"; fi
-  cp -R "$WEB_DIST" "$SRV/web-dist"
-  copy_docs "$SRV"
-  printf 'Run ./%s from this folder: it serves web-dist/ and the collaboration socket on http://127.0.0.1:3030\n' "$SERVER_BIN" >"$SRV/README.txt"
-  tar -C "$WORK/server" -czf "$DIST/$NAME.tar.gz" "$NAME"
+  NAME="drafftink-headless-$VERSION-macos-universal"
+  HL="$WORK/headless/$NAME"
+  mkdir -p "$HL"
+  install -m755 "$WORK/universal/$HEADLESS_BIN" "$HL/$HEADLESS_BIN"
+  if [ "$SIGN" = 1 ]; then sign "$HL/$HEADLESS_BIN"; fi
+  cp -R "$WEB_DIST" "$HL/web-dist"
+  copy_docs "$HL"
+  printf 'Run ./%s serve from this folder: it serves web-dist/ and the collaboration socket on http://127.0.0.1:3030\n./%s --help lists the MCP server and the tools for documents too.\n' "$HEADLESS_BIN" "$HEADLESS_BIN" >"$HL/README.txt"
+  tar -C "$WORK/headless" -czf "$DIST/$NAME.tar.gz" "$NAME"
   echo "wrote $DIST/$NAME.tar.gz"
 else
-  warn "no web build in $WEB_DIST (run scripts/build-web.sh), so the server archive was not written"
+  warn "no web build in $WEB_DIST (run scripts/build-web.sh), so the headless archive was not written"
 fi
 
 # ---- smoke ---------------------------------------------------------------------------------------
 # The runner's architecture runs its own slice of each universal binary.
 smoke_version "$APP/Contents/MacOS/drafftink"
-smoke_version "$APP/Contents/MacOS/drafftink-mcp"
-smoke_version "$APP/Contents/MacOS/drafftink-cli"
-smoke_version "$WORK/universal/$SERVER_BIN"
+smoke_version "$WORK/universal/$HEADLESS_BIN"
 lipo -archs "$APP/Contents/MacOS/drafftink"
 echo "==> done"
 ls -lh "$DIST"

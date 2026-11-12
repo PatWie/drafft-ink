@@ -1,7 +1,7 @@
 #![allow(dead_code, clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 // These tests run on real sockets with the real clock, natively only.
 #![allow(clippy::disallowed_methods)]
-//! Helpers for tests against the real `drafftink-server` binary: start and stop it, run clients on real threads and
+//! Helpers for tests against the real `drafftink-headless serve` process: start and stop it, run clients on real threads and
 //! sockets, and wait on their wake-ups instead of polling on a timer.
 
 use std::io::{BufRead, BufReader};
@@ -16,8 +16,8 @@ use drafftink_doc::LoroStore;
 use drafftink_protocol::{ClientId, RoomId, UserInfo};
 use drafftink_scene::*;
 
-/// The server binary, built once per test process. It is a separate crate at the app layer, so the tests run it as a
-/// child process instead of linking it.
+/// The `drafftink-headless` binary, built once per test process. It is a separate crate at the app layer, so the tests
+/// run its `serve` as a child process instead of linking it.
 fn server_binary() -> &'static PathBuf {
     static BIN: OnceLock<PathBuf> = OnceLock::new();
     BIN.get_or_init(|| {
@@ -25,7 +25,7 @@ fn server_binary() -> &'static PathBuf {
         let profile_dir = exe.parent().and_then(|p| p.parent()).expect("target/<profile>").to_path_buf();
         let profile = profile_dir.file_name().and_then(|n| n.to_str()).unwrap_or("debug").to_owned();
         let mut cmd = Command::new(std::env::var("CARGO").unwrap_or_else(|_| "cargo".into()));
-        cmd.args(["build", "--quiet", "-p", "drafftink-server"]).current_dir(env!("CARGO_MANIFEST_DIR"));
+        cmd.args(["build", "--quiet", "-p", "drafftink-headless"]).current_dir(env!("CARGO_MANIFEST_DIR"));
         match profile.as_str() {
             "debug" => {}
             "release" => {
@@ -36,8 +36,8 @@ fn server_binary() -> &'static PathBuf {
             }
         }
         let status = cmd.status().expect("run cargo build");
-        assert!(status.success(), "cargo build -p drafftink-server failed");
-        let bin = profile_dir.join(if cfg!(windows) { "drafftink-server.exe" } else { "drafftink-server" });
+        assert!(status.success(), "cargo build -p drafftink-headless failed");
+        let bin = profile_dir.join(if cfg!(windows) { "drafftink-headless.exe" } else { "drafftink-headless" });
         assert!(bin.exists(), "server binary not found at {}", bin.display());
         bin
     })
@@ -77,7 +77,7 @@ impl Server {
     fn spawn(args: Vec<String>, port: Option<u16>, data_dir: Option<tempfile::TempDir>) -> Server {
         let bind = format!("127.0.0.1:{}", port.unwrap_or(0));
         let mut child = Command::new(server_binary())
-            .args(["--bind", &bind])
+            .args(["serve", "--bind", &bind])
             .args(&args)
             .env("RUST_LOG", "info")
             .env_remove("DRAFFTINK_AUTH_TOKENS")

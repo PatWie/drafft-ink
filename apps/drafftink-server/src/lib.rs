@@ -1,8 +1,11 @@
-//! drafftink-server: the collaboration server for drafft.ink.
+//! drafftink-server: the collaboration server for drafft.ink, as a library.
 //!
-//! One binary serves the web client, the `/ws` WebSocket endpoint (the protocol in
+//! The server serves the web client, the `/ws` WebSocket endpoint (the protocol in
 //! `docs/protocol.md`) and `/health`. Rooms live in memory as Loro documents and are saved
 //! through a [`store::RoomStore`]. See `docs/server.md` for running and configuring it.
+//!
+//! This crate has no binary. `drafftink-headless serve` is the program: it flattens [`Args`] into its own command
+//! line and calls [`run`]. Tests and other programs embed the server with [`start`].
 
 #![warn(missing_docs, unreachable_pub)]
 
@@ -14,6 +17,7 @@ mod http;
 mod limits;
 pub mod outbox;
 pub mod room;
+mod run;
 mod schema;
 pub mod store;
 
@@ -27,9 +31,10 @@ use tokio::sync::{Semaphore, oneshot};
 use tokio::task::JoinHandle;
 use tracing::{info, warn};
 
-pub use config::{Cli, Config};
+pub use config::{Args, Config};
 pub use http::OriginPolicy;
 use room::RoomManager;
+pub use run::run;
 use store::{RoomStore, StoreError};
 
 /// Why the server could not start.

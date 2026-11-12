@@ -2,7 +2,7 @@
 //!
 //! Each command has an argument type and an output type with a derived schema. Generating them costs code: in the
 //! web build it was 89 KB of the brotli-compressed module (2.8%). Without the cargo feature `schemas` the schema
-//! code is not linked; the page fetches the same schemas as a file made at build time (`drafftink-cli schemas`),
+//! code is not linked; the page fetches the same schemas as a file made at build time (`drafftink-headless schemas`),
 //! hands it to [`install`], and every reader goes through [`CommandSpec::args_schema`] and
 //! [`CommandSpec::output_schema`], which read the table. Without the feature the table does not exist and the
 //! accessors generate the schema from the type, as before.

@@ -348,7 +348,7 @@ The budget arithmetic is `Budgets::check_filtered`; xtask uses no workspace crat
 `scripts/perf_scenarios.py {native|web} KEY...` runs scenarios and writes one `ScenarioReport` per key (`target/perf/app-native/pan@10k.json`). Both platforms use the same input scripts and the same report.
 
 - **Native:** starts `drafftink --perf-scenario <key> --perf-out <path>` under a private Xvfb (NVIDIA Vulkan). The app installs the scene, waits until it has drawn it and been quiet for a second, resets the profiler, prints `PERF-READY` and measures. The driver sends XTEST events (pointer motion, buttons, wheel buttons, Control) and then a line on the app's stdin, which ends the window: the app writes the report (stats, `cpu_pct` of its own process) and closes the window (`Waker::exit`). `--perf-secs N` makes the window self-timed instead (an `idle` run needs no driver).
-- **Web:** serves `dist/` with `drafftink-server`, opens it in headed Chromium on Xvfb, calls `await window.drafftink.runScenario(key)` (installs the scene, waits for quiet, resets the profiler) and sends Playwright mouse, wheel and key events. `window.drafftink.scenarioReport()` returns the report; the driver adds the CPU of the Chromium process tree, the adapter and the start-up marks.
+- **Web:** serves `dist/` with `drafftink-headless serve`, opens it in headed Chromium on Xvfb, calls `await window.drafftink.runScenario(key)` (installs the scene, waits for quiet, resets the profiler) and sends Playwright mouse, wheel and key events. `window.drafftink.scenarioReport()` returns the report; the driver adds the CPU of the Chromium process tree, the adapter and the start-up marks.
 - Both enable recording (`DRAFFTINK_PERF` is implied by `--perf-scenario`; `runScenario` turns it on) and reset the profiler before the window, so a report covers only that scenario.
 
 ## 6. Redraw rules, checked
@@ -671,7 +671,7 @@ What the questions found:
   engine with `default-features = false` (the desktop apps and every test turn it on again; `--all-features` does too, so
   `crates/engine/tests/without_schemas.rs` has a gate of its own, `cargo xtask test`). Every reader goes through
   `CommandSpec::args_schema` / `output_schema` / `arg_keys` (`engine/src/schemas.rs`), which read a table when the feature is off. The table is
-  `drafftink-cli schemas`, written by `scripts/build-web.sh` as `schemas/commands.<hash>.json` (33,875 bytes with brotli), listed in
+  `drafftink-headless schemas`, written by `scripts/build-web.sh` as `schemas/commands.<hash>.json` (33,875 bytes with brotli), listed in
   `window.__assets` and preloaded; `drafftink_app::web::schemas_ready()` fetches it once at start and installs it. Measured on 2026-11-09,
   same machine, `main` at `abd8892` against this change:
 

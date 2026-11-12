@@ -1,6 +1,6 @@
 # Collaboration protocol
 
-Crate: `crates/protocol` (`drafftink-protocol`, layer L0). Users: the sync client in `crates/collab` and the server in `apps/drafftink-server`. Protocol version: **1**.
+Crate: `crates/protocol` (`drafftink-protocol`, layer L0). Users: the sync client in `crates/collab` and the server in `apps/drafftink-server` (`drafftink-headless serve`). Protocol version: **1**.
 
 The protocol replaces the old scheme, where every local edit cleared and re-added every shape and sent a full base64 Loro snapshot, the server kept only the last snapshot ("last writer wins"), and every received snapshot rebuilt the whole document (2 s at 1k shapes). Now a local edit sends only the Loro update for that edit, a late joiner or a reconnecting client receives only what its version vector lacks, and the receiving document applies the update as a patch.
 

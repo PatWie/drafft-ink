@@ -1,0 +1,41 @@
+[package]
+name = "drafftink-headless"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+homepage.workspace = true
+description = "Drafft.ink without a screen: the collaboration server, an MCP server and command line tools for documents. No GPU, no window."
+readme = "README.md"
+keywords = ["whiteboard", "collaboration", "mcp", "cli", "server"]
+categories = ["command-line-utilities", "network-programming", "graphics"]
+
+[[bin]]
+name = "drafftink-headless"
+path = "src/main.rs"
+
+[features]
+# The hand-drawn fonts (GelPen, GelPen Serif, Vanilla Extract) from the Git repository, not from crates.io: see
+# `drafftink-typeset`. Without this feature those families are drawn with Noto Sans.
+hand-fonts = ["drafftink-cli/hand-fonts", "drafftink-mcp/hand-fonts"]
+# `serve --storage sqlite` (bundles SQLite, needs a C compiler).
+sqlite = ["drafftink-server/sqlite"]
+# `serve --storage s3` (any S3-compatible endpoint).
+s3 = ["drafftink-server/s3"]
+
+[dependencies]
+drafftink-cli = { path = "../drafftink-cli", version = "0.2.0" }
+drafftink-mcp = { path = "../drafftink-mcp", version = "0.2.0" }
+drafftink-server = { path = "../drafftink-server", version = "0.2.0" }
+clap.workspace = true
+
+[dev-dependencies]
+# The tests draw with the hand-drawn fonts (the Git repository has them; a package on crates.io does not, and a path-only
+# dev-dependency is not part of the package).
+drafftink-typeset = { path = "../../crates/typeset", features = ["hand-fonts"] }
+serde_json.workspace = true
+tempfile.workspace = true
+
+[lints]
+workspace = true

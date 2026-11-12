@@ -42,10 +42,11 @@ export CARGO_TARGET_DIR="${CARGO_TARGET_DIR:-$ROOT/target}"
 APP_ID=ink.drafft.drafftink
 export APP_ID
 
-# The binaries every desktop package carries, and the server package's.
-DESKTOP_BINS="drafftink drafftink-mcp drafftink-cli"
-SERVER_BIN="drafftink-server"
-export DESKTOP_BINS SERVER_BIN
+# The binary every desktop package carries (`drafftink mcp` is its MCP bridge), and the headless package's: the
+# collaboration server, the headless MCP server and the document tools, with no GPU or window code.
+DESKTOP_BINS="drafftink"
+HEADLESS_BIN="drafftink-headless"
+export DESKTOP_BINS HEADLESS_BIN
 
 # Emit a GitHub Actions warning (plain stderr outside Actions).
 warn() {

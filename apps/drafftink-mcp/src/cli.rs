@@ -5,7 +5,6 @@ use std::path::PathBuf;
 use std::process::ExitCode;
 use std::sync::Arc;
 
-use clap::Parser;
 use drafftink_bridge::files;
 use drafftink_bridge::mcp::handler::DrafftHandler;
 use drafftink_bridge::relay::{HOSTED_ORIGIN, RelayConfig, RelayServer};
@@ -20,21 +19,13 @@ use crate::ports::{FileScope, headless_session};
 /// other users of the machine.
 pub const TOKEN_ENV: &str = "DRAFFTINK_BRIDGE_TOKEN";
 
-/// `drafftink-mcp`: an MCP server for drafft.ink.
-///
-/// With no mode flag it runs headless: it owns its own editor session, for scripts and CI.
-#[derive(Debug, Parser)]
-#[command(name = "drafftink-mcp", version)]
-pub struct Cli {
-    /// The server's arguments, which `drafftink mcp` takes as well.
-    #[command(flatten)]
-    pub args: Args,
-}
-
-/// What `drafftink-mcp` and `drafftink mcp` accept. They share this definition.
+/// The options of the two modes that talk to a window: the running desktop app (`--attach`) and a browser tab
+/// (`--relay`). They need no editor of their own, so `drafftink mcp` takes exactly these, and `drafftink-headless
+/// mcp` takes them besides its own session.
 #[derive(Debug, clap::Args)]
-pub struct Args {
-    /// Attach to the running desktop app, so the user watches the agent draw.
+pub struct BridgeArgs {
+    /// Attach to the running desktop app, so the user watches the agent draw. This is the default of `drafftink
+    /// mcp`.
     #[arg(long, conflicts_with = "relay")]
     attach: bool,
     /// Listen on 127.0.0.1 for the drafft.ink browser tab, which connects out to this server.
@@ -42,16 +33,16 @@ pub struct Args {
     relay: bool,
 
     /// Attach: the app's bridge port (default: the one in `current.port`).
-    #[arg(long, requires = "attach")]
+    #[arg(long, conflicts_with = "relay")]
     port: Option<u16>,
     /// Attach: the folder with the app's token files (default: the app's runtime folder).
-    #[arg(long, requires = "attach")]
+    #[arg(long, conflicts_with = "relay")]
     bridge_dir: Option<PathBuf>,
     /// Attach: a ws://127.0.0.1:<port>/ URL instead of discovery. Needs --token-file or the token variable.
-    #[arg(long, requires = "attach")]
+    #[arg(long, conflicts_with = "relay")]
     url: Option<String>,
     /// Attach: read the token from this file (read again on every reconnect).
-    #[arg(long, requires = "attach")]
+    #[arg(long, conflicts_with = "relay")]
     token_file: Option<PathBuf>,
 
     /// Relay: the page that the pairing link opens.
@@ -63,7 +54,22 @@ pub struct Args {
     /// Relay: another page origin that may connect, for a self-hosted drafft.ink (repeatable).
     #[arg(long = "allow-origin", requires = "relay")]
     allow_origin: Vec<String>,
+}
 
+/// What `drafftink-headless mcp` accepts: the bridge modes, and without a mode flag a session of its own.
+#[derive(Debug, clap::Args)]
+// Without `--attach` there is no app to attach to, so an attach option alone is a mistake here. (`drafftink mcp`
+// attaches by default and takes the same options with no flag.)
+#[command(
+    mut_arg("port", |a| a.requires("attach")),
+    mut_arg("bridge_dir", |a| a.requires("attach")),
+    mut_arg("url", |a| a.requires("attach")),
+    mut_arg("token_file", |a| a.requires("attach"))
+)]
+pub struct Args {
+    /// `--attach`, `--relay` and their options.
+    #[command(flatten)]
+    bridge: BridgeArgs,
     /// Headless: a folder that files may be read from and written to (repeatable). Default: the current folder.
     #[arg(long = "allow-dir")]
     allow_dir: Vec<PathBuf>,
@@ -95,24 +101,10 @@ fn origin_of(page_url: &str) -> Option<String> {
     Some(format!("{scheme}://{host}"))
 }
 
-/// Builds the backend that the arguments ask for.
-pub fn backend(args: &Args) -> Result<Backend, CliError> {
-    if args.attach {
-        return attach_backend(args);
-    }
-    if args.relay {
-        let port = args.relay_port.unwrap_or(0);
-        let mut allowed_origins = vec![HOSTED_ORIGIN.to_owned()];
-        allowed_origins.extend(origin_of(&args.page_url));
-        allowed_origins.extend(args.allow_origin.iter().cloned());
-        let cfg = RelayConfig {
-            addr: SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), port),
-            allowed_origins,
-            ..RelayConfig::default()
-        };
-        let relay = RelayServer::start(cfg)?;
-        relay.announce_to_stderr(&args.page_url);
-        return Ok(Backend::Relay { relay, page_url: args.page_url.clone() });
+/// Builds the backend of `drafftink-headless mcp`: the bridge when a mode flag is given, else a session of its own.
+fn backend(args: &Args) -> Result<Backend, CliError> {
+    if args.bridge.attach || args.bridge.relay {
+        return bridge_backend(&args.bridge);
     }
     let scope = if args.allow_any_path {
         FileScope::Anywhere
@@ -127,7 +119,26 @@ pub fn backend(args: &Args) -> Result<Backend, CliError> {
     Ok(Backend::Headless(headless))
 }
 
-fn attach_backend(args: &Args) -> Result<Backend, CliError> {
+/// Builds the backend of `drafftink mcp`: a browser tab with `--relay`, else the running desktop app.
+fn bridge_backend(args: &BridgeArgs) -> Result<Backend, CliError> {
+    if args.relay {
+        let port = args.relay_port.unwrap_or(0);
+        let mut allowed_origins = vec![HOSTED_ORIGIN.to_owned()];
+        allowed_origins.extend(origin_of(&args.page_url));
+        allowed_origins.extend(args.allow_origin.iter().cloned());
+        let cfg = RelayConfig {
+            addr: SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), port),
+            allowed_origins,
+            ..RelayConfig::default()
+        };
+        let relay = RelayServer::start(cfg)?;
+        relay.announce_to_stderr(&args.page_url);
+        return Ok(Backend::Relay { relay, page_url: args.page_url.clone() });
+    }
+    attach_backend(args)
+}
+
+fn attach_backend(args: &BridgeArgs) -> Result<Backend, CliError> {
     let env_token = std::env::var(TOKEN_ENV).ok().filter(|t| !t.is_empty());
     let token = match (&args.token_file, env_token) {
         (Some(f), _) => Some(TokenSource::File(f.clone())),
@@ -159,8 +170,8 @@ async fn serve(backend: Backend) -> Result<(), CliError> {
     Ok(())
 }
 
-fn run(args: &Args) -> Result<(), CliError> {
-    let backend = backend(args)?;
+fn run(backend: Result<Backend, CliError>) -> Result<(), CliError> {
+    let backend = backend?;
     let rt = tokio::runtime::Builder::new_multi_thread()
         .worker_threads(2)
         .enable_all()
@@ -170,15 +181,12 @@ fn run(args: &Args) -> Result<(), CliError> {
 }
 
 /// Serves MCP on standard input and output until the client closes it, as the process `program` (the name the
-/// user typed: `drafftink-mcp`, or `drafftink` for `drafftink mcp`). Diagnostics go to standard error and start
-/// with `program`; standard output carries only the protocol. The exit code is 0 after a clean end and 1 when
-/// the server could not start or the transport failed.
-///
-/// `drafftink-mcp` and `drafftink mcp` both call this, so they cannot differ.
-pub fn run_server(args: &Args, program: &str) -> ExitCode {
+/// user typed). Diagnostics go to standard error and start with `program`; standard output carries only the
+/// protocol. The exit code is 0 after a clean end and 1 when the server could not start or the transport failed.
+fn finish(backend: Result<Backend, CliError>, program: &str) -> ExitCode {
     // Another logger may be installed already (the desktop app's); then that one stays.
     let _ = env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("warn")).try_init();
-    match run(args) {
+    match run(backend) {
         Ok(()) => ExitCode::SUCCESS,
         Err(e) => {
             eprintln!("{program}: {e}");
@@ -187,7 +195,13 @@ pub fn run_server(args: &Args, program: &str) -> ExitCode {
     }
 }
 
-/// The entry point of the `drafftink-mcp` binary.
-pub fn main() -> ExitCode {
-    run_server(&Cli::parse().args, "drafftink-mcp")
+/// `drafftink-headless mcp`: serves MCP on standard input and output, on a session of its own or on a bridge mode.
+pub fn run_server(args: &Args, program: &str) -> ExitCode {
+    finish(backend(args), program)
+}
+
+/// `drafftink mcp`: serves MCP on standard input and output for the running desktop app, or for a browser tab with
+/// `--relay`. It owns no document.
+pub fn run_bridge(args: &BridgeArgs, program: &str) -> ExitCode {
+    finish(bridge_backend(args), program)
 }

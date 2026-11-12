@@ -1,6 +1,6 @@
 # Collaboration client (crate `drafftink-collab`, L4)
 
-The client side of `docs/protocol.md`. The server is `apps/drafftink-server` (`docs/server.md`), the document is `LoroStore` (`docs/crdt.md`). The engine (L5) owns a `CollabSession` and drives it; this crate does not know about commands, the scene, egui or the clock. Builds for wasm32.
+The client side of `docs/protocol.md`. The server is `apps/drafftink-server`, run as `drafftink-headless serve` (`docs/server.md`), the document is `LoroStore` (`docs/crdt.md`). The engine (L5) owns a `CollabSession` and drives it; this crate does not know about commands, the scene, egui or the clock. Builds for wasm32.
 
 The engine side (the `collab` command family, `Session::collab_poll`, the `Net` port) is described in `docs/engine.md` section 4, "Collaboration".
 
@@ -91,7 +91,7 @@ Awareness is sent at most every 50 ms (or the server's slower rate), only when i
 | `tests/state_machine.rs` | The client against a scripted server: join, upload, debounce, window, resync, rate limit, every error code, backoff, offline edits, ping and idle, trimmed history, leave, presence, follow, status. |
 | `tests/session.rs` | `CollabSession` over the loopback transport, wake-ups, idle pumps. |
 | `tests/hostile.rs` | Property tests: random sequences never panic, never ask to be woken in the past, never reconnect a stopped client. |
-| `tests/server.rs` | Two to three clients against the real server binary (started as a child process on an ephemeral port, built by the test with `cargo build -p drafftink-server`; the crate layering forbids linking an app): concurrent edits converge, late join, server killed and restarted with edits made offline, a client that does not read is told to resync, auth on and off, version mismatch, replaced identity, presence and follow, leave, backoff against a dead port, idle means no redraw. |
+| `tests/server.rs` | Two to three clients against the real server (`drafftink-headless serve`, started as a child process on an ephemeral port, built by the test with `cargo build -p drafftink-headless`; the crate layering forbids linking an app): concurrent edits converge, late join, server killed and restarted with edits made offline, a client that does not read is told to resync, auth on and off, version mismatch, replaced identity, presence and follow, leave, backoff against a dead port, idle means no redraw. |
 | `tests/tls.rs` | `wss://` through a TLS-terminating proxy with a test certificate (`tests/fixtures`). |
 | `tests/logging.rs` | The token is absent from every log line. |
 

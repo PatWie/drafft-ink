@@ -1,9 +1,9 @@
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 // Real sockets, real threads and the real clock; natively only.
 #![allow(clippy::disallowed_methods)]
-//! Two engine sessions against the real `drafftink-server` binary, through the native WebSocket transport.
+//! Two engine sessions against the real `drafftink-headless serve` process, through the native WebSocket transport.
 //!
-//! The server is a child process on an ephemeral port (built by the test with `cargo build -p drafftink-server`).
+//! The server is a child process on an ephemeral port (built by the test with `cargo build -p drafftink-headless`).
 //! This test is the only place where the engine's `Net` port meets a real socket.
 
 use std::io::{BufRead, BufReader};
@@ -28,7 +28,7 @@ fn server_binary() -> &'static PathBuf {
         let profile_dir = exe.parent().and_then(|p| p.parent()).expect("target/<profile>").to_path_buf();
         let profile = profile_dir.file_name().and_then(|n| n.to_str()).unwrap_or("debug").to_owned();
         let mut cmd = Command::new(std::env::var("CARGO").unwrap_or_else(|_| "cargo".into()));
-        cmd.args(["build", "--quiet", "-p", "drafftink-server"]).current_dir(env!("CARGO_MANIFEST_DIR"));
+        cmd.args(["build", "--quiet", "-p", "drafftink-headless"]).current_dir(env!("CARGO_MANIFEST_DIR"));
         match profile.as_str() {
             "debug" => {}
             "release" => {
@@ -38,8 +38,8 @@ fn server_binary() -> &'static PathBuf {
                 cmd.args(["--profile", other]);
             }
         }
-        assert!(cmd.status().expect("run cargo build").success(), "cargo build -p drafftink-server failed");
-        let bin = profile_dir.join("drafftink-server");
+        assert!(cmd.status().expect("run cargo build").success(), "cargo build -p drafftink-headless failed");
+        let bin = profile_dir.join("drafftink-headless");
         assert!(bin.exists(), "server binary not found at {}", bin.display());
         bin
     })
@@ -53,7 +53,7 @@ struct Server {
 impl Server {
     fn start() -> Self {
         let mut child = Command::new(server_binary())
-            .args(["--bind", "127.0.0.1:0", "--storage", "memory", "--flush-interval-ms", "0"])
+            .args(["serve", "--bind", "127.0.0.1:0", "--storage", "memory", "--flush-interval-ms", "0"])
             .env_remove("DRAFFTINK_AUTH_TOKENS")
             .stdout(Stdio::piped())
             .stderr(Stdio::null())

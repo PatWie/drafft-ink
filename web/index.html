@@ -48,7 +48,7 @@ __PRELOAD__
 <script>window.__assets = __ASSETS__;</script>
 <script>
   // AGPL-3.0 section 13: the server that delivered this page says where its source code is. The About dialog reads
-  // window.__source when it opens. Hosted without drafftink-server, there is no such file and the dialog shows the
+  // window.__source when it opens. Hosted without `drafftink-headless serve`, there is no such file and the dialog shows the
   // project repository.
   fetch("/source.json", { cache: "no-cache" })
     .then((r) => (r.ok ? r.json() : null))

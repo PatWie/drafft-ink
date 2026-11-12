@@ -1,27 +1,45 @@
-//! The `drafftink-server` binary: parse the command line, start, wait for a signal, stop.
+//! The server as a process: build the configuration, start, wait for a signal, stop.
 
 use std::process::ExitCode;
 
-use clap::Parser;
-use drafftink_server::{Cli, Config};
 use tracing::{error, info, warn};
 use tracing_subscriber::EnvFilter;
 
-#[tokio::main]
-async fn main() -> ExitCode {
-    tracing_subscriber::fmt()
+use crate::{Args, Config};
+
+/// The exit code for arguments that do not make a configuration.
+const USAGE: u8 = 2;
+
+/// Runs the server until Ctrl-C or SIGTERM, then saves every room and returns.
+///
+/// Diagnostics go through `tracing` (the `RUST_LOG` filter, `info` by default). The exit code is 0 after a clean
+/// stop, 2 when the arguments are inconsistent and 1 when the server could not start.
+pub fn run(args: Args) -> ExitCode {
+    // Another subscriber may be installed already; then that one stays.
+    let _ = tracing_subscriber::fmt()
         .with_env_filter(EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info")))
-        .init();
-    let config = match Cli::parse().into_config() {
-        Ok(c) => c,
+        .try_init();
+    let config = match args.into_config() {
+        Ok(config) => config,
         Err(e) => {
             error!("{e}");
-            return ExitCode::from(2);
+            return ExitCode::from(USAGE);
         }
     };
+    let runtime = match tokio::runtime::Builder::new_multi_thread().enable_all().build() {
+        Ok(runtime) => runtime,
+        Err(e) => {
+            error!("cannot start the async runtime: {e}");
+            return ExitCode::FAILURE;
+        }
+    };
+    runtime.block_on(serve(config))
+}
+
+async fn serve(config: Config) -> ExitCode {
     warn_about_exposure(&config);
-    let handle = match drafftink_server::start(config).await {
-        Ok(h) => h,
+    let handle = match crate::start(config).await {
+        Ok(handle) => handle,
         Err(e) => {
             error!("{e}");
             return ExitCode::FAILURE;

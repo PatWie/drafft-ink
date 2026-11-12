@@ -8,7 +8,7 @@
 #   --build      run scripts/build-web.sh first
 #   --web-dist   the folder to package (default dist/)
 # The folder works under any URL prefix (the page uses relative URLs); the check below fails if it does not.
-# Serve it with any static host, or with drafftink-server --web-dir.
+# Serve it with any static host, or with drafftink-headless serve --web-dir.
 set -euo pipefail
 # shellcheck source=../packaging/env.sh
 . "$(dirname "${BASH_SOURCE[0]}")/../packaging/env.sh"

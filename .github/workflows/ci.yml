@@ -143,7 +143,8 @@ jobs:
             ${{ runner.os }}-quarantine-
       - run: python3 utils/quarantine_check.py --min-age-days 7
 
-  # The desktop app, the MCP server and the collaboration server on all three desktop systems.
+  # The desktop app and drafftink-headless (the collaboration server, the headless MCP server and the document tools) on
+  # all three desktop systems.
   # Linux needs no -dev packages: winit loads X11, Wayland and xkbcommon with dlopen, rusqlite is
   # bundled, and the fonts are in the binary (docs/building.md). Only a C compiler is needed, and
   # every runner has one. Windows needs the MSVC tools (preinstalled) for the icon resource in
@@ -168,7 +169,7 @@ jobs:
       - name: Run every binary with --version
         shell: bash
         run: |
-          for bin in drafftink drafftink-mcp drafftink-cli drafftink-server; do
+          for bin in drafftink drafftink-headless; do
             ./target/release/$bin --version
           done
 

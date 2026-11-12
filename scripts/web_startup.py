@@ -3,7 +3,7 @@
 
 usage: ~/.venvs/perf/bin/python scripts/web_startup.py [--dist dist] [--runs 5] [--frames 150] [--json out.json]
 
-Needs dist/ (scripts/build-web.sh) and target/release/drafftink-server. Measured in the page, in milliseconds
+Needs dist/ (scripts/build-web.sh) and target/release/drafftink-headless. Measured in the page, in milliseconds
 from the start of the navigation (performance.now()):
   response_end   the wasm download is done (localhost, so this is almost the start of the compile)
   first_frame    window.drafftink.frames().frames first reads above 0 (polled every animation frame)
@@ -18,7 +18,7 @@ from playwright.sync_api import sync_playwright
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 ap = argparse.ArgumentParser()
 ap.add_argument("--dist", default=os.path.join(ROOT, "dist"))
-ap.add_argument("--server", default=os.path.join(ROOT, "target/release/drafftink-server"))
+ap.add_argument("--headless", default=os.path.join(ROOT, "target/release/drafftink-headless"), help="the drafftink-headless binary; its `serve` runs the server")
 ap.add_argument("--display", default=":96")
 ap.add_argument("--runs", type=int, default=5)
 ap.add_argument("--frames", type=int, default=150)
@@ -111,7 +111,7 @@ def main():
     time.sleep(1.5)
     os.environ["DISPLAY"] = args.display
     port = free_port()
-    srv = subprocess.Popen([args.server, "--web-dir", args.dist, "--bind", f"127.0.0.1:{port}", "--storage", "memory"],
+    srv = subprocess.Popen([args.headless, "serve", "--web-dir", args.dist, "--bind", f"127.0.0.1:{port}", "--storage", "memory"],
                            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     for _ in range(100):
         try:

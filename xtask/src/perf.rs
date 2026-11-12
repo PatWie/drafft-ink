@@ -235,7 +235,7 @@ fn scenario_dist(root: &Path) -> PathBuf {
     target_dir(root).join("perf/web-dist")
 }
 
-/// What the web scenarios need: the web app built with `--features scenarios`, and the server that serves it.
+/// What the web scenarios need: the web app built with `--features scenarios`, and `drafftink-headless`, whose `serve` serves it.
 fn build_web(root: &Path, dist: &Path) -> Result<(), String> {
     let mut script = std::process::Command::new("bash");
     script.current_dir(root).env("DIST_DIR", dist).arg("scripts/build-web.sh").args([
@@ -246,7 +246,7 @@ fn build_web(root: &Path, dist: &Path) -> Result<(), String> {
     ]);
     run(&mut script)?;
     let mut server = cargo(root);
-    server.args(["build", "--release", "-p", "drafftink-server"]);
+    server.args(["build", "--release", "-p", "drafftink-headless"]);
     run(&mut server)
 }
 
@@ -291,7 +291,7 @@ fn app(root: &Path, which: Option<&str>, build: bool) -> Result<(), String> {
                         dist.display()
                     ));
                 }
-                driver.arg("--dist").arg(&dist).arg("--server").arg(release.join(exe("drafftink-server")));
+                driver.arg("--dist").arg(&dist).arg("--headless").arg(release.join(exe("drafftink-headless")));
             }
         }
         driver.arg("--out").arg(&out);

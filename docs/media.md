@@ -11,9 +11,9 @@ cargo xtask intro            # run intro.jsonl, rewrite intro.json
 cargo xtask intro --check    # fail when intro.json is not the script's output (also part of `cargo xtask test`)
 ```
 
-Under the hood this is `drafftink-cli run intro.jsonl --batch --seed 7 --out intro.json` (`apps/drafftink-cli/tests/intro.rs` owns the command line). The seed makes element ids and the hand-drawn jitter the same on every run, so the file only changes when the script does. Lines that start with `//` are comments and blank lines are skipped.
+Under the hood this is `drafftink-headless run intro.jsonl --batch --seed 7 --out intro.json` (`apps/drafftink-headless/tests/intro.rs` owns the command line). The seed makes element ids and the hand-drawn jitter the same on every run, so the file only changes when the script does. Lines that start with `//` are comments and blank lines are skipped.
 
-To look at the result without starting the app: `drafftink-cli outline crates/engine/assets/intro/intro.json`, or `cargo xtask media --only canvas-only` and open `docs/img/canvas-only.png`.
+To look at the result without starting the app: `drafftink-headless outline crates/engine/assets/intro/intro.json`, or `cargo xtask media --only canvas-only` and open `docs/img/canvas-only.png`.
 
 ### Writing the script
 

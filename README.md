@@ -41,9 +41,9 @@ That makes Drafft.ink easy to drive from code and from AI agents. Your AI can dr
 **Give your AI agent a whiteboard (MCP).**
 
 ```sh
-claude mcp add drafftink -- drafftink mcp            # its own document, no window
-claude mcp add drafftink -- drafftink mcp --attach   # the desktop app you have open
-claude mcp add drafftink -- drafftink mcp --relay    # the browser tab you have open
+claude mcp add drafftink -- drafftink mcp                   # the desktop app you have open
+claude mcp add drafftink -- drafftink-headless mcp          # no app needed: its own document
+claude mcp add drafftink -- drafftink mcp --relay           # the browser tab you have open
 ```
 
 An agent can build a whole flowchart with one `diagram.create` call, read the drawing back as an outline, and move, style or export anything. Everything listens only on your own machine and needs a fresh token each launch. See [docs/agents.md](docs/agents.md).
@@ -51,12 +51,13 @@ An agent can build a whole flowchart with one `diagram.create` call, read the dr
 **Or script it from the command line.** No window needed.
 
 ```sh
-drafftink convert diagram.mmd diagram.drafftink                  # Mermaid in, drawing out
-drafftink run script.jsonl --doc in.drafftink --out out.svg      # one command per line
-drafftink commands --family diagram                               # what is there
+cargo install drafftink-headless
+drafftink-headless convert diagram.mmd diagram.drafftink                  # Mermaid in, drawing out
+drafftink-headless run script.jsonl --doc in.drafftink --out out.svg      # one command per line
+drafftink-headless commands --family diagram                               # what is there
 ```
 
-The subcommands never open a window, so they work over SSH and without a display. A file named like a subcommand is opened as `drafftink ./run` or `drafftink -- run`. For servers and CI there are small standalone installs of the same programs without the window: `cargo install drafftink-cli` gives `drafftink-cli convert ...`, and `cargo install drafftink-mcp` gives `drafftink-mcp ...`. The collaboration server stays its own install, `cargo install drafftink-server`. See [docs/cli.md](docs/cli.md).
+Two programs, split by whether they have a screen. `drafftink` is the desktop app; its one subcommand, `drafftink mcp`, is the bridge to the window that is open. `drafftink-headless` has no GPU, window or file-dialog code, so it runs over SSH, in CI and in a container: the tools above, an MCP server that needs no app (`drafftink-headless mcp`) and the collaboration server (`drafftink-headless serve`). Typing a headless tool after `drafftink` prints where it went. A file named like a subcommand is opened as `drafftink ./mcp` or `drafftink -- mcp`. See [docs/cli.md](docs/cli.md).
 
 For apps of your own, the canvas is also a library: panning, zooming, hit testing and dragging, like [Konva](https://konvajs.org/), but on the GPU. The editor (arrows, groups, frames, undo, collaboration) sits on top of it.
 
@@ -84,13 +85,14 @@ scripts/build-web.sh          # builds into dist/
 scripts/serve-web.sh 8080     # then open http://127.0.0.1:8080
 ```
 
-**Your own collaboration server.**
+**Self-host the collaboration server.**
 
 ```sh
-cargo run --release -p drafftink-server -- --web-dir dist
+cargo install drafftink-headless --features sqlite,s3      # or: cargo run --release -p drafftink-headless -- serve --web-dir dist
+drafftink-headless serve --web-dir dist
 ```
 
-One binary, no config file. Nowhere to put a typo. Rooms are stored on disk, or in SQLite or S3 if you ask. See [docs/server.md](docs/server.md).
+One binary, no config file. Nowhere to put a typo. Rooms are stored on disk, or in SQLite or S3 if you ask (the features above add those two). The release page has the binary with the web build in one folder. See [docs/server.md](docs/server.md).
 
 ## Contributing
 

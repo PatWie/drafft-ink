@@ -7,7 +7,7 @@
 # the real implementations. Test code is outside this pass because tests read fixtures from disk.
 #
 # Documented exceptions are `#[allow(clippy::disallowed_methods)]` or `#[allow(clippy::disallowed_types)]` on
-# the item, with a comment that says why. The server app (apps/drafftink-server) and the other apps are L8:
+# the item, with a comment that says why. The tool libraries (`drafftink-server`, `-mcp`, `-cli`, L7) and the apps (L8):
 # they are not in this pass and use the file system and the network freely. `drafftink-collab` (L4) owns the
 # connection to a room and uses tokio for it; tokio's types are not std::net types, so they are not listed.
 #

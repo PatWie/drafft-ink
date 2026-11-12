@@ -1,4 +1,7 @@
-//! drafftink-cli: the headless command line of drafft.ink.
+//! drafftink-cli: the headless command line of drafft.ink, as a library.
+//!
+//! This crate has no binary. `drafftink-headless` is the program: it flattens [`cli::Command`] into its own command
+//! line and calls [`cli::run_command`].
 //!
 //! It owns an editor [`Session`](drafftink_engine::Session) without a window and drives it through the same
 //! `execute` and `execute_batch` as every other door, so a script that runs here does the same in the app, over

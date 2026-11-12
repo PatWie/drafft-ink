@@ -1,7 +1,7 @@
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 // Real sockets and the real clock; natively only.
 #![allow(clippy::disallowed_methods)]
-//! The client against the real `drafftink-server` binary: real sockets, real threads, real wake-ups.
+//! The client against the real `drafftink-headless serve` process: real sockets, real threads, real wake-ups.
 
 mod common;
 
