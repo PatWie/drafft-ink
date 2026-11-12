@@ -1,5 +1,7 @@
 # Design-compliance audit: `main` at `17667fd` against the design specification
 
+> Note (2026-11-12): the programs `drafftink-cli`, `drafftink-mcp` and `drafftink-server` named here were merged into `drafftink-headless` (and the `drafftink mcp` subcommand) in D18 (`docs/deviations.md`). This document keeps the names of its date.
+
 Audit date: 2026-11-08. Branch `audit-design`, worktree `/home/ubuntu/git/drafftink-wt/audit-design`. No code was edited; this file is the only change.
 
 Specification: `/home/ubuntu/git/drafft-ink-plan/DESIGN-SPEC.md` (outside the repo). Six independent auditors with fresh context covered: the command layer, state mutation outside `execute`, testing, security and servers, performance and structure, and feature parity. I spot-checked these claims myself: `apps/drafftink-cli/src/main.rs` is `fn main() {}`; `cargo xtask exceptions --check` does not exist (`xtask` usage lists no such gate); `docs/performance.md` still contains merge markers at lines 517 and 613; the repo root has no `README.md`; `xtask/src/gates.rs:99-110` returns `Ok` when `../drafft-ink/crates` is absent. Raw per-slice reports (about 1,400 lines, with file:line for every claim) are in `/tmp/audit-design/{core,mutation,testing,security,perf,parity}.md` and were not committed.

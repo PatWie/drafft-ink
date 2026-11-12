@@ -336,7 +336,7 @@ target, because the repository has no wasm test runner).
 
 ## Command schemas
 
-The module is built without the code that makes the JSON Schemas of the commands (`drafftink-engine` without its `schemas` feature; `apps/drafftink-web` and the crates it uses depend on the engine with `default-features = false`, and the desktop apps and the tests turn the feature on). `scripts/build-web.sh` writes what that code would have produced as `schemas/commands.<hash>.json` (`drafftink-cli schemas`), lists it in `window.__assets` as `commands.schema.json`, and preloads it. `drafftink_app::web::schemas_ready()` fetches it once (the entry point starts that first) and installs it in the engine (`drafftink_engine::schemas`). Who waits for it:
+The module is built without the code that makes the JSON Schemas of the commands (`drafftink-engine` without its `schemas` feature; `apps/drafftink-web` and the crates it uses depend on the engine with `default-features = false`, and the desktop apps and the tests turn the feature on). `scripts/build-web.sh` writes what that code would have produced as `schemas/commands.<hash>.json` (`drafftink-headless schemas`), lists it in `window.__assets` as `commands.schema.json`, and preloads it. `drafftink_app::web::schemas_ready()` fetches it once (the entry point starts that first) and installs it in the engine (`drafftink_engine::schemas`). Who waits for it:
 
 - `window.drafftink.describe(id)` and `commands({include_schemas: true})` wait, and reject with the reason if the file could not be loaded; `commands()` without schemas does not wait.
 - The WebMCP tools are built after it (their descriptions spell out each command's arguments).

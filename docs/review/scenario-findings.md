@@ -1,5 +1,7 @@
 # Scenario findings
 
+> Note (2026-11-12): the programs `drafftink-cli`, `drafftink-mcp` and `drafftink-server` named here were merged into `drafftink-headless` (and the `drafftink mcp` subcommand) in D18 (`docs/deviations.md`). This document keeps the names of its date.
+
 Found while writing the scenarios of every registered command family (`tests/scenarios/`, tasks `scenarios-all`
 and `scenarios-2`). All of them are fixed; each fix has a test that failed before it. This page keeps the record.
 

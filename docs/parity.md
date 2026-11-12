@@ -1,5 +1,7 @@
 # Feature parity audit
 
+> Note (2026-11-12): the programs `drafftink-cli`, `drafftink-mcp` and `drafftink-server` named here were merged into `drafftink-headless` (and the `drafftink mcp` subcommand) in D18 (`docs/deviations.md`). This document keeps the names of its date.
+
 Audit of the rewrite against (A) every feature of the old drafft-ink app (`/home/ubuntu/git/drafft-ink` at 8ce40ab) and (B) every Excalidraw feature we want, except the AI features (text-to-diagram, diagram-to-code, magic frame), which the user excluded.
 
 Audited tree: branch `audit-e` at `25fa072` (main at a184b29 plus later commits), refreshed at `c098e1b` and re-checked on branch `last-pass` (`main` at `52f6d8e`): all citations resolve against that tree, and the rows that later branches changed were read again (A-109, A-160, A-170, A-219, B-002, B-055, B-059, B-132, B-186, B-187, B-197, B-199). No status changed. The registry has 153 commands in 23 families (`cargo run -p drafftink-cli -- commands | wc -l` prints 153, one command per line). The desktop and web shells (`crates/app`, the root package `drafftink`, `apps/drafftink-web`) are on main. The previous version of this file was audited at 5a8f9c6, when the shells were still on branches; every row marked with a dagger then has been re-read against the code. Section 3 and the row ids are checked by `cargo test -p xtask parity`, which parses this file.

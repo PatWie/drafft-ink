@@ -18,6 +18,18 @@ pub enum StrokeStyle {
     Dotted,
 }
 
+impl StrokeStyle {
+    /// The on and off lengths of the dash pattern for a line `width` wide, `None` for a continuous line. Plain
+    /// outlines (an image's, a frame's) use this; sketched shapes get their dashes from the sketch generator.
+    pub fn dash(self, width: f64) -> Option<[f64; 2]> {
+        match self {
+            StrokeStyle::Solid => None,
+            StrokeStyle::Dashed => Some([width * 4.0, width * 2.0]),
+            StrokeStyle::Dotted => Some([width, width * 2.0]),
+        }
+    }
+}
+
 /// How a filled area is painted. The fill colour itself is `Style::fill_color`; `None` there means no fill.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default, Serialize, Deserialize, JsonSchema)]
 pub enum FillPattern {
@@ -74,7 +86,8 @@ impl Sloppiness {
 
 /// Visual style shared by every element kind.
 ///
-/// Text uses `stroke_color` as its text colour; images use the stroke as an optional border.
+/// Text uses `stroke_color` as its text colour; images use the stroke as an optional outline, and a new image has
+/// none ([`Style::for_image`]).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields, default)]
 pub struct Style {
@@ -113,6 +126,17 @@ impl Default for Style {
             corner_radius: 0.0,
             seed: 0,
         }
+    }
+}
+
+impl Style {
+    /// The style of a new image: no outline, and the defaults otherwise.
+    ///
+    /// A picture is visible without a stroke, so the stroke colour is clear ("no stroke"). The width and dash stay
+    /// at the defaults: when someone picks a stroke colour for the image, the outline shows at once at the usual
+    /// width. `seed` is the element's own seed.
+    pub fn for_image(seed: u32) -> Self {
+        Self { stroke_color: Color::TRANSPARENT, seed, ..Self::default() }
     }
 }
 

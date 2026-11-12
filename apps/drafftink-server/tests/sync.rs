@@ -15,8 +15,12 @@ async fn joining_a_new_room_gives_joined_and_an_empty_snapshot() {
     let server = start(test_config()).await.expect("start");
     let mut a = Client::connect(server.local_addr(), 1, "fresh-room").await;
     let (joined, sync) = a.join().await;
-    let ServerMessage::Joined { protocol_version, room, client_id, peers, limits, .. } = joined else { panic!() };
+    let ServerMessage::Joined { protocol_version, server: software, room, client_id, peers, limits, .. } = joined
+    else {
+        panic!()
+    };
     assert_eq!((protocol_version, room.as_str(), client_id), (1, "fresh-room", a.id));
+    assert_eq!(software, concat!("drafftink-headless/", env!("CARGO_PKG_VERSION")));
     assert!(peers.is_empty());
     assert_eq!(limits.max_updates_per_sec, 60);
     assert_eq!(sync_kind(&sync), SyncKind::Snapshot, "an empty client gets a snapshot");

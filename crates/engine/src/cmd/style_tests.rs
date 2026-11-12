@@ -900,13 +900,22 @@ fn apply_theme_to_a_locked_or_unsupporting_target_refuses_cleanly() {
         40.0,
     )
     .unwrap();
-    // An image has no stroke or fill: nothing in a theme applies to it except nothing at all.
+    // An image takes the stroke of a theme as its outline. A fill does not apply to it, so a call that asks for
+    // nothing else is not applicable.
     let r = refuse_clean(
+        &mut f.s,
+        "style.set",
+        json!({"props": {"fill_color": "blue-100"}, "ids": [img.as_str()], "scope": "selection"}),
+    );
+    assert_eq!(r.code, "not_applicable");
+    let out = run(
         &mut f.s,
         "style.apply_theme",
         json!({"name": "pastel", "ids": [img.as_str()], "scope": "selection"}),
     );
-    assert_eq!(r.code, "not_applicable");
+    assert_eq!(out["changed"], true);
+    assert_eq!(stroke_of(&f, &img), drafftink_scene::palette::lookup("slate-700").unwrap());
+    assert_eq!(el(&f.s, &img).style.fill_color, None, "a picture has no fill");
 }
 
 #[test]
@@ -1002,6 +1011,57 @@ fn kinds_drawn_in_their_stroke_colour_cannot_have_none() {
     // A closed line is a shape: with a fill it can lose its stroke.
     run(&mut f.s, "style.set", json!({"ids": [f.closed.as_str()], "props": {"fill_color": "blue-100", "stroke_color": "transparent"}}));
     assert_eq!(stroke_of(&f, &f.closed), Color::TRANSPARENT);
+}
+
+/// A picture on the canvas, with the style of any element (the stroke an older document gave it).
+fn add_image(f: &mut Fx) -> ElementId {
+    let kind = ElementKind::Image(drafftink_scene::ImageData {
+        file_id: None,
+        natural_width: 4,
+        natural_height: 4,
+        crop: None,
+    });
+    testing::add(&mut f.s, kind, 0.0, 600.0, 40.0, 40.0).unwrap()
+}
+
+#[test]
+fn an_image_can_have_no_stroke_because_it_shows_without_one() {
+    let mut f = fixture();
+    let img = add_image(&mut f);
+    let ids = json!([img.as_str()]);
+    // The strip asks `style.get`: the stroke controls apply to a picture, and "No stroke" is not blocked.
+    let got = run(&mut f.s, "style.get", json!({"ids": ids, "props": ["stroke_color", "stroke_width", "stroke_style"]}));
+    for prop in ["stroke_color", "stroke_width", "stroke_style"] {
+        assert!(got["props"][prop].get("value").is_some(), "{prop} applies to an image: {got}");
+        assert!(got["props"][prop].get("clear_reason").is_none(), "{prop}: {got}");
+    }
+    let out = run(&mut f.s, "style.set", json!({"ids": ids, "props": {"stroke_color": "transparent"}}));
+    assert_eq!(out["changed"], true);
+    assert_eq!(stroke_of(&f, &img), Color::TRANSPARENT);
+    // Once more is a no-op and not a refusal.
+    let again = run(&mut f.s, "style.set", json!({"ids": ids, "props": {"stroke_color": "transparent"}}));
+    assert_eq!(again["changed"], false);
+    // Undo brings the old outline back.
+    run(&mut f.s, "history.undo", json!({}));
+    assert_ne!(stroke_of(&f, &img), Color::TRANSPARENT);
+}
+
+#[test]
+fn a_stroke_property_chosen_for_an_image_without_an_outline_gives_it_one() {
+    let mut f = fixture();
+    let img = add_image(&mut f);
+    let ids = json!([img.as_str()]);
+    run(&mut f.s, "style.set", json!({"ids": ids, "props": {"stroke_color": "transparent"}}));
+    run(&mut f.s, "style.set", json!({"ids": ids, "props": {"stroke_width": 8}}));
+    let style = &el(&f.s, &img).style;
+    assert_eq!(style.stroke_width, 8.0);
+    assert_eq!(style.stroke_color, drafftink_scene::Style::default().stroke_color, "the width alone gives an outline");
+    run(&mut f.s, "style.set", json!({"ids": ids, "props": {"stroke_color": "red-500"}}));
+    assert_eq!(stroke_of(&f, &img), drafftink_scene::palette::lookup("red-500").unwrap());
+    // A rectangle is not affected by the image rule: it keeps its colour when only the width changes.
+    let before = stroke_of(&f, &f.rect);
+    run(&mut f.s, "style.set", json!({"ids": [f.rect.as_str()], "props": {"stroke_width": 8}}));
+    assert_eq!(stroke_of(&f, &f.rect), before);
 }
 
 #[test]

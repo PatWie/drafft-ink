@@ -233,6 +233,16 @@ fn a_dropped_plain_png_is_inserted_and_a_broken_jpeg_is_refused_in_words() {
 }
 
 #[test]
+fn a_dropped_picture_has_no_outline() {
+    for pointer in POINTER {
+        let (_, app) = drop_one(file("photo.png", "image/png", &png_1x1()), pointer);
+        let pictures: Vec<_> = app.session.store().iter().filter(|e| e.tag() == Kind::Image).collect();
+        assert_eq!(pictures.len(), 1, "pointer {pointer}");
+        assert_eq!(pictures[0].style.stroke_color, drafftink_scene::Color::TRANSPARENT, "pointer {pointer}");
+    }
+}
+
+#[test]
 fn a_file_that_is_not_supported_is_refused_in_plain_words() {
     let svg = br#"<svg xmlns="http://www.w3.org/2000/svg" width="1" height="1"/>"#;
     for pointer in POINTER {

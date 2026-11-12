@@ -17,7 +17,7 @@ To look at the result without starting the app: `drafftink-headless outline crat
 
 ### Writing the script
 
-The whole script runs as one batch, so a step can be named with `"as"` and later steps use `"$name"` (`"$name.id"`, and for `diagram.create` also `"$name.<node>"`). Elements that other tools address by name (the media shots below) carry a `name` argument, then `"@name"` finds them. Units are world units; the grid is 20. Colours are `#rrggbb` or palette names such as `blue-100` or `indigo-700`; `diagram.create` takes `#rrggbb` only. The full argument list of any command: `drafftink-cli commands element.create`.
+The whole script runs as one batch, so a step can be named with `"as"` and later steps use `"$name"` (`"$name.id"`, and for `diagram.create` also `"$name.<node>"`). Elements that other tools address by name (the media shots below) carry a `name` argument, then `"@name"` finds them. Units are world units; the grid is 20. Colours are `#rrggbb` or palette names such as `blue-100` or `indigo-700`; `diagram.create` takes `#rrggbb` only. The full argument list of any command: `drafftink-headless commands element.create`.
 
 | Need | Command |
 |---|---|

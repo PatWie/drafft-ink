@@ -1,5 +1,7 @@
 # Regression audit: old app (`8ce40ab`) against the rewrite (`main` at `b7f8011`)
 
+> Note (2026-11-12): the programs `drafftink-cli`, `drafftink-mcp` and `drafftink-server` named here were merged into `drafftink-headless` (and the `drafftink mcp` subcommand) in D18 (`docs/deviations.md`). This document keeps the names of its date.
+
 Run on 2026-11-08 on the research box (Ubuntu x86_64, 64 cores, NVIDIA L40S, driver 580.178.04, Rust 1.97.1, load average 5 to 13 from other agents). The old app was built into `/tmp/old-target`, the new one into `/tmp/new-target`; neither source tree was modified. Raw logs are in `/tmp/audit/*.log` (not committed).
 
 ## 1. Counts

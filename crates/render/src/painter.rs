@@ -10,8 +10,7 @@ use std::sync::Arc;
 
 use drafftink_profile::{Counter, count};
 use drafftink_scene::{
-    Color, Element, ElementKind, FileId, FillPattern, FreehandData, Head, ImageData as ImageElem, MathData,
-    StrokeStyle, TextData,
+    Color, Element, ElementKind, FileId, FillPattern, FreehandData, Head, ImageData as ImageElem, MathData, TextData,
 };
 use drafftink_sketch::{FillKind, SketchCache, SketchGeometry};
 use drafftink_typeset::{MathFontSlot, Typesetter};
@@ -196,14 +195,6 @@ impl Ink {
         }
         self.scene.stroke(&s, Affine::IDENTITY, color, None, path);
         self.grow(path.control_box().inflate(width / 2.0, width / 2.0));
-    }
-}
-
-fn stroke_dash(style: StrokeStyle, w: f64) -> Option<[f64; 2]> {
-    match style {
-        StrokeStyle::Solid => None,
-        StrokeStyle::Dashed => Some([w * 4.0, w * 2.0]),
-        StrokeStyle::Dotted => Some([w, w * 2.0]),
     }
 }
 
@@ -466,7 +457,7 @@ fn paint_frame(ink: &mut Ink, e: &Element) {
     }
     if style.stroke_color.a > 0 {
         let sc = ink.color(style.stroke_color);
-        ink.stroke(&path, style.stroke_width, stroke_dash(style.stroke_style, style.stroke_width), sc);
+        ink.stroke(&path, style.stroke_width, style.stroke_style.dash(style.stroke_width), sc);
     }
 }
 
@@ -521,7 +512,7 @@ fn paint_border(ink: &mut Ink, e: &Element, local: Rect) {
     let s = &e.style;
     if s.stroke_width > 0.0 && s.stroke_color.a > 0 {
         let c = ink.color(s.stroke_color);
-        ink.stroke(&local.to_path(0.05), s.stroke_width, stroke_dash(s.stroke_style, s.stroke_width), c);
+        ink.stroke(&local.to_path(0.05), s.stroke_width, s.stroke_style.dash(s.stroke_width), c);
     }
 }
 

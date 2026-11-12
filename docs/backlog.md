@@ -1,5 +1,7 @@
 # Feature backlog (coordinator)
 
+> Note (2026-11-12): the programs `drafftink-cli`, `drafftink-mcp` and `drafftink-server` named here were merged into `drafftink-headless` (and the `drafftink mcp` subcommand) in D18 (`docs/deviations.md`). This document keeps the names of its date.
+
 ## Open
 
 Checked against the code and tests on main at the branch `last-pass`.

@@ -26,7 +26,7 @@ use tokio::net::TcpListener;
 use tokio::sync::oneshot;
 use tokio_util::sync::CancellationToken;
 
-use super::handler::DrafftHandler;
+use super::handler::{DrafftHandler, Program};
 use super::local::LocalCaller;
 use crate::files::{self, TokenFile};
 use crate::guard::{self, Refused};
@@ -125,7 +125,7 @@ impl McpHttpServer {
 
         let cancel = CancellationToken::new();
         let caller = LocalCaller::new(jobs, format!("http://127.0.0.1:{port}{PATH}"));
-        let handler = DrafftHandler::new(Arc::new(Service::new(caller)));
+        let handler = DrafftHandler::new(Arc::new(Service::new(caller)), Program::Desktop);
         let mcp = StreamableHttpService::new(
             move || Ok(handler.clone()),
             Arc::new(LocalSessionManager::default()),

@@ -94,7 +94,9 @@ Export: Excalidraw has no inline math, so `text` and `originalText` are the sour
 | `corner_radius` | >= 0 world units | 0 |
 | `seed` | u32, makes the jitter reproducible | 0 (creators take it from `IdSource::seed`) |
 
-Colours are strings: `#rrggbb`, or `#rrggbbaa` when not opaque; `#rgb` and `transparent` are accepted on input. `Color` converts to and from `peniko::Color`. Text colour is `stroke_color`. A `stroke_color` of alpha 0 is **no stroke** (Excalidraw's `transparent`); the engine keeps every element visible, so only shapes with a fill can have it (`style.set`, "No stroke"). Font settings live in `TextData.font`, not in `Style`, so shapes carry no dead fields.
+Colours are strings: `#rrggbb`, or `#rrggbbaa` when not opaque; `#rgb` and `transparent` are accepted on input. `Color` converts to and from `peniko::Color`. Text colour is `stroke_color`. A `stroke_color` of alpha 0 is **no stroke** (Excalidraw's `transparent`); the engine keeps every element visible, so only shapes with a fill, and images, can have it (`style.set`, "No stroke").
+
+**Images.** The stroke of an image is its optional outline, drawn on the edge of the box (width, dash and colour; nothing when the colour is clear). A new image gets `Style::for_image`: a clear stroke colour, width 2 and the other defaults, wherever it comes from (paste, drop, the picker, `image.insert`, the npm package; an Excalidraw picture whose file has no stroke colour; a migrated old-format picture, whose stored black stroke the old app never drew). A picture shows without a stroke, so "No stroke" is allowed for it. Choosing a stroke colour outlines it; choosing only a width or a dash for a picture with no outline outlines it in the default stroke colour. A document that already stores an outline on a picture (the indigo that the first builds gave every picture) keeps drawing it as stored. Nothing rewrites it. Font settings live in `TextData.font`, not in `Style`, so shapes carry no dead fields.
 
 ## 6. Z-order
 
@@ -197,7 +199,7 @@ Old = `docs/formats.md` section 1 (commit `8ce40ab`). The migration itself belon
 | `.source_width, source_height` | `natural_width, natural_height` | |
 | `.format` Png, Jpeg, WebP | `FileEntry.mime` | Informational in the old app; `io` should sniff the bytes. |
 | `.data_base64` | `Document.files[hash].bytes` | Embedded once per content hash. |
-| `Image.style` | `style` | Stroke is a border. |
+| `Image.style` | `style` | The old app stored a stroke (black, 2 wide) on every picture and never drew it. The stroke is an optional outline here, so the import clears the colour: a migrated picture has no outline. |
 | `Group.children` (by value, absolute coordinates) | children become elements; `group_ids` | New `GroupId` per group, appended after the child's own groups (innermost first). A group with fewer than two children gets no id. |
 | `Group.rotation` | none | Cosmetic in the old app; `io` bakes it into the children's `angle` and positions. |
 | `Group.style` | none | Throwaway. |
@@ -205,7 +207,7 @@ Old = `docs/formats.md` section 1 (commit `8ce40ab`). The migration itself belon
 
 Loro schema fields (`formats.md` section 2.3) are covered by the same rows (`has_fill` = `fill_color` present, `intermediate_points`, `content` for math = `latex`).
 
-Excalidraw import (for `io`, not tested here): `strokeColor: "transparent"` <-> a stroke of alpha 0 (written back as `transparent`); `angle` -> `transform.angle`; `strokeStyle` -> `style.stroke_style`; `roughness` -> `sloppiness`; `fillStyle` -> `fill_pattern`; `opacity/100` -> `style.opacity`; `roundness` -> `corner_radius` or `path round`; `groupIds` -> `group_ids`; `frameId` -> `frame_id`; `containerId` -> `TextData.container_id`; `boundElements` -> derived, not imported; `startBinding/endBinding {elementId, fixedPoint, mode}` -> `Binding` (`skip` -> none); `startArrowhead/endArrowhead` -> `start_head/end_head`; `elbowed` -> `path elbow`; `fixedSegments`, `startIsSpecial`, `endIsSpecial` -> same names; `index` -> `index`; `isDeleted` -> `deleted`; `locked`, `link`, `customData` -> same; `fontFamily`, `textAlign`, `verticalAlign`, `lineHeight`, `autoResize`, `labelPosition` -> `TextData`; `crop`, `fileId`, `scale` -> `ImageData`, `flip_x/y`; `name` of a frame -> `FrameData.name`; `version/versionNonce/updated/created` -> dropped.
+Excalidraw import (for `io`, not tested here): `strokeColor: "transparent"` <-> a stroke of alpha 0 (written back as `transparent`); for a picture, a missing or unreadable `strokeColor` is also no stroke (Excalidraw writes `transparent` for every picture and never paints an outline; a colour that is in the file is kept as the outline, which is what this app's export writes); `angle` -> `transform.angle`; `strokeStyle` -> `style.stroke_style`; `roughness` -> `sloppiness`; `fillStyle` -> `fill_pattern`; `opacity/100` -> `style.opacity`; `roundness` -> `corner_radius` or `path round`; `groupIds` -> `group_ids`; `frameId` -> `frame_id`; `containerId` -> `TextData.container_id`; `boundElements` -> derived, not imported; `startBinding/endBinding {elementId, fixedPoint, mode}` -> `Binding` (`skip` -> none); `startArrowhead/endArrowhead` -> `start_head/end_head`; `elbowed` -> `path elbow`; `fixedSegments`, `startIsSpecial`, `endIsSpecial` -> same names; `index` -> `index`; `isDeleted` -> `deleted`; `locked`, `link`, `customData` -> same; `fontFamily`, `textAlign`, `verticalAlign`, `lineHeight`, `autoResize`, `labelPosition` -> `TextData`; `crop`, `fileId`, `scale` -> `ImageData`, `flip_x/y`; `name` of a frame -> `FrameData.name`; `version/versionNonce/updated/created` -> dropped.
 
 ## 11. Decisions and deviations
 

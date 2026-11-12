@@ -14,7 +14,10 @@ use serde_json::{Value, json};
 async fn initialize_names_the_server_and_points_at_the_guide() {
     let mut c = Client::start(headless()).await;
     let init = c.result("initialize", json!({ "protocolVersion": "2025-06-18", "capabilities": {}, "clientInfo": { "name": "t", "version": "1" } })).await;
-    assert_eq!(init["serverInfo"]["name"], "drafftink-mcp");
+    // One name for both programs; the title and description say which one serves.
+    assert_eq!(init["serverInfo"]["name"], "drafftink");
+    assert_eq!(init["serverInfo"]["title"], "Drafft.ink headless");
+    assert!(init["serverInfo"]["description"].as_str().unwrap().contains("drafftink-headless"));
     assert!(init["capabilities"]["tools"].is_object());
     assert!(init["capabilities"]["prompts"].is_object());
     let text = init["instructions"].as_str().unwrap();

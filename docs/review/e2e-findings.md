@@ -1,5 +1,7 @@
 # End-to-end findings
 
+> Note (2026-11-12): the programs `drafftink-cli`, `drafftink-mcp` and `drafftink-server` named here were merged into `drafftink-headless` (and the `drafftink mcp` subcommand) in D18 (`docs/deviations.md`). This document keeps the names of its date.
+
 What the browser and native suites (`docs/testing.md`, "Browser and native e2e") found in the apps, and what they do not cover.
 Numbers are from `cargo xtask e2e` on the NVIDIA L40S under Xvfb, Chromium 1208 (Playwright 1.58), 2026-11-08.
 
