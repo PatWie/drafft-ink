@@ -12,7 +12,7 @@ To render a formula, you need two ingredients: a mathematical font and a graphic
 
 First, load and parse the font with e.g. the `ttf-parser` crate.
 
-```no_run
+```ignore
 // create font backend
 let font_file = std::fs::read("font.otf").expect("Couldn't load font");
 let font = ttf_parser::Face::parse(&font_file, 0).expect("Couldn't parse font.");
@@ -21,7 +21,7 @@ let math_font = rex::font::backend::ttf_parser::TtfMathFont::new(font).expect("T
 
 Second, create the graphical backend, e.g. with `cairo` here
 
-```no_run
+```ignore
 # // create font backend
 # let font_file = std::fs::read("font.otf").expect("Couldn't load font");
 # let font = ttf_parser::Face::parse(&font_file, 0).expect("Couldn't parse font.");
@@ -38,7 +38,7 @@ let mut backend = rex::cairo::CairoBackend::new(context);
 With font and backend, a call to `render` will render the formula:
 
 
-```no_run
+```ignore
 # // create font backend
 # let font_file = std::fs::read("font.otf").expect("Couldn't load font");
 # let font = ttf_parser::Face::parse(&font_file, 0).expect("Couldn't parse font.");
@@ -82,14 +82,14 @@ The call to `render` is a wrapper around three operations and we may break these
 
 We can perform these steps manually. First, we parse the formula:
 
-```
+```text
 // Step 1: parsing formula into nodes
 let parse_nodes = rex::parser::parse(r"e = \lim_{n \to \infty} \left(1 + \frac{1}{n}\right)^n").expect("Parse error");
 ```
 
 Then, with the font backend loaded, we lay out the nodes in space:
 
-```no_run
+```ignore
 # // Step 1: parsing formula into nodes
 # let parse_nodes = rex::parser::parse(r"e = \lim_{n \to \infty} \left(1 + \frac{1}{n}\right)^n").expect("Parse error");
 # 
@@ -108,7 +108,7 @@ let layout = rex::layout::engine::LayoutBuilder::new(&math_font).layout(&parse_n
 The layout contains useful information like the dimension of the formulas. We use this to center:
 
 
-```no_run
+```ignore
 # // Step 1: parsing formula into nodes
 # let parse_nodes = rex::parser::parse(r"e = \lim_{n \to \infty} \left(1 + \frac{1}{n}\right)^n").expect("Parse error");
 # 
@@ -134,7 +134,7 @@ let mut backend = rex::cairo::CairoBackend::new(context);
 
 Finally, we may render:
 
-```no_run
+```ignore
 # // Step 1: parsing formula into nodes
 # let parse_nodes = rex::parser::parse(r"e = \lim_{n \to \infty} \left(1 + \frac{1}{n}\right)^n").expect("Parse error");
 # 
