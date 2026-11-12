@@ -269,9 +269,27 @@ fn print_sizes(sizes: &[Size]) -> Result<(), String> {
     if too_big.is_empty() { Ok(()) } else { Err(format!("over the 10 MiB limit of crates.io: {}", too_big.join(", "))) }
 }
 
-/// The size of `<name>-<version>.crate` in `<target>/package`, once the dry run has written it.
+/// Where a dry run leaves `<name>-<version>.crate`: in `<target>/package` for a workspace run, in its `tmp-crate`
+/// folder for a single package.
+fn crate_files(target_dir: &Path, name: &str, version: &str) -> [PathBuf; 2] {
+    let package = target_dir.join("package");
+    let file = format!("{name}-{version}.crate");
+    [package.join(&file), package.join("tmp-crate").join(file)]
+}
+
+/// The size of the package the dry run has just written.
 fn crate_bytes(target_dir: &Path, name: &str, version: &str) -> Option<u64> {
-    fs::metadata(target_dir.join("package").join(format!("{name}-{version}.crate"))).ok().map(|m| m.len())
+    crate_files(target_dir, name, version).iter().find_map(|path| fs::metadata(path).ok()).map(|m| m.len())
+}
+
+/// Removes the packages of an earlier run, so that a size is always from this run.
+fn forget_packages(target_dir: &Path, packages: &[Size]) {
+    for size in packages {
+        for path in crate_files(target_dir, &size.name, &size.version) {
+            // A file that is not there is the normal case.
+            let _ = fs::remove_file(path);
+        }
+    }
 }
 
 fn target_directory(meta: &Value) -> PathBuf {
@@ -339,8 +357,9 @@ pub fn run_publish(root: &Path, args: &[String]) -> Result<(), String> {
         "checks: metadata, versions of path dependencies, no Git dependency, no hand-drawn font in any package: ok\n"
     );
 
-    run(&mut publish_command(root, &options))?;
     let target_dir = target_directory(&meta);
+    forget_packages(&target_dir, &sizes);
+    run(&mut publish_command(root, &options))?;
     run(&mut publish_deprecated_command(root, &options, &target_dir))?;
 
     let sizes: Vec<Size> =

@@ -1,3 +1,5 @@
+// Upstream code, vendored as it is (docs/typeset.md): its lints are not ours. A source attribute beats `-D warnings`.
+#![allow(warnings, clippy::all)]
 /*! # A mathematical typesetting engine based on LuaTeX and XeTeX.
 
 This is a Rust mathematical typesetting engine library. It takes a formula written in TeX syntax (e.g. `\cos\frac{\pi}{4}`) and renders it to a screen, an image, etc.

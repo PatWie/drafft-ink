@@ -12,7 +12,7 @@ const LOWER_OMEGA: u32 = 0x3C9;
 const DIGIT_0: u32 = 0x30;
 const DIGIT_9: u32 = 0x39;
 
-#[cfg_attr(rustfmt, rustfmt_skip)]
+#[rustfmt::skip]
 const LATIN_UPPER_LUT: [u32; 28] = [
 //  None,              Italic,            Bold,              BoldItalic
     65      - UPPER_A, 0x1D434 - UPPER_A, 0x1D400 - UPPER_A, 0x1D468 - UPPER_A,   // Roman
@@ -24,7 +24,7 @@ const LATIN_UPPER_LUT: [u32; 28] = [
     0x1D434 - UPPER_A, 0x1D434 - UPPER_A, 0x1D400 - UPPER_A, 0x1D468 - UPPER_A,   // Normal
 ];
 
-#[cfg_attr(rustfmt, rustfmt_skip)]
+#[rustfmt::skip]
 const LATIN_LOWER_LUT: [u32; 28] = [
 //  None,              Italic,            Bold,              BoldItalic
     97      - LOWER_A, 0x1D44E - LOWER_A, 0x1D41A - LOWER_A, 0x1D482 - LOWER_A,   // Roman
@@ -36,7 +36,7 @@ const LATIN_LOWER_LUT: [u32; 28] = [
     0x1D44E - LOWER_A, 0x1D44E - LOWER_A, 0x1D41A - LOWER_A, 0x1D482 - LOWER_A,   // Normal
 ];
 
-#[cfg_attr(rustfmt, rustfmt_skip)]
+#[rustfmt::skip]
 const GREEK_UPPER_LUT: [u32; 28] = [
 //  None,                  Italic,                Bold,                  BoldItalic
     0x391   - UPPER_ALPHA, 0x1D6E2 - UPPER_ALPHA, 0x1D6A8 - UPPER_ALPHA, 0x1D71C - UPPER_ALPHA,   // Roman
@@ -48,7 +48,7 @@ const GREEK_UPPER_LUT: [u32; 28] = [
     0x1D6E2 - UPPER_ALPHA, 0x1D6E2 - UPPER_ALPHA, 0x1D6A8 - UPPER_ALPHA, 0x1D71C - UPPER_ALPHA,   // Normal
 ];
 
-#[cfg_attr(rustfmt, rustfmt_skip)]
+#[rustfmt::skip]
 const GREEK_LOWER_LUT: [u32; 28] = [
 //  None,                  Italic,                Bold,                  BoldItalic
     0x3B1   - LOWER_ALPHA, 0x1D6FC - LOWER_ALPHA, 0x1D6C2 - LOWER_ALPHA, 0x1D736 - LOWER_ALPHA,   // Roman
@@ -60,7 +60,7 @@ const GREEK_LOWER_LUT: [u32; 28] = [
     0x1D6FC - LOWER_ALPHA, 0x1D6FC - LOWER_ALPHA, 0x1D6C2 - LOWER_ALPHA, 0x1D736 - LOWER_ALPHA,   // Normal
 ];
 
-#[cfg_attr(rustfmt, rustfmt_skip)]
+#[rustfmt::skip]
 const DIGIT_LUT: [u32; 28] = [
 //  None,              Italic,            Bold,              BoldItalic
     48      - DIGIT_0, 48      - DIGIT_0, 0x1D7CE - DIGIT_0, 0x1D7CE - DIGIT_0,   // Roman

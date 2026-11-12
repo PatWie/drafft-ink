@@ -31,7 +31,3 @@ serde_derive = "1.0"
 serde = "1.0"
 log = "0.4.8"
 ttf-parser = { version = "0.25", optional = true }
-
-# Upstream code, vendored as it is: no lint noise from it.
-[lints.rust]
-warnings = "allow"

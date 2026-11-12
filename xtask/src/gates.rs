@@ -95,12 +95,7 @@ impl Gate {
 /// crate below L6, natively and for wasm32, with `xtask/clippy-below-l6/clippy.toml`, which adds the file system,
 /// the network, threads, processes and UI types to the disallowed lists (those crates do no I/O of their own).
 fn clippy(root: &Path) -> Result<(), String> {
-    let mut workspace = cargo(root);
-    workspace.args(["clippy", "--workspace", "--all-targets", "--all-features"]);
-    for krate in layers::vendored() {
-        workspace.args(["--exclude", krate]);
-    }
-    run(workspace.args(["--", "-D", "warnings"]))?;
+    run(cargo(root).args(["clippy", "--workspace", "--all-targets", "--all-features", "--", "-D", "warnings"]))?;
     let strict_config = root.join("xtask/clippy-below-l6");
     for target in [None, Some(wasm::TARGET)] {
         let mut command = cargo(root);

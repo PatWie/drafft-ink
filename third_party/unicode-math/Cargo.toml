@@ -26,7 +26,3 @@ doctest = false
 [build-dependencies]
 regex = "1"
 nom = "7.1.3"
-
-# Upstream code, vendored as it is: no lint noise from it.
-[lints.rust]
-warnings = "allow"

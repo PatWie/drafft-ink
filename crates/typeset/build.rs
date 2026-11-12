@@ -4,6 +4,10 @@
 //! (`exclude` in `Cargo.toml`). They exist in the Git repository only, so a build from crates.io with that feature would
 //! otherwise stop with "couldn't read ../assets/fonts/GelPen.ttf" from `include_bytes!`.
 
+// A build script runs on the machine that builds the crate and may look at files; the library code below L6 may not
+// (`xtask/clippy-below-l6/clippy.toml`).
+#![allow(clippy::disallowed_methods)]
+
 use std::env;
 use std::error::Error;
 use std::path::PathBuf;

@@ -594,7 +594,6 @@ fn every_fallback_font_has_only_characters_it_claims_and_claims_do_not_overlap()
 #[test]
 #[cfg(not(feature = "hand-fonts"))]
 fn without_hand_fonts_the_hand_families_are_drawn_with_noto_sans() {
-    assert!(!HAND_FONTS);
     let mut ts = Typesetter::new();
     let mut noto = plain("Sphinx of black quartz", 24.0);
     noto.style.family = FontFamily::NotoSans;
@@ -637,8 +636,12 @@ fn without_hand_fonts_a_formula_lays_out_with_a_noto_sans_text_font() {
 #[test]
 #[cfg(feature = "hand-fonts")]
 fn with_hand_fonts_the_hand_families_have_their_own_files() {
-    assert!(HAND_FONTS);
     let gelpen = font_file(&FontFamily::GelPen, FontWeight::Regular).unwrap_or_default();
     let noto = font_file(&FontFamily::NotoSans, FontWeight::Regular).unwrap_or_default();
     assert_ne!(gelpen.as_ptr(), noto.as_ptr());
+}
+
+#[test]
+fn hand_fonts_reports_the_cargo_feature() {
+    assert_eq!(HAND_FONTS, cfg!(feature = "hand-fonts"));
 }

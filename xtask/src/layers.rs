@@ -210,11 +210,6 @@ pub fn libraries_below_l6() -> Vec<&'static str> {
         .collect()
 }
 
-/// The copies of upstream crates in `third_party/`. Clippy leaves them alone: their code is upstream's.
-pub fn vendored() -> impl Iterator<Item = &'static str> {
-    TABLE.iter().filter(|(_, class)| *class == Class::Vendored).map(|(name, _)| *name)
-}
-
 pub fn classify(package: &str) -> Option<Class> {
     TABLE.iter().find(|(name, _)| *name == package).map(|(_, class)| *class)
 }

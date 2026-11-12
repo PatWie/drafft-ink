@@ -1,3 +1,5 @@
+// Upstream code, vendored as it is (docs/typeset.md): its lints are not ours. A source attribute beats `-D warnings`.
+#![allow(warnings, clippy::all)]
 use regex::Regex;
 use std::path::PathBuf;
 use std::{env, fs};
