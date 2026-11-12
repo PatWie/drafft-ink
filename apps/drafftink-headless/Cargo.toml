@@ -16,6 +16,12 @@ name = "drafftink-headless"
 path = "src/main.rs"
 
 [features]
+default = ["png"]
+# PNG export without a GPU (`convert x.drafftink x.png`, `doc.export` as png): the scene is drawn on the CPU by `vello_cpu`,
+# pure Rust, no system library (`docs/headless-png.md`). Without it a PNG output refuses and says how to proceed.
+png = ["drafftink-cli/png"]
+# Also draw with Vello on wgpu when the machine has an adapter (adds wgpu to this program; the CPU draws when there is none).
+png-gpu = ["png", "drafftink-cli/png-gpu"]
 # The hand-drawn fonts (GelPen, GelPen Serif, Vanilla Extract) from the Git repository, not from crates.io: see
 # `drafftink-typeset`. Without this feature those families are drawn with Noto Sans.
 hand-fonts = ["drafftink-cli/hand-fonts", "drafftink-mcp/hand-fonts"]
