@@ -12,6 +12,7 @@
 //! * [`paint_grid`] draws a grid whose cost is bounded at every zoom.
 //! * [`replay`] reads a finished scene back into immediate-mode calls, for renderers other than Vello's GPU one
 //!   (the WebGL2 fallback, a CPU rasteriser).
+//! * [`compose_export`] and [`encode_png`] make the picture of a PNG export: the scene of a region, and the file.
 //! * [`ImageCache`] holds decoded pictures and lets the host decode on a worker.
 //!
 //! This crate never creates a GPU device or a surface; the `gpu` crate renders the scenes. It builds for wasm32.
@@ -22,6 +23,7 @@
 
 mod cache;
 mod composer;
+mod export;
 mod fragment;
 mod frame_label;
 mod grid;
@@ -43,6 +45,7 @@ mod zorder;
 
 pub use cache::{CacheStats, DEFAULT_CACHE_BYTES, FragmentCache, Outcome};
 pub use composer::{FrameReport, SceneComposer};
+pub use export::{ExportError, ExportSpec, Exported, MAX_SIDE, compose_export, encode_png};
 pub use fragment::{Fragment, scene_bytes};
 pub use grid::{
     DEFAULT_SPACING, GridSpec, GridStats, GridStyle, MAX_LINES, MAX_POINTS, MIN_CELL_PX, grid_spacing, paint_grid,

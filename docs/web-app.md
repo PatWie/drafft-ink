@@ -215,7 +215,7 @@ The spike (`stack.md` §7) measured 63 ms for 3,000 shapes and 8,136 glyphs at 1
 ## PNG export
 
 The engine's `Renderer` port is synchronous, and a browser reads a texture back from the GPU asynchronously. So the port works in two
-steps (`web/render.rs`). The first `render_png` for a request composes the scene (the same code as the desktop, `crates/app/src/offscreen.rs`),
+steps (`web/render.rs`). The first `render_png` for a request composes the scene (the same code as the desktop, `crates/app/src/offscreen.rs` over `drafftink_render::compose_export`),
 starts drawing it on a GPU device of its own and answers `PortError::NotReady`; the command refuses with `render_pending`. When the pixels are
 back the port wakes the app. The caller then runs the command again, and the second call (same document, same request) gets the finished PNG.
 Nobody sees the refusal in normal use:

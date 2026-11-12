@@ -11,7 +11,7 @@ use super::canvas::{CpuCanvas, pictures_of};
 use super::compose::{Composed, compose};
 use super::error::RasterError;
 #[cfg(feature = "png-gpu")]
-use super::gpu::GpuRaster;
+use super::gpu::{GpuError, GpuRaster};
 
 /// Draws pictures: on the GPU when the build has `png-gpu` and the machine has an adapter, else on the CPU. It holds
 /// the text engine it shares with the session and, with `png-gpu`, a device opened on the first picture, so it costs
@@ -51,7 +51,7 @@ impl PngRenderer {
 
     /// The picture on the GPU, `None` when there is no GPU to draw it on.
     #[cfg(feature = "png-gpu")]
-    fn rasterize_on_gpu(&self, composed: &Composed) -> Option<Result<Vec<u8>, RasterError>> {
+    fn rasterize_on_gpu(&self, composed: &Composed) -> Option<Result<Vec<u8>, GpuError>> {
         let mut state = self.gpu.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
         if matches!(*state, GpuState::Unopened) {
             let cpu_only = std::env::var(RENDERER_VARIABLE).is_ok_and(|v| v.eq_ignore_ascii_case("cpu"));
@@ -80,7 +80,7 @@ impl Renderer for PngRenderer {
         };
         #[cfg(not(feature = "png-gpu"))]
         let rgba = rasterize(&composed);
-        encode_png(width, height, &rgba).map_err(into_port_error)
+        drafftink_render::encode_png(width, height, &rgba).map_err(|e| into_port_error(e.into()))
     }
 }
 
@@ -105,18 +105,6 @@ fn rasterize(composed: &Composed) -> Vec<u8> {
         RasterizerSettings { target_init: TargetInit::Clear(composed.base), ..RasterizerSettings::default() };
     ctx.render_with(&mut target, &mut resources, settings);
     target.take_rgba8(ImageAlphaType::Alpha)
-}
-
-/// An 8-bit RGBA PNG.
-fn encode_png(width: u32, height: u32, rgba: &[u8]) -> Result<Vec<u8>, RasterError> {
-    let mut out = Vec::new();
-    let mut encoder = png::Encoder::new(&mut out, width, height);
-    encoder.set_color(png::ColorType::Rgba);
-    encoder.set_depth(png::BitDepth::Eight);
-    let mut writer = encoder.write_header()?;
-    writer.write_image_data(rgba)?;
-    writer.finish()?;
-    Ok(out)
 }
 
 #[cfg(test)]

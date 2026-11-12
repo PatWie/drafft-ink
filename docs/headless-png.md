@@ -5,7 +5,7 @@ Question: can the headless tool (`drafftink-headless convert|run`, the program o
 ## What was built
 
 - `drafftink_render::replay` (moved from `crates/gpu/src/gl/replay.rs`, behaviour unchanged, tests moved with it): reads a finished `vello::Scene` back as immediate-mode calls on a `Canvas`. The WebGL2 fallback still uses it.
-- `apps/drafftink-cli/src/raster/`: `compose` (document to scene, the app's `offscreen::compose` without the selection overlay), `canvas` (`Canvas` over `vello_cpu::RenderContext`), `gpu` (Vello on wgpu, feature `png-gpu`), `renderer` (`PngRenderer`, the `Renderer` port). `ports::session` shares the text engine between the session and the renderer.
+- `apps/drafftink-cli/src/raster/`: `compose` (the request to `drafftink_render::compose_export`, the code the app's export uses too, with the selection overlay refused), `canvas` (`Canvas` over `vello_cpu::RenderContext`), `gpu` (Vello on wgpu, feature `png-gpu`), `renderer` (`PngRenderer`, the `Renderer` port). `ports::session` shares the text engine between the session and the renderer.
 - Refusals stay plain words: without the feature, `CliError::NoPng`; with it, a picture too large or an overlay request comes back as `render_failed`.
 
 ## Candidates

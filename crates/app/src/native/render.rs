@@ -11,7 +11,7 @@ use drafftink_engine::ports::{RenderRequest, Renderer, SceneView};
 use drafftink_engine::services::SharedTypesetter;
 use drafftink_gpu::{Compositor, Gpu, GpuOptions};
 
-use crate::offscreen::{compose, encode_png};
+use crate::offscreen::compose;
 
 struct Device {
     gpu: Gpu,
@@ -50,6 +50,7 @@ impl Renderer for OffscreenRenderer {
             .compositor
             .render_to_image_blocking(&dev.gpu, composed.size, Some((&composed.scene, composed.base)), None)
             .map_err(|e| PortError::Failed(e.to_string()))?;
-        encode_png(image.width, image.height, &image.rgba)
+        drafftink_render::encode_png(image.width, image.height, &image.rgba)
+            .map_err(|e| PortError::Failed(e.to_string()))
     }
 }

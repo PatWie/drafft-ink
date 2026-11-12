@@ -10,13 +10,35 @@ use vello::wgpu;
 use vello::{AaConfig, AaSupport, RenderParams, Renderer, RendererOptions};
 
 use super::compose::Composed;
-use super::error::RasterError;
 
 /// Most pixels a picture may have to be drawn on the GPU. Vello 0.11 gives no error when a scene needs more of its
 /// working buffers than the device has: the picture comes back black. The intro document is fine at 15 million
 /// pixels and a thousand shapes at 22 million, but 49 million came out black on a 48 GB card and on lavapipe alike.
 /// The CPU has no such limit, so a larger picture is drawn there.
 const MAX_GPU_PIXELS: u64 = 1 << 24;
+
+/// Why the GPU did not make a picture.
+#[derive(Debug, thiserror::Error)]
+pub enum GpuError {
+    /// Vello could not draw the scene.
+    #[error("Vello failed: {0}")]
+    Render(#[from] vello::Error),
+    /// The device did not finish its work.
+    #[error("the device failed while waiting: {0}")]
+    Poll(#[from] wgpu::PollError),
+    /// The device dropped the request to read the pixels back.
+    #[error("the device gave no answer to the read-back: {0}")]
+    NoAnswer(#[from] std::sync::mpsc::RecvError),
+    /// The pixels could not be mapped for reading.
+    #[error("the pixels could not be read back: {0}")]
+    Map(#[from] wgpu::BufferAsyncError),
+    /// The mapped pixels could not be viewed.
+    #[error("the pixels could not be viewed: {0}")]
+    View(#[from] wgpu::MapRangeError),
+    /// The device reported an error that no call returned.
+    #[error("the device reported: {0}")]
+    Device(wgpu::Error),
+}
 
 /// A wgpu device with a Vello renderer on it.
 pub(super) struct GpuRaster {
@@ -26,11 +48,7 @@ pub(super) struct GpuRaster {
     /// Largest side of a texture the device allows.
     max_side: u32,
     /// The first error the device reported that no call returned (wgpu would panic on it by default).
-    uncaptured: Arc<Mutex<Option<String>>>,
-}
-
-fn gpu(e: impl std::fmt::Display) -> RasterError {
-    RasterError::Gpu(e.to_string())
+    uncaptured: Arc<Mutex<Option<wgpu::Error>>>,
 }
 
 impl GpuRaster {
@@ -62,7 +80,7 @@ impl GpuRaster {
         let uncaptured = Arc::new(Mutex::new(None));
         let slot = Arc::clone(&uncaptured);
         device.on_uncaptured_error(Arc::new(move |error: wgpu::Error| {
-            slot.lock().unwrap_or_else(PoisonError::into_inner).get_or_insert(error.to_string());
+            slot.lock().unwrap_or_else(PoisonError::into_inner).get_or_insert(error);
         }));
         let options = RendererOptions { antialiasing_support: AaSupport::area_only(), ..RendererOptions::default() };
         let renderer = Renderer::new(&device, options).ok()?;
@@ -76,7 +94,7 @@ impl GpuRaster {
     }
 
     /// The scene as straight-alpha RGBA8, top row first.
-    pub(super) fn rasterize(&mut self, composed: &Composed) -> Result<Vec<u8>, RasterError> {
+    pub(super) fn rasterize(&mut self, composed: &Composed) -> Result<Vec<u8>, GpuError> {
         let [width, height] = composed.size.map(u32::from);
         let (device, queue) = (&self.device, &self.queue);
         let texture = device.create_texture(&wgpu::TextureDescriptor {
@@ -91,7 +109,7 @@ impl GpuRaster {
         });
         let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
         let params = RenderParams { base_color: composed.base, width, height, antialiasing_method: AaConfig::Area };
-        self.renderer.render_to_texture(device, queue, &composed.scene, &view, &params).map_err(gpu)?;
+        self.renderer.render_to_texture(device, queue, &composed.scene, &view, &params)?;
 
         let padded_row = (width * 4).next_multiple_of(wgpu::COPY_BYTES_PER_ROW_ALIGNMENT);
         let buffer = device.create_buffer(&wgpu::BufferDescriptor {
@@ -119,9 +137,9 @@ impl GpuRaster {
             // The receiver is gone only when this function has already failed.
             let _ = sender.send(result);
         });
-        device.poll(wgpu::PollType::wait_indefinitely()).map_err(gpu)?;
-        receiver.recv().map_err(gpu)?.map_err(gpu)?;
-        let mapped = buffer.slice(..).get_mapped_range().map_err(gpu)?;
+        device.poll(wgpu::PollType::wait_indefinitely())?;
+        receiver.recv()??;
+        let mapped = buffer.slice(..).get_mapped_range()?;
         let row_bytes = width as usize * 4;
         let mut rgba = Vec::with_capacity(row_bytes * height as usize);
         for row in mapped.chunks_exact(padded_row as usize) {
@@ -130,7 +148,7 @@ impl GpuRaster {
         drop(mapped);
         buffer.unmap();
         if let Some(error) = self.uncaptured.lock().unwrap_or_else(PoisonError::into_inner).take() {
-            return Err(gpu(error));
+            return Err(GpuError::Device(error));
         }
         Ok(rgba)
     }

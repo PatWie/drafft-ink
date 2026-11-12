@@ -2,7 +2,9 @@
 
 `render` turns scene elements into Vello scenes. It builds for wasm32 and never creates a GPU device or a
 surface: the `gpu` crate renders the scenes it produces. It depends on `scene`, `geom`, `sketch`, `typeset` and
-`profile`, plus `vello`, `peniko`, `kurbo` and `image`.
+`profile`, plus `vello`, `peniko`, `kurbo`, `image` and `png`.
+
+`compose_export` and `encode_png` (`export.rs`) make the picture of a PNG export: the scene of a region of a document, and the file written from the pixels a renderer drew. The desktop and web apps (`crates/app/src/offscreen.rs`, which adds the selection marks) and the command line (`apps/drafftink-cli`, `docs/headless-png.md`) all call them, so the scene, the size limit (`MAX_SIDE`) and the file format exist once.
 
 Related: `docs/performance.md` (the perf contract), `docs/typeset.md`, `docs/stack.md` §2 (why culling and cached
 fragments).

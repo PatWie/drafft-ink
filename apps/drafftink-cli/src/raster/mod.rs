@@ -18,4 +18,6 @@ mod gpu;
 mod renderer;
 
 pub use error::RasterError;
+#[cfg(feature = "png-gpu")]
+pub use gpu::GpuError;
 pub use renderer::PngRenderer;

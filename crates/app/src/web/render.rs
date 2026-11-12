@@ -23,7 +23,7 @@ use drafftink_scene::Document;
 use wasm_bindgen_futures::spawn_local;
 
 use super::pure::Shelf;
-use crate::offscreen::{Composed, compose, encode_png};
+use crate::offscreen::{Composed, compose};
 
 /// What the pictures are drawn with: its own, made on first use, so the window's device is never blocked. WebGPU when
 /// the browser has it, a hidden WebGL2 canvas when it does not (the fallback module).
@@ -158,5 +158,5 @@ async fn draw(cell: &RefCell<Option<Device>>, composed: Composed) -> Result<Vec<
         *cell.borrow_mut() = Some(device);
     }
     let image = image?;
-    encode_png(image.width, image.height, &image.rgba).map_err(|e| e.to_string())
+    drafftink_render::encode_png(image.width, image.height, &image.rgba).map_err(|e| e.to_string())
 }

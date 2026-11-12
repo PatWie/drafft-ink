@@ -23,7 +23,7 @@ hand-fonts = ["drafftink-engine/hand-fonts"]
 # Without it, a PNG output refuses and says so.
 # `png-gpu` adds Vello on wgpu (the app's own renderer) when the machine has an adapter; the CPU draws when it has none.
 png-gpu = ["png", "dep:vello", "vello/default", "dep:pollster"]
-png = ["dep:vello_cpu", "dep:drafftink-render", "dep:drafftink-geom", "dep:peniko", "dep:png", "dep:log"]
+png = ["dep:vello_cpu", "dep:drafftink-render", "dep:drafftink-geom", "dep:peniko", "dep:log"]
 
 [dependencies]
 drafftink-engine = { path = "../../crates/engine", version = "0.2.0" }
@@ -32,7 +32,6 @@ drafftink-render = { path = "../../crates/render", version = "0.2.0", optional =
 drafftink-geom = { path = "../../crates/geom", version = "0.2.0", optional = true }
 log = { workspace = true, optional = true }
 peniko = { workspace = true, optional = true }
-png = { workspace = true, optional = true }
 vello_cpu = { workspace = true, optional = true }
 vello = { workspace = true, optional = true }
 pollster = { workspace = true, optional = true }
@@ -44,6 +43,7 @@ getrandom = "0.3"
 
 [dev-dependencies]
 # The unit tests of the PNG renderer (feature `png`) write a picture to a folder and read it back.
+png.workspace = true
 tempfile.workspace = true
 
 [lints]

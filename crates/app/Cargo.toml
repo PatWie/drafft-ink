@@ -44,7 +44,6 @@ serde_json = { workspace = true }
 thiserror = { workspace = true }
 log = { workspace = true }
 web-time = { workspace = true }
-png = { workspace = true }
 wgpu = { workspace = true, optional = true }
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
@@ -73,6 +72,7 @@ path = "examples/media/main.rs"
 required-features = ["wgpu"]
 
 [dev-dependencies]
+png = { workspace = true }
 # The tests draw with the hand-drawn fonts (the Git repository has them; a package on crates.io does not, and a path-only
 # dev-dependency is not part of the package).
 drafftink-typeset = { path = "../typeset", features = ["hand-fonts"] }

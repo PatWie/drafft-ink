@@ -2,15 +2,11 @@
 
 use drafftink_engine::ports::{RenderRequest, SceneView};
 use drafftink_engine::services::SharedTypesetter;
-use drafftink_geom::kurbo::{Size, Vec2};
-use drafftink_render::{RenderOptions, Scene, SceneComposer, Theme, View, build_paint_index};
+use drafftink_render::{ExportError, ExportSpec, MAX_SIDE, Scene, compose_export};
 use drafftink_scene::MemoryStore;
 use peniko::Color;
 
 use super::error::RasterError;
-
-/// Longest side of a picture, as in the app's own export.
-pub(super) const MAX_SIDE: u32 = 16_384;
 
 /// A scene ready to be rasterised.
 pub(super) struct Composed {
@@ -22,7 +18,8 @@ pub(super) struct Composed {
     pub size: [u16; 2],
 }
 
-/// Encodes the region of `doc` that `req` asks for.
+/// Encodes the region of `doc` that `req` asks for. The scene is the one the app's export makes
+/// ([`drafftink_render::compose_export`]); only the selection marks are refused.
 pub(super) fn compose(
     typesetter: &SharedTypesetter,
     doc: &SceneView,
@@ -31,24 +28,14 @@ pub(super) fn compose(
     if req.overlay && !req.selection.is_empty() {
         return Err(RasterError::Overlay);
     }
-    let (w, h) = req.size_px;
-    let too_big = || RasterError::Size { width: w, height: h, max: MAX_SIDE };
-    if w == 0 || h == 0 || w > MAX_SIDE || h > MAX_SIDE {
-        return Err(too_big());
-    }
-    let size = [u16::try_from(w).map_err(|_| too_big())?, u16::try_from(h).map_err(|_| too_big())?];
-    let store = MemoryStore::from_document(doc).map_err(|e| RasterError::Document(e.to_string()))?;
-    let (x, y, region_width, _) = req.region;
-    let zoom = f64::from(w) / region_width.max(f64::EPSILON);
-    let view = View::new(zoom, Vec2::new(-x * zoom, -y * zoom), Size::new(f64::from(w), f64::from(h)));
-
-    let mut composer = SceneComposer::new();
-    composer.set_options(RenderOptions::for_export(if req.dark { Theme::Dark } else { Theme::Light }));
-    let index = build_paint_index(&store);
-    let mut scene = Scene::new();
-    typesetter.with(|ts| composer.compose(&store, &index, &view, ts, &mut scene));
-    let base = if req.background { composer.background(&store) } else { Color::TRANSPARENT };
-    Ok(Composed { scene, base, size })
+    let store = MemoryStore::from_document(doc)?;
+    let spec = ExportSpec { region: req.region, size_px: req.size_px, dark: req.dark, background: req.background };
+    let exported = typesetter.with(|ts| compose_export(&store, &spec, ts))?;
+    let [width, height] = exported.size;
+    // `compose_export` keeps each side within `MAX_SIDE`, which a `u16` holds.
+    let too_big = || ExportError::Size { width, height, max: MAX_SIDE };
+    let size = [u16::try_from(width).map_err(|_| too_big())?, u16::try_from(height).map_err(|_| too_big())?];
+    Ok(Composed { scene: exported.scene, base: exported.base, size })
 }
 
 #[cfg(test)]
@@ -88,7 +75,7 @@ mod tests {
         for size_px in [(0, 5), (5, 0), (MAX_SIDE + 1, 5), (5, MAX_SIDE + 1)] {
             let req = RenderRequest { size_px, ..request() };
             let err = compose(&LazyTypesetter::shared(), &Document::default(), &req).err().unwrap();
-            assert!(matches!(err, RasterError::Size { .. }), "{err}");
+            assert!(matches!(err, RasterError::Export(ExportError::Size { .. })), "{err}");
             assert!(err.to_string().contains("pixels"), "{err}");
         }
     }
