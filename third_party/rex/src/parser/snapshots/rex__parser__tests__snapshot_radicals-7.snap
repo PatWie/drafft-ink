@@ -1,0 +1,39 @@
+---
+source: src/parser/mod.rs
+expression: "parse(r\"\\sqrt2_3\")"
+---
+Ok(
+    [
+        Scripts(
+            Scripts {
+                base: Some(
+                    Radical(
+                        Radical {
+                            inner: [
+                                Symbol(
+                                    Symbol {
+                                        codepoint: '2',
+                                        atom_type: Alpha,
+                                    },
+                                ),
+                            ],
+                            character: '√',
+                            index: None,
+                        },
+                    ),
+                ),
+                superscript: None,
+                subscript: Some(
+                    [
+                        Symbol(
+                            Symbol {
+                                codepoint: '3',
+                                atom_type: Alpha,
+                            },
+                        ),
+                    ],
+                ),
+            },
+        ),
+    ],
+)

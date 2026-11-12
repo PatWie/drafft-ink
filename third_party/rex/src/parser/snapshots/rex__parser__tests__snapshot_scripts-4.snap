@@ -1,0 +1,31 @@
+---
+source: src/parser/mod.rs
+expression: "parse(r\"1^\\alpha\")"
+---
+Ok(
+    [
+        Scripts(
+            Scripts {
+                base: Some(
+                    Symbol(
+                        Symbol {
+                            codepoint: '1',
+                            atom_type: Alpha,
+                        },
+                    ),
+                ),
+                superscript: Some(
+                    [
+                        Symbol(
+                            Symbol {
+                                codepoint: '𝛼',
+                                atom_type: Alpha,
+                            },
+                        ),
+                    ],
+                ),
+                subscript: None,
+            },
+        ),
+    ],
+)

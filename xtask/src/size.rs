@@ -220,7 +220,11 @@ fn build_native(root: &Path) -> Result<(), String> {
     for (bin, _) in NATIVE_BINARIES {
         build.args(["-p", bin]);
     }
-    build.args(["--features", "drafftink-server/sqlite,drafftink-server/s3"]);
+    // The release builds carry the hand-drawn fonts from the repository (docs/publishing.md).
+    build.args([
+        "--features",
+        "drafftink-server/sqlite,drafftink-server/s3,drafftink/hand-fonts,drafftink-mcp/hand-fonts",
+    ]);
     run(&mut build)
 }
 

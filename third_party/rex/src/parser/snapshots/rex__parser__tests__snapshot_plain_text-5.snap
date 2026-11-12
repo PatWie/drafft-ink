@@ -1,0 +1,13 @@
+---
+source: src/parser/mod.rs
+expression: "parse(r\"\\text{a{\\}}}\")"
+---
+Ok(
+    [
+        PlainText(
+            PlainText {
+                text: "a}",
+            },
+        ),
+    ],
+)

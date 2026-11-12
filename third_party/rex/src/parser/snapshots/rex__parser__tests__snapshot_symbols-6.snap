@@ -1,0 +1,14 @@
+---
+source: src/parser/mod.rs
+expression: "parse(r\"\\alpha\")"
+---
+Ok(
+    [
+        Symbol(
+            Symbol {
+                codepoint: '𝛼',
+                atom_type: Alpha,
+            },
+        ),
+    ],
+)

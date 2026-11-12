@@ -1,0 +1,31 @@
+---
+source: src/parser/mod.rs
+expression: "parse(r\"\\text{abc}def\")"
+---
+Ok(
+    [
+        PlainText(
+            PlainText {
+                text: "abc",
+            },
+        ),
+        Symbol(
+            Symbol {
+                codepoint: '𝑑',
+                atom_type: Alpha,
+            },
+        ),
+        Symbol(
+            Symbol {
+                codepoint: '𝑒',
+                atom_type: Alpha,
+            },
+        ),
+        Symbol(
+            Symbol {
+                codepoint: '𝑓',
+                atom_type: Alpha,
+            },
+        ),
+    ],
+)

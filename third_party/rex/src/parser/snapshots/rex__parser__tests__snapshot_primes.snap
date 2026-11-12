@@ -1,0 +1,32 @@
+---
+source: src/parser/mod.rs
+assertion_line: 974
+expression: "parse(\"a'\")"
+---
+Ok(
+    [
+        Scripts(
+            Scripts {
+                base: Some(
+                    Symbol(
+                        Symbol {
+                            codepoint: '𝑎',
+                            atom_type: Alpha,
+                        },
+                    ),
+                ),
+                superscript: Some(
+                    [
+                        Symbol(
+                            Symbol {
+                                codepoint: '′',
+                                atom_type: Ordinary,
+                            },
+                        ),
+                    ],
+                ),
+                subscript: None,
+            },
+        ),
+    ],
+)

@@ -1,0 +1,7 @@
+---
+source: src/parser/mod.rs
+expression: "parse(r\"\\frac \\left(1\\right)2\")"
+---
+Err(
+    ExpectedSymbolAfterDelimiterCommand,
+)

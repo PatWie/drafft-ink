@@ -8,7 +8,7 @@ description = "End-to-end support: the native app driven through the agent bridg
 publish = false
 
 [dependencies]
-drafftink-bridge = { path = "../../crates/bridge" }
+drafftink-bridge = { path = "../../crates/bridge", version = "0.2.0" }
 serde_json.workspace = true
 thiserror.workspace = true
 tokio = { workspace = true, features = ["rt", "time"] }

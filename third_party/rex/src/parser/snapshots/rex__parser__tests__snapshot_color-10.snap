@@ -1,0 +1,9 @@
+---
+source: src/parser/mod.rs
+expression: "parse(r\"\\color red{1}\")"
+---
+Err(
+    UnrecognizedColor(
+        "r",
+    ),
+)

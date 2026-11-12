@@ -26,6 +26,8 @@ Every versioned desktop file is also attached once more without the version (`dr
 
 The desktop packages carry no server, and the server archives carry no desktop app. `drafftink-mcp` ships with the desktop app because an MCP client starts it (`drafftink-mcp --attach`) and the app is what it attaches to. `drafftink-cli` (`docs/cli.md`) ships there too: it is a user tool that runs command scripts and converts documents without a window, and it is small next to the app.
 
+Releases on crates.io (`cargo install drafftink`) are a separate path with their own rules for the hand-drawn fonts: `publishing.md`. The release binaries here are built with the Cargo feature `hand-fonts`.
+
 ## Names that are fixed once chosen
 
 - App id `ink.drafft.drafftink` (`packaging/env.sh`): the `.desktop` file name, the icon name, `StartupWMClass`, and the macOS bundle id. The window's Wayland `app_id` must equal it for the dock to find the icon. Check that the app sets it when the window code lands.
@@ -62,7 +64,7 @@ All scripts read the version from `Cargo.toml`, write to `dist-release/` (overri
 
 Icons live in `packaging/icons/` and are committed: `png/{16..512}.png`, `drafftink.ico`, `drafftink.icns`. They are cut from the old repo's `logo.png` (the mark without the word "Drafft", on white). `packaging/icons/generate.py` regenerates them (needs Pillow). The source logo is 293 px wide, so the 512 px and the macOS 1024 px entries are upscaled; replace `logo-original.png` with a vector or larger source when one exists and rerun the script.
 
-The Windows exe gets its icon and version resource from `apps/drafftink/build.rs` (the `embed-resource` crate; it does nothing on other targets, and it follows the *target*, so a cross build embeds it too). The macOS `Info.plist` template is `packaging/macos/Info.plist.in`; the Linux desktop entry and MIME type are in `packaging/linux/`.
+The Windows exe gets its icon and version resource from `build.rs` at the repository root (the `embed-resource` crate; it does nothing on other targets, and it follows the *target*, so a cross build embeds it too). The macOS `Info.plist` template is `packaging/macos/Info.plist.in`; the Linux desktop entry and MIME type are in `packaging/linux/`.
 
 ## CI (`.github/workflows/ci.yml`)
 

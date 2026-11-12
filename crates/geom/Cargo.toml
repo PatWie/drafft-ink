@@ -1,10 +1,15 @@
 [package]
 name = "drafftink-geom"
-description = "Drafft.ink geometry: kurbo re-export, oriented boxes, outline queries, R-tree index, snapping, align/distribute"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
 rust-version.workspace = true
+repository.workspace = true
+homepage.workspace = true
+description = "Drafft.ink geometry (L0): kurbo re-export, oriented boxes, outline queries, R-tree index, snapping, align and distribute."
+readme = "README.md"
+keywords = ["geometry", "kurbo", "r-tree", "snapping", "whiteboard"]
+categories = ["mathematics", "graphics", "algorithms"]
 
 [dependencies]
 kurbo = { workspace = true }

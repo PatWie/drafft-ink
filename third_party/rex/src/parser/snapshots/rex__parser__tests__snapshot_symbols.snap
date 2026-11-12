@@ -1,0 +1,14 @@
+---
+source: src/parser/mod.rs
+expression: "parse(\"1\")"
+---
+Ok(
+    [
+        Symbol(
+            Symbol {
+                codepoint: '1',
+                atom_type: Alpha,
+            },
+        ),
+    ],
+)

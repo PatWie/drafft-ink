@@ -1,0 +1,35 @@
+---
+source: src/parser/mod.rs
+expression: "parse(r\"1_\\mathrm{a}\")"
+---
+Ok(
+    [
+        Scripts(
+            Scripts {
+                base: Some(
+                    Symbol(
+                        Symbol {
+                            codepoint: '1',
+                            atom_type: Alpha,
+                        },
+                    ),
+                ),
+                superscript: None,
+                subscript: Some(
+                    [
+                        Group(
+                            [
+                                Symbol(
+                                    Symbol {
+                                        codepoint: 'a',
+                                        atom_type: Alpha,
+                                    },
+                                ),
+                            ],
+                        ),
+                    ],
+                ),
+            },
+        ),
+    ],
+)

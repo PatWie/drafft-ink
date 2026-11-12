@@ -1,0 +1,25 @@
+---
+source: src/parser/mod.rs
+expression: "parse(r\"\\left(\\right)\")"
+---
+Ok(
+    [
+        Delimited(
+            Delimited {
+                delimiters: [
+                    Symbol {
+                        codepoint: '(',
+                        atom_type: Open,
+                    },
+                    Symbol {
+                        codepoint: ')',
+                        atom_type: Close,
+                    },
+                ],
+                inners: [
+                    [],
+                ],
+            },
+        ),
+    ],
+)

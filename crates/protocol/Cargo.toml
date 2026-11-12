@@ -4,7 +4,12 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 rust-version.workspace = true
-description = "Versioned collaboration wire protocol shared by the drafft.ink client and server."
+repository.workspace = true
+homepage.workspace = true
+description = "Versioned collaboration wire protocol (L0) shared by the Drafft.ink client and server."
+readme = "README.md"
+keywords = ["collaboration", "websocket", "protocol", "crdt", "whiteboard"]
+categories = ["network-programming", "web-programming::websocket", "encoding"]
 
 [dependencies]
 serde.workspace = true

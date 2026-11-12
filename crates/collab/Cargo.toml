@@ -4,13 +4,18 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 rust-version.workspace = true
-description = "Collaboration client: a sans-IO sync state machine, presence, and WebSocket transports (native and web)."
+repository.workspace = true
+homepage.workspace = true
+description = "Drafft.ink collaboration client (L4): a sans-IO sync state machine, presence and WebSocket transports for native and web."
+readme = "README.md"
+keywords = ["collaboration", "crdt", "websocket", "sync", "whiteboard"]
+categories = ["network-programming", "web-programming::websocket"]
 
 [dependencies]
-drafftink-protocol = { path = "../protocol" }
-drafftink-doc = { path = "../doc" }
-drafftink-scene = { path = "../scene" }
-drafftink-profile = { path = "../profile", default-features = false }
+drafftink-protocol = { path = "../protocol", version = "0.2.0" }
+drafftink-doc = { path = "../doc", version = "0.2.0" }
+drafftink-scene = { path = "../scene", version = "0.2.0" }
+drafftink-profile = { path = "../profile", version = "0.2.0", default-features = false }
 log.workspace = true
 loro.workspace = true
 thiserror.workspace = true

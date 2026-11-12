@@ -1450,6 +1450,7 @@ dependencies = [
  "axum",
  "base64 0.22.1",
  "drafftink-engine",
+ "drafftink-typeset",
  "futures-util",
  "getrandom 0.3.4",
  "log",
@@ -1517,6 +1518,7 @@ dependencies = [
  "clap",
  "drafftink-engine",
  "drafftink-scene",
+ "drafftink-typeset",
  "getrandom 0.3.4",
  "serde",
  "serde_json",
@@ -1646,6 +1648,7 @@ dependencies = [
  "console_error_panic_hook",
  "console_log",
  "drafftink-profile",
+ "drafftink-typeset",
  "egui",
  "egui-wgpu",
  "egui-winit",
@@ -1699,6 +1702,7 @@ dependencies = [
  "drafftink-bridge",
  "drafftink-engine",
  "drafftink-scene",
+ "drafftink-typeset",
  "env_logger",
  "getrandom 0.3.4",
  "log",
@@ -1751,6 +1755,17 @@ dependencies = [
  "serde_json",
  "thiserror 2.0.21",
  "vello",
+]
+
+[[package]]
+name = "drafftink-rex"
+version = "0.1.2"
+dependencies = [
+ "drafftink-unicode-math",
+ "log",
+ "serde",
+ "serde_derive",
+ "ttf-parser",
 ]
 
 [[package]]
@@ -1822,6 +1837,7 @@ dependencies = [
  "drafftink-profile",
  "drafftink-render",
  "drafftink-scene",
+ "drafftink-typeset",
  "serde",
  "serde_json",
  "syn 2.0.119",
@@ -1836,13 +1852,13 @@ dependencies = [
  "criterion 0.8.2",
  "drafftink-geom",
  "drafftink-profile",
+ "drafftink-rex",
  "drafftink-typeset",
  "kurbo",
  "parley",
  "peniko",
  "png",
  "proptest",
- "rex",
  "serde_json",
  "thiserror 2.0.21",
  "ttf-parser",
@@ -1861,6 +1877,14 @@ dependencies = [
  "png",
  "serde_json",
  "thiserror 2.0.21",
+]
+
+[[package]]
+name = "drafftink-unicode-math"
+version = "0.1.0"
+dependencies = [
+ "nom 7.1.3",
+ "regex",
 ]
 
 [[package]]
@@ -5439,18 +5463,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "rex"
-version = "0.1.2"
-source = "git+https://github.com/KenyC/ReX?rev=aeccdba38f3fa54195c469319b65c423e17a77ae#aeccdba38f3fa54195c469319b65c423e17a77ae"
-dependencies = [
- "log",
- "serde",
- "serde_derive",
- "ttf-parser",
- "unicode-math",
-]
-
-[[package]]
 name = "rfd"
 version = "0.17.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -6922,15 +6934,6 @@ name = "unicode-ident"
 version = "1.0.27"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a2c754d6c33795a1c324727428e5a7dedb5b06195f9890bdbcba760d3e246563"
-
-[[package]]
-name = "unicode-math"
-version = "0.1.0"
-source = "git+https://github.com/KenyC/ReX?rev=aeccdba38f3fa54195c469319b65c423e17a77ae#aeccdba38f3fa54195c469319b65c423e17a77ae"
-dependencies = [
- "nom 7.1.3",
- "regex",
-]
 
 [[package]]
 name = "unicode-properties"

@@ -1,0 +1,12 @@
+---
+source: src/parser/mod.rs
+expression: "parse(r\"\\substack \\alpha \\\\ 1\")"
+---
+Err(
+    UnexpectedEndGroup {
+        expected: [
+            EndOfInput,
+        ],
+        got: NewLine,
+    },
+)

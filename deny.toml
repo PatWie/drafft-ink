@@ -27,6 +27,7 @@ allow = [
     "CDLA-Permissive-2.0", # permissive data licence: Mozilla CA root list (webpki-root-certs, via the S3 client)
     "OFL-1.1", # fonts
     "Ubuntu-font-1.0", # fonts
+    "LPPL-1.3c", # the symbol tables of drafftink-unicode-math (third_party/, from the LaTeX unicode-math package)
 ]
 confidence-threshold = 0.9
 # Not allowed unless added above with a reason: GPL-2.0-only and similar
@@ -37,7 +38,7 @@ confidence-threshold = 0.9
 unmaintained = "workspace"
 yanked = "warn"
 ignore = [
-    # ttf-parser is unmaintained (no vulnerability). ReX (math layout) can only read fonts through
+    # ttf-parser is unmaintained (no vulnerability). ReX (math layout, third_party/rex) can only read fonts through
     # it (feature `ttfparser-fontparser`), and `typeset` uses it on the bundled fonts and to check
     # user fonts. Revisit when ReX moves to skrifa/read-fonts (docs/typeset.md, "ReX").
     { id = "RUSTSEC-2026-0192", reason = "ReX's font backend; see docs/typeset.md" },
@@ -52,5 +53,6 @@ allow-wildcard-paths = true
 unknown-registry = "deny"
 unknown-git = "deny"
 allow-registry = ["https://github.com/rust-lang/crates.io-index"]
-# ReX at a pinned commit, the only maths layout engine in Rust that does TeX layout (docs/typeset.md).
-allow-git = ["https://github.com/KenyC/ReX"]
+# No Git sources: crates.io does not accept them. ReX, the only maths layout engine in Rust that does TeX layout, is
+# vendored in third_party/rex (docs/typeset.md).
+allow-git = []

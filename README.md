@@ -66,8 +66,14 @@ For apps of your own, the canvas is also a library: panning, zooming, hit testin
 **On your computer.** You need [Rust](https://rustup.rs/).
 
 ```sh
+cargo install drafftink     # from crates.io; the hand-drawn fonts are drawn with Noto Sans instead, see Licence below
+```
+
+Or build it from the repository, which has the hand-drawn fonts:
+
+```sh
 git clone https://github.com/PatWie/drafft-ink.git && cd drafft-ink
-cargo run --release -p drafftink
+cargo run --release -p drafftink --features hand-fonts     # or scripts/run-native.sh
 ```
 
 **Your own web version.**
@@ -92,3 +98,5 @@ Issues and pull requests are welcome. Read [AGENTS.md](AGENTS.md) first and run 
 ## Licence
 
 **AGPL-3.0.** Use it, change it, host it, keep it open. If you host a changed copy, share your changes too. The app links to its source in the About dialog. The bundled fonts have their own terms, listed in [ATTRIBUTION.md](ATTRIBUTION.md).
+
+**The hand-drawn fonts (GelPen, GelPen Serif, Vanilla Extract).** These fonts are not covered by the AGPL. They are by Shara Weber and remain under her terms. They are included only so Drafft.ink can display them. For any other use, get them from sharasfonts.com and follow her terms. They are not part of the crates.io packages. `cargo install drafftink` therefore draws those three families with Noto Sans; a build from this repository with the Cargo feature `hand-fonts` (the web app and the release binaries have it) draws them as designed. See [docs/publishing.md](docs/publishing.md).

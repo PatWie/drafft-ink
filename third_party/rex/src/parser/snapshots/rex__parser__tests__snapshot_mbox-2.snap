@@ -1,0 +1,12 @@
+---
+source: src/parser/mod.rs
+expression: "parse(r\"\\mbox{}}\")"
+---
+Err(
+    UnexpectedEndGroup {
+        expected: [
+            EndOfInput,
+        ],
+        got: BraceGroup,
+    },
+)

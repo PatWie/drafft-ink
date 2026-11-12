@@ -29,3 +29,4 @@ Drafft.ink is an infinite-canvas whiteboard in Rust (Vello on WebGPU, egui, Loro
 | The headless command line | `docs/cli.md` |
 | File formats | `docs/formats.md` |
 | Building, running, the desktop and web apps | `docs/building.md` |
+| Publishing to crates.io, the hand-drawn fonts (`hand-fonts`) | `docs/publishing.md` |

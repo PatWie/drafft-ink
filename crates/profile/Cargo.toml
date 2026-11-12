@@ -1,10 +1,15 @@
 [package]
 name = "drafftink-profile"
-description = "Drafft.ink performance tooling: spans, frame stats, redraw reasons, work counters, PerfStats JSON, Chrome trace"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
 rust-version.workspace = true
+repository.workspace = true
+homepage.workspace = true
+description = "Drafft.ink performance tooling (L0): spans, frame stats, redraw reasons, work counters, PerfStats JSON and Chrome traces."
+readme = "README.md"
+keywords = ["profiling", "performance", "tracing", "frame-stats", "whiteboard"]
+categories = ["development-tools::profiling"]
 
 [features]
 default = ["enabled"]

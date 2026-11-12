@@ -1,10 +1,15 @@
 [package]
 name = "drafftink-gpu"
-description = "Drafft.ink GPU and shell: the winit shell for native and web over two drawing back ends, Vello on wgpu and vello_gpu on WebGL2"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
 rust-version.workspace = true
+repository.workspace = true
+homepage.workspace = true
+description = "Drafft.ink GPU and shell (L6): the winit shell for native and web over two drawing back ends, Vello on wgpu and vello_gpu on WebGL2."
+readme = "README.md"
+keywords = ["wgpu", "vello", "winit", "webgl", "whiteboard"]
+categories = ["graphics", "rendering::graphics-api", "gui"]
 
 [features]
 default = ["wgpu"]
@@ -15,7 +20,7 @@ wgpu = ["dep:wgpu", "dep:egui-wgpu", "vello/default"]
 webgl = ["dep:vello_gpu", "dep:glifo", "dep:egui_glow", "dep:glow"]
 
 [dependencies]
-drafftink-profile = { path = "../profile" }
+drafftink-profile = { path = "../profile", version = "0.2.0" }
 egui = { workspace = true }
 egui-wgpu = { workspace = true, optional = true }
 wgpu = { workspace = true, features = ["std", "wgsl"], optional = true }
@@ -61,6 +66,8 @@ web-sys = { workspace = true, features = [
 ] }
 
 [dev-dependencies]
+# A font for the glyph-run tests of the WebGL2 replay. Path only: a dev-dependency without a version is not published.
+drafftink-typeset = { path = "../typeset", features = ["noto-sans"] }
 wgpu = { workspace = true }
 vello = { workspace = true }
 pollster = { workspace = true }

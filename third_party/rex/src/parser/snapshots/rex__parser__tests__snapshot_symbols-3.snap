@@ -1,0 +1,14 @@
+---
+source: src/parser/mod.rs
+expression: "parse(\"+\")"
+---
+Ok(
+    [
+        Symbol(
+            Symbol {
+                codepoint: '+',
+                atom_type: Binary,
+            },
+        ),
+    ],
+)

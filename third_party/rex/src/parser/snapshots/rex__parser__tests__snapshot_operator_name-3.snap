@@ -1,0 +1,7 @@
+---
+source: src/parser/mod.rs
+expression: "parse(r\"\\operatorname{\\frac12}\")"
+---
+Err(
+    ExpectedChars,
+)

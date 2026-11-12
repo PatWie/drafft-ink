@@ -1,0 +1,18 @@
+---
+source: src/parser/mod.rs
+expression: "parse(r\"\\nonumber{1}\")"
+---
+Ok(
+    [
+        Group(
+            [
+                Symbol(
+                    Symbol {
+                        codepoint: '1',
+                        atom_type: Alpha,
+                    },
+                ),
+            ],
+        ),
+    ],
+)

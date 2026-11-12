@@ -1,0 +1,56 @@
+---
+source: src/parser/mod.rs
+expression: "parse(r\"\\frac{1+0} {2+2}\")"
+---
+Ok(
+    [
+        GenFraction(
+            GenFraction {
+                numerator: [
+                    Symbol(
+                        Symbol {
+                            codepoint: '1',
+                            atom_type: Alpha,
+                        },
+                    ),
+                    Symbol(
+                        Symbol {
+                            codepoint: '+',
+                            atom_type: Binary,
+                        },
+                    ),
+                    Symbol(
+                        Symbol {
+                            codepoint: '0',
+                            atom_type: Alpha,
+                        },
+                    ),
+                ],
+                denominator: [
+                    Symbol(
+                        Symbol {
+                            codepoint: '2',
+                            atom_type: Alpha,
+                        },
+                    ),
+                    Symbol(
+                        Symbol {
+                            codepoint: '+',
+                            atom_type: Binary,
+                        },
+                    ),
+                    Symbol(
+                        Symbol {
+                            codepoint: '2',
+                            atom_type: Alpha,
+                        },
+                    ),
+                ],
+                bar_thickness: Default,
+                left_delimiter: None,
+                right_delimiter: None,
+                style: NoChange,
+            },
+        ),
+    ],
+)

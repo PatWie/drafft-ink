@@ -1,0 +1,35 @@
+---
+source: src/parser/mod.rs
+expression: "parse(r\"\\operatorname{cof}\")"
+---
+Ok(
+    [
+        AtomChange(
+            AtomChange {
+                at: Operator(
+                    false,
+                ),
+                inner: [
+                    Symbol(
+                        Symbol {
+                            codepoint: 'c',
+                            atom_type: Ordinary,
+                        },
+                    ),
+                    Symbol(
+                        Symbol {
+                            codepoint: 'o',
+                            atom_type: Ordinary,
+                        },
+                    ),
+                    Symbol(
+                        Symbol {
+                            codepoint: 'f',
+                            atom_type: Ordinary,
+                        },
+                    ),
+                ],
+            },
+        ),
+    ],
+)

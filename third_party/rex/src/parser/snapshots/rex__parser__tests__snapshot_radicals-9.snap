@@ -1,0 +1,9 @@
+---
+source: src/parser/mod.rs
+expression: "parse(r\"\\sqrt\")"
+---
+Err(
+    MissingArgForCommand(
+        "sqrt",
+    ),
+)

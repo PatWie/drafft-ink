@@ -1,10 +1,15 @@
 [package]
 name = "drafftink-render"
-description = "Drafft.ink scene encoding (L2): per-element Vello fragments, cache, culling, level of detail, grid, overlays"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
 rust-version.workspace = true
+repository.workspace = true
+homepage.workspace = true
+description = "Drafft.ink scene encoding (L2): per-element Vello fragments, cache, culling, level of detail, grid and overlays."
+readme = "README.md"
+keywords = ["vello", "rendering", "whiteboard", "gpu", "canvas"]
+categories = ["rendering", "graphics"]
 
 [features]
 default = []
@@ -13,11 +18,11 @@ default = []
 gpu-tests = ["dep:pollster", "vello/default"]
 
 [dependencies]
-drafftink-geom = { path = "../geom" }
-drafftink-profile = { path = "../profile" }
-drafftink-scene = { path = "../scene" }
-drafftink-sketch = { path = "../sketch" }
-drafftink-typeset = { path = "../typeset" }
+drafftink-geom = { path = "../geom", version = "0.2.0" }
+drafftink-profile = { path = "../profile", version = "0.2.0" }
+drafftink-scene = { path = "../scene", version = "0.2.0" }
+drafftink-sketch = { path = "../sketch", version = "0.2.0" }
+drafftink-typeset = { path = "../typeset", version = "0.2.0" }
 kurbo.workspace = true
 peniko.workspace = true
 vello.workspace = true
@@ -26,7 +31,7 @@ thiserror.workspace = true
 pollster = { workspace = true, optional = true }
 
 [dev-dependencies]
-drafftink-typeset = { path = "../typeset", features = ["embedded"] }
+drafftink-typeset = { path = "../typeset", features = ["hand-fonts", "embedded"] }
 criterion.workspace = true
 proptest.workspace = true
 png.workspace = true

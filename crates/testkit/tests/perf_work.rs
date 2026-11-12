@@ -396,7 +396,7 @@ fn drag_grab() -> (f64, f64) {
     (nums[0], nums[1])
 }
 
-/// The `drag` scenario without a window (`apps/drafftink`'s `scene_for`): the first hundred elements selected, zoom
+/// The `drag` scenario without a window (`src/main.rs`'s `scene_for`): the first hundred elements selected, zoom
 /// 0.5, the grid corner 150 points from the top left of a 1280 x 800 canvas, the driver's press on `DRAG_GRAB`.
 #[test]
 fn the_drag_scenario_moves_its_selection_and_lays_nothing_out_again() {

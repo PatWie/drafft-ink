@@ -1,0 +1,32 @@
+---
+source: src/parser/mod.rs
+expression: "parse(r\"\\underline{abc}\")"
+---
+Ok(
+    [
+        FontEffect(
+            FontEffect {
+                inner: [
+                    Symbol(
+                        Symbol {
+                            codepoint: '𝑎',
+                            atom_type: Alpha,
+                        },
+                    ),
+                    Symbol(
+                        Symbol {
+                            codepoint: '𝑏',
+                            atom_type: Alpha,
+                        },
+                    ),
+                    Symbol(
+                        Symbol {
+                            codepoint: '𝑐',
+                            atom_type: Alpha,
+                        },
+                    ),
+                ],
+            },
+        ),
+    ],
+)

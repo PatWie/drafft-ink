@@ -1,0 +1,32 @@
+---
+source: src/parser/mod.rs
+expression: "parse(r\"\\frac\\alpha\\beta\")"
+---
+Ok(
+    [
+        GenFraction(
+            GenFraction {
+                numerator: [
+                    Symbol(
+                        Symbol {
+                            codepoint: '𝛼',
+                            atom_type: Alpha,
+                        },
+                    ),
+                ],
+                denominator: [
+                    Symbol(
+                        Symbol {
+                            codepoint: '𝛽',
+                            atom_type: Alpha,
+                        },
+                    ),
+                ],
+                bar_thickness: Default,
+                left_delimiter: None,
+                right_delimiter: None,
+                style: NoChange,
+            },
+        ),
+    ],
+)

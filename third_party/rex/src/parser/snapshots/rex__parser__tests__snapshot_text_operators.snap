@@ -1,0 +1,41 @@
+---
+source: src/parser/mod.rs
+expression: "parse(r\"\\sin 1\")"
+---
+Ok(
+    [
+        AtomChange(
+            AtomChange {
+                at: Operator(
+                    false,
+                ),
+                inner: [
+                    Symbol(
+                        Symbol {
+                            codepoint: 's',
+                            atom_type: Ordinary,
+                        },
+                    ),
+                    Symbol(
+                        Symbol {
+                            codepoint: 'i',
+                            atom_type: Ordinary,
+                        },
+                    ),
+                    Symbol(
+                        Symbol {
+                            codepoint: 'n',
+                            atom_type: Ordinary,
+                        },
+                    ),
+                ],
+            },
+        ),
+        Symbol(
+            Symbol {
+                codepoint: '1',
+                atom_type: Alpha,
+            },
+        ),
+    ],
+)

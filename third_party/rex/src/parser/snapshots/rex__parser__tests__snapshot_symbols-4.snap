@@ -1,0 +1,18 @@
+---
+source: src/parser/mod.rs
+expression: "parse(r\"\\mathrm A\")"
+---
+Ok(
+    [
+        Group(
+            [
+                Symbol(
+                    Symbol {
+                        codepoint: 'A',
+                        atom_type: Alpha,
+                    },
+                ),
+            ],
+        ),
+    ],
+)

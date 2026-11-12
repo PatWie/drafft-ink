@@ -1,0 +1,37 @@
+---
+source: src/parser/mod.rs
+expression: "parse(r\"\\begin{array}{c}1\\\\\\end{array}\")"
+---
+Ok(
+    [
+        Array(
+            Array {
+                col_format: ArrayColumnsFormatting {
+                    alignment: [
+                        Centered,
+                    ],
+                    separators: [
+                        [],
+                        [],
+                    ],
+                },
+                rows: [
+                    [
+                        [
+                            Symbol(
+                                Symbol {
+                                    codepoint: '1',
+                                    atom_type: Alpha,
+                                },
+                            ),
+                        ],
+                    ],
+                ],
+                left_delimiter: None,
+                right_delimiter: None,
+                extra_row_sep: false,
+                cell_layout_style: Text,
+            },
+        ),
+    ],
+)

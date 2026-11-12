@@ -1,0 +1,209 @@
+---
+source: src/parser/mod.rs
+expression: "parse(r\"\\sin(a + b) = \\sin a \\cos b + \\cos b \\sin a\")"
+---
+Ok(
+    [
+        AtomChange(
+            AtomChange {
+                at: Operator(
+                    false,
+                ),
+                inner: [
+                    Symbol(
+                        Symbol {
+                            codepoint: 's',
+                            atom_type: Ordinary,
+                        },
+                    ),
+                    Symbol(
+                        Symbol {
+                            codepoint: 'i',
+                            atom_type: Ordinary,
+                        },
+                    ),
+                    Symbol(
+                        Symbol {
+                            codepoint: 'n',
+                            atom_type: Ordinary,
+                        },
+                    ),
+                ],
+            },
+        ),
+        Symbol(
+            Symbol {
+                codepoint: '(',
+                atom_type: Open,
+            },
+        ),
+        Symbol(
+            Symbol {
+                codepoint: '𝑎',
+                atom_type: Alpha,
+            },
+        ),
+        Symbol(
+            Symbol {
+                codepoint: '+',
+                atom_type: Binary,
+            },
+        ),
+        Symbol(
+            Symbol {
+                codepoint: '𝑏',
+                atom_type: Alpha,
+            },
+        ),
+        Symbol(
+            Symbol {
+                codepoint: ')',
+                atom_type: Close,
+            },
+        ),
+        Symbol(
+            Symbol {
+                codepoint: '=',
+                atom_type: Relation,
+            },
+        ),
+        AtomChange(
+            AtomChange {
+                at: Operator(
+                    false,
+                ),
+                inner: [
+                    Symbol(
+                        Symbol {
+                            codepoint: 's',
+                            atom_type: Ordinary,
+                        },
+                    ),
+                    Symbol(
+                        Symbol {
+                            codepoint: 'i',
+                            atom_type: Ordinary,
+                        },
+                    ),
+                    Symbol(
+                        Symbol {
+                            codepoint: 'n',
+                            atom_type: Ordinary,
+                        },
+                    ),
+                ],
+            },
+        ),
+        Symbol(
+            Symbol {
+                codepoint: '𝑎',
+                atom_type: Alpha,
+            },
+        ),
+        AtomChange(
+            AtomChange {
+                at: Operator(
+                    false,
+                ),
+                inner: [
+                    Symbol(
+                        Symbol {
+                            codepoint: 'c',
+                            atom_type: Ordinary,
+                        },
+                    ),
+                    Symbol(
+                        Symbol {
+                            codepoint: 'o',
+                            atom_type: Ordinary,
+                        },
+                    ),
+                    Symbol(
+                        Symbol {
+                            codepoint: 's',
+                            atom_type: Ordinary,
+                        },
+                    ),
+                ],
+            },
+        ),
+        Symbol(
+            Symbol {
+                codepoint: '𝑏',
+                atom_type: Alpha,
+            },
+        ),
+        Symbol(
+            Symbol {
+                codepoint: '+',
+                atom_type: Binary,
+            },
+        ),
+        AtomChange(
+            AtomChange {
+                at: Operator(
+                    false,
+                ),
+                inner: [
+                    Symbol(
+                        Symbol {
+                            codepoint: 'c',
+                            atom_type: Ordinary,
+                        },
+                    ),
+                    Symbol(
+                        Symbol {
+                            codepoint: 'o',
+                            atom_type: Ordinary,
+                        },
+                    ),
+                    Symbol(
+                        Symbol {
+                            codepoint: 's',
+                            atom_type: Ordinary,
+                        },
+                    ),
+                ],
+            },
+        ),
+        Symbol(
+            Symbol {
+                codepoint: '𝑏',
+                atom_type: Alpha,
+            },
+        ),
+        AtomChange(
+            AtomChange {
+                at: Operator(
+                    false,
+                ),
+                inner: [
+                    Symbol(
+                        Symbol {
+                            codepoint: 's',
+                            atom_type: Ordinary,
+                        },
+                    ),
+                    Symbol(
+                        Symbol {
+                            codepoint: 'i',
+                            atom_type: Ordinary,
+                        },
+                    ),
+                    Symbol(
+                        Symbol {
+                            codepoint: 'n',
+                            atom_type: Ordinary,
+                        },
+                    ),
+                ],
+            },
+        ),
+        Symbol(
+            Symbol {
+                codepoint: '𝑎',
+                atom_type: Alpha,
+            },
+        ),
+    ],
+)

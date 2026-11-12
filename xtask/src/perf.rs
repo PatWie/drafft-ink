@@ -276,7 +276,7 @@ fn app(root: &Path, which: Option<&str>, build: bool) -> Result<(), String> {
                 if build {
                     let mut build = cargo(root);
                     // `--perf-scenario` is compiled in only for this build; the shipped binary has no way to swap the document.
-                    build.args(["build", "--release", "-p", "drafftink", "--features", "scenarios"]);
+                    build.args(["build", "--release", "-p", "drafftink", "--features", "scenarios,hand-fonts"]);
                     run(&mut build)?;
                 }
                 driver.arg("--binary").arg(release.join(exe("drafftink")));

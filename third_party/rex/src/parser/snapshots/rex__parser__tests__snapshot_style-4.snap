@@ -1,0 +1,35 @@
+---
+source: src/parser/mod.rs
+expression: "parse(r\"1\\sqrt{\\displaystyle s}1\")"
+---
+Ok(
+    [
+        Symbol(
+            Symbol {
+                codepoint: '1',
+                atom_type: Alpha,
+            },
+        ),
+        Radical(
+            Radical {
+                inner: [
+                    Style(
+                        Display,
+                    ),
+                    Symbol(
+                        Symbol {
+                            codepoint: '𝑠',
+                            atom_type: Alpha,
+                        },
+                    ),
+                ],
+            },
+        ),
+        Symbol(
+            Symbol {
+                codepoint: '1',
+                atom_type: Alpha,
+            },
+        ),
+    ],
+)

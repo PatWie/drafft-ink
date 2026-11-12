@@ -1,0 +1,28 @@
+---
+source: src/parser/mod.rs
+expression: "parse(r\"\\mathbb{a\\mathbf{b}}\")"
+---
+Ok(
+    [
+        Group(
+            [
+                Symbol(
+                    Symbol {
+                        codepoint: '𝕒',
+                        atom_type: Alpha,
+                    },
+                ),
+                Group(
+                    [
+                        Symbol(
+                            Symbol {
+                                codepoint: '𝕓',
+                                atom_type: Alpha,
+                            },
+                        ),
+                    ],
+                ),
+            ],
+        ),
+    ],
+)

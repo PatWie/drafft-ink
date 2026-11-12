@@ -1,0 +1,24 @@
+---
+source: src/parser/mod.rs
+expression: "parse(r\"\\mathbb aa\")"
+---
+Ok(
+    [
+        Group(
+            [
+                Symbol(
+                    Symbol {
+                        codepoint: '𝕒',
+                        atom_type: Alpha,
+                    },
+                ),
+            ],
+        ),
+        Symbol(
+            Symbol {
+                codepoint: '𝑎',
+                atom_type: Alpha,
+            },
+        ),
+    ],
+)

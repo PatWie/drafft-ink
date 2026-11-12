@@ -28,6 +28,7 @@ A crate may depend on workspace crates of strictly lower layers. It may not depe
 | L7 | `app` | the application glue shared by the desktop and web apps: `App` (the shell's `ShellApp`), platform ports, input translation, overlay and scene upkeep. Uses any library below L7 and may use `testkit` only as a dev-dependency; only the apps use it |
 | L8 | apps | `drafftink`, `drafftink-web`, `drafftink-canvas-js` (the npm package, `docs/canvas-api.md` section 9), `drafftink-server`, `drafftink-cli`, `drafftink-mcp`, `drafftink-e2e` (the native end-to-end suite, `docs/testing.md`) |
 | none | `xtask` | build tooling. Standalone |
+| vendored | `third_party/rex`, `third_party/unicode-math` | copies of upstream crates that `typeset` uses, published as `drafftink-rex` and `drafftink-unicode-math` (crates.io takes no Git dependency, `typeset.md`). Leaves: they use only each other. Not held to the allowlist, not linted |
 
 Package names are `drafftink-<crate>`; the desktop app is `drafftink`.
 

@@ -1,0 +1,20 @@
+---
+source: src/parser/mod.rs
+expression: "parse(r\"1 \\substack{}\")"
+---
+Ok(
+    [
+        Symbol(
+            Symbol {
+                codepoint: '1',
+                atom_type: Alpha,
+            },
+        ),
+        Stack(
+            Stack {
+                atom_type: Inner,
+                lines: [],
+            },
+        ),
+    ],
+)

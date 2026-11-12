@@ -1,0 +1,23 @@
+---
+source: src/parser/mod.rs
+expression: "parse(r\"1\\textstyle2\")"
+---
+Ok(
+    [
+        Symbol(
+            Symbol {
+                codepoint: '1',
+                atom_type: Alpha,
+            },
+        ),
+        Style(
+            Text,
+        ),
+        Symbol(
+            Symbol {
+                codepoint: '2',
+                atom_type: Alpha,
+            },
+        ),
+    ],
+)

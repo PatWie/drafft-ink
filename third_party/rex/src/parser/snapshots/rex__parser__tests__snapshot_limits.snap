@@ -1,0 +1,42 @@
+---
+source: src/parser/mod.rs
+expression: "parse(r\"\\sum\\limits_1^2\")"
+---
+Ok(
+    [
+        Scripts(
+            Scripts {
+                base: Some(
+                    Symbol(
+                        Symbol {
+                            codepoint: '∑',
+                            atom_type: Operator(
+                                true,
+                            ),
+                        },
+                    ),
+                ),
+                superscript: Some(
+                    [
+                        Symbol(
+                            Symbol {
+                                codepoint: '2',
+                                atom_type: Alpha,
+                            },
+                        ),
+                    ],
+                ),
+                subscript: Some(
+                    [
+                        Symbol(
+                            Symbol {
+                                codepoint: '1',
+                                atom_type: Alpha,
+                            },
+                        ),
+                    ],
+                ),
+            },
+        ),
+    ],
+)

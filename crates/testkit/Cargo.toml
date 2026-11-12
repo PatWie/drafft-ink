@@ -6,21 +6,24 @@ license.workspace = true
 rust-version.workspace = true
 description = "Headless harness, JSON scenario runner, deterministic scene generator and pixel probes (L7)."
 build = "build.rs"
+publish = false
 
 [dependencies]
-drafftink-engine = { path = "../engine" }
-drafftink-scene = { path = "../scene", features = ["scenegen"] }
-drafftink-io = { path = "../io" }
-drafftink-geom = { path = "../geom" }
-drafftink-edit = { path = "../edit" }
-drafftink-render = { path = "../render" }
-drafftink-gpu = { path = "../gpu" }
+drafftink-engine = { path = "../engine", version = "0.2.0" }
+drafftink-scene = { path = "../scene", version = "0.2.0", features = ["scenegen"] }
+drafftink-io = { path = "../io", version = "0.2.0" }
+drafftink-geom = { path = "../geom", version = "0.2.0" }
+drafftink-edit = { path = "../edit", version = "0.2.0" }
+drafftink-render = { path = "../render", version = "0.2.0" }
+# The harness draws with the hand-drawn fonts, as the apps of this repository do.
+drafftink-typeset = { path = "../typeset", version = "0.2.0", features = ["embedded", "hand-fonts"] }
+drafftink-gpu = { path = "../gpu", version = "0.2.0" }
 wgpu = { workspace = true }
 serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true
 # The skip rule (`DRAFFTINK_REQUIRE_GPU`) and the `SKIPPED:` line are shared with the other test crates.
-drafftink-profile = { path = "../profile" }
+drafftink-profile = { path = "../profile", version = "0.2.0" }
 
 [dev-dependencies]
 # Work counters and the interaction layer's input events for tests/perf_work.rs.

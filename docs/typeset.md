@@ -140,6 +140,15 @@ pan" with `WorkScope`. Misses run inside a `typeset_text` / `typeset_math` span.
 
 ## Fonts (`fonts.rs`, `assets/fonts/`)
 
+**The hand-drawn fonts are optional.** GelPen, GelPen Serif and Vanilla Extract (by Shara Weber, not covered by the AGPL) are
+embedded only with the Cargo feature `hand-fonts` (`HAND_FONTS` is true then). The files are excluded from the package on
+crates.io (`exclude` in `Cargo.toml`), and the feature makes `build.rs` fail with a plain message when they are missing.
+Without the feature the three families are drawn with Noto Sans: `face_for` answers `Noto Sans` (400, or 700 for Heavy),
+`font_file` answers the Noto Sans file of that weight, and the text font of a formula is Noto Sans Regular. The family
+names stay in documents. The repository builds turn the feature on (`docs/publishing.md`); `cargo test -p drafftink-typeset`
+alone runs without it, `--features hand-fonts` (and every `--all-features` run) with it, and `cargo xtask test` does both.
+Tests that depend on the exact fonts carry `#[cfg(feature = "hand-fonts")]`.
+
 | `FontFamily` | Faces |
 |---|---|
 | `GelPen` | Light, Regular, Heavy (three Parley families: `GelPenLight`, `GelPen`, `GelPenHeavy`) |
@@ -179,7 +188,7 @@ lists, for each, the fallback font that is responsible, or the three Noto Sans f
 (Cyrillic, Greek, accents, the undertie ‿). So `ಠ_ಠ` asks for the Kannada file only, and `｡◕‿◕｡` for the symbols, the CJK file
 and Noto Sans. `needs_glyph_fallback(text)` tells SVG export that a text has such characters (see `formats.md`).
 
-The big fonts are `ExtraFont`s: Noto Sans (three files), IBM Plex Sans (one variable file) and STIX Two Math. The Cargo feature `embedded` (= `noto-sans` + `plex-sans` + `stix-math` + `fallback-fonts`) builds them into the binary; `drafftink-engine` turns it on for every target except wasm32, and `canvas-js` always. A build without them (the web app) starts with the seven GelPen and Vanilla Extract files only.
+The big fonts are `ExtraFont`s: Noto Sans (three files), IBM Plex Sans (one variable file) and STIX Two Math. The Cargo feature `embedded` (= `noto-sans` + `plex-sans` + `stix-math` + `fallback-fonts`) builds them into the binary; `drafftink-engine` turns it on for every target except wasm32, and `canvas-js` always. A build without them (the web app) starts with the seven GelPen and Vanilla Extract files only (feature `hand-fonts`; a build without that feature has no font at all until Noto Sans is provided).
 A layout that needs one of the others records that: `Typesetter::wanted_fonts()` lists the files still missing (all three Noto files when the family `noto_sans` is used or a character that no fallback font is responsible for has no glyph in the loaded fonts; the fallback font of a missing character; the Plex file when the family `plex_sans` is used; STIX when a formula is laid out), and the host gives
 them to `Typesetter::provide_font(font, bytes)`. A formula asked for before STIX is there is the error `MathErrorKind::FontLoading`, which is not cached. Providing a font changes
 `font_set_version`, drops the text and math caches and nothing else; the render crate's fragment caches are the caller's to drop (the app does, `CanvasView::sync_fonts`).
@@ -211,20 +220,22 @@ debug); run `cargo test --release -p drafftink-typeset --test hostile` for the s
 ## ReX
 
 ReX (https://github.com/KenyC/ReX, MIT) is the only Rust TeX math layout engine with an OpenType MATH
-table backend. It stays a Git dependency pinned to `aeccdba38f3fa54195c469319b65c423e17a77ae`, the
-commit the old app used, with feature `ttfparser-fontparser`. Checked on 2026-11-07 with the pinned
-stack: it builds natively and for `wasm32-unknown-unknown` (debug and release), and it pulls no
-`pathfinder`, `cairo` or other renderer crates (those are optional features). Its dependencies
-are `unicode-math` (in the same repo), `serde`, `log` and `ttf-parser` (`cargo tree -p rex`).
+table backend. It was a Git dependency pinned to `aeccdba38f3fa54195c469319b65c423e17a77ae`, the
+commit the old app used. A crate on crates.io cannot have a Git dependency, so the code is now copied into the repository
+and published under our name: `third_party/rex` is the crate `drafftink-rex` (its library is still called `rex`) and
+`third_party/unicode-math` is `drafftink-unicode-math`. Changes against upstream: only the `ttf-parser` font backend
+(feature `ttfparser-fontparser`) and the bounding-box renderer stay; the Cairo, FemtoVG, Raqote, Tiny-Skia and Pathfinder
+renderers, the `font` crate backend and the unit tests are removed, because they need Git dependencies, dev-dependencies
+and font files that are not in the package. The crates are in the layering table as `Class::Vendored` (leaves that any
+library may use) and are left out of clippy. Their dependencies are `serde`, `log` and `ttf-parser`.
 
 Consequences, and options if they start to hurt:
 
-- `deny.toml` allows the Git source `https://github.com/KenyC/ReX` and ignores RUSTSEC-2026-0192
+- `deny.toml` allows no Git source any more and ignores RUSTSEC-2026-0192
   (`ttf-parser` is unmaintained, no vulnerability). ReX can only read fonts through `ttf-parser`.
-  Options: wait for a ReX backend on `skrifa`/`read-fonts`; vendor ReX under `third_party/` (MIT,
-  about 11 kLOC with `unicode-math`) and port its font trait to `skrifa`; or switch to ReX's `fontrs-fontparser` feature (pulls the pdf-rs `font` crate and pathfinder
-  types from Git; not tried).
-- A Git dependency has no crates.io quarantine; the pinned commit is the control.
+  Options: wait for a ReX backend on `skrifa`/`read-fonts`, or port the font trait of the copy to `skrifa`.
+- The copy does not follow upstream. A fix in KenyC/ReX has to be brought over by hand (diff against the commit above).
+  The tables of `drafftink-unicode-math` are under the LaTeX Project Public License 1.3c (`ATTRIBUTION.md`).
 - ReX panics are possible in principle. The precheck and fuzz tests cover what was found; none was
   found with the limits in place.
 - ReX supports a subset of LaTeX. Checked: `\text{..}` takes plain text only; `\newcommand`, `\over`,

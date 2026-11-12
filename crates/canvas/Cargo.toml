@@ -1,15 +1,20 @@
 [package]
 name = "drafftink-canvas"
-description = "The reusable canvas library (L3): viewport, spatial scene index, exact hit testing, pointer gesture recognizers, transformer handles, overlay description and Konva-style event dispatch"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
 rust-version.workspace = true
+repository.workspace = true
+homepage.workspace = true
+description = "The reusable canvas library (L3): viewport, spatial scene index, exact hit testing, pointer gesture recognizers, transformer handles, overlay description and Konva-style event dispatch."
+readme = "README.md"
+keywords = ["canvas", "viewport", "hit-testing", "whiteboard", "konva"]
+categories = ["graphics", "gui", "data-structures"]
 
 [dependencies]
-drafftink-geom = { path = "../geom" }
-drafftink-profile = { path = "../profile" }
-drafftink-scene = { path = "../scene" }
+drafftink-geom = { path = "../geom", version = "0.2.0" }
+drafftink-profile = { path = "../profile", version = "0.2.0" }
+drafftink-scene = { path = "../scene", version = "0.2.0" }
 serde.workspace = true
 thiserror.workspace = true
 

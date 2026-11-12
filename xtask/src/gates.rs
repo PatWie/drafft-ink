@@ -180,12 +180,13 @@ fn test(root: &Path, args: &[String]) -> Result<Vec<String>, String> {
             // nextest does not run doc tests.
             run(cargo(root).args(["test", "--workspace", "--all-features", "--doc"]))?;
             without_schemas(root)?;
+            without_hand_fonts(root)?;
             Ok(vec![note])
         }
         Err(e) => {
             eprintln!("warning: {e}\nfalling back to cargo test");
             run(cargo(root).args(["test", "--workspace", "--all-features"]).args(args))?;
-            without_schemas(root).map(|()| Vec::new())
+            without_schemas(root).and_then(|()| without_hand_fonts(root)).map(|()| Vec::new())
         }
     }
 }
@@ -195,6 +196,13 @@ fn test(root: &Path, args: &[String]) -> Result<Vec<String>, String> {
 /// has a test target of its own, `crates/engine/tests/without_schemas.rs`.
 fn without_schemas(root: &Path) -> Result<(), String> {
     run(cargo(root).args(["test", "-p", "drafftink-engine", "--no-default-features", "--test", "without_schemas"]))
+}
+
+/// The typesetter as a package from crates.io has it, without the feature `hand-fonts`: `--all-features` always turns
+/// the feature on, so the Noto Sans stand-in for GelPen, GelPen Serif and Vanilla Extract has a run of its own. A
+/// single `-p` build does not unify features with the other workspace members, which is the point.
+fn without_hand_fonts(root: &Path) -> Result<(), String> {
+    run(cargo(root).args(["test", "-p", "drafftink-typeset"]))
 }
 
 /// How a gate ended.

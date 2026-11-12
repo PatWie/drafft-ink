@@ -1,0 +1,9 @@
+---
+source: src/parser/mod.rs
+expression: "parse(r\"\\begin{array}{rl@} 1 & 2 \\\\ 3 & 4\\end{array}\")"
+---
+Err(
+    MissingArgForCommand(
+        "@",
+    ),
+)

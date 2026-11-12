@@ -17,6 +17,7 @@ mod media;
 #[cfg(test)]
 mod parity;
 mod perf;
+mod publish;
 mod size;
 mod skips;
 mod standards;
@@ -66,6 +67,11 @@ media [--only NAME]...
                   renders the README pictures (docs/img/*.png) from the real app, offscreen, as docs/media/shots.json
                   lists them; uses Mesa lavapipe when VK_ICD_FILENAMES is unset (docs/media.md)
 
+publish [--dry-run] [--allow-dirty] [--no-verify]
+                  the dry run before a release to crates.io: lists the crates in publish order, checks their metadata
+                  and package contents (no hand-drawn fonts), runs `cargo publish --workspace --dry-run`, prints the
+                  package sizes. It never publishes; the release is done by hand (docs/publishing.md). Not part of ci
+
 e2e [--types|--web|--native|--no-build]
                   the browser (Playwright) and native (bridge) end-to-end suites on a private Xvfb; needs a display
                   and a GPU, so it is not part of ci (docs/testing.md); `cargo xtask e2e --help`
@@ -86,6 +92,7 @@ fn main() -> ExitCode {
         Some("e2e") => e2e::run_e2e(&root(), rest),
         Some("intro") => intro::run_intro(&root(), rest),
         Some("media") => media::run_media(&root(), rest),
+        Some("publish") => publish::run_publish(&root(), rest),
         Some(other) => match Gate::from_name(other) {
             Some(gate) => gates::run_one(gate, &root(), rest),
             None => Err(format!("unknown command `{other}`\n\n{USAGE}")),

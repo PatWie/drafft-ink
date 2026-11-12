@@ -1,0 +1,75 @@
+---
+source: src/parser/mod.rs
+expression: "parse(r\"\\begin{pmatrix}1&2\\\\3&4\\end{pmatrix}\")"
+---
+Ok(
+    [
+        Array(
+            Array {
+                col_format: ArrayColumnsFormatting {
+                    alignment: [
+                        Centered,
+                        Centered,
+                    ],
+                    separators: [
+                        [],
+                        [],
+                        [],
+                    ],
+                },
+                rows: [
+                    [
+                        [
+                            Symbol(
+                                Symbol {
+                                    codepoint: '1',
+                                    atom_type: Alpha,
+                                },
+                            ),
+                        ],
+                        [
+                            Symbol(
+                                Symbol {
+                                    codepoint: '2',
+                                    atom_type: Alpha,
+                                },
+                            ),
+                        ],
+                    ],
+                    [
+                        [
+                            Symbol(
+                                Symbol {
+                                    codepoint: '3',
+                                    atom_type: Alpha,
+                                },
+                            ),
+                        ],
+                        [
+                            Symbol(
+                                Symbol {
+                                    codepoint: '4',
+                                    atom_type: Alpha,
+                                },
+                            ),
+                        ],
+                    ],
+                ],
+                left_delimiter: Some(
+                    Symbol {
+                        codepoint: '(',
+                        atom_type: Inner,
+                    },
+                ),
+                right_delimiter: Some(
+                    Symbol {
+                        codepoint: ')',
+                        atom_type: Inner,
+                    },
+                ),
+                extra_row_sep: false,
+                cell_layout_style: Text,
+            },
+        ),
+    ],
+)
