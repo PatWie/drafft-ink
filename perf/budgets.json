@@ -1671,8 +1671,8 @@
       "note": "the desktop app, profile dist (fat LTO, stripped, cold crates at opt-level s). 45,488,960 measured on 2026-11-12 after the split into drafftink and drafftink-headless; the limit is 3% above. It was 45,772,992 with the same build recipe just before the split (the old limit of 43,500,000 was measured on 2026-11-08 and had been outgrown by the subcommand merge and other changes), so the split shrank it by 284,032 bytes: the headless MCP mode and the document tools are no longer linked. The old app was 24.4 MB (opt-level z, no strip). The bundled typeset fonts are 2.7 MB of it. Profile `release` (thin LTO, stripped) is 46.9 MB, 55.2 MB before `strip`"
     },
     "native.headless_bytes": {
-      "max": 37400000,
-      "note": "drafftink-headless (serve, mcp, convert/run/outline/inspect/commands/schemas) with the sqlite and s3 stores and the hand-drawn fonts, profile dist. 36,306,568 measured on 2026-11-12; the limit is 3% above. It replaces native.mcp_bytes (25,363,984 on the same recipe before the split) and native.server_bytes (14,614,776), and the old drafftink-cli (21,462,784): the one binary is 3.7 MB smaller than the two that were shipped (39,978,760 bytes together). It holds the whole engine and the 2.7 MB of typeset fonts for the headless session, and no GPU or window code"
+      "max": 39700000,
+      "note": "drafftink-headless (serve, mcp, convert/run/outline/inspect/commands/schemas) with the sqlite and s3 stores and the hand-drawn fonts, profile dist. 36,306,568 measured on 2026-11-12 without PNG export; 38,546,952 with the feature `png` on by default (vello_cpu, +2,240,384 bytes, the +2.2 MB of docs/headless-png.md), measured on the merged tree on 2026-11-12; the limit is 3% above the second. It replaces native.mcp_bytes (25,363,984 on the same recipe before the split) and native.server_bytes (14,614,776), and the old drafftink-cli (21,462,784): the one binary is 3.7 MB smaller than the two that were shipped (39,978,760 bytes together). It holds the whole engine and the 2.7 MB of typeset fonts for the headless session, and no GPU or window code"
     }
   }
 }
