@@ -3,15 +3,14 @@
 use std::collections::{HashMap, HashSet};
 
 use vello::Scene as VelloScene;
-use vello::low_level::vello_encoding::Patch;
 use vello::peniko::{Color, ImageData};
 use vello_gpu::{ImageId, ImageSource, RenderSize, Resources, Scene, WebGlRenderer, WebGlTextureBindings};
 use web_sys::{HtmlCanvasElement, WebGl2RenderingContext};
 
 use super::canvas::GpuCanvas;
-use super::replay::{ReplayStats, replay};
 use crate::backend::Detail;
 use crate::error::GpuError;
+use drafftink_render::replay::{ReplayStats, pictures, replay};
 
 fn webgl(e: impl std::fmt::Display) -> GpuError {
     GpuError::WebGl(e.to_string())
@@ -111,12 +110,4 @@ impl GlRenderer {
             }
         }
     }
-}
-
-/// The pictures a scene draws.
-fn pictures(scene: &VelloScene) -> impl Iterator<Item = &ImageData> {
-    scene.encoding().resources.patches.iter().filter_map(|p| match p {
-        Patch::Image { image, .. } => Some(image),
-        _ => None,
-    })
 }

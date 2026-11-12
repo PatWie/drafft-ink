@@ -23,10 +23,23 @@ path = "src/main.rs"
 # The hand-drawn fonts (GelPen, GelPen Serif, Vanilla Extract) from the Git repository, not from crates.io: see
 # `drafftink-typeset`. Without this feature those families are drawn with Noto Sans.
 hand-fonts = ["drafftink-engine/hand-fonts"]
+# PNG export without a GPU: the scene the app draws is rasterised on the CPU by `vello_cpu` (pure Rust, no system library).
+# Without it, a PNG output refuses and says so.
+# `png-gpu` adds Vello on wgpu (the app's own renderer) when the machine has an adapter; the CPU draws when it has none.
+png-gpu = ["png", "dep:vello", "vello/default", "dep:pollster"]
+png = ["dep:vello_cpu", "dep:drafftink-render", "dep:drafftink-geom", "dep:peniko", "dep:png", "dep:log"]
 
 [dependencies]
 drafftink-engine = { path = "../../crates/engine", version = "0.2.0" }
 drafftink-scene = { path = "../../crates/scene", version = "0.2.0" }
+drafftink-render = { path = "../../crates/render", version = "0.2.0", optional = true }
+drafftink-geom = { path = "../../crates/geom", version = "0.2.0", optional = true }
+log = { workspace = true, optional = true }
+peniko = { workspace = true, optional = true }
+png = { workspace = true, optional = true }
+vello_cpu = { workspace = true, optional = true }
+vello = { workspace = true, optional = true }
+pollster = { workspace = true, optional = true }
 clap.workspace = true
 serde.workspace = true
 serde_json.workspace = true

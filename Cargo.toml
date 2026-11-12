@@ -94,6 +94,9 @@ winit = "0.30.13"
 # kurbo 0.13 and peniko 0.6 with vello 0.11 and parley 0.12, so the scene's types are the same on both back ends.
 vello_gpu = { version = "=0.3.0", default-features = false, features = ["webgl", "text", "std"] }
 glifo = { version = "0.4", default-features = false, features = ["std"] }
+# The CPU rasteriser of the headless command line (apps/drafftink-cli feature `png`): no GPU, no system library. Same vello_common 0.3 as
+# vello_gpu. epaint still pulls vello_cpu 0.2 for the app, so the lockfile has both.
+vello_cpu = { version = "=0.3.0", default-features = false, features = ["std", "text", "u8_pipeline"] }
 egui_glow = { version = "=0.37.0", default-features = false }
 glow = "0.17"
 

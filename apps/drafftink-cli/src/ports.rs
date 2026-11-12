@@ -1,7 +1,8 @@
 //! The ports of a command line session: the system clock, random ids, and files on disk.
 //!
-//! There is no clipboard, storage or renderer. A command that needs one refuses with `port_unavailable` and says
-//! what to do instead. Files are not restricted to a folder, because the person who runs the tool is the one who
+//! There is no clipboard or storage. A command that needs one refuses with `port_unavailable` and says what to do
+//! instead. The renderer exists when the tool is built with the `png` feature: it draws on the CPU
+//! ([`crate::raster`]), so PNG export and screenshots need no GPU. Without the feature there is no renderer either. Files are not restricted to a folder, because the person who runs the tool is the one who
 //! chose the paths (`drafftink-mcp` restricts them, because an agent chooses there).
 
 use std::path::PathBuf;
@@ -9,6 +10,7 @@ use std::time::{Instant, SystemTime, UNIX_EPOCH};
 
 use drafftink_engine::Session;
 use drafftink_engine::ports::{Clock, FileRef, Files, PortError, Ports, WriteOutcome};
+use drafftink_engine::services::{LazyTypesetter, Services, SharedTypesetter};
 use drafftink_scene::{IdSource, RandomIds, Rng64, SplitMix64};
 
 /// Largest file that is read or written.
@@ -94,16 +96,30 @@ pub enum IdSeed {
     Fixed(u64),
 }
 
-/// The ports of a command line session.
-pub fn ports(seed: IdSeed) -> Ports {
+/// Whether this build can write a PNG (the `png` feature).
+pub const RENDERS_PNG: bool = cfg!(feature = "png");
+
+/// The ports of a command line session. `typesetter` is the text engine the renderer shares with the session.
+fn ports_with(seed: IdSeed, typesetter: SharedTypesetter) -> Ports {
     let ids: Box<dyn IdSource> = match seed {
         IdSeed::Random => Box::new(RandomIds(OsRng)),
         IdSeed::Fixed(seed) => Box::new(RandomIds(SplitMix64::new(seed))),
     };
-    Ports::new(Box::new(SystemClock { started: Instant::now() }), ids).with_files(Box::new(DiskFiles))
+    let ports = Ports::new(Box::new(SystemClock { started: Instant::now() }), ids).with_files(Box::new(DiskFiles));
+    #[cfg(feature = "png")]
+    let ports = ports.with_renderer(Box::new(crate::raster::PngRenderer::new(typesetter)));
+    #[cfg(not(feature = "png"))]
+    let _ = typesetter;
+    ports
+}
+
+/// The ports of a command line session.
+pub fn ports(seed: IdSeed) -> Ports {
+    ports_with(seed, LazyTypesetter::shared())
 }
 
 /// A session with the real text engine and [`ports`].
 pub fn session(seed: IdSeed) -> Session {
-    Session::new(ports(seed))
+    let typesetter = LazyTypesetter::shared();
+    Session::with_services(ports_with(seed, typesetter.clone()), Services::sharing(typesetter))
 }

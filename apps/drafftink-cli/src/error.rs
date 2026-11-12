@@ -51,11 +51,11 @@ pub enum CliError {
     /// The file extension or `--from` / `--to` does not name a format.
     #[error("{0}")]
     Format(String),
-    /// PNG was asked for. It needs a GPU.
+    /// PNG was asked for, and this build has no renderer.
     #[error(
-        "PNG export needs a GPU renderer, and this command line has none. Export SVG instead (`--to svg`), or open the document in the desktop app and export there, or run `drafftink-mcp --attach` against the app."
+        "this build of the command line cannot write PNG. Export SVG instead (`--to svg`), or build it with the `png` feature (`cargo install drafftink-cli --features png`), or export from the desktop app."
     )]
-    NeedsGpu,
+    NoPng,
     /// A result could not be turned into JSON.
     #[error("could not format a result: {0}")]
     Json(#[from] serde_json::Error),

@@ -175,25 +175,50 @@ fn mermaid_converts_with_subgraph_boxes_and_bound_arrows() {
     assert!(cli(&["convert", p(&mmd), p(&svg), "--from", "mermaid"]).status.success());
 }
 
+#[cfg(not(feature = "png"))]
 #[test]
-fn png_says_it_needs_a_gpu_before_it_does_anything() {
+fn png_says_this_build_cannot_write_it_before_it_does_anything() {
     let dir = tempfile::tempdir().unwrap();
     let native = dir.path().join("a.drafftink");
     assert!(cli(&["run", &script(dir.path(), BOXES), "--out", p(&native)]).status.success());
     let png = dir.path().join("a.png");
     let o = cli(&["convert", p(&native), p(&png)]);
     assert_eq!(o.status.code(), Some(1));
-    assert!(text(&o.stderr).contains("needs a GPU"), "{}", text(&o.stderr));
+    assert!(text(&o.stderr).contains("cannot write PNG"), "{}", text(&o.stderr));
     assert!(!png.exists());
     let o = cli(&["run", &script(dir.path(), BOXES), "--out", p(&png)]);
     assert_eq!(o.status.code(), Some(1));
-    assert!(text(&o.stderr).contains("needs a GPU"));
+    assert!(text(&o.stderr).contains("cannot write PNG"));
     assert!(o.stdout.is_empty(), "nothing ran");
     // A script that exports PNG itself gets the engine's refusal.
     let export = r#"{"id":"doc.export","args":{"format":"png"}}"#;
     let o = cli(&["run", &script(dir.path(), &format!("{BOXES}{export}\n"))]);
     assert_eq!(o.status.code(), Some(1));
     assert!(text(&o.stderr).contains("renderer"), "{}", text(&o.stderr));
+}
+
+#[cfg(feature = "png")]
+#[test]
+fn png_is_drawn_without_a_gpu_and_opens_again() {
+    let dir = tempfile::tempdir().unwrap();
+    let native = dir.path().join("a.drafftink");
+    assert!(cli(&["run", &script(dir.path(), BOXES), "--out", p(&native)]).status.success());
+    let png = dir.path().join("a.png");
+    let o = cli(&["convert", p(&native), p(&png)]);
+    assert!(o.status.success(), "{}", text(&o.stderr));
+    let bytes = std::fs::read(&png).unwrap();
+    assert_eq!(&bytes[..8], b"\x89PNG\r\n\x1a\n");
+    // The scene is inside the picture, so it converts back.
+    let back = dir.path().join("b.drafftink");
+    let o = cli(&["convert", p(&png), p(&back)]);
+    assert!(o.status.success(), "{}", text(&o.stderr));
+    let outline = text(&cli(&["outline", p(&back)]).stdout);
+    assert!(outline.contains("first") && outline.contains("second"), "{outline}");
+    // A script can export it itself, to a file or inline.
+    let export = r#"{"id":"doc.export","args":{"format":"png","scale":1}}"#;
+    let o = cli(&["run", &script(dir.path(), &format!("{BOXES}{export}\n"))]);
+    assert!(o.status.success(), "{}", text(&o.stderr));
+    assert!(text(&o.stdout).contains("image/png"), "{}", text(&o.stdout));
 }
 
 #[test]

@@ -2,26 +2,34 @@
 //!
 //! The render crate encodes every frame into a `vello::Scene`, which is a list of streams meant for Vello's compute
 //! shaders: path tags and coordinates, transforms, styles, draw tags and draw data, and late-bound glyph runs and
-//! images. `vello_gpu` takes immediate-mode calls instead. This module reads the streams back in drawing order and
-//! turns each draw object into one call on a [`Canvas`]. The render crate does not know about it, so the WebGPU module
-//! is the same code with or without the fallback.
+//! images. `vello_gpu` (WebGL2) and `vello_cpu` take immediate-mode calls instead. This module reads the streams back
+//! in drawing order and turns each draw object into one call on a [`Canvas`]. The composer does not know about it, so
+//! the scenes are the same whichever renderer draws them.
 //!
 //! What is replayed: solid fills (both fill rules) and strokes (width, joins, caps, miter limit; dashes were already
 //! cut into subpaths when the scene was built), image fills, glyph runs, clip layers and opacity layers. The app draws
 //! nothing else (no gradients, blurs or blend modes); a draw object of another kind is counted in
 //! [`ReplayStats::skipped`] and left out.
 
-use vello::Glyph;
-
-use crate::backend::Detail;
 use vello::kurbo::{Affine, BezPath, Join, Point, Stroke};
 use vello::low_level::vello_encoding::math::f16_to_f32;
 use vello::low_level::vello_encoding::{DrawBeginClip, DrawTag, Encoding, GlyphRun, Patch, PathTag, Style, Transform};
 use vello::peniko::{BlendMode, Compose, Fill, ImageData, ImageSampler, Mix};
+use vello::{Glyph, Scene};
+
+/// How much of the scene a replay draws.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum Detail {
+    /// Everything.
+    #[default]
+    Full,
+    /// While the user moves the view or a shape: text is drawn as grey bars, which costs a tenth of the glyphs.
+    Moving,
+}
 
 /// A solid colour with straight (not premultiplied) alpha, components 0 to 1.
 #[derive(Clone, Copy, Debug, PartialEq)]
-pub(crate) struct Rgba(pub [f32; 4]);
+pub struct Rgba(pub [f32; 4]);
 
 impl Rgba {
     /// The packed premultiplied RGBA8 word of a `DrawColor` (red in the low byte).
@@ -40,16 +48,23 @@ impl Rgba {
 }
 
 /// What fills a shape.
-pub(crate) enum Brush<'a> {
+pub enum Brush<'a> {
     /// One colour.
     Solid(Rgba),
-    /// A picture. `to_path` maps the picture's pixel space into the space of the shape's own transform.
-    Image { data: &'a ImageData, sampler: ImageSampler, to_path: Affine },
+    /// A picture.
+    Image {
+        /// The pixels.
+        data: &'a ImageData,
+        /// How they are sampled.
+        sampler: ImageSampler,
+        /// Maps the picture's pixel space into the space of the shape.
+        to_path: Affine,
+    },
 }
 
 /// What a layer does to what is drawn inside it.
 #[derive(Clone, Copy, Debug, PartialEq)]
-pub(crate) enum LayerKind {
+pub enum LayerKind {
     /// Only keeps what is inside the shape.
     Clip,
     /// Keeps what is inside the shape and draws the group with this opacity.
@@ -57,19 +72,28 @@ pub(crate) enum LayerKind {
 }
 
 /// A run of glyphs of one font, size and colour.
-pub(crate) struct GlyphDraw<'a> {
+pub struct GlyphDraw<'a> {
+    /// The font, size and transform of the run.
     pub run: &'a GlyphRun,
+    /// The glyphs, in the space of the run.
     pub glyphs: &'a [Glyph],
+    /// Normalised variation coordinates of the font.
     pub coords: &'a [i16],
+    /// The colour.
     pub color: Rgba,
 }
 
 /// The renderer a scene is replayed into.
-pub(crate) trait Canvas {
+pub trait Canvas {
+    /// Fills `path` under `transform`.
     fn fill(&mut self, transform: Affine, path: &BezPath, rule: Fill, brush: Brush<'_>);
+    /// Strokes `path` under `transform`.
     fn stroke(&mut self, transform: Affine, path: &BezPath, stroke: &Stroke, brush: Brush<'_>);
+    /// Starts a layer clipped to `clip`; everything drawn until the matching [`Canvas::pop_layer`] goes into it.
     fn push_layer(&mut self, transform: Affine, clip: &BezPath, kind: LayerKind);
+    /// Ends the innermost layer.
     fn pop_layer(&mut self);
+    /// Draws a run of glyphs.
     fn glyph_run(&mut self, draw: &GlyphDraw<'_>);
 }
 
@@ -93,7 +117,7 @@ pub struct ReplayStats {
 }
 
 /// Replay `encoding` into `canvas`. Layers left open by the scene are closed.
-pub(crate) fn replay(encoding: &Encoding, canvas: &mut dyn Canvas, detail: Detail) -> ReplayStats {
+pub fn replay(encoding: &Encoding, canvas: &mut dyn Canvas, detail: Detail) -> ReplayStats {
     let mut stats = ReplayStats::default();
     let mut reader = PathReader::new(encoding);
     let mut path = BezPath::new();
@@ -152,6 +176,14 @@ pub(crate) fn replay(encoding: &Encoding, canvas: &mut dyn Canvas, detail: Detai
         canvas.pop_layer();
     }
     stats
+}
+
+/// The pictures a scene draws.
+pub fn pictures(scene: &Scene) -> impl Iterator<Item = &ImageData> {
+    scene.encoding().resources.patches.iter().filter_map(|p| match p {
+        Patch::Image { image, .. } => Some(image),
+        _ => None,
+    })
 }
 
 /// Words of draw data a draw tag owns (bits 2 to 4 of the tag).
@@ -411,6 +443,7 @@ mod tests {
     struct Recorder(Vec<Op>);
 
     impl Canvas for Recorder {
+        /// Fills `path` under `transform`.
         fn fill(&mut self, transform: Affine, path: &BezPath, rule: Fill, brush: Brush<'_>) {
             self.0.push(match brush {
                 Brush::Solid(c) => Op::Fill { transform, path: path.elements().to_vec(), rule, color: Some(c.0) },
@@ -420,6 +453,7 @@ mod tests {
             });
         }
 
+        /// Strokes `path` under `transform`.
         fn stroke(&mut self, transform: Affine, path: &BezPath, stroke: &Stroke, brush: Brush<'_>) {
             let color = match brush {
                 Brush::Solid(c) => Some(c.0),
@@ -428,6 +462,7 @@ mod tests {
             self.0.push(Op::Stroke { transform, path: path.elements().to_vec(), stroke: stroke.clone(), color });
         }
 
+        /// Starts a layer clipped to `clip`; everything drawn until the matching [`Canvas::pop_layer`] goes into it.
         fn push_layer(&mut self, transform: Affine, _clip: &BezPath, kind: LayerKind) {
             self.0.push(Op::Push { transform, kind });
         }
@@ -436,6 +471,7 @@ mod tests {
             self.0.push(Op::Pop);
         }
 
+        /// Draws a run of glyphs.
         fn glyph_run(&mut self, draw: &GlyphDraw<'_>) {
             self.0.push(Op::Glyphs { count: draw.glyphs.len(), size: draw.run.font_size, color: draw.color.0 });
         }

@@ -57,7 +57,7 @@ pub enum OutFormat {
     Excalidraw,
     /// A vector picture with the fonts embedded (`.svg`).
     Svg,
-    /// A PNG. It needs a GPU, which this tool does not have, so asking for it fails with a way out.
+    /// A PNG, drawn on the CPU. Only a build with the `png` feature has the renderer; the others fail with a way out.
     Png,
 }
 

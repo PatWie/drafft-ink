@@ -5,8 +5,9 @@
 //! MCP and in a test. Four things are added around the engine and nothing else: reading and writing files
 //! ([`ports`]), reading a script ([`script`]), choosing a file format ([`format`]), and printing ([`cli`]).
 //!
-//! There is no renderer: a PNG needs a GPU, so `doc.export` as PNG refuses here and says so. SVG, JSON and
-//! Excalidraw work.
+//! PNG needs a renderer. The `png` feature adds one that draws on the CPU ([`raster`]), so a server or a CI job
+//! with no GPU and no display can write PNG. Without it `doc.export` as PNG refuses here and says so. SVG, JSON
+//! and Excalidraw always work.
 #![cfg_attr(test, allow(clippy::unwrap_used, clippy::expect_used, clippy::panic))]
 // A command line tool may read the clock; the rule against it is for the crates below L6.
 #![allow(clippy::disallowed_methods)]
@@ -16,4 +17,6 @@ pub mod error;
 pub mod format;
 pub mod ops;
 pub mod ports;
+#[cfg(feature = "png")]
+pub mod raster;
 pub mod script;
