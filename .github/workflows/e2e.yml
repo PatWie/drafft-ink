@@ -21,7 +21,9 @@ on:
     branches: [main]
     paths:
       - "apps/**"
+      - "src/**"
       - "crates/**"
+      - "third_party/**"
       - "e2e/**"
       - "web/**"
       - "xtask/**"
