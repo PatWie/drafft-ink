@@ -47,7 +47,7 @@ Package names are `drafftink-<crate>`; the desktop app is `drafftink`.
 8. **Every workspace crate has a layer.** A crate missing from the table fails. A table row without a crate fails too, so the table cannot drift.
 9. **Wasm.** Everything at L0 to L5, `drafftink-app`, `drafftink-web` and `drafftink-canvas-js` build for `wasm32-unknown-unknown` (`cargo xtask wasm`). Code below L6 takes time from the `Clock` port: `Instant::now` and `SystemTime::now` are disallowed by `clippy.toml` because they panic in the browser.
 10. **No crashes.** `unwrap`, `expect`, `panic!` and `unsafe` are denied through `[workspace.lints]`. `clippy.toml` allows them in tests.
-11. **No screen in the headless program.** `drafftink-headless` links no `drafftink-gpu`, `-ui` or `-app`, no `wgpu*`, `winit`, `egui*`, `eframe` or `rfd`, not even three levels down. `cargo xtask layers` reads the resolved graph (`cargo tree -p drafftink-headless -e normal --all-features --target all`) and prints the path to a forbidden crate (`xtask/src/screen.rs`, with unit tests on synthetic trees).
+11. **No screen in the headless program.** `drafftink-headless` links no `drafftink-gpu`, `-ui` or `-app`, no `wgpu*`, `winit`, `egui*`, `eframe` or `rfd`, not even three levels down. `cargo xtask layers` reads the resolved graph (`cargo tree -p drafftink-headless -e normal --target all`, with every feature but the opt-in `png-gpu`, which adds Vello on wgpu on purpose and is off by default) and prints the path to a forbidden crate (`xtask/src/screen.rs`, with unit tests on synthetic trees).
 
 ## How it is enforced
 
