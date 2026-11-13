@@ -16,9 +16,6 @@ use drafftink_render::{
 /// The handles of a selection box that only outlines: none.
 const OUTLINE_ONLY: HandleSet = HandleSet { corners: false, edges: false, rotate: false };
 
-/// The handles of the crop window: the corners and the middle of the edges, no rotation.
-const CROP_HANDLES: HandleSet = HandleSet { corners: true, edges: true, rotate: false };
-
 /// Everything the overlay pass should draw for `canvas` and the other people in the room (`remote`, from
 /// `drafftink_canvas::remote_parts`; the interaction layer's overlay leaves them empty), with `extra_guides`
 /// appended (a drawing snap).
@@ -77,11 +74,6 @@ pub(crate) fn add_interaction(out: &mut Overlay, interaction: &InteractionOverla
         Some(Badge::Size { .. }) | None => None,
     };
     out.eraser = interaction.eraser.map(|e: EngineRing| EraserRing { at: e.at, radius_px: e.radius_px });
-    if let Some(crop) = &interaction.crop {
-        // The crop window carries the handles, drawn solid; the whole picture is outlined thinly.
-        out.selection = vec![SelectionBox { obox: crop.window, handles: CROP_HANDLES, dashed: false }];
-        out.hover = vec![crop.picture];
-    }
 }
 
 /// Other people's pointers, selection outlines and laser trails, in their colours.

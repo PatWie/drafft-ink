@@ -12,6 +12,7 @@
 use drafftink_canvas::{
     Camera, CanvasConfig, Cursor, Hit, HitOptions, Picker, PointerKind, SelectionFrame, Target, Viewport, unit_group,
 };
+use drafftink_geom::OrientedBox;
 use drafftink_geom::kurbo::{Point, Size};
 use drafftink_scene::{Element, ElementId, GroupId, Kind, SceneRead, SceneStore};
 
@@ -37,6 +38,17 @@ pub(super) fn pointer_mode(tool: Tool) -> drafftink_canvas::PointerMode {
     }
 }
 
+/// What the crop editor lends the picker while it is open.
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) struct CropStage {
+    /// The image being cropped.
+    pub(crate) element: ElementId,
+    /// The crop window with its eight handles. It stands in for the selection's frame.
+    pub(crate) frame: SelectionFrame,
+    /// The whole picture as the draft has it. A drag that starts on it slides it, so it is what the pointer grabs.
+    pub(crate) picture: OrientedBox,
+}
+
 /// Index, viewport and selection frame for one tab.
 pub(crate) struct World {
     /// The viewport the recognizer uses. The interaction layer moves its camera directly (class C).
@@ -50,8 +62,8 @@ pub(crate) struct World {
     entered: Option<GroupId>,
     /// The tool, as the picker needs it.
     tool: Tool,
-    /// While the crop editor is open, the window and its handles stand in for the selection's frame.
-    crop_frame: Option<SelectionFrame>,
+    /// While the crop editor is open, its window stands in for the selection's frame and its picture is grabbed.
+    crop: Option<CropStage>,
 }
 
 impl World {
@@ -64,7 +76,7 @@ impl World {
             frame_key: None,
             entered: None,
             tool: Tool::Select,
-            crop_frame: None,
+            crop: None,
         }
     }
 
@@ -80,18 +92,19 @@ impl World {
         self.sync_frame(s);
     }
 
-    /// Puts the crop window in place of the selection's frame (`Some`), or takes it away (`None`).
-    pub(crate) fn set_crop_frame(&mut self, frame: Option<SelectionFrame>) {
-        if self.crop_frame != frame {
+    /// Opens the crop editor's stage (`Some`): its window takes the place of the selection's frame. `None` takes it
+    /// away.
+    pub(crate) fn set_crop(&mut self, stage: Option<CropStage>) {
+        if self.crop != stage {
             // The cached selection frame is stale after either change.
             self.frame_key = None;
-            self.crop_frame = frame;
+            self.crop = stage;
         }
     }
 
     fn sync_frame(&mut self, s: &Session) {
-        if let Some(frame) = &self.crop_frame {
-            self.frame = frame.clone();
+        if let Some(stage) = &self.crop {
+            self.frame = stage.frame.clone();
             return;
         }
         // A running gesture rewrites the selected elements every frame; the overlay builds its own frame, and
@@ -190,10 +203,12 @@ impl Picker for Pick<'_> {
     fn pick(&self, screen: Point, kind: PointerKind) -> Target {
         let w = self.world;
         let touch = kind == PointerKind::Touch;
+        // The crop editor draws its handles large for a pen as well as a finger, so a pen grabs them from as far.
+        let coarse = touch || (w.crop.is_some() && kind == PointerKind::Pen);
         // Handles exist for the select tool, and for text and math, whose handles resize and move the text.
         if matches!(w.tool, Tool::Select | Tool::Lasso | Tool::Text | Tool::Math) {
             let radius =
-                if touch { w.config.transformer.hit_radius_touch_px } else { w.config.transformer.hit_radius_px };
+                if coarse { w.config.transformer.hit_radius_touch_px } else { w.config.transformer.hit_radius_px };
             if let Some(h) = w.frame.hit(&w.viewport, screen, radius, &w.config.transformer) {
                 return Target::Handle(h);
             }
@@ -226,12 +241,27 @@ impl Picker for Pick<'_> {
                     store.get(&hit.id).and_then(|e| unit_group(e, w.entered.as_ref(), |g| store.derived().is_group(g)));
                 Target::Element { id: hit.id, unit_group: group }
             }
-            None => Target::Empty,
+            // While the crop editor is open the dimmed part of the picture is the picture too: a drag there slides it.
+            None => match &w.crop {
+                Some(stage) if stage.picture.contains(world) => {
+                    Target::Element { id: stage.element.clone(), unit_group: None }
+                }
+                _ => Target::Empty,
+            },
         }
     }
 
     fn cursor(&self, target: &Target) -> Cursor {
         let w = self.world;
+        if let Some(stage) = &w.crop {
+            // The crop editor owns the pointer: the handles resize the window, the picture is slid, nothing else
+            // answers.
+            return match target {
+                Target::Handle(h) => w.frame.cursor_for(h),
+                Target::Element { id, .. } if *id == stage.element => Cursor::Grab,
+                _ => Cursor::Default,
+            };
+        }
         match w.tool {
             Tool::Hand => Cursor::Grab,
             Tool::Select | Tool::Lasso | Tool::Text | Tool::Math => match target {

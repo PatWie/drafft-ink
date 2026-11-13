@@ -1,8 +1,8 @@
 //! The conversion copies every part the render pass can draw: the lasso, link icons, and what other people show.
 
 use drafftink_canvas::{
-    LassoOverlay, LinkIcon, Overlay as CanvasOverlay, RemoteCursor, RemoteParts, RemoteSelection, RemoteTrail,
-    TrailPoint,
+    LassoOverlay, LinkIcon, Overlay as CanvasOverlay, PointerKind, RemoteCursor, RemoteParts, RemoteSelection,
+    RemoteTrail, TrailPoint,
 };
 use drafftink_geom::OrientedBox;
 use drafftink_geom::kurbo::{Point, Rect, Size};
@@ -144,7 +144,7 @@ fn an_idle_interaction_adds_nothing() {
 }
 
 #[test]
-fn the_crop_window_is_a_solid_box_with_the_eight_handles_and_the_picture_is_outlined() {
+fn the_crop_editor_adds_no_selection_box_or_outline_to_the_overlay() {
     use drafftink_engine::interact::CropView;
     use drafftink_scene::{Element, ElementKind, ImageData, ZIndex};
 
@@ -156,16 +156,21 @@ fn the_crop_window_is_a_solid_box_with_the_eight_handles_and_the_picture_is_outl
     let window = OrientedBox::from_rect(Rect::new(10.0, 0.0, 30.0, 20.0));
     let picture = OrientedBox::from_rect(Rect::new(0.0, 0.0, 40.0, 20.0));
     let interaction = InteractionOverlay {
-        crop: Some(CropView { element: id("pic"), shown: image.clone(), whole: image, window, picture }),
+        crop: Some(CropView {
+            element: id("pic"),
+            shown: image.clone(),
+            whole: image,
+            window,
+            picture,
+            grid: false,
+            pointer: PointerKind::Mouse,
+        }),
         ..InteractionOverlay::default()
     };
-    // The crop editor draws no selection box of its own: the window stands in for it.
+    // The window, its handles and the outline of the picture are drawn by the crop painter of the render crate, not
+    // as a selection box with the square handles of the select tool.
     let mut out = to_render(&CanvasOverlay::default(), &RemoteParts::default(), &[]);
     add_interaction(&mut out, &interaction);
-    let [window_box] = out.selection.as_slice() else { panic!("one box: {:?}", out.selection) };
-    assert_eq!(window_box.obox, window);
-    assert!(!window_box.dashed, "the crop window is solid");
-    let handles = window_box.handles;
-    assert!(handles.corners && handles.edges && !handles.rotate, "eight handles and no rotation");
-    assert_eq!(out.hover, vec![picture]);
+    assert!(out.selection.is_empty(), "{:?}", out.selection);
+    assert!(out.hover.is_empty());
 }
