@@ -482,13 +482,22 @@ fn parse_image(rd: &Rd, ctx: &mut Ctx, w: f64, h: f64) -> Option<ImageData> {
     }
     let crop = crop_obj.and_then(|c| {
         let (x, y, cw, ch) = (num(c, "x")?, num(c, "y")?, num(c, "width")?, num(c, "height")?);
+        // The crop is in pixels of the picture as Excalidraw knew it (`naturalWidth` by `naturalHeight`). When the
+        // file's picture has another size, the crop moves to that size so that it shows the same part.
+        let (sx, sy) = match (num(c, "naturalWidth"), num(c, "naturalHeight")) {
+            (Some(w), Some(h)) if w >= 1.0 && h >= 1.0 => (f64::from(nw) / w, f64::from(nh) / h),
+            _ => (1.0, 1.0),
+        };
+        let (x, y, cw, ch) = (x * sx, y * sy, cw * sx, ch * sy);
         let ok = x >= 0.0 && y >= 0.0 && cw > 0.0 && ch > 0.0 && [x, y, cw, ch].iter().all(|v| *v <= MAX_COORD);
         if !ok {
             rd.warn(ctx.rep, || {
                 "has a crop that is empty or outside the picture; the whole picture is shown".to_owned()
             });
         }
-        ok.then_some(Crop { x, y, width: cw, height: ch })
+        // A crop that covers the whole picture is no crop (Excalidraw drops it the same way).
+        let whole = x <= 1e-6 && y <= 1e-6 && x + cw >= f64::from(nw) - 1e-6 && y + ch >= f64::from(nh) - 1e-6;
+        (ok && !whole).then_some(Crop { x, y, width: cw, height: ch })
     });
     Some(ImageData { file_id: Some(file_id), natural_width: nw, natural_height: nh, crop })
 }

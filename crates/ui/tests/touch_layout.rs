@@ -11,6 +11,7 @@ use drafftink_ui::state::{LayoutPreference, PanelKind};
 use egui::{Event, TouchDeviceId, TouchId, TouchPhase, Vec2, vec2};
 use egui_kittest::Harness;
 use egui_kittest::kittest::Queryable;
+use serde_json::json;
 
 type H = Harness<'static, Fixture>;
 
@@ -271,4 +272,20 @@ fn a_touch_device_starts_in_the_touch_layout_before_any_touch() {
     assert!(height_of(&h, "Rectangle tool") >= 44.0 && height_of(&h, "Undo") >= 40.0);
     let mouse = at(vec2(1180.0, 820.0), dialog::fixture());
     assert_eq!(height_of(&mouse, "Undo"), 28.0, "a desktop window keeps the desktop sizes");
+}
+
+#[test]
+fn on_a_phone_the_crop_buttons_of_an_image_wait_behind_more_at_finger_size() {
+    let mut f = dialog::fixture();
+    let picture = "iVBORw0KGgoAAAANSUhEUgAAACgAAAAUCAIAAABwJOjsAAAAJElEQVR4nGM4YWQ0IIhh1OJRi0ctHrV41OJRi0ctHrV45FgMAAkCqa66Bn33AAAAAElFTkSuQmCC";
+    let out = dialog::run(&mut f, "image.insert", json!({ "images": [{ "base64": picture }], "at": [0, 0] }));
+    let id = drafftink_scene::ElementId::new(out["ids"][0].as_str().unwrap()).unwrap();
+    dialog::run(&mut f, "image.crop", json!({ "id": id.as_str(), "crop": { "x": 0, "y": 0, "w": 20, "h": 20 } }));
+    let mut h = at(vec2(390.0, 844.0), f);
+    assert!(h.query_by_label("Crop image").is_none(), "not in the one-row strip");
+    h.get_by_label("More options").click();
+    h.run();
+    for label in ["Crop image", "Reset crop"] {
+        assert!(h.get_by_label(label).rect().height() >= 36.0, "{label} is a finger-sized target");
+    }
 }

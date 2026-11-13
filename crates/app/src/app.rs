@@ -814,6 +814,8 @@ impl App {
         let interaction_overlay = self.interaction.overlay(&self.session);
         let mut hide = hidden.clone();
         hide.extend(interaction_overlay.faded.iter().cloned());
+        // The crop editor draws its own picture of the image.
+        hide.extend(interaction_overlay.crop.iter().map(|c| c.element.clone()));
 
         let tab = self.session.tab().id;
         let revision = self.session.store().revision();

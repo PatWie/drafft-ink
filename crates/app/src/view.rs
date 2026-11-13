@@ -175,26 +175,39 @@ impl CanvasView {
                 composer.compose_edited_text(&edit.text, edit.reveal, view, ts, preview);
             });
         }
+        // The crop editor draws the whole picture faded, and the draft of the crop over it.
+        if let Some(crop) = &interaction.crop {
+            let whole = std::slice::from_ref(&crop.whole);
+            Self::compose_faded(composer, typesetter, store, whole, view, preview);
+            typesetter
+                .with(|ts| composer.compose_transient(store, std::slice::from_ref(&crop.shown), view, ts, preview));
+        }
         if let Some(el) = &interaction.preview {
             typesetter.with(|ts| composer.compose_transient(store, std::slice::from_ref(el), view, ts, preview));
         }
         let faded: Vec<_> = interaction.faded.iter().filter_map(|id| store.get(id)).cloned().collect();
         if !faded.is_empty() {
-            let mut layer = Scene::new();
-            typesetter.with(|ts| composer.compose_transient(store, &faded, view, ts, &mut layer));
-            let dev = view.device_size();
-            let clip = Rect::new(0.0, 0.0, dev.width, dev.height);
-            preview.push_layer(
-                Fill::NonZero,
-                BlendMode::new(Mix::Normal, Compose::SrcOver),
-                0.3,
-                Affine::IDENTITY,
-                &clip,
-            );
-            preview.append(&layer, None);
-            preview.pop_layer();
+            Self::compose_faded(composer, typesetter, store, &faded, view, preview);
         }
         typesetter.with(|ts| paint_overlay(overlay, render_overlay, view, &OverlayStyle::default(), ts));
+    }
+
+    /// Draws `elements` at 30% opacity on top of `scene` (the eraser's soft delete, the picture behind a crop).
+    fn compose_faded<S: SceneRead>(
+        composer: &mut SceneComposer,
+        typesetter: &SharedTypesetter,
+        store: &S,
+        elements: &[drafftink_scene::Element],
+        view: &View,
+        scene: &mut Scene,
+    ) {
+        let mut layer = Scene::new();
+        typesetter.with(|ts| composer.compose_transient(store, elements, view, ts, &mut layer));
+        let dev = view.device_size();
+        let clip = Rect::new(0.0, 0.0, dev.width, dev.height);
+        scene.push_layer(Fill::NonZero, BlendMode::new(Mix::Normal, Compose::SrcOver), 0.3, Affine::IDENTITY, &clip);
+        scene.append(&layer, None);
+        scene.pop_layer();
     }
 
     /// Writes the three scenes, back to front, into the shell's scene.

@@ -385,7 +385,7 @@ fn clear(s: &mut Session, _: NoArgs) -> Result<SelectionOut, Refusal> {
     o.selection.clear();
     o.selected_groups.clear();
     o.editing_group = None;
-    o.linear_editor = None;
+    o.close_editors();
     Ok(report(s, &before, &[]))
 }
 
@@ -448,6 +448,9 @@ pub struct SelectionSummary {
     /// The point editor, when a line or arrow is being edited point by point.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub linear_editor: Option<LinearEditorOut>,
+    /// The image whose crop is being edited (`image.crop_begin`).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub crop_editor: Option<String>,
 }
 
 /// Result of `selection.get`.
@@ -483,6 +486,7 @@ fn get(s: &mut Session, a: GetArgs) -> Result<GetOut, Refusal> {
                 element: l.element.as_str().to_owned(),
                 selected_points: l.selected_points.iter().copied().collect(),
             }),
+            crop_editor: s.tab().observed.crop_editor.as_ref().map(|id| id.as_str().to_owned()),
         }
     });
     let elements = (a.detail == Detail::Full).then(|| describe_all(store, &ids, &ALL_FIELDS));

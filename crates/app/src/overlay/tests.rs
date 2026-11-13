@@ -129,3 +129,30 @@ fn an_idle_interaction_adds_nothing() {
     add_interaction(&mut out, &InteractionOverlay::default());
     assert!(out.is_empty());
 }
+
+#[test]
+fn the_crop_window_is_a_solid_box_with_the_eight_handles_and_the_picture_is_outlined() {
+    use drafftink_engine::interact::CropView;
+    use drafftink_scene::{Element, ElementKind, ImageData, ZIndex};
+
+    let image = Element::new(
+        id("pic"),
+        ElementKind::Image(ImageData { file_id: None, natural_width: 40, natural_height: 20, crop: None }),
+        ZIndex::first(),
+    );
+    let window = OrientedBox::from_rect(Rect::new(10.0, 0.0, 30.0, 20.0));
+    let picture = OrientedBox::from_rect(Rect::new(0.0, 0.0, 40.0, 20.0));
+    let interaction = InteractionOverlay {
+        crop: Some(CropView { element: id("pic"), shown: image.clone(), whole: image, window, picture }),
+        ..InteractionOverlay::default()
+    };
+    // The crop editor draws no selection box of its own: the window stands in for it.
+    let mut out = to_render(&CanvasOverlay::default(), &RemoteParts::default(), &[]);
+    add_interaction(&mut out, &interaction);
+    let [window_box] = out.selection.as_slice() else { panic!("one box: {:?}", out.selection) };
+    assert_eq!(window_box.obox, window);
+    assert!(!window_box.dashed, "the crop window is solid");
+    let handles = window_box.handles;
+    assert!(handles.corners && handles.edges && !handles.rotate, "eight handles and no rotation");
+    assert_eq!(out.hover, vec![picture]);
+}

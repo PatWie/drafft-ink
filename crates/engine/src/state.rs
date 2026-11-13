@@ -36,9 +36,18 @@ pub struct Observed {
     pub editing_group: Option<GroupId>,
     /// The line or arrow whose points are being edited.
     pub linear_editor: Option<LinearEditor>,
+    /// The image whose crop is being edited (the crop editor, `image.crop_begin`).
+    pub crop_editor: Option<ElementId>,
 }
 
 impl Observed {
+    /// Closes the point editor and the crop editor: the selection they belong to changed. Nothing is kept of
+    /// them (an open crop edit that was not ended is dropped).
+    pub fn close_editors(&mut self) {
+        self.linear_editor = None;
+        self.crop_editor = None;
+    }
+
     /// The form the replicated store keeps with an undo step.
     pub fn to_state(&self) -> ObservedState {
         ObservedState {
@@ -59,6 +68,7 @@ impl Observed {
                 .point_editor
                 .as_ref()
                 .map(|e| LinearEditor { element: e.clone(), selected_points: BTreeSet::new() }),
+            crop_editor: None,
         }
     }
 }

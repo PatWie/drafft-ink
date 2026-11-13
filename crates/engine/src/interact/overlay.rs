@@ -11,6 +11,7 @@ use drafftink_canvas::{
     BindCandidate, Handle, HoverOutline, LassoOverlay, MarqueeOverlay, Overlay, SelectionBox, SelectionFrame,
     TransformerOverlay,
 };
+use drafftink_geom::OrientedBox;
 use drafftink_geom::guides::SmartGuide;
 use drafftink_geom::kurbo::{Point, Rect};
 use drafftink_scene::{Element, ElementId, SceneRead};
@@ -123,6 +124,21 @@ impl OverlayParts {
     }
 }
 
+/// What the crop editor shows: the whole picture faded, the draft over it, the window with its handles.
+#[derive(Debug, Clone, PartialEq)]
+pub struct CropView {
+    /// The image being cropped. The scene leaves it out while the editor draws its own picture of it.
+    pub element: ElementId,
+    /// The image as the draft would leave it: draw it like any element.
+    pub shown: Element,
+    /// The whole picture, uncropped, to draw faded under `shown`.
+    pub whole: Element,
+    /// The crop window in world space (it turns with the image). It carries the eight handles.
+    pub window: OrientedBox,
+    /// The whole picture in world space, to outline.
+    pub picture: OrientedBox,
+}
+
 /// Everything to draw above the scene for the current interaction.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct InteractionOverlay {
@@ -143,10 +159,23 @@ pub struct InteractionOverlay {
     pub snap_point: Option<Point>,
     /// The eraser's radius ring.
     pub eraser: Option<EraserRing>,
+    /// The crop editor, while it is open. The overlay then has no selection box, handles or hover outline of its
+    /// own: the window carries the handles.
+    pub crop: Option<CropView>,
 }
 
 /// Builds the overlay from the parts, the selection and the hover.
-pub(super) fn build(world: &World, s: &Session, parts: &OverlayParts, hover: Option<&ElementId>) -> InteractionOverlay {
+pub(super) fn build(
+    world: &World,
+    s: &Session,
+    parts: &OverlayParts,
+    hover: Option<&ElementId>,
+    crop: Option<CropView>,
+) -> InteractionOverlay {
+    if crop.is_some() {
+        let canvas = Overlay { zoom: world.viewport.zoom(), ..Overlay::default() };
+        return InteractionOverlay { canvas, crop, ..InteractionOverlay::default() };
+    }
     let cfg = &world.config;
     let store = s.store();
     let selection = s.selection();
@@ -199,5 +228,6 @@ pub(super) fn build(world: &World, s: &Session, parts: &OverlayParts, hover: Opt
         angle_rays: parts.angle_rays,
         snap_point: parts.snap_point,
         eraser: parts.eraser,
+        crop: None,
     }
 }

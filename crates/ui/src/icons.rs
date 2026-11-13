@@ -81,6 +81,8 @@ pub enum Icon {
     SelectAll,
     Layers,
     Convert,
+    Crop,
+    CropReset,
     Brush,
     Save,
     Open,
@@ -427,6 +429,17 @@ pub fn paint(painter: &Painter, rect: Rect, icon: Icon, color: Color32) {
         Icon::Search => {
             pen.circle(10.5, 10.5, 6.0);
             pen.line((15.0, 15.0), (20.5, 20.5));
+        }
+        Icon::Crop => {
+            // Two crop marks: an L from the top-left and an L from the bottom-right.
+            pen.poly(&[(7.0, 3.0), (7.0, 17.0), (21.0, 17.0)], false);
+            pen.poly(&[(3.0, 7.0), (17.0, 7.0), (17.0, 21.0)], false);
+        }
+        Icon::CropReset => {
+            // The crop marks, crossed out by a slash.
+            pen.poly(&[(7.0, 3.0), (7.0, 17.0), (21.0, 17.0)], false);
+            pen.poly(&[(3.0, 7.0), (17.0, 7.0), (17.0, 21.0)], false);
+            pen.line((4.0, 20.0), (20.0, 4.0));
         }
         Icon::Image => {
             pen.rect(3.5, 5.0, 17.0, 14.0, 1.5);

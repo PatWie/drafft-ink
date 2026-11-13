@@ -112,6 +112,9 @@ impl Session {
         if t.observed.linear_editor.as_ref().is_some_and(|l| gone.contains(&l.element)) {
             t.observed.linear_editor = None;
         }
+        if t.observed.crop_editor.as_ref().is_some_and(|id| gone.contains(id)) {
+            t.observed.crop_editor = None;
+        }
         self.cancel_gesture_on_removed(tab, &gone);
         self.mark_dirty(Redraw::Scene);
     }

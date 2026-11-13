@@ -769,10 +769,18 @@ Images are stored once per file (content hash) in the document's files table. Pa
 | id | title | undo | keys | source |
 |---|---|---|---|---|
 | `image.insert` | Insert image | Undoable | `I` is the UI verb `ui.insert_image` (picker), which calls this; `Mod+V` and drops also route here | A:5376-5468; file_ops 171-230, 939+; X:image tool |
+| `image.crop` | Crop | Undoable | the crop editor's `Enter`, click outside and `Esc` end with this | X:actionCropEditor, cropElement; NEW |
+| `image.reset_crop` | Reset crop | Undoable | - | X:cropElement (uncrop); NEW |
+| `image.crop_begin` | Crop image | NoUndo | `Enter` or double-click on a selected image (the interaction layer runs it) | X:actionCropEditor; NEW |
+| `image.crop_end` | Done cropping | NoUndo | - | NEW |
 
 | id | args | availability and refusals | effect |
 |---|---|---|---|
 | `image.insert` | `images: Bytes[]` (1 to 20), `at: Point = viewport_center`, `fit: number = 800`, `offset: number = 20`, `select: bool = true`, `downscale: bool = true`, `name?: string` (used in messages for pictures that carry no name) | Always available. Execute: `unsupported_format`: "`{name}` is not a supported image ({found}). Use PNG, JPEG or WebP."; `parse_failed`: "{name} could not be read as an image: {msg}. Try another file."; `limit_exceeded` (more than 20 images, or an image over 25 MiB). | Decodes the header for the size, stores the bytes (re-encoded to at most 2048 px on the long side when over 2 MiB and downscale=true), and creates image elements whose longest side is at most `fit` (smaller images keep their size, as the old 800 px rule), centred on `at`, each further image shifted by `offset`. Selects them. Replaces the old paste, drop and picker code paths, and the stale camera captured by the web drop handler (A:1917, FIX). A new image has no outline: its stroke colour is clear (`Style::for_image`), whatever the defaults for new shapes say. Pasting and dropping go through this command, so they have none either; give one with `style.set` (`stroke_color`, or a width or dash). |
+| `image.crop` | `id?: Ref` (default the single selected element), `crop: {x, y, w, h} \| null` (the part of the picture to show, **in pixels of the stored picture** from its top-left corner, as `natural_width` by `natural_height` of `element.query`; `null` or absent shows the whole picture; a crop that covers the whole picture is stored as no crop), `element_box: "follow_crop" \| "keep" = follow_crop`, `bounds?: {x, y, w, h}` (the unrotated box in world units; overrides `element_box`) | Available for one selected image whose picture is loaded (`default_targets`). Execute refuses: `wrong_kind` (not an image); `locked`; `not_found`; `picture_not_loaded`: "The picture of {id} has not arrived yet, so it cannot be cropped. Wait for it to load, then try again."; `bad_crop`: "The crop is {w} by {h} pixels, and a side must be at least 1 pixel. Make it larger.", "The crop (x {x}, y {y}, {w} by {h}) is not inside the picture, which is {pw} by {ph} pixels. ...", or a number that is not finite; `bad_arg` for `bounds` without a width and height. | Shows only that part of the picture and keeps the picture whole in the document, so the crop can be changed or reset later (non-destructive, Excalidraw's `crop`). `follow_crop` (default, Excalidraw's rule) keeps the scale and the place of the pixels on the canvas: the box shrinks to the cropped part (a crop of the left half of a 100 by 50 image gives a 50 by 50 box at the same top-left corner) and grows again when the crop widens. `keep` leaves the box as it is and stretches the cropped part over it. Rotated and mirrored images crop what the user sees: the rule works in the element's own frame, and a mirrored image's left edge shows the picture's right edge. The coordinates are always in the stored picture, which `image.insert` may have made smaller than the original (`natural_width`, `natural_height`). A repeat of the same crop writes nothing (`changed: false`). Closes the crop editor when it is open on this image. One undo step. |
+| `image.reset_crop` | `id?: Ref`, `element_box: "follow_crop" \| "keep" = follow_crop` | Available for one selected image that is cropped (else `nothing_to_do`: "the image is not cropped"). Refuses as `image.crop`: `wrong_kind`, `locked`, `not_found`, `picture_not_loaded`, and `bad_crop` for an image whose box has no size. | `image.crop` with `crop: null`: the whole picture is shown again; with `follow_crop` the box grows back to the whole picture at the scale it has. |
+| `image.crop_begin` | `id?: Ref` (default the single selected element) | Available for one selected image whose picture is loaded. Execute refuses `wrong_kind`, `locked`, `not_found`, `picture_not_loaded`. | Opens the crop editor: selects that image alone, switches to the select tool, and records the image in the observed state (`selection.get` summary `crop_editor`). The pointer side (the whole picture faded, 8 handles, panning, `Enter`, click outside and `Esc` end it with one `image.crop`) is `interact::crop`, `docs/exceptions.md` E17 and `docs/interaction.md`. Changing the selection, the tool or the tab closes the editor and drops what was not committed. `tool.cancel` closes it as one rung (`crop_editor`, after the text edit and before the point editor). No undo step. |
+| `image.crop_end` | - | Available while the crop editor is open (else `nothing_to_do`). | Closes the crop editor and keeps the document as it is. Whatever the pointer dragged in the editor and did not commit is dropped; the editor's own `Enter` and `Esc` commit it first with `image.crop`. |
 
 ### 2.14 `view`: camera, modes, screenshots
 
@@ -1476,7 +1484,7 @@ These are deliberate; each fixes an inventory finding. Reviewers should expect t
 | `Tab`, `Shift+Tab` convert element type | `element.convert` (cycles to the next or previous type of the family) |
 | `Mod` held: do not bind | `bind=off` argument |
 | click, click, click: curved arrow | recognizer collects points, `element.create` points, arrow_type=round |
-| Double-click or `Enter` on image: crop | not planned |
+| Double-click or `Enter` on image: crop | `image.crop_begin`, ends with `image.crop` (E17) |
 | `Mod+=`, `Mod+-`, `Mod+0` | `view.zoom_in`, `view.zoom_out`, `view.zoom_reset` |
 | `Shift+1`, `Shift+2`, `Shift+3` | `view.zoom_to_fit` |
 | `PgUp`, `PgDn`, with `Shift` | `view.scroll_page` |
@@ -1546,7 +1554,7 @@ These are deliberate; each fixes an inventory finding. Reviewers should expect t
 
 These Excalidraw features are outside the plan. They have no ids. If one is added, its family section is added here first.
 
-Embeddable and iframe elements, bucket fill, autoshape, eyedropper, image crop, list markers in text, chart paste, magic frame and every AI feature, dark theme and canvas theme switching, i18n, follow mode, room encryption and passwords, pen-only mode, Excalidraw+ export, shareable encrypted links, scrollbars, welcome screen, hint bar.
+Embeddable and iframe elements, bucket fill, autoshape, eyedropper, list markers in text, chart paste, magic frame and every AI feature, dark theme and canvas theme switching, i18n, follow mode, room encryption and passwords, pen-only mode, Excalidraw+ export, shareable encrypted links, scrollbars, welcome screen, hint bar.
 
 ---
 
@@ -1694,6 +1702,10 @@ Legend:
 | `arrow.move_segment` | D | - | - | ok | no | no | commit | scene | always | n | y |
 | `arrow.release_segment` | D | - | - | ok | no | no | commit | scene | always | n | y |
 | `image.insert` | D,O | - | - | ok | no | no | commit | scene | always | n | y |
+| `image.crop` | D,O | soft | - | ok | no | no | commit | scene | always | y | y |
+| `image.reset_crop` | D,O | soft | - | ok | no | no | commit | scene | always | y | y |
+| `image.crop_begin` | O,T | soft | - | ok | no | no | commit | overlay | always | y | y |
+| `image.crop_end` | O | - | - | ok | no | no | commit | overlay | always | y | n |
 | `view.set` | V | - | - | ok | ok | ok | ok | camera | quiet | n | y |
 | `view.pan` | V | - | - | ok | ok | ok | ok | camera | quiet | n | y |
 | `view.zoom_at` | V | - | - | ok | ok | ok | ok | camera | quiet | n | y |

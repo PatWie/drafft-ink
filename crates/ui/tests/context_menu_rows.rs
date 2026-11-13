@@ -558,3 +558,42 @@ fn the_panel_the_palette_and_the_hamburger_menu_use_the_same_titles() {
         );
     }
 }
+
+// ---- an image ----
+
+const PICTURE: &str = "iVBORw0KGgoAAAANSUhEUgAAACgAAAAUCAIAAABwJOjsAAAAJElEQVR4nGM4YWQ0IIhh1OJRi0ctHrV41OJRi0ctHrV45FgMAAkCqa66Bn33AAAAAElFTkSuQmCC";
+
+fn picture(f: &mut Fixture) -> ElementId {
+    let out = dialog::run(f, "image.insert", json!({ "images": [{ "base64": PICTURE }], "at": [0, 0] }));
+    ElementId::new(out["ids"][0].as_str().unwrap()).unwrap()
+}
+
+#[test]
+fn an_image_has_crop_rows_with_the_registry_titles_and_reset_only_while_it_is_cropped() {
+    let mut f = Fixture::new();
+    let id = picture(&mut f);
+    let mut h = open(f, std::slice::from_ref(&id));
+    assert!(has_row(&h, "Crop image") && !has_row(&h, "Reset crop"));
+    h.state_mut().clear();
+    row(&h, "Crop image").click();
+    h.run();
+    assert_eq!(calls(&h), vec![ctx_call("image.crop_begin", json!({}))]);
+
+    let mut f = Fixture::new();
+    let id = picture(&mut f);
+    dialog::run(&mut f, "image.crop", json!({ "id": id.as_str(), "crop": { "x": 0, "y": 0, "w": 20, "h": 20 } }));
+    let mut h = open(f, std::slice::from_ref(&id));
+    assert!(has_row(&h, "Crop image") && has_row(&h, "Reset crop"));
+    h.state_mut().clear();
+    row(&h, "Reset crop").click();
+    h.run();
+    assert_eq!(calls(&h), vec![ctx_call("image.reset_crop", json!({}))]);
+}
+
+#[test]
+fn a_rectangle_has_no_crop_rows() {
+    let mut f = Fixture::new();
+    let a = add_rect(&mut f.session, 0.0, 0.0, 50.0, 50.0).unwrap();
+    let h = open(f, &[a]);
+    assert!(!has_row(&h, "Crop image") && !has_row(&h, "Reset crop"));
+}

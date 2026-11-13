@@ -2,7 +2,7 @@
 
 use base64::Engine as _;
 use base64::engine::general_purpose::STANDARD;
-use drafftink_scene::{ElementKind, FileId, SceneRead};
+use drafftink_scene::{ElementKind, FileId, SceneRead, SceneTx};
 use serde_json::{Value, json};
 
 use crate::batch::{BatchOpts, BatchStep};
@@ -389,4 +389,228 @@ fn random_bytes_never_panic() {
             assert_ne!(r.code, "internal", "{}", r.message);
         }
     }
+}
+
+// ---- crop ----
+
+/// A 200 by 100 picture shown at 200 by 100 with its top-left corner at the origin: one unit per pixel.
+fn cropped_session() -> (Session, String) {
+    let mut s = session();
+    let out = run(&mut s, "image.insert", json!({"images": [b64(&png(200, 100))], "at": [100, 50]}));
+    let id = out["ids"][0].as_str().unwrap().to_owned();
+    (s, id)
+}
+
+fn crop_of(s: &Session, id: &str) -> Option<drafftink_scene::Crop> {
+    let id = drafftink_scene::ElementId::new(id).unwrap();
+    s.element(&id).and_then(|e| e.image_data()).and_then(|d| d.crop.clone())
+}
+
+fn box_of(s: &Session, id: &str) -> [f64; 4] {
+    let t = s.element(&drafftink_scene::ElementId::new(id).unwrap()).unwrap().transform;
+    [t.x, t.y, t.w, t.h]
+}
+
+fn assert_box(got: [f64; 4], want: [f64; 4]) {
+    assert!(got.iter().zip(want).all(|(a, b)| (a - b).abs() < 1e-9), "{got:?} != {want:?}");
+}
+
+#[test]
+fn crop_shrinks_the_box_around_the_cropped_pixels_by_default() {
+    let (mut s, id) = cropped_session();
+    let out = run(&mut s, "image.crop", json!({"id": id, "crop": {"x": 50, "y": 0, "w": 100, "h": 100}}));
+    assert_eq!(out["changed"], true);
+    assert_eq!(out["crop"], json!({"x": 50.0, "y": 0.0, "w": 100.0, "h": 100.0}));
+    assert_eq!((out["natural_width"].as_u64(), out["natural_height"].as_u64()), (Some(200), Some(100)));
+    // Same scale as before (one unit per pixel): a 100 by 100 box that starts 50 units right of the old corner.
+    assert_box(box_of(&s, &id), [50.0, 0.0, 100.0, 100.0]);
+    assert_eq!(crop_of(&s, &id).unwrap().width, 100.0);
+}
+
+#[test]
+fn crop_can_keep_the_box_and_stretch_the_picture_into_it() {
+    let (mut s, id) = cropped_session();
+    run(&mut s, "image.crop", json!({"id": id, "crop": {"x": 50, "y": 0, "w": 100, "h": 100}, "element_box": "keep"}));
+    assert_box(box_of(&s, &id), [0.0, 0.0, 200.0, 100.0]);
+    assert_eq!(crop_of(&s, &id).unwrap().x, 50.0);
+}
+
+#[test]
+fn crop_with_bounds_puts_the_box_exactly_there() {
+    let (mut s, id) = cropped_session();
+    run(&mut s, "image.crop", json!({"id": id, "crop": {"x": 0, "y": 0, "w": 100, "h": 100}, "bounds": {"x": 7, "y": 8, "w": 30, "h": 40}}));
+    assert_box(box_of(&s, &id), [7.0, 8.0, 30.0, 40.0]);
+    let r = refuse_clean(&mut s, "image.crop", json!({"id": id, "crop": null, "bounds": {"x": 0, "y": 0, "w": 0, "h": 5}}));
+    assert_eq!(r.code, "bad_args");
+}
+
+#[test]
+fn crop_defaults_to_the_selected_image_and_reset_gives_the_picture_back() {
+    let (mut s, id) = cropped_session();
+    run(&mut s, "image.crop", json!({"crop": {"x": 100, "y": 50, "w": 100, "h": 50}}));
+    assert_box(box_of(&s, &id), [100.0, 50.0, 100.0, 50.0]);
+    let out = run(&mut s, "image.reset_crop", json!({}));
+    assert_eq!(out["crop"], Value::Null);
+    assert_box(box_of(&s, &id), [0.0, 0.0, 200.0, 100.0]);
+    assert!(crop_of(&s, &id).is_none());
+    // Nothing left to reset: the control is greyed out with a reason.
+    let r = s.availability("image.reset_crop").unwrap_err();
+    assert_eq!(r.code, "nothing_to_do", "{}", r.message);
+}
+
+#[test]
+fn crop_null_is_a_reset_and_a_whole_picture_crop_is_no_crop() {
+    let (mut s, id) = cropped_session();
+    run(&mut s, "image.crop", json!({"id": id, "crop": {"x": 10, "y": 10, "w": 50, "h": 50}}));
+    run(&mut s, "image.crop", json!({"id": id, "crop": null}));
+    assert!(crop_of(&s, &id).is_none());
+    run(&mut s, "image.crop", json!({"id": id, "crop": {"x": 10, "y": 10, "w": 50, "h": 50}}));
+    let out = run(&mut s, "image.crop", json!({"id": id, "crop": {"x": 0, "y": 0, "w": 200, "h": 100}}));
+    assert_eq!(out["crop"], Value::Null);
+    assert!(crop_of(&s, &id).is_none());
+}
+
+#[test]
+fn crop_is_one_undo_step_and_undo_restores_the_crop_and_the_box() {
+    let (mut s, id) = cropped_session();
+    let before = box_of(&s, &id);
+    run(&mut s, "image.crop", json!({"id": id, "crop": {"x": 50, "y": 20, "w": 80, "h": 40}}));
+    assert!(crop_of(&s, &id).is_some());
+    run(&mut s, "history.undo", json!({}));
+    assert!(crop_of(&s, &id).is_none());
+    assert_box(box_of(&s, &id), before);
+    run(&mut s, "history.redo", json!({}));
+    assert_eq!(crop_of(&s, &id).unwrap().x, 50.0);
+}
+
+#[test]
+fn a_repeated_crop_changes_nothing_and_makes_no_undo_step() {
+    let (mut s, id) = cropped_session();
+    run(&mut s, "image.insert", json!({"images": [b64(&png(10, 10))], "at": [500, 500]}));
+    run(&mut s, "image.crop", json!({"id": id, "crop": {"x": 50, "y": 20, "w": 80, "h": 40}}));
+    let out = run(&mut s, "image.crop", json!({"id": id, "crop": {"x": 50, "y": 20, "w": 80, "h": 40}}));
+    assert_eq!(out["changed"], false);
+    run(&mut s, "history.undo", json!({}));
+    assert!(crop_of(&s, &id).is_none(), "one undo removes the crop, so the repeat made no step of its own");
+}
+
+#[test]
+fn crop_refusals_say_what_to_change_and_leave_everything_alone() {
+    let (mut s, id) = cropped_session();
+    let zero = refuse_clean(&mut s, "image.crop", json!({"id": id, "crop": {"x": 0, "y": 0, "w": 0, "h": 10}}));
+    assert_eq!(zero.code, "bad_crop");
+    assert!(zero.message.contains("at least 1 pixel"), "{}", zero.message);
+    let outside = refuse_clean(&mut s, "image.crop", json!({"id": id, "crop": {"x": 150, "y": 0, "w": 100, "h": 10}}));
+    assert_eq!(outside.code, "bad_crop");
+    assert!(outside.message.contains("200 by 100"), "{}", outside.message);
+    assert_eq!(refuse_clean(&mut s, "image.crop", json!({"id": id, "crop": {"x": -5, "y": 0, "w": 10, "h": 10}})).code, "bad_crop");
+    assert_eq!(refuse_clean(&mut s, "image.crop", json!({"id": id, "crop": {"x": 0, "y": 0, "w": 10}})).code, "bad_args");
+    assert_eq!(refuse_clean(&mut s, "image.crop", json!({"id": "nope", "crop": null})).code, "not_found");
+    assert!(crop_of(&s, &id).is_none());
+}
+
+#[test]
+fn crop_refuses_what_is_not_an_image_and_what_is_locked() {
+    let (mut s, id) = cropped_session();
+    let rect = testing::add_rect(&mut s, 0.0, 0.0, 50.0, 50.0).unwrap();
+    let r = refuse_clean(&mut s, "image.crop", json!({"id": rect.as_str(), "crop": null}));
+    assert_eq!(r.code, "wrong_kind");
+    assert!(r.message.contains("images"), "{}", r.message);
+    run(&mut s, "element.lock", json!({"ids": [id]}));
+    let locked = refuse_clean(&mut s, "image.crop", json!({"id": id, "crop": {"x": 0, "y": 0, "w": 10, "h": 10}}));
+    assert_eq!(locked.code, "locked");
+    assert_eq!(refuse_clean(&mut s, "image.crop_begin", json!({"id": id})).code, "locked");
+}
+
+#[test]
+fn crop_refuses_a_picture_that_is_not_in_the_document() {
+    let (mut s, id) = cropped_session();
+    let eid = drafftink_scene::ElementId::new(&id).unwrap();
+    s.tab_mut()
+        .doc
+        .edit::<(), drafftink_scene::StoreError>(|tx| {
+            tx.update(&eid, |e| {
+                if let ElementKind::Image(d) = &mut e.kind {
+                    d.file_id = None;
+                }
+            })
+        })
+        .unwrap();
+    let r = refuse_clean(&mut s, "image.crop", json!({"id": id, "crop": {"x": 0, "y": 0, "w": 10, "h": 10}}));
+    assert_eq!(r.code, "picture_not_loaded");
+    assert!(r.message.contains("not arrived"), "{}", r.message);
+    assert_eq!(s.availability("image.crop_begin").unwrap_err().code, "picture_not_loaded");
+}
+
+#[test]
+fn crop_needs_one_selected_image_when_no_id_is_given() {
+    let mut s = session();
+    let r = refuse_clean(&mut s, "image.crop", json!({"crop": null}));
+    assert_eq!(r.code, "needs_single");
+    assert!(s.availability("image.crop").is_err());
+}
+
+#[test]
+fn a_rotated_and_mirrored_image_crops_what_is_seen() {
+    let (mut s, id) = cropped_session();
+    run(&mut s, "element.rotate", json!({"ids": [id], "angle": 90, "mode": "to"}));
+    run(&mut s, "element.flip", json!({"ids": [id], "axis": "horizontal"}));
+    let before = s.element(&drafftink_scene::ElementId::new(&id).unwrap()).unwrap().clone();
+    let (cx, cy) = (before.transform.x + before.transform.w / 2.0, before.transform.y + before.transform.h / 2.0);
+    // The image is a 200 by 100 box turned a quarter: the middle of the box stays where it is for a crop of the
+    // middle of the picture.
+    run(&mut s, "image.crop", json!({"id": id, "crop": {"x": 50, "y": 25, "w": 100, "h": 50}}));
+    let after = s.element(&drafftink_scene::ElementId::new(&id).unwrap()).unwrap();
+    assert_eq!((after.transform.w, after.transform.h), (100.0, 50.0));
+    assert!(((after.transform.x + 50.0) - cx).abs() < 1e-9 && ((after.transform.y + 25.0) - cy).abs() < 1e-9);
+    assert_eq!(after.transform.angle, before.transform.angle);
+    assert_eq!((after.transform.flip_x, after.transform.flip_y), (before.transform.flip_x, before.transform.flip_y));
+}
+
+#[test]
+fn crop_begin_and_end_open_and_close_the_editor_without_an_undo_step() {
+    let (mut s, id) = cropped_session();
+    run(&mut s, "selection.clear", json!({}));
+    let out = run(&mut s, "image.crop_begin", json!({"id": id}));
+    assert_eq!(out["changed"], true);
+    assert_eq!(s.selection().iter().map(|i| i.as_str()).collect::<Vec<_>>(), vec![id.as_str()]);
+    let summary = run(&mut s, "selection.get", json!({"detail": "summary"}));
+    assert_eq!(summary["crop_editor"], json!(id));
+    assert_eq!(run(&mut s, "image.crop_begin", json!({"id": id}))["changed"], false);
+    let end = run(&mut s, "image.crop_end", json!({}));
+    assert_eq!(end["changed"], true);
+    assert!(s.availability("image.crop_end").is_err());
+    assert_eq!(run(&mut s, "history.undo", json!({}))["undone"], json!(["Insert image"]), "the insert is still the last step");
+}
+
+#[test]
+fn the_crop_editor_closes_with_the_selection_the_tool_and_esc() {
+    let (mut s, id) = cropped_session();
+    run(&mut s, "image.crop_begin", json!({"id": id}));
+    run(&mut s, "selection.clear", json!({}));
+    assert!(s.tab().observed.crop_editor.is_none());
+    run(&mut s, "image.crop_begin", json!({"id": id}));
+    run(&mut s, "tool.set", json!({"tool": "rectangle"}));
+    assert!(s.tab().observed.crop_editor.is_none());
+    run(&mut s, "image.crop_begin", json!({"id": id}));
+    assert_eq!(s.tool.active, crate::state::Tool::Select);
+    let out = run(&mut s, "tool.cancel", json!({}));
+    assert_eq!(out["rungs"], json!(["crop_editor"]));
+    assert!(s.selection().iter().next().is_some(), "Esc closed the editor and left the selection");
+}
+
+#[test]
+fn a_crop_closes_the_editor_of_its_image() {
+    let (mut s, id) = cropped_session();
+    run(&mut s, "image.crop_begin", json!({"id": id}));
+    run(&mut s, "image.crop", json!({"id": id, "crop": {"x": 0, "y": 0, "w": 50, "h": 50}}));
+    assert!(s.tab().observed.crop_editor.is_none());
+}
+
+#[test]
+fn a_collaborator_deleting_the_image_closes_the_editor() {
+    let (mut s, id) = cropped_session();
+    run(&mut s, "image.crop_begin", json!({"id": id}));
+    run(&mut s, "element.delete", json!({"ids": [id]}));
+    assert!(s.tab().observed.crop_editor.is_none());
 }

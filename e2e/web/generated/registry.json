@@ -1,5 +1,5 @@
 {
- "count": 157,
+ "count": 161,
  "families": [
   "arrange",
   "arrow",
@@ -116,7 +116,11 @@
   "history.redo",
   "history.state",
   "history.undo",
+  "image.crop",
+  "image.crop_begin",
+  "image.crop_end",
   "image.insert",
+  "image.reset_crop",
   "layout.apply",
   "library.add",
   "library.export",

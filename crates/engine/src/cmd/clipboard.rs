@@ -160,7 +160,7 @@ fn cut(s: &mut Session, a: CopyArgs) -> Result<CopyOut, Refusal> {
     if obs.selection.is_empty() {
         obs.selected_groups.clear();
     }
-    obs.linear_editor = None;
+    obs.close_editors();
     let system = publish(s, p.payload, a.system);
     Ok(CopyOut { count: p.count, system })
 }

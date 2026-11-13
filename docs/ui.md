@@ -70,6 +70,8 @@ Nothing mutates session state from a widget. `crates/ui/tests/thin.rs` reads the
 
 **Tokens.** `theme/tokens.rs` has the type scale (`TextSize`), the spacing scale (`space`), the radius ladder (`radius`) and the control heights (`Control`, with the touch heights). A surface asks for `TextSize::Body`, not `13.0`; `tests/tokens.rs` fails on a new literal font size in `surfaces/`. The UI font is the `ui.font` setting (`theme::UiFontChoice`); headings that keep GelPen use `TextSize::hand`.
 
+The strip has an image group for one selected image: "Crop image" ("Done cropping" while the crop editor is open) over "Reset crop" (only while the image is cropped). Their labels are the registry titles. The context menu (and so the long press on touch) has the same two rows.
+
 Look and feel is the old app's: floating cards with a 1 px border, soft shadow, 8 px radius and 12 px margins, the accent blue `#3b82f6` for the active tool, tab and primary button, GelPen for headings (the bytes come from `drafftink_typeset::font_file`, so the binary holds each font file once), the three canvas font families shown in their own faces in the font picker. Icons are drawn with the egui painter (`icons.rs`): no SVG assets, no image loader. All colours come from `theme::Palette`; the dark palette is chosen by the egui theme, which follows the `theme` setting (`light`, `dark`, `system`). Zen mode hides the chrome and keeps dialogs and toasts.
 
 ### Colours the UI shows

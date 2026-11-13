@@ -99,6 +99,8 @@ impl Row {
             Row::Flip => flip(ui, cx),
             Row::Compose => compose(ui, cx),
             Row::LinkDelete => link_and_delete(ui, cx),
+            Row::Crop => crop(ui, cx),
+            Row::ResetCrop => reset_crop(ui, cx),
         }
     }
 }
@@ -528,4 +530,33 @@ fn link_and_delete(ui: &mut Ui, cx: &mut Cx<'_>) {
     cx.verb_button_gated(ui, Verb::OpenLinkEditor, Icon::Link, side, &tip, link.is_some(), reason);
     cx.icon_button(ui, &Ctl::new("element.open_link").label("Open the link"), Icon::Open, side);
     cx.icon_button(ui, &Ctl::new("element.delete"), Icon::Delete, side);
+}
+
+/// Crop the selected image, or, while its crop editor is open, finish. Both labels are the registry's titles.
+fn crop(ui: &mut Ui, cx: &mut Cx<'_>) {
+    let (id, icon) =
+        if cx.model.crop_editing { ("image.crop_end", Icon::Check) } else { ("image.crop_begin", Icon::Crop) };
+    chip_with_icon(ui, cx, &Ctl::new(id), icon);
+}
+
+/// Shows the whole picture of the cropped image again.
+fn reset_crop(ui: &mut Ui, cx: &mut Cx<'_>) {
+    chip_with_icon(ui, cx, &Ctl::new("image.reset_crop"), Icon::CropReset);
+}
+
+/// A small button with an icon and the registry's title of its command beside it.
+fn chip_with_icon(ui: &mut Ui, cx: &mut Cx<'_>, ctl: &Ctl<'_>, icon: Icon) -> Response {
+    let pal = cx.pal;
+    let title = cx.model.title(ctl.id).to_owned();
+    let galley = ui.painter().layout_no_wrap(title, TextSize::Small.font(), pal.text);
+    let height = cx.layout.small_side();
+    let size = vec2(height + galley.size().x + 2.0 * space::MD, height);
+    cx.command_widget(ui, ctl, size, move |p, rect, look| {
+        paint_button_bg(p, rect, look, &pal, false);
+        let color = icon_color(look, &pal);
+        let glyph = Rect::from_min_size(rect.min, vec2(height, height)).shrink(height * 0.2);
+        icons::paint(p, glyph, icon, color);
+        let at = pos2(rect.left() + height + space::XS, rect.center().y - galley.size().y / 2.0);
+        p.galley(at, galley, color);
+    })
 }

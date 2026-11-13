@@ -20,6 +20,7 @@
 //!   along a path and the document outline.
 //! - `text_edit`: the model of the on-canvas text editor (text, colour runs, selection, motions, the editor's own
 //!   undo, input-method composition). It owns no document data; the result goes back through `text.edit_end`.
+//! - `crop`: cropping an image without changing the picture (`image.crop`, the crop editor).
 //! - `link`: hyperlinks and element links (`element.set_link`, `element.open_link`).
 //! - `library`: fragments (library items, merged files): take out, insert with new ids, tell apart.
 //! - `paste`, `preflight`: pasting copies into a scene, and the checks that run before a structural change. The
@@ -45,6 +46,7 @@ pub mod brush;
 pub mod convert;
 mod copy;
 pub mod create;
+pub mod crop;
 pub mod elbow;
 pub mod flowchart;
 pub mod frame;

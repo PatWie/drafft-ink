@@ -343,3 +343,21 @@ fn plex_sans_is_a_family_with_its_own_word_and_every_old_word_still_parses() {
     }
     assert!(serde_json::from_value::<FontFamily>(serde_json::json!("plex")).is_err());
 }
+
+#[test]
+fn an_image_written_before_crops_existed_has_none_and_an_uncropped_one_writes_no_key() {
+    let old = r#"{"natural_width":64,"natural_height":48}"#;
+    let data: ImageData = serde_json::from_str(old).unwrap();
+    assert_eq!(data.crop, None);
+    assert_eq!(serde_json::to_string(&data).unwrap(), old, "no crop is no key, so old readers see the same file");
+    // A crop is four numbers and nothing else.
+    let with = r#"{"natural_width":64,"natural_height":48,"crop":{"x":1.0,"y":2.0,"width":3.0,"height":4.0}}"#;
+    let cropped: ImageData = serde_json::from_str(with).unwrap();
+    assert_eq!(cropped.crop, Some(Crop { x: 1.0, y: 2.0, width: 3.0, height: 4.0 }));
+    assert_eq!(serde_json::to_string(&cropped).unwrap(), with);
+    assert!(serde_json::from_str::<ImageData>(&with.replace("\"height\":4.0", "\"height\":4.0,\"extra\":1")).is_err());
+    // The helpers the crop editor uses agree with the fields.
+    let c = cropped.crop.unwrap();
+    assert_eq!(c.rect(), kurbo::Rect::new(1.0, 2.0, 4.0, 6.0));
+    assert_eq!(Crop::from_rect(c.rect()), c);
+}
