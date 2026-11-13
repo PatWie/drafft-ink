@@ -791,3 +791,64 @@ fn svg_export_skips_a_clear_stroke() {
     assert!(!svg.contains("stroke-width") && !svg.contains("stroke=\""), "{svg}");
     assert!(svg.contains("fill=\"#0000ff\""), "the fill stays: {svg}");
 }
+
+/// A document of arrows along the x axis from the origin, one per length, each with a head at its end and nothing
+/// that is drawn rough, so the head is the same straight wings at every run.
+fn arrows_of_lengths(lengths: &[f64]) -> Document {
+    let mut d = Document::new();
+    let keys = ZIndex::rebalance(lengths.len()).unwrap();
+    for (i, (len, key)) in lengths.iter().zip(keys).enumerate() {
+        let mut lin = LinearData::new(vec![Point::new(0.0, 0.0), Point::new(*len, 0.0)]);
+        lin.end_head = Head::Arrow;
+        let mut e = Element::new(eid(&format!("a{i}")), ElementKind::Arrow(lin), key).with_bounds(
+            0.0,
+            i as f64 * 100.0,
+            *len,
+            0.0,
+        );
+        e.style.sloppiness = drafftink_scene::Sloppiness::Architect;
+        d.elements.push(e);
+    }
+    d
+}
+
+/// How far the drawn paths of the element `id` reach across the arrow (the y coordinates of its path data).
+fn head_height_in_svg(svg: &str, id: &str) -> f64 {
+    let doc = parse(svg);
+    let group = doc.descendants().find(|n| n.attribute("id") == Some(&format!("e-{id}"))).unwrap();
+    let ys: Vec<f64> = group
+        .descendants()
+        .filter_map(|n| n.attribute("d"))
+        .flat_map(|d| {
+            let numbers: Vec<f64> = d
+                .split(|c: char| !(c.is_ascii_digit() || c == '.' || c == '-'))
+                .filter_map(|t| t.parse().ok())
+                .collect();
+            numbers.chunks(2).filter_map(|p| p.get(1).copied()).collect::<Vec<_>>()
+        })
+        .collect();
+    assert!(!ys.is_empty(), "no path data in {id}");
+    ys.iter().copied().fold(f64::MIN, f64::max) - ys.iter().copied().fold(f64::MAX, f64::min)
+}
+
+#[test]
+fn svg_draws_a_smaller_head_on_a_short_arrow() {
+    let d = arrows_of_lengths(&[200.0, 20.0, 2.0]);
+    let svg = export_svg(&d, &SvgOptions::default(), &EstimateMeasure, None).unwrap();
+    let (long, short, tiny) =
+        (head_height_in_svg(&svg, "a0"), head_height_in_svg(&svg, "a1"), head_height_in_svg(&svg, "a2"));
+    // The wings of a head of size s are s/2 either side of the shaft.
+    assert!((long - 15.0).abs() < 1e-6, "a long arrow keeps the head of 15: {long}");
+    assert!((short - 10.0).abs() < 1e-6, "20 long: half of it, 10: {short}");
+    assert!((tiny - 4.0).abs() < 1e-6, "2 long: the 4 unit floor: {tiny}");
+}
+
+#[test]
+fn the_svg_view_box_still_holds_the_head_of_a_short_arrow() {
+    let d = arrows_of_lengths(&[10.0]);
+    let svg = export_svg(&d, &SvgOptions::default(), &EstimateMeasure, None).unwrap();
+    let doc = parse(&svg);
+    let vb: Vec<f64> =
+        doc.root_element().attribute("viewBox").unwrap().split(' ').map(|v| v.parse().unwrap()).collect();
+    assert!(vb[0] <= 0.0 && vb[0] + vb[2] >= 10.0 && vb[2] >= 10.0, "{vb:?}");
+}

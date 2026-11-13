@@ -315,6 +315,79 @@ fn old_arrow_has_the_old_head_geometry() {
     );
 }
 
+/// An open-head arrow through `pts`, with a head at both ends and the given head size.
+fn arrow_through(pts: &[(f64, f64)], size: f64) -> SketchGeometry {
+    sketch(&SketchInput::new(
+        SketchShape::Arrow {
+            points: pts.iter().map(|&(x, y)| Point::new(x, y)).collect(),
+            curve: Curve::Straight,
+            start: Arrowhead::ARROW,
+            end: Arrowhead::ARROW,
+            head_size: size,
+        },
+        SketchParams { roughness: 0.0, ..params(8) },
+    ))
+}
+
+#[test]
+fn a_head_shrinks_to_half_of_a_short_end_segment_and_keeps_a_minimum() {
+    // Elements of a sharp-edged arrow: shaft, then the wings as move/line pairs. Wing tip = element 3 and 5.
+    let wing = |g: &SketchGeometry, i: usize| match g.strokes[0].0.elements()[i] {
+        PathEl::LineTo(p) => p,
+        other => panic!("not a line: {other:?}"),
+    };
+    // 100 long: the full head of 15 behind the tip.
+    let long = arrow_through(&[(0.0, 0.0), (100.0, 0.0)], 15.0);
+    assert_eq!(wing(&long, 3), Point::new(85.0, 7.5));
+    // 20 long: half, 10 behind the tip and 5 to the side, at both ends.
+    let short = arrow_through(&[(0.0, 0.0), (20.0, 0.0)], 15.0);
+    assert_eq!(wing(&short, 3), Point::new(10.0, 5.0));
+    // 2 long: the floor of 4.
+    let tiny = arrow_through(&[(0.0, 0.0), (2.0, 0.0)], 15.0);
+    assert_eq!(wing(&tiny, 3), Point::new(-2.0, 2.0));
+    // A head that was asked smaller than the floor is not enlarged.
+    let small = arrow_through(&[(0.0, 0.0), (2.0, 0.0)], 3.0);
+    assert_eq!(wing(&small, 3), Point::new(-1.0, 1.5));
+}
+
+#[test]
+fn each_end_is_fitted_to_its_own_segment() {
+    // A short first segment and a long last one: only the start head shrinks.
+    let g = arrow_through(&[(0.0, 0.0), (10.0, 0.0), (110.0, 0.0)], 15.0);
+    let b = g.bounds().expect("bounds");
+    let els = g.strokes[0].0.elements();
+    let ys: Vec<f64> = els
+        .iter()
+        .filter_map(|e| match e {
+            PathEl::LineTo(p) | PathEl::MoveTo(p) => Some(p.y.abs()),
+            _ => None,
+        })
+        .collect();
+    // End head (first in the path after the shaft) has wings of 7.5, the start head 2.5.
+    assert!(ys.iter().any(|y| (y - 7.5).abs() < 1e-9) && ys.iter().any(|y| (y - 2.5).abs() < 1e-9), "{ys:?}");
+    assert!(b.height() <= 15.0 + 1e-9, "{b:?}");
+}
+
+#[test]
+fn a_shrunk_head_stays_inside_the_full_size_head_box() {
+    for len in [0.0_f64, 0.5, 3.0, 8.0, 20.0, 29.0, 31.0, 500.0] {
+        for h in [Arrowhead::ARROW, Arrowhead::TRIANGLE, Arrowhead::CIRCLE, Arrowhead::DIAMOND, Arrowhead::BAR] {
+            let g = sketch(&SketchInput::new(
+                SketchShape::Arrow {
+                    points: vec![Point::new(0.0, 0.0), Point::new(len.max(0.01), 0.0)],
+                    curve: Curve::Straight,
+                    start: Arrowhead::NONE,
+                    end: h,
+                    head_size: 15.0,
+                },
+                SketchParams { roughness: 0.0, ..params(8) },
+            ));
+            let b = g.bounds().expect("bounds");
+            assert!(b.height() <= 15.0 + 1e-9 && b.x0 >= -15.0 - 1e-9, "{h:?} len {len}: {b:?}");
+        }
+    }
+}
+
 #[test]
 fn dashed_shaft_keeps_solid_heads() {
     let g = arrow(Arrowhead::NONE, Arrowhead::TRIANGLE, LineDash::Dashed, 1.0);

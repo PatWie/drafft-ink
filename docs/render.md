@@ -38,7 +38,7 @@ The look is the old app's, checked against its PNGs (§7):
 | Kind | Drawing |
 |---|---|
 | rectangle, diamond, ellipse, line, arrow, freehand | `sketch` output: fills first (solid; a 15% tint plus hatch lines clipped to the fill outline for patterns; ink for filled heads and pressure outlines), then strokes (double stroke for sloppy styles, dashes `4w,2w` and `w,2w`). `Element::style.opacity` is multiplied into the alpha of every paint (truncating, like the old `stroke_with_opacity`). |
-| arrow heads | the sketch generator draws arrow, bar, circle, triangle, diamond (filled or outline). The six cardinality (entity-relationship) markers are drawn by the painter as clean solid strokes. |
+| arrow heads | the sketch generator draws arrow, bar, circle, triangle, diamond (filled or outline). The six cardinality (entity-relationship) markers are drawn by the painter as clean solid strokes. **Short segments:** a head is drawn at `drafftink_sketch::fit_head_size(asked, segment)`, where `segment` is the segment that ends in its tip (the last for the end head, the first for the start head; a two-point arrow has one segment for both). A segment of `asked / 0.5` or more keeps the full head; a shorter one gets half of its length, never under 4 world units (`HEAD_MIN_SIZE`) and never over the asked size (`HEAD_MAX_SEGMENT_SHARE` = 0.5). The sketch generator (screen, PNG, SVG) and the painter's cardinality markers both call that one function. `asked` is `LinearData::head_size_or_default` (the element's `head_size`, else 7.5 stroke widths, at least 15). Excalidraw uses the same half of the end segment (its diamond uses a quarter). |
 | highlighter (`FreehandData::highlighter`) | one wide round-capped stroke inside a layer whose alpha is the colour's alpha, so a stroke that crosses itself does not darken. |
 | text | `typeset` layout, one `draw_glyphs` per glyph run, decorations as rectangles, per-character colours from `runs`. Synthetic italic through the run's skew. |
 | math | `typeset` math layout (cached per formula), glyphs in the two fonts, rules as rectangles, formula colour `\color` or the stroke colour. A formula that does not parse draws the old pale-red box. |
@@ -75,7 +75,7 @@ text).
 ### Bounds
 
 `paint_bounds(&Element)` is the world box of everything the element can paint: stroke, sketch jitter (it grows
-with roughness and with the longest segment), arrow heads, text overhang, the frame label (sized for zoom 0.25, §5.1). **The spatial index
+with roughness and with the longest segment), arrow heads (at the size they are asked for, which is the largest a fitted head can be, so a shrunk head stays inside), text overhang, the frame label (sized for zoom 0.25, §5.1). **The spatial index
 handed to the composer must hold these**, not hit-test boxes. `build_paint_index(&store)` builds it and
 `update_paint_index(&mut index, &store, &changes)` follows a commit. A property test checks that no sketch kind,
 fill, roughness, head or stroke width paints outside its margin. Nothing is measured during render: text and math

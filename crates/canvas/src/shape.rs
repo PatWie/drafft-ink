@@ -17,9 +17,6 @@ use drafftink_geom::transform::ElementFrame;
 use drafftink_geom::{DiamondShape, EllipseShape, OrientedBox, Outline, PathShape, Polyline, Primitive, RectShape};
 use drafftink_scene::{Element, ElementKind, PathType};
 
-/// Default size of an arrowhead in world units when the element does not set one.
-pub const DEFAULT_HEAD_SIZE: f64 = 15.0;
-
 /// The rotated box of an element (position, size, angle).
 pub fn element_box(e: &Element) -> OrientedBox {
     let t = &e.transform;
@@ -80,12 +77,18 @@ pub fn has_fill(e: &Element) -> bool {
     e.style.fill_color.is_some_and(|c| c.a > 0)
 }
 
-/// How far past the outline the element paints, beyond half the stroke width: arrowheads.
+/// How far past the outline the element paints, beyond half the stroke width: arrowheads. This is the head size
+/// before it is fitted to a short segment, which is the largest the drawn head can be.
 fn paint_margin(e: &Element) -> f64 {
     match &e.kind {
         ElementKind::Arrow(d) | ElementKind::Line(d) => {
             let heads = d.start_head != drafftink_scene::Head::None || d.end_head != drafftink_scene::Head::None;
-            if heads { d.head_size.filter(|s| s.is_finite() && *s > 0.0).unwrap_or(DEFAULT_HEAD_SIZE) } else { 0.0 }
+            if !heads {
+                return 0.0;
+            }
+            d.head_size
+                .filter(|s| s.is_finite() && *s > 0.0)
+                .unwrap_or_else(|| drafftink_scene::default_head_size(stroke_reach_width(e)))
         }
         _ => 0.0,
     }
@@ -145,7 +148,31 @@ mod tests {
             d.end_head = drafftink_scene::Head::Triangle;
         }
         let with_head = index_bounds(&e).unwrap();
-        assert_eq!((with_head.x0, with_head.x1), (-17.0, 117.0));
+        // The drawn head of a 4 wide stroke is 30 long (7.5 stroke widths), not 15: the margin holds it.
+        assert_eq!((with_head.x0, with_head.x1), (-32.0, 132.0));
+        if let ElementKind::Arrow(d) = &mut e.kind {
+            d.head_size = Some(20.0);
+        }
+        let own = index_bounds(&e).unwrap();
+        assert_eq!((own.x0, own.x1), (-22.0, 122.0), "the element's own head size wins over the default");
+    }
+
+    #[test]
+    fn a_short_arrow_keeps_the_bounds_of_the_full_head() {
+        // The head is drawn smaller on a short segment, never larger, so the full-size margin stays.
+        let mut e = Element::linear(
+            id("s"),
+            drafftink_scene::LinearKind::Arrow,
+            ZIndex::first(),
+            &[Point::new(0.0, 0.0), Point::new(3.0, 0.0)],
+        )
+        .unwrap();
+        e.style.stroke_width = 2.0;
+        if let ElementKind::Arrow(d) = &mut e.kind {
+            d.end_head = drafftink_scene::Head::Triangle;
+        }
+        let b = index_bounds(&e).unwrap();
+        assert_eq!((b.x0, b.x1), (-16.0, 19.0));
     }
 
     #[test]

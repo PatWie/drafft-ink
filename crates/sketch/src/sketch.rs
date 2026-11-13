@@ -207,9 +207,13 @@ fn arrow(pts: &[Point], curve: Curve, start: Arrowhead, end: Arrowhead, size: f6
     let overall = direction(first, last, Vec2::new(1.0, 0.0));
     let mut spans: Vec<HeadSpan> = Vec::new();
     let mut subpaths = 1;
-    let heads =
-        [(end, last, direction(penultimate, last, overall)), (start, first, direction(second, first, -overall))];
-    for (head, tip, dir) in heads {
+    // Each head is fitted to the segment that ends in its tip.
+    let heads = [
+        (end, last, direction(penultimate, last, overall), (last - penultimate).hypot()),
+        (start, first, direction(second, first, -overall), (second - first).hypot()),
+    ];
+    for (head, tip, dir, segment) in heads {
+        let size = arrowhead::fit_head_size(size, segment);
         if let Some(span) = arrowhead::append(&mut path, subpaths, head, tip, dir, size) {
             subpaths += span.count;
             spans.push(span);

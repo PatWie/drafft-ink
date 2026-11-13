@@ -142,6 +142,61 @@ fn cardinality_markers_add_their_own_strokes() {
     }
 }
 
+/// An arrow of `len` along x with `head` at its end, drawn sharp so that its height is the height of its head.
+fn arrow_of_length(len: f64, head: Head) -> Element {
+    let mut e = line_el("a", &ZIndex::first(), LinearKind::Arrow, &[(0.0, 0.0), (len, 0.0)]);
+    if let ElementKind::Arrow(d) = &mut e.kind {
+        d.end_head = head;
+    }
+    e.style.sloppiness = Sloppiness::Architect;
+    e.style.stroke_width = 1.0;
+    e
+}
+
+/// The extent across the shaft of what the arrow draws, which is the height of its head.
+fn head_height(len: f64, head: Head) -> f64 {
+    let f = paint(&arrow_of_length(len, head));
+    f.bounds.height()
+}
+
+#[test]
+fn a_short_arrow_draws_a_smaller_head_than_a_long_one() {
+    for head in [
+        Head::Arrow,
+        Head::Triangle,
+        Head::TriangleOutline,
+        Head::Diamond,
+        Head::Circle,
+        Head::Bar,
+        Head::CardinalityMany,
+        Head::CardinalityZeroOrMany,
+        Head::CardinalityOne,
+    ] {
+        let long = head_height(300.0, head);
+        let mid = head_height(24.0, head);
+        let short = head_height(12.0, head);
+        let tiny = head_height(1.0, head);
+        assert!(long > mid && mid > short && short > tiny, "{head:?}: {long} {mid} {short} {tiny}");
+        // The stroke adds its own width, so compare to the head of the long arrow with a margin.
+        assert!(tiny < long * 0.5, "{head:?}: a 1 long arrow draws a head of {tiny}, a long one {long}");
+        // A head never grows past the full size.
+        assert!(head_height(30.0, head) <= long + 1e-9 && head_height(3000.0, head) <= long + 1e-9, "{head:?}");
+    }
+}
+
+#[test]
+fn a_short_arrow_keeps_its_paint_bounds_around_the_shrunk_head() {
+    for len in [0.5, 2.0, 9.0, 40.0] {
+        for head in [Head::Arrow, Head::Triangle, Head::CardinalityZeroOrMany] {
+            let e = arrow_of_length(len, head);
+            let f = paint(&e);
+            let m = paint_margin(&e);
+            assert!(f.bounds.x0 >= -m.left && f.bounds.x1 <= len + m.right, "{head:?} {len}: {:?} {m:?}", f.bounds);
+            assert!(f.bounds.y0 >= -m.top && f.bounds.y1 <= m.bottom, "{head:?} {len}: {:?} {m:?}", f.bounds);
+        }
+    }
+}
+
 #[test]
 fn a_highlighter_is_one_layer_with_the_alpha_on_the_layer() {
     let mut rng = Rng(1);

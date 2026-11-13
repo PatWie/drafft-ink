@@ -6,6 +6,35 @@ use kurbo::{BezPath, Circle, Point, Shape, Vec2};
 
 use crate::input::Arrowhead;
 
+/// The most of its end segment a head may cover: at most half. The head of the other end of a two-point arrow then
+/// still fits in the other half. Excalidraw uses the same half (`getArrowheadPoints`, `lengthMultiplier`).
+pub const HEAD_MAX_SEGMENT_SHARE: f64 = 0.5;
+
+/// The smallest a head is shrunk to, in world units. A segment shorter than twice this still gets a head of this
+/// size, so a tiny arrow keeps a visible head. A head that was asked to be smaller than this is not enlarged.
+pub const HEAD_MIN_SIZE: f64 = 4.0;
+
+/// The size a head is drawn at, given the size it was asked for and the length of the segment that ends in its tip
+/// (the last segment for an end head, the first for a start head; for a two-point arrow the whole arrow).
+///
+/// A segment of at least `size / HEAD_MAX_SEGMENT_SHARE` keeps the full `size`. A shorter one gets
+/// `HEAD_MAX_SEGMENT_SHARE` of its length, but never less than [`HEAD_MIN_SIZE`] and never more than `size`. The
+/// result grows with the segment length and never exceeds `size`, so bounds computed from `size` always hold the
+/// drawn head.
+///
+/// A `size` that is not a positive finite number gives `0.0`. A negative or zero `segment_len` counts as no segment
+/// (the minimum); one that is not finite (NaN, infinite) counts as unknown and keeps `size`.
+pub fn fit_head_size(size: f64, segment_len: f64) -> f64 {
+    if !(size.is_finite() && size > 0.0) {
+        return 0.0;
+    }
+    if segment_len.is_nan() {
+        return size;
+    }
+    let floor = HEAD_MIN_SIZE.min(size);
+    (segment_len.max(0.0) * HEAD_MAX_SEGMENT_SHARE).max(floor).min(size)
+}
+
 /// Where the subpaths of one head are in the arrow path, and whether it is filled.
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct HeadSpan {
@@ -74,6 +103,45 @@ pub(crate) fn append(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_long_segment_keeps_the_head_and_a_short_one_shrinks_it() {
+        assert_eq!(fit_head_size(15.0, 100.0), 15.0);
+        assert_eq!(fit_head_size(15.0, 30.0), 15.0);
+        assert_eq!(fit_head_size(15.0, 20.0), 10.0);
+        assert_eq!(fit_head_size(15.0, 10.0), 5.0);
+        // The floor holds below twice the minimum, and a head asked for smaller than the floor stays as asked.
+        assert_eq!(fit_head_size(15.0, 2.0), HEAD_MIN_SIZE);
+        assert_eq!(fit_head_size(15.0, 0.0), HEAD_MIN_SIZE);
+        assert_eq!(fit_head_size(3.0, 1.0), 3.0);
+        assert_eq!(fit_head_size(3.0, 100.0), 3.0);
+    }
+
+    #[test]
+    fn hostile_numbers_give_a_finite_head_that_never_exceeds_the_request() {
+        for size in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY, -5.0, 0.0, -0.0] {
+            assert_eq!(fit_head_size(size, 10.0), 0.0, "size {size}");
+        }
+        assert_eq!(fit_head_size(15.0, -10.0), HEAD_MIN_SIZE);
+        assert_eq!(fit_head_size(15.0, f64::NEG_INFINITY), HEAD_MIN_SIZE);
+        assert_eq!(fit_head_size(15.0, f64::NAN), 15.0);
+        assert_eq!(fit_head_size(15.0, f64::INFINITY), 15.0);
+        assert_eq!(fit_head_size(f64::MAX, f64::MAX), f64::MAX * HEAD_MAX_SEGMENT_SHARE);
+    }
+
+    #[test]
+    fn the_fitted_head_grows_with_the_segment_and_stays_within_bounds() {
+        for size in [1.0, 4.0, 15.0, 60.0] {
+            let mut last = 0.0;
+            for i in 0..=400 {
+                let fitted = fit_head_size(size, f64::from(i) * 0.5);
+                assert!(fitted >= last, "size {size} segment {}: {fitted} < {last}", f64::from(i) * 0.5);
+                assert!(fitted <= size && fitted >= HEAD_MIN_SIZE.min(size));
+                last = fitted;
+            }
+            assert_eq!(last, size);
+        }
+    }
 
     #[test]
     fn old_arrow_head_is_two_wings() {

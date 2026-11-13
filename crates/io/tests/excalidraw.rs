@@ -1807,3 +1807,35 @@ fn a_transparent_stroke_is_no_stroke_both_ways() {
     let json: Value = serde_json::from_str(&export_scene(&doc).unwrap()).unwrap();
     assert_eq!(json["elements"][0]["strokeColor"], "#11223380");
 }
+
+/// Excalidraw has no field for the size of a head: it draws each head from the length of the end segment (at most
+/// half of it) and its own sizes. So a short arrow is written with its real points, its real heads, and the size the
+/// head is asked for, not the shrunk one. Excalidraw then shrinks the head on the same segment, and drafftink does
+/// it again when the file comes back.
+#[test]
+fn a_short_arrow_exports_its_points_and_asked_head_size_and_reads_back_the_same() {
+    use drafftink_scene::LinearData;
+    let mut doc = Document::new();
+    let mut lin = LinearData::new(vec![Point::new(0.0, 0.0), Point::new(6.0, 0.0)]);
+    lin.end_head = Head::Arrow;
+    lin.start_head = Head::Triangle;
+    lin.head_size = Some(18.0);
+    let at = base_element(&mut doc, ElementKind::Arrow(lin), 10.0, 20.0, 6.0, 0.0);
+    // Without a size of its own the head is the stroke's default, and nothing is written for it.
+    let mut plain = LinearData::new(vec![Point::new(0.0, 0.0), Point::new(3.0, 0.0)]);
+    plain.end_head = Head::Arrow;
+    let bare = base_element(&mut doc, ElementKind::Arrow(plain), 0.0, 100.0, 3.0, 0.0);
+    let (text, _) = export_scene_with_report(&doc).unwrap();
+    let v: Value = serde_json::from_str(&text).unwrap();
+    let el = |i: usize| &v["elements"][i];
+    assert_eq!(el(at)["points"], json!([[0.0, 0.0], [6.0, 0.0]]));
+    assert_eq!((&el(at)["startArrowhead"], &el(at)["endArrowhead"]), (&json!("triangle"), &json!("arrow")));
+    assert_eq!(el(at)["customData"]["drafftink"]["head_size"], json!(18.0), "the asked size, not the fitted one");
+    assert_eq!(el(bare)["points"], json!([[0.0, 0.0], [3.0, 0.0]]));
+    assert!(el(bare)["customData"]["drafftink"]["head_size"].is_null());
+
+    let back = import_str(&text).unwrap().document;
+    assert_eq!(linear(&back.elements[at]).head_size, Some(18.0));
+    assert_eq!(linear(&back.elements[bare]).head_size, None);
+    assert_eq!(linear(&back.elements[at]).points, doc.elements[at].linear_data().unwrap().points);
+}

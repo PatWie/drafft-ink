@@ -20,7 +20,7 @@ use crate::input::{FillStyle, PressureProfile, Roundness, SketchInput, SketchPar
 use crate::limits::{MAX_COORD, MAX_HEAD_SIZE, MAX_ROUGHNESS, MAX_STROKE_WIDTH, bounded, coord, length};
 
 /// Bump when the generation algorithm changes, so keys of a persisted cache stop matching.
-pub const ALGORITHM_VERSION: u32 = 1;
+pub const ALGORITHM_VERSION: u32 = 2;
 
 /// A 128-bit identity of a [`SketchInput`]. Cheap to copy and hash.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]

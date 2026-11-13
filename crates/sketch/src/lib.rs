@@ -74,6 +74,7 @@ mod output;
 mod rng;
 mod sketch;
 
+pub use arrowhead::{HEAD_MAX_SEGMENT_SHARE, HEAD_MIN_SIZE, fit_head_size};
 pub use cache::{CacheStats, SketchCache};
 pub use input::{
     Arrowhead, Curve, DEFAULT_ROUGHNESS, FillStyle, HeadFill, LineDash, PressureProfile, Roundness, SketchInput,

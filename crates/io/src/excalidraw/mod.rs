@@ -54,6 +54,9 @@
 //!   the same (see `notes`): the fifth sloppiness level, the dots, dashed and zig-zag-line fills, an exact corner
 //!   radius, fonts without an Excalidraw twin (serif, pixel, light and heavy weights), `head_size`, per-character
 //!   colour runs, element names, brush, highlighter and closed freehand strokes, a frame that does not clip.
+//! * Arrowheads: Excalidraw has no head size field and shrinks a head on a short end segment by its own rule. The
+//!   file keeps the real points and heads, and `head_size` is the size the head is asked for, never the shrunk one;
+//!   drafftink shrinks it again by its own rule (`drafftink_sketch::fit_head_size`) when the file comes back.
 //! * **Math** has no Excalidraw type. It is written as a text element holding the LaTeX source and marked in the
 //!   note; the importer turns it back into math. Excalidraw shows the raw source.
 //! * Text is written unwrapped (`text` and `originalText` both hold the content); Excalidraw wraps it again to the

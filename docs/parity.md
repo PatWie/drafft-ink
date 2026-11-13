@@ -419,7 +419,7 @@ Rows follow `research/parts/04-features-diff.md` §1.1 to §1.15 and §4. The AI
 | B-088 | Midpoint snapping preference | X:actionToggleMidpointSnapping | done | setting `arrow.midpoint_snap`, used by the binding code; switch "Snap to side midpoints" in the preferences dialog | `edit/tests/arrows_acquire::an_orbit_focus_snaps_to_a_side_midpoint`, `ui/tests/preferences::input_arrow_and_frame_keys` |
 | B-089 | Elbow arrows: routed around bound shapes and, beyond Excalidraw, around the other shapes in the way; fixed segments, single-corner preference | X:elbowArrow.ts | done | `arrow.set_type` elbow, `arrow.move_segment`, `arrow.release_segment`, `arrow.reroute`; A* router (old app: render-only fixed Z route) | `edit/tests/arrows_elbow.rs`, `edit/tests/arrows_avoid.rs`, `edit/tests/perf_work.rs::routing_around_the_shapes_in_the_way_asks_the_index_and_its_work_does_not_grow_with_the_scene`, `eng/invariants_tests::an_elbow_arrow_goes_around_a_shape_dropped_in_its_way_and_back_when_it_leaves_in_one_undo_step_each`, `eng/cmd/arrow_tests::scenario_an_elbow_arrow_stays_routed_and_attached`, `S:arrow/point_editing_and_elbow_segments.json` |
 | B-090 | Elbow preview while drawing | X:elbowArrow.ts | done | While drawing an elbow arrow the preview shows the routed path (also around the shapes its ends are bound to), the same points the created arrow gets | `eng/int/draw_line_tests::the_elbow_preview_shows_the_route_the_arrow_will_get`, `eng/int/draw_line_tests::the_elbow_preview_routes_around_the_shapes_it_is_bound_to` |
-| B-091 | Arrowheads fit short segments | X:arrowheads.ts | partial | All head kinds are drawn at both ends; I found no code or test that shrinks a head on a short segment | `sketch/tests/behavior::every_head_kind_draws_at_both_ends` |
+| B-091 | Arrowheads fit short segments | X:arrowheads.ts | done | Every head is drawn at `sketch::fit_head_size(asked, end segment length)`: half of the segment it ends, at least 4 units, at most the asked size. The screen, PNG and SVG draw through the sketch generator; the six cardinality markers use the same function in the painter; paint and index bounds keep the asked size, so they hold the shrunk head. The Excalidraw file keeps the real points and the asked `head_size` (in `customData.drafftink`), and Excalidraw shrinks on the same segment by its own rule (half, a quarter for diamonds, its own sizes), so the two drawings are close, not equal. Differences: no Excalidraw widening of a small `arrow` head, no quarter for diamonds | `sketch/arrowhead::tests::a_long_segment_keeps_the_head_and_a_short_one_shrinks_it`, `sketch/tests/behavior::a_head_shrinks_to_half_of_a_short_end_segment_and_keeps_a_minimum`, `render/tests/painter::a_short_arrow_draws_a_smaller_head_than_a_long_one`, `io/tests/formats::svg_draws_a_smaller_head_on_a_short_arrow`, `io/tests/excalidraw::a_short_arrow_exports_its_points_and_asked_head_size_and_reads_back_the_same` |
 | B-092 | Keep arrows attached through group, copy and paste | X:binding | done | groups, paste of a bound pair keep bindings | `eng/cmd/group_tests::old_weakness_arrows_bound_to_a_group_follow_it`, `S:clipboard/paste_bound_pair_keeps_binding.json` |
 
 ### 2.5 Text, fonts, languages
@@ -622,15 +622,15 @@ Rows of section 2 that restate an old-app row (for example B-003 and A-002) coun
 | Part | done | partial | missing | out of scope | rows |
 |---|---|---|---|---|---|
 | A: old app (section 1) | 184 | 12 | 0 | 0 | 196 |
-| B: Excalidraw (section 2) | 155 | 31 | 19 | 7 | 212 |
-| Total | 339 | 43 | 19 | 7 | 408 |
+| B: Excalidraw (section 2) | 156 | 30 | 19 | 7 | 212 |
+| Total | 340 | 42 | 19 | 7 | 408 |
 
 What the numbers do not show:
 
 * Shell steps are the weakest evidence. The Playwright specs (`e2e/web`) that back the browser rows (for example B-210, B-214) were not run for the audit at `25fa072`; they ran on `last-pass` with `cargo xtask e2e`: 74 of 74 browser tests and 15 of 15 native tests passed (`docs/report.md` §3.2). Native pen pressure on Windows, a real input method, the native file drop and the file pickers were not tried.
 * Every `path::name` citation in the Evidence column was checked by script: the named function exists in the named file or directory (505 citations). The tests of every row that changed in this refresh, and many others, were run with `cargo test` and passed; the rest are cited from source.
 * Changes of status since 5a8f9c6: 24 rows moved up because UI landed (A-102, A-128, A-170, B-046, B-059, B-061, B-088, B-090, B-097, B-118, B-122, B-132, B-133, B-153, B-154, B-164, B-166, B-169, B-180, B-181, B-187, B-191, B-201, B-214); 7 moved down because the check found less than the old text claimed (A-058, A-108, A-109, A-110, B-002, B-055, B-199); B-199 moved up again when the app began to draw the remote selection outlines (branch `overlay-wiring`; B-002 and B-055 stay partial for the gaps their rows name); 7 rows were added (A-046, A-047, A-086 to A-088, A-221, A-222). Other changed rows only had their text or evidence corrected. B-186 was already partial and stays so, with its gap now named.
-* Two Excalidraw rows are partial only because the behaviour could not be verified in code or test: B-091 (head fitting on short segments) and B-123 (double-tap).
+* One Excalidraw row is partial only because the behaviour could not be verified in code or test: B-123 (double-tap).
 
 ---
 
@@ -668,6 +668,6 @@ Priority: **P0** is a promise of the user's requirement ("keep all old features"
 | 10 | P2 | Library and group UI (B-181, B-191, B-053, B-189, B-056) | Real previews, publish and browse, a dockable sidebar; group name field; avatars; copy link to an element needs a document address scheme | `ui`, `render`, `engine` | M |
 | 11 | P2 | Image support (B-140) | GIF, SVG and BMP decode | `engine` image family, `io::picture` | M |
 | 12 | P2 | Stats, theme key, deep select, wheel (B-114, B-115, B-072, B-246, B-238) | Angle and font size fields in the stats panel; a key for the theme; `deep` argument for `selection.select_region`; horizontal `Shift`+wheel | `ui`, `engine` selection, `canvas` | S |
-| 13 | P2 | Fonts, text direction, head fitting (B-095, B-099, B-091) | Add Excalidraw-compatible faces (check licences) and a CJK and emoji fallback; Arabic and Hebrew layout and render fixtures; shrink heads on short segments | `typeset` assets, `sketch` | M |
+| 13 | P2 | Fonts, text direction (B-095, B-099) | Add Excalidraw-compatible faces (check licences) and a CJK and emoji fallback; Arabic and Hebrew layout and render fixtures | `typeset` assets, `sketch` | M |
 | 14 | P2 | Sync between two browser tabs (B-168) | Share the autosave between tabs of one origin | `app` web | S |
 | 15 | P2 | Untested platforms and the README names (A-219, A-221) | Run on Wayland, Windows, macOS, Safari, Firefox, a real IME and a phone; decide whether `logo.png` and `screenshot.png` return to the repo root | `gpu`, `app`, docs | M |
