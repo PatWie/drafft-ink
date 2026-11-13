@@ -33,6 +33,7 @@ pub enum Icon {
     SnapGrid,
     SnapShapes,
     SnapAngle,
+    BindArrow,
     GridNone,
     GridLines,
     GridHorizontal,
@@ -273,6 +274,13 @@ pub fn paint(painter: &Painter, rect: Rect, icon: Icon, color: Color32) {
             pen.line((5.0, 19.0), (19.5, 19.0));
             pen.line((5.0, 19.0), (17.0, 7.0));
             pen.curve((11.0, 19.0), (11.0, 16.5), (12.5, 15.5), (13.5, 14.5));
+        }
+        Icon::BindArrow => {
+            // An arrow that ends on the edge of a box, with a dot where it attaches.
+            pen.rect(12.5, 5.5, 8.0, 13.0, 1.0);
+            pen.line((3.5, 12.0), (11.0, 12.0));
+            pen.poly(&[(8.0, 9.0), (11.0, 12.0), (8.0, 15.0)], false);
+            pen.dot(12.5, 12.0, 1.8);
         }
         Icon::GridNone => {
             pen.dot(5.0, 5.0, 0.8);

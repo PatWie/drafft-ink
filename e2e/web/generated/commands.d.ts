@@ -260,7 +260,7 @@ export namespace ArrowEditPoints {
 /** Moves one point of an arrow or line, binding an end to the shape under it and snapping as asked. */
 export namespace ArrowMovePoint {
   /** How a dragged end finds a target. */
-  type A_BindChoice = "auto" | "off" | "inside";
+  type A_BindChoice = "auto" | "on" | "off" | "inside";
   /** Which end of an arrow a command acts on. */
   type A_EndWord = "start" | "end";
   /** A point of a line or arrow: its number from 0, or `"start"` / `"end"`. */
@@ -287,7 +287,10 @@ export namespace ArrowMovePoint {
   export type Args = {
     /** The arrow or line. */
     arrow: A_Ref;
-    /** How an end finds a target: `auto`, `off` (Ctrl) or `inside` (Alt). */
+    /**
+     * How an end finds a target: `auto` (follow the setting `arrow.binding`), `on`, `off` or `inside`. A pointer
+     * gesture picks `on` or `off` from the setting and the Ctrl or Cmd key, and `inside` for Alt.
+     */
     bind?: A_BindChoice;
     /**
      * The point: a number from 0, or `"start"` / `"end"`. With `insert`, the segment number (segment `n`
@@ -2552,7 +2555,7 @@ export namespace ElementCreate {
   /** Where a bound arrow end sits relative to its target. */
   type A_BindMode = "inside" | "orbit";
   /** How automatic binding of arrow ends works (`bind` of `element.create`). */
-  type A_BindPolicy = "auto" | "off" | "inside";
+  type A_BindPolicy = "auto" | "on" | "off" | "inside";
   /** Brush of a freehand stroke. */
   type A_Brush = "normal" | "calligraphy";
   /** #rrggbb, #rrggbbaa, #rgb, 'transparent', or a palette name '<family>-<shade>' such as 'blue-500' (22 Tailwind families, shades 25, 50, 100-900, 950). */
@@ -2652,7 +2655,8 @@ export namespace ElementCreate {
     /**
      * line, arrow: automatic binding of ends that are not named in `start` or `end`. `auto` (default) binds an
      * end that lies inside a bindable element or near its outline; `off` binds nothing; `inside` binds an end over
-     * an element inside it. The setting `arrow.binding` set to false makes `auto` act as `off`.
+     * an element inside it; `on` is `auto` that ignores the setting. The setting `arrow.binding` set to false makes
+     * `auto` act as `off`. Only `auto` follows the setting: `on`, `off` and `inside` are always obeyed.
      */
     bind?: A_BindPolicy | null;
     /** rectangle, diamond, ellipse, frame: the box. A negative w or h is normalised. Both sides must be at least 1. */

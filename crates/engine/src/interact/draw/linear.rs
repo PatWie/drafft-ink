@@ -14,6 +14,7 @@ use serde_json::json;
 
 use super::preview;
 use super::snap::{self, SnapMarks, Snaps};
+use crate::cmd::arrow::BindChoice;
 use crate::interact::ctx::Ctx;
 use crate::interact::events::Ev;
 use crate::state::Tool;
@@ -74,26 +75,16 @@ fn path_of(cx: &Ctx<'_>) -> PathType {
     }
 }
 
-/// Ctrl turns binding off, Alt binds inside, and the setting `arrow.binding` can turn it off for good. This is
-/// what `element.create` does for `bind` auto, off and inside.
+/// The binding options of a placed point: what `element.create` does for the `bind` choice of the gesture
+/// ([`Ctx::bind_choice`]).
 fn bind_opts(cx: &Ctx<'_>, mods: Modifiers) -> BindOpts {
+    let choice = cx.bind_choice(mods);
     BindOpts {
         zoom: cx.world.displayed_zoom(),
-        force_inside: mods.alt,
-        disabled: mods.command() || !cx.setting("arrow.binding", true),
+        force_inside: choice == BindChoice::Inside,
+        disabled: choice == BindChoice::Off,
         midpoint_snap: cx.setting("arrow.midpoint_snap", false),
         angle_locked: false,
-    }
-}
-
-/// The `bind` argument of `element.create`.
-fn bind_policy(mods: Modifiers) -> &'static str {
-    if mods.command() {
-        "off"
-    } else if mods.alt {
-        "inside"
-    } else {
-        "auto"
     }
 }
 
@@ -332,7 +323,7 @@ impl Linear {
             return;
         }
         let pts: Vec<[f64; 2]> = points.iter().map(|p| [p.x, p.y]).collect();
-        let mut args = json!({ "kind": kind.name(), "points": pts, "bind": bind_policy(mods), "from_tool": true });
+        let mut args = json!({ "kind": kind.name(), "points": pts, "bind": cx.bind_choice(mods), "from_tool": true });
         if kind == Kind::Arrow {
             // The tool's defaults go to the command as plain arguments, so the ring entry replays the same arrow.
             let d = cx.s.tool.arrow_default;

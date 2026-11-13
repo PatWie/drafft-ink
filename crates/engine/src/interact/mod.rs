@@ -33,6 +33,7 @@
 //!
 //! No UI toolkit type appears here, and time is always passed in. `docs/interaction.md` is the guide.
 
+mod bind;
 mod crop;
 mod ctx;
 mod events;

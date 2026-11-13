@@ -68,7 +68,7 @@ A tool change drops drafts and previews. A gesture that disappeared (`tool.cance
 | Drag an element or selection | gesture `element.move` (Alt `duplicate`, Ctrl/Cmd no snap, `pointer` for frame drops). Guides and frame highlight from the frame output | E2 |
 | Drag one of 8 handles | gesture `element.resize` (Shift `keep_aspect`, Alt `from_center`), size badge | E3 |
 | Drag the rotate handle | gesture `element.rotate mode=by` (Shift `snap_degrees` 15), angle badge. Double-click it: `element.rotate mode=to angle=0` | E4 |
-| Drag a line or arrow point | gesture `arrow.move_point` (`bind` auto, Ctrl off, Alt inside), bind highlight | E5 |
+| Drag a line or arrow point | gesture `arrow.move_point` (`bind` `on` or `off` from the setting `arrow.binding` turned around by Ctrl/Cmd, Alt inside; with binding off a dragged bound end is unbound), bind highlight | E5 |
 | Drag a segment midpoint | `arrow.move_point insert=true`; on an elbow arrow gesture `arrow.move_segment`. Double-click an elbow segment handle: `arrow.release_segment` | E5 |
 | Double-click an element of a group | `group.enter` | |
 | Double-click text, shape, arrow, math | `text.edit_begin {id}` and `OpenTextEditor` (math: `OpenEquationEditor`) | |
@@ -101,7 +101,7 @@ The overlay (`InteractionOverlay::crop`) carries the whole picture (drawn faded)
 | Rectangle, diamond, ellipse, frame | drag | `element.create {kind, bounds, from_tool}`. Shift square, Alt from centre, grid and smart-guide snap. A drag under 1 unit makes nothing | E6 |
 | Line, arrow | drag | `element.create {points: 2}` | E6 |
 | Line, arrow | clicks | a draft with a rubber band; double-click, Enter or Esc ends it with one `element.create`. A click within 6 px of the last point is ignored | E6 |
-| Line, arrow | any | `bind` auto, Ctrl off, Alt inside; the highlighted shape is the one that gets bound; Shift locks the angle; elbow arrows send their two ends | E5, E6 |
+| Line, arrow | any | `bind` `on` or `off` from the setting `arrow.binding` turned around by Ctrl/Cmd, Alt inside (only while binding is in effect, so Alt alone does nothing with the setting off and Ctrl+Alt binds inside); the highlighted shape is the one that gets bound; Shift locks the angle; elbow arrows send their two ends | E5, E6 |
 | Freehand, highlighter | drag | samples (pressure from a pen only) in a buffer; one `element.create {kind: freehand, points, pressures?, highlighter, simplify: 2}` | E7 |
 | Eraser | drag | swept path; touched elements drawn faded; one `element.erase {path, radius: 10, units: screen}` | E8 |
 | Laser | drag | local trail of up to 50 points, faded by the clock; `collab.laser` at most every 33 ms; nothing is stored | E12 |

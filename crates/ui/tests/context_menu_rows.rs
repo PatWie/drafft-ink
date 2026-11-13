@@ -382,6 +382,7 @@ fn the_view_flyout_has_grid_snap_zen_view_only_stats_and_unlock_all() {
     let commands = [
         ("Cycle grid style", "settings.cycle", json!({ "key": "view.grid_style" })),
         ("Snap to grid", "settings.toggle", json!({ "key": "snap.grid" })),
+        ("Attach arrows to shapes", "settings.toggle", json!({ "key": "arrow.binding" })),
         ("View-only mode", "view.set_view_only", json!({})),
     ];
     for (text, id, args) in commands {
@@ -418,6 +419,10 @@ fn toggles_in_the_view_flyout_show_their_state() {
     let mut h = open(f, &[]);
     open_flyout(&mut h, "View");
     assert_eq!(row_in(&h, "View", "Snap to grid").accesskit_node().toggled(), Some(egui::accesskit::Toggled::True));
+    assert_eq!(
+        row_in(&h, "View", "Attach arrows to shapes").accesskit_node().toggled(),
+        Some(egui::accesskit::Toggled::True)
+    );
     assert_eq!(row_in(&h, "View", "View-only mode").accesskit_node().toggled(), Some(egui::accesskit::Toggled::False));
 }
 

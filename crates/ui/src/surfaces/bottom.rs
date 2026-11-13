@@ -62,6 +62,7 @@ pub(super) fn bar(ui: &mut egui::Ui, cx: &mut Cx<'_>, st: &mut UiState) {
             (Icon::SnapGrid, "snap.grid", "Snap to grid"),
             (Icon::SnapShapes, "snap.smart_guides", "Smart guides"),
             (Icon::SnapAngle, "snap.angle", "Angle snap"),
+            (Icon::BindArrow, "arrow.binding", "Attach arrows to shapes"),
         ] {
             let on = cx.model.setting_bool(key);
             let ctl = Ctl::new("settings.toggle").args(json!({ "key": key })).label(label).selected(on);

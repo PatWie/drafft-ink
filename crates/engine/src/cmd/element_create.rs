@@ -57,7 +57,10 @@ pub struct BindArg {
 pub enum BindPolicy {
     /// An end inside a bindable element binds inside; an end near its outline binds on the outline.
     Auto,
-    /// No automatic binding (Ctrl held). Ends named in `start` or `end` are still bound.
+    /// Automatic binding whatever the setting `arrow.binding` says (a pointer gesture sends this when Ctrl or Cmd
+    /// is held while the setting is off).
+    On,
+    /// No automatic binding. Ends named in `start` or `end` are still bound.
     Off,
     /// An end over a bindable element binds inside it (Alt held).
     Inside,
@@ -302,7 +305,8 @@ pub struct CreateArgs {
     pub end: Option<BindArg>,
     /// line, arrow: automatic binding of ends that are not named in `start` or `end`. `auto` (default) binds an
     /// end that lies inside a bindable element or near its outline; `off` binds nothing; `inside` binds an end over
-    /// an element inside it. The setting `arrow.binding` set to false makes `auto` act as `off`.
+    /// an element inside it; `on` is `auto` that ignores the setting. The setting `arrow.binding` set to false makes
+    /// `auto` act as `off`. Only `auto` follows the setting: `on`, `off` and `inside` are always obeyed.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub bind: Option<BindPolicy>,
     /// line, arrow: marker at the first point. Default none. `null` or `"none"` means no marker.
@@ -626,7 +630,7 @@ fn plan_create(s: &Session, a: &CreateArgs) -> Result<Plan, Refusal> {
                 BindPolicy::Off => AutoBind::Off,
                 BindPolicy::Inside => AutoBind::Inside,
                 BindPolicy::Auto if !s.settings.bool_or("arrow.binding", true) => AutoBind::Off,
-                BindPolicy::Auto => AutoBind::On,
+                BindPolicy::Auto | BindPolicy::On => AutoBind::On,
             };
             Body::Linear {
                 world,

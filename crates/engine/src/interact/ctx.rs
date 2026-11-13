@@ -5,9 +5,11 @@ use std::any::Any;
 use drafftink_canvas::Modifiers;
 use serde_json::Value;
 
+use super::bind;
 use super::outcome::Outcome;
 use super::overlay::OverlayParts;
 use super::world::World;
+use crate::cmd::arrow::BindChoice;
 use crate::refusal::Refusal;
 use crate::ring::Origin;
 use crate::session::Session;
@@ -75,6 +77,12 @@ impl Ctx<'_> {
     /// A boolean setting.
     pub(crate) fn setting(&self, key: &str, default: bool) -> bool {
         self.s.settings.bool_or(key, default)
+    }
+
+    /// How a gesture with these keys held binds an arrow end: the setting `arrow.binding`, turned around by Ctrl
+    /// or Cmd, and Alt for inside (see [`bind::choice`]).
+    pub(crate) fn bind_choice(&self, mods: Modifiers) -> BindChoice {
+        bind::choice(self.setting("arrow.binding", true), mods)
     }
 
     /// Pixels per world unit.

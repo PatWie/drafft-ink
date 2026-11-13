@@ -558,6 +558,24 @@ fn the_setting_arrow_binding_off_turns_automatic_binding_off() {
 }
 
 #[test]
+fn bind_on_and_inside_bind_with_the_setting_off_and_off_never_binds() {
+    let mut s = testing::headless_session();
+    two_boxes(&mut s);
+    s.settings.set_raw("arrow.binding", json!(false));
+    for (policy, bound) in [("on", true), ("inside", true), ("auto", false), ("off", false)] {
+        let out = create(&mut s, json!({"kind": "arrow", "points": [[50, 30], [350, 30]], "bind": policy}));
+        let d = el(&s, &new_id(&out)).linear_data().unwrap().clone();
+        assert_eq!((d.start_binding.is_some(), d.end_binding.is_some()), (bound, bound), "bind {policy} with the setting off");
+    }
+    s.settings.set_raw("arrow.binding", json!(true));
+    for (policy, bound) in [("on", true), ("auto", true), ("off", false)] {
+        let out = create(&mut s, json!({"kind": "arrow", "points": [[50, 30], [350, 30]], "bind": policy}));
+        let d = el(&s, &new_id(&out)).linear_data().unwrap().clone();
+        assert_eq!((d.start_binding.is_some(), d.end_binding.is_some()), (bound, bound), "bind {policy} with the setting on");
+    }
+}
+
+#[test]
 fn an_elbow_arrow_between_two_shapes_binds_and_routes_around_them() {
     let mut s = testing::headless_session();
     let (a, b) = two_boxes(&mut s);

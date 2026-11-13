@@ -151,6 +151,19 @@ fn alt_chords_use_the_physical_key_because_option_changes_the_character_on_macos
 }
 
 #[test]
+fn alt_b_toggles_attaching_arrows_to_shapes_on_both_platforms() {
+    let alt = Modifiers { alt: true, ..Modifiers::NONE };
+    for mac in [false, true] {
+        let m = model(mac);
+        let st = UiState::new();
+        // Option+B types a different character on macOS; the physical key is KeyB.
+        let logical = if mac { Key::Home } else { Key::B };
+        let a = one(&m, &st, press(logical, Some(Key::B), alt)).expect("Alt+B runs a command");
+        assert_eq!(call(&a), ("settings.toggle", &json!({ "key": "arrow.binding" }), Origin::Shortcut), "mac {mac}");
+    }
+}
+
+#[test]
 fn question_mark_opens_the_shortcuts_dialog_with_shift_implied() {
     let m = model(false);
     let st = UiState::new();

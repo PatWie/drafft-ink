@@ -230,6 +230,10 @@ fn view_entries(model: &Model, stats: bool, zen: bool) -> Vec<Entry> {
             .icon(Icon::SnapGrid)
             .checked(model.setting_bool("snap.grid"))
             .always(),
+        Entry::with_args("settings.toggle", json!({ "key": "arrow.binding" }))
+            .icon(Icon::BindArrow)
+            .checked(model.setting_bool("arrow.binding"))
+            .always(),
         Entry::verb(Verb::ToggleZen, "Zen mode", None).checked(zen),
         Entry::command("view.set_view_only").checked(model.view_only).always(),
         Entry::verb(Verb::ToggleStats, "Stats panel", None).checked(stats),

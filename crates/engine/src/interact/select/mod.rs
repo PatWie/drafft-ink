@@ -131,7 +131,7 @@ impl SelectTool {
             }
             Drag::Lasso => extend_lasso(cx, ev.at.world),
             Drag::Gesture(run) => {
-                run.frame.follow(ev, cx.mods);
+                run.frame.follow(ev, cx.mods, cx.bind_choice(cx.mods));
                 match cx.s.gesture_update(run.id, run.frame.args()) {
                     Ok(out) => {
                         frame_out::apply(cx.parts, &out);
@@ -168,7 +168,7 @@ impl SelectTool {
                             cx.out.refusals.push(refusal);
                         }
                     } else {
-                        run.frame.follow(ev, cx.mods);
+                        run.frame.follow(ev, cx.mods, cx.bind_choice(cx.mods));
                         if let Err(refusal) = cx.s.gesture_end_typed(run.id, Some(run.frame.args())) {
                             cx.out.refusals.push(refusal);
                         }

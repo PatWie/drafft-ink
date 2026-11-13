@@ -799,6 +799,37 @@ fn the_setting_arrow_binding_turns_automatic_binding_off() {
 }
 
 #[test]
+fn bind_on_binds_with_the_setting_off_and_off_never_binds_with_it_on() {
+    let mut w = world();
+    assert!(w.s.settings.set_raw("arrow.binding", json!(false)));
+    run(&mut w.s, "arrow.move_point", json!({"arrow": w.arrow, "index": "end", "to": [296, 70], "bind": "on"}));
+    assert!(data(&w.s, &w.arrow).end_binding.is_some(), "`on` ignores the setting: the toggle governs gestures only");
+    run(&mut w.s, "arrow.move_point", json!({"arrow": w.arrow, "index": "end", "to": [296, 70]}));
+    assert!(data(&w.s, &w.arrow).end_binding.is_none(), "`auto` follows the setting, and an end dragged while it is off unbinds");
+    assert!(w.s.settings.set_raw("arrow.binding", json!(true)));
+    run(&mut w.s, "arrow.move_point", json!({"arrow": w.arrow, "index": "end", "to": [296, 70], "bind": "off"}));
+    assert!(data(&w.s, &w.arrow).end_binding.is_none());
+    run(&mut w.s, "arrow.move_point", json!({"arrow": w.arrow, "index": "end", "to": [296, 70]}));
+    assert!(data(&w.s, &w.arrow).end_binding.is_some(), "`auto` binds with the setting on");
+}
+
+#[test]
+fn the_explicit_bind_command_is_not_blocked_by_the_setting() {
+    let mut w = world();
+    assert!(w.s.settings.set_raw("arrow.binding", json!(false)));
+    run(&mut w.s, "arrow.bind", json!({"arrow": w.arrow, "end": "end", "target": w.b}));
+    assert!(data(&w.s, &w.arrow).end_binding.is_some());
+}
+
+#[test]
+fn toggling_the_setting_leaves_existing_bindings_alone() {
+    let mut w = bound_world();
+    assert!(w.s.settings.set_raw("arrow.binding", json!(false)));
+    let d = data(&w.s, &w.arrow);
+    assert!(d.start_binding.is_some() && d.end_binding.is_some());
+}
+
+#[test]
 fn move_point_snaps_to_the_grid_and_to_an_angle() {
     let mut w = world();
     let line = linear(&mut w.s, "line", &[[0.0, 500.0], [100.0, 500.0]]);

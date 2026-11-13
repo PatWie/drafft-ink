@@ -327,8 +327,10 @@ const WRITE: Facts = Facts {
     doc_write: crate::spec::DocWrite::NotDocument,
 };
 
-const TOGGLE_KEYS: &[Binding] =
-    &[Binding::new(&["Alt+S"], Scope::Canvas).with_args(r#"{"key":"snap.smart_guides"}"#).titled("Smart guides")];
+const TOGGLE_KEYS: &[Binding] = &[
+    Binding::new(&["Alt+S"], Scope::Canvas).with_args(r#"{"key":"snap.smart_guides"}"#).titled("Smart guides"),
+    Binding::new(&["Alt+B"], Scope::Canvas).with_args(r#"{"key":"arrow.binding"}"#).titled("Attach arrows to shapes"),
+];
 const CYCLE_KEYS: &[Binding] =
     &[Binding::new(&["Mod+'"], Scope::Canvas).with_args(r#"{"key":"view.grid_style"}"#).titled("Cycle grid style")];
 

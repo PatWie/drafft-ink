@@ -100,10 +100,25 @@ pub enum BindChoice {
     /// Bind to a target under the pointer when the setting `arrow.binding` is on.
     #[default]
     Auto,
-    /// Ignore targets (Ctrl held).
+    /// Bind to a target under the pointer whatever the setting says (a pointer gesture sends this when Ctrl or Cmd
+    /// is held while the setting is off).
+    On,
+    /// Ignore targets (a pointer gesture sends this when binding is off, or when Ctrl or Cmd is held while the
+    /// setting is on).
     Off,
     /// Bind inside the target under the pointer (Alt held).
     Inside,
+}
+
+impl BindChoice {
+    /// True when no target is looked for, given the setting `arrow.binding`. Only `auto` follows the setting.
+    pub(crate) fn disabled(self, binding_on: bool) -> bool {
+        match self {
+            Self::Auto => !binding_on,
+            Self::Off => true,
+            Self::On | Self::Inside => false,
+        }
+    }
 }
 
 fn some_value<'de, D, T>(d: D) -> Result<Option<Option<T>>, D::Error>
@@ -213,7 +228,8 @@ pub struct MovePointArgs {
     /// handle).
     #[serde(default)]
     pub insert: bool,
-    /// How an end finds a target: `auto`, `off` (Ctrl) or `inside` (Alt).
+    /// How an end finds a target: `auto` (follow the setting `arrow.binding`), `on`, `off` or `inside`. A pointer
+    /// gesture picks `on` or `off` from the setting and the Ctrl or Cmd key, and `inside` for Alt.
     #[serde(default)]
     pub bind: BindChoice,
     /// Snapping of the point.
@@ -815,7 +831,7 @@ fn move_point(s: &mut Session, a: MovePointArgs) -> Result<MovePointOut, Refusal
     let opts = BindOpts {
         zoom: zoom_now,
         force_inside: a.bind == BindChoice::Inside,
-        disabled: a.bind == BindChoice::Off || (a.bind == BindChoice::Auto && !s.settings.bool_or("arrow.binding", true)),
+        disabled: a.bind.disabled(s.settings.bool_or("arrow.binding", true)),
         midpoint_snap: s.settings.bool_or("arrow.midpoint_snap", false),
         angle_locked: flags.angle,
     };
