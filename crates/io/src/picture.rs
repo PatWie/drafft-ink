@@ -11,6 +11,7 @@
 //! picture is then made smaller, see [`prepare`].
 
 mod ico;
+mod svg;
 
 use std::io::Cursor;
 
@@ -74,6 +75,8 @@ pub enum Kind {
     Bmp,
     /// Windows icon. The largest image is stored, as a PNG.
     Ico,
+    /// SVG, drawn at a fixed size and stored as a PNG. Only [`prepare`] reads it fully.
+    Svg,
 }
 
 impl Kind {
@@ -87,23 +90,33 @@ impl Kind {
             Kind::Gif => "image/gif",
             Kind::Bmp => "image/bmp",
             Kind::Ico => "image/x-icon",
+            Kind::Svg => "image/svg+xml",
         }
     }
 
-    fn format(self) -> ImageFormat {
+    /// The format of the `image` crate, or `None` for an SVG, which is drawn and not decoded.
+    fn format(self) -> Option<ImageFormat> {
         match self {
-            Kind::Png => ImageFormat::Png,
-            Kind::Jpeg => ImageFormat::Jpeg,
-            Kind::WebP => ImageFormat::WebP,
-            Kind::Gif => ImageFormat::Gif,
-            Kind::Bmp => ImageFormat::Bmp,
-            Kind::Ico => ImageFormat::Ico,
+            Kind::Png => Some(ImageFormat::Png),
+            Kind::Jpeg => Some(ImageFormat::Jpeg),
+            Kind::WebP => Some(ImageFormat::WebP),
+            Kind::Gif => Some(ImageFormat::Gif),
+            Kind::Bmp => Some(ImageFormat::Bmp),
+            Kind::Ico => Some(ImageFormat::Ico),
+            Kind::Svg => None,
         }
     }
 
     /// Whether the bytes go into the document unchanged.
     fn is_stored_as_given(self) -> bool {
         matches!(self, Kind::Png | Kind::Jpeg | Kind::WebP)
+    }
+
+    /// A reader of the `image` crate for `bytes` of this kind.
+    fn reader(self, bytes: &[u8]) -> Result<ImageReader<Cursor<&[u8]>>, PictureError> {
+        let format =
+            self.format().ok_or_else(|| PictureError::Unreadable("an SVG is drawn, not decoded".to_owned()))?;
+        Ok(ImageReader::with_format(Cursor::new(bytes), format))
     }
 }
 
@@ -143,6 +156,8 @@ pub fn sniff(bytes: &[u8]) -> Option<Kind> {
         Some(Kind::Bmp)
     } else if ico::looks_like_ico(bytes) {
         Some(Kind::Ico)
+    } else if svg::looks_like_svg(bytes) {
+        Some(Kind::Svg)
     } else {
         None
     }
@@ -156,8 +171,6 @@ fn kind_of(bytes: &[u8]) -> Result<Kind, PictureError> {
             "it is a PDF".to_owned()
         } else if bytes.starts_with(&[0x49, 0x49, 0x2a, 0x00]) || bytes.starts_with(&[0x4d, 0x4d, 0x00, 0x2a]) {
             "it is a TIFF".to_owned()
-        } else if bytes.iter().take(512).any(|b| *b == b'<') && bytes.windows(4).take(512).any(|w| w == b"<svg") {
-            "it is an SVG".to_owned()
         } else {
             "its content is not a picture format drafft.ink knows".to_owned()
         };
@@ -180,9 +193,12 @@ pub fn probe(bytes: &[u8]) -> Result<Probe, PictureError> {
         return Err(PictureError::TooLarge { size: bytes.len() });
     }
     let kind = kind_of(bytes)?;
-    let readable = readable(bytes, kind)?;
-    let reader = ImageReader::with_format(Cursor::new(readable.as_ref()), kind.format());
-    let (width, height) = reader.into_dimensions().map_err(|e| PictureError::Unreadable(e.to_string()))?;
+    let (width, height) = if kind == Kind::Svg {
+        svg::parse(bytes)?.given()
+    } else {
+        let readable = readable(bytes, kind)?;
+        kind.reader(&readable)?.into_dimensions().map_err(|e| PictureError::Unreadable(e.to_string()))?
+    };
     if width == 0 || height == 0 {
         return Err(PictureError::Unreadable("the picture has no pixels".to_owned()));
     }
@@ -195,7 +211,7 @@ pub fn probe(bytes: &[u8]) -> Result<Probe, PictureError> {
 /// Decodes a picture, with the side limits of `probe` and the allocation limit of this module.
 fn decode(bytes: &[u8], probe: &Probe) -> Result<DynamicImage, PictureError> {
     let readable = readable(bytes, probe.kind)?;
-    let mut reader = ImageReader::with_format(Cursor::new(readable.as_ref()), probe.kind.format());
+    let mut reader = probe.kind.reader(&readable)?;
     let mut limits = Limits::default();
     limits.max_image_width = Some(probe.width);
     limits.max_image_height = Some(probe.height);
@@ -231,6 +247,8 @@ pub struct Prepared {
     pub given: (u32, u32),
     /// True when a big picture was stored smaller.
     pub shrunk: bool,
+    /// Plain-words notes for the person: what in the picture was not kept.
+    pub warnings: Vec<String>,
 }
 
 /// Checks a picture and makes it storable, in this order:
@@ -242,6 +260,12 @@ pub struct Prepared {
 ///    become PNG, which keeps transparency). The result is kept only when it has fewer bytes.
 /// 4. A picture that was neither converted nor shrunk is decoded once and dropped, to find damaged pixel data now.
 pub fn prepare(bytes: Vec<u8>, downscale: bool) -> Result<Prepared, PictureError> {
+    if bytes.len() > MAX_PICTURE_BYTES {
+        return Err(PictureError::TooLarge { size: bytes.len() });
+    }
+    if kind_of(&bytes)? == Kind::Svg {
+        return Ok(svg::prepare(&svg::parse(&bytes)?)?);
+    }
     let probe = probe(&bytes)?;
     let given = (probe.width, probe.height);
     let (bytes, kind, natural) = if probe.kind.is_stored_as_given() {
@@ -257,10 +281,15 @@ pub fn prepare(bytes: Vec<u8>, downscale: bool) -> Result<Prepared, PictureError
         validate_pixels(&bytes, &stored)?;
     }
     Ok(match shrunk {
-        Some(sh) => {
-            Prepared { bytes: sh.bytes, mime: sh.kind.mime(), natural: (sh.width, sh.height), given, shrunk: true }
-        }
-        None => Prepared { bytes, mime: kind.mime(), natural, given, shrunk: false },
+        Some(sh) => Prepared {
+            bytes: sh.bytes,
+            mime: sh.kind.mime(),
+            natural: (sh.width, sh.height),
+            given,
+            shrunk: true,
+            warnings: Vec::new(),
+        },
+        None => Prepared { bytes, mime: kind.mime(), natural, given, shrunk: false, warnings: Vec::new() },
     })
 }
 
@@ -279,7 +308,7 @@ fn shrink(bytes: &[u8], probe: &Probe) -> Result<Option<Reencoded>, PictureError
     if bytes.len() <= SHRINK_ABOVE_BYTES || probe.width.max(probe.height) <= SHRINK_TO_SIDE {
         return Ok(None);
     }
-    let mut reader = ImageReader::with_format(Cursor::new(bytes), probe.kind.format());
+    let mut reader = probe.kind.reader(bytes)?;
     let mut limits = Limits::default();
     limits.max_image_width = Some(MAX_SIDE);
     limits.max_image_height = Some(MAX_SIDE);
@@ -328,7 +357,6 @@ mod tests {
         for (bytes, word) in [
             (b"%PDF-1.4".to_vec(), "PDF"),
             (b"BMW notes about a bike".to_vec(), "not a picture"),
-            (b"<svg xmlns=''></svg>".to_vec(), "SVG"),
             (Vec::new(), "empty"),
             (vec![1, 2, 3], "not a picture"),
         ] {

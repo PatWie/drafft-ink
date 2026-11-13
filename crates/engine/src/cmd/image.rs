@@ -112,7 +112,7 @@ fn picture_refusal(cmd: &str, name: &str, e: &PictureError) -> Refusal {
         PictureError::Unsupported { found } => Refusal::custom(
             "unsupported_format",
             cmd,
-            format!("`{}` is not a supported image ({found}). Use PNG, JPEG, WebP, GIF, BMP or ICO.", echo(name)),
+            format!("`{}` is not a supported image ({found}). Use PNG, JPEG, WebP, GIF, BMP, ICO or SVG.", echo(name)),
         ),
         PictureError::Unreadable(msg) => Refusal::custom(
             "parse_failed",
@@ -138,6 +138,9 @@ pub(crate) fn insert_pictures(
     let mut ready: Vec<Ready> = Vec::with_capacity(pics.len());
     for p in pics {
         let prepared = picture::prepare(p.bytes, place.downscale).map_err(|e| picture_refusal(cmd, &p.name, &e))?;
+        for note in &prepared.warnings {
+            s.warn(format!("`{}`: {}", echo(&p.name), note));
+        }
         // The size on the canvas follows the picture as it was given, not the smaller copy we store.
         let (w, h) = (f64::from(prepared.given.0), f64::from(prepared.given.1));
         let k = if w.max(h) > place.fit { place.fit / w.max(h) } else { 1.0 };
@@ -219,7 +222,7 @@ fn yes() -> bool {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct InsertArgs {
-    /// The pictures: 1 to 20, each `{base64, name?, mime?}` or `{path}`. PNG, JPEG, WebP, GIF, BMP or ICO, at most 25 MiB each.
+    /// The pictures: 1 to 20, each `{base64, name?, mime?}` or `{path}`. PNG, JPEG, WebP, GIF, BMP, ICO or SVG, at most 25 MiB each (an SVG is drawn into a PNG, without its text).
     pub images: Vec<Bytes>,
     /// Where the middle of the first picture goes, in world units. Default: the middle of the visible canvas.
     #[serde(default)]
@@ -574,7 +577,7 @@ pub const COMMANDS: &[CommandSpec] = &[
         "image.insert",
         "image",
         "Insert image",
-        "Inserts PNG, JPEG, WebP, GIF, BMP or ICO pictures as image elements, scaled to fit, stored once per content in the document.",
+        "Inserts PNG, JPEG, WebP, GIF, BMP, ICO or SVG pictures as image elements, scaled to fit, stored once per content in the document.",
         &Typed::new(insert),
         DOC,
     )

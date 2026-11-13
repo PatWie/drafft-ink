@@ -1635,16 +1635,16 @@
   },
   "size": {
     "wasm.opt_bytes": {
-      "max": 12750000,
-      "note": "the file the server sends. 12,363,143 measured on 2026-11-08 (full app, release-wasm, wasm-opt -Oz); the limit is 3% above"
+      "max": 13450000,
+      "note": "the file the server sends. 12,363,143 measured on 2026-11-08 (full app, release-wasm, wasm-opt -Oz); the limit is 3% above. Raised on 2026-11-13 for SVG pictures (resvg 0.48.1, usvg and tiny-skia: `drafftink_io::picture::svg`, docs/performance.md 8.5): 13,058,818 measured, 12,343,931 with GIF, BMP and ICO but no SVG; the limit is 3% above the new number."
     },
     "wasm.gzip_bytes": {
-      "max": 4720000,
-      "note": "4,576,123 measured on 2026-11-08; the limit is 3% above"
+      "max": 5130000,
+      "note": "4,576,123 measured on 2026-11-08; the limit is 3% above. Raised on 2026-11-13 for SVG pictures (resvg 0.48.1, usvg and tiny-skia: `drafftink_io::picture::svg`, docs/performance.md 8.5): 4,982,942 measured, 4,709,819 with GIF, BMP and ICO but no SVG; the limit is 3% above the new number."
     },
     "wasm.brotli_bytes": {
-      "max": 3410000,
-      "note": "the first-load cost of the code, what browsers are sent. 3,213,885 measured on 2026-11-08 and 3,312,440 on 2026-11-09 with per-run bold and italic, the live arrow preview and the token field (the old app: 3.46 MB; the target of docs/performance.md 7.5 is 3.5 MB); the limit is 3% above the latest"
+      "max": 3640000,
+      "note": "the first-load cost of the code, what browsers are sent. 3,213,885 measured on 2026-11-08 and 3,312,440 on 2026-11-09 with per-run bold and italic, the live arrow preview and the token field (the old app: 3.46 MB; the target of docs/performance.md 7.5 is 3.5 MB); the limit is 3% above the latest. Raised on 2026-11-13 for SVG pictures (resvg 0.48.1, usvg and tiny-skia: `drafftink_io::picture::svg`, docs/performance.md 8.5): 3,531,180 measured, 3,340,746 with GIF, BMP and ICO but no SVG; the limit is 3% above the new number."
     },
     "fonts.brotli_bytes": {
       "max": 2031000,
@@ -1655,16 +1655,16 @@
       "note": "the table of command schemas (args and output of every command) that the page fetches next to the module, which no longer carries the code that makes them. 33,875 measured on 2026-11-09 (153 commands); 35,481 on 2026-11-11 (157 commands: library.remove_section, library.rename_section, library.thumbnail and text.format are new, and 21 existing schemas gained fields); the limit is 3% above the latest"
     },
     "fallback.opt_bytes": {
-      "max": 12600000,
-      "note": "the WebGL2 module for browsers without WebGPU (dist/pkg-gl), loaded by those browsers only, so the wasm.* limits do not include it. 12,238,249 measured on 2026-11-09 (whole app, vello_gpu and egui_glow instead of Vello and wgpu, release-wasm, wasm-opt -Oz); the limit is 3% above"
+      "max": 13070000,
+      "note": "the WebGL2 module for browsers without WebGPU (dist/pkg-gl), loaded by those browsers only, so the wasm.* limits do not include it. 12,238,249 measured on 2026-11-09 (whole app, vello_gpu and egui_glow instead of Vello and wgpu, release-wasm, wasm-opt -Oz); the limit is 3% above. Raised on 2026-11-13 for SVG pictures (resvg 0.48.1, usvg and tiny-skia: `drafftink_io::picture::svg`, docs/performance.md 8.5): 12,688,189 measured, 11,974,961 with GIF, BMP and ICO but no SVG; the limit is 3% above the new number."
     },
     "fallback.gzip_bytes": {
-      "max": 4750000,
-      "note": "4,606,581 measured on 2026-11-09; the limit is 3% above"
+      "max": 5080000,
+      "note": "4,606,581 measured on 2026-11-09; the limit is 3% above. Raised on 2026-11-13 for SVG pictures (resvg 0.48.1, usvg and tiny-skia: `drafftink_io::picture::svg`, docs/performance.md 8.5): 4,928,672 measured, 4,655,469 with GIF, BMP and ICO but no SVG; the limit is 3% above the new number."
     },
     "fallback.brotli_bytes": {
-      "max": 3375000,
-      "note": "what a browser without WebGPU is sent. 3,276,255 measured on 2026-11-09 (the normal module: 3,299,743); the limit is 3% above"
+      "max": 3610000,
+      "note": "what a browser without WebGPU is sent. 3,276,255 measured on 2026-11-09 (the normal module: 3,299,743); the limit is 3% above. Raised on 2026-11-13 for SVG pictures (resvg 0.48.1, usvg and tiny-skia: `drafftink_io::picture::svg`, docs/performance.md 8.5): 3,504,486 measured, 3,313,429 with GIF, BMP and ICO but no SVG; the limit is 3% above the new number."
     },
     "native.drafftink_bytes": {
       "max": 46860000,

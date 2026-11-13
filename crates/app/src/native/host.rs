@@ -14,7 +14,7 @@ use crate::platform::{Host, HostJob, Inbound, Inbox, PickKind, PickedFile};
 pub(crate) struct NativeHost;
 
 const DOCUMENT_EXTENSIONS: &[&str] = &["drafftink", "json", "excalidraw", "png"];
-const IMAGE_EXTENSIONS: &[&str] = &["png", "jpg", "jpeg", "webp", "gif", "bmp", "ico"];
+const IMAGE_EXTENSIONS: &[&str] = &["png", "jpg", "jpeg", "webp", "gif", "bmp", "ico", "svg"];
 const LIBRARY_EXTENSIONS: &[&str] = &["excalidrawlib", "json"];
 
 fn path_ref(p: PathBuf) -> PickedFile {

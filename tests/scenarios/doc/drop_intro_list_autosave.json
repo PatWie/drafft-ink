@@ -4,7 +4,7 @@
     { "harness": "stage_fixture", "args": { "path": "excalidraw/basic_shapes.excalidraw" } },
     { "harness": "stage_fixture", "args": { "path": "excalidraw/fixture_library.excalidrawlib" } },
 
-    { "execute": "doc.drop", "args": { "items": [] }, "refused": "nothing_to_do", "text": "Nothing to open: none of the 0 dropped files is an image, document or library. Supported: PNG, JPEG, WebP, .json, .drafftink, .excalidraw, .excalidrawlib." },
+    { "execute": "doc.drop", "args": { "items": [] }, "refused": "nothing_to_do", "text": "Nothing to open: none of the 0 dropped files is an image, document or library. Supported: PNG, JPEG, WebP, GIF, BMP, ICO, SVG, .json, .drafftink, .excalidraw, .excalidrawlib." },
     { "execute": "doc.drop", "args": { "items": [ { "name": "notes.txt", "bytes": { "base64": "aGVsbG8=" } } ] }, "refused": "nothing_to_do", "text": "none of the 1 dropped files is an image, document or library" },
     { "execute": "doc.drop", "args": { "items": [ { "name": "shapes.excalidraw", "bytes": { "path": "fixtures/excalidraw/basic_shapes.excalidraw" } } ] }, "expect": [ { "path": "$.documents", "eq": 1 }, { "path": "$.images", "eq": 0 } ] },
     { "assert": "tab.list", "expect": [ { "path": "$.tabs", "len": 2, "note": "documents=new_tab is the default for a drop." } ] },

@@ -635,7 +635,7 @@ pub struct DropItem {
     pub mime: Option<String>,
 }
 
-/// What to do with a PNG that carries a scene (a drafft.ink export, or an Excalidraw export with its scene).
+/// What to do with a PNG or an SVG that carries a scene (a drafft.ink export, or an Excalidraw export with its scene).
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum ScenePng {
@@ -643,7 +643,7 @@ pub enum ScenePng {
     /// falls back to inserting the picture, and the output says so.
     #[default]
     Open,
-    /// Insert the PNG as an image, whatever it carries.
+    /// Insert the file as an image, whatever it carries.
     Insert,
 }
 
@@ -669,8 +669,8 @@ pub struct DropArgs {
     /// World point to put images and merged elements at: a point, `viewport_center` (default) or `$cursor`.
     #[serde(default)]
     pub at: At,
-    /// A PNG with an embedded scene: `open` the scene (default, like a dropped document) or `insert` the PNG as
-    /// an image.
+    /// A PNG or SVG with an embedded scene: `open` the scene (default, like a dropped document) or `insert` the
+    /// file as an image.
     #[serde(default)]
     pub scene_png: ScenePng,
     /// Documents: `new_tab` (default), `replace` or `merge`.
@@ -727,12 +727,24 @@ fn is_document(format: Format) -> bool {
     )
 }
 
-fn png_scene(bytes: &[u8]) -> PngScene {
-    match png_meta::extract_scene(bytes) {
+/// What the scene of a PNG or an SVG is, when it has one.
+fn picture_scene(scene: Result<Option<String>, IoError>) -> PngScene {
+    match scene {
         Ok(None) => PngScene::None,
         Ok(Some(text)) if is_document(native::sniff(text.as_bytes())) => PngScene::Readable,
         Ok(Some(_)) => PngScene::Unreadable("its scene is not a drafft.ink or Excalidraw document".to_owned()),
         Err(e) => PngScene::Unreadable(e.to_string()),
+    }
+}
+
+fn png_scene(bytes: &[u8]) -> PngScene {
+    picture_scene(png_meta::extract_scene(bytes))
+}
+
+fn svg_scene(bytes: &[u8]) -> PngScene {
+    match std::str::from_utf8(bytes) {
+        Ok(text) => picture_scene(drafftink_io::svg::extract_scene(text)),
+        Err(_) => PngScene::None,
     }
 }
 
@@ -746,7 +758,13 @@ fn classify(bytes: &[u8], scene_png: ScenePng) -> Class {
         },
         Format::ExcalidrawLibrary => Class::Library,
         format if is_document(format) => Class::Document,
-        Format::Svg => Class::Skip("SVG pictures are not supported; only SVG files exported from drafft.ink with a scene can be opened with `doc.open`".to_owned()),
+        // An SVG exported from drafft.ink with its scene opens like a PNG with one. Any other SVG is a picture.
+        Format::Svg if scene_png == ScenePng::Open => match svg_scene(bytes) {
+            PngScene::None => Class::Image(None),
+            PngScene::Readable => Class::Document,
+            PngScene::Unreadable(why) => Class::Image(Some(why)),
+        },
+        Format::Svg => Class::Image(None),
         Format::LegacyClipboard | Format::Mermaid => Class::Skip("it is clipboard or diagram text, not a file".to_owned()),
         Format::Unknown if picture::sniff(bytes).is_some() => Class::Image(None),
         _ => Class::Skip("it is not an image, document or library".to_owned()),
@@ -831,7 +849,7 @@ pub(super) fn drop_files(s: &mut Session, a: DropArgs) -> Result<DropOut, Refusa
             id,
             "open",
             &format!(
-                "none of the {n} dropped files is an image, document or library. Supported: PNG, JPEG, WebP, GIF, BMP, ICO, .json, .drafftink, .excalidraw, .excalidrawlib"
+                "none of the {n} dropped files is an image, document or library. Supported: PNG, JPEG, WebP, GIF, BMP, ICO, SVG, .json, .drafftink, .excalidraw, .excalidrawlib"
             ),
         ));
     }
@@ -872,7 +890,7 @@ pub(super) fn drop_files(s: &mut Session, a: DropArgs) -> Result<DropOut, Refusa
             }
             // A PNG whose scene cannot be read is still a picture. The other refusals (too many tabs, a room) are
             // about the placement, which the picture would not escape.
-            Err(r) if SCENE_UNREADABLE.contains(&r.code) && native::sniff(&loaded.bytes) == Format::Png => {
+            Err(r) if SCENE_UNREADABLE.contains(&r.code) && matches!(native::sniff(&loaded.bytes), Format::Png | Format::Svg) => {
                 images.push(Picture { loaded, mime: None, scene_problem: Some(r.message) });
             }
             Err(r) => {

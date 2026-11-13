@@ -376,7 +376,7 @@ export interface PngOptions {
 /** A write inside `transact`. */
 export interface Transaction {
   add(shape: ShapeInit): string;
-  /** Adds a PNG, JPEG, WebP, GIF, BMP or ICO picture (from a `Blob`, `File`, `ArrayBuffer` or bytes) at its natural size. */
+  /** Adds a PNG, JPEG, WebP, GIF, BMP, ICO or SVG picture (from a `Blob`, `File`, `ArrayBuffer` or bytes) at its natural size. */
   addImage(source: Blob | ArrayBuffer | Uint8Array, options?: ImageOptions): Promise<string>;
   update(id: string, patch: ShapePatch): void;
   remove(...ids: (string | string[])[]): void;

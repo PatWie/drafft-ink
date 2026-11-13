@@ -1651,7 +1651,7 @@ export namespace DocDrop {
     /** A path the session's file access can read. */
     path: string;
   };
-  /** What to do with a PNG that carries a scene (a drafft.ink export, or an Excalidraw export with its scene). */
+  /** What to do with a PNG or an SVG that carries a scene (a drafft.ink export, or an Excalidraw export with its scene). */
   type A_ScenePng = "open" | "insert";
   /** Arguments of `doc.drop`. */
   export type Args = {
@@ -1664,8 +1664,8 @@ export namespace DocDrop {
     /** What to do with unsaved changes when a document replaces the active one. */
     on_unsaved?: A_OnUnsaved;
     /**
-     * A PNG with an embedded scene: `open` the scene (default, like a dropped document) or `insert` the PNG as
-     * an image.
+     * A PNG or SVG with an embedded scene: `open` the scene (default, like a dropped document) or `insert` the
+     * file as an image.
      */
     scene_png?: A_ScenePng;
   };
@@ -4532,7 +4532,7 @@ export namespace ImageCropEnd {
   };
 }
 
-/** Inserts PNG, JPEG, WebP, GIF, BMP or ICO pictures as image elements, scaled to fit, stored once per content in the document. */
+/** Inserts PNG, JPEG, WebP, GIF, BMP, ICO or SVG pictures as image elements, scaled to fit, stored once per content in the document. */
 export namespace ImageInsert {
   /** Where the middle of what is inserted goes. */
   type A_At = A_AtWord | [number, number];
@@ -4565,7 +4565,7 @@ export namespace ImageInsert {
      * size.
      */
     fit?: number;
-    /** The pictures: 1 to 20, each `{base64, name?, mime?}` or `{path}`. PNG, JPEG, WebP, GIF, BMP or ICO, at most 25 MiB each. */
+    /** The pictures: 1 to 20, each `{base64, name?, mime?}` or `{path}`. PNG, JPEG, WebP, GIF, BMP, ICO or SVG, at most 25 MiB each (an SVG is drawn into a PNG, without its text). */
     images: A_Bytes[];
     /** A name for messages about pictures that carry no `name` of their own. */
     name?: string | null;

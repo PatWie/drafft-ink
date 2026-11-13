@@ -27,6 +27,8 @@ thiserror.workspace = true
 base64.workspace = true
 # Picture header and bounded decoding for image.insert (PNG, JPEG, WebP). Pure Rust, builds for wasm32.
 image.workspace = true
+# SVG pictures: resvg (with usvg and the XML reader it re-exports) reads and draws them (picture::svg). Pure Rust, builds for wasm32.
+resvg.workspace = true
 sha2.workspace = true
 loro.workspace = true
 # gzip for the large legacy fixtures and zlib for PNG text chunks. Pure Rust backend.

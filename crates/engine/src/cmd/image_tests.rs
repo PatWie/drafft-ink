@@ -151,6 +151,56 @@ fn gif_bmp_and_ico_become_png_pictures_of_the_size_they_have() {
     assert_eq!(images(&s).len(), 3);
 }
 
+// ---- SVG ----
+
+#[test]
+fn an_svg_becomes_a_png_picture_shown_at_the_size_it_gives_itself() {
+    let mut s = session();
+    let svg = "<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 300 100'><rect width='300' height='100' fill='red'/></svg>";
+    let out = run(&mut s, "image.insert", json!({"images": [named(svg.as_bytes(), "wide.svg")], "at": [0, 0]}));
+    let one = &out["images"][0];
+    assert_eq!((one["width"].as_f64(), one["height"].as_f64()), (Some(300.0), Some(100.0)), "the SVG's size");
+    assert_eq!((one["natural_width"].as_u64(), one["natural_height"].as_u64()), (Some(600), Some(200)), "drawn at twice that");
+    let id = FileId::new(one["file_id"].as_str().unwrap()).unwrap();
+    let entry = s.store().file(&id).unwrap();
+    assert_eq!(entry.mime, "image/png");
+    assert!(!String::from_utf8_lossy(&entry.bytes).contains("<svg"), "the SVG itself is not stored");
+    // A bigger one than `fit` is scaled like any picture.
+    let big = "<svg xmlns='http://www.w3.org/2000/svg' width='1600' height='400'/>";
+    let out = run(&mut s, "image.insert", json!({"images": [named(big.as_bytes(), "big.svg")], "at": [0, 0]}));
+    assert_eq!((out["images"][0]["width"].as_f64(), out["images"][0]["height"].as_f64()), (Some(800.0), Some(200.0)));
+}
+
+#[test]
+fn our_own_svg_export_is_a_picture_too_and_its_text_is_reported() {
+    let mut s = session();
+    run(&mut s, "element.create", json!({"kind": "rectangle", "bounds": {"x": 0, "y": 0, "w": 120, "h": 60}}));
+    run(&mut s, "element.create", json!({"kind": "text", "at": [10, 10], "text": "hello"}));
+    let export = run(&mut s, "doc.export", json!({"format": "svg", "scope": "all"}));
+    let svg = STANDARD.decode(export["bytes"]["base64"].as_str().unwrap()).unwrap();
+    assert!(String::from_utf8_lossy(&svg).contains("drafftink-scene"), "the export carries its scene");
+    let out = run(&mut s, "image.insert", json!({"images": [named(&svg, "export.svg")], "at": [300, 0]}));
+    assert_eq!(out["images"].as_array().map(Vec::len), Some(1));
+    assert!(out["images"][0]["width"].as_f64().is_some_and(|w| w > 100.0));
+    let warnings = out["warnings"].as_array().unwrap();
+    assert!(warnings.iter().any(|w| w.as_str().is_some_and(|w| w.starts_with("`export.svg`: The SVG has text"))), "{out}");
+}
+
+#[test]
+fn an_svg_that_cannot_be_drawn_is_refused_in_words_and_changes_nothing() {
+    let mut s = session();
+    let cases = [
+        ("<svg xmlns='http://www.w3.org/2000/svg' width='3'", "not well-formed"),
+        ("<html><svg xmlns='http://www.w3.org/2000/svg'/></html>", "not `svg`"),
+        (&format!("<svg xmlns='http://www.w3.org/2000/svg' width='4' height='4'>{}{}</svg>", "<g>".repeat(500), "</g>".repeat(500)), "deep"),
+    ];
+    for (svg, why) in cases {
+        let r = refuse_clean(&mut s, "image.insert", json!({"images": [named(svg.as_bytes(), "bad.svg")]}));
+        assert_eq!(r.code, "parse_failed", "{why}");
+        assert!(r.message.starts_with("bad.svg could not be read as an image") && r.message.contains(why), "{}", r.message);
+    }
+}
+
 // ---- availability ----
 
 #[test]
@@ -304,7 +354,7 @@ fn other_formats_are_unsupported_and_the_name_is_in_the_message() {
     let mut s = session();
     let r = refuse_clean(&mut s, "image.insert", json!({"images": [named(b"%PDF-1.4 ....", "paper.pdf")]}));
     assert_eq!(r.code, "unsupported_format");
-    assert_eq!(r.message, "`paper.pdf` is not a supported image (it is a PDF). Use PNG, JPEG, WebP, GIF, BMP or ICO.");
+    assert_eq!(r.message, "`paper.pdf` is not a supported image (it is a PDF). Use PNG, JPEG, WebP, GIF, BMP, ICO or SVG.");
     let r = refuse_clean(&mut s, "image.insert", json!({"images": [b64(b"hello there")]}));
     assert_eq!(r.code, "unsupported_format");
     assert!(r.message.starts_with("`image 1` is not a supported image"), "{}", r.message);

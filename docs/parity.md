@@ -473,7 +473,7 @@ Rows follow `research/parts/04-features-diff.md` §1.1 to §1.15 and §4. The AI
 
 | # | Feature | Source | Status | Where | Evidence |
 |---|---|---|---|---|---|
-| B-140 | Image formats PNG, JPEG, GIF, WebP, BMP, ICO, AVIF, JFIF, SVG | X:IMAGE_MIME_TYPES | partial | PNG, JPEG, WebP, GIF (first frame), BMP and ICO (largest image) by paste, drop and picker (`io::picture::prepare`; GIF, BMP and ICO are stored as PNG); SVG and AVIF are not read | `io/tests/pictures`, `eng/cmd/image_tests::gif_bmp_and_ico_become_png_pictures_of_the_size_they_have` |
+| B-140 | Image formats PNG, JPEG, GIF, WebP, BMP, ICO, AVIF, JFIF, SVG | X:IMAGE_MIME_TYPES | partial | PNG, JPEG, WebP, GIF (first frame), BMP and ICO (largest image) by paste, drop and picker (`io::picture::prepare`; GIF, BMP and ICO are stored as PNG); SVG is drawn into a PNG (B-148, text not drawn); AVIF is not read | `io/tests/pictures`, `eng/cmd/image_tests::gif_bmp_and_ico_become_png_pictures_of_the_size_they_have` |
 | B-141 | Downscale big images on insert | X:blob.ts | done | pictures above 2 MiB are re-encoded to at most 2048 px (setting-free; `downscale` argument) | `eng/cmd/image_tests::a_big_picture_is_stored_smaller_unless_downscale_is_off` |
 | B-142 | Content-addressed file table | X:BinaryFiles | done | one copy per SHA-256 | `eng/cmd/image_tests::several_pictures_cascade_by_offset_and_the_same_bytes_are_stored_once` |
 
@@ -484,7 +484,7 @@ Rows follow `research/parts/04-features-diff.md` §1.1 to §1.15 and §4. The AI
 | B-145 | Copy, cut, paste elements through the system clipboard, with the Excalidraw flavour | X:clipboard.ts | done | A-090; setting `clipboard.excalidraw_compat` | `eng/cmd/clipboard_tests::copy_keeps_the_buffer_and_writes_the_payload_with_the_excalidraw_flavour` |
 | B-146 | Paste image | X:clipboard.ts | done | A-057 | see A-057 |
 | B-147 | Paste plain text as a text element; `Mod+Shift+V` as plain text | X:clipboard.ts | done | `clipboard.paste` `plain_text` | `eng/cmd/clipboard_tests::plain_text_skips_the_sniffing` |
-| B-148 | Paste SVG as an image | X:clipboard.ts | missing | paste routing has no SVG branch | none |
+| B-148 | Paste SVG as an image | X:clipboard.ts | done | `clipboard.paste` takes SVG text (a document with an `svg` root; web pages that merely hold an `<svg` stay text) or an `image/svg+xml` clipboard image, drop and the pickers take `.svg` files; all go to `io::picture::prepare`, which draws the SVG with resvg into a PNG at twice its size (512 to 2048 px on the long side) and `image.insert` shows it at the size the SVG gives itself. No file, URL, font or script is read, and size, depth and `use` copies are limited (`picture/svg.rs`). Text in the SVG is not drawn, and the paste says so. Our own SVG export pastes and drops as its scene when it carries one | `io/tests/pictures` (hostile cases), `eng/cmd/clipboard_tests::svg_text_on_the_clipboard_is_pasted_as_a_picture_at_the_size_the_svg_gives`, `eng/cmd/doc_tests::drop_opens_the_scene_of_our_own_svg_export_and_inserts_it_when_asked` |
 | B-149 | Paste spreadsheet data as a chart | X:charts | missing | none | none |
 | B-150 | Paste Mermaid text | X:TTDDialog | done | A-109 | see A-109 |
 | B-151 | Paste URL as embed or link | X:clipboard.ts | missing | none | none |
@@ -622,8 +622,8 @@ Rows of section 2 that restate an old-app row (for example B-003 and A-002) coun
 | Part | done | partial | missing | out of scope | rows |
 |---|---|---|---|---|---|
 | A: old app (section 1) | 184 | 12 | 0 | 0 | 196 |
-| B: Excalidraw (section 2) | 155 | 31 | 19 | 7 | 212 |
-| Total | 339 | 43 | 19 | 7 | 408 |
+| B: Excalidraw (section 2) | 156 | 31 | 18 | 7 | 212 |
+| Total | 340 | 43 | 18 | 7 | 408 |
 
 What the numbers do not show:
 
@@ -642,7 +642,7 @@ Priority: **P0** is a promise of the user's requirement ("keep all old features"
 
 | Rank | Priority | Gap (rows) | What is needed | Owner | Size |
 |---|---|---|---|---|---|
-| 1 | P1 | Paste SVG, URL, chart data (B-148, B-149, B-151) | A branch for each in the paste routing; SVG needs a rasteriser (for example resvg) in `io`; chart parse and dialog | `io`, `engine` clipboard family | M |
+| 1 | P1 | Paste URL and chart data (B-149, B-151) | A branch for each in the paste routing; chart parse and dialog | `io`, `engine` clipboard family | M |
 | 3 | P2 | More Mermaid diagram types and a preview dialog (B-176) | Class, state, ER, gantt, quadrant, timeline parsers and a layout for each; a dialog that shows the result before inserting | `io` mermaid, `edit` diagram, `engine` diagram family, `ui` | L |
 | 4 | P2 | Localisation (B-100) | A string table behind every UI string; English first | `ui` | M to L |
 | 5 | P2 | Hover "+" buttons for flowchart nodes (B-024) | Overlay buttons on a selected node that call `diagram.extend` | `canvas` overlay, `engine/interact`, `render` | M |
@@ -666,7 +666,7 @@ Priority: **P0** is a promise of the user's requirement ("keep all old features"
 | 8 | P2 | Lasso and link leftovers (B-002, B-055) | Select live while the lasso path grows; `contain` should select a group only when all members are inside; a link popup on the selected element (the dialog replaces it today) | `engine/interact` select, `ui` | S |
 | 9 | P2 | SVG and PNG interop (B-096, B-161, B-162) | Subset the fonts in SVG export; read and write Excalidraw's PNG metadata | `engine` doc export, `typeset`, `io` | M |
 | 10 | P2 | Library and group UI (B-181, B-191, B-053, B-189, B-056) | Real previews, publish and browse, a dockable sidebar; group name field; avatars; copy link to an element needs a document address scheme | `ui`, `render`, `engine` | M |
-| 11 | P2 | Image support (B-140) | SVG and AVIF decode | `engine` image family, `io::picture` | M |
+| 11 | P2 | Image support (B-140) | AVIF decode; text inside an SVG picture (fonts) | `engine` image family, `io::picture` | M |
 | 12 | P2 | Stats, theme key, deep select, wheel (B-114, B-115, B-072, B-246, B-238) | Angle and font size fields in the stats panel; a key for the theme; `deep` argument for `selection.select_region`; horizontal `Shift`+wheel | `ui`, `engine` selection, `canvas` | S |
 | 13 | P2 | Fonts, text direction, head fitting (B-095, B-099, B-091) | Add Excalidraw-compatible faces (check licences) and a CJK and emoji fallback; Arabic and Hebrew layout and render fixtures; shrink heads on short segments | `typeset` assets, `sketch` | M |
 | 14 | P2 | Sync between two browser tabs (B-168) | Share the autosave between tabs of one origin | `app` web | S |

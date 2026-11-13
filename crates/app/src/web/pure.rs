@@ -64,7 +64,7 @@ pub(crate) fn download_name(name: &str) -> String {
 /// The `accept` attribute of the file input that picks a document.
 pub(crate) const ACCEPT_DOCUMENT: &str = ".drafftink,.json,.excalidraw,.png,application/json,image/png";
 /// The `accept` attribute of the file input that picks pictures.
-pub(crate) const ACCEPT_IMAGES: &str = "image/png,image/jpeg,image/webp,image/gif,image/bmp,image/x-icon,image/vnd.microsoft.icon,.png,.jpg,.jpeg,.webp,.gif,.bmp,.ico";
+pub(crate) const ACCEPT_IMAGES: &str = "image/png,image/jpeg,image/webp,image/gif,image/bmp,image/x-icon,image/vnd.microsoft.icon,image/svg+xml,.png,.jpg,.jpeg,.webp,.gif,.bmp,.ico,.svg";
 /// The `accept` attribute of the file input that picks a library.
 pub(crate) const ACCEPT_LIBRARY: &str = ".excalidrawlib,.json,application/json";
 
@@ -179,6 +179,7 @@ mod tests {
         assert!(ACCEPT_DOCUMENT.contains(".drafftink") && ACCEPT_DOCUMENT.contains(".excalidraw"));
         assert!(ACCEPT_IMAGES.contains("image/png") && ACCEPT_IMAGES.contains(".webp"));
         assert!(ACCEPT_IMAGES.contains(".gif") && ACCEPT_IMAGES.contains(".bmp") && ACCEPT_IMAGES.contains(".ico"));
+        assert!(ACCEPT_IMAGES.contains(".svg") && ACCEPT_IMAGES.contains("image/svg+xml"));
         assert!(ACCEPT_LIBRARY.contains(".excalidrawlib"));
     }
 

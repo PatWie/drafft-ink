@@ -1,4 +1,4 @@
-//! Pictures: adding an image from the bytes of a PNG, JPEG, WebP, GIF, BMP or ICO file.
+//! Pictures: adding an image from the bytes of a PNG, JPEG, WebP, GIF, BMP, ICO or SVG file.
 //!
 //! `drafftink-io` identifies the picture by its first bytes (never by a file name or a media type the page
 //! claims), reads its size from the header and decodes it once, so a damaged file is refused now and not at every
@@ -49,7 +49,7 @@ fn positive(what: &str, v: f64) -> Result<f64, ApiError> {
 }
 
 fn picture_error(e: &PictureError) -> ApiError {
-    ApiError::invalid(format!("{e}. Use a PNG, JPEG, WebP, GIF, BMP or ICO picture"))
+    ApiError::invalid(format!("{e}. Use a PNG, JPEG, WebP, GIF, BMP, ICO or SVG picture"))
 }
 
 /// The size a picture of `natural` pixels gets on the canvas.
