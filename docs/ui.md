@@ -26,7 +26,7 @@ Session ──refresh──> Model (snapshot) ──draw──> Vec<UiAction> �
 | `UiAction::Verb(Verb)` | open or close UI (docs/commands.md §6.3) | `UiState::apply_verb` |
 | `UiAction::Host(HostRequest)` | something only the app can do: file pickers, clipboard text, a link | returned to the app in `Report.host` |
 
-The verbs are the 23 of docs/commands.md §6.3 (the last one, `ui.open_about`, is the About dialog with the source offer, `surfaces/about.rs`). This work added `ui.open_export`, `ui.open_preferences`, `ui.toggle_library` and `ui.rename_document`; `ui.save_as` now opens a name dialog first.
+The verbs are the 24 of docs/commands.md §6.3 (the last one, `ui.open_about`, is the About dialog with the source offer, `surfaces/about.rs`). This work added `ui.open_export`, `ui.open_preferences`, `ui.toggle_library` and `ui.rename_document`; `ui.save_as` now opens a name dialog first. `ui.toggle_debug` is the debug panel (section 5d).
 
 `route(&UiAction, &UiState) -> Routed` is the one function that decides this. `dispatch(sink, state, actions, now)` executes in order. `CommandSink` is implemented by `Session`; tests use a recording sink. Origins: `ui` for buttons, `menu`, `context_menu`, `palette` and `shortcut` for the other surfaces. The origin is recorded in the ring and never changes a result.
 
@@ -65,6 +65,7 @@ Nothing mutates session state from a widget. `crates/ui/tests/thin.rs` reads the
 | Equation editor | `equation.rs` | `text.edit_end` |
 | Confirm, recent documents, search, stats | `dialogs.rs` | `doc.open`, `element.query`, `selection.select`, `view.center`, `element.set_bounds`; the confirm dialog re-runs the refused call |
 | Toasts | `toasts.rs` | suggestion buttons run the suggested command |
+| Debug panel | `debug.rs` | verb `ui.toggle_debug` (`Alt+D`, the menu's View rows, the palette); no commands |
 
 **Geometry.** No surface knows the height of another as a number. `chrome::ChromeRects` (in `UiState::chrome`, reset at the start of every `draw`) holds the rectangle of each surface that takes room, recorded when it is drawn; `surfaces::show_all` draws in the order of dependencies (strip, bottom bar, tabs, then the panels, popovers, toasts and the stats panel, which read the rectangles). The tool column stays centred on the window and scrolls when it would reach the strip (`scroll_when_taller`); the strip is two rows tall, so on a window of 800 points or less the column scrolls. A group that must be measured before it is placed (the strip's groups, a column that may scroll) is laid out first in a hidden sizing pass.
 
@@ -117,7 +118,7 @@ Shortcuts are data on the registrations (`Binding`). `keymap::resolve_keys(event
 
 | Thing | Why it is not a command |
 |---|---|
-| Open or closed state of the menu, popovers, dialogs, palette query, hover, scroll, toasts, zen mode, the stats panel | Not session state (docs/commands.md §1.1). |
+| Open or closed state of the menu, popovers, dialogs, palette query, hover, scroll, toasts, zen mode, the stats panel, the debug panel | Not session state (docs/commands.md §1.1). |
 | Text-field buffers of dialogs (hex colour, room name, LaTeX draft, form values) | A draft until the user applies it; applying runs a command. They live in egui's temporary memory. |
 | File and image pickers, clipboard text for the equation editor, links | Need the OS. The UI returns a `HostRequest`; the app does the work and then calls a command (`doc.open`, `doc.save` with `to`, `image.insert`, `library.import`). |
 | Pointer gestures on the canvas (drag, resize, rotate, draw, pan, zoom, hover) | The canvas and interaction layer, not this crate. They use the typed gesture API and are listed in docs/exceptions.md. This crate never executes a command per pointer move. |
@@ -151,6 +152,23 @@ Shortcuts are data on the registrations (`Binding`). `keymap::resolve_keys(event
 * **Fitting** (`ribbon/layout.rs`, `fit`). The widths of the parts are measured in a hidden pass, so the plan is right in the frame it is made. When the groups do not fit the window, the ones at the right end (the least used) go behind the "More" button, whose popover (menu kit, 288 points wide, under the strip, right-aligned with the button) shows them one under the other in their two rows, and under them the properties without a control of their own: sloppiness, pressure, line height, the text box, and the corners of arrows and lines (whose path chips take the place of the corners). The button stays while it has such properties, even when every group fits. When the colour group does not fit beside the left cluster and the button, it collapses to one style button that opens a popover with the same controls (`UiState::style_open`). The last resort is a sideways scroll of everything right of the left cluster. A narrow window (`Layout::narrow`, the phone) has one row: the left cluster, the style button and "More", with every group behind "More" (a scrolling row of 40 point targets on 390 points would show about three of them).
 * **Greyed or left out.** A control whose property applies to some of the targets is greyed with the engine's reason. A group the engine says cannot apply at all is left out.
 * **State.** `UiState::ribbon_menu` (which menu is open, and its button) is UI-only; Esc and a click outside close it. The opacity slider is the one scrub (E13).
+
+## 5d. The debug panel
+
+`surfaces/debug.rs` draws a card at the top right, under the strip, with the same panel frame, type scale and palette as the others. It opens with the verb `ui.toggle_debug` (`Alt+D`, the row "Debug panel" under View in the main menu, the palette) and with `--perf-overlay` / `?perf=overlay`. A close button in its header runs the same verb. It is a diagnostic, so zen mode does not hide it.
+
+The UI measures nothing. `debug::DebugView` is plain data that the app writes with `UiShell::set_debug` in every frame while `UiState::debug_open` is set (`app/src/debug.rs` builds it, with tests), and `None` when it is closed. Layout: **Frames** (rate, frame time, a graph of the latest frames against the 60 fps line), then sections of name/value rows. A value worth a look (a software rasteriser, a mean frame time over 16.7 ms) gets the warning dot of the collaboration status in front of it, never another text colour. A row that cannot be had is left out or says why; nothing is shown as 0 that was not measured.
+
+| Row | Source | Cost and limits |
+|---|---|---|
+| Rate, Frame time, graph | the shell times each frame from the start of the egui pass to the end of present (`FrameOutput::stats`, `profile::FrameMeter`); frames in the last second, mean and worst CPU time, the latest 90 frames | two clock reads per frame, only while open. A quiet canvas shows `idle (draws on demand)` and the last frame with its age, not 0 fps. The panel's own refresh frames are not counted |
+| Renderer, Adapter, API, Device, Driver, Draws on | `RendererInfo` from the wgpu adapter info (native, WebGPU) or the WebGL2 `RENDERER` and `VENDOR` strings | static. A browser reports little: empty fields say `not reported`. `Draws on` is `CPU (software driver)` for llvmpipe, lavapipe, SwiftShader, WARP, with the warning dot |
+| GPU time | timestamp queries around the composite pass (the blit of the Vello image and egui), resolved into a buffer and read a frame later without waiting | native only, and only on a device that has `TIMESTAMP_QUERY`; else `not available here`. Vello's own compute passes are not timed: Vello 0.11 submits them itself and has no hook outside its profiler feature |
+| GPU memory, Reserved | `Device::generate_allocator_report` totals, refreshed twice a second | `None` on the web, WebGL and drivers without an allocator report: the rows are left out |
+| Elements, Visible, Drawn, Cache, Zoom | the last `FrameReport` of the scene composer and the camera | Cache is hits and misses of the last scene build, not totals |
+| Redraw reason, Canvas, Collaboration | the reason of the frame, the surface size and scale, `collab.status` | |
+
+Zero cost when closed: no view is built, the shell and the back end measure nothing (`Backend::set_stats(false)` leaves the query set unused), and no timer exists. Open, the panel redraws itself twice a second with the redraw reason `debug_panel` (`performance.md` section 2.3), so an idle canvas with the panel open is not idle on purpose; the numbers it shows are what they are because of that, and the refresh frames are left out of them.
 
 ## 6. Repaints
 

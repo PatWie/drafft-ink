@@ -105,8 +105,8 @@ error page.
 
 `start(canvas_id)` (in `entry.rs`):
 
-1. installs the panic hook and `console_log`; turns profiling on only for `?perf=1` (or `?perf=overlay`, which also shows the
-   overlay) or when the page set `window.__drafftinkPerf = true` before `start`;
+1. installs the panic hook and `console_log`; turns profiling on only for `?perf=1` (or `?perf=overlay`, which also opens the
+   debug panel) or when the page set `window.__drafftinkPerf = true` before `start`;
 2. reads the page address: `?room=..&server=..` (query or fragment) is the room to join, via `StartupLink::parse`;
 3. `drafftink_app::web::platform(..)` opens IndexedDB (awaited), then builds the ports and the bridge queue;
 4. installs `window.drafftink`, reads or resumes the agent pairing, builds `AppConfig { join, default_server: "/ws",

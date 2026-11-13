@@ -111,7 +111,8 @@ pub struct App {
     in_room: bool,
     last_presence_ms: f64,
     collab_due_ms: Option<u64>,
-    perf_overlay: bool,
+    /// When the debug panel next refreshes its numbers (ms). Idle frames come from this while it is open.
+    debug_due_ms: f64,
     /// Where a scenario driver delivers a generated scene (`scene_loader`).
     #[cfg(feature = "scenarios")]
     scenes: Option<SceneSlot>,
@@ -119,6 +120,9 @@ pub struct App {
     /// The picture of the text editor the engine was last told about.
     staged: Option<(u64, u64)>,
 }
+
+/// How often the open debug panel redraws on its own, in milliseconds.
+const DEBUG_REFRESH_MS: f64 = 500.0;
 
 /// What the About dialog shows: this build, and the source address the host reports (the web page learns the
 /// operator's address from the server, so it can differ from the first answer later).
@@ -156,6 +160,7 @@ impl App {
         let (inbox, inbox_rx) = inbox(wake.clone());
         let mut ui = UiShell::new(is_mac);
         ui.set_about(about_of(host.as_ref()));
+        ui.state.debug_open = config.perf_overlay;
         Self {
             session,
             interaction: Interaction::new(),
@@ -184,7 +189,7 @@ impl App {
             in_room: false,
             last_presence_ms: f64::NEG_INFINITY,
             collab_due_ms: Some(0),
-            perf_overlay: config.perf_overlay,
+            debug_due_ms: f64::NEG_INFINITY,
             #[cfg(feature = "scenarios")]
             scenes: None,
             cursor: egui::CursorIcon::Default,
@@ -916,26 +921,26 @@ impl App {
         painter.galley(rect.min + egui::vec2(6.0, 3.0), galley, egui::Color32::WHITE);
     }
 
-    fn perf_hud(&self, ctx: &egui::Context) {
-        if !self.perf_overlay {
+    /// Gives the UI the content of the debug panel for this frame, or clears it. Nothing is built while the panel is
+    /// closed.
+    fn set_debug_panel(&mut self, cx: &FrameCx<'_>, now: f64) {
+        if !self.ui.state.debug_open {
+            self.ui.set_debug(None);
+            self.debug_due_ms = f64::NEG_INFINITY;
             return;
         }
-        let r = self.canvas.report();
-        let text = format!(
-            "frames {}  vello {}\nvisible {}/{}  drawn {}  cache hit {} miss {}",
-            drafftink_gpu::frames_drawn(),
-            drafftink_gpu::vello_runs(),
-            r.in_view,
-            r.total,
-            r.drawn,
-            r.cache_hits,
-            r.cache_misses
-        );
-        egui::Area::new(egui::Id::unique("drafftink-perf-hud"))
-            .anchor(egui::Align2::LEFT_BOTTOM, egui::vec2(8.0, -8.0))
-            .show(ctx, |ui| {
-                ui.label(egui::RichText::new(text).monospace().size(11.0));
-            });
+        let scene = self.canvas.report();
+        let view = crate::debug::debug_view(&crate::debug::DebugInputs {
+            renderer: cx.renderer,
+            stats: cx.stats,
+            scene: &scene,
+            view: cx.view,
+            reason: cx.reason,
+            zoom_percent: self.ui.model.zoom_percent,
+            collab: &self.ui.model.collab,
+        });
+        self.ui.set_debug(Some(view));
+        self.debug_due_ms = now + DEBUG_REFRESH_MS;
     }
 
     /// The earliest of the app's own timers as a repaint request.
@@ -957,6 +962,9 @@ impl App {
         }
         if let Some(ms) = self.session.workspace_next_due_ms() {
             consider(now + ms as f64, RedrawReason::Autosave);
+        }
+        if self.ui.state.debug_open {
+            consider(self.debug_due_ms, RedrawReason::DebugPanel);
         }
         match best {
             None => Repaint::Idle,
@@ -1145,6 +1153,7 @@ impl ShellApp for App {
         let collab = collab_view_of(&mut self.session);
         self.ui.set_collab(collab);
         self.ui.set_editor_faces(self.editor.as_ref().map(TextEditor::faces));
+        self.set_debug_panel(cx, now);
         let pointer = Pointer {
             cursor: self.pointer_world().map(|p| (p.x, p.y)),
             viewport_center: Some((self.interaction.camera().scroll.x, self.interaction.camera().scroll.y)),
@@ -1155,7 +1164,6 @@ impl ShellApp for App {
         }
         self.sync_editor();
         self.badge(&ctx);
-        self.perf_hud(&ctx);
         if let Some(content) = self.clipboard.take_outgoing() {
             cx.set_clipboard(content);
         }
@@ -1175,6 +1183,8 @@ impl ShellApp for App {
             canvas_rect: Some(self.canvas_rect),
             text_input,
             cursor: over_canvas.then_some(self.cursor),
+            // The shell times frames and the GPU only while the panel is open.
+            stats: self.ui.state.debug_open,
         }
     }
 }

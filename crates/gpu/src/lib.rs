@@ -21,6 +21,8 @@ pub mod frame;
 pub mod gl;
 #[cfg(feature = "wgpu")]
 pub mod gpu;
+#[cfg(feature = "wgpu")]
+mod gpu_timer;
 #[cfg(all(feature = "wgpu", not(target_arch = "wasm32")))]
 pub mod headless;
 #[cfg_attr(not(target_arch = "wasm32"), allow(dead_code))]
@@ -29,6 +31,7 @@ mod host;
 mod native;
 mod repaint;
 mod settle;
+mod stats;
 #[cfg(target_arch = "wasm32")]
 pub mod web;
 #[cfg(feature = "wgpu")]
@@ -44,6 +47,7 @@ pub use frame::*;
 #[cfg(feature = "wgpu")]
 pub use gpu::*;
 pub use shell::{Options, ShellError, frames_drawn, run, vello_runs};
+pub use stats::{BackendStats, DeviceClass, GpuMemory, GpuTime, GraphicsApi, Rasteriser, RendererInfo, ShellStats};
 
 /// Redraw reasons are part of the contract with the app.
 pub use drafftink_profile::RedrawReason;

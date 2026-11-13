@@ -535,6 +535,8 @@ pub struct Model {
     pub agent_server: Option<AgentServerView>,
     /// What the About dialog shows. Written by the app through `UiShell::set_about`.
     pub about: AboutInfo,
+    /// What the debug panel shows. Written by the app through `UiShell::set_debug`, only while the panel is open.
+    pub debug: Option<crate::debug::DebugView>,
     stamp: Option<u64>,
     captured_mac: bool,
 }
@@ -574,6 +576,7 @@ impl Default for Model {
             collab: CollabView::default(),
             agent_server: None,
             about: AboutInfo::default(),
+            debug: None,
             stamp: None,
             captured_mac: false,
         }

@@ -21,6 +21,7 @@ use super::renderer::GlRenderer;
 use crate::backend::{Backend, BackendKind, Detail, Presented};
 use crate::error::{GpuError, LostInfo};
 use crate::frame::EguiFrame;
+use crate::stats::{BackendStats, DeviceClass, GraphicsApi, Rasteriser, RendererInfo};
 
 fn webgl(message: impl Into<String>) -> GpuError {
     GpuError::WebGl(message.into())
@@ -152,6 +153,31 @@ impl Backend for GlBackend {
         let gl = self.draw.gl();
         let text = |parameter: u32| gl.get_parameter(parameter).ok().and_then(|v| v.as_string()).unwrap_or_default();
         format!("WebGL2 ({}, {})", text(Gl::RENDERER), text(Gl::VENDOR))
+    }
+
+    fn info(&self) -> RendererInfo {
+        let gl = self.draw.gl();
+        let text = |parameter: u32| gl.get_parameter(parameter).ok().and_then(|v| v.as_string()).unwrap_or_default();
+        // `RENDERER` is the real graphics chip only in browsers that expose it; others answer with a generic string.
+        let adapter = text(Gl::RENDERER);
+        let lower = adapter.to_ascii_lowercase();
+        let software = ["swiftshader", "llvmpipe", "software"].iter().any(|name| lower.contains(name));
+        RendererInfo {
+            kind: BackendKind::WebGl,
+            adapter,
+            api: GraphicsApi::WebGl2,
+            device: if software { DeviceClass::Cpu } else { DeviceClass::Unknown },
+            driver: text(Gl::VENDOR),
+            rasteriser: if software { Rasteriser::Cpu } else { Rasteriser::Gpu },
+        }
+    }
+
+    fn set_stats(&mut self, _on: bool) {}
+
+    /// WebGL2 has neither an allocator report nor timestamp queries that are safe to use (`EXT_disjoint_timer_query`
+    /// is off in most browsers), so there is nothing to measure.
+    fn stats(&mut self) -> BackendStats {
+        BackendStats::default()
     }
 
     fn max_texture_side(&self) -> u32 {

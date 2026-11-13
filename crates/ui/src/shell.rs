@@ -52,6 +52,12 @@ impl UiShell {
         self.model.collab = collab;
     }
 
+    /// What the debug panel shows. The app sets it in every frame while [`UiState::debug_open`] is set and clears it
+    /// (`None`) when the panel is closed.
+    pub fn set_debug(&mut self, debug: Option<crate::debug::DebugView>) {
+        self.model.debug = debug;
+    }
+
     /// Bold and italic at the selection of the running text editor, which the app owns (`None`: no editor).
     pub fn set_editor_faces(&mut self, faces: Option<TextFaces>) {
         self.model.editor_faces = faces;

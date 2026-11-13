@@ -120,6 +120,8 @@ name_enum! {
         Load => "load",
         /// The surface was lost, resized by the OS, or became visible again.
         Surface => "surface",
+        /// The debug panel refreshes its numbers (twice a second while it is open).
+        DebugPanel => "debug_panel",
         /// No better tag exists. Every use is a review item.
         Other => "other",
     }

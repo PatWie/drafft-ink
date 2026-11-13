@@ -14,6 +14,7 @@ use winit::window::Window;
 
 use crate::error::{GpuError, LostInfo};
 use crate::frame::EguiFrame;
+use crate::stats::{BackendStats, RendererInfo};
 
 /// Which renderer draws the canvas. The app reads it to choose how much to draw.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -52,6 +53,16 @@ pub(crate) trait Backend {
 
     /// One line for logs: the adapter or the GL renderer.
     fn describe(&self) -> String;
+
+    /// The facts about the renderer and its adapter, for the debug panel.
+    fn info(&self) -> RendererInfo;
+
+    /// Turns the measurements of [`Backend::stats`] on or off (the debug panel opened or closed). Off, the back end
+    /// does no extra work.
+    fn set_stats(&mut self, on: bool);
+
+    /// The latest GPU numbers. Called once per frame while the statistics are on; it never waits for the GPU.
+    fn stats(&mut self) -> BackendStats;
 
     /// The largest texture side, which egui's atlas must stay under.
     fn max_texture_side(&self) -> u32;

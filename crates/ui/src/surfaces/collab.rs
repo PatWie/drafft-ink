@@ -160,7 +160,7 @@ fn tone_color(pal: &theme::Palette, tone: Tone) -> Color32 {
     }
 }
 
-fn dot(ui: &mut Ui, color: Color32, diameter: f32) {
+pub(crate) fn dot(ui: &mut Ui, color: Color32, diameter: f32) {
     let (rect, _) = ui.allocate_exact_size(vec2(diameter, diameter), egui::Sense::hover());
     ui.painter().circle_filled(rect.center(), diameter / 2.0, color);
 }

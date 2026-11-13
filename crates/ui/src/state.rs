@@ -489,6 +489,8 @@ pub struct UiState {
     pub search_results: Option<SearchResults>,
     /// The stats panel is shown.
     pub stats_open: bool,
+    /// The debug panel is shown. The app measures frames and the GPU only while this is set.
+    pub debug_open: bool,
     /// The chrome is hidden.
     pub zen: bool,
     /// The equation editor, when open.
@@ -722,6 +724,7 @@ impl UiState {
             }
             Verb::ToggleStats => self.stats_open = !self.stats_open,
             Verb::ToggleZen => self.zen = !self.zen,
+            Verb::ToggleDebug => self.debug_open = !self.debug_open,
             Verb::OpenLinkEditor => {
                 if self.link_editor.is_none() {
                     self.close_overlays();

@@ -103,6 +103,8 @@ pub enum Verb {
     ToggleStats,
     /// `ui.toggle_zen`: hides the chrome.
     ToggleZen,
+    /// `ui.toggle_debug`: the debug panel (frame rate, GPU, scene).
+    ToggleDebug,
     /// `ui.open_equation_editor`: the LaTeX dialog.
     OpenEquationEditor,
     /// `ui.open_link_editor`: the link field for the selected element, ends with `element.set_link`.
@@ -121,7 +123,7 @@ pub enum Verb {
 
 impl Verb {
     /// Every verb, in the order of docs/commands.md §6.3.
-    pub const ALL: [Verb; 23] = [
+    pub const ALL: [Verb; 24] = [
         Verb::CloseOverlays,
         Verb::ToggleMenu,
         Verb::OpenFile,
@@ -138,6 +140,7 @@ impl Verb {
         Verb::OpenCollab,
         Verb::ToggleStats,
         Verb::ToggleZen,
+        Verb::ToggleDebug,
         Verb::OpenEquationEditor,
         Verb::OpenLinkEditor,
         Verb::OpenExport,
@@ -164,6 +167,7 @@ impl Verb {
             Verb::OpenCollab => "ui.open_collab",
             Verb::ToggleStats => "ui.toggle_stats",
             Verb::ToggleZen => "ui.toggle_zen",
+            Verb::ToggleDebug => "ui.toggle_debug",
             Verb::OpenEquationEditor => "ui.open_equation_editor",
             Verb::OpenLinkEditor => "ui.open_link_editor",
             Verb::OpenExport => "ui.open_export",
@@ -193,6 +197,7 @@ impl Verb {
             Verb::OpenCollab => "Collaboration",
             Verb::ToggleStats => "Show or hide the stats panel",
             Verb::ToggleZen => "Zen mode (hide the interface)",
+            Verb::ToggleDebug => "Show or hide the debug panel",
             Verb::OpenEquationEditor => "Edit the equation",
             Verb::OpenLinkEditor => "Edit the link",
             Verb::OpenExport => "Export…",
