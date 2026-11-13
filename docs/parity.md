@@ -622,8 +622,8 @@ Rows of section 2 that restate an old-app row (for example B-003 and A-002) coun
 | Part | done | partial | missing | out of scope | rows |
 |---|---|---|---|---|---|
 | A: old app (section 1) | 184 | 12 | 0 | 0 | 196 |
-| B: Excalidraw (section 2) | 156 | 31 | 18 | 7 | 212 |
-| Total | 340 | 43 | 18 | 7 | 408 |
+| B: Excalidraw (section 2) | 158 | 31 | 16 | 7 | 212 |
+| Total | 342 | 43 | 16 | 7 | 408 |
 
 What the numbers do not show:
 
