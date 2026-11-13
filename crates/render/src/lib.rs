@@ -23,6 +23,7 @@
 
 mod cache;
 mod composer;
+mod crop_dim;
 mod export;
 mod fragment;
 mod frame_label;
@@ -45,6 +46,7 @@ mod zorder;
 
 pub use cache::{CacheStats, DEFAULT_CACHE_BYTES, FragmentCache, Outcome};
 pub use composer::{FrameReport, SceneComposer};
+pub use crop_dim::{CropDim, paint_crop_dim};
 pub use export::{ExportError, ExportSpec, Exported, MAX_SIDE, compose_export, encode_png};
 pub use fragment::{Fragment, scene_bytes};
 pub use grid::{

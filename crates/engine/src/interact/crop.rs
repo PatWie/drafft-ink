@@ -8,7 +8,7 @@
 //!   resize it. Shift keeps its aspect ratio. An edge that comes close to an edge of the picture snaps to it.
 //! * A drag that starts anywhere else on the picture **pans** the picture under the window, which does not move.
 //! * Nothing in the document changes while the pointer moves (class B). The editor keeps the window and the
-//!   shift of the picture; the overlay shows the whole picture faded with the draft drawn over it.
+//!   shift of the picture; the overlay shows the whole picture dimmed with the draft drawn over it.
 //! * `Enter`, `Esc` and a click outside the window end the editor and commit what was done with one
 //!   `image.crop` (Excalidraw keeps the crop on `Esc` too). Nothing was done: `image.crop_end`.
 //!
