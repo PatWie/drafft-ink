@@ -213,6 +213,15 @@ pub(super) fn build(
             .doc
             .scene_index()
             .link_icons(store, &world.viewport.visible_rect(), world.viewport.zoom(), |e| selection.contains(&e.id));
+    // Elements that draw nothing get a dotted outline while the document can be edited, unless they are selected.
+    // A view-only document is for looking at, and an element left invisible on purpose should stay so there.
+    if !s.view_only {
+        o.invisible = s
+            .tab()
+            .doc
+            .scene_index()
+            .invisible_outlines(store, &world.viewport.visible_rect(), |e| selection.contains(&e.id));
+    }
     o.bind_candidates = parts
         .highlight
         .iter()

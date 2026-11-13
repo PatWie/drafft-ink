@@ -141,8 +141,35 @@ and `overlay_text.rs`.
 | `remote_selections` | `RemoteSelection { color, boxes }` | a solid 2 px outline 4 px outside each box, turned with the box; at most 256 boxes per person |
 | `trails` | `LaserTrail { color, points: [TrailPoint { at, age_ms }] }` | segments that get thinner and fainter with the age (`OverlayStyle::laser_fade_ms`, 1500 as in `collab::TRAIL_TTL_MS`), a dot at the newest point; points older than the fade time and non-finite points are skipped; at most 256 points |
 | `link_icons` | `LinkMark { rect, to_element }` | a white tile in the icon's rectangle (`geom::link_icon::icon_rect`) with a chain (web address) or an arrow (link to an element) in the accent colour |
+| `invisible` | `Vec<BezPath>` (world space) | a dotted line, 1.5 px wide at any zoom, in `OverlayStyle::hint` (the theme's ink at two thirds alpha, `OverlayStyle::for_theme`); an outline that would need more than 2,000 dots is drawn as a thin solid line |
 | `text_edit` | `TextEdit { to_world, caret, selection, caret_color }` | the selection rectangles as one accent fill at 30%, then the caret as a 1.5 px line; both are in the layout space of the text and follow `to_world` (`element_to_world`), so a turned text has a turned caret. `TextEdit::new(to_world, &layout, &selection, caret_on, color)` takes them from the typeset caret API (`selection_rects`, `caret_rect`); the caret is hidden while text is selected or while it blinks off (the caller blinks by the clock) |
 | `guides` | `SmartGuide` | lines and tick crosses; an equal-spacing guide (`EqualSpacingH`/`V`) also gets a badge with its length in whole world units, above the middle of a horizontal one and right of a vertical one. Alignment guides have no number |
+
+#### Elements that draw nothing
+
+An element whose opacity rounds every colour to clear, or whose colours show nothing (`drafftink_scene::style_shows`,
+the rule that `style.set` and `element.create` already use to refuse "no stroke and no fill"), is hit, hovered,
+selected and exported like any other. Only the screen marks it, with the dotted outline above, so that it can be found.
+`Element::shows_nothing` is the test. `SceneIndex` keeps the ids of such elements (`invisible_outlines`), so a document
+without any pays one empty-set check per overlay. The hint shows always (not only on hover, or an element that is
+invisible by opacity could not be found), in edit mode (`Session::view_only` hides it), and not for selected elements
+(their box shows). The overlay is never part of PNG, SVG or `.excalidraw` export, thumbnails or the library.
+
+How other programs show them (searched 2026-11-13):
+
+| Program | Element with opacity 0, or no fill and no stroke | Source |
+|---|---|---|
+| Figma | Nothing on the canvas. The layer stays in the layers panel and is highlighted there; a hover or selection draws the blue outline. Users report "invisible elements get lost". Outline view skips transparent layers | forum.figma.com "Invisible assets", "Invisible elements get lost", "Show Outlines, transparent objects" |
+| Excalidraw | Nothing; no marker found in docs or issues, and users who make a stroke transparent say they have to find the element again (the search found no documented hint) | github.com/excalidraw/excalidraw issue #5863 |
+| tldraw | Nothing on the shape. A hover or selection draws an indicator outline of the geometry in the selection colour, from a layer above the shapes | tldraw.dev/sdk-features/indicators |
+| Inkscape | Nothing. View > Display Mode > Outline shows every object as a thin line (a mode, not a hint); Edit > Select Same helps | inkscape.org forum threads "invisible layer????", "See the objects with no fill and no outline" |
+| Illustrator | Nothing; a selection shows the bounding box. Outline view (Ctrl+Y) shows any object, even without stroke and fill | community.adobe.com "Bounding box in Illustrator only shows when I mouse-over the object" |
+| PowerPoint | Nothing. Selection Pane lists every object; an unfilled shape is clicked on its outline only | support.microsoft.com "Select individual objects on a slide" |
+| Keynote | Not verified: the search found no source |  |
+| Miro | A shape can have a transparent fill and border; the community suggests this as a trick for invisible hot spots. No marker found | community.miro.com (locked-item outline thread) |
+
+Most programs show nothing and offer a mode or a list. tldraw's indicator-only-on-hover and Illustrator's outline view
+are the two ideas; Drafft.ink takes a constant light hint because it has no layers panel and no outline mode.
 
 #### Mapping the engine's data (for the app)
 

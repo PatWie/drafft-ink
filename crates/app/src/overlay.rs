@@ -56,6 +56,7 @@ pub(crate) fn to_render(canvas: &CanvasOverlay, remote: &RemoteParts, extra_guid
     out.marquee = canvas.marquee.as_ref().map(|m| m.rect);
     out.lasso = canvas.lasso.iter().flat_map(|l| l.points.iter().copied()).collect();
     out.link_icons.extend(canvas.link_icons.iter().map(|i| LinkMark { rect: i.rect, to_element: i.to_element }));
+    out.invisible.extend(canvas.invisible.iter().map(|i| outline_path(&i.shape)));
     add_remote(&mut out, remote);
     out.guides.extend(canvas.guides.iter().cloned());
     out.guides.extend(extra_guides.iter().cloned());

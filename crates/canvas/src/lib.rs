@@ -41,7 +41,8 @@ pub use canvas::{Canvas, Dirty, StoreMut};
 pub use config::{CanvasConfig, FingerMode, InputConfig, PointerMode};
 pub use dispatch::{Dispatcher, ElementEvent, EventKind, Listener, ListenerId, Node, Selector, SelectorError};
 pub use index::{
-    ApplyStats, Hit, HitOptions, HitPart, IndexMismatch, MarqueeMode, SceneIndex, hit_element, unit_group, z_cmp,
+    ApplyStats, Hit, HitOptions, HitPart, IndexMismatch, MAX_INVISIBLE_OUTLINES, MarqueeMode, SceneIndex, hit_element,
+    unit_group, z_cmp,
 };
 pub use input::{
     Button, Buttons, InputEvent, Modifiers, PointerEvent, PointerId, PointerKind, PointerPhase, Tilt, WheelEvent,
@@ -49,9 +50,9 @@ pub use input::{
 };
 pub use intent::{Cursor, Handle, Intent, Meta, Pos, Target, ViewSource};
 pub use overlay::{
-    BindCandidate, HoverOutline, LassoOverlay, LinkIcon, MarqueeOverlay, Overlay, OverlayInputs, OverlaySink,
-    RemoteCursor, RemoteParts, RemoteSelection, RemoteTrail, RemoteUser, SelectionBox, TrailPoint, TransformerOverlay,
-    remote_parts,
+    BindCandidate, HoverOutline, InvisibleOutline, LassoOverlay, LinkIcon, MarqueeOverlay, Overlay, OverlayInputs,
+    OverlaySink, RemoteCursor, RemoteParts, RemoteSelection, RemoteTrail, RemoteUser, SelectionBox, TrailPoint,
+    TransformerOverlay, remote_parts,
 };
 pub use recognizer::{Picker, Recognizer};
 pub use transformer::{HandlePos, SelectionFrame, TransformerConfig, handle_set_for};

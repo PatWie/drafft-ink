@@ -742,6 +742,9 @@ impl<S: SceneStore> Canvas<S> {
         o.link_icons = self.index.link_icons(&self.store, &self.viewport.visible_rect(), self.viewport.zoom(), |e| {
             self.selection_set.contains(&e.id)
         });
+        o.invisible = self
+            .index
+            .invisible_outlines(&self.store, &self.viewport.visible_rect(), |e| self.selection_set.contains(&e.id));
         o
     }
 

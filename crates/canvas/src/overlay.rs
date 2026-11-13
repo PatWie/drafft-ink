@@ -50,6 +50,16 @@ pub struct HoverOutline {
     pub shape: Primitive,
 }
 
+/// The outline of an element that draws nothing (opacity 0, or no stroke and no fill), so that a person can still see
+/// where it is. The painter marks it on screen only; export never reads the overlay.
+#[derive(Debug, Clone, PartialEq)]
+pub struct InvisibleOutline {
+    /// The element.
+    pub element: ElementId,
+    /// Its outline in world space.
+    pub shape: Primitive,
+}
+
 /// An element an arrow end would bind to if released now.
 #[derive(Debug, Clone, PartialEq)]
 pub struct BindCandidate {
@@ -200,6 +210,8 @@ pub struct Overlay {
     pub remote_trails: Vec<RemoteTrail>,
     /// Link icons of the elements in view that have a link and are not selected.
     pub link_icons: Vec<LinkIcon>,
+    /// Outlines of the elements in view that draw nothing and are not selected.
+    pub invisible: Vec<InvisibleOutline>,
 }
 
 impl Overlay {
@@ -216,6 +228,7 @@ impl Overlay {
             && self.remote_selections.is_empty()
             && self.remote_trails.is_empty()
             && self.link_icons.is_empty()
+            && self.invisible.is_empty()
     }
 }
 

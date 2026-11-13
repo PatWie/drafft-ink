@@ -191,7 +191,7 @@ impl CanvasView {
         if !faded.is_empty() {
             Self::compose_faded(composer, typesetter, store, &faded, view, preview);
         }
-        typesetter.with(|ts| paint_overlay(overlay, render_overlay, view, &OverlayStyle::default(), ts));
+        typesetter.with(|ts| paint_overlay(overlay, render_overlay, view, &OverlayStyle::for_theme(*theme), ts));
     }
 
     /// Draws `elements` at 30% opacity on top of `scene` (the eraser's soft delete).

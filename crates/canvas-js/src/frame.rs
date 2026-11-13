@@ -61,7 +61,7 @@ impl Frame {
             world: Scene::new(),
             overlay: Scene::new(),
             out: Scene::new(),
-            style: OverlayStyle::default(),
+            style: OverlayStyle::for_theme(theme),
             theme,
             report: FrameReport::default(),
             more_work: false,
@@ -86,6 +86,7 @@ impl Frame {
     /// Light or dark.
     pub(crate) fn set_theme(&mut self, theme: Theme) {
         self.theme = theme;
+        self.style = OverlayStyle::for_theme(theme);
         self.composer.set_options(RenderOptions { theme, ..*self.composer.options() });
         self.more_work = true;
     }

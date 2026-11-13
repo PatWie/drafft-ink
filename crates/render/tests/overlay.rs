@@ -8,12 +8,17 @@ use drafftink_geom::OrientedBox;
 use drafftink_geom::guides::{SmartGuide, SmartGuideKind};
 use drafftink_geom::select::HandleSet;
 use drafftink_render::*;
-use kurbo::{BezPath, Point, Rect, Size, Vec2};
+use kurbo::{BezPath, Point, Rect, Shape, Size, Vec2};
 use peniko::Color;
 use vello::Scene;
 
 fn ts() -> drafftink_typeset::Typesetter {
     drafftink_typeset::Typesetter::new()
+}
+
+/// The outline of an invisible square of `side` with its corner at (`x`, `y`).
+fn invisible_square(x: f64, y: f64, side: f64) -> BezPath {
+    Rect::new(x, y, x + side, y + side).to_path(0.1)
 }
 
 fn full() -> Overlay {
@@ -76,6 +81,7 @@ fn full() -> Overlay {
             LinkMark { rect: Rect::new(100.0, 0.0, 112.0, 12.0), to_element: false },
             LinkMark { rect: Rect::new(120.0, 0.0, 132.0, 12.0), to_element: true },
         ],
+        invisible: vec![invisible_square(150.0, 150.0, 40.0)],
         text_edit: Some(TextEdit {
             to_world: kurbo::Affine::translate((10.0, 100.0)),
             caret: Some(Rect::new(5.0, 0.0, 5.0, 20.0)),
@@ -106,8 +112,8 @@ fn every_part_draws_something() {
     let mut s = Scene::new();
     let r = paint_overlay(&mut s, &o, &view(1.0), &OverlayStyle::default(), &mut ts());
     // marquee 1, lasso 1, text edit 1, hover 1, binding 1, remote selections 2, selection 1, point handles 2,
-    // link icons 2, guides 2 and one badge, snap point 1, angle rays 1, rotation 1, eraser 1, trail 1, cursor 1.
-    assert_eq!(r.items, 21);
+    // link icons 2, invisible hint 1, guides 2 and one badge, snap point 1, angle rays 1, rotation 1, eraser 1, trail 1, cursor 1.
+    assert_eq!(r.items, 22);
     assert!(s.encoding().n_paths > 20, "{}", s.encoding().n_paths);
     let f = full();
     for name in PARTS {
@@ -119,7 +125,7 @@ fn every_part_draws_something() {
     }
 }
 
-const PARTS: [&str; 16] = [
+const PARTS: [&str; 17] = [
     "selection",
     "point handles",
     "hover",
@@ -135,6 +141,7 @@ const PARTS: [&str; 16] = [
     "remote selections",
     "trails",
     "link icons",
+    "invisible",
     "text edit",
 ];
 
@@ -158,6 +165,7 @@ fn only(part: &str, from: &Overlay) -> Overlay {
         "remote selections" => o.remote_selections = f.remote_selections,
         "trails" => o.trails = f.trails,
         "link icons" => o.link_icons = f.link_icons,
+        "invisible" => o.invisible = f.invisible,
         "text edit" => o.text_edit = f.text_edit,
         other => panic!("no part called {other}"),
     }
@@ -169,6 +177,9 @@ fn handles_do_not_grow_with_the_zoom() {
     // With a solid outline the encoded size of the overlay is the same at any zoom: the work does not depend on it.
     let mut o = full();
     o.selection[0].dashed = false;
+    // Dots are cut from the path, so their count follows the length of the outline on screen. The dotted hint has a
+    // test of its own below.
+    o.invisible.clear();
     let sizes: Vec<usize> = [0.1, 1.0, 8.0, 500.0]
         .iter()
         .map(|z| {
@@ -517,4 +528,36 @@ fn the_eraser_ring_keeps_its_screen_size_and_skips_a_bad_radius() {
     for bad in [0.0, -3.0, f64::NAN, f64::INFINITY] {
         assert_eq!(encoded(&ring(bad), 1.0), (0, 0), "radius {bad}");
     }
+}
+
+#[test]
+fn the_hint_of_an_invisible_element_is_dotted_in_the_hint_colour_of_the_theme() {
+    let square = || invisible_square(0.0, 0.0, 100.0);
+    let mut dotted = Scene::new();
+    let hint = Overlay { invisible: vec![square()], ..Overlay::default() };
+    assert_eq!(paint_overlay(&mut dotted, &hint, &view(1.0), &OverlayStyle::default(), &mut ts()).items, 1);
+    // The same outline as a plain stroked box has far fewer path segments than the dots.
+    let mut solid = Scene::new();
+    let hover = Overlay { hover: vec![OrientedBox::from_xywh(0.0, 0.0, 100.0, 100.0, 0.0)], ..Overlay::default() };
+    paint_overlay(&mut solid, &hover, &view(1.0), &OverlayStyle::default(), &mut ts());
+    assert!(dotted.encoding().path_data.len() > 3 * solid.encoding().path_data.len());
+    let light = OverlayStyle::for_theme(Theme::Light).hint.to_rgba8();
+    let dark = OverlayStyle::for_theme(Theme::Dark).hint.to_rgba8();
+    assert!(light.r < 64 && dark.r > 192, "dark ink on a light canvas, light ink on a dark one: {light:?} {dark:?}");
+    assert!(light.a > 0 && light.a < 255 && dark.a == light.a, "muted, not solid: {light:?}");
+}
+
+#[test]
+fn an_invisible_outline_far_larger_than_the_screen_is_drawn_thin_and_solid() {
+    let huge = Overlay { invisible: vec![invisible_square(-1e6, -1e6, 2e6)], ..Overlay::default() };
+    let mut s = Scene::new();
+    assert_eq!(paint_overlay(&mut s, &huge, &view(1.0), &OverlayStyle::default(), &mut ts()).items, 1);
+    assert!(s.encoding().path_data.len() < 200, "{}", s.encoding().path_data.len());
+}
+
+#[test]
+fn an_empty_or_degenerate_outline_draws_nothing() {
+    let o = Overlay { invisible: vec![BezPath::new()], ..Overlay::default() };
+    let mut s = Scene::new();
+    assert_eq!(paint_overlay(&mut s, &o, &view(1.0), &OverlayStyle::default(), &mut ts()).items, 0);
 }

@@ -10,7 +10,7 @@
 //!
 //! Parts with text (the names of collaborators, the distances on spacing guides) need the typesetter, so
 //! [`paint_overlay`] takes one. The drawing of each family of parts is in a module of its own: `overlay_peers`
-//! (cursors with names, selections, laser trails), `overlay_marks` (link icons), `overlay_snap` (the snap
+//! (cursors with names, selections, laser trails), `overlay_marks` (link icons, the dotted hint of invisible elements), `overlay_snap` (the snap
 //! crosshair, angle rays, rotation guides, eraser ring), `overlay_text` (labels, the text editor's caret and
 //! selection).
 
@@ -22,12 +22,13 @@ use kurbo::{Affine, BezPath, Circle, Point, Rect, Stroke};
 use peniko::{Color, Fill};
 use vello::Scene;
 
-use crate::overlay_marks::{LinkMark, paint_link_marks};
+use crate::overlay_marks::{LinkMark, paint_invisible_hints, paint_link_marks};
 use crate::overlay_peers::{LaserTrail, RemoteSelection, paint_cursors, paint_selections, paint_trails};
 use crate::overlay_snap::{
     AngleRays, EraserRing, RotationGuide, paint_angle_rays, paint_eraser, paint_rotation, paint_snap_point,
 };
 use crate::overlay_text::{TextEdit, paint_guide_badges, paint_text_edit};
+use crate::theme::Theme;
 use crate::view::View;
 
 /// Colours and sizes of the overlay, in logical pixels.
@@ -48,7 +49,21 @@ pub struct OverlayStyle {
     /// A point of a laser trail older than this is gone; the trail fades towards it, in milliseconds. The
     /// collaboration layer keeps peers' points for 1.5 s (`drafftink_collab::TRAIL_TTL_MS`).
     pub laser_fade_ms: f64,
+    /// The dotted outline of an element that draws nothing: the ink of the theme, half faded, so that it reads as
+    /// a hint and not as content on a light or a dark canvas.
+    pub hint: Color,
 }
+
+impl OverlayStyle {
+    /// The style for `theme`. Only the hint colour depends on it; the rest is the same on both.
+    pub fn for_theme(theme: Theme) -> Self {
+        let ink = theme.map(drafftink_scene::Color::BLACK);
+        Self { hint: Color::from_rgba8(ink.r, ink.g, ink.b, HINT_ALPHA), ..Self::default() }
+    }
+}
+
+/// Alpha of the dotted outline of an invisible element, 0 to 255.
+const HINT_ALPHA: u8 = 170;
 
 impl Default for OverlayStyle {
     fn default() -> Self {
@@ -60,6 +75,7 @@ impl Default for OverlayStyle {
             dash: 4.0,
             label_size: 12.0,
             laser_fade_ms: 1500.0,
+            hint: Color::from_rgba8(0, 0, 0, HINT_ALPHA),
         }
     }
 }
@@ -165,6 +181,9 @@ pub struct Overlay {
     pub trails: Vec<LaserTrail>,
     /// Link icons of elements that have a link and are not selected.
     pub link_icons: Vec<LinkMark>,
+    /// Outlines, in world space, of elements that draw nothing and are not selected. Drawn as a thin dotted line
+    /// of constant screen width.
+    pub invisible: Vec<BezPath>,
     /// The caret and selection of the text being edited on the canvas.
     pub text_edit: Option<TextEdit>,
 }
@@ -187,6 +206,7 @@ impl Overlay {
             && self.remote_selections.is_empty()
             && self.trails.is_empty()
             && self.link_icons.is_empty()
+            && self.invisible.is_empty()
             && self.text_edit.is_none()
     }
 }
@@ -261,6 +281,7 @@ pub fn paint_overlay(
     report.items += paint_marquee(scene, &pen, overlay.marquee);
     report.items += paint_lasso(scene, &pen, &overlay.lasso);
     report.items += paint_text_edit(scene, &pen, overlay.text_edit.as_ref());
+    report.items += paint_invisible_hints(scene, &pen, &overlay.invisible);
     report.items += paint_hover(scene, &pen, &overlay.hover);
     report.items += paint_binding(scene, &pen, &overlay.binding);
     report.items += paint_selections(scene, &pen, &overlay.remote_selections);

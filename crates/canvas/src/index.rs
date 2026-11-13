@@ -26,8 +26,12 @@
 //! * A shape with a visible fill is hit inside; an unfilled one only near its outline. Text, math and images are
 //!   hit anywhere in their box. A frame is hit near its border only.
 //! * A child of a clipping frame cannot be hit outside the frame.
+//! * Opacity does not matter: an element that draws nothing ([`drafftink_scene::Element::shows_nothing`]) is hit like
+//!   any other, so it can be found, hovered and selected. The index also lists those elements
+//!   ([`SceneIndex::invisible_outlines`]), so the overlay can mark them without scanning the scene.
 
 use std::cmp::Ordering;
+use std::collections::BTreeSet;
 
 use drafftink_geom::kurbo::{Point, Rect};
 use drafftink_geom::lasso::{Lasso, lasso_selects};
@@ -37,11 +41,14 @@ use drafftink_profile::{Counter, count, inc};
 use drafftink_scene::{ChangeKind, ChangeSet, Element, ElementId, ElementKind, GroupId, SceneRead};
 use serde::{Deserialize, Serialize};
 
-use crate::overlay::LinkIcon;
+use crate::overlay::{InvisibleOutline, LinkIcon};
 use crate::shape::{element_box, hits_inside, index_bounds, shape_of, stroke_reach_width};
 
 /// A change set that touches more entries than this, and more than half the index, rebuilds in bulk.
 const BULK_REBUILD_MIN: usize = 2048;
+
+/// Most outlines of invisible elements one overlay lists, so that a document made of them stays cheap to draw.
+pub const MAX_INVISIBLE_OUTLINES: usize = 1_000;
 
 /// Which part of an element a point hit.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -123,6 +130,16 @@ pub enum IndexMismatch {
         /// What the index holds.
         have: Rect,
     },
+    /// The set of invisible elements differs from what the scene says.
+    #[error("{id}: the index {} this element as invisible, the scene says {want}", if *.have { "lists" } else { "does not list" })]
+    Invisible {
+        /// The element.
+        id: ElementId,
+        /// What the index holds.
+        have: bool,
+        /// What a recomputation gives.
+        want: bool,
+    },
     /// The index holds entries for elements the scene no longer has.
     #[error("index holds {indexed} entries, scene has {expected} drawable elements")]
     Count {
@@ -178,6 +195,8 @@ pub fn unit_group(e: &Element, entered: Option<&GroupId>, is_group: impl Fn(&Gro
 #[derive(Debug, Clone, Default)]
 pub struct SceneIndex {
     index: SpatialIndex<ElementId>,
+    /// The indexed elements that draw nothing. Empty in a normal document, so marking them costs nothing there.
+    invisible: BTreeSet<ElementId>,
     bulk_rebuilds: u64,
 }
 
@@ -198,6 +217,8 @@ impl SceneIndex {
     pub fn rebuild<R: SceneRead>(&mut self, scene: &R) {
         count(Counter::ElementsScanned, u64::try_from(scene.len_all()).unwrap_or(u64::MAX));
         self.index = SpatialIndex::bulk_load(scene.iter().filter_map(|e| index_bounds(e).map(|b| (e.id.clone(), b))));
+        self.invisible =
+            scene.iter().filter(|e| e.shows_nothing() && self.index.contains(&e.id)).map(|e| e.id.clone()).collect();
         self.bulk_rebuilds += 1;
     }
 
@@ -249,6 +270,7 @@ impl SceneIndex {
         for c in &changes.elements {
             let live = scene.get(&c.id).filter(|e| !e.deleted);
             let Some(e) = live else {
+                self.invisible.remove(&c.id);
                 if self.index.remove(&c.id).is_some() {
                     stats.removed += 1;
                 }
@@ -262,9 +284,11 @@ impl SceneIndex {
                 Some(b) => {
                     if self.index.insert(e.id.clone(), b).is_ok() {
                         stats.updated += 1;
+                        self.track_invisible(e);
                     }
                 }
                 None => {
+                    self.invisible.remove(&c.id);
                     if self.index.remove(&c.id).is_some() {
                         stats.removed += 1;
                     }
@@ -274,13 +298,28 @@ impl SceneIndex {
         stats
     }
 
+    /// Lists `e` as invisible or not, after its entry was written.
+    fn track_invisible(&mut self, e: &Element) {
+        if e.shows_nothing() {
+            self.invisible.insert(e.id.clone());
+        } else {
+            self.invisible.remove(&e.id);
+        }
+    }
+
     /// Compares the index with a full recomputation from `scene`. `Ok` when every live drawable element is indexed
     /// with exactly the bounds [`index_bounds`] gives and nothing else is. The error says what differs first.
     pub fn verify<R: SceneRead>(&self, scene: &R) -> Result<(), IndexMismatch> {
         let mut expected = 0usize;
         for e in scene.iter() {
             match (index_bounds(e), self.index.get(&e.id)) {
-                (Some(want), Some(have)) if want == have => expected += 1,
+                (Some(want), Some(have)) if want == have => {
+                    expected += 1;
+                    let (listed, hidden) = (self.invisible.contains(&e.id), e.shows_nothing());
+                    if listed != hidden {
+                        return Err(IndexMismatch::Invisible { id: e.id.clone(), have: listed, want: hidden });
+                    }
+                }
                 (Some(want), have) => return Err(IndexMismatch::Bounds { id: e.id.clone(), have, want }),
                 (None, Some(have)) => return Err(IndexMismatch::NoGeometry { id: e.id.clone(), have }),
                 (None, None) => {}
@@ -359,6 +398,25 @@ impl SceneIndex {
             .filter(|e| e.link.is_some() && !skip(e))
             .map(|e| LinkIcon::of(e, zoom))
             .filter(|icon| icon.rect.overlaps(*visible))
+            .collect()
+    }
+
+    /// The outlines of the elements that draw nothing and lie in the world rectangle `visible`, in id order, at most
+    /// [`MAX_INVISIBLE_OUTLINES`]. `skip` names the elements to leave out (the selected ones show their box). Reads
+    /// the list the index keeps, so a document without such elements pays one empty-set check.
+    pub fn invisible_outlines<R: SceneRead>(
+        &self,
+        scene: &R,
+        visible: &Rect,
+        skip: impl Fn(&Element) -> bool,
+    ) -> Vec<InvisibleOutline> {
+        self.invisible
+            .iter()
+            .filter(|id| self.index.get(id).is_some_and(|b| b.overlaps(*visible)))
+            .filter_map(|id| scene.get(id))
+            .filter(|e| !e.deleted && !skip(e))
+            .filter_map(|e| shape_of(e).map(|shape| InvisibleOutline { element: e.id.clone(), shape }))
+            .take(MAX_INVISIBLE_OUTLINES)
             .collect()
     }
 

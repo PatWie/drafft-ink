@@ -692,6 +692,52 @@ fn the_overlay_lists_the_link_icons_in_view_that_are_not_selected() {
     assert_eq!(c.overlay().link_icons.len(), 1, "a selected element shows its handles instead");
 }
 
+/// `e` with opacity 0, which draws nothing.
+fn hidden(mut e: drafftink_canvas::scene::Element) -> drafftink_canvas::scene::Element {
+    e.style.opacity = 0.0;
+    e
+}
+
+#[test]
+fn the_overlay_outlines_what_draws_nothing_in_view_and_not_selected() {
+    let mut c = canvas_with(vec![
+        hidden(fill(rect("faded", 0.0, 100.0, 100.0, 50.0))),
+        {
+            let mut e = rect("ghost", 200.0, 100.0, 100.0, 50.0);
+            e.style.stroke_color = Color::TRANSPARENT;
+            e
+        },
+        hidden(fill(rect("far", 9000.0, 9000.0, 10.0, 10.0))),
+        fill(rect("plain", 400.0, 100.0, 100.0, 50.0)),
+        rect("outlined", 600.0, 100.0, 100.0, 50.0),
+    ]);
+    let listed =
+        |c: &Canvas<MemoryStore>| c.overlay().invisible.iter().map(|i| i.element.to_string()).collect::<Vec<_>>();
+    assert_eq!(listed(&c), ["faded", "ghost"], "in view only, in id order; visible elements are not listed");
+    assert!(!c.overlay().is_empty());
+    c.set_selection(vec![id("faded")]);
+    assert_eq!(listed(&c), ["ghost"], "a selected element shows its handles instead");
+    c.set_selection(Vec::new());
+
+    // The list follows edits: opaque again, then hidden again, then deleted.
+    c.transact(|tx| tx.update(&id("faded"), |e| e.style.opacity = 1.0)).unwrap();
+    assert_eq!(listed(&c), ["ghost"]);
+    c.transact(|tx| tx.update(&id("plain"), |e| e.style.opacity = 0.0)).unwrap();
+    assert_eq!(listed(&c), ["ghost", "plain"]);
+    c.transact(|tx| tx.update(&id("ghost"), |e| e.deleted = true)).unwrap();
+    assert_eq!(listed(&c), ["plain"]);
+    assert_eq!(c.index().verify(c.store()), Ok(()), "the list is what a recomputation gives");
+}
+
+#[test]
+fn a_document_without_invisible_elements_lists_none_and_a_pan_brings_them_into_view() {
+    let mut c =
+        canvas_with(vec![fill(rect("a", 0.0, 0.0, 50.0, 50.0)), hidden(fill(rect("far", 5000.0, 0.0, 50.0, 50.0)))]);
+    assert!(c.overlay().invisible.is_empty());
+    c.set_camera(Camera { scroll: Point::new(5025.0, 25.0), zoom: 1.0 });
+    assert_eq!(c.overlay().invisible.len(), 1);
+}
+
 #[test]
 fn remote_parts_make_cursors_boxes_and_trails_and_skip_what_is_gone() {
     use drafftink_canvas::{TrailPoint, remote_parts};

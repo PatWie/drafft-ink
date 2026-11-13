@@ -1052,3 +1052,105 @@ fn the_crop_editor_darkens_the_picture_outside_the_window_in_both_themes() {
         assert_eq!(rgb_at(&dimmed_px, 390, 290), rgb_at(&normal, 390, 290), "{theme:?}: the canvas");
     }
 }
+
+// ----------------------------------------------------------------------------------------------
+// Invisible elements
+
+/// A red filled rectangle with a blue stroke and opacity 0, at (50, 50), 60 by 40.
+fn invisible_rect() -> Element {
+    let mut e = rect_el("hidden", &ZIndex::first(), 50.0, 50.0, 60.0, 40.0);
+    e.style.opacity = 0.0;
+    e.style.fill_color = Some(Color::rgb(200, 30, 30));
+    e.style.stroke_color = Color::rgb(30, 30, 200);
+    e
+}
+
+fn is_base(p: &[u8], base: peniko::Color) -> bool {
+    let b = base.to_rgba8();
+    p == [b.r, b.g, b.b, b.a]
+}
+
+/// The device rows `y0..y1` of `p` inside the columns `x0..x1`: how many columns hold a pixel that is not `base`,
+/// and the most such pixels one column holds.
+fn ink_columns(p: &Pixels, (x0, x1): (u32, u32), (y0, y1): (u32, u32), base: peniko::Color) -> (usize, usize) {
+    let counts: Vec<usize> = (x0..x1)
+        .map(|x| (y0..y1).filter(|y| !is_base(&p.rgba[((y * p.w + x) * 4) as usize..][..4], base)).count())
+        .collect();
+    (counts.iter().filter(|c| **c > 0).count(), counts.into_iter().max().unwrap_or(0))
+}
+
+/// The world scene of `store` with the hint of `outline` over it, at `zoom`, 400 by 300 px.
+fn screen_with_hint(
+    store: &MemoryStore,
+    outline: kurbo::BezPath,
+    zoom: f64,
+    theme: Theme,
+    base: peniko::Color,
+) -> Pixels {
+    let mut ts = Typesetter::new();
+    let view = View::new(zoom, Vec2::ZERO, Size::new(400.0, 300.0));
+    let mut composer = SceneComposer::new();
+    composer.set_options(RenderOptions { theme, ..RenderOptions::default() });
+    let (mut world, mut overlay, mut out) = (Scene::new(), Scene::new(), Scene::new());
+    composer.compose(store, &build_paint_index(store), &view, &mut ts, &mut world);
+    let o = Overlay { invisible: vec![outline], ..Overlay::default() };
+    paint_overlay(&mut overlay, &o, &view, &OverlayStyle::for_theme(theme), &mut ts);
+    combine(&world, &overlay, &mut out);
+    render(&out, 400, 300, base)
+}
+
+#[test]
+fn an_invisible_element_has_a_dotted_hint_on_screen_and_nothing_in_the_export() {
+    need_gpu!();
+    use kurbo::Shape as _;
+    let store = store_of(vec![invisible_rect()]);
+    let outline = kurbo::Rect::new(50.0, 50.0, 110.0, 90.0).to_path(0.1);
+
+    // The export draws nothing for it: every pixel is the background.
+    let spec = ExportSpec { region: (0.0, 0.0, 200.0, 150.0), size_px: (200, 150), dark: false, background: true };
+    let exported = compose_export(&store, &spec, &mut Typesetter::new()).unwrap();
+    let picture = render(&exported.scene, 200, 150, exported.base);
+    assert!(picture.rgba.chunks_exact(4).all(|p| is_base(p, exported.base)), "the export shows an invisible element");
+
+    // On screen the world scene is just as empty, and the overlay adds a dotted line along the outline.
+    let white = peniko::Color::WHITE;
+    let screen = screen_with_hint(&store, outline.clone(), 1.0, Theme::Light, white);
+    let (columns, thickest) = ink_columns(&screen, (56, 104), (47, 54), white);
+    assert!(columns > 8 && columns < 40, "dots with gaps between them along the top edge: {columns} of 48 columns");
+    assert!(thickest <= 3, "a thin line: {thickest} px");
+    assert_eq!(ink_columns(&screen, (60, 100), (60, 80), white).0, 0, "the inside is left alone: no fill, no stroke");
+    let darkest = screen.rgba.chunks_exact(4).map(|p| p[0]).min().unwrap_or(255);
+    assert!((60..200).contains(&darkest), "muted: grey, not black and not white: {darkest}");
+}
+
+#[test]
+fn the_hint_keeps_its_width_at_every_zoom() {
+    need_gpu!();
+    use kurbo::Shape as _;
+    let store = store_of(vec![invisible_rect()]);
+    let outline = kurbo::Rect::new(50.0, 50.0, 110.0, 90.0).to_path(0.1);
+    let white = peniko::Color::WHITE;
+    for zoom in [0.5, 1.0, 2.0, 4.0] {
+        let screen = screen_with_hint(&store, outline.clone(), zoom, Theme::Light, white);
+        let top = (50.0 * zoom) as u32;
+        let (columns, thickest) =
+            ink_columns(&screen, ((50.0 * zoom) as u32 + 6, (110.0 * zoom) as u32 - 6), (top - 4, top + 4), white);
+        assert!(columns > 0, "zoom {zoom}: the hint is there");
+        assert!(thickest <= 3, "zoom {zoom}: {thickest} px thick");
+    }
+}
+
+#[test]
+fn the_hint_is_light_on_a_dark_canvas_and_dark_on_a_light_one() {
+    need_gpu!();
+    use kurbo::Shape as _;
+    let store = store_of(vec![invisible_rect()]);
+    let outline = kurbo::Rect::new(50.0, 50.0, 110.0, 90.0).to_path(0.1);
+    let dark_base = peniko::Color::from_rgba8(18, 18, 18, 255);
+    let dark = screen_with_hint(&store, outline.clone(), 1.0, Theme::Dark, dark_base);
+    let brightest = dark.rgba.chunks_exact(4).map(|p| p[0]).max().unwrap_or(0);
+    assert!(brightest > 90, "visible on #121212: {brightest}");
+    let light = screen_with_hint(&store, outline, 1.0, Theme::Light, peniko::Color::WHITE);
+    let darkest = light.rgba.chunks_exact(4).map(|p| p[0]).min().unwrap_or(255);
+    assert!(darkest < 160, "visible on white: {darkest}");
+}
