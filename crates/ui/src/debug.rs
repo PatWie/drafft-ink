@@ -58,6 +58,36 @@ pub struct DebugView {
     pub sections: Vec<DebugSection>,
 }
 
+/// What the debug panel cost the UI in one frame. The app takes it out of the frame time the panel shows: a meter that
+/// counted its own display would read slower with the panel open than without it.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct DebugCost {
+    /// Drawing the panel (layout, text, the graph), and the measuring of its tessellation.
+    pub draw_ns: u64,
+    /// What tessellating the panel's shapes costs. The shell tessellates them together with the others, after the
+    /// pass, so this is a measurement of the panel's shapes on their own, taken twice a second and reused between.
+    pub tessellate_ns: u64,
+}
+
+/// When the panel's shapes were last tessellated for a measurement, and what that took.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub(crate) struct TessellationProbe {
+    /// The clock of egui (seconds) at the measurement. `None` before the first one.
+    pub(crate) at: Option<f64>,
+    /// What it took.
+    pub(crate) ns: u64,
+}
+
+impl TessellationProbe {
+    /// How often the panel's tessellation is measured again, in seconds. It is the refresh of the panel's numbers.
+    const EVERY_S: f64 = 0.5;
+
+    /// A measurement is due at `now` (seconds on the clock of egui).
+    pub(crate) fn due(&self, now: f64) -> bool {
+        self.at.is_none_or(|at| now - at >= Self::EVERY_S || now < at)
+    }
+}
+
 /// A frame time as the panel shows it: `0.42 ms`, `12.3 ms`, `103 ms`.
 pub fn ms_label(ms: f64) -> String {
     if ms < 10.0 {

@@ -1,12 +1,13 @@
 //! The debug panel, end to end over a windowless shell: `Alt+D` opens it, the shell measures only while it is open,
 //! it refreshes itself on a timer that exists only while it is open, and it is drawn with the palette of the theme.
 //! Needs a Vulkan, Metal or DX12 adapter; without one the tests skip (`DRAFFTINK_REQUIRE_GPU=1` makes that a failure).
-//! `DRAFFTINK_SCREENSHOT_DIR=<dir>` also writes the pictures the pixel test looks at.
+//! The frame time it shows leaves its own cost out: a fixed workload reads the same with the panel open as it takes with
+//! the panel closed. `DRAFFTINK_SCREENSHOT_DIR=<dir>` also writes the pictures the pixel test looks at.
 #![cfg(all(feature = "wgpu", not(target_arch = "wasm32")))]
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
 use drafftink_app::{App, AppConfig, NoHost, Platform, SharedClipboard, WakeCell};
-use drafftink_engine::ports::fake::Fakes;
+use drafftink_engine::ports::fake::{FakeClock, Fakes};
 use drafftink_engine::services::LazyTypesetter;
 use drafftink_gpu::headless::{Headless, HeadlessOptions};
 use drafftink_gpu::{FrameOutput, GpuError, RedrawReason, Repaint};
@@ -31,11 +32,17 @@ fn platform(fakes: &Fakes) -> Platform {
 
 /// A windowless shell over an app, or `None` (with the skip line) on a machine without a GPU adapter.
 fn shell(config: AppConfig) -> Option<Headless<App>> {
+    shell_with_clock(config).map(|(shell, _)| shell)
+}
+
+/// The same, with the app's clock. It stands still until it is moved, so the panel's twice-a-second refresh is due
+/// when the test says it is.
+fn shell_with_clock(config: AppConfig) -> Option<(Headless<App>, FakeClock)> {
     let fakes = Fakes::new();
     let app = App::new(platform(&fakes), config);
     let options = HeadlessOptions { size_points: SIZE, scale: 1.0, touch_first: false };
     match Headless::new(app, options) {
-        Ok(shell) => Some(shell),
+        Ok(shell) => Some((shell, fakes.clock.clone())),
         Err(GpuError::NoAdapter(why)) => {
             if let Err(message) = drafftink_profile::skip_without_gpu(&why) {
                 panic!("{message}");
@@ -141,4 +148,96 @@ fn the_panel_is_a_card_in_the_colours_of_the_theme_in_light_and_dark() {
             enc.write_header().unwrap().write_image_data(&image.rgba).unwrap();
         }
     }
+}
+
+/// The frame time and the panel's cost as the panel's own reading says them, in milliseconds.
+fn reading(shell: &Headless<App>) -> (f64, f64) {
+    let frames = shell.app().debug_view().and_then(|view| view.frames.as_ref()).expect("the panel has a reading");
+    (frames.avg_ms, frames.panel_ms.expect("the panel reports its own cost"))
+}
+
+fn ms(ns: u64) -> f64 {
+    ns as f64 / 1e6
+}
+
+/// Pointer moves over the canvas, which draw a frame each. The same work in every round.
+fn workload(shell: &mut Headless<App>, frames: u32) -> Vec<u64> {
+    (0..frames)
+        .map(|i| {
+            let at = egui::pos2(300.0 + (i % 7) as f32 * 9.0, 300.0 + (i % 5) as f32 * 7.0);
+            let started = drafftink_profile::now_ns();
+            shell.frame(vec![Event::PointerMoved(at)]);
+            drafftink_profile::now_ns() - started
+        })
+        .collect()
+}
+
+#[test]
+fn a_fixed_workload_reads_the_same_frame_time_with_the_panel_open_as_it_takes_with_it_closed() {
+    let Some((mut shell, clock)) = shell_with_clock(AppConfig::default()) else { return };
+    for i in 0..120 {
+        let bounds = json!({ "x": (i % 12) * 80, "y": (i / 12) * 60, "w": 60, "h": 40 });
+        shell
+            .app_mut()
+            .session_mut()
+            .execute("element.create", json!({ "kind": "rectangle", "bounds": bounds }))
+            .unwrap();
+    }
+    shell.settle(8);
+
+    // Closed and open take turns, so a machine that gets busy in between spoils both. The least of the rounds
+    // is the one nothing else disturbed.
+    let (mut closed, mut counted, mut open_wall, mut panel) = (f64::MAX, f64::MAX, f64::MAX, f64::MAX);
+    for _ in 0..5 {
+        let mut walls = workload(&mut shell, 60);
+        walls.sort_unstable();
+        closed = closed.min(ms(walls[walls.len() / 2]));
+
+        shell.frame(alt_d());
+        shell.settle(4);
+        let mut walls = workload(&mut shell, 60);
+        walls.sort_unstable();
+        open_wall = open_wall.min(ms(walls[walls.len() / 2]));
+        clock.advance_ms(600); // the refresh is due: the panel reads the frames it has seen
+        shell.frame(Vec::new());
+        let (avg, panel_ms) = reading(&shell);
+        counted = counted.min(avg);
+        panel = panel.min(panel_ms);
+        shell.frame(alt_d());
+    }
+    assert!(panel > 0.0, "the panel reports a cost");
+    // Counting the panel, the open panel makes the same frames read slower; leaving it out brings them back.
+    let tolerance = closed * 0.15 + 0.05;
+    assert!(
+        (counted - closed).abs() <= tolerance,
+        "counted {counted:.3} ms with the panel open, {closed:.3} ms with it closed (panel {panel:.3} ms, open frames take {open_wall:.3} ms)"
+    );
+    // What was left out is what the open frames take more.
+    assert!(
+        (counted + panel - open_wall).abs() <= open_wall * 0.15 + 0.05,
+        "counted {counted:.3} + panel {panel:.3} ms is not the {open_wall:.3} ms the open frames take"
+    );
+}
+
+#[test]
+fn the_panel_is_rebuilt_twice_a_second_and_kept_between() {
+    let Some((mut shell, clock)) = shell_with_clock(AppConfig { perf_overlay: true, ..AppConfig::default() }) else {
+        return;
+    };
+    let frames_of = |shell: &Headless<App>| shell.app().debug_view().and_then(|v| v.frames.as_ref()).map(|f| f.frames);
+    shell.settle(3);
+    clock.advance_ms(600);
+    shell.frame(Vec::new());
+    let built = shell.app().debug_view().cloned();
+    assert!(built.as_ref().is_some_and(|v| v.frames.is_some()), "a reading after the first refresh");
+
+    shell.settle(5);
+    assert_eq!(shell.app().debug_view().cloned(), built, "five frames in the same half second change nothing");
+
+    clock.advance_ms(600);
+    shell.frame(Vec::new());
+    assert!(
+        frames_of(&shell) > built.and_then(|v| v.frames).map(|f| f.frames),
+        "the next refresh reads the new frames"
+    );
 }

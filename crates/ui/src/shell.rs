@@ -31,6 +31,8 @@ pub struct FrameResult {
     pub canvas_rect: Rect,
     /// A modal dialog is open, so pointer events must not reach the canvas.
     pub modal: bool,
+    /// What the debug panel cost in this frame (nothing while it is closed).
+    pub debug: crate::debug::DebugCost,
 }
 
 /// The UI: its own state and the model snapshot.
@@ -118,7 +120,12 @@ impl UiShell {
         }
         self.draw_pictures(&ctx, session);
         self.schedule_toasts(&ctx, now);
-        FrameResult { report, canvas_rect: ctx.content_rect(), modal: self.state.modal_open() }
+        FrameResult {
+            report,
+            canvas_rect: ctx.content_rect(),
+            modal: self.state.modal_open(),
+            debug: self.state.debug_cost,
+        }
     }
 
     /// Asks the session for the next few pictures of the library items, for the tiles the drawer just drew. A

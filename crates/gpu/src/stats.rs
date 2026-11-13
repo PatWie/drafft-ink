@@ -5,8 +5,9 @@
 //! A number the machine cannot give is a variant that says so ([`GpuTime::Unsupported`]) or an `Option`, never a
 //! zero.
 
-use drafftink_profile::FrameReading;
+use drafftink_profile::{FrameCost, FrameReading, Stage, now_ns};
 
+use crate::app::AppTimes;
 use crate::backend::BackendKind;
 
 /// The graphics API the adapter is driven through.
@@ -157,4 +158,102 @@ pub struct ShellStats {
     pub frames: FrameReading,
     /// GPU numbers.
     pub gpu: BackendStats,
+}
+
+/// A stopwatch that reads the clock only when it was asked to measure: a shell that nobody watches times nothing.
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct Stopwatch(Option<u64>);
+
+impl Stopwatch {
+    /// Starts now when `on`, and is a stopped watch (no clock read, ever) otherwise.
+    pub(crate) fn start(on: bool) -> Self {
+        Self(on.then(now_ns))
+    }
+
+    /// Nanoseconds since the start, or 0 for a watch that was never started.
+    pub(crate) fn elapsed_ns(self) -> u64 {
+        self.0.map_or(0, |start| now_ns().saturating_sub(start))
+    }
+}
+
+/// Where one frame's time went, as the shell ran it: the parts the shell times itself. A part the shell does not run
+/// (a shell without a window presents nothing) is `None`.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub(crate) struct FrameMarks {
+    /// The egui pass with the app's frame in it, panel and scene build included.
+    pub ui_ns: u64,
+    /// Handing the scene to the GPU renderer.
+    pub render_ns: Option<u64>,
+    /// Tessellating egui, compositing and presenting.
+    pub present_ns: Option<u64>,
+    /// What the shell itself spent on the panel, outside the pass: reading its own meter and the GPU numbers.
+    pub panel_ns: u64,
+}
+
+impl FrameMarks {
+    /// The cost of a frame that took `gross_ns` in all, with the debug panel's share named and the stages timed.
+    ///
+    /// The panel is taken out of the stage it ran in (its drawing out of the UI pass, its tessellation out of the
+    /// present), so the stages still add up to the frame without the panel. A shell that does not tessellate in its
+    /// frame (`present_ns` is `None`) has no tessellation of the panel to take out.
+    pub(crate) fn cost(&self, gross_ns: u64, app: AppTimes) -> FrameCost {
+        let tessellate_ns = if self.present_ns.is_some() { app.panel_tessellate_ns } else { 0 };
+        let mut cost = FrameCost::new(gross_ns)
+            .with_panel(self.panel_ns + app.panel_ns + tessellate_ns)
+            .with_stage(Stage::Ui, self.ui_ns.saturating_sub(app.panel_ns + app.scene_ns))
+            .with_stage(Stage::Scene, app.scene_ns);
+        if let Some(render_ns) = self.render_ns {
+            cost = cost.with_stage(Stage::Render, render_ns);
+        }
+        if let Some(present_ns) = self.present_ns {
+            cost = cost.with_stage(Stage::Present, present_ns.saturating_sub(tessellate_ns));
+        }
+        cost
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const MS: u64 = 1_000_000;
+
+    fn app(panel: u64, tessellate: u64, scene: u64) -> AppTimes {
+        AppTimes { panel_ns: panel * MS, panel_tessellate_ns: tessellate * MS, scene_ns: scene * MS }
+    }
+
+    fn stage(cost: &FrameCost, stage: Stage) -> Option<u64> {
+        cost.stages.get(stage).map(|ns| ns / MS)
+    }
+
+    #[test]
+    fn the_panel_comes_out_of_the_stage_it_ran_in() {
+        let marks = FrameMarks { ui_ns: 10 * MS, render_ns: Some(2 * MS), present_ns: Some(5 * MS), panel_ns: MS };
+        let cost = marks.cost(20 * MS, app(3, 1, 4));
+        assert_eq!(cost.panel_ns, 5 * MS, "1 outside the pass, 3 inside it, 1 of the tessellation");
+        assert_eq!(stage(&cost, Stage::Ui), Some(3), "10 less the panel's 3 and the scene's 4");
+        assert_eq!(stage(&cost, Stage::Scene), Some(4));
+        assert_eq!(stage(&cost, Stage::Render), Some(2));
+        assert_eq!(stage(&cost, Stage::Present), Some(4), "5 less the panel's tessellation");
+        assert_eq!(cost.counted_ns(), 15 * MS);
+    }
+
+    #[test]
+    fn a_shell_that_presents_nothing_has_no_present_stage_and_no_tessellation_to_take_out() {
+        let marks = FrameMarks { ui_ns: 10 * MS, ..FrameMarks::default() };
+        let cost = marks.cost(10 * MS, app(3, 1, 4));
+        assert_eq!(cost.panel_ns, 3 * MS);
+        assert_eq!(stage(&cost, Stage::Present), None, "not timed is not 0");
+        assert_eq!(stage(&cost, Stage::Render), None);
+        assert_eq!(cost.counted_ns(), 7 * MS);
+    }
+
+    #[test]
+    fn times_that_do_not_fit_leave_zero_and_not_a_wrapped_number() {
+        let marks = FrameMarks { ui_ns: MS, render_ns: None, present_ns: Some(MS), panel_ns: 0 };
+        let cost = marks.cost(2 * MS, app(9, 9, 9));
+        assert_eq!(stage(&cost, Stage::Ui), Some(0));
+        assert_eq!(stage(&cost, Stage::Present), Some(0));
+        assert_eq!(cost.counted_ns(), 0);
+    }
 }
