@@ -7,6 +7,7 @@
 #![allow(clippy::panic, clippy::expect_used, clippy::unwrap_used)]
 
 use std::panic::{AssertUnwindSafe, catch_unwind, resume_unwind};
+use std::sync::Arc;
 use std::sync::{Mutex, OnceLock, PoisonError, mpsc};
 use std::thread;
 
@@ -14,7 +15,7 @@ use drafftink_gpu::{Compositor, EguiFrame, Gpu, GpuOptions, Image};
 use drafftink_profile::{Counter, WorkScope};
 use vello::Scene;
 use vello::kurbo::{Affine, Rect};
-use vello::peniko::{Color, Fill};
+use vello::peniko::{Blob, Color, Fill, ImageAlphaType, ImageBrush, ImageData, ImageFormat};
 
 const RED: Color = Color::from_rgb8(255, 0, 0);
 const BASE: Color = Color::from_rgb8(10, 20, 30);
@@ -290,5 +291,44 @@ fn the_composite_pass_is_timed_when_the_device_can_and_only_while_asked() {
             GpuTime::Pending => panic!("no result after 200 passes on a device with timestamp queries"),
         }
         println!("composite pass: {last:?} (timestamp queries: {has_queries})");
+    });
+}
+
+/// A scene that draws `picture` (one flat colour) over the square (20, 20)..(60, 60), the way the painter does:
+/// as an image fill, so Vello keeps the pixels in its image atlas.
+fn picture_scene(picture: &ImageData) -> Scene {
+    let mut scene = Scene::new();
+    let brush = ImageBrush::new(picture.clone());
+    scene.fill(Fill::NonZero, Affine::IDENTITY, &brush, None, &Rect::new(20.0, 20.0, 60.0, 60.0));
+    scene
+}
+
+fn flat_picture(rgba: [u8; 4]) -> ImageData {
+    ImageData {
+        data: Blob::new(Arc::new(rgba.repeat(8 * 8))),
+        format: ImageFormat::Rgba8,
+        alpha_type: ImageAlphaType::Alpha,
+        width: 8,
+        height: 8,
+    }
+}
+
+#[test]
+fn a_picture_is_drawn_again_after_frames_that_draw_no_picture() {
+    on_gpu_thread(|| {
+        let gpu = gpu();
+        let mut comp = Compositor::new(&gpu, wgpu::TextureFormat::Rgba8Unorm).expect("compositor");
+        let green = [0, 255, 0, 255];
+        let picture = flat_picture(green);
+        let shown = |comp: &mut Compositor| render(comp, &gpu, &picture_scene(&picture), [100, 80]).pixel(40, 40);
+
+        assert_eq!(shown(&mut comp), Some(green), "the first frame draws the picture");
+        // Panned away: a frame with only plain shapes. Vello drops its image atlas for it.
+        let away = render(&mut comp, &gpu, &red_square_scene(), [100, 80]);
+        assert!(close(away.pixel(40, 40).expect("inside"), [255, 0, 0, 255], 2));
+        for frame in 0..3 {
+            let back = shown(&mut comp).expect("inside");
+            assert!(close(back, green, 2), "panned back, frame {frame}: {back:?}");
+        }
     });
 }

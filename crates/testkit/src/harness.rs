@@ -85,6 +85,9 @@ pub struct Harness {
     pub fakes: Fakes,
     typesetter: SharedTypesetter,
     fixtures: PathBuf,
+    /// The composer of the pixel probes. It lives as long as the harness, as the app's does, so a probe sees the
+    /// decoded pictures (and their identity on the GPU) of the probes before it.
+    probe_composer: drafftink_render::SceneComposer,
 }
 
 impl Default for Harness {
@@ -118,7 +121,13 @@ impl Harness {
     fn build(fakes: Fakes, ports: drafftink_engine::Ports) -> Self {
         let typesetter = LazyTypesetter::shared();
         let session = Session::with_services(ports, Services::sharing(SharedTypesetter::clone(&typesetter)));
-        Self { session, fakes, typesetter, fixtures: fixtures_dir() }
+        Self {
+            session,
+            fakes,
+            typesetter,
+            fixtures: fixtures_dir(),
+            probe_composer: drafftink_render::SceneComposer::new(),
+        }
     }
 
     /// Puts `doc` into the active tab as a fresh document: no undo history, nothing selected, saved.
@@ -195,7 +204,10 @@ impl Harness {
         };
         let store = self.session.tab().doc.store();
         let index = drafftink_render::build_paint_index(store);
-        let mut composer = drafftink_render::SceneComposer::new();
+        // Fragments and the z order belong to one document and revision; decoded pictures do not, so they stay.
+        let composer = &mut self.probe_composer;
+        composer.cache_mut().clear();
+        composer.forget_order();
         composer.set_options(drafftink_render::RenderOptions::for_export(drafftink_render::Theme::Light));
         let mut scene = drafftink_render::Scene::new();
         self.typesetter.with(|ts| composer.compose(store, &index, &view, ts, &mut scene));
