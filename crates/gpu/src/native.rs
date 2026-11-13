@@ -85,6 +85,8 @@ pub(crate) fn mime_for_path(path: &std::path::Path) -> &'static str {
         Some("jpg" | "jpeg") => "image/jpeg",
         Some("webp") => "image/webp",
         Some("gif") => "image/gif",
+        Some("bmp") => "image/bmp",
+        Some("ico") => "image/x-icon",
         Some("svg") => "image/svg+xml",
         Some("json") => "application/json",
         Some("txt" | "md") => "text/plain",

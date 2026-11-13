@@ -662,7 +662,7 @@ fn drop_with_nothing_usable_says_what_is_supported() {
     assert_eq!(r.code, "nothing_to_do");
     assert_eq!(
         r.message,
-        "Nothing to open: none of the 2 dropped files is an image, document or library. Supported: PNG, JPEG, WebP, .json, .drafftink, .excalidraw, .excalidrawlib."
+        "Nothing to open: none of the 2 dropped files is an image, document or library. Supported: PNG, JPEG, WebP, GIF, BMP, ICO, SVG, .json, .drafftink, .excalidraw, .excalidrawlib."
     );
 }
 
@@ -955,6 +955,77 @@ fn drop_with_an_image_that_cannot_be_read_says_why() {
     let r = refuse(&mut s, "doc.drop", json!({"items": [{"name": "bad.jpg", "bytes": {"base64": b64(&[0xff, 0xd8, 0xff, 0xe0, 0, 0])}}]}));
     assert_eq!(r.code, "nothing_to_do");
     assert!(r.message.contains("none of the 1 dropped files could be opened") && r.message.contains("bad.jpg"), "{}", r.message);
+}
+
+#[test]
+fn drop_inserts_gif_bmp_and_ico_files_as_pictures() {
+    use crate::cmd::image::tests::{GIF_1X1, bmp_2x1, ico_4_and_20};
+    let (mut s, _f) = testing::session();
+    let item = |name: &str, bytes: &[u8]| json!({"name": name, "bytes": {"base64": b64(bytes)}});
+    // Whatever the media type says: the content decides, and a file without a type is read the same.
+    let out = run(&mut s, "doc.drop", json!({"items": [item("a.gif", GIF_1X1), item("b.bmp", &bmp_2x1()), item("c.ico", &ico_4_and_20())]}));
+    assert_eq!((out["images"].as_u64(), out["skipped"].as_u64()), (Some(3), Some(0)), "{out}");
+    let kinds: Vec<_> = s.store().iter().map(|e| e.tag()).collect();
+    assert_eq!(kinds, [drafftink_scene::Kind::Image; 3]);
+}
+
+/// The SVG export of the session's rectangles, with or without the scene inside.
+fn svg_export(s: &mut Session, embed_scene: bool) -> Vec<u8> {
+    unb64(&run(s, "doc.export", json!({"format": "svg", "scope": "all", "embed_scene": embed_scene}))["bytes"]["base64"])
+}
+
+const SVG_DOT: &str = "<svg xmlns='http://www.w3.org/2000/svg' width='20' height='10'><rect width='20' height='10' fill='#00f'/></svg>";
+
+fn svg_item(name: &str, bytes: &[u8]) -> Value {
+    json!({"name": name, "bytes": {"base64": b64(bytes)}, "mime": "image/svg+xml"})
+}
+
+#[test]
+fn drop_inserts_an_svg_as_a_picture_at_the_size_it_gives_itself() {
+    let (s, out) = after_drop(&[svg_item("dot.svg", SVG_DOT.as_bytes())], json!({}));
+    assert_eq!((out["images"].as_u64(), out["documents"].as_u64(), out["skipped"].as_u64()), (Some(1), Some(0), Some(0)), "{out}");
+    let picture = s.store().iter().find(|e| e.tag() == drafftink_scene::Kind::Image).unwrap();
+    assert_eq!((picture.transform.w, picture.transform.h), (20.0, 10.0));
+    // The mime type is not trusted, and neither is the name.
+    let (_, out) = after_drop(&[json!({"name": "dot.txt", "bytes": {"base64": b64(SVG_DOT.as_bytes())}, "mime": "text/plain"})], json!({}));
+    assert_eq!(out["images"], 1);
+}
+
+#[test]
+fn drop_opens_the_scene_of_our_own_svg_export_and_inserts_it_when_asked() {
+    let (mut a, _) = drawn(2);
+    let svg = svg_export(&mut a, true);
+    let (s, out) = after_drop(&[svg_item("plan.svg", &svg)], json!({}));
+    assert_eq!((out["documents"].as_u64(), out["images"].as_u64()), (Some(1), Some(0)), "{out}");
+    assert_eq!((s.tabs.len(), live(&s)), (2, 2), "a new tab holds the two rectangles");
+    // The same file as a picture, when the caller says so, and the same when it has no scene.
+    let (s, out) = after_drop(&[svg_item("plan.svg", &svg)], json!({"scene_png": "insert"}));
+    assert_eq!((out["images"].as_u64(), out["documents"].as_u64()), (Some(1), Some(0)));
+    assert_eq!((s.tabs.len(), live(&s)), (1, 2));
+    let plain = svg_export(&mut a, false);
+    let (s, out) = after_drop(&[svg_item("plain.svg", &plain)], json!({}));
+    assert_eq!((out["images"].as_u64(), s.tabs.len()), (Some(1), 1), "{out}");
+}
+
+#[test]
+fn drop_inserts_an_svg_whose_scene_cannot_be_read_and_says_so() {
+    let (mut a, _) = drawn(1);
+    let svg = String::from_utf8(svg_export(&mut a, true)).unwrap();
+    let broken = svg.replacen("base64-deflate\">", "base64-deflate\">!!", 1);
+    assert_ne!(broken, svg);
+    let (s, out) = after_drop(&[svg_item("broken.svg", broken.as_bytes())], json!({}));
+    assert_eq!((out["images"].as_u64(), out["documents"].as_u64()), (Some(1), Some(0)), "{out}");
+    assert_eq!(out["scene_fallbacks"].as_array().map(Vec::len), Some(1));
+    assert_eq!(s.tabs.len(), 1);
+}
+
+#[test]
+fn the_svg_export_still_opens_with_doc_open() {
+    let (mut a, _) = drawn(2);
+    let svg = svg_export(&mut a, true);
+    let (mut s, _f) = testing::session();
+    let out = run(&mut s, "doc.open", json!({"source": {"base64": b64(&svg)}, "mode": "replace"}));
+    assert_eq!((out["format"].as_str(), out["elements"].as_u64()), (Some("svg"), Some(2)), "{out}");
 }
 
 // ---- doc.save ----

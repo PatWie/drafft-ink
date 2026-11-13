@@ -95,7 +95,7 @@ export class Stage {
 
   /**
    * Adds a picture and returns the id of its shape. `source` is a `Blob` or `File`, an `ArrayBuffer` or the bytes of
-   * a PNG, JPEG or WebP file; the format is read from the bytes, never from a name or a media type. The shape gets
+   * a PNG, JPEG, WebP, GIF, BMP, ICO or SVG file; the format is read from the bytes, never from a name or a media type. The shape gets
    * the natural size of the picture unless `options` say otherwise. Rejects for a file that is not a readable
    * picture, and then changes nothing.
    */

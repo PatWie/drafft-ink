@@ -30,7 +30,7 @@ pub const MAX_DECODE_BYTES: u64 = 256 << 20;
 /// Two errors are equal when their messages are, because the decoder's errors have no equality.
 #[derive(Clone, Debug, thiserror::Error)]
 pub enum ImageError {
-    /// The bytes are not a PNG, JPEG or WebP picture. The source is the decoder's error.
+    /// The bytes are not a picture format the decoder reads (PNG, JPEG, WebP, GIF, BMP, ICO). The source is the decoder's error.
     #[error("The picture could not be decoded: {0}.")]
     Decode(#[source] Arc<dyn Error + Send + Sync>),
     /// The picture is larger than the decoder accepts.
@@ -58,7 +58,7 @@ impl ImageError {
     }
 }
 
-/// Decodes encoded picture bytes (PNG, JPEG, WebP) into straight-alpha RGBA. Pure: run it on any thread.
+/// Decodes encoded picture bytes (PNG, JPEG, WebP, GIF, BMP, ICO) into straight-alpha RGBA. Pure: run it on any thread.
 pub fn decode_image(bytes: &[u8]) -> Result<ImageData, ImageError> {
     let mut reader = ImageReader::new(Cursor::new(bytes)).with_guessed_format().map_err(ImageError::decode)?;
     let mut limits = image::Limits::default();

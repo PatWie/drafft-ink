@@ -233,7 +233,7 @@ test("family image: insert from bytes scales to fit; bad bytes are refused with 
     await app.refusal("image.insert", { images: [{ base64: Buffer.from("not an image").toString("base64"), name: "notes.txt" }] }),
     "unsupported_format",
     "`notes.txt` is not a supported image",
-    "PNG, JPEG or WebP",
+    "PNG, JPEG, WebP, GIF, BMP, ICO or SVG",
   );
   expectRefusal(await app.refusal("element.create", { kind: "image" }), "wrong_kind", "image.insert");
 });

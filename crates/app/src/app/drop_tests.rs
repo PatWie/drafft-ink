@@ -243,12 +243,34 @@ fn a_dropped_picture_has_no_outline() {
 }
 
 #[test]
+fn a_dropped_svg_gif_bmp_or_ico_is_inserted_as_a_picture() {
+    let svg = br#"<svg xmlns="http://www.w3.org/2000/svg" width="30" height="20"><rect width="30" height="20"/></svg>"#;
+    let gif: &[u8] = &[
+        b'G', b'I', b'F', b'8', b'9', b'a', 1, 0, 1, 0, 0x80, 0, 0, 0, 0, 0, 0xff, 0xff, 0xff, 0x21, 0xf9, 4, 0, 0, 0,
+        0, 0, 0x2c, 0, 0, 0, 0, 1, 0, 1, 0, 0, 2, 2, 0x44, 1, 0, 0x3b,
+    ];
+    for pointer in POINTER {
+        for f in [file("logo.svg", "image/svg+xml", svg), file("logo.svg", "", svg), file("dot.gif", "image/gif", gif)]
+        {
+            let name = f.name.clone();
+            let (effect, app) = drop_one(f, pointer);
+            no_schema_error(&app);
+            assert_eq!(
+                (effect.tabs, effect.elements, effect.toasts.is_empty()),
+                (1, 1, true),
+                "{name}, pointer {pointer}: {:?}",
+                effect.toasts
+            );
+            assert_eq!(kinds(&app), [Kind::Image], "{name}");
+        }
+    }
+}
+
+#[test]
 fn a_file_that_is_not_supported_is_refused_in_plain_words() {
-    let svg = br#"<svg xmlns="http://www.w3.org/2000/svg" width="1" height="1"/>"#;
     for pointer in POINTER {
         for f in [
             file("notes.txt", "text/plain", b"hello"),
-            file("picture.svg", "image/svg+xml", svg),
             file("archive.zip", "", &[0x50, 0x4b, 3, 4]),
             file("empty.json", "application/json", b""),
         ] {

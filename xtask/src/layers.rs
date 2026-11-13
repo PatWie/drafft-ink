@@ -172,7 +172,7 @@ pub const ALLOWED_EXTERNAL: &[(&str, &[&str])] = &[
     ("drafftink-doc", &["base64", "flate2", "kurbo", "loro", "smallvec", "xxhash-rust"]),
     // L4
     ("drafftink-edit", &["schemars"]),
-    ("drafftink-io", &["base64", "flate2", "image", "kurbo", "loro", "png", "roxmltree", "sha2"]),
+    ("drafftink-io", &["base64", "flate2", "image", "kurbo", "loro", "png", "resvg", "roxmltree", "sha2"]),
     (
         "drafftink-collab",
         &[

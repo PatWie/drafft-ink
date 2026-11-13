@@ -108,6 +108,9 @@ pub enum TextKind {
     Elements(Imported),
     /// A Mermaid diagram of a supported type.
     Mermaid(Diagram),
+    /// An SVG document that [`crate::picture`] can read. The caller opens its scene when it has one, and
+    /// otherwise inserts it as a picture.
+    Svg,
     /// Anything else. `note` says why text that looked like a diagram was not taken as one.
     Plain {
         /// Why Mermaid-looking text stayed text.
@@ -120,6 +123,8 @@ pub enum TextKind {
 pub fn classify_text(text: &str, ids: &mut dyn IdSource) -> Result<TextKind, IoError> {
     match native::sniff(text.as_bytes()) {
         Format::ExcalidrawClipboard => excalidraw::import_clipboard(text, ids).map(TextKind::Elements),
+        // Text that merely contains an `<svg` (a web page, say) stays text: only a readable SVG document is a picture.
+        Format::Svg if crate::picture::probe(text.as_bytes()).is_ok() => Ok(TextKind::Svg),
         Format::Mermaid => match mermaid::parse(text) {
             Ok(d) => Ok(TextKind::Mermaid(d)),
             Err(e) => Ok(TextKind::Plain { note: Some(e.to_string()) }),
@@ -180,6 +185,10 @@ mod tests {
         let mut ids = SeqIds::new();
         assert!(matches!(classify_text("graph TD\nA-->B", &mut ids).unwrap(), TextKind::Mermaid(_)));
         assert!(matches!(classify_text("hello world", &mut ids).unwrap(), TextKind::Plain { note: None }));
+        let svg = "<svg xmlns='http://www.w3.org/2000/svg' width='4' height='4'/>";
+        assert!(matches!(classify_text(svg, &mut ids).unwrap(), TextKind::Svg));
+        let page = format!("<html><body>{svg}</body></html>");
+        assert!(matches!(classify_text(&page, &mut ids).unwrap(), TextKind::Plain { note: None }), "a page is text");
         assert!(matches!(classify_text("graph TD\n", &mut ids).unwrap(), TextKind::Plain { note: Some(_) }));
         let xl = r#"{"type":"excalidraw/clipboard","elements":[{"type":"rectangle","id":"x","x":0,"y":0,"width":10,"height":10}]}"#;
         assert!(matches!(classify_text(xl, &mut ids).unwrap(), TextKind::Elements(_)));

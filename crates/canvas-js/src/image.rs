@@ -1,8 +1,8 @@
-//! Pictures: adding an image from the bytes of a PNG, JPEG or WebP file.
+//! Pictures: adding an image from the bytes of a PNG, JPEG, WebP, GIF, BMP, ICO or SVG file.
 //!
 //! `drafftink-io` identifies the picture by its first bytes (never by a file name or a media type the page
 //! claims), reads its size from the header and decodes it once, so a damaged file is refused now and not at every
-//! frame. The bytes go into the scene's file table (one copy per content) and the new `image` shape gets the
+//! frame. GIF, BMP and ICO are stored as a PNG, see `drafftink_io::picture::prepare`. The bytes go into the scene's file table (one copy per content) and the new `image` shape gets the
 //! natural size of the picture as its default box.
 
 use drafftink_io::picture::{self, PictureError};
@@ -49,7 +49,7 @@ fn positive(what: &str, v: f64) -> Result<f64, ApiError> {
 }
 
 fn picture_error(e: &PictureError) -> ApiError {
-    ApiError::invalid(format!("{e}. Use a PNG, JPEG or WebP picture"))
+    ApiError::invalid(format!("{e}. Use a PNG, JPEG, WebP, GIF, BMP, ICO or SVG picture"))
 }
 
 /// The size a picture of `natural` pixels gets on the canvas.
@@ -79,16 +79,16 @@ fn shown_size(natural: (u32, u32), spec: &ImageSpec) -> Result<(f64, f64), ApiEr
 
 /// Checks the bytes and the options.
 pub(crate) fn prepare(bytes: &[u8], spec: &ImageSpec) -> Result<Prepared, ApiError> {
-    let probe = picture::probe(bytes).map_err(|e| picture_error(&e))?;
-    picture::validate_pixels(bytes, &probe).map_err(|e| picture_error(&e))?;
-    let natural = (probe.width, probe.height);
+    // The page's picture is stored as it is: no downscale, the caller has `maxSide` for that.
+    let ready = picture::prepare(bytes.to_vec(), false).map_err(|e| picture_error(&e))?;
+    let natural = ready.natural;
     let at = (spec.x.unwrap_or(0.0), spec.y.unwrap_or(0.0));
     if !(at.0.is_finite() && at.1.is_finite()) {
         return Err(ApiError::invalid("x and y must be finite numbers"));
     }
-    let size = shown_size(natural, spec)?;
+    let size = shown_size(ready.given, spec)?;
     let id = spec.id.as_deref().map(ElementId::new).transpose()?;
-    let (file_id, entry) = FileEntry::new(probe.mime, bytes);
+    let (file_id, entry) = FileEntry::new(ready.mime, ready.bytes);
     Ok(Prepared { entry, file_id, natural, at, size, id, name: spec.name.clone() })
 }
 

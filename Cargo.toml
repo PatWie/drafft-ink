@@ -115,8 +115,11 @@ smol_str = { version = "0.3", features = ["serde"] }
 base64 = "0.22"
 sha2 = "0.10"
 uuid = { version = "1", features = ["serde"] }
-image = { version = "0.25", default-features = false, features = ["png", "jpeg", "webp"] }
+image = { version = "0.25", default-features = false, features = ["png", "jpeg", "webp", "gif", "bmp", "ico"] }
 png = "0.18"
+# SVG pictures for image.insert: parse and rasterise, pure Rust. Without the default features there is no text (no fonts
+# to draw it with), no system fonts, no memory-mapped files and no SVGZ. `raster-images` draws the pictures inside an SVG.
+resvg = { version = "0.48.1", default-features = false, features = ["raster-images"] }
 web-time = "1"
 
 # ---- Platform glue ----
@@ -221,6 +224,45 @@ opt-level = "s"
 opt-level = "s"
 
 [profile.dist.package.image-webp]
+opt-level = "s"
+
+[profile.dist.package.gif]
+opt-level = "s"
+
+[profile.dist.package.resvg]
+opt-level = "s"
+
+[profile.dist.package.usvg]
+opt-level = "s"
+
+[profile.dist.package."tiny-skia@0.12.0"]
+opt-level = "s"
+
+[profile.dist.package."tiny-skia-path@0.12.0"]
+opt-level = "s"
+
+[profile.dist.package.svgtypes]
+opt-level = "s"
+
+[profile.dist.package.roxmltree]
+opt-level = "s"
+
+[profile.dist.package.simplecss]
+opt-level = "s"
+
+[profile.dist.package.data-url]
+opt-level = "s"
+
+[profile.dist.package.imagesize]
+opt-level = "s"
+
+[profile.dist.package.siphasher]
+opt-level = "s"
+
+[profile.dist.package.strict-num]
+opt-level = "s"
+
+[profile.dist.package.rgb]
 opt-level = "s"
 
 [profile.dist.package.image]
@@ -353,6 +395,45 @@ opt-level = "z"
 opt-level = "z"
 
 [profile.release-wasm.package.image-webp]
+opt-level = "z"
+
+[profile.release-wasm.package.gif]
+opt-level = "z"
+
+[profile.release-wasm.package.resvg]
+opt-level = "z"
+
+[profile.release-wasm.package.usvg]
+opt-level = "z"
+
+[profile.release-wasm.package."tiny-skia@0.12.0"]
+opt-level = "z"
+
+[profile.release-wasm.package."tiny-skia-path@0.12.0"]
+opt-level = "z"
+
+[profile.release-wasm.package.svgtypes]
+opt-level = "z"
+
+[profile.release-wasm.package.roxmltree]
+opt-level = "z"
+
+[profile.release-wasm.package.simplecss]
+opt-level = "z"
+
+[profile.release-wasm.package.data-url]
+opt-level = "z"
+
+[profile.release-wasm.package.imagesize]
+opt-level = "z"
+
+[profile.release-wasm.package.siphasher]
+opt-level = "z"
+
+[profile.release-wasm.package.strict-num]
+opt-level = "z"
+
+[profile.release-wasm.package.rgb]
 opt-level = "z"
 
 [profile.release-wasm.package.image]

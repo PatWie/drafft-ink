@@ -523,10 +523,27 @@ fn an_image_on_the_clipboard_is_inserted_with_the_800_rule() {
     assert_eq!(out["kind"], "image");
     let e = s.element(&id_list(&out, "ids")[0]).unwrap();
     assert_eq!(e.style.stroke_color, drafftink_scene::Color::TRANSPARENT, "also from a given source");
-    // An image that is not PNG, JPEG or WebP, with nothing else to paste.
-    fakes.clipboard.set(ClipPayload::Image { bytes: b"GIF89a....".to_vec(), mime: "image/gif".into() });
+    // An image that is not a picture format we read, with nothing else to paste.
+    fakes.clipboard.set(ClipPayload::Image { bytes: b"%PDF-1.4 ....".to_vec(), mime: "application/pdf".into() });
     let r = refuse_clean(&mut s, "clipboard.paste", json!({}));
     assert_eq!(r.code, "unsupported_format");
+}
+
+#[test]
+fn a_gif_bmp_or_ico_on_the_clipboard_is_pasted_as_a_picture() {
+    use crate::cmd::image::tests::{GIF_1X1, bmp_2x1, ico_4_and_20};
+    for (bytes, mime, size) in [
+        (GIF_1X1.to_vec(), "image/gif", [1.0, 1.0]),
+        (bmp_2x1(), "image/bmp", [2.0, 1.0]),
+        (ico_4_and_20(), "image/x-icon", [20.0, 20.0]),
+    ] {
+        let (mut s, fakes) = fx();
+        fakes.clipboard.set(ClipPayload::Image { bytes, mime: mime.into() });
+        let out = run(&mut s, "clipboard.paste", json!({"at": [0, 0]}));
+        assert_eq!(out["kind"], "image", "{mime}");
+        let e = s.element(&id_list(&out, "ids")[0]).unwrap();
+        assert_eq!([e.transform.w, e.transform.h], size, "{mime}");
+    }
 }
 
 #[test]
@@ -581,6 +598,83 @@ fn the_system_order_is_elements_then_text_formats_then_image_then_plain_text() {
     let out = run(&mut s, "clipboard.paste", json!({}));
     assert_eq!(out["kind"], "text");
     assert!(out["warnings"][0].as_str().unwrap().contains("pasted instead"), "{out}");
+}
+
+// ---- paste: SVG ----
+
+const SVG_BLUE: &str = "<svg xmlns='http://www.w3.org/2000/svg' width='30' height='12'><rect width='30' height='12' fill='#00f'/></svg>";
+
+fn paste_kinds_of(s: &Session) -> Vec<drafftink_scene::Kind> {
+    s.store().iter().map(|e| e.tag()).collect()
+}
+
+#[test]
+fn svg_text_on_the_clipboard_is_pasted_as_a_picture_at_the_size_the_svg_gives() {
+    let (mut s, fakes) = fx();
+    fakes.clipboard.set(ClipPayload::Text(SVG_BLUE.into()));
+    let out = run(&mut s, "clipboard.paste", json!({"at": [0, 0]}));
+    assert_eq!(out["kind"], "image");
+    assert_eq!(paste_kinds_of(&s), [drafftink_scene::Kind::Image]);
+    let e = s.element(&id_list(&out, "ids")[0]).unwrap();
+    assert_eq!([e.transform.w, e.transform.h], [30.0, 12.0]);
+    // Text given by the caller is sniffed the same way, and `plain_text` keeps it text.
+    let out = run(&mut s, "clipboard.paste", json!({"source": {"text": SVG_BLUE}, "at": [100, 0]}));
+    assert_eq!(out["kind"], "image");
+    let out = run(&mut s, "clipboard.paste", json!({"source": {"text": SVG_BLUE}, "plain_text": true, "at": [200, 0]}));
+    assert_eq!(out["kind"], "text");
+}
+
+#[test]
+fn an_svg_picture_on_the_clipboard_is_pasted_whatever_its_media_type() {
+    for mime in ["image/svg+xml", "text/plain", ""] {
+        let (mut s, fakes) = fx();
+        fakes.clipboard.set(ClipPayload::Image { bytes: SVG_BLUE.as_bytes().to_vec(), mime: mime.into() });
+        let out = run(&mut s, "clipboard.paste", json!({"at": [0, 0]}));
+        assert_eq!(out["kind"], "image", "{mime:?}");
+    }
+    let (mut s, _) = fx();
+    let b64 = base64::Engine::encode(&base64::engine::general_purpose::STANDARD, SVG_BLUE);
+    assert_eq!(run(&mut s, "clipboard.paste", json!({"source": {"image": {"base64": b64}}}))["kind"], "image");
+}
+
+#[test]
+fn text_with_an_svg_inside_a_web_page_stays_text() {
+    let (mut s, fakes) = fx();
+    let page = format!("<html><body><p>hello</p>{SVG_BLUE}</body></html>");
+    fakes.clipboard.set(ClipPayload::Text(page));
+    assert_eq!(run(&mut s, "clipboard.paste", json!({}))["kind"], "text");
+    // An SVG that cannot be drawn (no root element) is text, not a refusal.
+    fakes.clipboard.set(ClipPayload::Text("<svg xmlns='http://www.w3.org/2000/svg' width='3'".into()));
+    assert_eq!(run(&mut s, "clipboard.paste", json!({}))["kind"], "text");
+}
+
+#[test]
+fn an_svg_export_of_ours_pastes_as_its_elements_and_one_without_a_scene_as_a_picture() {
+    let (mut src, _) = fx();
+    two_rects(&mut src);
+    let export = |s: &mut Session, embed_scene: bool| -> String {
+        let out = run(s, "doc.export", json!({"format": "svg", "scope": "all", "embed_scene": embed_scene}));
+        let bytes = base64::Engine::decode(&base64::engine::general_purpose::STANDARD, out["bytes"]["base64"].as_str().unwrap()).unwrap();
+        String::from_utf8(bytes).unwrap()
+    };
+    let (mut s, fakes) = fx();
+    fakes.clipboard.set(ClipPayload::Text(export(&mut src, true)));
+    let out = run(&mut s, "clipboard.paste", json!({"at": [0, 0]}));
+    assert_eq!((out["kind"].as_str(), out["count"].as_u64()), (Some("elements"), Some(2)), "{out}");
+    assert_eq!(paste_kinds_of(&s), [drafftink_scene::Kind::Rectangle; 2]);
+    let (mut s, fakes) = fx();
+    fakes.clipboard.set(ClipPayload::Text(export(&mut src, false)));
+    assert_eq!(run(&mut s, "clipboard.paste", json!({}))["kind"], "image", "copy as SVG writes no scene");
+}
+
+#[test]
+fn an_svg_with_text_is_pasted_and_the_text_is_reported_as_not_drawn() {
+    let (mut s, fakes) = fx();
+    fakes.clipboard.set(ClipPayload::Text("<svg xmlns='http://www.w3.org/2000/svg' width='30' height='12'><text y='10'>Hi</text></svg>".into()));
+    let out = run(&mut s, "clipboard.paste", json!({}));
+    assert_eq!(out["kind"], "image");
+    let warnings = out["warnings"].as_array().unwrap();
+    assert!(warnings.iter().any(|w| w.as_str().is_some_and(|w| w.contains("text, which is not drawn"))), "{out}");
 }
 
 // ---- paste: Mermaid ----

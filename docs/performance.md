@@ -730,3 +730,16 @@ The desktop app was 24.4 MB in the first version (`opt-level = "z"`, full LTO, n
 - A size limit is raised only with the reason in its `note`, and lowered in the commit that makes the number better.
 - Do not enable `--all-features` in wasm-opt (`web-app.md`). Do not move a crate that runs every frame to `z`: measure with `scripts/web_startup.py`.
 - A new big asset is a file under `dist/fonts/` (or another hashed folder), not an `include_bytes!` in the module.
+
+### 8.5 Pictures: GIF, BMP, ICO and SVG (2026-11-13)
+
+`image.insert`, paste and drop read GIF, BMP, ICO and SVG (`drafftink_io::picture`). Measured with `cargo xtask size` on the same machine, `main` at `bac6b23` and the two commits on top of it (bytes):
+
+| | main | + GIF, BMP, ICO | + SVG |
+|---|---|---|---|
+| `wasm.opt_bytes` | 12,241,792 | 12,343,931 (+102,139) | 13,058,818 (+714,887) |
+| `wasm.gzip_bytes` | 4,669,321 | 4,709,819 (+40,498) | 4,982,942 (+273,123) |
+| `wasm.brotli_bytes` | 3,309,090 | 3,340,746 (+31,656) | 3,531,180 (+190,434) |
+| `fallback.brotli_bytes` | 3,284,179 | 3,313,429 | 3,504,486 |
+
+GIF, BMP and ICO cost the `gif` decoder (with `weezl` and `color_quant`), the `image` crate's BMP and ICO readers and a small ICO directory reader. SVG costs `resvg`, `usvg` and `tiny-skia` (0.12; the 0.11 copy that `sctk-adwaita` uses is native only), with `svgtypes`, `roxmltree`, `simplecss`, `data-url` and `imagesize`, at `opt-level = "z"` like the other cold crates. By `twiggy` before wasm-opt: `tiny_skia` 196 KB, `usvg` 132 KB, `resvg` 48 KB, `roxmltree` 42 KB, `tiny_skia_path` 40 KB, `svgtypes` 34 KB, `imagesize` 30 KB. The feature `raster-images` of resvg (pictures inside an SVG) reuses the PNG, JPEG, GIF and WebP decoders that are linked anyway. The module is 6.7% bigger for SVG, so the first-load brotli number is above the 3.5 MB of section 7.5 (3,531,180 bytes) and the six wasm limits were raised (`perf/budgets.json`). Kept out: resvg's `text` feature (fonts), `system-fonts` and `svgz`. Not tried: loading the rasteriser as a second module on first use, which would take it off the first-load path but needs a second wasm build and an asynchronous `image.insert`.

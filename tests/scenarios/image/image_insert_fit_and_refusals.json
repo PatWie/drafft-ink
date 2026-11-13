@@ -17,7 +17,7 @@
     { "undo": 1 },
     { "assert": "element.query", "args": { "filter": { "kind": "image" }, "fields": ["id"] }, "expect": [ { "path": "$.total", "eq": 2 } ], "note": "The two pictures of one insert go in one undo step." },
 
-    { "execute": "image.insert", "args": { "images": [ { "base64": "bm90IGFuIGltYWdl", "name": "notes.txt" } ] }, "refused": "unsupported_format", "text": ["`notes.txt` is not a supported image", "PNG, JPEG or WebP"] },
+    { "execute": "image.insert", "args": { "images": [ { "base64": "bm90IGFuIGltYWdl", "name": "notes.txt" } ] }, "refused": "unsupported_format", "text": ["`notes.txt` is not a supported image", "PNG, JPEG, WebP, GIF, BMP, ICO or SVG"] },
     { "execute": "image.insert", "args": { "images": [] }, "refused": "bad_args" },
     { "assert": "element.query", "args": { "filter": { "kind": "image" } }, "expect": [ { "path": "$.total", "eq": 2 }, { "path": "$.items", "len": 2 } ], "note": "Refusals change nothing." },
     { "execute": "element.create", "args": { "kind": "image" }, "refused": "wrong_kind", "text": "Use `image.insert`" }

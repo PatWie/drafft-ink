@@ -39,7 +39,7 @@ The same JSON is used for: native file save/open, web download/upload, IndexedDB
 | Web upload ("Import JSON/Excalidraw" menu) | Hidden `<input type=file accept=".json,.excalidraw">`; `.excalidraw` (case-insensitive suffix) -> `from_excalidraw`, otherwise `from_json`. | `app.rs:653-695`, `ui.rs:1938-1941` |
 | Web Ctrl+S / "Save Local" | Not a file: writes IndexedDB (3.3). | `app.rs:332-354` |
 | Web Ctrl+O / "Open" | Not a file picker: Ctrl+O calls `load_document_async` which loads IndexedDB key `__last__`; "Open" opens an in-app list of IndexedDB keys. | `app.rs:4795-4798`, `app.rs:373-397`, `app.rs:2710-2717` |
-| Drag and drop | Only images (`png`, `jpg`, `jpeg`, `webp`). A dropped PNG that contains an embedded scene (5.4) is loaded as a document. `.json` / `.excalidraw` drops are not handled. | native `app.rs:5375-5440`, web `app.rs:970-995`, `app.rs:1028-1055` |
+| Drag and drop | Only images (`png`, `jpg`, `jpeg`, `webp`; the rewrite also reads `gif`, `bmp` and `ico`, `docs/commands.md` `image.insert`). A dropped PNG that contains an embedded scene (5.4) is loaded as a document. `.json` / `.excalidraw` drops are not handled. | native `app.rs:5375-5440`, web `app.rs:970-995`, `app.rs:1028-1055` |
 
 Loading a document replaces the active tab's live `canvas.document` wholesale,
 clears the selection, does not push undo, does not reset the camera (except the

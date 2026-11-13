@@ -1,7 +1,8 @@
 //! `clipboard.paste`: find what the clipboard holds, then put it in.
 //!
 //! Finding (`source: "system"`, the old native order): the drafft.ink payload, Excalidraw clipboard JSON, text
-//! that parses as a Mermaid diagram, an image, plain text. `plain_text` skips to the last step. The other sources
+//! that parses as a Mermaid diagram, text that is an SVG document, an image, plain text. An SVG with a drafft.ink
+//! scene inside (our own export) pastes as its elements; any other SVG is rasterised into an image. `plain_text` skips to the last step. The other sources
 //! name the data: `internal` is the session's last copy, `{text}`, `{image}` and `{elements}` are what a shell
 //! read from the browser's paste event.
 //!
@@ -13,7 +14,7 @@ use drafftink_edit::CopyError;
 use drafftink_edit::create::FreeTextError;
 use drafftink_geom::kurbo::Point;
 use drafftink_io::clipboard::{self as wire, TextKind};
-use drafftink_io::{Imported, native};
+use drafftink_io::{Imported, Opened, native};
 use drafftink_scene::{Document, ElementId};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -205,6 +206,7 @@ fn from_text(s: &mut Session, text: &str) -> Result<Found, Refusal> {
             Ok(Found::Elements { doc: imported.document, kind })
         }
         Ok(TextKind::Mermaid(_)) => Ok(Found::Mermaid(text.to_owned())),
+        Ok(TextKind::Svg) => Ok(from_svg(s, text)),
         Ok(TextKind::Plain { note }) => {
             if let Some(n) = note {
                 s.warn(format!("The text looks like a Mermaid diagram but could not be read ({}), so it was pasted as text.", echo(&n)));
@@ -218,6 +220,18 @@ fn from_text(s: &mut Session, text: &str) -> Result<Found, Refusal> {
             "Copy the elements again in Excalidraw, or paste as plain text with `plain_text`.",
         )),
     }
+}
+
+/// An SVG document as text: the scene inside it when it is a drafft.ink export that has one, else a picture.
+fn from_svg(s: &mut Session, text: &str) -> Found {
+    let has_scene = matches!(drafftink_io::svg::extract_scene(text), Ok(Some(_)));
+    if has_scene
+        && let Ok(Opened::Document { imported, .. }) = drafftink_io::open(text.as_bytes(), &mut *s.ports.ids, s.services.io())
+    {
+        note_import(s, &imported);
+        return Found::Elements { doc: imported.document, kind: Kind::Elements };
+    }
+    Found::Image(Loaded { bytes: text.as_bytes().to_vec(), name: "the pasted SVG".to_owned() })
 }
 
 fn clipboard_error(cmd: &str, e: &crate::ports::PortError) -> Refusal {
@@ -263,7 +277,7 @@ fn from_system(s: &mut Session, plain_text: bool) -> Result<Found, Refusal> {
         if drafftink_io::picture::probe(&bytes).is_ok() || plain.is_none() {
             return Ok(Found::Image(Loaded { bytes, name: "the clipboard image".to_owned() }));
         }
-        s.warn("The clipboard image is not a PNG, JPEG or WebP, so its text was pasted instead.");
+        s.warn("The clipboard image is not a picture format drafft.ink reads (PNG, JPEG, WebP, GIF, BMP, ICO or SVG), so its text was pasted instead.");
     }
     plain.map(Found::Text).ok_or_else(|| empty(cmd))
 }

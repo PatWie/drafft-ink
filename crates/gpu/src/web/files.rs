@@ -124,6 +124,8 @@ fn guess_mime(name: &str) -> &'static str {
         "png" => "image/png",
         "jpg" | "jpeg" => "image/jpeg",
         "gif" => "image/gif",
+        "bmp" => "image/bmp",
+        "ico" => "image/x-icon",
         "webp" => "image/webp",
         "svg" => "image/svg+xml",
         "json" => "application/json",

@@ -264,14 +264,25 @@ fn an_image_is_added_from_bytes_at_its_natural_size_and_the_same_bytes_are_store
 }
 
 #[test]
+fn an_svg_is_added_at_the_size_it_gives_itself_and_is_stored_as_a_png() {
+    let mut s = stage();
+    let svg = b"<svg xmlns='http://www.w3.org/2000/svg' width='60' height='20'><rect width='60' height='20'/></svg>";
+    let id = s.add_image(svg, &ImageSpec::default()).unwrap();
+    assert_box(xywh(&s, id.as_str()), [0.0, 0.0, 60.0, 20.0]);
+}
+
+#[test]
 fn what_is_not_a_readable_picture_is_refused_and_changes_nothing() {
     let mut s = stage();
     s.add(rect("a", 0.0, 0.0, 10.0, 10.0)).unwrap();
     let revision = s.revision();
     let text = s.add_image(b"hello", &ImageSpec::default()).unwrap_err().to_string();
-    assert!(text.contains("PNG, JPEG or WebP"), "{text}");
+    assert!(text.contains("PNG, JPEG, WebP"), "{text}");
     assert!(s.add_image(&[], &ImageSpec::default()).is_err());
-    let svg = s.add_image(b"<svg xmlns='http://www.w3.org/2000/svg'/>", &ImageSpec::default()).unwrap_err().to_string();
+    let svg = s
+        .add_image(b"<svg xmlns='http://www.w3.org/2000/svg' width='5'", &ImageSpec::default())
+        .unwrap_err()
+        .to_string();
     assert!(svg.contains("SVG"), "{svg}");
     // A cut-off PNG has a header but no pixels.
     let mut cut = png_bytes(50, 50);
