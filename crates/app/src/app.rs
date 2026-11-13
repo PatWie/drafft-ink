@@ -944,6 +944,22 @@ impl App {
         self.ui.model.debug.as_ref()
     }
 
+    /// The camera as the canvas has it right now, for the minimap's rectangle: the canvas runs ahead of the session
+    /// while a pan or a zoom goes on. `None` while the minimap is off, so the UI reads nothing then.
+    fn minimap_camera(&self) -> Option<drafftink_ui::model::ViewView> {
+        if !self.ui.model.setting_bool("view.minimap") {
+            return None;
+        }
+        let camera = self.interaction.camera();
+        let size = self.canvas_rect.size();
+        Some(drafftink_ui::model::ViewView {
+            scroll: [camera.scroll.x, camera.scroll.y],
+            zoom: camera.zoom,
+            width: f64::from(size.x),
+            height: f64::from(size.y),
+        })
+    }
+
     /// Gives the UI the content of the debug panel, or clears it. Nothing is built while the panel is closed. Open, the
     /// content is built twice a second and kept between (the numbers are a second's mean anyway), not rebuilt from
     /// the renderer's counters and a dozen strings in every frame. Returns the time this took, 0 when it did nothing.
@@ -1187,6 +1203,8 @@ impl ShellApp for App {
         self.ui.set_collab(collab);
         self.ui.set_editor_faces(self.editor.as_ref().map(TextEditor::faces));
         let view_ns = self.set_debug_panel(cx, now);
+        let live_camera = self.minimap_camera();
+        self.ui.set_live_camera(live_camera);
         let pointer = Pointer {
             cursor: self.pointer_world().map(|p| (p.x, p.y)),
             viewport_center: Some((self.interaction.camera().scroll.x, self.interaction.camera().scroll.y)),

@@ -170,6 +170,7 @@ pub const VERB_BINDINGS: &[VerbBinding] = &[
     VerbBinding { keys: &["Alt+Z"], scope: Scope::Canvas, verb: Verb::ToggleZen },
     VerbBinding { keys: &["Alt+/"], scope: Scope::Canvas, verb: Verb::ToggleStats },
     VerbBinding { keys: &["Alt+D"], scope: Scope::Canvas, verb: Verb::ToggleDebug },
+    VerbBinding { keys: &["Alt+M"], scope: Scope::Canvas, verb: Verb::ToggleMinimap },
     VerbBinding { keys: &["S"], scope: Scope::Canvas, verb: Verb::OpenColorStroke },
     VerbBinding { keys: &["G"], scope: Scope::Canvas, verb: Verb::OpenColorFill },
     VerbBinding { keys: &["Shift+F"], scope: Scope::Canvas, verb: Verb::OpenFontPicker },

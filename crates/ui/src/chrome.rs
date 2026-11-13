@@ -6,9 +6,9 @@
 //! `surfaces::show_all` is the order of dependencies (the strip first, then the bottom bar, then the tabs, then
 //! everything that sits above or below them).
 
-use egui::Rect;
+use egui::{Rect, Vec2};
 
-use crate::theme::space;
+use crate::theme::{MARGIN, space};
 
 /// The gap between a bar and what is placed next to it.
 pub const GAP: f32 = space::LG;
@@ -31,6 +31,8 @@ pub struct ChromeRects {
     /// The library drawer, when it is open. It is drawn after every bar and panel above, so it is the highest
     /// of the bottom surfaces: things that float above the bottom chrome sit over it.
     pub library: Option<Rect>,
+    /// The minimap card, bottom right, when it is on. The presence panel stands above it.
+    pub minimap: Option<Rect>,
 }
 
 impl ChromeRects {
@@ -72,6 +74,21 @@ impl ChromeRects {
     pub fn centred_panel_height_above_bottom_bar(&self, screen: Rect) -> f32 {
         let below = (self.above_bottom_bar(screen) - screen.center().y - GAP).max(0.0);
         self.centred_panel_height(screen).min(2.0 * below)
+    }
+}
+
+impl ChromeRects {
+    /// How far a card of `size` anchored to the bottom right corner (with the window margin) must lift to stay clear
+    /// of the bottom chrome: the margin when nothing reaches under it, else enough to stand a gap above the highest
+    /// bottom surface that does (a narrow window, where the bar and the tabs span the width; the open library drawer).
+    pub fn lift_bottom_right(&self, screen: Rect, size: Vec2) -> f32 {
+        let left = screen.right() - MARGIN - size.x;
+        [self.bottom_bar, self.tabs, self.library]
+            .into_iter()
+            .flatten()
+            .filter(|r| r.right() + GAP > left)
+            .map(|r| lift_to(screen, r.top(), GAP))
+            .fold(MARGIN, f32::max)
     }
 }
 
@@ -149,6 +166,30 @@ mod tests {
         );
         let high_bar = ChromeRects { bottom_bar: Some(Rect::from_min_size(pos2(10.0, 380.0), vec2(300.0, 48.0))), ..r };
         assert_eq!(high_bar.centred_panel_height_above_bottom_bar(screen()), 0.0, "never negative");
+    }
+
+    #[test]
+    fn a_bottom_right_card_stays_at_the_margin_when_the_bottom_chrome_is_clear_of_it() {
+        let r = ChromeRects {
+            bottom_bar: Some(Rect::from_min_size(pos2(10.0, 740.0), vec2(300.0, 48.0))),
+            tabs: Some(Rect::from_min_size(pos2(420.0, 740.0), vec2(160.0, 48.0))),
+            ..ChromeRects::default()
+        };
+        assert_eq!(r.lift_bottom_right(screen(), vec2(200.0, 130.0)), MARGIN);
+    }
+
+    #[test]
+    fn a_bottom_right_card_lifts_above_the_chrome_that_reaches_under_it() {
+        let wide_bar = Rect::from_min_size(pos2(10.0, 740.0), vec2(900.0, 48.0));
+        let r = ChromeRects { bottom_bar: Some(wide_bar), ..ChromeRects::default() };
+        assert_eq!(r.lift_bottom_right(screen(), vec2(200.0, 130.0)), lift_to(screen(), 740.0, GAP));
+        let library = Rect::from_min_size(pos2(10.0, 500.0), vec2(980.0, 190.0));
+        let open = ChromeRects { bottom_bar: Some(wide_bar), library: Some(library), ..ChromeRects::default() };
+        assert_eq!(
+            open.lift_bottom_right(screen(), vec2(200.0, 130.0)),
+            lift_to(screen(), 500.0, GAP),
+            "the highest wins"
+        );
     }
 
     #[test]

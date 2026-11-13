@@ -537,6 +537,11 @@ pub struct Model {
     pub about: AboutInfo,
     /// What the debug panel shows. Written by the app through `UiShell::set_debug`, only while the panel is open.
     pub debug: Option<crate::debug::DebugView>,
+    /// What the minimap draws. Empty while the setting `view.minimap` is off.
+    pub minimap: crate::minimap::Snapshot,
+    /// The camera as the canvas has it right now, which runs ahead of the session's while a pan or zoom goes on
+    /// (`view.set` reports it every 100 ms). Written by the app through `UiShell::set_live_camera`.
+    pub live_camera: Option<ViewView>,
     stamp: Option<u64>,
     captured_mac: bool,
 }
@@ -577,6 +582,8 @@ impl Default for Model {
             agent_server: None,
             about: AboutInfo::default(),
             debug: None,
+            minimap: crate::minimap::Snapshot::default(),
+            live_camera: None,
             stamp: None,
             captured_mac: false,
         }
@@ -658,13 +665,34 @@ impl Model {
     /// leaves no ring entry.
     pub fn refresh(&mut self, s: &mut Session) -> bool {
         let stamp = Self::stamp_of(s);
-        if self.stamp == Some(stamp) && !self.commands.is_empty() && self.captured_mac == self.mac {
-            return false;
+        let unchanged = self.stamp == Some(stamp) && !self.commands.is_empty() && self.captured_mac == self.mac;
+        if !unchanged {
+            self.capture(s);
+            self.captured_mac = self.mac;
+            self.stamp = Some(stamp);
         }
-        self.capture(s);
-        self.captured_mac = self.mac;
-        self.stamp = Some(stamp);
-        true
+        // After the capture, which reads the settings. The camera moves without changing the stamp, so this runs
+        // every time; it costs nothing while the minimap is off.
+        self.sync_minimap(s);
+        !unchanged
+    }
+
+    /// Keeps the minimap's snapshot current: the camera every time, the reduced document when it changed.
+    fn sync_minimap(&mut self, s: &Session) {
+        let on = self.setting_bool("view.minimap");
+        let tab = s.tab();
+        let store = tab.doc.store();
+        let stamp = (tab.id.0, store.version_stamp(), store.len_all());
+        let camera = self.live_camera.unwrap_or_else(|| {
+            let view = &tab.view;
+            ViewView {
+                scroll: [view.scroll.x, view.scroll.y],
+                zoom: view.zoom,
+                width: view.viewport.w,
+                height: view.viewport.h,
+            }
+        });
+        self.minimap.sync(on, stamp, camera, s.gesture_running(), || crate::minimap::Scene::build(store));
     }
 
     fn capture(&mut self, s: &mut Session) {

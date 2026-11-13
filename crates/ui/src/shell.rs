@@ -60,6 +60,12 @@ impl UiShell {
         self.model.debug = debug;
     }
 
+    /// The camera as the canvas has it now (`None`: use the session's). The canvas runs ahead of the session while a
+    /// pan or zoom goes on, and the minimap's rectangle should follow the picture, not lag a tenth of a second.
+    pub fn set_live_camera(&mut self, camera: Option<crate::model::ViewView>) {
+        self.model.live_camera = camera;
+    }
+
     /// Bold and italic at the selection of the running text editor, which the app owns (`None`: no editor).
     pub fn set_editor_faces(&mut self, faces: Option<TextFaces>) {
         self.model.editor_faces = faces;

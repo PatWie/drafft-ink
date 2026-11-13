@@ -21,6 +21,7 @@ pub mod library;
 pub mod link;
 pub mod loading;
 pub mod menu;
+pub mod minimap;
 pub mod naming;
 pub mod palette;
 pub mod preferences;
@@ -42,8 +43,10 @@ pub fn show_all(ctx: &Context, cx: &mut Cx<'_>, st: &mut UiState) {
         tabs::show(ctx, cx, st);
         toolbar::show(ctx, cx, st);
         menu::show(ctx, cx, st);
-        collab::show_presence(ctx, cx, st);
         library::show(ctx, cx, st);
+        // The minimap reads the library drawer's rectangle, and the presence panel stands above the minimap.
+        minimap::show(ctx, cx, st);
+        collab::show_presence(ctx, cx, st);
     }
     color::show(ctx, cx, st);
     eyedropper::show(ctx, cx, st);
