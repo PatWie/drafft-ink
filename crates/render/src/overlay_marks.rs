@@ -1,4 +1,4 @@
-//! Small marks on elements: the link icon.
+//! Small marks on elements: the link icon, and the dotted hint that shows where an invisible element is.
 
 use kurbo::{Affine, BezPath, Cap, Join, Rect, RoundedRect, Shape, Stroke};
 use peniko::{Color, Fill};
@@ -62,6 +62,32 @@ pub(crate) fn paint_link_marks(scene: &mut Scene, pen: &Pen, marks: &[LinkMark])
         let stroke = Stroke::new((1.3 * pen.px / inner).max(0.0)).with_caps(Cap::Round).with_join(Join::Round);
         // The stroke width is in the glyph's unit square, so it scales with the tile.
         scene.stroke(&stroke, to_tile, pen.style.accent, None, &glyph);
+        drawn += 1;
+    }
+    drawn
+}
+
+/// Width of the dotted hint, in logical pixels.
+const HINT_WIDTH: f64 = 1.5;
+/// The dots of the hint: a dash this long (logical pixels, round caps add the rest) and a gap this long.
+const HINT_DASH: [f64; 2] = [0.5, 4.5];
+/// An outline with more dots than this is drawn as a thin solid line: dashes are expanded into path segments, so a
+/// shape far larger than the screen would cost a lot.
+const MAX_HINT_DOTS: f64 = 2_000.0;
+
+/// Draws each outline as a dotted line of constant width on screen, in the hint colour of the style.
+pub(crate) fn paint_invisible_hints(scene: &mut Scene, pen: &Pen, outlines: &[BezPath]) -> usize {
+    let mut drawn = 0;
+    for outline in outlines.iter().filter(|p| !p.elements().is_empty()) {
+        let path = pen.to_dev * outline;
+        let width = HINT_WIDTH * pen.px;
+        let [dash, gap] = HINT_DASH.map(|d| d * pen.px);
+        let stroke = if path.perimeter(0.5) / (dash + gap) <= MAX_HINT_DOTS {
+            Stroke::new(width).with_caps(Cap::Round).with_dashes(0.0, [dash, gap])
+        } else {
+            Stroke::new(pen.px)
+        };
+        scene.stroke(&stroke, Affine::IDENTITY, pen.style.hint, None, &path);
         drawn += 1;
     }
     drawn

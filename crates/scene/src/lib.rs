@@ -27,6 +27,7 @@ mod shared;
 mod store;
 mod style;
 mod validate;
+mod visibility;
 pub mod words;
 mod zindex;
 
@@ -56,4 +57,5 @@ pub use validate::{
     DocError, ElementError, Issue, Report, Severity, Validator, element_errors, is_image_media_type, is_valid_name,
     validate_document, validate_element, validate_parts, validate_scene, validate_transform,
 };
+pub use visibility::{fill_paints, style_shows};
 pub use zindex::{IndexError, MAX_INDEX_LEN, ZIndex};

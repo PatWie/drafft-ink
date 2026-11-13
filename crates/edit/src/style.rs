@@ -28,6 +28,7 @@ use drafftink_scene::{
     Brush, Color, Element, ElementId, ElementKind, FillPattern, FontFamily, FontWeight, Kind, PressureMode, SceneRead,
     SceneTx, Sloppiness, StoreError, StrokeStyle, Style, TextAlign, TextStyle, VerticalAlign,
 };
+use drafftink_scene::{fill_paints, style_shows};
 
 use crate::target::TargetError;
 use crate::text_bind::labels_of;
@@ -167,40 +168,10 @@ pub fn applies(e: &Element, prop: Prop) -> bool {
     }
 }
 
-/// True when a fill can paint something for an element of `kind`: shapes, and closed lines and pencil strokes.
-fn fill_paints(kind: Kind, closed: bool) -> bool {
-    match kind {
-        Kind::Rectangle | Kind::Diamond | Kind::Ellipse => true,
-        Kind::Line | Kind::Freehand => closed,
-        _ => false,
-    }
-}
-
-/// Whether an element of `kind` shows anything with `style`. A stroke colour with alpha 0 is "no stroke" (what
-/// Excalidraw calls `transparent`), and no fill is a missing or fully clear fill colour.
-///
-/// Rectangles, diamonds, ellipses, closed lines and closed pencil strokes show with a fill alone. Everything else
-/// is drawn in its stroke colour: text, formulas, open lines, arrows, open pencil strokes, and frames (outline and
-/// name). Images always show: their stroke is an optional outline, so "no stroke" is allowed for them.
-pub fn style_shows(kind: Kind, closed: bool, style: &Style) -> bool {
-    if kind == Kind::Image {
-        return true;
-    }
-    let fills = fill_paints(kind, closed) && style.fill_color.is_some_and(|c| c.a > 0);
-    style.stroke_color.a > 0 || fills
-}
-
-fn is_closed(e: &Element) -> bool {
-    match &e.kind {
-        ElementKind::Line(d) | ElementKind::Arrow(d) => d.closed,
-        ElementKind::Freehand(f) => f.closed && !f.highlighter,
-        _ => false,
-    }
-}
-
-/// True when `e` shows anything (see [`style_shows`]).
+/// True when the colours of `e` show anything (see [`style_shows`]). Opacity does not count: an element at opacity 0
+/// is allowed, and [`Element::shows_nothing`] is the test that includes it.
 pub fn is_visible(e: &Element) -> bool {
-    style_shows(e.tag(), is_closed(e), &e.style)
+    style_shows(e.tag(), e.is_closed_outline(), &e.style)
 }
 
 /// Refuses a style that would leave an element of `kind` showing nothing (see [`style_shows`]).
@@ -219,7 +190,7 @@ fn check_visible(old: &Element, part: &StyleProps) -> Result<(), StyleError> {
     }
     let mut new = old.clone();
     part.write(&mut new);
-    check_shows(new.tag(), is_closed(&new), &new.style)
+    check_shows(new.tag(), new.is_closed_outline(), &new.style)
 }
 
 /// Why `prop` (the stroke or the fill) cannot be set to none on `targets` now: the refusal `style.set` would give.
@@ -1035,29 +1006,6 @@ mod tests {
         assert!(g(&txt, Prop::FontFamily) && !g(&math, Prop::FontFamily) && g(&math, Prop::FontSize));
         assert!(!g(&txt, Prop::VerticalAlign), "free text has no container to align in");
         assert!(g(&free, Prop::FreehandStyle) && !g(&rect, Prop::PressureMode));
-    }
-
-    #[test]
-    fn what_shows_follows_the_kind() {
-        let style =
-            |stroke: Color, fill: Option<Color>| Style { stroke_color: stroke, fill_color: fill, ..Style::default() };
-        let blue = Some(Color::rgb(0, 0, 255));
-        for kind in Kind::ALL {
-            assert!(style_shows(kind, false, &style(Color::BLACK, None)), "{kind:?} with a stroke");
-        }
-        for kind in [Kind::Rectangle, Kind::Diamond, Kind::Ellipse] {
-            assert!(style_shows(kind, false, &style(Color::TRANSPARENT, blue)), "{kind:?}: a fill is enough");
-            assert!(!style_shows(kind, false, &style(Color::TRANSPARENT, None)));
-            assert!(
-                !style_shows(kind, false, &style(Color::TRANSPARENT, Some(Color::TRANSPARENT))),
-                "a clear fill is none"
-            );
-        }
-        assert!(style_shows(Kind::Line, true, &style(Color::TRANSPARENT, blue)), "closed lines are shapes");
-        for kind in [Kind::Line, Kind::Arrow, Kind::Freehand, Kind::Text, Kind::Math, Kind::Frame] {
-            assert!(!style_shows(kind, false, &style(Color::TRANSPARENT, blue)), "{kind:?} is drawn in its stroke");
-        }
-        assert!(style_shows(Kind::Image, false, &style(Color::TRANSPARENT, None)));
     }
 
     #[test]

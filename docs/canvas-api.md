@@ -170,6 +170,7 @@ Handle size, hit radius and the rotation offset are in screen pixels, so they sc
 | `bind_candidates` | outlines of elements to highlight, from `set_bind_candidates(ids)` |
 | `remote_cursors`, `remote_selections`, `remote_trails` | from `set_remote_users` (`RemoteUser { id, name, color, cursor, selection, trail }`); selection boxes capped per user; the work is `remote_parts(store, users, cap)`, which a host with its own overlay calls too |
 | `link_icons` | `LinkIcon { element, rect, to_element }` of the elements in view that have a link and are not selected |
+| `invisible` | `InvisibleOutline { element, shape }` of the elements in view that draw nothing (`Element::shows_nothing`: opacity 0, or no stroke and no fill) and are not selected, at most `MAX_INVISIBLE_OUTLINES`. `SceneIndex::invisible_outlines` reads the list the index keeps. Not in the JavaScript `OverlayDto`; the canvas-js renderer draws it itself |
 | `zoom` | for line widths and dashes |
 
 `trait OverlaySink { fn draw_overlay(&mut self, overlay: &Overlay, viewport: &Viewport) }` is the render-facing seam. The render crate sits below the canvas and cannot name `Overlay`, so the app (or a small glue module above both) implements `OverlaySink` for render's overlay pass once `p2-render` lands; until then nothing in this crate depends on render. `take_dirty()` returns `Dirty { scene, camera, overlay }`: re-encode changed elements, re-composite the cached fragments with the new camera, or redraw the overlay only.

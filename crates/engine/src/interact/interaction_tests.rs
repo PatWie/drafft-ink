@@ -571,3 +571,33 @@ fn the_overlay_lists_the_link_icons_of_unselected_elements_in_view() {
     rig.run("selection.select", json!({ "ids": [a.as_str()] }));
     assert!(rig.i.overlay(&rig.s).canvas.link_icons.is_empty(), "a selected element shows its handles instead");
 }
+
+#[test]
+fn an_element_at_opacity_zero_is_hovered_and_clicked_like_any_other_and_marked_on_screen() {
+    let mut rig = Rig::new();
+    let a = rig.rect(100.0, 100.0, 100.0, 100.0);
+    rig.run("style.set", json!({ "props": { "opacity": 0 }, "scope": "selection", "ids": [a.as_str()] }));
+    rig.run("selection.clear", json!({}));
+    assert_eq!(rig.elements()[0].style.opacity, 0.0, "the style change landed");
+    let marked: Vec<_> = rig.i.overlay(&rig.s).canvas.invisible.iter().map(|o| o.element.clone()).collect();
+    assert_eq!(marked, std::slice::from_ref(&a), "the element draws nothing, so the overlay marks where it is");
+
+    rig.hover(150.0, 150.0);
+    let hover = rig.i.overlay(&rig.s).canvas.hover;
+    assert_eq!(hover.map(|h| h.id), Some(a.clone()), "the pointer finds it");
+    rig.click(150.0, 150.0);
+    assert_eq!(rig.selected(), vec![a.as_str()], "a click selects it");
+    assert!(
+        rig.i.overlay(&rig.s).canvas.invisible.is_empty(),
+        "a selected element shows its selection box, not the hint"
+    );
+    rig.run("selection.clear", json!({}));
+    assert_eq!(rig.i.overlay(&rig.s).canvas.invisible.len(), 1);
+    rig.run("view.set_view_only", json!({ "on": true }));
+    assert!(rig.i.overlay(&rig.s).canvas.invisible.is_empty(), "a view-only document shows what it draws, no hint");
+    rig.run("view.set_view_only", json!({ "on": false }));
+    rig.run("selection.select", json!({ "ids": [a.as_str()] }));
+    rig.run("style.set", json!({ "props": { "opacity": 1 }, "scope": "selection" }));
+    rig.run("selection.clear", json!({}));
+    assert!(rig.i.overlay(&rig.s).canvas.invisible.is_empty(), "opaque again: no hint");
+}

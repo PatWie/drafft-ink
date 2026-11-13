@@ -58,6 +58,36 @@ fn filled_shapes_are_hit_inside() {
 }
 
 #[test]
+fn opacity_zero_changes_nothing_about_what_a_click_finds() {
+    let hide = |mut e: drafftink_canvas::scene::Element| {
+        e.style.opacity = 0.0;
+        e
+    };
+    let c = canvas_with(vec![
+        hide(fill(rect("filled", 100.0, 100.0, 200.0, 100.0))),
+        hide(rect("outlined", 400.0, 100.0, 200.0, 100.0)),
+        hide(text("words", 100.0, 300.0, 100.0, 30.0)),
+    ]);
+    assert_eq!(c.hit_at(p(200.0, 150.0)).map(|h| (h.id.to_string(), h.part)), Some(("filled".into(), HitPart::Fill)));
+    assert_eq!(top(&c, 400.0, 150.0).as_deref(), Some("outlined"), "its outline is hit");
+    assert_eq!(top(&c, 500.0, 150.0), None, "an unfilled shape has no inside, visible or not");
+    assert_eq!(top(&c, 150.0, 315.0).as_deref(), Some("words"), "text is hit anywhere in its box");
+    let ids = c.index().hit_all(c.store(), p(200.0, 150.0), 1.0, &HitOptions::default());
+    assert_eq!(ids.len(), 1);
+    let picked = c.index().marquee(c.store(), &Rect::new(0.0, 0.0, 700.0, 400.0), MarqueeMode::Contain, false);
+    assert_eq!(picked.len(), 3, "a marquee takes them too");
+}
+
+#[test]
+fn a_shape_with_no_stroke_and_no_fill_is_hit_on_its_outline() {
+    let mut e = rect("ghost", 100.0, 100.0, 200.0, 100.0);
+    e.style.stroke_color = drafftink_canvas::scene::Color::TRANSPARENT;
+    let c = canvas_with(vec![e]);
+    assert_eq!(top(&c, 100.0, 150.0).as_deref(), Some("ghost"));
+    assert_eq!(top(&c, 200.0, 150.0), None);
+}
+
+#[test]
 fn rotated_shapes_follow_the_rotation() {
     // A 200x20 bar turned a quarter: now vertical, occupying x 190..210 and y 40..240 around centre (200, 140).
     let mut bar = fill(rect("bar", 100.0, 130.0, 200.0, 20.0));

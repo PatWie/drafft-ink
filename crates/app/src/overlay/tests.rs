@@ -35,6 +35,19 @@ fn the_lasso_path_is_copied_in_drawing_order() {
 }
 
 #[test]
+fn the_outlines_of_invisible_elements_become_paths_for_the_hint() {
+    use drafftink_canvas::InvisibleOutline;
+    use drafftink_geom::kurbo::Shape as _;
+    use drafftink_geom::{Primitive, RectShape};
+    let shape: Primitive = RectShape::new(OrientedBox::from_xywh(10.0, 20.0, 30.0, 40.0, 0.0)).into();
+    let canvas =
+        CanvasOverlay { invisible: vec![InvisibleOutline { element: id("a"), shape }], ..CanvasOverlay::default() };
+    let out = to_render(&canvas, &RemoteParts::default(), &[]);
+    assert_eq!(out.invisible.len(), 1);
+    assert_eq!(out.invisible[0].bounding_box(), Rect::new(10.0, 20.0, 40.0, 60.0));
+}
+
+#[test]
 fn link_icons_keep_their_rectangle_and_kind() {
     let web = LinkIcon { element: id("a"), rect: Rect::new(10.0, 0.0, 26.0, 16.0), to_element: false };
     let element = LinkIcon { element: id("b"), rect: Rect::new(50.0, 0.0, 66.0, 16.0), to_element: true };

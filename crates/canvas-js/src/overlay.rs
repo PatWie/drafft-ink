@@ -95,5 +95,6 @@ pub(crate) fn to_render(overlay: &Overlay) -> drafftink_render::Overlay {
         })
         .collect();
     out.link_icons = overlay.link_icons.iter().map(|i| LinkMark { rect: i.rect, to_element: i.to_element }).collect();
+    out.invisible = overlay.invisible.iter().map(|i| primitive_path(&i.shape)).collect();
     out
 }
