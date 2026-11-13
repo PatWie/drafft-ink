@@ -638,7 +638,7 @@ fn cost_of_a_frame_with_a_thousand_elements() {
     );
 
     dialog::run(&mut f, "settings.set", json!({ "key": "view.minimap", "value": true }));
-    let mut refresh_cost = |f: &mut Fixture| {
+    let refresh_cost = |f: &mut Fixture| {
         let mut spent = 0.0;
         for i in 0..100 {
             // A change of the document: the model captures again, and builds the scene again when the minimap is on.
