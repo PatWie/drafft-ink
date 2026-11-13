@@ -38,8 +38,44 @@ fn intro_json_is_the_output_of_intro_jsonl() {
     let current = std::fs::read_to_string(&committed).unwrap_or_default();
     assert!(
         current == generated,
-        "crates/engine/assets/intro/intro.json is not the output of intro.jsonl. Run `cargo xtask intro` and commit the result."
+        "crates/engine/assets/intro/intro.json is not the output of intro.jsonl. Run `cargo xtask intro` and commit the result.\n{}",
+        first_differences(&current, &generated)
     );
+}
+
+/// The first lines where `committed` and `generated` differ, numbered, so a failure on another machine shows what
+/// differs without a download.
+fn first_differences(committed: &str, generated: &str) -> String {
+    const SHOWN: usize = 8;
+    let mut report = String::new();
+    let mut committed_lines = committed.lines();
+    let mut generated_lines = generated.lines();
+    let mut shown = 0;
+    for number in 1.. {
+        let (a, b) = (committed_lines.next(), generated_lines.next());
+        if a.is_none() && b.is_none() {
+            break;
+        }
+        if a != b {
+            report.push_str(&format!(
+                "line {number}:\n  committed: {}\n  generated: {}\n",
+                a.unwrap_or("<end>"),
+                b.unwrap_or("<end>")
+            ));
+            shown += 1;
+            if shown == SHOWN {
+                break;
+            }
+        }
+    }
+    if report.is_empty() {
+        report = format!(
+            "the lines are equal; the files differ in line endings or in the end ({} and {} bytes)\n",
+            committed.len(),
+            generated.len()
+        );
+    }
+    report
 }
 
 #[test]
