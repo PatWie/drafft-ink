@@ -473,7 +473,7 @@ Rows follow `research/parts/04-features-diff.md` §1.1 to §1.15 and §4. The AI
 
 | # | Feature | Source | Status | Where | Evidence |
 |---|---|---|---|---|---|
-| B-140 | Image formats PNG, JPEG, GIF, WebP, BMP, ICO, AVIF, JFIF, SVG | X:IMAGE_MIME_TYPES | partial | PNG, JPEG, WebP (`io::picture`); GIF and SVG images are skipped on import with a warning | `io/tests/excalidraw::images_come_with_their_picture_and_unsupported_embeds_are_reported` |
+| B-140 | Image formats PNG, JPEG, GIF, WebP, BMP, ICO, AVIF, JFIF, SVG | X:IMAGE_MIME_TYPES | partial | PNG, JPEG, WebP, GIF (first frame), BMP and ICO (largest image) by paste, drop and picker (`io::picture::prepare`; GIF, BMP and ICO are stored as PNG); SVG and AVIF are not read | `io/tests/pictures`, `eng/cmd/image_tests::gif_bmp_and_ico_become_png_pictures_of_the_size_they_have` |
 | B-141 | Downscale big images on insert | X:blob.ts | done | pictures above 2 MiB are re-encoded to at most 2048 px (setting-free; `downscale` argument) | `eng/cmd/image_tests::a_big_picture_is_stored_smaller_unless_downscale_is_off` |
 | B-142 | Content-addressed file table | X:BinaryFiles | done | one copy per SHA-256 | `eng/cmd/image_tests::several_pictures_cascade_by_offset_and_the_same_bytes_are_stored_once` |
 
@@ -666,7 +666,7 @@ Priority: **P0** is a promise of the user's requirement ("keep all old features"
 | 8 | P2 | Lasso and link leftovers (B-002, B-055) | Select live while the lasso path grows; `contain` should select a group only when all members are inside; a link popup on the selected element (the dialog replaces it today) | `engine/interact` select, `ui` | S |
 | 9 | P2 | SVG and PNG interop (B-096, B-161, B-162) | Subset the fonts in SVG export; read and write Excalidraw's PNG metadata | `engine` doc export, `typeset`, `io` | M |
 | 10 | P2 | Library and group UI (B-181, B-191, B-053, B-189, B-056) | Real previews, publish and browse, a dockable sidebar; group name field; avatars; copy link to an element needs a document address scheme | `ui`, `render`, `engine` | M |
-| 11 | P2 | Image support (B-140) | GIF, SVG and BMP decode | `engine` image family, `io::picture` | M |
+| 11 | P2 | Image support (B-140) | SVG and AVIF decode | `engine` image family, `io::picture` | M |
 | 12 | P2 | Stats, theme key, deep select, wheel (B-114, B-115, B-072, B-246, B-238) | Angle and font size fields in the stats panel; a key for the theme; `deep` argument for `selection.select_region`; horizontal `Shift`+wheel | `ui`, `engine` selection, `canvas` | S |
 | 13 | P2 | Fonts, text direction, head fitting (B-095, B-099, B-091) | Add Excalidraw-compatible faces (check licences) and a CJK and emoji fallback; Arabic and Hebrew layout and render fixtures; shrink heads on short segments | `typeset` assets, `sketch` | M |
 | 14 | P2 | Sync between two browser tabs (B-168) | Share the autosave between tabs of one origin | `app` web | S |

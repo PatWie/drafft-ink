@@ -4532,7 +4532,7 @@ export namespace ImageCropEnd {
   };
 }
 
-/** Inserts PNG, JPEG or WebP pictures as image elements, scaled to fit, stored once per content in the document. */
+/** Inserts PNG, JPEG, WebP, GIF, BMP or ICO pictures as image elements, scaled to fit, stored once per content in the document. */
 export namespace ImageInsert {
   /** Where the middle of what is inserted goes. */
   type A_At = A_AtWord | [number, number];
@@ -4565,7 +4565,7 @@ export namespace ImageInsert {
      * size.
      */
     fit?: number;
-    /** The pictures: 1 to 20, each `{base64, name?, mime?}` or `{path}`. PNG, JPEG or WebP, at most 25 MiB each. */
+    /** The pictures: 1 to 20, each `{base64, name?, mime?}` or `{path}`. PNG, JPEG, WebP, GIF, BMP or ICO, at most 25 MiB each. */
     images: A_Bytes[];
     /** A name for messages about pictures that carry no `name` of their own. */
     name?: string | null;

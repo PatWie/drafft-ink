@@ -1,13 +1,20 @@
-//! Pictures for `image.insert`: what some bytes are, how big, and a bounded way to make them smaller.
+//! Pictures for `image.insert`: what some bytes are, how big, and how they become something to store.
 //!
-//! Every function treats its input as hostile. A picture is identified by its first bytes (PNG, JPEG or WebP; a
-//! file extension is never trusted), its size is read from the header without decoding the pixels, and a picture
-//! with more than [`MAX_PIXELS`] pixels is refused before anything is allocated for it. Decoding (only needed to
-//! make a big picture smaller) runs with the `image` crate's allocation limit set. Nothing here panics.
+//! Every function treats its input as hostile. A picture is identified by its first bytes (a file extension is
+//! never trusted), its size is read from the header without decoding the pixels, and a picture with more than
+//! [`MAX_PIXELS`] pixels is refused before anything is allocated for it. Decoding runs with the `image` crate's
+//! allocation limit set. Nothing here panics.
+//!
+//! [`prepare`] is the one entry point for storing a picture. PNG, JPEG and WebP are stored as they are. GIF, BMP
+//! and ICO are stored as a PNG made from their first frame (GIF) or their largest image (ICO): the renderer, the
+//! exports and Excalidraw all read PNG, and a stored GIF would have to be decoded again at every start. A big
+//! picture is then made smaller, see [`prepare`].
+
+mod ico;
 
 use std::io::Cursor;
 
-use image::{ImageFormat, ImageReader, Limits};
+use image::{DynamicImage, ImageFormat, ImageReader, Limits};
 
 /// Largest picture accepted, in bytes.
 pub const MAX_PICTURE_BYTES: usize = 25 * 1024 * 1024;
@@ -25,7 +32,7 @@ const DECODE_ALLOC: u64 = 768 * 1024 * 1024;
 /// Why a picture was refused.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum PictureError {
-    /// The bytes are not a PNG, JPEG or WebP.
+    /// The bytes are not a picture format drafft.ink reads.
     #[error("{found}")]
     Unsupported {
         /// What the bytes look like, in words.
@@ -52,31 +59,99 @@ pub enum PictureError {
     },
 }
 
+/// The picture formats drafft.ink reads.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Kind {
+    /// PNG. Stored as it is.
+    Png,
+    /// JPEG. Stored as it is.
+    Jpeg,
+    /// WebP. Stored as it is.
+    WebP,
+    /// GIF. The first frame is stored, as a PNG.
+    Gif,
+    /// BMP. Stored as a PNG.
+    Bmp,
+    /// Windows icon. The largest image is stored, as a PNG.
+    Ico,
+}
+
+impl Kind {
+    /// The media type of the format.
+    #[must_use]
+    pub fn mime(self) -> &'static str {
+        match self {
+            Kind::Png => "image/png",
+            Kind::Jpeg => "image/jpeg",
+            Kind::WebP => "image/webp",
+            Kind::Gif => "image/gif",
+            Kind::Bmp => "image/bmp",
+            Kind::Ico => "image/x-icon",
+        }
+    }
+
+    fn format(self) -> ImageFormat {
+        match self {
+            Kind::Png => ImageFormat::Png,
+            Kind::Jpeg => ImageFormat::Jpeg,
+            Kind::WebP => ImageFormat::WebP,
+            Kind::Gif => ImageFormat::Gif,
+            Kind::Bmp => ImageFormat::Bmp,
+            Kind::Ico => ImageFormat::Ico,
+        }
+    }
+
+    /// Whether the bytes go into the document unchanged.
+    fn is_stored_as_given(self) -> bool {
+        matches!(self, Kind::Png | Kind::Jpeg | Kind::WebP)
+    }
+}
+
 /// The format and size of a picture.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Probe {
-    /// Media type: `image/png`, `image/jpeg` or `image/webp`.
-    pub mime: &'static str,
+    /// The format.
+    pub kind: Kind,
     /// Width in pixels, at least 1.
     pub width: u32,
     /// Height in pixels, at least 1.
     pub height: u32,
 }
 
-fn format_of(bytes: &[u8]) -> Result<ImageFormat, PictureError> {
+/// The size of a BMP header (`BITMAPCOREHEADER` and the `BITMAPINFOHEADER` family) that follows the 14-byte file
+/// header. A two-letter signature alone would take any text that starts with "BM".
+const BMP_HEADER_SIZES: [u32; 8] = [12, 16, 40, 52, 56, 64, 108, 124];
+
+/// Names the format of `bytes` from its first bytes, or `None`. It reads no size and decodes nothing, so a
+/// damaged picture is still named; [`probe`] and [`prepare`] find the damage.
+#[must_use]
+pub fn sniff(bytes: &[u8]) -> Option<Kind> {
     if bytes.starts_with(&[0x89, b'P', b'N', b'G', 0x0d, 0x0a, 0x1a, 0x0a]) {
-        Ok(ImageFormat::Png)
+        Some(Kind::Png)
     } else if bytes.starts_with(&[0xff, 0xd8, 0xff]) {
-        Ok(ImageFormat::Jpeg)
+        Some(Kind::Jpeg)
     } else if bytes.starts_with(b"RIFF") && bytes.get(8..12) == Some(b"WEBP".as_slice()) {
-        Ok(ImageFormat::WebP)
+        Some(Kind::WebP)
+    } else if bytes.starts_with(b"GIF87a") || bytes.starts_with(b"GIF89a") {
+        Some(Kind::Gif)
+    } else if bytes.starts_with(b"BM")
+        && bytes
+            .get(14..18)
+            .and_then(|b| b.try_into().ok())
+            .is_some_and(|b| BMP_HEADER_SIZES.contains(&u32::from_le_bytes(b)))
+    {
+        Some(Kind::Bmp)
+    } else if ico::looks_like_ico(bytes) {
+        Some(Kind::Ico)
     } else {
+        None
+    }
+}
+
+fn kind_of(bytes: &[u8]) -> Result<Kind, PictureError> {
+    sniff(bytes).ok_or_else(|| {
         let found = if bytes.is_empty() {
             "it is empty".to_owned()
-        } else if bytes.starts_with(b"GIF8") {
-            "it is a GIF".to_owned()
-        } else if bytes.starts_with(b"BM") {
-            "it is a BMP".to_owned()
         } else if bytes.starts_with(b"%PDF") {
             "it is a PDF".to_owned()
         } else if bytes.starts_with(&[0x49, 0x49, 0x2a, 0x00]) || bytes.starts_with(&[0x4d, 0x4d, 0x00, 0x2a]) {
@@ -86,15 +161,16 @@ fn format_of(bytes: &[u8]) -> Result<ImageFormat, PictureError> {
         } else {
             "its content is not a picture format drafft.ink knows".to_owned()
         };
-        Err(PictureError::Unsupported { found })
-    }
+        PictureError::Unsupported { found }
+    })
 }
 
-fn mime_of(f: ImageFormat) -> &'static str {
-    match f {
-        ImageFormat::Jpeg => "image/jpeg",
-        ImageFormat::WebP => "image/webp",
-        _ => "image/png",
+/// The bytes the `image` crate reads for `kind`. An ICO is cut down to its largest image first, because the
+/// decoder prefers the deepest colour over the biggest size.
+fn readable(bytes: &[u8], kind: Kind) -> Result<std::borrow::Cow<'_, [u8]>, PictureError> {
+    match kind {
+        Kind::Ico => ico::largest(bytes).map(std::borrow::Cow::Owned),
+        _ => Ok(std::borrow::Cow::Borrowed(bytes)),
     }
 }
 
@@ -103,8 +179,9 @@ pub fn probe(bytes: &[u8]) -> Result<Probe, PictureError> {
     if bytes.len() > MAX_PICTURE_BYTES {
         return Err(PictureError::TooLarge { size: bytes.len() });
     }
-    let format = format_of(bytes)?;
-    let reader = ImageReader::with_format(Cursor::new(bytes), format);
+    let kind = kind_of(bytes)?;
+    let readable = readable(bytes, kind)?;
+    let reader = ImageReader::with_format(Cursor::new(readable.as_ref()), kind.format());
     let (width, height) = reader.into_dimensions().map_err(|e| PictureError::Unreadable(e.to_string()))?;
     if width == 0 || height == 0 {
         return Err(PictureError::Unreadable("the picture has no pixels".to_owned()));
@@ -112,47 +189,97 @@ pub fn probe(bytes: &[u8]) -> Result<Probe, PictureError> {
     if width > MAX_SIDE || height > MAX_SIDE || u64::from(width) * u64::from(height) > MAX_PIXELS {
         return Err(PictureError::TooManyPixels { width, height });
     }
-    Ok(Probe { mime: mime_of(format), width, height })
+    Ok(Probe { kind, width, height })
 }
 
-/// Decodes the whole picture once, to find damaged pixel data now. [`probe`] reads only the header, so a picture
-/// that is cut short or corrupt would otherwise be stored and fail every time it is drawn. The decoder runs with
-/// the same side and allocation limits as [`shrink`]; the pixels are dropped at once.
-pub fn validate_pixels(bytes: &[u8], probe: &Probe) -> Result<(), PictureError> {
-    let format = format_of(bytes)?;
-    let mut reader = ImageReader::with_format(Cursor::new(bytes), format);
+/// Decodes a picture, with the side limits of `probe` and the allocation limit of this module.
+fn decode(bytes: &[u8], probe: &Probe) -> Result<DynamicImage, PictureError> {
+    let readable = readable(bytes, probe.kind)?;
+    let mut reader = ImageReader::with_format(Cursor::new(readable.as_ref()), probe.kind.format());
     let mut limits = Limits::default();
     limits.max_image_width = Some(probe.width);
     limits.max_image_height = Some(probe.height);
     limits.max_alloc = Some(DECODE_ALLOC);
     reader.limits(limits);
-    reader.decode().map(drop).map_err(|e| PictureError::Unreadable(e.to_string()))
+    reader.decode().map_err(|e| PictureError::Unreadable(e.to_string()))
+}
+
+/// Decodes the whole picture once, to find damaged pixel data now. [`probe`] reads only the header, so a picture
+/// that is cut short or corrupt would otherwise be stored and fail every time it is drawn. The pixels are dropped
+/// at once.
+fn validate_pixels(bytes: &[u8], probe: &Probe) -> Result<(), PictureError> {
+    decode(bytes, probe).map(drop)
+}
+
+fn encode_png(img: &DynamicImage) -> Result<Vec<u8>, PictureError> {
+    let mut out = Cursor::new(Vec::new());
+    img.write_to(&mut out, ImageFormat::Png).map_err(|e| PictureError::Unreadable(e.to_string()))?;
+    Ok(out.into_inner())
+}
+
+/// A picture that is ready to be stored in the document.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Prepared {
+    /// The bytes to store.
+    pub bytes: Vec<u8>,
+    /// Their media type: `image/png`, `image/jpeg` or `image/webp`.
+    pub mime: &'static str,
+    /// Width and height in pixels of the stored picture.
+    pub natural: (u32, u32),
+    /// Width and height in pixels of the picture as it was given. A picture is shown at this size (before the
+    /// caller's fit), also when a smaller copy is stored.
+    pub given: (u32, u32),
+    /// True when a big picture was stored smaller.
+    pub shrunk: bool,
+}
+
+/// Checks a picture and makes it storable, in this order:
+///
+/// 1. [`probe`]: the format, and the size from the header (too many pixels is refused here).
+/// 2. GIF, BMP and ICO become a PNG (first frame; largest image).
+/// 3. With `downscale`, a picture of more than [`SHRINK_ABOVE_BYTES`] bytes and a side over [`SHRINK_TO_SIDE`]
+///    is scaled so the long side is [`SHRINK_TO_SIDE`] and encoded again (JPEG stays JPEG at quality 85; the others
+///    become PNG, which keeps transparency). The result is kept only when it has fewer bytes.
+/// 4. A picture that was neither converted nor shrunk is decoded once and dropped, to find damaged pixel data now.
+pub fn prepare(bytes: Vec<u8>, downscale: bool) -> Result<Prepared, PictureError> {
+    let probe = probe(&bytes)?;
+    let given = (probe.width, probe.height);
+    let (bytes, kind, natural) = if probe.kind.is_stored_as_given() {
+        (bytes, probe.kind, given)
+    } else {
+        let png = encode_png(&decode(&bytes, &probe)?)?;
+        (png, Kind::Png, given)
+    };
+    let converted = kind != probe.kind;
+    let stored = Probe { kind, width: natural.0, height: natural.1 };
+    let shrunk = if downscale { shrink(&bytes, &stored)? } else { None };
+    if shrunk.is_none() && !converted {
+        validate_pixels(&bytes, &stored)?;
+    }
+    Ok(match shrunk {
+        Some(sh) => {
+            Prepared { bytes: sh.bytes, mime: sh.kind.mime(), natural: (sh.width, sh.height), given, shrunk: true }
+        }
+        None => Prepared { bytes, mime: kind.mime(), natural, given, shrunk: false },
+    })
 }
 
 /// A re-encoded picture.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Shrunk {
-    /// The new bytes.
-    pub bytes: Vec<u8>,
-    /// Their media type.
-    pub mime: &'static str,
-    /// Width in pixels.
-    pub width: u32,
-    /// Height in pixels.
-    pub height: u32,
+struct Reencoded {
+    bytes: Vec<u8>,
+    kind: Kind,
+    width: u32,
+    height: u32,
 }
 
-/// Makes a big picture smaller: when it has more than [`SHRINK_ABOVE_BYTES`] bytes and a side over
-/// [`SHRINK_TO_SIDE`], it is decoded, scaled so the long side is [`SHRINK_TO_SIDE`], and encoded again (JPEG stays
-/// JPEG at quality 85; PNG and WebP become PNG, which keeps transparency). Returns `None` when the picture is
-/// small enough as it is, or when the new bytes would not be smaller. `probe` must be the result of [`probe`] on
-/// `bytes`.
-pub fn shrink(bytes: &[u8], probe: &Probe) -> Result<Option<Shrunk>, PictureError> {
+/// Makes a big picture smaller, see [`prepare`]. Returns `None` when the picture is small enough as it is, or when
+/// the new bytes would not be smaller. `probe` must be the result of [`probe`] on `bytes`, which are PNG, JPEG or
+/// WebP.
+fn shrink(bytes: &[u8], probe: &Probe) -> Result<Option<Reencoded>, PictureError> {
     if bytes.len() <= SHRINK_ABOVE_BYTES || probe.width.max(probe.height) <= SHRINK_TO_SIDE {
         return Ok(None);
     }
-    let format = format_of(bytes)?;
-    let mut reader = ImageReader::with_format(Cursor::new(bytes), format);
+    let mut reader = ImageReader::with_format(Cursor::new(bytes), probe.kind.format());
     let mut limits = Limits::default();
     limits.max_image_width = Some(MAX_SIDE);
     limits.max_image_height = Some(MAX_SIDE);
@@ -163,20 +290,18 @@ pub fn shrink(bytes: &[u8], probe: &Probe) -> Result<Option<Shrunk>, PictureErro
     let w = ((f64::from(probe.width) * k).round() as u32).max(1);
     let h = ((f64::from(probe.height) * k).round() as u32).max(1);
     let small = img.resize_exact(w, h, image::imageops::FilterType::Triangle);
-    let mut out = Cursor::new(Vec::new());
-    let mime = if format == ImageFormat::Jpeg {
+    let (out, kind) = if probe.kind == Kind::Jpeg {
+        let mut out = Cursor::new(Vec::new());
         let enc = image::codecs::jpeg::JpegEncoder::new_with_quality(&mut out, 85);
         small.to_rgb8().write_with_encoder(enc).map_err(|e| PictureError::Unreadable(e.to_string()))?;
-        "image/jpeg"
+        (out.into_inner(), Kind::Jpeg)
     } else {
-        small.write_to(&mut out, ImageFormat::Png).map_err(|e| PictureError::Unreadable(e.to_string()))?;
-        "image/png"
+        (encode_png(&small)?, Kind::Png)
     };
-    let bytes_out = out.into_inner();
-    if bytes_out.len() >= bytes.len() {
+    if out.len() >= bytes.len() {
         return Ok(None);
     }
-    Ok(Some(Shrunk { bytes: bytes_out, mime, width: w, height: h }))
+    Ok(Some(Reencoded { bytes: out, kind, width: w, height: h }))
 }
 
 #[cfg(test)]
@@ -195,14 +320,14 @@ mod tests {
     #[test]
     fn probe_reads_the_size_from_the_header() {
         let p = probe(&png(30, 20)).unwrap();
-        assert_eq!((p.mime, p.width, p.height), ("image/png", 30, 20));
+        assert_eq!((p.kind, p.width, p.height), (Kind::Png, 30, 20));
     }
 
     #[test]
     fn other_formats_and_garbage_are_unsupported_with_a_reason() {
         for (bytes, word) in [
-            (b"GIF89a....".to_vec(), "GIF"),
             (b"%PDF-1.4".to_vec(), "PDF"),
+            (b"BMW notes about a bike".to_vec(), "not a picture"),
             (b"<svg xmlns=''></svg>".to_vec(), "SVG"),
             (Vec::new(), "empty"),
             (vec![1, 2, 3], "not a picture"),
@@ -257,7 +382,9 @@ mod tests {
     fn shrink_leaves_small_pictures_alone() {
         let b = png(100, 100);
         let p = probe(&b).unwrap();
-        assert_eq!(shrink(&b, &p).unwrap(), None);
+        assert!(shrink(&b, &p).unwrap().is_none());
+        let ready = prepare(b.clone(), true).unwrap();
+        assert_eq!((ready.bytes.as_slice(), ready.mime, ready.shrunk), (b.as_slice(), "image/png", false));
     }
 
     #[test]
@@ -271,11 +398,11 @@ mod tests {
         img.write_to(&mut out, ImageFormat::Png).unwrap();
         let b = out.into_inner();
         assert!(b.len() > SHRINK_ABOVE_BYTES, "{}", b.len());
-        let p = probe(&b).unwrap();
-        let s = shrink(&b, &p).unwrap();
+        let s = prepare(b.clone(), true).unwrap();
+        assert_eq!(s.given, (2400, 1200));
         // Scaled noise may or may not be smaller; when it is, the size is as promised.
-        if let Some(s) = s {
-            assert_eq!((s.width, s.height), (2048, 1024));
+        if s.shrunk {
+            assert_eq!(s.natural, (2048, 1024));
             let q = probe(&s.bytes).unwrap();
             assert_eq!((q.width, q.height), (2048, 1024));
             assert!(s.bytes.len() < b.len());

@@ -263,7 +263,7 @@ fn from_system(s: &mut Session, plain_text: bool) -> Result<Found, Refusal> {
         if drafftink_io::picture::probe(&bytes).is_ok() || plain.is_none() {
             return Ok(Found::Image(Loaded { bytes, name: "the clipboard image".to_owned() }));
         }
-        s.warn("The clipboard image is not a PNG, JPEG or WebP, so its text was pasted instead.");
+        s.warn("The clipboard image is not a picture format drafft.ink reads (PNG, JPEG, WebP, GIF, BMP or ICO), so its text was pasted instead.");
     }
     plain.map(Found::Text).ok_or_else(|| empty(cmd))
 }

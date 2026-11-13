@@ -115,7 +115,7 @@ smol_str = { version = "0.3", features = ["serde"] }
 base64 = "0.22"
 sha2 = "0.10"
 uuid = { version = "1", features = ["serde"] }
-image = { version = "0.25", default-features = false, features = ["png", "jpeg", "webp"] }
+image = { version = "0.25", default-features = false, features = ["png", "jpeg", "webp", "gif", "bmp", "ico"] }
 png = "0.18"
 web-time = "1"
 
@@ -221,6 +221,9 @@ opt-level = "s"
 opt-level = "s"
 
 [profile.dist.package.image-webp]
+opt-level = "s"
+
+[profile.dist.package.gif]
 opt-level = "s"
 
 [profile.dist.package.image]
@@ -353,6 +356,9 @@ opt-level = "z"
 opt-level = "z"
 
 [profile.release-wasm.package.image-webp]
+opt-level = "z"
+
+[profile.release-wasm.package.gif]
 opt-level = "z"
 
 [profile.release-wasm.package.image]

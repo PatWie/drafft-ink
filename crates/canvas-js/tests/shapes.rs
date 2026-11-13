@@ -269,7 +269,7 @@ fn what_is_not_a_readable_picture_is_refused_and_changes_nothing() {
     s.add(rect("a", 0.0, 0.0, 10.0, 10.0)).unwrap();
     let revision = s.revision();
     let text = s.add_image(b"hello", &ImageSpec::default()).unwrap_err().to_string();
-    assert!(text.contains("PNG, JPEG or WebP"), "{text}");
+    assert!(text.contains("PNG, JPEG, WebP"), "{text}");
     assert!(s.add_image(&[], &ImageSpec::default()).is_err());
     let svg = s.add_image(b"<svg xmlns='http://www.w3.org/2000/svg'/>", &ImageSpec::default()).unwrap_err().to_string();
     assert!(svg.contains("SVG"), "{svg}");

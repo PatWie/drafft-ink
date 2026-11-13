@@ -662,7 +662,7 @@ fn drop_with_nothing_usable_says_what_is_supported() {
     assert_eq!(r.code, "nothing_to_do");
     assert_eq!(
         r.message,
-        "Nothing to open: none of the 2 dropped files is an image, document or library. Supported: PNG, JPEG, WebP, .json, .drafftink, .excalidraw, .excalidrawlib."
+        "Nothing to open: none of the 2 dropped files is an image, document or library. Supported: PNG, JPEG, WebP, GIF, BMP, ICO, .json, .drafftink, .excalidraw, .excalidrawlib."
     );
 }
 
@@ -955,6 +955,18 @@ fn drop_with_an_image_that_cannot_be_read_says_why() {
     let r = refuse(&mut s, "doc.drop", json!({"items": [{"name": "bad.jpg", "bytes": {"base64": b64(&[0xff, 0xd8, 0xff, 0xe0, 0, 0])}}]}));
     assert_eq!(r.code, "nothing_to_do");
     assert!(r.message.contains("none of the 1 dropped files could be opened") && r.message.contains("bad.jpg"), "{}", r.message);
+}
+
+#[test]
+fn drop_inserts_gif_bmp_and_ico_files_as_pictures() {
+    use crate::cmd::image::tests::{GIF_1X1, bmp_2x1, ico_4_and_20};
+    let (mut s, _f) = testing::session();
+    let item = |name: &str, bytes: &[u8]| json!({"name": name, "bytes": {"base64": b64(bytes)}});
+    // Whatever the media type says: the content decides, and a file without a type is read the same.
+    let out = run(&mut s, "doc.drop", json!({"items": [item("a.gif", GIF_1X1), item("b.bmp", &bmp_2x1()), item("c.ico", &ico_4_and_20())]}));
+    assert_eq!((out["images"].as_u64(), out["skipped"].as_u64()), (Some(3), Some(0)), "{out}");
+    let kinds: Vec<_> = s.store().iter().map(|e| e.tag()).collect();
+    assert_eq!(kinds, [drafftink_scene::Kind::Image; 3]);
 }
 
 // ---- doc.save ----

@@ -7,7 +7,7 @@
 use drafftink_edit::library::{self, InsertReport, LibraryError, Placement};
 use drafftink_geom::kurbo::Point;
 use drafftink_io::native::{self, Format};
-use drafftink_io::{IoError, Opened, png_meta};
+use drafftink_io::{IoError, Opened, picture, png_meta};
 use drafftink_scene::{Document, DocumentError, SceneRead, StoreError};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -707,14 +707,6 @@ enum Class {
     Skip(String),
 }
 
-fn is_jpeg(b: &[u8]) -> bool {
-    b.starts_with(&[0xff, 0xd8, 0xff])
-}
-
-fn is_webp(b: &[u8]) -> bool {
-    b.len() >= 12 && b.starts_with(b"RIFF") && b.get(8..12) == Some(b"WEBP")
-}
-
 /// What a PNG's text chunks hold.
 enum PngScene {
     None,
@@ -756,7 +748,7 @@ fn classify(bytes: &[u8], scene_png: ScenePng) -> Class {
         format if is_document(format) => Class::Document,
         Format::Svg => Class::Skip("SVG pictures are not supported; only SVG files exported from drafft.ink with a scene can be opened with `doc.open`".to_owned()),
         Format::LegacyClipboard | Format::Mermaid => Class::Skip("it is clipboard or diagram text, not a file".to_owned()),
-        Format::Unknown if is_jpeg(bytes) || is_webp(bytes) => Class::Image(None),
+        Format::Unknown if picture::sniff(bytes).is_some() => Class::Image(None),
         _ => Class::Skip("it is not an image, document or library".to_owned()),
     }
 }
@@ -839,7 +831,7 @@ pub(super) fn drop_files(s: &mut Session, a: DropArgs) -> Result<DropOut, Refusa
             id,
             "open",
             &format!(
-                "none of the {n} dropped files is an image, document or library. Supported: PNG, JPEG, WebP, .json, .drafftink, .excalidraw, .excalidrawlib"
+                "none of the {n} dropped files is an image, document or library. Supported: PNG, JPEG, WebP, GIF, BMP, ICO, .json, .drafftink, .excalidraw, .excalidrawlib"
             ),
         ));
     }

@@ -133,7 +133,7 @@ impl Stage {
         Ok(id)
     }
 
-    /// Adds a picture from the bytes of a PNG, JPEG or WebP file. `options` may hold `id`, `x`, `y`, `width`,
+    /// Adds a picture from the bytes of a PNG, JPEG, WebP, GIF, BMP or ICO file. `options` may hold `id`, `x`, `y`, `width`,
     /// `height`, `maxSide` and `name`; without them the picture is at the origin in its natural size. Returns
     /// the id of the new shape.
     #[wasm_bindgen(js_name = addImage)]

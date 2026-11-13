@@ -84,6 +84,73 @@ fn session() -> Session {
     testing::headless_session()
 }
 
+// ---- GIF, BMP and ICO ----
+
+/// A 1x1 GIF, written by hand.
+pub(crate) const GIF_1X1: &[u8] = &[
+    b'G', b'I', b'F', b'8', b'9', b'a', 1, 0, 1, 0, 0x80, 0, 0, 0, 0, 0, 0xff, 0xff, 0xff, 0x21, 0xf9, 4, 0, 0, 0, 0, 0, 0x2c, 0, 0, 0,
+    0, 1, 0, 1, 0, 0, 2, 2, 0x44, 1, 0, 0x3b,
+];
+
+/// A 2x1 BMP (24 bits), written by hand: a red and a blue pixel.
+pub(crate) fn bmp_2x1() -> Vec<u8> {
+    let mut out = b"BM".to_vec();
+    out.extend_from_slice(&58u32.to_le_bytes());
+    out.extend_from_slice(&[0; 4]);
+    out.extend_from_slice(&54u32.to_le_bytes());
+    out.extend_from_slice(&40u32.to_le_bytes());
+    out.extend_from_slice(&[2, 0, 0, 0, 1, 0, 0, 0, 1, 0, 24, 0]);
+    out.extend_from_slice(&[0; 24]);
+    out.extend_from_slice(&[0, 0, 255, 255, 0, 0, 0, 0]);
+    out
+}
+
+/// A square RGBA PNG of one colour. An icon reads only PNGs of this kind.
+fn rgba_png(side: u32) -> Vec<u8> {
+    let mut out = Vec::new();
+    {
+        let mut enc = png::Encoder::new(&mut out, side, side);
+        enc.set_color(png::ColorType::Rgba);
+        enc.set_depth(png::BitDepth::Eight);
+        let mut writer = enc.write_header().unwrap();
+        writer.write_image_data(&[200u8, 0, 0, 255].repeat((side * side) as usize)).unwrap();
+    }
+    out
+}
+
+/// An icon with a 4 px and a 20 px picture (PNG inside), both declared with 32 bits.
+pub(crate) fn ico_4_and_20() -> Vec<u8> {
+    let (small, large) = (rgba_png(4), rgba_png(20));
+    let mut out = vec![0, 0, 1, 0, 2, 0];
+    for (side, data, offset) in [(4u8, &small, 38usize), (20, &large, 38 + small.len())] {
+        out.extend_from_slice(&[side, side, 0, 0, 1, 0, 32, 0]);
+        out.extend_from_slice(&(data.len() as u32).to_le_bytes());
+        out.extend_from_slice(&(offset as u32).to_le_bytes());
+    }
+    out.extend_from_slice(&small);
+    out.extend_from_slice(&large);
+    out
+}
+
+#[test]
+fn gif_bmp_and_ico_become_png_pictures_of_the_size_they_have() {
+    let mut s = session();
+    let files = [(GIF_1X1.to_vec(), "dot.gif", (1, 1)), (bmp_2x1(), "pair.bmp", (2, 1)), (ico_4_and_20(), "app.ico", (20, 20))];
+    for (bytes, name, (w, h)) in files {
+        let out = run(&mut s, "image.insert", json!({"images": [named(&bytes, name)], "at": [0, 0]}));
+        let one = &out["images"][0];
+        assert_eq!((one["natural_width"].as_u64(), one["natural_height"].as_u64()), (Some(w), Some(h)), "{name}");
+        assert_eq!((one["width"].as_f64(), one["height"].as_f64()), (Some(w as f64), Some(h as f64)), "{name}");
+        // What is stored is a PNG, not the file as it came.
+        assert!(s.store().file(&FileId::of(&bytes)).is_none(), "{name}: the original bytes are not stored");
+        let id = FileId::new(one["file_id"].as_str().unwrap()).unwrap();
+        let entry = s.store().file(&id).unwrap();
+        assert_eq!(entry.mime, "image/png", "{name}");
+        assert!(entry.bytes.starts_with(&[0x89, b'P', b'N', b'G']), "{name}");
+    }
+    assert_eq!(images(&s).len(), 3);
+}
+
 // ---- availability ----
 
 #[test]
@@ -235,9 +302,9 @@ fn a_batch_of_inserts_is_one_step() {
 #[test]
 fn other_formats_are_unsupported_and_the_name_is_in_the_message() {
     let mut s = session();
-    let r = refuse_clean(&mut s, "image.insert", json!({"images": [named(b"GIF89a\x01\x00\x01\x00", "cat.gif")]}));
+    let r = refuse_clean(&mut s, "image.insert", json!({"images": [named(b"%PDF-1.4 ....", "paper.pdf")]}));
     assert_eq!(r.code, "unsupported_format");
-    assert_eq!(r.message, "`cat.gif` is not a supported image (it is a GIF). Use PNG, JPEG or WebP.");
+    assert_eq!(r.message, "`paper.pdf` is not a supported image (it is a PDF). Use PNG, JPEG, WebP, GIF, BMP or ICO.");
     let r = refuse_clean(&mut s, "image.insert", json!({"images": [b64(b"hello there")]}));
     assert_eq!(r.code, "unsupported_format");
     assert!(r.message.starts_with("`image 1` is not a supported image"), "{}", r.message);

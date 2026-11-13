@@ -523,10 +523,27 @@ fn an_image_on_the_clipboard_is_inserted_with_the_800_rule() {
     assert_eq!(out["kind"], "image");
     let e = s.element(&id_list(&out, "ids")[0]).unwrap();
     assert_eq!(e.style.stroke_color, drafftink_scene::Color::TRANSPARENT, "also from a given source");
-    // An image that is not PNG, JPEG or WebP, with nothing else to paste.
-    fakes.clipboard.set(ClipPayload::Image { bytes: b"GIF89a....".to_vec(), mime: "image/gif".into() });
+    // An image that is not a picture format we read, with nothing else to paste.
+    fakes.clipboard.set(ClipPayload::Image { bytes: b"%PDF-1.4 ....".to_vec(), mime: "application/pdf".into() });
     let r = refuse_clean(&mut s, "clipboard.paste", json!({}));
     assert_eq!(r.code, "unsupported_format");
+}
+
+#[test]
+fn a_gif_bmp_or_ico_on_the_clipboard_is_pasted_as_a_picture() {
+    use crate::cmd::image::tests::{GIF_1X1, bmp_2x1, ico_4_and_20};
+    for (bytes, mime, size) in [
+        (GIF_1X1.to_vec(), "image/gif", [1.0, 1.0]),
+        (bmp_2x1(), "image/bmp", [2.0, 1.0]),
+        (ico_4_and_20(), "image/x-icon", [20.0, 20.0]),
+    ] {
+        let (mut s, fakes) = fx();
+        fakes.clipboard.set(ClipPayload::Image { bytes, mime: mime.into() });
+        let out = run(&mut s, "clipboard.paste", json!({"at": [0, 0]}));
+        assert_eq!(out["kind"], "image", "{mime}");
+        let e = s.element(&id_list(&out, "ids")[0]).unwrap();
+        assert_eq!([e.transform.w, e.transform.h], size, "{mime}");
+    }
 }
 
 #[test]

@@ -151,7 +151,7 @@ impl Core {
         }
     }
 
-    /// Adds a picture from the bytes of a PNG, JPEG or WebP file, on top of everything. The bytes are identified by
+    /// Adds a picture from the bytes of a PNG, JPEG, WebP, GIF, BMP or ICO file, on top of everything. The bytes are identified by
     /// their content, stored once in the scene and the shape gets the natural size of the picture unless `spec`
     /// says otherwise (`ImageSpec`). A damaged or unsupported file is refused and changes nothing.
     pub fn add_image(&mut self, bytes: &[u8], spec: &ImageSpec) -> Result<ElementId, ApiError> {
