@@ -347,6 +347,34 @@ fn toggle_flips_a_boolean_and_stores_it() {
 }
 
 #[test]
+fn attaching_arrows_is_on_by_default_toggles_and_survives_a_restart() {
+    let (mut s, f) = testing::session();
+    let got = run(&mut s, "settings.get", json!({"key": "arrow.binding"}));
+    assert_eq!((got["settings"]["arrow.binding"].clone(), got["default"].clone()), (json!(true), json!(true)));
+    let out = run(&mut s, "settings.toggle", json!({"key": "arrow.binding"}));
+    assert_eq!((out["value"].clone(), out["previous"].clone(), out["changed"].clone()), (json!(false), json!(true), json!(true)));
+    assert_eq!(stored(&f), Some(json!({"schema": 1, "values": {"arrow.binding": false}})));
+    // Only a value that differs from the default is stored, so a restart reads it back.
+    let mut again = Session::new(f.ports());
+    let report = again.load_settings().unwrap();
+    assert_eq!(report.applied, ["arrow.binding"]);
+    assert_eq!(value(&again, "arrow.binding"), json!(false));
+    let out = run(&mut again, "settings.set", json!({"key": "arrow.binding", "value": true}));
+    assert_eq!(out["changed"], json!(true));
+    assert_eq!(stored(&f), None, "the default again: nothing stored");
+    assert_eq!(refuse(&mut again, "settings.set", json!({"key": "arrow.binding", "value": "yes"})).code, "bad_args");
+}
+
+#[test]
+fn the_attach_toggle_is_a_setting_and_never_part_of_the_document() {
+    let (mut s, _f) = testing::session();
+    let (revision, undo) = (s.tab().doc.revision(), s.tab().doc.undo_depth());
+    run(&mut s, "settings.toggle", json!({"key": "arrow.binding"}));
+    // Settings are per person: the document, and with it what collaborators receive and what undo walks, is untouched.
+    assert_eq!((s.tab().doc.revision(), s.tab().doc.undo_depth()), (revision, undo));
+}
+
+#[test]
 fn toggle_refuses_a_setting_that_is_not_on_or_off() {
     let mut s = testing::headless_session();
     let before = s.fingerprint();
@@ -361,9 +389,12 @@ fn toggle_refuses_a_setting_that_is_not_on_or_off() {
 fn alt_s_toggles_smart_guides_and_mod_quote_cycles_the_grid() {
     let s = testing::headless_session();
     let t = s.spec("settings.toggle").unwrap();
-    assert_eq!(t.shortcuts.len(), 1);
+    assert_eq!(t.shortcuts.len(), 2);
     assert_eq!(t.shortcuts[0].keys, &["Alt+S"]);
     assert_eq!(serde_json::from_str::<Value>(t.shortcuts[0].args).unwrap(), json!({"key": "snap.smart_guides"}));
+    assert_eq!(t.shortcuts[1].keys, &["Alt+B"]);
+    assert_eq!(t.shortcuts[1].title, Some("Attach arrows to shapes"));
+    assert_eq!(serde_json::from_str::<Value>(t.shortcuts[1].args).unwrap(), json!({"key": "arrow.binding"}));
     let c = s.spec("settings.cycle").unwrap();
     assert_eq!(c.shortcuts[0].keys, &["Mod+'"]);
     assert_eq!(serde_json::from_str::<Value>(c.shortcuts[0].args).unwrap(), json!({"key": "view.grid_style"}));

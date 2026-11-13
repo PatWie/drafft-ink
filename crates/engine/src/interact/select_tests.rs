@@ -932,6 +932,87 @@ fn ctrl_keeps_the_arrow_end_from_binding() {
     assert_eq!(end_binding(&rig, &arrow), None);
 }
 
+/// An arrow that is bound at both ends to two rectangles, selected.
+fn bound_arrow() -> (Rig, ElementId, ElementId) {
+    let mut rig = Rig::new();
+    let a = rig.rect(100.0, 100.0, 100.0, 100.0);
+    let b = rig.rect(400.0, 100.0, 100.0, 100.0);
+    let arrow = testing::create_arrow_between(&mut rig.s, &a, &b).expect("arrow");
+    rig.pick(&[&arrow]);
+    (rig, arrow, b)
+}
+
+#[test]
+fn with_attaching_off_dragging_an_end_onto_a_shape_binds_nothing_and_shows_no_candidate() {
+    let (mut rig, arrow, _) = free_arrow();
+    rig.run("settings.toggle", json!({ "key": "arrow.binding" }));
+    let end = rig.handle_pos(&Handle::Point { element: arrow.clone(), index: 1 });
+    rig.hold_drag((end.x, end.y), (450.0, 150.0));
+    assert!(rig.i.parts().highlight.is_empty());
+    rig.up(450.0, 150.0);
+    assert_eq!(end_binding(&rig, &arrow), None);
+}
+
+#[test]
+fn with_attaching_off_ctrl_binds_the_dragged_end_and_with_it_on_ctrl_does_not() {
+    let (mut rig, arrow, target) = free_arrow();
+    rig.run("settings.set", json!({ "key": "arrow.binding", "value": false }));
+    let end = rig.handle_pos(&Handle::Point { element: arrow.clone(), index: 1 });
+    rig.with_mods(CTRL, |r| r.hold_drag((end.x, end.y), (450.0, 150.0)));
+    assert_eq!(rig.i.parts().highlight, std::slice::from_ref(&target), "the candidate shows while Ctrl is held");
+    rig.with_mods(CTRL, |r| r.up(450.0, 150.0));
+    assert_eq!(end_binding(&rig, &arrow), Some(target));
+
+    // The same gesture with the setting on and Ctrl held leaves the end free (`ctrl_keeps_the_arrow_end_from_binding`).
+    let (mut rig, arrow, _) = free_arrow();
+    let end = rig.handle_pos(&Handle::Point { element: arrow.clone(), index: 1 });
+    rig.with_mods(CTRL, |r| r.drag((end.x, end.y), (450.0, 150.0)));
+    assert_eq!(end_binding(&rig, &arrow), None);
+}
+
+#[test]
+fn the_gesture_equals_the_command_it_names_for_each_state_of_the_toggle() {
+    let off = |ctrl: bool| {
+        let (mut rig, arrow, _) = free_arrow();
+        rig.run("settings.set", json!({ "key": "arrow.binding", "value": false }));
+        let end = rig.handle_pos(&Handle::Point { element: arrow.clone(), index: 1 });
+        if ctrl {
+            rig.with_mods(CTRL, |r| r.drag((end.x, end.y), (450.0, 150.0)));
+        } else {
+            rig.drag((end.x, end.y), (450.0, 150.0));
+        }
+        rig
+    };
+    for (ctrl, bind) in [(false, "off"), (true, "on")] {
+        let (mut twin, tarrow, _) = free_arrow();
+        twin.run("settings.set", json!({ "key": "arrow.binding", "value": false }));
+        twin.run(
+            "arrow.move_point",
+            json!({ "arrow": tarrow.as_str(), "index": 1, "to": [450.0, 150.0], "bind": bind }),
+        );
+        assert_eq!(off(ctrl).normalized_doc(), twin.normalized_doc(), "ctrl {ctrl}");
+    }
+}
+
+#[test]
+fn with_attaching_off_dragging_a_bound_end_unbinds_it_even_onto_the_same_shape() {
+    let (mut rig, arrow, _) = bound_arrow();
+    rig.run("settings.set", json!({ "key": "arrow.binding", "value": false }));
+    assert!(end_binding(&rig, &arrow).is_some(), "switching the setting does not touch existing bindings");
+    let end = rig.handle_pos(&Handle::Point { element: arrow.clone(), index: 1 });
+    rig.drag((end.x, end.y), (450.0, 150.0));
+    assert_eq!(end_binding(&rig, &arrow), None);
+}
+
+#[test]
+fn with_attaching_off_ctrl_keeps_a_bound_end_bound_when_it_is_dragged_along_the_shape() {
+    let (mut rig, arrow, target) = bound_arrow();
+    rig.run("settings.set", json!({ "key": "arrow.binding", "value": false }));
+    let end = rig.handle_pos(&Handle::Point { element: arrow.clone(), index: 1 });
+    rig.with_mods(CTRL, |r| r.drag((end.x, end.y), (450.0, 170.0)));
+    assert_eq!(end_binding(&rig, &arrow), Some(target));
+}
+
 #[test]
 fn exception_E5_point_drag_equals_plain_command() {
     // A bind.

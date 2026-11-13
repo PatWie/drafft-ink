@@ -5,6 +5,11 @@
 //! the ends leave the boxes through "dongle" points, and a bend-penalising A* runs on the grid
 //! formed by the box edges. A cheaper one- or two-corner route is tried first.
 //!
+//! **Other shapes** ([`RouteOpts::obstacles`]) are routed around when the route above would cross them:
+//! their padded boxes join the grid, and the same A* runs again on it. The route above stays when it is
+//! clear, so a shape nearby that is not in the way never moves an arrow. The search is bounded (at most
+//! [`MAX_OBSTACLES`] boxes, [`MAX_EXPANSIONS`] steps) and falls back to the route above when it finds nothing.
+//!
 //! Everything here is pure and works in world coordinates. Inputs must be finite; anything else
 //! is refused with [`ElbowError::NotFinite`].
 
@@ -16,6 +21,7 @@ use drafftink_geom::binding::{
 };
 use drafftink_geom::kurbo::{Point, Rect, Vec2};
 use drafftink_geom::{Outline, point_is_finite};
+use drafftink_profile::{Counter, inc};
 use drafftink_scene::{ElementId, Head};
 
 use crate::linear::head_size;
@@ -29,6 +35,14 @@ pub const BASE_PADDING: f64 = ELBOW_BASE_PADDING;
 pub const CORNER_RADIUS: f64 = 16.0;
 /// Segments shorter than this are removed or ignored.
 pub const DEDUP_THRESHOLD: f64 = 1.0;
+/// Distance a route keeps from a shape that is not one of its ends.
+pub const AVOID_PADDING: f64 = 12.0;
+/// The most obstacle boxes one search starts with: the nearest to the arrow. A route that turns out to cross a box
+/// left out is searched again with that box added, up to [`MAX_OBSTACLES`] times two boxes in all, so the grid
+/// has at most about `4 * MAX_OBSTACLES + 8` lines on each axis.
+pub const MAX_OBSTACLES: usize = 24;
+/// The most nodes A* takes off its queue before it gives up and the route without obstacles is used.
+pub const MAX_EXPANSIONS: usize = 16_384;
 
 /// Why a route could not be made.
 #[derive(Debug, Clone, PartialEq, thiserror::Error)]
@@ -100,14 +114,29 @@ impl ElbowEnd {
 
 /// Options of the router.
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub struct RouteOpts {
+pub struct RouteOpts<'a> {
     /// Zoom, which sets how far from a shape an end still counts as attached.
     pub zoom: f64,
+    /// The boxes of the other shapes a route goes around, as they are (the router pads them). The two shapes an
+    /// arrow is bound to are not obstacles and need not be left out: a box that holds an end of the arrow is ignored.
+    pub obstacles: &'a [Bounds],
 }
 
-impl Default for RouteOpts {
+impl Default for RouteOpts<'_> {
     fn default() -> Self {
-        Self { zoom: 1.0 }
+        Self { zoom: 1.0, obstacles: &[] }
+    }
+}
+
+impl<'a> RouteOpts<'a> {
+    /// These options at `zoom`, with no obstacles.
+    pub fn at_zoom(zoom: f64) -> Self {
+        Self { zoom, obstacles: &[] }
+    }
+
+    /// These options with `obstacles` to go around.
+    pub fn around(self, obstacles: &'a [Bounds]) -> Self {
+        Self { obstacles, ..self }
     }
 }
 
@@ -174,7 +203,7 @@ pub(crate) fn end_heading(
     other: Point,
     bound: Option<&ElbowTarget>,
     orig: Point,
-    opts: RouteOpts,
+    opts: RouteOpts<'_>,
 ) -> Heading {
     let toward_other = Heading::from_points(other, p);
     let Some(b) = bound else { return toward_other };
@@ -196,6 +225,10 @@ pub(crate) fn end_heading(
 #[derive(Debug, Clone)]
 struct Data {
     dynamic: [Bounds; 2],
+    /// Each end's shape padded by [`BASE_PADDING`] on every side (a point's box for a free end).
+    pads: [Bounds; 2],
+    /// An end lies inside the padded box of the other: the shapes are too close to route around anything else.
+    overlap: bool,
     start_dongle: Point,
     end_dongle: Point,
     start: Point,
@@ -209,7 +242,7 @@ fn head_pad(h: Head) -> f64 {
     if h == Head::None { 2.0 } else { 6.0 }
 }
 
-fn data(s: &ElbowEnd, e: &ElbowEnd, opts: RouteOpts) -> Data {
+fn data(s: &ElbowEnd, e: &ElbowEnd, opts: RouteOpts<'_>) -> Data {
     let (sp, ep) = (s.point, e.point);
     let start_heading = end_heading(sp, ep, s.bound.as_ref(), s.orig, opts);
     let end_heading_ = end_heading(ep, sp, e.bound.as_ref(), e.orig, opts);
@@ -254,6 +287,8 @@ fn data(s: &ElbowEnd, e: &ElbowEnd, opts: RouteOpts) -> Data {
         e.bound.as_ref().map(|b| b.aabb([0.0; 4])),
     );
     Data {
+        pads: [start_pad_box, end_pad_box],
+        overlap,
         start_dongle: dongle(&dynamic[0], start_heading, sp),
         end_dongle: dongle(&dynamic[1], end_heading_, ep),
         dynamic,
@@ -262,6 +297,19 @@ fn data(s: &ElbowEnd, e: &ElbowEnd, opts: RouteOpts) -> Data {
         start_heading,
         end_heading: end_heading_,
         common,
+    }
+}
+
+/// The same ends for the route around other shapes. The ends do not grow towards each other (the route
+/// has to be free to turn anywhere between them): each leaves its padded box through the middle of the side it faces.
+fn around_data(d: &Data) -> Data {
+    let [start_box, end_box] = d.pads;
+    Data {
+        dynamic: d.pads,
+        start_dongle: dongle(&start_box, d.start_heading, d.start),
+        end_dongle: dongle(&end_box, d.end_heading, d.end),
+        common: common_bounds(&d.pads),
+        ..d.clone()
     }
 }
 
@@ -456,7 +504,15 @@ fn sorted_unique(mut v: Vec<f64>) -> Vec<f64> {
     v
 }
 
-fn make_grid(aabbs: &[Bounds], start: Point, sh: Heading, end: Point, eh: Heading, common: &Bounds) -> Grid {
+fn make_grid(
+    aabbs: &[Bounds],
+    extra: &[Bounds],
+    start: Point,
+    sh: Heading,
+    end: Point,
+    eh: Heading,
+    common: &Bounds,
+) -> Grid {
     let (mut xs, mut ys) = (Vec::new(), Vec::new());
     if sh.is_horizontal() {
         ys.push(start.y)
@@ -468,7 +524,7 @@ fn make_grid(aabbs: &[Bounds], start: Point, sh: Heading, end: Point, eh: Headin
     } else {
         xs.push(end.x)
     }
-    for b in aabbs {
+    for b in aabbs.iter().chain(extra) {
         xs.extend([b[0], b[2]]);
         ys.extend([b[1], b[3]]);
     }
@@ -666,7 +722,8 @@ impl PartialOrd for Entry {
 
 /// A* over the grid. Bends cost the cube of the start-to-end distance, so fewer bends always win,
 /// and ties go to the shorter route. The route may not turn back on itself, nor leave the start or
-/// enter the end against its heading, and may not cross the middle of an obstacle box.
+/// enter the end against its heading, and may not cross the middle of an obstacle box. It stops with `None` after
+/// [`MAX_EXPANSIONS`] nodes.
 fn astar(
     grid: &mut Grid,
     start: usize,
@@ -681,9 +738,15 @@ fn astar(
     let mut open = BinaryHeap::new();
     let mut seq = 0u64;
     open.push(Entry { f: 0.0, seq, node: start });
+    let mut expanded = 0usize;
     while let Some(Entry { node: current, .. }) = open.pop() {
         if grid.nodes.get(current)?.closed {
             continue;
+        }
+        expanded += 1;
+        inc(Counter::RouteExpansions);
+        if expanded > MAX_EXPANSIONS {
+            return None;
         }
         if current == end {
             let mut path = vec![current];
@@ -737,8 +800,10 @@ fn astar(
     None
 }
 
-fn grid_route(d: &Data, end_bound: bool, start_bound: bool) -> Option<Vec<Point>> {
-    let mut grid = make_grid(&d.dynamic, d.start_dongle, d.start_heading, d.end_dongle, d.end_heading, &d.common);
+/// The route on the grid of the two end boxes and the `extra` obstacle boxes, if there is one.
+fn grid_route(d: &Data, end_bound: bool, start_bound: bool, extra: &[Bounds]) -> Option<Vec<Point>> {
+    let mut grid =
+        make_grid(&d.dynamic, extra, d.start_dongle, d.start_heading, d.end_dongle, d.end_heading, &d.common);
     let start_dongle = grid.node_at(d.start_dongle)?;
     let end_dongle = grid.node_at(d.end_dongle)?;
     // The true end points are not to be stepped on.
@@ -751,8 +816,9 @@ fn grid_route(d: &Data, end_bound: bool, start_bound: bool) -> Option<Vec<Point>
     let sd = grid.nodes.get(start_dongle)?.pos;
     let ed = grid.nodes.get(end_dongle)?.pos;
     let dongle_overlap = inside(sd, &d.dynamic[1]) || inside(ed, &d.dynamic[0]);
-    let obstacles: &[Bounds] = if dongle_overlap { &[] } else { &d.dynamic };
-    let path = astar(&mut grid, start_dongle, end_dongle, d.start_heading, d.end_heading, obstacles)?;
+    let own: &[Bounds] = if dongle_overlap { &[] } else { &d.dynamic };
+    let obstacles: Vec<Bounds> = own.iter().chain(extra).copied().collect();
+    let path = astar(&mut grid, start_dongle, end_dongle, d.start_heading, d.end_heading, &obstacles)?;
     let mut points = vec![d.start];
     for i in path {
         points.push(grid.nodes.get(i)?.pos);
@@ -767,6 +833,61 @@ fn grid_route(d: &Data, end_bound: bool, start_bound: bool) -> Option<Vec<Point>
 
 fn crosses(a: Point, b: Point, bounds: &Bounds) -> bool {
     intersects(&[a.x.min(b.x), a.y.min(b.y), a.x.max(b.x), a.y.max(b.y)], bounds)
+}
+
+// ---------------------------------------------------------------------------------------------
+// Other shapes in the way
+// ---------------------------------------------------------------------------------------------
+
+/// True when some leg of `route` runs through the inside of one of `boxes`. A leg along an edge is clear.
+fn hits_any(route: &[Point], boxes: &[Bounds]) -> bool {
+    route.windows(2).any(|w| boxes.iter().any(|b| crosses(w[0], w[1], b)))
+}
+
+/// The route on the grid of the nearest of `all` (sorted nearest first), searched again with every box it
+/// crosses added. `None` when there is no route, or the boxes to take into account would be too many.
+fn route_around(d: &Data, end_bound: bool, start_bound: bool, all: &[Bounds]) -> Option<Vec<Point>> {
+    let mut active: Vec<Bounds> = all.iter().take(MAX_OBSTACLES).copied().collect();
+    loop {
+        let route = grid_route(d, end_bound, start_bound, &active)?;
+        let crossed: Vec<Bounds> =
+            all.iter().filter(|b| !active.contains(b) && hits_any(&route, std::slice::from_ref(b))).copied().collect();
+        if crossed.is_empty() {
+            return Some(route);
+        }
+        if active.len() + crossed.len() > 2 * MAX_OBSTACLES {
+            return None;
+        }
+        active.extend(crossed);
+    }
+}
+
+fn finite_bounds(b: &Bounds) -> bool {
+    b.iter().all(|v| v.is_finite() && v.abs() <= 1.0e9) && b[0] <= b[2] && b[1] <= b[3]
+}
+
+/// The padded boxes the route has to keep out of: not those that hold an end or a dongle (a big shape the
+/// arrow starts inside is not in its way), nearest to the middle between the ends first, in a fixed order so that
+/// the same input gives the same grid.
+fn usable_obstacles(d: &Data, obstacles: &[Bounds]) -> Vec<Bounds> {
+    let ends = [d.start, d.end, d.start_dongle, d.end_dongle];
+    let middle = Point::new((d.start.x + d.end.x) / 2.0, (d.start.y + d.end.y) / 2.0);
+    let mut padded: Vec<(f64, Bounds)> = obstacles
+        .iter()
+        .filter(|b| finite_bounds(b))
+        .map(|b| [b[0] - AVOID_PADDING, b[1] - AVOID_PADDING, b[2] + AVOID_PADDING, b[3] + AVOID_PADDING])
+        .filter(|b| !ends.iter().any(|p| inside(*p, b)))
+        .map(|b| {
+            let centre = Point::new((b[0] + b[2]) / 2.0, (b[1] + b[3]) / 2.0);
+            ((centre - middle).hypot2(), b)
+        })
+        .collect();
+    padded.sort_by(|(da, a), (db, b)| {
+        da.total_cmp(db)
+            .then_with(|| a.iter().zip(b).map(|(x, y)| x.total_cmp(y)).find(|o| o.is_ne()).unwrap_or(Ordering::Equal))
+    });
+    padded.dedup_by(|(_, a), (_, b)| a == b);
+    padded.into_iter().map(|(_, b)| b).collect()
 }
 
 fn dot(v: Vec2, h: Heading) -> f64 {
@@ -899,9 +1020,23 @@ pub fn route(start: &ElbowEnd, end: &ElbowEnd, opts: RouteOpts) -> Result<Vec<Po
     if !(finite(d.start_dongle) && finite(d.end_dongle)) {
         return Err(ElbowError::NotFinite);
     }
-    let raw = simple_route(start, end, &d)
-        .or_else(|| grid_route(&d, end.bound.is_some(), start.bound.is_some()))
-        .unwrap_or_else(|| fallback_route(&d));
+    let plain =
+        simple_route(start, end, &d).or_else(|| grid_route(&d, end.bound.is_some(), start.bound.is_some(), &[]));
+    let (bound_start, bound_end) = (start.bound.is_some(), end.bound.is_some());
+    let raw = if opts.obstacles.is_empty() || d.overlap {
+        plain.unwrap_or_else(|| fallback_route(&d))
+    } else {
+        let d_around = around_data(&d);
+        let extra = usable_obstacles(&d_around, opts.obstacles);
+        match plain {
+            Some(r) if !hits_any(&r, &extra) => r,
+            other => {
+                let around =
+                    (!extra.is_empty()).then(|| route_around(&d_around, bound_end, bound_start, &extra)).flatten();
+                around.or(other).unwrap_or_else(|| fallback_route(&d))
+            }
+        }
+    };
     let cleaned = corner_points(remove_short_segments(dedupe_exact(raw)));
     Ok(make_orthogonal(cleaned, start.point, end.point))
 }

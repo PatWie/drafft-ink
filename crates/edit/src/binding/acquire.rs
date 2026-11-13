@@ -476,7 +476,7 @@ fn drag_end_in<T: SceneTx>(
     if elbow {
         let (first, last) = (world[0], world[n - 1]);
         tx.update(arrow, |slot| slot.kind = e.kind)?;
-        elbow::reroute_with(tx, arrow, Some((first, last)), RouteOpts { zoom: opts.zoom })
+        elbow::reroute_with(tx, arrow, Some((first, last)), RouteOpts::at_zoom(opts.zoom))
             .map_err(|err| super::from_elbow(arrow, err))?;
         return Ok(candidate);
     }

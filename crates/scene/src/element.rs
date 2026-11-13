@@ -240,7 +240,25 @@ fn is_head_none(h: &Head) -> bool {
     *h == Head::None
 }
 
+/// The head size of an arrow whose `head_size` is `None` and whose stroke is thin: the old app's constant.
+pub const DEFAULT_HEAD_SIZE: f64 = 15.0;
+
+/// How many stroke widths long the head of an arrow without its own `head_size` is, once that beats
+/// [`DEFAULT_HEAD_SIZE`].
+const HEAD_SIZE_PER_STROKE: f64 = 7.5;
+
+/// The head size of an element that has no `head_size` of its own: it grows with the stroke width.
+pub fn default_head_size(stroke_width: f64) -> f64 {
+    (stroke_width * HEAD_SIZE_PER_STROKE).max(DEFAULT_HEAD_SIZE)
+}
+
 impl LinearData {
+    /// The size a head has before it is fitted to a short segment: the element's own `head_size`, or
+    /// [`default_head_size`]. Every crate that draws or bounds a head calls this, so they agree.
+    pub fn head_size_or_default(&self, stroke_width: f64) -> f64 {
+        self.head_size.unwrap_or_else(|| default_head_size(stroke_width))
+    }
+
     /// A plain polyline with no heads and no bindings. `points` are local (see the type docs).
     pub fn new(points: Vec<Point>) -> Self {
         Self {

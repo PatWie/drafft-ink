@@ -77,7 +77,7 @@ impl Frame {
     }
 
     /// Rewrites the arguments for the pointer now: the totals since the press, and the modifier keys now.
-    pub(super) fn follow(&mut self, ev: &Ev<'_>, mods: Modifiers) {
+    pub(super) fn follow(&mut self, ev: &Ev<'_>, mods: Modifiers, bind: BindChoice) {
         match self {
             Frame::Move(a) => {
                 a.dx = ev.delta_world.x;
@@ -98,7 +98,7 @@ impl Frame {
             }
             Frame::Point(a) => {
                 a.to = [ev.at.world.x, ev.at.world.y];
-                a.bind = bind_choice(mods);
+                a.bind = bind;
                 a.snap = point_snap(mods);
             }
             Frame::Segment(a) => a.to = Some([ev.at.world.x, ev.at.world.y]),
@@ -164,17 +164,6 @@ fn point_snap(mods: Modifiers) -> Snap {
     }
 }
 
-/// Ctrl or Cmd: do not bind. Alt: bind inside the shape.
-fn bind_choice(mods: Modifiers) -> BindChoice {
-    if mods.command() {
-        BindChoice::Off
-    } else if mods.alt {
-        BindChoice::Inside
-    } else {
-        BindChoice::Auto
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -199,12 +188,8 @@ mod tests {
     }
 
     #[test]
-    fn modifiers_choose_bind_and_snap() {
+    fn ctrl_switches_snapping_off() {
         let ctrl = Modifiers { ctrl: true, ..Modifiers::NONE };
-        let alt = Modifiers { alt: true, ..Modifiers::NONE };
-        assert_eq!(bind_choice(ctrl), BindChoice::Off);
-        assert_eq!(bind_choice(alt), BindChoice::Inside);
-        assert_eq!(bind_choice(Modifiers::NONE), BindChoice::Auto);
         assert_eq!(element_snap(ctrl), Snap::Word(SnapWord::None));
         assert_eq!(element_snap(Modifiers::NONE), Snap::default());
     }

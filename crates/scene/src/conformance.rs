@@ -410,6 +410,63 @@ fn derived_indexes<S: SceneStore>(mut s: S) -> Result<(), String> {
     derived_matches_rebuild(&s)
 }
 
+fn box_index<S: SceneStore>(mut s: S) -> Result<(), String> {
+    use kurbo::Rect;
+    let z = zs(3)?;
+    commit_all(&mut s, vec![rect("a", &z[0])?, rect("b", &z[1])?, rect("c", &z[2])?])?;
+    let found = |s: &S, r: Rect| -> Vec<String> {
+        let mut ids: Vec<String> = s.derived().ids_in_rect(&r).map(ToString::to_string).collect();
+        ids.sort();
+        ids
+    };
+    let brute = |s: &S, r: Rect| -> Vec<String> {
+        let mut ids: Vec<String> = s
+            .iter()
+            .filter(|e| {
+                let b = e.transform.obox().aabb();
+                b.x0 <= r.x1 && b.x1 >= r.x0 && b.y0 <= r.y1 && b.y1 >= r.y0
+            })
+            .map(|e| e.id.to_string())
+            .collect();
+        ids.sort();
+        ids
+    };
+    let probes = [
+        Rect::new(0.0, 0.0, 5.0, 5.0),
+        Rect::new(50.0, 40.0, 60.0, 50.0),
+        Rect::new(-1000.0, -1000.0, 1000.0, 1000.0),
+        Rect::new(500.0, 500.0, 600.0, 600.0),
+        Rect::new(60.0, 90.0, 70.0, 140.0),
+    ];
+    ensure_eq!(
+        found(&s, probes[1]),
+        vec!["a".to_string(), "b".to_string(), "c".to_string()],
+        "all three overlap the middle"
+    );
+    ensure_eq!(found(&s, probes[3]), Vec::<String>::new(), "far away nothing is found");
+
+    // A move, a turn (the box of the rotated box), a tombstone and a removal.
+    let mut tx = s.begin();
+    tx.update(&eid("a")?, |e| e.transform.x += 1000.0).map_err(e2s)?;
+    tx.update(&eid("b")?, |e| e.transform.angle = std::f64::consts::FRAC_PI_2).map_err(e2s)?;
+    tx.update(&eid("c")?, |e| e.deleted = true).map_err(e2s)?;
+    tx.commit().map_err(e2s)?;
+    for r in probes {
+        ensure_eq!(found(&s, r), brute(&s, r), "after the first edit");
+    }
+    ensure_eq!(found(&s, probes[4]), vec!["b".to_string()], "the turned box is taller than it was wide");
+    derived_matches_rebuild(&s)?;
+
+    let mut tx = s.begin();
+    tx.update(&eid("c")?, |e| e.deleted = false).map_err(e2s)?;
+    tx.remove(&eid("b")?).map_err(e2s)?;
+    tx.commit().map_err(e2s)?;
+    for r in probes {
+        ensure_eq!(found(&s, r), brute(&s, r), "after the second edit");
+    }
+    derived_matches_rebuild(&s)
+}
+
 fn meta_and_files<S: SceneStore>(mut s: S) -> Result<(), String> {
     let (id, entry) = FileEntry::new("image/png", vec![137, 80, 78, 71]);
     let mut tx = s.begin();
@@ -529,6 +586,7 @@ pub fn checks<S: SceneStore>() -> Vec<Check<S>> {
         Check { name: "refusals_leave_the_store_unchanged", run: refusals_leave_the_store_unchanged },
         Check { name: "subscribers", run: subscribers },
         Check { name: "derived_indexes", run: derived_indexes },
+        Check { name: "box_index", run: box_index },
         Check { name: "meta_and_files", run: meta_and_files },
         Check { name: "document_round_trip", run: document_round_trip },
         Check { name: "same_document_loaded_twice_changes_nothing", run: same_document_loaded_twice_changes_nothing },

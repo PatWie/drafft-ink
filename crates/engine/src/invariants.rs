@@ -8,9 +8,10 @@
 //!
 //! Order, in rounds:
 //!
-//! 1. **Arrows.** `binding::update_bound_arrows` for every element whose geometry changed (position, size,
+//! 1. **Arrows.** `binding::update_bound_arrows_near` for every element whose geometry changed (position, size,
 //!    angle, flip, or its points and text, which are in its kind), was added, or was deleted. Arrows bound to
-//!    them follow, and elbow arrows are routed again.
+//!    them follow, and elbow arrows are routed again, as are the elbow arrows near a shape that moved (they go
+//!    around it, or lose a detour it caused).
 //! 2. **Bound text.** `text_bind::refresh_labels` for the changed elements and the arrows step 1 moved: a label
 //!    follows its container, a container grows to hold its label.
 //! 3. **Frame membership.** A marked call site at the end of [`round`]; see there.
@@ -25,7 +26,9 @@
 //! another pass over the merged scene, [`crate::remote_repair`], which writes the same value on every peer.
 
 use drafftink_edit::binding::{self, BindingError};
+use drafftink_edit::elbow;
 use drafftink_edit::text_bind::{self, GrowAnchor, TextBindError};
+use drafftink_geom::kurbo::Rect;
 use drafftink_scene::{ChangeKind, ElementId, Fields, SceneStore, StoreError};
 
 use crate::services::Services;
@@ -82,8 +85,12 @@ fn round(doc: &mut TabDoc, services: &Services, mark: DocMark) -> Result<bool, P
         return Ok(false);
     }
 
-    // 1. Arrows bound to what moved, and elbow arrows among it.
-    let (arrows, _) = doc.edit::<Vec<ElementId>, PassError>(|tx| Ok(binding::update_bound_arrows(tx, &moved)?))?;
+    // 1. Arrows bound to what moved, and elbow arrows among it. A shape that moved or went away may be in the way
+    //    of an elbow arrow now, or may have been the reason for its detour: those arrows are routed again too.
+    let left: Vec<Rect> =
+        doc.elements_before(mark).into_iter().filter(|e| elbow::is_obstacle(e)).map(elbow::obstacle_box).collect();
+    let (arrows, _) =
+        doc.edit::<Vec<ElementId>, PassError>(|tx| Ok(binding::update_bound_arrows_near(tx, &moved, &left)?))?;
 
     // 2. Labels of what changed or was routed again.
     let mut labelled: Vec<ElementId> = cs

@@ -9,7 +9,7 @@ use drafftink_edit::elbow::{self, RouteOpts};
 use drafftink_edit::linear;
 use drafftink_scene::{PathType, SceneRead, SceneStore, SceneTx};
 
-fn opts() -> RouteOpts {
+fn opts() -> RouteOpts<'static> {
     RouteOpts::default()
 }
 

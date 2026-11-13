@@ -12,8 +12,7 @@ use drafftink_sketch as sketch;
 use drafftink_typeset as typeset;
 use kurbo::{Affine, Rect};
 
-/// Marker size of an arrow whose `head_size` is `None` and whose stroke is thin: the old app's constant.
-pub const DEFAULT_HEAD_SIZE: f64 = 15.0;
+pub use drafftink_scene::DEFAULT_HEAD_SIZE;
 /// Font size of a frame's name label, in logical pixels. The label has the same size on screen at every zoom
 /// (Excalidraw does the same), so the composer draws it in device space after the frame's fragment.
 pub const FRAME_LABEL_SIZE: f64 = 14.0;
@@ -152,9 +151,11 @@ fn params(e: &Element, fillable: bool) -> sketch::SketchParams {
 /// that marker painted 2.9 units outside its bounds.
 const HEAD_REACH: f64 = 1.6;
 
-/// The size of an arrow head: the element's own value, or a default that grows with the stroke.
+/// The size an arrow head is asked for: the element's own value, or a default that grows with the stroke. The head
+/// drawn on a short end segment is smaller (`drafftink_sketch::fit_head_size`); this value is the upper bound that
+/// the paint bounds use.
 pub fn head_size(d: &LinearData, stroke_width: f64) -> f64 {
-    d.head_size.unwrap_or_else(|| (stroke_width * 7.5).max(DEFAULT_HEAD_SIZE))
+    d.head_size_or_default(stroke_width)
 }
 
 fn arrowhead(h: Head) -> sketch::Arrowhead {

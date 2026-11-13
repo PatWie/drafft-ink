@@ -200,6 +200,8 @@ fn bottom_bar_buttons_run_their_commands() {
     assert_eq!(c[0].args, json!({"key": "snap.grid"}));
     let c = click(&mut h, "Angle snap");
     assert_eq!(c[0].args, json!({"key": "snap.angle"}));
+    let c = click(&mut h, "Attach arrows to shapes");
+    assert_eq!((c[0].id.as_str(), &c[0].args), ("settings.toggle", &json!({"key": "arrow.binding"})));
     let c = click(&mut h, "Zoom to fit");
     assert_eq!(c[0].id, "view.zoom_to_fit");
     let c = click(&mut h, "Centre the canvas at the origin");
@@ -427,6 +429,25 @@ fn the_bottom_bar_changes_the_zoom_and_the_undo_button_undoes() {
     h.run();
     click_and_run(&mut h, "Undo");
     assert_eq!(h.state_mut().session.execute("element.query", json!({})).unwrap()["total"], json!(2));
+}
+
+#[test]
+fn the_attach_button_shows_the_setting_and_flips_it() {
+    let mut h = harness(Fixture::new());
+    h.run();
+    assert!(h.state().model.setting_bool("arrow.binding"), "attaching is on by default");
+    assert_eq!(
+        h.get_by_label("Attach arrows to shapes").accesskit_node().toggled(),
+        Some(egui::accesskit::Toggled::True)
+    );
+    click_and_run(&mut h, "Attach arrows to shapes");
+    assert!(!h.state().model.setting_bool("arrow.binding"));
+    assert_eq!(
+        h.get_by_label("Attach arrows to shapes").accesskit_node().toggled(),
+        Some(egui::accesskit::Toggled::False)
+    );
+    click_and_run(&mut h, "Attach arrows to shapes");
+    assert!(h.state().model.setting_bool("arrow.binding"));
 }
 
 #[test]

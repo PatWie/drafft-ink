@@ -27,6 +27,7 @@ mod target;
 
 use std::collections::{BTreeSet, HashSet};
 
+use drafftink_geom::kurbo::Rect;
 use drafftink_profile::{Counter, count};
 use drafftink_scene::{DerivedIndex, ElementId, PathType, SceneRead, SceneTx, StoreError};
 
@@ -101,11 +102,47 @@ pub enum BindingError {
 /// transaction's elements once. A caller that writes before it calls, and that has many elements, takes the
 /// candidates first with [`arrows_bound_to`] and calls [`update_bound_arrows_from`].
 pub fn update_bound_arrows<T: SceneTx>(tx: &mut T, changed: &[ElementId]) -> Result<Vec<ElementId>, BindingError> {
-    if changed.is_empty() {
+    update_bound_arrows_near(tx, changed, &[])
+}
+
+/// Like [`update_bound_arrows`], and the elbow arrows near the shapes in `changed` are routed again as well,
+/// because such a shape may now be in their way, or may no longer be (see [`elbow::arrows_near`]). `left` are the
+/// boxes where changed shapes used to be (a shape that moved away or was deleted), which the caller reads
+/// from before the change. Only arrows whose box touches one of these places are looked at, found with the
+/// scene's box index.
+pub fn update_bound_arrows_near<T: SceneTx>(
+    tx: &mut T,
+    changed: &[ElementId],
+    left: &[Rect],
+) -> Result<Vec<ElementId>, BindingError> {
+    if changed.is_empty() && left.is_empty() {
         return Ok(Vec::new());
     }
-    let candidates = arrows_bound_to(&*tx, changed);
-    update_bound_arrows_from(tx, changed, candidates)
+    let places: Vec<Rect> = changed
+        .iter()
+        .filter_map(|id| tx.get(id))
+        .filter(|e| !e.deleted && elbow::is_obstacle(e))
+        .map(elbow::obstacle_box)
+        .chain(left.iter().copied())
+        .collect();
+    let (candidates, near) = if tx.derived_index().is_some() {
+        (arrows_bound_to(&*tx, changed), elbow::arrows_near(&*tx, &places))
+    } else {
+        // One pass finds both.
+        count(Counter::ElementsScanned, u64::try_from(tx.len_all()).unwrap_or(u64::MAX));
+        let set: HashSet<&ElementId> = changed.iter().collect();
+        let (mut bound, mut near) = (BTreeSet::new(), Vec::new());
+        for e in tx.iter() {
+            if e.binding_targets().into_iter().flatten().any(|t| set.contains(t)) {
+                bound.insert(e.id.clone());
+            }
+            if elbow::is_near(e, &places) {
+                near.push(e.id.clone());
+            }
+        }
+        (bound, near)
+    };
+    solve_changed(tx, changed, candidates, near)
 }
 
 /// The lines and arrows with an end bound to any of `ids`, as the reader sees them now. With a derived index this
@@ -134,6 +171,17 @@ pub fn update_bound_arrows_from<T: SceneTx>(
     if changed.is_empty() {
         return Ok(Vec::new());
     }
+    solve_changed(tx, changed, candidates, Vec::new())
+}
+
+/// Solves the arrows bound to `changed` (from `candidates`) and the arrows in `changed`, then `near`, which are
+/// elbow arrows routed again whether or not their ends moved.
+fn solve_changed<T: SceneTx>(
+    tx: &mut T,
+    changed: &[ElementId],
+    candidates: BTreeSet<ElementId>,
+    near: Vec<ElementId>,
+) -> Result<Vec<ElementId>, BindingError> {
     let set: HashSet<&ElementId> = changed.iter().collect();
     let mut affected: BTreeSet<ElementId> = BTreeSet::new();
     for id in candidates.iter().chain(changed) {
@@ -146,7 +194,8 @@ pub fn update_bound_arrows_from<T: SceneTx>(
             affected.insert(e.id.clone());
         }
     }
-    solve_all(tx, affected)
+    let forced: BTreeSet<ElementId> = near.into_iter().filter(|id| !affected.contains(id)).collect();
+    solve_all(tx, affected, forced)
 }
 
 /// Like [`update_bound_arrows`], finding the arrows with the committed reverse index instead of scanning. Arrows
@@ -165,16 +214,34 @@ pub fn update_bound_arrows_indexed<T: SceneTx>(
             affected.insert(id.clone());
         }
     }
-    solve_all(tx, affected)
+    solve_all(tx, affected, BTreeSet::new())
 }
 
-fn solve_all<T: SceneTx>(tx: &mut T, affected: BTreeSet<ElementId>) -> Result<Vec<ElementId>, BindingError> {
+/// Solves `affected` (as their bindings say) and `forced` (elbow arrows routed again even if their ends are where
+/// they were). The shapes each elbow arrow goes around are read before the first write, while the scene's box
+/// index is still exact for the reader.
+fn solve_all<T: SceneTx>(
+    tx: &mut T,
+    affected: BTreeSet<ElementId>,
+    forced: BTreeSet<ElementId>,
+) -> Result<Vec<ElementId>, BindingError> {
+    let finder = elbow::ObstacleFinder::new();
+    let plan: Vec<(ElementId, bool, Vec<elbow::Bounds>)> = affected
+        .into_iter()
+        .map(|id| (id, false))
+        .chain(forced.into_iter().map(|id| (id, true)))
+        .map(|(id, force)| {
+            let around = elbow::obstacles_of(&*tx, &id, &finder);
+            (id, force, around)
+        })
+        .collect();
     let mut changed = Vec::new();
-    for id in affected {
-        if solve_one(tx, &id)? {
+    for (id, force, around) in plan {
+        if solve_one(tx, &id, force, &around)? {
             changed.push(id);
         }
     }
+    changed.sort();
     Ok(changed)
 }
 
@@ -192,14 +259,19 @@ fn same_points(a: &[drafftink_geom::kurbo::Point], b: &[drafftink_geom::kurbo::P
     a.len() == b.len() && a.iter().zip(b).all(|(p, q)| (*p - *q).hypot() <= SAME)
 }
 
-fn solve_one<T: SceneTx>(tx: &mut T, id: &ElementId) -> Result<bool, BindingError> {
+fn solve_one<T: SceneTx>(
+    tx: &mut T,
+    id: &ElementId,
+    force: bool,
+    around: &[elbow::Bounds],
+) -> Result<bool, BindingError> {
     let Some(e) = tx.get(id) else { return Ok(false) };
     if e.deleted {
         return Ok(false);
     }
     let Some(d) = e.linear_data() else { return Ok(false) };
     if d.path == PathType::Elbow {
-        return elbow::reroute(tx, id, RouteOpts::default()).map_err(|err| from_elbow(id, err));
+        return elbow::reroute_among(tx, id, around, RouteOpts::default(), force).map_err(|err| from_elbow(id, err));
     }
     let Some(world) = world_points(e) else { return Ok(false) };
     let Some(next) = solve::simple_points(tx, d, &world, false) else { return Ok(false) };

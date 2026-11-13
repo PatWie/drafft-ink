@@ -218,8 +218,10 @@ fn fill_style(style: &Style) -> FillStyle {
     }
 }
 
+/// The size the head is asked for, as on screen. The sketch generator fits it to a short end segment, so the SVG
+/// and the PNG draw the same head.
 fn head_size(d: &drafftink_scene::LinearData, style: &Style) -> f64 {
-    d.head_size.unwrap_or_else(|| (style.stroke_width * 5.0).max(15.0))
+    d.head_size_or_default(style.stroke_width)
 }
 
 struct Ctx<'a> {

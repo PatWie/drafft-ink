@@ -47,7 +47,7 @@ pub(super) fn elbow(
         d.path = PathType::Elbow;
         (d.start_binding, d.end_binding) = bindings;
     }
-    let opts = RouteOpts { zoom: cx.s.view().zoom / BASE_ZOOM };
+    let opts = RouteOpts::at_zoom(cx.s.view().zoom / BASE_ZOOM);
     elbow::routed_copy(cx.s.store(), &arrow, opts).ok()
 }
 

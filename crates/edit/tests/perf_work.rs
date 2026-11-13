@@ -290,3 +290,99 @@ fn dragging_an_arrow_end_with_candidates_scans_nothing_and_matches_the_scan() {
         assert_eq!(store.get(&id("a0")), scanned_store.get(&id("a0")), "the same arrow as the scan makes at {n}");
     }
 }
+
+// ---------------------------------------------------------------------------------------------------------------
+// Elbow arrows around other shapes
+// ---------------------------------------------------------------------------------------------------------------
+
+/// `scene(n)` and one elbow arrow `long` from the right of `r0` to the left of `r<to>`, with the shapes between them in
+/// the way.
+fn scene_with_long_elbow(n: usize, to: usize) -> MemoryStore {
+    let mut store = scene(n);
+    let (a, b) = (store.get(&id("r0")).unwrap().clone(), store.get(&id(&format!("r{to}"))).unwrap().clone());
+    let start = Point::new(a.transform.x + 80.0 + 6.0, a.transform.y + 30.0);
+    let end = Point::new(b.transform.x - 6.0, b.transform.y + 30.0);
+    let mut arrow = Element::linear(
+        id("long"),
+        LinearKind::Arrow,
+        store.top_z().map(|z| ZIndex::between(Some(&z), None).unwrap()).unwrap(),
+        &[start, end],
+    )
+    .unwrap();
+    if let ElementKind::Arrow(d) = &mut arrow.kind {
+        d.path = drafftink_scene::PathType::Elbow;
+        d.start_binding = Some(Binding { target: a.id.clone(), mode: BindMode::Orbit, fixed_point: [1.0, 0.5] });
+        d.end_binding = Some(Binding { target: b.id.clone(), mode: BindMode::Orbit, fixed_point: [0.0, 0.5] });
+        d.end_head = Head::Arrow;
+    }
+    let mut tx = store.begin();
+    tx.insert(arrow).unwrap();
+    tx.commit().unwrap();
+    store
+}
+
+/// True when some leg of the route crosses the inside of the shape's box.
+fn crosses_shape(route: &[Point], shape: &Element) -> bool {
+    let r = shape.transform.rect();
+    route.windows(2).any(|w| {
+        let (x0, x1) = (w[0].x.min(w[1].x), w[0].x.max(w[1].x));
+        let (y0, y1) = (w[0].y.min(w[1].y), w[0].y.max(w[1].y));
+        x0 < r.x1 && x1 > r.x0 && y0 < r.y1 && y1 > r.y0
+    })
+}
+
+#[test]
+fn routing_around_the_shapes_in_the_way_asks_the_index_and_its_work_does_not_grow_with_the_scene() {
+    let mut expansions = Vec::new();
+    for &n in sizes() {
+        let mut store = scene_with_long_elbow(n, 6);
+        let mut tx = store.begin();
+        let work = WorkScope::begin();
+        let changed =
+            drafftink_edit::elbow::reroute_forced(&mut tx, &id("long"), drafftink_edit::elbow::RouteOpts::default())
+                .unwrap();
+        assert!(changed, "the straight line through five shapes is routed again at {n}");
+        assert_eq!(scanned(&work), 0, "at {n}: {}", work.summary());
+        assert!(work.count(Counter::SpatialQueries) >= 1, "the shapes come from the index at {n}: {}", work.summary());
+        let steps = work.count(Counter::RouteExpansions);
+        assert!(steps > 0 && steps <= drafftink_edit::elbow::MAX_EXPANSIONS as u64, "{steps} expansions at {n}");
+        expansions.push(steps);
+
+        let route = drafftink_edit::linear::world_points(tx.get(&id("long")).unwrap()).unwrap();
+        for k in 1..=5 {
+            let shape = tx.get(&id(&format!("r{k}"))).unwrap();
+            assert!(!crosses_shape(&route, shape), "the route crosses r{k} at {n}: {route:?}");
+        }
+    }
+    assert!(
+        expansions.windows(2).all(|w| w[0] == w[1]),
+        "the same neighbourhood costs the same at every size: {expansions:?}"
+    );
+}
+
+#[test]
+fn moving_a_shape_re_routes_the_few_elbow_arrows_near_it_and_scans_nothing() {
+    for &n in sizes() {
+        let mut store = scene_with_long_elbow(n, 2);
+        let mut tx = store.begin();
+        drafftink_edit::elbow::reroute_forced(&mut tx, &id("long"), drafftink_edit::elbow::RouteOpts::default())
+            .unwrap();
+        tx.commit().unwrap();
+        let before = store.get(&id("long")).unwrap().clone();
+
+        // r1 leaves the row: the detour around it is not needed any more. The move is committed, as the invariant
+        // pass sees it, and the pass starts in a fresh transaction.
+        let old = drafftink_edit::elbow::obstacle_box(store.get(&id("r1")).unwrap());
+        let mut tx = store.begin();
+        tx.update(&id("r1"), |e| e.transform.y += 3000.0).unwrap();
+        tx.commit().unwrap();
+        let mut tx = store.begin();
+        let work = WorkScope::begin();
+        let changed = drafftink_edit::binding::update_bound_arrows_near(&mut tx, &[id("r1")], &[old]).unwrap();
+        // `a0` is bound to r1 and follows it; `long` passed it and loses its detour. No other arrow is looked at.
+        assert_eq!(changed, [id("a0"), id("long")], "at {n}");
+        assert_eq!(scanned(&work), 0, "at {n}: {}", work.summary());
+        tx.commit().unwrap();
+        assert_ne!(store.get(&id("long")).unwrap(), &before, "the route changed at {n}");
+    }
+}

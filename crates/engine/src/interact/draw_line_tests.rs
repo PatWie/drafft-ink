@@ -500,6 +500,101 @@ fn the_setting_arrow_binding_off_disables_the_highlight_and_the_binding() {
     assert!(d.start_binding.is_none() && d.end_binding.is_none());
 }
 
+/// The ends of the one arrow in the document: whether the first and the last are bound.
+fn bound_ends(rig: &Rig) -> (bool, bool) {
+    let arrow = rig.elements().into_iter().find(|e| e.tag() == Kind::Arrow).expect("an arrow");
+    let d = arrow.linear_data().expect("linear data");
+    (d.start_binding.is_some(), d.end_binding.is_some())
+}
+
+#[test]
+fn drawing_an_arrow_between_two_shapes_binds_with_the_setting_on_and_not_with_it_off() {
+    let mut on = Rig::new();
+    two_boxes(&mut on);
+    on.tool(Tool::Arrow);
+    on.drag((210.0, 150.0), (390.0, 150.0));
+    assert_eq!(bound_ends(&on), (true, true));
+
+    let mut off = Rig::new();
+    two_boxes(&mut off);
+    // The command the toggle runs, not the raw setting.
+    off.run("settings.toggle", json!({ "key": "arrow.binding" }));
+    off.tool(Tool::Arrow);
+    off.drag((210.0, 150.0), (390.0, 150.0));
+    assert_eq!(bound_ends(&off), (false, false));
+}
+
+#[test]
+fn ctrl_binds_while_the_setting_is_off_and_still_shows_the_highlight() {
+    let mut rig = Rig::new();
+    let (_, b) = two_boxes(&mut rig);
+    rig.set("arrow.binding", json!(false));
+    rig.tool(Tool::Arrow);
+    rig.mods.ctrl = true;
+    rig.down(210.0, 150.0);
+    rig.drag_to(390.0, 150.0);
+    assert_eq!(rig.parts().highlight, [b], "the shape that Ctrl would bind to is highlighted");
+    rig.up(390.0, 150.0);
+    assert_eq!(bound_ends(&rig), (true, true));
+}
+
+#[test]
+fn cmd_inverts_the_setting_as_ctrl_does() {
+    let mut rig = Rig::new();
+    two_boxes(&mut rig);
+    rig.set("arrow.binding", json!(false));
+    rig.tool(Tool::Arrow);
+    rig.mods.meta = true;
+    rig.drag((210.0, 150.0), (390.0, 150.0));
+    assert_eq!(bound_ends(&rig), (true, true));
+}
+
+#[test]
+fn ctrl_with_the_setting_on_keeps_both_ends_free_and_releasing_it_binds_again() {
+    let mut rig = Rig::new();
+    two_boxes(&mut rig);
+    rig.tool(Tool::Arrow);
+    rig.mods.ctrl = true;
+    rig.drag((210.0, 150.0), (390.0, 150.0));
+    assert_eq!(bound_ends(&rig), (false, false), "Ctrl with the setting on keeps both ends free");
+    rig.mods.ctrl = false;
+    rig.run("history.undo", json!({}));
+    rig.tool(Tool::Arrow);
+    rig.drag((210.0, 150.0), (390.0, 150.0));
+    assert_eq!(bound_ends(&rig), (true, true), "released: the setting rules again");
+}
+
+#[test]
+fn alt_alone_does_not_bind_inside_while_the_setting_is_off_but_ctrl_alt_does() {
+    let mut rig = Rig::new();
+    let (_, b) = two_boxes(&mut rig);
+    rig.set("arrow.binding", json!(false));
+    rig.tool(Tool::Arrow);
+    rig.mods.alt = true;
+    rig.drag((210.0, 150.0), (390.0, 150.0));
+    assert_eq!(bound_ends(&rig), (false, false));
+    rig.run("history.undo", json!({}));
+    rig.tool(Tool::Arrow);
+    rig.mods.ctrl = true;
+    rig.drag((210.0, 150.0), (390.0, 150.0));
+    let arrow = rig.elements().into_iter().find(|e| e.tag() == Kind::Arrow).expect("an arrow");
+    let end = arrow.linear_data().and_then(|d| d.end_binding.clone()).expect("bound");
+    assert_eq!((end.target, end.mode), (b, BindMode::Inside));
+}
+
+#[test]
+fn a_multi_point_arrow_follows_the_setting_too() {
+    let mut rig = Rig::new();
+    two_boxes(&mut rig);
+    rig.set("arrow.binding", json!(false));
+    rig.tool(Tool::Arrow);
+    rig.click(210.0, 150.0);
+    rig.click(300.0, 250.0);
+    rig.click(390.0, 150.0);
+    rig.key(Key::Enter);
+    assert_eq!(bound_ends(&rig), (false, false));
+}
+
 #[test]
 fn a_bound_end_is_previewed_where_the_binding_puts_it() {
     let mut rig = Rig::new();

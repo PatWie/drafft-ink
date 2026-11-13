@@ -12,7 +12,7 @@ use drafftink_profile::{Counter, count};
 use drafftink_scene::{
     Color, Element, ElementKind, FileId, FillPattern, FreehandData, Head, ImageData as ImageElem, MathData, TextData,
 };
-use drafftink_sketch::{FillKind, SketchCache, SketchGeometry};
+use drafftink_sketch::{FillKind, SketchCache, SketchGeometry, fit_head_size};
 use drafftink_typeset::{MathFontSlot, Typesetter};
 use kurbo::{Affine, BezPath, Cap, Circle, Join, Point, Rect, RoundedRect, Shape, Stroke, Vec2};
 use peniko::{Fill, ImageBrush, Mix};
@@ -250,7 +250,7 @@ fn paint_cardinality(ink: &mut Ink, e: &Element, d: &drafftink_scene::LinearData
     if e.style.stroke_color.a == 0 {
         return;
     }
-    let size = head_size(d, e.style.stroke_width);
+    let asked = head_size(d, e.style.stroke_width);
     let ends = [(d.end_head, last, penultimate), (d.start_head, first, second)];
     let color = ink.color(e.style.stroke_color);
     for (head, tip, toward) in ends {
@@ -268,7 +268,8 @@ fn paint_cardinality(ink: &mut Ink, e: &Element, d: &drafftink_scene::LinearData
         let away = tip - toward;
         let len = away.hypot();
         let dir = if len > f64::EPSILON { away / len } else { Vec2::new(1.0, 0.0) };
-        let path = cardinality_path(head, tip, dir, size);
+        // The same fit as the sketch generator applies to the other heads.
+        let path = cardinality_path(head, tip, dir, fit_head_size(asked, len));
         ink.stroke(&path, e.style.stroke_width, None, color);
     }
 }

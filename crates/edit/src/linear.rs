@@ -378,7 +378,7 @@ pub fn set_path<T: SceneTx>(tx: &mut T, id: &ElementId, path: PathType) -> Resul
         d.end_is_special = false;
         commit(tx, id, e)?;
         elbow::bind_ends_for_elbow(tx, id)?;
-        elbow::reroute_with(tx, id, Some(ends), RouteOpts::default())?;
+        elbow::route_new(tx, id, Some(ends), RouteOpts::default())?;
     } else if from == PathType::Elbow {
         d.fixed_segments.clear();
         d.start_is_special = false;
