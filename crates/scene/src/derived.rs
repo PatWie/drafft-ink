@@ -4,13 +4,17 @@
 //! * members by group (reverse of `group_ids`),
 //! * children by frame (reverse of `frame_id`),
 //! * label text by container (reverse of `container_id`),
-//! * the frames themselves (a small set, so "which frame is under this point" need not scan the scene).
+//! * the frames themselves (a small set, so "which frame is under this point" need not scan the scene),
+//! * the boxes of the live elements in an R-tree ([`DerivedIndex::ids_in_rect`]: "what lies in this
+//!   rectangle", which the elbow router asks for the obstacles between two arrow ends).
 //!
 //! Only live elements are indexed. The index remembers what it recorded for each element, so it updates from a
 //! [`ChangeSet`] and the store's current state without needing the old element values.
 
 use std::collections::{BTreeSet, HashMap};
 
+use drafftink_geom::SpatialIndex;
+use drafftink_geom::kurbo::Rect;
 use smallvec::SmallVec;
 
 use crate::element::{Element, Kind};
@@ -49,6 +53,22 @@ impl Recorded {
     }
 }
 
+/// The boxes of the live elements (the axis-aligned box of the rotated box) in an R-tree. Two of them are
+/// equal when they hold the same boxes, whatever the shape of their trees.
+#[derive(Debug, Clone, Default)]
+struct Boxes(SpatialIndex<ElementId>);
+
+impl PartialEq for Boxes {
+    fn eq(&self, other: &Self) -> bool {
+        self.0.len() == other.0.len() && self.0.iter().all(|(id, r)| other.0.get(id) == Some(r))
+    }
+}
+
+impl Eq for Boxes {}
+
+/// A change set that touches more elements than this, and more than half of the boxes, loads them in bulk.
+const BULK_BOXES_MIN: usize = 2048;
+
 /// The derived indexes of a scene.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct DerivedIndex {
@@ -58,6 +78,7 @@ pub struct DerivedIndex {
     frame_children: HashMap<ElementId, BTreeSet<ElementId>>,
     labels: HashMap<ElementId, BTreeSet<ElementId>>,
     frames: BTreeSet<ElementId>,
+    boxes: Boxes,
 }
 
 fn add<K: std::hash::Hash + Eq + Clone>(map: &mut HashMap<K, BTreeSet<ElementId>>, key: &K, id: &ElementId) {
@@ -85,15 +106,42 @@ impl DerivedIndex {
         for e in scene.iter_all() {
             self.record(e);
         }
+        self.load_boxes(scene);
+    }
+
+    /// Replaces the boxes with a bulk-loaded index of the live elements of `scene`.
+    fn load_boxes<R: SceneRead>(&mut self, scene: &R) {
+        self.boxes = Boxes(SpatialIndex::bulk_load(scene.iter().map(|e| (e.id.clone(), e.transform.obox().aabb()))));
+    }
+
+    /// Brings the box of one element up to date. An element that is gone, or whose box is not finite, has none.
+    fn track_box(&mut self, id: &ElementId, live: Option<&Element>) {
+        let Some(e) = live else {
+            self.boxes.0.remove(id);
+            return;
+        };
+        let now = e.transform.obox().aabb();
+        if self.boxes.0.get(id) != Some(now) && self.boxes.0.insert(id.clone(), now).is_err() {
+            self.boxes.0.remove(id);
+        }
     }
 
     /// Brings the index up to date after `changes`. `scene` must be in the state the change set produced.
     pub fn apply<R: SceneRead>(&mut self, changes: &ChangeSet, scene: &R) {
+        let n = changes.elements.len();
+        let bulk = n > BULK_BOXES_MIN && n * 2 > self.boxes.0.len();
         for c in &changes.elements {
             self.forget(&c.id);
-            if let Some(e) = scene.get(&c.id) {
+            let e = scene.get(&c.id);
+            if let Some(e) = e {
                 self.record(e);
             }
+            if !bulk {
+                self.track_box(&c.id, e.filter(|e| !e.deleted));
+            }
+        }
+        if bulk {
+            self.load_boxes(scene);
         }
     }
 
@@ -179,5 +227,11 @@ impl DerivedIndex {
     /// Number of groups with at least one live member.
     pub fn group_count(&self) -> usize {
         self.group_members.len()
+    }
+
+    /// Live elements whose box (rotation included) overlaps or touches `rect`, in no particular order. Read the
+    /// elements from the scene.
+    pub fn ids_in_rect(&self, rect: &Rect) -> impl Iterator<Item = &ElementId> {
+        self.boxes.0.query_rect(rect).map(|(id, _)| id)
     }
 }

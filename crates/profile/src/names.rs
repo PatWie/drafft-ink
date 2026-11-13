@@ -74,6 +74,9 @@ name_enum! {
         /// An element was visited by a pass over the whole scene (a scan, not an index lookup). An
         /// operation whose cost must not grow with the scene reports 0 here.
         ElementsScanned => "elements_scanned",
+        /// A node was taken off the open list by the elbow router's A* search. It bounds the cost of routing
+        /// one arrow (at most `MAX_EXPANSIONS` per search).
+        RouteExpansions => "route_expansions",
     }
 }
 

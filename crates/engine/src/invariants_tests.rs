@@ -325,6 +325,84 @@ fn the_pass_is_idempotent_and_settles_in_two_rounds_for_a_plain_move() {
     let _ = a;
 }
 
+/// An elbow arrow from the right of `a` to the left of `b`, solved so the document is consistent.
+fn elbow_between(s: &mut Session, name: &str, a: &ElementId, b: &ElementId) -> ElementId {
+    let id = ElementId::new(name).unwrap();
+    let z = s.tab().doc.store().next_top_index().unwrap();
+    let (ra, rb) = (s.store().get(a).unwrap().rect(), s.store().get(b).unwrap().rect());
+    let pts = [Point::new(ra.x1 + 6.0, ra.center().y), Point::new(rb.x0 - 6.0, rb.center().y)];
+    let mut e = Element::linear(id.clone(), LinearKind::Arrow, z, &pts).unwrap();
+    if let ElementKind::Arrow(d) = &mut e.kind {
+        d.path = drafftink_scene::PathType::Elbow;
+        d.start_binding = Some(Binding { target: a.clone(), mode: BindMode::Orbit, fixed_point: [1.0, 0.5] });
+        d.end_binding = Some(Binding { target: b.clone(), mode: BindMode::Orbit, fixed_point: [0.0, 0.5] });
+    }
+    put(s, e);
+    let ids = [a.clone(), b.clone()];
+    s.tab_mut()
+        .doc
+        .edit::<_, drafftink_edit::binding::BindingError>(|tx| drafftink_edit::binding::update_bound_arrows(tx, &ids))
+        .unwrap();
+    id
+}
+
+fn route_of(s: &Session, arrow: &ElementId) -> Vec<Point> {
+    world_points(s.element(arrow).unwrap()).unwrap()
+}
+
+#[test]
+fn an_elbow_arrow_goes_around_a_shape_dropped_in_its_way_and_back_when_it_leaves_in_one_undo_step_each() {
+    let mut s = session();
+    let a = rect(&mut s, "a", 0.0, 0.0, 100.0, 100.0);
+    let b = rect(&mut s, "b", 500.0, 0.0, 100.0, 100.0);
+    let wall = rect(&mut s, "wall", 250.0, 600.0, 100.0, 60.0);
+    let arrow = elbow_between(&mut s, "arr", &a, &b);
+    ready(&mut s);
+    let straight = route_of(&s, &arrow);
+    assert_eq!(straight.len(), 2, "{straight:?}");
+
+    // The wall moves onto the line: the shape is not bound to the arrow, only in its way.
+    exec(&mut s, "t.move", json!({"id": "wall", "dx": 0.0, "dy": -580.0}));
+    let around = route_of(&s, &arrow);
+    let w = rect_of(&s, &wall);
+    assert!(around.len() > 2, "{around:?}");
+    assert!(
+        around.windows(2).all(|l| {
+            let (x0, x1) = (l[0].x.min(l[1].x), l[0].x.max(l[1].x));
+            let (y0, y1) = (l[0].y.min(l[1].y), l[0].y.max(l[1].y));
+            !(x0 < w.x1 && x1 > w.x0 && y0 < w.y1 && y1 > w.y0)
+        }),
+        "{around:?} crosses {w:?}"
+    );
+    assert!(stale_arrows(s.store()).is_empty());
+    assert_eq!(s.tab().doc.undo_depth(), 1, "the shape and the arrow it pushed aside are one step");
+
+    // It leaves again: the detour goes with it.
+    exec(&mut s, "t.move", json!({"id": "wall", "dx": 0.0, "dy": 580.0}));
+    assert_eq!(route_of(&s, &arrow), straight);
+    assert_eq!(s.tab().doc.undo_depth(), 2);
+
+    s.undo_steps(1).unwrap();
+    assert_eq!(route_of(&s, &arrow), around, "undo brings the shape and the detour back together");
+    s.undo_steps(1).unwrap();
+    assert_eq!(route_of(&s, &arrow), straight);
+}
+
+#[test]
+fn deleting_the_shape_in_the_way_straightens_the_arrow() {
+    let mut s = session();
+    let a = rect(&mut s, "a", 0.0, 0.0, 100.0, 100.0);
+    let b = rect(&mut s, "b", 500.0, 0.0, 100.0, 100.0);
+    let _wall = rect(&mut s, "wall", 250.0, 20.0, 100.0, 60.0);
+    let arrow = elbow_between(&mut s, "arr", &a, &b);
+    ready(&mut s);
+    assert!(route_of(&s, &arrow).len() > 2, "built with the shape in the way");
+    exec(&mut s, "t.delete", json!({"id": "wall"}));
+    assert_eq!(route_of(&s, &arrow).len(), 2);
+    s.undo_steps(1).unwrap();
+    assert!(route_of(&s, &arrow).len() > 2);
+}
+
 #[test]
 fn deleting_a_container_leaves_its_arrow_and_label_without_an_error() {
     let mut s = session();

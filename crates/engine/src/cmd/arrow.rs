@@ -1065,7 +1065,7 @@ fn move_segment(s: &mut Session, a: SegmentArgs) -> Result<IdsOut, Refusal> {
     };
     let to = pt(cmd, "to", to)?;
     let (id, _) = elbow_target(s, cmd, &a)?;
-    let opts = RouteOpts { zoom: zoom(s) };
+    let opts = RouteOpts::at_zoom(zoom(s));
     edit(s, |tx| elbow::move_segment_of(tx, &id, a.segment, to, opts).map_err(|e| from_elbow(cmd, "segment", e)))?;
     Ok(IdsOut { ids: vec![id.as_str().to_owned()] })
 }
@@ -1087,7 +1087,7 @@ fn release_segment(s: &mut Session, a: SegmentArgs) -> Result<IdsOut, Refusal> {
             &format!("segment {} of `{}` is not pinned", a.segment, id.as_str()),
         ));
     }
-    let opts = RouteOpts { zoom: zoom(s) };
+    let opts = RouteOpts::at_zoom(zoom(s));
     edit(s, |tx| elbow::release_segment_of(tx, &id, a.segment, opts).map_err(|e| from_elbow(cmd, "segment", e)))?;
     Ok(IdsOut { ids: vec![id.as_str().to_owned()] })
 }

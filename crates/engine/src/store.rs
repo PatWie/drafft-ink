@@ -649,6 +649,18 @@ impl TabDoc {
         ChangeSet { revision: self.work.revision(), elements, meta: meta.is_some_and(|m| m != self.work.meta()), files }
     }
 
+    /// The elements as they were at `mark`, for those the commits since then changed or removed (an element that
+    /// did not exist then is left out). The journal stays. The invariant pass reads where a shape used to be.
+    pub fn elements_before(&self, mark: DocMark) -> Vec<&Element> {
+        let mut first: BTreeMap<&ElementId, &Option<Element>> = BTreeMap::new();
+        for p in self.journal.get(mark.0..).unwrap_or(&[]) {
+            for (id, prev) in &p.elements {
+                first.entry(id).or_insert(prev);
+            }
+        }
+        first.into_values().filter_map(Option::as_ref).collect()
+    }
+
     /// Ids of the elements the commits since `mark` touched, whether or not they differ from before.
     pub fn touched_since(&self, mark: DocMark) -> BTreeSet<ElementId> {
         self.journal.get(mark.0..).unwrap_or(&[]).iter().flat_map(Patch::touched).cloned().collect()

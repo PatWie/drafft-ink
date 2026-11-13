@@ -160,7 +160,7 @@ pub fn bind_end<T: SceneTx>(
         }
     })?;
     if elbow {
-        elbow::reroute_with(tx, arrow, None, RouteOpts { zoom: req.zoom })?;
+        elbow::reroute_with(tx, arrow, None, RouteOpts::at_zoom(req.zoom))?;
     } else {
         update_bound_arrows(tx, std::slice::from_ref(arrow))?;
     }
@@ -187,7 +187,7 @@ pub fn reroute<T: SceneTx>(tx: &mut T, ids: &[ElementId], zoom: f64) -> Result<V
                 d.end_is_special = false;
             }
         })?;
-        elbow::reroute_forced(tx, id, RouteOpts { zoom })?;
+        elbow::reroute_forced(tx, id, RouteOpts::at_zoom(zoom))?;
     }
     update_bound_arrows(tx, &linear)?;
     let mut changed: Vec<ElementId> = before

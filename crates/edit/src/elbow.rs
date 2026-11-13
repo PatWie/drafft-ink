@@ -4,7 +4,11 @@
 //! dragged, and `start_is_special` / `end_is_special` mark a hidden stub. Hit tests, handles and the renderer
 //! all read the stored points. (The old app only drew a fixed Z at render time.)
 //!
-//! * [`route`], [`ElbowEnd`], [`ElbowTarget`]: the pure router (A* on a grid of obstacle-box edges).
+//! * [`route`], [`ElbowEnd`], [`ElbowTarget`]: the pure router (A* on a grid of obstacle-box edges). It goes
+//!   around the shapes the arrow is bound to and, when the arrow has a bound end, around the other shapes
+//!   too ([`RouteOpts::obstacles`]; `obstacles.rs` finds them with the scene's box index). The route is
+//!   computed from the scene and stored as points like any other, so peers that hold the same scene compute
+//!   the same route and a merge has nothing to reconcile.
 //! * [`move_segment`], [`release_segment`], [`update_ends`], [`renormalize`]: pin handling on a pure path.
 //! * [`reroute`], [`move_segment_of`], [`release_segment_of`]: the same on an element in a transaction.
 //! * [`snap_to_outline`], [`fixed_point_for`]: where an elbow end attaches to a shape.
@@ -12,19 +16,21 @@
 //!
 //! The router is a port of the algorithm in Excalidraw's `elbowArrow.ts` (MIT), written for our model.
 
+mod obstacles;
 mod route;
 mod segments;
 
 use drafftink_geom::binding::{BASE_BINDING_GAP, BindTarget, Heading, max_binding_distance};
-use drafftink_geom::kurbo::{BezPath, Point, Vec2};
+use drafftink_geom::kurbo::{BezPath, Point, Rect, Vec2};
 use drafftink_scene::{
     BindMode, Binding, Element, ElementId, ElementKind, FixedSegment, LinearData, PathType, SceneRead, SceneTx,
     StoreError,
 };
 
+pub use obstacles::ObstacleFinder;
 pub use route::{
-    BASE_PADDING, Bounds, CORNER_RADIUS, DEDUP_THRESHOLD, ElbowEnd, ElbowError, ElbowTarget, RouteOpts, heading_of_end,
-    is_orthogonal, route,
+    AVOID_PADDING, BASE_PADDING, Bounds, CORNER_RADIUS, DEDUP_THRESHOLD, ElbowEnd, ElbowError, ElbowTarget,
+    MAX_EXPANSIONS, MAX_OBSTACLES, RouteOpts, heading_of_end, is_orthogonal, route,
 };
 pub use segments::{ElbowPath, Pin, move_segment, release_segment, renormalize, update_ends};
 
@@ -109,12 +115,15 @@ const SAME: f64 = 1e-9;
 
 /// The route an elbow element should have now, or `None` if it is already right. `ends` overrides where
 /// free ends are.
+///
+/// `around` is the boxes of the other shapes to route around; `None` looks them up in `scene`.
 pub(crate) fn solve_path<R: SceneRead>(
     scene: &R,
     e: &Element,
     ends: Option<(Point, Point)>,
-    opts: RouteOpts,
+    opts: RouteOpts<'_>,
     force: bool,
+    around: Option<&[Bounds]>,
 ) -> Result<Option<ElbowPath>, ElbowError> {
     let Some(d) = e.linear_data() else { return Ok(None) };
     let Some(world) = world_points(e) else { return Ok(None) };
@@ -134,6 +143,15 @@ pub(crate) fn solve_path<R: SceneRead>(
     if path.is_valid() && !moved && !force && e.transform.angle == 0.0 {
         return Ok(None);
     }
+    let found;
+    let around = match around {
+        Some(boxes) => boxes,
+        None => {
+            found = ObstacleFinder::new().gather(scene, &e.id, &s, &en);
+            &found
+        }
+    };
+    let opts = opts.around(around);
     if !path.is_valid() {
         return Ok(Some(ElbowPath::free(route(&s, &en, opts)?)));
     }
@@ -143,12 +161,12 @@ pub(crate) fn solve_path<R: SceneRead>(
 /// A copy of `e` with its elbow route solved against `scene`, for a preview of an arrow that is not in the
 /// document yet (bound ends sit at their bindings, free ends where the points are). Nothing is written. An
 /// element that is not an elbow line or arrow comes back unchanged.
-pub fn routed_copy<R: SceneRead>(scene: &R, e: &Element, opts: RouteOpts) -> Result<Element, ElbowEditError> {
+pub fn routed_copy<R: SceneRead>(scene: &R, e: &Element, opts: RouteOpts<'_>) -> Result<Element, ElbowEditError> {
     let mut out = e.clone();
     if e.linear_data().is_none_or(|d| d.path != PathType::Elbow) {
         return Ok(out);
     }
-    if let Some(path) = solve_path(scene, e, None, opts, true)?
+    if let Some(path) = solve_path(scene, e, None, opts, true, None)?
         && !write_path(&mut out, &path)
     {
         return Err(ElbowEditError::Route(ElbowError::NotFinite));
@@ -173,14 +191,14 @@ fn elbow_element<R: SceneRead>(scene: &R, id: &ElementId) -> Result<Element, Elb
 
 /// Routes the elbow arrow again from its bindings. Free ends stay where they are. Returns whether anything
 /// changed.
-pub fn reroute<T: SceneTx>(tx: &mut T, id: &ElementId, opts: RouteOpts) -> Result<bool, ElbowEditError> {
+pub fn reroute<T: SceneTx>(tx: &mut T, id: &ElementId, opts: RouteOpts<'_>) -> Result<bool, ElbowEditError> {
     reroute_with(tx, id, None, opts)
 }
 
 /// Routes the elbow arrow again even if its ends did not move, as after a change of arrowhead (a head needs
 /// room). Pins are kept.
-pub fn reroute_forced<T: SceneTx>(tx: &mut T, id: &ElementId, opts: RouteOpts) -> Result<bool, ElbowEditError> {
-    reroute_inner(tx, id, None, opts, true)
+pub fn reroute_forced<T: SceneTx>(tx: &mut T, id: &ElementId, opts: RouteOpts<'_>) -> Result<bool, ElbowEditError> {
+    reroute_inner(tx, id, None, opts, true, None)
 }
 
 /// Like [`reroute`], with new positions for the two ends (free ends take them; bound ends keep their binding's
@@ -189,22 +207,86 @@ pub fn reroute_with<T: SceneTx>(
     tx: &mut T,
     id: &ElementId,
     ends: Option<(Point, Point)>,
-    opts: RouteOpts,
+    opts: RouteOpts<'_>,
 ) -> Result<bool, ElbowEditError> {
-    reroute_inner(tx, id, ends, opts, false)
+    reroute_inner(tx, id, ends, opts, false, None)
+}
+
+/// Like [`reroute_with`], and the route is made even when the ends are where they were and the points happen to be
+/// orthogonal already. For an arrow that has just become an elbow arrow: a straight horizontal line between two
+/// shapes is a valid route, but not one that goes around the shapes in between.
+pub fn route_new<T: SceneTx>(
+    tx: &mut T,
+    id: &ElementId,
+    ends: Option<(Point, Point)>,
+    opts: RouteOpts<'_>,
+) -> Result<bool, ElbowEditError> {
+    reroute_inner(tx, id, ends, opts, true, None)
+}
+
+/// The boxes of the other shapes the elbow arrow `id` is routed around now, read from `scene`. Empty for an arrow
+/// that is not an elbow arrow or has no bound end. A caller that is about to write to the scene and then route
+/// several arrows takes the boxes first (the box index of a reader is exact only until its first write), with one
+/// `finder` for all of them, and passes them to [`reroute_among`].
+pub fn obstacles_of<R: SceneRead>(scene: &R, id: &ElementId, finder: &ObstacleFinder) -> Vec<Bounds> {
+    let Some(e) = scene.get(id) else { return Vec::new() };
+    let (Some(d), Some(world)) = (e.linear_data(), world_points(e)) else { return Vec::new() };
+    if d.path != PathType::Elbow {
+        return Vec::new();
+    }
+    ends_for(scene, d, &world).map_or_else(Vec::new, |(s, en)| finder.gather(scene, id, &s, &en))
+}
+
+/// Like [`reroute`] (`force` as in [`reroute_forced`]) with the boxes to go around given by the caller, from
+/// [`obstacles_of`].
+pub fn reroute_among<T: SceneTx>(
+    tx: &mut T,
+    id: &ElementId,
+    around: &[Bounds],
+    opts: RouteOpts<'_>,
+    force: bool,
+) -> Result<bool, ElbowEditError> {
+    reroute_inner(tx, id, None, opts, force, Some(around))
+}
+
+/// The elbow arrows, bound at an end and with no pinned segment, that are near one of `places`: the arrows that a
+/// shape moving in or out of those places may have to be routed around, or may leave a detour behind. Sorted by
+/// id.
+pub fn arrows_near<R: SceneRead>(scene: &R, places: &[Rect]) -> Vec<ElementId> {
+    obstacles::arrows_near(scene, places)
+}
+
+/// Is `e` one of the arrows [`arrows_near`] finds for `places`? For a caller that walks the scene itself.
+pub fn is_near(e: &Element, places: &[Rect]) -> bool {
+    obstacles::is_near(e, places)
+}
+
+/// Does a shape of this element's kind stand in the way of elbow arrows? The box of a changed element of such a
+/// kind is a region for [`arrows_near`].
+pub fn is_obstacle(e: &Element) -> bool {
+    obstacles::is_obstacle(e)
+}
+
+/// The box [`arrows_near`] and the router use for an element.
+pub fn obstacle_box(e: &Element) -> Rect {
+    obstacles::box_of(e)
 }
 
 fn reroute_inner<T: SceneTx>(
     tx: &mut T,
     id: &ElementId,
     ends: Option<(Point, Point)>,
-    opts: RouteOpts,
+    opts: RouteOpts<'_>,
     force: bool,
+    around: Option<&[Bounds]>,
 ) -> Result<bool, ElbowEditError> {
     let mut e = elbow_element(tx, id)?;
-    let Some(path) = solve_path(tx, &e, ends, opts, force)? else { return Ok(false) };
+    let Some(path) = solve_path(tx, &e, ends, opts, force, around)? else { return Ok(false) };
     if !write_path(&mut e, &path) {
         return Err(ElbowEditError::Route(ElbowError::NotFinite));
+    }
+    if tx.get(id).is_some_and(|now| now.transform == e.transform && now.kind == e.kind) {
+        return Ok(false);
     }
     commit(tx, id, e)?;
     Ok(true)
@@ -212,17 +294,18 @@ fn reroute_inner<T: SceneTx>(
 
 fn with_ends<T: SceneTx, F>(tx: &mut T, id: &ElementId, f: F) -> Result<(), ElbowEditError>
 where
-    F: FnOnce(&ElbowPath, &ElbowEnd, &ElbowEnd) -> Result<ElbowPath, ElbowError>,
+    F: FnOnce(&ElbowPath, &ElbowEnd, &ElbowEnd, &[Bounds]) -> Result<ElbowPath, ElbowError>,
 {
     let mut e = elbow_element(tx, id)?;
     let d = e.linear_data().ok_or_else(|| ElbowEditError::NotElbow(id.clone()))?;
     let world = world_points(&e).ok_or_else(|| ElbowEditError::NotElbow(id.clone()))?;
     let (s, en) = ends_for(tx, d, &world).ok_or(ElbowError::TooFewPoints(world.len()))?;
     let mut path = path_of(&e, d, &world);
+    let around = ObstacleFinder::new().gather(&*tx, id, &s, &en);
     if !path.is_valid() {
-        path = ElbowPath::free(route(&s, &en, RouteOpts::default())?);
+        path = ElbowPath::free(route(&s, &en, RouteOpts::default().around(&around))?);
     }
-    let next = f(&path, &s, &en)?;
+    let next = f(&path, &s, &en, &around)?;
     if !write_path(&mut e, &next) {
         return Err(ElbowEditError::Route(ElbowError::NotFinite));
     }
@@ -237,9 +320,9 @@ pub fn move_segment_of<T: SceneTx>(
     id: &ElementId,
     index: usize,
     pointer: Point,
-    opts: RouteOpts,
+    opts: RouteOpts<'_>,
 ) -> Result<(), ElbowEditError> {
-    with_ends(tx, id, |path, s, e| move_segment(path, s, e, index, pointer, opts))
+    with_ends(tx, id, |path, s, e, around| move_segment(path, s, e, index, pointer, opts.around(around)))
 }
 
 /// Unpins segment `index` and routes that part of the arrow again (a double click on the handle).
@@ -247,9 +330,9 @@ pub fn release_segment_of<T: SceneTx>(
     tx: &mut T,
     id: &ElementId,
     index: usize,
-    opts: RouteOpts,
+    opts: RouteOpts<'_>,
 ) -> Result<(), ElbowEditError> {
-    with_ends(tx, id, |path, s, e| release_segment(path, s, e, index, opts))
+    with_ends(tx, id, |path, s, e, around| release_segment(path, s, e, index, opts.around(around)))
 }
 
 // ---------------------------------------------------------------------------------------------
