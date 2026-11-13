@@ -189,6 +189,71 @@ fn a_rectangle_gets_stroke_corners_opacity_layers_and_actions_but_no_text_align_
     assert!(has(&h, "Thin") && has(&h, "Extra bold"), "a rectangle has a width");
 }
 
+fn radius_slider<'a>(h: &'a H) -> Option<egui_kittest::Node<'a>> {
+    h.query_by_role_and_label(egui::accesskit::Role::Slider, "Corner radius")
+}
+
+#[test]
+fn the_corners_row_has_the_two_presets_and_a_radius_button_that_follow_the_selection() {
+    let mut f = one_rect();
+    dialog::run(&mut f, "style.set", json!({ "props": { "corner_radius": 12 } }));
+    let mut h = desk(f);
+    let on =
+        |h: &H, label: &str| h.get_by_label(label).accesskit_node().toggled() == Some(egui::accesskit::Toggled::True);
+    assert!(!on(&h, "Corners: Sharp") && !on(&h, "Corners: Round"), "12 is neither preset");
+    assert!(radius_slider(&h).is_none(), "the slider is in the menu, not in the strip");
+    h.get_by_role_and_label(egui::accesskit::Role::Button, "Corner radius");
+    open(&mut h, "Corner radius");
+    h.get_by_label("12");
+    assert_eq!(radius_slider(&h).and_then(|s| s.accesskit_node().numeric_value()), Some(12.0));
+    let mut f = one_rect();
+    dialog::run(&mut f, "style.set", json!({ "props": { "corner_radius": 32 } }));
+    let h = desk(f);
+    assert!(on(&h, "Corners: Round") && !on(&h, "Corners: Sharp"));
+}
+
+#[test]
+fn the_presets_still_set_the_radius() {
+    let mut h = desk(one_rect());
+    let calls = common::click(&mut h, "Corners: Round");
+    assert_eq!(
+        calls.last().map(|c| (c.id.as_str(), c.args.clone())),
+        Some(("style.set", json!({ "props": { "corner_radius": 32.0 } })))
+    );
+    let calls = common::click(&mut h, "Corners: Sharp");
+    assert_eq!(calls.last().map(|c| c.args.clone()), Some(json!({ "props": { "corner_radius": 0.0 } })));
+}
+
+#[test]
+fn only_shapes_that_round_get_the_radius_control() {
+    let has_button = |h: &H| h.query_by_role_and_label(egui::accesskit::Role::Button, "Corner radius").is_some();
+    assert!(has_button(&desk(one_rect())));
+    assert!(has_button(&desk(with_tool("rectangle"))));
+    assert!(has_button(&desk(with_tool("diamond"))));
+    assert!(!has_button(&desk(with_tool("ellipse"))), "an ellipse has no corners");
+    assert!(!has_button(&desk(free_text())));
+    assert!(!has_button(&desk(freehand())));
+    // Lines and arrows have their corners in the More menu, with the slider in it.
+    let mut h = desk(arrow());
+    assert!(!has_button(&h) && radius_slider(&h).is_none());
+    open(&mut h, "More options");
+    assert!(radius_slider(&h).is_some(), "the More menu of an arrow has it");
+}
+
+#[test]
+fn a_mixed_selection_of_shapes_shows_mixed_radii_and_a_text_does_not_count() {
+    let mut f = dialog::fixture();
+    let a = add_rect(&mut f.session, 0.0, 0.0, 100.0, 60.0).unwrap();
+    let b = add_rect(&mut f.session, 150.0, 0.0, 100.0, 60.0).unwrap();
+    let t = create(&mut f, json!({ "kind": "text", "text": "hello", "at": [0, 200] }));
+    dialog::run(&mut f, "style.set", json!({ "ids": [a.as_str()], "props": { "corner_radius": 8 } }));
+    selecting(&mut f, &[a, b, t]);
+    let mut h = desk(f);
+    open(&mut h, "Corner radius");
+    h.get_by_label("mixed");
+    assert!(radius_slider(&h).is_some());
+}
+
 #[test]
 fn the_fill_patterns_come_with_a_fill() {
     let mut f = one_rect();

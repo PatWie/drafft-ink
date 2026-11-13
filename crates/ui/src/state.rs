@@ -444,6 +444,8 @@ pub enum RibbonMenu {
     StartHead,
     /// The head at the end of an arrow.
     EndHead,
+    /// The corner radius slider of a shape's corners.
+    CornerRadius,
 }
 
 /// A ribbon menu that is open, and where its button is.

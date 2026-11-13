@@ -101,3 +101,28 @@ fn the_head_picker_opens_over_the_canvas_with_a_picture_in_every_cell() {
     assert!(changed > 2_000, "the picker covers the canvas under the End button ({changed} pixels changed)");
     save(&crop(&open, [520, 0, 380, 260], 2), "head-picker.png");
 }
+
+/// Where the corner radius button of the strip is, with a rectangle selected, in the same window.
+const RADIUS_BUTTON: Pos2 = Pos2::new(609.0, 19.0);
+
+#[test]
+fn the_corner_radius_menu_opens_under_its_button_with_the_slider_and_the_value() {
+    let Some(mut shell) = shell() else { return };
+    run(
+        &mut shell,
+        "element.create",
+        json!({ "kind": "rectangle", "bounds": { "x": 300, "y": 300, "w": 200, "h": 120 } }),
+    );
+    run(&mut shell, "style.set", json!({ "props": { "corner_radius": 20 } }));
+    shell.settle(3);
+    let closed = shell.screenshot().unwrap();
+    click(&mut shell, RADIUS_BUTTON);
+    let open = shell.screenshot().unwrap();
+    let [x, y, w, h] = [580, 40, 260, 80];
+    let changed = (y..y + h)
+        .flat_map(|row| (x..x + w).map(move |col| (col, row)))
+        .filter(|&(col, row)| closed.pixel(col, row) != open.pixel(col, row))
+        .count();
+    assert!(changed > 1_500, "the menu covers the canvas under the button ({changed} pixels changed)");
+    save(&crop(&open, [520, 0, 380, 140], 2), "corner-radius.png");
+}

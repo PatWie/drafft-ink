@@ -179,20 +179,20 @@ Rules that hold for all classes:
 | Final state | None for the document. The scriptable form is `collab.laser { points }`. |
 | Test | `exception_E12_laser_leaves_document_unchanged`. |
 
-### E13 Scrubbing the opacity slider
+### E13 Scrubbing the opacity and corner radius sliders
 
 | | |
 |---|---|
-| Input | Dragging the opacity slider in the ribbon. Every scrubbing control goes through the one helper `crates/ui/src/scrub.rs` (`scrub::slider`), which owns the rules below. A click on a swatch, a stroke-width button or a font-size button is not a gesture. |
+| Input | Dragging the opacity slider or the corner radius slider in the ribbon (the radius slider is also in the "More" menu of arrows and lines). Every scrubbing control goes through the one helper `crates/ui/src/scrub.rs` (`scrub::slider`), which owns the rules below. A click on a swatch, a stroke-width button or a font-size button is not a gesture. |
 | Class | A |
 | Protocol | `gesture.begin` `style.set` on the first change, `gesture.update` with the full props for each change, `gesture.end` at pointer release. |
-| Reason | The user sees the result live on the canvas, and a drag must be one undo step. The old opacity slider pushed an undo step on every tick (A:3639). |
+| Reason | The user sees the result live on the canvas, and a drag must be one undo step. The old opacity slider pushed an undo step on every tick (A:3639). The corner radius slider is the same case: a drag over many shapes, one step (`ScrubControl::CornerRadius`, whole numbers). |
 | Between events | Live frames skip the history, the broadcast and the defaults update. The end run also updates the defaults and broadcasts. |
 | Final state | `style.set { props, ids, scope }`. A click is a plain `style.set`. |
 | Cancel | Esc cancels the running gesture and restores the old value (the slider sends `gesture.cancel`; the shortcut `tool.cancel` does the same in the engine) and ignores the rest of that drag. |
 | Never left open | The slider stays enabled while its own gesture runs (every other command is refused then). If the slider is not drawn in a frame (the ribbon regrouped) or the window loses the focus, the frame ends the gesture. An arrow key on the slider is one plain `style.set`. |
 | Not built | Scrubbing a stroke-width or font-size slider and dragging inside a colour picker's saturation or hue area. Those controls send one plain `style.set` per choice. |
-| Test | `exception_E13_scrub_equals_plain_command` (two scrubs, one of them with a colour and a width, each compared with one plain `style.set`). |
+| Test | `exception_E13_scrub_equals_plain_command` (three scrubs, one of them with a colour and a width and one of the corner radius, each compared with one plain `style.set`). |
 
 ### E14 Releasing a dragged source (library item, dropped file)
 

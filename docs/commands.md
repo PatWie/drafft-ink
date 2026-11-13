@@ -609,7 +609,7 @@ The props (each applies only to the kinds listed; others are skipped and reporte
 | `stroke_width` | number above 0, at most 1000 (presets 1, 2, 4, 8) | all except text, math. Choosing a width (or a dash) for an image that has no outline outlines it, in the default stroke colour | U:1156, A:2679 |
 | `stroke_style` | `solid \| dashed \| dotted` | every shape: rectangle, diamond, ellipse, frame, image (its outline), line, arrow, freehand (the old app only had it on line and arrow) | U:1631, A:3097 |
 | `sloppiness` | `architect \| artist \| cartoonist \| drunk` | all except text, math, image, freehand | U:1542, A:2996 |
-| `corner_radius` | number from 0 (sharp), at most 1000000. The old "on" was 32. | rectangle, diamond, line, arrow, frame | U:1515, A:2970 |
+| `corner_radius` | number from 0 (sharp), at most 1000000. The old "on" was 32. A shape draws at most half its shorter side. The panel has Sharp (0), Round (32) and a slider from 0 to 100 that scrubs through `gesture.*` (E13); `style.get` says `mixed` when the shapes that take a radius differ. | rectangle, diamond, line, arrow, frame | U:1515, A:2970 |
 | `opacity` | 0 to 1 | all | U:1778, A:3639 |
 | `freehand_style` | `normal \| calligraphy` (smooths the samples of strokes drawn afterwards; `element.create` stores the points it is given) | freehand | U:1659, A:3609 |
 | `pressure_mode` | `uniform \| simulated \| device` (device is NEW: real pen pressure). `uniform` draws a constant width, the others use the stored `pressures`; `simulated` makes them from the pointer speed when a stroke is drawn with a mouse or finger | freehand | U:1675, A:3617 |

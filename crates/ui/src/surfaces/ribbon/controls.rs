@@ -23,6 +23,13 @@ use crate::widgets::{Ctl, Cx, Look, icon_color, paint_button_bg, strip_row};
 pub(super) const FONT_SIZES: [(&str, f64); 4] = [("S", 16.0), ("M", 20.0), ("L", 28.0), ("XL", 36.0)];
 /// Corner radius of "round".
 pub(super) const ROUND_CORNER: f64 = 32.0;
+/// The largest radius the corner slider reaches. A shape never rounds more than half its shorter side, and the
+/// command takes more (`style.set` allows up to the scene's limit), which the slider shows at its end.
+const CORNER_SLIDER_MAX: f32 = 100.0;
+/// The width of the corner radius slider in its menu.
+const CORNER_SLIDER_WIDTH: f32 = 140.0;
+/// The width reserved for the radius next to its slider ("mixed").
+const RADIUS_TEXT_WIDTH: f32 = 40.0;
 /// Line heights offered (the property takes 1.0 to 3.0).
 pub(super) const LINE_HEIGHTS: [f64; 4] = [1.0, 1.25, 1.5, 2.0];
 /// Width of the font button, wide enough for the longest family name.
@@ -77,7 +84,7 @@ impl Row {
             Row::Width => width(ui, cx),
             Row::StrokeStyle => stroke_style(ui, cx),
             Row::FillPattern => fill_pattern(ui, cx),
-            Row::Corners => corners(ui, cx),
+            Row::Corners => corners(ui, cx, st),
             Row::ArrowPath => arrow_path(ui, cx),
             Row::ArrowHeads => arrow_heads(ui, cx, st),
             Row::Brush => brush(ui, cx),
@@ -263,21 +270,92 @@ fn fill_pattern(ui: &mut Ui, cx: &mut Cx<'_>) {
     }
 }
 
-fn corners(ui: &mut Ui, cx: &mut Cx<'_>) {
+fn corners(ui: &mut Ui, cx: &mut Cx<'_>, st: &mut UiState) {
     for (name, value) in CORNERS {
         let ctl = corner_ctl(cx, name, value);
         let rounded = value > 0.0;
         picture(cx, ui, &ctl, move |p, rect, ink| pictograms::corner(p, rect, rounded, ink));
     }
+    corner_radius_button(ui, cx, st);
+}
+
+/// The small button after the presets that opens the radius slider: the sliders icon, its name and the radius in
+/// the tooltip, selected while the menu is open or the radius is none of the presets.
+fn corner_radius_button(ui: &mut Ui, cx: &Cx<'_>, st: &mut UiState) {
+    let open = st.ribbon_menu.is_some_and(|m| m.kind == RibbonMenu::CornerRadius);
+    let side = cx.layout.small_side();
+    let pal = cx.pal;
+    let (rect, resp) = ui.allocate_exact_size(vec2(side, side), Sense::click());
+    let look = Look {
+        hovered: resp.hovered() || resp.has_focus(),
+        pressed: resp.is_pointer_button_down_on(),
+        enabled: true,
+        selected: open,
+    };
+    if ui.is_rect_visible(rect) {
+        paint_button_bg(ui.painter(), rect, look, &pal, true);
+        pictograms::radius_slider(ui.painter(), rect.shrink(side * 0.22), icon_color(look, &pal));
+    }
+    let tip = format!("Corner radius: {}", radius_text(cx));
+    resp.widget_info(|| {
+        let mut info = WidgetInfo::labeled(Role::Button, true, "Corner radius");
+        info.selected = Some(open);
+        info
+    });
+    let resp = resp.on_hover_text(tip);
+    if !ui.is_sizing_pass() {
+        if resp.clicked() {
+            st.close_overlays();
+            st.ribbon_menu = Some(OpenRibbonMenu { kind: RibbonMenu::CornerRadius, anchor: resp.rect });
+        } else if open {
+            st.ribbon_menu = Some(OpenRibbonMenu { kind: RibbonMenu::CornerRadius, anchor: resp.rect });
+        }
+    }
+}
+
+/// The radius as the button and the slider's value show it: a whole number, or `mixed`.
+fn radius_text(cx: &Cx<'_>) -> String {
+    if cx.model.style.prop("corner_radius").is_some_and(StyleProp::is_mixed) {
+        "mixed".to_owned()
+    } else {
+        format!("{}", cx.model.style.num_value("corner_radius").unwrap_or(0.0).round())
+    }
+}
+
+/// The corner radius slider and its value: any radius, where the two buttons give the presets. A drag is one
+/// gesture (docs/exceptions.md E13), so it is one undo step; with several shapes of different radii the value says
+/// `mixed`.
+pub(super) fn corner_slider(ui: &mut Ui, cx: &mut Cx<'_>) {
+    let mut value = cx.model.style.num_value("corner_radius").unwrap_or(0.0) as f32;
+    ui.spacing_mut().slider_width = CORNER_SLIDER_WIDTH;
+    style_slider_rail(ui, cx);
+    let spec =
+        SliderSpec { control: ScrubControl::CornerRadius, label: "Corner radius", range: 0.0..=CORNER_SLIDER_MAX };
+    scrub::slider(ui, cx, &spec, &mut value, |v| json!({ "props": { "corner_radius": v.round() } }));
+    let text = radius_text(cx);
+    ui.add_sized(
+        [RADIUS_TEXT_WIDTH, cx.layout.toggle_height()],
+        egui::Label::new(egui::RichText::new(text).size(TextSize::Caption.points()).color(cx.pal.muted)),
+    );
+}
+
+/// The rail and the part before the handle of a slider must show on the card colour, in both themes.
+fn style_slider_rail(ui: &mut Ui, cx: &Cx<'_>) {
+    let pal = cx.pal;
+    let visuals = ui.visuals_mut();
+    visuals.widgets.inactive.bg_fill = pal.border;
+    visuals.widgets.hovered.bg_fill = pal.border;
+    visuals.widgets.active.bg_fill = pal.border;
+    visuals.selection.bg_fill = pal.accent;
+    visuals.slider_trailing_fill = true;
 }
 
 /// The two corner choices: sharp (radius 0) and round.
 pub(super) const CORNERS: [(&str, f64); 2] = [("Sharp", 0.0), ("Round", ROUND_CORNER)];
 
-/// The control of one corner choice, selected when the selection (or the defaults) has it.
+/// The control of one corner choice, selected when the selection (or the defaults) has exactly that radius.
 pub(super) fn corner_ctl(cx: &Cx<'_>, name: &str, value: f64) -> Ctl<'static> {
-    let selected =
-        cx.model.style.num_value("corner_radius").is_some_and(|r| if value == 0.0 { r < 1.0 } else { r >= 1.0 });
+    let selected = cx.model.style.num_value("corner_radius").is_some_and(|r| (r - value).abs() < 0.5);
     style_ctl("corner_radius", value).label(format!("Corners: {name}")).selected(selected)
 }
 
@@ -477,14 +555,7 @@ fn opacity(ui: &mut Ui, cx: &mut Cx<'_>) {
     let mixed = cx.model.style.prop("opacity").is_some_and(StyleProp::is_mixed);
     let mut value = current as f32;
     ui.spacing_mut().slider_width = SLIDER_WIDTH;
-    // The rail and the part before the handle must show on the card colour, in both themes.
-    let pal = cx.pal;
-    let visuals = ui.visuals_mut();
-    visuals.widgets.inactive.bg_fill = pal.border;
-    visuals.widgets.hovered.bg_fill = pal.border;
-    visuals.widgets.active.bg_fill = pal.border;
-    visuals.selection.bg_fill = pal.accent;
-    visuals.slider_trailing_fill = true;
+    style_slider_rail(ui, cx);
     let spec = SliderSpec { control: ScrubControl::Opacity, label: "Opacity", range: 0.0..=1.0 };
     scrub::slider(
         ui,

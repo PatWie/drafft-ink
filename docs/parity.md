@@ -359,7 +359,7 @@ Rows follow `research/parts/04-features-diff.md` §1.1 to §1.15 and §4. The AI
 | B-033 | Stroke width | X:actionChangeStrokeWidth | done | A-032 | see A-032 |
 | B-034 | Stroke style on all shapes | X:actionChangeStrokeStyle | done | A-038 | see A-038 |
 | B-035 | Sloppiness / roughness | X:actionChangeSloppiness | done | A-035 | see A-035 |
-| B-036 | Edges sharp or round; proportional or adaptive radius | X:actionChangeRoundness | partial | `corner_radius` per shape (rectangle, diamond, frame, line, arrow); panel offers only Sharp and Round (32). No radius value control. | `eng/cmd/style_tests::get_corner_radius_ignores_elements_that_cannot_have_one` |
+| B-036 | Edges sharp or round; proportional or adaptive radius | X:actionChangeRoundness | partial | `corner_radius` per shape (rectangle, diamond, frame, line, arrow). The panel keeps Sharp and Round (32) and adds a radius slider (0 to 100, one undo step per drag, `mixed` for unequal radii). The radius is absolute, not proportional or adaptive: a shape draws at most half its shorter side. | `eng/cmd/style_tests::get_corner_radius_says_mixed_when_the_shapes_that_round_differ_and_reads_through_a_gesture`, `ui/scrub::a_drag_of_the_corner_slider_is_one_gesture_and_one_undo_step` |
 | B-037 | Opacity | X:actionChangeOpacity | done | A-033 | see A-033 |
 | B-038 | Freedraw mode variable or constant | X:actionChangeFreedrawMode | done | `style.set` `pressure_mode`: `uniform` is constant, `simulated` and `device` are variable; see A-014 | see A-014 |
 | B-039 | Arrow type sharp, round, elbow (existing arrow) | X:actionChangeArrowType | done | `arrow.set_type`; panel "Path" | `eng/cmd/arrow_tests::set_type_elbow_routes_around_the_bound_shapes_and_back_keeps_the_corners` |
@@ -658,7 +658,7 @@ Priority: **P0** is a promise of the user's requirement ("keep all old features"
 |---|---|---|---|---|---|
 | 1 | P0 | Phone and tablet layout (A-128, A-217, B-122, B-123) | The shells call `UiShell::set_touch_first` (`pointer: coarse` on the web); save the layout choice; run it on an iPad and a phone; test double-tap | `app`, `apps/drafftink-web`, `ui` | M |
 | 2 | P1 | Menus and dialogs are thinner than the commands (B-160, B-185, B-186, B-256) | Padding field and a key for the export dialog; Search row and language choice in the menu; object-snap toggle in the canvas context menu | `ui` | S |
-| 3 | P1 | Settings controls (A-168, B-036, B-041) | A control for `doc.default_background`; free values instead of fixed choices; a corner radius value; outline and cardinality arrowheads in the panel (done) | `ui` ribbon, preferences | S |
+| 3 | P1 | Settings controls (A-168, B-036, B-041) | A control for `doc.default_background`; free values instead of fixed choices; a corner radius value (the slider is built; proportional and adaptive radii are not); outline and cardinality arrowheads in the panel (done) | `ui` ribbon, preferences | S |
 | 4 | P1 | Shell steps without a test (A-058, A-108, A-110) | A test from the picker result to `image.insert` and `library.import`, and a browser test of download and file input | `app`, `e2e/web` | S |
 | 5 | P1 | Mermaid node shapes (A-109) | Draw hexagon, cylinder, parallelogram, trapezoid and flag nodes with their own outline (needs a bindable polygon element kind; today the closest bindable shape is used and reported) | `edit` diagram, `io` mermaid | M |
 | 6 | P1 | Native pen pressure on Linux and macOS (A-015, A-210, B-124) | A platform backend for tablet input (XInput2, tablet-v2, NSEvent) | `gpu` shell | L |

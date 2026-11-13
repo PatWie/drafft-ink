@@ -5,7 +5,7 @@
 use egui::{Align2, Context, Id, Sense, pos2, vec2};
 use serde_json::{Value, json};
 
-use super::controls::{CORNERS, LINE_HEIGHTS, corner_ctl, has_path, new_arrows};
+use super::controls::{CORNERS, LINE_HEIGHTS, corner_ctl, corner_slider, has_path, new_arrows};
 use super::heads::{COLUMNS, End, HEADS, head_sample};
 use super::{Group, shows};
 use crate::chrome::GAP;
@@ -94,6 +94,9 @@ impl MoreRows {
             for (name, ctl) in &self.corners {
                 menu.command(ctl.clone(), Row::new().label(name).checked(ctl.selected));
             }
+            menu.custom(|ui, cx| {
+                ui.horizontal(|ui| corner_slider(ui, cx));
+            });
         }
         if let Some(current) = self.line_height {
             menu.heading("Line height");
@@ -132,7 +135,9 @@ impl HeadRows {
     fn read(cx: &Cx<'_>, kind: RibbonMenu) -> Self {
         let (side, end, arg, setting) = match kind {
             RibbonMenu::StartHead => ("Start", "start", "start_head", "arrow.start_head"),
-            RibbonMenu::EndHead | RibbonMenu::More => ("End", "end", "end_head", "arrow.end_head"),
+            RibbonMenu::EndHead | RibbonMenu::More | RibbonMenu::CornerRadius => {
+                ("End", "end", "end_head", "arrow.end_head")
+            }
         };
         let new = new_arrows(cx);
         let current = if new {
@@ -186,6 +191,7 @@ pub(crate) fn show(ctx: &Context, cx: &mut Cx<'_>, st: &mut UiState, overflow: &
         RibbonMenu::More => "More options menu",
         RibbonMenu::StartHead => "Start head menu",
         RibbonMenu::EndHead => "End head menu",
+        RibbonMenu::CornerRadius => "Corner radius menu",
     };
     let result = match kind {
         RibbonMenu::More => {
@@ -204,6 +210,20 @@ pub(crate) fn show(ctx: &Context, cx: &mut Cx<'_>, st: &mut UiState, overflow: &
                     menu.separator();
                 }
                 rows.draw(menu);
+            })
+        }
+        RibbonMenu::CornerRadius => {
+            let spec = Popup {
+                key: Id::unique(("ribbon_menu", kind)),
+                label,
+                pivot: Align2::LEFT_TOP,
+                at: anchor.left_bottom() + vec2(0.0, GAP),
+            };
+            popup_sized(ctx, cx, &spec, MENU_WIDTH, |menu| {
+                menu.heading("Corner radius");
+                menu.custom(|ui, cx| {
+                    ui.horizontal(|ui| corner_slider(ui, cx));
+                });
             })
         }
         RibbonMenu::StartHead | RibbonMenu::EndHead => {

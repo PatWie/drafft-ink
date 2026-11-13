@@ -7,7 +7,7 @@ use drafftink_engine::Session;
 use drafftink_engine::ports::fake::Fakes;
 use drafftink_engine::services::Services;
 use drafftink_engine::testing::{add_rect, select};
-use drafftink_scene::ElementId;
+use drafftink_scene::{ElementId, SceneRead};
 use drafftink_ui::{FrameInput, UiShell};
 use egui::{Event, Key, Modifiers, PointerButton, Pos2};
 use egui_kittest::Harness;
@@ -43,14 +43,19 @@ fn app() -> (H, ElementId) {
     (h, id)
 }
 
-fn slider(h: &H) -> egui::Rect {
-    h.get_by_role_and_label(egui::accesskit::Role::Slider, "Opacity").rect()
+fn slider_named(h: &H, label: &str) -> egui::Rect {
+    h.get_by_role_and_label(egui::accesskit::Role::Slider, label).rect()
 }
 
-/// A point on the slider at a fraction of its width.
-fn at(h: &H, fraction: f32) -> Pos2 {
-    let r = slider(h);
+/// A point on the slider `label` at a fraction of its width.
+fn at_on(h: &H, label: &str, fraction: f32) -> Pos2 {
+    let r = slider_named(h, label);
     Pos2::new(r.left() + r.width() * fraction, r.center().y)
+}
+
+/// A point on the opacity slider at a fraction of its width.
+fn at(h: &H, fraction: f32) -> Pos2 {
+    at_on(h, "Opacity", fraction)
 }
 
 fn press(h: &mut H, pos: Pos2) {
@@ -264,4 +269,121 @@ fn arrow_keys_on_the_slider_are_plain_commands_not_gestures() {
     assert!(refusals(&h).is_empty(), "{:?}", refusals(&h));
     assert_eq!(depth(&h), before + 1);
     assert_chrome_enabled(&h);
+}
+
+// ---- the corner radius slider ----
+
+const RADIUS: &str = "Corner radius";
+
+/// The radius button of the strip opens the menu that holds the slider.
+fn open_radius_menu(h: &mut H) {
+    h.get_by_role_and_label(egui::accesskit::Role::Button, RADIUS).click();
+    h.run();
+}
+
+fn radius_app() -> (H, ElementId) {
+    let (mut h, id) = app();
+    open_radius_menu(&mut h);
+    (h, id)
+}
+
+fn radius(h: &H) -> Option<f64> {
+    h.state().shell.model.style.num_value("corner_radius")
+}
+
+/// What the session holds for the radius of one element.
+fn stored_radius(h: &H, id: &ElementId) -> f64 {
+    <drafftink_scene::MemoryStore as SceneRead>::get(h.state().session.store(), id).unwrap().style.corner_radius
+}
+
+fn drag_radius(h: &mut H, fractions: &[f32]) {
+    for f in fractions {
+        let pos = at_on(h, RADIUS, *f);
+        h.event(Event::PointerMoved(pos));
+        h.step();
+    }
+}
+
+#[test]
+fn a_drag_of_the_corner_slider_is_one_gesture_and_one_undo_step() {
+    let (mut h, id) = radius_app();
+    let before = depth(&h);
+    let from = at_on(&h, RADIUS, 0.0);
+    press(&mut h, from);
+    drag_radius(&mut h, &[0.1, 0.3, 0.5]);
+    assert!(h.state().session.gesture_running(), "the drag is a gesture");
+    assert!(stored_radius(&h, &id) > 0.0, "the shape follows the handle while it is dragged");
+    let to = at_on(&h, RADIUS, 0.5);
+    release(&mut h, to);
+
+    let ids = ids(&h);
+    assert_eq!(ids.iter().filter(|i| **i == "gesture.begin").count(), 1, "{ids:?}");
+    assert_eq!(ids.last().copied(), Some("gesture.end"), "{ids:?}");
+    assert!(refusals(&h).is_empty() && toasts(&h).is_empty(), "{:?} {:?}", refusals(&h), toasts(&h));
+    assert!(!h.state().session.gesture_running());
+    assert_eq!(depth(&h), before + 1, "a whole drag is one undo step");
+    let r = stored_radius(&h, &id);
+    assert!((r - 50.0).abs() < 6.0 && r.fract() == 0.0, "a whole number near the middle of the slider: {r}");
+    h.state_mut().session.undo_steps(1).unwrap();
+    assert_eq!(stored_radius(&h, &id), 0.0, "one undo takes the whole drag back");
+}
+
+#[test]
+fn esc_cancels_a_corner_drag_and_restores_the_radius() {
+    let (mut h, id) = radius_app();
+    let before = depth(&h);
+    let from = at_on(&h, RADIUS, 0.0);
+    let end = at_on(&h, RADIUS, 0.6);
+    press(&mut h, from);
+    drag_radius(&mut h, &[0.2, 0.6]);
+    assert!(stored_radius(&h, &id) > 10.0);
+    // Esc cancels the gesture; it also closes the menu, as it closes every popup.
+    key(&mut h, Key::Escape);
+    assert!(!h.state().session.gesture_running());
+    assert_eq!(stored_radius(&h, &id), 0.0);
+    release(&mut h, end);
+    assert_eq!(depth(&h), before, "a cancelled drag leaves no undo step");
+    assert!(refusals(&h).is_empty(), "{:?}", refusals(&h));
+}
+
+#[test]
+fn the_corner_slider_works_on_a_selection_of_shapes_with_different_radii() {
+    let (mut h, a) = radius_app();
+    let b = add_rect(&mut h.state_mut().session, 200.0, 0.0, 100.0, 60.0).unwrap();
+    h.state_mut()
+        .session
+        .execute("style.set", json!({ "ids": [a.as_str()], "props": { "corner_radius": 24 } }))
+        .unwrap();
+    select(&mut h.state_mut().session, &[a.clone(), b.clone()]);
+    h.run();
+    assert_eq!(radius(&h), None, "two radii are no value");
+    assert!(
+        h.state().shell.model.style.prop("corner_radius").is_some_and(drafftink_ui::model::StyleProp::is_mixed),
+        "the model says mixed"
+    );
+    h.get_by_label("mixed");
+    // A drag sets one radius on both.
+    let from = at_on(&h, RADIUS, 0.0);
+    press(&mut h, from);
+    drag_radius(&mut h, &[0.1, 0.2]);
+    let to = at_on(&h, RADIUS, 0.2);
+    release(&mut h, to);
+    let (ra, rb) = (stored_radius(&h, &a), stored_radius(&h, &b));
+    assert_eq!(ra, rb, "both shapes got the same radius");
+    assert!(ra > 0.0);
+    assert_eq!(radius(&h), Some(ra));
+}
+
+#[test]
+fn arrow_keys_on_the_corner_slider_are_plain_commands() {
+    let (mut h, id) = radius_app();
+    let before = depth(&h);
+    h.get_by_role_and_label(egui::accesskit::Role::Slider, RADIUS).focus();
+    h.run();
+    key(&mut h, Key::ArrowRight);
+    h.run();
+    assert!(!h.state().session.gesture_running());
+    assert!(stored_radius(&h, &id) > 0.0, "the key moved the radius");
+    assert_eq!(depth(&h), before + 1);
+    assert!(refusals(&h).is_empty(), "{:?}", refusals(&h));
 }

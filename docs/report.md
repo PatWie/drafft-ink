@@ -102,7 +102,7 @@ High-frequency exceptions (`docs/exceptions.md`, closed list; each has a reason,
 | E10 | Pan | C | Hottest input; one matrix update per event, no document. | `view.set` |
 | E11 | Zoom | C | Same. | `view.set` |
 | E12 | Laser | E | Presence, not content. | `collab.laser` (no document change) |
-| E13 | Opacity slider scrub | A | Live result, one undo step. Width/size scrubs and colour-picker drags are not built. | `style.set` |
+| E13 | Opacity and corner radius slider scrub | A | Live result, one undo step. Width/size scrubs and colour-picker drags are not built. | `style.set` |
 | E14 | Release of a dragged library item or file | none | Listed to say that a drag source needs no recogniser. Ghost under the pointer and tab drag are not built. | `library.insert` / `doc.drop` |
 | E15 | Held key repeat | none | Each repeat is a plain `execute`; `element.nudge` coalesces a burst into one undo step. | `element.nudge` |
 | E16 | Text caret, selection, IME, in-text keys | D | Composition needs preedit state and cannot be commands. | `text.edit_end` |
