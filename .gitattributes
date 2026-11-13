@@ -1,0 +1,21 @@
+# Text is checked out with LF on every platform. Build scripts and tests read resource and data files byte for byte
+# (third_party/unicode-math/src/build.rs matches "\n" between two HTML table rows; tests/fixtures, the intro script and
+# the snapshots are compared with text generated on the machine), and Git for Windows would otherwise check them out
+# with CRLF (core.autocrlf=true on the hosted runners). `eol=lf` overrides core.autocrlf.
+* text=auto eol=lf
+
+# Binary files: never converted.
+*.png binary
+*.ico binary
+*.icns binary
+*.gz binary
+*.ttf binary
+*.otf binary
+*.woff binary
+*.woff2 binary
+*.der binary
+*.loro binary
+*.wasm binary
+
+# Upstream licence texts, kept byte for byte (these two ship with CRLF).
+crates/typeset/assets/licenses/*OFL*.txt -text
