@@ -78,7 +78,7 @@ fn set(s: &mut Session, a: SetArgs) -> Result<ToolOut, Refusal> {
     // A running text edit was committed by the gate before this handler. Leaving the linear point editor
     // belongs to every tool change.
     let obs = &mut s.tab_mut().observed;
-    obs.linear_editor = None;
+    obs.close_editors();
     if !keep {
         obs.selection.clear();
         obs.selected_groups.clear();
@@ -150,7 +150,7 @@ pub struct CancelArgs {
 pub struct CancelOut {
     /// False when no rung applied (a stray Esc).
     pub changed: bool,
-    /// The rungs that ran, in order: `gesture`, `text_edit`, `point_editor`, `group`, `selection`, `tool`.
+    /// The rungs that ran, in order: `gesture`, `text_edit`, `crop_editor`, `point_editor`, `group`, `selection`, `tool`.
     pub rungs: Vec<&'static str>,
 }
 
@@ -190,7 +190,16 @@ fn cancel(s: &mut Session, a: CancelArgs) -> Result<CancelOut, Refusal> {
             return Ok(finish(rungs));
         }
     }
-    // 3. The linear point editor closes.
+    // 3. The crop editor closes. Whatever was dragged in it and not committed is dropped: the interaction layer
+    //    commits it on Esc itself (`interact::crop`), so a `tool.cancel` that reaches here is one without a pointer.
+    if s.tab().observed.crop_editor.is_some() {
+        s.tab_mut().observed.crop_editor = None;
+        rungs.push("crop_editor");
+        if !a.all {
+            return Ok(finish(rungs));
+        }
+    }
+    // 3b. The linear point editor closes.
     if s.tab().observed.linear_editor.is_some() {
         s.tab_mut().observed.linear_editor = None;
         rungs.push("point_editor");
@@ -213,7 +222,7 @@ fn cancel(s: &mut Session, a: CancelArgs) -> Result<CancelOut, Refusal> {
             o.selection.clear();
             o.selected_groups.clear();
             o.editing_group = None;
-            o.linear_editor = None;
+            o.close_editors();
         })?;
         rungs.push("selection");
         if !a.all {

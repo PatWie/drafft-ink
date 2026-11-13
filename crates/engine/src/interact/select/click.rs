@@ -1,4 +1,4 @@
-//! Press, click and double-click of the select tool.
+//! Press, click and double-click of the select tool. A double-click on an image opens the crop editor.
 
 use drafftink_canvas::{Button, Handle, PointerKind, Target};
 use drafftink_scene::{ElementId, GroupId, Kind};
@@ -128,6 +128,7 @@ fn on_element(cx: &mut Ctx<'_>, ev: &Ev<'_>, id: &ElementId, unit_group: Option<
         Kind::Line => {
             cx.exec("arrow.edit_points", json!({ "arrow": id.as_str() }));
         }
-        Kind::Freehand | Kind::Image | Kind::Frame => {}
+        Kind::Image => super::super::crop::open(cx, id),
+        Kind::Freehand | Kind::Frame => {}
     }
 }

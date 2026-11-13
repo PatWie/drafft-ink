@@ -421,6 +421,35 @@ fn svg_background_scale_padding_options() {
 }
 
 #[test]
+fn svg_shows_a_crop_through_a_nested_view_box_in_picture_pixels() {
+    let mut d = sample();
+    let img = d.elements.iter_mut().find(|e| e.id.as_str() == "img").unwrap();
+    let (w, h) = (img.transform.w, img.transform.h);
+    let ElementKind::Image(data) = &mut img.kind else { panic!("the sample has an image") };
+    data.crop = Some(drafftink_scene::Crop { x: 1.0, y: 0.5, width: 2.0, height: 1.5 });
+    let svg = export_svg(&d, &SvgOptions::default(), &EstimateMeasure, None).unwrap();
+    let doc = parse(&svg);
+    let group = doc.descendants().find(|n| n.attribute("id") == Some("e-img")).expect("the image is exported");
+    let nested = group
+        .descendants()
+        .find(|n| n.tag_name().name() == "svg" && n.attribute("viewBox").is_some())
+        .expect("a cropped picture is drawn through a nested viewport");
+    assert_eq!(nested.attribute("viewBox"), Some("1 0.5 2 1.5"));
+    let num = |a: &str| nested.attribute(a).unwrap().parse::<f64>().unwrap();
+    assert_eq!((num("width"), num("height")), (w, h), "the viewport is the box of the element");
+    let image = nested.children().find(|n| n.tag_name().name() == "image").expect("the whole picture inside");
+    assert_eq!((image.attribute("width"), image.attribute("height")), (Some("4"), Some("3")));
+    // The mirror of the sample's picture wraps the viewport, so the crop is mirrored with it.
+    assert!(group.descendants().any(|n| n.attribute("transform").is_some_and(|t| t.contains("scale(-1 1)"))));
+    // An uncropped picture has no nested viewport.
+    let plain = export_svg(&sample(), &SvgOptions::default(), &EstimateMeasure, None).unwrap();
+    let plain = parse(&plain);
+    let root = plain.root_element();
+    let nested = plain.descendants().filter(|n| *n != root && n.tag_name().name() == "svg").count();
+    assert_eq!(nested, 0, "an uncropped picture has no nested viewport");
+}
+
+#[test]
 fn svg_selection_exports_only_the_selection_and_its_labels() {
     let d = sample();
     let opts = SvgOptions { selection: Some(vec![eid("rect")]), ..SvgOptions::default() };

@@ -55,7 +55,6 @@ The user asked for the Excalidraw features except AI. `docs/commands.md` section
 | Feature | Why not |
 |---|---|
 | Embeddables (iframes, YouTube and others) | Needs a sandboxed web view per element; the native app has no web view. Out of scope for a canvas that must also run headless. |
-| Image crop (command and handles) | Elements have a `crop` field and the painter honours it, but no command or UI sets it yet. Planned. |
 | Bucket fill, eyedropper, pen mode (palm rejection), autoshape (shape recognition), hover "+" connectors, list markers in text, chart paste | Smaller than the work they would take next to bound arrows, frames and the engine; none is in the plan's priority list (§6). Eyedropper in particular needs a pixel read-back that the browser gates behind a permission. |
 | Excalidraw+ features, sign-in, cloud, comments | A hosted service. The collaboration server is self-hosted. |
 | Mermaid diagram types beyond flowchart and sequence (class, state, ER, gantt, ...) | The parser and the layout for each type are separate work. They are refused with the list of supported types. |
@@ -70,3 +69,4 @@ Twenty-one deliberate changes (undo from every surface, Cmd on macOS, one paste 
 - The collaboration wire protocol is new (binary frames, versioned): an old client cannot join a new server, and the other way round. Documents in the old Loro format open.
 - `drafftink-server` binds `127.0.0.1` by default (it was `0.0.0.0`). `--bind 0.0.0.0:3030` is the explicit opt-in and logs a warning.
 - A Mermaid subgraph is drawn as a titled box again (see the cluster box row in `docs/commands.md` 2.19). The first version of the rewrite grouped the members and dropped the box; it was restored after the regression audit.
+- Image crop (new in this version, after Excalidraw's crop editor). Where it differs from Excalidraw: a drag on the picture slides it under the window (Excalidraw has no pan); `Alt` does not uncrop opposite sides and a click on a side does not uncrop it (drag the handle out, or use `image.reset_crop`); the crop coordinates of `image.crop` are pixels of the stored picture (which `image.insert` may have made smaller than the original); `Esc` keeps the crop, as in Excalidraw, so a crop is cancelled with undo, not with `Esc`. The handles are the usual 16 px squares with a 24 px reach for a finger; there is no larger handle for touch.

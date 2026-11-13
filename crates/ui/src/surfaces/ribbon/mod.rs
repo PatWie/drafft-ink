@@ -97,6 +97,10 @@ enum Row {
     Compose,
     /// The link and delete.
     LinkDelete,
+    /// Crop the image, or finish cropping it.
+    Crop,
+    /// Show the whole picture of a cropped image again.
+    ResetCrop,
 }
 
 /// The groups of the strip, in the order they have from left to right. The order never changes; groups come and go.
@@ -122,11 +126,13 @@ pub(crate) enum Group {
     Layer,
     /// Duplicate, group, lock over link and delete.
     Actions,
+    /// Crop over reset crop: for one selected image.
+    Image,
 }
 
 impl Group {
     /// Every group, in order.
-    pub(crate) const ALL: [Group; 10] = [
+    pub(crate) const ALL: [Group; 11] = [
         Group::Stroke,
         Group::Shape,
         Group::Arrow,
@@ -135,6 +141,7 @@ impl Group {
         Group::TextSize,
         Group::TextAlign,
         Group::Opacity,
+        Group::Image,
         Group::Layer,
         Group::Actions,
     ];
@@ -174,6 +181,11 @@ impl Group {
             }
             Group::Layer => vec![(Row::Layer, selected), (Row::Flip, selected)],
             Group::Actions => vec![(Row::Compose, selected), (Row::LinkDelete, selected)],
+            // One selected image offers the crop; the reset is there while the picture is cropped.
+            Group::Image => vec![
+                (Row::Crop, model.crop_editing || cx.refusal("image.crop_begin").is_none()),
+                (Row::ResetCrop, cx.refusal("image.reset_crop").is_none()),
+            ],
         };
         candidates.into_iter().filter_map(|(row, on)| on.then_some(row)).collect()
     }

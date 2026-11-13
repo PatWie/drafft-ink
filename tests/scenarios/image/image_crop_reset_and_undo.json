@@ -1,0 +1,29 @@
+{
+  "about": "A picture is cropped without changing it: the box follows the crop at the same scale, a second crop is relative to the whole picture, reset gives the picture back, one undo takes each step back, and the refusals say what to change.",
+  "steps": [
+    {"execute": "image.insert", "args": {"images": [{"base64": "iVBORw0KGgoAAAANSUhEUgAAACgAAAAUCAIAAABwJOjsAAAAJElEQVR4nGM4YWQ0IIhh1OJRi0ctHrV41OJRi0ctHrV45FgMAAkCqa66Bn33AAAAAElFTkSuQmCC", "name": "small.png"}], "at": [100, 100]}, "save": {"pic": "$.created[0]"}},
+    {"assert": "element.query", "args": {"filter": {"ids": ["{{pic}}"]}, "fields": ["bounds"]}, "expect": [{"path": "$.items[0].bounds.x", "eq": 80}, {"path": "$.items[0].bounds.w", "eq": 40}, {"path": "$.items[0].bounds.h", "eq": 20}]},
+    {"execute": "image.crop", "args": {"id": "{{pic}}", "crop": {"x": 10, "y": 0, "w": 20, "h": 20}}, "expect": [{"path": "$.changed", "eq": true}, {"path": "$.crop.x", "eq": 10}, {"path": "$.crop.w", "eq": 20}, {"path": "$.natural_width", "eq": 40}], "note": "The right half and the left quarter are cut away; the picture is shown at the scale it had."},
+    {"assert": "element.query", "args": {"filter": {"ids": ["{{pic}}"]}, "fields": ["bounds"]}, "expect": [{"path": "$.items[0].bounds.x", "eq": 90, "note": "The pixels did not move: 80 + 10."}, {"path": "$.items[0].bounds.w", "eq": 20}, {"path": "$.items[0].bounds.h", "eq": 20}]},
+    {"execute": "image.crop", "args": {"id": "{{pic}}", "crop": {"x": 0, "y": 0, "w": 30, "h": 20}}, "expect": [{"path": "$.bounds.x", "eq": 80}, {"path": "$.bounds.w", "eq": 30, "note": "A crop is relative to the whole picture, not to the earlier crop."}]},
+    {"execute": "image.crop", "args": {"id": "{{pic}}", "crop": {"x": 0, "y": 0, "w": 20, "h": 20}, "element_box": "keep"}, "expect": [{"path": "$.bounds.w", "eq": 30, "note": "keep leaves the box alone."}]},
+    {"execute": "image.reset_crop", "args": {"id": "{{pic}}"}, "expect": [{"path": "$.crop", "is": "null"}, {"path": "$.bounds.w", "eq": 60, "note": "The cropped part was stretched to 1.5 units a pixel across, so the whole 40 pixel picture grows back to 60."}]},
+    {"execute": "image.reset_crop", "args": {"id": "{{pic}}", "element_box": "follow_crop"}, "expect": [{"path": "$.changed", "eq": false}]},
+    {"execute": "image.crop", "args": {"id": "{{pic}}", "crop": {"x": 0, "y": 0, "w": 0, "h": 10}}, "refused": "bad_crop", "text": ["at least 1 pixel"]},
+    {"execute": "image.crop", "args": {"id": "{{pic}}", "crop": {"x": 30, "y": 0, "w": 20, "h": 10}}, "refused": "bad_crop", "text": ["not inside the picture", "40 by 20"]},
+    {"execute": "image.crop", "args": {"id": "{{pic}}", "crop": {"x": 0, "y": 0, "w": 10}}, "refused": "bad_args"},
+    {"execute": "element.create", "args": {"kind": "rectangle", "bounds": {"x": 300, "y": 0, "w": 50, "h": 50}}, "save": {"box": "$.created[0]"}},
+    {"execute": "image.crop", "args": {"id": "{{box}}", "crop": null}, "refused": "wrong_kind", "text": ["images"]},
+    {"execute": "element.lock", "args": {"ids": ["{{pic}}"]}},
+    {"execute": "image.crop", "args": {"id": "{{pic}}", "crop": {"x": 0, "y": 0, "w": 10, "h": 10}}, "refused": "locked"},
+    {"note": "Undo takes the steps back one at a time: the lock, the rectangle, then the crop steps."},
+    {"undo": 2},
+    {"execute": "image.crop", "args": {"id": "{{pic}}", "crop": {"x": 20, "y": 10, "w": 20, "h": 10}}},
+    {"undo": 1},
+    {"assert": "element.query", "args": {"filter": {"ids": ["{{pic}}"]}, "fields": ["bounds"]}, "expect": [{"path": "$.items[0].bounds.w", "eq": 60, "note": "Back to the state before the last crop: the whole picture, 60 wide after the reset."}]},
+    {"execute": "image.crop_begin", "args": {"id": "{{pic}}"}, "expect": [{"path": "$.changed", "eq": true}]},
+    {"assert": "selection.get", "expect": [{"path": "$.crop_editor", "eq": "{{pic}}"}]},
+    {"execute": "image.crop_end", "expect": [{"path": "$.changed", "eq": true}]},
+    {"assert": "selection.get", "expect": [{"path": "$.crop_editor", "exists": false}]}
+  ]
+}

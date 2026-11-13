@@ -73,10 +73,26 @@ A tool change drops drafts and previews. A gesture that disappeared (`tool.cance
 | Double-click an element of a group | `group.enter` | |
 | Double-click text, shape, arrow, math | `text.edit_begin {id}` and `OpenTextEditor` (math: `OpenEquationEditor`) | |
 | Double-click a line | `arrow.edit_points` | |
+| Double-click an image, or `Enter` with one image selected (`Interaction::key`) | `image.crop_begin {id}`: the crop editor opens (below) | E17 |
 | Double-click empty canvas | `text.edit_begin {at}` and `OpenTextEditor` | |
 | Click on the link icon of an element that is not selected (select tool; the icon sits beside the top-right corner, `edit::link::icon_rect`) | runs `element.open_link` for that element and does not select anything. A web link comes back as `UiRequest::OpenUrl { url }` for the shell to open; an element link has moved the view and selected the target; an unsafe stored link is a refusal toast | Excalidraw `hitLinkElement`, `isPointHittingLink` |
 | Right click, long press | selects what is under the pointer when it is not selected, then `OpenContextMenu`. When the topmost thing under the pointer is a locked element (the normal hit test skips it, so the pointer is over "nothing" or over something behind it), nothing is selected and the request is `OpenContextMenu { target: Locked { element } }`, so that the menu can offer Unlock (`element.unlock_all` with that id). Clicks, marquees and drags still skip locked elements. | Excalidraw `handleCanvasContextMenu` (`includeLockedElements`) |
 | Esc, pointer cancel, a second finger | `gesture_cancel` or the marquee is dropped: no trace | |
+
+### Crop editor (class B: a draft, one command at the end)
+
+While `image.crop_begin` has opened the editor (`Observed::crop_editor`), the crop machine (`interact/crop.rs`) owns the pointer. It works in the image's own frame, so rotation and mirroring need no special case. The document does not change until the editor ends.
+
+| Input | Result | Row |
+|---|---|---|
+| Drag one of the 8 handles of the crop window | the window's edges move with the pointer; Shift keeps the ratio; an edge within 6 px of the picture's edge snaps to it; the window stays inside the picture and is at least 10 units (or its starting size) and one picture pixel | E17 |
+| Drag anywhere else on the picture | the picture slides under the window, which stays; it always covers the window; its edges snap to the window's | E17 |
+| `Esc` during a drag | the window goes back to where the press found it; the editor stays open | |
+| `Enter`, `Esc` (no drag running), click outside the window | one `image.crop {id, crop, bounds}`; nothing changed: `image.crop_end`. A click goes on to the select tool and selects what is under it | E17 |
+| Click inside the window, press, double-click, right click | nothing | |
+| A tool change, another selection, a tab switch | the session closes the editor; the draft is dropped | |
+
+The overlay (`InteractionOverlay::crop`) carries the whole picture (drawn faded), the draft image (drawn over it), the window and the picture's outline; the scene leaves out the real image while the editor draws its own.
 
 ### Drawing tools (class B: preview, one command at the end)
 

@@ -76,7 +76,7 @@ The formula is one unit for the caret, selection, Backspace and double-click. To
 
 Export: Excalidraw has no inline math, so `text` and `originalText` are the source with its delimiters and `customData.drafftink.inline_math` is written only when the setting is `off`. SVG draws a text that has a formula, or a character that only a glyph-fallback font draws (Kannada, symbols, CJK punctuation: `typeset.md`, "Glyph fallback"), as glyph outlines (no `<text>`, no font needed), with the source in `data-text`; other text stays `<text>`. `doc.outline` and `element.query` show the source.
 
-`ImageData`: `file_id` (None while the blob is not there), `natural_width`, `natural_height` (pixels), `crop` `{x, y, width, height}` in source pixels (None = whole picture).
+`ImageData`: `file_id` (None while the blob is not there), `natural_width`, `natural_height` (pixels), `crop` `{x, y, width, height}` in source pixels (None = whole picture; a crop of the whole picture is stored as None). The box (`transform`) is where the cropped part is drawn, so a crop changes the box too (`image.crop`, rule `follow_crop`: the pixels keep their scale and place). Mirroring and rotation act on the cropped part; `crop` is in the picture's own pixels, whatever the mirror flags say.
 
 `FrameData`: `name` (None shows "Frame"), `clip` (default true).
 

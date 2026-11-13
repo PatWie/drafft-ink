@@ -50,6 +50,8 @@ pub(crate) struct World {
     entered: Option<GroupId>,
     /// The tool, as the picker needs it.
     tool: Tool,
+    /// While the crop editor is open, the window and its handles stand in for the selection's frame.
+    crop_frame: Option<SelectionFrame>,
 }
 
 impl World {
@@ -62,6 +64,7 @@ impl World {
             frame_key: None,
             entered: None,
             tool: Tool::Select,
+            crop_frame: None,
         }
     }
 
@@ -77,7 +80,20 @@ impl World {
         self.sync_frame(s);
     }
 
+    /// Puts the crop window in place of the selection's frame (`Some`), or takes it away (`None`).
+    pub(crate) fn set_crop_frame(&mut self, frame: Option<SelectionFrame>) {
+        if self.crop_frame != frame {
+            // The cached selection frame is stale after either change.
+            self.frame_key = None;
+            self.crop_frame = frame;
+        }
+    }
+
     fn sync_frame(&mut self, s: &Session) {
+        if let Some(frame) = &self.crop_frame {
+            self.frame = frame.clone();
+            return;
+        }
         // A running gesture rewrites the selected elements every frame; the overlay builds its own frame, and
         // nothing picks handles during a drag.
         if s.gesture_running() {

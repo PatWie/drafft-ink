@@ -125,6 +125,9 @@ fn drop_stale_state(s: &mut Session) {
     if t.observed.linear_editor.as_ref().is_some_and(|l| !live(&l.element)) {
         t.observed.linear_editor = None;
     }
+    if t.observed.crop_editor.as_ref().is_some_and(|id| !live(id)) {
+        t.observed.crop_editor = None;
+    }
 }
 
 fn undo(s: &mut Session, a: StepsArgs) -> Result<UndoOut, Refusal> {

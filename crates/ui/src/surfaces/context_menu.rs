@@ -256,6 +256,8 @@ fn selection_entries(sel: &[SelectedElement], paste: Entry) -> Vec<Entry> {
         Entry::verb(Verb::OpenLinkEditor, "Link", Some("element.set_link")).icon(Icon::Link).dialog(),
         Entry::command("element.open_link").icon(Icon::Link),
         Entry::command("library.add").icon(Icon::Library),
+        Entry::command("image.crop_begin").icon(Icon::Crop).section(),
+        Entry::command("image.reset_crop").icon(Icon::CropReset),
         Entry::command("clipboard.copy_style").icon(Icon::Brush).section(),
         Entry::command("clipboard.paste_style").icon(Icon::Brush),
     ];

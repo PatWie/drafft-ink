@@ -50,7 +50,7 @@ pub(crate) fn select_only(s: &mut Session, ids: &[ElementId]) {
     let o = &mut s.tab_mut().observed;
     o.selection = ids.iter().cloned().collect();
     o.selected_groups.clear();
-    o.linear_editor = None;
+    o.close_editors();
 }
 
 /// Maps a typed error of the text rules to the refusal of the catalog.

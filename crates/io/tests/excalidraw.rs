@@ -531,6 +531,48 @@ fn a_picture_outline_and_no_outline_survive_export_and_import() {
 }
 
 #[test]
+fn a_crop_is_written_and_read_in_excalidraws_own_terms() {
+    // The picture is 40 by 30; Excalidraw's record of the crop is in pixels of that picture.
+    let crop = json!({"x": 5, "y": 6, "width": 20, "height": 10, "naturalWidth": 40, "naturalHeight": 30});
+    let d = import_str(&picture_scene(json!({"crop": crop, "scale": [-1, 1], "width": 20, "height": 10})))
+        .unwrap()
+        .document;
+    let written: Value = serde_json::from_str(&export_scene(&d).unwrap()).unwrap();
+    let e = &written["elements"][0];
+    assert_eq!(
+        e["crop"],
+        json!({"x": 5.0, "y": 6.0, "width": 20.0, "height": 10.0, "naturalWidth": 40, "naturalHeight": 30})
+    );
+    assert_eq!((&e["width"], &e["height"], &e["scale"]), (&json!(20.0), &json!(10.0), &json!([-1, 1])));
+    // The same again: nothing moves on the way back.
+    let back = import_str(&written.to_string()).unwrap().document;
+    assert_same_doc(&d, &back);
+    // No crop is written as null, as Excalidraw does for an image that was never cropped.
+    let whole = import_str(&picture_scene(json!({}))).unwrap().document;
+    let written: Value = serde_json::from_str(&export_scene(&whole).unwrap()).unwrap();
+    assert_eq!(written["elements"][0]["crop"], Value::Null);
+}
+
+#[test]
+fn a_crop_made_for_another_picture_size_is_moved_to_the_size_of_the_picture() {
+    // Excalidraw says the picture is 80 by 60; the one in the file is 40 by 30. The same part is shown.
+    let crop = json!({"x": 10, "y": 6, "width": 40, "height": 30, "naturalWidth": 80, "naturalHeight": 60});
+    let i = import_str(&picture_scene(json!({"crop": crop}))).unwrap();
+    let ElementKind::Image(data) = &get(&i.document, "pic").kind else { panic!() };
+    let c = data.crop.as_ref().expect("cropped");
+    assert_eq!((c.x, c.y, c.width, c.height), (5.0, 3.0, 20.0, 15.0));
+    assert!(i.report.is_clean(), "{:?}", i.report.warnings);
+}
+
+#[test]
+fn a_crop_of_the_whole_picture_is_no_crop() {
+    let crop = json!({"x": 0, "y": 0, "width": 40, "height": 30, "naturalWidth": 40, "naturalHeight": 30});
+    let i = import_str(&picture_scene(json!({"crop": crop}))).unwrap();
+    assert!(matches!(&get(&i.document, "pic").kind, ElementKind::Image(d) if d.crop.is_none()));
+    assert!(i.report.is_clean(), "{:?}", i.report.warnings);
+}
+
+#[test]
 fn image_scale_and_crop_and_bad_picture_data() {
     let png = {
         let mut b = vec![0x89, b'P', b'N', b'G', 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 13, b'I', b'H', b'D', b'R'];

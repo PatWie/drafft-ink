@@ -44,6 +44,9 @@ pub(crate) fn apply_selection(s: &mut Session, sel: &EditSelection) {
     if o.linear_editor.as_ref().is_some_and(|l| !o.selection.contains(&l.element)) {
         o.linear_editor = None;
     }
+    if o.crop_editor.as_ref().is_some_and(|id| !o.selection.contains(id)) {
+        o.crop_editor = None;
+    }
 }
 
 /// Selects exactly these elements as the normalised selection (bound text becomes its container, the

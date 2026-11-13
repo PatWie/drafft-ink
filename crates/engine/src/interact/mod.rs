@@ -33,6 +33,7 @@
 //!
 //! No UI toolkit type appears here, and time is always passed in. `docs/interaction.md` is the guide.
 
+mod crop;
 mod ctx;
 mod events;
 mod frame_out;
@@ -49,6 +50,9 @@ mod select;
 mod testutil;
 
 #[cfg(test)]
+mod crop_tests;
+
+#[cfg(test)]
 mod interaction_tests;
 
 use drafftink_canvas::{
@@ -58,6 +62,7 @@ use drafftink_canvas::{
 use drafftink_geom::kurbo::Point;
 use drafftink_scene::{ElementId, SceneStore};
 
+use crop::CropTool;
 use ctx::Ctx;
 use draw::DrawTools;
 use events::Ev;
@@ -67,7 +72,7 @@ use world::{World, pointer_mode};
 
 pub use events::Key;
 pub use outcome::{ContextTarget, Outcome, UiRequest};
-pub use overlay::{AngleRays, Badge, EraserRing, InteractionOverlay, LaserPoint, LinkIcon, OverlayParts};
+pub use overlay::{AngleRays, Badge, CropView, EraserRing, InteractionOverlay, LaserPoint, LinkIcon, OverlayParts};
 pub use view::REPORT_EVERY_MS;
 
 use crate::session::Session;
@@ -89,6 +94,7 @@ pub struct Interaction {
     parts: OverlayParts,
     select: SelectTool,
     draw: DrawTools,
+    crop: CropTool,
     drag_owner: Option<Owner>,
     /// The element under an idle pointer, for the hover outline.
     hover: Option<ElementId>,
@@ -117,6 +123,7 @@ impl Interaction {
             parts: OverlayParts::default(),
             select: SelectTool::default(),
             draw: DrawTools::default(),
+            crop: CropTool::default(),
             drag_owner: None,
             hover: None,
             cursor: Cursor::Default,
@@ -222,7 +229,9 @@ impl Interaction {
             }
         }
         if !out.handled {
-            let used = self.with_ctx(s, &mut out, now_ms, mods, |cx, m| m.draw.key(cx, key) || m.select.key(cx, key));
+            let used = self.with_ctx(s, &mut out, now_ms, mods, |cx, m| {
+                m.crop.key(cx, key) || m.draw.key(cx, key) || m.select.key(cx, key)
+            });
             out.handled |= used;
         }
         self.finish(s, now_ms, &mut out);
@@ -256,7 +265,9 @@ impl Interaction {
 
     /// Everything to draw above the scene.
     pub fn overlay(&self, s: &Session) -> InteractionOverlay {
-        overlay::build(&self.world, s, &self.parts, self.hover.as_ref())
+        // The session decides whether the editor is open: a command may have opened or closed it since the last event.
+        let crop = self.crop.view(s);
+        overlay::build(&self.world, s, &self.parts, self.hover.as_ref(), crop)
     }
 
     /// The live camera. During a pan or zoom it can be ahead of `Session::view`, which is told with `view.set`
@@ -272,7 +283,11 @@ impl Interaction {
 
     /// True while a pointer gesture, a drawing preview or a multi-point line draft is running.
     pub fn is_busy(&self) -> bool {
-        self.drag_owner.is_some() || self.draw.is_active() || self.select.is_active() || !self.recognizer.is_idle()
+        self.drag_owner.is_some()
+            || self.draw.is_active()
+            || self.select.is_active()
+            || self.crop.is_active()
+            || !self.recognizer.is_idle()
     }
 
     /// The last pointer position seen in an input event (screen pixels).
@@ -295,6 +310,7 @@ impl Interaction {
     /// Start of every call: the world follows the session, drafts die with a tool change.
     fn begin(&mut self, s: &mut Session, _out: &mut Outcome) {
         self.view.begin(&mut self.world, s);
+        self.sync_crop(s);
         self.world.sync(s);
         let active = s.tool.active;
         if active != self.last_tool {
@@ -308,6 +324,7 @@ impl Interaction {
     /// when the scene or the camera moved under it.
     fn finish(&mut self, s: &mut Session, now_ms: f64, out: &mut Outcome) {
         self.view.report(&self.world, s, now_ms, false, out);
+        self.sync_crop(s);
         self.world.sync(s);
         let key = (s.store().revision(), self.world.viewport.camera());
         if self.refreshed != Some(key) {
@@ -321,6 +338,12 @@ impl Interaction {
                 self.dispatch(s, intent, now_ms, Modifiers::NONE, out);
             }
         }
+    }
+
+    /// The crop editor follows the session, and its window stands in for the selection's frame while it is open.
+    fn sync_crop(&mut self, s: &Session) {
+        self.crop.sync(s);
+        self.world.set_crop_frame(self.crop.frame());
     }
 
     fn pointer_moved(&mut self, s: &mut Session, p: &PointerEvent, out: &mut Outcome) {
@@ -342,6 +365,7 @@ impl Interaction {
         self.with_ctx(s, out, now_ms, Modifiers::NONE, |cx, m| {
             m.select.cancel(cx);
             m.draw.cancel(cx);
+            m.crop.cancel();
         });
         self.drag_owner = None;
         self.parts.clear_gesture();
@@ -357,7 +381,7 @@ impl Interaction {
         f: impl FnOnce(&mut Ctx<'_>, &mut Machines<'_>) -> R,
     ) -> R {
         let mut cx = Ctx { s, world: &self.world, parts: &mut self.parts, out, now_ms, mods };
-        let mut machines = Machines { select: &mut self.select, draw: &mut self.draw };
+        let mut machines = Machines { select: &mut self.select, draw: &mut self.draw, crop: &mut self.crop };
         f(&mut cx, &mut machines)
     }
 
@@ -410,6 +434,7 @@ impl Interaction {
         let tool = s.tool.effective();
         // Only a click has a use for the link icon; a press, a drag or a menu on it is on empty space.
         let intent = icon_as_empty_space_unless_click(intent);
+        let Some(intent) = self.crop_pointer(s, intent, now, out) else { return };
         match intent {
             Intent::Press { at, target, meta } => {
                 let ev = Ev {
@@ -520,6 +545,67 @@ impl Interaction {
         }
     }
 
+    /// While the crop editor is open it owns the pointer. Returns the intent when it goes on to the normal
+    /// handling: any intent while the editor is closed, and a click outside the window, after the editor
+    /// committed and closed (the click then selects what is under it).
+    fn crop_pointer(&mut self, s: &mut Session, intent: Intent, now: f64, out: &mut Outcome) -> Option<Intent> {
+        if !self.crop.is_open() && !self.crop.is_active() {
+            return Some(intent);
+        }
+        match intent {
+            Intent::Press { .. }
+            | Intent::DoubleClick { .. }
+            | Intent::LongPress { .. }
+            | Intent::ContextMenu { .. } => None,
+            Intent::Click { at, target, meta } => {
+                let ev = Ev {
+                    origin: at,
+                    at,
+                    delta_screen: Default::default(),
+                    delta_world: Default::default(),
+                    target: &target,
+                    meta: &meta,
+                };
+                let outside = self.with_ctx(s, out, now, meta.modifiers, |cx, m| {
+                    let outside = m.crop.click(cx, &ev);
+                    if outside {
+                        // The press that began this click was ours; the select tool did not see it.
+                        m.select.press(cx, &ev);
+                    }
+                    outside
+                });
+                outside.then_some(Intent::Click { at, target, meta })
+            }
+            Intent::DragStart { origin, at, target, meta } => {
+                self.drag_owner = None;
+                let ev = Ev {
+                    origin,
+                    at,
+                    delta_screen: at.screen - origin.screen,
+                    delta_world: at.world - origin.world,
+                    target: &target,
+                    meta: &meta,
+                };
+                self.with_ctx(s, out, now, meta.modifiers, |cx, m| m.crop.drag_start(cx, &ev));
+                None
+            }
+            Intent::DragUpdate { origin, at, delta_screen, delta_world, target, meta } if self.crop.is_active() => {
+                let ev = Ev { origin, at, delta_screen, delta_world, target: &target, meta: &meta };
+                self.with_ctx(s, out, now, meta.modifiers, |cx, m| m.crop.drag_update(cx, &ev));
+                None
+            }
+            Intent::DragEnd { origin, at, delta_screen, delta_world, target, cancelled, meta }
+                if self.crop.is_active() =>
+            {
+                let ev = Ev { origin, at, delta_screen, delta_world, target: &target, meta: &meta };
+                self.with_ctx(s, out, now, meta.modifiers, |cx, m| m.crop.drag_end(cx, &ev, cancelled));
+                out.redraw_at_least(Redraw::Overlay);
+                None
+            }
+            other => Some(other),
+        }
+    }
+
     /// A right click (or a long press): select what is under the pointer when it is not selected, then ask
     /// the shell for the menu.
     #[allow(clippy::too_many_arguments)]
@@ -570,6 +656,7 @@ impl Interaction {
 pub(crate) struct Machines<'a> {
     pub(crate) select: &'a mut SelectTool,
     pub(crate) draw: &'a mut DrawTools,
+    pub(crate) crop: &'a mut CropTool,
 }
 
 /// Which machine handles a press or a drag that starts on `target`.

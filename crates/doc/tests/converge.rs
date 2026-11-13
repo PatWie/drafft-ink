@@ -45,6 +45,68 @@ fn move_and_recolor_of_one_element_both_survive() {
     assert_view_matches_loro(&b);
 }
 
+/// Two replicas that both hold the picture `img` (a 200 by 100 picture in a 200 by 100 box).
+fn pair_with_picture() -> (LoroStore, LoroStore) {
+    let mut a = peer(1);
+    let mut b = peer(2);
+    let data = ImageData { file_id: None, natural_width: 200, natural_height: 100, crop: None };
+    let mut img = Element::new(eid("img"), ElementKind::Image(data), zs(1)[0].clone());
+    img.transform = Transform::new(0.0, 0.0, 200.0, 100.0);
+    add(&mut a, vec![img]);
+    sync(&mut a, &mut b);
+    (a, b)
+}
+
+fn crop_of(s: &LoroStore) -> Option<Crop> {
+    s.get(&eid("img")).unwrap().image_data().unwrap().crop.clone()
+}
+
+#[test]
+fn a_crop_and_the_box_that_goes_with_it_reach_the_other_replica_together() {
+    let (mut a, mut b) = pair_with_picture();
+    let crop = Crop { x: 50.0, y: 25.0, width: 100.0, height: 50.0 };
+    let cs = edit(&mut a, "img", |e| {
+        e.transform = Transform::new(50.0, 25.0, 100.0, 50.0);
+        if let ElementKind::Image(d) = &mut e.kind {
+            d.crop = Some(crop.clone());
+        }
+    });
+    assert!(cs.get(&eid("img")).is_some());
+    push(&a, &mut b);
+    assert_eq!(crop_of(&b), Some(crop.clone()));
+    assert_eq!(b.get(&eid("img")).unwrap().transform.rect(), a.get(&eid("img")).unwrap().transform.rect());
+    assert_same(&a, &b);
+    // A reset goes the same way: the crop is gone on both sides.
+    edit(&mut b, "img", |e| {
+        if let ElementKind::Image(d) = &mut e.kind {
+            d.crop = None;
+        }
+    });
+    push(&b, &mut a);
+    assert_eq!(crop_of(&a), None);
+    assert_same(&a, &b);
+}
+
+#[test]
+fn two_concurrent_crops_leave_one_whole_crop_and_never_a_mix_of_both() {
+    let (mut a, mut b) = pair_with_picture();
+    let set = |s: &mut LoroStore, c: Crop| {
+        edit(s, "img", |e| {
+            if let ElementKind::Image(d) = &mut e.kind {
+                d.crop = Some(c);
+            }
+        });
+    };
+    let (ca, cb) =
+        (Crop { x: 0.0, y: 0.0, width: 100.0, height: 50.0 }, Crop { x: 100.0, y: 50.0, width: 80.0, height: 40.0 });
+    set(&mut a, ca.clone());
+    set(&mut b, cb.clone());
+    sync(&mut a, &mut b);
+    assert_same(&a, &b);
+    let winner = crop_of(&a).unwrap();
+    assert!(winner == ca || winner == cb, "the crop is kept whole: {winner:?}");
+}
+
 #[test]
 fn concurrent_edits_of_the_same_field_pick_one_winner_everywhere() {
     let (mut a, mut b) = pair_with_rect();

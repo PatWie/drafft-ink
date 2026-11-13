@@ -894,3 +894,48 @@ fn a_library_dropped_on_the_canvas_gets_a_section_named_after_the_file() {
     run(&mut s, "doc.drop", json!({"items": [item]}));
     assert_eq!(sections_of(&run(&mut s, "library.list", json!({})))[0].1, "shapes");
 }
+
+// ---- a cropped picture in the library ----
+
+/// A renderer that keeps the document it was asked to draw.
+#[derive(Clone, Default)]
+struct SeesScene(Arc<Mutex<Vec<(drafftink_scene::Document, RenderRequest)>>>);
+
+impl Renderer for SeesScene {
+    fn render_png(&self, scene: &SceneView, req: &RenderRequest) -> Result<Vec<u8>, PortError> {
+        self.0.lock().unwrap().push((scene.clone(), req.clone()));
+        Ok(b"\x89PNG-fake".to_vec())
+    }
+}
+
+#[test]
+fn a_cropped_picture_keeps_its_crop_in_the_library_and_in_its_thumbnail() {
+    let seen = SeesScene::default();
+    let fakes = Fakes::new();
+    let mut ports = fakes.ports();
+    ports.renderer = Some(Box::new(seen.clone()));
+    let mut s = Session::with_services(ports, Services::fake());
+    // A 200 by 100 picture, cropped to its right half: the box becomes 100 by 100.
+    let bytes = crate::cmd::image::tests::png(200, 100);
+    let out = run(&mut s, "image.insert", json!({"images": [{"base64": b64(&bytes)}], "at": [0, 0]}));
+    let id = out["ids"][0].as_str().unwrap().to_owned();
+    run(&mut s, "image.crop", json!({"id": id, "crop": {"x": 100, "y": 0, "w": 100, "h": 100}}));
+    let item = run(&mut s, "library.add", json!({"name": "Half"}))["item"]["id"].as_str().unwrap().to_owned();
+
+    // The thumbnail is drawn from the cropped picture: its box is the crop, and the whole picture is in the file table.
+    run(&mut s, "library.thumbnail", json!({"item": item, "max_side": 100}));
+    let asked = seen.0.lock().unwrap().clone();
+    let (doc, req) = asked.last().expect("the renderer was asked");
+    let image = doc.elements.iter().find_map(|e| e.image_data().map(|d| (e, d))).expect("the picture is in the item");
+    assert_eq!(image.1.crop, Some(drafftink_scene::Crop { x: 100.0, y: 0.0, width: 100.0, height: 100.0 }));
+    assert_eq!((image.0.transform.w, image.0.transform.h), (100.0, 100.0));
+    assert!(doc.files.values().any(|f| f.bytes[..] == bytes[..]));
+    assert_eq!(req.size_px.0, req.size_px.1, "a square crop makes a square thumbnail");
+
+    // Inserting the item gives the same crop on a new element.
+    run(&mut s, "library.insert", json!({"item": item, "at": [500, 0]}));
+    let crops: Vec<_> = s.store().iter().filter_map(|e| e.image_data().map(|d| d.crop.clone())).collect();
+    assert_eq!(crops.len(), 2);
+    assert_eq!(crops[0], crops[1]);
+    assert!(crops[1].is_some());
+}

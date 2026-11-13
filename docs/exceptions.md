@@ -228,6 +228,18 @@ Rules that hold for all classes:
 | Not covered | Choosing a colour or style while the text edit is open does not call `style.set` (it refuses `text_editing`). The UI sends it to the editor, which applies a colour to the selected characters (`runs`) when some are selected and everything else to the element (`style`), and `text.edit_end` receives both. Bold and italic (`Mod+B`, `Mod+I`, or the Emphasis buttons of the style panel, which would run `text.format`) go the same way: the editor applies them to the selected characters, or to what is typed next when nothing is selected, and `text.edit_end` receives them in `runs`. The arrows bound to a label's container follow it while the container grows (`edit::binding::BoundArrows`, drawn by the editor as a preview), so they do not jump when the edit ends. A text element selected but not being edited uses `style.set` and `text.style_range` as usual. |
 | Test | `exception_E16_edit_equals_plain_command` (typing a string then `text.edit_end` equals one `element.create` kind=text with that `text`), `edit/tests/text_edit_model` (composition: preedit, commit, cancel), the staged-edit test of N3 in section 5, `app/editor/tests` (the editor draws the box the commit measures) and `app/editor/pixels` (equal pixels), and `commands_that_change_text_refuse_during_an_edit_and_others_commit_it` (commands with `while_text_edit = no` refuse). |
 
+### E17 Crop editor drags
+
+| | |
+|---|---|
+| Input | While the crop editor of an image is open (`image.crop_begin`: double-click, `Enter` with one image selected, the Crop button of the strip, or the context menu): drag one of the eight handles of the crop window, or drag the picture anywhere else to slide it under the window. Shift keeps the window's aspect ratio. |
+| Class | B |
+| What happens | The interaction layer keeps the window and the shift of the picture (`interact::crop`), in the element's own frame, so a rotated or mirrored image crops as it is seen. An edge that comes within 6 screen pixels of an edge of the picture snaps to it; the window cannot leave the picture and is not made smaller than 10 units (or than the window it started with) or than one picture pixel. The document does not change: the overlay draws the whole picture faded, the draft over it, and the window with its handles. `Esc` during a drag puts the window back where the press found it. Several drags make one draft. |
+| Reason | The crop window is a preview until the user is done, as a drawn shape is (E6). A command per pointer event would put an undo step and a CRDT delta in the history for every pixel, and collaborators would see a half-made crop. A gesture frame per event is not needed either: nothing else reacts to the draft. |
+| Final state | `image.crop { id, crop, bounds }`, run once when the editor ends: `Enter`, `Esc` (as in Excalidraw, which keeps the crop on `Esc` too) or a click outside the window. A draft that changed nothing runs `image.crop_end` instead, and no undo step is made. A click that ends the editor goes on to the select tool, so it also selects what is under it. |
+| Cancel | A tool change, a change of the selection or a tab switch closes the editor (the session does it) and drops the draft. `tool.cancel` closes it too, without a commit. |
+| Test | `exception_E17_crop_equals_plain_command` (a resize and a pan end in the same document as the plain `image.crop` with the same crop and `bounds`), `exception_E17_a_rotated_mirrored_crop_equals_plain_command` (the same for a rotated, mirrored image, and the resize-only crop equals the plain command's default `follow_crop` box). |
+
 ## 3. Things that look like exceptions but are commands
 
 | Input | Why it is not an exception |

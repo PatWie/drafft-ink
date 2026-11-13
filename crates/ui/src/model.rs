@@ -492,6 +492,8 @@ pub struct Model {
     pub tool_held: bool,
     /// The point editor has a selected point (the `PointEditor` key scope applies).
     pub point_selected: bool,
+    /// The crop editor is open (`image.crop_begin`): the strip offers "Done cropping" in place of "Crop image".
+    pub crop_editing: bool,
     /// Bold and italic of the selected texts and labels, from the document; `None` when none is selected.
     pub text_faces: Option<TextFaces>,
     /// Bold and italic at the selection of the text editor while one runs. The editor owns the text then, so these
@@ -551,6 +553,7 @@ impl Default for Model {
             gesture_running: false,
             tool_held: false,
             point_selected: false,
+            crop_editing: false,
             text_faces: None,
             editor_faces: None,
             selection_bounds: None,
@@ -605,6 +608,7 @@ impl Model {
             .as_ref()
             .map(|l| (l.element.as_str().to_owned(), l.selected_points.len()))
             .hash(&mut h);
+        t.observed.crop_editor.as_ref().map(|id| id.as_str().to_owned()).hash(&mut h);
         (s.tool.active.name(), s.tool.lock, s.tool.temporary.map(Tool::name)).hash(&mut h);
         format!("{:?}", s.tool.style_defaults).hash(&mut h);
         s.view_only.hash(&mut h);
@@ -689,6 +693,7 @@ impl Model {
         let t = s.tab();
         self.selection_count = t.observed.selection.len();
         self.point_selected = t.observed.linear_editor.as_ref().is_some_and(|l| !l.selected_points.is_empty());
+        self.crop_editing = t.observed.crop_editor.is_some();
         self.zoom_percent = t.view.percent();
         self.background = t.doc.store().meta().background.to_hex();
         self.history = HistoryView { undo_label: t.doc.undo_label(), redo_label: t.doc.redo_label() };

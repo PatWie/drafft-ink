@@ -506,6 +506,18 @@ pub struct Crop {
     pub height: f64,
 }
 
+impl Crop {
+    /// The crop as a rectangle in source pixels.
+    pub fn rect(&self) -> Rect {
+        Rect::new(self.x, self.y, self.x + self.width, self.y + self.height)
+    }
+
+    /// The crop that shows exactly `rect` (source pixels).
+    pub fn from_rect(rect: Rect) -> Self {
+        Self { x: rect.x0, y: rect.y0, width: rect.width(), height: rect.height() }
+    }
+}
+
 /// Data of an image element.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
@@ -831,6 +843,14 @@ impl Element {
     pub fn linear_data(&self) -> Option<&LinearData> {
         match &self.kind {
             ElementKind::Line(d) | ElementKind::Arrow(d) => Some(d),
+            _ => None,
+        }
+    }
+
+    /// The image data of an image element.
+    pub fn image_data(&self) -> Option<&ImageData> {
+        match &self.kind {
+            ElementKind::Image(d) => Some(d),
             _ => None,
         }
     }

@@ -77,5 +77,5 @@ pub(crate) fn select_only(s: &mut Session, ids: &[ElementId]) {
     obs.selection = ids.iter().cloned().collect();
     obs.selected_groups = groups;
     obs.editing_group = None;
-    obs.linear_editor = None;
+    obs.close_editors();
 }

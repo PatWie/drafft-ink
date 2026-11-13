@@ -233,6 +233,83 @@ mod tests {
         assert!(!(0..info.height).any(|y| (0..info.width).any(|x| is_outline(pixel(&info, &pixels, x, y)))));
     }
 
+    /// A 40 by 30 picture whose left half is green and whose right half is red, written to a file in `dir`.
+    fn green_and_red_picture(dir: &std::path::Path) -> std::path::PathBuf {
+        let path = dir.join("half.png");
+        let file = std::io::BufWriter::new(std::fs::File::create(&path).unwrap());
+        let mut encoder = png::Encoder::new(file, 40, 30);
+        encoder.set_color(png::ColorType::Rgb);
+        encoder.set_depth(png::BitDepth::Eight);
+        let mut writer = encoder.write_header().unwrap();
+        let row: Vec<u8> = (0..40).flat_map(|x| if x < 20 { [0u8, 160, 0] } else { [200, 0, 0] }).collect();
+        writer.write_image_data(&row.repeat(30)).unwrap();
+        writer.finish().unwrap();
+        path
+    }
+
+    /// The export of the one half-green, half-red picture after `crop` ran, with no padding.
+    fn cropped_export(crop: Value) -> (png::OutputInfo, Vec<u8>) {
+        let dir = tempfile::tempdir().unwrap();
+        let mut s = ports::session(IdSeed::Fixed(1));
+        let source = json!({ "path": green_and_red_picture(dir.path()).to_str().unwrap() });
+        let out = s.execute_from(Origin::Script, "image.insert", json!({ "images": [source], "at": [0, 0] })).unwrap();
+        let mut args = crop;
+        args["id"] = out["ids"][0].clone();
+        s.execute_from(Origin::Script, "image.crop", args).unwrap();
+        let (_, info, pixels) = export(&mut s, json!({ "scale": 1, "padding": 0, "background": false }));
+        (info, pixels)
+    }
+
+    #[test]
+    fn a_cropped_picture_exports_only_the_cropped_part_at_its_scale() {
+        // The left half: the box shrinks to 20 by 30, and every pixel is green.
+        let (info, pixels) = cropped_export(json!({ "crop": { "x": 0, "y": 0, "w": 20, "h": 30 } }));
+        assert_eq!((info.width, info.height), (20, 30));
+        let every = (0..info.height).all(|y| (0..info.width).all(|x| pixel(&info, &pixels, x, y) == [0, 160, 0, 255]));
+        assert!(every, "nothing of the red half is in the picture");
+        // The right half: all red.
+        let (info, pixels) = cropped_export(json!({ "crop": { "x": 20, "y": 0, "w": 20, "h": 30 } }));
+        assert_eq!((info.width, info.height), (20, 30));
+        assert_eq!(pixel(&info, &pixels, 0, 0), [200, 0, 0, 255]);
+        assert_eq!(pixel(&info, &pixels, 19, 29), [200, 0, 0, 255]);
+    }
+
+    #[test]
+    fn a_crop_that_keeps_the_box_stretches_the_part_over_it() {
+        let (info, pixels) =
+            cropped_export(json!({ "crop": { "x": 10, "y": 0, "w": 20, "h": 30 }, "element_box": "keep" }));
+        assert_eq!((info.width, info.height), (40, 30));
+        // 10 pixels of green and 10 of red, each stretched to 20: the seam is in the middle of the box.
+        assert_eq!(pixel(&info, &pixels, 5, 15), [0, 160, 0, 255]);
+        assert_eq!(pixel(&info, &pixels, 34, 15), [200, 0, 0, 255]);
+        assert_eq!(pixel(&info, &pixels, 15, 15)[1], 160);
+        assert_eq!(pixel(&info, &pixels, 25, 15)[0], 200);
+    }
+
+    #[test]
+    fn a_mirrored_and_turned_image_shows_the_cropped_part_it_names() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut s = ports::session(IdSeed::Fixed(1));
+        let source = json!({ "path": green_and_red_picture(dir.path()).to_str().unwrap() });
+        let out = s.execute_from(Origin::Script, "image.insert", json!({ "images": [source], "at": [0, 0] })).unwrap();
+        let id = out["ids"][0].clone();
+        s.execute_from(Origin::Script, "element.flip", json!({ "ids": [id], "axis": "horizontal" })).unwrap();
+        // The picture is mirrored, so its red half is on the left. Crop its green half (pixels 0 to 20).
+        s.execute_from(Origin::Script, "image.crop", json!({ "id": id, "crop": { "x": 0, "y": 0, "w": 20, "h": 30 } }))
+            .unwrap();
+        let (_, info, pixels) = export(&mut s, json!({ "scale": 1, "padding": 0, "background": false }));
+        assert_eq!((info.width, info.height), (20, 30));
+        let green = (0..info.height).all(|y| (0..info.width).all(|x| pixel(&info, &pixels, x, y) == [0, 160, 0, 255]));
+        assert!(green, "the mirrored crop shows the green half only");
+        // Turned a quarter, the box is 30 by 20 on the canvas, and the middle is still green.
+        s.execute_from(Origin::Script, "element.rotate", json!({ "ids": [id], "angle": 90, "mode": "to" })).unwrap();
+        let (_, info, pixels) = export(&mut s, json!({ "scale": 1, "padding": 0, "background": false }));
+        assert_eq!((info.width, info.height), (30, 20));
+        assert_eq!(pixel(&info, &pixels, 15, 10), [0, 160, 0, 255]);
+        assert_eq!(pixel(&info, &pixels, 2, 2), [0, 160, 0, 255]);
+        assert_eq!(pixel(&info, &pixels, 27, 17), [0, 160, 0, 255]);
+    }
+
     #[test]
     fn the_scene_is_embedded_so_that_the_picture_opens_again() {
         let mut s = session_with_a_rectangle();

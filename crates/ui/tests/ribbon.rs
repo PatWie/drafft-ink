@@ -684,3 +684,64 @@ fn the_strip_is_drawn_in_the_dark_theme_with_the_same_layout() {
         assert_eq!(rect(&light, label), rect(&dark, label), "{label}");
     }
 }
+
+// ---- an image ----
+
+/// A 40 by 20 PNG.
+const PICTURE: &str = "iVBORw0KGgoAAAANSUhEUgAAACgAAAAUCAIAAABwJOjsAAAAJElEQVR4nGM4YWQ0IIhh1OJRi0ctHrV41OJRi0ctHrV45FgMAAkCqa66Bn33AAAAAElFTkSuQmCC";
+
+/// A fixture with one image selected.
+fn one_image() -> (Fixture, ElementId) {
+    let mut f = dialog::fixture();
+    let out = dialog::run(&mut f, "image.insert", json!({ "images": [{ "base64": PICTURE }], "at": [0, 0] }));
+    let id = ElementId::new(out["ids"][0].as_str().unwrap()).unwrap();
+    (f, id)
+}
+
+#[test]
+fn a_selected_image_gets_a_crop_button_and_a_cropped_one_also_a_reset_button() {
+    let (f, _) = one_image();
+    let h = desk(f);
+    assert!(has(&h, "Crop image"), "the label is the registry's title");
+    assert!(!has(&h, "Reset crop"), "nothing to reset yet");
+    let (mut f, id) = one_image();
+    dialog::run(&mut f, "image.crop", json!({ "id": id.as_str(), "crop": { "x": 0, "y": 0, "w": 20, "h": 20 } }));
+    let h = desk(f);
+    assert!(has(&h, "Crop image") && has(&h, "Reset crop"));
+}
+
+#[test]
+fn the_crop_buttons_call_the_commands_and_the_strip_shows_done_while_the_editor_is_open() {
+    let (mut f, id) = one_image();
+    dialog::run(&mut f, "image.crop", json!({ "id": id.as_str(), "crop": { "x": 0, "y": 0, "w": 20, "h": 20 } }));
+    let mut h = desk(f);
+    h.get_by_label("Crop image").click();
+    h.run();
+    assert_eq!(h.state().last_call().map(|c| c.id.as_str()), Some("image.crop_begin"));
+    h.state_mut().dispatch();
+    h.run();
+    assert!(has(&h, "Done cropping") && !has(&h, "Crop image"), "while the editor is open the same place says Done");
+    h.get_by_label("Done cropping").click();
+    h.run();
+    assert_eq!(h.state().last_call().map(|c| c.id.as_str()), Some("image.crop_end"));
+    h.state_mut().dispatch();
+    h.run();
+    h.get_by_label("Reset crop").click();
+    h.run();
+    assert_eq!(h.state().last_call().map(|c| c.id.as_str()), Some("image.reset_crop"));
+}
+
+#[test]
+fn other_selections_have_no_crop_button() {
+    let h = desk(one_rect());
+    assert!(!has(&h, "Crop image") && !has(&h, "Reset crop"));
+    let (mut f, _) = one_image();
+    let r = add_rect(&mut f.session, 300.0, 0.0, 50.0, 50.0).unwrap();
+    let all: Vec<ElementId> = {
+        use drafftink_scene::SceneRead;
+        f.session.store().iter().map(|e| e.id.clone()).chain(std::iter::once(r)).collect()
+    };
+    selecting(&mut f, &all);
+    let h = desk(f);
+    assert!(!has(&h, "Crop image"), "several elements cannot be cropped at once");
+}

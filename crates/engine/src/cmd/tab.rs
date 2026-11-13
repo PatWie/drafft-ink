@@ -184,7 +184,7 @@ fn copy_tab(s: &mut Session, id: &str, src: usize, name: Option<String>) -> Resu
     let (observed, view, dirty) = (from.observed.clone(), from.view, from.dirty());
     let mut t = tab_from(s, id, &doc)?;
     t.observed = observed;
-    t.observed.linear_editor = None;
+    t.observed.close_editors();
     t.view = view;
     if dirty {
         t.saved_revision = NEVER_SAVED;
@@ -197,7 +197,7 @@ fn copy_tab(s: &mut Session, id: &str, src: usize, name: Option<String>) -> Resu
 pub(crate) fn activate_new(s: &mut Session, tab: Tab) {
     let at = s.active_index() + 1;
     let viewport = s.view().viewport;
-    s.tab_mut().observed.linear_editor = None;
+    s.tab_mut().observed.close_editors();
     let mut tab = tab;
     tab.view.viewport = viewport;
     s.tabs.insert(at.min(s.tabs.len()), tab);
@@ -278,7 +278,7 @@ fn switch(s: &mut Session, a: SwitchArgs) -> Result<TabOut, Refusal> {
         return Ok(out(s, false, tid, i, label));
     }
     let viewport = s.view().viewport;
-    s.tab_mut().observed.linear_editor = None;
+    s.tab_mut().observed.close_editors();
     s.set_active_index(i);
     s.tab_mut().view.viewport = viewport;
     Ok(out(s, true, tid, i, label))
@@ -485,7 +485,7 @@ fn duplicate(s: &mut Session, a: DuplicateArgs) -> Result<TabOut, Refusal> {
     let (tid, label) = (tab.id, name_of(&tab));
     // The copy goes right after its source and becomes the active tab.
     let viewport = s.view().viewport;
-    s.tab_mut().observed.linear_editor = None;
+    s.tab_mut().observed.close_editors();
     let mut tab = tab;
     tab.view.viewport = viewport;
     let at = (i + 1).min(s.tabs.len());
