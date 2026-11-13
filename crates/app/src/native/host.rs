@@ -74,6 +74,9 @@ impl Host for NativeHost {
                     reply.post(Inbound::SaveTarget(FileRef::Path { path: h.path().display().to_string() }));
                 }
             }
+            HostJob::PickScreenColor => {
+                reply.post(Inbound::Notice("This computer has no picker for colours on the screen.".to_owned()));
+            }
             HostJob::LoadFont(file) => {
                 reply.post(Inbound::Notice(format!(
                     "The font {} is built into the desktop app; nothing to load.",

@@ -16,6 +16,7 @@ use crate::compositor::Compositor;
 use crate::error::{GpuError, LostInfo};
 use crate::frame::EguiFrame;
 use crate::gpu::{Gpu, GpuOptions, PresentSurface, create_instance};
+use crate::readback::SceneRead;
 use crate::stats::{BackendStats, GpuMemory, RendererInfo};
 
 /// How long a memory report is reused. Building one lists every allocation, so it is not done every frame.
@@ -113,6 +114,10 @@ impl Backend for WgpuBackend {
 
     fn render_scene(&mut self, scene: &Scene, base: Color, size: [u32; 2], _detail: Detail) -> Result<(), GpuError> {
         self.comp.render_scene(&self.gpu, scene, base, size)
+    }
+
+    fn read_scene(&mut self, area: [u32; 4]) -> Result<SceneRead, GpuError> {
+        self.comp.start_scene_read(&self.gpu, area).map(SceneRead::Mapped)
     }
 
     fn present(&mut self, window: &Window, frame: &mut EguiFrame, size: [u32; 2]) -> Result<Presented, GpuError> {

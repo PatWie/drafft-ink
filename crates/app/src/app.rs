@@ -117,6 +117,8 @@ pub struct App {
     #[cfg(feature = "scenarios")]
     scenes: Option<SceneSlot>,
     cursor: egui::CursorIcon,
+    /// The colour the platform's own screen picker is asked to set (`HostRequest::PickScreenColor`).
+    screen_pick: Option<drafftink_ui::ColorTarget>,
     /// The picture of the text editor the engine was last told about.
     staged: Option<(u64, u64)>,
 }
@@ -160,6 +162,7 @@ impl App {
         let (inbox, inbox_rx) = inbox(wake.clone());
         let mut ui = UiShell::new(is_mac);
         ui.set_about(about_of(host.as_ref()));
+        ui.state.set_screen_color_picker(host.screen_color_picker());
         ui.state.debug_open = config.perf_overlay;
         Self {
             session,
@@ -193,6 +196,7 @@ impl App {
             #[cfg(feature = "scenarios")]
             scenes: None,
             cursor: egui::CursorIcon::Default,
+            screen_pick: None,
             staged: None,
         }
     }
@@ -339,6 +343,9 @@ impl App {
 
     fn handle_pointer(&mut self, cx: &mut EventCx<'_>, s: drafftink_gpu::PointerSample) -> Repaint {
         let over_egui = input::egui_owns(cx.ctx, self.canvas_rect, s.point.pos);
+        if let Some(repaint) = self.eyedropper_pointer(cx, &s, over_egui) {
+            return repaint;
+        }
         if let Some(repaint) = self.editor_pointer(cx, &s, over_egui) {
             return repaint;
         }
@@ -594,6 +601,13 @@ impl App {
                 self.run(Origin::Ui, "doc.save", json!({ "to": to, "overwrite": true }));
             }
             Inbound::ClipboardText(text) => self.ui.state.set_pasted_text(text),
+            Inbound::ScreenColor(rgb) => {
+                if let Some(target) = self.screen_pick.take()
+                    && let Some(call) = self.ui.state.finish_eyedropper(target, rgb)
+                {
+                    self.run(call.origin, &call.id, call.args);
+                }
+            }
             Inbound::Notice(text) => self.toast(text),
             Inbound::FontLoaded { file, bytes } => self.font_loaded(file, bytes),
         }
@@ -666,6 +680,10 @@ impl App {
                 let name = self.session.tab().doc.store().meta().name.clone();
                 let stem = if name.trim().is_empty() { "Untitled".to_owned() } else { name };
                 job(&mut self.host, &self.inbox, HostJob::PickSaveTarget { suggested: format!("{stem}.drafftink") });
+            }
+            HostRequest::PickScreenColor(target) => {
+                self.screen_pick = Some(target);
+                job(&mut self.host, &self.inbox, HostJob::PickScreenColor);
             }
             HostRequest::PasteText => job(&mut self.host, &self.inbox, HostJob::ReadClipboardText),
             HostRequest::PickRecent => {}
@@ -1044,6 +1062,7 @@ impl App {
                     }
                 }
             }
+            ShellEvent::Pixel(sample) => (self.eyedropper_pixel(sample), Handled::No),
             ShellEvent::Wheel(wheel) => match self.handle_wheel(&wheel) {
                 Some(repaint) => (repaint, Handled::Yes),
                 None => (Repaint::Idle, Handled::No),
@@ -1182,7 +1201,11 @@ impl ShellApp for App {
             repaint: self.next_wake(now),
             canvas_rect: Some(self.canvas_rect),
             text_input,
-            cursor: over_canvas.then_some(self.cursor),
+            cursor: over_canvas.then_some(if self.ui.state.eyedropper().is_some() {
+                egui::CursorIcon::Crosshair
+            } else {
+                self.cursor
+            }),
             // The shell times frames and the GPU only while the panel is open.
             stats: self.ui.state.debug_open,
         }
@@ -1197,6 +1220,8 @@ fn collab_view_of(s: &mut Session) -> drafftink_ui::CollabView {
 #[cfg(all(test, feature = "scenarios"))]
 #[path = "app/install_scene_tests.rs"]
 mod install_scene_tests;
+
+mod eyedropper;
 
 #[cfg(test)]
 #[path = "app/collab_poll_tests.rs"]

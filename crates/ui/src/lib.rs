@@ -18,6 +18,7 @@ pub mod chrome;
 pub mod colors;
 pub mod debug;
 pub(crate) mod error_report;
+pub mod eyedropper;
 pub mod icons;
 pub mod keymap;
 pub(crate) mod menu_kit;
@@ -32,6 +33,7 @@ pub mod widgets;
 
 pub use action::{Call, CommandSink, HostRequest, Report, Routed, Scrub, ScrubPhase, UiAction, Verb, dispatch, route};
 pub use debug::{DebugRow, DebugSection, DebugView, RowTone};
+pub use eyedropper::{Eyedropper, Preview};
 pub use keymap::{Chord, Pointer, help_rows, parse_chord, resolve_keys};
 pub use model::{
     AboutInfo, AgentServerView, BoundsView, CollabStatus, CollabView, Model, Peer, RoomLoading, TextFaces,

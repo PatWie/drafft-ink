@@ -25,8 +25,22 @@ impl Host for WebHost {
         value.as_string().as_deref().and_then(crate::platform::web_address)
     }
 
+    /// The browser has `EyeDropper` (Chromium; not Firefox or Safari).
+    fn screen_color_picker(&self) -> bool {
+        super::dom::window()
+            .ok()
+            .is_some_and(|w| js_sys::Reflect::has(&w, &JsValue::from_str("EyeDropper")).unwrap_or(false))
+    }
+
     fn start(&mut self, job: HostJob, reply: Inbox) {
         match job {
+            HostJob::PickScreenColor => spawn_local(async move {
+                match pick_screen_color().await {
+                    Ok(Some(rgb)) => reply.post(Inbound::ScreenColor(rgb)),
+                    Ok(None) => {}
+                    Err(why) => notice(&reply, format!("The browser's colour picker failed ({why}).")),
+                }
+            }),
             HostJob::PickDocument => pick(PickKind::Document, ACCEPT_DOCUMENT, false, reply),
             HostJob::PickImages => pick(PickKind::Images, ACCEPT_IMAGES, true, reply),
             HostJob::PickLibrary => pick(PickKind::Library, ACCEPT_LIBRARY, false, reply),
@@ -49,6 +63,33 @@ impl Host for WebHost {
                 }
             }),
         }
+    }
+}
+
+/// Opens the browser's `EyeDropper` and waits for a colour: `None` when the person cancelled (Esc, or a click that
+/// hit nothing). The call needs a recent click or key press of the person, which the button press is.
+async fn pick_screen_color() -> Result<Option<[u8; 3]>, String> {
+    let window = super::dom::window().map_err(|e| e.to_string())?;
+    let get =
+        |target: &JsValue, key: &str| js_sys::Reflect::get(target, &JsValue::from_str(key)).map_err(|e| js_error(&e));
+    let constructor: js_sys::Function =
+        get(&window, "EyeDropper")?.dyn_into().map_err(|_| "this browser has no EyeDropper".to_owned())?;
+    let dropper = js_sys::Reflect::construct(&constructor, &js_sys::Array::new()).map_err(|e| js_error(&e))?;
+    let open: js_sys::Function = get(&dropper, "open")?.dyn_into().map_err(|_| "EyeDropper has no open".to_owned())?;
+    let promise: js_sys::Promise = open
+        .call0(&dropper)
+        .map_err(|e| js_error(&e))?
+        .dyn_into()
+        .map_err(|_| "open did not give a promise".to_owned())?;
+    match JsFuture::from(promise).await {
+        Ok(result) => {
+            let hex = get(&result, "sRGBHex")?.as_string().ok_or("the picker gave no colour")?;
+            let color = drafftink_scene::Color::parse(&hex).map_err(|_| format!("`{hex}` is not a colour"))?;
+            Ok(Some([color.r, color.g, color.b]))
+        }
+        // Esc cancels with an AbortError; that is an answer, not a failure.
+        Err(e) if get(&e, "name").ok().and_then(|n| n.as_string()).as_deref() == Some("AbortError") => Ok(None),
+        Err(e) => Err(js_error(&e)),
     }
 }
 

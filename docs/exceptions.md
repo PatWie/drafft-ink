@@ -43,7 +43,7 @@ Rules that hold for all classes:
 |---|---|
 | Input | Pointer move over the canvas without a button. |
 | Class | B (and read-only) |
-| What happens | The recognizer hit-tests with the spatial index and picks the mouse cursor icon (resize arrows, move, grab, crosshair, default), the hover outline, and the arrow-bind candidate while an arrow is being drawn. |
+| What happens | The recognizer hit-tests with the spatial index and picks the mouse cursor icon (resize arrows, move, grab, crosshair, default), the hover outline, and the arrow-bind candidate while an arrow is being drawn. While the eyedropper is on (`ui.pick_color`), the move also reads the pixel under the pointer from the scene texture, for the swatch beside the pointer; that is UI state, and the pick itself is one `style.set`. |
 | Reason | Hover changes no state. It must not request a redraw unless the hover result changed (the old app redrew a full frame on every mouse move, 53 to 68% of a core). A command per move would add a ring entry, a transaction and a dirty reason per event. |
 | Final state | None. Nothing is committed. `element.at` exposes the same hit test to scripts. |
 | Test | `exception_E1_hover_requests_redraw_only_on_change` (idle gate). |

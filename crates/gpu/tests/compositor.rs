@@ -332,3 +332,48 @@ fn a_picture_is_drawn_again_after_frames_that_draw_no_picture() {
         }
     });
 }
+
+/// Reads a rectangle of the scene image the compositor last drew.
+fn read_scene(comp: &Compositor, gpu: &Gpu, area: [u32; 4]) -> Result<Image, drafftink_gpu::GpuError> {
+    pollster::block_on(comp.start_scene_read(gpu, area)?.image())
+}
+
+#[test]
+fn a_pixel_of_the_scene_is_read_back_as_drawn_and_without_egui() {
+    on_gpu_thread(|| {
+        let gpu = gpu();
+        let mut comp = Compositor::new(&gpu, wgpu::TextureFormat::Rgba8Unorm).expect("compositor");
+        assert!(read_scene(&comp, &gpu, [0, 0, 1, 1]).is_err(), "nothing drawn yet, nothing to read");
+        let size = [100, 80];
+        render(&mut comp, &gpu, &red_square_scene(), size);
+        let at =
+            |comp: &Compositor, x, y| read_scene(comp, &gpu, [x, y, 1, 1]).expect("read").pixel(0, 0).expect("pixel");
+        assert!(close(at(&comp, 40, 40), [255, 0, 0, 255], 2), "inside the square");
+        assert!(close(at(&comp, 5, 5), [10, 20, 30, 255], 2), "the base colour outside it");
+        // A rectangle comes back whole, top row first, with rows that need padding (width 3 is 12 bytes).
+        let patch = read_scene(&comp, &gpu, [18, 38, 5, 3]).expect("read");
+        assert_eq!((patch.width, patch.height), (5, 3));
+        assert!(close(patch.pixel(0, 0).expect("corner"), [10, 20, 30, 255], 2), "left of and above the square");
+        assert!(close(patch.pixel(4, 2).expect("corner"), [255, 0, 0, 255], 2), "inside it");
+        // An area past the edge is cut to the image rather than refused.
+        let cut = read_scene(&comp, &gpu, [98, 78, 10, 10]).expect("read");
+        assert_eq!((cut.width, cut.height), (2, 2));
+        assert!(close(at(&comp, 500, 500), [10, 20, 30, 255], 2), "a start past the edge reads the last pixel");
+        // What egui draws over the scene is not in it.
+        let mut frame = EguiFrame::empty();
+        let _ = comp.render_to_image_blocking(&gpu, size, None, Some(&mut frame)).expect("composite");
+        assert!(close(at(&comp, 40, 40), [255, 0, 0, 255], 2));
+    });
+}
+
+#[test]
+fn a_picture_on_the_canvas_is_read_back_with_its_own_colour() {
+    on_gpu_thread(|| {
+        let gpu = gpu();
+        let mut comp = Compositor::new(&gpu, wgpu::TextureFormat::Rgba8Unorm).expect("compositor");
+        let teal = [20, 184, 166, 255];
+        render(&mut comp, &gpu, &picture_scene(&flat_picture(teal)), [100, 80]);
+        let got = read_scene(&comp, &gpu, [40, 40, 1, 1]).expect("read").pixel(0, 0).expect("pixel");
+        assert!(close(got, teal, 2), "the colour of the picture, not of the element under it: {got:?}");
+    });
+}

@@ -16,6 +16,7 @@ pub mod debug;
 pub mod dialogs;
 pub mod equation;
 pub mod export;
+pub mod eyedropper;
 pub mod library;
 pub mod link;
 pub mod loading;
@@ -45,6 +46,7 @@ pub fn show_all(ctx: &Context, cx: &mut Cx<'_>, st: &mut UiState) {
         library::show(ctx, cx, st);
     }
     color::show(ctx, cx, st);
+    eyedropper::show(ctx, cx, st);
     debug::show(ctx, cx, st);
     dialogs::show(ctx, cx, st);
     collab::show(ctx, cx, st);

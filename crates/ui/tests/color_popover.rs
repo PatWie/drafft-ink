@@ -524,3 +524,83 @@ fn the_top_bar_the_last_picked_swatch_and_the_page_button_show_the_dark_display_
     let page = Color::WHITE.for_dark_theme();
     assert_eq!(swatch_fill(&h, "Background colour"), egui::Color32::from_rgb(page.r, page.g, page.b));
 }
+
+// ---- the eyedropper ----
+
+const PICK_STROKE: &str = "Pick the stroke colour from the canvas";
+const PICK_FILL: &str = "Pick the fill colour from the canvas";
+
+#[test]
+fn each_colour_row_has_an_eyedropper_next_to_its_wheel_that_starts_pick_mode_for_its_colour() {
+    let mut h = dialog::harness(dialog::fixture());
+    let (stroke, fill) = (h.get_by_label(PICK_STROKE).rect(), h.get_by_label(PICK_FILL).rect());
+    let (wheel, fill_wheel) =
+        (h.get_by_label("Pick the stroke colour").rect(), h.get_by_label("Pick the fill colour").rect());
+    assert!(stroke.max.x <= wheel.min.x && (stroke.center().y - wheel.center().y).abs() < 1.0, "left of its wheel");
+    assert!(fill.max.x <= fill_wheel.min.x && fill.min.y > stroke.max.y - 1.0, "and the fill row has its own");
+    assert!(!on(&h, PICK_STROKE), "not on until it is pressed");
+
+    h.get_by_label(PICK_FILL).click();
+    h.run();
+    assert_eq!(dialog::verbs(h.state()), [Verb::PickColorFill]);
+    h.state_mut().dispatch();
+    h.run();
+    assert_eq!(h.state().state.eyedropper_target(), Some(ColorTarget::Fill));
+    assert!(on(&h, PICK_FILL) && !on(&h, PICK_STROKE), "the button of the row that picks is on");
+    h.get_by_label("Click a colour on the canvas to use it for the fill. Esc cancels.");
+
+    // The other row switches the target; pressing the same one again leaves the mode.
+    h.get_by_label(PICK_STROKE).click();
+    h.run();
+    h.state_mut().dispatch();
+    assert_eq!(h.state().state.eyedropper_target(), Some(ColorTarget::Stroke));
+    h.get_by_label(PICK_STROKE).click();
+    h.run();
+    h.state_mut().dispatch();
+    h.run();
+    assert_eq!(h.state().state.eyedropper_target(), None);
+    assert!(h.query_by_label("Click a colour on the canvas to use it for the stroke. Esc cancels.").is_none());
+}
+
+#[test]
+fn the_swatch_beside_the_pointer_shows_the_colour_it_would_pick() {
+    let mut h = dialog::harness(dialog::fixture());
+    h.state_mut().state.apply_verb(Verb::PickColorStroke, &mut Vec::new());
+    h.state_mut().state.set_eyedropper_preview(pos2(500.0, 400.0), Some([0x3b, 0x82, 0xf6, 255]));
+    h.run();
+    let hex = h.get_by_label("#3b82f6").rect();
+    assert!(hex.min.x > 500.0 && hex.min.y > 400.0, "it hangs off the pointer: {hex:?}");
+    h.state_mut().state.set_eyedropper_preview(pos2(1270.0, 790.0), Some([0, 0, 0, 255]));
+    h.run();
+    let hex = h.get_by_label("#000000").rect();
+    assert!(hex.max.x <= 1280.0 && hex.max.y <= 800.0, "at the corner it flips to stay on the screen: {hex:?}");
+}
+
+#[test]
+fn a_platform_with_its_own_screen_picker_gets_a_request_instead_of_pick_mode() {
+    let mut f = dialog::fixture();
+    f.state.set_screen_color_picker(true);
+    let mut h = dialog::harness(f);
+    h.get_by_label(PICK_FILL).click();
+    h.run();
+    h.state_mut().dispatch();
+    assert_eq!(h.state().report.host, [drafftink_ui::HostRequest::PickScreenColor(ColorTarget::Fill)]);
+    assert!(h.state().state.eyedropper().is_none(), "the platform shows its own loupe");
+}
+
+#[test]
+fn a_pick_sets_the_colour_on_the_selection_in_one_undo_step() {
+    let mut f = dialog::fixture();
+    let a = drafftink_engine::testing::add_rect(&mut f.session, 0.0, 0.0, 100.0, 60.0).unwrap();
+    drafftink_engine::testing::select(&mut f.session, std::slice::from_ref(&a));
+    f.refresh();
+    let before = f.session.tab().doc.undo_depth();
+    f.state.apply_verb(Verb::PickColorFill, &mut Vec::new());
+    let call = f.state.finish_eyedropper(ColorTarget::Fill, [0x10, 0xb9, 0x81]).unwrap();
+    f.actions.push(UiAction::Command(call));
+    f.dispatch();
+    assert_eq!(f.model.style.str_value("fill_color"), Some("#10b981"));
+    assert_eq!(f.session.tab().doc.undo_depth(), before + 1, "one undo step");
+    assert!(f.state.eyedropper().is_none());
+    assert_eq!(f.state.last_picked.of(ColorTarget::Fill), Some("#10b981"), "the strip keeps it as the last picked");
+}

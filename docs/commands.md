@@ -1208,6 +1208,7 @@ Not commands, never in `engine.commands`. Each ends, when it produces a result, 
 | `ui.save_as` | name field, then the save picker | `doc.rename` (when the name changed), then `doc.save` with `to` | U:1900, 2631 |
 | `ui.insert_image` | image picker | `image.insert` | NEW |
 | `ui.open_color_picker` | colour popover (stroke, fill or background) | `style.set` or `doc.set_background` | U:1166-1195, 1007 |
+| `ui.pick_color` | the eyedropper next to the stroke and fill swatches: pick mode (a crosshair over the canvas, a swatch with the colour under the pointer, the release of the pointer picks, Esc cancels), or the platform's own picker where it has one (the browser's `EyeDropper`) | `style.set` with `stroke_color` or `fill_color` | X:EyeDropper.tsx |
 | `ui.open_font_picker` | font family popover | `style.set` | NEW |
 | `ui.open_palette` | command palette, listing `engine.commands` | the chosen command | NEW |
 | `ui.open_search` | search box over `element.query` | `selection.select`, `view.zoom_to_fit` | NEW |
@@ -1478,7 +1479,7 @@ These are deliberate; each fixes an inventory finding. Reviewers should expect t
 | `9` image | `I` (UI verb), conflict §6.4 |
 | `E`/`0` eraser, `F` frame, `K` laser | `tool.set` |
 | `B` bucket fill, `Shift+X` autoshape | not planned |
-| `I`, `Shift+S`, `Shift+G` eyedropper | not planned (`I` is image here) |
+| `I`, `Shift+S`, `Shift+G` eyedropper | not planned (`I` is image here); the button next to the swatches and the palette rows `ui.pick_color` do it |
 | `Q` tool lock | `tool.lock` |
 | `Esc` | `tool.cancel` |
 | `Enter` edit text or label | `text.edit_begin` |

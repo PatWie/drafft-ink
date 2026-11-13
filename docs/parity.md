@@ -317,7 +317,7 @@ Row ids (`A-nnn` old app, `B-nnn` Excalidraw) are stable so the gap list can ref
 
 ## 2. Excalidraw features (B)
 
-Rows follow `research/parts/04-features-diff.md` §1.1 to §1.15 and §4. The AI features are `out of scope` by the user's decision. The Excalidraw features that `docs/deviations.md` section 3 lists as not built are `missing` (or `partial` when part exists): embeddables (B-016), bucket fill (B-018), autoshape (B-019), eyedropper (B-020), pen mode (B-022), hover "+" buttons (B-024), list markers (B-063), chart paste (B-149), scrollbars (B-108). Sticky note, links, convert type and follow mode have landed. Each has a row; the reason for not building it is in `docs/deviations.md` section 3. Priorities are in section 4.
+Rows follow `research/parts/04-features-diff.md` §1.1 to §1.15 and §4. The AI features are `out of scope` by the user's decision. The Excalidraw features that `docs/deviations.md` section 3 lists as not built are `missing` (or `partial` when part exists): embeddables (B-016), bucket fill (B-018), autoshape (B-019), eyedropper (B-020, built without keys), pen mode (B-022), hover "+" buttons (B-024), list markers (B-063), chart paste (B-149), scrollbars (B-108). Sticky note, links, convert type and follow mode have landed. Each has a row; the reason for not building it is in `docs/deviations.md` section 3. Priorities are in section 4.
 
 ### 2.1 Tools
 
@@ -342,7 +342,7 @@ Rows follow `research/parts/04-features-diff.md` §1.1 to §1.15 and §4. The AI
 | B-017 | Laser pointer (`K`), shared with peers | X:laserTrails.ts | done | A-012, A-162; `Z` and `K` | see those rows |
 | B-018 | Bucket fill (`B`) | X:bucketFill.ts | missing | none | none |
 | B-019 | Autoshape (`Shift+X`) | X:convertToShape.ts | missing | none | none |
-| B-020 | Eyedropper (`I`, `Shift+S`, `Shift+G`) | X:EyeDropper.tsx | missing | `I` is image insert here | none |
+| B-020 | Eyedropper (`I`, `Shift+S`, `Shift+G`) | X:EyeDropper.tsx | partial | A button next to the stroke and fill swatches (`ui.pick_color`). Pick mode: crosshair, a swatch with the hex of the pixel under the pointer, the release picks, Esc cancels; one `style.set`, one undo step, the colour joins the last-picked swatch. The pixel is read from the scene texture the shell last drew (wgpu and WebGL2), so it is what the canvas shows, pictures included, never the interface. In browsers that have `EyeDropper` the button opens that picker instead. No `I`/`Shift+S`/`Shift+G` keys (`I` is image insert here). | `gpu/compositor::a_pixel_of_the_scene_is_read_back_as_drawn_and_without_egui`, `app/style_panel::a_click_on_the_canvas_in_pick_mode_sets_the_stroke_to_the_pixel_under_it_in_one_undo_step`, `ui/color_popover::each_colour_row_has_an_eyedropper_next_to_its_wheel_that_starts_pick_mode_for_its_colour` |
 | B-021 | Tool lock (`Q`) | X:LockButton.tsx | done | `tool.lock`; toolbar lock button | `eng/int/draw_tests::with_the_lock_the_tool_stays_and_a_second_shape_can_be_drawn` |
 | B-022 | Pen mode (stylus-only, palm rejection) | X:PenModeButton.tsx | partial | No button. Palm rejection is automatic: while a stylus is in contact, hovers or was seen in the last 2 s (`app/input.rs` `PenWatch`), a single finger only pans (`FingerMode::PanOnly`, no click) and a stylus that touches down cancels a finger gesture that began first; two fingers still pan and pinch. No way to turn it off, and a stylus without hover (older iPads) gives the 2 s only after its first contact | `app/touch_tests::a_palm_that_landed_before_the_pen_is_dropped_when_the_pen_touches_down`, `app/touch_tests::after_the_pen_a_finger_only_pans_until_the_grace_time_is_over`, `app/input::tests::a_stylus_makes_fingers_pan_until_two_seconds_after_its_last_sample`, `canvas/tests/recognizer::with_pan_only_fingers_a_single_finger_pans_and_a_tap_does_nothing`, `canvas/tests/recognizer::a_pen_that_touches_down_takes_over_from_a_finger_that_landed_first` |
 | B-023 | Flowchart quick-create: `Mod+Arrow` creates a linked node, `Alt+Arrow` navigates | X:flowchart.ts | done | `diagram.extend`, `selection.navigate` | `eng/cmd/diagram_tests::extend_adds_a_connected_node_next_to_the_selection_and_selects_it`, `eng/cmd/selection_tests::navigate_selects_the_connected_element_in_the_direction` |
@@ -580,7 +580,7 @@ Status here is about the key reaching a working action. Where the default key di
 | B-223 | `N` sticky note | 4.1 | done | `N` runs `element.create_sticky` at the pointer with `edit=true` (registry binding) | B-011, `ui/tests/keymap::every_registered_binding_dispatches_to_its_command_on_both_platforms` |
 | B-224 | `9` image | 4.1 | done | `I` (UI verb), `9` stays Math (decision 2) | `ui/tests/keymap::ui_verb_keys_do_not_collide_with_command_keys` |
 | B-225 | `E`/`0` eraser, `F` frame, `K` laser | 4.1 | done | `tool.set` | same test |
-| B-226 | `B` bucket fill, `Shift+X` autoshape, `I`/`Shift+S`/`Shift+G` eyedropper | 4.1 | missing | B-018 to B-020 | none |
+| B-226 | `B` bucket fill, `Shift+X` autoshape, `I`/`Shift+S`/`Shift+G` eyedropper | 4.1 | partial | the eyedropper is built without the keys (B-020); bucket fill and autoshape are not (B-018, B-019) | none |
 | B-227 | `Q` tool lock | 4.1 | done | `tool.lock` | B-021 |
 | B-228 | `Esc` | 4.1 | done | `tool.cancel` | A-197 |
 | B-229 | `Enter` edits text or label, ends a multi-point line | 4.1 | done | `text.edit_begin`; draft `Enter` | `eng/int/draw_line_tests::enter_ends_the_draft_with_the_placed_points_only`, `eng/cmd/text_tests::begin_without_arguments_uses_the_single_selected_element` |
@@ -649,7 +649,7 @@ Priority: **P0** is a promise of the user's requirement ("keep all old features"
 | 6 | P2 | Hint bar, scrollbars, input device setting (B-078, B-108, B-109) | Bottom hint line from the tool and gesture; drawn scrollbars; a mouse or trackpad wheel setting (`InputConfig.wheel_zooms` exists in `canvas`, no setting key) | `ui`, `canvas` config | S each |
 | 7 | P2 | Idle state and tool badge of peers (B-200, B-203) | Two fields in `AwarenessState` and a draw rule | `protocol`, `collab`, `render` overlay | S |
 | 8 | P2 | Room encryption and passwords (B-196) | Per-room key in the link fragment; encrypt update frames | `protocol`, `collab`, `apps/drafftink-server` (unchanged if frames stay opaque) | L |
-| 9 | P2 | Eyedropper, bucket fill, autoshape (B-018, B-019, B-020, B-226) | Pixel sample through the renderer port; planar region fill; stroke recognition | `render`/`gpu`, `geom`, `edit` | M each |
+| 9 | P2 | Bucket fill, autoshape (B-018, B-019); the eyedropper (B-020) is built, its keys are not (B-226) | Pixel sample through the renderer port; planar region fill; stroke recognition | `render`/`gpu`, `geom`, `edit` | M each |
 | 10 | P2 | Embeddables (B-016), pen mode (B-022), list markers (B-063), `Shift+Alt+D` key (B-240) | iframe overlay in the web shell and a placeholder elsewhere; ignore finger input while a pen is near; auto-continue list markers in the editor; bind `settings.cycle theme` | `scene`/`app` (embed), `canvas` (pen), `typeset`/app editor (lists), `engine` settings (key) | S to L |
 
 ### 4.2 Partial

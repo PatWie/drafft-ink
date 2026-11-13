@@ -505,13 +505,15 @@ fn align_needs_two_elements_and_distribute_three() {
 fn a_text_and_a_shape_together_get_both_sets_of_groups() {
     // Changed with the strip: at 1280 the layer and action groups of this selection do not fit beside the text
     // groups any more and wait behind "More" (see the overflow tests); they used to hang in the card's second row.
+    // The eyedropper button in the colour group (a button wide) moved the align group behind "More" as well.
     let mut h = desk(text_and_shape());
-    for label in [FONT, TEXT_SIZE, "Text align: Left", "Dashed", CORNERS, ALIGN_LEFT, "Bold text"] {
+    for label in [FONT, TEXT_SIZE, "Text align: Left", "Dashed", CORNERS, "Bold text"] {
         assert!(has(&h, label), "{label}");
     }
     assert!(!has(&h, "Path: Elbow"));
     open(&mut h, "More options");
     h.get_by_label(BRING_FRONT);
+    h.get_by_label(ALIGN_LEFT);
 }
 
 #[test]

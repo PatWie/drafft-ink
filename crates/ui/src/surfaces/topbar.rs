@@ -102,6 +102,13 @@ impl Paint {
         }
     }
 
+    fn pick_verb(self) -> Verb {
+        match self {
+            Paint::Stroke => Verb::PickColorStroke,
+            Paint::Fill => Verb::PickColorFill,
+        }
+    }
+
     fn popover(self) -> PopoverKey {
         match self {
             Paint::Stroke => PopoverKey::Stroke,
@@ -120,7 +127,7 @@ fn label_width(ui: &egui::Ui, cx: &Cx<'_>) -> f32 {
         .fold(0.0, f32::max)
 }
 
-/// One row: label, the "none" cell, the quick colours, the slot of the colour last picked, the wheel. Both rows
+/// One row: label, the "none" cell, the quick colours, the slot of the colour last picked, the eyedropper, the wheel. Both rows
 /// have every cell, in the same order and of the same size, so nothing moves when a colour is picked or the
 /// selection changes.
 fn colour_row(ui: &mut egui::Ui, cx: &mut Cx<'_>, st: &UiState, paint: Paint) {
@@ -171,8 +178,12 @@ fn colour_row(ui: &mut egui::Ui, cx: &mut Cx<'_>, st: &UiState, paint: Paint) {
         }
     }
     let wheel_tip = format!("More {} colours", title.to_lowercase());
-    let wheel =
-        cx.verb_button(ui, paint.open_verb(), Icon::Wheel, cx.layout.control(Control::Small), &wheel_tip, false);
+    let side = cx.layout.control(Control::Small);
+    // The eyedropper: pick the colour from the canvas. It is on while pick mode is on for this row.
+    let picking = st.eyedropper_target() == Some(paint.target());
+    let tip = format!("Pick the {} colour from the canvas", title.to_lowercase());
+    cx.verb_button_gated(ui, paint.pick_verb(), Icon::Eyedropper, side, &tip, picking, blocked);
+    let wheel = cx.verb_button(ui, paint.open_verb(), Icon::Wheel, side, &wheel_tip, false);
     remember_anchor_in(ui, paint.popover(), wheel.rect);
 }
 

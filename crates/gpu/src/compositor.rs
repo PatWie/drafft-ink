@@ -85,7 +85,7 @@ impl AtlasPin {
 }
 
 struct SceneTarget {
-    _texture: wgpu::Texture,
+    texture: wgpu::Texture,
     view: wgpu::TextureView,
     size: [u32; 2],
     bind_group: wgpu::BindGroup,
@@ -251,7 +251,9 @@ impl Compositor {
             sample_count: 1,
             dimension: wgpu::TextureDimension::D2,
             format: SCENE_FORMAT,
-            usage: wgpu::TextureUsages::STORAGE_BINDING | wgpu::TextureUsages::TEXTURE_BINDING,
+            usage: wgpu::TextureUsages::STORAGE_BINDING
+                | wgpu::TextureUsages::TEXTURE_BINDING
+                | wgpu::TextureUsages::COPY_SRC,
             view_formats: &[],
         });
         let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
@@ -260,7 +262,7 @@ impl Compositor {
             layout: &self.bind_layout,
             entries: &[wgpu::BindGroupEntry { binding: 0, resource: wgpu::BindingResource::TextureView(&view) }],
         });
-        self.target = Some(SceneTarget { _texture: texture, view, size, bind_group });
+        self.target = Some(SceneTarget { texture, view, size, bind_group });
         self.has_scene = false;
         self.stats.scene_textures_created += 1;
         true
@@ -293,6 +295,49 @@ impl Compositor {
         self.stats.vello_runs += 1;
         inc(Counter::GpuSubmits);
         Ok(())
+    }
+
+    /// Starts reading the rectangle `[x, y, width, height]` of the scene image Vello last drew (what the canvas
+    /// shows, without egui over it). It records the copy and submits it; [`MappedRead::image`] waits for the
+    /// pixels. The rectangle is cut to the image. Fails before any scene was rendered.
+    pub fn start_scene_read(&self, gpu: &Gpu, area: [u32; 4]) -> Result<MappedRead, GpuError> {
+        let target = self
+            .target
+            .as_ref()
+            .filter(|_| self.has_scene)
+            .ok_or_else(|| GpuError::Readback("no scene has been drawn yet".into()))?;
+        let [x, y, w, h] = area;
+        let (x, y) = (x.min(target.size[0].saturating_sub(1)), y.min(target.size[1].saturating_sub(1)));
+        let size = [w.clamp(1, target.size[0] - x), h.clamp(1, target.size[1] - y)];
+        let padded_row = (size[0] * 4).next_multiple_of(wgpu::COPY_BYTES_PER_ROW_ALIGNMENT);
+        let buffer = gpu.device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("scene readback"),
+            size: u64::from(padded_row) * u64::from(size[1]),
+            usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
+            mapped_at_creation: false,
+        });
+        let mut encoder =
+            gpu.device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: Some("scene readback") });
+        encoder.copy_texture_to_buffer(
+            wgpu::TexelCopyTextureInfo {
+                texture: &target.texture,
+                mip_level: 0,
+                origin: wgpu::Origin3d { x, y, z: 0 },
+                aspect: wgpu::TextureAspect::All,
+            },
+            wgpu::TexelCopyBufferInfo {
+                buffer: &buffer,
+                layout: wgpu::TexelCopyBufferLayout {
+                    offset: 0,
+                    bytes_per_row: Some(padded_row),
+                    rows_per_image: Some(size[1]),
+                },
+            },
+            wgpu::Extent3d { width: size[0], height: size[1], depth_or_array_layers: 1 },
+        );
+        gpu.queue.submit([encoder.finish()]);
+        inc(Counter::GpuSubmits);
+        Ok(MappedRead { device: gpu.device.clone(), buffer, size, padded_row })
     }
 
     /// Whether a scene has been rendered into the current texture.
@@ -461,7 +506,7 @@ impl Compositor {
         inc(Counter::GpuSubmits);
 
         let swap_rb = matches!(self.format, wgpu::TextureFormat::Bgra8Unorm | wgpu::TextureFormat::Bgra8UnormSrgb);
-        read_buffer(gpu, &buffer, size, padded_row, swap_rb).await
+        read_buffer(&gpu.device, &buffer, size, padded_row, swap_rb).await
     }
 
     /// Blocking form of [`Self::render_to_image`] for native tests and the CLI.
@@ -474,6 +519,22 @@ impl Compositor {
         egui: Option<&mut EguiFrame>,
     ) -> Result<Image, GpuError> {
         pollster::block_on(self.render_to_image(gpu, size, scene, egui))
+    }
+}
+
+/// A read of the scene image whose copy is on the GPU ([`Compositor::start_scene_read`]).
+#[derive(Debug)]
+pub struct MappedRead {
+    device: wgpu::Device,
+    buffer: wgpu::Buffer,
+    size: [u32; 2],
+    padded_row: u32,
+}
+
+impl MappedRead {
+    /// The pixels, RGBA8 (the scene image is not swapped), top row first.
+    pub async fn image(self) -> Result<Image, GpuError> {
+        read_buffer(&self.device, &self.buffer, self.size, self.padded_row, false).await
     }
 }
 
@@ -503,7 +564,7 @@ impl Future for MapFuture {
 }
 
 async fn read_buffer(
-    gpu: &Gpu,
+    device: &wgpu::Device,
     buffer: &wgpu::Buffer,
     size: [u32; 2],
     padded_row: u32,
@@ -520,11 +581,11 @@ async fn read_buffer(
     });
     // Native: drive the callback now. On the web the browser runs it from the event loop.
     #[cfg(not(target_arch = "wasm32"))]
-    gpu.device.poll(wgpu::PollType::Wait { submission_index: None, timeout: Some(READBACK_TIMEOUT) }).map_err(|e| {
+    device.poll(wgpu::PollType::Wait { submission_index: None, timeout: Some(READBACK_TIMEOUT) }).map_err(|e| {
         GpuError::Readback(format!("the GPU did not hand back the image within {READBACK_TIMEOUT:?} ({e})"))
     })?;
     #[cfg(target_arch = "wasm32")]
-    let _ = gpu;
+    let _ = device;
     MapFuture { state }.await.map_err(|e| GpuError::Readback(e.to_string()))?;
 
     let mapped = buffer.slice(..).get_mapped_range().map_err(|e| GpuError::Readback(e.to_string()))?;

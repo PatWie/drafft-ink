@@ -222,7 +222,7 @@ Bound arrows (move, resize, rotate, flip, delete, undo, focus, gap, highlight), 
 |---|---|---|
 | Embeddables (iframes) | missing | Needs a sandboxed web view per element; the native app has none. |
 | Image crop (command, handles) | missing | The `crop` field exists and the painter honours it; no command or UI sets it. Planned. |
-| Bucket fill, eyedropper, pen mode, autoshape, hover "+" connectors, list markers in text, chart paste | missing | Smaller than the work they would take next to bound arrows and frames; not on the plan's priority list. The eyedropper needs a pixel read-back that browsers gate behind a permission. |
+| Bucket fill, pen mode, autoshape, hover "+" connectors, list markers in text, chart paste | missing | Smaller than the work they would take next to bound arrows and frames; not on the plan's priority list. (The eyedropper has been built since: `docs/ui.md` section 5c.) |
 | Paste SVG and URL | missing | SVG needs a rasteriser in `io`. |
 | Mermaid types beyond flowchart and sequence | missing | A parser and a layout per type. They are refused with the list of supported types. Node shapes other than rectangle, round, stadium, circle and diamond are drawn as rectangles with a warning. |
 | Old guides: angle-snap rays, snap crosshair, eraser radius ring | missing | Overlay parts not ported (A-086, A-088, A-046; the crosshair producer in `engine/interact/frame_out.rs` passes an empty list). |

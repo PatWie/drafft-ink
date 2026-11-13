@@ -14,12 +14,14 @@ use vello::Scene;
 use vello::peniko::Color;
 
 use crate::RedrawReason;
-use crate::app::{FrameCx, FrameOutput, Outbox, SetupCx, ShellApp, ViewInfo, Waker};
+use crate::app::{EventCx, FrameCx, FrameOutput, Outbox, SetupCx, ShellApp, ViewInfo, Waker};
 use crate::backend::BackendKind;
 use crate::compositor::Compositor;
 use crate::error::GpuError;
+use crate::events::{Handled, PixelSample, Repaint, ShellEvent};
 use crate::frame::{EguiFrame, Image};
 use crate::gpu::{Gpu, GpuOptions};
+use crate::readback::pixel_area;
 use crate::stats::{BackendStats, GpuMemory, RendererInfo, ShellStats};
 
 /// Seconds the clock of egui advances per frame. Long enough that fades and tooltips settle within a few frames.
@@ -126,6 +128,46 @@ impl<A: ShellApp> Headless<A> {
     /// The GPU the frames are drawn on.
     pub fn gpu(&self) -> &Gpu {
         &self.gpu
+    }
+
+    /// Gives `event` to the app as the shell does, and answers the pixel reads it asks for with the colour of the canvas
+    /// as the last frame drew it (the answer is delivered at once, as a native shell does within the next turn of its
+    /// loop). Returns what the app answered to `event` and the earliest repaint of that and of the answers.
+    pub fn event(&mut self, event: ShellEvent) -> (Repaint, Handled) {
+        let mut queue = std::collections::VecDeque::from([event]);
+        let (mut repaint, mut handled) = (Repaint::Idle, None);
+        while let Some(event) = queue.pop_front() {
+            let mut out = Outbox::default();
+            let (again, taken) = {
+                let mut cx = EventCx {
+                    ctx: &self.ctx,
+                    backend: BackendKind::Vello,
+                    waker: &self.waker,
+                    view: ViewInfo { size_px: self.options.size_px(), scale: self.options.scale },
+                    modifiers: egui::Modifiers::NONE,
+                    text_input_on: false,
+                    out: &mut out,
+                };
+                self.app.event(&mut cx, event)
+            };
+            repaint = repaint.min(again);
+            handled.get_or_insert(taken);
+            for (at, purpose) in out.samples {
+                let rgba = self.read_pixel(at);
+                queue.push_back(ShellEvent::Pixel(PixelSample { at, purpose, rgba }));
+            }
+        }
+        (repaint, handled.unwrap_or_default())
+    }
+
+    /// The colour of the canvas at `at` (points) as the last frame drew it, without the interface over it.
+    fn read_pixel(&mut self, at: Pos2) -> Option<[u8; 4]> {
+        let area = pixel_area(at, self.options.scale, self.options.size_px())?;
+        if self.scene_drawn {
+            self.compositor.render_scene(&self.gpu, &self.scene, self.scene_base, self.options.size_px()).ok()?;
+        }
+        let read = self.compositor.start_scene_read(&self.gpu, area).ok()?;
+        pollster::block_on(read.image()).ok()?.pixel(0, 0)
     }
 
     /// Runs one frame with `events` as the input of that frame.

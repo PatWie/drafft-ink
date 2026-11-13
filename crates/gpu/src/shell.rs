@@ -5,7 +5,7 @@
 //! [`RepaintState`], so every frame has a recorded reason. Hover moves over the canvas go to the
 //! app and draw nothing unless the app answers with a repaint.
 
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -26,13 +26,14 @@ use winit::window::{Window, WindowId};
 use crate::app::{EventCx, FrameCx, FrameOutput, Outbox, SetupCx, ShellApp, ViewInfo, Waker};
 use crate::backend::{Backend, Presented};
 use crate::error::GpuError;
-use crate::events::{ClipboardContent, Handled, Repaint, ShellEvent, WheelInput};
+use crate::events::{ClipboardContent, Handled, PixelSample, PixelUse, Repaint, ShellEvent, WheelInput};
 #[cfg(not(target_arch = "wasm32"))]
 use crate::events::{PointerKind, PointerPhase, PointerPoint, PointerSample, TextInput};
 use crate::frame::EguiFrame;
 use crate::host::HostEvent;
 #[cfg(not(target_arch = "wasm32"))]
 use crate::host::now_ms;
+use crate::readback::pixel_area;
 use crate::repaint::{HeldHover, RepaintState, coalesce_pointer_moves, egui_owns_pointer};
 use crate::settle::Settle;
 use crate::stats::{RendererInfo, ShellStats};
@@ -249,6 +250,8 @@ struct Shell<A: ShellApp> {
     stats_on: bool,
     /// The frames timed while `stats_on`.
     meter: FrameMeter,
+    /// A pixel for a preview is being read (the browser maps the buffer later): the next preview is not asked for.
+    preview_busy: Rc<Cell<bool>>,
 }
 
 /// Run `app` in a window (native) or on the canvas (web). Native: blocks until the window closes.
@@ -324,6 +327,7 @@ impl<A: ShellApp> Shell<A> {
             lose_device_next: false,
             stats_on: false,
             meter: FrameMeter::new(),
+            preview_busy: Rc::new(Cell::new(false)),
         }
     }
 
@@ -394,6 +398,9 @@ impl<A: ShellApp> Shell<A> {
                 self.want_frame(RedrawReason::Ui);
             }
         }
+        for (at, purpose) in out.samples {
+            self.sample_scene(at, purpose);
+        }
         if out.lose_device {
             self.lose_device_next = true;
             self.want_frame(RedrawReason::Other);
@@ -407,6 +414,50 @@ impl<A: ShellApp> Shell<A> {
             run.applied_text_input = Some(caret);
             self.platform.set_text_input(Some(caret));
         }
+    }
+
+    /// Reads the pixel of the canvas under `at` and sends it to the app as [`ShellEvent::Pixel`]: at once on native (the
+    /// copy of one pixel is waited for here), when the browser has mapped the buffer on the web. A read that cannot
+    /// start answers with no colour, so the app never waits for an answer that does not come.
+    fn sample_scene(&mut self, at: egui::Pos2, purpose: PixelUse) {
+        if purpose == PixelUse::Preview && self.preview_busy.get() {
+            return;
+        }
+        let Some(run) = self.running.as_mut() else { return };
+        let Some(area) = pixel_area(at, run.ctx.pixels_per_point(), run.backend.size()) else { return };
+        let proxy = self.proxy.clone();
+        let post = move |rgba: Option<[u8; 4]>| {
+            let sample = PixelSample { at, purpose, rgba };
+            let _ = proxy.send_event(UserEvent::Host(HostEvent::App(ShellEvent::Pixel(sample))));
+        };
+        let read = match run.backend.read_scene(area) {
+            Ok(read) => read,
+            Err(e) => {
+                log::debug!("no pixel to read: {e}");
+                return post(None);
+            }
+        };
+        let busy = Rc::clone(&self.preview_busy);
+        if purpose == PixelUse::Preview {
+            busy.set(true);
+        }
+        let finish = async move {
+            let rgba = match read.image().await {
+                Ok(image) => image.pixel(0, 0),
+                Err(e) => {
+                    log::debug!("pixel not read: {e}");
+                    None
+                }
+            };
+            if purpose == PixelUse::Preview {
+                busy.set(false);
+            }
+            post(rgba);
+        };
+        #[cfg(not(target_arch = "wasm32"))]
+        pollster::block_on(finish);
+        #[cfg(target_arch = "wasm32")]
+        wasm_bindgen_futures::spawn_local(finish);
     }
 
     fn push_egui_event(&mut self, event: egui::Event) {
