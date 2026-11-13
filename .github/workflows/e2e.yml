@@ -13,8 +13,8 @@ on:
   workflow_dispatch:
     inputs:
       runner:
-        description: "Runner: ubuntu-latest (SwiftShader) or gpu (self-hosted with an NVIDIA GPU)"
-        default: ubuntu-latest
+        description: "Runner: ubuntu-24.04 (SwiftShader) or gpu (self-hosted with an NVIDIA GPU)"
+        default: ubuntu-24.04
   schedule:
     - cron: "17 3 * * *"
   pull_request:
@@ -43,7 +43,10 @@ env:
 jobs:
   e2e:
     name: E2E (browser and native)
-    runs-on: ${{ inputs.runner || 'ubuntu-latest' }}
+    # Pinned to 24.04 on 2026-11-13: `ubuntu-latest` became ubuntu-26.04, and Playwright 1.58 (e2e/web/package.json) stops
+    # at "does not support chromium on ubuntu26.04-x64". Playwright supports 26.04 from 1.61 on. Remove the pin when
+    # the suites move to that version.
+    runs-on: ${{ inputs.runner || 'ubuntu-24.04' }}
     timeout-minutes: 60
     env:
       # On a hosted runner there is no GPU: Chromium falls back to SwiftShader, and the native app to Mesa's software
