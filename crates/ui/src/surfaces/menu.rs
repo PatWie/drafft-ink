@@ -57,7 +57,7 @@ pub fn show(ctx: &Context, cx: &mut Cx<'_>, st: &mut UiState) {
         panel_frame(&cx.pal).show(ui, |ui| {
             ui.set_width(MENU_WIDTH);
             ui.spacing_mut().item_spacing = vec2(0.0, 1.0);
-            close_after = cx.with_origin(Origin::Menu, |cx| menu_rows(ui, cx));
+            close_after = cx.with_origin(Origin::Menu, |cx| menu_rows(ui, cx, st.debug_open));
         });
     });
     if close_after {
@@ -75,7 +75,7 @@ pub fn show(ctx: &Context, cx: &mut Cx<'_>, st: &mut UiState) {
 
 /// Draws the rows, grouped under headings. Returns true when a verb or app request was chosen and the menu must be
 /// closed by the caller; a command closes it here, after the call is made.
-fn menu_rows(ui: &mut egui::Ui, cx: &mut Cx<'_>) -> bool {
+fn menu_rows(ui: &mut egui::Ui, cx: &mut Cx<'_>, debug_open: bool) -> bool {
     let view_only = cx.model.view_only;
     let picked = Menu::run_in(ui, cx, Id::unique("main_menu.rows"), "Main menu", |m| {
         m.heading("File");
@@ -101,6 +101,7 @@ fn menu_rows(ui: &mut egui::Ui, cx: &mut Cx<'_>) -> bool {
         m.heading("View");
         m.command(Ctl::new("view.set_view_only"), Row::new().icon(Icon::Eye).checked(view_only));
         m.verb(Verb::ToggleLibrary, "Library", Row::new().icon(Icon::Library), None);
+        m.verb(Verb::ToggleDebug, "Debug panel", Row::new().icon(Icon::Stats).checked(debug_open), None);
         m.verb(Verb::OpenPreferences, "Preferences", Row::new().icon(Icon::Settings).dialog(), None);
         m.custom(theme_row);
 

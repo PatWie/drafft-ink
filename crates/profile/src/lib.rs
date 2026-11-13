@@ -6,6 +6,7 @@
 //! | Time a frame phase | [`phase`], [`in_phase`] with [`Phase`] |
 //! | Mark a frame | [`begin_frame`], [`end_frame`] |
 //! | Say why a redraw happens | [`redraw`] with a [`RedrawReason`] |
+//! | Show the frame rate live | [`FrameMeter`], [`FrameReading`] |
 //! | Count work | [`count`], [`inc`], [`set_gauge`] with [`Counter`], [`Gauge`] |
 //! | Assert on work in a test | [`WorkScope`] (no clock, per thread), [`snapshot_thread`] |
 //! | Export | [`snapshot`] -> [`PerfStats`] JSON, [`chrome_trace_json`] |
@@ -21,6 +22,7 @@
 mod clock;
 mod frame;
 mod live;
+mod meter;
 mod names;
 mod report;
 mod scenario;
@@ -36,6 +38,7 @@ pub use frame::{
     Histogram, Summary,
 };
 pub use live::{PhaseGuard, begin_frame, end_frame, in_phase, phase, reset, set_frame_window, snapshot};
+pub use meter::{FrameMeter, FrameReading, METER_WINDOW_NS, SPARKLINE_FRAMES};
 pub use names::{Counter, Gauge, Phase, RedrawReason, RedrawReasons};
 pub use report::{
     BudgetError, Budgets, Limit, PERF_OUT_ENV, REPORT_SCHEMA, ScenarioReport, Violation, is_deterministic, scenario_key,

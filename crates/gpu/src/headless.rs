@@ -8,6 +8,7 @@
 //! No event loop runs here: the app's [`Waker`] is [detached](Waker::detached), the clock of egui is moved by hand
 //! ([`Headless::frame`] advances it), and nothing is presented.
 
+use drafftink_profile::{FrameMeter, now_ns};
 use egui::{Event, Pos2, RawInput, Rect, ViewportId, ViewportInfo};
 use vello::Scene;
 use vello::peniko::Color;
@@ -19,6 +20,7 @@ use crate::compositor::Compositor;
 use crate::error::GpuError;
 use crate::frame::{EguiFrame, Image};
 use crate::gpu::{Gpu, GpuOptions};
+use crate::stats::{BackendStats, GpuMemory, RendererInfo, ShellStats};
 
 /// Seconds the clock of egui advances per frame. Long enough that fades and tooltips settle within a few frames.
 const FRAME_SECONDS: f64 = 0.1;
@@ -60,6 +62,21 @@ pub struct Headless<A: ShellApp> {
     /// The shapes of the last frame, painted by [`Self::screenshot`].
     last: Option<egui::FullOutput>,
     waker: Waker,
+    renderer: RendererInfo,
+    /// The app asked for statistics (its debug panel is open) and the frames are being timed.
+    stats_on: bool,
+    meter: FrameMeter,
+}
+
+impl<A: ShellApp> Drop for Headless<A> {
+    /// egui panics when it drops texture uploads nobody applied, which is what a shell dropped after frames without
+    /// a [`Headless::screenshot`] holds. Nothing will be painted any more, so they are discarded.
+    fn drop(&mut self) {
+        self.textures.clear();
+        if let Some(last) = self.last.as_mut() {
+            last.textures_delta.clear();
+        }
+    }
 }
 
 impl<A: ShellApp> Headless<A> {
@@ -71,6 +88,7 @@ impl<A: ShellApp> Headless<A> {
         let compositor = Compositor::new(&gpu, wgpu::TextureFormat::Rgba8Unorm)?;
         let ctx = egui::Context::default();
         let waker = Waker::detached();
+        let renderer = gpu.info().renderer_info();
         let view = ViewInfo { size_px: options.size_px(), scale: options.scale };
         app.setup(&mut SetupCx {
             ctx: &ctx,
@@ -94,6 +112,9 @@ impl<A: ShellApp> Headless<A> {
             textures: egui::TexturesDelta::default(),
             last: None,
             waker,
+            renderer,
+            stats_on: false,
+            meter: FrameMeter::new(),
         })
     }
 
@@ -125,11 +146,15 @@ impl<A: ShellApp> Headless<A> {
         let mut scene_dirty = false;
         let mut frame_out = FrameOutput::default();
         let view = ViewInfo { size_px: self.options.size_px(), scale: self.options.scale };
+        let started = now_ns();
+        let stats = self.stats_on.then(|| ShellStats { frames: self.meter.reading(started), gpu: self.gpu_stats() });
         let mut output = self.ctx.run_ui(raw, |ui| {
             let mut cx = FrameCx {
                 backend: BackendKind::Vello,
                 waker: &self.waker,
                 view,
+                renderer: &self.renderer,
+                stats: stats.as_ref(),
                 reason: self.reason,
                 resized: self.resized,
                 scene: &mut self.scene,
@@ -139,12 +164,29 @@ impl<A: ShellApp> Headless<A> {
             };
             frame_out = self.app.frame(ui, &mut cx);
         });
+        if frame_out.stats {
+            self.meter.record(started, now_ns().saturating_sub(started));
+        } else {
+            self.meter.clear();
+        }
+        self.stats_on = frame_out.stats;
         self.scene_drawn |= scene_dirty;
         self.resized = false;
         self.reason = RedrawReason::Timer;
         self.textures.append(std::mem::take(&mut output.textures_delta));
         self.last = Some(output);
         frame_out
+    }
+
+    /// The GPU numbers of a shell without a window: the allocator totals. The composite pass is not timed here: the
+    /// picture is painted only by [`Self::screenshot`].
+    fn gpu_stats(&self) -> BackendStats {
+        let memory = self
+            .gpu
+            .device
+            .generate_allocator_report()
+            .map(|report| GpuMemory { allocated: report.total_allocated_bytes, reserved: report.total_reserved_bytes });
+        BackendStats { memory, ..BackendStats::default() }
     }
 
     /// Runs `frames` frames with no input, so animations finish and the app finishes work it started (fonts,

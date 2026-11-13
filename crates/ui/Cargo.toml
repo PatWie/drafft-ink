@@ -15,6 +15,7 @@ categories = ["gui", "graphics"]
 # No schemas in the build: the web app fetches them as a file (docs/performance.md, "Wasm size"). The desktop apps and the
 # tests turn them on again.
 drafftink-engine = { path = "../engine", version = "0.2.0", default-features = false }
+drafftink-profile = { path = "../profile", version = "0.2.0" }
 drafftink-scene = { path = "../scene", version = "0.2.0" }
 drafftink-typeset = { path = "../typeset", version = "0.2.0", default-features = false }
 egui = { workspace = true }

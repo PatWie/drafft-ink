@@ -48,6 +48,7 @@ drafftink_gpu::run(app, Options { title, initial_size, canvas_id })   // native 
   `cx.scene_mut(base_color)`. Not calling `scene_mut` means "canvas unchanged": the shell composites the
   texture of the last Vello run and runs no Vello. The shell keeps the last scene, so a resize or a
   recreated device re-renders it without the app.
+- `FrameCx::renderer` is the `RendererInfo` of the back end (adapter name, API, device class, CPU or GPU rasteriser). `FrameCx::stats` is `Some(ShellStats)` (frame rate and frame time from `profile::FrameMeter`, GPU time and memory from the back end) only after a frame returned `FrameOutput::stats = true`; the debug panel does that while it is open, and the shell measures nothing otherwise.
 - `FrameOutput` says `canvas_rect` (where hover goes to the app), `text_input` (caret rect for the IME and
   the soft keyboard), `cursor`, and `repaint`. An event that opens the text editor also calls
   `EventCx::set_text_input(caret)`: the shell turns the input on in that event, not in the next frame, so a key that

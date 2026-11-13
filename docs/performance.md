@@ -19,6 +19,7 @@ The app draws only when something changed. An idle app uses no CPU and no GPU. F
    | Network (collab sync, presence) | transport task -> channel -> `request_repaint` | `collab` |
    | Autosave finished | job result -> channel -> `request_repaint` | `autosave` |
    | Text caret | one `request_repaint_after(blink_interval)` while a text field has focus | `caret_blink` |
+   | Debug panel | one `Repaint::After(500 ms)` while the panel is open, none when it is closed | `debug_panel` |
    | Async load, paste, drop, image decode | result -> channel -> `request_repaint` | `load` |
    | egui animation or tooltip | egui's own `request_repaint_after` | `ui` |
    | Window or canvas resized, scale changed | event loop | `resize` |
@@ -112,6 +113,7 @@ Time in a frame outside every phase is reported as the phase `other`. A phase al
 | `autosave` | autosave finished and the UI shows it |
 | `load` | async load, paste, drop or image decode finished |
 | `surface` | surface lost, resized by the OS, or visible again |
+| `debug_panel` | the debug panel (`ui.toggle_debug`) is open and refreshes its numbers, twice a second; the frame meter does not count these frames |
 | `other` | no better tag. Each use is a review item; the idle gate counts them |
 
 Adding a reason changes the schema (§3.4): it adds a key to `redraws.by_reason` and `frames.by_reason`.
@@ -176,6 +178,10 @@ Rules:
 - `summary()` lists every counter that moved. Put it in the assertion message.
 - A scenario test that checks "no redraw in this window" also checks `work.count(Counter::RedrawsSkipped)` when the input must have reached the gate.
 - Never assert on `frame_ms`, `phase_ms` or span times in a unit test. Those belong to the perf gate (§5).
+
+### 2.5a The live meter
+
+`profile::FrameMeter` is the small meter behind the debug panel (`ui.md` section 5d). The shell records the start and the CPU time of each frame into it, only while the panel is open, and `reading(now)` returns a `FrameReading`: the frames of the last second (the frame rate), their mean and worst time, the latest frame and its age, and the latest 90 frame times. No frame in the last second is `idle`, which is the normal state of a quiet canvas. It takes explicit timestamps and sorts nothing, unlike `FrameRecorder`, whose longer window feeds the reports.
 
 ### 2.6 Chrome trace
 

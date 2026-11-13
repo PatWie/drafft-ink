@@ -232,3 +232,63 @@ fn image_is_tightly_packed_for_widths_that_need_row_padding() {
         }
     });
 }
+
+#[test]
+fn the_renderer_info_agrees_with_the_adapter() {
+    on_gpu_thread(|| {
+        let gpu = gpu();
+        let info = gpu.info().renderer_info();
+        assert_eq!(info.adapter, gpu.info().name);
+        assert_eq!(info.rasteriser == drafftink_gpu::Rasteriser::Cpu, gpu.info().is_software());
+        assert_ne!(info.api, drafftink_gpu::GraphicsApi::Other, "a native adapter runs on a named API");
+    });
+}
+
+/// The composite pass is timed with timestamp queries when the device has them, and the result arrives without
+/// the CPU waiting for it. A device without them says so; it never reports a time of 0.
+#[test]
+fn the_composite_pass_is_timed_when_the_device_can_and_only_while_asked() {
+    use drafftink_gpu::GpuTime;
+    on_gpu_thread(|| {
+        let gpu = gpu();
+        let mut comp = Compositor::new(&gpu, wgpu::TextureFormat::Rgba8Unorm).expect("compositor");
+        let target = gpu.device.create_texture(&wgpu::TextureDescriptor {
+            label: Some("timing target"),
+            size: wgpu::Extent3d { width: 64, height: 64, depth_or_array_layers: 1 },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: wgpu::TextureFormat::Rgba8Unorm,
+            usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
+            view_formats: &[],
+        });
+        let view = target.create_view(&wgpu::TextureViewDescriptor::default());
+        let mut frame = EguiFrame::empty();
+        let has_queries = gpu.device.features().contains(wgpu::Features::TIMESTAMP_QUERY);
+
+        // Off: nothing is written and no result is waited for.
+        comp.composite(&gpu, &mut frame, &view, [64, 64]).expect("composite");
+        let expected_idle = if has_queries { GpuTime::Pending } else { GpuTime::Unsupported };
+        assert_eq!(comp.gpu_time(&gpu), expected_idle);
+
+        comp.set_timing(true);
+        let mut last = comp.gpu_time(&gpu);
+        for _ in 0..200 {
+            comp.composite(&gpu, &mut frame, &view, [64, 64]).expect("composite");
+            gpu.device.poll(wgpu::PollType::wait_indefinitely()).expect("the GPU finishes");
+            last = comp.gpu_time(&gpu);
+            if matches!(last, GpuTime::Measured(_)) {
+                break;
+            }
+        }
+        match last {
+            GpuTime::Measured(ms) => {
+                assert!(has_queries);
+                assert!((0.0..1000.0).contains(&ms), "a 64 pixel pass does not take {ms} ms");
+            }
+            GpuTime::Unsupported => assert!(!has_queries, "a device with timestamp queries must measure"),
+            GpuTime::Pending => panic!("no result after 200 passes on a device with timestamp queries"),
+        }
+        println!("composite pass: {last:?} (timestamp queries: {has_queries})");
+    });
+}

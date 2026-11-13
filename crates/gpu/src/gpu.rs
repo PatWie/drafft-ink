@@ -2,7 +2,9 @@
 
 use std::sync::{Arc, Mutex, PoisonError};
 
+use crate::BackendKind;
 pub use crate::error::{GpuError, LostInfo};
+use crate::stats::{DeviceClass, GraphicsApi, Rasteriser, RendererInfo};
 
 /// What kind of adapter this is.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -22,6 +24,8 @@ pub struct GpuInfo {
     pub vendor_id: u32,
     pub device_id: u32,
     pub backend: String,
+    /// The same backend as a value the panel can name.
+    pub api: GraphicsApi,
     pub driver: String,
     pub driver_info: String,
     pub kind: AdapterKind,
@@ -44,6 +48,14 @@ impl GpuInfo {
             vendor_id: info.vendor,
             device_id: info.device,
             backend: format!("{:?}", info.backend),
+            api: match info.backend {
+                wgpu::Backend::Vulkan => GraphicsApi::Vulkan,
+                wgpu::Backend::Metal => GraphicsApi::Metal,
+                wgpu::Backend::Dx12 => GraphicsApi::Dx12,
+                wgpu::Backend::Gl => GraphicsApi::OpenGl,
+                wgpu::Backend::BrowserWebGpu => GraphicsApi::WebGpu,
+                _ => GraphicsApi::Other,
+            },
             driver: info.driver,
             driver_info: info.driver_info,
             kind,
@@ -75,9 +87,43 @@ impl GpuInfo {
         }
     }
 
+    /// The facts the debug panel shows. A browser reports little about the adapter: its fields are then empty or
+    /// [`DeviceClass::Unknown`].
+    pub fn renderer_info(&self) -> RendererInfo {
+        RendererInfo {
+            kind: BackendKind::Vello,
+            adapter: self.name.clone(),
+            api: self.api,
+            device: match self.kind {
+                AdapterKind::Discrete => DeviceClass::Discrete,
+                AdapterKind::Integrated => DeviceClass::Integrated,
+                AdapterKind::Virtual => DeviceClass::Virtual,
+                AdapterKind::Cpu => DeviceClass::Cpu,
+                AdapterKind::Other if self.is_software() => DeviceClass::Cpu,
+                AdapterKind::Other => DeviceClass::Unknown,
+            },
+            driver: [self.driver.as_str(), self.driver_info.as_str()]
+                .iter()
+                .filter(|part| !part.is_empty())
+                .copied()
+                .collect::<Vec<_>>()
+                .join(" "),
+            rasteriser: if self.is_software() { Rasteriser::Cpu } else { Rasteriser::Gpu },
+        }
+    }
+
     /// One line for logs: `NVIDIA L40S (Vulkan, Discrete)`.
     pub fn summary(&self) -> String {
         format!("{} ({}, {:?}, vendor {})", self.name, self.backend, self.kind, self.vendor())
+    }
+}
+
+/// The features asked of the device beyond the defaults: timestamp queries, when the adapter has them.
+fn timestamp_features(adapter: &wgpu::Adapter) -> wgpu::Features {
+    if cfg!(target_arch = "wasm32") {
+        wgpu::Features::empty()
+    } else {
+        adapter.features() & wgpu::Features::TIMESTAMP_QUERY
     }
 }
 
@@ -151,6 +197,9 @@ impl Gpu {
         let (device, queue) = adapter
             .request_device(&wgpu::DeviceDescriptor {
                 label: Some("drafftink device"),
+                // Timestamp queries time the composite pass for the debug panel. Asked for only where the adapter has
+                // them, and only on native targets: a browser rounds timestamps, so the panel does not use them there.
+                required_features: timestamp_features(&adapter),
                 // Vello's target texture can be as large as the screen in physical pixels.
                 required_limits: wgpu::Limits {
                     max_texture_dimension_2d: adapter.limits().max_texture_dimension_2d,
@@ -319,6 +368,7 @@ mod tests {
             vendor_id,
             device_id: 0,
             backend: "Vulkan".into(),
+            api: GraphicsApi::Vulkan,
             driver: String::new(),
             driver_info: String::new(),
             kind,

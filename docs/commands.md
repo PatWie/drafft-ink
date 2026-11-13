@@ -1184,6 +1184,7 @@ One keymap for every platform. `Mod` is Cmd on macOS and Ctrl elsewhere. Binding
 | `?` | UI verb `ui.open_shortcuts` | canvas | U:1998 label only |
 | `Alt+Z` | UI verb `ui.toggle_zen` | canvas | NEW |
 | `Alt+/` | UI verb `ui.toggle_stats` | canvas | NEW |
+| `Alt+D` | UI verb `ui.toggle_debug` | canvas | NEW |
 | `S` `G` | UI verb `ui.open_color_picker` target=stroke, fill | canvas | NEW |
 | `Shift+F` | UI verb `ui.open_font_picker` | canvas | NEW |
 | `I` | UI verb `ui.insert_image` | canvas | NEW |
@@ -1216,6 +1217,7 @@ Not commands, never in `engine.commands`. Each ends, when it produces a result, 
 | `ui.open_context_menu` | context menu listing available commands | the chosen command | NEW |
 | `ui.toggle_stats` | stats panel (reads `selection.get`, edits with `element.set_bounds`, `style.set`) | those commands | NEW |
 | `ui.toggle_zen` | hides the chrome | none | NEW |
+| `ui.toggle_debug` | debug panel: frame rate and frame time, renderer and GPU, scene counts. The app measures only while it is open (`docs/ui.md` section 5d) | none | NEW |
 | `ui.open_export` | export dialog (format, scope, scale, background, dark, embed scene) | `doc.export` or `clipboard.copy_as` | X:ImageExportDialog |
 | `ui.open_preferences` | preferences dialog | `settings.set`, `settings.toggle`, `collab.set_user` | X:DefaultItems |
 | `ui.toggle_library` | library panel | `library.*` | X:LibraryMenu |

@@ -1893,6 +1893,7 @@ version = "0.2.0"
 dependencies = [
  "base64 0.22.1",
  "drafftink-engine",
+ "drafftink-profile",
  "drafftink-scene",
  "drafftink-typeset",
  "egui",

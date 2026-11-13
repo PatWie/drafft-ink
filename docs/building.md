@@ -20,7 +20,7 @@ Command line (`drafftink --help`):
 | `--token-file FILE` | The access token of the collaboration server (needs `--room`). Without it the environment variable `DRAFFTINK_COLLAB_TOKEN` is used. No flag takes the token itself: arguments are visible to other users. |
 | `--bridge [PORT]` | Let an AI agent drive this window (`agents.md`). Off by default. Listens on `127.0.0.1` only, on a free port or `PORT`, and prints the token file path. |
 | `--mcp-http [PORT]` | Serve MCP over streamable HTTP on `127.0.0.1:PORT` (default 3737; 0 is a free port) for MCP clients that take a URL (`agents.md` section 5.4). Off by default. Every request needs the bearer token from a private file, and the Preferences have a switch for it. |
-| `--perf-overlay` | Frame counts and cache numbers over the canvas. |
+| `--perf-overlay` | Open the debug panel at start (frame rate, frame time, renderer and GPU, scene counts). `Alt+D` opens and closes it any time (`ui.md` section 5d). |
 | `--perf-dump FILE` | At exit write the performance counters (`PerfStats` JSON, `performance.md`). Close the window to get it. |
 | `--data-dir DIR` | Keep settings, documents and the workspace in `DIR`. Default: `$XDG_DATA_HOME/drafftink` or `~/.local/share/drafftink` (Linux), `~/Library/Application Support/drafftink` (macOS), `%APPDATA%\drafftink` (Windows). `DRAFFTINK_DATA_DIR` does the same. |
 

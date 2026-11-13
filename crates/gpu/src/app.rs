@@ -10,6 +10,7 @@ use winit::event_loop::EventLoopProxy;
 use crate::backend::BackendKind;
 use crate::events::{ClipboardContent, CursorIcon, Handled, Repaint, ShellEvent};
 use crate::shell::UserEvent;
+use crate::stats::{RendererInfo, ShellStats};
 
 /// Size and scale of the window surface.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -141,6 +142,11 @@ pub struct FrameCx<'a> {
     pub backend: BackendKind,
     pub waker: &'a Waker,
     pub view: ViewInfo,
+    /// The renderer and its adapter. Cheap to read every frame; it never changes while the device lives.
+    pub renderer: &'a RendererInfo,
+    /// Frame rate, frame time and GPU numbers. `Some` only after a frame returned [`FrameOutput::stats`]: measuring
+    /// costs a little, so it runs only while someone looks (the debug panel).
+    pub stats: Option<&'a ShellStats>,
     /// Why this frame is drawn (the first reason of the pending ones).
     pub reason: RedrawReason,
     /// The surface size or scale changed since the previous frame.
@@ -193,6 +199,9 @@ pub struct FrameOutput {
     pub text_input: Option<egui::Rect>,
     /// Cursor over the canvas, used when egui has no opinion.
     pub cursor: Option<CursorIcon>,
+    /// The app shows frame statistics (the debug panel is open): the shell measures frames and the GPU and hands the
+    /// numbers to the next frames in [`FrameCx::stats`]. Off, the shell measures nothing.
+    pub stats: bool,
 }
 
 /// An app that runs in the shell. All methods run on the UI thread.

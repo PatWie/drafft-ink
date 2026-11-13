@@ -11,7 +11,7 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Duration;
 
-use drafftink_profile::{Counter, Phase, RedrawReason, begin_frame, end_frame, in_phase, inc};
+use drafftink_profile::{Counter, FrameMeter, Phase, RedrawReason, begin_frame, end_frame, in_phase, inc, now_ns};
 use thiserror::Error;
 use vello::Scene;
 use vello::peniko::Color;
@@ -35,6 +35,7 @@ use crate::host::HostEvent;
 use crate::host::now_ms;
 use crate::repaint::{HeldHover, RepaintState, coalesce_pointer_moves, egui_owns_pointer};
 use crate::settle::Settle;
+use crate::stats::{RendererInfo, ShellStats};
 
 /// Window setup.
 #[derive(Clone, Debug)]
@@ -97,6 +98,8 @@ type GpuSlot = Rc<RefCell<Option<Result<Box<dyn Backend>, GpuError>>>>;
 /// State that exists once the GPU is ready.
 struct Running {
     backend: Box<dyn Backend>,
+    /// The renderer's facts, read once from the back end.
+    info: RendererInfo,
     ctx: egui::Context,
     state: egui_winit::State,
     canvas_rect: Option<egui::Rect>,
@@ -241,6 +244,11 @@ struct Shell<A: ShellApp> {
     error: Option<ShellError>,
     /// Test hook: destroy the device at the next frame (`EventCx::debug_lose_device`).
     lose_device_next: bool,
+    /// The app asked for statistics with its last frame (`FrameOutput::stats`): frames are timed and the back end
+    /// measures. Off, nothing is measured.
+    stats_on: bool,
+    /// The frames timed while `stats_on`.
+    meter: FrameMeter,
 }
 
 /// Run `app` in a window (native) or on the canvas (web). Native: blocks until the window closes.
@@ -314,6 +322,8 @@ impl<A: ShellApp> Shell<A> {
             ime_enabled: false,
             error: None,
             lose_device_next: false,
+            stats_on: false,
+            meter: FrameMeter::new(),
         }
     }
 
@@ -508,9 +518,14 @@ impl<A: ShellApp> Shell<A> {
         if size.width == 0 || size.height == 0 {
             return; // minimized; a Resized event wakes us
         }
+        let started = self.stats_on.then(now_ns);
         begin_frame();
         let drawn = self.draw(&window, reason, [size.width, size.height]);
         end_frame();
+        // The refresh of the debug panel is a frame that exists to show numbers: it is not counted in them.
+        if let Some(started) = started.filter(|_| drawn && reason != RedrawReason::DebugPanel) {
+            self.meter.record(started, now_ns().saturating_sub(started));
+        }
         if self.repaint.needs_redraw_call() {
             window.request_redraw(); // the surface was not ready: try again
         }
@@ -543,6 +558,8 @@ impl<A: ShellApp> Shell<A> {
         let mut frame_out = FrameOutput::default();
         let view = ViewInfo { size_px: size, scale };
         let mut out = Outbox::default();
+        let stats =
+            self.stats_on.then(|| ShellStats { frames: self.meter.reading(now_ns()), gpu: run.backend.stats() });
         let mut output = in_phase(Phase::Ui, || {
             let backend = run.backend.kind();
             run.ctx.run_ui(raw, |ui| {
@@ -551,6 +568,8 @@ impl<A: ShellApp> Shell<A> {
                     waker: &self.waker,
                     view,
                     reason,
+                    renderer: &run.info,
+                    stats: stats.as_ref(),
                     resized: resized || scale_changed,
                     scene: &mut self.scene,
                     scene_dirty: &mut self.scene_dirty,
@@ -562,6 +581,13 @@ impl<A: ShellApp> Shell<A> {
         });
         if self.scene_dirty {
             self.scene_submitted = true;
+        }
+        if frame_out.stats != self.stats_on {
+            self.stats_on = frame_out.stats;
+            run.backend.set_stats(self.stats_on);
+            if !self.stats_on {
+                self.meter.clear();
+            }
         }
 
         // ---- platform output ----
@@ -715,7 +741,12 @@ impl<A: ShellApp> Shell<A> {
             view,
             touch_first,
         });
+        let mut backend = backend;
+        // A device lost while the panel was open comes back with its measurements on.
+        backend.set_stats(self.stats_on);
+        let info = backend.info();
         self.running = Some(Running {
+            info,
             backend,
             ctx,
             state,

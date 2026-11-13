@@ -56,7 +56,7 @@ pub struct AppConfig {
     pub collab_token: Option<StartupToken>,
     /// A document to open at start (native: the file argument). Replaces the restored workspace's active tab.
     pub open: Option<drafftink_engine::ports::FileRef>,
-    /// Show the performance overlay (frame times and redraw reasons) over the canvas.
+    /// Open the debug panel at start (`--perf-overlay`, `?perf=overlay`). It is the same panel as `Alt+D`.
     pub perf_overlay: bool,
     /// Make `doc.save` write to a stored name when there is no save target (the web has no save dialog).
     pub stored_default_target: bool,

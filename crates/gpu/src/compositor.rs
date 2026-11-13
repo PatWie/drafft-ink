@@ -18,6 +18,8 @@ use vello::{AaConfig, AaSupport, RenderParams, Renderer, RendererOptions, Scene}
 use crate::error::GpuError;
 use crate::frame::{EguiFrame, Image};
 use crate::gpu::Gpu;
+use crate::gpu_timer::{GpuTimer, Measure};
+use crate::stats::GpuTime;
 
 /// Counters that tests read to prove nothing is reallocated or redone per frame.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -60,6 +62,22 @@ pub struct Compositor {
     base: Color,
     offscreen: Option<Offscreen>,
     stats: CompositorStats,
+    /// Times the composite pass; `None` when the device has no timestamp queries.
+    timer: Option<GpuTimer>,
+    /// The debug panel is open: time the composite pass.
+    timing_on: bool,
+}
+
+/// What one composite pass draws and where.
+struct Pass<'a> {
+    /// The egui output painted over the scene.
+    frame: &'a EguiFrame,
+    /// The image the pass draws into.
+    target: &'a wgpu::TextureView,
+    /// Its size in physical pixels.
+    size: [u32; 2],
+    /// Timestamps around the pass, when it is timed.
+    timing: Option<&'a Measure>,
 }
 
 const SCENE_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba8Unorm;
@@ -131,7 +149,22 @@ impl Compositor {
             base: Color::BLACK,
             offscreen: None,
             stats: CompositorStats::default(),
+            timer: GpuTimer::new(gpu),
+            timing_on: false,
         })
+    }
+
+    /// Turns the timing of the composite pass on or off. Off costs nothing: no query is written.
+    pub fn set_timing(&mut self, on: bool) {
+        self.timing_on = on;
+    }
+
+    /// The GPU time of the latest finished composite pass. Does not wait for the GPU.
+    pub fn gpu_time(&mut self, gpu: &Gpu) -> GpuTime {
+        match self.timer.as_mut() {
+            None => GpuTime::Unsupported,
+            Some(timer) => timer.collect(gpu).map_or(GpuTime::Pending, GpuTime::Measured),
+        }
     }
 
     pub fn format(&self) -> wgpu::TextureFormat {
@@ -220,11 +253,10 @@ impl Compositor {
         &mut self,
         gpu: &Gpu,
         encoder: wgpu::CommandEncoder,
-        frame: &EguiFrame,
-        target: &wgpu::TextureView,
-        size: [u32; 2],
+        pass: Pass<'_>,
         finish: impl FnOnce(&mut wgpu::CommandEncoder),
     ) -> Vec<wgpu::CommandBuffer> {
+        let Pass { frame, target, size, timing } = pass;
         let mut encoder = encoder;
         let screen = egui_wgpu::ScreenDescriptor { size_in_pixels: size, pixels_per_point: frame.pixels_per_point };
         for (id, deltas) in &frame.textures_delta.set {
@@ -251,7 +283,7 @@ impl Compositor {
                         depth_slice: None,
                     })],
                     depth_stencil_attachment: None,
-                    timestamp_writes: None,
+                    timestamp_writes: timing.map(Measure::writes),
                     occlusion_query_set: None,
                     multiview_mask: None,
                 })
@@ -262,6 +294,9 @@ impl Compositor {
                 pass.draw(0..3, 0..1);
             }
             self.egui.render(&mut pass, &frame.primitives, &screen);
+        }
+        if let Some(timing) = timing {
+            timing.resolve(&mut encoder);
         }
         finish(&mut encoder);
         buffers.push(encoder.finish());
@@ -287,8 +322,14 @@ impl Compositor {
         size: [u32; 2],
     ) -> Result<(), GpuError> {
         let encoder = gpu.device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: Some("composite") });
-        let buffers = self.encode(gpu, encoder, frame, target, size, |_| {});
+        let timing = self.timer.as_ref().filter(|_| self.timing_on).and_then(GpuTimer::begin);
+        let buffers = self.encode(gpu, encoder, Pass { frame, target, size, timing: timing.as_ref() }, |_| {});
         gpu.queue.submit(buffers);
+        if timing.is_some()
+            && let Some(timer) = self.timer.as_mut()
+        {
+            timer.submitted();
+        }
         self.finish_textures(frame);
         self.stats.composites += 1;
         inc(Counter::GpuSubmits);
@@ -347,7 +388,7 @@ impl Compositor {
         };
         let encoder =
             gpu.device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: Some("offscreen composite") });
-        let buffers = self.encode(gpu, encoder, &*frame, &view, size, |enc| {
+        let buffers = self.encode(gpu, encoder, Pass { frame: &*frame, target: &view, size, timing: None }, |enc| {
             enc.copy_texture_to_buffer(
                 texture_copy.as_image_copy(),
                 wgpu::TexelCopyBufferInfo {

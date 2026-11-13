@@ -12,6 +12,7 @@ pub mod collab;
 pub mod color;
 pub mod context_menu;
 pub mod convert;
+pub mod debug;
 pub mod dialogs;
 pub mod equation;
 pub mod export;
@@ -44,6 +45,7 @@ pub fn show_all(ctx: &Context, cx: &mut Cx<'_>, st: &mut UiState) {
         library::show(ctx, cx, st);
     }
     color::show(ctx, cx, st);
+    debug::show(ctx, cx, st);
     dialogs::show(ctx, cx, st);
     collab::show(ctx, cx, st);
     equation::show(ctx, cx, st);
