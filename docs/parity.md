@@ -622,8 +622,8 @@ Rows of section 2 that restate an old-app row (for example B-003 and A-002) coun
 | Part | done | partial | missing | out of scope | rows |
 |---|---|---|---|---|---|
 | A: old app (section 1) | 184 | 12 | 0 | 0 | 196 |
-| B: Excalidraw (section 2) | 155 | 31 | 19 | 7 | 212 |
-| Total | 339 | 43 | 19 | 7 | 408 |
+| B: Excalidraw (section 2) | 156 | 32 | 17 | 7 | 212 |
+| Total | 340 | 44 | 17 | 7 | 408 |
 
 What the numbers do not show:
 
@@ -658,7 +658,7 @@ Priority: **P0** is a promise of the user's requirement ("keep all old features"
 |---|---|---|---|---|---|
 | 1 | P0 | Phone and tablet layout (A-128, A-217, B-122, B-123) | The shells call `UiShell::set_touch_first` (`pointer: coarse` on the web); save the layout choice; run it on an iPad and a phone; test double-tap | `app`, `apps/drafftink-web`, `ui` | M |
 | 2 | P1 | Menus and dialogs are thinner than the commands (B-160, B-185, B-186, B-256) | Padding field and a key for the export dialog; Search row and language choice in the menu; object-snap toggle in the canvas context menu | `ui` | S |
-| 3 | P1 | Settings controls (A-168, B-036, B-041) | A control for `doc.default_background`; free values instead of fixed choices; a corner radius value (the slider is built; proportional and adaptive radii are not); outline and cardinality arrowheads in the panel (done) | `ui` ribbon, preferences | S |
+| 3 | P1 | Settings controls (A-168, B-036) | A control for `doc.default_background`; free values instead of fixed choices; proportional and adaptive corner radii (the radius slider is built) | `ui` ribbon, preferences | S |
 | 4 | P1 | Shell steps without a test (A-058, A-108, A-110) | A test from the picker result to `image.insert` and `library.import`, and a browser test of download and file input | `app`, `e2e/web` | S |
 | 5 | P1 | Mermaid node shapes (A-109) | Draw hexagon, cylinder, parallelogram, trapezoid and flag nodes with their own outline (needs a bindable polygon element kind; today the closest bindable shape is used and reported) | `edit` diagram, `io` mermaid | M |
 | 6 | P1 | Native pen pressure on Linux and macOS (A-015, A-210, B-124) | A platform backend for tablet input (XInput2, tablet-v2, NSEvent) | `gpu` shell | L |
