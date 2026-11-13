@@ -181,3 +181,25 @@ fn the_ui_reads_leave_no_entry_in_the_ring() {
     // view.get, library.list) add none.
     assert_eq!(recent(&mut rig.session), before + 1);
 }
+
+#[test]
+fn a_closed_debug_panel_costs_nothing_and_an_open_one_says_what_it_cost() {
+    let mut rig = Rig::new();
+    let (closed, _) = rig.frame(vec![]);
+    assert_eq!(closed.debug, drafftink_ui::DebugCost::default(), "nothing is timed while it is closed");
+
+    rig.shell.state.debug_open = true;
+    let (first, _) = rig.frame(vec![]);
+    assert!(first.debug.draw_ns > 0, "the drawing is timed: {:?}", first.debug);
+    assert!(first.debug.tessellate_ns > 0, "the tessellation of its shapes is measured: {:?}", first.debug);
+
+    // The tessellation is measured twice a second and the number kept in between (the frames are 0.1 s apart).
+    for _ in 0..3 {
+        let (kept, _) = rig.frame(vec![]);
+        assert_eq!(kept.debug.tessellate_ns, first.debug.tessellate_ns);
+    }
+
+    rig.shell.state.debug_open = false;
+    let (shut, _) = rig.frame(vec![]);
+    assert_eq!(shut.debug, drafftink_ui::DebugCost::default());
+}

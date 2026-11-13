@@ -185,6 +185,22 @@ impl FrameCx<'_> {
     }
 }
 
+/// What the app measured of its own frame, for the shell's breakdown. Filled only while the app asks for statistics
+/// ([`FrameOutput::stats`]); otherwise nothing is timed and every field is 0.
+///
+/// The shell times the frame as a whole. It cannot see inside the app's call, so the app says how long the parts that
+/// matter took: the shell leaves the debug panel's share out of the frame time it shows, and names the scene build.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct AppTimes {
+    /// The debug panel inside the egui pass: building its content, drawing it, and measuring its tessellation.
+    pub panel_ns: u64,
+    /// What tessellating the panel's shapes costs. The shell tessellates them with all the others after the pass, so
+    /// this is the panel's share of that one call.
+    pub panel_tessellate_ns: u64,
+    /// Building the canvas scene.
+    pub scene_ns: u64,
+}
+
 /// What a frame reports back.
 #[derive(Clone, Debug, Default)]
 pub struct FrameOutput {
@@ -202,6 +218,8 @@ pub struct FrameOutput {
     /// The app shows frame statistics (the debug panel is open): the shell measures frames and the GPU and hands the
     /// numbers to the next frames in [`FrameCx::stats`]. Off, the shell measures nothing.
     pub stats: bool,
+    /// What the app timed in this frame. Zero unless [`Self::stats`] is set.
+    pub times: AppTimes,
 }
 
 /// An app that runs in the shell. All methods run on the UI thread.

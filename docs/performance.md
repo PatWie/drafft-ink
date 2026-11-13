@@ -181,7 +181,18 @@ Rules:
 
 ### 2.5a The live meter
 
-`profile::FrameMeter` is the small meter behind the debug panel (`ui.md` section 5d). The shell records the start and the CPU time of each frame into it, only while the panel is open, and `reading(now)` returns a `FrameReading`: the frames of the last second (the frame rate), their mean and worst time, the latest frame and its age, and the latest 90 frame times. No frame in the last second is `idle`, which is the normal state of a quiet canvas. It takes explicit timestamps and sorts nothing, unlike `FrameRecorder`, whose longer window feeds the reports.
+`profile::FrameMeter` is the small meter behind the debug panel (`ui.md` section 5d). The shell records the start and the cost of each frame into it, only while the panel is open, and `reading(now)` returns a `FrameReading`: the frames of the last second (the frame rate), their mean and worst time, the latest frame and its age, the latest 90 frame times, the mean time of each stage, and the panel's own cost. No frame in the last second is `idle`, which is the normal state of a quiet canvas. It takes explicit timestamps and sorts nothing, unlike `FrameRecorder`, whose longer window feeds the reports.
+
+**The panel is not part of the time it shows.** A panel that counts its own drawing reads slower the moment it opens (release build, 120 rectangles, pointer moves: 0.44 ms closed, 0.53 ms open, +19%). So the frame is recorded as a `FrameCost`: the gross time (start of the egui pass to the end of present), the share the panel took, and the stages (`Stage::Ui`, `Scene`, `Render`, `Present`, each `None` where a shell does not run it). `counted_ns` is the gross time minus the panel's share, and never negative (a panel timed in pieces can add up to more than the frame it was in; the share is clamped to the frame). The panel's share has four parts, each timed only while the panel is open (`profile::timed`, so they are also spans in a trace):
+
+| Part | Where | What it is |
+|---|---|---|
+| `debug_stats` | the shell, before the pass | building the `ShellStats` the panel is given |
+| `debug_panel_view` | `app`, in the frame | building the content (`DebugView`): twice a second, kept between |
+| `debug_panel` | `ui`, `surfaces/debug.rs` | laying out and painting the card |
+| `debug_panel_tessellate` | `ui`, same | tessellating the card's shapes on their own, measured twice a second (inside `debug_panel_probe`, which is the measuring itself and is also left out), the number kept in between |
+
+The shell cannot see inside the app's call, so the app reports its parts in `FrameOutput::times` (`AppTimes`: the panel inside the pass, the panel's tessellation, the scene build). The frame of a debug-panel refresh (`RedrawReason::DebugPanel`) is not counted in the frame rate or the frame time, only its cost goes into the panel's mean (`record_refresh`). Limits: the GPU time row is the composite pass, which paints the panel with everything else, and the pass has no finer timestamps, so the panel's part of it is not separated; what the panel adds that is in no span (egui keeping more areas and widgets, the final tessellation having a few hundred more vertices) is a few percent of the frame and stays in it. The test `a_fixed_workload_reads_the_same_frame_time_with_the_panel_open_as_it_takes_with_it_closed` (`crates/app/tests/debug_panel.rs`) holds the counted time within 15% of the closed time.
 
 ### 2.6 Chrome trace
 

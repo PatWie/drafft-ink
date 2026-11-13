@@ -139,6 +139,17 @@ pub fn scope<T>(name: &'static str, f: impl FnOnce() -> T) -> T {
     f()
 }
 
+/// Run `f` as a span called `name`, and return its result with the time it took in nanoseconds.
+///
+/// The time comes from the one clock ([`crate::now_ns`]) whether or not spans record, so a caller can subtract it
+/// from a larger measurement: the debug panel does that with its own drawing, which is not part of the frame it shows.
+#[inline]
+pub fn timed<T>(name: &'static str, f: impl FnOnce() -> T) -> (T, u64) {
+    let start = crate::clock::now_ns();
+    let value = scope(name, f);
+    (value, crate::clock::now_ns().saturating_sub(start))
+}
+
 /// Move this thread's finished spans to the shared ring. Reports call it for the calling
 /// thread; other threads flush when their outermost span ends.
 pub fn flush_thread() {

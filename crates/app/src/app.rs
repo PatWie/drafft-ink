@@ -17,8 +17,8 @@ use drafftink_engine::state::TabId;
 use drafftink_engine::{Origin, Refusal, Session};
 use drafftink_geom::kurbo::{Point, Size};
 use drafftink_gpu::{
-    ClipboardContent, DroppedFile, EventCx, FrameCx, FrameOutput, Handled, PointerPhase, RedrawReason, Repaint,
-    SetupCx, ShellApp, ShellEvent,
+    AppTimes, ClipboardContent, DroppedFile, EventCx, FrameCx, FrameOutput, Handled, PointerPhase, RedrawReason,
+    Repaint, SetupCx, ShellApp, ShellEvent,
 };
 use drafftink_render::{GridStyle, Theme};
 use drafftink_scene::{ElementKind, SceneRead, SceneStore};
@@ -921,26 +921,40 @@ impl App {
         painter.galley(rect.min + egui::vec2(6.0, 3.0), galley, egui::Color32::WHITE);
     }
 
-    /// Gives the UI the content of the debug panel for this frame, or clears it. Nothing is built while the panel is
-    /// closed.
-    fn set_debug_panel(&mut self, cx: &FrameCx<'_>, now: f64) {
+    /// What the debug panel shows now, `None` while it is closed or before its first frame. For tests and tools.
+    pub fn debug_view(&self) -> Option<&drafftink_ui::DebugView> {
+        self.ui.model.debug.as_ref()
+    }
+
+    /// Gives the UI the content of the debug panel, or clears it. Nothing is built while the panel is closed. Open, the
+    /// content is built twice a second and kept between (the numbers are a second's mean anyway), not rebuilt from
+    /// the renderer's counters and a dozen strings in every frame. Returns the time this took, 0 when it did nothing.
+    fn set_debug_panel(&mut self, cx: &FrameCx<'_>, now: f64) -> u64 {
         if !self.ui.state.debug_open {
             self.ui.set_debug(None);
             self.debug_due_ms = f64::NEG_INFINITY;
-            return;
+            return 0;
         }
-        let scene = self.canvas.report();
-        let view = crate::debug::debug_view(&crate::debug::DebugInputs {
-            renderer: cx.renderer,
-            stats: cx.stats,
-            scene: &scene,
-            view: cx.view,
-            reason: cx.reason,
-            zoom_percent: self.ui.model.zoom_percent,
-            collab: &self.ui.model.collab,
+        // A view without numbers waits for the first reading of the shell.
+        let measured = self.ui.model.debug.as_ref().is_some_and(|view| view.frames.is_some());
+        if measured && now < self.debug_due_ms {
+            return 0;
+        }
+        let (view, ns) = drafftink_profile::timed("debug_panel_view", || {
+            let scene = self.canvas.report();
+            crate::debug::debug_view(&crate::debug::DebugInputs {
+                renderer: cx.renderer,
+                stats: cx.stats,
+                scene: &scene,
+                view: cx.view,
+                reason: cx.reason,
+                zoom_percent: self.ui.model.zoom_percent,
+                collab: &self.ui.model.collab,
+            })
         });
         self.ui.set_debug(Some(view));
         self.debug_due_ms = now + DEBUG_REFRESH_MS;
+        ns
     }
 
     /// The earliest of the app's own timers as a repaint request.
@@ -1153,12 +1167,13 @@ impl ShellApp for App {
         let collab = collab_view_of(&mut self.session);
         self.ui.set_collab(collab);
         self.ui.set_editor_faces(self.editor.as_ref().map(TextEditor::faces));
-        self.set_debug_panel(cx, now);
+        let view_ns = self.set_debug_panel(cx, now);
         let pointer = Pointer {
             cursor: self.pointer_world().map(|p| (p.x, p.y)),
             viewport_center: Some((self.interaction.camera().scroll.x, self.interaction.camera().scroll.y)),
         };
         let result = self.ui.frame(ui, &mut self.session, FrameInput { pointer, host_clipboard: true });
+        let panel_ns = view_ns + result.debug.draw_ns;
         for request in result.report.host {
             self.handle_host_request(request, cx);
         }
@@ -1172,7 +1187,12 @@ impl ShellApp for App {
         let _ = self.session.take_dirty();
         let out = self.interaction.tick(&mut self.session, now);
         self.apply_outcome(out);
-        self.paint_canvas(&ctx, cx, now);
+        let measuring = self.ui.state.debug_open;
+        let (_, scene_ns) = if measuring {
+            drafftink_profile::timed("scene", || self.paint_canvas(&ctx, cx, now))
+        } else {
+            (self.paint_canvas(&ctx, cx, now), 0)
+        };
         self.request_fonts();
 
         let over_canvas =
@@ -1184,7 +1204,8 @@ impl ShellApp for App {
             text_input,
             cursor: over_canvas.then_some(self.cursor),
             // The shell times frames and the GPU only while the panel is open.
-            stats: self.ui.state.debug_open,
+            stats: measuring,
+            times: AppTimes { panel_ns, panel_tessellate_ns: result.debug.tessellate_ns, scene_ns },
         }
     }
 }

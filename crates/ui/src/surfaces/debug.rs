@@ -2,15 +2,15 @@
 //! the strip, drawn with the same card, type scale and palette as the other panels. The content is the app's
 //! ([`crate::debug::DebugView`]); this file only lays it out.
 
-use drafftink_profile::FrameReading;
+use drafftink_profile::{FrameReading, Stage, timed};
 use egui::{
-    Align, Align2, Area, Context, Id, Layout, Order, Pos2, Rect, RichText, Role, Sense, Shape, Stroke, Ui, WidgetInfo,
-    pos2, vec2,
+    Align, Align2, Area, Context, Id, LayerId, Layout, Order, Pos2, Rect, RichText, Role, Sense, Shape, Stroke, Ui,
+    WidgetInfo, pos2, vec2,
 };
 
 use crate::action::Verb;
 use crate::chrome::GAP;
-use crate::debug::{DebugRow, DebugSection, RowTone, ms_label};
+use crate::debug::{DebugCost, DebugRow, DebugSection, RowTone, TessellationProbe, ms_label};
 use crate::icons::Icon;
 use crate::state::UiState;
 use crate::surfaces::collab::dot;
@@ -31,16 +31,34 @@ const WARN_DOT: f32 = 8.0;
 const SLOW_FRAME_MS: f64 = BUDGET_60_MS as f64;
 
 /// Draws the panel while it is open (also in zen mode: it is a diagnostic, not interface chrome).
+///
+/// The panel measures itself: how long it takes to draw, and what its shapes cost to tessellate. The app leaves both
+/// out of the frame time it shows (`FrameResult::debug`). Nothing is timed while the panel is closed.
 pub fn show(ctx: &Context, cx: &mut Cx<'_>, st: &mut UiState) {
     if !st.debug_open {
+        st.debug_cost = DebugCost::default();
         return;
     }
+    let (layer, draw_ns) = timed("debug_panel", || draw(ctx, cx, st));
+    let now = ctx.input(|i| i.time);
+    let mut probe_ns = 0;
+    if st.debug_probe.due(now) {
+        let (ns, spent) = timed("debug_panel_probe", || tessellate_ns(ctx, layer));
+        st.debug_probe = TessellationProbe { at: Some(now), ns };
+        probe_ns = spent;
+    }
+    st.debug_cost = DebugCost { draw_ns: draw_ns + probe_ns, tessellate_ns: st.debug_probe.ns };
+}
+
+/// Lays out and paints the card. Returns the layer it painted into.
+fn draw(ctx: &Context, cx: &mut Cx<'_>, st: &UiState) -> LayerId {
     let pal = cx.pal;
     let screen = ctx.content_rect();
     let top = st.chrome.below_strip(screen) + GAP;
-    Area::new(Id::unique("debug_panel")).anchor(Align2::RIGHT_TOP, vec2(-MARGIN, top)).order(Order::Middle).show(
-        ctx,
-        |ui| {
+    let shown = Area::new(Id::unique("debug_panel"))
+        .anchor(Align2::RIGHT_TOP, vec2(-MARGIN, top))
+        .order(Order::Middle)
+        .show(ctx, |ui| {
             panel_frame(&pal).show(ui, |ui| {
                 ui.set_width(WIDTH);
                 header(ui, cx);
@@ -56,8 +74,17 @@ pub fn show(ctx: &Context, cx: &mut Cx<'_>, st: &mut UiState) {
                     }
                 }
             });
-        },
-    );
+        });
+    shown.response.layer_id
+}
+
+/// What tessellating the shapes painted into `layer` takes, in nanoseconds, on their own. The shell tessellates them
+/// with every other shape of the frame in one call; this is the panel's share of it.
+fn tessellate_ns(ctx: &Context, layer: LayerId) -> u64 {
+    let shapes: Vec<_> =
+        ctx.graphics(|g| g.get(layer).map(|list| list.all_entries().cloned().collect())).unwrap_or_default();
+    let (_, ns) = timed("debug_panel_tessellate", || ctx.tessellate(shapes, ctx.pixels_per_point()));
+    ns
 }
 
 fn muted(pal: &Palette, text: impl Into<String>) -> RichText {
@@ -119,6 +146,9 @@ fn frames(ui: &mut Ui, pal: &Palette, reading: Option<&FrameReading>) {
 }
 
 /// The rows of the frame section. The app draws on demand, so a quiet canvas is `idle`, not 0 frames per second.
+///
+/// The frame time is the frame without the panel. The panel's own cost has a row of its own, so a reader sees what
+/// was left out and can check it.
 pub(crate) fn frame_rows(r: &FrameReading) -> Vec<DebugRow> {
     let mut rows = Vec::new();
     if r.idle {
@@ -131,8 +161,22 @@ pub(crate) fn frame_rows(r: &FrameReading) -> Vec<DebugRow> {
         let time = format!("avg {}, worst {}", ms_label(r.avg_ms), ms_label(r.worst_ms));
         let row = DebugRow::new("Frame time", time);
         rows.push(if r.avg_ms > SLOW_FRAME_MS { row.flagged() } else { row });
+        rows.extend(r.stages.iter().map(|s| DebugRow::new(stage_name(s.stage), ms_label(s.avg_ms))));
+    }
+    if let Some(panel) = r.panel_ms {
+        rows.push(DebugRow::new("Debug panel", format!("{}, not counted", ms_label(panel))));
     }
     rows
+}
+
+/// The name of a part of the frame, as a row shows it.
+fn stage_name(stage: Stage) -> &'static str {
+    match stage {
+        Stage::Ui => "UI",
+        Stage::Scene => "Canvas scene",
+        Stage::Render => "Render",
+        Stage::Present => "Present",
+    }
 }
 
 /// How long ago, in words: `0.4 s ago`, `12 s ago`, `3 min ago`.
@@ -191,6 +235,8 @@ fn line_points(rect: Rect, history: &[f32], y_of: impl Fn(f32) -> f32) -> Vec<Po
 
 #[cfg(test)]
 mod tests {
+    use drafftink_profile::StageReading;
+
     use super::*;
 
     fn reading(frames: u32, avg: f64, worst: f64) -> FrameReading {
@@ -209,6 +255,34 @@ mod tests {
     fn slow_frames_are_marked() {
         let rows = frame_rows(&reading(20, 24.0, 40.0));
         assert_eq!(rows[1].tone, RowTone::Warn);
+    }
+
+    #[test]
+    fn the_panel_names_its_own_cost_as_not_counted() {
+        let mut r = reading(58, 2.1, 6.3);
+        r.panel_ms = Some(0.1);
+        let rows = frame_rows(&r);
+        assert_eq!(rows.last(), Some(&DebugRow::new("Debug panel", "0.10 ms, not counted")));
+        // Also on a quiet canvas: the refresh frames are all it has to report.
+        let mut quiet = reading(0, 0.0, 0.0);
+        quiet.panel_ms = Some(0.1);
+        assert_eq!(frame_rows(&quiet).last(), Some(&DebugRow::new("Debug panel", "0.10 ms, not counted")));
+        assert!(frame_rows(&reading(58, 2.1, 6.3)).iter().all(|row| row.name != "Debug panel"), "no number, no row");
+    }
+
+    #[test]
+    fn the_parts_of_the_frame_follow_the_frame_time_in_the_order_they_run() {
+        let mut r = reading(58, 2.1, 6.3);
+        r.stages = vec![
+            StageReading { stage: Stage::Ui, avg_ms: 0.31 },
+            StageReading { stage: Stage::Scene, avg_ms: 0.2 },
+            StageReading { stage: Stage::Present, avg_ms: 1.5 },
+        ];
+        let rows = frame_rows(&r);
+        let names: Vec<&str> = rows.iter().map(|row| row.name).collect();
+        assert_eq!(names, ["Rate", "Frame time", "UI", "Canvas scene", "Present"], "a part nobody timed has no row");
+        assert_eq!(rows[2].value, "0.31 ms");
+        assert_eq!(rows[4].value, "1.50 ms");
     }
 
     #[test]

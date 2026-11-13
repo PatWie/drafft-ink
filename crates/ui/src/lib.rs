@@ -31,7 +31,7 @@ pub mod thumbs;
 pub mod widgets;
 
 pub use action::{Call, CommandSink, HostRequest, Report, Routed, Scrub, ScrubPhase, UiAction, Verb, dispatch, route};
-pub use debug::{DebugRow, DebugSection, DebugView, RowTone};
+pub use debug::{DebugCost, DebugRow, DebugSection, DebugView, RowTone};
 pub use keymap::{Chord, Pointer, help_rows, parse_chord, resolve_keys};
 pub use model::{
     AboutInfo, AgentServerView, BoundsView, CollabStatus, CollabView, Model, Peer, RoomLoading, TextFaces,

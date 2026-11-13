@@ -6,7 +6,7 @@ mod dialog;
 mod support_a;
 
 use common::Fixture;
-use drafftink_profile::FrameReading;
+use drafftink_profile::{FrameReading, Stage, StageReading};
 use drafftink_ui::{DebugRow, DebugSection, DebugView, Verb};
 use egui_kittest::Harness;
 use egui_kittest::kittest::Queryable;
@@ -69,6 +69,19 @@ fn it_shows_the_rate_the_frame_time_and_every_row_it_is_given() {
         h.get_by_label(text);
     }
     h.get_by_label("Frame time history");
+}
+
+#[test]
+fn it_says_what_it_costs_itself_and_that_the_frame_time_leaves_that_out() {
+    let mut frames = busy();
+    frames.panel_ms = Some(0.1);
+    frames.stages =
+        vec![StageReading { stage: Stage::Ui, avg_ms: 0.31 }, StageReading { stage: Stage::Scene, avg_ms: 0.2 }];
+    let h = open(Some(view(frames)));
+    for text in ["Debug panel", "0.10 ms, not counted", "UI", "0.31 ms", "Canvas scene", "0.20 ms"] {
+        h.get_by_label(text);
+    }
+    assert!(h.query_by_label("Present").is_none(), "a part nobody timed has no row");
 }
 
 #[test]

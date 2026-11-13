@@ -11,7 +11,9 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Duration;
 
-use drafftink_profile::{Counter, FrameMeter, Phase, RedrawReason, begin_frame, end_frame, in_phase, inc, now_ns};
+use drafftink_profile::{
+    Counter, FrameMeter, Phase, RedrawReason, begin_frame, end_frame, in_phase, inc, now_ns, timed,
+};
 use thiserror::Error;
 use vello::Scene;
 use vello::peniko::Color;
@@ -23,7 +25,7 @@ use winit::event::{Ime, StartCause, WindowEvent};
 use winit::event_loop::{ActiveEventLoop, ControlFlow, EventLoop, EventLoopProxy, OwnedDisplayHandle};
 use winit::window::{Window, WindowId};
 
-use crate::app::{EventCx, FrameCx, FrameOutput, Outbox, SetupCx, ShellApp, ViewInfo, Waker};
+use crate::app::{AppTimes, EventCx, FrameCx, FrameOutput, Outbox, SetupCx, ShellApp, ViewInfo, Waker};
 use crate::backend::{Backend, Presented};
 use crate::error::GpuError;
 use crate::events::{ClipboardContent, Handled, Repaint, ShellEvent, WheelInput};
@@ -35,7 +37,7 @@ use crate::host::HostEvent;
 use crate::host::now_ms;
 use crate::repaint::{HeldHover, RepaintState, coalesce_pointer_moves, egui_owns_pointer};
 use crate::settle::Settle;
-use crate::stats::{RendererInfo, ShellStats};
+use crate::stats::{FrameMarks, RendererInfo, ShellStats, Stopwatch};
 
 /// Window setup.
 #[derive(Clone, Debug)]
@@ -214,6 +216,17 @@ impl ClipboardCache {
         }
         pasted
     }
+}
+
+/// What one drawn frame leaves for the meter.
+#[derive(Debug, Default)]
+struct Drawn {
+    /// A picture reached the screen. A frame that did not (the surface was not ready) is not counted.
+    shown: bool,
+    /// Where the time went, in the parts the shell ran.
+    marks: FrameMarks,
+    /// What the app timed of its own frame.
+    times: AppTimes,
 }
 
 struct Shell<A: ShellApp> {
@@ -520,11 +533,17 @@ impl<A: ShellApp> Shell<A> {
         }
         let started = self.stats_on.then(now_ns);
         begin_frame();
-        let drawn = self.draw(&window, reason, [size.width, size.height]);
+        let Drawn { shown: drawn, marks, times } = self.draw(&window, reason, [size.width, size.height]);
         end_frame();
-        // The refresh of the debug panel is a frame that exists to show numbers: it is not counted in them.
-        if let Some(started) = started.filter(|_| drawn && reason != RedrawReason::DebugPanel) {
-            self.meter.record(started, now_ns().saturating_sub(started));
+        // The debug panel's own work is taken out of the frame time. Its refresh is a frame that exists to show
+        // numbers: it is not counted in them at all, only its cost is.
+        if let Some(started) = started.filter(|_| drawn) {
+            let cost = marks.cost(now_ns().saturating_sub(started), times);
+            if reason == RedrawReason::DebugPanel {
+                self.meter.record_refresh(started, cost.panel_share_ns());
+            } else {
+                self.meter.record(started, cost);
+            }
         }
         if self.repaint.needs_redraw_call() {
             window.request_redraw(); // the surface was not ready: try again
@@ -536,8 +555,8 @@ impl<A: ShellApp> Shell<A> {
         }
     }
 
-    fn draw(&mut self, window: &Arc<Window>, reason: RedrawReason, size: [u32; 2]) -> bool {
-        let Some(run) = self.running.as_mut() else { return false };
+    fn draw(&mut self, window: &Arc<Window>, reason: RedrawReason, size: [u32; 2]) -> Drawn {
+        let Some(run) = self.running.as_mut() else { return Drawn::default() };
         let resized = run.backend.resize(size);
         let scale = run.ctx.pixels_per_point();
         let scale_changed = (scale - run.last_scale).abs() > f32::EPSILON;
@@ -558,8 +577,15 @@ impl<A: ShellApp> Shell<A> {
         let mut frame_out = FrameOutput::default();
         let view = ViewInfo { size_px: size, scale };
         let mut out = Outbox::default();
-        let stats =
-            self.stats_on.then(|| ShellStats { frames: self.meter.reading(now_ns()), gpu: run.backend.stats() });
+        let measuring = self.stats_on;
+        let mut marks = FrameMarks::default();
+        let stats = self.stats_on.then(|| {
+            let (stats, ns) =
+                timed("debug_stats", || ShellStats { frames: self.meter.reading(now_ns()), gpu: run.backend.stats() });
+            marks.panel_ns = ns;
+            stats
+        });
+        let ui_watch = Stopwatch::start(measuring);
         let mut output = in_phase(Phase::Ui, || {
             let backend = run.backend.kind();
             run.ctx.run_ui(raw, |ui| {
@@ -579,6 +605,7 @@ impl<A: ShellApp> Shell<A> {
                 frame_out = self.app.frame(ui, &mut cx);
             })
         });
+        marks.ui_ns = ui_watch.elapsed_ns();
         if self.scene_dirty {
             self.scene_submitted = true;
         }
@@ -634,7 +661,12 @@ impl<A: ShellApp> Shell<A> {
         let ran_vello = self.scene_dirty;
         let render = if self.scene_dirty {
             self.scene_dirty = false;
-            in_phase(Phase::GpuSubmit, || run.backend.render_scene(&self.scene, self.scene_base, size, plan.detail))
+            let render_watch = Stopwatch::start(measuring);
+            let render = in_phase(Phase::GpuSubmit, || {
+                run.backend.render_scene(&self.scene, self.scene_base, size, plan.detail)
+            });
+            marks.render_ns = measuring.then(|| render_watch.elapsed_ns());
+            render
         } else {
             Ok(())
         };
@@ -645,6 +677,7 @@ impl<A: ShellApp> Shell<A> {
         }
 
         // ---- composite + present ----
+        let present_watch = Stopwatch::start(measuring);
         let mut frame = drafftink_profile::scope("tessellate", || EguiFrame::from_output(&run.ctx, output));
         if !run.stashed_textures.is_empty() {
             let mut merged = std::mem::take(&mut run.stashed_textures);
@@ -666,6 +699,8 @@ impl<A: ShellApp> Shell<A> {
             }
         };
 
+        marks.present_ns = measuring.then(|| present_watch.elapsed_ns());
+
         // Pointer hover state for the next move event.
         run.over_egui = egui_owns_pointer(&run.ctx, run.canvas_rect, self.last_pos);
         let (pending_ime, ime_for_platform) = (ime_changed, ime_rect);
@@ -685,7 +720,7 @@ impl<A: ShellApp> Shell<A> {
             self.apply_repaint(Repaint::After(delay, RedrawReason::Timer));
         }
         inc(Counter::SceneBuilds);
-        drawn
+        Drawn { shown: drawn, marks, times: frame_out.times }
     }
 
     // ----- GPU lifecycle -----

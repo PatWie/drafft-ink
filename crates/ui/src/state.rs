@@ -491,6 +491,9 @@ pub struct UiState {
     pub stats_open: bool,
     /// The debug panel is shown. The app measures frames and the GPU only while this is set.
     pub debug_open: bool,
+    /// What the debug panel cost in the last frame, and when its tessellation was last measured.
+    pub(crate) debug_cost: crate::debug::DebugCost,
+    pub(crate) debug_probe: crate::debug::TessellationProbe,
     /// The chrome is hidden.
     pub zen: bool,
     /// The equation editor, when open.

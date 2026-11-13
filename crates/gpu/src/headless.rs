@@ -8,7 +8,7 @@
 //! No event loop runs here: the app's [`Waker`] is [detached](Waker::detached), the clock of egui is moved by hand
 //! ([`Headless::frame`] advances it), and nothing is presented.
 
-use drafftink_profile::{FrameMeter, now_ns};
+use drafftink_profile::{FrameMeter, now_ns, timed};
 use egui::{Event, Pos2, RawInput, Rect, ViewportId, ViewportInfo};
 use vello::Scene;
 use vello::peniko::Color;
@@ -20,7 +20,7 @@ use crate::compositor::Compositor;
 use crate::error::GpuError;
 use crate::frame::{EguiFrame, Image};
 use crate::gpu::{Gpu, GpuOptions};
-use crate::stats::{BackendStats, GpuMemory, RendererInfo, ShellStats};
+use crate::stats::{BackendStats, FrameMarks, GpuMemory, RendererInfo, ShellStats, Stopwatch};
 
 /// Seconds the clock of egui advances per frame. Long enough that fades and tooltips settle within a few frames.
 const FRAME_SECONDS: f64 = 0.1;
@@ -118,6 +118,11 @@ impl<A: ShellApp> Headless<A> {
         })
     }
 
+    /// The app, to read what it shows between frames.
+    pub fn app(&self) -> &A {
+        &self.app
+    }
+
     /// The app, to run commands on its session between frames.
     pub fn app_mut(&mut self) -> &mut A {
         &mut self.app
@@ -147,7 +152,15 @@ impl<A: ShellApp> Headless<A> {
         let mut frame_out = FrameOutput::default();
         let view = ViewInfo { size_px: self.options.size_px(), scale: self.options.scale };
         let started = now_ns();
-        let stats = self.stats_on.then(|| ShellStats { frames: self.meter.reading(started), gpu: self.gpu_stats() });
+        let measuring = self.stats_on;
+        let mut marks = FrameMarks::default();
+        let stats = self.stats_on.then(|| {
+            let (stats, ns) =
+                timed("debug_stats", || ShellStats { frames: self.meter.reading(started), gpu: self.gpu_stats() });
+            marks.panel_ns = ns;
+            stats
+        });
+        let ui_watch = Stopwatch::start(measuring);
         let mut output = self.ctx.run_ui(raw, |ui| {
             let mut cx = FrameCx {
                 backend: BackendKind::Vello,
@@ -164,8 +177,9 @@ impl<A: ShellApp> Headless<A> {
             };
             frame_out = self.app.frame(ui, &mut cx);
         });
+        marks.ui_ns = ui_watch.elapsed_ns();
         if frame_out.stats {
-            self.meter.record(started, now_ns().saturating_sub(started));
+            self.meter.record(started, marks.cost(now_ns().saturating_sub(started), frame_out.times));
         } else {
             self.meter.clear();
         }
