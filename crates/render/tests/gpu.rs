@@ -976,3 +976,79 @@ fn a_broken_formula_shows_its_source_in_red() {
     let red = px.rgba.chunks_exact(4).filter(|p| p[0] > 180 && p[1] < 110 && p[2] < 110).count();
     assert!(red > 100, "the source is drawn in the warning colour: {red} red pixels");
 }
+
+// ----------------------------------------------------------------------------------------------
+// The crop editor's dimming
+
+/// A pale picture of 200x100 pixels, rotated, mirrored, in a store with its file.
+fn crop_picture() -> (MemoryStore, Element) {
+    let img = image::RgbaImage::from_pixel(200, 100, image::Rgba([250, 230, 120, 255]));
+    let mut bytes = std::io::Cursor::new(Vec::new());
+    image::DynamicImage::ImageRgba8(img).write_to(&mut bytes, image::ImageFormat::Png).unwrap();
+    let (file, entry) = FileEntry::new("image/png", bytes.into_inner());
+    let mut e = Element::new(
+        id("pic"),
+        ElementKind::Image(ImageData { file_id: Some(file), natural_width: 200, natural_height: 100, crop: None }),
+        ZIndex::first(),
+    );
+    e.transform = Transform { angle: 0.4, flip_x: true, ..Transform::new(100.0, 60.0, 200.0, 100.0) };
+    e.style.stroke_width = 0.0;
+    let mut store = MemoryStore::new();
+    let mut tx = store.begin();
+    tx.put_file(entry).unwrap();
+    tx.commit().unwrap();
+    (store, e)
+}
+
+fn luma(p: [u8; 3]) -> f64 {
+    0.299 * f64::from(p[0]) + 0.587 * f64::from(p[1]) + 0.114 * f64::from(p[2])
+}
+
+#[test]
+fn the_crop_editor_darkens_the_picture_outside_the_window_in_both_themes() {
+    need_gpu!();
+    let (store, pic) = crop_picture();
+    let picture = drafftink_geom::OrientedBox::from_xywh(100.0, 60.0, 200.0, 100.0, 0.4);
+    // The window covers the left 80 units of the picture's own frame; it turns with the picture.
+    let window = drafftink_geom::OrientedBox::new(
+        picture.to_world(Point::new(-60.0, 0.0)),
+        Size::new(80.0, 100.0),
+        picture.angle,
+    );
+    let at = |x: f64, y: f64| {
+        let w = picture.to_world(Point::new(x, y));
+        (w.x.round() as u32, w.y.round() as u32)
+    };
+    let view = View::new(1.0, Vec2::ZERO, Size::new(400.0, 300.0));
+    for theme in [Theme::Light, Theme::Dark] {
+        let mut ts = Typesetter::new();
+        let mut composer = SceneComposer::new();
+        composer.set_options(RenderOptions { theme, ..RenderOptions::default() });
+        let base = composer.background(&store);
+        let mut whole = Scene::new();
+        composer.compose_transient(&store, std::slice::from_ref(&pic), &view, &mut ts, &mut whole);
+        // The same picture drawn normally.
+        let normal = render(&whole, 400, 300, base);
+        // The editor: the dimmed picture, the scrim, the cropped picture over it (here the whole one stands in).
+        let mut dimmed = Scene::new();
+        paint_crop_dim(&mut dimmed, &view, theme, &whole, &picture, &window);
+        dimmed.append(&whole, None);
+        let editor = render(&dimmed, 400, 300, base);
+        let mut outside_only = Scene::new();
+        paint_crop_dim(&mut outside_only, &view, theme, &whole, &picture, &window);
+        let dimmed_px = render(&outside_only, 400, 300, base);
+
+        let (ox, oy) = at(60.0, 0.0);
+        let (ix, iy) = at(-60.0, 0.0);
+        let plain_out = luma(rgb_at(&normal, ox, oy));
+        let dim_out = luma(rgb_at(&dimmed_px, ox, oy));
+        assert!(plain_out > 100.0, "{theme:?}: the picture is visible when drawn normally: {plain_out}");
+        assert!(dim_out < plain_out * 0.55, "{theme:?}: outside the window {dim_out} against {plain_out}");
+        assert!(plain_out - dim_out > 70.0, "{theme:?}: a clear margin, {dim_out} against {plain_out}");
+        // The window keeps the picture as it is drawn normally.
+        assert!(close(rgb_at(&editor, ix, iy), rgb_at(&normal, ix, iy)), "{theme:?}: inside the window");
+        // The canvas around the picture is not dimmed.
+        assert_eq!(rgb_at(&dimmed_px, 5, 5), rgb_at(&normal, 5, 5), "{theme:?}: the canvas");
+        assert_eq!(rgb_at(&dimmed_px, 390, 290), rgb_at(&normal, 390, 290), "{theme:?}: the canvas");
+    }
+}

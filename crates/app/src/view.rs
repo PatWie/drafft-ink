@@ -11,7 +11,7 @@ use drafftink_geom::kurbo::{Affine, Rect, Size, Vec2};
 use drafftink_gpu::BackendKind;
 use drafftink_render::{
     FrameReport, GridSpec, GridStyle, LodConfig, Overlay, OverlayStyle, PaintIndex, RenderOptions, Scene,
-    SceneComposer, Theme, View, build_paint_index, paint_overlay,
+    SceneComposer, Theme, View, build_paint_index, paint_crop_dim, paint_overlay,
 };
 use drafftink_scene::{ElementId, SceneRead};
 
@@ -164,7 +164,7 @@ impl CanvasView {
         edited: Option<&Arranged>,
         view: &View,
     ) {
-        let Self { composer, preview, overlay, typesetter, .. } = self;
+        let Self { composer, preview, overlay, typesetter, theme, .. } = self;
         preview.reset();
         if let Some(edit) = edited {
             typesetter.with(|ts| {
@@ -175,10 +175,12 @@ impl CanvasView {
                 composer.compose_edited_text(&edit.text, edit.reveal, view, ts, preview);
             });
         }
-        // The crop editor draws the whole picture faded, and the draft of the crop over it.
+        // The crop editor draws the whole picture dimmed under a dark scrim, and the draft of the crop over it.
         if let Some(crop) = &interaction.crop {
-            let whole = std::slice::from_ref(&crop.whole);
-            Self::compose_faded(composer, typesetter, store, whole, view, preview);
+            let mut whole = Scene::new();
+            typesetter
+                .with(|ts| composer.compose_transient(store, std::slice::from_ref(&crop.whole), view, ts, &mut whole));
+            paint_crop_dim(preview, view, *theme, &whole, &crop.picture, &crop.window);
             typesetter
                 .with(|ts| composer.compose_transient(store, std::slice::from_ref(&crop.shown), view, ts, preview));
         }
@@ -192,7 +194,7 @@ impl CanvasView {
         typesetter.with(|ts| paint_overlay(overlay, render_overlay, view, &OverlayStyle::default(), ts));
     }
 
-    /// Draws `elements` at 30% opacity on top of `scene` (the eraser's soft delete, the picture behind a crop).
+    /// Draws `elements` at 30% opacity on top of `scene` (the eraser's soft delete).
     fn compose_faded<S: SceneRead>(
         composer: &mut SceneComposer,
         typesetter: &SharedTypesetter,

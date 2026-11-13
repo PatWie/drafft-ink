@@ -124,14 +124,14 @@ impl OverlayParts {
     }
 }
 
-/// What the crop editor shows: the whole picture faded, the draft over it, the window with its handles.
+/// What the crop editor shows: the whole picture dimmed (reduced opacity under a dark scrim), the draft over it, the window with its handles.
 #[derive(Debug, Clone, PartialEq)]
 pub struct CropView {
     /// The image being cropped. The scene leaves it out while the editor draws its own picture of it.
     pub element: ElementId,
     /// The image as the draft would leave it: draw it like any element.
     pub shown: Element,
-    /// The whole picture, uncropped, to draw faded under `shown`.
+    /// The whole picture, uncropped, to draw dimmed under `shown`.
     pub whole: Element,
     /// The crop window in world space (it turns with the image). It carries the eight handles.
     pub window: OrientedBox,
