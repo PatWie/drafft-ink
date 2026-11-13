@@ -28,7 +28,11 @@ fn server_binary() -> &'static PathBuf {
         let profile_dir = exe.parent().and_then(|p| p.parent()).expect("target/<profile>").to_path_buf();
         let profile = profile_dir.file_name().and_then(|n| n.to_str()).unwrap_or("debug").to_owned();
         let mut cmd = Command::new(std::env::var("CARGO").unwrap_or_else(|_| "cargo".into()));
-        cmd.args(["build", "--quiet", "-p", "drafftink-headless"]).current_dir(env!("CARGO_MANIFEST_DIR"));
+        // `target/<profile>/drafftink-headless` is also the file `CARGO_BIN_EXE_drafftink-headless` names in the tests of
+        // that package, and this build links it again. It must keep the features those tests rely on: `hand-fonts` draws
+        // the text of `intro.json` (without it the widths differ and `intro_json_is_the_output_of_intro_jsonl` fails).
+        cmd.args(["build", "--quiet", "-p", "drafftink-headless", "--features", "hand-fonts"])
+            .current_dir(env!("CARGO_MANIFEST_DIR"));
         match profile.as_str() {
             "debug" => {}
             "release" => {

@@ -267,6 +267,7 @@ What the suites cannot cover is listed in `docs/review/e2e-findings.md` with the
 - No test depends on another's state. Each scenario builds its own session.
 - Tests of numbers use the fake text measure (`Services::fake()`), whose widths are exact. Scenarios use the real typesetter, so they check structure and relations, not glyph widths.
 - A scenario written ahead of its command uses `requires.commands`. A scenario that fails because of a bug is never marked skipped or loosened: fix the bug, or leave the scenario failing and say so. There is no "known failing" list.
+- A test that runs `drafftink-headless` has one file for it: `target/<profile>/drafftink-headless`, the path `CARGO_BIN_EXE_drafftink-headless` names. The collab and engine tests link it again with `cargo build -p drafftink-headless`, whichever test runs last wins, and that build has fewer features than `--workspace --all-features`. A test whose result depends on a feature of the binary (the text of `intro.json` needs `hand-fonts`) must have that feature in every such build, so those builds pass `--features hand-fonts`.
 - Code, comments and docs are in English.
 
 ## Environment variables
