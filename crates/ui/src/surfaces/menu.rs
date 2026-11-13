@@ -77,6 +77,7 @@ pub fn show(ctx: &Context, cx: &mut Cx<'_>, st: &mut UiState) {
 /// closed by the caller; a command closes it here, after the call is made.
 fn menu_rows(ui: &mut egui::Ui, cx: &mut Cx<'_>, debug_open: bool) -> bool {
     let view_only = cx.model.view_only;
+    let minimap = cx.model.setting_bool("view.minimap");
     let picked = Menu::run_in(ui, cx, Id::unique("main_menu.rows"), "Main menu", |m| {
         m.heading("File");
         m.command(Ctl::new("tab.new"), Row::new().icon(Icon::Plus));
@@ -101,6 +102,7 @@ fn menu_rows(ui: &mut egui::Ui, cx: &mut Cx<'_>, debug_open: bool) -> bool {
         m.heading("View");
         m.command(Ctl::new("view.set_view_only"), Row::new().icon(Icon::Eye).checked(view_only));
         m.verb(Verb::ToggleLibrary, "Library", Row::new().icon(Icon::Library), None);
+        m.verb(Verb::ToggleMinimap, "Minimap", Row::new().icon(Icon::Minimap).checked(minimap), None);
         m.verb(Verb::ToggleDebug, "Debug panel", Row::new().icon(Icon::Stats).checked(debug_open), None);
         m.verb(Verb::OpenPreferences, "Preferences", Row::new().icon(Icon::Settings).dialog(), None);
         m.custom(theme_row);

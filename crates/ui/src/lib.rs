@@ -21,6 +21,7 @@ pub(crate) mod error_report;
 pub mod icons;
 pub mod keymap;
 pub(crate) mod menu_kit;
+pub mod minimap;
 pub mod model;
 pub mod scrub;
 pub mod shell;

@@ -144,6 +144,7 @@ fn body(ui: &mut Ui, cx: &mut Cx<'_>, layout: &mut LayoutPreference, draft: &mut
     separator(ui, &pal);
 
     row_of_values(ui, cx, "Grid", "view.grid_style", &strings(&GRID_STYLES));
+    switches(ui, cx, &[("Minimap", "view.minimap", false)]);
     section_label(ui, &pal, "Snapping");
     switches(
         ui,

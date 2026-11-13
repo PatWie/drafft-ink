@@ -921,6 +921,22 @@ impl App {
         painter.galley(rect.min + egui::vec2(6.0, 3.0), galley, egui::Color32::WHITE);
     }
 
+    /// The camera as the canvas has it right now, for the minimap's rectangle: the canvas runs ahead of the session
+    /// while a pan or a zoom goes on. `None` while the minimap is off, so the UI reads nothing then.
+    fn minimap_camera(&self) -> Option<drafftink_ui::model::ViewView> {
+        if !self.ui.model.setting_bool("view.minimap") {
+            return None;
+        }
+        let camera = self.interaction.camera();
+        let size = self.canvas_rect.size();
+        Some(drafftink_ui::model::ViewView {
+            scroll: [camera.scroll.x, camera.scroll.y],
+            zoom: camera.zoom,
+            width: f64::from(size.x),
+            height: f64::from(size.y),
+        })
+    }
+
     /// Gives the UI the content of the debug panel for this frame, or clears it. Nothing is built while the panel is
     /// closed.
     fn set_debug_panel(&mut self, cx: &FrameCx<'_>, now: f64) {
@@ -1154,6 +1170,8 @@ impl ShellApp for App {
         self.ui.set_collab(collab);
         self.ui.set_editor_faces(self.editor.as_ref().map(TextEditor::faces));
         self.set_debug_panel(cx, now);
+        let live_camera = self.minimap_camera();
+        self.ui.set_live_camera(live_camera);
         let pointer = Pointer {
             cursor: self.pointer_world().map(|p| (p.x, p.y)),
             viewport_center: Some((self.interaction.camera().scroll.x, self.interaction.camera().scroll.y)),

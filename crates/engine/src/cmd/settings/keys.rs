@@ -123,6 +123,12 @@ const fn user_key(name: &'static str, kind: Kind, default: Def, summary: &'stati
 /// Every setting, in the order of docs/commands.md §5, then `theme`.
 pub const KEYS: &[KeyDef] = &[
     key("view.grid_style", Kind::Choice(GRID_STYLES), Def::Str("lines"), "How the background grid is drawn."),
+    key(
+        "view.minimap",
+        Kind::Bool,
+        Def::Bool(false),
+        "Show the minimap: a small map of the drawing with the visible part marked, to click or drag to move the view.",
+    ),
     key("snap.grid", Kind::Bool, Def::Bool(false), "Snap dragged points to the grid."),
     key("snap.smart_guides", Kind::Bool, Def::Bool(false), "Snap to the edges, centres and spacing of other elements."),
     key("snap.angle", Kind::Bool, Def::Bool(false), "Snap the angle of lines and arrows."),

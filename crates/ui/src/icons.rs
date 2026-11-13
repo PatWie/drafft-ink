@@ -89,6 +89,7 @@ pub enum Icon {
     Info,
     Keyboard,
     Stats,
+    Minimap,
     Check,
     ChevronRight,
     ChevronDown,
@@ -563,6 +564,11 @@ pub fn paint(painter: &Painter, rect: Rect, icon: Icon, color: Color32) {
             pen.line((6.0, 19.0), (6.0, 12.0));
             pen.line((12.0, 19.0), (12.0, 6.0));
             pen.line((18.0, 19.0), (18.0, 10.0));
+        }
+        Icon::Minimap => {
+            pen.rect(3.0, 5.0, 18.0, 14.0, 1.5);
+            pen.fill_rect(6.0, 8.5, 5.5, 4.5, 0.5);
+            pen.rect(10.0, 11.0, 8.0, 5.5, 0.5);
         }
         Icon::Check => pen.poly(&[(5.0, 12.5), (10.0, 17.5), (19.0, 7.0)], false),
         Icon::ChevronRight => pen.poly(&[(9.0, 5.5), (15.5, 12.0), (9.0, 18.5)], false),

@@ -11,6 +11,7 @@ use egui::{Align2, Area, Color32, Context, Id, Modal, Order, RichText, Ui, vec2}
 use serde_json::{Value, json};
 
 use crate::action::Call;
+use crate::chrome::{GAP, lift_to};
 use crate::model::{CollabStatus, CollabView};
 use crate::state::UiState;
 use crate::surfaces::dialogs::{Close, enter_pressed, secret_field, show_modal, text_field};
@@ -302,13 +303,15 @@ fn peer_row(ui: &mut Ui, cx: &mut Cx<'_>, p: &crate::model::Peer) {
 }
 
 /// Draws the presence panel: bottom right, who else is in the room.
-pub fn show_presence(ctx: &Context, cx: &mut Cx<'_>, _st: &mut UiState) {
+pub fn show_presence(ctx: &Context, cx: &mut Cx<'_>, st: &mut UiState) {
     let Some((peers, more)) = presence_rows(&cx.model.collab) else {
         return;
     };
     let pal = cx.pal;
+    // Above the minimap when there is one in the corner.
+    let lift = st.chrome.minimap.map_or(MARGIN, |card| lift_to(ctx.content_rect(), card.top(), GAP));
     Area::new(Id::unique("presence_panel"))
-        .anchor(Align2::RIGHT_BOTTOM, vec2(-MARGIN, -MARGIN))
+        .anchor(Align2::RIGHT_BOTTOM, vec2(-MARGIN, -lift))
         .order(Order::Middle)
         .show(ctx, |ui| {
             panel_frame(&pal).show(ui, |ui| {

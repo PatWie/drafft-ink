@@ -1071,6 +1071,7 @@ Persisted through the `Storage` settings namespace; read with `settings.get`, wr
 | Key | Type and range | Default | Old app |
 |---|---|---|---|
 | `view.grid_style` | `none \| lines \| horizontal_lines \| crosses \| dots` | `lines` | `config.grid_style` (U:817, not persisted) |
+| `view.minimap` | bool | false | none (new): the minimap card (`ui.toggle_minimap`, `docs/ui.md` section 5e) |
 | `snap.grid` | bool | false | `ui_state.grid_snap_enabled` |
 | `snap.smart_guides` | bool | false | `smart_snap_enabled` |
 | `snap.angle` | bool | false | `angle_snap_enabled` |
@@ -1185,6 +1186,7 @@ One keymap for every platform. `Mod` is Cmd on macOS and Ctrl elsewhere. Binding
 | `Alt+Z` | UI verb `ui.toggle_zen` | canvas | NEW |
 | `Alt+/` | UI verb `ui.toggle_stats` | canvas | NEW |
 | `Alt+D` | UI verb `ui.toggle_debug` | canvas | NEW |
+| `Alt+M` | UI verb `ui.toggle_minimap` | canvas | NEW |
 | `S` `G` | UI verb `ui.open_color_picker` target=stroke, fill | canvas | NEW |
 | `Shift+F` | UI verb `ui.open_font_picker` | canvas | NEW |
 | `I` | UI verb `ui.insert_image` | canvas | NEW |
@@ -1218,6 +1220,7 @@ Not commands, never in `engine.commands`. Each ends, when it produces a result, 
 | `ui.toggle_stats` | stats panel (reads `selection.get`, edits with `element.set_bounds`, `style.set`) | those commands | NEW |
 | `ui.toggle_zen` | hides the chrome | none | NEW |
 | `ui.toggle_debug` | debug panel: frame rate and frame time, renderer and GPU, scene counts. The app measures only while it is open (`docs/ui.md` section 5d) | none | NEW |
+| `ui.toggle_minimap` | the minimap: a small map of the drawing in the bottom right corner with the visible part marked; a click or drag on it moves the view, the wheel zooms (`docs/ui.md` section 5e) | `settings.toggle` key=view.minimap, `view.set`, `view.zoom_at` | NEW |
 | `ui.open_export` | export dialog (format, scope, scale, background, dark, embed scene) | `doc.export` or `clipboard.copy_as` | X:ImageExportDialog |
 | `ui.open_preferences` | preferences dialog | `settings.set`, `settings.toggle`, `collab.set_user` | X:DefaultItems |
 | `ui.toggle_library` | library panel | `library.*` | X:LibraryMenu |

@@ -80,7 +80,7 @@ fn every_key_default_passes_its_own_check_and_the_table_matches_the_catalog() {
     assert_eq!(sorted.len(), names.len(), "a key is listed twice");
     // The keys of docs/commands.md §5, plus `theme` and `ui.font`.
     for k in [
-        "view.grid_style", "snap.grid", "snap.smart_guides", "snap.angle", "snap.angle_step", "export.scale",
+        "view.grid_style", "view.minimap", "snap.grid", "snap.smart_guides", "snap.angle", "snap.angle_step", "export.scale",
         "export.padding", "export.background", "export.dark", "export.embed_scene", "doc.default_background",
         "input.nudge_step", "input.box_select", "style.defaults", "arrow.binding", "arrow.midpoint_snap",
         "arrow.type", "arrow.start_head", "arrow.end_head",
@@ -90,7 +90,7 @@ fn every_key_default_passes_its_own_check_and_the_table_matches_the_catalog() {
     ] {
         assert!(names.contains(&k), "`{k}` is missing from the table");
     }
-    assert_eq!(names.len(), 33);
+    assert_eq!(names.len(), 34);
 }
 
 #[test]
@@ -522,6 +522,23 @@ fn settings_survive_a_restart() {
     assert_eq!(value(&again, "snap.angle_step"), json!(45));
     assert_eq!(again.tool.style_defaults.stroke_width, 8.0, "the style defaults are live after loading");
     assert_eq!(value(&again, "snap.grid"), json!(false), "keys the record does not name keep their default");
+}
+
+#[test]
+fn the_minimap_is_off_until_it_is_turned_on_and_stays_on_after_a_restart() {
+    let (mut s, f) = testing::session();
+    assert_eq!(value(&s, "view.minimap"), json!(false), "off by default");
+    let on = run(&mut s, "settings.toggle", json!({"key": "view.minimap"}));
+    assert_eq!(on["value"], json!(true));
+    assert_eq!(on["previous"], json!(false));
+    assert_eq!(stored(&f).unwrap()["values"]["view.minimap"], json!(true), "stored at once");
+    let mut again = Session::new(f.ports());
+    again.load_settings().unwrap();
+    assert_eq!(value(&again, "view.minimap"), json!(true));
+    let r = refuse(&mut again, "settings.set", json!({"key": "view.minimap", "value": "yes"}));
+    assert_eq!(r.code, "bad_args", "an on/off setting takes true or false");
+    run(&mut again, "settings.reset", json!({"key": "view.minimap"}));
+    assert_eq!(value(&again, "view.minimap"), json!(false));
 }
 
 #[test]

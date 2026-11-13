@@ -10,6 +10,7 @@
 //!        v
 //!    UiAction ──route()──> Routed::Command(Call { id, args, origin }) ──> CommandSink::run (Session::execute_from)
 //!                          Routed::Local(Verb)                         ──> UiState (open a dialog, close a menu)
+//!                          (a verb that is a setting, `ui.toggle_minimap`, routes to its command instead)
 //!                          Routed::Host(HostRequest)                   ──> returned to the app (file picker, clipboard)
 //! ```
 //!
@@ -105,6 +106,9 @@ pub enum Verb {
     ToggleZen,
     /// `ui.toggle_debug`: the debug panel (frame rate, GPU, scene).
     ToggleDebug,
+    /// `ui.toggle_minimap`: the minimap. The choice is the setting `view.minimap`, so it is kept between runs and the
+    /// verb ends with `settings.toggle` (see [`Verb::setting_toggle`]).
+    ToggleMinimap,
     /// `ui.open_equation_editor`: the LaTeX dialog.
     OpenEquationEditor,
     /// `ui.open_link_editor`: the link field for the selected element, ends with `element.set_link`.
@@ -123,7 +127,7 @@ pub enum Verb {
 
 impl Verb {
     /// Every verb, in the order of docs/commands.md §6.3.
-    pub const ALL: [Verb; 24] = [
+    pub const ALL: [Verb; 25] = [
         Verb::CloseOverlays,
         Verb::ToggleMenu,
         Verb::OpenFile,
@@ -141,6 +145,7 @@ impl Verb {
         Verb::ToggleStats,
         Verb::ToggleZen,
         Verb::ToggleDebug,
+        Verb::ToggleMinimap,
         Verb::OpenEquationEditor,
         Verb::OpenLinkEditor,
         Verb::OpenExport,
@@ -168,6 +173,7 @@ impl Verb {
             Verb::ToggleStats => "ui.toggle_stats",
             Verb::ToggleZen => "ui.toggle_zen",
             Verb::ToggleDebug => "ui.toggle_debug",
+            Verb::ToggleMinimap => "ui.toggle_minimap",
             Verb::OpenEquationEditor => "ui.open_equation_editor",
             Verb::OpenLinkEditor => "ui.open_link_editor",
             Verb::OpenExport => "ui.open_export",
@@ -198,6 +204,7 @@ impl Verb {
             Verb::ToggleStats => "Show or hide the stats panel",
             Verb::ToggleZen => "Zen mode (hide the interface)",
             Verb::ToggleDebug => "Show or hide the debug panel",
+            Verb::ToggleMinimap => "Show or hide the minimap",
             Verb::OpenEquationEditor => "Edit the equation",
             Verb::OpenLinkEditor => "Edit the link",
             Verb::OpenExport => "Export…",
@@ -205,6 +212,15 @@ impl Verb {
             Verb::ToggleLibrary => "Show or hide the library",
             Verb::RenameDocument => "Rename the document",
             Verb::OpenAbout => "About Drafft.ink",
+        }
+    }
+
+    /// The setting this verb flips, for a verb whose whole effect is a setting: the UI keeps no state of its own for
+    /// it, [`route`] sends it to `settings.toggle`, and the choice is stored with the other settings.
+    pub fn setting_toggle(self) -> Option<&'static str> {
+        match self {
+            Verb::ToggleMinimap => Some("view.minimap"),
+            _ => None,
         }
     }
 }
@@ -300,7 +316,10 @@ pub enum Routed {
 pub fn route(action: &UiAction, state: &UiState) -> Routed {
     match action {
         UiAction::Command(c) => Routed::Command(c.clone()),
-        UiAction::Verb(v) => Routed::Local(*v),
+        UiAction::Verb(v) => match v.setting_toggle() {
+            Some(key) => Routed::Command(Call::new(Origin::Ui, "settings.toggle", json!({ "key": key }))),
+            None => Routed::Local(*v),
+        },
         UiAction::Host(h) => Routed::Host(h.clone()),
         UiAction::Scrub(s) => {
             let gesture = state.scrub_gesture().map(str::to_owned);

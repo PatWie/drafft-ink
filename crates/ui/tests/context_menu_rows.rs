@@ -390,7 +390,9 @@ fn the_view_flyout_has_grid_snap_zen_view_only_stats_and_unlock_all() {
         let report = h.state_mut().dispatch();
         assert!(report.refusals().next().is_none(), "{text}: {:?}", report.ran);
     }
-    for (text, verb) in [("Zen mode", Verb::ToggleZen), ("Stats panel", Verb::ToggleStats)] {
+    for (text, verb) in
+        [("Zen mode", Verb::ToggleZen), ("Stats panel", Verb::ToggleStats), ("Minimap", Verb::ToggleMinimap)]
+    {
         let mut h = fresh();
         assert!(pick(&mut h, "View", text).is_empty(), "{text} is a verb, not a command");
         assert!(dialog::verbs(h.state()).contains(&verb), "{text}");
