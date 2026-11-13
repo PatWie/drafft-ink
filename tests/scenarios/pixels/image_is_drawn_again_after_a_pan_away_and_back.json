@@ -1,0 +1,19 @@
+{
+  "about": "Regression: a picture is drawn, the view is panned so that nothing with a picture, text or gradient is in view, and panned back. The picture must be there again, not blank. (Vello dropped its image atlas for the empty frame; see the atlas pin in `drafftink-gpu`.) The document still holds the element the whole time.",
+  "requires": { "gpu": true },
+  "steps": [
+    { "execute": "view.set_viewport", "args": { "width": 600, "height": 400, "scale_factor": 1 } },
+    { "execute": "view.set", "args": { "zoom": 1, "scroll": [100, 100] } },
+    { "note": "A 40 by 20 magenta picture, centred on (100, 100).",
+      "execute": "image.insert", "args": { "images": [ { "base64": "iVBORw0KGgoAAAANSUhEUgAAACgAAAAUCAIAAABwJOjsAAAAJElEQVR42mP4z/B/QBDDqMWjFo9aPGrxqMWjFo9aPGrxyLEYALhmOhvsuWoYAAAAAElFTkSuQmCC", "name": "magenta.png" } ], "at": [100, 100] }, "save": { "pic": "$.created[0]" } },
+    { "harness": "pixel_probe", "args": { "size": [600, 400], "points": [ { "world": [100, 100] } ] },
+      "expect": [ { "path": "$.pixels[0]", "near": [255, 0, 255, 255], "tol": 24, "note": "the picture is drawn" } ] },
+    { "execute": "view.set", "args": { "zoom": 1, "scroll": [5000, 100] } },
+    { "harness": "pixel_probe", "args": { "size": [600, 400], "points": [ { "screen": [300, 200] } ] },
+      "expect": [ { "path": "$.ink_px", "eq": 0, "note": "nothing is in view" } ] },
+    { "assert": "element.query", "args": { "filter": { "ids": [ "{{pic}}" ] }, "fields": [ "kind" ] }, "expect": [ { "path": "$.items[0].kind", "eq": "image", "note": "the element exists the whole time" } ] },
+    { "execute": "view.set", "args": { "zoom": 1, "scroll": [100, 100] } },
+    { "harness": "pixel_probe", "args": { "size": [600, 400], "points": [ { "world": [100, 100] } ] },
+      "expect": [ { "path": "$.pixels[0]", "near": [255, 0, 255, 255], "tol": 24, "note": "panned back: the picture is drawn again" } ] }
+  ]
+}

@@ -12,7 +12,8 @@ use std::task::{Context, Poll, Waker};
 
 use drafftink_profile::{Counter, inc};
 
-use vello::peniko::Color;
+use vello::kurbo::{Affine, Rect};
+use vello::peniko::{Blob, Color, Fill, ImageAlphaType, ImageBrush, ImageData, ImageFormat};
 use vello::{AaConfig, AaSupport, RenderParams, Renderer, RendererOptions, Scene};
 
 use crate::error::GpuError;
@@ -30,6 +31,55 @@ pub struct CompositorStats {
     pub vello_runs: u64,
     /// Composite passes (one submit each).
     pub composites: u64,
+}
+
+/// Keeps Vello's image atlas alive across frames that draw no picture.
+///
+/// Vello 0.11 sizes its atlas texture from the images of the frame. A frame whose scene has no late-bound
+/// resource at all (no image, glyph run or gradient: a canvas panned to an empty place) makes it shrink the
+/// atlas to 1x1 and drop the texture, while its residency table still says that every picture is uploaded. The
+/// next frame with pictures creates a new, empty atlas and uploads nothing, so every picture stays blank.
+///
+/// Once a picture has been drawn, a scene without any resource gets one invisible image fill, which keeps the
+/// atlas at its size.
+struct AtlasPin {
+    /// A scene that holds only the invisible image fill.
+    pin: Scene,
+    /// The pin and the frame's scene together.
+    pinned: Scene,
+    /// A picture was drawn at some point, so Vello has an atlas to keep.
+    atlas_exists: bool,
+}
+
+impl AtlasPin {
+    fn new() -> Self {
+        let dot = ImageData {
+            data: Blob::new(Arc::new(vec![0; 4])),
+            format: ImageFormat::Rgba8,
+            alpha_type: ImageAlphaType::Alpha,
+            width: 1,
+            height: 1,
+        };
+        let mut pin = Scene::new();
+        let brush = ImageBrush::new(dot).with_alpha(0.0);
+        pin.fill(Fill::NonZero, Affine::IDENTITY, &brush, None, &Rect::new(0.0, 0.0, 1.0, 1.0));
+        Self { pin, pinned: Scene::new(), atlas_exists: false }
+    }
+
+    /// The scene to give Vello for `scene`: `scene` itself, or a copy of it with the pin when Vello would drop
+    /// its atlas for it.
+    fn scene<'a>(&'a mut self, scene: &'a Scene) -> &'a Scene {
+        if drafftink_render::replay::pictures(scene).next().is_some() {
+            self.atlas_exists = true;
+        }
+        if !self.atlas_exists || !scene.encoding().resources.patches.is_empty() {
+            return scene;
+        }
+        self.pinned.reset();
+        self.pinned.append(&self.pin, None);
+        self.pinned.append(scene, None);
+        &self.pinned
+    }
 }
 
 struct SceneTarget {
@@ -58,6 +108,7 @@ pub struct Compositor {
     /// A scene has been rendered into `target` at least once.
     has_scene: bool,
     base: Color,
+    atlas_pin: AtlasPin,
     offscreen: Option<Offscreen>,
     stats: CompositorStats,
 }
@@ -129,6 +180,7 @@ impl Compositor {
             target: None,
             has_scene: false,
             base: Color::BLACK,
+            atlas_pin: AtlasPin::new(),
             offscreen: None,
             stats: CompositorStats::default(),
         })
@@ -188,6 +240,7 @@ impl Compositor {
         let Some(target) = self.target.as_ref() else {
             return Err(GpuError::Render("no scene texture".into()));
         };
+        let scene = self.atlas_pin.scene(scene);
         self.vello
             .render_to_texture(
                 &gpu.device,
