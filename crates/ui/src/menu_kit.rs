@@ -13,7 +13,8 @@
 //!
 //! The keyboard works through egui's focus: Up and Down move between rows, Right (or Enter) opens a flyout and
 //! moves into it, Left closes it, Enter runs the row and Esc closes the menu (egui clears the focus first, then
-//! the keymap sees the key).
+//! the keymap sees the key). A [`Menu::grid`] of cells takes all four arrows inside it and hands Up and Down on
+//! to the rows around it at its edges.
 
 use egui::{
     Align2, Area, Context, Id, Key, Order, Painter, Pos2, Rect, Response, Role, Sense, Stroke, Ui, UiBuilder, Vec2,
@@ -255,6 +256,48 @@ struct Stop {
     submenu: bool,
 }
 
+/// A block of cells laid out in rows, whose stops are the `len` entries of `stops` from `start`.
+#[derive(Debug, Clone, Copy)]
+struct GridSpan {
+    start: usize,
+    len: usize,
+    columns: usize,
+}
+
+impl GridSpan {
+    /// Where the arrow key `key` leads from the cell at `at` (an index into `stops`): another cell of the grid, or
+    /// `Exit` when the key leaves it, or `Stay` for a key the grid does not use.
+    fn step(self, at: usize, up: bool, down: bool, left: bool, right: bool) -> GridStep {
+        let Some(cell) = at.checked_sub(self.start).filter(|c| *c < self.len) else { return GridStep::Stay };
+        let columns = self.columns.max(1);
+        let to = |cell: usize| GridStep::Cell(self.start + cell);
+        if right {
+            return if cell + 1 < self.len && (cell + 1) % columns != 0 { to(cell + 1) } else { GridStep::Stay };
+        }
+        if left {
+            return if cell % columns != 0 { to(cell - 1) } else { GridStep::Stay };
+        }
+        if down {
+            return if cell + columns < self.len { to(cell + columns) } else { GridStep::Exit };
+        }
+        if up {
+            return if cell >= columns { to(cell - columns) } else { GridStep::Exit };
+        }
+        GridStep::Stay
+    }
+}
+
+/// What an arrow key does inside a grid.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum GridStep {
+    /// Focus the stop at this index.
+    Cell(usize),
+    /// Up or Down past the first or last row: the menu's own rows take over.
+    Exit,
+    /// Nothing for the grid to do.
+    Stay,
+}
+
 /// The rows of one menu (or flyout), drawn into a [`Ui`].
 pub(crate) struct Menu<'u, 'c, 'a> {
     ui: &'u mut Ui,
@@ -264,6 +307,8 @@ pub(crate) struct Menu<'u, 'c, 'a> {
     frame: Rect,
     picked: Picked,
     stops: Vec<Stop>,
+    /// The grids among the stops.
+    grids: Vec<GridSpan>,
     /// The row the pointer is on.
     pointer_row: Option<Id>,
     /// Wanted before the next row: a separator, and a heading.
@@ -282,6 +327,7 @@ impl<'u, 'c, 'a> Menu<'u, 'c, 'a> {
             frame,
             picked: Picked::default(),
             stops: Vec::new(),
+            grids: Vec::new(),
             pointer_row: None,
             pending_separator: false,
             pending_heading: None,
@@ -319,6 +365,11 @@ impl<'u, 'c, 'a> Menu<'u, 'c, 'a> {
             picked
         })
         .inner
+    }
+
+    /// The colours of the UI, for a cell that paints itself.
+    pub(crate) fn palette(&self) -> Palette {
+        self.cx.pal
     }
 
     /// The refusal text of a command, `None` when it can run.
@@ -434,6 +485,39 @@ impl<'u, 'c, 'a> Menu<'u, 'c, 'a> {
             self.picked.local = true;
         }
         resp
+    }
+
+    /// A block of `count` command cells in rows of `columns`, each as wide as the menu allows and as tall as a row.
+    /// `cell` draws the cell at an index into the `Ui` it is given and returns its response, which is how a
+    /// click, the keyboard and the pointer reach it. The arrow keys move between the cells.
+    pub(crate) fn grid(
+        &mut self,
+        columns: usize,
+        count: usize,
+        mut cell: impl FnMut(&mut Ui, &mut Cx<'a>, usize, Vec2) -> Response,
+    ) {
+        self.flush();
+        let columns = columns.max(1);
+        let gap = space::XXS;
+        let width = ((self.ui.available_width() - gap * (columns - 1) as f32) / columns as f32).max(1.0);
+        let size = vec2(width, self.cx.layout.row_height());
+        let start = self.stops.len();
+        let mut responses = Vec::with_capacity(count);
+        for first in (0..count).step_by(columns) {
+            self.ui.horizontal(|ui| {
+                ui.spacing_mut().item_spacing = vec2(gap, 0.0);
+                for index in first..(first + columns).min(count) {
+                    responses.push(cell(ui, self.cx, index, size));
+                }
+            });
+        }
+        for resp in &responses {
+            self.track(resp, false);
+            if resp.clicked() {
+                self.picked.command = true;
+            }
+        }
+        self.grids.push(GridSpan { start, len: responses.len(), columns });
     }
 
     /// A control that is not a row (a line of toggles), drawn by `add` in the menu's `Ui`.
@@ -604,6 +688,37 @@ impl<'u, 'c, 'a> Menu<'u, 'c, 'a> {
             return;
         }
         let here = focused.and_then(|f| enabled.iter().position(|s| s.id == f));
+        // A cell of a grid takes the arrows itself. Past its first or last row, Up and Down go to the row before or
+        // after the grid, around the end of the menu.
+        let in_grid = focused.and_then(|f| self.stops.iter().position(|s| s.id == f)).and_then(|at| {
+            let grid = self.grids.iter().find(|g| (g.start..g.start + g.len).contains(&at))?;
+            Some((*grid, grid.step(at, up, down, left, right)))
+        });
+        match in_grid {
+            Some((_, GridStep::Cell(to))) => {
+                if let Some(stop) = self.stops.get(to) {
+                    focus(stop.id);
+                }
+                return;
+            }
+            Some((grid, GridStep::Exit)) => {
+                let outside = |i: &usize| !(grid.start..grid.start + grid.len).contains(i);
+                let live = |i: &usize| self.stops.get(*i).is_some_and(|s| s.enabled);
+                let target = if down {
+                    (grid.start + grid.len..self.stops.len()).find(live).or_else(|| (0..grid.start).find(live))
+                } else {
+                    (0..grid.start)
+                        .rev()
+                        .find(live)
+                        .or_else(|| (grid.start + grid.len..self.stops.len()).rev().find(live))
+                };
+                if let Some(stop) = target.filter(outside).and_then(|i| self.stops.get(i)) {
+                    focus(stop.id);
+                }
+                return;
+            }
+            Some((_, GridStep::Stay)) | None => {}
+        }
         match here {
             Some(at) => {
                 let len = enabled.len();

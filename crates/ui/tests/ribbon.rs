@@ -275,6 +275,131 @@ fn the_head_buttons_show_the_heads_of_the_selected_arrow() {
     assert!(on(&h, "End head: Triangle") && !on(&h, "End head: Arrow"), "and so is the end head");
 }
 
+/// Every head the scene knows, as the picker names it and as `arrow.set_head` takes it.
+const ALL_HEADS: [(&str, &str); 15] = [
+    ("None", "none"),
+    ("Arrow", "arrow"),
+    ("Bar", "bar"),
+    ("Dot", "circle"),
+    ("Hollow dot", "circle_outline"),
+    ("Triangle", "triangle"),
+    ("Hollow triangle", "triangle_outline"),
+    ("Diamond", "diamond"),
+    ("Hollow diamond", "diamond_outline"),
+    ("One", "cardinality_one"),
+    ("Many", "cardinality_many"),
+    ("One or many", "cardinality_one_or_many"),
+    ("Exactly one", "cardinality_exactly_one"),
+    ("Zero or one", "cardinality_zero_or_one"),
+    ("Zero or many", "cardinality_zero_or_many"),
+];
+
+#[test]
+fn both_ends_offer_every_head_and_each_runs_arrow_set_head() {
+    for (side, end) in [("Start", "start"), ("End", "end")] {
+        let mut h = desk(arrow());
+        open(&mut h, &format!("{side} head"));
+        for (name, value) in ALL_HEADS {
+            let label = format!("{side} head: {name}");
+            assert!(has(&h, &label), "{label}");
+            let calls = common::click(&mut h, &label);
+            let head = if value == "none" { serde_json::Value::Null } else { json!(value) };
+            let call = calls.last().map(|c| (c.id.as_str(), c.args.clone()));
+            assert_eq!(call, Some(("arrow.set_head", json!({ "end": end, "head": head }))), "{label}");
+            // A pick closes the menu; the next one opens it again.
+            h.run();
+            open(&mut h, &format!("{side} head"));
+        }
+    }
+}
+
+#[test]
+fn the_picker_lists_the_heads_in_a_grid_of_five_columns() {
+    let mut h = desk(arrow());
+    open(&mut h, "End head");
+    let rects: Vec<Rect> = ALL_HEADS.iter().map(|(name, _)| rect(&h, &format!("End head: {name}"))).collect();
+    let rows: Vec<f32> = rects.iter().map(|r| r.top()).collect();
+    assert_eq!(rows[0], rows[4], "the first five share a row");
+    assert!(rows[5] > rows[4] && rows[5] == rows[9] && rows[10] > rows[9], "rows of five: {rows:?}");
+    assert!(rects[0].right() <= rects[1].left() + 0.5, "cells do not overlap");
+}
+
+#[test]
+fn a_head_cell_has_a_name_a_check_for_the_current_head_and_a_tooltip_target() {
+    let mut f = dialog::fixture();
+    let a = create(
+        &mut f,
+        json!({ "kind": "arrow", "points": [[0, 0], [80, 30]], "end_head": "cardinality_zero_or_many" }),
+    );
+    selecting(&mut f, &[a]);
+    let mut h = desk(f);
+    open(&mut h, "End head");
+    let on =
+        |h: &H, label: &str| h.get_by_label(label).accesskit_node().toggled() == Some(egui::accesskit::Toggled::True);
+    assert!(on(&h, "End head: Zero or many") && !on(&h, "End head: Zero or one"));
+}
+
+#[test]
+fn the_arrow_keys_walk_the_head_grid_and_enter_picks() {
+    let mut h = desk(arrow());
+    open(&mut h, "End head");
+    let focused = |h: &H, name: &str| h.get_by_label(&format!("End head: {name}")).is_focused();
+    h.key_press(egui::Key::ArrowDown);
+    h.run();
+    assert!(focused(&h, "None"), "Down focuses the first cell");
+    h.key_press(egui::Key::ArrowRight);
+    h.run();
+    assert!(focused(&h, "Arrow"));
+    h.key_press(egui::Key::ArrowDown);
+    h.run();
+    assert!(focused(&h, "Hollow triangle"), "Down goes one row, which is five cells on");
+    h.key_press(egui::Key::ArrowLeft);
+    h.run();
+    assert!(focused(&h, "Triangle"));
+    h.key_press(egui::Key::ArrowUp);
+    h.run();
+    assert!(focused(&h, "None"), "Up goes one row back");
+    // Down through the second and third row and once more leaves the grid for the row under it.
+    h.key_press(egui::Key::ArrowDown);
+    h.run();
+    h.key_press(egui::Key::ArrowDown);
+    h.run();
+    h.key_press(egui::Key::ArrowDown);
+    h.run();
+    assert!(h.get_by_label("Swap heads").is_focused(), "Down past the last row goes to the row below the grid");
+    h.key_press(egui::Key::ArrowUp);
+    h.run();
+    assert!(focused(&h, "Zero or many"), "and Up comes back to the last cell");
+    h.state_mut().clear();
+    h.key_press(egui::Key::Enter);
+    h.run();
+    let calls = h.state().calls().into_iter().cloned().collect::<Vec<_>>();
+    assert_eq!(calls.last().map(|c| c.id.as_str()), Some("arrow.set_head"), "Enter runs the focused cell");
+}
+
+#[test]
+fn the_head_cells_have_finger_sized_targets_on_a_touch_device() {
+    let mut f = arrow();
+    f.state.set_touch_first(true);
+    let mut h = desk(f);
+    open(&mut h, "End head");
+    for (name, _) in ALL_HEADS {
+        let r = rect(&h, &format!("End head: {name}"));
+        assert!(r.height() >= 36.0 && r.width() >= 36.0, "{name}: {r:?}");
+    }
+}
+
+#[test]
+fn the_arrow_tool_sets_every_head_of_new_arrows() {
+    let mut h = desk(with_tool("arrow"));
+    open(&mut h, "Start head");
+    let calls = common::click(&mut h, "New arrows, Start head: Zero or many");
+    assert_eq!(
+        calls.last().map(|c| (c.id.as_str(), c.args.clone())),
+        Some(("tool.set_arrow", json!({ "start_head": "cardinality_zero_or_many" })))
+    );
+}
+
 #[test]
 fn two_arrows_with_different_heads_say_mixed() {
     let mut f = dialog::fixture();

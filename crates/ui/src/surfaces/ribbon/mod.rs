@@ -15,6 +15,7 @@
 //! Every control is a command; the scrub of the opacity slider is the one gesture (docs/exceptions.md E13).
 
 mod controls;
+mod heads;
 mod layout;
 mod menus;
 mod pictograms;

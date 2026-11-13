@@ -2,9 +2,11 @@
 //! UI verb; the choices that only the UI knows (which menu is open) live in `UiState`.
 
 use drafftink_engine::state::Tool;
+use drafftink_scene::Head;
 use egui::{Color32, FontId, Painter, Rect, Response, Role, Sense, Stroke, Ui, WidgetInfo, pos2, vec2};
 use serde_json::{Value, json};
 
+use super::heads::{End, HeadChoice, head_sample};
 use super::pictograms::{self, Align, LineStyle, Pattern};
 use super::{Group, Row};
 use crate::action::Verb;
@@ -27,7 +29,7 @@ pub(super) const LINE_HEIGHTS: [f64; 4] = [1.0, 1.25, 1.5, 2.0];
 const FONT_BUTTON_WIDTH: f32 = 124.0;
 /// Width of the "More" button.
 pub(crate) const MORE_BUTTON_WIDTH: f32 = 64.0;
-/// Width of a head button, wide enough for "Start: Triangle".
+/// Width of a head button: the side, a picture of the head and the chevron.
 const HEAD_BUTTON_WIDTH: f32 = 116.0;
 /// The stroke widths: name and value.
 const STROKE_WIDTHS: [(&str, f64); 4] = [("Thin", 1.0), ("Normal", 2.0), ("Bold", 4.0), ("Extra bold", 8.0)];
@@ -45,14 +47,6 @@ pub(super) const FONT_WEIGHTS: [(&str, &str, &str); 3] =
 pub(super) const TEXT_ALIGNS: [(&str, &str, Align); 3] =
     [("Left", "left", Align::Left), ("Center", "center", Align::Center), ("Right", "right", Align::Right)];
 pub(super) const ARROW_TYPES: [(&str, &str); 3] = [("Sharp", "sharp"), ("Round", "round"), ("Elbow", "elbow")];
-pub(super) const HEADS: [(&str, &str); 6] = [
-    ("None", "none"),
-    ("Arrow", "arrow"),
-    ("Bar", "bar"),
-    ("Dot", "circle"),
-    ("Triangle", "triangle"),
-    ("Diamond", "diamond"),
-];
 const BRUSHES: [(&str, &str); 2] = [("Normal", "normal"), ("Calligraphy", "calligraphy")];
 const STROKE_STYLES: [(LineStyle, &str, &str); 3] = [
     (LineStyle::Solid, "solid", "Solid"),
@@ -143,12 +137,22 @@ struct Dropdown<'a> {
     open: bool,
     /// Greys the button with this tooltip.
     reason: Option<String>,
+    /// A picture of an arrowhead between the text and the chevron, and the tooltip that names the head.
+    head: Option<HeadView>,
+}
+
+/// The arrowhead a [`Dropdown`] shows.
+struct HeadView {
+    head: Head,
+    end: End,
+    /// What the tooltip says: the button's name and the head's.
+    tooltip: String,
 }
 
 /// A button with a text and a chevron that opens something. The caller reacts to the click.
 /// `reason` greys it with that tooltip.
 fn dropdown(cx: &Cx<'_>, ui: &mut Ui, spec: Dropdown<'_>) -> Response {
-    let Dropdown { label, text, font, width, open, reason } = spec;
+    let Dropdown { label, text, font, width, open, reason, head } = spec;
     let pal = cx.pal;
     let enabled = reason.is_none();
     let height = cx.layout.small_side();
@@ -170,7 +174,15 @@ fn dropdown(cx: &Cx<'_>, ui: &mut Ui, spec: Dropdown<'_>) -> Response {
                 let galley = ui.painter().layout_no_wrap(text.to_owned(), font, ink);
                 let clip = Rect::from_min_max(rect.min, pos2(chevron.left() - space::XS, rect.max.y));
                 let at = pos2(rect.left() + space::LG, rect.center().y - galley.size().y / 2.0);
+                let text_right = at.x + galley.size().x;
                 ui.painter().with_clip_rect(clip).galley(at, galley, ink);
+                if let Some(view) = &head {
+                    let room = Rect::from_min_max(
+                        pos2(text_right + space::SM, rect.top() + space::SM),
+                        pos2(chevron.left() - space::XS, rect.bottom() - space::SM),
+                    );
+                    head_sample(ui.painter(), room, view.head, view.end, ink);
+                }
             }
             resp.widget_info(|| {
                 let mut info = WidgetInfo::labeled(Role::Button, enabled, label);
@@ -180,24 +192,27 @@ fn dropdown(cx: &Cx<'_>, ui: &mut Ui, spec: Dropdown<'_>) -> Response {
             resp
         })
         .inner;
-    match reason {
-        Some(r) => resp.on_disabled_hover_text(r),
-        None => resp.on_hover_text(label),
+    match (reason, head) {
+        (Some(r), _) => resp.on_disabled_hover_text(r),
+        (None, Some(view)) => resp.on_hover_text(view.tooltip),
+        (None, None) => resp.on_hover_text(label),
     }
 }
 
 /// A [`dropdown`] that opens a ribbon menu (`menus.rs`) under itself.
-fn menu_button(
-    cx: &Cx<'_>,
-    ui: &mut Ui,
-    st: &mut UiState,
+struct MenuButton<'a> {
     kind: RibbonMenu,
-    label: &str,
-    text: &str,
+    /// The accessible name.
+    label: &'a str,
+    text: &'a str,
     width: f32,
-) -> Response {
+    head: Option<HeadView>,
+}
+
+fn menu_button(cx: &Cx<'_>, ui: &mut Ui, st: &mut UiState, button: MenuButton<'_>) -> Response {
+    let MenuButton { kind, label, text, width, head } = button;
     let open = st.ribbon_menu.is_some_and(|m| m.kind == kind);
-    let spec = Dropdown { label, text, font: TextSize::Small.font(), width, open, reason: None };
+    let spec = Dropdown { label, text, font: TextSize::Small.font(), width, open, reason: None, head };
     let resp = dropdown(cx, ui, spec);
     if !ui.is_sizing_pass() {
         if resp.clicked() {
@@ -303,23 +318,27 @@ fn arrow_path(ui: &mut Ui, cx: &mut Cx<'_>) {
     }
 }
 
-/// The word shown on a head button: the head when it is known (new arrows, a selected arrow), else the side.
-fn head_text(side: &str, known: Option<&str>) -> String {
+/// What a head button shows: the side, and the head when it is known (new arrows, a selected arrow). `Mixed`
+/// arrows have no one head to draw.
+fn head_view(side: &str, known: Option<&str>, end: End) -> (String, Option<HeadView>) {
     match known {
-        Some("mixed") => format!("{side}: Mixed"),
-        Some(v) => match HEADS.iter().find(|(_, value)| *value == v) {
-            Some((name, _)) => format!("{side}: {name}"),
-            None => format!("{side}: {}", v.replace('_', " ")),
+        Some("mixed") => (format!("{side}: Mixed"), None),
+        Some(value) => match HeadChoice::named(value) {
+            Some(choice) => {
+                let tooltip = format!("{side} head: {}", choice.name);
+                (side.to_owned(), Some(HeadView { head: choice.head, end, tooltip }))
+            }
+            None => (format!("{side}: {}", value.replace('_', " ")), None),
         },
-        None => side.to_owned(),
+        None => (side.to_owned(), None),
     }
 }
 
 fn arrow_heads(ui: &mut Ui, cx: &mut Cx<'_>, st: &mut UiState) {
     let new = new_arrows(cx);
-    for (kind, side, key, default) in [
-        (RibbonMenu::StartHead, "Start", "arrow.start_head", "none"),
-        (RibbonMenu::EndHead, "End", "arrow.end_head", "arrow"),
+    for (kind, side, key, default, end) in [
+        (RibbonMenu::StartHead, "Start", "arrow.start_head", "none", End::Start),
+        (RibbonMenu::EndHead, "End", "arrow.end_head", "arrow", End::End),
     ] {
         let known = if new {
             Some(arrow_setting(cx, key, default))
@@ -330,8 +349,9 @@ fn arrow_heads(ui: &mut Ui, cx: &mut Cx<'_>, st: &mut UiState) {
                 .as_ref()
                 .map(|h| if kind == RibbonMenu::StartHead { h.start.clone() } else { h.end.clone() })
         };
-        let text = head_text(side, known.as_deref());
-        menu_button(cx, ui, st, kind, &format!("{side} head"), &text, HEAD_BUTTON_WIDTH);
+        let (text, head) = head_view(side, known.as_deref(), end);
+        let label = format!("{side} head");
+        menu_button(cx, ui, st, MenuButton { kind, label: &label, text: &text, width: HEAD_BUTTON_WIDTH, head });
     }
 }
 
@@ -358,8 +378,15 @@ fn font_family(ui: &mut Ui, cx: &mut Cx<'_>, st: &mut UiState) {
         None => (if mixed { "Mixed" } else { "Font" }, TextSize::Body.font()),
     };
     let reason = not_applicable(cx, "font_family");
-    let spec =
-        Dropdown { label: "Pick the font", text, font, width: FONT_BUTTON_WIDTH, open: st.font_picker_open, reason };
+    let spec = Dropdown {
+        label: "Pick the font",
+        text,
+        font,
+        width: FONT_BUTTON_WIDTH,
+        open: st.font_picker_open,
+        reason,
+        head: None,
+    };
     let resp = dropdown(cx, ui, spec);
     remember_anchor_in(ui, PopoverKey::Font, resp.rect);
     if resp.clicked() {
@@ -427,7 +454,18 @@ fn vertical_align(ui: &mut Ui, cx: &mut Cx<'_>) {
 
 /// The "More" button at the right end of the strip: it opens the popup of `menus.rs`.
 pub(crate) fn more_button(ui: &mut Ui, cx: &mut Cx<'_>, st: &mut UiState) {
-    menu_button(cx, ui, st, RibbonMenu::More, "More options", "More", MORE_BUTTON_WIDTH);
+    menu_button(
+        cx,
+        ui,
+        st,
+        MenuButton {
+            kind: RibbonMenu::More,
+            label: "More options",
+            text: "More",
+            width: MORE_BUTTON_WIDTH,
+            head: None,
+        },
+    );
 }
 
 // ---- opacity ----
