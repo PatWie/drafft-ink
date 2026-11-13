@@ -141,6 +141,28 @@ pub struct WheelInput {
     pub modifiers: egui::Modifiers,
 }
 
+/// What the app wants a pixel of the canvas for.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum PixelUse {
+    /// The colour under a moving pointer, for the preview of the eyedropper. A request that comes while the answer to
+    /// an earlier one is still on its way is dropped.
+    Preview,
+    /// The colour the person chose.
+    Pick,
+}
+
+/// The answer to [`crate::EventCx::sample_scene`].
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct PixelSample {
+    /// The position that was asked for, in egui points.
+    pub at: egui::Pos2,
+    /// Why it was asked for.
+    pub purpose: PixelUse,
+    /// The colour of the canvas there as drawn, RGBA8, or `None` when it could not be read (no scene drawn yet, a lost
+    /// device).
+    pub rgba: Option<[u8; 4]>,
+}
+
 /// Why the shell talks to the app. See [`crate::ShellApp::event`].
 #[derive(Clone, Debug, PartialEq)]
 pub enum ShellEvent {
@@ -169,6 +191,8 @@ pub enum ShellEvent {
     Wake(RedrawReason),
     /// Wheel or pinch over the canvas. Answer [`Handled::Yes`] to keep it from egui.
     Wheel(WheelInput),
+    /// The colour of a pixel of the canvas, asked for with [`crate::EventCx::sample_scene`].
+    Pixel(PixelSample),
 }
 
 /// The answer to [`ShellEvent::Paste`]: did the app take it?

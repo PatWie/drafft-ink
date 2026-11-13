@@ -20,7 +20,8 @@ use winit::window::Window;
 use super::renderer::GlRenderer;
 use crate::backend::{Backend, BackendKind, Detail, Presented};
 use crate::error::{GpuError, LostInfo};
-use crate::frame::EguiFrame;
+use crate::frame::{EguiFrame, Image};
+use crate::readback::SceneRead;
 use crate::stats::{BackendStats, DeviceClass, GraphicsApi, Rasteriser, RendererInfo};
 
 fn webgl(message: impl Into<String>) -> GpuError {
@@ -237,6 +238,35 @@ impl Backend for GlBackend {
         inc(Counter::GpuSubmits);
         log::trace!("webgl scene: {stats:?}");
         Ok(())
+    }
+
+    fn read_scene(&mut self, area: [u32; 4]) -> Result<SceneRead, GpuError> {
+        let image =
+            self.scene_image.as_ref().filter(|_| self.has_scene).ok_or_else(|| webgl("no scene has been drawn yet"))?;
+        let [x, y, w, h] = area;
+        let [width, height] = image.size;
+        let (x, y) = (x.min(width.saturating_sub(1)), y.min(height.saturating_sub(1)));
+        let (w, h) = (w.clamp(1, width - x), h.clamp(1, height - y));
+        let to_i32 = |v: u32| i32::try_from(v).map_err(|_| webgl("the area is too large"));
+        // WebGL counts rows from the bottom.
+        let from_bottom = to_i32(height - y - h)?;
+        let gl = self.draw.gl();
+        let row = w as usize * 4;
+        let mut bottom_up = vec![0u8; row * h as usize];
+        gl.bind_framebuffer(Gl::READ_FRAMEBUFFER, Some(&image.framebuffer));
+        let read = gl.read_pixels_with_opt_u8_array(
+            to_i32(x)?,
+            from_bottom,
+            to_i32(w)?,
+            to_i32(h)?,
+            Gl::RGBA,
+            Gl::UNSIGNED_BYTE,
+            Some(&mut bottom_up),
+        );
+        gl.bind_framebuffer(Gl::FRAMEBUFFER, None);
+        read.map_err(|_| GpuError::Readback("readPixels failed".into()))?;
+        let rgba = bottom_up.chunks_exact(row).rev().flatten().copied().collect();
+        Ok(SceneRead::Ready(Image { width: w, height: h, rgba }))
     }
 
     fn present(&mut self, window: &Window, frame: &mut EguiFrame, size: [u32; 2]) -> Result<Presented, GpuError> {

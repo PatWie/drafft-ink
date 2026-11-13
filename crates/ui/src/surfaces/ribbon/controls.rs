@@ -2,9 +2,11 @@
 //! UI verb; the choices that only the UI knows (which menu is open) live in `UiState`.
 
 use drafftink_engine::state::Tool;
+use drafftink_scene::Head;
 use egui::{Color32, FontId, Painter, Rect, Response, Role, Sense, Stroke, Ui, WidgetInfo, pos2, vec2};
 use serde_json::{Value, json};
 
+use super::heads::{End, HeadChoice, head_sample};
 use super::pictograms::{self, Align, LineStyle, Pattern};
 use super::{Group, Row};
 use crate::action::Verb;
@@ -21,13 +23,20 @@ use crate::widgets::{Ctl, Cx, Look, icon_color, paint_button_bg, strip_row};
 pub(super) const FONT_SIZES: [(&str, f64); 4] = [("S", 16.0), ("M", 20.0), ("L", 28.0), ("XL", 36.0)];
 /// Corner radius of "round".
 pub(super) const ROUND_CORNER: f64 = 32.0;
+/// The largest radius the corner slider reaches. A shape never rounds more than half its shorter side, and the
+/// command takes more (`style.set` allows up to the scene's limit), which the slider shows at its end.
+const CORNER_SLIDER_MAX: f32 = 100.0;
+/// The width of the corner radius slider in its menu.
+const CORNER_SLIDER_WIDTH: f32 = 140.0;
+/// The width reserved for the radius next to its slider ("mixed").
+const RADIUS_TEXT_WIDTH: f32 = 40.0;
 /// Line heights offered (the property takes 1.0 to 3.0).
 pub(super) const LINE_HEIGHTS: [f64; 4] = [1.0, 1.25, 1.5, 2.0];
 /// Width of the font button, wide enough for the longest family name.
 const FONT_BUTTON_WIDTH: f32 = 124.0;
 /// Width of the "More" button.
 pub(crate) const MORE_BUTTON_WIDTH: f32 = 64.0;
-/// Width of a head button, wide enough for "Start: Triangle".
+/// Width of a head button: the side, a picture of the head and the chevron.
 const HEAD_BUTTON_WIDTH: f32 = 116.0;
 /// The stroke widths: name and value.
 const STROKE_WIDTHS: [(&str, f64); 4] = [("Thin", 1.0), ("Normal", 2.0), ("Bold", 4.0), ("Extra bold", 8.0)];
@@ -45,14 +54,6 @@ pub(super) const FONT_WEIGHTS: [(&str, &str, &str); 3] =
 pub(super) const TEXT_ALIGNS: [(&str, &str, Align); 3] =
     [("Left", "left", Align::Left), ("Center", "center", Align::Center), ("Right", "right", Align::Right)];
 pub(super) const ARROW_TYPES: [(&str, &str); 3] = [("Sharp", "sharp"), ("Round", "round"), ("Elbow", "elbow")];
-pub(super) const HEADS: [(&str, &str); 6] = [
-    ("None", "none"),
-    ("Arrow", "arrow"),
-    ("Bar", "bar"),
-    ("Dot", "circle"),
-    ("Triangle", "triangle"),
-    ("Diamond", "diamond"),
-];
 const BRUSHES: [(&str, &str); 2] = [("Normal", "normal"), ("Calligraphy", "calligraphy")];
 const STROKE_STYLES: [(LineStyle, &str, &str); 3] = [
     (LineStyle::Solid, "solid", "Solid"),
@@ -83,7 +84,7 @@ impl Row {
             Row::Width => width(ui, cx),
             Row::StrokeStyle => stroke_style(ui, cx),
             Row::FillPattern => fill_pattern(ui, cx),
-            Row::Corners => corners(ui, cx),
+            Row::Corners => corners(ui, cx, st),
             Row::ArrowPath => arrow_path(ui, cx),
             Row::ArrowHeads => arrow_heads(ui, cx, st),
             Row::Brush => brush(ui, cx),
@@ -143,12 +144,22 @@ struct Dropdown<'a> {
     open: bool,
     /// Greys the button with this tooltip.
     reason: Option<String>,
+    /// A picture of an arrowhead between the text and the chevron, and the tooltip that names the head.
+    head: Option<HeadView>,
+}
+
+/// The arrowhead a [`Dropdown`] shows.
+struct HeadView {
+    head: Head,
+    end: End,
+    /// What the tooltip says: the button's name and the head's.
+    tooltip: String,
 }
 
 /// A button with a text and a chevron that opens something. The caller reacts to the click.
 /// `reason` greys it with that tooltip.
 fn dropdown(cx: &Cx<'_>, ui: &mut Ui, spec: Dropdown<'_>) -> Response {
-    let Dropdown { label, text, font, width, open, reason } = spec;
+    let Dropdown { label, text, font, width, open, reason, head } = spec;
     let pal = cx.pal;
     let enabled = reason.is_none();
     let height = cx.layout.small_side();
@@ -170,7 +181,15 @@ fn dropdown(cx: &Cx<'_>, ui: &mut Ui, spec: Dropdown<'_>) -> Response {
                 let galley = ui.painter().layout_no_wrap(text.to_owned(), font, ink);
                 let clip = Rect::from_min_max(rect.min, pos2(chevron.left() - space::XS, rect.max.y));
                 let at = pos2(rect.left() + space::LG, rect.center().y - galley.size().y / 2.0);
+                let text_right = at.x + galley.size().x;
                 ui.painter().with_clip_rect(clip).galley(at, galley, ink);
+                if let Some(view) = &head {
+                    let room = Rect::from_min_max(
+                        pos2(text_right + space::SM, rect.top() + space::SM),
+                        pos2(chevron.left() - space::XS, rect.bottom() - space::SM),
+                    );
+                    head_sample(ui.painter(), room, view.head, view.end, ink);
+                }
             }
             resp.widget_info(|| {
                 let mut info = WidgetInfo::labeled(Role::Button, enabled, label);
@@ -180,24 +199,27 @@ fn dropdown(cx: &Cx<'_>, ui: &mut Ui, spec: Dropdown<'_>) -> Response {
             resp
         })
         .inner;
-    match reason {
-        Some(r) => resp.on_disabled_hover_text(r),
-        None => resp.on_hover_text(label),
+    match (reason, head) {
+        (Some(r), _) => resp.on_disabled_hover_text(r),
+        (None, Some(view)) => resp.on_hover_text(view.tooltip),
+        (None, None) => resp.on_hover_text(label),
     }
 }
 
 /// A [`dropdown`] that opens a ribbon menu (`menus.rs`) under itself.
-fn menu_button(
-    cx: &Cx<'_>,
-    ui: &mut Ui,
-    st: &mut UiState,
+struct MenuButton<'a> {
     kind: RibbonMenu,
-    label: &str,
-    text: &str,
+    /// The accessible name.
+    label: &'a str,
+    text: &'a str,
     width: f32,
-) -> Response {
+    head: Option<HeadView>,
+}
+
+fn menu_button(cx: &Cx<'_>, ui: &mut Ui, st: &mut UiState, button: MenuButton<'_>) -> Response {
+    let MenuButton { kind, label, text, width, head } = button;
     let open = st.ribbon_menu.is_some_and(|m| m.kind == kind);
-    let spec = Dropdown { label, text, font: TextSize::Small.font(), width, open, reason: None };
+    let spec = Dropdown { label, text, font: TextSize::Small.font(), width, open, reason: None, head };
     let resp = dropdown(cx, ui, spec);
     if !ui.is_sizing_pass() {
         if resp.clicked() {
@@ -248,21 +270,92 @@ fn fill_pattern(ui: &mut Ui, cx: &mut Cx<'_>) {
     }
 }
 
-fn corners(ui: &mut Ui, cx: &mut Cx<'_>) {
+fn corners(ui: &mut Ui, cx: &mut Cx<'_>, st: &mut UiState) {
     for (name, value) in CORNERS {
         let ctl = corner_ctl(cx, name, value);
         let rounded = value > 0.0;
         picture(cx, ui, &ctl, move |p, rect, ink| pictograms::corner(p, rect, rounded, ink));
     }
+    corner_radius_button(ui, cx, st);
+}
+
+/// The small button after the presets that opens the radius slider: the sliders icon, its name and the radius in
+/// the tooltip, selected while the menu is open or the radius is none of the presets.
+fn corner_radius_button(ui: &mut Ui, cx: &Cx<'_>, st: &mut UiState) {
+    let open = st.ribbon_menu.is_some_and(|m| m.kind == RibbonMenu::CornerRadius);
+    let side = cx.layout.small_side();
+    let pal = cx.pal;
+    let (rect, resp) = ui.allocate_exact_size(vec2(side, side), Sense::click());
+    let look = Look {
+        hovered: resp.hovered() || resp.has_focus(),
+        pressed: resp.is_pointer_button_down_on(),
+        enabled: true,
+        selected: open,
+    };
+    if ui.is_rect_visible(rect) {
+        paint_button_bg(ui.painter(), rect, look, &pal, true);
+        pictograms::radius_slider(ui.painter(), rect.shrink(side * 0.22), icon_color(look, &pal));
+    }
+    let tip = format!("Corner radius: {}", radius_text(cx));
+    resp.widget_info(|| {
+        let mut info = WidgetInfo::labeled(Role::Button, true, "Corner radius");
+        info.selected = Some(open);
+        info
+    });
+    let resp = resp.on_hover_text(tip);
+    if !ui.is_sizing_pass() {
+        if resp.clicked() {
+            st.close_overlays();
+            st.ribbon_menu = Some(OpenRibbonMenu { kind: RibbonMenu::CornerRadius, anchor: resp.rect });
+        } else if open {
+            st.ribbon_menu = Some(OpenRibbonMenu { kind: RibbonMenu::CornerRadius, anchor: resp.rect });
+        }
+    }
+}
+
+/// The radius as the button and the slider's value show it: a whole number, or `mixed`.
+fn radius_text(cx: &Cx<'_>) -> String {
+    if cx.model.style.prop("corner_radius").is_some_and(StyleProp::is_mixed) {
+        "mixed".to_owned()
+    } else {
+        format!("{}", cx.model.style.num_value("corner_radius").unwrap_or(0.0).round())
+    }
+}
+
+/// The corner radius slider and its value: any radius, where the two buttons give the presets. A drag is one
+/// gesture (docs/exceptions.md E13), so it is one undo step; with several shapes of different radii the value says
+/// `mixed`.
+pub(super) fn corner_slider(ui: &mut Ui, cx: &mut Cx<'_>) {
+    let mut value = cx.model.style.num_value("corner_radius").unwrap_or(0.0) as f32;
+    ui.spacing_mut().slider_width = CORNER_SLIDER_WIDTH;
+    style_slider_rail(ui, cx);
+    let spec =
+        SliderSpec { control: ScrubControl::CornerRadius, label: "Corner radius", range: 0.0..=CORNER_SLIDER_MAX };
+    scrub::slider(ui, cx, &spec, &mut value, |v| json!({ "props": { "corner_radius": v.round() } }));
+    let text = radius_text(cx);
+    ui.add_sized(
+        [RADIUS_TEXT_WIDTH, cx.layout.toggle_height()],
+        egui::Label::new(egui::RichText::new(text).size(TextSize::Caption.points()).color(cx.pal.muted)),
+    );
+}
+
+/// The rail and the part before the handle of a slider must show on the card colour, in both themes.
+fn style_slider_rail(ui: &mut Ui, cx: &Cx<'_>) {
+    let pal = cx.pal;
+    let visuals = ui.visuals_mut();
+    visuals.widgets.inactive.bg_fill = pal.border;
+    visuals.widgets.hovered.bg_fill = pal.border;
+    visuals.widgets.active.bg_fill = pal.border;
+    visuals.selection.bg_fill = pal.accent;
+    visuals.slider_trailing_fill = true;
 }
 
 /// The two corner choices: sharp (radius 0) and round.
 pub(super) const CORNERS: [(&str, f64); 2] = [("Sharp", 0.0), ("Round", ROUND_CORNER)];
 
-/// The control of one corner choice, selected when the selection (or the defaults) has it.
+/// The control of one corner choice, selected when the selection (or the defaults) has exactly that radius.
 pub(super) fn corner_ctl(cx: &Cx<'_>, name: &str, value: f64) -> Ctl<'static> {
-    let selected =
-        cx.model.style.num_value("corner_radius").is_some_and(|r| if value == 0.0 { r < 1.0 } else { r >= 1.0 });
+    let selected = cx.model.style.num_value("corner_radius").is_some_and(|r| (r - value).abs() < 0.5);
     style_ctl("corner_radius", value).label(format!("Corners: {name}")).selected(selected)
 }
 
@@ -303,23 +396,27 @@ fn arrow_path(ui: &mut Ui, cx: &mut Cx<'_>) {
     }
 }
 
-/// The word shown on a head button: the head when it is known (new arrows, a selected arrow), else the side.
-fn head_text(side: &str, known: Option<&str>) -> String {
+/// What a head button shows: the side, and the head when it is known (new arrows, a selected arrow). `Mixed`
+/// arrows have no one head to draw.
+fn head_view(side: &str, known: Option<&str>, end: End) -> (String, Option<HeadView>) {
     match known {
-        Some("mixed") => format!("{side}: Mixed"),
-        Some(v) => match HEADS.iter().find(|(_, value)| *value == v) {
-            Some((name, _)) => format!("{side}: {name}"),
-            None => format!("{side}: {}", v.replace('_', " ")),
+        Some("mixed") => (format!("{side}: Mixed"), None),
+        Some(value) => match HeadChoice::named(value) {
+            Some(choice) => {
+                let tooltip = format!("{side} head: {}", choice.name);
+                (side.to_owned(), Some(HeadView { head: choice.head, end, tooltip }))
+            }
+            None => (format!("{side}: {}", value.replace('_', " ")), None),
         },
-        None => side.to_owned(),
+        None => (side.to_owned(), None),
     }
 }
 
 fn arrow_heads(ui: &mut Ui, cx: &mut Cx<'_>, st: &mut UiState) {
     let new = new_arrows(cx);
-    for (kind, side, key, default) in [
-        (RibbonMenu::StartHead, "Start", "arrow.start_head", "none"),
-        (RibbonMenu::EndHead, "End", "arrow.end_head", "arrow"),
+    for (kind, side, key, default, end) in [
+        (RibbonMenu::StartHead, "Start", "arrow.start_head", "none", End::Start),
+        (RibbonMenu::EndHead, "End", "arrow.end_head", "arrow", End::End),
     ] {
         let known = if new {
             Some(arrow_setting(cx, key, default))
@@ -330,8 +427,9 @@ fn arrow_heads(ui: &mut Ui, cx: &mut Cx<'_>, st: &mut UiState) {
                 .as_ref()
                 .map(|h| if kind == RibbonMenu::StartHead { h.start.clone() } else { h.end.clone() })
         };
-        let text = head_text(side, known.as_deref());
-        menu_button(cx, ui, st, kind, &format!("{side} head"), &text, HEAD_BUTTON_WIDTH);
+        let (text, head) = head_view(side, known.as_deref(), end);
+        let label = format!("{side} head");
+        menu_button(cx, ui, st, MenuButton { kind, label: &label, text: &text, width: HEAD_BUTTON_WIDTH, head });
     }
 }
 
@@ -358,8 +456,15 @@ fn font_family(ui: &mut Ui, cx: &mut Cx<'_>, st: &mut UiState) {
         None => (if mixed { "Mixed" } else { "Font" }, TextSize::Body.font()),
     };
     let reason = not_applicable(cx, "font_family");
-    let spec =
-        Dropdown { label: "Pick the font", text, font, width: FONT_BUTTON_WIDTH, open: st.font_picker_open, reason };
+    let spec = Dropdown {
+        label: "Pick the font",
+        text,
+        font,
+        width: FONT_BUTTON_WIDTH,
+        open: st.font_picker_open,
+        reason,
+        head: None,
+    };
     let resp = dropdown(cx, ui, spec);
     remember_anchor_in(ui, PopoverKey::Font, resp.rect);
     if resp.clicked() {
@@ -427,7 +532,18 @@ fn vertical_align(ui: &mut Ui, cx: &mut Cx<'_>) {
 
 /// The "More" button at the right end of the strip: it opens the popup of `menus.rs`.
 pub(crate) fn more_button(ui: &mut Ui, cx: &mut Cx<'_>, st: &mut UiState) {
-    menu_button(cx, ui, st, RibbonMenu::More, "More options", "More", MORE_BUTTON_WIDTH);
+    menu_button(
+        cx,
+        ui,
+        st,
+        MenuButton {
+            kind: RibbonMenu::More,
+            label: "More options",
+            text: "More",
+            width: MORE_BUTTON_WIDTH,
+            head: None,
+        },
+    );
 }
 
 // ---- opacity ----
@@ -439,14 +555,7 @@ fn opacity(ui: &mut Ui, cx: &mut Cx<'_>) {
     let mixed = cx.model.style.prop("opacity").is_some_and(StyleProp::is_mixed);
     let mut value = current as f32;
     ui.spacing_mut().slider_width = SLIDER_WIDTH;
-    // The rail and the part before the handle must show on the card colour, in both themes.
-    let pal = cx.pal;
-    let visuals = ui.visuals_mut();
-    visuals.widgets.inactive.bg_fill = pal.border;
-    visuals.widgets.hovered.bg_fill = pal.border;
-    visuals.widgets.active.bg_fill = pal.border;
-    visuals.selection.bg_fill = pal.accent;
-    visuals.slider_trailing_fill = true;
+    style_slider_rail(ui, cx);
     let spec = SliderSpec { control: ScrubControl::Opacity, label: "Opacity", range: 0.0..=1.0 };
     scrub::slider(
         ui,

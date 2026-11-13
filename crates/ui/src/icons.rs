@@ -67,6 +67,7 @@ pub enum Icon {
     Search,
     Image,
     Wheel,
+    Eyedropper,
     NoColor,
     Library,
     Sticky,
@@ -458,6 +459,12 @@ pub fn paint(painter: &Painter, rect: Rect, icon: Icon, color: Color32) {
                 ];
                 painter.add(Shape::convex_polygon(pts, c, Stroke::NONE));
             }
+        }
+        Icon::Eyedropper => {
+            // The tube from the tip at the lower left to the bulb at the upper right.
+            pen.poly(&[(5.8, 14.8), (8.2, 17.2), (15.2, 10.2), (12.8, 7.8)], true);
+            pen.line((6.0, 17.0), (3.5, 20.5));
+            pen.circle(16.6, 7.4, 3.2);
         }
         Icon::NoColor => {
             pen.circle(12.0, 12.0, 9.0);

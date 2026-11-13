@@ -609,7 +609,7 @@ The props (each applies only to the kinds listed; others are skipped and reporte
 | `stroke_width` | number above 0, at most 1000 (presets 1, 2, 4, 8) | all except text, math. Choosing a width (or a dash) for an image that has no outline outlines it, in the default stroke colour | U:1156, A:2679 |
 | `stroke_style` | `solid \| dashed \| dotted` | every shape: rectangle, diamond, ellipse, frame, image (its outline), line, arrow, freehand (the old app only had it on line and arrow) | U:1631, A:3097 |
 | `sloppiness` | `architect \| artist \| cartoonist \| drunk` | all except text, math, image, freehand | U:1542, A:2996 |
-| `corner_radius` | number from 0 (sharp), at most 1000000. The old "on" was 32. | rectangle, diamond, line, arrow, frame | U:1515, A:2970 |
+| `corner_radius` | number from 0 (sharp), at most 1000000. The old "on" was 32. A shape draws at most half its shorter side. The panel has Sharp (0), Round (32) and a slider from 0 to 100 that scrubs through `gesture.*` (E13); `style.get` says `mixed` when the shapes that take a radius differ. | rectangle, diamond, line, arrow, frame | U:1515, A:2970 |
 | `opacity` | 0 to 1 | all | U:1778, A:3639 |
 | `freehand_style` | `normal \| calligraphy` (smooths the samples of strokes drawn afterwards; `element.create` stores the points it is given) | freehand | U:1659, A:3609 |
 | `pressure_mode` | `uniform \| simulated \| device` (device is NEW: real pen pressure). `uniform` draws a constant width, the others use the stored `pressures`; `simulated` makes them from the pointer speed when a stroke is drawn with a mouse or finger | freehand | U:1675, A:3617 |
@@ -1208,6 +1208,7 @@ Not commands, never in `engine.commands`. Each ends, when it produces a result, 
 | `ui.save_as` | name field, then the save picker | `doc.rename` (when the name changed), then `doc.save` with `to` | U:1900, 2631 |
 | `ui.insert_image` | image picker | `image.insert` | NEW |
 | `ui.open_color_picker` | colour popover (stroke, fill or background) | `style.set` or `doc.set_background` | U:1166-1195, 1007 |
+| `ui.pick_color` | the eyedropper next to the stroke and fill swatches: pick mode (a crosshair over the canvas, a swatch with the colour under the pointer, the release of the pointer picks, Esc cancels), or the platform's own picker where it has one (the browser's `EyeDropper`) | `style.set` with `stroke_color` or `fill_color` | X:EyeDropper.tsx |
 | `ui.open_font_picker` | font family popover | `style.set` | NEW |
 | `ui.open_palette` | command palette, listing `engine.commands` | the chosen command | NEW |
 | `ui.open_search` | search box over `element.query` | `selection.select`, `view.zoom_to_fit` | NEW |
@@ -1478,7 +1479,7 @@ These are deliberate; each fixes an inventory finding. Reviewers should expect t
 | `9` image | `I` (UI verb), conflict §6.4 |
 | `E`/`0` eraser, `F` frame, `K` laser | `tool.set` |
 | `B` bucket fill, `Shift+X` autoshape | not planned |
-| `I`, `Shift+S`, `Shift+G` eyedropper | not planned (`I` is image here) |
+| `I`, `Shift+S`, `Shift+G` eyedropper | not planned (`I` is image here); the button next to the swatches and the palette rows `ui.pick_color` do it |
 | `Q` tool lock | `tool.lock` |
 | `Esc` | `tool.cancel` |
 | `Enter` edit text or label | `text.edit_begin` |

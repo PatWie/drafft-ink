@@ -467,3 +467,15 @@ fn a_popup_menu_takes_the_arrow_keys_and_enter_from_the_canvas() {
         one(&m, &closed, press(Key::ArrowDown, Some(Key::ArrowDown), Modifiers::SHIFT))
     );
 }
+
+#[test]
+fn esc_leaves_the_eyedropper_before_it_runs_anything_else() {
+    let m = model(false);
+    let mut st = UiState::new();
+    st.apply_verb(Verb::PickColorFill, &mut Vec::new());
+    assert!(st.eyedropper().is_some());
+    let action = one(&m, &st, press(Key::Escape, None, Modifiers::NONE)).unwrap();
+    assert_eq!(action, UiAction::Verb(Verb::CloseOverlays), "not tool.cancel: the mode comes first");
+    st.apply_verb(Verb::CloseOverlays, &mut Vec::new());
+    assert!(st.eyedropper().is_none());
+}

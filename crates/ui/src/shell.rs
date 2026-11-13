@@ -191,6 +191,7 @@ pub fn draw(ui: &mut egui::Ui, model: &Model, state: &mut UiState) -> Vec<UiActi
     state.chrome = crate::chrome::ChromeRects::default();
     let pal = Palette::of(&ctx);
     state.observe_input(&ctx);
+    state.dark = pal.dark;
     let screen = ctx.content_rect().size();
     let layout = Layout { compact: state.compact(screen.x), narrow: state.narrow(screen.x), screen };
     let mut cx = Cx::new(model, pal, &mut out).with_layout(layout).with_scrub(state.scrub.frame());

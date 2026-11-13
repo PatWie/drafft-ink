@@ -559,6 +559,7 @@ fn exception_E13_scrub_equals_plain_command() {
     for (first, last) in [
         (json!({"opacity": 0.9}), json!({"opacity": 0.2})),
         (json!({"stroke_width": 3}), json!({"stroke_width": 8, "stroke_color": "teal-500"})),
+        (json!({"corner_radius": 8}), json!({"corner_radius": 40})),
     ] {
         let mut scrubbed = fixture();
         let begin = run(&mut scrubbed.s, "gesture.begin", json!({"command": "style.set", "args": {"props": first}}));
@@ -678,6 +679,28 @@ fn get_corner_radius_ignores_elements_that_cannot_have_one() {
     testing::select(&mut f.s, &[f.rect.clone(), f.ellipse.clone()]);
     let out = run(&mut f.s, "style.get", json!({"props": ["corner_radius"]}));
     assert_eq!(out["props"]["corner_radius"], json!({"applicable": true, "value": 0.0}));
+}
+
+#[test]
+fn get_corner_radius_says_mixed_when_the_shapes_that_round_differ_and_reads_through_a_gesture() {
+    let mut f = fixture();
+    run(&mut f.s, "style.set", json!({"props": {"corner_radius": 20}, "ids": [f.rect.as_str()]}));
+    testing::select(&mut f.s, &[f.rect.clone(), f.boxed.clone(), f.ellipse.clone(), f.text.clone()]);
+    let out = run(&mut f.s, "style.get", json!({"props": ["corner_radius"]}));
+    assert_eq!(out["props"]["corner_radius"], json!({"applicable": true, "value": "mixed"}), "20 against 0");
+    // A drag of the slider writes one radius to every shape that rounds and leaves the others alone.
+    let depth = f.s.tab().doc.undo_depth();
+    let begin = run(&mut f.s, "gesture.begin", json!({"command": "style.set", "args": {"props": {"corner_radius": 6}}}));
+    let g = begin["gesture"].as_str().unwrap().to_owned();
+    run(&mut f.s, "gesture.update", json!({"gesture": g, "args": {"props": {"corner_radius": 44}}}));
+    run(&mut f.s, "gesture.end", json!({"gesture": g}));
+    assert_eq!((el(&f.s, &f.rect).style.corner_radius, el(&f.s, &f.boxed).style.corner_radius), (44.0, 44.0));
+    assert_eq!((el(&f.s, &f.ellipse).style.corner_radius, el(&f.s, &f.text).style.corner_radius), (0.0, 0.0));
+    let out = run(&mut f.s, "style.get", json!({"props": ["corner_radius"]}));
+    assert_eq!(out["props"]["corner_radius"], json!({"applicable": true, "value": 44.0}));
+    assert_eq!(f.s.tab().doc.undo_depth(), depth + 1, "the whole drag is one undo step");
+    f.s.undo_steps(1).unwrap();
+    assert_eq!(el(&f.s, &f.rect).style.corner_radius, 20.0, "and undoes to the mixed state it began in");
 }
 
 #[test]

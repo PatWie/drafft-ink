@@ -210,3 +210,10 @@ pub(super) fn box_lines(p: &Painter, rect: Rect, align: VAlign, ink: Color32) {
         p.line_segment([pos2(inner.left(), y), pos2(inner.left() + inner.width() * share, y)], stroke);
     }
 }
+
+/// A slider with its handle at the middle: the button that opens the corner radius slider.
+pub(super) fn radius_slider(p: &Painter, rect: Rect, ink: Color32) {
+    let y = rect.center().y;
+    p.line_segment([pos2(rect.left(), y), pos2(rect.right(), y)], Stroke::new(2.0, ink));
+    p.circle_filled(pos2(rect.center().x, y), rect.width() * 0.2, ink);
+}

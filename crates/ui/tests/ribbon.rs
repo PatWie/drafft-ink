@@ -189,6 +189,71 @@ fn a_rectangle_gets_stroke_corners_opacity_layers_and_actions_but_no_text_align_
     assert!(has(&h, "Thin") && has(&h, "Extra bold"), "a rectangle has a width");
 }
 
+fn radius_slider<'a>(h: &'a H) -> Option<egui_kittest::Node<'a>> {
+    h.query_by_role_and_label(egui::accesskit::Role::Slider, "Corner radius")
+}
+
+#[test]
+fn the_corners_row_has_the_two_presets_and_a_radius_button_that_follow_the_selection() {
+    let mut f = one_rect();
+    dialog::run(&mut f, "style.set", json!({ "props": { "corner_radius": 12 } }));
+    let mut h = desk(f);
+    let on =
+        |h: &H, label: &str| h.get_by_label(label).accesskit_node().toggled() == Some(egui::accesskit::Toggled::True);
+    assert!(!on(&h, "Corners: Sharp") && !on(&h, "Corners: Round"), "12 is neither preset");
+    assert!(radius_slider(&h).is_none(), "the slider is in the menu, not in the strip");
+    h.get_by_role_and_label(egui::accesskit::Role::Button, "Corner radius");
+    open(&mut h, "Corner radius");
+    h.get_by_label("12");
+    assert_eq!(radius_slider(&h).and_then(|s| s.accesskit_node().numeric_value()), Some(12.0));
+    let mut f = one_rect();
+    dialog::run(&mut f, "style.set", json!({ "props": { "corner_radius": 32 } }));
+    let h = desk(f);
+    assert!(on(&h, "Corners: Round") && !on(&h, "Corners: Sharp"));
+}
+
+#[test]
+fn the_presets_still_set_the_radius() {
+    let mut h = desk(one_rect());
+    let calls = common::click(&mut h, "Corners: Round");
+    assert_eq!(
+        calls.last().map(|c| (c.id.as_str(), c.args.clone())),
+        Some(("style.set", json!({ "props": { "corner_radius": 32.0 } })))
+    );
+    let calls = common::click(&mut h, "Corners: Sharp");
+    assert_eq!(calls.last().map(|c| c.args.clone()), Some(json!({ "props": { "corner_radius": 0.0 } })));
+}
+
+#[test]
+fn only_shapes_that_round_get_the_radius_control() {
+    let has_button = |h: &H| h.query_by_role_and_label(egui::accesskit::Role::Button, "Corner radius").is_some();
+    assert!(has_button(&desk(one_rect())));
+    assert!(has_button(&desk(with_tool("rectangle"))));
+    assert!(has_button(&desk(with_tool("diamond"))));
+    assert!(!has_button(&desk(with_tool("ellipse"))), "an ellipse has no corners");
+    assert!(!has_button(&desk(free_text())));
+    assert!(!has_button(&desk(freehand())));
+    // Lines and arrows have their corners in the More menu, with the slider in it.
+    let mut h = desk(arrow());
+    assert!(!has_button(&h) && radius_slider(&h).is_none());
+    open(&mut h, "More options");
+    assert!(radius_slider(&h).is_some(), "the More menu of an arrow has it");
+}
+
+#[test]
+fn a_mixed_selection_of_shapes_shows_mixed_radii_and_a_text_does_not_count() {
+    let mut f = dialog::fixture();
+    let a = add_rect(&mut f.session, 0.0, 0.0, 100.0, 60.0).unwrap();
+    let b = add_rect(&mut f.session, 150.0, 0.0, 100.0, 60.0).unwrap();
+    let t = create(&mut f, json!({ "kind": "text", "text": "hello", "at": [0, 200] }));
+    dialog::run(&mut f, "style.set", json!({ "ids": [a.as_str()], "props": { "corner_radius": 8 } }));
+    selecting(&mut f, &[a, b, t]);
+    let mut h = desk(f);
+    open(&mut h, "Corner radius");
+    h.get_by_label("mixed");
+    assert!(radius_slider(&h).is_some());
+}
+
 #[test]
 fn the_fill_patterns_come_with_a_fill() {
     let mut f = one_rect();
@@ -275,6 +340,131 @@ fn the_head_buttons_show_the_heads_of_the_selected_arrow() {
     assert!(on(&h, "End head: Triangle") && !on(&h, "End head: Arrow"), "and so is the end head");
 }
 
+/// Every head the scene knows, as the picker names it and as `arrow.set_head` takes it.
+const ALL_HEADS: [(&str, &str); 15] = [
+    ("None", "none"),
+    ("Arrow", "arrow"),
+    ("Bar", "bar"),
+    ("Dot", "circle"),
+    ("Hollow dot", "circle_outline"),
+    ("Triangle", "triangle"),
+    ("Hollow triangle", "triangle_outline"),
+    ("Diamond", "diamond"),
+    ("Hollow diamond", "diamond_outline"),
+    ("One", "cardinality_one"),
+    ("Many", "cardinality_many"),
+    ("One or many", "cardinality_one_or_many"),
+    ("Exactly one", "cardinality_exactly_one"),
+    ("Zero or one", "cardinality_zero_or_one"),
+    ("Zero or many", "cardinality_zero_or_many"),
+];
+
+#[test]
+fn both_ends_offer_every_head_and_each_runs_arrow_set_head() {
+    for (side, end) in [("Start", "start"), ("End", "end")] {
+        let mut h = desk(arrow());
+        open(&mut h, &format!("{side} head"));
+        for (name, value) in ALL_HEADS {
+            let label = format!("{side} head: {name}");
+            assert!(has(&h, &label), "{label}");
+            let calls = common::click(&mut h, &label);
+            let head = if value == "none" { serde_json::Value::Null } else { json!(value) };
+            let call = calls.last().map(|c| (c.id.as_str(), c.args.clone()));
+            assert_eq!(call, Some(("arrow.set_head", json!({ "end": end, "head": head }))), "{label}");
+            // A pick closes the menu; the next one opens it again.
+            h.run();
+            open(&mut h, &format!("{side} head"));
+        }
+    }
+}
+
+#[test]
+fn the_picker_lists_the_heads_in_a_grid_of_five_columns() {
+    let mut h = desk(arrow());
+    open(&mut h, "End head");
+    let rects: Vec<Rect> = ALL_HEADS.iter().map(|(name, _)| rect(&h, &format!("End head: {name}"))).collect();
+    let rows: Vec<f32> = rects.iter().map(|r| r.top()).collect();
+    assert_eq!(rows[0], rows[4], "the first five share a row");
+    assert!(rows[5] > rows[4] && rows[5] == rows[9] && rows[10] > rows[9], "rows of five: {rows:?}");
+    assert!(rects[0].right() <= rects[1].left() + 0.5, "cells do not overlap");
+}
+
+#[test]
+fn a_head_cell_has_a_name_a_check_for_the_current_head_and_a_tooltip_target() {
+    let mut f = dialog::fixture();
+    let a = create(
+        &mut f,
+        json!({ "kind": "arrow", "points": [[0, 0], [80, 30]], "end_head": "cardinality_zero_or_many" }),
+    );
+    selecting(&mut f, &[a]);
+    let mut h = desk(f);
+    open(&mut h, "End head");
+    let on =
+        |h: &H, label: &str| h.get_by_label(label).accesskit_node().toggled() == Some(egui::accesskit::Toggled::True);
+    assert!(on(&h, "End head: Zero or many") && !on(&h, "End head: Zero or one"));
+}
+
+#[test]
+fn the_arrow_keys_walk_the_head_grid_and_enter_picks() {
+    let mut h = desk(arrow());
+    open(&mut h, "End head");
+    let focused = |h: &H, name: &str| h.get_by_label(&format!("End head: {name}")).is_focused();
+    h.key_press(egui::Key::ArrowDown);
+    h.run();
+    assert!(focused(&h, "None"), "Down focuses the first cell");
+    h.key_press(egui::Key::ArrowRight);
+    h.run();
+    assert!(focused(&h, "Arrow"));
+    h.key_press(egui::Key::ArrowDown);
+    h.run();
+    assert!(focused(&h, "Hollow triangle"), "Down goes one row, which is five cells on");
+    h.key_press(egui::Key::ArrowLeft);
+    h.run();
+    assert!(focused(&h, "Triangle"));
+    h.key_press(egui::Key::ArrowUp);
+    h.run();
+    assert!(focused(&h, "None"), "Up goes one row back");
+    // Down through the second and third row and once more leaves the grid for the row under it.
+    h.key_press(egui::Key::ArrowDown);
+    h.run();
+    h.key_press(egui::Key::ArrowDown);
+    h.run();
+    h.key_press(egui::Key::ArrowDown);
+    h.run();
+    assert!(h.get_by_label("Swap heads").is_focused(), "Down past the last row goes to the row below the grid");
+    h.key_press(egui::Key::ArrowUp);
+    h.run();
+    assert!(focused(&h, "Zero or many"), "and Up comes back to the last cell");
+    h.state_mut().clear();
+    h.key_press(egui::Key::Enter);
+    h.run();
+    let calls = h.state().calls().into_iter().cloned().collect::<Vec<_>>();
+    assert_eq!(calls.last().map(|c| c.id.as_str()), Some("arrow.set_head"), "Enter runs the focused cell");
+}
+
+#[test]
+fn the_head_cells_have_finger_sized_targets_on_a_touch_device() {
+    let mut f = arrow();
+    f.state.set_touch_first(true);
+    let mut h = desk(f);
+    open(&mut h, "End head");
+    for (name, _) in ALL_HEADS {
+        let r = rect(&h, &format!("End head: {name}"));
+        assert!(r.height() >= 36.0 && r.width() >= 36.0, "{name}: {r:?}");
+    }
+}
+
+#[test]
+fn the_arrow_tool_sets_every_head_of_new_arrows() {
+    let mut h = desk(with_tool("arrow"));
+    open(&mut h, "Start head");
+    let calls = common::click(&mut h, "New arrows, Start head: Zero or many");
+    assert_eq!(
+        calls.last().map(|c| (c.id.as_str(), c.args.clone())),
+        Some(("tool.set_arrow", json!({ "start_head": "cardinality_zero_or_many" })))
+    );
+}
+
 #[test]
 fn two_arrows_with_different_heads_say_mixed() {
     let mut f = dialog::fixture();
@@ -315,13 +505,15 @@ fn align_needs_two_elements_and_distribute_three() {
 fn a_text_and_a_shape_together_get_both_sets_of_groups() {
     // Changed with the strip: at 1280 the layer and action groups of this selection do not fit beside the text
     // groups any more and wait behind "More" (see the overflow tests); they used to hang in the card's second row.
+    // The eyedropper button in the colour group (a button wide) moved the align group behind "More" as well.
     let mut h = desk(text_and_shape());
-    for label in [FONT, TEXT_SIZE, "Text align: Left", "Dashed", CORNERS, ALIGN_LEFT, "Bold text"] {
+    for label in [FONT, TEXT_SIZE, "Text align: Left", "Dashed", CORNERS, "Bold text"] {
         assert!(has(&h, label), "{label}");
     }
     assert!(!has(&h, "Path: Elbow"));
     open(&mut h, "More options");
     h.get_by_label(BRING_FRONT);
+    h.get_by_label(ALIGN_LEFT);
 }
 
 #[test]

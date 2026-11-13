@@ -125,6 +125,15 @@ reuses the last Vello texture. `Gpu::headless_blocking` creates a device without
 `GpuInfo` (`name`, `vendor()`, `backend`, `kind`, `is_software()`) tells an NVIDIA card from llvmpipe or
 SwiftShader. Browsers hide the adapter name: on the web it is blank and `kind` is `Other`.
 
+**Reading the canvas.** `EventCx::sample_scene(at, PixelUse)` asks for the colour of the retained scene image at a
+point (egui points; the scene texture has `COPY_SRC` for this): the canvas as the app drew it, without egui over it.
+The shell copies one pixel to a buffer (`Backend::read_scene`, `Compositor::start_scene_read`; the WebGL2 back end
+calls `readPixels` on the scene framebuffer) and answers with `ShellEvent::Pixel(PixelSample { at, purpose, rgba })`,
+posted through the event loop: natively in the next turn (the copy of one pixel is waited for), in the browser when
+the buffer is mapped. `PixelUse::Preview` requests that arrive while an earlier one is still in flight are dropped,
+`PixelUse::Pick` never. A read that cannot start (no scene drawn yet, a lost device) answers with no colour.
+`Headless::event` gives a `ShellEvent` to the app and answers its reads from the last frame, for tests of the eyedropper.
+
 ## 5. GPU setup and loss
 
 - Backends: WebGPU only on the web (no `webgl` feature). Native: `PRIMARY` (Vulkan, Metal, DX12) or `WGPU_BACKEND`.

@@ -14,6 +14,7 @@ use winit::window::Window;
 
 use crate::error::{GpuError, LostInfo};
 use crate::frame::EguiFrame;
+use crate::readback::SceneRead;
 use crate::stats::{BackendStats, RendererInfo};
 
 /// Which renderer draws the canvas. The app reads it to choose how much to draw.
@@ -85,6 +86,10 @@ pub(crate) trait Backend {
 
     /// Draw `scene` over `base` into the retained scene image.
     fn render_scene(&mut self, scene: &Scene, base: Color, size: [u32; 2], detail: Detail) -> Result<(), GpuError>;
+
+    /// Starts reading the rectangle `[x, y, width, height]` of the retained scene image: the canvas as drawn, without
+    /// the egui interface over it. It fails when no scene has been drawn yet.
+    fn read_scene(&mut self, area: [u32; 4]) -> Result<SceneRead, GpuError>;
 
     /// Put the retained scene image and `frame` on screen. Applies and clears the frame's texture updates when it
     /// returns [`Presented::Shown`].

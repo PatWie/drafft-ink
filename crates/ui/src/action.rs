@@ -89,6 +89,10 @@ pub enum Verb {
     OpenColorFill,
     /// `ui.open_color_picker`: colour popover for the page background.
     OpenColorBackground,
+    /// `ui.pick_color`: the eyedropper for the stroke colour.
+    PickColorStroke,
+    /// `ui.pick_color`: the eyedropper for the fill colour.
+    PickColorFill,
     /// `ui.open_font_picker`: font family popover.
     OpenFontPicker,
     /// `ui.open_palette`: the command palette.
@@ -123,7 +127,7 @@ pub enum Verb {
 
 impl Verb {
     /// Every verb, in the order of docs/commands.md §6.3.
-    pub const ALL: [Verb; 24] = [
+    pub const ALL: [Verb; 26] = [
         Verb::CloseOverlays,
         Verb::ToggleMenu,
         Verb::OpenFile,
@@ -133,6 +137,8 @@ impl Verb {
         Verb::OpenColorStroke,
         Verb::OpenColorFill,
         Verb::OpenColorBackground,
+        Verb::PickColorStroke,
+        Verb::PickColorFill,
         Verb::OpenFontPicker,
         Verb::OpenPalette,
         Verb::OpenSearch,
@@ -160,6 +166,7 @@ impl Verb {
             Verb::SaveAs => "ui.save_as",
             Verb::InsertImage => "ui.insert_image",
             Verb::OpenColorStroke | Verb::OpenColorFill | Verb::OpenColorBackground => "ui.open_color_picker",
+            Verb::PickColorStroke | Verb::PickColorFill => "ui.pick_color",
             Verb::OpenFontPicker => "ui.open_font_picker",
             Verb::OpenPalette => "ui.open_palette",
             Verb::OpenSearch => "ui.open_search",
@@ -190,6 +197,8 @@ impl Verb {
             Verb::OpenColorStroke => "Pick the stroke colour",
             Verb::OpenColorFill => "Pick the fill colour",
             Verb::OpenColorBackground => "Pick the background colour",
+            Verb::PickColorStroke => "Pick the stroke colour from the canvas",
+            Verb::PickColorFill => "Pick the fill colour from the canvas",
             Verb::OpenFontPicker => "Pick the font",
             Verb::OpenPalette => "Command palette",
             Verb::OpenSearch => "Search the canvas",
@@ -235,6 +244,9 @@ pub enum HostRequest {
     TextEditFormat(Value),
     /// Open a link in the browser.
     OpenUrl(String),
+    /// Ask the platform to pick a colour from anywhere on the screen (the browser's `EyeDropper`). The app answers
+    /// with `style.set` for `target`.
+    PickScreenColor(crate::state::ColorTarget),
     /// Show a picker for an Excalidraw library file. The app calls `library.import` with `mode: merge`
     /// (the library panel's Import button; `PickLibrary` opens a library as a tab instead).
     PickLibraryImport,

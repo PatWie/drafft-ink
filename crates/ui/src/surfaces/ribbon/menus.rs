@@ -2,15 +2,17 @@
 //! that have no control of their own) and the heads of an arrow. They are menu-kit popups, so they look and
 //! behave like every other menu: rows with check marks, a click outside closes them, a greyed row says why.
 
-use egui::{Align2, Context, Id, pos2, vec2};
+use egui::{Align2, Context, Id, Sense, pos2, vec2};
 use serde_json::{Value, json};
 
-use super::controls::{CORNERS, HEADS, LINE_HEIGHTS, corner_ctl, has_path, new_arrows};
+use super::controls::{CORNERS, LINE_HEIGHTS, corner_ctl, corner_slider, has_path, new_arrows};
+use super::heads::{COLUMNS, End, HEADS, head_sample};
 use super::{Group, shows};
 use crate::chrome::GAP;
 use crate::menu_kit::{MENU_WIDTH, Menu, Popup, Row, outer_width, popup_sized};
 use crate::state::{OpenRibbonMenu, RibbonMenu, UiState};
-use crate::widgets::{Ctl, Cx};
+use crate::theme::space;
+use crate::widgets::{Ctl, Cx, icon_color, paint_button_bg};
 
 /// A property with a few named values, as a `style.set` choice.
 struct Choice {
@@ -92,6 +94,9 @@ impl MoreRows {
             for (name, ctl) in &self.corners {
                 menu.command(ctl.clone(), Row::new().label(name).checked(ctl.selected));
             }
+            menu.custom(|ui, cx| {
+                ui.horizontal(|ui| corner_slider(ui, cx));
+            });
         }
         if let Some(current) = self.line_height {
             menu.heading("Line height");
@@ -130,7 +135,9 @@ impl HeadRows {
     fn read(cx: &Cx<'_>, kind: RibbonMenu) -> Self {
         let (side, end, arg, setting) = match kind {
             RibbonMenu::StartHead => ("Start", "start", "start_head", "arrow.start_head"),
-            RibbonMenu::EndHead | RibbonMenu::More => ("End", "end", "end_head", "arrow.end_head"),
+            RibbonMenu::EndHead | RibbonMenu::More | RibbonMenu::CornerRadius => {
+                ("End", "end", "end_head", "arrow.end_head")
+            }
         };
         let new = new_arrows(cx);
         let current = if new {
@@ -145,19 +152,26 @@ impl HeadRows {
 
     fn draw(&self, menu: &mut Menu<'_, '_, '_>) {
         menu.heading(&format!("{} head", self.side));
-        for (label, value) in HEADS {
+        let end = if self.end == "start" { End::Start } else { End::End };
+        let pal = menu.palette();
+        menu.grid(COLUMNS, HEADS.len(), |ui, cx, index, size| {
+            let Some(choice) = HEADS.get(index).copied() else { return ui.allocate_response(size, Sense::hover()) };
+            let value = choice.value();
+            let label = format!("{} head: {}", self.side, choice.name);
             let ctl = if self.new {
                 Ctl::new("tool.set_arrow")
                     .args(json!({ self.arg: value }))
-                    .label(format!("New arrows, {} head: {label}", self.side))
+                    .label(format!("New arrows, {} head: {}", self.side, choice.name))
             } else {
                 let head = if value == "none" { Value::Null } else { json!(value) };
-                Ctl::new("arrow.set_head")
-                    .args(json!({ "end": self.end, "head": head }))
-                    .label(format!("{} head: {label}", self.side))
+                Ctl::new("arrow.set_head").args(json!({ "end": self.end, "head": head })).label(label)
             };
-            menu.command(ctl, Row::new().label(label).checked(self.current == value));
-        }
+            let ctl = ctl.selected(self.current == value);
+            cx.command_widget(ui, &ctl, size, move |p, rect, look| {
+                paint_button_bg(p, rect, look, &pal, true);
+                head_sample(p, rect.shrink2(vec2(space::SM, 0.0)), choice.head, end, icon_color(look, &pal));
+            })
+        });
         if !self.new {
             menu.separator();
             menu.command(Ctl::new("arrow.swap_heads").label("Swap heads"), Row::new().label("Swap heads"));
@@ -177,6 +191,7 @@ pub(crate) fn show(ctx: &Context, cx: &mut Cx<'_>, st: &mut UiState, overflow: &
         RibbonMenu::More => "More options menu",
         RibbonMenu::StartHead => "Start head menu",
         RibbonMenu::EndHead => "End head menu",
+        RibbonMenu::CornerRadius => "Corner radius menu",
     };
     let result = match kind {
         RibbonMenu::More => {
@@ -195,6 +210,20 @@ pub(crate) fn show(ctx: &Context, cx: &mut Cx<'_>, st: &mut UiState, overflow: &
                     menu.separator();
                 }
                 rows.draw(menu);
+            })
+        }
+        RibbonMenu::CornerRadius => {
+            let spec = Popup {
+                key: Id::unique(("ribbon_menu", kind)),
+                label,
+                pivot: Align2::LEFT_TOP,
+                at: anchor.left_bottom() + vec2(0.0, GAP),
+            };
+            popup_sized(ctx, cx, &spec, MENU_WIDTH, |menu| {
+                menu.heading("Corner radius");
+                menu.custom(|ui, cx| {
+                    ui.horizontal(|ui| corner_slider(ui, cx));
+                });
             })
         }
         RibbonMenu::StartHead | RibbonMenu::EndHead => {

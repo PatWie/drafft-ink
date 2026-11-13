@@ -8,7 +8,7 @@ use vello::peniko::Color;
 use winit::event_loop::EventLoopProxy;
 
 use crate::backend::BackendKind;
-use crate::events::{ClipboardContent, CursorIcon, Handled, Repaint, ShellEvent};
+use crate::events::{ClipboardContent, CursorIcon, Handled, PixelUse, Repaint, ShellEvent};
 use crate::shell::UserEvent;
 use crate::stats::{RendererInfo, ShellStats};
 
@@ -74,6 +74,7 @@ pub(crate) struct Outbox {
     pub open_url: Option<(String, bool)>,
     pub lose_device: bool,
     pub text_input: Option<egui::Rect>,
+    pub samples: Vec<(egui::Pos2, PixelUse)>,
 }
 
 /// Passed to [`ShellApp::setup`].
@@ -128,6 +129,14 @@ impl EventCx<'_> {
     /// that arrive before that frame go to the canvas, where nothing reads them. A frame moves the caret later.
     pub fn set_text_input(&mut self, caret: egui::Rect) {
         self.out.text_input = Some(caret);
+    }
+
+    /// Ask for the colour of the canvas at `at` (egui points), as drawn: the pixel of the scene the app gave
+    /// [`FrameCx::scene_mut`], without the egui interface over it. The answer comes later as
+    /// [`ShellEvent::Pixel`], on native in the next turn of the loop and in the browser when the GPU has
+    /// handed the pixel over.
+    pub fn sample_scene(&mut self, at: egui::Pos2, purpose: PixelUse) {
+        self.out.samples.push((at, purpose));
     }
 
     /// Test hook: destroy the GPU device so the recovery path runs on the next frame. Not for the app.

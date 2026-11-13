@@ -444,6 +444,8 @@ pub enum RibbonMenu {
     StartHead,
     /// The head at the end of an arrow.
     EndHead,
+    /// The corner radius slider of a shape's corners.
+    CornerRadius,
 }
 
 /// A ribbon menu that is open, and where its button is.
@@ -479,6 +481,12 @@ pub struct UiState {
     pub color_popover: Option<ColorTarget>,
     /// The colours last picked in the colour popover.
     pub last_picked: LastPicked,
+    /// Pick mode of the eyedropper, when it is on (`eyedropper.rs`).
+    pub(crate) eyedropper: Option<crate::eyedropper::Eyedropper>,
+    /// The platform picks colours from the screen itself (`UiState::set_screen_color_picker`).
+    pub(crate) screen_picker: bool,
+    /// The dark palette is in use, as the last frame drew it.
+    pub(crate) dark: bool,
     /// The font family popover is open.
     pub font_picker_open: bool,
     /// The menu of a ribbon control, when open.
@@ -588,6 +596,7 @@ impl UiState {
             || self.about_open
             || self.collab_open
             || self.color_popover.is_some()
+            || self.eyedropper.is_some()
             || self.font_picker_open
             || self.ribbon_menu.is_some()
             || self.search_open
@@ -639,6 +648,7 @@ impl UiState {
         self.about_open = false;
         self.collab_open = false;
         self.color_popover = None;
+        self.eyedropper = None;
         self.font_picker_open = false;
         self.ribbon_menu = None;
         self.search_open = false;
@@ -697,6 +707,14 @@ impl UiState {
             Verb::OpenColorStroke => self.toggle_color(ColorTarget::Stroke),
             Verb::OpenColorFill => self.toggle_color(ColorTarget::Fill),
             Verb::OpenColorBackground => self.toggle_color(ColorTarget::Background),
+            Verb::PickColorStroke | Verb::PickColorFill => {
+                let target = if verb == Verb::PickColorStroke { ColorTarget::Stroke } else { ColorTarget::Fill };
+                if self.screen_picker {
+                    host.push(HostRequest::PickScreenColor(target));
+                } else {
+                    self.toggle_eyedropper(target);
+                }
+            }
             Verb::OpenFontPicker => {
                 let open = !self.font_picker_open;
                 self.close_overlays();

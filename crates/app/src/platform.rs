@@ -96,6 +96,10 @@ pub enum HostJob {
     },
     /// Read the text on the system clipboard. Answered by [`Inbound::ClipboardText`].
     ReadClipboardText,
+    /// Let the person pick a colour from anywhere on the screen with the platform's own picker (the browser's
+    /// `EyeDropper`). Answered by [`Inbound::ScreenColor`]; cancelling sends nothing. Only a host whose
+    /// [`Host::screen_color_picker`] is true is asked.
+    PickScreenColor,
     /// Fetch a font file. Answered by [`Inbound::FontLoaded`], or by [`Inbound::Notice`] when it fails. Only a
     /// build that leaves fonts out of the binary (the web) asks for this.
     LoadFont(FontFile),
@@ -147,6 +151,8 @@ pub enum Inbound {
     SaveTarget(FileRef),
     /// The text on the system clipboard, for the equation editor.
     ClipboardText(String),
+    /// The colour the person picked with the platform's picker ([`HostJob::PickScreenColor`]), as sRGB.
+    ScreenColor([u8; 3]),
     /// A plain note for a toast (a picker failed, a file could not be read).
     Notice(String),
     /// A font file arrived ([`HostJob::LoadFont`]).
@@ -194,6 +200,12 @@ pub(crate) fn inbox(wake: WakeCell) -> (Inbox, InboxRx) {
 pub trait Host {
     /// Starts `job`. `reply` delivers the answer, possibly from another thread or a browser callback.
     fn start(&mut self, job: HostJob, reply: Inbox);
+
+    /// The platform has a picker for colours anywhere on the screen, which the eyedropper button uses instead of
+    /// reading the canvas (the browser's `EyeDropper`, where the browser has it).
+    fn screen_color_picker(&self) -> bool {
+        false
+    }
 
     /// Where the operator of this copy offers its source code (the About dialog; AGPL-3.0 section 13), when the
     /// operator named one. `None` means the project repository. The web page learns it from the server that

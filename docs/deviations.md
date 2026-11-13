@@ -55,7 +55,7 @@ The user asked for the Excalidraw features except AI. `docs/commands.md` section
 | Feature | Why not |
 |---|---|
 | Embeddables (iframes, YouTube and others) | Needs a sandboxed web view per element; the native app has no web view. Out of scope for a canvas that must also run headless. |
-| Bucket fill, eyedropper, pen mode (palm rejection), autoshape (shape recognition), hover "+" connectors, list markers in text, chart paste | Smaller than the work they would take next to bound arrows, frames and the engine; none is in the plan's priority list (§6). Eyedropper in particular needs a pixel read-back that the browser gates behind a permission. |
+| Bucket fill, pen mode (palm rejection), autoshape (shape recognition), hover "+" connectors, list markers in text, chart paste | Smaller than the work they would take next to bound arrows, frames and the engine; none is in the plan's priority list (§6). The eyedropper is built (`ui/eyedropper.rs`): it reads the pixel from the scene texture the app drew, so it needs no permission; it has no keyboard shortcut (`I` is image insert here), only the button next to the swatches and the palette rows. |
 | Excalidraw+ features, sign-in, cloud, comments | A hosted service. The collaboration server is self-hosted. |
 | Mermaid diagram types beyond flowchart and sequence (class, state, ER, gantt, ...) | The parser and the layout for each type are separate work. They are refused with the list of supported types. |
 | The AI features (text-to-diagram, diagram-to-code, magic frame) | Excluded by the user. Agents drive the editor through MCP instead. |

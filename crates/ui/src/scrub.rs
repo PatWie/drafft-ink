@@ -1,5 +1,5 @@
 //! Scrubbing controls (docs/exceptions.md E13): the one place that turns a drag on a slider into the
-//! `gesture.*` commands.
+//! `gesture.*` commands. The opacity and the corner radius sliders are the two scrubbing controls.
 //!
 //! A slider calls [`slider`]; nothing else in the UI emits a [`Scrub`]. The helper and the frame
 //! bookkeeping ([`ScrubTrack::settle`], called by `draw`) keep these rules, so that no control has to:
@@ -26,13 +26,15 @@ use crate::widgets::Cx;
 pub enum ScrubControl {
     /// The opacity slider of the ribbon.
     Opacity,
+    /// The corner radius slider of the ribbon.
+    CornerRadius,
 }
 
 impl ScrubControl {
     /// The command the gesture runs and ends with.
     pub const fn command(self) -> &'static str {
         match self {
-            Self::Opacity => "style.set",
+            Self::Opacity | Self::CornerRadius => "style.set",
         }
     }
 }
