@@ -5,7 +5,7 @@
 #![allow(non_snake_case)]
 
 use base64::Engine as _;
-use drafftink_canvas::{Buttons, InputEvent, Modifiers, PointerEvent, PointerId, PointerKind, PointerPhase};
+use drafftink_canvas::{Buttons, Cursor, InputEvent, Modifiers, PointerEvent, PointerId, PointerKind, PointerPhase};
 use drafftink_geom::kurbo::Point;
 use drafftink_scene::{Crop, ElementId};
 use serde_json::json;
@@ -299,6 +299,191 @@ fn a_mirrored_image_is_cropped_as_it_is_seen() {
     rig.key(Key::Enter);
     assert_eq!(crop_of(&rig, &id), Some(Crop { x: 50.0, y: 0.0, width: 150.0, height: 100.0 }));
     near(rig.bounds(&id), (300.0, 250.0, 150.0, 100.0));
+}
+
+// ---- cursors and the grid ----
+
+/// The eight handles of the window of `rig_with_image` (a 200 by 100 picture centred on (400, 300)) as offsets from
+/// the centre, with the cursor an unrotated window shows over each. Corners first, as the picker ranks them.
+const HANDLE_CURSORS: [((f64, f64), Cursor); 8] = [
+    ((-100.0, -50.0), Cursor::ResizeNwse),
+    ((100.0, -50.0), Cursor::ResizeNesw),
+    ((100.0, 50.0), Cursor::ResizeNwse),
+    ((-100.0, 50.0), Cursor::ResizeNesw),
+    ((0.0, -50.0), Cursor::ResizeNs),
+    ((100.0, 0.0), Cursor::ResizeEw),
+    ((0.0, 50.0), Cursor::ResizeNs),
+    ((-100.0, 0.0), Cursor::ResizeEw),
+];
+
+/// Where a handle at `offset` from the centre (400, 300) lies once the window is turned by `degrees`.
+fn turned(offset: (f64, f64), degrees: f64) -> (f64, f64) {
+    let (s, c) = degrees.to_radians().sin_cos();
+    (400.0 + offset.0 * c - offset.1 * s, 300.0 + offset.0 * s + offset.1 * c)
+}
+
+/// The cursor over every handle of the open editor, in the order of [`HANDLE_CURSORS`], with the window turned by
+/// `degrees`. The pointer visits an empty spot between two handles, so that every visit is a change of target.
+fn cursors_over_handles(rig: &mut Rig, degrees: f64) -> Vec<Cursor> {
+    HANDLE_CURSORS
+        .iter()
+        .map(|(offset, _)| {
+            rig.hover(5.0, 5.0);
+            let (x, y) = turned(*offset, degrees);
+            rig.hover(x, y);
+            rig.i.cursor()
+        })
+        .collect()
+}
+
+#[test]
+fn every_handle_of_the_window_shows_its_own_resize_cursor() {
+    let (mut rig, _) = rig_with_image();
+    rig.key(Key::Enter);
+    let want: Vec<Cursor> = HANDLE_CURSORS.iter().map(|(_, c)| *c).collect();
+    assert_eq!(cursors_over_handles(&mut rig, 0.0), want);
+}
+
+#[test]
+fn the_resize_cursors_turn_with_a_rotated_image() {
+    // A quarter turn swaps the diagonals and the axes; an eighth turn puts the sides on the diagonals.
+    let quarter = [
+        Cursor::ResizeNesw,
+        Cursor::ResizeNwse,
+        Cursor::ResizeNesw,
+        Cursor::ResizeNwse,
+        Cursor::ResizeEw,
+        Cursor::ResizeNs,
+        Cursor::ResizeEw,
+        Cursor::ResizeNs,
+    ];
+    let eighth = [
+        Cursor::ResizeNs,
+        Cursor::ResizeEw,
+        Cursor::ResizeNs,
+        Cursor::ResizeEw,
+        Cursor::ResizeNesw,
+        Cursor::ResizeNwse,
+        Cursor::ResizeNesw,
+        Cursor::ResizeNwse,
+    ];
+    for (degrees, want) in [(90.0, quarter), (45.0, eighth)] {
+        let (mut rig, id) = rig_with_image();
+        rig.run("element.rotate", json!({ "ids": [id.as_str()], "angle": degrees, "mode": "to" }));
+        rig.key(Key::Enter);
+        assert_eq!(cursors_over_handles(&mut rig, degrees), want, "turned by {degrees} degrees");
+    }
+}
+
+#[test]
+fn a_mirrored_image_shows_the_cursors_of_its_window_whatever_the_flip() {
+    // The handles sit on the window, not on the mirrored picture. A flip turns the element's angle (a mirror image
+    // of a turned box), so the expected cursors are those of an unmirrored image turned to the same angle.
+    for (degrees, axis) in [(0.0, "horizontal"), (0.0, "vertical"), (90.0, "horizontal"), (30.0, "vertical")] {
+        let (mut mirrored, id) = rig_with_image();
+        mirrored.run("element.rotate", json!({ "ids": [id.as_str()], "angle": degrees, "mode": "to" }));
+        mirrored.run("element.flip", json!({ "ids": [id.as_str()], "axis": axis }));
+        assert!(
+            mirrored.element(&id).transform.flip_x || mirrored.element(&id).transform.flip_y,
+            "the image is mirrored"
+        );
+        let turned_to = mirrored.element(&id).transform.angle.to_degrees();
+        mirrored.key(Key::Enter);
+        let got = cursors_over_handles(&mut mirrored, turned_to);
+
+        let (mut plain, id) = rig_with_image();
+        plain.run("element.rotate", json!({ "ids": [id.as_str()], "angle": turned_to, "mode": "to" }));
+        plain.key(Key::Enter);
+        assert_eq!(got, cursors_over_handles(&mut plain, turned_to), "{axis} flip, turned by {degrees}");
+        assert!(got.iter().all(|c| *c != Cursor::Default), "every handle answers: {got:?}");
+    }
+}
+
+#[test]
+fn the_crop_overlay_names_the_pointer_used_last_and_a_pen_grabs_from_as_far_as_a_finger() {
+    let (mut rig, _) = rig_with_image();
+    rig.key(Key::Enter);
+    let pointer = |rig: &Rig| rig.i.overlay(&rig.s).crop.map(|c| c.pointer);
+    rig.hover(5.0, 5.0);
+    assert_eq!(pointer(&rig), Some(PointerKind::Mouse));
+    // A pen 20 px from the corner (300, 250) is out of reach of a mouse (12 px) but within the large handle's.
+    for (kind, reaches) in [(PointerKind::Mouse, false), (PointerKind::Pen, true), (PointerKind::Touch, true)] {
+        let mut at = |phase, x: f64, y: f64| {
+            rig.now += 16.0;
+            let ev = PointerEvent::new(PointerId(1), kind, phase, Point::new(x, y), rig.now);
+            rig.input(InputEvent::Pointer(ev));
+        };
+        at(PointerPhase::Move, 5.0, 5.0);
+        at(PointerPhase::Move, 285.0, 235.0);
+        let over_handle = matches!(rig.i.cursor(), Cursor::ResizeNwse);
+        assert_eq!(over_handle, reaches, "{kind:?}");
+        assert_eq!(pointer(&rig), Some(kind));
+    }
+}
+
+#[test]
+fn the_picture_shows_an_open_hand_and_the_hand_closes_while_it_is_slid() {
+    let (mut rig, _) = rig_with_image();
+    rig.key(Key::Enter);
+    // Make the window smaller than the picture, so that part of the picture is dimmed.
+    rig.drag((500.0, 300.0), (400.0, 300.0));
+    rig.hover(5.0, 5.0);
+    assert_eq!(rig.i.cursor(), Cursor::Default, "off the picture");
+    rig.hover(350.0, 280.0);
+    assert_eq!(rig.i.cursor(), Cursor::Grab, "inside the window");
+    rig.down(350.0, 280.0);
+    let out = rig.drag_to(360.0, 280.0);
+    assert!(out.redraw.is_some());
+    assert_eq!(rig.i.cursor(), Cursor::Grabbing, "while the picture moves");
+    rig.up(360.0, 280.0);
+    assert_eq!(rig.i.cursor(), Cursor::Grab, "the hand opens again: the pointer is still over the picture");
+}
+
+#[test]
+fn the_cursor_over_a_handle_stays_a_resize_cursor_during_its_drag_and_afterwards() {
+    let (mut rig, _) = rig_with_image();
+    rig.key(Key::Enter);
+    rig.hover(500.0, 300.0);
+    assert_eq!(rig.i.cursor(), Cursor::ResizeEw);
+    rig.down(500.0, 300.0);
+    rig.drag_to(470.0, 300.0);
+    assert_eq!(rig.i.cursor(), Cursor::ResizeEw);
+    rig.up(470.0, 300.0);
+    assert_eq!(rig.i.cursor(), Cursor::ResizeEw, "the handle followed the pointer and is still under it");
+    rig.hover(400.0, 300.0);
+    assert_eq!(rig.i.cursor(), Cursor::Grab, "away from the handle, over the picture");
+}
+
+#[test]
+fn the_picture_outside_the_cropped_box_is_grabbed_too() {
+    let (mut rig, id) = rig_with_image();
+    rig.key(Key::Enter);
+    rig.drag((500.0, 300.0), (400.0, 300.0));
+    rig.key(Key::Enter);
+    // The image now shows its left half. Open the editor again: the right half is outside the element's box.
+    rig.run("selection.select", json!({ "ids": [id.as_str()] }));
+    rig.key(Key::Enter);
+    rig.hover(5.0, 5.0);
+    rig.hover(450.0, 300.0);
+    assert_eq!(rig.i.cursor(), Cursor::Grab, "on the part of the picture that is cropped away");
+}
+
+#[test]
+fn the_overlay_shows_the_thirds_grid_only_while_a_drag_runs() {
+    let (mut rig, _) = rig_with_image();
+    rig.key(Key::Enter);
+    let grid = |rig: &Rig| rig.i.overlay(&rig.s).crop.map(|c| c.grid);
+    assert_eq!(grid(&rig), Some(false), "at rest");
+    rig.down(500.0, 300.0);
+    rig.drag_to(470.0, 300.0);
+    assert_eq!(grid(&rig), Some(true), "while a handle is dragged");
+    rig.up(470.0, 300.0);
+    assert_eq!(grid(&rig), Some(false), "after the drag");
+    rig.down(350.0, 300.0);
+    rig.drag_to(360.0, 300.0);
+    assert_eq!(grid(&rig), Some(true), "while the picture is slid");
+    rig.up(360.0, 300.0);
+    assert_eq!(grid(&rig), Some(false));
 }
 
 // ---- touch ----

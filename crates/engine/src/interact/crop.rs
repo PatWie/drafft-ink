@@ -16,7 +16,7 @@
 //! `drafftink_edit::crop::Picture` knows how the picture lies in it, so a rotated or mirrored image is cropped in
 //! the way the user sees it. The pointer is converted into that frame, which is the only place rotation matters.
 
-use drafftink_canvas::{Handle, SelectionFrame, Target};
+use drafftink_canvas::{Handle, PointerKind, SelectionFrame, Target};
 use drafftink_edit::crop::{MIN_CROP_PX, Picture};
 use drafftink_geom::OrientedBox;
 use drafftink_geom::kurbo::{Point, Rect, Size, Vec2};
@@ -29,6 +29,7 @@ use crate::cmd::image::CropArgs;
 use crate::cmd::view::RectArg;
 use crate::interact::ctx::Ctx;
 use crate::interact::events::{Ev, Key};
+use crate::interact::world::CropStage;
 use crate::session::{Ref, Session};
 use crate::state::Tool;
 
@@ -143,13 +144,15 @@ impl Draft {
         e
     }
 
-    fn view(&self) -> CropView {
+    fn view(&self, grid: bool, pointer: PointerKind) -> CropView {
         CropView {
             element: self.element.id.clone(),
             shown: self.shown(),
             whole: self.whole(),
             window: self.world_box(self.window),
             picture: self.world_box(self.shifted().whole()),
+            grid,
+            pointer,
         }
     }
 
@@ -315,18 +318,33 @@ impl CropTool {
         !matches!(self.drag, Drag::Idle)
     }
 
-    /// The window as a selection frame, for the picker's handle hits.
-    pub(crate) fn frame(&self) -> Option<SelectionFrame> {
-        self.draft.as_ref().map(Draft::frame)
+    /// True while a handle or the picture is being dragged: the editor then shows its grid.
+    fn is_dragging(&self) -> bool {
+        matches!(self.drag, Drag::Resize { .. } | Drag::Pan { .. })
+    }
+
+    /// True while the picture is being slid under the window.
+    pub(crate) fn is_panning(&self) -> bool {
+        matches!(self.drag, Drag::Pan { .. })
+    }
+
+    /// What the picker needs while the editor is open: the window as a selection frame (for the handles) and the
+    /// picture (for the cursor over it).
+    pub(crate) fn stage(&self) -> Option<CropStage> {
+        self.draft.as_ref().map(|d| CropStage {
+            element: d.element.id.clone(),
+            frame: d.frame(),
+            picture: d.world_box(d.shifted().whole()),
+        })
     }
 
     /// What the overlay shows. The editor may have been opened by a command since the last pointer event (the
     /// strip's button), so a draft that is not there yet is made from the image as it is.
-    pub(crate) fn view(&self, s: &Session) -> Option<CropView> {
+    pub(crate) fn view(&self, s: &Session, pointer: PointerKind) -> Option<CropView> {
         let id = s.tab().observed.crop_editor.as_ref()?;
         match &self.draft {
-            Some(d) if d.element.id == *id => Some(d.view()),
-            _ => s.element(id).and_then(Draft::open).map(|d| d.view()),
+            Some(d) if d.element.id == *id => Some(d.view(self.is_dragging(), pointer)),
+            _ => s.element(id).and_then(Draft::open).map(|d| d.view(false, pointer)),
         }
     }
 

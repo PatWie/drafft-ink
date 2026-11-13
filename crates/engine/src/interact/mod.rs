@@ -56,8 +56,8 @@ mod crop_tests;
 mod interaction_tests;
 
 use drafftink_canvas::{
-    Camera, Cursor, FingerMode, InputEvent, Intent, Modifiers, PointerEvent, PointerKind, PointerPhase, Recognizer,
-    Target, ViewSource,
+    Camera, Cursor, FingerMode, InputEvent, Intent, Modifiers, Picker, PointerEvent, PointerKind, PointerPhase,
+    Recognizer, Target, ViewSource,
 };
 use drafftink_geom::kurbo::Point;
 use drafftink_scene::{ElementId, SceneStore};
@@ -266,7 +266,8 @@ impl Interaction {
     /// Everything to draw above the scene.
     pub fn overlay(&self, s: &Session) -> InteractionOverlay {
         // The session decides whether the editor is open: a command may have opened or closed it since the last event.
-        let crop = self.crop.view(s);
+        let pointer = self.pointer.map_or(PointerKind::Mouse, |(_, kind)| kind);
+        let crop = self.crop.view(s, pointer);
         overlay::build(&self.world, s, &self.parts, self.hover.as_ref(), crop)
     }
 
@@ -343,7 +344,7 @@ impl Interaction {
     /// The crop editor follows the session, and its window stands in for the selection's frame while it is open.
     fn sync_crop(&mut self, s: &Session) {
         self.crop.sync(s);
-        self.world.set_crop_frame(self.crop.frame());
+        self.world.set_crop(self.crop.stage());
     }
 
     fn pointer_moved(&mut self, s: &mut Session, p: &PointerEvent, out: &mut Outcome) {
@@ -587,6 +588,9 @@ impl Interaction {
                     meta: &meta,
                 };
                 self.with_ctx(s, out, now, meta.modifiers, |cx, m| m.crop.drag_start(cx, &ev));
+                if self.crop.is_panning() {
+                    self.set_cursor(Cursor::Grabbing, out);
+                }
                 None
             }
             Intent::DragUpdate { origin, at, delta_screen, delta_world, target, meta } if self.crop.is_active() => {
@@ -599,6 +603,10 @@ impl Interaction {
             {
                 let ev = Ev { origin, at, delta_screen, delta_world, target: &target, meta: &meta };
                 self.with_ctx(s, out, now, meta.modifiers, |cx, m| m.crop.drag_end(cx, &ev, cancelled));
+                // The hand opens again. The recognizer reports a hover only when the target changed, so the
+                // cursor is worked out here from the target the pointer is still over.
+                let resting = self.world.picker(s).cursor(self.recognizer.hover());
+                self.set_cursor(resting, out);
                 out.redraw_at_least(Redraw::Overlay);
                 None
             }

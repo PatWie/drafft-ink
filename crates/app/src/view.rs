@@ -4,14 +4,15 @@
 //! The document scene is rebuilt only when the document or the camera changed. The overlay scenes are cheap
 //! and are rebuilt on their own, so a hover outline or a marquee never re-encodes an element.
 
+use drafftink_canvas::PointerKind;
 use drafftink_engine::interact::InteractionOverlay;
 use drafftink_engine::services::SharedTypesetter;
 use drafftink_engine::state::TabId;
 use drafftink_geom::kurbo::{Affine, Rect, Size, Vec2};
 use drafftink_gpu::BackendKind;
 use drafftink_render::{
-    FrameReport, GridSpec, GridStyle, LodConfig, Overlay, OverlayStyle, PaintIndex, RenderOptions, Scene,
-    SceneComposer, Theme, View, build_paint_index, paint_crop_dim, paint_overlay,
+    CropHandleSize, FrameReport, GridSpec, GridStyle, LodConfig, Overlay, OverlayStyle, PaintIndex, RenderOptions,
+    Scene, SceneComposer, Theme, View, build_paint_index, paint_crop_chrome, paint_crop_dim, paint_overlay,
 };
 use drafftink_scene::{ElementId, SceneRead};
 
@@ -175,7 +176,8 @@ impl CanvasView {
                 composer.compose_edited_text(&edit.text, edit.reveal, view, ts, preview);
             });
         }
-        // The crop editor draws the whole picture dimmed under a dark scrim, and the draft of the crop over it.
+        // The crop editor draws the whole picture dimmed under a dark scrim, the draft of the crop over it, and the
+        // window's brackets, bars and outlines on top.
         if let Some(crop) = &interaction.crop {
             let mut whole = Scene::new();
             typesetter
@@ -183,6 +185,8 @@ impl CanvasView {
             paint_crop_dim(preview, view, *theme, &whole, &crop.picture, &crop.window);
             typesetter
                 .with(|ts| composer.compose_transient(store, std::slice::from_ref(&crop.shown), view, ts, preview));
+            let size = crop_handle_size(crop.pointer);
+            paint_crop_chrome(preview, view, *theme, &crop.window, &crop.picture, crop.grid, size);
         }
         if let Some(el) = &interaction.preview {
             typesetter.with(|ts| composer.compose_transient(store, std::slice::from_ref(el), view, ts, preview));
@@ -217,6 +221,15 @@ impl CanvasView {
         out.append(&self.world, None);
         out.append(&self.preview, None);
         out.append(&self.overlay, None);
+    }
+}
+
+/// The size of the crop handles for the pointer used last: a finger or a pen gets the large marks, which are as big
+/// as the area it grabs them from, and a mouse the slim ones.
+pub(crate) fn crop_handle_size(pointer: PointerKind) -> CropHandleSize {
+    match pointer {
+        PointerKind::Mouse => CropHandleSize::Mouse,
+        PointerKind::Touch | PointerKind::Pen => CropHandleSize::Touch,
     }
 }
 
@@ -281,11 +294,12 @@ impl CanvasView {
 
 #[cfg(test)]
 mod tests {
+    use drafftink_canvas::PointerKind;
     use drafftink_geom::kurbo::{Point, Size, Vec2};
-    use drafftink_render::View;
+    use drafftink_render::{CropHandleSize, View};
     use vello::Scene;
 
-    use super::paint_laser_head;
+    use super::{crop_handle_size, paint_laser_head};
 
     #[test]
     fn the_laser_head_is_a_glow_a_disc_and_a_centre_at_the_pointer() {
@@ -304,5 +318,12 @@ mod tests {
             scene.encoding().path_data.len(),
             "the head keeps its screen size at every zoom, so it costs the same"
         );
+    }
+
+    #[test]
+    fn the_crop_handles_are_large_for_a_finger_and_a_pen_and_slim_for_a_mouse() {
+        assert_eq!(crop_handle_size(PointerKind::Mouse), CropHandleSize::Mouse);
+        assert_eq!(crop_handle_size(PointerKind::Touch), CropHandleSize::Touch);
+        assert_eq!(crop_handle_size(PointerKind::Pen), CropHandleSize::Touch);
     }
 }

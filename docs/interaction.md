@@ -92,7 +92,9 @@ While `image.crop_begin` has opened the editor (`Observed::crop_editor`), the cr
 | Click inside the window, press, double-click, right click | nothing | |
 | A tool change, another selection, a tab switch | the session closes the editor; the draft is dropped | |
 
-The overlay (`InteractionOverlay::crop`) carries the whole picture (drawn faded), the draft image (drawn over it), the window and the picture's outline; the scene leaves out the real image while the editor draws its own.
+The overlay (`InteractionOverlay::crop`) carries the whole picture (drawn faded), the draft image (drawn over it), the window, the picture's outline, whether a drag runs (the shell then lays a rule-of-thirds grid over the window) and the pointer used last (a finger or a pen gets larger brackets and bars, and a pen grabs them from as far as a finger). The scene leaves out the real image while the editor draws its own.
+
+Cursors in the editor: over a handle the resize arrow of that handle, turned with the image (a rotated image turns the arrows; a flip changes nothing, the handles sit on the window); over the picture, also the dimmed part, the open hand, and the closed hand while the picture is slid; elsewhere the arrow.
 
 ### Drawing tools (class B: preview, one command at the end)
 

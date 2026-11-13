@@ -1052,3 +1052,156 @@ fn the_crop_editor_darkens_the_picture_outside_the_window_in_both_themes() {
         assert_eq!(rgb_at(&dimmed_px, 390, 290), rgb_at(&normal, 390, 290), "{theme:?}: the canvas");
     }
 }
+
+// ----------------------------------------------------------------------------------------------
+// The crop window: brackets, bars, grid
+
+/// The window of the chrome tests: 200 by 120 with its top-left corner at (100, 100), on a 400 by 300 canvas.
+fn chrome_window() -> drafftink_geom::OrientedBox {
+    drafftink_geom::OrientedBox::from_xywh(100.0, 100.0, 200.0, 120.0, 0.0)
+}
+
+/// The window's chrome alone on a canvas of colour `base`.
+fn chrome_on(base: peniko::Color, theme: Theme, grid: bool, size: CropHandleSize) -> Pixels {
+    let view = View::new(1.0, Vec2::ZERO, Size::new(400.0, 300.0));
+    let mut scene = Scene::new();
+    let window = chrome_window();
+    paint_crop_chrome(&mut scene, &view, theme, &window, &window, grid, size);
+    render(&scene, 400, 300, base)
+}
+
+#[test]
+fn the_crop_brackets_read_on_a_white_and_on_a_black_picture_in_both_themes() {
+    need_gpu!();
+    for theme in [Theme::Light, Theme::Dark] {
+        for (name, base) in [("white", peniko::Color::WHITE), ("black", peniko::Color::BLACK)] {
+            let px = chrome_on(base, theme, false, CropHandleSize::Mouse);
+            let canvas = rgb_at(&chrome_on(base, theme, false, CropHandleSize::Mouse), 20, 20);
+            // The top arm of the top-left bracket: 3 px thick above the window's top edge, so the rows 97 to 99; the
+            // halo is the 1.5 px above it. The bar on the top side is centred at x = 200.
+            for (what, x) in [("bracket", 108), ("bar", 200)] {
+                let ink = rgb_at(&px, x, 98);
+                let halo = rgb_at(&px, x, 96);
+                assert!(
+                    (luma(ink) - luma(halo)).abs() > 100.0,
+                    "{theme:?} on {name}: the {what} stands out from its halo ({ink:?} against {halo:?})"
+                );
+                let best = (luma(ink) - luma(canvas)).abs().max((luma(halo) - luma(canvas)).abs());
+                assert!(best > 100.0, "{theme:?} on {name}: the {what} stands out from the picture");
+                // The ink is the theme's colour (a dark bracket in the light theme, a light one in the dark theme).
+                let want = theme.crop_chrome().ink.components;
+                assert!((f64::from(ink[0]) / 255.0 - f64::from(want[0])).abs() < 0.1, "{theme:?}: {ink:?}");
+            }
+            // Nothing is drawn over the pixels being framed: well inside the window the canvas is untouched.
+            assert_eq!(rgb_at(&px, 200, 160), canvas, "{theme:?} on {name}: inside the window");
+        }
+    }
+}
+
+#[test]
+fn touch_brackets_reach_further_along_the_edge_than_mouse_brackets() {
+    need_gpu!();
+    let (mouse, touch) = (
+        chrome_on(peniko::Color::WHITE, Theme::Light, false, CropHandleSize::Mouse),
+        chrome_on(peniko::Color::WHITE, Theme::Light, false, CropHandleSize::Touch),
+    );
+    // The arm of a mouse bracket ends at x = 98.5 + 18 = 116.5; a touch bracket's at 98.5 + 28 = 126.5.
+    // Row 97 is ink for both sizes and clear of the soft shadow under the window's own outline.
+    let row = |p: &Pixels, x| luma(rgb_at(p, x, 97));
+    assert!(row(&mouse, 112) < 80.0 && row(&mouse, 122) > 200.0, "mouse: {} {}", row(&mouse, 112), row(&mouse, 122));
+    assert!(row(&touch, 112) < 80.0 && row(&touch, 122) < 80.0, "touch: {} {}", row(&touch, 112), row(&touch, 122));
+    assert!(row(&touch, 132) > 200.0, "and ends at 126.5");
+    // The touch marks are thicker, too: 4 px against 3, so the row above the mouse bracket's ink is ink for touch.
+    // Row 96 is half ink for touch (the mark spans 96.5 to 100.5) and halo, which is white here, for the mouse.
+    assert!(luma(rgb_at(&touch, 108, 96)) < 180.0 && luma(rgb_at(&mouse, 108, 96)) > 220.0);
+}
+
+#[test]
+fn the_thirds_grid_is_drawn_only_when_asked() {
+    need_gpu!();
+    let plain = chrome_on(peniko::Color::BLACK, Theme::Light, false, CropHandleSize::Mouse);
+    let gridded = chrome_on(peniko::Color::BLACK, Theme::Light, true, CropHandleSize::Mouse);
+    // The vertical lines are a third and two thirds across: x = 100 + 200/3 and 100 + 400/3.
+    // A one pixel line at a fractional position covers two pixels, so the brightest of the neighbours is looked at.
+    let brightest = |p: &Pixels, x: u32, y: u32| (x - 1..=x + 1).map(|x| luma(rgb_at(p, x, y))).fold(0.0, f64::max);
+    for x in [167, 233] {
+        assert!(brightest(&plain, x, 160) < 10.0, "no line at {x} without the grid");
+        assert!(brightest(&gridded, x, 160) > 150.0, "a line at {x} with the grid");
+    }
+    // And the horizontal ones at y = 140 and 180.
+    let across = |p: &Pixels, y: u32| (y - 1..=y + 1).map(|y| luma(rgb_at(p, 200, y))).fold(0.0, f64::max);
+    assert!(across(&gridded, 140) > 90.0 && across(&gridded, 180) > 90.0 && across(&plain, 140) < 10.0);
+}
+
+/// With `DRAFFTINK_CROP_SHOTS=<dir>` set, writes pictures of the whole crop editor (the dimmed picture, the window
+/// with its brackets, in both themes, with and without the grid, for a mouse and for a finger) to that directory,
+/// for a person to look at. Without it the test only checks that the editor draws.
+#[test]
+fn the_crop_editor_draws_and_can_leave_pictures_for_review() {
+    need_gpu!();
+    let (store, pic) = crop_picture();
+    let picture = drafftink_geom::OrientedBox::from_xywh(100.0, 60.0, 200.0, 100.0, 0.4);
+    let window = drafftink_geom::OrientedBox::new(
+        picture.to_world(Point::new(-30.0, 0.0)),
+        Size::new(120.0, 80.0),
+        picture.angle,
+    );
+    let dir = std::env::var_os("DRAFFTINK_CROP_SHOTS").map(PathBuf::from);
+    let view = View::new(1.0, Vec2::ZERO, Size::new(400.0, 300.0));
+    for theme in [Theme::Light, Theme::Dark] {
+        for (name, grid, size) in [
+            ("mouse", false, CropHandleSize::Mouse),
+            ("mouse-grid", true, CropHandleSize::Mouse),
+            ("touch", false, CropHandleSize::Touch),
+        ] {
+            let mut composer = SceneComposer::new();
+            composer.set_options(RenderOptions { theme, ..RenderOptions::default() });
+            let base = composer.background(&store);
+            let mut whole = Scene::new();
+            composer.compose_transient(&store, std::slice::from_ref(&pic), &view, &mut Typesetter::new(), &mut whole);
+            let mut scene = Scene::new();
+            paint_crop_dim(&mut scene, &view, theme, &whole, &picture, &window);
+            // The cropped picture: the whole one, cut to the window.
+            let clip: kurbo::BezPath = {
+                let c = window.corners();
+                let mut path = kurbo::BezPath::new();
+                path.move_to(c[0]);
+                c[1..].iter().for_each(|p| path.line_to(*p));
+                path.close_path();
+                path
+            };
+            scene.push_layer(
+                peniko::Fill::NonZero,
+                peniko::BlendMode::new(peniko::Mix::Normal, peniko::Compose::SrcOver),
+                1.0,
+                kurbo::Affine::IDENTITY,
+                &clip,
+            );
+            scene.append(&whole, None);
+            scene.pop_layer();
+            paint_crop_chrome(&mut scene, &view, theme, &window, &picture, grid, size);
+            let shot = render(&scene, 400, 300, base);
+            // The brackets are there: the top-left corner of the window has ink next to it.
+            let corner = window.corners()[0];
+            let ink = theme.crop_chrome().ink.components;
+            let near_corner = (corner.x as u32).saturating_sub(3)..(corner.x as u32 + 3);
+            let found = near_corner.clone().any(|x| {
+                (corner.y as u32 - 4..corner.y as u32 + 2).any(|y| {
+                    let p = rgb_at(&shot, x, y);
+                    (f64::from(p[0]) / 255.0 - f64::from(ink[0])).abs() < 0.15
+                        && (f64::from(p[2]) / 255.0 - f64::from(ink[2])).abs() < 0.15
+                })
+            });
+            assert!(found, "{theme:?} {name}: ink near the corner of the window");
+            if let Some(dir) = &dir {
+                std::fs::create_dir_all(dir).unwrap();
+                let png = encode_png(shot.w, shot.h, &shot.rgba).unwrap();
+                std::fs::write(
+                    dir.join(format!("crop-{}-{name}.png", if theme == Theme::Light { "light" } else { "dark" })),
+                    png,
+                )
+                .unwrap();
+            }
+        }
+    }
+}

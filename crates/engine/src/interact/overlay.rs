@@ -8,8 +8,8 @@
 
 use drafftink_canvas::shape::{element_box, shape_of};
 use drafftink_canvas::{
-    BindCandidate, Handle, HoverOutline, LassoOverlay, MarqueeOverlay, Overlay, SelectionBox, SelectionFrame,
-    TransformerOverlay,
+    BindCandidate, Handle, HoverOutline, LassoOverlay, MarqueeOverlay, Overlay, PointerKind, SelectionBox,
+    SelectionFrame, TransformerOverlay,
 };
 use drafftink_geom::OrientedBox;
 use drafftink_geom::guides::SmartGuide;
@@ -137,6 +137,11 @@ pub struct CropView {
     pub window: OrientedBox,
     /// The whole picture in world space, to outline.
     pub picture: OrientedBox,
+    /// A drag runs (a handle or the picture): the shell lays the rule-of-thirds grid over the window.
+    pub grid: bool,
+    /// The pointer that was used last. A finger or a pen reaches handles from further away than a mouse, so the
+    /// shell draws them larger (the size of what reacts).
+    pub pointer: PointerKind,
 }
 
 /// Everything to draw above the scene for the current interaction.
