@@ -872,7 +872,7 @@ Settings live in the `Storage` settings namespace and are loaded at start (FIX: 
 |---|---|---|---|---|
 | `settings.get` | Get settings | NoUndo, read-only | none | NEW |
 | `settings.set` | Set setting | NoUndo | none | NEW; A:2898-2992 (snap, export scale) |
-| `settings.toggle` | Toggle setting | NoUndo | `Alt+S` (key=snap.smart_guides); see §6.1 | A:2870, 2898, 2902, 2906; X:actionToggleGridMode, ObjectsSnapMode |
+| `settings.toggle` | Toggle setting | NoUndo | `Alt+S` (key=snap.smart_guides), `Alt+B`, `Alt+M`; see §6.1 | A:2870, 2898, 2902, 2906; X:actionToggleGridMode, ObjectsSnapMode |
 | `settings.cycle` | Cycle setting | NoUndo | `Mod+'` (key=view.grid_style); see §6.1 | A:2870 `ToggleGrid` |
 | `settings.reset` | Reset settings | NoUndo | none | NEW |
 
@@ -1071,7 +1071,7 @@ Persisted through the `Storage` settings namespace; read with `settings.get`, wr
 | Key | Type and range | Default | Old app |
 |---|---|---|---|
 | `view.grid_style` | `none \| lines \| horizontal_lines \| crosses \| dots` | `lines` | `config.grid_style` (U:817, not persisted) |
-| `view.minimap` | bool | false | none (new): the minimap card (`ui.toggle_minimap`, `docs/ui.md` section 5e) |
+| `view.minimap` | bool | false | none (new): the minimap card (`docs/ui.md` section 5e). Toggle: `Alt+M`, the main menu and the context menu's View rows, the palette, Preferences |
 | `snap.grid` | bool | false | `ui_state.grid_snap_enabled` |
 | `snap.smart_guides` | bool | false | `smart_snap_enabled` |
 | `snap.angle` | bool | false | `angle_snap_enabled` |
@@ -1175,6 +1175,7 @@ One keymap for every platform. `Mod` is Cmd on macOS and Ctrl elsewhere. Binding
 | `Mod+'` | `settings.cycle` key=view.grid_style | canvas | NEW |
 | `Alt+S` | `settings.toggle` key=snap.smart_guides | canvas | NEW |
 | `Alt+B` | `settings.toggle` key=arrow.binding | canvas | NEW (Excalidraw has the toggle in its menu and no key) |
+| `Alt+M` | `settings.toggle` key=view.minimap | canvas | NEW |
 | `Mod+S` | `doc.save` | always | A:4784 |
 | `Mod+E` | `doc.export` format=png | canvas | A:4870 |
 | `Mod+Delete` | `doc.clear` | canvas | NEW |
@@ -1187,7 +1188,6 @@ One keymap for every platform. `Mod` is Cmd on macOS and Ctrl elsewhere. Binding
 | `Alt+Z` | UI verb `ui.toggle_zen` | canvas | NEW |
 | `Alt+/` | UI verb `ui.toggle_stats` | canvas | NEW |
 | `Alt+D` | UI verb `ui.toggle_debug` | canvas | NEW |
-| `Alt+M` | UI verb `ui.toggle_minimap` | canvas | NEW |
 | `S` `G` | UI verb `ui.open_color_picker` target=stroke, fill | canvas | NEW |
 | `Shift+F` | UI verb `ui.open_font_picker` | canvas | NEW |
 | `I` | UI verb `ui.insert_image` | canvas | NEW |
@@ -1222,7 +1222,6 @@ Not commands, never in `engine.commands`. Each ends, when it produces a result, 
 | `ui.toggle_stats` | stats panel (reads `selection.get`, edits with `element.set_bounds`, `style.set`) | those commands | NEW |
 | `ui.toggle_zen` | hides the chrome | none | NEW |
 | `ui.toggle_debug` | debug panel: frame rate and frame time, renderer and GPU, scene counts. The app measures only while it is open (`docs/ui.md` section 5d) | none | NEW |
-| `ui.toggle_minimap` | the minimap: a small map of the drawing in the bottom right corner with the visible part marked; a click or drag on it moves the view, the wheel zooms (`docs/ui.md` section 5e) | `settings.toggle` key=view.minimap, `view.set`, `view.zoom_at` | NEW |
 | `ui.open_export` | export dialog (format, scope, scale, background, dark, embed scene) | `doc.export` or `clipboard.copy_as` | X:ImageExportDialog |
 | `ui.open_preferences` | preferences dialog | `settings.set`, `settings.toggle`, `collab.set_user` | X:DefaultItems |
 | `ui.toggle_library` | library panel | `library.*` | X:LibraryMenu |

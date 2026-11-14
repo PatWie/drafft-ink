@@ -389,12 +389,15 @@ fn toggle_refuses_a_setting_that_is_not_on_or_off() {
 fn alt_s_toggles_smart_guides_and_mod_quote_cycles_the_grid() {
     let s = testing::headless_session();
     let t = s.spec("settings.toggle").unwrap();
-    assert_eq!(t.shortcuts.len(), 2);
+    assert_eq!(t.shortcuts.len(), 3);
     assert_eq!(t.shortcuts[0].keys, &["Alt+S"]);
     assert_eq!(serde_json::from_str::<Value>(t.shortcuts[0].args).unwrap(), json!({"key": "snap.smart_guides"}));
     assert_eq!(t.shortcuts[1].keys, &["Alt+B"]);
     assert_eq!(t.shortcuts[1].title, Some("Attach arrows to shapes"));
     assert_eq!(serde_json::from_str::<Value>(t.shortcuts[1].args).unwrap(), json!({"key": "arrow.binding"}));
+    assert_eq!(t.shortcuts[2].keys, &["Alt+M"]);
+    assert_eq!(t.shortcuts[2].title, Some("Minimap"));
+    assert_eq!(serde_json::from_str::<Value>(t.shortcuts[2].args).unwrap(), json!({"key": "view.minimap"}));
     let c = s.spec("settings.cycle").unwrap();
     assert_eq!(c.shortcuts[0].keys, &["Mod+'"]);
     assert_eq!(serde_json::from_str::<Value>(c.shortcuts[0].args).unwrap(), json!({"key": "view.grid_style"}));

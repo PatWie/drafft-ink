@@ -102,7 +102,7 @@ fn menu_rows(ui: &mut egui::Ui, cx: &mut Cx<'_>, debug_open: bool) -> bool {
         m.heading("View");
         m.command(Ctl::new("view.set_view_only"), Row::new().icon(Icon::Eye).checked(view_only));
         m.verb(Verb::ToggleLibrary, "Library", Row::new().icon(Icon::Library), None);
-        m.verb(Verb::ToggleMinimap, "Minimap", Row::new().icon(Icon::Minimap).checked(minimap), None);
+        m.command(minimap_toggle(), Row::new().icon(Icon::Minimap).checked(minimap));
         m.verb(Verb::ToggleDebug, "Debug panel", Row::new().icon(Icon::Stats).checked(debug_open), None);
         m.verb(Verb::OpenPreferences, "Preferences", Row::new().icon(Icon::Settings).dialog(), None);
         m.custom(theme_row);
@@ -117,6 +117,11 @@ fn menu_rows(ui: &mut egui::Ui, cx: &mut Cx<'_>, debug_open: bool) -> bool {
         cx.verb(Verb::CloseOverlays);
     }
     picked.local
+}
+
+/// `settings.toggle` of the minimap, titled by the registry.
+fn minimap_toggle() -> Ctl<'static> {
+    Ctl::new("settings.toggle").args(json!({ "key": "view.minimap" }))
 }
 
 /// `doc.export` as a PNG, titled by the registry.

@@ -748,8 +748,6 @@ impl UiState {
             Verb::ToggleStats => self.stats_open = !self.stats_open,
             Verb::ToggleZen => self.zen = !self.zen,
             Verb::ToggleDebug => self.debug_open = !self.debug_open,
-            // A setting: `route` sends it to `settings.toggle`, so it never gets here.
-            Verb::ToggleMinimap => {}
             Verb::OpenLinkEditor => {
                 if self.link_editor.is_none() {
                     self.close_overlays();

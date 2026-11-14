@@ -383,6 +383,7 @@ fn the_view_flyout_has_grid_snap_zen_view_only_stats_and_unlock_all() {
         ("Cycle grid style", "settings.cycle", json!({ "key": "view.grid_style" })),
         ("Snap to grid", "settings.toggle", json!({ "key": "snap.grid" })),
         ("Attach arrows to shapes", "settings.toggle", json!({ "key": "arrow.binding" })),
+        ("Minimap", "settings.toggle", json!({ "key": "view.minimap" })),
         ("View-only mode", "view.set_view_only", json!({})),
     ];
     for (text, id, args) in commands {
@@ -391,9 +392,7 @@ fn the_view_flyout_has_grid_snap_zen_view_only_stats_and_unlock_all() {
         let report = h.state_mut().dispatch();
         assert!(report.refusals().next().is_none(), "{text}: {:?}", report.ran);
     }
-    for (text, verb) in
-        [("Zen mode", Verb::ToggleZen), ("Stats panel", Verb::ToggleStats), ("Minimap", Verb::ToggleMinimap)]
-    {
+    for (text, verb) in [("Zen mode", Verb::ToggleZen), ("Stats panel", Verb::ToggleStats)] {
         let mut h = fresh();
         assert!(pick(&mut h, "View", text).is_empty(), "{text} is a verb, not a command");
         assert!(dialog::verbs(h.state()).contains(&verb), "{text}");
@@ -418,8 +417,10 @@ fn toggles_in_the_view_flyout_show_their_state() {
     let mut f = dialog::fixture();
     add_rect(&mut f.session, 0.0, 0.0, 30.0, 30.0).unwrap();
     dialog::run(&mut f, "settings.set", json!({ "key": "snap.grid", "value": true }));
+    dialog::run(&mut f, "settings.set", json!({ "key": "view.minimap", "value": true }));
     let mut h = open(f, &[]);
     open_flyout(&mut h, "View");
+    assert_eq!(row_in(&h, "View", "Minimap").accesskit_node().toggled(), Some(egui::accesskit::Toggled::True));
     assert_eq!(row_in(&h, "View", "Snap to grid").accesskit_node().toggled(), Some(egui::accesskit::Toggled::True));
     assert_eq!(
         row_in(&h, "View", "Attach arrows to shapes").accesskit_node().toggled(),
