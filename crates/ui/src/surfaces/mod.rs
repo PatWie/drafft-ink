@@ -17,6 +17,7 @@ pub mod dialogs;
 pub mod equation;
 pub mod export;
 pub mod eyedropper;
+pub mod frame_name;
 pub mod library;
 pub mod link;
 pub mod loading;
@@ -56,6 +57,7 @@ pub fn show_all(ctx: &Context, cx: &mut Cx<'_>, st: &mut UiState) {
     equation::show(ctx, cx, st);
     link::show(ctx, cx, st);
     naming::show(ctx, cx, st);
+    frame_name::show(ctx, cx, st);
     export::show(ctx, cx, st);
     preferences::show(ctx, cx, st);
     shortcuts::show(ctx, cx, st);

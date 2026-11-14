@@ -301,6 +301,9 @@ impl App {
                 });
                 self.ui.state.open_equation(latex.unwrap_or_default());
             }
+            UiRequest::OpenFrameNameEditor { frame, name, at, width } => {
+                self.ui.state.open_frame_name(frame.as_str(), name.as_str(), [at.x, at.y], *width);
+            }
             UiRequest::OpenUrl { url } => self.open_urls.push(url.clone()),
             UiRequest::OpenContextMenu { at, target } => {
                 let origin = self.canvas_rect.min;
@@ -936,10 +939,11 @@ impl App {
         self.ui.model.debug.as_ref()
     }
 
-    /// The camera as the canvas has it right now, for the minimap's rectangle: the canvas runs ahead of the session
-    /// while a pan or a zoom goes on. `None` while the minimap is off, so the UI reads nothing then.
-    fn minimap_camera(&self) -> Option<drafftink_ui::model::ViewView> {
-        if !self.ui.model.setting_bool("view.minimap") {
+    /// The camera as the canvas has it right now, for the minimap's rectangle and for the field over a frame's name:
+    /// the canvas runs ahead of the session while a pan or a zoom goes on. `None` while neither is shown, so the UI
+    /// reads nothing then.
+    fn live_camera(&self) -> Option<drafftink_ui::model::ViewView> {
+        if !self.ui.model.setting_bool("view.minimap") && self.ui.state.frame_name.is_none() {
             return None;
         }
         let camera = self.interaction.camera();
@@ -1195,7 +1199,7 @@ impl ShellApp for App {
         self.ui.set_collab(collab);
         self.ui.set_editor_faces(self.editor.as_ref().map(TextEditor::faces));
         let view_ns = self.set_debug_panel(cx, now);
-        let live_camera = self.minimap_camera();
+        let live_camera = self.live_camera();
         self.ui.set_live_camera(live_camera);
         let pointer = Pointer {
             cursor: self.pointer_world().map(|p| (p.x, p.y)),

@@ -408,6 +408,7 @@ impl UiState {
             // A rename dialog closes when the name was taken; a refusal (empty name) keeps it open next to its toast.
             (HostEffect::CompletesRename | HostEffect::CompletesRenameThenSaveAs, Ok(_)) => {
                 self.rename = None;
+                self.frame_name = None;
                 // Save As renames first and asks for the place afterwards.
                 if self.save_as.take().is_some() && facts.effect == HostEffect::CompletesRenameThenSaveAs {
                     host.push(HostRequest::PickSaveTarget);

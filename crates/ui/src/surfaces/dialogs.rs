@@ -1,6 +1,7 @@
 //! Small dialogs: the confirm box, the recent documents list, the search box and the stats panel.
 //! The module also holds the helpers the other dialogs (collaboration, equation) draw with.
 
+use egui::text::CCursorRange;
 use egui::{
     Align, Align2, Area, Button, Context, Id, Key, Layout, Modal, Order, Response, RichText, ScrollArea, TextEdit, Ui,
     vec2,
@@ -84,7 +85,9 @@ pub(crate) fn show_modal(
         ui.add_space(8.0);
         body(ui, cx);
     });
-    if out.backdrop_response.clicked() {
+    // A click on the backdrop, and Esc while the dialog is the top one. A text field that has the keyboard keeps Esc
+    // from the keymap, so without this a dialog that opens with a focused field would not close on Esc.
+    if out.should_close() {
         emit_close(cx, close);
     }
 }
@@ -110,6 +113,15 @@ pub(crate) fn text_field(
     label: &str,
 ) -> Response {
     field(ui, TextEdit::singleline(buf), hint, reason, char_limit, label)
+}
+
+/// Focuses a field that was just opened with `text` in it and selects all of it, so typing replaces the text and an
+/// arrow key puts the caret at an end of it. Call it once, in the field's first frame.
+pub(crate) fn focus_and_select_all(ui: &Ui, field: &Response, text: &str) {
+    field.request_focus();
+    let mut state = TextEdit::load_state(ui.ctx(), field.id).unwrap_or_default();
+    state.cursor.set_char_range(Some(CCursorRange::select_all_str(text)));
+    state.store(ui.ctx(), field.id);
 }
 
 /// A single-line field that shows dots instead of what is typed (an access token). The text stays in `buf`, in

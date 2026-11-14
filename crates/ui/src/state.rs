@@ -252,17 +252,38 @@ pub enum RenameTarget {
 pub struct RenameState {
     /// What the name belongs to.
     pub target: RenameTarget,
-    /// The text in the field.
-    pub text: String,
+    /// The text in the field. `None` until the first frame, when it takes the current name of the target from the
+    /// model: the one place that knows it, so no caller can open the dialog with another name.
+    pub text: Option<String>,
     /// Set once the field has been focused, so focus is requested only on the first frame.
     pub focused: bool,
 }
 
 impl RenameState {
-    /// A dialog for a target, starting from its current name.
-    pub fn new(target: RenameTarget, current: impl Into<String>) -> Self {
-        Self { target, text: current.into(), focused: false }
+    /// A dialog for a target. Its field starts from the target's current name.
+    pub fn new(target: RenameTarget) -> Self {
+        Self { target, text: None, focused: false }
     }
+}
+
+/// The inline field over the name label of a frame (`UiRequest::OpenFrameNameEditor`): it sits where the canvas draws
+/// the label and ends in `frame.rename`. It is not a modal: the canvas keeps its pointer, and a click away commits.
+#[derive(Debug, Clone, PartialEq)]
+pub struct FrameNameState {
+    /// The frame, by its id.
+    pub frame: String,
+    /// The label the field opened with, which a commit that changed nothing is compared with.
+    pub opened_with: String,
+    /// The text in the field.
+    pub text: String,
+    /// The frame's top-left corner in world units, which the field follows while the camera moves.
+    pub at: [f64; 2],
+    /// The frame's width in world units.
+    pub width: f64,
+    /// Set once the field has been focused, so focus is requested only on the first frame.
+    pub focused: bool,
+    /// The field had the keyboard in the last frame it was drawn: losing it ends the edit.
+    pub(crate) had_focus: bool,
 }
 
 /// The Save As dialog: the document name, asked before the save picker.
@@ -518,6 +539,8 @@ pub struct UiState {
     pub confirm: Option<Confirm>,
     /// The rename dialog, when open.
     pub rename: Option<RenameState>,
+    /// The field over the name label of a frame, when open.
+    pub frame_name: Option<FrameNameState>,
     /// The Save As dialog, when open.
     pub save_as: Option<SaveAsState>,
     /// The export dialog, when open.
@@ -608,6 +631,7 @@ impl UiState {
             || self.recent_open
             || self.confirm.is_some()
             || self.rename.is_some()
+            || self.frame_name.is_some()
             || self.library_remove.is_some()
             || self.save_as.is_some()
             || self.export.is_some()
@@ -661,6 +685,7 @@ impl UiState {
         self.recent_open = false;
         self.confirm = None;
         self.rename = None;
+        self.frame_name = None;
         self.library_remove = None;
         self.save_as = None;
         self.export = None;
@@ -702,8 +727,7 @@ impl UiState {
             Verb::ToggleLibrary => self.library_open = !self.library_open,
             Verb::RenameDocument => {
                 self.close_overlays();
-                // The field takes the document's name on the first frame it is drawn.
-                self.rename = Some(RenameState::new(RenameTarget::Document, String::new()));
+                self.rename = Some(RenameState::new(RenameTarget::Document));
             }
             Verb::InsertImage => host.push(HostRequest::PickImage),
             Verb::OpenColorStroke => self.toggle_color(ColorTarget::Stroke),
@@ -763,10 +787,27 @@ impl UiState {
         }
     }
 
-    /// Opens the rename dialog for a tab, with its current name.
-    pub fn open_rename(&mut self, target: RenameTarget, current: impl Into<String>) {
+    /// Opens the rename dialog for a target. The field takes the target's current name on the first frame.
+    pub fn open_rename(&mut self, target: RenameTarget) {
         self.close_overlays();
-        self.rename = Some(RenameState::new(target, current));
+        self.rename = Some(RenameState::new(target));
+    }
+
+    /// Opens the field over the name label of a frame. `at` is the frame's top-left corner and `width` its width, in
+    /// world units; `name` is the label the canvas shows. The canvas layer calls this for
+    /// `UiRequest::OpenFrameNameEditor`.
+    pub fn open_frame_name(&mut self, frame: impl Into<String>, name: impl Into<String>, at: [f64; 2], width: f64) {
+        self.close_overlays();
+        let name = name.into();
+        self.frame_name = Some(FrameNameState {
+            frame: frame.into(),
+            opened_with: name.clone(),
+            text: name,
+            at,
+            width,
+            focused: false,
+            had_focus: false,
+        });
     }
 
     /// The device is touch-first (the app knows from a media query or the platform). Touch events seen

@@ -171,6 +171,9 @@ pub struct SelectedElement {
     pub frame: Option<String>,
     /// The id of the text bound to it as its label, when it has one.
     pub label: Option<String>,
+    /// The name of a frame, as set by `frame.rename`. `None` for a frame that still shows the default label and for
+    /// every other kind.
+    pub frame_name: Option<String>,
 }
 
 /// Whether the selected text is bold and italic. `Some(true)`: all of it. `Some(false)`: none of it. `None`: some of
@@ -197,6 +200,16 @@ pub struct ViewView {
 }
 
 impl ViewView {
+    /// The screen point (logical pixels from the top-left of the canvas) of a world point: the inverse of
+    /// [`Self::screen_to_world`].
+    pub fn world_to_screen(&self, p: [f64; 2]) -> egui::Pos2 {
+        let zoom = if self.zoom > 0.0 { self.zoom } else { 1.0 };
+        egui::pos2(
+            ((p[0] - self.scroll[0]) * zoom + self.width / 2.0) as f32,
+            ((p[1] - self.scroll[1]) * zoom + self.height / 2.0) as f32,
+        )
+    }
+
     /// The world point under a screen point (logical pixels from the top-left of the canvas), the way
     /// `view.get` describes the camera. Used for dropping a library item where the pointer was released.
     pub fn screen_to_world(&self, p: egui::Pos2) -> [f64; 2] {
@@ -903,7 +916,8 @@ fn read_selection(s: &mut Session) -> SelectionRead {
         Some(BoundsView { x: number(b, "x")?, y: number(b, "y")?, w: number(b, "w")?, h: number(b, "h")? })
     });
     let count = got.get("count").and_then(Value::as_u64).unwrap_or(0);
-    let items = if count == 0 { Vec::new() } else { read_selected_elements(s) };
+    let mut items = if count == 0 { Vec::new() } else { read_selected_elements(s) };
+    read_frame_names(s, &mut items);
     SelectionRead { bounds, items }
 }
 
@@ -926,9 +940,30 @@ fn read_selected_elements(s: &mut Session) -> Vec<SelectedElement> {
                 link: text_of(item, "link").map(str::to_owned),
                 frame: text_of(item, "frame").map(str::to_owned),
                 label: text_of(item, "bound_text").map(str::to_owned),
+                frame_name: None,
             })
         })
         .collect()
+}
+
+/// Fills in `frame_name` of the selected frames. The `text` of a frame is its name; it is read for the frames only,
+/// because the `text` of other elements can be long and the menus do not need it.
+fn read_frame_names(s: &mut Session, selected: &mut [SelectedElement]) {
+    let ids: Vec<&str> = selected.iter().filter(|e| e.kind == "frame").map(|e| e.id.as_str()).collect();
+    if ids.is_empty() {
+        return;
+    }
+    let args = json!({ "filter": { "ids": ids }, "fields": ["id", "text"], "limit": SELECTION_DETAIL_LIMIT });
+    let Ok(out) = s.query("element.query", args) else {
+        return;
+    };
+    let items = out.get("items").and_then(Value::as_array).map(Vec::as_slice).unwrap_or_default();
+    for item in items {
+        let Some(id) = text_of(item, "id") else { continue };
+        if let Some(frame) = selected.iter_mut().find(|e| e.id == id) {
+            frame.frame_name = text_of(item, "text").map(str::to_owned);
+        }
+    }
 }
 
 /// Bold and italic of the selected texts and of the labels of the selected shapes, from the runs `element.query`

@@ -29,7 +29,7 @@ fn the_rename_commands_of_the_dialogs_close_them_and_a_refusal_keeps_them_open()
         (RenameTarget::Frame("f1".into()), "frame.rename"),
     ] {
         let mut st = UiState::new();
-        st.open_rename(target.clone(), "old");
+        st.open_rename(target.clone());
         let refused = Err(Refusal::custom("empty_name", id, "The name cannot be empty."));
         run(&mut st, id, json!({}), &refused);
         assert!(st.rename.is_some(), "{id}: a refusal keeps the dialog open");

@@ -46,7 +46,7 @@ pub fn show(ctx: &Context, cx: &mut Cx<'_>, st: &mut UiState) {
                             .selected(tab.active);
                         let resp = cx.toggle_button(ui, &ctl, &name);
                         if resp.double_clicked() {
-                            st.open_rename(RenameTarget::Tab(tab.id.clone()), tab.name.clone());
+                            st.open_rename(RenameTarget::Tab(tab.id.clone()));
                         } else if resp.secondary_clicked() {
                             let screen = resp.interact_pointer_pos().unwrap_or_else(|| resp.rect.center_top());
                             st.close_overlays();
@@ -94,7 +94,7 @@ fn menu(ctx: &Context, cx: &mut Cx<'_>, st: &mut UiState) {
 
 fn rows(m: &mut Menu<'_, '_, '_>, st: &mut UiState, tab: &TabView, count: usize) {
     if m.local("Rename tab", Row::new().icon(Icon::Text).dialog()).clicked() {
-        st.open_rename(RenameTarget::Tab(tab.id.clone()), tab.name.clone());
+        st.open_rename(RenameTarget::Tab(tab.id.clone()));
     }
     m.command(Ctl::new("tab.duplicate").args(json!({ "tab": tab.id })), Row::new().icon(Icon::Duplicate));
     m.separator();

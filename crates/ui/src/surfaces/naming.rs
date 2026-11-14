@@ -5,12 +5,13 @@
 //! [`HostRequest::PickSaveTarget`] (the app calls `doc.save` with `to` afterwards). A refusal (an empty
 //! name) keeps the dialog open next to its toast.
 
+use drafftink_scene::FrameData;
 use egui::{Context, Id, Key, Modal, RichText};
 use serde_json::{Value, json};
 
 use crate::action::{HostRequest, UiAction};
 use crate::state::{RenameState, RenameTarget, UiState};
-use crate::surfaces::dialogs::{Close, plain_button, show_modal, text_field};
+use crate::surfaces::dialogs::{Close, focus_and_select_all, plain_button, show_modal, text_field};
 use crate::theme::TextSize;
 use crate::widgets::{Ctl, Cx};
 
@@ -27,7 +28,11 @@ pub(crate) fn rename_call(target: &RenameTarget, text: &str) -> (&'static str, V
         RenameTarget::LibrarySection(section) => {
             ("library.rename_section", json!({ "section": section, "name": name }))
         }
-        RenameTarget::Frame(frame) => ("frame.rename", json!({ "frame": frame, "name": name })),
+        // The default label is the absence of a name: typing it back restores the default, as the command says.
+        RenameTarget::Frame(frame) => {
+            let name = (name != FrameData::DEFAULT_NAME).then_some(name);
+            ("frame.rename", json!({ "frame": frame, "name": name }))
+        }
     }
 }
 
@@ -53,7 +58,14 @@ fn current_name(cx: &Cx<'_>, target: &RenameTarget) -> String {
         RenameTarget::LibrarySection(id) => {
             cx.model.library_sections.iter().find(|s| &s.id == id).map(|s| s.name.clone()).unwrap_or_default()
         }
-        RenameTarget::Frame(_) => String::new(),
+        // The label the canvas shows: the name, or the default for a frame without one.
+        RenameTarget::Frame(id) => cx
+            .model
+            .selection
+            .iter()
+            .find(|e| &e.id == id)
+            .map(|e| e.frame_name.clone().unwrap_or_else(|| FrameData::DEFAULT_NAME.to_owned()))
+            .unwrap_or_default(),
     }
 }
 
@@ -67,16 +79,14 @@ fn rename(ctx: &Context, cx: &mut Cx<'_>, st: &mut UiState) {
     let Some(state) = st.rename.as_mut() else {
         return;
     };
-    if !state.focused && state.text.is_empty() {
-        state.text = current_name(cx, &state.target);
-    }
     let pal = cx.pal;
     let RenameState { target, text, focused } = state;
+    let text = text.get_or_insert_with(|| current_name(cx, target));
     let title = title_of(target);
     show_modal(ctx, cx, Modal::new(Id::unique("rename_dialog")), title, 380.0, &Close::Overlays, |ui, cx| {
         let field = text_field(ui, text, "Name", None, Some(MAX_NAME_CHARS), "Name");
         if !*focused {
-            field.request_focus();
+            focus_and_select_all(ui, &field, text);
             *focused = true;
         }
         let enter = field.lost_focus() && ui.input(|i| i.key_pressed(Key::Enter));
@@ -106,7 +116,7 @@ fn save_as(ctx: &Context, cx: &mut Cx<'_>, st: &mut UiState) {
     show_modal(ctx, cx, Modal::new(Id::unique("save_as_dialog")), "Save as", 380.0, &Close::Overlays, |ui, cx| {
         let field = text_field(ui, text, "Document name", None, Some(MAX_NAME_CHARS), "Document name");
         if !*focused {
-            field.request_focus();
+            focus_and_select_all(ui, &field, text);
             *focused = true;
         }
         let enter = field.lost_focus() && ui.input(|i| i.key_pressed(Key::Enter));
@@ -164,6 +174,11 @@ mod tests {
         assert_eq!(
             rename_call(&RenameTarget::Frame("f1".into()), "Part"),
             ("frame.rename", json!({"frame": "f1", "name": "Part"}))
+        );
+        assert_eq!(
+            rename_call(&RenameTarget::Frame("f1".into()), " Frame "),
+            ("frame.rename", json!({"frame": "f1", "name": null})),
+            "the default label is no name"
         );
     }
 }

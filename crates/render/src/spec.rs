@@ -5,8 +5,8 @@
 //! [`math_spec`], because the box the editor stores in `transform` has to be the box the renderer draws.
 
 use drafftink_scene::{
-    Color, Element, ElementKind, FillPattern, FontFamily, FontWeight, Head, InlineMath, LinearData, MathData, PathType,
-    PressureMode, Sloppiness, StrokeStyle, TextAlign, TextData,
+    Color, Element, ElementKind, FillPattern, FontFamily, FontWeight, FrameData, Head, InlineMath, LinearData,
+    MathData, PathType, PressureMode, Sloppiness, StrokeStyle, TextAlign, TextData,
 };
 use drafftink_sketch as sketch;
 use drafftink_typeset as typeset;
@@ -15,13 +15,13 @@ use kurbo::{Affine, Rect};
 pub use drafftink_scene::DEFAULT_HEAD_SIZE;
 /// Font size of a frame's name label, in logical pixels. The label has the same size on screen at every zoom
 /// (Excalidraw does the same), so the composer draws it in device space after the frame's fragment.
-pub const FRAME_LABEL_SIZE: f64 = 14.0;
+pub const FRAME_LABEL_SIZE: f64 = FrameData::LABEL_SIZE;
 /// Gap between the label and the frame's top edge, in logical pixels.
-pub const FRAME_LABEL_GAP: f64 = 4.0;
+pub const FRAME_LABEL_GAP: f64 = FrameData::LABEL_GAP;
 /// Room reserved above a frame for its label (gap plus the tallest label line), in logical pixels.
-pub const FRAME_LABEL_ROOM: f64 = 24.0;
+pub const FRAME_LABEL_ROOM: f64 = FrameData::LABEL_ROOM;
 /// The frame label is cut at the frame's width on screen, but never narrower than this many logical pixels.
-pub const FRAME_LABEL_MIN_WIDTH: f64 = 48.0;
+pub const FRAME_LABEL_MIN_WIDTH: f64 = FrameData::LABEL_MIN_WIDTH;
 /// The lowest zoom at which the paint bounds of a frame still cover its label. A label has a fixed size on screen,
 /// so its extent in world units grows as the zoom falls; the bounds (which cannot depend on the zoom) are sized for
 /// this one. Below it, a label can be culled a few pixels early at the edge of the view.

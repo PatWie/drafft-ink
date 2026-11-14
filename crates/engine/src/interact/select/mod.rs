@@ -12,6 +12,7 @@
 
 mod click;
 mod frame;
+mod frame_title;
 
 use drafftink_canvas::{Button, Handle, Target};
 use drafftink_geom::aabb;

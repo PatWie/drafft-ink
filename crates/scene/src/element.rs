@@ -564,6 +564,20 @@ pub struct FrameData {
     pub clip: bool,
 }
 
+impl FrameData {
+    /// The label a frame shows while it has no name.
+    pub const DEFAULT_NAME: &'static str = "Frame";
+    /// Font size of the name label, in logical pixels. The label has the same size on screen at every zoom
+    /// (Excalidraw does the same), so the renderer draws it in device space and the editors place a field with it.
+    pub const LABEL_SIZE: f64 = 14.0;
+    /// Gap between the label and the frame's top edge, in logical pixels.
+    pub const LABEL_GAP: f64 = 4.0;
+    /// Room reserved above a frame for its label (gap plus the tallest label line), in logical pixels.
+    pub const LABEL_ROOM: f64 = 24.0;
+    /// The label is cut at the frame's width on screen, but never narrower than this many logical pixels.
+    pub const LABEL_MIN_WIDTH: f64 = 48.0;
+}
+
 impl Default for FrameData {
     fn default() -> Self {
         Self { name: None, clip: true }

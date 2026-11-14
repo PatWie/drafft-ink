@@ -5,7 +5,7 @@
 //! after the fragment, from the typesetter's cached layout. The text is cut at the frame's width on screen, but
 //! never narrower than [`FRAME_LABEL_MIN_WIDTH`].
 
-use drafftink_scene::{Element, ElementKind};
+use drafftink_scene::{Element, ElementKind, FrameData};
 use drafftink_typeset::Typesetter;
 use kurbo::{Affine, Point, Rect};
 use peniko::Fill;
@@ -16,15 +16,13 @@ use crate::spec::{FRAME_LABEL_GAP, FRAME_LABEL_MIN_WIDTH, FRAME_LABEL_ROOM, fram
 use crate::theme::{Theme, scale_alpha};
 use crate::view::View;
 
-/// The name shown when a frame has none.
-const DEFAULT_NAME: &str = "Frame";
 /// A name is cut to this many characters before it is laid out.
 const MAX_NAME_CHARS: usize = 256;
 
-/// The text of the label: the first line of the name, or [`DEFAULT_NAME`] for a frame without one. `None` for a
+/// The text of the label: the first line of the name, or [`FrameData::DEFAULT_NAME`] for a frame without one. `None` for a
 /// frame whose name was set to nothing.
 fn label_text(name: Option<&str>) -> Option<String> {
-    let line = name.unwrap_or(DEFAULT_NAME).lines().next().unwrap_or("");
+    let line = name.unwrap_or(FrameData::DEFAULT_NAME).lines().next().unwrap_or("");
     let text: String = line.chars().filter(|c| !c.is_control()).take(MAX_NAME_CHARS).collect();
     (!text.trim().is_empty()).then_some(text)
 }

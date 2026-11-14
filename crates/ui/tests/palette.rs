@@ -92,7 +92,7 @@ fn a_titled_binding_row_carries_the_binding_arguments_and_its_key() {
 fn commands_with_required_arguments_open_a_form_unless_a_binding_fixes_them() {
     let f = Fixture::new();
     let all = rows(&f.model);
-    for id in ["arrow.set_type", "style.apply_theme", "frame.rename", "tab.rename", "tab.move", "tab.switch"] {
+    for id in ["arrow.set_type", "style.apply_theme", "frame.rename", "tab.move", "tab.switch"] {
         let row = all.iter().find(|r| r.id == id).unwrap_or_else(|| panic!("no row for {id}"));
         assert_eq!(row.action, RowAction::Form { id: id.to_owned() }, "{id}");
     }
@@ -262,8 +262,8 @@ fn the_query_field_is_focused_when_the_palette_opens() {
 
 #[test]
 fn a_required_args_command_opens_a_form_and_submitting_runs_it_with_the_built_args() {
-    let mut h = open_palette("rename tab");
-    row(&h, "Rename tab").click();
+    let mut h = open_palette("apply theme");
+    row(&h, "Apply theme").click();
     h.run();
     assert!(calls(&h).is_empty(), "opening the form runs nothing");
     assert!(h.state().state.palette.is_some(), "the palette stays open for the form");
@@ -275,11 +275,14 @@ fn a_required_args_command_opens_a_form_and_submitting_runs_it_with_the_built_ar
     h.run();
     h.get_by_role_and_label(egui::accesskit::Role::Button, "Run").click();
     h.run();
-    assert_eq!(calls(&h), vec![Call::new(Origin::Palette, "tab.rename", json!({ "name": "Architecture!" }))]);
+    assert_eq!(calls(&h), vec![Call::new(Origin::Palette, "style.apply_theme", json!({ "name": "pastel!" }))]);
     assert!(h.state().state.palette.is_none(), "submitting closes the palette");
     let report = h.state_mut().dispatch();
-    assert_eq!(report.refusals().count(), 0, "{:?}", report.ran);
-    assert_eq!(h.state().model.tabs[0].name, "Architecture!", "the real command renamed the tab");
+    assert_eq!(
+        report.refusals().next().map(|r| r.code),
+        Some("unknown_theme"),
+        "the real command refused the unknown theme"
+    );
 }
 
 #[test]
