@@ -19,6 +19,14 @@ const { defaultBrowserType: _browser, ...ipad } = devices["iPad Pro 11"];
 // ratio makes the two agree, as they do on an iPad.
 test.use({ ...ipad, launchOptions: { args: [...CHROMIUM_ARGS, `--force-device-scale-factor=${ipad.deviceScaleFactor}`] } });
 
+/** The freehand part of an exported scene (`doc.export` with format json). */
+interface StrokeKind {
+  type: string;
+  points: [number, number][];
+  pressures?: number[];
+  pressure_mode: string;
+}
+
 test.describe("an iPad", () => {
   test.beforeEach(async ({ app }) => {
     await camera(app, { x: 0, y: 0 }, 1);
@@ -77,11 +85,31 @@ test.describe("an iPad", () => {
     const hands = await Hands.on(app.page);
     await app.exec("tool.set", { tool: "freehand" });
     const at = (i: number) => ({ x: 300 + i * 30, y: 400 + 25 * Math.sin(i / 2) });
-    await hands.stroke(Array.from({ length: 12 }, (_, i) => ({ at: at(i), pressure: 0.2 + 0.07 * i })));
+    const pressure = (i: number) => 0.2 + 0.07 * i;
+    await hands.stroke(Array.from({ length: 12 }, (_, i) => ({ at: at(i), pressure: pressure(i) })));
     await app.until("the stroke", async () => (await app.count()) === 1);
-    const row = (await app.exec("element.query", { fields: ["kind", "points"] })).items[0] as { kind: string; points: unknown[] };
+    const row = (await app.exec("element.query", { fields: ["kind", "bounds"] })).items[0] as { kind: string; bounds: { w: number; h: number } };
     expect(row.kind).toBe("freehand");
-    expect(row.points.length).toBeGreaterThan(5);
+    expect(row.bounds.w, "the stroke runs along the 330 points the pen moved").toBeGreaterThan(300);
+    expect(row.bounds.h).toBeGreaterThan(30);
+
+    // `element.query` has `points` for lines and arrows only; the samples of a stroke are in the exported scene.
+    const exported = await app.exec("doc.export", { format: "json", scope: "all" });
+    const base64 = exported.bytes?.base64;
+    expect(base64, "an inline export").toBeDefined();
+    const scene = JSON.parse(Buffer.from(base64 ?? "", "base64").toString("utf8")) as { elements: { kind: StrokeKind }[] };
+    const stroke = scene.elements[0]?.kind;
+    expect(stroke?.type).toBe("freehand");
+    expect(stroke?.pressure_mode, "the pen's pressure is kept, not simulated from the speed").toBe("device");
+    const pressures = stroke?.pressures ?? [];
+    expect(pressures.length, "one pressure for each point that the simplified stroke keeps").toBe(stroke?.points.length);
+    expect(pressures.length).toBeGreaterThan(5);
+    // The pen pressed harder along the stroke, and each kept value is one that the pen sent.
+    expect(pressures).toEqual([...pressures].sort((a, b) => a - b));
+    expect(pressures[0]).toBeCloseTo(pressure(0), 2);
+    expect(pressures[pressures.length - 1]).toBeCloseTo(pressure(11), 2);
+    const sent = Array.from({ length: 12 }, (_, i) => pressure(i));
+    for (const p of pressures) expect(sent.some((v) => Math.abs(v - p) < 0.005), `the pressure ${p} is not one the pen sent`).toBe(true);
   });
 
   test("two fingers pinch and pan the view and draw nothing", async ({ app }) => {
