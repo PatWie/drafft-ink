@@ -11,14 +11,16 @@ use common::Fixture;
 use drafftink_engine::Origin;
 use drafftink_engine::testing::add_rect;
 use drafftink_scene::{Color, Element, ElementId, ElementKind, MemoryStore, SceneRead, SceneStore, SceneTx};
-use drafftink_ui::keymap::{KeyContext, Pointer, resolve_keys, verb_key_label};
+use drafftink_ui::keymap::{KeyContext, Pointer, resolve_keys};
 use drafftink_ui::minimap::{Look, MAX_MARKS, Mapping, Scene, WorldRect, visible};
 use drafftink_ui::model::ViewView;
 use drafftink_ui::surfaces::minimap::INSET;
-use drafftink_ui::{Call, CollabView, Peer, Routed, UiAction, Verb, route};
+use drafftink_ui::surfaces::palette::RowAction;
+use drafftink_ui::{Call, CollabView, Peer, UiAction, Verb};
+use egui::accesskit::Toggled;
 use egui::{Event, Key, Modifiers, MouseWheelSource, MouseWheelUnit, PointerButton, Pos2, Rect, TouchPhase, vec2};
 use egui_kittest::Harness;
-use egui_kittest::kittest::Queryable;
+use egui_kittest::kittest::{NodeT, Queryable};
 use serde_json::json;
 
 type H = Harness<'static, Fixture>;
@@ -497,28 +499,23 @@ fn the_wheel_elsewhere_does_nothing_here() {
 // ---- the verb, the setting, the menus, the key ----
 
 #[test]
-fn the_verb_ends_with_the_setting_toggle_and_the_choice_is_kept() {
-    let st = drafftink_ui::UiState::new();
-    let routed = route(&UiAction::Verb(Verb::ToggleMinimap), &st);
-    let call = Call::new(Origin::Ui, "settings.toggle", json!({ "key": "view.minimap" }));
-    assert_eq!(routed, Routed::Command(call));
-    assert_eq!(Verb::ToggleMinimap.id(), "ui.toggle_minimap");
-    assert_eq!(Verb::ToggleMinimap.setting_toggle(), Some("view.minimap"));
-
+fn the_toggle_is_a_setting_toggle_and_the_choice_is_kept() {
+    let toggle = || UiAction::run("settings.toggle", json!({ "key": "view.minimap" }));
     let mut f = dialog::fixture();
-    f.actions.push(UiAction::Verb(Verb::ToggleMinimap));
+    f.actions.push(toggle());
     f.dispatch();
-    assert!(f.model.minimap.on, "the verb turned it on");
+    assert!(f.model.minimap.on, "the toggle turned it on");
     assert_eq!(f.session.settings.get("view.minimap"), Some(&json!(true)), "a setting, so the next run has it");
-    f.actions.push(UiAction::Verb(Verb::ToggleMinimap));
+    f.actions.push(toggle());
     f.dispatch();
     assert!(!f.model.minimap.on);
 }
 
 #[test]
-fn the_key_is_alt_m_and_runs_the_verb() {
-    assert_eq!(verb_key_label(Verb::ToggleMinimap, false).as_deref(), Some("Alt+M"));
+fn the_key_is_alt_m_and_runs_the_setting_toggle() {
     let f = dialog::fixture();
+    let args = json!({ "key": "view.minimap" });
+    assert_eq!(f.model.shortcut_label("settings.toggle", &args).as_deref(), Some("Alt+M"));
     let event = Event::Key {
         key: Key::M,
         physical_key: Some(Key::M),
@@ -536,11 +533,11 @@ fn the_key_is_alt_m_and_runs_the_verb() {
             host_clipboard: false,
         },
     );
-    assert_eq!(actions, vec![UiAction::Verb(Verb::ToggleMinimap)]);
+    assert_eq!(actions, vec![UiAction::Command(Call::new(Origin::Shortcut, "settings.toggle", args))]);
 }
 
 #[test]
-fn the_view_menu_has_a_row_and_it_runs_the_verb() {
+fn the_view_menu_has_a_row_and_it_runs_the_setting_toggle() {
     for on_now in [false, true] {
         let mut f = dialog::fixture();
         dialog::run(&mut f, "settings.set", json!({ "key": "view.minimap", "value": on_now }));
@@ -555,19 +552,25 @@ fn the_view_menu_has_a_row_and_it_runs_the_verb() {
             at("Minimap") > at("Library") && at("Minimap") < at("Debug panel"),
             "under View, by the other panels: {rows:?}"
         );
+        let checked = if on_now { Toggled::True } else { Toggled::False };
+        assert_eq!(support_a::menu::row_in(&h, "Main menu", "Minimap").accesskit_node().toggled(), Some(checked));
         h.state_mut().clear();
         support_a::menu::row_in(&h, "Main menu", "Minimap").click();
         h.run();
-        assert_eq!(dialog::verbs(h.state()), vec![Verb::ToggleMinimap]);
+        let toggle = Call::new(Origin::Menu, "settings.toggle", json!({ "key": "view.minimap" }));
+        assert_eq!(h.state().calls(), vec![&toggle]);
     }
 }
 
 #[test]
-fn the_palette_lists_the_verb() {
+fn the_palette_lists_the_setting_toggle() {
     let mut f = dialog::fixture();
     f.refresh();
     let rows = drafftink_ui::surfaces::palette::rows(&f.model);
-    assert!(rows.iter().any(|r| r.id == "ui.toggle_minimap" && r.title == "Show or hide the minimap"));
+    let row = rows.iter().find(|r| r.title == "Minimap").expect("a Minimap row");
+    assert_eq!((row.id.as_str(), row.keys.as_deref()), ("settings.toggle", Some("Alt+M")));
+    assert!(matches!(&row.action, RowAction::Command { args, .. } if *args == json!({ "key": "view.minimap" })));
+    assert!(rows.iter().all(|r| r.id != "ui.toggle_minimap"), "no verb of its own");
 }
 
 #[test]

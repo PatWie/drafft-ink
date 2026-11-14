@@ -237,7 +237,9 @@ fn view_entries(model: &Model, stats: bool, zen: bool) -> Vec<Entry> {
         Entry::verb(Verb::ToggleZen, "Zen mode", None).checked(zen),
         Entry::command("view.set_view_only").checked(model.view_only).always(),
         Entry::verb(Verb::ToggleStats, "Stats panel", None).checked(stats),
-        Entry::verb(Verb::ToggleMinimap, "Minimap", None).checked(model.setting_bool("view.minimap")),
+        Entry::with_args("settings.toggle", json!({ "key": "view.minimap" }))
+            .checked(model.setting_bool("view.minimap"))
+            .always(),
         Entry::command("element.unlock_all").icon(Icon::Unlock).section(),
     ]
 }
