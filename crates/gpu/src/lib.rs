@@ -29,6 +29,7 @@ pub mod headless;
 mod host;
 #[cfg(not(target_arch = "wasm32"))]
 mod native;
+mod progress;
 mod readback;
 mod repaint;
 mod settle;
@@ -47,6 +48,7 @@ pub use events::*;
 pub use frame::*;
 #[cfg(feature = "wgpu")]
 pub use gpu::*;
+pub use progress::{gpu_in_flight, redraw_pending};
 pub use readback::SceneRead;
 pub use shell::{Options, ShellError, frames_drawn, run, vello_runs};
 pub use stats::{BackendStats, DeviceClass, GpuMemory, GpuTime, GraphicsApi, Rasteriser, RendererInfo, ShellStats};

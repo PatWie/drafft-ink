@@ -258,7 +258,7 @@ try { await drafftink.execute('nope.nothing'); } catch (e) { console.log(e.code,
 | `commands(opts?)`, `describe(id)`, `recent(opts?)`, `state()` | as in docs/agents.md section 5.1 |
 | `perf()` | `PerfStats` as an object (counters and redraw reasons are always on; spans and frame times need `?perf=1` or `perf_enable(true)`) |
 | `perf_reset()`, `perf_enable(on)` | reset the recorder; turn span recording on or off |
-| `frames()` | `{frames, vello_runs}`: frames drawn and frames in which Vello ran since start. Two reads 10 s apart that are equal prove an idle page |
+| `frames()` | `{frames, vello_runs, redraw_pending, gpu_in_flight}`: frames drawn and frames in which Vello ran since start, whether a frame was asked for and not yet drawn, and how many submitted frames the GPU has not finished. Two reads 10 s apart with equal `frames` prove an idle page; `redraw_pending` false and `gpu_in_flight` 0 mean the screen shows the latest state (on a CPU adapter a frame takes seconds to get there) |
 | `version` | the crate version |
 | `agent.pair(url, token)` (alias `connect`), `agent.disconnect()`, `agent.status()` | next section |
 | `webmcp.status()`, `webmcp.register()`, `webmcp.unregister()` | WebMCP, the section after next |

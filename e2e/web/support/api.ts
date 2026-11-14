@@ -49,6 +49,18 @@ export interface RecentEntry {
   [key: string]: unknown;
 }
 
+/** `frames()`: what the frame loop has done and what it still owes. */
+export interface FrameCounters {
+  /** Frames drawn since start (the CPU side is done). */
+  frames: number;
+  /** Frames in which Vello ran. */
+  vello_runs: number;
+  /** A frame was asked for and has not been drawn yet (the browser draws it at its next animation frame). */
+  redraw_pending: boolean;
+  /** Submitted frames the GPU has not finished. */
+  gpu_in_flight: number;
+}
+
 /** Counters from `perf()`. */
 export interface PerfStats {
   redraws: { by_reason: Record<string, number>; [key: string]: unknown };
@@ -86,7 +98,7 @@ export interface DrafftinkApi {
   perf(): PerfStats;
   perf_reset(): void;
   perf_enable(on: boolean): boolean;
-  frames(): { frames: number; vello_runs: number };
+  frames(): FrameCounters;
   version: string;
   webmcp: {
     /** True once the tools are built (they need the command schemas, which the page fetches as a file) and, where the browser and the address allow, registered. */

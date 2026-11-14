@@ -141,6 +141,7 @@ impl Backend for WgpuBackend {
         };
         let target = texture.texture.create_view(&wgpu::TextureViewDescriptor::default());
         in_phase(Phase::GpuSubmit, || self.comp.composite(&self.gpu, frame, &target, size))?;
+        crate::progress::gpu_frame_submitted(&self.gpu.queue);
         window.pre_present_notify();
         drafftink_profile::scope("present", || self.gpu.queue.present(texture));
         Ok(Presented::Shown)

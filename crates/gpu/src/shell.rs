@@ -355,12 +355,20 @@ impl<A: ShellApp> Shell<A> {
         if self.repaint.request_now(reason) {
             self.request_redraw();
         }
+        self.publish_progress();
     }
 
     fn apply_repaint(&mut self, repaint: Repaint) {
         if self.repaint.apply(Instant::now(), repaint) {
             self.request_redraw();
         }
+        self.publish_progress();
+    }
+
+    /// Tells [`crate::redraw_pending`] whether a frame is due. Called wherever the repaint state changes, so a reader
+    /// that runs right after a command already sees the frame that command asked for.
+    fn publish_progress(&self) {
+        crate::progress::set_redraw_pending(self.repaint.frame_due());
     }
 
     fn fail(&mut self, event_loop: &ActiveEventLoop, error: ShellError) {
@@ -604,6 +612,7 @@ impl<A: ShellApp> Shell<A> {
             // One line per frame; the idle checks count these.
             log::debug!(target: "drafftink_gpu::frame", "frame {n} reason={} vello_runs={}", reason.name(), vello_runs());
         }
+        self.publish_progress();
     }
 
     fn draw(&mut self, window: &Arc<Window>, reason: RedrawReason, size: [u32; 2]) -> Drawn {
@@ -795,6 +804,7 @@ impl<A: ShellApp> Shell<A> {
         log::warn!("GPU device lost; recreating");
         self.recovering = true;
         self.running = None;
+        crate::progress::gpu_frames_forgotten();
         self.start_gpu(window.clone(), event_loop.owned_display_handle());
     }
 
@@ -1240,6 +1250,7 @@ impl<A: ShellApp> ApplicationHandler<UserEvent> for Shell<A> {
     }
 
     fn about_to_wait(&mut self, event_loop: &ActiveEventLoop) {
+        self.publish_progress();
         event_loop.set_control_flow(self.repaint.control_flow());
     }
 }
