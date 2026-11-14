@@ -72,7 +72,10 @@ jobs:
       - name: System packages
         run: |
           sudo apt-get update
-          sudo apt-get install -y xvfb xclip mesa-vulkan-drivers libvulkan1 binaryen
+          # libxkbcommon-x11-0 and the X11 client libraries are loaded at run time (dlopen) by the native app's window
+          # library; without them `drafftink --bridge` panics at start ("libxkbcommon-x11.so could not be loaded").
+          sudo apt-get install -y xvfb xclip mesa-vulkan-drivers libvulkan1 binaryen \
+            libxkbcommon-x11-0 libx11-xcb1 libxcursor1 libxi6 libxrandr2
       - name: wasm-bindgen
         run: cargo install wasm-bindgen-cli --version "$(sed -n 's/^wasm-bindgen = "=\([0-9.]*\)".*/\1/p' Cargo.toml | head -1)" --locked
       - name: Playwright Chromium
