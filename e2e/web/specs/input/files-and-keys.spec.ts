@@ -3,6 +3,7 @@ import { test, expect, fixtureBase64, probe, type App } from "../../support/app.
 import { box, camera } from "../../support/build.ts";
 import { solidPng } from "../../support/png.ts";
 import { close, hex, shot } from "../../support/pixels.ts";
+import { clickUi, MENU_EXPORT_AS_PNG, openMainMenu } from "../../support/ui.ts";
 
 test("drop: a PNG dropped on the canvas becomes one image element, one undo step", async ({ app }) => {
   await camera(app, { x: 640, y: 400 }, 1);
@@ -177,11 +178,6 @@ test("keys: Ctrl+V with the pointer over a panel pastes at the middle of the vie
 });
 
 test.describe("export as PNG without the dialog", () => {
-  // The menu button and the row, in page points at zoom 1 (`crates/ui/tests/top_strip.rs` pins the numbers): the button
-  // is at (26, 20) and "Export as PNG" is centred at y = 354 (under the 72 point strip), the first row under the "Export" heading.
-  const MENU_BUTTON = { x: 26, y: 20 };
-  const EXPORT_AS_PNG = { x: 50, y: 354 };
-
   const PNG_SIGNATURE = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
 
   async function activeName(app: App): Promise<string> {
@@ -201,11 +197,9 @@ test.describe("export as PNG without the dialog", () => {
     await app.exec("selection.clear");
     const name = await activeName(app);
 
-    await app.page.mouse.move(MENU_BUTTON.x, MENU_BUTTON.y);
-    await app.page.mouse.click(MENU_BUTTON.x, MENU_BUTTON.y);
-    await app.page.waitForTimeout(400);
+    await openMainMenu(app);
     const downloaded = app.page.waitForEvent("download", { timeout: 20_000 });
-    await app.page.mouse.click(EXPORT_AS_PNG.x, EXPORT_AS_PNG.y);
+    await clickUi(app, MENU_EXPORT_AS_PNG);
     const download = await downloaded;
 
     expect(download.suggestedFilename()).toBe(`${name}.png`);

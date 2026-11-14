@@ -2,6 +2,7 @@ import { test as base, expect, openApp, serverInfo, type App } from "../../suppo
 import { box } from "../../support/build.ts";
 import { startServer } from "../../support/server.ts";
 import { close, shot } from "../../support/pixels.ts";
+import { clickUi, STRIP } from "../../support/ui.ts";
 
 /** Two pages with separate storage, in one room of the server that serves the page. */
 const test = base.extend<{ room: { a: App; b: App; name: string } }>({
@@ -127,12 +128,10 @@ test("collab: the dialog offers the access token field, and the token reaches co
     await app.exec("collab.leave_room");
     expect((await app.exec("collab.status")).state).toBe("ready");
 
-    // The dialog: the collaboration button, second in the top strip (the strip is 72 px high, two rows, the button is the
-    // 28 px square at x 44..72, y 6..34; `ui/tests/top_strip.rs` pins those numbers). With the server chosen it offers a room field and, below it,
+    // The dialog: the collaboration button, second in the top strip (`STRIP.collabButton`). With the server chosen it offers a room field and, below it,
     // the access token field, then the button. These are the pixels of the fields (what they do with text is in
     // the egui tests: `ui/tests/collab_dialog.rs`).
-    await app.page.mouse.click(58, 20, { delay: 120 });
-    await app.page.waitForTimeout(600);
+    await clickUi(app, STRIP.collabButton);
     const dialog = await shot(app);
     const field = (y: number) => dialog.at(780, y);
     expect(close(field(386), field(434), 1), "the token field looks like the room field (both at the right end, clear of the hint)").toBe(true);

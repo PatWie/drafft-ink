@@ -1,6 +1,7 @@
 import { test, expect } from "../../support/app.ts";
 import { box, camera } from "../../support/build.ts";
 import { drag } from "../../support/mouse.ts";
+import { clickTool, clickUi, hoverCanvas, MENU_NEW_TAB, openMainMenu } from "../../support/ui.ts";
 import { PNG } from "pngjs";
 import { Shot, type Region } from "../../support/pixels.ts";
 import { seedPrimarySelection } from "../../support/x11.ts";
@@ -265,28 +266,17 @@ test.describe("real pointer input", () => {
   test("one single click on a toolbar button and on a menu row runs its command, also after the pointer hovered the canvas", async ({ app }) => {
     await app.exec("tool.set", { tool: "select" });
     const uiRuns = async (id: string, source = "ui"): Promise<number> => (await app.recent(100)).filter((e) => e.id === id && e.source === source).length;
-    const hoverCanvas = async (): Promise<void> => {
-      // The hover goes to the app and is held back from egui; the next move to the toolbar must replace it.
-      await app.page.mouse.move(900, 500);
-      await app.page.waitForTimeout(200);
-      await app.page.mouse.move(920, 520);
-      await app.page.waitForTimeout(200);
-    };
-
     // The rectangle tool button in the tool column: one move, one press, one release, nothing else.
     const toolSets = await uiRuns("tool.set");
-    await hoverCanvas();
-    await app.page.mouse.click(40, 195);
-    await app.until("the rectangle tool after one click", async () => (await app.state()).tool === "rectangle");
+    await hoverCanvas(app);
+    await clickTool(app, "rectangle");
     expect(await uiRuns("tool.set"), "the click ran tool.set once").toBe(toolSets + 1);
 
-    // The menu button (x 12..40, y 6..34 in the top strip) opens the menu, and its first row ("New tab", under the
-    // strip, 72 px high, and the "File" heading: x 23..255, y 110..138) runs on the next single click. `ui/tests/top_strip.rs` pins those numbers.
+    // The menu button opens the menu, and its first row ("New tab", under the "File" heading) runs on the next single click.
     const tabs = await uiRuns("tab.new", "menu");
-    await hoverCanvas();
-    await app.page.mouse.click(26, 20);
-    await app.page.waitForTimeout(400);
-    await app.page.mouse.click(50, 124);
+    await hoverCanvas(app);
+    await openMainMenu(app);
+    await clickUi(app, MENU_NEW_TAB);
     await app.until("tab.new from the menu row", async () => (await uiRuns("tab.new", "menu")) === tabs + 1);
     await app.settle();
     expect(await uiRuns("tab.new", "menu"), "the menu row ran once").toBe(tabs + 1);
