@@ -26,7 +26,9 @@ use drafftink_typeset::Typesetter;
 use drafftink_ui::TextFaces;
 use serde_json::{Value, json};
 
-pub(crate) use keys::{EditorKey, KeyRoute, route};
+#[cfg(test)]
+pub(crate) use keys::KeyRoute;
+pub(crate) use keys::{EditorKey, take_keys};
 
 #[cfg(all(test, feature = "wgpu"))]
 mod pixels;
