@@ -4,8 +4,8 @@ use std::collections::{BTreeSet, HashMap};
 
 use drafftink_scene::MemoryTx;
 use drafftink_scene::{
-    Change, ChangeKind, ChangeSet, Color, DerivedIndex, DocMeta, Element, ElementId, ElementKind, FileEntry, FileId,
-    SceneRead, SceneTx, StoreError, ZIndex,
+    Change, ChangeKind, ChangeSet, Color, DerivedIndex, DocMeta, Element, ElementId, ElementKind, Fields, FileEntry,
+    FileId, SceneRead, SceneTx, StoreError, ZIndex,
 };
 use loro::{CommitOptions, LoroMap, LoroValue};
 
@@ -310,6 +310,7 @@ impl Core {
         for ch in &c.cs.elements {
             match ch.kind {
                 ChangeKind::Removed => {
+                    self.refitted.remove(&ch.id);
                     elements.delete(ch.id.as_str())?;
                     self.stats.fields_written += 1;
                 }
@@ -349,10 +350,12 @@ impl Core {
                 elements.ensure_mergeable_map(ch.id.as_str())?
             }
         };
-        let flat = codec::flatten(e, ch.fields)?;
+        // The view shows the fitted box of a decode that needed one; write all of it, so Loro holds what the view shows.
+        let fields = if self.refitted.remove(&ch.id) { Fields::all() } else { ch.fields };
+        let flat = codec::flatten(e, fields)?;
         let mut stale: Vec<String> = Vec::new();
         map.for_each(|k, _| {
-            let in_scope = reset || codec::group_of(k).intersects(ch.fields);
+            let in_scope = reset || codec::group_of(k).intersects(fields);
             if in_scope && !flat.contains_key(k) {
                 stale.push(k.to_owned());
             }

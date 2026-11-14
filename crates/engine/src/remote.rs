@@ -148,7 +148,7 @@ impl Session {
 
     /// Repairs the merge of `cs` ([`Session::repair_merge`]) and writes the `remote.repair` ring entry when it wrote
     /// something or failed. A failed repair does not fail the update: the update is in the document.
-    fn repair_and_record(&mut self, tab: TabId, cs: &ChangeSet) {
+    pub(crate) fn repair_and_record(&mut self, tab: TabId, cs: &ChangeSet) {
         let t0 = now_ns();
         let res = self.repair_merge(tab, cs);
         let dur = now_ns().saturating_sub(t0) / 1000;

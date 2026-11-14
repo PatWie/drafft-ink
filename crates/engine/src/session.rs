@@ -345,13 +345,27 @@ impl Session {
         let cmd = self.cmd();
         let t = self.tab_mut();
         let out = t.doc.undo(n).map_err(|e| Refusal::internal(cmd, format!("undo failed: {e}")))?;
+        Ok(self.finish_history(out))
+    }
+
+    /// What follows an undo or a redo: restores the editor state, repairs the result and raises the dirty reason.
+    ///
+    /// A step puts back what the peer wrote earlier, over what collaborators wrote since, which is a merge like the
+    /// one of a remote update. An element that comes back can share its z-order key with one a collaborator added
+    /// in its place, or refer to a frame that is gone. Without the repair of [`crate::remote_repair`] the next
+    /// command that needs a key between the two fails (docs/crdt.md section 10a).
+    fn finish_history(&mut self, out: UndoOutcome) -> UndoOutcome {
+        let tab = self.tab().id;
         if let Some(obs) = &out.observed {
-            t.observed = obs.clone();
+            self.tab_mut().observed = obs.clone();
+        }
+        for cs in &out.changes {
+            self.repair_and_record(tab, cs);
         }
         if !out.labels.is_empty() {
             self.mark_dirty(Redraw::Scene);
         }
-        Ok(out)
+        out
     }
 
     /// Re-applies up to `n` undone steps of the active tab.
@@ -359,13 +373,7 @@ impl Session {
         let cmd = self.cmd();
         let t = self.tab_mut();
         let out = t.doc.redo(n).map_err(|e| Refusal::internal(cmd, format!("redo failed: {e}")))?;
-        if let Some(obs) = &out.observed {
-            t.observed = obs.clone();
-        }
-        if !out.labels.is_empty() {
-            self.mark_dirty(Redraw::Scene);
-        }
-        Ok(out)
+        Ok(self.finish_history(out))
     }
 
     // ---- soft state (rollback) ----
