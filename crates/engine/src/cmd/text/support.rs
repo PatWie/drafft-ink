@@ -4,7 +4,7 @@
 use drafftink_edit::text_bind::{MathMeasure, TextBindError, TextMeasure};
 use drafftink_geom::kurbo::{Rect, Size};
 use drafftink_scene::limits;
-use drafftink_typeset::MathError;
+use drafftink_typeset::{MathError, MathErrorKind};
 use drafftink_scene::{ElementId, IdSource};
 use schemars::JsonSchema;
 use serde::Serialize;
@@ -83,6 +83,7 @@ pub(crate) fn refuse(cmd: &str, e: TextBindError) -> Refusal {
         B::TextTooLong { n, max } => Refusal::limit_exceeded(cmd, n, "characters", max),
         e @ (B::BadRange { .. } | B::EmptyRange { .. }) => Refusal::custom("bad_range", cmd, e.to_string()),
         e @ B::RangeNeedsOneText { .. } => Refusal::bad_arg(cmd, "range", e.to_string()),
+        B::InvalidLatex { error, .. } if error.kind == MathErrorKind::FontLoading => Refusal::math_font_loading(cmd),
         e @ (B::EmptyFormula | B::FormulaTooLong { .. } | B::InvalidLatex { .. }) => {
             Refusal::custom("invalid_latex", cmd, e.to_string())
         }

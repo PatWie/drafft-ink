@@ -504,7 +504,7 @@ pub const COMMANDS: &[CommandSpec] = &[
         &Typed::new(set_latex),
         DOC,
     )
-    .refusals(&["wrong_kind", "invalid_latex"])
+    .refusals(&["wrong_kind", "invalid_latex", "math_font_loading"])
     .example(r#"{"id":"@formula","latex":"\\frac{a}{b}"}"#),
     CommandSpec::new(
         "text.edit_begin",
@@ -540,7 +540,7 @@ pub const COMMANDS: &[CommandSpec] = &[
     )
     .host(Host::effect(HostEffect::EndsEquationEdit))
     .available(editing_now)
-    .refusals(&["not_editing", "invalid_latex", "invisible"])
+    .refusals(&["not_editing", "invalid_latex", "math_font_loading", "invisible"])
     // A blocked document cannot take the result (`edit_end` says so), but the edit can still be discarded.
     .allowed_when_blocked()
     .shortcuts(EDIT_END_KEYS),

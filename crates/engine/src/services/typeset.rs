@@ -33,6 +33,14 @@ impl LazyTypesetter {
         Arc::new(Self::default())
     }
 
+    /// A handle on a typesetter that exists already, such as one that starts without the math font (the web).
+    pub fn holding(typesetter: Typesetter) -> SharedTypesetter {
+        let cell = OnceLock::new();
+        // A new cell is empty, so the value is always set.
+        let _ = cell.set(Mutex::new(typesetter));
+        Arc::new(Self { cell })
+    }
+
     /// Runs `f` on the typesetter, building it first if needed. A poisoned lock (a panic in an earlier call) is
     /// ignored: layouts are immutable values and the caches stay consistent.
     pub fn with<R>(&self, f: impl FnOnce(&mut Typesetter) -> R) -> R {

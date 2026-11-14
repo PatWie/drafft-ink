@@ -106,6 +106,24 @@ export class App {
     return this.resolve<Output<K>>("execute", [id, args[0]], id);
   }
 
+  /**
+   * Runs `call` again while the app refuses it with `code`: a refusal that says "run it again in a moment", such as
+   * `math_font_loading` (the web build fetches the math font when the first formula needs it) or `schemas_loading`.
+   * Any other outcome, an answer or another rejection, ends it.
+   */
+  async retrying<T>(code: string, call: () => Promise<T>, limitMs = 60_000): Promise<T> {
+    const start = Date.now();
+    for (;;) {
+      try {
+        return await call();
+      } catch (e) {
+        const again = e instanceof Rejected && e.rpcCode === REFUSED && e.data?.code === code;
+        if (!again || Date.now() - start > limitMs) throw e;
+        await this.page.waitForTimeout(100);
+      }
+    }
+  }
+
   /** Runs one command that must be refused, and returns the refusal. Fails when it succeeds. */
   async refusal<K extends CommandId>(id: K, ...args: ArgsParam<K>): Promise<RefusalData> {
     const r = await this.call<unknown>("execute", [id, args[0]]);

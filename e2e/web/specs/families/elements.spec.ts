@@ -195,7 +195,8 @@ test("family text: create, set, latex, runs, size and labels undo; the editor se
   expect((await app.exec("text.set", { id: textId, text: "hello there" })).changed).toBe(true);
   expectRefusal(await app.refusal("text.set", { id: textId, text: "" }), "empty_text", "Delete it with `element.delete`");
 
-  const math = await app.exec("element.create", { kind: "math", latex: "x^2", at: [0, 200] });
+  // The first formula on the page asks the app for the math font, and the app says to come back when it has arrived.
+  const math = await app.retrying("math_font_loading", () => app.exec("element.create", { kind: "math", latex: "x^2", at: [0, 200] }));
   expectRefusal(await app.refusal("text.set", { id: math.id, text: "x" }), "wrong_kind", "text.set_latex");
   await app.exec("text.set_latex", { id: math.id, latex: "\\frac{a}{b}" });
   expectRefusal(await app.refusal("text.set_latex", { id: math.id, latex: "\\frac{" }), "invalid_latex", "could not be parsed", "\\frac{a}{b}");

@@ -396,6 +396,19 @@ impl Refusal {
         )
     }
 
+    /// `math_font_loading`: the formula cannot be laid out until the math font has arrived (a build that does not
+    /// carry it, the web, fetches it the first time a formula needs it). Nothing is wrong with the formula, and
+    /// running the command again after the font has come gets it.
+    pub fn math_font_loading(id: &str) -> Self {
+        Self::custom(
+            "math_font_loading",
+            id,
+            format!(
+                "The math font is still loading, so the formula cannot be laid out yet. Run `{id}` again in a moment."
+            ),
+        )
+    }
+
     /// The refusal for a failed `Renderer` call: `render_pending` while the port is still drawing, else `io_failed`.
     pub fn render_failed(id: &str, what: &str, e: &crate::ports::PortError) -> Self {
         match e {
