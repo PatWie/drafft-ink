@@ -7,11 +7,17 @@
 import { devices } from "@playwright/test";
 import { test, expect, probe } from "../../support/app.ts";
 import { box, camera } from "../../support/build.ts";
+import { CHROMIUM_ARGS } from "../../support/env.ts";
 import { Hands } from "../../support/touch.ts";
 
 // The browser of the project stays Chromium: only the device's screen, pixel ratio, user agent and touch flags apply.
 const { defaultBrowserType: _browser, ...ipad } = devices["iPad Pro 11"];
-test.use(ipad);
+// The device's pixel ratio of 2 is only an override of `window.devicePixelRatio`. Chromium still reports the
+// `devicePixelContentBoxSize` of the canvas for the real display (ratio 1), and winit sizes the surface from that
+// box: the buffer would be 834x1194 for a canvas of 834x1194 CSS pixels at a ratio of 2, the app would lay out 417x597
+// points, and every touch (in CSS pixels) would land at twice the point it is drawn at. A real display with the same
+// ratio makes the two agree, as they do on an iPad.
+test.use({ ...ipad, launchOptions: { args: [...CHROMIUM_ARGS, `--force-device-scale-factor=${ipad.deviceScaleFactor}`] } });
 
 test.describe("an iPad", () => {
   test.beforeEach(async ({ app }) => {
@@ -31,6 +37,10 @@ test.describe("an iPad", () => {
     expect(page.coarse, "the emulated device has a coarse pointer, so the app starts in its touch layout").toBe(true);
     expect(page.position, "pinned to the visible viewport, not sized with 100vh").toBe("fixed");
     expect([info.left, info.top]).toEqual([0, 0]);
+    expect([info.bufferWidth, info.bufferHeight], "the buffer has a device pixel for each one the screen has").toEqual([
+      Math.round(info.cssWidth * info.devicePixelRatio),
+      Math.round(info.cssHeight * info.devicePixelRatio),
+    ]);
     expect(info.cssWidth).toBeCloseTo(page.w, 0);
     expect(info.cssHeight, "the bottom of the canvas (and the bottom bar) is on the screen").toBeCloseTo(page.h, 0);
 
