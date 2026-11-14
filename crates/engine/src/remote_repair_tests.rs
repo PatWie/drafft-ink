@@ -246,6 +246,29 @@ fn a_repair_is_written_once_and_a_second_pass_changes_nothing() {
     assert_eq!(before, writes(&p), "a repair of a repaired scene wrote");
 }
 
+/// Peer a wraps a shape in a frame and undoes it, peer b adds a shape that takes the key the frame had, and a redo
+/// brings the frame back with that key. The redo is a merge of the old step with a collaborator's edit, so it is
+/// repaired like one; with the tie left, `frame.wrap` of the two found no key between them and failed inside.
+#[test]
+fn a_redo_that_brings_back_a_key_a_collaborator_took_leaves_no_tie() {
+    let mut p = [peer("a", 1), peer("b", 2)];
+    let base = rect(&mut p[0], 0.0, 0.0);
+    let (a, b) = p.split_at_mut(1);
+    send(&a[0], &mut b[0]);
+    let frame = run(&mut p[0], "frame.wrap", json!({"ids": [base]}))["frame"].as_str().unwrap().to_owned();
+    run(&mut p[0], "history.undo", json!({}));
+    let taken = rect(&mut p[1], 300.0, 0.0);
+    let (a, b) = p.split_at_mut(1);
+    send(&b[0], &mut a[0]);
+    run(&mut p[0], "history.redo", json!({}));
+    let (frame_key, taken_key) = (element(&p[0], &frame).index, element(&p[0], &taken).index);
+    assert_ne!(frame_key, taken_key, "the redo left two elements with one z-order key");
+    assert!(p[0].ring().iter().any(|e| e.id == "remote.repair"), "the repair of the redo is in the ring");
+    run(&mut p[0], "frame.wrap", json!({"ids": [base, taken]}));
+    settle(&mut p);
+    assert_converged_and_valid(&p);
+}
+
 #[test]
 fn a_deleted_container_releases_a_label_bound_concurrently() {
     let mut p = [peer("a", 1), peer("b", 2)];

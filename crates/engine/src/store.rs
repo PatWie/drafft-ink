@@ -889,7 +889,7 @@ impl TabDoc {
 
     fn undo_redo(&mut self, n: usize, undo: bool) -> Result<UndoOutcome, StoreError> {
         self.last_coalesce = None;
-        let mut out = UndoOutcome { labels: Vec::new(), observed: None, touched: Vec::new() };
+        let mut out = UndoOutcome { labels: Vec::new(), observed: None, touched: Vec::new(), changes: Vec::new() };
         while out.labels.len() < n {
             let before_rev = self.revision();
             let step = if undo { self.loro.undo() } else { self.loro.redo() }.map_err(StoreError::backend)?;
@@ -901,6 +901,7 @@ impl TabDoc {
                 continue;
             }
             out.touched.extend(step.changes.ids().cloned());
+            out.changes.push(step.changes);
             out.labels.push(step.label);
             out.observed = Some(Observed::from_state(&step.restore));
         }
@@ -1047,6 +1048,8 @@ pub struct UndoOutcome {
     pub observed: Option<Observed>,
     /// Elements whose value changed.
     pub touched: Vec<ElementId>,
+    /// What each applied step changed, in the order the steps were applied. The merge repair reads them.
+    pub changes: Vec<ChangeSet>,
 }
 
 #[cfg(test)]

@@ -381,6 +381,51 @@ fn editing_a_point_while_another_peer_moves_the_line_keeps_the_box_consistent() 
     assert_eq!(a.invalid_elements().count(), 0);
 }
 
+/// A merge can leave the box and the points of a line out of step; the view then shows the box fitted to the points,
+/// which Loro does not hold. A later write that makes the line valid again must put the fitted position into Loro as
+/// well, or the view and a fresh read of the same document differ by the rounding of the fit.
+#[test]
+fn a_write_after_a_fitted_decode_leaves_the_view_equal_to_a_fresh_read() {
+    let mut a = peer(1);
+    let mut b = peer(2);
+    add(&mut a, vec![arrow("ar", &zs(1)[0])]);
+    edit(&mut a, "ar", |e| e.transform.x = 0.1);
+    sync(&mut a, &mut b);
+    // A widens the line and styles it (more operations than B, so A's width wins); B drags the end point further
+    // (B's points win). The box of A and the points of B disagree.
+    edit(&mut a, "ar", |e| {
+        if let ElementKind::Arrow(d) = &mut e.kind {
+            d.points[1] = Point::new(100.0, 20.0);
+        }
+        e.transform.w = 100.0;
+        e.style.opacity = 0.5;
+        e.style.stroke_width = 3.0;
+    });
+    edit(&mut b, "ar", |e| {
+        if let ElementKind::Arrow(d) = &mut e.kind {
+            d.points[1] = Point::new(300.0, 90.0);
+        }
+        e.transform.w = 300.0;
+        e.transform.h = 90.0;
+    });
+    sync(&mut a, &mut b);
+    assert_same(&a, &b);
+    // The next write changes the size and the points, and not the position.
+    for s in [&mut a, &mut b] {
+        edit(s, "ar", |e| {
+            if let ElementKind::Arrow(d) = &mut e.kind {
+                d.points[1] = Point::new(310.0, 95.0);
+            }
+            e.transform.w = 310.0;
+            e.transform.h = 95.0;
+        });
+    }
+    sync(&mut a, &mut b);
+    assert_same(&a, &b);
+    assert_view_matches_loro(&a);
+    assert_view_matches_loro(&b);
+}
+
 #[test]
 fn concurrent_changes_to_the_two_binding_ends_both_apply() {
     let mut a = peer(1);

@@ -336,9 +336,18 @@ fn runs_json(runs: &[drafftink_scene::TextRun]) -> Result<Value, DocError> {
     serde_json::to_value(runs).map_err(|e| bad(e.to_string()))
 }
 
+/// An element read from Loro.
+pub(crate) struct Decoded {
+    /// The element as the view holds it.
+    pub element: Element,
+    /// True when the box was fitted to the points on the way in, so the element differs from what Loro holds. The
+    /// next write of the element must put the fitted values into Loro too (see `Core::refitted`).
+    pub refitted: bool,
+}
+
 /// Decodes the element stored in `map`. Fails (the caller quarantines the element) when a field has the wrong
 /// type, a value is out of range, or the element breaks a rule that cannot be repaired.
-pub(crate) fn read_element(id: &ElementId, map: &LoroMap) -> Result<Element, DocError> {
+pub(crate) fn read_element(id: &ElementId, map: &LoroMap) -> Result<Decoded, DocError> {
     let mut top = Map::new();
     let mut transform = Map::new();
     let mut kind = Map::new();
@@ -360,6 +369,7 @@ pub(crate) fn read_element(id: &ElementId, map: &LoroMap) -> Result<Element, Doc
     top.insert("kind".into(), Value::Object(kind));
     top.insert("style".into(), Value::Object(style));
     let mut e: Element = serde_json::from_value(Value::Object(top)).map_err(|er| bad(er.to_string()))?;
+    let mut refitted = false;
     if let Err(first) = validate_element(&e) {
         // A merge of two edits of a line (one changed the points, one the box) can leave the box and the points
         // out of step. Every peer repairs the same way, from the merged points.
@@ -367,8 +377,9 @@ pub(crate) fn read_element(id: &ElementId, map: &LoroMap) -> Result<Element, Doc
         if let Some(error) = still {
             return Err(DocError::BadElement { id: id.clone(), error });
         }
+        refitted = true;
     }
-    Ok(e)
+    Ok(Decoded { element: e, refitted })
 }
 
 fn absorb(

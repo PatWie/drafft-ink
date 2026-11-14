@@ -133,6 +133,12 @@ fn sync_view_inner(view: &mut MemoryStore, core: &mut Core, mut t: Touched) -> R
             Some(ValueOrContainer::Container(Container::Map(m))) => read_element(&id, &m).ok(),
             _ => None,
         };
+        if decoded.as_ref().is_some_and(|d| d.refitted) {
+            core.refitted.insert(id.clone());
+        } else {
+            core.refitted.remove(&id);
+        }
+        let decoded = decoded.map(|d| d.element);
         let present = tx.get(&id).is_some();
         match (present, decoded) {
             (true, Some(new)) => {

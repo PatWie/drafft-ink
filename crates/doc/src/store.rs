@@ -89,6 +89,11 @@ pub(crate) struct Core {
     pub stats: WorkStats,
     /// Elements in Loro that failed to decode or validate. They are hidden from the view.
     pub invalid: BTreeSet<ElementId>,
+    /// Elements whose view value is the fitted one (box fitted to the points) of a decode that needed it, so it
+    /// differs from what Loro holds. Whatever is written next for one of them writes all its fields, or the view
+    /// would keep the fitted value that Loro does not hold once the points become valid again, and peers would end
+    /// with different views of one document.
+    pub refitted: BTreeSet<ElementId>,
     /// Frontiers just before each recent undoable local commit, oldest first.
     pub marks: VecDeque<Frontiers>,
     /// Counts local commits; stamps the undo step a commit pushes (`UndoInfo::seq`).
@@ -185,6 +190,7 @@ impl Core {
             next_subscription: 0,
             stats: WorkStats::default(),
             invalid: BTreeSet::new(),
+            refitted: BTreeSet::new(),
             marks: VecDeque::new(),
             commit_seq: 0,
             last_merged: false,
@@ -423,6 +429,7 @@ impl LoroStore {
         let fresh = opened?;
         self.core.reset_doc(fresh.doc.clone());
         self.core.invalid.clear();
+        self.core.refitted.clear();
         let cs = sync::rebuild_all(&mut self.view, &mut self.core)?;
         self.core.notify(&cs);
         Ok(cs)
