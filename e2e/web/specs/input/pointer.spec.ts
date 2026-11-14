@@ -146,11 +146,13 @@ test.describe("real pointer input", () => {
     await app.until("the editor", async () => (await app.state()).text_edit !== undefined && (await app.state()).text_edit !== null);
     const keys = app.page.keyboard;
     await keys.type("plain ", { delay: 20 });
-    // A chord is a key event and the text is a text event: the app takes a key at its next frame, so give the
-    // chord a frame before the next letter, as a person's fingers do.
+    // A chord is a key event and the text is a text event: the app takes a key at its next frame, and a letter at
+    // once. Wait for the frame that took the chord before the next letter, as a person's fingers do (a frame takes
+    // longer than the gap between two keys only on a slow adapter). The editor's caret blinks, so the app never
+    // settles while the text is open: count frames.
     const chord = async (name: string) => {
       await keys.press(name);
-      await app.page.waitForTimeout(100);
+      await app.framesDrawn();
     };
     await chord("Control+b");
     await keys.type("bold", { delay: 20 });

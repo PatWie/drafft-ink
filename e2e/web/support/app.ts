@@ -196,6 +196,19 @@ export class App {
     }
   }
 
+  /**
+   * Waits until `count` more frames were drawn and the app owes none. For an app that never goes quiet (a text editor
+   * blinks its caret), where `settle` would wait for ever: an input event that was queued before this call is taken at
+   * the next frame, so after two frames it has been applied and drawn.
+   */
+  async framesDrawn(count = 2): Promise<void> {
+    const target = (await this.frames()).frames + count;
+    await this.until(`${count} frames`, async () => {
+      const f = await this.frames();
+      return f.frames >= target && !f.redraw_pending && f.gpu_in_flight === 0;
+    }, 60_000);
+  }
+
   /** Waits for a command-read condition to hold; the polling is the only wait. */
   async until(what: string, check: () => Promise<boolean>, limitMs = 15_000): Promise<void> {
     const start = Date.now();
