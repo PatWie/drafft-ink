@@ -100,6 +100,9 @@ test.describe("pixels: the screen shows what the commands built", () => {
     const id = (await app.exec("element.query", { fields: ["id"] })).items[0] as { id: string };
     await app.exec("style.set", { ids: [id.id], props: { stroke_color: STORED, stroke_width: 8, sloppiness: "architect" } });
     await app.exec("selection.clear");
+    // The pointer rests on the end of the line, and a line under the pointer is drawn with a hover outline: take it
+    // away to read the colour of the line itself.
+    await app.page.mouse.move(900, 650);
     await app.settle();
     const onDark = await shot(app);
     expect(onDark.share({ x: 800, y: 500, w: 200, h: 150 }, hex("#121212"), TOL), "the page is drawn dark in the dark theme").toBeGreaterThan(0.85);

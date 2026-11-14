@@ -3,6 +3,7 @@ import { test, expect, fixtureBase64, probe, type App } from "../../support/app.
 import { box, camera } from "../../support/build.ts";
 import { solidPng } from "../../support/png.ts";
 import { close, hex, shot } from "../../support/pixels.ts";
+import { clickUi, MENU_EXPORT_AS_PNG, openMainMenu } from "../../support/ui.ts";
 
 test("drop: a PNG dropped on the canvas becomes one image element, one undo step", async ({ app }) => {
   await camera(app, { x: 640, y: 400 }, 1);
@@ -83,20 +84,29 @@ test("keys: shortcuts run the same commands (origin shortcut), and undo, delete,
   await app.page.keyboard.press("Control+z");
   await app.until("a back", async () => (await app.count()) === 2);
 
-  const ring = await app.recent(30);
+  // The polls of `until` fill the ring, and the slower the adapter the more of them fit between two key presses.
+  const ring = await app.recent(60, { mutatingOnly: true });
   const fromKeys = ring.filter((e) => e.source === "shortcut").map((e) => e.id);
   for (const id of ["selection.all", "group.create", "group.ungroup", "history.undo", "history.redo", "element.delete"]) {
     expect(fromKeys, `${id} came from a shortcut`).toContain(id);
   }
 });
 
+/** Presses Ctrl+C and waits until the app has run `clipboard.copy` for it (a frame takes the key, and that can take a while). */
+async function copyWithKeys(app: App): Promise<void> {
+  const copies = async () => (await app.recent(256)).filter((e) => e.id === "clipboard.copy" && e.source === "shortcut").length;
+  const before = await copies();
+  await app.page.keyboard.press("Control+c");
+  await app.until("the copy from the shortcut", async () => (await copies()) > before);
+  // The browser writes the system clipboard after the command, asynchronously: wait for the app to have nothing owed.
+  await app.settle();
+}
+
 test("keys: Ctrl+C and Ctrl+V paste a copy of the selected shape", async ({ app }) => {
   await camera(app, { x: 640, y: 400 }, 1);
   const a = await box(app, 300, 300, 100, 60, { fill: "#ffd8a8", name: "orig" });
   await app.exec("selection.select", { ids: [a] });
-  await app.page.keyboard.press("Control+c");
-  // The browser writes the system clipboard asynchronously; a person takes longer than a millisecond to press V.
-  await app.page.waitForTimeout(300);
+  await copyWithKeys(app);
   await app.page.keyboard.press("Control+v");
   await app.until("a pasted copy", async () => (await app.count()) >= 2);
   await app.settle(800);
@@ -125,8 +135,7 @@ test("keys: one Ctrl+V pastes once", async ({ app }) => {
   await camera(app, { x: 640, y: 400 }, 1);
   const a = await box(app, 300, 300, 100, 60, { fill: "#ffd8a8" });
   await app.exec("selection.select", { ids: [a] });
-  await app.page.keyboard.press("Control+c");
-  await app.page.waitForTimeout(300);
+  await copyWithKeys(app);
   await app.page.keyboard.press("Control+v");
   await app.settle(1000);
   expect(await app.count(), "one original and one copy").toBe(2);
@@ -177,11 +186,6 @@ test("keys: Ctrl+V with the pointer over a panel pastes at the middle of the vie
 });
 
 test.describe("export as PNG without the dialog", () => {
-  // The menu button and the row, in page points at zoom 1 (`crates/ui/tests/top_strip.rs` pins the numbers): the button
-  // is at (26, 20) and "Export as PNG" is centred at y = 354 (under the 72 point strip), the first row under the "Export" heading.
-  const MENU_BUTTON = { x: 26, y: 20 };
-  const EXPORT_AS_PNG = { x: 50, y: 354 };
-
   const PNG_SIGNATURE = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
 
   async function activeName(app: App): Promise<string> {
@@ -201,11 +205,9 @@ test.describe("export as PNG without the dialog", () => {
     await app.exec("selection.clear");
     const name = await activeName(app);
 
-    await app.page.mouse.move(MENU_BUTTON.x, MENU_BUTTON.y);
-    await app.page.mouse.click(MENU_BUTTON.x, MENU_BUTTON.y);
-    await app.page.waitForTimeout(400);
+    await openMainMenu(app);
     const downloaded = app.page.waitForEvent("download", { timeout: 20_000 });
-    await app.page.mouse.click(EXPORT_AS_PNG.x, EXPORT_AS_PNG.y);
+    await clickUi(app, MENU_EXPORT_AS_PNG);
     const download = await downloaded;
 
     expect(download.suggestedFilename()).toBe(`${name}.png`);

@@ -47,7 +47,10 @@ jobs:
     # at "does not support chromium on ubuntu26.04-x64". Playwright supports 26.04 from 1.61 on. Remove the pin when
     # the suites move to that version.
     runs-on: ${{ inputs.runner || 'ubuntu-24.04' }}
-    timeout-minutes: 60
+    # Run 43602468435: the Rust build took 23 minutes with a warm cache, the browser suite 33 (111 specs on SwiftShader,
+    # about 17 s each on 4 vCPUs), and the native suite and `cargo xtask test` come after them. 60 minutes cut the run
+    # off in the native suite with every browser spec green.
+    timeout-minutes: 100
     env:
       # On a hosted runner there is no GPU: Chromium falls back to SwiftShader, and the native app to Mesa's software
       # Vulkan (lavapipe). On the `gpu` runner the real adapter is required.
@@ -72,7 +75,10 @@ jobs:
       - name: System packages
         run: |
           sudo apt-get update
-          sudo apt-get install -y xvfb xclip mesa-vulkan-drivers libvulkan1 binaryen
+          # libxkbcommon-x11-0 and the X11 client libraries are loaded at run time (dlopen) by the native app's window
+          # library; without them `drafftink --bridge` panics at start ("libxkbcommon-x11.so could not be loaded").
+          sudo apt-get install -y xvfb xclip mesa-vulkan-drivers libvulkan1 binaryen \
+            libxkbcommon-x11-0 libx11-xcb1 libxcursor1 libxi6 libxrandr2
       - name: wasm-bindgen
         run: cargo install wasm-bindgen-cli --version "$(sed -n 's/^wasm-bindgen = "=\([0-9.]*\)".*/\1/p' Cargo.toml | head -1)" --locked
       - name: Playwright Chromium

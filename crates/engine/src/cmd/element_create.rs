@@ -18,6 +18,7 @@ use drafftink_edit::text_bind::{self, Relabeled};
 use drafftink_geom::kurbo::{Point, Size};
 use drafftink_scene::words::Article;
 use drafftink_scene::limits::{MAX_LATEX_CHARS, MAX_POINTS, MAX_TEXT_CHARS};
+use drafftink_typeset::MathErrorKind;
 use drafftink_scene::{BindMode, ElementId, Head, Kind, PathType, PressureMode, SceneRead, SceneTx, Style};
 use schemars::JsonSchema;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
@@ -249,6 +250,7 @@ fn math_box(s: &Session, latex: &str, font_size: f64) -> Result<Size, Refusal> {
         Some(b) => Ok(Size::new(b.width.max(1.0), (b.height + b.depth).max(1.0))),
         None => {
             let why = match s.services.math_layout(latex, font_size) {
+                Err(e) if e.kind == MathErrorKind::FontLoading => return Err(Refusal::math_font_loading(s.cmd())),
                 Err(e) => {
                     let (line, col) = e.line_col(latex);
                     format!("{} (line {}, column {})", e.message, line + 1, col + 1)
@@ -1069,6 +1071,7 @@ pub const COMMANDS: &[CommandSpec] = &[
         "not_bindable",
         "already_bound",
         "invalid_latex",
+        "math_font_loading",
     ])
     .example(r#"{"kind":"rectangle","bounds":{"x":0,"y":0,"w":120,"h":60},"name":"box"}"#),
     CommandSpec::new(

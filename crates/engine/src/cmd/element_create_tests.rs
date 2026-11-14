@@ -8,11 +8,14 @@ use drafftink_scene::{
     BindMode, Brush, Element, ElementId, ElementKind, Head, Kind, PathType, PressureMode, SceneRead, SceneTx,
     StoreError,
 };
+use drafftink_typeset::{ExtraFont, Typesetter};
 use serde_json::{Value, json};
 
 use crate::batch::{BatchOpts, BatchStep};
 use crate::refusal::Refusal;
+use crate::ports::fake::Fakes;
 use crate::ring::Origin;
+use crate::services::{LazyTypesetter, Services};
 use crate::session::Session;
 use crate::state::Tool;
 use crate::testing;
@@ -1494,4 +1497,19 @@ fn ids_and_seeds_come_from_the_id_source_so_two_sessions_agree() {
         [a, b, c].map(|i| (i.clone(), el(&s, &i).style.seed))
     };
     assert_eq!(make(), make());
+}
+
+#[test]
+fn a_formula_before_the_math_font_has_arrived_is_a_retry_and_not_a_syntax_error() {
+    // The web build fetches the math font when the first formula needs it.
+    let fakes = Fakes::new();
+    let typesetter = LazyTypesetter::holding(Typesetter::without_extra_fonts());
+    let mut s = Session::with_services(fakes.ports(), Services::sharing(typesetter.clone()));
+    let before = s.fingerprint();
+    let r = refuse(&mut s, "element.create", json!({"kind": "math", "at": [0, 0], "latex": "x^2"}));
+    assert_eq!(r.code, "math_font_loading");
+    assert!(r.message.contains("Run `element.create` again"), "{}", r.message);
+    assert!(!r.message.contains("Fix the expression"), "the formula is fine: {}", r.message);
+    assert_eq!(s.fingerprint(), before);
+    assert_eq!(typesetter.peek(|ts| ts.wanted_fonts()), Some(vec![ExtraFont::StixTwoMath]), "the font was asked for");
 }

@@ -122,6 +122,8 @@ pub(crate) fn install(jobs: &JobSender) -> Result<(), JsValue> {
         js::from_json(&json!({
             "frames": drafftink_gpu::frames_drawn(),
             "vello_runs": drafftink_gpu::vello_runs(),
+            "redraw_pending": drafftink_gpu::redraw_pending(),
+            "gpu_in_flight": drafftink_gpu::gpu_in_flight(),
         }))
     });
 

@@ -10,7 +10,7 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import type { DrafftinkTest } from "../harness/harness.types.ts";
 import { installHarness } from "../harness/harness.page.ts";
-import type { ArgsParam, BatchOpts, BatchResult, BatchStep, CommandId, DrafftinkApi, Output, PerfStats, RecentEntry, RefusalData } from "./api.ts";
+import type { ArgsParam, BatchOpts, BatchResult, BatchStep, CommandId, DrafftinkApi, FrameCounters, Output, PerfStats, RecentEntry, RefusalData } from "./api.ts";
 import { FIXTURES, SERVER_INFO } from "./env.ts";
 
 /** JSON-RPC code of a command refusal (docs/agents.md 5.1). */
@@ -106,6 +106,24 @@ export class App {
     return this.resolve<Output<K>>("execute", [id, args[0]], id);
   }
 
+  /**
+   * Runs `call` again while the app refuses it with `code`: a refusal that says "run it again in a moment", such as
+   * `math_font_loading` (the web build fetches the math font when the first formula needs it) or `schemas_loading`.
+   * Any other outcome, an answer or another rejection, ends it.
+   */
+  async retrying<T>(code: string, call: () => Promise<T>, limitMs = 60_000): Promise<T> {
+    const start = Date.now();
+    for (;;) {
+      try {
+        return await call();
+      } catch (e) {
+        const again = e instanceof Rejected && e.rpcCode === REFUSED && e.data?.code === code;
+        if (!again || Date.now() - start > limitMs) throw e;
+        await this.page.waitForTimeout(100);
+      }
+    }
+  }
+
   /** Runs one command that must be refused, and returns the refusal. Fails when it succeeds. */
   async refusal<K extends CommandId>(id: K, ...args: ArgsParam<K>): Promise<RefusalData> {
     const r = await this.call<unknown>("execute", [id, args[0]]);
@@ -138,9 +156,12 @@ export class App {
     return this.resolve("describe", [id], "describe");
   }
 
-  /** The newest entries of the ring, oldest first. */
-  async recent(limit = 20): Promise<RecentEntry[]> {
-    return (await this.resolve<{ entries: RecentEntry[] }>("recent", [{ limit }], "recent")).entries;
+  /**
+   * The newest entries of the ring, oldest first. A spec that polls with `until` fills the ring with its own reads,
+   * and the slower the adapter the more reads fit between two frames: `mutatingOnly` leaves them out.
+   */
+  async recent(limit = 20, { mutatingOnly = false } = {}): Promise<RecentEntry[]> {
+    return (await this.resolve<{ entries: RecentEntry[] }>("recent", [{ limit, mutating_only: mutatingOnly }], "recent")).entries;
   }
 
   /** `engine.state`. */
@@ -153,26 +174,42 @@ export class App {
     return this.page.evaluate(() => window.drafftink.perf());
   }
 
-  /** Frames drawn and frames in which Vello ran since start. */
-  frames(): Promise<{ frames: number; vello_runs: number }> {
+  /** The frame counters: frames drawn, frames in which Vello ran, and the work the loop still owes. */
+  frames(): Promise<FrameCounters> {
     return this.page.evaluate(() => window.drafftink.frames());
   }
 
-  /** Waits until no frame has been drawn for `quietMs`. Returns the frame counters. */
-  async settle(quietMs = 600, limitMs = 20_000): Promise<{ frames: number; vello_runs: number }> {
+  /**
+   * Waits until the picture on screen shows the document: no frame is asked for and none is in flight on the GPU,
+   * and no frame was drawn for `quietMs` (a timer may still ask for one, such as the second pass of a busy scene).
+   * Counting frames alone cannot tell an idle app from one that waits for its next animation frame or for the GPU,
+   * which takes seconds on a CPU adapter. Returns the counters.
+   */
+  async settle(quietMs = 300, limitMs = 60_000): Promise<FrameCounters> {
     const start = Date.now();
     let last = await this.frames();
     let since = Date.now();
-    while (Date.now() - since < quietMs) {
-      if (Date.now() - start > limitMs) throw new Error(`the app kept drawing for ${limitMs} ms (frames ${last.frames})`);
+    for (;;) {
+      if (Date.now() - start > limitMs) throw new Error(`the app kept drawing for ${limitMs} ms (${JSON.stringify(last)})`);
       await this.page.waitForTimeout(50);
       const now = await this.frames();
-      if (now.frames !== last.frames) {
-        last = now;
-        since = Date.now();
-      }
+      if (now.frames !== last.frames || now.redraw_pending || now.gpu_in_flight > 0) since = Date.now();
+      last = now;
+      if (Date.now() - since >= quietMs) return last;
     }
-    return last;
+  }
+
+  /**
+   * Waits until `count` more frames were drawn and the app owes none. For an app that never goes quiet (a text editor
+   * blinks its caret), where `settle` would wait for ever: an input event that was queued before this call is taken at
+   * the next frame, so after two frames it has been applied and drawn.
+   */
+  async framesDrawn(count = 2): Promise<void> {
+    const target = (await this.frames()).frames + count;
+    await this.until(`${count} frames`, async () => {
+      const f = await this.frames();
+      return f.frames >= target && !f.redraw_pending && f.gpu_in_flight === 0;
+    }, 60_000);
   }
 
   /** Waits for a command-read condition to hold; the polling is the only wait. */
@@ -274,6 +311,17 @@ export async function waitStarted(page: Page, timeoutMs = 90_000): Promise<void>
   await page.waitForFunction(() => window.__started === true || typeof window.__error === "string", undefined, { timeout: timeoutMs });
   const error = await page.evaluate(() => window.__error ?? null);
   if (error !== null) throw new Error(`the app failed to start: ${error}`);
+  // The page is "started" when the first frame was drawn by the CPU. The GPU may still be busy with it: a CPU adapter
+  // takes seconds for its first Vello run, and the browser draws nothing else meanwhile. A spec starts when the first
+  // frame is on the screen and nothing is owed.
+  await page.waitForFunction(
+    () => {
+      const f = window.drafftink.frames();
+      return !f.redraw_pending && f.gpu_in_flight === 0;
+    },
+    undefined,
+    { timeout: timeoutMs, polling: 100 },
+  );
   // The WebMCP tools are built from the command schemas, which arrive as a file after the first frame.
   await page.evaluate(() => window.drafftink.webmcp.ready);
 }

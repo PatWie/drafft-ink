@@ -59,6 +59,46 @@ pub(crate) fn route(key: egui::Key, m: egui::Modifiers, mac: bool) -> Option<Key
     key.action(mac).map(|_| KeyRoute::Editor(key))
 }
 
+/// What the editor took from the key events of one frame.
+#[derive(Debug, Default, PartialEq, Eq)]
+pub(crate) struct Taken {
+    /// Esc or Mod+Enter was pressed: the edit ends after the keys are applied.
+    pub finish: bool,
+    /// The editing keys, in the order they were pressed.
+    pub keys: Vec<EditorKey>,
+}
+
+/// Takes the editor's key presses out of a frame's events and leaves the rest to the app.
+///
+/// A frame can hold the whole of what a person typed and the key that ends the edit (a slow frame, a fast typist).
+/// The letters before that key belong to the text: with the edit over, the app's keymap must not read them as tool
+/// shortcuts, so they go too. Keys after it are the app's, and so is every chord with Ctrl, Cmd or Alt.
+pub(crate) fn take_keys(events: &mut Vec<egui::Event>, mac: bool) -> Taken {
+    let mut taken = Taken::default();
+    let mut kept = Vec::with_capacity(events.len());
+    for event in events.drain(..) {
+        let egui::Event::Key { key, pressed: true, modifiers, .. } = &event else {
+            kept.push(event);
+            continue;
+        };
+        match route(*key, *modifiers, mac) {
+            Some(KeyRoute::Finish) => {
+                taken.finish = true;
+                kept.retain(|e| !is_typing(e));
+            }
+            Some(KeyRoute::Editor(k)) => taken.keys.push(k),
+            None => kept.push(event),
+        }
+    }
+    *events = kept;
+    taken
+}
+
+/// A key press or release that types a character: no Ctrl, Cmd or Alt held.
+fn is_typing(event: &egui::Event) -> bool {
+    matches!(event, egui::Event::Key { modifiers, .. } if !modifiers.command && !modifiers.alt && !modifiers.ctrl)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -83,5 +123,40 @@ mod tests {
         assert_eq!(route(egui::Key::K, cmd(), false), None, "other chords do nothing in a text");
         assert_eq!(route(egui::Key::S, cmd(), false), None, "Mod+S is the app's");
         assert_eq!(route(egui::Key::Z, egui::Modifiers::NONE, false), None, "a plain letter is typed text");
+    }
+
+    fn press(key: egui::Key, modifiers: egui::Modifiers) -> egui::Event {
+        egui::Event::Key { key, physical_key: Some(key), pressed: true, repeat: false, modifiers }
+    }
+
+    #[test]
+    fn letters_typed_before_the_end_of_the_edit_in_one_frame_are_not_shortcuts() {
+        // "hello" and Ctrl+Enter in one frame: a slow frame batches them. Only the editor's keys and the typing
+        // before the end are taken; what comes after the end, and a chord, stays for the keymap.
+        let mut events = vec![
+            press(egui::Key::H, egui::Modifiers::NONE),
+            press(egui::Key::E, egui::Modifiers::NONE),
+            press(egui::Key::S, cmd()),
+            press(egui::Key::Enter, cmd()),
+            press(egui::Key::T, egui::Modifiers::NONE),
+            egui::Event::Text("x".to_owned()),
+        ];
+        let taken = take_keys(&mut events, false);
+        assert!(taken.finish);
+        assert!(taken.keys.is_empty());
+        assert_eq!(events.len(), 3, "{events:?}");
+        assert!(matches!(&events[0], egui::Event::Key { key: egui::Key::S, .. }), "Mod+S is the app's");
+        assert!(matches!(&events[1], egui::Event::Key { key: egui::Key::T, .. }), "a key after the end is the app's");
+        assert!(matches!(&events[2], egui::Event::Text(_)));
+    }
+
+    #[test]
+    fn without_the_end_of_the_edit_the_typed_letters_stay_for_the_frame_to_ignore() {
+        let mut events =
+            vec![press(egui::Key::H, egui::Modifiers::NONE), press(egui::Key::ArrowLeft, egui::Modifiers::NONE)];
+        let taken = take_keys(&mut events, false);
+        assert!(!taken.finish);
+        assert_eq!(taken.keys.len(), 1);
+        assert_eq!(events.len(), 1, "the editing key is taken, the letter is not");
     }
 }

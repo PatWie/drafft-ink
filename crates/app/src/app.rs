@@ -29,7 +29,7 @@ use vello::peniko::Color;
 
 use crate::agent_server::McpHttpState;
 use crate::config::AppConfig;
-use crate::editor::{KeyRoute, TextEditor, route};
+use crate::editor::{TextEditor, take_keys};
 use crate::input::{self, Contacts, Held, PenWatch};
 use crate::overlay;
 #[cfg(feature = "scenarios")]
@@ -524,21 +524,13 @@ impl App {
     fn editor_keys(&mut self, ctx: &egui::Context, now_ms: f64) -> bool {
         let Some(editor) = self.editor.as_mut() else { return false };
         let mac = self.is_mac;
-        let mut finish = false;
-        let mut changed = false;
+        let taken = ctx.input_mut(|i| take_keys(&mut i.events, mac));
         let ts = &self.typesetter;
-        ctx.input_mut(|i| {
-            i.events.retain(|event| {
-                let egui::Event::Key { key, pressed: true, modifiers, .. } = event else { return true };
-                match route(*key, *modifiers, mac) {
-                    Some(KeyRoute::Finish) => finish = true,
-                    Some(KeyRoute::Editor(k)) => changed |= ts.with(|ts| editor.key(k, mac, ts, now_ms)),
-                    None => return true,
-                }
-                false
-            });
+        let changed = taken.keys.into_iter().fold(false, |changed, key| {
+            // Not `||`: every key must reach the editor, whether or not an earlier one changed the picture.
+            ts.with(|ts| editor.key(key, mac, ts, now_ms)) | changed
         });
-        if finish {
+        if taken.finish {
             self.stage_editor();
             self.finish_editor();
             return true;

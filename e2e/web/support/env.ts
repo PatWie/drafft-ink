@@ -32,16 +32,16 @@ const NVIDIA = [
   "--disable-gpu-sandbox",
 ];
 
-/** Chromium flags for the CPU adapter (SwiftShader): slow, but it needs no GPU. */
-const SWIFTSHADER = [
-  "--enable-unsafe-webgpu",
-  "--enable-features=Vulkan",
-  "--use-angle=swiftshader",
-  "--enable-unsafe-swiftshader",
-  "--use-webgpu-adapter=swiftshader",
-  "--ignore-gpu-blocklist",
-  "--no-sandbox",
-];
+/**
+ * Chromium flags for the CPU adapter (SwiftShader): slow, but it needs no GPU.
+ *
+ * Neither `--enable-features=Vulkan` nor `--use-angle=swiftshader` is here, and that is on purpose. On a machine
+ * without a GPU (a hosted CI runner, a container) either of them makes the page a white screenshot while the app
+ * reports every frame done: the compositor cannot show the WebGPU canvas. `--use-angle=swiftshader` alone also leaves
+ * frames in flight for good. Dawn finds its own SwiftShader with `--use-webgpu-adapter=swiftshader`, and
+ * `--enable-unsafe-swiftshader` lets the WebGL2 fallback run in software too.
+ */
+const SWIFTSHADER = ["--enable-unsafe-webgpu", "--use-webgpu-adapter=swiftshader", "--enable-unsafe-swiftshader", "--ignore-gpu-blocklist", "--no-sandbox"];
 
 /** `DRAFFTINK_E2E_ADAPTER=swiftshader` selects the CPU adapter; the default is the NVIDIA GPU. */
 export const ADAPTER: "nvidia" | "swiftshader" = process.env["DRAFFTINK_E2E_ADAPTER"] === "swiftshader" ? "swiftshader" : "nvidia";

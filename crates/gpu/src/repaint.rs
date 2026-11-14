@@ -132,6 +132,11 @@ impl RepaintState {
         self.requested = false;
     }
 
+    /// True when a frame is due now and the window can draw it: asked for, not yet taken, not hidden.
+    pub(crate) fn frame_due(&self) -> bool {
+        self.now.is_some() && !self.hidden
+    }
+
     #[cfg(test)]
     pub(crate) fn pending_now(&self) -> bool {
         self.now.is_some()
@@ -303,6 +308,22 @@ mod tests {
         assert!(s.pending_now());
         assert!(s.set_hidden(false), "visible again with a frame pending");
         assert!(!s.set_hidden(false));
+    }
+
+    #[test]
+    fn a_frame_is_due_from_its_request_until_it_is_taken_and_never_while_hidden() {
+        let mut s = RepaintState::default();
+        assert!(!s.frame_due());
+        s.request_now(RedrawReason::Command);
+        assert!(s.frame_due(), "asked for and not drawn: a test must wait");
+        s.request_after(Instant::now(), ms(500), RedrawReason::Timer);
+        s.take();
+        assert!(!s.frame_due(), "drawn; the delayed request is not due yet");
+        s.set_hidden(true);
+        s.request_now(RedrawReason::Command);
+        assert!(!s.frame_due(), "a hidden window draws nothing, so nobody can wait for it");
+        s.set_hidden(false);
+        assert!(s.frame_due());
     }
 
     #[test]

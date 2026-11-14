@@ -100,7 +100,10 @@ The loop sleeps in `ControlFlow::Wait`, or `WaitUntil(deadline)` when something 
    reason `surface`. The egui texture updates of that frame are kept and applied with the next one.
 
 `drafftink_gpu::frames_drawn()` and `vello_runs()` are process counters for tests; each drawn frame also logs
-`drafftink_gpu::frame` at debug level with its reason.
+`drafftink_gpu::frame` at debug level with its reason. `redraw_pending()` (a frame was asked for and not drawn yet) and
+`gpu_in_flight()` (submitted frames the GPU has not finished, from `Queue::on_submitted_work_done`) say whether the
+screen shows the latest state: the frame counter alone cannot, because on a CPU adapter the browser draws the next
+animation frame seconds after a command asked for it.
 
 ## 3. Frame
 
