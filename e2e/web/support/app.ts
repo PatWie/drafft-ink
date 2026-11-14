@@ -156,9 +156,12 @@ export class App {
     return this.resolve("describe", [id], "describe");
   }
 
-  /** The newest entries of the ring, oldest first. */
-  async recent(limit = 20): Promise<RecentEntry[]> {
-    return (await this.resolve<{ entries: RecentEntry[] }>("recent", [{ limit }], "recent")).entries;
+  /**
+   * The newest entries of the ring, oldest first. A spec that polls with `until` fills the ring with its own reads,
+   * and the slower the adapter the more reads fit between two frames: `mutatingOnly` leaves them out.
+   */
+  async recent(limit = 20, { mutatingOnly = false } = {}): Promise<RecentEntry[]> {
+    return (await this.resolve<{ entries: RecentEntry[] }>("recent", [{ limit, mutating_only: mutatingOnly }], "recent")).entries;
   }
 
   /** `engine.state`. */

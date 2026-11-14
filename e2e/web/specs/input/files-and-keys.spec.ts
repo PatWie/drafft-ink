@@ -84,20 +84,29 @@ test("keys: shortcuts run the same commands (origin shortcut), and undo, delete,
   await app.page.keyboard.press("Control+z");
   await app.until("a back", async () => (await app.count()) === 2);
 
-  const ring = await app.recent(30);
+  // The polls of `until` fill the ring, and the slower the adapter the more of them fit between two key presses.
+  const ring = await app.recent(60, { mutatingOnly: true });
   const fromKeys = ring.filter((e) => e.source === "shortcut").map((e) => e.id);
   for (const id of ["selection.all", "group.create", "group.ungroup", "history.undo", "history.redo", "element.delete"]) {
     expect(fromKeys, `${id} came from a shortcut`).toContain(id);
   }
 });
 
+/** Presses Ctrl+C and waits until the app has run `clipboard.copy` for it (a frame takes the key, and that can take a while). */
+async function copyWithKeys(app: App): Promise<void> {
+  const copies = async () => (await app.recent(256)).filter((e) => e.id === "clipboard.copy" && e.source === "shortcut").length;
+  const before = await copies();
+  await app.page.keyboard.press("Control+c");
+  await app.until("the copy from the shortcut", async () => (await copies()) > before);
+  // The browser writes the system clipboard after the command, asynchronously: wait for the app to have nothing owed.
+  await app.settle();
+}
+
 test("keys: Ctrl+C and Ctrl+V paste a copy of the selected shape", async ({ app }) => {
   await camera(app, { x: 640, y: 400 }, 1);
   const a = await box(app, 300, 300, 100, 60, { fill: "#ffd8a8", name: "orig" });
   await app.exec("selection.select", { ids: [a] });
-  await app.page.keyboard.press("Control+c");
-  // The browser writes the system clipboard asynchronously; a person takes longer than a millisecond to press V.
-  await app.page.waitForTimeout(300);
+  await copyWithKeys(app);
   await app.page.keyboard.press("Control+v");
   await app.until("a pasted copy", async () => (await app.count()) >= 2);
   await app.settle(800);
@@ -126,8 +135,7 @@ test("keys: one Ctrl+V pastes once", async ({ app }) => {
   await camera(app, { x: 640, y: 400 }, 1);
   const a = await box(app, 300, 300, 100, 60, { fill: "#ffd8a8" });
   await app.exec("selection.select", { ids: [a] });
-  await app.page.keyboard.press("Control+c");
-  await app.page.waitForTimeout(300);
+  await copyWithKeys(app);
   await app.page.keyboard.press("Control+v");
   await app.settle(1000);
   expect(await app.count(), "one original and one copy").toBe(2);
