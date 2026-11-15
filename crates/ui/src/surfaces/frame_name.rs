@@ -4,7 +4,7 @@
 //! click away commits through `frame.rename`, Esc cancels. The canvas keeps its pointer while the field is open.
 
 use drafftink_scene::FrameData;
-use egui::{Align2, Area, Context, Frame, Id, Key, Margin, Order, Stroke, TextEdit, vec2};
+use egui::{Align2, Area, Context, Frame, Id, Key, Margin, Order, Rect, Stroke, TextEdit, vec2};
 
 use crate::state::{RenameTarget, UiState};
 use crate::surfaces::dialogs::focus_and_select_all;
@@ -16,9 +16,12 @@ use crate::widgets::Cx;
 const MAX_NAME_CHARS: usize = 256;
 /// Space between the text and the border of the field, in points.
 const PAD: i8 = 2;
+/// The height of a line of the label's font in units of its size, to tell where the field sits before it is laid out.
+const LINE_FACTOR: f32 = 1.4;
 
 /// Draws the field when `st.frame_name` is set.
 pub fn show(ctx: &Context, cx: &mut Cx<'_>, st: &mut UiState) {
+    let strip = st.chrome.strip;
     let Some(edit) = st.frame_name.as_mut() else {
         return;
     };
@@ -31,6 +34,10 @@ pub fn show(ctx: &Context, cx: &mut Cx<'_>, st: &mut UiState) {
     let width = ((edit.width * zoom) as f32).max(FrameData::LABEL_MIN_WIDTH as f32);
     // The text of the field starts where the label's does; its bottom edge is where the label's is.
     let anchor = corner + vec2(-f32::from(PAD) - 1.0, -(FrameData::LABEL_GAP as f32) + f32::from(PAD) + 1.0);
+    // The label sits on the canvas, under the strip when the view has put it there: the field is cut by the strip too.
+    let height = FrameData::LABEL_SIZE as f32 * LINE_FACTOR + 2.0 * f32::from(PAD);
+    let field = Rect::from_min_max(anchor - vec2(0.0, height), anchor + vec2(width + 2.0 * f32::from(PAD), 0.0));
+    let clip = canvas_clip(field, strip, ctx.content_rect());
     let escaped = ctx.input(|i| i.key_pressed(Key::Escape));
     let mut commit = false;
     Area::new(Id::unique("frame_name_field"))
@@ -38,6 +45,7 @@ pub fn show(ctx: &Context, cx: &mut Cx<'_>, st: &mut UiState) {
         .fixed_pos(anchor)
         .pivot(Align2::LEFT_BOTTOM)
         .show(ctx, |ui| {
+            ui.set_clip_rect(ui.clip_rect().intersect(clip));
             field_frame(&pal).show(ui, |ui| {
                 let field = ui.add(
                     TextEdit::singleline(&mut edit.text)
@@ -72,6 +80,14 @@ pub fn show(ctx: &Context, cx: &mut Cx<'_>, st: &mut UiState) {
     }
 }
 
+/// Where the field may draw and take the pointer: the screen, and not the strip when the field reaches under it.
+fn canvas_clip(field: Rect, strip: Option<Rect>, screen: Rect) -> Rect {
+    match strip {
+        Some(strip) if strip.intersects(field) => screen.intersect(Rect::everything_below(strip.bottom())),
+        _ => screen,
+    }
+}
+
 /// Ends the edit: a name that did not change closes the field with no call, any other runs `frame.rename`.
 fn finish(cx: &mut Cx<'_>, st: &mut UiState) {
     let Some(edit) = st.frame_name.as_ref() else {
@@ -93,4 +109,30 @@ fn field_frame(pal: &Palette) -> Frame {
         .stroke(Stroke::new(1.0, pal.accent))
         .corner_radius(theme::BUTTON_RADIUS)
         .inner_margin(Margin::same(PAD))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use egui::pos2;
+
+    const SCREEN: Rect = Rect::from_min_max(pos2(0.0, 0.0), pos2(1000.0, 700.0));
+    const STRIP: Rect = Rect::from_min_max(pos2(100.0, 0.0), pos2(900.0, 90.0));
+
+    fn field_at(x: f32, y: f32) -> Rect {
+        Rect::from_min_size(pos2(x, y), vec2(120.0, 24.0))
+    }
+
+    #[test]
+    fn a_field_that_reaches_under_the_strip_is_cut_below_it() {
+        let clip = canvas_clip(field_at(300.0, 70.0), Some(STRIP), SCREEN);
+        assert_eq!(clip, Rect::from_min_max(pos2(0.0, 90.0), pos2(1000.0, 700.0)));
+    }
+
+    #[test]
+    fn a_field_clear_of_the_strip_or_with_no_strip_is_not_cut() {
+        assert_eq!(canvas_clip(field_at(300.0, 200.0), Some(STRIP), SCREEN), SCREEN);
+        assert_eq!(canvas_clip(field_at(-60.0, 10.0), Some(STRIP), SCREEN), SCREEN, "beside the strip, not under it");
+        assert_eq!(canvas_clip(field_at(300.0, 70.0), None, SCREEN), SCREEN);
+    }
 }
