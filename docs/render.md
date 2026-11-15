@@ -42,7 +42,7 @@ The look is the old app's, checked against its PNGs (§7):
 | highlighter (`FreehandData::highlighter`) | one wide round-capped stroke inside a layer whose alpha is the colour's alpha, so a stroke that crosses itself does not darken. |
 | text | `typeset` layout, one `draw_glyphs` per glyph run, decorations as rectangles, per-character colours from `runs`. Synthetic italic through the run's skew. |
 | math | `typeset` math layout (cached per formula), glyphs in the two fonts, rules as rectangles, formula colour `\color` or the stroke colour. A formula that does not parse draws the old pale-red box. |
-| image | the decoded picture as a textured rectangle with the crop applied (the crop is in pixels of the stored picture; the box is where the cropped part is drawn, so rotation and mirroring act on the cropped part; `image.crop` sets it); opacity as the brush alpha; an outline when the stroke has a colour (not clear) and a width, solid, dashed or dotted; a new picture has none. A grey box with a cross is the placeholder (a red-tinted one for a picture that cannot be decoded). |
+| image | the decoded picture as a textured rectangle with the crop applied (the crop is in pixels of the stored picture; the box is where the cropped part is drawn, so rotation and mirroring act on the cropped part; `image.crop` sets it); opacity as the brush alpha; `style.corner_radius` (at most half the shorter side, as for a frame) rounds the path the picture is filled into, so the corners clip it after the crop in the element's local frame and the composer's rotation and mirror carry the clip along; an outline when the stroke has a colour (not clear) and a width, solid, dashed or dotted; a new picture has none, and it follows the rounded path. A grey box with a cross is the placeholder (a red-tinted one for a picture that cannot be decoded). |
 | frame | rectangle border (and a solid fill). The name is not in the fragment: the composer draws it in device space right after the fragment, above the top-left corner, at a constant size on screen (14 logical pixels, 4 px above the edge), in the stroke colour, cut at the frame's width on screen but never narrower than 48 px (§5.1). |
 
 Dark theme (`RenderOptions::theme`) is a colour mapping applied while encoding: the CSS filter
@@ -240,7 +240,7 @@ sketch and typeset enforce their own limits. `hostile_views_and_elements_never_p
 | `tests/bounds.rs` | property tests: nothing paints outside `paint_margin` |
 | `tests/painter.rs` | draw order, colours, tint, opacity, dark mapping, heads, highlighter, text runs, math, frames, dashes |
 | `tests/grid.rs` | the grid is bounded for any view |
-| `tests/images.rs` | decode limits, inline and deferred policies, late blobs, broken pictures, byte bound, crop |
+| `tests/images.rs` | decode limits, inline and deferred policies, late blobs, broken pictures, byte bound, crop, rounded corners (clip, outline, rotation, mirror) |
 | `tests/overlay.rs` | overlay parts, constant size, independent of the document; labels, remote selections, trails, link icons, spacing badges, the text editor overlay |
 | `tests/gpu.rs` | feature `gpu-tests`: pixel checks on a real adapter |
 

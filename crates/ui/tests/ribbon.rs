@@ -903,6 +903,26 @@ fn a_selected_image_gets_a_crop_button_and_a_cropped_one_also_a_reset_button() {
 }
 
 #[test]
+fn a_selected_image_gets_the_corner_controls_and_they_set_its_radius() {
+    let (f, _) = one_image();
+    let mut h = desk(f);
+    assert!(has(&h, "Corners: Sharp") && has(&h, "Corners: Round"), "an image has corners to round");
+    h.get_by_role_and_label(egui::accesskit::Role::Button, "Corner radius");
+    let calls = common::click(&mut h, "Corners: Round");
+    assert_eq!(
+        calls.last().map(|c| (c.id.as_str(), c.args.clone())),
+        Some(("style.set", json!({ "props": { "corner_radius": 32.0 } })))
+    );
+    // The slider in the menu shows the radius the image has.
+    let (mut f, id) = one_image();
+    dialog::run(&mut f, "style.set", json!({ "ids": [id.as_str()], "props": { "corner_radius": 12 } }));
+    let mut h = desk(f);
+    open(&mut h, "Corner radius");
+    h.get_by_label("12");
+    assert_eq!(radius_slider(&h).and_then(|s| s.accesskit_node().numeric_value()), Some(12.0));
+}
+
+#[test]
 fn the_crop_buttons_call_the_commands_and_the_strip_shows_done_while_the_editor_is_open() {
     let (mut f, id) = one_image();
     dialog::run(&mut f, "image.crop", json!({ "id": id.as_str(), "crop": { "x": 0, "y": 0, "w": 20, "h": 20 } }));

@@ -119,9 +119,11 @@ impl Draft {
         SelectionFrame::Box { obox: self.world_box(self.window), set: HANDLES, multi: false }
     }
 
-    /// The image as the draft would leave it.
+    /// The image as the draft would leave it. Its rounded corners are left off while the editor is open: the window
+    /// is a rectangle, and the corners come back on the element when the crop is committed.
     fn shown(&self) -> Element {
         let mut e = self.element.clone();
+        e.style.corner_radius = 0.0;
         let b = self.world_bounds();
         (e.transform.x, e.transform.y, e.transform.w, e.transform.h) = (b.x0, b.y0, b.width(), b.height());
         if let ElementKind::Image(d) = &mut e.kind {
@@ -130,9 +132,10 @@ impl Draft {
         e
     }
 
-    /// The whole picture as the draft has it, to draw faded under the window.
+    /// The whole picture as the draft has it, to draw faded under the window, without rounded corners.
     fn whole(&self) -> Element {
         let mut e = self.element.clone();
+        e.style.corner_radius = 0.0;
         let whole = self.shifted().whole();
         let t = &self.element.transform;
         let centre = t.local_to_world(whole.center());

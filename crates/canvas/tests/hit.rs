@@ -133,6 +133,38 @@ fn flipped_elements_hit_like_unflipped_ones() {
 }
 
 #[test]
+fn a_rounded_image_is_not_hit_on_its_cut_off_corners() {
+    let image = |radius: f64| {
+        let mut img = Element::new(
+            id("img"),
+            ElementKind::Image(ImageData { file_id: None, natural_width: 10, natural_height: 10, crop: None }),
+            drafftink_canvas::scene::ZIndex::first(),
+        )
+        .with_bounds(100.0, 100.0, 200.0, 100.0);
+        img.style.corner_radius = radius;
+        img
+    };
+    let sharp = canvas_with(vec![image(0.0)]);
+    assert_eq!(top(&sharp, 103.0, 103.0).as_deref(), Some("img"), "a sharp corner is hit");
+    let round = canvas_with(vec![image(40.0)]);
+    assert_eq!(top(&round, 103.0, 103.0), None, "the corner is cut off by the radius");
+    assert_eq!(top(&round, 297.0, 197.0), None, "on every corner");
+    assert_eq!(top(&round, 200.0, 150.0).as_deref(), Some("img"), "the middle is hit");
+    assert_eq!(top(&round, 140.0, 103.0).as_deref(), Some("img"), "the straight part of the edge is hit");
+    // A radius larger than half the shorter side is held to it, so the corner of a 100 high image is a half circle.
+    let huge = canvas_with(vec![image(1000.0)]);
+    assert_eq!(top(&huge, 103.0, 103.0), None);
+    assert_eq!(top(&huge, 200.0, 150.0).as_deref(), Some("img"));
+    // Turned a quarter about its centre (200, 150) it covers x 150 to 250 and y 50 to 250, with its corners cut.
+    let mut turned = image(40.0);
+    turned.transform.angle = FRAC_PI_2;
+    let turned = canvas_with(vec![turned]);
+    assert_eq!(top(&turned, 153.0, 53.0), None);
+    assert_eq!(top(&turned, 247.0, 247.0), None);
+    assert_eq!(top(&turned, 200.0, 60.0).as_deref(), Some("img"));
+}
+
+#[test]
 fn lines_are_hit_near_the_stroke_and_the_tolerance_is_in_screen_pixels() {
     let mut c = canvas_with(vec![line("l", &[(100.0, 100.0), (300.0, 100.0), (300.0, 300.0)])]);
     assert_eq!(top(&c, 200.0, 100.0).as_deref(), Some("l"));

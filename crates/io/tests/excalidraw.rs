@@ -630,6 +630,66 @@ fn image_scale_and_crop_and_bad_picture_data() {
 }
 
 #[test]
+fn a_rounded_picture_is_written_with_roundness_and_read_back_with_its_radius() {
+    use base64::Engine as _;
+    let mut doc = Document::new();
+    let (png_id, file) = drafftink_scene::FileEntry::new("image/png", {
+        let mut b = vec![0x89, b'P', b'N', b'G', 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 13, b'I', b'H', b'D', b'R'];
+        b.extend_from_slice(&40u32.to_be_bytes());
+        b.extend_from_slice(&30u32.to_be_bytes());
+        b
+    });
+    doc.files.insert(png_id.clone(), file);
+    let keys = drafftink_scene::ZIndex::rebalance(3).unwrap();
+    let make = |n: usize, w: f64, h: f64, radius: f64| {
+        let data = drafftink_scene::ImageData {
+            file_id: Some(png_id.clone()),
+            natural_width: 40,
+            natural_height: 30,
+            crop: None,
+        };
+        let id = drafftink_scene::ElementId::new(&format!("p{n}")).unwrap();
+        let mut e = Element::new(id, ElementKind::Image(data), keys[n].clone()).with_bounds(0.0, 0.0, w, h);
+        e.style.corner_radius = radius;
+        e
+    };
+    // 200 x 100: Excalidraw's adaptive rule gives 25 (a quarter of the shorter side), so 25 needs no note.
+    doc.elements = vec![make(0, 200.0, 100.0, 25.0), make(1, 200.0, 100.0, 0.0), make(2, 200.0, 100.0, 7.0)];
+    let (text, report) = export_scene_with_report(&doc).unwrap();
+    assert!(report.is_clean(), "{:?}", report.warnings);
+    let v: Value = serde_json::from_str(&text).unwrap();
+    let el = |id: &str| v["elements"].as_array().unwrap().iter().find(|e| e["id"] == id).unwrap().clone();
+    assert_eq!(el("p0")["roundness"], json!({"type": 3}));
+    assert!(el("p0")["customData"]["drafftink"].get("corner_radius").is_none(), "25 is what Excalidraw draws");
+    assert_eq!(el("p1")["roundness"], Value::Null, "a sharp picture has no roundness");
+    assert_eq!(el("p2")["roundness"], json!({"type": 3}));
+    assert_eq!(el("p2")["customData"]["drafftink"]["corner_radius"], 7.0, "the exact radius is kept");
+    let back = import_str(&text).unwrap();
+    assert_no_errors(&back.document);
+    let radius = |id: &str| get(&back.document, id).style.corner_radius;
+    assert_eq!((radius("p0"), radius("p1"), radius("p2")), (25.0, 0.0, 7.0));
+    // A file Excalidraw wrote: the picture has `roundness` and no note, so the radius comes from its rule.
+    let url = format!("data:image/png;base64,{}", base64::engine::general_purpose::STANDARD.encode([0x89u8, b'P']));
+    let foreign = import_str(
+        &json!({
+            "type": "excalidraw", "version": 2,
+            "elements": [
+                {"id": "a", "type": "image", "x": 0, "y": 0, "width": 400, "height": 300, "fileId": "f",
+                 "roundness": {"type": 3}},
+                {"id": "b", "type": "image", "x": 0, "y": 0, "width": 40, "height": 30, "fileId": "f",
+                 "roundness": {"type": 2}},
+                {"id": "c", "type": "image", "x": 0, "y": 0, "width": 40, "height": 30, "fileId": "f"},
+            ],
+            "files": {"f": {"id": "f", "mimeType": "image/png", "dataURL": url, "created": 1}},
+        })
+        .to_string(),
+    )
+    .unwrap();
+    let r = |id: &str| get(&foreign.document, id).style.corner_radius;
+    assert_eq!((r("a"), r("b"), r("c")), (32.0, 7.5, 0.0));
+}
+
+#[test]
 fn minimal_fields_use_defaults_and_odd_input_is_skipped() {
     let i = scene("minimal_fields");
     let d = &i.document;
@@ -860,6 +920,7 @@ fn native_documents_survive_a_trip_through_excalidraw() {
     );
     doc.elements[img].transform.flip_y = true;
     doc.elements[img].transform.angle = 0.1;
+    doc.elements[img].style.corner_radius = 11.0; // Excalidraw's rule gives 10 for a side of 40
     let frame = base_element(
         &mut doc,
         ElementKind::Frame(FrameData { name: Some("Frame".into()), clip: false }),
@@ -902,6 +963,10 @@ fn native_documents_survive_a_trip_through_excalidraw() {
     assert_eq!(note("n0")["fill_pattern"], "dots");
     assert_eq!(note("n0")["sloppiness"], "drunk");
     assert_eq!(note("n0")["corner_radius"], 17.0);
+    let image_id = doc.elements[img].id.as_str().to_owned();
+    let image = v["elements"].as_array().unwrap().iter().find(|e| e["id"] == image_id.as_str()).unwrap().clone();
+    assert_eq!(image["roundness"], json!({"type": 3}), "a rounded picture is written with adaptive roundness");
+    assert_eq!(note(&image_id)["corner_radius"], 11.0, "the exact radius is in the note");
     assert_eq!(v["elements"][0]["customData"]["mine"], json!({"x": [1, 2]}));
     assert_eq!(v["elements"][0]["roughness"], 2.0);
     assert_eq!(v["elements"][0]["fillStyle"], "hachure", "dots falls back to the nearest Excalidraw fill");

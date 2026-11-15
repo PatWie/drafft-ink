@@ -14,8 +14,9 @@
 //!   (Kannada, symbols, CJK punctuation: `drafftink_typeset::needs_glyph_fallback`).
 //! * **Formulas** are drawn by a [`MathSvg`] the engine supplies (it owns the formula engine). Without one the
 //!   LaTeX source is written as italic text.
-//! * **Images** are embedded as data URIs (cropping and mirroring included). An image whose blob is missing
-//!   is drawn as a dashed placeholder. Image borders are not drawn.
+//! * **Images** are embedded as data URIs (cropping and mirroring included). Rounded corners are a `<clipPath>`
+//!   with a rounded `<rect>` in the element's own frame, and the outline of a picture that has a stroke follows it.
+//!   An image whose blob is missing is drawn as a dashed placeholder.
 //! * **Selection export** takes the given ids plus the labels bound to them. Only those elements, and only the
 //!   blobs they use, go into the embedded scene, so exporting a selection never leaks the rest of the document.
 //! * **Embedded scene**: a `<metadata><drafftink-scene encoding="base64-deflate">` element holding the native JSON,
@@ -707,6 +708,23 @@ impl Ctx<'_> {
                 if fy { "-1" } else { "1" }
             ),
         };
+        // The corners clip the picture after the crop, in the element's own frame: the clip sits on a group outside
+        // the mirror, so it is cut from the box the user sees and turns with the element.
+        let radius = image_radius(e);
+        let clip = (radius > 0.0).then(|| {
+            let id = format!("clip-img-{}", e.id);
+            put!(
+                self.defs,
+                "<clipPath id=\"{id}\"><rect width=\"{}\" height=\"{}\" rx=\"{}\"/></clipPath>",
+                num(t.w),
+                num(t.h),
+                num(radius)
+            );
+            id
+        });
+        if let Some(id) = &clip {
+            put!(self.out, "<g clip-path=\"url(#{id})\">");
+        }
         put!(self.out, "<g{flip}>");
         match &i.crop {
             Some(c) => {
@@ -733,6 +751,9 @@ impl Ctx<'_> {
             }
         }
         self.out.push_str("</g>");
+        if clip.is_some() {
+            self.out.push_str("</g>");
+        }
         self.image_outline(e);
     }
 
@@ -751,9 +772,13 @@ impl Ctx<'_> {
         let opacity = alpha(s.stroke_color).map(|a| format!(" stroke-opacity=\"{a}\"")).unwrap_or_default();
         put!(
             self.out,
-            "<rect width=\"{}\" height=\"{}\" fill=\"none\" stroke=\"{}\" stroke-width=\"{}\"{dash}{opacity}/>",
+            "<rect width=\"{}\" height=\"{}\"{} fill=\"none\" stroke=\"{}\" stroke-width=\"{}\"{dash}{opacity}/>",
             num(e.transform.w),
             num(e.transform.h),
+            match image_radius(e) {
+                r if r > 0.0 => format!(" rx=\"{}\"", num(r)),
+                _ => String::new(),
+            },
             paint(s.stroke_color),
             num(s.stroke_width)
         );
@@ -775,6 +800,12 @@ impl Ctx<'_> {
             esc(name.unwrap_or("Frame"))
         );
     }
+}
+
+/// The corner radius a picture is drawn with: `style.corner_radius`, at most half the shorter side of the box.
+fn image_radius(e: &Element) -> f64 {
+    let r = e.style.corner_radius.min(e.transform.w.min(e.transform.h) / 2.0);
+    if r.is_finite() && r > 0.0 { r } else { 0.0 }
 }
 
 fn opacity_attr(name: &str, a: f64) -> String {

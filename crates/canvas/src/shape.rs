@@ -6,9 +6,10 @@
 //! | Kind | Shape | Fill rule |
 //! |---|---|---|
 //! | rectangle, diamond, ellipse | the shape, rotated about the box centre | hit inside only when it has a visible fill |
+//! | image | the box with its rounded corners, rotated about the box centre | always the whole shape |
 //! | line, arrow | polyline through the points; `round` paths use the same Catmull-Rom spline as the sketch crate | inside only for a closed line with a visible fill |
 //! | freehand | polyline through the points | inside only for a closed stroke with a visible fill |
-//! | text, math, image | the rotated box | always the whole box |
+//! | text, math | the rotated box | always the whole box |
 //! | frame | the rotated box | border only, never the inside |
 
 use drafftink_geom::kurbo::Rect;
@@ -34,12 +35,12 @@ fn element_frame(e: &Element) -> ElementFrame {
 pub fn shape_of(e: &Element) -> Option<Primitive> {
     let b = element_box(e);
     let shape: Primitive = match &e.kind {
-        ElementKind::Rectangle => RectShape::new(b).with_corner_radius(e.style.corner_radius.max(0.0)).into(),
+        ElementKind::Rectangle | ElementKind::Image(_) => {
+            RectShape::new(b).with_corner_radius(e.style.corner_radius.max(0.0)).into()
+        }
         ElementKind::Diamond => DiamondShape::new(b).with_corner_radius(e.style.corner_radius.max(0.0)).into(),
         ElementKind::Ellipse => EllipseShape::new(b).into(),
-        ElementKind::Text(_) | ElementKind::Math(_) | ElementKind::Image(_) | ElementKind::Frame(_) => {
-            RectShape::new(b).into()
-        }
+        ElementKind::Text(_) | ElementKind::Math(_) | ElementKind::Frame(_) => RectShape::new(b).into(),
         ElementKind::Line(d) | ElementKind::Arrow(d) => {
             if d.points.len() < 2 {
                 return None;

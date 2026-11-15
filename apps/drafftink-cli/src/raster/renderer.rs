@@ -233,6 +233,63 @@ mod tests {
         assert!(!(0..info.height).any(|y| (0..info.width).any(|x| is_outline(pixel(&info, &pixels, x, y)))));
     }
 
+    #[test]
+    fn a_rounded_picture_exports_with_clear_corners_and_the_picture_inside() {
+        let (info, pixels) = picture_export(Some(json!({ "corner_radius": 10 })));
+        assert_eq!((info.width, info.height), (40, 30));
+        let at = |x, y| pixel(&info, &pixels, x, y);
+        for corner in [(0, 0), (39, 0), (0, 29), (39, 29), (1, 1), (38, 28)] {
+            assert_eq!(at(corner.0, corner.1)[3], 0, "the corner pixel {corner:?} is cut off");
+        }
+        for inside in [(20, 15), (10, 0), (0, 10), (39, 15), (20, 29), (3, 3)] {
+            assert_eq!(at(inside.0, inside.1), [0, 160, 0, 255], "the pixel {inside:?} is the picture");
+        }
+        // The radius is held to half the shorter side (15): a huge one makes the short sides half circles.
+        let (info, pixels) = picture_export(Some(json!({ "corner_radius": 1000 })));
+        assert_eq!(pixel(&info, &pixels, 0, 0)[3], 0);
+        assert_eq!(pixel(&info, &pixels, 15, 0), [0, 160, 0, 255], "the straight part of the edge is left");
+        assert_eq!(pixel(&info, &pixels, 20, 15), [0, 160, 0, 255]);
+    }
+
+    #[test]
+    fn the_outline_of_a_rounded_picture_follows_the_corners() {
+        let (info, pixels) =
+            picture_export(Some(json!({ "corner_radius": 10, "stroke_color": "#ff0000", "stroke_width": 4 })));
+        let at = |x, y| pixel(&info, &pixels, x, y);
+        assert_eq!(at(0, 0)[3], 0, "no outline in the square corner");
+        assert_eq!(
+            [at(1, 15), at(20, 1), at(38, 15), at(20, 28)],
+            [[255, 0, 0, 255]; 4],
+            "red along the straight edges"
+        );
+        assert_eq!(at(20, 15), [0, 160, 0, 255]);
+        // On the arc of the corner (centre (10, 10), radius 10): the 45 degree point is at about (2.9, 2.9).
+        assert_eq!(at(3, 3), [255, 0, 0, 255], "the outline runs through the arc");
+    }
+
+    #[test]
+    fn a_turned_and_mirrored_rounded_picture_is_clipped_with_the_element() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut s = ports::session(IdSeed::Fixed(1));
+        let source = json!({ "path": green_and_red_picture(dir.path()).to_str().unwrap() });
+        let out = s.execute_from(Origin::Script, "image.insert", json!({ "images": [source], "at": [0, 0] })).unwrap();
+        let id = out["ids"][0].clone();
+        let run = |s: &mut Session, command: &str, args: Value| s.execute_from(Origin::Script, command, args).unwrap();
+        run(&mut s, "style.set", json!({ "ids": [id], "props": { "corner_radius": 10 } }));
+        run(&mut s, "element.flip", json!({ "ids": [id], "axis": "horizontal" }));
+        run(&mut s, "element.rotate", json!({ "ids": [id], "angle": 90, "mode": "to" }));
+        let (_, info, pixels) = export(&mut s, json!({ "scale": 1, "padding": 0, "background": false }));
+        assert_eq!((info.width, info.height), (30, 40));
+        let at = |x, y| pixel(&info, &pixels, x, y);
+        for corner in [(0, 0), (29, 0), (0, 39), (29, 39)] {
+            assert_eq!(at(corner.0, corner.1)[3], 0, "the corner {corner:?} is cut off after the turn");
+        }
+        assert_eq!(at(15, 20)[3], 255);
+        // Mirrored, the red half is on the left of the unturned picture, and a quarter turn puts it at the top.
+        assert_eq!(at(15, 5), [200, 0, 0, 255]);
+        assert_eq!(at(15, 35), [0, 160, 0, 255]);
+    }
+
     /// A 40 by 30 picture whose left half is green and whose right half is red, written to a file in `dir`.
     fn green_and_red_picture(dir: &std::path::Path) -> std::path::PathBuf {
         let path = dir.join("half.png");

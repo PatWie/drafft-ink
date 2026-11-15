@@ -105,7 +105,7 @@ fn nonce(id: &str) -> u32 {
 fn roundness_value(e: &Element) -> Option<(Roundness, Value)> {
     let radius = e.style.corner_radius;
     match &e.kind {
-        ElementKind::Rectangle if radius > 0.0 => {
+        ElementKind::Rectangle | ElementKind::Image(_) if radius > 0.0 => {
             Some((Roundness { kind: map::ROUNDNESS_ADAPTIVE, value: None }, json!({"type": map::ROUNDNESS_ADAPTIVE})))
         }
         ElementKind::Diamond if radius > 0.0 => Some((
@@ -123,7 +123,7 @@ fn roundness_value(e: &Element) -> Option<(Roundness, Value)> {
 /// The corner radius the importer derives from what the exporter wrote.
 fn radius_read_back(e: &Element, r: Option<Roundness>) -> f64 {
     match (&e.kind, r) {
-        (ElementKind::Rectangle | ElementKind::Diamond, Some(r)) => {
+        (ElementKind::Rectangle | ElementKind::Diamond | ElementKind::Image(_), Some(r)) => {
             map::corner_radius(r, e.transform.w.min(e.transform.h))
         }
         _ => 0.0,

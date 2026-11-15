@@ -372,6 +372,42 @@ fn svg_writes_an_outline_for_a_picture_only_when_it_has_a_stroke() {
 }
 
 #[test]
+fn svg_clips_a_rounded_picture_in_its_own_frame_and_rounds_its_outline() {
+    let mut d = sample();
+    let at = d.elements.iter().position(|e| e.id.as_str() == "img").unwrap();
+    let (w, h) = (d.elements[at].transform.w, d.elements[at].transform.h);
+    let plain = export_svg(&d, &SvgOptions::default(), &EstimateMeasure, None).unwrap();
+    assert!(!plain.contains("clip-img-"), "a sharp picture has no clip");
+
+    d.elements[at].style.corner_radius = 1.0e6; // more than the box holds: held to half the shorter side
+    d.elements[at].style.stroke_color = Color::rgb(255, 0, 0);
+    d.elements[at].style.stroke_width = 2.0;
+    let svg = export_svg(&d, &SvgOptions::default(), &EstimateMeasure, None).unwrap();
+    let doc = parse(&svg);
+    let half = w.min(h) / 2.0;
+    let clip = doc.descendants().find(|n| n.attribute("id") == Some("clip-img-img")).expect("a clip for the picture");
+    assert_eq!(clip.tag_name().name(), "clipPath");
+    let rect = clip.children().find(|n| n.tag_name().name() == "rect").expect("a rounded rect");
+    let num = |n: &roxmltree::Node, a: &str| n.attribute(a).unwrap().parse::<f64>().unwrap();
+    assert_eq!((num(&rect, "width"), num(&rect, "height"), num(&rect, "rx")), (w, h, half));
+    // The clip sits on a group outside the mirror and inside the element's own group, so it is in the local frame
+    // and turns with the element, and the mirrored picture is cut from the same box.
+    let group = doc.descendants().find(|n| n.attribute("id") == Some("e-img")).unwrap();
+    let clipped = group
+        .children()
+        .find(|n| n.attribute("clip-path") == Some("url(#clip-img-img)"))
+        .expect("the picture is under the clip");
+    assert!(clipped.attribute("transform").is_none(), "the clip group itself is not mirrored");
+    assert!(clipped.descendants().any(|n| n.attribute("transform").is_some_and(|t| t.contains("scale(-1 1)"))));
+    assert!(clipped.descendants().any(|n| n.tag_name().name() == "image"));
+    // The outline follows the same rounding and is not inside the clip.
+    let outline = group.children().find(|n| n.tag_name().name() == "rect" && n.attribute("stroke").is_some());
+    let outline = outline.expect("the outline is a rect of the element");
+    assert_eq!(num(&outline, "rx"), half);
+    assert!(clipped.descendants().all(|n| n.attribute("stroke").is_none()));
+}
+
+#[test]
 fn svg_is_deterministic_and_style_changes_the_geometry() {
     let d = sample();
     let a = export_svg(&d, &SvgOptions::default(), &EstimateMeasure, None).unwrap();

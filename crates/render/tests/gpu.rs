@@ -1054,6 +1054,42 @@ fn the_crop_editor_darkens_the_picture_outside_the_window_in_both_themes() {
 }
 
 // ----------------------------------------------------------------------------------------------
+// Rounded pictures
+
+#[test]
+fn a_rounded_picture_has_clear_corners_and_its_pixels_inside_even_turned_and_mirrored() {
+    need_gpu!();
+    let (store, mut pic) = crop_picture();
+    pic.transform = Transform { angle: 0.0, flip_x: true, ..Transform::new(20.0, 20.0, 200.0, 100.0) };
+    pic.style.corner_radius = 30.0;
+    let view = View::new(1.0, Vec2::ZERO, Size::new(400.0, 300.0));
+    let mut ts = Typesetter::new();
+    let mut composer = SceneComposer::new();
+    let base = composer.background(&store);
+    let mut scene = Scene::new();
+    composer.compose_transient(&store, std::slice::from_ref(&pic), &view, &mut ts, &mut scene);
+    let px = render(&scene, 400, 300, base);
+    let picture = [250, 230, 120];
+    let background = [base.to_rgba8().r, base.to_rgba8().g, base.to_rgba8().b];
+    assert!(close(rgb_at(&px, 120, 70), picture), "the middle is the picture");
+    assert!(close(rgb_at(&px, 60, 22), picture), "the straight part of the top edge is the picture");
+    for corner in [(21, 21), (218, 21), (21, 118), (218, 118)] {
+        assert!(close(rgb_at(&px, corner.0, corner.1), background), "the corner {corner:?} is cut off");
+    }
+    // Turned a quarter about its middle (120, 70), the box covers x 70 to 170 and y -30 to 170 (its top is off the
+    // target, so only the two lower corners are looked at).
+    pic.transform.angle = std::f64::consts::FRAC_PI_2;
+    let mut scene = Scene::new();
+    composer.compose_transient(&store, std::slice::from_ref(&pic), &view, &mut ts, &mut scene);
+    let px = render(&scene, 400, 300, base);
+    assert!(close(rgb_at(&px, 120, 70), picture));
+    assert!(close(rgb_at(&px, 72, 100), picture), "the straight part of the long edge");
+    for corner in [(71, 168), (168, 168)] {
+        assert!(close(rgb_at(&px, corner.0, corner.1), background), "the turned corner {corner:?} is cut off");
+    }
+}
+
+// ----------------------------------------------------------------------------------------------
 // Invisible elements
 
 /// A red filled rectangle with a blue stroke and opacity 0, at (50, 50), 60 by 40.

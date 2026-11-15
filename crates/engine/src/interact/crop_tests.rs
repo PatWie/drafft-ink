@@ -124,6 +124,23 @@ fn dragging_a_handle_and_pressing_enter_commits_exactly_one_image_crop() {
 }
 
 #[test]
+fn a_rounded_image_is_cropped_with_square_corners_in_the_editor_and_keeps_its_radius() {
+    let (mut rig, id) = rig_with_image();
+    rig.run("style.set", json!({ "ids": [id.as_str()], "props": { "corner_radius": 24 } }));
+    rig.key(Key::Enter);
+    let view = rig.i.overlay(&rig.s).crop.expect("the overlay shows the editor");
+    assert_eq!(view.shown.style.corner_radius, 0.0, "the draft is drawn without the corners");
+    assert_eq!(view.whole.style.corner_radius, 0.0, "so is the whole picture under it");
+    assert_eq!(rig.element(&id).style.corner_radius, 24.0, "the document still has the radius");
+    rig.drag((500.0, 300.0), (450.0, 300.0));
+    rig.key(Key::Enter);
+    assert_eq!(crops(&rig), 1, "{:?}", rig.ring_ids());
+    assert_eq!(crop_of(&rig, &id), Some(Crop { x: 0.0, y: 0.0, width: 150.0, height: 100.0 }));
+    assert_eq!(rig.element(&id).style.corner_radius, 24.0, "the crop commit leaves the style alone");
+    assert_eq!(editor(&rig), None);
+}
+
+#[test]
 fn several_drags_are_still_one_image_crop() {
     let (mut rig, id) = rig_with_image();
     rig.key(Key::Enter);

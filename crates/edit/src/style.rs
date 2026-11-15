@@ -136,7 +136,7 @@ impl Prop {
             Prop::StrokeWidth => "every element except text and math",
             Prop::StrokeStyle => "rectangles, diamonds, ellipses, frames, images, lines, arrows and freehand strokes",
             Prop::Sloppiness => "rectangles, diamonds, ellipses, frames, lines and arrows",
-            Prop::CornerRadius => "rectangles, diamonds, frames, lines and arrows",
+            Prop::CornerRadius => "rectangles, diamonds, frames, images, lines and arrows",
             Prop::Opacity => "every element",
             Prop::FreehandStyle | Prop::PressureMode => "freehand strokes",
             Prop::FontFamily | Prop::FontWeight | Prop::TextAlign | Prop::LineHeight => {
@@ -159,7 +159,9 @@ pub fn applies(e: &Element, prop: Prop) -> bool {
         Prop::FillColor | Prop::FillPattern => fillable,
         Prop::StrokeWidth | Prop::StrokeStyle => !matches!(k, Kind::Text | Kind::Math),
         Prop::Sloppiness => !matches!(k, Kind::Image | Kind::Text | Kind::Math | Kind::Freehand),
-        Prop::CornerRadius => matches!(k, Kind::Rectangle | Kind::Diamond | Kind::Line | Kind::Arrow | Kind::Frame),
+        Prop::CornerRadius => {
+            matches!(k, Kind::Rectangle | Kind::Diamond | Kind::Line | Kind::Arrow | Kind::Frame | Kind::Image)
+        }
         Prop::Opacity => true,
         Prop::FreehandStyle | Prop::PressureMode => k == Kind::Freehand,
         Prop::FontFamily | Prop::FontWeight | Prop::TextAlign | Prop::LineHeight => k == Kind::Text,
@@ -992,6 +994,7 @@ mod tests {
         let math = put(&mut st, "m", ElementKind::Math(drafftink_scene::MathData::new("x")));
         let g = |i: &ElementId, p: Prop| applies(st.get(i).unwrap(), p);
         assert!(g(&rect, Prop::CornerRadius) && !g(&ell, Prop::CornerRadius));
+        assert!(g(&img, Prop::CornerRadius) && !g(&txt, Prop::CornerRadius) && !g(&math, Prop::CornerRadius));
         assert!(
             g(&rect, Prop::FillColor)
                 && g(&cl, Prop::FillColor)
@@ -1059,6 +1062,29 @@ mod tests {
         assert_eq!(st.get(&r).unwrap().style.corner_radius, 8.0);
         assert_eq!(st.get(&t).unwrap().style.opacity, 0.5);
         assert_eq!(st.get(&t).unwrap().style.corner_radius, 0.0);
+    }
+
+    #[test]
+    fn an_image_takes_the_corner_radius_and_the_words_say_so() {
+        let mut st = MemoryStore::new();
+        let img = put(
+            &mut st,
+            "i",
+            ElementKind::Image(drafftink_scene::ImageData {
+                file_id: None,
+                natural_width: 1,
+                natural_height: 1,
+                crop: None,
+            }),
+        );
+        let mut tx = st.begin();
+        let rep = apply(&mut tx, std::slice::from_ref(&img), &props(json!({"corner_radius": 8})), true).unwrap();
+        tx.commit().unwrap();
+        assert_eq!(rep.applied[&img], BTreeSet::from([Prop::CornerRadius]));
+        assert!(rep.skipped.is_empty(), "{:?}", rep.skipped);
+        assert_eq!(st.get(&img).unwrap().style.corner_radius, 8.0);
+        assert_eq!(props_of(st.get(&img).unwrap()).corner_radius, Some(8.0));
+        assert!(Prop::CornerRadius.applies_to().contains("images"));
     }
 
     #[test]
