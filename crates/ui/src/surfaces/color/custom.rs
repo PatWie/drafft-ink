@@ -403,11 +403,7 @@ fn paint_hue_bar(ui: &Ui, rect: Rect, hsv: Hsv, pal: &Palette, thumb: f32) {
 
 /// The grey squares under a colour that is not opaque.
 fn paint_checker(ui: &Ui, rect: Rect, pal: &Palette) {
-    let (light, dark) = if pal.dark {
-        (Color32::from_gray(90), Color32::from_gray(60))
-    } else {
-        (Color32::from_gray(255), Color32::from_gray(204))
-    };
+    let [light, dark] = pal.checker;
     let p = ui.painter().with_clip_rect(rect);
     p.rect_filled(rect, 0.0, light);
     let cell = 6.0;

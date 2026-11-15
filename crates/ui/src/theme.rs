@@ -281,6 +281,9 @@ pub struct Palette {
     pub warn: Color32,
     /// Drop shadow.
     pub shadow: Color32,
+    /// The two squares of the chequerboard under a colour that is not opaque: the one the board starts with, and the
+    /// other.
+    pub checker: [Color32; 2],
 }
 
 impl Palette {
@@ -302,6 +305,7 @@ impl Palette {
         ok: Color32::from_rgb(34, 197, 94),
         warn: Color32::from_rgb(250, 204, 21),
         shadow: Color32::from_black_alpha(28),
+        checker: [Color32::from_gray(255), Color32::from_gray(204)],
     };
 
     /// The dark palette.
@@ -322,6 +326,7 @@ impl Palette {
         ok: Color32::from_rgb(74, 222, 128),
         warn: Color32::from_rgb(250, 204, 21),
         shadow: Color32::from_black_alpha(90),
+        checker: [Color32::from_gray(90), Color32::from_gray(60)],
     };
 
     /// The palette of the current egui theme.
