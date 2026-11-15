@@ -507,6 +507,7 @@ fn document_round_trip<S: SceneStore>(mut s: S) -> Result<(), String> {
             natural_width: 4,
             natural_height: 3,
             crop: None,
+            paint: Default::default(),
         }),
         z[2].clone(),
     );

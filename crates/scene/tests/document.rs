@@ -72,7 +72,13 @@ fn sample() -> Document {
         .with_bounds(0.0, 150.0, 40.0, 30.0);
     let img = Element::new(
         id("picture"),
-        ElementKind::Image(ImageData { file_id: Some(fid), natural_width: 32, natural_height: 16, crop: None }),
+        ElementKind::Image(ImageData {
+            file_id: Some(fid),
+            natural_width: 32,
+            natural_height: 16,
+            crop: None,
+            paint: Default::default(),
+        }),
         z[6].clone(),
     )
     .with_bounds(220.0, 120.0, 64.0, 32.0);

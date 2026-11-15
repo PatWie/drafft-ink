@@ -233,6 +233,63 @@ mod tests {
         assert!(!(0..info.height).any(|y| (0..info.width).any(|x| is_outline(pixel(&info, &pixels, x, y)))));
     }
 
+    #[test]
+    fn a_rounded_picture_exports_with_clear_corners_and_the_picture_inside() {
+        let (info, pixels) = picture_export(Some(json!({ "corner_radius": 10 })));
+        assert_eq!((info.width, info.height), (40, 30));
+        let at = |x, y| pixel(&info, &pixels, x, y);
+        for corner in [(0, 0), (39, 0), (0, 29), (39, 29), (1, 1), (38, 28)] {
+            assert_eq!(at(corner.0, corner.1)[3], 0, "the corner pixel {corner:?} is cut off");
+        }
+        for inside in [(20, 15), (10, 0), (0, 10), (39, 15), (20, 29), (3, 3)] {
+            assert_eq!(at(inside.0, inside.1), [0, 160, 0, 255], "the pixel {inside:?} is the picture");
+        }
+        // The radius is held to half the shorter side (15): a huge one makes the short sides half circles.
+        let (info, pixels) = picture_export(Some(json!({ "corner_radius": 1000 })));
+        assert_eq!(pixel(&info, &pixels, 0, 0)[3], 0);
+        assert_eq!(pixel(&info, &pixels, 15, 0), [0, 160, 0, 255], "the straight part of the edge is left");
+        assert_eq!(pixel(&info, &pixels, 20, 15), [0, 160, 0, 255]);
+    }
+
+    #[test]
+    fn the_outline_of_a_rounded_picture_follows_the_corners() {
+        let (info, pixels) =
+            picture_export(Some(json!({ "corner_radius": 10, "stroke_color": "#ff0000", "stroke_width": 4 })));
+        let at = |x, y| pixel(&info, &pixels, x, y);
+        assert_eq!(at(0, 0)[3], 0, "no outline in the square corner");
+        assert_eq!(
+            [at(1, 15), at(20, 1), at(38, 15), at(20, 28)],
+            [[255, 0, 0, 255]; 4],
+            "red along the straight edges"
+        );
+        assert_eq!(at(20, 15), [0, 160, 0, 255]);
+        // On the arc of the corner (centre (10, 10), radius 10): the 45 degree point is at about (2.9, 2.9).
+        assert_eq!(at(3, 3), [255, 0, 0, 255], "the outline runs through the arc");
+    }
+
+    #[test]
+    fn a_turned_and_mirrored_rounded_picture_is_clipped_with_the_element() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut s = ports::session(IdSeed::Fixed(1));
+        let source = json!({ "path": green_and_red_picture(dir.path()).to_str().unwrap() });
+        let out = s.execute_from(Origin::Script, "image.insert", json!({ "images": [source], "at": [0, 0] })).unwrap();
+        let id = out["ids"][0].clone();
+        let run = |s: &mut Session, command: &str, args: Value| s.execute_from(Origin::Script, command, args).unwrap();
+        run(&mut s, "style.set", json!({ "ids": [id], "props": { "corner_radius": 10 } }));
+        run(&mut s, "element.flip", json!({ "ids": [id], "axis": "horizontal" }));
+        run(&mut s, "element.rotate", json!({ "ids": [id], "angle": 90, "mode": "to" }));
+        let (_, info, pixels) = export(&mut s, json!({ "scale": 1, "padding": 0, "background": false }));
+        assert_eq!((info.width, info.height), (30, 40));
+        let at = |x, y| pixel(&info, &pixels, x, y);
+        for corner in [(0, 0), (29, 0), (0, 39), (29, 39)] {
+            assert_eq!(at(corner.0, corner.1)[3], 0, "the corner {corner:?} is cut off after the turn");
+        }
+        assert_eq!(at(15, 20)[3], 255);
+        // Mirrored, the red half is on the left of the unturned picture, and a quarter turn puts it at the top.
+        assert_eq!(at(15, 5), [200, 0, 0, 255]);
+        assert_eq!(at(15, 35), [0, 160, 0, 255]);
+    }
+
     /// A 40 by 30 picture whose left half is green and whose right half is red, written to a file in `dir`.
     fn green_and_red_picture(dir: &std::path::Path) -> std::path::PathBuf {
         let path = dir.join("half.png");
@@ -308,6 +365,74 @@ mod tests {
         assert_eq!(pixel(&info, &pixels, 15, 10), [0, 160, 0, 255]);
         assert_eq!(pixel(&info, &pixels, 2, 2), [0, 160, 0, 255]);
         assert_eq!(pixel(&info, &pixels, 27, 17), [0, 160, 0, 255]);
+    }
+
+    /// A native document with the 40 by 30 half-green picture and `strokes` on it, mirrored when `flip_x`.
+    fn painted_document(strokes: Vec<drafftink_scene::PaintStroke>, flip_x: bool) -> String {
+        use drafftink_scene::{Document, Element, ElementId, ElementKind, FileEntry, ImageData, StrokeId, ZIndex};
+        let dir = tempfile::tempdir().unwrap();
+        let bytes = std::fs::read(green_and_red_picture(dir.path())).unwrap();
+        let (file, entry) = FileEntry::new("image/png", bytes);
+        let mut data = ImageData::new(Some(file.clone()), 40, 30);
+        data.paint = strokes
+            .into_iter()
+            .enumerate()
+            .map(|(i, stroke)| (StrokeId::new(&format!("{:06}-t", i + 1)).unwrap(), stroke))
+            .collect();
+        let mut picture = Element::new(ElementId::new("pic").unwrap(), ElementKind::Image(data), ZIndex::first())
+            .with_bounds(0.0, 0.0, 40.0, 30.0);
+        picture.style.stroke_width = 0.0;
+        picture.transform.flip_x = flip_x;
+        let mut doc = Document::new();
+        doc.files.insert(file, entry);
+        doc.elements.push(picture);
+        doc.to_json().unwrap()
+    }
+
+    fn stroke(mode: drafftink_scene::PaintMode, size: f64, at: (f64, f64)) -> drafftink_scene::PaintStroke {
+        drafftink_scene::PaintStroke {
+            mode,
+            color: drafftink_scene::Color::rgb(0, 0, 255),
+            size,
+            hardness: 1.0,
+            opacity: 1.0,
+            points: vec![peniko::kurbo::Point::new(at.0, at.1)],
+            pressures: Vec::new(),
+        }
+    }
+
+    /// The export of a native document (no padding, no background).
+    fn export_document(json: &str) -> (png::OutputInfo, Vec<u8>) {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("painted.drafftink");
+        std::fs::write(&path, json).unwrap();
+        let mut s = ports::session(IdSeed::Fixed(1));
+        let source = json!({ "path": path.to_str().unwrap() });
+        s.execute_from(Origin::Script, "doc.open", json!({ "source": source, "mode": "replace" })).unwrap();
+        let (_, info, pixels) = export(&mut s, json!({ "scale": 1, "padding": 0, "background": false }));
+        (info, pixels)
+    }
+
+    #[test]
+    fn paint_on_a_picture_is_drawn_and_an_erase_stroke_takes_it_off_again() {
+        use drafftink_scene::PaintMode::{Erase, Paint};
+        let dab = stroke(Paint, 8.0, (10.0, 15.0));
+        let (info, pixels) = export_document(&painted_document(vec![dab.clone()], false));
+        assert_eq!((info.width, info.height), (40, 30));
+        assert_eq!(pixel(&info, &pixels, 10, 15), [0, 0, 255, 255], "the dab is blue in the green half");
+        assert_eq!(pixel(&info, &pixels, 3, 3), [0, 160, 0, 255], "pixels away from the dab are the picture");
+        assert_eq!(pixel(&info, &pixels, 30, 15), [200, 0, 0, 255], "the red half has no paint");
+
+        let wipe = stroke(Erase, 40.0, (10.0, 15.0));
+        let (_, erased) = export_document(&painted_document(vec![dab.clone(), wipe], false));
+        let (_, plain) = export_document(&painted_document(Vec::new(), false));
+        assert_eq!(erased, plain, "the eraser gives the picture back");
+        assert_ne!(pixels, plain);
+
+        // The paint is in picture pixels, so a mirrored picture shows the dab on the other side.
+        let (info, mirrored) = export_document(&painted_document(vec![dab], true));
+        assert_eq!(pixel(&info, &mirrored, 29, 15), [0, 0, 255, 255]);
+        assert_eq!(pixel(&info, &mirrored, 10, 15), [200, 0, 0, 255]);
     }
 
     #[test]

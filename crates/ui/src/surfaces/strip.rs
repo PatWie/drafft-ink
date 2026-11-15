@@ -190,32 +190,41 @@ fn style_button(ui: &mut Ui, cx: &mut Cx<'_>, st: &mut UiState) {
     };
     if ui.is_rect_visible(rect) {
         paint_button_bg(ui.painter(), rect, look, &pal, true);
-        let radius = side * 0.22;
-        let offset = side * 0.14;
-        let current = |prop: &str| -> Option<egui::Color32> {
-            let name = cx.model.style.prop(prop)?.value.as_ref().and_then(Value::as_str)?;
-            colors::displayed(name, pal.dark)
-        };
-        // On the accent fill of the selected look, the rings keep the contrast of the icon colour.
-        let ring = if look.selected { None } else { current("stroke_color") }.unwrap_or_else(|| icon_color(look, &pal));
-        paint_swatch(
-            ui.painter(),
-            rect.center() + vec2(offset, offset),
-            radius,
-            current("fill_color"),
-            false,
-            false,
-            &pal,
-            true,
-        );
-        ui.painter().circle_stroke(rect.center() - vec2(offset, offset), radius, Stroke::new(2.5, ring));
+        if cx.model.paint_editing {
+            // The brush colour is the one style the editor has; it is a colour of the picture, so it is shown as it
+            // is.
+            let color = colors::to_egui(cx.model.brush.color);
+            paint_swatch(ui.painter(), rect.center(), side * 0.3, Some(color), false, false, &pal, true);
+        } else {
+            let current = |prop: &str| -> Option<egui::Color32> {
+                let name = cx.model.style.prop(prop)?.value.as_ref().and_then(Value::as_str)?;
+                colors::displayed(name, pal.dark)
+            };
+            // On the accent fill of the selected look, the rings keep the contrast of the icon colour.
+            let ring =
+                if look.selected { None } else { current("stroke_color") }.unwrap_or_else(|| icon_color(look, &pal));
+            let radius = side * 0.22;
+            let offset = side * 0.14;
+            paint_swatch(
+                ui.painter(),
+                rect.center() + vec2(offset, offset),
+                radius,
+                current("fill_color"),
+                false,
+                false,
+                &pal,
+                true,
+            );
+            ui.painter().circle_stroke(rect.center() - vec2(offset, offset), radius, Stroke::new(2.5, ring));
+        }
     }
+    let name = if cx.model.paint_editing { "Brush colour" } else { "Stroke and fill" };
     resp.widget_info(|| {
-        let mut info = WidgetInfo::labeled(Role::Button, true, "Stroke and fill");
+        let mut info = WidgetInfo::labeled(Role::Button, true, name);
         info.selected = Some(st.style_open);
         info
     });
-    if resp.on_hover_text("Stroke and fill").clicked() {
+    if resp.on_hover_text(name).clicked() {
         st.style_open = !st.style_open;
     }
 }

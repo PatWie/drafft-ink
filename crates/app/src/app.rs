@@ -357,9 +357,17 @@ impl App {
             cx.open_url(url, true);
         }
         if routed.cursor {
-            cx.set_cursor(self.cursor);
+            cx.set_cursor(self.paint_cursor().unwrap_or(self.cursor));
         }
         routed.repaint
+    }
+
+    /// The cursor over the picture while the paint editor is open: a crosshair at the middle of the brush ring, which
+    /// is what shows where and how large the brush is. `None` when the editor is closed, and off the picture (where
+    /// there is no ring, and a click ends the editor), so the canvas's own cursor shows there.
+    fn paint_cursor(&self) -> Option<egui::CursorIcon> {
+        self.session.tab().observed.paint_editor.as_ref()?;
+        self.interaction.overlay(&self.session).eraser.map(|_| egui::CursorIcon::Crosshair)
     }
 
     /// A pointer sample for the canvas, once the text editor has had its say. `over_egui`: egui owns the pointer at
@@ -832,8 +840,9 @@ impl App {
         let interaction_overlay = self.interaction.overlay(&self.session);
         let mut hide = hidden.clone();
         hide.extend(interaction_overlay.faded.iter().cloned());
-        // The crop editor draws its own picture of the image.
+        // The crop editor and the paint editor draw their own picture of the image.
         hide.extend(interaction_overlay.crop.iter().map(|c| c.element.clone()));
+        hide.extend(interaction_overlay.paint.iter().map(|p| p.element.clone()));
 
         let tab = self.session.tab().id;
         let revision = self.session.store().revision();
@@ -1241,7 +1250,7 @@ impl ShellApp for App {
             cursor: over_canvas.then_some(if self.ui.state.eyedropper().is_some() {
                 egui::CursorIcon::Crosshair
             } else {
-                self.cursor
+                self.paint_cursor().unwrap_or(self.cursor)
             }),
             // The shell times frames and the GPU only while the panel is open.
             stats: measuring,

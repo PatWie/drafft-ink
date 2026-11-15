@@ -38,6 +38,7 @@ mod overlay_marks;
 mod overlay_peers;
 mod overlay_snap;
 mod overlay_text;
+mod paint_veil;
 mod painter;
 pub mod replay;
 mod spec;
@@ -69,6 +70,7 @@ pub use overlay_marks::LinkMark;
 pub use overlay_peers::{LaserTrail, RemoteSelection, TrailPoint};
 pub use overlay_snap::{AngleRays, EraserRing, RotationGuide};
 pub use overlay_text::TextEdit;
+pub use paint_veil::{PaintVeil, fill_veil};
 pub use painter::{ElementPainter, FileSource};
 pub use spec::{
     DEFAULT_HEAD_SIZE, FRAME_LABEL_GAP, FRAME_LABEL_MIN_WIDTH, FRAME_LABEL_ROOM, FRAME_LABEL_SIZE, Margin,

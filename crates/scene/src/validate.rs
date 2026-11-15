@@ -20,6 +20,7 @@ use crate::element::{
 };
 use crate::id::{ElementId, FileId, GroupId};
 use crate::limits::*;
+use crate::paint::{MAX_PAINT_POINTS, MAX_PAINT_SIZE, MAX_PAINT_STROKES, MIN_PAINT_SIZE, Paint, paint_points};
 use crate::store::SceneRead;
 use crate::zindex::{MAX_INDEX_LEN, ZIndex};
 
@@ -332,12 +333,46 @@ fn math_errors(d: &MathData, out: &mut Vec<ElementError>) {
 }
 
 fn image_errors(d: &ImageData, out: &mut Vec<ElementError>) {
-    let Some(c) = &d.crop else { return };
-    for (f, v) in [("crop.x", c.x), ("crop.y", c.y), ("crop.width", c.width), ("crop.height", c.height)] {
-        put(out, ranged(f, v, 0.0, MAX_COORD));
+    if let Some(c) = &d.crop {
+        for (f, v) in [("crop.x", c.x), ("crop.y", c.y), ("crop.width", c.width), ("crop.height", c.height)] {
+            put(out, ranged(f, v, 0.0, MAX_COORD));
+        }
+        if c.width <= 0.0 || c.height <= 0.0 {
+            put(out, Err(ElementError::NotApplicable("a crop must have a width and height above 0")));
+        }
     }
-    if c.width <= 0.0 || c.height <= 0.0 {
-        put(out, Err(ElementError::NotApplicable("a crop must have a width and height above 0")));
+    paint_errors(&d.paint, out);
+}
+
+fn paint_errors(paint: &Paint, out: &mut Vec<ElementError>) {
+    if paint.len() > MAX_PAINT_STROKES {
+        out.push(ElementError::TooLong { field: "paint", len: paint.len(), max: MAX_PAINT_STROKES });
+        return;
+    }
+    let points = paint_points(paint);
+    if points > MAX_PAINT_POINTS {
+        out.push(ElementError::TooLong { field: "paint points", len: points, max: MAX_PAINT_POINTS });
+        return;
+    }
+    for s in paint.values() {
+        put(out, ranged("paint.size", s.size, MIN_PAINT_SIZE, MAX_PAINT_SIZE));
+        put(out, ranged("paint.hardness", s.hardness, 0.0, 1.0));
+        put(out, ranged("paint.opacity", s.opacity, 0.0, 1.0));
+        if s.points.is_empty() {
+            out.push(ElementError::TooFewPoints { kind: "a brush stroke", min: 1, have: 0 });
+        }
+        if s.points
+            .iter()
+            .any(|p| !(p.x.is_finite() && p.y.is_finite() && p.x.abs() <= MAX_COORD && p.y.abs() <= MAX_COORD))
+        {
+            out.push(ElementError::NotFinite { field: "paint.points" });
+        }
+        if !s.pressures.is_empty() && s.pressures.len() != s.points.len() {
+            put(out, Err(ElementError::NotApplicable("a brush stroke has no pressures, or one per point")));
+        }
+        if let Some(p) = s.pressures.iter().find(|p| !(0.0..=1.0).contains(*p)) {
+            out.push(ElementError::OutOfRange { field: "paint.pressures", value: *p, min: 0.0, max: 1.0 });
+        }
     }
 }
 

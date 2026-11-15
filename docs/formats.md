@@ -17,7 +17,8 @@ Conventions:
   It is the best real-world old file and is used as evidence below.
 
 Contents: 1 Native JSON, 2 CRDT and collaboration, 3 Local storage, 4 Tabs,
-5 Clipboard and export, 6 Excalidraw import, 7 Mermaid import, 8 Gotchas.
+5 Clipboard and export, 6 Excalidraw import, 7 Mermaid import, 8 Gotchas, 9 Paint on
+pictures (current formats; sections 1 to 8 describe the old app).
 
 ---
 
@@ -1143,3 +1144,44 @@ Styles via `base_style` as in 7.3.
     (6.2); a rewrite must not copy the byte-slice approach.
 22. **HashMap order**: old files list shapes in random key order; always sort by
     `z_order`, never by file order.
+
+---
+
+## 9. Paint on pictures (current formats)
+
+Sections 1 to 8 describe the old app. This section is about the rewrite: an image element can carry brush strokes
+(`ImageData::paint`, `docs/model.md`) and the formats treat them as follows. The original picture is never changed
+in the document.
+
+**Native JSON and `.drafftink`.** The strokes are part of the image element: `kind.paint` maps a stroke id (a
+sequence number and a tag, `000003-k7`) to `{mode?, color, size, hardness, opacity, points, pressures?}`. `mode` is
+left out for a paint stroke (`"erase"` otherwise), `pressures` is left out when empty, and the whole `paint` key is
+left out for a picture without strokes, so old files and files without paint are unchanged. All coordinates and sizes
+are in pixels of the stored picture. A file with a bad stroke (size, hardness, opacity or pressure out of range, no
+points, a number that is not finite, too many strokes or points) is refused like any other bad element.
+
+**Loro (collaboration).** Each stroke is a group of flat fields on the element, `kind.paint.<stroke id>.<field>`, with
+`points` and `pressures` packed as little-endian `f64` bytes like the points of a freehand line. Two people painting
+at once add different keys, so both strokes survive and every replica orders them the same way (by id). Taking one
+stroke off (undo) removes its keys only; `image.reset_paint` removes all keys it saw. A stroke another person is still
+sending is not drawn until it is whole: an element with an incomplete or nonsensical stroke is hidden and listed as
+invalid, as for any other field, and comes back when the author repairs it. Tests: `doc/tests/converge`, `schema`,
+`hostile`.
+
+**SVG.** A painted picture is embedded as a PNG data URI made by `picture::baked_png`: the stored picture decoded,
+the strokes baked over it with `drafftink_scene::paint::bake`, encoded again as 8-bit RGBA. The size is the decoded
+size of the picture, and the crop (nested viewport), mirror and outline are written as for any picture. An unpainted
+picture is embedded exactly as stored, byte for byte. A picture that cannot be decoded keeps its original bytes. The
+embedded scene (`embed_scene`) is the native JSON, so the strokes come back when the SVG is opened again. Tests:
+`io/tests/formats::svg_embeds_a_painted_picture_with_its_paint_and_an_unpainted_one_as_before`.
+
+**Excalidraw.** Excalidraw has no strokes on pictures, so they are baked into a new file. The painted element's
+`fileId` is the content hash of the baked PNG (as for every file), the `files` table holds that PNG, and the original
+is kept in the table only when an unpainted image uses it too. `customData.drafftink.paint_baked` holds the number of
+strokes that were baked, as a record of what happened. The crop and `scale` (mirror) are written as before. Reading
+the file back gives a normal picture without paint, with no warning: the importer needs no special case and ignores
+the note, which is dropped like the other notes. A picture that cannot be baked is written unpainted, with a warning
+(`image <id> was exported without its paint: ...`). Tests: `io/tests/excalidraw::a_painted_picture_*`.
+
+**PNG export** (GPU and headless CPU) and the library thumbnails draw through the renderer, which draws the baked
+picture (`docs/render.md`, "Paint on a picture"). A PNG with the scene embedded keeps the strokes in the embedded JSON.

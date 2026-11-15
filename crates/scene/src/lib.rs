@@ -20,6 +20,7 @@ mod id;
 mod label_cut;
 pub mod limits;
 mod memory;
+pub mod paint;
 pub mod palette;
 mod points;
 #[cfg(feature = "scenegen")]
@@ -43,9 +44,12 @@ pub use element::{
     FreehandData, Head, ImageData, Kind, LinearData, LinearKind, MathData, ParseKindError, PathType, PressureMode,
     RefitError, TextData, TextRun, Transform, default_head_size,
 };
-pub use id::{ElementId, FileId, GroupId, IdError, IdSource, MAX_ID_LEN, RandomIds, Rng64, SeqIds, SplitMix64};
+pub use id::{
+    ElementId, FileId, GroupId, IdError, IdSource, MAX_ID_LEN, RandomIds, Rng64, SeqIds, SplitMix64, StrokeId,
+};
 pub use label_cut::{LABEL_CUT_PADDING, LabelCut};
 pub use memory::{MemoryStore, MemoryTx};
+pub use paint::{Paint, PaintMode, PaintStroke};
 pub use shared::{DocumentCheck, JsonJob, SharedDocument};
 pub use store::{
     Change, ChangeKind, ChangeSet, Fields, FileRejection, SceneRead, SceneStore, SceneTx, StoreError, SubscriptionId,

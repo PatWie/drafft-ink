@@ -5,15 +5,15 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 use base64::Engine as _;
 use base64::engine::general_purpose::STANDARD;
 use drafftink_scene::{
-    BindMode, Binding, Element, ElementId, ElementKind, FileEntry, FileId, FontFamily, FontWeight, InlineMath,
-    LinearData, PathType, PressureMode,
+    BindMode, Binding, Element, ElementId, ElementKind, FileEntry, FileId, FontFamily, FontWeight, ImageData,
+    InlineMath, LinearData, PathType, PressureMode,
 };
 use serde_json::{Map, Value, json};
 
 use super::map::{self, Roundness};
 use super::notes::{self, Note};
 use super::read::warn;
-use crate::ImportReport;
+use crate::{ImportReport, picture};
 
 /// What the `source` field of a file we write says.
 pub(super) const SOURCE: &str = "https://drafft.ink";
@@ -105,7 +105,7 @@ fn nonce(id: &str) -> u32 {
 fn roundness_value(e: &Element) -> Option<(Roundness, Value)> {
     let radius = e.style.corner_radius;
     match &e.kind {
-        ElementKind::Rectangle if radius > 0.0 => {
+        ElementKind::Rectangle | ElementKind::Image(_) if radius > 0.0 => {
             Some((Roundness { kind: map::ROUNDNESS_ADAPTIVE, value: None }, json!({"type": map::ROUNDNESS_ADAPTIVE})))
         }
         ElementKind::Diamond if radius > 0.0 => Some((
@@ -123,11 +123,18 @@ fn roundness_value(e: &Element) -> Option<(Roundness, Value)> {
 /// The corner radius the importer derives from what the exporter wrote.
 fn radius_read_back(e: &Element, r: Option<Roundness>) -> f64 {
     match (&e.kind, r) {
-        (ElementKind::Rectangle | ElementKind::Diamond, Some(r)) => {
+        (ElementKind::Rectangle | ElementKind::Diamond | ElementKind::Image(_), Some(r)) => {
             map::corner_radius(r, e.transform.w.min(e.transform.h))
         }
         _ => 0.0,
     }
+}
+
+/// The file entry of a painted picture: its PNG with the paint baked in, under the id of those bytes.
+fn baked_entry(e: &Element, d: &ImageData, original: &FileEntry) -> Result<(FileId, FileEntry), String> {
+    let png = picture::baked_png(&original.bytes, (d.natural_width, d.natural_height), &d.paint)
+        .map_err(|why| format!("{why} ({} strokes of {})", d.paint.len(), e.id))?;
+    Ok(FileEntry::new("image/png", png))
 }
 
 fn binding_json(b: &Binding) -> Value {
@@ -299,8 +306,24 @@ fn element_json(e: &Element, bound: Option<&[Value]>, cx: &mut Cx) -> Value {
         }
         ElementKind::Image(d) => {
             type_written = "image";
-            let file_id = d.file_id.as_ref();
-            put("fileId", file_id.map_or(Value::Null, |f| json!(f.as_str())));
+            // A painted picture is written as its baked PNG under its own file id (Excalidraw has no strokes); the
+            // note says so. Where the picture cannot be baked the original goes out and a warning says why.
+            let source = d.file_id.as_ref().and_then(|f| cx.files.get(f).map(|entry| (f, entry)));
+            let (file_id, entry) = match source {
+                Some((f, entry)) if !d.paint.is_empty() => match baked_entry(e, d, entry) {
+                    Ok(baked) => {
+                        note.paint_baked = Some(d.paint.len());
+                        (Some(baked.0), Some(baked.1))
+                    }
+                    Err(why) => {
+                        warn(cx.rep, || format!("image {} was exported without its paint: {why}", e.id));
+                        (Some(f.clone()), Some(entry.clone()))
+                    }
+                },
+                Some((f, entry)) => (Some(f.clone()), Some(entry.clone())),
+                None => (d.file_id.clone(), None),
+            };
+            put("fileId", file_id.as_ref().map_or(Value::Null, |f| json!(f.as_str())));
             put("status", json!("saved"));
             put("scale", json!([if t.flip_x { -1 } else { 1 }, if t.flip_y { -1 } else { 1 }]));
             put(
@@ -312,7 +335,7 @@ fn element_json(e: &Element, bound: Option<&[Value]>, cx: &mut Cx) -> Value {
                     })
                 }),
             );
-            if let Some((id, entry)) = file_id.and_then(|f| cx.files.get(f).map(|e| (f, e))) {
+            if let (Some(id), Some(entry)) = (file_id, entry) {
                 cx.out_files.entry(id.as_str().to_owned()).or_insert_with(|| {
                     json!({
                         "id": id.as_str(),

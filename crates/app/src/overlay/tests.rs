@@ -150,7 +150,13 @@ fn the_crop_editor_adds_no_selection_box_or_outline_to_the_overlay() {
 
     let image = Element::new(
         id("pic"),
-        ElementKind::Image(ImageData { file_id: None, natural_width: 40, natural_height: 20, crop: None }),
+        ElementKind::Image(ImageData {
+            file_id: None,
+            natural_width: 40,
+            natural_height: 20,
+            crop: None,
+            paint: Default::default(),
+        }),
         ZIndex::first(),
     );
     let window = OrientedBox::from_rect(Rect::new(10.0, 0.0, 30.0, 20.0));

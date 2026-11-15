@@ -43,7 +43,9 @@ The look is the old app's, checked against its PNGs (§7):
 | highlighter (`FreehandData::highlighter`) | one wide round-capped stroke inside a layer whose alpha is the colour's alpha, so a stroke that crosses itself does not darken. |
 | text | `typeset` layout, one `draw_glyphs` per glyph run, decorations as rectangles, per-character colours from `runs`. Synthetic italic through the run's skew. |
 | math | `typeset` math layout (cached per formula), glyphs in the two fonts, rules as rectangles, formula colour `\color` or the stroke colour. A formula that does not parse draws the old pale-red box. |
-| image | the decoded picture as a textured rectangle with the crop applied (the crop is in pixels of the stored picture; the box is where the cropped part is drawn, so rotation and mirroring act on the cropped part; `image.crop` sets it); opacity as the brush alpha; an outline when the stroke has a colour (not clear) and a width, solid, dashed or dotted; a new picture has none. A grey box with a cross is the placeholder (a red-tinted one for a picture that cannot be decoded). |
+| image | the decoded picture as a textured rectangle with the crop applied (the crop is in pixels of the stored picture; the box is where the cropped part is drawn, so rotation and mirroring act on the cropped part; `image.crop` sets it); opacity as the brush alpha; `style.corner_radius` (at most half the shorter side, as for a frame) rounds the path the picture is filled into, so the corners clip it after the crop in the element's local frame and the composer's rotation and mirror carry the clip along; an outline when the stroke has a colour (not clear) and a width, solid, dashed or dotted; a new picture has none, and it follows the rounded path. A grey box with a cross is the placeholder (a red-tinted one for a picture that cannot be decoded). |
+
+| image | the decoded picture (with its paint baked in, see "Pictures" in §5) as a textured rectangle with the crop applied (the crop is in pixels of the stored picture; the box is where the cropped part is drawn, so rotation and mirroring act on the cropped part; `image.crop` sets it); opacity as the brush alpha; an outline when the stroke has a colour (not clear) and a width, solid, dashed or dotted; a new picture has none. A grey box with a cross is the placeholder (a red-tinted one for a picture that cannot be decoded). |
 | frame | rectangle border (and a solid fill). The name is not in the fragment: the composer draws it in device space right after the fragment, above the top-left corner, at a constant size on screen (14 logical pixels, 4 px above the edge), in the stroke colour, cut at the frame's width on screen but never narrower than 48 px (§5.1). |
 
 Dark theme (`RenderOptions::theme`) is a colour mapping applied while encoding: the CSS filter
@@ -228,6 +230,33 @@ one picture); `DecodePolicy::Deferred` records `DecodeRequest`s for the host to 
 served from the cache; when the picture is ready (or its blob arrives) the fragment is encoded again. A picture
 that fails to decode is remembered, so a broken file costs one decode. Limits: 16,384 px a side, 256 MiB per decode.
 
+**Paint on a picture.** An image element can carry brush strokes (`ImageData::paint`, in pixels of the stored
+picture; `docs/model.md`). The painter does not draw them as vector shapes: it draws the *baked* picture, the decoded
+pixels with the strokes laid over them by `drafftink_scene::paint::bake`, the same function the exporters and the
+command line call. `ImageCache::baked` keeps the baked pictures next to the decoded ones, keyed by the file and a
+digest of the strokes (`hash::paint_key`, built from the same hashing of strokes that `paint_hash` uses, so the two
+cannot disagree). They count against the same byte budget and are evicted in the same least-recently-used order as
+decoded pictures. Rules:
+
+- A picture is baked once per distinct paint, not once per frame: the element's fragment is cached by `paint_hash`,
+  which includes the strokes, and a second element with the same file and strokes finds the baked pixels in the cache.
+- The original stays decoded as well, so erasing, undoing or resetting needs no new decode. Each file keeps at most
+  three baked versions (the paint on screen, the one before an undo, and one being drawn).
+- When a picture gains strokes, only the new ones are painted, over the cached bake of the strokes it had before
+  (`paint::bake_over`). The paint editor shows the stroke being drawn as one more stroke on a transient element, so
+  every frame of a drag costs the new stroke plus one copy of the pixels, not a repaint of all strokes. Any other
+  change (an erased stroke, a stroke inserted in the middle by another person) bakes from the original.
+- Strokes are in stored-picture pixels. The decoded picture can have another size than `natural_width` by
+  `natural_height` (the same fallback the crop has); the scale between them is passed to `bake`.
+- Crop, mirror, rotation, opacity and the outline are applied to the baked picture exactly as to the original, so
+  paint is cropped, mirrored and turned with it. Without paint the original pixels are drawn and nothing is copied.
+- A picture that is pending, missing or broken shows its placeholder, with or without strokes. Nothing is baked until
+  the decode finishes, and then the first frame bakes it (the deferred policy is unchanged).
+
+The GPU and web renderers, the PNG export (`compose_export`), the headless CPU PNG (`apps/drafftink-cli`, which draws
+the scene's picture patches) and the library thumbnails all go through this painter, so they show paint without
+decoding anything on their own. SVG and Excalidraw export bake in `io` (`docs/formats.md`, §9).
+
 ## 6. Hostile input
 
 Non-finite numbers, huge sizes and nonsense views are handled without panicking: an element the index refuses is
@@ -242,9 +271,11 @@ sketch and typeset enforce their own limits. `hostile_views_and_elements_never_p
 | `tests/bounds.rs` | property tests: nothing paints outside `paint_margin` |
 | `tests/painter.rs` | draw order, colours, tint, opacity, dark mapping, heads, highlighter, text runs, math, frames, dashes |
 | `tests/grid.rs` | the grid is bounded for any view |
-| `tests/images.rs` | decode limits, inline and deferred policies, late blobs, broken pictures, byte bound, crop |
+| `tests/images.rs` | decode limits, inline and deferred policies, late blobs, broken pictures, byte bound, crop, rounded corners (clip, outline, rotation, mirror) |
+
+| `tests/images.rs` | decode limits, inline and deferred policies, late blobs, broken pictures, byte bound, crop; paint: pixels, erase, crop/flip/rotation, bake once, bake on an earlier bake, placeholder while pending, budget |
 | `tests/overlay.rs` | overlay parts, constant size, independent of the document; labels, remote selections, trails, link icons, spacing badges, the text editor overlay |
-| `tests/gpu.rs` | feature `gpu-tests`: pixel checks on a real adapter |
+| `tests/gpu.rs` | feature `gpu-tests`: pixel checks on a real adapter (including paint on a mirrored picture) |
 
 `cargo test -p drafftink-render --features gpu-tests --test gpu` renders offscreen with Vello and compares with
 `tests/fixtures/render` (the old renderer's PNGs, per-channel tolerance 16). It also checks the overlay on pixels (peers in their colours, link icon and text selection, the frame label as big at three zooms). Without an adapter the tests skip;

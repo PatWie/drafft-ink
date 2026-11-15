@@ -451,6 +451,9 @@ pub struct SelectionSummary {
     /// The image whose crop is being edited (`image.crop_begin`).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub crop_editor: Option<String>,
+    /// The image that is being painted on (`image.paint_begin`).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub paint_editor: Option<String>,
 }
 
 /// Result of `selection.get`.
@@ -487,6 +490,7 @@ fn get(s: &mut Session, a: GetArgs) -> Result<GetOut, Refusal> {
                 selected_points: l.selected_points.iter().copied().collect(),
             }),
             crop_editor: s.tab().observed.crop_editor.as_ref().map(|id| id.as_str().to_owned()),
+            paint_editor: s.tab().observed.paint_editor.as_ref().map(|id| id.as_str().to_owned()),
         }
     });
     let elements = (a.detail == Detail::Full).then(|| describe_all(store, &ids, &ALL_FIELDS));

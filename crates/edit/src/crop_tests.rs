@@ -12,7 +12,13 @@ fn store_with(edit: impl FnOnce(&mut Element)) -> MemoryStore {
     let mut tx = store.begin();
     let (file, entry) = FileEntry::new("image/png", vec![1u8, 2, 3]);
     tx.put_file(entry).unwrap();
-    let data = ImageData { file_id: Some(file), natural_width: 200, natural_height: 100, crop: None };
+    let data = ImageData {
+        file_id: Some(file),
+        natural_width: 200,
+        natural_height: 100,
+        crop: None,
+        paint: Default::default(),
+    };
     let mut e = Element::new(id("a"), ElementKind::Image(data), ZIndex::first());
     e.transform = Transform::new(10.0, 20.0, 100.0, 50.0);
     edit(&mut e);

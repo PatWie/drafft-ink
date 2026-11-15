@@ -13,7 +13,8 @@ use std::hash::{DefaultHasher, Hash, Hasher};
 use drafftink_engine::spec::{CommandSpec, Host, Scope, TextGate};
 use drafftink_engine::state::Tool;
 use drafftink_engine::{Refusal, Session};
-use drafftink_scene::SceneRead;
+use drafftink_scene::paint::PaintMode;
+use drafftink_scene::{Color, SceneRead};
 use serde_json::{Value, json};
 
 use crate::keymap::{Chord, parse_chord};
@@ -184,6 +185,28 @@ pub struct TextFaces {
     pub bold: Option<bool>,
     /// The text is italic.
     pub italic: Option<bool>,
+}
+
+/// The brush of the paint editor: what the session paints with (`image.paint_brush`).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct BrushView {
+    /// The colour of a paint stroke, as stored. It is a colour of the picture, so it is never mapped for the dark
+    /// theme (the canvas draws pictures as they are).
+    pub color: Color,
+    /// The diameter at full pressure, in picture pixels.
+    pub size: f64,
+    /// 1 is a hard edge, 0 the softest.
+    pub hardness: f64,
+    /// 1 is solid, 0 is clear.
+    pub opacity: f64,
+    /// Paint, or erase back to the original picture.
+    pub mode: PaintMode,
+}
+
+impl Default for BrushView {
+    fn default() -> Self {
+        Self { color: Color::BLACK, size: 24.0, hardness: 0.8, opacity: 1.0, mode: PaintMode::Paint }
+    }
 }
 
 /// The camera, from `view.get`.
@@ -507,6 +530,11 @@ pub struct Model {
     pub point_selected: bool,
     /// The crop editor is open (`image.crop_begin`): the strip offers "Done cropping" in place of "Crop image".
     pub crop_editing: bool,
+    /// The paint editor is open (`image.paint_begin`): the strip shows the brush instead of the style of the
+    /// selection, whose stroke and fill would only change the outline of the image.
+    pub paint_editing: bool,
+    /// The brush of the paint editor.
+    pub brush: BrushView,
     /// Bold and italic of the selected texts and labels, from the document; `None` when none is selected.
     pub text_faces: Option<TextFaces>,
     /// Bold and italic at the selection of the text editor while one runs. The editor owns the text then, so these
@@ -574,6 +602,8 @@ impl Default for Model {
             tool_held: false,
             point_selected: false,
             crop_editing: false,
+            paint_editing: false,
+            brush: BrushView::default(),
             text_faces: None,
             editor_faces: None,
             selection_bounds: None,
@@ -632,6 +662,8 @@ impl Model {
             .map(|l| (l.element.as_str().to_owned(), l.selected_points.len()))
             .hash(&mut h);
         t.observed.crop_editor.as_ref().map(|id| id.as_str().to_owned()).hash(&mut h);
+        t.observed.paint_editor.as_ref().map(|id| id.as_str().to_owned()).hash(&mut h);
+        format!("{:?}", s.tool.paint_brush).hash(&mut h);
         (s.tool.active.name(), s.tool.lock, s.tool.temporary.map(Tool::name)).hash(&mut h);
         format!("{:?}", s.tool.style_defaults).hash(&mut h);
         s.view_only.hash(&mut h);
@@ -738,6 +770,15 @@ impl Model {
         self.selection_count = t.observed.selection.len();
         self.point_selected = t.observed.linear_editor.as_ref().is_some_and(|l| !l.selected_points.is_empty());
         self.crop_editing = t.observed.crop_editor.is_some();
+        self.paint_editing = t.observed.paint_editor.is_some();
+        let brush = &s.tool.paint_brush;
+        self.brush = BrushView {
+            color: brush.color,
+            size: brush.size,
+            hardness: brush.hardness,
+            opacity: brush.opacity,
+            mode: brush.mode,
+        };
         self.zoom_percent = t.view.percent();
         self.background = t.doc.store().meta().background.to_hex();
         self.history = HistoryView { undo_label: t.doc.undo_label(), redo_label: t.doc.redo_label() };

@@ -217,6 +217,7 @@ fn images_and_crops() {
             natural_width: 10,
             natural_height: 10,
             crop: Some(Crop { x: 0.0, y: 0.0, width: 0.0, height: 5.0 }),
+            paint: Default::default(),
         }),
         ZIndex::first(),
     );
@@ -398,7 +399,13 @@ fn image_blobs_are_checked_against_their_hash() {
     let (fid, entry) = FileEntry::new("image/png", vec![1, 2, 3]);
     let img = Element::new(
         id("i"),
-        ElementKind::Image(ImageData { file_id: Some(fid.clone()), natural_width: 1, natural_height: 1, crop: None }),
+        ElementKind::Image(ImageData {
+            file_id: Some(fid.clone()),
+            natural_width: 1,
+            natural_height: 1,
+            crop: None,
+            paint: Default::default(),
+        }),
         z[0].clone(),
     );
     let mut doc = doc_of(vec![img.clone()]);

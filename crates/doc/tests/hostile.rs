@@ -158,6 +158,134 @@ fn a_huge_point_list_is_refused_before_it_is_decoded() {
     assert_hidden(&s, "huge");
 }
 
+/// A store with the rectangle `fine` and a picture `pic` that has one good stroke, `000001-a`.
+fn painted_base() -> LoroStore {
+    let mut s = base();
+    let data = ImageData { file_id: None, natural_width: 100, natural_height: 80, crop: None, paint: Paint::new() };
+    let mut pic = Element::new(eid("pic"), ElementKind::Image(data), zs(2)[1].clone());
+    pic.transform = Transform::new(0.0, 0.0, 100.0, 80.0);
+    if let ElementKind::Image(d) = &mut pic.kind {
+        d.paint.insert(
+            StrokeId::new("000001-a").unwrap(),
+            PaintStroke {
+                mode: PaintMode::Paint,
+                color: Color::rgb(255, 0, 0),
+                size: 10.0,
+                hardness: 1.0,
+                opacity: 1.0,
+                points: vec![kurbo::Point::new(5.0, 5.0), kurbo::Point::new(9.0, 9.0)],
+                pressures: Vec::new(),
+            },
+        );
+    }
+    add(&mut s, vec![pic]);
+    s
+}
+
+fn packed(values: &[f64]) -> Vec<u8> {
+    values.iter().flat_map(|v| v.to_le_bytes()).collect()
+}
+
+#[test]
+fn a_brush_stroke_with_nonsense_hides_the_picture_and_nothing_else() {
+    type Spoil = fn(&loro::LoroMap);
+    const S: &str = "kind.paint.000001-a";
+    let spoilers: Vec<(&str, Spoil)> = vec![
+        ("size_nan", |m| m.insert("kind.paint.000001-a.size", f64::NAN).unwrap()),
+        ("size_huge", |m| m.insert("kind.paint.000001-a.size", 1.0e9).unwrap()),
+        ("size_zero", |m| m.insert("kind.paint.000001-a.size", 0.0).unwrap()),
+        ("size_text", |m| m.insert("kind.paint.000001-a.size", "big").unwrap()),
+        ("hardness_over_one", |m| m.insert("kind.paint.000001-a.hardness", 7.0).unwrap()),
+        ("opacity_negative", |m| m.insert("kind.paint.000001-a.opacity", -1.0).unwrap()),
+        ("opacity_inf", |m| m.insert("kind.paint.000001-a.opacity", f64::INFINITY).unwrap()),
+        ("bad_colour", |m| m.insert("kind.paint.000001-a.color", "not-a-colour").unwrap()),
+        ("bad_mode", |m| m.insert("kind.paint.000001-a.mode", "scribble").unwrap()),
+        ("unknown_field", |m| m.insert("kind.paint.000001-a.glitter", 1i64).unwrap()),
+        ("no_points", |m| m.insert("kind.paint.000001-a.points", Vec::<u8>::new()).unwrap()),
+        ("odd_points", |m| m.insert("kind.paint.000001-a.points", vec![0u8; 24]).unwrap()),
+        ("points_not_bytes", |m| m.insert("kind.paint.000001-a.points", "1,2,3,4").unwrap()),
+        ("nan_point", |m| m.insert("kind.paint.000001-a.points", packed(&[f64::NAN, 1.0])).unwrap()),
+        ("far_point", |m| m.insert("kind.paint.000001-a.points", packed(&[1.0e30, 1.0])).unwrap()),
+        ("huge_point_list", |m| m.insert("kind.paint.000001-a.points", vec![0u8; 16 * 250_000]).unwrap()),
+        ("pressure_nan", |m| {
+            m.insert("kind.paint.000001-a.pressures", packed(&[f64::NAN, 0.5])).unwrap();
+        }),
+        ("pressure_over_one", |m| {
+            m.insert("kind.paint.000001-a.pressures", packed(&[0.5, 40.0])).unwrap();
+        }),
+        ("pressure_count_differs", |m| m.insert("kind.paint.000001-a.pressures", packed(&[0.5])).unwrap()),
+        ("huge_pressure_list", |m| m.insert("kind.paint.000001-a.pressures", vec![0u8; 8 * 250_000]).unwrap()),
+        ("stroke_value_and_group_clash", |m| m.insert(S, 1i64).unwrap()),
+        ("stroke_id_with_spaces", |m| m.insert("kind.paint.no spaces allowed.size", 5.0).unwrap()),
+        ("too_many_strokes", |m| {
+            for i in 2..=1001 {
+                let key = format!("kind.paint.{i:06}-z");
+                m.insert(&format!("{key}.size"), 4.0).unwrap();
+                m.insert(&format!("{key}.hardness"), 1.0).unwrap();
+                m.insert(&format!("{key}.opacity"), 1.0).unwrap();
+                m.insert(&format!("{key}.color"), "#000000").unwrap();
+                m.insert(&format!("{key}.points"), packed(&[1.0, 1.0])).unwrap();
+            }
+        }),
+        ("too_many_points_in_all", |m| {
+            for i in 2..=12 {
+                let key = format!("kind.paint.{i:06}-z");
+                m.insert(&format!("{key}.size"), 4.0).unwrap();
+                m.insert(&format!("{key}.hardness"), 1.0).unwrap();
+                m.insert(&format!("{key}.opacity"), 1.0).unwrap();
+                m.insert(&format!("{key}.color"), "#000000").unwrap();
+                m.insert(&format!("{key}.points"), packed(&vec![1.0; 2 * 10_000])).unwrap();
+            }
+        }),
+    ];
+    for (name, spoil) in spoilers {
+        let mut s = painted_base();
+        let h = Hostile::of(&s);
+        spoil(&h.element("pic"));
+        h.send(&mut s).unwrap_or_else(|e| panic!("{name}: {e}"));
+        assert!(s.get(&eid("pic")).is_none(), "{name}: the picture is quarantined");
+        assert!(s.invalid_elements().any(|i| i.as_str() == "pic"), "{name}: and reported");
+        assert!(s.get(&eid("fine")).is_some(), "{name}: other elements are unaffected");
+        assert_view_matches_loro_ignoring_hidden(&s);
+        // The store stays usable.
+        add(&mut s, vec![rect("after", &zs(1)[0])]);
+        assert!(s.get(&eid("after")).is_some(), "{name}");
+    }
+}
+
+#[test]
+fn a_picture_quarantined_for_bad_paint_comes_back_when_its_author_repairs_the_stroke() {
+    let mut s = painted_base();
+    let h = Hostile::of(&s);
+    let pic = h.element("pic");
+    pic.insert("kind.paint.000001-a.size", f64::NAN).unwrap();
+    h.send(&mut s).unwrap();
+    assert!(s.get(&eid("pic")).is_none());
+    pic.insert("kind.paint.000001-a.size", 12.0).unwrap();
+    h.send(&mut s).unwrap();
+    let back = s.get(&eid("pic")).expect("repaired");
+    assert_eq!(back.image_data().unwrap().paint.len(), 1);
+    assert_eq!(s.invalid_elements().count(), 0);
+}
+
+#[test]
+fn a_stroke_that_is_only_partly_written_is_not_drawn_half_way() {
+    // A peer that has sent the size and colour of a stroke but not its points yet (the updates arrive in pieces)
+    // must not show a stroke with no points: the picture is hidden until the stroke is whole.
+    let mut s = painted_base();
+    let h = Hostile::of(&s);
+    let m = h.element("pic");
+    m.insert("kind.paint.000002-b.size", 6.0).unwrap();
+    m.insert("kind.paint.000002-b.hardness", 1.0).unwrap();
+    m.insert("kind.paint.000002-b.opacity", 1.0).unwrap();
+    m.insert("kind.paint.000002-b.color", "#00ff00").unwrap();
+    h.send(&mut s).unwrap();
+    assert!(s.get(&eid("pic")).is_none(), "no points yet");
+    m.insert("kind.paint.000002-b.points", packed(&[2.0, 3.0])).unwrap();
+    h.send(&mut s).unwrap();
+    assert_eq!(s.get(&eid("pic")).unwrap().image_data().unwrap().paint.len(), 2);
+}
+
 #[test]
 fn a_hidden_element_can_be_repaired_by_its_author() {
     let mut s = base();

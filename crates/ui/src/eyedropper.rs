@@ -9,7 +9,9 @@
 //!
 //! The pixel is the colour as the canvas draws it. In the dark theme the canvas draws stored colours through a
 //! filter, so the colour to store is the inverse of the pixel ([`crate::colors::stored`]), the same as for a colour
-//! typed in the hex field.
+//! typed in the hex field. The brush of the paint editor is the exception: it paints pixels of a picture, which the
+//! canvas does not filter, so the pixel is the colour to store whatever the theme. Where the pick lands on the
+//! picture itself it samples exactly that picture (the veil of the editor lies under it, not over it).
 
 use drafftink_scene::Color;
 use serde_json::json;
@@ -76,19 +78,28 @@ impl UiState {
     }
 
     /// A colour was chosen, from the canvas (`rgba` is the pixel as drawn) or from the platform's picker. Leaves pick
-    /// mode and returns the call that sets it: `style.set` for the colour of the target. The colour is also the one
+    /// mode and returns the call that sets it: `style.set` for the colour of the target, `image.paint_brush` for the
+    /// brush. The colour is also the one
     /// last picked, which the strip keeps as a swatch. `None` for the background, which is not picked this way.
     pub fn finish_eyedropper(&mut self, target: ColorTarget, rgb: [u8; 3]) -> Option<Call> {
         self.eyedropper = None;
-        let prop = match target {
-            ColorTarget::Stroke => "stroke_color",
-            ColorTarget::Fill => "fill_color",
+        let [r, g, b] = rgb;
+        let seen = Color::rgb(r, g, b);
+        let (id, args) = match target {
+            ColorTarget::Stroke | ColorTarget::Fill => {
+                let prop = if target == ColorTarget::Stroke { "stroke_color" } else { "fill_color" };
+                let stored = colors::stored(seen, self.dark).to_hex();
+                self.last_picked.remember(target, stored.clone());
+                ("style.set", json!({ "props": { prop: stored } }))
+            }
+            ColorTarget::Brush => {
+                let hex = seen.to_hex();
+                self.last_picked.remember(target, hex.clone());
+                ("image.paint_brush", json!({ "color": hex }))
+            }
             ColorTarget::Background => return None,
         };
-        let [r, g, b] = rgb;
-        let stored = colors::stored(Color::rgb(r, g, b), self.dark).to_hex();
-        self.last_picked.remember(target, stored.clone());
-        Some(Call::new(Origin::Ui, "style.set", json!({ "props": { prop: stored } })))
+        Some(Call::new(Origin::Ui, id, args))
     }
 
     /// The target of pick mode, when it is on.
@@ -145,6 +156,19 @@ mod tests {
         let mut light = UiState::new();
         let call = light.finish_eyedropper(ColorTarget::Stroke, [pixel.r, pixel.g, pixel.b]).unwrap();
         assert_eq!(call.args["props"]["stroke_color"], pixel.to_hex());
+    }
+
+    #[test]
+    fn a_brush_pick_sets_the_brush_and_the_dark_theme_does_not_change_the_colour() {
+        for dark in [false, true] {
+            let mut st = UiState::new();
+            st.dark = dark;
+            st.toggle_eyedropper(ColorTarget::Brush);
+            let call = st.finish_eyedropper(ColorTarget::Brush, [0x3b, 0x82, 0xf6]).unwrap();
+            assert_eq!((call.id.as_str(), call.args), ("image.paint_brush", json!({ "color": "#3b82f6" })), "{dark}");
+            assert_eq!(st.last_picked.of(ColorTarget::Brush), Some("#3b82f6"));
+            assert_eq!(st.last_picked.of(ColorTarget::Stroke), None, "the stroke is not touched");
+        }
     }
 
     #[test]

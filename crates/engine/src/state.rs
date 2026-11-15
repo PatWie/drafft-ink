@@ -6,6 +6,7 @@ use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 use drafftink_doc::ObservedState;
 use drafftink_edit::arrow_defaults::ArrowDefaults;
+use drafftink_edit::retouch::PaintBrush;
 use drafftink_edit::style::StyleDefaults;
 use drafftink_geom::kurbo::Point;
 use drafftink_scene::{Brush, ElementId, GroupId, PressureMode, Style, TextStyle};
@@ -38,14 +39,19 @@ pub struct Observed {
     pub linear_editor: Option<LinearEditor>,
     /// The image whose crop is being edited (the crop editor, `image.crop_begin`).
     pub crop_editor: Option<ElementId>,
+    /// The image that is being painted on (the paint editor, `image.paint_begin`). Never open together with the crop
+    /// editor.
+    pub paint_editor: Option<ElementId>,
 }
 
 impl Observed {
-    /// Closes the point editor and the crop editor: the selection they belong to changed. Nothing is kept of
-    /// them (an open crop edit that was not ended is dropped).
+    /// Closes the point editor, the crop editor and the paint editor: the selection they belong to changed.
+    /// Nothing is kept of them (an open crop edit that was not ended is dropped; strokes already painted are in
+    /// the document).
     pub fn close_editors(&mut self) {
         self.linear_editor = None;
         self.crop_editor = None;
+        self.paint_editor = None;
     }
 
     /// The form the replicated store keeps with an undo step.
@@ -69,6 +75,7 @@ impl Observed {
                 .as_ref()
                 .map(|e| LinearEditor { element: e.clone(), selected_points: BTreeSet::new() }),
             crop_editor: None,
+            paint_editor: None,
         }
     }
 }
@@ -215,6 +222,8 @@ pub struct ToolState {
     /// Path type and heads of new arrows (`tool.set_arrow`; the settings `arrow.type`, `arrow.start_head` and
     /// `arrow.end_head` keep them).
     pub arrow_default: ArrowDefaults,
+    /// The brush of the paint editor and the default of `image.paint` (`image.paint_brush`).
+    pub paint_brush: PaintBrush,
 }
 
 impl Default for ToolState {
@@ -229,6 +238,7 @@ impl Default for ToolState {
             brush_default: d.brush,
             pressure_default: d.pressure_mode,
             arrow_default: ArrowDefaults::default(),
+            paint_brush: PaintBrush::default(),
         }
     }
 }

@@ -600,6 +600,37 @@ fn an_image_has_crop_rows_with_the_registry_titles_and_reset_only_while_it_is_cr
 }
 
 #[test]
+fn an_image_has_edit_picture_and_reset_paint_rows_with_the_registry_titles_and_reset_only_while_it_has_paint() {
+    let mut f = Fixture::new();
+    let id = picture(&mut f);
+    let mut h = open(f, std::slice::from_ref(&id));
+    assert!(has_row(&h, "Edit picture") && !has_row(&h, "Reset paint"));
+    h.state_mut().clear();
+    row(&h, "Edit picture").click();
+    h.run();
+    assert_eq!(calls(&h), vec![ctx_call("image.paint_begin", json!({}))]);
+
+    let mut f = Fixture::new();
+    let id = picture(&mut f);
+    let stroke = json!({ "points": [[5, 5], [30, 12]] });
+    dialog::run(&mut f, "image.paint", json!({ "id": id.as_str(), "strokes": [stroke] }));
+    let mut h = open(f, std::slice::from_ref(&id));
+    assert!(has_row(&h, "Edit picture") && has_row(&h, "Reset paint"));
+    h.state_mut().clear();
+    row(&h, "Reset paint").click();
+    h.run();
+    assert_eq!(calls(&h), vec![ctx_call("image.reset_paint", json!({}))]);
+}
+
+#[test]
+fn a_rectangle_has_no_edit_picture_rows() {
+    let mut f = Fixture::new();
+    let a = add_rect(&mut f.session, 0.0, 0.0, 50.0, 50.0).unwrap();
+    let h = open(f, &[a]);
+    assert!(!has_row(&h, "Edit picture") && !has_row(&h, "Reset paint"));
+}
+
+#[test]
 fn a_rectangle_has_no_crop_rows() {
     let mut f = Fixture::new();
     let a = add_rect(&mut f.session, 0.0, 0.0, 50.0, 50.0).unwrap();

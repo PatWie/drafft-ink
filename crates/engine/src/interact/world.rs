@@ -12,6 +12,7 @@
 use drafftink_canvas::{
     Camera, CanvasConfig, Cursor, Hit, HitOptions, Picker, PointerKind, SelectionFrame, Target, Viewport, unit_group,
 };
+use drafftink_edit::retouch::PictureSpace;
 use drafftink_geom::OrientedBox;
 use drafftink_geom::kurbo::{Point, Size};
 use drafftink_scene::{Element, ElementId, GroupId, Kind, SceneRead, SceneStore};
@@ -49,6 +50,15 @@ pub(crate) struct CropStage {
     pub(crate) picture: OrientedBox,
 }
 
+/// What the paint editor lends the picker while it is open.
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) struct PaintStage {
+    /// The image being painted on: the only element the pointer can reach.
+    pub(crate) element: ElementId,
+    /// How its picture lies on the canvas, to tell whether the pointer is over it.
+    pub(crate) space: PictureSpace,
+}
+
 /// Index, viewport and selection frame for one tab.
 pub(crate) struct World {
     /// The viewport the recognizer uses. The interaction layer moves its camera directly (class C).
@@ -64,6 +74,8 @@ pub(crate) struct World {
     tool: Tool,
     /// While the crop editor is open, its window stands in for the selection's frame and its picture is grabbed.
     crop: Option<CropStage>,
+    /// While the paint editor is open, only its image is pickable, and nothing has handles.
+    paint: Option<PaintStage>,
 }
 
 impl World {
@@ -77,6 +89,7 @@ impl World {
             entered: None,
             tool: Tool::Select,
             crop: None,
+            paint: None,
         }
     }
 
@@ -102,7 +115,20 @@ impl World {
         }
     }
 
+    /// Opens the paint editor's stage (`Some`): the image under edit is all the picker finds, and the selection has no
+    /// frame. `None` takes it away.
+    pub(crate) fn set_paint(&mut self, stage: Option<PaintStage>) {
+        if self.paint != stage {
+            self.frame_key = None;
+            self.paint = stage;
+        }
+    }
+
     fn sync_frame(&mut self, s: &Session) {
+        if self.paint.is_some() {
+            self.frame = SelectionFrame::None;
+            return;
+        }
         if let Some(stage) = &self.crop {
             self.frame = stage.frame.clone();
             return;
@@ -203,6 +229,15 @@ impl Picker for Pick<'_> {
     fn pick(&self, screen: Point, kind: PointerKind) -> Target {
         let w = self.world;
         let touch = kind == PointerKind::Touch;
+        // The paint editor owns the pointer: the image under edit answers where it is shown, and nothing else does.
+        if let Some(stage) = &w.paint {
+            let world = w.viewport.screen_to_world(screen);
+            return if stage.space.shows(world) {
+                Target::Element { id: stage.element.clone(), unit_group: None }
+            } else {
+                Target::Empty
+            };
+        }
         // The crop editor draws its handles large for a pen as well as a finger, so a pen grabs them from as far.
         let coarse = touch || (w.crop.is_some() && kind == PointerKind::Pen);
         // Handles exist for the select tool, and for text and math, whose handles resize and move the text.
@@ -253,6 +288,13 @@ impl Picker for Pick<'_> {
 
     fn cursor(&self, target: &Target) -> Cursor {
         let w = self.world;
+        if w.paint.is_some() {
+            // The brush paints where the pointer is over the image; elsewhere a click ends the editor.
+            return match target {
+                Target::Element { .. } => Cursor::Crosshair,
+                _ => Cursor::Default,
+            };
+        }
         if let Some(stage) = &w.crop {
             // The crop editor owns the pointer: the handles resize the window, the picture is slid, nothing else
             // answers.

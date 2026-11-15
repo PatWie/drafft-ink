@@ -57,7 +57,7 @@ Kind data keys (`kind.` plus the field name of `docs/model.md` section 4):
 | `freehand` | `kind.points` (binary), `kind.pressures` (binary), `kind.pressure_mode`, `kind.brush`, `kind.highlighter`, `kind.closed` |
 | `text` | `kind.content` (**LoroText** with `color` marks), `kind.font.family`, `kind.font.size`, `kind.font.weight`, `kind.font.align`, `kind.font.vertical_align`, `kind.font.line_height`, `kind.font.inline_math` (only when `off`), `kind.auto_resize`, `kind.container_id`, `kind.label_position` |
 | `math` | `kind.latex`, `kind.font_size` |
-| `image` | `kind.file_id`, `kind.natural_width`, `kind.natural_height`, `kind.crop` (map, whole) |
+| `image` | `kind.file_id`, `kind.natural_width`, `kind.natural_height`, `kind.crop` (map, whole), and for each stroke of the paint `kind.paint.<stroke id>.<field>`: `size`, `hardness`, `opacity`, `color`, `mode` (only when `erase`), `points` and `pressures` (binary, packed as `kind.points`; `pressures` only when the stroke has them) |
 | `frame` | `kind.name`, `kind.clip` |
 
 `Element.version` is not stored. It is a local counter, raised by one per reported change.
@@ -85,6 +85,8 @@ When a move and a point edit merge (position from one, points and box from the o
 **Enums are strings.** Readable in `debug_json()` and in tools, forward compatible with new variants through the schema version rather than through numeric codes. Loro compresses repeated keys and strings in snapshots.
 
 **Element identity is a mergeable container.** The element map is created with `ensure_mergeable_map(id)`. Its container id is derived from (parent, key, type), so two peers that create the same id get the same container and their fields merge (tested), and undoing a hard removal brings back the same container, with edits that peers made meanwhile (Loro's `UndoManager` documentation, "Undoing deletion of a map child"). A regular child container would be reconstructed under a new id and lose concurrent edits. The text content uses `ensure_mergeable_text` for the same reason.
+
+**Paint strokes are fields of their own.** Each stroke of a painted picture has the keys `kind.paint.<stroke id>.*`, so two people painting the same picture at once each add keys, and both strokes survive. The stroke id is `NNNNNN-tag`: the sequence number orders the strokes (the order they are painted in), and the tag (a random 32-bit number of the call) keeps two peers' strokes with the same number apart. When both pick the same number the tag breaks the tie, and both strokes are applied, in the order of the ids. `image.reset_paint` deletes the keys of the strokes its peer knows, so a stroke a collaborator added at the same time is kept. The points of a stroke are one atomic binary value, never a list, for the reasons below.
 
 ## 5. Z-order
 

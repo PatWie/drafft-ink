@@ -147,8 +147,11 @@ impl ElementPainter {
         let lookup = self.images.lookup(file, || files(file));
         match lookup {
             Lookup::Ready(data) => {
-                paint_picture(ink, img, local, data);
-                paint_border(ink, e, local);
+                let outline = image_outline(e, local);
+                let natural = (img.natural_width, img.natural_height);
+                let shown = self.images.baked(file, natural, &img.paint, &data);
+                paint_picture(ink, img, local, &outline, shown);
+                paint_border(ink, e, &outline);
                 None
             }
             Lookup::Failed => {
@@ -511,7 +514,16 @@ fn draw_runs(
     }
 }
 
-fn paint_picture(ink: &mut Ink, img: &ImageElem, local: Rect, data: peniko::ImageData) {
+/// The outline of a picture in its local frame: the box, with the corners rounded by `style.corner_radius` (at most
+/// half the shorter side, like a frame). The picture is filled into it and the border follows it, so the corners
+/// clip the picture after the crop. The grey placeholder box is not rounded.
+fn image_outline(e: &Element, local: Rect) -> BezPath {
+    let radius = e.style.corner_radius.min(local.width().min(local.height()) / 2.0);
+    if radius > 0.0 { RoundedRect::from_rect(local, radius).to_path(0.05) } else { local.to_path(0.05) }
+}
+
+/// Fills the picture (cropped to its source rectangle and stretched over `local`) into `outline`.
+fn paint_picture(ink: &mut Ink, img: &ImageElem, local: Rect, outline: &BezPath, data: peniko::ImageData) {
     let (iw, ih) = (f64::from(data.width), f64::from(data.height));
     if iw <= 0.0 || ih <= 0.0 || local.width() <= 0.0 || local.height() <= 0.0 {
         return;
@@ -533,15 +545,15 @@ fn paint_picture(ink: &mut Ink, img: &ImageElem, local: Rect, data: peniko::Imag
     let to_box = Affine::scale_non_uniform(local.width() / src.width(), local.height() / src.height())
         * Affine::translate((-src.x0, -src.y0));
     let brush = ImageBrush::new(data).with_alpha(ink.opacity as f32);
-    ink.scene.fill(Fill::NonZero, Affine::IDENTITY, &brush, Some(to_box), &local);
+    ink.scene.fill(Fill::NonZero, Affine::IDENTITY, &brush, Some(to_box), outline);
     ink.grow(local);
 }
 
-fn paint_border(ink: &mut Ink, e: &Element, local: Rect) {
+fn paint_border(ink: &mut Ink, e: &Element, outline: &BezPath) {
     let s = &e.style;
     if s.stroke_width > 0.0 && s.stroke_color.a > 0 {
         let c = ink.color(s.stroke_color);
-        ink.stroke(&local.to_path(0.05), s.stroke_width, s.stroke_style.dash(s.stroke_width), c);
+        ink.stroke(outline, s.stroke_width, s.stroke_style.dash(s.stroke_width), c);
     }
 }
 

@@ -211,6 +211,7 @@ impl Conv {
                     natural_width: v["source_width"].as_u64().unwrap_or(0) as u32,
                     natural_height: v["source_height"].as_u64().unwrap_or(0) as u32,
                     crop: None,
+                    paint: Default::default(),
                 };
                 let p = pt(&v["position"]);
                 self.push(

@@ -679,6 +679,67 @@ fn image_scale_and_crop_and_bad_picture_data() {
 }
 
 #[test]
+fn a_rounded_picture_is_written_with_roundness_and_read_back_with_its_radius() {
+    use base64::Engine as _;
+    let mut doc = Document::new();
+    let (png_id, file) = drafftink_scene::FileEntry::new("image/png", {
+        let mut b = vec![0x89, b'P', b'N', b'G', 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 13, b'I', b'H', b'D', b'R'];
+        b.extend_from_slice(&40u32.to_be_bytes());
+        b.extend_from_slice(&30u32.to_be_bytes());
+        b
+    });
+    doc.files.insert(png_id.clone(), file);
+    let keys = drafftink_scene::ZIndex::rebalance(3).unwrap();
+    let make = |n: usize, w: f64, h: f64, radius: f64| {
+        let data = drafftink_scene::ImageData {
+            file_id: Some(png_id.clone()),
+            natural_width: 40,
+            natural_height: 30,
+            crop: None,
+            paint: Default::default(),
+        };
+        let id = drafftink_scene::ElementId::new(&format!("p{n}")).unwrap();
+        let mut e = Element::new(id, ElementKind::Image(data), keys[n].clone()).with_bounds(0.0, 0.0, w, h);
+        e.style.corner_radius = radius;
+        e
+    };
+    // 200 x 100: Excalidraw's adaptive rule gives 25 (a quarter of the shorter side), so 25 needs no note.
+    doc.elements = vec![make(0, 200.0, 100.0, 25.0), make(1, 200.0, 100.0, 0.0), make(2, 200.0, 100.0, 7.0)];
+    let (text, report) = export_scene_with_report(&doc).unwrap();
+    assert!(report.is_clean(), "{:?}", report.warnings);
+    let v: Value = serde_json::from_str(&text).unwrap();
+    let el = |id: &str| v["elements"].as_array().unwrap().iter().find(|e| e["id"] == id).unwrap().clone();
+    assert_eq!(el("p0")["roundness"], json!({"type": 3}));
+    assert!(el("p0")["customData"]["drafftink"].get("corner_radius").is_none(), "25 is what Excalidraw draws");
+    assert_eq!(el("p1")["roundness"], Value::Null, "a sharp picture has no roundness");
+    assert_eq!(el("p2")["roundness"], json!({"type": 3}));
+    assert_eq!(el("p2")["customData"]["drafftink"]["corner_radius"], 7.0, "the exact radius is kept");
+    let back = import_str(&text).unwrap();
+    assert_no_errors(&back.document);
+    let radius = |id: &str| get(&back.document, id).style.corner_radius;
+    assert_eq!((radius("p0"), radius("p1"), radius("p2")), (25.0, 0.0, 7.0));
+    // A file Excalidraw wrote: the picture has `roundness` and no note, so the radius comes from its rule.
+    let url = format!("data:image/png;base64,{}", base64::engine::general_purpose::STANDARD.encode([0x89u8, b'P']));
+    let foreign = import_str(
+        &json!({
+            "type": "excalidraw", "version": 2,
+            "elements": [
+                {"id": "a", "type": "image", "x": 0, "y": 0, "width": 400, "height": 300, "fileId": "f",
+                 "roundness": {"type": 3}},
+                {"id": "b", "type": "image", "x": 0, "y": 0, "width": 40, "height": 30, "fileId": "f",
+                 "roundness": {"type": 2}},
+                {"id": "c", "type": "image", "x": 0, "y": 0, "width": 40, "height": 30, "fileId": "f"},
+            ],
+            "files": {"f": {"id": "f", "mimeType": "image/png", "dataURL": url, "created": 1}},
+        })
+        .to_string(),
+    )
+    .unwrap();
+    let r = |id: &str| get(&foreign.document, id).style.corner_radius;
+    assert_eq!((r("a"), r("b"), r("c")), (32.0, 7.5, 0.0));
+}
+
+#[test]
 fn minimal_fields_use_defaults_and_odd_input_is_skipped() {
     let i = scene("minimal_fields");
     let d = &i.document;
@@ -901,6 +962,7 @@ fn native_documents_survive_a_trip_through_excalidraw() {
             natural_width: 8,
             natural_height: 4,
             crop: Some(drafftink_scene::Crop { x: 1.0, y: 1.0, width: 4.0, height: 2.0 }),
+            paint: Default::default(),
         }),
         700.0,
         0.0,
@@ -909,6 +971,7 @@ fn native_documents_survive_a_trip_through_excalidraw() {
     );
     doc.elements[img].transform.flip_y = true;
     doc.elements[img].transform.angle = 0.1;
+    doc.elements[img].style.corner_radius = 11.0; // Excalidraw's rule gives 10 for a side of 40
     let frame = base_element(
         &mut doc,
         ElementKind::Frame(FrameData { name: Some("Frame".into()), clip: false }),
@@ -960,6 +1023,10 @@ fn native_documents_survive_a_trip_through_excalidraw() {
     assert_eq!(note("n0")["fill_pattern"], "dots");
     assert_eq!(note("n0")["sloppiness"], "drunk");
     assert_eq!(note("n0")["corner_radius"], 17.0);
+    let image_id = doc.elements[img].id.as_str().to_owned();
+    let image = v["elements"].as_array().unwrap().iter().find(|e| e["id"] == image_id.as_str()).unwrap().clone();
+    assert_eq!(image["roundness"], json!({"type": 3}), "a rounded picture is written with adaptive roundness");
+    assert_eq!(note(&image_id)["corner_radius"], 11.0, "the exact radius is in the note");
     assert_eq!(v["elements"][0]["customData"]["mine"], json!({"x": [1, 2]}));
     assert_eq!(v["elements"][0]["roughness"], 2.0);
     assert_eq!(v["elements"][0]["fillStyle"], "hachure", "dots falls back to the nearest Excalidraw fill");
@@ -1016,6 +1083,7 @@ fn export_refuses_nothing_silently() {
             natural_width: 1,
             natural_height: 1,
             crop: None,
+            paint: Default::default(),
         }),
         0.0,
         0.0,
@@ -1281,6 +1349,7 @@ fn exporting_a_library_leaves_images_out_with_a_warning() {
             natural_width: 1,
             natural_height: 1,
             crop: None,
+            paint: Default::default(),
         }),
         0.0,
         0.0,
@@ -1294,6 +1363,146 @@ fn exporting_a_library_leaves_images_out_with_a_warning() {
         serde_json::from_str::<Value>(&text).unwrap()["libraryItems"][0]["elements"].as_array().unwrap().len(),
         1
     );
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+// Paint on pictures
+
+/// A 6 x 4 blue PNG.
+fn blue_png() -> Vec<u8> {
+    let mut out = std::io::Cursor::new(Vec::new());
+    image::DynamicImage::ImageRgba8(image::RgbaImage::from_pixel(6, 4, image::Rgba([0, 0, 255, 255])))
+        .write_to(&mut out, image::ImageFormat::Png)
+        .unwrap();
+    out.into_inner()
+}
+
+fn red_dab(x: f64, y: f64) -> drafftink_scene::PaintStroke {
+    drafftink_scene::PaintStroke {
+        mode: drafftink_scene::PaintMode::Paint,
+        color: Color::rgb(255, 0, 0),
+        size: 3.0,
+        hardness: 1.0,
+        opacity: 1.0,
+        points: vec![Point::new(x, y)],
+        pressures: Vec::new(),
+    }
+}
+
+/// An image element of `file` in `doc`, with a red dab when `painted`.
+fn add_picture(doc: &mut Document, file: &drafftink_scene::FileId, painted: bool) -> usize {
+    let paint = if painted {
+        std::iter::once((drafftink_scene::StrokeId::new("000001-t").unwrap(), red_dab(4.5, 2.5))).collect()
+    } else {
+        Default::default()
+    };
+    let data = drafftink_scene::ImageData {
+        file_id: Some(file.clone()),
+        natural_width: 6,
+        natural_height: 4,
+        crop: None,
+        paint,
+    };
+    base_element(doc, ElementKind::Image(data), 0.0, 0.0, 60.0, 40.0)
+}
+
+/// The PNG a written file entry holds.
+fn written_picture(v: &Value, file_id: &str) -> image::RgbaImage {
+    use base64::Engine as _;
+    let url = v["files"][file_id]["dataURL"].as_str().expect("the file entry has a data URL");
+    let b64 = url.strip_prefix("data:image/png;base64,").expect("a PNG");
+    let bytes = base64::engine::general_purpose::STANDARD.decode(b64).unwrap();
+    image::load_from_memory_with_format(&bytes, image::ImageFormat::Png).unwrap().to_rgba8()
+}
+
+#[test]
+fn a_painted_picture_is_written_as_its_baked_png_with_a_note() {
+    let mut doc = Document::new();
+    let (file, entry) = drafftink_scene::FileEntry::new("image/png", blue_png());
+    doc.files.insert(file.clone(), entry);
+    let painted = add_picture(&mut doc, &file, true);
+    let (text, report) = export_scene_with_report(&doc).unwrap();
+    assert!(report.is_clean(), "{report:?}");
+    let v: Value = serde_json::from_str(&text).unwrap();
+
+    let element = &v["elements"][0];
+    assert_eq!(element["id"], doc.elements[painted].id.as_str());
+    let written = element["fileId"].as_str().unwrap();
+    assert_ne!(written, file.as_str(), "the element points at the baked picture");
+    assert_eq!(v["files"].as_object().unwrap().len(), 1, "the original is not kept when nothing else uses it");
+    assert_eq!(element["customData"]["drafftink"]["paint_baked"], 1);
+
+    let png = written_picture(&v, written);
+    assert_eq!(png.dimensions(), (6, 4));
+    assert_eq!(*png.get_pixel(4, 2), image::Rgba([255, 0, 0, 255]), "the dab is in the file");
+    assert_eq!(*png.get_pixel(0, 0), image::Rgba([0, 0, 255, 255]), "the rest is the original");
+    // The file id is the content hash of the baked bytes, as for every other file.
+    let url = v["files"][written]["dataURL"].as_str().unwrap();
+    let bytes = {
+        use base64::Engine as _;
+        base64::engine::general_purpose::STANDARD.decode(url.strip_prefix("data:image/png;base64,").unwrap()).unwrap()
+    };
+    assert_eq!(drafftink_scene::FileId::of(&bytes).as_str(), written);
+}
+
+#[test]
+fn the_original_stays_in_the_file_table_when_an_unpainted_picture_uses_it() {
+    let mut doc = Document::new();
+    let (file, entry) = drafftink_scene::FileEntry::new("image/png", blue_png());
+    doc.files.insert(file.clone(), entry);
+    add_picture(&mut doc, &file, false);
+    add_picture(&mut doc, &file, true);
+    let v: Value = serde_json::from_str(&export_scene(&doc).unwrap()).unwrap();
+    assert_eq!(v["files"].as_object().unwrap().len(), 2);
+    let plain = v["elements"].as_array().unwrap().iter().find(|e| e["customData"].is_null()).expect("unpainted");
+    assert_eq!(plain["fileId"], file.as_str(), "an unpainted picture is written as before");
+    assert!(plain.get("customData").is_none_or(Value::is_null));
+    let baked = v["elements"].as_array().unwrap().iter().find(|e| !e["customData"].is_null()).expect("painted");
+    assert_ne!(baked["fileId"], file.as_str());
+}
+
+#[test]
+fn a_painted_picture_exports_differently_and_comes_back_as_a_plain_picture() {
+    let build = |painted: bool| {
+        let mut doc = Document::new();
+        let (file, entry) = drafftink_scene::FileEntry::new("image/png", blue_png());
+        doc.files.insert(file.clone(), entry);
+        let at = add_picture(&mut doc, &file, painted);
+        if let ElementKind::Image(d) = &mut doc.elements[at].kind {
+            d.crop = Some(drafftink_scene::Crop { x: 1.0, y: 1.0, width: 4.0, height: 2.0 });
+        }
+        doc
+    };
+    let (plain, with) = (export_scene(&build(false)).unwrap(), export_scene(&build(true)).unwrap());
+    assert_ne!(plain, with);
+
+    let back = import_str(&with).unwrap();
+    assert_clean(&back.document);
+    assert!(back.report.is_clean(), "the importer needs no special case: {:?}", back.report);
+    let img = back.document.elements.iter().find(|e| matches!(e.kind, ElementKind::Image(_))).unwrap();
+    let ElementKind::Image(d) = &img.kind else { unreachable!() };
+    assert!(d.paint.is_empty(), "a re-import sees a normal picture");
+    assert_eq!((d.natural_width, d.natural_height), (6, 4));
+    assert!(d.crop.is_some(), "the crop travels with the baked picture");
+    let file = &back.document.files[d.file_id.as_ref().unwrap()];
+    let png = image::load_from_memory(&file.bytes).unwrap().to_rgba8();
+    assert_eq!(*png.get_pixel(4, 2), image::Rgba([255, 0, 0, 255]));
+}
+
+#[test]
+fn a_painted_picture_that_cannot_be_baked_is_exported_unpainted_with_a_warning() {
+    let mut doc = Document::new();
+    // Not a decodable picture: only the PNG signature.
+    let (file, entry) =
+        drafftink_scene::FileEntry::new("image/png", vec![0x89, b'P', b'N', b'G', 0x0d, 0x0a, 0x1a, 0x0a]);
+    doc.files.insert(file.clone(), entry);
+    add_picture(&mut doc, &file, true);
+    let (text, report) = export_scene_with_report(&doc).unwrap();
+    assert_eq!(report.warnings.len(), 1, "{report:?}");
+    assert!(report.warnings[0].contains("without its paint"), "{report:?}");
+    let v: Value = serde_json::from_str(&text).unwrap();
+    assert_eq!(v["elements"][0]["fileId"], file.as_str());
+    assert!(v["elements"][0].get("customData").is_none_or(Value::is_null));
 }
 
 // ---------------------------------------------------------------------------------------------------------------

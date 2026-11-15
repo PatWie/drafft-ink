@@ -7,6 +7,7 @@ use egui::{Color32, FontId, Painter, Rect, Response, Role, Sense, Stroke, Ui, Wi
 use serde_json::{Value, json};
 
 use super::heads::{End, HeadChoice, head_sample};
+use super::paint;
 use super::pictograms::{self, Align, LineStyle, Pattern};
 use super::{Group, Row};
 use crate::action::Verb;
@@ -101,8 +102,10 @@ impl Row {
             Row::Flip => flip(ui, cx),
             Row::Compose => compose(ui, cx),
             Row::LinkDelete => link_and_delete(ui, cx),
-            Row::Crop => crop(ui, cx),
-            Row::ResetCrop => reset_crop(ui, cx),
+            Row::ImageEdit => image_edit(ui, cx),
+            Row::ImageReset => image_reset(ui, cx),
+            Row::BrushShape => paint::size_and_hardness(ui, cx),
+            Row::BrushOpacityDone => paint::opacity_reset_done(ui, cx),
         }
     }
 }
@@ -110,7 +113,7 @@ impl Row {
 // ---- building blocks ----
 
 /// A small text button of a segmented choice, filled with the accent when it is on.
-fn chip(cx: &mut Cx<'_>, ui: &mut Ui, ctl: &Ctl<'_>, text: &str) -> Response {
+pub(crate) fn chip(cx: &mut Cx<'_>, ui: &mut Ui, ctl: &Ctl<'_>, text: &str) -> Response {
     let pal = cx.pal;
     let galley = ui.painter().layout_no_wrap(text.to_owned(), TextSize::Small.font(), pal.text);
     let height = cx.layout.small_side();
@@ -341,7 +344,7 @@ pub(super) fn corner_slider(ui: &mut Ui, cx: &mut Cx<'_>) {
 }
 
 /// The rail and the part before the handle of a slider must show on the card colour, in both themes.
-fn style_slider_rail(ui: &mut Ui, cx: &Cx<'_>) {
+pub(super) fn style_slider_rail(ui: &mut Ui, cx: &Cx<'_>) {
     let pal = cx.pal;
     let visuals = ui.visuals_mut();
     visuals.widgets.inactive.bg_fill = pal.border;
@@ -642,20 +645,52 @@ fn link_and_delete(ui: &mut Ui, cx: &mut Cx<'_>) {
     cx.icon_button(ui, &Ctl::new("element.delete"), Icon::Delete, side);
 }
 
-/// Crop the selected image, or, while its crop editor is open, finish. Both labels are the registry's titles.
-fn crop(ui: &mut Ui, cx: &mut Cx<'_>) {
-    let (id, icon) =
-        if cx.model.crop_editing { ("image.crop_end", Icon::Check) } else { ("image.crop_begin", Icon::Crop) };
-    chip_with_icon(ui, cx, &Ctl::new(id), icon);
+/// The crop editor can be opened, or is open (its chip then says Done).
+pub(super) fn can_crop(cx: &Cx<'_>) -> bool {
+    cx.model.crop_editing || cx.refusal("image.crop_begin").is_none()
 }
 
-/// Shows the whole picture of the cropped image again.
-fn reset_crop(ui: &mut Ui, cx: &mut Cx<'_>) {
-    chip_with_icon(ui, cx, &Ctl::new("image.reset_crop"), Icon::CropReset);
+/// The paint editor can be opened on the selection. It is not offered while the crop editor is open: the two never
+/// run together, and the chip next to Done would only close the crop.
+pub(super) fn can_paint(cx: &Cx<'_>) -> bool {
+    !cx.model.crop_editing && cx.refusal("image.paint_begin").is_none()
+}
+
+/// The cropped picture can be shown whole again.
+pub(super) fn can_reset_crop(cx: &Cx<'_>) -> bool {
+    cx.refusal("image.reset_crop").is_none()
+}
+
+/// The paint can be taken off the picture (it is not offered while the crop editor is open).
+pub(super) fn can_reset_paint(cx: &Cx<'_>) -> bool {
+    !cx.model.crop_editing && cx.refusal("image.reset_paint").is_none()
+}
+
+/// Crop the selected image, or, while its crop editor is open, finish; and open the paint editor. The labels are
+/// the registry's titles.
+fn image_edit(ui: &mut Ui, cx: &mut Cx<'_>) {
+    if can_crop(cx) {
+        let (id, icon) =
+            if cx.model.crop_editing { ("image.crop_end", Icon::Check) } else { ("image.crop_begin", Icon::Crop) };
+        chip_with_icon(ui, cx, &Ctl::new(id), icon);
+    }
+    if can_paint(cx) {
+        paint::edit_picture(ui, cx);
+    }
+}
+
+/// Shows the whole picture of the cropped image again, and takes the paint off the painted one.
+fn image_reset(ui: &mut Ui, cx: &mut Cx<'_>) {
+    if can_reset_crop(cx) {
+        chip_with_icon(ui, cx, &Ctl::new("image.reset_crop"), Icon::CropReset);
+    }
+    if can_reset_paint(cx) {
+        paint::reset_paint(ui, cx);
+    }
 }
 
 /// A small button with an icon and the registry's title of its command beside it.
-fn chip_with_icon(ui: &mut Ui, cx: &mut Cx<'_>, ctl: &Ctl<'_>, icon: Icon) -> Response {
+pub(super) fn chip_with_icon(ui: &mut Ui, cx: &mut Cx<'_>, ctl: &Ctl<'_>, icon: Icon) -> Response {
     let pal = cx.pal;
     let title = cx.model.title(ctl.id).to_owned();
     let galley = ui.painter().layout_no_wrap(title, TextSize::Small.font(), pal.text);

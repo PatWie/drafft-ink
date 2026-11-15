@@ -8,8 +8,8 @@ use std::hash::Hash;
 
 use drafftink_geom::hash::{Bits, Hash128};
 use drafftink_scene::{
-    Crop, Element, ElementKind, FrameData, FreehandData, ImageData, LinearData, MathData, Style, TextData, TextRun,
-    TextStyle, Transform,
+    Crop, Element, ElementKind, FrameData, FreehandData, ImageData, LinearData, MathData, Paint, PaintStroke, Style,
+    TextData, TextRun, TextStyle, Transform,
 };
 use kurbo::Point;
 
@@ -91,15 +91,35 @@ fn math(h: &mut Hash128, m: &MathData) {
     (latex, Bits(*font_size)).hash(h);
 }
 
+fn paint(h: &mut Hash128, strokes: &Paint) {
+    strokes.len().hash(h);
+    for (key, stroke) in strokes {
+        let PaintStroke { mode, color, size, hardness, opacity, points: pts, pressures } = stroke;
+        (key, mode, color, Bits(*size), Bits(*hardness), Bits(*opacity)).hash(h);
+        points(h, pts);
+        pressures.iter().for_each(|p| Bits(*p).hash(h));
+    }
+}
+
 fn image(h: &mut Hash128, i: &ImageData) {
-    let ImageData { file_id, natural_width, natural_height, crop } = i;
+    let ImageData { file_id, natural_width, natural_height, crop, paint: strokes } = i;
     (file_id, natural_width, natural_height).hash(h);
+    paint(h, strokes);
     crop.as_ref()
         .map(|c| {
             let Crop { x, y, width, height } = c;
             (Bits(*x), Bits(*y), Bits(*width), Bits(*height))
         })
         .hash(h);
+}
+
+/// A 128-bit digest of the strokes on a picture and the stored size they are drawn for. Two pictures with the
+/// same digest and the same file give the same baked pixels, so this is the key of the baked-picture cache.
+pub(crate) fn paint_key(natural: (u32, u32), strokes: &Paint) -> u128 {
+    let mut h = Hash128::new();
+    natural.hash(&mut h);
+    paint(&mut h, strokes);
+    h.finish128()
 }
 
 fn frame(h: &mut Hash128, f: &FrameData) {

@@ -115,6 +115,9 @@ impl Session {
         if t.observed.crop_editor.as_ref().is_some_and(|id| gone.contains(id)) {
             t.observed.crop_editor = None;
         }
+        if t.observed.paint_editor.as_ref().is_some_and(|id| gone.contains(id)) {
+            t.observed.paint_editor = None;
+        }
         self.cancel_gesture_on_removed(tab, &gone);
         self.mark_dirty(Redraw::Scene);
     }

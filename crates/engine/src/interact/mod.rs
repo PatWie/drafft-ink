@@ -41,6 +41,7 @@ mod frame_out;
 mod link;
 mod outcome;
 mod overlay;
+mod paint;
 mod view;
 mod world;
 
@@ -52,6 +53,9 @@ mod testutil;
 
 #[cfg(test)]
 mod crop_tests;
+
+#[cfg(test)]
+mod paint_tests;
 
 #[cfg(test)]
 mod interaction_tests;
@@ -67,13 +71,16 @@ use crop::CropTool;
 use ctx::Ctx;
 use draw::DrawTools;
 use events::Ev;
+use paint::PaintTool;
 use select::SelectTool;
 use view::ViewSync;
 use world::{World, pointer_mode};
 
 pub use events::Key;
 pub use outcome::{ContextTarget, Outcome, UiRequest};
-pub use overlay::{AngleRays, Badge, CropView, EraserRing, InteractionOverlay, LaserPoint, LinkIcon, OverlayParts};
+pub use overlay::{
+    AngleRays, Badge, CropView, EraserRing, InteractionOverlay, LaserPoint, LinkIcon, OverlayParts, PaintView,
+};
 pub use view::REPORT_EVERY_MS;
 
 use crate::session::Session;
@@ -96,6 +103,7 @@ pub struct Interaction {
     select: SelectTool,
     draw: DrawTools,
     crop: CropTool,
+    paint: PaintTool,
     drag_owner: Option<Owner>,
     /// The element under an idle pointer, for the hover outline.
     hover: Option<ElementId>,
@@ -125,6 +133,7 @@ impl Interaction {
             select: SelectTool::default(),
             draw: DrawTools::default(),
             crop: CropTool::default(),
+            paint: PaintTool::default(),
             drag_owner: None,
             hover: None,
             cursor: Cursor::Default,
@@ -153,6 +162,9 @@ impl Interaction {
         self.begin(s, &mut out);
         if let InputEvent::Pointer(p) = ev {
             self.pointer = Some((p.pos, p.kind));
+        }
+        if matches!(ev, InputEvent::PointerLeave { .. }) {
+            self.with_ctx(s, &mut out, now, mods, |cx, m| m.paint.leave(cx));
         }
         let mut intents = Vec::new();
         {
@@ -231,7 +243,7 @@ impl Interaction {
         }
         if !out.handled {
             let used = self.with_ctx(s, &mut out, now_ms, mods, |cx, m| {
-                m.crop.key(cx, key) || m.draw.key(cx, key) || m.select.key(cx, key)
+                m.paint.key(cx, key) || m.crop.key(cx, key) || m.draw.key(cx, key) || m.select.key(cx, key)
             });
             out.handled |= used;
         }
@@ -269,7 +281,8 @@ impl Interaction {
         // The session decides whether the editor is open: a command may have opened or closed it since the last event.
         let pointer = self.pointer.map_or(PointerKind::Mouse, |(_, kind)| kind);
         let crop = self.crop.view(s, pointer);
-        overlay::build(&self.world, s, &self.parts, self.hover.as_ref(), crop)
+        let paint = self.paint.view(s).map(|view| (view, self.paint.ring(s, self.world.zoom())));
+        overlay::build(&self.world, s, &self.parts, self.hover.as_ref(), crop, paint)
     }
 
     /// The live camera. During a pan or zoom it can be ahead of `Session::view`, which is told with `view.set`
@@ -289,6 +302,7 @@ impl Interaction {
             || self.draw.is_active()
             || self.select.is_active()
             || self.crop.is_active()
+            || self.paint.is_active()
             || !self.recognizer.is_idle()
     }
 
@@ -312,7 +326,7 @@ impl Interaction {
     /// Start of every call: the world follows the session, drafts die with a tool change.
     fn begin(&mut self, s: &mut Session, _out: &mut Outcome) {
         self.view.begin(&mut self.world, s);
-        self.sync_crop(s);
+        self.sync_editors(s);
         self.world.sync(s);
         let active = s.tool.active;
         if active != self.last_tool {
@@ -326,7 +340,7 @@ impl Interaction {
     /// when the scene or the camera moved under it.
     fn finish(&mut self, s: &mut Session, now_ms: f64, out: &mut Outcome) {
         self.view.report(&self.world, s, now_ms, false, out);
-        self.sync_crop(s);
+        self.sync_editors(s);
         self.world.sync(s);
         let key = (s.store().revision(), self.world.viewport.camera());
         if self.refreshed != Some(key) {
@@ -342,10 +356,13 @@ impl Interaction {
         }
     }
 
-    /// The crop editor follows the session, and its window stands in for the selection's frame while it is open.
-    fn sync_crop(&mut self, s: &Session) {
+    /// The editors follow the session. The crop editor's window stands in for the selection's frame while it is open,
+    /// and while the paint editor is open the picker finds only its image.
+    fn sync_editors(&mut self, s: &Session) {
         self.crop.sync(s);
         self.world.set_crop(self.crop.stage());
+        self.paint.sync(s);
+        self.world.set_paint(self.paint.stage());
     }
 
     fn pointer_moved(&mut self, s: &mut Session, p: &PointerEvent, out: &mut Outcome) {
@@ -353,6 +370,8 @@ impl Interaction {
         let (pos, mods, now) = (p.pos, p.modifiers, p.time_ms);
         if !matches!(s.tool.effective(), Tool::Select | Tool::Lasso | Tool::Hand) {
             self.with_ctx(s, out, now, mods, |cx, m| m.draw.pointer_moved(cx, pos, world));
+        } else if self.paint.is_open() {
+            self.with_ctx(s, out, now, mods, |cx, m| m.paint.hover(cx, world));
         }
     }
 
@@ -368,6 +387,7 @@ impl Interaction {
             m.select.cancel(cx);
             m.draw.cancel(cx);
             m.crop.cancel();
+            m.paint.cancel();
         });
         self.drag_owner = None;
         self.parts.clear_gesture();
@@ -383,7 +403,8 @@ impl Interaction {
         f: impl FnOnce(&mut Ctx<'_>, &mut Machines<'_>) -> R,
     ) -> R {
         let mut cx = Ctx { s, world: &self.world, parts: &mut self.parts, out, now_ms, mods };
-        let mut machines = Machines { select: &mut self.select, draw: &mut self.draw, crop: &mut self.crop };
+        let mut machines =
+            Machines { select: &mut self.select, draw: &mut self.draw, crop: &mut self.crop, paint: &mut self.paint };
         f(&mut cx, &mut machines)
     }
 
@@ -437,6 +458,7 @@ impl Interaction {
         // Only a click has a use for the link icon; a press, a drag or a menu on it is on empty space.
         let intent = icon_as_empty_space_unless_click(intent);
         let Some(intent) = self.crop_pointer(s, intent, now, out) else { return };
+        let Some(intent) = self.paint_pointer(s, intent, now, out) else { return };
         match intent {
             Intent::Press { at, target, meta } => {
                 let ev = Ev {
@@ -615,6 +637,65 @@ impl Interaction {
         }
     }
 
+    /// While the paint editor is open it owns the pointer. Returns the intent when it goes on to the normal
+    /// handling: any intent while the editor is closed, and a click outside the image, after the editor ended (the
+    /// click then selects what is under it).
+    fn paint_pointer(&mut self, s: &mut Session, intent: Intent, now: f64, out: &mut Outcome) -> Option<Intent> {
+        if !self.paint.is_open() {
+            return Some(intent);
+        }
+        match intent {
+            Intent::Press { .. }
+            | Intent::DoubleClick { .. }
+            | Intent::LongPress { .. }
+            | Intent::ContextMenu { .. } => None,
+            Intent::Click { at, target, meta } => {
+                let ev = Ev {
+                    origin: at,
+                    at,
+                    delta_screen: Default::default(),
+                    delta_world: Default::default(),
+                    target: &target,
+                    meta: &meta,
+                };
+                let outside = self.with_ctx(s, out, now, meta.modifiers, |cx, m| {
+                    let outside = m.paint.click(cx, &ev);
+                    if outside {
+                        // The press that began this click was ours; the select tool did not see it.
+                        m.select.press(cx, &ev);
+                    }
+                    outside
+                });
+                outside.then_some(Intent::Click { at, target, meta })
+            }
+            Intent::DragStart { origin, at, target, meta } => {
+                self.drag_owner = None;
+                let ev = Ev {
+                    origin,
+                    at,
+                    delta_screen: at.screen - origin.screen,
+                    delta_world: at.world - origin.world,
+                    target: &target,
+                    meta: &meta,
+                };
+                self.with_ctx(s, out, now, meta.modifiers, |cx, m| m.paint.drag_start(cx, &ev));
+                None
+            }
+            Intent::DragUpdate { origin, at, delta_screen, delta_world, target, meta } => {
+                let ev = Ev { origin, at, delta_screen, delta_world, target: &target, meta: &meta };
+                self.with_ctx(s, out, now, meta.modifiers, |cx, m| m.paint.drag_update(cx, &ev));
+                None
+            }
+            Intent::DragEnd { origin, at, delta_screen, delta_world, target, cancelled, meta } => {
+                let ev = Ev { origin, at, delta_screen, delta_world, target: &target, meta: &meta };
+                self.with_ctx(s, out, now, meta.modifiers, |cx, m| m.paint.drag_end(cx, &ev, cancelled));
+                out.redraw_at_least(Redraw::Overlay);
+                None
+            }
+            other => Some(other),
+        }
+    }
+
     /// A right click (or a long press): select what is under the pointer when it is not selected, then ask
     /// the shell for the menu.
     #[allow(clippy::too_many_arguments)]
@@ -666,6 +747,7 @@ pub(crate) struct Machines<'a> {
     pub(crate) select: &'a mut SelectTool,
     pub(crate) draw: &'a mut DrawTools,
     pub(crate) crop: &'a mut CropTool,
+    pub(crate) paint: &'a mut PaintTool,
 }
 
 /// Which machine handles a press or a drag that starts on `target`.

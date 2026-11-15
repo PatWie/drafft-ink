@@ -150,7 +150,7 @@ pub struct CancelArgs {
 pub struct CancelOut {
     /// False when no rung applied (a stray Esc).
     pub changed: bool,
-    /// The rungs that ran, in order: `gesture`, `text_edit`, `crop_editor`, `point_editor`, `group`, `selection`, `tool`.
+    /// The rungs that ran, in order: `gesture`, `text_edit`, `crop_editor`, `paint_editor`, `point_editor`, `group`, `selection`, `tool`.
     pub rungs: Vec<&'static str>,
 }
 
@@ -195,6 +195,15 @@ fn cancel(s: &mut Session, a: CancelArgs) -> Result<CancelOut, Refusal> {
     if s.tab().observed.crop_editor.is_some() {
         s.tab_mut().observed.crop_editor = None;
         rungs.push("crop_editor");
+        if !a.all {
+            return Ok(finish(rungs));
+        }
+    }
+    // 3a. The paint editor closes. The strokes already painted are in the document; a stroke being dragged is dropped
+    //     by the interaction layer, which ends the editor itself on Esc (`interact::paint`).
+    if s.tab().observed.paint_editor.is_some() {
+        s.tab_mut().observed.paint_editor = None;
+        rungs.push("paint_editor");
         if !a.all {
             return Ok(finish(rungs));
         }

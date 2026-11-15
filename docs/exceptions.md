@@ -240,6 +240,18 @@ Rules that hold for all classes:
 | Cancel | A tool change, a change of the selection or a tab switch closes the editor (the session does it) and drops the draft. `tool.cancel` closes it too, without a commit. |
 | Test | `exception_E17_crop_equals_plain_command` (a resize and a pan end in the same document as the plain `image.crop` with the same crop and `bounds`), `exception_E17_a_rotated_mirrored_crop_equals_plain_command` (the same for a rotated, mirrored image, and the resize-only crop equals the plain command's default `follow_crop` box). |
 
+### E18 Paint editor strokes
+
+| | |
+|---|---|
+| Input | While the paint editor of an image is open (`image.paint_begin`: `B` with one image selected, the Edit picture button of the strip, or the context menu): press and drag on the image to paint a stroke with the session brush (`image.paint_brush`), or click for a dab. A pen's pressure narrows the brush. |
+| Class | B |
+| What happens | The interaction layer (`interact::paint`) owns the pointer while the editor is open, and only the image under edit can be picked. It converts every sample into pixels of the stored picture through `drafftink_edit::retouch::PictureSpace` (the same box, crop, rotation and mirroring rules as the crop editor), so a stroke lands where the user saw the pointer on a rotated, mirrored or cropped image. Samples closer than half a screen pixel to the last one are skipped, a stroke holds at most 5000 samples, and the pen's pressure per sample comes from `edit::brush::StrokeSampler` as for a freehand stroke. The document does not change: the overlay draws the image with the draft stroke already in its paint (`InteractionOverlay::paint`), the rest of the canvas dimmed, and the brush ring (`EraserRing`) at the pointer. The draft is simplified with `edit::create::simplify_stroke` (a tolerance of 5 % of the brush size, at least a quarter pixel) every time it is drawn, so what the overlay shows is the stroke that is stored. |
+| Reason | A stroke is a preview until the pointer is released, as a drawn shape is (E6, E7). A command per pointer event would put an undo step and a CRDT delta in the history for every sample, and collaborators would see half a stroke. A gesture frame per event is not needed: nothing else reacts to the draft. |
+| Final state | `image.paint { id, strokes: [{mode, color, size, hardness, opacity, points, pressures}] }`, run once when the pointer is released (a click: a stroke of one point). One stroke is one undo step. The editor stays open for the next stroke. |
+| Cancel | `Esc` during a drag (a second finger, window blur) drops the stroke and leaves the editor open. `Enter`, `Esc` with no drag running and a click outside the image end the editor with `image.paint_end` (the click goes on to the select tool and selects what is under it); a tool change, a change of the selection or a tab switch closes it through the session. `tool.cancel` closes it too (rung `paint_editor`). |
+| Test | `exception_E18_paint_equals_plain_command` (a drag ends in the same document, the same stroke and the same ring arguments as the plain `image.paint` with the points the drag stored), `exception_E18_a_rotated_mirrored_cropped_stroke_equals_plain_command` (the same for a turned, mirrored and cropped image). |
+
 ## 3. Things that look like exceptions but are commands
 
 | Input | Why it is not an exception |

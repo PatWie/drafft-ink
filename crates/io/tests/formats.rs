@@ -126,7 +126,13 @@ fn sample() -> Document {
     d.files.insert(fid.clone(), entry);
     let mut img = Element::new(
         eid("img"),
-        ElementKind::Image(ImageData { file_id: Some(fid), natural_width: 4, natural_height: 3, crop: None }),
+        ElementKind::Image(ImageData {
+            file_id: Some(fid),
+            natural_width: 4,
+            natural_height: 3,
+            crop: None,
+            paint: Default::default(),
+        }),
         ZIndex::first(),
     )
     .with_bounds(300.0, 100.0, 40.0, 30.0);
@@ -139,6 +145,7 @@ fn sample() -> Document {
             natural_width: 1,
             natural_height: 1,
             crop: None,
+            paint: Default::default(),
         }),
         ZIndex::first(),
     )
@@ -369,6 +376,42 @@ fn svg_writes_an_outline_for_a_picture_only_when_it_has_a_stroke() {
     d.elements[at].style.stroke_style = StrokeStyle::Dashed;
     let outlined = export_svg(&d, &SvgOptions::default(), &EstimateMeasure, None).unwrap();
     assert_eq!(strokes_of(&outlined, "img"), [("#ff0000".to_owned(), Some("8 4".to_owned()))]);
+}
+
+#[test]
+fn svg_clips_a_rounded_picture_in_its_own_frame_and_rounds_its_outline() {
+    let mut d = sample();
+    let at = d.elements.iter().position(|e| e.id.as_str() == "img").unwrap();
+    let (w, h) = (d.elements[at].transform.w, d.elements[at].transform.h);
+    let plain = export_svg(&d, &SvgOptions::default(), &EstimateMeasure, None).unwrap();
+    assert!(!plain.contains("clip-img-"), "a sharp picture has no clip");
+
+    d.elements[at].style.corner_radius = 1.0e6; // more than the box holds: held to half the shorter side
+    d.elements[at].style.stroke_color = Color::rgb(255, 0, 0);
+    d.elements[at].style.stroke_width = 2.0;
+    let svg = export_svg(&d, &SvgOptions::default(), &EstimateMeasure, None).unwrap();
+    let doc = parse(&svg);
+    let half = w.min(h) / 2.0;
+    let clip = doc.descendants().find(|n| n.attribute("id") == Some("clip-img-img")).expect("a clip for the picture");
+    assert_eq!(clip.tag_name().name(), "clipPath");
+    let rect = clip.children().find(|n| n.tag_name().name() == "rect").expect("a rounded rect");
+    let num = |n: &roxmltree::Node, a: &str| n.attribute(a).unwrap().parse::<f64>().unwrap();
+    assert_eq!((num(&rect, "width"), num(&rect, "height"), num(&rect, "rx")), (w, h, half));
+    // The clip sits on a group outside the mirror and inside the element's own group, so it is in the local frame
+    // and turns with the element, and the mirrored picture is cut from the same box.
+    let group = doc.descendants().find(|n| n.attribute("id") == Some("e-img")).unwrap();
+    let clipped = group
+        .children()
+        .find(|n| n.attribute("clip-path") == Some("url(#clip-img-img)"))
+        .expect("the picture is under the clip");
+    assert!(clipped.attribute("transform").is_none(), "the clip group itself is not mirrored");
+    assert!(clipped.descendants().any(|n| n.attribute("transform").is_some_and(|t| t.contains("scale(-1 1)"))));
+    assert!(clipped.descendants().any(|n| n.tag_name().name() == "image"));
+    // The outline follows the same rounding and is not inside the clip.
+    let outline = group.children().find(|n| n.tag_name().name() == "rect" && n.attribute("stroke").is_some());
+    let outline = outline.expect("the outline is a rect of the element");
+    assert_eq!(num(&outline, "rx"), half);
+    assert!(clipped.descendants().all(|n| n.attribute("stroke").is_none()));
 }
 
 #[test]
@@ -990,4 +1033,86 @@ fn svg_cuts_a_hand_drawn_line_too() {
     assert_eq!(dark_in(&cut, 167.0, 233.0, 20.0, 80.0), 0, "and is gone behind the label");
     assert!(dark_in(&cut, 30.0, 160.0, 20.0, 80.0) > 300);
     assert!(dark_in(&cut, 240.0, 340.0, 20.0, 80.0) > 300);
+}
+
+// ---- paint on pictures ----
+
+/// The decoded pictures embedded in an SVG, in document order.
+fn embedded_pictures(svg: &str) -> Vec<image::RgbaImage> {
+    use base64::Engine as _;
+    let doc = parse(svg);
+    doc.descendants()
+        .filter(|n| n.tag_name().name() == "image")
+        .filter_map(|n| n.attribute("href"))
+        .filter_map(|h| h.strip_prefix("data:image/png;base64,"))
+        .map(|b| {
+            let bytes = base64::engine::general_purpose::STANDARD.decode(b).unwrap();
+            image::load_from_memory_with_format(&bytes, image::ImageFormat::Png).unwrap().to_rgba8()
+        })
+        .collect()
+}
+
+/// The sample with a red dab at (3, 2) of its 4 x 3 picture.
+fn painted_sample() -> Document {
+    let mut d = sample();
+    let img = d.elements.iter_mut().find(|e| e.id.as_str() == "img").unwrap();
+    let ElementKind::Image(data) = &mut img.kind else { panic!("the sample has an image") };
+    data.paint.insert(
+        drafftink_scene::StrokeId::new("000001-t").unwrap(),
+        drafftink_scene::PaintStroke {
+            mode: drafftink_scene::PaintMode::Paint,
+            color: Color::rgb(255, 0, 0),
+            size: 1.5,
+            hardness: 1.0,
+            opacity: 1.0,
+            points: vec![Point::new(3.5, 2.5)],
+            pressures: Vec::new(),
+        },
+    );
+    d
+}
+
+#[test]
+fn svg_embeds_a_painted_picture_with_its_paint_and_an_unpainted_one_as_before() {
+    let options = SvgOptions { embed_scene: false, ..SvgOptions::default() };
+    let plain = export_svg(&sample(), &options, &EstimateMeasure, None).unwrap();
+    let painted = export_svg(&painted_sample(), &options, &EstimateMeasure, None).unwrap();
+    assert_ne!(plain, painted, "paint changes the export");
+
+    // Without paint the picture is the stored file, byte for byte.
+    let original = png_bytes(4, 3);
+    let stored = {
+        use base64::Engine as _;
+        base64::engine::general_purpose::STANDARD.encode(&original)
+    };
+    assert!(plain.contains(&format!("data:image/png;base64,{stored}")));
+    assert!(!painted.contains(&stored), "the painted picture is a new PNG");
+
+    let pictures = embedded_pictures(&painted);
+    assert_eq!(pictures.len(), 1);
+    let baked = &pictures[0];
+    assert_eq!(baked.dimensions(), (4, 3));
+    assert_eq!(*baked.get_pixel(3, 2), image::Rgba([255, 0, 0, 255]));
+    assert_eq!(*baked.get_pixel(0, 0), image::Rgba([200, 200, 200, 200]), "the other pixels are the original");
+}
+
+#[test]
+fn svg_keeps_paint_and_crop_together_and_the_scene_keeps_the_strokes() {
+    let mut d = painted_sample();
+    let img = d.elements.iter_mut().find(|e| e.id.as_str() == "img").unwrap();
+    let ElementKind::Image(data) = &mut img.kind else { panic!("the sample has an image") };
+    data.crop = Some(drafftink_scene::Crop { x: 1.0, y: 0.5, width: 2.0, height: 1.5 });
+    let svg = export_svg(&d, &SvgOptions::default(), &EstimateMeasure, None).unwrap();
+    let doc = parse(&svg);
+    let nested = doc
+        .descendants()
+        .find(|n| n.tag_name().name() == "svg" && n.attribute("viewBox") == Some("1 0.5 2 1.5"))
+        .expect("the crop is a nested viewport over the whole baked picture");
+    assert!(nested.children().any(|n| n.tag_name().name() == "image"));
+    // The embedded scene is the native JSON: the strokes survive a re-import of the SVG.
+    let back = native::load(&svg::extract_scene(&svg).unwrap().expect("the scene is embedded")).unwrap();
+    let ElementKind::Image(data) = &back.elements.iter().find(|e| e.id.as_str() == "img").unwrap().kind else {
+        panic!("an image")
+    };
+    assert_eq!(data.paint.len(), 1);
 }

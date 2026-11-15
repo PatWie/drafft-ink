@@ -12,7 +12,7 @@ use drafftink_geom::kurbo::{Affine, Rect, Size, Vec2};
 use drafftink_gpu::BackendKind;
 use drafftink_render::{
     CropHandleSize, FrameReport, GridSpec, GridStyle, LodConfig, Overlay, OverlayStyle, PaintIndex, RenderOptions,
-    Scene, SceneComposer, Theme, View, build_paint_index, paint_crop_chrome, paint_crop_dim, paint_overlay,
+    Scene, SceneComposer, Theme, View, build_paint_index, fill_veil, paint_crop_chrome, paint_crop_dim, paint_overlay,
 };
 use drafftink_scene::{Element, ElementId, Kind, SceneRead};
 
@@ -197,6 +197,15 @@ impl CanvasView {
                 .with(|ts| composer.compose_transient(store, std::slice::from_ref(&crop.shown), view, ts, preview));
             let size = crop_handle_size(crop.pointer);
             paint_crop_chrome(preview, view, *theme, &crop.window, &crop.picture, crop.grid, size);
+        }
+        // The paint editor veils the rest of the canvas and draws its picture, with the draft stroke on it, over the
+        // veil. The picture is left out of the scene (`App::paint_canvas` hides it), so nothing is drawn twice.
+        if let Some(paint) = &interaction.paint {
+            if paint.veil {
+                fill_veil(preview, view, *theme, composer.background(store));
+            }
+            typesetter
+                .with(|ts| composer.compose_transient(store, std::slice::from_ref(&paint.shown), view, ts, preview));
         }
         if let Some(el) = &interaction.preview {
             typesetter.with(|ts| composer.compose_transient(store, std::slice::from_ref(el), view, ts, preview));

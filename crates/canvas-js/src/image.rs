@@ -103,6 +103,7 @@ pub(crate) fn insert<T: SceneTx>(tx: &mut T, cx: &mut OpCx<'_>, picture: Prepare
         natural_width: natural.0,
         natural_height: natural.1,
         crop: None,
+        paint: Default::default(),
     });
     let mut element = Element::new(id.clone(), kind, z);
     element.transform = Transform::new(at.0, at.1, size.0, size.1);

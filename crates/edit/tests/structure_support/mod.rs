@@ -43,7 +43,7 @@ pub fn label(name: &str, container: &str, x: f64, y: f64, w: f64, h: f64) -> Ele
 }
 
 pub fn image(name: &str, x: f64, y: f64, w: f64, h: f64) -> Element {
-    let d = ImageData { file_id: None, natural_width: 100, natural_height: 50, crop: None };
+    let d = ImageData { file_id: None, natural_width: 100, natural_height: 50, crop: None, paint: Default::default() };
     Element::new(id(name), ElementKind::Image(d), placeholder()).with_bounds(x, y, w, h)
 }
 

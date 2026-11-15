@@ -48,6 +48,8 @@ pub enum PopoverKey {
     Fill,
     /// The background button.
     Background,
+    /// The wheel of the brush colour in the paint editor.
+    Brush,
     /// The font family button.
     Font,
 }
@@ -58,6 +60,7 @@ impl PopoverKey {
             ColorTarget::Stroke => Self::Stroke,
             ColorTarget::Fill => Self::Fill,
             ColorTarget::Background => Self::Background,
+            ColorTarget::Brush => Self::Brush,
         }
     }
 }
@@ -93,12 +96,12 @@ fn popover_area(ctx: &Context, chrome: &ChromeRects, id: Id, key: PopoverKey) ->
     let screen = ctx.content_rect();
     let under_strip = chrome.below_strip(screen) + GAP;
     match (anchor_of(ctx, key), key) {
-        (Some(r), PopoverKey::Stroke | PopoverKey::Fill) => {
+        (Some(r), PopoverKey::Stroke | PopoverKey::Fill | PopoverKey::Brush) => {
             area.pivot(Align2::LEFT_TOP).fixed_pos(r.left_bottom() + vec2(0.0, GAP))
         }
         (Some(r), PopoverKey::Background) => area.pivot(Align2::LEFT_BOTTOM).fixed_pos(r.left_top() - vec2(0.0, GAP)),
         (Some(r), PopoverKey::Font) => area.pivot(Align2::LEFT_TOP).fixed_pos(r.left_bottom() + vec2(0.0, GAP)),
-        (None, PopoverKey::Stroke | PopoverKey::Fill) => {
+        (None, PopoverKey::Stroke | PopoverKey::Fill | PopoverKey::Brush) => {
             area.pivot(Align2::CENTER_TOP).fixed_pos(pos2(screen.center().x, under_strip))
         }
         (None, PopoverKey::Background) => area
@@ -148,6 +151,7 @@ pub(crate) fn pick_command(target: ColorTarget, pick: &Pick) -> (&'static str, V
             ("style.set", json!({ "props": { "fill_color": value } }))
         }
         ColorTarget::Background => ("doc.set_background", json!({ "color": text })),
+        ColorTarget::Brush => ("image.paint_brush", json!({ "color": text })),
     }
 }
 
@@ -178,6 +182,7 @@ fn current(model: &Model, target: ColorTarget) -> Option<Option<Color>> {
             _ => None,
         },
         ColorTarget::Background => Color::parse(&model.background).ok().map(Some),
+        ColorTarget::Brush => Some(Some(model.brush.color)),
     }
 }
 
@@ -302,9 +307,14 @@ fn color_popover(ctx: &Context, cx: &mut Cx<'_>, chrome: &ChromeRects, target: C
     let pal = cx.pal;
     let key = PopoverKey::of(target);
     let now = current(cx.model, target);
-    let dark = pal.dark;
+    // The colours of the picture are not mapped for the dark theme: the brush's swatches are what they say.
+    let dark = pal.dark && target.is_themed();
     let mode = PickerMode::of_model(cx.model);
-    let quick = quick_column(dark);
+    let mut quick = quick_column(dark);
+    if target == ColorTarget::Brush {
+        // A brush has a colour; "none" would paint nothing (erasing is the other mode).
+        quick.remove(0);
+    }
     let screen = ctx.content_rect();
     let max_w = (screen.width() - 2.0 * MARGIN - 24.0).max(120.0);
     let max_h = (screen.height() - 2.0 * MARGIN - GRID_CHROME).max(80.0);
@@ -321,6 +331,7 @@ fn color_popover(ctx: &Context, cx: &mut Cx<'_>, chrome: &ChromeRects, target: C
                 ColorTarget::Stroke => "Stroke colour",
                 ColorTarget::Fill => "Fill colour",
                 ColorTarget::Background => "Background colour",
+                ColorTarget::Brush => "Brush colour",
             };
             ui.label(RichText::new(title).font(TextSize::Label.hand()).color(pal.muted));
             ui.add_space(4.0);
@@ -409,7 +420,7 @@ fn hex_row(
         match parse_hex(&draft.text) {
             Ok(color) => {
                 // The typed colour is the one to see on the canvas; the document holds the colour that draws it.
-                let pick = Pick::Color(colors::stored(color, pal.dark).to_hex());
+                let pick = Pick::Color(colors::stored(color, pal.dark && target.is_themed()).to_hex());
                 let (id, args) = pick_command(target, &pick);
                 cx.run(id, args);
                 applied = Some(pick);
@@ -489,7 +500,7 @@ pub fn show(ctx: &Context, cx: &mut Cx<'_>, st: &mut UiState) {
         }
         None => ctx.data_mut(|d| {
             d.remove_temp::<HexDraft>(Id::unique("color_hex_draft"));
-            for target in [ColorTarget::Stroke, ColorTarget::Fill, ColorTarget::Background] {
+            for target in [ColorTarget::Stroke, ColorTarget::Fill, ColorTarget::Background, ColorTarget::Brush] {
                 d.remove_temp::<custom::Working>(Id::unique(("color_custom", target)));
             }
         }),

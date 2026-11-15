@@ -491,3 +491,82 @@ fn damaged_and_cut_svg_never_panic() {
         let _ = picture::prepare(good[..i].to_vec(), true);
     }
 }
+
+// ---- painted pictures ----
+
+fn dab(x: f64, y: f64, size: f64, mode: drafftink_scene::PaintMode) -> drafftink_scene::PaintStroke {
+    drafftink_scene::PaintStroke {
+        mode,
+        color: drafftink_scene::Color::rgb(255, 0, 0),
+        size,
+        hardness: 1.0,
+        opacity: 1.0,
+        points: vec![kurbo::Point::new(x, y)],
+        pressures: Vec::new(),
+    }
+}
+
+fn paint_of(strokes: Vec<drafftink_scene::PaintStroke>) -> drafftink_scene::Paint {
+    strokes
+        .into_iter()
+        .enumerate()
+        .map(|(i, s)| (drafftink_scene::StrokeId::new(&format!("{:06}-t", i + 1)).unwrap(), s))
+        .collect()
+}
+
+#[test]
+fn baked_png_paints_the_stroke_and_keeps_every_other_pixel() {
+    let original = RgbaImage::from_pixel(20, 20, BLUE);
+    let paint = paint_of(vec![dab(10.0, 10.0, 6.0, drafftink_scene::PaintMode::Paint)]);
+    let out = picture::baked_png(&png_of(&original), (20, 20), &paint).unwrap();
+    let baked = image::load_from_memory_with_format(&out, ImageFormat::Png).unwrap().to_rgba8();
+    assert_eq!(baked.dimensions(), (20, 20));
+    assert_eq!(*baked.get_pixel(10, 10), RED);
+    assert_eq!(*baked.get_pixel(1, 1), BLUE);
+    assert_eq!(*baked.get_pixel(18, 3), BLUE);
+}
+
+#[test]
+fn baked_png_erase_gives_the_picture_back_and_jpeg_input_is_read() {
+    let original = RgbaImage::from_pixel(20, 20, BLUE);
+    let paint = paint_of(vec![
+        dab(10.0, 10.0, 6.0, drafftink_scene::PaintMode::Paint),
+        dab(10.0, 10.0, 30.0, drafftink_scene::PaintMode::Erase),
+    ]);
+    let out = picture::baked_png(&png_of(&original), (20, 20), &paint).unwrap();
+    let baked = image::load_from_memory_with_format(&out, ImageFormat::Png).unwrap().to_rgba8();
+    assert_eq!(baked, original);
+
+    let mut jpeg = Cursor::new(Vec::new());
+    image::DynamicImage::ImageRgba8(original).to_rgb8().write_to(&mut jpeg, ImageFormat::Jpeg).unwrap();
+    let paint = paint_of(vec![dab(10.0, 10.0, 8.0, drafftink_scene::PaintMode::Paint)]);
+    let out = picture::baked_png(jpeg.get_ref(), (20, 20), &paint).unwrap();
+    let baked = image::load_from_memory_with_format(&out, ImageFormat::Png).unwrap().to_rgba8();
+    assert_eq!(*baked.get_pixel(10, 10), RED);
+}
+
+#[test]
+fn baked_png_scales_strokes_to_a_picture_stored_at_another_size() {
+    // The element says the picture is 10x10 pixels, the file has 20x20: stroke coordinates double.
+    let original = RgbaImage::from_pixel(20, 20, BLUE);
+    let paint = paint_of(vec![dab(5.0, 5.0, 2.0, drafftink_scene::PaintMode::Paint)]);
+    let out = picture::baked_png(&png_of(&original), (10, 10), &paint).unwrap();
+    let baked = image::load_from_memory_with_format(&out, ImageFormat::Png).unwrap().to_rgba8();
+    assert_eq!(*baked.get_pixel(10, 10), RED);
+    assert_eq!(*baked.get_pixel(5, 5), BLUE);
+}
+
+#[test]
+fn baked_png_refuses_what_is_not_a_picture_and_survives_hostile_strokes() {
+    let paint = paint_of(vec![dab(1.0, 1.0, 2.0, drafftink_scene::PaintMode::Paint)]);
+    assert!(picture::baked_png(b"not a picture", (4, 4), &paint).is_err());
+    let mut hostile = dab(f64::NAN, f64::INFINITY, f64::NAN, drafftink_scene::PaintMode::Paint);
+    hostile.points.push(kurbo::Point::new(1e300, -1e300));
+    hostile.pressures = vec![f64::NAN];
+    let original = png_of(&RgbaImage::from_pixel(8, 8, BLUE));
+    let out = picture::baked_png(&original, (8, 8), &paint_of(vec![hostile])).unwrap();
+    let baked = image::load_from_memory_with_format(&out, ImageFormat::Png).unwrap().to_rgba8();
+    assert_eq!(baked, RgbaImage::from_pixel(8, 8, BLUE), "strokes that cannot be drawn change nothing");
+    // A zero stored size must not divide by zero.
+    assert!(picture::baked_png(&original, (0, 0), &paint).is_ok());
+}

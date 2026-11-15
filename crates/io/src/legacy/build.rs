@@ -341,7 +341,13 @@ impl Builder<'_> {
                 }
             }
         }
-        let data = ImageData { file_id, natural_width: i.source_w, natural_height: i.source_h, crop: None };
+        let data = ImageData {
+            file_id,
+            natural_width: i.source_w,
+            natural_height: i.source_h,
+            crop: None,
+            paint: Default::default(),
+        };
         let id = self.element_id(s.id.as_deref());
         let mut e = Element::new(id, ElementKind::Image(data), ZIndex::first());
         e.transform = boxed(i.pos.x, i.pos.y, i.w, i.h, i.rotation);

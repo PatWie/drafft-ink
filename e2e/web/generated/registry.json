@@ -1,5 +1,5 @@
 {
- "count": 161,
+ "count": 166,
  "families": [
   "arrange",
   "arrow",
@@ -120,7 +120,12 @@
   "image.crop_begin",
   "image.crop_end",
   "image.insert",
+  "image.paint",
+  "image.paint_begin",
+  "image.paint_brush",
+  "image.paint_end",
   "image.reset_crop",
+  "image.reset_paint",
   "layout.apply",
   "library.add",
   "library.export",

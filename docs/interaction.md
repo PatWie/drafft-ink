@@ -75,6 +75,7 @@ A tool change drops drafts and previews. A gesture that disappeared (`tool.cance
 | Double-click a line | `arrow.edit_points` | |
 | Double-click an image, or `Enter` with one image selected (`Interaction::key`) | `image.crop_begin {id}`: the crop editor opens (below) | E17 |
 | Double-click the name label of a frame (the strip above its top-left corner, as wide as the name; `select/frame_title.rs`) | `selection.select` of the frame and `OpenFrameNameEditor`: the UI opens a field over the label (`ui.md` 3), which ends in `frame.rename`. An element over the label keeps the double-click | |
+| `B` with one image selected (a key binding of `image.paint_begin`, not the layer) | the paint editor opens (below) | E18 |
 | Double-click empty canvas, also the inside of a frame | `text.edit_begin {at}` and `OpenTextEditor` | |
 | Click on the link icon of an element that is not selected (select tool; the icon sits beside the top-right corner, `edit::link::icon_rect`) | runs `element.open_link` for that element and does not select anything. A web link comes back as `UiRequest::OpenUrl { url }` for the shell to open; an element link has moved the view and selected the target; an unsafe stored link is a refusal toast | Excalidraw `hitLinkElement`, `isPointHittingLink` |
 | Right click, long press | selects what is under the pointer when it is not selected, then `OpenContextMenu`. When the topmost thing under the pointer is a locked element (the normal hit test skips it, so the pointer is over "nothing" or over something behind it), nothing is selected and the request is `OpenContextMenu { target: Locked { element } }`, so that the menu can offer Unlock (`element.unlock_all` with that id). Clicks, marquees and drags still skip locked elements. | Excalidraw `handleCanvasContextMenu` (`includeLockedElements`) |
@@ -93,9 +94,27 @@ While `image.crop_begin` has opened the editor (`Observed::crop_editor`), the cr
 | Click inside the window, press, double-click, right click | nothing | |
 | A tool change, another selection, a tab switch | the session closes the editor; the draft is dropped | |
 
-The overlay (`InteractionOverlay::crop`) carries the whole picture (drawn faded), the draft image (drawn over it), the window, the picture's outline, whether a drag runs (the shell then lays a rule-of-thirds grid over the window) and the pointer used last (a finger or a pen gets larger brackets and bars, and a pen grabs them from as far as a finger). The scene leaves out the real image while the editor draws its own.
+The overlay (`InteractionOverlay::crop`) carries the whole picture (drawn faded), the draft image (drawn over it), the window, the picture's outline, whether a drag runs (the shell then lays a rule-of-thirds grid over the window) and the pointer used last (a finger or a pen gets larger brackets and bars, and a pen grabs them from as far as a finger). The scene leaves out the real image while the editor draws its own. A rounded image is drawn square there (the draft and the whole picture have radius 0, the window is a rectangle); the radius stays on the element and the commit does not touch it.
 
 Cursors in the editor: over a handle the resize arrow of that handle, turned with the image (a rotated image turns the arrows; a flip changes nothing, the handles sit on the window); over the picture, also the dimmed part, the open hand, and the closed hand while the picture is slid; elsewhere the arrow.
+
+### Paint editor (class B: a draft stroke, one command per stroke)
+
+While `image.paint_begin` has opened the editor (`Observed::paint_editor`), the paint machine (`interact/paint.rs`) owns the pointer. It converts the pointer into pixels of the stored picture (`edit::retouch::PictureSpace`), so rotation, mirroring, crop and resize need no special case. The document does not change until the pointer is released. Only the image under edit is pickable: the picker answers with that image where the pointer is over its shown part and with empty space everywhere else, there are no handles, and the hover outline is off.
+
+| Input | Result | Row |
+|---|---|---|
+| Press and drag on the image | a draft stroke with the session brush (`ToolState::paint_brush`); a pen adds its pressure per sample; samples under half a screen pixel apart are skipped | E18 |
+| Release | one `image.paint {id, strokes: [stroke]}` with the stroke as the overlay showed it; the editor stays open | E18 |
+| Click on the image | a dab: one `image.paint` with a stroke of one point | E18 |
+| `Esc` during a drag | the stroke is dropped, nothing is stored; the editor stays open | |
+| `Enter`, `Esc` (no drag running) | `image.paint_end`. There is nothing to commit, the strokes are in the document | |
+| Click outside the image | `image.paint_end`, and the click goes on to the select tool, which selects what is under it | |
+| A drag that begins outside the image, press, double-click, right click | nothing | |
+| A tool change, another selection, a tab switch | the session closes the editor; a running stroke is dropped | |
+| `Mod+Z`, `Mod+Shift+Z` | take a stroke back or give it again; the editor stays open (the session keeps it through undo and redo while its image is selected) | |
+
+The overlay (`InteractionOverlay::paint`, a `PaintView`) carries the image as it is now with the draft stroke already in its paint (`shown`), and `veil`: the shell leaves the image out of the scene, lays a translucent theme veil over the rest of the canvas, and draws `shown` on top. The overlay has no selection frame, handles or hover outline of its own. The brush ring is `InteractionOverlay::eraser` (the eraser's ring): it follows the pointer while it is over the image (or a stroke runs) and goes when the pointer leaves the canvas. Its radius is the brush's in screen pixels (the brush diameter in picture pixels, times the canvas units per picture pixel, times the zoom). The cursor over the image is the crosshair, elsewhere the arrow.
 
 ### Drawing tools (class B: preview, one command at the end)
 

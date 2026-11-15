@@ -144,6 +144,19 @@ pub struct CropView {
     pub pointer: PointerKind,
 }
 
+/// What the paint editor shows: the image with the stroke being dragged already painted on it.
+#[derive(Debug, Clone, PartialEq)]
+pub struct PaintView {
+    /// The image being painted on. The scene leaves it out while the editor draws its own picture of it.
+    pub element: ElementId,
+    /// The image as it is now with the draft stroke added to its `paint`: draw it like any element, on top of the
+    /// veil. The stroke that is stored when the pointer is released is this same stroke.
+    pub shown: Element,
+    /// Everything else on the canvas is dimmed (a translucent theme veil) and cannot be picked while the editor is
+    /// open.
+    pub veil: bool,
+}
+
 /// Everything to draw above the scene for the current interaction.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct InteractionOverlay {
@@ -167,6 +180,9 @@ pub struct InteractionOverlay {
     /// The crop editor, while it is open. The overlay then has no selection box, handles or hover outline of its
     /// own: the window carries the handles.
     pub crop: Option<CropView>,
+    /// The paint editor, while it is open. The overlay then has no selection box, handles or hover outline of its
+    /// own. The brush ring is `eraser`.
+    pub paint: Option<PaintView>,
 }
 
 /// Builds the overlay from the parts, the selection and the hover.
@@ -176,10 +192,15 @@ pub(super) fn build(
     parts: &OverlayParts,
     hover: Option<&ElementId>,
     crop: Option<CropView>,
+    paint: Option<(PaintView, Option<EraserRing>)>,
 ) -> InteractionOverlay {
     if crop.is_some() {
         let canvas = Overlay { zoom: world.viewport.zoom(), ..Overlay::default() };
         return InteractionOverlay { canvas, crop, ..InteractionOverlay::default() };
+    }
+    if let Some((view, ring)) = paint {
+        let canvas = Overlay { zoom: world.viewport.zoom(), ..Overlay::default() };
+        return InteractionOverlay { canvas, eraser: ring, paint: Some(view), ..InteractionOverlay::default() };
     }
     let cfg = &world.config;
     let store = s.store();
@@ -243,5 +264,6 @@ pub(super) fn build(
         snap_point: parts.snap_point,
         eraser: parts.eraser,
         crop: None,
+        paint: None,
     }
 }

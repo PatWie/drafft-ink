@@ -916,7 +916,8 @@ fn apply_theme_to_a_locked_or_unsupporting_target_refuses_cleanly() {
             natural_width: 4,
             natural_height: 4,
             crop: None,
-        }),
+ paint: Default::default(),
+}),
         0.0,
         600.0,
         40.0,
@@ -1043,7 +1044,8 @@ fn add_image(f: &mut Fx) -> ElementId {
         natural_width: 4,
         natural_height: 4,
         crop: None,
-    });
+ paint: Default::default(),
+});
     testing::add(&mut f.s, kind, 0.0, 600.0, 40.0, 40.0).unwrap()
 }
 
@@ -1067,6 +1069,32 @@ fn an_image_can_have_no_stroke_because_it_shows_without_one() {
     // Undo brings the old outline back.
     run(&mut f.s, "history.undo", json!({}));
     assert_ne!(stroke_of(&f, &img), Color::TRANSPARENT);
+}
+
+#[test]
+fn the_corner_radius_applies_to_an_image_in_one_undo_step() {
+    let mut f = fixture();
+    let img = add_image(&mut f);
+    let ids = json!([img.as_str()]);
+    let got = run(&mut f.s, "style.get", json!({"ids": ids, "props": ["corner_radius"]}));
+    assert_eq!(got["props"]["corner_radius"]["value"], 0.0, "{got}");
+    let undo = f.s.tab().doc.undo_depth();
+    let out = run(&mut f.s, "style.set", json!({"ids": ids, "props": {"corner_radius": 12}}));
+    assert_eq!(out["changed"], true);
+    assert_eq!(out["applied"][img.as_str()], json!(["corner_radius"]));
+    assert_eq!(out["skipped"], json!([]), "an image is no longer skipped for the radius");
+    assert_eq!(el(&f.s, &img).style.corner_radius, 12.0);
+    assert_eq!(f.s.tab().doc.undo_depth(), undo + 1, "one undo step");
+    run(&mut f.s, "history.undo", json!({}));
+    assert_eq!(el(&f.s, &img).style.corner_radius, 0.0);
+    // Together with a rectangle and a text: the text alone is skipped.
+    testing::select(&mut f.s, &[img.clone(), f.rect.clone(), f.text.clone()]);
+    let out = run(&mut f.s, "style.set", json!({"props": {"corner_radius": 8}, "scope": "selection"}));
+    assert_eq!(out["applied"][img.as_str()], json!(["corner_radius"]));
+    assert_eq!(out["skipped"], json!([{"id": f.text.as_str(), "props": ["corner_radius"]}]));
+    // A refusal that names what takes a radius lists images.
+    let r = refuse_clean(&mut f.s, "style.set", json!({"ids": [f.text.as_str()], "props": {"corner_radius": 8}}));
+    assert!(r.message.contains("images"), "{}", r.message);
 }
 
 #[test]

@@ -18,11 +18,12 @@ mod controls;
 mod heads;
 mod layout;
 mod menus;
+mod paint;
 mod pictograms;
 
 use drafftink_engine::state::Tool;
 
-pub(crate) use self::controls::{MORE_BUTTON_WIDTH, more_button};
+pub(crate) use self::controls::{MORE_BUTTON_WIDTH, chip, more_button};
 pub(crate) use self::layout::{Widths, fit};
 pub(crate) use self::menus::{has_more as has_extras, show as show_menus};
 use crate::model::StyleProp;
@@ -54,6 +55,10 @@ fn tool_shows(tool: Tool, prop: &str) -> bool {
 /// Whether a property has a control now: the engine's `style.get` for a selection, the tool for new elements.
 fn shows(cx: &Cx<'_>, prop: &str) -> bool {
     let m = cx.model;
+    // The paint editor has the brush in place of the style of the selection (`Group::Paint`).
+    if m.paint_editing {
+        return false;
+    }
     if m.selection_count > 0 { m.style.applies(prop) } else { tool_shows(m.tool, prop) }
 }
 
@@ -98,10 +103,14 @@ enum Row {
     Compose,
     /// The link and delete.
     LinkDelete,
-    /// Crop the image, or finish cropping it.
-    Crop,
-    /// Show the whole picture of a cropped image again.
-    ResetCrop,
+    /// Crop the image or finish cropping it, and open the paint editor.
+    ImageEdit,
+    /// Show the whole picture of a cropped image again, and take the paint off it.
+    ImageReset,
+    /// The size and the hardness of the brush.
+    BrushShape,
+    /// The opacity of the brush, and Reset and Done.
+    BrushOpacityDone,
 }
 
 /// The groups of the strip, in the order they have from left to right. The order never changes; groups come and go.
@@ -127,13 +136,15 @@ pub(crate) enum Group {
     Layer,
     /// Duplicate, group, lock over link and delete.
     Actions,
-    /// Crop over reset crop: for one selected image.
+    /// Crop and edit picture over their resets: for one selected image.
     Image,
+    /// Size and hardness over opacity, Reset and Done: while the paint editor is open, instead of every other group.
+    Paint,
 }
 
 impl Group {
     /// Every group, in order.
-    pub(crate) const ALL: [Group; 11] = [
+    pub(crate) const ALL: [Group; 12] = [
         Group::Stroke,
         Group::Shape,
         Group::Arrow,
@@ -142,6 +153,7 @@ impl Group {
         Group::TextSize,
         Group::TextAlign,
         Group::Opacity,
+        Group::Paint,
         Group::Image,
         Group::Layer,
         Group::Actions,
@@ -151,6 +163,10 @@ impl Group {
     fn rows(self, cx: &Cx<'_>) -> Vec<Row> {
         let model = cx.model;
         let selected = model.selection_count > 0;
+        // The paint editor shows its own group only: the style rows would change the outline of the image.
+        if model.paint_editing {
+            return if self == Group::Paint { vec![Row::BrushShape, Row::BrushOpacityDone] } else { Vec::new() };
+        }
         let candidates: Vec<(Row, bool)> = match self {
             Group::Stroke => {
                 vec![(Row::Width, shows(cx, "stroke_width")), (Row::StrokeStyle, shows(cx, "stroke_style"))]
@@ -182,11 +198,13 @@ impl Group {
             }
             Group::Layer => vec![(Row::Layer, selected), (Row::Flip, selected)],
             Group::Actions => vec![(Row::Compose, selected), (Row::LinkDelete, selected)],
-            // One selected image offers the crop; the reset is there while the picture is cropped.
+            // One selected image offers the crop and the paint editor; the resets are there while the picture is
+            // cropped or has paint.
             Group::Image => vec![
-                (Row::Crop, model.crop_editing || cx.refusal("image.crop_begin").is_none()),
-                (Row::ResetCrop, cx.refusal("image.reset_crop").is_none()),
+                (Row::ImageEdit, controls::can_crop(cx) || controls::can_paint(cx)),
+                (Row::ImageReset, controls::can_reset_crop(cx) || controls::can_reset_paint(cx)),
             ],
+            Group::Paint => Vec::new(),
         };
         candidates.into_iter().filter_map(|(row, on)| on.then_some(row)).collect()
     }

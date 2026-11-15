@@ -306,6 +306,9 @@ fn parse_element(rd: Rd, ctx: &mut Ctx) -> Option<Draft> {
             let (sx, sy) = rd.get("scale").and_then(pair).map_or((1.0, 1.0), |[a, b]| (a, b));
             d.transform = Transform { angle, flip_x: sx < 0.0, flip_y: sy < 0.0, ..Transform::new(x, y, w, h) };
             d.kind = ElementKind::Image(parse_image(&rd, ctx, w, h)?);
+            if let Some(r) = rounding {
+                style.corner_radius = map::corner_radius(r, w.min(h));
+            }
         }
         "text" => {
             let (kind, transform, container, label_position) = parse_text(&rd, ctx, &note, angle);
@@ -499,7 +502,7 @@ fn parse_image(rd: &Rd, ctx: &mut Ctx, w: f64, h: f64) -> Option<ImageData> {
         let whole = x <= 1e-6 && y <= 1e-6 && x + cw >= f64::from(nw) - 1e-6 && y + ch >= f64::from(nh) - 1e-6;
         (ok && !whole).then_some(Crop { x, y, width: cw, height: ch })
     });
-    Some(ImageData { file_id: Some(file_id), natural_width: nw, natural_height: nh, crop })
+    Some(ImageData { file_id: Some(file_id), natural_width: nw, natural_height: nh, crop, paint: Default::default() })
 }
 
 fn parse_text(

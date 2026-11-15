@@ -115,15 +115,16 @@ impl Live {
         match target {
             ColorTarget::Stroke => Self::Gesture(ScrubControl::StrokeColor),
             ColorTarget::Fill => Self::Gesture(ScrubControl::FillColor),
-            ColorTarget::Background => Self::OnRelease,
+            // The brush has no style gesture: a pick is `image.paint_brush`, run once when the drag ends.
+            ColorTarget::Background | ColorTarget::Brush => Self::OnRelease,
         }
     }
 }
 
 /// True when the colour of the target has an alpha: the stroke and the fill do (`#rrggbbaa`, which the hex field also
-/// takes); the colour of the page is a solid one, and "None" is its clear choice.
+/// takes); the colour of the page is a solid one, and "None" is its clear choice. The brush has its own opacity.
 pub(super) fn has_alpha(target: ColorTarget) -> bool {
-    target != ColorTarget::Background
+    matches!(target, ColorTarget::Stroke | ColorTarget::Fill)
 }
 
 /// What the custom view tells the popover.
@@ -150,7 +151,8 @@ pub(super) fn show(
     hex: &mut HexDraft,
 ) -> Out {
     let pal = cx.pal;
-    let dark = pal.dark;
+    // The colours of a picture are not mapped for the dark theme (`ColorTarget::is_themed`).
+    let dark = pal.dark && target.is_themed();
     let touch = cx.layout.compact;
     let live = Live::of(target);
     let pointer_down = ui.input(|i| i.pointer.any_down());
@@ -292,7 +294,9 @@ pub(super) fn show(
             out.remember = Some(Pick::Color(stored));
         }
     });
-    if let Some(none) = quick_column(dark).first()
+    // A brush has a colour; "none" would paint nothing (erasing is the other mode).
+    if target.is_themed()
+        && let Some(none) = quick_column(dark).first()
         && cell(ui, cx, target, now, none).is_some()
     {
         out.close = true;

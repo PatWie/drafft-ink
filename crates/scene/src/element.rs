@@ -15,6 +15,7 @@ use serde::{Deserialize, Serialize};
 use smallvec::SmallVec;
 
 use crate::id::{ElementId, FileId, GroupId};
+use crate::paint::Paint;
 use crate::points::{pt, pts};
 use crate::style::{Style, TextStyle};
 use crate::{color::Color, zindex::ZIndex};
@@ -567,6 +568,16 @@ pub struct ImageData {
     /// Visible part of the picture. `None` shows all of it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub crop: Option<Crop>,
+    /// Brush strokes painted on the picture, in pixels of the stored picture. Empty shows the picture as it is.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub paint: Paint,
+}
+
+impl ImageData {
+    /// An image of the stored picture `file_id` (`natural_width` by `natural_height` pixels), shown whole and unpainted.
+    pub fn new(file_id: Option<FileId>, natural_width: u32, natural_height: u32) -> Self {
+        Self { file_id, natural_width, natural_height, crop: None, paint: Paint::new() }
+    }
 }
 
 /// Data of a frame.

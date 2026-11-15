@@ -85,6 +85,8 @@ pub enum Icon {
     Convert,
     Crop,
     CropReset,
+    EditPicture,
+    EditPictureReset,
     Brush,
     Save,
     Open,
@@ -450,6 +452,21 @@ pub fn paint(painter: &Painter, rect: Rect, icon: Icon, color: Color32) {
             pen.poly(&[(7.0, 3.0), (7.0, 17.0), (21.0, 17.0)], false);
             pen.poly(&[(3.0, 7.0), (17.0, 7.0), (17.0, 21.0)], false);
             pen.line((4.0, 20.0), (20.0, 4.0));
+        }
+        Icon::EditPicture => {
+            // A picture frame with a paintbrush laid across its top-right corner.
+            pen.poly(&[(13.5, 6.0), (4.5, 6.0), (4.5, 19.5), (18.0, 19.5), (18.0, 12.5)], false);
+            pen.line((20.5, 3.5), (13.0, 11.0));
+            pen.curve((13.0, 11.0), (10.5, 9.5), (8.0, 11.5), (7.5, 16.0));
+            pen.curve((7.5, 16.0), (12.0, 15.5), (14.5, 14.0), (13.0, 11.0));
+        }
+        Icon::EditPictureReset => {
+            // The same picture and brush, crossed out by a slash.
+            pen.poly(&[(13.5, 6.0), (4.5, 6.0), (4.5, 19.5), (18.0, 19.5), (18.0, 12.5)], false);
+            pen.line((20.5, 3.5), (13.0, 11.0));
+            pen.curve((13.0, 11.0), (10.5, 9.5), (8.0, 11.5), (7.5, 16.0));
+            pen.curve((7.5, 16.0), (12.0, 15.5), (14.5, 14.0), (13.0, 11.0));
+            pen.line((3.0, 21.0), (21.0, 3.0));
         }
         Icon::Image => {
             pen.rect(3.5, 5.0, 17.0, 14.0, 1.5);

@@ -49,7 +49,8 @@ fn move_and_recolor_of_one_element_both_survive() {
 fn pair_with_picture() -> (LoroStore, LoroStore) {
     let mut a = peer(1);
     let mut b = peer(2);
-    let data = ImageData { file_id: None, natural_width: 200, natural_height: 100, crop: None };
+    let data =
+        ImageData { file_id: None, natural_width: 200, natural_height: 100, crop: None, paint: Default::default() };
     let mut img = Element::new(eid("img"), ElementKind::Image(data), zs(1)[0].clone());
     img.transform = Transform::new(0.0, 0.0, 200.0, 100.0);
     add(&mut a, vec![img]);
@@ -734,4 +735,132 @@ proptest! {
             assert!(broken.is_empty(), "{}", broken.join("\n"));
         }
     }
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+// Paint on a picture
+
+fn brush_stroke(x: f64, y: f64, size: f64) -> PaintStroke {
+    PaintStroke {
+        mode: PaintMode::Paint,
+        color: red(),
+        size,
+        hardness: 0.75,
+        opacity: 0.5,
+        points: vec![Point::new(x, y), Point::new(x + 10.0, y + 4.5)],
+        pressures: vec![0.25, 1.0],
+    }
+}
+
+fn stroke_id(s: &str) -> StrokeId {
+    StrokeId::new(s).unwrap()
+}
+
+fn paint_of(s: &LoroStore) -> Paint {
+    s.get(&eid("img")).unwrap().image_data().unwrap().paint.clone()
+}
+
+/// Adds `stroke` to the picture `img` under `id`, as the paint command does.
+fn paint(s: &mut LoroStore, id: &str, stroke: PaintStroke) -> ChangeSet {
+    edit(s, "img", |e| {
+        if let ElementKind::Image(d) = &mut e.kind {
+            d.paint.insert(stroke_id(id), stroke);
+        }
+    })
+}
+
+#[test]
+fn a_stroke_on_a_picture_reaches_the_other_replica_whole_and_a_snapshot_keeps_it() {
+    let (mut a, mut b) = pair_with_picture();
+    let mut erase = brush_stroke(40.0, 40.0, 30.0);
+    erase.mode = PaintMode::Erase;
+    let cs = paint(&mut a, "000001-a", brush_stroke(5.0, 6.5, 12.0));
+    assert!(cs.get(&eid("img")).is_some());
+    paint(&mut a, "000002-a", erase.clone());
+    push(&a, &mut b);
+    assert_eq!(paint_of(&b), paint_of(&a));
+    let got = paint_of(&b);
+    assert_eq!(got.len(), 2);
+    assert_eq!(got[&stroke_id("000001-a")], brush_stroke(5.0, 6.5, 12.0), "every number, colour and pressure survives");
+    assert_eq!(got[&stroke_id("000002-a")].mode, PaintMode::Erase);
+    assert_same(&a, &b);
+    assert_view_matches_loro(&a);
+    assert_view_matches_loro(&b);
+    // A stroke without pressures stays without.
+    let mut plain = brush_stroke(1.0, 1.0, 4.0);
+    plain.pressures.clear();
+    paint(&mut b, "000003-b", plain.clone());
+    push(&b, &mut a);
+    assert_eq!(paint_of(&a)[&stroke_id("000003-b")], plain);
+}
+
+#[test]
+fn two_replicas_painting_different_strokes_on_one_picture_keep_both_in_order() {
+    let (mut a, mut b) = pair_with_picture();
+    paint(&mut a, "000001-a", brush_stroke(10.0, 10.0, 8.0));
+    sync(&mut a, &mut b);
+    // Both paint the next stroke while offline: the same sequence number, told apart by their tag.
+    paint(&mut a, "000002-a", brush_stroke(20.0, 20.0, 8.0));
+    paint(&mut b, "000002-b", brush_stroke(60.0, 60.0, 9.0));
+    sync(&mut a, &mut b);
+    assert_same(&a, &b);
+    for s in [&a, &b] {
+        let strokes = paint_of(s);
+        let keys: Vec<&str> = strokes.keys().map(StrokeId::as_str).collect();
+        assert_eq!(keys, ["000001-a", "000002-a", "000002-b"], "all three strokes, in one order on both sides");
+        assert_view_matches_loro(s);
+    }
+    // One replica paints a stroke inside a picture the other one cropped: both edits stay.
+    let crop = Crop { x: 50.0, y: 25.0, width: 100.0, height: 50.0 };
+    edit(&mut b, "img", |e| {
+        if let ElementKind::Image(d) = &mut e.kind {
+            d.crop = Some(crop.clone());
+        }
+    });
+    paint(&mut a, "000003-a", brush_stroke(70.0, 30.0, 5.0));
+    sync(&mut a, &mut b);
+    assert_same(&a, &b);
+    assert_eq!(crop_of(&a), Some(crop));
+    assert_eq!(paint_of(&a).len(), 4);
+}
+
+#[test]
+fn removing_one_stroke_does_not_bring_back_another_and_reset_removes_all_on_both_sides() {
+    let (mut a, mut b) = pair_with_picture();
+    paint(&mut a, "000001-a", brush_stroke(10.0, 10.0, 8.0));
+    paint(&mut a, "000002-a", brush_stroke(20.0, 20.0, 8.0));
+    sync(&mut a, &mut b);
+    // An undo of the last stroke on a: the other replica loses only that one.
+    edit(&mut a, "img", |e| {
+        if let ElementKind::Image(d) = &mut e.kind {
+            d.paint.remove(&stroke_id("000002-a"));
+        }
+    });
+    push(&a, &mut b);
+    let left = paint_of(&b);
+    assert_eq!(left.keys().map(StrokeId::as_str).collect::<Vec<_>>(), ["000001-a"]);
+    assert_same(&a, &b);
+
+    // b paints another stroke while a resets: the reset takes what a saw, and the new stroke is not lost silently
+    // or half-kept: both replicas end up with the same paint.
+    paint(&mut b, "000002-b", brush_stroke(30.0, 30.0, 8.0));
+    edit(&mut a, "img", |e| {
+        if let ElementKind::Image(d) = &mut e.kind {
+            d.paint.clear();
+        }
+    });
+    sync(&mut a, &mut b);
+    assert_same(&a, &b);
+    assert!(!paint_of(&a).contains_key(&stroke_id("000001-a")), "the stroke a reset is gone on both sides");
+    assert_view_matches_loro(&a);
+
+    // A reset that both sides see removes everything.
+    edit(&mut b, "img", |e| {
+        if let ElementKind::Image(d) = &mut e.kind {
+            d.paint.clear();
+        }
+    });
+    push(&b, &mut a);
+    assert!(paint_of(&a).is_empty() && paint_of(&b).is_empty());
+    assert_same(&a, &b);
 }

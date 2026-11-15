@@ -1028,6 +1028,7 @@ fn edit_points(s: &mut Session, a: EditPointsArgs) -> Result<EditPointsOut, Refu
         obs.selection.insert(id.clone());
         obs.selected_groups.clear();
         obs.crop_editor = None;
+        obs.paint_editor = None;
         obs.linear_editor = Some(ed);
     } else {
         obs.linear_editor = None;

@@ -4619,6 +4619,174 @@ export namespace ImageInsert {
   };
 }
 
+/** Paints brush strokes on an image, in pixels of the stored picture. The picture stays whole, so the paint can be erased or reset later. */
+export namespace ImagePaint {
+  /** #rrggbb, #rrggbbaa, #rgb, 'transparent', or a palette name '<family>-<shade>' such as 'blue-500' (22 Tailwind families, shades 25, 50, 100-900, 950). */
+  type A_ColorArg = string;
+  /** What a stroke does to the picture. */
+  type A_PaintMode = "paint" | "erase";
+  /** One brush stroke of `image.paint`. Coordinates and sizes are in pixels of the stored picture. */
+  type A_PaintStrokeArg = {
+    /**
+     * The colour: `#rrggbb`, `#rrggbbaa` or a palette name such as `red-600`. Its alpha multiplies `opacity`.
+     * An erase stroke ignores it. Default: the colour of the session brush.
+     */
+    color?: A_ColorArg | null;
+    /** 1 is a hard edge, towards 0 the edge fades over more of the radius. Default: the session brush. */
+    hardness?: number | null;
+    /**
+     * `paint` lays the colour over the picture; `erase` gives the original pixels back where the brush passes.
+     * Default: the mode of the session brush (`image.paint_brush`).
+     */
+    mode?: A_PaintMode | null;
+    /**
+     * How much of the picture the stroke covers, 0 (nothing) to 1 (all). The whole stroke has this opacity, so
+     * where it crosses itself it does not get darker. Default: the session brush.
+     */
+    opacity?: number | null;
+    /**
+     * Where the brush went, in pixels of the stored picture from its top-left corner (`natural_width` by
+     * `natural_height` of `element.query`). 1 to 10000 points; a single point is a dab.
+     */
+    points: [number, number][];
+    /** Pen pressure per point, 0 to 1: none, or one per point. The brush is narrower where the pressure is low. */
+    pressures?: number[];
+    /**
+     * The brush diameter at full pressure, 0.5 to 4096 picture pixels. Default: the size of the session brush
+     * (until a size is set, 1.5 % of the picture's longer side, from 4 to 200).
+     */
+    size?: number | null;
+  };
+  /** An element reference in arguments: an id, or `"@name"` for the name set with `element.set_name`. */
+  type A_Ref = string;
+  /** Arguments of `image.paint`. */
+  export type Args = {
+    /** The image: an id or `@name`. Default: the single selected element. */
+    id?: A_Ref | null;
+    /** The strokes to add, 1 to 64, applied in this order after the strokes the picture has. */
+    strokes?: A_PaintStrokeArg[];
+  };
+  /** Result of `image.paint`. */
+  export type Output = {
+    /** The ids of the strokes this call added, in order. */
+    added: string[];
+    /** True when the document changed. */
+    changed: boolean;
+    /** Ids of elements the command made. */
+    created?: string[];
+    /** Ids of elements the command removed. */
+    deleted?: string[];
+    /** The image. */
+    id: string;
+    /** How many strokes the image carries now. */
+    strokes: number;
+    /** The label of the undo step the command pushed. */
+    undo_label?: string;
+    /** Non-fatal notes. */
+    warnings?: string[];
+    [key: string]: unknown;
+  };
+}
+
+/** Opens the paint editor on an image: drag on the picture to paint with the session brush. */
+export namespace ImagePaintBegin {
+  /** An element reference in arguments: an id, or `"@name"` for the name set with `element.set_name`. */
+  type A_Ref = string;
+  /** Arguments of `image.paint_begin`. */
+  export type Args = {
+    /** The image: an id or `@name`. Default: the single selected element. It becomes the selection. */
+    id?: A_Ref | null;
+  };
+  /** Result of `image.paint_begin` and `image.paint_end`. */
+  export type Output = {
+    /** False when the editor was in this state already. */
+    changed: boolean;
+    /** Ids of elements the command made. */
+    created?: string[];
+    /** Ids of elements the command removed. */
+    deleted?: string[];
+    /** The image that is being painted on now; null when the editor is closed. */
+    id?: string | null;
+    /** The label of the undo step the command pushed. */
+    undo_label?: string;
+    /** Non-fatal notes. */
+    warnings?: string[];
+    [key: string]: unknown;
+  };
+}
+
+/** Sets the brush of the paint editor and the default of `image.paint`: colour, size, hardness, opacity and paint or erase. Without arguments it reports the brush. */
+export namespace ImagePaintBrush {
+  /** #rrggbb, #rrggbbaa, #rgb, 'transparent', or a palette name '<family>-<shade>' such as 'blue-500' (22 Tailwind families, shades 25, 50, 100-900, 950). */
+  type A_ColorArg = string;
+  /** What a stroke does to the picture. */
+  type A_PaintMode = "paint" | "erase";
+  /** Arguments of `image.paint_brush`. */
+  export type Args = {
+    /** The colour: `#rrggbb`, `#rrggbbaa` or a palette name such as `red-600`. */
+    color?: A_ColorArg | null;
+    /** 1 is a hard edge, 0 the softest. */
+    hardness?: number | null;
+    /** `paint` or `erase`. */
+    mode?: A_PaintMode | null;
+    /** 0 (clear) to 1 (solid). */
+    opacity?: number | null;
+    /** The diameter at full pressure, 0.5 to 4096 picture pixels. Once set it stays, whatever the picture. */
+    size?: number | null;
+  };
+  /** What a stroke does to the picture. */
+  type O_PaintMode = "paint" | "erase";
+  /** The session brush, as `image.paint_brush` reports it. */
+  export type Output = {
+    /** True when the command changed any state. */
+    changed?: boolean;
+    /** The colour as `#rrggbb` (or `#rrggbbaa`). */
+    color: string;
+    /** Ids of elements the command made. */
+    created?: string[];
+    /** Ids of elements the command removed. */
+    deleted?: string[];
+    /** 1 is a hard edge, 0 the softest. */
+    hardness: number;
+    /** `paint` or `erase`. */
+    mode: O_PaintMode;
+    /** 0 (clear) to 1 (solid). */
+    opacity: number;
+    /**
+     * The diameter at full pressure in picture pixels. Until a size is set it is the default of the last picture
+     * the paint editor opened on.
+     */
+    size: number;
+    /** The label of the undo step the command pushed. */
+    undo_label?: string;
+    /** Non-fatal notes. */
+    warnings?: string[];
+    [key: string]: unknown;
+  };
+}
+
+/** Closes the paint editor. The strokes already painted stay in the document. */
+export namespace ImagePaintEnd {
+  /** Arguments of `image.paint_end`. */
+  export type Args = Record<string, never>;
+  /** Result of `image.paint_begin` and `image.paint_end`. */
+  export type Output = {
+    /** False when the editor was in this state already. */
+    changed: boolean;
+    /** Ids of elements the command made. */
+    created?: string[];
+    /** Ids of elements the command removed. */
+    deleted?: string[];
+    /** The image that is being painted on now; null when the editor is closed. */
+    id?: string | null;
+    /** The label of the undo step the command pushed. */
+    undo_label?: string;
+    /** Non-fatal notes. */
+    warnings?: string[];
+    [key: string]: unknown;
+  };
+}
+
 /** Shows the whole picture of a cropped image again. */
 export namespace ImageResetCrop {
   /** What a crop does to the element's box. */
@@ -4664,6 +4832,35 @@ export namespace ImageResetCrop {
     natural_height: number;
     /** Width of the stored picture in pixels. */
     natural_width: number;
+    /** The label of the undo step the command pushed. */
+    undo_label?: string;
+    /** Non-fatal notes. */
+    warnings?: string[];
+    [key: string]: unknown;
+  };
+}
+
+/** Takes all the paint off an image and shows the picture as it was. */
+export namespace ImageResetPaint {
+  /** An element reference in arguments: an id, or `"@name"` for the name set with `element.set_name`. */
+  type A_Ref = string;
+  /** Arguments of `image.reset_paint`. */
+  export type Args = {
+    /** The image: an id or `@name`. Default: the single selected element. */
+    id?: A_Ref | null;
+  };
+  /** Result of `image.reset_paint`. */
+  export type Output = {
+    /** True when the command changed any state. */
+    changed?: boolean;
+    /** Ids of elements the command made. */
+    created?: string[];
+    /** Ids of elements the command removed. */
+    deleted?: string[];
+    /** The image. */
+    id: string;
+    /** How many strokes were taken off. */
+    removed: number;
     /** The label of the undo step the command pushed. */
     undo_label?: string;
     /** Non-fatal notes. */
@@ -5472,6 +5669,8 @@ export namespace SelectionGet {
     };
     /** The point editor, when a line or arrow is being edited point by point. */
     linear_editor?: O_LinearEditorOut | null;
+    /** The image that is being painted on (`image.paint_begin`). */
+    paint_editor?: string | null;
     /** The label of the undo step the command pushed. */
     undo_label?: string;
     /** Non-fatal notes. */
@@ -7125,7 +7324,7 @@ export namespace ToolCancel {
     created?: string[];
     /** Ids of elements the command removed. */
     deleted?: string[];
-    /** The rungs that ran, in order: `gesture`, `text_edit`, `crop_editor`, `point_editor`, `group`, `selection`, `tool`. */
+    /** The rungs that ran, in order: `gesture`, `text_edit`, `crop_editor`, `paint_editor`, `point_editor`, `group`, `selection`, `tool`. */
     rungs: string[];
     /** The label of the undo step the command pushed. */
     undo_label?: string;
@@ -7899,7 +8098,12 @@ export interface CommandTable {
   "image.crop_begin": { args: ImageCropBegin.Args; output: ImageCropBegin.Output };
   "image.crop_end": { args: ImageCropEnd.Args; output: ImageCropEnd.Output };
   "image.insert": { args: ImageInsert.Args; output: ImageInsert.Output };
+  "image.paint": { args: ImagePaint.Args; output: ImagePaint.Output };
+  "image.paint_begin": { args: ImagePaintBegin.Args; output: ImagePaintBegin.Output };
+  "image.paint_brush": { args: ImagePaintBrush.Args; output: ImagePaintBrush.Output };
+  "image.paint_end": { args: ImagePaintEnd.Args; output: ImagePaintEnd.Output };
   "image.reset_crop": { args: ImageResetCrop.Args; output: ImageResetCrop.Output };
+  "image.reset_paint": { args: ImageResetPaint.Args; output: ImageResetPaint.Output };
   "layout.apply": { args: LayoutApply.Args; output: LayoutApply.Output };
   "library.add": { args: LibraryAdd.Args; output: LibraryAdd.Output };
   "library.export": { args: LibraryExport.Args; output: LibraryExport.Output };
@@ -7971,7 +8175,7 @@ export interface CommandTable {
 export type CommandId = keyof CommandTable;
 
 /** Commands whose arguments may all be left out. */
-export type OptionalArgsId = "arrow.delete_point" | "arrow.edit_points" | "arrow.reroute" | "arrow.swap_heads" | "clipboard.copy" | "clipboard.copy_as" | "clipboard.copy_style" | "clipboard.cut" | "clipboard.paste" | "clipboard.paste_style" | "collab.connect" | "collab.disconnect" | "collab.follow" | "collab.join_room" | "collab.leave_room" | "collab.set_pointer" | "collab.set_user" | "collab.status" | "doc.autosave" | "doc.clear" | "doc.export" | "doc.inspect" | "doc.list" | "doc.new" | "doc.outline" | "doc.save" | "doc.show_intro" | "element.convert" | "element.create_sticky" | "element.delete" | "element.duplicate" | "element.lock" | "element.move" | "element.open_link" | "element.query" | "element.set_bounds" | "element.set_link" | "element.unlock_all" | "engine.commands" | "engine.recent" | "engine.state" | "frame.remove" | "frame.select_children" | "frame.unwrap" | "frame.wrap" | "gesture.cancel" | "gesture.end" | "group.create" | "group.enter" | "group.exit" | "group.set_name" | "group.ungroup" | "history.clear" | "history.redo" | "history.state" | "history.undo" | "image.crop" | "image.crop_begin" | "image.crop_end" | "image.reset_crop" | "layout.apply" | "library.add" | "library.export" | "library.list" | "library.remove" | "perf.stats" | "selection.all" | "selection.clear" | "selection.get" | "selection.select" | "settings.get" | "settings.reset" | "style.get" | "style.list_themes" | "tab.close" | "tab.duplicate" | "tab.list" | "tab.new" | "text.edit_begin" | "text.edit_end" | "text.format" | "text.wrap_in_container" | "tool.cancel" | "tool.hold" | "tool.lock" | "tool.release" | "tool.set_arrow" | "view.center" | "view.get" | "view.screenshot" | "view.set" | "view.set_view_only" | "view.zoom_at" | "view.zoom_in" | "view.zoom_out" | "view.zoom_reset" | "view.zoom_to_fit";
+export type OptionalArgsId = "arrow.delete_point" | "arrow.edit_points" | "arrow.reroute" | "arrow.swap_heads" | "clipboard.copy" | "clipboard.copy_as" | "clipboard.copy_style" | "clipboard.cut" | "clipboard.paste" | "clipboard.paste_style" | "collab.connect" | "collab.disconnect" | "collab.follow" | "collab.join_room" | "collab.leave_room" | "collab.set_pointer" | "collab.set_user" | "collab.status" | "doc.autosave" | "doc.clear" | "doc.export" | "doc.inspect" | "doc.list" | "doc.new" | "doc.outline" | "doc.save" | "doc.show_intro" | "element.convert" | "element.create_sticky" | "element.delete" | "element.duplicate" | "element.lock" | "element.move" | "element.open_link" | "element.query" | "element.set_bounds" | "element.set_link" | "element.unlock_all" | "engine.commands" | "engine.recent" | "engine.state" | "frame.remove" | "frame.select_children" | "frame.unwrap" | "frame.wrap" | "gesture.cancel" | "gesture.end" | "group.create" | "group.enter" | "group.exit" | "group.set_name" | "group.ungroup" | "history.clear" | "history.redo" | "history.state" | "history.undo" | "image.crop" | "image.crop_begin" | "image.crop_end" | "image.paint" | "image.paint_begin" | "image.paint_brush" | "image.paint_end" | "image.reset_crop" | "image.reset_paint" | "layout.apply" | "library.add" | "library.export" | "library.list" | "library.remove" | "perf.stats" | "selection.all" | "selection.clear" | "selection.get" | "selection.select" | "settings.get" | "settings.reset" | "style.get" | "style.list_themes" | "tab.close" | "tab.duplicate" | "tab.list" | "tab.new" | "text.edit_begin" | "text.edit_end" | "text.format" | "text.wrap_in_container" | "tool.cancel" | "tool.hold" | "tool.lock" | "tool.release" | "tool.set_arrow" | "view.center" | "view.get" | "view.screenshot" | "view.set" | "view.set_view_only" | "view.zoom_at" | "view.zoom_in" | "view.zoom_out" | "view.zoom_reset" | "view.zoom_to_fit";
 
 /** The registry size when the types were made; a spec can compare it with `commands()`. */
-export declare const COMMAND_COUNT: 161;
+export declare const COMMAND_COUNT: 166;

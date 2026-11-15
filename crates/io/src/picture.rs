@@ -11,7 +11,10 @@
 //! picture is then made smaller, see [`prepare`].
 
 mod ico;
+mod paint;
 mod svg;
+
+pub use paint::baked_png;
 
 use std::io::Cursor;
 
