@@ -63,6 +63,7 @@ fn editing(r: &mut Rig, zoom: f64) -> Scene {
     let editor = r.editor.as_mut().expect("an editor");
     let arranged = ts.with(|ts| editor.paint(ts).clone());
     canvas.set_hidden(editor.hidden());
+    canvas.set_edited_label(r.s.store(), Some(&arranged.text));
     let (tab, revision) = (r.s.tab().id, r.s.store().revision());
     canvas.sync_index(tab, revision, r.s.store(), &[]);
     let view = view(zoom);

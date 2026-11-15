@@ -927,3 +927,168 @@ fn renaming_a_frame_reuses_its_fragment_and_redraws_the_label() {
     assert_eq!((rep.cache_misses, rep.cache_reuses), (0, 1), "{rep:?}");
     assert!(scene.encoding().resources.glyphs.len() > one, "five letters instead of three");
 }
+
+// ----------------------------------------------------------------------------------------------
+// The label of an arrow hides the line behind it
+
+/// A canvas that keeps the clip layers and the number of strokes of a replayed scene.
+#[derive(Default)]
+struct Layers {
+    clips: Vec<kurbo::BezPath>,
+    strokes: usize,
+}
+
+impl replay::Canvas for Layers {
+    fn fill(&mut self, _: kurbo::Affine, _: &kurbo::BezPath, _: peniko::Fill, _: replay::Brush<'_>) {}
+
+    fn stroke(&mut self, _: kurbo::Affine, _: &kurbo::BezPath, _: &kurbo::Stroke, _: replay::Brush<'_>) {
+        self.strokes += 1;
+    }
+
+    fn push_layer(&mut self, _: kurbo::Affine, clip: &kurbo::BezPath, _: replay::LayerKind) {
+        self.clips.push(clip.clone());
+    }
+
+    fn pop_layer(&mut self) {}
+
+    fn glyph_run(&mut self, _: &replay::GlyphDraw<'_>) {}
+}
+
+fn layers_of(scene: &Scene) -> Layers {
+    let mut layers = Layers::default();
+    replay::replay(scene.encoding(), &mut layers, replay::Detail::Full);
+    layers
+}
+
+fn compose_arrow(elements: Vec<Element>) -> (Scene, FrameReport) {
+    let mut ts = Typesetter::new();
+    let store = store_of(elements);
+    let index = build_paint_index(&store);
+    let mut composer = SceneComposer::new();
+    composer.set_options(no_lod());
+    let mut scene = Scene::new();
+    let report = composer.compose(&store, &index, &view(1.0, 0.0, 0.0), &mut ts, &mut scene);
+    (scene, report)
+}
+
+#[test]
+fn an_arrow_with_a_label_is_drawn_through_a_clip_that_leaves_the_labels_place_out() {
+    let (scene, _) = compose_arrow(labelled_arrow(200.0, 60.0, 20.0));
+    let layers = layers_of(&scene);
+    assert_eq!(layers.clips.len(), 1, "one clip layer, for the arrow");
+    let clip = &layers.clips[0];
+    // The clip is in the arrow's frame: x from 20, y from 50 (its box is 360 by 0 at (20, 50)).
+    let local = |x: f64, y: f64| kurbo::Point::new(x - 20.0, y - 50.0);
+    assert!(!kurbo::Shape::contains(clip, local(200.0, 50.0)), "the middle of the label is cut");
+    assert!(!kurbo::Shape::contains(clip, local(200.0 - 30.0 - 3.0, 50.0)), "the padding is cut too");
+    assert!(kurbo::Shape::contains(clip, local(200.0 - 30.0 - 6.0, 50.0)), "the line reaches the label's padding");
+    assert!(kurbo::Shape::contains(clip, local(100.0, 50.0)), "the rest of the arrow is kept");
+    assert!(kurbo::Shape::contains(clip, local(300.0, 50.0)));
+    assert!(layers.strokes >= 1);
+}
+
+#[test]
+fn an_arrow_without_a_label_or_with_a_blank_one_has_no_clip() {
+    let (scene, _) = compose_arrow(labelled_arrow(200.0, 60.0, 20.0).into_iter().take(1).collect());
+    assert!(layers_of(&scene).clips.is_empty());
+    let mut els = labelled_arrow(200.0, 60.0, 20.0);
+    if let ElementKind::Text(t) = &mut els[1].kind {
+        t.content = "   ".into();
+    }
+    let (scene, _) = compose_arrow(els);
+    assert!(layers_of(&scene).clips.is_empty(), "no text, no gap");
+    let mut gone = labelled_arrow(200.0, 60.0, 20.0);
+    gone[1].deleted = true;
+    let (scene, _) = compose_arrow(gone);
+    assert!(layers_of(&scene).clips.is_empty(), "a deleted label leaves no gap");
+}
+
+#[test]
+fn the_cut_follows_the_label_through_the_cache() {
+    let mut ts = Typesetter::new();
+    let store = store_of(labelled_arrow(200.0, 60.0, 20.0));
+    let mut rig = Rig {
+        index: build_paint_index(&store),
+        store,
+        ts: Typesetter::new(),
+        composer: SceneComposer::new(),
+        scene: Scene::new(),
+    };
+    rig.composer.set_options(no_lod());
+    let _ = &mut ts;
+    let v = view(1.0, 0.0, 0.0);
+    assert_eq!(rig.compose(&v).cache_misses, 2, "both are encoded the first time");
+    assert_eq!(rig.compose(&v).cache_misses, 0, "and kept");
+
+    // The label alone moves along the arrow: the arrow did not change, its picture does.
+    rig.edit("label", |e| e.transform.x += 50.0);
+    let rep = rig.compose(&v);
+    assert_eq!(rep.cache_misses, 1, "only the arrow is encoded again: {rep:?}");
+    let clip_at = |rig: &Rig, x: f64| {
+        let layers = layers_of(&rig.scene);
+        kurbo::Shape::contains(&layers.clips[0], kurbo::Point::new(x - 20.0, 0.0))
+    };
+    assert!(clip_at(&rig, 200.0), "the old place is drawn again");
+    assert!(!clip_at(&rig, 250.0), "the new place is cut");
+
+    // The label and the arrow move together: the arrow keeps its fragment.
+    rig.edit("label", |e| e.transform.x += 10.0);
+    rig.compose(&v);
+    rig.edit("arrow", |e| e.transform.y += 30.0);
+    rig.edit("label", |e| e.transform.y += 30.0);
+    let rep = rig.compose(&v);
+    assert_eq!(rep.cache_misses, 0, "a move of both changes nothing in the arrow's own frame: {rep:?}");
+
+    // The label goes away: the line is whole again.
+    rig.edit("label", |e| e.deleted = true);
+    rig.compose(&v);
+    assert!(layers_of(&rig.scene).clips.is_empty());
+}
+
+#[test]
+fn a_rotated_arrow_cuts_where_its_label_is_in_the_world() {
+    let mut els = labelled_arrow(200.0, 60.0, 20.0);
+    els[0].transform.angle = 0.6;
+    let arrow = els[0].transform;
+    // The label stays put in the world; the arrow's centre is (200, 50), which the rotation keeps.
+    let (scene, _) = compose_arrow(els);
+    let layers = layers_of(&scene);
+    assert_eq!(layers.clips.len(), 1);
+    let clip = &layers.clips[0];
+    // Corners of the label's box, a little inside, taken from the world into the arrow's frame: all cut.
+    for (x, y) in [(172.0, 42.0), (228.0, 42.0), (228.0, 58.0), (172.0, 58.0), (200.0, 50.0)] {
+        let p = arrow.world_to_local(kurbo::Point::new(x, y));
+        assert!(!kurbo::Shape::contains(clip, p), "({x}, {y}) is under the label: {p:?}");
+    }
+    // The line itself, away from the label, is kept.
+    assert!(kurbo::Shape::contains(clip, kurbo::Point::new(300.0, 0.0)));
+    assert!(kurbo::Shape::contains(clip, kurbo::Point::new(60.0, 0.0)));
+}
+
+#[test]
+fn the_text_being_edited_stands_in_for_the_stored_label_of_its_arrow() {
+    let mut ts = Typesetter::new();
+    // The arrow has no label yet; one is being typed at x = 250.
+    let els = labelled_arrow(250.0, 80.0, 20.0);
+    let (arrow, typed) = (els[0].clone(), els[1].clone());
+    let store = store_of(vec![arrow]);
+    let index = build_paint_index(&store);
+    let mut composer = SceneComposer::new();
+    composer.set_options(no_lod());
+    let mut scene = Scene::new();
+    composer.compose(&store, &index, &view(1.0, 0.0, 0.0), &mut ts, &mut scene);
+    assert!(layers_of(&scene).clips.is_empty(), "no label, no gap");
+
+    assert!(composer.set_edited_label(Some(typed.clone())), "a new text changes it");
+    assert!(!composer.set_edited_label(Some(typed.clone())), "the same one does not");
+    composer.compose(&store, &index, &view(1.0, 0.0, 0.0), &mut ts, &mut scene);
+    let layers = layers_of(&scene);
+    assert_eq!(layers.clips.len(), 1);
+    assert!(!kurbo::Shape::contains(&layers.clips[0], kurbo::Point::new(250.0 - 20.0, 0.0)), "cut where it is typed");
+    assert!(kurbo::Shape::contains(&layers.clips[0], kurbo::Point::new(100.0, 0.0)));
+
+    // The editor closes: the line is whole again.
+    assert!(composer.set_edited_label(None));
+    composer.compose(&store, &index, &view(1.0, 0.0, 0.0), &mut ts, &mut scene);
+    assert!(layers_of(&scene).clips.is_empty());
+}

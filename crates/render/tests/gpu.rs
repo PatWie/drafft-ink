@@ -1307,3 +1307,54 @@ fn the_crop_editor_draws_and_can_leave_pictures_for_review() {
         }
     }
 }
+
+// ----------------------------------------------------------------------------------------------
+// The label of an arrow hides the line behind it
+
+/// The dark pixels of `p` in the columns `x0..x1` and rows `y0..y1`.
+fn dark_pixels(p: &Pixels, x0: u32, x1: u32, y0: u32, y1: u32) -> usize {
+    (y0..y1).flat_map(|y| (x0..x1).map(move |x| (x, y))).filter(|&(x, y)| rgb_at(p, x, y)[0] < 160).count()
+}
+
+#[test]
+fn the_line_of_an_arrow_stops_at_its_label_and_is_there_everywhere_else() {
+    need_gpu!();
+    let mut ts = Typesetter::new();
+    let (w, h) = (400u32, 100u32);
+    let view = View::new(1.0, Vec2::ZERO, Size::new(f64::from(w), f64::from(h)));
+    let draw = |elements: Vec<Element>, ts: &mut Typesetter| {
+        let store = store_of(elements);
+        let index = build_paint_index(&store);
+        let mut composer = SceneComposer::new();
+        composer.set_options(RenderOptions::for_export(Theme::Light));
+        let mut scene = Scene::new();
+        composer.compose(&store, &index, &view, ts, &mut scene);
+        render(&scene, w, h, peniko::Color::WHITE)
+    };
+    // The label is 60 by 20 at x = 200: its box with the padding is x 166..234. It paints nothing itself.
+    for (name, sloppiness) in [("clean", Sloppiness::Architect), ("sketchy", Sloppiness::Cartoonist)] {
+        let styled = |mut els: Vec<Element>| {
+            els[0].style.sloppiness = sloppiness;
+            els
+        };
+        let whole = draw(styled(labelled_arrow(200.0, 60.0, 20.0)).into_iter().take(1).collect(), &mut ts);
+        let cut = draw(styled(labelled_arrow(200.0, 60.0, 20.0)), &mut ts);
+        let band = |p: &Pixels, x0, x1| dark_pixels(p, x0, x1, 38, 62);
+        assert!(band(&whole, 170, 230) > 150, "{name}: without a label the line runs through the middle");
+        assert_eq!(band(&cut, 168, 232), 0, "{name}: the line is gone behind the label");
+        assert!(band(&cut, 40, 160) > 300, "{name}: and there before it");
+        assert!(band(&cut, 240, 340) > 300, "{name}: and after it");
+        // Away from the label the two pictures are the same.
+        for (x0, x1) in [(0, 160), (240, 400)] {
+            for y in 0..h {
+                for x in x0..x1 {
+                    assert_eq!(rgb_at(&cut, x, y), rgb_at(&whole, x, y), "{name}: ({x}, {y}) differs outside the gap");
+                }
+            }
+        }
+    }
+    // The head at the end of the arrow is drawn when the label is elsewhere.
+    let head = draw(labelled_arrow(120.0, 60.0, 20.0), &mut ts);
+    assert!(dark_pixels(&head, 360, 384, 38, 62) > 20, "the arrowhead stays");
+    assert_eq!(dark_pixels(&head, 92, 148, 38, 62), 0, "the gap moves with the label");
+}

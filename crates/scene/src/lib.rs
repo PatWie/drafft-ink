@@ -17,6 +17,7 @@ mod derived;
 mod document;
 mod element;
 mod id;
+mod label_cut;
 pub mod limits;
 mod memory;
 pub mod palette;
@@ -43,6 +44,7 @@ pub use element::{
     RefitError, TextData, TextRun, Transform, default_head_size,
 };
 pub use id::{ElementId, FileId, GroupId, IdError, IdSource, MAX_ID_LEN, RandomIds, Rng64, SeqIds, SplitMix64};
+pub use label_cut::{LABEL_CUT_PADDING, LabelCut};
 pub use memory::{MemoryStore, MemoryTx};
 pub use shared::{DocumentCheck, JsonJob, SharedDocument};
 pub use store::{

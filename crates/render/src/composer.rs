@@ -10,7 +10,9 @@ use std::sync::Arc;
 
 use drafftink_geom::{SpatialIndex, aabb};
 use drafftink_profile::{Counter, Gauge, count, inc, set_gauge};
-use drafftink_scene::{Change, ChangeKind, ChangeSet, Element, ElementId, ElementKind, Fields, FileId, SceneRead};
+use drafftink_scene::{
+    Change, ChangeKind, ChangeSet, Element, ElementId, ElementKind, Fields, FileId, LabelCut, SceneRead,
+};
 use drafftink_typeset::Typesetter;
 use kurbo::{Affine, Rect};
 use peniko::Fill;
@@ -81,6 +83,9 @@ pub struct SceneComposer {
     options: RenderOptions,
     grid: GridSpec,
     hidden: Vec<ElementId>,
+    /// The text being edited as the label of an arrow: it stands in for the arrow's stored label (or its lack) when
+    /// the gap in the line is worked out, so the line stops at the text while it is typed.
+    edited_label: Option<Element>,
     trace: Option<Vec<ElementId>>,
     /// The z order of the whole scene, kept between frames while the store does not change (a pan or a zoom).
     order: Option<ZOrder>,
@@ -105,6 +110,7 @@ impl SceneComposer {
             options: RenderOptions::default(),
             grid: GridSpec::default(),
             hidden: Vec::new(),
+            edited_label: None,
             trace: None,
             order: None,
         }
@@ -135,6 +141,15 @@ impl SceneComposer {
     /// Elements that are not drawn, for example the text being edited (the editor draws it).
     pub fn set_hidden(&mut self, ids: Vec<ElementId>) {
         self.hidden = ids;
+    }
+
+    /// The text being edited as the label of an arrow, or `None`. While it is set, the line of its container stops at
+    /// this text's box, as it will at the committed label (the stored label, hidden meanwhile, is not asked). Returns
+    /// whether it changed, so the caller knows to compose the world again.
+    pub fn set_edited_label(&mut self, text: Option<Element>) -> bool {
+        let changed = self.edited_label != text;
+        self.edited_label = text;
+        changed
     }
 
     /// Starts or stops recording the ids drawn by each [`Self::compose`], in draw order (for tests and tools).
@@ -264,7 +279,7 @@ impl SceneComposer {
         let files = |id: &FileId| store.file(id).map(|f| Arc::clone(&f.bytes));
         let mut clips = FrameClips::default();
         let mut cheap = 0usize;
-        let SceneComposer { painter, cache, options, trace, .. } = self;
+        let SceneComposer { painter, cache, options, trace, edited_label, .. } = self;
         for c in &candidates {
             let el = c.el;
 
@@ -294,8 +309,10 @@ impl SceneComposer {
                     let stale = cache
                         .awaiting(&el.id, theme)
                         .is_some_and(|fid| painter.images().changed_since_placeholder(fid, || files(fid).is_some()));
-                    let (fragment, outcome) =
-                        cache.get_or_paint(el, theme, stale, || painter.paint(el, options, typesetter, &files));
+                    let cut = label_cut(store, edited_label.as_ref(), el);
+                    let (fragment, outcome) = cache.get_or_paint(el, cut, theme, stale, || {
+                        painter.paint_cut(el, cut.as_ref(), options, typesetter, &files)
+                    });
                     match outcome {
                         Outcome::Hit => rep.cache_hits += 1,
                         Outcome::Reuse => rep.cache_reuses += 1,
@@ -365,6 +382,19 @@ impl SceneComposer {
             scene.append(&fragment.scene, Some(view.world_to_device() * element_to_world(text)));
         }
     }
+}
+
+/// What the label of an arrow hides of it: the cut its box makes (the text being edited, when it is the arrow's
+/// label, else the stored label). `None` for everything that is not an arrow with a text on it.
+fn label_cut<S: SceneRead>(store: &S, edited: Option<&Element>, el: &Element) -> Option<LabelCut> {
+    if !matches!(el.kind, ElementKind::Arrow(_)) {
+        return None;
+    }
+    if let Some(text) = edited.filter(|t| t.container_id() == Some(&el.id)) {
+        return LabelCut::of(el, text);
+    }
+    let label = store.derived_index()?.label_of(&el.id)?;
+    LabelCut::of(el, store.get(label)?)
 }
 
 /// A cheap stand-in for an element too small to draw properly.

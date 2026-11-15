@@ -14,6 +14,9 @@
 //!   (Kannada, symbols, CJK punctuation: `drafftink_typeset::needs_glyph_fallback`).
 //! * **Formulas** are drawn by a [`MathSvg`] the engine supplies (it owns the formula engine). Without one the
 //!   LaTeX source is written as italic text.
+//! * **An arrow stops where its label sits**, as on the canvas: the arrow's group is clipped by a `clipPath` that
+//!   covers the arrow and leaves out the label's box plus 4 units ([`drafftink_scene::LabelCut`]). Only the picture
+//!   changes; the embedded scene keeps the whole arrow.
 //! * **Images** are embedded as data URIs (cropping and mirroring included). An image whose blob is missing
 //!   is drawn as a dashed placeholder. Image borders are not drawn.
 //! * **Selection export** takes the given ids plus the labels bound to them. Only those elements, and only the
@@ -44,7 +47,7 @@ use base64::Engine as _;
 use base64::engine::general_purpose::STANDARD;
 use drafftink_scene::{
     Color, Document, Element, ElementId, ElementKind, FillPattern, FontFamily, FontWeight, Head, ImageData, InlineMath,
-    PressureMode, StrokeStyle, Style, TextAlign, TextData,
+    LabelCut, PressureMode, StrokeStyle, Style, TextAlign, TextData,
 };
 use drafftink_sketch::{
     Arrowhead, Curve, FillKind, FillStyle, LineDash, PressureProfile, Roundness, SketchInput, SketchParams,
@@ -224,6 +227,24 @@ fn head_size(d: &drafftink_scene::LinearData, style: &Style) -> f64 {
     d.head_size_or_default(style.stroke_width)
 }
 
+/// How far beyond its box the clip of an arrow's label cut reaches, in world units: further than any stroke,
+/// sketchy wobble or head goes.
+const CUT_REACH: f64 = 10_000.0;
+
+/// The live text bound to each container, the one with the smallest id when several claim it (as the editor picks).
+fn labels_by_container(doc: &Document) -> HashMap<&ElementId, &Element> {
+    let mut labels: HashMap<&ElementId, &Element> = HashMap::new();
+    for e in doc.elements.iter().filter(|e| !e.deleted) {
+        if let Some(container) = e.container_id() {
+            let best = labels.entry(container).or_insert(e);
+            if e.id < best.id {
+                *best = e;
+            }
+        }
+    }
+    labels
+}
+
 struct Ctx<'a> {
     doc: &'a Document,
     opts: &'a SvgOptions,
@@ -234,6 +255,8 @@ struct Ctx<'a> {
     next_id: u32,
     used_faces: Vec<(FontFamily, FontWeight)>,
     frame_clips: HashMap<ElementId, String>,
+    /// The text bound to each arrow (the one with the smallest id when several claim it), for the gap it leaves.
+    labels: HashMap<&'a ElementId, &'a Element>,
 }
 
 /// Draws the document (or the selection) as an SVG string.
@@ -279,6 +302,7 @@ pub fn export_svg(
         next_id: 0,
         used_faces: Vec::new(),
         frame_clips: HashMap::new(),
+        labels: labels_by_container(drawn),
     };
     if opts.background {
         putln!(
@@ -449,7 +473,22 @@ impl Ctx<'_> {
                     end: arrowhead(d.end_head),
                     head_size: head_size(d, &e.style),
                 };
+                // The line stops where the label sits: everything of the arrow is clipped by the label's box.
+                let cut = self.labels.get(&e.id).and_then(|label| LabelCut::of(e, label));
+                if let Some(cut) = &cut {
+                    let id = self.fresh_id("cut");
+                    let area = Rect::new(-CUT_REACH, -CUT_REACH, t.w + CUT_REACH, t.h + CUT_REACH);
+                    put!(
+                        self.defs,
+                        "<clipPath id=\"{id}\"><path d=\"{}\"/></clipPath>",
+                        esc(&cut.outside(area).to_svg())
+                    );
+                    put!(self.out, "<g clip-path=\"url(#{id})\">");
+                }
                 self.sketched(e, shape, false);
+                if cut.is_some() {
+                    self.out.push_str("</g>");
+                }
             }
             ElementKind::Freehand(d) => {
                 let pressures = if d.pressure_mode == PressureMode::Device { d.pressures.clone() } else { Vec::new() };

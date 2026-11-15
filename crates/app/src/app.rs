@@ -843,6 +843,8 @@ impl App {
         self.canvas.sync_index(tab, revision, self.session.store(), &touched);
         let look = self.canvas.set_look(theme, grid) | self.canvas.sync_fonts();
         let hidden_changed = self.canvas.set_hidden(hide);
+        let label_changed =
+            self.canvas.set_edited_label(self.session.store(), edit_paint.as_ref().map(|(arranged, _)| &arranged.text));
         let key = WorldKey {
             tab,
             revision,
@@ -854,7 +856,8 @@ impl App {
             editing: hidden.clone(),
         };
         let view = CanvasView::view_of(camera.scroll, camera.zoom, size, dpr);
-        let world_stale = look || hidden_changed || self.world_key.as_ref() != Some(&key) || cx.resized;
+        let world_stale =
+            look || hidden_changed || label_changed || self.world_key.as_ref() != Some(&key) || cx.resized;
         let remote = self.remote_parts();
         let caret_on = self.editor.as_ref().is_some_and(|e| e.caret_on(now));
         let edit_key = edit_paint.as_ref().map(|(_, picture)| (*picture, caret_on));
