@@ -414,6 +414,35 @@ fn set_type_elbow_routes_around_the_bound_shapes_and_back_keeps_the_corners() {
 }
 
 #[test]
+fn set_type_switches_between_elbow_and_auto_elbow_and_each_is_one_undo_step() {
+    let mut w = bound_world();
+    let base = undo_depth(&w.s);
+    run(&mut w.s, "arrow.set_type", json!({"ids": [w.arrow], "type": "elbow"}));
+    let elbow = pts(&w.s, &w.arrow);
+    assert_eq!(undo_depth(&w.s), base + 1);
+    let out = run(&mut w.s, "arrow.set_type", json!({"ids": [w.arrow], "type": "auto_elbow"}));
+    assert_eq!(out["undo_label"], json!("Set arrow type"));
+    assert_eq!(data(&w.s, &w.arrow).path, PathType::AutoElbow);
+    let auto = pts(&w.s, &w.arrow);
+    assert!(auto.windows(2).all(|q| (q[0].x - q[1].x).abs() < 1e-6 || (q[0].y - q[1].y).abs() < 1e-6), "{auto:?}");
+    assert_eq!(auto, elbow, "with no shape in the way both give the same route");
+    assert!(data(&w.s, &w.arrow).start_binding.is_some() && data(&w.s, &w.arrow).end_binding.is_some());
+    assert_eq!(undo_depth(&w.s), base + 2);
+    run(&mut w.s, "arrow.set_type", json!({"ids": [w.arrow], "type": "elbow"}));
+    assert_eq!(data(&w.s, &w.arrow).path, PathType::Elbow);
+    assert_eq!(pts(&w.s, &w.arrow), auto, "the route is kept");
+    assert!(stale_arrows(w.s.store()).is_empty());
+}
+
+#[test]
+fn set_type_names_the_words_it_takes_for_a_misspelt_type() {
+    let mut w = bound_world();
+    let r = refuse(&mut w.s, "arrow.set_type", json!({"ids": [w.arrow], "type": "auto-elbow"}));
+    assert_eq!(r.code, "bad_args");
+    assert!(r.message.contains("auto_elbow"), "{}", r.message);
+}
+
+#[test]
 fn set_type_applies_to_the_arrows_of_a_mixed_list_and_refuses_when_one_is_locked() {
     let mut w = world();
     run(&mut w.s, "arrow.set_type", json!({"ids": [w.a, w.arrow], "type": "round"}));

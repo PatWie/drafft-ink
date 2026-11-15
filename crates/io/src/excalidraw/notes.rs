@@ -1,7 +1,7 @@
 //! The `drafftink` note inside an element's `customData`.
 //!
 //! Excalidraw has no place for some things this model keeps: a fifth sloppiness level, the dots, dashed and
-//! zig-zag-line fills, an exact corner radius, serif and pixel fonts, per-character colours, math, an element name.
+//! zig-zag-line fills, an exact corner radius, serif and pixel fonts, per-character colours, math, an element name, an elbow arrow that avoids shapes.
 //! The exporter writes each of these into `customData.drafftink` **only when the plain Excalidraw fields would not
 //! read back to the same value**, and the importer applies the note on top of the plain fields and removes it from
 //! the element's own `custom` map. Excalidraw keeps `customData` untouched, so a drafftink to Excalidraw to drafftink
@@ -29,6 +29,9 @@ pub(super) struct Note {
     pub font_weight: Option<FontWeight>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub head_size: Option<f64>,
+    /// The elbow arrow goes around the other shapes (`auto_elbow`). Excalidraw's elbow arrow is the plain `elbow`.
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub auto_elbow: bool,
     /// The element is a formula: the Excalidraw text holds its LaTeX source.
     #[serde(default, skip_serializing_if = "is_false")]
     pub math: bool,
@@ -82,6 +85,7 @@ mod tests {
             font_family: Some(FontFamily::GelPenSerif),
             font_weight: Some(FontWeight::Light),
             head_size: Some(9.0),
+            auto_elbow: true,
             math: true,
             brush: Some(Brush::Calligraphy),
             highlighter: Some(true),

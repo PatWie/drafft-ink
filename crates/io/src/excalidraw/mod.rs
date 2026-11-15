@@ -53,7 +53,9 @@
 //! * Things Excalidraw cannot hold go into `customData.drafftink`, only when the plain fields would not read back
 //!   the same (see `notes`): the fifth sloppiness level, the dots, dashed and zig-zag-line fills, an exact corner
 //!   radius, fonts without an Excalidraw twin (serif, pixel, light and heavy weights), `head_size`, per-character
-//!   colour runs, element names, brush, highlighter and closed freehand strokes, a frame that does not clip.
+//!   colour runs, element names, brush, highlighter and closed freehand strokes, a frame that does not clip, an
+//!   `auto_elbow` arrow (both elbow paths are written as Excalidraw elbow arrows; a file without the note reads
+//!   back as a plain `elbow`).
 //! * Arrowheads: Excalidraw has no head size field and shrinks a head on a short end segment by its own rule. The
 //!   file keeps the real points and heads, and `head_size` is the size the head is asked for, never the shrunk one;
 //!   drafftink shrinks it again by its own rule (`drafftink_sketch::fit_head_size`) when the file comes back.

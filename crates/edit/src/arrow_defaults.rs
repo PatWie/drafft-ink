@@ -30,7 +30,7 @@ pub const HEADS: [Head; 15] = [
 ];
 
 /// Every path type.
-pub const PATH_TYPES: [PathType; 3] = [PathType::Sharp, PathType::Round, PathType::Elbow];
+pub const PATH_TYPES: [PathType; 4] = [PathType::Sharp, PathType::Round, PathType::Elbow, PathType::AutoElbow];
 
 /// The name of a head as it is written in JSON and in settings.
 pub fn name_of(head: Head) -> &'static str {
@@ -64,6 +64,7 @@ pub fn path_name(path: PathType) -> &'static str {
         PathType::Sharp => "sharp",
         PathType::Round => "round",
         PathType::Elbow => "elbow",
+        PathType::AutoElbow => "auto_elbow",
     }
 }
 

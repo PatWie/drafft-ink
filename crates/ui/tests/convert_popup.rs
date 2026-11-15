@@ -80,9 +80,9 @@ fn a_click_on_a_type_converts_the_selection_to_it_and_keeps_the_popup() {
 }
 
 #[test]
-fn arrows_get_line_and_the_three_arrow_types() {
+fn arrows_get_line_and_the_four_arrow_types() {
     let h = after_tab("arrow");
-    for text in ["line", "sharp arrow", "round arrow", "elbow arrow"] {
+    for text in ["line", "sharp arrow", "round arrow", "elbow arrow", "auto elbow arrow"] {
         h.get_by_label(&format!("Convert to {text}"));
     }
     assert!(h.query_by_label("Convert to ellipse").is_none());

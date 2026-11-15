@@ -219,7 +219,7 @@ pub fn route_edge(from: &NodeBox, to: &NodeBox, p: &RouteParams<'_>) -> Route {
     let mut through = Vec::with_capacity(p.waypoints.len() + 2);
     through.push(s);
     let direct_blocked = || p.obstacles.iter().any(|r| segment_intersects_rect(s, e, r));
-    if p.path == PathType::Elbow || (!p.waypoints.is_empty() && direct_blocked()) {
+    if p.path.is_right_angled() || (!p.waypoints.is_empty() && direct_blocked()) {
         // Edges that share a lane group run side by side through the layers they skip.
         let cross = match p.flow {
             Some(Direction::Down | Direction::Up) => Vec2::new(1.0, 0.0),
@@ -230,7 +230,7 @@ pub fn route_edge(from: &NodeBox, to: &NodeBox, p: &RouteParams<'_>) -> Route {
         through.extend(p.waypoints.iter().map(|w| *w + shift));
     }
     through.push(e);
-    let points = if p.path == PathType::Elbow { orthogonal(&through, sa.vertical()) } else { through };
+    let points = if p.path.is_right_angled() { orthogonal(&through, sa.vertical()) } else { through };
     Route { points, start: binding(from, rs), end: binding(to, re) }
 }
 

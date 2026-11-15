@@ -396,8 +396,7 @@ fn linear_extras(e: &Element, d: &LinearData, out: &mut Vec<ElementError>) {
             }
         }
     }
-    let elbow = d.path == crate::element::PathType::Elbow;
-    if !elbow && (!d.fixed_segments.is_empty() || d.start_is_special || d.end_is_special) {
+    if !d.path.is_right_angled() && (!d.fixed_segments.is_empty() || d.start_is_special || d.end_is_special) {
         out.push(ElementError::NotApplicable("fixed segments and stubs only exist on elbow paths"));
     }
     let mut prev = 0u32;

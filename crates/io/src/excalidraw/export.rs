@@ -216,7 +216,9 @@ fn element_json(e: &Element, bound: Option<&[Value]>, cx: &mut Cx) -> Value {
             put("startArrowhead", map::head_to_name(d.start_head).map_or(Value::Null, |n| json!(n)));
             put("endArrowhead", map::head_to_name(d.end_head).map_or(Value::Null, |n| json!(n)));
             note.head_size = d.head_size;
-            let elbow = d.path == PathType::Elbow;
+            // Both right-angled paths are Excalidraw elbow arrows; the note tells the auto one apart.
+            let elbow = d.path.is_right_angled();
+            note.auto_elbow = d.path.avoids_shapes();
             if is_arrow || elbow {
                 put("elbowed", json!(elbow));
             }

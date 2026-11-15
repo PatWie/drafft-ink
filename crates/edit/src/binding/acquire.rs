@@ -254,7 +254,7 @@ pub fn hover_candidate_for<R: SceneRead>(
     if opts.disabled {
         return None;
     }
-    let elbow = path == PathType::Elbow;
+    let elbow = path.is_right_angled();
     let r = resolve_element(scene.get(&hit.id)?)?;
     if r.target.contains(p) && !elbow {
         return None;
@@ -356,7 +356,7 @@ fn plan_end_drag_in<R: SceneRead>(
     let Some(hit) = lookup.find(scene, at, opts.zoom, std::slice::from_ref(&arrow.id)) else { return free };
     let Some(r) = scene.get(&hit.id).and_then(resolve_element) else { return free };
 
-    if d.path == PathType::Elbow {
+    if d.path.is_right_angled() {
         let q = elbow::snap_to_outline(&r.target, r.gap, at, opts.midpoint_snap, opts.zoom);
         let cand = candidate_for(&r, BindMode::Orbit, q, None, hit.signed_distance);
         return DragPlan { dragged: EndChange::Bind(cand), other: EndChange::Keep };
@@ -453,7 +453,7 @@ fn drag_end_in<T: SceneTx>(
     let plan = plan_end_drag_in(tx, lookup, &el, end, at, opts);
 
     let mut e = el;
-    let elbow = e.linear_data().is_some_and(|d| d.path == PathType::Elbow);
+    let elbow = e.linear_data().is_some_and(|d| d.path.is_right_angled());
     let idx = if end == End::Start { 0 } else { n - 1 };
     if let Some(slot) = world.get_mut(idx) {
         *slot = match (&plan.dragged, elbow) {

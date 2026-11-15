@@ -1,12 +1,13 @@
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 //! `update_bound_arrows` at scale: 1,000 arrows bound to 1,000 shapes, 100 shapes moved in one transaction.
 //!
-//! Three solvers are timed on the same scene:
+//! Four solvers are timed on the same scene:
 //! * `scan`: `update_bound_arrows`, which finds the arrows by scanning the transaction's elements;
 //! * `indexed`: `update_bound_arrows_indexed`, which uses the committed reverse index;
-//! * `elbow`: the same with every arrow an elbow arrow (A* routing per arrow).
+//! * `elbow`: the same with every arrow an elbow arrow (A* routing per arrow, no other shapes);
+//! * `auto_elbow`: the same with every arrow an auto elbow arrow (also routed around the other shapes).
 //!
-//! A second group, `elbow_around_shapes_1k_shapes`, routes elbow arrows around the shapes between their ends.
+//! A second group, `elbow_around_shapes_1k_shapes`, routes auto elbow arrows around the shapes between their ends.
 
 use std::hint::black_box;
 
@@ -26,7 +27,9 @@ fn id(prefix: &str, i: usize) -> ElementId {
     ElementId::new(&format!("{prefix}{i}")).expect("valid id")
 }
 
-fn scene(elbow: bool) -> (MemoryStore, Vec<ElementId>) {
+/// 1,000 shapes and 1,000 arrows of the given right-angled path type, or straight arrows for `None`.
+fn scene(path: Option<PathType>) -> (MemoryStore, Vec<ElementId>) {
+    let elbow = path.is_some();
     let mut store = MemoryStore::new();
     let mut tx = store.begin();
     let cols = 40usize;
@@ -54,8 +57,8 @@ fn scene(elbow: bool) -> (MemoryStore, Vec<ElementId>) {
         if let ElementKind::Arrow(d) = &mut e.kind {
             let d: &mut LinearData = d;
             d.end_binding = Some(Binding { target: id("s", i), mode: BindMode::Orbit, fixed_point: [0.5, 0.5] });
-            if elbow {
-                d.path = PathType::Elbow;
+            if let Some(path) = path {
+                d.path = path;
             }
         }
         tx.insert(e).expect("insert arrow");
@@ -84,7 +87,7 @@ fn bench(c: &mut Criterion) {
     let mut group = c.benchmark_group("update_bound_arrows_1k_arrows_1k_shapes_100_moved");
     group.sample_size(30);
 
-    let (mut simple, shapes) = scene(false);
+    let (mut simple, shapes) = scene(None);
     {
         // Pre-flight: the benchmark must really re-solve the 100 arrows of the 100 moved shapes.
         let mut tx = simple.begin();
@@ -119,32 +122,34 @@ fn bench(c: &mut Criterion) {
         )
     });
 
-    let (mut elbows, shapes) = scene(true);
-    {
-        let mut tx = elbows.begin();
-        let moved = move_some(&mut tx, &shapes);
-        let n = update_bound_arrows(&mut tx, &moved).expect("solve");
-        assert_eq!(n.len(), MOVED);
+    for (name, path) in [("elbow", PathType::Elbow), ("auto_elbow", PathType::AutoElbow)] {
+        let (mut store, shapes) = scene(Some(path));
+        {
+            let mut tx = store.begin();
+            let moved = move_some(&mut tx, &shapes);
+            let n = update_bound_arrows(&mut tx, &moved).expect("solve");
+            assert_eq!(n.len(), MOVED);
+        }
+        group.bench_function(name, |b| {
+            b.iter_batched(
+                || (),
+                |()| {
+                    let mut tx = store.begin();
+                    let moved = move_some(&mut tx, &shapes);
+                    let n = update_bound_arrows(&mut tx, &moved).expect("solve");
+                    black_box(n.len());
+                },
+                BatchSize::PerIteration,
+            )
+        });
     }
-    group.bench_function("elbow", |b| {
-        b.iter_batched(
-            || (),
-            |()| {
-                let mut tx = elbows.begin();
-                let moved = move_some(&mut tx, &shapes);
-                let n = update_bound_arrows(&mut tx, &moved).expect("solve");
-                black_box(n.len());
-            },
-            BatchSize::PerIteration,
-        )
-    });
     group.finish();
 }
 
 /// 1,000 shapes in 40 columns and 100 elbow arrows, each from a shape to the one three columns to its right, with
 /// two shapes in the way. Settled, so every arrow has its route around the two shapes.
 fn around_scene() -> (MemoryStore, Vec<ElementId>) {
-    let (mut store, shapes) = scene(false);
+    let (mut store, shapes) = scene(None);
     let mut tx = store.begin();
     let mut z: Option<ZIndex> = tx.top_z();
     let mut arrows = Vec::new();
@@ -157,7 +162,7 @@ fn around_scene() -> (MemoryStore, Vec<ElementId>) {
         z = Some(key.clone());
         let mut e = Element::linear(id("e", k), LinearKind::Arrow, key, &[start, end]).expect("arrow");
         if let ElementKind::Arrow(d) = &mut e.kind {
-            d.path = PathType::Elbow;
+            d.path = PathType::AutoElbow;
             d.start_binding =
                 Some(Binding { target: shapes[from].clone(), mode: BindMode::Orbit, fixed_point: [1.0, 0.5] });
             d.end_binding =
@@ -222,7 +227,7 @@ fn bench_around(c: &mut Criterion) {
         ];
         let mut e = Element::linear(id("wide", 0), LinearKind::Arrow, key, &pts).expect("arrow");
         if let ElementKind::Arrow(d) = &mut e.kind {
-            d.path = PathType::Elbow;
+            d.path = PathType::AutoElbow;
             d.start_binding = Some(Binding { target: a.id.clone(), mode: BindMode::Orbit, fixed_point: [1.0, 0.5] });
             d.end_binding = Some(Binding { target: b.id.clone(), mode: BindMode::Orbit, fixed_point: [0.0, 0.5] });
         }

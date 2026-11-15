@@ -310,7 +310,7 @@ fn scene_with_long_elbow(n: usize, to: usize) -> MemoryStore {
     )
     .unwrap();
     if let ElementKind::Arrow(d) = &mut arrow.kind {
-        d.path = drafftink_scene::PathType::Elbow;
+        d.path = drafftink_scene::PathType::AutoElbow;
         d.start_binding = Some(Binding { target: a.id.clone(), mode: BindMode::Orbit, fixed_point: [1.0, 0.5] });
         d.end_binding = Some(Binding { target: b.id.clone(), mode: BindMode::Orbit, fixed_point: [0.0, 0.5] });
         d.end_head = Head::Arrow;

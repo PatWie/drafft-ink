@@ -824,7 +824,7 @@ pub struct OutlineEdge {
     /// Marker at the end.
     #[serde(skip_serializing_if = "is_no_head")]
     pub end_head: Head,
-    /// Straight, curved or elbow.
+    /// Straight, curved, elbow or auto elbow.
     pub path: PathType,
 }
 
@@ -1175,6 +1175,7 @@ impl Outline {
                     PathType::Sharp => {}
                     PathType::Round => out.push_str(" round"),
                     PathType::Elbow => out.push_str(" elbow"),
+                    PathType::AutoElbow => out.push_str(" auto_elbow"),
                 }
                 if let Some(n) = &e.name {
                     out.push_str(&format!(" @{n}"));

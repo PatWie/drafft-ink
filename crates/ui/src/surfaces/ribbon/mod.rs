@@ -68,7 +68,7 @@ enum Row {
     FillPattern,
     /// Sharp or round corners.
     Corners,
-    /// Straight, curved or elbow arrows and lines.
+    /// Straight, curved, elbow or auto elbow arrows and lines.
     ArrowPath,
     /// The start and end heads of an arrow.
     ArrowHeads,
@@ -155,7 +155,7 @@ impl Group {
             Group::Stroke => {
                 vec![(Row::Width, shows(cx, "stroke_width")), (Row::StrokeStyle, shows(cx, "stroke_style"))]
             }
-            // Next to a path (sharp, round, elbow) two more "sharp" and "round" would only confuse: the corners of
+            // Next to a path (sharp, round, elbow, auto elbow) two more "sharp" and "round" would only confuse: the corners of
             // arrows and lines are in the "More" menu.
             Group::Shape => vec![
                 (Row::FillPattern, shows(cx, "fill_pattern") && has_fill(cx)),

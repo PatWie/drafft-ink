@@ -231,8 +231,17 @@ impl Scene {
 
     /// An elbow arrow from `a_at` to `b_at`, both ends dropped near shapes so they bind.
     pub fn elbow_between(&mut self, name: &str, a_at: Point, b_at: Point) -> ElementId {
+        self.right_angled_between(name, PathType::Elbow, a_at, b_at)
+    }
+
+    /// An auto elbow arrow from `a_at` to `b_at`, both ends dropped near shapes so they bind.
+    pub fn auto_elbow_between(&mut self, name: &str, a_at: Point, b_at: Point) -> ElementId {
+        self.right_angled_between(name, PathType::AutoElbow, a_at, b_at)
+    }
+
+    fn right_angled_between(&mut self, name: &str, path: PathType, a_at: Point, b_at: Point) -> ElementId {
         let arrow = self.arrow(name, &[(a_at.x, a_at.y), (b_at.x, b_at.y)]);
-        self.set_path(&arrow, PathType::Elbow);
+        self.set_path(&arrow, path);
         self.drag_end(&arrow, End::Start, a_at);
         self.drag_end(&arrow, End::End, b_at);
         arrow

@@ -29,7 +29,7 @@ use std::collections::{BTreeSet, HashSet};
 
 use drafftink_geom::kurbo::Rect;
 use drafftink_profile::{Counter, count};
-use drafftink_scene::{DerivedIndex, ElementId, PathType, SceneRead, SceneTx, StoreError};
+use drafftink_scene::{DerivedIndex, ElementId, SceneRead, SceneTx, StoreError};
 
 pub use acquire::{
     BindOpts, BindingCandidate, DragPlan, EndChange, Hovered, binding_reach, drag_end, drag_end_among, find_hovered,
@@ -189,7 +189,7 @@ fn solve_changed<T: SceneTx>(
         let Some(d) = e.linear_data() else { continue };
         let [a, b] = e.binding_targets();
         let bound_to_changed = a.is_some_and(|t| set.contains(t)) || b.is_some_and(|t| set.contains(t));
-        let own = set.contains(&e.id) && (a.is_some() || b.is_some() || d.path == PathType::Elbow);
+        let own = set.contains(&e.id) && (a.is_some() || b.is_some() || d.path.is_right_angled());
         if bound_to_changed || own {
             affected.insert(e.id.clone());
         }
@@ -270,7 +270,7 @@ fn solve_one<T: SceneTx>(
         return Ok(false);
     }
     let Some(d) = e.linear_data() else { return Ok(false) };
-    if d.path == PathType::Elbow {
+    if d.path.is_right_angled() {
         return elbow::reroute_among(tx, id, around, RouteOpts::default(), force).map_err(|err| from_elbow(id, err));
     }
     let Some(world) = world_points(e) else { return Ok(false) };
@@ -299,7 +299,7 @@ pub fn stale_arrows<R: SceneRead>(scene: &R) -> Vec<ElementId> {
             continue;
         }
         let Some(world) = world_points(e).filter(|w| w.len() >= 2) else { continue };
-        if d.path == PathType::Elbow {
+        if d.path.is_right_angled() {
             let Some((s, en)) = elbow::ends_for(scene, d, &world) else { continue };
             let (first, last) = (world[0], world[world.len() - 1]);
             let bad = (s.bound.is_some() && (s.point - first).hypot() > 1e-6)

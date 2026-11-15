@@ -1,14 +1,19 @@
-//! Elbow arrows: orthogonal routes around the shapes an arrow is bound to.
+//! Right-angled arrows: routes between the two ends, for the two right-angled path types.
+//!
+//! * `PathType::Elbow` is routed simply between its ends and around the shapes it is bound to, as Excalidraw
+//!   does. The user edits its segments; a shape that moves near it changes nothing.
+//! * `PathType::AutoElbow` is routed around the other shapes too, and routed again when one moves in or out of
+//!   its way ([`PathType::avoids_shapes`](drafftink_scene::PathType::avoids_shapes)).
 //!
 //! The route is **stored geometry**: `points` are the corners, `fixed_segments` are the pins the user
 //! dragged, and `start_is_special` / `end_is_special` mark a hidden stub. Hit tests, handles and the renderer
 //! all read the stored points. (The old app only drew a fixed Z at render time.)
 //!
 //! * [`route`], [`ElbowEnd`], [`ElbowTarget`]: the pure router (A* on a grid of obstacle-box edges). It goes
-//!   around the shapes the arrow is bound to and, when the arrow has a bound end, around the other shapes
-//!   too ([`RouteOpts::obstacles`]; `obstacles.rs` finds them with the scene's box index). The route is
-//!   computed from the scene and stored as points like any other, so peers that hold the same scene compute
-//!   the same route and a merge has nothing to reconcile.
+//!   around the shapes the arrow is bound to and, when the caller passes [`RouteOpts::obstacles`], around the other
+//!   shapes too (only for an auto elbow arrow with a bound end; `obstacles.rs` finds them with the scene's box
+//!   index). The route is computed from the scene and stored as points like any other, so peers that hold the
+//!   same scene compute the same route and a merge has nothing to reconcile.
 //! * [`move_segment`], [`release_segment`], [`update_ends`], [`renormalize`]: pin handling on a pure path.
 //! * [`reroute`], [`move_segment_of`], [`release_segment_of`]: the same on an element in a transaction.
 //! * [`snap_to_outline`], [`fixed_point_for`]: where an elbow end attaches to a shape.
@@ -23,8 +28,7 @@ mod segments;
 use drafftink_geom::binding::{BASE_BINDING_GAP, BindTarget, Heading, max_binding_distance};
 use drafftink_geom::kurbo::{BezPath, Point, Rect, Vec2};
 use drafftink_scene::{
-    BindMode, Binding, Element, ElementId, ElementKind, FixedSegment, LinearData, PathType, SceneRead, SceneTx,
-    StoreError,
+    BindMode, Binding, Element, ElementId, ElementKind, FixedSegment, LinearData, SceneRead, SceneTx, StoreError,
 };
 
 pub use obstacles::ObstacleFinder;
@@ -147,7 +151,8 @@ pub(crate) fn solve_path<R: SceneRead>(
     let around = match around {
         Some(boxes) => boxes,
         None => {
-            found = ObstacleFinder::new().gather(scene, &e.id, &s, &en);
+            found =
+                if d.path.avoids_shapes() { ObstacleFinder::new().gather(scene, &e.id, &s, &en) } else { Vec::new() };
             &found
         }
     };
@@ -163,7 +168,7 @@ pub(crate) fn solve_path<R: SceneRead>(
 /// element that is not an elbow line or arrow comes back unchanged.
 pub fn routed_copy<R: SceneRead>(scene: &R, e: &Element, opts: RouteOpts<'_>) -> Result<Element, ElbowEditError> {
     let mut out = e.clone();
-    if e.linear_data().is_none_or(|d| d.path != PathType::Elbow) {
+    if e.linear_data().is_none_or(|d| !d.path.is_right_angled()) {
         return Ok(out);
     }
     if let Some(path) = solve_path(scene, e, None, opts, true, None)?
@@ -184,7 +189,7 @@ fn commit<T: SceneTx>(tx: &mut T, id: &ElementId, e: Element) -> Result<(), Stor
 fn elbow_element<R: SceneRead>(scene: &R, id: &ElementId) -> Result<Element, ElbowEditError> {
     let e = scene.get(id).ok_or_else(|| ElbowEditError::Missing(id.clone()))?;
     match e.linear_data() {
-        Some(d) if d.path == PathType::Elbow => Ok(e.clone()),
+        Some(d) if d.path.is_right_angled() => Ok(e.clone()),
         _ => Err(ElbowEditError::NotElbow(id.clone())),
     }
 }
@@ -224,14 +229,14 @@ pub fn route_new<T: SceneTx>(
     reroute_inner(tx, id, ends, opts, true, None)
 }
 
-/// The boxes of the other shapes the elbow arrow `id` is routed around now, read from `scene`. Empty for an arrow
-/// that is not an elbow arrow or has no bound end. A caller that is about to write to the scene and then route
+/// The boxes of the other shapes the arrow `id` is routed around now, read from `scene`. Empty for an arrow
+/// that is not an auto elbow arrow (a plain elbow arrow ignores the other shapes) or has no bound end. A caller that is about to write to the scene and then route
 /// several arrows takes the boxes first (the box index of a reader is exact only until its first write), with one
 /// `finder` for all of them, and passes them to [`reroute_among`].
 pub fn obstacles_of<R: SceneRead>(scene: &R, id: &ElementId, finder: &ObstacleFinder) -> Vec<Bounds> {
     let Some(e) = scene.get(id) else { return Vec::new() };
     let (Some(d), Some(world)) = (e.linear_data(), world_points(e)) else { return Vec::new() };
-    if d.path != PathType::Elbow {
+    if !d.path.avoids_shapes() {
         return Vec::new();
     }
     ends_for(scene, d, &world).map_or_else(Vec::new, |(s, en)| finder.gather(scene, id, &s, &en))
@@ -301,7 +306,7 @@ where
     let world = world_points(&e).ok_or_else(|| ElbowEditError::NotElbow(id.clone()))?;
     let (s, en) = ends_for(tx, d, &world).ok_or(ElbowError::TooFewPoints(world.len()))?;
     let mut path = path_of(&e, d, &world);
-    let around = ObstacleFinder::new().gather(&*tx, id, &s, &en);
+    let around = if d.path.avoids_shapes() { ObstacleFinder::new().gather(&*tx, id, &s, &en) } else { Vec::new() };
     if !path.is_valid() {
         path = ElbowPath::free(route(&s, &en, RouteOpts::default().around(&around))?);
     }

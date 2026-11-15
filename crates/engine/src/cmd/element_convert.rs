@@ -42,10 +42,10 @@ pub struct ConvertArgs {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub ids: Option<Vec<Ref>>,
     /// The type to convert to. Absent: the next type of the family (rectangle, diamond, ellipse; or line, sharp
-    /// arrow, round arrow, elbow arrow), as Tab does.
+    /// arrow, round arrow, elbow arrow, auto elbow arrow), as Tab does.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub to: Option<ConvertTo>,
-    /// With `to` = arrow: sharp (default), round or elbow.
+    /// With `to` = arrow: sharp (default), round, elbow or auto_elbow.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub arrow_type: Option<PathType>,
     /// Without `to`: take the previous type instead of the next (Shift+Tab).
@@ -56,8 +56,8 @@ pub struct ConvertArgs {
 /// What `element.convert` did.
 #[derive(Debug, Clone, PartialEq, Serialize, JsonSchema)]
 pub struct ConvertOut {
-    /// The type now, in words: `rectangle`, `diamond`, `ellipse`, `line`, `sharp arrow`, `round arrow` or
-    /// `elbow arrow`.
+    /// The type now, in words: `rectangle`, `diamond`, `ellipse`, `line`, `sharp arrow`, `round arrow`,
+    /// `elbow arrow` or `auto elbow arrow`.
     pub to: String,
     /// The elements whose type changed.
     pub converted: Vec<String>,
@@ -183,6 +183,7 @@ const VARIANTS: &[Variant] = &[
     Variant::new(r#"{"to":"arrow","arrow_type":"sharp"}"#, "Convert to sharp arrow"),
     Variant::new(r#"{"to":"arrow","arrow_type":"round"}"#, "Convert to round arrow"),
     Variant::new(r#"{"to":"arrow","arrow_type":"elbow"}"#, "Convert to elbow arrow"),
+    Variant::new(r#"{"to":"arrow","arrow_type":"auto_elbow"}"#, "Convert to auto elbow arrow"),
 ];
 
 /// Commands of this file.

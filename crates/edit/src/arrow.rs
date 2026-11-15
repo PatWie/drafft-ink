@@ -17,9 +17,7 @@ use drafftink_geom::snap::{
     ENDPOINT_SNAP_RADIUS, GRID_SIZE, MAX_SNAP_CANDIDATES, SMART_GUIDE_THRESHOLD, snap_angle, snap_ray_to_grid_lines,
     snap_to_grid,
 };
-use drafftink_scene::{
-    BindMode, Binding, Element, ElementId, ElementKind, Kind, PathType, SceneRead, SceneTx, StoreError,
-};
+use drafftink_scene::{BindMode, Binding, Element, ElementId, ElementKind, Kind, SceneRead, SceneTx, StoreError};
 
 use crate::binding::{BindingError, End, resolve, update_bound_arrows};
 use crate::elbow::{self, ElbowEditError, RouteOpts};
@@ -127,7 +125,7 @@ pub fn bind_end<T: SceneTx>(
     .copied()
     .ok_or_else(|| ArrowError::NotLinear(arrow.clone()))?;
 
-    let elbow = d.path == PathType::Elbow;
+    let elbow = d.path.is_right_angled();
     let (mode, fixed_point) = if elbow {
         let fp = match req.fixed_point {
             Some(v) => v,
@@ -176,7 +174,7 @@ pub fn reroute<T: SceneTx>(tx: &mut T, ids: &[ElementId], zoom: f64) -> Result<V
     let before: Vec<(ElementId, Element)> =
         linear.iter().filter_map(|id| tx.get(id).map(|e| (id.clone(), e.clone()))).collect();
     for id in &linear {
-        let is_elbow = tx.get(id).and_then(Element::linear_data).is_some_and(|d| d.path == PathType::Elbow);
+        let is_elbow = tx.get(id).and_then(Element::linear_data).is_some_and(|d| d.path.is_right_angled());
         if !is_elbow {
             continue;
         }

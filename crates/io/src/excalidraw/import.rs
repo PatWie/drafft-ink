@@ -743,7 +743,9 @@ fn parse_linear(
     let elbow = rd.bool("elbowed", rep) == Some(true);
     let mut data = LinearData::new(f.local);
     data.path = if elbow {
-        PathType::Elbow
+        // Excalidraw's elbow arrow routes around the shapes it is bound to: the plain elbow. Only our own note
+        // makes it an auto elbow arrow.
+        if note.auto_elbow { PathType::AutoElbow } else { PathType::Elbow }
     } else if rounding.is_some() {
         PathType::Round
     } else {
@@ -955,7 +957,7 @@ fn resolve(
         // Arrow bindings.
         if let ElementKind::Line(l) | ElementKind::Arrow(l) = &mut e.kind {
             let ends = endpoints.get(i).copied().flatten();
-            let elbow = l.path == PathType::Elbow;
+            let elbow = l.path.is_right_angled();
             for (which, raw) in d.bindings.into_iter().enumerate() {
                 let Some(raw) = raw else { continue };
                 let target = pos_of(&raw.target).filter(|j| *j != i && kinds.get(*j).is_some_and(|k| k.is_bindable()));

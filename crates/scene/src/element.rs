@@ -114,8 +114,25 @@ pub enum PathType {
     Sharp,
     /// A smooth curve through the points (old `Flowing`).
     Round,
-    /// Orthogonal segments routed around the bound shapes (old `Angular`; the old app drew it but never stored it).
+    /// Right-angled segments routed simply between the two ends and around the shapes the arrow is bound to
+    /// (old `Angular`; the old app drew it but never stored it). The user can move its segments.
     Elbow,
+    /// Right-angled segments that also find their way around the other shapes, and are routed again when a
+    /// shape moves. Stored the same way as `Elbow`: the route is a list of points computed from the scene.
+    AutoElbow,
+}
+
+impl PathType {
+    /// Does the route run in right angles (`Elbow` and `AutoElbow`)? Both store a route as corner points, can pin
+    /// segments, and cannot be rotated.
+    pub const fn is_right_angled(self) -> bool {
+        matches!(self, Self::Elbow | Self::AutoElbow)
+    }
+
+    /// Is the route found around the other shapes, and made again when they move (`AutoElbow` only)?
+    pub const fn avoids_shapes(self) -> bool {
+        matches!(self, Self::AutoElbow)
+    }
 }
 
 /// What is drawn at an end of a line or arrow.
