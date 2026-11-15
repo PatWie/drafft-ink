@@ -429,6 +429,55 @@ fn elbow_arrows_keep_segments_bindings_and_flags() {
     assert_eq!(linear(get(d, "round")).path, PathType::Round);
 }
 
+/// A document with one elbow and one auto elbow arrow between two rectangles.
+fn two_right_angled_arrows() -> Document {
+    let mut doc = Document::new();
+    base_element(&mut doc, ElementKind::Rectangle, 0.0, 0.0, 100.0, 60.0);
+    base_element(&mut doc, ElementKind::Rectangle, 400.0, 200.0, 100.0, 60.0);
+    for (path, y) in [(PathType::Elbow, 0.0), (PathType::AutoElbow, 300.0)] {
+        let mut d = drafftink_scene::LinearData::new(vec![
+            Point::new(0.0, 0.0),
+            Point::new(150.0, 0.0),
+            Point::new(150.0, 80.0),
+        ]);
+        d.path = path;
+        base_element(&mut doc, ElementKind::Arrow(d), 100.0, 30.0 + y, 150.0, 80.0);
+    }
+    doc
+}
+
+#[test]
+fn elbow_and_auto_elbow_are_both_excalidraw_elbow_arrows_and_come_back_as_they_were() {
+    let doc = two_right_angled_arrows();
+    let written = export_scene(&doc).unwrap();
+    let v: Value = serde_json::from_str(&written).unwrap();
+    let arrows: Vec<&Value> = v["elements"].as_array().unwrap().iter().filter(|e| e["type"] == "arrow").collect();
+    assert_eq!(arrows.len(), 2);
+    for a in &arrows {
+        assert_eq!(a["elbowed"], json!(true), "both are elbow arrows to Excalidraw");
+    }
+    assert!(arrows[0]["customData"].is_null(), "a plain elbow arrow needs no note: {}", arrows[0]);
+    assert_eq!(arrows[1]["customData"]["drafftink"]["auto_elbow"], json!(true));
+    let back = import_str(&written).unwrap().document;
+    assert_clean(&back);
+    let paths: Vec<PathType> = back.elements.iter().filter_map(|e| e.linear_data()).map(|d| d.path).collect();
+    assert_eq!(paths, [PathType::Elbow, PathType::AutoElbow]);
+}
+
+#[test]
+fn an_excalidraw_elbow_arrow_without_the_note_is_a_plain_elbow() {
+    // What Excalidraw (or an older file of ours) wrote: no note, so the route is not made around other shapes.
+    let doc = two_right_angled_arrows();
+    let mut v: Value = serde_json::from_str(&export_scene(&doc).unwrap()).unwrap();
+    for e in v["elements"].as_array_mut().unwrap() {
+        if let Some(o) = e.as_object_mut() {
+            o.remove("customData");
+        }
+    }
+    let back = import_str(&v.to_string()).unwrap().document;
+    assert!(back.elements.iter().filter_map(|e| e.linear_data()).all(|d| d.path == PathType::Elbow));
+}
+
 #[test]
 fn closed_paths_use_the_polygon_flag_not_a_distance_guess() {
     let i = scene("closed_paths");
@@ -877,6 +926,15 @@ fn native_documents_survive_a_trip_through_excalidraw() {
     doc.elements[ell].group_ids.push(g1);
     doc.elements[ell].group_ids.push(g2.clone());
     doc.elements[dia].group_ids.push(g2);
+    // An auto elbow arrow: Excalidraw's elbow arrow plus a note.
+    let mut auto = LinearData::new(vec![
+        Point::new(0.0, 0.0),
+        Point::new(50.0, 0.0),
+        Point::new(50.0, 80.0),
+        Point::new(100.0, 80.0),
+    ]);
+    auto.path = PathType::AutoElbow;
+    base_element(&mut doc, ElementKind::Arrow(auto), 0.0, 400.0, 100.0, 80.0);
     // A tombstone, which is not exported.
     let dead = base_element(&mut doc, ElementKind::Rectangle, 0.0, 0.0, 1.0, 1.0);
     doc.elements[dead].deleted = true;

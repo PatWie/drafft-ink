@@ -173,7 +173,8 @@ impl Linear {
         {
             pts.push(tip);
         }
-        let elbow = path_of(cx) == PathType::Elbow;
+        let path = path_of(cx);
+        let elbow = path.is_right_angled();
         if elbow {
             pts = ends_of(&pts);
         }
@@ -184,7 +185,7 @@ impl Linear {
         let (start, end) = (self.start.as_ref(), self.end.as_ref());
         if elbow && let (Some(&first), Some(&last)) = (pts.first(), pts.last()) {
             let bindings = (start.map(BindingCandidate::binding), end.map(BindingCandidate::binding));
-            if let Some(routed) = preview::elbow(cx, first, last, bindings) {
+            if let Some(routed) = preview::elbow(cx, path, first, last, bindings) {
                 return Some(routed);
             }
         }
@@ -316,7 +317,7 @@ impl Linear {
         self.reset();
         take_back(cx, shown);
         points.dedup_by(|a, b| a.distance(*b) < 1e-9);
-        if path == PathType::Elbow {
+        if path.is_right_angled() {
             points = ends_of(&points);
         }
         if points.len() < 2 || !has_extent(kind, &points) {

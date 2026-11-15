@@ -292,8 +292,8 @@ pub struct CreateArgs {
     /// more (one point is a dot).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub points: Option<Vec<Pt>>,
-    /// line, arrow: sharp (straight segments, default), round (a curve through the points) or elbow (orthogonal
-    /// route between the two ends).
+    /// line, arrow: sharp (straight segments, default), round (a curve through the points), elbow (a right-angled
+    /// route between the two ends) or auto_elbow (a right-angled route that also goes around the other shapes).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub arrow_type: Option<PathType>,
     /// line: the last point connects back to the first (needs 3 or more points).
@@ -620,8 +620,8 @@ fn plan_create(s: &Session, a: &CreateArgs) -> Result<Plan, Refusal> {
             if world.len() < min {
                 return Err(refuse(cmd, CreateError::TooFewPoints { kind: a.kind, min, have: world.len() }));
             }
-            if spec.closed && spec.path == PathType::Elbow {
-                return Err(Refusal::bad_arg(cmd, "closed", "a closed line cannot be an elbow; use arrow_type sharp or round"));
+            if spec.closed && spec.path.is_right_angled() {
+                return Err(Refusal::bad_arg(cmd, "closed", "a closed line cannot be an elbow or auto elbow; use arrow_type sharp or round"));
             }
             let (mut x0, mut y0, mut x1, mut y1) = (f64::MAX, f64::MAX, f64::MIN, f64::MIN);
             for p in &world {
@@ -854,7 +854,7 @@ pub struct ConnectArgs {
     /// arrow (default) or line.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub kind: Option<ConnectKind>,
-    /// sharp (default), round or elbow.
+    /// sharp (default), round, elbow or auto_elbow.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub arrow_type: Option<PathType>,
     /// orbit (default): the ends sit on the outlines plus a gap. inside: the ends stay at the facing outline points.

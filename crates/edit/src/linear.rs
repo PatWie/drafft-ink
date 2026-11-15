@@ -169,7 +169,7 @@ fn min_points(e: &drafftink_scene::Element) -> usize {
 }
 
 fn is_elbow(e: &drafftink_scene::Element) -> bool {
-    e.linear_data().is_some_and(|d| d.path == PathType::Elbow)
+    e.linear_data().is_some_and(|d| d.path.is_right_angled())
 }
 
 fn finish<T: SceneTx>(tx: &mut T, id: &ElementId) -> Result<(), LinearError> {
@@ -333,7 +333,7 @@ pub fn set_head<T: SceneTx>(tx: &mut T, id: &ElementId, end: End, head: Head) ->
         End::Start => d.start_head = head,
         End::End => d.end_head = head,
     }
-    let elbow = d.path == PathType::Elbow;
+    let elbow = d.path.is_right_angled();
     commit(tx, id, e)?;
     if elbow {
         elbow::reroute_forced(tx, id, RouteOpts::default())?;
@@ -346,7 +346,7 @@ pub fn swap_heads<T: SceneTx>(tx: &mut T, id: &ElementId) -> Result<(), LinearEr
     let (mut e, _) = linear_of(tx, id)?;
     let Some(d) = data_mut(&mut e) else { return Err(LinearError::NotLinear(id.clone())) };
     std::mem::swap(&mut d.start_head, &mut d.end_head);
-    let elbow = d.path == PathType::Elbow;
+    let elbow = d.path.is_right_angled();
     commit(tx, id, e)?;
     if elbow {
         elbow::reroute_forced(tx, id, RouteOpts::default())?;
@@ -354,12 +354,16 @@ pub fn swap_heads<T: SceneTx>(tx: &mut T, id: &ElementId) -> Result<(), LinearEr
     finish(tx, id)
 }
 
-/// Changes how the points are joined: straight (`Sharp`), curved (`Round`) or elbow.
+/// Changes how the points are joined: straight (`Sharp`), curved (`Round`), elbow or auto elbow.
 ///
 /// * Straight and curved keep the points and the bindings.
-/// * To elbow keeps only the two ends, binds them the elbow way (snapped to the outline) and routes.
-/// * From elbow keeps the route's points, drops the pins and re-anchors the bindings inside their shapes so
-///   the ends keep following them.
+/// * To a right-angled path from another kind keeps only the two ends, binds them the elbow way (snapped to the
+///   outline) and routes. An auto elbow route goes around the other shapes, a plain elbow route does not.
+/// * Elbow to auto elbow drops the pins and routes again around the other shapes.
+/// * Auto elbow to elbow keeps the route and its pins as they are; from then on the route ignores the other
+///   shapes.
+/// * From a right-angled path to straight or curved keeps the route's points, drops the pins and re-anchors the
+///   bindings inside their shapes so the ends keep following them.
 pub fn set_path<T: SceneTx>(tx: &mut T, id: &ElementId, path: PathType) -> Result<(), LinearError> {
     let (mut e, world) = linear_of(tx, id)?;
     let Some(d) = data_mut(&mut e) else { return Err(LinearError::NotLinear(id.clone())) };
@@ -367,26 +371,36 @@ pub fn set_path<T: SceneTx>(tx: &mut T, id: &ElementId, path: PathType) -> Resul
     if from == path {
         return Ok(());
     }
-    if path == PathType::Elbow && d.closed {
+    if path.is_right_angled() && d.closed {
         return Err(LinearError::ClosedElbow);
     }
     d.path = path;
-    if path == PathType::Elbow {
-        let ends = (world[0], world[world.len() - 1]);
-        d.fixed_segments.clear();
-        d.start_is_special = false;
-        d.end_is_special = false;
-        commit(tx, id, e)?;
-        elbow::bind_ends_for_elbow(tx, id)?;
-        elbow::route_new(tx, id, Some(ends), RouteOpts::default())?;
-    } else if from == PathType::Elbow {
-        d.fixed_segments.clear();
-        d.start_is_special = false;
-        d.end_is_special = false;
-        commit(tx, id, e)?;
-        elbow::reanchor_for_simple(tx, id)?;
-    } else {
-        commit(tx, id, e)?;
+    let ends = (world[0], world[world.len() - 1]);
+    match (from.is_right_angled(), path.is_right_angled()) {
+        (false, true) => {
+            d.fixed_segments.clear();
+            d.start_is_special = false;
+            d.end_is_special = false;
+            commit(tx, id, e)?;
+            elbow::bind_ends_for_elbow(tx, id)?;
+            elbow::route_new(tx, id, Some(ends), RouteOpts::default())?;
+        }
+        (true, true) if path.avoids_shapes() => {
+            d.fixed_segments.clear();
+            d.start_is_special = false;
+            d.end_is_special = false;
+            commit(tx, id, e)?;
+            elbow::route_new(tx, id, Some(ends), RouteOpts::default())?;
+        }
+        (true, true) => commit(tx, id, e)?,
+        (true, false) => {
+            d.fixed_segments.clear();
+            d.start_is_special = false;
+            d.end_is_special = false;
+            commit(tx, id, e)?;
+            elbow::reanchor_for_simple(tx, id)?;
+        }
+        (false, false) => commit(tx, id, e)?,
     }
     finish(tx, id)
 }
@@ -417,7 +431,7 @@ pub fn midpoint_handles(e: &drafftink_scene::Element, zoom: f64) -> Vec<MidHandl
     let Some(world) = world_points(e) else { return Vec::new() };
     let Some(d) = e.linear_data() else { return Vec::new() };
     let zoom = if zoom.is_finite() && zoom > 0.0 { zoom } else { 1.0 };
-    let min = if d.path == PathType::Elbow { ELBOW_MIDPOINT_MIN_SCREEN_LENGTH } else { MIDPOINT_MIN_SCREEN_LENGTH };
+    let min = if d.path.is_right_angled() { ELBOW_MIDPOINT_MIN_SCREEN_LENGTH } else { MIDPOINT_MIN_SCREEN_LENGTH };
     let curves = (d.path == PathType::Round && world.len() > 2).then(|| curve_segments(&world));
     let mut out = Vec::new();
     for i in 1..world.len() {

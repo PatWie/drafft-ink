@@ -37,7 +37,7 @@ A shape is the scene's element, with the field names of the document file. The f
 | type | fields |
 |---|---|
 | `rectangle`, `diamond`, `ellipse` | box |
-| `line`, `arrow` | `points` (relative to `x`, `y`), `path: "sharp" \| "round" \| "elbow"`, `start_head`, `end_head`, `closed` |
+| `line`, `arrow` | `points` (relative to `x`, `y`), `path: "sharp" \| "round" \| "elbow" \| "auto_elbow"`, `start_head`, `end_head`, `closed` |
 | `freehand` | `points`, `pressures` |
 | `text` | `content`, `font: { family, size, weight, align }`; the box follows the text |
 | `math` | `latex`, `font_size` |

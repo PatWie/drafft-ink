@@ -152,7 +152,7 @@ pub(crate) fn simple_points<R: SceneRead>(
 pub fn bound_end_position<R: SceneRead>(scene: &R, arrow: &Element, end: End) -> Option<Point> {
     let d = arrow.linear_data()?;
     let world = crate::linear::world_points(arrow)?;
-    if d.path == drafftink_scene::PathType::Elbow {
+    if d.path.is_right_angled() {
         let (s, e) = crate::elbow::ends_for(scene, d, &world)?;
         let this = match end {
             End::Start => s,

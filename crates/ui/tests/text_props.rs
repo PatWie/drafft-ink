@@ -249,6 +249,9 @@ fn the_arrow_tool_ribbon_sets_the_defaults_for_the_next_arrow_with_tool_set_arro
     let call = press_in(&mut h, "Start head", "New arrows, Start head: Dot");
     assert_eq!(call.args, json!({ "start_head": "circle" }));
     assert_eq!(h.state().model.setting("arrow.type"), Some(&json!("elbow")));
+    let call = press(&mut h, "New arrows: Auto elbow");
+    assert_eq!(call, Call::new(Origin::Ui, "tool.set_arrow", json!({ "arrow_type": "auto_elbow" })));
+    assert_eq!(h.state().model.setting("arrow.type"), Some(&json!("auto_elbow")));
     assert_eq!(h.state().model.setting("arrow.end_head"), Some(&json!("bar")));
 }
 

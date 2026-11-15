@@ -10,7 +10,8 @@ use std::sync::Arc;
 
 use drafftink_profile::{Counter, count};
 use drafftink_scene::{
-    Color, Element, ElementKind, FileId, FillPattern, FreehandData, Head, ImageData as ImageElem, MathData, TextData,
+    Color, Element, ElementKind, FileId, FillPattern, FreehandData, Head, ImageData as ImageElem, LabelCut, MathData,
+    TextData,
 };
 use drafftink_sketch::{FillKind, SketchCache, SketchGeometry, fit_head_size};
 use drafftink_typeset::{MathFontSlot, Typesetter};
@@ -21,7 +22,7 @@ use vello::{Glyph, Scene};
 use crate::fragment::Fragment;
 use crate::images::{ImageCache, Lookup};
 use crate::options::RenderOptions;
-use crate::spec::{head_size, math_spec, sketch_input, text_spec};
+use crate::spec::{head_size, math_spec, paint_margin, sketch_input, text_spec};
 use crate::theme::{Theme, scale_alpha};
 
 /// A dashed stroke that would have more dashes than this is drawn solid.
@@ -73,6 +74,19 @@ impl ElementPainter {
         typesetter: &mut Typesetter,
         files: FileSource<'_>,
     ) -> Fragment {
+        self.paint_cut(e, None, options, typesetter, files)
+    }
+
+    /// Encodes `e` in its local frame. An arrow whose label sits on it is drawn with `cut` left out: the stroke and
+    /// the heads stop at the label's box (`LabelCut`). `cut` means nothing for other kinds.
+    pub fn paint_cut(
+        &mut self,
+        e: &Element,
+        cut: Option<&LabelCut>,
+        options: &RenderOptions,
+        typesetter: &mut Typesetter,
+        files: FileSource<'_>,
+    ) -> Fragment {
         let _span = drafftink_profile::span("paint_element");
         let mut ink = Ink::new(options.theme, e.style.opacity);
         let mut awaiting = None;
@@ -81,8 +95,12 @@ impl ElementPainter {
                 self.paint_sketch(&mut ink, e);
             }
             ElementKind::Arrow(d) => {
+                let clipped = cut.map(|c| begin_cut(&mut ink, e, c)).is_some();
                 self.paint_sketch(&mut ink, e);
                 paint_cardinality(&mut ink, e, d);
+                if clipped {
+                    ink.scene.pop_layer();
+                }
             }
             ElementKind::Freehand(f) if f.highlighter => paint_highlighter(&mut ink, e, f),
             ElementKind::Freehand(_) => self.paint_sketch(&mut ink, e),
@@ -237,6 +255,16 @@ fn paint_geometry(ink: &mut Ink, e: &Element, g: &SketchGeometry) {
             ink.stroke(path, s.width, s.dash, stroke_color);
         }
     }
+}
+
+/// Opens a layer that clips away `cut`: what is drawn next shows everywhere but in the label's place. The layer's
+/// shape is the arrow's paint area with the cut as a hole, in one path with the hole wound the other way, so the
+/// non-zero rule that every renderer has leaves it out. Close it with `ink.scene.pop_layer()`.
+fn begin_cut(ink: &mut Ink, e: &Element, cut: &LabelCut) {
+    let m = paint_margin(e);
+    let t = &e.transform;
+    let area = Rect::new(-m.left, -m.top, t.w + m.right, t.h + m.bottom);
+    ink.scene.push_clip_layer(Fill::NonZero, Affine::IDENTITY, &cut.outside(area));
 }
 
 /// The entity-relationship markers, which the sketch generator does not draw.

@@ -628,13 +628,13 @@ The guard is `scripts/web_check.py --app`: 125 moves per second over empty canva
 tree is printed (7.8% in the run above, 302 moves, load average 330). `web/hover@N` in `perf/budgets.json` already bounds redraws and
 `counter.elements_scanned`; its CPU limit is generous because the number is mostly the input injection.
 
-### 7.12 Elbow arrows around other shapes
+### 7.12 Auto elbow arrows around other shapes
 
-An elbow arrow with a bound end goes around the shapes between its ends (`docs/commands.md`, `arrow.set_type`). The work is bounded in three ways, and `crates/edit/tests/perf_work.rs` asserts each on 1,000 and 10,000 elements (and 100,000 in release builds):
+An auto elbow arrow with a bound end goes around the shapes between its ends (`docs/commands.md`, `arrow.set_type`); a plain elbow arrow looks at no other shape and costs what it did before. The work is bounded in three ways, and `crates/edit/tests/perf_work.rs` asserts each on 1,000 and 10,000 elements (and 100,000 in release builds):
 
 - The shapes come from the box index of the store (`DerivedIndex::ids_in_rect`, one R-tree query for the corridor of the arrow), so `elements_scanned` is 0 and the cost does not grow with the scene. A transaction that has written has no index; it is scanned once per call, not once per arrow (`ObstacleFinder`).
 - A search starts with the 24 nearest boxes (`MAX_OBSTACLES`) and takes in a box that its route crosses, up to 48 in all. A route that would need more falls back to the route without obstacles. A search stops after 16,384 nodes (`MAX_EXPANSIONS`; counter `route_expansions`). A five-shape detour at 1,000 and at 10,000 elements takes 182 expansions.
-- When a shape moves, only the unpinned elbow arrows whose box touches the shape's new box or the box it left (grown by 24 units) are routed again, found with the same index. In `perf_work` that is the one arrow that passed the shape plus the arrow bound to it.
+- When a shape moves, only the unpinned auto elbow arrows whose box touches the shape's new box or the box it left (grown by 24 units) are routed again, found with the same index. In `perf_work` that is the one arrow that passed the shape plus the arrow bound to it.
 
 `cargo bench -p drafftink-edit --bench arrows_binding` (release, criterion median, 1,000 shapes in 40 columns, results in `crates/edit/benches/results.md`):
 
@@ -643,7 +643,8 @@ An elbow arrow with a bound end goes around the shapes between its ends (`docs/c
 | One arrow routed again, two shapes in the way | 20 us |
 | One arrow from the first to the last shape of a row, 38 shapes in the way (the search is repeated with the shapes it crosses) | 0.63 ms |
 | A shape moved out of an arrow's way and back, with the arrow routed again each time, commit and pass | 56 us for the two |
-| `update_bound_arrows`, 100 moved shapes, every arrow elbow, in a transaction that has written (one scan) | 1.2 ms (0.55 ms before the router looked at other shapes) |
+| `update_bound_arrows`, 100 moved shapes, every arrow auto elbow, in a transaction that has written (one scan) | 1.27 ms |
+| The same with every arrow a plain elbow arrow | 0.64 ms |
 
 The store keeps one more R-tree for this (the boxes of the live elements, in `DerivedIndex`), updated from every change set: one removal and one insertion per element that moved.
 

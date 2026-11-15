@@ -373,7 +373,7 @@ export namespace ArrowMoveSegment {
   type A_Ref = string;
   /** Arguments of `arrow.move_segment` and `arrow.release_segment`. */
   export type Args = {
-    /** The elbow arrow. */
+    /** The elbow or auto elbow arrow. */
     arrow: A_Ref;
     /** The segment, counted from 1: segment `n` joins point `n - 1` and point `n`. */
     segment: number;
@@ -407,7 +407,7 @@ export namespace ArrowReleaseSegment {
   type A_Ref = string;
   /** Arguments of `arrow.move_segment` and `arrow.release_segment`. */
   export type Args = {
-    /** The elbow arrow. */
+    /** The elbow or auto elbow arrow. */
     arrow: A_Ref;
     /** The segment, counted from 1: segment `n` joins point `n - 1` and point `n`. */
     segment: number;
@@ -435,7 +435,7 @@ export namespace ArrowReleaseSegment {
   };
 }
 
-/** Clears the pinned elbow segments, re-solves the bindings and routes arrows again. */
+/** Clears the pinned elbow segments, re-solves the bindings and routes arrows again (auto elbow arrows around the other shapes). */
 export namespace ArrowReroute {
   /** An element reference in arguments: an id, or `"@name"` for the name set with `element.set_name`. */
   type A_Ref = string;
@@ -497,10 +497,10 @@ export namespace ArrowSetHead {
   };
 }
 
-/** Sets how the points of arrows and lines are joined: sharp, round or elbow. */
+/** Sets how the points of arrows and lines are joined: sharp, round, elbow or auto_elbow. */
 export namespace ArrowSetType {
   /** How the points of a line or arrow are joined. */
-  type A_PathType = "sharp" | "round" | "elbow";
+  type A_PathType = "sharp" | "round" | "elbow" | "auto_elbow";
   /** An element reference in arguments: an id, or `"@name"` for the name set with `element.set_name`. */
   type A_Ref = string;
   /** Arguments of `arrow.set_type`. */
@@ -508,8 +508,9 @@ export namespace ArrowSetType {
     /** The arrows and lines. Default: the selection. */
     ids?: A_Ref[] | null;
     /**
-     * `sharp` straight segments, `round` a smooth curve through the points, `elbow` an orthogonal route
-     * around the bound shapes.
+     * `sharp` straight segments, `round` a smooth curve through the points, `elbow` a right-angled route between
+     * the ends (around the shapes the arrow is bound to), `auto_elbow` a right-angled route that also goes
+     * around the other shapes and is made again when they move.
      */
     type: A_PathType;
   };
@@ -1360,7 +1361,7 @@ export namespace DiagramCreate {
     y?: number | null;
   };
   /** How the points of a line or arrow are joined. */
-  type A_PathType = "sharp" | "round" | "elbow";
+  type A_PathType = "sharp" | "round" | "elbow" | "auto_elbow";
   /** How hand-drawn the outline looks. The names are the old app's; `roughness` gives the numeric value. */
   type A_Sloppiness = "architect" | "artist" | "cartoonist" | "drunk";
   /** Dash pattern of a stroke. */
@@ -2084,7 +2085,7 @@ export namespace DocOutline {
     label?: string | null;
     /** The `name`. */
     name?: string | null;
-    /** Straight, curved or elbow. */
+    /** Straight, curved, elbow or auto elbow. */
     path: O_PathType;
     /** Marker at the start. */
     start_head: O_Head;
@@ -2131,7 +2132,7 @@ export namespace DocOutline {
     [key: string]: unknown;
   };
   /** How the points of a line or arrow are joined. */
-  type O_PathType = "sharp" | "round" | "elbow";
+  type O_PathType = "sharp" | "round" | "elbow" | "auto_elbow";
   /** Said when the outline is cut short. */
   type O_Truncation = {
     /** Edges shown. */
@@ -2398,7 +2399,7 @@ export namespace ElementConnect {
   /** What is drawn at an end of a line or arrow. */
   type A_Head = "none" | "arrow" | "bar" | "circle" | "circle_outline" | "triangle" | "triangle_outline" | "diamond" | "diamond_outline" | "cardinality_one" | "cardinality_many" | "cardinality_one_or_many" | "cardinality_exactly_one" | "cardinality_zero_or_one" | "cardinality_zero_or_many";
   /** How the points of a line or arrow are joined. */
-  type A_PathType = "sharp" | "round" | "elbow";
+  type A_PathType = "sharp" | "round" | "elbow" | "auto_elbow";
   /** How pen pressure shapes a freehand stroke. */
   type A_PressureMode = "uniform" | "simulated" | "device";
   /** An element reference in arguments: an id, or `"@name"` for the name set with `element.set_name`. */
@@ -2448,7 +2449,7 @@ export namespace ElementConnect {
   type A_VerticalAlign = "top" | "middle" | "bottom";
   /** Arguments of `element.connect`. */
   export type Args = {
-    /** sharp (default), round or elbow. */
+    /** sharp (default), round, elbow or auto_elbow. */
     arrow_type?: A_PathType | null;
     /** orbit (default): the ends sit on the outlines plus a gap. inside: the ends stay at the facing outline points. */
     bind_mode?: A_BindMode | null;
@@ -2494,12 +2495,12 @@ export namespace ElementConvert {
   /** The type to convert to. */
   type A_ConvertTo = "rectangle" | "diamond" | "ellipse" | "line" | "arrow";
   /** How the points of a line or arrow are joined. */
-  type A_PathType = "sharp" | "round" | "elbow";
+  type A_PathType = "sharp" | "round" | "elbow" | "auto_elbow";
   /** An element reference in arguments: an id, or `"@name"` for the name set with `element.set_name`. */
   type A_Ref = string;
   /** Arguments of `element.convert`. */
   export type Args = {
-    /** With `to` = arrow: sharp (default), round or elbow. */
+    /** With `to` = arrow: sharp (default), round, elbow or auto_elbow. */
     arrow_type?: A_PathType | null;
     /** Rectangles, diamonds, ellipses, or lines and arrows (not both). Default: the selection. */
     ids?: A_Ref[] | null;
@@ -2507,7 +2508,7 @@ export namespace ElementConvert {
     reverse?: boolean;
     /**
      * The type to convert to. Absent: the next type of the family (rectangle, diamond, ellipse; or line, sharp
-     * arrow, round arrow, elbow arrow), as Tab does.
+     * arrow, round arrow, elbow arrow, auto elbow arrow), as Tab does.
      */
     to?: A_ConvertTo | null;
   };
@@ -2524,8 +2525,8 @@ export namespace ElementConvert {
     /** Arrows bound to a converted shape that were put back on its new outline. */
     followers: string[];
     /**
-     * The type now, in words: `rectangle`, `diamond`, `ellipse`, `line`, `sharp arrow`, `round arrow` or
-     * `elbow arrow`.
+     * The type now, in words: `rectangle`, `diamond`, `ellipse`, `line`, `sharp arrow`, `round arrow`,
+     * `elbow arrow` or `auto elbow arrow`.
      */
     to: string;
     /** Elements that already had the type. */
@@ -2576,7 +2577,7 @@ export namespace ElementCreate {
   /** The kind tag without data. */
   type A_Kind = "rectangle" | "diamond" | "ellipse" | "line" | "arrow" | "freehand" | "text" | "math" | "image" | "frame";
   /** How the points of a line or arrow are joined. */
-  type A_PathType = "sharp" | "round" | "elbow";
+  type A_PathType = "sharp" | "round" | "elbow" | "auto_elbow";
   /** How pen pressure shapes a freehand stroke. */
   type A_PressureMode = "uniform" | "simulated" | "device";
   /** A world rectangle. */
@@ -2646,8 +2647,8 @@ export namespace ElementCreate {
      */
     after?: A_Ref | null;
     /**
-     * line, arrow: sharp (straight segments, default), round (a curve through the points) or elbow (orthogonal
-     * route between the two ends).
+     * line, arrow: sharp (straight segments, default), round (a curve through the points), elbow (a right-angled
+     * route between the two ends) or auto_elbow (a right-angled route that also goes around the other shapes).
      */
     arrow_type?: A_PathType | null;
     /** text: top-left corner of the box. math: top-left corner of the formula's box. Not with `container`. */
@@ -7269,15 +7270,15 @@ export namespace ToolSet {
   };
 }
 
-/** Sets the path type (sharp, round, elbow) and the heads that the arrow tool gives new arrows. Existing arrows are not changed. */
+/** Sets the path type (sharp, round, elbow, auto_elbow) and the heads that the arrow tool gives new arrows. Existing arrows are not changed. */
 export namespace ToolSetArrow {
   /** What is drawn at an end of a line or arrow. */
   type A_Head = "none" | "arrow" | "bar" | "circle" | "circle_outline" | "triangle" | "triangle_outline" | "diamond" | "diamond_outline" | "cardinality_one" | "cardinality_many" | "cardinality_one_or_many" | "cardinality_exactly_one" | "cardinality_zero_or_one" | "cardinality_zero_or_many";
   /** How the points of a line or arrow are joined. */
-  type A_PathType = "sharp" | "round" | "elbow";
+  type A_PathType = "sharp" | "round" | "elbow" | "auto_elbow";
   /** Arguments of `tool.set_arrow`. */
   export type Args = {
-    /** How new arrows are drawn: `sharp` (straight segments), `round` (a curve) or `elbow` (right angles). */
+    /** How new arrows are drawn: `sharp` (straight segments), `round` (a curve), `elbow` (right angles) or `auto_elbow` (right angles around the other shapes). */
     arrow_type?: A_PathType | null;
     /** The head at the end of new arrows. `null` or `"none"` means no head. */
     end_head?: A_Head | null;
@@ -7287,7 +7288,7 @@ export namespace ToolSetArrow {
   /** What is drawn at an end of a line or arrow. */
   type O_Head = "none" | "arrow" | "bar" | "circle" | "circle_outline" | "triangle" | "triangle_outline" | "diamond" | "diamond_outline" | "cardinality_one" | "cardinality_many" | "cardinality_one_or_many" | "cardinality_exactly_one" | "cardinality_zero_or_one" | "cardinality_zero_or_many";
   /** How the points of a line or arrow are joined. */
-  type O_PathType = "sharp" | "round" | "elbow";
+  type O_PathType = "sharp" | "round" | "elbow" | "auto_elbow";
   /** Output of `tool.set_arrow`: the defaults in effect. */
   export type Output = {
     /** The path type of new arrows. */

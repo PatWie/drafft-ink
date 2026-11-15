@@ -144,8 +144,9 @@ pub struct SetTypeArgs {
     /// The arrows and lines. Default: the selection.
     #[serde(default)]
     pub ids: Option<Vec<Ref>>,
-    /// `sharp` straight segments, `round` a smooth curve through the points, `elbow` an orthogonal route
-    /// around the bound shapes.
+    /// `sharp` straight segments, `round` a smooth curve through the points, `elbow` a right-angled route between
+    /// the ends (around the shapes the arrow is bound to), `auto_elbow` a right-angled route that also goes
+    /// around the other shapes and is made again when they move.
     #[serde(rename = "type")]
     #[schemars(rename = "type")]
     pub path: PathType,
@@ -281,7 +282,7 @@ pub struct EditPointsArgs {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct SegmentArgs {
-    /// The elbow arrow.
+    /// The elbow or auto elbow arrow.
     pub arrow: Ref,
     /// The segment, counted from 1: segment `n` joins point `n - 1` and point `n`.
     pub segment: usize,
@@ -698,7 +699,7 @@ fn bind(s: &mut Session, a: BindArgs) -> Result<BindOut, Refusal> {
     let z = zoom(s);
     let mut note = None;
     if a.mode == BindMode::Inside
-        && s.element(&arrow).and_then(Element::linear_data).is_some_and(|d| d.path == PathType::Elbow)
+        && s.element(&arrow).and_then(Element::linear_data).is_some_and(|d| d.path.is_right_angled())
     {
         note = Some("Elbow arrows always bind in orbit mode, so `mode: inside` was ignored.");
     }
@@ -763,7 +764,7 @@ fn move_point(s: &mut Session, a: MovePointArgs) -> Result<MovePointOut, Refusal
     let el = linear_target(s, cmd, &id)?;
     let world = world_points(&el).unwrap_or_default();
     let n = world.len();
-    let elbow = el.linear_data().is_some_and(|d| d.path == PathType::Elbow);
+    let elbow = el.linear_data().is_some_and(|d| d.path.is_right_angled());
 
     // Which point, and whether a point is inserted first.
     let index = if a.insert {
@@ -886,7 +887,7 @@ fn add_point(s: &mut Session, a: AddPointArgs) -> Result<AddPointOut, Refusal> {
     let id = s.resolve_ref(&a.arrow)?;
     let el = linear_target(s, cmd, &id)?;
     let world = world_points(&el).unwrap_or_default();
-    if el.linear_data().is_some_and(|d| d.path == PathType::Elbow) {
+    if el.linear_data().is_some_and(|d| d.path.is_right_angled()) {
         return Err(not_movable(cmd));
     }
     let seg = a.segment;
@@ -931,7 +932,7 @@ fn delete_point(s: &mut Session, a: DeletePointArgs) -> Result<DeletePointOut, R
     if let Some(bad) = indices.iter().find(|i| **i >= len) {
         return Err(no_such_point(cmd, "index", *bad, len));
     }
-    if el.linear_data().is_some_and(|d| d.path == PathType::Elbow) {
+    if el.linear_data().is_some_and(|d| d.path.is_right_angled()) {
         return Err(not_movable(cmd));
     }
     let deleted = edit(s, |tx| {
@@ -1064,7 +1065,7 @@ fn reroute(s: &mut Session, a: IdsArgs) -> Result<RerouteOut, Refusal> {
 fn elbow_target(s: &Session, cmd: &str, a: &SegmentArgs) -> Result<(ElementId, usize), Refusal> {
     let id = s.resolve_ref(&a.arrow)?;
     let el = linear_target(s, cmd, &id)?;
-    if el.linear_data().is_none_or(|d| d.path != PathType::Elbow) {
+    if el.linear_data().is_none_or(|d| !d.path.is_right_angled()) {
         return Err(not_elbow(cmd, id.as_str()));
     }
     let len = world_points(&el).map_or(0, |w| w.len());
@@ -1141,7 +1142,7 @@ pub const COMMANDS: &[CommandSpec] = &[
         "arrow.set_type",
         "arrow",
         "Set arrow type",
-        "Sets how the points of arrows and lines are joined: sharp, round or elbow.",
+        "Sets how the points of arrows and lines are joined: sharp, round, elbow or auto_elbow.",
         &Typed::new(set_type),
         ON_SELECTION,
     )
@@ -1232,7 +1233,7 @@ pub const COMMANDS: &[CommandSpec] = &[
         "arrow.reroute",
         "arrow",
         "Re-route arrows",
-        "Clears the pinned elbow segments, re-solves the bindings and routes arrows again.",
+        "Clears the pinned elbow segments, re-solves the bindings and routes arrows again (auto elbow arrows around the other shapes).",
         &Typed::new(reroute),
         ON_SELECTION,
     ),

@@ -14,7 +14,7 @@ use drafftink_render::{
     CropHandleSize, FrameReport, GridSpec, GridStyle, LodConfig, Overlay, OverlayStyle, PaintIndex, RenderOptions,
     Scene, SceneComposer, Theme, View, build_paint_index, paint_crop_chrome, paint_crop_dim, paint_overlay,
 };
-use drafftink_scene::{ElementId, SceneRead};
+use drafftink_scene::{Element, ElementId, Kind, SceneRead};
 
 use crate::editor::Arranged;
 use vello::peniko::{BlendMode, Color, Compose, Fill, Mix};
@@ -107,6 +107,16 @@ impl CanvasView {
         self.composer.set_hidden(ids.clone());
         self.hidden = ids;
         true
+    }
+
+    /// The text being edited, when it is the label of an arrow (`None` when the editor is closed or edits something
+    /// else): the line of the arrow stops at its box while it is typed. Returns true when that changed, and then the
+    /// world is composed again.
+    pub(crate) fn set_edited_label<S: SceneRead>(&mut self, store: &S, text: Option<&Element>) -> bool {
+        let label = text
+            .filter(|t| t.container_id().and_then(|c| store.get(c)).is_some_and(|c| c.tag() == Kind::Arrow))
+            .cloned();
+        self.composer.set_edited_label(label)
     }
 
     /// Forgets which revision the paint index follows, so the next sync rebuilds it (the document was replaced).

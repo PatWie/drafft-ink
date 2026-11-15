@@ -92,7 +92,7 @@ pub const COLOR_PICKERS: &[&str] = &["swatches", "custom"];
 /// The fonts the UI text can use: the canvas families that are bundled (the words of the `font_family` property).
 pub const UI_FONTS: &[&str] = &["gelpen", "gelpen_serif", "vanilla_extract", "noto_sans", "plex_sans"];
 /// The path types of `arrow.type` (the words of `drafftink_edit::arrow_defaults::path_name`).
-pub const ARROW_TYPES: &[&str] = &["sharp", "round", "elbow"];
+pub const ARROW_TYPES: &[&str] = &["sharp", "round", "elbow", "auto_elbow"];
 /// The heads of `arrow.start_head` and `arrow.end_head` (the words of `drafftink_edit::arrow_defaults::name_of`).
 pub const HEAD_NAMES: &[&str] = &[
     "none",
@@ -160,7 +160,7 @@ pub const KEYS: &[KeyDef] = &[
         "arrow.type",
         Kind::Choice(ARROW_TYPES),
         Def::Str("sharp"),
-        "Path type of new arrows (the arrow tool): straight, curved or elbow.",
+        "Path type of new arrows (the arrow tool): straight, curved, elbow or auto elbow.",
     ),
     key("arrow.start_head", Kind::Choice(HEAD_NAMES), Def::Str("none"), "Head at the start of new arrows."),
     key("arrow.end_head", Kind::Choice(HEAD_NAMES), Def::Str("arrow"), "Head at the end of new arrows."),

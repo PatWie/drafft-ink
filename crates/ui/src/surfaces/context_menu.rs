@@ -82,6 +82,7 @@ pub(crate) fn convert_targets(sel: &[SelectedElement]) -> Vec<Value> {
             json!({ "to": "arrow", "arrow_type": "sharp" }),
             json!({ "to": "arrow", "arrow_type": "round" }),
             json!({ "to": "arrow", "arrow_type": "elbow" }),
+            json!({ "to": "arrow", "arrow_type": "auto_elbow" }),
         ]
     } else {
         Vec::new()

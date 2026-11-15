@@ -226,11 +226,11 @@ fn arrow_types_are_chosen_with_arrow_type() {
 }
 
 #[test]
-fn tab_walks_line_sharp_round_elbow_and_wraps() {
+fn tab_walks_line_sharp_round_elbow_auto_elbow_and_wraps() {
     let mut s = testing::headless_session();
     let l = line(&mut s, json!([[0, 0], [120, 80]]));
     select(&mut s, &[&l]);
-    let seen: Vec<(Kind, PathType)> = (0..4)
+    let seen: Vec<(Kind, PathType)> = (0..5)
         .map(|_| {
             run(&mut s, json!({}));
             (tag(&s, &l), linear(&s, &l).path)
@@ -242,11 +242,12 @@ fn tab_walks_line_sharp_round_elbow_and_wraps() {
             (Kind::Arrow, PathType::Sharp),
             (Kind::Arrow, PathType::Round),
             (Kind::Arrow, PathType::Elbow),
+            (Kind::Arrow, PathType::AutoElbow),
             (Kind::Line, PathType::Sharp)
         ]
     );
     run(&mut s, json!({"reverse": true}));
-    assert_eq!((tag(&s, &l), linear(&s, &l).path), (Kind::Arrow, PathType::Elbow));
+    assert_eq!((tag(&s, &l), linear(&s, &l).path), (Kind::Arrow, PathType::AutoElbow));
 }
 
 #[test]

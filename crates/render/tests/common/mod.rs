@@ -152,3 +152,21 @@ pub fn update(store: &mut MemoryStore, name: &str, f: impl FnOnce(&mut Element))
     tx.update(&id(name), f).unwrap();
     tx.commit().unwrap()
 }
+
+/// A horizontal arrow from (20, 50) to (380, 50), and a label on it whose box is centred at `(label_x, 50)`. The
+/// label is `w` by `h` and invisible (a clear stroke), so that a picture of the scene shows only the arrow. Ids
+/// are `arrow` and `label`; the label is bound to the arrow as `text.bind` binds one.
+pub fn labelled_arrow(label_x: f64, w: f64, h: f64) -> Vec<Element> {
+    let zs = ZIndex::rebalance(2).unwrap();
+    let mut arrow = line_el("arrow", &zs[0], LinearKind::Arrow, &[(20.0, 50.0), (380.0, 50.0)]);
+    arrow.style.stroke_color = Color::rgb(0, 0, 0);
+    arrow.style.stroke_width = 4.0;
+    arrow.style.sloppiness = Sloppiness::Architect;
+    let mut text = TextData::new("label");
+    text.container_id = Some(arrow.id.clone());
+    text.label_position = Some(0.5);
+    let mut label = Element::new(id("label"), ElementKind::Text(text), zs[1].clone());
+    label.transform = Transform::new(label_x - w / 2.0, 50.0 - h / 2.0, w, h);
+    label.style.stroke_color = Color::rgba(0, 0, 0, 0);
+    vec![arrow, label]
+}

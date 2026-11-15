@@ -164,7 +164,9 @@ fn each_drawing_tool_shows_the_groups_of_its_new_elements() {
 #[test]
 fn the_arrow_tool_sets_new_arrows_and_keeps_the_corners_in_the_more_menu() {
     let mut h = desk(with_tool("arrow"));
-    assert!(has(&h, "New arrows: Sharp") && has(&h, "New arrows: Round") && has(&h, "New arrows: Elbow"));
+    for label in ["New arrows: Sharp", "New arrows: Round", "New arrows: Elbow", "New arrows: Auto elbow"] {
+        assert!(has(&h, label), "{label}");
+    }
     assert!(has(&h, "Start head") && has(&h, "End head") && has(&h, "Dashed"));
     assert!(!has(&h, CORNERS), "the path chips are next to it, the corners wait in the menu");
     assert!(!has(&h, "Path: Elbow"), "that is for arrows that exist");
@@ -310,7 +312,16 @@ fn text_gets_font_weight_size_emphasis_and_alignment() {
 #[test]
 fn an_arrow_gets_path_heads_and_a_swap() {
     let mut h = desk(arrow());
-    for label in ["Path: Sharp", "Path: Round", "Path: Elbow", "Start head", "End head", "Dashed", BRING_FRONT] {
+    for label in [
+        "Path: Sharp",
+        "Path: Round",
+        "Path: Elbow",
+        "Path: Auto elbow",
+        "Start head",
+        "End head",
+        "Dashed",
+        BRING_FRONT,
+    ] {
         assert!(has(&h, label), "{label}");
     }
     assert!(!has(&h, CORNERS) && !has(&h, FONT) && !has(&h, "New arrows: Elbow"));

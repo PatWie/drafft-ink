@@ -177,12 +177,13 @@ fn convert_offers_the_family_of_the_selection_and_converts_in_place() {
 }
 
 #[test]
-fn an_arrow_converts_to_a_line_and_to_the_three_arrow_types() {
+fn an_arrow_converts_to_a_line_and_to_the_four_arrow_types() {
     let rows = [
         ("Convert to line", json!({ "to": "line" })),
         ("Convert to sharp arrow", json!({ "to": "arrow", "arrow_type": "sharp" })),
         ("Convert to round arrow", json!({ "to": "arrow", "arrow_type": "round" })),
         ("Convert to elbow arrow", json!({ "to": "arrow", "arrow_type": "elbow" })),
+        ("Convert to auto elbow arrow", json!({ "to": "arrow", "arrow_type": "auto_elbow" })),
     ];
     for (text, args) in rows {
         let mut f = dialog::fixture();

@@ -327,13 +327,29 @@ fn the_pass_is_idempotent_and_settles_in_two_rounds_for_a_plain_move() {
 
 /// An elbow arrow from the right of `a` to the left of `b`, solved so the document is consistent.
 fn elbow_between(s: &mut Session, name: &str, a: &ElementId, b: &ElementId) -> ElementId {
+    right_angled_between(s, name, drafftink_scene::PathType::Elbow, a, b)
+}
+
+/// Like [`elbow_between`], an auto elbow arrow.
+fn auto_elbow_between(s: &mut Session, name: &str, a: &ElementId, b: &ElementId) -> ElementId {
+    right_angled_between(s, name, drafftink_scene::PathType::AutoElbow, a, b)
+}
+
+/// An arrow of the right-angled path type `path` between the two shapes.
+fn right_angled_between(
+    s: &mut Session,
+    name: &str,
+    path: drafftink_scene::PathType,
+    a: &ElementId,
+    b: &ElementId,
+) -> ElementId {
     let id = ElementId::new(name).unwrap();
     let z = s.tab().doc.store().next_top_index().unwrap();
     let (ra, rb) = (s.store().get(a).unwrap().rect(), s.store().get(b).unwrap().rect());
     let pts = [Point::new(ra.x1 + 6.0, ra.center().y), Point::new(rb.x0 - 6.0, rb.center().y)];
     let mut e = Element::linear(id.clone(), LinearKind::Arrow, z, &pts).unwrap();
     if let ElementKind::Arrow(d) = &mut e.kind {
-        d.path = drafftink_scene::PathType::Elbow;
+        d.path = path;
         d.start_binding = Some(Binding { target: a.clone(), mode: BindMode::Orbit, fixed_point: [1.0, 0.5] });
         d.end_binding = Some(Binding { target: b.clone(), mode: BindMode::Orbit, fixed_point: [0.0, 0.5] });
     }
@@ -351,12 +367,12 @@ fn route_of(s: &Session, arrow: &ElementId) -> Vec<Point> {
 }
 
 #[test]
-fn an_elbow_arrow_goes_around_a_shape_dropped_in_its_way_and_back_when_it_leaves_in_one_undo_step_each() {
+fn an_auto_elbow_arrow_goes_around_a_shape_dropped_in_its_way_and_back_when_it_leaves_in_one_undo_step_each() {
     let mut s = session();
     let a = rect(&mut s, "a", 0.0, 0.0, 100.0, 100.0);
     let b = rect(&mut s, "b", 500.0, 0.0, 100.0, 100.0);
     let wall = rect(&mut s, "wall", 250.0, 600.0, 100.0, 60.0);
-    let arrow = elbow_between(&mut s, "arr", &a, &b);
+    let arrow = auto_elbow_between(&mut s, "arr", &a, &b);
     ready(&mut s);
     let straight = route_of(&s, &arrow);
     assert_eq!(straight.len(), 2, "{straight:?}");
@@ -389,12 +405,26 @@ fn an_elbow_arrow_goes_around_a_shape_dropped_in_its_way_and_back_when_it_leaves
 }
 
 #[test]
+fn a_plain_elbow_arrow_ignores_a_shape_dropped_in_its_way() {
+    let mut s = session();
+    let a = rect(&mut s, "a", 0.0, 0.0, 100.0, 100.0);
+    let b = rect(&mut s, "b", 500.0, 0.0, 100.0, 100.0);
+    let _wall = rect(&mut s, "wall", 250.0, 600.0, 100.0, 60.0);
+    let arrow = elbow_between(&mut s, "arr", &a, &b);
+    ready(&mut s);
+    let straight = route_of(&s, &arrow);
+    exec(&mut s, "t.move", json!({"id": "wall", "dx": 0.0, "dy": -580.0}));
+    assert_eq!(route_of(&s, &arrow), straight, "a plain elbow arrow is not routed around other shapes");
+    assert_eq!(s.tab().doc.undo_depth(), 1, "only the shape moved");
+}
+
+#[test]
 fn deleting_the_shape_in_the_way_straightens_the_arrow() {
     let mut s = session();
     let a = rect(&mut s, "a", 0.0, 0.0, 100.0, 100.0);
     let b = rect(&mut s, "b", 500.0, 0.0, 100.0, 100.0);
     let _wall = rect(&mut s, "wall", 250.0, 20.0, 100.0, 60.0);
-    let arrow = elbow_between(&mut s, "arr", &a, &b);
+    let arrow = auto_elbow_between(&mut s, "arr", &a, &b);
     ready(&mut s);
     assert!(route_of(&s, &arrow).len() > 2, "built with the shape in the way");
     exec(&mut s, "t.delete", json!({"id": "wall"}));

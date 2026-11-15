@@ -152,7 +152,7 @@ pub fn unbind_detached<T: SceneTx>(tx: &mut T, set: &[ElementId]) -> Result<Vec<
 pub fn can_move_with<R: SceneRead>(scene: &R, arrow: &ElementId, set: &[ElementId]) -> bool {
     let Some(e) = scene.get(arrow) else { return true };
     let Some(d) = e.linear_data() else { return true };
-    if d.path != drafftink_scene::PathType::Elbow {
+    if !d.path.is_right_angled() {
         return true;
     }
     [&d.start_binding, &d.end_binding].into_iter().flatten().all(|b| set.contains(&b.target))

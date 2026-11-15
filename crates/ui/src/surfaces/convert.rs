@@ -18,13 +18,13 @@ fn short(text: &str) -> &str {
 }
 
 /// True when the row converts to the type `current` (the `to` the last conversion reported: a shape name,
-/// `line`, or `sharp arrow`, `round arrow`, `elbow arrow`).
+/// `line`, or `sharp arrow`, `round arrow`, `elbow arrow`, `auto elbow arrow`).
 fn is_current(args: &Value, current: Option<&str>) -> bool {
     let Some(current) = current else {
         return false;
     };
     match (args.get("to").and_then(Value::as_str), args.get("arrow_type").and_then(Value::as_str)) {
-        (Some("arrow"), Some(kind)) => current == format!("{kind} arrow"),
+        (Some("arrow"), Some(kind)) => current == format!("{} arrow", kind.replace('_', " ")),
         (Some(to), _) => to == current,
         (None, _) => false,
     }
@@ -83,6 +83,8 @@ mod tests {
         assert!(is_current(&json!({ "to": "line" }), Some("line")));
         assert!(is_current(&json!({ "to": "arrow", "arrow_type": "elbow" }), Some("elbow arrow")));
         assert!(!is_current(&json!({ "to": "arrow", "arrow_type": "sharp" }), Some("elbow arrow")));
+        assert!(is_current(&json!({ "to": "arrow", "arrow_type": "auto_elbow" }), Some("auto elbow arrow")));
+        assert!(!is_current(&json!({ "to": "arrow", "arrow_type": "elbow" }), Some("auto elbow arrow")));
         assert!(!is_current(&json!({ "to": "line" }), None));
     }
 }

@@ -852,3 +852,142 @@ fn the_svg_view_box_still_holds_the_head_of_a_short_arrow() {
         doc.root_element().attribute("viewBox").unwrap().split(' ').map(|v| v.parse().unwrap()).collect();
     assert!(vb[0] <= 0.0 && vb[0] + vb[2] >= 10.0 && vb[2] >= 10.0, "{vb:?}");
 }
+
+// ---- the label of an arrow hides the line behind it ----
+
+/// A horizontal arrow from (20, 50) to (380, 50) with a label 60 by 20 centred on `(label_x, 50)`. The label is
+/// invisible (a clear stroke), so that a picture shows only the arrow.
+fn arrow_with_label(label_x: f64, angle: f64) -> Document {
+    let mut d = Document::new();
+    let mut arrow = Element::linear(
+        eid("arrow"),
+        drafftink_scene::LinearKind::Arrow,
+        ZIndex::first(),
+        &[Point::new(20.0, 50.0), Point::new(380.0, 50.0)],
+    )
+    .unwrap();
+    arrow.style.stroke_color = Color::rgb(0, 0, 0);
+    arrow.style.stroke_width = 4.0;
+    arrow.transform.angle = angle;
+    let mut text = TextData::new("label");
+    text.container_id = Some(arrow.id.clone());
+    let mut label = Element::new(eid("label"), ElementKind::Text(text), ZIndex::first()).with_bounds(
+        label_x - 30.0,
+        40.0,
+        60.0,
+        20.0,
+    );
+    label.style.stroke_color = Color::rgba(0, 0, 0, 0);
+    let keys = ZIndex::rebalance(2).unwrap();
+    for (mut e, key) in [arrow, label].into_iter().zip(keys) {
+        e.index = key;
+        d.elements.push(e);
+    }
+    d
+}
+
+/// The SVG drawn at one pixel per unit: the pixels, their width, and the view's top-left corner.
+fn rasterise(svg: &str) -> (Vec<u8>, u32, (f64, f64)) {
+    let doc = parse(svg);
+    let view: Vec<f64> =
+        doc.root_element().attribute("viewBox").unwrap().split_whitespace().map(|v| v.parse().unwrap()).collect();
+    let tree = resvg::usvg::Tree::from_str(svg, &resvg::usvg::Options::default()).unwrap();
+    let (w, h) = (view[2].ceil() as u32, view[3].ceil() as u32);
+    let mut pixmap = resvg::tiny_skia::Pixmap::new(w, h).unwrap();
+    resvg::render(&tree, resvg::tiny_skia::Transform::identity(), &mut pixmap.as_mut());
+    (pixmap.data().to_vec(), w, (view[0], view[1]))
+}
+
+/// How many pixels in the box `x0..x1`, `y0..y1` (world units) are dark.
+fn dark_in(px: &(Vec<u8>, u32, (f64, f64)), x0: f64, x1: f64, y0: f64, y1: f64) -> usize {
+    let (data, w, (vx, vy)) = px;
+    let rows = data.len() as u32 / (w * 4);
+    let range =
+        |a: f64, b: f64, v: f64, n: u32| ((a - v).floor().max(0.0) as u32)..((b - v).ceil().max(0.0) as u32).min(n);
+    range(y0, y1, *vy, rows)
+        .flat_map(|y| range(x0, x1, *vx, *w).map(move |x| (x, y)))
+        .filter(|&(x, y)| {
+            let i = ((y * w + x) * 4) as usize;
+            data[i + 3] > 128 && data[i] < 100
+        })
+        .count()
+}
+
+fn clean_svg(d: &Document) -> String {
+    let opts = SvgOptions { style: SvgStyle::Clean, background: false, embed_scene: false, ..SvgOptions::default() };
+    export_svg(d, &opts, &EstimateMeasure, None).unwrap()
+}
+
+#[test]
+fn svg_stops_the_line_of_an_arrow_at_its_label() {
+    let without = {
+        let mut d = arrow_with_label(200.0, 0.0);
+        d.elements.retain(|e| e.id.as_str() != "label");
+        d
+    };
+    let whole = rasterise(&clean_svg(&without));
+    assert!(dark_in(&whole, 170.0, 230.0, 46.0, 54.0) > 200, "the line runs through the middle");
+
+    let svg = clean_svg(&arrow_with_label(200.0, 0.0));
+    assert!(svg.contains("<clipPath id=\"cut"), "a clip path holds the gap");
+    assert_eq!(svg, clean_svg(&arrow_with_label(200.0, 0.0)), "and the export is the same every time");
+    let cut = rasterise(&svg);
+    // The label's box is x 170..230, with 4 units of padding: nothing of the line from 166 to 234.
+    assert_eq!(dark_in(&cut, 167.0, 233.0, 40.0, 60.0), 0, "the line is gone behind the label");
+    assert!(dark_in(&cut, 40.0, 160.0, 46.0, 54.0) > 400, "and drawn before it");
+    assert!(dark_in(&cut, 240.0, 340.0, 46.0, 54.0) > 300, "and after it");
+    assert_eq!(
+        dark_in(&cut, 0.0, 160.0, 0.0, 100.0),
+        dark_in(&whole, 0.0, 160.0, 0.0, 100.0),
+        "the rest of the arrow is not touched"
+    );
+
+    // The gap follows a label that sits elsewhere along the arrow, and its head is kept.
+    let near_start = rasterise(&clean_svg(&arrow_with_label(90.0, 0.0)));
+    assert_eq!(dark_in(&near_start, 61.0, 119.0, 40.0, 60.0), 0);
+    assert!(dark_in(&near_start, 130.0, 300.0, 46.0, 54.0) > 500);
+    assert!(dark_in(&near_start, 360.0, 384.0, 40.0, 60.0) > 10, "the arrowhead is drawn");
+}
+
+#[test]
+fn svg_cuts_a_rotated_arrow_where_the_label_is_in_the_world() {
+    // The arrow turns about its centre (200, 50), where the label is.
+    let svg = clean_svg(&arrow_with_label(200.0, 0.4));
+    let cut = rasterise(&svg);
+    assert_eq!(dark_in(&cut, 172.0, 228.0, 42.0, 58.0), 0, "nothing of the line under the label");
+    let mut d = arrow_with_label(200.0, 0.4);
+    d.elements.retain(|e| e.id.as_str() != "label");
+    let whole = rasterise(&clean_svg(&d));
+    assert!(dark_in(&whole, 172.0, 228.0, 42.0, 58.0) > 100, "without the label the rotated line passes there");
+}
+
+#[test]
+fn svg_draws_whole_an_arrow_whose_label_is_empty_or_gone() {
+    let mut d = arrow_with_label(200.0, 0.0);
+    if let ElementKind::Text(t) = &mut d.elements[1].kind {
+        t.content = "  ".into();
+    }
+    assert!(!clean_svg(&d).contains("clipPath"));
+    let mut gone = arrow_with_label(200.0, 0.0);
+    gone.elements[1].deleted = true;
+    assert!(!clean_svg(&gone).contains("clipPath"));
+}
+
+#[test]
+fn svg_cuts_a_hand_drawn_line_too() {
+    let sketchy = |label: bool| {
+        let mut d = arrow_with_label(200.0, 0.0);
+        d.elements[0].style.sloppiness = drafftink_scene::Sloppiness::Drunk;
+        if !label {
+            d.elements.retain(|e| e.id.as_str() != "label");
+        }
+        let opts =
+            SvgOptions { style: SvgStyle::Sketch, background: false, embed_scene: false, ..SvgOptions::default() };
+        rasterise(&export_svg(&d, &opts, &EstimateMeasure, None).unwrap())
+    };
+    let (whole, cut) = (sketchy(false), sketchy(true));
+    assert!(dark_in(&whole, 170.0, 230.0, 30.0, 70.0) > 100, "the wobbling line passes the middle");
+    assert_eq!(dark_in(&cut, 167.0, 233.0, 20.0, 80.0), 0, "and is gone behind the label");
+    assert!(dark_in(&cut, 30.0, 160.0, 20.0, 80.0) > 300);
+    assert!(dark_in(&cut, 240.0, 340.0, 20.0, 80.0) > 300);
+}

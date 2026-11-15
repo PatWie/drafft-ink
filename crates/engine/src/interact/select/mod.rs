@@ -18,7 +18,7 @@ use drafftink_canvas::{Button, Handle, Target};
 use drafftink_geom::aabb;
 use drafftink_geom::kurbo::{Point, Rect};
 use drafftink_geom::lasso::Lasso;
-use drafftink_scene::{ElementId, PathType};
+use drafftink_scene::ElementId;
 
 use self::frame::{Frame, Pivot};
 use crate::cmd::element::Handle as BoxHandle;
@@ -337,7 +337,7 @@ fn arrow_ref(id: &ElementId) -> Ref {
 
 /// True for an arrow or line routed with right angles.
 pub(super) fn is_elbow(cx: &Ctx<'_>, id: &ElementId) -> bool {
-    cx.s.element(id).and_then(|e| e.linear_data()).is_some_and(|d| d.path == PathType::Elbow)
+    cx.s.element(id).and_then(|e| e.linear_data()).is_some_and(|d| d.path.is_right_angled())
 }
 
 /// Drops what this tool puts in the overlay: the marquee, guides, highlights, the badge and the active handle.

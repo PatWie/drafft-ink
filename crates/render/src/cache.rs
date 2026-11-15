@@ -16,7 +16,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use drafftink_profile::{Counter, inc};
-use drafftink_scene::{Element, ElementId, FileId};
+use drafftink_scene::{Element, ElementId, FileId, LabelCut};
 
 use crate::fragment::Fragment;
 use crate::hash::paint_hash;
@@ -57,6 +57,9 @@ struct Entry {
     fragment: Arc<Fragment>,
     version: u64,
     hash: u128,
+    /// The label cut the fragment was drawn with. It comes from another element (the label), so neither the version
+    /// nor the content hash of the arrow tells that it changed.
+    cut: Option<LabelCut>,
     tick: u64,
 }
 
@@ -144,10 +147,12 @@ impl FragmentCache {
     /// The fragment for `e`: from the cache when valid, else `paint` is called and its result stored.
     ///
     /// `stale` is true when a held fragment must be encoded again regardless of its version (a placeholder whose
-    /// picture has arrived; see [`Self::awaiting`]).
+    /// picture has arrived; see [`Self::awaiting`]). `cut` is the part of an arrow that its label hides: a held
+    /// fragment drawn with another cut is encoded again.
     pub fn get_or_paint(
         &mut self,
         e: &Element,
+        cut: Option<LabelCut>,
         theme: Theme,
         stale: bool,
         paint: impl FnOnce() -> Fragment,
@@ -158,6 +163,7 @@ impl FragmentCache {
         let mut new_hash = None;
         if let Some(entry) = map.get_mut(&e.id)
             && !stale
+            && entry.cut == cut
         {
             if entry.version == e.version && e.version != 0 {
                 entry.tick = tick;
@@ -180,7 +186,7 @@ impl FragmentCache {
         let fragment = Arc::new(paint());
         let hash = new_hash.unwrap_or_else(|| paint_hash(e));
         let bytes = fragment.bytes;
-        let entry = Entry { fragment: Arc::clone(&fragment), version: e.version, hash, tick };
+        let entry = Entry { fragment: Arc::clone(&fragment), version: e.version, hash, cut, tick };
         if let Some(old) = self.maps[theme.index()].insert(e.id.clone(), entry) {
             self.bytes = self.bytes.saturating_sub(old.fragment.bytes);
         }

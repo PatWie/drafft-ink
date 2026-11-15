@@ -29,8 +29,8 @@ use drafftink_geom::snap::snap_rotation;
 use drafftink_geom::transform::{ElementFrame, Mapped, map_box, normalize_angle, normalize_angle_signed, rotate_point};
 use drafftink_geom::{OrientedBox, aabb};
 use drafftink_scene::{
-    Binding, Element, ElementError, ElementId, ElementKind, Kind, PathType, SceneRead, SceneTx, StoreError, Transform,
-    limits, validate_element, validate_transform,
+    Binding, Element, ElementError, ElementId, ElementKind, Kind, SceneRead, SceneTx, StoreError, Transform, limits,
+    validate_element, validate_transform,
 };
 
 use crate::binding::{self, BindingError};
@@ -702,7 +702,7 @@ pub fn rotate<T: SceneTx>(
         .iter()
         .filter(|i| {
             tx.get(i)
-                .is_some_and(|e| e.tag() == Kind::Frame || e.linear_data().is_some_and(|d| d.path == PathType::Elbow))
+                .is_some_and(|e| e.tag() == Kind::Frame || e.linear_data().is_some_and(|d| d.path.is_right_angled()))
         })
         .cloned()
         .collect();

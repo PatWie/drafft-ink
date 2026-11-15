@@ -31,11 +31,13 @@ pub(super) fn linear(cx: &Ctx<'_>, kind: Kind, points: &[Point]) -> Option<Eleme
     create::linear_element(preview_id()?, ZIndex::first(), points, &spec, style).ok()
 }
 
-/// An elbow arrow preview from `start` to `end`, routed as the engine will route the arrow once it exists:
-/// around the shapes the ends are bound to. `None` when the route cannot be made (the caller then shows the
-/// straight preview).
+/// A right-angled arrow preview of type `path` (elbow or auto elbow) from `start` to `end`, routed as the engine
+/// will route the arrow once it exists: around the shapes the ends are bound to, and for an auto elbow arrow
+/// around the other shapes too. `None` when the route cannot be made (the caller then shows the straight
+/// preview).
 pub(super) fn elbow(
     cx: &Ctx<'_>,
+    path: PathType,
     start: Point,
     end: Point,
     bindings: (Option<Binding>, Option<Binding>),
@@ -44,7 +46,7 @@ pub(super) fn elbow(
     let spec = arrow_spec(cx, Kind::Arrow);
     let mut arrow = create::linear_element(preview_id()?, ZIndex::first(), &[start, end], &spec, style).ok()?;
     if let ElementKind::Arrow(d) = &mut arrow.kind {
-        d.path = PathType::Elbow;
+        d.path = path;
         (d.start_binding, d.end_binding) = bindings;
     }
     let opts = RouteOpts::at_zoom(cx.s.view().zoom / BASE_ZOOM);
