@@ -624,3 +624,19 @@ fn a_picture_that_gains_a_stroke_paints_only_the_new_one_and_gets_the_same_pixel
     let fresh = ImageCache::default().baked(&fid, (60, 60), &other, &original);
     assert_eq!(changed.data.data(), fresh.data.data());
 }
+
+#[test]
+fn paint_on_a_rounded_picture_is_clipped_to_the_rounded_outline() {
+    let bytes = png(100, 60);
+    // A big red dab right in the top left corner, which the radius of 20 cuts off.
+    let e = with_paint(rounded_picture(&bytes), vec![red_stroke(PaintMode::Paint, 30.0, &[(2.0, 2.0)])]);
+    let mut pb = Paintbox::new(bytes);
+    let fragment = pb.paint(&e);
+    let baked = shown(&fragment).unwrap();
+    assert_eq!(pixel(&baked, 2, 2), [255, 0, 0, 255], "the stroke is in the picture's pixels, corner included");
+    let shapes = shapes_of(&fragment.scene);
+    let [fill] = &shapes.picture[..] else { panic!("one picture fill: {}", shapes.picture.len()) };
+    assert!(!fill.contains(kurbo::Point::new(2.0, 2.0)), "but the fill that draws it is rounded: the corner is clear");
+    assert!(fill.contains(kurbo::Point::new(12.0, 12.0)), "and the paint inside the arc shows");
+    assert_eq!(shapes.strokes.len(), 1, "the outline is still drawn once");
+}

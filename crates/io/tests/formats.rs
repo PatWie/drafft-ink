@@ -1116,3 +1116,20 @@ fn svg_keeps_paint_and_crop_together_and_the_scene_keeps_the_strokes() {
     };
     assert_eq!(data.paint.len(), 1);
 }
+
+#[test]
+fn svg_clips_the_paint_of_a_rounded_picture_with_the_picture() {
+    let mut d = painted_sample();
+    let at = d.elements.iter().position(|e| e.id.as_str() == "img").unwrap();
+    d.elements[at].style.corner_radius = 1.0e6;
+    let svg =
+        export_svg(&d, &SvgOptions { embed_scene: false, ..SvgOptions::default() }, &EstimateMeasure, None).unwrap();
+    let doc = parse(&svg);
+    let group = doc.descendants().find(|n| n.attribute("id") == Some("e-img")).unwrap();
+    let clipped = group
+        .children()
+        .find(|n| n.attribute("clip-path") == Some("url(#clip-img-img)"))
+        .expect("the picture, paint included, is under the rounded clip");
+    assert!(clipped.descendants().any(|n| n.tag_name().name() == "image"), "the baked picture is inside the clip");
+    assert_eq!(embedded_pictures(&svg).len(), 1);
+}

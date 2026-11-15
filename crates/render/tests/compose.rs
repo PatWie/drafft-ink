@@ -1105,3 +1105,19 @@ fn the_text_being_edited_stands_in_for_the_stored_label_of_its_arrow() {
     composer.compose(&store, &index, &view(1.0, 0.0, 0.0), &mut ts, &mut scene);
     assert!(layers_of(&scene).clips.is_empty());
 }
+
+#[test]
+fn every_path_type_of_an_arrow_leaves_the_place_of_its_label_out() {
+    for path in [PathType::Sharp, PathType::Round, PathType::Elbow, PathType::AutoElbow] {
+        let mut els = labelled_arrow(200.0, 60.0, 20.0);
+        if let ElementKind::Arrow(d) = &mut els[0].kind {
+            d.path = path;
+        }
+        let (scene, _) = compose_arrow(els);
+        let layers = layers_of(&scene);
+        assert_eq!(layers.clips.len(), 1, "{path:?}: the arrow is drawn through a clip");
+        let local = |x: f64| kurbo::Point::new(x - 20.0, 0.0);
+        assert!(!kurbo::Shape::contains(&layers.clips[0], local(200.0)), "{path:?}: the label's place is cut");
+        assert!(kurbo::Shape::contains(&layers.clips[0], local(100.0)), "{path:?}: the rest is kept");
+    }
+}
