@@ -130,7 +130,9 @@ impl ElementPainter {
         match lookup {
             Lookup::Ready(data) => {
                 let outline = image_outline(e, local);
-                paint_picture(ink, img, local, &outline, data);
+                let natural = (img.natural_width, img.natural_height);
+                let shown = self.images.baked(file, natural, &img.paint, &data);
+                paint_picture(ink, img, local, &outline, shown);
                 paint_border(ink, e, &outline);
                 None
             }

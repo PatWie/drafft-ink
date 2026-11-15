@@ -10,13 +10,19 @@
 //!
 //! Either way a failed decode is remembered (a bad picture is not decoded again every frame), and the decoded
 //! pixels are bounded by bytes with least-recently-used eviction.
+//!
+//! A picture with paint on it is drawn from its *baked* pixels: the decoded picture with the strokes painted over
+//! it ([`drafftink_scene::paint::bake`]). The cache keeps them next to the decoded pictures, by file and a digest
+//! of the strokes, under the same byte budget. The original stays decoded as well, so a stroke that is erased,
+//! undone or reset needs no new decode.
 
 use std::collections::HashMap;
 use std::error::Error;
 use std::io::Cursor;
 use std::sync::Arc;
 
-use drafftink_scene::FileId;
+use drafftink_scene::paint::{bake, bake_over};
+use drafftink_scene::{FileId, Paint};
 use image::ImageReader;
 use peniko::{Blob, ImageAlphaType, ImageData, ImageFormat};
 
@@ -127,6 +133,31 @@ struct Slot {
     source: Option<Arc<[u8]>>,
 }
 
+/// A decoded picture with strokes painted over it.
+struct Baked {
+    image: ImageData,
+    /// The strokes that were painted, and the stored size they are in pixels of: what a later bake can build on.
+    paint: Paint,
+    natural: (u32, u32),
+    tick: u64,
+}
+
+impl Baked {
+    fn bytes(&self) -> usize {
+        self.image.data.data().len()
+    }
+}
+
+/// What the byte budget can evict.
+#[derive(Clone, PartialEq, Eq, PartialOrd, Ord)]
+enum Held {
+    Picture(FileId),
+    Baked(BakedKey),
+}
+
+/// A baked picture: the file and the digest of its strokes (and stored size).
+type BakedKey = (FileId, u128);
+
 /// Counters of the image cache.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct ImageStats {
@@ -138,13 +169,20 @@ pub struct ImageStats {
     pub evictions: u64,
     /// Entries now held.
     pub entries: usize,
-    /// Decoded pixel bytes now held.
+    /// Decoded and baked pixel bytes now held.
     pub bytes: usize,
+    /// Painted pictures baked (strokes laid over the decoded pixels).
+    pub baked: u64,
+    /// Of those, the ones that only painted the strokes added to an earlier bake of the same picture.
+    pub baked_on_earlier: u64,
+    /// Baked pictures now held.
+    pub baked_entries: usize,
 }
 
 /// Decoded pictures by file id, bounded by bytes.
 pub struct ImageCache {
     slots: HashMap<FileId, Slot>,
+    baked: HashMap<BakedKey, Baked>,
     requests: Vec<DecodeRequest>,
     policy: DecodePolicy,
     max_bytes: usize,
@@ -156,12 +194,15 @@ pub struct ImageCache {
 
 /// Failed and pending entries are tiny but still bounded.
 const MAX_SMALL_ENTRIES: usize = 4096;
+/// Most baked versions of one picture kept at once: the shown paint, the one before an undo, and a stroke being drawn.
+const MAX_BAKED_PER_FILE: usize = 3;
 
 impl ImageCache {
     /// A cache holding at most `max_bytes` of decoded pixels.
     pub fn new(max_bytes: usize) -> Self {
         Self {
             slots: HashMap::new(),
+            baked: HashMap::new(),
             requests: Vec::new(),
             policy: DecodePolicy::default(),
             max_bytes: max_bytes.max(1),
@@ -305,19 +346,103 @@ impl ImageCache {
         if self.bytes <= self.max_bytes {
             return;
         }
-        // Drop the least recently used decoded pictures until 10% under the budget. The newest stays.
+        // Drop the least recently used pixels (decoded or baked) until 10% under the budget. The newest stays.
         let target = self.max_bytes - self.max_bytes / 10;
-        let mut order: Vec<(u64, FileId)> =
-            self.slots.iter().filter(|(_, s)| s.bytes > 0).map(|(k, s)| (s.tick, k.clone())).collect();
+        let mut order: Vec<(u64, Held)> = self
+            .slots
+            .iter()
+            .filter(|(_, s)| s.bytes > 0)
+            .map(|(k, s)| (s.tick, Held::Picture(k.clone())))
+            .chain(self.baked.iter().map(|(k, b)| (b.tick, Held::Baked(k.clone()))))
+            .collect();
         order.sort_unstable();
         order.pop();
-        for (_, key) in order {
+        for (_, held) in order {
             if self.bytes <= target {
                 break;
             }
-            if let Some(s) = self.slots.remove(&key) {
-                self.bytes = self.bytes.saturating_sub(s.bytes);
+            let freed = match held {
+                Held::Picture(file) => self.slots.remove(&file).map(|s| s.bytes),
+                Held::Baked(key) => self.baked.remove(&key).map(|b| b.bytes()),
+            };
+            if let Some(freed) = freed {
+                self.bytes = self.bytes.saturating_sub(freed);
                 self.stats.evictions += 1;
+            }
+        }
+    }
+
+    /// The picture with the strokes of `paint` painted over `original` (the decoded picture of `file`).
+    ///
+    /// `natural` is the stored size of the picture the strokes are in pixels of. The result is baked once per
+    /// distinct paint and kept under the byte budget; asking again is a lookup. Without strokes, or when the
+    /// strokes cannot be painted onto this picture, it is `original`.
+    pub fn baked(&mut self, file: &FileId, natural: (u32, u32), paint: &Paint, original: &ImageData) -> ImageData {
+        if paint.is_empty() || natural.0 == 0 || natural.1 == 0 {
+            return original.clone();
+        }
+        let key = (file.clone(), crate::hash::paint_key(natural, paint));
+        self.tick += 1;
+        let tick = self.tick;
+        if let Some(hit) = self.baked.get_mut(&key) {
+            hit.tick = tick;
+            return hit.image.clone();
+        }
+        let scale =
+            (f64::from(original.width) / f64::from(natural.0), f64::from(original.height) / f64::from(natural.1));
+        // A picture that gains strokes (the paint editor shows the stroke being drawn as one more stroke) only needs
+        // the new ones painted over the bake of the strokes it already had.
+        let earlier = self.longest_bake_within(file, natural, paint);
+        let pixels = match &earlier {
+            Some((base, done)) => bake_over(
+                base.data.data(),
+                original.data.data(),
+                original.width,
+                original.height,
+                scale,
+                paint.values().skip(*done),
+            ),
+            None => bake(original.data.data(), original.width, original.height, scale, paint.values()),
+        };
+        let Some(pixels) = pixels else { return original.clone() };
+        let image = ImageData { data: Blob::new(Arc::new(pixels)), ..original.clone() };
+        self.stats.baked += 1;
+        self.stats.baked_on_earlier += u64::from(earlier.is_some());
+        self.forget_oldest_bake_of(file);
+        let entry = Baked { image: image.clone(), paint: paint.clone(), natural, tick };
+        self.bytes += entry.bytes();
+        self.baked.insert(key, entry);
+        self.evict();
+        image
+    }
+
+    /// The bake of `file` whose strokes are the first strokes of `paint` (as many as possible), and how many.
+    /// It counts as a use.
+    fn longest_bake_within(&mut self, file: &FileId, natural: (u32, u32), paint: &Paint) -> Option<(ImageData, usize)> {
+        let (key, done) = self
+            .baked
+            .iter()
+            .filter(|(k, b)| &k.0 == file && b.natural == natural && b.paint.len() < paint.len())
+            .filter(|(_, b)| b.paint.iter().zip(paint).all(|(old, new)| old == new))
+            .map(|(k, b)| (k.clone(), b.paint.len()))
+            .max_by_key(|(_, n)| *n)?;
+        let entry = self.baked.get_mut(&key)?;
+        entry.tick = self.tick;
+        Some((entry.image.clone(), done))
+    }
+
+    /// Makes room for one more baked version of `file` when it already has [`MAX_BAKED_PER_FILE`].
+    fn forget_oldest_bake_of(&mut self, file: &FileId) {
+        let mut mine: Vec<(u64, BakedKey)> =
+            self.baked.iter().filter(|(k, _)| &k.0 == file).map(|(k, b)| (b.tick, k.clone())).collect();
+        if mine.len() < MAX_BAKED_PER_FILE {
+            return;
+        }
+        mine.sort_unstable();
+        let excess = mine.len() + 1 - MAX_BAKED_PER_FILE;
+        for (_, key) in mine.into_iter().take(excess) {
+            if let Some(old) = self.baked.remove(&key) {
+                self.bytes = self.bytes.saturating_sub(old.bytes());
             }
         }
     }
@@ -338,13 +463,14 @@ impl ImageCache {
     /// Forgets everything (a different document was loaded).
     pub fn clear(&mut self) {
         self.slots.clear();
+        self.baked.clear();
         self.requests.clear();
         self.bytes = 0;
     }
 
     /// Counters.
     pub fn stats(&self) -> ImageStats {
-        ImageStats { entries: self.slots.len(), bytes: self.bytes, ..self.stats }
+        ImageStats { entries: self.slots.len(), baked_entries: self.baked.len(), bytes: self.bytes, ..self.stats }
     }
 }
 

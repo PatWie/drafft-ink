@@ -93,8 +93,13 @@ mod tests {
 
     #[test]
     fn a_picture_with_opacity_zero_shows_nothing_but_one_without_a_stroke_does() {
-        let mut e =
-            el(ElementKind::Image(crate::ImageData { file_id: None, natural_width: 4, natural_height: 3, crop: None }));
+        let mut e = el(ElementKind::Image(crate::ImageData {
+            file_id: None,
+            natural_width: 4,
+            natural_height: 3,
+            crop: None,
+            paint: Default::default(),
+        }));
         e.style.stroke_color = Color::TRANSPARENT;
         assert!(!e.shows_nothing());
         e.style.opacity = 0.0;

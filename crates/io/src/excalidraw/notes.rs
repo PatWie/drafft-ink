@@ -5,7 +5,8 @@
 //! The exporter writes each of these into `customData.drafftink` **only when the plain Excalidraw fields would not
 //! read back to the same value**, and the importer applies the note on top of the plain fields and removes it from
 //! the element's own `custom` map. Excalidraw keeps `customData` untouched, so a drafftink to Excalidraw to drafftink
-//! trip loses nothing even when Excalidraw edits the file in between.
+//! trip loses nothing even when Excalidraw edits the file in between. The one exception is paint on a picture,
+//! which is baked into the exported PNG and recorded only as `paint_baked`.
 
 use drafftink_scene::{Brush, FillPattern, FontFamily, FontWeight, InlineMath, Sloppiness, TextRun};
 use serde::{Deserialize, Serialize};
@@ -44,6 +45,10 @@ pub(super) struct Note {
     pub name: Option<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub runs: Vec<TextRun>,
+    /// The picture carries this many brush strokes that were baked into its pixels: Excalidraw has no strokes, so the
+    /// file holds the painted PNG. A re-import reads a plain picture; the note only tells what happened.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub paint_baked: Option<usize>,
     /// Inline math of a text. Excalidraw shows the source with its dollar signs; the note only says when it is off.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub inline_math: Option<InlineMath>,
@@ -89,6 +94,7 @@ mod tests {
             frame_clip: Some(false),
             name: Some("n".into()),
             runs: vec![TextRun { start: 0, end: 2, color: None, ..Default::default() }],
+            paint_baked: Some(3),
             inline_math: Some(InlineMath::Off),
         };
         let v = n.to_value().unwrap();

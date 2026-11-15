@@ -7,6 +7,7 @@ use common::*;
 use drafftink_doc::LoroStore;
 use drafftink_scene::*;
 use kurbo::Point;
+use loro::ToJson as _;
 use smallvec::smallvec;
 
 fn styled(mut e: Element) -> Element {
@@ -110,6 +111,34 @@ fn every_kind() -> Document {
             natural_width: 640,
             natural_height: 480,
             crop: Some(Crop { x: 1.0, y: 2.0, width: 3.0, height: 4.0 }),
+            paint: [
+                (
+                    StrokeId::new("000001-a").unwrap(),
+                    PaintStroke {
+                        mode: PaintMode::Paint,
+                        color: Color::parse("#e0313180").unwrap(),
+                        size: 24.5,
+                        hardness: 0.8,
+                        opacity: 0.6,
+                        points: vec![Point::new(10.0, 20.5), Point::new(30.25, 40.0)],
+                        pressures: vec![0.3, 1.0],
+                    },
+                ),
+                (
+                    StrokeId::new("000002-b").unwrap(),
+                    PaintStroke {
+                        mode: PaintMode::Erase,
+                        color: Color::rgb(0, 0, 0),
+                        size: 8.0,
+                        hardness: 1.0,
+                        opacity: 1.0,
+                        points: vec![Point::new(5.0, 5.0)],
+                        pressures: Vec::new(),
+                    },
+                ),
+            ]
+            .into_iter()
+            .collect(),
         }),
         z[9].clone(),
     )
@@ -334,4 +363,24 @@ fn a_clear_stroke_survives_the_crdt_and_a_second_replica() {
     push(&s, &mut other);
     assert_same(&s, &other);
     assert_eq!(content(&other).elements[0].style.stroke_color, Color::TRANSPARENT);
+}
+
+#[test]
+fn a_stroke_is_stored_as_flat_fields_with_packed_points_and_no_default_noise() {
+    let doc = every_kind();
+    let mut s = peer(1);
+    load_document(&mut s, &doc).unwrap();
+    let snapshot = s.export_snapshot().unwrap();
+    let json = loro::LoroDoc::from_snapshot(&snapshot).unwrap().get_deep_value().to_json_value();
+    let picture = json["elements"]
+        .as_object()
+        .and_then(|m| m.values().find(|e| e["kind"] == "image"))
+        .expect("the document has a picture");
+    assert!(picture["kind.paint.000001-a.size"].is_number(), "{picture}");
+    let packed = |key: &str| picture[key].as_array().map(Vec::len);
+    assert_eq!(packed("kind.paint.000001-a.points"), Some(2 * 2 * 8), "two points are 32 packed bytes: {picture}");
+    assert_eq!(packed("kind.paint.000001-a.pressures"), Some(2 * 8), "two pressures are 16 packed bytes: {picture}");
+    assert!(picture["kind.paint.000002-b.mode"] == "erase");
+    assert!(picture.get("kind.paint.000002-b.pressures").is_none(), "no pressures, nothing stored: {picture}");
+    assert!(picture.get("kind.paint.000001-a.mode").is_none(), "the default mode is not stored: {picture}");
 }

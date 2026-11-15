@@ -1,6 +1,5 @@
 //! Freehand and highlighter strokes (E7).
 
-use drafftink_canvas::PointerKind;
 use drafftink_edit::brush::{StrokeSample, StrokeSampler};
 use drafftink_geom::kurbo::Point;
 use serde_json::json;
@@ -27,11 +26,6 @@ pub(super) struct Stroke {
     highlighter: bool,
     /// Brush and pressure model of this stroke. It starts with the first sample, which brings the time.
     sampler: Option<StrokeSampler>,
-}
-
-/// The pressure of a sample: only a pen reports one.
-fn pressure_of(ev: &Ev<'_>) -> Option<f64> {
-    (ev.meta.kind == PointerKind::Pen).then(|| f64::from(ev.meta.pressure).clamp(0.0, 1.0))
 }
 
 impl Stroke {
@@ -65,7 +59,7 @@ impl Stroke {
             defaults.pressure_mode,
             ev.origin.world,
             ev.meta.time_ms,
-            pressure_of(ev),
+            ev.pen_pressure(),
         );
         self.sampler = Some(sampler);
         self.push(first.point, first.pressure);
@@ -74,7 +68,7 @@ impl Stroke {
 
     /// Runs the pointer sample through the brush and keeps what comes out. True when the stroke changed.
     fn add(&mut self, min_gap: f64, ev: &Ev<'_>) -> bool {
-        let sample = self.sampler.as_mut().and_then(|s| s.push(ev.at.world, ev.meta.time_ms, pressure_of(ev)));
+        let sample = self.sampler.as_mut().and_then(|s| s.push(ev.at.world, ev.meta.time_ms, ev.pen_pressure()));
         sample.is_some_and(|StrokeSample { point, pressure }| self.push_spaced(min_gap, point, pressure))
     }
 
@@ -118,7 +112,7 @@ impl Stroke {
 
 /// A click without a drag makes a dot.
 pub(super) fn dot(cx: &mut Ctx<'_>, ev: &Ev<'_>) {
-    let pressures: Vec<f64> = pressure_of(ev).into_iter().collect();
+    let pressures: Vec<f64> = ev.pen_pressure().into_iter().collect();
     create(cx, &[ev.at.world], &pressures, cx.tool() == Tool::Highlighter);
 }
 

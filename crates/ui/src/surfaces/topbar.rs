@@ -28,6 +28,10 @@ pub fn not_applicable(cx: &Cx<'_>, prop: &str) -> Option<String> {
 /// the swatches and the two wheels line up column by column. Every control is `style.set`; with nothing selected
 /// the engine writes the defaults for new elements, so they are always useful.
 pub(super) fn style_rows(ui: &mut egui::Ui, cx: &mut Cx<'_>, st: &UiState) {
+    // The paint editor has its own colour: stroke and fill would only recolour the outline of the image.
+    if cx.model.paint_editing {
+        return super::brush::rows(ui, cx, st);
+    }
     let height = cx.layout.small_side();
     ui.vertical(|ui| {
         ui.spacing_mut().item_spacing = vec2(space::SM, space::SM);
@@ -39,6 +43,9 @@ pub(super) fn style_rows(ui: &mut egui::Ui, cx: &mut Cx<'_>, st: &UiState) {
 
 /// The same controls as rows one under the other, for the popover of a strip with no room for [`style_rows`].
 pub(super) fn style_column(ui: &mut egui::Ui, cx: &mut Cx<'_>, st: &UiState) {
+    if cx.model.paint_editing {
+        return super::brush::column(ui, cx, st);
+    }
     ui.spacing_mut().item_spacing = vec2(space::SM, space::MD);
     for paint in Paint::BOTH {
         ui.horizontal_wrapped(|ui| colour_row(ui, cx, st, paint));
@@ -51,7 +58,7 @@ pub fn clear_blocked(cx: &Cx<'_>, target: ColorTarget) -> Option<String> {
     let prop = match target {
         ColorTarget::Stroke => "stroke_color",
         ColorTarget::Fill => "fill_color",
-        ColorTarget::Background => return None,
+        ColorTarget::Background | ColorTarget::Brush => return None,
     };
     not_applicable(cx, prop).or_else(|| cx.model.style.prop(prop).and_then(|p| p.clear_reason.clone()))
 }

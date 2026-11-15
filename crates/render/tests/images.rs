@@ -21,7 +21,7 @@ fn png(w: u32, h: u32) -> Vec<u8> {
 }
 
 fn picture(name: &str, file: Option<FileId>, w: u32, h: u32) -> Element {
-    let data = ImageData { file_id: file, natural_width: w, natural_height: h, crop: None };
+    let data = ImageData { file_id: file, natural_width: w, natural_height: h, crop: None, paint: Default::default() };
     let mut e = Element::new(id(name), ElementKind::Image(data), ZIndex::first());
     e.transform = Transform::new(10.0, 10.0, f64::from(w), f64::from(h));
     e.style.stroke_width = 0.0;
@@ -366,4 +366,261 @@ fn a_new_radius_re_encodes_the_picture_and_the_placeholder_is_not_rounded() {
         ElementPainter::new().paint(&waiting, &RenderOptions::default(), &mut Typesetter::new(), &|_: &FileId| None);
     assert!(fragment.awaiting_image.is_some());
     assert!(shapes_of(&fragment.scene).picture.is_empty());
+}
+
+// ----------------------------------------------------------------------------------------------
+// Paint on a picture
+
+/// The picture a fragment draws: its size and RGBA pixels, read from the encoded scene.
+fn shown(f: &Fragment) -> Option<(u32, u32, Vec<u8>)> {
+    use vello::low_level::vello_encoding::Patch;
+    f.scene.encoding().resources.patches.iter().find_map(|p| match p {
+        Patch::Image { image, .. } => Some((image.width, image.height, image.data.data().to_vec())),
+        _ => None,
+    })
+}
+
+fn red_stroke(mode: PaintMode, size: f64, points: &[(f64, f64)]) -> PaintStroke {
+    PaintStroke {
+        mode,
+        color: Color::rgb(255, 0, 0),
+        size,
+        hardness: 1.0,
+        opacity: 1.0,
+        points: points.iter().map(|&(x, y)| kurbo::Point::new(x, y)).collect(),
+        pressures: Vec::new(),
+    }
+}
+
+/// Adds the strokes to an image element, numbering them in order.
+fn with_paint(mut e: Element, strokes: Vec<PaintStroke>) -> Element {
+    if let ElementKind::Image(d) = &mut e.kind {
+        d.paint = strokes
+            .into_iter()
+            .enumerate()
+            .map(|(i, s)| (StrokeId::new(&format!("{:06}-t", i + 1)).unwrap(), s))
+            .collect();
+    }
+    e
+}
+
+fn pixel(px: &(u32, u32, Vec<u8>), x: u32, y: u32) -> [u8; 4] {
+    let i = ((y * px.0 + x) * 4) as usize;
+    [px.2[i], px.2[i + 1], px.2[i + 2], px.2[i + 3]]
+}
+
+struct Paintbox {
+    painter: ElementPainter,
+    ts: Typesetter,
+    bytes: Vec<u8>,
+}
+
+impl Paintbox {
+    fn new(bytes: Vec<u8>) -> Self {
+        Self { painter: ElementPainter::new(), ts: Typesetter::new(), bytes }
+    }
+
+    fn paint(&mut self, e: &Element) -> Fragment {
+        let bytes = self.bytes.clone();
+        let files = move |_: &FileId| Some(Arc::<[u8]>::from(bytes.clone()));
+        self.painter.paint(e, &RenderOptions::default(), &mut self.ts, &files)
+    }
+}
+
+#[test]
+fn a_stroke_paints_its_pixels_and_leaves_the_others_alone() {
+    let bytes = png(40, 40);
+    let fid = FileId::of(&bytes);
+    let original = decode_image(&bytes).unwrap();
+    let plain = picture("p", Some(fid), 40, 40);
+    let painted = with_paint(plain.clone(), vec![red_stroke(PaintMode::Paint, 8.0, &[(20.0, 20.0)])]);
+    let mut pb = Paintbox::new(bytes);
+    assert_ne!(paint_hash(&plain), paint_hash(&painted), "paint is part of the fragment key");
+
+    let before = shown(&pb.paint(&plain)).unwrap();
+    assert_eq!(before.2, original.data.data(), "no paint, the decoded pixels");
+    let after = shown(&pb.paint(&painted)).unwrap();
+    assert_eq!((after.0, after.1), (40, 40));
+    assert_eq!(pixel(&after, 20, 20), [255, 0, 0, 255], "the dab is red at its centre");
+    let changed: Vec<(u32, u32)> = (0..40)
+        .flat_map(|y| (0..40).map(move |x| (x, y)))
+        .filter(|&(x, y)| pixel(&after, x, y) != pixel(&before, x, y))
+        .collect();
+    assert!(changed.len() > 20, "a dab of 8 pixels changes some pixels: {}", changed.len());
+    assert!(
+        changed.iter().all(|&(x, y)| (f64::from(x) - 20.0).hypot(f64::from(y) - 20.0) < 6.0),
+        "and none far from it: {changed:?}"
+    );
+    assert_eq!(pixel(&after, 2, 2), pixel(&before, 2, 2));
+}
+
+#[test]
+fn an_erase_stroke_gives_the_original_pixels_back() {
+    let bytes = png(40, 40);
+    let original = decode_image(&bytes).unwrap();
+    let fid = FileId::of(&bytes);
+    let dab = red_stroke(PaintMode::Paint, 12.0, &[(20.0, 20.0), (30.0, 20.0)]);
+    let wipe = red_stroke(PaintMode::Erase, 40.0, &[(20.0, 20.0), (30.0, 20.0)]);
+    let mut pb = Paintbox::new(bytes);
+    let painted = shown(&pb.paint(&with_paint(picture("p", Some(fid.clone()), 40, 40), vec![dab.clone()]))).unwrap();
+    assert_ne!(painted.2, original.data.data());
+    let erased = shown(&pb.paint(&with_paint(picture("p", Some(fid), 40, 40), vec![dab, wipe]))).unwrap();
+    assert_eq!(erased.2, original.data.data(), "the eraser restores every pixel");
+}
+
+#[test]
+fn a_crop_a_flip_and_a_rotation_carry_the_paint() {
+    let bytes = png(40, 40);
+    let fid = FileId::of(&bytes);
+    let painted = with_paint(picture("p", Some(fid), 40, 40), vec![red_stroke(PaintMode::Paint, 8.0, &[(30.0, 10.0)])]);
+    let mut pb = Paintbox::new(bytes);
+    let whole = shown(&pb.paint(&painted)).unwrap();
+    assert_eq!(pixel(&whole, 30, 10), [255, 0, 0, 255]);
+
+    // The crop shows the right half. The stroke is in pixels of the whole picture, so the baked pixels are the same
+    // and the crop only picks the window.
+    let mut cropped = painted.clone();
+    if let ElementKind::Image(d) = &mut cropped.kind {
+        d.crop = Some(Crop { x: 20.0, y: 0.0, width: 20.0, height: 40.0 });
+    }
+    let c = pb.paint(&cropped);
+    assert_eq!(shown(&c).unwrap().2, whole.2, "the paint stays at its picture pixel");
+    assert_ne!(c.scene.encoding().transforms, pb.paint(&painted).scene.encoding().transforms);
+
+    // Flip and rotation only change the transform of the element: the fragment is the same.
+    let mut turned = painted.clone();
+    turned.transform.flip_x = true;
+    turned.transform.angle = 0.7;
+    assert_eq!(paint_hash(&turned), paint_hash(&painted));
+    assert_eq!(shown(&pb.paint(&turned)).unwrap().2, whole.2);
+}
+
+#[test]
+fn paint_is_baked_once_per_distinct_paint_and_reused_by_the_composer() {
+    let bytes = png(16, 16);
+    let fid = FileId::of(&bytes);
+    let one = red_stroke(PaintMode::Paint, 4.0, &[(4.0, 4.0)]);
+    let two = red_stroke(PaintMode::Paint, 4.0, &[(10.0, 10.0)]);
+    let (mut rig, _) = Rig::with(vec![with_paint(picture("p", Some(fid), 16, 16), vec![one.clone()])], vec![bytes]);
+    rig.compose();
+    rig.compose();
+    assert_eq!(rig.composer.painter().images().stats().baked, 1, "the second frame hits the fragment cache");
+
+    // A second stroke is a new paint: one more bake.
+    let mut tx = rig.store.begin();
+    tx.update(&id("p"), |e| {
+        if let ElementKind::Image(d) = &mut e.kind {
+            d.paint.insert(StrokeId::new("000002-t").unwrap(), two);
+        }
+    })
+    .unwrap();
+    let cs = tx.commit().unwrap();
+    update_paint_index(&mut rig.index, &rig.store, &cs);
+    let rep = rig.compose();
+    assert_eq!(rep.cache_misses, 1);
+    assert_eq!(rig.composer.painter().images().stats().baked, 2);
+    assert_eq!(rig.composer.painter().images().stats().decoded, 1, "the picture is decoded once");
+
+    // Back to the first paint (an undo): the baked picture is still cached.
+    let mut tx = rig.store.begin();
+    tx.update(&id("p"), |e| {
+        if let ElementKind::Image(d) = &mut e.kind {
+            d.paint.remove(&StrokeId::new("000002-t").unwrap());
+        }
+    })
+    .unwrap();
+    let cs = tx.commit().unwrap();
+    update_paint_index(&mut rig.index, &rig.store, &cs);
+    rig.compose();
+    assert_eq!(rig.composer.painter().images().stats().baked, 2, "no new bake after an undo");
+}
+
+#[test]
+fn paint_on_a_picture_still_decoding_shows_the_placeholder_and_bakes_after() {
+    let bytes = png(20, 10);
+    let fid = FileId::of(&bytes);
+    let stroke = red_stroke(PaintMode::Paint, 4.0, &[(10.0, 5.0)]);
+    let (mut rig, _) = Rig::with(vec![with_paint(picture("p", Some(fid), 20, 10), vec![stroke])], vec![bytes]);
+    rig.composer.painter_mut().images_mut().set_policy(DecodePolicy::Deferred);
+    let first = rig.compose();
+    assert_eq!(first.images_pending, 1);
+    assert_eq!(rig.composer.painter().images().stats().baked, 0, "nothing to bake yet");
+    let reqs = rig.composer.painter_mut().images_mut().take_requests();
+    let result = decode_image(&reqs[0].bytes);
+    rig.composer.painter_mut().images_mut().complete(&reqs[0].file, result);
+    let done = rig.compose();
+    assert_eq!(done.images_pending, 0);
+    assert_eq!(rig.composer.painter().images().stats().baked, 1);
+}
+
+#[test]
+fn a_picture_decoded_at_another_size_is_painted_in_stored_picture_pixels() {
+    // The file is 40x40 pixels, the element says it is stored as 20x20: the stroke at (10, 10) is the file's (20, 20).
+    let bytes = png(40, 40);
+    let fid = FileId::of(&bytes);
+    let e = with_paint(picture("p", Some(fid), 20, 20), vec![red_stroke(PaintMode::Paint, 4.0, &[(10.0, 10.0)])]);
+    let px = shown(&Paintbox::new(bytes).paint(&e)).unwrap();
+    assert_eq!(pixel(&px, 20, 20), [255, 0, 0, 255]);
+    assert_ne!(pixel(&px, 10, 10), [255, 0, 0, 255]);
+}
+
+#[test]
+fn baked_pictures_share_the_byte_budget_and_each_file_keeps_a_few() {
+    let bytes = png(100, 100);
+    let fid = FileId::of(&bytes);
+    let original = decode_image(&bytes).unwrap();
+    let one_picture = 100 * 100 * 4;
+    let mut cache = ImageCache::new(one_picture * 4);
+    cache.complete(&fid, Ok(original.clone()));
+    for i in 0..30u32 {
+        let paint: Paint = std::iter::once((
+            StrokeId::new("000001-t").unwrap(),
+            red_stroke(PaintMode::Paint, 5.0, &[(f64::from(i), 50.0)]),
+        ))
+        .collect();
+        // The live preview of a stroke: a new paint on every frame.
+        let img = cache.baked(&fid, (100, 100), &paint, &original);
+        assert_eq!((img.width, img.height), (100, 100));
+        let s = cache.stats();
+        assert!(s.bytes <= one_picture * 5, "{s:?}");
+        assert!(s.baked_entries <= 3, "{s:?}");
+    }
+    assert_eq!(cache.stats().baked, 30);
+}
+
+#[test]
+fn a_picture_that_gains_a_stroke_paints_only_the_new_one_and_gets_the_same_pixels() {
+    let bytes = png(60, 60);
+    let fid = FileId::of(&bytes);
+    let original = decode_image(&bytes).unwrap();
+    let strokes = [
+        red_stroke(PaintMode::Paint, 10.0, &[(10.0, 10.0), (40.0, 12.0)]),
+        red_stroke(PaintMode::Erase, 14.0, &[(25.0, 11.0)]),
+        red_stroke(PaintMode::Paint, 6.0, &[(30.0, 30.0), (45.0, 50.0)]),
+    ];
+    let paint_of = |n: usize| -> Paint {
+        strokes
+            .iter()
+            .take(n)
+            .enumerate()
+            .map(|(i, s)| (StrokeId::new(&format!("{:06}-t", i + 1)).unwrap(), s.clone()))
+            .collect()
+    };
+    let mut growing = ImageCache::default();
+    for n in 1..=3 {
+        let grown = growing.baked(&fid, (60, 60), &paint_of(n), &original);
+        let fresh = ImageCache::default().baked(&fid, (60, 60), &paint_of(n), &original);
+        assert_eq!(grown.data.data(), fresh.data.data(), "{n} strokes");
+    }
+    let s = growing.stats();
+    assert_eq!((s.baked, s.baked_on_earlier), (3, 2), "the second and third bake build on the one before: {s:?}");
+
+    // The same strokes with one changed in the middle share no prefix beyond the first.
+    let mut other = paint_of(3);
+    if let Some(s) = other.values_mut().nth(1) {
+        s.size = 3.0;
+    }
+    let changed = growing.baked(&fid, (60, 60), &other, &original);
+    let fresh = ImageCache::default().baked(&fid, (60, 60), &other, &original);
+    assert_eq!(changed.data.data(), fresh.data.data());
 }

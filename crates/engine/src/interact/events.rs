@@ -1,6 +1,6 @@
 //! The pointer events the tool machines receive, as one borrowed shape.
 
-use drafftink_canvas::{Meta, Pos, Target};
+use drafftink_canvas::{Meta, PointerKind, Pos, Target};
 use drafftink_geom::kurbo::Vec2;
 
 /// One pointer event as the tool machines see it.
@@ -21,6 +21,13 @@ pub(crate) struct Ev<'a> {
     pub(crate) target: &'a Target,
     /// Pointer details (modifiers, pressure, time).
     pub(crate) meta: &'a Meta,
+}
+
+impl Ev<'_> {
+    /// The pressure a pen reports for this event, 0 to 1. Only a pen has one: a mouse and a finger give `None`.
+    pub(crate) fn pen_pressure(&self) -> Option<f64> {
+        (self.meta.kind == PointerKind::Pen).then(|| f64::from(self.meta.pressure).clamp(0.0, 1.0))
+    }
 }
 
 /// A key the interaction layer reacts to. Other keys are commands (`docs/commands.md` section 6.1).

@@ -539,7 +539,8 @@ pub fn closest<'a>(wanted: &str, candidates: impl IntoIterator<Item = &'a str>, 
         let d = edit_distance(&wanted_lc, c);
         let d_last = edit_distance(last, c_last);
         // A typo that dropped letters ("zoom_fit" for "zoom_to_fit") is a stronger hint than a short edit distance.
-        let subseq = last.len() > 3 && is_subsequence(last, c_last);
+        // A name more than twice as long does not count: "pann" is spread over "paint_end" by chance.
+        let subseq = last.len() > 3 && c_last.len() <= last.len() * 2 && is_subsequence(last, c_last);
         if same_last || subseq || d <= limit || (d_last <= 1 && last.len() > 3) {
             let tier = if same_last {
                 0

@@ -63,6 +63,7 @@ fn every_kind(z: &[ZIndex]) -> Vec<Element> {
         natural_width: 640,
         natural_height: 480,
         crop: Some(Crop { x: 1.0, y: 2.0, width: 3.0, height: 4.0 }),
+        paint: Default::default(),
     };
     let mut im = Element::new(id("img"), ElementKind::Image(img), z[8].clone()).with_bounds(0.0, 0.0, 64.0, 48.0);
     im.transform.flip_x = true;

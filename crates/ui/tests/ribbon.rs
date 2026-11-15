@@ -957,3 +957,265 @@ fn other_selections_have_no_crop_button() {
     let h = desk(f);
     assert!(!has(&h, "Crop image"), "several elements cannot be cropped at once");
 }
+
+// ---- the paint editor ----
+
+/// A fixture with one image selected and the paint editor open on it.
+fn painting() -> (Fixture, ElementId) {
+    let (mut f, id) = one_image();
+    dialog::run(&mut f, "image.paint_begin", json!({}));
+    (f, id)
+}
+
+/// Gives the image one stroke, so that it has paint to reset.
+fn paint_a_stroke(f: &mut Fixture, id: &ElementId) {
+    let stroke = json!({ "points": [[5, 5], [30, 12]] });
+    dialog::run(f, "image.paint", json!({ "id": id.as_str(), "strokes": [stroke] }));
+}
+
+/// Clicks `label`, runs what it asked for on the session and draws again.
+fn press(h: &mut H, label: &str) -> Vec<drafftink_ui::Call> {
+    let calls = common::click(h, label);
+    h.state_mut().dispatch();
+    h.run();
+    calls
+}
+
+#[test]
+fn an_image_gets_edit_picture_next_to_crop_and_reset_paint_only_while_it_has_paint() {
+    let (f, id) = one_image();
+    let h = desk(f);
+    assert!(has(&h, "Edit picture") && has(&h, "Crop image"), "the labels are the registry's titles");
+    assert!(!has(&h, "Reset paint") && !has(&h, "Reset crop"), "nothing to reset yet");
+    let (crop, edit) = (rect(&h, "Crop image"), rect(&h, "Edit picture"));
+    assert!(edit.min.x >= crop.max.x && (edit.center().y - crop.center().y).abs() < 1.0, "next to Crop: {edit:?}");
+    assert_eq!(edit.height(), 28.0, "a chip of the strip");
+
+    let (mut f, id2) = one_image();
+    paint_a_stroke(&mut f, &id2);
+    let h = desk(f);
+    assert!(has(&h, "Reset paint") && !has(&h, "Reset crop"));
+    assert!(rect(&h, "Reset paint").min.y > rect(&h, "Edit picture").max.y - 1.0, "on the second row");
+    drop(id);
+}
+
+#[test]
+fn other_selections_have_no_edit_picture_button() {
+    let h = desk(one_rect());
+    assert!(!has(&h, "Edit picture") && !has(&h, "Reset paint"));
+}
+
+#[test]
+fn edit_picture_opens_the_editor_and_the_strip_then_shows_the_brush_instead_of_the_style() {
+    let (f, _) = one_image();
+    let mut h = desk(f);
+    let calls = press(&mut h, "Edit picture");
+    assert_eq!(calls.iter().map(|c| c.id.as_str()).collect::<Vec<_>>(), ["image.paint_begin"]);
+    assert!(h.state().model.paint_editing, "the model follows the engine");
+    for label in
+        ["Brush size", "Brush hardness", "Brush opacity", "Paint", "Erase", "Reset paint", "Done editing picture"]
+    {
+        assert!(has(&h, label), "{label}");
+    }
+    // The stroke, fill, corner and layer rows would change the outline of the image: not offered.
+    for label in [
+        "Stroke blue",
+        "Fill blue",
+        "No stroke",
+        "Thin",
+        "Corners: Sharp",
+        "Opacity",
+        BRING_FRONT,
+        "Duplicate",
+        "Delete",
+    ] {
+        assert!(!has(&h, label), "{label} must not show while painting");
+    }
+    assert!(h.query_by_role_and_label(egui::accesskit::Role::Slider, "Opacity").is_none(), "the style's opacity");
+    assert!(!has(&h, "Crop image") && !has(&h, "Edit picture"), "the image group is the paint group now");
+    // Nothing has been painted: Reset is there and greyed with the engine's words.
+    let reset = h.get_by_label("Reset paint");
+    assert!(reset.accesskit_node().is_disabled());
+}
+
+#[test]
+fn done_ends_the_editor_and_reset_takes_the_paint_off() {
+    let (mut f, id) = painting();
+    paint_a_stroke(&mut f, &id);
+    let mut h = desk(f);
+    let calls = press(&mut h, "Reset paint");
+    assert_eq!(calls.iter().map(|c| c.id.as_str()).collect::<Vec<_>>(), ["image.reset_paint"]);
+    assert!(h.get_by_label("Reset paint").accesskit_node().is_disabled(), "nothing is left to reset");
+    let calls = press(&mut h, "Done editing picture");
+    assert_eq!(calls.iter().map(|c| c.id.as_str()).collect::<Vec<_>>(), ["image.paint_end"]);
+    assert!(
+        !h.state().model.paint_editing && has(&h, "Crop image") && has(&h, "Edit picture"),
+        "back to the image group"
+    );
+}
+
+#[test]
+fn the_erase_toggle_sets_the_mode_of_the_brush_and_shows_which_is_in_use() {
+    let (f, _) = painting();
+    let mut h = desk(f);
+    let on =
+        |h: &H, label: &str| h.get_by_label(label).accesskit_node().toggled() == Some(egui::accesskit::Toggled::True);
+    assert!(on(&h, "Paint") && !on(&h, "Erase"));
+    let calls = press(&mut h, "Erase");
+    assert_eq!(calls.len(), 1);
+    assert_eq!((calls[0].id.as_str(), calls[0].args.clone()), ("image.paint_brush", json!({ "mode": "erase" })));
+    assert!(on(&h, "Erase") && !on(&h, "Paint"), "the brush of the session is now erasing");
+    let calls = press(&mut h, "Paint");
+    assert_eq!(calls[0].args, json!({ "mode": "paint" }));
+}
+
+#[test]
+fn the_colour_row_sets_the_brush_and_never_the_style_of_the_image() {
+    let (f, _) = painting();
+    let mut h = desk(f);
+    let before = h.state().session.tab().doc.undo_depth();
+    let calls = press(&mut h, "Brush blue");
+    assert_eq!(calls.len(), 1);
+    assert_eq!((calls[0].id.as_str(), calls[0].args.clone()), ("image.paint_brush", json!({ "color": "blue-500" })));
+    assert_eq!(h.state().model.brush.color, drafftink_scene::palette::lookup("blue-500").unwrap());
+    assert!(
+        h.get_by_label("Brush blue").accesskit_node().toggled() == Some(egui::accesskit::Toggled::True),
+        "the swatch in use is ringed"
+    );
+    assert_eq!(h.state().session.tab().doc.undo_depth(), before, "no document change, so no undo step");
+    // The row has the eyedropper and the wheel of the brush, in the places of the stroke row.
+    h.get_by_label("Pick the brush colour from the canvas");
+    h.get_by_label("Pick the brush colour");
+    assert!(!has(&h, "Pick the stroke colour from the canvas") && !has(&h, "Pick the fill colour from the canvas"));
+}
+
+#[test]
+fn the_sliders_set_size_hardness_and_opacity_with_one_brush_call_each() {
+    let (f, _) = painting();
+    let mut h = desk(f);
+    for (label, key, lo, hi) in [
+        ("Brush size", "size", 1.0, 400.0),
+        ("Brush hardness", "hardness", 0.0, 1.0),
+        ("Brush opacity", "opacity", 0.0, 1.0),
+    ] {
+        h.state_mut().clear();
+        let r = h.get_by_role_and_label(egui::accesskit::Role::Slider, label).rect();
+        let at = egui::pos2(r.left() + r.width() * 0.5, r.center().y);
+        h.event(egui::Event::PointerMoved(at));
+        h.step();
+        h.event(egui::Event::PointerButton {
+            pos: at,
+            button: egui::PointerButton::Primary,
+            pressed: true,
+            modifiers: egui::Modifiers::NONE,
+        });
+        h.step();
+        h.event(egui::Event::PointerButton {
+            pos: at,
+            button: egui::PointerButton::Primary,
+            pressed: false,
+            modifiers: egui::Modifiers::NONE,
+        });
+        h.run();
+        let calls: Vec<_> = h.state().calls().into_iter().cloned().collect();
+        let last = calls.last().unwrap_or_else(|| panic!("{label}: no call"));
+        assert_eq!(last.id, "image.paint_brush", "{label}");
+        let value = last.args[key].as_f64().unwrap_or_else(|| panic!("{label}: {:?}", last.args));
+        assert!(value > lo && value < hi, "{label}: {value}");
+        assert!(last.args.as_object().is_some_and(|o| o.len() == 1), "{label}: only {key} is set");
+        h.state_mut().dispatch();
+        h.run();
+    }
+    // The size slider is on a log scale: its middle is far nearer 20 pixels than 200.
+    let size = h.state().model.brush.size;
+    assert!((10.0..=40.0).contains(&size), "{size}");
+}
+
+#[test]
+fn the_paint_strip_has_the_height_of_the_strip_and_everything_stays_inside_at_every_size() {
+    let sizes = [(1280.0, 800.0), (1024.0, 768.0), (820.0, 1180.0), (390.0, 844.0), (1180.0, 820.0)];
+    for theme in [egui::Theme::Light, egui::Theme::Dark] {
+        for touch in [false, true] {
+            for (w, height) in sizes {
+                let (mut f, id) = painting();
+                paint_a_stroke(&mut f, &id);
+                if touch {
+                    f.state.layout = LayoutPreference::Touch;
+                }
+                let h = at(vec2(w, height), theme, f);
+                let screen = Rect::from_min_size(egui::Pos2::ZERO, vec2(w, height));
+                let strip = chrome(&h).strip.unwrap();
+                let here = format!("{theme:?} touch {touch} at {w}x{height}");
+                assert!(screen.contains_rect(strip), "{here}");
+                for r in in_the_strip(&h) {
+                    assert!(screen.contains_rect(r) && strip.contains_rect(r), "{here}: {r:?} in {strip:?}");
+                }
+                let in_the_strip = has(&h, "Brush size");
+                assert!(in_the_strip || has(&h, "More options"), "{here}: what does not fit is behind More");
+            }
+        }
+    }
+}
+
+#[test]
+fn in_a_wide_window_the_whole_brush_is_in_the_strip_and_in_a_narrow_one_it_is_behind_the_buttons() {
+    let (f, _) = painting();
+    let h = at(vec2(1280.0, 800.0), egui::Theme::Light, f);
+    for label in ["Brush size", "Brush hardness", "Brush opacity", "Done editing picture", "Erase", "Brush red"] {
+        assert!(has(&h, label), "{label} in the strip at 1280");
+    }
+    // A phone: one row. The colour waits behind the style button, the sliders and Done behind More.
+    let (f, _) = painting();
+    let mut h = at(vec2(390.0, 844.0), egui::Theme::Light, f);
+    assert!(!has(&h, "Brush size") && !has(&h, "Brush red"), "nothing of the brush in the one-row strip");
+    open(&mut h, "More options");
+    for label in ["Brush size", "Brush hardness", "Brush opacity", "Reset paint", "Done editing picture"] {
+        let r = rect(&h, label);
+        assert!(r.max.x <= 390.0 && r.min.x >= 0.0, "{label} {r:?} is inside the window");
+    }
+    let calls = common::click(&mut h, "Done editing picture");
+    assert_eq!(calls.last().map(|c| c.id.as_str()), Some("image.paint_end"));
+}
+
+#[test]
+fn the_style_button_of_a_phone_opens_the_brush_colours_and_the_mode() {
+    let (f, _) = painting();
+    let mut h = at(vec2(390.0, 844.0), egui::Theme::Light, f);
+    open(&mut h, "Brush colour");
+    for label in
+        ["Brush", "Mode", "Brush blue", "Brush slate", "Paint", "Erase", "Pick the brush colour from the canvas"]
+    {
+        let r = rect(&h, label);
+        assert!(r.max.x <= 390.0 && r.min.x >= 0.0, "{label} {r:?} is inside the window");
+    }
+    let calls = common::click(&mut h, "Erase");
+    assert_eq!(calls.last().map(|c| c.args.clone()), Some(json!({ "mode": "erase" })));
+}
+
+#[test]
+fn the_brush_swatches_show_the_colour_as_it_is_in_the_dark_theme() {
+    let (f, _) = painting();
+    let h = at(vec2(1280.0, 800.0), egui::Theme::Dark, f);
+    let blue = drafftink_scene::palette::lookup("blue-500").unwrap();
+    // Not the dark mapping: a picture is not recoloured by the canvas, and neither is its brush.
+    assert_eq!(swatch_circle(&h, "Brush blue"), egui::Color32::from_rgb(blue.r, blue.g, blue.b));
+}
+
+/// The fill of the circle painted for the swatch `label`.
+fn swatch_circle(h: &H, label: &str) -> egui::Color32 {
+    fn circles(shape: &egui::Shape, out: &mut Vec<(egui::Pos2, egui::Color32)>) {
+        match shape {
+            egui::Shape::Circle(c) if c.fill != egui::Color32::TRANSPARENT => out.push((c.center, c.fill)),
+            egui::Shape::Vec(v) => v.iter().for_each(|s| circles(s, out)),
+            _ => {}
+        }
+    }
+    let centre = rect(h, label).center();
+    let mut all = Vec::new();
+    h.output().shapes.iter().for_each(|s| circles(&s.shape, &mut all));
+    all.into_iter()
+        .rev()
+        .find(|(c, _)| (c.x - centre.x).abs() < 0.5 && (c.y - centre.y).abs() < 0.5)
+        .map(|(_, fill)| fill)
+        .unwrap_or_else(|| panic!("no swatch is painted for {label:?}"))
+}

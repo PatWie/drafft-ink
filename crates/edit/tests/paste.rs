@@ -115,6 +115,7 @@ fn pictures_are_stored_once_by_content() {
                 natural_width: 4,
                 natural_height: 4,
                 crop: None,
+                paint: Default::default(),
             }),
             ZIndex::parse(z).unwrap(),
         )

@@ -168,7 +168,8 @@ pub(crate) fn insert_pictures(
                     natural_width: r.natural.0,
                     natural_height: r.natural.1,
                     crop: None,
-                }),
+ paint: Default::default(),
+}),
                 z,
             );
             e.transform = Transform::new(
@@ -339,7 +340,7 @@ pub struct CropOut {
 /// The refusal code for a crop that is too small, outside the picture or not a number.
 const BAD_CROP: &str = "bad_crop";
 /// The refusal code for a picture whose bytes are not in the document.
-const PICTURE_NOT_LOADED: &str = "picture_not_loaded";
+pub(super) const PICTURE_NOT_LOADED: &str = "picture_not_loaded";
 
 fn crop_refusal(cmd: &str, e: CropError) -> Refusal {
     match e {
@@ -357,7 +358,7 @@ fn crop_refusal(cmd: &str, e: CropError) -> Refusal {
 }
 
 /// The one image a command acts on: the given reference, else the single selected element.
-fn one_image(s: &Session, id: Option<&Ref>) -> Result<ElementId, Refusal> {
+pub(super) fn one_image(s: &Session, id: Option<&Ref>) -> Result<ElementId, Refusal> {
     if let Some(r) = id {
         return s.resolve_ref(r);
     }
@@ -511,7 +512,10 @@ fn crop_begin(s: &mut Session, a: CropBeginArgs) -> Result<CropEditorOut, Refusa
         s.run_nested("tool.set", json!({ "tool": "select" }))?;
     }
     s.run_nested("selection.select", json!({ "ids": [id.as_str()] }))?;
-    s.tab_mut().observed.crop_editor = Some(id.clone());
+    // The two editors are never open together.
+    let obs = &mut s.tab_mut().observed;
+    obs.paint_editor = None;
+    obs.crop_editor = Some(id.clone());
     Ok(CropEditorOut { id: Some(id.as_str().to_owned()), changed: true })
 }
 

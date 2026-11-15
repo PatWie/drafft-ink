@@ -14,9 +14,10 @@
 //!   (Kannada, symbols, CJK punctuation: `drafftink_typeset::needs_glyph_fallback`).
 //! * **Formulas** are drawn by a [`MathSvg`] the engine supplies (it owns the formula engine). Without one the
 //!   LaTeX source is written as italic text.
-//! * **Images** are embedded as data URIs (cropping and mirroring included). Rounded corners are a `<clipPath>`
-//!   with a rounded `<rect>` in the element's own frame, and the outline of a picture that has a stroke follows it.
-//!   An image whose blob is missing is drawn as a dashed placeholder.
+//! * **Images** are embedded as data URIs (cropping and mirroring included). A picture with paint on it is
+//!   embedded as a PNG with the paint baked in. Rounded corners are a `<clipPath>` with a rounded `<rect>` in the
+//!   element's own frame, and the outline of a picture that has a stroke follows it. An image whose blob is
+//!   missing is drawn as a dashed placeholder.
 //! * **Selection export** takes the given ids plus the labels bound to them. Only those elements, and only the
 //!   blobs they use, go into the embedded scene, so exporting a selection never leaks the rest of the document.
 //! * **Embedded scene**: a `<metadata><drafftink-scene encoding="base64-deflate">` element holding the native JSON,
@@ -695,9 +696,21 @@ impl Ctx<'_> {
             );
             return;
         };
-        let mime: String =
-            blob.mime.chars().filter(|c| c.is_ascii_alphanumeric() || matches!(c, '/' | '+' | '.' | '-')).collect();
-        let href = format!("data:{mime};base64,{}", STANDARD.encode(&blob.bytes));
+        // A painted picture is embedded as the PNG with its paint baked in; one that cannot be baked (its bytes are
+        // damaged) keeps the original, so the export still has a picture.
+        let baked = if i.paint.is_empty() {
+            None
+        } else {
+            crate::picture::baked_png(&blob.bytes, (i.natural_width, i.natural_height), &i.paint).ok()
+        };
+        let (mime, bytes): (String, &[u8]) = match &baked {
+            Some(png) => ("image/png".to_owned(), png),
+            None => (
+                blob.mime.chars().filter(|c| c.is_ascii_alphanumeric() || matches!(c, '/' | '+' | '.' | '-')).collect(),
+                &blob.bytes,
+            ),
+        };
+        let href = format!("data:{mime};base64,{}", STANDARD.encode(bytes));
         let flip = match (t.flip_x, t.flip_y) {
             (false, false) => String::new(),
             (fx, fy) => format!(

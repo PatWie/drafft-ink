@@ -99,14 +99,26 @@ pub enum ColorTarget {
     Fill,
     /// Page background (`doc.set_background`).
     Background,
+    /// The brush of the paint editor (`image.paint_brush` `color`). It is a colour of the picture, which the canvas
+    /// does not map for the dark theme, so swatches and picks of it are never mapped either.
+    Brush,
 }
 
-/// The colours last picked in the full colour popover, one for the stroke and one for the fill. The top bar keeps
+impl ColorTarget {
+    /// True when the canvas draws what the target colours through the dark mapping (`colors::shown`), so that a
+    /// swatch must show the mapped colour and a pick of a colour seen on the canvas must store its inverse.
+    pub fn is_themed(self) -> bool {
+        !matches!(self, ColorTarget::Brush)
+    }
+}
+
+/// The colours last picked in the full colour popover, one for the stroke, one for the fill and one for the brush. The top bar keeps
 /// a swatch of each next to the colour wheel, so a colour from the grid is one click away afterwards.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct LastPicked {
     stroke: Option<String>,
     fill: Option<String>,
+    brush: Option<String>,
 }
 
 impl LastPicked {
@@ -116,6 +128,7 @@ impl LastPicked {
         match target {
             ColorTarget::Stroke => self.stroke.as_deref(),
             ColorTarget::Fill => self.fill.as_deref(),
+            ColorTarget::Brush => self.brush.as_deref(),
             ColorTarget::Background => None,
         }
     }
@@ -125,6 +138,7 @@ impl LastPicked {
         match target {
             ColorTarget::Stroke => self.stroke = Some(color),
             ColorTarget::Fill => self.fill = Some(color),
+            ColorTarget::Brush => self.brush = Some(color),
             ColorTarget::Background => {}
         }
     }
@@ -708,9 +722,14 @@ impl UiState {
             Verb::InsertImage => host.push(HostRequest::PickImage),
             Verb::OpenColorStroke => self.toggle_color(ColorTarget::Stroke),
             Verb::OpenColorFill => self.toggle_color(ColorTarget::Fill),
+            Verb::OpenColorBrush => self.toggle_color(ColorTarget::Brush),
             Verb::OpenColorBackground => self.toggle_color(ColorTarget::Background),
-            Verb::PickColorStroke | Verb::PickColorFill => {
-                let target = if verb == Verb::PickColorStroke { ColorTarget::Stroke } else { ColorTarget::Fill };
+            Verb::PickColorStroke | Verb::PickColorFill | Verb::PickColorBrush => {
+                let target = match verb {
+                    Verb::PickColorStroke => ColorTarget::Stroke,
+                    Verb::PickColorBrush => ColorTarget::Brush,
+                    _ => ColorTarget::Fill,
+                };
                 if self.screen_picker {
                     host.push(HostRequest::PickScreenColor(target));
                 } else {

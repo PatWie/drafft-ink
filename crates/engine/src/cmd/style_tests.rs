@@ -916,7 +916,8 @@ fn apply_theme_to_a_locked_or_unsupporting_target_refuses_cleanly() {
             natural_width: 4,
             natural_height: 4,
             crop: None,
-        }),
+ paint: Default::default(),
+}),
         0.0,
         600.0,
         40.0,
@@ -1043,7 +1044,8 @@ fn add_image(f: &mut Fx) -> ElementId {
         natural_width: 4,
         natural_height: 4,
         crop: None,
-    });
+ paint: Default::default(),
+});
     testing::add(&mut f.s, kind, 0.0, 600.0, 40.0, 40.0).unwrap()
 }
 

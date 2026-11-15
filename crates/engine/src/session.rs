@@ -357,7 +357,12 @@ impl Session {
     fn finish_history(&mut self, out: UndoOutcome) -> UndoOutcome {
         let tab = self.tab().id;
         if let Some(obs) = &out.observed {
-            self.tab_mut().observed = obs.clone();
+            // The paint editor stays open through undo and redo (taking back a stroke is what one does in it), as
+            // long as its image is still selected; every other editor closes with the restored state.
+            let painting = self.tab().observed.paint_editor.clone().filter(|id| obs.selection.contains(id));
+            let t = self.tab_mut();
+            t.observed = obs.clone();
+            t.observed.paint_editor = painting;
         }
         for cs in &out.changes {
             self.repair_and_record(tab, cs);

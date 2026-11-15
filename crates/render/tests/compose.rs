@@ -639,6 +639,19 @@ fn fully_set_elements() -> Vec<Element> {
         natural_width: 64,
         natural_height: 48,
         crop: Some(Crop { x: 1.0, y: 2.0, width: 30.0, height: 20.0 }),
+        paint: std::iter::once((
+            StrokeId::new("000001-a").unwrap(),
+            PaintStroke {
+                mode: PaintMode::Erase,
+                color: Color::rgb(10, 20, 30),
+                size: 12.0,
+                hardness: 0.5,
+                opacity: 0.75,
+                points: vec![Point::new(3.0, 4.0), Point::new(5.0, 6.0)],
+                pressures: vec![0.5, 0.75],
+            },
+        ))
+        .collect(),
     };
     let frame = FrameData { name: Some("Frame A".into()), clip: false };
     [

@@ -117,7 +117,13 @@ fn rotated_shapes_follow_the_rotation() {
 fn flipped_elements_hit_like_unflipped_ones() {
     let mut img = Element::new(
         id("img"),
-        ElementKind::Image(ImageData { file_id: None, natural_width: 10, natural_height: 10, crop: None }),
+        ElementKind::Image(ImageData {
+            file_id: None,
+            natural_width: 10,
+            natural_height: 10,
+            crop: None,
+            paint: Default::default(),
+        }),
         drafftink_canvas::scene::ZIndex::first(),
     )
     .with_bounds(100.0, 100.0, 200.0, 50.0);
@@ -137,7 +143,13 @@ fn a_rounded_image_is_not_hit_on_its_cut_off_corners() {
     let image = |radius: f64| {
         let mut img = Element::new(
             id("img"),
-            ElementKind::Image(ImageData { file_id: None, natural_width: 10, natural_height: 10, crop: None }),
+            ElementKind::Image(ImageData {
+                file_id: None,
+                natural_width: 10,
+                natural_height: 10,
+                crop: None,
+                paint: Default::default(),
+            }),
             drafftink_canvas::scene::ZIndex::first(),
         )
         .with_bounds(100.0, 100.0, 200.0, 100.0);

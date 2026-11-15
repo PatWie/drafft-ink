@@ -217,3 +217,40 @@ pub(super) fn radius_slider(p: &Painter, rect: Rect, ink: Color32) {
     p.line_segment([pos2(rect.left(), y), pos2(rect.right(), y)], Stroke::new(2.0, ink));
     p.circle_filled(pos2(rect.center().x, y), rect.width() * 0.2, ink);
 }
+
+/// Which property of the brush a slider sets, as a small picture before it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum BrushProp {
+    Size,
+    Hardness,
+    Opacity,
+}
+
+/// A picture of what a brush slider changes: a small dot beside a large one (the size), a disc with a fading edge (the
+/// hardness) or a disc that is half there (the opacity).
+pub(super) fn brush_prop(p: &Painter, rect: Rect, prop: BrushProp, ink: Color32) {
+    let c = rect.center();
+    let r = rect.width().min(rect.height()) / 2.0;
+    match prop {
+        BrushProp::Size => {
+            p.circle_filled(c + vec2(-r * 0.45, r * 0.4), r * 0.25, ink);
+            p.circle_stroke(c + vec2(r * 0.2, -r * 0.15), r * 0.7, Stroke::new(1.5, ink));
+        }
+        BrushProp::Hardness => {
+            // Rings that grow fainter towards the edge: a soft brush.
+            for (scale, alpha) in [(1.0, 0.18), (0.8, 0.4), (0.6, 0.7), (0.4, 1.0)] {
+                p.circle_filled(c, r * scale, ink.gamma_multiply(alpha));
+            }
+        }
+        BrushProp::Opacity => {
+            p.circle_stroke(c, r * 0.9, Stroke::new(1.5, ink));
+            let half: Vec<Pos2> = (0..=12)
+                .map(|i| {
+                    let a = std::f32::consts::FRAC_PI_2 + std::f32::consts::PI * (i as f32 / 12.0);
+                    c + vec2(a.cos(), a.sin()) * r * 0.9
+                })
+                .collect();
+            p.add(Shape::convex_polygon(half, ink, Stroke::NONE));
+        }
+    }
+}

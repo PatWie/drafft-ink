@@ -502,7 +502,7 @@ fn parse_image(rd: &Rd, ctx: &mut Ctx, w: f64, h: f64) -> Option<ImageData> {
         let whole = x <= 1e-6 && y <= 1e-6 && x + cw >= f64::from(nw) - 1e-6 && y + ch >= f64::from(nh) - 1e-6;
         (ok && !whole).then_some(Crop { x, y, width: cw, height: ch })
     });
-    Some(ImageData { file_id: Some(file_id), natural_width: nw, natural_height: nh, crop })
+    Some(ImageData { file_id: Some(file_id), natural_width: nw, natural_height: nh, crop, paint: Default::default() })
 }
 
 fn parse_text(

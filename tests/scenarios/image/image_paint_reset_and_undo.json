@@ -1,0 +1,425 @@
+{
+  "about": "A picture is painted on without changing it: strokes are in pixels of the stored picture and survive a crop and a turn, erasing is a stroke too, one call is one undo step, reset takes all the paint off, the brush is session state, the paint editor and the crop editor are never open together, and the refusals say what to change.",
+  "steps": [
+    {
+      "execute": "image.insert",
+      "args": {
+        "images": [
+          {
+            "base64": "iVBORw0KGgoAAAANSUhEUgAAACgAAAAUCAIAAABwJOjsAAAAJElEQVR4nGM4YWQ0IIhh1OJRi0ctHrV41OJRi0ctHrV45FgMAAkCqa66Bn33AAAAAElFTkSuQmCC",
+            "name": "small.png"
+          }
+        ],
+        "at": [
+          100,
+          100
+        ]
+      },
+      "save": {
+        "pic": "$.created[0]"
+      }
+    },
+    {
+      "execute": "image.paint_brush",
+      "args": {
+        "color": "#1971c2",
+        "size": 6,
+        "hardness": 1,
+        "opacity": 0.5
+      },
+      "expect": [
+        {
+          "path": "$.color",
+          "eq": "#1971c2"
+        },
+        {
+          "path": "$.size",
+          "eq": 6
+        },
+        {
+          "path": "$.mode",
+          "eq": "paint"
+        }
+      ],
+      "note": "The brush is session state: it makes no undo step."
+    },
+    {
+      "execute": "image.paint",
+      "args": {
+        "id": "{{pic}}",
+        "strokes": [
+          {
+            "points": [
+              [
+                5,
+                5
+              ],
+              [
+                20,
+                10
+              ],
+              [
+                35,
+                15
+              ]
+            ]
+          },
+          {
+            "points": [
+              [
+                10,
+                15
+              ]
+            ],
+            "color": "red-600",
+            "size": 10
+          }
+        ]
+      },
+      "expect": [
+        {
+          "path": "$.strokes",
+          "eq": 2
+        },
+        {
+          "path": "$.added",
+          "len": 2
+        },
+        {
+          "path": "$.changed",
+          "eq": true
+        }
+      ],
+      "note": "Points are in pixels of the stored picture (40 by 20). What a stroke leaves out comes from the brush."
+    },
+    {
+      "execute": "image.paint",
+      "args": {
+        "id": "{{pic}}",
+        "strokes": [
+          {
+            "mode": "erase",
+            "points": [
+              [
+                10,
+                15
+              ]
+            ],
+            "size": 10,
+            "opacity": 1
+          }
+        ]
+      },
+      "expect": [
+        {
+          "path": "$.strokes",
+          "eq": 3
+        }
+      ],
+      "note": "Erasing is a stroke too: it gives the original pixels back where the brush passes."
+    },
+    {
+      "execute": "image.crop",
+      "args": {
+        "id": "{{pic}}",
+        "crop": {
+          "x": 10,
+          "y": 0,
+          "w": 20,
+          "h": 20
+        }
+      }
+    },
+    {
+      "execute": "element.rotate",
+      "args": {
+        "ids": [
+          "{{pic}}"
+        ],
+        "angle": 90,
+        "mode": "to"
+      }
+    },
+    {
+      "execute": "image.paint",
+      "args": {
+        "id": "{{pic}}",
+        "strokes": [
+          {
+            "points": [
+              [
+                12,
+                12
+              ]
+            ]
+          }
+        ]
+      },
+      "expect": [
+        {
+          "path": "$.strokes",
+          "eq": 4
+        }
+      ],
+      "note": "The strokes are in the picture, so a crop and a turn do not move them or the pixels they mean."
+    },
+    {
+      "undo": 1
+    },
+    {
+      "execute": "image.paint",
+      "args": {
+        "id": "{{pic}}",
+        "strokes": [
+          {
+            "points": [
+              [
+                1,
+                1
+              ]
+            ]
+          }
+        ]
+      },
+      "expect": [
+        {
+          "path": "$.strokes",
+          "eq": 4
+        }
+      ],
+      "note": "One call was one undo step."
+    },
+    {
+      "execute": "image.reset_paint",
+      "args": {
+        "id": "{{pic}}"
+      },
+      "expect": [
+        {
+          "path": "$.removed",
+          "eq": 4
+        }
+      ]
+    },
+    {
+      "execute": "image.reset_paint",
+      "args": {
+        "id": "{{pic}}"
+      },
+      "expect": [
+        {
+          "path": "$.removed",
+          "eq": 0
+        }
+      ]
+    },
+    {
+      "undo": 1
+    },
+    {
+      "execute": "image.paint",
+      "args": {
+        "id": "{{pic}}",
+        "strokes": [
+          {
+            "points": [
+              [
+                1,
+                1
+              ]
+            ],
+            "size": 0.1
+          }
+        ]
+      },
+      "refused": "bad_paint",
+      "text": [
+        "0.5 to 4096"
+      ]
+    },
+    {
+      "execute": "image.paint",
+      "args": {
+        "id": "{{pic}}",
+        "strokes": [
+          {
+            "points": []
+          }
+        ]
+      },
+      "refused": "bad_paint",
+      "text": [
+        "no points"
+      ]
+    },
+    {
+      "execute": "image.paint",
+      "args": {
+        "id": "{{pic}}",
+        "strokes": []
+      },
+      "refused": "bad_args"
+    },
+    {
+      "execute": "image.paint_brush",
+      "args": {
+        "opacity": 3
+      },
+      "refused": "bad_paint",
+      "text": [
+        "0 (clear) to 1"
+      ]
+    },
+    {
+      "execute": "element.create",
+      "args": {
+        "kind": "rectangle",
+        "bounds": {
+          "x": 300,
+          "y": 0,
+          "w": 50,
+          "h": 50
+        }
+      },
+      "save": {
+        "box": "$.created[0]"
+      }
+    },
+    {
+      "execute": "image.paint",
+      "args": {
+        "id": "{{box}}",
+        "strokes": [
+          {
+            "points": [
+              [
+                1,
+                1
+              ]
+            ]
+          }
+        ]
+      },
+      "refused": "wrong_kind",
+      "text": [
+        "images"
+      ]
+    },
+    {
+      "execute": "image.paint_begin",
+      "args": {
+        "id": "{{pic}}"
+      },
+      "expect": [
+        {
+          "path": "$.changed",
+          "eq": true
+        }
+      ]
+    },
+    {
+      "assert": "selection.get",
+      "expect": [
+        {
+          "path": "$.paint_editor",
+          "eq": "{{pic}}"
+        }
+      ]
+    },
+    {
+      "execute": "image.paint",
+      "args": {
+        "id": "{{pic}}",
+        "strokes": [
+          {
+            "points": [
+              [
+                3,
+                3
+              ]
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "assert": "selection.get",
+      "expect": [
+        {
+          "path": "$.paint_editor",
+          "eq": "{{pic}}"
+        }
+      ],
+      "note": "Painting leaves the editor open."
+    },
+    {
+      "execute": "image.crop_begin",
+      "args": {
+        "id": "{{pic}}"
+      }
+    },
+    {
+      "assert": "selection.get",
+      "expect": [
+        {
+          "path": "$.crop_editor",
+          "eq": "{{pic}}"
+        },
+        {
+          "path": "$.paint_editor",
+          "exists": false
+        }
+      ],
+      "note": "The two editors are never open together."
+    },
+    {
+      "execute": "image.paint_begin",
+      "args": {
+        "id": "{{pic}}"
+      }
+    },
+    {
+      "execute": "image.paint_end",
+      "expect": [
+        {
+          "path": "$.changed",
+          "eq": true
+        }
+      ]
+    },
+    {
+      "assert": "selection.get",
+      "expect": [
+        {
+          "path": "$.paint_editor",
+          "exists": false
+        }
+      ]
+    },
+    {
+      "execute": "element.lock",
+      "args": {
+        "ids": [
+          "{{pic}}"
+        ]
+      }
+    },
+    {
+      "execute": "image.paint",
+      "args": {
+        "id": "{{pic}}",
+        "strokes": [
+          {
+            "points": [
+              [
+                1,
+                1
+              ]
+            ]
+          }
+        ]
+      },
+      "refused": "locked"
+    }
+  ]
+}

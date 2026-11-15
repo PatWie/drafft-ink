@@ -123,6 +123,14 @@ string_id!(
     "GroupId"
 );
 
+string_id!(
+    /// Identifier of one brush stroke on a picture. It starts with a sequence number, which is the order the strokes
+    /// are applied in (`paint::next_stroke_id`). It never contains a dot, because the document store joins keys with
+    /// dots.
+    StrokeId,
+    "StrokeId"
+);
+
 /// Content hash of an image blob: 64 lowercase hex digits of its SHA-256.
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct FileId(SmolStr);

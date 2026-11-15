@@ -126,7 +126,13 @@ fn sample() -> Document {
     d.files.insert(fid.clone(), entry);
     let mut img = Element::new(
         eid("img"),
-        ElementKind::Image(ImageData { file_id: Some(fid), natural_width: 4, natural_height: 3, crop: None }),
+        ElementKind::Image(ImageData {
+            file_id: Some(fid),
+            natural_width: 4,
+            natural_height: 3,
+            crop: None,
+            paint: Default::default(),
+        }),
         ZIndex::first(),
     )
     .with_bounds(300.0, 100.0, 40.0, 30.0);
@@ -139,6 +145,7 @@ fn sample() -> Document {
             natural_width: 1,
             natural_height: 1,
             crop: None,
+            paint: Default::default(),
         }),
         ZIndex::first(),
     )
@@ -887,4 +894,86 @@ fn the_svg_view_box_still_holds_the_head_of_a_short_arrow() {
     let vb: Vec<f64> =
         doc.root_element().attribute("viewBox").unwrap().split(' ').map(|v| v.parse().unwrap()).collect();
     assert!(vb[0] <= 0.0 && vb[0] + vb[2] >= 10.0 && vb[2] >= 10.0, "{vb:?}");
+}
+
+// ---- paint on pictures ----
+
+/// The decoded pictures embedded in an SVG, in document order.
+fn embedded_pictures(svg: &str) -> Vec<image::RgbaImage> {
+    use base64::Engine as _;
+    let doc = parse(svg);
+    doc.descendants()
+        .filter(|n| n.tag_name().name() == "image")
+        .filter_map(|n| n.attribute("href"))
+        .filter_map(|h| h.strip_prefix("data:image/png;base64,"))
+        .map(|b| {
+            let bytes = base64::engine::general_purpose::STANDARD.decode(b).unwrap();
+            image::load_from_memory_with_format(&bytes, image::ImageFormat::Png).unwrap().to_rgba8()
+        })
+        .collect()
+}
+
+/// The sample with a red dab at (3, 2) of its 4 x 3 picture.
+fn painted_sample() -> Document {
+    let mut d = sample();
+    let img = d.elements.iter_mut().find(|e| e.id.as_str() == "img").unwrap();
+    let ElementKind::Image(data) = &mut img.kind else { panic!("the sample has an image") };
+    data.paint.insert(
+        drafftink_scene::StrokeId::new("000001-t").unwrap(),
+        drafftink_scene::PaintStroke {
+            mode: drafftink_scene::PaintMode::Paint,
+            color: Color::rgb(255, 0, 0),
+            size: 1.5,
+            hardness: 1.0,
+            opacity: 1.0,
+            points: vec![Point::new(3.5, 2.5)],
+            pressures: Vec::new(),
+        },
+    );
+    d
+}
+
+#[test]
+fn svg_embeds_a_painted_picture_with_its_paint_and_an_unpainted_one_as_before() {
+    let options = SvgOptions { embed_scene: false, ..SvgOptions::default() };
+    let plain = export_svg(&sample(), &options, &EstimateMeasure, None).unwrap();
+    let painted = export_svg(&painted_sample(), &options, &EstimateMeasure, None).unwrap();
+    assert_ne!(plain, painted, "paint changes the export");
+
+    // Without paint the picture is the stored file, byte for byte.
+    let original = png_bytes(4, 3);
+    let stored = {
+        use base64::Engine as _;
+        base64::engine::general_purpose::STANDARD.encode(&original)
+    };
+    assert!(plain.contains(&format!("data:image/png;base64,{stored}")));
+    assert!(!painted.contains(&stored), "the painted picture is a new PNG");
+
+    let pictures = embedded_pictures(&painted);
+    assert_eq!(pictures.len(), 1);
+    let baked = &pictures[0];
+    assert_eq!(baked.dimensions(), (4, 3));
+    assert_eq!(*baked.get_pixel(3, 2), image::Rgba([255, 0, 0, 255]));
+    assert_eq!(*baked.get_pixel(0, 0), image::Rgba([200, 200, 200, 200]), "the other pixels are the original");
+}
+
+#[test]
+fn svg_keeps_paint_and_crop_together_and_the_scene_keeps_the_strokes() {
+    let mut d = painted_sample();
+    let img = d.elements.iter_mut().find(|e| e.id.as_str() == "img").unwrap();
+    let ElementKind::Image(data) = &mut img.kind else { panic!("the sample has an image") };
+    data.crop = Some(drafftink_scene::Crop { x: 1.0, y: 0.5, width: 2.0, height: 1.5 });
+    let svg = export_svg(&d, &SvgOptions::default(), &EstimateMeasure, None).unwrap();
+    let doc = parse(&svg);
+    let nested = doc
+        .descendants()
+        .find(|n| n.tag_name().name() == "svg" && n.attribute("viewBox") == Some("1 0.5 2 1.5"))
+        .expect("the crop is a nested viewport over the whole baked picture");
+    assert!(nested.children().any(|n| n.tag_name().name() == "image"));
+    // The embedded scene is the native JSON: the strokes survive a re-import of the SVG.
+    let back = native::load(&svg::extract_scene(&svg).unwrap().expect("the scene is embedded")).unwrap();
+    let ElementKind::Image(data) = &back.elements.iter().find(|e| e.id.as_str() == "img").unwrap().kind else {
+        panic!("an image")
+    };
+    assert_eq!(data.paint.len(), 1);
 }

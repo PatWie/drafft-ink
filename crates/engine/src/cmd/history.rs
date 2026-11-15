@@ -128,6 +128,9 @@ fn drop_stale_state(s: &mut Session) {
     if t.observed.crop_editor.as_ref().is_some_and(|id| !live(id)) {
         t.observed.crop_editor = None;
     }
+    if t.observed.paint_editor.as_ref().is_some_and(|id| !live(id)) {
+        t.observed.paint_editor = None;
+    }
 }
 
 fn undo(s: &mut Session, a: StepsArgs) -> Result<UndoOut, Refusal> {

@@ -647,6 +647,7 @@ fn a_rounded_picture_is_written_with_roundness_and_read_back_with_its_radius() {
             natural_width: 40,
             natural_height: 30,
             crop: None,
+            paint: Default::default(),
         };
         let id = drafftink_scene::ElementId::new(&format!("p{n}")).unwrap();
         let mut e = Element::new(id, ElementKind::Image(data), keys[n].clone()).with_bounds(0.0, 0.0, w, h);
@@ -912,6 +913,7 @@ fn native_documents_survive_a_trip_through_excalidraw() {
             natural_width: 8,
             natural_height: 4,
             crop: Some(drafftink_scene::Crop { x: 1.0, y: 1.0, width: 4.0, height: 2.0 }),
+            paint: Default::default(),
         }),
         700.0,
         0.0,
@@ -1023,6 +1025,7 @@ fn export_refuses_nothing_silently() {
             natural_width: 1,
             natural_height: 1,
             crop: None,
+            paint: Default::default(),
         }),
         0.0,
         0.0,
@@ -1288,6 +1291,7 @@ fn exporting_a_library_leaves_images_out_with_a_warning() {
             natural_width: 1,
             natural_height: 1,
             crop: None,
+            paint: Default::default(),
         }),
         0.0,
         0.0,
@@ -1301,6 +1305,146 @@ fn exporting_a_library_leaves_images_out_with_a_warning() {
         serde_json::from_str::<Value>(&text).unwrap()["libraryItems"][0]["elements"].as_array().unwrap().len(),
         1
     );
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+// Paint on pictures
+
+/// A 6 x 4 blue PNG.
+fn blue_png() -> Vec<u8> {
+    let mut out = std::io::Cursor::new(Vec::new());
+    image::DynamicImage::ImageRgba8(image::RgbaImage::from_pixel(6, 4, image::Rgba([0, 0, 255, 255])))
+        .write_to(&mut out, image::ImageFormat::Png)
+        .unwrap();
+    out.into_inner()
+}
+
+fn red_dab(x: f64, y: f64) -> drafftink_scene::PaintStroke {
+    drafftink_scene::PaintStroke {
+        mode: drafftink_scene::PaintMode::Paint,
+        color: Color::rgb(255, 0, 0),
+        size: 3.0,
+        hardness: 1.0,
+        opacity: 1.0,
+        points: vec![Point::new(x, y)],
+        pressures: Vec::new(),
+    }
+}
+
+/// An image element of `file` in `doc`, with a red dab when `painted`.
+fn add_picture(doc: &mut Document, file: &drafftink_scene::FileId, painted: bool) -> usize {
+    let paint = if painted {
+        std::iter::once((drafftink_scene::StrokeId::new("000001-t").unwrap(), red_dab(4.5, 2.5))).collect()
+    } else {
+        Default::default()
+    };
+    let data = drafftink_scene::ImageData {
+        file_id: Some(file.clone()),
+        natural_width: 6,
+        natural_height: 4,
+        crop: None,
+        paint,
+    };
+    base_element(doc, ElementKind::Image(data), 0.0, 0.0, 60.0, 40.0)
+}
+
+/// The PNG a written file entry holds.
+fn written_picture(v: &Value, file_id: &str) -> image::RgbaImage {
+    use base64::Engine as _;
+    let url = v["files"][file_id]["dataURL"].as_str().expect("the file entry has a data URL");
+    let b64 = url.strip_prefix("data:image/png;base64,").expect("a PNG");
+    let bytes = base64::engine::general_purpose::STANDARD.decode(b64).unwrap();
+    image::load_from_memory_with_format(&bytes, image::ImageFormat::Png).unwrap().to_rgba8()
+}
+
+#[test]
+fn a_painted_picture_is_written_as_its_baked_png_with_a_note() {
+    let mut doc = Document::new();
+    let (file, entry) = drafftink_scene::FileEntry::new("image/png", blue_png());
+    doc.files.insert(file.clone(), entry);
+    let painted = add_picture(&mut doc, &file, true);
+    let (text, report) = export_scene_with_report(&doc).unwrap();
+    assert!(report.is_clean(), "{report:?}");
+    let v: Value = serde_json::from_str(&text).unwrap();
+
+    let element = &v["elements"][0];
+    assert_eq!(element["id"], doc.elements[painted].id.as_str());
+    let written = element["fileId"].as_str().unwrap();
+    assert_ne!(written, file.as_str(), "the element points at the baked picture");
+    assert_eq!(v["files"].as_object().unwrap().len(), 1, "the original is not kept when nothing else uses it");
+    assert_eq!(element["customData"]["drafftink"]["paint_baked"], 1);
+
+    let png = written_picture(&v, written);
+    assert_eq!(png.dimensions(), (6, 4));
+    assert_eq!(*png.get_pixel(4, 2), image::Rgba([255, 0, 0, 255]), "the dab is in the file");
+    assert_eq!(*png.get_pixel(0, 0), image::Rgba([0, 0, 255, 255]), "the rest is the original");
+    // The file id is the content hash of the baked bytes, as for every other file.
+    let url = v["files"][written]["dataURL"].as_str().unwrap();
+    let bytes = {
+        use base64::Engine as _;
+        base64::engine::general_purpose::STANDARD.decode(url.strip_prefix("data:image/png;base64,").unwrap()).unwrap()
+    };
+    assert_eq!(drafftink_scene::FileId::of(&bytes).as_str(), written);
+}
+
+#[test]
+fn the_original_stays_in_the_file_table_when_an_unpainted_picture_uses_it() {
+    let mut doc = Document::new();
+    let (file, entry) = drafftink_scene::FileEntry::new("image/png", blue_png());
+    doc.files.insert(file.clone(), entry);
+    add_picture(&mut doc, &file, false);
+    add_picture(&mut doc, &file, true);
+    let v: Value = serde_json::from_str(&export_scene(&doc).unwrap()).unwrap();
+    assert_eq!(v["files"].as_object().unwrap().len(), 2);
+    let plain = v["elements"].as_array().unwrap().iter().find(|e| e["customData"].is_null()).expect("unpainted");
+    assert_eq!(plain["fileId"], file.as_str(), "an unpainted picture is written as before");
+    assert!(plain.get("customData").is_none_or(Value::is_null));
+    let baked = v["elements"].as_array().unwrap().iter().find(|e| !e["customData"].is_null()).expect("painted");
+    assert_ne!(baked["fileId"], file.as_str());
+}
+
+#[test]
+fn a_painted_picture_exports_differently_and_comes_back_as_a_plain_picture() {
+    let build = |painted: bool| {
+        let mut doc = Document::new();
+        let (file, entry) = drafftink_scene::FileEntry::new("image/png", blue_png());
+        doc.files.insert(file.clone(), entry);
+        let at = add_picture(&mut doc, &file, painted);
+        if let ElementKind::Image(d) = &mut doc.elements[at].kind {
+            d.crop = Some(drafftink_scene::Crop { x: 1.0, y: 1.0, width: 4.0, height: 2.0 });
+        }
+        doc
+    };
+    let (plain, with) = (export_scene(&build(false)).unwrap(), export_scene(&build(true)).unwrap());
+    assert_ne!(plain, with);
+
+    let back = import_str(&with).unwrap();
+    assert_clean(&back.document);
+    assert!(back.report.is_clean(), "the importer needs no special case: {:?}", back.report);
+    let img = back.document.elements.iter().find(|e| matches!(e.kind, ElementKind::Image(_))).unwrap();
+    let ElementKind::Image(d) = &img.kind else { unreachable!() };
+    assert!(d.paint.is_empty(), "a re-import sees a normal picture");
+    assert_eq!((d.natural_width, d.natural_height), (6, 4));
+    assert!(d.crop.is_some(), "the crop travels with the baked picture");
+    let file = &back.document.files[d.file_id.as_ref().unwrap()];
+    let png = image::load_from_memory(&file.bytes).unwrap().to_rgba8();
+    assert_eq!(*png.get_pixel(4, 2), image::Rgba([255, 0, 0, 255]));
+}
+
+#[test]
+fn a_painted_picture_that_cannot_be_baked_is_exported_unpainted_with_a_warning() {
+    let mut doc = Document::new();
+    // Not a decodable picture: only the PNG signature.
+    let (file, entry) =
+        drafftink_scene::FileEntry::new("image/png", vec![0x89, b'P', b'N', b'G', 0x0d, 0x0a, 0x1a, 0x0a]);
+    doc.files.insert(file.clone(), entry);
+    add_picture(&mut doc, &file, true);
+    let (text, report) = export_scene_with_report(&doc).unwrap();
+    assert_eq!(report.warnings.len(), 1, "{report:?}");
+    assert!(report.warnings[0].contains("without its paint"), "{report:?}");
+    let v: Value = serde_json::from_str(&text).unwrap();
+    assert_eq!(v["elements"][0]["fileId"], file.as_str());
+    assert!(v["elements"][0].get("customData").is_none_or(Value::is_null));
 }
 
 // ---------------------------------------------------------------------------------------------------------------

@@ -6,6 +6,7 @@ mod dialog;
 
 use common::Fixture;
 use drafftink_engine::Origin;
+use drafftink_scene::Color;
 use drafftink_ui::surfaces::color::{PopoverKey, remember_anchor};
 use drafftink_ui::{ColorTarget, Routed, UiAction, Verb, route};
 use egui::{Key, Rect, pos2};
@@ -434,7 +435,6 @@ fn open_dark(target: ColorTarget) -> egui_kittest::Harness<'static, Fixture> {
 
 #[test]
 fn in_the_dark_theme_a_swatch_shows_what_the_canvas_draws_for_its_colour() {
-    use drafftink_scene::Color;
     let h = open_dark(ColorTarget::Stroke);
     // Blue 500 is stored as blue-500; the dark canvas draws it through the filter, and so does the swatch.
     let want = Color::parse("#3b82f6").unwrap().for_dark_theme();
@@ -458,7 +458,6 @@ fn in_the_dark_theme_a_swatch_shows_what_the_canvas_draws_for_its_colour() {
 
 #[test]
 fn in_the_dark_theme_a_palette_pick_stores_the_palette_colour_and_a_look_pick_stores_the_inverse() {
-    use drafftink_scene::Color;
     let mut h = open_dark(ColorTarget::Stroke);
     h.get_by_label("Blue 500").click();
     h.run();
@@ -500,7 +499,6 @@ fn in_the_dark_theme_a_palette_pick_stores_the_palette_colour_and_a_look_pick_st
 
 #[test]
 fn in_the_light_theme_a_swatch_is_the_stored_colour() {
-    use drafftink_scene::Color;
     let h = open(dialog::fixture(), ColorTarget::Stroke);
     let stored = Color::parse("#3b82f6").unwrap();
     assert_eq!(swatch_fill(&h, "Blue 500"), egui::Color32::from_rgb(stored.r, stored.g, stored.b));
@@ -509,7 +507,6 @@ fn in_the_light_theme_a_swatch_is_the_stored_colour() {
 
 #[test]
 fn the_top_bar_the_last_picked_swatch_and_the_page_button_show_the_dark_display_too() {
-    use drafftink_scene::Color;
     let shown = |name: &str| {
         let c = drafftink_scene::palette::lookup(name).unwrap().for_dark_theme();
         egui::Color32::from_rgb(c.r, c.g, c.b)
@@ -603,4 +600,75 @@ fn a_pick_sets_the_colour_on_the_selection_in_one_undo_step() {
     assert_eq!(f.session.tab().doc.undo_depth(), before + 1, "one undo step");
     assert!(f.state.eyedropper().is_none());
     assert_eq!(f.state.last_picked.of(ColorTarget::Fill), Some("#10b981"), "the strip keeps it as the last picked");
+}
+
+// ---- the brush colour of the paint editor ----
+
+#[test]
+fn a_brush_pick_is_image_paint_brush_and_the_popover_has_no_none_cell() {
+    let mut h = open(dialog::fixture(), ColorTarget::Brush);
+    h.get_by_label("Brush colour");
+    assert!(h.query_by_label("None").is_none(), "a brush has a colour; erasing is its other mode");
+    h.get_by_label("Blue 500").click();
+    h.run();
+    assert_eq!(calls(&h), [("image.paint_brush".to_owned(), json!({"color": "blue-500"}), Origin::Ui)]);
+    assert_eq!(dialog::verbs(h.state()), [Verb::CloseOverlays]);
+    h.state_mut().dispatch();
+    assert_eq!(h.state().model.brush.color, drafftink_scene::palette::lookup("blue-500").unwrap());
+    // The style of the document was never asked.
+    assert!(h.state().calls().iter().all(|c| c.id != "style.set"));
+}
+
+#[test]
+fn the_brush_popover_shows_and_stores_colours_as_they_are_in_the_dark_theme() {
+    let mut h = dialog::sized(dialog::fixture(), egui::vec2(1280.0, 800.0), egui::Theme::Dark);
+    h.state_mut().state.color_popover = Some(ColorTarget::Brush);
+    h.run();
+    let blue = Color::parse("#3b82f6").unwrap();
+    assert_eq!(swatch_fill(&h, "Blue 500"), egui::Color32::from_rgb(blue.r, blue.g, blue.b), "not mapped");
+    assert_eq!(swatch_fill(&h, "White"), egui::Color32::WHITE);
+    h.get_by_label("White").click();
+    h.run();
+    assert_eq!(calls(&h)[0].1, json!({"color": "#ffffff"}), "White is white on a picture, whatever the theme");
+    // A typed colour is stored as typed.
+    let mut h = dialog::sized(dialog::fixture(), egui::vec2(1280.0, 800.0), egui::Theme::Dark);
+    h.state_mut().state.color_popover = Some(ColorTarget::Brush);
+    h.run();
+    h.get_by_label("Hex colour").focus();
+    h.run();
+    h.get_by_label("Hex colour").type_text("#808080");
+    h.run();
+    h.key_press(Key::Enter);
+    h.run();
+    assert_eq!(calls(&h)[0].1, json!({"color": "#808080"}));
+}
+
+#[test]
+fn the_brush_eyedropper_samples_the_pixel_and_sets_the_brush_in_both_themes() {
+    for theme in [egui::Theme::Light, egui::Theme::Dark] {
+        let mut h = dialog::sized(dialog::fixture(), egui::vec2(1280.0, 800.0), theme);
+        h.run();
+        let f = h.state_mut();
+        f.state.apply_verb(Verb::PickColorBrush, &mut Vec::new());
+        assert_eq!(f.state.eyedropper_target(), Some(ColorTarget::Brush));
+        let call = f.state.finish_eyedropper(ColorTarget::Brush, [0x10, 0xb9, 0x81]).unwrap();
+        assert_eq!(
+            (call.id.as_str(), call.args.clone()),
+            ("image.paint_brush", json!({"color": "#10b981"})),
+            "{theme:?}"
+        );
+        f.actions.push(UiAction::Command(call));
+        f.dispatch();
+        assert_eq!(f.model.brush.color, Color::rgb(0x10, 0xb9, 0x81), "the pixel is the colour: {theme:?}");
+        assert_eq!(f.state.last_picked.of(ColorTarget::Brush), Some("#10b981"));
+    }
+}
+
+#[test]
+fn a_platform_screen_picker_is_asked_for_the_brush_too() {
+    let mut f = dialog::fixture();
+    f.state.set_screen_color_picker(true);
+    let mut host = Vec::new();
+    f.state.apply_verb(Verb::PickColorBrush, &mut host);
+    assert_eq!(host, [drafftink_ui::HostRequest::PickScreenColor(ColorTarget::Brush)]);
 }

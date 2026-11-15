@@ -289,3 +289,35 @@ fn on_a_phone_the_crop_buttons_of_an_image_wait_behind_more_at_finger_size() {
         assert!(h.get_by_label(label).rect().height() >= 36.0, "{label} is a finger-sized target");
     }
 }
+
+#[test]
+fn on_a_phone_the_paint_buttons_of_an_image_wait_behind_more_and_the_editor_fits_the_menu() {
+    let mut f = dialog::fixture();
+    let picture = "iVBORw0KGgoAAAANSUhEUgAAACgAAAAUCAIAAABwJOjsAAAAJElEQVR4nGM4YWQ0IIhh1OJRi0ctHrV41OJRi0ctHrV45FgMAAkCqa66Bn33AAAAAElFTkSuQmCC";
+    let out = dialog::run(&mut f, "image.insert", json!({ "images": [{ "base64": picture }], "at": [0, 0] }));
+    let id = drafftink_scene::ElementId::new(out["ids"][0].as_str().unwrap()).unwrap();
+    let stroke = json!({ "points": [[5, 5], [30, 12]] });
+    dialog::run(&mut f, "image.paint", json!({ "id": id.as_str(), "strokes": [stroke] }));
+    let mut h = at(vec2(390.0, 844.0), f);
+    assert!(h.query_by_label("Edit picture").is_none(), "not in the one-row strip");
+    h.get_by_label("More options").click();
+    h.run();
+    for label in ["Edit picture", "Reset paint"] {
+        assert!(h.get_by_label(label).rect().height() >= 36.0, "{label} is a finger-sized target");
+    }
+    // Open the editor: its whole group has to fit the menu, at finger size, on a 390 point window.
+    h.get_by_label("Edit picture").click();
+    h.run();
+    h.state_mut().dispatch();
+    h.run();
+    assert!(h.state().model.paint_editing, "the editor is open");
+    h.state_mut().state.ribbon_menu = None;
+    h.run();
+    h.get_by_label("More options").click();
+    h.run();
+    for label in ["Brush size", "Brush hardness", "Brush opacity", "Reset paint", "Done editing picture"] {
+        let r = h.get_by_label(label).rect();
+        assert!(r.min.x >= 0.0 && r.max.x <= 390.0, "{label} {r:?} is inside the window");
+        assert!(r.height() >= 36.0 || label.starts_with("Brush"), "{label} is a finger-sized target: {r:?}");
+    }
+}

@@ -20,6 +20,7 @@ fn hint(target: ColorTarget) -> &'static str {
     match target {
         ColorTarget::Stroke => "Click a colour on the canvas to use it for the stroke. Esc cancels.",
         ColorTarget::Fill => "Click a colour on the canvas to use it for the fill. Esc cancels.",
+        ColorTarget::Brush => "Click a colour on the canvas to paint with it. Esc cancels.",
         ColorTarget::Background => "Click a colour on the canvas. Esc cancels.",
     }
 }

@@ -989,6 +989,7 @@ mod tests {
                 natural_width: 1,
                 natural_height: 1,
                 crop: None,
+                paint: Default::default(),
             }),
         );
         let math = put(&mut st, "m", ElementKind::Math(drafftink_scene::MathData::new("x")));
@@ -1075,6 +1076,7 @@ mod tests {
                 natural_width: 1,
                 natural_height: 1,
                 crop: None,
+                paint: Default::default(),
             }),
         );
         let mut tx = st.begin();
@@ -1114,6 +1116,7 @@ mod tests {
             natural_width: 1,
             natural_height: 1,
             crop: None,
+            paint: Default::default(),
         });
         let image = put(store, s, kind);
         let mut tx = store.begin();

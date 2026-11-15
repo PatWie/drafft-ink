@@ -8,6 +8,7 @@ use crate::widgets::Cx;
 
 pub mod about;
 pub mod bottom;
+pub mod brush;
 pub mod collab;
 pub mod color;
 pub mod context_menu;
