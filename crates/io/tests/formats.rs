@@ -1017,6 +1017,29 @@ fn svg_cuts_a_rotated_arrow_where_the_label_is_in_the_world() {
 }
 
 #[test]
+fn svg_cuts_the_gap_where_the_smallest_id_of_several_labels_sits() {
+    // The arrow has two texts, as after a merge of two offline edits. `label` sits at x 200. The other one, at x 90,
+    // wins when its id is smaller (the rule of `drafftink_scene::label`) and loses when it is larger.
+    let two = |other: &str| {
+        let mut d = arrow_with_label(200.0, 0.0);
+        let mut second = d.elements[1].clone();
+        second.id = eid(other);
+        second.transform.x = 60.0;
+        second.index = ZIndex::rebalance(3).unwrap().remove(2);
+        d.elements.push(second);
+        d
+    };
+    let gap_at = |d: &Document, x0: f64, x1: f64| dark_in(&rasterise(&clean_svg(d)), x0, x1, 40.0, 60.0);
+    let (own, other) = ((170.0, 230.0), (61.0, 119.0));
+    let larger = two("zz");
+    assert_eq!(gap_at(&larger, own.0 + 1.0, own.1 - 1.0), 0, "`label` is smaller than `zz`: the gap is at 200");
+    assert!(gap_at(&larger, other.0, other.1) > 100, "and the line runs through the other text");
+    let smaller = two("aa");
+    assert_eq!(gap_at(&smaller, other.0, other.1), 0, "`aa` is smaller than `label`: the gap is at 90");
+    assert!(gap_at(&smaller, own.0 + 1.0, own.1 - 1.0) > 100, "and the line runs through `label`");
+}
+
+#[test]
 fn svg_draws_whole_an_arrow_whose_label_is_empty_or_gone() {
     let mut d = arrow_with_label(200.0, 0.0);
     if let ElementKind::Text(t) = &mut d.elements[1].kind {

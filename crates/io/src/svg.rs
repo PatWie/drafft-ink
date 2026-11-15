@@ -49,7 +49,7 @@ use base64::Engine as _;
 use base64::engine::general_purpose::STANDARD;
 use drafftink_scene::{
     Color, Document, Element, ElementId, ElementKind, FillPattern, FontFamily, FontWeight, FrameData, Head, ImageData,
-    InlineMath, LabelCut, PressureMode, StrokeStyle, Style, TextAlign, TextData,
+    InlineMath, LabelCut, PressureMode, StrokeStyle, Style, TextAlign, TextData, label,
 };
 use drafftink_sketch::{
     Arrowhead, Curve, FillKind, FillStyle, LineDash, PressureProfile, Roundness, SketchInput, SketchParams,
@@ -233,20 +233,6 @@ fn head_size(d: &drafftink_scene::LinearData, style: &Style) -> f64 {
 /// sketchy wobble or head goes.
 const CUT_REACH: f64 = 10_000.0;
 
-/// The live text bound to each container, the one with the smallest id when several claim it (as the editor picks).
-fn labels_by_container(doc: &Document) -> HashMap<&ElementId, &Element> {
-    let mut labels: HashMap<&ElementId, &Element> = HashMap::new();
-    for e in doc.elements.iter().filter(|e| !e.deleted) {
-        if let Some(container) = e.container_id() {
-            let best = labels.entry(container).or_insert(e);
-            if e.id < best.id {
-                *best = e;
-            }
-        }
-    }
-    labels
-}
-
 struct Ctx<'a> {
     doc: &'a Document,
     opts: &'a SvgOptions,
@@ -257,7 +243,7 @@ struct Ctx<'a> {
     next_id: u32,
     used_faces: Vec<(FontFamily, FontWeight)>,
     frame_clips: HashMap<ElementId, String>,
-    /// The text bound to each arrow (the one with the smallest id when several claim it), for the gap it leaves.
+    /// The text bound to each container ([`label::by_container`]), for the gap it leaves in an arrow.
     labels: HashMap<&'a ElementId, &'a Element>,
 }
 
@@ -304,7 +290,7 @@ pub fn export_svg(
         next_id: 0,
         used_faces: Vec::new(),
         frame_clips: HashMap::new(),
-        labels: labels_by_container(drawn),
+        labels: label::by_container(&drawn.elements),
     };
     if opts.background {
         putln!(

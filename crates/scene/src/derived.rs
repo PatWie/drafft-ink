@@ -19,6 +19,7 @@ use smallvec::SmallVec;
 
 use crate::element::{Element, Kind};
 use crate::id::{ElementId, GroupId};
+use crate::label;
 use crate::store::{ChangeSet, SceneRead};
 
 /// What the index recorded for one element.
@@ -209,9 +210,10 @@ impl DerivedIndex {
         self.frame_children.get(frame).into_iter().flatten()
     }
 
-    /// The live label text of a container. If several claim it (a merge conflict), the one with the smallest id.
+    /// The live label text of a container. If several claim it (a merge conflict), the winner of
+    /// [`label::winner`](crate::label::winner).
     pub fn label_of(&self, container: &ElementId) -> Option<&ElementId> {
-        self.labels.get(container).and_then(|s| s.iter().next())
+        self.labels.get(container).and_then(label::winner)
     }
 
     /// All live texts that claim `container` as their container.

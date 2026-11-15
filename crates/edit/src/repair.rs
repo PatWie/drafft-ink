@@ -30,7 +30,7 @@ use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 use drafftink_scene::{
     Change, ChangeKind, ElementId, ElementKind, Fields, GroupId, IndexError, Kind, SceneRead, SceneTx, StoreError,
-    ZIndex,
+    ZIndex, label,
 };
 
 use crate::binding::{self, BindingError};
@@ -89,8 +89,8 @@ fn reference_fields() -> Fields {
 }
 
 /// Drops references that point nowhere useful: arrow ends bound to a missing, deleted or unattachable element,
-/// labels whose container is gone, deleted or cannot hold a label (and all but the smallest id of several labels
-/// of one container), and frame children whose frame is gone, deleted or not a frame. A label also takes the frame
+/// labels whose container is gone, deleted or cannot hold a label (and all but the winner of several labels
+/// of one container, see `drafftink_scene::label`), and frame children whose frame is gone, deleted or not a frame. A label also takes the frame
 /// and the groups of its container, as `text.bind` and `group.create` leave them.
 ///
 /// `changed` is what the merge changed. The elements looked at are the changed ones, and those that refer to an
@@ -178,7 +178,7 @@ impl Plan {
     fn make<R: SceneRead>(r: &R, candidates: &BTreeSet<ElementId>) -> Self {
         let mut plan = Plan::default();
         let mut rivals: BTreeMap<ElementId, BTreeSet<ElementId>> = BTreeMap::new();
-        let scanned = labels_by_container(r);
+        let scanned = claims_by_container(r);
         for id in candidates {
             let Some(e) = r.get(id).filter(|e| !e.deleted) else { continue };
             if e.tag().is_linear() {
@@ -204,9 +204,10 @@ impl Plan {
                 }
             }
         }
-        // Several live texts claim one container: the smallest id keeps it, as readers already assume.
+        // Several live texts claim one container: the winner of the label rule keeps it, as readers already assume.
         for claims in rivals.into_values() {
-            plan.labels.extend(claims.into_iter().skip(1));
+            let keeper = label::winner(&claims).cloned();
+            plan.labels.extend(claims.into_iter().filter(|claim| Some(claim) != keeper.as_ref()));
         }
         plan.labels.sort();
         plan.labels.dedup();
@@ -232,7 +233,7 @@ fn frame_ok<R: SceneRead>(r: &R, frame: &ElementId, child: &drafftink_scene::Ele
         && r.get(frame).is_some_and(|f| !f.deleted && f.tag() == Kind::Frame)
 }
 
-/// Every live text that claims `container`, sorted by id.
+/// Every live text that claims `container`, sorted by id. [`label::winner`] says which of them is its label.
 fn claimants<R: SceneRead>(
     r: &R,
     scanned: Option<&HashMap<ElementId, BTreeSet<ElementId>>>,
@@ -245,7 +246,7 @@ fn claimants<R: SceneRead>(
 }
 
 /// Without a committed index: the claims of every container, from one pass over the scene.
-fn labels_by_container<R: SceneRead>(r: &R) -> Option<HashMap<ElementId, BTreeSet<ElementId>>> {
+fn claims_by_container<R: SceneRead>(r: &R) -> Option<HashMap<ElementId, BTreeSet<ElementId>>> {
     if r.derived_index().is_some() {
         return None;
     }

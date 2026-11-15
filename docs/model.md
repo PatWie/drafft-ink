@@ -151,7 +151,7 @@ A reference to an id that never existed is an error. A reference to a tombstone 
 
 Guarantees (tested by `conformance`): reads inside a transaction see its writes; invalid elements and duplicate ids are refused and leave the store unchanged; a commit reports the **net** change per element (`Added`/`Updated`/`Removed` and the `Fields` that differ: `position size angle flip kind style index groups frame locked deleted name link custom`); a commit with no net change is a no-op (no revision, no notification, no version bump); every reported change raises the element's `version` by one; subscribers run once per commit after the store is consistent.
 
-`DerivedIndex` (kept current by the store from each `ChangeSet`, equal to a fresh rebuild): `bound_arrows(target)`, `group_members(group)`, `group_len`, `is_group` (>= 2 live members), `frame_children(frame)`, `label_of(container)`. It indexes live elements only.
+`DerivedIndex` (kept current by the store from each `ChangeSet`, equal to a fresh rebuild): `bound_arrows(target)`, `group_members(group)`, `group_len`, `is_group` (>= 2 live members), `frame_children(frame)`, `label_of(container)`. It indexes live elements only. Which text is the label of a container is one rule, in `drafftink_scene::label`: of the live texts that name the container, the one with the smallest id (`winner`, `by_container`, and `SceneRead::label_of`, which uses the index when there is one and scans otherwise). `edit`, `io` (SVG), `render` and the queries all call it.
 
 `MemoryStore` is the in-memory implementation. `conformance::run(make)` (feature `conformance`) is the suite the Loro store must pass. `snapshot(&store) -> Document` and `load_document(&mut store, &doc)` move whole documents.
 
