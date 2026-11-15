@@ -18,7 +18,7 @@ fn short(text: &str) -> &str {
 }
 
 /// True when the row converts to the type `current` (the `to` the last conversion reported: a shape name,
-/// `line`, or `sharp arrow`, `round arrow`, `elbow arrow`, `auto elbow arrow`).
+/// `line`, or `sharp arrow`, `round arrow`, `elbow arrow`, `auto route arrow`).
 fn is_current(args: &Value, current: Option<&str>) -> bool {
     let Some(current) = current else {
         return false;
@@ -83,8 +83,8 @@ mod tests {
         assert!(is_current(&json!({ "to": "line" }), Some("line")));
         assert!(is_current(&json!({ "to": "arrow", "arrow_type": "elbow" }), Some("elbow arrow")));
         assert!(!is_current(&json!({ "to": "arrow", "arrow_type": "sharp" }), Some("elbow arrow")));
-        assert!(is_current(&json!({ "to": "arrow", "arrow_type": "auto_elbow" }), Some("auto elbow arrow")));
-        assert!(!is_current(&json!({ "to": "arrow", "arrow_type": "elbow" }), Some("auto elbow arrow")));
+        assert!(is_current(&json!({ "to": "arrow", "arrow_type": "auto_route" }), Some("auto route arrow")));
+        assert!(!is_current(&json!({ "to": "arrow", "arrow_type": "elbow" }), Some("auto route arrow")));
         assert!(!is_current(&json!({ "to": "line" }), None));
     }
 }

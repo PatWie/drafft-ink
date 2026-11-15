@@ -61,7 +61,7 @@ const LINEAR_ORDER: [Target; 5] = [
     Target::Arrow(PathType::Sharp),
     Target::Arrow(PathType::Round),
     Target::Arrow(PathType::Elbow),
-    Target::Arrow(PathType::AutoElbow),
+    Target::Arrow(PathType::AutoRoute),
 ];
 
 impl Target {
@@ -83,7 +83,7 @@ impl Target {
             Self::Arrow(PathType::Sharp) => "sharp arrow",
             Self::Arrow(PathType::Round) => "round arrow",
             Self::Arrow(PathType::Elbow) => "elbow arrow",
-            Self::Arrow(PathType::AutoElbow) => "auto elbow arrow",
+            Self::Arrow(PathType::AutoRoute) => "auto route arrow",
         }
     }
 
@@ -355,7 +355,7 @@ mod tests {
     const SHARP: Target = Target::Arrow(PathType::Sharp);
     const ROUND: Target = Target::Arrow(PathType::Round);
     const ELBOW: Target = Target::Arrow(PathType::Elbow);
-    const AUTO: Target = Target::Arrow(PathType::AutoElbow);
+    const AUTO: Target = Target::Arrow(PathType::AutoRoute);
 
     #[test]
     fn tab_walks_the_shapes_in_order_and_wraps() {
@@ -447,7 +447,7 @@ mod tests {
     #[test]
     fn the_words_read_in_plain_language() {
         assert_eq!(Target::Arrow(PathType::Elbow).words(), "elbow arrow");
-        assert_eq!(Target::Arrow(PathType::AutoElbow).words(), "auto elbow arrow");
+        assert_eq!(Target::Arrow(PathType::AutoRoute).words(), "auto route arrow");
         assert_eq!(Target::Line.family(), Family::Linear);
         assert_eq!(Target::Diamond.family(), Family::Shape);
     }

@@ -747,8 +747,8 @@ fn parse_linear(
     let mut data = LinearData::new(f.local);
     data.path = if elbow {
         // Excalidraw's elbow arrow routes around the shapes it is bound to: the plain elbow. Only our own note
-        // makes it an auto elbow arrow.
-        if note.auto_elbow { PathType::AutoElbow } else { PathType::Elbow }
+        // makes it an auto route arrow.
+        if note.auto_route { PathType::AutoRoute } else { PathType::Elbow }
     } else if rounding.is_some() {
         PathType::Round
     } else {

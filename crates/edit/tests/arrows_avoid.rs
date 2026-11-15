@@ -1,5 +1,5 @@
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
-//! Auto elbow arrows go around the other shapes (plain elbow arrows do not): the router with obstacles, the arrows
+//! Auto route arrows go around the other shapes (plain elbow arrows do not): the router with obstacles, the arrows
 //! of a scene when a shape moves in or out of their way, and switching between the arrow types.
 
 mod arrows_common;
@@ -168,7 +168,7 @@ fn hostile_boxes_are_ignored() {
 fn arrow_scene() -> (Scene, ElementId, ElementId, ElementId, ElementId) {
     let (mut s, a, b) = pair();
     let wall = s.rect("wall", 250.0, 600.0, 100.0, 60.0);
-    let arrow = s.auto_elbow_between("arrow", p(106.0, 50.0), p(494.0, 50.0));
+    let arrow = s.auto_route_between("arrow", p(106.0, 50.0), p(494.0, 50.0));
     (s, a, b, wall, arrow)
 }
 
@@ -211,7 +211,7 @@ fn moving_a_shape_re_routes_only_the_arrows_near_it() {
     // A second pair far away, with its own arrow.
     s.rect("c", 0.0, 2000.0, 100.0, 100.0);
     s.rect("d", 500.0, 2000.0, 100.0, 100.0);
-    let far = s.auto_elbow_between("far", p(106.0, 2050.0), p(494.0, 2050.0));
+    let far = s.auto_route_between("far", p(106.0, 2050.0), p(494.0, 2050.0));
     let far_version = s.get(&far).version;
     let near_version = s.get(&arrow).version;
 
@@ -276,14 +276,14 @@ fn the_same_scene_gives_the_same_stored_route_however_it_got_there() {
 fn pinned_and_free_arrows_and_lines_are_left_alone() {
     let (mut s, _a, _b, wall, arrow) = arrow_scene();
     // A pinned arrow keeps the route its user made.
-    let pinned = s.auto_elbow_between("pinned", p(106.0, 50.0), p(494.0, 50.0));
+    let pinned = s.auto_route_between("pinned", p(106.0, 50.0), p(494.0, 50.0));
     s.data(&pinned, |d| {
         d.fixed_segments.push(drafftink_scene::FixedSegment { index: 1, start: p(0.0, 0.0), end: p(0.0, 0.0) });
     });
     let pinned_before = s.get(&pinned);
     // An elbow arrow with two free ends goes where it was drawn.
     let free = s.arrow("free", &[(100.0, 40.0), (500.0, 60.0)]);
-    s.set_path(&free, drafftink_scene::PathType::AutoElbow);
+    s.set_path(&free, drafftink_scene::PathType::AutoRoute);
     let free_before = s.get(&free);
     // A line is not an obstacle.
     let line = s.line("line", &[(250.0, 0.0), (250.0, 100.0)]);
@@ -326,7 +326,7 @@ fn dragging_an_end_to_a_shape_behind_a_wall_routes_around_the_wall() {
     move_wall(&mut s, &wall, 250.0, 20.0);
     // Drawn from somewhere else and dropped on the two shapes, so that its ends move.
     let arrow2 = s.arrow("arrow2", &[(200.0, 300.0), (300.0, 300.0)]);
-    s.set_path(&arrow2, drafftink_scene::PathType::AutoElbow);
+    s.set_path(&arrow2, drafftink_scene::PathType::AutoRoute);
     s.drag_end(&arrow2, End::Start, p(106.0, 70.0));
     s.drag_end(&arrow2, End::End, p(494.0, 70.0));
     let w = s.world(&arrow2);
@@ -364,7 +364,7 @@ fn an_arrow_made_elbow_between_two_shapes_goes_around_the_shape_between_them_at_
     s.drag_end(&arrow, End::Start, p(106.0, 50.0));
     s.drag_end(&arrow, End::End, p(494.0, 50.0));
     let mut tx = s.store.begin();
-    drafftink_edit::linear::set_path(&mut tx, &arrow, drafftink_scene::PathType::AutoElbow).unwrap();
+    drafftink_edit::linear::set_path(&mut tx, &arrow, drafftink_scene::PathType::AutoRoute).unwrap();
     tx.commit().unwrap();
     let w = s.world(&arrow);
     let wall = obstacle_box(&s.get(&id("wall")));
@@ -373,7 +373,7 @@ fn an_arrow_made_elbow_between_two_shapes_goes_around_the_shape_between_them_at_
 }
 
 // ---------------------------------------------------------------------------------------------------------------
-// Elbow does not avoid shapes, auto elbow does; switching between them
+// Elbow does not avoid shapes, auto route does; switching between them
 // ---------------------------------------------------------------------------------------------------------------
 
 fn wall_box(s: &Scene, wall: &ElementId) -> Bounds {
@@ -419,7 +419,7 @@ fn a_plain_elbow_arrow_keeps_its_route_when_a_shape_moves_into_its_way_and_an_au
     assert_eq!(s.world(&plain).len(), 2);
 
     let changed = move_wall(&mut s, &wall, 250.0, 20.0);
-    assert_eq!(changed, std::slice::from_ref(&auto), "the auto elbow arrow goes around the wall");
+    assert_eq!(changed, std::slice::from_ref(&auto), "the auto route arrow goes around the wall");
     assert!(s.world(&auto).len() > 2);
 }
 
@@ -437,14 +437,14 @@ fn a_plain_elbow_arrow_is_left_alone_by_reroute_as_well() {
 }
 
 #[test]
-fn switching_a_plain_elbow_arrow_to_auto_elbow_goes_around_the_shape_and_back_keeps_the_route() {
+fn switching_a_plain_elbow_arrow_to_auto_route_goes_around_the_shape_and_back_keeps_the_route() {
     let (mut s, _a, _b) = pair();
     let wall = s.rect("wall", 250.0, 20.0, 100.0, 60.0);
     let arrow = s.elbow_between("arrow", p(106.0, 50.0), p(494.0, 50.0));
     assert_eq!(s.world(&arrow).len(), 2);
 
-    set_path(&mut s, &arrow, PathType::AutoElbow);
-    assert_eq!(path_of(&s, &arrow), PathType::AutoElbow);
+    set_path(&mut s, &arrow, PathType::AutoRoute);
+    assert_eq!(path_of(&s, &arrow), PathType::AutoRoute);
     let around = s.world(&arrow);
     assert_clean_orthogonal(&around);
     assert!(around.len() > 2 && !crosses(&around, &wall_box(&s, &wall), 0.0), "{around:?}");
@@ -458,7 +458,7 @@ fn switching_a_plain_elbow_arrow_to_auto_elbow_goes_around_the_shape_and_back_ke
 }
 
 #[test]
-fn auto_elbow_gives_up_its_pins_and_elbow_keeps_them() {
+fn auto_route_gives_up_its_pins_and_elbow_keeps_them() {
     let (mut s, _a, _b) = pair();
     let arrow = s.elbow_between("arrow", p(106.0, 50.0), p(494.0, 50.0));
     s.data(&arrow, |d| {
@@ -467,8 +467,8 @@ fn auto_elbow_gives_up_its_pins_and_elbow_keeps_them() {
     let pinned = s.get(&arrow);
     set_path(&mut s, &arrow, PathType::Elbow);
     assert_eq!(s.get(&arrow), pinned, "the same type is no change");
-    set_path(&mut s, &arrow, PathType::AutoElbow);
-    assert!(s.pins(&arrow).is_empty(), "the router owns an auto elbow route");
+    set_path(&mut s, &arrow, PathType::AutoRoute);
+    assert!(s.pins(&arrow).is_empty(), "the router owns an auto route route");
     s.data(&arrow, |d| {
         d.fixed_segments.push(drafftink_scene::FixedSegment { index: 1, start: p(0.0, 0.0), end: p(0.0, 0.0) });
     });
@@ -477,28 +477,28 @@ fn auto_elbow_gives_up_its_pins_and_elbow_keeps_them() {
 }
 
 #[test]
-fn a_straight_arrow_becomes_auto_elbow_and_leaves_it_with_its_points() {
+fn a_straight_arrow_becomes_auto_route_and_leaves_it_with_its_points() {
     let (mut s, _a, _b) = pair();
     let wall = s.rect("wall", 250.0, 20.0, 100.0, 60.0);
     let arrow = s.arrow("arrow", &[(106.0, 50.0), (494.0, 50.0)]);
     s.drag_end(&arrow, End::Start, p(106.0, 50.0));
     s.drag_end(&arrow, End::End, p(494.0, 50.0));
-    set_path(&mut s, &arrow, PathType::AutoElbow);
+    set_path(&mut s, &arrow, PathType::AutoRoute);
     let routed = s.world(&arrow);
     assert!(routed.len() > 2 && !crosses(&routed, &wall_box(&s, &wall), 0.0), "{routed:?}");
     set_path(&mut s, &arrow, PathType::Round);
     assert_eq!(path_of(&s, &arrow), PathType::Round);
     assert_eq!(s.world(&arrow).len(), routed.len(), "leaving a right-angled path keeps the corner points");
     set_path(&mut s, &arrow, PathType::Sharp);
-    set_path(&mut s, &arrow, PathType::AutoElbow);
+    set_path(&mut s, &arrow, PathType::AutoRoute);
     assert!(!crosses(&s.world(&arrow), &wall_box(&s, &wall), 0.0));
 }
 
 #[test]
-fn an_auto_elbow_line_with_free_ends_goes_where_it_was_drawn() {
+fn an_auto_route_line_with_free_ends_goes_where_it_was_drawn() {
     let (mut s, _a, _b) = pair();
     let free = s.arrow("free", &[(100.0, 40.0), (500.0, 60.0)]);
-    set_path(&mut s, &free, PathType::AutoElbow);
+    set_path(&mut s, &free, PathType::AutoRoute);
     let before = s.get(&free);
     s.rect("wall", 250.0, 20.0, 100.0, 60.0);
     s.solve(&[&free]);

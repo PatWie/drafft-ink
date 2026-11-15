@@ -5,9 +5,9 @@
 //! * `scan`: `update_bound_arrows`, which finds the arrows by scanning the transaction's elements;
 //! * `indexed`: `update_bound_arrows_indexed`, which uses the committed reverse index;
 //! * `elbow`: the same with every arrow an elbow arrow (A* routing per arrow, no other shapes);
-//! * `auto_elbow`: the same with every arrow an auto elbow arrow (also routed around the other shapes).
+//! * `auto_route`: the same with every arrow an auto route arrow (also routed around the other shapes).
 //!
-//! A second group, `elbow_around_shapes_1k_shapes`, routes auto elbow arrows around the shapes between their ends.
+//! A second group, `elbow_around_shapes_1k_shapes`, routes auto route arrows around the shapes between their ends.
 
 use std::hint::black_box;
 
@@ -122,7 +122,7 @@ fn bench(c: &mut Criterion) {
         )
     });
 
-    for (name, path) in [("elbow", PathType::Elbow), ("auto_elbow", PathType::AutoElbow)] {
+    for (name, path) in [("elbow", PathType::Elbow), ("auto_route", PathType::AutoRoute)] {
         let (mut store, shapes) = scene(Some(path));
         {
             let mut tx = store.begin();
@@ -162,7 +162,7 @@ fn around_scene() -> (MemoryStore, Vec<ElementId>) {
         z = Some(key.clone());
         let mut e = Element::linear(id("e", k), LinearKind::Arrow, key, &[start, end]).expect("arrow");
         if let ElementKind::Arrow(d) = &mut e.kind {
-            d.path = PathType::AutoElbow;
+            d.path = PathType::AutoRoute;
             d.start_binding =
                 Some(Binding { target: shapes[from].clone(), mode: BindMode::Orbit, fixed_point: [1.0, 0.5] });
             d.end_binding =
@@ -227,7 +227,7 @@ fn bench_around(c: &mut Criterion) {
         ];
         let mut e = Element::linear(id("wide", 0), LinearKind::Arrow, key, &pts).expect("arrow");
         if let ElementKind::Arrow(d) = &mut e.kind {
-            d.path = PathType::AutoElbow;
+            d.path = PathType::AutoRoute;
             d.start_binding = Some(Binding { target: a.id.clone(), mode: BindMode::Orbit, fixed_point: [1.0, 0.5] });
             d.end_binding = Some(Binding { target: b.id.clone(), mode: BindMode::Orbit, fixed_point: [0.0, 0.5] });
         }

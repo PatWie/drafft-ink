@@ -225,7 +225,7 @@ fn element_json(e: &Element, bound: Option<&[Value]>, cx: &mut Cx) -> Value {
             note.head_size = d.head_size;
             // Both right-angled paths are Excalidraw elbow arrows; the note tells the auto one apart.
             let elbow = d.path.is_right_angled();
-            note.auto_elbow = d.path.avoids_shapes();
+            note.auto_route = d.path.avoids_shapes();
             if is_arrow || elbow {
                 put("elbowed", json!(elbow));
             }

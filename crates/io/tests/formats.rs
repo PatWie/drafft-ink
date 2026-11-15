@@ -156,6 +156,18 @@ fn sample() -> Document {
 }
 
 #[test]
+fn a_native_file_with_the_old_auto_elbow_word_loads_as_auto_route() {
+    let mut d = Document::new();
+    let mut l = LinearData::new(vec![Point::new(0.0, 0.0), Point::new(50.0, 0.0), Point::new(50.0, 40.0)]);
+    l.path = drafftink_scene::PathType::AutoRoute;
+    d.elements.push(Element::new(eid("a"), ElementKind::Arrow(l), ZIndex::first()).with_bounds(0.0, 0.0, 50.0, 40.0));
+    let text = native::save(&d).unwrap();
+    assert!(text.contains("auto_route") && !text.contains("auto_elbow"), "the new word is written");
+    let loaded = native::load(&text.replace("auto_route", "auto_elbow")).unwrap();
+    assert_eq!(loaded, d, "the old word reads as auto route, and a save writes the new one");
+}
+
+#[test]
 fn native_save_load_round_trip_and_errors() {
     let d = sample();
     // `sample` has a missing blob (a warning, not an error), so it saves.

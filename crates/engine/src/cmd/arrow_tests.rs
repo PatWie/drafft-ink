@@ -414,15 +414,15 @@ fn set_type_elbow_routes_around_the_bound_shapes_and_back_keeps_the_corners() {
 }
 
 #[test]
-fn set_type_switches_between_elbow_and_auto_elbow_and_each_is_one_undo_step() {
+fn set_type_switches_between_elbow_and_auto_route_and_each_is_one_undo_step() {
     let mut w = bound_world();
     let base = undo_depth(&w.s);
     run(&mut w.s, "arrow.set_type", json!({"ids": [w.arrow], "type": "elbow"}));
     let elbow = pts(&w.s, &w.arrow);
     assert_eq!(undo_depth(&w.s), base + 1);
-    let out = run(&mut w.s, "arrow.set_type", json!({"ids": [w.arrow], "type": "auto_elbow"}));
+    let out = run(&mut w.s, "arrow.set_type", json!({"ids": [w.arrow], "type": "auto_route"}));
     assert_eq!(out["undo_label"], json!("Set arrow type"));
-    assert_eq!(data(&w.s, &w.arrow).path, PathType::AutoElbow);
+    assert_eq!(data(&w.s, &w.arrow).path, PathType::AutoRoute);
     let auto = pts(&w.s, &w.arrow);
     assert!(auto.windows(2).all(|q| (q[0].x - q[1].x).abs() < 1e-6 || (q[0].y - q[1].y).abs() < 1e-6), "{auto:?}");
     assert_eq!(auto, elbow, "with no shape in the way both give the same route");
@@ -435,11 +435,22 @@ fn set_type_switches_between_elbow_and_auto_elbow_and_each_is_one_undo_step() {
 }
 
 #[test]
+fn set_type_still_takes_the_old_word_auto_elbow_and_the_schema_does_not_list_it() {
+    let mut w = bound_world();
+    let out = run(&mut w.s, "arrow.set_type", json!({"ids": [w.arrow], "type": "auto_elbow"}));
+    assert_eq!(out["undo_label"], json!("Set arrow type"));
+    assert_eq!(data(&w.s, &w.arrow).path, PathType::AutoRoute);
+    let mut full = crate::testing::headless_session();
+    let listed = run(&mut full, "engine.describe", json!({"id": "arrow.set_type"}))["args_schema"].to_string();
+    assert!(listed.contains("auto_route") && !listed.contains("auto_elbow"), "{listed}");
+}
+
+#[test]
 fn set_type_names_the_words_it_takes_for_a_misspelt_type() {
     let mut w = bound_world();
-    let r = refuse(&mut w.s, "arrow.set_type", json!({"ids": [w.arrow], "type": "auto-elbow"}));
+    let r = refuse(&mut w.s, "arrow.set_type", json!({"ids": [w.arrow], "type": "auto-route"}));
     assert_eq!(r.code, "bad_args");
-    assert!(r.message.contains("auto_elbow"), "{}", r.message);
+    assert!(r.message.contains("auto_route"), "{}", r.message);
 }
 
 #[test]

@@ -164,7 +164,7 @@ fn each_drawing_tool_shows_the_groups_of_its_new_elements() {
 #[test]
 fn the_arrow_tool_sets_new_arrows_and_keeps_the_corners_in_the_more_menu() {
     let mut h = desk(with_tool("arrow"));
-    for label in ["New arrows: Sharp", "New arrows: Round", "New arrows: Elbow", "New arrows: Auto elbow"] {
+    for label in ["New arrows: Sharp", "New arrows: Round", "New arrows: Elbow", "New arrows: Auto route"] {
         assert!(has(&h, label), "{label}");
     }
     assert!(has(&h, "Start head") && has(&h, "End head") && has(&h, "Dashed"));
@@ -316,7 +316,7 @@ fn an_arrow_gets_path_heads_and_a_swap() {
         "Path: Sharp",
         "Path: Round",
         "Path: Elbow",
-        "Path: Auto elbow",
+        "Path: Auto route",
         "Start head",
         "End head",
         "Dashed",

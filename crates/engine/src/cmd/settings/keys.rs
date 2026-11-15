@@ -92,7 +92,10 @@ pub const COLOR_PICKERS: &[&str] = &["swatches", "custom"];
 /// The fonts the UI text can use: the canvas families that are bundled (the words of the `font_family` property).
 pub const UI_FONTS: &[&str] = &["gelpen", "gelpen_serif", "vanilla_extract", "noto_sans", "plex_sans"];
 /// The path types of `arrow.type` (the words of `drafftink_edit::arrow_defaults::path_name`).
-pub const ARROW_TYPES: &[&str] = &["sharp", "round", "elbow", "auto_elbow"];
+pub const ARROW_TYPES: &[&str] = &["sharp", "round", "elbow", "auto_route"];
+/// Words a choice setting was stored with before it was renamed: (key, old word, word now). A stored record or
+/// a script that has the old word is read as the new one; the new one is the only one written or listed.
+const RENAMED_CHOICES: &[(&str, &str, &str)] = &[("arrow.type", "auto_elbow", "auto_route")];
 /// The heads of `arrow.start_head` and `arrow.end_head` (the words of `drafftink_edit::arrow_defaults::name_of`).
 pub const HEAD_NAMES: &[&str] = &[
     "none",
@@ -160,7 +163,7 @@ pub const KEYS: &[KeyDef] = &[
         "arrow.type",
         Kind::Choice(ARROW_TYPES),
         Def::Str("sharp"),
-        "Path type of new arrows (the arrow tool): straight, curved, elbow or auto elbow.",
+        "Path type of new arrows (the arrow tool): straight, curved, elbow or auto route.",
     ),
     key("arrow.start_head", Kind::Choice(HEAD_NAMES), Def::Str("none"), "Head at the start of new arrows."),
     key("arrow.end_head", Kind::Choice(HEAD_NAMES), Def::Str("arrow"), "Head at the end of new arrows."),
@@ -334,6 +337,14 @@ impl KeyDef {
         }
     }
 
+    /// `word` as this key spells it now: a renamed choice gives its new word, any other word comes back as it is.
+    fn current_word<'a>(&self, word: &'a str) -> &'a str {
+        RENAMED_CHOICES
+            .iter()
+            .find(|(key, old, _)| *key == self.name && *old == word)
+            .map_or(word, |(_, _, new)| new)
+    }
+
     /// Checks a value and returns it in normal form.
     pub fn normalize(&self, v: &Value) -> Result<Value, Mismatch> {
         let bad = || Mismatch { expected: self.expected(), got: describe(v) };
@@ -350,7 +361,7 @@ impl KeyDef {
                     _ => Err(bad()),
                 }
             }
-            Kind::Choice(list) => match v.as_str() {
+            Kind::Choice(list) => match v.as_str().map(|s| self.current_word(s)) {
                 Some(s) if list.contains(&s) => Ok(Value::String(s.to_owned())),
                 _ => Err(bad()),
             },

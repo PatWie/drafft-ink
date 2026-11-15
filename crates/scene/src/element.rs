@@ -120,19 +120,22 @@ pub enum PathType {
     Elbow,
     /// Right-angled segments that also find their way around the other shapes, and are routed again when a
     /// shape moves. Stored the same way as `Elbow`: the route is a list of points computed from the scene.
-    AutoElbow,
+    // Files, autosaves and rooms written while it was called `auto_elbow` still read: the old word is an alias,
+    // and is never written. (A plain comment, so that the schema agents see does not list it.)
+    #[serde(alias = "auto_elbow")]
+    AutoRoute,
 }
 
 impl PathType {
-    /// Does the route run in right angles (`Elbow` and `AutoElbow`)? Both store a route as corner points, can pin
+    /// Does the route run in right angles (`Elbow` and `AutoRoute`)? Both store a route as corner points, can pin
     /// segments, and cannot be rotated.
     pub const fn is_right_angled(self) -> bool {
-        matches!(self, Self::Elbow | Self::AutoElbow)
+        matches!(self, Self::Elbow | Self::AutoRoute)
     }
 
-    /// Is the route found around the other shapes, and made again when they move (`AutoElbow` only)?
+    /// Is the route found around the other shapes, and made again when they move (`AutoRoute` only)?
     pub const fn avoids_shapes(self) -> bool {
-        matches!(self, Self::AutoElbow)
+        matches!(self, Self::AutoRoute)
     }
 }
 

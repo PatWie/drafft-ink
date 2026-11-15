@@ -354,13 +354,13 @@ pub fn swap_heads<T: SceneTx>(tx: &mut T, id: &ElementId) -> Result<(), LinearEr
     finish(tx, id)
 }
 
-/// Changes how the points are joined: straight (`Sharp`), curved (`Round`), elbow or auto elbow.
+/// Changes how the points are joined: straight (`Sharp`), curved (`Round`), elbow or auto route.
 ///
 /// * Straight and curved keep the points and the bindings.
 /// * To a right-angled path from another kind keeps only the two ends, binds them the elbow way (snapped to the
-///   outline) and routes. An auto elbow route goes around the other shapes, a plain elbow route does not.
-/// * Elbow to auto elbow drops the pins and routes again around the other shapes.
-/// * Auto elbow to elbow keeps the route and its pins as they are; from then on the route ignores the other
+///   outline) and routes. An auto route route goes around the other shapes, a plain elbow route does not.
+/// * Elbow to auto route drops the pins and routes again around the other shapes.
+/// * Auto route to elbow keeps the route and its pins as they are; from then on the route ignores the other
 ///   shapes.
 /// * From a right-angled path to straight or curved keeps the route's points, drops the pins and re-anchors the
 ///   bindings inside their shapes so the ends keep following them.

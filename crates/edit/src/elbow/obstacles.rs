@@ -110,7 +110,7 @@ fn touches(a: &Rect, b: &Rect) -> bool {
 /// the shapes it goes around, and a shape that left a region may have been the reason for a detour that far out.
 const NEAR_REACH: f64 = 2.0 * AVOID_PADDING;
 
-/// Is `e` an auto elbow arrow, bound at an end and with no pinned segment, whose box touches one of `places` grown by
+/// Is `e` an auto route arrow, bound at an end and with no pinned segment, whose box touches one of `places` grown by
 /// [`NEAR_REACH`]?
 pub(crate) fn is_near(e: &Element, places: &[Rect]) -> bool {
     !e.deleted && is_routed_by_obstacles(e) && {
@@ -137,7 +137,7 @@ pub(crate) fn arrows_near<R: SceneRead>(scene: &R, places: &[Rect]) -> Vec<Eleme
     out
 }
 
-/// An auto elbow arrow with a bound end and no pinned segment: its route is a function of the scene alone, so it
+/// An auto route arrow with a bound end and no pinned segment: its route is a function of the scene alone, so it
 /// is the one the router may change when something moves near it. A plain elbow arrow keeps its route.
 fn is_routed_by_obstacles(e: &Element) -> bool {
     e.linear_data().is_some_and(|d| {

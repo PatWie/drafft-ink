@@ -34,7 +34,7 @@ where
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields, default)]
 pub struct SetArrowArgs {
-    /// How new arrows are drawn: `sharp` (straight segments), `round` (a curve), `elbow` (right angles) or `auto_elbow` (right angles around the other shapes).
+    /// How new arrows are drawn: `sharp` (straight segments), `round` (a curve), `elbow` (right angles) or `auto_route` (right angles around the other shapes).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub arrow_type: Option<PathType>,
     /// The head at the start of new arrows. `null` or `"none"` means no head.
@@ -93,7 +93,7 @@ pub const COMMANDS: &[CommandSpec] = &[CommandSpec::new(
     "tool.set_arrow",
     "tool",
     "Set new arrow style",
-    "Sets the path type (sharp, round, elbow, auto_elbow) and the heads that the arrow tool gives new arrows. Existing arrows are not changed.",
+    "Sets the path type (sharp, round, elbow, auto_route) and the heads that the arrow tool gives new arrows. Existing arrows are not changed.",
     &Typed::new(set_arrow),
     Facts {
         undo: Undo::NoUndo,

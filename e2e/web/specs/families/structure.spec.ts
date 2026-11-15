@@ -105,8 +105,8 @@ test("family arrow: bind, unbind, heads, type, points and segments; refusals nam
   expect((await app.exec("arrow.reroute", { ids: [arrow] })).rerouted, "an arrow that is already on its route is left alone").toEqual([]);
   expect((await app.exec("arrow.set_type", { ids: [arrow], type: "elbow" })).undo_label).toBe("Set arrow type");
   expect((await app.element(arrow)).bindings, "an elbow arrow keeps its bindings").toEqual({ start: a, end: b });
-  expect((await app.exec("arrow.set_type", { ids: [arrow], type: "auto_elbow" })).undo_label).toBe("Set arrow type");
-  expect((await app.element(arrow)).bindings, "an auto elbow arrow keeps its bindings").toEqual({ start: a, end: b });
+  expect((await app.exec("arrow.set_type", { ids: [arrow], type: "auto_route" })).undo_label).toBe("Set arrow type");
+  expect((await app.element(arrow)).bindings, "an auto route arrow keeps its bindings").toEqual({ start: a, end: b });
   expectRefusal(await app.refusal("arrow.set_type", { ids: [a], type: "elbow" }), "not_applicable", "arrows and lines");
   expectRefusal(await app.refusal("arrow.set_type", { ids: [arrow], type: "zigzag" as "elbow" }), "bad_args", "zigzag");
   expect((await app.exec("arrow.set_head", { ids: [arrow], end: "start", head: "triangle" })).changed).toBe(true);

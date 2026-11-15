@@ -28,7 +28,7 @@
     { "assert": "element.query", "args": { "filter": { "ids": ["e6"] }, "fields": ["kind"] }, "expect": [ { "path": "$.items[0].kind", "eq": "arrow" } ] },
     { "execute": "element.convert", "args": {}, "expect": [ { "path": "$.to", "eq": "round arrow" } ] },
     { "execute": "element.convert", "args": {}, "expect": [ { "path": "$.to", "eq": "elbow arrow" } ] },
-    { "execute": "element.convert", "args": {}, "expect": [ { "path": "$.to", "eq": "auto elbow arrow" } ] },
+    { "execute": "element.convert", "args": {}, "expect": [ { "path": "$.to", "eq": "auto route arrow" } ] },
     { "execute": "element.convert", "args": {}, "expect": [ { "path": "$.to", "eq": "line" } ], "note": "The cycle wraps to the line." },
 
     { "execute": "element.create", "args": { "kind": "text", "text": "free", "at": [0, 500] }, "expect": [ { "path": "$.id", "eq": "e7" } ] },
@@ -39,8 +39,8 @@
 
     { "undo": 3 },
     { "assert": "element.query", "args": { "filter": { "ids": ["e6"] }, "fields": ["kind", "points"] },
-      "expect": [ { "path": "$.items[0].kind", "eq": "arrow" }, { "path": "$.items[0].points", "len": 4, "note": "An elbow route with one jog." } ], "note": "Three undos: the lock, the text, and the conversion of the auto elbow arrow to a line. The auto elbow arrow is back." },
+      "expect": [ { "path": "$.items[0].kind", "eq": "arrow" }, { "path": "$.items[0].points", "len": 4, "note": "An elbow route with one jog." } ], "note": "Three undos: the lock, the text, and the conversion of the auto route arrow to a line. The auto route arrow is back." },
     { "undo": 4 },
-    { "assert": "element.query", "args": { "filter": { "ids": ["e6"] }, "fields": ["kind"] }, "expect": [ { "path": "$.items[0].kind", "eq": "line" } ], "note": "Four more undos take back the auto elbow, elbow, round and sharp arrow steps: a line again." }
+    { "assert": "element.query", "args": { "filter": { "ids": ["e6"] }, "fields": ["kind"] }, "expect": [ { "path": "$.items[0].kind", "eq": "line" } ], "note": "Four more undos take back the auto route, elbow, round and sharp arrow steps: a line again." }
   ]
 }

@@ -2,7 +2,7 @@
 //!
 //! * `PathType::Elbow` is routed simply between its ends and around the shapes it is bound to, as Excalidraw
 //!   does. The user edits its segments; a shape that moves near it changes nothing.
-//! * `PathType::AutoElbow` is routed around the other shapes too, and routed again when one moves in or out of
+//! * `PathType::AutoRoute` is routed around the other shapes too, and routed again when one moves in or out of
 //!   its way ([`PathType::avoids_shapes`](drafftink_scene::PathType::avoids_shapes)).
 //!
 //! The route is **stored geometry**: `points` are the corners, `fixed_segments` are the pins the user
@@ -11,7 +11,7 @@
 //!
 //! * [`route`], [`ElbowEnd`], [`ElbowTarget`]: the pure router (A* on a grid of obstacle-box edges). It goes
 //!   around the shapes the arrow is bound to and, when the caller passes [`RouteOpts::obstacles`], around the other
-//!   shapes too (only for an auto elbow arrow with a bound end; `obstacles.rs` finds them with the scene's box
+//!   shapes too (only for an auto route arrow with a bound end; `obstacles.rs` finds them with the scene's box
 //!   index). The route is computed from the scene and stored as points like any other, so peers that hold the
 //!   same scene compute the same route and a merge has nothing to reconcile.
 //! * [`move_segment`], [`release_segment`], [`update_ends`], [`renormalize`]: pin handling on a pure path.
@@ -230,7 +230,7 @@ pub fn route_new<T: SceneTx>(
 }
 
 /// The boxes of the other shapes the arrow `id` is routed around now, read from `scene`. Empty for an arrow
-/// that is not an auto elbow arrow (a plain elbow arrow ignores the other shapes) or has no bound end. A caller that is about to write to the scene and then route
+/// that is not an auto route arrow (a plain elbow arrow ignores the other shapes) or has no bound end. A caller that is about to write to the scene and then route
 /// several arrows takes the boxes first (the box index of a reader is exact only until its first write), with one
 /// `finder` for all of them, and passes them to [`reroute_among`].
 pub fn obstacles_of<R: SceneRead>(scene: &R, id: &ElementId, finder: &ObstacleFinder) -> Vec<Bounds> {

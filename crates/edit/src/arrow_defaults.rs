@@ -30,7 +30,7 @@ pub const HEADS: [Head; 15] = [
 ];
 
 /// Every path type.
-pub const PATH_TYPES: [PathType; 4] = [PathType::Sharp, PathType::Round, PathType::Elbow, PathType::AutoElbow];
+pub const PATH_TYPES: [PathType; 4] = [PathType::Sharp, PathType::Round, PathType::Elbow, PathType::AutoRoute];
 
 /// The name of a head as it is written in JSON and in settings.
 pub fn name_of(head: Head) -> &'static str {
@@ -64,12 +64,18 @@ pub fn path_name(path: PathType) -> &'static str {
         PathType::Sharp => "sharp",
         PathType::Round => "round",
         PathType::Elbow => "elbow",
-        PathType::AutoElbow => "auto_elbow",
+        PathType::AutoRoute => "auto_route",
     }
 }
 
-/// The path type called `name`, as [`path_name`] writes it.
+/// The word `auto_route` had before it was renamed. It is read (a stored setting, an old script) and never written.
+const LEGACY_AUTO_ROUTE: &str = "auto_elbow";
+
+/// The path type called `name`, as [`path_name`] writes it, or by the old word of `auto_route`.
 pub fn path_named(name: &str) -> Option<PathType> {
+    if name == LEGACY_AUTO_ROUTE {
+        return Some(PathType::AutoRoute);
+    }
     PATH_TYPES.into_iter().find(|p| path_name(*p) == name)
 }
 
@@ -136,6 +142,13 @@ mod tests {
         }
         assert_eq!(head_named("spiky"), None);
         assert_eq!(path_named("wavy"), None);
+    }
+
+    #[test]
+    fn the_old_word_of_auto_route_is_read_and_never_written() {
+        assert_eq!(path_named("auto_elbow"), Some(PathType::AutoRoute));
+        assert_eq!(path_name(PathType::AutoRoute), "auto_route");
+        assert!(PATH_TYPES.into_iter().all(|p| path_name(p) != "auto_elbow"));
     }
 
     #[test]
