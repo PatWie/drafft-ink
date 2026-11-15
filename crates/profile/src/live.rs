@@ -158,21 +158,30 @@ mod tests {
         reset();
         spans::set_enabled(true);
         work::redraw(RedrawReason::Gesture);
+        // Sleeps overrun on a loaded machine, so each part is held against the time it really took, not against
+        // the time asked for.
+        let timed = |ms: u64| {
+            let started = crate::clock::now_ns();
+            std::thread::sleep(std::time::Duration::from_millis(ms));
+            (crate::clock::now_ns() - started) as f64 / 1e6
+        };
+        let (mut own, mut inner) = (0.0, 0.0);
         begin_frame();
         in_phase(Phase::Ui, || {
-            std::thread::sleep(std::time::Duration::from_millis(2));
-            in_phase(Phase::Encode, || std::thread::sleep(std::time::Duration::from_millis(6)));
+            own += timed(2);
+            in_phase(Phase::Encode, || inner += timed(6));
             // A second inner phase after the first one ended.
-            in_phase(Phase::Encode, || std::thread::sleep(std::time::Duration::from_millis(2)));
+            in_phase(Phase::Encode, || inner += timed(2));
         });
         end_frame();
         spans::set_enabled(false);
         let s = snapshot();
         let (ui, encode, other) =
             (s.frames.phase_ms["ui"].max_ms, s.frames.phase_ms["encode"].max_ms, s.frames.phase_ms["other"].max_ms);
-        assert!((8.0..11.0).contains(&encode), "encode {encode}");
-        assert!((2.0..5.0).contains(&ui), "ui keeps its own time only: {ui}");
-        assert!(other < 2.0, "the phases add up to the frame: other {other}");
+        let slack = 2.0;
+        assert!(encode >= inner && encode < inner + slack, "encode {encode} for {inner} ms slept");
+        assert!(ui >= own && ui < own + slack, "ui keeps its own time only: {ui} for {own} ms slept");
+        assert!(other < slack, "the phases add up to the frame: other {other}");
     }
 
     #[test]
