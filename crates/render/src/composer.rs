@@ -393,7 +393,7 @@ fn label_cut<S: SceneRead>(store: &S, edited: Option<&Element>, el: &Element) ->
     if let Some(text) = edited.filter(|t| t.container_id() == Some(&el.id)) {
         return LabelCut::of(el, text);
     }
-    let label = store.derived_index()?.label_of(&el.id)?;
+    let label = store.label_of(&el.id)?;
     LabelCut::of(el, store.get(label)?)
 }
 

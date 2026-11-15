@@ -145,7 +145,7 @@ pub struct SetTypeArgs {
     #[serde(default)]
     pub ids: Option<Vec<Ref>>,
     /// `sharp` straight segments, `round` a smooth curve through the points, `elbow` a right-angled route between
-    /// the ends (around the shapes the arrow is bound to), `auto_elbow` a right-angled route that also goes
+    /// the ends (around the shapes the arrow is bound to), `auto_route` a right-angled route that also goes
     /// around the other shapes and is made again when they move.
     #[serde(rename = "type")]
     #[schemars(rename = "type")]
@@ -282,7 +282,7 @@ pub struct EditPointsArgs {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct SegmentArgs {
-    /// The elbow or auto elbow arrow.
+    /// The elbow or auto route arrow.
     pub arrow: Ref,
     /// The segment, counted from 1: segment `n` joins point `n - 1` and point `n`.
     pub segment: usize,
@@ -1143,7 +1143,7 @@ pub const COMMANDS: &[CommandSpec] = &[
         "arrow.set_type",
         "arrow",
         "Set arrow type",
-        "Sets how the points of arrows and lines are joined: sharp, round, elbow or auto_elbow.",
+        "Sets how the points of arrows and lines are joined: sharp, round, elbow or auto_route.",
         &Typed::new(set_type),
         ON_SELECTION,
     )
@@ -1234,7 +1234,7 @@ pub const COMMANDS: &[CommandSpec] = &[
         "arrow.reroute",
         "arrow",
         "Re-route arrows",
-        "Clears the pinned elbow segments, re-solves the bindings and routes arrows again (auto elbow arrows around the other shapes).",
+        "Clears the pinned elbow segments, re-solves the bindings and routes arrows again (auto route arrows around the other shapes).",
         &Typed::new(reroute),
         ON_SELECTION,
     ),

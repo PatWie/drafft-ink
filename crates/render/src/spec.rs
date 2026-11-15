@@ -190,7 +190,7 @@ fn roundness(e: &Element) -> sketch::Roundness {
 fn curve(p: PathType) -> sketch::Curve {
     match p {
         PathType::Round => sketch::Curve::Smooth,
-        PathType::Sharp | PathType::Elbow | PathType::AutoElbow => sketch::Curve::Straight,
+        PathType::Sharp | PathType::Elbow | PathType::AutoRoute => sketch::Curve::Straight,
     }
 }
 

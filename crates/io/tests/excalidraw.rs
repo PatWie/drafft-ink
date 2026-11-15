@@ -429,12 +429,12 @@ fn elbow_arrows_keep_segments_bindings_and_flags() {
     assert_eq!(linear(get(d, "round")).path, PathType::Round);
 }
 
-/// A document with one elbow and one auto elbow arrow between two rectangles.
+/// A document with one elbow and one auto route arrow between two rectangles.
 fn two_right_angled_arrows() -> Document {
     let mut doc = Document::new();
     base_element(&mut doc, ElementKind::Rectangle, 0.0, 0.0, 100.0, 60.0);
     base_element(&mut doc, ElementKind::Rectangle, 400.0, 200.0, 100.0, 60.0);
-    for (path, y) in [(PathType::Elbow, 0.0), (PathType::AutoElbow, 300.0)] {
+    for (path, y) in [(PathType::Elbow, 0.0), (PathType::AutoRoute, 300.0)] {
         let mut d = drafftink_scene::LinearData::new(vec![
             Point::new(0.0, 0.0),
             Point::new(150.0, 0.0),
@@ -447,7 +447,7 @@ fn two_right_angled_arrows() -> Document {
 }
 
 #[test]
-fn elbow_and_auto_elbow_are_both_excalidraw_elbow_arrows_and_come_back_as_they_were() {
+fn elbow_and_auto_route_are_both_excalidraw_elbow_arrows_and_come_back_as_they_were() {
     let doc = two_right_angled_arrows();
     let written = export_scene(&doc).unwrap();
     let v: Value = serde_json::from_str(&written).unwrap();
@@ -457,11 +457,25 @@ fn elbow_and_auto_elbow_are_both_excalidraw_elbow_arrows_and_come_back_as_they_w
         assert_eq!(a["elbowed"], json!(true), "both are elbow arrows to Excalidraw");
     }
     assert!(arrows[0]["customData"].is_null(), "a plain elbow arrow needs no note: {}", arrows[0]);
-    assert_eq!(arrows[1]["customData"]["drafftink"]["auto_elbow"], json!(true));
+    assert_eq!(arrows[1]["customData"]["drafftink"]["auto_route"], json!(true));
     let back = import_str(&written).unwrap().document;
     assert_clean(&back);
     let paths: Vec<PathType> = back.elements.iter().filter_map(|e| e.linear_data()).map(|d| d.path).collect();
-    assert_eq!(paths, [PathType::Elbow, PathType::AutoElbow]);
+    assert_eq!(paths, [PathType::Elbow, PathType::AutoRoute]);
+}
+
+#[test]
+fn a_file_written_with_the_old_auto_elbow_note_reads_as_auto_route() {
+    let written = export_scene(&two_right_angled_arrows()).unwrap();
+    assert!(!written.contains("auto_elbow"), "the old key is never written");
+    let old = written.replace("\"auto_route\"", "\"auto_elbow\"");
+    assert_ne!(old, written, "the test file really has the old key");
+    let back = import_str(&old).unwrap();
+    assert!(back.report.is_clean(), "{:?}", back.report.warnings);
+    let paths: Vec<PathType> = back.document.elements.iter().filter_map(|e| e.linear_data()).map(|d| d.path).collect();
+    assert_eq!(paths, [PathType::Elbow, PathType::AutoRoute]);
+    let again = export_scene(&back.document).unwrap();
+    assert!(again.contains("\"auto_route\"") && !again.contains("auto_elbow"), "it is written with the new key");
 }
 
 #[test]
@@ -989,14 +1003,14 @@ fn native_documents_survive_a_trip_through_excalidraw() {
     doc.elements[ell].group_ids.push(g1);
     doc.elements[ell].group_ids.push(g2.clone());
     doc.elements[dia].group_ids.push(g2);
-    // An auto elbow arrow: Excalidraw's elbow arrow plus a note.
+    // An auto route arrow: Excalidraw's elbow arrow plus a note.
     let mut auto = LinearData::new(vec![
         Point::new(0.0, 0.0),
         Point::new(50.0, 0.0),
         Point::new(50.0, 80.0),
         Point::new(100.0, 80.0),
     ]);
-    auto.path = PathType::AutoElbow;
+    auto.path = PathType::AutoRoute;
     base_element(&mut doc, ElementKind::Arrow(auto), 0.0, 400.0, 100.0, 80.0);
     // A tombstone, which is not exported.
     let dead = base_element(&mut doc, ElementKind::Rectangle, 0.0, 0.0, 1.0, 1.0);

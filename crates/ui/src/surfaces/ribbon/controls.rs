@@ -55,7 +55,7 @@ pub(super) const FONT_WEIGHTS: [(&str, &str, &str); 3] =
 pub(super) const TEXT_ALIGNS: [(&str, &str, Align); 3] =
     [("Left", "left", Align::Left), ("Center", "center", Align::Center), ("Right", "right", Align::Right)];
 pub(super) const ARROW_TYPES: [(&str, &str); 4] =
-    [("Sharp", "sharp"), ("Round", "round"), ("Elbow", "elbow"), ("Auto elbow", "auto_elbow")];
+    [("Sharp", "sharp"), ("Round", "round"), ("Elbow", "elbow"), ("Auto route", "auto_route")];
 const BRUSHES: [(&str, &str); 2] = [("Normal", "normal"), ("Calligraphy", "calligraphy")];
 const STROKE_STYLES: [(LineStyle, &str, &str); 3] = [
     (LineStyle::Solid, "solid", "Solid"),

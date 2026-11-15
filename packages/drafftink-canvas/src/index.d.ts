@@ -70,7 +70,7 @@ export interface Binding {
 export interface LinearData {
   /** Relative to the top-left corner of the box. */
   points: Point[];
-  path?: "sharp" | "round" | "elbow" | "auto_elbow";
+  path?: "sharp" | "round" | "elbow" | "auto_route";
   start_binding?: Binding;
   end_binding?: Binding;
   start_head?: Head;

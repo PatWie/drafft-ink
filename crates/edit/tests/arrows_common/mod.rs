@@ -234,9 +234,9 @@ impl Scene {
         self.right_angled_between(name, PathType::Elbow, a_at, b_at)
     }
 
-    /// An auto elbow arrow from `a_at` to `b_at`, both ends dropped near shapes so they bind.
-    pub fn auto_elbow_between(&mut self, name: &str, a_at: Point, b_at: Point) -> ElementId {
-        self.right_angled_between(name, PathType::AutoElbow, a_at, b_at)
+    /// An auto route arrow from `a_at` to `b_at`, both ends dropped near shapes so they bind.
+    pub fn auto_route_between(&mut self, name: &str, a_at: Point, b_at: Point) -> ElementId {
+        self.right_angled_between(name, PathType::AutoRoute, a_at, b_at)
     }
 
     fn right_angled_between(&mut self, name: &str, path: PathType, a_at: Point, b_at: Point) -> ElementId {

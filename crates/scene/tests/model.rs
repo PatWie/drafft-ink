@@ -329,6 +329,24 @@ fn json_schema_describes_the_document() {
 }
 
 #[test]
+fn auto_route_is_written_with_its_new_word_and_the_old_word_is_still_read() {
+    assert_eq!(serde_json::to_value(PathType::AutoRoute).unwrap(), serde_json::json!("auto_route"));
+    for word in ["auto_route", "auto_elbow"] {
+        let parsed: PathType = serde_json::from_value(serde_json::json!(word)).unwrap();
+        assert_eq!(parsed, PathType::AutoRoute, "{word}");
+    }
+    // A whole element written by the first release: the old word sits inside the element, and is read.
+    let z = ZIndex::first();
+    let mut d = LinearData::new(vec![Point::new(0.0, 0.0), Point::new(50.0, 0.0), Point::new(50.0, 40.0)]);
+    d.path = PathType::AutoRoute;
+    let e = Element::new(ElementId::new("a").unwrap(), ElementKind::Arrow(d), z).with_bounds(0.0, 0.0, 50.0, 40.0);
+    let text = serde_json::to_string(&e).unwrap();
+    assert!(text.contains("\"auto_route\"") && !text.contains("auto_elbow"), "{text}");
+    let old: Element = serde_json::from_str(&text.replace("auto_route", "auto_elbow")).unwrap();
+    assert_eq!(old.linear_data().map(|d| d.path), Some(PathType::AutoRoute));
+}
+
+#[test]
 fn plex_sans_is_a_family_with_its_own_word_and_every_old_word_still_parses() {
     assert_eq!(serde_json::to_value(FontFamily::PlexSans).unwrap(), serde_json::json!("plex_sans"));
     assert_eq!(FontFamily::PlexSans.display_name(), "IBM Plex Sans");

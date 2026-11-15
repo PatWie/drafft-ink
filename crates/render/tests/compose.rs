@@ -1108,7 +1108,7 @@ fn the_text_being_edited_stands_in_for_the_stored_label_of_its_arrow() {
 
 #[test]
 fn every_path_type_of_an_arrow_leaves_the_place_of_its_label_out() {
-    for path in [PathType::Sharp, PathType::Round, PathType::Elbow, PathType::AutoElbow] {
+    for path in [PathType::Sharp, PathType::Round, PathType::Elbow, PathType::AutoRoute] {
         let mut els = labelled_arrow(200.0, 60.0, 20.0);
         if let ElementKind::Arrow(d) = &mut els[0].kind {
             d.path = path;

@@ -1,5 +1,5 @@
 {
-  "about": "Arrow type (sharp, round, elbow, auto elbow), heads and re-routing change the arrow and keep its bindings; a rectangle is refused with the kinds that work.",
+  "about": "Arrow type (sharp, round, elbow, auto route), heads and re-routing change the arrow and keep its bindings; a rectangle is refused with the kinds that work.",
   "steps": [
     { "harness": "load_generated", "args": { "count": 5 } },
     { "execute": "arrow.reroute", "args": { "ids": ["e4"] }, "expect": [ { "path": "$.rerouted", "eq": ["e4"] } ] },
@@ -10,9 +10,9 @@
         { "path": "$.items[0].points", "len": 4, "note": "an elbow arrow turns twice" },
         { "path": "$.items[0].bindings.start", "eq": "e0" }, { "path": "$.items[0].bindings.end", "eq": "e1" } ] },
 
-    { "execute": "arrow.set_type", "args": { "ids": ["e4"], "type": "auto_elbow" }, "expect": [ { "path": "$.undo_label", "eq": "Set arrow type" } ] },
+    { "execute": "arrow.set_type", "args": { "ids": ["e4"], "type": "auto_route" }, "expect": [ { "path": "$.undo_label", "eq": "Set arrow type" } ] },
     { "assert": "element.query", "args": { "filter": { "ids": ["e4"] }, "fields": ["points", "bindings"] }, "expect": [
-        { "path": "$.items[0].points", "len": 4, "note": "with no shape in the way an auto elbow arrow has the elbow route" },
+        { "path": "$.items[0].points", "len": 4, "note": "with no shape in the way an auto route arrow has the elbow route" },
         { "path": "$.items[0].bindings.start", "eq": "e0" }, { "path": "$.items[0].bindings.end", "eq": "e1" } ] },
 
     { "execute": "arrow.set_head", "args": { "ids": ["e4"], "end": "start", "head": "triangle" }, "expect": [ { "path": "$.changed", "eq": true } ] },

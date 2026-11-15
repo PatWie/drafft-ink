@@ -17,6 +17,7 @@ mod derived;
 mod document;
 mod element;
 mod id;
+pub mod label;
 mod label_cut;
 pub mod limits;
 mod memory;

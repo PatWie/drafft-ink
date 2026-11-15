@@ -25,7 +25,7 @@ The whole script runs as one batch, so a step can be named with `"as"` and later
 | Label inside a shape or on an arrow | `element.create` `kind: text` with `container: "$shape"` and `text` |
 | Free text | `element.create` `kind: text`, `at [x,y]`, `text`, optional `width` (wraps), `style {font_size, font_family, font_weight, text_align, stroke_color}` |
 | Formula | `element.create` `kind: math`, `at`, `latex`; `text.set_latex` to change it |
-| Lines, arrows, curves | `element.create` `kind: line | arrow | freehand`, `points`, `arrow_type: sharp | round | elbow | auto_elbow`, `start`/`end {target}` to bind to shapes, `start_head`/`end_head` |
+| Lines, arrows, curves | `element.create` `kind: line | arrow | freehand`, `points`, `arrow_type: sharp | round | elbow | auto_route`, `start`/`end {target}` to bind to shapes, `start_head`/`end_head` |
 | Sticky note | `element.create_sticky` with `at` (centre) or `bounds`, `size`, `color: yellow | pink | green | blue | orange`, `text` |
 | Whole diagram from nodes and edges | `diagram.create` with `nodes`, `edges`, `layout {algorithm: layered | tree | grid | force | none, direction}`, `at`, optional `frame` (a name) or `group` |
 | Frame around elements, or an empty frame | `frame.wrap {ids, name, padding}`; `element.create` `kind: frame` with `bounds` |

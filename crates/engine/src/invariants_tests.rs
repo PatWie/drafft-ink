@@ -330,9 +330,9 @@ fn elbow_between(s: &mut Session, name: &str, a: &ElementId, b: &ElementId) -> E
     right_angled_between(s, name, drafftink_scene::PathType::Elbow, a, b)
 }
 
-/// Like [`elbow_between`], an auto elbow arrow.
-fn auto_elbow_between(s: &mut Session, name: &str, a: &ElementId, b: &ElementId) -> ElementId {
-    right_angled_between(s, name, drafftink_scene::PathType::AutoElbow, a, b)
+/// Like [`elbow_between`], an auto route arrow.
+fn auto_route_between(s: &mut Session, name: &str, a: &ElementId, b: &ElementId) -> ElementId {
+    right_angled_between(s, name, drafftink_scene::PathType::AutoRoute, a, b)
 }
 
 /// An arrow of the right-angled path type `path` between the two shapes.
@@ -367,12 +367,12 @@ fn route_of(s: &Session, arrow: &ElementId) -> Vec<Point> {
 }
 
 #[test]
-fn an_auto_elbow_arrow_goes_around_a_shape_dropped_in_its_way_and_back_when_it_leaves_in_one_undo_step_each() {
+fn an_auto_route_arrow_goes_around_a_shape_dropped_in_its_way_and_back_when_it_leaves_in_one_undo_step_each() {
     let mut s = session();
     let a = rect(&mut s, "a", 0.0, 0.0, 100.0, 100.0);
     let b = rect(&mut s, "b", 500.0, 0.0, 100.0, 100.0);
     let wall = rect(&mut s, "wall", 250.0, 600.0, 100.0, 60.0);
-    let arrow = auto_elbow_between(&mut s, "arr", &a, &b);
+    let arrow = auto_route_between(&mut s, "arr", &a, &b);
     ready(&mut s);
     let straight = route_of(&s, &arrow);
     assert_eq!(straight.len(), 2, "{straight:?}");
@@ -424,7 +424,7 @@ fn deleting_the_shape_in_the_way_straightens_the_arrow() {
     let a = rect(&mut s, "a", 0.0, 0.0, 100.0, 100.0);
     let b = rect(&mut s, "b", 500.0, 0.0, 100.0, 100.0);
     let _wall = rect(&mut s, "wall", 250.0, 20.0, 100.0, 60.0);
-    let arrow = auto_elbow_between(&mut s, "arr", &a, &b);
+    let arrow = auto_route_between(&mut s, "arr", &a, &b);
     ready(&mut s);
     assert!(route_of(&s, &arrow).len() > 2, "built with the shape in the way");
     exec(&mut s, "t.delete", json!({"id": "wall"}));

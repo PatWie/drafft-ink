@@ -129,3 +129,40 @@ fn the_shipped_intro_document_loads_and_edits() {
     assert_eq!(s.get(&first).unwrap().transform.x, doc.elements.iter().find(|e| e.id == first).unwrap().transform.x);
     assert_view_matches_loro(&s);
 }
+
+/// A document saved while the path type was called `auto_elbow` (the Loro store holds the word as text).
+#[test]
+fn a_loro_document_with_the_old_auto_elbow_word_loads_as_auto_route() {
+    let mut s = peer(1);
+    add(&mut s, vec![arrow("arr", &zs(1)[0])]);
+    edit(&mut s, "arr", |e| {
+        if let ElementKind::Arrow(d) = &mut e.kind {
+            d.path = PathType::AutoRoute;
+        }
+    });
+    let current = s.export_snapshot().unwrap();
+    assert!(!String::from_utf8_lossy(&current).contains("auto_elbow"));
+
+    let raw = loro::LoroDoc::new();
+    raw.import(&current).unwrap();
+    let element = match raw.get_map("elements").get("arr") {
+        Some(loro::ValueOrContainer::Container(loro::Container::Map(m))) => m,
+        other => panic!("the element is a map: {other:?}"),
+    };
+    assert_eq!(
+        element
+            .get("kind.path")
+            .and_then(|v| v.into_value().ok())
+            .and_then(|v| v.into_string().ok())
+            .as_deref()
+            .map(|s| &**s),
+        Some("auto_route")
+    );
+    element.insert("kind.path", "auto_elbow").unwrap();
+    raw.commit();
+
+    let old = LoroStore::from_snapshot(&raw.export(loro::ExportMode::Snapshot).unwrap()).unwrap();
+    assert_eq!(old.invalid_elements().count(), 0);
+    let path = old.get(&eid("arr")).and_then(|e| e.linear_data().map(|d| d.path));
+    assert_eq!(path, Some(PathType::AutoRoute));
+}

@@ -30,9 +30,10 @@ pub(super) struct Note {
     pub font_weight: Option<FontWeight>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub head_size: Option<f64>,
-    /// The elbow arrow goes around the other shapes (`auto_elbow`). Excalidraw's elbow arrow is the plain `elbow`.
-    #[serde(default, skip_serializing_if = "is_false")]
-    pub auto_elbow: bool,
+    /// The elbow arrow goes around the other shapes (`auto_route`). Excalidraw's elbow arrow is the plain `elbow`.
+    /// Files written while the type was called `auto_elbow` still read; the old key is never written.
+    #[serde(default, skip_serializing_if = "is_false", alias = "auto_elbow")]
+    pub auto_route: bool,
     /// The element is a formula: the Excalidraw text holds its LaTeX source.
     #[serde(default, skip_serializing_if = "is_false")]
     pub math: bool,
@@ -90,7 +91,7 @@ mod tests {
             font_family: Some(FontFamily::GelPenSerif),
             font_weight: Some(FontWeight::Light),
             head_size: Some(9.0),
-            auto_elbow: true,
+            auto_route: true,
             math: true,
             brush: Some(Brush::Calligraphy),
             highlighter: Some(true),

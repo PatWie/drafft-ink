@@ -689,3 +689,21 @@ fn a_batch_writes_the_record_once_after_the_last_step() {
     assert_eq!(stored(&f), None, "port writes of a rolled-back batch are dropped");
     assert_eq!(value(&s, "theme"), json!("dark"), "the setting itself is not rolled back");
 }
+
+// ---- the renamed arrow type ----
+
+#[test]
+fn arrow_type_still_takes_the_old_word_auto_elbow_from_a_script_and_from_a_stored_record() {
+    let (mut s, fakes) = testing::session();
+    let out = run(&mut s, "settings.set", json!({"key": "arrow.type", "value": "auto_elbow"}));
+    assert_eq!(out["value"], json!("auto_route"), "{out}");
+    assert_eq!(value(&s, "arrow.type"), json!("auto_route"));
+    assert_eq!(s.tool.arrow_default.path, drafftink_scene::PathType::AutoRoute);
+    assert_eq!(stored(&fakes).unwrap()["values"]["arrow.type"], json!("auto_route"), "the new word is written");
+
+    let mut fresh = crate::state::Settings::default();
+    let record = serde_json::to_vec(&json!({"schema": 1, "values": {"arrow.type": "auto_elbow"}})).unwrap();
+    let load = store::decode_into(&mut fresh, &record).unwrap();
+    assert!(load.ignored.is_empty(), "{:?}", load.ignored);
+    assert_eq!(fresh.get("arrow.type"), Some(&json!("auto_route")));
+}

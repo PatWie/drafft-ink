@@ -44,7 +44,7 @@ use drafftink_profile::{Counter, count};
 
 use drafftink_scene::{
     Element, ElementError, ElementId, ElementKind, IdSource, IndexError, Kind, SceneRead, SceneTx, StoreError, Style,
-    TextAlign, TextData, TextRun, TextStyle, Transform, VerticalAlign, ZIndex,
+    TextAlign, TextData, TextRun, TextStyle, Transform, VerticalAlign, ZIndex, label,
 };
 use drafftink_typeset::MathError;
 
@@ -441,13 +441,13 @@ fn text_of<'a, R: SceneRead>(r: &'a R, id: &ElementId) -> Result<(&'a Element, &
     }
 }
 
-/// The live label of a container (the smallest id when several claim it).
+/// The live label of a container, by the rule of [`drafftink_scene::label`] (the smallest id when several claim
+/// it). It asks [`SceneRead::label_of`], and counts the pass over the scene when the reader has no index.
 pub fn label_of<R: SceneRead>(r: &R, container: &ElementId) -> Option<ElementId> {
-    if let Some(index) = r.derived_index() {
-        return index.label_of(container).cloned();
+    if r.derived_index().is_none() {
+        count_scan(r);
     }
-    count(Counter::ElementsScanned, u64::try_from(r.len_all()).unwrap_or(u64::MAX));
-    r.iter().filter(|e| e.container_id() == Some(container)).map(|e| e.id.clone()).min()
+    r.label_of(container).cloned()
 }
 
 /// The labels of the containers in `ids` (a map from container to label; an id with no label is left out). With the
@@ -455,38 +455,30 @@ pub fn label_of<R: SceneRead>(r: &R, container: &ElementId) -> Option<ElementId>
 /// finds every label.
 pub fn labels_of<R: SceneRead>(r: &R, ids: &[ElementId]) -> HashMap<ElementId, ElementId> {
     if r.derived_index().is_none() {
-        return label_index(r);
+        return label_ids(r);
     }
     ids.iter().filter_map(|id| label_of(r, id).map(|label| (id.clone(), label))).collect()
 }
 
-/// The label of every container in one pass.
-pub fn label_index<R: SceneRead>(r: &R) -> HashMap<ElementId, ElementId> {
-    count(Counter::ElementsScanned, u64::try_from(r.len_all()).unwrap_or(u64::MAX));
-    let mut out: HashMap<ElementId, ElementId> = HashMap::new();
-    for e in r.iter() {
-        if let Some(c) = e.container_id() {
-            match out.get(c) {
-                Some(old) if *old <= e.id => {}
-                _ => {
-                    out.insert(c.clone(), e.id.clone());
-                }
-            }
-        }
-    }
-    out
+/// The label of every container in one pass ([`drafftink_scene::label::by_container`]).
+fn label_ids<R: SceneRead>(r: &R) -> HashMap<ElementId, ElementId> {
+    count_scan(r);
+    label::by_container(r.iter()).into_iter().map(|(container, text)| (container.clone(), text.id.clone())).collect()
 }
 
-/// The label of `container`: the smallest id among the texts that claim it.
+fn count_scan<R: SceneRead>(r: &R) {
+    count(Counter::ElementsScanned, u64::try_from(r.len_all()).unwrap_or(u64::MAX));
+}
+
+/// The label of `container`: from the one pass of [`label_ids`] when the caller made it, else from the reader.
 fn label_for<R: SceneRead>(
     r: &R,
     scanned: Option<&HashMap<ElementId, ElementId>>,
     container: &ElementId,
 ) -> Option<ElementId> {
-    match (r.derived_index(), scanned) {
-        (Some(index), _) => index.label_of(container).cloned(),
-        (None, Some(map)) => map.get(container).cloned(),
-        (None, None) => None,
+    match scanned {
+        Some(map) => map.get(container).cloned(),
+        None => r.label_of(container).cloned(),
     }
 }
 
@@ -741,7 +733,7 @@ pub fn refresh_labels<T: SceneTx, M: TextMeasure + ?Sized>(
     anchor: GrowAnchor,
 ) -> Result<Vec<ElementId>, TextBindError> {
     // The committed index knows every label; without one, a single pass finds them all.
-    let scanned = if tx.derived_index().is_some() { None } else { Some(label_index(tx)) };
+    let scanned = if tx.derived_index().is_some() { None } else { Some(label_ids(tx)) };
     let mut pairs: Vec<(ElementId, ElementId)> = Vec::new();
     for id in changed {
         let Some(e) = tx.get(id).filter(|e| !e.deleted) else { continue };

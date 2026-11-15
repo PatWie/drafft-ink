@@ -31,8 +31,8 @@ pub(super) fn linear(cx: &Ctx<'_>, kind: Kind, points: &[Point]) -> Option<Eleme
     create::linear_element(preview_id()?, ZIndex::first(), points, &spec, style).ok()
 }
 
-/// A right-angled arrow preview of type `path` (elbow or auto elbow) from `start` to `end`, routed as the engine
-/// will route the arrow once it exists: around the shapes the ends are bound to, and for an auto elbow arrow
+/// A right-angled arrow preview of type `path` (elbow or auto route) from `start` to `end`, routed as the engine
+/// will route the arrow once it exists: around the shapes the ends are bound to, and for an auto route arrow
 /// around the other shapes too. `None` when the route cannot be made (the caller then shows the straight
 /// preview).
 pub(super) fn elbow(

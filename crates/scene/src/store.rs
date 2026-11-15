@@ -407,6 +407,16 @@ pub trait SceneRead {
         None
     }
 
+    /// The label of a container: the live text that names it, and when several do (two peers each added one), the
+    /// one that [`label::winner`](crate::label::winner) picks. Answered from the derived index when there is one,
+    /// else by a scan of the scene.
+    fn label_of(&self, container: &ElementId) -> Option<&ElementId> {
+        match self.derived_index() {
+            Some(index) => index.label_of(container),
+            None => crate::label::scan(self.iter(), container),
+        }
+    }
+
     /// Live elements, back to front.
     fn iter(&self) -> impl Iterator<Item = &Element> {
         self.iter_all().filter(|e| !e.deleted)

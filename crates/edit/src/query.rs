@@ -27,7 +27,7 @@ use serde_json::{Value, json};
 use crate::target::TargetError;
 use drafftink_scene::{
     Color, Element, ElementId, ElementKind, FillPattern, FontFamily, GroupId, Head, Kind, PathType, SceneRead,
-    Sloppiness, StrokeStyle, TextAlign,
+    Sloppiness, StrokeStyle, TextAlign, label,
 };
 
 pub use regex_lite::{Case, Regex, RegexError};
@@ -343,40 +343,33 @@ fn same(a: f64, b: f64) -> bool {
     (a - b).abs() < 1e-6
 }
 
-/// The label of every container.
-struct Labels {
-    by_container: HashMap<ElementId, ElementId>,
+/// The label of every container ([`drafftink_scene::label::by_container`]).
+struct Labels<'a> {
+    by_container: HashMap<&'a ElementId, &'a Element>,
 }
 
-impl Labels {
-    fn build<R: SceneRead>(r: &R) -> Self {
-        let mut by_container: HashMap<ElementId, ElementId> = HashMap::new();
-        for e in r.iter() {
-            if let Some(c) = e.container_id() {
-                match by_container.get(c) {
-                    Some(old) if *old <= e.id => {}
-                    _ => {
-                        by_container.insert(c.clone(), e.id.clone());
-                    }
-                }
-            }
-        }
-        Self { by_container }
+impl<'a> Labels<'a> {
+    fn build<R: SceneRead>(r: &'a R) -> Self {
+        Self { by_container: label::by_container(r.iter()) }
     }
 
-    fn text_of<'a, R: SceneRead>(&self, r: &'a R, container: &ElementId) -> Option<&'a str> {
-        let l = self.by_container.get(container)?;
-        r.get(l).and_then(Element::text_data).map(|t| t.content.as_str())
+    /// The id of the label of `container`.
+    fn id_of(&self, container: &ElementId) -> Option<&'a ElementId> {
+        self.by_container.get(container).map(|l| &l.id)
+    }
+
+    fn text_of(&self, container: &ElementId) -> Option<&'a str> {
+        self.by_container.get(container).and_then(|l| l.text_data()).map(|t| t.content.as_str())
     }
 }
 
 /// The text an element shows: its own, its latex, its frame name, or its label.
-fn element_text<'a, R: SceneRead>(r: &'a R, labels: &Labels, e: &'a Element) -> Option<&'a str> {
+fn element_text<'a>(labels: &Labels<'a>, e: &'a Element) -> Option<&'a str> {
     match &e.kind {
         ElementKind::Text(t) => Some(t.content.as_str()),
         ElementKind::Math(m) => Some(m.latex.as_str()),
         ElementKind::Frame(f) => f.name.as_deref(),
-        _ => labels.text_of(r, &e.id),
+        _ => labels.text_of(&e.id),
     }
 }
 
@@ -492,7 +485,7 @@ fn style_matches(f: &StyleFilter, e: &Element) -> bool {
     true
 }
 
-fn matches<R: SceneRead>(r: &R, labels: &Labels, c: &Compiled<'_>, ctx: &QueryCtx<'_>, e: &Element) -> bool {
+fn matches(labels: &Labels<'_>, c: &Compiled<'_>, ctx: &QueryCtx<'_>, e: &Element) -> bool {
     let q = c.q;
     if e.container_id().is_some() && !c.include_bound_text {
         return false;
@@ -535,7 +528,7 @@ fn matches<R: SceneRead>(r: &R, labels: &Labels, c: &Compiled<'_>, ctx: &QueryCt
         }
     }
     if c.contains.is_some() || c.regex.is_some() {
-        let Some(text) = element_text(r, labels, e) else { return false };
+        let Some(text) = element_text(labels, e) else { return false };
         if c.contains.as_ref().is_some_and(|needle| !text.to_lowercase().contains(needle.as_str())) {
             return false;
         }
@@ -558,7 +551,7 @@ pub fn run_query<R: SceneRead>(
     }
     let compiled = compile(r, q)?;
     let labels = Labels::build(r);
-    let mut hits: Vec<&Element> = r.iter().filter(|e| matches(r, &labels, &compiled, ctx, e)).collect();
+    let mut hits: Vec<&Element> = r.iter().filter(|e| matches(&labels, &compiled, ctx, e)).collect();
     match opts.order {
         Order::Z => {}
         Order::Reading => hits.sort_by(|a, b| {
@@ -628,7 +621,7 @@ fn round2(v: f64) -> f64 {
 /// The JSON objects for the elements `ids` with the chosen fields (`null` for an unknown id).
 pub fn describe_all<R: SceneRead>(r: &R, ids: &[ElementId], fields: &[Field]) -> Vec<Value> {
     let labels = Labels::build(r);
-    ids.iter().map(|id| r.get(id).map_or(Value::Null, |e| describe_with(r, &labels, e, fields))).collect()
+    ids.iter().map(|id| r.get(id).map_or(Value::Null, |e| describe_with(&labels, e, fields))).collect()
 }
 
 /// The JSON object for one element. `Null` for an unknown id.
@@ -636,14 +629,14 @@ pub fn describe<R: SceneRead>(r: &R, id: &ElementId, fields: &[Field]) -> Value 
     describe_all(r, std::slice::from_ref(id), fields).into_iter().next().unwrap_or(Value::Null)
 }
 
-fn describe_with<R: SceneRead>(r: &R, labels: &Labels, e: &Element, fields: &[Field]) -> Value {
+fn describe_with(labels: &Labels<'_>, e: &Element, fields: &[Field]) -> Value {
     let mut o = serde_json::Map::new();
     for f in fields {
         let (key, v) = match f {
             Field::Id => ("id", json!(e.id)),
             Field::Kind => ("kind", json!(e.tag().name())),
             Field::Name => ("name", json!(e.name)),
-            Field::Text => ("text", json!(element_text(r, labels, e))),
+            Field::Text => ("text", json!(element_text(labels, e))),
             Field::Bounds => {
                 let b = element_bounds(e);
                 (
@@ -659,7 +652,7 @@ fn describe_with<R: SceneRead>(r: &R, labels: &Labels, e: &Element, fields: &[Fi
                 let [s, t] = e.binding_targets();
                 ("bindings", json!({"start": s, "end": t}))
             }
-            Field::BoundText => ("bound_text", json!(labels.by_container.get(&e.id))),
+            Field::BoundText => ("bound_text", json!(labels.id_of(&e.id))),
             Field::Locked => ("locked", json!(e.locked)),
             Field::Link => ("link", json!(e.link)),
             Field::Z => ("z", json!(e.index.as_str())),
@@ -824,7 +817,7 @@ pub struct OutlineEdge {
     /// Marker at the end.
     #[serde(skip_serializing_if = "is_no_head")]
     pub end_head: Head,
-    /// Straight, curved, elbow or auto elbow.
+    /// Straight, curved, elbow or auto route.
     pub path: PathType,
 }
 
@@ -965,7 +958,7 @@ pub fn outline<R: SceneRead>(r: &R, opts: &OutlineOpts) -> Outline {
         let label = match &e.kind {
             ElementKind::Text(t) => Some(t.content.clone()),
             ElementKind::Math(m) => Some(m.latex.clone()),
-            _ => labels.text_of(r, &e.id).map(str::to_string),
+            _ => labels.text_of(&e.id).map(str::to_string),
         };
         let node = OutlineNode {
             id: e.id.clone(),
@@ -1008,7 +1001,7 @@ pub fn outline<R: SceneRead>(r: &R, opts: &OutlineOpts) -> Outline {
                 name: e.name.clone(),
                 from: s.cloned(),
                 to: t.cloned(),
-                label: labels.text_of(r, &e.id).map(str::to_string),
+                label: labels.text_of(&e.id).map(str::to_string),
                 start_head: d.start_head,
                 end_head: d.end_head,
                 path: d.path,
@@ -1175,7 +1168,7 @@ impl Outline {
                     PathType::Sharp => {}
                     PathType::Round => out.push_str(" round"),
                     PathType::Elbow => out.push_str(" elbow"),
-                    PathType::AutoElbow => out.push_str(" auto_elbow"),
+                    PathType::AutoRoute => out.push_str(" auto_route"),
                 }
                 if let Some(n) = &e.name {
                     out.push_str(&format!(" @{n}"));
