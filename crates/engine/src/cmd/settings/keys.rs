@@ -87,6 +87,8 @@ pub struct KeyDef {
 pub const GRID_STYLES: &[&str] = &["none", "lines", "horizontal_lines", "crosses", "dots"];
 /// The theme choices (docs/commands.md §9 item 13).
 pub const THEMES: &[&str] = &["light", "dark", "system"];
+/// The views of the colour menu: the preset swatches, and the custom picker (`ui.color_picker`).
+pub const COLOR_PICKERS: &[&str] = &["swatches", "custom"];
 /// The fonts the UI text can use: the canvas families that are bundled (the words of the `font_family` property).
 pub const UI_FONTS: &[&str] = &["gelpen", "gelpen_serif", "vanilla_extract", "noto_sans", "plex_sans"];
 /// The path types of `arrow.type` (the words of `drafftink_edit::arrow_defaults::path_name`).
@@ -197,6 +199,12 @@ pub const KEYS: &[KeyDef] = &[
         Kind::Choice(UI_FONTS),
         Def::Str("gelpen"),
         "The font of menus, bars and dialogs: one of the bundled canvas fonts. Does not change the canvas.",
+    ),
+    key(
+        "ui.color_picker",
+        Kind::Choice(COLOR_PICKERS),
+        Def::Str("swatches"),
+        "The colour menu shows the preset swatches, or a custom picker: a saturation and value square with a hue slider.",
     ),
 ];
 

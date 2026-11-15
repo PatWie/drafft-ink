@@ -604,3 +604,143 @@ fn a_pick_sets_the_colour_on_the_selection_in_one_undo_step() {
     assert!(f.state.eyedropper().is_none());
     assert_eq!(f.state.last_picked.of(ColorTarget::Fill), Some("#10b981"), "the strip keeps it as the last picked");
 }
+
+// ---- the switch between the swatches and the custom picker (`ui.color_picker`) ----
+
+type Hn = egui_kittest::Harness<'static, Fixture>;
+
+/// The popover of `target` with the custom view as the person's choice.
+fn open_custom(fixture: Fixture, target: ColorTarget) -> Hn {
+    let mut f = fixture;
+    f.session.execute("settings.set", json!({ "key": "ui.color_picker", "value": "custom" })).unwrap();
+    f.refresh();
+    open(f, target)
+}
+
+fn sliders(h: &Hn) -> Vec<String> {
+    h.query_all_by_role(egui::accesskit::Role::Slider).filter_map(|n| n.accesskit_node().label()).collect()
+}
+
+#[test]
+fn the_popover_opens_on_the_swatches_and_offers_the_custom_picker_beside_them() {
+    let h = open(dialog::fixture(), ColorTarget::Stroke);
+    assert!(on(&h, "Colour picker: Swatches"));
+    assert!(!on(&h, "Colour picker: Custom"));
+    h.get_by_label("Blue 500");
+    assert!(sliders(&h).is_empty(), "no picker widgets in the swatch view");
+}
+
+#[test]
+fn the_custom_button_sets_the_setting_and_the_picker_takes_the_place_of_the_grid() {
+    let mut h = open(dialog::fixture(), ColorTarget::Stroke);
+    h.get_by_label("Colour picker: Custom").click();
+    h.run();
+    assert_eq!(
+        calls(&h),
+        [("settings.set".to_owned(), json!({"key": "ui.color_picker", "value": "custom"}), Origin::Ui)]
+    );
+    assert!(dialog::verbs(h.state()).is_empty(), "the switch does not close the popover");
+    h.state_mut().dispatch();
+    h.run();
+    assert!(on(&h, "Colour picker: Custom"));
+    assert_eq!(sliders(&h), ["Saturation and value", "Hue", "Alpha"]);
+    assert!(h.query_by_label("Blue 500").is_none(), "the grid is gone");
+    h.get_by_label("Hex colour");
+    h.get_by_label("None");
+}
+
+#[test]
+fn the_choice_is_kept_for_the_next_popover_and_swatches_bring_the_grid_back() {
+    let mut h = open_custom(dialog::fixture(), ColorTarget::Fill);
+    assert_eq!(sliders(&h).len(), 3, "the choice of a person is the view of every popover");
+    h.state_mut().state.color_popover = Some(ColorTarget::Stroke);
+    h.run();
+    assert_eq!(sliders(&h).len(), 3);
+    h.get_by_label("Colour picker: Swatches").click();
+    h.run();
+    assert_eq!(calls(&h)[0].1, json!({"key": "ui.color_picker", "value": "swatches"}));
+    h.state_mut().dispatch();
+    h.run();
+    h.get_by_label("Blue 500");
+    assert!(sliders(&h).is_empty());
+}
+
+#[test]
+fn stroke_and_fill_have_an_alpha_bar_and_the_page_colour_does_not() {
+    for (target, alpha) in [(ColorTarget::Stroke, true), (ColorTarget::Fill, true), (ColorTarget::Background, false)] {
+        let h = open_custom(dialog::fixture(), target);
+        assert_eq!(sliders(&h).contains(&"Alpha".to_owned()), alpha, "{target:?}");
+        assert!(sliders(&h).contains(&"Hue".to_owned()), "{target:?}");
+    }
+}
+
+#[test]
+fn the_hex_field_of_the_custom_view_shows_the_colour_and_applies_a_typed_one_without_closing() {
+    let mut f = filled_rect(Some("#3b82f6"));
+    f.session.execute("settings.set", json!({ "key": "theme", "value": "light" })).unwrap();
+    f.refresh();
+    let mut h = open_custom(f, ColorTarget::Stroke);
+    assert_eq!(h.get_by_label("Hex colour").value().as_deref(), Some("#3b82f6"), "the colour of the selection");
+    h.get_by_label("Hex colour").focus();
+    h.run();
+    h.key_press_modifiers(egui::Modifiers::COMMAND, Key::A);
+    h.run();
+    h.get_by_label("Hex colour").type_text("#ff0000");
+    h.run();
+    h.key_press(Key::Enter);
+    h.run();
+    assert_eq!(calls(&h), [("style.set".to_owned(), json!({"props": {"stroke_color": "#ff0000"}}), Origin::Ui)]);
+    assert!(dialog::verbs(h.state()).is_empty(), "a drag may go on, so a pick keeps the custom view open");
+    h.state_mut().dispatch();
+    h.run();
+    assert_eq!(h.get_by_label("Hex colour").value().as_deref(), Some("#ff0000"));
+}
+
+#[test]
+fn a_bad_value_in_the_custom_hex_field_keeps_its_error_on_screen() {
+    let mut h = open_custom(dialog::fixture(), ColorTarget::Fill);
+    h.get_by_label("Hex colour").focus();
+    h.run();
+    h.get_by_label("Hex colour").type_text("#12");
+    h.run();
+    h.key_press(Key::Enter);
+    h.run();
+    h.run();
+    assert!(h.state().calls().is_empty());
+    h.get_by_label_contains("is not a colour");
+}
+
+#[test]
+fn none_in_the_custom_view_clears_the_colour_and_closes() {
+    let mut h = open_custom(filled_rect(None), ColorTarget::Stroke);
+    h.get_by_label("None").click();
+    h.run();
+    assert_eq!(calls(&h)[0].1, json!({"props": {"stroke_color": "transparent"}}));
+    assert_eq!(dialog::verbs(h.state()), [Verb::CloseOverlays]);
+}
+
+#[test]
+fn the_custom_view_draws_in_both_themes() {
+    for theme in [egui::Theme::Light, egui::Theme::Dark] {
+        let mut f = dialog::fixture();
+        f.session.execute("settings.set", json!({ "key": "ui.color_picker", "value": "custom" })).unwrap();
+        f.refresh();
+        let mut h = dialog::sized(f, egui::vec2(1280.0, 800.0), theme);
+        h.state_mut().state.color_popover = Some(ColorTarget::Stroke);
+        h.run();
+        assert_eq!(sliders(&h).len(), 3, "{theme:?}");
+    }
+}
+
+#[test]
+fn a_refusal_greys_the_custom_picker_with_its_text() {
+    let mut f = dialog::fixture();
+    f.session.execute("settings.set", json!({ "key": "ui.color_picker", "value": "custom" })).unwrap();
+    f.session.view_only = true;
+    f.refresh();
+    let h = open(f, ColorTarget::Stroke);
+    for label in ["Saturation and value", "Hue", "Alpha"] {
+        let node = h.get_by_role_and_label(egui::accesskit::Role::Slider, label);
+        assert!(node.accesskit_node().is_disabled(), "{label}");
+    }
+}

@@ -4,6 +4,12 @@
 //! column. A pick is a plain command: `style.set` for stroke and fill, `doc.set_background` for the
 //! page. "None" on the fill is `fill_color: null`, never a transparent colour. The popover closes on a
 //! pick, on Esc (the keymap) and on a click outside it.
+//!
+//! A switch at the top chooses the view, and the choice is the setting `ui.color_picker`: the swatches, or the custom
+//! picker (`custom.rs`: a saturation and value square, a hue bar, an alpha bar). The hex field is in both. In the custom
+//! view a pick does not close the popover, since it is a drag that goes on.
+
+mod custom;
 
 use drafftink_scene::Color;
 use drafftink_scene::palette::{FAMILIES, SHADES};
@@ -18,6 +24,7 @@ use crate::colors;
 use crate::model::Model;
 use crate::state::{ColorTarget, UiState};
 use crate::surfaces::dialogs::{enter_pressed, text_field};
+use crate::surfaces::preferences::set_args;
 use crate::surfaces::topbar::clear_blocked;
 use crate::theme::{MARGIN, TextSize, UiFontChoice};
 use crate::widgets::{Ctl, Cx, Look, paint_button_bg, panel_frame, section_label};
@@ -241,19 +248,72 @@ fn cell(ui: &mut Ui, cx: &mut Cx<'_>, target: ColorTarget, now: Option<Option<Co
     cx.swatch(ui, &ctl, c.shown, CELL).clicked().then(|| c.pick.clone())
 }
 
-/// Draws the popover of a colour target. The pick and the outside click push actions; the pick is also returned.
+/// Which view of the colour popover shows (the setting `ui.color_picker`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+enum PickerMode {
+    /// The preset swatches.
+    #[default]
+    Swatches,
+    /// The custom picker.
+    Custom,
+}
+
+impl PickerMode {
+    const ALL: [Self; 2] = [Self::Swatches, Self::Custom];
+
+    /// The value of the setting.
+    const fn setting(self) -> &'static str {
+        match self {
+            Self::Swatches => "swatches",
+            Self::Custom => "custom",
+        }
+    }
+
+    /// The label of its button.
+    const fn title(self) -> &'static str {
+        match self {
+            Self::Swatches => "Swatches",
+            Self::Custom => "Custom",
+        }
+    }
+
+    /// The mode the setting names; the swatches for a word the UI does not know.
+    fn of_model(model: &Model) -> Self {
+        Self::ALL.into_iter().find(|m| Some(m.setting()) == model.setting_str("ui.color_picker")).unwrap_or_default()
+    }
+}
+
+/// The switch between the views: two toggles, each a `settings.set` of `ui.color_picker`.
+fn mode_switch(ui: &mut Ui, cx: &mut Cx<'_>, mode: PickerMode) {
+    ui.horizontal(|ui| {
+        ui.spacing_mut().item_spacing.x = 2.0;
+        for m in PickerMode::ALL {
+            let ctl = Ctl::new("settings.set")
+                .args(set_args("ui.color_picker", m.setting()))
+                .label(format!("Colour picker: {}", m.title()))
+                .selected(mode == m);
+            cx.toggle_button(ui, &ctl, m.title());
+        }
+    });
+}
+
+/// Draws the popover of a colour target. Returns the colour to show as the last picked one.
 fn color_popover(ctx: &Context, cx: &mut Cx<'_>, chrome: &ChromeRects, target: ColorTarget) -> Option<Pick> {
     let pal = cx.pal;
     let key = PopoverKey::of(target);
     let now = current(cx.model, target);
     let dark = pal.dark;
+    let mode = PickerMode::of_model(cx.model);
     let quick = quick_column(dark);
     let screen = ctx.content_rect();
     let max_w = (screen.width() - 2.0 * MARGIN - 24.0).max(120.0);
     let max_h = (screen.height() - 2.0 * MARGIN - GRID_CHROME).max(80.0);
     let hex_key = Id::unique("color_hex_draft");
+    let custom_key = Id::unique(("color_custom", target));
     let mut hex: HexDraft = ctx.data_mut(|d| d.get_temp(hex_key)).unwrap_or_default();
+    let mut working: custom::Working = ctx.data_mut(|d| d.get_temp(custom_key)).unwrap_or_default();
     let mut picked: Option<Pick> = None;
+    let mut custom_out = custom::Out::default();
 
     let out = popover_area(ctx, chrome, Id::unique("color_popover"), key).show(ctx, |ui| {
         panel_frame(&pal).show(ui, |ui| {
@@ -264,58 +324,86 @@ fn color_popover(ctx: &Context, cx: &mut Cx<'_>, chrome: &ChromeRects, target: C
             };
             ui.label(RichText::new(title).font(TextSize::Label.hand()).color(pal.muted));
             ui.add_space(4.0);
-            ScrollArea::both().max_width(max_w).max_height(max_h).auto_shrink([true, true]).show(ui, |ui| {
-                ui.spacing_mut().item_spacing = vec2(0.0, 0.0);
-                // Shade 25 is too close to white to tell apart in a 16 px cell: the grid starts at 50.
-                let shades = SHADES.iter().enumerate().skip(1);
-                for (row, (_, shade)) in shades.enumerate() {
-                    if row == 1 || row == 5 || row == 6 {
-                        ui.add_space(4.0);
-                    }
-                    ui.horizontal(|ui| {
-                        for fam in FAMILIES {
-                            let c = choice(
-                                format!("{} {shade}", capitalised(fam.name)),
-                                &format!("{}-{shade}", fam.name),
-                                dark,
-                            );
-                            picked = cell(ui, cx, target, now, &c).or(picked.take());
-                        }
-                        if let Some(q) = quick.get(row) {
-                            ui.add_space(8.0);
-                            picked = cell(ui, cx, target, now, q).or(picked.take());
+            mode_switch(ui, cx, mode);
+            ui.add_space(6.0);
+            match mode {
+                PickerMode::Swatches => {
+                    ScrollArea::both().max_width(max_w).max_height(max_h).auto_shrink([true, true]).show(ui, |ui| {
+                        ui.spacing_mut().item_spacing = vec2(0.0, 0.0);
+                        // Shade 25 is too close to white to tell apart in a 16 px cell: the grid starts at 50.
+                        let shades = SHADES.iter().enumerate().skip(1);
+                        for (row, (_, shade)) in shades.enumerate() {
+                            if row == 1 || row == 5 || row == 6 {
+                                ui.add_space(4.0);
+                            }
+                            ui.horizontal(|ui| {
+                                for fam in FAMILIES {
+                                    let c = choice(
+                                        format!("{} {shade}", capitalised(fam.name)),
+                                        &format!("{}-{shade}", fam.name),
+                                        dark,
+                                    );
+                                    picked = cell(ui, cx, target, now, &c).or(picked.take());
+                                }
+                                if let Some(q) = quick.get(row) {
+                                    ui.add_space(8.0);
+                                    picked = cell(ui, cx, target, now, q).or(picked.take());
+                                }
+                            });
                         }
                     });
+                    ui.add_space(8.0);
+                    let reason = cx.refusal(pick_command(target, &Pick::Clear).0);
+                    section_label(ui, &pal, "Hex");
+                    picked = hex_row(ui, cx, target, &mut hex, reason).or(picked.take());
                 }
-            });
-            ui.add_space(8.0);
-            picked = hex_row(ui, cx, target, &mut hex).or(picked.take());
+                PickerMode::Custom => {
+                    custom_out = custom::show(ui, cx, target, now, &mut working, &mut hex);
+                }
+            }
         });
     });
 
+    let mut remember = picked.clone();
     if picked.is_some() {
         hex = HexDraft::default();
         cx.verb(Verb::CloseOverlays);
-    } else if pressed_outside(ctx, out.response.rect) {
+    } else if custom_out.close || pressed_outside(ctx, out.response.rect) {
         cx.verb(Verb::CloseOverlays);
     }
-    ctx.data_mut(|d| d.insert_temp(hex_key, hex));
-    picked
+    if custom_out.remember.is_some() {
+        remember = custom_out.remember;
+    }
+    ctx.data_mut(|d| {
+        d.insert_temp(hex_key, hex);
+        d.insert_temp(custom_key, working);
+    });
+    remember
 }
 
 #[derive(Clone, Default)]
 struct HexDraft {
     text: String,
     error: Option<String>,
+    /// The field had the keyboard in the last frame it was drawn: the custom view leaves the text alone then.
+    editing: bool,
 }
 
 /// The hex field. Enter applies a valid value and returns it as a pick; a bad one shows an error under the field.
-fn hex_row(ui: &mut Ui, cx: &mut Cx<'_>, target: ColorTarget, draft: &mut HexDraft) -> Option<Pick> {
+/// `reason` is why the colour cannot be set now, which greys the field.
+fn hex_row(
+    ui: &mut Ui,
+    cx: &mut Cx<'_>,
+    target: ColorTarget,
+    draft: &mut HexDraft,
+    reason: Option<String>,
+) -> Option<Pick> {
     let pal = cx.pal;
-    let (id, _) = pick_command(target, &Pick::Clear);
-    let reason = cx.refusal(id);
-    section_label(ui, &pal, "Hex");
     let resp = text_field(ui, &mut draft.text, "#rrggbb, then Enter", reason.clone(), Some(9), "Hex colour");
+    draft.editing = resp.has_focus();
+    if resp.changed() {
+        draft.error = None;
+    }
     let mut applied = None;
     if reason.is_none() && resp.lost_focus() && enter_pressed(ui) {
         match parse_hex(&draft.text) {
@@ -399,9 +487,12 @@ pub fn show(ctx: &Context, cx: &mut Cx<'_>, st: &mut UiState) {
                 st.last_picked.remember(target, color);
             }
         }
-        None => {
-            ctx.data_mut(|d| d.remove_temp::<HexDraft>(Id::unique("color_hex_draft")));
-        }
+        None => ctx.data_mut(|d| {
+            d.remove_temp::<HexDraft>(Id::unique("color_hex_draft"));
+            for target in [ColorTarget::Stroke, ColorTarget::Fill, ColorTarget::Background] {
+                d.remove_temp::<custom::Working>(Id::unique(("color_custom", target)));
+            }
+        }),
     }
     if st.font_picker_open {
         font_picker(ctx, cx, &st.chrome);

@@ -1,11 +1,14 @@
 //! Scrubbing controls (docs/exceptions.md E13): the one place that turns a drag on a slider into the
-//! `gesture.*` commands. The opacity and the corner radius sliders are the two scrubbing controls.
+//! `gesture.*` commands. The opacity and the corner radius sliders and the custom colour picker (its stroke and fill
+//! colours) are the scrubbing controls.
 //!
-//! A slider calls [`slider`]; nothing else in the UI emits a [`Scrub`]. The helper and the frame
-//! bookkeeping ([`ScrubTrack::settle`], called by `draw`) keep these rules, so that no control has to:
+//! A slider calls [`slider`], any other draggable widget (the square and the bars of the colour picker) calls
+//! [`drive`]; nothing else in the UI emits a [`Scrub`]. One control may have several widgets (the picker has three),
+//! and they share one gesture. The helper and the frame bookkeeping ([`ScrubTrack::settle`], called by `draw`) keep
+//! these rules, so that no control has to:
 //!
 //! * One drag is one gesture: `begin` on the first change with the pointer down, `update` for each further
-//!   change, `end` when the pointer is no longer down on the slider.
+//!   change, `end` when the pointer is no longer down.
 //! * The slider stays enabled while its own gesture runs. Every other command is refused during a gesture, and
 //!   a slider that greys itself for that reason loses the drag before its release can be seen.
 //! * A gesture is never left open. If the slider is not drawn in a frame (the ribbon regrouped, the selection
@@ -28,13 +31,17 @@ pub enum ScrubControl {
     Opacity,
     /// The corner radius slider of the ribbon.
     CornerRadius,
+    /// The square and the bars of the custom colour picker, while it edits a stroke colour.
+    StrokeColor,
+    /// The same, while it edits a fill colour.
+    FillColor,
 }
 
 impl ScrubControl {
     /// The command the gesture runs and ends with.
     pub const fn command(self) -> &'static str {
         match self {
-            Self::Opacity | Self::CornerRadius => "style.set",
+            Self::Opacity | Self::CornerRadius | Self::StrokeColor | Self::FillColor => "style.set",
         }
     }
 }
@@ -64,6 +71,8 @@ pub(crate) struct ScrubFrame {
     suppressed: Option<ScrubControl>,
     seen: Vec<ScrubControl>,
     released: Option<ScrubControl>,
+    /// A widget already asked to end the running gesture in this frame: the others of its control do not repeat it.
+    ending: bool,
 }
 
 /// What the UI remembers of the scrub in progress.
@@ -149,7 +158,7 @@ impl ScrubFrame {
 
 /// The reason the command of a control cannot run now. A running gesture of the control itself is no
 /// reason: it is the control's own drag.
-fn refusal(cx: &Cx<'_>, control: ScrubControl) -> Option<String> {
+pub(crate) fn refusal(cx: &Cx<'_>, control: ScrubControl) -> Option<String> {
     let id = control.command();
     let own = cx.scrub.running == Some(control);
     match cx.model.command(id)?.available.as_ref() {
@@ -179,31 +188,41 @@ pub(crate) fn slider(
     if ui.is_sizing_pass() {
         return resp;
     }
-    cx.scrub.mark_seen(control);
+    drive(ui, cx, control, &resp, || args(*value));
+    resp
+}
 
+/// Turns what a draggable widget of `control` did in this frame into the steps of its gesture. `resp.changed()` says
+/// the widget changed its value (call [`Response::mark_changed`] for a custom widget), and `args` gives the arguments of
+/// the command for the value it has now.
+///
+/// A change with the pointer down is a step of the gesture, a change without it (an arrow key) is a plain command,
+/// and the first frame in which no pointer is down ends a gesture the control has running.
+pub(crate) fn drive(ui: &Ui, cx: &mut Cx<'_>, control: ScrubControl, resp: &Response, args: impl FnOnce() -> Value) {
+    cx.scrub.mark_seen(control);
     let held = resp.is_pointer_button_down_on() || resp.dragged();
+    // Any pointer down keeps a drag of this control going: a drag that starts on the square goes on over the bars.
+    let pointer_down = ui.input(|i| i.pointer.any_down());
     if cx.scrub.suppressed == Some(control) {
-        if !held {
+        if !pointer_down {
             cx.scrub.released = Some(control);
         }
-        return resp;
+        return;
     }
     let own = cx.scrub.running == Some(control);
     if own && ui.input(|i| i.key_pressed(Key::Escape)) {
         // Esc is also a shortcut (`tool.cancel`), which cancels the gesture in the engine too; this tells the
-        // state and restores the value. The pointer is still down, so the slider ignores the rest of the drag.
+        // state and restores the value. The pointer is still down, so the control ignores the rest of the drag.
         cx.emit(UiAction::Scrub(Scrub::new(ScrubPhase::Cancel, control, Value::Null)));
         cx.scrub.suppressed = Some(control);
-        return resp;
+        return;
     }
-    let args = args(*value);
     if resp.changed() && held {
         let phase = if own { ScrubPhase::Update } else { ScrubPhase::Begin };
-        cx.emit(UiAction::Scrub(Scrub::new(phase, control, args)));
+        cx.emit(UiAction::Scrub(Scrub::new(phase, control, args())));
     } else if resp.changed() {
-        cx.run(control.command(), args);
-    } else if own && !held {
-        cx.emit(UiAction::Scrub(Scrub::new(ScrubPhase::End, control, args)));
+        cx.run(control.command(), args());
+    } else if own && !pointer_down && !std::mem::replace(&mut cx.scrub.ending, true) {
+        cx.emit(UiAction::Scrub(Scrub::new(ScrubPhase::End, control, args())));
     }
-    resp
 }

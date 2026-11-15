@@ -91,7 +91,7 @@ impl Toast {
 }
 
 /// Which colour the popover edits.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum ColorTarget {
     /// Stroke colour (`style.set` `stroke_color`).
     Stroke,
