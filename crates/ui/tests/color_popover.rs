@@ -812,3 +812,58 @@ fn a_platform_screen_picker_is_asked_for_the_brush_too() {
     f.state.apply_verb(Verb::PickColorBrush, &mut host);
     assert_eq!(host, [drafftink_ui::HostRequest::PickScreenColor(ColorTarget::Brush)]);
 }
+
+// ---- the custom picker for the brush ----
+
+/// The custom view of the brush popover, in `theme`.
+fn custom_brush(theme: egui::Theme) -> Hn {
+    let mut f = dialog::fixture();
+    f.session.execute("settings.set", json!({ "key": "ui.color_picker", "value": "custom" })).unwrap();
+    f.refresh();
+    let mut h = dialog::sized(f, egui::vec2(1280.0, 800.0), theme);
+    h.state_mut().state.color_popover = Some(ColorTarget::Brush);
+    h.run();
+    h
+}
+
+#[test]
+fn the_custom_picker_edits_the_brush_with_no_alpha_bar_and_no_none_button() {
+    let h = custom_brush(egui::Theme::Light);
+    assert_eq!(sliders(&h), ["Saturation and value", "Hue"], "the brush has its own opacity");
+    h.get_by_label("Hex colour");
+    assert!(h.query_by_label("None").is_none(), "a brush has a colour; erasing is its other mode");
+}
+
+#[test]
+fn a_brush_colour_from_the_custom_picker_is_stored_as_shown_in_the_dark_theme() {
+    let mut h = custom_brush(egui::Theme::Dark);
+    // The hex field is what the eyedropper stores: the colour as it is, whatever the theme.
+    h.get_by_label("Hex colour").focus();
+    h.run();
+    h.key_press_modifiers(egui::Modifiers::COMMAND, Key::A);
+    h.run();
+    h.get_by_label("Hex colour").type_text("#808080");
+    h.run();
+    h.key_press(Key::Enter);
+    h.run();
+    assert_eq!(calls(&h), [("image.paint_brush".to_owned(), json!({"color": "#808080"}), Origin::Ui)]);
+    h.state_mut().dispatch();
+    h.run();
+    assert_eq!(h.state().model.brush.color, Color::rgb(0x80, 0x80, 0x80));
+    assert_eq!(
+        h.get_by_label("Hex colour").value().as_deref(),
+        Some("#808080"),
+        "the field shows the colour as stored"
+    );
+    assert!(h.state().calls().iter().all(|c| c.id != "style.set"), "the style of the document was never asked");
+
+    // A key on the hue bar moves the brush by one command of its own, and still stores what it shows.
+    h.get_by_role_and_label(egui::accesskit::Role::Slider, "Hue").focus();
+    h.run();
+    h.key_press(Key::ArrowRight);
+    h.run();
+    let last = calls(&h).pop().unwrap();
+    assert_eq!(last.0, "image.paint_brush");
+    assert!(last.1["color"].is_string(), "{last:?}");
+    assert!(h.state().calls().iter().all(|c| c.id != "style.set"));
+}
