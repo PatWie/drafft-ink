@@ -1,6 +1,8 @@
-//! Press, click and double-click of the select tool. A double-click on an image opens the crop editor.
+//! Press, click and double-click of the select tool. A double-click on an image opens the crop editor, and one on the
+//! name label of a frame opens the field that renames it.
 
 use drafftink_canvas::{Button, Handle, PointerKind, Target};
+use drafftink_geom::kurbo::Point;
 use drafftink_scene::{ElementId, GroupId, Kind};
 use serde_json::json;
 
@@ -83,6 +85,10 @@ pub(super) fn click(cx: &mut Ctx<'_>, ev: &Ev<'_>, toggle_now: bool) {
 
 /// A double-click: edit what is under the pointer.
 pub(super) fn double_click(cx: &mut Ctx<'_>, ev: &Ev<'_>) {
+    if let Some((frame, name)) = super::frame_title::frame_at(cx, ev) {
+        rename_frame_in_place(cx, &frame, name);
+        return;
+    }
     match ev.target {
         Target::Handle(handle) => on_handle(cx, handle),
         Target::Element { id, unit_group } => on_element(cx, ev, id, unit_group.as_ref()),
@@ -94,6 +100,15 @@ pub(super) fn double_click(cx: &mut Ctx<'_>, ev: &Ev<'_>) {
         }
         Target::None | Target::LinkIcon { .. } => {}
     }
+}
+
+/// A double-click on the name label of a frame: selects the frame and asks the shell for a field at the label. The
+/// field ends in `frame.rename`, which is where a locked frame or a view-only document is refused.
+fn rename_frame_in_place(cx: &mut Ctx<'_>, frame: &ElementId, name: String) {
+    let Some(el) = cx.s.element(frame) else { return };
+    let (at, width) = (Point::new(el.transform.x, el.transform.y), el.transform.w.max(0.0));
+    cx.exec("selection.select", json!({ "ids": [frame.as_str()] }));
+    cx.out.ui_request = Some(UiRequest::OpenFrameNameEditor { frame: frame.clone(), name, at, width });
 }
 
 fn on_handle(cx: &mut Ctx<'_>, handle: &Handle) {

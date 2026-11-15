@@ -546,7 +546,7 @@ fn section_header(ui: &mut Ui, cx: &mut Cx<'_>, st: &mut UiState, group: &Group<
         st.library_remove = Some(section.id.clone());
     }
     if !section.mine && rename_button(&mut tools_ui, cx, side, &format!("Rename section {}", section.name)) {
-        st.open_rename(RenameTarget::LibrarySection(section.id.clone()), section.name.clone());
+        st.open_rename(RenameTarget::LibrarySection(section.id.clone()));
     }
     rect
 }
@@ -738,7 +738,7 @@ fn corner_buttons(ui: &mut Ui, cx: &mut Cx<'_>, st: &mut UiState, item: &Library
     let remove = Ctl::new("library.remove").args(remove_args(&item.id)).label(format!("Remove {name}"));
     cx.icon_button(&mut corner, &remove, Icon::Delete, side);
     if rename_button(&mut corner, cx, side, &format!("Rename {name}")) {
-        st.open_rename(RenameTarget::LibraryItem(item.id.clone()), item.name.clone());
+        st.open_rename(RenameTarget::LibraryItem(item.id.clone()));
     }
 }
 
@@ -805,7 +805,7 @@ fn section_rows(m: &mut Menu<'_, '_, '_>, st: &mut UiState, section: &LibrarySec
         toggle_section(st, &section.id);
     }
     if !section.mine && m.local("Rename", Row::new().icon(Icon::Text).dialog()).clicked() {
-        st.open_rename(RenameTarget::LibrarySection(section.id.clone()), section.name.clone());
+        st.open_rename(RenameTarget::LibrarySection(section.id.clone()));
     }
     m.separator();
     if m.local("Remove section", Row::new().icon(Icon::Delete).dialog()).clicked() {
@@ -818,7 +818,7 @@ fn section_rows(m: &mut Menu<'_, '_, '_>, st: &mut UiState, section: &LibrarySec
 fn tile_rows(m: &mut Menu<'_, '_, '_>, st: &mut UiState, item: &LibraryItem) {
     m.command(Ctl::new("library.insert").args(insert_args(&item.id)), Row::new().label("Insert").icon(Icon::Library));
     if m.local("Rename", Row::new().icon(Icon::Text).dialog()).clicked() {
-        st.open_rename(RenameTarget::LibraryItem(item.id.clone()), item.name.clone());
+        st.open_rename(RenameTarget::LibraryItem(item.id.clone()));
     }
     m.separator();
     m.command(Ctl::new("library.remove").args(remove_args(&item.id)), Row::new().label("Remove").icon(Icon::Delete));

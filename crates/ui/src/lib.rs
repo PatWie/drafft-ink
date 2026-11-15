@@ -19,6 +19,7 @@ pub mod colors;
 pub mod debug;
 pub(crate) mod error_report;
 pub mod eyedropper;
+pub mod hsv;
 pub mod icons;
 pub mod keymap;
 pub(crate) mod menu_kit;

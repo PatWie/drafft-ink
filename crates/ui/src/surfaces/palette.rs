@@ -17,7 +17,7 @@ use crate::action::Verb;
 use crate::args_form::{self, Field, FormValues};
 use crate::keymap::{Pointer, VERB_BINDINGS, parse_chord, substitute};
 use crate::model::{self, Model};
-use crate::state::UiState;
+use crate::state::{RenameTarget, UiState};
 use crate::theme::{BUTTON_RADIUS, Palette, TextSize};
 use crate::widgets::{Ctl, Cx, dialog_frame, separator};
 
@@ -45,6 +45,9 @@ pub enum RowAction {
     },
     /// Applies a UI verb.
     Verb(Verb),
+    /// Opens the rename dialog of a target, whose field starts from the current name (`rename_dialog_for` says which
+    /// rows have it).
+    Rename(RenameTarget),
 }
 
 /// One line of the palette.
@@ -80,6 +83,19 @@ pub(crate) fn family_title(family: &str) -> String {
     chars.next().map_or_else(String::new, |first| first.to_uppercase().chain(chars).collect())
 }
 
+/// The rename dialog that a rename command's row opens instead of its form: for `doc.rename` the document, for
+/// `tab.rename` the active tab, for `frame.rename` the frame when exactly one is selected. The form asks for the name and shows an example of it, never
+/// the current name; the dialog starts from the current name, as the tab bar and the context menu do. The other cases
+/// keep the form.
+fn rename_dialog_for(model: &Model, id: &str) -> Option<RenameTarget> {
+    match (id, model.selection.as_slice()) {
+        ("doc.rename", _) => Some(RenameTarget::Document),
+        ("tab.rename", _) => model.tabs.iter().find(|t| t.active).map(|t| RenameTarget::Tab(t.id.clone())),
+        ("frame.rename", [only]) if only.kind == "frame" => Some(RenameTarget::Frame(only.id.clone())),
+        _ => None,
+    }
+}
+
 /// Every row of the palette: one per titled binding of a palette command, one for a palette command
 /// without titled bindings, one per variant (a named call without keys), then one per UI verb. Arguments with `$cursor` placeholders lose them,
 /// because the palette has no pointer.
@@ -97,7 +113,9 @@ pub fn rows(model: &Model) -> Vec<Row> {
             action,
         };
         if titled.is_empty() {
-            let action = if args_form::requires_args(cmd.id) {
+            let action = if let Some(target) = rename_dialog_for(model, cmd.id) {
+                RowAction::Rename(target)
+            } else if args_form::requires_args(cmd.id) {
                 RowAction::Form { id: cmd.id.to_owned() }
             } else {
                 RowAction::Command { id: cmd.id.to_owned(), args: json!({}) }
@@ -281,6 +299,7 @@ fn finish(cx: &mut Cx<'_>, st: &mut UiState, action: RowAction) {
     match action {
         RowAction::Command { id, args } => cx.with_origin(Origin::Palette, |cx| cx.run(&id, args)),
         RowAction::Verb(v) => cx.verb(v),
+        RowAction::Rename(target) => st.open_rename(target),
         // The form is opened by `draw`, which never reports it as an outcome.
         RowAction::Form { .. } => return,
     }

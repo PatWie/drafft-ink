@@ -1371,6 +1371,89 @@ fn double_click_on_empty_canvas_starts_a_draft_at_the_point() {
     );
 }
 
+/// A frame at (100, 100), 300 by 200, called `name` unless that is `None`. Its label lies above its top-left corner,
+/// at y 76 to 100.
+fn frame_at_100(rig: &mut Rig, name: Option<&str>) -> ElementId {
+    let out =
+        rig.run("element.create", json!({ "kind": "frame", "bounds": { "x": 100, "y": 100, "w": 300, "h": 200 } }));
+    let id = ElementId::new(out["id"].as_str().expect("an id")).expect("a valid id");
+    if let Some(name) = name {
+        rig.run("frame.rename", json!({ "frame": id.as_str(), "name": name }));
+    }
+    rig.pick(&[]);
+    id
+}
+
+#[test]
+fn double_click_on_the_name_of_a_frame_asks_for_a_field_over_it_and_selects_the_frame() {
+    let mut rig = Rig::new();
+    let frame = frame_at_100(&mut rig, Some("Login"));
+    rig.double_click(108.0, 90.0);
+    assert_eq!(
+        rig.last.ui_request,
+        Some(UiRequest::OpenFrameNameEditor {
+            frame: frame.clone(),
+            name: "Login".to_owned(),
+            at: Point::new(100.0, 100.0),
+            width: 300.0,
+        })
+    );
+    assert_eq!(rig.s.selection().iter().collect::<Vec<_>>(), vec![&frame], "the frame is selected");
+    assert!(rig.s.text_edit.is_none(), "no text is started over the label");
+}
+
+#[test]
+fn a_frame_without_a_name_offers_the_label_it_shows() {
+    let mut rig = Rig::new();
+    frame_at_100(&mut rig, None);
+    rig.double_click(108.0, 90.0);
+    let Some(UiRequest::OpenFrameNameEditor { name, .. }) = rig.last.ui_request.clone() else {
+        panic!("no field was asked for: {:?}", rig.last.ui_request);
+    };
+    assert_eq!(name, "Frame");
+}
+
+#[test]
+fn double_click_off_the_label_keeps_its_old_meaning() {
+    let mut rig = Rig::new();
+    let frame = frame_at_100(&mut rig, Some("Login"));
+    // Inside the body of the frame: a text starts there, as on any empty canvas.
+    rig.double_click(250.0, 200.0);
+    let edit = rig.s.text_edit.as_ref().expect("a text edit");
+    assert!(edit.draft, "the body of a frame starts a new text");
+    assert_eq!(
+        rig.last.ui_request,
+        Some(UiRequest::OpenTextEditor { element: None, at: Point::new(250.0, 200.0), width: None })
+    );
+    rig.key(Key::Escape);
+
+    // The strip above the frame, past the end of the name: not the label.
+    rig.pick(&[]);
+    rig.double_click(380.0, 90.0);
+    assert!(
+        matches!(rig.last.ui_request, Some(UiRequest::OpenTextEditor { element: None, .. })),
+        "{:?}",
+        rig.last.ui_request
+    );
+    rig.key(Key::Escape);
+
+    // The outline of the frame does nothing, as before.
+    rig.pick(&[]);
+    rig.double_click(250.0, 100.0);
+    assert!(!matches!(rig.last.ui_request, Some(UiRequest::OpenFrameNameEditor { .. })));
+    let _ = frame;
+}
+
+#[test]
+fn an_element_over_the_label_keeps_the_double_click() {
+    let mut rig = Rig::new();
+    frame_at_100(&mut rig, Some("Login"));
+    let shape = rig.rect(104.0, 70.0, 60.0, 40.0);
+    rig.double_click(130.0, 90.0);
+    assert_eq!(text_edit_target(&rig), Some(shape), "the shape over the label is edited, not the frame's name");
+    assert!(!matches!(rig.last.ui_request, Some(UiRequest::OpenFrameNameEditor { .. })));
+}
+
 #[test]
 fn double_click_on_a_stroke_does_nothing() {
     let mut rig = Rig::new();

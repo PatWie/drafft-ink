@@ -78,7 +78,7 @@ fn every_key_default_passes_its_own_check_and_the_table_matches_the_catalog() {
     sorted.sort_unstable();
     sorted.dedup();
     assert_eq!(sorted.len(), names.len(), "a key is listed twice");
-    // The keys of docs/commands.md §5, plus `theme` and `ui.font`.
+    // The keys of docs/commands.md §5, plus `theme`, `ui.font` and `ui.color_picker`.
     for k in [
         "view.grid_style", "view.minimap", "snap.grid", "snap.smart_guides", "snap.angle", "snap.angle_step", "export.scale",
         "export.padding", "export.background", "export.dark", "export.embed_scene", "doc.default_background",
@@ -86,11 +86,11 @@ fn every_key_default_passes_its_own_check_and_the_table_matches_the_catalog() {
         "arrow.type", "arrow.start_head", "arrow.end_head",
         "frame.clip", "frame.show_names", "frame.outline", "history.depth", "autosave.enabled",
         "autosave.interval_s", "clipboard.excalidraw_compat", "collab.server_url", "collab.user_name",
-        "collab.user_color", "doc.recent", "theme", "agent.mcp_http", "ui.font",
+        "collab.user_color", "doc.recent", "theme", "agent.mcp_http", "ui.font", "ui.color_picker",
     ] {
         assert!(names.contains(&k), "`{k}` is missing from the table");
     }
-    assert_eq!(names.len(), 34);
+    assert_eq!(names.len(), 35);
 }
 
 #[test]
@@ -201,6 +201,22 @@ fn set_refuses_a_value_of_the_wrong_type_or_range_with_the_exact_text() {
         assert_eq!(r.message, text, "{key}");
         assert_eq!(s.fingerprint(), before, "a refusal changes nothing ({key})");
     }
+}
+
+#[test]
+fn the_colour_picker_is_swatches_until_the_person_chooses_the_custom_one_and_the_choice_is_kept() {
+    let (mut s, f) = testing::session();
+    assert_eq!(value(&s, "ui.color_picker"), json!("swatches"));
+    run(&mut s, "settings.set", json!({"key": "ui.color_picker", "value": "custom"}));
+    assert_eq!(stored(&f).unwrap()["values"]["ui.color_picker"], json!("custom"), "stored at once");
+    let mut again = Session::new(f.ports());
+    again.load_settings().unwrap();
+    assert_eq!(value(&again, "ui.color_picker"), json!("custom"), "the choice survives a restart");
+    let r = refuse(&mut again, "settings.set", json!({"key": "ui.color_picker", "value": "wheel"}));
+    assert_eq!(r.code, "bad_args");
+    assert!(r.message.contains("`swatches` or `custom`"), "{}", r.message);
+    run(&mut again, "settings.reset", json!({"key": "ui.color_picker"}));
+    assert_eq!(value(&again, "ui.color_picker"), json!("swatches"));
 }
 
 #[test]

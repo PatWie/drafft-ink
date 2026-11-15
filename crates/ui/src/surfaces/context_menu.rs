@@ -398,7 +398,7 @@ fn draw(menu: &mut Menu<'_, '_, '_>, entries: Vec<Entry>, st: &mut UiState) {
             Act::RenameFrame(frame) => {
                 let label = entry.label.unwrap_or("Rename frame");
                 if menu.local(label, row).clicked() {
-                    st.open_rename(RenameTarget::Frame(frame), "");
+                    st.open_rename(RenameTarget::Frame(frame));
                 }
             }
             Act::Submenu { label, entries } => {

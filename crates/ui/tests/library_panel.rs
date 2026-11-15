@@ -207,7 +207,7 @@ fn rename_opens_the_dialog_and_runs_library_rename() {
     show_tile_buttons(&mut h);
     h.get_by_label("Rename Box").click();
     h.run();
-    assert_eq!(h.state().state.rename.as_ref().map(|r| r.text.as_str()), Some("Box"));
+    assert_eq!(h.state().state.rename.as_ref().and_then(|r| r.text.as_deref()), Some("Box"));
     dialog::field(&h, "Name").focus();
     h.run();
     h.key_press_modifiers(Modifiers::COMMAND, egui::Key::A);
@@ -295,7 +295,7 @@ fn the_tile_menu_renames_through_the_dialog_and_a_click_elsewhere_closes_it() {
     menu_row(&h, "Rename…").click();
     h.run();
     assert!(h.state().calls().is_empty(), "the dialog makes the call, not the row");
-    assert_eq!(h.state().state.rename.as_ref().map(|r| r.text.as_str()), Some("Box"));
+    assert_eq!(h.state().state.rename.as_ref().and_then(|r| r.text.as_deref()), Some("Box"));
     assert!(h.state().state.library_menu.is_none());
 
     let mut h = dialog::harness(with_item());
@@ -1226,7 +1226,7 @@ fn the_rename_button_of_a_section_renames_it_with_library_rename_section() {
     h.run();
     button(&h, "Rename section shapes").click();
     h.run();
-    assert_eq!(h.state().state.rename.as_ref().map(|r| r.text.as_str()), Some("shapes"));
+    assert_eq!(h.state().state.rename.as_ref().and_then(|r| r.text.as_deref()), Some("shapes"));
     dialog::field(&h, "Name").focus();
     h.run();
     h.key_press_modifiers(Modifiers::COMMAND, egui::Key::A);

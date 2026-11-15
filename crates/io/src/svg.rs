@@ -43,8 +43,8 @@ use std::sync::Arc;
 use base64::Engine as _;
 use base64::engine::general_purpose::STANDARD;
 use drafftink_scene::{
-    Color, Document, Element, ElementId, ElementKind, FillPattern, FontFamily, FontWeight, Head, ImageData, InlineMath,
-    PressureMode, StrokeStyle, Style, TextAlign, TextData,
+    Color, Document, Element, ElementId, ElementKind, FillPattern, FontFamily, FontWeight, FrameData, Head, ImageData,
+    InlineMath, PressureMode, StrokeStyle, Style, TextAlign, TextData,
 };
 use drafftink_sketch::{
     Arrowhead, Curve, FillKind, FillStyle, LineDash, PressureProfile, Roundness, SketchInput, SketchParams,
@@ -772,7 +772,7 @@ impl Ctx<'_> {
         put!(
             self.out,
             "<text y=\"-6\" font-size=\"14\" font-family=\"sans-serif\" fill=\"#6b7280\">{}</text>",
-            esc(name.unwrap_or("Frame"))
+            esc(name.unwrap_or(FrameData::DEFAULT_NAME))
         );
     }
 }

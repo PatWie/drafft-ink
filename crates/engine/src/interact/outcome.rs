@@ -58,6 +58,20 @@ pub enum UiRequest {
         /// The math element.
         element: ElementId,
     },
+    /// An inline field over the name label of a frame, which a double-click on the label asked for. The frame is
+    /// selected already. The field starts from `name` and is placed at the frame's top-left corner, at the size of the
+    /// label (`FrameData::LABEL_SIZE`); it ends in `frame.rename`.
+    OpenFrameNameEditor {
+        /// The frame.
+        frame: ElementId,
+        /// The label as the canvas shows it: the name, or the default label of a frame without one.
+        name: String,
+        /// The frame's top-left corner, in world units.
+        at: Point,
+        /// The frame's width, in world units (the label is cut at it on screen, and is never narrower than
+        /// `FrameData::LABEL_MIN_WIDTH`).
+        width: f64,
+    },
     /// A web address to open in the browser, because a link icon was clicked (`element.open_link` answered
     /// `kind: url`). The shell opens it; the engine never does. A click on the icon of an element link has
     /// already moved the view, and sends no request.
