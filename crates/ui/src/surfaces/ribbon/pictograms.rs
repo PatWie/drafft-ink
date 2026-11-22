@@ -254,3 +254,35 @@ pub(super) fn brush_prop(p: &Painter, rect: Rect, prop: BrushProp, ink: Color32)
         }
     }
 }
+
+/// The marker in the highlight button: a pen slanted to the right with a chisel tip at the bottom left.
+pub(super) fn marker_pen(p: &Painter, rect: Rect, ink: Color32) {
+    let at = |x: f32, y: f32| pos2(rect.left() + rect.width() * x, rect.top() + rect.height() * y);
+    // The body and the cap, as one slanted bar; the tip is the short chisel at the lower end.
+    let body = vec![at(0.42, 0.62), at(0.74, 0.12), at(0.94, 0.26), at(0.62, 0.76)];
+    p.add(Shape::convex_polygon(body, Color32::TRANSPARENT, Stroke::new(1.5, ink)));
+    let tip = vec![at(0.42, 0.62), at(0.62, 0.76), at(0.30, 0.90), at(0.20, 0.80)];
+    p.add(Shape::convex_polygon(tip, ink, Stroke::NONE));
+}
+
+/// One choice of the marker menu: a band of the marker's colour as the strip would show it, or a crossed band for
+/// "none". `dark` picks the value the marker has on the dark canvas.
+pub(super) fn marker_swatch(
+    p: &Painter,
+    rect: Rect,
+    color: Option<drafftink_scene::MarkerColor>,
+    dark: bool,
+    ink: Color32,
+) {
+    match color {
+        Some(m) => {
+            let tone = if dark { drafftink_scene::Tone::Dark } else { drafftink_scene::Tone::Light };
+            let c = m.rgb(tone);
+            p.rect_filled(rect, 3.0, Color32::from_rgb(c.r, c.g, c.b));
+        }
+        None => {
+            p.rect_stroke(rect, 3.0, Stroke::new(1.5, ink), egui::StrokeKind::Inside);
+            p.line_segment([rect.right_top(), rect.left_bottom()], Stroke::new(1.5, ink));
+        }
+    }
+}

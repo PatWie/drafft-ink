@@ -11,12 +11,23 @@
 //! | freehand | polyline through the points | inside only for a closed stroke with a visible fill |
 //! | text, math | the rotated box | always the whole box |
 //! | frame | the rotated box | border only, never the inside |
+//!
+//! # Highlight
+//!
+//! The marker band of an element (`style.highlight`) is part of what is hit and what is selected. A band follows the
+//! outline, `drafftink_scene::band_width` wide, so [`hit_reach_width`] replaces the stroke width as the reach of
+//! shapes, lines, arrows, freehand strokes and images, and an arrow's heads are hit within their band
+//! ([`head_band_hit`]). The band of a text or a formula reaches a little past its box at the ends of its lines
+//! ([`box_overhang`]). [`selection_box`] is the dashed outline of a selected element with the band inside it.
 
 use drafftink_geom::kurbo::Rect;
+use drafftink_geom::kurbo::{Line, ParamCurveNearest, Point};
 use drafftink_geom::spline::catmull_rom_path;
 use drafftink_geom::transform::ElementFrame;
 use drafftink_geom::{DiamondShape, EllipseShape, OrientedBox, Outline, PathShape, Polyline, Primitive, RectShape};
-use drafftink_scene::{Element, ElementKind, PathType};
+use drafftink_scene::{
+    Element, ElementKind, Head, LinearData, PathType, band_width, has_highlight, text_band_overhang,
+};
 
 /// The rotated box of an element (position, size, angle).
 pub fn element_box(e: &Element) -> OrientedBox {
@@ -105,13 +116,93 @@ pub fn outline_bounds(e: &Element) -> Option<Rect> {
 pub fn index_bounds(e: &Element) -> Option<Rect> {
     let shape = shape_of(e)?;
     let w = if e.style.stroke_width.is_finite() { e.style.stroke_width.max(0.0) } else { 0.0 };
-    let r = shape.bounds().inflate(w * 0.5 + paint_margin(e), w * 0.5 + paint_margin(e));
+    // The band is hit around the outline like a wide stroke, and the head of an arrow has one too.
+    let w = w.max(hit_reach_width(e));
+    let reach = w * 0.5 + paint_margin(e) + box_overhang(e);
+    let r = shape.bounds().inflate(reach, reach);
     drafftink_geom::aabb::is_finite(&r).then_some(r)
 }
 
 /// The stroke width used as reach when hit testing: the element's, clamped to something finite.
 pub fn stroke_reach_width(e: &Element) -> f64 {
     if e.style.stroke_width.is_finite() { e.style.stroke_width.clamp(0.0, 1e6) } else { 0.0 }
+}
+
+/// Whether the highlight band of `e` follows its outline (shapes, lines, arrows, freehand strokes, pictures), as
+/// opposed to lying behind lines of text or a formula, or not existing (frames).
+fn has_outline_band(e: &Element) -> bool {
+    e.style.highlight.is_some()
+        && !matches!(e.kind, ElementKind::Text(_) | ElementKind::Math(_) | ElementKind::Frame(_))
+}
+
+/// The width a pointer hits around the outline: the stroke's, or the band's when the element has a band and the band
+/// is wider.
+pub fn hit_reach_width(e: &Element) -> f64 {
+    let stroke = stroke_reach_width(e);
+    if has_outline_band(e) { stroke.max(band_width(stroke)) } else { stroke }
+}
+
+/// How far the band of a text or formula reaches past its box at the ends of its lines, in world units; 0 for other
+/// kinds and for text without a highlight.
+pub fn box_overhang(e: &Element) -> f64 {
+    match &e.kind {
+        ElementKind::Text(t) if has_highlight(e) => text_band_overhang(t.font.size * t.font.line_height),
+        ElementKind::Math(_) if has_highlight(e) => text_band_overhang(e.transform.h),
+        _ => 0.0,
+    }
+}
+
+/// True when `world` is on the band of one of the heads of an arrow. The heads are drawn outside the points of the
+/// line, so the band of the line (reach [`hit_reach_width`] around the outline) does not cover them. The test is a
+/// capsule around the head's axis, as long as the head, as wide as the head and its band: it takes the full size
+/// of the head, which is the most it is drawn (`drafftink_sketch::fit_head_size`).
+pub fn head_band_hit(e: &Element, world: Point, tol: f64) -> bool {
+    let (ElementKind::Arrow(d), Some(_)) = (&e.kind, e.style.highlight) else { return false };
+    let size = head_extent(e, d);
+    let reach = size * 0.5 + band_width(stroke_reach_width(e)) * 0.5 + tol.max(0.0);
+    let to_world = |p: Point| e.transform.local_to_world(p);
+    let ends = [
+        (d.end_head, d.points.last(), d.points.iter().rev().nth(1)),
+        (d.start_head, d.points.first(), d.points.get(1)),
+    ];
+    ends.into_iter().filter(|(head, ..)| *head != Head::None).any(|(_, tip, toward)| {
+        let (Some(tip), Some(toward)) = (tip, toward) else { return false };
+        let (tip, toward) = (to_world(*tip), to_world(*toward));
+        let away = tip - toward;
+        let len = away.hypot();
+        if !len.is_finite() || len <= 1e-9 {
+            return false;
+        }
+        let back = tip - away / len * size;
+        Line::new(tip, back).nearest(world, 1e-6).distance_sq.sqrt() <= reach
+    })
+}
+
+fn head_extent(e: &Element, d: &LinearData) -> f64 {
+    d.head_size
+        .filter(|s| s.is_finite() && *s > 0.0)
+        .unwrap_or_else(|| drafftink_scene::default_head_size(stroke_reach_width(e)))
+}
+
+/// The dashed outline of a selected element: its box, grown by the highlight band where the element has one, so the
+/// outline holds everything that is drawn and hit. The handles stay on the element's own box (`element_box`), because
+/// resizing moves that box.
+pub fn selection_box(e: &Element) -> OrientedBox {
+    let b = element_box(e);
+    let (dx, dy) = if has_outline_band(e) {
+        let half = band_width(stroke_reach_width(e)) / 2.0;
+        (half, half)
+    } else {
+        (box_overhang(e), 0.0)
+    };
+    if dx <= 0.0 && dy <= 0.0 {
+        return b;
+    }
+    OrientedBox::new(
+        b.center,
+        drafftink_geom::kurbo::Size::new(b.size.width + 2.0 * dx, b.size.height + 2.0 * dy),
+        b.angle,
+    )
 }
 
 #[cfg(test)]

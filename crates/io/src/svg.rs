@@ -49,11 +49,11 @@ use base64::Engine as _;
 use base64::engine::general_purpose::STANDARD;
 use drafftink_scene::{
     Color, Document, Element, ElementId, ElementKind, FillPattern, FontFamily, FontWeight, FrameData, Head, ImageData,
-    InlineMath, LabelCut, PressureMode, StrokeStyle, Style, TextAlign, TextData, label,
+    InlineMath, LabelCut, MARKER_ALPHA, PressureMode, StrokeStyle, Style, TextAlign, TextData, Tone, label,
 };
 use drafftink_sketch::{
-    Arrowhead, Curve, FillKind, FillStyle, LineDash, PressureProfile, Roundness, SketchInput, SketchParams,
-    SketchShape, sketch,
+    Arrowhead, Curve, FillKind, FillStyle, LineDash, PressureProfile, Roundness, SketchGeometry, SketchInput,
+    SketchParams, SketchShape, sketch,
 };
 use kurbo::Rect;
 
@@ -519,6 +519,7 @@ impl Ctx<'_> {
             ..SketchParams::default()
         };
         let geometry = sketch(&SketchInput::new(shape, params));
+        self.highlight_band(e, &geometry);
         let stroke = paint(s.stroke_color);
         let stroke_op = alpha(s.stroke_color);
         let fill = s.fill_color.unwrap_or(s.stroke_color);
@@ -568,6 +569,29 @@ impl Ctx<'_> {
                 stroke_op.as_ref().map(|a| format!(" stroke-opacity=\"{a}\"")).unwrap_or_default()
             );
         }
+    }
+
+    /// The highlight band under a shape, line or arrow: its strokes again, `band_width` wide with flat ends, in one
+    /// group that carries the marker's opacity, so overlaps do not darken. Texts, formulas and pictures do not get
+    /// their band here (the canvas and the PNG export draw it; `docs/formats.md`).
+    fn highlight_band(&mut self, e: &Element, geometry: &SketchGeometry) {
+        let Some(marker) = e.style.highlight else { return };
+        if geometry.strokes.is_empty() {
+            return;
+        }
+        let tone = if self.opts.dark { Tone::Dark } else { Tone::Light };
+        let width = drafftink_scene::band_width(e.style.stroke_width);
+        put!(self.out, "<g opacity=\"{}\">", num(MARKER_ALPHA));
+        for (path, _) in &geometry.strokes {
+            put!(
+                self.out,
+                "<path d=\"{}\" fill=\"none\" stroke=\"{}\" stroke-width=\"{}\" stroke-linecap=\"butt\" stroke-linejoin=\"miter\" stroke-miterlimit=\"1.5\"/>",
+                esc(&path.to_svg()),
+                paint(marker.rgb(tone)),
+                num(width)
+            );
+        }
+        self.out.push_str("</g>");
     }
 
     fn text(&mut self, e: &Element, d: &TextData) {

@@ -66,6 +66,10 @@ swatches are shown the other way round (stored colour in, display out). Alpha is
 palette colour the swatch equals the colour the painter encodes for what the pick stores, in both themes) and the
 browser spec `pixels.spec.ts` (dark theme, the stored pick of White draws a white line).
 
+### The highlight band (`marker.rs`)
+
+`Style::highlight` is drawn first, so under the element's fill and stroke (an arrow does it inside its label cut). Each marker colour is one layer: opaque inside, faded as a whole by `MARKER_ALPHA` times the element's opacity, so overlaps do not darken. The ink of a marker comes from `Theme::marker`, which has a value per theme and does not go through the dark filter. Outlines (rectangle, diamond, ellipse, line, arrow with its heads and ER markers, picture, freehand) are the strokes the sketch generator made, stroked `band_width` wide with butt caps and a mitre limit of 1.5, plus a slanted cut at the open ends of lines, arrows and freehand strokes that have no head. A text gets one quadrilateral per laid-out line and per run of equal highlight (`selection_rects` of the byte range), over the lower 85% of the line box; its ends lean by amounts drawn from `style.seed` (splitmix), so a band is the same on every peer. `highlighted_ranges` is the rule of which characters (`SpanHighlight::resolve`). `paint_margin` includes the reach of the band, `paint_hash` includes the highlight of the element and of every run, and a run that only highlights is not a typeset span (the layout cache is not asked again for it).
+
 ### One text path for measuring and drawing
 
 `text_spec(&TextData, stroke, box_width)` and `math_spec(&MathData)` convert an element into the layout input.
@@ -269,6 +273,7 @@ sketch and typeset enforce their own limits. `hostile_views_and_elements_never_p
 |---|---|
 | `tests/compose.rs` | culling against brute force, z order, both collection strategies, warm pan encodes nothing, move/rotate reuse, resize/recolour/opacity, cache bound and LRU, themes, level of detail, frames and their labels (constant size at every zoom and pixel ratio, rename reuses the fragment, the label just outside the view), hidden, hostile views, index follows commits |
 | `tests/bounds.rs` | property tests: nothing paints outside `paint_margin` |
+| `tests/highlight.rs` | the highlight band: layers, order under fill and stroke, per theme, heads, text per line and per run, determinism, cache key, paint bounds |
 | `tests/painter.rs` | draw order, colours, tint, opacity, dark mapping, heads, highlighter, text runs, math, frames, dashes |
 | `tests/grid.rs` | the grid is bounded for any view |
 | `tests/images.rs` | decode limits, inline and deferred policies, late blobs, broken pictures, byte bound, crop, rounded corners (clip, outline, rotation, mirror) |

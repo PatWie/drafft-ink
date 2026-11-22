@@ -36,6 +36,10 @@ pub(crate) const DIVIDER_WIDTH: f32 = 2.0 * space::MD + 1.0;
 /// Whether a property is relevant to the tool being drawn with (used only when nothing is selected). This is
 /// presentation: the engine skips and reports the properties that do not apply.
 fn tool_shows(tool: Tool, prop: &str) -> bool {
+    // New elements are never highlighted (the defaults carry no highlight): the button needs a selection.
+    if prop == "highlight" {
+        return false;
+    }
     const TEXT: [&str; 4] = ["font_family", "font_weight", "font_size", "text_align"];
     const FREEHAND: [&str; 2] = ["freehand_style", "pressure_mode"];
     match tool {

@@ -6,7 +6,7 @@
 //! binding highlights) plus the parts that the canvas library has no field for (preview element, faded
 //! elements, badges, laser trail, angle rays, snap point, eraser ring).
 
-use drafftink_canvas::shape::{element_box, shape_of};
+use drafftink_canvas::shape::{selection_box, shape_of};
 use drafftink_canvas::{
     BindCandidate, Handle, HoverOutline, LassoOverlay, MarqueeOverlay, Overlay, PointerKind, SelectionBox,
     SelectionFrame, TransformerOverlay,
@@ -213,7 +213,7 @@ pub(super) fn build(
             .iter()
             .filter_map(|id| store.get(id))
             .filter(|e| !e.deleted)
-            .map(|e| SelectionBox { id: e.id.clone(), obox: element_box(e) })
+            .map(|e| SelectionBox { id: e.id.clone(), obox: selection_box(e) })
             .collect();
     }
     if !frame.is_none() {

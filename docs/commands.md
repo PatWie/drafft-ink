@@ -606,6 +606,7 @@ The props (each applies only to the kinds listed; others are skipped and reporte
 | `stroke_color` | `Color` (`transparent` is "no stroke") | all. For an image the stroke is its optional outline, and "no stroke" is allowed because a picture shows without one | U:1043, A:2606 |
 | `fill_color` | `Color \| null` (null is no fill; the old colour grid returned transparent instead of None, FIX) | rectangle, diamond, ellipse, frame, closed line, freehand | U:1097-1182, A:2659 |
 | `fill_pattern` | `solid \| hachure \| zigzag \| cross_hatch \| dots \| dashed \| zigzag_line` (all seven; the old UI showed four) | the kinds that can have a fill (as `fill_color`), whether or not a fill colour is set yet | U:1572, A:3025 |
+| `highlight` | `yellow \| green \| pink \| blue \| orange \| null` (null is none). A marker band behind the element, under its fill and stroke, in a colour that has a value of its own per theme. Not a stroke and not a fill. For a text it is the highlight of the whole text; a part of a text is highlighted with `highlight.apply` (or in the text editor) and a run can switch it off. The defaults for new elements carry none, so `scope` never writes it to them. | all except frames (see §2.7a) | NEW |
 | `stroke_width` | number above 0, at most 1000 (presets 1, 2, 4, 8) | all except text, math. Choosing a width (or a dash) for an image that has no outline outlines it, in the default stroke colour | U:1156, A:2679 |
 | `stroke_style` | `solid \| dashed \| dotted` | every shape: rectangle, diamond, ellipse, frame, image (its outline), line, arrow, freehand (the old app only had it on line and arrow) | U:1631, A:3097 |
 | `sloppiness` | `architect \| artist \| cartoonist \| drunk` | all except text, math, image, freehand | U:1542, A:2996 |
@@ -637,6 +638,20 @@ Arrow props (type, arrowheads) are in the `arrow` family. Background colour is `
 | `style.list_themes` | none | Always available. | `{changed: false, themes: [{name, props, background?}]}`, in the order default, monochrome, pastel, blueprint, high_contrast. `props` holds only the props the theme sets. |
 
 Initial style defaults (the old `UiState::default`, kept): stroke `indigo-500` (`#6366f1`), no fill, pattern solid, width 2, stroke style solid, sloppiness artist, corner radius 0, opacity 1, font gelpen, weight regular, size 20, align left.
+
+### 2.7a `highlight`: marker bands
+
+A highlight is a wide, see-through band behind an element, like a text marker. It is a style property of its own (`style.set` with `props.highlight`, see §2.7), and `highlight.apply` is the command that takes it to many elements and to ranges of characters in one step.
+
+What the band covers: the outline of a rectangle, diamond or ellipse (not the inside: a filled shape covers the inner half itself); the whole path of a line, an arrow and a pencil stroke, an arrow's heads and entity-relationship markers included; the outline of an image; each line of a text (the lower 85% of the line box, with ends that lean a little differently on each side, from the element's seed), and a formula as one such band. A frame has none (it is a container). The width is `max(3 x stroke width, 10)` world units, the ends are flat and slightly slanted, and the whole band has one opacity, so overlaps do not darken. Hit testing, the spatial index and the selection outline include the band.
+
+| id | title | undo | keys | source |
+|---|---|---|---|---|
+| `highlight.apply` | Highlight | Undoable | none | NEW |
+
+| id | args | availability and refusals | effect |
+|---|---|---|---|
+| `highlight.apply` | `color?: "yellow" \| "green" \| "pink" \| "blue" \| "orange" \| null` (null or absent takes it off), `ids?: Refs` (default: the selection when `ranges` is empty), `ranges?: {id: Ref, start: int, end: int}[]` | Always available (not in view-only mode). Execute: `bad_args` when neither `ids` nor `ranges` is given and nothing is selected; `not_applicable` when the targets are only frames; `bad_range`: as in `text.style_range`, for a range that is empty or past the end of its text; `wrong_kind` for a range of something that is not a text; `locked`, `not_found`. All of it is checked before anything is written. | Sets, or takes off, the highlight of the elements as a whole (a text named in `ids` is highlighted all over, and the highlights its runs had of their own go) and of the character ranges (`start..end` counts Unicode characters from 0, `end` exclusive, as `text.style_range`). One call is one transaction: one undo step and one sync change however many targets it names. A character shows the highlight of its run when the run has one (a colour, or `none`), and the text's own otherwise; the runs record only what differs from the text's own. During a text edit the editor takes the choice (`text_editing` otherwise) and applies it to its selection. Output `{changed, highlighted: [id], unchanged: [id], skipped: [id]}`. |
 
 ### 2.8 `text`: text, labels and math
 
@@ -1708,6 +1723,7 @@ Legend:
 | `style.set` | D,T,S | soft | - | ok | no | no | no | scene | always | n | y |
 | `style.get` | - | soft | - | ok | ok | ok | ok | - | always | n | y |
 | `style.apply_theme` | D,T,S | soft | - | ok | no | no | no | scene | always | y | y |
+| `highlight.apply` | D | soft | - | ok | no | no | no | scene | always | n | y |
 | `style.list_themes` | - | - | - | ok | ok | ok | ok | - | always | n | y |
 | `text.set` | D | - | - | ok | no | no | no | scene | always | n | y |
 | `text.set_latex` | D | - | - | ok | no | no | no | scene | always | n | y |
@@ -1867,6 +1883,7 @@ Four more facts of a registration, kept apart from the table above because most 
 | `library.rename_section` | not_document | completes_rename | show | repeats | n | n |
 | `style.set` | edit | - | show | repeats | y | n |
 | `text.format` | edit | - | show | repeats | y | n |
+| `highlight.apply` | edit | - | show | repeats | y | n |
 | `tab.rename` | edit | completes_rename | show | repeats | n | n |
 | `text.edit_end` | edit | ends_equation_edit | show | repeats | n | n |
 | `tool.hold` | not_document | - | show | first_press_only | n | n |

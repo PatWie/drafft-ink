@@ -15,6 +15,7 @@ use serde::{Deserialize, Serialize};
 use smallvec::SmallVec;
 
 use crate::id::{ElementId, FileId, GroupId};
+use crate::marker::SpanHighlight;
 use crate::paint::Paint;
 use crate::points::{pt, pts};
 use crate::style::{Style, TextStyle};
@@ -370,16 +371,19 @@ pub struct CharStyle {
     pub bold: bool,
     /// Italic: the italic face, or a slanted regular one where the family has none.
     pub italic: bool,
+    /// The character's own highlight, which replaces the element's (see [`SpanHighlight`]).
+    pub highlight: SpanHighlight,
 }
 
 impl CharStyle {
-    /// Whether the character looks like the element says (no colour of its own, regular, upright).
+    /// Whether the character looks like the element says (no colour of its own, regular, upright, no highlight of
+    /// its own).
     pub fn is_plain(&self) -> bool {
         *self == Self::default()
     }
 }
 
-/// A style override for a range of characters: colour, bold and italic.
+/// A style override for a range of characters: colour, bold, italic and highlight.
 ///
 /// Ranges are in Unicode scalar values (`char`s), not bytes or UTF-16 units, exactly like the old `char_colors`.
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize, JsonSchema)]
@@ -398,17 +402,27 @@ pub struct TextRun {
     /// The range is italic.
     #[serde(default, skip_serializing_if = "is_false")]
     pub italic: bool,
+    /// Highlight of the range: a marker colour, `"none"` (no highlight even if the whole text has one), or absent
+    /// (the text's own `style.highlight`).
+    #[serde(default, skip_serializing_if = "SpanHighlight::is_inherit")]
+    pub highlight: SpanHighlight,
 }
 
 impl TextRun {
     /// A run over `start..end` with `style`.
     pub fn new(start: u32, end: u32, style: CharStyle) -> Self {
-        Self { start, end, color: style.color, bold: style.bold, italic: style.italic }
+        Self { start, end, color: style.color, bold: style.bold, italic: style.italic, highlight: style.highlight }
     }
 
     /// What the run gives its characters.
     pub fn style(&self) -> CharStyle {
-        CharStyle { color: self.color, bold: self.bold, italic: self.italic }
+        CharStyle { color: self.color, bold: self.bold, italic: self.italic, highlight: self.highlight }
+    }
+
+    /// Whether the run changes how glyphs are drawn or measured (colour, bold, italic). A run that only carries a
+    /// highlight does not: the layout ignores it.
+    pub fn styles_glyphs(&self) -> bool {
+        self.color.is_some() || self.bold || self.italic
     }
 }
 

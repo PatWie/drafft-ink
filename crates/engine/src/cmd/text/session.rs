@@ -10,7 +10,7 @@ use drafftink_edit::style::{StyleError, StyleProps};
 use drafftink_edit::text_bind::{self, MathMeasure, NewText, Relabeled, TextBindError, TextProps};
 use drafftink_geom::kurbo::Point;
 use drafftink_scene::{
-    Color, ElementId, ElementKind, InlineMath, Kind, SceneTx, TextRun,
+    Color, ElementId, ElementKind, InlineMath, Kind, SceneTx, SpanHighlight, TextRun,
 };
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -302,7 +302,7 @@ fn begin_existing(s: &mut Session, cmd: &str, id: Option<&Ref>, caret: Caret) ->
 // text.edit_end
 // ---------------------------------------------------------------------------------------------
 
-/// One style range chosen in the editor: a colour, bold, italic.
+/// One style range chosen in the editor: a colour, bold, italic, a highlight.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct RunArg {
@@ -319,11 +319,22 @@ pub struct RunArg {
     /// The range is italic.
     #[serde(default)]
     pub italic: bool,
+    /// The highlight of the range: a marker colour (`yellow`, `green`, `pink`, `blue`, `orange`), `none` for no
+    /// highlight even where the whole text has one, or absent for the text's own.
+    #[serde(default, skip_serializing_if = "SpanHighlight::is_inherit")]
+    pub highlight: SpanHighlight,
 }
 
 impl RunArg {
     fn to_run(self) -> TextRun {
-        TextRun { start: self.start, end: self.end, color: self.color, bold: self.bold, italic: self.italic }
+        TextRun {
+            start: self.start,
+            end: self.end,
+            color: self.color,
+            bold: self.bold,
+            italic: self.italic,
+            highlight: self.highlight,
+        }
     }
 }
 
@@ -354,7 +365,7 @@ pub struct EndArgs {
     pub text: Option<String>,
     /// The final formula, when a math element is edited.
     pub latex: Option<String>,
-    /// Style ranges of the text (colour, bold, italic). Absent keeps the current ones.
+    /// Style ranges of the text (colour, bold, italic, highlight). Absent keeps the current ones.
     pub runs: Option<Vec<RunArg>>,
     /// Text properties chosen during the edit, applied in the same step: the colour, opacity and font
     /// properties of `style.set` (`stroke_color`, `opacity`, `font_family`, `font_weight`, `font_size`,

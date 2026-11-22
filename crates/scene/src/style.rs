@@ -4,6 +4,7 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 use crate::color::Color;
+use crate::marker::MarkerColor;
 
 /// Dash pattern of a stroke.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default, Serialize, Deserialize, JsonSchema)]
@@ -102,6 +103,11 @@ pub struct Style {
     pub fill_color: Option<Color>,
     /// Fill pattern. Ignored while there is no fill colour.
     pub fill_pattern: FillPattern,
+    /// The marker band behind the element, under its fill and stroke. `None` is no highlight. It is separate from
+    /// stroke and fill (`docs/model.md`, "Highlight"). For text it is the default of every character, and a run
+    /// can say otherwise ([`crate::SpanHighlight`]).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub highlight: Option<MarkerColor>,
     /// How hand-drawn the outline is.
     pub sloppiness: Sloppiness,
     /// Opacity of the whole element, 0 (invisible) to 1.
@@ -121,6 +127,7 @@ impl Default for Style {
             stroke_style: StrokeStyle::Solid,
             fill_color: None,
             fill_pattern: FillPattern::Solid,
+            highlight: None,
             sloppiness: Sloppiness::Artist,
             opacity: 1.0,
             corner_radius: 0.0,

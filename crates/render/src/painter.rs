@@ -10,8 +10,8 @@ use std::sync::Arc;
 
 use drafftink_profile::{Counter, count};
 use drafftink_scene::{
-    Color, Element, ElementKind, FileId, FillPattern, FreehandData, Head, ImageData as ImageElem, LabelCut, MathData,
-    TextData,
+    Color, Element, ElementKind, FileId, FillPattern, FreehandData, Head, ImageData as ImageElem, LabelCut,
+    MARKER_ALPHA, MarkerColor, MathData, TextData,
 };
 use drafftink_sketch::{FillKind, SketchCache, SketchGeometry, fit_head_size};
 use drafftink_typeset::{MathFontSlot, Typesetter};
@@ -34,7 +34,7 @@ pub type FileSource<'a> = &'a dyn Fn(&FileId) -> Option<Arc<[u8]>>;
 /// Encodes elements into fragments. Owns the sketch cache and the decoded-picture cache; borrows the typesetter
 /// (shared with the editor, so text is laid out once for measuring and drawing).
 pub struct ElementPainter {
-    sketch: SketchCache,
+    pub(crate) sketch: SketchCache,
     images: ImageCache,
     sketch_misses_seen: u64,
 }
@@ -90,12 +90,17 @@ impl ElementPainter {
         let _span = drafftink_profile::span("paint_element");
         let mut ink = Ink::new(options.theme, e.style.opacity);
         let mut awaiting = None;
+        // The highlight band lies under everything the element draws (an arrow does it inside its label cut).
+        if !matches!(e.kind, ElementKind::Arrow(_)) {
+            self.paint_highlight(&mut ink, e, typesetter);
+        }
         match &e.kind {
             ElementKind::Rectangle | ElementKind::Diamond | ElementKind::Ellipse | ElementKind::Line(_) => {
                 self.paint_sketch(&mut ink, e);
             }
             ElementKind::Arrow(d) => {
                 let clipped = cut.map(|c| begin_cut(&mut ink, e, c)).is_some();
+                self.paint_highlight(&mut ink, e, typesetter);
                 self.paint_sketch(&mut ink, e);
                 paint_cardinality(&mut ink, e, d);
                 if clipped {
@@ -126,6 +131,7 @@ impl ElementPainter {
     ) -> Fragment {
         let mut ink = Ink::new(options.theme, e.style.opacity);
         if let ElementKind::Text(t) = &e.kind {
+            crate::marker::paint_text_highlight(&mut ink, e, t, typesetter);
             paint_text(&mut ink, e, t, typesetter, reveal);
         }
         Fragment::new(ink.scene, ink.bounds, None)
@@ -188,6 +194,13 @@ impl Ink {
     pub fn color(&self, c: Color) -> peniko::Color {
         let m = self.theme.map(c);
         peniko::Color::from_rgba8(m.r, m.g, m.b, scale_alpha(m.a, self.opacity))
+    }
+
+    /// The ink of a marker band on this theme, opaque, and the opacity the band layer is drawn with: the marker's own
+    /// (`MARKER_ALPHA`) times the element's.
+    pub fn marker(&self, color: MarkerColor) -> (peniko::Color, f32) {
+        let c = self.theme.marker(color);
+        (peniko::Color::from_rgba8(c.r, c.g, c.b, 255), (MARKER_ALPHA * self.opacity) as f32)
     }
 
     pub fn grow(&mut self, r: Rect) {

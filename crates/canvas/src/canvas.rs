@@ -57,7 +57,7 @@ use crate::overlay::{
     remote_parts,
 };
 use crate::recognizer::{Picker, Recognizer};
-use crate::shape::{element_box, shape_of};
+use crate::shape::{selection_box, shape_of};
 use crate::transformer::SelectionFrame;
 use crate::viewport::{Camera, Viewport};
 
@@ -709,7 +709,7 @@ impl<S: SceneStore> Canvas<S> {
                 .iter()
                 .filter_map(|id| self.store.get(id))
                 .filter(|e| !e.deleted)
-                .map(|e| SelectionBox { id: e.id.clone(), obox: element_box(e) })
+                .map(|e| SelectionBox { id: e.id.clone(), obox: selection_box(e) })
                 .collect();
         }
         if !self.frame.is_none() {

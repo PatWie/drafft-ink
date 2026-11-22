@@ -10,6 +10,7 @@ use std::collections::{BTreeMap, HashMap};
 use std::sync::OnceLock;
 
 use drafftink_scene::limits::{MAX_POINTS, MAX_TEXT_CHARS};
+use drafftink_scene::unknown::{self, UnknownFields};
 use drafftink_scene::{Element, ElementId, ElementKind, Fields, Style, TextStyle, validate_element};
 use loro::{Container, LoroMap, LoroValue, ValueOrContainer};
 use serde_json::{Map, Number, Value};
@@ -61,6 +62,17 @@ pub(crate) fn group_of(key: &str) -> Fields {
         k if k.starts_with("style.") => Fields::STYLE,
         _ => Fields::empty(),
     }
+}
+
+/// The stored key of a field path found by the lenient reader: the element's `transform` is stored as plain keys.
+fn stored_key(path: &str) -> String {
+    path.strip_prefix("transform.").unwrap_or(path).to_owned()
+}
+
+/// True when `key` is, or lies below, one of the `unknown` keys of the element: a field a newer build wrote. Such a
+/// key is not part of any group of the model, so a write of the group leaves it in place.
+pub(crate) fn is_kept(key: &str, unknown: &[String]) -> bool {
+    unknown.iter().any(|u| key == u || key.strip_prefix(u.as_str()).is_some_and(|rest| rest.starts_with('.')))
 }
 
 fn last_segment(key: &str) -> &str {
@@ -338,6 +350,9 @@ fn runs_json(runs: &[drafftink_scene::TextRun]) -> Result<Value, DocError> {
 
 /// An element read from Loro.
 pub(crate) struct Decoded {
+    /// Stored keys (`style.glow`, `kind.future`) that this build does not know, written by a newer one. The view
+    /// leaves them out; the store keeps them in Loro and never deletes them (see [`is_kept`]).
+    pub unknown: Vec<String>,
     /// The element as the view holds it.
     pub element: Element,
     /// True when the box was fitted to the points on the way in, so the element differs from what Loro holds. The
@@ -368,7 +383,8 @@ pub(crate) fn read_element(id: &ElementId, map: &LoroMap) -> Result<Decoded, Doc
     top.insert("transform".into(), Value::Object(transform));
     top.insert("kind".into(), Value::Object(kind));
     top.insert("style".into(), Value::Object(style));
-    let mut e: Element = serde_json::from_value(Value::Object(top)).map_err(|er| bad(er.to_string()))?;
+    let mut found = UnknownFields::new();
+    let mut e: Element = unknown::from_value(Value::Object(top), &mut found).map_err(|er| bad(er.to_string()))?;
     let mut refitted = false;
     if let Err(first) = validate_element(&e) {
         // A merge of two edits of a line (one changed the points, one the box) can leave the box and the points
@@ -379,7 +395,7 @@ pub(crate) fn read_element(id: &ElementId, map: &LoroMap) -> Result<Decoded, Doc
         }
         refitted = true;
     }
-    Ok(Decoded { element: e, refitted })
+    Ok(Decoded { element: e, refitted, unknown: found.paths().iter().map(|p| stored_key(p)).collect() })
 }
 
 fn absorb(

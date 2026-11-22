@@ -14,6 +14,7 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use crate::color::Color;
 use crate::element::{Element, ElementKind};
 use crate::id::FileId;
+use crate::unknown::{self, UnknownFields};
 use crate::validate::{Report, validate_document};
 use crate::version::NamedVersion;
 
@@ -184,6 +185,34 @@ impl Default for Document {
     }
 }
 
+/// A document read by [`Document::from_json_lenient`], and the fields of a newer version that were left out.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Loaded {
+    /// The document, without the unknown fields.
+    pub document: Document,
+    /// The unknown fields that were taken out. Empty for a file this build fully understands.
+    pub unknown: UnknownFields,
+}
+
+/// The checks that come before the parse: a newer version reports that, and the text must be an object.
+fn check_shape(text: &str) -> Result<(), DocumentError> {
+    // Check the version first so that a newer file reports that, not a parse error on a field we do not know.
+    #[derive(Deserialize)]
+    struct Probe {
+        version: Option<u32>,
+    }
+    if let Ok(p) = serde_json::from_str::<Probe>(text)
+        && let Some(found) = p.version.filter(|v| *v > SCHEMA_VERSION)
+    {
+        return Err(DocumentError::NewerVersion { found, max: SCHEMA_VERSION });
+    }
+    // serde accepts a bare array for a struct; a document is always an object.
+    if !text.trim_start().starts_with('{') {
+        return Err(DocumentError::NotAnObject);
+    }
+    Ok(())
+}
+
 /// Why a document could not be read or written.
 ///
 /// `PartialEq` compares the JSON errors by their message, because `serde_json::Error` has no equality.
@@ -269,31 +298,69 @@ impl Document {
         validate_document(self)
     }
 
-    /// Reads a document. Fails on malformed JSON, a newer schema version, or any rule violation of error severity.
-    /// Never panics, whatever the text.
+    /// Reads a document. Fails on malformed JSON, a newer schema version, any field this build does not know, or any
+    /// rule violation of error severity. Never panics, whatever the text. Files from the outside go through
+    /// [`Document::from_json_lenient`] instead.
     pub fn from_json(text: &str) -> Result<Document, DocumentError> {
-        // Check the version first so that a newer file reports that, not a parse error on a field we do not know.
-        #[derive(Deserialize)]
-        struct Probe {
-            version: Option<u32>,
+        check_shape(text)?;
+        let doc: Document = serde_json::from_str(text).map_err(|e| DocumentError::Parse(Arc::new(e)))?;
+        doc.checked()
+    }
+
+    /// Reads a document like [`Document::from_json`], except that fields this build does not know are taken out
+    /// and listed in [`Loaded::unknown`] instead of failing the read. A newer build of the app adds fields to the
+    /// format without raising the schema version (a style property, say); an older build shows what it understands.
+    /// What was taken out is gone from the document, so saving it loses those fields: the caller warns with
+    /// [`UnknownFields::WARNING`]. A file with no unknown field reads exactly as with `from_json`, in one pass.
+    pub fn from_json_lenient(text: &str) -> Result<Loaded, DocumentError> {
+        check_shape(text)?;
+        match serde_json::from_str::<Document>(text) {
+            Ok(doc) => Ok(Loaded { document: doc.checked()?, unknown: UnknownFields::new() }),
+            Err(e) if e.to_string().starts_with("unknown field") => {
+                let value: serde_json::Value =
+                    serde_json::from_str(text).map_err(|e| DocumentError::Parse(Arc::new(e)))?;
+                Self::from_value_lenient(value)
+            }
+            Err(e) => Err(DocumentError::Parse(Arc::new(e))),
         }
-        if let Ok(p) = serde_json::from_str::<Probe>(text)
-            && let Some(found) = p.version.filter(|v| *v > SCHEMA_VERSION)
-        {
-            return Err(DocumentError::NewerVersion { found, max: SCHEMA_VERSION });
+    }
+
+    /// Reads a document from a JSON value like [`Document::from_json_lenient`] (the version is not checked here; the
+    /// slow path of that function). The elements are read one by one, so the cost of a retry
+    /// is that of one element and not of the document.
+    pub fn from_value_lenient(mut value: serde_json::Value) -> Result<Loaded, DocumentError> {
+        let parse = |e| DocumentError::Parse(Arc::new(e));
+        let mut unknown = UnknownFields::new();
+        let items = match value.as_object_mut().and_then(|o| o.remove("elements")) {
+            Some(serde_json::Value::Array(items)) => items,
+            Some(other) => {
+                // Not a list: let the strict reader say what is wrong.
+                value.as_object_mut().map(|o| o.insert("elements".into(), other));
+                Vec::new()
+            }
+            None => Vec::new(),
+        };
+        let mut elements = Vec::with_capacity(items.len());
+        for (i, item) in items.into_iter().enumerate() {
+            let mut found = UnknownFields::new();
+            elements.push(unknown::from_value::<Element>(item, &mut found).map_err(parse)?);
+            unknown.absorb(found, &format!("elements[{i}]"));
         }
-        // serde accepts a bare array for a struct; a document is always an object.
-        if !text.trim_start().starts_with('{') {
-            return Err(DocumentError::NotAnObject);
+        let mut doc: Document = unknown::from_value(value, &mut unknown).map_err(parse)?;
+        if doc.elements.is_empty() {
+            doc.elements = elements;
         }
-        let mut doc: Document = serde_json::from_str(text).map_err(|e| DocumentError::Parse(Arc::new(e)))?;
-        let report = doc.validate();
+        Ok(Loaded { document: doc.checked()?, unknown })
+    }
+
+    fn checked(mut self) -> Result<Document, DocumentError> {
+        let report = self.validate();
         if report.has_errors() {
             return Err(DocumentError::Invalid(report));
         }
         // The content decides the version, so a document equals the same document built in memory.
-        let versions = std::mem::take(&mut doc.versions);
-        Ok(doc.with_versions(versions))
+        let versions = std::mem::take(&mut self.versions);
+        Ok(self.with_versions(versions))
     }
 
     /// Writes compact JSON. Refuses a document that breaks a rule, so that a file we write can always be read back

@@ -92,11 +92,28 @@ Export: Excalidraw has no inline math, so `text` and `originalText` are the sour
 | `sloppiness` | `architect artist cartoonist drunk` (roughness 0, 1, 2, 3.5) | artist |
 | `opacity` | 0..1 | 1 |
 | `corner_radius` | >= 0 world units | 0 |
+| `highlight` | `yellow green pink blue orange` or absent (= none) | absent |
 | `seed` | u32, makes the jitter reproducible | 0 (creators take it from `IdSource::seed`) |
 
 Colours are strings: `#rrggbb`, or `#rrggbbaa` when not opaque; `#rgb` and `transparent` are accepted on input. `Color` converts to and from `peniko::Color`. Text colour is `stroke_color`. A `stroke_color` of alpha 0 is **no stroke** (Excalidraw's `transparent`); the engine keeps every element visible, so only shapes with a fill, and images, can have it (`style.set`, "No stroke").
 
 **Images.** The stroke of an image is its optional outline, drawn on the edge of the box (width, dash and colour; nothing when the colour is clear). A new image gets `Style::for_image`: a clear stroke colour, width 2 and the other defaults, wherever it comes from (paste, drop, the picker, `image.insert`, the npm package; an Excalidraw picture whose file has no stroke colour; a migrated old-format picture, whose stored black stroke the old app never drew). A picture shows without a stroke, so "No stroke" is allowed for it. The corner radius (`style.corner_radius`, at most half the shorter side) rounds the box the picture is clipped to, after the crop and in the element's own frame, so rotation and mirroring turn the corners with it; the outline follows the rounded box, and a click on a cut-off corner misses. Choosing a stroke colour outlines it; choosing only a width or a dash for a picture with no outline outlines it in the default stroke colour. A document that already stores an outline on a picture (the indigo that the first builds gave every picture) keeps drawing it as stored. Nothing rewrites it. Font settings live in `TextData.font`, not in `Style`, so shapes carry no dead fields.
+
+**Highlight.** `style.highlight` is a named marker colour, a wide see-through band drawn behind the element, under its fill and stroke and above what lies below it. It is a style property of its own, separate from stroke and fill. It is a name and not a colour because it resolves per theme: every marker has a value for the light canvas and one for the dark canvas (`MarkerColor::rgb(Tone)`, the numbers and their contrast are in `crates/scene/tests/highlight.rs`), where the dark filter that maps stored colours would turn a pale yellow into olive. Every band has one opacity (`MARKER_ALPHA`, 50%, times the element's opacity) over all of it, so overlaps do not darken.
+
+| Kind | What the band covers |
+|---|---|
+| rectangle, diamond, ellipse | the outline only, `max(3 x stroke width, 10)` wide and centred on it; a filled shape covers the inner half itself |
+| line, arrow | the whole path; the heads and the entity-relationship markers of an arrow too, the band follows their outline |
+| freehand | the path of the points, under the stroke (decision: a marker under a pen stroke is a natural thing to do; a stroke of the highlighter tool is a band of its own and is not meant to have one) |
+| image | the outline of the picture, like a rectangle |
+| text | each laid-out line, over the lower 85% of the line box, with ends that lean a little differently on each side; the lean comes from `style.seed`, so every peer and every export draws the same |
+| math | one band behind the formula, drawn like a line of text (decision: a formula is typeset text) |
+| frame | none (decision: a frame is a container; it has a border and a name already) |
+
+The ends of a band are flat and slightly slanted, never round. Hit testing, the spatial index and the dashed outline of a selection include the band; the handles stay on the element's own box, because resizing moves that box.
+
+*Text, per character.* A run (`TextRun`) may carry its own `highlight`: a marker name, or `"none"`. The rule is one sentence: **the highlight of a character is its run's when the run has one (a colour, or none), and the element's `style.highlight` otherwise.** So `style.highlight` on a text is the highlight of every character that says nothing of its own; a run that says `none` takes it off for its characters; a run with a colour overrides the text's. `SpanHighlight` (`Inherit`, `Off`, `On(colour)`) is that value; `SpanHighlight::resolve` applies the rule and `SpanHighlight::for_result` gives the value that makes a character look as wanted, which is `Inherit` whenever the text already says it, so runs hold only what differs. Setting the highlight of a whole text (`style.set`, or `highlight.apply` with the text in `ids`) clears what its runs said of their own. A run that holds only a highlight changes no glyph and no box.
 
 ## 6. Z-order
 
@@ -110,13 +127,15 @@ Colours are strings: `#rrggbb`, or `#rrggbbaa` when not opaque; `#rgb` and `tran
   "files": { "<sha256 hex>": { "mime": "image/png", "bytes": "<base64>" } } }
 ```
 
-- `format` must be `"drafftink"`. `version` is the schema version: **1** for a document without named versions, **2** for one with (`versions`, below). A reader refuses a **newer** version with `NewerVersion` and the text "Update the app"; the same version is read strictly (unknown fields are errors, so typos are caught). A build from before named versions therefore refuses a file that has them with that clear message, and opens every file that has none. The version a document is written as follows from its content, and reading sets it from the content too (`Document::with_versions`).
+- `format` must be `"drafftink"`. `version` is the schema version: **1** for a document without named versions, **2** for one with (`versions`, below). A reader refuses a **newer** version with `NewerVersion` and the text "Update the app". The model structs deny unknown fields (so a typo in a hand-written file is an error, and the JSON Schema is exact), and `Document::from_json` is strict. A file that comes from outside goes through `Document::from_json_lenient`: a build that adds a field without a new schema version writes files that an older build still reads. See "Newer files" below. The version a document is written as follows from its content, and reading sets it from the content too (`Document::with_versions`).
 - `elements` are in z-order, tombstones included, keys strictly increasing.
 - Omitted fields take their defaults; defaults are not written. Numbers round-trip exactly (`float_roundtrip`).
 - `Document::from_json` validates and refuses any document with an error-level issue. `to_json` refuses an invalid document too, so a file we write can be read back (the old app wrote NaN as `null` and could not reload).
 - `scene::json_schema()` returns the JSON Schema (schemars) for agents and tools.
 - `versions` (optional, absent when there are none): the named versions, oldest first: `{id, name, created_ms, author?, elements, files?, state}`. `state` is base64 of the scene as one codec byte and zlib-deflated JSON (`NamedVersion`, `docs/design/versions.md` section 2). The images a version needs stay in `files`; `files` of the version only lists their ids. At most 500 versions, 2 MiB each, 32 MiB together; names are 1 to 100 characters. `validate_document` checks each version's metadata, duplicate ids and the limits, and warns when a version needs a blob the file does not hold. A scene embedded in a PNG or SVG, a clipboard and the export of a selection never carry versions.
 - Not in the file: selection, camera, tabs, undo history, derived indexes. Those belong to the session.
+
+**Newer files.** `Document::from_json_lenient` (used by `io::native::load_report`, so by opening a file, a dropped file, a PNG or SVG with a scene inside, and a pasted envelope) reads strictly first and, only when the complaint is an unknown field, reads again element by element taking those fields out (`scene::unknown`). They are listed in `Loaded::unknown`, and the import report carries one warning: "This drawing uses features from a newer version of Drafft.ink. They are hidden here and may be lost if you save." Every other error is still an error. In a shared document (`drafftink-doc`) the same holds for the keys a collaborator's newer build wrote under `style.` or `kind.`: the element is shown without them (it used to be hidden as invalid), the store never deletes them when this build edits the element's style, and the session tells the person once per document (`CollabNotice::Info`). The arguments of commands are not read this way: an unknown argument is still refused, because there it is a typo (`bad_args`). The collaboration wire messages (`drafftink-protocol`) never refused unknown fields.
 
 A golden file `crates/scene/tests/golden/native_v1.json` fixes the format; a change that alters it must bump the version or be a bug.
 

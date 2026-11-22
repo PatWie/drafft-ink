@@ -652,7 +652,7 @@ fn get_reports_values_applicability_and_kinds_for_one_element() {
     let said = refuse(&mut f.s, "style.set", json!({"props": {"font_size": 20}, "scope": "selection"}));
     assert_eq!(out["props"]["font_size"], json!({"applicable": false, "reason": said.message}));
     assert_eq!(out["props"]["sloppiness"]["value"], "artist");
-    assert_eq!(out["props"].as_object().unwrap().len(), 16);
+    assert_eq!(out["props"].as_object().unwrap().len(), 17);
 }
 
 #[test]

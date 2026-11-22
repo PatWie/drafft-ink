@@ -16,4 +16,4 @@ macro_rules! families {
 pub(crate) mod bytes;
 pub(crate) mod element_common;
 
-families! { arrange, arrow, clipboard, collab, diagram, doc, doc_read, element, element_convert, element_create, element_link, element_query, element_sticky, engine, frame, gesture, group, history, image, image_paint, layout, library, perf, selection, selection_lasso, settings, style, tab, text, tool, tool_arrow, version, view }
+families! { arrange, arrow, clipboard, collab, diagram, doc, doc_read, element, element_convert, element_create, element_link, element_query, element_sticky, engine, frame, gesture, group, highlight, history, image, image_paint, layout, library, perf, selection, selection_lasso, settings, style, tab, text, tool, tool_arrow, version, view }

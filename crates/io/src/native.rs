@@ -5,10 +5,11 @@
 //! them without trusting a file extension.
 
 use drafftink_scene::Document;
+use drafftink_scene::unknown::UnknownFields;
 use serde::Deserialize;
 use serde::de::IgnoredAny;
 
-use crate::error::IoError;
+use crate::error::{ImportReport, Imported, IoError};
 use crate::limits::MAX_INPUT_BYTES;
 
 /// A file format this crate reads.
@@ -108,12 +109,26 @@ fn sniff_json_array(t: &str) -> Format {
     if all { Format::LegacyClipboard } else { Format::Unknown }
 }
 
-/// Reads a native document.
+/// Reads a native document. Fields that a newer version of the format added are left out; use [`load_report`] to
+/// be told.
 pub fn load(text: &str) -> Result<Document, IoError> {
+    load_report(text).map(|imported| imported.document)
+}
+
+/// Reads a native document and says what it left out. A file written by a newer build can carry fields this build
+/// does not know (a style property, say). They are ignored, and the report has one warning, the sentence of
+/// [`UnknownFields::WARNING`], so the person knows that saving loses them. Everything else that is wrong with the
+/// file is an error, as for [`Document::from_json`].
+pub fn load_report(text: &str) -> Result<Imported, IoError> {
     if text.len() > MAX_INPUT_BYTES {
         return Err(IoError::Limit { what: "document", max: format!("{MAX_INPUT_BYTES} bytes") });
     }
-    Ok(Document::from_json(text.trim_start_matches('\u{feff}'))?)
+    let loaded = Document::from_json_lenient(text.trim_start_matches('\u{feff}'))?;
+    let mut report = ImportReport::default();
+    if !loaded.unknown.is_empty() {
+        report.warn(UnknownFields::WARNING);
+    }
+    Ok(Imported { document: loaded.document, report })
 }
 
 /// Writes a native document as compact JSON. Refuses a document that breaks a rule.

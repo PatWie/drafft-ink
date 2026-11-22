@@ -32,6 +32,7 @@ mod grid;
 mod hash;
 mod images;
 mod index;
+mod marker;
 mod options;
 mod overlay;
 mod overlay_marks;

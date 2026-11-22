@@ -2,17 +2,17 @@
 //! UI verb; the choices that only the UI knows (which menu is open) live in `UiState`.
 
 use drafftink_engine::state::Tool;
-use drafftink_scene::Head;
+use drafftink_scene::{Head, MarkerColor};
 use egui::{Color32, FontId, Painter, Rect, Response, Role, Sense, Stroke, Ui, WidgetInfo, pos2, vec2};
 use serde_json::{Value, json};
 
 use super::heads::{End, HeadChoice, head_sample};
 use super::paint;
 use super::pictograms::{self, Align, LineStyle, Pattern};
-use super::{Group, Row};
+use super::{Group, Row, shows};
 use crate::action::Verb;
 use crate::icons::{self, Icon};
-use crate::model::StyleProp;
+use crate::model::{MarkerState, StyleProp};
 use crate::scrub::{self, ScrubControl, SliderSpec};
 use crate::state::{OpenRibbonMenu, RibbonMenu, UiState};
 use crate::surfaces::color::{PopoverKey, remember_anchor_in};
@@ -84,7 +84,10 @@ impl Row {
     fn draw(self, ui: &mut Ui, cx: &mut Cx<'_>, st: &mut UiState) {
         match self {
             Row::Width => width(ui, cx),
-            Row::StrokeStyle => stroke_style(ui, cx),
+            Row::StrokeStyle => {
+                stroke_style(ui, cx);
+                highlight_in(Row::StrokeStyle, ui, cx, st);
+            }
             Row::FillPattern => fill_pattern(ui, cx),
             Row::Corners => corners(ui, cx, st),
             Row::ArrowPath => arrow_path(ui, cx),
@@ -93,10 +96,16 @@ impl Row {
             Row::FontFamily => font_family(ui, cx, st),
             Row::FontWeight => font_weight(ui, cx),
             Row::TextSize => text_size(ui, cx),
-            Row::Emphasis => emphasis(ui, cx),
+            Row::Emphasis => {
+                emphasis(ui, cx);
+                highlight_in(Row::Emphasis, ui, cx, st);
+            }
             Row::TextAlign => text_align(ui, cx),
             Row::VerticalAlign => vertical_align(ui, cx),
-            Row::Opacity => opacity(ui, cx),
+            Row::Opacity => {
+                opacity(ui, cx);
+                highlight_in(Row::Opacity, ui, cx, st);
+            }
             Row::Align => align(ui, cx),
             Row::Layer => layer(ui, cx),
             Row::Flip => flip(ui, cx),
@@ -573,6 +582,110 @@ fn opacity(ui: &mut Ui, cx: &mut Cx<'_>) {
         [PERCENT_WIDTH, cx.layout.toggle_height()],
         egui::Label::new(egui::RichText::new(text).size(TextSize::Caption.points()).color(cx.pal.muted)),
     );
+}
+
+// ---- highlight ----
+
+/// Width of the little arrow part of the highlight button.
+const MARKER_ARROW_WIDTH: f32 = 14.0;
+
+/// Whether the highlight button is on the strip now: something is selected that can be highlighted.
+fn has_highlight(cx: &Cx<'_>) -> bool {
+    cx.model.selection_count > 0 && !cx.model.paint_editing && cx.model.marker().is_some()
+}
+
+/// The row that holds the highlight button. It makes no row of its own: it goes at the end of the first of these
+/// that the strip shows now. The stroke style row has room (three buttons) for everything with an outline; a text
+/// has no outline, so the bold and italic row (also two buttons) is its place; a formula has neither, and the opacity
+/// row is.
+fn highlight_home(cx: &Cx<'_>) -> Option<Row> {
+    if !has_highlight(cx) {
+        None
+    } else if shows(cx, "stroke_style") {
+        Some(Row::StrokeStyle)
+    } else if cx.model.faces().is_some() {
+        Some(Row::Emphasis)
+    } else {
+        Some(Row::Opacity)
+    }
+}
+
+/// Draws the highlight button when `row` is its home.
+fn highlight_in(row: Row, ui: &mut Ui, cx: &mut Cx<'_>, st: &mut UiState) {
+    if highlight_home(cx) == Some(row) {
+        ui.add_space(space::XS);
+        highlight(ui, cx, st);
+    }
+}
+
+/// The highlight button: a marker with a bar of the current colour under it, and a small arrow that opens the five
+/// colours and "none". Clicking the marker puts the last colour on the selection, or takes the highlight off when it
+/// has one. It is `style.set` with `highlight`, so it works for the characters selected in a text edit too.
+fn highlight(ui: &mut Ui, cx: &mut Cx<'_>, st: &mut UiState) {
+    let Some(state) = cx.model.marker().filter(|_| has_highlight(cx)) else { return };
+    if let MarkerState::On(shown) = state {
+        st.last_marker = Some(shown);
+    }
+    let colour = st.last_marker.unwrap_or(MarkerColor::Yellow);
+    let (value, tip) = match state {
+        MarkerState::On(_) => (Value::Null, "Take the highlight off".to_owned()),
+        MarkerState::Off | MarkerState::Mixed => (json!(colour.name()), format!("Highlight ({})", colour.name())),
+    };
+    let ctl = Ctl::new("style.set")
+        .args(json!({ "props": { "highlight": value } }))
+        .label(tip)
+        .selected(matches!(state, MarkerState::On(_)));
+    let (pal, side) = (cx.pal, cx.layout.small_side());
+    cx.command_widget(ui, &ctl, vec2(side, side), move |p, rect, look| {
+        paint_button_bg(p, rect, look, &pal, true);
+        let ink = icon_color(look, &pal);
+        pictograms::marker_pen(p, rect.shrink2(vec2(side * 0.2, side * 0.12)), ink);
+        // The bar under the pen: the marker colour, or the outline of an empty one.
+        let bar = Rect::from_min_max(
+            pos2(rect.left() + side * 0.2, rect.bottom() - side * 0.2),
+            pos2(rect.right() - side * 0.2, rect.bottom() - side * 0.08),
+        );
+        match state {
+            MarkerState::On(m) => pictograms::marker_swatch(p, bar, Some(m), pal.dark, ink),
+            MarkerState::Mixed => {
+                p.rect_stroke(bar, 2.0, Stroke::new(1.0, pal.muted), egui::StrokeKind::Inside);
+            }
+            MarkerState::Off => pictograms::marker_swatch(p, bar, Some(colour), pal.dark, ink),
+        }
+    });
+    marker_arrow(ui, cx, st);
+}
+
+/// The small arrow beside the highlight button; it opens the colours.
+fn marker_arrow(ui: &mut Ui, cx: &Cx<'_>, st: &mut UiState) {
+    let open = st.ribbon_menu.is_some_and(|m| m.kind == RibbonMenu::Highlight);
+    let (pal, height) = (cx.pal, cx.layout.small_side());
+    let (rect, resp) = ui.allocate_exact_size(vec2(MARKER_ARROW_WIDTH, height), Sense::click());
+    let look = Look {
+        hovered: resp.hovered() || resp.has_focus(),
+        pressed: resp.is_pointer_button_down_on(),
+        enabled: true,
+        selected: open,
+    };
+    if ui.is_rect_visible(rect) {
+        paint_button_bg(ui.painter(), rect, look, &pal, true);
+        let chevron = Rect::from_center_size(rect.center(), vec2(10.0, 10.0));
+        icons::paint(ui.painter(), chevron, Icon::ChevronDown, icon_color(look, &pal));
+    }
+    resp.widget_info(|| {
+        let mut info = WidgetInfo::labeled(Role::Button, true, "Highlight colours");
+        info.selected = Some(open);
+        info
+    });
+    let resp = resp.on_hover_text("Highlight colours");
+    if !ui.is_sizing_pass() {
+        if resp.clicked() {
+            st.close_overlays();
+            st.ribbon_menu = Some(OpenRibbonMenu { kind: RibbonMenu::Highlight, anchor: resp.rect });
+        } else if open {
+            st.ribbon_menu = Some(OpenRibbonMenu { kind: RibbonMenu::Highlight, anchor: resp.rect });
+        }
+    }
 }
 
 // ---- arrange ----
