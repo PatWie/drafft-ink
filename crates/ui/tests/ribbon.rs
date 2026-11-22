@@ -1264,29 +1264,63 @@ fn click_and_apply(h: &mut H, label: &str) -> Vec<drafftink_ui::Call> {
     calls
 }
 
+/// The cells of the quick column of the highlight popover: none, yellow (the default marker) and the families of the
+/// stroke and fill swatches, at the standard shade.
+const QUICK_MARKERS: [&str; 7] =
+    ["yellow-400", "blue-400", "red-400", "emerald-400", "amber-400", "purple-400", "slate-400"];
+
 #[test]
-fn the_marker_toggles_the_highlight_with_the_last_colour_and_the_menu_picks_one() {
+fn the_marker_toggles_the_highlight_with_the_last_colour_and_the_popover_picks_one() {
     let mut h = desk(one_rect());
     // Off: a click puts the default (yellow) on.
-    let calls = click_and_apply(&mut h, "Highlight (yellow)");
+    let calls = click_and_apply(&mut h, "Highlight (yellow-400)");
     assert_eq!(
         calls.last().map(|c| (c.id.as_str(), c.args.clone())),
-        Some(("style.set", json!({ "props": { "highlight": "yellow" } })))
+        Some(("style.set", json!({ "props": { "highlight": "yellow-400" } })))
     );
     // On: the button now takes it off.
     let calls = click_and_apply(&mut h, "Take the highlight off");
     assert_eq!(calls.last().map(|c| c.args.clone()), Some(json!({ "props": { "highlight": null } })));
-    // The menu lists the five markers and none, and a pick is `style.set` too.
+    // The popover starts with the quick column and "none", like the stroke popover, and a pick is `style.set` too.
     open(&mut h, "Highlight colours");
-    for name in ["yellow", "green", "pink", "blue", "orange", "none"] {
+    for name in QUICK_MARKERS.into_iter().chain(["none"]) {
         assert!(has(&h, &format!("Highlight: {name}")), "{name}");
     }
-    let calls = click_and_apply(&mut h, "Highlight: pink");
-    assert_eq!(calls.last().map(|c| c.args.clone()), Some(json!({ "props": { "highlight": "pink" } })));
+    assert!(!has(&h, "Highlight: pink-400"), "the grid waits for \"More colours\"");
+    let calls = click_and_apply(&mut h, "Highlight: blue-400");
+    assert_eq!(calls.last().map(|c| c.args.clone()), Some(json!({ "props": { "highlight": "blue-400" } })));
+    // Any family is in the expanded grid, in the three marker shades only.
+    h.get_by_label("Take the highlight off");
+    open(&mut h, "Highlight colours");
+    open(&mut h, "More colours");
+    for family in drafftink_scene::palette::family_names() {
+        for shade in [300, 400, 500] {
+            // The quick column repeats some of them, as the stroke popover's does.
+            let cells = h.query_all_by_label(&format!("Highlight: {family}-{shade}")).count();
+            assert!(cells >= 1, "{family}-{shade}");
+        }
+        assert!(!has(&h, &format!("Highlight: {family}-200")), "{family}-200 is not a marker shade");
+    }
+    let calls = click_and_apply(&mut h, "Highlight: pink-300");
+    assert_eq!(calls.last().map(|c| c.args.clone()), Some(json!({ "props": { "highlight": "pink-300" } })));
     // The colour picked is the one the button puts on the next time.
     assert!(has(&h, "Take the highlight off"));
     click_and_apply(&mut h, "Take the highlight off");
-    assert!(has(&h, "Highlight (pink)"), "the last colour is remembered");
+    assert!(has(&h, "Highlight (pink-300)"), "the last colour is remembered");
+}
+
+#[test]
+fn the_popover_marks_the_current_colour_and_none() {
+    let mut h = desk(one_rect());
+    click_and_apply(&mut h, "Highlight (yellow-400)");
+    open(&mut h, "Highlight colours");
+    let selected =
+        |h: &H, label: &str| h.get_by_label(label).accesskit_node().toggled() == Some(egui::accesskit::Toggled::True);
+    assert!(selected(&h, "Highlight: yellow-400"));
+    assert!(!selected(&h, "Highlight: blue-400") && !selected(&h, "Highlight: none"));
+    click_and_apply(&mut h, "Highlight: none");
+    open(&mut h, "Highlight colours");
+    assert!(selected(&h, "Highlight: none"));
 }
 
 #[test]
@@ -1295,12 +1329,14 @@ fn during_a_text_edit_the_highlight_goes_to_the_editor() {
     f.model.text_editing = true;
     let mut h = desk(f);
     h.state_mut().clear();
-    h.get_by_label("Highlight (yellow)").click();
+    h.get_by_label("Highlight (yellow-400)").click();
     h.run();
     assert!(h.state().calls().is_empty(), "`style.set` would refuse while a text is edited");
     assert_eq!(
         h.state().actions,
-        vec![drafftink_ui::UiAction::Host(drafftink_ui::HostRequest::TextEditStyle(json!({ "highlight": "yellow" })))]
+        vec![drafftink_ui::UiAction::Host(drafftink_ui::HostRequest::TextEditStyle(
+            json!({ "highlight": "yellow-400" })
+        ))]
     );
 }
 
@@ -1309,13 +1345,13 @@ fn the_editor_selection_decides_what_the_button_shows_while_a_text_is_edited() {
     use drafftink_ui::MarkerState;
     let mut f = free_text();
     f.model.text_editing = true;
-    f.model.editor_highlight = Some(MarkerState::On(drafftink_scene::MarkerColor::Green));
+    f.model.editor_highlight = Some(MarkerState::On(drafftink_scene::MarkerColor::from_name("green-400").unwrap()));
     let h = desk(f);
     assert!(has(&h, "Take the highlight off"));
     let mut f = free_text();
     f.model.text_editing = true;
     f.model.editor_highlight = Some(MarkerState::Mixed);
-    assert!(has(&desk(f), "Highlight (yellow)"), "a mixed selection puts the marker on");
+    assert!(has(&desk(f), "Highlight (yellow-400)"), "a mixed selection puts the marker on");
 }
 
 #[test]
@@ -1328,13 +1364,14 @@ fn the_highlighter_tool_has_the_same_colours_as_the_highlight_control_and_none_r
         Some(("tool.set_marker", json!({ "color": null })))
     );
     open(&mut h, "Highlight colours");
-    for name in ["yellow", "green", "pink", "blue", "orange", "none"] {
+    for name in QUICK_MARKERS.into_iter().chain(["none"]) {
         assert!(has(&h, &format!("Highlight: {name}")), "{name}");
     }
-    let calls = click_and_apply(&mut h, "Highlight: pink");
+    open(&mut h, "More colours");
+    let calls = click_and_apply(&mut h, "Highlight: pink-400");
     assert_eq!(
         calls.last().map(|c| (c.id.as_str(), c.args.clone())),
-        Some(("tool.set_marker", json!({ "color": "pink" })))
+        Some(("tool.set_marker", json!({ "color": "pink-400" })))
     );
     let calls = click_and_apply(&mut h, "Highlighter: none");
     assert_eq!(calls.last().map(|c| c.args.clone()), Some(json!({ "color": null })));

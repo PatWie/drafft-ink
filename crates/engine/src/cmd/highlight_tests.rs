@@ -68,9 +68,9 @@ fn style_set_carries_the_highlight_and_null_removes_it() {
     let out = run(&mut f.s, "style.set", json!({"props": {"highlight": "green"}}));
     assert_eq!(out["changed"], true);
     assert_eq!(out["applied"][f.rect.as_str()], json!(["highlight"]));
-    assert_eq!(highlight(&f.s, &f.rect), Some(MarkerColor::Green));
+    assert_eq!(highlight(&f.s, &f.rect), Some(MarkerColor::from_name("green-400").unwrap()));
     let got = run(&mut f.s, "style.get", json!({"props": ["highlight"]}));
-    assert_eq!(got["props"]["highlight"], json!({"applicable": true, "value": "green"}));
+    assert_eq!(got["props"]["highlight"], json!({"applicable": true, "value": "green-400"}));
     run(&mut f.s, "style.set", json!({"props": {"highlight": null}}));
     assert_eq!(highlight(&f.s, &f.rect), None);
     // Two plain `style.set` calls in a row are one undo step (they coalesce), so one undo takes back both.
@@ -108,11 +108,11 @@ fn apply_marks_elements_and_character_ranges_in_one_undo_step() {
     assert_eq!(out["changed"], true);
     assert_eq!(out["highlighted"], json!([f.rect.as_str(), f.arrow.as_str(), f.text.as_str()]));
     assert_eq!(out["skipped"], json!([f.frame.as_str()]));
-    assert_eq!(highlight(&f.s, &f.arrow), Some(MarkerColor::Yellow));
+    assert_eq!(highlight(&f.s, &f.arrow), Some(MarkerColor::YELLOW));
     assert_eq!(highlight(&f.s, &f.frame), None);
     assert_eq!(
         runs(&f.s, &f.text),
-        [TextRun::new(6, 11, CharStyle { highlight: SpanHighlight::On(MarkerColor::Yellow), ..Default::default() })],
+        [TextRun::new(6, 11, CharStyle { highlight: SpanHighlight::On(MarkerColor::YELLOW), ..Default::default() })],
         "characters, not bytes: the ö is one character"
     );
     assert_eq!(f.s.tab().doc.undo_depth(), before + 1, "one undo step");
@@ -127,7 +127,7 @@ fn apply_marks_elements_and_character_ranges_in_one_undo_step() {
 fn apply_defaults_to_the_selection_and_clears_with_a_missing_colour() {
     let mut f = fixture();
     run(&mut f.s, "highlight.apply", json!({"color": "blue"}));
-    assert_eq!(highlight(&f.s, &f.rect), Some(MarkerColor::Blue));
+    assert_eq!(highlight(&f.s, &f.rect), Some(MarkerColor::from_name("blue-400").unwrap()));
     let again = run(&mut f.s, "highlight.apply", json!({"color": "blue"}));
     assert_eq!((again["changed"].clone(), again["unchanged"].clone()), (json!(false), json!([f.rect.as_str()])));
     run(&mut f.s, "highlight.apply", json!({}));
@@ -212,7 +212,7 @@ fn the_highlight_arrives_in_a_second_replica() {
     );
     let mut peer = LoroStore::new();
     peer.apply_remote(&f.s.tab().doc.replicated().export_snapshot().unwrap()).unwrap();
-    assert_eq!(peer.get(&f.rect).unwrap().style.highlight, Some(MarkerColor::Green));
+    assert_eq!(peer.get(&f.rect).unwrap().style.highlight, Some(MarkerColor::from_name("green-400").unwrap()));
     let got = peer.get(&f.text).and_then(|e| e.text_data().map(|t| t.runs.clone())).unwrap();
     assert_eq!(got, runs(&f.s, &f.text));
 }
@@ -223,4 +223,54 @@ fn the_catalog_says_what_the_command_is() {
     let spec = s.spec("highlight.apply").unwrap();
     assert!(spec.host.text_editor_takes_style);
     assert_eq!(spec.family, "highlight");
+}
+
+#[test]
+fn the_old_names_work_in_every_command_that_takes_a_marker_and_come_back_as_the_new_ones() {
+    for (old, new) in [
+        ("yellow", "yellow-400"),
+        ("green", "green-400"),
+        ("pink", "pink-400"),
+        ("blue", "blue-400"),
+        ("orange", "orange-400"),
+    ] {
+        let mut f = fixture();
+        run(&mut f.s, "style.set", json!({"props": {"highlight": old}, "scope": "selection"}));
+        let got = run(&mut f.s, "style.get", json!({"props": ["highlight"]}));
+        assert_eq!(got["props"]["highlight"]["value"], new, "style.set {old}");
+        run(&mut f.s, "highlight.apply", json!({"color": null}));
+        run(&mut f.s, "highlight.apply", json!({"color": old, "ranges": [{"id": f.text.as_str(), "start": 0, "end": 2}]}));
+        assert_eq!(
+            runs(&f.s, &f.text)[0].highlight,
+            SpanHighlight::On(MarkerColor::from_name(new).unwrap()),
+            "highlight.apply {old}"
+        );
+        let out = run(&mut f.s, "tool.set_marker", json!({"color": old}));
+        assert_eq!(out["color"], new, "tool.set_marker {old}");
+        assert_eq!(f.s.tool.marker, MarkerColor::from_name(new), "{old}");
+    }
+}
+
+#[test]
+fn a_palette_marker_is_a_family_and_a_marker_shade_and_other_shades_are_refused_with_the_choices() {
+    let mut f = fixture();
+    for name in ["slate-300", "emerald-400", "rose-500", "Amber-400"] {
+        run(&mut f.s, "highlight.apply", json!({"color": name}));
+        let got = run(&mut f.s, "style.get", json!({"props": ["highlight"]}));
+        assert_eq!(got["props"]["highlight"]["value"], name.to_lowercase(), "{name}");
+    }
+    for bad in ["blue-100", "blue-600", "#facc15", "mauve-400", "blue"] {
+        let before = f.s.fingerprint();
+        let r = match f.s.execute_from(Origin::Test, "highlight.apply", json!({"color": bad})) {
+            Ok(v) if bad == "blue" => {
+                assert_eq!(v["changed"], true, "`blue` is the old name of blue-400");
+                continue;
+            }
+            Ok(v) => panic!("{bad} should be refused, got {v}"),
+            Err(r) => r,
+        };
+        assert_eq!(r.code, "bad_args", "{bad}");
+        assert!(r.message.contains("shade 300, 400 or 500"), "{}", r.message);
+        assert_eq!(f.s.fingerprint(), before, "{bad}");
+    }
 }

@@ -701,8 +701,8 @@ export namespace ClipboardCopyStyle {
   type O_FontWeight = "light" | "regular" | "heavy";
   /** The kind tag without data. */
   type O_Kind = "rectangle" | "diamond" | "ellipse" | "line" | "arrow" | "freehand" | "text" | "math" | "image" | "frame";
-  /** A named marker colour. */
-  type O_MarkerColor = "yellow" | "green" | "pink" | "blue" | "orange";
+  /** A highlight colour: `<family>-<shade>`, a palette family and shade 300, 400 or 500 (`yellow-400`). The old names yellow, green, pink, blue and orange mean the 400 shade. */
+  type O_MarkerColor = string;
   /** How pen pressure shapes a freehand stroke. */
   type O_PressureMode = "uniform" | "simulated" | "device";
   /** How hand-drawn the outline looks. The names are the old app's; `roughness` gives the numeric value. */
@@ -726,7 +726,8 @@ export namespace ClipboardCopyStyle {
     /** Freehand brush: normal or calligraphy. */
     freehand_style?: O_Brush | null;
     /**
-     * The marker band behind the element: yellow, green, pink, blue or orange. `null` removes it. For text this
+     * The marker band behind the element: a palette family in shade 300, 400 or 500 (`yellow-400`; the old names
+     * `yellow`, `green`, `pink`, `blue` and `orange` mean the 400 shade). `null` removes it. For text this
      * is the whole text; a part of a text is highlighted with `text.format`.
      */
     highlight?: O_MarkerColor | null;
@@ -2409,8 +2410,8 @@ export namespace ElementConnect {
   type A_FontWeight = "light" | "regular" | "heavy";
   /** What is drawn at an end of a line or arrow. */
   type A_Head = "none" | "arrow" | "bar" | "circle" | "circle_outline" | "triangle" | "triangle_outline" | "diamond" | "diamond_outline" | "cardinality_one" | "cardinality_many" | "cardinality_one_or_many" | "cardinality_exactly_one" | "cardinality_zero_or_one" | "cardinality_zero_or_many";
-  /** A named marker colour. */
-  type A_MarkerColor = "yellow" | "green" | "pink" | "blue" | "orange";
+  /** A highlight colour: `<family>-<shade>`, a palette family and shade 300, 400 or 500 (`yellow-400`). The old names yellow, green, pink, blue and orange mean the 400 shade. */
+  type A_MarkerColor = string;
   /** How the points of a line or arrow are joined. */
   type A_PathType = "sharp" | "round" | "elbow" | "auto_route";
   /** How pen pressure shapes a freehand stroke. */
@@ -2438,7 +2439,8 @@ export namespace ElementConnect {
     /** Freehand brush: normal or calligraphy. */
     freehand_style?: A_Brush | null;
     /**
-     * The marker band behind the element: yellow, green, pink, blue or orange. `null` removes it. For text this
+     * The marker band behind the element: a palette family in shade 300, 400 or 500 (`yellow-400`; the old names
+     * `yellow`, `green`, `pink`, `blue` and `orange` mean the 400 shade). `null` removes it. For text this
      * is the whole text; a part of a text is highlighted with `text.format`.
      */
     highlight?: A_MarkerColor | null;
@@ -2598,8 +2600,8 @@ export namespace ElementCreate {
   type A_Head = "none" | "arrow" | "bar" | "circle" | "circle_outline" | "triangle" | "triangle_outline" | "diamond" | "diamond_outline" | "cardinality_one" | "cardinality_many" | "cardinality_one_or_many" | "cardinality_exactly_one" | "cardinality_zero_or_one" | "cardinality_zero_or_many";
   /** The kind tag without data. */
   type A_Kind = "rectangle" | "diamond" | "ellipse" | "line" | "arrow" | "freehand" | "text" | "math" | "image" | "frame";
-  /** A named marker colour. */
-  type A_MarkerColor = "yellow" | "green" | "pink" | "blue" | "orange";
+  /** A highlight colour: `<family>-<shade>`, a palette family and shade 300, 400 or 500 (`yellow-400`). The old names yellow, green, pink, blue and orange mean the 400 shade. */
+  type A_MarkerColor = string;
   /** How the points of a line or arrow are joined. */
   type A_PathType = "sharp" | "round" | "elbow" | "auto_route";
   /** How pen pressure shapes a freehand stroke. */
@@ -2638,7 +2640,8 @@ export namespace ElementCreate {
     /** Freehand brush: normal or calligraphy. */
     freehand_style?: A_Brush | null;
     /**
-     * The marker band behind the element: yellow, green, pink, blue or orange. `null` removes it. For text this
+     * The marker band behind the element: a palette family in shade 300, 400 or 500 (`yellow-400`; the old names
+     * `yellow`, `green`, `pink`, `blue` and `orange` mean the 400 shade). `null` removes it. For text this
      * is the whole text; a part of a text is highlighted with `text.format`.
      */
     highlight?: A_MarkerColor | null;
@@ -4334,8 +4337,8 @@ export namespace GroupUngroup {
 
 /** Puts a marker band behind elements, or behind ranges of characters of texts, or takes it off. Elements and ranges in one call are one undo step. */
 export namespace HighlightApply {
-  /** A named marker colour. */
-  type A_MarkerColor = "yellow" | "green" | "pink" | "blue" | "orange";
+  /** A highlight colour: `<family>-<shade>`, a palette family and shade 300, 400 or 500 (`yellow-400`). The old names yellow, green, pink, blue and orange mean the 400 shade. */
+  type A_MarkerColor = string;
   /** A range of characters of one text. */
   type A_RangeArg = {
     /** One past the last character. Above `start`, and at most the number of characters of the text. */
@@ -4349,7 +4352,11 @@ export namespace HighlightApply {
   type A_Ref = string;
   /** Arguments of `highlight.apply`. */
   export type Args = {
-    /** The marker colour: `yellow`, `green`, `pink`, `blue` or `orange`. `null` (or absent) takes the highlight off. */
+    /**
+     * The marker colour: `<family>-<shade>` with a palette family and shade 300, 400 or 500 (`yellow-400`); the old
+     * names `yellow`, `green`, `pink`, `blue` and `orange` mean the 400 shade. `null` (or absent) takes the highlight
+     * off.
+     */
     color?: A_MarkerColor | null;
     /**
      * Elements to highlight as a whole. A text named here is highlighted all over. Default: the selection when no
@@ -6417,8 +6424,8 @@ export namespace StyleListThemes {
   type O_FontFamily = "gelpen" | "noto_sans" | "gelpen_serif" | "vanilla_extract" | "plex_sans";
   /** Font weight. */
   type O_FontWeight = "light" | "regular" | "heavy";
-  /** A named marker colour. */
-  type O_MarkerColor = "yellow" | "green" | "pink" | "blue" | "orange";
+  /** A highlight colour: `<family>-<shade>`, a palette family and shade 300, 400 or 500 (`yellow-400`). The old names yellow, green, pink, blue and orange mean the 400 shade. */
+  type O_MarkerColor = string;
   /** How pen pressure shapes a freehand stroke. */
   type O_PressureMode = "uniform" | "simulated" | "device";
   /** How hand-drawn the outline looks. The names are the old app's; `roughness` gives the numeric value. */
@@ -6442,7 +6449,8 @@ export namespace StyleListThemes {
     /** Freehand brush: normal or calligraphy. */
     freehand_style?: O_Brush | null;
     /**
-     * The marker band behind the element: yellow, green, pink, blue or orange. `null` removes it. For text this
+     * The marker band behind the element: a palette family in shade 300, 400 or 500 (`yellow-400`; the old names
+     * `yellow`, `green`, `pink`, `blue` and `orange` mean the 400 shade). `null` removes it. For text this
      * is the whole text; a part of a text is highlighted with `text.format`.
      */
     highlight?: O_MarkerColor | null;
@@ -6516,8 +6524,8 @@ export namespace StyleSet {
   type A_FontFamily = "gelpen" | "noto_sans" | "gelpen_serif" | "vanilla_extract" | "plex_sans";
   /** Font weight. */
   type A_FontWeight = "light" | "regular" | "heavy";
-  /** A named marker colour. */
-  type A_MarkerColor = "yellow" | "green" | "pink" | "blue" | "orange";
+  /** A highlight colour: `<family>-<shade>`, a palette family and shade 300, 400 or 500 (`yellow-400`). The old names yellow, green, pink, blue and orange mean the 400 shade. */
+  type A_MarkerColor = string;
   /** How pen pressure shapes a freehand stroke. */
   type A_PressureMode = "uniform" | "simulated" | "device";
   /** An element reference in arguments: an id, or `"@name"` for the name set with `element.set_name`. */
@@ -6545,7 +6553,8 @@ export namespace StyleSet {
     /** Freehand brush: normal or calligraphy. */
     freehand_style?: A_Brush | null;
     /**
-     * The marker band behind the element: yellow, green, pink, blue or orange. `null` removes it. For text this
+     * The marker band behind the element: a palette family in shade 300, 400 or 500 (`yellow-400`; the old names
+     * `yellow`, `green`, `pink`, `blue` and `orange` mean the 400 shade). `null` removes it. For text this
      * is the whole text; a part of a text is highlighted with `text.format`.
      */
     highlight?: A_MarkerColor | null;
@@ -7000,8 +7009,8 @@ export namespace TextEditEnd {
    * the text is drawn and measured (`docs/model.md` section 4, "Inline math").
    */
   type A_InlineMath = "auto" | "off";
-  /** A named marker colour. */
-  type A_MarkerColor = "yellow" | "green" | "pink" | "blue" | "orange";
+  /** A highlight colour: `<family>-<shade>`, a palette family and shade 300, 400 or 500 (`yellow-400`). The old names yellow, green, pink, blue and orange mean the 400 shade. */
+  type A_MarkerColor = string;
   /** How pen pressure shapes a freehand stroke. */
   type A_PressureMode = "uniform" | "simulated" | "device";
   /** One style range chosen in the editor: a colour, bold, italic, a highlight. */
@@ -7024,7 +7033,7 @@ export namespace TextEditEnd {
   };
   /** How hand-drawn the outline looks. The names are the old app's; `roughness` gives the numeric value. */
   type A_Sloppiness = "architect" | "artist" | "cartoonist" | "drunk";
-  type A_SpanHighlight = "none" | "yellow" | "green" | "pink" | "blue" | "orange";
+  type A_SpanHighlight = string | "none";
   /** Dash pattern of a stroke. */
   type A_StrokeStyle = "solid" | "dashed" | "dotted";
   /** A set of style properties to change. Absent properties stay as they are. */
@@ -7044,7 +7053,8 @@ export namespace TextEditEnd {
     /** Freehand brush: normal or calligraphy. */
     freehand_style?: A_Brush | null;
     /**
-     * The marker band behind the element: yellow, green, pink, blue or orange. `null` removes it. For text this
+     * The marker band behind the element: a palette family in shade 300, 400 or 500 (`yellow-400`; the old names
+     * `yellow`, `green`, `pink`, `blue` and `orange` mean the 400 shade). `null` removes it. For text this
      * is the whole text; a part of a text is highlighted with `text.format`.
      */
     highlight?: A_MarkerColor | null;
@@ -7635,20 +7645,21 @@ export namespace ToolSetArrow {
   };
 }
 
-/** Sets the colour of the highlighter tool: yellow, green, pink, blue or orange. null is none: the tool then removes highlights. */
+/** Sets the colour of the highlighter tool: a palette family in shade 300, 400 or 500, such as yellow-400. null is none: the tool then removes highlights. */
 export namespace ToolSetMarker {
-  /** A named marker colour. */
-  type A_MarkerColor = "yellow" | "green" | "pink" | "blue" | "orange";
+  /** A highlight colour: `<family>-<shade>`, a palette family and shade 300, 400 or 500 (`yellow-400`). The old names yellow, green, pink, blue and orange mean the 400 shade. */
+  type A_MarkerColor = string;
   /** Arguments of `tool.set_marker`. */
   export type Args = {
     /**
-     * The marker colour: `yellow`, `green`, `pink`, `blue` or `orange`. `null` (or absent) is none: the
+     * The marker colour: `<family>-<shade>` with a palette family and shade 300, 400 or 500 (`yellow-400`); the
+     * old names `yellow`, `green`, `pink`, `blue` and `orange` mean the 400 shade. `null` (or absent) is none: the
      * highlighter then removes highlights.
      */
     color?: A_MarkerColor | null;
   };
-  /** A named marker colour. */
-  type O_MarkerColor = "yellow" | "green" | "pink" | "blue" | "orange";
+  /** A highlight colour: `<family>-<shade>`, a palette family and shade 300, 400 or 500 (`yellow-400`). The old names yellow, green, pink, blue and orange mean the 400 shade. */
+  type O_MarkerColor = string;
   /** Result of `tool.set_marker`. */
   export type Output = {
     /** False when the marker already had this colour. */

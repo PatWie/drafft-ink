@@ -515,12 +515,12 @@ fn a_highlight_chosen_while_editing_marks_the_selected_characters_and_commits_wi
     r.editor().model.select_chars(6..11);
     assert!(r.editor().add_style(&json!({ "highlight": "green" }), 1.0));
     assert!(!r.editor().add_style(&json!({ "highlight": "green" }), 2.0), "it is on already");
-    assert_eq!(r.editor().marker(), MarkerState::On(MarkerColor::Green));
+    assert_eq!(r.editor().marker(), MarkerState::On(MarkerColor::from_name("green-400").unwrap()));
     r.editor().model.select_chars(0..16);
     assert_eq!(r.editor().marker(), MarkerState::Mixed);
     // Only the characters carry it, and it goes with the text when the edit ends.
     let args = r.editor().finish_args();
-    assert_eq!(args["runs"], json!([{ "start": 6, "end": 11, "highlight": "green" }]));
+    assert_eq!(args["runs"], json!([{ "start": 6, "end": 11, "highlight": "green-400" }]));
     assert!(args.get("style").is_none(), "the element itself is not highlighted");
     r.commit();
     let stored = r.element(&id);
@@ -530,7 +530,7 @@ fn a_highlight_chosen_while_editing_marks_the_selected_characters_and_commits_wi
         vec![TextRun {
             start: 6,
             end: 11,
-            highlight: drafftink_scene::SpanHighlight::On(MarkerColor::Green),
+            highlight: drafftink_scene::SpanHighlight::On(MarkerColor::from_name("green-400").unwrap()),
             ..Default::default()
         }]
     );
@@ -547,7 +547,7 @@ fn taking_a_highlight_off_part_of_a_highlighted_text_while_editing_keeps_the_res
     assert!(r.editor().add_style(&json!({ "highlight": null }), 1.0));
     r.commit();
     let stored = r.element(&id);
-    assert_eq!(stored.style.highlight, Some(MarkerColor::Yellow));
+    assert_eq!(stored.style.highlight, Some(MarkerColor::YELLOW));
     assert_eq!(
         stored.text_data().expect("text").runs.iter().map(|t| (t.start, t.end, t.highlight)).collect::<Vec<_>>(),
         vec![(6, 11, SpanHighlight::Off)]

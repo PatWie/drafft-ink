@@ -335,10 +335,15 @@ pub(crate) fn paint_text_highlight(ink: &mut Ink, e: &Element, t: &TextData, ts:
 
 #[cfg(test)]
 mod tests {
-    use MarkerColor::{Green, Yellow};
     use drafftink_scene::{CharStyle, SpanHighlight, TextRun};
 
     use super::*;
+
+    const YELLOW: MarkerColor = MarkerColor::YELLOW;
+
+    fn green() -> MarkerColor {
+        MarkerColor::from_name("green-400").unwrap()
+    }
 
     #[test]
     fn the_width_is_three_strokes_with_a_floor_of_ten() {
@@ -355,12 +360,12 @@ mod tests {
         // The text is yellow; the run over "bc" says green, the run over "é" says none.
         t.runs = vec![
             TextRun::new(1, 2, CharStyle { highlight: SpanHighlight::Off, ..Default::default() }),
-            TextRun::new(3, 5, CharStyle { highlight: SpanHighlight::On(Green), ..Default::default() }),
+            TextRun::new(3, 5, CharStyle { highlight: SpanHighlight::On(green()), ..Default::default() }),
         ];
-        assert_eq!(highlighted_ranges(&t, Some(Yellow)), vec![(Yellow, 0..1), (Yellow, 3..4), (Green, 4..6)]);
-        assert_eq!(highlighted_ranges(&t, None), vec![(Green, 4..6)]);
+        assert_eq!(highlighted_ranges(&t, Some(YELLOW)), vec![(YELLOW, 0..1), (YELLOW, 3..4), (green(), 4..6)]);
+        assert_eq!(highlighted_ranges(&t, None), vec![(green(), 4..6)]);
         assert!(highlighted_ranges(&TextData::new("plain"), None).is_empty());
-        assert_eq!(highlighted_ranges(&TextData::new("ab"), Some(Yellow)), vec![(Yellow, 0..2)]);
+        assert_eq!(highlighted_ranges(&TextData::new("ab"), Some(YELLOW)), vec![(YELLOW, 0..2)]);
     }
 
     #[test]

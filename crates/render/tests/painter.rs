@@ -227,7 +227,7 @@ fn a_highlight_band_under_a_chisel_stroke_follows_its_points_and_holds_the_whole
         d.points = points.clone();
     }
     let plain = paint(&e);
-    e.style.highlight = Some(MarkerColor::Yellow);
+    e.style.highlight = Some(MarkerColor::YELLOW);
     let banded = paint(&e);
     let nib = Nib::new(width).expect("a nib");
     let sweep = nib.outline(&points).control_box();

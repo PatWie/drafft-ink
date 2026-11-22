@@ -4,7 +4,7 @@
 //! control, the highlighter tool and agents use it. A call is one transaction, so it is one undo step and one sync
 //! change however many elements and ranges it names. The rules are in `drafftink_edit::highlight`.
 //!
-//! The whole element is also a style property (`style.set` with `{"props": {"highlight": "yellow"}}`); that is the
+//! The whole element is also a style property (`style.set` with `{"props": {"highlight": "yellow-400"}}`); that is the
 //! way to set it together with other properties and for the defaults. `highlight.apply` is the way to take it
 //! to ranges of characters, and to many targets with their ranges at once.
 
@@ -38,7 +38,9 @@ pub struct RangeArg {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct ApplyArgs {
-    /// The marker colour: `yellow`, `green`, `pink`, `blue` or `orange`. `null` (or absent) takes the highlight off.
+    /// The marker colour: `<family>-<shade>` with a palette family and shade 300, 400 or 500 (`yellow-400`); the old
+    /// names `yellow`, `green`, `pink`, `blue` and `orange` mean the 400 shade. `null` (or absent) takes the highlight
+    /// off.
     #[serde(default)]
     pub color: Option<MarkerColor>,
     /// Elements to highlight as a whole. A text named here is highlighted all over. Default: the selection when no
@@ -128,7 +130,7 @@ pub const COMMANDS: &[CommandSpec] = &[CommandSpec::new(
 )
 .host(Host::text_editor_takes_style())
 .refusals(&["bad_range", "not_applicable"])
-.example(r#"{"color":"yellow","ids":["@box"],"ranges":[{"id":"@title","start":0,"end":5}]}"#)];
+.example(r#"{"color":"yellow-400","ids":["@box"],"ranges":[{"id":"@title","start":0,"end":5}]}"#)];
 
 #[cfg(test)]
 #[path = "highlight_tests.rs"]

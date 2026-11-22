@@ -56,8 +56,8 @@ pub use id::{
 };
 pub use label_cut::{LABEL_CUT_PADDING, LabelCut};
 pub use marker::{
-    MARKER_ALPHA, MarkerColor, SpanHighlight, TEXT_END_PAD, TEXT_END_WOBBLE, Tone, band_width, has_highlight,
-    text_band_overhang,
+    MARKER_ALPHA, MarkerColor, MarkerShade, SpanHighlight, TEXT_END_PAD, TEXT_END_WOBBLE, Tone, band_width,
+    has_highlight, text_band_overhang,
 };
 pub use memory::{MemoryStore, MemoryTx};
 pub use paint::{Paint, PaintMode, PaintStroke};

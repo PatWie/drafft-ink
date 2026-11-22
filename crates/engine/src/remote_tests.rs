@@ -203,7 +203,11 @@ fn fields_of_a_newer_build_show_the_element_and_warn_once() {
     assert!(s.take_collab_notices().is_empty(), "everything in it is known: no warning");
     s.apply_remote(tab, &newer_update(&s, "n2", &[("style.glow", 3)])).unwrap();
     let id = ElementId::new("n2").unwrap();
-    assert_eq!(s.element(&id).unwrap().style.highlight, Some(drafftink_scene::MarkerColor::Pink), "shown, not hidden");
+    assert_eq!(
+        s.element(&id).unwrap().style.highlight,
+        Some(drafftink_scene::MarkerColor::from_name("pink-400").unwrap()),
+        "shown, not hidden"
+    );
     assert_eq!(s.take_collab_notices(), vec![CollabNotice::Info(warning.to_owned())]);
     s.apply_remote(tab, &newer_update(&s, "n3", &[("style.glow", 4)])).unwrap();
     assert!(s.take_collab_notices().is_empty(), "told once for the document");

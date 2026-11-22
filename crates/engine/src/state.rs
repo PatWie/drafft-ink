@@ -245,7 +245,7 @@ impl Default for ToolState {
             pressure_default: d.pressure_mode,
             arrow_default: ArrowDefaults::default(),
             paint_brush: PaintBrush::default(),
-            marker: Some(MarkerColor::Yellow),
+            marker: Some(MarkerColor::YELLOW),
         }
     }
 }

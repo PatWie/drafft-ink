@@ -5,7 +5,7 @@
 //! pick stores the colour whose display is the swatch (`Color::from_dark_theme`, the inverse of the same function).
 //! This module is the only place the UI applies either direction. In the light theme both are the identity.
 
-use drafftink_scene::{Color, palette};
+use drafftink_scene::{Color, MarkerColor, MarkerShade, Tone, palette};
 use egui::Color32;
 
 /// The families of the quick swatches in the top bar (the old app's choice).
@@ -14,6 +14,27 @@ pub const QUICK_FAMILIES: [&str; 6] = ["blue", "red", "emerald", "amber", "purpl
 pub const QUICK_STROKE_SHADE: u16 = 500;
 /// Shade of a quick fill swatch.
 pub const QUICK_FILL_SHADE: u16 = 100;
+
+/// Shade of a quick marker swatch: the marker shade that the old five markers became, and the one the button puts on.
+pub const QUICK_MARKER_SHADE: MarkerShade = MarkerShade::Standard;
+
+/// The markers of the quick column of the highlight popover: yellow, the default marker, then the families of the
+/// quick stroke and fill swatches, all in [`QUICK_MARKER_SHADE`].
+pub fn quick_markers() -> Vec<MarkerColor> {
+    std::iter::once("yellow")
+        .chain(QUICK_FAMILIES)
+        .filter_map(|family| MarkerColor::new(family, QUICK_MARKER_SHADE))
+        .collect()
+}
+
+/// A marker as the popover offers it: a pick stores its name (`yellow-400`, a token that each theme resolves), and
+/// the swatch shows the ink the canvas of this theme draws the band with (the band itself is that ink at half
+/// opacity, too pale to tell apart in a 16 px cell), not the palette colour of the name, which the dark theme would
+/// filter.
+pub fn marker_offer(marker: MarkerColor, dark: bool) -> Offer {
+    let tone = if dark { Tone::Dark } else { Tone::Light };
+    Offer { stored: marker.name(), shown: to_egui(marker.rgb(tone)) }
+}
 
 /// A scene colour as an egui colour.
 pub fn to_egui(c: Color) -> Color32 {
@@ -83,5 +104,37 @@ pub fn same(a: &str, b: &str) -> bool {
     match (parse(a), parse(b)) {
         (Some(x), Some(y)) => x == y,
         _ => false,
+    }
+}
+
+#[cfg(test)]
+mod marker_tests {
+    use super::*;
+
+    #[test]
+    fn the_quick_markers_are_yellow_then_the_quick_families_in_the_standard_shade() {
+        let names: Vec<String> = quick_markers().iter().map(|m| m.name()).collect();
+        assert_eq!(names, ["yellow-400", "blue-400", "red-400", "emerald-400", "amber-400", "purple-400", "slate-400"]);
+        assert_eq!(quick_markers()[0], MarkerColor::YELLOW, "the default and last used marker stays yellow");
+    }
+
+    #[test]
+    fn a_marker_cell_stores_the_name_and_shows_the_ink_of_the_theme() {
+        let m = MarkerColor::new("blue", MarkerShade::Soft).unwrap();
+        let light = marker_offer(m, false);
+        let dark = marker_offer(m, true);
+        assert_eq!((light.stored.as_str(), dark.stored.as_str()), ("blue-300", "blue-300"), "one token, both themes");
+        assert_eq!(light.shown, to_egui(m.rgb(Tone::Light)));
+        assert_eq!(dark.shown, to_egui(m.rgb(Tone::Dark)));
+        assert_ne!(light.shown, dark.shown);
+        assert_eq!(
+            resolve(&light.stored),
+            Some(palette_blue_300()),
+            "the light swatch is the palette colour of the name"
+        );
+    }
+
+    fn palette_blue_300() -> Color {
+        palette::lookup("blue-300").unwrap()
     }
 }

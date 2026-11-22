@@ -636,8 +636,8 @@ fn highlight_in(row: Row, ui: &mut Ui, cx: &mut Cx<'_>, st: &mut UiState) {
     }
 }
 
-/// The highlight button: a marker with a bar of the current colour under it, and a small arrow that opens the five
-/// colours and "none". Clicking the marker puts the last colour on the selection, or takes the highlight off when it
+/// The highlight button: a marker with a bar of the current colour under it, and a small arrow that opens the
+/// colour popover (the quick column and "none", and the marker shades of the palette). Clicking the marker puts the last colour on the selection, or takes the highlight off when it
 /// has one. It is `style.set` with `highlight`, so it works for the characters selected in a text edit too.
 fn highlight(ui: &mut Ui, cx: &mut Cx<'_>, st: &mut UiState) {
     let Some(state) = cx.model.marker().filter(|_| has_highlight(cx)) else { return };
@@ -667,7 +667,7 @@ fn highlight_split(ui: &mut Ui, cx: &mut Cx<'_>, st: &mut UiState, state: Marker
     if let MarkerState::On(shown) = state {
         st.last_marker = Some(shown);
     }
-    let colour = st.last_marker.unwrap_or(MarkerColor::Yellow);
+    let colour = st.last_marker.unwrap_or(MarkerColor::YELLOW);
     let (value, tip) = match state {
         MarkerState::On(_) if pick == Pick::Tool => (Value::Null, "Highlighter: none".to_owned()),
         MarkerState::On(_) => (Value::Null, "Take the highlight off".to_owned()),

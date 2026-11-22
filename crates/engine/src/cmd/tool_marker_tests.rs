@@ -9,9 +9,9 @@ use crate::testing;
 #[test]
 fn the_marker_starts_yellow_and_none_is_a_colour_of_its_own() {
     let mut s = testing::headless_session();
-    assert_eq!(s.tool.marker, Some(MarkerColor::Yellow));
+    assert_eq!(s.tool.marker, Some(MarkerColor::YELLOW));
     let out = s.execute_from(Origin::Test, "tool.set_marker", json!({ "color": "pink" })).unwrap();
-    assert_eq!((out["changed"].clone(), out["color"].clone()), (json!(true), json!("pink")));
+    assert_eq!((out["changed"].clone(), out["color"].clone()), (json!(true), json!("pink-400")));
     let out = s.execute_from(Origin::Test, "tool.set_marker", json!({ "color": null })).unwrap();
     assert_eq!((out["changed"].clone(), out["color"].clone()), (json!(true), Value::Null));
     assert_eq!(s.tool.marker, None);

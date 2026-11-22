@@ -15,7 +15,7 @@ fn p(x: f64, y: f64) -> Point {
 }
 
 fn marked(mut e: Element) -> Element {
-    e.style.highlight = Some(MarkerColor::Yellow);
+    e.style.highlight = Some(MarkerColor::YELLOW);
     e
 }
 
@@ -92,7 +92,10 @@ fn a_text_band_reaches_a_little_past_the_box_and_an_unmarked_text_does_not() {
         d.runs = vec![TextRun::new(
             0,
             2,
-            CharStyle { highlight: SpanHighlight::On(MarkerColor::Pink), ..Default::default() },
+            CharStyle {
+                highlight: SpanHighlight::On(MarkerColor::from_name("pink-400").unwrap()),
+                ..Default::default()
+            },
         )];
     }
     let spans = canvas_with(vec![t]);

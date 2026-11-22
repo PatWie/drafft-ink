@@ -67,12 +67,12 @@ fn a_drag_across_elements_highlights_them_with_one_command_and_creates_nothing()
 
     assert_eq!(rig.commands_since(ring), ["highlight.apply"]);
     assert_eq!(rig.undo_depth(), undo + 1, "the whole drag is one undo step");
-    assert_eq!(band(&rig, &a), Some(MarkerColor::Yellow));
-    assert_eq!(band(&rig, &b), Some(MarkerColor::Yellow));
+    assert_eq!(band(&rig, &a), Some(MarkerColor::YELLOW));
+    assert_eq!(band(&rig, &b), Some(MarkerColor::YELLOW));
     assert_eq!(band(&rig, &far), None, "what the path did not touch");
     assert_eq!(rig.elements().len(), 3, "the highlighter creates no element");
     assert_eq!(rig.s.tool.active, Tool::Highlighter, "and the tool stays");
-    assert_eq!(rig.s.tool.marker, Some(MarkerColor::Yellow));
+    assert_eq!(rig.s.tool.marker, Some(MarkerColor::YELLOW));
 
     rig.run("history.undo", json!({}));
     assert_eq!((band(&rig, &a), band(&rig, &b)), (None, None), "one undo takes both back");
@@ -88,7 +88,7 @@ fn exception_E19_a_highlighter_drag_equals_the_plain_command() {
     let (pa, pb) = (plain.rect(100.0, 100.0, 80.0, 80.0), plain.rect(300.0, 100.0, 80.0, 80.0));
     plain.run("highlight.apply", json!({ "ids": [pa.as_str(), pb.as_str()], "color": "yellow" }));
     assert_eq!(drag.normalized_doc(), plain.normalized_doc());
-    assert_eq!((band(&drag, &a), band(&drag, &b)), (Some(MarkerColor::Yellow), Some(MarkerColor::Yellow)));
+    assert_eq!((band(&drag, &a), band(&drag, &b)), (Some(MarkerColor::YELLOW), Some(MarkerColor::YELLOW)));
 }
 
 #[test]
@@ -97,7 +97,7 @@ fn the_marker_colour_is_the_colour_of_the_drag() {
     let a = rig.rect(100.0, 100.0, 80.0, 80.0);
     rig.run("tool.set_marker", json!({ "color": "pink" }));
     rig.drag((50.0, 140.0), (150.0, 140.0));
-    assert_eq!(band(&rig, &a), Some(MarkerColor::Pink));
+    assert_eq!(band(&rig, &a), Some(MarkerColor::from_name("pink-400").unwrap()));
 }
 
 #[test]
@@ -121,7 +121,7 @@ fn the_drag_shows_a_trail_and_the_elements_it_would_highlight_and_takes_them_bac
     rig.drag_to(250.0, 140.0);
     let shown = rig.parts().marker.clone().expect("a preview");
     assert!(shown.trail.len() >= 3 && shown.trail.first() == Some(&Point::new(50.0, 140.0)), "{:?}", shown.trail);
-    assert_eq!(shown.color, Some(MarkerColor::Yellow));
+    assert_eq!(shown.color, Some(MarkerColor::YELLOW));
     assert_eq!(rig.parts().highlight, std::slice::from_ref(&a), "the rectangle is outlined before the release");
     assert_eq!(band(&rig, &a), None, "nothing is written while the pointer is down");
     assert_eq!(rig.undo_depth(), undo);
@@ -152,10 +152,10 @@ fn with_none_selected_the_drag_removes_the_highlight() {
     rig.run("tool.set_marker", json!({ "color": null }));
     let undo = rig.undo_depth();
     rig.drag((50.0, 140.0), (200.0, 140.0));
-    assert_eq!((band(&rig, &a), band(&rig, &b)), (None, Some(MarkerColor::Yellow)));
+    assert_eq!((band(&rig, &a), band(&rig, &b)), (None, Some(MarkerColor::YELLOW)));
     assert_eq!(rig.undo_depth(), undo + 1, "removing is one undo step too");
     rig.run("history.undo", json!({}));
-    assert_eq!(band(&rig, &a), Some(MarkerColor::Yellow), "and undo puts it back");
+    assert_eq!(band(&rig, &a), Some(MarkerColor::YELLOW), "and undo puts it back");
 }
 
 #[test]
@@ -163,7 +163,7 @@ fn alt_removes_for_the_length_of_the_drag_whatever_the_colour() {
     let mut rig = marker_rig();
     let a = rig.rect(100.0, 100.0, 80.0, 80.0);
     rig.drag((50.0, 140.0), (150.0, 140.0));
-    assert_eq!(band(&rig, &a), Some(MarkerColor::Yellow));
+    assert_eq!(band(&rig, &a), Some(MarkerColor::YELLOW));
     rig.mods.alt = true;
     rig.down(50.0, 140.0);
     rig.drag_to(150.0, 140.0);
@@ -171,7 +171,7 @@ fn alt_removes_for_the_length_of_the_drag_whatever_the_colour() {
     rig.up(150.0, 140.0);
     rig.mods.alt = false;
     assert_eq!(band(&rig, &a), None);
-    assert_eq!(rig.s.tool.marker, Some(MarkerColor::Yellow), "the colour of the tool is not touched");
+    assert_eq!(rig.s.tool.marker, Some(MarkerColor::YELLOW), "the colour of the tool is not touched");
 }
 
 // ---- text -------------------------------------------------------------------------------------------------------
@@ -192,7 +192,7 @@ fn a_drag_along_a_text_highlights_only_the_characters_it_crosses() {
     );
     assert!(args.get("ids").is_none(), "no element is named, so the command does not fall back to the selection");
     assert_eq!(band(&rig, &id), None, "the text as a whole is not highlighted");
-    assert_eq!(chars(&rig, &id), [(6, 9, MarkerColor::Yellow)]);
+    assert_eq!(chars(&rig, &id), [(6, 9, MarkerColor::YELLOW)]);
 }
 
 #[test]
@@ -221,13 +221,13 @@ fn removing_from_a_text_takes_off_only_the_crossed_characters() {
     let (a, b, c) = (edge(&rig, &id, 0), edge(&rig, &id, 5), edge(&rig, &id, 9));
     rig.drag((a.x, a.y), (b.x, b.y));
     rig.drag((b.x + 0.5, b.y), (c.x, c.y));
-    assert_eq!(chars(&rig, &id), [(0, 9, MarkerColor::Yellow)], "two drags that meet are one highlight");
+    assert_eq!(chars(&rig, &id), [(0, 9, MarkerColor::YELLOW)], "two drags that meet are one highlight");
     rig.mods.alt = true;
     let undo = rig.undo_depth();
     rig.drag((a.x, a.y), (b.x, b.y));
     rig.mods.alt = false;
     assert_eq!(rig.undo_depth(), undo + 1);
-    assert_eq!(chars(&rig, &id), [(5, 9, MarkerColor::Yellow)], "the first five characters lost theirs");
+    assert_eq!(chars(&rig, &id), [(5, 9, MarkerColor::YELLOW)], "the first five characters lost theirs");
 }
 
 #[test]
@@ -240,8 +240,8 @@ fn a_drag_over_a_text_and_a_shape_is_one_command_for_both() {
     rig.trace(&[(from.x, from.y), (to.x, to.y), (to.x, 240.0), (200.0, 240.0)]);
     assert_eq!(rig.commands_since(ring), ["highlight.apply"]);
     assert_eq!(rig.undo_depth(), undo + 1);
-    assert_eq!(band(&rig, &shape), Some(MarkerColor::Yellow));
-    assert_eq!(chars(&rig, &id), [(2, 4, MarkerColor::Yellow)]);
+    assert_eq!(band(&rig, &shape), Some(MarkerColor::YELLOW));
+    assert_eq!(chars(&rig, &id), [(2, 4, MarkerColor::YELLOW)]);
 }
 
 #[test]
