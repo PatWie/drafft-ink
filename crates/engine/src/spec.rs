@@ -141,6 +141,8 @@ bitset! {
         NET = 16 => ("Net", "net"),
         /// The clock.
         CLOCK = 32 => ("Clock", "clock"),
+        /// The store of service tokens.
+        SECRETS = 64 => ("Secrets", "secrets"),
     }
 }
 
@@ -154,6 +156,7 @@ impl PortSet {
             PortKind::Renderer => Self::RENDERER,
             PortKind::Net => Self::NET,
             PortKind::Clock => Self::CLOCK,
+            PortKind::Secrets => Self::SECRETS,
         }
     }
 }

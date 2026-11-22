@@ -32,9 +32,10 @@ use loro::VersionVector;
 mod parts;
 
 use self::parts::{Health, Reconcile, Uploads};
+use crate::access::AccessDenial;
 use crate::awareness::{LocalPresence, Peer, PeerTable};
 use crate::sealed::ImageEvent;
-use crate::status::{ConnState, Problem, ProblemAction, Status, StopReason, explain, stop_reason};
+use crate::status::{ConnState, Problem, ProblemAction, Status, StopReason, explain, explain_access, stop_reason};
 use crate::transport::TransportEvent;
 use crate::url::ServerUrl;
 
@@ -225,6 +226,9 @@ pub enum CollabEvent {
     },
     /// A picture of a sealed room arrived, was damaged or was refused (`docs/design/collab-e2e.md` section 9).
     Image(ImageEvent),
+    /// The relay deleted the room on request (`SealedClient::delete_room`) and closed the connection. The client has
+    /// stopped with [`StopReason::RoomDeleted`]. The document in this tab is untouched.
+    RoomDeleted,
     /// The room's deadline moved, or the room is past it (a sealed room on a relay that deletes rooms).
     Retention {
         /// When the room is deleted if nobody visits, in milliseconds since the epoch. 0: never.
@@ -618,9 +622,20 @@ impl CollabClient {
             TransportEvent::Message(bytes) => self.on_frame(now_ms, &bytes, store),
             // The plaintext protocol has no text frames.
             TransportEvent::Text(_) => {}
+            TransportEvent::Denied(denial) => self.on_denied(denial),
             TransportEvent::Closed { error } => self.on_closed(now_ms, error),
         }
         self.flush_events();
+    }
+
+    /// The server turned the connection away at its door. The same token would be refused again, so the client stops
+    /// and says what to do.
+    fn on_denied(&mut self, denial: AccessDenial) {
+        if matches!(self.phase, Phase::Idle | Phase::Stopped(_) | Phase::Backoff { .. }) {
+            return;
+        }
+        let problem = explain_access(denial, self.cfg.url.host(), true);
+        self.enter_stopped(StopReason::AccessDenied, Some(problem));
     }
 
     fn on_opened(&mut self, now_ms: u64, store: &LoroStore) {

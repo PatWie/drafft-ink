@@ -10,7 +10,7 @@ use drafftink_scene::FileId;
 use crate::awareness::{LocalPresence, PeerTable};
 use crate::blobs::{BlobRequest, BlobResponse};
 use crate::client::{AuthToken, CollabClient, CollabEvent, Output, Stats, TrimmedChoice};
-use crate::sealed::{ImageProgress, SealedClient};
+use crate::sealed::{DeleteRoomError, ImageProgress, SealedClient};
 use crate::status::Status;
 use crate::transport::TransportEvent;
 use crate::url::ServerUrl;
@@ -113,6 +113,15 @@ impl RoomClient {
     /// Tries again at once instead of waiting out the backoff.
     pub fn retry_now(&mut self, now_ms: u64) {
         forward!(self.retry_now(now_ms));
+    }
+
+    /// Asks the relay to delete the room for everyone (see [`SealedClient::delete_room`]). A plaintext room cannot be
+    /// deleted this way.
+    pub fn delete_room(&mut self) -> Result<(), DeleteRoomError> {
+        match self {
+            RoomClient::Plain(_) => Err(DeleteRoomError::NotEncrypted),
+            RoomClient::Sealed(c) => c.delete_room(),
+        }
     }
 
     /// Leaves the room.

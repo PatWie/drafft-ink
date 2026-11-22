@@ -22,6 +22,7 @@
 #![warn(missing_docs)]
 #![cfg_attr(test, allow(clippy::unwrap_used, clippy::expect_used, clippy::panic))]
 
+mod access;
 mod awareness;
 mod blobs;
 mod client;
@@ -36,6 +37,10 @@ mod url;
 #[cfg(target_arch = "wasm32")]
 mod web;
 
+pub use access::{
+    AccessCredentials, AccessDenial, AccessError, AccessField, AccessGrant, AccessHeaders, AccessOrigin,
+    CLIENT_ID_HEADER, CLIENT_SECRET_HEADER, MAX_ACCESS_VALUE_BYTES,
+};
 pub use awareness::{LocalPresence, Peer, PeerTable, TRAIL_MAX_POINTS, TRAIL_TTL_MS, Trail};
 #[cfg(target_arch = "wasm32")]
 pub use blobs::WebBlobTransport;
@@ -54,12 +59,12 @@ pub use client::{
 pub use native::{NativeOptions, NativeTransport, TlsOptions};
 pub use room_client::RoomClient;
 pub use sealed::{
-    BLOB_TIMEOUT_MS, CATCHUP_REPLY_TIMEOUT_MS, COMPACT_RETRY_MS, GAP_GRACE_MS, IMAGE_RETRY_BASE_MS, IMAGE_RETRY_MAX_MS,
-    ImageEvent, ImageProgress, ImageRefusal, MAX_DOWNLOADS, MAX_UPLOADS, Resume, SealedClient, SealedConfig,
-    SealedConfigError,
+    BLOB_TIMEOUT_MS, CATCHUP_REPLY_TIMEOUT_MS, COMPACT_RETRY_MS, DeleteRoomError, GAP_GRACE_MS, IMAGE_RETRY_BASE_MS,
+    IMAGE_RETRY_MAX_MS, ImageEvent, ImageProgress, ImageRefusal, MAX_DOWNLOADS, MAX_UPLOADS, Resume, SealedClient,
+    SealedConfig, SealedConfigError,
 };
 pub use session::{CollabSession, Pump};
-pub use status::{ConnState, Problem, ProblemAction, Status, StopReason, explain};
+pub use status::{ConnState, Problem, ProblemAction, Status, StopReason, explain, explain_access};
 pub use transport::{LoopbackServer, LoopbackTransport, Transport, TransportError, TransportEvent, WakeFn, loopback};
 pub use url::{ServerUrl, UrlError, UrlPolicy};
 #[cfg(target_arch = "wasm32")]

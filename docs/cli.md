@@ -101,6 +101,10 @@ Measurements (the intro document, 9080 by 1640 pixels at scale 2, `dist` profile
 
 - No PNG and no screenshots in a build without the `png` feature (no renderer port; the default build of `drafftink-headless` has it). A script that calls `doc.export` with `format: "png"` gets the engine's refusal and its words. With the feature, `doc.export`, `clipboard.copy_as` and `view.screenshot` draw (selection marks, `overlay`, are drawn by the app only and refuse here).
 - No clipboard, no persistent storage, no network: commands that need them refuse with `port_unavailable`.
+
+### The access token of a private server
+
+`drafftink-headless mcp` reads the service token of a server behind Cloudflare Access (`collab.md`, "Access service token") from the environment: `DRAFFTINK_ACCESS_CLIENT_ID` (the client id) and `DRAFFTINK_ACCESS_CLIENT_SECRET_FILE` (the path of a file that holds the client secret; `chmod 600` it). Set both or neither. There is no flag and no variable that takes the secret itself, because other users of the machine can read arguments and the environment. The token applies to the server of the setting `collab.server_url` and to no other, and `collab.set_access` and `collab.clear_access` refuse here (they say where the token comes from). A value that cannot be used is reported on standard error when the program starts and no token is sent. The headless program has no network port yet, so its collab commands still refuse with `port_unavailable`; the variables take effect when it has one.
 - Files are read and written wherever the person who runs the tool can. `drafftink-headless mcp` restricts them to chosen folders because an agent chooses the paths there; these tools are run by the person who chooses.
 
 ## Tests

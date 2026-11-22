@@ -1244,6 +1244,40 @@ A sealed joiner stayed empty when the room held one record of 256 KiB or more (a
 
 Fixed in `begin_staged` (the fresh document takes over the old history first). The sealed client now also checks `LoroStore::has_pending_remote` when the catch-up ends and says "Part of this room could not be loaded because some of its saved history is missing" with the action `SaveCopy`, so a room whose log really lacks history is never a silent empty joiner. Protocol v1 rooms had the same document bug; their client recovered by asking the server for the room again (`sync_requests` 1), which the new test in `crates/collab/tests/server.rs` now requires to be 0. A drawing over the room limit is refused in plain words (`RoomFull`, "This room holds as much as a room may ... Save a copy") and stays on the device; that was already so and is tested at the limit and one byte over.
 
+### 14.6 What phase 3P built in the native client (2026-11-22)
+
+The client half of the private instance (section 19): the `Secrets` port, the Access service token on the native transports, and the commands `collab.set_access`, `collab.clear_access` and `collab.delete_room`. The Worker half is section 14.5. The rules and their tests are in `docs/collab.md`, "Access service token"; the command rows are in `docs/commands.md` section 2.16.
+
+**What exists**
+
+- **`AccessCredentials`, `AccessOrigin`, `AccessGrant`, `AccessDenial`** (`drafftink-collab`, `access.rs`). The credentials have no `Display`, print `AccessCredentials(<hidden>)` and keep both values in `zeroize::Zeroizing` buffers. A grant binds them to one origin, and `AccessGrant::headers_for` is the only way out. `AccessDenial::of_reply(status, body, sent)` decides whether an answer is the gate's.
+- **The plumbing.** `Transport::set_access` and `BlobTransport::set_access` (default: ignored, which is right for the browser), `TransportEvent::Denied(AccessDenial)`, `BlobReply::denial`, `StopReason::AccessDenied`, `explain_access` (the three texts of 19.6). `NativeTransport` adds the two headers to the handshake and `NativeBlobTransport` to every request, `LoopbackTransport` and `loopback_blobs` record the client id they would have sent so that the engine tests can see where the token goes.
+- **The `Secrets` port** (`drafftink-engine`, `PortKind::Secrets`, `PortSet::SECRETS`, `Ports::with_secrets`, `FakeSecrets`). Native: `NativeSecrets` (`drafftink-app`), a `0600` file in a `0700` folder of the data folder. Headless: `EnvSecrets` (`drafftink-mcp`), read from `DRAFFTINK_ACCESS_CLIENT_ID` and `DRAFFTINK_ACCESS_CLIENT_SECRET_FILE`. Web: none.
+- **Commands.** `collab.set_access`, `collab.clear_access` (NoUndo, never in a batch, both values `secret_args`, not in the palette, not for agents), `collab.delete_room {confirm}`, and `collab.status` with `access` and `room_deleted`. `SealedClient::delete_room` sends tag `0x15`; `CollabEvent::RoomDeleted` and `StopReason::RoomDeleted` end it; the engine's `end_deleted_room` unbinds the tab with the code `collab.leave_room` uses.
+- **Tests.** `access::tests`, `tests/access.rs` (mock WebSocket and HTTP servers that record headers), `tests/logging.rs` (extended), `tests/images.rs`, `tests/state_machine.rs`, `tests/sealed.rs` (the Forbidden path also against the real server process), `cmd/collab_access_tests.rs` (the commands through the real relay core), `native/secrets.rs` and `mcp/secrets.rs` (modes, damaged files, no secret in `Debug`).
+
+**Where it differs from sections 13 and 19**
+
+- **Plain `ws://` never gets the token, even with insecure connections allowed.** 19.6 says "the existing `UrlPolicy`". `UrlPolicy::allow_insecure` lets a drawing travel in clear text on a trusted network; letting a password travel the same way would be a different decision, so the grant checks `https`/`wss` or a loopback host itself.
+- **`collab.delete_room` has no `not_allowed` refusal.** A command never waits for the network, and the relay's `Forbidden` comes after it returned. It is a non-fatal notice "This server does not allow deleting rooms." (action `AskAdmin`), and the client joins again. Two refusals were added: `room_offline` (not joined now) and `not_e2e` (a plaintext room). The command returns `{requested: true}`; the result is `room_deleted` in `collab.status`.
+- **Deletion is read from a clean close.** The relay answers a deleted room with nothing but a close, and the protocol has no confirmation message. A host that restarts in the same second would be misread, and the tab would lose its link although the room lives on (the drawing stays). A `Deleted` server message in a later protocol version removes the guess. A broken connection is not taken for a deletion.
+- **The headless token is an ambient token.** 19.6 says "a file or environment variable". The environment cannot say which server the token is for, and sending it to whatever server a session joins would break "only to the stored origin". `Secrets::ambient` gives the engine a token that it applies to the origin of the setting `collab.server_url` and to no other.
+- **`collab.status.access`** also has `"browser"` (13.2 lists it; the task text only the two others): the web build has no store and says so.
+- **The commands are not for agents and not in the palette.** A token passed as a tool argument would end up in a transcript, and a palette entry would need a dialog. The Preferences panel (below) is the place for them.
+- **`BlobReply` has a new field** (`denial`), set by the transport, because only the transport knows whether it sent a token or is a browser. Test code that built a `BlobReply` by hand needed `..BlobReply::default()`.
+
+**Gaps and open points**
+
+- **The Preferences panel is not built** (`ui` and `gpu` were out of scope). The first problem text says "Open Preferences, Collaboration, and enter the access token", which names a place that does not exist yet. Until it does, a desktop user can write `access.json` by hand (the format is in `docs/collab.md`) or run the command through the bridge client.
+- **The browser's expired sign-in is half built.** The web blob transport sends `X-Requested-With: XMLHttpRequest` and marks a `401` as `SignInExpired`. The `/api/status` probe for a failed WebSocket upgrade does not exist (nothing in `collab` or the web app calls it); `web.rs` says where it would go. Covered by compilation only, like the rest of the web transports.
+- **Not verified against a real Access application:** what Access answers to a token that is wrong, revoked or not on a Service Auth policy. The client treats a `401`, any redirect, and the Worker's JSON on a `401` or `403` as the gate, and a `403` without that JSON as an ordinary refusal. If Access answers a bad token with a plain `403`, it will show as a generic failure and retry; a spike against the private instance settles it (19.12).
+- **The wire tests use plain `ws://` and `http://` to loopback.** The rule "only over TLS to another machine" is unit-tested on the grant and on the blob transport's refusal of plain `http://`, not through a TLS server. `wss://` itself is covered by `tests/tls.rs`.
+- **A new token takes effect at the next join.** The running connection keeps the transports it was started with.
+- **tungstenite and `ureq` log the handshake, with the service token's headers, at `trace`.** Nothing caps it (a cap in the shells would also have raised the level for someone who asked for less). Documented in `docs/collab.md`.
+- **The OS credential store** (`keyring`) is not used: it pulls in D-Bus on Linux and is heavy for one small secret. On Windows the file relies on the user's own application folder. Both are later options.
+- **Headless programs have no network port**, so `drafftink-headless mcp` cannot connect to a room at all yet. Its token store is ready.
+- **Phase 3P of the Worker** (R2, `ALLOW_DELETE_ROOM` in the Worker, the JWT check) is 14.5.
+
 ### 14.7 What phase 3P built in the Worker (private environment), and where it differs from the text above (2026-11-22)
 
 The private environment (section 19) runs from the same Worker as the demo. `apps/drafftink-worker/README.md` has the commands and

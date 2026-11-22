@@ -141,6 +141,8 @@ pub(super) struct Live {
     pub follow_view: Option<View>,
     /// What the pictures of an encrypted room need.
     pub pictures: super::pictures::Pictures,
+    /// The relay deleted the room on request and closed the connection. `collab_poll` ends the room.
+    pub deleted: bool,
 }
 
 /// One point of the local laser.
@@ -200,6 +202,9 @@ pub(super) struct CollabState {
     pub laser: LaserTrail,
     /// Notices waiting for the UI.
     notices: VecDeque<CollabNotice>,
+    /// The id of the room the relay deleted on request, until the next connection or disconnect. `collab.status`
+    /// says so.
+    pub room_deleted: Option<String>,
 }
 
 impl CollabState {

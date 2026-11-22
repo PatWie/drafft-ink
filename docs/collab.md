@@ -9,10 +9,11 @@ The engine side (the `collab` command family, `Session::collab_poll`, the `Net` 
 | Part | What it is |
 |---|---|
 | `CollabClient` | Sans-IO state machine. Inputs: transport events, `tick(now_ms, &mut LoroStore)`, local calls. Outputs: `poll_output()` (connect, send a frame, close), `take_events()`, `next_wake_ms()`. No socket, no clock, no document of its own. |
-| `Transport` | The frame pipe: `open`, `send`, `close`, `poll`. `NativeTransport` (background thread, tokio, tungstenite, rustls), `WebTransport` (browser `WebSocket`, wasm only), `loopback()` (in memory, for tests). |
+| `Transport` | The frame pipe: `open`, `send`, `close`, `poll`. `NativeTransport` (background thread, tokio, tungstenite, rustls), `WebTransport` (browser `WebSocket`, wasm only), `loopback()` (in memory, for tests). `set_access` gives it the service token of a private server (default: ignored, as in the browser). |
 | `CollabSession<T>` | A client plus a transport. `pump(now_ms, &mut store)` moves bytes both ways and returns `Pump { events, next_wake_ms, redraw }`. |
 | `LocalPresence`, `PeerTable` | Ephemeral presence: cursor, selection, viewport, user, laser trail, peers with timeouts. Never enters the document. |
 | `ServerUrl`, `AuthToken` | The checked address and the secret token. |
+| `AccessCredentials`, `AccessOrigin`, `AccessGrant`, `AccessDenial` | The service token of a private server, the origin it belongs to, the two bound together (the only way to read the token out), and why a server's gate turned a request away. See "Access service token" below. |
 
 | `SealedClient` | The same kind of state machine for an end-to-end encrypted room (protocol v2, module `sealed`). See "Encrypted rooms" below. |
 | `RoomClient` | One type for the session and the engine: `Plain(CollabClient)` or `Sealed(SealedClient)`. Every method forwards. |
@@ -125,12 +126,55 @@ Where the token comes from:
 
 It is not a setting on purpose: `settings.get` would hand it to every agent, `settings.set` would echo it, and the settings record is written to disk. The token is not recorded in the ring (`CommandSpec::secret_args` makes `engine.recent` show `"<hidden>"`), not in any command output or status, not in `Debug` output (`TokenArg`, `StartupToken` and `AuthToken` print a placeholder), and not in a refusal (a token that is empty or longer than 4096 bytes is `bad_args` without repeating it). Tests: `the_token_is_never_recorded_or_shown` (engine), `the_token_of_the_launcher_reaches_a_server_that_asks_for_one_and_stays_out_of_the_ring` (app), `tests/logging.rs` (client).
 
+## Access service token
+
+A private instance (`docs/design/collab-e2e.md` section 19) sits behind Cloudflare Access. A browser signs in once and carries a cookie. A program that cannot sign in (the desktop app, a script, an MCP server) sends a **service token** instead: the headers `CF-Access-Client-Id` and `CF-Access-Client-Secret` on every request, the WebSocket handshake included. The token is a machine identity and a secret. These are the rules, and each has a test:
+
+| Rule | Where it is decided | Test |
+|---|---|---|
+| The token goes to **one origin** (scheme, host and port) and no other: another host, another port, the same machine under another name, a sub-domain, a host that only starts with the same text. | `AccessGrant::headers_for` | `access::tests` (unit), `tests/access.rs` (wire: the mock servers see no header) |
+| **Only over `https`/`wss`, or to this machine** (`localhost`, `127.x.x.x`, `::1`). Plain `ws://` or `http://` to another machine never gets it, **even when insecure connections are allowed** (`UrlPolicy::allow_insecure` protects a drawing, this protects a password). | `AccessGrant::headers_for`, `NativeBlobTransport::check` | `access::tests`, `tests/access.rs` |
+| **No redirect is followed** for a request that carries the headers. tungstenite follows none, and `ureq` is set to follow none. A `302` to `*.cloudflareaccess.com` is Access saying "not signed in". | `NativeTransport`, `NativeBlobTransport` | `tests/access.rs` (the second mock server gets no connection) |
+| **A denial is typed**, not a text in a log: `TransportEvent::Denied(AccessDenial)` for the handshake and `BlobReply::denial` for a picture request. | `AccessDenial::of_reply` | `access::tests`, `tests/access.rs` |
+| The secret is **in no log line, `Debug`, ring entry, `collab.status`, refusal text, notice or link.** | `AccessCredentials` (no `Display`, `Debug` prints `AccessCredentials(<hidden>)`, a zeroizing buffer), `SecretText`, `secret_args` | `tests/logging.rs`, `the_token_is_in_no_output_no_ring_entry_no_status_no_notice_and_no_refusal` |
+
+**What the person reads.** `AccessDenial::of_reply(status, body, sent)` decides from the status and the Worker's JSON (`{"error":"access_required"|"access_invalid","message":...}`):
+
+| Answer | No token was sent | A token was sent |
+|---|---|---|
+| `401` or a redirect, no JSON | `Required` | `Rejected` |
+| `access_required` | `Required` | `Rejected` |
+| `access_invalid` | `Rejected` | `Rejected` |
+| a `401` or `403` with another JSON `error` (the relay's own `unauthorized`: a membership token that does not open the room) | none | none |
+| a `403` without that JSON | none (a relay says `403` for its own reasons) | none |
+
+`Required`: "This server is private. Open Preferences, Collaboration, and enter the access token for `<host>`. The server's owner can create one." `Rejected`: "The server did not accept the access token. It may have expired or been revoked. Ask the server's owner for a new one." Both have the action `AskAdmin`. A denial of the handshake stops the client (`StopReason::AccessDenied`, fatal: the same token would be refused again). A denial of a picture request is a non-fatal problem, told once per connection: the room keeps working and the pictures wait.
+
+**Where the token lives.**
+
+| Program | Store | Notes |
+|---|---|---|
+| Desktop app | `<data folder>/secrets/access.json`, mode `0600` in a folder of mode `0700` (`NativeSecrets`) | Created with those modes from the first byte (a temporary file renamed over the old one). A file or folder found with looser modes is tightened. On Windows it takes the permissions of the user's own application folder; no access list is added. The OS credential store (the `keyring` crate) is a later option: it pulls in D-Bus on Linux. Format: `{"version":1,"tokens":{"https://canvas.example.com":{"client_id":"...","client_secret":"..."}}}`, one entry per origin. Read once per session, written through. |
+| Headless programs (`drafftink-headless mcp`) | The environment: `DRAFFTINK_ACCESS_CLIENT_ID` and `DRAFFTINK_ACCESS_CLIENT_SECRET_FILE` (the path of a file that holds the secret) | No flag and no variable takes the secret itself: arguments and the environment are visible to other users, a file has permissions (a file readable by others is reported). Both or neither. The token applies to the server of the setting `collab.server_url` and to no other (`Secrets::ambient`). `collab.set_access` and `collab.clear_access` refuse here and say where the token comes from. These programs have no network port yet, so the collab commands still refuse with `port_unavailable`: the token is ready for the day there is one. |
+| Web app | none (no `Secrets` port) | The browser carries the Access cookie itself. The commands refuse with `port_unavailable`; `collab.status` says `access: "browser"`. |
+
+**Commands.** `collab.set_access {server?, client_id, client_secret}` stores a token, `collab.clear_access {server?}` removes it, `collab.status` shows `access: "service_token" | "browser" | "none"` and never a value. A token takes effect at the next connection: leave the room (or disconnect) and join again. They are not in a batch, not in the palette and not for agents, and both values are `secret_args`. A value that is empty, over 512 bytes or not printable ASCII is `bad_args` and is not repeated; a value that is not text is refused as "must be text" without quoting it. Not in `settings`: `settings.get` would hand it to every agent and the settings record is written to disk.
+
+**Not in links.** A room link never holds it. The link is a room capability; the token is a server capability.
+
+**Browser, expired sign-in.** The picture requests of the web build send `X-Requested-With: XMLHttpRequest`, so that Access answers an ended session with a `401` that `fetch` can read (not a redirect it can only report as a network error). That `401` is marked `AccessDenial::SignInExpired`: "Your sign-in has expired. Reload the page to sign in again. Your drawing is saved on this device." A **WebSocket** cannot carry the header and a failed upgrade is only a `Closed` event, so the web transport cannot tell an ended sign-in from a server that is down. The `/api/status` probe that settles it (`docs/design/collab-e2e.md` section 19.6) does not exist yet; `web.rs` documents where it would go. Not built.
+
+**Logs.** tungstenite writes the whole handshake request (the service token's headers) and the first frame (the plaintext room's token) at the `trace` level, and `ureq` may do the same. The client's own log lines and everything up to `debug` hold no secret (`tests/logging.rs` runs at `debug`). Do not enable `trace` for those crates on a machine whose logs others read.
+
+**Deleting a room.** `collab.delete_room {confirm}` sends `DeleteRoom` from a joined member (`SealedClient::delete_room`). A host that allows it (the private instance) deletes the room's records, snapshot and pictures and closes the connection; the client takes that clean close for the deletion, since the relay sends nothing else: `CollabEvent::RoomDeleted`, `StopReason::RoomDeleted`. The engine then ends the room as `collab.leave_room` does (the tab keeps its drawing as a local copy, the key and the saved link are dropped) and `collab.status` has `room_deleted: true`. A host that does not allow it answers `Forbidden`: the problem "This server does not allow deleting rooms." (not fatal, the client joins again). A connection that breaks during the request proves nothing; the client reconnects and a room that is gone is the usual "This room is gone".
+
 ## Presence
 
 Awareness is sent at most every 50 ms (or the server's slower rate), only when it changed, plus a full resend every 10 s while someone else is in the room. A client alone in a room sends nothing; a `PeerJoined` makes it send at once. A peer's presence is cleared after 30 s of silence while the peer stays listed. The laser pointer is local: protocol version 1 has no laser flag, so a receiver draws the recent cursor path (`Peer::trail`, 1.5 s, 64 points) of any peer. A real "this peer uses the laser" flag needs protocol version 2.
 
 ## Security
 
+- The service token of a private server never leaves its origin, never goes over plain text to another machine, and is never sent after a redirect (see "Access service token").
 - `ServerUrl::parse` accepts only `ws://` and `wss://`, refuses `user:password@`, `#fragments`, control characters and overlong text, and refuses `ws://` to any host that is not loopback unless `UrlPolicy { allow_insecure: true }`. No transport takes a plain string.
 - `AuthToken` has no `Display`, `Debug` prints `AuthToken(<hidden>)`, and no log line prints a protocol message that holds it (tests: `tests/logging.rs`, `debug_output_never_contains_the_token`). The token travels in the first binary frame, never in the URL.
 - `wss://` uses rustls with the ring provider named explicitly (no process-wide default that another crate could change), the system roots (bundled Mozilla roots as a fallback), and `TlsOptions::extra_roots_der` for a private CA. A certificate that is not trusted stops the handshake before any frame, so the token never reaches the server (`tests/tls.rs`).
@@ -148,7 +192,8 @@ Awareness is sent at most every 50 ms (or the server's slower rate), only when i
 | `tests/hostile.rs` | Property tests: random sequences never panic, never ask to be woken in the past, never reconnect a stopped client. |
 | `tests/server.rs` | Two to three clients against the real server (`drafftink-headless serve`, started as a child process on an ephemeral port, built by the test with `cargo build -p drafftink-headless`; the crate layering forbids linking an app): concurrent edits converge, late join, server killed and restarted with edits made offline, a client that does not read is told to resync, auth on and off, version mismatch, replaced identity, presence and follow, leave, backoff against a dead port, idle means no redraw. |
 | `tests/tls.rs` | `wss://` through a TLS-terminating proxy with a test certificate (`tests/fixtures`). |
-| `tests/logging.rs` | The token is absent from every log line. |
+| `tests/logging.rs` | The token and the service token are absent from every log line (at `debug`). |
+| `tests/access.rs` | The service token on the wire against local mock servers: the handshake headers and every kind of picture request, only to the stored origin, never to another, never after a redirect, the Worker's `401` JSON, the relay's own `401`. |
 
 ## Big rooms
 

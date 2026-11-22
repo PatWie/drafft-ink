@@ -1,5 +1,5 @@
 //! The desktop platform: folders for settings and documents, files by path, the system file dialogs, the
-//! WebSocket transport, and an offscreen renderer for PNG export and screenshots.
+//! WebSocket transport, the file of access tokens for private servers, and an offscreen renderer for PNG export and screenshots.
 //!
 //! The system clipboard is not here: the shell reads and writes it inside the event that needs it (see
 //! `SharedClipboard`).
@@ -12,6 +12,7 @@ mod render;
 mod rng;
 #[cfg(feature = "scenarios")]
 mod scenario;
+mod secrets;
 mod storage;
 
 use std::path::PathBuf;
@@ -49,7 +50,8 @@ pub fn platform(options: &NativeOptions) -> Platform {
         .with_storage(Box::new(store.clone()))
         .with_files(Box::new(files::NativeFiles::new(root.join("downloads"))))
         .with_renderer(Box::new(render::OffscreenRenderer::new(typesetter.clone())))
-        .with_net(Box::new(net::NativeNet::new(wake.hook(RedrawReason::Collab))));
+        .with_net(Box::new(net::NativeNet::new(wake.hook(RedrawReason::Collab))))
+        .with_secrets(Box::new(secrets::NativeSecrets::new(&root)));
     Platform {
         ports,
         host: Box::new(host::NativeHost),

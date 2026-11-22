@@ -217,6 +217,7 @@ pub const ALLOWED_EXTERNAL: &[(&str, &[&str])] = &[
             "wasm-bindgen-futures",
             "web-sys",
             "webpki-roots",
+            "zeroize",
         ],
     ),
     // L5

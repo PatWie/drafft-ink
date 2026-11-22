@@ -19,6 +19,8 @@ use base64::Engine as _;
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use drafftink_protocol::v2::MembershipToken;
 
+use crate::access::{AccessDenial, AccessGrant};
+
 pub use loopback::{LoopbackBlobServer, LoopbackBlobs, loopback_blobs};
 #[cfg(not(target_arch = "wasm32"))]
 pub use native::{NativeBlobOptions, NativeBlobTransport};
@@ -122,6 +124,9 @@ pub struct BlobReply {
     pub content_length: Option<u64>,
     /// The `Retry-After` header in milliseconds, when it is a number of seconds.
     pub retry_after_ms: Option<u64>,
+    /// Set when the answer is the server's gate and not the relay's: a `401` or a redirect to the Access login. The
+    /// transport decides, because only it knows whether it sent a service token or is a browser.
+    pub denial: Option<AccessDenial>,
 }
 
 impl fmt::Debug for BlobReply {
@@ -131,6 +136,7 @@ impl fmt::Debug for BlobReply {
             .field("body", &format_args!("{} bytes", self.body.len()))
             .field("content_length", &self.content_length)
             .field("retry_after_ms", &self.retry_after_ms)
+            .field("denial", &self.denial)
             .finish()
     }
 }
@@ -157,6 +163,12 @@ pub enum BlobTransportError {
 
 /// A pipe for picture requests. See the module docs.
 pub trait BlobTransport {
+    /// Gives the transport the service token of a private server (`None`: no token). It goes into the headers of each
+    /// request, under the rules of [`AccessGrant::headers_for`], and a redirect is never followed while it does. A
+    /// transport that cannot send headers the page does not control (the browser's `fetch`, which carries the
+    /// sign-in cookie) ignores it, which is why this has a default.
+    fn set_access(&mut self, _access: Option<AccessGrant>) {}
+
     /// Queues one request. The answer arrives through [`poll`](Self::poll), with the id of the request.
     fn send(&mut self, request: BlobRequest) -> Result<(), BlobTransportError>;
     /// The next answer, without blocking.

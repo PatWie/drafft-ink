@@ -2,6 +2,7 @@
 //! Helpers shared by the collab integration tests.
 
 pub mod live;
+pub mod mock;
 
 use drafftink_collab::*;
 use drafftink_doc::{LoroConfig, LoroStore};
