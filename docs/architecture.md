@@ -10,10 +10,11 @@ A crate may depend on workspace crates of strictly lower layers. It may not depe
 |---|---|---|
 | L0 | `geom` | kurbo-based math, transforms, bounds, R-tree spatial index |
 | L0 | `profile` | span profiler, frame-time histograms, counters |
-| L0 | `protocol` | versioned collab wire types, shared by client and server |
+| L0 | `protocol` | versioned collab wire types (v1 plaintext rooms, v2 sealed rooms), shared by client and server |
 | L1 | `scene` | element model: flat elements, ids, fractional z-index, groupIds, frameId, bindings, styles, serde. Pure data |
 | L1 | `typeset` | text (Parley) and math (ReX) layout to outlines, with caches |
 | L1 | `sketch` | roughr hand-drawn path generation, cached by (seed, geometry) |
+| L1 | `seal` | end-to-end encryption of collab rooms: room key, HKDF subkeys, XChaCha20-Poly1305 sealed records, the `#room=<id>,<key>` link. `docs/design/collab-e2e.md` |
 | L2 | `render` | Vello scene encoding: per-element fragments, culling, level of detail, grid. Knows nothing about documents or commands |
 | L3 | `canvas` | the reusable library (uses the `SceneStore` trait from `scene`): viewport, hit testing, picking, transformer handles, gesture recognizers, event dispatch, in-memory store |
 | L3 | `doc` | Loro-backed `SceneStore`: transactions, undo, incremental sync deltas, schema version, derived indexes |

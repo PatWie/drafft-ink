@@ -1,0 +1,42 @@
+[package]
+name = "drafftink-seal"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+homepage.workspace = true
+description = "End-to-end encryption for Drafft.ink collaboration rooms (L1): the room key, its subkeys, sealed records and the room link."
+readme = "README.md"
+keywords = ["encryption", "xchacha20poly1305", "collaboration", "whiteboard", "e2ee"]
+categories = ["cryptography", "wasm"]
+
+[dependencies]
+drafftink-protocol = { path = "../protocol", version = "0.2.0" }
+thiserror.workspace = true
+subtle.workspace = true
+zeroize = "1.9"
+base64ct = { version = "1.8", features = ["alloc"] }
+# The RustCrypto releases below share digest 0.11 (see `drafftink-protocol` for sha2).
+sha2 = "0.11"
+hmac = { version = "0.13", features = ["zeroize"] }
+hkdf = "0.13"
+chacha20poly1305 = { version = "0.11", default-features = false, features = ["alloc", "zeroize"] }
+
+# Random bytes for keys and nonces. In the browser `getrandom` calls `crypto.getRandomValues`, which needs the `wasm_js`
+# feature on the one target where there is no operating system.
+[target.'cfg(not(all(target_arch = "wasm32", target_os = "unknown")))'.dependencies]
+getrandom = "0.4"
+
+[target.'cfg(all(target_arch = "wasm32", target_os = "unknown"))'.dependencies]
+getrandom = { version = "0.4", features = ["wasm_js"] }
+
+[dev-dependencies]
+serde_json.workspace = true
+
+[lints]
+workspace = true
+
+# The vectors also run in a browser-less wasm runtime (`cargo xtask wasm` only checks the build; see tests/vectors/README.md).
+[target.'cfg(target_arch = "wasm32")'.dev-dependencies]
+wasm-bindgen-test = "0.3"

@@ -47,6 +47,7 @@ mod tests {
         let packages = packages();
         for name in [
             "drafftink-geom",
+            "drafftink-seal",
             "drafftink-render",
             "drafftink-doc",
             "drafftink-engine",

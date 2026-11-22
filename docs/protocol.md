@@ -1,10 +1,10 @@
 # Collaboration protocol
 
-Crate: `crates/protocol` (`drafftink-protocol`, layer L0). Users: the sync client in `crates/collab` and the server in `apps/drafftink-server` (`drafftink-headless serve`). Protocol version: **1**.
+Crate: `crates/protocol` (`drafftink-protocol`, layer L0). Users: the sync client in `crates/collab` and the server in `apps/drafftink-server` (`drafftink-headless serve`). Protocol versions: **1**, plaintext rooms (sections 1 to 10), and **2**, sealed end-to-end encrypted rooms (section 11). A build speaks both (`MIN_PROTOCOL_VERSION = 1`, `PROTOCOL_VERSION = 2`). Nothing in sections 1 to 10 changed when version 2 was added, except what section 2 says about `Join`.
 
 The protocol replaces the old scheme, where every local edit cleared and re-added every shape and sent a full base64 Loro snapshot, the server kept only the last snapshot ("last writer wins"), and every received snapshot rebuilt the whole document (2 s at 1k shapes). Now a local edit sends only the Loro update for that edit, a late joiner or a reconnecting client receives only what its version vector lacks, and the receiving document applies the update as a patch.
 
-The protocol crate knows nothing about Loro. Updates, snapshots and version vectors are opaque byte strings. It builds for `wasm32-unknown-unknown` and depends only on `serde`, `serde_json` and `thiserror`.
+The protocol crate knows nothing about Loro. Updates, snapshots and version vectors are opaque byte strings. It builds for `wasm32-unknown-unknown` and depends only on `serde`, `serde_json`, `thiserror` and, for the room id of version 2 (a hash of the membership token, section 11), `sha2`, `subtle`, `zeroize` and `base64ct`.
 
 ## 1. Transport and framing
 
@@ -46,9 +46,11 @@ Shared shapes: `UserInfo = name str, color u32 (0xRRGGBB)`. `PeerInfo = client_i
 
 ## 2. Versions and the handshake
 
-`Join` is the hello. Its first five bytes (tag, `min_version`, `max_version`) keep their layout in every protocol version. The server picks the highest version both sides speak (`negotiate_version`) and returns it in `Joined.protocol_version`. If the ranges do not overlap, the server stops reading the frame (a newer client may have changed the rest of the layout), sends `Error { code: UnsupportedVersion }` whose message names the versions it speaks, and closes. The client must not retry that error until it is a different build.
+`Join` is the hello. Its first five bytes (tag, `min_version`, `max_version`) keep their layout in every protocol version. A host reads them with `JoinVersions::peek` without reading the rest, picks the highest version both sides speak (`negotiate_version`, or `negotiate_version_within` for a host that speaks fewer versions) and returns it in `Joined.protocol_version`. It then hands the frame to the decoder of that version: `ClientMessage::decode` for 1 and `v2::ClientMessage::decode` for 2. If the ranges do not overlap, the host stops reading the frame (a newer client may have changed the rest of the layout), sends `Error { code: UnsupportedVersion }` whose message names the versions it speaks, and closes. The client must not retry that error until it is a different build.
 
-A version bump is needed for any change to a frame layout, a tag, an enum value, an error code, or a limit that clients rely on. Adding behavior that does not change bytes does not need one. `MIN_PROTOCOL_VERSION` rises only when an old layout is dropped.
+A `Join` lays out the rest of its fields for one version, and a client cannot know before the answer which version the host picks. So a client sends `min_version == max_version`: 1 for a plaintext room, 2 for a room whose link has a key. The kind of room decides, and a room is plaintext or sealed for its whole life. A decoder that gets the other version's `Join` returns `DecodeError::WrongLayout` (error code `UnsupportedVersion`), and the version 1 decoder does the same for a range that does not include 1. A range that includes both (for example 1..=2) is read in the layout of the decoder the host picked.
+
+A version bump is needed for any change to a frame layout, a tag, an enum value, an error code, or a limit that clients rely on. Adding behavior that does not change bytes does not need one. `MIN_PROTOCOL_VERSION` rises only when an old layout is dropped. Version 2 has its own `ErrorCode` enum, so the version 1 enum (numbers 1 to 14) is unchanged.
 
 The first message on a connection must be `Join` (otherwise `NotJoined`), and a second `Join` is `AlreadyJoined`. The server closes a connection that sends no `Join` within 10 seconds.
 
@@ -215,4 +217,85 @@ Local edits leave in the reverse direction: each commit of the doc layer yields 
 
 ## 10. Testing
 
-`crates/protocol/tests/` holds: round trips for every message in binary and JSON; truncation of every prefix of every frame; every single-bit flip; 30k random mutations and 50k random frames; oversize and overlong length prefixes; invalid UTF-8, flags and numbers; hostile JSON (deep nesting, wrong types, oversize); and version negotiation, including the "stop before reading the rest" rule. The invariant checked on every decoded frame: encoding it again and decoding the result gives the same message.
+`crates/protocol/tests/` holds (version 1; version 2 is in `v2.rs`, section 11): round trips for every message in binary and JSON; truncation of every prefix of every frame; every single-bit flip; 30k random mutations and 50k random frames; oversize and overlong length prefixes; invalid UTF-8, flags and numbers; hostile JSON (deep nesting, wrong types, oversize); and version negotiation, including the "stop before reading the rest" rule. The invariant checked on every decoded frame: encoding it again and decoding the result gives the same message.
+
+## 11. Protocol v2: sealed rooms
+
+The design is `docs/design/collab-e2e.md` (sections 4 to 11). In short: the room key lives in the link after `#`, so no server sees it. Every update, snapshot, presence message and image is a *sealed record* made by `crates/seal` (`drafftink-seal`, L1: XChaCha20-Poly1305, random 24-byte nonces, HKDF-SHA256 subkeys). The relay checks membership, numbers records, stores them, and fans them out. It never reads a payload and never imports a Loro blob. Code: `crates/protocol/src/v2/`. Version 2 has no JSON debug form: a payload is not readable, and a `Join` carries a secret.
+
+Routes: `wss://host/r/<room_id>/ws` and `https://host/r/<room_id>/f/<name>` (images, phase 2). The room id is in the path so that a Worker can pick the room before it reads a frame. The v1 route `/ws` stays. A text frame `ping` (every 20 s) is answered with `pong`; other text frames are refused (`KEEPALIVE_PING`, `KEEPALIVE_PONG`).
+
+### Names and proofs
+
+- `v2::RoomId`: 16 bytes, written as 22 characters of unpadded base64url. It is `SHA-256("drafft v1 room-id" || membership token)[..16]`. It is not the v1 `RoomId` (a name of up to 128 characters).
+- `v2::MembershipToken`: 32 bytes, HKDF subkey `"drafft v1 membership"`. A relay accepts a join when `RoomId::accepts(&proof)` holds (constant time). It stores nothing and learns nothing about the key. It sees the token on the wire, so a relay can act as a member towards itself. Scheme 2 (Ed25519, later) removes that.
+- `v2::Proof` is the `scheme` byte and the proof bytes of `Join`. Scheme 1 is the token. A proof of another length is representable (a relay answers `Unauthorized`). It is wiped on drop, and `Debug` does not print it. The same holds for `MembershipToken`.
+- `v2::ImageName`: 16 bytes, 22 characters. `HMAC-SHA256(K_name, file_id)[..16]`, where `file_id` is the 32 raw bytes of the SHA-256 of the picture.
+
+### The sealed record header
+
+```
+SealedRecord = header || nonce[24] || ciphertext || tag[16]
+header       = version u8 (=1) | kind u8 | sender [16] | ctr u64 LE | covers_seq u64 LE      (34 bytes)
+```
+
+`kind`: 1 update, 2 snapshot, 3 presence, 4 direct, 5 image. `ctr` counts the sender's records. `covers_seq` is set on snapshots only. An image has a zero sender and counter. A relay reads the header with `RecordHeader::peek` and refuses a record that is shorter than `SEAL_OVERHEAD` (78 bytes: 34 + 24 + 4 for the length prefix inside the ciphertext + 16), has another format version or an unknown kind, or sets a field that must be zero. The header is in the associated data of the cipher, so a relay cannot change it. Each message checks the kind of the record it carries. Where a message repeats a header field (`from`, `ctr`, `covers_seq`), the decoder checks that they agree.
+
+### Client to relay
+
+| Tag | Message | Fields |
+|---|---|---|
+| 0x01 | `Join` | `min_version u16`, `max_version u16`, `room [16]`, `client_id [16]`, `mode u8` (0 open, 1 create), `scheme u8`, `proof bytes` (at most 256), `last_seq u64`, `captcha opt str` (at most 4096) |
+| 0x10 | `Append` | `record` (kind 1) |
+| 0x11 | `PutSnapshot` | `expected_snapshot_seq u64`, `record` (kind 2) |
+| 0x12 | `Presence` | `record` (kind 3) |
+| 0x13 | `Catchup` | `after_seq u64` |
+| 0x14 | `Direct` | `to opt [16]`, `record` (kind 4) |
+| 0x15 | `DeleteRoom` | none. Only a host that allows it accepts it. |
+| 0x07 | `Leave` | none |
+
+### Relay to client
+
+| Tag | Message | Fields |
+|---|---|---|
+| 0x81 | `Joined` | `protocol_version u16`, `room_state u8` (0 existing, 1 created), `head_seq u64`, `snapshot_seq u64`, `log_records u32`, `log_bytes u32`, `expires_at_ms u64` (0 never), `peers list [16]`, `limits` (`max_frame_bytes u32`, `max_record_bytes u32`, `max_updates_per_sec u16`, `max_presence_per_sec u16`, `max_image_bytes u32`, `max_room_image_bytes u64`, `max_room_images u32`) |
+| 0x82 | `Catchup` | `snapshot opt {covers_seq u64, record}`, `records list {seq u64, from [16], ctr u64, record}` (at most 64), `head_seq u64`, `more bool` |
+| 0x83 | `Record` | `seq u64`, `from [16]`, `ctr u64`, `record` (live; not echoed to the sender) |
+| 0x84 | `Ack` | `ctr u64`, `seq u64` (the record is sequenced and stored) |
+| 0x85 | `PeerJoined` | `client_id [16]`, `max_presence_per_sec u16` |
+| 0x86 | `PeerLeft` | `client_id [16]` |
+| 0x87 | `PresenceBundle` | `list {from [16], record}` (at most 256, one bundle per `PRESENCE_TICK_MS`) |
+| 0x88 | `Error` | `code u8`, `message str`, `retry_after_ms opt u32` |
+| 0x89 | `SnapshotResult` | `ok bool`, `covers_seq u64`, `snapshot_seq u64`, `head_seq u64` |
+| 0x8a | `CompactAdvice` | `head_seq u64` |
+| 0x8b | `Direct` | `from [16]`, `record` |
+| 0x8c | `Retention` | `expires_at_ms u64`, `expiring bool` |
+
+Integers, lengths, options and strictness are as in section 1. The design's table has `PeerJoined` with a client id only, and its section 11.3 says the new personal presence rate travels with `PeerJoined`; the field is there (`RoomLimits::presence_share(peers)` computes it, and a client keeps the lower of its old and new rate).
+
+### Error codes (`v2::ErrorCode`)
+
+1 `Malformed`, 2 `UnsupportedVersion`, 3 `Unauthorized`, 4 `Forbidden`, 5 `RoomFull`, 6 `TooLarge`, 7 `RateLimited`, 9 `Replaced`, 10 `NotJoined`, 11 `AlreadyJoined`, 13 `Unavailable`, 14 `Internal` have the numbers and meaning of version 1. New: 15 `RoomMissing` (`open` on a room that does not exist), 16 `WrongRoomKind` (a plaintext room joined as sealed or the other way round), 17 `Conflict` (a compare-and-set failed), 18 `DailyLimit` (the host's capacity, with `retry_after_ms`). `ResyncRequired` (8) and `InvalidUpdate` (12) do not exist in version 2: the relay cannot import a payload, and a client repairs a gap with `Catchup`. A version 1 client cannot read codes 15 to 18, so a host that answers a version 1 `Join` for a sealed room uses a version 1 code.
+
+### Limits of version 2
+
+Hard ceilings are constants in `drafftink-protocol` (`limits.rs`); a relay may announce lower values in `Joined.limits`. The encoders refuse to build a frame above them, and the decoders enforce them before they allocate.
+
+| Constant | Value |
+|---|---|
+| `MAX_FRAME_BYTES` | 16 MiB (as version 1) |
+| `MAX_RECORD_BYTES` (update, direct) | 4 MiB |
+| `MAX_SNAPSHOT_RECORD_BYTES` | 15 MiB (`MAX_SYNC_BYTES`) |
+| `MAX_PRESENCE_RECORD_BYTES` | 64 KiB |
+| `MAX_CATCHUP_RECORDS`, `CATCHUP_TARGET_BYTES` | 64 records; a relay stops adding records past 2 MiB and sets `more` (always at least one record) |
+| `MAX_IMAGE_BYTES` | 4 MiB before sealing; `MAX_SEALED_IMAGE_BYTES` is that plus `SEAL_OVERHEAD` |
+| `MAX_ROOM_IMAGE_BYTES`, `MAX_ROOM_IMAGES` | 50 MiB of sealed images, 200 images |
+| `MAX_ROOM_STATE_BYTES`, `SELF_HOST_ROOM_STATE_BYTES` | 32 MiB (the demo), 256 MiB (self-host default) |
+| `MAX_PEERS_PER_ROOM` | 64 (the protocol maximum is `MAX_PEERS`, 256) |
+| `ROOM_PRESENCE_BUDGET`, `PRESENCE_TICK_MS` | 40 messages per second for the room, a bundle every 100 ms |
+| Per connection | `Append` 60 per second with burst 2x (`DEFAULT_MAX_UPDATES_PER_SEC`), `PutSnapshot` once per `PUT_SNAPSHOT_MIN_INTERVAL_MS` (10 s), `Catchup` once per `CATCHUP_MIN_INTERVAL_MS` (1 s), `Direct` `MAX_DIRECT_PER_SEC` (5) per second, `Presence` by `Joined.limits.max_presence_per_sec`. A room: `MAX_ROOM_UPDATES_PER_SEC` (200). |
+| `ROOM_TTL`, `ROOM_LEAVE_GRACE`, `ROOM_RECHECK` | 48 h after the last visit (an accepted `Join`), 60 s after the last connection closes, 1 h (design section 10). A private instance sets no TTL. |
+
+### Tests
+
+`crates/protocol/tests/v2.rs`: round trips and the wire bytes of every message; every truncation, every single-bit flip, 30,000 mutations and 50,000 random frames; huge length prefixes; each way a record can be wrong for its message; the `Join` handshake (same first five bytes, negotiation, `WrongLayout`); the membership check; error codes; the values of the constants. `crates/seal/tests/` holds the known-answer, tamper, replay, nonce, link, hostile and logging tests of the cipher side (`crates/seal/tests/vectors/README.md`).

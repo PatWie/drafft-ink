@@ -32,6 +32,18 @@ pub enum Rule {
     /// A range has its minimum above its maximum.
     #[error("min is above max")]
     InvertedRange,
+    /// Not unpadded base64url of the right length.
+    #[error("must be unpadded base64url of the right length")]
+    NotBase64Url,
+    /// A sealed record that does not start with a valid header or is too short.
+    #[error("is not a sealed record")]
+    BadRecord,
+    /// A sealed record of another kind than this message carries.
+    #[error("is a sealed record of the wrong kind")]
+    WrongRecordKind,
+    /// Two fields that must agree do not (a sender and the sender in the record header).
+    #[error("disagrees with the record it carries")]
+    Inconsistent,
 }
 
 /// A field or value broke a protocol rule.
@@ -120,6 +132,20 @@ pub enum DecodeError {
     /// The message decoded but breaks a protocol rule.
     #[error(transparent)]
     Invalid(#[from] ValidationError),
+    /// A `Join` that names protocol versions this build speaks, but not the one this codec reads: a v2 `Join` given
+    /// to the v1 decoder or the other way round. Read the first five bytes with [`crate::JoinVersions::peek`],
+    /// negotiate, and pick the decoder of the negotiated version.
+    #[error(
+        "this join is for protocol versions {client_min}..={client_max}, which the version {codec} codec cannot read"
+    )]
+    WrongLayout {
+        /// Lowest version the client speaks.
+        client_min: u16,
+        /// Highest version the client speaks.
+        client_max: u16,
+        /// The version of the codec that was asked to decode it.
+        codec: u16,
+    },
     /// The client's protocol version range does not overlap the one this build speaks.
     #[error(
         "no common protocol version: client speaks {client_min}..={client_max}, this side speaks {ours_min}..={ours_max}"
@@ -145,7 +171,9 @@ impl DecodeError {
     pub fn error_code(&self) -> crate::ErrorCode {
         match self {
             DecodeError::FrameTooLarge { .. } | DecodeError::FieldTooLong { .. } => crate::ErrorCode::TooLarge,
-            DecodeError::UnsupportedVersion { .. } => crate::ErrorCode::UnsupportedVersion,
+            DecodeError::UnsupportedVersion { .. } | DecodeError::WrongLayout { .. } => {
+                crate::ErrorCode::UnsupportedVersion
+            }
             DecodeError::Empty
             | DecodeError::Truncated(_)
             | DecodeError::TrailingBytes(_)

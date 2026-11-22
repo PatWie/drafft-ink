@@ -6,7 +6,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
 use axum::extract::ws::{Message, WebSocket};
-use drafftink_protocol::{ClientId, ClientMessage, ErrorCode, ServerMessage, negotiate_version};
+use drafftink_protocol::{ClientId, ClientMessage, ErrorCode, PROTOCOL_V1, ServerMessage, negotiate_version_within};
 use futures_util::stream::SplitSink;
 use futures_util::{SinkExt, StreamExt};
 use tokio::sync::OwnedSemaphorePermit;
@@ -304,7 +304,9 @@ impl Conn {
         let ClientMessage::Join { min_version, max_version, room, client_id, auth_token, version, user } = msg else {
             return Flow::Close;
         };
-        let Some(protocol_version) = negotiate_version(min_version, max_version) else {
+        // This server hosts plaintext rooms only (sealed rooms come with the relay core).
+        let Some(protocol_version) = negotiate_version_within(min_version, max_version, PROTOCOL_V1..=PROTOCOL_V1)
+        else {
             self.fail(ErrorCode::UnsupportedVersion, "no protocol version in common");
             return Flow::Close;
         };

@@ -17,7 +17,9 @@ fn join(min: u16, max: u16) -> ClientMessage {
 
 #[test]
 fn negotiation_picks_the_highest_common_version() {
-    assert_eq!(negotiate_version(1, 1), Some(PROTOCOL_VERSION));
+    // A client that speaks only version 1 gets 1. This line said `Some(PROTOCOL_VERSION)` while the two were equal.
+    assert_eq!(negotiate_version(1, 1), Some(PROTOCOL_V1));
+    assert_eq!(negotiate_version(1, 2), Some(PROTOCOL_V2));
     assert_eq!(negotiate_version(MIN_PROTOCOL_VERSION, PROTOCOL_VERSION + 5), Some(PROTOCOL_VERSION));
     assert_eq!(negotiate_version(PROTOCOL_VERSION + 1, PROTOCOL_VERSION + 2), None);
     assert_eq!(negotiate_version(0, 0), None, "version 0 is not spoken");

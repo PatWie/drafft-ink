@@ -8,6 +8,7 @@ use crate::error::{DecodeError, EncodeError};
 use crate::ids::{ClientId, RoomId};
 use crate::limits::*;
 use crate::message::*;
+use crate::version::JoinVersions;
 use crate::wire::{Reader, Writer};
 
 // Client tags.
@@ -38,20 +39,7 @@ const A_VIEWPORT: u8 = 4;
 const A_SELECTION: u8 = 8;
 const A_ALL: u8 = A_USER | A_CURSOR | A_VIEWPORT | A_SELECTION;
 
-pub(crate) fn check_version_range(client_min: u16, client_max: u16) -> Result<(), DecodeError> {
-    if negotiate_version(client_min, client_max).is_some() {
-        Ok(())
-    } else {
-        Err(DecodeError::UnsupportedVersion {
-            client_min,
-            client_max,
-            ours_min: MIN_PROTOCOL_VERSION,
-            ours_max: PROTOCOL_VERSION,
-        })
-    }
-}
-
-fn finish(w: Writer) -> Result<Vec<u8>, EncodeError> {
+pub(crate) fn finish(w: Writer) -> Result<Vec<u8>, EncodeError> {
     let out = w.finish();
     if out.len() > MAX_FRAME_BYTES {
         return Err(EncodeError::FrameTooLarge { len: out.len(), max: MAX_FRAME_BYTES });
@@ -59,7 +47,7 @@ fn finish(w: Writer) -> Result<Vec<u8>, EncodeError> {
     Ok(out)
 }
 
-fn split_tag(frame: &[u8]) -> Result<(u8, Reader<'_>), DecodeError> {
+pub(crate) fn split_tag(frame: &[u8]) -> Result<(u8, Reader<'_>), DecodeError> {
     if frame.len() > MAX_FRAME_BYTES {
         return Err(DecodeError::FrameTooLarge { len: frame.len(), max: MAX_FRAME_BYTES });
     }
@@ -222,7 +210,7 @@ impl ClientMessage {
             C_JOIN => {
                 let min_version = r.u16("min_version")?;
                 let max_version = r.u16("max_version")?;
-                check_version_range(min_version, max_version)?;
+                JoinVersions { min: min_version, max: max_version }.check_codec(PROTOCOL_V1)?;
                 let room = get_room(&mut r)?;
                 let client_id = ClientId::from_bytes(r.id16("client_id")?);
                 let auth_token = r.option("auth flag", |r| r.string("auth_token", MAX_AUTH_TOKEN_BYTES))?;

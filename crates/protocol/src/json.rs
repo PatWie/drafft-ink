@@ -2,8 +2,9 @@
 //! debugging; production traffic uses the binary form.
 
 use crate::error::{DecodeError, EncodeError};
-use crate::limits::MAX_JSON_BYTES;
+use crate::limits::{MAX_JSON_BYTES, PROTOCOL_V1};
 use crate::message::{ClientMessage, ServerMessage};
+use crate::version::JoinVersions;
 
 /// Serde adapter: `Vec<u8>` as a hex string.
 pub(crate) mod hex_bytes {
@@ -39,7 +40,7 @@ impl ClientMessage {
     pub fn from_json(text: &str) -> Result<Self, DecodeError> {
         let msg: ClientMessage = parse(text)?;
         if let ClientMessage::Join { min_version, max_version, .. } = &msg {
-            crate::binary::check_version_range(*min_version, *max_version)?;
+            JoinVersions { min: *min_version, max: *max_version }.check_codec(PROTOCOL_V1)?;
         }
         msg.validate()?;
         Ok(msg)

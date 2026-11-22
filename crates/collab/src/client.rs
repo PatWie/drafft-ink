@@ -23,8 +23,8 @@ use std::fmt;
 use drafftink_doc::{DocError, LoroStore};
 use drafftink_protocol::{
     AwarenessState, ClientId, ClientMessage, ErrorCode, IDLE_TIMEOUT_MS, Limits, MAX_AUTH_TOKEN_BYTES,
-    MAX_UPDATE_BYTES, MIN_PROTOCOL_VERSION, PING_INTERVAL_MS, PROTOCOL_VERSION, PeerInfo, Point, RoomId, ServerMessage,
-    SyncKind, UserInfo, ValidationError, Viewport, reconnect_delay_ms,
+    MAX_UPDATE_BYTES, PING_INTERVAL_MS, PROTOCOL_V1, PeerInfo, Point, RoomId, ServerMessage, SyncKind, UserInfo,
+    ValidationError, Viewport, reconnect_delay_ms,
 };
 use drafftink_scene::{ChangeKind, ChangeSet};
 use loro::VersionVector;
@@ -624,8 +624,9 @@ impl CollabClient {
         };
         self.phase = Phase::Joining { since: now_ms };
         let join = ClientMessage::Join {
-            min_version: MIN_PROTOCOL_VERSION,
-            max_version: PROTOCOL_VERSION,
+            // This client speaks the plaintext protocol only. A Join lays out its fields for one version, so min == max.
+            min_version: PROTOCOL_V1,
+            max_version: PROTOCOL_V1,
             room: self.cfg.room.clone(),
             client_id: self.cfg.client_id,
             auth_token: self.cfg.auth_token.as_ref().map(|t| t.0.clone()),
@@ -695,7 +696,7 @@ impl CollabClient {
         if !matches!(self.phase, Phase::Joining { .. }) {
             return;
         }
-        let version_ok = (MIN_PROTOCOL_VERSION..=PROTOCOL_VERSION).contains(&version);
+        let version_ok = version == PROTOCOL_V1;
         if !version_ok || *room != self.cfg.room || client_id != self.cfg.client_id {
             log::warn!("collab: the server answered the join with a different version, room or id");
             self.fail_connection(now_ms, "The server's answer did not match the request");
