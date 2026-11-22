@@ -9,7 +9,7 @@ open the instance, so the Worker checks the Access JWT itself on `/r/*` and `/ap
 | `src/access_jwt.rs` | Pure Rust, no clock, no network, no RSA crate. Parses the token, refuses every algorithm but `RS256`, checks the claims, owns every refusal code and text. Native unit tests, and `wasm-bindgen` functions on `wasm32`. |
 | `src/access.ts` | The shell: gets and caches the signing keys, verifies the signature with Web Crypto, builds the 401, strips the identity. Needs only `fetch` and `crypto.subtle`. |
 | `test/access*.test.ts` | Plain vitest in Node, against the real wasm module. `access-fixtures.ts` holds the helpers. |
-| `vitest.access.config.ts` | A node-environment config for the tests above, until the Worker's own vitest setup takes them over. |
+| `test/private-access.test.ts`, `test/misconfigured-refuse.test.ts` | The same check inside the Worker, in miniflare: see "In the Worker" below. |
 
 ## What is checked, in this order
 
@@ -67,51 +67,38 @@ cookies and headers stay. Method, URL, body and an upgrade request are untouched
 | `ACCESS_REQUIRED` | `true` (or the string `"true"`) turns the check on. Off: the guard checks nothing and still strips. |
 | `ACCESS_TEAM_DOMAIN` | The host `<team>.cloudflareaccess.com`, no scheme, no slash. |
 | `ACCESS_AUD` | The AUD tag of the Access application. |
-| `ACCESS_CERTS_URL` | Optional. Replaces the certs URL, for tests and local runs. |
-| `ACCESS_APP_HOSTNAME` | Optional, new. The host people open (`canvas.patwie.com`). Used in the 401 text and the `Origin` rule. Defaults to the host of the request URL, which is wrong on a `workers.dev` host: set it in the `private` environment. |
+| `ACCESS_CERTS_URL` | Optional. Replaces the certs URL. **For tests and local runs only**; it is empty in every deployment. |
+| `ACCESS_APP_HOSTNAME` | Optional. The host people open (`canvas.patwie.com`). Used in the 401 text and the `Origin` rule. Defaults to the host of the request URL, which is wrong on a `workers.dev` host: set it in the `private` environment. |
 
-## Wiring (done by the Worker's `src/index.ts`)
+## In the Worker (`src/index.ts`)
+
+`handle` calls `guard` first, before routing, for every request that reaches the Worker (`/r/*` and `/api/*`):
 
 ```ts
-import { guard, coreFromWasm } from "./access";
-import * as wasm from "../pkg/drafftink_worker"; // after initSync({ module }) as in docs/design/collab-spike.md, section 5
-
-const accessCore = coreFromWasm(wasm); // exports access_parse, access_check_claims, access_refusal
-
-// in fetch(request, env), for /r/* and /api/* only:
-const checked = await guard(request, env, Date.now(), { core: accessCore });
-if (checked instanceof Response) return checked; // 401 JSON: the object and R2 are never called
-const forward = checked;                          // the request without Access headers and cookies
-return env.ROOM.get(id).fetch(forward);
+const accessCore = coreFromWasm({ access_parse, access_check_claims, access_refusal }); // from ./wasm
+const checked = await guard(request, accessEnv(env), Date.now(), { core: accessCore });
+if (checked instanceof Response) return checked; // 401 JSON: no object and no R2 is called
+// `checked` is the request without Access headers and cookies; it is what goes on to the object
 ```
 
-`env` may be the Worker's whole `Env`: `guard` reads only the five names above. `clearAccessCache()` forgets the
-cached key sets (tests).
+- `accessEnv` reads `ACCESS_REQUIRED` **fail-closed** (`accessRequired` in `src/env.ts`): only empty, `false` and `0` mean off.
+  `"yes"` or `"True "` keep the lock on.
+- With the check on and `ACCESS_TEAM_DOMAIN` or `ACCESS_AUD` empty, every request is refused (`not_configured`), even one that
+  carries a token signed by a key the Worker could trust.
+- A request on a host other than `ACCESS_APP_HOSTNAME` (a `workers.dev` address) with no assertion is refused. The
+  `workers_dev` and `preview_urls` switches are off as well; this is the second lock.
+- The stripped request is the one forwarded to the object, for WebSocket upgrades too. `new Request(request, { headers })`
+  keeps an upgrade working in workerd (miniflare: `private-access.test.ts`; real runtime: `scripts/private-smoke.mjs`).
+
+Two faults of the first version showed only in workerd and are fixed: the key fetch used `redirect: "error"`, which workerd
+refuses, and called the global `fetch` as a method of the key store (an "illegal invocation" in workerd). Both made every
+valid token fail with `keys_unavailable`; the Node tests could not see them.
 
 ## Running the tests
 
-Rust, native: `cargo nextest run -p drafftink-worker access`.
-
-TypeScript, with the real wasm (Node 22):
-
-```bash
-cargo build -p drafftink-worker --lib --target wasm32-unknown-unknown --release
-wasm-bindgen --target nodejs --out-dir target/access-wasm target/wasm32-unknown-unknown/release/drafftink_worker.wasm
-cd apps/drafftink-worker && npx vitest run --config vitest.access.config.ts
-```
-
-`ACCESS_WASM_DIR` overrides `target/access-wasm`. Fragment for the Worker's `package.json` (the file belongs to the
-Worker's author; versions are the ones the tests ran with):
-
-```json
-{
-  "scripts": { "test:access": "vitest run --config vitest.access.config.ts" },
-  "devDependencies": { "vitest": "^5.1.1", "typescript": "^7.0.2", "@types/node": "^22" }
-}
-```
-
-If the Worker's own vitest config already includes `test/**/*.test.ts` in a Node-compatible pool, `vitest.access.config.ts`
-and the script are not needed. The tests import `../src/access`, use `node:` modules and need the wasm built for Node.
+Everything runs with `npm test` in `apps/drafftink-worker`, which builds the wasm module for the Worker (`pkg/`) and for Node
+(`pkg-node/`, a CommonJS build with its own `package.json`) when they are missing. Only the Access tests in Node:
+`npm run test:access`. Rust, native: `cargo nextest run -p drafftink-worker access`. `ACCESS_WASM_DIR` overrides `pkg-node`.
 
 ## What the tests cover
 
@@ -122,7 +109,7 @@ every other algorithm; header without `kid`, wrong `typ`; truncated, misshapen, 
 codes, reason words and texts; random strings, random base64url parts, random JSON bytes and a byte-by-byte mutation of
 a valid token never panic (proptest).
 
-TypeScript (53 tests): the cases above through the whole path with real RSA 2048 signatures; tampered payload; an
+TypeScript, Node (53 tests): the cases above through the whole path with real RSA 2048 signatures; tampered payload; an
 attacker key with a known `kid`; unknown `kid` (one refetch, none inside the minute, one after it); rotation (both keys
 verify, a new key is picked up); one-hour cache; one fetch for concurrent requests; four ways the fetch fails, recovery
 after 5 seconds; missing header is `access_required`, garbage is `access_invalid`; cookie fallback and the `Origin`
@@ -139,6 +126,4 @@ reason words and no token, token part, email or client id.
   `use`, and `public_cert`); a real response is unchecked.
 - CPU time on the Free plan. The signature check is one `crypto.subtle.verify`, and the wasm side parses at most 8 KiB;
   both should be well under 10 ms, but only a deployed Worker can say.
-- `new Request(request, { headers })` for a WebSocket upgrade in workerd (the Node tests cover the headers, the body and
-  the method, not the upgrade).
 - The names of the cookies `CF_AppSession` and `CF_Binding`.

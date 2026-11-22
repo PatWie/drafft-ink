@@ -11,11 +11,12 @@ src/lib.rs, config.rs, edge.rs, host.rs, driver.rs   Rust: settings, edge checks
 src/wasm/                                            Rust: wasm-bindgen glue (wasm32 only)
 src/index.ts                                         the Worker: routing, Origin check, 413/401 before any object, /api/status, quota gate
 src/room.ts                                          the Durable Object `Room`: hibernation, timers, alarms, deletion
-src/sql-store.ts, blobs.ts                           the room's tables; the picture backend seam (BlobBackend)
+src/access.ts, access_jwt.rs                         the Cloudflare Access check (ACCESS.md)
+src/sql-store.ts, blobs.ts                           the room's tables; the picture backends (database, R2) behind BlobBackend
 src/wake.ts, sockets.ts, effects.ts, ...             small helpers
 test/                                                vitest on miniflare (real Worker, real Room, real wasm core)
 tests/                                               Rust: the fixtures of the TypeScript tests, and the smoke test against `wrangler dev`
-scripts/                                             build-wasm.sh, render-config.sh, dev.sh
+scripts/                                             build-wasm.sh, render-config.sh, dev.sh, private-smoke.mjs
 ```
 
 ## Build, test, run
@@ -26,9 +27,11 @@ Needs Node 22 (`export PATH=$HOME/.local/node22/bin:$PATH` on the dev machine), 
 ```bash
 cd apps/drafftink-worker
 npm ci                       # versions are pinned in package.json and package-lock.json
-npm run build:wasm           # cargo (release-wasm) + wasm-bindgen into pkg/ (git-ignored)
-npm run typecheck            # tsc --noEmit, strict
-npm test                     # vitest on miniflare; builds pkg/ first when it is missing
+npm run build:wasm           # cargo (release-wasm) + wasm-bindgen into pkg/ (the Worker) and pkg-node/ (the Access tests); git-ignored
+npm run typecheck            # tsc --noEmit, strict, for the Worker and for the Node tests
+npm test                     # everything: vitest on miniflare (demo, no-expiry, private, misconfigured) and the Access tests in Node
+npm run test:access          # only the Access tests
+npm run smoke:private        # the private environment in the real local runtime (below)
 cargo nextest run -p drafftink-worker                    # the Rust side, native
 cargo test -p drafftink-worker --test fixtures -- --ignored regenerate   # rewrite test/fixtures/frames.json
 ```
@@ -75,8 +78,11 @@ reason when a value is wrong.
 |---|---|---|---|
 | `ROOM_TTL_SECS` | seconds from the last visit to the deletion; **empty: rooms never expire, no alarm** | `172800` | empty |
 | `ROOM_LEAVE_GRACE_SECS` | seconds a room past its deadline lives on after the last connection closed | `60` | `60` (unused without a deadline) |
-| `BLOB_STORE` | `do`: pictures are rows of the room's database. `r2`: phase 3P, not built (the Worker answers `500`) | `do` | `r2` |
-| `ACCESS_REQUIRED`, `ACCESS_TEAM_DOMAIN`, `ACCESS_AUD` | Cloudflare Access (another module). While `ACCESS_REQUIRED` is true and no check is wired in, every request is refused | `false`, empty, empty | `true`, team, audience |
+| `BLOB_STORE` | `do`: pictures are rows of the room's database. `r2`: the manifest is in the database and the bytes in the R2 bucket `BLOBS` (the Worker answers `500 bad_config` when the binding is missing) | `do` | `r2` |
+| `ACCESS_REQUIRED` | Turns the Access check on. **Fails closed**: only empty, `false` and `0` switch it off, so a typo keeps the instance locked | `false` | `true` |
+| `ACCESS_TEAM_DOMAIN`, `ACCESS_AUD` | `<team>.cloudflareaccess.com` and the AUD tag of the application. Required when the check is on: if either is empty everything is refused | empty | team, audience |
+| `ACCESS_APP_HOSTNAME` | The host people open (`canvas.patwie.com`). Used in the texts and the `Origin` rule. A request on another host (`workers.dev`) without an assertion is refused | empty | the domain |
+| `ACCESS_CERTS_URL` | **Tests and local runs only.** Replaces `https://<team>/cdn-cgi/access/certs` as the place of the signing keys. Empty in every deployment | empty | empty |
 | `ALLOWED_ORIGINS` | comma separated origins that may open a WebSocket from a browser; empty: the page's own origin only | `https://drafft.ink` | `https://<domain>` |
 | `MAX_ROOM_STATE_BYTES` | sealed bytes of snapshot plus log | 32 MiB | 256 MiB |
 | `MAX_IMAGE_BYTES` | largest picture before sealing | 4 MiB | 4 MiB |
@@ -94,6 +100,8 @@ variable above plus `WORKER_NAME` and `DOMAIN`, and `PRIVATE_R2_BUCKET`. `CF_WOR
 Makefile uses today) are the defaults of the private name and domain. An empty value that is set on purpose (for
 example `PRIVATE_ROOM_TTL_SECS=`) stays empty.
 
+`PRIVATE_ACCESS_APP_HOSTNAME` defaults to the private domain; `PRIVATE_ACCESS_TEAM_DOMAIN` and `PRIVATE_ACCESS_AUD` have no default, so a private config rendered without them refuses every request until they are set.
+
 **The Makefile.** `make cf-config` still fills only `@CF_WORKER_NAME@`, `@CF_DOMAIN@` and `@ASSETS_DIR@`, which are not
 the placeholders of the new template, so it writes an unusable file. It must call
 `apps/drafftink-worker/scripts/render-config.sh private target/cloudflare/wrangler.toml` instead (the same `CF_*` values
@@ -102,6 +110,11 @@ are the defaults), and `cf-dev`, `cf-check` and `cf-deploy` must add `--env priv
 
 ## How a request is handled
 
+- **Access first (`src/index.ts`, `src/access.ts`).** Before anything else the Worker runs the guard of `ACCESS.md` on every
+  request: with `ACCESS_REQUIRED` on, a missing or invalid `Cf-Access-Jwt-Assertion` is `401` (JSON, never a redirect) and
+  neither an object nor R2 is touched. What goes on is the same request without any `cf-access-*` header and without the
+  Access cookies, so the room never learns who connected. (`new Request(request, {headers})` keeps a WebSocket upgrade
+  working in workerd: tested in miniflare and in a real `wrangler dev` with a real WebSocket.)
 - **Worker (`src/index.ts`).** A path that is not `/r/<16 bytes>/ws|f|f/<name>` or `/api/status` is a `404`. A bad room id
   is `404 room_missing`. Picture routes need `Authorization: Drafft-Member <base64url token>`: the Worker hashes the
   32 bytes (`checkMember` in the wasm core, `RoomId::accepts`) and answers `401` before any object is called; a bad name is
@@ -147,14 +160,40 @@ are the defaults), and `cf-dev`, `cf-check` and `cf-deploy` must add `--env priv
   never passed to `ws.close`). The error texts of the Free plan are undocumented: `src/host-error.ts` matches a message
   by words (a best guess) and must be checked against a real account.
 
-### The picture seam (phase 3P)
+### Pictures in R2 (the private environment)
 
-`BlobBackend` in `src/blobs.ts` is the interface between the core's synchronous `BlobHost` calls and the storage of the
-sealed bytes. The demo's `DatabaseBlobs` writes the bytes into the manifest row. For R2: `put` writes the manifest row with
-`data = NULL` and remembers the bytes; after the core returned (and answered `201`), `settle()` does `await bucket.put(key, bytes)`
-with the key `r/<room>/<name>` and, when it fails, deletes the manifest row and throws so the reply becomes `503`; `purge()`
-deletes `r/<room>/` when the room is deleted; downloads are read from R2 by the Worker after its membership check, so they
-wake no object. The doc comment of `BlobBackend` says the same.
+`BlobBackend` in `src/blobs.ts` is the seam between the core's synchronous `BlobHost` calls and the place of the sealed
+bytes. `DatabaseBlobs` (demo) writes the bytes into the manifest row. `R2Blobs` (`BLOB_STORE=r2`, binding `BLOBS`, key
+`r/<room id hex>/<name hex>`) works like this:
+
+- **Upload.** The core checks the limits and the quotas (from the manifest) and calls `put`, which writes the manifest row
+  first: name and size, no bytes. After the core answered `201`, `settle()` writes the bytes with `bucket.put`. When R2 fails
+  the manifest goes back to what it was (a new row is deleted, an overwritten one gets its old size) and the reply is `503`,
+  or `429 rate_limited` with `Retry-After: 1` when R2 answers its limit of one write a second per key (error 10058). So
+  the manifest never lists a picture that R2 lacks, except after a crash of the object between the two steps: a download then
+  finds nothing and the client uploads again.
+- **Buffered, not streamed.** The core has to read the sealed picture to check its header, so the body is read once into
+  memory (at most 4 MiB plus the seal, the 413 check bounds it) and handed to R2 as bytes. R2's warning about the 128 MB
+  Worker limit does not apply to a body of this size.
+- **List, `HEAD`, quotas** come from the manifest and call no R2 operation (`HEAD` is answered from the listing).
+- **Download.** After the membership check the Worker reads R2 itself and streams the object. No object is woken
+  (tested with the object call counter). `R2Blobs.get` throws, so the core can never serve a download from the room.
+- **Deletion** (`DeleteRoom`, or the deadline when `ROOM_TTL_SECS` is set). The room lists the prefix `r/<room hex>/`
+  in pages, deletes each page, and only then calls `deleteAlarm()` and `deleteAll()`. When R2 fails, the rows stay, a
+  tombstone table notes that the room is deleted, and an alarm 30 seconds later tries again. Until it succeeds every request
+  for the room is `503` (an upgrade is not accepted). An upload that was in flight during the purge could leave an orphan
+  object; the manifest is gone then, so nothing refers to it.
+
+## Private environment in the real runtime
+
+`npm run smoke:private` (`node scripts/private-smoke.mjs [--port 8793]`; needs `npm run build:wasm` once) starts a tiny HTTP
+server with a throwaway key set, renders the config for the private environment with `ACCESS_REQUIRED` on and
+`ACCESS_CERTS_URL` pointing at that server, runs `wrangler dev --env private` (local, state in a temporary folder), and
+checks with real HTTP and a real WebSocket (`ws`): no token is `401 access_required`; a broken signature, an expired token and
+another audience are `401`; a person's token and a service token (`common_name`) both open the WebSocket and join, append
+(Ack) and ping; a picture is uploaded, listed and downloaded from R2; the object received no `cf-access-*` header and no
+`CF_Authorization` cookie (the entry `test/smoke-worker.ts` adds one route, `/api/__seen/<room>`, that lists what the
+object saw; it is not part of the product); and `DeleteRoom` removes the picture from R2.
 
 ## Tests
 
@@ -168,8 +207,17 @@ wake no object. The doc comment of `BlobBackend` says the same.
   object, pictures, hostile frames), `retention` (deadline and alarm after a join, a later visit, edits do not move it,
   an early alarm re-arms, deletion at the deadline, expiring with someone connected and the 1 h recheck, the grace, a rejoin
   in the grace, a stale socket, the contrast with a pinging one, re-creation), `no-expiry` (no deadline and no alarm,
-  `DeleteRoom`), `quota` and `quota-wake` (a used-up limit inside a room, in the Worker, and while a room wakes), and
-  `canary`.
+  a restart after 400 simulated days, `DeleteRoom`), `quota` and `quota-wake` (a used-up limit inside a room, in the Worker,
+  and while a room wakes), and `canary`.
+- **vitest, private environment** (`private-*.test.ts`, miniflare with R2 and the Access key set served by the test
+  config): `private-access` (401 on every route without an object or R2 call, a workers.dev style host, invalid tokens,
+  person and service token, the WebSocket upgrade after the request was rebuilt, headers and cookies stripped before the
+  object), `misconfigured-refuse` (Access on with no team and no AUD, and a typo as the switch: everything is refused, even a
+  validly signed token), `private-r2` (manifest row without bytes, bytes in R2, list and `HEAD` without R2, downloads
+  without an object call, a failed write leaves no manifest row, the 429 mapping, quotas of the environment, `Joined.limits`,
+  `DeleteRoom` with paging that keeps another room's objects, a failed purge that is retried by the alarm), and
+  `private-canary` (the blind-storage scan over the database, R2 keys, bodies and metadata, and the frames).
+- **Access tests** (`access*.test.ts`, plain Node against `pkg-node/`): see `ACCESS.md`.
 - **The canary** sends sealed records and a sealed picture that hold `CANARY-7f3a91c2`, and a sealed presence with the name
   `Zelda-Canary`; then it dumps every table of the room's SQLite (including `sqlite_master` and the key-value area), every
   frame each client sent and received and the HTTP replies, and asserts no hit for the marker, the name, the room key, every

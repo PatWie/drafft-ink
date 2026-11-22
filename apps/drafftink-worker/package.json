@@ -22,6 +22,7 @@
     "@types/node": "22.15.17",
     "typescript": "5.9.3",
     "vitest": "5.1.1",
-    "wrangler": "4.166.0"
+    "wrangler": "4.166.0",
+    "ws": "8.21.0"
   }
 }

@@ -1243,3 +1243,60 @@ Repository: `docs/protocol.md`, `docs/collab.md`, `docs/server.md`, `docs/crdt.m
 A sealed joiner stayed empty when the room held one record of 256 KiB or more (about 3,000 rectangles in one commit) after a small first snapshot. The relay, the frames and the seal were not the cause: the same room was joined whole by `SealedClient` over the loopback and over the `serve` process at 1,000, 3,000 and 10,000 elements as a seeded snapshot, a log tail of 450 records and a compacted room. The cause was `LoroStore::apply_remote` in `crates/doc` with `stage_import_bytes` set (the engine sets it to 256 KiB for every tab): it staged a big message into a fresh CRDT document that had thrown away the history the replica already held (the room's first snapshot, with the schema operations). The big update then waited for operations that were gone, `import` reported them pending, and the client said "Connected. All changes are shared." over an empty drawing.
 
 Fixed in `begin_staged` (the fresh document takes over the old history first). The sealed client now also checks `LoroStore::has_pending_remote` when the catch-up ends and says "Part of this room could not be loaded because some of its saved history is missing" with the action `SaveCopy`, so a room whose log really lacks history is never a silent empty joiner. Protocol v1 rooms had the same document bug; their client recovered by asking the server for the room again (`sync_requests` 1), which the new test in `crates/collab/tests/server.rs` now requires to be 0. A drawing over the room limit is refused in plain words (`RoomFull`, "This room holds as much as a room may ... Save a copy") and stays on the device; that was already so and is tested at the limit and one byte over.
+
+### 14.7 What phase 3P built in the Worker (private environment), and where it differs from the text above (2026-11-22)
+
+The private environment (section 19) runs from the same Worker as the demo. `apps/drafftink-worker/README.md` has the commands and
+the variables; `ACCESS.md` has the Access check.
+
+- **The Access guard is wired in** (19.5). `src/index.ts` runs it before routing, for every request: a missing or invalid
+  assertion is a `401` JSON that never reaches an object or R2, and the request that goes on has no `cf-access-*` header and
+  no Access cookie. `ACCESS_REQUIRED` fails closed: only empty, `false` and `0` switch it off, and with it on an empty team
+  domain or AUD tag refuses everything. A request on a host other than `ACCESS_APP_HOSTNAME` (`workers.dev`) without an
+  assertion is refused. `ACCESS_CERTS_URL` replaces the key set URL for tests and local runs and is empty in a deployment.
+  Rebuilding the request without the Access headers keeps a WebSocket upgrade working in workerd (miniflare and a real
+  `wrangler dev`). Two faults of the first version of the module (`redirect: "error"`, and the global `fetch` called as a
+  method) made every valid token fail in workerd and were found only by running it there; both are fixed.
+- **R2 holds the pictures** (`BLOB_STORE=r2`, binding `BLOBS`, key `r/<room id hex>/<name hex>`, 19.8). The room's database
+  holds the manifest (name and size, no bytes) and does the quota checks through the core. An upload writes the manifest row
+  first and then the bytes; a failed R2 write rolls the row back (`503`, or `429 rate_limited` with `Retry-After` for R2's
+  one write a second per key). The body is buffered once (at most 4 MiB plus the seal) because the core reads the header
+  of the picture; R2 sees bytes, not a stream. List, `HEAD` and the quotas call no R2 operation. A download is the Worker's
+  own R2 read after its membership check and wakes no object.
+- **Deletion cleans R2 first.** `DeleteRoom` (`ALLOW_DELETE_ROOM`, true in the private environment) and the retention deadline
+  list the prefix `r/<room hex>/` in pages, delete each page, and then run `deleteAlarm()` and `deleteAll()`. When R2 fails,
+  the rows and a tombstone stay and an alarm 30 seconds later retries; until it succeeds the room answers `503`, so nothing
+  is orphaned and nothing is served from a half-deleted room. The objects of another room are never touched (tested).
+- **No expiry** (`ROOM_TTL_SECS` empty): no deadline, no alarm, `Joined.expires_at_ms = 0`; a room opens after 400 simulated
+  days and a restart of the object.
+- **Limits per environment.** `Joined.limits` carries the numbers of the environment (tested with 2 MiB pictures and 7 pictures
+  per room in the private tests, and the protocol's numbers in the demo tests).
+- **Tests.** vitest projects `private` and `private-misconfigured` run the Worker with R2, the Access key set served by the test
+  config, and the private variables; the canary also covers R2 (keys, bodies, metadata) and the manifest row. `npm test` runs
+  everything including the Access tests in Node. `scripts/private-smoke.mjs` runs the private environment in the real local
+  runtime: no token is 401, a person's token and a service token open a WebSocket and store and read a picture, bad tokens are
+  refused, the object receives no Access header or cookie, and `DeleteRoom` removes the picture from R2.
+
+Differences and gaps:
+
+- **Private limits stay at the protocol ceilings.** 19.8 asks for 500 MiB and 2,000 pictures per room, but `drafftink-protocol`
+  caps a room at 50 MiB and 200 pictures (`MAX_ROOM_IMAGE_BYTES`, `MAX_ROOM_IMAGES`) and the core refuses more. Raising them is
+  a protocol decision (clients validate `Joined.limits` against the same ceilings) and was not done here.
+- **A crash between the manifest row and the R2 write** leaves a row for a picture R2 lacks. A download answers `404` and the
+  client uploads the picture again; `HEAD` (which answers from the manifest) says it exists, so a client that asks `HEAD` first
+  would skip the upload. The window is one `await`; closing it needs a second state in the manifest (pending/stored).
+- **An upload in flight during a purge** can write an object after the listing. The manifest is wiped, so nothing refers to
+  it; a later purge of the prefix (none is scheduled for a deleted room) would be needed to remove it.
+- **R2's 429 is matched by its text** (`10058`, "reduce your concurrent request rate"), from the R2 error documentation, not from
+  a real response.
+- **Retention deletion with R2** uses the same path as `DeleteRoom` but has no test with a deadline in the private project
+  (the private environment sets no deadline); the shared path is covered by the `DeleteRoom` tests.
+
+Real-account checks added by this phase:
+
+1. The key set of a real Access team (`/cdn-cgi/access/certs`): the shape of `keys`, and that `Cf-Access-Jwt-Assertion` is present on
+   a WebSocket upgrade of a signed-in browser and of a service token (collab-spike section 6, items 1 to 5).
+2. The names of the Access cookies (`CF_Authorization`, `CF_AppSession`, `CF_Binding`).
+3. R2: the text and status of a second write to one key within a second; `list` and `delete` (up to 1000 keys) on a real bucket;
+   whether a deleted prefix is empty at once; the CPU of the Worker streaming a 4 MiB object.
+4. CPU time of the Access check (one `crypto.subtle.verify` and a parse of at most 8 KiB) in a Worker on the Free plan.
