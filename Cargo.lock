@@ -1942,6 +1942,7 @@ dependencies = [
  "futures-util",
  "loro",
  "object_store",
+ "ring",
  "rusqlite",
  "serde_json",
  "sha2 0.10.9",

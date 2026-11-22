@@ -53,6 +53,9 @@ drafftink-doc = { path = "../../crates/doc" }
 drafftink-profile = { path = "../../crates/profile", version = "0.2.0" }
 ureq.workspace = true
 tungstenite = { workspace = true, features = ["handshake"] }
+# The stand-in for Cloudflare Access (tests/parity/stand_in.rs) signs RS256 tokens with a committed test key; ring is
+# already in the tree through rustls.
+ring = "0.17"
 tokio-tungstenite.workspace = true
 tempfile.workspace = true
 sha2.workspace = true

@@ -115,7 +115,7 @@ impl Images {
         offer.phase = match result {
             Ok(reply) if matches!(reply.status, 200 | 201) => {
                 if let Some(totals) = parse_totals(&reply.body) {
-                    self.totals = totals;
+                    self.totals = self.totals.after_upload(totals);
                 }
                 self.listed.insert(offer.name);
                 offer.bytes = None;

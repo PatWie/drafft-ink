@@ -4,7 +4,11 @@ use std::net::SocketAddr;
 use std::path::Path;
 use std::time::Duration;
 
-use super::{child, in_process, wrangler};
+use drafftink_collab::{AccessCredentials, AccessGrant, AccessOrigin, ServerUrl, UrlPolicy};
+
+use super::common::http::{self, Reply};
+use super::common::room_client::access_headers;
+use super::{child, in_process, stand_in, wrangler};
 
 /// A relay target of the suite.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -13,8 +17,11 @@ pub enum Target {
     InProcess,
     /// The `drafftink-headless serve` child process.
     Child,
-    /// The Worker under `wrangler dev` (gated by `DRAFFTINK_PARITY_WRANGLER`).
+    /// The demo Worker under `wrangler dev` (gated by `DRAFFTINK_PARITY_WRANGLER`).
     Wrangler,
+    /// The private Worker under `wrangler dev --env private`: R2 for the pictures, rooms that never expire, and
+    /// Cloudflare Access required, with a stand-in for Access in front (gated like `Wrangler`).
+    Private,
 }
 
 /// How long rooms live on a relay. Every target gets the same numbers.
@@ -50,6 +57,8 @@ pub struct Traits {
     /// Extra time, after the deadline and the grace, that the target may take to delete a room (a Durable Object alarm
     /// is a timer of another process).
     pub deletion_slack: Duration,
+    /// Whether rooms have a deadline: `Joined.expires_at_ms` is not 0. False where rooms never expire.
+    pub room_deadline: bool,
 }
 
 /// A running relay.
@@ -64,6 +73,11 @@ pub struct Relay {
     pub traits: Traits,
     /// The lifetime of rooms it was started with.
     pub life: Lifetime,
+    /// The service token of a relay behind Cloudflare Access (the stand-in), which every client and hand-made request
+    /// must present.
+    pub token: Option<AccessCredentials>,
+    /// What the stand-in for Access did with each request, when there is one.
+    pub gate: Option<stand_in::Log>,
     /// Where it keeps its state on disk. Searched by the canary once the relay has stopped.
     stored: std::path::PathBuf,
     host: Box<dyn Host>,
@@ -73,6 +87,12 @@ pub struct Relay {
 pub trait Host {
     /// Stops the relay and waits until it is gone, so that the files it wrote are complete. Safe to call twice.
     fn stop(&mut self);
+
+    /// Stops the relay process and starts it again on the same address with the same state on disk. Only a target
+    /// that keeps its state can; the others say so.
+    fn restart(&mut self) -> Result<(), String> {
+        Err("this target cannot restart with its state".to_owned())
+    }
 }
 
 impl Relay {
@@ -84,7 +104,47 @@ impl Relay {
         stored: &Path,
         host: Box<dyn Host>,
     ) -> Relay {
-        Relay { name, addr, url: format!("ws://{addr}/ws"), traits, life, stored: stored.to_path_buf(), host }
+        Relay {
+            name,
+            addr,
+            url: format!("ws://{addr}/ws"),
+            traits,
+            life,
+            token: None,
+            gate: None,
+            stored: stored.to_path_buf(),
+            host,
+        }
+    }
+
+    /// Puts the relay behind a gate that wants `token`.
+    pub fn behind(mut self, token: AccessCredentials, gate: stand_in::Log) -> Relay {
+        self.token = Some(token);
+        self.gate = Some(gate);
+        self
+    }
+
+    /// The token bound to this relay's origin, as the clients are given it.
+    pub fn grant(&self) -> Option<AccessGrant> {
+        let url = ServerUrl::parse(&self.url, UrlPolicy { allow_insecure: true }).ok()?;
+        self.token.clone().map(|token| AccessGrant::new(AccessOrigin::of(&url), token))
+    }
+
+    /// The headers of the token, for a request that is made by hand.
+    pub fn access_headers(&self) -> Vec<(&'static str, String)> {
+        access_headers(self.grant().as_ref())
+    }
+
+    /// A request by hand, with the service token if the relay has a gate.
+    pub fn http(&self, method: &str, path: &str, headers: &[(&str, String)], body: &[u8]) -> Reply {
+        let mut all: Vec<(&str, String)> = headers.to_vec();
+        all.extend(self.access_headers());
+        http::request(self.addr, method, path, &all, body)
+    }
+
+    /// Stops the relay process and starts it again with its state.
+    pub fn restart(&mut self) {
+        self.host.restart().unwrap_or_else(|why| panic!("{} cannot restart: {why}", self.name));
     }
 
     /// Stops the relay. Its files stay readable until the relay is dropped.
@@ -112,6 +172,7 @@ impl Target {
             Target::InProcess => Some(in_process::start(life)),
             Target::Child => Some(child::start(life)),
             Target::Wrangler => wrangler::start(life),
+            Target::Private => wrangler::start_private(),
         }
     }
 }

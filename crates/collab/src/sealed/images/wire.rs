@@ -41,6 +41,15 @@ pub(super) struct RoomTotals {
     pub(super) bytes: u64,
 }
 
+impl RoomTotals {
+    /// The totals after an upload reported `reported`. Uploads run side by side and a relay may store them in another
+    /// order than the client sent them, so the answers can arrive in either order; a `PUT` only ever adds a picture, so
+    /// the larger total is the later one. (A list sets the totals exactly and does not go through here.)
+    pub(super) fn after_upload(self, reported: RoomTotals) -> RoomTotals {
+        if (reported.images, reported.bytes) >= (self.images, self.bytes) { reported } else { self }
+    }
+}
+
 /// The body of a `201`: `{"room_images":n,"room_image_bytes":n}`.
 pub(super) fn parse_totals(body: &[u8]) -> Option<RoomTotals> {
     let value: Value = serde_json::from_slice(body).ok()?;
@@ -95,6 +104,16 @@ mod tests {
         flipped[60] ^= 1;
         assert!(open_picture(&keys, &name, &id, flipped).is_none());
         assert!(open_picture(&keys, &name, &id, Vec::new()).is_none());
+    }
+
+    #[test]
+    fn the_answers_of_two_uploads_can_arrive_in_either_order() {
+        let one = RoomTotals { images: 1, bytes: 5078 };
+        let two = RoomTotals { images: 2, bytes: 8156 };
+        assert_eq!(RoomTotals::default().after_upload(one), one);
+        assert_eq!(one.after_upload(two), two);
+        assert_eq!(two.after_upload(one), two, "the answer of the earlier store comes last and changes nothing");
+        assert_eq!(two.after_upload(two), two);
     }
 
     #[test]

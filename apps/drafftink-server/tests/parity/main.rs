@@ -8,7 +8,8 @@
 //! |---|---|---|
 //! | `in_process` | `drafftink_server::start` in this process, filesystem store | always |
 //! | `child` | the real `drafftink-headless serve` process, filesystem store | always |
-//! | `wrangler` | the Worker (TypeScript Worker, Durable Object, Rust wasm core) under `wrangler dev` | `DRAFFTINK_PARITY_WRANGLER=1` |
+//! | `wrangler` | the demo Worker (TypeScript Worker, Durable Object, Rust wasm core) under `wrangler dev` | `DRAFFTINK_PARITY_WRANGLER=1` |
+//! | `private` | the private Worker under `wrangler dev --env private`: R2, no expiry, Access required, with a stand-in for Access in front (`stand_in.rs`) | `DRAFFTINK_PARITY_WRANGLER=1` |
 //!
 //! A scenario never asks which target it runs on. What legitimately differs (how long a room's deletion takes to show)
 //! is data of the target (`Relay::slack`). A scenario that needs a short room lifetime asks for [`Lifetime::Short`], and
@@ -32,12 +33,13 @@ mod raw;
 mod relay;
 mod scenarios;
 mod scene;
+mod stand_in;
 mod wrangler;
 
 use relay::{Lifetime, Target};
 
-/// One test per scenario and target. The tests are named `parity::<target>::<scenario>`.
-macro_rules! scenarios_on {
+/// The tests every target has, one per scenario. The tests are named `parity::<target>::<scenario>`.
+macro_rules! common_scenarios {
     ($target:expr) => {
         #[test]
         fn join() {
@@ -56,10 +58,6 @@ macro_rules! scenarios_on {
             run($target, Lifetime::Normal, scenarios::images);
         }
         #[test]
-        fn expire() {
-            run($target, Lifetime::Short, scenarios::expire);
-        }
-        #[test]
         fn membership() {
             run($target, Lifetime::Normal, scenarios::membership);
         }
@@ -70,6 +68,36 @@ macro_rules! scenarios_on {
         #[test]
         fn canary() {
             run($target, Lifetime::Normal, scenarios::canary);
+        }
+    };
+}
+
+/// A target whose rooms expire: the common scenarios and `expire`.
+macro_rules! expiring_target {
+    ($target:expr) => {
+        common_scenarios!($target);
+        #[test]
+        fn expire() {
+            run($target, Lifetime::Short, scenarios::expire);
+        }
+    };
+}
+
+/// A target whose rooms never expire: the common scenarios, `persist` instead of `expire`, `delete`, and the gate.
+macro_rules! persistent_target {
+    ($target:expr) => {
+        common_scenarios!($target);
+        #[test]
+        fn persist() {
+            run($target, Lifetime::Normal, scenarios::persist);
+        }
+        #[test]
+        fn delete() {
+            run($target, Lifetime::Normal, scenarios::delete);
+        }
+        #[test]
+        fn access() {
+            run($target, Lifetime::Normal, scenarios::access);
         }
     };
 }
@@ -87,16 +115,21 @@ mod parity {
 
     mod in_process {
         use super::*;
-        scenarios_on!(Target::InProcess);
+        expiring_target!(Target::InProcess);
     }
 
     mod child {
         use super::*;
-        scenarios_on!(Target::Child);
+        expiring_target!(Target::Child);
     }
 
     mod wrangler {
         use super::*;
-        scenarios_on!(Target::Wrangler);
+        expiring_target!(Target::Wrangler);
+    }
+
+    mod private {
+        use super::*;
+        persistent_target!(Target::Private);
     }
 }

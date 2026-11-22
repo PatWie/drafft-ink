@@ -89,5 +89,12 @@ pub fn start(life: Lifetime) -> Relay {
         panic!("drafftink-headless did not print its address within {}s", STARTUP.as_secs());
     };
     let addr: SocketAddr = text.parse().expect("a socket address");
-    Relay::new("child", addr, Traits { deletion_slack: Duration::from_secs(1) }, life, &stored, Box::new(host))
+    Relay::new(
+        "child",
+        addr,
+        Traits { deletion_slack: Duration::from_secs(1), room_deadline: true },
+        life,
+        &stored,
+        Box::new(host),
+    )
 }

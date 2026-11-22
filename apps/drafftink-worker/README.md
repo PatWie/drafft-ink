@@ -240,7 +240,8 @@ The same scenarios run against this Worker and against the other relays through 
 `--persist-to` folder) and stops its process group when it ends. It needs `npm ci` and `npm run build:wasm` here once.
 
 ```bash
-DRAFFTINK_PARITY_WRANGLER=1 cargo nextest run -p drafftink-server parity                     # all targets, about a minute
+DRAFFTINK_PARITY_WRANGLER=1 cargo nextest run -p drafftink-server parity                     # all targets (demo and private Worker), about a minute
+DRAFFTINK_PARITY_WRANGLER=1 cargo nextest run -p drafftink-server parity::private            # the private environment: R2, no expiry, a stand-in for Access in front
 DRAFFTINK_PARITY_WRANGLER=1 cargo nextest run -p drafftink-server parity::wrangler::expire   # one scenario on this Worker
 cargo xtask worker                                                                           # the TypeScript tests, then the parity suite
 ```
