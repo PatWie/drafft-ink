@@ -18,7 +18,7 @@
 use std::ops::Range;
 
 use drafftink_scene::{
-    Element, ElementKind, Head, LinearData, MarkerColor, MathData, TextData, limits::MAX_STROKE_WIDTH,
+    Element, ElementKind, Head, LinearData, MarkerColor, MathData, TEXT_END_PAD, TEXT_END_WOBBLE, TextData, band_width, text_band_overhang,
 };
 use drafftink_sketch::fit_head_size;
 use drafftink_typeset::Typesetter;
@@ -28,23 +28,12 @@ use peniko::{Fill, Mix};
 use crate::painter::{ElementPainter, Ink, cardinality_path};
 use crate::spec::{head_size, sketch_input, text_spec};
 
-/// Band width as a multiple of the stroke width, and its floor, in world units.
-const WIDTH_PER_STROKE: f64 = 3.0;
-const MIN_WIDTH: f64 = 10.0;
 /// Share of a text line box the band leaves free at the top.
 const TEXT_BAND_TOP: f64 = 0.15;
 /// How far a slanted end sticks out, as a share of the band width.
 const CAP_SLANT: f64 = 0.25;
-/// Largest sideways wobble of a text band's ends, as a share of the line height.
-const END_WOBBLE: f64 = 0.10;
-/// How far a text band reaches past the characters at each end, as a share of the line height.
-const END_PAD: f64 = 0.06;
-
-/// The width of the band of an element with `stroke_width`.
-pub(crate) fn band_width(stroke_width: f64) -> f64 {
-    let sw = if stroke_width.is_finite() { stroke_width.clamp(0.0, MAX_STROKE_WIDTH) } else { 0.0 };
-    (WIDTH_PER_STROKE * sw).max(MIN_WIDTH)
-}
+const END_WOBBLE: f64 = TEXT_END_WOBBLE;
+const END_PAD: f64 = TEXT_END_PAD;
 
 /// A mitre longer than this many half-widths becomes a bevel: a right angle (1.41) stays sharp, a thin corner does not
 /// grow a spike.
@@ -54,14 +43,14 @@ const MITRE_LIMIT: f64 = 1.5;
 /// `MITRE_LIMIT` half-widths (a slanted end stays inside that); the bands of text and math reach past the characters
 /// by `END_PAD + END_WOBBLE` line heights.
 pub(crate) fn reach(e: &Element) -> f64 {
-    let sideways = END_PAD + END_WOBBLE;
     match (&e.kind, e.style.highlight) {
         (ElementKind::Frame(_), _) => 0.0,
         (ElementKind::Text(t), _) => {
             let lines = if t.font.line_height.is_finite() { t.font.line_height.clamp(1.0, 3.0) } else { 1.0 };
-            sideways * lines * if t.font.size.is_finite() { t.font.size.max(0.0) } else { 0.0 } * 1.5
+            // A line box can be taller than the line height says; 1.5 covers the fonts that ship.
+            text_band_overhang(lines * if t.font.size.is_finite() { t.font.size.max(0.0) } else { 0.0 } * 1.5)
         }
-        (ElementKind::Math(_), _) => sideways * if e.transform.h.is_finite() { e.transform.h.max(0.0) } else { 0.0 },
+        (ElementKind::Math(_), _) => text_band_overhang(e.transform.h),
         (_, None) => 0.0,
         _ => stroke_reach(band_width(e.style.stroke_width)),
     }

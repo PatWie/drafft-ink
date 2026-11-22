@@ -50,7 +50,10 @@ pub use element::{
 pub use id::{
     ElementId, FileId, GroupId, IdError, IdSource, MAX_ID_LEN, RandomIds, Rng64, SeqIds, SplitMix64, StrokeId,
 };
-pub use marker::{MARKER_ALPHA, MarkerColor, SpanHighlight, Tone};
+pub use marker::{
+    MARKER_ALPHA, MarkerColor, SpanHighlight, TEXT_END_PAD, TEXT_END_WOBBLE, Tone, band_width, has_highlight,
+    text_band_overhang,
+};
 pub use label_cut::{LABEL_CUT_PADDING, LabelCut};
 pub use memory::{MemoryStore, MemoryTx};
 pub use paint::{Paint, PaintMode, PaintStroke};

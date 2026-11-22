@@ -16,6 +16,34 @@ use crate::color::Color;
 /// Opacity of a marker band, as a share of 1. The whole band is one layer at this opacity.
 pub const MARKER_ALPHA: f64 = 0.5;
 
+/// Band width as a multiple of the stroke width.
+const WIDTH_PER_STROKE: f64 = 3.0;
+/// The narrowest band, in world units.
+const MIN_BAND_WIDTH: f64 = 10.0;
+/// How far a text band reaches past its characters at each end, as a share of the line height.
+pub const TEXT_END_PAD: f64 = 0.06;
+/// Largest sideways wobble of a text band's ends, as a share of the line height.
+pub const TEXT_END_WOBBLE: f64 = 0.10;
+
+/// The width of the band of an outline with `stroke_width`: three strokes, and not less than 10 world units. This
+/// is what the renderer draws and what hit testing and the selection box count.
+pub fn band_width(stroke_width: f64) -> f64 {
+    let sw = if stroke_width.is_finite() { stroke_width.clamp(0.0, crate::limits::MAX_STROKE_WIDTH) } else { 0.0 };
+    (WIDTH_PER_STROKE * sw).max(MIN_BAND_WIDTH)
+}
+
+/// How far the band of a text or a formula reaches sideways past its characters, in world units, for lines
+/// `line_height` tall.
+pub fn text_band_overhang(line_height: f64) -> f64 {
+    if line_height.is_finite() { (TEXT_END_PAD + TEXT_END_WOBBLE) * line_height.max(0.0) } else { 0.0 }
+}
+
+/// Whether anything of `e` is highlighted: the element itself, or (for a text) some of its characters.
+pub fn has_highlight(e: &crate::Element) -> bool {
+    e.style.highlight.is_some()
+        || matches!(&e.kind, crate::ElementKind::Text(t) if t.runs.iter().any(|r| matches!(r.highlight, SpanHighlight::On(_))))
+}
+
 /// Which canvas a marker is drawn on.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Tone {

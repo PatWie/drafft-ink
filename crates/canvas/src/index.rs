@@ -42,7 +42,10 @@ use drafftink_scene::{ChangeKind, ChangeSet, Element, ElementId, ElementKind, Gr
 use serde::{Deserialize, Serialize};
 
 use crate::overlay::{InvisibleOutline, LinkIcon};
-use crate::shape::{element_box, hits_inside, index_bounds, shape_of, stroke_reach_width};
+use crate::shape::{
+    box_overhang, element_box, head_band_hit, hit_reach_width, hits_inside, index_bounds, shape_of,
+    stroke_reach_width,
+};
 
 /// A change set that touches more entries than this, and more than half the index, rebuilds in bulk.
 const BULK_REBUILD_MIN: usize = 2048;
@@ -537,14 +540,16 @@ pub fn hit_element<R: SceneRead>(scene: &R, e: &Element, world: Point, tol: f64)
         return None;
     }
     let shape = shape_of(e)?;
-    let width = stroke_reach_width(e);
+    let width = hit_reach_width(e);
     let near_outline = shape.hit_test(world, HitOpts::stroke(tol, width));
     let box_like = matches!(e.kind, ElementKind::Text(_) | ElementKind::Math(_) | ElementKind::Image(_));
     if box_like {
-        // The whole box, plus the tolerance around its border.
-        return shape.hit_test(world, HitOpts::filled(tol, 0.0)).then_some(HitPart::Body);
+        // The whole box, plus the tolerance around its border, and the highlight band that lies past it (a text's
+        // at the ends of its lines, a picture's around its outline).
+        let band = if width > stroke_reach_width(e) { width } else { 0.0 };
+        return shape.hit_test(world, HitOpts::filled(tol + box_overhang(e), band)).then_some(HitPart::Body);
     }
-    if near_outline {
+    if near_outline || head_band_hit(e, world, tol) {
         return Some(HitPart::Stroke);
     }
     (hits_inside(e) && shape.contains(world)).then_some(HitPart::Fill)
