@@ -364,6 +364,57 @@ fn files_must_hash_to_their_key() {
     h.send(&mut s).unwrap();
     assert_eq!(s.files().count(), 1);
     assert!(s.file(&good_id).is_some());
+    assert_eq!(s.manifests().count(), 1, "an entry that is ignored has no manifest");
+}
+
+#[test]
+fn hostile_file_entries_are_ignored_and_the_good_ones_stay() {
+    use std::collections::HashMap;
+    let mut s = base();
+    let h = Hostile::of(&s);
+    let files = h.doc.get_map("files");
+    let key = |n: u8| format!("{n:064x}");
+    let png = |bytes: Option<LoroValue>, size: Option<LoroValue>, mime: LoroValue| {
+        let mut m = HashMap::from([("mime".to_owned(), mime)]);
+        if let Some(b) = bytes {
+            m.insert("bytes".to_owned(), b);
+        }
+        if let Some(n) = size {
+            m.insert("size".to_owned(), n);
+        }
+        LoroValue::from(m)
+    };
+    let mime = || LoroValue::from("image/png");
+    let int = |n: i64| Some(LoroValue::from(n));
+    let (good_id, good) = FileEntry::new("image/png", vec![1u8, 2, 3]);
+    files.insert(good_id.as_str(), png(None, int(3), mime())).unwrap();
+    let cases: Vec<(&str, LoroValue)> = vec![
+        ("no size", png(None, None, mime())),
+        ("size as text", png(None, Some(LoroValue::from("10")), mime())),
+        ("size as float", png(None, Some(LoroValue::from(10.0)), mime())),
+        ("negative size", png(None, int(-1), mime())),
+        ("huge size", png(None, int(i64::MAX), mime())),
+        ("one over the limit", png(None, int(drafftink_scene::limits::MAX_FILE_BYTES as i64 + 1), mime())),
+        ("not an image", png(None, int(10), LoroValue::from("text/html"))),
+        ("a script as media type", png(None, int(10), LoroValue::from("image/<script>"))),
+        ("media type of the wrong type", png(None, int(10), LoroValue::from(7i64))),
+        ("no media type", LoroValue::from(HashMap::from([("size".to_owned(), LoroValue::from(10i64))]))),
+        ("bytes as text", png(Some(LoroValue::from("abc")), int(10), mime())),
+        ("size does not match the bytes", png(Some(LoroValue::from(vec![9u8; 10])), int(11), mime())),
+    ];
+    for (n, (_, value)) in cases.iter().enumerate() {
+        files.insert(&key(u8::try_from(n).unwrap() + 1), value.clone()).unwrap();
+    }
+    h.send(&mut s).unwrap();
+    for (n, (what, _)) in cases.iter().enumerate() {
+        let id = FileId::new(&key(u8::try_from(n).unwrap() + 1)).unwrap();
+        assert!(s.manifest(&id).is_none(), "{what} must not show as a manifest");
+        assert!(s.file(&id).is_none(), "{what}");
+    }
+    assert_eq!(s.manifests().count(), 1, "only the good manifest");
+    assert_eq!(s.manifest(&good_id), Some(&FileManifest::of(&good)));
+    assert!(s.file(&good_id).is_none());
+    assert!(s.get(&eid("fine")).is_some());
 }
 
 #[test]
@@ -384,7 +435,7 @@ fn a_newer_schema_is_refused_and_blocks_writes() {
     h.doc.get_map("meta").insert("schema", 99i64).unwrap();
     h.good_rect("from_the_future");
     let err = h.send(&mut s).unwrap_err();
-    assert_eq!(err, DocError::NewerSchema { found: 99, max: 1 });
+    assert_eq!(err, DocError::NewerSchema { found: 99, max: drafftink_doc::SCHEMA_VERSION });
     assert_eq!(s.blocked_by_schema(), Some(99));
     assert!(err.to_string().contains("Update the app"));
     assert!(s.get(&eid("from_the_future")).is_none());

@@ -102,3 +102,40 @@ pub fn freehand(id: &str, z: &ZIndex, world_points: &[Point]) -> Element {
     e
 }
 pub mod legacy;
+
+/// A picture of `len` bytes that do not compress (a xorshift stream from `seed`), with its id.
+pub fn picture(seed: u64, len: usize) -> (FileId, FileEntry) {
+    let mut x = seed.wrapping_mul(0x9E37_79B9_7F4A_7C15) | 1;
+    let bytes: Vec<u8> = (0..len)
+        .map(|_| {
+            x ^= x << 13;
+            x ^= x >> 7;
+            x ^= x << 17;
+            (x >> 24) as u8
+        })
+        .collect();
+    FileEntry::new("image/png", bytes)
+}
+
+/// Adds the picture to the store in one commit and returns it.
+pub fn put_picture(s: &mut LoroStore, seed: u64, len: usize) -> (FileId, FileEntry) {
+    let (id, entry) = picture(seed, len);
+    let mut tx = s.begin();
+    tx.put_file(entry.clone()).unwrap();
+    tx.commit().unwrap();
+    (id, entry)
+}
+
+/// An image element that names `file`.
+pub fn image_of(id: &str, z: &ZIndex, file: &FileId) -> Element {
+    let data = ImageData {
+        file_id: Some(file.clone()),
+        natural_width: 200,
+        natural_height: 100,
+        crop: None,
+        paint: Default::default(),
+    };
+    let mut e = Element::new(eid(id), ElementKind::Image(data), z.clone());
+    e.transform = Transform::new(0.0, 0.0, 200.0, 100.0);
+    e
+}

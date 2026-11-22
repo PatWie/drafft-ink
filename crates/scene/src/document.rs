@@ -76,6 +76,23 @@ impl FileEntry {
     }
 }
 
+/// What a picture is, without its bytes: the media type and the byte length. A shared room keeps only this in the
+/// document; the bytes travel as separate files. The picture's id is the hash of its bytes ([`FileId`]).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FileManifest {
+    /// Media type, for example `image/png`.
+    pub mime: String,
+    /// Length of the encoded picture in bytes.
+    pub size: u64,
+}
+
+impl FileManifest {
+    /// The manifest of `entry`.
+    pub fn of(entry: &FileEntry) -> Self {
+        Self { mime: entry.mime.clone(), size: u64::try_from(entry.bytes.len()).unwrap_or(u64::MAX) }
+    }
+}
+
 pub(crate) mod b64 {
     use std::sync::Arc;
 

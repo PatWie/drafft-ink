@@ -43,7 +43,8 @@ pub mod conformance;
 pub use color::Color;
 pub use derived::DerivedIndex;
 pub use document::{
-    BASE_SCHEMA_VERSION, DocMeta, Document, DocumentError, FORMAT_NAME, FileEntry, Loaded, SCHEMA_VERSION, json_schema,
+    BASE_SCHEMA_VERSION, DocMeta, Document, DocumentError, FORMAT_NAME, FileEntry, FileManifest, Loaded,
+    SCHEMA_VERSION, json_schema,
 };
 pub use element::{
     BindMode, Binding, Brush, CharStyle, Crop, DEFAULT_HEAD_SIZE, Element, ElementKind, FixedSegment, FrameData,

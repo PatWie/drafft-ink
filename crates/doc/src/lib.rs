@@ -16,6 +16,7 @@
 
 mod codec;
 pub mod error;
+mod files;
 mod history;
 pub mod schema;
 mod staged;
@@ -27,6 +28,7 @@ mod undo;
 mod versions;
 
 pub use error::DocError;
+pub use files::FilePolicy;
 pub use history::{HistoryStats, TrimOptions, TrimReport};
 pub use schema::{MIGRATIONS, Migration, SCHEMA_VERSION};
 pub use store::{ImportProgress, LoroConfig, LoroStore, WorkStats};

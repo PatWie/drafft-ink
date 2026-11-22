@@ -7,8 +7,9 @@ use std::cell::Cell;
 use std::rc::Rc;
 
 use common::*;
-use drafftink_doc::LoroStore;
+use drafftink_doc::{DocError, FilePolicy, LoroStore};
 use drafftink_scene::*;
+use loro::LoroDoc;
 
 const N: usize = 3000;
 
@@ -356,4 +357,165 @@ fn a_step_without_a_staged_import_does_nothing() {
     let mut b = empty_staging(7);
     assert!(b.import_progress().is_none());
     assert!(b.import_step(100).unwrap().is_empty());
+}
+
+// ---- pictures without bytes ----
+
+/// An External replica that added a picture, and an empty replica that has synced with it.
+fn external_pair() -> (LoroStore, LoroStore, FileId, FileEntry) {
+    let mut a = peer(1);
+    a.set_file_policy(FilePolicy::External);
+    let (id, entry) = put_picture(&mut a, 1, 2000);
+    let mut b = peer(2);
+    push(&a, &mut b);
+    (a, b, id, entry)
+}
+
+#[test]
+fn a_manifest_only_entry_syncs_and_shows_in_manifests_but_not_in_file() {
+    let (a, b, id, entry) = external_pair();
+    assert_eq!(b.manifest(&id), Some(&FileManifest::of(&entry)));
+    assert_eq!(b.manifests().map(|(i, _)| i.clone()).collect::<Vec<_>>(), vec![id.clone()]);
+    assert!(b.file(&id).is_none() && b.files().count() == 0, "no bytes here");
+    assert!(b.manifest_revision() > 0);
+    assert!(a.file(&id).is_some(), "the writer still has them");
+    assert_view_matches_loro(&b);
+}
+
+#[test]
+fn supply_file_takes_matching_bytes_and_writes_nothing_to_loro() {
+    let (a, mut b, id, entry) = external_pair();
+    let (vv, revision, manifests) = (b.version_vector().unwrap(), b.revision(), b.manifest_revision());
+    assert_eq!(b.supply_file(entry.clone()), Ok(true));
+    assert_eq!(b.file(&id), Some(&entry));
+    assert!(b.revision() > revision, "the view moved, so the picture is drawn");
+    assert_eq!(b.manifest_revision(), manifests, "the set of manifests did not change");
+    assert_eq!(b.version_vector().unwrap(), vv, "no Loro write");
+    assert!(!b.can_undo(), "nothing to undo");
+    assert_eq!(b.supply_file(entry), Ok(false), "already present");
+    assert_same(&a, &b);
+}
+
+#[test]
+fn supply_file_refuses_what_the_manifest_does_not_describe() {
+    let (_, mut b, id, entry) = external_pair();
+    let (_, stranger) = picture(99, 2000);
+    assert_eq!(b.supply_file(stranger), Ok(false), "no manifest for these bytes");
+    let (_, wrong_mime) = FileEntry::new("image/jpeg", entry.bytes.to_vec());
+    assert_eq!(b.supply_file(wrong_mime), Ok(false), "same bytes, other media type");
+    assert!(b.file(&id).is_none());
+
+    // A manifest that lies about the size does not take the real bytes either.
+    let hostile = LoroDoc::new();
+    hostile.import(&b.export_snapshot().unwrap()).unwrap();
+    hostile.set_peer_id(666).unwrap();
+    hostile.get_map("files").insert(id.as_str(), file_value("image/png", Some(1999), None)).unwrap();
+    hostile.commit();
+    b.apply_remote(&hostile.export(loro::ExportMode::updates(&Default::default())).unwrap()).unwrap();
+    assert_eq!(b.manifest(&id).unwrap().size, 1999);
+    assert_eq!(b.supply_file(entry), Ok(false), "size differs from the manifest");
+    assert!(b.file(&id).is_none());
+}
+
+#[test]
+fn supply_file_without_a_manifest_is_a_plain_false_not_an_error() {
+    let mut s = peer(1);
+    let (_, entry) = picture(5, 10);
+    assert_eq!(s.supply_file(entry), Ok(false));
+    assert_eq!(s.files().count(), 0);
+}
+
+/// A `files` value as a peer would write it; `None` leaves the key out.
+fn file_value(mime: &str, size: Option<i64>, bytes: Option<Vec<u8>>) -> loro::LoroValue {
+    let mut m = std::collections::HashMap::from([("mime".to_owned(), loro::LoroValue::from(mime))]);
+    if let Some(n) = size {
+        m.insert("size".to_owned(), loro::LoroValue::from(n));
+    }
+    if let Some(b) = bytes {
+        m.insert("bytes".to_owned(), loro::LoroValue::from(b));
+    }
+    loro::LoroValue::from(m)
+}
+
+#[test]
+fn a_manifest_only_remote_entry_never_deletes_bytes_the_view_holds() {
+    // `b` holds the bytes of an embedded picture. A peer then overwrites the entry with a manifest-only value.
+    let mut a = peer(1);
+    let (id, entry) = put_picture(&mut a, 2, 500);
+    let mut b = peer(2);
+    push(&a, &mut b);
+    assert_eq!(b.file(&id), Some(&entry));
+
+    let hostile = LoroDoc::new();
+    hostile.set_peer_id(666).unwrap();
+    hostile.import(&a.export_snapshot().unwrap()).unwrap();
+    hostile.get_map("files").insert(id.as_str(), file_value("image/png", Some(500), None)).unwrap();
+    hostile.commit();
+    let from = loro::VersionVector::decode(&b.version_vector().unwrap()).unwrap();
+    let cs = b.apply_remote(&hostile.export(loro::ExportMode::updates(&from)).unwrap()).unwrap();
+    assert!(cs.files.is_empty(), "the view did not change");
+    assert_eq!(b.file(&id), Some(&entry), "the bytes stay");
+    assert_eq!(b.manifest(&id), Some(&FileManifest::of(&entry)));
+}
+
+#[test]
+fn two_replicas_that_add_the_same_external_picture_both_keep_their_bytes() {
+    let (mut a, mut b) = (peer(1), peer(2));
+    a.set_file_policy(FilePolicy::External);
+    b.set_file_policy(FilePolicy::External);
+    let (id, entry) = put_picture(&mut a, 3, 800);
+    put_picture(&mut b, 3, 800);
+    sync(&mut a, &mut b);
+    assert_eq!(a.file(&id), Some(&entry));
+    assert_eq!(b.file(&id), Some(&entry));
+    assert_eq!(a.manifests().count(), 1);
+    assert_eq!(a.debug_json(), b.debug_json());
+}
+
+#[test]
+fn deleting_the_key_removes_the_manifest_and_the_bytes_of_a_replica() {
+    let (mut a, mut b, id, entry) = external_pair();
+    assert_eq!(b.supply_file(entry), Ok(true));
+    let mut tx = a.begin();
+    assert!(tx.remove_file(&id));
+    tx.commit().unwrap();
+    let seen = b.manifest_revision();
+    push(&a, &mut b);
+    assert!(b.manifest(&id).is_none() && b.file(&id).is_none());
+    assert!(b.manifest_revision() > seen);
+}
+
+#[test]
+fn a_snapshot_replaces_the_manifests_too() {
+    let (a, mut b, id, _) = external_pair();
+    let snapshot = a.export_snapshot().unwrap();
+    b.replace_from_snapshot(&snapshot).unwrap();
+    assert!(b.manifest(&id).is_some());
+
+    let mut c = peer(3);
+    add(&mut c, vec![rect("only", &zs(1)[0])]);
+    let seen = b.manifest_revision();
+    b.replace_from_snapshot(&c.export_snapshot().unwrap()).unwrap();
+    assert_eq!(b.manifests().count(), 0, "a manifest of the old document is gone");
+    assert!(b.manifest_revision() > seen);
+}
+
+#[test]
+fn a_staged_import_brings_the_manifests_and_a_replica_with_manifests_is_not_pristine() {
+    let (a, _, id, entry) = external_pair();
+    let mut b = empty_staging(7);
+    b.apply_remote(&a.export_snapshot().unwrap()).unwrap();
+    while b.import_progress().is_some() {
+        b.import_step(1).unwrap();
+    }
+    assert_eq!(b.manifest(&id), Some(&FileManifest::of(&entry)));
+    assert!(b.file(&id).is_none());
+    // Holding a manifest is something of the document's: a trimmed snapshot is not taken over silently.
+    let mut local = peer(9);
+    local.apply_remote(&a.export_state_only().unwrap()).unwrap();
+    assert!(local.manifest(&id).is_some());
+    let mut other = peer(10);
+    add(&mut other, vec![rect("x", &zs(1)[0])]);
+    let trimmed = other.export_shallow_snapshot(0).unwrap();
+    assert_eq!(local.apply_remote(&trimmed), Err(DocError::SnapshotStartsLater));
 }

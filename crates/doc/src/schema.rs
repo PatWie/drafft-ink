@@ -23,7 +23,7 @@ pub(crate) const META_NAME: &str = "name";
 pub(crate) const META_BACKGROUND: &str = "background";
 
 /// The schema version this build writes and reads without migration.
-pub const SCHEMA_VERSION: u32 = 1;
+pub const SCHEMA_VERSION: u32 = 2;
 
 /// Commit origins starting with this prefix are not recorded by the undo manager.
 pub(crate) const SYSTEM_ORIGIN_PREFIX: &str = "sys:";
@@ -42,9 +42,9 @@ pub struct Migration {
     pub apply: fn(&LoroDoc) -> Result<(), DocError>,
 }
 
-/// The migrations this build knows. Empty: version 1 is the first schema. When version 2 exists, a step with
-/// `from: 1` goes here, and `SCHEMA_VERSION` is raised.
-pub const MIGRATIONS: &[Migration] = &[];
+/// The migrations this build knows. Schema 2 gave every `files` entry a `size` and made `bytes` optional; the step
+/// from 1 writes the size of every entry that has bytes and no size.
+pub const MIGRATIONS: &[Migration] = &[Migration { from: 1, apply: crate::files::add_sizes }];
 
 /// Reads the schema version of a document. `None` when there is none.
 pub(crate) fn read_version(doc: &LoroDoc) -> Option<u32> {
@@ -138,6 +138,18 @@ mod tests {
         assert!(matches!(migrate_to(&doc, 0, 1, &[]), Err(DocError::Migration { from: 0, .. })));
         assert_eq!(read_version(&doc), Some(0), "version is untouched after a failed migration");
         assert!(matches!(migrate_to(&doc, 3, 2, &[]), Err(DocError::NewerSchema { found: 3, max: 2 })));
+    }
+
+    #[test]
+    fn a_build_whose_newest_schema_is_one_refuses_a_schema_two_document() {
+        // What the build before schema 2 did: its newest schema was 1, so a document at 2 is refused.
+        let doc = doc_at(i64::from(SCHEMA_VERSION));
+        assert_eq!(read_version(&doc), Some(2));
+        assert!(matches!(migrate_to(&doc, 2, 1, MIGRATIONS), Err(DocError::NewerSchema { found: 2, max: 1 })));
+        // A schema-1 document is migrated by the built-in table up to this build's version.
+        let old = doc_at(1);
+        assert!(migrate(&old, 1, MIGRATIONS).unwrap());
+        assert_eq!(read_version(&old), Some(SCHEMA_VERSION));
     }
 
     #[test]
