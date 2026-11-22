@@ -276,6 +276,22 @@ impl SceneRead for MemoryTx<'_> {
 }
 
 impl MemoryTx<'_> {
+    /// The part of [`SceneTx::update`] that does not depend on the closure, so that it is compiled once and not once
+    /// for every closure that a command passes (56 copies were 28 KB of the web module).
+    fn update_with(&mut self, id: &ElementId, f: &mut dyn FnMut(&mut Element)) -> Result<(), StoreError> {
+        // Work on a copy so that a panicking or rejected closure leaves the store untouched.
+        let mut work = self.store.elements.get(id).ok_or_else(|| StoreError::NotFound(id.clone()))?.as_ref().clone();
+        f(&mut work);
+        if work.id != *id {
+            return Err(StoreError::IdChanged(id.clone()));
+        }
+        validate_element(&work).map_err(|error| StoreError::Invalid { id: id.clone(), error })?;
+        let old = self.store.take(id).ok_or_else(|| StoreError::NotFound(id.clone()))?;
+        self.touched.entry(id.clone()).or_insert(Some(old));
+        self.store.put(Arc::new(work));
+        Ok(())
+    }
+
     fn restore(&mut self) {
         for (id, orig) in std::mem::take(&mut self.touched) {
             self.store.take(&id);
@@ -335,17 +351,12 @@ impl SceneTx for MemoryTx<'_> {
     }
 
     fn update<F: FnOnce(&mut Element)>(&mut self, id: &ElementId, f: F) -> Result<(), StoreError> {
-        // Work on a copy so that a panicking or rejected closure leaves the store untouched.
-        let mut work = self.store.elements.get(id).ok_or_else(|| StoreError::NotFound(id.clone()))?.as_ref().clone();
-        f(&mut work);
-        if work.id != *id {
-            return Err(StoreError::IdChanged(id.clone()));
-        }
-        validate_element(&work).map_err(|error| StoreError::Invalid { id: id.clone(), error })?;
-        let old = self.store.take(id).ok_or_else(|| StoreError::NotFound(id.clone()))?;
-        self.touched.entry(id.clone()).or_insert(Some(old));
-        self.store.put(Arc::new(work));
-        Ok(())
+        let mut f = Some(f);
+        self.update_with(id, &mut |element| {
+            if let Some(f) = f.take() {
+                f(element);
+            }
+        })
     }
 
     fn remove(&mut self, id: &ElementId) -> Result<(), StoreError> {

@@ -764,3 +764,41 @@ The desktop app was 24.4 MB in the first version (`opt-level = "z"`, full LTO, n
 | `fallback.brotli_bytes` | 3,284,179 | 3,313,429 | 3,504,486 |
 
 GIF, BMP and ICO cost the `gif` decoder (with `weezl` and `color_quant`), the `image` crate's BMP and ICO readers and a small ICO directory reader. SVG costs `resvg`, `usvg` and `tiny-skia` (0.12; the 0.11 copy that `sctk-adwaita` uses is native only), with `svgtypes`, `roxmltree`, `simplecss`, `data-url` and `imagesize`, at `opt-level = "z"` like the other cold crates. By `twiggy` before wasm-opt: `tiny_skia` 196 KB, `usvg` 132 KB, `resvg` 48 KB, `roxmltree` 42 KB, `tiny_skia_path` 40 KB, `svgtypes` 34 KB, `imagesize` 30 KB. The feature `raster-images` of resvg (pictures inside an SVG) reuses the PNG, JPEG, GIF and WebP decoders that are linked anyway. The module is 6.7% bigger for SVG, so the first-load brotli number is above the 3.5 MB of section 7.5 (3,531,180 bytes) and the six wasm limits were raised (`perf/budgets.json`). Kept out: resvg's `text` feature (fonts), `system-fonts` and `svgz`. Not tried: loading the rasteriser as a second module on first use, which would take it off the first-load path but needs a second wasm build and an asynchronous `image.insert`.
+
+### 8.6 Named versions and the highlight style (2026-11-22)
+
+The WebGL2 module went over `fallback.*` between `dbec1a5` and `86b2b6b`. Built as `scripts/build-web.sh` builds it (`webgl,hand-fonts`, `release-wasm`, wasm-bindgen, wasm-opt `-Oz`), brotli with a 16 MiB window as the `brotli` program picks for a file of this size (bytes):
+
+| | opt | brotli | gzip |
+|---|---|---|---|
+| `dbec1a5` | 12,968,087 | 3,552,982 | 5,046,234 |
+| + named versions (`14f826d`) | +153,499 | +33,075 | +57,953 |
+| + highlight style, applicator, chisel pencil, lenient loading (`0006d84`) | +124,340 | +28,506 | +48,065 |
+| + highlight palette, url, storage fix (`f8358cc`) | +4,875 | +5,447 | +4,623 |
+| `f8358cc` before the cuts | 13,250,801 | 3,620,010 | 5,156,875 |
+
+The growth is spread thin: no table and no single function. By symbol name in the optimised module (`twiggy top` of a `wasm-opt -g` build, names without crate hashes, diffed by name), the versions cost 38 KB of serde code (`NamedVersion` read from three kinds of reader), 30 KB of `BTreeMap` and 12 KB of stable sorts for their keys, 21 KB in the engine, 17 KB of UI and 16 KB in `scene`. The highlight step is 55 KB in `serde_path_to_error` (the lenient reader of `scene::unknown` instantiates `Element`, `Document`, `Style` and `Transform` over `&Value`; 21 KB of by-value readers went away), and the rest is `alloc` and `core` instantiations, the engine, the UI and the renderer. Data segments grew by 10 KB in all.
+
+What was cut, each step measured on its own on top of the one before (opt, gzip, brotli):
+
+| Step | opt | gzip | brotli |
+|---|---|---|---|
+| A version's scene (`NamedVersion::open`) and a stored library item are read as text, like every other document, and not as bytes: `serde_json::from_slice` compiled the element deserialiser a second time | -53,479 | -20,123 | -11,427 |
+| `drafftink-edit` at `opt-level = "z"` (it runs on a command and in the text editor, not in the frame loop, and the engine that calls it is `z` already) | -90,725 | -38,318 | -26,178 |
+| `parse_args::<A>` had 155 copies, 958 bytes each (148 KB), because the refusal was built inside the generic function. Only the read depends on `A` now | -125,218 | -6,880 | +4,250 |
+| `MemoryTx::update` keeps what does not depend on the closure in one function | -9,099 | -2,746 | -1,318 |
+| Total | -278,521 | -68,067 | -34,673 |
+
+Final, `cargo xtask size` with brotli at that window: fallback opt 12,972,280, gzip 5,088,823, brotli 3,586,176; the WebGPU module opt 13,342,404, gzip 5,144,180, brotli 3,611,783 (13,621,517, 5,210,640 and 3,644,680 before; its limits `wasm.opt_bytes` and `wasm.brotli_bytes` were over on `f8358cc` too). The gzip limits of both modules were raised (`perf/budgets.json`), the others hold. `schemas.brotli_bytes` is 39,049 (limit 40,100): nothing here changes the schema table.
+
+Tried and not kept (fallback, opt / gzip / brotli; the `drafftink-scene` row on `f8358cc`, the others on the state after the cuts above):
+
+| Change | opt | gzip | brotli | Why not |
+|---|---|---|---|---|
+| `TabDoc::run_tx` with the closure behind `&mut dyn FnMut` (79 copies of 735 bytes) | +22,620 | +5,600 | -2,630 | the indirection costs more than the copies |
+| `drafftink-scene` at `opt-level = "z"` | -120,347 | -50,875 | -32,158 | the render, canvas and UI crates call it in the frame loop; needs `scripts/web_startup.py` first (8.4) |
+| wasm-opt `--merge-similar-functions` | -97,227 | -33,725 | not measured | changes the code of the hot loops; needs a frame measurement |
+| wasm-opt `--converge` | -15,439 | -13,218 | not measured | the build is slower (8.2) |
+
+What is left to find: 131 instantiations of the stable sort (about 3.7 KB each, 500 KB in all, 92 of them with our own types or closures) and 160 deserialisers of command arguments over `&Value` with `serde_path_to_error` (533 KB), which 8.2 keeps for the key paths in refusals.
+

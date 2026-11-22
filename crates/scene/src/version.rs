@@ -226,7 +226,10 @@ impl NamedVersion {
         if json.len() > max_inflated {
             return Err(corrupt("it expands to more than the limit"));
         }
-        let wire: WireIn = serde_json::from_slice(&json).map_err(|e| VersionError::Corrupt(e.to_string()))?;
+        // Read as text, like every other place that reads scene types (`Document::from_json`): a reader of bytes would
+        // compile the whole element deserialiser a second time into the web module (`docs/performance.md`, 8.6).
+        let text = std::str::from_utf8(&json).map_err(|e| VersionError::Corrupt(e.to_string()))?;
+        let wire: WireIn = serde_json::from_str(text).map_err(|e| VersionError::Corrupt(e.to_string()))?;
         if wire.elements.len() > MAX_ELEMENTS {
             return Err(corrupt("it holds more elements than a document may"));
         }
@@ -351,5 +354,21 @@ mod tests {
             state: Arc::from(enc.finish().unwrap()),
         };
         assert!(matches!(v.open(), Err(VersionError::InvalidElement { id, .. }) if id.as_str() == "bad"));
+    }
+
+    #[test]
+    fn a_state_that_is_not_text_is_corrupt() {
+        let mut enc = ZlibEncoder::new(vec![CODEC_ZLIB_JSON], Compression::default());
+        std::io::Write::write_all(&mut enc, &[b'{', 0xff, 0xfe, b'}']).unwrap();
+        let v = NamedVersion {
+            id: SeqIds::new().version_id(),
+            name: "x".into(),
+            created_ms: 0,
+            author: None,
+            elements: 0,
+            files: Vec::new(),
+            state: Arc::from(enc.finish().unwrap()),
+        };
+        assert!(matches!(v.open(), Err(VersionError::Corrupt(why)) if why.contains("utf-8")));
     }
 }
